@@ -28,8 +28,7 @@ enum Cmd {
     },
     /// Analyze one or more repositories and open them in the viewer.
     View {
-        /// Repository roots; several become a project switcher.
-        #[arg(required = true)]
+        /// Repository roots; default: the current directory. Several become a project switcher.
         repos: Vec<PathBuf>,
         /// An `architecture.yml` or `roles.json` for a single repo; default: the repo's own, else inferred.
         #[arg(long)]
@@ -79,7 +78,10 @@ fn view(repos: &[PathBuf], roles: Option<&std::path::Path>, out: Option<PathBuf>
 
 fn main() -> Result<()> {
     match Cli::parse().cmd {
-        Cmd::View { repos, roles, out, no_open } => view(&repos, roles.as_deref(), out, !no_open)?,
+        Cmd::View { repos, roles, out, no_open } => {
+            let repos = if repos.is_empty() { vec![std::env::current_dir()?] } else { repos };
+            view(&repos, roles.as_deref(), out, !no_open)?
+        }
         Cmd::Analyze { repo, package, roles, out } => {
             let g = atlas_engine::analyze(&repo, package.as_deref(), roles.as_deref())?;
             std::fs::write(&out, serde_json::to_string(&g)?)?;
