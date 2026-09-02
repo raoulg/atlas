@@ -650,6 +650,30 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut Store, root: &str,
     let body = if n.kind == NodeKind::Module { Some(d) } else { d.child_by_field_name("body") };
     let Some(body) = body else { return };
     let cls_attrs = n.cls.as_ref().and_then(|c| store.classes.get(c)).map(|c| c.attr_types.clone());
+    // locals assigned from a constructor or from a function whose return type is a class
+    let mut locals: HashMap<String, String> = HashMap::new();
+    if n.kind != NodeKind::Module {
+        for a in walk(body, &["assignment"]) {
+            let (Some(left), Some(right)) = (a.child_by_field_name("left"), a.child_by_field_name("right")) else { continue };
+            if left.kind() != "identifier" || right.kind() != "call" {
+                continue;
+            }
+            let parts = dotted(right.child_by_field_name("function"), src);
+            let Some(r) = resolve(m, &parts, modules, &store.nodes, root).filter(|r| !r.starts_with("ext:")) else { continue };
+            let ty = match store.nodes.get(&r).map(|x| x.kind) {
+                Some(NodeKind::Class) => Some(r),
+                Some(NodeKind::Function) | Some(NodeKind::Method) => store
+                    .edges
+                    .iter()
+                    .find(|e| e.src == r && e.kind == EdgeKind::Returns && store.nodes.get(&e.dst).map_or(false, |x| x.kind == NodeKind::Class))
+                    .map(|e| e.dst.clone()),
+                _ => None,
+            };
+            if let Some(t) = ty {
+                locals.insert(text(left, src).to_string(), t);
+            }
+        }
+    }
     let mut tags: BTreeMap<String, u32> = BTreeMap::new();
     let mut new_edges: Vec<(String, EdgeKind)> = vec![];
     for c in walk(body, &["call"]) {
@@ -705,6 +729,9 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut Store, root: &str,
                     target = method_of(store, t, &parts[2], 0).or_else(|| Some(t.clone()));
                 }
             }
+        } else if parts.len() == 2 && locals.contains_key(&parts[0]) {
+            let t = &locals[&parts[0]];
+            target = method_of(store, t, &parts[1], 0).or_else(|| Some(t.clone()));
         } else {
             target = resolve(m, &parts, modules, &store.nodes, root);
             if target.is_none() && parts.len() > 1 {

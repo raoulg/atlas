@@ -723,6 +723,49 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut Store, crate_ids: 
         }
     }
     let cls = n.cls.clone();
+    // locals assigned from a constructor, a struct literal, or a function with a typed return
+    let class_of = |id: &str| store.nodes.get(id).filter(|x| x.kind == NodeKind::Class).map(|_| id.to_string());
+    let returned_class = |id: &str| store.edges.iter().find(|e| e.src == id && e.kind == EdgeKind::Returns && store.nodes.get(&e.dst).map_or(false, |x| x.kind == NodeKind::Class)).map(|e| e.dst.clone());
+    for l in walk(body, &["let_declaration"]) {
+        let Some(pat) = l.child_by_field_name("pattern") else { continue };
+        if pat.kind() != "identifier" && pat.kind() != "mut_pattern" {
+            continue;
+        }
+        let name = text(pat, src).trim_start_matches("mut ").to_string();
+        let mut value = l.child_by_field_name("value");
+        loop {
+            let Some(v) = value else { break };
+            match v.kind() {
+                "try_expression" | "await_expression" | "unary_expression" | "reference_expression" | "parenthesized_expression" => value = named_children(v).into_iter().next(),
+                // `.unwrap()`, `.expect(..)`, `.ok_or_else(..)`, `.context(..)`: the receiver decides the type
+                "call_expression" => match v.child_by_field_name("function") {
+                    Some(f) if f.kind() == "field_expression" => value = f.child_by_field_name("value"),
+                    _ => break,
+                },
+                _ => break,
+            }
+        }
+        let Some(v) = value else { continue };
+        let ty = match v.kind() {
+            "identifier" => locals.get(text(v, src)).cloned(),
+            "struct_expression" => resolve(m, &path_parts(v.child_by_field_name("name"), src), modules, &store.nodes, crate_ids).and_then(|r| class_of(&r)),
+            "call_expression" => {
+                let parts = path_parts(v.child_by_field_name("function"), src);
+                if parts.is_empty() {
+                    None
+                } else {
+                    let full = resolve(m, &parts, modules, &store.nodes, crate_ids);
+                    full.as_deref().and_then(returned_class).or_else(|| {
+                        resolve(m, &parts[..parts.len().saturating_sub(1)], modules, &store.nodes, crate_ids).and_then(|r| class_of(&r))
+                    })
+                }
+            }
+            _ => None,
+        };
+        if let Some(t) = ty {
+            locals.insert(name, t);
+        }
+    }
     let attr_types = cls.as_ref().and_then(|c| store.classes.get(c)).map(|c| c.attr_types.clone()).unwrap_or_default();
     let mut new_edges: Vec<(String, EdgeKind)> = vec![];
     let mut tags: BTreeMap<String, u32> = BTreeMap::new();

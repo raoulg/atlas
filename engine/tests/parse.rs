@@ -57,8 +57,8 @@ fn self_attr_inference_and_base_method_lookup() {
     assert!(calls.contains(&("fixture.build.Pipeline.run".into(), "fixture.sinks.duck.DuckSink.write".into())));
     // self.close() is defined on the Mixin base
     assert!(calls.contains(&("fixture.sinks.duck.DuckSink.write".into(), "fixture.sinks.base.Mixin.close".into())));
-    // g.add(...) on a local is not resolved yet (local-scope tracking is M2)
-    assert!(!calls.contains(&("fixture.build.build_graph".into(), "fixture.schema.Graph.add".into())));
+    // g = Graph(); g.add(...) resolves through the local's constructor
+    assert!(calls.contains(&("fixture.build.build_graph".into(), "fixture.schema.Graph.add".into())));
     let has = edges(&g, EdgeKind::Has);
     assert!(has.contains(&("fixture.build.Pipeline".into(), "fixture.sinks.duck.DuckSink".into())));
     assert!(has.contains(&("fixture.schema.Graph".into(), "fixture.schema.Node".into())), "annotated field");
@@ -128,6 +128,8 @@ fn rust_workspace_parses() {
     assert!(calls.contains(&("atlas-engine.language.Rust.parse".into(), "atlas-engine.rust.parse".into())), "trait impl calls the module");
     let returns = edges(&g, EdgeKind::Returns);
     assert!(returns.contains(&("atlas-engine.analyze".into(), "atlas-engine.model.Graph".into())), "`pub use model::*` resolves Graph");
+    // `let lang = language::detect(..)?; lang.parse(..)`: a local typed by the callee's return
+    assert!(calls.contains(&("atlas-engine.analyze".into(), "atlas-engine.language.Language.parse".into())));
     // typed parameters give receivers a type: `store.add_edge(..)` with `store: &mut Store`
     assert!(calls.contains(&("atlas-engine.python.collect_symbols".into(), "atlas-engine.store.Store.add_edge".into())));
     assert!(g.node("atlas-engine.rust.parse").unwrap().boundaries.get("disk_read").is_some(), "walkdir and fs::read");
