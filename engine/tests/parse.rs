@@ -109,9 +109,9 @@ fn roles_are_inferred_when_nothing_is_declared() {
     assert_eq!(g.node("fixture.cli.build").unwrap().role, "Root");
 }
 
-/// Atlas is its own first subject: the workspace parses, and its shape is the algebra.
+/// A Rust workspace parses; the sample is this workspace, which also declares its own picture.
 #[test]
-fn atlas_reads_atlas() {
+fn rust_workspace_parses() {
     let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
     let g = analyze(&repo, None, None).expect("the Atlas workspace parses");
     let ids: HashSet<&str> = g.nodes.iter().map(|n| n.id.as_str()).collect();
@@ -125,7 +125,9 @@ fn atlas_reads_atlas() {
     let calls = edges(&g, EdgeKind::Calls);
     assert!(calls.contains(&("atlas.main".into(), "atlas.view".into())));
     assert!(calls.contains(&("atlas.view".into(), "atlas-engine.analyze".into())), "cli calls into the engine");
-    assert!(calls.contains(&("atlas-engine.analyze".into(), "atlas-engine.rust.parse".into())));
+    assert!(calls.contains(&("atlas-engine.language.Rust.parse".into(), "atlas-engine.rust.parse".into())), "trait impl calls the module");
+    let returns = edges(&g, EdgeKind::Returns);
+    assert!(returns.contains(&("atlas-engine.analyze".into(), "atlas-engine.model.Graph".into())), "`pub use model::*` resolves Graph");
     // typed parameters give receivers a type: `store.add_edge(..)` with `store: &mut Store`
     assert!(calls.contains(&("atlas-engine.python.collect_symbols".into(), "atlas-engine.store.Store.add_edge".into())));
     assert!(g.node("atlas-engine.rust.parse").unwrap().boundaries.get("disk_read").is_some(), "walkdir and fs::read");

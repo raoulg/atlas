@@ -80,7 +80,9 @@ svg#canvas:active{cursor:grabbing}
 #legend .k{display:inline-flex;align-items:center;gap:6px}
 #legend svg{overflow:visible}
 #hint{position:absolute;right:14px;bottom:14px;font-size:11px;color:var(--ink-3)}
-#fit{position:absolute;right:14px;top:14px;border:1px solid var(--line);background:var(--panel);color:var(--ink-2);font:inherit;font-size:11px;border-radius:6px;padding:4px 9px;cursor:pointer}
+#zoomctl{position:absolute;right:14px;top:14px;display:flex;gap:4px}
+#zoomctl button{border:1px solid var(--line);background:var(--panel);color:var(--ink-2);font:inherit;font-size:12px;border-radius:6px;padding:3px 9px;cursor:pointer;min-width:30px}
+#zoomctl button:hover{color:var(--ink);border-color:var(--ink-3)}
 aside{border-left:1px solid var(--line);background:var(--panel);overflow:auto;padding:18px 20px 40px}
 aside .empty{color:var(--ink-3);padding-top:40px;text-align:center;line-height:1.6}
 aside .empty b{color:var(--ink-2);display:block;margin-bottom:6px;font-weight:500}
@@ -171,7 +173,7 @@ pre.code .l::before{counter-increment:ln;content:counter(ln);display:inline-bloc
   </header>
   <main>
     <svg id="canvas"><g id="scene" class="scene"></g></svg>
-    <button id="fit" type="button">fit</button>
+    <div id="zoomctl"><button id="zout" type="button" title="zoom out">−</button><button id="fit" type="button">fit</button><button id="zone" type="button" title="actual size">1:1</button><button id="zin" type="button" title="zoom in">+</button></div>
     <div id="resizer" title="drag to resize the inspector"></div>
     <div id="legend"></div>
     <div id="hint">drag to pan · scroll to zoom · click a block</div>
@@ -262,10 +264,13 @@ function fit(animate = false, pad = 40, tries = 0) {
   if (!bb.width || !bb.height) return;
   let s = Math.max(0.08, Math.min((W - pad*2) / bb.width, (H - pad*2) / bb.height, 1.4));
   let t = d3.zoomIdentity.translate(W/2 - s*(bb.x + bb.width/2), H/2 - s*(bb.y + bb.height/2)).scale(s);
-  if (view === "story") { s = Math.min(1, (W - 40) / bb.width); t = d3.zoomIdentity.translate(10, 10).scale(s); }  // a story reads top-left, at 1:1
+  if (view === "story") { t = d3.zoomIdentity.translate(10, 10).scale(1); }  // a story reads top-left, at 1:1
   if (animate) svg.transition().duration(300).call(zoom.transform, t); else svg.call(zoom.transform, t);
 }
 document.getElementById("fit").onclick = () => fit(true);
+document.getElementById("zin").onclick = () => svg.transition().duration(150).call(zoom.scaleBy, 1.25);
+document.getElementById("zout").onclick = () => svg.transition().duration(150).call(zoom.scaleBy, 0.8);
+document.getElementById("zone").onclick = () => { const t = d3.zoomTransform(svg.node()); svg.transition().duration(200).call(zoom.transform, d3.zoomIdentity.translate(t.x, t.y).scale(1)); };
 let userZoomed = false;
 zoom.on("zoom.user", ev => { if (ev.sourceEvent) userZoomed = true; });
 window.addEventListener("resize", () => { if (!userZoomed) fit(); });
@@ -542,7 +547,17 @@ async function renderSig() {
 }
 
 // ---------- story: routes from entry points, in call order, against the world they touch ----------
-const LANES = [["net", "Web"], ["disk_read", "Disk in"], ["disk_write", "Disk out"], ["disk", "Disk"], ["db_memgraph", "Memgraph"], ["db_duckdb", "DuckDB"], ["db_sqlite", "SQLite"], ["db_sql", "SQL"], ["llm", "LLM"], ["model", "Model"], ["process", "Process"]];
+const LANES = [["net", "Web"], ["disk_read", "Disk in"], ["disk_write", "Disk out"], ["disk", "Disk"], ["db_memgraph", "Memgraph"], ["db_duckdb", "DuckDB"], ["db_sqlite", "SQLite"], ["db_sql", "SQL"], ["llm", "LLM"], ["model", "Model"], ["process", "Spawn"]];
+// the effect signature: what a step takes from the world or the hub types, and what it hands on
+const WORLD_IN = {net: "Web", disk_read: "Disk", disk: "Disk"};
+const WORLD_OUT = {disk_write: "Disk", db_memgraph: "Memgraph", db_duckdb: "DuckDB", db_sqlite: "SQLite", db_sql: "SQL", llm: "LLM", model: "Model", process: "Spawn"};
+function effectSig(id, bounds) {
+  const t = typesOf(id);
+  const dom = t.takes.map(x => byId.get(x).name), cod = t.returns.map(x => byId.get(x).name);
+  for (const k of Object.keys(bounds || {})) { if (WORLD_IN[k] && !dom.includes(WORLD_IN[k])) dom.push(WORLD_IN[k]); if (WORLD_OUT[k] && !cod.includes(WORLD_OUT[k])) cod.push(WORLD_OUT[k]); }
+  if (!dom.length && !cod.length) return "";
+  return (dom.join(" × ") || "()") + " → " + (cod.join(" × ") || "∅");
+}
 const KIND_LABEL = {make: "Make", cli: "CLI", script: "Script", route: "API", mcp: "MCP", notebook: "Notebook", test: "Test"}, KIND_ORDER = ["make", "cli", "script", "notebook", "route", "mcp", "test"];
 const entries = [...byId.values()].filter(n => n.entry).sort((a, b) => (KIND_ORDER.indexOf(a.entry.kind) - KIND_ORDER.indexOf(b.entry.kind)) || a.entry.label.localeCompare(b.entry.label));
 function callees(id) { const n = byId.get(id); if (n && n.make) return n.make.calls.filter(c => byId.has(c)); const seen = new Set(), res = []; for (const e of (out.get(id) || [])) { if (e.kind !== "calls" && e.kind !== "instantiates") continue; if (seen.has(e.dst) || !byId.has(e.dst)) continue; seen.add(e.dst); res.push(e.dst); } return res; }
@@ -558,7 +573,7 @@ function reach(id) {  // boundaries touched and functions covered by everything 
   const r = {bounds: acc, size: vis.size}; reachCache.set(id, r); return r;
 }
 const typesOf = id => ({takes: [...new Set((out.get(id) || []).filter(e => e.kind === "takes").map(e => e.dst))], returns: [...new Set((out.get(id) || []).filter(e => e.kind === "returns").map(e => e.dst))]});
-let storyEntry = null; const expanded = new Set();
+let storyEntry = null, showTests = false; const expanded = new Set();
 const entrySel = document.getElementById("entry");
 for (const k of KIND_ORDER) { const es = entries.filter(e => e.entry.kind === k); if (!es.length) continue; const og = document.createElement("optgroup"); og.label = KIND_LABEL[k]; for (const e of es) { const o = document.createElement("option"); o.value = e.id; o.textContent = e.entry.label; og.appendChild(o); } entrySel.appendChild(og); }
 entrySel.addEventListener("change", () => { storyEntry = entrySel.value || null; expanded.clear(); render(); });
@@ -566,8 +581,13 @@ function renderStory() {
   const g = scene.node(), ROW = 30, X0 = 30, NAMEW = 620, LW = 80;
   const rows = [], lanesUsed = new Set();
   if (!storyEntry) {
-    let lastKind = null;
-    for (const e of entries) { const r = reach(e.id); Object.keys(r.bounds).forEach(k => lanesUsed.add(k)); rows.push({id: e.id, depth: 0, label: e.entry.label, kind: e.entry.kind, bounds: r.bounds, size: r.size, group: e.entry.kind !== lastKind ? KIND_LABEL[e.entry.kind] : null}); lastKind = e.entry.kind; }
+    let lastKind = null, hiddenTests = 0;
+    for (const e of entries) {
+      if (e.entry.kind === "test" && !showTests) { hiddenTests++; continue; }
+      const r = reach(e.id); Object.keys(r.bounds).forEach(k => lanesUsed.add(k));
+      rows.push({id: e.id, depth: 0, label: e.entry.label, kind: e.entry.kind, bounds: r.bounds, size: r.size, group: e.entry.kind !== lastKind ? KIND_LABEL[e.entry.kind] : null}); lastKind = e.entry.kind;
+    }
+    if (hiddenTests) rows.push({id: "__tests__", depth: 0, label: `${hiddenTests} tests — click to show`, kind: "test", bounds: {}, size: 0, group: "Test", toggle: true});
   } else {
     const walk = (id, depth, prefix) => callees(id).forEach((c, i) => {
       const n = byId.get(c), r = reach(c); Object.keys(r.bounds).forEach(k => lanesUsed.add(k));
@@ -593,16 +613,17 @@ function renderStory() {
       el("text", {class: "num", x: ix, y: 17}, rg).textContent = row.num;
       if (row.kids) { const ch = el("text", {class: "chev", x: ix + 36, y: 17}, rg); ch.textContent = row.open ? "▾" : "▸"; ch.addEventListener("click", ev => { ev.stopPropagation(); if (expanded.has(row.id)) expanded.delete(row.id); else expanded.add(row.id); render(); }); }
       const nx = ix + 52; el("text", {class: "sname", x: nx, y: 17}, rg).textContent = row.name;
-      const t = typesOf(row.id); let tx = nx + row.name.length * 7.6 + 10;
-      if (t.takes.length || t.returns.length) { const sig = el("text", {class: "stype", x: tx, y: 17}, rg); sig.textContent = (t.takes.map(x => byId.get(x).name).join(" × ") || "()") + " → " + (t.returns.map(x => byId.get(x).name).join(" | ") || "∅"); tx += sig.textContent.length * 6.7 + 12; }
+      let tx = nx + row.name.length * 7.6 + 10;
+      const es = effectSig(row.id, row.bounds);
+      if (es) { const sig = el("text", {class: "stype", x: tx, y: 17}, rg); sig.textContent = es; tx += es.length * 6.7 + 12; }
       el("text", {class: "smod", x: Math.max(tx, nx + 240), y: 17}, rg).textContent = short(row.node.module) + (row.size > 1 ? ` · ${row.size} fns` : "");
     } else {
       el("text", {class: "kind", x: ix, y: 17}, rg).textContent = KIND_LABEL[row.kind];
-      el("text", {class: "sname", x: ix + 44, y: 17}, rg).textContent = row.label;
-      el("text", {class: "smod", x: ix + 44 + row.label.length * 7.6 + 14, y: 17}, rg).textContent = `${short(row.id)} · ${row.size} fns`;
+      el("text", {class: row.toggle ? "smod" : "sname", x: ix + 44, y: 17}, rg).textContent = row.label;
+      if (!row.toggle) el("text", {class: "smod", x: ix + 44 + row.label.length * 7.6 + 14, y: 17}, rg).textContent = `${short(row.id)} · ${row.size} fns`;
     }
     lanes.forEach(([k], j) => { const c = row.bounds[k]; if (c) el("circle", {class: "dot", cx: laneX0 + j * LW + LW/2, cy: (ROW - 4) / 2, r: 3 + Math.min(5, Math.log2(c + 1))}, rg); });
-    rg.addEventListener("click", () => { if (!storyEntry) { storyEntry = row.id; expanded.clear(); entrySel.value = row.id; render(); } else select(row.id); });
+    rg.addEventListener("click", () => { if (row.toggle) { showTests = true; render(); } else if (!storyEntry) { storyEntry = row.id; expanded.clear(); entrySel.value = row.id; render(); } else select(row.id); });
     y += ROW;
   }
   if (!rows.length) el("text", {class: "story-sub", x: X0, y: hdrY + 60}, g).textContent = storyEntry ? "This entry point calls nothing inside the package." : "No entry points found (CLI commands, API routes, MCP tools).";
@@ -703,9 +724,9 @@ function legend() {
   L.appendChild(row);
   const row2 = html("div", "row");
   row2.innerHTML = view === "story"
-    ? `<span class="k">rows = steps in call order · columns = the world · dot size = how often</span><span class="k">▸ expand a step into its own steps · click a name for the code</span>`
+    ? `<span class="k">rows = steps in call order · A → B = what a step takes and hands on, from its signature and everything it reaches</span><span class="k">Disk in = reads files · Disk out = writes files · Spawn = starts another process · dot size = how often</span><span class="k">▸ expand a step into its own steps · click a name for the code</span>`
     : view === "arch"
-    ? `<span class="k"><svg width="26" height="8"><path d="M0,4 H26" stroke="currentColor" stroke-width="1.5"/></svg>module → module, width = count</span><span class="k" style="color:var(--alert)"><svg width="26" height="8"><path d="M0,4 H26" stroke="currentColor" stroke-width="2"/></svg>backflow: an earlier stage depends on a later one</span><span class="k"><i style="display:inline-block;width:18px;height:10px;border:1px solid currentColor;border-radius:2px"></i>class</span><span class="k"><i style="display:inline-block;width:18px;height:10px;border:1px solid currentColor;border-radius:6px"></i>function</span>`
+    ? `<span class="k">columns = roles ${D.roles.inferred ? "inferred from the package layout" : "declared in architecture.yml"}, not classes</span><span class="k"><svg width="26" height="8"><path d="M0,4 H26" stroke="currentColor" stroke-width="1.5"/></svg>module → module, width = count</span><span class="k" style="color:var(--alert)"><svg width="26" height="8"><path d="M0,4 H26" stroke="currentColor" stroke-width="2"/></svg>backflow: an earlier stage depends on a later one</span><span class="k"><i style="display:inline-block;width:18px;height:10px;border:1px solid currentColor;border-radius:2px"></i>class</span><span class="k"><i style="display:inline-block;width:18px;height:10px;border:1px solid currentColor;border-radius:6px"></i>function</span>`
     : view === "types"
     ? `<span class="k"><i style="display:inline-block;width:18px;height:10px;border:1px dashed currentColor;border-radius:2px"></i>external base</span><span class="k">● role comes from the base class</span><span class="k"><b style="font-family:var(--mono)">nƒ</b> methods</span>`
     : `<span class="k">node = type · arrow = functions A → B · width = how many</span><span class="k"><svg width="26" height="8"><path d="M0,4 H26" stroke="currentColor" stroke-dasharray="2 3"/></svg>has-a (fields)</span>`;

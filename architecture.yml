@@ -7,6 +7,7 @@ bands:
   bottom: [Model]
 rules:
   atlas-engine: Parse            # lib.rs: analyze = parse, then roles
+  atlas-engine.language: Parse
   atlas-engine.python: Parse
   atlas-engine.rust: Parse
   atlas-engine.tree: Parse

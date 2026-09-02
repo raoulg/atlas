@@ -475,7 +475,7 @@ fn collect_use(n: TsNode, prefix: &[String], src: &[u8], out: &mut Vec<(String, 
 }
 
 /// A path as written -> an internal id or `ext:...`.
-fn path_to_id(m: &Module, parts: &[String], crate_ids: &HashMap<String, String>) -> String {
+fn path_to_id(m: &Module, parts: &[String], crate_ids: &HashMap<String, String>, is_module: &dyn Fn(&str) -> bool) -> String {
     let Some(head) = parts.first() else { return String::new() };
     let (base, rest): (String, &[String]) = match head.as_str() {
         "crate" => (m.krate.clone(), &parts[1..]),
@@ -490,6 +490,7 @@ fn path_to_id(m: &Module, parts: &[String], crate_ids: &HashMap<String, String>)
             (base, &parts[i..])
         }
         h if crate_ids.contains_key(h) => (crate_ids[h].clone(), &parts[1..]),
+        h if is_module(&format!("{}.{h}", m.id)) => (format!("{}.{h}", m.id), &parts[1..]),
         _ => return format!("ext:{}", parts.join(".")),
     };
     let mut id = base;
@@ -508,15 +509,16 @@ fn collect_uses(m: &mut Module, crate_ids: &HashMap<String, String>, module_ids:
     }
     let mut bindings = vec![];
     let mut edges = vec![];
+    let is_module = |id: &str| module_ids.contains(id);
     for (alias, parts) in out {
-        let id = path_to_id(m, &parts, crate_ids);
+        let id = path_to_id(m, &parts, crate_ids, &is_module);
         if !id.starts_with("ext:") {
             edges.push(id.clone());
         }
         bindings.push((alias, id));
     }
     for w in wild {
-        let id = path_to_id(m, &w, crate_ids);
+        let id = path_to_id(m, &w, crate_ids, &is_module);
         if !id.starts_with("ext:") {
             edges.push(id.clone());
             m.wildcards.push(id);
@@ -540,8 +542,9 @@ fn collect_uses(m: &mut Module, crate_ids: &HashMap<String, String>, module_ids:
 
 fn resolve(m: &Module, parts: &[String], modules: &IndexMap<String, Module>, nodes: &IndexMap<String, Node>, crate_ids: &HashMap<String, String>) -> Option<String> {
     let head = parts.first()?;
+    let is_module = |id: &str| nodes.get(id).map_or(false, |n| n.kind == NodeKind::Module);
     let (mut target, rest): (String, &[String]) = if matches!(head.as_str(), "crate" | "self" | "super") || crate_ids.contains_key(head) {
-        (path_to_id(m, parts, crate_ids), &[])
+        (path_to_id(m, parts, crate_ids, &is_module), &[])
     } else if let Some(s) = m.symbols.get(head) {
         (s.clone(), &parts[1..])
     } else if let Some(b) = m.bindings.get(head) {
