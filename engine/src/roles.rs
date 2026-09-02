@@ -134,7 +134,7 @@ pub fn infer(store: &mut Store, root: &str) -> Architecture {
     let mut arch = Architecture {
         order: vec![],
         bands: Bands { top: vec!["Root".into(), "Scripts".into()], bottom: vec![] },
-        rules,
+        rules: rules.into(),
         base_roles: BTreeMap::new(),
         dependencies: "against_flow".into(),
         allowed: vec![],

@@ -141,9 +141,8 @@ pub struct Architecture {
     #[serde(default)]
     pub bands: Bands,
     /// Package prefix -> role, longest prefix wins.
-    #[serde(default, deserialize_with = "de_rules")]
-    #[ts(type = "Array<[string, string]>")]
-    pub rules: Vec<(String, String)>,
+    #[serde(default)]
+    pub rules: Rules,
     /// Base class -> role; a class whose base chain reaches one takes that role.
     #[serde(default)]
     pub base_roles: BTreeMap<String, String>,
@@ -161,18 +160,44 @@ fn against_flow() -> String {
     "against_flow".into()
 }
 
-/// Rules may be written as a map (`rkg.source: Source`) or as a list of pairs.
-fn de_rules<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Vec<(String, String)>, D::Error> {
-    #[derive(Deserialize)]
-    #[serde(untagged)]
-    enum Rules {
-        Map(IndexMap<String, String>),
-        List(Vec<(String, String)>),
+/// Package prefix -> role pairs. Written as a map (`rkg.source: Source`) or as a list of
+/// pairs; serialized as a list.
+#[derive(TS, Clone, Debug, Default, PartialEq)]
+#[ts(export)]
+pub struct Rules(#[ts(type = "Array<[string, string]>")] pub Vec<(String, String)>);
+
+impl Serialize for Rules {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        self.0.serialize(s)
     }
-    Ok(match Rules::deserialize(d)? {
-        Rules::Map(m) => m.into_iter().collect(),
-        Rules::List(l) => l,
-    })
+}
+
+impl<'de> Deserialize<'de> for Rules {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Input {
+            Map(IndexMap<String, String>),
+            List(Vec<(String, String)>),
+        }
+        Ok(Rules(match Input::deserialize(d)? {
+            Input::Map(m) => m.into_iter().collect(),
+            Input::List(l) => l,
+        }))
+    }
+}
+
+impl std::ops::Deref for Rules {
+    type Target = Vec<(String, String)>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl From<Vec<(String, String)>> for Rules {
+    fn from(v: Vec<(String, String)>) -> Self {
+        Rules(v)
+    }
 }
 
 #[derive(Serialize, Deserialize, TS, Clone, Debug, Default)]
