@@ -1,9 +1,17 @@
 # Atlas
 
-A visual, agent-first code browser. It shows a repository at the level where the
-thinking happens: places where data rests, the arrows of code between them, base
-types and their subtypes, functions as morphisms `f: A → B`. Click a block, see the
-code. The gitgraph stays. Editing does not.
+A shared language between a human and an agent for building software together.
+
+The human has sensors the agent lacks: a picture, a name, a shape that looks wrong
+at a glance. The agent has sensors the human lacks: every type, call and effect at
+once. Talking in prose between the two is slow and sloppy for both. Atlas replaces
+it with a small piece of mathematics that has one picture per construct, so that
+pointing at a box and saying "this should not exist" is something both can act on.
+
+What it shows: places where data rests, the arrows of code between them, base
+types and their subtypes, functions as morphisms `f: A → B`, zoomed by the
+hierarchies the code already has. Click a block, see the code. The gitgraph stays.
+Editing does not. See `CLAUDE.md` for the six sentences and the rules that follow.
 
 Atlas is one small algebra, and Atlas itself is the first subject that has to obey it:
 

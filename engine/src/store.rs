@@ -51,17 +51,17 @@ impl Store {
     }
 
     /// Record a boundary call on a node: its kind, and what it touches.
-    pub fn touch(&mut self, id: &str, kind: &str, what: &str, payload: &str) {
+    pub fn touch(&mut self, id: &str, kind: &str, what: &str, payload: &str, op: &str) {
         let Some(n) = self.nodes.get_mut(id) else { return };
         *n.boundaries.entry(kind.to_string()).or_insert(0) += 1;
-        match n.touches.iter_mut().find(|t| t.kind == kind && t.what == what) {
+        match n.touches.iter_mut().find(|t| t.kind == kind && t.what == what && t.op == op) {
             Some(t) => {
                 t.n += 1;
                 if t.payload.is_empty() {
                     t.payload = payload.into();
                 }
             }
-            None => n.touches.push(Touch { kind: kind.into(), what: what.into(), n: 1, payload: payload.into() }),
+            None => n.touches.push(Touch { kind: kind.into(), what: what.into(), n: 1, payload: payload.into(), op: op.into() }),
         }
     }
 

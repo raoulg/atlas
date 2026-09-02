@@ -769,15 +769,15 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut Store, crate_ids: 
         }
     }
     let attr_types = cls.as_ref().and_then(|c| store.classes.get(c)).map(|c| c.attr_types.clone()).unwrap_or_default();
-    let mut new_edges: Vec<(String, EdgeKind)> = vec![];
-    let mut touches: Vec<(String, String, String)> = vec![];
+    let mut new_edges: Vec<(String, EdgeKind, Option<String>)> = vec![];
+    let mut touches: Vec<(String, String, String, String)> = vec![];
     let mut unresolved: Vec<String> = vec![];
     for c in walk(body, &["call_expression", "struct_expression"]) {
         if c.kind() == "struct_expression" {
             let parts = path_parts(c.child_by_field_name("name"), src);
             if let Some(r) = resolve(m, &parts, modules, &store.nodes, crate_ids).filter(|r| !r.starts_with("ext:")) {
                 if store.nodes.get(&r).map_or(false, |x| x.kind == NodeKind::Class) {
-                    new_edges.push((r, EdgeKind::Instantiates));
+                    new_edges.push((r, EdgeKind::Instantiates, None));
                 }
             }
             continue;
@@ -841,7 +841,9 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut Store, crate_ids: 
         match target {
             Some(t) if !t.starts_with("ext:") => {
                 let kind = if store.nodes[&t].kind == NodeKind::Class { EdgeKind::Instantiates } else { EdgeKind::Calls };
-                new_edges.push((t, kind));
+                // `Type::method(..)` with no such method known: keep the name, it is what was called
+                let via = if kind == EdgeKind::Instantiates && parts.len() > 1 && parts[0] != "Self" { parts.last().cloned() } else { None };
+                new_edges.push((t, kind, via));
             }
             _ => {
                 if parts.is_empty() {
@@ -852,19 +854,19 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut Store, crate_ids: 
                 if let Some(tag) = effects::boundary_rust(&full) {
                     let what = what_of(c, src, &["string_literal", "raw_string_literal"], "arguments");
                     let payload = payload_of(c, src, &what, "arguments", &locals);
-                    touches.push((tag.to_string(), what, payload));
+                    touches.push((tag.to_string(), what, payload, parts.last().cloned().unwrap_or_default()));
                 }
             }
         }
     }
-    for (t, kind) in new_edges {
-        store.add_edge(id, &t, kind, None);
+    for (t, kind, via) in new_edges {
+        store.add_edge(id, &t, kind, via);
     }
     for u in unresolved {
         *store.unresolved.entry(u).or_insert(0) += 1;
     }
-    for (kind, what, payload) in touches {
-        store.touch(id, &kind, &what, &payload);
+    for (kind, what, payload, op) in touches {
+        store.touch(id, &kind, &what, &payload, &op);
     }
 }
 

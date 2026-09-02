@@ -123,6 +123,9 @@ pub struct Touch {
     /// What flows through the boundary, as the author named it, with its type when known.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub payload: String,
+    /// The operation as called: `write`, `create_dir_all`, `read_text`, `get`.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub op: String,
 }
 
 #[derive(Serialize, Deserialize, TS, Clone, Debug)]

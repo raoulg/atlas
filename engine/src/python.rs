@@ -676,7 +676,7 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut Store, root: &str,
             }
         }
     }
-    let mut touches: Vec<(String, String, String)> = vec![];
+    let mut touches: Vec<(String, String, String, String)> = vec![];
     let mut new_edges: Vec<(String, EdgeKind)> = vec![];
     for c in walk(body, &["call"]) {
         if n.kind == NodeKind::Module {
@@ -761,7 +761,7 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut Store, root: &str,
                 if let Some(tag) = effects::boundary(pkg.as_deref(), &parts, &m.ext_pkgs) {
                     let what = what_of(c, src, &["string"], "arguments");
                     let payload = payload_of(c, src, &what, "arguments", &locals);
-                    touches.push((tag.to_string(), what, payload));
+                    touches.push((tag.to_string(), what, payload, parts.last().cloned().unwrap_or_default()));
                 }
             }
         }
@@ -769,8 +769,8 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut Store, root: &str,
     for (t, kind) in new_edges {
         store.add_edge(id, &t, kind, None);
     }
-    for (kind, what, payload) in touches {
-        store.touch(id, &kind, &what, &payload);
+    for (kind, what, payload, op) in touches {
+        store.touch(id, &kind, &what, &payload, &op);
     }
 }
 

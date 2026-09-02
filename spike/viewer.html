@@ -561,26 +561,38 @@ function worldItem(kind, whats) {
   return (WORLD_IN[kind] || WORLD_OUT[kind]) + (ws.length ? `(${ws.join(", ")})` : "");
 }
 // a step's own signature, in the author's words
+// line one carries the author's names; the typed signature waits in the inspector
 function ownSig(n) {
-  const ps = (n.params || []).filter(p => p !== "self" && p !== "cls" && !p.startsWith("&self") && !p.startsWith("&mut self")).join(", ");
+  const names = (n.params || []).filter(p => !/^(&?mut )?(self|cls)\b/.test(p)).map(p => p.replace(/^(mut |\*\*|\*)/, "").split(":")[0].split("=")[0].trim());
   let ret = n.returns || "";
   const m = ret.match(/^Result<(.*)>$/); if (m) ret = m[1];
-  if (!ps && !ret) return "";
+  ret = ret.replace(/\b(std|core)::[a-z_:]+::/g, "").replace(/&(mut )?/g, "");
+  if (!names.length && !ret) return "";
   const cut = (t, k) => t.length > k ? t.slice(0, k - 1) + "…" : t;
-  return `(${cut(ps, 48)})` + (ret && ret !== "None" && ret !== "()" ? ` → ${cut(ret, 24)}` : "");
+  return `(${cut(names.join(", "), 44)})` + (ret && ret !== "None" && ret !== "()" ? ` → ${cut(ret, 28)}` : "");
 }
 const VERB = {net: "calls", disk_read: "reads", disk: "opens", disk_write: "writes", db_memgraph: "queries Memgraph", db_duckdb: "queries DuckDB", db_sqlite: "queries SQLite", db_sql: "queries SQL", llm: "asks LLM", model: "runs model", process: "runs"};
-// what a step does in its own body, as verbs: reads Makefile · writes html → out · runs open
+// the verb comes from the operation when it says more than the kind
+function verbOf(t) {
+  const op = t.op || "";
+  if (/^(create_dir|mkdir|makedirs)/.test(op)) return "creates";
+  if (/^(remove|unlink|rmtree|rm)/.test(op)) return "removes";
+  if (/^(rename|move)/.test(op)) return "moves";
+  if (/^copy/.test(op)) return "copies";
+  if (t.kind === "net" && /^(get|post|put|delete|patch)$/.test(op)) return `${op.toUpperCase()}s`;
+  return VERB[t.kind] || t.kind;
+}
+// what a step does in its own body, grouped by verb: reads Makefile · writes html → out · runs open | xdg-open
 function ownEffects(n) {
-  const ts = (n.touches || []).slice().sort((a, b) => b.n - a.n);
-  const items = ts.map(t => {
-    const what = t.what || "";
-    if (t.kind === "disk_write") return `writes ${t.payload ? t.payload + " → " : ""}${what || "disk"}`;
-    if (t.kind === "process") return `runs ${what || "a process"}`;
-    return `${VERB[t.kind] || t.kind}${what ? " " + what : ""}`;
-  });
-  const u = [...new Set(items)];
-  return u.slice(0, 4).join(" · ") + (u.length > 4 ? ` · and ${u.length - 4} more` : "");
+  const groups = new Map();
+  for (const t of (n.touches || []).slice().sort((a, b) => b.n - a.n)) {
+    const v = verbOf(t), what = t.what || "";
+    const item = t.kind === "disk_write" && v === "writes" && t.payload ? `${t.payload} → ${what || "disk"}` : (what || (t.kind === "process" ? "a process" : ""));
+    if (!groups.has(v)) groups.set(v, []);
+    if (item && !groups.get(v).includes(item)) groups.get(v).push(item);
+  }
+  const parts = [...groups].map(([v, items]) => v + (items.length ? " " + items.slice(0, 3).join(" | ") + (items.length > 3 ? ` | +${items.length - 3}` : "") : ""));
+  return parts.slice(0, 4).join(" · ") + (parts.length > 4 ? ` · and ${parts.length - 4} more` : "");
 }
 function effectSig(id, r) {
   const t = typesOf(id);
@@ -637,7 +649,8 @@ function renderStory() {
     const walk = (id, depth, prefix) => callees(id).forEach((c, i) => {
       const n = byId.get(c), r = reach(c); Object.keys(r.bounds).forEach(k => lanesUsed.add(k));
       const num = prefix ? `${prefix}.${i + 1}` : `${i + 1}`, kids = callees(c).length;
-      const row = {id: c, depth, num, name: n.kind === "class" ? n.name + "()" : n.entry ? `${KIND_LABEL[n.entry.kind]} ${n.entry.label}` : n.name, node: n, bounds: r.bounds, reach: r, size: r.size, kids, open: expanded.has(c)};
+      const via = n.kind === "class" ? (out.get(id) || []).find(e => e.dst === c && e.kind === "instantiates" && e.via)?.via : null;
+      const row = {id: c, depth, num, name: n.kind === "class" ? (via ? `${n.name}::${via}()` : n.name + "()") : n.entry ? `${KIND_LABEL[n.entry.kind]} ${n.entry.label}` : n.name, node: n, bounds: r.bounds, reach: r, size: r.size, kids, open: expanded.has(c)};
       rows.push(row); if (row.open) walk(c, depth + 1, num);
     });
     const own = byId.get(storyEntry), ownR = ownReach(own);
@@ -898,7 +911,7 @@ function legend() {
   row2.innerHTML = view === "plaat"
     ? `<span class="k">box = a place data rests: a type family (role strip) or a part of the world (grey strip) · (n) = a family, click to open · ▴ = member of an open family</span><span class="k">arrow = the functions from one place to another, named by what they share · width = how many</span>`
     : view === "story"
-    ? `<span class="k">rows = steps in call order · A → B = what a step takes and hands on, from its signature and everything it reaches</span><span class="k">Disk in = reads files · Disk out = writes files · Spawn = starts another process · dot size = how often</span><span class="k">▸ expand a step into its own steps · click a name for the code</span>`
+    ? `<span class="k">rows = steps in call order · line 1 = the step's own signature, in the author's names · line 2 = what its own body does</span><span class="k">dots = what the step reaches through everything below it · dot size = how often</span><span class="k">▸ expand a step into its own steps · click a name for the code</span>`
     : view === "arch"
     ? `<span class="k">columns = roles ${D.roles.inferred ? "inferred from the package layout" : "declared in architecture.yml"}, not classes</span><span class="k"><svg width="26" height="8"><path d="M0,4 H26" stroke="currentColor" stroke-width="1.5"/></svg>module → module, width = count</span><span class="k" style="color:var(--alert)"><svg width="26" height="8"><path d="M0,4 H26" stroke="currentColor" stroke-width="2"/></svg>backflow: an earlier stage depends on a later one</span><span class="k"><i style="display:inline-block;width:18px;height:10px;border:1px solid currentColor;border-radius:2px"></i>class</span><span class="k"><i style="display:inline-block;width:18px;height:10px;border:1px solid currentColor;border-radius:6px"></i>function</span>`
     : view === "types"
