@@ -22,6 +22,20 @@ engine knows languages and libraries, never a project.
 - Planning: Linear project *Atlas — code at the level of types and flows*
 - Subjects: Atlas itself, then `ruimtelijke-knowledge-graph`, `vectormesh`, `goad_toolkit`, `notebooktester`
 
+## Run it
+
+```bash
+cargo run -q -- view /path/to/repo
+```
+
+`atlas view` analyzes one or more repositories and opens them in the viewer; several
+repos become a project switcher. `atlas analyze <repo> -o graph.json` writes the graph
+alone. A repo may declare itself in an `architecture.yml` at its root (see
+[docs/design.md](docs/design.md) §3); without one, roles are inferred and the page says so.
+
+The engine is the Rust workspace (`engine/`, `cli/`); `cargo test` runs the fixture
+tests and regenerates the TypeScript bindings in `engine/bindings/`.
+
 ## Spike (M0)
 
 A throwaway pipeline that answers "does the abstraction hold?" on a real repo.
