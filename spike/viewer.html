@@ -154,6 +154,7 @@ pre.code .l::before{counter-increment:ln;content:counter(ln);display:inline-bloc
     <div class="brand">Atlas <select id="project" aria-label="project"></select> <small>spike</small></div>
     <div class="tabs" role="tablist">
       <button role="tab" data-view="story" aria-selected="true">Story</button>
+      <button role="tab" data-view="plaat" aria-selected="false">Plaat</button>
       <button role="tab" data-view="arch" aria-selected="false">Architecture</button>
       <button role="tab" data-view="types" aria-selected="false">Type lattice</button>
       <button role="tab" data-view="sig" aria-selected="false">Signature flow</button>
@@ -550,11 +551,16 @@ async function renderSig() {
 const LANES = [["net", "Web"], ["disk_read", "Disk in"], ["disk_write", "Disk out"], ["disk", "Disk"], ["db_memgraph", "Memgraph"], ["db_duckdb", "DuckDB"], ["db_sqlite", "SQLite"], ["db_sql", "SQL"], ["llm", "LLM"], ["model", "Model"], ["process", "Spawn"]];
 // the effect signature: what a step takes from the world or the hub types, and what it hands on
 const WORLD_IN = {net: "Web", disk_read: "Disk", disk: "Disk"};
-const WORLD_OUT = {disk_write: "Disk", db_memgraph: "Memgraph", db_duckdb: "DuckDB", db_sqlite: "SQLite", db_sql: "SQL", llm: "LLM", model: "Model", process: "Spawn"};
-function effectSig(id, bounds) {
+const WORLD_OUT = {disk_write: "Disk", db_memgraph: "Memgraph", db_duckdb: "DuckDB", db_sqlite: "SQLite", db_sql: "SQL", llm: "LLM", model: "Model", process: "open"};
+function worldItem(kind, whats) {
+  const ws = pickWhats((whats || {})[kind]);
+  if (kind === "process") return ws.length ? ws.join(" | ") : "process";
+  return (WORLD_IN[kind] || WORLD_OUT[kind]) + (ws.length ? `(${ws.join(", ")})` : "");
+}
+function effectSig(id, r) {
   const t = typesOf(id);
   const dom = t.takes.map(x => byId.get(x).name), cod = t.returns.map(x => byId.get(x).name);
-  for (const k of Object.keys(bounds || {})) { if (WORLD_IN[k] && !dom.includes(WORLD_IN[k])) dom.push(WORLD_IN[k]); if (WORLD_OUT[k] && !cod.includes(WORLD_OUT[k])) cod.push(WORLD_OUT[k]); }
+  for (const k of Object.keys((r && r.bounds) || {})) { const item = worldItem(k, r.whats); if (WORLD_IN[k] && !dom.includes(item)) dom.push(item); if (WORLD_OUT[k] && !cod.includes(item)) cod.push(item); }
   if (!dom.length && !cod.length) return "";
   return (dom.join(" × ") || "()") + " → " + (cod.join(" × ") || "∅");
 }
@@ -564,13 +570,27 @@ function callees(id) { const n = byId.get(id); if (n && n.make) return n.make.ca
 const reachCache = new Map();
 function reach(id) {  // boundaries touched and functions covered by everything reachable through calls
   if (reachCache.has(id)) return reachCache.get(id);
-  const acc = {}, vis = new Set([id]), stack = [id];
+  const acc = {}, whats = {}, vis = new Set([id]), stack = [id];
   while (stack.length) {
     const cur = stack.pop(), n = byId.get(cur); if (!n) continue;
-    for (const [k, v] of Object.entries(n.boundaries || {})) acc[k] = (acc[k] || 0) + v;
+    addTouches(acc, whats, n);
     for (let t of callees(cur)) { if (byId.get(t).kind === "class") { const init = t + ".__init__"; t = byId.has(init) ? init : null; } if (t && !vis.has(t)) { vis.add(t); stack.push(t); } }
   }
-  const r = {bounds: acc, size: vis.size}; reachCache.set(id, r); return r;
+  const r = {bounds: acc, whats, size: vis.size}; reachCache.set(id, r); return r;
+}
+function addTouches(acc, whats, n) {
+  const ts = n.touches || [];
+  if (ts.length) for (const t of ts) { acc[t.kind] = (acc[t.kind] || 0) + t.n; (whats[t.kind] ||= {}); if (t.what) whats[t.kind][t.what] = (whats[t.kind][t.what] || 0) + t.n; }
+  else for (const [k, v] of Object.entries(n.boundaries || {})) acc[k] = (acc[k] || 0) + v;
+}
+function ownReach(n) { const acc = {}, whats = {}; addTouches(acc, whats, n); return {bounds: acc, whats, size: 1}; }
+// the most telling names for what a boundary touches: literals (paths, tables, commands) before variable names
+const literalish = w => /[\/ .:]/.test(w) && !/^[a-z_][a-z0-9_]*(\.[a-z_][a-z0-9_]*)+$/.test(w);
+function pickWhats(m, k = 2) {
+  let es = Object.entries(m || {}).filter(([w]) => w);
+  if (es.some(([w]) => literalish(w))) es = es.filter(([w]) => literalish(w));  // a real name beats a variable name
+  es.sort((a, b) => b[1] - a[1]);
+  const out = es.slice(0, k).map(([w]) => w); if (es.length > k) out.push(`+${es.length - k}`); return out;
 }
 const typesOf = id => ({takes: [...new Set((out.get(id) || []).filter(e => e.kind === "takes").map(e => e.dst))], returns: [...new Set((out.get(id) || []).filter(e => e.kind === "returns").map(e => e.dst))]});
 let storyEntry = null, showTests = false; const expanded = new Set();
@@ -592,12 +612,17 @@ function renderStory() {
     const walk = (id, depth, prefix) => callees(id).forEach((c, i) => {
       const n = byId.get(c), r = reach(c); Object.keys(r.bounds).forEach(k => lanesUsed.add(k));
       const num = prefix ? `${prefix}.${i + 1}` : `${i + 1}`, kids = callees(c).length;
-      const row = {id: c, depth, num, name: n.kind === "class" ? n.name + "()" : n.entry ? `${KIND_LABEL[n.entry.kind]} ${n.entry.label}` : n.name, node: n, bounds: r.bounds, size: r.size, kids, open: expanded.has(c)};
+      const row = {id: c, depth, num, name: n.kind === "class" ? n.name + "()" : n.entry ? `${KIND_LABEL[n.entry.kind]} ${n.entry.label}` : n.name, node: n, bounds: r.bounds, reach: r, size: r.size, kids, open: expanded.has(c)};
       rows.push(row); if (row.open) walk(c, depth + 1, num);
     });
+    const own = byId.get(storyEntry), ownR = ownReach(own);
+    if (own.kind !== "make" && (Object.keys(ownR.bounds).length || typesOf(storyEntry).takes.length || typesOf(storyEntry).returns.length)) {
+      Object.keys(ownR.bounds).forEach(k => lanesUsed.add(k));
+      rows.push({id: storyEntry, depth: 0, num: "·", name: "itself", node: own, bounds: ownR.bounds, reach: ownR, size: 1, kids: 0, open: false, own: true});
+    }
     walk(storyEntry, 0, "");
   }
-  const lanes = LANES.filter(([k]) => lanesUsed.has(k)), laneX0 = X0 + NAMEW + 30, hdrY = 30;
+  const lanes = LANES.filter(([k]) => lanesUsed.has(k)).map(([k, l]) => [k, k === "process" ? (pickWhats(Object.assign({}, ...rows.map(r => (r.reach || {}).whats?.process || {})), 1)[0] || l) : l]), laneX0 = X0 + NAMEW + 30, hdrY = 30;
   const title = storyEntry ? byId.get(storyEntry) : null;
   el("text", {class: "story-title", x: X0, y: hdrY}, g).textContent = title ? `${KIND_LABEL[title.entry.kind]} · ${title.entry.label}` : "All entry points";
   el("text", {class: "story-sub", x: X0, y: hdrY + 17}, g).textContent = title ? `${short(title.id)} — steps in call order; a dot means the step, or anything it reaches, touches that part of the world` : `${entries.length} routes into the program, and what each one reaches`;
@@ -614,9 +639,9 @@ function renderStory() {
       if (row.kids) { const ch = el("text", {class: "chev", x: ix + 36, y: 17}, rg); ch.textContent = row.open ? "▾" : "▸"; ch.addEventListener("click", ev => { ev.stopPropagation(); if (expanded.has(row.id)) expanded.delete(row.id); else expanded.add(row.id); render(); }); }
       const nx = ix + 52; el("text", {class: "sname", x: nx, y: 17}, rg).textContent = row.name;
       let tx = nx + row.name.length * 7.6 + 10;
-      const es = effectSig(row.id, row.bounds);
+      const es = effectSig(row.id, row.reach || {bounds: row.bounds, whats: row.whats});
       if (es) { const sig = el("text", {class: "stype", x: tx, y: 17}, rg); sig.textContent = es; tx += es.length * 6.7 + 12; }
-      el("text", {class: "smod", x: Math.max(tx, nx + 240), y: 17}, rg).textContent = short(row.node.module) + (row.size > 1 ? ` · ${row.size} fns` : "");
+      el("text", {class: "smod", x: Math.max(tx, nx + 240), y: 17}, rg).textContent = row.own ? "what the entry does in its own body" : short(row.node.module) + (row.size > 1 ? ` · ${row.size} fns` : "");
     } else {
       el("text", {class: "kind", x: ix, y: 17}, rg).textContent = KIND_LABEL[row.kind];
       el("text", {class: row.toggle ? "smod" : "sname", x: ix + 44, y: 17}, rg).textContent = row.label;
@@ -627,6 +652,81 @@ function renderStory() {
     y += ROW;
   }
   if (!rows.length) el("text", {class: "story-sub", x: X0, y: hdrY + 60}, g).textContent = storyEntry ? "This entry point calls nothing inside the package." : "No entry points found (CLI commands, API routes, MCP tools).";
+}
+
+// ---------- plaat: resting places and the arrows between them, from types and effects alone ----------
+const refined = new Set();
+async function renderPlaat() {
+  const g = scene.node();
+  const deg = new Map();
+  for (const e of D.edges) if (["takes", "returns", "has"].includes(e.kind) && byId.has(e.dst)) deg.set(e.dst, (deg.get(e.dst) || 0) + 1);
+  const hub = new Set([...deg].filter(([, c]) => c >= 2).map(([id]) => id));
+  const places = new Map(), arrows = new Map();
+  // a type keeps its bare name unless another hub type shares it
+  const nameCount = new Map(); for (const id of hub) nameCount.set(byId.get(id).name, (nameCount.get(byId.get(id).name) || 0) + 1);
+  const typeLabel = id => { const n = byId.get(id); if (nameCount.get(n.name) > 1) { const mod = (n.module || "").split(".").pop(); return mod ? `${mod}.${n.name}` : n.name; } return n.name; };
+  const addPlace = (id, label, kind, role) => { if (!places.has(id)) places.set(id, {id, label, kind, role}); };
+  const worldPlace = (k, whats) => {
+    const base = "w:" + (WORLD_IN[k] || WORLD_OUT[k]);
+    const ws = pickWhats((whats || {})[k], 1).filter(w => !w.startsWith("+"));
+    if (k === "process") return [base + ":" + (ws[0] || "process"), ws[0] || "process"];
+    if (refined.has(base) && ws.length) return [base + ":" + ws[0], `${WORLD_IN[k] || WORLD_OUT[k]}(${ws[0]})`];
+    return [base, WORLD_IN[k] || WORLD_OUT[k]];
+  };
+  for (const f of D.nodes.filter(n => n.kind === "function" || n.kind === "method")) {
+    const r = reach(f.id), t = typesOf(f.id), dom = [], cod = [];
+    for (const x of t.takes) if (hub.has(x)) dom.push(["t:" + x, typeLabel(x), byId.get(x).kind === "external" ? "ext" : "type", byId.get(x).role]);
+    for (const x of t.returns) if (hub.has(x)) cod.push(["t:" + x, typeLabel(x), byId.get(x).kind === "external" ? "ext" : "type", byId.get(x).role]);
+    for (const k of Object.keys(r.bounds)) { const [id, label] = worldPlace(k, r.whats); if (WORLD_IN[k]) dom.push([id, label, "world"]); if (WORLD_OUT[k]) cod.push([id, label, "world"]); }
+    if (!dom.length || !cod.length) continue;
+    for (const d of dom) for (const c of cod) {
+      if (d[0] === c[0]) continue;
+      addPlace(...d); addPlace(...c);
+      const key = d[0] + ">" + c[0];
+      if (!arrows.has(key)) arrows.set(key, {src: d[0], dst: c[0], fns: []});
+      arrows.get(key).fns.push(f.id);
+    }
+  }
+  // name an arrow by what its functions share: a name, a class, a module; else a count
+  const nameOf = fns => {
+    const ns = fns.map(id => byId.get(id));
+    const same = (f) => new Set(ns.map(f)).size === 1;
+    if (same(n => n.name)) return ns[0].name;
+    if (same(n => n.cls) && ns[0].cls) return byId.get(ns[0].cls).name;
+    if (same(n => n.module)) return short(ns[0].module);
+    return `${fns.length} fns`;
+  };
+  const nodes = [...places.values()].map(p => ({id: p.id, width: 28 + p.label.length * 7.6 + 16, height: 40}));
+  const edges = [...arrows.values()].map((a, i) => ({id: "a" + i, sources: [a.src], targets: [a.dst], a}));
+  const layout = await new ELK().layout({id: "root", layoutOptions: {"elk.algorithm": "layered", "elk.direction": "RIGHT", "elk.edgeRouting": "ORTHOGONAL", "elk.layered.spacing.nodeNodeBetweenLayers": "110", "elk.spacing.nodeNode": "30", "elk.layered.nodePlacement.strategy": "NETWORK_SIMPLEX", "elk.spacing.edgeNode": "24", "elk.layered.spacing.edgeNodeBetweenLayers": "30"}, children: nodes, edges});
+  el("text", {class: "story-title", x: 20, y: 24}, g).textContent = "Resting places, and the arrows of code between them";
+  el("text", {class: "story-sub", x: 20, y: 41}, g).textContent = "computed from signatures and boundary calls alone, nothing declared · click a world box to split it by what is touched · click an arrow for its functions";
+  const eg = el("g", {transform: "translate(20,60)"}, g), ng = el("g", {transform: "translate(20,60)"}, g);
+  for (const e of layout.edges || []) {
+    const s = e.sections[0], pts = [s.startPoint, ...(s.bendPoints || []), s.endPoint];
+    const d = pts.map((q, i) => (i ? "L" : "M") + q.x + "," + q.y).join(" "), cnt = e.a.fns.length, sw = 1 + Math.log2(cnt) * 0.9;
+    el("path", {class: "sedge fn", d, "stroke-width": sw.toFixed(2)}, eg);
+    const last = pts[pts.length - 1], prev = pts[pts.length - 2], ang = Math.atan2(last.y - prev.y, last.x - prev.x), L = 8 + sw, Wd = 4 + sw / 2;
+    el("polygon", {points: [[last.x, last.y], [last.x - L * Math.cos(ang) + Wd * Math.sin(ang), last.y - L * Math.sin(ang) - Wd * Math.cos(ang)], [last.x - L * Math.cos(ang) - Wd * Math.sin(ang), last.y - L * Math.sin(ang) + Wd * Math.cos(ang)]].map(q => q.join(",")).join(" "), fill: "var(--ink-3)"}, eg);
+    const mid = pts[Math.floor((pts.length - 1) / 2)], mid2 = pts[Math.floor((pts.length - 1) / 2) + 1] || mid;
+    const lbl = el("text", {class: "sedge-label", x: (mid.x + mid2.x) / 2, y: (mid.y + mid2.y) / 2 - 6, "text-anchor": "middle"}, eg);
+    lbl.textContent = nameOf(e.a.fns) + (cnt > 1 ? ` ·${cnt}` : "");
+    const hit = el("path", {class: "edge-hit", d}, eg);
+    hit.addEventListener("click", () => selectArrows({src: e.a.src, dst: e.a.dst, fns: e.a.fns, kind: "fn", places}));
+  }
+  for (const n of layout.children) {
+    const p = places.get(n.id);
+    const grp = el("g", {class: "tnode" + (p.kind === "ext" ? " ghost" : ""), transform: `translate(${n.x},${n.y})`, "data-id": n.id}, ng);
+    el("rect", {class: "bg", width: n.width, height: n.height, rx: p.kind === "world" ? 4 : 10}, grp);
+    if (p.kind === "type") el("rect", {x: 0, y: 0, width: 5, height: n.height, rx: 2, fill: roleVar(p.role)}, grp);
+    if (p.kind === "world") el("rect", {x: 0, y: 0, width: 5, height: n.height, rx: 2, fill: "var(--ink-3)"}, grp);
+    el("text", {class: "title", x: 16, y: n.height / 2 + 4}, grp).textContent = p.label;
+    grp.addEventListener("click", () => {
+      if (p.kind === "world") { const base = p.id.split(":").slice(0, 2).join(":"); if (refined.has(base)) refined.delete(base); else refined.add(base); render(); }
+      else select(p.id.slice(2));
+    });
+  }
+  fit();
 }
 
 // ---------- inspector ----------
@@ -706,11 +806,12 @@ function selectEdge(a) {
   insp.scrollTop = 0;
 }
 function selectArrows(p) {
-  const a = byId.get(p.src), b = byId.get(p.dst);
+  const nameOfPlace = id => p.places ? (p.places.get(id) || {}).label || id : byId.get(id).name;
+  const an = nameOfPlace(p.src), bn = nameOfPlace(p.dst);
   insp.innerHTML = "";
   const eb = html("div", "eyebrow"); eb.appendChild(html("span", null, p.kind === "has" ? "composition" : "morphisms")); insp.appendChild(eb);
-  insp.appendChild(html("h1", "name", `${a.name} → ${b.name}`));
-  insp.appendChild(html("div", "path", p.kind === "has" ? `${a.name} has fields of type ${b.name}` : `functions taking ${a.name} and returning ${b.name}`));
+  insp.appendChild(html("h1", "name", `${an} → ${bn}`));
+  insp.appendChild(html("div", "path", p.kind === "has" ? `${an} has fields of type ${bn}` : `functions that take from ${an} and hand on to ${bn}`));
   if (p.kind === "has") { insp.appendChild(section("fields", p.fns.length, (() => { const d = html("div", "links"); p.fns.forEach(f => d.appendChild(html("button", null, "." + f))); return d; })())); insp.appendChild(section("owner", null, linkList([p.src]))); }
   else insp.appendChild(section("functions", p.fns.length, linkList(p.fns)));
   insp.scrollTop = 0;
@@ -723,7 +824,9 @@ function legend() {
   const row = html("div", "row"); for (const r of roles) { const s = html("span", "sw"); const i = html("i"); i.style.background = roleVar(r); s.appendChild(i); s.appendChild(document.createTextNode(r)); row.appendChild(s); }
   L.appendChild(row);
   const row2 = html("div", "row");
-  row2.innerHTML = view === "story"
+  row2.innerHTML = view === "plaat"
+    ? `<span class="k">box = a place data rests: the world (grey strip) or a type used by two or more signatures (role strip) · arrow = the functions between them, named by what they share</span>`
+    : view === "story"
     ? `<span class="k">rows = steps in call order · A → B = what a step takes and hands on, from its signature and everything it reaches</span><span class="k">Disk in = reads files · Disk out = writes files · Spawn = starts another process · dot size = how often</span><span class="k">▸ expand a step into its own steps · click a name for the code</span>`
     : view === "arch"
     ? `<span class="k">columns = roles ${D.roles.inferred ? "inferred from the package layout" : "declared in architecture.yml"}, not classes</span><span class="k"><svg width="26" height="8"><path d="M0,4 H26" stroke="currentColor" stroke-width="1.5"/></svg>module → module, width = count</span><span class="k" style="color:var(--alert)"><svg width="26" height="8"><path d="M0,4 H26" stroke="currentColor" stroke-width="2"/></svg>backflow: an earlier stage depends on a later one</span><span class="k"><i style="display:inline-block;width:18px;height:10px;border:1px solid currentColor;border-radius:2px"></i>class</span><span class="k"><i style="display:inline-block;width:18px;height:10px;border:1px solid currentColor;border-radius:6px"></i>function</span>`
@@ -745,7 +848,7 @@ async function render() {
   scene.node().innerHTML = ""; scene.node().classList.remove("focus");
   document.getElementById("toggles").style.visibility = view === "arch" ? "visible" : "hidden";
   entrySel.style.display = view === "story" ? "" : "none";
-  if (view === "story") { renderStory(); fit(); } else if (view === "arch") { renderArch(); fit(); } else if (view === "types") { renderTypes(); fit(); } else { await renderSig(); }
+  if (view === "story") { renderStory(); fit(); } else if (view === "plaat") { await renderPlaat(); } else if (view === "arch") { renderArch(); fit(); } else if (view === "types") { renderTypes(); fit(); } else { await renderSig(); }
   legend();
   if (selected) scene.node().querySelectorAll(`[data-id="${CSS.escape(selected)}"]`).forEach(x => x.classList.add("selected"));
 }

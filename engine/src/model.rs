@@ -99,6 +99,10 @@ pub struct Node {
     /// Calls that leave the package, by the part of the world they touch.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub boundaries: BTreeMap<String, u32>,
+    /// The same calls with what they touch: a path literal, a table, a command, or the
+    /// argument's name when nothing better is known.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub touches: Vec<Touch>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub is_pkg: bool,
 }
@@ -107,6 +111,15 @@ impl Default for NodeKind {
     fn default() -> Self {
         NodeKind::Module
     }
+}
+
+/// One kind of boundary call and what it touches.
+#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq, Eq)]
+#[ts(export)]
+pub struct Touch {
+    pub kind: String,
+    pub what: String,
+    pub n: u32,
 }
 
 #[derive(Serialize, Deserialize, TS, Clone, Debug)]

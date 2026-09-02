@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use indexmap::IndexMap;
 
-use crate::model::{Edge, EdgeKind, Node, NodeKind};
+use crate::model::{Edge, EdgeKind, Node, NodeKind, Touch};
 
 /// Per-class facts that only matter during resolution.
 #[derive(Default, Clone, Debug)]
@@ -47,6 +47,16 @@ impl Store {
         let key = (src.to_string(), dst.to_string(), kind);
         if self.edge_set.insert(key) {
             self.edges.push(Edge { src: src.into(), dst: dst.into(), kind, via, weight: None });
+        }
+    }
+
+    /// Record a boundary call on a node: its kind, and what it touches.
+    pub fn touch(&mut self, id: &str, kind: &str, what: &str) {
+        let Some(n) = self.nodes.get_mut(id) else { return };
+        *n.boundaries.entry(kind.to_string()).or_insert(0) += 1;
+        match n.touches.iter_mut().find(|t| t.kind == kind && t.what == what) {
+            Some(t) => t.n += 1,
+            None => n.touches.push(Touch { kind: kind.into(), what: what.into(), n: 1 }),
         }
     }
 

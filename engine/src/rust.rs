@@ -16,7 +16,7 @@ use walkdir::WalkDir;
 use crate::effects;
 use crate::model::{EdgeKind, Entry, EntryKind, Node, NodeKind};
 use crate::store::{ClassInfo, SigInfo, Store};
-use crate::tree::{named_children, span, text, walk};
+use crate::tree::{named_children, span, text, walk, what_of};
 
 struct Crate {
     name: String,
@@ -674,14 +674,16 @@ fn link(modules: &IndexMap<String, Module>, store: &mut Store, crate_ids: &HashM
         }
         let m = &modules[&module];
         let sig = store.sigs.get(id).cloned().unwrap_or_default();
-        for t in &sig.ptypes {
-            if let Some(r) = resolve(m, t, modules, &store.nodes, crate_ids).filter(|r| !r.starts_with("ext:")) {
-                store.add_edge(id, &r, EdgeKind::Takes, None);
-            }
-        }
-        for t in &sig.rtypes {
-            if let Some(r) = resolve(m, t, modules, &store.nodes, crate_ids).filter(|r| !r.starts_with("ext:")) {
-                store.add_edge(id, &r, EdgeKind::Returns, None);
+        for (types, kind) in [(&sig.ptypes, EdgeKind::Takes), (&sig.rtypes, EdgeKind::Returns)] {
+            for t in types {
+                let Some(r) = resolve(m, t, modules, &store.nodes, crate_ids) else { continue };
+                if r.starts_with("ext:") {
+                    if !foreign_type(&r) {
+                        continue;
+                    }
+                    store.ext_node(&r);
+                }
+                store.add_edge(id, &r, kind, None);
             }
         }
         link_calls(modules, store, crate_ids, id);
@@ -768,7 +770,7 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut Store, crate_ids: 
     }
     let attr_types = cls.as_ref().and_then(|c| store.classes.get(c)).map(|c| c.attr_types.clone()).unwrap_or_default();
     let mut new_edges: Vec<(String, EdgeKind)> = vec![];
-    let mut tags: BTreeMap<String, u32> = BTreeMap::new();
+    let mut touches: Vec<(String, String)> = vec![];
     let mut unresolved: Vec<String> = vec![];
     for c in walk(body, &["call_expression", "struct_expression"]) {
         if c.kind() == "struct_expression" {
@@ -848,7 +850,7 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut Store, crate_ids: 
                 let full = expand(m, &parts);
                 unresolved.push(full.iter().take(2).cloned().collect::<Vec<_>>().join("."));
                 if let Some(tag) = effects::boundary_rust(&full) {
-                    *tags.entry(tag.to_string()).or_insert(0) += 1;
+                    touches.push((tag.to_string(), what_of(c, src, &["string_literal", "raw_string_literal"], "arguments")));
                 }
             }
         }
@@ -859,8 +861,17 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut Store, crate_ids: 
     for u in unresolved {
         *store.unresolved.entry(u).or_insert(0) += 1;
     }
-    let node = &mut store.nodes[id];
-    for (k, v) in tags {
-        *node.boundaries.entry(k).or_insert(0) += v;
+    for (kind, what) in touches {
+        store.touch(id, &kind, &what);
     }
+}
+
+/// A foreign type worth keeping in a signature: from a third-party crate, not std or a container.
+fn foreign_type(id: &str) -> bool {
+    let Some(full) = id.strip_prefix("ext:") else { return false };
+    let head = full.split('.').next().unwrap_or("");
+    let name = full.rsplit('.').next().unwrap_or("");
+    full.contains('.')
+        && !["std", "core", "alloc", "anyhow", "serde", "serde_json", "indexmap", "regex", "toml", "clap"].contains(&head)
+        && !["Result", "Option", "Vec", "Box", "HashMap", "HashSet", "BTreeMap", "IndexMap", "String", "Path", "PathBuf"].contains(&name)
 }
