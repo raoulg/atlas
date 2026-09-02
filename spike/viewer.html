@@ -660,7 +660,8 @@ async function renderPlaat() {
   const g = scene.node();
   const deg = new Map();
   for (const e of D.edges) if (["takes", "returns", "has"].includes(e.kind) && byId.has(e.dst)) deg.set(e.dst, (deg.get(e.dst) || 0) + 1);
-  const hub = new Set([...deg].filter(([, c]) => c >= 2).map(([id]) => id));
+  // the coarse picture keeps only the most-used types; refinement adds the rest later
+  const hub = new Set([...deg].filter(([, c]) => c >= 2).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 10).map(([id]) => id));
   const places = new Map(), arrows = new Map();
   // a type keeps its bare name unless another hub type shares it
   const nameCount = new Map(); for (const id of hub) nameCount.set(byId.get(id).name, (nameCount.get(byId.get(id).name) || 0) + 1);
