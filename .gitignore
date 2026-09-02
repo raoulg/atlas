@@ -8,3 +8,7 @@ target/
 engine/bindings/
 
 .DS_Store
+
+# stray analyze output
+graph.json
+*.graph.json
