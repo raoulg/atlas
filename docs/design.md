@@ -1,4 +1,4 @@
-# CodeBrowser — design
+# Atlas — design
 
 A visual, agent-first code browser. It shows a repository at the level where the
 thinking happens: base types and their subtypes, functions as morphisms `f: A → B`,
@@ -28,12 +28,12 @@ faster in Rust). A native shell (Tauri) can wrap the same code later.
 | Layout | elkjs (layered / Sugiyama) in a web worker | The flows are DAG-shaped; layered layout is what a reader expects. Role columns are laid out by a small custom layout; ELK handles the inside of a column and the signature flow. |
 | Code view | Shiki (read-only) | Editor-grade highlighting without an editor. "Open in editor" is a deep link (`vscode://`, `zed://`). |
 | Design | one `tokens.css` | Role hue, kind shape, edge style, type scale, spacing, light/dark. A design round changes tokens first, components second. |
-| Distribution | one static binary, frontend embedded (`rust-embed`) | `cargo install codebrowser` or a Homebrew tap, then `codebrowser serve .` |
+| Distribution | one static binary, frontend embedded (`rust-embed`) | `cargo install atlas` or a Homebrew tap, then `atlas serve .` |
 
 Repository layout:
 
 ```
-codebrowser/
+atlas/
   engine/      Rust crate: parse · resolve · types · roles · algorithms · git · lenses
   server/      Rust crate: axum app, MCP server, embeds frontend/dist
   cli/         Rust binary: analyze · serve · check · mcp
@@ -105,6 +105,11 @@ candidates `f: A → B, g: B → C` become paths; the hub types (in `rkg`: `Grap
 dataclass, enum, TypedDict) and *behaviour* (everything else); data classes group
 into the foundation band by default.
 
+**L2b Routes and boundaries.** Entry points (decorators, `[project.scripts]`,
+Makefile recipes, top-level scripts), the call outline under each one in source
+order, and boundary tags on every call that leaves the package, classified by the
+imported library and the method name. This is what the Story view reads.
+
 **L3 Architecture.** Role assignment (yaml → base chains → package → community
 detection as the honest fallback), the quotient graph (edges aggregated per role
 pair and kind), conformance (an earlier stage depending on a later one, unless in
@@ -140,6 +145,7 @@ two views.
 
 | View | Question | Picture |
 |---|---|---|
+| **Story** | What does this program do, in order? | The front door. Routes into the program (Makefile targets, scripts, CLI commands, API routes, MCP tools) as rows of steps in call order; the parts of the world (web, disk, databases, LLM, models) as columns; a dot where a step, or anything it reaches, touches one. Each step shows its morphism `A × B → C` and expands into its own steps. Overview: every route and what it reaches. |
 | **Architecture** | How does information flow? | Role columns left → right in declared order; orchestration band above, foundation band below. Modules as boxes with class/function chips inside; edges aggregated per module pair, thickness by count; conformance violations in the alert colour. Hover: upstream/downstream. Click: inspector. Double-click: expand the box to its symbols. |
 | **Type lattice** | What are the base types, and who subtypes them? | An inheritance forest, one small tree per root; external bases (`BaseModel`, `ABC`, `StrEnum`) as ghosts; badges for abstract methods and overrides. |
 | **Signature flow** | What are the morphisms? | Types as nodes, functions as arrows, ELK-layered; select two types and the composition paths light up. |

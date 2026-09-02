@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from collections import Counter
 from pathlib import Path
 
@@ -29,6 +30,48 @@ BUILTIN_TYPES = {
     "Callable", "Path", "Literal", "TypeVar", "Self", "ClassVar", "type", "object",
     "frozenset", "Generator", "AsyncIterator", "Awaitable", "Annotated",
 }
+
+
+# --- entry points: decorators that make a function a route into the program ---
+DECO_RE = re.compile(r"^([\w.]+)\s*(?:\(\s*(?:['\"]([^'\"]*)['\"])?)?")
+HTTP_METHODS = {"get", "post", "put", "delete", "patch", "websocket"}
+
+
+def entry_of(decorators: list[str], name: str) -> dict | None:
+    for d in decorators:
+        m = DECO_RE.match(d)
+        if not m:
+            continue
+        dn, arg = m.group(1), m.group(2)
+        parts = dn.split(".")
+        last = parts[-1]
+        if last == "command":
+            return {"kind": "cli", "label": arg or name.removeprefix("cmd_").replace("_", "-")}
+        if last in HTTP_METHODS and len(parts) == 2:
+            return {"kind": "route", "label": f"{last.upper()} {arg or ''}".strip()}
+        if last in ("tool", "resource", "prompt") and "mcp" in dn.lower():
+            return {"kind": "mcp", "label": arg or name}
+    return None
+
+
+# --- boundaries: calls that cross into the world (network, disk, databases, models) ---
+NET_PKGS = {"requests", "httpx", "urllib", "http", "socket", "aiohttp"}
+DB_PKGS = {"duckdb": "db_duckdb", "neo4j": "db_memgraph", "mgclient": "db_memgraph", "sqlite3": "db_sqlite",
+           "psycopg2": "db_sql", "sqlalchemy": "db_sql"}
+LLM_PKGS = {"openai", "anthropic"}
+MODEL_PKGS = {"sentence_transformers", "torch", "transformers", "huggingface_hub", "datasets", "torchvision"}
+FILE_PKGS = {"json", "yaml", "pickle", "csv", "tarfile", "zipfile", "shutil", "os", "pathlib", "pandas", "geopandas",
+             "numpy", "rasterio", "lxml", "PIL", "matplotlib", "plt", "ruamel", "np", "pd"}
+READ_BOUND = {"read_text", "read_bytes", "read_csv", "read_parquet", "read_file", "read_json", "read_excel", "iterdir",
+              "glob", "rglob", "load", "load_workbook", "parse", "fromfile", "imread", "open_dataset", "read", "readlines",
+              "safe_load", "listdir", "walk", "open"}
+WRITE_BOUND = {"write_text", "write_bytes", "to_csv", "to_parquet", "to_json", "dump", "safe_dump", "savefig", "save",
+               "mkdir", "copy", "copyfile", "copytree", "move", "unlink", "rmtree", "touch", "imwrite", "extractall",
+               "makedirs", "rename", "replace", "writelines"}
+READ_UNBOUND = {"read_text", "read_bytes", "iterdir", "glob", "rglob", "read", "readlines", "read_csv", "read_parquet",
+                "read_file"}
+WRITE_UNBOUND = {"write_text", "write_bytes", "mkdir", "unlink", "touch", "to_csv", "to_parquet", "to_json", "savefig",
+                 "writelines", "rmtree"}
 
 
 def txt(n: TSNode | None) -> str:
@@ -107,6 +150,7 @@ class Module:
         self.package = mid if is_pkg else mid.rsplit(".", 1)[0]
         self.bindings: dict[str, str] = {}   # local name -> fully qualified target
         self.symbols: dict[str, str] = {}    # top-level name -> node id
+        self.ext_pkgs: set[str] | None = None
         self.tree = PARSER.parse(src)
 
 
@@ -139,6 +183,19 @@ class Analyzer:
             self.files[str(p)] = src.decode(errors="replace")
             self.add_node(mid, "module", parts[-1], str(p), m.tree.root_node,
                           doc=first_docline(m.tree.root_node), module=mid, is_pkg=is_pkg)
+        # scripts next to the package (repo root and scripts/) are routes into it
+        root = self.project_root()
+        if root is not None:
+            extras = sorted(root.glob("*.py")) + (sorted((root / "scripts").glob("*.py")) if (root / "scripts").is_dir() else [])
+            for p in extras:
+                rel = p.relative_to(root)
+                mid = ".".join(["scripts", rel.stem]) if rel.parts[0] == "scripts" else f"_root.{rel.stem}"
+                src = p.read_bytes()
+                m = Module(mid, p, False, src)
+                self.modules[mid] = m
+                self.files[str(p)] = src.decode(errors="replace")
+                self.add_node(mid, "module", rel.stem, str(p), m.tree.root_node, doc=first_docline(m.tree.root_node),
+                              module=mid, is_pkg=False, entry={"kind": "script", "label": str(rel)})
         for m in self.modules.values():
             self.collect_symbols(m)
         for m in self.modules.values():
@@ -199,7 +256,7 @@ class Analyzer:
                         self.add_node(mnid, "method", mname, str(m.path), md, module=m.id,
                                       cls=nid, doc=first_docline(md.child_by_field_name("body")),
                                       decorators=mdecs, params=sig["params"], returns=sig["returns"],
-                                      _sig=sig)
+                                      entry=entry_of(mdecs, mname), _sig=sig)
                         node["methods"].append(mname)
                         self.add_edge(nid, mnid, "contains")
                     for st in body.named_children:
@@ -214,7 +271,8 @@ class Analyzer:
                 sig = self.signature(d)
                 self.add_node(nid, "function", name, str(m.path), d, module=m.id,
                               doc=first_docline(body), decorators=decs,
-                              params=sig["params"], returns=sig["returns"], _sig=sig)
+                              params=sig["params"], returns=sig["returns"],
+                              entry=entry_of(decs, name), _sig=sig)
                 self.add_edge(m.id, nid, "contains")
 
     def resolve_relative(self, m: Module, dots: int, name: str | None) -> str:
@@ -446,9 +504,155 @@ class Analyzer:
                         target = self.method_of(r, parts[-1]) or r
             if target is None or target.startswith("ext:"):
                 self.unresolved[".".join(parts[:2])] += 1
+                tag = self.boundary(m, parts)
+                if tag:
+                    b = n.setdefault("boundaries", {})
+                    b[tag] = b.get(tag, 0) + 1
                 continue
             kind = "instantiates" if self.nodes[target]["kind"] == "class" else "calls"
             self.add_edge(n["id"], target, kind)
+
+    def boundary(self, m: Module, parts: list[str]) -> str | None:
+        """Classify a call that leaves the package: which part of the world does it touch?"""
+        if m.ext_pkgs is None:
+            m.ext_pkgs = {v.split(".")[0] for v in m.bindings.values() if not v.startswith(self.root)}
+        head, last = parts[0], parts[-1]
+        b = m.bindings.get(head)
+        pkg = b.split(".")[0] if b and not b.startswith(self.root) else None
+        if pkg in NET_PKGS:
+            return "net"
+        if pkg in DB_PKGS:
+            return DB_PKGS[pkg]
+        if pkg in LLM_PKGS:
+            return "llm"
+        if pkg in MODEL_PKGS:
+            return "model"
+        if pkg == "subprocess":
+            return "process"
+        if pkg in FILE_PKGS:
+            if last in WRITE_BOUND:
+                return "disk_write"
+            if last in READ_BOUND:
+                return "disk_read"
+            return None
+        if pkg is not None:
+            return None
+        if len(parts) == 1 and head == "open":
+            return "disk"
+        ext = m.ext_pkgs
+        if last in READ_UNBOUND:
+            return "disk_read"
+        if last in WRITE_UNBOUND:
+            return "disk_write"
+        if last in ("run", "execute_query") and ext & {"neo4j", "mgclient"}:
+            return "db_memgraph"
+        if last in ("execute", "executemany", "sql", "register") and "duckdb" in ext:
+            return "db_duckdb"
+        if last in ("execute", "executemany") and "sqlite3" in ext:
+            return "db_sqlite"
+        if last == "create" and ext & LLM_PKGS:
+            return "llm"
+        if last in ("encode", "embed") and "sentence_transformers" in ext:
+            return "model"
+        return None
+
+    def project_root(self) -> Path | None:
+        for parent in [self.pkg_dir, *self.pkg_dir.parents][:4]:
+            if (parent / "pyproject.toml").exists():
+                return parent
+        return None
+
+    def mark_scripts(self):
+        """`[project.scripts]` in the nearest pyproject.toml are entry points too."""
+        import tomllib
+        self.scripts: dict[str, str] = {}
+        root = self.project_root()
+        if root is None:
+            return
+        try:
+            scripts = tomllib.loads((root / "pyproject.toml").read_text()).get("project", {}).get("scripts", {})
+        except tomllib.TOMLDecodeError:
+            return
+        for name, target in scripts.items():
+            mod, _, fn = target.partition(":")
+            nid = f"{mod}.{fn}" if fn else mod
+            if nid not in self.nodes and fn and mod in self.modules:
+                nid = self.modules[mod].bindings.get(fn, nid)  # re-exported main
+            n = self.nodes.get(nid)
+            if n is not None and n["kind"] in ("function", "method"):
+                if not n.get("entry"):
+                    n["entry"] = {"kind": "cli", "label": name}
+                self.scripts[name] = nid
+
+    def read_makefile(self) -> list[dict]:
+        """Makefile targets are the routes a developer actually uses: each one becomes a `make:` entry
+        whose steps are the CLI commands and other targets its recipe invokes."""
+        root = self.project_root()
+        mk = (root / "Makefile") if root else None
+        if mk is None or not mk.exists():
+            return []
+        targets: list[dict] = []
+        cur = None
+        for line in mk.read_text().splitlines():
+            m = re.match(r"^([A-Za-z0-9_-]+):(?!=)\s*([^#]*)(?:##\s*(.*))?$", line)
+            if m and not line.startswith("\t"):
+                cur = {"id": f"make:{m.group(1)}", "label": m.group(1), "doc": (m.group(3) or "").strip(),
+                       "deps": m.group(2).split(), "recipe": [], "calls": []}
+                targets.append(cur)
+            elif line.startswith("\t") and cur is not None:
+                cur["recipe"].append(line[1:])
+            elif line.strip() == "" or not line.startswith("\t"):
+                cur = None if not m else cur
+        by_label = {t["label"]: t["id"] for t in targets}
+        cli_entries = {n["entry"]["label"]: n["id"] for n in self.nodes.values() if n.get("entry") and n["entry"]["kind"] == "cli"}
+        script_names = "|".join(re.escape(s) for s in self.scripts) or None
+        for t in targets:
+            seen: list[str] = []
+            for dep in t["deps"]:
+                if dep in by_label and by_label[dep] not in seen:
+                    seen.append(by_label[dep])
+            for line in t["recipe"]:
+                if re.match(r"\s*@?echo\b", line):
+                    continue
+                if script_names:
+                    for mm in re.finditer(rf"\b(?:{script_names})\s+([a-z0-9][a-z0-9-]*)", line):
+                        eid = cli_entries.get(mm.group(1))
+                        if eid and eid not in seen:
+                            seen.append(eid)
+                for mm in re.finditer(r"(?:\$\(MAKE\)|\bmake)\s+([A-Za-z0-9_-]+)", line):
+                    mid = by_label.get(mm.group(1))
+                    if mid and mid not in seen:
+                        seen.append(mid)
+            t["calls"] = seen
+        return [t for t in targets if t["recipe"] or t["calls"]]
+
+    def infer_roles(self):
+        """No roles file: one role per immediate subpackage, root modules together, columns ordered
+        so that providers stand left of their consumers, a pure provider goes to the foundation band."""
+        pkg_mods = [m for m in self.modules.values() if m.id == self.root or m.id.startswith(self.root + ".")]
+        subs = sorted({m.id.split(".")[1] for m in pkg_mods if len(m.id.split(".")) > 1 and m.id.split(".")[1] in
+                       {x.id.split(".")[1] for x in pkg_mods if x.is_pkg and len(x.id.split(".")) == 2}})
+        if not subs:  # a flat package: every module is its own stage
+            subs = sorted({m.id.split(".")[1] for m in pkg_mods if len(m.id.split(".")) == 2})
+        rules = [[f"{self.root}.{s}", s.capitalize()] for s in subs]
+        rules += [[self.root, "Root"], ["scripts", "Scripts"], ["_root", "Scripts"]]
+        self.roles = {"order": [], "bands": {"top": ["Root", "Scripts"], "bottom": []}, "rules": rules, "base_roles": {},
+                      "dependencies": "against_flow", "allowed": [], "inferred": True}
+        self.assign_roles()
+        deps: Counter = Counter()
+        for e in self.edges:
+            if e["kind"] == "contains":
+                continue
+            a, b = self.nodes.get(e["src"]), self.nodes.get(e["dst"])
+            if not a or not b or a["role"] == b["role"] or "External" in (a["role"], b["role"]):
+                continue
+            deps[(a["role"], b["role"])] += 1
+        roles = [r for _, r in rules if r not in ("Root", "Scripts")]
+        incoming = {r: sum(v for (x, y), v in deps.items() if y == r) for r in roles}
+        outgoing = {r: sum(v for (x, y), v in deps.items() if x == r) for r in roles}
+        foundation = [r for r in roles if outgoing[r] == 0 and incoming[r] > 0 and len(roles) > 2]
+        order = sorted([r for r in roles if r not in foundation], key=lambda r: (outgoing[r] - incoming[r], r))
+        self.roles["order"], self.roles["bands"]["bottom"] = order, foundation
 
     # ---------- roles ----------
     def assign_roles(self):
@@ -498,6 +702,7 @@ class Analyzer:
             "roles": self.roles,
             "nodes": nodes,
             "edges": self.edges,
+            "make": self.read_makefile(),
             "files": self.files,
             "stats": {
                 "modules": len(self.modules),
@@ -515,10 +720,13 @@ def main():
     ap.add_argument("--roles", type=Path)
     ap.add_argument("-o", "--out", type=Path, default=Path("graph.json"))
     a = ap.parse_args()
-    roles = json.loads(a.roles.read_text()) if a.roles else {"order": [], "rules": [], "base_roles": {}}
-    an = Analyzer(a.pkg_dir.resolve(), roles)
+    roles = json.loads(a.roles.read_text()) if a.roles else None
+    an = Analyzer(a.pkg_dir.resolve(), roles or {"order": [], "rules": [], "base_roles": {}})
     an.load()
     an.link()
+    an.mark_scripts()
+    if roles is None:
+        an.infer_roles()
     an.assign_roles()
     out = an.export()
     a.out.write_text(json.dumps(out, ensure_ascii=False))
