@@ -16,7 +16,7 @@ use crate::effects;
 use crate::entries::entry_of;
 use crate::model::{EdgeKind, Entry, EntryKind, Node, NodeKind};
 pub use crate::store::{ClassInfo, SigInfo, Store};
-use crate::tree::{field_children, named_children, text, walk, what_of};
+use crate::tree::{field_children, named_children, payload_of, text, walk, what_of};
 
 const BUILTIN_TYPES: &[&str] = &[
     "str", "int", "float", "bool", "bytes", "list", "dict", "set", "tuple", "None", "Any", "Optional",
@@ -676,7 +676,7 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut Store, root: &str,
             }
         }
     }
-    let mut touches: Vec<(String, String)> = vec![];
+    let mut touches: Vec<(String, String, String)> = vec![];
     let mut new_edges: Vec<(String, EdgeKind)> = vec![];
     for c in walk(body, &["call"]) {
         if n.kind == NodeKind::Module {
@@ -759,7 +759,9 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut Store, root: &str,
                     .and_then(|b| b.split('.').next())
                     .map(str::to_string);
                 if let Some(tag) = effects::boundary(pkg.as_deref(), &parts, &m.ext_pkgs) {
-                    touches.push((tag.to_string(), what_of(c, src, &["string"], "arguments")));
+                    let what = what_of(c, src, &["string"], "arguments");
+                    let payload = payload_of(c, src, &what, "arguments", &locals);
+                    touches.push((tag.to_string(), what, payload));
                 }
             }
         }
@@ -767,8 +769,8 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut Store, root: &str,
     for (t, kind) in new_edges {
         store.add_edge(id, &t, kind, None);
     }
-    for (kind, what) in touches {
-        store.touch(id, &kind, &what);
+    for (kind, what, payload) in touches {
+        store.touch(id, &kind, &what, &payload);
     }
 }
 

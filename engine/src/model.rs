@@ -120,6 +120,9 @@ pub struct Touch {
     pub kind: String,
     pub what: String,
     pub n: u32,
+    /// What flows through the boundary, as the author named it, with its type when known.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub payload: String,
 }
 
 #[derive(Serialize, Deserialize, TS, Clone, Debug)]

@@ -56,3 +56,25 @@ pub fn what_of(call: TsNode, src: &[u8], string_kinds: &[&str], arg_field: &str)
         _ => String::new(),
     }
 }
+
+/// What flows through a boundary call: the first plain identifier among the arguments that
+/// is not the `what` (the path or command), as the author named it, with its type when a
+/// local or parameter of that name is known.
+pub fn payload_of(call: TsNode, src: &[u8], what: &str, arg_field: &str, locals: &std::collections::HashMap<String, String>) -> String {
+    let Some(args) = call.child_by_field_name(arg_field) else { return String::new() };
+    for id in walk(args, &["identifier"]) {
+        let bad_parent = id.parent().map_or(false, |p| matches!(p.kind(), "scoped_identifier" | "attribute" | "field_expression" | "generic_function" | "keyword_argument" | "call_expression" | "call"));
+        if bad_parent {
+            continue;
+        }
+        let name = text(id, src);
+        if name == what || name == "self" || name == "cls" {
+            continue;
+        }
+        return match locals.get(name) {
+            Some(t) => format!("{name}: {}", t.rsplit('.').next().unwrap_or(t)),
+            None => name.to_string(),
+        };
+    }
+    String::new()
+}

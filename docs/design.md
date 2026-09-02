@@ -9,6 +9,38 @@ Atlas is designed around one small algebra, and Atlas itself is the first subjec
 that has to obey it. Decisions are marked **Decision** with their reason; open
 questions are at the end.
 
+## 0. The shared language
+
+Atlas exists so that a human and an agent can build software together at a level
+where the human's sensors (a picture, a name, a shape that looks wrong) and the
+agent's (types, calls, effects, everything at once) meet. Informal language is the
+bottleneck on both sides. The shared language is a small piece of mathematics with
+one picture per construct, and the two are the same structure, so that pointing at a
+box and saying "this should not exist" is a statement both can act on.
+
+- **Objects are places where data rests.** Memory(type), File(path), Database(table),
+  Network(url), Process(command), Screen(human), Library(what a dependency produces).
+  Creating an object is an arrow into Memory(T), the same kind of thing as writing a
+  file. Every place carries a *what*: the type, the path, the table, the command.
+- **Morphisms are functions.** A function's domain is its parameters plus what its
+  body consumes (what it instantiates, what its callees hand back, what it reads);
+  its codomain is what it returns plus what it writes, sends or runs. The author's
+  names are the labels: `repo: Path`, `writes html → out`.
+- **Composition is call order.** A route is a story: an entry point and its steps.
+  Flows start at an entry and end at a place; both must be visible.
+- **Zoom is a quotient on types.** Three hierarchies exist in code and give three
+  consistent zooms: by base class (`Language ⊇ {Python, Rust}`), by composition
+  (`Graph ⊇ {Node, Edge, Architecture}`), by module. A level is a choice of
+  equivalence; zooming out coarsens it, zooming in refines one family at a time. The
+  picture stays the same picture, only the boxes split or merge.
+- **Filters are restrictions.** A route, an entry point, an edge kind, a commit range.
+  Restriction and quotient do not commute; the order in a lens is meaning.
+- **Two levels are never merged.** A step's own morphism (its signature, its direct
+  effects) and what it transitively reaches are different quantities and are drawn
+  differently.
+
+Everything below is the engineering of that language.
+
 ## 1. The algebra
 
 Four objects, four kinds of arrows.

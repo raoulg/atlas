@@ -16,7 +16,7 @@ use walkdir::WalkDir;
 use crate::effects;
 use crate::model::{EdgeKind, Entry, EntryKind, Node, NodeKind};
 use crate::store::{ClassInfo, SigInfo, Store};
-use crate::tree::{named_children, span, text, walk, what_of};
+use crate::tree::{named_children, payload_of, span, text, walk, what_of};
 
 struct Crate {
     name: String,
@@ -770,7 +770,7 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut Store, crate_ids: 
     }
     let attr_types = cls.as_ref().and_then(|c| store.classes.get(c)).map(|c| c.attr_types.clone()).unwrap_or_default();
     let mut new_edges: Vec<(String, EdgeKind)> = vec![];
-    let mut touches: Vec<(String, String)> = vec![];
+    let mut touches: Vec<(String, String, String)> = vec![];
     let mut unresolved: Vec<String> = vec![];
     for c in walk(body, &["call_expression", "struct_expression"]) {
         if c.kind() == "struct_expression" {
@@ -850,7 +850,9 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut Store, crate_ids: 
                 let full = expand(m, &parts);
                 unresolved.push(full.iter().take(2).cloned().collect::<Vec<_>>().join("."));
                 if let Some(tag) = effects::boundary_rust(&full) {
-                    touches.push((tag.to_string(), what_of(c, src, &["string_literal", "raw_string_literal"], "arguments")));
+                    let what = what_of(c, src, &["string_literal", "raw_string_literal"], "arguments");
+                    let payload = payload_of(c, src, &what, "arguments", &locals);
+                    touches.push((tag.to_string(), what, payload));
                 }
             }
         }
@@ -861,8 +863,8 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut Store, crate_ids: 
     for u in unresolved {
         *store.unresolved.entry(u).or_insert(0) += 1;
     }
-    for (kind, what) in touches {
-        store.touch(id, &kind, &what);
+    for (kind, what, payload) in touches {
+        store.touch(id, &kind, &what, &payload);
     }
 }
 
