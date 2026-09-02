@@ -54,6 +54,7 @@ pub enum EntryKind {
     Route,
     Mcp,
     Notebook,
+    Test,
 }
 
 /// A route into the program.

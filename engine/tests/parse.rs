@@ -109,6 +109,32 @@ fn roles_are_inferred_when_nothing_is_declared() {
     assert_eq!(g.node("fixture.cli.build").unwrap().role, "Root");
 }
 
+/// Atlas is its own first subject: the workspace parses, and its shape is the algebra.
+#[test]
+fn atlas_reads_atlas() {
+    let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
+    let g = analyze(&repo, None, None).expect("the Atlas workspace parses");
+    let ids: HashSet<&str> = g.nodes.iter().map(|n| n.id.as_str()).collect();
+    for id in ["atlas-engine", "atlas-engine.model", "atlas-engine.lens", "atlas-engine.python", "atlas-engine.rust", "atlas"] {
+        assert!(ids.contains(id), "module {id}");
+    }
+    assert!(ids.contains("atlas-engine.model.Graph") && ids.contains("atlas-engine.lens.Lens"));
+    assert_eq!(g.node("atlas.main").unwrap().entry.as_ref().unwrap().kind, EntryKind::Cli);
+    let inh = edges(&g, EdgeKind::Inherits);
+    assert!(inh.contains(&("atlas-engine.lens.Restrict".into(), "atlas-engine.lens.Lens".into())), "impl Lens for Restrict");
+    let calls = edges(&g, EdgeKind::Calls);
+    assert!(calls.contains(&("atlas.main".into(), "atlas.view".into())));
+    assert!(calls.contains(&("atlas.view".into(), "atlas-engine.analyze".into())), "cli calls into the engine");
+    assert!(calls.contains(&("atlas-engine.analyze".into(), "atlas-engine.rust.parse".into())));
+    // typed parameters give receivers a type: `store.add_edge(..)` with `store: &mut Store`
+    assert!(calls.contains(&("atlas-engine.python.collect_symbols".into(), "atlas-engine.store.Store.add_edge".into())));
+    assert!(g.node("atlas-engine.rust.parse").unwrap().boundaries.get("disk_read").is_some(), "walkdir and fs::read");
+    // the declared picture: parse -> lens -> layout, model underneath
+    assert_eq!(g.roles.order, vec!["Parse", "Lens", "Layout"]);
+    assert_eq!(g.node("atlas-engine.lens.Quotient").unwrap().role, "Lens");
+    assert_eq!(g.node("atlas-engine.model.Node").unwrap().role, "Model");
+}
+
 #[test]
 fn lenses_restrict_and_quotient() {
     let g = fixture();

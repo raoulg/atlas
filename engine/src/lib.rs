@@ -8,6 +8,9 @@ pub mod lens;
 pub mod model;
 pub mod python;
 pub mod roles;
+pub mod rust;
+pub mod store;
+pub mod tree;
 
 use std::path::Path;
 
@@ -20,12 +23,18 @@ pub use model::*;
 /// `package` overrides package discovery; `roles` points at an `architecture.yml` or a
 /// `roles.json`, otherwise the repo's own declaration is used, or roles are inferred.
 pub fn analyze(repo: &Path, package: Option<&Path>, roles: Option<&Path>) -> Result<Graph> {
-    let pkg_dir = match package {
-        Some(p) => p.to_path_buf(),
-        None => python::discover_package(repo)?,
+    let (mut store, root, project_root) = if package.is_none() && repo.join("Cargo.toml").exists() {
+        let (store, root) = rust::parse(repo)?;
+        (store, root, Some(repo.to_path_buf()))
+    } else {
+        let pkg_dir = match package {
+            Some(p) => p.to_path_buf(),
+            None => python::discover_package(repo)?,
+        };
+        let project_root = python::project_root(&pkg_dir).or_else(|| repo.join("pyproject.toml").exists().then(|| repo.to_path_buf()));
+        let (store, root) = python::parse(&pkg_dir, project_root.as_deref())?;
+        (store, root, project_root)
     };
-    let project_root = python::project_root(&pkg_dir).or_else(|| repo.join("pyproject.toml").exists().then(|| repo.to_path_buf()));
-    let (mut store, root) = python::parse(&pkg_dir, project_root.as_deref())?;
     let scripts = entries::mark_scripts(&mut store, project_root.as_deref());
     let arch = match roles {
         Some(p) => roles::load(p)?,

@@ -543,7 +543,7 @@ async function renderSig() {
 
 // ---------- story: routes from entry points, in call order, against the world they touch ----------
 const LANES = [["net", "Web"], ["disk_read", "Disk in"], ["disk_write", "Disk out"], ["disk", "Disk"], ["db_memgraph", "Memgraph"], ["db_duckdb", "DuckDB"], ["db_sqlite", "SQLite"], ["db_sql", "SQL"], ["llm", "LLM"], ["model", "Model"], ["process", "Process"]];
-const KIND_LABEL = {make: "Make", cli: "CLI", script: "Script", route: "API", mcp: "MCP"}, KIND_ORDER = ["make", "cli", "script", "route", "mcp"];
+const KIND_LABEL = {make: "Make", cli: "CLI", script: "Script", route: "API", mcp: "MCP", notebook: "Notebook", test: "Test"}, KIND_ORDER = ["make", "cli", "script", "notebook", "route", "mcp", "test"];
 const entries = [...byId.values()].filter(n => n.entry).sort((a, b) => (KIND_ORDER.indexOf(a.entry.kind) - KIND_ORDER.indexOf(b.entry.kind)) || a.entry.label.localeCompare(b.entry.label));
 function callees(id) { const n = byId.get(id); if (n && n.make) return n.make.calls.filter(c => byId.has(c)); const seen = new Set(), res = []; for (const e of (out.get(id) || [])) { if (e.kind !== "calls" && e.kind !== "instantiates") continue; if (seen.has(e.dst) || !byId.has(e.dst)) continue; seen.add(e.dst); res.push(e.dst); } return res; }
 const reachCache = new Map();

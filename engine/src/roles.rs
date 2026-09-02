@@ -6,7 +6,7 @@ use std::path::Path;
 use anyhow::{Context, Result};
 
 use crate::model::{Architecture, Bands, EdgeKind, NodeKind};
-use crate::python::Store;
+use crate::store::Store;
 
 /// Load `architecture.yml` / `.yaml` or a spike-style `roles.json`.
 pub fn load(path: &Path) -> Result<Architecture> {

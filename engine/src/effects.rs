@@ -46,6 +46,30 @@ fn db_pkg(pkg: &str) -> Option<&'static str> {
     }
 }
 
+/// Classify a Rust call by its full path, e.g. `std::fs::read_to_string` -> `disk_read`.
+pub fn boundary_rust(parts: &[String]) -> Option<&'static str> {
+    let head = parts.first().map(String::as_str).unwrap_or("");
+    let last = parts.last().map(String::as_str).unwrap_or("");
+    let has = |p: &str| parts.iter().any(|x| x == p);
+    if has("fs") {
+        return Some(match last {
+            "read" | "read_to_string" | "read_dir" | "metadata" | "canonicalize" | "exists" | "open" | "read_link" => "disk_read",
+            "write" | "create" | "create_dir" | "create_dir_all" | "remove_file" | "remove_dir" | "remove_dir_all" | "rename" | "copy" | "set_permissions" => "disk_write",
+            _ => "disk",
+        });
+    }
+    if has("process") || head == "Command" {
+        return Some("process");
+    }
+    match head {
+        "walkdir" | "WalkDir" | "glob" | "notify" => Some("disk_read"),
+        "reqwest" | "ureq" | "hyper" | "tungstenite" | "tokio_tungstenite" | "curl" | "axum" | "TcpStream" | "TcpListener" => Some("net"),
+        "rusqlite" | "sqlx" | "diesel" | "duckdb" | "postgres" | "tokio_postgres" | "sea_orm" => Some("db_sql"),
+        "git2" | "gix" => Some("disk_read"),
+        _ => None,
+    }
+}
+
 /// Classify a call that leaves the package.
 ///
 /// `pkg` is the external top-level package the call's head name is bound to, if any;

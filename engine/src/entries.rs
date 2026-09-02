@@ -7,7 +7,7 @@ use std::sync::OnceLock;
 use regex::Regex;
 
 use crate::model::{Entry, EntryKind, MakeTarget, NodeKind};
-use crate::python::Store;
+use crate::store::Store;
 
 const HTTP_METHODS: &[&str] = &["get", "post", "put", "delete", "patch", "websocket"];
 
