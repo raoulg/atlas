@@ -1,13 +1,26 @@
 # Atlas
 
 A visual, agent-first code browser. It shows a repository at the level where the
-thinking happens: base types and their subtypes, functions as morphisms `f: A → B`,
-and information flowing through a handful of architectural blocks. Click a block,
-see the code. The gitgraph stays. Editing does not.
+thinking happens: places where data rests, the arrows of code between them, base
+types and their subtypes, functions as morphisms `f: A → B`. Click a block, see the
+code. The gitgraph stays. Editing does not.
+
+Atlas is one small algebra, and Atlas itself is the first subject that has to obey it:
+
+```
+Repo ──parse──▶ Graph ──lens──▶ Graph ──layout──▶ Picture
+                  │
+                  └──inspect──▶ Source
+```
+
+Lenses compose and come in two families: restrictions (subgraphs) and quotients
+(identify nodes; refining a quotient is the zoom). The high-level picture of a
+codebase is the image of an effect functor into the category of resting places. The
+engine knows languages and libraries, never a project.
 
 - Design: [docs/design.md](docs/design.md)
 - Planning: Linear project *Atlas — code at the level of types and flows*
-- First subject: `ruimtelijke-knowledge-graph` (`Source → Graph → Sinks ↔ Repository → API`)
+- Subjects: Atlas itself, then `ruimtelijke-knowledge-graph`, `vectormesh`, `goad_toolkit`, `notebooktester`
 
 ## Spike (M0)
 

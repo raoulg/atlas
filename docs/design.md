@@ -1,20 +1,110 @@
 # Atlas — design
 
 A visual, agent-first code browser. It shows a repository at the level where the
-thinking happens: base types and their subtypes, functions as morphisms `f: A → B`,
-and information flowing through a handful of architectural blocks. Click a block,
-see the code. The gitgraph stays. Editing does not.
+thinking happens: places where data rests, the arrows of code between them, base
+types and their subtypes, functions as morphisms `f: A → B`. Click a block, see the
+code. The gitgraph stays. Editing does not.
 
-This document has three parts: the framework, the analytics, the visualisation.
-Decisions are marked **Decision** with their reason; open questions are at the end.
+Atlas is designed around one small algebra, and Atlas itself is the first subject
+that has to obey it. Decisions are marked **Decision** with their reason; open
+questions are at the end.
 
-## 1. Framework
+## 1. The algebra
+
+Four objects, four kinds of arrows.
+
+```
+Repo ──parse──▶ Graph ──lens──▶ Graph ──layout──▶ Picture
+                  │
+                  └──inspect──▶ Source
+```
+
+**Repo** is a directory at a commit. **Graph** is the one central type: typed nodes
+(modules, classes, functions, artifacts, resting places) and typed edges. Everything
+between parsing and drawing is `Graph → Graph`. **Picture** is geometry: positions,
+shapes, labels. **Source** is a span of text.
+
+**parse: Repo → Graph.** Per language, per file; a repo is the union of its files'
+parses, plus what the repo declares about itself (scripts, Makefile targets,
+notebooks). *Decision: the engine may know languages and libraries, never a
+project.* Knowing what a `requests.get` call means is the engine's job. Knowing that
+`rkg.sinks` is a sink is the project's job, declared in its own `architecture.yml`.
+Nothing about rkg, vectormesh or Atlas is hard-coded, so that Atlas cannot flatter
+the repos it was built on.
+
+**lens: Graph → Graph.** The whole middle of Atlas. Lenses compose, so a view spec is
+a list of lenses, and the order is meaning: restriction and quotient do not commute
+in general. Two families and nothing else:
+
+- **Restrictions** keep a subgraph, the inverse image of a predicate (a pullback):
+  reachable from this entry point, hide private, hide tests, k-hop focus, only these
+  edge kinds, only this commit range.
+- **Quotients** identify nodes (a pushout, a coequalizer): by declared role, by base
+  class, by package, by effect signature, by artifact. A quotient carries a
+  refinement order, so "zoom in" is replacing a quotient by a finer one and "zoom
+  out" by a coarser one. The quotients of a graph form a lattice; browsing is
+  walking it.
+
+**layout: Graph → Picture.** The only place geometry exists: columns, outline,
+inheritance forest, layered flow. Nothing upstream knows about pixels.
+
+**inspect: Node → Source.** The span of the symbol, read-only.
+
+### The plaat is a functor image
+
+The "simple story" of a codebase (in rkg: OZON API → assets on disk → `Graph` →
+Memgraph and DuckDB → repository objects → HTTP) is not made of modules. Its boxes
+are **resting places**: where data sits between arrows. The code is the arrows.
+
+Take the small category **W** of resting places: the web, artifacts on disk,
+databases, hub types in memory, the browser. The **effect signature** is a functor
+`F: Graph → W` that sends each function to the arrow from what it takes in to what
+it hands on. The high-level picture is the image of `F`. Refining **W** (Disk into
+named artifacts, DB into Memgraph and DuckDB, `Sink` into its subclasses) refines
+the picture; that is the zoom. The declared architecture is an override on the
+naming of the classes, never the source of the picture.
+
+Three things make `F` honest, and each is an engine task:
+
+1. Database reads and writes are different arrows; the SQL and Cypher verbs in the
+   literals tell them apart.
+2. In-place mutation hides arrows: a function that takes a hub type and calls a
+   mutator on it is an endomorphism `Graph → Graph`, not `Graph → ()`.
+3. Disk is too coarse: `.env` and `assets/regelingen` are different resting places.
+   Artifacts are named by path pattern, and they connect the route that writes them
+   to the route that reads them.
+
+Where the composition happens outside the package (vectormesh wires `VectorCache →
+Serial → Trainer` in scripts and notebooks), the resting places are types, the
+arrows are constructor calls, and a notebook is a route read cell by cell.
+
+### Why look at code
+
+Four questions; each view is a lens plus a layout that answers one of them. A view
+that answers none is decoration.
+
+| Question | Lens | Layout |
+|---|---|---|
+| **Orient** — what does this do? | restrict to a route, quotient by effect signature | story outline, plaat |
+| **Verify** — does it do what I designed? | quotient by declared role, diff against the declaration | plaat with conformance marks |
+| **Place** — where does new work land? | quotient by base class, k-hop focus | type lattice, architecture columns |
+| **Explain** — to a student or an agent | any of the above, saved as a lens | the same, with notes |
+
+### Atlas as its own subject
+
+If Atlas obeys the algebra, its own story is `parse → lens → layout` with nothing
+else on the route, and Atlas can check that about itself. In Rust that maps
+directly: an enum per node and edge kind, a `Lens` trait with composition, and a
+conformance check on the Atlas repo in its own CI. If the picture of Atlas in Atlas
+is not four boxes, the code has drifted, not the picture.
+
+## 2. Framework
 
 **Decision: a Rust engine with a TypeScript/SVG frontend, shipped as one binary.
 Not Mac-native, not Python.** Students must be able to run it with one command on
 any OS; the engine must be typed and fast with a dependency story that needs no
-virtualenv; tree-sitter is Rust-native; the graph model is a set of algebraic data
-types, which is how the reader thinks about it. Python is the spike language only.
+virtualenv; tree-sitter is Rust-native; the algebra above is a set of algebraic
+data types, which Rust expresses directly. Python is the spike language only.
 Runner-up: Go (single binary, gonum; but tree-sitter is a cgo binding and graph
 transforms without sum types get verbose). Rejected: Julia (no tree-sitter binding,
 slow start, niche), TypeScript end-to-end (the engine core is better typed and
@@ -22,42 +112,46 @@ faster in Rust). A native shell (Tauri) can wrap the same code later.
 
 | Layer | Choice | Why |
 |---|---|---|
-| Engine | Rust: `tree-sitter` crate, `petgraph`, `serde`, `ts-rs` | Grammars compile in; SCC, dominators and paths from petgraph; layering, quotient, conformance and Louvain are small enough to own. `ts-rs` generates the TypeScript types so the graph model and the lens spec are defined once. |
+| Engine | Rust: `tree-sitter` crate, `petgraph`, `serde`, `ts-rs` | Grammars compile in; SCC, dominators and paths from petgraph; quotients, restrictions, effect signatures and conformance are small enough to own. `ts-rs` generates the TypeScript types so the graph model and the lens spec are defined once. |
 | Server | `axum` + websocket, `notify` | JSON endpoints (`/graph`, `/lens/{name}`, `/source`, `/git/log`), live reload when a file changes, and the same process serves the MCP endpoint (`rmcp`, the official Rust MCP SDK). |
 | Frontend | Vite, TypeScript, React 19, SVG | Boring and deep: the agent is most fluent in it. SVG (not canvas) so every element is CSS-styleable and design rounds are cheap. Canvas fallback only if a view exceeds ~2k elements. |
-| Layout | elkjs (layered / Sugiyama) in a web worker | The flows are DAG-shaped; layered layout is what a reader expects. Role columns are laid out by a small custom layout; ELK handles the inside of a column and the signature flow. |
+| Layout | elkjs (layered / Sugiyama) in a web worker | The flows are DAG-shaped; layered layout is what a reader expects. Columns and outlines are small custom layouts; ELK handles layered flows. |
 | Code view | Shiki (read-only) | Editor-grade highlighting without an editor. "Open in editor" is a deep link (`vscode://`, `zed://`). |
 | Design | one `tokens.css` | Role hue, kind shape, edge style, type scale, spacing, light/dark. A design round changes tokens first, components second. |
 | Distribution | one static binary, frontend embedded (`rust-embed`) | `cargo install atlas` or a Homebrew tap, then `atlas serve .` |
 
-Repository layout:
+Repository layout, which is also the plaat of Atlas:
 
 ```
 atlas/
-  engine/      Rust crate: parse · resolve · types · roles · algorithms · git · lenses
+  engine/      Rust crate: parse · lens (restrict, quotient) · effects · git
   server/      Rust crate: axum app, MCP server, embeds frontend/dist
   cli/         Rust binary: analyze · serve · check · mcp
-  frontend/    Vite + React; views, inspector, tokens.css; types generated by ts-rs
+  frontend/    Vite + React: layouts, inspector, tokens.css; types generated by ts-rs
   spike/       throwaway experiments (M0, Python)
   docs/
 ```
 
-## 2. The graph (data model)
+## 3. The graph
 
-Everything downstream reads one typed graph.
+**Nodes** — `module`, `class`, `function`, `method`, `external`, `artifact`,
+`place` (a resting place in **W**); later `type_alias`, `constant`, `route`,
+`command`, `cell`. Fields: `id` (stable), `kind`, `name`, `file`, `span`, `doc`,
+`signature`, `decorators`, `role`, `role_source`, `entry`, `boundaries`.
 
-**Nodes** — `module`, `class`, `function`, `method`, `external`; later `type_alias`,
-`constant`, `route`, `command`. Fields: `id` (dotted, stable), `kind`, `name`,
-`file`, `span`, `doc`, `signature`, `decorators`, `role`, `role_source`.
+**Edges** — `contains`, `imports`, `inherits`, `calls`, `instantiates`, `takes`,
+`returns`, `has`, `reads`, `writes`, `mutates`; later `yields`, `raises`,
+`decorates`.
 
-**Edges** — `contains`, `imports`, `inherits`, `calls`, `instantiates`, `takes`
-(parameter type), `returns`, `has` (attribute of type); later `yields`, `raises`,
-`decorates`, `reads`/`writes` for module state.
+**Entry points** — CLI commands, API routes, MCP tools (by decorator),
+`[project.scripts]`, Makefile targets (recipes resolved to the commands they run),
+top-level scripts, notebooks. Each is the start of a route.
 
-**Architecture** — a small `architecture.yml` in the subject repo:
+**Architecture** — a small `architecture.yml` in the subject repo, an override on
+naming and on what counts as a legitimate flow, never the source of the picture:
 
 ```yaml
-order: [Source, Graph, Sink, Repository, Analysis, API]   # flow, left to right
+order: [Source, Graph, Sink, Repository, Analysis, API]   # data flow, left to right
 bands: {top: [CLI], bottom: [Schema, Config]}             # orchestration, foundation
 rules:                                                    # package prefix → role
   rkg.source: Source
@@ -73,111 +167,91 @@ allowed:                                                  # fine in both directi
 run against it, consumer → provider: `Graph → Source` is expected, `Source → Graph`
 is backflow. `dependencies: with_flow` flips that for push-style code. Bands are
 exempt: the orchestration band may depend on anything, anything may depend on the
-foundation band.
+foundation band. Role assignment is per class: a class whose base chain reaches a
+`base_roles` root takes that role wherever it lives. Without a yml, roles are
+inferred (one per subpackage, or per module in a flat package, columns ordered so
+providers stand left of consumers) and the UI says so.
 
-Role assignment is per class, not per module: a class whose base chain reaches a
-`base_roles` root takes that role wherever it lives. The spike on `rkg` shows why:
-`RasterReader` subclasses live in `source/`, sinks in `sinks/`, but the rule that
-makes them what they are is the base class.
+## 4. Analytics, as lenses
 
-## 3. Analytics
+Each layer is a pure function of the layer below and can be tested alone.
 
-Seven layers; each is a pure function of the layer below and can be tested alone.
+**L0 Syntax (tree-sitter).** Per file, per language, `.scm` queries yield
+definitions, signatures, imports, calls, annotations, decorators, docstrings,
+string literals at boundary calls. A new language is new queries, not new code.
 
-**L0 Syntax (tree-sitter).** Per file, per language, a set of `.scm` queries
-yields definitions, signatures, imports, calls, annotations, decorators, docstrings.
-Adding a language is adding queries, not code.
+**L1 Resolution.** Names become node ids: imports (absolute, relative, re-exports),
+bases, calls in module scope, `self.x` / `cls.x` through the class and its bases,
+`self.attr.method()` through `__init__` inference, local variables assigned from a
+constructor. Output: the symbol graph plus a resolution report (resolved, external,
+builtin, local, unknown) so the quality has a number.
 
-**L1 Resolution.** Names become node ids. Imports (absolute, relative, re-exports
-through `__init__`), bases, calls in module scope, `self.x` / `cls.x` through the
-class and its bases, and `self.attr.method()` through a small inference:
-`__init__(self, sink: MemgraphSink)` + `self.sink = sink` gives `self.sink` a type.
-Output: the symbol graph, plus a resolution report (resolved, external, builtin,
-unknown) so the quality has a number. The spike leaves 3314 calls unresolved on
-`rkg`; most are `len`, `str`, `logger.info`, `click.echo` and belong in the
-external/builtin buckets, not in "unknown".
+**L2 Effects.** Boundary tags on every call that leaves the package (web, disk in
+and out, each database read or written, LLM, model, process), artifacts by path
+pattern, hub types by arrow count, mutation detection, and the effect signature
+`F: Graph → W` per function and per route. This is the functor behind the plaat.
 
-**L2 Types.** The signature graph: types (classes) as nodes, functions as arrows
-grouped by (domain types → codomain type). `build_graph: Sources → Graph`,
-`MemgraphSink.write: Graph → None`, `GraphStore.read: () → Graph`. Composition
-candidates `f: A → B, g: B → C` become paths; the hub types (in `rkg`: `Graph`,
-`Node`) become the spine of the picture. Classes split into *data* (pydantic,
-dataclass, enum, TypedDict) and *behaviour* (everything else); data classes group
-into the foundation band by default.
+**L3 Quotients.** By declared role, by base class, by package, by effect signature,
+by artifact; each with its refinement order. The quotient graph aggregates edges per
+class pair and kind. Conformance is the difference between the quotient by declared
+role and the declared flow.
 
-**L2b Routes and boundaries.** Entry points (decorators, `[project.scripts]`,
-Makefile recipes, top-level scripts), the call outline under each one in source
-order, and boundary tags on every call that leaves the package, classified by the
-imported library and the method name. This is what the Story view reads.
+**L4 Restrictions and structure.** Reach from an entry point (dominator tree for
+"what does this command touch"), k-hop focus, edge-kind filters, commit ranges; SCC
+condensation for import cycles; betweenness for hubs; k-shortest paths between two
+types for the signature flow; Leiden as the honest fallback when nothing is
+declared.
 
-**L3 Architecture.** Role assignment (yaml → base chains → package → community
-detection as the honest fallback), the quotient graph (edges aggregated per role
-pair and kind), conformance (an earlier stage depending on a later one, unless in
-`allowed`; the spike finds `Sink → Source` and `Analysis → API` imports in `rkg`,
-each worth a look), and longest-path layering inside a column.
+**L5 Git.** Commit DAG; diff hunks × spans → symbols; churn and age per symbol; a
+commit range is a restriction lens.
 
-**L4 Structure algorithms (petgraph).** SCC condensation for import cycles;
-betweenness and in/out degree for hubs; Leiden/Louvain for unlabeled clusters;
-a dominator tree from entry points (CLI commands, API routes, MCP tools) to answer
-"what does this command touch"; k-shortest paths between two symbols for the
-signature flow.
+**L6 Agent.** An MCP server over the same engine: `search`, `neighbourhood`,
+`effects`, `quotient`, `conformance_report`, `signature_paths`, `apply_lens`.
+Lenses are JSON view specs, a list of restrictions and quotients plus a layout, that
+the agent writes and the browser renders. Annotations are agent explanations stored
+per symbol.
 
-**L5 Simplification heuristics.** The rules that keep a view on one screen:
-hide tests, dunders and private helpers by default; collapse a leaf helper into
-its single caller; merge data-only classes into the schema band; degree thresholds
-per view; focus + context (k-hop neighbourhood of the selection, everything else
-collapsed into its role block); edge bundling per role pair; "important paths"
-(top-k by flow weight from an entry point to a sink). Every rule is a named,
-toggleable transform on the graph, so a lens can switch it on or off.
+## 5. Visualisation
 
-**L6 Git.** Commit DAG from `git log`; per-commit file diffs mapped to symbols by
-intersecting hunks with spans; churn and age per symbol; branch and range overlays.
-
-**L7 Agent.** An MCP server over the same engine: `search`, `neighbourhood`,
-`role_of`, `conformance_report`, `signature_paths(A, B)`, `apply_lens`. Lenses are
-JSON view specs the agent writes and the browser renders. Annotations are agent
-explanations stored per symbol and shown in the inspector.
-
-## 4. Visualisation
-
-Every view answers one question. If a legend needs more than three items, it is
-two views.
+Every view answers one of the four questions. If a legend needs more than three
+items, it is two views.
 
 | View | Question | Picture |
 |---|---|---|
-| **Story** | What does this program do, in order? | The front door. Routes into the program (Makefile targets, scripts, CLI commands, API routes, MCP tools) as rows of steps in call order; the parts of the world (web, disk, databases, LLM, models) as columns; a dot where a step, or anything it reaches, touches one. Each step shows its morphism `A × B → C` and expands into its own steps. Overview: every route and what it reaches. |
-| **Architecture** | How does information flow? | Role columns left → right in declared order; orchestration band above, foundation band below. Modules as boxes with class/function chips inside; edges aggregated per module pair, thickness by count; conformance violations in the alert colour. Hover: upstream/downstream. Click: inspector. Double-click: expand the box to its symbols. |
-| **Type lattice** | What are the base types, and who subtypes them? | An inheritance forest, one small tree per root; external bases (`BaseModel`, `ABC`, `StrEnum`) as ghosts; badges for abstract methods and overrides. |
-| **Signature flow** | What are the morphisms? | Types as nodes, functions as arrows, ELK-layered; select two types and the composition paths light up. |
-| **Module map** | Where is everything? | Nested boxes package → module, sized by symbol count, coloured by role; shows a class whose base says one role while its folder says another. |
-| **Git graph** | What changed? | Commit DAG with branches and tags; click a commit or drag a range → overlay on the architecture view. |
-| **Inspector** | What is this, exactly? | Read-only code with the symbol's span highlighted, signature and docstring on top, in/out edges as clickable lists, agent annotation, "open in editor". |
+| **Story** | Orient | Routes into the program as rows of steps in call order; the resting places as columns; a dot where a step, or anything it reaches, touches one. Each step shows its morphism and expands into its own steps. Overview: every route and what it reaches. |
+| **Plaat** | Orient, Verify | The image of the effect functor: resting places as boxes, quotiented arrows between them, named by base class or package when declared and by signature otherwise. Click a box to refine it one level. Conformance marks where the declared flow disagrees. |
+| **Architecture** | Verify, Place | Role columns left → right; orchestration band above, foundation band below; modules as boxes with class/function chips; aggregated edges; backflow in the alert colour. |
+| **Type lattice** | Place | Inheritance forest; external bases as ghosts; wide leaf families as a grid; badges for abstract methods and overrides. |
+| **Signature flow** | Orient | Types as nodes, functions as arrows, ELK-layered; select two types and the composition paths light up. |
+| **Git graph** | Verify | Commit DAG; click a commit or drag a range → overlay on any view. |
+| **Inspector** | all | Read-only code with room for 100 columns, signature, docstring, in/out edges, annotation, open in editor. |
 
-**Design language.** Role = hue (a muted seven-hue palette, one per column, the
-same in every view). Kind = shape (module: rounded box; class: box with a header
-strip; function: pill; external: dashed ghost). Edge kind = line style (`calls`
-solid; `inherits` dashed with a hollow head; `imports` dotted and thin; type edges
-thin double). Sans for labels, mono for identifiers. Light and dark from the same
-tokens. Motion only when the focus changes, and short.
+**Design language.** Role = hue (one muted palette, the same in every view). Kind =
+shape (module: rounded box; class: box with a header strip; function: pill;
+external: dashed ghost; resting place: a plain rectangle). Edge kind = line style.
+Sans for labels, mono for identifiers. Light and dark from the same tokens. Motion
+only when the focus changes, and short.
 
-**Interaction.** Command-K search; keyboard navigation; breadcrumb of zoom levels;
-URL state so a view can be linked from a Linear issue; a view is never more than
-two clicks from the code.
+**Interaction.** Command-K search; keyboard navigation; breadcrumb; URL state so a
+view can be linked from an issue; a folder picker to open a project; never more
+than two clicks from the code.
 
-## 5. The feedback loop
+## 6. The feedback loop
 
-- **M0 (now):** a static spike on `rkg`. Per view: keep / change / drop.
-- **M1:** the walking skeleton is in daily use; friction goes straight to Linear.
+- **M0 (done):** a Python spike on rkg, vectormesh, goad_toolkit and notebooktester.
+  One question per round; ten was too early.
+- **M1:** the Rust skeleton, with Atlas itself as the first subject, rkg and
+  vectormesh second and third. Friction goes straight to Linear.
 - **Design rounds** are explicit issues with the label *Design*: three screenshots,
-  three questions, one decision each.
+  one question, one decision.
 - **Decisions** are recorded on the issue that made them, with the reason.
 
-## 6. Open questions
+## 7. Open questions
 
-1. Is the role the right unit for colour, or is the base type? (Both are visible;
-   one has to be the hue.)
-2. Editing: probably never. "Open in editor" as a deep link should be enough.
-   Revisit after M1.
-3. Which second language first for students: TypeScript.
-4. How much of the analysis should be cached across runs, and where (a
-   `.codebrowser/` directory next to `.git`?).
+1. Restriction and quotient do not commute. Is "restrict, then quotient" the only
+   order a lens list may use, or do both orders have a reading?
+2. Is the role the right unit for colour, or is the base type?
+3. Editing: probably never. "Open in editor" as a deep link should be enough.
+4. The browser as a resting place: a click in `apps/plusmin` is an arrow into an
+   API route. Needs TypeScript parsing first.
+5. Analysis cache across runs: a `.atlas/` directory next to `.git`.
