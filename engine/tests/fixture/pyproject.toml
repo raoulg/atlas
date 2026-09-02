@@ -1,0 +1,6 @@
+[project]
+name = "fixture"
+version = "0.0.0"
+
+[project.scripts]
+fixture = "fixture.cli:main"

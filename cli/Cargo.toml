@@ -1,0 +1,16 @@
+[package]
+name = "atlas"
+description = "Atlas: code at the level of types and flows"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "atlas"
+path = "src/main.rs"
+
+[dependencies]
+atlas-engine = { path = "../engine" }
+anyhow.workspace = true
+serde_json.workspace = true
+clap = { version = "4", features = ["derive"] }

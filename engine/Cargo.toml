@@ -1,0 +1,19 @@
+[package]
+name = "atlas-engine"
+description = "parse: Repo -> Graph, lens: Graph -> Graph"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+indexmap.workspace = true
+serde_yaml = "0.9"
+toml = "1"
+regex = "1"
+walkdir = "2"
+tree-sitter = "0.25"
+tree-sitter-python = "0.25"
+ts-rs = "12"

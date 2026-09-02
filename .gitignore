@@ -3,4 +3,8 @@ spike/*.graph.json
 spike/*.html
 !spike/viewer.html
 
+# rust
+target/
+engine/bindings/
+
 .DS_Store
