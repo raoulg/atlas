@@ -728,6 +728,7 @@ async function renderPlaat() {
   };
   for (const f of D.nodes.filter(n => n.kind === "function" || n.kind === "method")) {
     const t = typesOf(f.id), dom = [], cod = [];
+    if (f.cls && byId.has(f.cls)) dom.push(typePlace(f.cls));  // a method's receiver is part of its domain
     for (const x of t.takes) dom.push(typePlace(x));
     // what the body consumes: instantiated types and what callees hand back
     for (const c of callees(f.id)) { const cn = byId.get(c); if (cn.kind === "class") dom.push(typePlace(c)); else for (const r of typesOf(c).returns) dom.push(typePlace(r)); }
@@ -751,6 +752,7 @@ async function renderPlaat() {
   const nameOf = fns => {
     const ns = fns.map(id => byId.get(id));
     const same = f => new Set(ns.map(f)).size === 1;
+    if (ns.length === 1 && ns[0].cls) return `${typeLabel(ns[0].cls)}.${ns[0].name}`;
     if (same(n => n.name) && ns.every(n => n.cls)) {
       // one trait or base-class method, implemented by each class
       const bases = ns.map(n => (out.get(n.cls) || []).filter(e => e.kind === "inherits").map(e => e.dst));

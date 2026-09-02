@@ -876,4 +876,7 @@ fn foreign_type(id: &str) -> bool {
     full.contains('.')
         && !["std", "core", "alloc", "anyhow", "serde", "serde_json", "indexmap", "regex", "toml", "clap"].contains(&head)
         && !["Result", "Option", "Vec", "Box", "HashMap", "HashSet", "BTreeMap", "IndexMap", "String", "Path", "PathBuf"].contains(&name)
+        // `D::Error`, `S::Ok`, `Self::Target`: associated types on generic parameters, not places
+        && !(head.len() == 1 && head.chars().all(|c| c.is_ascii_uppercase()))
+        && !["Ok", "Err", "Error", "Target", "Output", "Item", "Self"].contains(&name)
 }
