@@ -10,6 +10,7 @@
   --role-Config:#9A968C; --role-Other:#9A968C; --role-External:#A0A6AE;
   --syn-kw:#7E3FA8; --syn-str:#1F7A5C; --syn-com:#8A94A3; --syn-num:#B4551C; --syn-fn:#2B4FBF; --syn-dec:#A0641E; --syn-bi:#1F6E8C;
   --hue-1:#1F8A7E; --hue-2:#3F5FCF; --hue-3:#C7862B; --hue-4:#7E56B8; --hue-5:#C44F70; --hue-6:#4E9A4E; --hue-7:#5C6B80; --hue-8:#7D7A72;
+  --k-cmd:#2F7D4F; --k-file:#B26A00; --k-db:#7E56B8; --k-web:#1F7A8C; --k-screen:#3F5FCF; --k-proc:#5C6B80; --k-model:#C44F70;
   --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
   --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
 }
@@ -21,8 +22,10 @@
   --role-Config:#B0ABA0; --role-Other:#B0ABA0; --role-External:#7F8792;
   --syn-kw:#C792EA; --syn-str:#7FCFA8; --syn-com:#6F7987; --syn-num:#F0A070; --syn-fn:#8FB0FF; --syn-dec:#E0B070; --syn-bi:#7FC4E0;
   --hue-1:#3DB8A9; --hue-2:#7B93E8; --hue-3:#E0A24A; --hue-4:#A98AD9; --hue-5:#E27A96; --hue-6:#77BF77; --hue-7:#8C9BB0; --hue-8:#A39F95;
+  --k-cmd:#6CC08C; --k-file:#E0A24A; --k-db:#B596E6; --k-web:#5CC0D4; --k-screen:#8FA6F0; --k-proc:#9AA8BC; --k-model:#E88AA4;
 }}
 :root[data-theme="dark"]{
+  --k-cmd:#6CC08C; --k-file:#E0A24A; --k-db:#B596E6; --k-web:#5CC0D4; --k-screen:#8FA6F0; --k-proc:#9AA8BC; --k-model:#E88AA4;
   --bg:#14181D; --panel:#1C2128; --panel-2:#222932; --ink:#E6EAF0; --ink-2:#AEB6C2; --ink-3:#6F7987;
   --line:#2C343E; --line-2:#242B34; --alert:#F0663D; --focus:#E6EAF0;
   --role-Source:#3DB8A9; --role-Graph:#7B93E8; --role-Sink:#E0A24A; --role-Repository:#A98AD9;
@@ -36,6 +39,8 @@ html,body{height:100%}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:13px;line-height:1.45;overflow:hidden}
 #app{display:grid;grid-template-rows:46px 1fr;grid-template-columns:1fr var(--aside-w,820px);height:100vh}
 #resizer{position:absolute;right:0;top:0;bottom:0;width:7px;cursor:col-resize;z-index:3}
+#app.noaside{grid-template-columns:1fr 0}
+#app.noaside aside,#app.noaside #resizer{display:none}
 #resizer:hover{background:color-mix(in oklab, var(--ink-3) 30%, transparent)}
 #entry,#project{font:inherit;font-family:var(--mono);font-size:12px;padding:5px 9px;border:1px solid var(--line);border-radius:6px;background:var(--panel-2);color:var(--ink);max-width:340px}
 #project{font-weight:600;padding:3px 6px}
@@ -81,6 +86,8 @@ svg#canvas{width:100%;height:100%;display:block;cursor:grab}
 svg#canvas:active{cursor:grabbing}
 #legend{position:absolute;left:14px;bottom:14px;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;gap:6px;font-size:11px;color:var(--ink-2);max-width:280px}
 #legend .row{display:flex;flex-wrap:wrap;gap:4px 10px}
+#legend .legend-head{all:unset;cursor:pointer;font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3)}
+#legend .legend-head:hover{color:var(--ink)}
 #legend .sw{display:inline-flex;align-items:center;gap:5px}
 #legend .sw i{width:10px;height:10px;border-radius:2px;display:inline-block}
 #legend .k{display:inline-flex;align-items:center;gap:6px}
@@ -96,6 +103,18 @@ svg#canvas:active{cursor:grabbing}
 .sedge.reach{stroke-dasharray:5 4}
 .sedge.back{stroke-dasharray:1 3;stroke-linecap:round}
 .tstep{cursor:pointer}
+.tstep.own rect.bg{fill:var(--panel);stroke-dasharray:none}
+.tnode.world rect.bg{fill:color-mix(in oklab, var(--k) 12%, var(--panel));stroke:color-mix(in oklab, var(--k) 55%, var(--line))}
+.tnode.ref rect.bg{fill:transparent;stroke-dasharray:3 3}
+.tnode.ref .title{fill:var(--ink-3);font-weight:500}
+.glyph{fill:none;stroke:currentColor;stroke-width:1.3;stroke-linecap:round;stroke-linejoin:round}
+svg.glyph{vertical-align:-2px}
+.frame rect.bg{fill:color-mix(in oklab, var(--panel) 55%, transparent);stroke:var(--line);stroke-width:1.2}
+.frame.choice rect.bg{stroke-dasharray:6 4;stroke:var(--ink-3)}
+.frame.fam rect.bg{fill:color-mix(in oklab, var(--panel-2) 70%, transparent)}
+.frame .ftitle{font-family:var(--mono);font-size:11.5px;font-weight:600;fill:var(--ink-2);cursor:pointer}
+.frame .ftitle:hover{fill:var(--ink)}
+.sedge-head{fill:var(--ink-3)}
 .tstep rect.bg{fill:var(--panel-2);stroke:var(--ink-3)}
 .tstep .title{font-family:var(--mono);font-size:11px;font-weight:500;fill:var(--ink)}
 .tstep:hover rect.bg,.tstep.selected rect.bg{stroke:var(--focus);stroke-width:1.6}
@@ -194,7 +213,7 @@ pre.code .l::before{counter-increment:ln;content:counter(ln);display:inline-bloc
   <main>
     <svg id="canvas"><g id="scene" class="scene"></g><g id="lanes"></g></svg>
     <div id="crumbs" aria-label="what this picture shows"></div>
-    <div id="zoomctl"><button id="zout" type="button" title="zoom out">−</button><button id="fit" type="button">fit</button><button id="zone" type="button" title="actual size">1:1</button><button id="zin" type="button" title="zoom in">+</button></div>
+    <div id="zoomctl"><button id="zout" type="button" title="zoom out">−</button><button id="fit" type="button">fit</button><button id="zone" type="button" title="actual size">1:1</button><button id="zin" type="button" title="zoom in">+</button><button id="codetoggle" type="button" title="show or hide the code panel">hide code</button></div>
     <div id="resizer" title="drag to resize the inspector"></div>
     <div id="legend"></div>
     <div id="hint">drag to pan · scroll to zoom · click a block</div>
@@ -284,7 +303,11 @@ function placeLanes(t) {
   if (!sticky || view !== "story") return;
   const y = Math.max(16, t.y + t.k * sticky.y), xs = sticky.xs.map(x => t.x + t.k * x);
   if (y === 16 && xs.length) el("rect", {class: "lanes-bg", x: xs[0] - 50, y: 0, width: xs[xs.length - 1] - xs[0] + 100, height: 26}, L);
-  xs.forEach((x, j) => { el("text", {class: "lane-label", x, y, "text-anchor": "middle"}, L).textContent = sticky.labels[j]; });
+  xs.forEach((x, j) => {
+    const kind = sticky.kinds[j], w = sticky.labels[j].length * 6.6;
+    el("text", {class: "lane-label", x: x + 8, y, "text-anchor": "middle", style: `fill:var(--k-${kind})`}, L).textContent = sticky.labels[j];
+    glyphAt(L, kind, x + 8 - w / 2 - 17, y - 10);
+  });
 }
 svg.call(zoom).on("dblclick.zoom", null);
 function fit(animate = false, pad = 40, tries = 0) {
@@ -310,13 +333,19 @@ window.addEventListener("resize", () => { if (!userZoomed) fit(); });
   window.addEventListener("mousemove", e => { if (!drag) return; const w = Math.max(360, Math.min(window.innerWidth - 420, window.innerWidth - e.clientX)); document.documentElement.style.setProperty("--aside-w", w + "px"); });
   window.addEventListener("mouseup", () => { if (drag) { drag = false; document.body.style.cursor = ""; if (!userZoomed) fit(); } }); }
 let defs = el("defs", {}, svg.node());
+// the code panel can be closed; the canvas takes the width, and the choice is remembered in this browser
+{ const app = document.getElementById("app"), btn = document.getElementById("codetoggle");
+  const set = open => { app.classList.toggle("noaside", !open); btn.textContent = open ? "hide code" : "show code"; try { localStorage.setItem("atlas.code", open ? "1" : "0"); } catch {} };
+  let saved = null; try { saved = localStorage.getItem("atlas.code"); } catch {}
+  set(saved !== "0");
+  btn.onclick = () => { set(app.classList.contains("noaside")); if (!userZoomed) setTimeout(() => fit(true), 30); }; }
 
 // ---------- state ----------
 let view = "story", selected = null;
 const enabled = () => Object.fromEntries([...document.querySelectorAll("#toggles input[data-kind]")].map(i => [i.dataset.kind, i.checked]));
 const showBack = () => document.getElementById("backflow").checked;
 document.querySelectorAll("#toggles input").forEach(i => i.addEventListener("change", render));
-document.querySelectorAll(".tabs button").forEach(b => b.addEventListener("click", () => { view = b.dataset.view; document.querySelectorAll(".tabs button").forEach(x => x.setAttribute("aria-selected", x === b)); render(); }));
+document.querySelectorAll(".tabs button").forEach(b => b.addEventListener("click", () => { view = b.dataset.view; plaatFit = true; prevPos = new Map(); document.querySelectorAll(".tabs button").forEach(x => x.setAttribute("aria-selected", x === b)); render(); }));
 document.getElementById("toggles").style.visibility = "visible";
 
 // ---------- architecture view ----------
@@ -680,7 +709,7 @@ const typesOf = id => ({takes: [...new Set((out.get(id) || []).filter(e => e.kin
 let storyEntry = null, showTests = false; const expanded = new Set();
 const entrySel = document.getElementById("entry");
 for (const k of KIND_ORDER) { const es = entries.filter(e => e.entry.kind === k); if (!es.length) continue; const og = document.createElement("optgroup"); og.label = KIND_LABEL[k]; for (const e of es) { const o = document.createElement("option"); o.value = e.id; o.textContent = e.entry.label; og.appendChild(o); } entrySel.appendChild(og); }
-entrySel.addEventListener("change", () => { storyEntry = entrySel.value || null; expanded.clear(); render(); });
+entrySel.addEventListener("change", () => { storyEntry = entrySel.value || null; expanded.clear(); plaatFit = true; render(); });
 function renderStory() {
   const g = scene.node(), ROW = 44, X0 = 30, NAMEW = 720, LW = 80;
   const rows = [], lanesUsed = new Set();
@@ -695,16 +724,16 @@ function renderStory() {
   } else {
     // a step already shown in this story is a reference to where it was shown, not a second copy
     const shown = new Map([[storyEntry, "the entry"]]);
-    const walk = (id, depth, prefix) => callees(id).forEach((c, i) => {
-      const n = byId.get(c), num = prefix ? `${prefix}.${i + 1}` : `${i + 1}`;
+    const walk = (id, depth, prefix) => { const p = byId.get(id), alts = new Set(p && p.cls ? overrides(p) : []); let seq = 0, alt = 0; callees(id).forEach(c => {
+      const n = byId.get(c), isAlt = alts.has(c), num = isAlt ? `${prefix}${"abcdefgh"[alt++ % 8]}` : prefix ? `${prefix}.${++seq}` : `${++seq}`;
       const via = n.kind === "class" ? (out.get(id) || []).find(e => e.dst === c && e.kind === "instantiates" && e.via)?.via : null;
       const name = n.kind === "class" ? (via ? `${n.name}::${via}()` : n.name + "()") : n.entry ? `${KIND_LABEL[n.entry.kind]} ${n.entry.label}` : n.cls && byId.has(n.cls) ? `${byId.get(n.cls).name}.${n.name}` : n.name;
       if (shown.has(c) && callees(c).length) { rows.push({id: c, depth, num, name, node: n, bounds: {}, size: 0, kids: 0, ref: shown.get(c)}); return; }
       const r = reach(c); Object.keys(r.bounds).forEach(k => lanesUsed.add(k));
       shown.set(c, num);
-      const row = {id: c, depth, num, name, node: n, bounds: r.bounds, reach: r, size: r.size, kids: callees(c).length, open: expanded.has(c)};
+      const row = {id: c, depth, num, name, node: n, bounds: r.bounds, reach: r, size: r.size, kids: callees(c).length, open: expanded.has(c), hue: isAlt ? (alt - 1) % 8 + 1 : null};
       rows.push(row); if (row.open) walk(c, depth + 1, num);
-    });
+    }); };
     Object.keys(ownReach(byId.get(storyEntry)).bounds).forEach(k => lanesUsed.add(k));
     walk(storyEntry, 0, "");
   }
@@ -724,7 +753,7 @@ function renderStory() {
   const totalH = rows.length * ROW + rows.filter(r => r.group).length * 34;
   const laneY = hdrY;
   lanes.forEach(([k, label], j) => { const x = laneX0 + j * LW + LW/2; el("line", {class: "lane-line", x1: x, x2: x, y1: laneY + 8, y2: laneY + 30 + totalH}, g); });
-  sticky = {xs: lanes.map((_, j) => laneX0 + j * LW + LW/2), labels: lanes.map(([, l]) => l), y: laneY};
+  sticky = {xs: lanes.map((_, j) => laneX0 + j * LW + LW/2), labels: lanes.map(([, l]) => l), kinds: lanes.map(([k]) => laneKind(k)), y: laneY};
   let y = hdrY + hdrH + 24;
   for (const row of rows) {
     if (row.group) { y += 10; el("text", {class: "group-label", x: X0, y: y + 12}, g).textContent = row.group; y += 24; }
@@ -738,11 +767,12 @@ function renderStory() {
     } else if (storyEntry) {
       el("text", {class: "num", x: ix, y: 17}, rg).textContent = row.num;
       if (row.kids) { const ch = el("text", {class: "chev", x: ix + 36, y: 17}, rg); ch.textContent = row.open ? "▾" : "▸"; ch.addEventListener("click", ev => { ev.stopPropagation(); if (expanded.has(row.id)) expanded.delete(row.id); else expanded.add(row.id); render(); }); }
-      const nx = ix + 52; el("text", {class: "sname", x: nx, y: 17}, rg).textContent = row.name;
+      const nx = ix + 52, nm = el("text", {class: "sname", x: nx, y: 17}, rg); nm.textContent = row.name;
+      if (row.hue) nm.style.fill = `var(--hue-${row.hue})`;
       let tx = nx + row.name.length * 7.6 + 6;
       const sig = ownSig(row.node);
       if (sig) { const st = el("text", {class: "stype", x: tx, y: 17}, rg); st.textContent = sig; tx += Math.min(sig.length, 70) * 6.7 + 12; }
-      el("text", {class: "smod", x: Math.max(tx, nx + 260), y: 17}, rg).textContent = short(row.node.module) + (row.size > 1 ? ` · reaches ${row.size} fns` : "");
+      el("text", {class: "smod", x: Math.max(tx, nx + 260), y: 17}, rg).textContent = (row.hue ? "or · " : "") + short(row.node.module) + (row.size > 1 ? ` · reaches ${row.size} fns` : "") + (altCount(row.id) ? ` · one of ${altCount(row.id)}` : "");
       const eff = ownEffects(row.node);
       if (eff) el("text", {class: "seff", x: nx, y: 33}, rg).textContent = eff;
     } else {
@@ -757,14 +787,15 @@ function renderStory() {
   if (!rows.length) el("text", {class: "story-sub", x: X0, y: hdrY + 60}, g).textContent = storyEntry ? "This entry point calls nothing inside the package." : "No entry points found (CLI commands, API routes, MCP tools).";
 }
 
-// ---------- plaat: a route as places, its steps as arrows ----------
+// ---------- plaat: a route as places and steps ----------
 // The same lens as Story, laid out as places instead of rows: restrict to a route (an entry and the
-// steps opened in it), turn every step into arrows from what it takes to what it hands on, then
-// quotient types into their families. An opened step shows its own body; a closed step stands for
-// everything below it, and what it touches down there is drawn dashed: a step's own morphism and
-// what it reaches are different quantities. Without an entry, every route is one closed step.
-// A place is where data rests: a type family in memory, or a part of the world. Families come from
-// base classes (Language ⊇ Python, Rust) and composition (Graph ⊇ Architecture), opened one at a time.
+// steps opened in it), make every step a pill between what it takes and what it hands on, then
+// quotient types into their families. Zooming in is nesting: an opened step is a frame around its
+// own steps, an opened family a frame around its subclasses or parts, and a call into a family is a
+// choice between its members. A closed step stands for everything below it, and what it touches
+// down there is dashed: a step's own morphism and what it reaches are different quantities. The
+// world stands still at the edges: what the route only reads on the left, what it only writes on
+// the right.
 const STD_BASES = new Set(["Default", "Serialize", "Deserialize", "Deref", "DerefMut", "From", "Into", "Clone", "Debug", "Display", "Iterator", "Drop", "PartialEq", "Eq", "Hash", "ABC", "Protocol", "Generic", "object", "Module", "TorchDataset"]);
 const famCache = new Map();
 function familyOf(id, depth = 0) {
@@ -783,169 +814,319 @@ function familyOf(id, depth = 0) {
   }
   famCache.set(id, fam); return fam;
 }
+const members = new Map();
+for (const n of D.nodes) if (n.kind === "class" || n.kind === "external") { const f = familyOf(n.id); if (f !== n.id) { if (!members.has(f)) members.set(f, []); members.get(f).push(n.id); } }
 const expandedFamilies = new Set(), refined = new Set();
 const bare = id => byId.has(id) ? byId.get(id).name : id.replace(/^ext:/, "").split(".").pop();
 const nameCount = new Map(); for (const n of D.nodes) if (n.kind === "class" || n.kind === "external") nameCount.set(bare(n.id), (nameCount.get(bare(n.id)) || 0) + 1);
 const typeLabel = id => { const b = bare(id); if ((nameCount.get(b) || 0) > 1) { const mod = (byId.get(id)?.module || id.replace(/^ext:/, "").split(".").slice(0, -1).join(".")).split(".").pop(); return mod ? `${mod}.${b}` : b; } return b; };
 const entryTitle = id => { const n = byId.get(id); return `${KIND_LABEL[n.entry.kind]} ${n.entry.label}`; };
-// the steps of the route in call order; own = the step is open: its own body is drawn and its callees are steps too
-function routeSteps() {
-  if (!storyEntry) return entries.filter(e => e.entry.kind !== "test" || showTests).map(e => ({id: e.id, own: false}));
-  const steps = [], seen = new Set();
-  const visit = (id, parent) => {
-    if (seen.has(id)) return; seen.add(id);
-    const open = id === storyEntry || expanded.has(id);
-    steps.push({id, own: open, parent});
-    if (open) callees(id).forEach(c => visit(c, id));
-  };
-  visit(storyEntry, null);
-  return steps;
-}
 // everything a closed step touches, anywhere below it
 const reachTouches = id => reach(id).touches;
 // what a step changes in place is in its codomain too: `T -> T`
 const mutatesOf = id => [...new Set((out.get(id) || []).filter(e => e.kind === "mutates").map(e => e.dst))];
 // where a route comes from: the command typed, the request made, the tool called
 const ENTRY_PLACE = {cli: l => `$ ${l}`, make: l => `$ make ${l}`, script: l => `$ python ${l}`, notebook: l => `notebook ${l}`, route: l => l, mcp: l => `MCP ${l}`, test: l => `test ${l}`};
-const entryPlace = id => { const e = byId.get(id).entry; return ["e:" + id, ENTRY_PLACE[e.kind](e.label), "entry", "", null]; };
+const entryPlace = id => { const e = byId.get(id).entry; return {id: "e:" + id, label: ENTRY_PLACE[e.kind](e.label), kind: "world"}; };
+// one glyph and one hue per kind of place: where a route starts, files, databases, the web, the screen, programs, models
+const GLYPH = {
+  cmd: '<path d="M2.5 4l3.5 3-3.5 3M7.5 11h4"/>',
+  file: '<path d="M3 1.5h5l3 3v8H3zM8 1.5v3h3"/>',
+  db: '<ellipse cx="7" cy="3.5" rx="5" ry="2"/><path d="M2 3.5v7c0 1.1 2.2 2 5 2s5-.9 5-2v-7"/>',
+  web: '<circle cx="7" cy="7" r="5.5"/><ellipse cx="7" cy="7" rx="2.3" ry="5.5"/><path d="M1.5 7h11"/>',
+  screen: '<rect x="1.5" y="2" width="11" height="7.5" rx="1"/><path d="M5 12.5h4M7 9.5v3"/>',
+  proc: '<circle cx="7" cy="7" r="2"/><path d="M7 1.5v2M7 10.5v2M1.5 7h2M10.5 7h2M3.1 3.1l1.4 1.4M9.5 9.5l1.4 1.4M3.1 10.9l1.4-1.4M9.5 4.5l1.4-1.4"/>',
+  model: '<path d="M7 1.5l1.4 4.1 4.1 1.4-4.1 1.4L7 12.5l-1.4-4.1L1.5 7l4.1-1.4z"/>',
+};
+const KIND_NAME = {cmd: "start", file: "file", db: "database", web: "web", screen: "screen", proc: "program", model: "model"};
+const placeKind = id => id.startsWith("e:") ? "cmd" : /^w:(File|Disk)/.test(id) ? "file" : /^w:(DuckDB|SQLite|Memgraph|SQL)\b/.test(id) ? "db" : id.startsWith("w:Web") ? "web" : id.startsWith("w:Screen") ? "screen" : /^w:(LLM|Model)\b/.test(id) ? "model" : id.startsWith("w:open") ? "proc" : null;
+const laneKind = k => k === "net" ? "web" : k.startsWith("disk") ? "file" : k.startsWith("db_") ? "db" : k === "screen" ? "screen" : k === "process" ? "proc" : "model";
+const glyphSvg = kind => `<svg class="glyph" width="13" height="13" viewBox="0 0 14 14" style="color:var(--k-${kind})">${GLYPH[kind]}</svg>`;
+function glyphAt(parent, kind, x, y) { const g = el("g", {class: "glyph", transform: `translate(${x},${y})`, style: `color:var(--k-${kind})`}, parent); g.innerHTML = GLYPH[kind]; return g; }
+// the route as a tree: an open step holds its own steps; a call into a family holds its members' overrides as branches
+function routeTree() {
+  if (!entries.length) return D.nodes.filter(n => n.kind === "function" || n.kind === "method").map(n => ({id: n.id, open: false, ownBody: true, kids: [], hue: null}));
+  if (!storyEntry) return entries.filter(e => e.entry.kind !== "test" || showTests).map(e => ({id: e.id, open: false, kids: [], hue: null}));
+  const seen = new Set();
+  const visit = (id, hue) => {
+    seen.add(id);
+    const n = byId.get(id), open = id === storyEntry || expanded.has(id), node = {id, open, kids: [], hue, choice: false};
+    if (open) {
+      const alts = new Set(n && n.cls ? overrides(n) : []);
+      node.choice = alts.size > 0;
+      let b = 0;
+      for (const c of callees(id)) if (!seen.has(c)) node.kids.push(visit(c, alts.has(c) ? (b++ % 8) + 1 : hue));
+    }
+    return node;
+  };
+  return [visit(storyEntry, null)];
+}
+const altCount = id => { const n = byId.get(id); return n && n.cls ? overrides(n).length : 0; };
+let prevPos = new Map(), plaatAnchor = null, plaatFit = true;
 async function renderPlaat() {
-  const g = scene.node();
-  const members = new Map();
-  for (const n of D.nodes) if (n.kind === "class" || n.kind === "external") { const f = familyOf(n.id); if (f !== n.id) { if (!members.has(f)) members.set(f, []); members.get(f).push(n.id); } }
+  const g = scene.node(), DUR = matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 380;
   const placeOfType = t => { const f = familyOf(t); return expandedFamilies.has(f) ? t : f; };
-  const places = new Map(), pills = new Map();
-  const addPlace = (id, label, kind, role, fam) => { if (!places.has(id)) places.set(id, {id, label, kind, role, fam}); };
-  // a part of the world: a file the code names, else coarse disk; a database, the screen, a command
+  const places = new Map();   // id -> {id, label, kind: world | type | ext, role, fam}
+  const addPlace = p => { if (!places.has(p.id)) places.set(p.id, p); return p.id; };
+  // a part of the world: a file the code names, else coarse disk; a database, the screen, a program
   const worldPlace = t => {
     const k = t.kind, name = WORLD[k], base = "w:" + name;
-    if (k === "process") return [base + ":" + (t.what || "process"), t.what || "process", "world"];
+    if (k === "process") return {id: base + ":" + (t.what || "process"), label: t.what || "process", kind: "world"};
     if (k.startsWith("disk")) {
-      if (t.artifact && !PROBE.test(t.op || "")) return ["w:File:" + t.artifact, `File(${t.artifact})`, "world"];
+      if (t.artifact && !PROBE.test(t.op || "")) return {id: "w:File:" + t.artifact, label: `File(${t.artifact})`, kind: "world"};
       const what = pickWhats({[t.what]: 1}, 1)[0];
-      if (refined.has("w:Disk") && what) return ["w:Disk:" + what, `Disk(${what})`, "world"];
-      return isIn(t) ? ["w:Disk:in", "Disk in", "world"] : ["w:Disk:out", "Disk out", "world"];
+      if (refined.has("w:Disk") && what) return {id: "w:Disk:" + what, label: `Disk(${what})`, kind: "world"};
+      return isIn(t) ? {id: "w:Disk:in", label: "Disk in", kind: "world"} : {id: "w:Disk:out", label: "Disk out", kind: "world"};
     }
-    if (k.startsWith("db_") && refined.has(base) && t.artifact) return [base + ":" + t.artifact, `${name}(${t.artifact})`, "world"];
-    return [base, name, "world"];
+    if (k.startsWith("db_") && refined.has(base) && t.artifact) return {id: base + ":" + t.artifact, label: `${name}(${t.artifact})`, kind: "world"};
+    return {id: base, label: name, kind: "world"};
   };
   const typePlace = t => {
-    const pid = placeOfType(t), n = byId.get(pid), isFam = members.has(pid);
-    const parent = familyOf(pid);  // shown as ▴ only when this place is a member of a family that is open
-    const fam = parent !== pid && expandedFamilies.has(parent) ? parent : null;
-    return ["t:" + pid, typeLabel(pid) + (isFam && !expandedFamilies.has(pid) ? ` (${members.get(pid).length + 1})` : ""), n && n.kind === "external" ? "ext" : "type", n ? n.role : "", fam];
+    const pid = placeOfType(t), n = byId.get(pid), closedFam = members.has(pid) && !expandedFamilies.has(pid);
+    return {id: "t:" + pid, label: typeLabel(pid) + (closedFam ? ` (${members.get(pid).length + 1})` : ""), kind: n && n.kind === "external" ? "ext" : "type", role: n ? n.role : "", type: pid};
   };
-  const anchored = entries.length > 0;
-  const steps = anchored ? routeSteps() : D.nodes.filter(n => n.kind === "function" || n.kind === "method").map(n => ({id: n.id, own: true}));
-  for (const s of steps) {
-    const f = byId.get(s.id); if (!f) continue;
-    const dom = [], cod = [];  // [place, reach]: reach = touched somewhere below a closed step, not by the step itself
-    // a route starts at its entry; in the overview the pill is the entry, so routes that touch the same places are one pill
-    if (f.entry && s.id === storyEntry) dom.push([entryPlace(s.id), false]);
+  // a step's morphism: its own body, or (closed) its interface and everything it touches below
+  const morphism = (id, own, isAnchor) => {
+    const f = byId.get(id), dom = [], cod = [];  // [placeId, reach]
+    if (!f) return {dom, cod};
+    if (isAnchor && f.entry) dom.push([addPlace(entryPlace(id)), false]);
     if (f.kind === "class") {
-      cod.push([typePlace(f.id), false]);
-      if (byId.has(f.id + ".__init__")) for (const x of typesOf(f.id + ".__init__").takes) dom.push([typePlace(x), false]);
+      cod.push([addPlace(typePlace(f.id)), false]);
+      if (byId.has(f.id + ".__init__")) for (const x of typesOf(f.id + ".__init__").takes) dom.push([addPlace(typePlace(x)), false]);
     } else {
-      if (f.cls && byId.has(f.cls)) dom.push([typePlace(f.cls), false]);  // a method's receiver is part of its domain
-      for (const x of typesOf(f.id).takes) dom.push([typePlace(x), false]);
-      for (const x of typesOf(f.id).returns) cod.push([typePlace(x), false]);
-      for (const x of mutatesOf(f.id)) cod.push([typePlace(x), false]);
+      if (f.cls && byId.has(f.cls)) dom.push([addPlace(typePlace(f.cls)), false]);  // a method's receiver is part of its domain
+      for (const x of typesOf(f.id).takes) dom.push([addPlace(typePlace(x)), false]);
+      for (const x of typesOf(f.id).returns) cod.push([addPlace(typePlace(x)), false]);
+      for (const x of mutatesOf(f.id)) cod.push([addPlace(typePlace(x)), false]);
       // an open step's body consumes what it instantiates and what its callees hand back
-      if (s.own) for (const c of callees(f.id)) { const cn = byId.get(c); if (cn.kind === "class") dom.push([typePlace(c), false]); else for (const r of typesOf(c).returns) dom.push([typePlace(r), false]); }
+      if (own) for (const c of callees(f.id)) { const cn = byId.get(c); if (cn.kind === "class") dom.push([addPlace(typePlace(c)), false]); else for (const r of typesOf(c).returns) dom.push([addPlace(typePlace(r)), false]); }
     }
-    const own = new Set((f.touches || []).map(touchKey));
-    for (const tc of (s.own ? f.touches || [] : reachTouches(f.id))) {
+    const ownKeys = new Set((f.touches || []).map(touchKey));
+    for (const tc of (own ? f.touches || [] : reachTouches(f.id))) {
       if (!WORLD[tc.kind]) continue;
-      const p = worldPlace(tc), r = !own.has(touchKey(tc));
-      (isIn(tc) ? dom : cod).push([p, r]);
+      (isIn(tc) ? dom : cod).push([addPlace(worldPlace(tc)), !ownKeys.has(touchKey(tc))]);
     }
-    // a result with no place of its own (a str, a dict) goes back to the step that called it
-    const ret = (f.returns || "").replace(/^Result<(.*)>$/, "$1");
-    const handsBack = !cod.some(([p]) => p[0].startsWith("t:")) && ret && !/^(None|\(\)|Self)$/.test(ret) && s.parent;
-    if (!dom.length && !cod.length && !handsBack) continue;
-    // a step is a pill between the places it takes from and hands on to; steps with the same places are one pill
-    const Dm = new Map(), Cm = new Map();
-    for (const [p, r] of dom) { addPlace(...p); Dm.set(p[0], (Dm.has(p[0]) ? Dm.get(p[0]) : true) && r); }
-    for (const [p, r] of cod) { addPlace(...p); Cm.set(p[0], (Cm.has(p[0]) ? Cm.get(p[0]) : true) && r); }
-    const key = [...Dm.keys()].sort().join(",") + ">" + [...Cm.keys()].sort().join(",") + (handsBack ? "^" + s.parent : "");
-    if (!pills.has(key)) pills.set(key, {id: "s:" + pills.size, steps: [], D: Dm, C: Cm});
-    else { const P = pills.get(key); Dm.forEach((r, k) => P.D.set(k, P.D.get(k) && r)); Cm.forEach((r, k) => P.C.set(k, P.C.get(k) && r)); }
-    const P = pills.get(key); P.steps.push(s.id);
-    if (handsBack) (P.back ||= new Set()).add(s.parent);
-  }
-  // without entry points there is no route; keep that picture coarse: the world and the busiest types
-  const keep = new Set(places.keys());
-  if (!anchored) {
-    const involvement = new Map();
-    for (const P of pills.values()) for (const k of [...P.D.keys(), ...P.C.keys()]) involvement.set(k, (involvement.get(k) || 0) + 1);
-    keep.clear(); [...places.keys()].filter(id => id.startsWith("w:")).forEach(id => keep.add(id));
-    [...places.keys()].filter(id => !id.startsWith("w:")).sort((a, b) => (involvement.get(b) || 0) - (involvement.get(a) || 0)).slice(0, 16).forEach(id => keep.add(id));
-  }
+    const sig = arr => { const m = new Map(); for (const [p, r] of arr) m.set(p, (m.has(p) ? m.get(p) : true) && r); return m; };
+    return {dom: sig(dom), cod: sig(cod)};
+  };
+  // a result with no place of its own (a str, a dict) goes back to the step that called it
+  const handsBack = (id, cod) => { const f = byId.get(id), ret = ((f && f.returns) || "").replace(/^Result<(.*)>$/, "$1"); return ![...cod.keys()].some(p => p.startsWith("t:")) && ret && !/^(None|\(\)|Self)$/.test(ret); };
+
+  // build the nested picture: frames for open steps, pills for closed ones (siblings with the same places are one pill)
+  const pills = new Map(), frames = new Map();  // id -> {...}
   const stepName = id => { const n = byId.get(id); if (!storyEntry && n.entry) return ENTRY_PLACE[n.entry.kind](n.entry.label); if (n.kind === "class") return n.name + "()"; if (n.make) return n.name; return n.cls ? `${typeLabel(n.cls)}.${n.name}` : n.name; };
   const openable = id => id !== storyEntry && !expanded.has(id) && callees(id).length > 0;
-  const pillLabel = P => {
-    const ns = [...new Set(P.steps.map(stepName))], text = ns.length <= 2 ? ns.join(", ") : `${ns.slice(0, 2).join(", ")} +${ns.length - 2}`;
-    const open = P.steps.some(id => id === storyEntry || expanded.has(id));
-    return (open ? "▾ " : P.steps.some(openable) ? "▸ " : "") + text;
-  };
-  const nodes = [...places.values()].filter(p => keep.has(p.id)).map(p => ({id: p.id, width: 30 + p.label.length * 7.6, height: p.fam ? 46 : 40, layoutOptions: p.kind === "entry" ? {"elk.layered.layering.layerConstraint": "FIRST"} : {}}));
-  const edges = [];
-  for (const P of pills.values()) {
-    P.label = pillLabel(P);
-    const ins = [...P.D].filter(([k]) => keep.has(k)), outs = [...P.C].filter(([k]) => keep.has(k));
-    if (!ins.length && !outs.length) continue;
-    nodes.push({id: P.id, width: 22 + P.label.length * 6.9, height: 26});
-    ins.forEach(([k, r], i) => edges.push({id: `${P.id}:i${i}`, sources: [k], targets: [P.id], reach: r}));
-    outs.forEach(([k, r], i) => edges.push({id: `${P.id}:o${i}`, sources: [P.id], targets: [k], reach: r}));
-  }
-  const pillOf = new Map([...pills.values()].map(P => [P.id, P]));
-  const pillOfStep = new Map([...pills.values()].flatMap(P => P.steps.map(id => [id, P.id])));
-  for (const P of pills.values()) for (const caller of P.back || []) {
-    const to = pillOfStep.get(caller);
-    if (to && to !== P.id && nodes.some(n => n.id === to)) edges.push({id: `${P.id}:b:${to}`, sources: [P.id], targets: [to], back: true});
-  }
-  const layout = await new ELK().layout({id: "root", layoutOptions: {"elk.algorithm": "layered", "elk.direction": "RIGHT", "elk.edgeRouting": "ORTHOGONAL", "elk.layered.spacing.nodeNodeBetweenLayers": "70", "elk.spacing.nodeNode": "22", "elk.layered.nodePlacement.strategy": "NETWORK_SIMPLEX", "elk.spacing.edgeNode": "18", "elk.layered.spacing.edgeNodeBetweenLayers": "22"}, children: nodes, edges});
-  el("text", {class: "story-title", x: 20, y: 24}, g).textContent = !anchored ? "Every function (no entry points found)" : storyEntry ? `Route · ${entryTitle(storyEntry)}` : "All routes";
-  el("text", {class: "story-sub", x: 20, y: 41}, g).textContent = !anchored ? "nothing anchors a route here, so every typed function is a step · the sixteen busiest types are kept"
-    : storyEntry ? `${short(storyEntry)} · boxes: where data rests · pills: the steps, from what they take to what they hand on · ▸ opens a step · dashed: happens inside a closed step`
-    : "each route from where it starts to where its data ends up · click a route to follow it";
-  if (!nodes.length) el("text", {class: "story-sub", x: 20, y: 70}, g).textContent = "No step on this route takes or hands on a place yet: open a step in Story, or pick another route.";
-  const eg = el("g", {transform: "translate(20,60)"}, g), ng = el("g", {transform: "translate(20,60)"}, g);
-  for (const e of layout.edges || []) {
-    const sct = e.sections[0], pts = [sct.startPoint, ...(sct.bendPoints || []), sct.endPoint];
-    const d = pts.map((q, i) => (i ? "L" : "M") + q.x + "," + q.y).join(" ");
-    el("path", {class: "sedge fn" + (e.reach ? " reach" : "") + (e.back ? " back" : ""), d, "stroke-width": 1.3}, eg);
-    const last = pts[pts.length - 1], prev = pts[pts.length - 2], ang = Math.atan2(last.y - prev.y, last.x - prev.x), L = 8, Wd = 4;
-    el("polygon", {points: [[last.x, last.y], [last.x - L * Math.cos(ang) + Wd * Math.sin(ang), last.y - L * Math.sin(ang) - Wd * Math.cos(ang)], [last.x - L * Math.cos(ang) - Wd * Math.sin(ang), last.y - L * Math.sin(ang) + Wd * Math.cos(ang)]].map(q => q.join(",")).join(" "), fill: "var(--ink-3)"}, eg);
-  }
-  for (const n of layout.children) {
-    const P = pillOf.get(n.id);
-    if (P) {
-      const grp = el("g", {class: "tstep", transform: `translate(${n.x},${n.y})`, "data-id": P.steps[0]}, ng);
-      el("rect", {class: "bg", width: n.width, height: n.height, rx: n.height / 2}, grp);
-      el("text", {class: "title", x: 11, y: n.height / 2 + 4}, grp).textContent = P.label;
-      grp.addEventListener("click", () => {
-        if (P.steps.length === 1) select(P.steps[0]); else selectArrows({src: null, dst: null, fns: P.steps, kind: "steps"});
-        if (!storyEntry && anchored) { if (P.steps.length === 1) { storyEntry = P.steps[0]; entrySel.value = storyEntry; expanded.clear(); render(); } return; }
-        const opens = P.steps.filter(openable);
-        if (opens.length) { opens.forEach(id => expanded.add(id)); render(); }
-      });
-      continue;
+  const build = (node, parent) => {
+    if (node.open) {
+      const fid = "n:" + node.id, kids = [];
+      frames.set(fid, {id: fid, step: node.id, parent, hue: node.hue, choice: node.choice, anchor: node.id === storyEntry, title: (node.id === storyEntry ? entryTitle(node.id) : stepName(node.id)) + (node.choice ? " · one of" : "")});
+      const own = morphism(node.id, true, node.id === storyEntry);
+      const back = [];
+      for (const k of node.kids) { const r = build(k, fid); if (r) back.push(r); }
+      if (own.dom.size || own.cod.size || back.length) {
+        const oid = "o:" + node.id;
+        pills.set(oid, {id: oid, steps: [node.id], D: own.dom, C: own.cod, parent: fid, hue: node.hue, own: true});
+        for (const b of back) b.backTo = oid;
+      }
+      return null;
     }
-    const p = places.get(n.id);
-    const grp = el("g", {class: "tnode" + (p.kind === "ext" ? " ghost" : "") + (p.kind === "entry" ? " entry" : ""), transform: `translate(${n.x},${n.y})`, "data-id": n.id}, ng);
-    el("rect", {class: "bg", width: n.width, height: n.height, rx: p.kind === "type" || p.kind === "ext" ? 10 : 4}, grp);
-    el("rect", {x: 0, y: 0, width: 5, height: n.height, rx: 2, fill: p.kind === "world" || p.kind === "entry" ? "var(--ink-3)" : roleVar(p.role || "External")}, grp);
-    if (p.fam) el("text", {class: "fam", x: 16, y: 13}, grp).textContent = "▴ " + typeLabel(p.fam);
-    el("text", {class: "title", x: 16, y: p.fam ? 34 : n.height / 2 + 4}, grp).textContent = p.label;
+    const m = morphism(node.id, !!node.ownBody, false), hb = parent && handsBack(node.id, m.cod);
+    if (!m.dom.size && !m.cod.size && !hb) return null;
+    const key = (parent || "") + "|" + [...m.dom.keys()].sort() + ">" + [...m.cod.keys()].sort() + "|" + (node.hue || "") + (hb ? "^" : "");
+    const P = pills.get(key);
+    if (P && !node.hue) { P.steps.push(node.id); m.dom.forEach((r, k) => P.D.set(k, P.D.get(k) && r)); m.cod.forEach((r, k) => P.C.set(k, P.C.get(k) && r)); return hb ? P : null; }
+    const pill = {id: "n:" + node.id, steps: [node.id], D: m.dom, C: m.cod, parent, hue: node.hue, key};
+    pills.set(key, pill);
+    return hb ? pill : null;
+  };
+  for (const t of routeTree()) build(t, null);
+  for (const P of pills.values()) if (P.steps.length > 1) P.id = "n:" + P.steps.join("+");
+  // without entry points there is no route; keep that picture coarse: the world and the busiest types
+  const keep = new Set(places.keys());
+  if (!entries.length) {
+    const involvement = new Map();
+    for (const P of pills.values()) for (const k of [...P.D.keys(), ...P.C.keys()]) involvement.set(k, (involvement.get(k) || 0) + 1);
+    keep.clear(); [...places.keys()].filter(id => !id.startsWith("t:")).forEach(id => keep.add(id));
+    [...places.keys()].filter(id => id.startsWith("t:")).sort((a, b) => (involvement.get(b) || 0) - (involvement.get(a) || 0)).slice(0, 16).forEach(id => keep.add(id));
+  }
+  // open families are frames around their members; a member stands inside, the family itself is the frame
+  const famFrames = new Map();
+  for (const p of places.values()) {
+    if (!p.type) continue;
+    const f = familyOf(p.type);
+    if (!expandedFamilies.has(f) || !members.has(f)) continue;
+    if (!famFrames.has(f)) famFrames.set(f, {id: "t:" + f, fam: f});
+  }
+  for (const [f, F] of famFrames) {
+    places.delete("t:" + f); keep.delete("t:" + f);
+    const inFam = new Set([f, ...members.get(f)]);
+    const viaOf = m => (inn.get(m) || []).find(e => e.kind === "has" && inFam.has(e.src) && e.via)?.via;
+    const isSub = m => { let cur = m; for (let i = 0; i < 10; i++) { const b = (out.get(cur) || []).find(e => e.kind === "inherits" && inFam.has(e.dst)); if (!b) return false; if (b.dst === f) return true; cur = b.dst; } return false; };
+    F.kids = members.get(f).map(m => ({id: "t:" + m, label: isSub(m) ? typeLabel(m) : `${viaOf(m) || "·"}: ${typeLabel(m)}`, kind: "type", role: byId.get(m)?.role || "", type: m}));
+    // what the composite holds that is not its own (shared with other owners), as references
+    const shared = (out.get(f) || []).filter(e => e.kind === "has" && e.via && !inFam.has(e.dst) && byId.get(e.dst)?.kind === "class");
+    F.kids.push(...shared.map(e => ({id: `r:${f}:${e.via}`, label: `${e.via}: ${typeLabel(e.dst)}`, kind: "ref", type: e.dst})));
+    F.title = typeLabel(f) + (F.kids.some(k => k.kind === "type" && !k.label.includes(": ")) ? " ⊇" : "");
+    F.role = byId.get(f)?.role || "";
+    for (const k of F.kids) { places.set(k.id, {...k, inFrame: F.id}); keep.add(k.id); }
+  }
+
+  // which side of the picture each part of the world stands on
+  const used = new Map();  // placeId -> {in, out}
+  const use = (p, side) => { if (!used.has(p)) used.set(p, {in: false, out: false}); used.get(p)[side] = true; };
+  for (const P of pills.values()) { P.D.forEach((_, k) => use(k, "in")); P.C.forEach((_, k) => use(k, "out")); }
+  const famOf = pid => { const p = places.get(pid); return p && p.inFrame ? p.inFrame : pid; };
+  const exists = id => keep.has(id) || famFrames.has(id.slice(2)) && id.startsWith("t:");
+  // ---- the ELK graph, in an order the layout keeps from one refinement to the next ----
+  const textW = (s, c = 7.3) => s.length * c;
+  const nodeOf = new Map();
+  const leaf = (id, w, h, opts) => { const n = {id, width: w, height: h, layoutOptions: opts || {}}; nodeOf.set(id, n); return n; };
+  const frameNode = (id, padTop) => { const n = {id, children: [], layoutOptions: {"elk.padding": `[top=${padTop},left=14,bottom=14,right=14]`}}; nodeOf.set(id, n); return n; };
+  const root = {id: "root", children: [], edges: []};
+  const sideOf = id => { const u = used.get(id) || {}; return u.in && !u.out ? "in" : u.out && !u.in ? "out" : "both"; };
+  const worldIds = [...places.values()].filter(p => p.kind === "world" && keep.has(p.id)).map(p => p.id);
+  const sortWorld = ids => ids.sort((a, b) => (a.startsWith("e:") ? -1 : 0) - (b.startsWith("e:") ? -1 : 0) || (placeKind(a) || "").localeCompare(placeKind(b) || "") || a.localeCompare(b));
+  for (const id of sortWorld(worldIds.filter(id => sideOf(id) === "in" || id.startsWith("e:")))) root.children.push(leaf(id, 40 + textW(places.get(id).label), 36, {"elk.layered.layering.layerConstraint": "FIRST_SEPARATE"}));
+  // steps: frames hold their own steps, in call order
+  const holder = pid => pid ? nodeOf.get(pid) : root;
+  for (const F of frames.values()) { const n = frameNode(F.id, 34); (F.parent ? null : root.children.push(n)); }
+  for (const F of frames.values()) if (F.parent) holder(F.parent).children.push(nodeOf.get(F.id));
+  const pillLabel = P => {
+    if (P.own) return stepName(P.steps[0]);
+    const ns = [...new Set(P.steps.map(stepName))], text = ns.length <= 2 ? ns.join(", ") : `${ns.slice(0, 2).join(", ")} +${ns.length - 2}`;
+    const alts = P.steps.length === 1 ? altCount(P.steps[0]) : 0;
+    return (P.steps.some(openable) || (!storyEntry && entries.length) ? "▸ " : "") + text + (alts ? ` · one of ${alts}` : "");
+  };
+  for (const P of pills.values()) { P.label = pillLabel(P); holder(P.parent).children.push(leaf(P.id, 24 + textW(P.label, 6.9), 26)); }
+  // memory lives in the smallest open step that holds every step using it
+  const chain = fid => { const c = []; for (let f = fid; f; f = frames.get(f)?.parent) c.unshift(f); return c; };
+  const usersOf = new Map();
+  for (const P of pills.values()) for (const k of [...P.D.keys(), ...P.C.keys()]) { const key = famOf(k); if (!usersOf.has(key)) usersOf.set(key, []); usersOf.get(key).push(P.parent); }
+  const homeOf = id => {
+    const cs = (usersOf.get(id) || []).map(chain);
+    if (!cs.length || cs.some(c => !c.length)) return root;
+    let common = cs[0];
+    for (const c of cs.slice(1)) { let i = 0; while (i < common.length && i < c.length && common[i] === c[i]) i++; common = common.slice(0, i); }
+    return common.length ? nodeOf.get(common[common.length - 1]) : root;
+  };
+  for (const p of [...places.values()].filter(p => (p.kind === "type" || p.kind === "ext") && keep.has(p.id) && !p.inFrame).sort((a, b) => a.label.localeCompare(b.label))) homeOf(p.id).children.push(leaf(p.id, 30 + textW(p.label), 36));
+  for (const F of famFrames.values()) { const n = frameNode(F.id, 30); homeOf(F.id).children.push(n); for (const k of F.kids) n.children.push(leaf(k.id, 26 + textW(k.label, 6.9), 28)); }
+  for (const id of sortWorld(worldIds.filter(id => sideOf(id) === "both"))) root.children.push(leaf(id, 40 + textW(places.get(id).label), 36));
+  for (const id of sortWorld(worldIds.filter(id => sideOf(id) === "out" && !id.startsWith("e:")))) root.children.push(leaf(id, 40 + textW(places.get(id).label), 36, {"elk.layered.layering.layerConstraint": "LAST_SEPARATE"}));
+  // edges: data into a step and out of it, and results handed back to the caller
+  const edgeInfo = new Map(), addEdge = (a, b, info) => { if (!nodeOf.has(a) || !nodeOf.has(b) || a === b) return; const id = `${a}>${b}`; if (edgeInfo.has(id)) { edgeInfo.get(id).reach &&= info.reach; return; } edgeInfo.set(id, info); root.edges.push({id, sources: [a], targets: [b]}); };
+  for (const P of pills.values()) {
+    P.D.forEach((r, k) => addEdge(k, P.id, {reach: r, hue: P.hue}));
+    P.C.forEach((r, k) => addEdge(P.id, k, {reach: r, hue: P.hue}));
+    if (P.backTo) addEdge(P.id, P.backTo, {back: true, hue: P.hue});
+  }
+  const layout = await new ELK().layout(Object.assign(root, {layoutOptions: {"elk.algorithm": "layered", "elk.direction": "RIGHT", "elk.hierarchyHandling": "INCLUDE_CHILDREN", "elk.edgeRouting": "ORTHOGONAL", "elk.layered.spacing.nodeNodeBetweenLayers": "56", "elk.spacing.nodeNode": "16", "elk.layered.nodePlacement.strategy": "NETWORK_SIMPLEX", "elk.spacing.edgeNode": "14", "elk.layered.spacing.edgeNodeBetweenLayers": "16", "elk.layered.considerModelOrder.strategy": "NODES_AND_EDGES"}}));
+  // absolute positions; edge points are relative to the edge's container
+  const OX = 20, OY = 60, pos = new Map();
+  const walkPos = (n, ox, oy, depth) => { for (const c of n.children || []) { pos.set(c.id, {x: c.x + ox, y: c.y + oy, w: c.width, h: c.height, depth}); walkPos(c, c.x + ox, c.y + oy, depth + 1); } };
+  walkPos(layout, OX, OY, 0);
+  const parentOf = new Map(); const walkPar = n => { for (const c of n.children || []) { parentOf.set(c.id, n.id); walkPar(c); } }; walkPar(layout);
+  el("text", {class: "story-title", x: 20, y: 24}, g).textContent = !entries.length ? "Every function (no entry points found)" : storyEntry ? `Route · ${entryTitle(storyEntry)}` : "All routes";
+  el("text", {class: "story-sub", x: 20, y: 41}, g).textContent = !entries.length ? "nothing anchors a route here, so every typed function is a step · the sixteen busiest types are kept"
+    : storyEntry ? `${short(storyEntry)} · what it reads on the left, what it writes on the right · click a pill to open it, a frame's title to close it`
+    : "each route from what it reads to what it writes · click a route to open it";
+  if (!pos.size) el("text", {class: "story-sub", x: 20, y: 70}, g).textContent = "No step on this route takes or hands on a place yet: open a step in Story, or pick another route.";
+  const fg = el("g", {}, g), eg = el("g", {}, g), ng = el("g", {}, g);
+  // motion: everything starts where it was (or where its frame was) and moves to where it goes
+  const startOf = id => { if (prevPos.has(id)) return prevPos.get(id); for (let p = parentOf.get(id); p && p !== "root"; p = parentOf.get(p)) if (prevPos.has(p)) { const q = prevPos.get(p); return {x: q.x + 8, y: q.y + 8, w: 0, h: 0, fresh: true}; } return null; };
+  const place = (grp, id, extra) => {
+    const to = pos.get(id), from = startOf(id);
+    if (!from || !DUR) { grp.setAttribute("transform", `translate(${to.x},${to.y})`); if (!from && DUR) d3.select(grp).attr("opacity", 0).transition().delay(DUR * .5).duration(DUR * .6).attr("opacity", 1); return; }
+    const s = d3.select(grp).attr("transform", `translate(${from.x},${from.y})`);
+    if (from.fresh) s.attr("opacity", 0);
+    s.transition().duration(DUR).attr("transform", `translate(${to.x},${to.y})`).attr("opacity", 1);
+    if (extra) extra(from, to);
+  };
+  const hueVar = h => h ? `var(--hue-${h})` : null;
+  // frames: open steps (choices dashed) and open families
+  for (const id of [...pos.keys()].filter(id => frames.has(id) || famFrames.has(id.slice(2)) && id.startsWith("t:")).sort((a, b) => pos.get(a).depth - pos.get(b).depth)) {
+    const P = pos.get(id), F = frames.get(id) || famFrames.get(id.slice(2)), isFam = !frames.has(id);
+    const grp = el("g", {class: "frame" + (isFam ? " fam" : "") + (F.choice ? " choice" : ""), "data-id": id}, fg);
+    const r = el("rect", {class: "bg", width: P.w, height: P.h, rx: isFam ? 10 : 8}, grp);
+    if (F.hue) r.setAttribute("style", `stroke:${hueVar(F.hue)}`);
+    if (isFam) el("rect", {x: 0, y: 0, width: 5, height: P.h, rx: 2, fill: roleVar(F.role || "External")}, grp);
+    const title = el("text", {class: "ftitle", x: 14, y: 20}, grp); title.textContent = "▾ " + F.title;
+    title.addEventListener("click", ev => {
+      ev.stopPropagation(); plaatAnchor = id;
+      if (isFam) expandedFamilies.delete(F.fam); else if (F.anchor) { storyEntry = null; entrySel.value = ""; expanded.clear(); plaatAnchor = "n:" + F.step; } else expanded.delete(F.step);
+      render();
+    });
+    place(grp, id, (from, to) => { if (!from.fresh) d3.select(r).attr("width", from.w).attr("height", from.h).transition().duration(DUR).attr("width", to.w).attr("height", to.h); });
+  }
+  // edges, faded in once the boxes have moved
+  for (const e of layout.edges || []) {
+    const info = edgeInfo.get(e.id) || {}, c = e.container && e.container !== "root" ? pos.get(e.container) : {x: OX, y: OY};
+    for (const sct of e.sections || []) {
+      const pts = [sct.startPoint, ...(sct.bendPoints || []), sct.endPoint].map(q => ({x: q.x + c.x, y: q.y + c.y}));
+      const d = pts.map((q, i) => (i ? "L" : "M") + q.x + "," + q.y).join(" ");
+      const p = el("path", {class: "sedge fn" + (info.reach ? " reach" : "") + (info.back ? " back" : ""), d, "stroke-width": 1.3}, eg);
+      const last = pts[pts.length - 1], prev = pts[pts.length - 2], ang = Math.atan2(last.y - prev.y, last.x - prev.x), L = 8, Wd = 4;
+      const head = el("polygon", {points: [[last.x, last.y], [last.x - L * Math.cos(ang) + Wd * Math.sin(ang), last.y - L * Math.sin(ang) - Wd * Math.cos(ang)], [last.x - L * Math.cos(ang) - Wd * Math.sin(ang), last.y - L * Math.sin(ang) + Wd * Math.cos(ang)]].map(q => q.join(",")).join(" "), class: "sedge-head"}, eg);
+      if (info.hue) { p.style.stroke = hueVar(info.hue); head.style.fill = hueVar(info.hue); }
+      if (DUR) for (const x of [p, head]) d3.select(x).attr("opacity", 0).transition().delay(DUR * .7).duration(DUR * .6).attr("opacity", 1);
+    }
+  }
+  // pills
+  for (const P of pills.values()) {
+    if (!pos.has(P.id)) continue;
+    const Q = pos.get(P.id), grp = el("g", {class: "tstep" + (P.own ? " own" : ""), "data-id": P.steps[0]}, ng);
+    const r = el("rect", {class: "bg", width: Q.w, height: Q.h, rx: Q.h / 2}, grp);
+    if (P.hue) r.setAttribute("style", `stroke:${hueVar(P.hue)};stroke-width:1.6`);
+    el("text", {class: "title", x: 11, y: Q.h / 2 + 4}, grp).textContent = P.label;
     grp.addEventListener("click", () => {
-      if (p.kind === "entry") { const id = p.id.slice(2); if (!storyEntry) { storyEntry = id; entrySel.value = id; expanded.clear(); render(); } else select(id); return; }
-      if (p.kind === "world") { const base = p.id.split(":").slice(0, 2).join(":"); if (base === "w:File" || base === "w:Screen") return; if (refined.has(base)) refined.delete(base); else refined.add(base); render(); return; }
-      const tid = p.id.slice(2);
+      if (P.steps.length === 1) select(P.steps[0]); else selectArrows({fns: P.steps, kind: "steps"});
+      if (P.own) return;
+      if (!storyEntry && entries.length) { if (P.steps.length === 1) { storyEntry = P.steps[0]; entrySel.value = storyEntry; expanded.clear(); plaatAnchor = P.id; render(); } return; }
+      const opens = P.steps.filter(openable);
+      if (opens.length) { opens.forEach(id => expanded.add(id)); plaatAnchor = P.id; render(); }
+    });
+    place(grp, P.id);
+  }
+  // places
+  for (const p of places.values()) {
+    if (!pos.has(p.id)) continue;
+    const Q = pos.get(p.id), kind = placeKind(p.id);
+    const grp = el("g", {class: "tnode" + (p.kind === "ext" ? " ghost" : "") + (p.kind === "ref" ? " ref" : "") + (kind ? " world" : ""), "data-id": p.id}, ng);
+    if (kind) grp.style.setProperty("--k", `var(--k-${kind})`);
+    el("rect", {class: "bg", width: Q.w, height: Q.h, rx: kind ? 4 : 9}, grp);
+    if (kind) glyphAt(grp, kind, 11, Q.h / 2 - 7);
+    else if (p.kind !== "ref") el("rect", {x: 0, y: 0, width: 5, height: Q.h, rx: 2, fill: roleVar(p.role || "External")}, grp);
+    el("text", {class: "title", x: kind ? 32 : 15, y: Q.h / 2 + 4}, grp).textContent = p.label;
+    grp.addEventListener("click", () => {
+      plaatAnchor = p.id;
+      if (p.id.startsWith("e:")) { const id = p.id.slice(2); if (!storyEntry) { storyEntry = id; entrySel.value = id; expanded.clear(); render(); } else select(id); return; }
+      if (kind) { if (p.id.startsWith("w:Disk") || kind === "db") { const base = p.id.split(":").slice(0, 2).join(":"); if (refined.has(base)) refined.delete(base); else refined.add(base); render(); } return; }
+      const tid = p.type;
       if (members.has(tid) && !expandedFamilies.has(tid)) { expandedFamilies.add(tid); render(); }
       else if (byId.has(tid)) select(tid);
     });
+    place(grp, p.id);
   }
-  fit();
+  // keep the clicked thing where it was on the screen; zoom out only as far as the picture needs
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const q of pos.values()) { x0 = Math.min(x0, q.x); y0 = Math.min(y0, q.y); x1 = Math.max(x1, q.x + q.w); y1 = Math.max(y1, q.y + q.h); }
+  x0 = Math.min(x0, 20); y0 = Math.min(y0, 10);
+  const W = svg.node().clientWidth, H = svg.node().clientHeight, top = document.getElementById("crumbs").offsetHeight + 14, pad = 30;
+  const fitK = Math.max(0.08, Math.min((W - 2 * pad) / (x1 - x0), (H - top - 2 * pad) / (y1 - y0), 1.4));
+  const t0 = d3.zoomTransform(svg.node());
+  let t1;
+  if (!plaatFit && plaatAnchor && pos.has(plaatAnchor) && (prevPos.has(plaatAnchor) || prevPos.has(plaatAnchor.replace(/^n:/, "o:")))) {
+    const a0 = prevPos.get(plaatAnchor) || prevPos.get(plaatAnchor.replace(/^n:/, "o:")), a1 = pos.get(plaatAnchor), k = Math.min(t0.k, fitK);
+    let tx = t0.x + t0.k * a0.x - k * a1.x, ty = t0.y + t0.k * a0.y - k * a1.y;
+    // the whole picture in view when it fits
+    if (k * (x1 - x0) <= W - 2 * pad) tx = Math.min(Math.max(tx, pad - k * x0), W - pad - k * x1);
+    if (k * (y1 - y0) <= H - top - 2 * pad) ty = Math.min(Math.max(ty, top + pad - k * y0), H - pad - k * y1);
+    t1 = d3.zoomIdentity.translate(tx, ty).scale(k);
+  } else if (plaatFit || !pos.size) {
+    t1 = d3.zoomIdentity.translate(W / 2 - fitK * (x0 + x1) / 2, top + (H - top) / 2 - fitK * (y0 + y1) / 2).scale(fitK);
+  }
+  if (t1) { if (plaatFit || !DUR) svg.call(zoom.transform, t1); else svg.transition().duration(DUR).call(zoom.transform, t1); }
+  prevPos = pos; plaatAnchor = null; plaatFit = false;
 }
 // what the picture is a function of, each part undoable: the route, the opened steps, the open families, the split world boxes
 function crumbs() {
@@ -1055,14 +1236,19 @@ function selectArrows(p) {
 }
 
 // ---------- legend, search, render ----------
+let legendFolded = false; try { legendFolded = localStorage.getItem("atlas.legend") === "0"; } catch {}
 function legend() {
   const L = document.getElementById("legend"); L.innerHTML = "";
+  const head = html("button", "legend-head", legendFolded ? "legend ▸" : "legend ▾");
+  head.onclick = () => { legendFolded = !legendFolded; try { localStorage.setItem("atlas.legend", legendFolded ? "0" : "1"); } catch {} legend(); };
+  L.appendChild(head);
+  if (legendFolded) return;
   const roles = [...bands.top, ...roleOrder, ...bands.bottom].filter(r => allRoles.includes(r));
   const row = html("div", "row"); for (const r of roles) { const s = html("span", "sw"); const i = html("i"); i.style.background = roleVar(r); s.appendChild(i); s.appendChild(document.createTextNode(r)); row.appendChild(s); }
   L.appendChild(row);
   const row2 = html("div", "row");
   row2.innerHTML = view === "plaat"
-    ? `<span class="k">box = a place data rests: a type family (role strip), a file, a database, the screen, or where the route starts (grey strip) · (n) = a family, click to open</span><span class="k">pill = a step: arrows in from what it takes, out to what it hands on · ▸ = click to open its own steps · dashed = happens inside a closed step · dotted = a result handed back to the caller</span><span class="k">the bar at the top is everything the picture depends on · ✕ undoes</span>`
+    ? `<span class="k">${Object.keys(GLYPH).map(k => `<span class="sw">${glyphSvg(k)} ${KIND_NAME[k]}</span>`).join(" ")}</span><span class="k">left: what the route only reads · right: what it only writes · boxes with a coloured strip are types in memory; (n) is a family, click to open it</span><span class="k">pill = a step, from what it takes to what it hands on · ▸ opens it into a frame · a frame's title closes it · one of n: a call that runs one of n overrides, each branch in its own colour · dashed: happens inside a closed step · dotted: a result handed back</span>`
     : view === "story"
     ? `<span class="k">rows = steps in call order · line 1 = the step's own signature, in the author's names · line 2 = what its own body does</span><span class="k">dots = what the step reaches through everything below it · dot size = how often</span><span class="k">▸ expand a step into its own steps · click a name for the code</span>`
     : view === "arch"
