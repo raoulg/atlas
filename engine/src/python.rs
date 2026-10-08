@@ -555,6 +555,29 @@ fn link(modules: &IndexMap<String, Module>, store: &mut Store, root: &str) {
             infer_self_attrs(modules, store, root, id);
         }
     }
+    // methods that change their receiver, directly or through another such method on self
+    for _ in 0..5 {
+        let before = store.mutating.len();
+        for id in &ids {
+            let n = &store.nodes[id];
+            let (Some(cls), true) = (n.cls.clone(), n.kind == NodeKind::Method && n.name != "__init__") else { continue };
+            let m = &modules[&n.module];
+            let Some(body) = def_node(m, n).and_then(|d| d.child_by_field_name("body")) else { continue };
+            let on_self = |c: TsNode| {
+                let f = c.child_by_field_name("function").filter(|f| f.kind() == "attribute");
+                let obj = f.and_then(|f| f.child_by_field_name("object")).map(|o| text(o, &m.src));
+                let name = f.and_then(|f| f.child_by_field_name("attribute")).map(|a| text(a, &m.src)).unwrap_or("");
+                obj == Some("self") && method_of(store, &cls, name, 0).map_or(false, |t| store.mutating.contains(&t))
+            };
+            if changed_roots(body, &m.src, &on_self).contains("self") {
+                let id = id.clone();
+                store.mutating.insert(id);
+            }
+        }
+        if store.mutating.len() == before {
+            break;
+        }
+    }
     // signatures -> takes / returns; bodies -> calls / instantiates / boundaries
     for id in &ids {
         let (kind, module) = (store.nodes[id].kind, store.nodes[id].module.clone());
@@ -588,26 +611,71 @@ fn link(modules: &IndexMap<String, Module>, store: &mut Store, root: &str) {
     }
 }
 
+/// Typed parameters that are classes of the package, by name: `graph: Graph` -> Graph.
+fn param_types(m: &Module, d: TsNode, modules: &IndexMap<String, Module>, nodes: &IndexMap<String, Node>, root: &str) -> HashMap<String, String> {
+    let mut out = HashMap::new();
+    let Some(pn) = d.child_by_field_name("parameters") else { return out };
+    for p in named_children(pn) {
+        // `typed_parameter` carries its identifier as a plain child, `typed_default_parameter` as a field
+        let name = p.child_by_field_name("name").or_else(|| named_children(p).into_iter().find(|c| c.kind() == "identifier"));
+        if let (Some(name), Some(t)) = (name, p.child_by_field_name("type")) {
+            for tn in type_names(Some(t), &m.src) {
+                if let Some(r) = resolve(m, &tn, modules, nodes, root).filter(|r| !r.starts_with("ext:")) {
+                    if nodes.get(&r).map_or(false, |x| x.kind == NodeKind::Class) {
+                        out.insert(text(name, &m.src).to_string(), r);
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Methods that change their library receiver: `xs.append(..)`, `g.add_node(..)`.
+const MUTATORS: &[&str] = &[
+    "append", "extend", "insert", "remove", "pop", "clear", "update", "add", "discard", "setdefault", "sort", "reverse",
+    "popitem", "add_node", "add_edge", "add_nodes_from", "add_edges_from", "remove_node", "remove_edge", "push",
+];
+
+/// The name a chain like `self.items[0].x` starts from.
+fn root_name<'a>(n: TsNode, src: &'a [u8]) -> Option<&'a str> {
+    match n.kind() {
+        "identifier" => Some(text(n, src)),
+        "attribute" => root_name(n.child_by_field_name("object")?, src),
+        "subscript" => root_name(n.child_by_field_name("value")?, src),
+        _ => None,
+    }
+}
+
+/// The names whose objects a body changes in place: the root of every assignment to an
+/// attribute or item (`self.x = ..`, `p.items[k] = ..`), and of every call to a mutator
+/// (`self.nodes.append(..)`) or to a method known to change its receiver. Changing a part
+/// changes the whole.
+fn changed_roots<'a>(body: TsNode, src: &'a [u8], mutating: &dyn Fn(TsNode) -> bool) -> HashSet<&'a str> {
+    let mut out = HashSet::new();
+    for a in walk(body, &["assignment", "augmented_assignment"]) {
+        if let Some(left) = a.child_by_field_name("left").filter(|l| matches!(l.kind(), "attribute" | "subscript")) {
+            out.extend(root_name(left, src));
+        }
+    }
+    for c in walk(body, &["call"]) {
+        let Some(f) = c.child_by_field_name("function").filter(|f| f.kind() == "attribute") else { continue };
+        let Some(obj) = f.child_by_field_name("object") else { continue };
+        let name = f.child_by_field_name("attribute").map(|a| text(a, src)).unwrap_or("");
+        if MUTATORS.contains(&name) || mutating(c) {
+            out.extend(root_name(obj, src));
+        }
+    }
+    out
+}
+
 fn infer_self_attrs(modules: &IndexMap<String, Module>, store: &mut Store, root: &str, init_id: &str) {
     let n = store.nodes[init_id].clone();
     let Some(cls) = n.cls.clone() else { return };
     let m = &modules[&n.module];
     let Some(d) = def_node(m, &n) else { return };
     let src = &m.src;
-    let mut ptypes: HashMap<String, String> = HashMap::new();
-    if let Some(pn) = d.child_by_field_name("parameters") {
-        for p in named_children(pn) {
-            // `typed_parameter` carries its identifier as a plain child, `typed_default_parameter` as a field
-            let name = p.child_by_field_name("name").or_else(|| named_children(p).into_iter().find(|c| c.kind() == "identifier"));
-            if let (Some(name), Some(t)) = (name, p.child_by_field_name("type")) {
-                for tn in type_names(Some(t), src) {
-                    if let Some(r) = resolve(m, &tn, modules, &store.nodes, root).filter(|r| !r.starts_with("ext:")) {
-                        ptypes.insert(text(name, src).to_string(), r);
-                    }
-                }
-            }
-        }
-    }
+    let ptypes = param_types(m, d, modules, &store.nodes, root);
     let Some(body) = d.child_by_field_name("body") else { return };
     let mut found: Vec<(String, String)> = vec![];
     for a in walk(body, &["assignment"]) {
@@ -732,8 +800,9 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut Store, root: &str,
     let body = if n.kind == NodeKind::Module { Some(d) } else { d.child_by_field_name("body") };
     let Some(body) = body else { return };
     let cls_attrs = n.cls.as_ref().and_then(|c| store.classes.get(c)).map(|c| c.attr_types.clone());
-    // locals assigned from a constructor or from a function whose return type is a class
-    let mut locals: HashMap<String, String> = HashMap::new();
+    // typed parameters, and locals assigned from a constructor or from a function whose return type is a class
+    let params = if n.kind == NodeKind::Module { HashMap::new() } else { param_types(m, d, modules, &store.nodes, root) };
+    let mut locals: HashMap<String, String> = params.clone();
     if n.kind != NodeKind::Module {
         for a in walk(body, &["assignment"]) {
             let (Some(left), Some(right)) = (a.child_by_field_name("left"), a.child_by_field_name("right")) else { continue };
@@ -845,6 +914,23 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut Store, root: &str,
                     let payload = payload_of(c, src, &what, "arguments", &locals);
                     touches.push(Touch { kind: f.kind.into(), what, payload, op, artifact: f.artifact, dir: f.dir.into(), n: 1 });
                 }
+            }
+        }
+    }
+    // what the body changes of its inputs: `T -> T` for the receiver or a parameter it changes;
+    // a value the body constructs itself is built, not changed
+    if n.kind != NodeKind::Module {
+        let receiver_mutates = |c: TsNode| {
+            let f = c.child_by_field_name("function").filter(|f| f.kind() == "attribute");
+            let obj = f.and_then(|f| f.child_by_field_name("object")).filter(|o| o.kind() == "identifier").map(|o| text(o, src));
+            let name = f.and_then(|f| f.child_by_field_name("attribute")).map(|a| text(a, src)).unwrap_or("");
+            let ty = obj.and_then(|o| if o == "self" { n.cls.clone() } else { locals.get(o).cloned() });
+            ty.and_then(|t| method_of(store, &t, name, 0)).map_or(false, |t| store.mutating.contains(&t))
+        };
+        for r in changed_roots(body, src, &receiver_mutates) {
+            let ty = if r == "self" { n.cls.clone().filter(|_| n.name != "__init__") } else { params.get(r).cloned() };
+            if let Some(t) = ty {
+                new_edges.push((t, EdgeKind::Mutates));
             }
         }
     }

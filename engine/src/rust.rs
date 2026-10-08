@@ -710,13 +710,26 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut Store, crate_ids: 
     let Some(body) = d.child_by_field_name("body") else { return };
     // typed parameters give receivers a type: `store.add_edge(..)` with `store: &mut Store`
     let mut locals: HashMap<String, String> = HashMap::new();
+    // `&mut T` and `&mut self` hand the value back changed: `T -> T`
+    let mut mutates: Vec<String> = vec![];
     if let Some(pn) = d.child_by_field_name("parameters") {
-        for p in named_children(pn).into_iter().filter(|p| p.kind() == "parameter") {
+        for p in named_children(pn) {
+            if p.kind() == "self_parameter" && text(p, src).contains("mut") {
+                mutates.extend(n.cls.clone());
+                continue;
+            }
+            if p.kind() != "parameter" {
+                continue;
+            }
             let Some(pat) = p.child_by_field_name("pattern") else { continue };
             let pname = text(pat, src).trim_start_matches("mut ").to_string();
+            let by_mut_ref = p.child_by_field_name("type").map_or(false, |t| text(t, src).starts_with("&mut"));
             for t in type_names(p.child_by_field_name("type"), src) {
                 if let Some(r) = resolve(m, &t, modules, &store.nodes, crate_ids).filter(|r| !r.starts_with("ext:")) {
                     if store.nodes.get(&r).map_or(false, |x| x.kind == NodeKind::Class) {
+                        if by_mut_ref {
+                            mutates.push(r.clone());
+                        }
                         locals.insert(pname.clone(), r);
                         break;
                     }
@@ -878,6 +891,9 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut Store, crate_ids: 
     }
     for (t, kind, via) in new_edges {
         store.add_edge(id, &t, kind, via);
+    }
+    for t in mutates {
+        store.add_edge(id, &t, EdgeKind::Mutates, None);
     }
     for u in unresolved {
         *store.unresolved.entry(u).or_insert(0) += 1;

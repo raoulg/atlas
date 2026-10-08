@@ -18,6 +18,10 @@ def build_graph(text: str) -> Graph:
     return g
 
 
+def enrich(graph: Graph, extra: Node) -> None:
+    graph.add(extra)
+
+
 class Pipeline:
     def __init__(self, sink: DuckSink):
         self.sink = sink

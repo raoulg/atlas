@@ -222,7 +222,7 @@ const ROOT = D.root + ".";
 const short = id => id.startsWith(ROOT) ? id.slice(ROOT.length) : id.replace(/^ext:/, "");
 const roleVar = r => `var(--role-${r})`;
 const isPrivate = n => n.name.startsWith("_");
-const KG = {imports:"imports", calls:"calls", instantiates:"calls", takes:"types", returns:"types", has:"types", inherits:"inherits"};
+const KG = {imports:"imports", calls:"calls", instantiates:"calls", takes:"types", returns:"types", has:"types", mutates:"types", inherits:"inherits"};
 const NS = "http://www.w3.org/2000/svg";
 const el = (tag, attrs={}, parent) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; };
 const html = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
@@ -599,9 +599,10 @@ function ownSig(n) {
   let ret = n.returns || "";
   const m = ret.match(/^Result<(.*)>$/); if (m) ret = m[1];
   ret = ret.replace(/\b(std|core)::[a-z_:]+::/g, "").replace(/&(mut )?/g, "");
-  if (!names.length && !ret) return "";
+  const changes = mutatesOf(n.id).map(t => byId.get(t)?.name || t);
+  if (!names.length && !ret && !changes.length) return "";
   const cut = (t, k) => t.length > k ? t.slice(0, k - 1) + "…" : t;
-  return `(${cut(names.join(", "), 44)})` + (ret && ret !== "None" && ret !== "()" ? ` → ${cut(ret, 28)}` : "");
+  return `(${cut(names.join(", "), 44)})` + (ret && ret !== "None" && ret !== "()" ? ` → ${cut(ret, 28)}` : "") + (changes.length ? `  ↻ ${changes.join(", ")}` : "");
 }
 const VERB = {net: "calls", disk_read: "reads", disk: "opens", disk_write: "writes", db_memgraph: "queries Memgraph", db_duckdb: "queries DuckDB", db_sqlite: "queries SQLite", db_sql: "queries SQL", llm: "asks LLM", model: "runs model", process: "runs", screen: "prints"};
 // the verb comes from the operation when it says more than the kind
@@ -802,17 +803,8 @@ function routeSteps() {
 }
 // everything a closed step touches, anywhere below it
 const reachTouches = id => reach(id).touches;
-// `&mut T` hands T back changed, so T is in the codomain too (Rust says so in the signature; Python does not)
-function mutated(f) {
-  const res = [];
-  for (const p of f.params || []) {
-    if (/^&mut self\b/.test(p) && f.cls) { res.push(f.cls); continue; }
-    const m = p.match(/:\s*&mut\s+([\w:]+)/); if (!m) continue;
-    const t = m[1].split("::").pop();
-    for (const x of typesOf(f.id).takes) if (bare(x) === t) res.push(x);
-  }
-  return res;
-}
+// what a step changes in place is in its codomain too: `T -> T`
+const mutatesOf = id => [...new Set((out.get(id) || []).filter(e => e.kind === "mutates").map(e => e.dst))];
 // where a route comes from: the command typed, the request made, the tool called
 const ENTRY_PLACE = {cli: l => `$ ${l}`, make: l => `$ make ${l}`, script: l => `$ python ${l}`, notebook: l => `notebook ${l}`, route: l => l, mcp: l => `MCP ${l}`, test: l => `test ${l}`};
 const entryPlace = id => { const e = byId.get(id).entry; return ["e:" + id, ENTRY_PLACE[e.kind](e.label), "entry", "", null]; };
@@ -855,7 +847,7 @@ async function renderPlaat() {
       if (f.cls && byId.has(f.cls)) dom.push([typePlace(f.cls), false]);  // a method's receiver is part of its domain
       for (const x of typesOf(f.id).takes) dom.push([typePlace(x), false]);
       for (const x of typesOf(f.id).returns) cod.push([typePlace(x), false]);
-      for (const x of mutated(f)) cod.push([typePlace(x), false]);
+      for (const x of mutatesOf(f.id)) cod.push([typePlace(x), false]);
       // an open step's body consumes what it instantiates and what its callees hand back
       if (s.own) for (const c of callees(f.id)) { const cn = byId.get(c); if (cn.kind === "class") dom.push([typePlace(c), false]); else for (const r of typesOf(c).returns) dom.push([typePlace(r), false]); }
     }

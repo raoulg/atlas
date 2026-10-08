@@ -101,6 +101,16 @@ fn boundaries_are_tagged() {
     assert_eq!(b("fixture.cli.cmd_report").get("screen"), Some(&1), "click.echo");
 }
 
+/// Changing an input in place is an arrow from its type to itself; building a new value is not.
+#[test]
+fn mutation_is_an_endomorphism() {
+    let g = fixture();
+    let m = edges(&g, EdgeKind::Mutates);
+    assert!(m.contains(&("fixture.schema.Graph.add".into(), "fixture.schema.Graph".into())), "self.nodes.append");
+    assert!(m.contains(&("fixture.build.enrich".into(), "fixture.schema.Graph".into())), "graph.add(..) on a parameter");
+    assert!(!m.iter().any(|(s, _)| s == "fixture.build.build_graph"), "g = Graph(); g.add(..) builds, it does not change an input");
+}
+
 /// Where data rests is named as precisely as the code allows: a literal file, else its format;
 /// a database statement reads or writes a table.
 #[test]
@@ -158,6 +168,8 @@ fn rust_workspace_parses() {
     assert!(arts("atlas-engine.entries.read_makefile").contains(&("disk_read".into(), "Makefile".into())));
     assert!(arts("atlas-engine.language.Python.detect").contains(&("disk_read".into(), "pyproject.toml".into())), "repo.join(..).exists()");
     assert!(g.node("atlas.view").unwrap().boundaries.contains_key("screen"), "eprintln!");
+    let m = edges(&g, EdgeKind::Mutates);
+    assert!(m.contains(&("atlas-engine.model.Graph.recount".into(), "atlas-engine.model.Graph".into())), "&mut self");
     // the declared picture: parse -> lens -> layout, model underneath
     assert_eq!(g.roles.order, vec!["Parse", "Lens", "Layout"]);
     assert_eq!(g.node("atlas-engine.lens.Quotient").unwrap().role, "Lens");

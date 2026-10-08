@@ -33,6 +33,8 @@ pub struct Store {
     pub files: BTreeMap<String, String>,
     /// Module id -> local name -> fully qualified target, kept for re-export lookups.
     pub bindings: HashMap<String, HashMap<String, String>>,
+    /// Methods that change their receiver in place.
+    pub mutating: HashSet<String>,
 }
 
 impl Store {
