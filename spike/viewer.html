@@ -839,7 +839,8 @@ async function renderPlaat() {
   for (const s of steps) {
     const f = byId.get(s.id); if (!f) continue;
     const dom = [], cod = [];  // [place, reach]: reach = touched somewhere below a closed step, not by the step itself
-    if (f.entry && (s.id === storyEntry || !storyEntry)) dom.push([entryPlace(s.id), false]);
+    // a route starts at its entry; in the overview the pill is the entry, so routes that touch the same places are one pill
+    if (f.entry && s.id === storyEntry) dom.push([entryPlace(s.id), false]);
     if (f.kind === "class") {
       cod.push([typePlace(f.id), false]);
       if (byId.has(f.id + ".__init__")) for (const x of typesOf(f.id + ".__init__").takes) dom.push([typePlace(x), false]);
@@ -879,7 +880,7 @@ async function renderPlaat() {
     keep.clear(); [...places.keys()].filter(id => id.startsWith("w:")).forEach(id => keep.add(id));
     [...places.keys()].filter(id => !id.startsWith("w:")).sort((a, b) => (involvement.get(b) || 0) - (involvement.get(a) || 0)).slice(0, 16).forEach(id => keep.add(id));
   }
-  const stepName = id => { const n = byId.get(id); if (n.kind === "class") return n.name + "()"; if (n.make) return n.name; return n.cls ? `${typeLabel(n.cls)}.${n.name}` : n.name; };
+  const stepName = id => { const n = byId.get(id); if (!storyEntry && n.entry) return ENTRY_PLACE[n.entry.kind](n.entry.label); if (n.kind === "class") return n.name + "()"; if (n.make) return n.name; return n.cls ? `${typeLabel(n.cls)}.${n.name}` : n.name; };
   const openable = id => id !== storyEntry && !expanded.has(id) && callees(id).length > 0;
   const pillLabel = P => {
     const ns = [...new Set(P.steps.map(stepName))], text = ns.length <= 2 ? ns.join(", ") : `${ns.slice(0, 2).join(", ")} +${ns.length - 2}`;
