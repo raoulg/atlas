@@ -140,6 +140,9 @@ pub fn infer(g: &Graph) -> Architecture {
     rules.push((root.to_string(), "Root".into()));
     rules.push(("scripts".into(), "Scripts".into()));
     rules.push(("_root".into(), "Scripts".into()));
+    for d in ["examples", "demo", "demos"] {
+        rules.push((d.into(), "Scripts".into()));
+    }
     let mut arch = Architecture {
         order: vec![],
         bands: Bands { top: vec!["Root".into(), "Scripts".into()], bottom: vec![] },

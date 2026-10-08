@@ -54,6 +54,8 @@ pub enum EntryKind {
     Route,
     Mcp,
     Notebook,
+    /// A name a package or crate exports at its root: a route into it as a library.
+    Export,
     Test,
 }
 

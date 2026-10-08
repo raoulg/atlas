@@ -659,10 +659,13 @@ function ownEffects(n) {
   const parts = [...groups].map(([v, items]) => v + (items.length ? " " + items.slice(0, 3).join(" | ") + (items.length > 3 ? ` | +${items.length - 3}` : "") : ""));
   return parts.slice(0, 4).join(" · ") + (parts.length > 4 ? ` · and ${parts.length - 4} more` : "");
 }
-const KIND_LABEL = {make: "Make", cli: "CLI", script: "Script", route: "API", mcp: "MCP", notebook: "Notebook", test: "Test"}, KIND_ORDER = ["make", "cli", "script", "notebook", "route", "mcp", "test"];
+const KIND_LABEL = {make: "Make", cli: "CLI", script: "Script", route: "API", mcp: "MCP", notebook: "Notebook", export: "Library", test: "Test"}, KIND_ORDER = ["make", "cli", "export", "script", "notebook", "route", "mcp", "test"];
+// an exported class is a route whose steps are its public methods, in source order
+const publicMethods = id => (out.get(id) || []).filter(e => e.kind === "contains").map(e => e.dst).filter(m => byId.get(m)?.kind === "method" && !byId.get(m).name.startsWith("_"));
 const entries = [...byId.values()].filter(n => n.entry).sort((a, b) => (KIND_ORDER.indexOf(a.entry.kind) - KIND_ORDER.indexOf(b.entry.kind)) || a.entry.label.localeCompare(b.entry.label));
 function callees(id) {
   const n = byId.get(id); if (n && n.make) return n.make.calls.filter(c => byId.has(c));
+  if (n && n.kind === "class" && n.entry) return publicMethods(id);
   const seen = new Set(), res = [];
   for (const e of (out.get(id) || [])) { if (e.kind !== "calls" && e.kind !== "instantiates") continue; if (seen.has(e.dst) || !byId.has(e.dst)) continue; seen.add(e.dst); res.push(e.dst); }
   if (n && n.cls) for (const o of overrides(n)) if (!seen.has(o)) { seen.add(o); res.push(o); }
@@ -826,7 +829,7 @@ const reachTouches = id => reach(id).touches;
 // what a step changes in place is in its codomain too: `T -> T`
 const mutatesOf = id => [...new Set((out.get(id) || []).filter(e => e.kind === "mutates").map(e => e.dst))];
 // where a route comes from: the command typed, the request made, the tool called
-const ENTRY_PLACE = {cli: l => `$ ${l}`, make: l => `$ make ${l}`, script: l => `$ python ${l}`, notebook: l => `notebook ${l}`, route: l => l, mcp: l => `MCP ${l}`, test: l => `test ${l}`};
+const ENTRY_PLACE = {cli: l => `$ ${l}`, make: l => `$ make ${l}`, script: l => `$ python ${l}`, notebook: l => `notebook ${l}`, route: l => l, mcp: l => `MCP ${l}`, export: l => `${D.root}.${l}`, test: l => `test ${l}`};
 const entryPlace = id => { const e = byId.get(id).entry; return {id: "e:" + id, label: ENTRY_PLACE[e.kind](e.label), kind: "world"}; };
 // one glyph and one hue per kind of place: where a route starts, files, databases, the web, the screen, programs, models
 const GLYPH = {
@@ -890,7 +893,13 @@ async function renderPlaat() {
     const f = byId.get(id), dom = [], cod = [];  // [placeId, reach]
     if (!f) return {dom, cod};
     if (isAnchor && f.entry) dom.push([addPlace(entryPlace(id)), false]);
-    if (f.kind === "class") {
+    if (f.kind === "class" && f.entry) {
+      // a library class, closed: what its public methods take and hand on together, the class itself aside
+      if (!own) {
+        const self = "t:" + placeOfType(f.id);
+        for (const m of publicMethods(f.id)) { const r = morphism(m, false, false); r.dom.forEach((v, k) => k !== self && dom.push([k, v])); r.cod.forEach((v, k) => k !== self && cod.push([k, v])); }
+      }
+    } else if (f.kind === "class") {
       cod.push([addPlace(typePlace(f.id)), false]);
       if (byId.has(f.id + ".__init__")) for (const x of typesOf(f.id + ".__init__").takes) dom.push([addPlace(typePlace(x)), false]);
     } else {
@@ -916,21 +925,24 @@ async function renderPlaat() {
   const pills = new Map(), frames = new Map();  // id -> {...}
   const stepName = id => { const n = byId.get(id); if (!storyEntry && n.entry) return ENTRY_PLACE[n.entry.kind](n.entry.label); if (n.kind === "class") return n.name + "()"; if (n.make) return n.name; return n.cls ? `${typeLabel(n.cls)}.${n.name}` : n.name; };
   const openable = id => id !== storyEntry && !expanded.has(id) && callees(id).length > 0;
-  const build = (node, parent) => {
+  // an exported class has no body of its own: its route starts at each public method the caller can call
+  const libraryClass = id => byId.get(id)?.kind === "class" && !!byId.get(id).entry;
+  const build = (node, parent, caller) => {
     if (node.open) {
       const fid = "n:" + node.id, kids = [];
       frames.set(fid, {id: fid, step: node.id, parent, hue: node.hue, choice: node.choice, anchor: node.id === storyEntry, title: (node.id === storyEntry ? entryTitle(node.id) : stepName(node.id)) + (node.choice ? " · one of" : "")});
-      const own = morphism(node.id, true, node.id === storyEntry);
+      const own = libraryClass(node.id) ? {dom: new Map(), cod: new Map()} : morphism(node.id, true, node.id === storyEntry);
       const back = [];
-      for (const k of node.kids) { const r = build(k, fid); if (r) back.push(r); }
-      if (own.dom.size || own.cod.size || back.length) {
+      for (const k of node.kids) { const r = build(k, fid, libraryClass(node.id) && node.id === storyEntry ? node.id : null); if (r) back.push(r); }
+      if (own.dom.size || own.cod.size || (back.length && !libraryClass(node.id))) {
         const oid = "o:" + node.id;
         pills.set(oid, {id: oid, steps: [node.id], D: own.dom, C: own.cod, parent: fid, hue: node.hue, own: true});
         for (const b of back) b.backTo = oid;
       }
       return null;
     }
-    const m = morphism(node.id, !!node.ownBody, false), hb = parent && handsBack(node.id, m.cod);
+    const m = morphism(node.id, !!node.ownBody, false), hb = parent && !caller && handsBack(node.id, m.cod);
+    if (caller) m.dom.set(addPlace(entryPlace(caller)), false);
     if (!m.dom.size && !m.cod.size && !hb) return null;
     const key = (parent || "") + "|" + [...m.dom.keys()].sort() + ">" + [...m.cod.keys()].sort() + "|" + (node.hue || "") + (hb ? "^" : "");
     const P = pills.get(key);

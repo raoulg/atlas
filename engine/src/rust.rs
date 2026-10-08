@@ -315,6 +315,11 @@ pub fn parse(repo: &Path) -> Result<(GraphBuilder, String)> {
 
 // ---------- pass 1: symbols ----------
 
+/// A `pub` item at the root of a library crate is a route into it.
+fn exported(m: &Module, item: tree_sitter::Node, bins: &HashSet<String>, src: &[u8]) -> bool {
+    m.is_root && !bins.contains(&m.krate) && named_children(item).iter().any(|c| c.kind() == "visibility_modifier" && text(*c, src) == "pub")
+}
+
 fn collect_symbols(m: &mut Module, store: &mut GraphBuilder, bins: &HashSet<String>) {
     let src = &m.src;
     let file = m.path.to_string_lossy().to_string();
@@ -331,6 +336,8 @@ fn collect_symbols(m: &mut Module, store: &mut GraphBuilder, bins: &HashSet<Stri
                     Some(Entry { kind: EntryKind::Test, label: name.clone() })
                 } else if name == "main" && m.is_root && bins.contains(&m.krate) {
                     Some(Entry { kind: EntryKind::Cli, label: m.krate.clone() })
+                } else if exported(m, item, bins, src) {
+                    Some(Entry { kind: EntryKind::Export, label: name.clone() })
                 } else {
                     None
                 };
@@ -395,6 +402,7 @@ fn collect_symbols(m: &mut Module, store: &mut GraphBuilder, bins: &HashSet<Stri
                     }
                 }
                 store.classes.insert(nid.clone(), ClassInfo { bases: vec![], resolved: vec![], attr_types: BTreeMap::new(), fields });
+                let entry = exported(m, item, bins, src).then(|| Entry { kind: EntryKind::Export, label: name.clone() });
                 store.add_node(Node {
                     id: nid.clone(),
                     kind: NodeKind::Class,
@@ -405,6 +413,7 @@ fn collect_symbols(m: &mut Module, store: &mut GraphBuilder, bins: &HashSet<Stri
                     doc: doc_of(item, src),
                     decorators: attrs_of(item, src),
                     methods,
+                    entry,
                     ..Default::default()
                 });
                 store.add_edge(&m.id, &nid, EdgeKind::Contains, None);

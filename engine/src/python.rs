@@ -245,7 +245,8 @@ pub fn parse(pkg_dir: &Path, project_root: Option<&Path>) -> Result<(GraphBuilde
     // scripts next to the package (repo root and scripts/) are routes into it
     if let Some(root_dir) = project_root {
         let mut extras: Vec<PathBuf> = vec![];
-        for dir in [root_dir.to_path_buf(), root_dir.join("scripts")] {
+        // scripts next to the package, and the examples that wire it together
+        for dir in [root_dir.to_path_buf(), root_dir.join("scripts"), root_dir.join("examples"), root_dir.join("demo"), root_dir.join("demos")] {
             let Ok(rd) = std::fs::read_dir(&dir) else { continue };
             let mut ps: Vec<PathBuf> = rd
                 .flatten()
@@ -258,7 +259,10 @@ pub fn parse(pkg_dir: &Path, project_root: Option<&Path>) -> Result<(GraphBuilde
         for p in extras {
             let rel = p.strip_prefix(root_dir).unwrap_or(&p).to_path_buf();
             let stem = p.file_stem().and_then(|s| s.to_str()).unwrap_or("script").to_string();
-            let mid = if rel.starts_with("scripts") { format!("scripts.{stem}") } else { format!("_root.{stem}") };
+            let mid = match rel.parent().and_then(|d| d.to_str()).filter(|d| !d.is_empty()) {
+                Some(d) => format!("{d}.{stem}"),
+                None => format!("_root.{stem}"),
+            };
             let m = load_module(&mut parser, &mid, &p, false)?;
             store.files.insert(p.to_string_lossy().to_string(), String::from_utf8_lossy(&m.src).to_string());
             store.add_node(Node {
@@ -286,6 +290,7 @@ pub fn parse(pkg_dir: &Path, project_root: Option<&Path>) -> Result<(GraphBuilde
         store.bindings.insert(m.id.clone(), m.bindings.clone());
     }
     link(&modules, &mut store, &root);
+    mark_exports(&modules, &mut store, &root);
     Ok((store, root))
 }
 
@@ -716,6 +721,25 @@ fn infer_self_attrs(modules: &IndexMap<String, Module>, store: &mut GraphBuilder
     for (attr, t) in found {
         store.classes.entry(cls.clone()).or_default().attr_types.insert(attr.clone(), t.clone());
         store.add_edge(&cls, &t, EdgeKind::Has, Some(attr));
+    }
+}
+
+/// What a package exports at its root is a route into it: the names in `__all__` of its
+/// `__init__.py`, else the public names that module imports from the package or defines.
+fn mark_exports(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, root: &str) {
+    let Some(m) = modules.get(root) else { return };
+    let declared = top_assignments(m).into_iter().find_map(|a| {
+        let left = a.child_by_field_name("left").filter(|l| text(*l, &m.src) == "__all__")?;
+        Some(literals(a.child_by_field_name("right").unwrap_or(left), &m.src, &["string"]))
+    });
+    let names: Vec<String> = declared.unwrap_or_else(|| m.symbols.keys().chain(m.bindings.keys()).filter(|n| !n.starts_with('_')).cloned().collect());
+    for name in names {
+        let Some(t) = m.symbols.get(&name).or_else(|| m.bindings.get(&name)).filter(|t| t.starts_with(&format!("{root}."))) else { continue };
+        if let Some(n) = store.nodes.get_mut(t) {
+            if matches!(n.kind, NodeKind::Function | NodeKind::Class) && n.entry.is_none() {
+                n.entry = Some(Entry { kind: EntryKind::Export, label: name.clone() });
+            }
+        }
     }
 }
 

@@ -81,6 +81,10 @@ fn entry_points_from_decorators_scripts_and_makefile() {
     assert_eq!(entry("fixture.cli.build").label, "build");
     assert_eq!(entry("fixture.cli.cmd_report").label, "report");
     assert_eq!(entry("fixture.cli.main").label, "fixture", "[project.scripts]");
+    // what the package exports at its root (`__all__`) are routes into it as a library
+    assert_eq!(entry("fixture.schema.Graph").kind, EntryKind::Export);
+    assert_eq!(entry("fixture.sinks.base.Sink").label, "Sink");
+    assert!(g.node("fixture.build.build_graph").unwrap().entry.is_none(), "not exported");
     let build = g.make.iter().find(|t| t.label == "build").unwrap();
     assert_eq!(build.doc, "build the thing");
     assert_eq!(build.calls, vec!["fixture.cli.build".to_string(), "make:report".to_string()]);
@@ -151,6 +155,8 @@ fn rust_workspace_parses() {
     }
     assert!(ids.contains("atlas-engine.model.Graph") && ids.contains("atlas-engine.lens.Lens"));
     assert_eq!(g.node("atlas.main").unwrap().entry.as_ref().unwrap().kind, EntryKind::Cli);
+    assert_eq!(g.node("atlas-engine.analyze").unwrap().entry.as_ref().unwrap().kind, EntryKind::Export, "pub fn at the root of a library crate");
+    assert!(g.node("atlas-engine.lens.hide_private").unwrap().entry.is_none(), "pub in a module is not the crate's root");
     let inh = edges(&g, EdgeKind::Inherits);
     assert!(inh.contains(&("atlas-engine.lens.Restrict".into(), "atlas-engine.lens.Lens".into())), "impl Lens for Restrict");
     let calls = edges(&g, EdgeKind::Calls);
