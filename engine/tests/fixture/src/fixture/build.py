@@ -1,4 +1,4 @@
-from typing import Union
+from typing import Type, TypeVar, Union
 
 import pandas as pd
 import requests
@@ -6,6 +6,9 @@ import requests
 from fixture import Graph
 from fixture.schema import Node
 from fixture.sinks import DuckSink
+from fixture.sinks.base import Sink
+
+SinkT = TypeVar("SinkT", bound="Sink")
 
 
 def download(url: str) -> str:
@@ -45,3 +48,11 @@ Loaded = Union[Graph, Node]
 
 def load(path) -> Loaded:
     return READERS[path.suffix](path)
+
+
+def register(kind: Type[SinkT]) -> None:
+    pass
+
+
+def describe(graph: "Graph") -> "Node":
+    return Node(id=str(len(graph.nodes)))

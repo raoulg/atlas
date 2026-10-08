@@ -63,16 +63,27 @@ fn dotted(n: Option<TsNode>, src: &[u8]) -> Vec<String> {
 fn type_names(t: Option<TsNode>, src: &[u8]) -> Vec<Vec<String>> {
     let Some(t) = t else { return vec![] };
     let mut out = vec![];
-    for n in walk(t, &["identifier", "attribute"]) {
+    let mut keep = |parts: Vec<String>| {
+        if parts.last().map_or(false, |l| !BUILTIN_TYPES.contains(&l.as_str())) {
+            out.push(parts);
+        }
+    };
+    for n in walk(t, &["identifier", "attribute", "string"]) {
         if n.kind() == "identifier" && n.parent().map_or(false, |p| p.kind() == "attribute") {
             continue;
         }
-        let parts = dotted(Some(n), src);
-        if let Some(last) = parts.last() {
-            if !BUILTIN_TYPES.contains(&last.as_str()) {
-                out.push(parts);
+        if n.kind() == "string" {
+            // a quoted annotation is a forward reference: `"pd.DataFrame"`, `"List[Node]"`
+            let lit = text(n, src).trim_matches(|c| c == '"' || c == '\'');
+            for name in lit.split(|c: char| !(c.is_alphanumeric() || c == '_' || c == '.')).filter(|w| w.chars().next().map_or(false, |c| c.is_alphabetic() || c == '_')) {
+                keep(name.split('.').map(str::to_string).collect());
             }
+            continue;
         }
+        if n.parent().map_or(false, |p| p.kind() == "string" || p.kind() == "interpolation") {
+            continue;
+        }
+        keep(dotted(Some(n), src));
     }
     out
 }
@@ -750,14 +761,39 @@ fn type_aliases(modules: &IndexMap<String, Module>) -> HashMap<String, (String, 
     for (mid, m) in modules {
         for a in top_assignments(m) {
             let (Some(left), Some(right)) = (a.child_by_field_name("left"), a.child_by_field_name("right")) else { continue };
-            let is_type = match right.kind() {
-                "subscript" => matches!(dotted(right.child_by_field_name("value"), &m.src).last().map(String::as_str), Some("Union" | "Optional")),
-                "binary_operator" => text(right, &m.src).contains('|'),
-                _ => false,
-            };
-            if left.kind() == "identifier" && is_type {
-                out.insert(format!("{mid}.{}", text(left, &m.src)), (mid.clone(), type_names(Some(right), &m.src)));
+            if left.kind() != "identifier" {
+                continue;
             }
+            let names = match right.kind() {
+                "subscript" if matches!(dotted(right.child_by_field_name("value"), &m.src).last().map(String::as_str), Some("Union" | "Optional")) => type_names(Some(right), &m.src),
+                "binary_operator" if text(right, &m.src).contains('|') => type_names(Some(right), &m.src),
+                // `T = TypeVar("T", bound="TransformBase")` stands for its bound, `TypeVar("T", A, B)` for its constraints
+                "call" if dotted(right.child_by_field_name("function"), &m.src).last().map(String::as_str) == Some("TypeVar") => typevar_names(right, &m.src),
+                _ => continue,
+            };
+            out.insert(format!("{mid}.{}", text(left, &m.src)), (mid.clone(), names));
+        }
+    }
+    out
+}
+
+/// What a `TypeVar` ranges over: its bound, else its constraints; a bound may be a string.
+fn typevar_names(call: TsNode, src: &[u8]) -> Vec<Vec<String>> {
+    let Some(args) = call.child_by_field_name("arguments") else { return vec![] };
+    let mut out = vec![];
+    for (i, a) in named_children(args).into_iter().enumerate() {
+        let value = match a.kind() {
+            "keyword_argument" if a.child_by_field_name("name").map(|n| text(n, src)) == Some("bound") => a.child_by_field_name("value"),
+            "keyword_argument" => None,
+            _ if i > 0 => Some(a),
+            _ => None,
+        };
+        let Some(v) = value else { continue };
+        if v.kind() == "string" {
+            let lit = text(v, src).trim_matches(|c| c == '"' || c == '\'');
+            out.push(lit.split('.').map(str::to_string).collect());
+        } else {
+            out.extend(type_names(Some(v), src));
         }
     }
     out

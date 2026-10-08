@@ -133,6 +133,10 @@ fn files_and_tables_are_places() {
     let returns = edges(&g, EdgeKind::Returns);
     assert!(returns.contains(&("fixture.build.load".into(), "fixture.schema.Graph".into())), "Loaded = Union[Graph, Node]");
     assert!(returns.contains(&("fixture.build.load".into(), "fixture.schema.Node".into())));
+    let takes = edges(&g, EdgeKind::Takes);
+    assert!(takes.contains(&("fixture.build.register".into(), "fixture.sinks.base.Sink".into())), "Type[SinkT], SinkT = TypeVar(bound=\"Sink\")");
+    assert!(takes.contains(&("fixture.build.describe".into(), "fixture.schema.Graph".into())), "a quoted annotation is a forward reference");
+    assert!(returns.contains(&("fixture.build.describe".into(), "fixture.schema.Node".into())));
 }
 
 #[test]
