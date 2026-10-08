@@ -161,8 +161,8 @@ fn rust_workspace_parses() {
     assert!(returns.contains(&("atlas-engine.analyze".into(), "atlas-engine.model.Graph".into())), "`pub use model::*` resolves Graph");
     // `let lang = language::detect(..)?; lang.parse(..)`: a local typed by the callee's return
     assert!(calls.contains(&("atlas-engine.analyze".into(), "atlas-engine.language.Language.parse".into())));
-    // typed parameters give receivers a type: `store.add_edge(..)` with `store: &mut Store`
-    assert!(calls.contains(&("atlas-engine.python.collect_symbols".into(), "atlas-engine.store.Store.add_edge".into())));
+    // typed parameters give receivers a type: `store.add_edge(..)` with `store: &mut GraphBuilder`
+    assert!(calls.contains(&("atlas-engine.python.collect_symbols".into(), "atlas-engine.builder.GraphBuilder.add_edge".into())));
     assert!(g.node("atlas-engine.rust.parse").unwrap().boundaries.get("disk_read").is_some(), "walkdir and fs::read");
     let arts = |id: &str| g.node(id).unwrap().touches.iter().map(|t| (t.kind.clone(), t.artifact.clone())).collect::<HashSet<_>>();
     assert!(arts("atlas-engine.entries.read_makefile").contains(&("disk_read".into(), "Makefile".into())));
@@ -174,6 +174,30 @@ fn rust_workspace_parses() {
     assert_eq!(g.roles.order, vec!["Parse", "Lens", "Layout"]);
     assert_eq!(g.node("atlas-engine.lens.Quotient").unwrap().role, "Lens");
     assert_eq!(g.node("atlas-engine.model.Node").unwrap().role, "Model");
+}
+
+/// Atlas obeys its own algebra: the steps of `analyze` move data between the repo on disk, a
+/// `Language`, the `Graph` and its `Architecture`, and nothing else. A new type between parse
+/// and Graph is a box the algebra does not have, and the code changes, not the picture.
+#[test]
+fn atlas_reads_as_its_algebra() {
+    let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
+    let g = analyze(&repo, None, None).expect("the Atlas workspace parses");
+    let classes: HashSet<&str> = g.nodes.iter().filter(|n| n.kind == NodeKind::Class).map(|n| n.id.as_str()).collect();
+    let name = |id: &str| id.rsplit('.').next().unwrap().to_string();
+    let steps: Vec<&str> = g.edges.iter().filter(|e| e.src == "atlas-engine.analyze" && e.kind == EdgeKind::Calls).map(|e| e.dst.as_str()).collect();
+    assert!(steps.len() >= 6, "analyze has its steps: {steps:?}");
+    for step in steps {
+        for e in g.edges.iter().filter(|e| e.src == step && matches!(e.kind, EdgeKind::Takes | EdgeKind::Returns | EdgeKind::Mutates)) {
+            if classes.contains(e.dst.as_str()) {
+                assert!(["Graph", "Language", "Architecture"].contains(&name(&e.dst).as_str()), "{step} moves a {}: the algebra has no such place", e.dst);
+            }
+        }
+    }
+    let returns = edges(&g, EdgeKind::Returns);
+    assert!(returns.contains(&("atlas-engine.language.Language.parse".into(), "atlas-engine.model.Graph".into())), "parse: Disk(repo) -> Graph");
+    let mutates = edges(&g, EdgeKind::Mutates);
+    assert!(mutates.contains(&("atlas-engine.roles.assign".into(), "atlas-engine.model.Graph".into())), "assign: Graph -> Graph");
 }
 
 #[test]

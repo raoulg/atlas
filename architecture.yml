@@ -13,7 +13,7 @@ rules:
   atlas-engine.tree: Parse
   atlas-engine.entries: Parse
   atlas-engine.effects: Parse
-  atlas-engine.store: Parse
+  atlas-engine.builder: Parse
   atlas-engine.roles: Lens
   atlas-engine.lens: Lens
   atlas-engine.model: Model

@@ -5,8 +5,7 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 
-use crate::model::{Architecture, Bands, EdgeKind, NodeKind};
-use crate::store::Store;
+use crate::model::{Architecture, Bands, EdgeKind, Graph, NodeKind};
 
 /// Load `architecture.yml` / `.yaml` or a spike-style `roles.json`.
 pub fn load(path: &Path) -> Result<Architecture> {
@@ -19,9 +18,13 @@ pub fn load(path: &Path) -> Result<Architecture> {
     Ok(arch)
 }
 
-/// The declared architecture of a project root, if it has one.
-pub fn find(project_root: Option<&Path>) -> Option<Architecture> {
-    let root = project_root?;
+/// The architecture a repo declares at its project root, if it has one.
+pub fn find(g: &Graph) -> Option<Architecture> {
+    if g.project_root.is_empty() {
+        return None;
+    }
+    let root = Path::new(&g.project_root);
+
     ["architecture.yml", "architecture.yaml", ".atlas/architecture.yml"]
         .iter()
         .map(|f| root.join(f))
@@ -41,19 +44,20 @@ fn module_role(rules: &[(String, String)], mid: &str) -> String {
     best.map(|b| b.1.clone()).unwrap_or_else(|| "Other".into())
 }
 
-fn base_role(store: &Store, base_roles: &BTreeMap<String, String>, cid: &str, depth: u32) -> Option<String> {
+/// A role declared for a base class reaches every class whose base chain gets there.
+fn base_role(bases: &HashMap<&str, Vec<&str>>, base_roles: &BTreeMap<String, String>, cid: &str, depth: u32) -> Option<String> {
     if let Some(r) = base_roles.get(cid) {
         return Some(r.clone());
     }
     if depth > 8 {
         return None;
     }
-    for b in store.classes.get(cid).map(|c| c.resolved.clone()).unwrap_or_default() {
-        if let Some(r) = base_roles.get(&b) {
+    for b in bases.get(cid).into_iter().flatten() {
+        if let Some(r) = base_roles.get(*b) {
             return Some(r.clone());
         }
         if !b.starts_with("ext:") {
-            if let Some(r) = base_role(store, base_roles, &b, depth + 1) {
+            if let Some(r) = base_role(bases, base_roles, b, depth + 1) {
                 return Some(r);
             }
         }
@@ -61,48 +65,53 @@ fn base_role(store: &Store, base_roles: &BTreeMap<String, String>, cid: &str, de
     None
 }
 
-/// Assign a role to every node: per class through the base chain, otherwise by package.
-pub fn assign(store: &mut Store, arch: &Architecture) {
-    let ids: Vec<String> = store.nodes.keys().cloned().collect();
-    for id in &ids {
-        let (kind, module) = {
-            let n = &store.nodes[id];
-            (n.kind, n.module.clone())
+/// The role of every node: per class through the base chain, otherwise by package; a method
+/// takes its class's role.
+fn roles_of(g: &Graph, arch: &Architecture) -> HashMap<String, (String, &'static str)> {
+    let mut bases: HashMap<&str, Vec<&str>> = HashMap::new();
+    for e in g.edges.iter().filter(|e| e.kind == EdgeKind::Inherits) {
+        bases.entry(e.src.as_str()).or_default().push(e.dst.as_str());
+    }
+    let mut out: HashMap<String, (String, &'static str)> = HashMap::new();
+    for n in &g.nodes {
+        let r = match n.kind {
+            NodeKind::External => ("External".to_string(), ""),
+            NodeKind::Class => match base_role(&bases, &arch.base_roles, &n.id, 0) {
+                Some(r) => (r, "base"),
+                None => (module_role(&arch.rules, &n.module), "package"),
+            },
+            _ => (module_role(&arch.rules, &n.module), "package"),
         };
-        if kind == NodeKind::External {
-            store.nodes[id].role = "External".into();
-            continue;
-        }
-        let mut role = module_role(&arch.rules, &module);
-        let mut source = "package";
-        if kind == NodeKind::Class {
-            if let Some(r) = base_role(store, &arch.base_roles, id, 0) {
-                role = r;
-                source = "base";
-            }
-        }
-        let n = &mut store.nodes[id];
-        n.role = role;
-        n.role_source = source.into();
+        out.insert(n.id.clone(), r);
     }
-    for id in &ids {
-        let cls = store.nodes[id].cls.clone();
-        if let (NodeKind::Method, Some(c)) = (store.nodes[id].kind, cls) {
-            let (role, src) = store.nodes.get(&c).map(|c| (c.role.clone(), c.role_source.clone())).unwrap_or_default();
-            let n = &mut store.nodes[id];
-            n.role = role;
-            n.role_source = src;
+    for n in g.nodes.iter().filter(|n| n.kind == NodeKind::Method) {
+        if let Some(r) = n.cls.as_ref().and_then(|c| out.get(c)).cloned() {
+            out.insert(n.id.clone(), r);
         }
     }
+    out
+}
+
+/// Paint every node with its role, and keep the architecture on the graph.
+pub fn assign(g: &mut Graph, arch: Architecture) {
+    let roles = roles_of(g, &arch);
+    for n in g.nodes.iter_mut() {
+        if let Some((role, source)) = roles.get(&n.id) {
+            n.role = role.clone();
+            n.role_source = source.to_string();
+        }
+    }
+    g.roles = arch;
 }
 
 /// No declaration: one role per immediate subpackage (or per module in a flat package),
 /// root modules and scripts in the orchestration band, columns ordered so providers stand
 /// left of their consumers, a pure provider in the foundation band.
-pub fn infer(store: &mut Store, root: &str) -> Architecture {
-    let pkg_mods: Vec<(String, bool)> = store
+pub fn infer(g: &Graph) -> Architecture {
+    let root = g.root.as_str();
+    let pkg_mods: Vec<(String, bool)> = g
         .nodes
-        .values()
+        .iter()
         .filter(|n| n.kind == NodeKind::Module && (n.module == root || n.module.starts_with(&format!("{root}."))))
         .map(|n| (n.module.clone(), n.is_pkg))
         .collect();
@@ -140,17 +149,17 @@ pub fn infer(store: &mut Store, root: &str) -> Architecture {
         allowed: vec![],
         inferred: true,
     };
-    assign(store, &arch);
+    let roles = roles_of(g, &arch);
     let mut deps: HashMap<(String, String), u32> = HashMap::new();
-    for e in &store.edges {
+    for e in &g.edges {
         if e.kind == EdgeKind::Contains {
             continue;
         }
-        let (Some(a), Some(b)) = (store.nodes.get(&e.src), store.nodes.get(&e.dst)) else { continue };
-        if a.role == b.role || a.role == "External" || b.role == "External" {
+        let (Some((a, _)), Some((b, _))) = (roles.get(&e.src), roles.get(&e.dst)) else { continue };
+        if a == b || a == "External" || b == "External" {
             continue;
         }
-        *deps.entry((a.role.clone(), b.role.clone())).or_insert(0) += 1;
+        *deps.entry((a.clone(), b.clone())).or_insert(0) += 1;
     }
     let roles: Vec<String> = arch.rules.iter().map(|r| r.1.clone()).filter(|r| r != "Root" && r != "Scripts").collect();
     let incoming = |r: &str| deps.iter().filter(|((_, y), _)| y == r).map(|(_, v)| *v as i64).sum::<i64>();

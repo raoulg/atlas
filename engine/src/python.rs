@@ -15,7 +15,7 @@ use walkdir::WalkDir;
 use crate::effects;
 use crate::entries::entry_of;
 use crate::model::{EdgeKind, Entry, EntryKind, Node, NodeKind, Touch};
-pub use crate::store::{ClassInfo, SigInfo, Store};
+pub use crate::builder::{ClassInfo, GraphBuilder, SigInfo};
 use crate::tree::{field_children, literals, named_children, payload_of, text, walk, what_of};
 
 const BUILTIN_TYPES: &[&str] = &[
@@ -200,12 +200,12 @@ pub fn discover_package(repo: &Path) -> Result<PathBuf> {
     anyhow::bail!("no Python package found under {} (looked for src/<pkg>/__init__.py and <pkg>/__init__.py)", repo.display())
 }
 
-/// Parse a package (and the scripts next to it) into a `Store`. Returns the store and the root package name.
-pub fn parse(pkg_dir: &Path, project_root: Option<&Path>) -> Result<(Store, String)> {
+/// Parse a package (and the scripts next to it) into a `GraphBuilder`. Returns the store and the root package name.
+pub fn parse(pkg_dir: &Path, project_root: Option<&Path>) -> Result<(GraphBuilder, String)> {
     let root = pkg_dir.file_name().and_then(|n| n.to_str()).context("package dir has no name")?.to_string();
     let mut parser = new_parser()?;
     let mut modules: IndexMap<String, Module> = IndexMap::new();
-    let mut store = Store::default();
+    let mut store = GraphBuilder::default();
 
     let mut files: Vec<PathBuf> = WalkDir::new(pkg_dir)
         .into_iter()
@@ -291,7 +291,7 @@ pub fn parse(pkg_dir: &Path, project_root: Option<&Path>) -> Result<(Store, Stri
 
 // ---------- pass 1: symbols and imports ----------
 
-fn collect_symbols(m: &mut Module, store: &mut Store) {
+fn collect_symbols(m: &mut Module, store: &mut GraphBuilder) {
     let root = m.tree.root_node();
     let src = &m.src;
     let file = m.path.to_string_lossy().to_string();
@@ -396,7 +396,7 @@ fn resolve_relative(m: &Module, dots: usize, name: Option<&str>) -> String {
     base.join(".")
 }
 
-fn import_edge(m: &Module, target: &str, module_ids: &HashSet<String>, store: &mut Store, root: &str) {
+fn import_edge(m: &Module, target: &str, module_ids: &HashSet<String>, store: &mut GraphBuilder, root: &str) {
     if !target.starts_with(root) {
         return;
     }
@@ -409,7 +409,7 @@ fn import_edge(m: &Module, target: &str, module_ids: &HashSet<String>, store: &m
     }
 }
 
-fn collect_imports(m: &mut Module, module_ids: &HashSet<String>, store: &mut Store, root: &str) {
+fn collect_imports(m: &mut Module, module_ids: &HashSet<String>, store: &mut GraphBuilder, root: &str) {
     let tree_root = m.tree.root_node();
     let mut bindings: Vec<(String, String)> = vec![];
     let mut edges: Vec<String> = vec![];
@@ -489,7 +489,7 @@ fn resolve(m: &Module, parts: &[String], modules: &IndexMap<String, Module>, nod
     Some(format!("ext:{target}"))
 }
 
-fn method_of(store: &Store, cls_id: &str, name: &str, depth: u32) -> Option<String> {
+fn method_of(store: &GraphBuilder, cls_id: &str, name: &str, depth: u32) -> Option<String> {
     if depth > 8 {
         return None;
     }
@@ -518,7 +518,7 @@ fn def_node<'t>(m: &'t Module, n: &Node) -> Option<TsNode<'t>> {
     })
 }
 
-fn link(modules: &IndexMap<String, Module>, store: &mut Store, root: &str) {
+fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, root: &str) {
     let aliases = type_aliases(modules);
     let ids: Vec<String> = store.nodes.keys().cloned().collect();
     // bases and annotated fields
@@ -669,7 +669,7 @@ fn changed_roots<'a>(body: TsNode, src: &'a [u8], mutating: &dyn Fn(TsNode) -> b
     out
 }
 
-fn infer_self_attrs(modules: &IndexMap<String, Module>, store: &mut Store, root: &str, init_id: &str) {
+fn infer_self_attrs(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, root: &str, init_id: &str) {
     let n = store.nodes[init_id].clone();
     let Some(cls) = n.cls.clone() else { return };
     let m = &modules[&n.module];
@@ -792,7 +792,7 @@ fn io_refs(m: &Module, n: TsNode, root: &str, what: &str) -> Vec<Touch> {
     out
 }
 
-fn link_calls(modules: &IndexMap<String, Module>, store: &mut Store, root: &str, id: &str) {
+fn link_calls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, root: &str, id: &str) {
     let n = store.nodes[id].clone();
     let m = &modules[&n.module];
     let Some(d) = def_node(m, &n) else { return };

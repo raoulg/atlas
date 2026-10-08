@@ -1,10 +1,11 @@
-//! Everything a parser produces before it becomes a `Graph`, shared by all languages.
+//! A `Graph` under construction: what a language module fills while it parses, with the
+//! scratch it needs for resolution. It never leaves `Language::parse`.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use indexmap::IndexMap;
 
-use crate::model::{Edge, EdgeKind, Node, NodeKind, Touch};
+use crate::model::{Edge, EdgeKind, Graph, Node, NodeKind, Stats, Touch};
 
 /// Per-class facts that only matter during resolution.
 #[derive(Default, Clone, Debug)]
@@ -21,9 +22,9 @@ pub struct SigInfo {
     pub rtypes: Vec<Vec<String>>,
 }
 
-/// Everything the parser produces before it becomes a `Graph`.
+/// The nodes and edges found so far, and the tables that resolve names into them.
 #[derive(Default)]
-pub struct Store {
+pub struct GraphBuilder {
     pub nodes: IndexMap<String, Node>,
     pub edges: Vec<Edge>,
     pub edge_set: HashSet<(String, String, EdgeKind)>,
@@ -37,7 +38,7 @@ pub struct Store {
     pub mutating: HashSet<String>,
 }
 
-impl Store {
+impl GraphBuilder {
     pub fn add_node(&mut self, n: Node) {
         self.nodes.insert(n.id.clone(), n);
     }
@@ -65,6 +66,28 @@ impl Store {
             }
             None => n.touches.push(Touch { n: 1, ..t }),
         }
+    }
+
+    /// The graph, once every file is parsed: the scratch is dropped, the names that did not
+    /// resolve are counted.
+    pub fn finish(self, root: String, project_root: Option<&std::path::Path>) -> Graph {
+        let mut top: Vec<(String, u32)> = self.unresolved.iter().map(|(k, v)| (k.clone(), *v)).collect();
+        top.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+        let mut g = Graph {
+            root,
+            project_root: project_root.map(|p| p.to_string_lossy().to_string()).unwrap_or_default(),
+            nodes: self.nodes.into_values().collect(),
+            edges: self.edges,
+            files: self.files,
+            stats: Stats {
+                unresolved_calls_total: self.unresolved.values().sum(),
+                unresolved_calls_top: top.into_iter().take(25).collect(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        g.recount();
+        g
     }
 
     pub fn ext_node(&mut self, eid: &str) {

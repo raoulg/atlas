@@ -258,6 +258,10 @@ pub struct Stats {
 #[ts(export)]
 pub struct Graph {
     pub root: String,
+    /// The directory that holds the repo's own declarations: Makefile, pyproject.toml,
+    /// Cargo.toml, architecture.yml.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub project_root: String,
     pub roles: Architecture,
     pub nodes: Vec<Node>,
     pub edges: Vec<Edge>,

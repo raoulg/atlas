@@ -15,7 +15,7 @@ use walkdir::WalkDir;
 
 use crate::effects;
 use crate::model::{EdgeKind, Entry, EntryKind, Node, NodeKind, Touch};
-use crate::store::{ClassInfo, SigInfo, Store};
+use crate::builder::{ClassInfo, GraphBuilder, SigInfo};
 use crate::tree::{literals, named_children, payload_of, span, text, walk, what_of};
 
 struct Crate {
@@ -239,11 +239,11 @@ fn fn_name(f: TsNode, src: &[u8]) -> String {
 
 // ---------- loading ----------
 
-/// Parse a Cargo workspace or crate into a `Store`; returns the store and the workspace name.
-pub fn parse(repo: &Path) -> Result<(Store, String)> {
+/// Parse a Cargo workspace or crate into a `GraphBuilder`; returns the store and the workspace name.
+pub fn parse(repo: &Path) -> Result<(GraphBuilder, String)> {
     let mut parser = new_parser()?;
     let mut modules: IndexMap<String, Module> = IndexMap::new();
-    let mut store = Store::default();
+    let mut store = GraphBuilder::default();
     let crate_list = crates(repo)?;
     // a single crate is named after itself; a workspace after its directory
     let root_name = if crate_list.len() == 1 {
@@ -315,7 +315,7 @@ pub fn parse(repo: &Path) -> Result<(Store, String)> {
 
 // ---------- pass 1: symbols ----------
 
-fn collect_symbols(m: &mut Module, store: &mut Store, bins: &HashSet<String>) {
+fn collect_symbols(m: &mut Module, store: &mut GraphBuilder, bins: &HashSet<String>) {
     let src = &m.src;
     let file = m.path.to_string_lossy().to_string();
     for item in items(m.tree.root_node()) {
@@ -501,7 +501,7 @@ fn path_to_id(m: &Module, parts: &[String], crate_ids: &HashMap<String, String>,
     id
 }
 
-fn collect_uses(m: &mut Module, crate_ids: &HashMap<String, String>, module_ids: &HashSet<String>, store: &mut Store) {
+fn collect_uses(m: &mut Module, crate_ids: &HashMap<String, String>, module_ids: &HashSet<String>, store: &mut GraphBuilder) {
     let mut out = vec![];
     let mut wild = vec![];
     for u in walk(m.tree.root_node(), &["use_declaration"]) {
@@ -570,14 +570,14 @@ fn resolve(m: &Module, parts: &[String], modules: &IndexMap<String, Module>, nod
     nodes.contains_key(re).then(|| re.clone())
 }
 
-fn method_of(store: &Store, cls_id: &str, name: &str) -> Option<String> {
+fn method_of(store: &GraphBuilder, cls_id: &str, name: &str) -> Option<String> {
     let cand = format!("{cls_id}.{name}");
     store.nodes.contains_key(&cand).then_some(cand)
 }
 
 // ---------- pass 1c: impl blocks ----------
 
-fn collect_impls(modules: &IndexMap<String, Module>, store: &mut Store, crate_ids: &HashMap<String, String>) {
+fn collect_impls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crate_ids: &HashMap<String, String>) {
     let mut impls: Vec<Impl> = vec![];
     for m in modules.values() {
         for item in items(m.tree.root_node()).into_iter().filter(|i| i.kind() == "impl_item") {
@@ -647,7 +647,7 @@ fn def_node<'t>(m: &'t Module, n: &Node) -> Option<TsNode<'t>> {
         .find(|d| d.start_position().row as u32 + 1 == start && d.child_by_field_name("name").map_or(false, |x| text(x, &m.src) == n.name))
 }
 
-fn link(modules: &IndexMap<String, Module>, store: &mut Store, crate_ids: &HashMap<String, String>) {
+fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crate_ids: &HashMap<String, String>) {
     let ids: Vec<String> = store.nodes.keys().cloned().collect();
     for id in &ids {
         let (kind, module) = (store.nodes[id].kind, store.nodes[id].module.clone());
@@ -702,13 +702,13 @@ fn expand(m: &Module, parts: &[String]) -> Vec<String> {
     }
 }
 
-fn link_calls(modules: &IndexMap<String, Module>, store: &mut Store, crate_ids: &HashMap<String, String>, id: &str) {
+fn link_calls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crate_ids: &HashMap<String, String>, id: &str) {
     let n = store.nodes[id].clone();
     let m = &modules[&n.module];
     let src = &m.src;
     let Some(d) = def_node(m, &n) else { return };
     let Some(body) = d.child_by_field_name("body") else { return };
-    // typed parameters give receivers a type: `store.add_edge(..)` with `store: &mut Store`
+    // typed parameters give receivers a type: `store.add_edge(..)` with `store: &mut GraphBuilder`
     let mut locals: HashMap<String, String> = HashMap::new();
     // `&mut T` and `&mut self` hand the value back changed: `T -> T`
     let mut mutates: Vec<String> = vec![];

@@ -4,26 +4,20 @@
 //! module ids, how names resolve, which calls are boundaries, what counts as an entry
 //! point. The grammar itself is reused from tree-sitter.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use anyhow::Result;
 
-use crate::store::Store;
-use crate::{python, rust};
-
-/// What a language module produces: the raw store, the root package name, and the
-/// project root that holds the repo's declarations (Makefile, scripts, architecture).
-pub struct Parsed {
-    pub store: Store,
-    pub root: String,
-    pub project_root: Option<PathBuf>,
-}
+use crate::model::Graph;
+use crate::{entries, python, rust};
 
 pub trait Language {
     fn name(&self) -> &'static str;
     /// Does this repo look like one of mine?
     fn detect(&self, repo: &Path) -> bool;
-    fn parse(&self, repo: &Path, package: Option<&Path>) -> Result<Parsed>;
+    /// `Disk(repo) -> Graph`: every file, its symbols, the calls and types between them, the
+    /// routes into the program, and the calls that leave it.
+    fn parse(&self, repo: &Path, package: Option<&Path>) -> Result<Graph>;
 }
 
 pub struct Python;
@@ -35,14 +29,15 @@ impl Language for Python {
     fn detect(&self, repo: &Path) -> bool {
         repo.join("pyproject.toml").exists() || python::discover_package(repo).is_ok()
     }
-    fn parse(&self, repo: &Path, package: Option<&Path>) -> Result<Parsed> {
+    fn parse(&self, repo: &Path, package: Option<&Path>) -> Result<Graph> {
         let pkg_dir = match package {
             Some(p) => p.to_path_buf(),
             None => python::discover_package(repo)?,
         };
         let project_root = python::project_root(&pkg_dir).or_else(|| repo.join("pyproject.toml").exists().then(|| repo.to_path_buf()));
-        let (store, root) = python::parse(&pkg_dir, project_root.as_deref())?;
-        Ok(Parsed { store, root, project_root })
+        let (mut b, root) = python::parse(&pkg_dir, project_root.as_deref())?;
+        entries::mark_scripts(&mut b, project_root.as_deref());
+        Ok(b.finish(root, project_root.as_deref()))
     }
 }
 
@@ -55,9 +50,9 @@ impl Language for Rust {
     fn detect(&self, repo: &Path) -> bool {
         repo.join("Cargo.toml").exists()
     }
-    fn parse(&self, repo: &Path, _package: Option<&Path>) -> Result<Parsed> {
-        let (store, root) = rust::parse(repo)?;
-        Ok(Parsed { store, root, project_root: Some(repo.to_path_buf()) })
+    fn parse(&self, repo: &Path, _package: Option<&Path>) -> Result<Graph> {
+        let (b, root) = rust::parse(repo)?;
+        Ok(b.finish(root, Some(repo)))
     }
 }
 
