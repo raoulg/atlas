@@ -55,6 +55,9 @@ body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font
 .srow .smod{font-family:var(--sans);font-size:10.5px;fill:var(--ink-3)}
 .srow .kind{font-family:var(--sans);font-size:10px;letter-spacing:.06em;fill:var(--ink-3)}
 .srow .seff{font-family:var(--sans);font-size:10.5px;fill:var(--ink-2)}
+.srow .sname.ref{fill:var(--ink-3);font-weight:500}
+.story-own{font-family:var(--mono);font-size:12px;fill:var(--ink-2)}
+.lanes-bg{fill:var(--bg);opacity:.94}
 .tnode .fam{font-family:var(--sans);font-size:9.5px;fill:var(--ink-3);letter-spacing:.04em}
 .tnode .endo{font-family:var(--mono);font-size:10px;fill:var(--ink-2)}
 .dot{fill:var(--ink-2);opacity:.85}
@@ -189,7 +192,7 @@ pre.code .l::before{counter-increment:ln;content:counter(ln);display:inline-bloc
     <datalist id="symbols"></datalist>
   </header>
   <main>
-    <svg id="canvas"><g id="scene" class="scene"></g></svg>
+    <svg id="canvas"><g id="scene" class="scene"></g><g id="lanes"></g></svg>
     <div id="crumbs" aria-label="what this picture shows"></div>
     <div id="zoomctl"><button id="zout" type="button" title="zoom out">−</button><button id="fit" type="button">fit</button><button id="zone" type="button" title="actual size">1:1</button><button id="zin" type="button" title="zoom in">+</button></div>
     <div id="resizer" title="drag to resize the inspector"></div>
@@ -273,7 +276,16 @@ document.getElementById("stats").textContent =
 
 // ---------- svg + zoom ----------
 const svg = d3.select("#canvas"), scene = d3.select("#scene");
-const zoom = d3.zoom().scaleExtent([0.08, 4]).on("zoom", ev => scene.attr("transform", ev.transform));
+const zoom = d3.zoom().scaleExtent([0.08, 4]).on("zoom", ev => { scene.attr("transform", ev.transform); placeLanes(ev.transform); });
+// Story's lane labels stay readable while the rows scroll under them: in place, or stuck to the top
+let sticky = null;
+function placeLanes(t) {
+  const L = document.getElementById("lanes"); L.innerHTML = "";
+  if (!sticky || view !== "story") return;
+  const y = Math.max(16, t.y + t.k * sticky.y), xs = sticky.xs.map(x => t.x + t.k * x);
+  if (y === 16 && xs.length) el("rect", {class: "lanes-bg", x: xs[0] - 50, y: 0, width: xs[xs.length - 1] - xs[0] + 100, height: 26}, L);
+  xs.forEach((x, j) => { el("text", {class: "lane-label", x, y, "text-anchor": "middle"}, L).textContent = sticky.labels[j]; });
+}
 svg.call(zoom).on("dblclick.zoom", null);
 function fit(animate = false, pad = 40, tries = 0) {
   const W = svg.node().clientWidth, H = svg.node().clientHeight;
@@ -680,40 +692,56 @@ function renderStory() {
     }
     if (hiddenTests) rows.push({id: "__tests__", depth: 0, label: `${hiddenTests} tests — click to show`, kind: "test", bounds: {}, size: 0, group: "Test", toggle: true});
   } else {
-    const walk = (id, depth, prefix, path) => callees(id).forEach((c, i) => {
-      const n = byId.get(c), r = reach(c); Object.keys(r.bounds).forEach(k => lanesUsed.add(k));
-      const num = prefix ? `${prefix}.${i + 1}` : `${i + 1}`, kids = callees(c).length;
+    // a step already shown in this story is a reference to where it was shown, not a second copy
+    const shown = new Map([[storyEntry, "the entry"]]);
+    const walk = (id, depth, prefix) => callees(id).forEach((c, i) => {
+      const n = byId.get(c), num = prefix ? `${prefix}.${i + 1}` : `${i + 1}`;
       const via = n.kind === "class" ? (out.get(id) || []).find(e => e.dst === c && e.kind === "instantiates" && e.via)?.via : null;
-      const row = {id: c, depth, num, name: n.kind === "class" ? (via ? `${n.name}::${via}()` : n.name + "()") : n.entry ? `${KIND_LABEL[n.entry.kind]} ${n.entry.label}` : n.name, node: n, bounds: r.bounds, reach: r, size: r.size, kids, open: expanded.has(c)};
-      rows.push(row); if (row.open && !path.has(c)) walk(c, depth + 1, num, new Set([...path, c]));  // recursion opens once
+      const name = n.kind === "class" ? (via ? `${n.name}::${via}()` : n.name + "()") : n.entry ? `${KIND_LABEL[n.entry.kind]} ${n.entry.label}` : n.cls && byId.has(n.cls) ? `${byId.get(n.cls).name}.${n.name}` : n.name;
+      if (shown.has(c) && callees(c).length) { rows.push({id: c, depth, num, name, node: n, bounds: {}, size: 0, kids: 0, ref: shown.get(c)}); return; }
+      const r = reach(c); Object.keys(r.bounds).forEach(k => lanesUsed.add(k));
+      shown.set(c, num);
+      const row = {id: c, depth, num, name, node: n, bounds: r.bounds, reach: r, size: r.size, kids: callees(c).length, open: expanded.has(c)};
+      rows.push(row); if (row.open) walk(c, depth + 1, num);
     });
-    const own = byId.get(storyEntry), ownR = ownReach(own);
-    if (own.kind !== "make" && (Object.keys(ownR.bounds).length || (own.params || []).length || own.returns)) {
-      Object.keys(ownR.bounds).forEach(k => lanesUsed.add(k));
-      rows.push({id: storyEntry, depth: 0, num: "·", name: own.name, node: own, bounds: ownR.bounds, reach: ownR, size: 1, kids: 0, open: false, own: true});
-    }
-    walk(storyEntry, 0, "", new Set([storyEntry]));
+    Object.keys(ownReach(byId.get(storyEntry)).bounds).forEach(k => lanesUsed.add(k));
+    walk(storyEntry, 0, "");
   }
   const lanes = LANES.filter(([k]) => lanesUsed.has(k)).map(([k, l]) => [k, k === "process" ? (pickWhats(Object.assign({}, ...rows.map(r => (r.reach || {}).whats?.process || {})), 1)[0] || l) : l]), laneX0 = X0 + NAMEW + 30, hdrY = 30;
   const title = storyEntry ? byId.get(storyEntry) : null;
   el("text", {class: "story-title", x: X0, y: hdrY}, g).textContent = title ? `${KIND_LABEL[title.entry.kind]} · ${title.entry.label}` : "All entry points";
-  el("text", {class: "story-sub", x: X0, y: hdrY + 17}, g).textContent = title ? `${short(title.id)} — steps in call order · each step: its own signature and its own effects · dots: what it reaches through everything below it` : `${entries.length} routes into the program, and what each one reaches`;
+  // the entry is the header: its own signature and its own effects, with dots for what its own body touches
+  let hdrH = 17;
+  if (title) {
+    const sig = el("text", {class: "story-own", x: X0, y: hdrY + 19}, g);
+    sig.textContent = (title.make ? `make ${title.name}` : `${short(title.id)}${ownSig(title) || "()"}`) + (ownEffects(title) ? "   ·   " + ownEffects(title) : "");
+    const ob = ownReach(title).bounds;
+    lanes.forEach(([k], j) => { const c = ob[k]; if (c) el("circle", {class: "dot", cx: laneX0 + j * LW + LW/2, cy: hdrY + 15, r: 3 + Math.min(5, Math.log2(c + 1))}, g); });
+    hdrH = 36;
+  }
+  el("text", {class: "story-sub", x: X0, y: hdrY + hdrH}, g).textContent = title ? "steps in call order · each step: its own signature and its own effects · dots: what it reaches through everything below it" : `${entries.length} routes into the program, and what each one reaches`;
   const totalH = rows.length * ROW + rows.filter(r => r.group).length * 34;
-  lanes.forEach(([k, label], j) => { const x = laneX0 + j * LW + LW/2; el("text", {class: "lane-label", x, y: hdrY + 17, "text-anchor": "middle"}, g).textContent = label; el("line", {class: "lane-line", x1: x, x2: x, y1: hdrY + 26, y2: hdrY + 50 + totalH}, g); });
-  let y = hdrY + 40;
+  const laneY = hdrY;
+  lanes.forEach(([k, label], j) => { const x = laneX0 + j * LW + LW/2; el("line", {class: "lane-line", x1: x, x2: x, y1: laneY + 8, y2: laneY + 30 + totalH}, g); });
+  sticky = {xs: lanes.map((_, j) => laneX0 + j * LW + LW/2), labels: lanes.map(([, l]) => l), y: laneY};
+  let y = hdrY + hdrH + 24;
   for (const row of rows) {
     if (row.group) { y += 10; el("text", {class: "group-label", x: X0, y: y + 12}, g).textContent = row.group; y += 24; }
     const rg = el("g", {class: "srow" + (row.id === selected ? " selected" : ""), transform: `translate(0,${y})`, "data-id": row.id}, g);
     el("rect", {class: "srow-bg", x: X0 - 10, y: 0, width: laneX0 + lanes.length * LW - X0 + 10, height: ROW - 4, rx: 4}, rg);
     const ix = X0 + (row.depth || 0) * 22;
-    if (storyEntry) {
+    if (storyEntry && row.ref) {
+      el("text", {class: "num", x: ix, y: 17}, rg).textContent = row.num;
+      el("text", {class: "sname ref", x: ix + 52, y: 17}, rg).textContent = row.name;
+      el("text", {class: "smod", x: ix + 52 + row.name.length * 7.6 + 10, y: 17}, rg).textContent = `→ see ${row.ref}`;
+    } else if (storyEntry) {
       el("text", {class: "num", x: ix, y: 17}, rg).textContent = row.num;
       if (row.kids) { const ch = el("text", {class: "chev", x: ix + 36, y: 17}, rg); ch.textContent = row.open ? "▾" : "▸"; ch.addEventListener("click", ev => { ev.stopPropagation(); if (expanded.has(row.id)) expanded.delete(row.id); else expanded.add(row.id); render(); }); }
       const nx = ix + 52; el("text", {class: "sname", x: nx, y: 17}, rg).textContent = row.name;
       let tx = nx + row.name.length * 7.6 + 6;
       const sig = ownSig(row.node);
       if (sig) { const st = el("text", {class: "stype", x: tx, y: 17}, rg); st.textContent = sig; tx += Math.min(sig.length, 70) * 6.7 + 12; }
-      el("text", {class: "smod", x: Math.max(tx, nx + 260), y: 17}, rg).textContent = row.own ? "own body of the entry" : short(row.node.module) + (row.size > 1 ? ` · reaches ${row.size} fns` : "");
+      el("text", {class: "smod", x: Math.max(tx, nx + 260), y: 17}, rg).textContent = short(row.node.module) + (row.size > 1 ? ` · reaches ${row.size} fns` : "");
       const eff = ownEffects(row.node);
       if (eff) el("text", {class: "seff", x: nx, y: 33}, rg).textContent = eff;
     } else {
@@ -1061,11 +1089,11 @@ document.getElementById("search").addEventListener("change", ev => {
   ev.target.value = "";
 });
 async function render() {
-  scene.node().innerHTML = ""; scene.node().classList.remove("focus");
+  scene.node().innerHTML = ""; scene.node().classList.remove("focus"); sticky = null;
   document.getElementById("toggles").style.visibility = view === "arch" ? "visible" : "hidden";
   entrySel.style.display = view === "story" || view === "plaat" ? "" : "none";
   crumbs();
-  if (view === "story") { renderStory(); fit(); } else if (view === "plaat") { await renderPlaat(); } else if (view === "arch") { renderArch(); fit(); } else if (view === "types") { renderTypes(); fit(); } else { await renderSig(); }
+  if (view === "story") { renderStory(); fit(); placeLanes(d3.zoomTransform(svg.node())); } else if (view === "plaat") { await renderPlaat(); } else if (view === "arch") { renderArch(); fit(); } else if (view === "types") { renderTypes(); fit(); } else { await renderSig(); }
   legend();
   if (selected) scene.node().querySelectorAll(`[data-id="${CSS.escape(selected)}"]`).forEach(x => x.classList.add("selected"));
 }
