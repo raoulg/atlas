@@ -114,7 +114,7 @@ impl Default for NodeKind {
 }
 
 /// One kind of boundary call and what it touches.
-#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, TS, Clone, Debug, Default, PartialEq, Eq)]
 #[ts(export)]
 pub struct Touch {
     pub kind: String,
@@ -126,6 +126,14 @@ pub struct Touch {
     /// The operation as called: `write`, `create_dir_all`, `read_text`, `get`.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub op: String,
+    /// The file or table as the code names it: a literal path or pattern (`out.json`,
+    /// `{name}.png`), `*.csv` when only the format is known, a table after a SQL verb. Empty
+    /// when only a variable says which.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub artifact: String,
+    /// `read` or `write`, when the kind does not say: a database statement's verb decides.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub dir: String,
 }
 
 #[derive(Serialize, Deserialize, TS, Clone, Debug)]

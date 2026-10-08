@@ -78,6 +78,11 @@ pub fn boundary(pkg: Option<&str>, parts: &[String], ext: &HashSet<String>) -> O
     let head = parts.first().map(String::as_str).unwrap_or("");
     let last = parts.last().map(String::as_str).unwrap_or("");
     if let Some(pkg) = pkg {
+        if matches!((pkg, last), ("click" | "typer", "echo" | "secho") | ("rich", "print") | ("pprint", "pprint" | "pp"))
+            || (pkg == "sys" && parts.len() == 3 && matches!(parts[1].as_str(), "stdout" | "stderr"))
+        {
+            return Some("screen");
+        }
         if NET_PKGS.contains(&pkg) {
             return Some("net");
         }
@@ -102,6 +107,9 @@ pub fn boundary(pkg: Option<&str>, parts: &[String], ext: &HashSet<String>) -> O
             }
         }
         return None;
+    }
+    if parts.len() == 1 && head == "print" {
+        return Some("screen");
     }
     if parts.len() == 1 && head == "open" {
         return Some("disk");
@@ -129,4 +137,164 @@ pub fn boundary(pkg: Option<&str>, parts: &[String], ext: &HashSet<String>) -> O
         return Some("model");
     }
     None
+}
+
+/// `Path.exists()` and friends on a receiver whose type is unknown still read the disk.
+pub const RUST_PATH_READS: &[&str] = &["exists", "try_exists", "is_file", "is_dir", "read_dir", "canonicalize", "symlink_metadata"];
+
+/// `println!` and friends print to the terminal.
+pub fn screen_macro(name: &str) -> bool {
+    matches!(name, "println" | "print" | "eprintln" | "eprint")
+}
+
+/// What a boundary call is, once the string literals under it have been read: the part of the
+/// world it touches, which file or table it names, and whether a database is read or written.
+#[derive(Debug, PartialEq)]
+pub struct Facts {
+    pub kind: &'static str,
+    pub artifact: String,
+    pub dir: &'static str,
+}
+
+/// Refine a boundary by its literals: `open(p, "w")` writes, `to_csv(path)` writes a csv,
+/// `Path("out.json")` names its file, `execute("INSERT INTO nodes ..")` writes the table `nodes`.
+pub fn facts(kind: &'static str, pkg: Option<&str>, op: &str, literals: &[String]) -> Facts {
+    let mut kind = kind;
+    if op == "open" || kind == "disk" {
+        if let Some(m) = literals.iter().find(|l| is_mode(l)) {
+            kind = if m.contains(['w', 'a', 'x', '+']) { "disk_write" } else { "disk_read" };
+        } else if kind == "disk" {
+            kind = "disk_read";
+        }
+    }
+    if kind.starts_with("db_") {
+        let Some((dir, table)) = literals.iter().find_map(|l| statement(l)) else {
+            return Facts { kind, artifact: String::new(), dir: "" };
+        };
+        return Facts { kind, artifact: table, dir };
+    }
+    if !kind.starts_with("disk") {
+        return Facts { kind, artifact: String::new(), dir: "" };
+    }
+    let artifact = literals
+        .iter()
+        .find(|l| path_like(l))
+        .cloned()
+        .or_else(|| literals.iter().find_map(|l| extension(l)).map(|e| format!("*.{e}")))
+        .or_else(|| format_of(pkg, op).map(|f| format!("*.{f}")))
+        .unwrap_or_default();
+    Facts { kind, artifact, dir: "" }
+}
+
+/// A file mode literal: `r`, `wb`, `a+`.
+pub fn is_mode(s: &str) -> bool {
+    (1..=3).contains(&s.len()) && s.chars().all(|c| "rwabxt+".contains(c))
+}
+
+/// The format a call implies when the code names no file.
+fn format_of(pkg: Option<&str>, op: &str) -> Option<&'static str> {
+    let by_op = match op {
+        "read_csv" | "to_csv" => Some("csv"),
+        "read_parquet" | "to_parquet" => Some("parquet"),
+        "read_json" | "to_json" => Some("json"),
+        "read_excel" | "to_excel" | "load_workbook" => Some("xlsx"),
+        "read_feather" | "to_feather" => Some("feather"),
+        "savefig" | "imsave" => Some("png"),
+        "safe_load" | "safe_dump" => Some("yaml"),
+        _ => None,
+    };
+    if by_op.is_some() {
+        return by_op;
+    }
+    match pkg? {
+        "json" => Some("json"),
+        "yaml" | "ruamel" => Some("yaml"),
+        "pickle" => Some("pkl"),
+        "csv" => Some("csv"),
+        "toml" | "tomllib" | "tomli" => Some("toml"),
+        "lxml" => Some("xml"),
+        "rasterio" => Some("tif"),
+        "numpy" | "np" if matches!(op, "save" | "load") => Some("npy"),
+        _ => None,
+    }
+}
+
+/// A literal that names a file: `out.json`, `assets/{id}/x.xml`, `Makefile`. Not a mode, an
+/// encoding, a URL or a sentence.
+fn path_like(s: &str) -> bool {
+    let Some(first) = s.chars().next() else { return false };
+    s.len() >= 2
+        && !s.contains("://")
+        && !is_mode(s)
+        && s.chars().all(|c| c.is_alphanumeric() || "._-/{}*~".contains(c))
+        && (s.contains('/') || extension(s).is_some() || (first.is_ascii_uppercase() && s.chars().all(|c| c.is_alphanumeric())))
+}
+
+/// The extension a literal ends in: `{name}.png` -> `png`, `.env` -> `env`.
+fn extension(s: &str) -> Option<String> {
+    let (_, e) = s.rsplit_once('.')?;
+    let ok = (1..=8).contains(&e.len()) && e.chars().all(|c| c.is_ascii_alphanumeric()) && e.chars().any(|c| c.is_ascii_alphabetic());
+    (ok && !s.contains(char::is_whitespace)).then(|| e.to_ascii_lowercase())
+}
+
+/// A SQL or Cypher statement: whether it reads or writes, and the table or label it names.
+/// Any write verb makes it a write (`MATCH .. MERGE`, `WITH .. INSERT`).
+pub fn statement(s: &str) -> Option<(&'static str, String)> {
+    const WRITE: &[&str] = &["insert", "update", "delete", "create", "merge", "copy", "drop", "alter", "replace", "upsert", "set", "detach", "remove"];
+    const READ: &[&str] = &["select", "match", "with", "return", "show", "describe", "pragma", "call", "unwind"];
+    let words: Vec<String> = s.split(|c: char| !(c.is_alphanumeric() || c == '_')).filter(|w| !w.is_empty()).map(|w| w.to_ascii_lowercase()).collect();
+    let first = words.first()?;
+    if !WRITE.contains(&first.as_str()) && !READ.contains(&first.as_str()) {
+        return None;
+    }
+    let dir = if words.iter().any(|w| WRITE.contains(&w.as_str())) { "write" } else { "read" };
+    // a Cypher label `(n:Regeling)`, else the word after a SQL keyword that names a table
+    let label = s.match_indices(':').find_map(|(i, _)| {
+        let before = s[..i].chars().last()?;
+        let in_node = s[..i].rfind('(') > s[..i].rfind(')');
+        if !(in_node && (before.is_alphanumeric() || before == '_' || before == '(')) {
+            return None;
+        }
+        let l: String = s[i + 1..].chars().take_while(|c| c.is_alphanumeric() || *c == '_').collect();
+        (!l.is_empty()).then_some(l)
+    });
+    let table = label.or_else(|| {
+        words.windows(2).find(|w| matches!(w[0].as_str(), "into" | "from" | "update" | "table" | "join")).map(|w| w[1].clone())
+    });
+    Some((dir, table.unwrap_or_default()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn lits(xs: &[&str]) -> Vec<String> {
+        xs.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn files_are_named_by_literal_then_format() {
+        assert_eq!(facts("disk_write", None, "write_text", &lits(&["out.json"])).artifact, "out.json");
+        assert_eq!(facts("disk_write", None, "to_csv", &lits(&[";"])).artifact, "*.csv");
+        assert_eq!(facts("disk_write", None, "savefig", &lits(&["{name}.svg"])).artifact, "{name}.svg");
+        assert_eq!(facts("disk_write", Some("json"), "dump", &[]).artifact, "*.json");
+        assert_eq!(facts("disk_read", None, "read_text", &lits(&["utf-8"])).artifact, "");
+        assert_eq!(facts("disk_read", None, "read_to_string", &lits(&["Makefile"])).artifact, "Makefile");
+    }
+
+    #[test]
+    fn open_mode_decides_read_or_write() {
+        assert_eq!(facts("disk", None, "open", &lits(&["w"])).kind, "disk_write");
+        assert_eq!(facts("disk", None, "open", &lits(&["data.csv"])).kind, "disk_read");
+        assert_eq!(facts("disk", None, "open", &lits(&["data.csv", "w"])).artifact, "data.csv");
+    }
+
+    #[test]
+    fn statements_read_or_write_a_table() {
+        assert_eq!(statement("INSERT INTO nodes VALUES (?)"), Some(("write", "nodes".into())));
+        assert_eq!(statement("select * from edges where x = 1"), Some(("read", "edges".into())));
+        assert_eq!(statement("MATCH (n:Regeling) RETURN n"), Some(("read", "Regeling".into())));
+        assert_eq!(statement("MATCH (a) MERGE (b:Node {id: $id})"), Some(("write", "Node".into())));
+        assert_eq!(statement("hello world"), None);
+    }
 }

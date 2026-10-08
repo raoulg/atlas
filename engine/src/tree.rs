@@ -40,10 +40,8 @@ pub fn span(n: TsNode) -> Option<(u32, u32)> {
 /// table, a command), else the first argument's own text, else nothing. Long literals
 /// are cut; a SQL or Cypher statement keeps its first three words.
 pub fn what_of(call: TsNode, src: &[u8], string_kinds: &[&str], arg_field: &str) -> String {
-    if let Some(s) = walk(call, string_kinds).into_iter().next() {
-        let raw = text(s, src);
-        let raw = raw.trim_start_matches(|c: char| c.is_ascii_alphabetic()); // f"..", b"..", r".."
-        let lit = raw.trim_matches(|c| c == '"' || c == '\'' || c == '`').trim();
+    if let Some(lit) = literals(call, src, string_kinds).into_iter().find(|l| !crate::effects::is_mode(l)) {
+        let lit = lit.trim();
         let words: Vec<&str> = lit.split_whitespace().collect();
         let out = if words.len() > 3 { words[..3].join(" ") + " …" } else { lit.to_string() };
         return out.chars().take(48).collect();
@@ -55,6 +53,19 @@ pub fn what_of(call: TsNode, src: &[u8], string_kinds: &[&str], arg_field: &str)
         }
         _ => String::new(),
     }
+}
+
+/// Every string literal under a call, unquoted, in source order: `f"{name}.png"` -> `{name}.png`.
+pub fn literals(call: TsNode, src: &[u8], string_kinds: &[&str]) -> Vec<String> {
+    walk(call, string_kinds)
+        .into_iter()
+        .map(|s| {
+            let raw = text(s, src).trim_start_matches(|c: char| c.is_ascii_alphabetic()); // f"..", b"..", r#".."#
+            let raw = raw.trim_matches('#');
+            let raw = raw.strip_prefix("\"\"\"").and_then(|r| r.strip_suffix("\"\"\"")).unwrap_or(raw);
+            raw.trim_matches(|c| c == '"' || c == '\'' || c == '`').to_string()
+        })
+        .collect()
 }
 
 /// What flows through a boundary call: the first plain identifier among the arguments that

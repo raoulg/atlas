@@ -1,3 +1,6 @@
+from typing import Union
+
+import pandas as pd
 import requests
 
 from fixture import Graph
@@ -22,3 +25,19 @@ class Pipeline:
     def run(self, url: str) -> None:
         g = build_graph(download(url))
         self.sink.write(g)
+
+
+def save(frame, name: str, path) -> None:
+    frame.to_csv(f"{name}.csv", sep=";")
+    frame.to_parquet(path)
+    with open(name, "w") as f:
+        f.write("done")
+    print("saved", name)
+
+
+READERS = {".csv": pd.read_csv}
+Loaded = Union[Graph, Node]
+
+
+def load(path) -> Loaded:
+    return READERS[path.suffix](path)

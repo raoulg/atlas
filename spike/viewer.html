@@ -91,6 +91,12 @@ svg#canvas:active{cursor:grabbing}
 #crumbs button{font:inherit;font-family:var(--mono);font-size:11px;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:10px;padding:1px 9px;cursor:pointer}
 #crumbs button:hover{border-color:var(--ink-3)}
 .sedge.reach{stroke-dasharray:5 4}
+.sedge.back{stroke-dasharray:1 3;stroke-linecap:round}
+.tstep{cursor:pointer}
+.tstep rect.bg{fill:var(--panel-2);stroke:var(--ink-3)}
+.tstep .title{font-family:var(--mono);font-size:11px;font-weight:500;fill:var(--ink)}
+.tstep:hover rect.bg,.tstep.selected rect.bg{stroke:var(--focus);stroke-width:1.6}
+.tnode.entry .title{font-family:var(--mono);font-weight:500}
 #zoomctl button{border:1px solid var(--line);background:var(--panel);color:var(--ink-2);font:inherit;font-size:12px;border-radius:6px;padding:3px 9px;cursor:pointer;min-width:30px}
 #zoomctl button:hover{color:var(--ink);border-color:var(--ink-3)}
 aside{border-left:1px solid var(--line);background:var(--panel);overflow:auto;padding:18px 20px 40px}
@@ -560,14 +566,19 @@ async function renderSig() {
 }
 
 // ---------- story: routes from entry points, in call order, against the world they touch ----------
-const LANES = [["net", "Web"], ["disk_read", "Disk in"], ["disk_write", "Disk out"], ["disk", "Disk"], ["db_memgraph", "Memgraph"], ["db_duckdb", "DuckDB"], ["db_sqlite", "SQLite"], ["db_sql", "SQL"], ["llm", "LLM"], ["model", "Model"], ["process", "Spawn"]];
+const LANES = [["net", "Web"], ["disk_read", "Disk in"], ["disk_write", "Disk out"], ["disk", "Disk"], ["db_memgraph", "Memgraph"], ["db_duckdb", "DuckDB"], ["db_sqlite", "SQLite"], ["db_sql", "SQL"], ["llm", "LLM"], ["model", "Model"], ["process", "Spawn"], ["screen", "Screen"]];
 // the effect signature: what a step takes from the world or the hub types, and what it hands on
 const WORLD_IN = {net: "Web", disk_read: "Disk", disk: "Disk"};
-const WORLD_OUT = {disk_write: "Disk", db_memgraph: "Memgraph", db_duckdb: "DuckDB", db_sqlite: "SQLite", db_sql: "SQL", llm: "LLM", model: "Model", process: "open"};
+const WORLD_OUT = {disk_write: "Disk", db_memgraph: "Memgraph", db_duckdb: "DuckDB", db_sqlite: "SQLite", db_sql: "SQL", llm: "LLM", model: "Model", process: "open", screen: "Screen"};
+const WORLD = {...WORLD_IN, ...WORLD_OUT};
+// which side of a step a touch is on: a database statement's verb decides, otherwise the kind
+const isIn = t => t.dir ? t.dir === "read" : !!WORLD_IN[t.kind];
+// disk operations on the shape of the file system, not on the data in a file
+const PROBE = /^(exists|try_exists|is_file|is_dir|is_symlink|read_dir|iterdir|glob|rglob|listdir|scandir|walk|canonicalize|metadata|symlink_metadata|new|mkdir|makedirs|create_dir|create_dir_all)$/;
 function worldItem(kind, whats) {
   const ws = pickWhats((whats || {})[kind]);
   if (kind === "process") return ws.length ? ws.join(" | ") : "process";
-  return (WORLD_IN[kind] || WORLD_OUT[kind]) + (ws.length ? `(${ws.join(", ")})` : "");
+  return WORLD[kind] + (ws.length ? `(${ws.join(", ")})` : "");
 }
 // a step's own signature, in the author's words
 // line one carries the author's names; the typed signature waits in the inspector
@@ -580,10 +591,13 @@ function ownSig(n) {
   const cut = (t, k) => t.length > k ? t.slice(0, k - 1) + "…" : t;
   return `(${cut(names.join(", "), 44)})` + (ret && ret !== "None" && ret !== "()" ? ` → ${cut(ret, 28)}` : "");
 }
-const VERB = {net: "calls", disk_read: "reads", disk: "opens", disk_write: "writes", db_memgraph: "queries Memgraph", db_duckdb: "queries DuckDB", db_sqlite: "queries SQLite", db_sql: "queries SQL", llm: "asks LLM", model: "runs model", process: "runs"};
+const VERB = {net: "calls", disk_read: "reads", disk: "opens", disk_write: "writes", db_memgraph: "queries Memgraph", db_duckdb: "queries DuckDB", db_sqlite: "queries SQLite", db_sql: "queries SQL", llm: "asks LLM", model: "runs model", process: "runs", screen: "prints"};
 // the verb comes from the operation when it says more than the kind
 function verbOf(t) {
   const op = t.op || "";
+  if (t.kind.startsWith("db_") && t.dir) return t.dir === "read" ? "reads" : "writes";
+  if (/^(exists|try_exists|is_file|is_dir)$/.test(op)) return "checks";
+  if (/^(read_dir|iterdir|glob|rglob|listdir|scandir|walk)$/.test(op)) return "lists";
   if (/^(create_dir|mkdir|makedirs)/.test(op)) return "creates";
   if (/^(remove|unlink|rmtree|rm)/.test(op)) return "removes";
   if (/^(rename|move)/.test(op)) return "moves";
@@ -595,20 +609,13 @@ function verbOf(t) {
 function ownEffects(n) {
   const groups = new Map();
   for (const t of (n.touches || []).slice().sort((a, b) => b.n - a.n)) {
-    const v = verbOf(t), what = t.what || "";
+    const v = verbOf(t), what = t.kind.startsWith("db_") && t.dir ? WORLD[t.kind] + (t.artifact ? `(${t.artifact})` : "") : t.kind === "screen" ? "" : (t.artifact || t.what || "");
     const item = t.kind === "disk_write" && v === "writes" && t.payload ? `${t.payload} → ${what || "disk"}` : (what || (t.kind === "process" ? "a process" : ""));
     if (!groups.has(v)) groups.set(v, []);
     if (item && !groups.get(v).includes(item)) groups.get(v).push(item);
   }
   const parts = [...groups].map(([v, items]) => v + (items.length ? " " + items.slice(0, 3).join(" | ") + (items.length > 3 ? ` | +${items.length - 3}` : "") : ""));
   return parts.slice(0, 4).join(" · ") + (parts.length > 4 ? ` · and ${parts.length - 4} more` : "");
-}
-function effectSig(id, r) {
-  const t = typesOf(id);
-  const dom = t.takes.map(x => byId.get(x).name), cod = t.returns.map(x => byId.get(x).name);
-  for (const k of Object.keys((r && r.bounds) || {})) { const item = worldItem(k, r.whats); if (WORLD_IN[k] && !dom.includes(item)) dom.push(item); if (WORLD_OUT[k] && !cod.includes(item)) cod.push(item); }
-  if (!dom.length && !cod.length) return "";
-  return (dom.join(" × ") || "()") + " → " + (cod.join(" × ") || "∅");
 }
 const KIND_LABEL = {make: "Make", cli: "CLI", script: "Script", route: "API", mcp: "MCP", notebook: "Notebook", test: "Test"}, KIND_ORDER = ["make", "cli", "script", "notebook", "route", "mcp", "test"];
 const entries = [...byId.values()].filter(n => n.entry).sort((a, b) => (KIND_ORDER.indexOf(a.entry.kind) - KIND_ORDER.indexOf(b.entry.kind)) || a.entry.label.localeCompare(b.entry.label));
@@ -632,14 +639,16 @@ function overrides(n) {
 const reachCache = new Map();
 function reach(id) {  // boundaries touched and functions covered by everything reachable through calls
   if (reachCache.has(id)) return reachCache.get(id);
-  const acc = {}, whats = {}, vis = new Set([id]), stack = [id];
+  const acc = {}, whats = {}, touches = new Map(), vis = new Set([id]), stack = [id];
   while (stack.length) {
     const cur = stack.pop(), n = byId.get(cur); if (!n) continue;
     addTouches(acc, whats, n);
+    for (const t of n.touches || []) { const k = touchKey(t); if (!touches.has(k)) touches.set(k, t); }
     for (let t of callees(cur)) { if (byId.get(t).kind === "class") { const init = t + ".__init__"; t = byId.has(init) ? init : null; } if (t && !vis.has(t)) { vis.add(t); stack.push(t); } }
   }
-  const r = {bounds: acc, whats, size: vis.size}; reachCache.set(id, r); return r;
+  const r = {bounds: acc, whats, size: vis.size, touches: [...touches.values()]}; reachCache.set(id, r); return r;
 }
+const touchKey = t => [t.kind, t.what, t.artifact || "", t.dir || "", t.op || ""].join("|");
 function addTouches(acc, whats, n) {
   const ts = n.touches || [];
   if (ts.length) for (const t of ts) { acc[t.kind] = (acc[t.kind] || 0) + t.n; (whats[t.kind] ||= {}); if (t.what) whats[t.kind][t.what] = (whats[t.kind][t.what] || 0) + t.n; }
@@ -754,22 +763,17 @@ const entryTitle = id => { const n = byId.get(id); return `${KIND_LABEL[n.entry.
 function routeSteps() {
   if (!storyEntry) return entries.filter(e => e.entry.kind !== "test" || showTests).map(e => ({id: e.id, own: false}));
   const steps = [], seen = new Set();
-  const visit = id => {
+  const visit = (id, parent) => {
     if (seen.has(id)) return; seen.add(id);
     const open = id === storyEntry || expanded.has(id);
-    steps.push({id, own: open});
-    if (open) callees(id).forEach(visit);
+    steps.push({id, own: open, parent});
+    if (open) callees(id).forEach(c => visit(c, id));
   };
-  visit(storyEntry);
+  visit(storyEntry, null);
   return steps;
 }
 // everything a closed step touches, anywhere below it
-function reachTouches(id) {
-  const r = reach(id), res = [];
-  for (const [k, ws] of Object.entries(r.whats)) for (const [w, n] of Object.entries(ws)) res.push({kind: k, what: w, n});
-  for (const k of Object.keys(r.bounds)) if (!Object.keys(r.whats[k] || {}).length) res.push({kind: k, what: "", n: r.bounds[k]});
-  return res;
-}
+const reachTouches = id => reach(id).touches;
 // `&mut T` hands T back changed, so T is in the codomain too (Rust says so in the signature; Python does not)
 function mutated(f) {
   const res = [];
@@ -781,20 +785,28 @@ function mutated(f) {
   }
   return res;
 }
+// where a route comes from: the command typed, the request made, the tool called
+const ENTRY_PLACE = {cli: l => `$ ${l}`, make: l => `$ make ${l}`, script: l => `$ python ${l}`, notebook: l => `notebook ${l}`, route: l => l, mcp: l => `MCP ${l}`, test: l => `test ${l}`};
+const entryPlace = id => { const e = byId.get(id).entry; return ["e:" + id, ENTRY_PLACE[e.kind](e.label), "entry", "", null]; };
 async function renderPlaat() {
   const g = scene.node();
   const members = new Map();
   for (const n of D.nodes) if (n.kind === "class" || n.kind === "external") { const f = familyOf(n.id); if (f !== n.id) { if (!members.has(f)) members.set(f, []); members.get(f).push(n.id); } }
   const placeOfType = t => { const f = familyOf(t); return expandedFamilies.has(f) ? t : f; };
-  const places = new Map(), arrows = new Map(), endo = new Map();
+  const places = new Map(), pills = new Map();
   const addPlace = (id, label, kind, role, fam) => { if (!places.has(id)) places.set(id, {id, label, kind, role, fam}); };
-  const worldPlace = (k, what) => {
-    const name = WORLD_IN[k] || WORLD_OUT[k], base = "w:" + name;
-    if (k === "process") return [base + ":" + (what || "process"), what || "process"];
-    if (refined.has(base) && what) return [base + ":" + what, `${name}(${what})`];
-    // coarse disk is what the route reads and what it writes, the words Story uses; split, it is one box per file
-    if (name === "Disk") return WORLD_IN[k] ? [base + ":in", "Disk in"] : [base + ":out", "Disk out"];
-    return [base, name];
+  // a part of the world: a file the code names, else coarse disk; a database, the screen, a command
+  const worldPlace = t => {
+    const k = t.kind, name = WORLD[k], base = "w:" + name;
+    if (k === "process") return [base + ":" + (t.what || "process"), t.what || "process", "world"];
+    if (k.startsWith("disk")) {
+      if (t.artifact && !PROBE.test(t.op || "")) return ["w:File:" + t.artifact, `File(${t.artifact})`, "world"];
+      const what = pickWhats({[t.what]: 1}, 1)[0];
+      if (refined.has("w:Disk") && what) return ["w:Disk:" + what, `Disk(${what})`, "world"];
+      return isIn(t) ? ["w:Disk:in", "Disk in", "world"] : ["w:Disk:out", "Disk out", "world"];
+    }
+    if (k.startsWith("db_") && refined.has(base) && t.artifact) return [base + ":" + t.artifact, `${name}(${t.artifact})`, "world"];
+    return [base, name, "world"];
   };
   const typePlace = t => {
     const pid = placeOfType(t), n = byId.get(pid), isFam = members.has(pid);
@@ -807,6 +819,7 @@ async function renderPlaat() {
   for (const s of steps) {
     const f = byId.get(s.id); if (!f) continue;
     const dom = [], cod = [];  // [place, reach]: reach = touched somewhere below a closed step, not by the step itself
+    if (f.entry && (s.id === storyEntry || !storyEntry)) dom.push([entryPlace(s.id), false]);
     if (f.kind === "class") {
       cod.push([typePlace(f.id), false]);
       if (byId.has(f.id + ".__init__")) for (const x of typesOf(f.id + ".__init__").takes) dom.push([typePlace(x), false]);
@@ -818,67 +831,94 @@ async function renderPlaat() {
       // an open step's body consumes what it instantiates and what its callees hand back
       if (s.own) for (const c of callees(f.id)) { const cn = byId.get(c); if (cn.kind === "class") dom.push([typePlace(c), false]); else for (const r of typesOf(c).returns) dom.push([typePlace(r), false]); }
     }
-    const own = new Set((f.touches || []).map(t => t.kind + "|" + t.what));
+    const own = new Set((f.touches || []).map(touchKey));
     for (const tc of (s.own ? f.touches || [] : reachTouches(f.id))) {
-      const [id, label] = worldPlace(tc.kind, pickWhats({[tc.what]: tc.n}, 1)[0]), p = [id, label, "world"], r = !own.has(tc.kind + "|" + tc.what);
-      if (WORLD_IN[tc.kind]) dom.push([p, r]);
-      if (WORLD_OUT[tc.kind]) cod.push([p, r]);
+      if (!WORLD[tc.kind]) continue;
+      const p = worldPlace(tc), r = !own.has(touchKey(tc));
+      (isIn(tc) ? dom : cod).push([p, r]);
     }
-    if (!dom.length || !cod.length) continue;
-    for (const [d, rd] of dom) for (const [c, rc] of cod) {
-      addPlace(...d);
-      if (d[0] === c[0]) { if (!endo.has(d[0])) endo.set(d[0], new Set()); endo.get(d[0]).add(s.id); continue; }
-      addPlace(...c);
-      const key = d[0] + ">" + c[0];
-      if (!arrows.has(key)) arrows.set(key, {src: d[0], dst: c[0], steps: [], own: false});
-      const a = arrows.get(key); if (!a.steps.includes(s.id)) a.steps.push(s.id); a.own ||= !(rd || rc);
-    }
+    // a result with no place of its own (a str, a dict) goes back to the step that called it
+    const ret = (f.returns || "").replace(/^Result<(.*)>$/, "$1");
+    const handsBack = !cod.some(([p]) => p[0].startsWith("t:")) && ret && !/^(None|\(\)|Self)$/.test(ret) && s.parent;
+    if (!dom.length && !cod.length && !handsBack) continue;
+    // a step is a pill between the places it takes from and hands on to; steps with the same places are one pill
+    const Dm = new Map(), Cm = new Map();
+    for (const [p, r] of dom) { addPlace(...p); Dm.set(p[0], (Dm.has(p[0]) ? Dm.get(p[0]) : true) && r); }
+    for (const [p, r] of cod) { addPlace(...p); Cm.set(p[0], (Cm.has(p[0]) ? Cm.get(p[0]) : true) && r); }
+    const key = [...Dm.keys()].sort().join(",") + ">" + [...Cm.keys()].sort().join(",") + (handsBack ? "^" + s.parent : "");
+    if (!pills.has(key)) pills.set(key, {id: "s:" + pills.size, steps: [], D: Dm, C: Cm});
+    else { const P = pills.get(key); Dm.forEach((r, k) => P.D.set(k, P.D.get(k) && r)); Cm.forEach((r, k) => P.C.set(k, P.C.get(k) && r)); }
+    const P = pills.get(key); P.steps.push(s.id);
+    if (handsBack) (P.back ||= new Set()).add(s.parent);
   }
   // without entry points there is no route; keep that picture coarse: the world and the busiest types
   const keep = new Set(places.keys());
   if (!anchored) {
     const involvement = new Map();
-    for (const a of arrows.values()) { involvement.set(a.src, (involvement.get(a.src) || 0) + 1); involvement.set(a.dst, (involvement.get(a.dst) || 0) + 1); }
+    for (const P of pills.values()) for (const k of [...P.D.keys(), ...P.C.keys()]) involvement.set(k, (involvement.get(k) || 0) + 1);
     keep.clear(); [...places.keys()].filter(id => id.startsWith("w:")).forEach(id => keep.add(id));
     [...places.keys()].filter(id => !id.startsWith("w:")).sort((a, b) => (involvement.get(b) || 0) - (involvement.get(a) || 0)).slice(0, 16).forEach(id => keep.add(id));
   }
-  const stepName = id => { const n = byId.get(id); if (!storyEntry && n.entry) return entryTitle(id); if (n.kind === "class") return n.name + "()"; return n.cls ? `${typeLabel(n.cls)}.${n.name}` : n.name; };
-  const label = ss => { const ns = [...new Set(ss.map(stepName))]; return ns.length <= 2 ? ns.join(", ") : `${ns.slice(0, 2).join(", ")} +${ns.length - 2}`; };
-  const nodes = [...places.values()].filter(p => keep.has(p.id)).map(p => ({id: p.id, width: 30 + p.label.length * 7.6 + (endo.get(p.id) ? 34 : 14), height: p.fam ? 46 : 40}));
-  const edges = [...arrows.values()].filter(a => keep.has(a.src) && keep.has(a.dst)).map((a, i) => ({id: "a" + i, sources: [a.src], targets: [a.dst], a}));
-  const layout = await new ELK().layout({id: "root", layoutOptions: {"elk.algorithm": "layered", "elk.direction": "RIGHT", "elk.edgeRouting": "ORTHOGONAL", "elk.layered.spacing.nodeNodeBetweenLayers": "110", "elk.spacing.nodeNode": "30", "elk.layered.nodePlacement.strategy": "NETWORK_SIMPLEX", "elk.spacing.edgeNode": "24", "elk.layered.spacing.edgeNodeBetweenLayers": "30"}, children: nodes, edges});
+  const stepName = id => { const n = byId.get(id); if (n.kind === "class") return n.name + "()"; if (n.make) return n.name; return n.cls ? `${typeLabel(n.cls)}.${n.name}` : n.name; };
+  const openable = id => id !== storyEntry && !expanded.has(id) && callees(id).length > 0;
+  const pillLabel = P => {
+    const ns = [...new Set(P.steps.map(stepName))], text = ns.length <= 2 ? ns.join(", ") : `${ns.slice(0, 2).join(", ")} +${ns.length - 2}`;
+    const open = P.steps.some(id => id === storyEntry || expanded.has(id));
+    return (open ? "▾ " : P.steps.some(openable) ? "▸ " : "") + text;
+  };
+  const nodes = [...places.values()].filter(p => keep.has(p.id)).map(p => ({id: p.id, width: 30 + p.label.length * 7.6, height: p.fam ? 46 : 40, layoutOptions: p.kind === "entry" ? {"elk.layered.layering.layerConstraint": "FIRST"} : {}}));
+  const edges = [];
+  for (const P of pills.values()) {
+    P.label = pillLabel(P);
+    const ins = [...P.D].filter(([k]) => keep.has(k)), outs = [...P.C].filter(([k]) => keep.has(k));
+    if (!ins.length && !outs.length) continue;
+    nodes.push({id: P.id, width: 22 + P.label.length * 6.9, height: 26});
+    ins.forEach(([k, r], i) => edges.push({id: `${P.id}:i${i}`, sources: [k], targets: [P.id], reach: r}));
+    outs.forEach(([k, r], i) => edges.push({id: `${P.id}:o${i}`, sources: [P.id], targets: [k], reach: r}));
+  }
+  const pillOf = new Map([...pills.values()].map(P => [P.id, P]));
+  const pillOfStep = new Map([...pills.values()].flatMap(P => P.steps.map(id => [id, P.id])));
+  for (const P of pills.values()) for (const caller of P.back || []) {
+    const to = pillOfStep.get(caller);
+    if (to && to !== P.id && nodes.some(n => n.id === to)) edges.push({id: `${P.id}:b:${to}`, sources: [P.id], targets: [to], back: true});
+  }
+  const layout = await new ELK().layout({id: "root", layoutOptions: {"elk.algorithm": "layered", "elk.direction": "RIGHT", "elk.edgeRouting": "ORTHOGONAL", "elk.layered.spacing.nodeNodeBetweenLayers": "70", "elk.spacing.nodeNode": "22", "elk.layered.nodePlacement.strategy": "NETWORK_SIMPLEX", "elk.spacing.edgeNode": "18", "elk.layered.spacing.edgeNodeBetweenLayers": "22"}, children: nodes, edges});
   el("text", {class: "story-title", x: 20, y: 24}, g).textContent = !anchored ? "Every function (no entry points found)" : storyEntry ? `Route · ${entryTitle(storyEntry)}` : "All routes";
-  el("text", {class: "story-sub", x: 20, y: 41}, g).textContent = !anchored ? "nothing anchors a route here, so every typed function is an arrow · the sixteen busiest types are kept"
-    : storyEntry ? `${short(storyEntry)} · each arrow is a step, from what it takes to what it hands on · dashed: happens inside a closed step · click an arrow to open its steps`
-    : "each arrow is an entry point, from what it reaches into to what it hands on · click an arrow to follow that route";
-  if (!edges.length && !nodes.length) el("text", {class: "story-sub", x: 20, y: 70}, g).textContent = "No step on this route takes or hands on a place yet: open a step in Story, or pick another route.";
+  el("text", {class: "story-sub", x: 20, y: 41}, g).textContent = !anchored ? "nothing anchors a route here, so every typed function is a step · the sixteen busiest types are kept"
+    : storyEntry ? `${short(storyEntry)} · boxes: where data rests · pills: the steps, from what they take to what they hand on · ▸ opens a step · dashed: happens inside a closed step`
+    : "each route from where it starts to where its data ends up · click a route to follow it";
+  if (!nodes.length) el("text", {class: "story-sub", x: 20, y: 70}, g).textContent = "No step on this route takes or hands on a place yet: open a step in Story, or pick another route.";
   const eg = el("g", {transform: "translate(20,60)"}, g), ng = el("g", {transform: "translate(20,60)"}, g);
   for (const e of layout.edges || []) {
     const sct = e.sections[0], pts = [sct.startPoint, ...(sct.bendPoints || []), sct.endPoint];
-    const d = pts.map((q, i) => (i ? "L" : "M") + q.x + "," + q.y).join(" "), cnt = e.a.steps.length, sw = 1 + Math.log2(cnt) * 0.9;
-    el("path", {class: "sedge fn" + (e.a.own ? "" : " reach"), d, "stroke-width": sw.toFixed(2)}, eg);
-    const last = pts[pts.length - 1], prev = pts[pts.length - 2], ang = Math.atan2(last.y - prev.y, last.x - prev.x), L = 8 + sw, Wd = 4 + sw / 2;
+    const d = pts.map((q, i) => (i ? "L" : "M") + q.x + "," + q.y).join(" ");
+    el("path", {class: "sedge fn" + (e.reach ? " reach" : "") + (e.back ? " back" : ""), d, "stroke-width": 1.3}, eg);
+    const last = pts[pts.length - 1], prev = pts[pts.length - 2], ang = Math.atan2(last.y - prev.y, last.x - prev.x), L = 8, Wd = 4;
     el("polygon", {points: [[last.x, last.y], [last.x - L * Math.cos(ang) + Wd * Math.sin(ang), last.y - L * Math.sin(ang) - Wd * Math.cos(ang)], [last.x - L * Math.cos(ang) - Wd * Math.sin(ang), last.y - L * Math.sin(ang) + Wd * Math.cos(ang)]].map(q => q.join(",")).join(" "), fill: "var(--ink-3)"}, eg);
-    const mid = pts[Math.floor((pts.length - 1) / 2)], mid2 = pts[Math.floor((pts.length - 1) / 2) + 1] || mid;
-    el("text", {class: "sedge-label", x: (mid.x + mid2.x) / 2, y: (mid.y + mid2.y) / 2 - 6, "text-anchor": "middle"}, eg).textContent = label(e.a.steps);
-    const hit = el("path", {class: "edge-hit", d}, eg);
-    hit.addEventListener("click", () => {
-      selectArrows({src: e.a.src, dst: e.a.dst, fns: e.a.steps, kind: "fn", places});
-      if (!storyEntry && anchored) { if (e.a.steps.length === 1) { storyEntry = e.a.steps[0]; entrySel.value = storyEntry; expanded.clear(); render(); } return; }
-      const openable = e.a.steps.filter(id => id !== storyEntry && !expanded.has(id) && callees(id).length);
-      if (openable.length) { openable.forEach(id => expanded.add(id)); render(); }
-    });
   }
   for (const n of layout.children) {
+    const P = pillOf.get(n.id);
+    if (P) {
+      const grp = el("g", {class: "tstep", transform: `translate(${n.x},${n.y})`, "data-id": P.steps[0]}, ng);
+      el("rect", {class: "bg", width: n.width, height: n.height, rx: n.height / 2}, grp);
+      el("text", {class: "title", x: 11, y: n.height / 2 + 4}, grp).textContent = P.label;
+      grp.addEventListener("click", () => {
+        if (P.steps.length === 1) select(P.steps[0]); else selectArrows({src: null, dst: null, fns: P.steps, kind: "steps"});
+        if (!storyEntry && anchored) { if (P.steps.length === 1) { storyEntry = P.steps[0]; entrySel.value = storyEntry; expanded.clear(); render(); } return; }
+        const opens = P.steps.filter(openable);
+        if (opens.length) { opens.forEach(id => expanded.add(id)); render(); }
+      });
+      continue;
+    }
     const p = places.get(n.id);
-    const grp = el("g", {class: "tnode" + (p.kind === "ext" ? " ghost" : ""), transform: `translate(${n.x},${n.y})`, "data-id": n.id}, ng);
-    el("rect", {class: "bg", width: n.width, height: n.height, rx: p.kind === "world" ? 4 : 10}, grp);
-    el("rect", {x: 0, y: 0, width: 5, height: n.height, rx: 2, fill: p.kind === "world" ? "var(--ink-3)" : roleVar(p.role || "External")}, grp);
+    const grp = el("g", {class: "tnode" + (p.kind === "ext" ? " ghost" : "") + (p.kind === "entry" ? " entry" : ""), transform: `translate(${n.x},${n.y})`, "data-id": n.id}, ng);
+    el("rect", {class: "bg", width: n.width, height: n.height, rx: p.kind === "type" || p.kind === "ext" ? 10 : 4}, grp);
+    el("rect", {x: 0, y: 0, width: 5, height: n.height, rx: 2, fill: p.kind === "world" || p.kind === "entry" ? "var(--ink-3)" : roleVar(p.role || "External")}, grp);
     if (p.fam) el("text", {class: "fam", x: 16, y: 13}, grp).textContent = "▴ " + typeLabel(p.fam);
     el("text", {class: "title", x: 16, y: p.fam ? 34 : n.height / 2 + 4}, grp).textContent = p.label;
-    if (endo.get(n.id)) el("text", {class: "endo", x: n.width - 10, y: n.height / 2 + 4, "text-anchor": "end"}, grp).textContent = `↻${endo.get(n.id).size}`;
     grp.addEventListener("click", () => {
-      if (p.kind === "world") { const base = p.id.split(":").slice(0, 2).join(":"); if (refined.has(base)) refined.delete(base); else refined.add(base); render(); return; }
+      if (p.kind === "entry") { const id = p.id.slice(2); if (!storyEntry) { storyEntry = id; entrySel.value = id; expanded.clear(); render(); } else select(id); return; }
+      if (p.kind === "world") { const base = p.id.split(":").slice(0, 2).join(":"); if (base === "w:File" || base === "w:Screen") return; if (refined.has(base)) refined.delete(base); else refined.add(base); render(); return; }
       const tid = p.id.slice(2);
       if (members.has(tid) && !expandedFamilies.has(tid)) { expandedFamilies.add(tid); render(); }
       else if (byId.has(tid)) select(tid);
@@ -976,6 +1016,12 @@ function selectEdge(a) {
   insp.scrollTop = 0;
 }
 function selectArrows(p) {
+  if (p.kind === "steps") {  // one pill standing for several steps with the same places
+    insp.innerHTML = ""; insp.appendChild(html("div", "eyebrow", "steps"));
+    insp.appendChild(html("h1", "name", `${p.fns.length} steps`));
+    insp.appendChild(html("div", "path", "steps that take from the same places and hand on to the same places"));
+    insp.appendChild(section("steps", p.fns.length, linkList(p.fns))); insp.scrollTop = 0; return;
+  }
   const nameOfPlace = id => p.places ? (p.places.get(id) || {}).label || id : byId.get(id).name;
   const an = nameOfPlace(p.src), bn = nameOfPlace(p.dst);
   insp.innerHTML = "";
@@ -995,7 +1041,7 @@ function legend() {
   L.appendChild(row);
   const row2 = html("div", "row");
   row2.innerHTML = view === "plaat"
-    ? `<span class="k">box = a place data rests: a type family (role strip) or a part of the world (grey strip) · (n) = a family, click to open · ▴ = member of an open family</span><span class="k">arrow = a step of the route, from what it takes to what it hands on · dashed = happens inside a closed step · click it to open the step</span><span class="k">the bar at the top is everything the picture depends on · ✕ undoes</span>`
+    ? `<span class="k">box = a place data rests: a type family (role strip), a file, a database, the screen, or where the route starts (grey strip) · (n) = a family, click to open</span><span class="k">pill = a step: arrows in from what it takes, out to what it hands on · ▸ = click to open its own steps · dashed = happens inside a closed step · dotted = a result handed back to the caller</span><span class="k">the bar at the top is everything the picture depends on · ✕ undoes</span>`
     : view === "story"
     ? `<span class="k">rows = steps in call order · line 1 = the step's own signature, in the author's names · line 2 = what its own body does</span><span class="k">dots = what the step reaches through everything below it · dot size = how often</span><span class="k">▸ expand a step into its own steps · click a name for the code</span>`
     : view === "arch"

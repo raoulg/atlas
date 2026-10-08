@@ -98,6 +98,27 @@ fn boundaries_are_tagged() {
     assert_eq!(write.get("db_duckdb"), Some(&1), "con.execute with duckdb imported");
     assert_eq!(write.get("disk_write"), Some(&1), "Path(...).write_text");
     assert_eq!(b("fixture.sinks.duck.DuckSink.__init__").get("db_duckdb"), Some(&1), "duckdb.connect");
+    assert_eq!(b("fixture.cli.cmd_report").get("screen"), Some(&1), "click.echo");
+}
+
+/// Where data rests is named as precisely as the code allows: a literal file, else its format;
+/// a database statement reads or writes a table.
+#[test]
+fn files_and_tables_are_places() {
+    let g = fixture();
+    let t = |id: &str| g.node(id).unwrap().touches.iter().map(|t| (t.kind.as_str(), t.artifact.as_str(), t.dir.as_str())).collect::<HashSet<_>>();
+    let write = t("fixture.sinks.duck.DuckSink.write");
+    assert!(write.contains(&("db_duckdb", "nodes", "write")), "INSERT INTO nodes");
+    assert!(write.contains(&("disk_write", "out.json", "")), "Path(\"out.json\").write_text");
+    let save = t("fixture.build.save");
+    assert!(save.contains(&("disk_write", "{name}.csv", "")), "to_csv with an f-string path");
+    assert!(save.contains(&("disk_write", "*.parquet", "")), "to_parquet(path): only the format is known");
+    assert!(save.contains(&("disk_write", "", "")), "open(name, \"w\") writes");
+    assert!(save.contains(&("screen", "", "")), "print");
+    assert!(t("fixture.build.load").contains(&("disk_read", "*.csv", "")), "pd.read_csv named in a module-level table");
+    let returns = edges(&g, EdgeKind::Returns);
+    assert!(returns.contains(&("fixture.build.load".into(), "fixture.schema.Graph".into())), "Loaded = Union[Graph, Node]");
+    assert!(returns.contains(&("fixture.build.load".into(), "fixture.schema.Node".into())));
 }
 
 #[test]
@@ -133,6 +154,10 @@ fn rust_workspace_parses() {
     // typed parameters give receivers a type: `store.add_edge(..)` with `store: &mut Store`
     assert!(calls.contains(&("atlas-engine.python.collect_symbols".into(), "atlas-engine.store.Store.add_edge".into())));
     assert!(g.node("atlas-engine.rust.parse").unwrap().boundaries.get("disk_read").is_some(), "walkdir and fs::read");
+    let arts = |id: &str| g.node(id).unwrap().touches.iter().map(|t| (t.kind.clone(), t.artifact.clone())).collect::<HashSet<_>>();
+    assert!(arts("atlas-engine.entries.read_makefile").contains(&("disk_read".into(), "Makefile".into())));
+    assert!(arts("atlas-engine.language.Python.detect").contains(&("disk_read".into(), "pyproject.toml".into())), "repo.join(..).exists()");
+    assert!(g.node("atlas.view").unwrap().boundaries.contains_key("screen"), "eprintln!");
     // the declared picture: parse -> lens -> layout, model underneath
     assert_eq!(g.roles.order, vec!["Parse", "Lens", "Layout"]);
     assert_eq!(g.node("atlas-engine.lens.Quotient").unwrap().role, "Lens");

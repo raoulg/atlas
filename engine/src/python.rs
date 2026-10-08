@@ -14,9 +14,9 @@ use walkdir::WalkDir;
 
 use crate::effects;
 use crate::entries::entry_of;
-use crate::model::{EdgeKind, Entry, EntryKind, Node, NodeKind};
+use crate::model::{EdgeKind, Entry, EntryKind, Node, NodeKind, Touch};
 pub use crate::store::{ClassInfo, SigInfo, Store};
-use crate::tree::{field_children, named_children, payload_of, text, walk, what_of};
+use crate::tree::{field_children, literals, named_children, payload_of, text, walk, what_of};
 
 const BUILTIN_TYPES: &[&str] = &[
     "str", "int", "float", "bool", "bytes", "list", "dict", "set", "tuple", "None", "Any", "Optional",
@@ -519,6 +519,7 @@ fn def_node<'t>(m: &'t Module, n: &Node) -> Option<TsNode<'t>> {
 }
 
 fn link(modules: &IndexMap<String, Module>, store: &mut Store, root: &str) {
+    let aliases = type_aliases(modules);
     let ids: Vec<String> = store.nodes.keys().cloned().collect();
     // bases and annotated fields
     for id in &ids {
@@ -562,8 +563,14 @@ fn link(modules: &IndexMap<String, Module>, store: &mut Store, root: &str) {
                 let m = &modules[&module];
                 let sig = store.sigs.get(id).cloned().unwrap_or_default();
                 for (types, kind) in [(&sig.ptypes, EdgeKind::Takes), (&sig.rtypes, EdgeKind::Returns)] {
-                    for t in types {
-                        let Some(r) = resolve(m, t, modules, &store.nodes, root) else { continue };
+                    let targets: Vec<String> = types
+                        .iter()
+                        .flat_map(|t| match resolve(m, t, modules, &store.nodes, root) {
+                            Some(r) => vec![r],
+                            None => alias_targets(m, t, modules, &aliases, &store.nodes, root),
+                        })
+                        .collect();
+                    for r in targets {
                         if r.starts_with("ext:") {
                             if !foreign_type(&r) {
                                 continue;
@@ -644,6 +651,79 @@ fn infer_self_attrs(modules: &IndexMap<String, Module>, store: &mut Store, root:
     }
 }
 
+/// Module-level type aliases, `Result = Union[FitResult, FailedFit]` or `Id = int | str`, by
+/// full name: the module they live in and the names they stand for.
+fn type_aliases(modules: &IndexMap<String, Module>) -> HashMap<String, (String, Vec<Vec<String>>)> {
+    let mut out = HashMap::new();
+    for (mid, m) in modules {
+        for a in top_assignments(m) {
+            let (Some(left), Some(right)) = (a.child_by_field_name("left"), a.child_by_field_name("right")) else { continue };
+            let is_type = match right.kind() {
+                "subscript" => matches!(dotted(right.child_by_field_name("value"), &m.src).last().map(String::as_str), Some("Union" | "Optional")),
+                "binary_operator" => text(right, &m.src).contains('|'),
+                _ => false,
+            };
+            if left.kind() == "identifier" && is_type {
+                out.insert(format!("{mid}.{}", text(left, &m.src)), (mid.clone(), type_names(Some(right), &m.src)));
+            }
+        }
+    }
+    out
+}
+
+/// The assignments at the top level of a module.
+fn top_assignments<'t>(m: &'t Module) -> Vec<TsNode<'t>> {
+    named_children(m.tree.root_node())
+        .into_iter()
+        .filter(|s| s.kind() == "expression_statement")
+        .flat_map(named_children)
+        .filter(|a| a.kind() == "assignment")
+        .collect()
+}
+
+/// The classes an alias stands for, resolved in the module that defines it.
+fn alias_targets(m: &Module, t: &[String], modules: &IndexMap<String, Module>, aliases: &HashMap<String, (String, Vec<Vec<String>>)>, nodes: &IndexMap<String, Node>, root: &str) -> Vec<String> {
+    let [name] = t else { return vec![] };
+    let full = m.bindings.get(name).cloned().unwrap_or_else(|| format!("{}.{name}", m.id));
+    let Some((mid, names)) = aliases.get(&full) else { return vec![] };
+    names.iter().filter_map(|n| resolve(&modules[mid], n, modules, nodes, root)).collect()
+}
+
+/// I/O functions named without being called: `READERS = {".csv": pd.read_csv}` reads csv
+/// wherever `READERS` is used. Keyed by the module-level name that holds them.
+fn io_tables(m: &Module, root: &str) -> HashMap<String, Vec<Touch>> {
+    let mut out: HashMap<String, Vec<Touch>> = HashMap::new();
+    for a in top_assignments(m) {
+        let (Some(left), Some(right)) = (a.child_by_field_name("left"), a.child_by_field_name("right")) else { continue };
+        if left.kind() != "identifier" {
+            continue;
+        }
+        let ts = io_refs(m, right, root, text(left, &m.src));
+        if !ts.is_empty() {
+            out.insert(text(left, &m.src).to_string(), ts);
+        }
+    }
+    out
+}
+
+/// Attributes under `n` that name an I/O function of a library without calling it.
+fn io_refs(m: &Module, n: TsNode, root: &str, what: &str) -> Vec<Touch> {
+    let mut out = vec![];
+    for a in walk(n, &["attribute"]) {
+        let called = a.parent().map_or(false, |p| p.kind() == "call" && p.child_by_field_name("function").map(|f| f.id()) == Some(a.id()));
+        if called || a.parent().map_or(false, |p| p.kind() == "attribute") {
+            continue;
+        }
+        let parts = dotted(Some(a), &m.src);
+        let Some(pkg) = parts.first().and_then(|h| m.bindings.get(h)).filter(|b| !b.starts_with(root)).and_then(|b| b.split('.').next()) else { continue };
+        let Some(tag) = effects::boundary(Some(pkg), &parts, &m.ext_pkgs) else { continue };
+        let op = parts.last().cloned().unwrap_or_default();
+        let f = effects::facts(tag, Some(pkg), &op, &[]);
+        out.push(Touch { kind: f.kind.into(), what: what.into(), op, artifact: f.artifact, dir: f.dir.into(), n: 1, ..Default::default() });
+    }
+    out
+}
+
 fn link_calls(modules: &IndexMap<String, Module>, store: &mut Store, root: &str, id: &str) {
     let n = store.nodes[id].clone();
     let m = &modules[&n.module];
@@ -676,7 +756,7 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut Store, root: &str,
             }
         }
     }
-    let mut touches: Vec<(String, String, String, String)> = vec![];
+    let mut touches: Vec<Touch> = vec![];
     let mut new_edges: Vec<(String, EdgeKind)> = vec![];
     for c in walk(body, &["call"]) {
         if n.kind == NodeKind::Module {
@@ -759,18 +839,30 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut Store, root: &str,
                     .and_then(|b| b.split('.').next())
                     .map(str::to_string);
                 if let Some(tag) = effects::boundary(pkg.as_deref(), &parts, &m.ext_pkgs) {
+                    let op = parts.last().cloned().unwrap_or_default();
+                    let f = effects::facts(tag, pkg.as_deref(), &op, &literals(c, src, &["string"]));
                     let what = what_of(c, src, &["string"], "arguments");
                     let payload = payload_of(c, src, &what, "arguments", &locals);
-                    touches.push((tag.to_string(), what, payload, parts.last().cloned().unwrap_or_default()));
+                    touches.push(Touch { kind: f.kind.into(), what, payload, op, artifact: f.artifact, dir: f.dir.into(), n: 1 });
                 }
+            }
+        }
+    }
+    // I/O functions referenced, directly or through a module-level table, may be called later
+    if n.kind != NodeKind::Module {
+        touches.extend(io_refs(m, body, root, ""));
+        let tables = io_tables(m, root);
+        for ident in walk(body, &["identifier"]) {
+            if let Some(ts) = tables.get(text(ident, src)) {
+                touches.extend(ts.iter().cloned());
             }
         }
     }
     for (t, kind) in new_edges {
         store.add_edge(id, &t, kind, None);
     }
-    for (kind, what, payload, op) in touches {
-        store.touch(id, &kind, &what, &payload, &op);
+    for t in touches {
+        store.touch(id, t);
     }
 }
 

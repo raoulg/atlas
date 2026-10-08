@@ -14,9 +14,9 @@ use tree_sitter::{Node as TsNode, Parser, Tree};
 use walkdir::WalkDir;
 
 use crate::effects;
-use crate::model::{EdgeKind, Entry, EntryKind, Node, NodeKind};
+use crate::model::{EdgeKind, Entry, EntryKind, Node, NodeKind, Touch};
 use crate::store::{ClassInfo, SigInfo, Store};
-use crate::tree::{named_children, payload_of, span, text, walk, what_of};
+use crate::tree::{literals, named_children, payload_of, span, text, walk, what_of};
 
 struct Crate {
     name: String,
@@ -770,7 +770,21 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut Store, crate_ids: 
     }
     let attr_types = cls.as_ref().and_then(|c| store.classes.get(c)).map(|c| c.attr_types.clone()).unwrap_or_default();
     let mut new_edges: Vec<(String, EdgeKind, Option<String>)> = vec![];
-    let mut touches: Vec<(String, String, String, String)> = vec![];
+    let mut touches: Vec<Touch> = vec![];
+    let lit_kinds = &["string_literal", "raw_string_literal"];
+    // a boundary call, refined by the literals under it
+    let touch = |c: tree_sitter::Node, kind: &'static str, op: &str, locals: &HashMap<String, String>| {
+        let f = effects::facts(kind, None, op, &literals(c, src, lit_kinds));
+        let what = what_of(c, src, lit_kinds, "arguments");
+        let payload = payload_of(c, src, &what, "arguments", locals);
+        Touch { kind: f.kind.into(), what, payload, op: op.into(), artifact: f.artifact, dir: f.dir.into(), n: 1 }
+    };
+    for mac in walk(body, &["macro_invocation"]) {
+        let name = mac.child_by_field_name("macro").map(|x| text(x, src)).unwrap_or("");
+        if effects::screen_macro(name) {
+            touches.push(Touch { kind: "screen".into(), op: name.into(), n: 1, ..Default::default() });
+        }
+    }
     let mut unresolved: Vec<String> = vec![];
     for c in walk(body, &["call_expression", "struct_expression"]) {
         if c.kind() == "struct_expression" {
@@ -808,7 +822,12 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut Store, crate_ids: 
             };
             match receiver {
                 Some(r) => target = method_of(store, &r, &method).or_else(|| store.nodes.contains_key(&r).then(|| r.clone())),
-                None => continue,
+                None => {
+                    if effects::RUST_PATH_READS.contains(&method.as_str()) {
+                        touches.push(touch(c, "disk_read", &method, &locals));
+                    }
+                    continue;
+                }
             }
             if target.is_none() {
                 continue;
@@ -852,9 +871,7 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut Store, crate_ids: 
                 let full = expand(m, &parts);
                 unresolved.push(full.iter().take(2).cloned().collect::<Vec<_>>().join("."));
                 if let Some(tag) = effects::boundary_rust(&full) {
-                    let what = what_of(c, src, &["string_literal", "raw_string_literal"], "arguments");
-                    let payload = payload_of(c, src, &what, "arguments", &locals);
-                    touches.push((tag.to_string(), what, payload, parts.last().cloned().unwrap_or_default()));
+                    touches.push(touch(c, tag, parts.last().map(String::as_str).unwrap_or(""), &locals));
                 }
             }
         }
@@ -865,8 +882,8 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut Store, crate_ids: 
     for u in unresolved {
         *store.unresolved.entry(u).or_insert(0) += 1;
     }
-    for (kind, what, payload, op) in touches {
-        store.touch(id, &kind, &what, &payload, &op);
+    for t in touches {
+        store.touch(id, t);
     }
 }
 
