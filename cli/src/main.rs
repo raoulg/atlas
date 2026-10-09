@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use anyhow::Result;
+use atlas_engine::principles;
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
@@ -25,6 +26,14 @@ enum Cmd {
         /// Where to write the graph.
         #[arg(short, long, default_value = "graph.json")]
         out: PathBuf,
+    },
+    /// Check a repository against the design principles Atlas stands on.
+    Check {
+        /// Repository root; default: the current directory.
+        repo: Option<PathBuf>,
+        /// Print the findings as JSON.
+        #[arg(long)]
+        json: bool,
     },
     /// Analyze one or more repositories and open them in the viewer.
     View {
@@ -76,11 +85,53 @@ fn view(repos: &[PathBuf], roles: Option<&std::path::Path>, out: Option<PathBuf>
     Ok(())
 }
 
+/// The findings, grouped by principle, each ending in its question; exit status 1 when there
+/// is anything to ask.
+fn check(repo: &std::path::Path, json: bool) -> Result<bool> {
+    let g = atlas_engine::analyze(repo, None, None)?;
+    let findings = principles::check(&g);
+    if json {
+        println!("{}", serde_json::to_string_pretty(&serde_json::json!({ "root": g.root, "findings": findings }))?);
+        return Ok(findings.is_empty());
+    }
+    let n = findings.len();
+    println!("{} · {n} {}", g.root, if n == 1 { "finding" } else { "findings" });
+    let mut clear = vec![];
+    for p in principles::PRINCIPLES {
+        let mine: Vec<_> = findings.iter().filter(|f| f.principle == p.id).collect();
+        if mine.is_empty() {
+            clear.push(p.id);
+            continue;
+        }
+        println!("\n{} · {}", p.id, p.asks);
+        for f in mine {
+            println!("  {}:{}  {}", f.file, f.line, f.what);
+            for e in &f.evidence {
+                println!("      {e}");
+            }
+            println!("    ? {}", f.question);
+        }
+    }
+    if !clear.is_empty() {
+        println!("\nnothing to ask about {}", clear.join(", "));
+    }
+    Ok(findings.is_empty())
+}
+
 fn main() -> Result<()> {
     match Cli::parse().cmd {
         Cmd::View { repos, roles, out, no_open } => {
             let repos = if repos.is_empty() { vec![std::env::current_dir()?] } else { repos };
             view(&repos, roles.as_deref(), out, !no_open)?
+        }
+        Cmd::Check { repo, json } => {
+            let repo = match repo {
+                Some(r) => r,
+                None => std::env::current_dir()?,
+            };
+            if !check(&repo, json)? {
+                std::process::exit(1);
+            }
         }
         Cmd::Analyze { repo, package, roles, out } => {
             let g = atlas_engine::analyze(&repo, package.as_deref(), roles.as_deref())?;

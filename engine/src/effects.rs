@@ -187,6 +187,12 @@ pub fn facts(kind: &'static str, pkg: Option<&str>, op: &str, literals: &[String
 }
 
 /// A file mode literal: `r`, `wb`, `a+`.
+/// A boundary whose literal argument names a place someone could want elsewhere: a file or
+/// a URL. A table in a statement or a command line is what the call does, not where.
+pub fn locates(kind: &str) -> bool {
+    kind.starts_with("disk") || kind == "net"
+}
+
 pub fn is_mode(s: &str) -> bool {
     (1..=3).contains(&s.len()) && s.chars().all(|c| "rwabxt+".contains(c))
 }

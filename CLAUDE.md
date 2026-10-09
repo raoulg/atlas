@@ -56,6 +56,9 @@ The rigorous half and the visual half are the same structure. Read `docs/design.
 - Build and run: `cargo build`, `atlas view .` (install with `cargo install --path cli`;
   the viewer is baked into the binary, so rebuild after editing `spike/viewer.html`).
 - Tests: `cargo test`. The Rust workspace itself is a test subject.
+- `atlas check .` must find nothing on Atlas itself (`engine/tests/principles.rs` pins it).
+  A new principle is a rule in `engine/src/principles.rs`, a case in the fixture, and a
+  section in `docs/principles.md`; it checks what the graph holds, never a project.
 - tree-sitter is pinned to the 0.25 crate line; `tree-sitter-python` 0.25,
   `tree-sitter-rust` 0.24.
 - Languages: `engine/src/language.rs` is the trait; `python.rs` and `rust.rs`

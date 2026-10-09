@@ -70,11 +70,12 @@ impl GraphBuilder {
 
     /// The graph, once every file is parsed: the scratch is dropped, the names that did not
     /// resolve are counted.
-    pub fn finish(self, root: String, project_root: Option<&std::path::Path>) -> Graph {
+    pub fn finish(self, root: String, project_root: Option<&std::path::Path>, language: &str) -> Graph {
         let mut top: Vec<(String, u32)> = self.unresolved.iter().map(|(k, v)| (k.clone(), *v)).collect();
         top.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
         let mut g = Graph {
             root,
+            language: language.into(),
             project_root: project_root.map(|p| p.to_string_lossy().to_string()).unwrap_or_default(),
             nodes: self.nodes.into_values().collect(),
             edges: self.edges,

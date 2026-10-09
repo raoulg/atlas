@@ -16,7 +16,7 @@ use crate::effects;
 use crate::entries::entry_of;
 use crate::model::{EdgeKind, Entry, EntryKind, Node, NodeKind, Touch};
 pub use crate::builder::{ClassInfo, GraphBuilder, SigInfo};
-use crate::tree::{field_children, literals, named_children, payload_of, text, walk, what_of};
+use crate::tree::{field_children, literals, named_children, payload_of, span, starts_at_literal, text, walk, what_of};
 
 const BUILTIN_TYPES: &[&str] = &[
     "str", "int", "float", "bool", "bytes", "list", "dict", "set", "tuple", "None", "Any", "Optional",
@@ -130,10 +130,12 @@ fn signature(f: TsNode, src: &[u8]) -> (Vec<String>, String, SigInfo) {
     let mut info = SigInfo::default();
     if let Some(pn) = f.child_by_field_name("parameters") {
         for p in named_children(pn) {
-            let name_node = if p.kind() == "identifier" {
-                Some(p)
-            } else {
-                p.child_by_field_name("name").or_else(|| named_children(p).into_iter().next())
+            if matches!(p.kind(), "comment" | "keyword_separator" | "positional_separator") {
+                continue;
+            }
+            let name_node = match p.kind() {
+                "identifier" | "list_splat_pattern" | "dictionary_splat_pattern" => Some(p),
+                _ => p.child_by_field_name("name").or_else(|| named_children(p).into_iter().next()),
             };
             let pname = name_node.map(|n| text(n, src)).unwrap_or_else(|| text(p, src));
             let t = p.child_by_field_name("type");
@@ -536,6 +538,7 @@ fn def_node<'t>(m: &'t Module, n: &Node) -> Option<TsNode<'t>> {
 
 fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, root: &str) {
     let aliases = type_aliases(modules);
+    add_sums(modules, store, &aliases, root);
     let ids: Vec<String> = store.nodes.keys().cloned().collect();
     // bases and annotated fields
     for id in &ids {
@@ -754,9 +757,19 @@ fn mark_exports(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, ro
     }
 }
 
-/// Module-level type aliases, `Result = Union[FitResult, FailedFit]` or `Id = int | str`, by
-/// full name: the module they live in and the names they stand for.
-fn type_aliases(modules: &IndexMap<String, Module>) -> HashMap<String, (String, Vec<Vec<String>>)> {
+/// A module-level type alias: `Result = Union[FitResult, FailedFit]`, `Id = int | str`,
+/// `T = TypeVar("T", bound="Base")`.
+struct Alias {
+    module: String,
+    names: Vec<Vec<String>>,
+    /// A union: the value is one of its names. A `TypeVar` or an `Optional` stands for them.
+    sum: bool,
+    span: Option<(u32, u32)>,
+    text: String,
+}
+
+/// Module-level type aliases by full name.
+fn type_aliases(modules: &IndexMap<String, Module>) -> HashMap<String, Alias> {
     let mut out = HashMap::new();
     for (mid, m) in modules {
         for a in top_assignments(m) {
@@ -764,17 +777,55 @@ fn type_aliases(modules: &IndexMap<String, Module>) -> HashMap<String, (String, 
             if left.kind() != "identifier" {
                 continue;
             }
-            let names = match right.kind() {
-                "subscript" if matches!(dotted(right.child_by_field_name("value"), &m.src).last().map(String::as_str), Some("Union" | "Optional")) => type_names(Some(right), &m.src),
-                "binary_operator" if text(right, &m.src).contains('|') => type_names(Some(right), &m.src),
+            let head = dotted(right.child_by_field_name("value").or_else(|| right.child_by_field_name("function")), &m.src).last().cloned().unwrap_or_default();
+            let (names, sum) = match right.kind() {
+                "subscript" if matches!(head.as_str(), "Union" | "Optional") => (type_names(Some(right), &m.src), head == "Union"),
+                "binary_operator" if text(right, &m.src).contains('|') => (type_names(Some(right), &m.src), true),
                 // `T = TypeVar("T", bound="TransformBase")` stands for its bound, `TypeVar("T", A, B)` for its constraints
-                "call" if dotted(right.child_by_field_name("function"), &m.src).last().map(String::as_str) == Some("TypeVar") => typevar_names(right, &m.src),
+                "call" if head == "TypeVar" => (typevar_names(right, &m.src), false),
                 _ => continue,
             };
-            out.insert(format!("{mid}.{}", text(left, &m.src)), (mid.clone(), names));
+            let alias = Alias { module: mid.clone(), names, sum, span: span(a), text: text(right, &m.src).to_string() };
+            out.insert(format!("{mid}.{}", text(left, &m.src)), alias);
         }
     }
     out
+}
+
+/// A union of two or more known types is a type of its own, a sum: a node with a `variant`
+/// edge to each type it may be. Signatures that name the alias take or return the sum.
+fn add_sums(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, aliases: &HashMap<String, Alias>, root: &str) {
+    let mut sums: Vec<(&String, &Alias)> = aliases.iter().filter(|(_, a)| a.sum).collect();
+    sums.sort_by_key(|(id, _)| id.as_str());
+    for (id, a) in sums {
+        let m = &modules[&a.module];
+        let mut variants: Vec<String> = vec![];
+        for r in a.names.iter().filter_map(|n| resolve(m, n, modules, &store.nodes, root)) {
+            if (!r.starts_with("ext:") || foreign_type(&r)) && !variants.contains(&r) {
+                variants.push(r);
+            }
+        }
+        if variants.len() < 2 {
+            continue;
+        }
+        store.add_node(Node {
+            id: id.clone(),
+            kind: NodeKind::Class,
+            name: id.rsplit('.').next().unwrap_or(id).to_string(),
+            file: m.path.to_string_lossy().to_string(),
+            span: a.span,
+            module: a.module.clone(),
+            doc: a.text.clone(),
+            ..Default::default()
+        });
+        store.add_edge(&a.module, id, EdgeKind::Contains, None);
+        for v in variants {
+            if v.starts_with("ext:") {
+                store.ext_node(&v);
+            }
+            store.add_edge(id, &v, EdgeKind::Variant, None);
+        }
+    }
 }
 
 /// What a `TypeVar` ranges over: its bound, else its constraints; a bound may be a string.
@@ -809,12 +860,16 @@ fn top_assignments<'t>(m: &'t Module) -> Vec<TsNode<'t>> {
         .collect()
 }
 
-/// The classes an alias stands for, resolved in the module that defines it.
-fn alias_targets(m: &Module, t: &[String], modules: &IndexMap<String, Module>, aliases: &HashMap<String, (String, Vec<Vec<String>>)>, nodes: &IndexMap<String, Node>, root: &str) -> Vec<String> {
+/// What an alias stands for, resolved in the module that defines it: the sum it names, else
+/// the classes it ranges over.
+fn alias_targets(m: &Module, t: &[String], modules: &IndexMap<String, Module>, aliases: &HashMap<String, Alias>, nodes: &IndexMap<String, Node>, root: &str) -> Vec<String> {
     let [name] = t else { return vec![] };
     let full = m.bindings.get(name).cloned().unwrap_or_else(|| format!("{}.{name}", m.id));
-    let Some((mid, names)) = aliases.get(&full) else { return vec![] };
-    names.iter().filter_map(|n| resolve(&modules[mid], n, modules, nodes, root)).collect()
+    if nodes.contains_key(&full) {
+        return vec![full];
+    }
+    let Some(a) = aliases.get(&full) else { return vec![] };
+    a.names.iter().filter_map(|n| resolve(&modules[&a.module], n, modules, nodes, root)).collect()
 }
 
 /// I/O functions named without being called: `READERS = {".csv": pd.read_csv}` reads csv
@@ -887,6 +942,7 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, root
     }
     let mut touches: Vec<Touch> = vec![];
     let mut new_edges: Vec<(String, EdgeKind)> = vec![];
+    let mut changes: Vec<(String, String)> = vec![];
     for c in walk(body, &["call"]) {
         if n.kind == NodeKind::Module {
             // calls inside a definition belong to that definition
@@ -972,7 +1028,8 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, root
                     let f = effects::facts(tag, pkg.as_deref(), &op, &literals(c, src, &["string"]));
                     let what = what_of(c, src, &["string"], "arguments");
                     let payload = payload_of(c, src, &what, "arguments", &locals);
-                    touches.push(Touch { kind: f.kind.into(), what, payload, op, artifact: f.artifact, dir: f.dir.into(), n: 1 });
+                    let fixed = effects::locates(f.kind) && starts_at_literal(c, src, &["string"], "arguments");
+                    touches.push(Touch { kind: f.kind.into(), what, payload, op, artifact: f.artifact, dir: f.dir.into(), fixed, n: 1 });
                 }
             }
         }
@@ -990,7 +1047,7 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, root
         for r in changed_roots(body, src, &receiver_mutates) {
             let ty = if r == "self" { n.cls.clone().filter(|_| n.name != "__init__") } else { params.get(r).cloned() };
             if let Some(t) = ty {
-                new_edges.push((t, EdgeKind::Mutates));
+                changes.push((t, r.to_string()));
             }
         }
     }
@@ -1006,6 +1063,9 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, root
     }
     for (t, kind) in new_edges {
         store.add_edge(id, &t, kind, None);
+    }
+    for (t, input) in changes {
+        store.add_edge(id, &t, EdgeKind::Mutates, Some(input));
     }
     for t in touches {
         store.touch(id, t);

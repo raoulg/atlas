@@ -14,3 +14,6 @@ class Graph(BaseModel):
 
     def add(self, node: Node) -> None:
         self.nodes.append(node)
+
+    def first(self):
+        return self.nodes[0]

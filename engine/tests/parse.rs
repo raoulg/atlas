@@ -112,6 +112,9 @@ fn mutation_is_an_endomorphism() {
     let m = edges(&g, EdgeKind::Mutates);
     assert!(m.contains(&("fixture.schema.Graph.add".into(), "fixture.schema.Graph".into())), "self.nodes.append");
     assert!(m.contains(&("fixture.build.enrich".into(), "fixture.schema.Graph".into())), "graph.add(..) on a parameter");
+    let via = |src: &str| g.edges.iter().find(|e| e.kind == EdgeKind::Mutates && e.src == src).and_then(|e| e.via.clone());
+    assert_eq!(via("fixture.build.enrich").as_deref(), Some("graph"), "the edge names the input that changes");
+    assert_eq!(via("fixture.schema.Graph.add").as_deref(), Some("self"));
     assert!(!m.iter().any(|(s, _)| s == "fixture.build.build_graph"), "g = Graph(); g.add(..) builds, it does not change an input");
 }
 
@@ -126,13 +129,18 @@ fn files_and_tables_are_places() {
     assert!(write.contains(&("disk_write", "out.json", "")), "Path(\"out.json\").write_text");
     let save = t("fixture.build.save");
     assert!(save.contains(&("disk_write", "{name}.csv", "")), "to_csv with an f-string path");
+    let fixed = |id: &str| g.node(id).unwrap().touches.iter().filter(|t| t.fixed).map(|t| t.op.as_str()).collect::<Vec<_>>();
+    assert_eq!(fixed("fixture.sinks.duck.DuckSink.write"), ["write_text"], "Path(\"out.json\") is decided by the code alone");
+    assert!(fixed("fixture.build.save").is_empty(), "f\"{{name}}.csv\", path and name come from the caller");
     assert!(save.contains(&("disk_write", "*.parquet", "")), "to_parquet(path): only the format is known");
     assert!(save.contains(&("disk_write", "", "")), "open(name, \"w\") writes");
     assert!(save.contains(&("screen", "", "")), "print");
     assert!(t("fixture.build.load").contains(&("disk_read", "*.csv", "")), "pd.read_csv named in a module-level table");
     let returns = edges(&g, EdgeKind::Returns);
-    assert!(returns.contains(&("fixture.build.load".into(), "fixture.schema.Graph".into())), "Loaded = Union[Graph, Node]");
-    assert!(returns.contains(&("fixture.build.load".into(), "fixture.schema.Node".into())));
+    assert!(returns.contains(&("fixture.build.load".into(), "fixture.build.Loaded".into())), "Loaded = Union[Graph, Node] is a type of its own");
+    let variants = edges(&g, EdgeKind::Variant);
+    assert!(variants.contains(&("fixture.build.Loaded".into(), "fixture.schema.Graph".into())), "a sum and the types it may be");
+    assert!(variants.contains(&("fixture.build.Loaded".into(), "fixture.schema.Node".into())));
     let takes = edges(&g, EdgeKind::Takes);
     assert!(takes.contains(&("fixture.build.register".into(), "fixture.sinks.base.Sink".into())), "Type[SinkT], SinkT = TypeVar(bound=\"Sink\")");
     assert!(takes.contains(&("fixture.build.describe".into(), "fixture.schema.Graph".into())), "a quoted annotation is a forward reference");

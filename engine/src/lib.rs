@@ -8,6 +8,7 @@ pub mod entries;
 pub mod language;
 pub mod lens;
 pub mod model;
+pub mod principles;
 pub mod python;
 pub mod roles;
 pub mod rust;

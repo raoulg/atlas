@@ -27,6 +27,7 @@ codebase is the image of an effect functor into the category of resting places. 
 engine knows languages and libraries, never a project.
 
 - Design: [docs/design.md](docs/design.md)
+- Principles: [docs/principles.md](docs/principles.md)
 - Planning: Linear project *Atlas — code at the level of types and flows*
 - Subjects: Atlas itself, then `ruimtelijke-knowledge-graph`, `vectormesh`, `goad_toolkit`, `notebooktester`
 
@@ -40,6 +41,10 @@ cargo run -q -- view /path/to/repo
 repos become a project switcher. `atlas analyze <repo> -o graph.json` writes the graph
 alone. A repo may declare itself in an `architecture.yml` at its root (see
 [docs/design.md](docs/design.md) §3); without one, roles are inferred and the page says so.
+
+`atlas check [repo]` reads the same graph and reports where the code and the design
+principles Atlas stands on disagree, each finding ending in a question for the author
+(`--json` for an agent). The principles are in [docs/principles.md](docs/principles.md).
 
 The engine is the Rust workspace (`engine/`, `cli/`); `cargo test` runs the fixture
 tests and regenerates the TypeScript bindings in `engine/bindings/`.

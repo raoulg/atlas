@@ -16,7 +16,7 @@ use walkdir::WalkDir;
 use crate::effects;
 use crate::model::{EdgeKind, Entry, EntryKind, Node, NodeKind, Touch};
 use crate::builder::{ClassInfo, GraphBuilder, SigInfo};
-use crate::tree::{literals, named_children, payload_of, span, text, walk, what_of};
+use crate::tree::{literals, named_children, payload_of, span, starts_at_literal, text, walk, what_of};
 
 struct Crate {
     name: String,
@@ -720,11 +720,11 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crat
     // typed parameters give receivers a type: `store.add_edge(..)` with `store: &mut GraphBuilder`
     let mut locals: HashMap<String, String> = HashMap::new();
     // `&mut T` and `&mut self` hand the value back changed: `T -> T`
-    let mut mutates: Vec<String> = vec![];
+    let mut mutates: Vec<(String, String)> = vec![];
     if let Some(pn) = d.child_by_field_name("parameters") {
         for p in named_children(pn) {
             if p.kind() == "self_parameter" && text(p, src).contains("mut") {
-                mutates.extend(n.cls.clone());
+                mutates.extend(n.cls.clone().map(|c| (c, "self".to_string())));
                 continue;
             }
             if p.kind() != "parameter" {
@@ -737,7 +737,7 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crat
                 if let Some(r) = resolve(m, &t, modules, &store.nodes, crate_ids).filter(|r| !r.starts_with("ext:")) {
                     if store.nodes.get(&r).map_or(false, |x| x.kind == NodeKind::Class) {
                         if by_mut_ref {
-                            mutates.push(r.clone());
+                            mutates.push((r.clone(), pname.clone()));
                         }
                         locals.insert(pname.clone(), r);
                         break;
@@ -799,7 +799,8 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crat
         let f = effects::facts(kind, None, op, &literals(c, src, lit_kinds));
         let what = what_of(c, src, lit_kinds, "arguments");
         let payload = payload_of(c, src, &what, "arguments", locals);
-        Touch { kind: f.kind.into(), what, payload, op: op.into(), artifact: f.artifact, dir: f.dir.into(), n: 1 }
+        let fixed = effects::locates(f.kind) && starts_at_literal(c, src, lit_kinds, "arguments");
+        Touch { kind: f.kind.into(), what, payload, op: op.into(), artifact: f.artifact, dir: f.dir.into(), fixed, n: 1 }
     };
     for mac in walk(body, &["macro_invocation"]) {
         let name = mac.child_by_field_name("macro").map(|x| text(x, src)).unwrap_or("");
@@ -901,8 +902,8 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crat
     for (t, kind, via) in new_edges {
         store.add_edge(id, &t, kind, via);
     }
-    for t in mutates {
-        store.add_edge(id, &t, EdgeKind::Mutates, None);
+    for (t, input) in mutates {
+        store.add_edge(id, &t, EdgeKind::Mutates, Some(input));
     }
     for u in unresolved {
         *store.unresolved.entry(u).or_insert(0) += 1;

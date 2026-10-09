@@ -41,7 +41,10 @@ pub enum EdgeKind {
     Has,
     Reads,
     Writes,
+    /// A parameter or the receiver the body changes in place; `via` names which.
     Mutates,
+    /// A sum type and one of the types it may be: `Result = FitResult | FailedFit`.
+    Variant,
 }
 
 #[derive(Serialize, Deserialize, TS, Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -136,6 +139,10 @@ pub struct Touch {
     /// `read` or `write`, when the kind does not say: a database statement's verb decides.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub dir: String,
+    /// The code alone decides where: the path or URL starts at a literal (`"out.csv"`,
+    /// `Path("data") / name`), not at a value a caller hands in (`root / "out.csv"`).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub fixed: bool,
 }
 
 #[derive(Serialize, Deserialize, TS, Clone, Debug)]
@@ -144,7 +151,8 @@ pub struct Edge {
     pub src: String,
     pub dst: String,
     pub kind: EdgeKind,
-    /// The attribute or field that carries a `has` edge.
+    /// The attribute or field that carries a `has` edge; the parameter (or `self`) a
+    /// `mutates` edge changes.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub via: Option<String>,
     /// How many original edges a quotient edge stands for.
@@ -260,6 +268,9 @@ pub struct Stats {
 #[ts(export)]
 pub struct Graph {
     pub root: String,
+    /// The language the repo was parsed as: `python`, `rust`.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub language: String,
     /// The directory that holds the repo's own declarations: Makefile, pyproject.toml,
     /// Cargo.toml, architecture.yml.
     #[serde(default, skip_serializing_if = "String::is_empty")]

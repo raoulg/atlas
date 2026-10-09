@@ -22,6 +22,7 @@ impl<F: Fn(&Node) -> bool> Lens for Restrict<F> {
         let keep: HashSet<&str> = g.nodes.iter().filter(|n| (self.0)(n)).map(|n| n.id.as_str()).collect();
         let mut out = Graph {
             root: g.root.clone(),
+            language: g.language.clone(),
             project_root: g.project_root.clone(),
             roles: g.roles.clone(),
             nodes: g.nodes.iter().filter(|n| keep.contains(n.id.as_str())).cloned().collect(),
@@ -64,6 +65,7 @@ impl<F: Fn(&Node) -> Option<Node>> Lens for Quotient<F> {
         }
         let mut out = Graph {
             root: g.root.clone(),
+            language: g.language.clone(),
             project_root: g.project_root.clone(),
             roles: g.roles.clone(),
             nodes: classes.into_values().collect(),

@@ -37,7 +37,7 @@ impl Language for Python {
         let project_root = python::project_root(&pkg_dir).or_else(|| repo.join("pyproject.toml").exists().then(|| repo.to_path_buf()));
         let (mut b, root) = python::parse(&pkg_dir, project_root.as_deref())?;
         entries::mark_scripts(&mut b, project_root.as_deref());
-        Ok(b.finish(root, project_root.as_deref()))
+        Ok(b.finish(root, project_root.as_deref(), self.name()))
     }
 }
 
@@ -52,7 +52,7 @@ impl Language for Rust {
     }
     fn parse(&self, repo: &Path, _package: Option<&Path>) -> Result<Graph> {
         let (b, root) = rust::parse(repo)?;
-        Ok(b.finish(root, Some(repo)))
+        Ok(b.finish(root, Some(repo), self.name()))
     }
 }
 

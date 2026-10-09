@@ -245,7 +245,7 @@ const ROOT = D.root + ".";
 const short = id => id.startsWith(ROOT) ? id.slice(ROOT.length) : id.replace(/^ext:/, "");
 const roleVar = r => `var(--role-${r})`;
 const isPrivate = n => n.name.startsWith("_");
-const KG = {imports:"imports", calls:"calls", instantiates:"calls", takes:"types", returns:"types", has:"types", mutates:"types", inherits:"inherits"};
+const KG = {imports:"imports", calls:"calls", instantiates:"calls", takes:"types", returns:"types", has:"types", mutates:"types", variant:"types", inherits:"inherits"};
 const NS = "http://www.w3.org/2000/svg";
 const el = (tag, attrs={}, parent) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; };
 const html = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
@@ -1294,7 +1294,7 @@ function select(id, extra) {
     if (oa.length) insp.appendChild(section("talks to", oa.length, aggList(oa, "dst")));
     if (ia.length) insp.appendChild(section("used by", ia.length, aggList(ia, "src")));
   } else {
-    const groups = [["inherits", outK("inherits")], ["subclasses", inK("inherits")], ["methods", outK("contains")], ["takes", outK("takes")], ["returns", outK("returns")], ["has", outK("has")], ["calls", outK("calls")], ["instantiates", outK("instantiates")], ["called by", inK("calls")], ["instantiated by", inK("instantiates")], ["taken by", inK("takes")], ["returned by", inK("returns")], ["field of", inK("has")]];
+    const groups = [["inherits", outK("inherits")], ["subclasses", inK("inherits")], ["methods", outK("contains")], ["takes", outK("takes")], ["returns", outK("returns")], ["has", outK("has")], ["one of", outK("variant")], ["calls", outK("calls")], ["instantiates", outK("instantiates")], ["called by", inK("calls")], ["instantiated by", inK("instantiates")], ["taken by", inK("takes")], ["returned by", inK("returns")], ["field of", inK("has")], ["variant of", inK("variant")]];
     for (const [t, ids] of groups) if (ids.length) insp.appendChild(section(t, ids.length, linkList(ids)));
   }
   if (n.kind !== "external" && n.kind !== "module") { const c = codeBlock(n); if (c) insp.appendChild(section("code", null, c)); }

@@ -2,7 +2,7 @@ from pathlib import Path
 
 import click
 
-from fixture.build import Pipeline
+from fixture.build import Loaded, Pipeline
 from fixture.sinks.duck import DuckSink
 
 
@@ -20,6 +20,10 @@ def build(fast):
 @cli.command("report")
 def cmd_report():
     click.echo("done")
+
+
+def show(loaded: Loaded) -> None:
+    click.echo(loaded)
 
 
 def main():
