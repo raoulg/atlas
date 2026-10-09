@@ -988,8 +988,9 @@ async function renderPlaat() {
     if (!f) return {dom: new Map(), cod: new Map()};
     if (isAnchor && f.entry) dom.push([addPlace(entryPlace(id)), false]);
     const merge = r => { r.dom.forEach((v, k) => dom.push([k, v])); r.cod.forEach((v, k) => cod.push([k, v])); };
-    if (f.kind === "class" && f.entry) {
-      // a library class, closed: what it is built from and what its public methods take and hand on, together
+    if (f.kind === "class" && f.entry && !storyEntry) {
+      // a library class among all routes: what it is built from and what its public methods take and hand on,
+      // together; inside a route, building one is a step like any constructor, handing on what it builds
       // seen from inside the class, getting the class back (`add` returns self to chain) is not an output
       if (!own) { const self = "t:" + placeOfType(f.id); for (const m of callees(f.id)) { const r = morphism(m, false, false, true); r.cod.delete(self); merge(r); } }
     } else if (f.kind === "class") {
@@ -997,7 +998,9 @@ async function renderPlaat() {
       if (byId.has(f.id + ".__init__")) for (const x of typesOf(f.id + ".__init__").takes) dom.push([addPlace(typePlace(x)), false]);
     } else {
       const ctor = f.name === "__init__" && f.cls;
-      if (f.cls && byId.has(f.cls) && !noReceiver && !ctor) dom.push([addPlace(typePlace(f.cls)), false]);  // a method's receiver is part of its domain
+      // a method's receiver is part of its domain; a classmethod's or staticmethod's is the class, not a value of it
+      const onClass = (f.decorators || []).some(d => /^(classmethod|staticmethod)$/.test(d));
+      if (f.cls && byId.has(f.cls) && !noReceiver && !ctor && !onClass) dom.push([addPlace(typePlace(f.cls)), false]);
       for (const x of typesOf(f.id).takes) dom.push([addPlace(typePlace(x)), false]);
       for (const x of typesOf(f.id).returns) cod.push([addPlace(typePlace(x)), false]);
       if (ctor && !noReceiver) cod.push([addPlace(typePlace(f.cls)), false]);  // a constructor hands on what it builds
