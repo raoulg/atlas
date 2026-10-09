@@ -26,8 +26,10 @@ fn each_principle_finds_its_case() {
     assert_eq!(got["doors"], ["fixture.schema.Graph.first"]);
     // `load` makes a Loaded, `cli.show` takes it from another module
     assert_eq!(got["sums"], ["fixture.build.Loaded"]);
-    // `CountingSink.write` gives an int where `Sink.write` promises None; `clone` narrows to a subclass
-    assert_eq!(got["overrides"], ["fixture.sinks.base.Sink.write"]);
+    // `CountingSink.write` gives an int where `Sink.write` promises None; `clone` narrows to a
+    // subclass. `MeanEncoder` keeps `...` with `batch dim`, `PatchEncoder` breaks `batch dim`
+    // with three dims; `GraphReader` gives one variant of the `Loaded` that `Reader` promises
+    assert_eq!(got["overrides"], ["fixture.build.MeanEncoder.encode", "fixture.sinks.base.Sink.write"]);
     // `Path("out.json")` in a sink; `save` writes where its caller says
     assert_eq!(got["places"], ["fixture.sinks.duck.DuckSink.write"]);
     // `enrich` changes the Graph it is handed; `Graph.add` changes itself

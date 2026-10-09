@@ -102,3 +102,28 @@ def hold(node: Node) -> "Holder[Node]":
 
 def unwrap(held: Holder[Node]) -> Node:
     return held.item
+
+
+class Encoder:
+    def encode(self, x: Float[Tensor, "batch seq dim"]) -> Float[Tensor, "..."]:
+        return x
+
+
+class MeanEncoder(Encoder):
+    def encode(self, x: Float[Tensor, "batch seq dim"]) -> Float[Tensor, "batch dim"]:
+        return x.mean(1)
+
+
+class PatchEncoder(MeanEncoder):
+    def encode(self, x: Float[Tensor, "batch seq dim"]) -> Float[Tensor, "batch seq dim"]:
+        return x
+
+
+class Reader:
+    def read(self) -> Loaded:
+        return Graph()
+
+
+class GraphReader(Reader):
+    def read(self) -> Graph:
+        return Graph()

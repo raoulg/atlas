@@ -316,18 +316,8 @@ fn overrides(ix: &Index) -> Vec<Finding> {
         if base.returns.is_empty() || m.returns.is_empty() || same_type(&base.returns, &m.returns) {
             continue;
         }
-        if base.returns.contains("Self") || m.returns.contains("Self") {
+        if base.returns.contains("Self") || m.returns.contains("Self") || keeps(ix, base, m) {
             continue;
-        }
-        // a subclass of the promised type keeps the promise; only a bare name says exactly which type
-        let bare = |s: &str| s.chars().all(|c| c.is_alphanumeric() || matches!(c, '_' | '.' | '"' | '\''));
-        if bare(&base.returns) && bare(&m.returns) {
-            let (promised, given) = (ix.targets(&base.id, EdgeKind::Returns), ix.targets(&m.id, EdgeKind::Returns));
-            if let ([p], [t]) = (promised.as_slice(), given.as_slice()) {
-                if ix.ancestors(t).contains(p) {
-                    continue;
-                }
-            }
         }
         match broken.iter_mut().find(|(b, _)| b.id == base.id) {
             Some((_, ms)) => ms.push(m),
@@ -361,6 +351,84 @@ fn overrides(ix: &Index) -> Vec<Finding> {
             )
         })
         .collect()
+}
+
+/// Whether what an override gives is something its base promised: the same shape of
+/// annotation with each array at least as specific (`Float[Tensor, "batch dim"]` where
+/// `Float[Tensor, "..."]` is promised), or, when the base names one type, a subclass of it,
+/// one of the variants of a sum it names, or an array of a shape it allows.
+fn keeps(ix: &Index, base: &Node, m: &Node) -> bool {
+    let (promised, given) = (arrays(&base.returns), arrays(&m.returns));
+    if promised.0 == given.0 && promised.1.len() == given.1.len() && promised.1.iter().zip(&given.1).all(|(p, g)| array_fits(g, p)) {
+        return true;
+    }
+    let bare = base.returns.trim_matches(|c| c == '"' || c == '\'').chars().all(|c| c.is_alphanumeric() || matches!(c, '_' | '.'));
+    if !bare {
+        return false;
+    }
+    let mut allowed: Vec<&str> = vec![];
+    for p in ix.targets(&base.id, EdgeKind::Returns) {
+        allowed.push(p);
+        allowed.extend(ix.targets(p, EdgeKind::Variant));
+    }
+    let gives = ix.targets(&m.id, EdgeKind::Returns);
+    !allowed.is_empty()
+        && !gives.is_empty()
+        && gives.iter().all(|g| allowed.iter().any(|p| p == g || ix.ancestors(g).contains(p) || array_id_fits(g, p)))
+}
+
+/// An array annotation, jaxtyping style: dtype, array type and dims (`Float`, `Tensor`, `batch dim`).
+#[derive(PartialEq, Debug)]
+struct Array {
+    dtype: String,
+    array: String,
+    dims: Vec<String>,
+}
+
+/// An annotation with its arrays taken out: `dict[str, list[Float[Tensor, "_ dim"]]]` is
+/// `dict[str,list[#]]` and one array.
+fn arrays(annotation: &str) -> (String, Vec<Array>) {
+    let re = regex::Regex::new(r#"([A-Za-z_][\w.]*)\[\s*([A-Za-z_][\w.]*)\s*,\s*["']([^"']*)["']\s*\]"#).unwrap();
+    let found = re
+        .captures_iter(annotation)
+        .map(|c| Array {
+            dtype: c[1].rsplit('.').next().unwrap_or("").to_string(),
+            array: c[2].rsplit('.').next().unwrap_or("").to_string(),
+            dims: c[3].split_whitespace().map(str::to_string).collect(),
+        })
+        .collect();
+    let skeleton = re.replace_all(annotation, "#").chars().filter(|c| !c.is_whitespace() && *c != '"' && *c != '\'').collect();
+    (skeleton, found)
+}
+
+/// `ext:jaxtyping.Float[Tensor, batch dim]` as an array.
+fn array_of_id(id: &str) -> Option<Array> {
+    let rest = id.strip_prefix("ext:jaxtyping.")?;
+    let (dtype, inner) = rest.split_once('[')?;
+    let (array, dims) = inner.strip_suffix(']')?.split_once(',')?;
+    Some(Array { dtype: dtype.into(), array: array.trim().into(), dims: dims.split_whitespace().map(str::to_string).collect() })
+}
+
+fn array_id_fits(given: &str, promised: &str) -> bool {
+    matches!((array_of_id(given), array_of_id(promised)), (Some(g), Some(p)) if array_fits(&g, &p))
+}
+
+/// A given array keeps a promised one when dtype and array type agree and the promised dims
+/// admit the given ones: `...` (or `*name`) any run of dims, a name or `_` any one dim, a
+/// number only itself.
+fn array_fits(given: &Array, promised: &Array) -> bool {
+    if given.dtype != promised.dtype || given.array != promised.array {
+        return false;
+    }
+    let one = |p: &str, g: &str| !p.chars().all(|c| c.is_ascii_digit()) || p == g;
+    let (p, g) = (&promised.dims, &given.dims);
+    match p.iter().position(|d| d == "..." || d.starts_with('*')) {
+        None => p.len() == g.len() && p.iter().zip(g).all(|(p, g)| one(p, g)),
+        Some(i) => {
+            let tail = p.len() - i - 1;
+            g.len() >= i + tail && p[..i].iter().zip(g).all(|(p, g)| one(p, g)) && p[i + 1..].iter().zip(&g[g.len() - tail..]).all(|(p, g)| one(p, g))
+        }
+    }
 }
 
 // ---------- places ----------
