@@ -262,20 +262,25 @@ fn letter(i: usize) -> char {
     (b'a' + (i % 26) as u8) as char
 }
 
-/// The verb for a touch: the operation when it says more than the kind.
+/// The verb for a touch: the operation when it says more than the kind, then the direction
+/// when the kind leaves it open (a database statement, a transfer over the web).
 fn verb(t: &Touch) -> String {
-    let op = t.op.as_str();
-    if t.kind.starts_with("db_") && !t.dir.is_empty() {
-        return if t.dir == "read" { "reads" } else { "writes" }.into();
-    }
-    let by_op = match op {
+    let by_op = match t.op.as_str() {
         "exists" | "try_exists" | "is_file" | "is_dir" => Some("checks"),
         "read_dir" | "iterdir" | "glob" | "rglob" | "listdir" | "scandir" | "walk" => Some("lists"),
         o if o.starts_with("create_dir") || o.starts_with("mkdir") || o.starts_with("makedirs") => Some("creates"),
         o if o.starts_with("remove") || o.starts_with("unlink") || o.starts_with("rmtree") => Some("removes"),
         _ => None,
     };
-    if let Some(v) = by_op {
+    let by_dir = match (t.kind.as_str(), t.dir.as_str()) {
+        (k, "read") if k.starts_with("db_") => Some("reads"),
+        (k, "write") if k.starts_with("db_") => Some("writes"),
+        ("net", "read") => Some("downloads"),
+        ("net", "write") => Some("uploads"),
+        ("model", "read") => Some("loads model"),
+        _ => None,
+    };
+    if let Some(v) = by_dir.filter(|_| t.kind.starts_with("db_")).or(by_op).or(by_dir) {
         return v.into();
     }
     match t.kind.as_str() {

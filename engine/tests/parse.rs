@@ -123,6 +123,22 @@ fn mutation_is_an_endomorphism() {
     assert!(!m.iter().any(|(s, _)| s == "fixture.build.build_graph"), "g = Graph(); g.add(..) builds, it does not change an input");
 }
 
+/// The Hugging Face Hub is a host on the web: a download reads it, an upload writes it, and
+/// a client built from the library (`api = HfApi()`) is the library. An array annotated with
+/// jaxtyping is one type with its shape.
+#[test]
+fn the_hub_is_a_host_and_a_shape_is_a_type() {
+    let g = fixture();
+    let t = |id: &str| g.node(id).unwrap().touches.iter().map(|t| (t.kind.as_str(), t.artifact.as_str(), t.dir.as_str(), t.what.as_str())).collect::<Vec<_>>();
+    assert_eq!(t("fixture.build.fetch"), [("net", "huggingface.co", "read", "repo_id")]);
+    assert_eq!(t("fixture.build.publish"), [("net", "huggingface.co", "write", "repo_id")], "`api.upload_folder` through the client `api`");
+    assert!(t("fixture.build.pool").is_empty(), "tensor arithmetic stays in memory");
+    let e = |kind: EdgeKind| edges(&g, kind).into_iter().filter(|(s, _)| s == "fixture.build.pool").map(|(_, d)| d).collect::<Vec<_>>();
+    assert_eq!(e(EdgeKind::Takes), ["ext:jaxtyping.Float[Tensor, batch seq dim]"]);
+    assert_eq!(e(EdgeKind::Returns), ["ext:jaxtyping.Float[Tensor, batch dim]"]);
+    assert_eq!(g.node("ext:jaxtyping.Float[Tensor, batch dim]").unwrap().name, "Float[Tensor, batch dim]");
+}
+
 /// A call knows the arms of the choices it sits in; calls in different arms of one choice are
 /// alternatives, and a comparison knows which choice it decides.
 #[test]

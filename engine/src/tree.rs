@@ -216,6 +216,18 @@ fn head_literal(e: TsNode, src: &[u8], string_kinds: &[&str]) -> bool {
     }
 }
 
+/// A call's argument as written: the one passed by `keyword`, else the first passed by position.
+pub fn argument(call: TsNode, src: &[u8], keyword: &str) -> Option<String> {
+    let args = named_children(call.child_by_field_name("arguments")?);
+    let by_name = args.iter().find(|a| a.kind() == "keyword_argument" && a.child_by_field_name("name").map(|n| text(n, src)) == Some(keyword));
+    let arg = match by_name {
+        Some(k) => k.child_by_field_name("value")?,
+        None => *args.iter().find(|a| !matches!(a.kind(), "keyword_argument" | "comment"))?,
+    };
+    let t = text(arg, src);
+    Some(if arg.kind() == "string" { unquote(t) } else { t.to_string() })
+}
+
 /// What flows through a boundary call: the first plain identifier among the arguments that
 /// is not the `what` (the path or command), as the author named it, with its type when a
 /// local or parameter of that name is known.

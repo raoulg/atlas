@@ -2,6 +2,9 @@ from typing import Type, TypeVar, Union
 
 import pandas as pd
 import requests
+from huggingface_hub import HfApi, snapshot_download
+from jaxtyping import Float
+from torch import Tensor
 
 from fixture import DuckSink, Graph
 from fixture.schema import Node
@@ -70,3 +73,16 @@ def register(kind: Type[SinkT]) -> None:
 
 def describe(graph: "Graph") -> "Node":
     return Node(id=str(len(graph.nodes)))
+
+
+def pool(x: Float[Tensor, "batch seq dim"]) -> Float[Tensor, "batch dim"]:
+    return x.mean(1)
+
+
+def fetch(repo_id: str) -> str:
+    return snapshot_download(repo_id, repo_type="dataset")
+
+
+def publish(folder: str, repo_id: str) -> None:
+    api = HfApi()
+    api.upload_folder(repo_id=repo_id, folder_path=folder)

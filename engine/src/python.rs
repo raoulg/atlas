@@ -17,7 +17,7 @@ use crate::entries::entry_of;
 use crate::model::{Compare, EdgeKind, Entry, EntryKind, Node, NodeKind, Touch};
 pub use crate::builder::{ClassInfo, GraphBuilder, SigInfo};
 use crate::tree::{
-    arms_of, decides, field_children, literals, named_children, nth_of_kind, number_choices, payload_of, span, starts_at_literal, text, unquote, walk,
+    argument, arms_of, decides, field_children, literals, named_children, nth_of_kind, number_choices, payload_of, span, starts_at_literal, text, unquote, walk,
     what_of, ChoiceSyntax, Part,
 };
 
@@ -62,7 +62,31 @@ fn dotted(n: Option<TsNode>, src: &[u8]) -> Vec<String> {
     }
 }
 
-/// All dotted names mentioned in an annotation, e.g. `list[Graph]` -> `[[Graph]]`.
+/// An array annotated with its dtype and shape, jaxtyping style: `Float[Tensor, "batch dim"]`
+/// is one type, `Float[Tensor, batch dim]`, its shape the contract a step keeps.
+fn shaped<'t>(n: TsNode<'t>, src: &[u8]) -> Option<String> {
+    // an expression subscripts (`Float[..]`); an annotation is a generic type of type parameters
+    let unwrap = |x: TsNode<'t>| if x.kind() == "type" { named_children(x).into_iter().next().unwrap_or(x) } else { x };
+    let (head, args) = match n.kind() {
+        "subscript" => (dotted(n.child_by_field_name("value"), src), field_children(n, "subscript")),
+        "generic_type" => {
+            let kids = named_children(n);
+            let params = kids.iter().find(|k| k.kind() == "type_parameter").map(|tp| named_children(*tp).into_iter().map(unwrap).collect()).unwrap_or_default();
+            (dotted(kids.first().copied(), src), params)
+        }
+        _ => return None,
+    };
+    let ([array, shape], Some(dtype)) = (args.as_slice(), head.last()) else { return None };
+    if shape.kind() != "string" || named_children(*shape).iter().any(|c| c.kind() == "interpolation") || matches!(dtype.as_str(), "Literal" | "Annotated") {
+        return None;
+    }
+    let array = text(*array, src).rsplit('.').next().unwrap_or("");
+    let dims = unquote(text(*shape, src)).split_whitespace().collect::<Vec<_>>().join(" ");
+    Some(format!("{}[{array}, {dims}]", head.join(".")))
+}
+
+/// All dotted names mentioned in an annotation, e.g. `list[Graph]` -> `[[Graph]]`. A shaped
+/// array is one name, `[["Float[Tensor, batch dim]"]]`.
 fn type_names(t: Option<TsNode>, src: &[u8]) -> Vec<Vec<String>> {
     let Some(t) = t else { return vec![] };
     let mut out = vec![];
@@ -71,7 +95,15 @@ fn type_names(t: Option<TsNode>, src: &[u8]) -> Vec<Vec<String>> {
             out.push(parts);
         }
     };
+    let arrays: Vec<TsNode> = walk(t, &["subscript", "generic_type"]).into_iter().filter(|n| shaped(*n, src).is_some()).collect();
+    let inside = |n: TsNode| arrays.iter().any(|a| a.start_byte() <= n.start_byte() && n.end_byte() <= a.end_byte());
+    for a in arrays.iter().filter(|a| !arrays.iter().any(|b| b.id() != a.id() && b.start_byte() <= a.start_byte() && a.end_byte() <= b.end_byte())) {
+        keep(vec![shaped(*a, src).unwrap_or_default()]);
+    }
     for n in walk(t, &["identifier", "attribute", "string"]) {
+        if inside(n) {
+            continue;
+        }
         if n.kind() == "identifier" && n.parent().map_or(false, |p| p.kind() == "attribute") {
             continue;
         }
@@ -494,6 +526,13 @@ fn collect_imports(m: &mut Module, module_ids: &HashSet<String>, store: &mut Gra
 
 /// Dotted name in module scope -> node id, `ext:<name>`, or None.
 fn resolve(m: &Module, parts: &[String], modules: &IndexMap<String, Module>, nodes: &IndexMap<String, Node>, root: &str) -> Option<String> {
+    // a shaped array is its dtype's type with the shape kept: `ext:jaxtyping.Float[Tensor, batch dim]`
+    if let [one] = parts {
+        if let Some((head, shape)) = one.split_once('[') {
+            let base = resolve(m, &head.split('.').map(str::to_string).collect::<Vec<_>>(), modules, nodes, root)?;
+            return Some(if base.starts_with("ext:jaxtyping.") { format!("{base}[{shape}") } else { base });
+        }
+    }
     let head = parts.first()?;
     let mut target = m.symbols.get(head).or_else(|| m.bindings.get(head))?.clone();
     for p in &parts[1..] {
@@ -968,6 +1007,19 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, root
             }
         }
     }
+    // a local built by a library is that library's client: `api = HfApi(); api.upload_folder(..)`
+    let mut clients: HashMap<String, String> = HashMap::new();
+    for a in walk(body, &["assignment"]) {
+        let (Some(left), Some(right)) = (a.child_by_field_name("left"), a.child_by_field_name("right")) else { continue };
+        if left.kind() != "identifier" || right.kind() != "call" {
+            continue;
+        }
+        let parts = dotted(right.child_by_field_name("function"), src);
+        let pkg = parts.first().and_then(|h| m.bindings.get(h)).filter(|b| !b.starts_with(root)).and_then(|b| b.split('.').next());
+        if let Some(pkg) = pkg {
+            clients.insert(text(left, src).to_string(), pkg.to_string());
+        }
+    }
     let mut touches: Vec<Touch> = vec![];
     let mut new_edges: Vec<(String, EdgeKind, Vec<(u32, u32)>)> = vec![];
     let choices = number_choices(body, src, &CHOICES);
@@ -1051,11 +1103,16 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, root
                     .get(&parts[0])
                     .filter(|b| !b.starts_with(root))
                     .and_then(|b| b.split('.').next())
-                    .map(str::to_string);
+                    .map(str::to_string)
+                    .or_else(|| clients.get(&parts[0]).filter(|_| parts.len() > 1).cloned());
                 if let Some(tag) = effects::boundary(pkg.as_deref(), &parts, &m.ext_pkgs) {
                     let op = parts.last().cloned().unwrap_or_default();
                     let f = effects::facts(tag, pkg.as_deref(), &op, &literals(c, src, &["string"]));
-                    let what = what_of(c, src, &["string"], "arguments");
+                    // on a hub, what moves is the repository the call names
+                    let what = match f.kind == "net" && !f.artifact.is_empty() {
+                        true => argument(c, src, "repo_id").unwrap_or_else(|| what_of(c, src, &["string"], "arguments")),
+                        false => what_of(c, src, &["string"], "arguments"),
+                    };
                     let payload = payload_of(c, src, &what, "arguments", &locals);
                     let fixed = effects::locates(f.kind) && starts_at_literal(c, src, &["string"], "arguments");
                     touches.push(Touch { kind: f.kind.into(), what, payload, op, artifact: f.artifact, dir: f.dir.into(), fixed, n: 1 });

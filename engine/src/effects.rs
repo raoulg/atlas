@@ -5,14 +5,13 @@ use std::collections::HashSet;
 
 const NET_PKGS: &[&str] = &["requests", "httpx", "urllib", "http", "socket", "aiohttp"];
 const LLM_PKGS: &[&str] = &["openai", "anthropic"];
-const MODEL_PKGS: &[&str] = &[
-    "sentence_transformers",
-    "torch",
-    "transformers",
-    "huggingface_hub",
-    "datasets",
-    "torchvision",
-];
+/// Libraries that compute in memory. Most of their calls stay in the program (`torch.cat`,
+/// `nn.Linear`); `ml` names the few that cross to a place.
+const ML_PKGS: &[&str] = &["sentence_transformers", "torch", "transformers", "huggingface_hub", "datasets", "torchvision"];
+/// The Hugging Face Hub: what comes down, and what goes up.
+const HUB_READ: &[&str] = &["snapshot_download", "hf_hub_download", "load_dataset", "repo_info", "dataset_info", "model_info", "list_repo_files"];
+const HUB_WRITE: &[&str] = &["upload_folder", "upload_file", "upload_large_folder", "create_repo", "create_commit", "delete_file", "delete_folder", "push_to_hub"];
+const HUB_HOST: &str = "huggingface.co";
 const FILE_PKGS: &[&str] = &[
     "json", "yaml", "pickle", "csv", "tarfile", "zipfile", "shutil", "os", "pathlib", "pandas",
     "geopandas", "numpy", "rasterio", "lxml", "PIL", "matplotlib", "plt", "ruamel", "np", "pd",
@@ -92,8 +91,8 @@ pub fn boundary(pkg: Option<&str>, parts: &[String], ext: &HashSet<String>) -> O
         if LLM_PKGS.contains(&pkg) {
             return Some("llm");
         }
-        if MODEL_PKGS.contains(&pkg) {
-            return Some("model");
+        if ML_PKGS.contains(&pkg) {
+            return ml(pkg, parts, last);
         }
         if pkg == "subprocess" {
             return Some("process");
@@ -136,7 +135,30 @@ pub fn boundary(pkg: Option<&str>, parts: &[String], ext: &HashSet<String>) -> O
     if ["encode", "embed"].contains(&last) && has("sentence_transformers") {
         return Some("model");
     }
+    if last == "push_to_hub" && (has("datasets") || has("huggingface_hub") || has("transformers")) {
+        return Some("net");
+    }
+    if last == "save_to_disk" && has("datasets") {
+        return Some("disk_write");
+    }
     None
+}
+
+/// The calls of a machine-learning library that cross to a place: pretrained weights load a
+/// model, the Hub sends and receives files, a checkpoint or a saved dataset is a file.
+fn ml(pkg: &str, parts: &[String], last: &str) -> Option<&'static str> {
+    let hub_load = pkg == "torch" && parts.iter().any(|p| p == "hub") && last == "load";
+    if last == "from_pretrained" || hub_load || matches!((pkg, last), ("sentence_transformers", "SentenceTransformer" | "CrossEncoder") | ("transformers", "pipeline")) {
+        return Some("model");
+    }
+    if matches!(pkg, "huggingface_hub" | "datasets") && (HUB_READ.contains(&last) || HUB_WRITE.contains(&last)) {
+        return Some("net");
+    }
+    match (pkg, last) {
+        ("torch" | "datasets", "load" | "load_from_disk") => Some("disk_read"),
+        ("torch" | "datasets", "save" | "save_to_disk") => Some("disk_write"),
+        _ => None,
+    }
 }
 
 /// `Path.exists()` and friends on a receiver whose type is unknown still read the disk.
@@ -177,6 +199,18 @@ pub fn facts(kind: &'static str, pkg: Option<&str>, op: &str, literals: &[String
         };
         return Facts { kind, artifact: table, dir };
     }
+    if kind == "net" {
+        // a web place is named by its host; the Hub's operations say which way the files go
+        let hub = HUB_READ.contains(&op) || HUB_WRITE.contains(&op);
+        let artifact = if hub { HUB_HOST.to_string() } else { literals.iter().find_map(|l| host(l)).unwrap_or_default() };
+        let dir = if HUB_WRITE.contains(&op) { "write" } else if hub { "read" } else { "" };
+        return Facts { kind, artifact, dir };
+    }
+    if kind == "model" {
+        // weights are read: the model is named by the checkpoint, when the code names it
+        let artifact = literals.iter().find(|l| l.contains('/') && !l.contains(char::is_whitespace)).cloned().unwrap_or_default();
+        return Facts { kind, artifact, dir: "read" };
+    }
     if !kind.starts_with("disk") {
         return Facts { kind, artifact: String::new(), dir: "" };
     }
@@ -191,6 +225,13 @@ pub fn facts(kind: &'static str, pkg: Option<&str>, op: &str, literals: &[String
 }
 
 /// A file mode literal: `r`, `wb`, `a+`.
+/// The host of a URL: `https://huggingface.co/api/x` -> `huggingface.co`.
+fn host(s: &str) -> Option<String> {
+    let rest = s.split_once("://")?.1;
+    let h = rest.split(['/', '?', '#']).next()?;
+    (!h.is_empty() && !h.contains('{')).then(|| h.to_string())
+}
+
 /// A boundary whose literal argument names a place someone could want elsewhere: a file or
 /// a URL. A table in a statement or a command line is what the call does, not where.
 pub fn locates(kind: &str) -> bool {
@@ -307,6 +348,29 @@ mod tests {
 
     fn lits(xs: &[&str]) -> Vec<String> {
         xs.iter().map(|s| s.to_string()).collect()
+    }
+
+    fn parts(xs: &[&str]) -> Vec<String> {
+        lits(xs)
+    }
+
+    /// A machine-learning library computes in memory; only loading weights, moving files to
+    /// and from the Hub, and checkpoints cross to a place.
+    #[test]
+    fn a_library_is_not_a_place() {
+        let none = HashSet::new();
+        assert_eq!(boundary(Some("torch"), &parts(&["torch", "cat"]), &none), None);
+        assert_eq!(boundary(Some("torch"), &parts(&["nn", "Linear"]), &none), None);
+        assert_eq!(boundary(Some("transformers"), &parts(&["AutoModel", "from_pretrained"]), &none), Some("model"));
+        assert_eq!(boundary(Some("torch"), &parts(&["torch", "save"]), &none), Some("disk_write"));
+        assert_eq!(boundary(Some("huggingface_hub"), &parts(&["snapshot_download"]), &none), Some("net"));
+        assert_eq!(boundary(Some("huggingface_hub"), &parts(&["HfApi"]), &none), None, "building a client moves nothing");
+        assert_eq!(boundary(Some("datasets"), &parts(&["load_dataset"]), &none), Some("net"));
+        let down = facts("net", Some("huggingface_hub"), "snapshot_download", &lits(&["dataset"]));
+        assert_eq!((down.artifact.as_str(), down.dir), ("huggingface.co", "read"), "the Hub is a host; a download reads");
+        assert_eq!(facts("net", Some("huggingface_hub"), "upload_folder", &[]).dir, "write");
+        assert_eq!(facts("net", Some("requests"), "get", &lits(&["https://api.example.org/v1/x"])).artifact, "api.example.org");
+        assert_eq!(facts("model", Some("transformers"), "from_pretrained", &lits(&["facebook/dinov2-small", "auto"])).artifact, "facebook/dinov2-small");
     }
 
     #[test]

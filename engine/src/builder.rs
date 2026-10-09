@@ -101,12 +101,17 @@ impl GraphBuilder {
         if self.nodes.contains_key(eid) {
             return;
         }
+        // a shaped type keeps its shape in the name: `jaxtyping` / `Float[Tensor, batch dim]`
         let full = &eid[4..];
-        let (module, name) = full.rsplit_once('.').unwrap_or(("", full));
+        let cut = full.find('[').unwrap_or(full.len());
+        let (module, name) = match full[..cut].rsplit_once('.') {
+            Some((module, name)) => (module, format!("{name}{}", &full[cut..])),
+            None => ("", full.to_string()),
+        };
         self.add_node(Node {
             id: eid.into(),
             kind: NodeKind::External,
-            name: name.into(),
+            name,
             module: module.into(),
             ..Default::default()
         });

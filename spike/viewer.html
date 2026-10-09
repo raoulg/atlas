@@ -652,6 +652,8 @@ function verbOf(t) {
   if (/^(rename|move)/.test(op)) return "moves";
   if (/^copy/.test(op)) return "copies";
   if (t.kind === "net" && /^(get|post|put|delete|patch)$/.test(op)) return `${op.toUpperCase()}s`;
+  if (t.kind === "net" && t.dir) return t.dir === "read" ? "downloads" : "uploads";
+  if (t.kind === "model" && t.dir === "read") return "loads model";
   return VERB[t.kind] || t.kind;
 }
 // what a step does in its own body, grouped by verb: reads Makefile · writes html → out · runs open | xdg-open
@@ -925,6 +927,8 @@ function worldPlaceOf(t) {
     return isIn(t) ? {id: "w:Disk:in", label: "Disk in", short: "Disk in", kind: "world"} : {id: "w:Disk:out", label: "Disk out", short: "Disk out", kind: "world"};
   }
   if (k.startsWith("db_") && refined.has(base) && t.artifact) return {id: base + ":" + t.artifact, label: `${name}(${t.artifact})`, short: `${name}(${t.artifact})`, kind: "world"};
+  // a host on the web, a checkpoint of a model: named where the code names them
+  if ((k === "net" || k === "model") && t.artifact) return {id: base + ":" + t.artifact, label: `${name}(${t.artifact})`, short: t.artifact, kind: "world"};
   return {id: base, label: name, short: name, kind: "world"};
 }
 // the places a set of touches reaches, with how often: placeId -> {place, n}
