@@ -84,10 +84,13 @@ header .brand small{font-weight:400;color:var(--ink-3);font-family:var(--mono);f
 main{position:relative;overflow:hidden}
 svg#canvas{width:100%;height:100%;display:block;cursor:grab}
 svg#canvas:active{cursor:grabbing}
-#legend{position:absolute;left:14px;bottom:14px;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;gap:6px;font-size:11px;color:var(--ink-2);max-width:280px}
-#legend .row{display:flex;flex-wrap:wrap;gap:4px 10px}
-#legend .legend-head{all:unset;cursor:pointer;font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3)}
-#legend .legend-head:hover{color:var(--ink)}
+#legend{position:absolute;left:14px;bottom:14px;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:6px 10px;display:flex;flex-direction:column;gap:6px;font-size:11px;color:var(--ink-2);max-width:min(760px,calc(100% - 28px))}
+#legend .row{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px}
+#legend .sep{width:1px;align-self:stretch;background:var(--line)}
+#legend .help-toggle{all:unset;cursor:pointer;width:16px;height:16px;border-radius:50%;border:1px solid var(--line);display:inline-flex;align-items:center;justify-content:center;font-size:10px;color:var(--ink-3);margin-left:2px}
+#legend .help-toggle:hover,#legend .help-toggle[aria-expanded="true"]{color:var(--ink);border-color:var(--ink-3)}
+#legend .help-toggle:focus-visible{outline:2px solid var(--ink-3);outline-offset:2px}
+#legend .help{display:flex;flex-direction:column;gap:6px;max-width:440px}
 #legend .sw{display:inline-flex;align-items:center;gap:5px}
 #legend .sw i{width:10px;height:10px;border-radius:2px;display:inline-block}
 #legend .k{display:inline-flex;align-items:center;gap:6px}
@@ -1378,27 +1381,34 @@ function selectArrows(p) {
 }
 
 // ---------- legend, search, render ----------
-let legendFolded = false; try { legendFolded = localStorage.getItem("atlas.legend") === "0"; } catch {}
+// the colours stay in view; how to read them folds away behind "?"
+let legendHelp = false; try { legendHelp = localStorage.getItem("atlas.legend.help") === "1"; } catch {}
 function legend() {
   const L = document.getElementById("legend"); L.innerHTML = "";
-  const head = html("button", "legend-head", legendFolded ? "legend ▸" : "legend ▾");
-  head.onclick = () => { legendFolded = !legendFolded; try { localStorage.setItem("atlas.legend", legendFolded ? "0" : "1"); } catch {} legend(); };
-  L.appendChild(head);
-  if (legendFolded) return;
+  const row = html("div", "row");
   const roles = [...bands.top, ...roleOrder, ...bands.bottom].filter(r => allRoles.includes(r));
-  const row = html("div", "row"); for (const r of roles) { const s = html("span", "sw"); const i = html("i"); i.style.background = roleVar(r); s.appendChild(i); s.appendChild(document.createTextNode(r)); row.appendChild(s); }
+  for (const r of roles) { const sw = html("span", "sw"); const i = html("i"); i.style.background = roleVar(r); sw.appendChild(i); sw.appendChild(document.createTextNode(r)); row.appendChild(sw); }
+  if (view === "plaat" || view === "story") {
+    row.appendChild(html("span", "sep"));
+    for (const k of Object.keys(GLYPH).filter(k => view === "plaat" || k !== "cmd")) { const sw = html("span", "sw"); sw.innerHTML = `${glyphSvg(k)} ${KIND_NAME[k]}`; row.appendChild(sw); }
+  }
+  const toggle = html("button", "help-toggle", "?");
+  toggle.setAttribute("aria-expanded", String(legendHelp)); toggle.setAttribute("aria-label", "How to read this view"); toggle.title = "How to read this view";
+  toggle.onclick = () => { legendHelp = !legendHelp; try { localStorage.setItem("atlas.legend.help", legendHelp ? "1" : "0"); } catch {} legend(); };
+  row.appendChild(toggle);
   L.appendChild(row);
-  const row2 = html("div", "row");
-  row2.innerHTML = view === "plaat"
-    ? `<span class="k wrap">${Object.keys(GLYPH).map(k => `<span class="sw">${glyphSvg(k)} ${KIND_NAME[k]}</span>`).join(" ")}</span><span class="k">left: what the route only reads · right: what it only writes · boxes with a coloured strip are types in memory; (n) is a family, click to open it</span><span class="k">pill = a step, from what it takes to what it hands on · ▸ opens it into a frame · a frame's title closes it · one of: alternatives, each branch in its own colour (the overrides a call may run, or the arms of an if, a match or an or-else) · dashed: happens inside a closed step · dotted: a result handed back</span>`
+  if (!legendHelp) return;
+  const help = html("div", "help");
+  help.innerHTML = view === "plaat"
+    ? `<span class="k">left: what the route only reads · right: what it only writes · boxes with a coloured strip are types in memory; (n) is a family, click to open it</span><span class="k">pill = a step, from what it takes to what it hands on · ▸ opens it into a frame · a frame's title closes it · one of: alternatives, each branch in its own colour (the overrides a call may run, or the arms of an if, a match or an or-else) · dashed: happens inside a closed step · dotted: a result handed back</span>`
     : view === "story"
-    ? `<span class="k wrap">${Object.keys(GLYPH).filter(k => k !== "cmd").map(k => `<span class="sw">${glyphSvg(k)} ${KIND_NAME[k]}</span>`).join(" ")}</span><span class="k">rows = steps in call order · line 1 = the step's own signature, in the author's names · line 2 = what its own body does</span><span class="k">columns = the places reached, as the Plaat names them · a dot = the step reaches it through everything below it, in the place's colour · size = how often</span><span class="k">▸ expand a step into its own steps · click a name for the code</span>`
+    ? `<span class="k">rows = steps in call order · line 1 = the step's own signature, in the author's names · line 2 = what its own body does</span><span class="k">columns = the places reached, as the Plaat names them · a dot = the step reaches it through everything below it, in the place's colour · size = how often</span><span class="k">▸ expand a step into its own steps · click a name for the code</span>`
     : view === "arch"
     ? `<span class="k">columns = roles ${D.roles.inferred ? "inferred from the package layout" : "declared in architecture.yml"}, not classes</span><span class="k"><svg width="26" height="8"><path d="M0,4 H26" stroke="currentColor" stroke-width="1.5"/></svg>module → module, width = count</span><span class="k" style="color:var(--alert)"><svg width="26" height="8"><path d="M0,4 H26" stroke="currentColor" stroke-width="2"/></svg>backflow: an earlier stage depends on a later one</span><span class="k"><i style="display:inline-block;width:18px;height:10px;border:1px solid currentColor;border-radius:2px"></i>class</span><span class="k"><i style="display:inline-block;width:18px;height:10px;border:1px solid currentColor;border-radius:6px"></i>function</span>`
     : view === "types"
     ? `<span class="k"><i style="display:inline-block;width:18px;height:10px;border:1px dashed currentColor;border-radius:2px"></i>external base</span><span class="k">● role comes from the base class</span><span class="k"><b style="font-family:var(--mono)">nƒ</b> methods</span>`
     : `<span class="k">node = type · arrow = functions A → B · width = how many</span><span class="k"><svg width="26" height="8"><path d="M0,4 H26" stroke="currentColor" stroke-dasharray="2 3"/></svg>has-a (fields)</span>`;
-  L.appendChild(row2);
+  L.appendChild(help);
 }
 const dl = document.getElementById("symbols");
 for (const n of D.nodes) if (n.kind !== "external" && n.kind !== "method") { const o = document.createElement("option"); o.value = short(n.id); dl.appendChild(o); }
