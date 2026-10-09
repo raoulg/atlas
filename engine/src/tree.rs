@@ -188,7 +188,7 @@ pub fn starts_at_literal(call: TsNode, src: &[u8], string_kinds: &[&str], arg_fi
 /// `x` in `x.method`, for Python attributes and Rust field expressions.
 fn receiver_of(f: TsNode) -> Option<TsNode> {
     match f.kind() {
-        "attribute" => f.child_by_field_name("object"),
+        "attribute" | "member_expression" => f.child_by_field_name("object"),
         "field_expression" => f.child_by_field_name("value"),
         _ => None,
     }
@@ -198,6 +198,9 @@ fn first_arg(args: TsNode) -> Option<TsNode> {
     named_children(args).into_iter().find(|a| a.kind() != "comment")
 }
 
+/// Functions and constructors that build a path or a URL from their first argument.
+const PATH_BUILDERS: &[&str] = &["Path", "PurePath", "PosixPath", "WindowsPath", "Path::new", "PathBuf::from", "URL", "new URL"];
+
 /// Whether an expression's value starts at a literal: the leftmost operand of a `/` or a
 /// `+`, the receiver of a method, the first argument of a constructor like `Path(..)`.
 fn head_literal(e: TsNode, src: &[u8], string_kinds: &[&str]) -> bool {
@@ -205,21 +208,25 @@ fn head_literal(e: TsNode, src: &[u8], string_kinds: &[&str]) -> bool {
     match e.kind() {
         k if string_kinds.contains(&k) => {
             let lit = unquote(text(e, src));
-            !lit.is_empty() && !lit.starts_with('{')
+            // `{root}/x` (Python) and `${root}/x` (a template string) start at a value
+            !lit.is_empty() && !lit.starts_with('{') && !lit.starts_with("${")
         }
         "binary_operator" | "binary_expression" => child("left").map_or(false, |l| head_literal(l, src, string_kinds)),
         "keyword_argument" => child("value").map_or(false, |v| head_literal(v, src, string_kinds)),
         "parenthesized_expression" | "reference_expression" => {
             child("value").or_else(|| first_arg(e)).map_or(false, |v| head_literal(v, src, string_kinds))
         }
-        "call" | "call_expression" => {
-            let Some(f) = child("function") else { return false };
+        "call" | "call_expression" | "new_expression" => {
+            let Some(f) = child("function").or_else(|| child("constructor")) else { return false };
             match receiver_of(f) {
                 Some(r) => head_literal(r, src, string_kinds),
-                None => child("arguments").and_then(first_arg).map_or(false, |a| head_literal(a, src, string_kinds)),
+                // only a path or URL builder starts the place at its argument; what any other
+                // function makes of a string (a key, a name) is not known here
+                None if PATH_BUILDERS.contains(&text(f, src)) => child("arguments").and_then(first_arg).map_or(false, |a| head_literal(a, src, string_kinds)),
+                None => false,
             }
         }
-        "attribute" | "field_expression" => receiver_of(e).map_or(false, |r| head_literal(r, src, string_kinds)),
+        "attribute" | "field_expression" | "member_expression" => receiver_of(e).map_or(false, |r| head_literal(r, src, string_kinds)),
         // `format!("out/{}.png", x)`: the template decides
         "macro_invocation" => walk(e, string_kinds).first().map_or(false, |l| head_literal(*l, src, string_kinds)),
         _ => false,

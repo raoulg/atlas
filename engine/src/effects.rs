@@ -164,6 +164,35 @@ fn ml(pkg: &str, parts: &[String], last: &str) -> Option<&'static str> {
     }
 }
 
+/// The boundary a TypeScript or JavaScript call crosses: `fetch` and HTTP clients go to the
+/// web, `console` to the screen, `node:fs` reads and writes files, `child_process` runs a
+/// program. `pkg` is the package the call's head was imported from, if any.
+pub fn boundary_ts(pkg: Option<&str>, parts: &[String]) -> Option<&'static str> {
+    let head = parts.first().map(String::as_str).unwrap_or("");
+    let last = parts.last().map(String::as_str).unwrap_or("");
+    match pkg {
+        None if matches!(parts, [f] if f == "fetch") || (matches!(head, "window" | "globalThis") && last == "fetch") => Some("net"),
+        None if head == "console" => Some("screen"),
+        Some("axios" | "ky" | "ofetch" | "node-fetch" | "undici" | "got") => Some("net"),
+        Some("fs" | "fs/promises") => {
+            const READS: &[&str] = &["readFile", "readFileSync", "readdir", "readdirSync", "createReadStream", "existsSync", "stat", "statSync", "access"];
+            const WRITES: &[&str] = &[
+                "writeFile", "writeFileSync", "appendFile", "appendFileSync", "mkdir", "mkdirSync", "rm", "rmSync", "unlink", "unlinkSync", "rename",
+                "renameSync", "copyFile", "copyFileSync", "createWriteStream",
+            ];
+            if READS.contains(&last) {
+                Some("disk_read")
+            } else if WRITES.contains(&last) {
+                Some("disk_write")
+            } else {
+                None
+            }
+        }
+        Some("child_process") => Some("process"),
+        _ => None,
+    }
+}
+
 /// `Path.exists()` and friends on a receiver whose type is unknown still read the disk.
 pub const RUST_PATH_READS: &[&str] = &["exists", "try_exists", "is_file", "is_dir", "read_dir", "canonicalize", "symlink_metadata"];
 

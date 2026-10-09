@@ -658,6 +658,7 @@ function verbOf(t) {
   if (/^copy/.test(op)) return "copies";
   if (t.kind === "net" && /^(get|post|put|delete|patch)$/.test(op)) return `${op.toUpperCase()}s`;
   if (t.kind === "net" && t.dir) return t.dir === "read" ? "downloads" : "uploads";
+  if (t.kind === "screen" && op === "render") return "renders";
   return VERB[t.kind] || t.kind;
 }
 // what a step does in its own body, grouped by verb: reads Makefile · writes html → out · runs open | xdg-open
@@ -713,6 +714,8 @@ function choiceGroups(id) {
   return items;
 }
 const LETTER = i => "abcdefghijklmnopqrstuvwxyz"[i % 26];
+// a class's constructor, whatever the language calls it (`__init__`, `constructor`): the graph files it as `Class.__init__`
+const isCtor = n => !!(n && n.cls && n.id === n.cls + ".__init__");
 const reachCache = new Map();
 function reach(id) {  // boundaries touched and functions covered by everything reachable through calls
   if (reachCache.has(id)) return reachCache.get(id);
@@ -997,7 +1000,7 @@ async function renderPlaat() {
       cod.push([addPlace(typePlace(f.id)), false]);
       if (byId.has(f.id + ".__init__")) for (const x of typesOf(f.id + ".__init__").takes) dom.push([addPlace(typePlace(x)), false]);
     } else {
-      const ctor = f.name === "__init__" && f.cls;
+      const ctor = isCtor(f);
       // a method's receiver is part of its domain; a classmethod's or staticmethod's is the class, not a value of it
       const onClass = (f.decorators || []).some(d => /^(classmethod|staticmethod)$/.test(d));
       if (f.cls && byId.has(f.cls) && !noReceiver && !ctor && !onClass) dom.push([addPlace(typePlace(f.cls)), false]);
@@ -1023,7 +1026,7 @@ async function renderPlaat() {
 
   // build the nested picture: frames for open steps, pills for closed ones (siblings with the same places are one pill)
   const pills = new Map(), frames = new Map();  // id -> {...}
-  const stepName = id => { const n = byId.get(id); if (!storyEntry && n.entry) return ENTRY_PLACE[n.entry.kind](n.entry.label); if (n.kind === "class") return n.name + "()"; if (n.make) return n.name; if (n.name === "__init__" && n.cls) return typeLabel(n.cls) + "()"; return n.cls ? `${typeLabel(n.cls)}.${n.name}` : n.name; };
+  const stepName = id => { const n = byId.get(id); if (!storyEntry && n.entry) return ENTRY_PLACE[n.entry.kind](n.entry.label); if (n.kind === "class") return n.name + "()"; if (n.make) return n.name; if (isCtor(n)) return typeLabel(n.cls) + "()"; return n.cls ? `${typeLabel(n.cls)}.${n.name}` : n.name; };
   const openable = id => id !== storyEntry && !expanded.has(id) && callees(id).length > 0;
   // an exported class has no body of its own: its route starts at each public method the caller can call
   const libraryClass = id => byId.get(id)?.kind === "class" && !!byId.get(id).entry;
@@ -1314,11 +1317,12 @@ function linkList(ids, kindClass) {
   return d;
 }
 function section(title, count, node) { const s = html("div", "sec"); const h = html("h3", null, title); if (count != null) h.appendChild(html("span", null, String(count))); s.appendChild(h); s.appendChild(node); return s; }
+const CODE_LANG = {python: "python", rust: "rust", typescript: "typescript"}[D.language] || "python";
 function codeBlock(n, mark) {
   const src = D.files[n.file]; if (!src || !n.span) return null;
   const lines = src.split("\n").slice(n.span[0] - 1, Math.min(n.span[1], n.span[0] - 1 + 400));
   const pre = html("pre", "code"); pre.style.setProperty("--ln0", n.span[0] - 1);
-  const hl = hljs.highlight(lines.join("\n"), {language: "python"}).value;
+  const hl = hljs.highlight(lines.join("\n"), {language: CODE_LANG}).value;
   pre.innerHTML = hl.split("\n").map((l, i) => `<span class="l${n.span[0] + i === mark ? " mark" : ""}">${l || " "}</span>`).join("");
   return pre;
 }
@@ -1358,7 +1362,8 @@ function select(id, extra) {
   const es = [...(out.get(id) || []), ...(inn.get(id) || [])];
   const outK = k => es.filter(e => e.src === id && e.kind === k).map(e => e.dst), inK = k => es.filter(e => e.dst === id && e.kind === k).map(e => e.src);
   if (n.kind === "function" || n.kind === "method") {
-    insp.appendChild(html("div", "sig", `def ${n.name}(${(n.params || []).join(", ")})${n.returns ? " -> " + n.returns : ""}`));
+    const [kw, arrow] = {rust: ["fn", " -> "], typescript: ["function", ": "]}[D.language] || ["def", " -> "];
+    insp.appendChild(html("div", "sig", `${kw} ${n.name}(${(n.params || []).join(", ")})${n.returns ? arrow + n.returns : ""}`));
     if (n.cls) insp.appendChild(section("method of", null, linkList([n.cls])));
   } else if (n.kind === "class") {
     insp.appendChild(html("div", "sig", `class ${n.name}(${(n.bases || []).join(", ")})`));

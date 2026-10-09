@@ -14,6 +14,7 @@ pub mod roles;
 pub mod rust;
 pub mod story;
 pub mod tree;
+pub mod typescript;
 
 use std::path::Path;
 
@@ -28,7 +29,7 @@ pub use model::*;
 /// `roles.json`, otherwise the repo's own declaration is used, or roles are inferred.
 pub fn analyze(repo: &Path, package: Option<&Path>, roles: Option<&Path>) -> Result<Graph> {
     let lang = language::detect(repo, package)
-        .ok_or_else(|| anyhow::anyhow!("no language recognised in {} (looked for Cargo.toml, pyproject.toml, a Python package)", repo.display()))?;
+        .ok_or_else(|| anyhow::anyhow!("no language recognised in {} (looked for Cargo.toml, pyproject.toml, a Python package, package.json)", repo.display()))?;
     let mut g = lang.parse(repo, package)?;
     entries::read_makefile(&mut g);
     let arch = roles::resolve(&g, roles)?;

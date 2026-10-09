@@ -1,0 +1,10 @@
+{
+  "compilerOptions": {
+    /* Bundler mode */
+    "jsx": "react-jsx",
+    // a comment on its own line
+    "paths": {
+      "@/*": ["./src/*"],
+    },
+  },
+}

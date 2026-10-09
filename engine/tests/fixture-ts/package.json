@@ -1,0 +1,6 @@
+{
+  "name": "fixture-ts",
+  "private": true,
+  "type": "module",
+  "bin": { "fixture": "./src/cli.ts" }
+}

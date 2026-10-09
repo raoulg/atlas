@@ -9,7 +9,7 @@ use std::path::Path;
 use anyhow::Result;
 
 use crate::model::Graph;
-use crate::{entries, python, rust};
+use crate::{entries, python, rust, typescript};
 
 pub trait Language {
     fn name(&self) -> &'static str;
@@ -56,6 +56,21 @@ impl Language for Rust {
     }
 }
 
+pub struct TypeScript;
+
+impl Language for TypeScript {
+    fn name(&self) -> &'static str {
+        "typescript"
+    }
+    fn detect(&self, repo: &Path) -> bool {
+        typescript::detect(repo)
+    }
+    fn parse(&self, repo: &Path, _package: Option<&Path>) -> Result<Graph> {
+        let (b, root) = typescript::parse(repo)?;
+        Ok(b.finish(root, Some(repo), self.name()))
+    }
+}
+
 /// Whether a language leaves types and exports to the author: a Python signature may say
 /// nothing, and a Python package offers whatever its root binds. Rust's compiler asks for
 /// every type, and `pub` is the export.
@@ -65,7 +80,7 @@ pub fn author_declares(language: &str) -> bool {
 
 /// All known languages, in detection order.
 pub fn languages() -> Vec<Box<dyn Language>> {
-    vec![Box::new(Rust), Box::new(Python)]
+    vec![Box::new(Rust), Box::new(Python), Box::new(TypeScript)]
 }
 
 /// The language a repo is written in; an explicit package directory means Python.
