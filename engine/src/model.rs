@@ -146,6 +146,13 @@ pub struct Touch {
     /// `Path("data") / name`), not at a value a caller hands in (`root / "out.csv"`).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub fixed: bool,
+    /// The line of the first such call, 1-based.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub line: u32,
+}
+
+fn is_zero(n: &u32) -> bool {
+    *n == 0
 }
 
 #[derive(Serialize, Deserialize, TS, Clone, Debug)]

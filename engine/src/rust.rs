@@ -804,12 +804,12 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crat
         let what = what_of(c, src, lit_kinds, "arguments");
         let payload = payload_of(c, src, &what, "arguments", locals);
         let fixed = effects::locates(f.kind) && starts_at_literal(c, src, lit_kinds, "arguments", effects::on_receiver(&op));
-        Touch { kind: f.kind.into(), what, payload, op: op.into(), artifact: f.artifact, dir: f.dir.into(), fixed, n: 1 }
+        Touch { kind: f.kind.into(), what, payload, op: op.into(), artifact: f.artifact, dir: f.dir.into(), fixed, line: c.start_position().row as u32 + 1, n: 1 }
     };
     for mac in walk(body, &["macro_invocation"]) {
         let name = mac.child_by_field_name("macro").map(|x| text(x, src)).unwrap_or("");
         if effects::screen_macro(name) {
-            touches.push(Touch { kind: "screen".into(), op: name.into(), n: 1, ..Default::default() });
+            touches.push(Touch { kind: "screen".into(), op: name.into(), line: mac.start_position().row as u32 + 1, n: 1, ..Default::default() });
         }
     }
     let mut unresolved: Vec<String> = vec![];

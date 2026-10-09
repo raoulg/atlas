@@ -148,6 +148,7 @@ h1.name{font-family:var(--mono);font-size:17px;font-weight:600;margin:6px 0 2px;
 .links button i{display:inline-block;width:7px;height:7px;border-radius:2px;margin-right:5px;vertical-align:0}
 pre.code{font-family:var(--mono);font-size:11.5px;line-height:1.55;background:var(--panel-2);border:1px solid var(--line-2);border-radius:6px;padding:10px 0;overflow-x:auto;margin:6px 0 0;counter-reset:ln var(--ln0)}
 pre.code .l{display:block;padding:0 12px 0 0;white-space:pre}
+pre.code .l.mark{background:var(--line)}
 pre.code .l::before{counter-increment:ln;content:counter(ln);display:inline-block;width:46px;padding-right:12px;text-align:right;color:var(--ink-3);user-select:none}
 .hljs-keyword{color:var(--syn-kw)} .hljs-string{color:var(--syn-str)} .hljs-comment{color:var(--syn-com);font-style:italic}
 .hljs-number{color:var(--syn-num)} .hljs-title,.hljs-title.function_{color:var(--syn-fn)} .hljs-meta{color:var(--syn-dec)} .hljs-built_in{color:var(--syn-bi)}
@@ -199,7 +200,7 @@ pre.code .l::before{counter-increment:ln;content:counter(ln);display:inline-bloc
     <div class="brand">Atlas <select id="project" aria-label="project"></select> <small>spike</small></div>
     <div class="tabs" role="tablist">
       <button role="tab" data-view="story" aria-selected="true">Story</button>
-      <button role="tab" data-view="plaat" aria-selected="false">Plaat</button>
+      <button role="tab" data-view="plaat" aria-selected="false">Flowchart</button>
       <button role="tab" data-view="arch" aria-selected="false">Architecture</button>
       <button role="tab" data-view="types" aria-selected="false">Type lattice</button>
       <button role="tab" data-view="sig" aria-selected="false">Signature flow</button>
@@ -308,24 +309,28 @@ let sticky = null;
 function placeLanes(t) {
   const L = document.getElementById("lanes"); L.innerHTML = "";
   if (!sticky || view !== "story") return;
-  const y = Math.max(16, t.y + t.k * sticky.y), xs = sticky.xs.map(x => t.x + t.k * x);
-  if (y === 16 && xs.length) el("rect", {class: "lanes-bg", x: xs[0] - 50, y: 0, width: xs[xs.length - 1] - xs[0] + 100, height: 26}, L);
+  const top = barHeight(), y = Math.max(16 + top, t.y + t.k * sticky.y), xs = sticky.xs.map(x => t.x + t.k * x);
+  if (y === 16 + top && xs.length) el("rect", {class: "lanes-bg", x: xs[0] - 50, y: top, width: xs[xs.length - 1] - xs[0] + 100, height: 26}, L);
   xs.forEach((x, j) => {
     const kind = sticky.kinds[j] || "file", w = sticky.labels[j].length * 6.6;
-    el("text", {class: "lane-label", x: x + 8, y, "text-anchor": "middle", style: `fill:var(--k-${kind})`}, L).textContent = sticky.labels[j];
+    const label = el("text", {class: "lane-label", x: x + 8, y, "text-anchor": "middle", style: `fill:var(--k-${kind});cursor:pointer`}, L);
+    label.textContent = sticky.labels[j];
+    label.addEventListener("click", () => selectPlace(sticky.ids[j], sticky.places[j]));
     glyphAt(L, kind, x + 8 - w / 2 - 17, y - 10);
   });
 }
 svg.call(zoom).on("dblclick.zoom", null);
+// the height the state bar takes at the top of the canvas, when it shows
+const barHeight = () => { const C = document.getElementById("crumbs"); return C.style.display === "none" ? 0 : C.offsetHeight + 14; };
 function fit(animate = false, pad = 40, tries = 0) {
   const W = svg.node().clientWidth, H = svg.node().clientHeight;
   if ((W < 200 || H < 200) && tries < 30) { setTimeout(() => fit(animate, pad, tries + 1), 100); return; }
   const bb = document.getElementById("scene").getBBox();
   if (!bb.width || !bb.height) return;
-  const top = view === "plaat" ? document.getElementById("crumbs").offsetHeight + 14 : 0;  // keep the state bar clear
+  const top = barHeight();  // keep the state bar clear
   let s = Math.max(0.08, Math.min((W - pad*2) / bb.width, (H - top - pad*2) / bb.height, 1.4));
   let t = d3.zoomIdentity.translate(W/2 - s*(bb.x + bb.width/2), top + (H - top)/2 - s*(bb.y + bb.height/2)).scale(s);
-  if (view === "story") { t = d3.zoomIdentity.translate(10, 10).scale(1); }  // a story reads top-left, at 1:1
+  if (view === "story") { t = d3.zoomIdentity.translate(10, 10 + top).scale(1); }  // a story reads top-left, at 1:1
   if (animate) svg.transition().duration(300).call(zoom.transform, t); else svg.call(zoom.transform, t);
 }
 document.getElementById("fit").onclick = () => fit(true);
@@ -653,7 +658,6 @@ function verbOf(t) {
   if (/^copy/.test(op)) return "copies";
   if (t.kind === "net" && /^(get|post|put|delete|patch)$/.test(op)) return `${op.toUpperCase()}s`;
   if (t.kind === "net" && t.dir) return t.dir === "read" ? "downloads" : "uploads";
-  if (t.kind === "model" && t.dir === "read") return "loads model";
   return VERB[t.kind] || t.kind;
 }
 // what a step does in its own body, grouped by verb: reads Makefile · writes html → out · runs open | xdg-open
@@ -813,7 +817,7 @@ function renderStory() {
   const totalH = rows.length * ROW + rows.filter(r => r.group).length * 34;
   const laneY = hdrY;
   for (const l of lanes) el("line", {class: "lane-line", x1: l.x, x2: l.x, y1: laneY + 8, y2: laneY + 30 + totalH}, g);
-  sticky = {xs: lanes.map(l => l.x), labels: lanes.map(l => l.label), kinds: lanes.map(l => l.kind), y: laneY};
+  sticky = {xs: lanes.map(l => l.x), labels: lanes.map(l => l.label), kinds: lanes.map(l => l.kind), ids: lanes.map(l => l.id), places: lanes.map(l => lanesUsed.get(l.id).place.label), y: laneY};
   let y = hdrY + hdrH + 24;
   for (const row of rows) {
     if (row.group) { y += 10; el("text", {class: "group-label", x: X0, y: y + 12}, g).textContent = row.group; y += 24; }
@@ -1251,6 +1255,7 @@ async function renderPlaat() {
     grp.addEventListener("click", () => {
       plaatAnchor = p.id;
       if (p.id.startsWith("e:")) { const id = p.id.slice(2); if (!storyEntry) { storyEntry = id; entrySel.value = id; expanded.clear(); render(); } else select(id); return; }
+      if (kind) selectPlace(p.id, p.label);
       if (kind) { if (p.id.startsWith("w:Disk") || kind === "db") { const base = p.id.split(":").slice(0, 2).join(":"); if (refined.has(base)) refined.delete(base); else refined.add(base); render(); } return; }
       const tid = p.type;
       if (members.has(tid) && !expandedFamilies.has(tid)) { expandedFamilies.add(tid); render(); }
@@ -1282,8 +1287,10 @@ async function renderPlaat() {
 // what the picture is a function of, each part undoable: the route, the opened steps, the open families, the split world boxes
 function crumbs() {
   const C = document.getElementById("crumbs"); C.innerHTML = "";
-  C.style.display = view === "plaat" ? "" : "none";
-  if (view !== "plaat") return;
+  // in Story the bar shows when a route or an opened step narrows the picture, so it can be undone
+  const show = view === "plaat" || (view === "story" && (storyEntry || entryKind || expanded.size));
+  C.style.display = show ? "" : "none";
+  if (!show) return;
   const lbl = t => C.appendChild(html("span", "lbl", t));
   const chip = (text, undo) => { const b = html("button", null, text + " ✕"); b.title = "undo"; b.onclick = () => { undo(); render(); }; C.appendChild(b); };
   lbl("route");
@@ -1304,13 +1311,38 @@ function linkList(ids, kindClass) {
   return d;
 }
 function section(title, count, node) { const s = html("div", "sec"); const h = html("h3", null, title); if (count != null) h.appendChild(html("span", null, String(count))); s.appendChild(h); s.appendChild(node); return s; }
-function codeBlock(n) {
+function codeBlock(n, mark) {
   const src = D.files[n.file]; if (!src || !n.span) return null;
   const lines = src.split("\n").slice(n.span[0] - 1, Math.min(n.span[1], n.span[0] - 1 + 400));
   const pre = html("pre", "code"); pre.style.setProperty("--ln0", n.span[0] - 1);
   const hl = hljs.highlight(lines.join("\n"), {language: "python"}).value;
-  pre.innerHTML = hl.split("\n").map(l => `<span class="l">${l || " "}</span>`).join("");
+  pre.innerHTML = hl.split("\n").map((l, i) => `<span class="l${n.span[0] + i === mark ? " mark" : ""}">${l || " "}</span>`).join("");
   return pre;
+}
+// a place in the world: every call in the code that reaches it, in the step that makes it, with its line
+function selectPlace(pid, label) {
+  selected = pid;
+  scene.node().querySelectorAll(".selected").forEach(x => x.classList.remove("selected"));
+  scene.node().querySelectorAll(`[data-id="${CSS.escape(pid)}"]`).forEach(x => x.classList.add("selected"));
+  insp.innerHTML = "";
+  const eb = html("div", "eyebrow"); eb.appendChild(html("span", null, `place · ${KIND_NAME[placeKind(pid)] || "world"}`)); insp.appendChild(eb);
+  insp.appendChild(html("h1", "name", label));
+  const calls = [];
+  for (const n of D.nodes) for (const t of n.touches || []) if (WORLD[t.kind] && worldPlaceOf(t).id === pid) calls.push({n, t});
+  calls.sort((a, b) => a.n.file.localeCompare(b.n.file) || (a.t.line || 0) - (b.t.line || 0));
+  insp.appendChild(html("div", "path", `${calls.length} ${calls.length === 1 ? "call" : "calls"} in the code`));
+  const d = html("div", "links");
+  for (const {n, t} of calls) {
+    const step = n.kind === "module" ? short(n.id) : n.cls && byId.has(n.cls) ? `${byId.get(n.cls).name}.${n.name}` : n.name;
+    const where = t.kind === "screen" ? "" : ` ${t.artifact && !t.artifact.startsWith("huggingface") ? t.artifact : t.what || t.artifact}`;
+    const b = html("button", "fn", `${step} · ${verbOf(t)}${where}${t.line ? ` · line ${t.line}` : ""}`);
+    b.onclick = () => { select(n.id); const c = codeBlock(n, t.line); if (c) insp.appendChild(section(`line ${t.line}`, null, c)); };
+    d.appendChild(b);
+  }
+  insp.appendChild(section("reached by", calls.length, d));
+  const first = calls.find(c => c.t.line);
+  if (first) { const c = codeBlock({file: first.n.file, span: [Math.max(1, first.t.line - 3), first.t.line + 4]}, first.t.line); if (c) insp.appendChild(section(`${short(first.n.id)} · line ${first.t.line}`, null, c)); }
+  insp.scrollTop = 0;
 }
 function select(id, extra) {
   selected = id; const n = byId.get(id); if (!n) return;
@@ -1411,7 +1443,7 @@ function legend() {
   help.innerHTML = view === "plaat"
     ? `<span class="k">left: what the route only reads · right: what it only writes · boxes with a coloured strip are types in memory; (n) is a family, click to open it</span><span class="k">pill = a step, from what it takes to what it hands on · ▸ opens it into a frame · a frame's title closes it · one of: alternatives, each branch in its own colour (the overrides a call may run, or the arms of an if, a match or an or-else) · dashed: happens inside a closed step · dotted: a result handed back</span>`
     : view === "story"
-    ? `<span class="k">rows = steps in call order · line 1 = the step's own signature, in the author's names · line 2 = what its own body does</span><span class="k">columns = the places reached, as the Plaat names them · a dot = the step reaches it through everything below it, in the place's colour · size = how often</span><span class="k">▸ expand a step into its own steps · click a name for the code</span>`
+    ? `<span class="k">rows = steps in call order · line 1 = the step's own signature, in the author's names · line 2 = what its own body does</span><span class="k">columns = the places reached, as the Flowchart names them · a dot = the step reaches it through everything below it, in the place's colour · size = how often</span><span class="k">▸ expand a step into its own steps · click a name for the code</span>`
     : view === "arch"
     ? `<span class="k">columns = roles ${D.roles.inferred ? "inferred from the package layout" : "declared in architecture.yml"}, not classes</span><span class="k"><svg width="26" height="8"><path d="M0,4 H26" stroke="currentColor" stroke-width="1.5"/></svg>module → module, width = count</span><span class="k" style="color:var(--alert)"><svg width="26" height="8"><path d="M0,4 H26" stroke="currentColor" stroke-width="2"/></svg>backflow: an earlier stage depends on a later one</span><span class="k"><i style="display:inline-block;width:18px;height:10px;border:1px solid currentColor;border-radius:2px"></i>class</span><span class="k"><i style="display:inline-block;width:18px;height:10px;border:1px solid currentColor;border-radius:6px"></i>function</span>`
     : view === "types"

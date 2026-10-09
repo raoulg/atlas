@@ -10,6 +10,8 @@ const LLM_PKGS: &[&str] = &["openai", "anthropic"];
 const ML_PKGS: &[&str] = &["sentence_transformers", "torch", "transformers", "huggingface_hub", "datasets", "torchvision"];
 /// The Hugging Face Hub: what comes down, and what goes up.
 const HUB_READ: &[&str] = &["snapshot_download", "hf_hub_download", "load_dataset", "repo_info", "dataset_info", "model_info", "list_repo_files"];
+/// Pretrained weights, downloaded from the Hub by name: `AutoModel.from_pretrained(name)`.
+const HUB_MODELS: &[&str] = &["from_pretrained", "SentenceTransformer", "CrossEncoder", "pipeline"];
 const HUB_WRITE: &[&str] = &["upload_folder", "upload_file", "upload_large_folder", "create_repo", "create_commit", "delete_file", "delete_folder", "push_to_hub"];
 const HUB_HOST: &str = "huggingface.co";
 const FILE_PKGS: &[&str] = &[
@@ -148,8 +150,9 @@ pub fn boundary(pkg: Option<&str>, parts: &[String], ext: &HashSet<String>) -> O
 /// model, the Hub sends and receives files, a checkpoint or a saved dataset is a file.
 fn ml(pkg: &str, parts: &[String], last: &str) -> Option<&'static str> {
     let hub_load = pkg == "torch" && parts.iter().any(|p| p == "hub") && last == "load";
-    if last == "from_pretrained" || hub_load || matches!((pkg, last), ("sentence_transformers", "SentenceTransformer" | "CrossEncoder") | ("transformers", "pipeline")) {
-        return Some("model");
+    let pretrained = last == "from_pretrained" || matches!((pkg, last), ("sentence_transformers", "SentenceTransformer" | "CrossEncoder") | ("transformers", "pipeline"));
+    if pretrained || hub_load {
+        return Some("net");
     }
     if matches!(pkg, "huggingface_hub" | "datasets") && (HUB_READ.contains(&last) || HUB_WRITE.contains(&last)) {
         return Some("net");
@@ -200,16 +203,17 @@ pub fn facts(kind: &'static str, pkg: Option<&str>, op: &str, literals: &[String
         return Facts { kind, artifact: table, dir };
     }
     if kind == "net" {
+        // pretrained weights named by a local path are a file, by a name a download from the Hub
+        if HUB_MODELS.contains(&op) {
+            if let Some(local) = literals.first().filter(|l| l.starts_with(['.', '/', '~'])) {
+                return Facts { kind: "disk_read", artifact: local.clone(), dir: "" };
+            }
+        }
         // a web place is named by its host; the Hub's operations say which way the files go
-        let hub = HUB_READ.contains(&op) || HUB_WRITE.contains(&op);
+        let hub = HUB_READ.contains(&op) || HUB_WRITE.contains(&op) || HUB_MODELS.contains(&op);
         let artifact = if hub { HUB_HOST.to_string() } else { literals.iter().find_map(|l| host(l)).unwrap_or_default() };
         let dir = if HUB_WRITE.contains(&op) { "write" } else if hub { "read" } else { "" };
         return Facts { kind, artifact, dir };
-    }
-    if kind == "model" {
-        // weights are read: the model is named by the checkpoint, when the code names it
-        let artifact = literals.iter().find(|l| l.contains('/') && !l.contains(char::is_whitespace)).cloned().unwrap_or_default();
-        return Facts { kind, artifact, dir: "read" };
     }
     if !kind.starts_with("disk") {
         return Facts { kind, artifact: String::new(), dir: "" };
@@ -371,7 +375,7 @@ mod tests {
         let none = HashSet::new();
         assert_eq!(boundary(Some("torch"), &parts(&["torch", "cat"]), &none), None);
         assert_eq!(boundary(Some("torch"), &parts(&["nn", "Linear"]), &none), None);
-        assert_eq!(boundary(Some("transformers"), &parts(&["AutoModel", "from_pretrained"]), &none), Some("model"));
+        assert_eq!(boundary(Some("transformers"), &parts(&["AutoModel", "from_pretrained"]), &none), Some("net"), "weights come down from the Hub");
         assert_eq!(boundary(Some("torch"), &parts(&["torch", "save"]), &none), Some("disk_write"));
         assert_eq!(boundary(Some("huggingface_hub"), &parts(&["snapshot_download"]), &none), Some("net"));
         assert_eq!(boundary(Some("huggingface_hub"), &parts(&["HfApi"]), &none), None, "building a client moves nothing");
@@ -380,7 +384,9 @@ mod tests {
         assert_eq!((down.artifact.as_str(), down.dir), ("huggingface.co", "read"), "the Hub is a host; a download reads");
         assert_eq!(facts("net", Some("huggingface_hub"), "upload_folder", &[]).dir, "write");
         assert_eq!(facts("net", Some("requests"), "get", &lits(&["https://api.example.org/v1/x"])).artifact, "api.example.org");
-        assert_eq!(facts("model", Some("transformers"), "from_pretrained", &lits(&["facebook/dinov2-small", "auto"])).artifact, "facebook/dinov2-small");
+        let model = facts("net", Some("transformers"), "from_pretrained", &lits(&["facebook/dinov2-small", "auto"]));
+        assert_eq!((model.kind, model.artifact.as_str(), model.dir), ("net", "huggingface.co", "read"));
+        assert_eq!(facts("net", Some("transformers"), "from_pretrained", &lits(&["./checkpoints/best"])).kind, "disk_read", "a local checkpoint is a file");
     }
 
     #[test]

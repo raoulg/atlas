@@ -277,7 +277,6 @@ fn verb(t: &Touch) -> String {
         (k, "write") if k.starts_with("db_") => Some("writes"),
         ("net", "read") => Some("downloads"),
         ("net", "write") => Some("uploads"),
-        ("model", "read") => Some("loads model"),
         _ => None,
     };
     if let Some(v) = by_dir.filter(|_| t.kind.starts_with("db_")).or(by_op).or(by_dir) {

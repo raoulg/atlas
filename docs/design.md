@@ -255,7 +255,7 @@ items, it is two views.
 | View | Question | Picture |
 |---|---|---|
 | **Story** | Orient | Routes into the program as rows of steps in call order; the resting places as columns; a dot where a step, or anything it reaches, touches one. Each step shows its morphism and expands into its own steps. Overview: every route and what it reaches. |
-| **Plaat** | Orient, Verify | The image of the effect functor: resting places as boxes, quotiented arrows between them, named by base class or package when declared and by signature otherwise. Click a box to refine it one level. Conformance marks where the declared flow disagrees. |
+| **Flowchart** | Orient, Verify | The image of the effect functor: resting places as boxes, quotiented arrows between them, named by base class or package when declared and by signature otherwise. Click a box to refine it one level. Conformance marks where the declared flow disagrees. |
 | **Architecture** | Verify, Place | Role columns left → right; orchestration band above, foundation band below; modules as boxes with class/function chips; aggregated edges; backflow in the alert colour. |
 | **Type lattice** | Place | Inheritance forest; external bases as ghosts; wide leaf families as a grid; badges for abstract methods and overrides. |
 | **Signature flow** | Orient | Types as nodes, functions as arrows, ELK-layered; select two types and the composition paths light up. |
