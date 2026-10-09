@@ -11,6 +11,16 @@ atlas check ../goad    # another one
 atlas check --json     # for an agent or a script
 ```
 
+A coding agent asks the same through MCP. `atlas mcp` serves five tools over stdio:
+`principles`, `check`, `explain` (a principle's section of this page), `routes`, and
+`route` (what one entry point does, step by step). In Claude Code:
+
+```bash
+claude mcp add atlas -- atlas mcp
+```
+
+Any other agent takes the same command: `{"command": "atlas", "args": ["mcp"]}`.
+
 Each finding names the principle, the place in the code, the evidence the graph holds,
 and ends in a question. Atlas coaches; it does not fix. The author decides what the
 answer is, changes the code, and the picture follows.

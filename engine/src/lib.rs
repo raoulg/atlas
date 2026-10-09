@@ -12,6 +12,7 @@ pub mod principles;
 pub mod python;
 pub mod roles;
 pub mod rust;
+pub mod story;
 pub mod tree;
 
 use std::path::Path;

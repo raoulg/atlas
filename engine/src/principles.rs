@@ -45,6 +45,43 @@ pub struct Finding {
     pub question: String,
 }
 
+/// `docs/principles.md`, the explanation of every principle, carried in the binary.
+const DOCS: &str = include_str!("../../docs/principles.md");
+
+/// A principle's section of the docs: what it asks, why, its PEP or Rust idiom, how Atlas
+/// sees it, an example.
+pub fn explain(id: &str) -> Option<&'static str> {
+    let marker = format!("Id: `{id}`.");
+    DOCS.split("\n## ").skip(1).find(|s| s.contains(&marker)).map(|s| s.trim_end())
+}
+
+/// The findings as text, grouped by principle, each ending in its question; the principles
+/// with nothing to ask are named at the end.
+pub fn report(root: &str, findings: &[Finding]) -> String {
+    let n = findings.len();
+    let mut out = format!("{root} · {n} {}\n", if n == 1 { "finding" } else { "findings" });
+    let mut clear = vec![];
+    for p in PRINCIPLES {
+        let mine: Vec<&Finding> = findings.iter().filter(|f| f.principle == p.id).collect();
+        if mine.is_empty() {
+            clear.push(p.id);
+            continue;
+        }
+        out.push_str(&format!("\n{} · {}\n", p.id, p.asks));
+        for f in mine {
+            out.push_str(&format!("  {}:{}  {}\n", f.file, f.line, f.what));
+            for e in &f.evidence {
+                out.push_str(&format!("      {e}\n"));
+            }
+            out.push_str(&format!("    ? {}\n", f.question));
+        }
+    }
+    if !clear.is_empty() {
+        out.push_str(&format!("\nnothing to ask about {}\n", clear.join(", ")));
+    }
+    out
+}
+
 /// Every finding, by principle in the order of `PRINCIPLES`, then by place in the code.
 pub fn check(g: &Graph) -> Vec<Finding> {
     let ix = Index::new(g);

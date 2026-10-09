@@ -46,6 +46,9 @@ alone. A repo may declare itself in an `architecture.yml` at its root (see
 principles Atlas stands on disagree, each finding ending in a question for the author
 (`--json` for an agent). The principles are in [docs/principles.md](docs/principles.md).
 
+`atlas mcp` serves the same to a coding agent over MCP (stdio): `principles`, `check`,
+`explain`, `routes` and `route`. In Claude Code: `claude mcp add atlas -- atlas mcp`.
+
 The engine is the Rust workspace (`engine/`, `cli/`); `cargo test` runs the fixture
 tests and regenerates the TypeScript bindings in `engine/bindings/`.
 

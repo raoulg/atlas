@@ -1,3 +1,5 @@
+mod mcp;
+
 use std::path::PathBuf;
 
 use anyhow::Result;
@@ -35,6 +37,8 @@ enum Cmd {
         #[arg(long)]
         json: bool,
     },
+    /// Serve Atlas to a coding agent over MCP (stdio): principles, check, explain, routes, route.
+    Mcp,
     /// Analyze one or more repositories and open them in the viewer.
     View {
         /// Repository roots; default: the current directory. Several become a project switcher.
@@ -92,28 +96,8 @@ fn check(repo: &std::path::Path, json: bool) -> Result<bool> {
     let findings = principles::check(&g);
     if json {
         println!("{}", serde_json::to_string_pretty(&serde_json::json!({ "root": g.root, "findings": findings }))?);
-        return Ok(findings.is_empty());
-    }
-    let n = findings.len();
-    println!("{} · {n} {}", g.root, if n == 1 { "finding" } else { "findings" });
-    let mut clear = vec![];
-    for p in principles::PRINCIPLES {
-        let mine: Vec<_> = findings.iter().filter(|f| f.principle == p.id).collect();
-        if mine.is_empty() {
-            clear.push(p.id);
-            continue;
-        }
-        println!("\n{} · {}", p.id, p.asks);
-        for f in mine {
-            println!("  {}:{}  {}", f.file, f.line, f.what);
-            for e in &f.evidence {
-                println!("      {e}");
-            }
-            println!("    ? {}", f.question);
-        }
-    }
-    if !clear.is_empty() {
-        println!("\nnothing to ask about {}", clear.join(", "));
+    } else {
+        print!("{}", principles::report(&g.root, &findings));
     }
     Ok(findings.is_empty())
 }
@@ -124,6 +108,7 @@ fn main() -> Result<()> {
             let repos = if repos.is_empty() { vec![std::env::current_dir()?] } else { repos };
             view(&repos, roles.as_deref(), out, !no_open)?
         }
+        Cmd::Mcp => mcp::serve()?,
         Cmd::Check { repo, json } => {
             let repo = match repo {
                 Some(r) => r,
