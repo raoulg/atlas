@@ -803,7 +803,7 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crat
         let f = effects::facts(kind, None, op, &literals(c, src, lit_kinds));
         let what = what_of(c, src, lit_kinds, "arguments");
         let payload = payload_of(c, src, &what, "arguments", locals);
-        let fixed = effects::locates(f.kind) && starts_at_literal(c, src, lit_kinds, "arguments");
+        let fixed = effects::locates(f.kind) && starts_at_literal(c, src, lit_kinds, "arguments", effects::on_receiver(&op));
         Touch { kind: f.kind.into(), what, payload, op: op.into(), artifact: f.artifact, dir: f.dir.into(), fixed, n: 1 }
     };
     for mac in walk(body, &["macro_invocation"]) {

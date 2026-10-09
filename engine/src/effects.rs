@@ -225,6 +225,16 @@ pub fn facts(kind: &'static str, pkg: Option<&str>, op: &str, literals: &[String
 }
 
 /// A file mode literal: `r`, `wb`, `a+`.
+/// Path operations whose place is the path they are called on; their argument is a pattern
+/// below it or what is written: `cache_dir.glob("*.arrow")`, `p.write_text("done")`.
+pub fn on_receiver(op: &str) -> bool {
+    matches!(
+        op,
+        "glob" | "rglob" | "iterdir" | "joinpath" | "read_text" | "read_bytes" | "write_text" | "write_bytes" | "exists" | "is_file"
+            | "is_dir" | "mkdir" | "unlink" | "rmdir" | "touch" | "stat"
+    )
+}
+
 /// The host of a URL: `https://huggingface.co/api/x` -> `huggingface.co`.
 fn host(s: &str) -> Option<String> {
     let rest = s.split_once("://")?.1;

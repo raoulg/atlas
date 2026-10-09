@@ -176,9 +176,12 @@ pub fn unquote(raw: &str) -> String {
 /// `open("out.csv")`, `Path("data") / name`, `f"out/{x}.png"`, `Path::new("a.toml")`. False
 /// when it starts at a value from elsewhere: `root / "x.csv"`, `root.join("Cargo.toml")`,
 /// `f"{root}/x"`.
-pub fn starts_at_literal(call: TsNode, src: &[u8], string_kinds: &[&str], arg_field: &str) -> bool {
+///
+/// When the operation works on the path it is called on (`dir.glob("*")`), only that path
+/// counts: the argument is a pattern below it, or what is written.
+pub fn starts_at_literal(call: TsNode, src: &[u8], string_kinds: &[&str], arg_field: &str, on_receiver: bool) -> bool {
     let receiver = call.child_by_field_name("function").and_then(receiver_of);
-    let first = call.child_by_field_name(arg_field).and_then(first_arg);
+    let first = if on_receiver { None } else { call.child_by_field_name(arg_field).and_then(first_arg) };
     [receiver, first].into_iter().flatten().any(|e| head_literal(e, src, string_kinds))
 }
 
@@ -267,7 +270,8 @@ mod tests {
         p.set_language(&lang).unwrap();
         let tree = p.parse(code, None).unwrap();
         let c = walk(tree.root_node(), &[call])[0];
-        starts_at_literal(c, code.as_bytes(), strings, "arguments")
+        let op = c.child_by_field_name("function").map(|f| text(f, code.as_bytes()).rsplit(['.', ':']).next().unwrap_or("").to_string()).unwrap_or_default();
+        starts_at_literal(c, code.as_bytes(), strings, "arguments", crate::effects::on_receiver(&op))
     }
 
     #[test]
@@ -282,6 +286,8 @@ mod tests {
         assert!(!py("pd.read_csv(root / 'x.csv')"));
         assert!(!py("df.to_csv(f'{root}/x.csv')"));
         assert!(!py("self.path.read_text()"));
+        assert!(!py("cache_dir.glob(f'*_{tag}')"), "a pattern below a directory handed in");
+        assert!(!py("p.write_text('done')"), "what is written is not where");
         let rs = |code: &str| fixed(tree_sitter_rust::LANGUAGE.into(), code, "call_expression", &["string_literal", "raw_string_literal"]);
         assert!(rs("fn f() { std::fs::read_to_string(\"Cargo.toml\"); }"));
         assert!(rs("fn f() { Path::new(\"a.toml\").exists(); }"));

@@ -1200,7 +1200,7 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, root
                         false => what_of(c, src, &["string"], "arguments"),
                     };
                     let payload = payload_of(c, src, &what, "arguments", &locals);
-                    let fixed = effects::locates(f.kind) && starts_at_literal(c, src, &["string"], "arguments");
+                    let fixed = effects::locates(f.kind) && starts_at_literal(c, src, &["string"], "arguments", effects::on_receiver(&op));
                     touches.push(Touch { kind: f.kind.into(), what, payload, op, artifact: f.artifact, dir: f.dir.into(), fixed, n: 1 });
                 }
             }
