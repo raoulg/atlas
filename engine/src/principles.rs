@@ -169,7 +169,18 @@ fn doors(ix: &Index) -> Vec<Finding> {
     let g = ix.g;
     let exports: Vec<&Node> = g.nodes.iter().filter(|n| n.entry.as_ref().map_or(false, |e| e.kind == EntryKind::Export)).collect();
     let mut out = vec![];
-    if exports.is_empty() && g.language == "python" {
+    // `src/` is where packages live, not a name: installed, it collides with every other project laid out the same way
+    if g.language == "python" && g.root == "src" {
+        if let Some(root) = ix.node(&g.root) {
+            out.push(ix.finding(
+                "doors",
+                root,
+                "the package is called src, the folder packages live in".into(),
+                vec![format!("{}: the layout folder is the import name, `from src.… import …`", ix.file(root))],
+                "Under src/<name>/ with a build system in pyproject.toml, `uv sync` installs it as <name>, and `from <name> import …` works the same in a script, a test and a notebook. What is this package called?".into(),
+            ));
+        }
+    } else if exports.is_empty() && g.language == "python" {
         if let Some(root) = ix.node(&g.root) {
             out.push(ix.finding(
                 "doors",
@@ -330,7 +341,12 @@ fn places(ix: &Index) -> Vec<Finding> {
         if starts.contains(n.module.as_str()) {
             continue;
         }
-        let fixed: Vec<String> = n.touches.iter().filter(|t| t.fixed).map(|t| format!("{}({})", t.op, t.what)).collect();
+        let fixed: Vec<String> = n
+            .touches
+            .iter()
+            .filter(|t| t.fixed)
+            .map(|t| format!("{}({})", t.op, if t.artifact.is_empty() { &t.what } else { &t.artifact }))
+            .collect();
         if fixed.is_empty() {
             continue;
         }

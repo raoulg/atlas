@@ -228,6 +228,7 @@ fn format_of(pkg: Option<&str>, op: &str) -> Option<&'static str> {
 /// A literal that names a file: `out.json`, `assets/{id}/x.xml`, `Makefile`. Not a mode, an
 /// encoding, a URL or a sentence.
 fn path_like(s: &str) -> bool {
+    let s = &holes(s);
     let Some(first) = s.chars().next() else { return false };
     s.len() >= 2
         && !s.contains("://")
@@ -237,6 +238,32 @@ fn path_like(s: &str) -> bool {
 }
 
 /// The extension a literal ends in: `{name}.png` -> `png`, `.env` -> `env`.
+/// A pattern with its interpolations as holes, whatever fills them:
+/// `figures/{safe(name)}.png` -> `figures/{}.png`.
+fn holes(s: &str) -> String {
+    let mut out = String::new();
+    let mut depth = 0;
+    for c in s.chars() {
+        match c {
+            '{' => {
+                if depth == 0 {
+                    out.push('{');
+                }
+                depth += 1;
+            }
+            '}' if depth > 0 => {
+                depth -= 1;
+                if depth == 0 {
+                    out.push('}');
+                }
+            }
+            _ if depth == 0 => out.push(c),
+            _ => {}
+        }
+    }
+    out
+}
+
 fn extension(s: &str) -> Option<String> {
     let (_, e) = s.rsplit_once('.')?;
     let ok = (1..=8).contains(&e.len()) && e.chars().all(|c| c.is_ascii_alphanumeric()) && e.chars().any(|c| c.is_ascii_alphabetic());

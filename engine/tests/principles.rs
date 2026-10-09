@@ -35,6 +35,14 @@ fn each_principle_finds_its_case() {
     assert!(fs.iter().all(|f| f.question.ends_with('?')), "a finding ends in a question");
 }
 
+/// `src/` holds packages; a package called `src` has no name of its own yet, and that comes first.
+#[test]
+fn a_package_called_src_is_asked_its_name() {
+    let fs = findings("tests/srclayout");
+    assert_eq!(by_principle(&fs)["doors"], ["src"]);
+    assert!(fs[0].what.contains("called src"), "{}", fs[0].what);
+}
+
 /// Atlas is its own first subject: it follows the principles it checks.
 #[test]
 fn atlas_obeys_its_principles() {

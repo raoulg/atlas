@@ -46,9 +46,15 @@ Atlas) guessing where a route goes.
 - **Rust.** `pub` items at a library crate's root are its doors, and the compiler asks
   for every type. Atlas has nothing to ask here.
 
-Atlas checks: a Python package that exports nothing at its root, and an exported
-function or a public method of an exported class whose parameters or return are not
-annotated.
+Atlas checks: a Python package called `src`, a Python package that exports nothing at
+its root, and an exported function or a public method of an exported class whose
+parameters or return are not annotated.
+
+A package needs a name before it can have doors. `src/` is the folder packages live in
+([the src layout](https://packaging.python.org/en/latest/discussions/src-layout-vs-flat-layout/)):
+code in `src/__init__.py` installs as a package called `src`, the same name as every other
+project laid out that way. Under `src/<name>/`, `uv sync` installs it as `<name>`, and
+`from <name> import …` works the same in a script, a test and a notebook.
 
 A package whose root binds no public name has no route in as a library. goad names
 four:
