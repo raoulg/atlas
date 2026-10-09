@@ -17,7 +17,7 @@ use crate::entries::entry_of;
 use crate::model::{Compare, EdgeKind, Entry, EntryKind, Node, NodeKind, Touch};
 pub use crate::builder::{ClassInfo, GraphBuilder, SigInfo};
 use crate::tree::{
-    argument, arms_of, decides, field_children, literals, named_children, nth_of_kind, number_choices, payload_of, span, starts_at_literal, text, unquote, walk,
+    argument, arms_of, decides, evaluation_order, field_children, literals, named_children, nth_of_kind, number_choices, payload_of, span, starts_at_literal, text, unquote, walk,
     what_of, ChoiceSyntax, Part,
 };
 
@@ -198,7 +198,10 @@ fn new_parser() -> Result<Parser> {
 }
 
 fn load_module(parser: &mut Parser, id: &str, path: &Path, is_pkg: bool) -> Result<Module> {
-    let src = std::fs::read(path).with_context(|| format!("reading {}", path.display()))?;
+    let src = match path.extension().and_then(|x| x.to_str()) {
+        Some("ipynb") => notebook_source(path)?.into_bytes(),
+        _ => std::fs::read(path).with_context(|| format!("reading {}", path.display()))?,
+    };
     let tree = parser.parse(&src, None).with_context(|| format!("parsing {}", path.display()))?;
     let package = if is_pkg { id.to_string() } else { id.rsplit_once('.').map(|x| x.0).unwrap_or(id).to_string() };
     Ok(Module {
@@ -211,6 +214,26 @@ fn load_module(parser: &mut Parser, id: &str, path: &Path, is_pkg: bool) -> Resu
         symbols: HashMap::new(),
         ext_pkgs: HashSet::new(),
     })
+}
+
+/// A notebook as the script it runs: its code cells in order, separated as jupytext does
+/// (`# %%`). A line for IPython (`%matplotlib`, `!pip install`) is kept as a comment, so the
+/// rest still parses as Python.
+fn notebook_source(path: &Path) -> Result<String> {
+    let text = std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+    let nb: serde_json::Value = serde_json::from_str(&text).with_context(|| format!("parsing {}", path.display()))?;
+    let cells = nb.get("cells").and_then(|c| c.as_array()).cloned().unwrap_or_default();
+    let mut out = vec![];
+    for cell in cells.iter().filter(|c| c.get("cell_type").and_then(|t| t.as_str()) == Some("code")) {
+        let src = match cell.get("source") {
+            Some(serde_json::Value::Array(lines)) => lines.iter().filter_map(|l| l.as_str()).collect::<String>(),
+            Some(serde_json::Value::String(s)) => s.clone(),
+            _ => continue,
+        };
+        let code: Vec<String> = src.lines().map(|l| if l.trim_start().starts_with(['%', '!']) { format!("# {l}") } else { l.to_string() }).collect();
+        out.push(format!("# %%\n{}", code.join("\n")));
+    }
+    Ok(out.join("\n\n") + "\n")
 }
 
 /// The nearest ancestor of the package that holds a `pyproject.toml`.
@@ -293,13 +316,14 @@ pub fn parse(pkg_dir: &Path, project_root: Option<&Path>) -> Result<(GraphBuilde
     // scripts next to the package (repo root and scripts/) are routes into it
     if let Some(root_dir) = project_root {
         let mut extras: Vec<PathBuf> = vec![];
-        // scripts next to the package, and the examples that wire it together
-        for dir in [root_dir.to_path_buf(), root_dir.join("scripts"), root_dir.join("examples"), root_dir.join("demo"), root_dir.join("demos")] {
+        // scripts and notebooks next to the package, and the examples that wire it together
+        let dirs = ["", "scripts", "examples", "demo", "demos", "notebooks"].map(|d| root_dir.join(d));
+        for dir in dirs {
             let Ok(rd) = std::fs::read_dir(&dir) else { continue };
             let mut ps: Vec<PathBuf> = rd
                 .flatten()
                 .map(|e| e.path())
-                .filter(|p| p.is_file() && p.extension().and_then(|x| x.to_str()) == Some("py"))
+                .filter(|p| p.is_file() && matches!(p.extension().and_then(|x| x.to_str()), Some("py" | "ipynb")))
                 .collect();
             ps.sort();
             extras.extend(ps);
@@ -321,7 +345,10 @@ pub fn parse(pkg_dir: &Path, project_root: Option<&Path>) -> Result<(GraphBuilde
                 span: Some((1, m.tree.root_node().end_position().row as u32 + 1)),
                 module: mid.clone(),
                 doc: first_docline(Some(m.tree.root_node()), &m.src),
-                entry: Some(Entry { kind: EntryKind::Script, label: rel.to_string_lossy().to_string() }),
+                entry: Some(Entry {
+                    kind: if p.extension().and_then(|x| x.to_str()) == Some("ipynb") { EntryKind::Notebook } else { EntryKind::Script },
+                    label: rel.to_string_lossy().to_string(),
+                }),
                 ..Default::default()
             });
             modules.insert(mid, m);
@@ -1024,7 +1051,7 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, root
     let mut new_edges: Vec<(String, EdgeKind, Vec<(u32, u32)>)> = vec![];
     let choices = number_choices(body, src, &CHOICES);
     let mut changes: Vec<(String, String)> = vec![];
-    for c in walk(body, &["call"]) {
+    for c in evaluation_order(walk(body, &["call"])) {
         if n.kind == NodeKind::Module {
             // calls inside a definition belong to that definition
             let mut p = c.parent();

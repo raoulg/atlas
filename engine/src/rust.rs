@@ -17,7 +17,7 @@ use crate::effects;
 use crate::model::{Compare, EdgeKind, Entry, EntryKind, Node, NodeKind, Touch};
 use crate::builder::{ClassInfo, GraphBuilder, SigInfo};
 use crate::tree::{
-    arms_of, decides, literals, named_children, nth_of_kind, number_choices, payload_of, span, starts_at_literal, text, unquote, walk, what_of,
+    arms_of, decides, evaluation_order, literals, named_children, nth_of_kind, number_choices, payload_of, span, starts_at_literal, text, unquote, walk, what_of,
     ChoiceSyntax, Part,
 };
 
@@ -813,7 +813,7 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crat
         }
     }
     let mut unresolved: Vec<String> = vec![];
-    for c in walk(body, &["call_expression", "struct_expression"]) {
+    for c in evaluation_order(walk(body, &["call_expression", "struct_expression"])) {
         if c.kind() == "struct_expression" {
             let parts = path_parts(c.child_by_field_name("name"), src);
             if let Some(r) = resolve(m, &parts, modules, &store.nodes, crate_ids).filter(|r| !r.starts_with("ext:")) {

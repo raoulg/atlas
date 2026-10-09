@@ -127,6 +127,13 @@ pub fn nth_of_kind(parent: TsNode, child: TsNode) -> u32 {
     named_children(parent).into_iter().filter(|c| c.kind() == child.kind()).take_while(|c| c.id() != child.id()).count() as u32
 }
 
+/// Calls in the order they run: what a call is handed (its arguments, its receiver) before
+/// the call itself, so `Serial([Padding(), Mean()])` runs `Padding`, `Mean`, then `Serial`.
+pub fn evaluation_order(mut calls: Vec<TsNode>) -> Vec<TsNode> {
+    calls.sort_by_key(|c| c.end_byte());
+    calls
+}
+
 /// Row-based span, 1-based, as the viewer shows it.
 pub fn span(n: TsNode) -> Option<(u32, u32)> {
     Some((n.start_position().row as u32 + 1, n.end_position().row as u32 + 1))

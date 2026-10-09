@@ -18,7 +18,7 @@ fn modules_classes_and_functions_are_found() {
     let g = fixture();
     assert_eq!(g.root, "fixture");
     let kinds = |k: NodeKind| g.nodes.iter().filter(|n| n.kind == k).count();
-    assert_eq!(kinds(NodeKind::Module), 7);
+    assert_eq!(kinds(NodeKind::Module), 8, "the package's six, a root script and a notebook");
     assert!(g.node("fixture.sinks").unwrap().is_pkg);
     assert_eq!(g.node("fixture.schema.Graph").unwrap().doc, "Nodes and edges.");
     assert_eq!(g.node("fixture.sinks.duck.DuckSink").unwrap().bases, vec!["Sink", "Mixin"]);
@@ -36,6 +36,9 @@ fn relative_imports_and_reexports_resolve() {
     assert!(inst.contains(&("fixture.build.build_graph".into(), "fixture.schema.Graph".into())));
     // `from fixture.sinks import DuckSink` re-exported through sinks/__init__
     assert!(inst.contains(&("fixture.cli.build".into(), "fixture.sinks.duck.DuckSink".into())));
+    // `Pipeline(DuckSink(..))`: what a call is handed is built first
+    let order: Vec<&str> = g.edges.iter().filter(|e| e.src == "fixture.cli.build" && e.kind == EdgeKind::Instantiates).map(|e| e.dst.as_str()).collect();
+    assert_eq!(order, ["fixture.sinks.duck.DuckSink", "fixture.build.Pipeline"], "calls run in evaluation order");
     // `from fixture import DuckSink`: through the root, then through sinks/__init__
     let takes = edges(&g, EdgeKind::Takes);
     assert!(takes.contains(&("fixture.build.Pipeline.__init__".into(), "fixture.sinks.duck.DuckSink".into())), "a name re-exported twice");
@@ -121,6 +124,16 @@ fn mutation_is_an_endomorphism() {
     assert_eq!(via("fixture.build.enrich").as_deref(), Some("graph"), "the edge names the input that changes");
     assert_eq!(via("fixture.schema.Graph.add").as_deref(), Some("self"));
     assert!(!m.iter().any(|(s, _)| s == "fixture.build.build_graph"), "g = Graph(); g.add(..) builds, it does not change an input");
+}
+
+/// A notebook is a script whose code cells run in order; a line for IPython is not Python.
+#[test]
+fn a_notebook_is_a_script() {
+    let g = fixture();
+    let nb = g.node("notebooks.explore").expect("notebooks/explore.ipynb is read");
+    assert_eq!(nb.entry.as_ref().map(|e| (e.kind, e.label.as_str())), Some((EntryKind::Notebook, "notebooks/explore.ipynb")));
+    assert!(edges(&g, EdgeKind::Calls).contains(&("notebooks.explore".into(), "fixture.build.build_graph".into())), "a cell calls into the package");
+    assert_eq!(nb.boundaries.get("screen"), Some(&1), "print in the last cell");
 }
 
 /// The Hugging Face Hub is a host on the web: a download reads it, an upload writes it, and

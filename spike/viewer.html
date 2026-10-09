@@ -856,7 +856,8 @@ function renderStory() {
 // down there is dashed: a step's own morphism and what it reaches are different quantities. The
 // world stands still at the edges: what the route only reads on the left, what it only writes on
 // the right.
-const STD_BASES = new Set(["Default", "Serialize", "Deserialize", "Deref", "DerefMut", "From", "Into", "Clone", "Debug", "Display", "Iterator", "Drop", "PartialEq", "Eq", "Hash", "ABC", "Protocol", "Generic", "object", "Module", "TorchDataset"]);
+// a family is rooted in the package's own classes: a library's base (pydantic's BaseModel,
+// torch's Module, a derived trait) is how a class is built, not one of the project's concepts
 const famCache = new Map();
 function familyOf(id, depth = 0) {
   if (famCache.has(id)) return famCache.get(id);
@@ -865,12 +866,8 @@ function familyOf(id, depth = 0) {
   const internal = bases.find(b => byId.get(b)?.kind === "class");
   if (internal && depth < 10) fam = familyOf(internal, depth + 1);
   else {
-    const ext = bases.find(b => b.startsWith("ext:") && !STD_BASES.has(b.slice(4).split(".").pop()));
-    if (ext) fam = ext;
-    else {
-      const owners = [...new Set((inn.get(id) || []).filter(e => e.kind === "has" && byId.get(e.src)?.kind === "class").map(e => e.src))];
-      if (owners.length === 1 && owners[0] !== id && depth < 10) fam = familyOf(owners[0], depth + 1);
-    }
+    const owners = [...new Set((inn.get(id) || []).filter(e => e.kind === "has" && byId.get(e.src)?.kind === "class").map(e => e.src))];
+    if (owners.length === 1 && owners[0] !== id && depth < 10) fam = familyOf(owners[0], depth + 1);
   }
   famCache.set(id, fam); return fam;
 }
@@ -882,8 +879,7 @@ function kindOf(id, depth = 0) {
   if (kindCache.has(id)) return kindCache.get(id);
   const bases = (out.get(id) || []).filter(e => e.kind === "inherits").map(e => e.dst);
   const internal = bases.find(b => byId.get(b)?.kind === "class");
-  const ext = bases.find(b => b.startsWith("ext:") && !STD_BASES.has(b.slice(4).split(".").pop()));
-  const k = internal && depth < 10 ? kindOf(internal, depth + 1) : ext || id;
+  const k = internal && depth < 10 ? kindOf(internal, depth + 1) : id;
   kindCache.set(id, k); return k;
 }
 const members = new Map();
@@ -964,7 +960,8 @@ const altCount = id => { const n = byId.get(id); return n && n.cls ? overrides(n
 let prevPos = new Map(), plaatAnchor = null, plaatFit = true;
 async function renderPlaat() {
   const g = scene.node(), DUR = matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 380;
-  const placeOfType = t => expandedFamilies.has(familyOf(t)) ? t : expandedFamilies.has(kindOf(t)) ? t : kindOf(t);
+  // the subject of a route stands as itself; other types stand in their family until it is opened
+  const placeOfType = t => t === storyEntry || expandedFamilies.has(familyOf(t)) || expandedFamilies.has(kindOf(t)) ? t : kindOf(t);
   const places = new Map();   // id -> {id, label, kind: world | type | ext, role, fam}
   const addPlace = p => { if (!places.has(p.id)) places.set(p.id, p); return p.id; };
   const worldPlace = worldPlaceOf;
