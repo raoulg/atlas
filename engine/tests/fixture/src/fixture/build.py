@@ -3,9 +3,8 @@ from typing import Type, TypeVar, Union
 import pandas as pd
 import requests
 
-from fixture import Graph
+from fixture import DuckSink, Graph
 from fixture.schema import Node
-from fixture.sinks import DuckSink
 from fixture.sinks.base import Sink
 
 SinkT = TypeVar("SinkT", bound="Sink")

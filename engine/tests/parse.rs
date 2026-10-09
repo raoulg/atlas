@@ -36,6 +36,9 @@ fn relative_imports_and_reexports_resolve() {
     assert!(inst.contains(&("fixture.build.build_graph".into(), "fixture.schema.Graph".into())));
     // `from fixture.sinks import DuckSink` re-exported through sinks/__init__
     assert!(inst.contains(&("fixture.cli.build".into(), "fixture.sinks.duck.DuckSink".into())));
+    // `from fixture import DuckSink`: through the root, then through sinks/__init__
+    let takes = edges(&g, EdgeKind::Takes);
+    assert!(takes.contains(&("fixture.build.Pipeline.__init__".into(), "fixture.sinks.duck.DuckSink".into())), "a name re-exported twice");
 }
 
 #[test]
@@ -83,7 +86,9 @@ fn entry_points_from_decorators_scripts_and_makefile() {
     assert_eq!(entry("fixture.cli.main").label, "fixture", "[project.scripts]");
     // what the package exports at its root (`__all__`) are routes into it as a library
     assert_eq!(entry("fixture.schema.Graph").kind, EntryKind::Export);
-    assert_eq!(entry("fixture.sinks.base.Sink").label, "Sink");
+    assert_eq!(entry("fixture.sinks.base.Sink").label, "Sink", "exported by the root and by `sinks`: the root's label");
+    // a public subpackage's `__all__` is a door too, named by its path
+    assert_eq!(entry("fixture.sinks.duck.DuckSink").label, "sinks.DuckSink");
     assert!(g.node("fixture.build.build_graph").unwrap().entry.is_none(), "not exported");
     let build = g.make.iter().find(|t| t.label == "build").unwrap();
     assert_eq!(build.doc, "build the thing");

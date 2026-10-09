@@ -499,13 +499,11 @@ fn resolve(m: &Module, parts: &[String], modules: &IndexMap<String, Module>, nod
     for p in &parts[1..] {
         target = format!("{target}.{p}");
     }
+    if target.starts_with(&format!("{root}.")) {
+        return defined(&target, modules, nodes);
+    }
     if nodes.contains_key(&target) {
         return Some(target);
-    }
-    if target.starts_with(&format!("{root}.")) {
-        let (modid, nm) = target.rsplit_once('.')?;
-        let t2 = modules.get(modid)?.bindings.get(nm)?;
-        return if nodes.contains_key(t2) { Some(t2.clone()) } else { None };
     }
     Some(format!("ext:{target}"))
 }
@@ -741,23 +739,50 @@ fn infer_self_attrs(modules: &IndexMap<String, Module>, store: &mut GraphBuilder
     }
 }
 
-/// What a package exports at its root is a route into it: the names in `__all__` of its
-/// `__init__.py`, else the public names that module imports from the package or defines.
+/// What a package exports is a route into it: the names in `__all__` of its `__init__.py`,
+/// else (at the root) the public names that module imports from the package or defines. A
+/// public subpackage that declares `__all__` is a door too (`from vectormesh.components import
+/// Serial`), labelled by its path from the root; a name the root exports keeps the root's label.
 fn mark_exports(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, root: &str) {
-    let Some(m) = modules.get(root) else { return };
-    let declared = top_assignments(m).into_iter().find_map(|a| {
-        let left = a.child_by_field_name("left").filter(|l| text(*l, &m.src) == "__all__")?;
-        Some(literals(a.child_by_field_name("right").unwrap_or(left), &m.src, &["string"]))
-    });
-    let names: Vec<String> = declared.unwrap_or_else(|| m.symbols.keys().chain(m.bindings.keys()).filter(|n| !n.starts_with('_')).cloned().collect());
-    for name in names {
-        let Some(t) = m.symbols.get(&name).or_else(|| m.bindings.get(&name)).filter(|t| t.starts_with(&format!("{root}."))) else { continue };
-        if let Some(n) = store.nodes.get_mut(t) {
-            if matches!(n.kind, NodeKind::Function | NodeKind::Class) && n.entry.is_none() {
-                n.entry = Some(Entry { kind: EntryKind::Export, label: name.clone() });
+    let public = |id: &str| id.split('.').all(|p| !p.starts_with('_'));
+    let mut packages: Vec<&Module> = modules.values().filter(|m| m.package == m.id && (m.id == root || (m.id.starts_with(&format!("{root}.")) && public(&m.id)))).collect();
+    packages.sort_by_key(|m| (m.id != root, m.id.clone()));
+    for m in packages {
+        let declared = top_assignments(m).into_iter().find_map(|a| {
+            let left = a.child_by_field_name("left").filter(|l| text(*l, &m.src) == "__all__")?;
+            Some(literals(a.child_by_field_name("right").unwrap_or(left), &m.src, &["string"]))
+        });
+        let names: Vec<String> = match declared {
+            Some(d) => d,
+            None if m.id == root => m.symbols.keys().chain(m.bindings.keys()).filter(|n| !n.starts_with('_')).cloned().collect(),
+            None => continue,
+        };
+        let path = m.id.strip_prefix(root).unwrap_or("").trim_start_matches('.');
+        for name in names {
+            let Some(t) = m.symbols.get(&name).or_else(|| m.bindings.get(&name)).filter(|t| t.starts_with(&format!("{root}."))) else { continue };
+            let Some(t) = defined(t, modules, &store.nodes) else { continue };
+            if let Some(n) = store.nodes.get_mut(&t) {
+                if matches!(n.kind, NodeKind::Function | NodeKind::Class) && n.entry.is_none() {
+                    let label = if path.is_empty() { name.clone() } else { format!("{path}.{name}") };
+                    n.entry = Some(Entry { kind: EntryKind::Export, label });
+                }
             }
         }
     }
+}
+
+/// A name followed through the packages that re-export it to where it is defined:
+/// `vectormesh.VectorCache` -> `vectormesh.data.VectorCache` -> `vectormesh.data.cache.VectorCache`.
+fn defined(target: &str, modules: &IndexMap<String, Module>, nodes: &IndexMap<String, Node>) -> Option<String> {
+    let mut t = target.to_string();
+    for _ in 0..8 {
+        if nodes.contains_key(&t) {
+            return Some(t);
+        }
+        let (modid, name) = t.rsplit_once('.')?;
+        t = modules.get(modid)?.bindings.get(name)?.clone();
+    }
+    None
 }
 
 /// A module-level type alias: `Result = Union[FitResult, FailedFit]`, `Id = int | str`,

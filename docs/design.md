@@ -178,9 +178,10 @@ atlas/
 **Entry points** — CLI commands, API routes, MCP tools (by decorator),
 `[project.scripts]`, Makefile targets (recipes resolved to the commands they run),
 scripts next to the package and in `scripts/`, `examples/`, `demo/`, notebooks, and what
-a package exports at its root (`__all__` or the public names its `__init__.py` binds; the
-`pub` items at the root of a library crate). Each is the start of a route; an exported
-class is a route whose steps are its public methods.
+a package exports (`__all__` or the public names its root `__init__.py` binds, and the
+`__all__` of each public subpackage, as `components.Serial`; the `pub` items at the root
+of a library crate). A re-exported name is followed to where it is defined. Each is the
+start of a route; an exported class is a route whose steps are its public methods.
 
 **Architecture** — a small `architecture.yml` in the subject repo, an override on
 naming and on what counts as a legitimate flow, never the source of the picture:
