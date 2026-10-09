@@ -56,6 +56,13 @@ impl Language for Rust {
     }
 }
 
+/// Whether a language leaves types and exports to the author: a Python signature may say
+/// nothing, and a Python package offers whatever its root binds. Rust's compiler asks for
+/// every type, and `pub` is the export.
+pub fn author_declares(language: &str) -> bool {
+    language == "python"
+}
+
 /// All known languages, in detection order.
 pub fn languages() -> Vec<Box<dyn Language>> {
     vec![Box::new(Rust), Box::new(Python)]

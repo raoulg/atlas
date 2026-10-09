@@ -176,8 +176,53 @@ goad: `BasePlot.plot_on(other_plot)` sets `other_plot.fig` and `other_plot.ax` f
 outside, then asks it to plot. The question is whether `other_plot` could be told where
 to draw by a method of its own.
 
-## Not checked yet
+## A choice is made once, in a place with a name.
 
-A choice inside a body (`if`, `match`, `x or y`) between steps that has no name of its
-own. Atlas will see it once the engine records which arm of a conditional each call
-sits in.
+Id: `choices`.
+
+Code chooses: which experiment, which criterion, where a value comes from. A choice that
+is made in one place, under a name, is one thing to read and one thing to change. A
+choice spread over a body is neither.
+
+Two shapes of the same problem:
+
+- **A value handed in is tested in several places.** `mode == "parallel"` here,
+  `mode in {"weighted", "parallel"}` there: what `"parallel"` means is spelled out again
+  in each place, and a new mode is a change in all of them (Fowler's *repeated switches*).
+  Made once, the choice becomes a table or a type that says what each case stands for.
+- **Alternatives sit between other steps.** `load(p)` or `find(g)` or `infer(g)`: three
+  ways to get one value, in the middle of a body that also does other things. Where the
+  value comes from is a step of its own; given a name, the body reads as its steps
+  again.
+
+- **Python.** A `Literal["a", "b"]` or an `Enum` for the cases, and one dict from case
+  to what it means: `EXPERIMENTS: dict[str, Experiment]`, with `Experiment` a dataclass
+  ([PEP 557](https://peps.python.org/pep-0557/)) holding the facts each `if` asked
+  about. A choice between steps becomes a function whose body is that choice, written
+  with `match` ([PEP 634](https://peps.python.org/pep-0634/)) or `if`/`elif`.
+- **Rust.** An `enum` for the cases with one `match`, and methods on the enum for what
+  each case means. A choice between steps becomes a function whose body is the `match`
+  (or the `unwrap_or_else` chain).
+
+Atlas records, for every call, the arms of the choices it sits in (`if`/`elif`/`else`,
+`match`, `try`/`except`, `a if c else b`, `x or y`; Rust's `if`, `match` and
+`unwrap_or_else`/`or_else`), and for every comparison of a value with string literals,
+the choice it decides. It checks: a parameter (or `self`) tested against the same literal
+in two or more places, and a body whose alternatives each produce the same type while it
+also takes other steps.
+
+A student's exam project: `run_standard_experiment(args)` tests `args.experiment` in four
+places, and `"parallel"` comes back three times. One `Experiment` per name, holding
+`use_2d`, `weighted`, `parallel` and the model to build, makes it one place.
+
+In Atlas, `roles::resolve` is such a step: `load | find | infer` is its whole body.
+Written inline in `analyze`, the three calls would sit between parsing and assigning
+roles, and `atlas check` would ask for their name. Named, `analyze` reads as its
+algebra:
+
+```rust
+let mut g = lang.parse(repo, package)?;
+entries::read_makefile(&mut g);
+let arch = roles::resolve(&g, roles)?;
+roles::assign(&mut g, arch);
+```

@@ -118,6 +118,25 @@ fn mutation_is_an_endomorphism() {
     assert!(!m.iter().any(|(s, _)| s == "fixture.build.build_graph"), "g = Graph(); g.add(..) builds, it does not change an input");
 }
 
+/// A call knows the arms of the choices it sits in; calls in different arms of one choice are
+/// alternatives, and a comparison knows which choice it decides.
+#[test]
+fn alternatives_carry_their_arms() {
+    let g = fixture();
+    let arms = |src: &str, dst: &str| g.edges.iter().find(|e| e.src == src && e.dst == dst).map(|e| e.arms.clone()).unwrap();
+    assert_eq!(arms("fixture.build.prepare", "fixture.build.build_graph"), [(0, 0)], "`a if c else b`: a is arm 0");
+    assert_eq!(arms("fixture.build.prepare", "fixture.build.empty"), [(0, 1)]);
+    assert!(arms("fixture.build.prepare", "fixture.build.enrich").is_empty(), "outside every choice");
+    let cmp = &g.node("fixture.build.prepare").unwrap().compares;
+    assert_eq!(cmp.iter().map(|c| (c.subject.as_str(), c.choice)).collect::<Vec<_>>(), [("mode", Some(0)), ("mode", Some(1))]);
+
+    let atlas = analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(".."), None, None).unwrap();
+    let arms = |dst: &str| atlas.edges.iter().find(|e| e.src == "atlas-engine.roles.resolve" && e.dst == dst).map(|e| e.arms.clone()).unwrap();
+    assert_eq!(arms("atlas-engine.roles.load"), [(0, 0)], "match arm `Some(p)`");
+    assert_eq!(arms("atlas-engine.roles.find"), [(0, 1), (1, 0)], "`None`, then the receiver of `unwrap_or_else`");
+    assert_eq!(arms("atlas-engine.roles.infer"), [(0, 1), (1, 1)], "`None`, then its argument");
+}
+
 /// Where data rests is named as precisely as the code allows: a literal file, else its format;
 /// a database statement reads or writes a table.
 #[test]

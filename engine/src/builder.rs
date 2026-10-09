@@ -44,12 +44,18 @@ impl GraphBuilder {
     }
 
     pub fn add_edge(&mut self, src: &str, dst: &str, kind: EdgeKind, via: Option<String>) {
+        self.add_call(src, dst, kind, via, vec![]);
+    }
+
+    /// An edge from a body, with the arms of the choices it sits in; the first call of a
+    /// target is the one kept.
+    pub fn add_call(&mut self, src: &str, dst: &str, kind: EdgeKind, via: Option<String>, arms: Vec<(u32, u32)>) {
         if src == dst {
             return;
         }
         let key = (src.to_string(), dst.to_string(), kind);
         if self.edge_set.insert(key) {
-            self.edges.push(Edge { src: src.into(), dst: dst.into(), kind, via, weight: None });
+            self.edges.push(Edge { src: src.into(), dst: dst.into(), kind, via, weight: None, arms });
         }
     }
 

@@ -32,6 +32,9 @@ fn each_principle_finds_its_case() {
     assert_eq!(got["places"], ["fixture.sinks.duck.DuckSink.write"]);
     // `enrich` changes the Graph it is handed; `Graph.add` changes itself
     assert_eq!(got["changes"], ["fixture.build.enrich"]);
+    // `prepare` tests `mode` twice and picks where its Graph comes from between other steps;
+    // `fresh_or_empty` is nothing but that choice, so it has a name
+    assert_eq!(got["choices"], ["fixture.build.prepare", "fixture.build.prepare"]);
     assert!(fs.iter().all(|f| f.question.ends_with('?')), "a finding ends in a question");
 }
 

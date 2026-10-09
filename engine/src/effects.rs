@@ -159,14 +159,18 @@ pub struct Facts {
 /// Refine a boundary by its literals: `open(p, "w")` writes, `to_csv(path)` writes a csv,
 /// `Path("out.json")` names its file, `execute("INSERT INTO nodes ..")` writes the table `nodes`.
 pub fn facts(kind: &'static str, pkg: Option<&str>, op: &str, literals: &[String]) -> Facts {
-    let mut kind = kind;
-    if op == "open" || kind == "disk" {
-        if let Some(m) = literals.iter().find(|l| is_mode(l)) {
-            kind = if m.contains(['w', 'a', 'x', '+']) { "disk_write" } else { "disk_read" };
-        } else if kind == "disk" {
-            kind = "disk_read";
+    // a file call reads unless a mode says it writes; `open` is one whatever its package
+    let file = kind == "disk";
+    let kind = if op == "open" || file {
+        match literals.iter().find(|l| is_mode(l)) {
+            Some(m) if m.contains(['w', 'a', 'x', '+']) => "disk_write",
+            Some(_) => "disk_read",
+            None if file => "disk_read",
+            None => kind,
         }
-    }
+    } else {
+        kind
+    };
     if kind.starts_with("db_") {
         let Some((dir, table)) = literals.iter().find_map(|l| statement(l)) else {
             return Facts { kind, artifact: String::new(), dir: "" };

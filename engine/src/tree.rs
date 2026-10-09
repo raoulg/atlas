@@ -31,6 +31,102 @@ pub fn walk<'t>(n: TsNode<'t>, kinds: &[&str]) -> Vec<TsNode<'t>> {
     out
 }
 
+/// Every named node under `n`, pre-order, source order.
+pub fn walk_all<'t>(n: TsNode<'t>) -> Vec<TsNode<'t>> {
+    let mut out = vec![];
+    let mut stack = vec![n];
+    while let Some(cur) = stack.pop() {
+        out.push(cur);
+        for k in named_children(cur).into_iter().rev() {
+            stack.push(k);
+        }
+    }
+    out
+}
+
+/// What a direct child is to the choice that holds it.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Part {
+    /// One of the alternatives, by its place in the choice.
+    Arm(u32),
+    /// What decides which arm runs: a condition, a subject.
+    Decides,
+    /// Neither: an `elif` or an `else if` that carries its own arms, a `finally`.
+    Through,
+}
+
+/// How a language writes choices: `if`/`elif`/`else`, `match`, `x or y`,
+/// `unwrap_or_else(..)`.
+pub struct ChoiceSyntax {
+    /// Does this node choose between arms?
+    pub chooses: fn(TsNode, &[u8]) -> bool,
+    /// The node whose choice this one continues: an `elif` its `if`, an `else if` the `if`
+    /// before it.
+    pub continues: fn(TsNode) -> Option<TsNode>,
+    /// What a direct child is to the choice.
+    pub part: fn(TsNode, TsNode, &[u8]) -> Part,
+}
+
+/// The choices of a body, numbered in source order; a continuation shares the number of the
+/// choice it continues.
+pub fn number_choices(body: TsNode, src: &[u8], syn: &ChoiceSyntax) -> std::collections::HashMap<usize, u32> {
+    let mut ids = std::collections::HashMap::new();
+    let mut next = 0;
+    for n in walk_all(body) {
+        if !(syn.chooses)(n, src) {
+            continue;
+        }
+        match (syn.continues)(n).and_then(|c| ids.get(&c.id()).copied()) {
+            Some(c) => {
+                ids.insert(n.id(), c);
+            }
+            None => {
+                ids.insert(n.id(), next);
+                next += 1;
+            }
+        }
+    }
+    ids
+}
+
+/// The arms of the choices `n` sits in, from the outermost in.
+pub fn arms_of(n: TsNode, body: TsNode, src: &[u8], ids: &std::collections::HashMap<usize, u32>, syn: &ChoiceSyntax) -> Vec<(u32, u32)> {
+    let mut out = vec![];
+    let mut child = n;
+    while child.id() != body.id() {
+        let Some(p) = child.parent() else { break };
+        if let (Some(&c), Part::Arm(a)) = (ids.get(&p.id()), (syn.part)(p, child, src)) {
+            out.push((c, a));
+        }
+        child = p;
+    }
+    out.reverse();
+    out
+}
+
+/// The choice `n` helps decide: the nearest choice whose deciding part holds it. A
+/// comparison inside an arm, or outside every choice, decides none.
+pub fn decides(n: TsNode, body: TsNode, src: &[u8], ids: &std::collections::HashMap<usize, u32>, syn: &ChoiceSyntax) -> Option<u32> {
+    let mut child = n;
+    while child.id() != body.id() {
+        let p = child.parent()?;
+        if let Some(&c) = ids.get(&p.id()) {
+            match (syn.part)(p, child, src) {
+                Part::Decides => return Some(c),
+                Part::Arm(_) => return None,
+                Part::Through => {}
+            }
+        }
+        child = p;
+    }
+    None
+}
+
+/// The position of `child` among the named children of `parent` of the same kind.
+pub fn nth_of_kind(parent: TsNode, child: TsNode) -> u32 {
+    named_children(parent).into_iter().filter(|c| c.kind() == child.kind()).take_while(|c| c.id() != child.id()).count() as u32
+}
+
 /// Row-based span, 1-based, as the viewer shows it.
 pub fn span(n: TsNode) -> Option<(u32, u32)> {
     Some((n.start_position().row as u32 + 1, n.end_position().row as u32 + 1))
@@ -61,7 +157,7 @@ pub fn literals(call: TsNode, src: &[u8], string_kinds: &[&str]) -> Vec<String> 
 }
 
 /// A string literal's contents: `f"{name}.png"` -> `{name}.png`, `r#"x"#` -> `x`.
-fn unquote(raw: &str) -> String {
+pub fn unquote(raw: &str) -> String {
     let raw = raw.trim_start_matches(|c: char| c.is_ascii_alphabetic()); // f"..", b"..", r#".."#
     let raw = raw.trim_matches('#');
     let raw = raw.strip_prefix("\"\"\"").and_then(|r| r.strip_suffix("\"\"\"")).unwrap_or(raw);

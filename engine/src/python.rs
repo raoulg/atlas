@@ -14,9 +14,12 @@ use walkdir::WalkDir;
 
 use crate::effects;
 use crate::entries::entry_of;
-use crate::model::{EdgeKind, Entry, EntryKind, Node, NodeKind, Touch};
+use crate::model::{Compare, EdgeKind, Entry, EntryKind, Node, NodeKind, Touch};
 pub use crate::builder::{ClassInfo, GraphBuilder, SigInfo};
-use crate::tree::{field_children, literals, named_children, payload_of, span, starts_at_literal, text, walk, what_of};
+use crate::tree::{
+    arms_of, decides, field_children, literals, named_children, nth_of_kind, number_choices, payload_of, span, starts_at_literal, text, unquote, walk,
+    what_of, ChoiceSyntax, Part,
+};
 
 const BUILTIN_TYPES: &[&str] = &[
     "str", "int", "float", "bool", "bytes", "list", "dict", "set", "tuple", "None", "Any", "Optional",
@@ -941,7 +944,8 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, root
         }
     }
     let mut touches: Vec<Touch> = vec![];
-    let mut new_edges: Vec<(String, EdgeKind)> = vec![];
+    let mut new_edges: Vec<(String, EdgeKind, Vec<(u32, u32)>)> = vec![];
+    let choices = number_choices(body, src, &CHOICES);
     let mut changes: Vec<(String, String)> = vec![];
     for c in walk(body, &["call"]) {
         if n.kind == NodeKind::Module {
@@ -1012,7 +1016,7 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, root
         match target {
             Some(t) if !t.starts_with("ext:") => {
                 let kind = if store.nodes[&t].kind == NodeKind::Class { EdgeKind::Instantiates } else { EdgeKind::Calls };
-                new_edges.push((t, kind));
+                new_edges.push((t, kind, arms_of(c, body, src, &choices, &CHOICES)));
             }
             _ => {
                 let key = parts.iter().take(2).cloned().collect::<Vec<_>>().join(".");
@@ -1061,8 +1065,14 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, root
             }
         }
     }
-    for (t, kind) in new_edges {
-        store.add_edge(id, &t, kind, None);
+    for (t, kind, arms) in new_edges {
+        store.add_call(id, &t, kind, None, arms);
+    }
+    if n.kind != NodeKind::Module {
+        let compares = compares(body, src, &choices);
+        if let Some(node) = store.nodes.get_mut(id) {
+            node.compares = compares;
+        }
     }
     for (t, input) in changes {
         store.add_edge(id, &t, EdgeKind::Mutates, Some(input));
@@ -1070,6 +1080,88 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, root
     for t in touches {
         store.touch(id, t);
     }
+}
+
+// ---------- choices ----------
+
+/// Python's choices: `if`/`elif`/`else`, `match`, `try`/`except`, `a if c else b`, `x or y`.
+const CHOICES: ChoiceSyntax = ChoiceSyntax {
+    chooses: |n, src| match n.kind() {
+        "if_statement" | "elif_clause" | "conditional_expression" | "try_statement" | "case_clause" => true,
+        "boolean_operator" => n.child_by_field_name("operator").map(|o| text(o, src)) == Some("or"),
+        // the cases of a `match` sit in its body block
+        "block" => n.parent().map_or(false, |p| p.kind() == "match_statement"),
+        _ => false,
+    },
+    continues: |n| if matches!(n.kind(), "elif_clause" | "case_clause") { n.parent() } else { None },
+    part: |c, child, _| {
+        let is = |f: &str| c.child_by_field_name(f).map(|x| x.id()) == Some(child.id());
+        match c.kind() {
+            "if_statement" if is("condition") => Part::Decides,
+            "if_statement" if is("consequence") => Part::Arm(0),
+            "if_statement" if child.kind() == "else_clause" => {
+                Part::Arm(1 + named_children(c).iter().filter(|x| x.kind() == "elif_clause").count() as u32)
+            }
+            "elif_clause" if is("condition") => Part::Decides,
+            "elif_clause" if is("consequence") => Part::Arm(1 + c.parent().map_or(0, |p| nth_of_kind(p, c))),
+            "conditional_expression" => match named_children(c).iter().position(|x| x.id() == child.id()) {
+                Some(0) => Part::Arm(0),
+                Some(1) => Part::Decides,
+                Some(2) => Part::Arm(1),
+                _ => Part::Through,
+            },
+            "boolean_operator" if is("left") => Part::Arm(0),
+            "boolean_operator" if is("right") => Part::Arm(1),
+            "block" if child.kind() == "case_clause" => Part::Arm(nth_of_kind(c, child)),
+            // a pattern and its guard decide which case runs
+            "case_clause" if child.kind() == "case_pattern" || is("guard") => Part::Decides,
+            "try_statement" if is("body") || child.kind() == "else_clause" => Part::Arm(0),
+            "try_statement" if child.kind() == "except_clause" => Part::Arm(1 + nth_of_kind(c, child)),
+            _ => Part::Through,
+        }
+    },
+};
+
+/// The string literals an operand names: `"a"`, or every element of `{"a", "b"}`.
+fn string_cases(n: TsNode, src: &[u8]) -> Option<Vec<String>> {
+    match n.kind() {
+        "string" if n.child_by_field_name("interpolation").is_none() && !named_children(n).iter().any(|c| c.kind() == "interpolation") => Some(vec![unquote(text(n, src))]),
+        "set" | "list" | "tuple" => {
+            let items = named_children(n);
+            (!items.is_empty() && items.iter().all(|i| i.kind() == "string")).then(|| items.iter().map(|i| unquote(text(*i, src))).collect())
+        }
+        _ => None,
+    }
+}
+
+/// Where a body compares one value with string literals, and the choice each comparison decides.
+fn compares(body: TsNode, src: &[u8], choices: &HashMap<usize, u32>) -> Vec<Compare> {
+    let mut out = vec![];
+    for n in walk(body, &["comparison_operator", "match_statement"]) {
+        let line = n.start_position().row as u32 + 1;
+        if n.kind() == "match_statement" {
+            let (Some(subject), Some(block)) = (n.child_by_field_name("subject"), n.child_by_field_name("body")) else { continue };
+            let cases: Vec<String> = walk(block, &["case_pattern"]).into_iter().flat_map(|p| walk(p, &["string"])).map(|s| unquote(text(s, src))).collect();
+            if !cases.is_empty() {
+                out.push(Compare { subject: text(subject, src).to_string(), cases, line, choice: choices.get(&block.id()).copied() });
+            }
+            continue;
+        }
+        let op = field_children(n, "operators").iter().map(|o| text(*o, src)).collect::<Vec<_>>().join(" ");
+        let operands = named_children(n);
+        if !matches!(op.as_str(), "==" | "!=" | "in" | "not in") || operands.len() != 2 {
+            continue;
+        }
+        let (subject, cases) = match (string_cases(operands[0], src), string_cases(operands[1], src)) {
+            (None, Some(c)) => (operands[0], c),
+            (Some(c), None) => (operands[1], c),
+            _ => continue,
+        };
+        if matches!(subject.kind(), "identifier" | "attribute" | "subscript") {
+            out.push(Compare { subject: text(subject, src).to_string(), cases, line, choice: decides(n, body, src, choices, &CHOICES) });
+        }
+    }
+    out
 }
 
 /// A foreign type worth keeping in a signature: bound to a third-party package, not a builtin.

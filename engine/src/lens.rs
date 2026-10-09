@@ -71,7 +71,7 @@ impl<F: Fn(&Node) -> Option<Node>> Lens for Quotient<F> {
             nodes: classes.into_values().collect(),
             edges: agg
                 .into_iter()
-                .map(|((src, dst, kind), w)| Edge { src, dst, kind, via: None, weight: Some(w) })
+                .map(|((src, dst, kind), w)| Edge { src, dst, kind, via: None, weight: Some(w), arms: vec![] })
                 .collect(),
             files: BTreeMap::new(),
             make: g.make.clone(),

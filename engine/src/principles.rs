@@ -5,11 +5,12 @@
 //! so these are the principles that live there; what a single line should look like belongs
 //! to ruff, pyright and clippy. `docs/principles.md` explains each one.
 
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::path::Path;
 
 use serde::Serialize;
 
+use crate::language::author_declares;
 use crate::model::{Edge, EdgeKind, EntryKind, Graph, Node, NodeKind};
 
 /// A principle by its id and what it asks of code.
@@ -24,6 +25,7 @@ pub const PRINCIPLES: &[Principle] = &[
     Principle { id: "overrides", asks: "An override keeps the promise of its base." },
     Principle { id: "places", asks: "Library code does not decide where data lives." },
     Principle { id: "changes", asks: "A change to an input shows in the signature." },
+    Principle { id: "choices", asks: "A choice is made once, in a place with a name." },
 ];
 
 /// One place where the code and a principle disagree.
@@ -47,7 +49,7 @@ pub struct Finding {
 pub fn check(g: &Graph) -> Vec<Finding> {
     let ix = Index::new(g);
     let mut out = vec![];
-    for rule in [doors, sums, overrides, places, changes] {
+    for rule in [doors, sums, overrides, places, changes, choices] {
         let mut found = rule(&ix);
         found.sort_by(|a, b| (&a.file, a.line).cmp(&(&b.file, b.line)));
         out.extend(found);
@@ -169,8 +171,9 @@ fn doors(ix: &Index) -> Vec<Finding> {
     let g = ix.g;
     let exports: Vec<&Node> = g.nodes.iter().filter(|n| n.entry.as_ref().map_or(false, |e| e.kind == EntryKind::Export)).collect();
     let mut out = vec![];
+    let declared = author_declares(&g.language);
     // `src/` is where packages live, not a name: installed, it collides with every other project laid out the same way
-    if g.language == "python" && g.root == "src" {
+    if declared && g.root == "src" {
         if let Some(root) = ix.node(&g.root) {
             out.push(ix.finding(
                 "doors",
@@ -180,7 +183,7 @@ fn doors(ix: &Index) -> Vec<Finding> {
                 "Under src/<name>/ with a build system in pyproject.toml, `uv sync` installs it as <name>, and `from <name> import …` works the same in a script, a test and a notebook. What is this package called?".into(),
             ));
         }
-    } else if exports.is_empty() && g.language == "python" {
+    } else if exports.is_empty() && declared {
         if let Some(root) = ix.node(&g.root) {
             out.push(ix.finding(
                 "doors",
@@ -204,7 +207,7 @@ fn doors(ix: &Index) -> Vec<Finding> {
                 .filter(|p| !p.contains(':') && !is_receiver(p) && !p.starts_with('*'))
                 .map(|p| format!("`{}`", param_name(p)))
                 .collect();
-            let gives_unknown = g.language == "python" && f.returns.is_empty() && f.name != "__init__";
+            let gives_unknown = declared && f.returns.is_empty() && f.name != "__init__";
             if untyped.is_empty() && !gives_unknown {
                 continue;
             }
@@ -390,6 +393,106 @@ fn changes(ix: &Index) -> Vec<Finding> {
                 ix.label(&f.id)
             ),
         ));
+    }
+    out
+}
+
+// ---------- choices ----------
+
+/// Two ways a choice goes unnamed. The same literal tested against the same value in several
+/// places: what that case means is spelled out again in each of them, and a new case is a
+/// change in all of them. And alternatives that each produce the same type, sitting in a body
+/// between other steps: how to get that value is a step of its own, without a name.
+fn choices(ix: &Index) -> Vec<Finding> {
+    let mut out = vec![];
+    for f in ix.g.nodes.iter().filter(|n| is_function(n)) {
+        out.extend(repeated(ix, f));
+        out.extend(unnamed(ix, f));
+    }
+    out
+}
+
+/// The literals a body tests a value it was handed against in more than one place: a
+/// parameter, or `self`, that picks behaviour by name.
+fn repeated(ix: &Index, f: &Node) -> Vec<Finding> {
+    let handed: HashSet<&str> = f.params.iter().map(|p| param_name(p).trim_start_matches('&').trim_start_matches("mut ").trim()).collect();
+    let root = |s: &str| s.split(|c: char| !(c.is_alphanumeric() || c == '_')).next().unwrap_or("").to_string();
+    // a place is a choice, or a comparison that decides none on its own line
+    let mut places: BTreeMap<&str, BTreeMap<&str, BTreeSet<(Option<u32>, u32)>>> = BTreeMap::new();
+    for c in f.compares.iter().filter(|c| handed.contains(root(&c.subject).as_str())) {
+        let place = match c.choice {
+            Some(ch) => (Some(ch), 0),
+            None => (None, c.line),
+        };
+        for lit in &c.cases {
+            places.entry(c.subject.as_str()).or_default().entry(lit.as_str()).or_default().insert(place);
+        }
+    }
+    let mut out = vec![];
+    for (subject, lits) in places {
+        let spread: Vec<(&str, usize)> = lits.iter().filter(|(_, ps)| ps.len() > 1).map(|(l, ps)| (*l, ps.len())).collect();
+        if spread.is_empty() {
+            continue;
+        }
+        let n_places = f.compares.iter().filter(|c| c.subject == subject).map(|c| c.choice.map_or((None, c.line), |ch| (Some(ch), 0))).collect::<BTreeSet<_>>().len();
+        let named: Vec<String> = spread.iter().map(|(l, n)| format!("\"{l}\" ({n}×)")).collect();
+        let evidence = f
+            .compares
+            .iter()
+            .filter(|c| c.subject == subject)
+            .map(|c| format!("line {}: {subject} against {}", c.line, c.cases.iter().map(|x| format!("\"{x}\"")).collect::<Vec<_>>().join(", ")))
+            .collect();
+        out.push(ix.finding(
+            "choices",
+            f,
+            format!("{} tests `{subject}` in {n_places} places; {} come back", ix.label(&f.id), list(&named)),
+            evidence,
+            format!(
+                "What each case means is spelled out again in each place, so a new case is a change in all of them. Could the choice be made once, in a table or a type that says what each `{subject}` stands for?"
+            ),
+        ));
+    }
+    out
+}
+
+/// Alternatives that each produce the same type, in a body that does more than choose.
+fn unnamed<'g>(ix: &Index<'g>, f: &Node) -> Vec<Finding> {
+    let calls: Vec<&'g Edge> = ix.out.get(f.id.as_str()).into_iter().flatten().filter(|e| matches!(e.kind, EdgeKind::Calls | EdgeKind::Instantiates)).copied().collect();
+    // the type a step hands on: what it constructs, or the class it returns
+    let made = |e: &'g Edge| -> Vec<&'g str> {
+        if e.kind == EdgeKind::Instantiates {
+            return vec![e.dst.as_str()];
+        }
+        ix.targets(&e.dst, EdgeKind::Returns).into_iter().filter(|t| ix.node(t).map_or(false, |n| n.kind == NodeKind::Class)).collect()
+    };
+    // the choices the body itself makes; one nested in an arm is part of the arm
+    let choice_ids: BTreeSet<u32> = calls.iter().filter_map(|e| e.arms.first().map(|(c, _)| *c)).collect();
+    let mut out = vec![];
+    for c in choice_ids {
+        let inside: Vec<&'g Edge> = calls.iter().copied().filter(|e| e.arms.first().map_or(false, |(ch, _)| *ch == c)).collect();
+        if inside.len() == calls.len() {
+            continue; // the body is the choice: it has a name, the function's
+        }
+        // type -> arm -> the steps in that arm that produce it
+        let mut by_type: BTreeMap<&str, BTreeMap<u32, Vec<&str>>> = BTreeMap::new();
+        for e in &inside {
+            let arm = e.arms.first().map_or(0, |(_, a)| *a);
+            for t in made(e) {
+                by_type.entry(t).or_default().entry(arm).or_default().push(e.dst.as_str());
+            }
+        }
+        for (t, arms) in by_type.into_iter().filter(|(_, arms)| arms.len() > 1) {
+            let steps: Vec<String> = arms.values().flatten().map(|s| ix.label(s)).collect();
+            let others: Vec<String> = calls.iter().filter(|e| e.arms.first().map_or(true, |(ch, _)| *ch != c)).map(|e| ix.label(&e.dst)).collect();
+            let ty = ix.label(t);
+            out.push(ix.finding(
+                "choices",
+                f,
+                format!("{} chooses where its {ty} comes from ({}) between its other steps", ix.label(&f.id), steps.join(" | ")),
+                vec![format!("alternatives: {}", steps.join(" | ")), format!("around them: {}", list(&others))],
+                format!("Where the {ty} comes from is a step of its own, with {} as its arms. What would that step be called?", list(&steps)),
+            ));
+        }
     }
     out
 }

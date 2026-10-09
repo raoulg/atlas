@@ -25,6 +25,21 @@ def enrich(graph: Graph, extra: Node) -> None:
     graph.add(extra)
 
 
+def empty() -> Graph:
+    return Graph()
+
+
+def prepare(text: str, mode: str) -> None:
+    g = build_graph(text) if mode == "fresh" else empty()
+    enrich(g, Node(id=text))
+    if mode == "fresh":
+        print("built")
+
+
+def fresh_or_empty(text: str, fresh: bool) -> Graph:
+    return build_graph(text) if fresh else empty()
+
+
 class Pipeline:
     def __init__(self, sink: DuckSink):
         self.sink = sink

@@ -110,6 +110,9 @@ pub struct Node {
     pub touches: Vec<Touch>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub is_pkg: bool,
+    /// Where the body compares a value with literals.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub compares: Vec<Compare>,
 }
 
 impl Default for NodeKind {
@@ -158,6 +161,28 @@ pub struct Edge {
     /// How many original edges a quotient edge stands for.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub weight: Option<u32>,
+    /// The arms of the choices a call sits in, from the outermost in: `(choice, arm)`, with
+    /// the choices of a body numbered in source order. Two calls from one body are
+    /// alternatives when they sit in different arms of the same choice.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(type = "Array<[number, number]>")]
+    pub arms: Vec<(u32, u32)>,
+}
+
+/// Where a body compares one value with literals: `args.mode == "train"`,
+/// `mode in {"a", "b"}`, `case "a":`, `"a" =>`.
+#[derive(Serialize, Deserialize, TS, Clone, Debug, Default, PartialEq, Eq)]
+#[ts(export)]
+pub struct Compare {
+    /// The value as written: `args.experiment`.
+    pub subject: String,
+    /// The literals it is compared with.
+    pub cases: Vec<String>,
+    pub line: u32,
+    /// The choice it decides, numbered like `Edge::arms`; a comparison that only computes a
+    /// value (`weighted = mode in {..}`) decides none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub choice: Option<u32>,
 }
 
 #[derive(Serialize, Deserialize, TS, Clone, Debug, Default)]

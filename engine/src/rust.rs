@@ -14,9 +14,12 @@ use tree_sitter::{Node as TsNode, Parser, Tree};
 use walkdir::WalkDir;
 
 use crate::effects;
-use crate::model::{EdgeKind, Entry, EntryKind, Node, NodeKind, Touch};
+use crate::model::{Compare, EdgeKind, Entry, EntryKind, Node, NodeKind, Touch};
 use crate::builder::{ClassInfo, GraphBuilder, SigInfo};
-use crate::tree::{literals, named_children, payload_of, span, starts_at_literal, text, walk, what_of};
+use crate::tree::{
+    arms_of, decides, literals, named_children, nth_of_kind, number_choices, payload_of, span, starts_at_literal, text, unquote, walk, what_of,
+    ChoiceSyntax, Part,
+};
 
 struct Crate {
     name: String,
@@ -791,7 +794,8 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crat
         }
     }
     let attr_types = cls.as_ref().and_then(|c| store.classes.get(c)).map(|c| c.attr_types.clone()).unwrap_or_default();
-    let mut new_edges: Vec<(String, EdgeKind, Option<String>)> = vec![];
+    let mut new_edges: Vec<(String, EdgeKind, Option<String>, Vec<(u32, u32)>)> = vec![];
+    let choices = number_choices(body, src, &CHOICES);
     let mut touches: Vec<Touch> = vec![];
     let lit_kinds = &["string_literal", "raw_string_literal"];
     // a boundary call, refined by the literals under it
@@ -814,7 +818,7 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crat
             let parts = path_parts(c.child_by_field_name("name"), src);
             if let Some(r) = resolve(m, &parts, modules, &store.nodes, crate_ids).filter(|r| !r.starts_with("ext:")) {
                 if store.nodes.get(&r).map_or(false, |x| x.kind == NodeKind::Class) {
-                    new_edges.push((r, EdgeKind::Instantiates, None));
+                    new_edges.push((r, EdgeKind::Instantiates, None, arms_of(c, body, src, &choices, &CHOICES)));
                 }
             }
             continue;
@@ -885,7 +889,7 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crat
                 let kind = if store.nodes[&t].kind == NodeKind::Class { EdgeKind::Instantiates } else { EdgeKind::Calls };
                 // `Type::method(..)` with no such method known: keep the name, it is what was called
                 let via = if kind == EdgeKind::Instantiates && parts.len() > 1 && parts[0] != "Self" { parts.last().cloned() } else { None };
-                new_edges.push((t, kind, via));
+                new_edges.push((t, kind, via, arms_of(c, body, src, &choices, &CHOICES)));
             }
             _ => {
                 if parts.is_empty() {
@@ -899,8 +903,12 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crat
             }
         }
     }
-    for (t, kind, via) in new_edges {
-        store.add_edge(id, &t, kind, via);
+    for (t, kind, via, arms) in new_edges {
+        store.add_call(id, &t, kind, via, arms);
+    }
+    let compares = compares(body, src, &choices);
+    if let Some(node) = store.nodes.get_mut(id) {
+        node.compares = compares;
     }
     for (t, input) in mutates {
         store.add_edge(id, &t, EdgeKind::Mutates, Some(input));
@@ -911,6 +919,98 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crat
     for t in touches {
         store.touch(id, t);
     }
+}
+
+// ---------- choices ----------
+
+/// `Option` and `Result` methods whose argument is the other arm: `find(g).unwrap_or_else(|| infer(g))`.
+const OR_ELSE: &[&str] = &["unwrap_or_else", "unwrap_or", "or_else", "or", "map_or_else", "map_or"];
+
+/// How many `else if` steps an `if` sits down its chain.
+fn else_if_depth(n: TsNode) -> u32 {
+    let mut d = 0;
+    let mut cur = n;
+    while let Some(up) = cur.parent().filter(|p| p.kind() == "else_clause").and_then(|e| e.parent()).filter(|p| p.kind() == "if_expression") {
+        d += 1;
+        cur = up;
+    }
+    d
+}
+
+/// Rust's choices: `if`/`else if`/`else` (with `if let`), `match`, and the `Option`/`Result`
+/// methods that run their argument only when the receiver has nothing.
+const CHOICES: ChoiceSyntax = ChoiceSyntax {
+    chooses: |n, src| match n.kind() {
+        "if_expression" | "match_block" | "match_arm" => true,
+        "call_expression" => n
+            .child_by_field_name("function")
+            .filter(|f| f.kind() == "field_expression")
+            .and_then(|f| f.child_by_field_name("field"))
+            .map_or(false, |m| OR_ELSE.contains(&text(m, src))),
+        _ => false,
+    },
+    continues: |n| {
+        if n.kind() == "match_arm" {
+            return n.parent();
+        }
+        let up = n.parent().filter(|p| p.kind() == "else_clause")?.parent()?;
+        (n.kind() == "if_expression" && up.kind() == "if_expression").then_some(up)
+    },
+    part: |c, child, _| {
+        let is = |f: &str| c.child_by_field_name(f).map(|x| x.id()) == Some(child.id());
+        match c.kind() {
+            "if_expression" if is("condition") => Part::Decides,
+            "if_expression" if is("consequence") => Part::Arm(else_if_depth(c)),
+            "if_expression" if is("alternative") => {
+                if named_children(child).iter().any(|x| x.kind() == "if_expression") {
+                    Part::Through
+                } else {
+                    Part::Arm(else_if_depth(c) + 1)
+                }
+            }
+            "match_block" if child.kind() == "match_arm" => Part::Arm(nth_of_kind(c, child)),
+            // a pattern and its guard decide which arm runs
+            "match_arm" if is("pattern") => Part::Decides,
+            "call_expression" if is("function") => Part::Arm(0),
+            "call_expression" if is("arguments") => Part::Arm(1),
+            _ => Part::Through,
+        }
+    },
+};
+
+/// Where a body compares one value with string literals (`kind == "net"`, a `match` on
+/// `&str`), and the choice each comparison decides.
+fn compares(body: TsNode, src: &[u8], choices: &HashMap<usize, u32>) -> Vec<Compare> {
+    let lit = |n: TsNode| matches!(n.kind(), "string_literal" | "raw_string_literal");
+    let mut out = vec![];
+    for n in walk(body, &["binary_expression", "match_expression"]) {
+        let line = n.start_position().row as u32 + 1;
+        if n.kind() == "match_expression" {
+            let (Some(value), Some(block)) = (n.child_by_field_name("value"), n.child_by_field_name("body")) else { continue };
+            let cases: Vec<String> = named_children(block)
+                .into_iter()
+                .filter_map(|a| a.child_by_field_name("pattern"))
+                .flat_map(|p| walk(p, &["string_literal", "raw_string_literal"]))
+                .map(|s| unquote(text(s, src)))
+                .collect();
+            if !cases.is_empty() {
+                out.push(Compare { subject: text(value, src).to_string(), cases, line, choice: choices.get(&block.id()).copied() });
+            }
+            continue;
+        }
+        let op = n.child_by_field_name("operator").map(|o| text(o, src)).unwrap_or("");
+        let (Some(l), Some(r)) = (n.child_by_field_name("left"), n.child_by_field_name("right")) else { continue };
+        if !matches!(op, "==" | "!=") {
+            continue;
+        }
+        let (subject, case) = match (lit(l), lit(r)) {
+            (false, true) => (l, r),
+            (true, false) => (r, l),
+            _ => continue,
+        };
+        out.push(Compare { subject: text(subject, src).to_string(), cases: vec![unquote(text(case, src))], line, choice: decides(n, body, src, choices, &CHOICES) });
+    }
+    out
 }
 
 /// A foreign type worth keeping in a signature: from a third-party crate, not std or a container.
