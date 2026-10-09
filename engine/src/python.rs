@@ -28,6 +28,19 @@ const BUILTIN_TYPES: &[&str] = &[
     "Annotated",
 ];
 
+/// Generic types whose parameters are the values they hold or stand for: `list[Graph]` holds
+/// Graphs, `Optional[Node]` is a Node or nothing. A generic class of a package or a library
+/// (`VectorCache[TVectorizer]`, `Dataset[Row]`) is a value of that class; its parameters are
+/// types, not values that come along.
+const CONTAINERS: &[&str] = &[
+    "list", "dict", "set", "tuple", "frozenset", "type", "Optional", "Union", "Iterable", "Iterator", "Sequence",
+    "Mapping", "Callable", "Generator", "AsyncIterator", "Awaitable", "Annotated", "ClassVar", "List", "Dict",
+    "Tuple", "Set", "FrozenSet", "Type", "Deque", "deque", "DefaultDict", "defaultdict", "OrderedDict", "Counter",
+    "ChainMap", "Collection", "Container", "AbstractSet", "MutableSet", "MutableSequence", "MutableMapping",
+    "AsyncIterable", "AsyncGenerator", "Coroutine", "Reversible", "Final", "Required", "NotRequired", "ReadOnly",
+    "TypeGuard", "TypeIs", "Unpack",
+];
+
 struct Module {
     id: String,
     path: PathBuf,
@@ -96,7 +109,18 @@ fn type_names(t: Option<TsNode>, src: &[u8]) -> Vec<Vec<String>> {
         }
     };
     let arrays: Vec<TsNode> = walk(t, &["subscript", "generic_type"]).into_iter().filter(|n| shaped(*n, src).is_some()).collect();
-    let inside = |n: TsNode| arrays.iter().any(|a| a.start_byte() <= n.start_byte() && n.end_byte() <= a.end_byte());
+    // the parameters of a generic class that is not a container: `VectorCache[TVectorizer]`
+    let mut params: Vec<TsNode> = vec![];
+    for g in walk(t, &["subscript", "generic_type"]) {
+        let (head, args) = match g.kind() {
+            "subscript" => (dotted(g.child_by_field_name("value"), src), field_children(g, "subscript")),
+            _ => (dotted(named_children(g).first().copied(), src), named_children(g).into_iter().filter(|k| k.kind() == "type_parameter").collect()),
+        };
+        if head.last().map_or(false, |h| !CONTAINERS.contains(&h.as_str())) {
+            params.extend(args);
+        }
+    }
+    let inside = |n: TsNode| arrays.iter().chain(params.iter()).any(|a| a.start_byte() <= n.start_byte() && n.end_byte() <= a.end_byte());
     for a in arrays.iter().filter(|a| !arrays.iter().any(|b| b.id() != a.id() && b.start_byte() <= a.start_byte() && a.end_byte() <= b.end_byte())) {
         keep(vec![shaped(*a, src).unwrap_or_default()]);
     }
@@ -110,7 +134,7 @@ fn type_names(t: Option<TsNode>, src: &[u8]) -> Vec<Vec<String>> {
         if n.kind() == "string" {
             // a quoted annotation is a forward reference: `"pd.DataFrame"`, `"List[Node]"`
             let lit = text(n, src).trim_matches(|c| c == '"' || c == '\'');
-            for name in lit.split(|c: char| !(c.is_alphanumeric() || c == '_' || c == '.')).filter(|w| w.chars().next().map_or(false, |c| c.is_alphabetic() || c == '_')) {
+            for name in quoted_values(lit) {
                 keep(name.split('.').map(str::to_string).collect());
             }
             continue;
@@ -119,6 +143,41 @@ fn type_names(t: Option<TsNode>, src: &[u8]) -> Vec<Vec<String>> {
             continue;
         }
         keep(dotted(Some(n), src));
+    }
+    out
+}
+
+/// The names in a quoted annotation that stand for values: `"List[Node]"` -> Node,
+/// `"VectorCache[TVectorizer]"` -> VectorCache, its parameter being a type.
+fn quoted_values(lit: &str) -> Vec<&str> {
+    let mut out = vec![];
+    // per open bracket: whether what it holds are parameters of a generic class
+    let mut opaque: Vec<bool> = vec![];
+    let mut last = "";
+    let mut start = None;
+    let is_name = |c: char| c.is_alphanumeric() || c == '_' || c == '.';
+    for (i, c) in lit.char_indices().chain(std::iter::once((lit.len(), ' '))) {
+        if is_name(c) {
+            start.get_or_insert(i);
+            continue;
+        }
+        if let Some(s) = start.take() {
+            let w = &lit[s..i];
+            if w.chars().next().map_or(false, |c| c.is_alphabetic() || c == '_') && !opaque.iter().any(|o| *o) {
+                out.push(w);
+            }
+            last = w;
+        }
+        match c {
+            '[' => opaque.push(!CONTAINERS.contains(&last.rsplit('.').next().unwrap_or(last))),
+            ']' => {
+                opaque.pop();
+            }
+            _ => {}
+        }
+        if !c.is_whitespace() {
+            last = if c == '[' { "" } else { last };
+        }
     }
     out
 }

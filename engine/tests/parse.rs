@@ -197,6 +197,11 @@ fn files_and_tables_are_places() {
     let takes = edges(&g, EdgeKind::Takes);
     assert!(takes.contains(&("fixture.build.register".into(), "fixture.sinks.base.Sink".into())), "Type[SinkT], SinkT = TypeVar(bound=\"Sink\")");
     assert!(takes.contains(&("fixture.build.describe".into(), "fixture.schema.Graph".into())), "a quoted annotation is a forward reference");
+    // a generic class's parameters are types, a container's are the values it holds
+    let of = |src: &str, kind: EdgeKind| edges(&g, kind).into_iter().filter(|(s, _)| s == src).map(|(_, d)| d).collect::<Vec<_>>();
+    assert_eq!(of("fixture.build.hold", EdgeKind::Returns), ["fixture.build.Holder"], "`\"Holder[Node]\"` is one Holder");
+    assert_eq!(of("fixture.build.unwrap", EdgeKind::Takes), ["fixture.build.Holder"], "`Holder[Node]` too");
+    assert_eq!(of("fixture.build.unwrap", EdgeKind::Returns), ["fixture.schema.Node"]);
     assert!(returns.contains(&("fixture.build.describe".into(), "fixture.schema.Node".into())));
 }
 

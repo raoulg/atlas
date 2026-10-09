@@ -856,15 +856,25 @@ function renderStory() {
 // down there is dashed: a step's own morphism and what it reaches are different quantities. The
 // world stands still at the edges: what the route only reads on the left, what it only writes on
 // the right.
-// a family is rooted in the package's own classes: a library's base (pydantic's BaseModel,
-// torch's Module, a derived trait) is how a class is built, not one of the project's concepts
+// a family is rooted in a base the program uses as a type: some signature takes or returns it, a
+// field holds it, a sum names it. A base that only shares code (a config mixin, pydantic's
+// BaseModel, torch's Module, a derived trait) is how a class is built, not what flows
+const usedAsType = new Set(D.edges.filter(e => ["takes", "returns", "has", "mutates", "variant"].includes(e.kind)).map(e => e.dst));
+// the outermost ancestor the program uses as a type, through bases that only share code
+function usedBase(id, depth) {
+  for (const b of (out.get(id) || []).filter(e => e.kind === "inherits" && byId.get(e.dst)?.kind === "class").map(e => e.dst)) {
+    const up = depth < 10 ? usedBase(b, depth + 1) : null;
+    if (up) return up;
+    if (usedAsType.has(b)) return b;
+  }
+  return null;
+}
 const famCache = new Map();
 function familyOf(id, depth = 0) {
   if (famCache.has(id)) return famCache.get(id);
   let fam = id;
-  const bases = (out.get(id) || []).filter(e => e.kind === "inherits").map(e => e.dst);
-  const internal = bases.find(b => byId.get(b)?.kind === "class");
-  if (internal && depth < 10) fam = familyOf(internal, depth + 1);
+  const up = usedBase(id, depth);
+  if (up) fam = up;
   else {
     const owners = [...new Set((inn.get(id) || []).filter(e => e.kind === "has" && byId.get(e.src)?.kind === "class").map(e => e.src))];
     if (owners.length === 1 && owners[0] !== id && depth < 10) fam = familyOf(owners[0], depth + 1);
@@ -877,9 +887,7 @@ function familyOf(id, depth = 0) {
 const kindCache = new Map();
 function kindOf(id, depth = 0) {
   if (kindCache.has(id)) return kindCache.get(id);
-  const bases = (out.get(id) || []).filter(e => e.kind === "inherits").map(e => e.dst);
-  const internal = bases.find(b => byId.get(b)?.kind === "class");
-  const k = internal && depth < 10 ? kindOf(internal, depth + 1) : id;
+  const k = usedBase(id, depth) || id;
   kindCache.set(id, k); return k;
 }
 const members = new Map();

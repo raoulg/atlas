@@ -1,4 +1,4 @@
-from typing import Type, TypeVar, Union
+from typing import Generic, Type, TypeVar, Union
 
 import pandas as pd
 import requests
@@ -86,3 +86,19 @@ def fetch(repo_id: str) -> str:
 def publish(folder: str, repo_id: str) -> None:
     api = HfApi()
     api.upload_folder(repo_id=repo_id, folder_path=folder)
+
+
+T = TypeVar("T")
+
+
+class Holder(Generic[T]):
+    def __init__(self, item: T) -> None:
+        self.item = item
+
+
+def hold(node: Node) -> "Holder[Node]":
+    return Holder(node)
+
+
+def unwrap(held: Holder[Node]) -> Node:
+    return held.item
