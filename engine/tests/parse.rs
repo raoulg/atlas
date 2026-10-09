@@ -196,7 +196,8 @@ fn atlas_reads_as_its_algebra() {
     let classes: HashSet<&str> = g.nodes.iter().filter(|n| n.kind == NodeKind::Class).map(|n| n.id.as_str()).collect();
     let name = |id: &str| id.rsplit('.').next().unwrap().to_string();
     let steps: Vec<&str> = g.edges.iter().filter(|e| e.src == "atlas-engine.analyze" && e.kind == EdgeKind::Calls).map(|e| e.dst.as_str()).collect();
-    assert!(steps.len() >= 6, "analyze has its steps: {steps:?}");
+    let short: Vec<&str> = steps.iter().map(|s| s.trim_start_matches("atlas-engine.")).collect();
+    assert_eq!(short, ["language.detect", "language.Language.parse", "entries.read_makefile", "roles.resolve", "roles.assign"], "analyze is its algebra, step by step");
     for step in steps {
         for e in g.edges.iter().filter(|e| e.src == step && matches!(e.kind, EdgeKind::Takes | EdgeKind::Returns | EdgeKind::Mutates)) {
             if classes.contains(e.dst.as_str()) {

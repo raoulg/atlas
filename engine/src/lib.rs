@@ -29,10 +29,7 @@ pub fn analyze(repo: &Path, package: Option<&Path>, roles: Option<&Path>) -> Res
         .ok_or_else(|| anyhow::anyhow!("no language recognised in {} (looked for Cargo.toml, pyproject.toml, a Python package)", repo.display()))?;
     let mut g = lang.parse(repo, package)?;
     entries::read_makefile(&mut g);
-    let arch = match roles {
-        Some(p) => roles::load(p)?,
-        None => roles::find(&g).unwrap_or_else(|| roles::infer(&g)),
-    };
+    let arch = roles::resolve(&g, roles)?;
     roles::assign(&mut g, arch);
     Ok(g)
 }

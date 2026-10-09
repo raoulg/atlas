@@ -7,6 +7,15 @@ use anyhow::{Context, Result};
 
 use crate::model::{Architecture, Bands, EdgeKind, Graph, NodeKind};
 
+/// Where a repo's architecture comes from: the declaration given, else the repo's own
+/// `architecture.yml`, else an inference from its package layout. One of the three, always.
+pub fn resolve(g: &Graph, declared: Option<&Path>) -> Result<Architecture> {
+    match declared {
+        Some(p) => load(p),
+        None => Ok(find(g).unwrap_or_else(|| infer(g))),
+    }
+}
+
 /// Load `architecture.yml` / `.yaml` or a spike-style `roles.json`.
 pub fn load(path: &Path) -> Result<Architecture> {
     let text = std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
