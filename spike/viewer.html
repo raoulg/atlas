@@ -685,6 +685,25 @@ function overrides(n) {
   }
   return res;
 }
+// calls in different arms of one choice in a body (an if, a match, an or-else) are alternatives:
+// the body's steps in call order, each choice with two or more branches as one group
+function choiceGroups(id) {
+  const cs = callees(id), arms = new Map();
+  for (const e of out.get(id) || []) if ((e.kind === "calls" || e.kind === "instantiates") && e.arms && e.arms.length && !arms.has(e.dst)) arms.set(e.dst, e.arms);
+  const byChoice = new Map();
+  for (const c of cs) if (arms.has(c)) { const k = arms.get(c)[0][0]; if (!byChoice.has(k)) byChoice.set(k, []); byChoice.get(k).push(c); }
+  const items = [], placed = new Set();
+  for (const c of cs) {
+    const k = arms.has(c) ? arms.get(c)[0][0] : null, grp = k === null ? null : byChoice.get(k);
+    const paths = grp ? [...new Set(grp.map(m => JSON.stringify(arms.get(m))))] : [];
+    if (paths.length < 2) { items.push(c); continue; }
+    if (placed.has(k)) continue;
+    placed.add(k);
+    items.push({choice: k, members: grp.map(m => ({id: m, branch: paths.indexOf(JSON.stringify(arms.get(m)))}))});
+  }
+  return items;
+}
+const LETTER = i => "abcdefghijklmnopqrstuvwxyz"[i % 26];
 const reachCache = new Map();
 function reach(id) {  // boundaries touched and functions covered by everything reachable through calls
   if (reachCache.has(id)) return reachCache.get(id);
@@ -744,16 +763,24 @@ function renderStory() {
   } else {
     // a step already shown in this story is a reference to where it was shown, not a second copy
     const shown = new Map([[storyEntry, "the entry"]]);
-    const walk = (id, depth, prefix) => { const p = byId.get(id), alts = new Set(p && p.cls ? overrides(p) : []); let seq = 0, alt = 0; callees(id).forEach(c => {
-      const n = byId.get(c), isAlt = alts.has(c), num = isAlt ? `${prefix}${"abcdefgh"[alt++ % 8]}` : prefix ? `${prefix}.${++seq}` : `${++seq}`;
+    const walk = (id, depth, prefix) => { const p = byId.get(id), alts = new Set(p && p.cls ? overrides(p) : []); let seq = 0, alt = 0;
+    const next = () => prefix ? `${prefix}.${++seq}` : `${++seq}`;
+    // a choice is one step lettered by branch (2.1.4a | 2.1.4b), like the overrides a call may run
+    for (const it of choiceGroups(id)) {
+      if (typeof it !== "string") { const k = next(); for (const m of it.members) step(m.id, `${k}${LETTER(m.branch)}`, m.branch % 8 + 1); }
+      else if (alts.has(it)) { step(it, `${prefix}${LETTER(alt)}`, alt % 8 + 1); alt++; }
+      else step(it, next(), null);
+    }
+    function step(c, num, hue) {
+      const n = byId.get(c);
       const via = n.kind === "class" ? (out.get(id) || []).find(e => e.dst === c && e.kind === "instantiates" && e.via)?.via : null;
       const name = n.kind === "class" ? (via ? `${n.name}::${via}()` : n.name + "()") : n.entry ? `${KIND_LABEL[n.entry.kind]} ${n.entry.label}` : n.cls && byId.has(n.cls) ? `${byId.get(n.cls).name}.${n.name}` : n.name;
       if (shown.has(c) && callees(c).length) { rows.push({id: c, depth, num, name, node: n, bounds: {}, size: 0, kids: 0, ref: shown.get(c)}); return; }
       const r = reach(c); useLanes(r);
       shown.set(c, num);
-      const row = {id: c, depth, num, name, node: n, bounds: r.bounds, reach: r, size: r.size, kids: callees(c).length, open: expanded.has(c), hue: isAlt ? (alt - 1) % 8 + 1 : null};
+      const row = {id: c, depth, num, name, node: n, bounds: r.bounds, reach: r, size: r.size, kids: callees(c).length, open: expanded.has(c), hue};
       rows.push(row); if (row.open) walk(c, depth + 1, num);
-    }); };
+    } };
     useLanes(ownReach(byId.get(storyEntry)));
     walk(storyEntry, 0, "");
   }
@@ -915,7 +942,12 @@ function routeTree() {
       const alts = new Set(n && n.cls ? overrides(n) : []);
       node.choice = alts.size > 0;
       let b = 0;
-      for (const c of callees(id)) if (!seen.has(c)) node.kids.push(visit(c, alts.has(c) ? (b++ % 8) + 1 : hue));
+      for (const it of choiceGroups(id)) {
+        if (typeof it === "string") { if (!seen.has(it)) node.kids.push(visit(it, alts.has(it) ? (b++ % 8) + 1 : hue)); continue; }
+        // the body's own choice: a frame of its branches, each in its own colour
+        const kids = it.members.filter(m => !seen.has(m.id)).map(m => visit(m.id, m.branch % 8 + 1));
+        if (kids.length) node.kids.push({id: `${id}~c${it.choice}`, open: true, synthetic: true, choice: true, kids, hue});
+      }
     }
     return node;
   };
@@ -977,25 +1009,29 @@ async function renderPlaat() {
   // an exported class has no body of its own: its route starts at each public method the caller can call
   const libraryClass = id => byId.get(id)?.kind === "class" && !!byId.get(id).entry;
   const build = (node, parent, caller) => {
+    if (node.synthetic) {
+      const fid = "n:" + node.id;
+      frames.set(fid, {id: fid, step: null, parent, hue: node.hue, choice: true, synthetic: true, title: "one of"});
+      return node.kids.flatMap(k => build(k, fid, caller));
+    }
     if (node.open) {
       const fid = "n:" + node.id, kids = [];
       frames.set(fid, {id: fid, step: node.id, parent, hue: node.hue, choice: node.choice, anchor: node.id === storyEntry, title: (node.id === storyEntry ? entryTitle(node.id) : stepName(node.id)) + (node.choice ? " · one of" : "")});
       const own = libraryClass(node.id) ? {dom: new Map(), cod: new Map()} : morphism(node.id, true, node.id === storyEntry);
-      const back = [];
-      for (const k of node.kids) { const r = build(k, fid, libraryClass(node.id) && node.id === storyEntry ? node.id : null); if (r) back.push(r); }
+      const back = node.kids.flatMap(k => build(k, fid, libraryClass(node.id) && node.id === storyEntry ? node.id : null));
       if (own.dom.size || own.cod.size || (back.length && !libraryClass(node.id))) {
         const oid = "o:" + node.id;
         pills.set(oid, {id: oid, steps: [node.id], D: own.dom, C: own.cod, parent: fid, hue: node.hue, own: true});
         for (const b of back) b.backTo = oid;
       }
-      return null;
+      return [];
     }
     const m = morphism(node.id, !!node.ownBody, false), hb = parent && !caller && handsBack(node.id, m.cod);
     if (caller) m.dom.set(addPlace(entryPlace(caller)), false);
-    if (!m.dom.size && !m.cod.size && !hb) return null;
+    if (!m.dom.size && !m.cod.size && !hb) return [];
     const pill = {id: "n:" + node.id, steps: [node.id], D: m.dom, C: m.cod, parent, hue: node.hue};
     pills.set(pill.id, pill);
-    return hb ? pill : null;
+    return hb ? [pill] : [];
   };
   for (const t of routeTree()) build(t, null);
   // a type a step takes and hands on is two moments of the data, not one box: memory is versioned in
@@ -1150,9 +1186,9 @@ async function renderPlaat() {
     const r = el("rect", {class: "bg", width: P.w, height: P.h, rx: isFam ? 10 : 8}, grp);
     if (F.hue) r.setAttribute("style", `stroke:${hueVar(F.hue)}`);
     if (isFam) el("rect", {x: 0, y: 0, width: 5, height: P.h, rx: 2, fill: roleVar(F.role || "External")}, grp);
-    const title = el("text", {class: "ftitle", x: 14, y: 20}, grp); title.textContent = "▾ " + F.title;
+    const title = el("text", {class: "ftitle", x: 14, y: 20}, grp); title.textContent = (F.synthetic ? "" : "▾ ") + F.title;
     title.addEventListener("click", ev => {
-      ev.stopPropagation(); plaatAnchor = id;
+      ev.stopPropagation(); if (F.synthetic) return; plaatAnchor = id;
       if (isFam) expandedFamilies.delete(F.fam); else if (F.anchor) { storyEntry = null; entrySel.value = ""; expanded.clear(); plaatAnchor = "n:" + F.step; } else expanded.delete(F.step);
       render();
     });
@@ -1354,7 +1390,7 @@ function legend() {
   L.appendChild(row);
   const row2 = html("div", "row");
   row2.innerHTML = view === "plaat"
-    ? `<span class="k wrap">${Object.keys(GLYPH).map(k => `<span class="sw">${glyphSvg(k)} ${KIND_NAME[k]}</span>`).join(" ")}</span><span class="k">left: what the route only reads · right: what it only writes · boxes with a coloured strip are types in memory; (n) is a family, click to open it</span><span class="k">pill = a step, from what it takes to what it hands on · ▸ opens it into a frame · a frame's title closes it · one of n: a call that runs one of n overrides, each branch in its own colour · dashed: happens inside a closed step · dotted: a result handed back</span>`
+    ? `<span class="k wrap">${Object.keys(GLYPH).map(k => `<span class="sw">${glyphSvg(k)} ${KIND_NAME[k]}</span>`).join(" ")}</span><span class="k">left: what the route only reads · right: what it only writes · boxes with a coloured strip are types in memory; (n) is a family, click to open it</span><span class="k">pill = a step, from what it takes to what it hands on · ▸ opens it into a frame · a frame's title closes it · one of: alternatives, each branch in its own colour (the overrides a call may run, or the arms of an if, a match or an or-else) · dashed: happens inside a closed step · dotted: a result handed back</span>`
     : view === "story"
     ? `<span class="k wrap">${Object.keys(GLYPH).filter(k => k !== "cmd").map(k => `<span class="sw">${glyphSvg(k)} ${KIND_NAME[k]}</span>`).join(" ")}</span><span class="k">rows = steps in call order · line 1 = the step's own signature, in the author's names · line 2 = what its own body does</span><span class="k">columns = the places reached, as the Plaat names them · a dot = the step reaches it through everything below it, in the place's colour · size = how often</span><span class="k">▸ expand a step into its own steps · click a name for the code</span>`
     : view === "arch"
