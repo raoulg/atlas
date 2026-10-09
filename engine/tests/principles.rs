@@ -22,8 +22,9 @@ fn by_principle(fs: &[Finding]) -> BTreeMap<&'static str, Vec<&str>> {
 fn each_principle_finds_its_case() {
     let fs = findings("tests/fixture");
     let got = by_principle(&fs);
-    // `Graph.add` and `Sink.write` are typed; `first` says nothing
-    assert_eq!(got["doors"], ["fixture.schema.Graph.first"]);
+    // `Graph.add` and `Sink.write` are typed; `first` says nothing, nor does the `flush`
+    // that the exported DuckSink inherits from its mixin
+    assert_eq!(got["doors"], ["fixture.schema.Graph.first", "fixture.sinks.base.Mixin.flush"]);
     // `load` makes a Loaded, `cli.show` takes it from another module
     assert_eq!(got["sums"], ["fixture.build.Loaded"]);
     // `CountingSink.write` gives an int where `Sink.write` promises None; `clone` narrows to a

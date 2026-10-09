@@ -24,3 +24,6 @@ class CountingSink(Sink):
 class Mixin:
     def close(self) -> None:
         pass
+
+    def flush(self):
+        pass

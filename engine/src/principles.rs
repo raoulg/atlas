@@ -146,6 +146,22 @@ impl<'g> Index<'g> {
         format!("{}:{}", self.file(n), n.span.map_or(1, |s| s.0))
     }
 
+/// A class's public methods (and its constructor), its own and those it inherits from
+    /// the package's classes, each from the nearest class that defines it.
+    fn interface(&self, cls: &str) -> Vec<&'g Node> {
+        let mut seen = HashSet::new();
+        let mut out = vec![];
+        for c in std::iter::once(cls).chain(self.ancestors(cls)) {
+            let Some(n) = self.node(c) else { continue };
+            for m in n.methods.iter().filter_map(|m| self.node(&format!("{c}.{m}"))) {
+                if (public(m) || m.name == "__init__") && seen.insert(m.name.as_str()) {
+                    out.push(m);
+                }
+            }
+        }
+        out
+    }
+
     /// Ancestors along `inherits`, nearest first.
     fn ancestors(&self, cls: &str) -> Vec<&'g str> {
         let mut seen = HashSet::new();
@@ -231,13 +247,15 @@ fn doors(ix: &Index) -> Vec<Finding> {
             ));
         }
     }
+    // a method two exported classes inherit is one door to fix
+    let mut asked = HashSet::new();
     for e in exports {
         let fns: Vec<&Node> = match e.kind {
             NodeKind::Function => vec![e],
-            NodeKind::Class => e.methods.iter().filter_map(|m| ix.node(&format!("{}.{m}", e.id))).filter(|m| public(m) || m.name == "__init__").collect(),
+            NodeKind::Class => ix.interface(&e.id),
             _ => vec![],
         };
-        for f in fns {
+        for f in fns.into_iter().filter(|f| asked.insert(f.id.as_str())) {
             let untyped: Vec<String> = f
                 .params
                 .iter()
