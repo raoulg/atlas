@@ -12,8 +12,11 @@ use indexmap::IndexMap;
 use tree_sitter::{Node as TsNode, Parser, Tree};
 use walkdir::WalkDir;
 
+mod paths;
+
 use crate::effects;
 use crate::pytypes::{By, Facts, Target, Types, Value};
+use paths::{At, Built, Eval, Passed, Seg};
 use crate::entries::entry_of;
 use crate::model::{Compare, EdgeKind, Entry, EntryKind, Node, NodeKind, Touch};
 pub use crate::builder::{ClassInfo, GraphBuilder, SigInfo};
@@ -423,7 +426,7 @@ pub fn parse(pkg_dir: &Path, project_root: Option<&Path>) -> Result<(GraphBuilde
     }
     let files: Vec<(String, PathBuf)> = modules.values().map(|m| (crate::tree::path_str(&m.path), m.path.clone())).collect();
     let types = Types::read(project_root.unwrap_or(base), &files);
-    link(&modules, &mut store, &root, &types);
+    link(&modules, &mut store, &root, &types, project_root.unwrap_or(base));
     mark_exports(&modules, &mut store, &root);
     route_prefixes(&modules, &mut store);
     Ok((store, root))
@@ -757,7 +760,7 @@ fn def_node<'t>(m: &'t Module, n: &Node) -> Option<TsNode<'t>> {
     })
 }
 
-fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, root: &str, types: &Types) {
+fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, root: &str, types: &Types, root_dir: &Path) {
     let aliases = type_aliases(modules);
     add_sums(modules, store, &aliases, root);
     let ids: Vec<String> = store.nodes.keys().cloned().collect();
@@ -842,12 +845,19 @@ fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, root: &str
         }
     }
     // bodies -> calls / instantiates / boundaries
+    let eval = Eval::new(modules, types, root_dir);
     let mut handed = vec![];
+    let mut files: Vec<(String, Touch, Vec<Built>)> = vec![];
+    let mut args: Vec<Arg> = vec![];
     for id in &ids {
         if matches!(store.nodes[id].kind, NodeKind::Function | NodeKind::Method | NodeKind::Module) {
-            handed.extend(link_calls(modules, store, types, &sites, root, id));
+            let linked = link_calls(modules, store, types, &sites, &eval, root, id);
+            handed.extend(linked.handed);
+            files.extend(linked.files.into_iter().map(|(t, b)| (id.clone(), t, b)));
+            args.extend(linked.args);
         }
     }
+    place_files(modules, store, &eval, files, &args);
     // the work handed to a managed transaction (`session.execute_read(work)`) goes its way
     for (work, kind, dir) in handed {
         if let Some(n) = store.nodes.get_mut(&work) {
@@ -1309,15 +1319,39 @@ fn io_refs(m: &Module, n: TsNode, root: &str, what: &str) -> Vec<Touch> {
 
 /// A body's calls, as edges and touches. Gives back the functions it hands to a managed
 /// transaction, with the database and the direction the transaction says.
-fn link_calls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, types: &Types, sites: &HashMap<(String, usize), String>, root: &str, id: &str) -> Vec<(String, String, &'static str)> {
+/// One call's arguments to a function of the package: which parameter each is handed to, where
+/// the call is, and which of the callee's parameters it leaves out.
+struct Arg<'t> {
+    caller: String,
+    callee: String,
+    module: String,
+    scope: Option<TsNode<'t>>,
+    passed: Vec<(String, TsNode<'t>)>,
+}
+
+/// What reading a body gives besides its edges and touches: the work it hands a managed
+/// transaction, its file calls with their paths as built (placed once the parameters' values
+/// are known), and the arguments of its calls.
+#[derive(Default)]
+struct Linked<'t> {
+    handed: Vec<(String, String, &'static str)>,
+    files: Vec<(Touch, Vec<Built>)>,
+    args: Vec<Arg<'t>>,
+}
+
+fn link_calls<'t>(modules: &'t IndexMap<String, Module>, store: &mut GraphBuilder, types: &Types, sites: &HashMap<(String, usize), String>, eval: &Eval, root: &str, id: &str) -> Linked<'t> {
     let n = store.nodes[id].clone();
     let m = &modules[&n.module];
-    let Some(d) = def_node(m, &n) else { return vec![] };
+    let Some(d) = def_node(m, &n) else { return Linked::default() };
     let src = &m.src;
     let in_module = n.kind == NodeKind::Module;
     let body = if in_module { Some(d) } else { d.child_by_field_name("body") };
-    let Some(body) = body else { return vec![] };
+    let Some(body) = body else { return Linked::default() };
     let mut handed: Vec<(String, String, &'static str)> = vec![];
+    let mut files: Vec<(Touch, Vec<Built>)> = vec![];
+    let mut args: Vec<Arg> = vec![];
+    let own_params: Vec<String> = if in_module { vec![] } else { paths::parameters(d, src, false).into_iter().map(|(p, _)| p).collect() };
+    let at = At { m, scope: (!in_module).then_some(d), params: &own_params };
     // the direction a body says to a database's driver, per database
     let mut declared: Vec<(String, &'static str)> = vec![];
     let params = if in_module { HashMap::new() } else { param_types(m, d, modules, &store.nodes, root) };
@@ -1355,6 +1389,7 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, type
                 if kind == EdgeKind::Calls && value_used(c) {
                     used.push(t.clone());
                 }
+                args.extend(arguments(modules, store, id, t, c, at));
                 new_edges.push((t.clone(), kind, arms_of(c, body, src, &choices, &CHOICES)));
                 continue;
             }
@@ -1397,9 +1432,22 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, type
                         }
                     }
                 }
+                // a file's path, as the code builds it, is placed once the parameters' values are known
+                let path = match fnode.kind() == "attribute" && paths::on_receiver(&op) {
+                    true => fnode.child_by_field_name("object"),
+                    false => positional(c),
+                };
+                let built = match f.kind.starts_with("disk") {
+                    true => path.map(|p| eval.of(at, p, 0)).unwrap_or_default(),
+                    false => vec![],
+                };
                 for (artifact, dir) in f.places() {
                     let dir = if dir.is_empty() { said } else { dir };
-                    touches.push(Touch { kind: f.kind.into(), what: what.clone(), payload: payload.clone(), op: op.clone(), artifact, dir: dir.into(), fixed, line: c.start_position().row as u32 + 1, n: 1 });
+                    let t = Touch { kind: f.kind.into(), what: what.clone(), payload: payload.clone(), op: op.clone(), artifact, dir: dir.into(), fixed, line: c.start_position().row as u32 + 1, n: 1 };
+                    match built.is_empty() {
+                        true => touches.push(t),
+                        false => files.push((t, built.clone())),
+                    }
                 }
             }
         }
@@ -1456,7 +1504,88 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, type
     for t in touches {
         store.touch(id, t);
     }
-    handed
+    Linked { handed, files, args }
+}
+
+/// Which parameter of the function a call reaches each argument is handed to: positional
+/// arguments in order (after `self`), keyword arguments by name. A class's call reaches its
+/// `__init__`.
+fn arguments<'t>(modules: &'t IndexMap<String, Module>, store: &GraphBuilder, caller: &str, target: &str, c: TsNode<'t>, at: At<'_, 't>) -> Option<Arg<'t>> {
+    let callee = match store.nodes.get(target)?.kind {
+        NodeKind::Class => format!("{target}.__init__"),
+        _ => target.to_string(),
+    };
+    let cn = store.nodes.get(&callee)?;
+    let cm = modules.get(&cn.module)?;
+    let def = def_node(cm, cn)?;
+    let params = paths::parameters(def, &cm.src, cn.kind == NodeKind::Method);
+    let mut passed = vec![];
+    let mut i = 0;
+    for a in named_children(c.child_by_field_name("arguments")?).into_iter().filter(|a| a.kind() != "comment") {
+        match a.kind() {
+            "keyword_argument" => {
+                if let (Some(k), Some(v)) = (a.child_by_field_name("name"), a.child_by_field_name("value")) {
+                    passed.push((text(k, &at.m.src).to_string(), v));
+                }
+            }
+            "list_splat" | "dictionary_splat" => break,
+            _ => {
+                if let Some((p, _)) = params.get(i) {
+                    passed.push((p.clone(), a));
+                }
+                i += 1;
+            }
+        }
+    }
+    Some(Arg { caller: caller.to_string(), callee, module: at.m.id.clone(), scope: at.scope, passed })
+}
+
+/// Place the file calls: each path, with its function's parameters bound to what its callers
+/// hand them. Only the parameters a path depends on are followed, back through the callers'
+/// own parameters; a default counts where a call leaves its parameter out, and an entry's
+/// declared defaults count as its call.
+fn place_files(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, eval: &Eval, files: Vec<(String, Touch, Vec<Built>)>, args: &[Arg]) {
+    let needs = |b: &Built, f: &str| b.iter().filter_map(|s| if let Seg::Param(p) = s { Some((f.to_string(), p.clone())) } else { None }).collect::<Vec<_>>();
+    let mut queue: Vec<(String, String)> = files.iter().flat_map(|(f, _, bs)| bs.iter().flat_map(|b| needs(b, f)).collect::<Vec<_>>()).collect();
+    let mut seen: HashSet<(String, String)> = HashSet::new();
+    let mut passed: Vec<Passed> = vec![];
+    let mut base: HashMap<(String, String), Vec<Built>> = HashMap::new();
+    while let Some((f, p)) = queue.pop() {
+        if !seen.insert((f.clone(), p.clone())) {
+            continue;
+        }
+        let calls: Vec<&Arg> = args.iter().filter(|a| a.callee == f).collect();
+        for a in &calls {
+            let Some(&(_, node)) = a.passed.iter().find(|(q, _)| *q == p) else { continue };
+            let Some(m) = modules.get(&a.module) else { continue };
+            let caller_params: Vec<String> = a.scope.map(|s| paths::parameters(s, &m.src, false).into_iter().map(|(q, _)| q).collect()).unwrap_or_default();
+            let values = eval.of(At { m, scope: a.scope, params: &caller_params }, node, 0);
+            queue.extend(values.iter().flat_map(|b| needs(b, &a.caller)));
+            passed.push(Passed { caller: a.caller.clone(), callee: f.clone(), param: p.clone(), values });
+        }
+        // a default: where a call leaves the parameter out, or as an entry is run
+        let Some(n) = store.nodes.get(&f) else { continue };
+        let Some(m) = modules.get(&n.module) else { continue };
+        let Some(def) = def_node(m, n) else { continue };
+        let omitted = calls.is_empty() || calls.iter().any(|a| !a.passed.iter().any(|(q, _)| *q == p));
+        let declared = paths::parameters(def, &m.src, n.kind == NodeKind::Method).into_iter().find(|(q, _)| *q == p).and_then(|(_, d)| d);
+        let entry = n.entry.is_some().then(|| paths::entry_defaults(def, &m.src).into_iter().find(|(q, _)| *q == p).map(|(_, d)| d)).flatten();
+        for d in [entry, omitted.then_some(declared).flatten()].into_iter().flatten() {
+            base.entry((f.clone(), p.clone())).or_default().extend(eval.of(At { m, scope: None, params: &[] }, d, 0));
+        }
+    }
+    let values = paths::handed(&passed, base);
+    for (f, t, built) in files {
+        let mut placed: Vec<String> = built.iter().flat_map(|b| paths::bind(b, &f, &values)).filter_map(|b| paths::place(&b, &t.op)).collect();
+        placed.dedup();
+        if placed.is_empty() {
+            store.touch(&f, t);
+            continue;
+        }
+        for artifact in placed {
+            store.touch(&f, Touch { artifact, ..t.clone() });
+        }
+    }
 }
 
 /// Whether what a call gives back is used: anything but a call standing as a statement.

@@ -77,6 +77,7 @@ pub struct Value {
 pub struct Facts {
     callees: HashMap<(usize, usize), Vec<Callee>>,
     values: HashMap<(usize, usize), Value>,
+    defs: HashMap<(usize, usize), Target>,
 }
 
 impl Facts {
@@ -88,6 +89,11 @@ impl Facts {
     /// The type of the expression at `range`, when ty knows it.
     pub fn value(&self, range: (usize, usize)) -> Option<&Value> {
         self.values.get(&range)
+    }
+
+    /// Where the name or attribute at `range` is defined, as a reader's goto-definition finds it.
+    pub fn def(&self, range: (usize, usize)) -> Option<&Target> {
+        self.defs.get(&range)
     }
 }
 
@@ -449,6 +455,15 @@ impl<'e> Visitor<'e> for Reader<'_, '_> {
             ast::Expr::Name(n) if n.ctx.is_load() => {
                 if let Some(t) = self.value(expr) {
                     self.facts.values.insert(span(expr), t);
+                }
+                let defs = definitions_for_name(self.model, n.id.as_str(), AnyNodeRef::from(n), ImportAliasResolution::ResolveAliases);
+                if let Some(t) = defs.first().and_then(|d| self.target(d.focus_range(self.db))) {
+                    self.facts.defs.insert(span(expr), t);
+                }
+            }
+            ast::Expr::Attribute(a) if a.ctx.is_load() => {
+                if let Some(t) = definitions_for_attribute(self.model, a).first().and_then(|d| self.target(d.focus_range(self.db))) {
+                    self.facts.defs.insert(span(expr), t);
                 }
             }
             _ => {}

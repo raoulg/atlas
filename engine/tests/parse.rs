@@ -18,7 +18,7 @@ fn modules_classes_and_functions_are_found() {
     let g = fixture();
     assert_eq!(g.root, "fixture");
     let kinds = |k: NodeKind| g.nodes.iter().filter(|n| n.kind == k).count();
-    assert_eq!(kinds(NodeKind::Module), 9, "the package's seven, a root script and a notebook");
+    assert_eq!(kinds(NodeKind::Module), 10, "the package's eight, a root script and a notebook");
     assert!(g.node("fixture.sinks").unwrap().is_pkg);
     assert_eq!(g.node("fixture.schema.Graph").unwrap().doc, "Nodes and edges.");
     assert_eq!(g.node("fixture.sinks.duck.DuckSink").unwrap().bases, vec!["Sink", "Mixin"]);
@@ -373,4 +373,19 @@ fn a_client_is_a_door() {
     assert_eq!(g.node("ext:requests.Session").map(|n| n.door.as_str()), Some("net"));
     assert_eq!(g.node("ext:neo4j.Driver").map(|n| n.door.as_str()), Some("db_memgraph"));
     assert_eq!(g.node("ext:pandas.DataFrame").map(|n| n.door.as_str()), Some(""));
+}
+
+/// Two routes meet on the disk where one writes the place the other reads. A path is evaluated
+/// from the code: a constant (`DATA / "raw"`), what a parameter is handed (`unpack(.., out)`),
+/// an entry's declared default (`--out`). An unknown part of a path is a directory: what is
+/// made in `data/raw/{kind}/{archive}` and what lists `data/raw` meet at `data/raw/`; a file
+/// named under an unknown directory is that name under any (`data/*/report.json`).
+#[test]
+fn routes_meet_on_the_disk() {
+    let g = fixture();
+    let places = |id: &str| g.node(id).unwrap().touches.iter().map(|t| (t.kind.as_str(), t.artifact.as_str())).collect::<HashSet<_>>();
+    assert!(places("fixture.files.unpack").contains(&("disk_write", "data/raw/")), "{:?}", places("fixture.files.unpack"));
+    assert!(places("fixture.files.kinds").contains(&("disk_read", "data/raw/")), "{:?}", places("fixture.files.kinds"));
+    assert!(places("fixture.files.report").contains(&("disk_write", "data/*/report.json")), "{:?}", places("fixture.files.report"));
+    assert!(places("fixture.files.read_report").contains(&("disk_read", "data/*/report.json")), "{:?}", places("fixture.files.read_report"));
 }

@@ -114,8 +114,15 @@ Three things make `F` honest, and each is an engine task:
 2. In-place mutation hides arrows: a function that takes a hub type and calls a
    mutator on it is an endomorphism `Graph → Graph`, not `Graph → ()`.
 3. Disk is too coarse: `.env` and `assets/regelingen` are different resting places.
-   Artifacts are named by path pattern, and they connect the route that writes them
-   to the route that reads them.
+   A file's place is its path evaluated from the code: literals and constants,
+   `Path(..) / ..`, a property's or function's `return` (followed through ty's
+   definitions), and what a parameter is handed by its callers, carried back through
+   the callers' own parameters to an entry's declared default (`@click.option(..,
+   default=..)`). A file named under a directory that is not known is that name under
+   any (`artefacts/*/report.json`); a path whose last part is not known rests in the
+   directory before it, so what one route unpacks into `D/{kind}/{id}` and what another
+   lists in `D` meet at `D/`. The same place connects the route that writes it to the
+   route that reads it.
 
 Where the composition happens outside the package (vectormesh wires `VectorCache →
 Serial → Trainer` in scripts and notebooks), the resting places are types, the

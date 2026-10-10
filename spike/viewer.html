@@ -634,7 +634,8 @@ const WORLD_OUT = {disk_write: "Disk", db_memgraph: "Memgraph", db_duckdb: "Duck
 const WORLD = {...WORLD_IN, ...WORLD_OUT};
 // which side of a step a touch is on: a database statement's verb decides, otherwise the kind
 const isIn = t => t.dir ? t.dir === "read" : !!WORLD_IN[t.kind];
-// disk operations on the shape of the file system, not on the data in a file
+// disk operations on the shape of the file system, not on the data in a file; on a directory
+// that is a place of its own (`assets/regelingen/`), listing it reads it and making it writes it
 const PROBE = /^(exists|try_exists|is_file|is_dir|is_symlink|read_dir|iterdir|glob|rglob|listdir|scandir|walk|canonicalize|metadata|symlink_metadata|new|mkdir|makedirs|create_dir|create_dir_all)$/;
 function worldItem(kind, whats) {
   const ws = pickWhats((whats || {})[kind]);
@@ -996,7 +997,7 @@ function worldPlaceOf(t) {
   const k = t.kind, name = WORLD[k], base = "w:" + name;
   if (k === "process") return {id: base + ":" + (t.what || "process"), label: t.what || "process", short: t.what || "process", kind: "world"};
   if (k.startsWith("disk")) {
-    if (t.artifact && !PROBE.test(t.op || "")) return {id: "w:File:" + t.artifact, label: `File(${t.artifact})`, short: t.artifact, kind: "world"};
+    if (t.artifact && (!PROBE.test(t.op || "") || t.artifact.endsWith("/"))) return {id: "w:File:" + t.artifact, label: `File(${t.artifact})`, short: t.artifact, kind: "world"};
     const what = pickWhats({[t.what]: 1}, 1)[0];
     if (refined.has("w:Disk") && what) return {id: "w:Disk:" + what, label: `Disk(${what})`, short: what, kind: "world"};
     return isIn(t) ? {id: "w:Disk:in", label: "Disk in", short: "Disk in", kind: "world"} : {id: "w:Disk:out", label: "Disk out", short: "Disk out", kind: "world"};
