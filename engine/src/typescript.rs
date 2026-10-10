@@ -1432,6 +1432,7 @@ fn link_calls<'t>(m: &'t Module, modules: &'t IndexMap<String, Module>, store: &
             locals.insert(name.to_string(), r);
         }
     }
+    let param_types = locals.clone();
     for v in walk(body, &["variable_declarator"]).into_iter().filter(|v| mine(*v)) {
         let (Some(name), Some(value)) = (v.child_by_field_name("name"), v.child_by_field_name("value")) else { continue };
         if name.kind() != "identifier" {
@@ -1625,6 +1626,16 @@ fn link_calls<'t>(m: &'t Module, modules: &'t IndexMap<String, Module>, store: &
     for t in touches {
         store.touch(id, t);
     }
+    // what the body changes of its inputs: `T -> T` for the receiver or a parameter it changes;
+    // a constructor builds its object, it does not change it
+    if !is_module {
+        for r in changed_roots(body, src) {
+            let ty = if r == "this" { cls.clone().filter(|_| !id.ends_with(".__init__")) } else { param_types.get(r).cloned() };
+            if let Some(t) = ty {
+                store.add_edge(id, &t, EdgeKind::Mutates, Some(r.to_string()));
+            }
+        }
+    }
     if !is_module {
         let cmp = compares(body, src, &choices);
         if let Some(node) = store.nodes.get_mut(id) {
@@ -1651,6 +1662,43 @@ fn method_of_request<'t>(op: &str, args: &[TsNode<'t>], at: At<'_, 't>, eval: &E
         Some(v) => eval.of(at, v, 0),
         None => vec![crate::paths::lit("GET")],
     }
+}
+
+/// Methods that change their receiver: an array's, a map's or a set's.
+const MUTATORS: &[&str] = &["push", "pop", "shift", "unshift", "splice", "sort", "reverse", "fill", "copyWithin", "set", "delete", "clear", "add"];
+
+/// The name a chain like `this.items[0].x` starts from.
+fn chain_root<'a>(n: TsNode, src: &'a [u8]) -> Option<&'a str> {
+    match n.kind() {
+        "identifier" | "this" => Some(text(n, src)),
+        "member_expression" | "subscript_expression" => chain_root(n.child_by_field_name("object")?, src),
+        "non_null_expression" | "parenthesized_expression" => chain_root(named_children(n).into_iter().next()?, src),
+        _ => None,
+    }
+}
+
+/// The names whose objects a body changes in place: the root of every assignment to a member
+/// or an item (`this.x = ..`, `p.items[k] += ..`, `p.n++`, `delete p.k`), and of every call to a
+/// method that changes its receiver (`p.rows.push(..)`). Changing a part changes the whole.
+fn changed_roots<'a>(body: TsNode, src: &'a [u8]) -> HashSet<&'a str> {
+    let member = |n: TsNode| matches!(n.kind(), "member_expression" | "subscript_expression");
+    let mut out = HashSet::new();
+    for a in walk(body, &["assignment_expression", "augmented_assignment_expression"]) {
+        out.extend(a.child_by_field_name("left").filter(|l| member(*l)).and_then(|l| chain_root(l, src)));
+    }
+    for u in walk(body, &["update_expression", "unary_expression"]) {
+        let deletes = u.kind() == "update_expression" || (0..u.child_count()).filter_map(|i| u.child(i)).any(|c| c.kind() == "delete");
+        if deletes {
+            out.extend(u.child_by_field_name("argument").filter(|a| member(*a)).and_then(|a| chain_root(a, src)));
+        }
+    }
+    for c in walk(body, &["call_expression"]) {
+        let Some(f) = c.child_by_field_name("function").filter(|f| f.kind() == "member_expression") else { continue };
+        if f.child_by_field_name("property").map_or(false, |p| MUTATORS.contains(&text(p, src))) {
+            out.extend(f.child_by_field_name("object").and_then(|o| chain_root(o, src)));
+        }
+    }
+    out
 }
 
 /// Which parameter of the function a call reaches each argument is handed to, in order.

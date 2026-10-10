@@ -509,7 +509,7 @@ fn places(ix: &Index) -> Vec<Finding> {
 fn changes(ix: &Index) -> Vec<Finding> {
     let mut out = vec![];
     for e in ix.g.edges.iter().filter(|e| e.kind == EdgeKind::Mutates) {
-        let Some(input) = e.via.as_deref().filter(|v| *v != "self") else { continue };
+        let Some(input) = e.via.as_deref().filter(|v| !matches!(*v, "self" | "this")) else { continue };
         let Some(f) = ix.node(&e.src).filter(|f| is_function(f)) else { continue };
         let declared = f.params.iter().find(|p| param_name(p) == input).map_or(false, |p| p.split_once(':').map_or(false, |(_, t)| t.trim().starts_with("&mut")));
         if declared {

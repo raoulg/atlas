@@ -156,3 +156,17 @@ fn paths_and_requests_are_evaluated() {
     assert!(!has(&requests, "lib.klant.nieuw", "server.regels.regels.GET /:id"), "by its method");
     assert!(t("lib.klant.vraag").is_empty(), "a request to the package's own route is no place on the web");
 }
+
+/// A body that changes what it is handed (a member assigned, an item pushed) changes its input:
+/// `T -> T`, and `changes` asks about it; a constructor builds its object.
+#[test]
+fn a_change_to_an_input_is_a_change() {
+    let g = fixture();
+    let m = edges(&g, EdgeKind::Mutates);
+    assert!(has(&m, "lib.telling.verzamel", "lib.model.Regel"), "`uit.push(r)`: {m:?}");
+    assert!(has(&m, "lib.telling.hernoem", "lib.model.Regel"), "`regel.id = id`");
+    assert!(has(&m, "lib.telling.Teller.tel", "lib.telling.Teller"), "`this.aantal++`");
+    assert!(!m.iter().any(|(s, _)| s == "lib.telling.telAlles" || s == "lib.telling.Teller.__init__"), "{m:?}");
+    let asked: Vec<String> = check(&g).into_iter().filter(|f| f.principle == "changes").map(|f| f.what).collect();
+    assert!(asked.iter().any(|w| w.contains("verzamel")) && !asked.iter().any(|w| w.contains("Teller.tel")), "{asked:?}");
+}

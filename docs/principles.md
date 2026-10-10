@@ -183,9 +183,13 @@ in the signature, or not in the function.
   method of its own (`graph.add(node)`), or the function leaves its input alone and
   hands back a new value (`sorted(xs)` next to `xs.sort()`). A method that changes
   `self` is what methods are for.
+- **TypeScript.** The same as Python: a `Readonly<T>` parameter can promise no change, but
+  nothing promises one. A method that changes `this` is what methods are for; a function
+  that fills an array it is handed (`lines.push(..)`) can hand back the array instead.
 
-Atlas checks: a Python function that changes a parameter other than `self`, found from
-assignments to its attributes and items and from calls that change it.
+Atlas checks: a Python or TypeScript function that changes a parameter other than its
+receiver, found from assignments to its members and items and from calls that change it
+(`append`, `push`, `set`).
 
 goad: `BasePlot.plot_on(other_plot)` sets `other_plot.fig` and `other_plot.ax` from the
 outside, then asks it to plot. The question is whether `other_plot` could be told where
