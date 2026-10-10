@@ -804,7 +804,10 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crat
         let what = what_of(c, src, lit_kinds, "arguments");
         let payload = payload_of(c, src, &what, "arguments", locals);
         let fixed = effects::locates(f.kind) && starts_at_literal(c, src, lit_kinds, "arguments", effects::on_receiver(&op));
-        Touch { kind: f.kind.into(), what, payload, op: op.into(), artifact: f.artifact, dir: f.dir.into(), fixed, line: c.start_position().row as u32 + 1, n: 1 }
+        f.places()
+            .into_iter()
+            .map(|(artifact, dir)| Touch { kind: f.kind.into(), what: what.clone(), payload: payload.clone(), op: op.into(), artifact, dir: dir.into(), fixed, line: c.start_position().row as u32 + 1, n: 1 })
+            .collect::<Vec<_>>()
     };
     for mac in walk(body, &["macro_invocation"]) {
         let name = mac.child_by_field_name("macro").map(|x| text(x, src)).unwrap_or("");
@@ -851,7 +854,7 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crat
                 Some(r) => target = method_of(store, &r, &method).or_else(|| store.nodes.contains_key(&r).then(|| r.clone())),
                 None => {
                     if effects::RUST_PATH_READS.contains(&method.as_str()) {
-                        touches.push(touch(c, "disk_read", &method, &locals));
+                        touches.extend(touch(c, "disk_read", &method, &locals));
                     }
                     continue;
                 }
@@ -898,7 +901,7 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crat
                 let full = expand(m, &parts);
                 unresolved.push(full.iter().take(2).cloned().collect::<Vec<_>>().join("."));
                 if let Some(tag) = effects::boundary_rust(&full) {
-                    touches.push(touch(c, tag, parts.last().map(String::as_str).unwrap_or(""), &locals));
+                    touches.extend(touch(c, tag, parts.last().map(String::as_str).unwrap_or(""), &locals));
                 }
             }
         }

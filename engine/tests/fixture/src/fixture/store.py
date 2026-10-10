@@ -1,5 +1,6 @@
 """A store and its readers, found by the types of what holds them."""
 
+import sqlite3
 import zipfile
 
 import requests
@@ -109,3 +110,14 @@ def merged(graphs: list[Graph]) -> Graph:
     for g in graphs:
         out.add(g.first())
     return out
+
+
+class Ledger:
+    def __init__(self, path: str):
+        self.con = sqlite3.connect(path)
+
+    def keep(self, table: str) -> None:
+        self.con.execute("PRAGMA journal_mode=WAL")
+        self.con.execute("CREATE TABLE IF NOT EXISTS log (n INTEGER)")
+        self.con.execute("INSERT INTO log SELECT count(*) FROM nodes")
+        self.con.execute(f"DELETE FROM {table}")

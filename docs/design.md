@@ -102,7 +102,10 @@ Three things make `F` honest, and each is an engine task:
    the Python code says to its driver: a managed transaction (`execute_read`,
    `execute_write`), a routing or an access mode; what runs inside it goes the same way.
    A graph query's text is not read, and where the code says nothing the direction stays
-   open. A SQL statement's verb names its direction and table.
+   open. Python's own database interface (PEP 249) has only `execute(sql)`, so SQL is
+   read, by its grammar and in its database's dialect: a statement writes the table it
+   changes and reads the tables it takes from (`INSERT INTO a SELECT .. FROM b`), a
+   setting names no table, and a table filled in at run time is not named.
 2. In-place mutation hides arrows: a function that takes a hub type and calls a
    mutator on it is an endomorphism `Graph → Graph`, not `Graph → ()`.
 3. Disk is too coarse: `.env` and `assets/regelingen` are different resting places.

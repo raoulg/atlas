@@ -15,6 +15,7 @@ indexmap.workspace = true
 serde_yaml = "0.9"
 toml = "1"
 regex = "1"
+sqlparser = { version = "0.63", features = ["visitor"] }
 walkdir = "2"
 tree-sitter = "0.25"
 tree-sitter-python = "0.25"

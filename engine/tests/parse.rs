@@ -111,6 +111,16 @@ fn a_driver_says_which_way_the_data_goes() {
     assert_eq!((peek.dir.as_str(), peek.artifact.as_str()), ("", ""), "`session.run(\"MATCH (n:Graph) ..\")` says nothing in Python");
 }
 
+/// SQL is read by its grammar: a statement writes the table it changes and reads the ones it
+/// takes from; a setting names no table, and a table named at run time is not named.
+#[test]
+fn sql_names_the_tables_it_reads_and_writes() {
+    let g = fixture();
+    let sides = g.node("fixture.store.Ledger.keep").unwrap().touches.iter().filter(|t| t.kind == "db_sqlite").map(|t| (t.op.as_str(), t.artifact.as_str(), t.dir.as_str())).collect::<HashSet<_>>();
+    let expected: HashSet<_> = [("execute", "", ""), ("execute", "log", "write"), ("execute", "nodes", "read"), ("execute", "", "write")].into_iter().collect();
+    assert_eq!(sides, expected, "PRAGMA; CREATE TABLE IF NOT EXISTS log; INSERT INTO log SELECT .. FROM nodes; DELETE FROM {{table}}");
+}
+
 #[test]
 fn signatures_become_takes_and_returns() {
     let g = fixture();

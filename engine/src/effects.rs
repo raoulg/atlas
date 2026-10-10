@@ -2,6 +2,11 @@
 //! touch. The engine knows libraries, never a project.
 
 use std::collections::HashSet;
+use std::ops::ControlFlow;
+
+use sqlparser::ast::{visit_relations, Query, SetExpr, Statement, Visit, Visitor};
+use sqlparser::dialect::{Dialect, DuckDbDialect, GenericDialect, SQLiteDialect};
+use sqlparser::parser::Parser;
 
 const NET_PKGS: &[&str] = &["requests", "httpx", "urllib", "http", "socket", "aiohttp"];
 const LLM_PKGS: &[&str] = &["openai", "anthropic"];
@@ -207,11 +212,24 @@ pub fn screen_macro(name: &str) -> bool {
 
 /// What a boundary call is, once the string literals under it have been read: the part of the
 /// world it touches, which file or table it names, and whether a database is read or written.
+/// A statement that writes one table from others names them in `also`.
 #[derive(Debug, PartialEq)]
 pub struct Facts {
     pub kind: &'static str,
     pub artifact: String,
     pub dir: &'static str,
+    pub also: Vec<(String, &'static str)>,
+}
+
+impl Facts {
+    fn of(kind: &'static str, artifact: String, dir: &'static str) -> Facts {
+        Facts { kind, artifact, dir, also: vec![] }
+    }
+
+    /// Every place the call touches, with its direction: the first, then the others.
+    pub fn places(&self) -> Vec<(String, &'static str)> {
+        std::iter::once((self.artifact.clone(), self.dir)).chain(self.also.iter().cloned()).collect()
+    }
 }
 
 /// Refine a boundary by its literals: `open(p, "w")` writes, `to_csv(path)` writes a csv,
@@ -230,26 +248,28 @@ pub fn facts(kind: &'static str, pkg: Option<&str>, op: &str, literals: &[String
         kind
     };
     if kind.starts_with("db_") {
-        let Some((dir, table)) = literals.iter().find_map(|l| statement(l)).filter(|_| SQL_DBS.contains(&kind)) else {
-            return Facts { kind, artifact: String::new(), dir: access(kind, op, None) };
+        let sides = SQL_DBS.contains(&kind).then(|| sql(kind, literals)).flatten();
+        let Some(mut sides) = sides.filter(|s| !s.is_empty()) else {
+            return Facts::of(kind, String::new(), access(kind, op, None));
         };
-        return Facts { kind, artifact: table, dir };
+        let (artifact, dir) = sides.remove(0);
+        return Facts { kind, artifact, dir, also: sides };
     }
     if kind == "net" {
         // pretrained weights named by a local path are a file, by a name a download from the Hub
         if HUB_MODELS.contains(&op) {
             if let Some(local) = literals.first().filter(|l| l.starts_with(['.', '/', '~'])) {
-                return Facts { kind: "disk_read", artifact: local.clone(), dir: "" };
+                return Facts::of("disk_read", local.clone(), "");
             }
         }
         // a web place is named by its host; the Hub's operations say which way the files go
         let hub = HUB_READ.contains(&op) || HUB_WRITE.contains(&op) || HUB_MODELS.contains(&op);
         let artifact = if hub { HUB_HOST.to_string() } else { literals.iter().find_map(|l| host(l)).unwrap_or_default() };
         let dir = if HUB_WRITE.contains(&op) { "write" } else if hub { "read" } else { "" };
-        return Facts { kind, artifact, dir };
+        return Facts::of(kind, artifact, dir);
     }
     if !kind.starts_with("disk") {
-        return Facts { kind, artifact: String::new(), dir: "" };
+        return Facts::of(kind, String::new(), "");
     }
     let artifact = literals
         .iter()
@@ -258,7 +278,7 @@ pub fn facts(kind: &'static str, pkg: Option<&str>, op: &str, literals: &[String
         .or_else(|| literals.iter().find_map(|l| extension(l)).map(|e| format!("*.{e}")))
         .or_else(|| format_of(pkg, op).map(|f| format!("*.{f}")))
         .unwrap_or_default();
-    Facts { kind, artifact, dir: "" }
+    Facts::of(kind, artifact, "")
 }
 
 /// A file mode literal: `r`, `wb`, `a+`.
@@ -362,22 +382,139 @@ fn extension(s: &str) -> Option<String> {
     (ok && !s.contains(char::is_whitespace)).then(|| e.to_ascii_lowercase())
 }
 
-/// A SQL statement: whether it reads or writes, and the table it names. Any write verb makes it
-/// a write (`WITH .. INSERT`).
-pub fn statement(s: &str) -> Option<(&'static str, String)> {
-    const WRITE: &[&str] = &["insert", "update", "delete", "create", "merge", "copy", "drop", "alter", "replace", "upsert", "truncate"];
-    const READ: &[&str] = &["select", "with", "show", "describe", "pragma", "call", "explain"];
-    let words: Vec<String> = s.split(|c: char| !(c.is_alphanumeric() || c == '_')).filter(|w| !w.is_empty()).map(|w| w.to_ascii_lowercase()).collect();
-    let first = words.first()?;
-    if !WRITE.contains(&first.as_str()) && !READ.contains(&first.as_str()) {
-        return None;
-    }
-    let dir = if words.iter().any(|w| WRITE.contains(&w.as_str())) { "write" } else { "read" };
-    let table = words.windows(2).find(|w| matches!(w[0].as_str(), "into" | "from" | "update" | "table" | "join")).map(|w| w[1].clone());
-    Some((dir, table.unwrap_or_default()))
+/// What the SQL under a call does to the tables it names: each table with whether it is read or
+/// written, the written first. A literal that is not SQL says nothing. A statement split over
+/// several literals (`"SELECT a " "FROM t"`) is the longest run from its first literal that the
+/// grammar reads whole; the call's other literals (`timespec="seconds"`) are not part of it. A
+/// statement that names no table (a `PRAGMA`, `SET`, `INSTALL`, a transaction) has no sides.
+pub fn sql(kind: &str, literals: &[String]) -> Option<Vec<(String, &'static str)>> {
+    let start = literals.iter().position(|l| verb(l).is_some())?;
+    (start + 1..=literals.len()).rev().find_map(|end| parsed(kind, &literals[start..end].join(" "))).or_else(|| statement(kind, &literals[start]))
 }
 
-/// The databases whose statements are SQL, read for their verb and table.
+/// One SQL text read by its grammar, in its database's dialect. What the grammar cannot read
+/// keeps its leading verb (`INSERT` writes) and names no table.
+pub fn statement(kind: &str, text: &str) -> Option<Vec<(String, &'static str)>> {
+    parsed(kind, text).or_else(|| verb(text).map(|v| if v.is_empty() { vec![] } else { vec![(String::new(), v)] }))
+}
+
+/// Whether a text starts as SQL does: `write` for a verb that changes data or its shape, `read`
+/// for one that asks, nothing for a setting.
+fn verb(text: &str) -> Option<&'static str> {
+    let first = text.split_whitespace().next()?.to_ascii_lowercase();
+    let first = first.as_str();
+    [(WRITE_VERBS, "write"), (READ_VERBS, "read"), (SETTINGS, "")].into_iter().find(|(verbs, _)| verbs.contains(&first)).map(|(_, dir)| dir)
+}
+
+/// A SQL text the grammar reads whole: the sides of its statements.
+fn parsed(kind: &str, text: &str) -> Option<Vec<(String, &'static str)>> {
+    verb(text)?;
+    let sql = sql_holes(text);
+    let dialect: Box<dyn Dialect> = match kind {
+        "db_sqlite" => Box::new(SQLiteDialect {}),
+        "db_duckdb" => Box::new(DuckDbDialect {}),
+        _ => Box::new(GenericDialect {}),
+    };
+    let stmts = Parser::parse_sql(dialect.as_ref(), &sql).or_else(|_| Parser::parse_sql(&GenericDialect {}, &sql)).ok()?;
+    let mut out: Vec<(String, &'static str)> = stmts.iter().flat_map(sides).collect();
+    out.sort_by_key(|(_, d)| *d != "write");
+    out.dedup();
+    Some(out)
+}
+
+/// The verbs a statement starts with: those that change data or its shape, those that ask, and
+/// the settings around them.
+const WRITE_VERBS: &[&str] = &["insert", "update", "delete", "create", "merge", "copy", "drop", "alter", "replace", "upsert", "truncate"];
+const READ_VERBS: &[&str] = &["select", "with", "values", "show", "describe", "call"];
+const SETTINGS: &[&str] = &["pragma", "set", "install", "load", "begin", "commit", "rollback", "attach", "detach", "vacuum", "analyze", "explain", "checkpoint", "use"];
+
+/// A placeholder the code fills in at run time (`{tabel}`, `${t}`, `%s`) as a name the grammar
+/// accepts and Atlas does not take for a table.
+const HOLE: &str = "atlas_hole";
+fn sql_holes(text: &str) -> String {
+    static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let re = RE.get_or_init(|| regex::Regex::new(r"\$?\{[^{}]*\}|%\([A-Za-z_]\w*\)s|%s").unwrap());
+    let mut n = 0;
+    re.replace_all(text, |c: &regex::Captures| {
+        n += 1;
+        if c[0].starts_with('%') { "?".to_string() } else { format!("{HOLE}{n}") }
+    })
+    .into_owned()
+}
+
+/// The names a statement gives its own subqueries: `WITH t AS (..)` names `t`, not a table.
+struct Ctes(Vec<String>);
+
+impl Visitor for Ctes {
+    type Break = ();
+    fn pre_visit_query(&mut self, q: &Query) -> ControlFlow<()> {
+        self.0.extend(q.with.iter().flat_map(|w| w.cte_tables.iter().map(|c| c.alias.name.value.clone())));
+        ControlFlow::Continue(())
+    }
+}
+
+fn ctes(st: &Statement) -> Vec<String> {
+    let mut found = Ctes(vec![]);
+    let _ = st.visit(&mut found);
+    found.0
+}
+
+/// Every table a statement names, in the order it names them.
+fn relations(st: &Statement) -> Vec<String> {
+    let named = ctes(st);
+    let mut names: Vec<String> = vec![];
+    let _ = visit_relations(st, |n| {
+        names.push(n.0.iter().map(|p| p.to_string().trim_matches(['"', '`', '[', ']']).to_string()).collect::<Vec<_>>().join("."));
+        ControlFlow::<()>::Continue(())
+    });
+    names.retain(|n| !named.contains(n));
+    names
+}
+
+/// The tables one statement writes and reads: a statement that changes data writes the first
+/// table it names (`INSERT INTO a SELECT .. FROM b`) and reads the others; a query reads all of
+/// them; a setting names none.
+fn sides(st: &Statement) -> Vec<(String, &'static str)> {
+    // `WITH t AS (..) INSERT INTO b ..`: the change is the body; what `WITH` names it reads
+    if let Statement::Query(q) = st {
+        if let SetExpr::Insert(inner) | SetExpr::Update(inner) | SetExpr::Delete(inner) | SetExpr::Merge(inner) = q.body.as_ref() {
+            let named = ctes(st);
+            let mut out = sides(inner);
+            out.retain(|(n, _)| !named.contains(n));
+            let read: Vec<(String, &'static str)> = relations(st).into_iter().filter(|n| !n.contains(HOLE) && !out.iter().any(|(m, _)| m == n)).map(|n| (n, "read")).collect();
+            out.extend(read);
+            return out;
+        }
+    }
+    let mut names = relations(st);
+    if let Statement::Drop { names: dropped, .. } = st {
+        names = dropped.iter().map(|n| n.to_string().trim_matches(['"', '`']).to_string()).collect();
+    }
+    let writes = match st {
+        Statement::Query(_) => false,
+        Statement::Copy { to, .. } => !*to,
+        Statement::Insert(_)
+        | Statement::Update(_)
+        | Statement::Delete(_)
+        | Statement::Merge(_)
+        | Statement::CreateTable(_)
+        | Statement::CreateView(_)
+        | Statement::CreateIndex(_)
+        | Statement::AlterTable(_)
+        | Statement::Drop { .. }
+        | Statement::Truncate(_) => true,
+        _ => return vec![],
+    };
+    let dir = if writes { "write" } else { "read" };
+    let mut out: Vec<(String, &'static str)> = names.into_iter().enumerate().map(|(i, n)| (n, if writes && i == 0 { "write" } else { "read" })).filter(|(n, _)| !n.contains(HOLE)).collect();
+    // a table named at run time is unknown, but which way the statement goes is not
+    if !out.iter().any(|(_, d)| *d == dir) {
+        out.insert(0, (String::new(), dir));
+    }
+    out
+}
+
+/// The databases whose statements are SQL.
 const SQL_DBS: &[&str] = &["db_duckdb", "db_sqlite", "db_sql"];
 
 /// A graph database driver's calls that run queries.
@@ -460,13 +597,25 @@ mod tests {
         assert_eq!(facts("disk", None, "open", &lits(&["data.csv", "w"])).artifact, "data.csv");
     }
 
+    /// SQL is read by its grammar: a statement writes the table it changes and reads the ones it
+    /// takes from; a setting names no table; a name filled in at run time is no table.
     #[test]
-    fn statements_read_or_write_a_table() {
-        assert_eq!(statement("INSERT INTO nodes VALUES (?)"), Some(("write", "nodes".into())));
-        assert_eq!(statement("select * from edges where x = 1"), Some(("read", "edges".into())));
-        assert_eq!(statement("WITH t AS (SELECT 1) INSERT INTO log SELECT * FROM t"), Some(("write", "log".into())));
-        assert_eq!(statement("MATCH (n:Regeling) RETURN n"), None, "a graph query is not read: the driver call says which way");
-        assert_eq!(statement("hello world"), None);
+    fn statements_read_or_write_tables() {
+        let s = |kind: &str, text: &str| statement(kind, text).unwrap();
+        let t = |xs: &[(&str, &'static str)]| xs.iter().map(|(n, d)| (n.to_string(), *d)).collect::<Vec<_>>();
+        assert_eq!(s("db_sqlite", "INSERT INTO nodes VALUES (?)"), t(&[("nodes", "write")]));
+        assert_eq!(s("db_duckdb", "select * from edges e join nodes n on e.a = n.id"), t(&[("edges", "read"), ("nodes", "read")]));
+        assert_eq!(s("db_sqlite", "INSERT INTO log SELECT * FROM oordeel WHERE status = :s"), t(&[("log", "write"), ("oordeel", "read")]));
+        assert_eq!(s("db_sqlite", "WITH t AS (SELECT * FROM a) INSERT INTO b SELECT * FROM t"), t(&[("b", "write"), ("a", "read")]), "`t` names a subquery, not a table");
+        assert_eq!(s("db_sqlite", "CREATE TABLE IF NOT EXISTS oordeel (uuid TEXT PRIMARY KEY)"), t(&[("oordeel", "write")]));
+        assert_eq!(s("db_duckdb", "DROP TABLE IF EXISTS locaties"), t(&[("locaties", "write")]));
+        assert_eq!(s("db_sqlite", "PRAGMA user_version = 3"), t(&[]), "a setting names no table");
+        assert_eq!(s("db_sqlite", "PRAGMA journal_mode=WAL"), t(&[]), "nor when the grammar does not read it");
+        assert_eq!(s("db_sqlite", "ALTER TABLE {tabel} ADD COLUMN x TEXT"), t(&[("", "write")]), "a table named at run time");
+        assert_eq!(s("db_sqlite", "SELECT count(*) FROM {tabel}"), t(&[("", "read")]));
+        assert_eq!(statement("db_sqlite", "hello world"), None);
+        assert_eq!(sql("db_sqlite", &lits(&["SELECT a ", "FROM t"])), Some(t(&[("t", "read")])), "a statement split over literals");
+        assert_eq!(sql("db_sqlite", &lits(&["INSERT INTO verbruik (moment, ", "model) VALUES (?, ?)", "seconds"])), Some(t(&[("verbruik", "write")])), "and the call's other literals");
     }
 
     /// A graph database's direction is what the Python code says to the driver, never the query.
@@ -477,6 +626,6 @@ mod tests {
         assert_eq!(access("db_memgraph", "execute_query", Some("RoutingControl.READ")), "read");
         assert_eq!(access("db_memgraph", "session", Some("neo4j.WRITE_ACCESS")), "write");
         assert_eq!(access("db_memgraph", "run", None), "", "a query alone says nothing");
-        assert_eq!(facts("db_memgraph", Some("neo4j"), "run", &lits(&["MATCH (n:Regeling) RETURN n"])), Facts { kind: "db_memgraph", artifact: String::new(), dir: "" });
+        assert_eq!(facts("db_memgraph", Some("neo4j"), "run", &lits(&["MATCH (n:Regeling) RETURN n"])), Facts::of("db_memgraph", String::new(), ""));
     }
 }

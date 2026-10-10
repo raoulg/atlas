@@ -1692,8 +1692,10 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, know
                         }
                     }
                 }
-                let dir = if f.dir.is_empty() { said } else { f.dir };
-                touches.push(Touch { kind: f.kind.into(), what, payload, op, artifact: f.artifact, dir: dir.into(), fixed, line: c.start_position().row as u32 + 1, n: 1 });
+                for (artifact, dir) in f.places() {
+                    let dir = if dir.is_empty() { said } else { dir };
+                    touches.push(Touch { kind: f.kind.into(), what: what.clone(), payload: payload.clone(), op: op.clone(), artifact, dir: dir.into(), fixed, line: c.start_position().row as u32 + 1, n: 1 });
+                }
             }
         }
         // what a body runs inside the session or transaction it opened goes the way it said

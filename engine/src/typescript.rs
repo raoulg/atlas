@@ -1156,17 +1156,19 @@ fn link_calls(m: &Module, modules: &IndexMap<String, Module>, store: &mut GraphB
                             let what = what_of(c, src, kinds, "arguments");
                             let payload = payload_of(c, src, &what, "arguments", &HashMap::new());
                             let fixed = effects::locates(f.kind) && starts_at_literal(c, src, kinds, "arguments", effects::on_receiver(&op));
-                            touches.push(Touch {
-                                kind: f.kind.into(),
-                                what,
-                                payload,
-                                op,
-                                artifact: f.artifact,
-                                dir: f.dir.into(),
-                                fixed,
-                                line: c.start_position().row as u32 + 1,
-                                n: 1,
-                            });
+                            for (artifact, dir) in f.places() {
+                                touches.push(Touch {
+                                    kind: f.kind.into(),
+                                    what: what.clone(),
+                                    payload: payload.clone(),
+                                    op: op.clone(),
+                                    artifact,
+                                    dir: dir.into(),
+                                    fixed,
+                                    line: c.start_position().row as u32 + 1,
+                                    n: 1,
+                                });
+                            }
                         }
                     }
                 }
