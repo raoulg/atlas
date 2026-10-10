@@ -74,8 +74,12 @@ Read it from left to right:
   in focus, the types that cross between them and the places they touch, and joins the
   rest of the code by counted arrows on either side. Click the rest to open it into the
   packages that hand the focus data or take data from it, and click one of those to add
-  it to the focus; the inspector lists them too.
+  it to the focus. The state bar names the packages around the focus, the most exchanged
+  first, to add with one click.
 - **Double-click a box** to pin its lines, to study or compare what it connects.
+- **Space over a box** shows its details and code over the picture while the code panel is
+  closed; space, Esc or a click on the picture puts them away, and **pin** keeps the panel
+  open beside the picture.
 
 Story shows the same route as a list. Each step has its own signature and its own effects
 (`writes html → out`, `runs open`). A choice is lettered (`2a | 2b | 2c`). The dots on the
