@@ -10,7 +10,7 @@ use std::path::Path;
 
 use serde::Serialize;
 
-use crate::language::author_declares;
+use crate::language::{author_declares, door_may_omit_return};
 use crate::model::{Edge, EdgeKind, EntryKind, Graph, Node, NodeKind};
 
 /// A principle by its id and what it asks of code.
@@ -265,13 +265,15 @@ fn doors(ix: &Index) -> Vec<Finding> {
         }
     }
     for f in door_fns(ix) {
+        // a function handed to a call where it is declared takes its parameters' types from the call
         let untyped: Vec<String> = f
             .params
             .iter()
-            .filter(|p| !p.contains(':') && !is_receiver(p) && !p.starts_with('*'))
+            .filter(|p| f.typed_by.is_empty() && !p.contains(':') && !is_receiver(p) && !p.starts_with('*'))
             .map(|p| format!("`{}`", param_name(p)))
             .collect();
-        let gives_unknown = declared && f.returns.is_empty() && f.name != "__init__";
+        // a constructor gives its class: TypeScript's is `constructor`, the graph's `__init__`
+        let gives_unknown = door_may_omit_return(&g.language) && f.returns.is_empty() && !f.id.ends_with(".__init__");
         if untyped.is_empty() && !gives_unknown {
             continue;
         }

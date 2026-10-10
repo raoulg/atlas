@@ -105,3 +105,36 @@ fn principles_read_typescript() {
     let fs = check(&fixture());
     assert!(fs.iter().any(|f| f.principle == "choices" && f.node == "fixture-ts.lib.api.kies"), "{fs:#?}");
 }
+
+/// A server's routes are its registration calls, at the full path of the routers they are
+/// mounted on; a script that runs a file of the package is a command; what the package's
+/// entry exports is its library.
+#[test]
+fn a_server_registers_its_routes() {
+    let g = fixture();
+    let entry = |id: &str| g.node(&format!("fixture-ts.{id}")).and_then(|n| n.entry.clone()).map(|e| (e.kind, e.label));
+    assert_eq!(entry("server.app.GET /api/health"), Some((EntryKind::Route, "GET /api/health".into())));
+    assert_eq!(entry("server.regels.regels.GET /:id"), Some((EntryKind::Route, "GET /api/regels/{id}".into())), "`app.route(\"/api/regels\", regels)`");
+    assert_eq!(entry("server.regels.regels.POST /"), Some((EntryKind::Route, "POST /api/regels".into())));
+    assert!(g.node("fixture-ts.server.regels.regels").is_none(), "a router is no function");
+    assert_eq!(entry("server"), Some((EntryKind::Cli, "dev · serve".into())), "the scripts that run server/index.ts");
+    assert_eq!(entry("lib.api.laad"), Some((EntryKind::Export, "laad".into())), "`exports` → lib/index.ts → `export *`");
+    assert_eq!(entry("lib.model.Laag"), Some((EntryKind::Export, "Kaartlaag".into())), "`export {{ Laag as Kaartlaag }}`");
+    assert_eq!(entry("lib.thema.thema"), None, "not exported by the entry");
+}
+
+/// A client a package makes moves data where it is used: a pool's query reaches the database
+/// by its statement, an SDK's client asks the model (its helpers do not), a promisified
+/// `execFile` runs a program, the browser's storage keeps a key, a socket connects.
+#[test]
+fn a_client_moves_data_where_it_is_used() {
+    let g = fixture();
+    let t = |id: &str| g.node(&format!("fixture-ts.{id}")).unwrap().touches.iter().map(|t| (t.kind.clone(), t.op.clone(), t.artifact.clone(), t.dir.clone())).collect::<Vec<_>>();
+    let post = t("server.regels.regels.POST /");
+    assert!(post.contains(&("db_sql".into(), "query".into(), "regels".into(), "write".into())), "{post:?}");
+    assert!(post.iter().any(|x| x.0 == "process" && x.1 == "run"), "`promisify(execFile)`: {post:?}");
+    assert_eq!(t("server.regels.vat"), [("llm".into(), "create".into(), String::new(), String::new())], "the client, not `zodOutputFormat`");
+    assert_eq!(t("lib.thema.thema"), [("db_kv".into(), "getItem".into(), "thema".into(), "read".into())]);
+    assert!(t("lib.thema.bewaar").contains(&("screen".into(), "write".into(), String::new(), String::new())), "process.stdout");
+    assert_eq!(t("lib.thema.luister"), [("net".into(), "WebSocket".into(), "live.example.org".into(), String::new())]);
+}

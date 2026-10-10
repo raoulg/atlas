@@ -88,7 +88,20 @@ fn rust_db(krate: &str) -> &'static str {
 
 const RUST_NET: &[&str] = &["reqwest", "ureq", "hyper", "tungstenite", "tokio_tungstenite", "curl", "axum", "TcpStream", "TcpListener"];
 const RUST_DB: &[&str] = &["rusqlite", "sqlx", "diesel", "duckdb", "postgres", "tokio_postgres", "sea_orm"];
-const TS_NET: &[&str] = &["axios", "ky", "ofetch", "node-fetch", "undici", "got"];
+const TS_NET: &[&str] = &["axios", "ky", "ofetch", "node-fetch", "undici", "got", "ws"];
+const TS_LLM: &[&str] = &["@anthropic-ai/sdk", "openai", "@google/generative-ai", "@google/genai", "@mistralai/mistralai", "ollama"];
+
+/// The database an npm package is a driver or an ORM for.
+fn ts_db(pkg: &str) -> Option<&'static str> {
+    match pkg {
+        "pg" | "postgres" | "mysql2" | "mysql" | "@prisma/client" | "drizzle-orm" | "kysely" | "knex" | "@neondatabase/serverless" => Some("db_sql"),
+        "better-sqlite3" | "sqlite3" | "sqlite" | "@libsql/client" => Some("db_sqlite"),
+        "duckdb" | "@duckdb/node-api" | "@duckdb/duckdb-wasm" => Some("db_duckdb"),
+        "neo4j-driver" => Some("db_graph"),
+        "redis" | "ioredis" | "@upstash/redis" | "idb-keyval" => Some("db_kv"),
+        _ => None,
+    }
+}
 
 /// The part of the world a library's calls reach, for a library that is a client of one: a
 /// database, the network, a language model, a process. A value of its types is a door to that
@@ -103,11 +116,14 @@ pub fn library_place(pkg: &str) -> Option<&'static str> {
     if RUST_DB.contains(&pkg) {
         return Some(rust_db(pkg));
     }
-    if LLM_PKGS.contains(&pkg) {
+    if LLM_PKGS.contains(&pkg) || TS_LLM.contains(&pkg) {
         return Some("llm");
     }
+    if let Some(db) = ts_db(pkg) {
+        return Some(db);
+    }
     match pkg {
-        "subprocess" | "child_process" => Some("process"),
+        "subprocess" | "child_process" | "execa" => Some("process"),
         _ => None,
     }
 }
@@ -235,8 +251,14 @@ pub fn boundary_ts(pkg: Option<&str>, parts: &[String]) -> Option<&'static str> 
     let last = parts.last().map(String::as_str).unwrap_or("");
     match pkg {
         None if matches!(parts, [f] if f == "fetch") || (matches!(head, "window" | "globalThis") && last == "fetch") => Some("net"),
-        None if head == "console" => Some("screen"),
-        Some(p) if TS_NET.contains(&p) => Some("net"),
+        None if head == "console" || (head == "process" && matches!(parts.get(1).map(String::as_str), Some("stdout" | "stderr"))) => Some("screen"),
+        // the browser's own key-value stores
+        None if matches!(head, "localStorage" | "sessionStorage") && matches!(last, "getItem" | "setItem" | "removeItem" | "clear") => Some("db_kv"),
+        // building a client moves nothing: `axios.create(..)`
+        Some(_) if matches!(last, "create" | "createClient") && parts.len() == 2 && !TS_LLM.contains(&pkg.unwrap_or("")) => None,
+        // a request, by its verb, or the package called as one (`got(url)`); a response read moves nothing
+        Some(p) if TS_NET.contains(&p) => (parts.len() == 1 || NET_OPS.contains(&last) || last == "fetch").then_some("net"),
+        Some(p) if library_place(p).is_some() => library_place(p),
         Some("fs" | "fs/promises") => {
             const READS: &[&str] = &["readFile", "readFileSync", "readdir", "readdirSync", "createReadStream", "existsSync", "stat", "statSync", "access"];
             const WRITES: &[&str] = &[
@@ -251,7 +273,7 @@ pub fn boundary_ts(pkg: Option<&str>, parts: &[String]) -> Option<&'static str> 
                 None
             }
         }
-        Some("child_process") => Some("process"),
+        Some("child_process" | "execa") => Some("process"),
         _ => None,
     }
 }
@@ -304,7 +326,9 @@ pub fn facts(kind: &'static str, pkg: Option<&str>, op: &str, literals: &[String
     if kind.starts_with("db_") {
         let sides = SQL_DBS.contains(&kind).then(|| sql(kind, literals)).flatten();
         let Some(mut sides) = sides.filter(|s| !s.is_empty()) else {
-            return Facts::of(kind, String::new(), access(kind, op, None));
+            // a key-value store's place is the key it is handed
+            let key = if kind == "db_kv" { literals.first().cloned().unwrap_or_default() } else { String::new() };
+            return Facts::of(kind, key, access(kind, op, None));
         };
         let (artifact, dir) = sides.remove(0);
         return Facts { kind, artifact, dir, also: sides };
@@ -583,6 +607,16 @@ const SQL_DBS: &[&str] = &["db_duckdb", "db_sqlite", "db_sql"];
 /// (`driver.session(default_access_mode=READ_ACCESS)`). The query's own text is not read;
 /// where the code says nothing, the direction stays open.
 pub fn access(kind: &str, op: &str, mode: Option<&str>) -> &'static str {
+    if kind == "db_kv" {
+        let op = op.to_ascii_lowercase();
+        return if ["get", "mget", "hget", "keys", "scan", "exists"].iter().any(|r| op.starts_with(r)) {
+            "read"
+        } else if ["set", "mset", "hset", "del", "remove", "clear", "incr", "decr", "expire", "lpush", "rpush", "sadd"].iter().any(|w| op.starts_with(w)) {
+            "write"
+        } else {
+            ""
+        };
+    }
     if kind != "db_graph" {
         return "";
     }

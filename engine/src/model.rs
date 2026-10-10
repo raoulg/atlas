@@ -118,6 +118,10 @@ pub struct Node {
     /// TypeScript `static` method.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub on_class: bool,
+    /// For a function handed to a call where it is declared (`memo((props) => ..)`,
+    /// `createServerFn(..).handler(..)`): the call, which gives its parameters their types.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub typed_by: String,
     /// Where the body compares a value with literals.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub compares: Vec<Compare>,

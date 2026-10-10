@@ -117,7 +117,8 @@ Atlas reads:
 - **Python**, including notebooks (`.ipynb` in `notebooks/`, `scripts/`, `examples/`), with
   its types from [ty](https://docs.astral.sh/ty/);
 - **Rust**, including workspaces;
-- **TypeScript and TSX**: React components, TanStack routes and server functions, `tsconfig` paths.
+- **TypeScript and TSX**: React components, server routes (Hono, Express, Fastify), TanStack
+  routes and server functions, `tsconfig` paths.
 
 A repository can hold several parts: a Python API and a TypeScript app, the crates of a
 workspace. Atlas finds every `Cargo.toml`, `pyproject.toml` and `package.json` itself and
@@ -156,11 +157,14 @@ precise as the code's annotations. It sees best when:
 
 Entry points come from the code itself. Atlas finds:
 
-- `[project.scripts]`, `package.json` `bin` and a Rust binary's `main`;
+- `[project.scripts]`, `package.json` `bin` and scripts that run a file of the package, and a
+  Rust binary's `main`;
 - commands (`@app.command`, as in click and typer);
-- web routes (`@app.get("/…")`, as in FastAPI, and TanStack file routes);
+- web routes (`@app.get("/…")` as in FastAPI, `app.get("/…", handler)` as in Hono and Express,
+  each at the full path of the routers it is mounted on, and TanStack file routes);
 - MCP tools, Makefile targets, scripts, notebooks and tests;
-- what a library exports: at its root, and in Rust also through `pub mod` and `pub use`.
+- what a library exports: at its root (in TypeScript the module `package.json` points to), and
+  in Rust also through `pub mod` and `pub use`.
 
 ### Check: the picture as a list of questions
 

@@ -198,14 +198,17 @@ atlas/
 `returns`, `has`, `reads`, `writes`, `mutates`, `variant`, `requests`; later `yields`,
 `raises`, `decorates`.
 
-**Entry points** — CLI commands, API routes, MCP tools (by decorator),
-`[project.scripts]`, Makefile targets (recipes resolved to the commands they run),
+**Entry points** — CLI commands, API routes, MCP tools (by decorator), a router's
+registration calls (`app.get("/x", handler)`, at the prefixes of `app.route("/api", sub)`;
+an inline handler is a function named by its route), `[project.scripts]`, `package.json`
+`bin` and the scripts that run a file of the package, Makefile targets (recipes resolved to the commands they run),
 scripts next to the package and in `scripts/`, `examples/`, `demo/`, notebooks, and what
 a package exports (`__all__` or the public names its root `__init__.py` binds, and the
 `__all__` of each public subpackage, as `components.Serial`; the `pub` items of a library
 crate's root and of the modules it makes public with `pub mod`, as `view::hide_private`, and
-the names a public module re-exports with `pub use`). A re-exported name is followed to where
-it is defined. Each is the
+the names a public module re-exports with `pub use`; the names exported by the module a
+`package.json` points to with `exports`, `module` or `main`). A re-exported name is followed to
+where it is defined. Each is the
 start of a route; an exported class is a route whose steps are its public methods.
 
 **Parts** — a repository is one or more parts: what one manifest roots (`Cargo.toml`,
@@ -314,7 +317,11 @@ type that made it, through the locals that hold it: building (`new`, `builder()`
 `build()`, `default`) moves nothing, and the value moves data where it is used
 (`client.get(url).send()`, `OpenOptions::new().append(true).open(p)` writes). A value whose
 making touched a place (`File::open(p)`, `Command::new("git")`) is at that place; a call on it
-adds one only when it names its own (`conn.execute("INSERT INTO log ..")`). Artifacts by path
+adds one only when it names its own (`conn.execute("INSERT INTO log ..")`). In TypeScript a
+client is what a package's constructor or `create…` factory made (`new Pool()`,
+`new Anthropic()`, `axios.create()`): a call on it is the package's, and a language model is
+asked only through one. The browser's `localStorage` is a key-value store, keyed by the literal
+it is handed; a URL without a host is the page's own origin. Artifacts by path
 pattern, hub types by arrow count, mutation detection, and the effect signature
 `F: Graph → W` per function and per route. This is the functor behind the plaat.
 

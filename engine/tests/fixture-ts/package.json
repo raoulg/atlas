@@ -2,5 +2,11 @@
   "name": "fixture-ts",
   "private": true,
   "type": "module",
-  "bin": { "fixture": "./src/cli.ts" }
+  "bin": { "fixture": "./src/cli.ts" },
+  "exports": "./src/lib/index.ts",
+  "scripts": {
+    "dev": "NO_OPEN=1 tsx watch src/server/index.ts",
+    "serve": "tsx src/server/index.ts",
+    "build": "vite build"
+  }
 }

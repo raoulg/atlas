@@ -78,6 +78,13 @@ pub fn author_declares(language: &str) -> bool {
     language == "python"
 }
 
+/// Whether a door's signature may leave out what it gives: Python's may, and TypeScript infers
+/// it, which a reader of the declaration does not see (`isolatedDeclarations` asks for it).
+/// Rust's compiler asks for every type.
+pub fn door_may_omit_return(language: &str) -> bool {
+    matches!(language, "python" | "typescript")
+}
+
 /// All known languages, in detection order.
 pub fn languages() -> Vec<Box<dyn Language>> {
     vec![Box::new(Rust), Box::new(Python), Box::new(TypeScript)]

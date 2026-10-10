@@ -31,8 +31,13 @@ const CONTAINERS: &[&str] = &[
     "Promise", "Array", "ReadonlyArray", "Set", "ReadonlySet", "Map", "ReadonlyMap", "Record", "Partial", "Required", "Readonly",
     "Pick", "Omit", "NonNullable", "Awaited", "Iterable", "AsyncIterable", "Generator", "AsyncGenerator",
 ];
-/// Packages whose types are how code is written, not places data rests.
-const PLAIN_PACKAGES: &[&str] = &["react", "react-dom", "zod"];
+/// Packages whose types describe the code rather than data it moves: a UI framework's
+/// components and props, a schema library's schemas.
+const CODE_PACKAGES: &[&str] = &["react", "react-dom", "preact", "vue", "svelte", "solid-js", "zod", "yup", "valibot", "superstruct", "io-ts"];
+/// Web frameworks whose router registers a route by a call: `app.get("/x", handler)`.
+const ROUTERS: &[&str] = &["hono", "express", "fastify", "koa-router", "@koa/router", "elysia", "itty-router", "h3"];
+/// A router's registration calls, by HTTP method.
+const VERBS: &[&str] = &["get", "post", "put", "delete", "patch", "all"];
 
 #[derive(Clone, Debug)]
 enum Bound {
@@ -62,6 +67,14 @@ struct Module {
     values: HashMap<String, Vec<String>>,
     /// Names a body imports when it runs: `const { ApiProvider } = await import("./api-provider")`.
     dynamic: HashMap<String, Bound>,
+    /// The names the module exports: `export function`, `export { a as b }`, `export * from`.
+    exported: Vec<String>,
+    /// Module-level values that are a web framework's router: `const app = new Hono()`.
+    routers: HashSet<String>,
+    /// Route handlers by the router they are registered on: (handler id, router name).
+    routes: Vec<(String, String)>,
+    /// Routers mounted on another under a prefix: (router, prefix, mounted router).
+    mounts: Vec<(String, String, String)>,
 }
 
 /// Does this look like a JavaScript or TypeScript package: a `package.json` with a
@@ -383,14 +396,22 @@ pub fn parse(repo: &Path) -> Result<(GraphBuilder, String)> {
                 ext_pkgs: HashSet::new(),
                 values: HashMap::new(),
                 dynamic: HashMap::new(),
+                exported: vec![],
+                routers: HashSet::new(),
+                routes: vec![],
+                mounts: vec![],
             },
         );
     }
     for m in modules.values_mut() {
-        collect_symbols(m, &mut store);
         collect_imports(m, &aliases, &files);
+        collect_wrapped(m);
+        collect_symbols(m, &mut store);
+        collect_routes(m, &mut store);
     }
+    route_prefixes(&modules, &mut store);
     mark_bins(repo, &files, &mut store);
+    mark_exports(repo, &files, &modules, &mut store);
     link(&modules, &mut store);
     Ok((store, root))
 }
@@ -489,8 +510,11 @@ fn collect_symbols(m: &mut Module, store: &mut GraphBuilder) {
     let tree = m.tree.clone();
     let src = m.src.clone();
     let mut route: Option<String> = None;
-    for (d, _exported, default) in declarations(tree.root_node()) {
+    for (d, exported, default) in declarations(tree.root_node()) {
         let name = d.child_by_field_name("name").map(|n| text(n, &src).to_string()).unwrap_or_default();
+        if exported && !name.is_empty() {
+            m.exported.push(name.clone());
+        }
         match d.kind() {
             "function_declaration" | "generator_function_declaration" | "function_expression" | "function" if !name.is_empty() => {
                 let body = d.child_by_field_name("body").unwrap_or(d);
@@ -593,6 +617,14 @@ fn collect_symbols(m: &mut Module, store: &mut GraphBuilder) {
                         continue;
                     }
                     let vname = text(n, &src).to_string();
+                    if exported {
+                        m.exported.push(vname.clone());
+                    }
+                    // a router is a value its registrations hand routes to, not a function
+                    if router_made(value, m, &src) {
+                        m.routers.insert(vname);
+                        continue;
+                    }
                     let Some(f) = function_in(value) else {
                         let declared = v.child_by_field_name("type").and_then(|t| named_children(t).into_iter().next()).map(|t| type_head(t, &src));
                         let built = (value.kind() == "new_expression").then(|| value.child_by_field_name("constructor").map(|c| member_parts(c, &src))).flatten();
@@ -602,6 +634,12 @@ fn collect_symbols(m: &mut Module, store: &mut GraphBuilder) {
                         continue;
                     };
                     let id = add_function(m, store, &vname, d, f, value, None);
+                    // an arrow handed to a call takes its parameters' types from the call
+                    if f.id() != value.id() {
+                        if let (Some(n), Some(call)) = (store.nodes.get_mut(&id), f.parent().and_then(|a| a.parent()).filter(|c| c.kind() == "call_expression")) {
+                            n.typed_by = call.child_by_field_name("function").map(|x| text(x, &src).to_string()).unwrap_or_default();
+                        }
+                    }
                     store.add_edge(&m.id.clone(), &id, EdgeKind::Contains, None);
                     m.symbols.insert(vname, id);
                 }
@@ -703,6 +741,7 @@ fn collect_imports(m: &mut Module, aliases: &[(String, PathBuf)], files: &HashMa
                 for s in walk(st, &["export_specifier"]) {
                     let (Some(n), alias) = (s.child_by_field_name("name"), s.child_by_field_name("alias")) else { continue };
                     let target = format!("{}.{}", m.id, text(n, &src));
+                    m.exported.push(text(alias.unwrap_or(n), &src).to_string());
                     if let Some(a) = alias {
                         m.bindings.insert(text(a, &src).to_string(), Bound::Own(target));
                     }
@@ -759,6 +798,7 @@ fn collect_imports(m: &mut Module, aliases: &[(String, PathBuf)], files: &HashMa
                 for s in specs {
                     let Some(n) = s.child_by_field_name("name") else { continue };
                     let local = s.child_by_field_name("alias").unwrap_or(n);
+                    m.exported.push(text(local, &src).to_string());
                     m.bindings.insert(text(local, &src).to_string(), member(Some(text(n, &src))));
                 }
             }
@@ -767,7 +807,14 @@ fn collect_imports(m: &mut Module, aliases: &[(String, PathBuf)], files: &HashMa
     }
 }
 
-/// `package.json` `bin`: each command is a CLI route into the module it runs.
+/// The module a path in `package.json` names, with or without its extension.
+fn module_at(repo: &Path, path: &str, files: &HashMap<PathBuf, String>) -> Option<String> {
+    let p = normalize(&repo.join(path));
+    files.get(&p).cloned().or_else(|| files.iter().find(|(f, _)| f.with_extension("") == p.with_extension("")).map(|(_, id)| id.clone()))
+}
+
+/// `package.json` `bin`, and each script that runs a file of the package (`tsx server/index.ts`):
+/// a command, a CLI route into the module it runs. Scripts that run one module name it together.
 fn mark_bins(repo: &Path, files: &HashMap<PathBuf, String>, store: &mut GraphBuilder) {
     let Ok(text) = std::fs::read_to_string(repo.join("package.json")) else { return };
     let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) else { return };
@@ -777,10 +824,244 @@ fn mark_bins(repo: &Path, files: &HashMap<PathBuf, String>, store: &mut GraphBui
         _ => vec![],
     };
     for (name, path) in bins {
-        let p = normalize(&repo.join(&path));
-        let id = files.get(&p).cloned().or_else(|| files.iter().find(|(f, _)| f.with_extension("") == p.with_extension("")).map(|(_, id)| id.clone()));
-        if let Some(n) = id.and_then(|id| store.nodes.get_mut(&id)) {
+        if let Some(n) = module_at(repo, &path, files).and_then(|id| store.nodes.get_mut(&id)) {
             n.entry = Some(Entry { kind: EntryKind::Cli, label: name });
+        }
+    }
+    let mut scripts: IndexMap<String, Vec<String>> = IndexMap::new();
+    for (name, cmd) in json["scripts"].as_object().into_iter().flatten() {
+        let Some(cmd) = cmd.as_str() else { continue };
+        if let Some(id) = cmd.split_whitespace().find_map(|w| module_at(repo, w.trim_matches(['"', '\'']), files)) {
+            scripts.entry(id).or_default().push(name.clone());
+        }
+    }
+    for (id, mut names) in scripts {
+        names.sort_by_key(|n| (n.len(), n.clone()));
+        if let Some(n) = store.nodes.get_mut(&id).filter(|n| n.entry.is_none()) {
+            n.entry = Some(Entry { kind: EntryKind::Cli, label: names.join(" · ") });
+        }
+    }
+}
+
+/// What a package exports is a route into it: the names its entry module exports, the module
+/// `package.json` points to (`exports`, `module`, `main`) or else the index at its root. A
+/// name re-exported is followed to where it is defined.
+fn mark_exports(repo: &Path, files: &HashMap<PathBuf, String>, modules: &IndexMap<String, Module>, store: &mut GraphBuilder) {
+    let json = std::fs::read_to_string(repo.join("package.json")).ok().and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok()).unwrap_or_default();
+    let dot = |v: &serde_json::Value| -> Option<String> {
+        match v {
+            serde_json::Value::String(s) => Some(s.clone()),
+            serde_json::Value::Object(o) => ["import", "default", "types", "require"].iter().find_map(|k| o.get(*k).and_then(|x| x.as_str()).map(str::to_string)),
+            _ => None,
+        }
+    };
+    let declared = [json["exports"].get(".").and_then(dot), dot(&json["exports"]), json["module"].as_str().map(str::to_string), json["main"].as_str().map(str::to_string)];
+    let root = files.values().find(|id| modules.get(*id).map_or(false, |m| m.path.file_stem().and_then(|s| s.to_str()) == Some("index") && !id.contains('.'))).cloned();
+    let Some(entry) = declared.into_iter().flatten().find_map(|p| module_at(repo, &p, files)).or(root) else { return };
+    let mut names: Vec<(String, String)> = vec![];
+    let mut stack = vec![(entry.clone(), 0)];
+    while let Some((mid, depth)) = stack.pop() {
+        let Some(m) = modules.get(&mid) else { continue };
+        names.extend(m.exported.iter().map(|n| (n.clone(), format!("{mid}.{n}"))));
+        if depth < 8 {
+            stack.extend(m.wildcards.iter().map(|w| (w.clone(), depth + 1)));
+        }
+    }
+    for (name, target) in names {
+        let Some(id) = defined(&target, modules, &store.nodes, 0) else { continue };
+        if let Some(n) = store.nodes.get_mut(&id).filter(|n| matches!(n.kind, NodeKind::Function | NodeKind::Class) && n.entry.is_none()) {
+            n.entry = Some(Entry { kind: EntryKind::Export, label: name });
+        }
+    }
+}
+
+/// Whether a value is made by a web framework's router: `new Hono()`, `express()`,
+/// `express.Router()`, and the chain of registrations on it (`new Hono().get(..).post(..)`).
+fn router_made(mut v: TsNode, m: &Module, src: &[u8]) -> bool {
+    loop {
+        match v.kind() {
+            "call_expression" => match v.child_by_field_name("function") {
+                Some(f) if f.kind() == "member_expression" && f.child_by_field_name("object").map_or(false, |o| matches!(o.kind(), "call_expression" | "new_expression")) => {
+                    v = f.child_by_field_name("object").unwrap();
+                }
+                Some(f) => return router_pkg(&member_parts(f, src), m),
+                None => return false,
+            },
+            "new_expression" => return v.child_by_field_name("constructor").map_or(false, |c| router_pkg(&member_parts(c, src), m)),
+            "parenthesized_expression" | "await_expression" => match named_children(v).into_iter().next() {
+                Some(x) => v = x,
+                None => return false,
+            },
+            _ => return false,
+        }
+    }
+}
+
+/// Module-level names for an imported function wrapped to answer with a promise:
+/// `const run = promisify(execFile)` is `execFile`.
+fn collect_wrapped(m: &mut Module) {
+    let mut wrapped = vec![];
+    for (d, _, _) in declarations(m.tree.root_node()) {
+        for v in named_children(d).into_iter().filter(|v| v.kind() == "variable_declarator") {
+            let (Some(n), Some(value)) = (v.child_by_field_name("name"), v.child_by_field_name("value")) else { continue };
+            if let Some(b) = promisified(value, m, &m.src) {
+                wrapped.push((text(n, &m.src).to_string(), b));
+            }
+        }
+    }
+    m.bindings.extend(wrapped);
+}
+
+/// What `util.promisify(f)` wraps, when `f` is bound.
+fn promisified(value: TsNode, m: &Module, src: &[u8]) -> Option<Bound> {
+    let f = value.child_by_field_name("function").filter(|_| value.kind() == "call_expression")?;
+    let parts = member_parts(f, src);
+    let pkg = match m.bindings.get(parts.first()?)? {
+        Bound::Ext(e) => package_from_ext(e, &m.ext_pkgs),
+        Bound::Own(_) => return None,
+    };
+    (pkg == "util" && parts.last().map(String::as_str) == Some("promisify")).then_some(())?;
+    let arg = named_children(value.child_by_field_name("arguments")?).into_iter().next().filter(|a| a.kind() == "identifier")?;
+    m.bindings.get(text(arg, src)).cloned()
+}
+
+/// The package a client was made by: `new Anthropic()`, `new Pool()`, `axios.create()`,
+/// `createClient()`. What a package's other calls give back is a result, not a client.
+fn made_by_package(value: TsNode, m: &Module, src: &[u8]) -> Option<String> {
+    let mut v = value;
+    while matches!(v.kind(), "await_expression" | "parenthesized_expression" | "as_expression" | "non_null_expression") {
+        v = named_children(v).into_iter().next()?;
+    }
+    let maker = match v.kind() {
+        "new_expression" => v.child_by_field_name("constructor")?,
+        "call_expression" => v.child_by_field_name("function").filter(|f| {
+            let last = member_parts(*f, src).pop().unwrap_or_default();
+            last.starts_with("create") || matches!(last.as_str(), "connect" | "open")
+        })?,
+        _ => return None,
+    };
+    match m.bindings.get(member_parts(maker, src).first()?)? {
+        Bound::Ext(e) => Some(package_from_ext(e, &m.ext_pkgs)),
+        Bound::Own(_) => None,
+    }
+}
+
+fn router_pkg(parts: &[String], m: &Module) -> bool {
+    match parts.first().and_then(|h| m.bindings.get(h)) {
+        Some(Bound::Ext(e)) => ROUTERS.contains(&package_from_ext(e, &m.ext_pkgs).as_str()),
+        _ => false,
+    }
+}
+
+/// The routes a module registers on its routers: `app.get("/x", (c) => ..)` is a handler at
+/// `GET /x`, and `app.route("/api", sub)` (`app.use` in Express) mounts one router on another.
+/// An inline handler is a function of its own, named by its route.
+fn collect_routes(m: &mut Module, store: &mut GraphBuilder) {
+    let tree = m.tree.clone();
+    let src = m.src.clone();
+    let lit = |n: TsNode| matches!(n.kind(), "string" | "template_string") && !walk(n, &["template_substitution"]).iter().any(|_| true);
+    for c in walk(tree.root_node(), &["call_expression"]) {
+        let Some(f) = c.child_by_field_name("function").filter(|f| f.kind() == "member_expression") else { continue };
+        let (Some(obj), Some(prop)) = (f.child_by_field_name("object"), f.child_by_field_name("property")) else { continue };
+        let verb = text(prop, &src).to_string();
+        // the router: a module-level router by name, or the chain a declaration makes
+        let router = match obj.kind() {
+            "identifier" if m.routers.contains(text(obj, &src)) => text(obj, &src).to_string(),
+            _ => {
+                let mut up = c.parent();
+                while let Some(p) = up.filter(|p| matches!(p.kind(), "member_expression" | "call_expression" | "parenthesized_expression")) {
+                    up = p.parent();
+                }
+                let declared = up.filter(|p| p.kind() == "variable_declarator").and_then(|d| d.child_by_field_name("name")).map(|n| text(n, &src).to_string());
+                // or a chain of registrations on a named router: `app.get(..).post(..)`
+                let chained = || {
+                    let mut base = obj;
+                    while base.kind() == "call_expression" {
+                        base = base.child_by_field_name("function").and_then(|f| f.child_by_field_name("object"))?;
+                    }
+                    (base.kind() == "identifier").then(|| text(base, &src).to_string())
+                };
+                match declared.or_else(chained) {
+                    Some(name) if m.routers.contains(&name) => name,
+                    _ => continue,
+                }
+            }
+        };
+        let args = c.child_by_field_name("arguments").map(named_children).unwrap_or_default();
+        let Some(path) = args.first().filter(|a| lit(**a)).map(|a| unquote(text(*a, &src))) else { continue };
+        if matches!(verb.as_str(), "route" | "use") {
+            if let Some(sub) = args.get(1).filter(|a| a.kind() == "identifier") {
+                m.mounts.push((router.clone(), path, text(*sub, &src).to_string()));
+            }
+            continue;
+        }
+        if !VERBS.contains(&verb.as_str()) {
+            continue;
+        }
+        let method = if verb == "all" { "GET".to_string() } else { verb.to_uppercase() };
+        let label = format!("{method} {path}");
+        let Some(handler) = args.last().filter(|a| a.id() != args[0].id()) else { continue };
+        let id = match handler.kind() {
+            "arrow_function" | "function_expression" | "function" => {
+                let body = handler.child_by_field_name("body").unwrap_or(*handler);
+                let id = add_function(m, store, &format!("{router}.{}", label.replace('.', "_")), c, *handler, body, None);
+                if let Some(n) = store.nodes.get_mut(&id) {
+                    n.name = label.clone();
+                }
+                store.add_edge(&m.id.clone(), &id, EdgeKind::Contains, None);
+                id
+            }
+            "identifier" => match m.symbols.get(text(*handler, &src)) {
+                Some(id) => id.clone(),
+                None => continue,
+            },
+            _ => continue,
+        };
+        if let Some(n) = store.nodes.get_mut(&id).filter(|n| n.entry.is_none()) {
+            n.entry = Some(Entry { kind: EntryKind::Route, label });
+            m.routes.push((id, router.clone()));
+        }
+    }
+}
+
+/// A route's full path: the prefixes of the routers it is mounted under, out to the one nobody
+/// mounts. `:id` is a segment, written `{id}` as in every other language.
+fn route_prefixes(modules: &IndexMap<String, Module>, store: &mut GraphBuilder) {
+    // a router by where it is made: the module that makes it, followed through imports
+    fn key_of(m: &Module, local: &str, modules: &IndexMap<String, Module>, depth: u32) -> Option<String> {
+        if m.routers.contains(local) {
+            return Some(format!("{}.{local}", m.id));
+        }
+        let bound = if local == "default" { m.default.clone() } else { m.bindings.get(local).cloned() };
+        let Some(Bound::Own(target)) = bound else { return None };
+        let (mid, name) = target.rsplit_once('.').filter(|_| depth < 8)?;
+        key_of(modules.get(mid)?, name, modules, depth + 1)
+    }
+    let mut mounted: HashMap<String, (String, String)> = HashMap::new();
+    for m in modules.values() {
+        for (parent, prefix, sub) in &m.mounts {
+            if let (Some(p), Some(s)) = (key_of(m, parent, modules, 0), key_of(m, sub, modules, 0)) {
+                mounted.insert(s, (p, prefix.clone()));
+            }
+        }
+    }
+    let full = |key: &str| {
+        let (mut key, mut out) = (key.to_string(), String::new());
+        for _ in 0..10 {
+            let Some((parent, prefix)) = mounted.get(&key) else { break };
+            out = format!("{}{out}", prefix.trim_end_matches('/'));
+            key = parent.clone();
+        }
+        out
+    };
+    for m in modules.values() {
+        for (id, router) in &m.routes {
+            let prefix = key_of(m, router, modules, 0).map(|k| full(&k)).unwrap_or_default();
+            let Some(e) = store.nodes.get_mut(id).and_then(|n| n.entry.as_mut()) else { continue };
+            let Some((method, path)) = e.label.split_once(' ') else { continue };
+            let path = if path == "/" && !prefix.is_empty() { String::new() } else { path.to_string() };
+            let segs: Vec<String> = format!("{prefix}{path}").split('/').map(|s| if let Some(p) = s.strip_prefix(':') { format!("{{{}}}", p.trim_end_matches('?')) } else if s == "*" { "{rest:path}".into() } else { s.to_string() }).collect();
+            e.label = format!("{method} {}", segs.join("/"));
         }
     }
 }
@@ -825,11 +1106,11 @@ fn defined(target: &str, modules: &IndexMap<String, Module>, nodes: &IndexMap<St
     m.wildcards.iter().find_map(|w| defined(&format!("{w}.{name}"), modules, nodes, depth + 1))
 }
 
-/// A foreign type worth a place: a package's type, not React's own vocabulary.
+/// A foreign type worth a place: a package's type, not one that describes the code.
 fn foreign_type(id: &str) -> bool {
     let Some(full) = id.strip_prefix("ext:") else { return false };
     let head = full.split('.').next().unwrap_or("");
-    full.contains('.') && !PLAIN_PACKAGES.contains(&head)
+    full.contains('.') && !CODE_PACKAGES.contains(&head)
 }
 
 fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder) {
@@ -1061,6 +1342,26 @@ fn link_calls(m: &Module, modules: &IndexMap<String, Module>, store: &mut GraphB
             locals.insert(text(name, src).to_string(), r);
         }
     }
+    // values a package made, by the package: a call on one is the package's
+    let mut made: HashMap<String, String> = HashMap::new();
+    for v in walk(if is_module { root } else { body }, &["variable_declarator"]) {
+        let (Some(name), Some(value)) = (v.child_by_field_name("name"), v.child_by_field_name("value")) else { continue };
+        if name.kind() == "identifier" && (mine(v) || is_module || module_level(v, root, &m.bodies)) {
+            if let Some(p) = made_by_package(value, m, src) {
+                made.insert(text(name, src).to_string(), p);
+            }
+        }
+    }
+    if !is_module {
+        for v in walk(root, &["variable_declarator"]).into_iter().filter(|v| module_level(*v, root, &m.bodies)) {
+            let (Some(name), Some(value)) = (v.child_by_field_name("name"), v.child_by_field_name("value")) else { continue };
+            if name.kind() == "identifier" {
+                if let Some(p) = made_by_package(value, m, src) {
+                    made.entry(text(name, src).to_string()).or_insert(p);
+                }
+            }
+        }
+    }
     let cls = n.cls.clone();
     let attrs = cls.as_ref().and_then(|c| store.classes.get(c)).map(|c| c.attr_types.clone()).unwrap_or_default();
     let choices = number_choices(body, src, &CHOICES);
@@ -1080,6 +1381,11 @@ fn link_calls(m: &Module, modules: &IndexMap<String, Module>, store: &mut GraphB
                     if store.nodes[&r].kind == NodeKind::Class {
                         new_edges.push((r, EdgeKind::Instantiates, arms));
                     }
+                } else if matches!(parts.as_slice(), [g] if matches!(g.as_str(), "WebSocket" | "EventSource")) && !m.bindings.contains_key(&parts[0]) {
+                    // opening a socket or an event stream connects to its URL
+                    let kinds = &["string", "template_string"];
+                    let f = effects::facts("net", None, &parts[0], &literals(c, src, kinds));
+                    touches.push(Touch { kind: "net".into(), what: what_of(c, src, kinds, "arguments"), op: parts[0].clone(), artifact: f.artifact, line: c.start_position().row as u32 + 1, n: 1, ..Default::default() });
                 }
             }
             "jsx_opening_element" | "jsx_self_closing_element" => {
@@ -1148,9 +1454,11 @@ fn link_calls(m: &Module, modules: &IndexMap<String, Module>, store: &mut GraphB
                         *store.unresolved.entry(key).or_insert(0) += 1;
                         let pkg = match m.bindings.get(&parts[0]) {
                             Some(Bound::Ext(e)) => Some(package_from_ext(e, &m.ext_pkgs)),
-                            _ => None,
+                            _ => made.get(&parts[0]).cloned(),
                         };
-                        if let Some(kind) = effects::boundary_ts(pkg.as_deref(), &parts) {
+                        // a language model is asked through a client the package made, not its helpers
+                        let kind = effects::boundary_ts(pkg.as_deref(), &parts).filter(|k| *k != "llm" || made.contains_key(&parts[0]));
+                        if let Some(kind) = kind {
                             let op = parts.last().cloned().unwrap_or_default();
                             let kinds = &["string", "template_string"];
                             let f = effects::facts(kind, pkg.as_deref(), &op, &literals(c, src, kinds));
@@ -1158,6 +1466,8 @@ fn link_calls(m: &Module, modules: &IndexMap<String, Module>, store: &mut GraphB
                             let payload = payload_of(c, src, &what, "arguments", &HashMap::new());
                             let fixed = effects::locates(f.kind) && starts_at_literal(c, src, kinds, "arguments", effects::on_receiver(&op));
                             for (artifact, dir) in f.places() {
+                                // a URL without a host is the page's own origin, decided by whoever serves it
+                                let fixed = fixed && (f.kind != "net" || !artifact.is_empty());
                                 touches.push(Touch {
                                     kind: f.kind.into(),
                                     what: what.clone(),
