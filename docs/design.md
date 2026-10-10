@@ -321,7 +321,15 @@ adds one only when it names its own (`conn.execute("INSERT INTO log ..")`). In T
 client is what a package's constructor or `create…` factory made (`new Pool()`,
 `new Anthropic()`, `axios.create()`): a call on it is the package's, and a language model is
 asked only through one. The browser's `localStorage` is a key-value store, keyed by the literal
-it is handed; a URL without a host is the page's own origin. Artifacts by path
+it is handed; a URL without a host is the page's own origin. A TypeScript path or URL is
+evaluated as a Python one: from the module's own file (`import.meta.url`, `__dirname`),
+through `path.join`, `path.resolve`, `path.dirname` and `new URL(rel, base)`, across the
+constants it names, and at each call that hands its function's parameters, out to the
+function where it is complete. A request is its method and its URL; one the package's own
+routes serve is a `requests` edge from the function that names it to the route's handler, the
+most literal route first (`/years` before `/{year}`). An object of functions
+(`const api = { get: (path) => .. }`) is a namespace; one with a declared type is a value of
+that type. Artifacts by path
 pattern, hub types by arrow count, mutation detection, and the effect signature
 `F: Graph → W` per function and per route. This is the functor behind the plaat.
 

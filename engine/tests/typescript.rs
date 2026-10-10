@@ -138,3 +138,21 @@ fn a_client_moves_data_where_it_is_used() {
     assert!(t("lib.thema.bewaar").contains(&("screen".into(), "write".into(), String::new(), String::new())), "process.stdout");
     assert_eq!(t("lib.thema.luister"), [("net".into(), "WebSocket".into(), "live.example.org".into(), String::new())]);
 }
+
+/// A file's place is its path evaluated: from the module's own file (`import.meta.url`),
+/// through `path.join`, `path.resolve` and `new URL(..)`, across the constants it names, with a
+/// function's parameters bound to what its callers hand it. A request is its method and URL
+/// built the same way, and a URL the package's own routes serve is a request to the handler
+/// from the function that names it.
+#[test]
+fn paths_and_requests_are_evaluated() {
+    let g = fixture();
+    let t = |id: &str| g.node(&format!("fixture-ts.{id}")).unwrap().touches.iter().map(|t| (t.kind.clone(), t.artifact.clone())).collect::<Vec<_>>();
+    assert_eq!(t("server.opslag.lees"), [("disk_read".into(), "data/klanten.csv".into())], "`lees(\"klanten.csv\")` under `DATA`");
+    assert_eq!(t("server.opslag.bewaar"), [("disk_write".into(), "uit/regels.pdf".into())], "`new URL(\"../../uit/regels.pdf\", import.meta.url)`");
+    let requests = edges(&g, EdgeKind::Requests);
+    assert!(has(&requests, "lib.klant.regel", "server.regels.regels.GET /:id"), "{requests:?}");
+    assert!(has(&requests, "lib.klant.nieuw", "server.regels.regels.POST /"), "{requests:?}");
+    assert!(!has(&requests, "lib.klant.nieuw", "server.regels.regels.GET /:id"), "by its method");
+    assert!(t("lib.klant.vraag").is_empty(), "a request to the package's own route is no place on the web");
+}

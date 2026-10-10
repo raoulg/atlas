@@ -14,6 +14,10 @@ use indexmap::IndexMap;
 use tree_sitter::{Node as TsNode, Parser, Tree};
 use walkdir::WalkDir;
 
+mod paths;
+
+use paths::{Arg, At, Eval};
+
 use crate::builder::{ClassInfo, GraphBuilder, SigInfo};
 use crate::effects;
 use crate::model::{Compare, EdgeKind, Entry, EntryKind, Node, NodeKind, Touch};
@@ -412,7 +416,7 @@ pub fn parse(repo: &Path) -> Result<(GraphBuilder, String)> {
     route_prefixes(&modules, &mut store);
     mark_bins(repo, &files, &mut store);
     mark_exports(repo, &files, &modules, &mut store);
-    link(&modules, &mut store);
+    link(&modules, &mut store, repo);
     Ok((store, root))
 }
 
@@ -620,6 +624,11 @@ fn collect_symbols(m: &mut Module, store: &mut GraphBuilder) {
                     if exported {
                         m.exported.push(vname.clone());
                     }
+                    // an object of functions is a namespace: `api.get(..)` calls its `get`; one with a
+                    // declared type is a value of that type
+                    if value.kind() == "object" && v.child_by_field_name("type").is_none() && namespace(m, store, &vname, value) {
+                        continue;
+                    }
                     // a router is a value its registrations hand routes to, not a function
                     if router_made(value, m, &src) {
                         m.routers.insert(vname);
@@ -655,6 +664,34 @@ fn collect_symbols(m: &mut Module, store: &mut GraphBuilder) {
             n.entry = Some(Entry { kind: EntryKind::Route, label: if path == "__root" { "/ (root)".into() } else { path } });
         }
     }
+}
+
+/// The functions of an object literal, each a function of the module named by its key
+/// (`api.get`); false when the object holds none.
+fn namespace(m: &mut Module, store: &mut GraphBuilder, name: &str, object: TsNode) -> bool {
+    let src = m.src.clone();
+    let mut any = false;
+    for member in named_children(object) {
+        let (key, f, body) = match member.kind() {
+            "pair" => match (member.child_by_field_name("key"), member.child_by_field_name("value").filter(|v| matches!(v.kind(), "arrow_function" | "function_expression" | "function"))) {
+                (Some(k), Some(v)) => (k, v, v),
+                _ => continue,
+            },
+            "method_definition" => match (member.child_by_field_name("name"), member.child_by_field_name("body")) {
+                (Some(k), Some(b)) => (k, member, b),
+                _ => continue,
+            },
+            _ => continue,
+        };
+        let key = if key.kind() == "string" { unquote(text(key, &src)) } else { text(key, &src).to_string() };
+        let id = add_function(m, store, &format!("{name}.{key}"), member, f, body, None);
+        store.add_edge(&m.id.clone(), &id, EdgeKind::Contains, None);
+        any = true;
+    }
+    if any {
+        m.symbols.insert(name.to_string(), format!("{}.{name}", m.id));
+    }
+    any
 }
 
 /// What an interface or a named object type promises its implementations do: each method
@@ -1113,7 +1150,15 @@ fn foreign_type(id: &str) -> bool {
     full.contains('.') && !CODE_PACKAGES.contains(&head)
 }
 
-fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder) {
+/// What the bodies hand the places pass: file and network calls with what their path or URL
+/// is built from, and the calls of the package's functions with the arguments they pass.
+#[derive(Default)]
+struct Linked<'t> {
+    calls: Vec<(String, Touch, Vec<crate::paths::Built>)>,
+    args: Vec<Arg<'t>>,
+}
+
+fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, repo: &Path) {
     // a union of two or more known types is a sum; any other alias stands for what it names
     for m in modules.values() {
         let mut names: Vec<&String> = m.aliases.keys().collect();
@@ -1237,11 +1282,72 @@ fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder) {
         }
     }
     // bodies -> calls / instantiates / boundaries
+    let eval = Eval::new(modules, repo);
+    let mut linked = Linked::default();
     for id in &ids {
         let n = &store.nodes[id];
         let Some(m) = modules.get(&n.module) else { continue };
         if matches!(n.kind, NodeKind::Function | NodeKind::Method) || (n.kind == NodeKind::Module && modules.contains_key(id)) {
-            link_calls(m, modules, store, id, &returned);
+            link_calls(m, modules, store, id, &returned, &eval, &mut linked);
+        }
+    }
+    place_calls(store, &eval, linked);
+}
+
+/// Place the file and network calls: each path or URL, with its function's parameters bound to
+/// what each call of it hands them. A file is touched by the function that opens it, at every
+/// place it is opened at; a URL without a host that one of the package's routes serves is a
+/// request from the function that names it to the route's handler.
+fn place_calls(store: &mut GraphBuilder, eval: &Eval, linked: Linked) {
+    let routes: Vec<(String, String, String)> = store
+        .nodes
+        .values()
+        .filter_map(|n| {
+            let e = n.entry.as_ref().filter(|e| e.kind == EntryKind::Route)?;
+            let (method, path) = e.label.split_once(' ')?;
+            Some((n.id.clone(), method.to_string(), path.to_string()))
+        })
+        .collect();
+    for (f, t, built) in linked.calls {
+        let found: Vec<(String, crate::paths::Built)> = built.iter().flat_map(|b| paths::at_callers(eval, &linked.args, &f, b, 0)).collect();
+        let mut placed: Vec<String> = vec![];
+        let mut requested = false;
+        for (holder, b) in &found {
+            let rendered = crate::paths::render(b);
+            // a request's method, when the code says it, and its URL
+            let (method, url) = match rendered.split_once(' ') {
+                Some((m, u)) if t.kind == "net" => (m.to_ascii_uppercase(), u.to_string()),
+                _ => (String::new(), rendered.clone()),
+            };
+            if t.kind == "net" {
+                if url.starts_with('/') {
+                    let known = !method.contains('{');
+                    let served: Vec<&(String, String, String)> = routes.iter().filter(|(_, m, p)| (!known || *m == method) && crate::parts::route_matches(p, &url)).collect();
+                    // a literal segment serves before a parameter: `/years` before `/{year}`
+                    let fewest = served.iter().map(|(_, _, p)| p.matches('{').count()).min().unwrap_or(0);
+                    for (handler, _, path) in served.into_iter().filter(|(_, _, p)| p.matches('{').count() == fewest) {
+                        store.add_edge(holder, handler, EdgeKind::Requests, Some(path.clone()));
+                        requested = true;
+                    }
+                } else if let Some(host) = effects::facts("net", None, &t.op, &[url.clone()]).places().into_iter().next().map(|(a, _)| a).filter(|a| !a.is_empty()) {
+                    placed.push(host);
+                }
+            } else if let Some(p) = crate::paths::place(b, &t.op) {
+                placed.push(p);
+            }
+        }
+        placed.sort();
+        placed.dedup();
+        if placed.is_empty() {
+            if !requested {
+                // a URL without a host is the page's own origin, decided by whoever serves it
+                let fixed = t.fixed && (t.kind != "net" || !t.artifact.is_empty());
+                store.touch(&f, Touch { fixed, ..t });
+            }
+            continue;
+        }
+        for artifact in placed {
+            store.touch(&f, Touch { artifact, ..t.clone() });
         }
     }
 }
@@ -1298,7 +1404,7 @@ fn member_parts(n: TsNode, src: &[u8]) -> Vec<String> {
     }
 }
 
-fn link_calls(m: &Module, modules: &IndexMap<String, Module>, store: &mut GraphBuilder, id: &str, returned: &HashMap<String, String>) {
+fn link_calls<'t>(m: &'t Module, modules: &'t IndexMap<String, Module>, store: &mut GraphBuilder, id: &str, returned: &HashMap<String, String>, eval: &Eval, linked: &mut Linked<'t>) {
     let n = store.nodes[id].clone();
     let src = &m.src;
     let root = m.tree.root_node();
@@ -1312,6 +1418,8 @@ fn link_calls(m: &Module, modules: &IndexMap<String, Module>, store: &mut GraphB
     };
     // within a module's own body, a function's body is the function's
     let others: HashMap<String, (usize, usize)> = if is_module { m.bodies.clone() } else { HashMap::new() };
+    let scope = if is_module { None } else { paths::function_node(body) };
+    let params: Vec<String> = scope.map(|f| paths::param_names(f, src)).unwrap_or_default();
     let mine = |x: TsNode| !is_module || module_level(x, root, &others);
     // parameters and locals with a class type give receivers a type
     let mut locals: HashMap<String, String> = HashMap::new();
@@ -1447,6 +1555,10 @@ fn link_calls(m: &Module, modules: &IndexMap<String, Module>, store: &mut GraphB
                 match target {
                     Some(t) if own(&t, store) => {
                         let kind = if store.nodes[&t].kind == NodeKind::Class { EdgeKind::Instantiates } else { EdgeKind::Calls };
+                        let callee = if kind == EdgeKind::Instantiates { format!("{t}.__init__") } else { t.clone() };
+                        if let Some(a) = argument(modules, store, id, &callee, c, m, scope, &params) {
+                            linked.args.push(a);
+                        }
                         new_edges.push((t, kind, arms));
                     }
                     _ => {
@@ -1465,6 +1577,21 @@ fn link_calls(m: &Module, modules: &IndexMap<String, Module>, store: &mut GraphB
                             let what = what_of(c, src, kinds, "arguments");
                             let payload = payload_of(c, src, &what, "arguments", &HashMap::new());
                             let fixed = effects::locates(f.kind) && starts_at_literal(c, src, kinds, "arguments", effects::on_receiver(&op));
+                            let args = c.child_by_field_name("arguments").map(named_children).unwrap_or_default();
+                            // the path a file call is handed, the URL a request is: placed once every call is known
+                            if effects::locates(f.kind) && !args.is_empty() {
+                                let at = At { m, scope, params: &params };
+                                let two = matches!(op.as_str(), "copyFile" | "copyFileSync" | "rename" | "renameSync" | "cp" | "cpSync") && args.len() > 1;
+                                let sides: Vec<(&str, TsNode)> = if two { vec![("disk_read", args[0]), ("disk_write", args[1])] } else { vec![(f.kind, args[0])] };
+                                for (kind, a) in sides {
+                                    let t = Touch { kind: kind.into(), what: text(a, src).to_string(), payload: payload.clone(), op: op.clone(), artifact: f.artifact.clone(), fixed, line: c.start_position().row as u32 + 1, n: 1, ..Default::default() };
+                                    let built = eval.of(at, a, 0);
+                                    // a request is its method and its URL: `fetch(url, { method })`, `axios.post(url)`
+                                    let built = if kind == "net" { crate::paths::cross(&method_of_request(&op, &args, at, eval), &built, " ") } else { built };
+                                    linked.calls.push((id.to_string(), t, built));
+                                }
+                                continue;
+                            }
                             for (artifact, dir) in f.places() {
                                 // a URL without a host is the page's own origin, decided by whoever serves it
                                 let fixed = fixed && (f.kind != "net" || !artifact.is_empty());
@@ -1504,6 +1631,44 @@ fn link_calls(m: &Module, modules: &IndexMap<String, Module>, store: &mut GraphB
             node.compares = cmp;
         }
     }
+}
+
+/// The HTTP method of a request: `fetch`'s `init.method` (GET when it has none), or the verb
+/// of the call.
+fn method_of_request<'t>(op: &str, args: &[TsNode<'t>], at: At<'_, 't>, eval: &Eval) -> Vec<crate::paths::Built> {
+    const HTTP: &[&str] = &["get", "post", "put", "patch", "delete", "head", "options"];
+    if HTTP.contains(&op) {
+        return vec![crate::paths::lit(&op.to_uppercase())];
+    }
+    let init = args.get(1).filter(|a| a.kind() == "object").and_then(|o| {
+        named_children(*o).into_iter().find_map(|p| match p.kind() {
+            "pair" if p.child_by_field_name("key").map(|k| text(k, &at.m.src)) == Some("method") => p.child_by_field_name("value"),
+            "shorthand_property_identifier" if text(p, &at.m.src) == "method" => Some(p),
+            _ => None,
+        })
+    });
+    match init {
+        Some(v) => eval.of(at, v, 0),
+        None => vec![crate::paths::lit("GET")],
+    }
+}
+
+/// Which parameter of the function a call reaches each argument is handed to, in order.
+#[allow(clippy::too_many_arguments)]
+fn argument<'t>(modules: &'t IndexMap<String, Module>, store: &GraphBuilder, caller: &str, callee: &str, c: TsNode<'t>, m: &'t Module, scope: Option<TsNode<'t>>, params: &[String]) -> Option<Arg<'t>> {
+    let cn = store.nodes.get(callee)?;
+    let cm = modules.get(&cn.module)?;
+    let (s, e) = *cm.bodies.get(callee)?;
+    let def = paths::function_node(cm.tree.root_node().descendant_for_byte_range(s, e)?)?;
+    let names = paths::param_names(def, &cm.src);
+    let passed = named_children(c.child_by_field_name("arguments")?)
+        .into_iter()
+        .take_while(|a| a.kind() != "spread_element")
+        .zip(names)
+        .filter(|(_, n)| !n.is_empty())
+        .map(|(a, n)| (n, a))
+        .collect();
+    Some(Arg { caller: caller.to_string(), callee: callee.to_string(), module: m.id.clone(), scope, params: params.to_vec(), passed })
 }
 
 /// The package an `ext:` binding came from, as the module imported it.

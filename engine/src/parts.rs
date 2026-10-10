@@ -159,6 +159,12 @@ fn route_pattern(path: &str) -> Option<Regex> {
     Regex::new(&(out + "/?$")).ok()
 }
 
+/// Whether a route (`/api/customers/{id}`) serves a path (`/api/customers/x`).
+pub fn route_matches(route: &str, path: &str) -> bool {
+    let path = placeholder_re().replace_all(path.split(['?', '#']).next().unwrap_or(path), "x");
+    route_pattern(route).map_or(false, |re| re.is_match(&path))
+}
+
 /// The path a string literal asks for: without its host (written out, or a leading `${base}`)
 /// and its query; a placeholder is a segment.
 fn requested(lit: &str) -> Option<String> {

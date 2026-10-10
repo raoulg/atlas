@@ -9,6 +9,7 @@ pub mod language;
 pub mod view;
 pub mod model;
 pub mod parts;
+pub mod paths;
 pub mod principles;
 pub mod python;
 pub mod pytypes;
