@@ -1,4 +1,4 @@
-//! Atlas engine: `parse: Repo -> Graph` and `lens: Graph -> Graph`.
+//! Atlas engine: `parse: Repo -> Graph` and `view: Graph -> Graph`.
 //!
 //! The engine knows languages and libraries, never a project.
 
@@ -6,7 +6,7 @@ pub mod builder;
 pub mod effects;
 pub mod entries;
 pub mod language;
-pub mod lens;
+pub mod view;
 pub mod model;
 pub mod parts;
 pub mod principles;

@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use std::path::PathBuf;
 
-use atlas_engine::lens::{by_role, hide_private, reach_from, Compose, Lens};
+use atlas_engine::view::{by_role, hide_private, reach_from, Compose, View};
 use atlas_engine::{analyze, EdgeKind, EntryKind, Graph, NodeKind};
 
 fn fixture() -> Graph {
@@ -271,15 +271,15 @@ fn rust_workspace_parses() {
     let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
     let g = analyze(&repo, None, None).expect("the Atlas workspace parses");
     let ids: HashSet<&str> = g.nodes.iter().map(|n| n.id.as_str()).collect();
-    for id in ["atlas-engine", "atlas-engine.model", "atlas-engine.lens", "atlas-engine.python", "atlas-engine.rust", "atlas"] {
+    for id in ["atlas-engine", "atlas-engine.model", "atlas-engine.view", "atlas-engine.python", "atlas-engine.rust", "atlas"] {
         assert!(ids.contains(id), "module {id}");
     }
-    assert!(ids.contains("atlas-engine.model.Graph") && ids.contains("atlas-engine.lens.Lens"));
+    assert!(ids.contains("atlas-engine.model.Graph") && ids.contains("atlas-engine.view.View"));
     assert_eq!(g.node("atlas.main").unwrap().entry.as_ref().unwrap().kind, EntryKind::Cli);
     assert_eq!(g.node("atlas-engine.analyze").unwrap().entry.as_ref().unwrap().kind, EntryKind::Export, "pub fn at the root of a library crate");
-    assert!(g.node("atlas-engine.lens.hide_private").unwrap().entry.is_none(), "pub in a module is not the crate's root");
+    assert!(g.node("atlas-engine.view.hide_private").unwrap().entry.is_none(), "pub in a module is not the crate's root");
     let inh = edges(&g, EdgeKind::Inherits);
-    assert!(inh.contains(&("atlas-engine.lens.Restrict".into(), "atlas-engine.lens.Lens".into())), "impl Lens for Restrict");
+    assert!(inh.contains(&("atlas-engine.view.Fiber".into(), "atlas-engine.view.View".into())), "impl View for Fiber");
     let calls = edges(&g, EdgeKind::Calls);
     assert!(calls.contains(&("atlas.main".into(), "atlas.view".into())));
     assert!(calls.contains(&("atlas.view".into(), "atlas-engine.parts.analyze_repo".into())), "cli calls into the engine");
@@ -298,9 +298,9 @@ fn rust_workspace_parses() {
     assert!(g.node("atlas.view").unwrap().boundaries.contains_key("screen"), "eprintln!");
     let m = edges(&g, EdgeKind::Mutates);
     assert!(m.contains(&("atlas-engine.model.Graph.recount".into(), "atlas-engine.model.Graph".into())), "&mut self");
-    // the declared picture: parse -> lens -> layout, model underneath
-    assert_eq!(g.roles.order, vec!["Parse", "Lens", "Layout"]);
-    assert_eq!(g.node("atlas-engine.lens.Quotient").unwrap().role, "Lens");
+    // the declared picture: parse -> view -> layout, model underneath
+    assert_eq!(g.roles.order, vec!["Parse", "View", "Layout"]);
+    assert_eq!(g.node("atlas-engine.view.Quotient").unwrap().role, "View");
     assert_eq!(g.node("atlas-engine.model.Node").unwrap().role, "Model");
 }
 
@@ -330,7 +330,7 @@ fn atlas_reads_as_its_algebra() {
 }
 
 #[test]
-fn lenses_restrict_and_quotient() {
+fn views_are_fibers_and_quotients() {
     let g = fixture();
     let reach = reach_from(&g, "fixture.cli.build").apply(&g);
     let ids: HashSet<&str> = reach.nodes.iter().map(|n| n.id.as_str()).collect();

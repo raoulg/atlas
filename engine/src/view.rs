@@ -1,8 +1,11 @@
-//! `lens: Graph -> Graph`, in exactly two families.
+//! `view: Graph -> Graph`, in exactly two families.
 //!
-//! A `Restrict` keeps a subgraph (the inverse image of a predicate); a `Quotient`
-//! identifies nodes (a pushout) and aggregates the edges between the classes. Lenses
-//! compose, and the order is meaning: restriction and quotient do not commute.
+//! A `Fiber` keeps the subgraph where a predicate holds: the pullback of `true` along the
+//! predicate, the nodes it holds for and the edges between them. A `Quotient` identifies
+//! nodes (the coequalizer of the classes) and aggregates the edges between the classes.
+//! One map `f: G -> B` gives both: its quotient is the overview, the fiber over one `b` is
+//! that `b` alone. Views compose, and the order is meaning: fiber and quotient do not
+//! commute. A view only reads the graph; nothing is written back through it.
 
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 
@@ -10,14 +13,14 @@ use indexmap::IndexMap;
 
 use crate::model::{Edge, EdgeKind, Graph, Node, NodeKind};
 
-pub trait Lens {
+pub trait View {
     fn apply(&self, g: &Graph) -> Graph;
 }
 
-/// Keep the nodes that satisfy the predicate, and the edges between them.
-pub struct Restrict<F: Fn(&Node) -> bool>(pub F);
+/// The fiber of a predicate: the nodes that satisfy it, and the edges between them.
+pub struct Fiber<F: Fn(&Node) -> bool>(pub F);
 
-impl<F: Fn(&Node) -> bool> Lens for Restrict<F> {
+impl<F: Fn(&Node) -> bool> View for Fiber<F> {
     fn apply(&self, g: &Graph) -> Graph {
         let keep: HashSet<&str> = g.nodes.iter().filter(|n| (self.0)(n)).map(|n| n.id.as_str()).collect();
         let mut out = Graph {
@@ -46,7 +49,7 @@ impl<F: Fn(&Node) -> bool> Lens for Restrict<F> {
 /// between classes are aggregated per kind with a `weight`; edges inside a class vanish.
 pub struct Quotient<F: Fn(&Node) -> Option<Node>>(pub F);
 
-impl<F: Fn(&Node) -> Option<Node>> Lens for Quotient<F> {
+impl<F: Fn(&Node) -> Option<Node>> View for Quotient<F> {
     fn apply(&self, g: &Graph) -> Graph {
         let mut classes: IndexMap<String, Node> = IndexMap::new();
         let mut of: HashMap<&str, String> = HashMap::new();
@@ -84,10 +87,10 @@ impl<F: Fn(&Node) -> Option<Node>> Lens for Quotient<F> {
     }
 }
 
-/// Lenses in sequence; the first is applied first.
-pub struct Compose(pub Vec<Box<dyn Lens>>);
+/// Views in sequence; the first is applied first.
+pub struct Compose(pub Vec<Box<dyn View>>);
 
-impl Lens for Compose {
+impl View for Compose {
     fn apply(&self, g: &Graph) -> Graph {
         let mut cur = g.clone();
         for l in &self.0 {
@@ -97,15 +100,15 @@ impl Lens for Compose {
     }
 }
 
-// ---------- the built-in lenses ----------
+// ---------- the built-in views ----------
 
 /// Drop private symbols (leading underscore, dunders included); modules always stay.
-pub fn hide_private() -> impl Lens {
-    Restrict(|n: &Node| n.kind == NodeKind::Module || !n.name.starts_with('_'))
+pub fn hide_private() -> impl View {
+    Fiber(|n: &Node| n.kind == NodeKind::Module || !n.name.starts_with('_'))
 }
 
 /// Keep what an entry point reaches through calls and instantiations, the entry included.
-pub fn reach_from(g: &Graph, entry: &str) -> impl Lens {
+pub fn reach_from(g: &Graph, entry: &str) -> impl View {
     let mut out: HashMap<&str, Vec<&str>> = HashMap::new();
     for e in &g.edges {
         if matches!(e.kind, EdgeKind::Calls | EdgeKind::Instantiates) {
@@ -122,11 +125,11 @@ pub fn reach_from(g: &Graph, entry: &str) -> impl Lens {
             q.push_back(t.to_string());
         }
     }
-    Restrict(move |n: &Node| seen.contains(&n.id))
+    Fiber(move |n: &Node| seen.contains(&n.id))
 }
 
 /// One node per role; the class node carries the role as its name.
-pub fn by_role() -> impl Lens {
+pub fn by_role() -> impl View {
     Quotient(|n: &Node| {
         if n.kind == NodeKind::External || n.role.is_empty() {
             return None;
@@ -143,7 +146,7 @@ pub fn by_role() -> impl Lens {
 }
 
 /// One node per module; symbols fold into the module that contains them.
-pub fn by_module() -> impl Lens {
+pub fn by_module() -> impl View {
     Quotient(|n: &Node| {
         if n.kind == NodeKind::External {
             return None;

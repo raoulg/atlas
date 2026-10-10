@@ -27,8 +27,9 @@ The rigorous half and the visual half are the same structure. Read `docs/design.
 4. Zoom is a quotient on types: by base class, by composition, by module. Zooming
    out coarsens, zooming in refines one family at a time. The picture stays the same
    picture.
-5. Filters are restrictions. Restriction and quotient do not commute; order in a
-   lens is meaning.
+5. Filters are fibers: the part of the graph where a predicate holds. One map gives
+   both zoom and filter: its quotient is the overview, a fiber is one class alone.
+   Fiber and quotient do not commute; order in a view is meaning.
 6. A step's own morphism and what it transitively reaches are different quantities
    and are never merged.
 
@@ -39,7 +40,7 @@ The rigorous half and the visual half are the same structure. Read `docs/design.
   `architecture.yml`, and even that is an override on naming, never the source of
   the picture. If a view only works because of a special case, it is wrong.
 - **Atlas is its own first subject.** `atlas view .` must read as the algebra:
-  `Disk(repo) → Language.parse → Graph → Lens → File(html) → open`. When the
+  `Disk(repo) → Language.parse → Graph → View → File(html) → open`. When the
   self-picture shows a box the algebra does not have, the code changes, not the
   picture. `cargo test` pins the self-picture.
 - **If the code is good, the picture is good, automatically.** Views are computed

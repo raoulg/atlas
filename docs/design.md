@@ -33,8 +33,11 @@ box and saying "this should not exist" is a statement both can act on.
   (`Graph ⊇ {Node, Edge, Architecture}`), by module. A level is a choice of
   equivalence; zooming out coarsens it, zooming in refines one family at a time. The
   picture stays the same picture, only the boxes split or merge.
-- **Filters are restrictions.** A route, an entry point, an edge kind, a commit range.
-  Restriction and quotient do not commute; the order in a lens is meaning.
+- **Filters are fibers.** A route, an entry point, an edge kind, a commit range: the
+  part of the graph where a predicate holds. Zoom and filter come from one map: the
+  quotient by `f: G → B` is the overview, the fiber over one `b` is that `b` alone, and
+  opening `b` puts its fiber in its place. Fiber and quotient do not commute; the order
+  in a view is meaning.
 - **Two levels are never merged.** A step's own morphism (its signature, its direct
   effects) and what it transitively reaches are different quantities and are drawn
   differently.
@@ -46,7 +49,7 @@ Everything below is the engineering of that language.
 Four objects, four kinds of arrows.
 
 ```
-Repo ──parse──▶ Graph ──lens──▶ Graph ──layout──▶ Picture
+Repo ──parse──▶ Graph ──view──▶ Graph ──layout──▶ Picture
                   │
                   └──inspect──▶ Source
 ```
@@ -64,14 +67,16 @@ project.* Knowing what a `requests.get` call means is the engine's job. Knowing 
 Nothing about rkg, vectormesh or Atlas is hard-coded, so that Atlas cannot flatter
 the repos it was built on.
 
-**lens: Graph → Graph.** The whole middle of Atlas. Lenses compose, so a view spec is
-a list of lenses, and the order is meaning: restriction and quotient do not commute
-in general. Two families and nothing else:
+**view: Graph → Graph.** The whole middle of Atlas. Views compose, so a view spec is
+a list of views, and the order is meaning: fiber and quotient do not commute in
+general. A view only reads: it is the `get` of a lens with no `put`. Two families and
+nothing else:
 
-- **Restrictions** keep a subgraph, the inverse image of a predicate (a pullback):
-  reachable from this entry point, hide private, hide tests, k-hop focus, only these
-  edge kinds, only this commit range.
-- **Quotients** identify nodes (a pushout, a coequalizer): by declared role, by base
+- **Fibers** keep the subgraph where a predicate holds: the pullback of `true` along
+  the predicate, its nodes and the edges between them. Reachable from this entry point,
+  hide private, hide tests, k-hop focus, only these edge kinds, only this commit range,
+  only this part.
+- **Quotients** identify nodes (the coequalizer of the classes): by declared role, by base
   class, by package, by effect signature, by artifact. A quotient carries a
   refinement order, so "zoom in" is replacing a quotient by a finer one and "zoom
   out" by a coarser one. The quotients of a graph form a lattice; browsing is
@@ -118,21 +123,21 @@ arrows are constructor calls, and a notebook is a route read cell by cell.
 
 ### Why look at code
 
-Four questions; each view is a lens plus a layout that answers one of them. A view
-that answers none is decoration.
+Four questions; each picture is a view plus a layout that answers one of them. A
+picture that answers none is decoration.
 
-| Question | Lens | Layout |
+| Question | View | Layout |
 |---|---|---|
-| **Orient** — what does this do? | restrict to a route, quotient by effect signature | story outline, plaat |
+| **Orient** — what does this do? | the fiber of a route, quotient by effect signature | story outline, plaat |
 | **Verify** — does it do what I designed? | quotient by declared role, diff against the declaration | plaat with conformance marks |
 | **Place** — where does new work land? | quotient by base class, k-hop focus | type lattice, architecture columns |
-| **Explain** — to a student or an agent | any of the above, saved as a lens | the same, with notes |
+| **Explain** — to a student or an agent | any of the above, saved as a view | the same, with notes |
 
 ### Atlas as its own subject
 
-If Atlas obeys the algebra, its own story is `parse → lens → layout` with nothing
+If Atlas obeys the algebra, its own story is `parse → view → layout` with nothing
 else on the route, and Atlas can check that about itself. In Rust that maps
-directly: an enum per node and edge kind, a `Lens` trait with composition, and a
+directly: an enum per node and edge kind, a `View` trait with composition, and a
 conformance check on the Atlas repo in its own CI. If the picture of Atlas in Atlas
 is not four boxes, the code has drifted, not the picture.
 
@@ -150,8 +155,8 @@ faster in Rust). A native shell (Tauri) can wrap the same code later.
 
 | Layer | Choice | Why |
 |---|---|---|
-| Engine | Rust: `tree-sitter` crate, `petgraph`, `serde`, `ts-rs` | Grammars compile in; SCC, dominators and paths from petgraph; quotients, restrictions, effect signatures and conformance are small enough to own. `ts-rs` generates the TypeScript types so the graph model and the lens spec are defined once. |
-| Server | `axum` + websocket, `notify` | JSON endpoints (`/graph`, `/lens/{name}`, `/source`, `/git/log`), live reload when a file changes, and the same process serves the MCP endpoint (`rmcp`, the official Rust MCP SDK). |
+| Engine | Rust: `tree-sitter` crate, `petgraph`, `serde`, `ts-rs` | Grammars compile in; SCC, dominators and paths from petgraph; quotients, fibers, effect signatures and conformance are small enough to own. `ts-rs` generates the TypeScript types so the graph model and the view spec are defined once. |
+| Server | `axum` + websocket, `notify` | JSON endpoints (`/graph`, `/view/{name}`, `/source`, `/git/log`), live reload when a file changes, and the same process serves the MCP endpoint (`rmcp`, the official Rust MCP SDK). |
 | Frontend | Vite, TypeScript, React 19, SVG | Boring and deep: the agent is most fluent in it. SVG (not canvas) so every element is CSS-styleable and design rounds are cheap. Canvas fallback only if a view exceeds ~2k elements. |
 | Layout | elkjs (layered / Sugiyama) in a web worker | The flows are DAG-shaped; layered layout is what a reader expects. Columns and outlines are small custom layouts; ELK handles layered flows. |
 | Code view | Shiki (read-only) | Editor-grade highlighting without an editor. "Open in editor" is a deep link (`vscode://`, `zed://`). |
@@ -162,7 +167,7 @@ Repository layout, which is also the plaat of Atlas:
 
 ```
 atlas/
-  engine/      Rust crate: parse · lens (restrict, quotient) · effects · git
+  engine/      Rust crate: parse · view (fiber, quotient) · effects · git
   server/      Rust crate: axum app, MCP server, embeds frontend/dist
   cli/         Rust binary: analyze · serve · check · mcp
   frontend/    Vite + React: layouts, inspector, tokens.css; types generated by ts-rs
@@ -200,7 +205,7 @@ node that holds it to the handler. A literal that names one of its own part's ro
 link within that part. In the views, parts are a zoom level like families: the overview
 is one step per part (memory stays inside it; what it reads and writes in the world, and
 the HTTP of the parts it requests, stand outside), a click opens a part into its routes,
-and keeping to one part is a restriction, in which another part is the web place it is
+and keeping to one part is its fiber, in which another part is the web place it is
 reached through. `atlas check` reads each part in its own language.
 
 **Architecture** — a small `architecture.yml` in the subject repo, an override on
@@ -228,7 +233,7 @@ foundation band. Role assignment is per class: a class whose base chain reaches 
 inferred (one per subpackage, or per module in a flat package, columns ordered so
 providers stand left of consumers) and the UI says so.
 
-## 4. Analytics, as lenses
+## 4. Analytics, as views
 
 Each layer is a pure function of the layer below and can be tested alone.
 
@@ -264,18 +269,18 @@ by artifact; each with its refinement order. The quotient graph aggregates edges
 class pair and kind. Conformance is the difference between the quotient by declared
 role and the declared flow.
 
-**L4 Restrictions and structure.** Reach from an entry point (dominator tree for
+**L4 Fibers and structure.** Reach from an entry point (dominator tree for
 "what does this command touch"), k-hop focus, edge-kind filters, commit ranges; SCC
 condensation for import cycles; betweenness for hubs; k-shortest paths between two
 types for the signature flow; Leiden as the honest fallback when nothing is
 declared.
 
 **L5 Git.** Commit DAG; diff hunks × spans → symbols; churn and age per symbol; a
-commit range is a restriction lens.
+commit range is a fiber.
 
 **L6 Agent.** An MCP server over the same engine: `search`, `neighbourhood`,
-`effects`, `quotient`, `conformance_report`, `signature_paths`, `apply_lens`.
-Lenses are JSON view specs, a list of restrictions and quotients plus a layout, that
+`effects`, `quotient`, `conformance_report`, `signature_paths`, `apply_view`.
+Views are JSON specs, a list of fibers and quotients plus a layout, that
 the agent writes and the browser renders. Annotations are agent explanations stored
 per symbol.
 
@@ -316,8 +321,8 @@ than two clicks from the code.
 
 ## 7. Open questions
 
-1. Restriction and quotient do not commute. Is "restrict, then quotient" the only
-   order a lens list may use, or do both orders have a reading?
+1. Fiber and quotient do not commute. Is "fiber, then quotient" the only order a
+   view list may use, or do both orders have a reading?
 2. Is the role the right unit for colour, or is the base type?
 3. Editing: probably never. "Open in editor" as a deep link should be enough.
 4. The browser as a resting place: a click in `apps/plusmin` is an arrow into an

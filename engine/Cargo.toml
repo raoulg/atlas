@@ -1,6 +1,6 @@
 [package]
 name = "atlas-engine"
-description = "parse: Repo -> Graph, lens: Graph -> Graph"
+description = "parse: Repo -> Graph, view: Graph -> Graph"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
