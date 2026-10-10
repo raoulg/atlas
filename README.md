@@ -72,8 +72,9 @@ Read it from left to right:
   `File(artefacts/) · 8` opens into what is in it with a click.
 - **Shift-click a package** in the overview to focus on it: the picture keeps the packages
   in focus, the types that cross between them and the places they touch, and joins the
-  rest of the code by counted arrows on either side. The inspector lists the packages
-  around the focus, to add with one click.
+  rest of the code by counted arrows on either side. Click the rest to open it into the
+  packages that hand the focus data or take data from it, and click one of those to add
+  it to the focus; the inspector lists them too.
 - **Double-click a box** to pin its lines, to study or compare what it connects.
 
 Story shows the same route as a list. Each step has its own signature and its own effects

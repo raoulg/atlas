@@ -986,10 +986,24 @@ function topUnits(part) {
   if ((D.make || []).length && part === partOf({})) us.push("Makefile");
   return us;
 }
-const unitLabel = u => { if (u === "~in" || u === "~out") { const n = aroundFocus().length; return `the rest · ${n} ${n === 1 ? "package" : "packages"}`; } const base = u.replace(/\$$/, ""), last = base === "_root" ? "scripts at the root" : base.split(".").pop(); return u.endsWith("$") ? `${last} itself` : last; };
+const unitLabel = u => { if (u === "~in" || u === "~out") { const n = aroundFocus().length; return `the rest · ${n} ${n === 1 ? "package" : "packages"}`; } if (u.startsWith("~")) return unitLabel(u.slice(4)); const base = u.replace(/\$$/, ""), last = base === "_root" ? "scripts at the root" : base.split(".").pop(); return u.endsWith("$") ? `${last} itself` : last; };
 const partOfUnit = u => { const m = [...byId.values()].find(n => n.kind === "module" && inUnit(n.id, u)); return m ? partOf(m) : partOf({}); };
 const inFocus = id => [...focusUnits].some(u => inUnit(id, u));
-const isRest = u => u === "~in" || u === "~out";
+// the rest of the code around a focus: `~in` hands data to it, `~out` takes data from it; opened, each
+// is the packages it holds (`~in:rkg.serve`)
+const isRest = u => u.startsWith("~");
+// the packages of the rest that hand the focus data (`~in`) or take data from it (`~out`), each with the types
+function restExchange(side) {
+  const out = new Map(), around = aroundFocus();
+  for (const [t, takers] of typeUse.takes) {
+    const makers = typeUse.makes.get(t);
+    if (!makers || !isData(t)) continue;
+    const [from, into] = side === "~in" ? [makers, takers] : [takers, makers];
+    if (![...into].some(inFocus)) continue;
+    for (const p of around) if ([...from].some(x => inUnit(x, p))) { if (!out.has(p)) out.set(p, new Set()); out.get(p).add(t); }
+  }
+  return out;
+}
 // the packages of the focus's parts that are not in it, nor around or inside one that is
 function aroundFocus() {
   const parts = new Set([...focusUnits].map(partOfUnit));
@@ -1107,7 +1121,10 @@ function routeTree() {
     const unitNodes = (us, part) => us.map(u => { const open = expandedUnits.has(u); return {id: "unit:" + u, open, kids: open ? unitKids(u, part) : [], hue: null, choice: false}; });
     const unitKids = (u, part) => { const below = u.endsWith("$") || u === "Makefile" ? [] : unitsBelow(u, part); return below.length > 1 ? unitNodes(below, part) : closedRoutes(unitRoutes(u)); };
     // a focus: the packages chosen, each opened as before, and the rest of the code on either side
-    if (focusUnits.size) return [...[...focusUnits].sort().flatMap(u => unitNodes([u], partOfUnit(u))), ...["~in", "~out"].map(r => ({id: "unit:" + r, open: false, kids: [], hue: null, choice: false}))];
+    if (focusUnits.size) {
+      const rest = r => { const open = expandedUnits.has(r); return {id: "unit:" + r, open, kids: open ? [...restExchange(r).keys()].sort().map(p => ({id: `unit:${r}:${p}`, open: false, kids: [], hue: null, choice: false})) : [], hue: null, choice: false}; };
+      return [...[...focusUnits].sort().flatMap(u => unitNodes([u], partOfUnit(u))), rest("~in"), rest("~out")];
+    }
     if (multi && !partFilter) return PARTS.map(p => { const open = expandedParts.has(p.id); return {id: "part:" + p.id, open, kids: open ? unitNodes(topUnits(p.id), p.id) : [], hue: null, choice: false}; });
     const part = partFilter || partOf({});
     return unitNodes(topUnits(part), part);
@@ -1261,6 +1278,22 @@ async function renderPlaat() {
     return hb ? [pill] : [];
   };
   for (const t of routeTree()) build(t, null);
+  // a focus and the rest of the code: one arrow each way per unit in focus, counting the types that
+  // cross; an opened rest has one arrow per package in it, from the package that makes the types or
+  // to the one that takes them, and holds only the packages with an arrow
+  const restArrows = [];  // [rest pill, unit pill, side, types]
+  const around = focusUnits.size ? aroundFocus() : [];
+  for (const [u, {in: ins, out: outs}] of restLinks) {
+    for (const [r, ts] of [["~in", ins], ["~out", outs]]) {
+      if (!ts.size) continue;
+      if (!expandedUnits.has(r)) { restArrows.push(["n:unit:" + r, "n:unit:" + u, r, ts]); continue; }
+      const byPkg = new Map();
+      for (const t of ts) for (const p of around) if ([...((r === "~in" ? typeUse.makes : typeUse.takes).get(t) || [])].some(x => inUnit(x, p))) { if (!byPkg.has(p)) byPkg.set(p, new Set()); byPkg.get(p).add(t); }
+      for (const [p, s] of byPkg) restArrows.push([`n:unit:${r}:${p}`, "n:unit:" + u, r, s]);
+    }
+  }
+  const linkedRest = new Set(restArrows.map(a => a[0]));
+  for (const P of [...pills.values()]) if (/^unit:~(in|out):/.test(P.steps[0]) && !linkedRest.has(P.id)) pills.delete(P.id);
   // the disk is a tree: past a column's worth, files fold into their directories, and a click opens one
   dirFold = foldDirs([...places.keys()].map(filePath).filter(Boolean));
   if (dirFold.to.size) {
@@ -1386,10 +1419,9 @@ async function renderPlaat() {
     if (P.backTo) addEdge(P.id, P.backTo, {back: true, hue: P.hue});
   }
   // a focus and the rest of the code: one arrow each way per unit, counting the types that cross
-  for (const [u, {in: ins, out: outs}] of restLinks) {
-    const at = "n:unit:" + u, names = ts => [...ts].map(typeLabel).sort().join(", ");
-    if (ins.size) addEdge("n:unit:~in", at, {label: `${ins.size} ${ins.size === 1 ? "type" : "types"}`, title: names(ins)});
-    if (outs.size) addEdge(at, "n:unit:~out", {label: `${outs.size} ${outs.size === 1 ? "type" : "types"}`, title: names(outs)});
+  for (const [rest, at, r, ts] of restArrows) {
+    const info = {label: `${ts.size} ${ts.size === 1 ? "type" : "types"}`, title: [...ts].map(typeLabel).sort().join(", ")};
+    if (r === "~in") addEdge(rest, at, info); else addEdge(at, rest, info);
   }
   // units that call one another while no data joins them: a dotted line, from the caller
   const unitPills = [...pills.values()].filter(P => P.steps[0].startsWith("unit:"));
@@ -1486,7 +1518,9 @@ async function renderPlaat() {
     clicks(grp, ev => {
       if (P.steps[0].startsWith("unit:")) {
         const u = P.steps[0].slice(5);
-        if (isRest(u)) { focusPanel(); return; }
+        // the rest opens into its packages; a package of it joins the focus
+        if (u === "~in" || u === "~out") { expandedUnits.add(u); plaatAnchor = P.id; render(); focusPanel(); return; }
+        if (isRest(u)) { focusUnits.add(u.slice(4)); plaatFit = true; render(); focusPanel(); return; }
         if (ev.shiftKey) { if (focusUnits.has(u)) focusUnits.delete(u); else focusUnits.add(u); plaatFit = true; render(); focusPanel(); return; }
       }
       if (P.steps[0].startsWith("part:")) { if (!P.own) { expandedParts.add(P.steps[0].slice(5)); plaatAnchor = P.id; render(); } return; }
@@ -1564,7 +1598,8 @@ function crumbs() {
   if (!entryKind && !storyEntry && !partFilter) C.appendChild(html("span", "none", entries.length ? "all" : "none"));
   if (view === "plaat" && pinned.size) { lbl("pinned"); chip(`${pinned.size} ${pinned.size === 1 ? "box" : "boxes"}`, () => pinned.clear()); }
   if (expandedParts.size && !storyEntry) { lbl("parts"); for (const p of expandedParts) chip(p, () => expandedParts.delete(p)); }
-  if (expandedUnits.size && !storyEntry && !entryKind) { lbl("packages"); for (const u of expandedUnits) chip(unitLabel(u), () => expandedUnits.delete(u)); }
+  const opened = u => u === "~in" ? "the rest, handing in" : u === "~out" ? "the rest, taking" : unitLabel(u);
+  if (expandedUnits.size && !storyEntry && !entryKind) { lbl("packages"); for (const u of expandedUnits) chip(opened(u), () => expandedUnits.delete(u)); }
   if (expanded.size) { lbl("opened"); for (const id of expanded) chip(byId.get(id)?.name || short(id), () => expanded.delete(id)); }
   if (expandedFamilies.size) { lbl("families"); for (const f of expandedFamilies) chip(typeLabel(f), () => expandedFamilies.delete(f)); }
   if (refined.size) { lbl("split"); for (const r of refined) chip(r.slice(2), () => refined.delete(r)); }
