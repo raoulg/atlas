@@ -9,6 +9,9 @@ engine/bindings/
 
 .DS_Store
 
+# a private subject's roles
+spike/rkg.roles.json
+
 # stray analyze output
 graph.json
 *.graph.json

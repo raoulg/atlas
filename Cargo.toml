@@ -6,6 +6,8 @@ resolver = "2"
 version = "0.1.0"
 edition = "2021"
 license = "CC-BY-NC-SA-4.0"
+repository = "https://github.com/raoulg/atlas"
+homepage = "https://github.com/raoulg/atlas"
 
 [workspace.dependencies]
 anyhow = "1"

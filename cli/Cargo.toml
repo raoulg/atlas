@@ -1,9 +1,14 @@
 [package]
 name = "atlas"
-description = "Atlas: code at the level of types and flows"
+description = "See how code works: where data rests, and the functions that carry it there"
+readme = "../README.md"
+keywords = ["code-visualization", "tree-sitter", "architecture", "static-analysis", "mcp"]
+categories = ["development-tools", "visualization", "command-line-utilities"]
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
+homepage.workspace = true
 
 [[bin]]
 name = "atlas"
