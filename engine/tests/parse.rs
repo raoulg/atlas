@@ -433,3 +433,16 @@ fn building_a_client_moves_nothing() {
     assert_eq!(n("fixture.clients.content_type", "net"), ["get"], "`requests.get(url)`, and not `headers.get`");
     assert_eq!(n("fixture.clients.ask", "llm"), ["create"], "`messages.create(..)`, and not `Anthropic()`");
 }
+
+/// A class is a door to a place when one of its operations reaches a database, the web, a model
+/// or a program: a sink, a connection. A value that reads itself from a file (an alternative
+/// constructor) or shows itself on the screen is data.
+#[test]
+fn a_door_reaches_a_service() {
+    let g = fixture();
+    let door = |id: &str| g.node(id).unwrap().door.clone();
+    assert_eq!(door("fixture.sinks.duck.DuckSink"), "db_duckdb");
+    assert_eq!(door("fixture.store.Connection"), "db_graph");
+    assert_eq!(door("fixture.files.Report"), "", "`from_file` and `show` make no door");
+    assert_eq!(door("fixture.schema.Graph"), "");
+}

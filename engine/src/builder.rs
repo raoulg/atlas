@@ -80,6 +80,8 @@ impl GraphBuilder {
     /// resolve are counted.
     pub fn finish(self, root: String, project_root: Option<&std::path::Path>, language: &str) -> Graph {
         let mut top: Vec<(String, u32)> = self.unresolved.iter().map(|(k, v)| (k.clone(), *v)).collect();
+        let mut nodes = self.nodes;
+        mark_doors(&mut nodes, &self.edges, language);
         let mut edges = self.edges;
         for e in edges.iter_mut().filter(|e| e.kind == EdgeKind::Calls) {
             e.uses = self.used.contains(&(e.src.clone(), e.dst.clone()));
@@ -89,7 +91,7 @@ impl GraphBuilder {
             root,
             language: language.into(),
             project_root: project_root.map(crate::tree::path_str).unwrap_or_default(),
-            nodes: self.nodes.into_values().collect(),
+            nodes: nodes.into_values().collect(),
             edges,
             files: self.files,
             stats: Stats {
@@ -126,3 +128,58 @@ impl GraphBuilder {
     }
 }
 
+
+/// The part of the world a kind of touch is, when it is a service a door leads to: a database,
+/// the web, a model or a program. A file or the screen is not: a value may save or show itself.
+fn service(kind: &str) -> bool {
+    kind.starts_with("db_") || matches!(kind, "net" | "llm" | "model" | "process")
+}
+
+/// Mark the classes that are doors: one of their operations reaches a service, through what it
+/// calls. An operation is a method called on a value of the class: in Python one that is not a
+/// class or static method, in Rust one whose first parameter is `self`. An alternative
+/// constructor (`Config.from_yaml`) reads into a value and leaves it data.
+fn mark_doors(nodes: &mut IndexMap<String, Node>, edges: &[Edge], language: &str) {
+    let mut out: std::collections::HashMap<&str, Vec<&str>> = std::collections::HashMap::new();
+    for e in edges.iter().filter(|e| matches!(e.kind, EdgeKind::Calls | EdgeKind::Instantiates)) {
+        out.entry(e.src.as_str()).or_default().push(e.dst.as_str());
+    }
+    let operation = |n: &Node| {
+        n.kind == NodeKind::Method
+            && !n.decorators.iter().any(|d| matches!(d.as_str(), "classmethod" | "staticmethod" | "static"))
+            && (language != "rust" || n.params.first().map_or(false, |p| p.trim_start_matches('&').trim_start_matches("mut ").starts_with("self")))
+    };
+    let reaches = |start: &str| -> Option<String> {
+        let mut seen = HashSet::from([start.to_string()]);
+        let mut stack = vec![start.to_string()];
+        while let Some(id) = stack.pop() {
+            let Some(n) = nodes.get(&id) else { continue };
+            if let Some(t) = n.touches.iter().find(|t| service(&t.kind)) {
+                return Some(t.kind.clone());
+            }
+            let next = match n.kind {
+                NodeKind::Class => vec![format!("{id}.__init__")],
+                _ => out.get(id.as_str()).into_iter().flatten().map(|d| d.to_string()).collect(),
+            };
+            for d in next {
+                if seen.insert(d.clone()) {
+                    stack.push(d);
+                }
+            }
+        }
+        None
+    };
+    let doors: Vec<(String, String)> = nodes
+        .values()
+        .filter(|n| n.kind == NodeKind::Class)
+        .filter_map(|c| {
+            let prefix = format!("{}.", c.id);
+            nodes.values().filter(|m| m.cls.as_deref() == Some(c.id.as_str()) || m.id.starts_with(&prefix) && m.kind == NodeKind::Method).filter(|m| operation(m)).find_map(|m| reaches(&m.id)).map(|k| (c.id.clone(), k))
+        })
+        .collect();
+    for (id, kind) in doors {
+        if let Some(n) = nodes.get_mut(&id) {
+            n.door = kind;
+        }
+    }
+}

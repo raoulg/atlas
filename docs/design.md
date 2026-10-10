@@ -227,9 +227,13 @@ routes and doors (the functions other packages call in it). A package closed is 
 the places its own code touches, not what it reaches through other packages, and the
 types that cross its edge. A type crosses where one package makes it (gives it back,
 builds it, changes it) and another takes it, and between packages it is drawn once, as
-the joint. What crosses is data: a class whose methods reach a place in the world (a
-sink, a repository, a client), and a library's type whose calls reach one
-(`sqlite3.Connection`), is a door to that place, and the place is drawn instead.
+the joint. What crosses is data: a class one of whose operations reaches a database,
+the web, a model or a program (a sink, a repository, a client), and a library's type
+whose calls reach one (`sqlite3.Connection`), is a door to that place, and the place is
+drawn instead. A file or the screen makes no door: a value may save or show itself.
+Packages that call one another while no data joins them get a dotted line, from the
+caller: the quotient of the call graph, beside the quotient of the places. The package
+level stands whether or not entry points are found.
 
 **Architecture** — a small `architecture.yml` in the subject repo, an override on
 naming and on what counts as a legitimate flow, never the source of the picture:

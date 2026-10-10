@@ -116,8 +116,10 @@ pub struct Node {
     /// Where the body compares a value with literals.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub compares: Vec<Compare>,
-    /// For a library's type: the part of the world its library's calls reach (`db_sqlite` for
-    /// `sqlite3.Connection`), when they reach one. A value of it is a door to that place.
+    /// The part of the world a value of this type is a door to, when it is one. A library's type:
+    /// what its library's calls reach (`db_sqlite` for `sqlite3.Connection`). A class of the
+    /// package: what one of its operations reaches, through what it calls (a sink, a repository,
+    /// a client).
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub door: String,
     /// The part of the repository the node belongs to.

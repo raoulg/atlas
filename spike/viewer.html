@@ -107,6 +107,7 @@ svg#canvas:active{cursor:grabbing}
 #crumbs button:hover{border-color:var(--ink-3)}
 .sedge.reach{stroke-dasharray:5 4}
 .sedge.back{stroke-dasharray:1 3;stroke-linecap:round}
+.sedge.uses{stroke-dasharray:1 3;stroke-linecap:round;opacity:.7}
 .tstep{cursor:pointer}
 .tstep.own rect.bg{fill:var(--panel);stroke-dasharray:none}
 .tnode.world rect.bg{fill:color-mix(in oklab, var(--k) 12%, var(--panel));stroke:color-mix(in oklab, var(--k) 55%, var(--line))}
@@ -954,18 +955,20 @@ function unitRoutes(u) {
   const doors = [...byId.values()].filter(n => ["function", "method", "class"].includes(n.kind) && inUnit(n.id, u) && !seen.has(n.id) && called(n)).map(n => n.id).sort();
   return [...es, ...doors];
 }
-// a class whose methods reach a place in the world (a sink, a repository, a client) is a door to that
-// place, not a place where data rests: between units the place is drawn, not the door. So is a
-// library's type whose calls reach a place (`sqlite3.Connection`); what crosses between units is data
+// a class whose own operations reach a database, the web, a model or a program (a sink, a
+// repository, a client) is a door to that place, not a place where data rests: between units the
+// place is drawn, not the door; the engine marks it (`door`), and a family is a door when one of
+// its members is. So is a library's type whose calls reach a place (`sqlite3.Connection`); what
+// crosses between units is data
 const doorCache = new Map();
 function isDoor(t) {
   if (!doorCache.has(t)) {
     const fam = familyOf(t), kin = [t, fam, ...(members.get(fam) || [])];
-    doorCache.set(t, kin.some(c => (out.get(c) || []).some(e => e.kind === "contains" && reach(e.dst).touches.some(tc => WORLD[tc.kind]))));
+    doorCache.set(t, kin.some(c => !!byId.get(c)?.door));
   }
   return doorCache.get(t);
 }
-const isData = t => { const n = byId.get(t); return n?.kind === "class" ? !isDoor(t) : n?.kind === "external" && !n.door; };
+const isData = t => { const n = byId.get(t); return (n?.kind === "class" || n?.kind === "external") && !isDoor(t); };
 // who makes each type (gives it back, builds it, changes it) and who takes it: a type crosses between
 // two units when one makes it and the other takes it
 const typeUse = { makes: new Map(), takes: new Map() };
@@ -1015,7 +1018,6 @@ function placesOf(touches) {
 }
 // the route as a tree: an open step holds its own steps; a call into a family holds its members' overrides as branches
 function routeTree() {
-  if (!entries.length) return D.nodes.filter(n => n.kind === "function" || n.kind === "method").map(n => ({id: n.id, open: false, ownBody: true, kids: [], hue: null}));
   const closedRoutes = es => es.map(e => ({id: e.id, open: false, kids: [], hue: null}));
   if (!storyEntry && !entryKind) {
     const unitNodes = (us, part) => us.map(u => { const open = expandedUnits.has(u); return {id: "unit:" + u, open, kids: open ? unitKids(u, part) : [], hue: null, choice: false}; });
@@ -1195,14 +1197,7 @@ async function renderPlaat() {
   // a type no step takes or hands on any more is not drawn
   const referenced = new Set([...pills.values()].flatMap(P => [...P.D.keys(), ...P.C.keys()]));
   for (const k of [...places.keys()]) if (k.startsWith("t:") && !referenced.has(k)) places.delete(k);
-  // without entry points there is no route; keep that picture coarse: the world and the busiest types
   const keep = new Set(places.keys());
-  if (!entries.length) {
-    const involvement = new Map();
-    for (const P of pills.values()) for (const k of [...P.D.keys(), ...P.C.keys()]) involvement.set(k, (involvement.get(k) || 0) + 1);
-    keep.clear(); [...places.keys()].filter(id => !id.startsWith("t:")).forEach(id => keep.add(id));
-    [...places.keys()].filter(id => id.startsWith("t:")).sort((a, b) => (involvement.get(b) || 0) - (involvement.get(a) || 0)).slice(0, 16).forEach(id => keep.add(id));
-  }
   // open families are frames around their members; a member stands inside, the family itself is the frame
   const famFrames = new Map();
   for (const p of places.values()) {
@@ -1252,7 +1247,7 @@ async function renderPlaat() {
     if (P.own) return stepName(P.steps[0]);
     const ns = [...new Set(P.steps.map(stepName))], text = ns.length <= 2 ? ns.join(", ") : `${ns.slice(0, 2).join(", ")} +${ns.length - 2}`;
     const alts = P.steps.length === 1 ? altCount(P.steps[0]) : 0;
-    return (P.steps.some(openable) || (!storyEntry && entries.length) ? "▸ " : "") + text + (alts ? ` · one of ${alts}` : "");
+    return (P.steps.some(openable) || !storyEntry ? "▸ " : "") + text + (alts ? ` · one of ${alts}` : "");
   };
   for (const P of pills.values()) { P.label = pillLabel(P); holder(P.parent).children.push(leaf(P.id, 24 + textW(P.label, 6.9), 26)); }
   // memory lives in the smallest open step that holds every step using it
@@ -1277,17 +1272,25 @@ async function renderPlaat() {
     P.C.forEach((r, k) => addEdge(P.id, k, {reach: r, hue: P.hue}));
     if (P.backTo) addEdge(P.id, P.backTo, {back: true, hue: P.hue});
   }
+  // units that call one another while no data joins them: a dotted line, from the caller
+  const unitPills = [...pills.values()].filter(P => P.steps[0].startsWith("unit:"));
+  for (const A of unitPills) for (const B of unitPills) {
+    if (A === B || A.parent !== B.parent) continue;
+    const a = A.steps[0].slice(5), b = B.steps[0].slice(5);
+    const joined = [...A.C.keys()].some(k => B.D.has(k)) || [...B.C.keys()].some(k => A.D.has(k));
+    const calls = D.edges.some(e => (e.kind === "calls" || e.kind === "instantiates") && inUnit(e.src, a) && inUnit(e.dst, b));
+    if (calls && !joined) addEdge(A.id, B.id, {uses: true});
+  }
   const layout = await new ELK().layout(Object.assign(root, {layoutOptions: {"elk.algorithm": "layered", "elk.direction": "RIGHT", "elk.hierarchyHandling": "INCLUDE_CHILDREN", "elk.edgeRouting": "ORTHOGONAL", "elk.layered.spacing.nodeNodeBetweenLayers": "56", "elk.spacing.nodeNode": "16", "elk.layered.nodePlacement.strategy": "NETWORK_SIMPLEX", "elk.spacing.edgeNode": "14", "elk.layered.spacing.edgeNodeBetweenLayers": "16", "elk.layered.considerModelOrder.strategy": "NODES_AND_EDGES"}}));
   // absolute positions; edge points are relative to the edge's container
   const OX = 20, OY = 60, pos = new Map();
   const walkPos = (n, ox, oy, depth) => { for (const c of n.children || []) { pos.set(c.id, {x: c.x + ox, y: c.y + oy, w: c.width, h: c.height, depth}); walkPos(c, c.x + ox, c.y + oy, depth + 1); } };
   walkPos(layout, OX, OY, 0);
   const parentOf = new Map(); const walkPar = n => { for (const c of n.children || []) { parentOf.set(c.id, n.id); walkPar(c); } }; walkPar(layout);
-  el("text", {class: "story-title", x: 20, y: 24}, g).textContent = !entries.length ? "Every function (no entry points found)" : storyEntry ? `Route · ${entryTitle(storyEntry)}` : entryKind ? `All ${KIND_LABEL[entryKind]} routes` : partFilter ? `${partFilter} by package` : multi ? `${PARTS.length} parts` : `${D.root} by package`;
-  el("text", {class: "story-sub", x: 20, y: 41}, g).textContent = !entries.length ? "nothing anchors a route here, so every typed function is a step · the sixteen busiest types are kept"
-    : storyEntry ? `${short(storyEntry)} · what it reads on the left, what it writes on the right · click a pill to open it, a frame's title to close it`
+  el("text", {class: "story-title", x: 20, y: 24}, g).textContent = storyEntry ? `Route · ${entryTitle(storyEntry)}` : entryKind ? `All ${KIND_LABEL[entryKind]} routes` : partFilter ? `${partFilter} by package` : multi ? `${PARTS.length} parts` : `${D.root} by package`;
+  el("text", {class: "story-sub", x: 20, y: 41}, g).textContent = storyEntry ? `${short(storyEntry)} · what it reads on the left, what it writes on the right · click a pill to open it, a frame's title to close it`
     : multi && !partFilter && !entryKind ? "each part from what it reads to what it writes; one part's requests are another's HTTP · click a part to open it"
-    : !entryKind ? "each package from what its own code reads to what it writes, joined by the types that cross between packages · click a package to open it"
+    : !entryKind ? "each package from what its own code reads to what it writes, joined by the types that cross between packages; a dotted line where one only calls another · click a package to open it"
     : "each route from what it reads to what it writes · click a route to open it";
   if (!pos.size) el("text", {class: "story-sub", x: 20, y: 70}, g).textContent = "No step on this route takes or hands on a place yet: open a step in Story, or pick another route.";
   const fg = el("g", {}, g), eg = el("g", {}, g), ng = el("g", {}, g);
@@ -1334,7 +1337,7 @@ async function renderPlaat() {
     for (const sct of e.sections || []) {
       const pts = [sct.startPoint, ...(sct.bendPoints || []), sct.endPoint].map(q => ({x: q.x + c.x, y: q.y + c.y}));
       const d = pts.map((q, i) => (i ? "L" : "M") + q.x + "," + q.y).join(" ");
-      const p = el("path", {class: "sedge fn" + (info.reach ? " reach" : "") + (info.back ? " back" : ""), d, "stroke-width": 1.3}, eg);
+      const p = el("path", {class: "sedge fn" + (info.reach ? " reach" : "") + (info.back ? " back" : "") + (info.uses ? " uses" : ""), d, "stroke-width": info.uses ? 1 : 1.3}, eg);
       const last = pts[pts.length - 1], prev = pts[pts.length - 2], ang = Math.atan2(last.y - prev.y, last.x - prev.x), L = 8, Wd = 4;
       const head = el("polygon", {points: [[last.x, last.y], [last.x - L * Math.cos(ang) + Wd * Math.sin(ang), last.y - L * Math.sin(ang) - Wd * Math.cos(ang)], [last.x - L * Math.cos(ang) - Wd * Math.sin(ang), last.y - L * Math.sin(ang) + Wd * Math.cos(ang)]].map(q => q.join(",")).join(" "), class: "sedge-head"}, eg);
       if (info.hue) { p.style.stroke = hueVar(info.hue); head.style.fill = hueVar(info.hue); }
@@ -1355,7 +1358,7 @@ async function renderPlaat() {
       if (P.steps[0].startsWith("unit:")) { expandedUnits.add(P.steps[0].slice(5)); plaatAnchor = P.id; render(); return; }
       if (P.steps.length === 1) select(P.steps[0]); else selectArrows({fns: P.steps, kind: "steps"});
       if (P.own) return;
-      if (!storyEntry && entries.length) { if (P.steps.length === 1) { storyEntry = P.steps[0]; entrySel.value = storyEntry; expanded.clear(); plaatAnchor = P.id; render(); } return; }
+      if (!storyEntry) { if (P.steps.length === 1) { storyEntry = P.steps[0]; entrySel.value = storyEntry; expanded.clear(); plaatAnchor = P.id; render(); } return; }
       const opens = P.steps.filter(openable);
       if (opens.length) { opens.forEach(id => expanded.add(id)); plaatAnchor = P.id; render(); }
     });

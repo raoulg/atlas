@@ -46,3 +46,17 @@ def install(default: Path) -> None:
 
 def export(frame: pd.DataFrame) -> None:
     frame.to_csv(DATA / "frame.csv", na_rep="NA")
+
+
+class Report:
+    """A value that can be read from a file and show itself: data, not a door."""
+
+    def __init__(self, lines: list[str]) -> None:
+        self.lines = lines
+
+    @classmethod
+    def from_file(cls, path: Path) -> "Report":
+        return cls(path.read_text().splitlines())
+
+    def show(self) -> None:
+        print("\\n".join(self.lines))
