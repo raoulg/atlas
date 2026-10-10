@@ -7,22 +7,22 @@ use atlas_engine::principles;
 use clap::builder::styling::{AnsiColor, Effects, Style, Styles};
 use clap::{Parser, Subcommand};
 
-/// The viewer's place colours, in the terminal's own palette.
+/// The logo's colours in the terminal's own palette: structure in petrol (cyan), commands in ink.
 const STYLES: Styles = Styles::styled()
-    .header(AnsiColor::Blue.on_default().effects(Effects::BOLD))
-    .usage(AnsiColor::Blue.on_default().effects(Effects::BOLD))
-    .literal(AnsiColor::Cyan.on_default().effects(Effects::BOLD))
-    .placeholder(AnsiColor::Yellow.on_default())
-    .valid(AnsiColor::Green.on_default())
+    .header(AnsiColor::Cyan.on_default().effects(Effects::BOLD))
+    .usage(AnsiColor::Cyan.on_default().effects(Effects::BOLD))
+    .literal(Style::new().effects(Effects::BOLD))
+    .placeholder(AnsiColor::Cyan.on_default())
+    .valid(AnsiColor::Cyan.on_default())
     .invalid(AnsiColor::Red.on_default().effects(Effects::BOLD))
     .error(AnsiColor::Red.on_default().effects(Effects::BOLD));
 
-/// The logo in a line: a place, a function, a place, a function, a place.
+/// The logo in a line: places joined by a route that ends in vermilion, where its data rests.
 fn banner() -> String {
-    let (a, b, c) = (AnsiColor::Cyan.on_default(), AnsiColor::Blue.on_default(), AnsiColor::Yellow.on_default());
+    let (place, end) = (AnsiColor::Cyan.on_default(), AnsiColor::Red.on_default());
     let (dim, bold) = (Style::new().effects(Effects::DIMMED), Style::new().effects(Effects::BOLD));
     format!(
-        "{a}■{a:#}{dim}──▶{dim:#}{b}■{b:#}{dim}──▶{dim:#}{c}■{c:#}  {bold}atlas{bold:#} {dim}{}{dim:#}",
+        "{place}■{place:#}{dim}──▶{dim:#}{place}■{place:#}{dim}──▶{dim:#}{end}■{end:#}  {bold}atlas{bold:#} {dim}{}{dim:#}",
         env!("CARGO_PKG_VERSION")
     )
 }

@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/logo.svg" width="112" alt="Atlas logo: the letter A drawn as a route through three places">
+  <img src="docs/logo.svg" width="112" alt="Atlas logo: an A found in the cellular automaton Rule 30, five of its cells joined as a route">
 </p>
 
 <h1 align="center">Atlas</h1>
