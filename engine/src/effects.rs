@@ -28,6 +28,10 @@ const WRITE_BOUND: &[&str] = &[
     "save", "mkdir", "copy", "copyfile", "copytree", "move", "unlink", "rmtree", "touch", "imwrite",
     "extractall", "makedirs", "rename", "replace", "writelines",
 ];
+/// Writes that move or remove files rather than store data: only the file system's own libraries
+/// do them, and a frame's `copy()` or `replace(..)` stays in memory.
+const FILE_OPS: &[&str] = &["copy", "copyfile", "copytree", "move", "unlink", "rmtree", "rename", "replace", "mkdir", "makedirs", "touch"];
+const FS_PKGS: &[&str] = &["shutil", "os", "pathlib"];
 const READ_UNBOUND: &[&str] = &[
     "read_text", "read_bytes", "iterdir", "glob", "rglob", "read", "readlines", "read_csv",
     "read_parquet", "read_file",
@@ -100,7 +104,7 @@ pub fn boundary(pkg: Option<&str>, parts: &[String], ext: &HashSet<String>) -> O
             return Some("process");
         }
         if FILE_PKGS.contains(&pkg) {
-            if WRITE_BOUND.contains(&last) {
+            if WRITE_BOUND.contains(&last) && (!FILE_OPS.contains(&last) || FS_PKGS.contains(&pkg)) {
                 return Some("disk_write");
             }
             if READ_BOUND.contains(&last) {

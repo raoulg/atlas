@@ -683,6 +683,21 @@ fn collect_imports(m: &mut Module, module_ids: &HashSet<String>, store: &mut Gra
     for (k, v) in bindings {
         m.bindings.insert(k, v);
     }
+    // a function or class under another name is that function or class: `graaf = triple`
+    let renamed: Vec<(String, String)> = top_assignments(m)
+        .into_iter()
+        .filter_map(|a| {
+            let (left, right) = (a.child_by_field_name("left")?, a.child_by_field_name("right")?);
+            if left.kind() != "identifier" || !matches!(right.kind(), "identifier" | "attribute") || a.child_by_field_name("type").is_some() {
+                return None;
+            }
+            let parts = dotted(Some(right), &m.src);
+            let head = m.symbols.get(parts.first()?).or_else(|| m.bindings.get(&parts[0]))?;
+            let name = text(left, &m.src).to_string();
+            (!m.symbols.contains_key(&name)).then(|| (name, std::iter::once(head.clone()).chain(parts[1..].iter().cloned()).collect::<Vec<_>>().join(".")))
+        })
+        .collect();
+    m.bindings.extend(renamed);
     for target in edges {
         import_edge(m, &target, module_ids, store, root);
     }
@@ -773,13 +788,35 @@ fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, root: &str
             }
         }
     }
-    // self.x = param in __init__
+    // signatures -> takes / returns, every one before any body is read
     for id in &ids {
-        let n = &store.nodes[id];
-        if n.kind == NodeKind::Method && n.name == "__init__" {
-            infer_self_attrs(modules, store, root, id);
+        let (kind, module) = (store.nodes[id].kind, store.nodes[id].module.clone());
+        if !matches!(kind, NodeKind::Function | NodeKind::Method) {
+            continue;
+        }
+        let m = &modules[&module];
+        let sig = store.sigs.get(id).cloned().unwrap_or_default();
+        for (types, kind) in [(&sig.ptypes, EdgeKind::Takes), (&sig.rtypes, EdgeKind::Returns)] {
+            let targets: Vec<String> = types
+                .iter()
+                .flat_map(|t| match resolve(m, t, modules, &store.nodes, root) {
+                    Some(r) => vec![r],
+                    None => alias_targets(m, t, modules, &aliases, &store.nodes, root),
+                })
+                .collect();
+            for r in targets {
+                if r.starts_with("ext:") {
+                    if !foreign_type(&r) {
+                        continue;
+                    }
+                    store.ext_node(&r);
+                }
+                store.add_edge(id, &r, kind, None);
+            }
         }
     }
+    // what functions give back, globals and attributes hold
+    let known = type_values(modules, store, root);
     // methods that change their receiver, directly or through another such method on self
     for _ in 0..5 {
         let before = store.mutating.len();
@@ -803,35 +840,10 @@ fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, root: &str
             break;
         }
     }
-    // signatures -> takes / returns; bodies -> calls / instantiates / boundaries
+    // bodies -> calls / instantiates / boundaries
     for id in &ids {
-        let (kind, module) = (store.nodes[id].kind, store.nodes[id].module.clone());
-        match kind {
-            NodeKind::Function | NodeKind::Method => {
-                let m = &modules[&module];
-                let sig = store.sigs.get(id).cloned().unwrap_or_default();
-                for (types, kind) in [(&sig.ptypes, EdgeKind::Takes), (&sig.rtypes, EdgeKind::Returns)] {
-                    let targets: Vec<String> = types
-                        .iter()
-                        .flat_map(|t| match resolve(m, t, modules, &store.nodes, root) {
-                            Some(r) => vec![r],
-                            None => alias_targets(m, t, modules, &aliases, &store.nodes, root),
-                        })
-                        .collect();
-                    for r in targets {
-                        if r.starts_with("ext:") {
-                            if !foreign_type(&r) {
-                                continue;
-                            }
-                            store.ext_node(&r);
-                        }
-                        store.add_edge(id, &r, kind, None);
-                    }
-                }
-                link_calls(modules, store, root, id);
-            }
-            NodeKind::Module => link_calls(modules, store, root, id),
-            _ => {}
+        if matches!(store.nodes[id].kind, NodeKind::Function | NodeKind::Method | NodeKind::Module) {
+            link_calls(modules, store, &known, root, id);
         }
     }
 }
@@ -894,53 +906,491 @@ fn changed_roots<'a>(body: TsNode, src: &'a [u8], mutating: &dyn Fn(TsNode) -> b
     out
 }
 
-fn infer_self_attrs(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, root: &str, init_id: &str) {
-    let n = store.nodes[init_id].clone();
-    let Some(cls) = n.cls.clone() else { return };
-    let m = &modules[&n.module];
-    let Some(d) = def_node(m, &n) else { return };
+// ---------- the types of expressions ----------
+
+/// What a value is, as far as the code says: an instance of a class of the package, a
+/// collection of such instances (`list[Graph]`), a mapping to them (`dict[str, Graph]`), or a
+/// value a library made (`requests.Session()`, `duckdb.connect(..)`), named by the library.
+#[derive(Clone, Debug, PartialEq)]
+enum Ty {
+    Class(String),
+    Many(String),
+    Map(String),
+    Lib(String),
+}
+
+/// What a call reaches: a function, method or class of the package, or a library.
+enum Callee {
+    Def(String),
+    Lib(String),
+}
+
+/// Generic types whose parameter is what iterating them gives: `list[Graph]` is many Graphs.
+const COLLECTIONS: &[&str] = &[
+    "list", "List", "set", "Set", "frozenset", "FrozenSet", "Sequence", "MutableSequence", "Iterable", "Iterator", "Collection",
+    "AbstractSet", "MutableSet", "Generator", "AsyncIterable", "AsyncIterator", "AsyncGenerator", "deque", "Deque",
+];
+
+/// Generic types that map keys to their last parameter: `dict[str, Graph]`.
+const MAPPINGS: &[&str] = &["dict", "Dict", "Mapping", "MutableMapping", "defaultdict", "DefaultDict", "OrderedDict"];
+
+/// Generic types that are one of their parameters: `Optional[Store]`, `Final[Store]`.
+const ONE_OF: &[&str] = &["Optional", "Union", "Annotated", "Final", "ClassVar", "Required", "NotRequired", "ReadOnly"];
+
+/// The library an external name belongs to: `ext:requests.Session` -> `requests`.
+fn lib_of(resolved: &str) -> Option<String> {
+    resolved.strip_prefix("ext:").map(|r| r.split(['.', '[']).next().unwrap_or(r).to_string())
+}
+
+/// An annotation's generic head and parameters: `list[Graph]` -> (`list`, [Graph]).
+fn generic<'t>(n: TsNode<'t>, src: &[u8]) -> Option<(String, Vec<TsNode<'t>>)> {
+    let unwrap = |x: TsNode<'t>| if x.kind() == "type" { named_children(x).into_iter().next().unwrap_or(x) } else { x };
+    let (head, args) = match n.kind() {
+        "generic_type" => {
+            let kids = named_children(n);
+            let args = kids.iter().find(|k| k.kind() == "type_parameter").map(|tp| named_children(*tp).into_iter().map(unwrap).collect()).unwrap_or_default();
+            (dotted(kids.first().copied(), src), args)
+        }
+        "subscript" => (dotted(n.child_by_field_name("value"), src), field_children(n, "subscript").into_iter().map(unwrap).collect()),
+        _ => return None,
+    };
+    Some((head.last()?.clone(), args))
+}
+
+/// The type an annotation gives a value: a class of the package or a library's value, many of
+/// them (`list[Graph]`), or one of them (`Store | None`, `Optional[Store]`). A generic class
+/// (`Holder[Node]`) is a value of that class; a mapping or a tuple has no one type.
+fn annotated(m: &Module, t: TsNode, modules: &IndexMap<String, Module>, nodes: &IndexMap<String, Node>, root: &str) -> Option<Ty> {
     let src = &m.src;
-    let ptypes = param_types(m, d, modules, &store.nodes, root);
-    let Some(body) = d.child_by_field_name("body") else { return };
-    let mut found: Vec<(String, String)> = vec![];
-    for a in walk(body, &["assignment"]) {
-        let Some(left) = a.child_by_field_name("left") else { continue };
-        if left.kind() != "attribute" {
-            continue;
+    let t = if t.kind() == "type" { named_children(t).into_iter().next()? } else { t };
+    match t.kind() {
+        // `Store | None`: the side that names a type
+        "binary_operator" => return named_children(t).into_iter().find_map(|x| annotated(m, x, modules, nodes, root)),
+        "string" => {
+            let lit = text(t, src).trim_matches(|c| c == '"' || c == '\'');
+            let head = lit.split('[').next().unwrap_or("").rsplit('.').next().unwrap_or("");
+            let many = lit.contains('[') && COLLECTIONS.contains(&head);
+            let ty = quoted_values(lit).into_iter().find_map(|name| one(m, &name.split('.').map(str::to_string).collect::<Vec<_>>(), modules, nodes, root));
+            return if many { ty.and_then(|t| if let Ty::Class(c) = t { Some(Ty::Many(c)) } else { None }) } else { ty };
         }
-        let lp = dotted(Some(left), src);
-        if lp.len() != 2 || lp[0] != "self" {
-            continue;
+        _ => {}
+    }
+    if let Some((head, args)) = generic(t, src) {
+        if COLLECTIONS.contains(&head.as_str()) {
+            return match args.first().and_then(|a| annotated(m, *a, modules, nodes, root))? {
+                Ty::Class(c) | Ty::Many(c) => Some(Ty::Many(c)),
+                Ty::Map(_) | Ty::Lib(_) => None,
+            };
         }
-        let mut target: Option<String> = None;
-        if let Some(t) = a.child_by_field_name("type") {
-            for tn in type_names(Some(t), src) {
-                if let Some(r) = resolve(m, &tn, modules, &store.nodes, root).filter(|r| !r.starts_with("ext:")) {
-                    target = Some(r);
+        if MAPPINGS.contains(&head.as_str()) {
+            return match args.last().and_then(|a| annotated(m, *a, modules, nodes, root))? {
+                Ty::Class(c) => Some(Ty::Map(c)),
+                _ => None,
+            };
+        }
+        if ONE_OF.contains(&head.as_str()) {
+            return args.into_iter().find_map(|a| annotated(m, a, modules, nodes, root));
+        }
+        if CONTAINERS.contains(&head.as_str()) {
+            return None;
+        }
+    }
+    let name = match generic(t, src) {
+        Some(_) => dotted(named_children(t).first().copied().or(t.child_by_field_name("value")), src),
+        None => dotted(Some(t), src),
+    };
+    one(m, &name, modules, nodes, root)
+}
+
+/// A name in an annotation as a type: a class of the package, or a library's value.
+fn one(m: &Module, name: &[String], modules: &IndexMap<String, Module>, nodes: &IndexMap<String, Node>, root: &str) -> Option<Ty> {
+    if name.last().map_or(true, |l| BUILTIN_TYPES.contains(&l.as_str())) {
+        return None;
+    }
+    let r = resolve(m, name, modules, nodes, root)?;
+    match lib_of(&r) {
+        Some(lib) => Some(Ty::Lib(lib)),
+        None => nodes.get(&r).filter(|n| n.kind == NodeKind::Class).map(|_| Ty::Class(r)),
+    }
+}
+
+/// What is typed before any body is read: what each function gives back (and, for a tuple, at
+/// each place), what each module's globals and each class's attributes hold.
+#[derive(Default)]
+struct Known {
+    returns: HashMap<String, Ty>,
+    tuples: HashMap<String, Vec<Option<Ty>>>,
+    globals: HashMap<String, HashMap<String, Ty>>,
+    attrs: HashMap<String, HashMap<String, Ty>>,
+}
+
+/// Fill `Known`: return types from the annotations; then, twice so that a type found through
+/// another settles, globals from their assignments and attributes from the class's annotated
+/// fields and from `self.x = ..` in its methods, `__init__` first. An attribute that holds a
+/// class of the package is an edge `has`.
+fn type_values(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, root: &str) -> Known {
+    let mut known = Known::default();
+    let defs: Vec<String> = store.nodes.values().filter(|n| matches!(n.kind, NodeKind::Function | NodeKind::Method)).map(|n| n.id.clone()).collect();
+    for id in &defs {
+        let n = &store.nodes[id];
+        let m = &modules[&n.module];
+        let Some(rt) = def_node(m, n).and_then(|d| d.child_by_field_name("return_type")) else { continue };
+        if let Some(t) = annotated(m, rt, modules, &store.nodes, root) {
+            known.returns.insert(id.clone(), t);
+        }
+        let inner = named_children(rt).into_iter().next().unwrap_or(rt);
+        if let Some((head, args)) = generic(inner, &m.src).filter(|(h, _)| h == "tuple" || h == "Tuple") {
+            let _ = head;
+            known.tuples.insert(id.clone(), args.into_iter().map(|a| annotated(m, a, modules, &store.nodes, root)).collect());
+        }
+    }
+    let mut methods: Vec<&String> = defs.iter().filter(|id| store.nodes[*id].cls.is_some()).collect();
+    methods.sort_by_key(|id| store.nodes[*id].name != "__init__");
+    let classes: Vec<String> = store.nodes.values().filter(|n| n.kind == NodeKind::Class).map(|n| n.id.clone()).collect();
+    for _ in 0..2 {
+        let mut globals = HashMap::new();
+        let mut found: Vec<(String, String, Ty)> = vec![];
+        {
+            for (mid, m) in modules {
+                let scope = Scope::new(m, modules, store, &known, root, None);
+                let mut g = HashMap::new();
+                for a in top_assignments(m) {
+                    let Some(left) = a.child_by_field_name("left").filter(|l| l.kind() == "identifier") else { continue };
+                    if let Some(t) = scope.assigned(a) {
+                        g.insert(text(left, &m.src).to_string(), t);
+                    }
+                }
+                globals.insert(mid.clone(), g);
+            }
+            // a class's annotated fields: `nodes: list[Node]`
+            for cls in &classes {
+                let n = &store.nodes[cls];
+                let m = &modules[&n.module];
+                let Some(body) = def_node(m, n).and_then(|d| d.child_by_field_name("body")) else { continue };
+                for st in named_children(body).into_iter().filter(|s| s.kind() == "expression_statement") {
+                    let Some(a) = named_children(st).into_iter().next().filter(|a| a.kind() == "assignment") else { continue };
+                    let (Some(left), Some(t)) = (a.child_by_field_name("left").filter(|l| l.kind() == "identifier"), a.child_by_field_name("type")) else { continue };
+                    if let Some(t) = annotated(m, t, modules, &store.nodes, root) {
+                        found.push((cls.clone(), text(left, &m.src).to_string(), t));
+                    }
                 }
             }
-        }
-        if target.is_none() {
-            if let Some(right) = a.child_by_field_name("right") {
-                if right.kind() == "identifier" {
-                    target = ptypes.get(text(right, src)).cloned();
-                } else if right.kind() == "call" {
-                    let parts = dotted(right.child_by_field_name("function"), src);
-                    if let Some(r) = resolve(m, &parts, modules, &store.nodes, root) {
-                        if store.nodes.get(&r).map_or(false, |x| x.kind == NodeKind::Class) {
-                            target = Some(r);
-                        }
+            for id in &methods {
+                let n = &store.nodes[*id];
+                let m = &modules[&n.module];
+                let Some(d) = def_node(m, n) else { continue };
+                let scope = Scope::of_def(m, modules, store, &known, root, n, d);
+                let Some(body) = d.child_by_field_name("body") else { continue };
+                for a in walk(body, &["assignment"]) {
+                    let Some(left) = a.child_by_field_name("left").filter(|l| l.kind() == "attribute") else { continue };
+                    let lp = dotted(Some(left), &m.src);
+                    if lp.len() != 2 || lp[0] != "self" {
+                        continue;
+                    }
+                    if let Some(t) = scope.assigned(a) {
+                        found.push((n.cls.clone().unwrap_or_default(), lp[1].clone(), t));
                     }
                 }
             }
         }
-        if let Some(t) = target {
-            found.push((lp[1].clone(), t));
+        known.globals = globals;
+        for (cls, attr, t) in found {
+            let attrs = known.attrs.entry(cls.clone()).or_default();
+            if attrs.contains_key(&attr) {
+                continue;
+            }
+            attrs.insert(attr.clone(), t.clone());
+            if let Ty::Class(c) | Ty::Many(c) | Ty::Map(c) = t {
+                store.classes.entry(cls.clone()).or_default().attr_types.entry(attr.clone()).or_insert(c.clone());
+                store.add_edge(&cls, &c, EdgeKind::Has, Some(attr));
+            }
         }
     }
-    for (attr, t) in found {
-        store.classes.entry(cls.clone()).or_default().attr_types.insert(attr.clone(), t.clone());
-        store.add_edge(&cls, &t, EdgeKind::Has, Some(attr));
+    known
+}
+
+/// The dotted path a call is written with; through a call it is made on, `X(..).method` is
+/// `X.method`.
+fn call_path(f: TsNode, src: &[u8]) -> Vec<String> {
+    let parts = dotted(Some(f), src);
+    if !parts.is_empty() || f.kind() != "attribute" {
+        return parts;
+    }
+    let (Some(obj), Some(attr)) = (f.child_by_field_name("object"), f.child_by_field_name("attribute")) else { return vec![] };
+    let mut inner = match obj.kind() {
+        "call" => obj.child_by_field_name("function").map(|g| call_path(g, src)).unwrap_or_default(),
+        _ => vec![],
+    };
+    if !inner.is_empty() {
+        inner.push(text(attr, src).to_string());
+    }
+    inner
+}
+
+/// Where expressions are typed: one body, or a module's top level; the names bound there and
+/// the class `self` belongs to. The type of an expression is composed from its parts: a name
+/// has the type of its binding, `a.b` the type of `b` in the type of `a`, `f(..)` what `f`
+/// makes or gives back, `a or b` the type of either.
+struct Scope<'a> {
+    m: &'a Module,
+    modules: &'a IndexMap<String, Module>,
+    store: &'a GraphBuilder,
+    known: &'a Known,
+    root: &'a str,
+    cls: Option<String>,
+    names: HashMap<String, Ty>,
+}
+
+impl<'a> Scope<'a> {
+    fn new(m: &'a Module, modules: &'a IndexMap<String, Module>, store: &'a GraphBuilder, known: &'a Known, root: &'a str, cls: Option<String>) -> Self {
+        Scope { m, modules, store, known, root, cls, names: HashMap::new() }
+    }
+
+    /// A function's scope: its annotated parameters, then what its body binds.
+    fn of_def(m: &'a Module, modules: &'a IndexMap<String, Module>, store: &'a GraphBuilder, known: &'a Known, root: &'a str, n: &Node, d: TsNode) -> Self {
+        let mut s = Scope::new(m, modules, store, known, root, n.cls.clone());
+        if let Some(pn) = d.child_by_field_name("parameters") {
+            for p in named_children(pn) {
+                let name = p.child_by_field_name("name").or_else(|| named_children(p).into_iter().find(|c| c.kind() == "identifier"));
+                if let (Some(name), Some(t)) = (name, p.child_by_field_name("type")) {
+                    if let Some(t) = annotated(m, t, modules, &store.nodes, root) {
+                        s.names.insert(text(name, &m.src).to_string(), t);
+                    }
+                }
+            }
+        }
+        if let Some(body) = d.child_by_field_name("body") {
+            s.bind(body);
+        }
+        s
+    }
+
+    fn is_class(&self, id: &str) -> bool {
+        self.store.nodes.get(id).map_or(false, |n| n.kind == NodeKind::Class)
+    }
+
+    /// What an assignment gives its single target: its annotation, else its value.
+    fn assigned(&self, a: TsNode) -> Option<Ty> {
+        match a.child_by_field_name("type") {
+            Some(t) => annotated(self.m, t, self.modules, &self.store.nodes, self.root),
+            None => self.of(a.child_by_field_name("right")?),
+        }
+    }
+
+    /// Bind what a body assigns, loops over and opens with `with`, twice so that a name typed
+    /// from another settles.
+    fn bind(&mut self, body: TsNode) {
+        for _ in 0..2 {
+            for a in walk(body, &["assignment", "named_expression", "for_statement", "for_in_clause", "as_pattern"]) {
+                let bound = self.binds(a);
+                self.names.extend(bound);
+            }
+        }
+    }
+
+    /// The names one binding gives a type: an assignment its targets, a loop its variable, a
+    /// `with` its alias.
+    fn binds(&self, a: TsNode) -> Vec<(String, Ty)> {
+        let pairs: Vec<(Option<TsNode>, Option<Ty>)> = match a.kind() {
+            "assignment" => match a.child_by_field_name("left") {
+                Some(left) if matches!(left.kind(), "pattern_list" | "tuple_pattern") => {
+                    let targets = named_children(left);
+                    let types = a.child_by_field_name("right").map(|r| self.unpacked(r, targets.len())).unwrap_or_default();
+                    targets.into_iter().map(Some).zip(types).collect()
+                }
+                left => vec![(left, self.assigned(a))],
+            },
+            "named_expression" => vec![(a.child_by_field_name("name"), a.child_by_field_name("value").and_then(|v| self.of(v)))],
+            "for_statement" | "for_in_clause" => vec![(a.child_by_field_name("left"), a.child_by_field_name("right").and_then(|r| self.item(r)))],
+            _ => vec![(a.child_by_field_name("alias").and_then(|t| named_children(t).into_iter().next()), named_children(a).into_iter().next().and_then(|v| self.entered(v)))],
+        };
+        pairs.into_iter().filter_map(|(n, t)| Some((text(n.filter(|n| n.kind() == "identifier")?, &self.m.src).to_string(), t?))).collect()
+    }
+
+    /// What `with v as x` gives `x`: what the class's `__enter__` gives back, else `v` itself.
+    fn entered(&self, v: TsNode) -> Option<Ty> {
+        let t = self.of(v)?;
+        let enter = match &t {
+            Ty::Class(c) => method_of(self.store, c, "__enter__", 0).and_then(|e| self.known.returns.get(&e).cloned()),
+            _ => None,
+        };
+        enter.or(Some(t))
+    }
+
+    /// The types of `a, b = ..`, place by place: the elements of a tuple written out, or the
+    /// places of a function's `-> tuple[A, B]`.
+    fn unpacked(&self, right: TsNode, n: usize) -> Vec<Option<Ty>> {
+        match right.kind() {
+            "expression_list" | "tuple" => named_children(right).into_iter().map(|e| self.of(e)).collect(),
+            "call" => match right.child_by_field_name("function").and_then(|f| self.callee(f)) {
+                Some(Callee::Def(d)) => self.known.tuples.get(&d).cloned().unwrap_or_default(),
+                _ => vec![None; n],
+            },
+            _ => vec![None; n],
+        }
+    }
+
+    /// A name: bound in this scope, else a global of this module or of the one it is imported from.
+    fn name(&self, n: &str) -> Option<Ty> {
+        if matches!(n, "self" | "cls") {
+            if let Some(c) = &self.cls {
+                return Some(Ty::Class(c.clone()));
+            }
+        }
+        if let Some(t) = self.names.get(n) {
+            return Some(t.clone());
+        }
+        let (mut module, mut name) = (self.m.id.clone(), n.to_string());
+        for _ in 0..8 {
+            if let Some(t) = self.known.globals.get(&module).and_then(|g| g.get(&name)) {
+                return Some(t.clone());
+            }
+            let target = self.modules.get(&module)?.bindings.get(&name)?;
+            let (mid, nm) = target.rsplit_once('.')?;
+            (module, name) = (mid.to_string(), nm.to_string());
+        }
+        None
+    }
+
+    /// The type of attribute `a` of a value of type `t`: declared on its class or on a base,
+    /// or given by a property.
+    fn attr(&self, t: &Ty, a: &str) -> Option<Ty> {
+        let Ty::Class(c) = t else { return None };
+        if let Some(t) = self.attr_of(c, a, 0) {
+            return Some(t);
+        }
+        let p = method_of(self.store, c, a, 0).filter(|p| self.store.nodes[p].decorators.iter().any(|d| d.ends_with("property")))?;
+        self.known.returns.get(&p).cloned()
+    }
+
+    fn attr_of(&self, cls: &str, a: &str, depth: u32) -> Option<Ty> {
+        if depth > 8 {
+            return None;
+        }
+        if let Some(t) = self.known.attrs.get(cls).and_then(|x| x.get(a)) {
+            return Some(t.clone());
+        }
+        let bases = self.store.classes.get(cls).map(|c| c.resolved.clone()).unwrap_or_default();
+        bases.iter().filter(|b| !b.starts_with("ext:")).find_map(|b| self.attr_of(b, a, depth + 1))
+    }
+
+    /// One item of a value: an element of a collection, or what a class's `__iter__` yields.
+    fn item(&self, e: TsNode) -> Option<Ty> {
+        match self.of(e)? {
+            Ty::Many(c) => Some(Ty::Class(c)),
+            Ty::Class(c) => match self.known.returns.get(&method_of(self.store, &c, "__iter__", 0)?)? {
+                Ty::Many(x) => Some(Ty::Class(x.clone())),
+                _ => None,
+            },
+            Ty::Map(_) | Ty::Lib(_) => None,
+        }
+    }
+
+    /// The type of an expression.
+    fn of(&self, e: TsNode) -> Option<Ty> {
+        let src = &self.m.src;
+        match e.kind() {
+            "identifier" => self.name(text(e, src)),
+            "attribute" => {
+                let t = self.of(e.child_by_field_name("object")?)?;
+                self.attr(&t, text(e.child_by_field_name("attribute")?, src))
+            }
+            "call" => self.from_mapping(e).or_else(|| self.made(e)),
+            "subscript" => match self.of(e.child_by_field_name("value")?)? {
+                Ty::Many(c) | Ty::Map(c) => Some(Ty::Class(c)),
+                Ty::Class(c) => self.known.returns.get(&method_of(self.store, &c, "__getitem__", 0)?).cloned(),
+                Ty::Lib(_) => None,
+            },
+            "boolean_operator" => named_children(e).into_iter().find_map(|x| self.of(x)),
+            "conditional_expression" => {
+                let k = named_children(e);
+                k.first().and_then(|x| self.of(*x)).or_else(|| k.get(2).and_then(|x| self.of(*x)))
+            }
+            "parenthesized_expression" | "await" => named_children(e).into_iter().next().and_then(|x| self.of(x)),
+            _ => None,
+        }
+    }
+
+    /// What a mapping's own methods give: `d.get(k)` is one value, `d.values()` many.
+    fn from_mapping(&self, call: TsNode) -> Option<Ty> {
+        let f = call.child_by_field_name("function").filter(|f| f.kind() == "attribute")?;
+        let Ty::Map(c) = self.of(f.child_by_field_name("object")?)? else { return None };
+        match text(f.child_by_field_name("attribute")?, &self.m.src) {
+            "get" | "pop" | "setdefault" => Some(Ty::Class(c)),
+            "values" => Some(Ty::Many(c)),
+            _ => None,
+        }
+    }
+
+    /// What a call makes: an instance of the class it constructs, what a function gives back,
+    /// or a value of the library it is named from (`requests.Session()`). What a method of a
+    /// library's value gives back is not known.
+    fn made(&self, call: TsNode) -> Option<Ty> {
+        let f = call.child_by_field_name("function")?;
+        match self.callee(f)? {
+            Callee::Def(d) if self.is_class(&d) => Some(Ty::Class(d)),
+            Callee::Def(d) => self.known.returns.get(&d).cloned(),
+            Callee::Lib(lib) => self.named_from_library(f).then_some(Ty::Lib(lib)),
+        }
+    }
+
+    /// Whether a call is written from a library's import (`requests.Session`, `HfApi`), not on
+    /// a value.
+    fn named_from_library(&self, f: TsNode) -> bool {
+        let Some(head) = dotted(Some(f), &self.m.src).into_iter().next() else { return false };
+        !self.names.contains_key(&head) && self.m.bindings.get(&head).map_or(false, |b| !b.starts_with(self.root))
+    }
+
+    /// The library a value belongs to when it hangs under a library's value:
+    /// `client.chat.completions`. What a call on that value gives back is not the library's.
+    fn lib_under(&self, mut e: TsNode) -> Option<String> {
+        loop {
+            e = match e.kind() {
+                "attribute" => e.child_by_field_name("object")?,
+                "subscript" => e.child_by_field_name("value")?,
+                _ => return None,
+            };
+            if let Some(Ty::Lib(lib)) = self.of(e) {
+                return Some(lib);
+            }
+        }
+    }
+
+    /// What a call reaches: a method of its receiver's class, the library its receiver belongs
+    /// to, or what its dotted name resolves to.
+    fn callee(&self, f: TsNode) -> Option<Callee> {
+        let src = &self.m.src;
+        if f.kind() == "attribute" {
+            let (obj, name) = (f.child_by_field_name("object")?, text(f.child_by_field_name("attribute")?, src));
+            match self.of(obj) {
+                Some(Ty::Class(c)) => return method_of(self.store, &c, name, 0).map(Callee::Def),
+                Some(Ty::Many(_) | Ty::Map(_)) => return None,
+                Some(Ty::Lib(lib)) => return Some(Callee::Lib(lib)),
+                None => {
+                    if let Some(lib) = self.lib_under(obj) {
+                        return Some(Callee::Lib(lib));
+                    }
+                }
+            }
+        }
+        let parts = call_path(f, src);
+        let head = parts.first()?;
+        // a name this scope binds is a value, not a path into a module
+        if self.names.contains_key(head) || (matches!(head.as_str(), "self" | "cls") && self.cls.is_some()) {
+            return None;
+        }
+        match resolve(self.m, &parts, self.modules, &self.store.nodes, self.root) {
+            Some(r) => Some(match lib_of(&r) {
+                Some(lib) => Callee::Lib(lib),
+                None => Callee::Def(r),
+            }),
+            // `Class.method` with the method on a base, or a constructor the class inherits
+            None if parts.len() > 1 => {
+                let owner = resolve(self.m, &parts[..parts.len() - 1], self.modules, &self.store.nodes, self.root).filter(|r| self.is_class(r))?;
+                Some(Callee::Def(method_of(self.store, &owner, parts.last()?, 0).unwrap_or(owner)))
+            }
+            None => None,
+        }
     }
 }
 
@@ -1140,168 +1590,100 @@ fn io_refs(m: &Module, n: TsNode, root: &str, what: &str) -> Vec<Touch> {
     out
 }
 
-fn link_calls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, root: &str, id: &str) {
+fn link_calls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, known: &Known, root: &str, id: &str) {
     let n = store.nodes[id].clone();
     let m = &modules[&n.module];
     let Some(d) = def_node(m, &n) else { return };
     let src = &m.src;
-    let body = if n.kind == NodeKind::Module { Some(d) } else { d.child_by_field_name("body") };
+    let in_module = n.kind == NodeKind::Module;
+    let body = if in_module { Some(d) } else { d.child_by_field_name("body") };
     let Some(body) = body else { return };
-    let cls_attrs = n.cls.as_ref().and_then(|c| store.classes.get(c)).map(|c| c.attr_types.clone());
-    // typed parameters, and locals assigned from a constructor or from a function whose return type is a class
-    let params = if n.kind == NodeKind::Module { HashMap::new() } else { param_types(m, d, modules, &store.nodes, root) };
-    let mut locals: HashMap<String, String> = params.clone();
-    if n.kind != NodeKind::Module {
-        for a in walk(body, &["assignment"]) {
-            let (Some(left), Some(right)) = (a.child_by_field_name("left"), a.child_by_field_name("right")) else { continue };
-            if left.kind() != "identifier" || right.kind() != "call" {
-                continue;
-            }
-            let parts = dotted(right.child_by_field_name("function"), src);
-            let Some(r) = resolve(m, &parts, modules, &store.nodes, root).filter(|r| !r.starts_with("ext:")) else { continue };
-            let ty = match store.nodes.get(&r).map(|x| x.kind) {
-                Some(NodeKind::Class) => Some(r),
-                Some(NodeKind::Function) | Some(NodeKind::Method) => store
-                    .edges
-                    .iter()
-                    .find(|e| e.src == r && e.kind == EdgeKind::Returns && store.nodes.get(&e.dst).map_or(false, |x| x.kind == NodeKind::Class))
-                    .map(|e| e.dst.clone()),
-                _ => None,
-            };
-            if let Some(t) = ty {
-                locals.insert(text(left, src).to_string(), t);
-            }
-        }
-    }
-    // a local built by a library is that library's client: `api = HfApi(); api.upload_folder(..)`
-    let mut clients: HashMap<String, String> = HashMap::new();
-    for a in walk(body, &["assignment"]) {
-        let (Some(left), Some(right)) = (a.child_by_field_name("left"), a.child_by_field_name("right")) else { continue };
-        if left.kind() != "identifier" || right.kind() != "call" {
-            continue;
-        }
-        let parts = dotted(right.child_by_field_name("function"), src);
-        let pkg = parts.first().and_then(|h| m.bindings.get(h)).filter(|b| !b.starts_with(root)).and_then(|b| b.split('.').next());
-        if let Some(pkg) = pkg {
-            clients.insert(text(left, src).to_string(), pkg.to_string());
-        }
-    }
+    let params = if in_module { HashMap::new() } else { param_types(m, d, modules, &store.nodes, root) };
     let mut touches: Vec<Touch> = vec![];
     let mut new_edges: Vec<(String, EdgeKind, Vec<(u32, u32)>)> = vec![];
+    let mut unresolved: Vec<String> = vec![];
     let choices = number_choices(body, src, &CHOICES);
     let mut changes: Vec<(String, String)> = vec![];
-    for c in evaluation_order(walk(body, &["call"])) {
-        if n.kind == NodeKind::Module {
-            // calls inside a definition belong to that definition
-            let mut p = c.parent();
-            let mut inner = false;
-            while let Some(pp) = p {
-                if pp.id() == body.id() {
-                    break;
-                }
-                if matches!(pp.kind(), "function_definition" | "class_definition") {
-                    inner = true;
-                    break;
-                }
-                p = pp.parent();
-            }
-            if inner {
-                continue;
-            }
-        }
-        let fnode = c.child_by_field_name("function");
-        let mut parts = dotted(fnode, src);
-        let mut target: Option<String> = None;
-        if parts.is_empty() {
-            // `X(...).method(...)`: a method on something just constructed
-            let Some(f) = fnode.filter(|f| f.kind() == "attribute") else { continue };
-            let (Some(obj), Some(attr)) = (f.child_by_field_name("object"), f.child_by_field_name("attribute")) else { continue };
-            if obj.kind() != "call" {
-                continue;
-            }
-            let inner = dotted(obj.child_by_field_name("function"), src);
-            if inner.is_empty() {
-                continue;
-            }
-            let attr = text(attr, src).to_string();
-            if let Some(r) = resolve(m, &inner, modules, &store.nodes, root).filter(|r| !r.starts_with("ext:")) {
-                if store.nodes.get(&r).map_or(false, |x| x.kind == NodeKind::Class) {
-                    target = method_of(store, &r, &attr, 0).or(Some(r));
-                }
-            }
-            parts = inner;
-            parts.push(attr);
-        }
-        if target.is_some() {
-            // resolved through the constructor chain above
-        } else if (parts[0] == "self" || parts[0] == "cls") && n.cls.is_some() {
-            let cls = n.cls.as_deref().unwrap();
-            if parts.len() == 2 {
-                target = method_of(store, cls, &parts[1], 0);
-            } else if parts.len() == 3 {
-                if let Some(t) = cls_attrs.as_ref().and_then(|a| a.get(&parts[1])) {
-                    target = method_of(store, t, &parts[2], 0).or_else(|| Some(t.clone()));
-                }
-            }
-        } else if parts.len() == 2 && locals.contains_key(&parts[0]) {
-            let t = &locals[&parts[0]];
-            target = method_of(store, t, &parts[1], 0).or_else(|| Some(t.clone()));
-        } else {
-            target = resolve(m, &parts, modules, &store.nodes, root);
-            if target.is_none() && parts.len() > 1 {
-                if let Some(r) = resolve(m, &parts[..parts.len() - 1], modules, &store.nodes, root) {
-                    if store.nodes.get(&r).map_or(false, |x| x.kind == NodeKind::Class) {
-                        target = method_of(store, &r, &parts[parts.len() - 1], 0).or(Some(r));
+    {
+        let scope = if in_module { Scope::new(m, modules, store, known, root, None) } else { Scope::of_def(m, modules, store, known, root, &n, d) };
+        // the names that hold values of the package's classes, for what a call is handed
+        let locals: HashMap<String, String> = scope
+            .names
+            .iter()
+            .filter_map(|(k, t)| match t {
+                Ty::Class(c) | Ty::Many(c) | Ty::Map(c) => Some((k.clone(), c.clone())),
+                Ty::Lib(_) => None,
+            })
+            .collect();
+        for c in evaluation_order(walk(body, &["call"])) {
+            if in_module {
+                // calls inside a definition belong to that definition
+                let mut p = c.parent();
+                let mut inner = false;
+                while let Some(pp) = p {
+                    if pp.id() == body.id() {
+                        break;
                     }
+                    if matches!(pp.kind(), "function_definition" | "class_definition") {
+                        inner = true;
+                        break;
+                    }
+                    p = pp.parent();
+                }
+                if inner {
+                    continue;
                 }
             }
-        }
-        match target {
-            Some(t) if !t.starts_with("ext:") => {
-                let kind = if store.nodes[&t].kind == NodeKind::Class { EdgeKind::Instantiates } else { EdgeKind::Calls };
-                new_edges.push((t, kind, arms_of(c, body, src, &choices, &CHOICES)));
+            let Some(fnode) = c.child_by_field_name("function") else { continue };
+            let callee = scope.callee(fnode);
+            if let Some(Callee::Def(t)) = &callee {
+                let kind = if scope.is_class(t) { EdgeKind::Instantiates } else { EdgeKind::Calls };
+                new_edges.push((t.clone(), kind, arms_of(c, body, src, &choices, &CHOICES)));
+                continue;
             }
-            _ => {
-                let key = parts.iter().take(2).cloned().collect::<Vec<_>>().join(".");
-                *store.unresolved.entry(key).or_insert(0) += 1;
-                let pkg = m
-                    .bindings
-                    .get(&parts[0])
-                    .filter(|b| !b.starts_with(root))
-                    .and_then(|b| b.split('.').next())
-                    .map(str::to_string)
-                    .or_else(|| clients.get(&parts[0]).filter(|_| parts.len() > 1).cloned());
-                if let Some(tag) = effects::boundary(pkg.as_deref(), &parts, &m.ext_pkgs) {
-                    let op = parts.last().cloned().unwrap_or_default();
-                    let f = effects::facts(tag, pkg.as_deref(), &op, &literals(c, src, &["string"]));
-                    // on a hub, what moves is the repository the call names
-                    let what = match f.kind == "net" && !f.artifact.is_empty() {
-                        true => argument(c, src, "repo_id").unwrap_or_else(|| what_of(c, src, &["string"], "arguments")),
-                        false => what_of(c, src, &["string"], "arguments"),
-                    };
-                    let payload = payload_of(c, src, &what, "arguments", &locals);
-                    let fixed = effects::locates(f.kind) && starts_at_literal(c, src, &["string"], "arguments", effects::on_receiver(&op));
-                    touches.push(Touch { kind: f.kind.into(), what, payload, op, artifact: f.artifact, dir: f.dir.into(), fixed, line: c.start_position().row as u32 + 1, n: 1 });
+            let parts = call_path(fnode, src);
+            if parts.is_empty() {
+                continue;
+            }
+            unresolved.push(parts.iter().take(2).cloned().collect::<Vec<_>>().join("."));
+            let lib = match callee {
+                Some(Callee::Lib(lib)) => Some(lib),
+                _ => None,
+            };
+            // a library's own call is classified by the library; a call on a value it made falls
+            // back on the names every library shares (`encode`, `read_text`)
+            let on_value = lib.is_some() && !scope.named_from_library(fnode);
+            let tag = effects::boundary(lib.as_deref(), &parts, &m.ext_pkgs).or_else(|| on_value.then(|| effects::boundary(None, &parts, &m.ext_pkgs)).flatten());
+            if let Some(tag) = tag {
+                let op = parts.last().cloned().unwrap_or_default();
+                let f = effects::facts(tag, lib.as_deref(), &op, &literals(c, src, &["string"]));
+                // on a hub, what moves is the repository the call names
+                let what = match f.kind == "net" && !f.artifact.is_empty() {
+                    true => argument(c, src, "repo_id").unwrap_or_else(|| what_of(c, src, &["string"], "arguments")),
+                    false => what_of(c, src, &["string"], "arguments"),
+                };
+                let payload = payload_of(c, src, &what, "arguments", &locals);
+                let fixed = effects::locates(f.kind) && starts_at_literal(c, src, &["string"], "arguments", effects::on_receiver(&op));
+                touches.push(Touch { kind: f.kind.into(), what, payload, op, artifact: f.artifact, dir: f.dir.into(), fixed, line: c.start_position().row as u32 + 1, n: 1 });
+            }
+        }
+        // what the body changes of its inputs: `T -> T` for the receiver or a parameter it changes;
+        // a value the body constructs itself is built, not changed
+        if !in_module {
+            let receiver_mutates = |c: TsNode| match c.child_by_field_name("function").filter(|f| f.kind() == "attribute" && f.child_by_field_name("object").map_or(false, |o| o.kind() == "identifier")) {
+                Some(f) => matches!(scope.callee(f), Some(Callee::Def(t)) if store.mutating.contains(&t)),
+                None => false,
+            };
+            for r in changed_roots(body, src, &receiver_mutates) {
+                let ty = if r == "self" { n.cls.clone().filter(|_| n.name != "__init__") } else { params.get(r).cloned() };
+                if let Some(t) = ty {
+                    changes.push((t, r.to_string()));
                 }
             }
         }
     }
-    // what the body changes of its inputs: `T -> T` for the receiver or a parameter it changes;
-    // a value the body constructs itself is built, not changed
-    if n.kind != NodeKind::Module {
-        let receiver_mutates = |c: TsNode| {
-            let f = c.child_by_field_name("function").filter(|f| f.kind() == "attribute");
-            let obj = f.and_then(|f| f.child_by_field_name("object")).filter(|o| o.kind() == "identifier").map(|o| text(o, src));
-            let name = f.and_then(|f| f.child_by_field_name("attribute")).map(|a| text(a, src)).unwrap_or("");
-            let ty = obj.and_then(|o| if o == "self" { n.cls.clone() } else { locals.get(o).cloned() });
-            ty.and_then(|t| method_of(store, &t, name, 0)).map_or(false, |t| store.mutating.contains(&t))
-        };
-        for r in changed_roots(body, src, &receiver_mutates) {
-            let ty = if r == "self" { n.cls.clone().filter(|_| n.name != "__init__") } else { params.get(r).cloned() };
-            if let Some(t) = ty {
-                changes.push((t, r.to_string()));
-            }
-        }
+    for key in unresolved {
+        *store.unresolved.entry(key).or_insert(0) += 1;
     }
     // I/O functions referenced, directly or through a module-level table, may be called later
     if n.kind != NodeKind::Module {

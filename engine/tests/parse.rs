@@ -18,7 +18,7 @@ fn modules_classes_and_functions_are_found() {
     let g = fixture();
     assert_eq!(g.root, "fixture");
     let kinds = |k: NodeKind| g.nodes.iter().filter(|n| n.kind == k).count();
-    assert_eq!(kinds(NodeKind::Module), 8, "the package's six, a root script and a notebook");
+    assert_eq!(kinds(NodeKind::Module), 9, "the package's seven, a root script and a notebook");
     assert!(g.node("fixture.sinks").unwrap().is_pkg);
     assert_eq!(g.node("fixture.schema.Graph").unwrap().doc, "Nodes and edges.");
     assert_eq!(g.node("fixture.sinks.duck.DuckSink").unwrap().bases, vec!["Sink", "Mixin"]);
@@ -68,6 +68,31 @@ fn self_attr_inference_and_base_method_lookup() {
     let has = edges(&g, EdgeKind::Has);
     assert!(has.contains(&("fixture.build.Pipeline".into(), "fixture.sinks.duck.DuckSink".into())));
     assert!(has.contains(&("fixture.schema.Graph".into(), "fixture.schema.Node".into())), "annotated field");
+}
+
+/// The type of an expression is composed from its parts: a name has the type of its binding,
+/// `a.b` the type of `b` in the type of `a`, `f()` what `f` makes or gives back, `a or b` the
+/// type of either. A receiver typed this way is what a call reaches.
+#[test]
+fn types_compose_from_their_parts() {
+    let g = fixture();
+    let calls = edges(&g, EdgeKind::Calls);
+    let call = |src: &str, dst: &str| calls.contains(&(format!("fixture.{src}"), format!("fixture.{dst}")));
+    assert!(call("store.Store.write", "store.Connection.run"), "`self.conn = connection or Connection(uri)`, then `conn = self.conn`");
+    assert!(call("store.Reader.nodes", "store.Connection.run"), "`self.store.conn.run(..)`: a chain of attributes");
+    assert!(call("store.Copier.copy", "store.Store.write"), "`self.store`, set by the base's `__init__`");
+    assert!(call("store.keep", "store.Store.write") && call("store.keep", "store.Reader.nodes"), "`store, reader = stores()` with `-> tuple[Store, Reader]`");
+    assert!(call("store.latest", "store.reader") && call("store.latest", "store.Reader.nodes"), "`current = reader`: a function under another name");
+    assert!(call("store.firsts", "schema.Graph.first"), "`[g.first() for g in graphs]` with `graphs: list[Graph]`");
+    assert!(call("store.merged", "schema.Graph.first"), "`for g in graphs`");
+    assert!(call("build.reread", "store.Reader.nodes"), "`reader()` is defined in a module read after this one");
+    assert!(edges(&g, EdgeKind::Has).contains(&("fixture.store.Store".into(), "fixture.store.Connection".into())), "the class `or` makes");
+    let b = |id: &str| g.node(id).unwrap().boundaries.clone();
+    assert_eq!(b("fixture.store.pull").get("net"), Some(&1), "`SESSION = _session()` with `-> requests.Session`, at module level");
+    assert_eq!(b("fixture.store.unpack").get("disk_write"), Some(&1), "`with zipfile.ZipFile(..) as zf: zf.extractall(..)`");
+    assert!(b("fixture.store.Connection.driver").contains_key("db_memgraph"), "`GraphDatabase.driver(..)`");
+    let inst = edges(&g, EdgeKind::Instantiates);
+    assert!(!inst.contains(&("fixture.schema.Graph.add".into(), "fixture.schema.Node".into())), "`self.nodes.append(..)` on a `list[Node]` builds no Node");
 }
 
 #[test]

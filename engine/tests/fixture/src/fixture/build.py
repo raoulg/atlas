@@ -9,6 +9,7 @@ from torch import Tensor
 from fixture import DuckSink, Graph
 from fixture.schema import Node
 from fixture.sinks.base import Sink
+from fixture.store import reader
 
 SinkT = TypeVar("SinkT", bound="Sink")
 
@@ -40,6 +41,11 @@ def prepare(text: str, mode: str) -> None:
 
 def fresh_or_empty(text: str, fresh: bool) -> Graph:
     return build_graph(text) if fresh else empty()
+
+
+def reread() -> int:
+    r = reader()
+    return len(r.nodes())
 
 
 class Pipeline:

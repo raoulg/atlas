@@ -230,11 +230,23 @@ Each layer is a pure function of the layer below and can be tested alone.
 definitions, signatures, imports, calls, annotations, decorators, docstrings,
 string literals at boundary calls. A new language is new queries, not new code.
 
-**L1 Resolution.** Names become node ids: imports (absolute, relative, re-exports),
-bases, calls in module scope, `self.x` / `cls.x` through the class and its bases,
-`self.attr.method()` through `__init__` inference, local variables assigned from a
-constructor. Output: the symbol graph plus a resolution report (resolved, external,
-builtin, local, unknown) so the quality has a number.
+**L1 Resolution.** Names become node ids: imports (absolute, relative, re-exports, a
+name given to another: `graaf = triple`), bases, and calls through the type of their
+receiver. That type is composed from its parts, the way a typechecker reads it:
+
+- a name has the type of its binding: a parameter's annotation, an assignment, a loop
+  over a collection, `with .. as`, a module global;
+- `a.b` has the type of `b` in the type of `a`, declared on its class or a base (an
+  annotated field, `self.b = ..` in a method, a property);
+- `f(..)` has the type `f` constructs or its annotation gives back, place by place for
+  `-> tuple[A, B]`;
+- `a or b` and `a if c else b` have the type of either.
+
+A type is a class of the package, many of them (`list[Graph]`), a mapping to them, or
+a value a library made (`requests.Session()`), whose calls are that library's. Every
+signature is read before any body, so the order of the files does not matter. Output:
+the symbol graph plus a resolution report (resolved, external, builtin, local,
+unknown) so the quality has a number.
 
 **L2 Effects.** Boundary tags on every call that leaves the package (web, disk in
 and out, each database read or written, LLM, model, process), artifacts by path
