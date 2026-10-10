@@ -6,7 +6,7 @@
 //! `index` file stands for its directory. The engine knows the language and its common
 //! libraries; it never knows a project.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
@@ -470,6 +470,7 @@ fn add_function(m: &mut Module, store: &mut GraphBuilder, name: &str, def: TsNod
     store.add_node(Node {
         id: id.clone(),
         kind: if cls.is_some() { NodeKind::Method } else { NodeKind::Function },
+        on_class: cls.is_some() && (0..def.child_count()).filter_map(|i| def.child(i)).any(|c| c.kind() == "static"),
         name: name.to_string(),
         file: crate::tree::path_str(&m.path),
         span: span(def),
@@ -652,7 +653,7 @@ fn fields_of(body: TsNode, src: &[u8]) -> Vec<(String, Vec<Vec<String>>)> {
 
 fn add_type(m: &mut Module, store: &mut GraphBuilder, name: &str, d: TsNode, bases: Vec<Vec<String>>, fields: Vec<(String, Vec<Vec<String>>)>, methods: Vec<String>) {
     let id = format!("{}.{name}", m.id);
-    store.classes.insert(id.clone(), ClassInfo { bases: bases.clone(), resolved: vec![], attr_types: BTreeMap::new(), fields });
+    store.classes.insert(id.clone(), ClassInfo { bases: bases.clone(), fields, ..Default::default() });
     store.add_node(Node {
         id: id.clone(),
         kind: NodeKind::Class,

@@ -4,7 +4,7 @@
 //! bases, signatures and calls into edges. The engine knows the language; it never
 //! knows a project.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
@@ -545,6 +545,7 @@ fn collect_symbols(m: &mut Module, store: &mut GraphBuilder) {
                         module: m.id.clone(),
                         doc: first_docline(md.child_by_field_name("body"), src),
                         cls: Some(nid.clone()),
+                        on_class: mdecs.iter().any(|d| matches!(d.as_str(), "classmethod" | "staticmethod")),
                         decorators: mdecs.clone(),
                         params,
                         returns,
@@ -569,7 +570,7 @@ fn collect_symbols(m: &mut Module, store: &mut GraphBuilder) {
                     }
                 }
             }
-            store.classes.insert(nid.clone(), ClassInfo { bases: bases.clone(), resolved: vec![], attr_types: BTreeMap::new(), fields });
+            store.classes.insert(nid.clone(), ClassInfo { bases: bases.clone(), fields, ..Default::default() });
             store.add_node(Node {
                 id: nid.clone(),
                 kind: NodeKind::Class,

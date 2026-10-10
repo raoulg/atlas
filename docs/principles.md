@@ -54,7 +54,8 @@ Atlas) guessing where a route goes.
   ([PEP 484](https://peps.python.org/pep-0484/)). To keep `import package` fast, the
   exports can resolve lazily with a module `__getattr__`
   ([PEP 562](https://peps.python.org/pep-0562/)).
-- **Rust.** `pub` items at a library crate's root are its doors, and the compiler asks
+- **Rust.** `pub` items at a library crate's root, in the modules it makes public with
+  `pub mod`, and what it re-exports with `pub use` are its doors, and the compiler asks
   for every type. Atlas has nothing to ask here.
 
 Atlas checks: a Python package called `src`, a Python package that exports nothing at

@@ -1,5 +1,10 @@
 //! Functions handed on as values, to be called by whoever receives them.
 
+pub mod world;
+mod shapes;
+
+pub use shapes::Shape;
+
 pub struct Item {
     pub n: u32,
 }
@@ -20,4 +25,9 @@ impl Item {
 
 pub fn doubled(items: &[Item]) -> Vec<u32> {
     items.iter().map(double).collect()
+}
+
+/// A method the type does not have (`to_string` comes from a trait) builds nothing.
+pub fn describe(item: &Item) -> String {
+    item.to_string()
 }

@@ -277,7 +277,8 @@ fn rust_workspace_parses() {
     assert!(ids.contains("atlas-engine.model.Graph") && ids.contains("atlas-engine.view.View"));
     assert_eq!(g.node("atlas.main").unwrap().entry.as_ref().unwrap().kind, EntryKind::Cli);
     assert_eq!(g.node("atlas-engine.analyze").unwrap().entry.as_ref().unwrap().kind, EntryKind::Export, "pub fn at the root of a library crate");
-    assert!(g.node("atlas-engine.view.hide_private").unwrap().entry.is_none(), "pub in a module is not the crate's root");
+    let hide = g.node("atlas-engine.view.hide_private").unwrap().entry.as_ref().unwrap();
+    assert_eq!((hide.kind, hide.label.as_str()), (EntryKind::Export, "view::hide_private"), "pub in a `pub mod`, by its path");
     let inh = edges(&g, EdgeKind::Inherits);
     assert!(inh.contains(&("atlas-engine.view.Fiber".into(), "atlas-engine.view.View".into())), "impl View for Fiber");
     let calls = edges(&g, EdgeKind::Calls);
@@ -402,6 +403,42 @@ fn a_function_handed_on_is_called() {
     let calls = edges(&rs, EdgeKind::Calls);
     assert!(calls.contains(&("handed.doubled".into(), "handed.double".into())), "`.map(double)`: {calls:?}");
     assert!(calls.contains(&("handed.Item.labels".into(), "handed.Item.label".into())), "`.map(Self::label)`: {calls:?}");
+}
+
+/// Rust is read by Rust's own rules: Cargo's targets (one lib, a bin per `main`), `Self` as the
+/// impl's type, the crate's public paths (`pub mod`, `pub use`), an `enum` as a sum, `matches!`
+/// as a comparison, and a library's value moving data where it is used, not where it is built.
+#[test]
+fn rust_is_read_by_rusts_semantics() {
+    let g = analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixture-rs"), None, None).unwrap();
+    let entry = |id: &str| g.node(id).and_then(|n| n.entry.as_ref()).map(|e| (e.kind, e.label.clone()));
+    assert_eq!(entry("handed.main.main"), Some((EntryKind::Cli, "handed".into())), "src/main.rs is the bin named after the crate");
+    assert_eq!(entry("handed.bin.tool.main"), Some((EntryKind::Cli, "tool".into())), "src/bin/tool.rs");
+    assert_eq!(entry("handed.doubled"), Some((EntryKind::Export, "doubled".into())), "the lib keeps its exports beside a bin");
+    assert_eq!(entry("handed.shapes.Shape"), Some((EntryKind::Export, "Shape".into())), "`pub use shapes::Shape` from a private module");
+    assert_eq!(entry("handed.world.fetch"), Some((EntryKind::Export, "world::fetch".into())), "`pub mod world`");
+    assert!(edges(&g, EdgeKind::Returns).contains(&("handed.shapes.Shape.square".into(), "handed.shapes.Shape".into())), "`-> Self`");
+    assert!(!edges(&g, EdgeKind::Instantiates).iter().any(|(s, _)| s == "handed.describe"), "`item.to_string()` builds no Item");
+    let variants = edges(&g, EdgeKind::Variant);
+    assert!(variants.contains(&("handed.world.Line".into(), "handed.world.Page".into())) && variants.contains(&("handed.world.Line".into(), "handed.world.Log".into())), "{variants:?}");
+    assert!(!edges(&g, EdgeKind::Has).iter().any(|(s, _)| s == "handed.world.Line"), "an enum is one of its variants, not all of them");
+    let weight = &g.node("handed.world.weight").unwrap().compares;
+    assert_eq!((weight[0].subject.as_str(), weight[0].cases.clone()), ("kind", vec!["page".to_string(), "log".to_string()]), "`matches!(kind, \"page\" | \"log\")`");
+    let t = |id: &str| g.node(id).unwrap().touches.iter().map(|t| (t.kind.clone(), t.op.clone(), t.artifact.clone())).collect::<Vec<_>>();
+    assert!(t("handed.world.client").is_empty(), "building a client moves nothing: {:?}", t("handed.world.client"));
+    assert_eq!(t("handed.world.fetch"), [("net".into(), "get".into(), String::new())], "`client.get(url).send()` on a `Client::new()`");
+    assert!(t("handed.world.record").contains(&("db_sqlite".into(), "execute".into(), "log".into())), "{:?}", t("handed.world.record"));
+    assert_eq!(t("handed.world.notes"), [("disk_read".into(), "open".into(), "notes.txt".into())], "the handle reads where it was opened");
+    assert_eq!(t("handed.world.Log.append"), [("disk_write".into(), "open".into(), String::new())], "`OpenOptions::new().append(true)` writes");
+    assert_eq!(t("handed.world.clean"), [("process".into(), "new".into(), String::new())], "one program run");
+    assert!(t("handed.world.quit").is_empty(), "`process::exit` runs no program");
+}
+
+/// `atlas check .` inside a crate reads the crate: the walk's root is read whatever it is called.
+#[test]
+fn a_crate_reads_from_inside() {
+    let g = analyze(std::path::Path::new("."), None, None).expect("the engine crate, from its own directory");
+    assert!(g.nodes.iter().filter(|n| n.kind == NodeKind::Module).count() > 10);
 }
 
 /// A file call's file is what its library types as one: the path a method of a path is called

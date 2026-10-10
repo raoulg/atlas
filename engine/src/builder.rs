@@ -14,6 +14,8 @@ pub struct ClassInfo {
     pub resolved: Vec<String>,
     pub attr_types: BTreeMap<String, String>,
     pub fields: Vec<(String, Vec<Vec<String>>)>,
+    /// For a sum (a Rust `enum`): the types its variants carry.
+    pub variants: Vec<Vec<String>>,
 }
 
 #[derive(Default, Clone, Debug)]
@@ -81,7 +83,7 @@ impl GraphBuilder {
     pub fn finish(self, root: String, project_root: Option<&std::path::Path>, language: &str) -> Graph {
         let mut top: Vec<(String, u32)> = self.unresolved.iter().map(|(k, v)| (k.clone(), *v)).collect();
         let mut nodes = self.nodes;
-        mark_doors(&mut nodes, &self.edges, language);
+        mark_doors(&mut nodes, &self.edges);
         let mut edges = self.edges;
         for e in edges.iter_mut().filter(|e| e.kind == EdgeKind::Calls) {
             e.uses = self.used.contains(&(e.src.clone(), e.dst.clone()));
@@ -136,19 +138,14 @@ fn service(kind: &str) -> bool {
 }
 
 /// Mark the classes that are doors: one of their operations reaches a service, through what it
-/// calls. An operation is a method called on a value of the class: in Python one that is not a
-/// class or static method, in Rust one whose first parameter is `self`. An alternative
-/// constructor (`Config.from_yaml`) reads into a value and leaves it data.
-fn mark_doors(nodes: &mut IndexMap<String, Node>, edges: &[Edge], language: &str) {
+/// calls. An operation is a method called on a value of the class, not on the class: an
+/// alternative constructor (`Config.from_yaml`) reads into a value and leaves it data.
+fn mark_doors(nodes: &mut IndexMap<String, Node>, edges: &[Edge]) {
     let mut out: std::collections::HashMap<&str, Vec<&str>> = std::collections::HashMap::new();
     for e in edges.iter().filter(|e| matches!(e.kind, EdgeKind::Calls | EdgeKind::Instantiates)) {
         out.entry(e.src.as_str()).or_default().push(e.dst.as_str());
     }
-    let operation = |n: &Node| {
-        n.kind == NodeKind::Method
-            && !n.decorators.iter().any(|d| matches!(d.as_str(), "classmethod" | "staticmethod" | "static"))
-            && (language != "rust" || n.params.first().map_or(false, |p| p.trim_start_matches('&').trim_start_matches("mut ").starts_with("self")))
-    };
+    let operation = |n: &Node| n.kind == NodeKind::Method && !n.on_class;
     let reaches = |start: &str| -> Option<String> {
         let mut seen = HashSet::from([start.to_string()]);
         let mut stack = vec![start.to_string()];

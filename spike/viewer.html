@@ -1078,9 +1078,8 @@ async function renderPlaat() {
       if (byId.has(f.id + ".__init__")) for (const x of typesOf(f.id + ".__init__").takes) dom.push([addPlace(typePlace(x)), false]);
     } else {
       const ctor = isCtor(f);
-      // a method's receiver is part of its domain; a classmethod's or staticmethod's is the class, not a value of it
-      const onClass = (f.decorators || []).some(d => /^(classmethod|staticmethod)$/.test(d));
-      if (f.cls && byId.has(f.cls) && !noReceiver && !ctor && !onClass) dom.push([addPlace(typePlace(f.cls)), false]);
+      // a method's receiver is part of its domain, unless it is called on the class, not a value of it
+      if (f.cls && byId.has(f.cls) && !noReceiver && !ctor && !f.on_class) dom.push([addPlace(typePlace(f.cls)), false]);
       for (const x of typesOf(f.id).takes) dom.push([addPlace(typePlace(x)), false]);
       for (const x of typesOf(f.id).returns) cod.push([addPlace(typePlace(x)), false]);
       if (ctor && !noReceiver) cod.push([addPlace(typePlace(f.cls)), false]);  // a constructor hands on what it builds
@@ -1128,7 +1127,7 @@ async function renderPlaat() {
     return {dom, cod};
   };
   // a result with no place of its own (a str, a dict) goes back to the step that called it
-  const handsBack = (id, cod) => { if (id.startsWith("part:") || id.startsWith("unit:")) return false; const f = byId.get(id), ret = ((f && f.returns) || "").replace(/^Result<(.*)>$/, "$1"); return ![...cod.keys()].some(p => p.startsWith("t:")) && ret && !/^(None|\(\)|Self)$/.test(ret); };
+  const handsBack = (id, cod) => { if (id.startsWith("part:") || id.startsWith("unit:")) return false; const f = byId.get(id), ret = ((f && f.returns) || "").replace(/^(?:[\w:]*::)?(?:Result|Promise)<(.*?)(?:,.*)?>$/, "$1"); return ![...cod.keys()].some(p => p.startsWith("t:")) && ret && !/^(None|\(\)|Self|void|undefined)$/.test(ret); };
 
   // build the nested picture: frames for open steps, pills for closed ones (siblings with the same places are one pill)
   const pills = new Map(), frames = new Map();  // id -> {...}

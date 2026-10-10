@@ -113,6 +113,11 @@ pub struct Node {
     pub touches: Vec<Touch>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub is_pkg: bool,
+    /// For a method: it is called on its class, not on a value of it, so the class is no input.
+    /// A Python class or static method, a Rust function in an `impl` without `self`, a
+    /// TypeScript `static` method.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub on_class: bool,
     /// Where the body compares a value with literals.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub compares: Vec<Compare>,

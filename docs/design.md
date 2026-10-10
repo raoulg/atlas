@@ -202,14 +202,18 @@ atlas/
 `[project.scripts]`, Makefile targets (recipes resolved to the commands they run),
 scripts next to the package and in `scripts/`, `examples/`, `demo/`, notebooks, and what
 a package exports (`__all__` or the public names its root `__init__.py` binds, and the
-`__all__` of each public subpackage, as `components.Serial`; the `pub` items at the root
-of a library crate). A re-exported name is followed to where it is defined. Each is the
+`__all__` of each public subpackage, as `components.Serial`; the `pub` items of a library
+crate's root and of the modules it makes public with `pub mod`, as `view::hide_private`, and
+the names a public module re-exports with `pub use`). A re-exported name is followed to where
+it is defined. Each is the
 start of a route; an exported class is a route whose steps are its public methods.
 
 **Parts** — a repository is one or more parts: what one manifest roots (`Cargo.toml`,
 `pyproject.toml`, `package.json`), read in its own language; a workspace's crates are
-parts of one root, and nothing under `tests/` or `node_modules/` is a part. The graph holds
-them side by side and every node knows its part. Parts meet over HTTP: a web framework's
+parts of one root, and nothing under `tests/` or `node_modules/` is a part. A crate is read
+by Cargo's targets: one library (`src/lib.rs`) and a binary per `main` (`src/main.rs`,
+`src/bin/*.rs`), each a root of its own; a directory with its own `Cargo.toml` is another
+package. The graph holds them side by side and every node knows its part. Parts meet over HTTP: a web framework's
 routes stand at their full path (through `app.mount(prefix, sub_app)`,
 `include_router(router, prefix=…)`, `APIRouter(prefix=…)`), and a string literal in one
 part that is the full path of a route another part serves is a `requests` edge from the
@@ -286,7 +290,11 @@ is still what the import binds (`requests.get` is `get` of `requests`); what the
 gives back has no type.
 
 Rust's and TypeScript's signatures carry their types, and a receiver's type is
-composed from them.
+composed from them. In Rust, `Self` is the impl's type, a method the type does not define
+(`to_string`, `clone`, a trait's default) reaches nothing, an `enum` is a sum of the types
+its variants carry, and `matches!(k, "a" | "b")` compares like `match`. A function in an
+`impl` without `self`, a Python class or static method and a TypeScript `static` method are
+called on the class, so the class is not their input.
 
 In every language, a function of the package handed on as a value (an executor's
 work, a thread's target, a callback, an iterator's `map`) is called by whoever
@@ -300,7 +308,13 @@ defines what is called and by what that library's API does: a network library's 
 that is handed a URL (or sends on a socket) moves data, and a statement, a connection
 or a commit reaches a database, while building a client (a web or LLM library's class)
 or reading a response or rows that have arrived moves nothing. A database is named by
-what its driver reaches: the Bolt driver (`neo4j`) a graph database, whichever one. Artifacts by path
+what its driver reaches: the Bolt driver (`neo4j`) a graph database, whichever one. Rust
+has no type checker to ask, so a library's value is traced to the call of a function on its
+type that made it, through the locals that hold it: building (`new`, `builder()` up to
+`build()`, `default`) moves nothing, and the value moves data where it is used
+(`client.get(url).send()`, `OpenOptions::new().append(true).open(p)` writes). A value whose
+making touched a place (`File::open(p)`, `Command::new("git")`) is at that place; a call on it
+adds one only when it names its own (`conn.execute("INSERT INTO log ..")`). Artifacts by path
 pattern, hub types by arrow count, mutation detection, and the effect signature
 `F: Graph → W` per function and per route. This is the functor behind the plaat.
 

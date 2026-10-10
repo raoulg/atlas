@@ -127,21 +127,26 @@ pub fn boundary_rust(parts: &[String]) -> Option<&'static str> {
     let head = parts.first().map(String::as_str).unwrap_or("");
     let last = parts.last().map(String::as_str).unwrap_or("");
     let has = |p: &str| parts.iter().any(|x| x == p);
+    // building moves nothing: `Client::new()`, `Client::builder()..build()`, `OpenOptions::new()`
+    // (Rust's constructor conventions, C-CTOR and C-BUILDER)
+    let builds = matches!(last, "new" | "builder" | "default" | "build");
     if has("fs") {
+        if builds {
+            return None;
+        }
         return Some(match last {
-            "read" | "read_to_string" | "read_dir" | "metadata" | "canonicalize" | "exists" | "open" | "read_link" => "disk_read",
-            "write" | "create" | "create_dir" | "create_dir_all" | "remove_file" | "remove_dir" | "remove_dir_all" | "rename" | "copy" | "set_permissions" => "disk_write",
+            "read" | "read_to_string" | "read_to_end" | "read_exact" | "read_line" | "read_dir" | "metadata" | "canonicalize" | "exists" | "open" | "read_link" => "disk_read",
+            "write" | "write_all" | "write_fmt" | "set_len" | "sync_all" | "create" | "create_dir" | "create_dir_all" | "remove_file" | "remove_dir" | "remove_dir_all" | "rename" | "copy" | "set_permissions" => "disk_write",
             _ => "disk",
         });
     }
-    if has("process") || head == "Command" {
+    // a program is run by a `Command`; `process::exit` ends this one and runs none
+    if has("Command") {
         return Some("process");
     }
     match head {
         "walkdir" | "WalkDir" | "glob" | "notify" => Some("disk_read"),
-        // building a client moves nothing: `Client::new()`, `Client::builder()` (Rust's
-        // constructor convention, C-CTOR)
-        h if RUST_NET.contains(&h) => (!matches!(last, "new" | "builder" | "default")).then_some("net"),
+        h if RUST_NET.contains(&h) => (!builds).then_some("net"),
         h if RUST_DB.contains(&h) => Some(rust_db(h)),
         "git2" | "gix" => Some("disk_read"),
         _ => None,

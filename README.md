@@ -160,7 +160,7 @@ Entry points come from the code itself. Atlas finds:
 - commands (`@app.command`, as in click and typer);
 - web routes (`@app.get("/…")`, as in FastAPI, and TanStack file routes);
 - MCP tools, Makefile targets, scripts, notebooks and tests;
-- what a library exports at its root.
+- what a library exports: at its root, and in Rust also through `pub mod` and `pub use`.
 
 ### Check: the picture as a list of questions
 
