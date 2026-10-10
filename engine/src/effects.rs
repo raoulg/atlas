@@ -24,6 +24,8 @@ const HUB_READ: &[&str] = &["snapshot_download", "hf_hub_download", "load_datase
 const HUB_MODELS: &[&str] = &["from_pretrained", "SentenceTransformer", "CrossEncoder", "pipeline"];
 const HUB_WRITE: &[&str] = &["upload_folder", "upload_file", "upload_large_folder", "create_repo", "create_commit", "delete_file", "delete_folder", "push_to_hub"];
 const HUB_HOST: &str = "huggingface.co";
+/// The datasets library's builtin loaders: a dataset made by one of them comes from local files.
+const HF_LOADERS: &[&str] = &["csv", "json", "parquet", "text", "arrow", "pandas", "imagefolder", "audiofolder", "videofolder", "webdataset", "xml", "sql"];
 const FILE_PKGS: &[&str] = &[
     "json", "yaml", "pickle", "csv", "tarfile", "zipfile", "shutil", "os", "pathlib", "pandas",
     "geopandas", "numpy", "rasterio", "lxml", "PIL", "matplotlib", "plt", "ruamel", "np", "pd",
@@ -44,13 +46,45 @@ const FILE_OPS: &[&str] = &["copy", "copyfile", "copytree", "move", "unlink", "r
 const FS_PKGS: &[&str] = &["shutil", "os", "pathlib"];
 
 /// What a database driver does that reaches the database: open a connection or a session, run
-/// a statement, or hand an object to an ORM's session. Reading the rows a statement gave back,
-/// committing or closing is part of what already ran.
+/// a statement, or flush or commit what a session holds. Handing an object to an ORM's session
+/// (`add`, `merge`, `delete`) only stages it, and reading the rows a statement gave back or
+/// closing is part of what already ran.
 const DB_OPS: &[&str] = &[
     "connect", "driver", "session", "execute", "executemany", "executescript", "sql", "query", "run", "execute_query",
     "execute_read", "execute_write", "read_transaction", "write_transaction", "register", "read_csv", "read_parquet",
-    "read_json", "add", "add_all", "merge", "delete",
+    "read_json", "flush", "commit",
 ];
+
+/// A socket's sending and receiving: the network calls that are handed no URL.
+const SOCKET_OPS: &[&str] = &["connect", "send", "sendall", "sendto", "recv", "recvfrom", "recv_into"];
+
+/// Whether a network library's call moves data, by its signature: it is handed a URL (or a
+/// socket's address), or it sends or receives on a socket. Building a client, or reading a
+/// response that has arrived (`resp.headers.get(..)`), is handed none.
+pub fn requests(params: &[&str], op: &str) -> bool {
+    params.iter().any(|p| matches!(*p, "url" | "uri" | "address")) || SOCKET_OPS.contains(&op)
+}
+
+/// Whether a package is a network library, whose calls `requests` decides.
+pub fn network(pkg: &str) -> bool {
+    NET_PKGS.contains(&pkg)
+}
+
+/// Whether a package is a client of a place (the web, a language model): building one of its
+/// clients moves nothing. A model library's class is no client: building a pretrained model
+/// downloads its weights.
+pub fn client(pkg: &str) -> bool {
+    NET_PKGS.contains(&pkg) || LLM_PKGS.contains(&pkg)
+}
+
+/// The database a Rust crate is a driver for.
+fn rust_db(krate: &str) -> &'static str {
+    match krate {
+        "rusqlite" => "db_sqlite",
+        "duckdb" => "db_duckdb",
+        _ => "db_sql",
+    }
+}
 
 const RUST_NET: &[&str] = &["reqwest", "ureq", "hyper", "tungstenite", "tokio_tungstenite", "curl", "axum", "TcpStream", "TcpListener"];
 const RUST_DB: &[&str] = &["rusqlite", "sqlx", "diesel", "duckdb", "postgres", "tokio_postgres", "sea_orm"];
@@ -63,22 +97,25 @@ pub fn library_place(pkg: &str) -> Option<&'static str> {
     if NET_PKGS.contains(&pkg) || RUST_NET.contains(&pkg) || TS_NET.contains(&pkg) {
         return Some("net");
     }
+    if let Some(db) = db_pkg(pkg) {
+        return Some(db);
+    }
     if RUST_DB.contains(&pkg) {
-        return Some("db_sql");
+        return Some(rust_db(pkg));
     }
     if LLM_PKGS.contains(&pkg) {
         return Some("llm");
     }
     match pkg {
         "subprocess" | "child_process" => Some("process"),
-        _ => db_pkg(pkg),
+        _ => None,
     }
 }
 
 fn db_pkg(pkg: &str) -> Option<&'static str> {
     match pkg {
         "duckdb" => Some("db_duckdb"),
-        "neo4j" | "mgclient" => Some("db_memgraph"),
+        "neo4j" | "mgclient" => Some("db_graph"),
         "sqlite3" => Some("db_sqlite"),
         "psycopg2" | "sqlalchemy" => Some("db_sql"),
         _ => None,
@@ -102,8 +139,10 @@ pub fn boundary_rust(parts: &[String]) -> Option<&'static str> {
     }
     match head {
         "walkdir" | "WalkDir" | "glob" | "notify" => Some("disk_read"),
-        h if RUST_NET.contains(&h) => Some("net"),
-        h if RUST_DB.contains(&h) => Some("db_sql"),
+        // building a client moves nothing: `Client::new()`, `Client::builder()` (Rust's
+        // constructor convention, C-CTOR)
+        h if RUST_NET.contains(&h) => (!matches!(last, "new" | "builder" | "default")).then_some("net"),
+        h if RUST_DB.contains(&h) => Some(rust_db(h)),
         "git2" | "gix" => Some("disk_read"),
         _ => None,
     }
@@ -176,6 +215,7 @@ fn ml(pkg: &str, parts: &[String], last: &str) -> Option<&'static str> {
     }
     match (pkg, last) {
         ("sentence_transformers", "encode" | "embed") => Some("model"),
+        ("transformers" | "sentence_transformers", "save_pretrained") => Some("disk_write"),
         ("torch" | "datasets", "load" | "load_from_disk") => Some("disk_read"),
         ("torch" | "datasets", "save" | "save_to_disk") => Some("disk_write"),
         _ => None,
@@ -265,6 +305,11 @@ pub fn facts(kind: &'static str, pkg: Option<&str>, op: &str, literals: &[String
         return Facts { kind, artifact, dir, also: sides };
     }
     if kind == "net" {
+        // a dataset built by one of the library's own loaders (`load_dataset("csv", data_files=..)`)
+        // is read from local files
+        if op == "load_dataset" && literals.first().map_or(false, |l| HF_LOADERS.contains(&l.as_str())) {
+            return Facts::of("disk_read", literals.iter().skip(1).find(|l| path_like(l)).cloned().unwrap_or_default(), "");
+        }
         // pretrained weights named by a local path are a file, by a name a download from the Hub
         if HUB_MODELS.contains(&op) {
             if let Some(local) = literals.first().filter(|l| l.starts_with(['.', '/', '~'])) {
@@ -533,7 +578,7 @@ const SQL_DBS: &[&str] = &["db_duckdb", "db_sqlite", "db_sql"];
 /// (`driver.session(default_access_mode=READ_ACCESS)`). The query's own text is not read;
 /// where the code says nothing, the direction stays open.
 pub fn access(kind: &str, op: &str, mode: Option<&str>) -> &'static str {
-    if kind != "db_memgraph" {
+    if kind != "db_graph" {
         return "";
     }
     match op {
@@ -587,6 +632,19 @@ mod tests {
     }
 
     #[test]
+    fn a_library_names_what_it_is() {
+        let p = |xs: &[&str]| xs.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert_eq!(boundary_rust(&p(&["reqwest", "Client", "new"])), None, "building a client moves nothing");
+        assert_eq!(boundary_rust(&p(&["reqwest", "get"])), Some("net"));
+        assert_eq!(boundary_rust(&p(&["rusqlite", "Connection", "open"])), Some("db_sqlite"), "one database, one name in every language");
+        assert_eq!(library_place("neo4j"), Some("db_graph"), "the Bolt driver reaches a graph database, whichever");
+        assert_eq!(library_place("duckdb"), Some("db_duckdb"));
+        let local = facts("net", Some("datasets"), "load_dataset", &p(&["csv", "data/train.csv"]));
+        assert_eq!((local.kind, local.artifact.as_str()), ("disk_read", "data/train.csv"), "a builtin loader reads local files");
+        assert!(requests(&["url", "params"], "get") && !requests(&["key", "default"], "get"), "a request is handed a URL");
+    }
+
+    #[test]
     fn files_are_named_by_literal_then_format() {
         assert_eq!(facts("disk_write", None, "write_text", &lits(&["out.json"])).artifact, "out.json");
         assert_eq!(facts("disk_write", None, "to_csv", &lits(&[";"])).artifact, "*.csv");
@@ -628,11 +686,11 @@ mod tests {
     /// A graph database's direction is what the Python code says to the driver, never the query.
     #[test]
     fn a_driver_says_which_way() {
-        assert_eq!(access("db_memgraph", "execute_read", None), "read");
-        assert_eq!(access("db_memgraph", "execute_write", None), "write");
-        assert_eq!(access("db_memgraph", "execute_query", Some("RoutingControl.READ")), "read");
-        assert_eq!(access("db_memgraph", "session", Some("neo4j.WRITE_ACCESS")), "write");
-        assert_eq!(access("db_memgraph", "run", None), "", "a query alone says nothing");
-        assert_eq!(facts("db_memgraph", Some("neo4j"), "run", &lits(&["MATCH (n:Regeling) RETURN n"])), Facts::of("db_memgraph", String::new(), ""));
+        assert_eq!(access("db_graph", "execute_read", None), "read");
+        assert_eq!(access("db_graph", "execute_write", None), "write");
+        assert_eq!(access("db_graph", "execute_query", Some("RoutingControl.READ")), "read");
+        assert_eq!(access("db_graph", "session", Some("neo4j.WRITE_ACCESS")), "write");
+        assert_eq!(access("db_graph", "run", None), "", "a query alone says nothing");
+        assert_eq!(facts("db_graph", Some("neo4j"), "run", &lits(&["MATCH (n:Regeling) RETURN n"])), Facts::of("db_graph", String::new(), ""));
     }
 }

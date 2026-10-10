@@ -1,7 +1,11 @@
 from typing import Any
 
+class CaseInsensitiveDict:
+    def get(self, key: str, default: Any = None) -> Any: ...
+
 class Response:
     text: str
+    headers: CaseInsensitiveDict
     def json(self) -> Any: ...
 
 class Session:

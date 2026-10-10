@@ -18,7 +18,7 @@ fn modules_classes_and_functions_are_found() {
     let g = fixture();
     assert_eq!(g.root, "fixture");
     let kinds = |k: NodeKind| g.nodes.iter().filter(|n| n.kind == k).count();
-    assert_eq!(kinds(NodeKind::Module), 11, "the package's nine, a root script and a notebook");
+    assert_eq!(kinds(NodeKind::Module), 12, "the package's ten, a root script and a notebook");
     assert!(g.node("fixture.sinks").unwrap().is_pkg);
     assert_eq!(g.node("fixture.schema.Graph").unwrap().doc, "Nodes and edges.");
     assert_eq!(g.node("fixture.sinks.duck.DuckSink").unwrap().bases, vec!["Sink", "Mixin"]);
@@ -90,7 +90,7 @@ fn types_compose_from_their_parts() {
     let b = |id: &str| g.node(id).unwrap().boundaries.clone();
     assert_eq!(b("fixture.store.pull").get("net"), Some(&1), "`SESSION = _session()` with `-> requests.Session`, at module level");
     assert_eq!(b("fixture.store.unpack").get("disk_write"), Some(&1), "`with zipfile.ZipFile(..) as zf: zf.extractall(..)`");
-    assert!(b("fixture.store.Connection.driver").contains_key("db_memgraph"), "`GraphDatabase.driver(..)`");
+    assert!(b("fixture.store.Connection.driver").contains_key("db_graph"), "`GraphDatabase.driver(..)`");
     let inst = edges(&g, EdgeKind::Instantiates);
     assert!(!inst.contains(&("fixture.schema.Graph.add".into(), "fixture.schema.Node".into())), "`self.nodes.append(..)` on a `list[Node]` builds no Node");
 }
@@ -101,7 +101,7 @@ fn types_compose_from_their_parts() {
 #[test]
 fn a_driver_says_which_way_the_data_goes() {
     let g = fixture();
-    let dirs = |id: &str| g.node(id).unwrap().touches.iter().filter(|t| t.kind == "db_memgraph").map(|t| (t.op.as_str(), t.dir.as_str())).collect::<HashSet<_>>();
+    let dirs = |id: &str| g.node(id).unwrap().touches.iter().filter(|t| t.kind == "db_graph").map(|t| (t.op.as_str(), t.dir.as_str())).collect::<HashSet<_>>();
     let set = |xs: &[(&'static str, &'static str)]| xs.iter().copied().collect::<HashSet<_>>();
     assert_eq!(dirs("fixture.store.Connection.read"), set(&[("session", "read"), ("execute_read", "read"), ("run", "read")]), "`session.execute_read(lambda tx: tx.run(..))`");
     assert_eq!(dirs("fixture.store.Connection.write"), set(&[("session", "write"), ("execute_write", "write")]));
@@ -371,7 +371,7 @@ fn an_unknown_type_is_not_guessed() {
 fn a_client_is_a_door() {
     let g = fixture();
     assert_eq!(g.node("ext:requests.Session").map(|n| n.door.as_str()), Some("net"));
-    assert_eq!(g.node("ext:neo4j.Driver").map(|n| n.door.as_str()), Some("db_memgraph"));
+    assert_eq!(g.node("ext:neo4j.Driver").map(|n| n.door.as_str()), Some("db_graph"));
     assert_eq!(g.node("ext:pandas.DataFrame").map(|n| n.door.as_str()), Some(""));
 }
 
@@ -421,4 +421,15 @@ fn a_file_is_what_the_api_types_as_one() {
     let export = t("fixture.files.export");
     assert!(export.iter().any(|(k, _, a, _)| k == "disk_write" && a == "data/frame.csv"), "{export:?}");
     assert!(export.iter().all(|(_, _, a, _)| a != "NA"), "{export:?}");
+}
+
+/// A library call reaches a place when its types say it moves data: a network library's call
+/// that is handed a URL, a model's answer. Building a client moves nothing, and reading a
+/// response that has arrived (`response.headers.get(..)`) is no second request.
+#[test]
+fn building_a_client_moves_nothing() {
+    let g = fixture();
+    let n = |id: &str, kind: &str| g.node(id).unwrap().touches.iter().filter(|t| t.kind == kind).map(|t| t.op.clone()).collect::<Vec<_>>();
+    assert_eq!(n("fixture.clients.content_type", "net"), ["get"], "`requests.get(url)`, and not `headers.get`");
+    assert_eq!(n("fixture.clients.ask", "llm"), ["create"], "`messages.create(..)`, and not `Anthropic()`");
 }

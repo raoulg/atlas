@@ -1067,6 +1067,21 @@ impl<'a> Seen<'a> {
         }
     }
 
+    /// Whether a library call that its package's table marks as reaching a place does move data,
+    /// as its types say: building a client (a web or LLM library's class) moves nothing, and a
+    /// network library's call moves data only when it is handed a URL or sends on a socket. Where
+    /// the types are not known, the table stands.
+    fn moves(&self, f: TsNode, kind: &str, lib: Option<&str>, op: &str) -> bool {
+        let reached = self.facts.map_or(&[][..], |x| x.callees(Self::range(f)));
+        if lib.map_or(false, effects::client) && reached.iter().any(|c| c.by == By::Construct && matches!(c.target, Target::Lib(_))) {
+            return false;
+        }
+        match self.facts.and_then(|x| x.signature(Self::range(f))) {
+            Some(sig) if kind == "net" && lib.map_or(false, effects::network) => effects::requests(&sig.iter().map(|p| p.name.as_str()).collect::<Vec<_>>(), op),
+            _ => true,
+        }
+    }
+
     /// What a dotted name reaches through what the module imports or defines.
     fn bound(&self, f: TsNode) -> Option<Callee> {
         let parts = call_path(f, &self.m.src);
@@ -1322,7 +1337,9 @@ fn io_refs(m: &Module, n: TsNode, root: &str, what: &str) -> Vec<Touch> {
     let mut out = vec![];
     for a in walk(n, &["attribute"]) {
         let called = a.parent().map_or(false, |p| p.kind() == "call" && p.child_by_field_name("function").map(|f| f.id()) == Some(a.id()));
-        if called || a.parent().map_or(false, |p| p.kind() == "attribute") {
+        // `openai.api_key = ..` assigns the attribute; it names no function
+        let assigned = a.parent().map_or(false, |p| p.kind() == "assignment" && p.child_by_field_name("left").map(|l| l.id()) == Some(a.id()));
+        if called || assigned || a.parent().map_or(false, |p| p.kind() == "attribute") {
             continue;
         }
         let parts = dotted(Some(a), &m.src);
@@ -1440,7 +1457,7 @@ fn link_calls<'t>(modules: &'t IndexMap<String, Module>, store: &mut GraphBuilde
             if lib.is_none() {
                 unresolved.push(parts.iter().take(2).cloned().collect::<Vec<_>>().join("."));
             }
-            let tag = effects::boundary(lib.as_deref(), &parts);
+            let tag = effects::boundary(lib.as_deref(), &parts).filter(|t| seen.moves(fnode, t, lib.as_deref(), parts.last().map_or("", String::as_str)));
             if let Some(tag) = tag.filter(|t| t.starts_with("disk")) {
                 let op = parts.last().cloned().unwrap_or_default();
                 let what = what_of(c, src, &["string"], "arguments");

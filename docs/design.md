@@ -292,9 +292,11 @@ external, builtin, local, unknown) so the quality has a number.
 
 **L2 Effects.** Boundary tags on every call that leaves the package (web, disk in
 and out, each database read or written, LLM, model, process), by the library that
-defines what is called and by what that library's API does: a request moves data over
-the network and a statement or a connection reaches a database, while building a
-client or reading a response or rows that have arrived moves nothing. Artifacts by path
+defines what is called and by what that library's API does: a network library's call
+that is handed a URL (or sends on a socket) moves data, and a statement, a connection
+or a commit reaches a database, while building a client (a web or LLM library's class)
+or reading a response or rows that have arrived moves nothing. A database is named by
+what its driver reaches: the Bolt driver (`neo4j`) a graph database, whichever one. Artifacts by path
 pattern, hub types by arrow count, mutation detection, and the effect signature
 `F: Graph → W` per function and per route. This is the functor behind the plaat.
 
