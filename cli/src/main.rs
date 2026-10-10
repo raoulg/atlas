@@ -3,7 +3,7 @@ mod mcp;
 use std::path::PathBuf;
 
 use anyhow::Result;
-use atlas_engine::{parts, principles};
+use atlas_engine::{parts, principles, remote};
 use clap::builder::styling::{AnsiColor, Effects, Style, Styles};
 use clap::{Parser, Subcommand};
 
@@ -32,6 +32,7 @@ fn examples() -> String {
     let rows = [
         ("atlas view", "draw the repository you are in and open it in the browser"),
         ("atlas view ../api ../web", "two repositories as parts of one picture"),
+        ("atlas view https://github.com/o/r/tree/main/src/pkg", "one folder of a repository on GitHub"),
         ("atlas check", "where the code and the design principles disagree"),
         ("atlas changes", "what your edits did to the routes, their places and the findings"),
         ("claude mcp add atlas -- atlas mcp", "give Claude Code the same picture"),
@@ -61,7 +62,8 @@ struct Cli {
 enum Cmd {
     /// Draw one or more repositories and open the picture in the browser.
     View {
-        /// Repository roots; default: the current directory. Several become parts of one page.
+        /// Repository roots or git URLs (a `…/tree/<ref>/<folder>` URL names one folder); default:
+        /// the current directory. Several become parts of one page.
         repos: Vec<PathBuf>,
         /// An `architecture.yml` or `roles.json` for a single repo; default: the repo's own, else inferred.
         #[arg(long)]
@@ -78,7 +80,7 @@ enum Cmd {
     },
     /// List where the code and the design principles disagree, each with a question.
     Check {
-        /// Repository root; default: the current directory.
+        /// Repository root or git URL; default: the current directory.
         repo: Option<PathBuf>,
         /// Print the findings as JSON.
         #[arg(long)]
@@ -99,7 +101,7 @@ enum Cmd {
     Mcp,
     /// Write a repository's graph as JSON.
     Analyze {
-        /// Repository root (or a package directory).
+        /// Repository root, a package directory, or a git URL.
         repo: PathBuf,
         /// Package directory, when discovery picks the wrong one.
         #[arg(long)]
@@ -152,6 +154,18 @@ fn view(repos: &[PathBuf], roles: Option<&std::path::Path>, out: Option<PathBuf>
     Ok(())
 }
 
+/// A repository argument as a folder on disk: a path as it is, a URL cloned for as long as the
+/// command runs.
+fn local(arg: PathBuf) -> Result<(PathBuf, Option<remote::Clone>)> {
+    let spec = arg.to_string_lossy().to_string();
+    if !remote::is_url(&spec) {
+        return Ok((arg, None));
+    }
+    eprintln!("cloning {spec}");
+    let c = remote::clone(&spec)?;
+    Ok((c.dir.clone(), Some(c)))
+}
+
 /// The findings, grouped by principle, each ending in its question; exit status 1 when there
 /// is anything to ask.
 fn check(repo: &std::path::Path, json: bool) -> Result<bool> {
@@ -173,6 +187,7 @@ fn main() -> Result<()> {
     match Cli::parse().cmd {
         Cmd::View { repos, roles, out, no_open, since } => {
             let repos = if repos.is_empty() { vec![std::env::current_dir()?] } else { repos };
+            let (repos, _clones): (Vec<PathBuf>, Vec<Option<remote::Clone>>) = repos.into_iter().map(local).collect::<Result<Vec<_>>>()?.into_iter().unzip();
             view(&repos, roles.as_deref(), out, !no_open, since.as_deref())?
         }
         Cmd::Mcp => mcp::serve()?,
@@ -189,15 +204,16 @@ fn main() -> Result<()> {
             }
         }
         Cmd::Check { repo, json } => {
-            let repo = match repo {
+            let (repo, _clone) = local(match repo {
                 Some(r) => r,
                 None => std::env::current_dir()?,
-            };
+            })?;
             if !check(&repo, json)? {
                 std::process::exit(1);
             }
         }
         Cmd::Analyze { repo, package, roles, out } => {
+            let (repo, _clone) = local(repo)?;
             let g = match package {
                 Some(p) => atlas_engine::analyze(&repo, Some(&p), roles.as_deref())?,
                 None => parts::analyze_repo(&[repo.clone()], roles.as_deref())?,

@@ -103,6 +103,7 @@ cargo install --locked --git https://github.com/raoulg/atlas atlas
 ```bash
 atlas view                      # draw the repository you are in; opens in your browser
 atlas view ../api ../web        # two repositories as parts of one picture
+atlas view https://github.com/o/r/tree/main/src/pkg   # one folder of a repository, from its URL
 atlas check                     # where the code and the design principles disagree
 atlas changes                   # what your edits did to the routes, their places and the findings
 atlas --help

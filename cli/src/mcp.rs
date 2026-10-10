@@ -8,7 +8,7 @@ use std::io::{BufRead, Write};
 use std::path::PathBuf;
 
 use anyhow::Result;
-use atlas_engine::{principles, story, Graph};
+use atlas_engine::{principles, remote, story, Graph};
 use serde_json::{json, Value};
 
 /// Protocol versions this server speaks; a client asking for one gets it, else the newest.
@@ -81,7 +81,7 @@ fn initialize(params: &Value) -> Value {
 }
 
 fn tools() -> Value {
-    let path = json!({ "type": "string", "description": "The repository: its root, or a package directory. Default: the directory the server runs in." });
+    let path = json!({ "type": "string", "description": "The repository: its root, a package directory, or a git URL (a `…/tree/<ref>/<folder>` URL names one folder). Default: the directory the server runs in." });
     let read_only = json!({ "readOnlyHint": true, "openWorldHint": false });
     json!([
         {
@@ -176,14 +176,22 @@ fn call(name: &str, args: &Value) -> Option<Result<String, String>> {
     })
 }
 
+/// The repository a tool is handed: a path, or a URL cloned for as long as the tool runs.
+fn located(path: Option<&str>) -> Result<(PathBuf, Option<remote::Clone>), String> {
+    match path {
+        Some(p) if remote::is_url(p) => remote::clone(p).map(|c| (c.dir.clone(), Some(c))).map_err(|e| format!("Could not fetch {p}: {e}")),
+        p => Ok((PathBuf::from(p.unwrap_or(".")), None)),
+    }
+}
+
 fn graph(path: Option<&str>) -> Result<Graph, String> {
-    let repo = path.map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."));
+    let (repo, _clone) = located(path)?;
     atlas_engine::parts::analyze_repo(&[repo.clone()], None).map_err(|e| format!("Could not read {}: {e}", repo.display()))
 }
 
 /// Each part's own graph, checked in its own language.
 fn parts_of(path: Option<&str>) -> Result<Vec<Graph>, String> {
-    let repo = path.map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."));
+    let (repo, _clone) = located(path)?;
     atlas_engine::parts::analyze_parts(&[repo.clone()], None).map_err(|e| format!("Could not read {}: {e}", repo.display()))
 }
 
