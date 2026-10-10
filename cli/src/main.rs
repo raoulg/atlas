@@ -4,10 +4,53 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use atlas_engine::principles;
+use clap::builder::styling::{AnsiColor, Effects, Style, Styles};
 use clap::{Parser, Subcommand};
 
+/// The viewer's place colours, in the terminal's own palette.
+const STYLES: Styles = Styles::styled()
+    .header(AnsiColor::Blue.on_default().effects(Effects::BOLD))
+    .usage(AnsiColor::Blue.on_default().effects(Effects::BOLD))
+    .literal(AnsiColor::Cyan.on_default().effects(Effects::BOLD))
+    .placeholder(AnsiColor::Yellow.on_default())
+    .valid(AnsiColor::Green.on_default())
+    .invalid(AnsiColor::Red.on_default().effects(Effects::BOLD))
+    .error(AnsiColor::Red.on_default().effects(Effects::BOLD));
+
+/// The logo in a line: a place, a function, a place, a function, a place.
+fn banner() -> String {
+    let (a, b, c) = (AnsiColor::Cyan.on_default(), AnsiColor::Blue.on_default(), AnsiColor::Yellow.on_default());
+    let (dim, bold) = (Style::new().effects(Effects::DIMMED), Style::new().effects(Effects::BOLD));
+    format!(
+        "{a}■{a:#}{dim}──▶{dim:#}{b}■{b:#}{dim}──▶{dim:#}{c}■{c:#}  {bold}atlas{bold:#} {dim}{}{dim:#}",
+        env!("CARGO_PKG_VERSION")
+    )
+}
+
+fn examples() -> String {
+    let (head, cmd, dim) = (STYLES.get_header(), STYLES.get_literal(), Style::new().effects(Effects::DIMMED));
+    let rows = [
+        ("atlas view", "draw the repository you are in and open it in the browser"),
+        ("atlas view ../api ../web", "two projects in one page, with a switcher"),
+        ("atlas check", "where the code and the design principles disagree"),
+        ("claude mcp add atlas -- atlas mcp", "give Claude Code the same picture"),
+    ];
+    let mut s = format!("{head}Examples:{head:#}\n");
+    for (c, what) in rows {
+        s += &format!("  {cmd}{c:<36}{cmd:#}{dim}{what}{dim:#}\n");
+    }
+    s
+}
+
 #[derive(Parser)]
-#[command(name = "atlas", version, about = "Atlas: code at the level of types and flows")]
+#[command(
+    name = "atlas",
+    version,
+    about = "See how code works: where data rests, and the functions that carry it there.",
+    before_help = banner(),
+    after_help = examples(),
+    styles = STYLES
+)]
 struct Cli {
     #[command(subcommand)]
     cmd: Cmd,
@@ -15,31 +58,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Cmd {
-    /// Parse a repository into its graph (JSON).
-    Analyze {
-        /// Repository root (or a package directory).
-        repo: PathBuf,
-        /// Package directory, when discovery picks the wrong one.
-        #[arg(long)]
-        package: Option<PathBuf>,
-        /// An `architecture.yml` or spike-style `roles.json`; default: the repo's own, else inferred.
-        #[arg(long)]
-        roles: Option<PathBuf>,
-        /// Where to write the graph.
-        #[arg(short, long, default_value = "graph.json")]
-        out: PathBuf,
-    },
-    /// Check a repository against the design principles Atlas stands on.
-    Check {
-        /// Repository root; default: the current directory.
-        repo: Option<PathBuf>,
-        /// Print the findings as JSON.
-        #[arg(long)]
-        json: bool,
-    },
-    /// Serve Atlas to a coding agent over MCP (stdio): principles, check, explain, routes, route.
-    Mcp,
-    /// Analyze one or more repositories and open them in the viewer.
+    /// Draw one or more repositories and open the picture in the browser.
     View {
         /// Repository roots; default: the current directory. Several become a project switcher.
         repos: Vec<PathBuf>,
@@ -52,6 +71,30 @@ enum Cmd {
         /// Write the page without opening a browser.
         #[arg(long)]
         no_open: bool,
+    },
+    /// List where the code and the design principles disagree, each with a question.
+    Check {
+        /// Repository root; default: the current directory.
+        repo: Option<PathBuf>,
+        /// Print the findings as JSON.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Serve Atlas to a coding agent over MCP (stdio): principles, check, explain, routes, route.
+    Mcp,
+    /// Write a repository's graph as JSON.
+    Analyze {
+        /// Repository root (or a package directory).
+        repo: PathBuf,
+        /// Package directory, when discovery picks the wrong one.
+        #[arg(long)]
+        package: Option<PathBuf>,
+        /// An `architecture.yml` or spike-style `roles.json`; default: the repo's own, else inferred.
+        #[arg(long)]
+        roles: Option<PathBuf>,
+        /// Where to write the graph.
+        #[arg(short, long, default_value = "graph.json")]
+        out: PathBuf,
     },
 }
 
