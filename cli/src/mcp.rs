@@ -131,15 +131,19 @@ fn call(name: &str, args: &Value) -> Option<Result<String, String>> {
             let id = text("principle").unwrap_or("");
             principles::explain(id).map(str::to_string).ok_or_else(|| unknown_principle(id))
         }
-        "check" => graph(text("path")).and_then(|g| {
-            let mut findings = principles::check(&g);
-            if let Some(p) = text("principle") {
-                if !principles::PRINCIPLES.iter().any(|x| x.id == p) {
-                    return Err(unknown_principle(p));
-                }
-                findings.retain(|f| f.principle == p);
+        "check" => parts_of(text("path")).and_then(|gs| {
+            if let Some(p) = text("principle").filter(|p| !principles::PRINCIPLES.iter().any(|x| x.id == *p)) {
+                return Err(unknown_principle(p));
             }
-            Ok(principles::report(&g.root, &findings))
+            Ok(gs
+                .iter()
+                .map(|g| {
+                    let mut findings = principles::check(g);
+                    findings.retain(|f| text("principle").map_or(true, |p| f.principle == p));
+                    principles::report(&g.root, &findings)
+                })
+                .collect::<Vec<_>>()
+                .join("\n"))
         }),
         "routes" => graph(text("path")).map(|g| {
             let rows: Vec<String> = story::entries(&g).into_iter().map(|(k, label, id)| format!("{:<8} {label}  ({id})", story::kind_label(k))).collect();
@@ -156,7 +160,13 @@ fn call(name: &str, args: &Value) -> Option<Result<String, String>> {
 
 fn graph(path: Option<&str>) -> Result<Graph, String> {
     let repo = path.map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."));
-    atlas_engine::analyze(&repo, None, None).map_err(|e| format!("Could not read {}: {e}", repo.display()))
+    atlas_engine::parts::analyze_repo(&[repo.clone()], None).map_err(|e| format!("Could not read {}: {e}", repo.display()))
+}
+
+/// Each part's own graph, checked in its own language.
+fn parts_of(path: Option<&str>) -> Result<Vec<Graph>, String> {
+    let repo = path.map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."));
+    atlas_engine::parts::analyze_parts(&[repo.clone()], None).map_err(|e| format!("Could not read {}: {e}", repo.display()))
 }
 
 fn unknown_principle(id: &str) -> String {

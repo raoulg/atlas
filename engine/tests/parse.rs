@@ -231,7 +231,8 @@ fn rust_workspace_parses() {
     assert!(inh.contains(&("atlas-engine.lens.Restrict".into(), "atlas-engine.lens.Lens".into())), "impl Lens for Restrict");
     let calls = edges(&g, EdgeKind::Calls);
     assert!(calls.contains(&("atlas.main".into(), "atlas.view".into())));
-    assert!(calls.contains(&("atlas.view".into(), "atlas-engine.analyze".into())), "cli calls into the engine");
+    assert!(calls.contains(&("atlas.view".into(), "atlas-engine.parts.analyze_repo".into())), "cli calls into the engine");
+    assert!(calls.contains(&("atlas-engine.parts.analyze_parts".into(), "atlas-engine.analyze".into())), "each part is analyzed in its language");
     assert!(calls.contains(&("atlas-engine.language.Rust.parse".into(), "atlas-engine.rust.parse".into())), "trait impl calls the module");
     let returns = edges(&g, EdgeKind::Returns);
     assert!(returns.contains(&("atlas-engine.analyze".into(), "atlas-engine.model.Graph".into())), "`pub use model::*` resolves Graph");
@@ -263,7 +264,7 @@ fn atlas_reads_as_its_algebra() {
     let name = |id: &str| id.rsplit('.').next().unwrap().to_string();
     let steps: Vec<&str> = g.edges.iter().filter(|e| e.src == "atlas-engine.analyze" && e.kind == EdgeKind::Calls).map(|e| e.dst.as_str()).collect();
     let short: Vec<&str> = steps.iter().map(|s| s.trim_start_matches("atlas-engine.")).collect();
-    assert_eq!(short, ["language.detect", "language.Language.parse", "entries.read_makefile", "roles.resolve", "roles.assign"], "analyze is its algebra, step by step");
+    assert_eq!(short, ["language.detect", "language.Language.parse", "entries.read_makefile", "roles.resolve", "roles.assign", "parts.assign"], "analyze is its algebra, step by step");
     for step in steps {
         for e in g.edges.iter().filter(|e| e.src == step && matches!(e.kind, EdgeKind::Takes | EdgeKind::Returns | EdgeKind::Mutates)) {
             if classes.contains(e.dst.as_str()) {

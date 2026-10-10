@@ -1,0 +1,1 @@
+{ "name": "web", "private": true, "dependencies": { "@tanstack/react-router": "1" } }

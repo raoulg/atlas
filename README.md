@@ -102,7 +102,7 @@ cargo install --locked --git https://github.com/raoulg/atlas atlas
 
 ```bash
 atlas view                      # draw the repository you are in; opens in your browser
-atlas view ../api ../web        # several repositories, one page with a switcher
+atlas view ../api ../web        # two repositories as parts of one picture
 atlas check                     # where the code and the design principles disagree
 atlas --help
 ```
@@ -117,6 +117,14 @@ Atlas reads:
 - **Python**, including notebooks (`.ipynb` in `notebooks/`, `scripts/`, `examples/`);
 - **Rust**, including workspaces;
 - **TypeScript and TSX**: React components, TanStack routes and server functions, `tsconfig` paths.
+
+A repository can hold several parts: a Python API and a TypeScript app, the crates of a
+workspace. Atlas finds every `Cargo.toml`, `pyproject.toml` and `package.json` itself and
+reads each part in its own language. The overview then shows each part as one step, from
+what it reads to what it writes. Where one part names a route another part serves (the app
+asks for `/api/items/{id}`, a FastAPI app mounted at `/api` serves `/items/{id}`), the two
+meet in that part's `HTTP`. Click a part to open it; **Only *part*** in the menu keeps to
+one.
 
 Entry points come from the code itself. Atlas finds:
 

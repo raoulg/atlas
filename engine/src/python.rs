@@ -425,7 +425,87 @@ pub fn parse(pkg_dir: &Path, project_root: Option<&Path>) -> Result<(GraphBuilde
     }
     link(&modules, &mut store, &root);
     mark_exports(&modules, &mut store, &root);
+    route_prefixes(&modules, &mut store);
     Ok((store, root))
+}
+
+/// A web app's routes at the paths a client asks for: under the prefix an app is mounted at
+/// (`app.mount("/api", sub)`), a router is included with (`app.include_router(r, prefix="/v1")`)
+/// and a router declares (`APIRouter(prefix="/items")`).
+fn route_prefixes(modules: &IndexMap<String, Module>, store: &mut GraphBuilder) {
+    let mut own: HashMap<String, String> = HashMap::new();
+    let mut mounted: HashMap<String, (String, String)> = HashMap::new();
+    for m in modules.values() {
+        let src = &m.src;
+        let key = |name: &str| m.bindings.get(name).cloned().unwrap_or_else(|| format!("{}.{name}", m.id));
+        for call in walk(m.tree.root_node(), &["call"]) {
+            let Some(f) = call.child_by_field_name("function") else { continue };
+            let positional: Vec<TsNode> = call
+                .child_by_field_name("arguments")
+                .map(named_children)
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|a| !matches!(a.kind(), "keyword_argument" | "comment"))
+                .collect();
+            let name_at = |i: usize| positional.get(i).filter(|a| a.kind() == "identifier").map(|a| text(*a, src).to_string());
+            match (f.kind(), f.child_by_field_name("attribute").map(|a| text(a, src))) {
+                ("attribute", Some("mount")) => {
+                    let parent = f.child_by_field_name("object").map(|o| text(o, src).to_string());
+                    let path = positional.first().filter(|a| a.kind() == "string").map(|a| unquote(text(*a, src)));
+                    if let (Some(parent), Some(path), Some(child)) = (parent, path, name_at(1)) {
+                        mounted.insert(key(&child), (key(&parent), path));
+                    }
+                }
+                ("attribute", Some("include_router")) => {
+                    let parent = f.child_by_field_name("object").map(|o| text(o, src).to_string());
+                    if let (Some(parent), Some(child)) = (parent, name_at(0)) {
+                        let prefix = lit_kw(call, src, "prefix").unwrap_or_default();
+                        mounted.insert(key(&child), (key(&parent), prefix));
+                    }
+                }
+                _ if text(f, src).ends_with("APIRouter") => {
+                    let target = call.parent().filter(|p| p.kind() == "assignment").and_then(|a| a.child_by_field_name("left")).filter(|l| l.kind() == "identifier");
+                    if let (Some(t), Some(prefix)) = (target, lit_kw(call, src, "prefix")) {
+                        own.insert(key(text(t, src)), prefix);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    // from the app or router a route is declared on, out to the app nobody mounts
+    let full = |start: &str| {
+        let trim = |p: &str| p.trim_end_matches('/').to_string();
+        let (mut key, mut out) = (start.to_string(), trim(own.get(start).map(String::as_str).unwrap_or("")));
+        for _ in 0..10 {
+            let Some((parent, prefix)) = mounted.get(&key) else { break };
+            out = format!("{}{}{out}", trim(own.get(parent).map(String::as_str).unwrap_or("")), trim(prefix));
+            key = parent.clone();
+        }
+        out
+    };
+    for n in store.nodes.values_mut() {
+        let Some(e) = n.entry.as_mut().filter(|e| e.kind == EntryKind::Route) else { continue };
+        let Some(m) = modules.get(&n.module) else { continue };
+        const VERBS: &[&str] = &["get(", "post(", "put(", "delete(", "patch(", "websocket("];
+        let Some(recv) = n.decorators.iter().find_map(|d| d.split_once('.').filter(|(_, rest)| VERBS.iter().any(|v| rest.starts_with(v))).map(|(r, _)| r.to_string())) else { continue };
+        let prefix = full(&m.bindings.get(&recv).cloned().unwrap_or_else(|| format!("{}.{recv}", m.id)));
+        if prefix.is_empty() {
+            continue;
+        }
+        if let Some((method, path)) = e.label.split_once(' ') {
+            let path = if path == "/" { String::new() } else { path.to_string() };
+            e.label = format!("{method} {}{path}", prefix.trim_end_matches('/'));
+        }
+    }
+}
+
+/// A keyword argument that is a string literal.
+fn lit_kw(call: TsNode, src: &[u8], kw: &str) -> Option<String> {
+    let args = named_children(call.child_by_field_name("arguments")?);
+    let k = args.iter().find(|a| a.kind() == "keyword_argument" && a.child_by_field_name("name").map(|n| text(n, src)) == Some(kw))?;
+    let v = k.child_by_field_name("value").filter(|v| v.kind() == "string")?;
+    Some(unquote(text(v, src)))
 }
 
 // ---------- pass 1: symbols and imports ----------

@@ -248,10 +248,16 @@ const D = ALL[current];
 const byId = new Map(D.nodes.map(n => [n.id, n]));
 for (const t of (D.make || [])) byId.set(t.id, {id: t.id, kind: "make", name: t.label, module: "Makefile", doc: t.doc, recipe: t.recipe, entry: {kind: "make", label: t.label}, make: t});
 const ROOT = D.root + ".";
+// a repository of several parts (a crate, a package, an app), each read in its own language
+const PARTS = D.parts || [], multi = PARTS.length > 1;
+const partOf = n => n.part || (PARTS[0] || {}).id || D.root;
+const langOf = n => (PARTS.find(p => p.id === partOf(n)) || {}).language || D.language;
+const partRank = n => Math.max(0, PARTS.findIndex(p => p.id === partOf(n)));
+let partFilter = null; const expandedParts = new Set();
 const short = id => id.startsWith(ROOT) ? id.slice(ROOT.length) : id.replace(/^ext:/, "");
 const roleVar = r => `var(--role-${r})`;
 const isPrivate = n => n.name.startsWith("_");
-const KG = {imports:"imports", calls:"calls", instantiates:"calls", takes:"types", returns:"types", has:"types", mutates:"types", variant:"types", inherits:"inherits"};
+const KG = {imports:"imports", calls:"calls", requests:"calls", instantiates:"calls", takes:"types", returns:"types", has:"types", mutates:"types", variant:"types", inherits:"inherits"};
 const NS = "http://www.w3.org/2000/svg";
 const el = (tag, attrs={}, parent) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; };
 const html = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
@@ -678,7 +684,7 @@ function ownEffects(n) {
 const KIND_LABEL = {make: "Make", cli: "CLI", script: "Script", route: "API", mcp: "MCP", notebook: "Notebook", export: "Library", test: "Test"}, KIND_ORDER = ["make", "cli", "export", "script", "notebook", "route", "mcp", "test"];
 // an exported class is a route whose steps are its public methods, in source order
 const publicMethods = id => (out.get(id) || []).filter(e => e.kind === "contains").map(e => e.dst).filter(m => byId.get(m)?.kind === "method" && !byId.get(m).name.startsWith("_"));
-const entries = [...byId.values()].filter(n => n.entry).sort((a, b) => (KIND_ORDER.indexOf(a.entry.kind) - KIND_ORDER.indexOf(b.entry.kind)) || a.entry.label.localeCompare(b.entry.label));
+const entries = [...byId.values()].filter(n => n.entry).sort((a, b) => (partRank(a) - partRank(b)) || (KIND_ORDER.indexOf(a.entry.kind) - KIND_ORDER.indexOf(b.entry.kind)) || a.entry.label.localeCompare(b.entry.label));
 function callees(id) {
   const n = byId.get(id); if (n && n.make) return n.make.calls.filter(c => byId.has(c));
   if (n && n.kind === "class" && n.entry) return [...(byId.has(id + ".__init__") ? [id + ".__init__"] : []), ...publicMethods(id)];
@@ -748,8 +754,13 @@ function pickWhats(m, k = 2) {
 const typesOf = id => ({takes: [...new Set((out.get(id) || []).filter(e => e.kind === "takes").map(e => e.dst))], returns: [...new Set((out.get(id) || []).filter(e => e.kind === "returns").map(e => e.dst))]});
 let storyEntry = null, entryKind = null, showTests = false; const expanded = new Set();
 // the routes an overview shows: all of them, or those of one kind (all Library routes, all CLI routes)
-const overviewEntries = () => entries.filter(e => entryKind ? e.entry.kind === entryKind : e.entry.kind !== "test" || showTests);
+const overviewEntries = () => entries.filter(e => (entryKind ? e.entry.kind === entryKind : e.entry.kind !== "test" || showTests) && (!partFilter || partOf(e) === partFilter));
 const entrySel = document.getElementById("entry");
+if (multi) {
+  const og = document.createElement("optgroup"); og.label = "Parts";
+  for (const p of PARTS) { const o = document.createElement("option"); o.value = "part:" + p.id; o.textContent = `Only ${p.id} (${entries.filter(e => partOf(e) === p.id).length})`; og.appendChild(o); }
+  entrySel.appendChild(og);
+}
 for (const k of KIND_ORDER) {
   const es = entries.filter(e => e.entry.kind === k); if (!es.length) continue;
   const og = document.createElement("optgroup"); og.label = KIND_LABEL[k];
@@ -759,7 +770,8 @@ for (const k of KIND_ORDER) {
 }
 entrySel.addEventListener("change", () => {
   const v = entrySel.value;
-  if (v.startsWith("kind:")) { entryKind = v.slice(5); storyEntry = null; } else { entryKind = null; storyEntry = v || null; }
+  if (v.startsWith("part:")) { partFilter = v.slice(5); entryKind = null; storyEntry = null; }
+  else if (v.startsWith("kind:")) { entryKind = v.slice(5); storyEntry = null; partFilter = null; } else { entryKind = null; storyEntry = v || null; if (!v) partFilter = null; }
   expanded.clear(); plaatFit = true; render();
 });
 function renderStory() {
@@ -771,7 +783,8 @@ function renderStory() {
     const hiddenTests = entryKind ? 0 : entries.filter(e => e.entry.kind === "test").length - overviewEntries().filter(e => e.entry.kind === "test").length;
     for (const e of overviewEntries()) {
       const r = reach(e.id); useLanes(r);
-      rows.push({id: e.id, depth: 0, label: e.entry.label, kind: e.entry.kind, bounds: r.bounds, size: r.size, group: e.entry.kind !== lastKind ? KIND_LABEL[e.entry.kind] : null}); lastKind = e.entry.kind;
+      const grp = (multi && !partFilter ? partOf(e) + " · " : "") + KIND_LABEL[e.entry.kind];
+      rows.push({id: e.id, depth: 0, label: e.entry.label, kind: e.entry.kind, bounds: r.bounds, size: r.size, group: grp !== lastKind ? grp : null}); lastKind = grp;
     }
     if (hiddenTests) rows.push({id: "__tests__", depth: 0, label: `${hiddenTests} tests — click to show`, kind: "test", bounds: {}, size: 0, group: "Test", toggle: true});
   } else {
@@ -808,7 +821,7 @@ function renderStory() {
   const lanesW = lx - laneX0;
   const dot = (parent, cx, cy, laneId, n) => el("circle", {class: "dot", cx, cy, r: 3 + Math.min(5, Math.log2(n + 1)), style: `fill:var(--k-${placeKind(laneId)})`}, parent);
   const title = storyEntry ? byId.get(storyEntry) : null;
-  el("text", {class: "story-title", x: X0, y: hdrY}, g).textContent = title ? `${KIND_LABEL[title.entry.kind]} · ${title.entry.label}` : entryKind ? `All ${KIND_LABEL[entryKind]} routes` : "All entry points";
+  el("text", {class: "story-title", x: X0, y: hdrY}, g).textContent = title ? `${KIND_LABEL[title.entry.kind]} · ${title.entry.label}` : entryKind ? `All ${KIND_LABEL[entryKind]} routes` : partFilter ? `All routes of ${partFilter}` : "All entry points";
   // the entry is the header: its own signature and its own effects, with dots for what its own body touches
   let hdrH = 17;
   if (title) {
@@ -911,8 +924,8 @@ const reachTouches = id => reach(id).touches;
 // what a step changes in place is in its codomain too: `T -> T`
 const mutatesOf = id => [...new Set((out.get(id) || []).filter(e => e.kind === "mutates").map(e => e.dst))];
 // where a route comes from: the command typed, the request made, the tool called
-const ENTRY_PLACE = {cli: l => `$ ${l}`, make: l => `$ make ${l}`, script: l => `$ python ${l}`, notebook: l => `notebook ${l}`, route: l => l, mcp: l => `MCP ${l}`, export: l => `${D.root}.${l}`, test: l => `test ${l}`};
-const entryPlace = id => { const e = byId.get(id).entry; return {id: "e:" + id, label: ENTRY_PLACE[e.kind](e.label), kind: "world"}; };
+const ENTRY_PLACE = {cli: l => `$ ${l}`, make: l => `$ make ${l}`, script: l => `$ python ${l}`, notebook: l => `notebook ${l}`, route: l => l, mcp: l => `MCP ${l}`, export: (l, n) => `${n ? partOf(n) : D.root}.${l}`, test: l => `test ${l}`};
+const entryPlace = id => { const n = byId.get(id), e = n.entry; return {id: "e:" + id, label: ENTRY_PLACE[e.kind](e.label, n), kind: "world"}; };
 // one glyph and one hue per kind of place: where a route starts, files, databases, the web, the screen, programs, models
 const GLYPH = {
   cmd: '<path d="M2.5 4l3.5 3-3.5 3M7.5 11h4"/>',
@@ -953,7 +966,10 @@ function placesOf(touches) {
 // the route as a tree: an open step holds its own steps; a call into a family holds its members' overrides as branches
 function routeTree() {
   if (!entries.length) return D.nodes.filter(n => n.kind === "function" || n.kind === "method").map(n => ({id: n.id, open: false, ownBody: true, kids: [], hue: null}));
-  if (!storyEntry) return overviewEntries().map(e => ({id: e.id, open: false, kids: [], hue: null}));
+  const closedRoutes = es => es.map(e => ({id: e.id, open: false, kids: [], hue: null}));
+  if (!storyEntry && multi && !partFilter && !entryKind)
+    return PARTS.map(p => { const open = expandedParts.has(p.id); return {id: "part:" + p.id, open, kids: open ? closedRoutes(overviewEntries().filter(e => partOf(e) === p.id)) : [], hue: null, choice: false}; });
+  if (!storyEntry) return closedRoutes(overviewEntries());
   const seen = new Set();
   const visit = (id, hue) => {
     seen.add(id);
@@ -989,6 +1005,7 @@ async function renderPlaat() {
   // a step's morphism: its own body, or (closed) its interface and everything it touches below
   // noReceiver: the step is seen from its own class (a library class's route), so the receiver is not an input
   const morphism = (id, own, isAnchor, noReceiver) => {
+    if (id.startsWith("part:")) return partMorphism(id.slice(5), own);
     const f = byId.get(id), dom = [], cod = [];  // [placeId, reach]
     if (!f) return {dom: new Map(), cod: new Map()};
     if (isAnchor && f.entry) dom.push([addPlace(entryPlace(id)), false]);
@@ -1023,12 +1040,29 @@ async function renderPlaat() {
     const sig = arr => { const m = new Map(); for (const [p, r] of arr) m.set(p, (m.has(p) ? m.get(p) : true) && r); return m; };
     return {dom: sig(dom), cod: sig(cod)};
   };
+  // a part: the routes it serves over HTTP come in through its own place, the routes of other
+  // parts it requests go out to theirs; closed, it also reaches whatever its routes reach
+  const httpPlace = p => ({id: "w:Web:http:" + p, label: `HTTP(${p})`, short: `HTTP(${p})`, kind: "world"});
+  const partMorphism = (p, own) => {
+    const dom = new Map(), cod = new Map();
+    if (entries.some(e => partOf(e) === p && e.entry.kind === "route" && /^[A-Z]+ \//.test(e.entry.label))) dom.set(addPlace(httpPlace(p)), false);
+    for (const e of D.edges) if (e.kind === "requests") {
+      const a = partOf(byId.get(e.src) || {}), b = partOf(byId.get(e.dst) || {});
+      if (a === p && b !== p) cod.set(addPlace(httpPlace(b)), false);
+    }
+    if (!own) for (const e of overviewEntries().filter(e => partOf(e) === p)) {
+      const r = morphism(e.id, false, false);
+      r.dom.forEach((v, k) => { if (!k.startsWith("t:") && !dom.has(k)) dom.set(k, true); });
+      r.cod.forEach((v, k) => { if (!k.startsWith("t:") && !cod.has(k)) cod.set(k, true); });
+    }
+    return {dom, cod};
+  };
   // a result with no place of its own (a str, a dict) goes back to the step that called it
-  const handsBack = (id, cod) => { const f = byId.get(id), ret = ((f && f.returns) || "").replace(/^Result<(.*)>$/, "$1"); return ![...cod.keys()].some(p => p.startsWith("t:")) && ret && !/^(None|\(\)|Self)$/.test(ret); };
+  const handsBack = (id, cod) => { if (id.startsWith("part:")) return false; const f = byId.get(id), ret = ((f && f.returns) || "").replace(/^Result<(.*)>$/, "$1"); return ![...cod.keys()].some(p => p.startsWith("t:")) && ret && !/^(None|\(\)|Self)$/.test(ret); };
 
   // build the nested picture: frames for open steps, pills for closed ones (siblings with the same places are one pill)
   const pills = new Map(), frames = new Map();  // id -> {...}
-  const stepName = id => { const n = byId.get(id); if (!storyEntry && n.entry) return ENTRY_PLACE[n.entry.kind](n.entry.label); if (n.kind === "class") return n.name + "()"; if (n.make) return n.name; if (isCtor(n)) return typeLabel(n.cls) + "()"; return n.cls ? `${typeLabel(n.cls)}.${n.name}` : n.name; };
+  const stepName = id => { if (id.startsWith("part:")) { const p = PARTS.find(x => x.id === id.slice(5)) || {}; return `${p.id} · ${p.language}`; } const n = byId.get(id); if (!storyEntry && n.entry) return ENTRY_PLACE[n.entry.kind](n.entry.label, n); if (n.kind === "class") return n.name + "()"; if (n.make) return n.name; if (isCtor(n)) return typeLabel(n.cls) + "()"; return n.cls ? `${typeLabel(n.cls)}.${n.name}` : n.name; };
   const openable = id => id !== storyEntry && !expanded.has(id) && callees(id).length > 0;
   // an exported class has no body of its own: its route starts at each public method the caller can call
   const libraryClass = id => byId.get(id)?.kind === "class" && !!byId.get(id).entry;
@@ -1079,7 +1113,7 @@ async function renderPlaat() {
   // siblings that take and hand on the same places (the same versions) are one pill
   const merged = new Map();
   for (const P of [...pills.values()]) {
-    if (P.own || P.hue) continue;
+    if (P.own || P.hue || P.steps[0].startsWith("part:")) continue;
     const key = (P.parent || "") + "|" + [...P.D.keys()].sort() + ">" + [...P.C.keys()].sort() + "|" + (P.backTo || "");
     const Q = merged.get(key);
     if (!Q) { merged.set(key, P); continue; }
@@ -1140,7 +1174,10 @@ async function renderPlaat() {
   const holder = pid => pid ? nodeOf.get(pid) : root;
   for (const F of frames.values()) { const n = frameNode(F.id, 34); (F.parent ? null : root.children.push(n)); }
   for (const F of frames.values()) if (F.parent) holder(F.parent).children.push(nodeOf.get(F.id));
+  // an open part's own step: the code in it that names another part's routes
+  const requesters = p => [...new Set(D.edges.filter(e => e.kind === "requests" && partOf(byId.get(e.src) || {}) === p).map(e => byId.get(e.src)?.name || short(e.src)))];
   const pillLabel = P => {
+    if (P.own && P.steps[0].startsWith("part:")) { const rs = requesters(P.steps[0].slice(5)); return rs.length <= 2 ? rs.join(", ") : `${rs.slice(0, 2).join(", ")} +${rs.length - 2}`; }
     if (P.own) return stepName(P.steps[0]);
     const ns = [...new Set(P.steps.map(stepName))], text = ns.length <= 2 ? ns.join(", ") : `${ns.slice(0, 2).join(", ")} +${ns.length - 2}`;
     const alts = P.steps.length === 1 ? altCount(P.steps[0]) : 0;
@@ -1175,9 +1212,10 @@ async function renderPlaat() {
   const walkPos = (n, ox, oy, depth) => { for (const c of n.children || []) { pos.set(c.id, {x: c.x + ox, y: c.y + oy, w: c.width, h: c.height, depth}); walkPos(c, c.x + ox, c.y + oy, depth + 1); } };
   walkPos(layout, OX, OY, 0);
   const parentOf = new Map(); const walkPar = n => { for (const c of n.children || []) { parentOf.set(c.id, n.id); walkPar(c); } }; walkPar(layout);
-  el("text", {class: "story-title", x: 20, y: 24}, g).textContent = !entries.length ? "Every function (no entry points found)" : storyEntry ? `Route · ${entryTitle(storyEntry)}` : entryKind ? `All ${KIND_LABEL[entryKind]} routes` : "All routes";
+  el("text", {class: "story-title", x: 20, y: 24}, g).textContent = !entries.length ? "Every function (no entry points found)" : storyEntry ? `Route · ${entryTitle(storyEntry)}` : entryKind ? `All ${KIND_LABEL[entryKind]} routes` : partFilter ? `All routes of ${partFilter}` : multi ? `${PARTS.length} parts` : "All routes";
   el("text", {class: "story-sub", x: 20, y: 41}, g).textContent = !entries.length ? "nothing anchors a route here, so every typed function is a step · the sixteen busiest types are kept"
     : storyEntry ? `${short(storyEntry)} · what it reads on the left, what it writes on the right · click a pill to open it, a frame's title to close it`
+    : multi && !partFilter && !entryKind ? "each part from what it reads to what it writes; one part's requests are another's HTTP · click a part to open it"
     : "each route from what it reads to what it writes · click a route to open it";
   if (!pos.size) el("text", {class: "story-sub", x: 20, y: 70}, g).textContent = "No step on this route takes or hands on a place yet: open a step in Story, or pick another route.";
   const fg = el("g", {}, g), eg = el("g", {}, g), ng = el("g", {}, g);
@@ -1213,7 +1251,7 @@ async function renderPlaat() {
     const title = el("text", {class: "ftitle", x: 14, y: 20}, grp); title.textContent = (F.synthetic ? "" : "▾ ") + F.title;
     title.addEventListener("click", ev => {
       ev.stopPropagation(); if (F.synthetic) return; plaatAnchor = id;
-      if (isFam) expandedFamilies.delete(F.fam); else if (F.anchor) { storyEntry = null; entrySel.value = ""; expanded.clear(); plaatAnchor = "n:" + F.step; } else expanded.delete(F.step);
+      if (isFam) expandedFamilies.delete(F.fam); else if (F.step && F.step.startsWith("part:")) expandedParts.delete(F.step.slice(5)); else if (F.anchor) { storyEntry = null; entrySel.value = ""; expanded.clear(); plaatAnchor = "n:" + F.step; } else expanded.delete(F.step);
       render();
     });
     place(grp, id, (from, to) => { if (!from.fresh) d3.select(r).attr("width", from.w).attr("height", from.h).transition().duration(DUR).attr("width", to.w).attr("height", to.h); });
@@ -1241,6 +1279,7 @@ async function renderPlaat() {
     if (P.hue) r.setAttribute("style", `stroke:${hueVar(P.hue)};stroke-width:1.6`);
     el("text", {class: "title", x: 11, y: Q.h / 2 + 4}, grp).textContent = P.label;
     grp.addEventListener("click", () => {
+      if (P.steps[0].startsWith("part:")) { if (!P.own) { expandedParts.add(P.steps[0].slice(5)); plaatAnchor = P.id; render(); } return; }
       if (P.steps.length === 1) select(P.steps[0]); else selectArrows({fns: P.steps, kind: "steps"});
       if (P.own) return;
       if (!storyEntry && entries.length) { if (P.steps.length === 1) { storyEntry = P.steps[0]; entrySel.value = storyEntry; expanded.clear(); plaatAnchor = P.id; render(); } return; }
@@ -1296,15 +1335,17 @@ async function renderPlaat() {
 function crumbs() {
   const C = document.getElementById("crumbs"); C.innerHTML = "";
   // in Story the bar shows when a route or an opened step narrows the picture, so it can be undone
-  const show = view === "plaat" || (view === "story" && (storyEntry || entryKind || expanded.size));
+  const show = view === "plaat" || (view === "story" && (storyEntry || entryKind || partFilter || expanded.size));
   C.style.display = show ? "" : "none";
   if (!show) return;
   const lbl = t => C.appendChild(html("span", "lbl", t));
   const chip = (text, undo) => { const b = html("button", null, text + " ✕"); b.title = "undo"; b.onclick = () => { undo(); render(); }; C.appendChild(b); };
   lbl("route");
+  if (partFilter) chip(`Only ${partFilter}`, () => { partFilter = null; if (!storyEntry) entrySel.value = ""; });
   if (entryKind) chip(`All ${KIND_LABEL[entryKind]}`, () => { entryKind = null; if (!storyEntry) entrySel.value = ""; });
   if (storyEntry) chip(entryTitle(storyEntry), () => { storyEntry = null; entrySel.value = entryKind ? "kind:" + entryKind : ""; expanded.clear(); });
-  if (!entryKind && !storyEntry) C.appendChild(html("span", "none", entries.length ? "all" : "none"));
+  if (!entryKind && !storyEntry && !partFilter) C.appendChild(html("span", "none", entries.length ? "all" : "none"));
+  if (expandedParts.size && !storyEntry) { lbl("parts"); for (const p of expandedParts) chip(p, () => expandedParts.delete(p)); }
   if (expanded.size) { lbl("opened"); for (const id of expanded) chip(byId.get(id)?.name || short(id), () => expanded.delete(id)); }
   if (expandedFamilies.size) { lbl("families"); for (const f of expandedFamilies) chip(typeLabel(f), () => expandedFamilies.delete(f)); }
   if (refined.size) { lbl("split"); for (const r of refined) chip(r.slice(2), () => refined.delete(r)); }
@@ -1319,12 +1360,12 @@ function linkList(ids, kindClass) {
   return d;
 }
 function section(title, count, node) { const s = html("div", "sec"); const h = html("h3", null, title); if (count != null) h.appendChild(html("span", null, String(count))); s.appendChild(h); s.appendChild(node); return s; }
-const CODE_LANG = {python: "python", rust: "rust", typescript: "typescript"}[D.language] || "python";
+const codeLang = n => ({python: "python", rust: "rust", typescript: "typescript"})[langOf(n)] || "python";
 function codeBlock(n, mark) {
   const src = D.files[n.file]; if (!src || !n.span) return null;
   const lines = src.split("\n").slice(n.span[0] - 1, Math.min(n.span[1], n.span[0] - 1 + 400));
   const pre = html("pre", "code"); pre.style.setProperty("--ln0", n.span[0] - 1);
-  const hl = hljs.highlight(lines.join("\n"), {language: CODE_LANG}).value;
+  const hl = hljs.highlight(lines.join("\n"), {language: codeLang(n)}).value;
   pre.innerHTML = hl.split("\n").map((l, i) => `<span class="l${n.span[0] + i === mark ? " mark" : ""}">${l || " "}</span>`).join("");
   return pre;
 }
@@ -1336,6 +1377,15 @@ function selectPlace(pid, label) {
   insp.innerHTML = "";
   const eb = html("div", "eyebrow"); eb.appendChild(html("span", null, `place · ${KIND_NAME[placeKind(pid)] || "world"}`)); insp.appendChild(eb);
   insp.appendChild(html("h1", "name", label));
+  // a part's HTTP: the routes it serves that other parts name, and where they name them
+  if (pid.startsWith("w:Web:http:")) {
+    const p = pid.slice("w:Web:http:".length), reqs = D.edges.filter(e => e.kind === "requests" && partOf(byId.get(e.dst) || {}) === p);
+    insp.appendChild(html("div", "path", `${reqs.length} ${reqs.length === 1 ? "request" : "requests"} from other parts to the routes ${p} serves`));
+    const d = html("div", "links");
+    for (const e of reqs) { const b = html("button", "fn", `${short(e.src)} → ${e.via}`); b.onclick = () => select(e.dst); d.appendChild(b); }
+    insp.appendChild(d);
+    return;
+  }
   const calls = [];
   for (const n of D.nodes) for (const t of n.touches || []) if (WORLD[t.kind] && worldPlaceOf(t).id === pid) calls.push({n, t});
   calls.sort((a, b) => a.n.file.localeCompare(b.n.file) || (a.t.line || 0) - (b.t.line || 0));
@@ -1364,7 +1414,7 @@ function select(id, extra) {
   const es = [...(out.get(id) || []), ...(inn.get(id) || [])];
   const outK = k => es.filter(e => e.src === id && e.kind === k).map(e => e.dst), inK = k => es.filter(e => e.dst === id && e.kind === k).map(e => e.src);
   if (n.kind === "function" || n.kind === "method") {
-    const [kw, arrow] = {rust: ["fn", " -> "], typescript: ["function", ": "]}[D.language] || ["def", " -> "];
+    const [kw, arrow] = {rust: ["fn", " -> "], typescript: ["function", ": "]}[langOf(n)] || ["def", " -> "];
     insp.appendChild(html("div", "sig", `${kw} ${n.name}(${(n.params || []).join(", ")})${n.returns ? arrow + n.returns : ""}`));
     if (n.cls) insp.appendChild(section("method of", null, linkList([n.cls])));
   } else if (n.kind === "class") {

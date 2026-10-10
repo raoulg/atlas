@@ -45,6 +45,9 @@ pub enum EdgeKind {
     Mutates,
     /// A sum type and one of the types it may be: `Result = FitResult | FailedFit`.
     Variant,
+    /// A node that names a route another part serves, to the route's handler: a request over
+    /// HTTP; `via` names the path.
+    Requests,
 }
 
 #[derive(Serialize, Deserialize, TS, Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -113,6 +116,9 @@ pub struct Node {
     /// Where the body compares a value with literals.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub compares: Vec<Compare>,
+    /// The part of the repository the node belongs to.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub part: String,
 }
 
 impl Default for NodeKind {
@@ -296,11 +302,24 @@ pub struct Stats {
     pub unresolved_calls_top: Vec<(String, u32)>,
 }
 
+/// One part of a repository: what one manifest roots (a crate, a Python package, an app),
+/// read in its own language.
+#[derive(Serialize, Deserialize, TS, Clone, Debug, Default, PartialEq)]
+#[ts(export)]
+pub struct Part {
+    pub id: String,
+    pub language: String,
+    /// The directory that holds the part's manifest.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub dir: String,
+}
+
 #[derive(Serialize, Deserialize, TS, Clone, Debug, Default)]
 #[ts(export)]
 pub struct Graph {
     pub root: String,
-    /// The language the repo was parsed as: `python`, `rust`.
+    /// The language the repo was parsed as: `python`, `rust`, `typescript`; empty when its
+    /// parts are read in several.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub language: String,
     /// The directory that holds the repo's own declarations: Makefile, pyproject.toml,
@@ -308,6 +327,9 @@ pub struct Graph {
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub project_root: String,
     pub roles: Architecture,
+    /// The parts of the repository, in the order they were found.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub parts: Vec<Part>,
     pub nodes: Vec<Node>,
     pub edges: Vec<Edge>,
     /// Absolute path -> file text, for `inspect`.

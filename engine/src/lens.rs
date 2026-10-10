@@ -25,6 +25,7 @@ impl<F: Fn(&Node) -> bool> Lens for Restrict<F> {
             language: g.language.clone(),
             project_root: g.project_root.clone(),
             roles: g.roles.clone(),
+            parts: g.parts.clone(),
             nodes: g.nodes.iter().filter(|n| keep.contains(n.id.as_str())).cloned().collect(),
             edges: g
                 .edges
@@ -68,6 +69,7 @@ impl<F: Fn(&Node) -> Option<Node>> Lens for Quotient<F> {
             language: g.language.clone(),
             project_root: g.project_root.clone(),
             roles: g.roles.clone(),
+            parts: g.parts.clone(),
             nodes: classes.into_values().collect(),
             edges: agg
                 .into_iter()

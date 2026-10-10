@@ -3,7 +3,7 @@ mod mcp;
 use std::path::PathBuf;
 
 use anyhow::Result;
-use atlas_engine::principles;
+use atlas_engine::{parts, principles};
 use clap::builder::styling::{AnsiColor, Effects, Style, Styles};
 use clap::{Parser, Subcommand};
 
@@ -31,7 +31,7 @@ fn examples() -> String {
     let (head, cmd, dim) = (STYLES.get_header(), STYLES.get_literal(), Style::new().effects(Effects::DIMMED));
     let rows = [
         ("atlas view", "draw the repository you are in and open it in the browser"),
-        ("atlas view ../api ../web", "two projects in one page, with a switcher"),
+        ("atlas view ../api ../web", "two repositories as parts of one picture"),
         ("atlas check", "where the code and the design principles disagree"),
         ("claude mcp add atlas -- atlas mcp", "give Claude Code the same picture"),
     ];
@@ -60,7 +60,7 @@ struct Cli {
 enum Cmd {
     /// Draw one or more repositories and open the picture in the browser.
     View {
-        /// Repository roots; default: the current directory. Several become a project switcher.
+        /// Repository roots; default: the current directory. Several become parts of one page.
         repos: Vec<PathBuf>,
         /// An `architecture.yml` or `roles.json` for a single repo; default: the repo's own, else inferred.
         #[arg(long)]
@@ -103,12 +103,11 @@ const VIEWER: &str = include_str!("../../spike/viewer.html");
 const FONTS: &str = include_str!("../../spike/fonts.css");
 
 fn view(repos: &[PathBuf], roles: Option<&std::path::Path>, out: Option<PathBuf>, open: bool) -> Result<()> {
+    let g = parts::analyze_repo(repos, roles)?;
+    let parts: Vec<&str> = g.parts.iter().map(|p| p.id.as_str()).collect();
+    eprintln!("{} · {} · {} modules · {} entries", g.root, parts.join(" + "), g.stats.modules, g.nodes.iter().filter(|n| n.entry.is_some()).count());
     let mut projects = serde_json::Map::new();
-    for repo in repos {
-        let g = atlas_engine::analyze(repo, None, if repos.len() == 1 { roles } else { None })?;
-        eprintln!("{} · {} modules · {} entries", g.root, g.stats.modules, g.nodes.iter().filter(|n| n.entry.is_some()).count());
-        projects.insert(g.root.clone(), serde_json::to_value(&g)?);
-    }
+    projects.insert(g.root.clone(), serde_json::to_value(&g)?);
     let payload = serde_json::to_string(&serde_json::json!({ "projects": projects }))?.replace("</", "<\\/");
     let html = VIEWER.replacen("/*__FONTS__*/", FONTS, 1).replacen("/*__DATA__*/null", &payload, 1);
     let out = out.unwrap_or_else(|| {
@@ -136,14 +135,18 @@ fn view(repos: &[PathBuf], roles: Option<&std::path::Path>, out: Option<PathBuf>
 /// The findings, grouped by principle, each ending in its question; exit status 1 when there
 /// is anything to ask.
 fn check(repo: &std::path::Path, json: bool) -> Result<bool> {
-    let g = atlas_engine::analyze(repo, None, None)?;
-    let findings = principles::check(&g);
-    if json {
-        println!("{}", serde_json::to_string_pretty(&serde_json::json!({ "root": g.root, "findings": findings }))?);
-    } else {
-        print!("{}", principles::report(&g.root, &findings));
+    let mut clean = true;
+    // each part in its own language: what a Python package declares, a crate's compiler checks
+    for g in parts::analyze_parts(&[repo.to_path_buf()], None)? {
+        let findings = principles::check(&g);
+        if json {
+            println!("{}", serde_json::to_string_pretty(&serde_json::json!({ "root": g.root, "findings": findings }))?);
+        } else {
+            print!("{}", principles::report(&g.root, &findings));
+        }
+        clean &= findings.is_empty();
     }
-    Ok(findings.is_empty())
+    Ok(clean)
 }
 
 fn main() -> Result<()> {
@@ -163,7 +166,10 @@ fn main() -> Result<()> {
             }
         }
         Cmd::Analyze { repo, package, roles, out } => {
-            let g = atlas_engine::analyze(&repo, package.as_deref(), roles.as_deref())?;
+            let g = match package {
+                Some(p) => atlas_engine::analyze(&repo, Some(&p), roles.as_deref())?,
+                None => parts::analyze_repo(&[repo.clone()], roles.as_deref())?,
+            };
             std::fs::write(&out, serde_json::to_string(&g)?)?;
             let s = &g.stats;
             eprintln!(

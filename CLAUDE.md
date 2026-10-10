@@ -62,5 +62,7 @@ The rigorous half and the visual half are the same structure. Read `docs/design.
 - tree-sitter is pinned to the 0.25 crate line; `tree-sitter-python` 0.25,
   `tree-sitter-rust` 0.24, `tree-sitter-typescript` 0.23.
 - Languages: `engine/src/language.rs` is the trait; `python.rs`, `rust.rs` and
-  `typescript.rs` implement it. Grammars are reused from tree-sitter crates; what a module writes
+  `typescript.rs` implement it. `parts.rs` finds a repository's parts (one per manifest),
+  reads each in its language, merges them and joins them where one requests another's
+  routes; `atlas view` and the MCP routes use the merged graph, `atlas check` each part. Grammars are reused from tree-sitter crates; what a module writes
   itself is resolution, entry points and boundaries.

@@ -172,8 +172,8 @@ atlas/
 `signature`, `decorators`, `role`, `role_source`, `entry`, `boundaries`.
 
 **Edges** — `contains`, `imports`, `inherits`, `calls`, `instantiates`, `takes`,
-`returns`, `has`, `reads`, `writes`, `mutates`; later `yields`, `raises`,
-`decorates`.
+`returns`, `has`, `reads`, `writes`, `mutates`, `variant`, `requests`; later `yields`,
+`raises`, `decorates`.
 
 **Entry points** — CLI commands, API routes, MCP tools (by decorator),
 `[project.scripts]`, Makefile targets (recipes resolved to the commands they run),
@@ -182,6 +182,20 @@ a package exports (`__all__` or the public names its root `__init__.py` binds, a
 `__all__` of each public subpackage, as `components.Serial`; the `pub` items at the root
 of a library crate). A re-exported name is followed to where it is defined. Each is the
 start of a route; an exported class is a route whose steps are its public methods.
+
+**Parts** — a repository is one or more parts: what one manifest roots (`Cargo.toml`,
+`pyproject.toml`, `package.json`), read in its own language; a workspace's crates are
+parts of one root, and nothing under `tests/` or `node_modules/` is a part. The graph holds
+them side by side and every node knows its part. Parts meet over HTTP: a web framework's
+routes stand at their full path (through `app.mount(prefix, sub_app)`,
+`include_router(router, prefix=…)`, `APIRouter(prefix=…)`), and a string literal in one
+part that is the full path of a route another part serves is a `requests` edge from the
+node that holds it to the handler. A literal that names one of its own part's routes is a
+link within that part. In the views, parts are a zoom level like families: the overview
+is one step per part (memory stays inside it; what it reads and writes in the world, and
+the HTTP of the parts it requests, stand outside), a click opens a part into its routes,
+and keeping to one part is a restriction, in which another part is the web place it is
+reached through. `atlas check` reads each part in its own language.
 
 **Architecture** — a small `architecture.yml` in the subject repo, an override on
 naming and on what counts as a legitimate flow, never the source of the picture:
@@ -289,5 +303,7 @@ than two clicks from the code.
 2. Is the role the right unit for colour, or is the base type?
 3. Editing: probably never. "Open in editor" as a deep link should be enough.
 4. The browser as a resting place: a click in `apps/plusmin` is an arrow into an
-   API route. Needs TypeScript parsing first.
+   API route. Parts are joined where one names a route the other serves; the function
+   that sends the request, when the path reaches it through configuration
+   (`requireRestApiEndpoint("tables")`), needs data flow.
 5. Analysis cache across runs: a `.atlas/` directory next to `.git`.
