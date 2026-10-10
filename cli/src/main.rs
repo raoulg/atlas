@@ -98,8 +98,9 @@ enum Cmd {
     },
 }
 
-/// The spike viewer, baked into the binary until the frontend replaces it.
+/// The spike viewer, baked into the binary until the frontend replaces it, with its fonts.
 const VIEWER: &str = include_str!("../../spike/viewer.html");
+const FONTS: &str = include_str!("../../spike/fonts.css");
 
 fn view(repos: &[PathBuf], roles: Option<&std::path::Path>, out: Option<PathBuf>, open: bool) -> Result<()> {
     let mut projects = serde_json::Map::new();
@@ -109,7 +110,7 @@ fn view(repos: &[PathBuf], roles: Option<&std::path::Path>, out: Option<PathBuf>
         projects.insert(g.root.clone(), serde_json::to_value(&g)?);
     }
     let payload = serde_json::to_string(&serde_json::json!({ "projects": projects }))?.replace("</", "<\\/");
-    let html = VIEWER.replacen("/*__DATA__*/null", &payload, 1);
+    let html = VIEWER.replacen("/*__FONTS__*/", FONTS, 1).replacen("/*__DATA__*/null", &payload, 1);
     let out = out.unwrap_or_else(|| {
         let dir = std::env::temp_dir().join("atlas");
         let _ = std::fs::create_dir_all(&dir);

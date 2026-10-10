@@ -107,8 +107,9 @@ atlas check                     # where the code and the design principles disag
 atlas --help
 ```
 
-`atlas view` writes a single HTML file and opens it. No server runs and nothing leaves
-your machine. The page has five views. **Story** and **Flowchart** are the ones to start
+`atlas view` writes a single HTML file and opens it. No server runs and your code stays on
+your machine. The page fetches only its drawing libraries (d3, elk, highlight.js) from a
+CDN. It has five views. **Story** and **Flowchart** are the ones to start
 with. Architecture, Type lattice and Signature flow are earlier experiments.
 
 Atlas reads:
