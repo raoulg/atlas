@@ -349,3 +349,18 @@ fn views_are_fibers_and_quotients() {
     assert!(root_to_sinks.unwrap().weight.unwrap() >= 1);
     assert!(q.edges.iter().all(|e| e.src != e.dst), "edges inside a class vanish");
 }
+
+/// Python's types are ty's. Where ty does not know a value's type, neither does Atlas: a
+/// method without a return annotation gives back a value of no type, and a database call on it
+/// is not drawn.
+#[test]
+fn an_unknown_type_is_not_guessed() {
+    let g = fixture();
+    let kinds = |id: &str| g.node(id).unwrap().touches.iter().map(|t| t.kind.clone()).collect::<HashSet<_>>();
+    assert!(kinds("fixture.store.Ledger.keep").contains("db_sqlite"), "`self.con = sqlite3.connect(..)`");
+    assert!(kinds("fixture.store.Journal.connection").contains("db_sqlite"), "`sqlite3.connect(..)` itself");
+    assert!(!kinds("fixture.store.Journal.entries").contains("db_sqlite"), "`con = self.connection()`, which says nothing");
+    let uses = |src: &str, dst: &str| g.edges.iter().any(|e| e.src == src && e.dst == dst && e.uses);
+    assert!(uses("fixture.store.Journal.entries", "fixture.store.Journal.connection"), "its value is used");
+    assert!(!uses("fixture.build.Pipeline.run", "fixture.sinks.duck.DuckSink.write"), "a call as a statement");
+}

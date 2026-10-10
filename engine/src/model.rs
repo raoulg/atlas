@@ -180,6 +180,10 @@ pub struct Edge {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[ts(type = "Array<[number, number]>")]
     pub arms: Vec<(u32, u32)>,
+    /// For a call: the caller uses what the call gives back (assigns it, hands it on, calls a
+    /// method on it), rather than only calling it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub uses: bool,
 }
 
 /// Where a body compares one value with literals: `args.mode == "train"`,

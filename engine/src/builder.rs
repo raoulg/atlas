@@ -36,6 +36,8 @@ pub struct GraphBuilder {
     pub bindings: HashMap<String, HashMap<String, String>>,
     /// Methods that change their receiver in place.
     pub mutating: HashSet<String>,
+    /// Calls whose caller uses what they give back, as (caller, callee).
+    pub used: HashSet<(String, String)>,
 }
 
 impl GraphBuilder {
@@ -55,7 +57,7 @@ impl GraphBuilder {
         }
         let key = (src.to_string(), dst.to_string(), kind);
         if self.edge_set.insert(key) {
-            self.edges.push(Edge { src: src.into(), dst: dst.into(), kind, via, weight: None, arms });
+            self.edges.push(Edge { src: src.into(), dst: dst.into(), kind, via, weight: None, arms, uses: false });
         }
     }
 
@@ -78,13 +80,17 @@ impl GraphBuilder {
     /// resolve are counted.
     pub fn finish(self, root: String, project_root: Option<&std::path::Path>, language: &str) -> Graph {
         let mut top: Vec<(String, u32)> = self.unresolved.iter().map(|(k, v)| (k.clone(), *v)).collect();
+        let mut edges = self.edges;
+        for e in edges.iter_mut().filter(|e| e.kind == EdgeKind::Calls) {
+            e.uses = self.used.contains(&(e.src.clone(), e.dst.clone()));
+        }
         top.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
         let mut g = Graph {
             root,
             language: language.into(),
             project_root: project_root.map(crate::tree::path_str).unwrap_or_default(),
             nodes: self.nodes.into_values().collect(),
-            edges: self.edges,
+            edges,
             files: self.files,
             stats: Stats {
                 unresolved_calls_total: self.unresolved.values().sum(),

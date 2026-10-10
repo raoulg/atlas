@@ -67,3 +67,10 @@ The rigorous half and the visual half are the same structure. Read `docs/design.
   reads each in its language, merges them and joins them where one requests another's
   routes; `atlas view` and the MCP routes use the merged graph, `atlas check` each part. Grammars are reused from tree-sitter crates; what a module writes
   itself is resolution, entry points and boundaries.
+- Python's types come from ty (`engine/src/pytypes.rs`): the `ty_*` and `ruff_*` crates are
+  pinned to one version together, and need the Rust in `rust-version`. The Python fixture has
+  no environment; its libraries are stubs in `engine/tests/fixture/typings`, found through
+  `[tool.ty.environment] extra-paths`.
+- Run `uv` from the repo root or the scratchpad, never inside `engine/tests/fixture`: it has a
+  `pyproject.toml`, so uv makes a `.venv` there, and ty then reads that as the fixture's
+  environment.

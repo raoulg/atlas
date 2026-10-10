@@ -1,7 +1,6 @@
 //! Boundaries: calls that leave the package, classified by the part of the world they
 //! touch. The engine knows libraries, never a project.
 
-use std::collections::HashSet;
 use std::ops::ControlFlow;
 
 use sqlparser::ast::{visit_relations, Query, SetExpr, Statement, Visit, Visitor};
@@ -9,6 +8,12 @@ use sqlparser::dialect::{Dialect, DuckDbDialect, GenericDialect, SQLiteDialect};
 use sqlparser::parser::Parser;
 
 const NET_PKGS: &[&str] = &["requests", "httpx", "urllib", "http", "socket", "aiohttp"];
+/// What a network library does that moves data: a request, by its verb, and a socket's sending
+/// and receiving. Building a client, or reading a response that has arrived, moves nothing.
+const NET_OPS: &[&str] = &[
+    "get", "post", "put", "patch", "delete", "head", "options", "request", "send", "stream", "urlopen", "urlretrieve",
+    "connect", "sendall", "sendto", "recv", "recvfrom", "recv_into",
+];
 const LLM_PKGS: &[&str] = &["openai", "anthropic"];
 /// Libraries that compute in memory. Most of their calls stay in the program (`torch.cat`,
 /// `nn.Linear`); `ml` names the few that cross to a place.
@@ -37,13 +42,14 @@ const WRITE_BOUND: &[&str] = &[
 /// do them, and a frame's `copy()` or `replace(..)` stays in memory.
 const FILE_OPS: &[&str] = &["copy", "copyfile", "copytree", "move", "unlink", "rmtree", "rename", "replace", "mkdir", "makedirs", "touch"];
 const FS_PKGS: &[&str] = &["shutil", "os", "pathlib"];
-const READ_UNBOUND: &[&str] = &[
-    "read_text", "read_bytes", "iterdir", "glob", "rglob", "read", "readlines", "read_csv",
-    "read_parquet", "read_file",
-];
-const WRITE_UNBOUND: &[&str] = &[
-    "write_text", "write_bytes", "mkdir", "unlink", "touch", "to_csv", "to_parquet", "to_json",
-    "savefig", "writelines", "rmtree",
+
+/// What a database driver does that reaches the database: open a connection or a session, run
+/// a statement, or hand an object to an ORM's session. Reading the rows a statement gave back,
+/// committing or closing is part of what already ran.
+const DB_OPS: &[&str] = &[
+    "connect", "driver", "session", "execute", "executemany", "executescript", "sql", "query", "run", "execute_query",
+    "execute_read", "execute_write", "read_transaction", "write_transaction", "register", "read_csv", "read_parquet",
+    "read_json", "add", "add_all", "merge", "delete",
 ];
 
 fn db_pkg(pkg: &str) -> Option<&'static str> {
@@ -80,77 +86,53 @@ pub fn boundary_rust(parts: &[String]) -> Option<&'static str> {
     }
 }
 
-/// Classify a call that leaves the package.
+/// Classify a call that leaves the package, by the package that defines what is called.
 ///
-/// `pkg` is the external top-level package the call's head name is bound to, if any;
-/// `parts` the dotted call name as written; `ext` the external packages the module imports.
-pub fn boundary(pkg: Option<&str>, parts: &[String], ext: &HashSet<String>) -> Option<&'static str> {
+/// `pkg` is that package: the library of the call's callee, or of its receiver's type, and
+/// `builtins` for Python's own; `parts` the dotted call name as written. A call whose callee is
+/// not known (`pkg` is `None`) touches nothing, unless it is a bare name nothing binds, which in
+/// Python is a builtin.
+pub fn boundary(pkg: Option<&str>, parts: &[String]) -> Option<&'static str> {
     let head = parts.first().map(String::as_str).unwrap_or("");
     let last = parts.last().map(String::as_str).unwrap_or("");
-    if let Some(pkg) = pkg {
-        if matches!((pkg, last), ("click" | "typer", "echo" | "secho") | ("rich", "print") | ("pprint", "pprint" | "pp"))
-            || (pkg == "sys" && parts.len() == 3 && matches!(parts[1].as_str(), "stdout" | "stderr"))
-        {
-            return Some("screen");
-        }
-        if NET_PKGS.contains(&pkg) {
-            return Some("net");
-        }
-        if let Some(db) = db_pkg(pkg) {
-            return Some(db);
-        }
-        if LLM_PKGS.contains(&pkg) {
-            return Some("llm");
-        }
-        if ML_PKGS.contains(&pkg) {
-            return ml(pkg, parts, last);
-        }
-        if pkg == "subprocess" {
-            return Some("process");
-        }
-        if FILE_PKGS.contains(&pkg) {
-            if WRITE_BOUND.contains(&last) && (!FILE_OPS.contains(&last) || FS_PKGS.contains(&pkg)) {
-                return Some("disk_write");
-            }
-            if READ_BOUND.contains(&last) {
-                return Some("disk_read");
-            }
-        }
-        return None;
+    let builtin = |name: &str| match name {
+        "print" => Some("screen"),
+        "open" => Some("disk"),
+        _ => None,
+    };
+    let Some(pkg) = pkg else {
+        return if parts.len() == 1 { builtin(head) } else { None };
+    };
+    if pkg == "builtins" {
+        return builtin(last);
     }
-    if parts.len() == 1 && head == "print" {
+    if matches!((pkg, last), ("click" | "typer", "echo" | "secho") | ("rich", "print") | ("pprint", "pprint" | "pp"))
+        || (pkg == "sys" && parts.len() == 3 && matches!(parts[1].as_str(), "stdout" | "stderr"))
+    {
         return Some("screen");
     }
-    if parts.len() == 1 && head == "open" {
-        return Some("disk");
+    if NET_PKGS.contains(&pkg) {
+        return NET_OPS.contains(&last).then_some("net");
     }
-    if READ_UNBOUND.contains(&last) {
-        return Some("disk_read");
+    if let Some(db) = db_pkg(pkg) {
+        return DB_OPS.contains(&last).then_some(db);
     }
-    if WRITE_UNBOUND.contains(&last) {
-        return Some("disk_write");
-    }
-    let has = |p: &str| ext.contains(p);
-    if GRAPH_OPS.contains(&last) && (has("neo4j") || has("mgclient")) {
-        return Some("db_memgraph");
-    }
-    if ["execute", "executemany", "sql", "register"].contains(&last) && has("duckdb") {
-        return Some("db_duckdb");
-    }
-    if ["execute", "executemany"].contains(&last) && has("sqlite3") {
-        return Some("db_sqlite");
-    }
-    if last == "create" && LLM_PKGS.iter().any(|p| has(p)) {
+    if LLM_PKGS.contains(&pkg) {
         return Some("llm");
     }
-    if ["encode", "embed"].contains(&last) && has("sentence_transformers") {
-        return Some("model");
+    if ML_PKGS.contains(&pkg) {
+        return ml(pkg, parts, last);
     }
-    if last == "push_to_hub" && (has("datasets") || has("huggingface_hub") || has("transformers")) {
-        return Some("net");
+    if pkg == "subprocess" {
+        return Some("process");
     }
-    if last == "save_to_disk" && has("datasets") {
-        return Some("disk_write");
+    if FILE_PKGS.contains(&pkg) {
+        if WRITE_BOUND.contains(&last) && (!FILE_OPS.contains(&last) || FS_PKGS.contains(&pkg)) {
+            return Some("disk_write");
+        }
+        if READ_BOUND.contains(&last) {
+            return Some("disk_read");
+        }
     }
     None
 }
@@ -166,7 +148,11 @@ fn ml(pkg: &str, parts: &[String], last: &str) -> Option<&'static str> {
     if matches!(pkg, "huggingface_hub" | "datasets") && (HUB_READ.contains(&last) || HUB_WRITE.contains(&last)) {
         return Some("net");
     }
+    if pkg == "transformers" && last == "push_to_hub" {
+        return Some("net");
+    }
     match (pkg, last) {
+        ("sentence_transformers", "encode" | "embed") => Some("model"),
         ("torch" | "datasets", "load" | "load_from_disk") => Some("disk_read"),
         ("torch" | "datasets", "save" | "save_to_disk") => Some("disk_write"),
         _ => None,
@@ -517,9 +503,6 @@ fn sides(st: &Statement) -> Vec<(String, &'static str)> {
 /// The databases whose statements are SQL.
 const SQL_DBS: &[&str] = &["db_duckdb", "db_sqlite", "db_sql"];
 
-/// A graph database driver's calls that run queries.
-const GRAPH_OPS: &[&str] = &["run", "execute_query", "execute_read", "execute_write", "read_transaction", "write_transaction"];
-
 /// Which way a graph database's data goes, where the Python code says it to the driver: a
 /// managed transaction (`session.execute_read(work)`, `execute_write`), a query's routing
 /// (`execute_query(q, routing_=RoutingControl.READ)`) or a session's access mode
@@ -563,14 +546,13 @@ mod tests {
     /// and from the Hub, and checkpoints cross to a place.
     #[test]
     fn a_library_is_not_a_place() {
-        let none = HashSet::new();
-        assert_eq!(boundary(Some("torch"), &parts(&["torch", "cat"]), &none), None);
-        assert_eq!(boundary(Some("torch"), &parts(&["nn", "Linear"]), &none), None);
-        assert_eq!(boundary(Some("transformers"), &parts(&["AutoModel", "from_pretrained"]), &none), Some("net"), "weights come down from the Hub");
-        assert_eq!(boundary(Some("torch"), &parts(&["torch", "save"]), &none), Some("disk_write"));
-        assert_eq!(boundary(Some("huggingface_hub"), &parts(&["snapshot_download"]), &none), Some("net"));
-        assert_eq!(boundary(Some("huggingface_hub"), &parts(&["HfApi"]), &none), None, "building a client moves nothing");
-        assert_eq!(boundary(Some("datasets"), &parts(&["load_dataset"]), &none), Some("net"));
+        assert_eq!(boundary(Some("torch"), &parts(&["torch", "cat"])), None);
+        assert_eq!(boundary(Some("torch"), &parts(&["nn", "Linear"])), None);
+        assert_eq!(boundary(Some("transformers"), &parts(&["AutoModel", "from_pretrained"])), Some("net"), "weights come down from the Hub");
+        assert_eq!(boundary(Some("torch"), &parts(&["torch", "save"])), Some("disk_write"));
+        assert_eq!(boundary(Some("huggingface_hub"), &parts(&["snapshot_download"])), Some("net"));
+        assert_eq!(boundary(Some("huggingface_hub"), &parts(&["HfApi"])), None, "building a client moves nothing");
+        assert_eq!(boundary(Some("datasets"), &parts(&["load_dataset"])), Some("net"));
         let down = facts("net", Some("huggingface_hub"), "snapshot_download", &lits(&["dataset"]));
         assert_eq!((down.artifact.as_str(), down.dir), ("huggingface.co", "read"), "the Hub is a host; a download reads");
         assert_eq!(facts("net", Some("huggingface_hub"), "upload_folder", &[]).dir, "write");

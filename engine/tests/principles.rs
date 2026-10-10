@@ -35,6 +35,9 @@ fn each_principle_finds_its_case() {
     assert_eq!(got["places"], ["fixture.sinks.duck.DuckSink.write"]);
     // `enrich` changes the Graph it is handed; `Graph.add` changes itself
     assert_eq!(got["changes"], ["fixture.build.enrich"]);
+    // `Journal.connection` gives back a connection `entries` uses, without saying so; the
+    // door `Graph.first` is asked about by `doors`
+    assert_eq!(got["gives"], ["fixture.store.Journal.connection"]);
     // `prepare` tests `mode` twice and picks where its Graph comes from between other steps;
     // `fresh_or_empty` is nothing but that choice, so it has a name
     assert_eq!(got["choices"], ["fixture.build.prepare", "fixture.build.prepare"]);

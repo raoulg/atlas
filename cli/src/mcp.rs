@@ -20,7 +20,10 @@ handful of design principles. `check` finds where code and principle disagree, `
 why a principle matters and how it looks in Python and Rust, `routes` and `route` read what an \
 entry point does, step by step. Atlas coaches: every finding ends in a question for the author. \
 When you help a student, put that question to them and help them reason about the answer; let \
-them make the change, then run `check` again to see the finding go.";
+them make the change, then run `check` again to see the finding go. Python's types come from \
+ty: a value whose type ty does not know (a function without a return annotation, a library \
+without an installed environment) is not followed, and `check` asks for the annotation. Atlas \
+sees Python best with the environment synced (`uv sync`) and Ruff's `ANN` rules on.";
 
 /// Answer every message on stdin until it closes.
 pub fn serve() -> Result<()> {

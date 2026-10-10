@@ -4,7 +4,7 @@ import sqlite3
 import zipfile
 
 import requests
-from neo4j import Driver, GraphDatabase, RoutingControl
+from neo4j import Driver, GraphDatabase, ManagedTransaction, RoutingControl
 
 from fixture.schema import Graph
 
@@ -53,7 +53,7 @@ class Connection:
             return list(session.run("MATCH (n:Graph) RETURN n"))
 
 
-def _write(tx, query: str) -> None:
+def _write(tx: ManagedTransaction, query: str) -> None:
     tx.run(query)
 
 
@@ -121,3 +121,17 @@ class Ledger:
         self.con.execute("CREATE TABLE IF NOT EXISTS log (n INTEGER)")
         self.con.execute("INSERT INTO log SELECT count(*) FROM nodes")
         self.con.execute(f"DELETE FROM {table}")
+
+
+class Journal:
+    """A log whose connection comes from a method that does not say what it gives."""
+
+    def __init__(self, path: str) -> None:
+        self.path = path
+
+    def connection(self):
+        return sqlite3.connect(self.path)
+
+    def entries(self) -> int:
+        con = self.connection()
+        return con.execute("SELECT count(*) FROM log").fetchone()[0]

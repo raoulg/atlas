@@ -11,6 +11,7 @@ pub mod model;
 pub mod parts;
 pub mod principles;
 pub mod python;
+pub mod pytypes;
 pub mod roles;
 pub mod rust;
 pub mod story;

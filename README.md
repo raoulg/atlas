@@ -114,7 +114,8 @@ with. Architecture, Type lattice and Signature flow are earlier experiments.
 
 Atlas reads:
 
-- **Python**, including notebooks (`.ipynb` in `notebooks/`, `scripts/`, `examples/`);
+- **Python**, including notebooks (`.ipynb` in `notebooks/`, `scripts/`, `examples/`), with
+  its types from [ty](https://docs.astral.sh/ty/);
 - **Rust**, including workspaces;
 - **TypeScript and TSX**: React components, TanStack routes and server functions, `tsconfig` paths.
 
@@ -126,6 +127,26 @@ asks for `/api/items/{id}`, a FastAPI app mounted at `/api` serves `/items/{id}`
 meet in that part's `HTTP`. Click a part to open it; **Only *part*** in the menu keeps to
 one.
 
+Atlas reads Python's types through ty, Astral's type checker, the way `ty check` reads the
+project: the environment it finds (`.venv`, `VIRTUAL_ENV`) and `[tool.ty.environment]` in
+`pyproject.toml`. Where ty does not know a type, Atlas does not guess, so the picture is as
+precise as the code's annotations. It sees best when:
+
+- the environment is synced (`uv sync`), so that libraries have types. Without one, Atlas
+  still knows a call to `requests.get`, but not what the value it gives back is;
+- every parameter and every return is annotated. Ruff's `ANN` rules ask for both:
+
+  ```toml
+  [tool.ruff.lint]
+  extend-select = ["ANN"]
+  ```
+
+- a variable is annotated where its value says nothing: an empty container
+  (`nodes: list[Node] = []`) or `None` to begin with (`self.conn: Connection | None = None`).
+  ty infers the rest.
+
+`atlas check` asks for a return annotation where callers use what a function gives back.
+
 Entry points come from the code itself. Atlas finds:
 
 - `[project.scripts]`, `package.json` `bin` and a Rust binary's `main`;
@@ -136,7 +157,7 @@ Entry points come from the code itself. Atlas finds:
 
 ### Check: the picture as a list of questions
 
-`atlas check` reads the same graph and lists where the code and six design principles
+`atlas check` reads the same graph and lists where the code and seven design principles
 disagree. Each finding ends in a question for the author. Atlas coaches; it does not fix.
 
 | Principle | In one line |
@@ -146,6 +167,7 @@ disagree. Each finding ends in a question for the author. Atlas coaches; it does
 | `overrides` | An override keeps the promise of its base. |
 | `places` | Library code does not decide where data lives. |
 | `changes` | A change to an input shows in the signature. |
+| `gives` | A function whose value is used says what it gives back. |
 | `choices` | A choice is made once, in a place with a name. |
 
 Each principle, with its reasoning and the Python and Rust idioms behind it, is in
@@ -168,7 +190,8 @@ Any other MCP client takes the same command: `{"command": "atlas", "args": ["mcp
 
 Atlas is a Rust workspace. `engine/` parses a repository with
 [tree-sitter](https://tree-sitter.github.io) into a graph of modules, types, functions,
-calls and the places they touch. It computes routes, families and findings from that
+calls and the places they touch; Python's types come from
+[ty](https://github.com/astral-sh/ty). It computes routes, families and findings from that
 graph. `cli/` is the `atlas` command. The viewer is a single HTML file
 (`spike/viewer.html`) baked into the binary.
 

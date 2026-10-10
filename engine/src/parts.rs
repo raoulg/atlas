@@ -231,7 +231,7 @@ pub fn join(g: &mut Graph) {
         }
     }
     for ((src, dst), via) in edges {
-        g.edges.push(Edge { src, dst, kind: EdgeKind::Requests, via: Some(via), weight: None, arms: vec![] });
+        g.edges.push(Edge { src, dst, kind: EdgeKind::Requests, via: Some(via), weight: None, arms: vec![], uses: false });
     }
     g.recount();
 }

@@ -29,9 +29,10 @@ answer is, changes the code, and the picture follows.
 the box that should not be there. Check is the list of places on that map that deserve
 a second look, found by the engine, which sees every type, call and effect at once.
 
-Atlas is not a linter. ruff, pyright and clippy own the line level: style, a missing
-annotation on a private helper, an unused import. Atlas owns the level of types, routes
-and places: which doors a package has, what travels between modules, where data rests.
+Atlas is not a linter. ruff, pyright and clippy own the line level: style, an unused
+import, a missing annotation as such. Atlas owns the level of types, routes and places:
+which doors a package has, what travels between modules, where data rests. It asks for an
+annotation only where a route stops without one.
 The two work together. A linter makes a signature precise; Atlas asks whether it is
 the right one.
 
@@ -185,6 +186,38 @@ assignments to its attributes and items and from calls that change it.
 goad: `BasePlot.plot_on(other_plot)` sets `other_plot.fig` and `other_plot.ax` from the
 outside, then asks it to plot. The question is whether `other_plot` could be told where
 to draw by a method of its own.
+
+## A function whose value is used says what it gives back.
+
+Id: `gives`.
+
+What a function gives back travels on: its caller stores it, hands it to the next function,
+calls a method on it. A return annotation is what lets a reader follow it, and a type
+checker check it. Without one, the value has no type at the caller, and the route stops
+there.
+
+- **Rust.** Every function says what it returns. Atlas has nothing to ask.
+- **Python.** The annotation is the author's to write. Atlas reads Python's types through
+  ty, Astral's type checker, and ty gives a function without a return annotation the type
+  `Unknown`. Atlas does not guess behind it: a database call on that value is not drawn,
+  because nothing says which database it is.
+
+Atlas checks: a Python function or method without a return annotation, whose value at
+least one caller uses. A call that stands as a statement does not use it. A door is asked
+about by `doors`.
+
+rkg: `RegisterSink.transaction(self)` returns a connection to the register's SQLite
+database. Every `with sink.transaction() as con: con.execute(..)` then runs on a value
+without a type, and the register's tables drop out of the picture. With
+`-> AbstractContextManager[sqlite3.Connection]` they come back.
+
+Atlas sees best with the annotations the linters ask for. Ruff's `ANN` rules ask for every
+parameter and every return:
+
+```toml
+[tool.ruff.lint]
+extend-select = ["ANN"]
+```
 
 ## A choice is made once, in a place with a name.
 

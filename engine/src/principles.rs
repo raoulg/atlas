@@ -25,6 +25,7 @@ pub const PRINCIPLES: &[Principle] = &[
     Principle { id: "overrides", asks: "An override keeps the promise of its base." },
     Principle { id: "places", asks: "Library code does not decide where data lives." },
     Principle { id: "changes", asks: "A change to an input shows in the signature." },
+    Principle { id: "gives", asks: "A function whose value is used says what it gives back." },
     Principle { id: "choices", asks: "A choice is made once, in a place with a name." },
 ];
 
@@ -86,7 +87,7 @@ pub fn report(root: &str, findings: &[Finding]) -> String {
 pub fn check(g: &Graph) -> Vec<Finding> {
     let ix = Index::new(g);
     let mut out = vec![];
-    for rule in [doors, sums, overrides, places, changes, choices] {
+    for rule in [doors, sums, overrides, places, changes, gives, choices] {
         let mut found = rule(&ix);
         found.sort_by(|a, b| (&a.file, a.line).cmp(&(&b.file, b.line)));
         out.extend(found);
@@ -220,6 +221,22 @@ fn list(xs: &[String]) -> String {
 /// exported class, says what it takes and gives. Python makes every module importable, so
 /// what a package offers is a declaration it has to make (`__all__`); a Rust lib's `pub` items
 /// are that declaration, and the compiler asks for every type.
+/// The functions that are doors: each exported function, and the public methods of each exported
+/// class; a method two exported classes inherit is one door.
+fn door_fns<'g>(ix: &Index<'g>) -> Vec<&'g Node> {
+    let mut asked = HashSet::new();
+    let mut out = vec![];
+    for e in ix.g.nodes.iter().filter(|n| n.entry.as_ref().map_or(false, |e| e.kind == EntryKind::Export)) {
+        let fns: Vec<&Node> = match e.kind {
+            NodeKind::Function => vec![e],
+            NodeKind::Class => ix.interface(&e.id),
+            _ => vec![],
+        };
+        out.extend(fns.into_iter().filter(|f| asked.insert(f.id.as_str())));
+    }
+    out
+}
+
 fn doors(ix: &Index) -> Vec<Finding> {
     let g = ix.g;
     let exports: Vec<&Node> = g.nodes.iter().filter(|n| n.entry.as_ref().map_or(false, |e| e.kind == EntryKind::Export)).collect();
@@ -247,38 +264,29 @@ fn doors(ix: &Index) -> Vec<Finding> {
             ));
         }
     }
-    // a method two exported classes inherit is one door to fix
-    let mut asked = HashSet::new();
-    for e in exports {
-        let fns: Vec<&Node> = match e.kind {
-            NodeKind::Function => vec![e],
-            NodeKind::Class => ix.interface(&e.id),
-            _ => vec![],
-        };
-        for f in fns.into_iter().filter(|f| asked.insert(f.id.as_str())) {
-            let untyped: Vec<String> = f
-                .params
-                .iter()
-                .filter(|p| !p.contains(':') && !is_receiver(p) && !p.starts_with('*'))
-                .map(|p| format!("`{}`", param_name(p)))
-                .collect();
-            let gives_unknown = declared && f.returns.is_empty() && f.name != "__init__";
-            if untyped.is_empty() && !gives_unknown {
-                continue;
-            }
-            let what = match (untyped.is_empty(), gives_unknown) {
-                (false, true) => format!("{} does not say what {} are, nor what it gives", ix.label(&f.id), list(&untyped)),
-                (false, false) => format!("{} does not say what {} {}", ix.label(&f.id), list(&untyped), if untyped.len() == 1 { "is" } else { "are" }),
-                _ => format!("{} does not say what it gives", ix.label(&f.id)),
-            };
-            out.push(ix.finding(
-                "doors",
-                f,
-                what,
-                vec![signature(f)],
-                format!("Until its signature says so, a reader and Atlas both lose the route at this door. What does {} take and give?", ix.label(&f.id)),
-            ));
+    for f in door_fns(ix) {
+        let untyped: Vec<String> = f
+            .params
+            .iter()
+            .filter(|p| !p.contains(':') && !is_receiver(p) && !p.starts_with('*'))
+            .map(|p| format!("`{}`", param_name(p)))
+            .collect();
+        let gives_unknown = declared && f.returns.is_empty() && f.name != "__init__";
+        if untyped.is_empty() && !gives_unknown {
+            continue;
         }
+        let what = match (untyped.is_empty(), gives_unknown) {
+            (false, true) => format!("{} does not say what {} are, nor what it gives", ix.label(&f.id), list(&untyped)),
+            (false, false) => format!("{} does not say what {} {}", ix.label(&f.id), list(&untyped), if untyped.len() == 1 { "is" } else { "are" }),
+            _ => format!("{} does not say what it gives", ix.label(&f.id)),
+        };
+        out.push(ix.finding(
+            "doors",
+            f,
+            what,
+            vec![signature(f)],
+            format!("Until its signature says so, a reader and Atlas both lose the route at this door. What does {} take and give?", ix.label(&f.id)),
+        ));
     }
     out
 }
@@ -515,6 +523,39 @@ fn changes(ix: &Index) -> Vec<Finding> {
                 "Nothing in the signature shows that `{input}` changes. Should {ty} change itself through a method of its own, or should {} hand back a new {ty}?",
                 ix.label(&f.id)
             ),
+        ));
+    }
+    out
+}
+
+// ---------- gives ----------
+
+/// A function whose callers use what it gives back, with no return annotation: what they get
+/// has no type, so neither a reader nor Atlas can follow it further. Python leaves the type to
+/// the author; a door is asked about by `doors`.
+fn gives(ix: &Index) -> Vec<Finding> {
+    if !author_declares(&ix.g.language) {
+        return vec![];
+    }
+    let doors: HashSet<&str> = door_fns(ix).into_iter().map(|f| f.id.as_str()).collect();
+    let mut out = vec![];
+    for f in ix.g.nodes.iter().filter(|f| is_function(f) && f.returns.is_empty() && f.name != "__init__" && !doors.contains(f.id.as_str())) {
+        let mut users: Vec<String> = ix.into.get(f.id.as_str()).into_iter().flatten().filter(|e| e.kind == EdgeKind::Calls && e.uses).map(|e| format!("`{}`", ix.label(&e.src))).collect();
+        if users.is_empty() {
+            continue;
+        }
+        let name = ix.label(&f.id);
+        let more = users.len().saturating_sub(3);
+        users.truncate(3);
+        if more > 0 {
+            users.push(format!("{more} more"));
+        }
+        out.push(ix.finding(
+            "gives",
+            f,
+            format!("{name} gives back a value its callers use, and does not say what it is"),
+            vec![signature(f), format!("used by {}", list(&users))],
+            format!("Without a return annotation, what its callers get has no type, and the route stops there. What does {name} give back?"),
         ));
     }
     out

@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Generic, Type, TypeVar, Union
 
 import pandas as pd
@@ -57,7 +58,7 @@ class Pipeline:
         self.sink.write(g)
 
 
-def save(frame, name: str, path) -> None:
+def save(frame: pd.DataFrame, name: str, path: Path) -> None:
     frame.to_csv(f"{name}.csv", sep=";")
     frame.to_parquet(path)
     with open(name, "w") as f:
@@ -69,7 +70,7 @@ READERS = {".csv": pd.read_csv}
 Loaded = Union[Graph, Node]
 
 
-def load(path) -> Loaded:
+def load(path: Path) -> Loaded:
     return READERS[path.suffix](path)
 
 

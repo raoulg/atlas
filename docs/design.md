@@ -241,26 +241,32 @@ Each layer is a pure function of the layer below and can be tested alone.
 definitions, signatures, imports, calls, annotations, decorators, docstrings,
 string literals at boundary calls. A new language is new queries, not new code.
 
-**L1 Resolution.** Names become node ids: imports (absolute, relative, re-exports, a
-name given to another: `graaf = triple`), bases, and calls through the type of their
-receiver. That type is composed from its parts, the way a typechecker reads it:
+**L1 Resolution.** Names become node ids: imports (absolute, relative, re-exports),
+bases, and calls through the type of their receiver.
 
-- a name has the type of its binding: a parameter's annotation, an assignment, a loop
-  over a collection, `with .. as`, a module global;
-- `a.b` has the type of `b` in the type of `a`, declared on its class or a base (an
-  annotated field, `self.b = ..` in a method, a property);
-- `f(..)` has the type `f` constructs or its annotation gives back, place by place for
-  `-> tuple[A, B]`;
-- `a or b` and `a if c else b` have the type of either.
+Python's types are ty's, Astral's type checker, which reads the project as `ty check`
+would: the environment it finds (`VIRTUAL_ENV`, `.venv`) and `[tool.ty.environment]`.
+For each call ty says where it goes: a definition of the package, matched to its node
+by where its name is written, or a library's module. For each value it says what type
+it has, and which classes that type names (`list[Node]` names `Node`). The two trees,
+tree-sitter's and ty's, meet at an expression's byte range; a notebook's cells are
+joined as ruff joins them, so the positions agree.
 
-A type is a class of the package, many of them (`list[Graph]`), a mapping to them, or
-a value a library made (`requests.Session()`), whose calls are that library's. Every
-signature is read before any body, so the order of the files does not matter. Output:
-the symbol graph plus a resolution report (resolved, external, builtin, local,
-unknown) so the quality has a number.
+Where ty does not know a type, Atlas does not guess. A function without a return
+annotation gives back `Unknown`, a call on that value reaches nothing, and `atlas
+check` asks for the annotation. Without an environment, a dotted name through an import
+is still what the import binds (`requests.get` is `get` of `requests`); what the call
+gives back has no type.
+
+Rust's and TypeScript's signatures carry their types, and a receiver's type is
+composed from them. Output: the symbol graph plus a resolution report (resolved,
+external, builtin, local, unknown) so the quality has a number.
 
 **L2 Effects.** Boundary tags on every call that leaves the package (web, disk in
-and out, each database read or written, LLM, model, process), artifacts by path
+and out, each database read or written, LLM, model, process), by the library that
+defines what is called and by what that library's API does: a request moves data over
+the network and a statement or a connection reaches a database, while building a
+client or reading a response or rows that have arrived moves nothing. Artifacts by path
 pattern, hub types by arrow count, mutation detection, and the effect signature
 `F: Graph → W` per function and per route. This is the functor behind the plaat.
 
