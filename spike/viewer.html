@@ -349,7 +349,7 @@ function placeLanes(t) {
     const kind = sticky.kinds[j] || "file", w = sticky.labels[j].length * 6.6;
     const label = el("text", {class: "lane-label", x: x + 8, y, "text-anchor": "middle", style: `fill:var(--k-${kind});cursor:pointer`}, L);
     label.textContent = sticky.labels[j];
-    label.addEventListener("click", () => selectPlace(sticky.ids[j], sticky.places[j]));
+    label.addEventListener("click", () => { const d = filePath(sticky.ids[j]); selectPlace(sticky.ids[j], sticky.places[j]); if (d && dirFold.n.has(d)) { openedDirs.add(d); render(); } });
     glyphAt(L, kind, x + 8 - w / 2 - 17, y - 10);
   });
 }
@@ -804,6 +804,7 @@ entrySel.addEventListener("change", () => {
   expanded.clear(); plaatFit = true; render();
 });
 function renderStory() {
+  dirFold = {to: new Map(), n: new Map()};
   const g = scene.node(), ROW = 44, X0 = 30, NAMEW = 720;
   const rows = [], lanesUsed = new Map();  // placeId -> {place, in, out}
   const useLanes = r => { for (const [id, e] of placesOf(r.touches)) { const u = lanesUsed.get(id) || {place: e.place, in: false, out: false}; u.in ||= e.in; u.out ||= e.out; lanesUsed.set(id, u); } };
@@ -839,6 +840,15 @@ function renderStory() {
     } };
     useLanes(ownReach(byId.get(storyEntry)));
     walk(storyEntry, 0, "");
+  }
+  // files fold into their directories as in the Flowchart; the dots below follow the folding
+  dirFold = foldDirs([...lanesUsed.keys()].map(filePath).filter(Boolean));
+  for (const [id, u] of [...lanesUsed]) {
+    const p = filePath(id), f = p ? filePlace(p) : null;
+    if (!f || f.id === id) continue;
+    lanesUsed.delete(id);
+    const v = lanesUsed.get(f.id) || {place: f, in: false, out: false};
+    v.in ||= u.in; v.out ||= u.out; lanesUsed.set(f.id, v);
   }
   // lanes: the places reached, what is read before what is written, each as wide as its name
   const KIND_ORDER_W = ["cmd", "web", "file", "db", "model", "proc", "screen"];
@@ -944,6 +954,8 @@ function kindOf(id, depth = 0) {
 const members = new Map();
 for (const n of D.nodes) if (n.kind === "class" || n.kind === "external") { const f = familyOf(n.id); if (f !== n.id) { if (!members.has(f)) members.set(f, []); members.get(f).push(n.id); } }
 const expandedFamilies = new Set(), refined = new Set();
+// the directories opened by a click, and the packages the reader focuses on (a fiber of the picture)
+const openedDirs = new Set(), focusUnits = new Set();
 const bare = id => byId.has(id) ? byId.get(id).name : id.replace(/^ext:/, "").split(".").pop();
 const nameCount = new Map(); for (const n of D.nodes) if (n.kind === "class" || n.kind === "external") nameCount.set(bare(n.id), (nameCount.get(bare(n.id)) || 0) + 1);
 const typeLabel = id => { const b = bare(id); if ((nameCount.get(b) || 0) > 1) { const mod = (byId.get(id)?.module || id.replace(/^ext:/, "").split(".").slice(0, -1).join(".")).split(".").pop(); return mod ? `${mod}.${b}` : b; } return b; };
@@ -974,7 +986,21 @@ function topUnits(part) {
   if ((D.make || []).length && part === partOf({})) us.push("Makefile");
   return us;
 }
-const unitLabel = u => { const base = u.replace(/\$$/, ""), last = base === "_root" ? "scripts at the root" : base.split(".").pop(); return u.endsWith("$") ? `${last} itself` : last; };
+const unitLabel = u => { if (u === "~in" || u === "~out") { const n = aroundFocus().length; return `the rest · ${n} ${n === 1 ? "package" : "packages"}`; } const base = u.replace(/\$$/, ""), last = base === "_root" ? "scripts at the root" : base.split(".").pop(); return u.endsWith("$") ? `${last} itself` : last; };
+const partOfUnit = u => { const m = [...byId.values()].find(n => n.kind === "module" && inUnit(n.id, u)); return m ? partOf(m) : partOf({}); };
+const inFocus = id => [...focusUnits].some(u => inUnit(id, u));
+const isRest = u => u === "~in" || u === "~out";
+// the packages of the focus's parts that are not in it, nor around or inside one that is
+function aroundFocus() {
+  const parts = new Set([...focusUnits].map(partOfUnit));
+  return [...parts].flatMap(p => topUnits(p)).filter(u => u !== "Makefile" && ![...focusUnits].some(f => { const a = f.replace(/\$$/, ""), b = u.replace(/\$$/, ""); return a === b || a.startsWith(b + ".") || b.startsWith(a + "."); }));
+}
+// the packages around a focus: those that hand data to it or take data from it, the most first
+function neighbours() {
+  const cands = aroundFocus();
+  const crossing = c => { let k = 0; for (const [t, takers] of typeUse.takes) { const makers = typeUse.makes.get(t); if (!makers || !isData(t)) continue; const tk = [...takers], mk = [...makers]; if ((mk.some(x => inUnit(x, c)) && tk.some(inFocus)) || (mk.some(inFocus) && tk.some(x => inUnit(x, c)))) k++; } return k; };
+  return cands.map(u => ({u, n: crossing(u)})).filter(x => x.n).sort((a, b) => b.n - a.n || a.u.localeCompare(b.u));
+}
 // a unit's routes: its entries, then its doors, what other units call in it
 function unitRoutes(u) {
   const es = overviewEntries().filter(e => inUnit(e.id, u)).map(e => e.id), seen = new Set(es);
@@ -1021,13 +1047,44 @@ const placeKind = id => id.startsWith("e:") ? "cmd" : /^w:(File|Disk)/.test(id) 
 const laneKind = k => k === "net" ? "web" : k.startsWith("disk") ? "file" : k.startsWith("db_") ? "db" : k === "screen" ? "screen" : k === "process" ? "proc" : "model";
 const glyphSvg = kind => `<svg class="glyph" width="13" height="13" viewBox="0 0 14 14" style="color:var(--k-${kind})">${GLYPH[kind]}</svg>`;
 function glyphAt(parent, kind, x, y) { const g = el("g", {class: "glyph", transform: `translate(${x},${y})`, style: `color:var(--k-${kind})`}, parent); g.innerHTML = GLYPH[kind]; return g; }
+// ---------- the disk is a tree: files fold into their directories ----------
+// the files of a picture, each standing in the directory it is folded into, and how many stand in each
+let dirFold = {to: new Map(), n: new Map()};
+const filePath = id => id.startsWith("w:File:") ? id.slice(7) : null;
+// the directories a path is in, from the top: `a/b/c.csv` -> `a/`, `a/b/`
+const dirsOf = p => { const segs = p.replace(/\/$/, "").split("/"), out = []; for (let i = 1; i < segs.length; i++) out.push(segs.slice(0, i).join("/") + "/"); return out.filter(d => d !== "/"); };
+// a picture with more files than a column holds folds them: each file stands in the highest
+// directory that holds more than one of them and is not opened, taken as deep as it holds the
+// same files (`artefacts/*/` when everything in `artefacts/` is under `*`)
+function foldDirs(paths) {
+  const to = new Map(), n = new Map();
+  if (paths.length <= 6) return {to, n};
+  const holds = d => paths.filter(p => p.startsWith(d)).length;
+  for (const p of paths) {
+    const ds = dirsOf(p);
+    let at = p;
+    for (let i = 0; i < ds.length; i++) {
+      if (openedDirs.has(ds[i])) continue;
+      const k = holds(ds[i]);
+      if (k < 2) break;
+      let j = i; while (j + 1 < ds.length && !openedDirs.has(ds[j + 1]) && holds(ds[j + 1]) === k) j++;
+      at = ds[j]; break;
+    }
+    if (at !== p) { to.set(p, at); n.set(at, holds(at)); }
+  }
+  return {to, n};
+}
+const filePlace = path => {
+  const d = dirFold.to.get(path) || path, k = dirFold.n.get(d);
+  return k ? {id: "w:File:" + d, label: `File(${d}) · ${k}`, short: `${d} · ${k}`, kind: "world", folded: d} : {id: "w:File:" + path, label: `File(${path})`, short: path, kind: "world"};
+};
 // a part of the world, as Story and Plaat both name it: a file the code names, else coarse disk; a
 // database, the screen, a program
 function worldPlaceOf(t) {
   const k = t.kind, name = WORLD[k], base = "w:" + name;
   if (k === "process") return {id: base + ":" + (t.what || "process"), label: t.what || "process", short: t.what || "process", kind: "world"};
   if (k.startsWith("disk")) {
-    if (t.artifact && (!PROBE.test(t.op || "") || t.artifact.endsWith("/"))) return {id: "w:File:" + t.artifact, label: `File(${t.artifact})`, short: t.artifact, kind: "world"};
+    if (t.artifact && (!PROBE.test(t.op || "") || t.artifact.endsWith("/"))) return filePlace(t.artifact);
     const what = pickWhats({[t.what]: 1}, 1)[0];
     if (refined.has("w:Disk") && what) return {id: "w:Disk:" + what, label: `Disk(${what})`, short: what, kind: "world"};
     return isIn(t) ? {id: "w:Disk:in", label: "Disk in", short: "Disk in", kind: "world"} : {id: "w:Disk:out", label: "Disk out", short: "Disk out", kind: "world"};
@@ -1049,6 +1106,8 @@ function routeTree() {
   if (!storyEntry && !entryKind) {
     const unitNodes = (us, part) => us.map(u => { const open = expandedUnits.has(u); return {id: "unit:" + u, open, kids: open ? unitKids(u, part) : [], hue: null, choice: false}; });
     const unitKids = (u, part) => { const below = u.endsWith("$") || u === "Makefile" ? [] : unitsBelow(u, part); return below.length > 1 ? unitNodes(below, part) : closedRoutes(unitRoutes(u)); };
+    // a focus: the packages chosen, each opened as before, and the rest of the code on either side
+    if (focusUnits.size) return [...[...focusUnits].sort().flatMap(u => unitNodes([u], partOfUnit(u))), ...["~in", "~out"].map(r => ({id: "unit:" + r, open: false, kids: [], hue: null, choice: false}))];
     if (multi && !partFilter) return PARTS.map(p => { const open = expandedParts.has(p.id); return {id: "part:" + p.id, open, kids: open ? unitNodes(topUnits(p.id), p.id) : [], hue: null, choice: false}; });
     const part = partFilter || partOf({});
     return unitNodes(topUnits(part), part);
@@ -1077,9 +1136,11 @@ const altCount = id => { const n = byId.get(id); return n && n.cls ? overrides(n
 let prevPos = new Map(), plaatAnchor = null, plaatFit = true;
 async function renderPlaat() {
   const g = scene.node(), DUR = matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 380;
+  dirFold = {to: new Map(), n: new Map()};
   // the subject of a route stands as itself; other types stand in their family until it is opened
   const placeOfType = t => t === storyEntry || expandedFamilies.has(familyOf(t)) || expandedFamilies.has(kindOf(t)) ? t : kindOf(t);
   const places = new Map();   // id -> {id, label, kind: world | type | ext, role, fam}
+  const restLinks = new Map();  // in a focus: unit -> the types it takes from the rest and hands to it
   const addPlace = p => { if (!places.has(p.id)) places.set(p.id, p); return p.id; };
   const worldPlace = worldPlaceOf;
   const typePlace = t => {
@@ -1147,10 +1208,21 @@ async function renderPlaat() {
   const unitMorphism = (u, own) => {
     const dom = new Map(), cod = new Map();
     if (own) return {dom, cod};
+    // the rest of the code, seen from a focus, is joined to it by counted arrows, not by boxes
+    if (isRest(u)) return {dom, cod};
     for (const n of byId.values()) if (inUnit(n.id, u)) for (const tc of n.touches || []) if (WORLD[tc.kind]) (isIn(tc) ? dom : cod).set(addPlace(worldPlace(tc)), false);
-    const inside = id => inUnit(id, u), crosses = (t, ours, theirs) => isData(t) && ours && theirs && [...ours].some(inside) && [...theirs].some(x => !inside(x));
-    for (const [t, takers] of typeUse.takes) if (crosses(t, takers, typeUse.makes.get(t))) dom.set(addPlace(typePlace(t)), false);
-    for (const [t, makers] of typeUse.makes) if (crosses(t, makers, typeUse.takes.get(t))) cod.set(addPlace(typePlace(t)), false);
+    // a type crossing the unit's edge is a joint drawn as a box; in a focus, only when another unit in
+    // the focus is on its other side, and an arrow from or to the rest otherwise
+    const inside = id => inUnit(id, u), theirs = xs => [...(xs || [])].filter(x => !inside(x) && byId.has(x));
+    const side = (xs, put, way, t) => {
+      const other = theirs(xs);
+      if (!other.length) return;
+      if (!focusUnits.size || other.some(inFocus)) { put.set(addPlace(typePlace(t)), false); return; }
+      if (!restLinks.has(u)) restLinks.set(u, {in: new Set(), out: new Set()});
+      restLinks.get(u)[way].add(t);
+    };
+    for (const [t, takers] of typeUse.takes) if (isData(t) && [...takers].some(inside)) side(typeUse.makes.get(t), dom, "in", t);
+    for (const [t, makers] of typeUse.makes) if (isData(t) && [...makers].some(inside)) side(typeUse.takes.get(t), cod, "out", t);
     return {dom, cod};
   };
   // a result with no place of its own (a str, a dict) goes back to the step that called it
@@ -1189,6 +1261,15 @@ async function renderPlaat() {
     return hb ? [pill] : [];
   };
   for (const t of routeTree()) build(t, null);
+  // the disk is a tree: past a column's worth, files fold into their directories, and a click opens one
+  dirFold = foldDirs([...places.keys()].map(filePath).filter(Boolean));
+  if (dirFold.to.size) {
+    const to = k => { const p = filePath(k); return p ? filePlace(p).id : k; };
+    const remap = m => { const out = new Map(); m.forEach((r, k) => { const k2 = to(k); out.set(k2, out.has(k2) ? out.get(k2) && r : r); }); return out; };
+    for (const P of pills.values()) { P.D = remap(P.D); P.C = remap(P.C); }
+    for (const p of [...dirFold.to.keys()]) places.delete("w:File:" + p);
+    for (const d of dirFold.n.keys()) places.set("w:File:" + d, filePlace(d));
+  }
   // a type a step takes and hands on is two moments of the data, not one box: memory is versioned in
   // call order (a step that hands on T makes a new T, later steps take the latest); in the overview,
   // where routes have no order between them, every route takes the same inputs and hands on the same outputs
@@ -1292,17 +1373,30 @@ async function renderPlaat() {
   for (const id of sortWorld(worldIds.filter(id => sideOf(id) === "both"))) root.children.push(leaf(id, 40 + textW(places.get(id).label), 36));
   for (const id of sortWorld(worldIds.filter(id => sideOf(id) === "out" && !id.startsWith("e:")))) root.children.push(leaf(id, 40 + textW(places.get(id).label), 36, {"elk.layered.layering.layerConstraint": "LAST_SEPARATE"}));
   // edges: data into a step and out of it, and results handed back to the caller
-  const edgeInfo = new Map(), addEdge = (a, b, info) => { if (!nodeOf.has(a) || !nodeOf.has(b) || a === b) return; const id = `${a}>${b}`; if (edgeInfo.has(id)) { edgeInfo.get(id).reach &&= info.reach; return; } edgeInfo.set(id, info); root.edges.push({id, sources: [a], targets: [b]}); };
+  const edgeInfo = new Map(), addEdge = (a, b, info) => {
+    if (!nodeOf.has(a) || !nodeOf.has(b) || a === b) return;
+    const id = `${a}>${b}`;
+    if (edgeInfo.has(id)) { edgeInfo.get(id).reach &&= info.reach; return; }
+    edgeInfo.set(id, info);
+    root.edges.push({id, sources: [a], targets: [b], ...(info.label ? {labels: [{text: info.label, width: textW(info.label, 6.2), height: 12}]} : {})});
+  };
   for (const P of pills.values()) {
     P.D.forEach((r, k) => addEdge(k, P.id, {reach: r, hue: P.hue}));
     P.C.forEach((r, k) => addEdge(P.id, k, {reach: r, hue: P.hue}));
     if (P.backTo) addEdge(P.id, P.backTo, {back: true, hue: P.hue});
+  }
+  // a focus and the rest of the code: one arrow each way per unit, counting the types that cross
+  for (const [u, {in: ins, out: outs}] of restLinks) {
+    const at = "n:unit:" + u, names = ts => [...ts].map(typeLabel).sort().join(", ");
+    if (ins.size) addEdge("n:unit:~in", at, {label: `${ins.size} ${ins.size === 1 ? "type" : "types"}`, title: names(ins)});
+    if (outs.size) addEdge(at, "n:unit:~out", {label: `${outs.size} ${outs.size === 1 ? "type" : "types"}`, title: names(outs)});
   }
   // units that call one another while no data joins them: a dotted line, from the caller
   const unitPills = [...pills.values()].filter(P => P.steps[0].startsWith("unit:"));
   for (const A of unitPills) for (const B of unitPills) {
     if (A === B || A.parent !== B.parent) continue;
     const a = A.steps[0].slice(5), b = B.steps[0].slice(5);
+    if (isRest(a) || isRest(b)) continue;
     const joined = [...A.C.keys()].some(k => B.D.has(k)) || [...B.C.keys()].some(k => A.D.has(k));
     const calls = D.edges.some(e => (e.kind === "calls" || e.kind === "instantiates") && inUnit(e.src, a) && inUnit(e.dst, b));
     if (calls && !joined) addEdge(A.id, B.id, {uses: true});
@@ -1313,10 +1407,12 @@ async function renderPlaat() {
   const walkPos = (n, ox, oy, depth) => { for (const c of n.children || []) { pos.set(c.id, {x: c.x + ox, y: c.y + oy, w: c.width, h: c.height, depth}); walkPos(c, c.x + ox, c.y + oy, depth + 1); } };
   walkPos(layout, OX, OY, 0);
   const parentOf = new Map(); const walkPar = n => { for (const c of n.children || []) { parentOf.set(c.id, n.id); walkPar(c); } }; walkPar(layout);
-  el("text", {class: "story-title", x: 20, y: 24}, g).textContent = storyEntry ? `Route · ${entryTitle(storyEntry)}` : entryKind ? `All ${KIND_LABEL[entryKind]} routes` : partFilter ? `${partFilter} by package` : multi ? `${PARTS.length} parts` : `${D.root} by package`;
+  const focused = focusUnits.size && !storyEntry && !entryKind;
+  el("text", {class: "story-title", x: 20, y: 24}, g).textContent = storyEntry ? `Route · ${entryTitle(storyEntry)}` : entryKind ? `All ${KIND_LABEL[entryKind]} routes` : focused ? `Focus · ${[...focusUnits].sort().map(unitLabel).join(", ")}` : partFilter ? `${partFilter} by package` : multi ? `${PARTS.length} parts` : `${D.root} by package`;
   el("text", {class: "story-sub", x: 20, y: 41}, g).textContent = storyEntry ? `${short(storyEntry)} · what it reads on the left, what it writes on the right · click a pill to open it, a frame's title to close it, double-click a box to pin its lines`
+    : focused ? "the packages in focus, the types that cross between them and the places they touch; the rest of the code on either side · shift-click a package to add or drop it"
     : multi && !partFilter && !entryKind ? "each part from what it reads to what it writes; one part's requests are another's HTTP · click a part to open it"
-    : !entryKind ? "each package from what its own code reads to what it writes, joined by the types that cross between packages; a dotted line where one only calls another · click a package to open it, double-click a box to pin its lines"
+    : !entryKind ? "each package from what its own code reads to what it writes, joined by the types that cross between packages; a dotted line where one only calls another · click a package to open it, shift-click to focus on it, double-click a box to pin its lines"
     : "each route from what it reads to what it writes · click a route to open it";
   if (!pos.size) el("text", {class: "story-sub", x: 20, y: 70}, g).textContent = "No step on this route takes or hands on a place yet: open a step in Story, or pick another route.";
   const fg = el("g", {}, g), eg = el("g", {}, g), ng = el("g", {}, g);
@@ -1372,7 +1468,10 @@ async function renderPlaat() {
       const last = pts[pts.length - 1], prev = pts[pts.length - 2], ang = Math.atan2(last.y - prev.y, last.x - prev.x), L = 8, Wd = 4;
       const head = el("polygon", {points: [[last.x, last.y], [last.x - L * Math.cos(ang) + Wd * Math.sin(ang), last.y - L * Math.sin(ang) - Wd * Math.cos(ang)], [last.x - L * Math.cos(ang) - Wd * Math.sin(ang), last.y - L * Math.sin(ang) + Wd * Math.cos(ang)]].map(q => q.join(",")).join(" "), class: "sedge-head"}, eg);
       if (info.hue) { p.style.stroke = hueVar(info.hue); head.style.fill = hueVar(info.hue); }
-      edgeEls.push({a: e.sources[0], b: e.targets[0], els: [p, head]});
+      const els = [p, head];
+      if (info.title) el("title", {}, p).textContent = info.title;
+      for (const l of e.labels || []) { const tx = el("text", {class: "sedge-label", x: l.x + c.x + l.width / 2, y: l.y + c.y + 10, "text-anchor": "middle"}, eg); tx.textContent = l.text; els.push(tx); }
+      edgeEls.push({a: e.sources[0], b: e.targets[0], els});
       if (DUR) for (const x of [p, head]) d3.select(x).attr("opacity", 0).transition().delay(DUR * .7).duration(DUR * .6).attr("opacity", 1);
     }
   }
@@ -1384,7 +1483,12 @@ async function renderPlaat() {
     const r = el("rect", {class: "bg", width: Q.w, height: Q.h, rx: Q.h / 2}, grp);
     if (P.hue) r.setAttribute("style", `stroke:${hueVar(P.hue)};stroke-width:1.6`);
     el("text", {class: "title", x: 11, y: Q.h / 2 + 4}, grp).textContent = P.label;
-    clicks(grp, () => {
+    clicks(grp, ev => {
+      if (P.steps[0].startsWith("unit:")) {
+        const u = P.steps[0].slice(5);
+        if (isRest(u)) { focusPanel(); return; }
+        if (ev.shiftKey) { if (focusUnits.has(u)) focusUnits.delete(u); else focusUnits.add(u); plaatFit = true; render(); focusPanel(); return; }
+      }
       if (P.steps[0].startsWith("part:")) { if (!P.own) { expandedParts.add(P.steps[0].slice(5)); plaatAnchor = P.id; render(); } return; }
       if (P.steps[0].startsWith("unit:")) { expandedUnits.add(P.steps[0].slice(5)); plaatAnchor = P.id; render(); return; }
       if (P.steps.length === 1) select(P.steps[0]); else selectArrows({fns: P.steps, kind: "steps"});
@@ -1408,6 +1512,7 @@ async function renderPlaat() {
     el("text", {class: "title", x: kind ? 32 : 15, y: Q.h / 2 + 4}, grp).textContent = p.label;
     clicks(grp, () => {
       plaatAnchor = p.id;
+      if (p.folded) { selectPlace(p.id, p.label); openedDirs.add(p.folded); render(); return; }
       if (p.id.startsWith("e:")) { const id = p.id.slice(2); if (!storyEntry) { storyEntry = id; entrySel.value = id; expanded.clear(); render(); } else select(id); return; }
       if (kind) selectPlace(p.id, p.label);
       if (kind) { if (p.id.startsWith("w:Disk") || kind === "db") { const base = p.id.split(":").slice(0, 2).join(":"); if (refined.has(base)) refined.delete(base); else refined.add(base); render(); } return; }
@@ -1463,6 +1568,8 @@ function crumbs() {
   if (expanded.size) { lbl("opened"); for (const id of expanded) chip(byId.get(id)?.name || short(id), () => expanded.delete(id)); }
   if (expandedFamilies.size) { lbl("families"); for (const f of expandedFamilies) chip(typeLabel(f), () => expandedFamilies.delete(f)); }
   if (refined.size) { lbl("split"); for (const r of refined) chip(r.slice(2), () => refined.delete(r)); }
+  if (openedDirs.size) { lbl("folders"); for (const d of openedDirs) chip(d, () => openedDirs.delete(d)); }
+  if (focusUnits.size && view === "plaat") { lbl("focus"); for (const u of focusUnits) chip(unitLabel(u), () => focusUnits.delete(u)); }
 }
 
 // ---------- inspector ----------
@@ -1484,6 +1591,23 @@ function codeBlock(n, mark) {
   return pre;
 }
 // a place in the world: every call in the code that reaches it, in the step that makes it, with its line
+// the focus in the inspector: the packages in it, each to drop, and the packages around it that
+// hand it data or take data from it, each to add
+function focusPanel() {
+  selected = null;
+  insp.innerHTML = "";
+  insp.appendChild(html("div", "eyebrow", "focus"));
+  insp.appendChild(html("h1", "name", focusUnits.size ? [...focusUnits].sort().map(unitLabel).join(", ") : "nothing in focus"));
+  insp.appendChild(html("div", "path", "shift-click a package in the picture to add or drop it"));
+  const redraw = () => { plaatFit = true; render(); focusPanel(); };
+  const inside = html("div", "links");
+  for (const u of [...focusUnits].sort()) { const b = html("button", "fn", `− ${unitLabel(u)}`); b.title = u; b.onclick = () => { focusUnits.delete(u); redraw(); }; inside.appendChild(b); }
+  insp.appendChild(section("in focus", focusUnits.size, inside));
+  if (!focusUnits.size) return;
+  const ns = neighbours(), around = html("div", "links");
+  for (const {u, n} of ns) { const b = html("button", "fn", `+ ${unitLabel(u)} · ${n} ${n === 1 ? "type" : "types"} across`); b.title = u; b.onclick = () => { focusUnits.add(u); redraw(); }; around.appendChild(b); }
+  insp.appendChild(section("around it", ns.length, around));
+}
 function selectPlace(pid, label) {
   selected = pid;
   scene.node().querySelectorAll(".selected").forEach(x => x.classList.remove("selected"));

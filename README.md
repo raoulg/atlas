@@ -68,6 +68,13 @@ Read it from left to right:
   TypeScript reader. `Language (4)` and `Graph (6)` are families: a type and the
   types that belong to it, folded into one box. Click one to open it.
 - **Click any pill** to open it into its own steps, and **show code** to see its source.
+- **Files fold into their folders** once a picture holds more than a column's worth:
+  `File(artefacts/) · 8` opens into what is in it with a click.
+- **Shift-click a package** in the overview to focus on it: the picture keeps the packages
+  in focus, the types that cross between them and the places they touch, and joins the
+  rest of the code by counted arrows on either side. The inspector lists the packages
+  around the focus, to add with one click.
+- **Double-click a box** to pin its lines, to study or compare what it connects.
 
 Story shows the same route as a list. Each step has its own signature and its own effects
 (`writes html → out`, `runs open`). A choice is lettered (`2a | 2b | 2c`). The dots on the
