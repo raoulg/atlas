@@ -12,6 +12,7 @@
   --syn-kw:#7E3FA8; --syn-str:#1F7A5C; --syn-com:#8A94A3; --syn-num:#B4551C; --syn-fn:#2B4FBF; --syn-dec:#A0641E; --syn-bi:#1F6E8C;
   --hue-1:#1F8A7E; --hue-2:#3F5FCF; --hue-3:#C7862B; --hue-4:#7E56B8; --hue-5:#C44F70; --hue-6:#4E9A4E; --hue-7:#5C6B80; --hue-8:#7D7A72;
   --k-cmd:#2F7D4F; --k-file:#B26A00; --k-db:#7E56B8; --k-web:#1F7A8C; --k-screen:#3F5FCF; --k-proc:#5C6B80; --k-model:#C44F70;
+  --add:#2E8B57;
   --sans:"Outfit","Helvetica Neue",Helvetica,system-ui,sans-serif;
   --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
 }
@@ -24,9 +25,11 @@
   --syn-kw:#C792EA; --syn-str:#7FCFA8; --syn-com:#6F7987; --syn-num:#F0A070; --syn-fn:#8FB0FF; --syn-dec:#E0B070; --syn-bi:#7FC4E0;
   --hue-1:#3DB8A9; --hue-2:#7B93E8; --hue-3:#E0A24A; --hue-4:#A98AD9; --hue-5:#E27A96; --hue-6:#77BF77; --hue-7:#8C9BB0; --hue-8:#A39F95;
   --k-cmd:#6CC08C; --k-file:#E0A24A; --k-db:#B596E6; --k-web:#5CC0D4; --k-screen:#8FA6F0; --k-proc:#9AA8BC; --k-model:#E88AA4;
+  --add:#6CC08C;
 }}
 :root[data-theme="dark"]{
   --k-cmd:#6CC08C; --k-file:#E0A24A; --k-db:#B596E6; --k-web:#5CC0D4; --k-screen:#8FA6F0; --k-proc:#9AA8BC; --k-model:#E88AA4;
+  --add:#6CC08C;
   --bg:#141210; --panel:#1B1815; --panel-2:#221E1A; --ink:#F4F1EC; --ink-2:#B8B0A5; --ink-3:#857C71;
   --line:#2B2621; --line-2:#221E1A; --alert:#F2643C; --focus:#86B9C9; --accent:#F2643C;
   --role-Source:#3DB8A9; --role-Graph:#7B93E8; --role-Sink:#E0A24A; --role-Repository:#A98AD9;
@@ -109,6 +112,14 @@ svg#canvas:active{cursor:grabbing}
 .sedge.back{stroke-dasharray:1 3;stroke-linecap:round}
 .sedge.uses{stroke-dasharray:1 3;stroke-linecap:round;opacity:.7}
 .tstep{cursor:pointer}
+.tstep.added rect.bg,.tnode.added rect.bg,.tnode.world.added rect.bg{stroke:var(--add);stroke-width:2.5;stroke-dasharray:none}
+.srow.added .sname,.srow.changed .sname{fill:var(--add)}
+.chg{margin:12px 0 16px;display:flex;flex-direction:column;gap:2px}
+.chg-route{font:inherit;font-family:var(--mono);font-size:12px;background:none;border:0;padding:0;color:var(--ink);cursor:pointer;text-align:left}
+.chg-route:hover{text-decoration:underline}
+.chg .add,.chg .del{font-family:var(--mono);font-size:11px;padding-left:14px}
+.chg .add{color:var(--add)}
+.chg .del{color:var(--alert);text-decoration:line-through}
 .tstep.own rect.bg{fill:var(--panel);stroke-dasharray:none}
 .tnode.world rect.bg{fill:color-mix(in oklab, var(--k) 12%, var(--panel));stroke:color-mix(in oklab, var(--k) 55%, var(--line))}
 .tnode.ref rect.bg{fill:transparent;stroke-dasharray:3 3}
@@ -244,6 +255,9 @@ const ALL = window.DATA.projects, names = Object.keys(ALL);
 const wanted = (location.hash.match(/p=([\w.-]+)/) || [])[1];
 const current = names.includes(wanted) ? wanted : names[0];
 const D = ALL[current];
+// what the working tree changed since a revision, when the page is drawn with `--since`
+const CH = D.changes || null;
+const changedRoute = new Map((CH ? CH.routes : []).map(r => [r.id, r]));
 { const ps = document.getElementById("project"); for (const n of names) { const o = document.createElement("option"); o.value = n; o.textContent = n; o.selected = n === current; ps.appendChild(o); }
   ps.addEventListener("change", () => { location.hash = "#p=" + ps.value; location.reload(); }); }
 const byId = new Map(D.nodes.map(n => [n.id, n]));
@@ -767,7 +781,7 @@ for (const k of KIND_ORDER) {
   const es = entries.filter(e => e.entry.kind === k); if (!es.length) continue;
   const og = document.createElement("optgroup"); og.label = KIND_LABEL[k];
   const all = document.createElement("option"); all.value = "kind:" + k; all.textContent = `All ${KIND_LABEL[k]} (${es.length})`; og.appendChild(all);
-  for (const e of es) { const o = document.createElement("option"); o.value = e.id; o.textContent = e.entry.label; og.appendChild(o); }
+  for (const e of es) { const o = document.createElement("option"); o.value = e.id; const c = changedRoute.get(e.id); o.textContent = (c ? (c.status === "added" ? "+ " : "~ ") : "") + e.entry.label; og.appendChild(o); }
   entrySel.appendChild(og);
 }
 entrySel.addEventListener("change", () => {
@@ -1603,8 +1617,42 @@ async function render() {
   crumbs();
   if (view === "story") { renderStory(); fit(); placeLanes(d3.zoomTransform(svg.node())); } else if (view === "plaat") { await renderPlaat(); } else if (view === "arch") { renderArch(); fit(); } else if (view === "types") { renderTypes(); fit(); } else { await renderSig(); }
   legend();
+  markChanges();
   if (selected) scene.node().querySelectorAll(`[data-id="${CSS.escape(selected)}"]`).forEach(x => x.classList.add("selected"));
 }
+// the steps and places a route gained since `--since`, marked where they are drawn
+function markChanges() {
+  if (!CH) return;
+  const s = scene.node(), mark = (id, cls) => s.querySelectorAll(`[data-id="${CSS.escape(id)}"]`).forEach(x => x.classList.add(cls));
+  for (const r of CH.routes.filter(r => !storyEntry || r.id === storyEntry)) {
+    r.steps_added.forEach(id => mark(id, "added"));
+    r.touches_added.forEach(t => mark(worldPlaceOf(t).id, "added"));
+  }
+  for (const r of CH.routes) s.querySelectorAll(`.srow[data-id="${CSS.escape(r.id)}"]`).forEach(x => x.classList.add(r.status === "added" ? "added" : "changed"));
+}
+// the changes as a list: each route that changed, what it gained and lost, and the findings
+function changesPanel() {
+  insp.innerHTML = "";
+  insp.appendChild(html("div", "eyebrow", `changes since ${CH.rev}`));
+  if (!CH.routes.length && !CH.findings_added.length && !CH.findings_resolved.length) { insp.appendChild(html("div", "empty", "Nothing changed in the routes, their places or the findings.")); return; }
+  for (const r of CH.routes) {
+    const d = html("div", "chg");
+    const b = html("button", "chg-route", `${r.status === "added" ? "+" : r.status === "removed" ? "−" : "~"} ${r.route}`);
+    if (r.status !== "removed") b.onclick = () => { storyEntry = r.id; entrySel.value = r.id; expanded.clear(); plaatFit = true; render(); };
+    d.appendChild(b);
+    const sh = id => id.startsWith(r.root + ".") ? id.slice(r.root.length + 1) : id;
+    const steps = r.status === "changed" ? [["add", r.steps_added.map(sh)], ["del", r.steps_removed.map(sh)]] : [];
+    for (const [cls, xs] of [...steps, ["add", r.places_added], ["del", r.places_removed]]) for (const x of xs) d.appendChild(html("div", cls, x));
+    insp.appendChild(d);
+  }
+  for (const [title, cls, fs] of [["findings raised", "add", CH.findings_added], ["findings resolved", "del", CH.findings_resolved]]) {
+    if (!fs.length) continue;
+    const d = html("div", "chg"); d.appendChild(html("div", "eyebrow", title));
+    for (const f of fs) d.appendChild(html("div", cls, `${f.principle} · ${f.file}:${f.line} ${f.what}`));
+    insp.appendChild(d);
+  }
+}
+if (CH) changesPanel();
 render();
 })();
 </script>

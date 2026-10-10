@@ -3,7 +3,7 @@
 //! read against a git revision, which is read from git itself into a directory of its own, so
 //! neither the working tree nor the index is touched.
 
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -19,12 +19,19 @@ use crate::story;
 pub struct RouteChange {
     /// `API · GET /api/regels/{id}`, with its part when the repository has several.
     pub route: String,
+    /// The node the route starts at, and the root of its part.
+    pub id: String,
+    pub root: String,
     /// `added`, `removed` or `changed`.
     pub status: &'static str,
+    /// Steps by node id.
     pub steps_added: Vec<String>,
     pub steps_removed: Vec<String>,
+    /// Places in words (`writes logs/run.log`), and the touches that reach them.
     pub places_added: Vec<String>,
     pub places_removed: Vec<String>,
+    pub touches_added: Vec<Touch>,
+    pub touches_removed: Vec<Touch>,
 }
 
 #[derive(Debug, Default, serde::Serialize)]
@@ -55,8 +62,13 @@ pub fn between(rev: &str, before: &[Graph], after: &[Graph]) -> Changes {
         let empty = Route::default();
         let (a2, b2) = (a.unwrap_or(&empty), b.unwrap_or(&empty));
         let diff = |x: &BTreeSet<String>, y: &BTreeSet<String>| x.difference(y).cloned().collect::<Vec<_>>();
+        let gone = |x: &BTreeMap<String, Touch>, y: &BTreeMap<String, Touch>| x.iter().filter(|(p, _)| !y.contains_key(*p)).map(|(p, t)| (p.clone(), t.clone())).unzip::<_, _, Vec<_>, Vec<_>>();
+        let ((places_added, touches_added), (places_removed, touches_removed)) = (gone(&b2.places, &a2.places), gone(&a2.places, &b2.places));
+        let here = b.or(a).unwrap_or(&empty);
         let c = RouteChange {
             route: k.clone(),
+            id: here.id.clone(),
+            root: here.root.clone(),
             status: match (a, b) {
                 (None, _) => "added",
                 (_, None) => "removed",
@@ -64,8 +76,10 @@ pub fn between(rev: &str, before: &[Graph], after: &[Graph]) -> Changes {
             },
             steps_added: diff(&b2.steps, &a2.steps),
             steps_removed: diff(&a2.steps, &b2.steps),
-            places_added: diff(&b2.places, &a2.places),
-            places_removed: diff(&a2.places, &b2.places),
+            places_added,
+            places_removed,
+            touches_added,
+            touches_removed,
         };
         if c.status != "changed" || !(c.steps_added.is_empty() && c.steps_removed.is_empty() && c.places_added.is_empty() && c.places_removed.is_empty()) {
             out.routes.push(c);
@@ -93,11 +107,13 @@ pub fn report(c: &Changes) -> String {
             _ => "~",
         };
         out.push_str(&format!("\n{mark} {}\n", r.route));
+        let short = |id: &str| id.strip_prefix(&format!("{}.", r.root)).unwrap_or(id).to_string();
         for (sign, what, xs) in [("+", "step", &r.steps_added), ("-", "step", &r.steps_removed), ("+", "place", &r.places_added), ("-", "place", &r.places_removed)] {
             if r.status != "changed" && what == "step" {
                 continue;
             }
             for x in xs {
+                let x = if what == "step" { short(x) } else { x.clone() };
                 out.push_str(&format!("    {sign} {what} {x}\n"));
             }
         }
@@ -114,11 +130,13 @@ pub fn report(c: &Changes) -> String {
     out
 }
 
-/// A route: the steps it can run, and the places they touch.
+/// A route: where it starts, the steps it can run, and the places they touch.
 #[derive(Default)]
 struct Route {
+    id: String,
+    root: String,
     steps: BTreeSet<String>,
-    places: BTreeSet<String>,
+    places: BTreeMap<String, Touch>,
 }
 
 /// Every route of the parts, by its kind and label.
@@ -134,18 +152,19 @@ fn routes(parts: &[Graph], several: bool) -> HashMap<String, Route> {
         for e in g.edges.iter().filter(|e| e.kind == EdgeKind::Contains && by_id.get(e.src.as_str()).map_or(false, |n| n.kind == NodeKind::Class)) {
             next.entry(e.src.as_str()).or_default().push(e.dst.as_str());
         }
-        let short = |id: &str| id.strip_prefix(&format!("{}.", g.root)).unwrap_or(id).to_string();
         for (kind, label, start) in story::entries(g) {
             let name = format!("{}{} · {label}", if several { format!("{} · ", g.root) } else { String::new() }, story::kind_label(kind));
-            let mut r = Route::default();
+            let mut r = Route { id: start.to_string(), root: g.root.clone(), ..Default::default() };
             let mut seen = HashSet::from([start]);
             let mut stack = vec![start];
             while let Some(id) = stack.pop() {
                 let Some(n) = by_id.get(id) else { continue };
                 if id != start && n.kind != NodeKind::External {
-                    r.steps.insert(short(id));
+                    r.steps.insert(id.to_string());
                 }
-                r.places.extend(n.touches.iter().filter(|t| t.kind != "screen" || id == start).map(place));
+                for t in n.touches.iter().filter(|t| t.kind != "screen" || id == start) {
+                    r.places.entry(place(t)).or_insert_with(|| t.clone());
+                }
                 for d in next.get(id).into_iter().flatten() {
                     if seen.insert(d) {
                         stack.push(d);

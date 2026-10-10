@@ -72,6 +72,9 @@ enum Cmd {
         /// Write the page without opening a browser.
         #[arg(long)]
         no_open: bool,
+        /// Mark what the working tree changed since this git revision (one repository).
+        #[arg(long)]
+        since: Option<String>,
     },
     /// List where the code and the design principles disagree, each with a question.
     Check {
@@ -114,12 +117,17 @@ enum Cmd {
 const VIEWER: &str = include_str!("../../spike/viewer.html");
 const FONTS: &str = include_str!("../../spike/fonts.css");
 
-fn view(repos: &[PathBuf], roles: Option<&std::path::Path>, out: Option<PathBuf>, open: bool) -> Result<()> {
+fn view(repos: &[PathBuf], roles: Option<&std::path::Path>, out: Option<PathBuf>, open: bool, since: Option<&str>) -> Result<()> {
     let g = parts::analyze_repo(repos, roles)?;
     let parts: Vec<&str> = g.parts.iter().map(|p| p.id.as_str()).collect();
     eprintln!("{} · {} · {} modules · {} entries", g.root, parts.join(" + "), g.stats.modules, g.nodes.iter().filter(|n| n.entry.is_some()).count());
     let mut projects = serde_json::Map::new();
-    projects.insert(g.root.clone(), serde_json::to_value(&g)?);
+    let mut page = serde_json::to_value(&g)?;
+    if let Some(rev) = since {
+        let [repo] = repos else { anyhow::bail!("--since compares one repository with its history") };
+        page["changes"] = serde_json::to_value(atlas_engine::changes::since(repo, rev)?)?;
+    }
+    projects.insert(g.root.clone(), page);
     let payload = serde_json::to_string(&serde_json::json!({ "projects": projects }))?.replace("</", "<\\/");
     let html = VIEWER.replacen("/*__FONTS__*/", FONTS, 1).replacen("/*__DATA__*/null", &payload, 1);
     let out = out.unwrap_or_else(|| {
@@ -163,9 +171,9 @@ fn check(repo: &std::path::Path, json: bool) -> Result<bool> {
 
 fn main() -> Result<()> {
     match Cli::parse().cmd {
-        Cmd::View { repos, roles, out, no_open } => {
+        Cmd::View { repos, roles, out, no_open, since } => {
             let repos = if repos.is_empty() { vec![std::env::current_dir()?] } else { repos };
-            view(&repos, roles.as_deref(), out, !no_open)?
+            view(&repos, roles.as_deref(), out, !no_open, since.as_deref())?
         }
         Cmd::Mcp => mcp::serve()?,
         Cmd::Changes { rev, repo, json } => {

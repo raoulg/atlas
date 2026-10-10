@@ -193,7 +193,9 @@ and lists what the edit did: the routes added and removed, the steps and places 
 gains and loses, and the findings it raises and resolves. In a design loop, that is the
 question after every step: does the change do what it was meant to, and nothing else? The
 revision is read from git into a directory of its own; the working tree and the index stay
-as they are.
+as they are. `atlas view --since <rev>` draws the same changes on the picture: a changed route
+is marked in the route list, the steps and places it gained are outlined, and the inspector
+lists what came and what went.
 
 ```text
 since HEAD
