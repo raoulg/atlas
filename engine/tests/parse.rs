@@ -18,7 +18,7 @@ fn modules_classes_and_functions_are_found() {
     let g = fixture();
     assert_eq!(g.root, "fixture");
     let kinds = |k: NodeKind| g.nodes.iter().filter(|n| n.kind == k).count();
-    assert_eq!(kinds(NodeKind::Module), 10, "the package's eight, a root script and a notebook");
+    assert_eq!(kinds(NodeKind::Module), 11, "the package's nine, a root script and a notebook");
     assert!(g.node("fixture.sinks").unwrap().is_pkg);
     assert_eq!(g.node("fixture.schema.Graph").unwrap().doc, "Nodes and edges.");
     assert_eq!(g.node("fixture.sinks.duck.DuckSink").unwrap().bases, vec!["Sink", "Mixin"]);
@@ -388,4 +388,18 @@ fn routes_meet_on_the_disk() {
     assert!(places("fixture.files.kinds").contains(&("disk_read", "data/raw/")), "{:?}", places("fixture.files.kinds"));
     assert!(places("fixture.files.report").contains(&("disk_write", "data/*/report.json")), "{:?}", places("fixture.files.report"));
     assert!(places("fixture.files.read_report").contains(&("disk_read", "data/*/report.json")), "{:?}", places("fixture.files.read_report"));
+}
+
+/// A function of the package handed on as a value is called by whoever receives it: an
+/// executor's work, a thread's target, an iterator's map, as in TypeScript.
+#[test]
+fn a_function_handed_on_is_called() {
+    let g = fixture();
+    let calls = edges(&g, EdgeKind::Calls);
+    assert!(calls.contains(&("fixture.run.run_all".into(), "fixture.run.work".into())), "`pool.submit(work, n)`");
+    assert!(calls.contains(&("fixture.run.run_all".into(), "fixture.run.done".into())), "`Thread(target=done)`");
+    let rs = analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixture-rs"), None, None).unwrap();
+    let calls = edges(&rs, EdgeKind::Calls);
+    assert!(calls.contains(&("handed.doubled".into(), "handed.double".into())), "`.map(double)`: {calls:?}");
+    assert!(calls.contains(&("handed.Item.labels".into(), "handed.Item.label".into())), "`.map(Self::label)`: {calls:?}");
 }

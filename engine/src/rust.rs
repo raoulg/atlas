@@ -827,6 +827,21 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crat
             continue;
         }
         let Some(f) = c.child_by_field_name("function") else { continue };
+        // an own function handed on as a value (`xs.iter().map(Self::label)`, `thread::spawn(run)`)
+        // is called by whoever receives it
+        for a in c.child_by_field_name("arguments").map(named_children).unwrap_or_default() {
+            if !matches!(a.kind(), "identifier" | "scoped_identifier") || locals.contains_key(text(a, src)) {
+                continue;
+            }
+            let ps = path_parts(Some(a), src);
+            let handed = match (ps.first().map(String::as_str), &cls) {
+                (Some("Self"), Some(c)) => ps.get(1).and_then(|m| method_of(store, c, m)),
+                _ => resolve(m, &ps, modules, &store.nodes, crate_ids),
+            };
+            if let Some(t) = handed.filter(|t| store.nodes.get(t).map_or(false, |n| matches!(n.kind, NodeKind::Function | NodeKind::Method))) {
+                new_edges.push((t, EdgeKind::Calls, None, arms_of(a, body, src, &choices, &CHOICES)));
+            }
+        }
         let mut target: Option<String> = None;
         let mut parts: Vec<String> = vec![];
         if f.kind() == "field_expression" {

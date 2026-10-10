@@ -444,8 +444,10 @@ impl<'e> Visitor<'e> for Reader<'_, '_> {
                 if !reached.is_empty() {
                     self.facts.callees.insert(span(&*call.func), reached);
                 }
-                // a function handed to another, to be called there: `session.execute_read(work)`
-                for a in call.arguments.args.iter().filter(|a| matches!(a, ast::Expr::Name(_) | ast::Expr::Attribute(_))) {
+                // a function handed to another, to be called there: `executor.submit(work)`,
+                // `Thread(target=work)`
+                let handed = call.arguments.args.iter().chain(call.arguments.keywords.iter().map(|k| &k.value));
+                for a in handed.filter(|a| matches!(a, ast::Expr::Name(_) | ast::Expr::Attribute(_))) {
                     let reached = self.callees(a);
                     if !reached.is_empty() {
                         self.facts.callees.insert(span(a), reached);

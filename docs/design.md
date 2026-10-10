@@ -277,7 +277,12 @@ is still what the import binds (`requests.get` is `get` of `requests`); what the
 gives back has no type.
 
 Rust's and TypeScript's signatures carry their types, and a receiver's type is
-composed from them. Output: the symbol graph plus a resolution report (resolved,
+composed from them.
+
+In every language, a function of the package handed on as a value (an executor's
+work, a thread's target, a callback, an iterator's `map`) is called by whoever
+receives it, so it is a call from where it is handed. Reading a property hands
+nothing on. Output: the symbol graph plus a resolution report (resolved,
 external, builtin, local, unknown) so the quality has a number.
 
 **L2 Effects.** Boundary tags on every call that leaves the package (web, disk in

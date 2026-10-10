@@ -1045,6 +1045,28 @@ impl<'a> Seen<'a> {
         self.bound(f)
     }
 
+    /// The function of the package a value handed on is called as: a function or method, or an
+    /// instance's `__call__`. Reading a property hands nothing on.
+    fn handed_function(&self, a: TsNode) -> Option<String> {
+        let reached = self.facts.map_or(&[][..], |x| x.callees(Self::range(a)));
+        let function = |id: &&String| self.store.nodes.get(*id).map_or(false, |n| n.kind == NodeKind::Function);
+        for c in reached {
+            let def = match c.by {
+                By::Call => self.node(&c.target).cloned(),
+                By::Instance => self.node(&c.target).and_then(|cls| method_of(self.store, cls, "__call__", 0)),
+                By::Name => self.node(&c.target).filter(function).cloned(),
+                By::Construct => None,
+            };
+            if def.is_some() {
+                return def;
+            }
+        }
+        match self.bound(a) {
+            Some(Callee::Def(t)) if reached.is_empty() && function(&&t) => Some(t),
+            _ => None,
+        }
+    }
+
     /// What a dotted name reaches through what the module imports or defines.
     fn bound(&self, f: TsNode) -> Option<Callee> {
         let parts = call_path(f, &self.m.src);
@@ -1383,6 +1405,13 @@ fn link_calls<'t>(modules: &'t IndexMap<String, Module>, store: &mut GraphBuilde
                 }
             }
             let Some(fnode) = c.child_by_field_name("function") else { continue };
+            // a function of the package handed on as a value (`executor.submit(self.run, x)`,
+            // `Thread(target=work)`) is called by whoever receives it
+            for a in handed_on(c) {
+                if let Some(t) = seen.handed_function(a) {
+                    new_edges.push((t, EdgeKind::Calls, arms_of(a, body, src, &choices, &CHOICES)));
+                }
+            }
             let callee = seen.callee(fnode);
             if let Some(Callee::Def(t)) = &callee {
                 let kind = if seen.is_class(t) { EdgeKind::Instantiates } else { EdgeKind::Calls };
@@ -1586,6 +1615,20 @@ fn place_files(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, eva
             store.touch(&f, Touch { artifact, ..t.clone() });
         }
     }
+}
+
+/// The arguments of a call that name a value without computing one: a name or an attribute,
+/// handed positionally or by keyword.
+fn handed_on(call: TsNode) -> Vec<TsNode> {
+    let Some(args) = call.child_by_field_name("arguments") else { return vec![] };
+    named_children(args)
+        .into_iter()
+        .filter_map(|a| match a.kind() {
+            "keyword_argument" => a.child_by_field_name("value"),
+            _ => Some(a),
+        })
+        .filter(|a| matches!(a.kind(), "identifier" | "attribute"))
+        .collect()
 }
 
 /// Whether what a call gives back is used: anything but a call standing as a statement.
