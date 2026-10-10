@@ -104,6 +104,7 @@ cargo install --locked --git https://github.com/raoulg/atlas atlas
 atlas view                      # draw the repository you are in; opens in your browser
 atlas view ../api ../web        # two repositories as parts of one picture
 atlas check                     # where the code and the design principles disagree
+atlas changes                   # what your edits did to the routes, their places and the findings
 atlas --help
 ```
 
@@ -185,11 +186,29 @@ Each principle, with its reasoning and the Python and Rust idioms behind it, is 
 [docs/principles.md](docs/principles.md). Atlas holds itself to them: `atlas check` on
 this repository finds nothing, and the tests keep it that way.
 
+### Changes: what an edit did
+
+`atlas changes [<rev>]` reads the working tree against a git revision (`HEAD` by default)
+and lists what the edit did: the routes added and removed, the steps and places each route
+gains and loses, and the findings it raises and resolves. In a design loop, that is the
+question after every step: does the change do what it was meant to, and nothing else? The
+revision is read from git into a directory of its own; the working tree and the index stay
+as they are.
+
+```text
+since HEAD
+
+~ API · POST /api/regels
+    - step server.regels.vat
+    - place asks an LLM create
+```
+
 ### Give your coding agent the same picture
 
 `atlas mcp` serves Atlas over the [Model Context Protocol](https://modelcontextprotocol.io).
-The tools are `principles`, `check`, `explain`, `routes` and `route`; `route` returns what
-one entry point does, step by step. In [Claude Code](https://claude.com/claude-code):
+The tools are `principles`, `check`, `explain`, `routes`, `route` and `changes`; `route`
+returns what one entry point does, step by step, and `changes` what the working tree did
+since a commit, so an agent can check its edit against what it was meant to do. In [Claude Code](https://claude.com/claude-code):
 
 ```bash
 claude mcp add atlas -- atlas mcp

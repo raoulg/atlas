@@ -42,11 +42,43 @@ fn a_client_initializes_lists_and_calls() {
     assert_eq!(replies[0]["result"]["protocolVersion"], "2025-06-18", "the client's version, when spoken");
     assert!(replies[0]["result"]["instructions"].as_str().unwrap().contains("coaches"));
     let tools: Vec<&str> = replies[1]["result"]["tools"].as_array().unwrap().iter().map(|t| t["name"].as_str().unwrap()).collect();
-    assert_eq!(tools, ["principles", "check", "explain", "routes", "route"]);
+    assert_eq!(tools, ["principles", "check", "explain", "routes", "route", "changes"]);
     assert!(text(&replies[2]).contains("prepare tests `mode`"), "{}", text(&replies[2]));
     assert!(!text(&replies[2]).contains("\ndoors ·"), "only the principle asked for");
     assert!(text(&replies[3]).starts_with("A sum type is unwrapped where it arises."));
     assert!(text(&replies[4]).contains("4.1a  load(path) → Architecture"), "{}", text(&replies[4]));
     assert_eq!(replies[5]["result"]["isError"], true, "an unknown principle is the tool's error, said in words");
     assert_eq!(replies[6]["error"]["code"], -32602, "an unknown tool is a protocol error");
+}
+
+/// `changes` over MCP: an agent sees what its edit did to the routes.
+#[test]
+fn changes_shows_an_edit() {
+    let from = std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../engine/tests/fixture-ts"));
+    let repo = std::env::temp_dir().join(format!("atlas-mcp-changes-{}", std::process::id())).join("fixture-ts");
+    let _ = std::fs::remove_dir_all(&repo);
+    let mut stack = vec![from.clone()];
+    while let Some(d) = stack.pop() {
+        for e in std::fs::read_dir(&d).unwrap().flatten() {
+            let p = e.path();
+            let dest = repo.join(p.strip_prefix(&from).unwrap());
+            if p.is_dir() {
+                stack.push(p);
+            } else {
+                std::fs::create_dir_all(dest.parent().unwrap()).unwrap();
+                std::fs::copy(&p, dest).unwrap();
+            }
+        }
+    }
+    let git = |args: &[&str]| assert!(Command::new("git").arg("-C").arg(&repo).args(["-c", "user.name=atlas", "-c", "user.email=atlas@example.org", "-c", "commit.gpgsign=false"]).args(args).status().unwrap().success());
+    git(&["init", "-q"]);
+    git(&["add", "."]);
+    git(&["commit", "-q", "-m", "fixture"]);
+    let regels = repo.join("src/server/regels.ts");
+    let src = std::fs::read_to_string(&regels).unwrap().replace("[await vat(\"x\")]", "[\"x\"]");
+    std::fs::write(&regels, src).unwrap();
+    let replies = session(&[call(1, "changes", json!({ "path": repo.to_string_lossy() }))]);
+    let t = text(&replies[0]);
+    assert!(t.contains("~ API · POST /api/regels\n    - step server.regels.vat\n"), "{t}");
+    let _ = std::fs::remove_dir_all(repo.parent().unwrap());
 }

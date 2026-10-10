@@ -18,7 +18,8 @@ const INSTRUCTIONS: &str = "Atlas reads a repository as the places where data re
 tables, types in memory, the screen) and the functions between them, and checks it against a \
 handful of design principles. `check` finds where code and principle disagree, `explain` says \
 why a principle matters and how it looks in Python and Rust, `routes` and `route` read what an \
-entry point does, step by step. Atlas coaches: every finding ends in a question for the author. \
+entry point does, step by step, and `changes` shows what the working tree did to the routes, \
+their places and the findings since a commit: check a change against what it was meant to do. Atlas coaches: every finding ends in a question for the author. \
 When you help a student, put that question to them and help them reason about the answer; let \
 them make the change, then run `check` again to see the finding go. Python's types come from \
 ty: a value whose type ty does not know (a function without a return annotation, a library \
@@ -122,6 +123,15 @@ fn tools() -> Value {
             }, "required": ["entry"] },
             "annotations": read_only,
         },
+        {
+            "name": "changes",
+            "description": "What the working tree changes against a git revision: the routes added and removed, the steps and places each route gains and loses, and the findings raised and resolved. Use it after an edit to see whether the change does what it was meant to.",
+            "inputSchema": { "type": "object", "properties": {
+                "path": path,
+                "rev": { "type": "string", "description": "The revision to compare with. Default: HEAD." },
+            } },
+            "annotations": read_only,
+        },
     ])
 }
 
@@ -152,6 +162,11 @@ fn call(name: &str, args: &Value) -> Option<Result<String, String>> {
             let rows: Vec<String> = story::entries(&g).into_iter().map(|(k, label, id)| format!("{:<8} {label}  ({id})", story::kind_label(k))).collect();
             if rows.is_empty() { "No entry points found: no CLI command, script, export, MCP tool or test.".into() } else { rows.join("\n") }
         }),
+        "changes" => {
+            let repo = PathBuf::from(text("path").unwrap_or("."));
+            let rev = text("rev").unwrap_or("HEAD");
+            atlas_engine::changes::since(&repo, rev).map(|c| atlas_engine::changes::report(&c)).map_err(|e| format!("Could not compare {} with {rev}: {e}", repo.display()))
+        }
         "route" => graph(text("path")).and_then(|g| {
             let entry = text("entry").unwrap_or("");
             let depth = args.get("depth").and_then(Value::as_u64).unwrap_or(2) as usize;

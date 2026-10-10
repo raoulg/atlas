@@ -33,6 +33,7 @@ fn examples() -> String {
         ("atlas view", "draw the repository you are in and open it in the browser"),
         ("atlas view ../api ../web", "two repositories as parts of one picture"),
         ("atlas check", "where the code and the design principles disagree"),
+        ("atlas changes", "what your edits did to the routes, their places and the findings"),
         ("claude mcp add atlas -- atlas mcp", "give Claude Code the same picture"),
     ];
     let mut s = format!("{head}Examples:{head:#}\n");
@@ -80,7 +81,18 @@ enum Cmd {
         #[arg(long)]
         json: bool,
     },
-    /// Serve Atlas to a coding agent over MCP (stdio): principles, check, explain, routes, route.
+    /// What the working tree changes against a git revision: routes, their steps and places, findings.
+    Changes {
+        /// The revision to compare with; default: HEAD.
+        rev: Option<String>,
+        /// Repository root; default: the current directory.
+        #[arg(long)]
+        repo: Option<PathBuf>,
+        /// Print the changes as JSON.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Serve Atlas to a coding agent over MCP (stdio): principles, check, explain, routes, route, changes.
     Mcp,
     /// Write a repository's graph as JSON.
     Analyze {
@@ -156,6 +168,18 @@ fn main() -> Result<()> {
             view(&repos, roles.as_deref(), out, !no_open)?
         }
         Cmd::Mcp => mcp::serve()?,
+        Cmd::Changes { rev, repo, json } => {
+            let repo = match repo {
+                Some(r) => r,
+                None => std::env::current_dir()?,
+            };
+            let c = atlas_engine::changes::since(&repo, rev.as_deref().unwrap_or("HEAD"))?;
+            if json {
+                println!("{}", serde_json::to_string_pretty(&c)?);
+            } else {
+                print!("{}", atlas_engine::changes::report(&c));
+            }
+        }
         Cmd::Check { repo, json } => {
             let repo = match repo {
                 Some(r) => r,
