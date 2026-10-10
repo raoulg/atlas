@@ -114,11 +114,13 @@ impl GraphBuilder {
             Some((module, name)) => (module, format!("{name}{}", &full[cut..])),
             None => ("", full.to_string()),
         };
+        let package = module.split(['.', ':']).next().unwrap_or("");
         self.add_node(Node {
             id: eid.into(),
             kind: NodeKind::External,
             name,
             module: module.into(),
+            door: crate::effects::library_place(package.strip_prefix('_').unwrap_or(package)).unwrap_or_default().into(),
             ..Default::default()
         });
     }

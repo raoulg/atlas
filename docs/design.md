@@ -204,9 +204,20 @@ part that is the full path of a route another part serves is a `requests` edge f
 node that holds it to the handler. A literal that names one of its own part's routes is a
 link within that part. In the views, parts are a zoom level like families: the overview
 is one step per part (memory stays inside it; what it reads and writes in the world, and
-the HTTP of the parts it requests, stand outside), a click opens a part into its routes,
+the HTTP of the parts it requests, stand outside), a click opens a part into its packages,
 and keeping to one part is its fiber, in which another part is the web place it is
 reached through. `atlas check` reads each part in its own language.
+
+**Packages** — one level down, the same quotient by module path: a part's packages (the
+children of its own package, a crate's modules, an app's directories; scripts and
+notebooks beside them as one each), a package's subpackages, and at the bottom a module's
+routes and doors (the functions other packages call in it). A package closed is one step:
+the places its own code touches, not what it reaches through other packages, and the
+types that cross its edge. A type crosses where one package makes it (gives it back,
+builds it, changes it) and another takes it, and between packages it is drawn once, as
+the joint. What crosses is data: a class whose methods reach a place in the world (a
+sink, a repository, a client), and a library's type whose calls reach one
+(`sqlite3.Connection`), is a door to that place, and the place is drawn instead.
 
 **Architecture** — a small `architecture.yml` in the subject repo, an override on
 naming and on what counts as a legitimate flow, never the source of the picture:

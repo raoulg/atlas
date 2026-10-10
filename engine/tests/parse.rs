@@ -364,3 +364,13 @@ fn an_unknown_type_is_not_guessed() {
     assert!(uses("fixture.store.Journal.entries", "fixture.store.Journal.connection"), "its value is used");
     assert!(!uses("fixture.build.Pipeline.run", "fixture.sinks.duck.DuckSink.write"), "a call as a statement");
 }
+
+/// A library's type whose calls reach a place is a door to that place, not data: a requests
+/// session reaches the network, a data frame stays in memory.
+#[test]
+fn a_client_is_a_door() {
+    let g = fixture();
+    assert_eq!(g.node("ext:requests.Session").map(|n| n.door.as_str()), Some("net"));
+    assert_eq!(g.node("ext:neo4j.Driver").map(|n| n.door.as_str()), Some("db_memgraph"));
+    assert_eq!(g.node("ext:pandas.DataFrame").map(|n| n.door.as_str()), Some(""));
+}

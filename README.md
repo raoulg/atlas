@@ -127,6 +127,12 @@ asks for `/api/items/{id}`, a FastAPI app mounted at `/api` serves `/items/{id}`
 meet in that part's `HTTP`. Click a part to open it; **Only *part*** in the menu keeps to
 one.
 
+A part opens into its packages, each as one step from what its own code reads to what it
+writes. Between packages stand the types that cross them: data one package makes and
+another takes. A sink or a repository is not drawn as a type there: it is a door to its
+database, and the database is drawn. A package opens into its subpackages, and a module
+into its routes and the functions other packages call in it.
+
 Atlas reads Python's types through ty, Astral's type checker, the way `ty check` reads the
 project: the environment it finds (`.venv`, `VIRTUAL_ENV`) and `[tool.ty.environment]` in
 `pyproject.toml`. Where ty does not know a type, Atlas does not guess, so the picture is as

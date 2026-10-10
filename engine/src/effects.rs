@@ -52,6 +52,29 @@ const DB_OPS: &[&str] = &[
     "read_json", "add", "add_all", "merge", "delete",
 ];
 
+const RUST_NET: &[&str] = &["reqwest", "ureq", "hyper", "tungstenite", "tokio_tungstenite", "curl", "axum", "TcpStream", "TcpListener"];
+const RUST_DB: &[&str] = &["rusqlite", "sqlx", "diesel", "duckdb", "postgres", "tokio_postgres", "sea_orm"];
+const TS_NET: &[&str] = &["axios", "ky", "ofetch", "node-fetch", "undici", "got"];
+
+/// The part of the world a library's calls reach, for a library that is a client of one: a
+/// database, the network, a language model, a process. A value of its types is a door to that
+/// place, not data at rest.
+pub fn library_place(pkg: &str) -> Option<&'static str> {
+    if NET_PKGS.contains(&pkg) || RUST_NET.contains(&pkg) || TS_NET.contains(&pkg) {
+        return Some("net");
+    }
+    if RUST_DB.contains(&pkg) {
+        return Some("db_sql");
+    }
+    if LLM_PKGS.contains(&pkg) {
+        return Some("llm");
+    }
+    match pkg {
+        "subprocess" | "child_process" => Some("process"),
+        _ => db_pkg(pkg),
+    }
+}
+
 fn db_pkg(pkg: &str) -> Option<&'static str> {
     match pkg {
         "duckdb" => Some("db_duckdb"),
@@ -79,8 +102,8 @@ pub fn boundary_rust(parts: &[String]) -> Option<&'static str> {
     }
     match head {
         "walkdir" | "WalkDir" | "glob" | "notify" => Some("disk_read"),
-        "reqwest" | "ureq" | "hyper" | "tungstenite" | "tokio_tungstenite" | "curl" | "axum" | "TcpStream" | "TcpListener" => Some("net"),
-        "rusqlite" | "sqlx" | "diesel" | "duckdb" | "postgres" | "tokio_postgres" | "sea_orm" => Some("db_sql"),
+        h if RUST_NET.contains(&h) => Some("net"),
+        h if RUST_DB.contains(&h) => Some("db_sql"),
         "git2" | "gix" => Some("disk_read"),
         _ => None,
     }
@@ -168,7 +191,7 @@ pub fn boundary_ts(pkg: Option<&str>, parts: &[String]) -> Option<&'static str> 
     match pkg {
         None if matches!(parts, [f] if f == "fetch") || (matches!(head, "window" | "globalThis") && last == "fetch") => Some("net"),
         None if head == "console" => Some("screen"),
-        Some("axios" | "ky" | "ofetch" | "node-fetch" | "undici" | "got") => Some("net"),
+        Some(p) if TS_NET.contains(&p) => Some("net"),
         Some("fs" | "fs/promises") => {
             const READS: &[&str] = &["readFile", "readFileSync", "readdir", "readdirSync", "createReadStream", "existsSync", "stat", "statSync", "access"];
             const WRITES: &[&str] = &[
