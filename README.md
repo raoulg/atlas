@@ -80,6 +80,7 @@ Read it from left to right:
 - **Space over a box** shows its details and code over the picture while the code panel is
   closed; space, Esc or a click on the picture puts them away, and **pin** keeps the panel
   open beside the picture.
+- **Press `?`** in the page for every key and click on one card.
 
 Story shows the same route as a list. Each step has its own signature and its own effects
 (`writes html → out`, `runs open`). A choice is lettered (`2a | 2b | 2c`). The dots on the
