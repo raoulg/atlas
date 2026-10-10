@@ -841,9 +841,18 @@ fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, root: &str
         }
     }
     // bodies -> calls / instantiates / boundaries
+    let mut handed = vec![];
     for id in &ids {
         if matches!(store.nodes[id].kind, NodeKind::Function | NodeKind::Method | NodeKind::Module) {
-            link_calls(modules, store, &known, root, id);
+            handed.extend(link_calls(modules, store, &known, root, id));
+        }
+    }
+    // the work handed to a managed transaction (`session.execute_read(work)`) goes its way
+    for (work, kind, dir) in handed {
+        if let Some(n) = store.nodes.get_mut(&work) {
+            for t in n.touches.iter_mut().filter(|t| t.kind == kind && t.dir.is_empty()) {
+                t.dir = dir.into();
+            }
         }
     }
 }
@@ -1581,6 +1590,10 @@ fn io_refs(m: &Module, n: TsNode, root: &str, what: &str) -> Vec<Touch> {
             continue;
         }
         let parts = dotted(Some(a), &m.src);
+        // a function is named in lower case; `RoutingControl.READ` is a constant, not a call to come
+        if parts.last().map_or(true, |l| l.starts_with(char::is_uppercase)) {
+            continue;
+        }
         let Some(pkg) = parts.first().and_then(|h| m.bindings.get(h)).filter(|b| !b.starts_with(root)).and_then(|b| b.split('.').next()) else { continue };
         let Some(tag) = effects::boundary(Some(pkg), &parts, &m.ext_pkgs) else { continue };
         let op = parts.last().cloned().unwrap_or_default();
@@ -1590,14 +1603,19 @@ fn io_refs(m: &Module, n: TsNode, root: &str, what: &str) -> Vec<Touch> {
     out
 }
 
-fn link_calls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, known: &Known, root: &str, id: &str) {
+/// A body's calls, as edges and touches. Gives back the functions it hands to a managed
+/// transaction, with the database and the direction the transaction says.
+fn link_calls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, known: &Known, root: &str, id: &str) -> Vec<(String, String, &'static str)> {
     let n = store.nodes[id].clone();
     let m = &modules[&n.module];
-    let Some(d) = def_node(m, &n) else { return };
+    let Some(d) = def_node(m, &n) else { return vec![] };
     let src = &m.src;
     let in_module = n.kind == NodeKind::Module;
     let body = if in_module { Some(d) } else { d.child_by_field_name("body") };
-    let Some(body) = body else { return };
+    let Some(body) = body else { return vec![] };
+    let mut handed: Vec<(String, String, &'static str)> = vec![];
+    // the direction a body says to a database's driver, per database
+    let mut declared: Vec<(String, &'static str)> = vec![];
     let params = if in_module { HashMap::new() } else { param_types(m, d, modules, &store.nodes, root) };
     let mut touches: Vec<Touch> = vec![];
     let mut new_edges: Vec<(String, EdgeKind, Vec<(u32, u32)>)> = vec![];
@@ -1664,7 +1682,25 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, know
                 };
                 let payload = payload_of(c, src, &what, "arguments", &locals);
                 let fixed = effects::locates(f.kind) && starts_at_literal(c, src, &["string"], "arguments", effects::on_receiver(&op));
-                touches.push(Touch { kind: f.kind.into(), what, payload, op, artifact: f.artifact, dir: f.dir.into(), fixed, line: c.start_position().row as u32 + 1, n: 1 });
+                let said = effects::access(f.kind, &op, keyword(c, src, &["routing_", "default_access_mode"]).as_deref());
+                if !said.is_empty() {
+                    declared.push((f.kind.to_string(), said));
+                    // the work a managed transaction is handed runs in its direction
+                    if effects::transaction(&op) {
+                        if let Some(Callee::Def(work)) = positional(c).and_then(|a| scope.callee(a)) {
+                            handed.push((work, f.kind.to_string(), said));
+                        }
+                    }
+                }
+                let dir = if f.dir.is_empty() { said } else { f.dir };
+                touches.push(Touch { kind: f.kind.into(), what, payload, op, artifact: f.artifact, dir: dir.into(), fixed, line: c.start_position().row as u32 + 1, n: 1 });
+            }
+        }
+        // what a body runs inside the session or transaction it opened goes the way it said
+        for t in touches.iter_mut().filter(|t| t.dir.is_empty()) {
+            let said: HashSet<&str> = declared.iter().filter(|(k, _)| *k == t.kind).map(|(_, d)| *d).collect();
+            if let [dir] = said.into_iter().collect::<Vec<_>>()[..] {
+                t.dir = dir.into();
             }
         }
         // what the body changes of its inputs: `T -> T` for the receiver or a parameter it changes;
@@ -1710,6 +1746,19 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, know
     for t in touches {
         store.touch(id, t);
     }
+    handed
+}
+
+/// A call's first positional argument.
+fn positional(call: TsNode) -> Option<TsNode> {
+    named_children(call.child_by_field_name("arguments")?).into_iter().find(|a| !matches!(a.kind(), "keyword_argument" | "comment" | "list_splat" | "dictionary_splat"))
+}
+
+/// The text of the first of these keyword arguments a call is given.
+fn keyword(call: TsNode, src: &[u8], names: &[&str]) -> Option<String> {
+    let args = named_children(call.child_by_field_name("arguments")?);
+    let k = args.iter().find(|a| a.kind() == "keyword_argument" && a.child_by_field_name("name").map_or(false, |n| names.contains(&text(n, src))))?;
+    Some(text(k.child_by_field_name("value")?, src).to_string())
 }
 
 // ---------- choices ----------

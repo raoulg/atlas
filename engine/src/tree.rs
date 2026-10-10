@@ -150,7 +150,7 @@ pub fn span(n: TsNode) -> Option<(u32, u32)> {
 
 /// What a boundary call touches: the first string literal under the call (a path, a
 /// table, a command), else the first argument's own text, else nothing. Long literals
-/// are cut; a SQL or Cypher statement keeps its first three words.
+/// are cut; a long statement keeps its first three words.
 pub fn what_of(call: TsNode, src: &[u8], string_kinds: &[&str], arg_field: &str) -> String {
     if let Some(lit) = literals(call, src, string_kinds).into_iter().find(|l| !crate::effects::is_mode(l)) {
         let lit = lit.trim();

@@ -98,8 +98,11 @@ naming of the classes, never the source of the picture.
 
 Three things make `F` honest, and each is an engine task:
 
-1. Database reads and writes are different arrows; the SQL and Cypher verbs in the
-   literals tell them apart.
+1. Database reads and writes are different arrows. A graph database's direction is what
+   the Python code says to its driver: a managed transaction (`execute_read`,
+   `execute_write`), a routing or an access mode; what runs inside it goes the same way.
+   A graph query's text is not read, and where the code says nothing the direction stays
+   open. A SQL statement's verb names its direction and table.
 2. In-place mutation hides arrows: a function that takes a hub type and calls a
    mutator on it is an endomorphism `Graph → Graph`, not `Graph → ()`.
 3. Disk is too coarse: `.env` and `assets/regelingen` are different resting places.

@@ -78,8 +78,8 @@ fn types_compose_from_their_parts() {
     let g = fixture();
     let calls = edges(&g, EdgeKind::Calls);
     let call = |src: &str, dst: &str| calls.contains(&(format!("fixture.{src}"), format!("fixture.{dst}")));
-    assert!(call("store.Store.write", "store.Connection.run"), "`self.conn = connection or Connection(uri)`, then `conn = self.conn`");
-    assert!(call("store.Reader.nodes", "store.Connection.run"), "`self.store.conn.run(..)`: a chain of attributes");
+    assert!(call("store.Store.write", "store.Connection.write"), "`self.conn = connection or Connection(uri)`, then `conn = self.conn`");
+    assert!(call("store.Reader.nodes", "store.Connection.read"), "`self.store.conn.read(..)`: a chain of attributes");
     assert!(call("store.Copier.copy", "store.Store.write"), "`self.store`, set by the base's `__init__`");
     assert!(call("store.keep", "store.Store.write") && call("store.keep", "store.Reader.nodes"), "`store, reader = stores()` with `-> tuple[Store, Reader]`");
     assert!(call("store.latest", "store.reader") && call("store.latest", "store.Reader.nodes"), "`current = reader`: a function under another name");
@@ -93,6 +93,22 @@ fn types_compose_from_their_parts() {
     assert!(b("fixture.store.Connection.driver").contains_key("db_memgraph"), "`GraphDatabase.driver(..)`");
     let inst = edges(&g, EdgeKind::Instantiates);
     assert!(!inst.contains(&("fixture.schema.Graph.add".into(), "fixture.schema.Node".into())), "`self.nodes.append(..)` on a `list[Node]` builds no Node");
+}
+
+/// Which way a graph database's data goes is what the Python code says to its driver: a managed
+/// transaction, a routing, an access mode. What runs inside goes the same way; the query's text
+/// is not read.
+#[test]
+fn a_driver_says_which_way_the_data_goes() {
+    let g = fixture();
+    let dirs = |id: &str| g.node(id).unwrap().touches.iter().filter(|t| t.kind == "db_memgraph").map(|t| (t.op.as_str(), t.dir.as_str())).collect::<HashSet<_>>();
+    let set = |xs: &[(&'static str, &'static str)]| xs.iter().copied().collect::<HashSet<_>>();
+    assert_eq!(dirs("fixture.store.Connection.read"), set(&[("session", "read"), ("execute_read", "read"), ("run", "read")]), "`session.execute_read(lambda tx: tx.run(..))`");
+    assert_eq!(dirs("fixture.store.Connection.write"), set(&[("session", "write"), ("execute_write", "write")]));
+    assert_eq!(dirs("fixture.store._write"), set(&[("run", "write")]), "the work `execute_write` is handed");
+    assert_eq!(dirs("fixture.store.Connection.count"), set(&[("execute_query", "read")]), "`routing_=RoutingControl.READ`");
+    let peek = g.node("fixture.store.Connection.peek").unwrap().touches.iter().find(|t| t.op == "run").unwrap();
+    assert_eq!((peek.dir.as_str(), peek.artifact.as_str()), ("", ""), "`session.run(\"MATCH (n:Graph) ..\")` says nothing in Python");
 }
 
 #[test]

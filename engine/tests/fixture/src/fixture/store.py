@@ -3,7 +3,7 @@
 import zipfile
 
 import requests
-from neo4j import Driver, GraphDatabase
+from neo4j import Driver, GraphDatabase, RoutingControl
 
 from fixture.schema import Graph
 
@@ -35,9 +35,25 @@ class Connection:
             self._driver = GraphDatabase.driver(self.uri)
         return self._driver
 
-    def run(self, query: str) -> list:
+    def read(self, query: str) -> list:
         with self.driver.session() as session:
-            return list(session.run(query))
+            return session.execute_read(lambda tx: list(tx.run(query)))
+
+    def write(self, query: str) -> None:
+        with self.driver.session() as session:
+            session.execute_write(_write, query)
+
+    def count(self, query: str) -> int:
+        records, _, _ = self.driver.execute_query(query, routing_=RoutingControl.READ)
+        return len(records)
+
+    def peek(self) -> list:
+        with self.driver.session() as session:
+            return list(session.run("MATCH (n:Graph) RETURN n"))
+
+
+def _write(tx, query: str) -> None:
+    tx.run(query)
 
 
 class Store:
@@ -46,7 +62,7 @@ class Store:
 
     def write(self, graph: Graph) -> None:
         conn = self.conn
-        conn.run(f"CREATE (:Graph {{n: {len(graph.nodes)}}})")
+        conn.write(f"CREATE (:Graph {{n: {len(graph.nodes)}}})")
 
 
 class Reader:
@@ -54,7 +70,7 @@ class Reader:
         self.store = store
 
     def nodes(self) -> list:
-        return self.store.conn.run("MATCH (n) RETURN n")
+        return self.store.conn.read("MATCH (n) RETURN n")
 
 
 class Copier(Reader):

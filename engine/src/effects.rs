@@ -126,7 +126,7 @@ pub fn boundary(pkg: Option<&str>, parts: &[String], ext: &HashSet<String>) -> O
         return Some("disk_write");
     }
     let has = |p: &str| ext.contains(p);
-    if (last == "run" || last == "execute_query") && (has("neo4j") || has("mgclient")) {
+    if GRAPH_OPS.contains(&last) && (has("neo4j") || has("mgclient")) {
         return Some("db_memgraph");
     }
     if ["execute", "executemany", "sql", "register"].contains(&last) && has("duckdb") {
@@ -230,8 +230,8 @@ pub fn facts(kind: &'static str, pkg: Option<&str>, op: &str, literals: &[String
         kind
     };
     if kind.starts_with("db_") {
-        let Some((dir, table)) = literals.iter().find_map(|l| statement(l)) else {
-            return Facts { kind, artifact: String::new(), dir: "" };
+        let Some((dir, table)) = literals.iter().find_map(|l| statement(l)).filter(|_| SQL_DBS.contains(&kind)) else {
+            return Facts { kind, artifact: String::new(), dir: access(kind, op, None) };
         };
         return Facts { kind, artifact: table, dir };
     }
@@ -362,31 +362,52 @@ fn extension(s: &str) -> Option<String> {
     (ok && !s.contains(char::is_whitespace)).then(|| e.to_ascii_lowercase())
 }
 
-/// A SQL or Cypher statement: whether it reads or writes, and the table or label it names.
-/// Any write verb makes it a write (`MATCH .. MERGE`, `WITH .. INSERT`).
+/// A SQL statement: whether it reads or writes, and the table it names. Any write verb makes it
+/// a write (`WITH .. INSERT`).
 pub fn statement(s: &str) -> Option<(&'static str, String)> {
-    const WRITE: &[&str] = &["insert", "update", "delete", "create", "merge", "copy", "drop", "alter", "replace", "upsert", "set", "detach", "remove"];
-    const READ: &[&str] = &["select", "match", "with", "return", "show", "describe", "pragma", "call", "unwind"];
+    const WRITE: &[&str] = &["insert", "update", "delete", "create", "merge", "copy", "drop", "alter", "replace", "upsert", "truncate"];
+    const READ: &[&str] = &["select", "with", "show", "describe", "pragma", "call", "explain"];
     let words: Vec<String> = s.split(|c: char| !(c.is_alphanumeric() || c == '_')).filter(|w| !w.is_empty()).map(|w| w.to_ascii_lowercase()).collect();
     let first = words.first()?;
     if !WRITE.contains(&first.as_str()) && !READ.contains(&first.as_str()) {
         return None;
     }
     let dir = if words.iter().any(|w| WRITE.contains(&w.as_str())) { "write" } else { "read" };
-    // a Cypher label `(n:Regeling)`, else the word after a SQL keyword that names a table
-    let label = s.match_indices(':').find_map(|(i, _)| {
-        let before = s[..i].chars().last()?;
-        let in_node = s[..i].rfind('(') > s[..i].rfind(')');
-        if !(in_node && (before.is_alphanumeric() || before == '_' || before == '(')) {
-            return None;
-        }
-        let l: String = s[i + 1..].chars().take_while(|c| c.is_alphanumeric() || *c == '_').collect();
-        (!l.is_empty()).then_some(l)
-    });
-    let table = label.or_else(|| {
-        words.windows(2).find(|w| matches!(w[0].as_str(), "into" | "from" | "update" | "table" | "join")).map(|w| w[1].clone())
-    });
+    let table = words.windows(2).find(|w| matches!(w[0].as_str(), "into" | "from" | "update" | "table" | "join")).map(|w| w[1].clone());
     Some((dir, table.unwrap_or_default()))
+}
+
+/// The databases whose statements are SQL, read for their verb and table.
+const SQL_DBS: &[&str] = &["db_duckdb", "db_sqlite", "db_sql"];
+
+/// A graph database driver's calls that run queries.
+const GRAPH_OPS: &[&str] = &["run", "execute_query", "execute_read", "execute_write", "read_transaction", "write_transaction"];
+
+/// Which way a graph database's data goes, where the Python code says it to the driver: a
+/// managed transaction (`session.execute_read(work)`, `execute_write`), a query's routing
+/// (`execute_query(q, routing_=RoutingControl.READ)`) or a session's access mode
+/// (`driver.session(default_access_mode=READ_ACCESS)`). The query's own text is not read;
+/// where the code says nothing, the direction stays open.
+pub fn access(kind: &str, op: &str, mode: Option<&str>) -> &'static str {
+    if kind != "db_memgraph" {
+        return "";
+    }
+    match op {
+        "execute_read" | "read_transaction" => return "read",
+        "execute_write" | "write_transaction" => return "write",
+        _ => {}
+    }
+    let mode = mode.map(|m| m.trim_matches(['"', '\'']).rsplit('.').next().unwrap_or("").to_ascii_uppercase()).unwrap_or_default();
+    match mode.as_str() {
+        "READ" | "R" | "READ_ACCESS" => "read",
+        "WRITE" | "W" | "WRITE_ACCESS" => "write",
+        _ => "",
+    }
+}
+
+/// A managed transaction, handed the work it runs: `session.execute_read(work, ..)`.
+pub fn transaction(op: &str) -> bool {
+    matches!(op, "execute_read" | "execute_write" | "read_transaction" | "write_transaction")
 }
 
 #[cfg(test)]
@@ -443,8 +464,19 @@ mod tests {
     fn statements_read_or_write_a_table() {
         assert_eq!(statement("INSERT INTO nodes VALUES (?)"), Some(("write", "nodes".into())));
         assert_eq!(statement("select * from edges where x = 1"), Some(("read", "edges".into())));
-        assert_eq!(statement("MATCH (n:Regeling) RETURN n"), Some(("read", "Regeling".into())));
-        assert_eq!(statement("MATCH (a) MERGE (b:Node {id: $id})"), Some(("write", "Node".into())));
+        assert_eq!(statement("WITH t AS (SELECT 1) INSERT INTO log SELECT * FROM t"), Some(("write", "log".into())));
+        assert_eq!(statement("MATCH (n:Regeling) RETURN n"), None, "a graph query is not read: the driver call says which way");
         assert_eq!(statement("hello world"), None);
+    }
+
+    /// A graph database's direction is what the Python code says to the driver, never the query.
+    #[test]
+    fn a_driver_says_which_way() {
+        assert_eq!(access("db_memgraph", "execute_read", None), "read");
+        assert_eq!(access("db_memgraph", "execute_write", None), "write");
+        assert_eq!(access("db_memgraph", "execute_query", Some("RoutingControl.READ")), "read");
+        assert_eq!(access("db_memgraph", "session", Some("neo4j.WRITE_ACCESS")), "write");
+        assert_eq!(access("db_memgraph", "run", None), "", "a query alone says nothing");
+        assert_eq!(facts("db_memgraph", Some("neo4j"), "run", &lits(&["MATCH (n:Regeling) RETURN n"])), Facts { kind: "db_memgraph", artifact: String::new(), dir: "" });
     }
 }
