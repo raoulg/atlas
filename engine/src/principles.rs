@@ -139,7 +139,7 @@ impl<'g> Index<'g> {
 
     fn file(&self, n: &Node) -> String {
         let root = Path::new(&self.g.project_root);
-        Path::new(&n.file).strip_prefix(root).map(|p| p.to_string_lossy().to_string()).unwrap_or_else(|_| n.file.clone())
+        Path::new(&n.file).strip_prefix(root).map(crate::tree::path_str).unwrap_or_else(|_| n.file.clone())
     }
 
     fn at(&self, n: &Node) -> String {

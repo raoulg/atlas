@@ -1,6 +1,15 @@
 //! Small helpers over tree-sitter nodes, shared by the language modules.
 
+use std::path::Path;
+
 use tree_sitter::Node as TsNode;
+
+/// A path as the graph writes it: `/` between its parts on every system, so a graph reads the
+/// same wherever it was made.
+pub fn path_str(p: &Path) -> String {
+    let s = p.to_string_lossy();
+    if cfg!(windows) { s.replace('\\', "/") } else { s.into_owned() }
+}
 
 pub fn text<'a>(n: TsNode, src: &'a [u8]) -> &'a str {
     n.utf8_text(src).unwrap_or("")

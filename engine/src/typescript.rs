@@ -351,15 +351,15 @@ pub fn parse(repo: &Path) -> Result<(GraphBuilder, String)> {
         let src = std::fs::read(p).with_context(|| format!("reading {}", p.display()))?;
         let jsx = matches!(p.extension().and_then(|e| e.to_str()), Some("tsx" | "jsx" | "js" | "mjs" | "cjs"));
         let tree = (if jsx { &mut tsx } else { &mut ts }).parse(&src, None).with_context(|| format!("parsing {}", p.display()))?;
-        store.files.insert(p.to_string_lossy().to_string(), String::from_utf8_lossy(&src).to_string());
+        store.files.insert(crate::tree::path_str(p), String::from_utf8_lossy(&src).to_string());
         let is_index = p.file_stem().and_then(|s| s.to_str()) == Some("index");
-        let rel = p.strip_prefix(repo).unwrap_or(p).to_string_lossy().to_string();
+        let rel = crate::tree::path_str(p.strip_prefix(repo).unwrap_or(p));
         let entry = test_file(p).then(|| Entry { kind: EntryKind::Test, label: rel.clone() });
         let node = Node {
             id: id.clone(),
             kind: NodeKind::Module,
             name: p.file_name().and_then(|n| n.to_str()).unwrap_or("").to_string(),
-            file: p.to_string_lossy().to_string(),
+            file: crate::tree::path_str(p),
             span: span(tree.root_node()),
             module: id.clone(),
             is_pkg: is_index,
@@ -471,7 +471,7 @@ fn add_function(m: &mut Module, store: &mut GraphBuilder, name: &str, def: TsNod
         id: id.clone(),
         kind: if cls.is_some() { NodeKind::Method } else { NodeKind::Function },
         name: name.to_string(),
-        file: m.path.to_string_lossy().to_string(),
+        file: crate::tree::path_str(&m.path),
         span: span(def),
         module: m.id.clone(),
         doc: doc_of(def, src),
@@ -657,7 +657,7 @@ fn add_type(m: &mut Module, store: &mut GraphBuilder, name: &str, d: TsNode, bas
         id: id.clone(),
         kind: NodeKind::Class,
         name: name.to_string(),
-        file: m.path.to_string_lossy().to_string(),
+        file: crate::tree::path_str(&m.path),
         span: span(d),
         module: m.id.clone(),
         doc: doc_of(d, &m.src),
@@ -855,7 +855,7 @@ fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder) {
                 id: id.clone(),
                 kind: NodeKind::Class,
                 name: name.clone(),
-                file: m.path.to_string_lossy().to_string(),
+                file: crate::tree::path_str(&m.path),
                 module: m.id.clone(),
                 ..Default::default()
             });

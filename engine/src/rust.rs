@@ -284,12 +284,12 @@ pub fn parse(repo: &Path) -> Result<(GraphBuilder, String)> {
             let is_root = mid == c.name;
             let parent = if is_root { mid.clone() } else { mid.rsplit_once('.').map(|x| x.0.to_string()).unwrap_or(mid.clone()) };
             let name = mid.rsplit('.').next().unwrap_or(&mid).to_string();
-            store.files.insert(p.to_string_lossy().to_string(), String::from_utf8_lossy(&src).to_string());
+            store.files.insert(crate::tree::path_str(&p), String::from_utf8_lossy(&src).to_string());
             store.add_node(Node {
                 id: mid.clone(),
                 kind: NodeKind::Module,
                 name,
-                file: p.to_string_lossy().to_string(),
+                file: crate::tree::path_str(&p),
                 span: span(tree.root_node()),
                 module: mid.clone(),
                 doc: module_doc(tree.root_node(), &src),
@@ -325,7 +325,7 @@ fn exported(m: &Module, item: tree_sitter::Node, bins: &HashSet<String>, src: &[
 
 fn collect_symbols(m: &mut Module, store: &mut GraphBuilder, bins: &HashSet<String>) {
     let src = &m.src;
-    let file = m.path.to_string_lossy().to_string();
+    let file = crate::tree::path_str(&m.path);
     for item in items(m.tree.root_node()) {
         match item.kind() {
             "function_item" => {
@@ -614,7 +614,7 @@ fn collect_impls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, c
             store.classes.entry(cls.clone()).or_default().resolved.push(tr);
         }
         let Some(body) = im.body else { continue };
-        let file = m.path.to_string_lossy().to_string();
+        let file = crate::tree::path_str(&m.path);
         for f in named_children(body).into_iter().filter(|f| f.kind() == "function_item") {
             let mname = fn_name(f, src);
             let mnid = format!("{cls}.{mname}");

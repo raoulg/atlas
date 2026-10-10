@@ -358,12 +358,12 @@ pub fn parse(pkg_dir: &Path, project_root: Option<&Path>) -> Result<(GraphBuilde
         }
         let mid = parts.join(".");
         let m = load_module(&mut parser, &mid, &p, is_pkg)?;
-        store.files.insert(p.to_string_lossy().to_string(), String::from_utf8_lossy(&m.src).to_string());
+        store.files.insert(crate::tree::path_str(&p), String::from_utf8_lossy(&m.src).to_string());
         store.add_node(Node {
             id: mid.clone(),
             kind: NodeKind::Module,
             name: parts.last().cloned().unwrap_or_default(),
-            file: p.to_string_lossy().to_string(),
+            file: crate::tree::path_str(&p),
             span: Some((1, m.tree.root_node().end_position().row as u32 + 1)),
             module: mid.clone(),
             doc: first_docline(Some(m.tree.root_node()), &m.src),
@@ -395,18 +395,18 @@ pub fn parse(pkg_dir: &Path, project_root: Option<&Path>) -> Result<(GraphBuilde
                 None => format!("_root.{stem}"),
             };
             let m = load_module(&mut parser, &mid, &p, false)?;
-            store.files.insert(p.to_string_lossy().to_string(), String::from_utf8_lossy(&m.src).to_string());
+            store.files.insert(crate::tree::path_str(&p), String::from_utf8_lossy(&m.src).to_string());
             store.add_node(Node {
                 id: mid.clone(),
                 kind: NodeKind::Module,
                 name: stem,
-                file: p.to_string_lossy().to_string(),
+                file: crate::tree::path_str(&p),
                 span: Some((1, m.tree.root_node().end_position().row as u32 + 1)),
                 module: mid.clone(),
                 doc: first_docline(Some(m.tree.root_node()), &m.src),
                 entry: Some(Entry {
                     kind: if p.extension().and_then(|x| x.to_str()) == Some("ipynb") { EntryKind::Notebook } else { EntryKind::Script },
-                    label: rel.to_string_lossy().to_string(),
+                    label: crate::tree::path_str(&rel),
                 }),
                 ..Default::default()
             });
@@ -433,7 +433,7 @@ pub fn parse(pkg_dir: &Path, project_root: Option<&Path>) -> Result<(GraphBuilde
 fn collect_symbols(m: &mut Module, store: &mut GraphBuilder) {
     let root = m.tree.root_node();
     let src = &m.src;
-    let file = m.path.to_string_lossy().to_string();
+    let file = crate::tree::path_str(&m.path);
     for (decs, d) in iter_defs(root, src) {
         let name = d.child_by_field_name("name").map(|n| text(n, src)).unwrap_or("").to_string();
         let nid = format!("{}.{}", m.id, name);
@@ -965,7 +965,7 @@ fn add_sums(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, aliase
             id: id.clone(),
             kind: NodeKind::Class,
             name: id.rsplit('.').next().unwrap_or(id).to_string(),
-            file: m.path.to_string_lossy().to_string(),
+            file: crate::tree::path_str(&m.path),
             span: a.span,
             module: a.module.clone(),
             doc: a.text.clone(),

@@ -82,7 +82,7 @@ impl GraphBuilder {
         let mut g = Graph {
             root,
             language: language.into(),
-            project_root: project_root.map(|p| p.to_string_lossy().to_string()).unwrap_or_default(),
+            project_root: project_root.map(crate::tree::path_str).unwrap_or_default(),
             nodes: self.nodes.into_values().collect(),
             edges: self.edges,
             files: self.files,
