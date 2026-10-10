@@ -15,7 +15,7 @@ use walkdir::WalkDir;
 mod paths;
 
 use crate::effects;
-use crate::pytypes::{By, Facts, Target, Types, Value};
+use crate::pytypes::{By, Facts, FileArg, Target, Types, Value};
 use paths::{At, Built, Eval, Passed, Seg};
 use crate::entries::entry_of;
 use crate::model::{Compare, EdgeKind, Entry, EntryKind, Node, NodeKind, Touch};
@@ -1441,7 +1441,18 @@ fn link_calls<'t>(modules: &'t IndexMap<String, Module>, store: &mut GraphBuilde
                 unresolved.push(parts.iter().take(2).cloned().collect::<Vec<_>>().join("."));
             }
             let tag = effects::boundary(lib.as_deref(), &parts);
-            if let Some(tag) = tag {
+            if let Some(tag) = tag.filter(|t| t.starts_with("disk")) {
+                let op = parts.last().cloned().unwrap_or_default();
+                let what = what_of(c, src, &["string"], "arguments");
+                let payload = payload_of(c, src, &what, "arguments", &seen.handed(c));
+                for (kind, artifact, fixed, built) in file_calls(&seen, eval, at, c, fnode, tag, lib.as_deref(), &op) {
+                    let t = Touch { kind: kind.into(), what: what.clone(), payload: payload.clone(), op: op.clone(), artifact, dir: String::new(), fixed, line: c.start_position().row as u32 + 1, n: 1 };
+                    match built.is_empty() {
+                        true => touches.push(t),
+                        false => files.push((t, built)),
+                    }
+                }
+            } else if let Some(tag) = tag {
                 let op = parts.last().cloned().unwrap_or_default();
                 let f = effects::facts(tag, lib.as_deref(), &op, &literals(c, src, &["string"]));
                 // on a hub, what moves is the repository the call names
@@ -1461,22 +1472,9 @@ fn link_calls<'t>(modules: &'t IndexMap<String, Module>, store: &mut GraphBuilde
                         }
                     }
                 }
-                // a file's path, as the code builds it, is placed once the parameters' values are known
-                let path = match fnode.kind() == "attribute" && paths::on_receiver(&op) {
-                    true => fnode.child_by_field_name("object"),
-                    false => positional(c),
-                };
-                let built = match f.kind.starts_with("disk") {
-                    true => path.map(|p| eval.of(at, p, 0)).unwrap_or_default(),
-                    false => vec![],
-                };
                 for (artifact, dir) in f.places() {
                     let dir = if dir.is_empty() { said } else { dir };
-                    let t = Touch { kind: f.kind.into(), what: what.clone(), payload: payload.clone(), op: op.clone(), artifact, dir: dir.into(), fixed, line: c.start_position().row as u32 + 1, n: 1 };
-                    match built.is_empty() {
-                        true => touches.push(t),
-                        false => files.push((t, built.clone())),
-                    }
+                    touches.push(Touch { kind: f.kind.into(), what: what.clone(), payload: payload.clone(), op: op.clone(), artifact, dir: dir.into(), fixed, line: c.start_position().row as u32 + 1, n: 1 });
                 }
             }
         }
@@ -1534,6 +1532,51 @@ fn link_calls<'t>(modules: &'t IndexMap<String, Module>, store: &mut GraphBuilde
         store.touch(id, t);
     }
     Linked { handed, files, args }
+}
+
+/// The files a file call touches, each with its direction, its name when the code writes it out,
+/// whether the code alone decides it, and its path as built (placed once the parameters' values
+/// are known). The file is what the call's library types as one: the path a method of a path is
+/// called on, an argument typed as a path, or a file opened to read from or write to; a library
+/// whose types are not known hands its first argument. The direction is what the type says
+/// (`SupportsRead`, `SupportsWrite`), what the call's `mode` says, or for a call handed two paths
+/// the API's own names for them (`src`, `dst`); else the operation's.
+fn file_calls<'t>(seen: &Seen, eval: &Eval, at: At<'_, 't>, c: TsNode<'t>, fnode: TsNode<'t>, tag: &'static str, lib: Option<&str>, op: &str) -> Vec<(&'static str, String, bool, Vec<Built>)> {
+    let src = &at.m.src;
+    let sig = seen.facts.and_then(|x| x.signature(Seen::range(fnode)));
+    let typed = sig.map(|s| paths::file_args(s, c, src)).unwrap_or_default();
+    let mode = typed.iter().find(|(p, _)| p.name == "mode").map(|(_, a)| unquote(text(*a, src)));
+    let files: Vec<(Option<FileArg>, &str, TsNode)> = match (fnode.kind() == "attribute" && lib == Some("pathlib"), sig) {
+        (true, _) => fnode.child_by_field_name("object").map(|o| vec![(Some(FileArg::Path), "self", o)]).unwrap_or_default(),
+        (false, Some(_)) => typed.iter().filter(|(p, _)| p.file.is_some()).map(|(p, a)| (p.file, p.name.as_str(), *a)).collect(),
+        (false, None) => positional(c).map(|a| vec![(None, "", a)]).unwrap_or_default(),
+    };
+    let paths = files.iter().filter(|(k, _, _)| *k == Some(FileArg::Path)).count();
+    if files.is_empty() {
+        let f = effects::facts(tag, lib, op, &mode.into_iter().collect::<Vec<_>>());
+        return f.places().into_iter().map(|(artifact, _)| (f.kind, artifact, false, vec![])).collect();
+    }
+    files
+        .into_iter()
+        .map(|(file, name, a)| {
+            // a method of a path names its file by the path and by its own arguments (a pattern)
+            let mut lits = literals(a, src, &["string"]);
+            if name == "self" {
+                lits.extend(c.child_by_field_name("arguments").map(|x| literals(x, src, &["string"])).unwrap_or_default());
+            }
+            lits.extend(mode.clone());
+            let f = effects::facts(tag, lib, op, &lits);
+            let kind = match file {
+                Some(FileArg::Reads) => "disk_read",
+                Some(FileArg::Writes) => "disk_write",
+                _ if paths > 1 && matches!(name, "src" | "source" | "from_") => "disk_read",
+                _ if paths > 1 && matches!(name, "dst" | "destination" | "target" | "to") => "disk_write",
+                _ => f.kind,
+            };
+            let artifact = f.places().into_iter().next().map(|(a, _)| a).unwrap_or_default();
+            (kind, artifact, crate::tree::head_literal(a, src, &["string"]), eval.of(at, a, 0))
+        })
+        .collect()
 }
 
 /// Which parameter of the function a call reaches each argument is handed to: positional

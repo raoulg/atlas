@@ -212,7 +212,7 @@ const PATH_BUILDERS: &[&str] = &["Path", "PurePath", "PosixPath", "WindowsPath",
 
 /// Whether an expression's value starts at a literal: the leftmost operand of a `/` or a
 /// `+`, the receiver of a method, the first argument of a constructor like `Path(..)`.
-fn head_literal(e: TsNode, src: &[u8], string_kinds: &[&str]) -> bool {
+pub fn head_literal(e: TsNode, src: &[u8], string_kinds: &[&str]) -> bool {
     let child = |f: &str| e.child_by_field_name(f);
     match e.kind() {
         k if string_kinds.contains(&k) => {

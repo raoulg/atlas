@@ -63,6 +63,36 @@ pub struct Callee {
     pub by: By,
 }
 
+/// What a parameter of a library function is handed, as its type says: a path, a file to read
+/// from (`SupportsRead`), one to write to (`SupportsWrite`), an open file.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum FileArg {
+    Path,
+    Reads,
+    Writes,
+    Open,
+}
+
+/// A parameter of a library function: its name, and what it is handed when that is a file.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Param {
+    pub name: String,
+    pub file: Option<FileArg>,
+}
+
+/// The standard library's types for a path and for a file, by the class that defines them.
+fn file_of(class: &str) -> Option<FileArg> {
+    match class {
+        "PathLike" | "PurePath" | "Path" | "PurePosixPath" | "PureWindowsPath" | "PosixPath" | "WindowsPath" => Some(FileArg::Path),
+        "SupportsRead" | "SupportsReadline" => Some(FileArg::Reads),
+        "SupportsWrite" => Some(FileArg::Writes),
+        "IO" | "TextIO" | "BinaryIO" | "IOBase" | "RawIOBase" | "BufferedIOBase" | "TextIOBase" | "TextIOWrapper" | "BufferedReader" | "BufferedWriter" | "BufferedRandom" | "FileIO" => {
+            Some(FileArg::Open)
+        }
+        _ => None,
+    }
+}
+
 /// A value's type: as ty writes it, the classes it names (`list[Node]` names `list` and
 /// `Node`), and whether the value is a class itself rather than an instance.
 #[derive(Clone, Debug, PartialEq)]
@@ -78,6 +108,7 @@ pub struct Facts {
     callees: HashMap<(usize, usize), Vec<Callee>>,
     values: HashMap<(usize, usize), Value>,
     defs: HashMap<(usize, usize), Target>,
+    signatures: HashMap<(usize, usize), Vec<Param>>,
 }
 
 impl Facts {
@@ -89,6 +120,11 @@ impl Facts {
     /// The type of the expression at `range`, when ty knows it.
     pub fn value(&self, range: (usize, usize)) -> Option<&Value> {
         self.values.get(&range)
+    }
+
+    /// The parameters of the library function the expression at `range` calls.
+    pub fn signature(&self, range: (usize, usize)) -> Option<&[Param]> {
+        self.signatures.get(&range).map(Vec::as_slice)
     }
 
     /// Where the name or attribute at `range` is defined, as a reader's goto-definition finds it.
@@ -395,6 +431,53 @@ impl Reader<'_, '_> {
         out
     }
 
+    /// The parameters of a library function, from ty's signature, each with what its
+    /// annotation says about files in any of the function's overloads (pandas' `to_csv` takes
+    /// `None` in one and a path in another). A parameter spans `name: annotation`, and the
+    /// types written inside it are its type; a type variable named for paths (`_StrPathT`) is a
+    /// path.
+    fn signature(&self, ty: Type) -> Vec<Param> {
+        let env = self.model.program_environment();
+        let parts = ty.display(self.db, &env).to_string_parts();
+        let mut params: Vec<(String, (u32, u32))> = vec![];
+        let mut depth = 0;
+        for (d, r) in parts.details.iter().zip(&parts.targets) {
+            match d {
+                TypeDetail::SignatureStart => depth += 1,
+                TypeDetail::SignatureEnd => depth -= 1,
+                TypeDetail::Parameter(name) if depth == 1 => params.push((name.clone(), (r.start().into(), r.end().into()))),
+                _ => {}
+            }
+        }
+        let class = |t: &Type| -> Option<String> {
+            let TypeDefinition::StaticClass(_) = t.definition(self.db, &env)? else { return None };
+            let r = t.definition(self.db, &env)?.focus_range(self.db)?;
+            let text = ruff_db::source::source_text(self.db, r.file());
+            text.as_str().get(r.range().start().to_usize()..r.range().end().to_usize()).map(String::from)
+        };
+        let each: Vec<Param> = params
+            .into_iter()
+            .map(|(name, (a, b))| {
+                let inside = parts.details.iter().zip(&parts.targets).filter(|(_, r)| u32::from(r.start()) >= a && u32::from(r.end()) <= b);
+                let kinds: Vec<FileArg> = inside.filter_map(|(d, _)| if let TypeDetail::Type(t) = d { class(t).and_then(|c| file_of(&c)) } else { None }).collect();
+                let annotation = parts.label.get(a as usize..b as usize).and_then(|s| s.split_once(':')).map(|(_, t)| t.trim()).unwrap_or("");
+                let file = [FileArg::Path, FileArg::Reads, FileArg::Writes, FileArg::Open]
+                    .into_iter()
+                    .find(|k| kinds.contains(k))
+                    .or_else(|| (annotation.ends_with("PathT") && !annotation.contains(' ')).then_some(FileArg::Path));
+                Param { name, file }
+            })
+            .collect();
+        let mut out: Vec<Param> = vec![];
+        for p in each {
+            match out.iter_mut().find(|q| q.name == p.name) {
+                Some(q) => q.file = q.file.or(p.file),
+                None => out.push(p),
+            }
+        }
+        out
+    }
+
     /// The type of `e`, unless ty does not know it.
     fn value(&self, e: &ast::Expr) -> Option<Value> {
         let ty = e.inferred_type(self.model)?;
@@ -441,6 +524,14 @@ impl<'e> Visitor<'e> for Reader<'_, '_> {
                     self.facts.values.insert(span(expr), t);
                 }
                 let reached = self.callees(&call.func);
+                if reached.iter().any(|c| matches!(c.target, Target::Lib(_))) {
+                    if let Some(ty) = call.func.inferred_type(self.model) {
+                        let sig = self.signature(ty);
+                        if !sig.is_empty() {
+                            self.facts.signatures.insert(span(&*call.func), sig);
+                        }
+                    }
+                }
                 if !reached.is_empty() {
                     self.facts.callees.insert(span(&*call.func), reached);
                 }

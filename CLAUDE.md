@@ -71,6 +71,7 @@ The rigorous half and the visual half are the same structure. Read `docs/design.
   pinned to one version together, and need the Rust in `rust-version`. The Python fixture has
   no environment; its libraries are stubs in `engine/tests/fixture/typings`, found through
   `[tool.ty.environment] extra-paths`.
-- Run `uv` from the repo root or the scratchpad, never inside `engine/tests/fixture`: it has a
-  `pyproject.toml`, so uv makes a `.venv` there, and ty then reads that as the fixture's
-  environment.
+- Run `uv` from the repo root or the scratchpad, never inside `engine/tests/fixture` or a
+  project under review: in a directory with a `pyproject.toml`, uv makes a `.venv`, installs the
+  project and re-locks `uv.lock`, and ty then reads that `.venv` as the project's environment.
+  Pass the project's path as an argument instead.

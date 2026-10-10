@@ -232,7 +232,7 @@ fn files_and_tables_are_places() {
     assert!(write.contains(&("db_duckdb", "nodes", "write")), "INSERT INTO nodes");
     assert!(write.contains(&("disk_write", "out.json", "")), "Path(\"out.json\").write_text");
     let save = t("fixture.build.save");
-    assert!(save.contains(&("disk_write", "{name}.csv", "")), "to_csv with an f-string path");
+    assert!(save.contains(&("disk_write", "*.csv", "")), "to_csv(f\"{{name}}.csv\"): a name made of a value is known only by its format");
     let fixed = |id: &str| g.node(id).unwrap().touches.iter().filter(|t| t.fixed).map(|t| t.op.as_str()).collect::<Vec<_>>();
     assert_eq!(fixed("fixture.sinks.duck.DuckSink.write"), ["write_text"], "Path(\"out.json\") is decided by the code alone");
     assert!(fixed("fixture.build.save").is_empty(), "f\"{{name}}.csv\", path and name come from the caller");
@@ -402,4 +402,23 @@ fn a_function_handed_on_is_called() {
     let calls = edges(&rs, EdgeKind::Calls);
     assert!(calls.contains(&("handed.doubled".into(), "handed.double".into())), "`.map(double)`: {calls:?}");
     assert!(calls.contains(&("handed.Item.labels".into(), "handed.Item.label".into())), "`.map(Self::label)`: {calls:?}");
+}
+
+/// A file call's file is what its library types as one: the path a method of a path is called
+/// on (the mode of `p.open("w")` is no path), each of `shutil.copy`'s two paths in its
+/// direction, the file a handle was opened at, and never a literal that is not the path
+/// (`na_rep="NA"`).
+#[test]
+fn a_file_is_what_the_api_types_as_one() {
+    let g = fixture();
+    let t = |id: &str| g.node(id).unwrap().touches.iter().map(|t| (t.kind.clone(), t.op.clone(), t.artifact.clone(), t.fixed)).collect::<Vec<_>>();
+    let keep = t("fixture.files.keep");
+    assert!(keep.iter().all(|(_, _, a, fixed)| !fixed && a != "w"), "`cache_file.open(\"w\")`: the path is the parameter: {keep:?}");
+    assert!(keep.iter().any(|(k, op, _, _)| k == "disk_write" && op == "dump"), "`json.dump(.., f)` writes the file `f` was opened at: {keep:?}");
+    let install = t("fixture.files.install");
+    assert!(install.iter().any(|(k, _, a, _)| k == "disk_write" && a == "data/config.toml"), "{install:?}");
+    assert!(install.iter().any(|(k, _, _, _)| k == "disk_read"), "the source is read: {install:?}");
+    let export = t("fixture.files.export");
+    assert!(export.iter().any(|(k, _, a, _)| k == "disk_write" && a == "data/frame.csv"), "{export:?}");
+    assert!(export.iter().all(|(_, _, a, _)| a != "NA"), "{export:?}");
 }

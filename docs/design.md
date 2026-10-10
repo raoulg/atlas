@@ -114,7 +114,12 @@ Three things make `F` honest, and each is an engine task:
 2. In-place mutation hides arrows: a function that takes a hub type and calls a
    mutator on it is an endomorphism `Graph → Graph`, not `Graph → ()`.
 3. Disk is too coarse: `.env` and `assets/regelingen` are different resting places.
-   A file's place is its path evaluated from the code: literals and constants,
+   Which argument of a call is a file is what its library's types say: a parameter typed
+   as a path (`PathLike`), a file to read from (`SupportsRead`) or to write to
+   (`SupportsWrite`) in any of its overloads, the path a method of a path is called on.
+   The direction is what those types say, the call's own `mode`, or, for a call handed
+   two paths, the API's names for them (`src`, `dst`); else the operation's. A file handle
+   is the file it was opened at. A file's place is its path evaluated from the code: literals and constants,
    `Path(..) / ..`, a property's or function's `return` (followed through ty's
    definitions), and what a parameter is handed by its callers, carried back through
    the callers' own parameters to an entry's declared default (`@click.option(..,

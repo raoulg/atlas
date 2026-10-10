@@ -15,7 +15,7 @@ use indexmap::IndexMap;
 use tree_sitter::Node as TsNode;
 
 use super::{call_path, dotted, Module};
-use crate::pytypes::{Target, Types};
+use crate::pytypes::{FileArg, Param, Target, Types};
 use crate::tree::{named_children, path_str, text, unquote, walk};
 
 /// A part of a path as the code builds it.
@@ -145,12 +145,6 @@ pub(super) fn place(b: &Built, op: &str) -> Option<String> {
     (!matches!(p.as_str(), "" | "." | "./" | "/" | "*")).then_some(p)
 }
 
-/// Whether an operation's path is the value it is called on (`root.iterdir()`), not its first
-/// argument (`open(path)`).
-pub(super) fn on_receiver(op: &str) -> bool {
-    crate::effects::on_receiver(op) || matches!(op, "iterdir" | "glob" | "rglob" | "mkdir" | "rmdir" | "unlink" | "touch" | "open" | "rename" | "replace")
-}
-
 /// Evaluates paths in the modules of one project.
 pub(super) struct Eval<'a> {
     by_file: HashMap<String, &'a Module>,
@@ -174,6 +168,15 @@ impl<'a> Eval<'a> {
 
     fn def(&self, m: &Module, e: TsNode) -> Option<Target> {
         self.types.of(&path_str(&m.path))?.def((e.start_byte(), e.end_byte())).cloned()
+    }
+
+    fn signature<'s>(&'s self, m: &Module, f: TsNode) -> Option<&'s [Param]> {
+        self.types.of(&path_str(&m.path))?.signature((f.start_byte(), f.end_byte()))
+    }
+
+    /// Whether calling `f` reaches a method of `pathlib`.
+    fn of_pathlib(&self, m: &Module, f: TsNode) -> bool {
+        self.types.of(&path_str(&m.path)).map_or(false, |x| x.callees((f.start_byte(), f.end_byte())).iter().any(|c| matches!(&c.target, Target::Lib(m) if m == "pathlib")))
     }
 
     fn callee_def(&self, m: &Module, f: TsNode) -> Option<(String, usize)> {
@@ -281,6 +284,12 @@ impl<'a> Eval<'a> {
         if p.kind() == "attribute" {
             p = p.parent()?;
         }
+        // `with open(p) as f`: `f` is what the context gives, the file at `p`
+        if p.kind() == "as_pattern_target" {
+            let value = p.parent().filter(|a| a.kind() == "as_pattern").and_then(|a| named_children(a).into_iter().next())?;
+            let here = if within(at.scope) { At { m, ..at } } else { At { m, scope: None, params: &[] } };
+            return Some(self.of(here, value, depth + 1));
+        }
         match p.kind() {
             "assignment" => {
                 let right = p.child_by_field_name("right")?;
@@ -338,6 +347,16 @@ impl<'a> Eval<'a> {
             m if SAME_PATH.contains(&m) => return receiver(),
             _ => {}
         }
+        // a method of a path gives back something at that path: `p.open("w")`
+        if f.kind() == "attribute" && self.of_pathlib(at.m, f) {
+            return receiver();
+        }
+        // a library call handed a path gives back something at that path: `open(p)`, `ZipFile(p)`
+        if let Some(sig) = self.signature(at.m, f) {
+            if let Some((_, a)) = file_args(sig, c, src).into_iter().find(|(p, _)| p.file == Some(FileArg::Path)) {
+                return self.of(at, a, depth + 1);
+            }
+        }
         // a function of the package: what it gives back
         if let Some((file, offset)) = self.callee_def(at.m, f) {
             if let Some(v) = self.follow(At { scope: None, params: &[], ..at }, &file, offset, depth).filter(|v| !v.is_empty()) {
@@ -346,6 +365,32 @@ impl<'a> Eval<'a> {
         }
         vec![hole(last)]
     }
+}
+
+/// The arguments of a call matched to the parameters of its signature: positional ones in
+/// order, keyword ones by name.
+pub(super) fn file_args<'s, 't>(sig: &'s [Param], call: TsNode<'t>, src: &[u8]) -> Vec<(&'s Param, TsNode<'t>)> {
+    let Some(args) = call.child_by_field_name("arguments") else { return vec![] };
+    let mut out = vec![];
+    let mut i = 0;
+    for a in named_children(args).into_iter().filter(|a| a.kind() != "comment") {
+        match a.kind() {
+            "keyword_argument" => {
+                let name = a.child_by_field_name("name").map(|n| text(n, src)).unwrap_or("");
+                if let (Some(p), Some(v)) = (sig.iter().find(|p| p.name == name), a.child_by_field_name("value")) {
+                    out.push((p, v));
+                }
+            }
+            "list_splat" | "dictionary_splat" => break,
+            _ => {
+                if let Some(p) = sig.get(i) {
+                    out.push((p, a));
+                }
+                i += 1;
+            }
+        }
+    }
+    out
 }
 
 /// The function a node sits in.

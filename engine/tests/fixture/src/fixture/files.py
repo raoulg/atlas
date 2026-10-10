@@ -1,8 +1,11 @@
 """Two routes that meet on the disk: one writes where the other reads."""
 
+import json
+import shutil
 from pathlib import Path
 
 import click
+import pandas as pd
 
 DATA = Path("data")
 
@@ -30,3 +33,16 @@ def report(kind: str) -> None:
 
 def read_report(kind: str) -> str:
     return (DATA / kind / "report.json").read_text()
+
+
+def keep(cache_file: Path) -> None:
+    with cache_file.open("w") as f:
+        json.dump({}, f)
+
+
+def install(default: Path) -> None:
+    shutil.copy(default, DATA / "config.toml")
+
+
+def export(frame: pd.DataFrame) -> None:
+    frame.to_csv(DATA / "frame.csv", na_rep="NA")

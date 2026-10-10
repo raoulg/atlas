@@ -280,9 +280,10 @@ pub fn facts(kind: &'static str, pkg: Option<&str>, op: &str, literals: &[String
     if !kind.starts_with("disk") {
         return Facts::of(kind, String::new(), "");
     }
+    // a name that starts with a value (`{name}.csv`) is known only by its format
     let artifact = literals
         .iter()
-        .find(|l| path_like(l))
+        .find(|l| path_like(l) && !l.starts_with(['{', '$']))
         .cloned()
         .or_else(|| literals.iter().find_map(|l| extension(l)).map(|e| format!("*.{e}")))
         .or_else(|| format_of(pkg, op).map(|f| format!("*.{f}")))
@@ -589,7 +590,8 @@ mod tests {
     fn files_are_named_by_literal_then_format() {
         assert_eq!(facts("disk_write", None, "write_text", &lits(&["out.json"])).artifact, "out.json");
         assert_eq!(facts("disk_write", None, "to_csv", &lits(&[";"])).artifact, "*.csv");
-        assert_eq!(facts("disk_write", None, "savefig", &lits(&["{name}.svg"])).artifact, "{name}.svg");
+        assert_eq!(facts("disk_write", None, "savefig", &lits(&["{name}.svg"])).artifact, "*.svg", "a name made of a value is its format");
+        assert_eq!(facts("disk_write", None, "savefig", &lits(&["plots/{name}.svg"])).artifact, "plots/{name}.svg");
         assert_eq!(facts("disk_write", Some("json"), "dump", &[]).artifact, "*.json");
         assert_eq!(facts("disk_read", None, "read_text", &lits(&["utf-8"])).artifact, "");
         assert_eq!(facts("disk_read", None, "read_to_string", &lits(&["Makefile"])).artifact, "Makefile");
