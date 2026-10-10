@@ -115,7 +115,8 @@ with. Architecture, Type lattice and Signature flow are earlier experiments.
 
 Atlas reads:
 
-- **Python**, including notebooks (`.ipynb` in `notebooks/`, `scripts/`, `examples/`), with
+- **Python**, including the project's scripts and notebooks at any depth (`.py` and `.ipynb`
+  outside the package, its tests and what git ignores), with
   its types from [ty](https://docs.astral.sh/ty/);
 - **Rust**, including workspaces;
 - **TypeScript and TSX**: React components, server routes (Hono, Express, Fastify), TanStack

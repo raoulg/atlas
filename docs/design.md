@@ -202,7 +202,8 @@ atlas/
 registration calls (`app.get("/x", handler)`, at the prefixes of `app.route("/api", sub)`;
 an inline handler is a function named by its route), `[project.scripts]`, `package.json`
 `bin` and the scripts that run a file of the package, Makefile targets (recipes resolved to the commands they run),
-scripts next to the package and in `scripts/`, `examples/`, `demo/`, notebooks, and what
+the project's scripts and notebooks at any depth (every `.py` and `.ipynb` outside the package,
+its tests, what git ignores and another package or project inside it), and what
 a package exports (`__all__` or the public names its root `__init__.py` binds, and the
 `__all__` of each public subpackage, as `components.Serial`; the `pub` items of a library
 crate's root and of the modules it makes public with `pub mod`, as `view::hide_private`, and

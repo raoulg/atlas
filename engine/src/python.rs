@@ -297,6 +297,35 @@ fn notebook_source(path: &Path) -> Result<String> {
     Ok(lines.concat())
 }
 
+/// The scripts and notebooks of a project: every `.py` and `.ipynb` outside its package, at any
+/// depth. Not its tests, what git ignores, hidden directories or environments, and not another
+/// package or project inside it (a directory with an `__init__.py` or a `pyproject.toml`).
+fn scripts(root_dir: &Path, pkg_dir: &Path) -> Vec<PathBuf> {
+    const NOT: &[&str] = &["tests", "test", "node_modules", "venv", "env", "build", "dist", "site-packages", "__pycache__"];
+    let pkg = std::fs::canonicalize(pkg_dir).unwrap_or_else(|_| pkg_dir.to_path_buf());
+    let mut out: Vec<PathBuf> = ignore::WalkBuilder::new(root_dir)
+        .require_git(false)
+        .git_global(false)
+        .filter_entry(move |e| {
+            let (p, name) = (e.path(), e.file_name().to_str().unwrap_or(""));
+            let dir = e.file_type().map_or(false, |t| t.is_dir());
+            e.depth() == 0
+                || !dir
+                || !(NOT.contains(&name) || std::fs::canonicalize(p).map_or(false, |c| c == pkg) || p.join("__init__.py").exists() || p.join("pyproject.toml").exists())
+        })
+        .build()
+        .flatten()
+        .map(|e| e.into_path())
+        .filter(|p| p.is_file() && matches!(p.extension().and_then(|x| x.to_str()), Some("py" | "ipynb")))
+        .filter(|p| {
+            let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            !(name.starts_with("test_") || name.ends_with("_test.py") || name == "conftest.py")
+        })
+        .collect();
+    out.sort();
+    out
+}
+
 /// The nearest ancestor of the package that holds a `pyproject.toml`.
 pub fn project_root(pkg_dir: &Path) -> Option<PathBuf> {
     let mut cur = Some(pkg_dir);
@@ -374,27 +403,16 @@ pub fn parse(pkg_dir: &Path, project_root: Option<&Path>) -> Result<(GraphBuilde
         });
         modules.insert(mid, m);
     }
-    // scripts next to the package (repo root and scripts/) are routes into it
+    // the project's scripts and notebooks are routes into the package
     if let Some(root_dir) = project_root {
-        let mut extras: Vec<PathBuf> = vec![];
-        // scripts and notebooks next to the package, and the examples that wire it together
-        let dirs = ["", "scripts", "examples", "demo", "demos", "notebooks"].map(|d| root_dir.join(d));
-        for dir in dirs {
-            let Ok(rd) = std::fs::read_dir(&dir) else { continue };
-            let mut ps: Vec<PathBuf> = rd
-                .flatten()
-                .map(|e| e.path())
-                .filter(|p| p.is_file() && matches!(p.extension().and_then(|x| x.to_str()), Some("py" | "ipynb")))
-                .collect();
-            ps.sort();
-            extras.extend(ps);
-        }
-        for p in extras {
+        for p in scripts(root_dir, pkg_dir) {
             let rel = p.strip_prefix(root_dir).unwrap_or(&p).to_path_buf();
             let stem = p.file_stem().and_then(|s| s.to_str()).unwrap_or("script").to_string();
-            let mid = match rel.parent().and_then(|d| d.to_str()).filter(|d| !d.is_empty()) {
-                Some(d) => format!("{d}.{stem}"),
-                None => format!("_root.{stem}"),
+            // a dot in a file's name is no module boundary
+            let dirs: Vec<String> = rel.parent().map(|d| d.components().map(|c| c.as_os_str().to_string_lossy().replace('.', "_")).collect()).unwrap_or_default();
+            let mid = match dirs.is_empty() {
+                false => format!("{}.{}", dirs.join("."), stem.replace('.', "_")),
+                true => format!("_root.{}", stem.replace('.', "_")),
             };
             let m = load_module(&mut parser, &mid, &p, false)?;
             store.files.insert(crate::tree::path_str(&p), String::from_utf8_lossy(&m.src).to_string());
