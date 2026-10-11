@@ -132,6 +132,8 @@ fn view(repos: &[PathBuf], opts: &Options, out: Option<PathBuf>, open: bool, sin
     let mut page = serde_json::to_value(&g)?;
     // what each route runs, step by step: the same bodies the agent reads its routes from
     page["flow"] = serde_json::to_value(atlas_engine::flow::bodies(&g))?;
+    // what each function takes and gives, as types
+    page["arrows"] = serde_json::to_value(atlas_engine::flow::arrows(&g))?;
     if let Some(rev) = since {
         let [repo] = repos else { anyhow::bail!("--since compares one repository with its history") };
         page["changes"] = serde_json::to_value(atlas_engine::changes::since(repo, rev, opts)?)?;

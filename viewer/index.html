@@ -514,7 +514,7 @@ const KIND_LABEL = {make: "Make", cli: "CLI", script: "Script", route: "API", mc
 const entries = [...byId.values()].filter(n => n.entry).sort((a, b) => (partRank(a) - partRank(b)) || (KIND_ORDER.indexOf(a.entry.kind) - KIND_ORDER.indexOf(b.entry.kind)) || a.entry.label.localeCompare(b.entry.label));
 // what running a function means, from the engine's reading: its body on a value of class `on` (the
 // calls in the order they run, a method called on a known class that class's), or on any value
-const FLOW = D.flow || {};
+const FLOW = D.flow || {}, ARROWS = D.arrows || {};
 const bodyOf = (id, on) => FLOW[on ? `${id}@${on}` : id] || {items: []};
 const stepsIn = b => b.items.flatMap(it => it.members ? it.members : [it]);
 // the functions a step runs: its body's steps, and the overrides it may run instead
@@ -524,15 +524,8 @@ const callees = (id, on) => { const b = bodyOf(id, on); return [...new Set([...s
 // path through the route, so two calls of one function are two steps
 const treeInfo = new Map();
 const stepOf = key => treeInfo.get(key)?.step ?? key;
-// a class's constructor, whatever the language calls it (`__init__`, `constructor`): the graph files it as `Class.__init__`
-const isCtor = n => !!(n && n.cls && n.id === n.cls + ".__init__");
-// what building a class takes: its constructor's parameters, or its nearest base's when it has none
-// of its own; what a call to it hands is drawn with the call
-function builtFrom(c, depth = 0) {
-  if (byId.has(c + ".__init__")) return typesOf(c + ".__init__").takes;
-  const base = (out.get(c) || []).find(e => e.kind === "inherits" && byId.get(e.dst)?.kind === "class");
-  return base && depth < 10 ? builtFrom(base.dst, depth + 1) : [];
-}
+// a constructor, whatever the language calls it: the function that builds its class
+const isCtor = n => !!(n && ARROWS[n.id]?.builds);
 // everything a step touches, anywhere below it: the touches of every function its body runs, on the
 // class each runs on, and of every override it may run instead
 const reachCache = new Map();
@@ -553,7 +546,6 @@ function reach(id, on) {
   const r = {touches: [...touches.values()]}; reachCache.set(k0, r); return r;
 }
 const touchKey = t => [t.kind, t.what, t.artifact || "", t.dir || "", t.op || ""].join("|");
-const typesOf = id => ({takes: [...new Set((out.get(id) || []).filter(e => e.kind === "takes").map(e => e.dst))], returns: [...new Set((out.get(id) || []).filter(e => e.kind === "returns").map(e => e.dst))]});
 let routeEntry = null, entryKind = null; const expanded = new Set();
 // the routes an overview shows: all of them, or those of one kind (all Library routes, all CLI routes)
 const overviewEntries = () => entries.filter(e => (entryKind ? e.entry.kind === entryKind : e.entry.kind !== "test") && (!partFilter || partOf(e) === partFilter));
@@ -636,7 +628,6 @@ const nameCount = new Map(); for (const n of D.nodes) if (n.kind === "class" || 
 const typeLabel = id => { const b = bare(id); if ((nameCount.get(b) || 0) > 1) { const mod = (byId.get(id)?.module || id.replace(/^ext:/, "").split(".").slice(0, -1).join(".")).split(".").pop(); return mod ? `${mod}.${b}` : b; } return b; };
 const entryTitle = id => { const n = byId.get(id); return n.entry ? `${KIND_LABEL[n.entry.kind]} ${n.entry.label}` : short(id); };
 // what a step changes in place is in its codomain too: `T -> T`
-const mutatesOf = id => [...new Set((out.get(id) || []).filter(e => e.kind === "mutates").map(e => e.dst))];
 
 // ---------- layers: the code quotiented by module path, one level at a time ----------
 // a unit is a module path: a package with everything under it, or a package's own module by itself
@@ -846,23 +837,19 @@ async function renderPlaat() {
       // together; inside a route, building one is a step like any constructor, handing on what it builds
       // seen from inside the class, getting the class back (`add` returns self to chain) is not an output
       if (!own) { const self = "t:" + placeOfType(f.id); for (const m of callees(f.id)) { const r = morphism(m, false, false, true); r.cod.delete(self); merge(r); } }
-    } else if (f.kind === "class") {
-      cod.push([addPlace(typePlace(f.id)), false]);
-      for (const x of builtFrom(f.id)) dom.push([addPlace(typePlace(x)), false]);
     } else {
-      const ctor = isCtor(f);
-      // a method's receiver is part of its domain, unless it is called on the class, not a value of it;
-      // a call says the receiver's class when it is a subclass of the method's own
-      const recv = opts.on || f.cls;
-      if (recv && byId.has(recv) && !noReceiver && !ctor && !f.on_class) dom.push([addPlace(typePlace(recv)), false]);
-      for (const x of typesOf(f.id).takes) dom.push([addPlace(typePlace(x)), false]);
-      for (const x of typesOf(f.id).returns) cod.push([addPlace(typePlace(x)), false]);
-      if (ctor && !noReceiver) cod.push([addPlace(typePlace(f.cls)), false]);  // a constructor hands on what it builds
-      for (const x of mutatesOf(f.id)) if (!((noReceiver || ctor) && x === f.cls)) cod.push([addPlace(typePlace(x)), false]);
-      // an open step's body makes what it gives back from what it instantiates and what its callees
-      // hand back; a body that gives nothing back has only its own effects
-      const givesBack = typesOf(f.id).returns.length > 0 || (!!f.returns && !/^(None|\(\)|Self|void|undefined)$/.test(f.returns));
-      if (own && givesBack) for (const c of callees(f.id, opts.on)) { const cn = byId.get(c); if (cn.kind === "class") dom.push([addPlace(typePlace(c)), false]); else for (const r of typesOf(c).returns) dom.push([addPlace(typePlace(r)), false]); }
+      // what the engine says the function takes and gives; the receiver is the class the call
+      // says it runs on, when it says; seen from its own class (noReceiver), the value it runs on
+      // and builds is no input or output
+      const a = ARROWS[f.id] || {};
+      const recv = a.receiver ? opts.on || a.receiver : null;
+      if (recv && byId.has(recv) && !noReceiver) dom.push([addPlace(typePlace(recv)), false]);
+      for (const x of a.takes || []) dom.push([addPlace(typePlace(x)), false]);
+      for (const x of a.gives || []) cod.push([addPlace(typePlace(x)), false]);
+      if (a.builds && !noReceiver) cod.push([addPlace(typePlace(a.builds)), false]);
+      for (const x of a.changes || []) if (!((noReceiver || a.builds) && x === f.cls)) cod.push([addPlace(typePlace(x)), false]);
+      // an open step's body makes what it gives back from what its steps make
+      if (own && a.gives_back) for (const x of bodyOf(f.id, opts.on).made_from || []) dom.push([addPlace(typePlace(x)), false]);
       // a closed call into a family takes and hands on what any of its branches does, unless the call
       // says which class it runs on
       if (!own && !opts.on) for (const o of bodyOf(f.id, null).alts || []) merge(morphism(o, false, false, noReceiver));
@@ -919,7 +906,7 @@ async function renderPlaat() {
     return {dom, cod};
   };
   // a result with no place of its own (a str, a dict) goes back to the step that called it
-  const handsBack = (id, cod) => { if (id.startsWith("part:") || id.startsWith("unit:") || id.startsWith("op:")) return false; const f = byId.get(id), ret = ((f && f.returns) || "").replace(/^(?:[\w:]*::)?(?:Result|Promise)<(.*?)(?:,.*)?>$/, "$1"); return ![...cod.keys()].some(p => p.startsWith("t:")) && ret && !/^(None|\(\)|Self|void|undefined)$/.test(ret); };
+  const handsBack = (id, cod) => !/^(part|unit|op):/.test(id) && !!ARROWS[id]?.returns_value && ![...cod.keys()].some(p => p.startsWith("t:"));
 
   // a figure a call makes, numbered in the order the route makes them
   const figureNo = new Map();
@@ -942,7 +929,8 @@ async function renderPlaat() {
       for (const h of site.hands || []) { const k = held(h); if (!m.dom.has(k)) m.dom.set(k, false); if (h.name) dn.set(k, h.name); }
       for (const h of site.gives || []) { const k = held(h); if (!m.cod.has(k)) m.cod.set(k, false); if (h.name) cn.set(k, h.name); }
       // what the step changes is the value it was handed, under the same name: `read_makefile(&mut g)`
-      for (const x of [...mutatesOf(step), ...(on && mutatesOf(step).includes(byId.get(step)?.cls) ? [on] : [])]) { const k = "t:" + placeOfType(x); if (m.cod.has(k) && dn.has(k) && !cn.has(k)) cn.set(k, dn.get(k)); }
+      const changes = ARROWS[step]?.changes || [];
+      for (const x of [...changes, ...(on && changes.includes(byId.get(step)?.cls) ? [on] : [])]) { const k = "t:" + placeOfType(x); if (m.cod.has(k) && dn.has(k) && !cn.has(k)) cn.set(k, dn.get(k)); }
     }
     return {dom: m.dom, cod: m.cod, dn, cn};
   };

@@ -276,6 +276,119 @@ impl Touch {
     }
 }
 
+// ---------- arrows: what a function takes and gives, as types ----------
+
+/// What a function takes and gives as types: the effect functor on an arrow, before the places its
+/// body touches. A class is the arrow that builds it.
+#[derive(Serialize, Clone, Debug, Default, PartialEq)]
+pub struct Arrow {
+    /// The class of the value a method runs on: none for a constructor, or a method called on
+    /// its class.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub receiver: String,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub takes: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub gives: Vec<String>,
+    /// The class a constructor builds.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub builds: String,
+    /// What the body changes in place: `T -> T`.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub changes: Vec<String>,
+    /// The signature gives a value back: an opened body makes it from what its steps give.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub gives_back: bool,
+    /// What it gives back, unwrapped from a `Result` or a `Promise`, is a value, not a unit: a
+    /// value with no place of its own (a `str`) goes back to the step that called it.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub returns_value: bool,
+}
+
+/// The types that stand for nothing given back, in the languages Atlas reads: Python's `None`,
+/// Rust's `()`, TypeScript's `void` and `undefined`, and `Self`, the value the method was
+/// called on.
+fn unit(ty: &str) -> bool {
+    matches!(ty, "None" | "()" | "Self" | "void" | "undefined")
+}
+
+/// A `Result<T, E>` or a `Promise<T>` as the `T` it gives on success.
+fn unwrapped(ty: &str) -> &str {
+    static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let re = RE.get_or_init(|| regex::Regex::new(r"^(?:[\w:]*::)?(?:Result|Promise)<(.*?)(?:,.*)?>$").unwrap());
+    re.captures(ty).and_then(|c| c.get(1)).map_or(ty, |m| m.as_str())
+}
+
+impl<'g> Ix<'g> {
+    fn targets(&self, id: &str, kind: EdgeKind) -> Vec<String> {
+        let mut out: Vec<String> = vec![];
+        for e in self.out(id, kind) {
+            if !out.contains(&e.dst) {
+                out.push(e.dst.clone());
+            }
+        }
+        out
+    }
+
+    fn ctor(&self, class: &str) -> Option<String> {
+        let c = format!("{class}.__init__");
+        self.nodes.contains_key(c.as_str()).then_some(c)
+    }
+
+    /// What building a class takes: its constructor's parameters, or its nearest base's when it
+    /// has none of its own.
+    fn built_from(&self, class: &str, depth: usize) -> Vec<String> {
+        if let Some(c) = self.ctor(class) {
+            return self.targets(&c, EdgeKind::Takes);
+        }
+        let base = self.out(class, EdgeKind::Inherits).find(|e| self.nodes.get(e.dst.as_str()).map_or(false, |n| n.kind == NodeKind::Class));
+        match base {
+            Some(b) if depth < 10 => self.built_from(&b.dst, depth + 1),
+            _ => vec![],
+        }
+    }
+}
+
+fn arrow_of(ix: &Ix, n: &Node) -> Arrow {
+    if n.kind == NodeKind::Class {
+        return Arrow { takes: ix.built_from(&n.id, 0), gives: vec![n.id.clone()], ..Default::default() };
+    }
+    let ctor = n.cls.as_deref().map_or(false, |c| n.id == format!("{c}.__init__"));
+    let gives = ix.targets(&n.id, EdgeKind::Returns);
+    let returned = unwrapped(&n.returns);
+    Arrow {
+        receiver: n.cls.clone().filter(|_| !ctor && !n.on_class).unwrap_or_default(),
+        takes: ix.targets(&n.id, EdgeKind::Takes),
+        gives_back: !gives.is_empty() || (!n.returns.is_empty() && !unit(&n.returns)),
+        gives,
+        builds: if ctor { n.cls.clone().unwrap_or_default() } else { String::new() },
+        changes: ix.targets(&n.id, EdgeKind::Mutates),
+        returns_value: !returned.is_empty() && !unit(returned),
+    }
+}
+
+/// The arrow of every function, method and class.
+pub fn arrows(g: &Graph) -> BTreeMap<String, Arrow> {
+    let ix = Ix::new(g);
+    g.nodes.iter().filter(|n| matches!(n.kind, NodeKind::Class | NodeKind::Function | NodeKind::Method)).map(|n| (n.id.clone(), arrow_of(&ix, n))).filter(|(_, a)| *a != Arrow::default()).collect()
+}
+
+/// What a body's steps make: the class a step builds, else what the function it runs gives back.
+fn made_from(ix: &Ix, body: &Body) -> Vec<String> {
+    let mut callees: Vec<&str> = vec![];
+    for t in body.steps().into_iter().map(|s| s.to.as_str()).chain(body.alts.iter().map(String::as_str)) {
+        if ix.nodes.contains_key(t) && !callees.contains(&t) {
+            callees.push(t);
+        }
+    }
+    let mut out = vec![];
+    for c in callees {
+        let made = if ix.nodes[c].kind == NodeKind::Class { vec![c.to_string()] } else { ix.targets(c, EdgeKind::Returns) };
+        out.extend(made);
+    }
+    out
+}
+
 // ---------- bodies: what a step runs, the same for the agent and the page ----------
 
 /// One step of a body as a route runs it: the function it reaches, or a library's operation
@@ -315,6 +428,10 @@ pub struct Body {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub alts: Vec<String>,
     pub items: Vec<Item>,
+    /// What an opened body makes the value it gives back from: the classes its steps build and
+    /// what the functions they run give back.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub made_from: Vec<String>,
 }
 
 impl Body {
@@ -439,7 +556,7 @@ fn body_of(ix: &Ix, n: &Node, on: &str) -> Body {
                 (Step { to, on: runs_on.to_string(), site: Some(i) }, s.arms.clone())
             })
             .collect();
-        return Body { alts, items: grouped(steps) };
+        return Body { alts, items: grouped(steps), made_from: vec![] };
     }
     let callees: Vec<String> = if n.kind == NodeKind::Class && n.entry.is_some() {
         let ctor = format!("{}.__init__", n.id);
@@ -462,7 +579,7 @@ fn body_of(ix: &Ix, n: &Node, on: &str) -> Body {
         arms.entry(e.dst.as_str()).or_insert_with(|| e.arms.clone());
     }
     let steps = callees.iter().map(|c| (Step { to: c.clone(), on: String::new(), site: None }, arms.get(c.as_str()).cloned().unwrap_or_default())).collect();
-    Body { alts, items: grouped(steps) }
+    Body { alts, items: grouped(steps), made_from: vec![] }
 }
 
 /// The body of every function, and of every function on each class a step runs it on, by `key`:
@@ -474,7 +591,7 @@ pub fn bodies(g: &Graph) -> BTreeMap<String, Body> {
     for t in &g.make {
         let items: Vec<Item> = t.calls.iter().filter(|c| ix.nodes.contains_key(c.as_str()) || g.make.iter().any(|m| &m.id == *c)).map(|c| Item::Step(Step { to: c.clone(), on: String::new(), site: None })).collect();
         if !items.is_empty() {
-            out.insert(t.id.clone(), Body { alts: vec![], items });
+            out.insert(t.id.clone(), Body { alts: vec![], items, made_from: vec![] });
         }
     }
     let mut todo: Vec<(String, String)> = g.nodes.iter().rev().map(|n| (n.id.clone(), String::new())).collect();
@@ -485,10 +602,11 @@ pub fn bodies(g: &Graph) -> BTreeMap<String, Body> {
             continue;
         }
         let Some(n) = ix.nodes.get(f.as_str()) else { continue };
-        let body = body_of(&ix, n, &on);
+        let mut body = body_of(&ix, n, &on);
         for s in body.steps().into_iter().filter(|s| !s.on.is_empty()) {
             todo.push((s.to.clone(), s.on.clone()));
         }
+        body.made_from = made_from(&ix, &body);
         if !body.is_empty() {
             out.insert(k, body);
         }
