@@ -125,7 +125,8 @@ atlas --help
 your machine. The page fetches only its drawing libraries (d3, elk, highlight.js) from a
 CDN. It has four views. The **Flowchart** is the one to start with. Architecture, Type
 lattice and Signature flow are earlier experiments. The header names the build that drew
-the page, as `atlas --version` does: `0.1.0 (a5e777d)`.
+the page, as `atlas --version` does: `0.2.0 (b0ead14)`. The minor number goes up when what
+Atlas reads or draws changes, the patch number for a fix.
 
 Atlas reads:
 

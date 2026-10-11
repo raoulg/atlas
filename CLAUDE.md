@@ -56,6 +56,9 @@ The rigorous half and the visual half are the same structure. Read `docs/design.
 
 - Build and run: `cargo build`, `atlas view .` (install with `cargo install --path cli`;
   the viewer is baked into the binary, so rebuild after editing `spike/viewer.html`).
+- Version: `version` in the root `Cargo.toml`. Raise the minor number when what Atlas reads
+  or draws changes, the patch number for a fix, in the commit that makes the change. The
+  build adds the commit it is made from (`0.2.0 (b0ead14)`).
 - Tests: `cargo test`. The Rust workspace itself is a test subject.
 - `atlas check .` must find nothing on Atlas itself (`engine/tests/principles.rs` pins it).
   A new principle is a rule in `engine/src/principles.rs`, a case in the fixture, and a
