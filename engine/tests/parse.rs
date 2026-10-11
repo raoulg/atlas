@@ -540,3 +540,22 @@ fn a_call_inside_a_call_is_composition() {
     let analyze_steps: Vec<&str> = atlas.node("atlas-engine.analyze").unwrap().sites.iter().map(|s| if s.to.is_empty() { s.op.as_str() } else { s.to.as_str() }).collect();
     assert_eq!(analyze_steps, ["atlas-engine.language.detect", "atlas-engine.language.Language.parse", "atlas-engine.entries.read_makefile", "atlas-engine.parts.assign"]);
 }
+
+/// What a step runs is the same for the agent and the page: the engine's bodies. A method called
+/// on a value whose class is known runs that class's method; called where the class is not known,
+/// it runs any of the overrides.
+#[test]
+fn a_body_is_what_a_route_runs() {
+    let g = fixture();
+    let bodies = atlas_engine::flow::bodies(&g);
+    let run: Vec<String> = bodies["fixture.build.Pipeline.run"].steps().iter().map(|s| s.to.clone()).collect();
+    assert!(run.contains(&"fixture.sinks.duck.DuckSink.write".to_string()), "`self.sink.write(..)` on the sink the pipeline holds: {run:?}");
+
+    let atlas = analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(".."), &Options::default()).unwrap();
+    let bodies = atlas_engine::flow::bodies(&atlas);
+    let mut alts = bodies["atlas-engine.language.Language.parse"].alts.clone();
+    alts.sort();
+    assert_eq!(alts, ["atlas-engine.language.Python.parse", "atlas-engine.language.Rust.parse", "atlas-engine.language.TypeScript.parse"]);
+    let route = atlas_engine::story::route(&atlas, "atlas-engine.analyze", 2).unwrap();
+    assert!(route.contains("2  Language.parse(repo, opts) → Graph   ·   one of 3"), "the agent reads the same alternatives: {route}");
+}

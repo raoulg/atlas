@@ -2,9 +2,10 @@
 //! own effects. Alternatives share a number and are lettered by branch:
 //! the arms of a choice in the body, or the overrides a call may run.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap};
 
-use crate::model::{Dir, Edge, EdgeKind, EntryKind, Graph, Node, NodeKind, Touch, World};
+use crate::flow::{self, Body, Item, Step};
+use crate::model::{Dir, Edge, EdgeKind, EntryKind, Graph, Held, Node, NodeKind, Site, Touch, World};
 
 /// Every route into the program: its kind, its label and the id of the node it starts at.
 pub fn entries(g: &Graph) -> Vec<(EntryKind, &str, &str)> {
@@ -14,19 +15,19 @@ pub fn entries(g: &Graph) -> Vec<(EntryKind, &str, &str)> {
 }
 
 /// The route that starts at `entry` (an id, or an entry's label), its steps opened `depth`
-/// levels deep.
+/// levels deep: the same steps, from the same bodies, as the page draws.
 pub fn route(g: &Graph, entry: &str, depth: usize) -> Option<String> {
     let s = Story::new(g);
     let start = s.find(entry)?;
     let n = s.nodes[start];
-    let kind = n.entry.as_ref().map(|e| format!("{} · {}", kind_label(e.kind), e.label)).unwrap_or_else(|| s.name(start));
+    let kind = n.entry.as_ref().map(|e| format!("{} · {}", kind_label(e.kind), e.label)).unwrap_or_else(|| s.name(start, ""));
     let mut out = format!("{kind}\n{}{}", n.id, s.signature(n));
     let effects = s.effects(n);
     if !effects.is_empty() {
         out.push_str(&format!("   ·   {effects}"));
     }
     out.push('\n');
-    let mut shown: HashMap<&str, String> = HashMap::from([(start, "the entry".to_string())]);
+    let mut shown: HashMap<String, String> = HashMap::from([(start.to_string(), "the entry".to_string())]);
     s.walk(start, "", depth.max(1), &mut shown, &mut out);
     Some(out)
 }
@@ -51,28 +52,20 @@ fn kind_order(k: EntryKind) -> usize {
         .unwrap_or(9)
 }
 
-/// One step of a body, or the alternatives of one choice in it.
-enum Item<'g> {
-    Step(&'g str),
-    Choice(Vec<(&'g str, usize)>),
-}
-
 struct Story<'g> {
     g: &'g Graph,
     nodes: HashMap<&'g str, &'g Node>,
     out: HashMap<&'g str, Vec<&'g Edge>>,
-    into: HashMap<&'g str, Vec<&'g Edge>>,
+    bodies: BTreeMap<String, Body>,
 }
 
 impl<'g> Story<'g> {
     fn new(g: &'g Graph) -> Self {
         let mut out: HashMap<&str, Vec<&Edge>> = HashMap::new();
-        let mut into: HashMap<&str, Vec<&Edge>> = HashMap::new();
         for e in &g.edges {
             out.entry(e.src.as_str()).or_default().push(e);
-            into.entry(e.dst.as_str()).or_default().push(e);
         }
-        Story { g, nodes: g.nodes.iter().map(|n| (n.id.as_str(), n)).collect(), out, into }
+        Story { g, nodes: g.nodes.iter().map(|n| (n.id.as_str(), n)).collect(), out, bodies: flow::bodies(g) }
     }
 
     fn find(&self, entry: &str) -> Option<&'g str> {
@@ -84,135 +77,80 @@ impl<'g> Story<'g> {
         self.out.get(id).into_iter().flatten().copied().filter(move |e| e.kind == kind)
     }
 
-    /// What a step calls and builds, in call order. A library class is its constructor and
-    /// its public methods.
-    fn callees(&self, id: &str) -> Vec<&'g str> {
-        let Some(n) = self.nodes.get(id) else { return vec![] };
-        if n.kind == NodeKind::Class && n.entry.is_some() {
-            let init = format!("{id}.__init__");
-            let mut out: Vec<&str> = self.nodes.get_key_value(init.as_str()).map(|(k, _)| *k).into_iter().collect();
-            out.extend(self.edges(id, EdgeKind::Contains).map(|e| e.dst.as_str()).filter(|m| self.nodes.get(m).map_or(false, |m| m.kind == NodeKind::Method && !m.name.starts_with('_'))));
-            return out;
-        }
-        let mut seen = HashSet::new();
-        self.out
-            .get(id)
-            .into_iter()
-            .flatten()
-            .filter(|e| matches!(e.kind, EdgeKind::Calls | EdgeKind::Instantiates) && self.nodes.contains_key(e.dst.as_str()))
-            .map(|e| e.dst.as_str())
-            .filter(|d| seen.insert(*d))
-            .collect()
-    }
-
-    /// The overrides a call to a method may run: Language.parse runs Python.parse or Rust.parse.
-    fn overrides(&self, id: &str) -> Vec<&'g str> {
-        let Some(n) = self.nodes.get(id) else { return vec![] };
-        let Some(cls) = n.cls.as_deref() else { return vec![] };
-        let (mut out, mut stack, mut seen) = (vec![], vec![cls.to_string()], HashSet::new());
-        while let Some(c) = stack.pop() {
-            for e in self.into.get(c.as_str()).into_iter().flatten().filter(|e| e.kind == EdgeKind::Inherits) {
-                if seen.insert(e.src.as_str()) {
-                    stack.push(e.src.clone());
-                    let m = format!("{}.{}", e.src, n.name);
-                    if let Some((k, _)) = self.nodes.get_key_value(m.as_str()) {
-                        out.push(*k);
-                    }
-                }
-            }
-        }
-        out
-    }
-
-    /// The body's steps, each choice with two or more branches as one item.
-    fn items(&self, id: &str) -> Vec<Item<'g>> {
-        let calls = self.callees(id);
-        let mut arms: HashMap<&str, &Vec<(u32, u32)>> = HashMap::new();
-        for e in self.out.get(id).into_iter().flatten().filter(|e| matches!(e.kind, EdgeKind::Calls | EdgeKind::Instantiates) && !e.arms.is_empty()) {
-            arms.entry(e.dst.as_str()).or_insert(&e.arms);
-        }
-        let choice_of = |c: &str| arms.get(c).map(|a| a[0].0);
-        let mut items = vec![];
-        let mut placed = HashSet::new();
-        for &c in &calls {
-            let Some(k) = choice_of(c) else {
-                items.push(Item::Step(c));
-                continue;
-            };
-            let members: Vec<&str> = calls.iter().copied().filter(|m| choice_of(m) == Some(k)).collect();
-            let mut paths: Vec<&Vec<(u32, u32)>> = vec![];
-            for m in &members {
-                if !paths.contains(&arms[m]) {
-                    paths.push(arms[m]);
-                }
-            }
-            if paths.len() < 2 {
-                items.push(Item::Step(c));
-            } else if placed.insert(k) {
-                items.push(Item::Choice(members.iter().map(|m| (*m, paths.iter().position(|p| *p == arms[m]).unwrap_or(0))).collect()));
-            }
-        }
-        items
-    }
-
-    fn walk(&self, id: &str, prefix: &str, depth: usize, shown: &mut HashMap<&'g str, String>, out: &mut String) {
+    /// The steps of the body at `body` (a function, or a function on a class), each choice's
+    /// branches lettered, then the overrides the call may run instead.
+    fn walk(&self, body: &str, prefix: &str, depth: usize, shown: &mut HashMap<String, String>, out: &mut String) {
+        let Some(b) = self.bodies.get(body) else { return };
+        let holder = body.split('@').next().unwrap_or(body);
+        let sites = self.nodes.get(holder).map(|n| n.sites.as_slice()).unwrap_or(&[]);
         let mut seq = 0;
         let mut next = || {
             seq += 1;
             if prefix.is_empty() { seq.to_string() } else { format!("{prefix}.{seq}") }
         };
         let level = prefix.matches('.').count() + usize::from(!prefix.is_empty());
-        for item in self.items(id) {
+        for item in &b.items {
             match item {
-                Item::Step(c) => self.step(c, &next(), level, depth, shown, out),
-                Item::Choice(members) => {
+                Item::Step(st) => self.step(st, st.site.and_then(|i| sites.get(i)), &next(), level, depth, shown, out),
+                Item::Choice { members, .. } => {
                     let k = next();
-                    for (m, branch) in members {
-                        self.step(m, &format!("{k}{}", letter(branch)), level, depth, shown, out);
+                    for m in members {
+                        self.step(&m.step, m.step.site.and_then(|i| sites.get(i)), &format!("{k}{}", letter(m.branch)), level, depth, shown, out);
                     }
                 }
             }
         }
-        for (i, o) in self.overrides(id).into_iter().enumerate() {
-            self.step(o, &format!("{prefix}{}", letter(i)), level, depth, shown, out);
+        for (i, o) in b.alts.iter().enumerate() {
+            let st = Step { to: o.clone(), on: String::new(), site: None };
+            self.step(&st, None, &format!("{prefix}{}", letter(i)), level, depth, shown, out);
         }
     }
 
-    fn step(&self, id: &'g str, num: &str, level: usize, depth: usize, shown: &mut HashMap<&'g str, String>, out: &mut String) {
-        let n = self.nodes[id];
+    fn step(&self, st: &Step, site: Option<&Site>, num: &str, level: usize, depth: usize, shown: &mut HashMap<String, String>, out: &mut String) {
         let indent = "  ".repeat(level);
-        let kids = !self.callees(id).is_empty() || !self.overrides(id).is_empty();
-        if let Some(at) = shown.get(id).filter(|_| kids) {
-            out.push_str(&format!("{indent}{num}  {}  → see {at}\n", self.name(id)));
+        let Some(n) = self.nodes.get(st.to.as_str()) else {
+            // a library's operation: what the call hands it and what it gives, by name
+            let names = |hs: &[Held]| hs.iter().map(|h| if h.name.starts_with('#') { "·".to_string() } else { h.name.clone() }).collect::<Vec<_>>().join(", ");
+            let (hands, gives) = site.map(|s| (names(&s.hands), names(&s.gives))).unwrap_or_default();
+            let op = st.to.strip_prefix("op:").unwrap_or(&st.to);
+            out.push_str(&format!("{indent}{num}  {op}({hands}){}\n", if gives.is_empty() { String::new() } else { format!(" → {gives}") }));
+            return;
+        };
+        let k = flow::key(&st.to, &st.on);
+        let body = self.bodies.get(&k);
+        if let Some(at) = shown.get(&k).filter(|_| body.is_some()) {
+            out.push_str(&format!("{indent}{num}  {}  → see {at}\n", self.name(&st.to, &st.on)));
             return;
         }
-        shown.insert(id, num.to_string());
-        let mut line = format!("{indent}{num}  {}{}", self.name(id), self.signature(n));
+        shown.insert(k.clone(), num.to_string());
+        let mut line = format!("{indent}{num}  {}{}", self.name(&st.to, &st.on), self.signature(n));
         let effects = self.effects(n);
         if !effects.is_empty() {
             line.push_str(&format!("   ·   {effects}"));
         }
-        let alts = self.overrides(id).len();
+        let alts = body.map_or(0, |b| b.alts.len());
         if alts > 0 {
             line.push_str(&format!("   ·   one of {alts}"));
         }
         out.push_str(&line);
         out.push('\n');
         if level + 1 < depth {
-            self.walk(id, num, depth, shown, out);
+            self.walk(&k, num, depth, shown, out);
         }
     }
 
     /// `Graph()` for a type built in place, `BasePlot` for its constructor (the signature
-    /// follows), `BasePlot.plot`, `analyze`.
-    fn name(&self, id: &str) -> String {
+    /// follows), `BasePlot.plot`, `ComparePlot.plot` for a method run on a subclass, `analyze`.
+    fn name(&self, id: &str, on: &str) -> String {
         let n = self.nodes[id];
         if n.kind == NodeKind::Class {
             return format!("{}()", n.name);
         }
-        match n.cls.as_deref().and_then(|c| self.nodes.get(c)) {
-            Some(c) if n.name == "__init__" => c.name.clone(),
-            Some(c) => format!("{}.{}", c.name, n.name),
+        let class = |c: &str| self.nodes.get(c).map_or_else(|| c.rsplit('.').next().unwrap_or(c).to_string(), |c| c.name.clone());
+        match n.cls.as_deref() {
+            Some(c) if n.name == "__init__" => class(c),
+            Some(_) if !on.is_empty() => format!("{}.{}", class(on), n.name),
+            Some(c) => format!("{}.{}", class(c), n.name),
             None => n.name.clone(),
         }
     }
