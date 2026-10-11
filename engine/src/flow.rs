@@ -119,6 +119,20 @@ fn drop_identities(sites: &mut Vec<Site>) {
     }
 }
 
+/// The image of the effect functor: what every step runs, what every function takes and gives as
+/// types, and how the types group. The agent and the page read routes from it alike.
+#[derive(Serialize, Clone, Debug, Default, PartialEq)]
+pub struct Flow {
+    pub bodies: BTreeMap<String, Body>,
+    pub arrows: BTreeMap<String, Arrow>,
+    pub types: crate::families::Families,
+}
+
+/// The flow of a graph.
+pub fn of(g: &Graph) -> Flow {
+    Flow { bodies: bodies(g), arrows: arrows(g), types: crate::families::families(g) }
+}
+
 // ---------- places: where a touch rests, which side of its step, and what it does there ----------
 
 /// A part of the world as the picture names it. A touch rests at its finest place; until the

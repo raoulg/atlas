@@ -46,13 +46,19 @@ Everything below is the engineering of that language.
 
 ## 1. The algebra
 
-Four objects, four kinds of arrows.
+Five objects, five kinds of arrows.
 
 ```
-Repo ──parse──▶ Graph ──view──▶ Graph ──layout──▶ Picture
+Repo ──parse──▶ Graph ──F──▶ Flow ──view──▶ Flow ──layout──▶ Picture
                   │
                   └──inspect──▶ Source
 ```
+
+**Flow** is the image of the effect functor `F` (below): what every step of every body runs, in
+call order and with dispatch (`bodies`), what every function takes and gives as types
+(`arrows`), how the types group into families and which are doors (`types`); each touch says
+where it rests, which side of its step it stands on and what it does there. The agent's route
+text and the page are read from the same Flow, so the two see the same route.
 
 **Repo** is a directory at a commit. **Graph** is the one central type: typed nodes
 (modules, classes, functions) and typed edges, and on each function the places in the

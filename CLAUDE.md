@@ -41,7 +41,7 @@ The rigorous half and the visual half are the same structure. Read `docs/design.
   mind, the code is what changes. If a view only works because of a special case, it is
   wrong.
 - **Atlas is its own first subject.** `atlas view .` must read as the algebra:
-  `Disk(repo) → Language.parse → Graph → View → File(html) → open`. When the
+  `Disk(repo) → Language.parse → Graph → Flow → View → File(html) → open`. When the
   self-picture shows a box the algebra does not have, the code changes, not the
   picture. `cargo test` pins the self-picture.
 - **If the code is good, the picture is good, automatically.** Views are computed

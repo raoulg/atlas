@@ -514,7 +514,7 @@ const KIND_LABEL = {make: "Make", cli: "CLI", script: "Script", route: "API", mc
 const entries = [...byId.values()].filter(n => n.entry).sort((a, b) => (partRank(a) - partRank(b)) || (KIND_ORDER.indexOf(a.entry.kind) - KIND_ORDER.indexOf(b.entry.kind)) || a.entry.label.localeCompare(b.entry.label));
 // what running a function means, from the engine's reading: its body on a value of class `on` (the
 // calls in the order they run, a method called on a known class that class's), or on any value
-const FLOW = D.flow || {}, ARROWS = D.arrows || {};
+const FLOW = (D.flow || {}).bodies || {}, ARROWS = (D.flow || {}).arrows || {};
 const bodyOf = (id, on) => FLOW[on ? `${id}@${on}` : id] || {items: []};
 const stepsIn = b => b.items.flatMap(it => it.members ? it.members : [it]);
 // the functions a step runs: its body's steps, and the overrides it may run instead
@@ -583,7 +583,7 @@ if (D.open && byId.has(D.open)) { routeEntry = D.open; entrySel.value = D.open; 
 // BaseModel, torch's Module, a derived trait) is how a class is built, not what flows
 // the engine groups the types: a subclass stands in its base's place (Python and Rust are kinds of
 // Language), a part in its one owner's, and a type holds what other types hold too as a reference
-const TYPES = D.types || {};
+const TYPES = (D.flow || {}).types || {};
 const familyOf = id => (TYPES.family || {})[id] || id;
 const kindOf = id => (TYPES.kind || {})[id] || id;
 const members = new Map(Object.entries(TYPES.members || {}));
