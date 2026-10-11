@@ -268,8 +268,9 @@ const out = new Map(), inn = new Map();
 for (const e of D.edges) { if (!out.has(e.src)) out.set(e.src, []); out.get(e.src).push(e); if (!inn.has(e.dst)) inn.set(e.dst, []); inn.get(e.dst).push(e); }
 const modOf = n => n.kind === "module" ? n.id : n.module;
 // a box takes the hue of its package: the first level of the code quotiented by module path, the
-// level a part's overview shows; what lies outside the code has no package
-let HUES = null;
+// level a part's overview shows; what lies outside the code has no package. The legend names the
+// packages the picture shows.
+let HUES = null, shownUnits = new Set();
 const unitCache = new Map();
 function unitOfNode(n) {
   if (!n || n.kind === "external" || n.kind === "make" || !n.module) return null;
@@ -278,7 +279,9 @@ function unitOfNode(n) {
 }
 function hueOf(n) {
   if (!HUES) { HUES = new Map(); for (const p of PARTS.length ? PARTS.map(p => p.id) : [partOf({})]) for (const u of topUnits(p)) if (u !== "Makefile" && !HUES.has(u)) HUES.set(u, `var(--hue-${(HUES.size % 8) + 1})`); }
-  return HUES.get(unitOfNode(n)) || "var(--external)";
+  const u = unitOfNode(n);
+  if (u) shownUnits.add(u);
+  return HUES.get(u) || "var(--external)";
 }
 
 // aggregated module edges
@@ -1592,7 +1595,7 @@ function legend() {
   const L = document.getElementById("legend"); L.innerHTML = "";
   const row = html("div", "row");
   hueOf(null);
-  for (const [u, hue] of HUES) { const sw = html("span", "sw"); const i = html("i"); i.style.background = hue; sw.appendChild(i); sw.appendChild(document.createTextNode(unitLabel(u))); row.appendChild(sw); }
+  for (const [u, hue] of HUES) if (shownUnits.has(u)) { const sw = html("span", "sw"); const i = html("i"); i.style.background = hue; sw.appendChild(i); sw.appendChild(document.createTextNode(unitLabel(u))); row.appendChild(sw); }
   if (view === "plaat") {
     row.appendChild(html("span", "sep"));
     for (const k of Object.keys(GLYPH)) { const sw = html("span", "sw"); sw.innerHTML = `${glyphSvg(k)} ${KIND_NAME[k]}`; row.appendChild(sw); }
@@ -1622,6 +1625,7 @@ document.getElementById("search").addEventListener("change", ev => {
 });
 async function render() {
   scene.node().innerHTML = ""; scene.node().classList.remove("focus");
+  shownUnits = new Set();
   entrySel.style.display = view === "plaat" ? "" : "none";
   crumbs();
   if (view === "plaat") { await renderPlaat(); } else if (view === "types") { renderTypes(); fit(); } else { await renderSig(); }
