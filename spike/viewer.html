@@ -113,12 +113,12 @@ svg#canvas:active{cursor:grabbing}
 /* every key and click, on a card over the picture */
 #keys{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:color-mix(in oklab, var(--bg) 55%, transparent);z-index:40}
 #keys[hidden]{display:none}
-#keys .card{background:var(--panel);border:1px solid var(--line);box-shadow:0 18px 50px rgba(0,0,0,.3);max-width:min(820px,calc(100vw - 32px));max-height:84vh;overflow:auto;padding:20px 24px 22px}
+#keys .card{background:var(--panel);border:1px solid var(--line);box-shadow:0 18px 50px rgba(0,0,0,.3);max-width:min(680px,calc(100vw - 32px));max-height:84vh;overflow:auto;padding:20px 24px 22px}
 #keys h2{font-size:15px;font-weight:600;margin:0 0 4px}
 #keys .sub{color:var(--ink-3);font-size:11.5px;margin-bottom:12px}
 #keys h3{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);font-weight:500;margin:14px 0 6px}
-#keys dl{display:grid;grid-template-columns:210px 1fr;gap:5px 18px;margin:0}
-#keys dt{font-family:var(--mono);font-size:11.5px;color:var(--ink)}
+#keys dl{display:grid;grid-template-columns:max-content 1fr;gap:7px 20px;margin:0}
+#keys dt{font-family:var(--mono);font-size:11.5px;color:var(--ink);white-space:nowrap}
 #keys dd{margin:0;color:var(--ink-2);font-size:12.5px}
 #keys kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--line);border-bottom-width:2px;padding:0 5px;background:var(--panel-2)}
 #zoomctl{position:absolute;right:14px;top:14px;display:flex;gap:4px}
@@ -257,44 +257,19 @@ pre.code .l::before{counter-increment:ln;content:counter(ln);display:inline-bloc
     <div id="zoomctl"><button id="zout" type="button" title="zoom out">−</button><button id="fit" type="button">fit</button><button id="zone" type="button" title="actual size">1:1</button><button id="zin" type="button" title="zoom in">+</button><button id="codetoggle" type="button" title="show or hide the code panel">hide code</button></div>
     <div id="resizer" title="drag to resize the inspector"></div>
     <div id="legend"></div>
-    <div id="hint">drag to pan · scroll to zoom · <kbd>space</kbd> over a box: its code · <button id="keyshelp" type="button">? keys and clicks</button></div>
+    <div id="hint"><kbd>shift</kbd>-click a package: focus · double-click: pin · <kbd>space</kbd>: code · <button id="keyshelp" type="button">? more</button></div>
   </main>
   <aside id="inspector"><div class="empty"><b>Nothing selected</b>Click a module, a class or a function.<br>Hover a block to see what it talks to.</div></aside>
   <div id="keys" role="dialog" aria-label="keys and clicks" hidden><div class="card">
     <h2>Keys and clicks</h2>
-    <div class="sub"><kbd>?</kbd> opens and closes this card, <kbd>Esc</kbd> closes it</div>
-    <h3>Anywhere</h3>
+    <div class="sub">what the page does not show by itself</div>
     <dl>
-      <dt>drag · scroll</dt><dd>pan · zoom</dd>
-      <dt>fit · 1:1 · − +</dt><dd>the whole picture · actual size · zoom out and in</dd>
-      <dt>the route list</dt><dd>one route, or all routes of a kind</dd>
-      <dt>jump to symbol</dt><dd>find a function, a class or a module</dd>
-      <dt>✕ on a chip</dt><dd>undo what the chip says in the bar: an opened step, a folder, a package in focus</dd>
-    </dl>
-    <h3>Flowchart</h3>
-    <dl>
-      <dt>click a pill</dt><dd>open it into its steps; a part into its packages, a package into its own</dd>
-      <dt>click a frame's title</dt><dd>close it</dd>
-      <dt>click a type (n)</dt><dd>open its family</dd>
-      <dt>click a place</dt><dd>what reaches it, with its lines in the code; Disk and a database split by name</dd>
-      <dt>click File(dir/) · n</dt><dd>open the folder</dd>
-      <dt><kbd>shift</kbd>-click a package</dt><dd>add it to the focus, or drop it</dd>
-      <dt>click the rest</dt><dd>open it into its packages; click one to add it to the focus</dd>
-      <dt>+ name · n in the bar</dt><dd>add a package around the focus; n is the types it exchanges with it</dd>
-      <dt>point at a box</dt><dd>light up its lines and what is at their ends</dd>
-      <dt>double-click a box</dt><dd>pin its lines; a second box adds its own · double-click empty space or <kbd>Esc</kbd> lets go</dd>
-    </dl>
-    <h3>Story</h3>
-    <dl>
-      <dt>click a route</dt><dd>open it as steps in call order</dd>
-      <dt>▸</dt><dd>open a step into its own steps</dd>
-      <dt>click a column's name</dt><dd>what reaches that place; a folder opens</dd>
-    </dl>
-    <h3>Details and code</h3>
-    <dl>
-      <dt><kbd>space</kbd> over a box</dt><dd>its details and code over the picture, while the code panel is closed · <kbd>space</kbd>, <kbd>Esc</kbd> or a click on the picture puts them away</dd>
-      <dt>pin · hide code</dt><dd>keep the panel open beside the picture · close it again; drag its edge to resize it</dd>
-      <dt>click a box</dt><dd>with the panel open: its details and code there</dd>
+      <dt><kbd>shift</kbd>-click a package</dt><dd>add it to the focus, or drop it (Flowchart)</dd>
+      <dt>double-click a box</dt><dd>pin its lines; a second box adds its own</dd>
+      <dt>double-click empty space · <kbd>Esc</kbd></dt><dd>let go of the pinned lines</dd>
+      <dt><kbd>space</kbd> over a box</dt><dd>its details and code over the picture; <kbd>space</kbd>, <kbd>Esc</kbd> or a click on the picture puts them away</dd>
+      <dt>drag the panel's edge</dt><dd>make the code panel wider or narrower</dd>
+      <dt><kbd>?</kbd></dt><dd>this card; <kbd>Esc</kbd> closes it</dd>
     </dl>
   </div></div>
   <div id="peekbar"><button id="peekpin" type="button" title="keep the panel open beside the picture">pin</button><button id="peekclose" type="button" title="close (Esc, space)">✕</button></div>
