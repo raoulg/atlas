@@ -5,7 +5,7 @@
 use std::collections::{BTreeMap, HashMap};
 
 use crate::flow::{self, Body, Item, Step};
-use crate::model::{Dir, Edge, EdgeKind, EntryKind, Graph, Held, Node, NodeKind, Site, Touch, World};
+use crate::model::{Edge, EdgeKind, EntryKind, Graph, Held, Node, NodeKind, Site, Touch, World};
 
 /// Every route into the program: its kind, its label and the id of the node it starts at.
 pub fn entries(g: &Graph) -> Vec<(EntryKind, &str, &str)> {
@@ -182,7 +182,7 @@ impl<'g> Story<'g> {
     fn effects(&self, n: &Node) -> String {
         let mut groups: Vec<(String, Vec<String>)> = vec![];
         for t in &n.touches {
-            let (v, what) = (verb(t), place(t));
+            let (v, what) = (t.verb(), place(t));
             match groups.iter_mut().find(|(g, _)| *g == v) {
                 Some((_, items)) => {
                     if !what.is_empty() && !items.contains(&what) {
@@ -198,42 +198,6 @@ impl<'g> Story<'g> {
 
 fn letter(i: usize) -> char {
     (b'a' + (i % 26) as u8) as char
-}
-
-/// The verb for a touch: the operation when it says more than the kind, then the direction
-/// when the kind leaves it open (a database statement, a transfer over the web).
-fn verb(t: &Touch) -> String {
-    let by_op = match t.op.as_str() {
-        "exists" | "try_exists" | "is_file" | "is_dir" => Some("checks"),
-        "read_dir" | "iterdir" | "glob" | "rglob" | "listdir" | "scandir" | "walk" => Some("lists"),
-        o if o.starts_with("create_dir") || o.starts_with("mkdir") || o.starts_with("makedirs") => Some("creates"),
-        o if o.starts_with("remove") || o.starts_with("unlink") || o.starts_with("rmtree") => Some("removes"),
-        _ => None,
-    };
-    let by_dir = match (t.kind, t.dir) {
-        (World::Db(_), Some(Dir::Read)) => Some("reads"),
-        (World::Db(_), Some(Dir::Write)) => Some("writes"),
-        (World::Net, Some(Dir::Read)) => Some("downloads"),
-        (World::Net, Some(Dir::Write)) => Some("uploads"),
-        (World::Screen, _) if t.op == "render" => Some("renders"),
-        _ => None,
-    };
-    if let Some(v) = by_dir.filter(|_| matches!(t.kind, World::Db(_))).or(by_op).or(by_dir) {
-        return v.into();
-    }
-    match (t.kind, t.dir) {
-        (World::Net, _) => "calls",
-        (World::Disk, Some(Dir::Read)) => "reads",
-        (World::Disk, Some(Dir::Write)) => "writes",
-        (World::Disk, None) => "opens",
-        (World::Llm, _) => "asks an LLM",
-        (World::Model, _) => "runs a model",
-        (World::Process, _) => "runs",
-        (World::Screen, _) => "prints",
-        (World::Db(_), _) => "queries",
-        (World::Figure, _) => "figure",
-    }
-    .into()
 }
 
 /// Where a touch lands, as the code names it.

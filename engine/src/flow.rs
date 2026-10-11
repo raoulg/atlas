@@ -11,7 +11,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use indexmap::IndexMap;
 use serde::Serialize;
 
-use crate::model::{Edge, EdgeKind, Graph, Held, Node, NodeKind, Site};
+use crate::model::{Db, Dir, Edge, EdgeKind, Graph, Held, Node, NodeKind, Site, Touch, World};
 
 /// Wire the steps of every body: a call written inside another call hands it its result, under
 /// the name the body gives it or, without one, under the step's own (`#n`, unique in the graph);
@@ -116,6 +116,163 @@ fn drop_identities(sites: &mut Vec<Site>) {
     }
     for b in gone.into_iter().rev() {
         sites.remove(b);
+    }
+}
+
+// ---------- places: where a touch rests, which side of its step, and what it does there ----------
+
+/// A part of the world as the picture names it. A touch rests at its finest place; until the
+/// picture splits `group`, it is drawn as `coarse` (the disk a route reads, a database for its
+/// tables), when that differs.
+#[derive(Serialize, Clone, Debug, PartialEq, Eq)]
+pub struct Place {
+    pub id: String,
+    pub label: String,
+    pub short: String,
+    /// The kind of place, as one glyph: `file`, `db`, `web`, `screen`, `proc`, `model`.
+    pub glyph: &'static str,
+    /// The path, for a file the code names: files fold into their directories.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub file: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub coarse: Option<Box<Place>>,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub group: String,
+}
+
+/// Which side of its step a touch stands on.
+#[derive(Serialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum Side {
+    In,
+    Out,
+}
+
+impl World {
+    /// The name the picture gives this part of the world.
+    pub fn name(self) -> &'static str {
+        match self {
+            World::Disk => "Disk",
+            World::Net => "Web",
+            World::Db(Db::Sql) => "SQL",
+            World::Db(Db::Sqlite) => "SQLite",
+            World::Db(Db::Duckdb) => "DuckDB",
+            World::Db(Db::Graph) => "GraphDB",
+            World::Db(Db::Kv) => "KV",
+            World::Llm => "LLM",
+            World::Model => "Model",
+            World::Process => "open",
+            World::Screen => "Screen",
+            World::Figure => "Figure",
+        }
+    }
+
+    fn glyph(self) -> &'static str {
+        match self {
+            World::Disk => "file",
+            World::Db(_) => "db",
+            World::Net => "web",
+            World::Screen | World::Figure => "screen",
+            World::Process => "proc",
+            World::Llm | World::Model => "model",
+        }
+    }
+}
+
+fn place(id: String, label: String, short: String, glyph: &'static str) -> Place {
+    Place { id, label, short, glyph, file: String::new(), coarse: None, group: String::new() }
+}
+
+impl Touch {
+    /// Which side of its step the touch stands on: what the call says (a file's mode, a
+    /// statement's verb, a download), else what its kind of place does by default. The web and a
+    /// file whose way is not said are read; everything else is written to.
+    pub fn side(&self) -> Side {
+        match (self.dir, self.kind) {
+            (Some(Dir::Read), _) => Side::In,
+            (Some(Dir::Write), _) => Side::Out,
+            (None, World::Net | World::Disk) => Side::In,
+            (None, _) => Side::Out,
+        }
+    }
+
+    /// Where the touch rests. A file the code names is that file, unless the operation looks at
+    /// the shape of the file system rather than at a file's data (whether a path exists, what a
+    /// directory lists), which is the disk, except on a directory, a place of its own
+    /// (`assets/regelingen/`). A file only a variable names is the disk read or written, split
+    /// by that name. A database is one place, split by its tables; a host on the web and a
+    /// model's checkpoint are named where the code names them; a program by its command.
+    pub fn place(&self) -> Place {
+        let (w, name) = (self.kind, self.kind.name());
+        let base = format!("w:{name}");
+        let world = || place(base.clone(), name.to_string(), name.to_string(), w.glyph());
+        match w {
+            World::Process => {
+                let what = if self.what.is_empty() { "process" } else { self.what.as_str() };
+                place(format!("w:open:{what}"), what.to_string(), what.to_string(), "proc")
+            }
+            World::Disk => {
+                let shape = crate::effects::fs_op(&self.op) != crate::effects::FsOp::Data;
+                if !self.artifact.is_empty() && (!shape || self.artifact.ends_with('/')) {
+                    let a = &self.artifact;
+                    return Place { file: a.clone(), ..place(format!("w:File:{a}"), format!("File({a})"), a.clone(), "file") };
+                }
+                let coarse = match self.side() {
+                    Side::In => place("w:Disk:in".into(), "Disk in".into(), "Disk in".into(), "file"),
+                    Side::Out => place("w:Disk:out".into(), "Disk out".into(), "Disk out".into(), "file"),
+                };
+                if self.what.is_empty() {
+                    return coarse;
+                }
+                let w = &self.what;
+                Place { coarse: Some(Box::new(coarse)), group: "w:Disk".into(), ..place(format!("w:Disk:{w}"), format!("Disk({w})"), w.clone(), "file") }
+            }
+            World::Db(_) if !self.artifact.is_empty() => {
+                let label = format!("{name}({})", self.artifact);
+                Place { coarse: Some(Box::new(world())), group: base.clone(), ..place(format!("{base}:{}", self.artifact), label.clone(), label, "db") }
+            }
+            World::Net | World::Model if !self.artifact.is_empty() => place(format!("{base}:{}", self.artifact), format!("{name}({})", self.artifact), self.artifact.clone(), w.glyph()),
+            _ => world(),
+        }
+    }
+
+    /// What the touch does at its place, as a verb: the operation when it says more than the kind
+    /// (`checks`, `lists`, `GETs`), the way the data goes when the kind leaves it open (a
+    /// statement reads or writes, a transfer downloads or uploads), else the kind's own.
+    pub fn verb(&self) -> String {
+        use crate::effects::{fs_op, FsOp};
+        let op = self.op.as_str();
+        let by_op = match (self.kind, fs_op(op)) {
+            (World::Disk, FsOp::Checks) => Some("checks"),
+            (World::Disk, FsOp::Lists) => Some("lists"),
+            (World::Disk, FsOp::Creates) => Some("creates"),
+            (World::Disk, FsOp::Removes) => Some("removes"),
+            (World::Disk, FsOp::Moves) => Some("moves"),
+            (World::Disk, FsOp::Copies) => Some("copies"),
+            _ => None,
+        };
+        if let Some(v) = by_op {
+            return v.into();
+        }
+        match (self.kind, self.dir) {
+            (World::Db(_), Some(Dir::Read)) => "reads".into(),
+            (World::Db(_), Some(Dir::Write)) => "writes".into(),
+            (World::Net, _) if matches!(op, "get" | "post" | "put" | "delete" | "patch") => format!("{}s", op.to_uppercase()),
+            (World::Net, Some(Dir::Read)) => "downloads".into(),
+            (World::Net, Some(Dir::Write)) => "uploads".into(),
+            (World::Net, None) => "calls".into(),
+            (World::Disk, Some(Dir::Read)) => "reads".into(),
+            (World::Disk, Some(Dir::Write)) => "writes".into(),
+            (World::Disk, None) => "opens".into(),
+            (World::Db(_), None) => format!("queries {}", self.kind.name()),
+            (World::Llm, _) => "asks an LLM".into(),
+            (World::Model, _) => "runs a model".into(),
+            (World::Process, _) => "runs".into(),
+            (World::Screen, _) if op == "render" => "renders".into(),
+            (World::Screen, _) if matches!(op, "figure" | "subplots" | "subplot_mosaic" | "show") => "draws".into(),
+            (World::Screen, _) => "prints".into(),
+            (World::Figure, _) => "draws".into(),
+        }
     }
 }
 

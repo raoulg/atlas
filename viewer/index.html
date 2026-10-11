@@ -507,32 +507,9 @@ async function renderSig() {
 }
 
 // ---------- routes: entry points, their steps, and the world they touch ----------
-// the effect signature: what a step takes from the world or the hub types, and what it hands on
-const WORLD_IN = {net: "Web", disk_read: "Disk", disk: "Disk"};
-const WORLD_OUT = {disk_write: "Disk", db_graph: "GraphDB", db_duckdb: "DuckDB", db_sqlite: "SQLite", db_sql: "SQL", llm: "LLM", model: "Model", process: "open", screen: "Screen"};
-const WORLD = {...WORLD_IN, ...WORLD_OUT};
-// which side of a step a touch is on: a database statement's verb decides, otherwise the kind
-const isIn = t => t.dir ? t.dir === "read" : !!WORLD_IN[t.kind];
-// disk operations on the shape of the file system, not on the data in a file; on a directory
-// that is a place of its own (`assets/regelingen/`), listing it reads it and making it writes it
-const PROBE = /^(exists|try_exists|is_file|is_dir|is_symlink|read_dir|iterdir|glob|rglob|listdir|scandir|walk|canonicalize|metadata|symlink_metadata|new|mkdir|makedirs|create_dir|create_dir_all)$/;
-const VERB = {net: "calls", disk_read: "reads", disk: "opens", disk_write: "writes", db_graph: "queries GraphDB", db_duckdb: "queries DuckDB", db_sqlite: "queries SQLite", db_sql: "queries SQL", llm: "asks LLM", model: "runs model", process: "runs", screen: "prints"};
-// the verb comes from the operation when it says more than the kind
-function verbOf(t) {
-  const op = t.op || "";
-  if (t.kind.startsWith("db_") && t.dir) return t.dir === "read" ? "reads" : "writes";
-  if (/^(exists|try_exists|is_file|is_dir)$/.test(op)) return "checks";
-  if (/^(read_dir|iterdir|glob|rglob|listdir|scandir|walk)$/.test(op)) return "lists";
-  if (/^(create_dir|mkdir|makedirs)/.test(op)) return "creates";
-  if (/^(remove|unlink|rmtree|rm)/.test(op)) return "removes";
-  if (/^(rename|move)/.test(op)) return "moves";
-  if (/^copy/.test(op)) return "copies";
-  if (t.kind === "net" && /^(get|post|put|delete|patch)$/.test(op)) return `${op.toUpperCase()}s`;
-  if (t.kind === "net" && t.dir) return t.dir === "read" ? "downloads" : "uploads";
-  if (t.kind === "screen" && op === "render") return "renders";
-  if (t.kind === "screen" && /^(figure|subplots|subplot_mosaic|show)$/.test(op)) return "draws";
-  return VERB[t.kind] || t.kind;
-}
+// where a touch rests, which side of its step it stands on and what it does there: the engine says
+const isIn = t => t.side === "in";
+const verbOf = t => t.verb;
 const KIND_LABEL = {make: "Make", cli: "CLI", script: "Script", route: "API", mcp: "MCP", notebook: "Notebook", export: "Library", test: "Test"}, KIND_ORDER = ["make", "cli", "export", "script", "notebook", "route", "mcp", "test"];
 const entries = [...byId.values()].filter(n => n.entry).sort((a, b) => (partRank(a) - partRank(b)) || (KIND_ORDER.indexOf(a.entry.kind) - KIND_ORDER.indexOf(b.entry.kind)) || a.entry.label.localeCompare(b.entry.label));
 // what running a function means, from the engine's reading: its body on a value of class `on` (the
@@ -754,7 +731,7 @@ const GLYPH = {
   model: '<path d="M7 1.5l1.4 4.1 4.1 1.4-4.1 1.4L7 12.5l-1.4-4.1L1.5 7l4.1-1.4z"/>',
 };
 const KIND_NAME = {cmd: "start", file: "file", db: "database", web: "web", screen: "screen", proc: "program", model: "model"};
-const placeKind = id => id.startsWith("e:") ? "cmd" : /^w:(File|Disk)/.test(id) ? "file" : /^w:(DuckDB|SQLite|GraphDB|SQL)\b/.test(id) ? "db" : id.startsWith("w:Web") ? "web" : id.startsWith("w:Screen") ? "screen" : /^w:(LLM|Model)\b/.test(id) ? "model" : id.startsWith("w:open") ? "proc" : null;
+const placeKind = id => id.startsWith("e:") ? "cmd" : placeGlyph.get(id) || (/^w:(File|Disk)/.test(id) ? "file" : /^w:(DuckDB|SQLite|GraphDB|SQL)\b/.test(id) ? "db" : id.startsWith("w:Web") ? "web" : id.startsWith("w:Screen") ? "screen" : /^w:(LLM|Model)\b/.test(id) ? "model" : id.startsWith("w:open") ? "proc" : null);
 const glyphSvg = kind => `<svg class="glyph" width="13" height="13" viewBox="0 0 14 14" style="color:var(--k-${kind})">${GLYPH[kind]}</svg>`;
 function glyphAt(parent, kind, x, y) { const g = el("g", {class: "glyph", transform: `translate(${x},${y})`, style: `color:var(--k-${kind})`}, parent); g.innerHTML = GLYPH[kind]; return g; }
 // ---------- the disk is a tree: files fold into their directories ----------
@@ -790,22 +767,18 @@ const filePlace = path => {
 };
 // a figure made is seen where a notebook runs the cell that made it: on a notebook's route it is
 // on the screen, elsewhere only `show` puts it there
-const shownAs = t => t.kind === "figure" && byId.get(routeEntry)?.entry?.kind === "notebook" ? {...t, kind: "screen"} : t;
-// a part of the world, as the Flowchart names it: a file the code names, else coarse disk; a
-// database, the screen, a program
+const shownAs = t => t.kind === "figure" && byId.get(routeEntry)?.entry?.kind === "notebook" ? {...t, kind: "screen", side: "out", place: {id: "w:Screen", label: "Screen", short: "Screen", glyph: "screen"}} : t;
+// a touch is drawn where it rests; a figure that no notebook shows is not on the screen
+const drawn = t => t.kind !== "figure";
+// a part of the world as the picture draws it now: the place the engine names, its coarser place
+// until the reader splits that group, a file in the directory it is folded into
+const placeGlyph = new Map();
 function worldPlaceOf(t) {
-  const k = t.kind, name = WORLD[k], base = "w:" + name;
-  if (k === "process") return {id: base + ":" + (t.what || "process"), label: t.what || "process", short: t.what || "process", kind: "world"};
-  if (k.startsWith("disk")) {
-    if (t.artifact && (!PROBE.test(t.op || "") || t.artifact.endsWith("/"))) return filePlace(t.artifact);
-    const what = t.what;
-    if (refined.has("w:Disk") && what) return {id: "w:Disk:" + what, label: `Disk(${what})`, short: what, kind: "world"};
-    return isIn(t) ? {id: "w:Disk:in", label: "Disk in", short: "Disk in", kind: "world"} : {id: "w:Disk:out", label: "Disk out", short: "Disk out", kind: "world"};
-  }
-  if (k.startsWith("db_") && refined.has(base) && t.artifact) return {id: base + ":" + t.artifact, label: `${name}(${t.artifact})`, short: `${name}(${t.artifact})`, kind: "world"};
-  // a host on the web, a checkpoint of a model: named where the code names them
-  if ((k === "net" || k === "model") && t.artifact) return {id: base + ":" + t.artifact, label: `${name}(${t.artifact})`, short: t.artifact, kind: "world"};
-  return {id: base, label: name, short: name, kind: "world"};
+  let p = t.place;
+  if (p.coarse && !refined.has(p.group)) p = p.coarse;
+  const q = p.file ? filePlace(p.file) : {id: p.id, label: p.label, short: p.short, kind: "world"};
+  placeGlyph.set(q.id, p.glyph);
+  return q;
 }
 // the route as a tree: an open step holds its own steps; a call into a family holds its members' overrides as branches
 function routeTree() {
@@ -897,7 +870,7 @@ async function renderPlaat() {
     const ownKeys = new Set((f.touches || []).map(touchKey));
     for (const raw of (own ? f.touches || [] : reach(f.id, opts.on).touches)) {
       const tc = shownAs(raw);
-      if (!WORLD[tc.kind]) continue;
+      if (!drawn(tc)) continue;
       // each call that makes a figure makes one: a figure of its own on the screen
       const p = raw.kind === "figure" && tc.kind === "screen" && opts.figure ? figurePlace(opts.figure, opts.label) : worldPlace(tc);
       (isIn(tc) ? dom : cod).push([addPlace(p), !ownKeys.has(touchKey(raw))]);
@@ -930,7 +903,7 @@ async function renderPlaat() {
     if (own) return {dom, cod};
     // the rest of the code, seen from a focus, is joined to it by counted arrows, not by boxes
     if (isRest(u)) return {dom, cod};
-    for (const n of byId.values()) if (inUnit(n.id, u)) for (const tc of n.touches || []) if (WORLD[tc.kind]) (isIn(tc) ? dom : cod).set(addPlace(worldPlace(tc)), false);
+    for (const n of byId.values()) if (inUnit(n.id, u)) for (const tc of n.touches || []) if (drawn(tc)) (isIn(tc) ? dom : cod).set(addPlace(worldPlace(tc)), false);
     // a type crossing the unit's edge is a joint drawn as a box; in a focus, only when another unit in
     // the focus is on its other side, and an arrow from or to the rest otherwise
     const inside = id => inUnit(id, u), theirs = xs => [...(xs || [])].filter(x => !inside(x) && byId.has(x));
@@ -1429,7 +1402,7 @@ function selectPlace(pid, label) {
     return;
   }
   const calls = [];
-  for (const n of D.nodes) for (const t of n.touches || []) { const s = shownAs(t); if (WORLD[s.kind] && worldPlaceOf(s).id === pid) calls.push({n, t: s}); }
+  for (const n of D.nodes) for (const t of n.touches || []) { const s = shownAs(t); if (drawn(s) && worldPlaceOf(s).id === pid) calls.push({n, t: s}); }
   calls.sort((a, b) => a.n.file.localeCompare(b.n.file) || (a.t.line || 0) - (b.t.line || 0));
   insp.appendChild(html("div", "path", `${calls.length} ${calls.length === 1 ? "call" : "calls"} in the code`));
   const d = html("div", "links");

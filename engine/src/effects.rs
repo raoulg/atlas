@@ -305,6 +305,33 @@ pub fn boundary_ts(pkg: Option<&str>, parts: &[String]) -> Option<Crossing> {
     }
 }
 
+/// What a file operation does to the file system, by its name in the languages Atlas reads: look
+/// at its shape (whether a path is there, what a directory holds), change its shape, or move the
+/// data in a file.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum FsOp {
+    Checks,
+    Lists,
+    Creates,
+    Removes,
+    Moves,
+    Copies,
+    /// Reads or writes what a file holds.
+    Data,
+}
+
+pub fn fs_op(op: &str) -> FsOp {
+    match op {
+        "exists" | "try_exists" | "is_file" | "is_dir" | "is_symlink" | "canonicalize" | "metadata" | "symlink_metadata" | "existsSync" | "stat" | "statSync" | "access" => FsOp::Checks,
+        "read_dir" | "iterdir" | "glob" | "rglob" | "listdir" | "scandir" | "walk" | "readdir" | "readdirSync" | "opendir" | "opendirSync" => FsOp::Lists,
+        o if o.starts_with("create_dir") || o.starts_with("mkdir") || o.starts_with("makedirs") || o == "touch" => FsOp::Creates,
+        o if o.starts_with("remove") || o.starts_with("unlink") || o.starts_with("rmtree") || o.starts_with("rm") => FsOp::Removes,
+        o if o.starts_with("rename") || o.starts_with("move") => FsOp::Moves,
+        o if o.starts_with("copy") || o == "cp" || o == "cpSync" => FsOp::Copies,
+        _ => FsOp::Data,
+    }
+}
+
 /// `Path.exists()` and friends on a receiver whose type is unknown still read the disk.
 pub const RUST_PATH_READS: &[&str] = &["exists", "try_exists", "is_file", "is_dir", "read_dir", "canonicalize", "symlink_metadata"];
 

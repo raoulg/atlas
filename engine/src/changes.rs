@@ -10,7 +10,7 @@ use std::process::{Command, Stdio};
 
 use anyhow::{bail, Context, Result};
 
-use crate::model::{Dir, EdgeKind, Graph, NodeKind, Touch, World};
+use crate::model::{EdgeKind, Graph, NodeKind, Touch, World};
 use crate::principles::{self, Finding};
 use crate::story;
 
@@ -177,25 +177,10 @@ fn routes(parts: &[Graph], several: bool) -> HashMap<String, Route> {
     out
 }
 
-/// A place as a route touches it: `writes logs/run.log`, `queries SQLite log (write)`.
+/// A place as a route touches it, in words: `writes logs/run.log`, `writes SQLite(log)`.
 fn place(t: &Touch) -> String {
-    let verb = match (t.kind, t.dir) {
-        (World::Net, _) => "calls the web",
-        (World::Disk, Some(Dir::Read)) => "reads",
-        (World::Disk, Some(Dir::Write)) => "writes",
-        (World::Disk, None) => "opens",
-        (World::Llm, _) => "asks an LLM",
-        (World::Model, _) => "runs a model",
-        (World::Process, _) => "runs",
-        (World::Screen, _) => "prints",
-        (k, _) => k.as_str().strip_prefix("db_").unwrap_or(k.as_str()),
-    };
     let what = if t.artifact.is_empty() { t.what.clone() } else { t.artifact.clone() };
-    let dir = match (t.kind, t.dir) {
-        (World::Disk, _) | (_, None) => String::new(),
-        (_, Some(d)) => format!(" ({})", d.as_str()),
-    };
-    format!("{verb} {what}{dir}").trim().to_string()
+    format!("{} {what}", t.verb()).trim().to_string()
 }
 
 fn git(dir: &Path, args: &[&str]) -> Result<Vec<u8>> {
