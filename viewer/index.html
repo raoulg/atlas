@@ -1040,8 +1040,9 @@ async function renderPlaat() {
     const {step, on, site} = info, dn = new Map(), cn = new Map();
     const m = step.startsWith("op:") ? {dom: new Map(), cod: new Map()} : morphism(step, own, isAnchor, false, {on, figure: key, label: stepLabel(key)});
     if (site && !own) {
-      // a value whose type ty does not know is still the value its name holds
-      const held = h => addPlace(h.type ? typePlace(h.type) : {id: "v:" + h.name, label: h.name, kind: "type", hue: hueOf(null), type: null});
+      // a value whose type ty does not know is still the value its name holds; a value no name holds
+      // (`#3`, one call's result handed straight to the next) is drawn without one
+      const held = h => addPlace(h.type ? typePlace(h.type) : {id: "v:" + h.name, label: h.name.startsWith("#") ? "·" : h.name, kind: "type", hue: hueOf(null), type: null});
       for (const h of site.hands || []) { const k = held(h); if (!m.dom.has(k)) m.dom.set(k, false); if (h.name) dn.set(k, h.name); }
       for (const h of site.gives || []) { const k = held(h); if (!m.cod.has(k)) m.cod.set(k, false); if (h.name) cn.set(k, h.name); }
       // what the step changes is the value it was handed, under the same name: `read_makefile(&mut g)`
@@ -1132,7 +1133,7 @@ async function renderPlaat() {
     P.C.forEach((r, k) => {
       if (!isMem(k)) { Cv.set(k, r); return; }
       const nm = name(P.cn, k), v = version(k, `${k}@${routeEntry ? choiceOf(P) : "out"}`);
-      if (nm && !k.startsWith("v:")) places.get(v).label = `${places.get(k).label} · ${nm}`;
+      if (nm && !nm.startsWith("#") && !k.startsWith("v:")) places.get(v).label = `${places.get(k).label} · ${nm}`;
       if (routeEntry) { latest.set(k + "|" + nm, v); latest.set(k + "|", v); }
       Cv.set(v, r);
     });

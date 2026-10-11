@@ -82,6 +82,7 @@ impl GraphBuilder {
     pub fn finish(self, root: String, project_root: Option<&std::path::Path>, language: &str) -> Graph {
         let mut top: Vec<(String, u32)> = self.unresolved.iter().map(|(k, v)| (k.clone(), *v)).collect();
         let mut nodes = self.nodes;
+        crate::flow::wire(&mut nodes, &self.edges);
         mark_doors(&mut nodes, &self.edges);
         let mut edges = self.edges;
         for e in edges.iter_mut().filter(|e| e.kind == EdgeKind::Calls) {

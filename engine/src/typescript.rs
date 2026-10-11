@@ -1515,7 +1515,7 @@ fn link_calls<'t>(m: &'t Module, modules: &'t IndexMap<String, Module>, store: &
         out
     };
     let gives_of = |c: TsNode, to: Option<&str>| -> Vec<Held> {
-        kept_as(c, src).map(|name| Held { ty: locals.get(&name).cloned().or_else(|| to.and_then(|t| returned.get(t).cloned())).unwrap_or_default(), name }).into_iter().collect()
+        kept_as(c, src).map(|name| Held::new(locals.get(&name).cloned().or_else(|| to.and_then(|t| returned.get(t).cloned())).unwrap_or_default(), name)).into_iter().collect()
     };
     for &c in &sites {
         let arms = arms_of(c, body, src, &choices, &CHOICES);
@@ -1526,7 +1526,7 @@ fn link_calls<'t>(m: &'t Module, modules: &'t IndexMap<String, Module>, store: &
                 if let Some(r) = resolve(m, &parts, modules, &store.nodes).filter(|r| own(r, store)) {
                     if store.nodes[&r].kind == NodeKind::Class {
                         let gives = gives_of(c, Some(&r));
-                        steps.push(Site { line, to: r.clone(), hands: hands_of(&[c.child_by_field_name("arguments")], &kept), gives: gives.clone(), arms: arms.clone(), ..Default::default() });
+                        steps.push(Site { line, to: r.clone(), hands: hands_of(&[c.child_by_field_name("arguments")], &kept), gives: gives.clone(), arms: arms.clone(), span: (c.start_byte() as u32, c.end_byte() as u32), ..Default::default() });
                         kept.extend(gives.into_iter().map(|g| g.name));
                         new_edges.push((r, EdgeKind::Instantiates, arms));
                     }
@@ -1542,7 +1542,7 @@ fn link_calls<'t>(m: &'t Module, modules: &'t IndexMap<String, Module>, store: &
                     let kind = if store.nodes[&r].kind == NodeKind::Class { EdgeKind::Instantiates } else { EdgeKind::Calls };
                     // a component is handed its attributes
                     let attrs: Vec<Option<TsNode>> = walk(c, &["jsx_attribute"]).into_iter().map(Some).collect();
-                    steps.push(Site { line, to: r.clone(), hands: hands_of(&attrs, &kept), arms: arms.clone(), ..Default::default() });
+                    steps.push(Site { line, to: r.clone(), hands: hands_of(&attrs, &kept), arms: arms.clone(), span: (c.start_byte() as u32, c.end_byte() as u32), ..Default::default() });
                     new_edges.push((r, kind, arms));
                 }
             }
@@ -1601,7 +1601,7 @@ fn link_calls<'t>(m: &'t Module, modules: &'t IndexMap<String, Module>, store: &
                         let sub = class.filter(|k| store.nodes[t].cls.as_deref().map_or(false, |b| b != k.as_str())).unwrap_or_default();
                         let this = object.map_or(false, |o| o.kind() == "this");
                         let gives = gives_of(c, Some(t));
-                        steps.push(Site { line, to: t.clone(), on: sub, this, hands, gives: gives.clone(), arms: arms.clone(), ..Default::default() });
+                        steps.push(Site { line, to: t.clone(), on: sub, this, hands, gives: gives.clone(), arms: arms.clone(), span: (c.start_byte() as u32, c.end_byte() as u32), ..Default::default() });
                         kept.extend(gives.into_iter().map(|g| g.name));
                     }
                     // a library's operation not read is a step where the body keeps what it gives
@@ -1609,7 +1609,7 @@ fn link_calls<'t>(m: &'t Module, modules: &'t IndexMap<String, Module>, store: &
                         let gives = gives_of(c, None);
                         if !hands.is_empty() && !gives.is_empty() {
                             let op = parts.last().cloned().unwrap_or_default();
-                            steps.push(Site { line, op, hands, gives: gives.clone(), arms: arms.clone(), ..Default::default() });
+                            steps.push(Site { line, op, hands, gives: gives.clone(), arms: arms.clone(), span: (c.start_byte() as u32, c.end_byte() as u32), ..Default::default() });
                             kept.extend(gives.into_iter().map(|g| g.name));
                         }
                     }

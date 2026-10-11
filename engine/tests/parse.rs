@@ -499,7 +499,7 @@ fn a_rust_body_lists_its_calls() {
     let g = analyze(&repo, &Options::default()).expect("the Atlas workspace parses");
     let analyze_fn = g.nodes.iter().find(|n| n.id == "atlas-engine.analyze").unwrap();
     let step = |to: &str| analyze_fn.sites.iter().find(|s| s.to == to).unwrap_or_else(|| panic!("{to} in {:#?}", analyze_fn.sites));
-    let held = |ty: &str, name: &str| atlas_engine::Held { ty: ty.into(), name: name.into() };
+    let held = |ty: &str, name: &str| atlas_engine::Held::new(ty, name);
     assert_eq!(step("atlas-engine.language.Language.parse").gives, [held("atlas-engine.model.Graph", "g")], "a method gives what it returns, not its receiver's type");
     let detect = step("atlas-engine.language.detect");
     assert_eq!(detect.hands, [held("atlas-engine.Options", "opts")], "the repository is a path, not a value of the package");
@@ -519,4 +519,24 @@ fn parse_is_a_function() {
             assert!(json(repo) == first, "{repo} reads differently the second time");
         }
     }
+}
+
+/// A call written inside another is composition: `Pipeline(DuckSink(..)).run()` builds a
+/// `DuckSink`, hands it to `Pipeline`, and runs what that gives back. The outer call is handed the
+/// inner one's result, not its arguments, and a value no name holds is named by its step.
+#[test]
+fn a_call_inside_a_call_is_composition() {
+    let g = fixture();
+    let steps = &g.node("fixture.cli.build").unwrap().sites;
+    let to: Vec<&str> = steps.iter().map(|s| s.to.as_str()).collect();
+    assert_eq!(to, ["fixture.sinks.duck.DuckSink", "fixture.build.Pipeline", "fixture.build.Pipeline.run"]);
+    let sink = &steps[0].gives[0];
+    assert!(sink.name.starts_with('#') && sink.ty == "fixture.sinks.duck.DuckSink", "{sink:?}");
+    assert!(steps[1].hands.contains(sink), "Pipeline is handed the sink: {:?}", steps[1].hands);
+    assert!(steps[2].hands.contains(&steps[1].gives[0]), "run is called on what Pipeline gives");
+
+    // `let lang = language::detect(repo, opts).ok_or_else(..)?`: the unwrapping is an identity
+    let atlas = analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(".."), &Options::default()).unwrap();
+    let analyze_steps: Vec<&str> = atlas.node("atlas-engine.analyze").unwrap().sites.iter().map(|s| if s.to.is_empty() { s.op.as_str() } else { s.to.as_str() }).collect();
+    assert_eq!(analyze_steps, ["atlas-engine.language.detect", "atlas-engine.language.Language.parse", "atlas-engine.entries.read_makefile", "atlas-engine.parts.assign"]);
 }

@@ -1311,15 +1311,15 @@ impl<'a> Seen<'a> {
     /// value, and `self` is the call's receiver, not something handed.
     fn held_in(&self, e: TsNode, ext: &HashMap<(String, String), String>, made: &HashSet<String>) -> Vec<Held> {
         let mut out: Vec<Held> = vec![];
-        let mut add = |ty: String, name: String| {
+        let mut add = |ty: String, name: String, at: usize| {
             if !out.iter().any(|h| h.ty == ty && h.name == name) {
-                out.push(Held { ty, name });
+                out.push(Held { ty, name, at: at as u32 });
             }
         };
         let data = |v: &&Value| !v.is_class && !v.is_code;
         if e.kind() == "call" {
             for ty in self.value(e).filter(data).map(|v| self.drawn(v, ext)).unwrap_or_default() {
-                add(ty, String::new());
+                add(ty, String::new(), e.start_byte());
             }
         }
         for i in walk(e, &["identifier"]) {
@@ -1334,10 +1334,10 @@ impl<'a> Seen<'a> {
             let tys = v.map(|v| self.drawn(v, ext)).unwrap_or_default();
             // a name whose type is not known is still a value the body made, when an earlier step made it
             if tys.is_empty() && made.contains(name) {
-                add(String::new(), name.to_string());
+                add(String::new(), name.to_string(), i.start_byte());
             }
             for ty in tys {
-                add(ty, name.to_string());
+                add(ty, name.to_string(), i.start_byte());
             }
         }
         // a value known by name is not also a nameless one
@@ -1745,12 +1745,12 @@ fn link_calls<'t>(modules: &'t IndexMap<String, Module>, store: &mut GraphBuilde
             let mut seen_held = HashSet::new();
             hands.retain(|h| seen_held.insert(h.clone()));
             // what the call gives back, by the name it is assigned to
-            let assigned = c.parent().filter(|p| p.kind() == "assignment" && p.child_by_field_name("right").map_or(false, |r| r.id() == c.id())).and_then(|p| p.child_by_field_name("left")).filter(|l| l.kind() == "identifier").map(|l| text(l, src).to_string()).unwrap_or_default();
+            let assigned = kept_as(c, src).unwrap_or_default();
             let known = seen.value(c).filter(|v| !v.is_class && !v.is_code);
-            let mut gives: Vec<Held> = known.map(|v| seen.drawn(v, ext)).unwrap_or_default().into_iter().map(|ty| Held { ty, name: assigned.clone() }).collect();
+            let mut gives: Vec<Held> = known.map(|v| seen.drawn(v, ext)).unwrap_or_default().into_iter().map(|ty| Held::new(ty, assigned.clone())).collect();
             // a value whose type ty does not know is still made, and held by the name it is assigned to
             if gives.is_empty() && known.map_or(true, |v| v.shown == "Unknown") && !assigned.is_empty() && !hands.is_empty() {
-                gives.push(Held { ty: String::new(), name: assigned.clone() });
+                gives.push(Held::new(String::new(), assigned.clone()));
             }
             new_ext.extend(hands.iter().chain(&gives).map(|h| h.ty.clone()).filter(|t| t.starts_with("ext:")));
             made.extend(gives.iter().map(|g| g.name.clone()).filter(|n| !n.is_empty()));
@@ -1777,7 +1777,7 @@ fn link_calls<'t>(modules: &'t IndexMap<String, Module>, store: &mut GraphBuilde
             match &callee {
                 Some(Callee::Def(t)) => {
                     let this = receiver.map_or(false, |o| o.kind() == "identifier" && text(o, src) == "self");
-                    steps.push(Site { line, to: t.clone(), on: on.unwrap_or_default(), this, hands: hands.clone(), gives: gives.clone(), arms: arms.clone(), ..Default::default() })
+                    steps.push(Site { line, to: t.clone(), on: on.unwrap_or_default(), this, hands: hands.clone(), gives: gives.clone(), arms: arms.clone(), span: (c.start_byte() as u32, c.end_byte() as u32), ..Default::default() })
                 }
                 // a library's call not read that makes a value the body keeps under a name, from
                 // values it was handed, is a step of its own; what a call gives without a name
@@ -1788,7 +1788,7 @@ fn link_calls<'t>(modules: &'t IndexMap<String, Module>, store: &mut GraphBuilde
                             "attribute" => fnode.child_by_field_name("attribute").map(|a| text(a, src).to_string()),
                             _ => Some(text(fnode, src).rsplit('.').next().unwrap_or("").to_string()),
                         };
-                        steps.push(Site { line, op: op.unwrap_or_default(), hands: hands.clone(), gives: gives.clone(), arms: arms.clone(), ..Default::default() });
+                        steps.push(Site { line, op: op.unwrap_or_default(), hands: hands.clone(), gives: gives.clone(), arms: arms.clone(), span: (c.start_byte() as u32, c.end_byte() as u32), ..Default::default() });
                     }
                 }
             }
@@ -1965,6 +1965,22 @@ fn file_calls<'t>(seen: &Seen, eval: &Eval, at: At<'_, 't>, c: TsNode<'t>, fnode
             (kind, what, artifact, crate::tree::head_literal(a, src, &["string"]), eval.of(at, a, 0))
         })
         .collect()
+}
+
+/// The name the body keeps a call's value by: the target of the assignment (or `:=`) it is the
+/// value of, through parentheses and `await`. A value assigned to `_` is not kept.
+fn kept_as(c: TsNode, src: &[u8]) -> Option<String> {
+    let mut n = c;
+    loop {
+        let p = n.parent()?;
+        let value = |field: &str| p.child_by_field_name(field).map(|v| v.id()) == Some(n.id());
+        match p.kind() {
+            "parenthesized_expression" | "await" => n = p,
+            "assignment" if value("right") => return p.child_by_field_name("left").filter(|l| l.kind() == "identifier" && text(*l, src) != "_").map(|l| text(l, src).to_string()),
+            "named_expression" if value("value") => return p.child_by_field_name("name").map(|l| text(l, src).to_string()),
+            _ => return None,
+        }
+    }
 }
 
 /// Which way a file argument goes: what its parameter's type says (a file to read from or to write

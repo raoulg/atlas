@@ -62,7 +62,7 @@ fn a_body_lists_its_calls() {
         "{:#?}",
         main.sites
     );
-    let held = |ty: &str, name: &str| atlas_engine::Held { ty: ty.into(), name: name.into() };
+    let held = |ty: &str, name: &str| atlas_engine::Held::new(ty, name);
     let settings = &main.sites[3];
     assert_eq!(settings.gives, [held("plotkit.figures.Settings", "settings")]);
     let plot = &main.sites[5];

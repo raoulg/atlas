@@ -1051,7 +1051,7 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crat
     };
     // what it gives back, by the name the body keeps it by
     let gives_of = |c: TsNode, to: Option<&str>| -> Vec<Held> {
-        kept_as(c, src).map(|name| Held { ty: locals.get(&name).cloned().or_else(|| to.and_then(returned_class)).unwrap_or_default(), name }).into_iter().collect()
+        kept_as(c, src).map(|name| Held::new(locals.get(&name).cloned().or_else(|| to.and_then(returned_class)).unwrap_or_default(), name)).into_iter().collect()
     };
     for c in evaluation_order(walk(body, &["call_expression", "struct_expression"])) {
         let line = c.start_position().row as u32 + 1;
@@ -1060,7 +1060,7 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crat
             if let Some(r) = resolve(m, &parts, modules, &store.nodes, crate_ids).filter(|r| !r.starts_with("ext:")) {
                 if store.nodes.get(&r).map_or(false, |x| x.kind == NodeKind::Class) {
                     let gives = gives_of(c, Some(&r));
-                    steps.push(Site { line, to: r.clone(), hands: hands_of(&[c.child_by_field_name("body")], &made), gives: gives.clone(), arms: arms_of(c, body, src, &choices, &CHOICES), ..Default::default() });
+                    steps.push(Site { line, to: r.clone(), hands: hands_of(&[c.child_by_field_name("body")], &made), gives: gives.clone(), arms: arms_of(c, body, src, &choices, &CHOICES), span: (c.start_byte() as u32, c.end_byte() as u32), ..Default::default() });
                     made.extend(gives.into_iter().map(|g| g.name));
                     new_edges.push((r, EdgeKind::Instantiates, None, arms_of(c, body, src, &choices, &CHOICES)));
                 }
@@ -1088,7 +1088,7 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crat
         let library_step = |op: &str, recv: Option<TsNode>, made: &HashSet<String>| -> Option<Site> {
             let hands = hands_of(&[recv, c.child_by_field_name("arguments")], made);
             let gives = gives_of(c, None);
-            (!hands.is_empty() && !gives.is_empty()).then(|| Site { line, op: op.to_string(), hands, gives, arms: arms_of(c, body, src, &choices, &CHOICES), ..Default::default() })
+            (!hands.is_empty() && !gives.is_empty()).then(|| Site { line, op: op.to_string(), hands, gives, arms: arms_of(c, body, src, &choices, &CHOICES), span: (c.start_byte() as u32, c.end_byte() as u32), ..Default::default() })
         };
         let mut target: Option<String> = None;
         let mut recv: Option<TsNode> = None;
@@ -1204,7 +1204,7 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crat
                 let via = if kind == EdgeKind::Instantiates && parts.len() > 1 && parts[0] != "Self" { parts.last().cloned() } else { None };
                 let this = recv.map_or(false, |r| r.kind() == "self");
                 let gives = gives_of(c, Some(&t));
-                steps.push(Site { line, to: t.clone(), this, hands: hands_of(&[recv, c.child_by_field_name("arguments")], &made), gives: gives.clone(), arms: arms_of(c, body, src, &choices, &CHOICES), ..Default::default() });
+                steps.push(Site { line, to: t.clone(), this, hands: hands_of(&[recv, c.child_by_field_name("arguments")], &made), gives: gives.clone(), arms: arms_of(c, body, src, &choices, &CHOICES), span: (c.start_byte() as u32, c.end_byte() as u32), ..Default::default() });
                 made.extend(gives.into_iter().map(|g| g.name));
                 new_edges.push((t, kind, via, arms_of(c, body, src, &choices, &CHOICES)));
             }

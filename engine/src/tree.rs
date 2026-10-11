@@ -38,8 +38,8 @@ pub fn held_names(e: TsNode, src: &[u8], skip: &[&str], ty: &dyn Fn(&str) -> Opt
             continue;
         }
         let held = match ty(name) {
-            Some(t) => crate::model::Held { ty: t, name: name.to_string() },
-            None if made.contains(name) => crate::model::Held { ty: String::new(), name: name.to_string() },
+            Some(t) => crate::model::Held { ty: t, name: name.to_string(), at: i.start_byte() as u32 },
+            None if made.contains(name) => crate::model::Held { ty: String::new(), name: name.to_string(), at: i.start_byte() as u32 },
             None => continue,
         };
         if !out.contains(&held) {

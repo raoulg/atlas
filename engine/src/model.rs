@@ -161,16 +161,45 @@ pub struct Site {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[ts(type = "Array<[number, number]>")]
     pub arms: Vec<(u32, u32)>,
+    /// Where the call is written, as a byte range of its file; `(0, 0)` for a step no expression
+    /// of the body is (a function handed on, called by whoever receives it).
+    #[serde(skip)]
+    pub span: (u32, u32),
 }
 
-/// A value by its type, and the name the code holds it by when it has one.
-#[derive(Serialize, Deserialize, TS, Clone, Debug, Default, PartialEq, Eq, Hash)]
+/// A value by its type, and the name the code holds it by when it has one. A value no name holds
+/// (one call's result handed straight to another) is named by the step that makes it: `#3`.
+#[derive(Serialize, Deserialize, TS, Clone, Debug, Default)]
 #[ts(export)]
 pub struct Held {
     #[serde(rename = "type")]
     pub ty: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub name: String,
+    /// Where the code writes it, as a byte offset of its file: where it comes from, not what it is.
+    #[serde(skip)]
+    pub at: u32,
+}
+
+impl Held {
+    pub fn new(ty: impl Into<String>, name: impl Into<String>) -> Held {
+        Held { ty: ty.into(), name: name.into(), at: 0 }
+    }
+}
+
+/// A value is its type and its name; where it is written does not make it another.
+impl PartialEq for Held {
+    fn eq(&self, other: &Held) -> bool {
+        (&self.ty, &self.name) == (&other.ty, &other.name)
+    }
+}
+
+impl Eq for Held {}
+
+impl std::hash::Hash for Held {
+    fn hash<H: std::hash::Hasher>(&self, h: &mut H) {
+        (&self.ty, &self.name).hash(h);
+    }
 }
 
 impl Default for NodeKind {
