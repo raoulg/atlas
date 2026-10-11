@@ -7,6 +7,13 @@ use atlas_engine::{parts, principles, remote};
 use clap::builder::styling::{AnsiColor, Effects, Style, Styles};
 use clap::{Parser, Subcommand};
 
+/// The version and the commit this build is from: `0.1.0 (a5e777d)`, with `+` after a commit
+/// whose tree had edits.
+static VERSION: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| match env!("ATLAS_COMMIT") {
+    "" => env!("CARGO_PKG_VERSION").to_string(),
+    c => format!("{} ({c})", env!("CARGO_PKG_VERSION")),
+});
+
 /// The logo's colours in the terminal's own palette: structure in petrol (cyan), commands in ink.
 const STYLES: Styles = Styles::styled()
     .header(AnsiColor::Cyan.on_default().effects(Effects::BOLD))
@@ -23,7 +30,7 @@ fn banner() -> String {
     let (dim, bold) = (Style::new().effects(Effects::DIMMED), Style::new().effects(Effects::BOLD));
     format!(
         "{place}■{place:#}{dim}──▶{dim:#}{place}■{place:#}{dim}──▶{dim:#}{end}■{end:#}  {bold}atlas{bold:#} {dim}{}{dim:#}",
-        env!("CARGO_PKG_VERSION")
+        VERSION.as_str()
     )
 }
 
@@ -47,7 +54,7 @@ fn examples() -> String {
 #[derive(Parser)]
 #[command(
     name = "atlas",
-    version,
+    version = VERSION.as_str(),
     about = "See how code works: where data rests, and the functions that carry it there.",
     before_help = banner(),
     after_help = examples(),
@@ -130,7 +137,7 @@ fn view(repos: &[PathBuf], roles: Option<&std::path::Path>, out: Option<PathBuf>
         page["changes"] = serde_json::to_value(atlas_engine::changes::since(repo, rev)?)?;
     }
     projects.insert(g.root.clone(), page);
-    let payload = serde_json::to_string(&serde_json::json!({ "projects": projects }))?.replace("</", "<\\/");
+    let payload = serde_json::to_string(&serde_json::json!({ "projects": projects, "atlas": VERSION.as_str() }))?.replace("</", "<\\/");
     let html = VIEWER.replacen("/*__FONTS__*/", FONTS, 1).replacen("/*__DATA__*/null", &payload, 1);
     let out = out.unwrap_or_else(|| {
         let dir = std::env::temp_dir().join("atlas");

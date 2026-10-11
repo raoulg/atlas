@@ -153,10 +153,7 @@ pub fn span(n: TsNode) -> Option<(u32, u32)> {
 /// are cut; a long statement keeps its first three words.
 pub fn what_of(call: TsNode, src: &[u8], string_kinds: &[&str], arg_field: &str) -> String {
     if let Some(lit) = literals(call, src, string_kinds).into_iter().find(|l| !crate::effects::is_mode(l)) {
-        let lit = lit.trim();
-        let words: Vec<&str> = lit.split_whitespace().collect();
-        let out = if words.len() > 3 { words[..3].join(" ") + " …" } else { lit.to_string() };
-        return out.chars().take(48).collect();
+        return shown(&lit);
     }
     let Some(args) = call.child_by_field_name(arg_field) else { return String::new() };
     match named_children(args).into_iter().next() {
@@ -165,6 +162,14 @@ pub fn what_of(call: TsNode, src: &[u8], string_kinds: &[&str], arg_field: &str)
         }
         _ => String::new(),
     }
+}
+
+/// A literal as a label: its first three words, at most 48 characters.
+pub fn shown(lit: &str) -> String {
+    let lit = lit.trim();
+    let words: Vec<&str> = lit.split_whitespace().collect();
+    let out = if words.len() > 3 { words[..3].join(" ") + " …" } else { lit.to_string() };
+    out.chars().take(48).collect()
 }
 
 /// Every string literal under a call, unquoted, in source order: `f"{name}.png"` -> `{name}.png`.

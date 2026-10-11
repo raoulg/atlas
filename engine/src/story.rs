@@ -1,5 +1,5 @@
 //! A route as text: an entry and its steps in call order, each with its own signature and its
-//! own effects, as Story shows them. Alternatives share a number and are lettered by branch:
+//! own effects. Alternatives share a number and are lettered by branch:
 //! the arms of a choice in the body, or the overrides a call may run.
 
 use std::collections::{HashMap, HashSet};

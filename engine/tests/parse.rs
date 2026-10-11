@@ -447,7 +447,8 @@ fn a_crate_reads_from_inside() {
 /// A file call's file is what its library types as one: the path a method of a path is called
 /// on (the mode of `p.open("w")` is no path), each of `shutil.copy`'s two paths in its
 /// direction, the file a handle was opened at, and never a literal that is not the path
-/// (`na_rep="NA"`).
+/// (`na_rep="NA"`, `encoding="utf-8"`): a path known only at run time is named by the code that
+/// holds it.
 #[test]
 fn a_file_is_what_the_api_types_as_one() {
     let g = fixture();
@@ -455,6 +456,8 @@ fn a_file_is_what_the_api_types_as_one() {
     let keep = t("fixture.files.keep");
     assert!(keep.iter().all(|(_, _, a, fixed)| !fixed && a != "w"), "`cache_file.open(\"w\")`: the path is the parameter: {keep:?}");
     assert!(keep.iter().any(|(k, op, _, _)| k == "disk_write" && op == "dump"), "`json.dump(.., f)` writes the file `f` was opened at: {keep:?}");
+    let named: Vec<&str> = g.node("fixture.files.keep").unwrap().touches.iter().filter(|t| t.op == "open").map(|t| t.what.as_str()).collect();
+    assert_eq!(named, ["cache_file"], "the file is the path it is opened at, not its encoding");
     let install = t("fixture.files.install");
     assert!(install.iter().any(|(k, _, a, _)| k == "disk_write" && a == "data/config.toml"), "{install:?}");
     assert!(install.iter().any(|(k, _, _, _)| k == "disk_read"), "the source is read: {install:?}");

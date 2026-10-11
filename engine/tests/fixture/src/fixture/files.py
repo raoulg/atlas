@@ -36,7 +36,7 @@ def read_report(kind: str) -> str:
 
 
 def keep(cache_file: Path) -> None:
-    with cache_file.open("w") as f:
+    with cache_file.open("w", encoding="utf-8") as f:
         json.dump({}, f)
 
 

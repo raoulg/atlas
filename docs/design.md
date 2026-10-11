@@ -140,7 +140,7 @@ picture that answers none is decoration.
 
 | Question | View | Layout |
 |---|---|---|
-| **Orient** — what does this do? | the fiber of a route, quotient by effect signature | story outline, plaat |
+| **Orient** — what does this do? | the fiber of a route, quotient by effect signature | plaat |
 | **Verify** — does it do what I designed? | quotient by declared role, diff against the declaration | plaat with conformance marks |
 | **Place** — where does new work land? | quotient by base class, k-hop focus | type lattice, architecture columns |
 | **Explain** — to a student or an agent | any of the above, saved as a view | the same, with notes |
@@ -361,7 +361,6 @@ items, it is two views.
 
 | View | Question | Picture |
 |---|---|---|
-| **Story** | Orient | Routes into the program as rows of steps in call order; the resting places as columns; a dot where a step, or anything it reaches, touches one. Each step shows its morphism and expands into its own steps. Overview: every route and what it reaches. |
 | **Flowchart** | Orient, Verify | The image of the effect functor: resting places as boxes, quotiented arrows between them, named by base class or package when declared and by signature otherwise. Click a box to refine it one level. Conformance marks where the declared flow disagrees. |
 | **Architecture** | Verify, Place | Role columns left → right; orchestration band above, foundation band below; modules as boxes with class/function chips; aggregated edges; backflow in the alert colour. |
 | **Type lattice** | Place | Inheritance forest; external bases as ghosts; wide leaf families as a grid; badges for abstract methods and overrides. |

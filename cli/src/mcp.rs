@@ -75,7 +75,7 @@ fn initialize(params: &Value) -> Value {
     json!({
         "protocolVersion": version,
         "capabilities": { "tools": {} },
-        "serverInfo": { "name": "atlas", "version": env!("CARGO_PKG_VERSION") },
+        "serverInfo": { "name": "atlas", "version": crate::VERSION.as_str() },
         "instructions": INSTRUCTIONS,
     })
 }

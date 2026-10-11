@@ -1479,9 +1479,8 @@ fn link_calls<'t>(modules: &'t IndexMap<String, Module>, store: &mut GraphBuilde
             let tag = effects::boundary(lib.as_deref(), &parts).filter(|t| seen.moves(fnode, t, lib.as_deref(), parts.last().map_or("", String::as_str)));
             if let Some(tag) = tag.filter(|t| t.starts_with("disk")) {
                 let op = parts.last().cloned().unwrap_or_default();
-                let what = what_of(c, src, &["string"], "arguments");
-                let payload = payload_of(c, src, &what, "arguments", &seen.handed(c));
-                for (kind, artifact, fixed, built) in file_calls(&seen, eval, at, c, fnode, tag, lib.as_deref(), &op) {
+                for (kind, what, artifact, fixed, built) in file_calls(&seen, eval, at, c, fnode, tag, lib.as_deref(), &op) {
+                    let payload = payload_of(c, src, &what, "arguments", &seen.handed(c));
                     let t = Touch { kind: kind.into(), what: what.clone(), payload: payload.clone(), op: op.clone(), artifact, dir: String::new(), fixed, line: c.start_position().row as u32 + 1, n: 1 };
                     match built.is_empty() {
                         true => touches.push(t),
@@ -1570,14 +1569,16 @@ fn link_calls<'t>(modules: &'t IndexMap<String, Module>, store: &mut GraphBuilde
     Linked { handed, files, args }
 }
 
-/// The files a file call touches, each with its direction, its name when the code writes it out,
+/// The files a file call touches, each with its direction, what the code calls it (the literal
+/// it is built from, else the expression that holds it: `datafile` in `datafile.open(..)`), its
+/// name when the code writes it out,
 /// whether the code alone decides it, and its path as built (placed once the parameters' values
 /// are known). The file is what the call's library types as one: the path a method of a path is
 /// called on, an argument typed as a path, or a file opened to read from or write to; a library
 /// whose types are not known hands its first argument. The direction is what the type says
 /// (`SupportsRead`, `SupportsWrite`), what the call's `mode` says, or for a call handed two paths
 /// the API's own names for them (`src`, `dst`); else the operation's.
-fn file_calls<'t>(seen: &Seen, eval: &Eval, at: At<'_, 't>, c: TsNode<'t>, fnode: TsNode<'t>, tag: &'static str, lib: Option<&str>, op: &str) -> Vec<(&'static str, String, bool, Vec<Built>)> {
+fn file_calls<'t>(seen: &Seen, eval: &Eval, at: At<'_, 't>, c: TsNode<'t>, fnode: TsNode<'t>, tag: &'static str, lib: Option<&str>, op: &str) -> Vec<(&'static str, String, String, bool, Vec<Built>)> {
     let src = &at.m.src;
     let sig = seen.facts.and_then(|x| x.signature(Seen::range(fnode)));
     let typed = sig.map(|s| paths::file_args(s, c, src)).unwrap_or_default();
@@ -1590,7 +1591,8 @@ fn file_calls<'t>(seen: &Seen, eval: &Eval, at: At<'_, 't>, c: TsNode<'t>, fnode
     let paths = files.iter().filter(|(k, _, _)| *k == Some(FileArg::Path)).count();
     if files.is_empty() {
         let f = effects::facts(tag, lib, op, &mode.into_iter().collect::<Vec<_>>());
-        return f.places().into_iter().map(|(artifact, _)| (f.kind, artifact, false, vec![])).collect();
+        let what = what_of(c, src, &["string"], "arguments");
+        return f.places().into_iter().map(|(artifact, _)| (f.kind, what.clone(), artifact, false, vec![])).collect();
     }
     files
         .into_iter()
@@ -1610,7 +1612,11 @@ fn file_calls<'t>(seen: &Seen, eval: &Eval, at: At<'_, 't>, c: TsNode<'t>, fnode
                 _ => f.kind,
             };
             let artifact = f.places().into_iter().next().map(|(a, _)| a).unwrap_or_default();
-            (kind, artifact, crate::tree::head_literal(a, src, &["string"]), eval.of(at, a, 0))
+            let what = match literals(a, src, &["string"]).into_iter().next() {
+                Some(l) => crate::tree::shown(&l),
+                None => text(a, src).chars().take(40).collect(),
+            };
+            (kind, what, artifact, crate::tree::head_literal(a, src, &["string"]), eval.of(at, a, 0))
         })
         .collect()
 }

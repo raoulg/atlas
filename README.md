@@ -65,8 +65,9 @@ Read it from left to right:
   each part its role, and hand back the `Graph`. That is Atlas's whole job, and the code
   says it in five steps.
 - **`parse · one of 3`** is a choice: the same call goes to the Python, the Rust or the
-  TypeScript reader. `Language (4)` and `Graph (6)` are families: a type and the
-  types that belong to it, folded into one box. Click one to open it.
+  TypeScript reader. `Language (4)` and `Graph (9)` are families: a type and the
+  types that belong to it or that it holds, folded into one box. Click one to open it.
+  A config opens the same way into what it holds (`folders: Folders`).
 - **Click any pill** to open it into its own steps, and **show code** to see its source.
 - **Files fold into their folders** once a picture holds more than a column's worth:
   `File(artefacts/) · 8` opens into what is in it with a click.
@@ -82,14 +83,7 @@ Read it from left to right:
   open beside the picture.
 - **Press `?`** in the page for every key and click on one card.
 
-Story shows the same route as a list. Each step has its own signature and its own effects
-(`writes html → out`, `runs open`). A choice is lettered (`2a | 2b | 2c`). The dots on the
-right show which places a step reaches through everything it calls.
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/img/story-dark.png">
-  <img src="docs/img/story-light.png" alt="Atlas's Story view of its own command line">
-</picture>
+The same route as text, with its steps in call order, is the MCP tool `route` (see below).
 
 ## Install
 
@@ -124,8 +118,9 @@ atlas --help
 
 `atlas view` writes a single HTML file and opens it. No server runs and your code stays on
 your machine. The page fetches only its drawing libraries (d3, elk, highlight.js) from a
-CDN. It has five views. **Story** and **Flowchart** are the ones to start
-with. Architecture, Type lattice and Signature flow are earlier experiments.
+CDN. It has four views. The **Flowchart** is the one to start with. Architecture, Type
+lattice and Signature flow are earlier experiments. The header names the build that drew
+the page, as `atlas --version` does: `0.1.0 (a5e777d)`.
 
 Atlas reads:
 
