@@ -296,11 +296,13 @@ pub struct Arrow {
     /// What the body changes in place: `T -> T`.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub changes: Vec<String>,
-    /// The signature gives a value back: an opened body makes it from what its steps give.
+    /// The signature gives a value back: a type of the code's, or what it gives on success
+    /// (unwrapped from a `Result` or a `Promise`) is no unit. An opened body makes it from what
+    /// its steps give.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub gives_back: bool,
-    /// What it gives back, unwrapped from a `Result` or a `Promise`, is a value, not a unit: a
-    /// value with no place of its own (a `str`) goes back to the step that called it.
+    /// What it gives back on success is a value, not a unit: a value with no place of its own (a
+    /// `str`) goes back to the step that called it.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub returns_value: bool,
 }
@@ -356,14 +358,15 @@ fn arrow_of(ix: &Ix, n: &Node) -> Arrow {
     let ctor = n.cls.as_deref().map_or(false, |c| n.id == format!("{c}.__init__"));
     let gives = ix.targets(&n.id, EdgeKind::Returns);
     let returned = unwrapped(&n.returns);
+    let returns_value = !returned.is_empty() && !unit(returned);
     Arrow {
         receiver: n.cls.clone().filter(|_| !ctor && !n.on_class).unwrap_or_default(),
         takes: ix.targets(&n.id, EdgeKind::Takes),
-        gives_back: !gives.is_empty() || (!n.returns.is_empty() && !unit(&n.returns)),
+        gives_back: !gives.is_empty() || returns_value,
         gives,
         builds: if ctor { n.cls.clone().unwrap_or_default() } else { String::new() },
         changes: ix.targets(&n.id, EdgeKind::Mutates),
-        returns_value: !returned.is_empty() && !unit(returned),
+        returns_value,
     }
 }
 
@@ -653,6 +656,16 @@ mod tests {
 
     /// `lang = detect(opts).unwrap()` read by a language that names the unwrapped value already:
     /// the arrow from `lang` to `lang` is the identity.
+    /// `Result<(), E>` and `Promise<void>` give nothing back on success; `Result<Graph>` gives a
+    /// `Graph`.
+    #[test]
+    fn a_unit_wrapped_is_nothing_given_back() {
+        assert_eq!(unwrapped("std::io::Result<()>"), "()");
+        assert_eq!(unwrapped("Promise<void>"), "void");
+        assert_eq!(unwrapped("Result<Vec<String>, Error>"), "Vec<String>");
+        assert!(unit(unwrapped("anyhow::Result<()>")) && !unit(unwrapped("Result<Graph>")));
+    }
+
     #[test]
     fn an_identity_on_a_named_value_is_not_drawn() {
         let mut sites = vec![
