@@ -559,3 +559,15 @@ fn a_body_is_what_a_route_runs() {
     let route = atlas_engine::story::route(&atlas, "atlas-engine.analyze", 2).unwrap();
     assert!(route.contains("2  Language.parse(repo, opts) → Graph   ·   one of 3"), "the agent reads the same alternatives: {route}");
 }
+
+/// A subclass stands in the place of the base the program uses as a type, and a family whose
+/// member reaches a database is a door to it, not data.
+#[test]
+fn types_fall_into_families() {
+    let g = fixture();
+    let t = atlas_engine::families::families(&g);
+    assert_eq!(t.kind.get("fixture.sinks.duck.DuckSink").map(String::as_str), Some("fixture.sinks.base.Sink"), "Pipeline takes a Sink");
+    assert!(t.members["fixture.sinks.base.Sink"].contains(&"fixture.sinks.duck.DuckSink".to_string()));
+    assert!(t.doors.contains(&"fixture.sinks.base.Sink".to_string()), "DuckSink writes to DuckDB, so a Sink is a door");
+    assert!(!t.doors.contains(&"fixture.schema.Graph".to_string()), "a Graph is data");
+}

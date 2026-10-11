@@ -134,6 +134,8 @@ fn view(repos: &[PathBuf], opts: &Options, out: Option<PathBuf>, open: bool, sin
     page["flow"] = serde_json::to_value(atlas_engine::flow::bodies(&g))?;
     // what each function takes and gives, as types
     page["arrows"] = serde_json::to_value(atlas_engine::flow::arrows(&g))?;
+    // the types as the picture groups them: families, doors, who makes and takes each
+    page["types"] = serde_json::to_value(atlas_engine::families::families(&g))?;
     if let Some(rev) = since {
         let [repo] = repos else { anyhow::bail!("--since compares one repository with its history") };
         page["changes"] = serde_json::to_value(atlas_engine::changes::since(repo, rev, opts)?)?;

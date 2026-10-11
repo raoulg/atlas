@@ -581,42 +581,13 @@ if (D.open && byId.has(D.open)) { routeEntry = D.open; entrySel.value = D.open; 
 // a family is rooted in a base the program uses as a type: some signature takes or returns it, a
 // field holds it, a sum names it. A base that only shares code (a config mixin, pydantic's
 // BaseModel, torch's Module, a derived trait) is how a class is built, not what flows
-const usedAsType = new Set(D.edges.filter(e => ["takes", "returns", "has", "mutates", "variant"].includes(e.kind)).map(e => e.dst));
-// the outermost ancestor the program uses as a type, through bases that only share code
-function usedBase(id, depth) {
-  for (const b of (out.get(id) || []).filter(e => e.kind === "inherits" && byId.get(e.dst)?.kind === "class").map(e => e.dst)) {
-    const up = depth < 10 ? usedBase(b, depth + 1) : null;
-    if (up) return up;
-    if (usedAsType.has(b)) return b;
-  }
-  return null;
-}
-const famCache = new Map();
-function familyOf(id, depth = 0) {
-  if (famCache.has(id)) return famCache.get(id);
-  let fam = id;
-  const up = usedBase(id, depth);
-  if (up) fam = up;
-  else {
-    const owners = [...new Set((inn.get(id) || []).filter(e => e.kind === "has" && byId.get(e.src)?.kind === "class").map(e => e.src))];
-    if (owners.length === 1 && owners[0] !== id && depth < 10) fam = familyOf(owners[0], depth + 1);
-  }
-  famCache.set(id, fam); return fam;
-}
-// in the picture a subclass stands in its base's place (Python and Rust are kinds of Language); a part
-// stands on its own, because a part that a step takes or hands on by itself is a value, not a part;
-// opening a type shows both what kinds it has and what it holds
-const kindCache = new Map();
-function kindOf(id, depth = 0) {
-  if (kindCache.has(id)) return kindCache.get(id);
-  const k = usedBase(id, depth) || id;
-  kindCache.set(id, k); return k;
-}
-const members = new Map();
-for (const n of D.nodes) if (n.kind === "class" || n.kind === "external") { const f = familyOf(n.id); if (f !== n.id) { if (!members.has(f)) members.set(f, []); members.get(f).push(n.id); } }
-// what a type holds that other types hold too (a config's folders, which the class it configures
-// keeps as well): not its own part, but inside it, as a reference, when it is opened
-const sharedOf = f => { const inFam = new Set([f, ...(members.get(f) || [])]); return (out.get(f) || []).filter(e => e.kind === "has" && e.via && !inFam.has(e.dst) && byId.get(e.dst)?.kind === "class"); };
+// the engine groups the types: a subclass stands in its base's place (Python and Rust are kinds of
+// Language), a part in its one owner's, and a type holds what other types hold too as a reference
+const TYPES = D.types || {};
+const familyOf = id => (TYPES.family || {})[id] || id;
+const kindOf = id => (TYPES.kind || {})[id] || id;
+const members = new Map(Object.entries(TYPES.members || {}));
+const sharedOf = f => ((TYPES.shared || {})[f] || []).map(s => ({via: s.via, dst: s.to}));
 // a type opens when it has kinds or parts of its own, or holds what it shares; (n) counts the types it opens into
 const opens = t => members.has(t) || sharedOf(t).length > 0;
 const opensInto = t => (members.get(t) || []).length + sharedOf(t).length + 1;
@@ -691,23 +662,12 @@ function unitRoutes(u) {
 // place is drawn, not the door; the engine marks it (`door`), and a family is a door when one of
 // its members is. So is a library's type whose calls reach a place (`sqlite3.Connection`); what
 // crosses between units is data
-const doorCache = new Map();
-function isDoor(t) {
-  if (!doorCache.has(t)) {
-    const fam = familyOf(t), kin = [t, fam, ...(members.get(fam) || [])];
-    doorCache.set(t, kin.some(c => !!byId.get(c)?.door));
-  }
-  return doorCache.get(t);
-}
+const doors = new Set(TYPES.doors || []);
+const isDoor = t => doors.has(t);
 const isData = t => { const n = byId.get(t); return (n?.kind === "class" || n?.kind === "external") && !isDoor(t); };
 // who makes each type (gives it back, builds it, changes it) and who takes it: a type crosses between
 // two units when one makes it and the other takes it
-const typeUse = { makes: new Map(), takes: new Map() };
-for (const e of D.edges) {
-  if (byId.get(e.src)?.library) continue;
-  const m = e.kind === "takes" ? typeUse.takes : ["returns", "instantiates", "mutates"].includes(e.kind) ? typeUse.makes : null;
-  if (m) { if (!m.has(e.dst)) m.set(e.dst, new Set()); m.get(e.dst).add(e.src); }
-}
+const typeUse = { makes: new Map((TYPES.makes || []).map(([t, by]) => [t, new Set(by)])), takes: new Map((TYPES.takes || []).map(([t, by]) => [t, new Set(by)])) };
 // where a route comes from: the command typed, the request made, the tool called
 const ENTRY_PLACE = {cli: l => `$ ${l}`, make: l => `$ make ${l}`, script: l => `$ python ${l}`, notebook: l => `notebook ${l}`, route: l => l, mcp: l => `MCP ${l}`, export: (l, n) => `${n ? partOf(n) : D.root}.${l}`, test: l => `test ${l}`};
 const entryPlace = id => { const n = byId.get(id), e = n.entry; return {id: "e:" + id, label: ENTRY_PLACE[e.kind](e.label, n), kind: "world"}; };
