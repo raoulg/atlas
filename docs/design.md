@@ -101,6 +101,17 @@ named artifacts, DB into Memgraph and DuckDB, `Sink` into its subclasses) refine
 the picture; that is the zoom. The declared architecture is an override on the
 naming of the classes, never the source of the picture.
 
+An opened route is the fiber of its calls, not of its functions. Each call is an arrow of
+its own, in the order the body runs them: a function called twice is two arrows, and a
+method called on a value of a subclass is that subclass's (Python's own dispatch, by the
+receiver's type ty gives). An arrow takes what its function declares and what its call
+hands it, and hands on what it gives back; each value is the one the body holds by its
+name, so `data` from one call is the `data` the next takes. A library's operation Atlas does
+not read is an arrow where the body names its result (`tests = data["x"].to_numpy()`);
+what it gives without a name goes into the call around it. Where ty does not know a value's
+type, the value is still followed by its name, and no type is guessed. A body that gives
+nothing back has only its own effects as its own arrow.
+
 Three things make `F` honest, and each is an engine task:
 
 1. Database reads and writes are different arrows. A graph database's direction is what

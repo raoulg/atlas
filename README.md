@@ -69,6 +69,11 @@ Read it from left to right:
   types that belong to it or that it holds, folded into one box. Click one to open it.
   A config opens the same way into what it holds (`folders: Folders`).
 - **Click any pill** to open it into its own steps, and **show code** to see its source.
+- **In Python a step is a call.** A function the route calls twice is two steps, and a
+  method called on a subclass's value is that subclass's (`ComparePlot.plot`). Values are
+  drawn by the names the code holds them by (`DataFrame · data`). A library operation
+  Atlas does not read is a step in italics where the code names its result (`to_numpy`). In
+  a notebook, each call that makes a figure makes its own (`Figure 3 · ResidualPlot.plot`).
 - **Files fold into their folders** once a picture holds more than a column's worth:
   `File(artefacts/) · 8` opens into what is in it with a click.
 - **Shift-click a package** in the overview to focus on it: the picture keeps the packages

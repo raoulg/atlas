@@ -1766,7 +1766,10 @@ fn link_calls<'t>(modules: &'t IndexMap<String, Module>, store: &mut GraphBuilde
                 }
             }
             match &callee {
-                Some(Callee::Def(t)) => steps.push(Site { line, to: t.clone(), on: on.unwrap_or_default(), hands: hands.clone(), gives: gives.clone(), arms: arms.clone(), ..Default::default() }),
+                Some(Callee::Def(t)) => {
+                    let this = receiver.map_or(false, |o| o.kind() == "identifier" && text(o, src) == "self");
+                    steps.push(Site { line, to: t.clone(), on: on.unwrap_or_default(), this, hands: hands.clone(), gives: gives.clone(), arms: arms.clone(), ..Default::default() })
+                }
                 // a library's call not read that makes a value the body keeps under a name, from
                 // values it was handed, is a step of its own; what a call gives without a name
                 // goes into the call around it

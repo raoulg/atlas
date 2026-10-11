@@ -125,6 +125,9 @@ svg#canvas:active{cursor:grabbing}
 .chg .add{color:var(--add)}
 .chg .del{color:var(--alert);text-decoration:line-through}
 .tstep.own rect.bg{fill:var(--panel);stroke-dasharray:none}
+.tstep.op{cursor:default}
+.tstep.op rect.bg{stroke-dasharray:3 3}
+.tstep.op text.title{font-style:italic}
 .tnode.world rect.bg{fill:color-mix(in oklab, var(--k) 12%, var(--panel));stroke:color-mix(in oklab, var(--k) 55%, var(--line))}
 .tnode.ref rect.bg{fill:transparent;stroke-dasharray:3 3}
 .tnode.ref .title{fill:var(--ink-3);font-weight:500}
@@ -732,6 +735,34 @@ function overrides(n) {
   }
   return res;
 }
+// the method a value of class `on` runs for `name`: its class's own, or the nearest base's
+function methodOn(on, name, depth = 0) {
+  if (byId.has(`${on}.${name}`)) return `${on}.${name}`;
+  if (depth > 10) return null;
+  for (const e of out.get(on) || []) if (e.kind === "inherits") { const m = methodOn(e.dst, name, depth + 1); if (m) return m; }
+  return null;
+}
+// a body's calls (where the engine lists them, in the order they run) in different arms of one
+// choice are alternatives, as its callees are below
+function siteGroups(sites) {
+  const byChoice = new Map(), arms = s => s.arms && s.arms.length ? s.arms : null;
+  sites.forEach((s, i) => { if (arms(s)) { const k = s.arms[0][0]; if (!byChoice.has(k)) byChoice.set(k, []); byChoice.get(k).push(i); } });
+  const items = [], placed = new Set();
+  sites.forEach((s, i) => {
+    const k = arms(s) ? s.arms[0][0] : null, grp = k === null ? null : byChoice.get(k);
+    const paths = grp ? [...new Set(grp.map(j => JSON.stringify(sites[j].arms)))] : [];
+    if (paths.length < 2) { items.push(i); return; }
+    if (placed.has(k)) return;
+    placed.add(k);
+    items.push({choice: k, members: grp.map(j => ({i: j, branch: paths.indexOf(JSON.stringify(sites[j].arms))}))});
+  });
+  return items;
+}
+// what each step of an opened route stands for: the function it runs (or a library's operation,
+// `op:to_numpy`), the class of the value it runs on, and the call; a step is a call, keyed by its
+// path through the route, so two calls of one function are two steps
+const treeInfo = new Map();
+const stepOf = key => treeInfo.get(key)?.step ?? key;
 // calls in different arms of one choice in a body (an if, a match, an or-else) are alternatives:
 // the body's steps in call order, each choice with two or more branches as one group
 function choiceGroups(id) {
@@ -752,14 +783,12 @@ function choiceGroups(id) {
 }
 // a class's constructor, whatever the language calls it (`__init__`, `constructor`): the graph files it as `Class.__init__`
 const isCtor = n => !!(n && n.cls && n.id === n.cls + ".__init__");
-// what building a class takes: its constructor's parameters, its nearest base's when it has none
-// of its own; a class with no constructor in the program is built from its fields (a dataclass, a
-// pydantic model, a struct literal)
+// what building a class takes: its constructor's parameters, or its nearest base's when it has none
+// of its own; what a call to it hands is drawn with the call
 function builtFrom(c, depth = 0) {
   if (byId.has(c + ".__init__")) return typesOf(c + ".__init__").takes;
   const base = (out.get(c) || []).find(e => e.kind === "inherits" && byId.get(e.dst)?.kind === "class");
-  if (base && depth < 10) { const up = builtFrom(base.dst, depth + 1); if (up.length) return up; }
-  return [...new Set((out.get(c) || []).filter(e => e.kind === "has" && e.via).map(e => e.dst))];
+  return base && depth < 10 ? builtFrom(base.dst, depth + 1) : [];
 }
 const reachCache = new Map();
 function reach(id) {  // boundaries touched and functions covered by everything reachable through calls
@@ -1034,24 +1063,41 @@ function routeTree() {
     return unitNodes(topUnits(part), part);
   }
   if (!routeEntry) return closedRoutes(overviewEntries());
-  const seen = new Set();
-  const visit = (id, hue) => {
-    seen.add(id);
-    const n = byId.get(id), open = id === routeEntry || expanded.has(id), node = {id, open, kids: [], hue, choice: false};
-    if (open) {
-      const alts = new Set(n && n.cls ? overrides(n) : []);
-      node.choice = alts.size > 0;
-      let b = 0;
-      for (const it of choiceGroups(id)) {
-        if (typeof it === "string") { if (!seen.has(it)) node.kids.push(visit(it, alts.has(it) ? (b++ % 8) + 1 : hue)); continue; }
+  treeInfo.clear();
+  // a step runs on a value of class `on` when its call says so; a call on `self` in its body runs on
+  // the same value, so it reaches that class's method, and no other override is an alternative
+  const visit = (key, step, on, site, hue, path) => {
+    treeInfo.set(key, {step, on, site});
+    const n = byId.get(step), open = key === routeEntry || expanded.has(key), node = {id: key, open, kids: [], hue, choice: false};
+    if (!open || !n) return node;
+    const deeper = new Set([...path, step]);
+    const alts = new Set(n.cls && !on ? overrides(n) : []);
+    node.choice = alts.size > 0;
+    let b = 0;
+    for (const o of alts) node.kids.push(visit(`${key}|${o}`, o, null, null, (b++ % 8) + 1, deeper));
+    if (!n.sites) {
+      for (const it of choiceGroups(step)) {
+        if (typeof it === "string") { if (!deeper.has(it) && !alts.has(it)) node.kids.push(visit(`${key}/${it}`, it, null, null, hue, deeper)); continue; }
         // the body's own choice: a frame of its branches, each in its own colour
-        const kids = it.members.filter(m => !seen.has(m.id)).map(m => visit(m.id, m.branch % 8 + 1));
-        if (kids.length) node.kids.push({id: `${id}~c${it.choice}`, open: true, synthetic: true, choice: true, kids, hue});
+        const kids = it.members.filter(m => !deeper.has(m.id)).map(m => visit(`${key}/${m.id}`, m.id, null, null, m.branch % 8 + 1, deeper));
+        if (kids.length) node.kids.push({id: `${key}~c${it.choice}`, open: true, synthetic: true, choice: true, kids, hue});
       }
+      return node;
+    }
+    const call = (i, h) => {
+      const s = n.sites[i], runsOn = s.on || (s.self ? on : null);
+      let to = s.to ? s.to : "op:" + s.op;
+      if (runsOn && s.to && byId.get(s.to)?.cls) to = methodOn(runsOn, byId.get(s.to).name) || s.to;
+      return deeper.has(to) ? null : visit(`${key}/${i}`, to, runsOn, s, h, deeper);
+    };
+    for (const it of siteGroups(n.sites)) {
+      if (typeof it === "number") { const k = call(it, hue); if (k) node.kids.push(k); continue; }
+      const kids = it.members.map(m => call(m.i, m.branch % 8 + 1)).filter(Boolean);
+      if (kids.length) node.kids.push({id: `${key}~c${it.choice}`, open: true, synthetic: true, choice: true, kids, hue});
     }
     return node;
   };
-  return [visit(routeEntry, null)];
+  return [visit(routeEntry, routeEntry, null, null, null, new Set())];
 }
 const altCount = id => { const n = byId.get(id); return n && n.cls ? overrides(n).length : 0; };
 let prevPos = new Map(), plaatAnchor = null, plaatFit = true;
@@ -1070,7 +1116,7 @@ async function renderPlaat() {
   };
   // a step's morphism: its own body, or (closed) its interface and everything it touches below
   // noReceiver: the step is seen from its own class (a library class's route), so the receiver is not an input
-  const morphism = (id, own, isAnchor, noReceiver) => {
+  const morphism = (id, own, isAnchor, noReceiver, opts = {}) => {
     if (id.startsWith("part:")) return partMorphism(id.slice(5), own);
     if (id.startsWith("unit:")) return unitMorphism(id.slice(5), own);
     const f = byId.get(id), dom = [], cod = [];  // [placeId, reach]
@@ -1087,22 +1133,29 @@ async function renderPlaat() {
       for (const x of builtFrom(f.id)) dom.push([addPlace(typePlace(x)), false]);
     } else {
       const ctor = isCtor(f);
-      // a method's receiver is part of its domain, unless it is called on the class, not a value of it
-      if (f.cls && byId.has(f.cls) && !noReceiver && !ctor && !f.on_class) dom.push([addPlace(typePlace(f.cls)), false]);
+      // a method's receiver is part of its domain, unless it is called on the class, not a value of it;
+      // a call says the receiver's class when it is a subclass of the method's own
+      const recv = opts.on || f.cls;
+      if (recv && byId.has(recv) && !noReceiver && !ctor && !f.on_class) dom.push([addPlace(typePlace(recv)), false]);
       for (const x of typesOf(f.id).takes) dom.push([addPlace(typePlace(x)), false]);
       for (const x of typesOf(f.id).returns) cod.push([addPlace(typePlace(x)), false]);
       if (ctor && !noReceiver) cod.push([addPlace(typePlace(f.cls)), false]);  // a constructor hands on what it builds
       for (const x of mutatesOf(f.id)) if (!((noReceiver || ctor) && x === f.cls)) cod.push([addPlace(typePlace(x)), false]);
-      // an open step's body consumes what it instantiates and what its callees hand back
-      if (own) for (const c of callees(f.id)) { const cn = byId.get(c); if (cn.kind === "class") dom.push([addPlace(typePlace(c)), false]); else for (const r of typesOf(c).returns) dom.push([addPlace(typePlace(r)), false]); }
-      // a closed call into a family takes and hands on what any of its branches does
-      if (!own && f.cls) for (const o of overrides(f)) merge(morphism(o, false, false, noReceiver));
+      // an open step's body makes what it gives back from what it instantiates and what its callees
+      // hand back; a body that gives nothing back has only its own effects
+      const givesBack = typesOf(f.id).returns.length > 0 || (!!f.returns && !/^(None|\(\)|Self|void|undefined)$/.test(f.returns));
+      if (own && givesBack) for (const c of callees(f.id)) { const cn = byId.get(c); if (cn.kind === "class") dom.push([addPlace(typePlace(c)), false]); else for (const r of typesOf(c).returns) dom.push([addPlace(typePlace(r)), false]); }
+      // a closed call into a family takes and hands on what any of its branches does, unless the call
+      // says which class it runs on
+      if (!own && f.cls && !opts.on) for (const o of overrides(f)) merge(morphism(o, false, false, noReceiver));
     }
     const ownKeys = new Set((f.touches || []).map(touchKey));
     for (const raw of (own ? f.touches || [] : reachTouches(f.id))) {
       const tc = shownAs(raw);
       if (!WORLD[tc.kind]) continue;
-      (isIn(tc) ? dom : cod).push([addPlace(worldPlace(tc)), !ownKeys.has(touchKey(raw))]);
+      // each call that makes a figure makes one: a figure of its own on the screen
+      const p = raw.kind === "figure" && tc.kind === "screen" && opts.figure ? figurePlace(opts.figure, opts.label) : worldPlace(tc);
+      (isIn(tc) ? dom : cod).push([addPlace(p), !ownKeys.has(touchKey(raw))]);
     }
     const sig = arr => { const m = new Map(); for (const [p, r] of arr) m.set(p, (m.has(p) ? m.get(p) : true) && r); return m; };
     return {dom: sig(dom), cod: sig(cod)};
@@ -1148,12 +1201,42 @@ async function renderPlaat() {
     return {dom, cod};
   };
   // a result with no place of its own (a str, a dict) goes back to the step that called it
-  const handsBack = (id, cod) => { if (id.startsWith("part:") || id.startsWith("unit:")) return false; const f = byId.get(id), ret = ((f && f.returns) || "").replace(/^(?:[\w:]*::)?(?:Result|Promise)<(.*?)(?:,.*)?>$/, "$1"); return ![...cod.keys()].some(p => p.startsWith("t:")) && ret && !/^(None|\(\)|Self|void|undefined)$/.test(ret); };
+  const handsBack = (id, cod) => { if (id.startsWith("part:") || id.startsWith("unit:") || id.startsWith("op:")) return false; const f = byId.get(id), ret = ((f && f.returns) || "").replace(/^(?:[\w:]*::)?(?:Result|Promise)<(.*?)(?:,.*)?>$/, "$1"); return ![...cod.keys()].some(p => p.startsWith("t:")) && ret && !/^(None|\(\)|Self|void|undefined)$/.test(ret); };
 
+  // a figure a call makes, numbered in the order the route makes them
+  const figureNo = new Map();
+  const figurePlace = (key, label) => {
+    if (!figureNo.has(key)) figureNo.set(key, figureNo.size + 1);
+    const name = `Figure ${figureNo.get(key)} · ${label}`;
+    return {id: "w:Screen:fig:" + key, label: name, short: name, kind: "world"};
+  };
+  // a step of an opened route is a call: what its function takes and gives, with what the call
+  // hands it and gets back, each value by the name that holds it; a library's operation has only those
+  const stepMorphism = (key, own, isAnchor) => {
+    const info = treeInfo.get(key);
+    if (!info) return morphism(key, own, isAnchor);
+    const {step, on, site} = info, dn = new Map(), cn = new Map();
+    const m = step.startsWith("op:") ? {dom: new Map(), cod: new Map()} : morphism(step, own, isAnchor, false, {on, figure: key, label: stepLabel(key)});
+    if (site && !own) {
+      // a value whose type ty does not know is still the value its name holds
+      const held = h => addPlace(h.type ? typePlace(h.type) : {id: "v:" + h.name, label: h.name, kind: "type", role: "", type: null});
+      for (const h of site.hands || []) { const k = held(h); if (!m.dom.has(k)) m.dom.set(k, false); if (h.name) dn.set(k, h.name); }
+      for (const h of site.gives || []) { const k = held(h); if (!m.cod.has(k)) m.cod.set(k, false); if (h.name) cn.set(k, h.name); }
+    }
+    return {dom: m.dom, cod: m.cod, dn, cn};
+  };
   // build the nested picture: frames for open steps, pills for closed ones (siblings with the same places are one pill)
   const pills = new Map(), frames = new Map();  // id -> {...}
   const stepName = id => { if (id.startsWith("part:")) { const p = PARTS.find(x => x.id === id.slice(5)) || {}; return `${p.id} · ${p.language}`; } if (id.startsWith("unit:")) return unitLabel(id.slice(5)); const n = byId.get(id); if (!routeEntry && n.entry) return ENTRY_PLACE[n.entry.kind](n.entry.label, n); if (n.kind === "class") return n.name + "()"; if (n.make) return n.name; if (isCtor(n)) return typeLabel(n.cls) + "()"; return n.cls ? `${typeLabel(n.cls)}.${n.name}` : n.name; };
-  const openable = id => id !== routeEntry && !expanded.has(id) && callees(id).length > 0;
+  // a step's name: a method run on a subclass is that class's, a library's operation is its own name
+  const stepLabel = key => {
+    const info = treeInfo.get(key);
+    if (!info) return stepName(key);
+    if (info.step.startsWith("op:")) return info.step.slice(3);
+    const n = byId.get(info.step);
+    return info.on && n && n.cls && !isCtor(n) ? `${typeLabel(info.on)}.${n.name}` : stepName(info.step);
+  };
+  const openable = key => { const s = stepOf(key); return key !== routeEntry && !expanded.has(key) && !s.startsWith("op:") && (byId.get(s)?.sites?.length || callees(s).length) > 0; };
   // an exported class has no body of its own: its route starts at each public method the caller can call
   const libraryClass = id => byId.get(id)?.kind === "class" && !!byId.get(id).entry;
   const build = (node, parent, caller) => {
@@ -1164,21 +1247,22 @@ async function renderPlaat() {
     }
     if (node.open) {
       const fid = "n:" + node.id, kids = [];
-      frames.set(fid, {id: fid, step: node.id, parent, hue: node.hue, choice: node.choice, anchor: node.id === routeEntry, title: (node.id === routeEntry ? entryTitle(node.id) : stepName(node.id)) + (node.choice ? " · one of" : "")});
-      const own = libraryClass(node.id) || node.id.startsWith("unit:") ? {dom: new Map(), cod: new Map()} : morphism(node.id, true, node.id === routeEntry);
-      const back = node.kids.flatMap(k => build(k, fid, libraryClass(node.id) && node.id === routeEntry ? node.id : null));
-      if (own.dom.size || own.cod.size || (back.length && !libraryClass(node.id) && !node.id.startsWith("unit:"))) {
+      frames.set(fid, {id: fid, step: node.id, parent, hue: node.hue, choice: node.choice, anchor: node.id === routeEntry, title: (node.id === routeEntry ? entryTitle(node.id) : stepLabel(node.id)) + (node.choice ? " · one of" : "")});
+      const lib = libraryClass(stepOf(node.id));
+      const own = lib || node.id.startsWith("unit:") ? {dom: new Map(), cod: new Map()} : stepMorphism(node.id, true, node.id === routeEntry);
+      const back = node.kids.flatMap(k => build(k, fid, lib && node.id === routeEntry ? node.id : null));
+      if (own.dom.size || own.cod.size || (back.length && !lib && !node.id.startsWith("unit:"))) {
         const oid = "o:" + node.id;
-        pills.set(oid, {id: oid, steps: [node.id], D: own.dom, C: own.cod, parent: fid, hue: node.hue, own: true});
+        pills.set(oid, {id: oid, steps: [node.id], D: own.dom, C: own.cod, dn: own.dn, cn: own.cn, parent: fid, hue: node.hue, own: true});
         for (const b of back) b.backTo = oid;
       }
       return [];
     }
-    const m = morphism(node.id, !!node.ownBody, false), hb = parent && !caller && handsBack(node.id, m.cod);
+    const m = stepMorphism(node.id, !!node.ownBody, false), hb = parent && !caller && handsBack(stepOf(node.id), m.cod);
     if (caller) m.dom.set(addPlace(entryPlace(caller)), false);
     // a unit stands even when nothing crosses its edge, so that it can be opened
     if (!m.dom.size && !m.cod.size && !hb && !node.id.startsWith("unit:")) return [];
-    const pill = {id: "n:" + node.id, steps: [node.id], D: m.dom, C: m.cod, parent, hue: node.hue};
+    const pill = {id: "n:" + node.id, steps: [node.id], D: m.dom, C: m.cod, dn: m.dn, cn: m.cn, parent, hue: node.hue};
     pills.set(pill.id, pill);
     return hb ? [pill] : [];
   };
@@ -1211,19 +1295,21 @@ async function renderPlaat() {
   // a type a step takes and hands on is two moments of the data, not one box: memory is versioned in
   // call order (a step that hands on T makes a new T, later steps take the latest); in the overview,
   // where routes have no order between them, every route takes the same inputs and hands on the same outputs
-  const isMem = k => k.startsWith("t:") && !expandedFamilies.has(familyOf(places.get(k)?.type));
+  const isMem = k => k.startsWith("v:") || (k.startsWith("t:") && !expandedFamilies.has(familyOf(places.get(k)?.type)));
   const version = (k, v) => { if (!places.has(v)) places.set(v, {...places.get(k), id: v}); return v; };
   const choiceOf = P => frames.get(P.parent)?.choice ? P.parent : P.id;
   const latest = new Map();
   for (const P of pills.values()) {
     // between units a type is the joint itself: one unit makes it, the next takes it
     if (P.steps[0].startsWith("unit:")) continue;
-    const Dv = new Map(), Cv = new Map();
-    P.D.forEach((r, k) => Dv.set(isMem(k) && latest.has(k) ? latest.get(k) : k, r));
+    // a value is taken by the name that holds it, else as the latest of its type
+    const Dv = new Map(), Cv = new Map(), name = (m, k) => (m && m.get(k)) || "";
+    P.D.forEach((r, k) => { const v = isMem(k) ? latest.get(k + "|" + name(P.dn, k)) || latest.get(k + "|") : null; Dv.set(v || k, r); });
     P.C.forEach((r, k) => {
       if (!isMem(k)) { Cv.set(k, r); return; }
-      const v = version(k, `${k}@${routeEntry ? choiceOf(P) : "out"}`);
-      if (routeEntry) latest.set(k, v);
+      const nm = name(P.cn, k), v = version(k, `${k}@${routeEntry ? choiceOf(P) : "out"}`);
+      if (nm && !k.startsWith("v:")) places.get(v).label = `${places.get(k).label} · ${nm}`;
+      if (routeEntry) { latest.set(k + "|" + nm, v); latest.set(k + "|", v); }
       Cv.set(v, r);
     });
     P.D = Dv; P.C = Cv;
@@ -1241,7 +1327,7 @@ async function renderPlaat() {
   for (const P of pills.values()) if (P.steps.length > 1) P.id = "n:" + P.steps.join("+");
   // a type no step takes or hands on any more is not drawn
   const referenced = new Set([...pills.values()].flatMap(P => [...P.D.keys(), ...P.C.keys()]));
-  for (const k of [...places.keys()]) if (k.startsWith("t:") && !referenced.has(k)) places.delete(k);
+  for (const k of [...places.keys()]) if ((k.startsWith("t:") || k.startsWith("v:")) && !referenced.has(k)) places.delete(k);
   const keep = new Set(places.keys());
   // open families are frames around their members; a member stands inside, the family itself is the frame
   const famFrames = new Map();
@@ -1287,9 +1373,9 @@ async function renderPlaat() {
   const requesters = p => [...new Set(D.edges.filter(e => e.kind === "requests" && partOf(byId.get(e.src) || {}) === p).map(e => byId.get(e.src)?.name || short(e.src)))];
   const pillLabel = P => {
     if (P.own && P.steps[0].startsWith("part:")) { const rs = requesters(P.steps[0].slice(5)); return rs.length <= 2 ? rs.join(", ") : `${rs.slice(0, 2).join(", ")} +${rs.length - 2}`; }
-    if (P.own) return stepName(P.steps[0]);
-    const ns = [...new Set(P.steps.map(stepName))], text = ns.length <= 2 ? ns.join(", ") : `${ns.slice(0, 2).join(", ")} +${ns.length - 2}`;
-    const alts = P.steps.length === 1 ? altCount(P.steps[0]) : 0;
+    if (P.own) return stepLabel(P.steps[0]);
+    const ns = [...new Set(P.steps.map(stepLabel))], text = ns.length <= 2 ? ns.join(", ") : `${ns.slice(0, 2).join(", ")} +${ns.length - 2}`;
+    const alts = P.steps.length === 1 && !treeInfo.get(P.steps[0])?.on && !stepOf(P.steps[0]).startsWith("op:") ? altCount(stepOf(P.steps[0])) : 0;
     return (P.steps.some(openable) || !routeEntry ? "▸ " : "") + text + (alts ? ` · one of ${alts}` : "");
   };
   for (const P of pills.values()) { P.label = pillLabel(P); holder(P.parent).children.push(leaf(P.id, 24 + textW(P.label, 6.9), 26)); }
@@ -1413,14 +1499,14 @@ async function renderPlaat() {
   // pills
   for (const P of pills.values()) {
     if (!pos.has(P.id)) continue;
-    const Q = pos.get(P.id), grp = el("g", {class: "tstep" + (P.own ? " own" : ""), "data-id": P.steps[0]}, ng);
+    const Q = pos.get(P.id), grp = el("g", {class: "tstep" + (P.own ? " own" : "") + (stepOf(P.steps[0]).startsWith("op:") ? " op" : ""), "data-id": stepOf(P.steps[0])}, ng);
     pointable(grp, P.id);
     // what a peek shows of a pill: its step (or steps), a package's module, the focus around the rest
     const shows = () => {
       const s = P.steps[0];
       if (s.startsWith("unit:")) { const u = s.slice(5); if (isRest(u)) focusPanel(); else if (byId.has(u.replace(/\$$/, ""))) select(u.replace(/\$$/, "")); return; }
-      if (s.startsWith("part:")) return;
-      if (P.steps.length === 1) select(s); else selectArrows({fns: P.steps, kind: "steps"});
+      if (s.startsWith("part:") || stepOf(s).startsWith("op:")) return;
+      if (P.steps.length === 1) select(stepOf(s)); else selectArrows({fns: P.steps.map(stepOf), kind: "steps"});
     };
     grp.addEventListener("mouseenter", () => { hoverTarget = shows; });
     grp.addEventListener("mouseleave", () => { hoverTarget = null; });
@@ -1437,7 +1523,8 @@ async function renderPlaat() {
       }
       if (P.steps[0].startsWith("part:")) { if (!P.own) { expandedParts.add(P.steps[0].slice(5)); plaatAnchor = P.id; render(); } return; }
       if (P.steps[0].startsWith("unit:")) { expandedUnits.add(P.steps[0].slice(5)); plaatAnchor = P.id; render(); return; }
-      if (P.steps.length === 1) select(P.steps[0]); else selectArrows({fns: P.steps, kind: "steps"});
+      if (stepOf(P.steps[0]).startsWith("op:")) return;
+      if (P.steps.length === 1) select(stepOf(P.steps[0])); else selectArrows({fns: P.steps.map(stepOf), kind: "steps"});
       if (P.own) return;
       if (!routeEntry) { if (P.steps.length === 1) { routeEntry = P.steps[0]; entrySel.value = routeEntry; expanded.clear(); plaatAnchor = P.id; render(); } return; }
       const opens = P.steps.filter(openable);
@@ -1513,7 +1600,10 @@ function crumbs() {
   if (expandedParts.size && !routeEntry) { lbl("parts"); for (const p of expandedParts) chip(p, () => expandedParts.delete(p)); }
   const opened = u => u === "~in" ? "the rest, handing in" : u === "~out" ? "the rest, taking" : unitLabel(u);
   if (expandedUnits.size && !routeEntry && !entryKind) { lbl("packages"); for (const u of expandedUnits) chip(opened(u), () => expandedUnits.delete(u)); }
-  if (expanded.size) { lbl("opened"); for (const id of expanded) chip(byId.get(id)?.name || short(id), () => expanded.delete(id)); }
+  if (expanded.size) {
+    lbl("opened");
+    for (const id of expanded) { const info = treeInfo.get(id), n = byId.get(stepOf(id)), name = n?.name || short(stepOf(id)); chip(info?.on && n?.cls ? `${typeLabel(info.on)}.${name}` : name, () => expanded.delete(id)); }
+  }
   if (expandedFamilies.size) { lbl("families"); for (const f of expandedFamilies) chip(typeLabel(f), () => expandedFamilies.delete(f)); }
   if (refined.size) { lbl("split"); for (const r of refined) chip(r.slice(2), () => refined.delete(r)); }
   if (openedDirs.size) { lbl("folders"); for (const d of openedDirs) chip(d, () => openedDirs.delete(d)); }

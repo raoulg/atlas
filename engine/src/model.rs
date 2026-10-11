@@ -159,6 +159,10 @@ pub struct Site {
     /// class (`ComparePlot(..).plot()` reaches `BasePlot.plot` on a `ComparePlot`).
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub on: String,
+    /// The call is made on the body's own receiver (`self.build(..)`): on a value of a
+    /// subclass, it reaches that subclass's method.
+    #[serde(default, rename = "self", skip_serializing_if = "std::ops::Not::not")]
+    pub this: bool,
     /// The values the call is handed: its arguments and the value it is called on.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub hands: Vec<Held>,

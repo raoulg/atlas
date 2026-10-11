@@ -47,3 +47,31 @@ fn a_library_is_not_judged() {
     let findings = principles::check(&g);
     assert!(findings.iter().all(|f| !f.node.starts_with("plotkit")), "{:?}", findings.iter().map(|f| &f.node).collect::<Vec<_>>());
 }
+
+/// A body's calls are its steps, in the order they run: what each reaches, the class of the
+/// value a method runs on, what it is handed and gives back by the names that hold them, and a
+/// library's operation Atlas does not read where the body names its result.
+#[test]
+fn a_body_lists_its_calls() {
+    let g = fixture();
+    let main = g.nodes.iter().find(|n| n.id == "app.main.main").unwrap();
+    let to: Vec<&str> = main.sites.iter().map(|s| if s.to.is_empty() { s.op.as_str() } else { s.to.as_str() }).collect();
+    assert_eq!(
+        to,
+        ["plotkit.data.load", "plotkit.data.lines", "plotkit.data.standard", "plotkit.figures.Settings", "plotkit.figures.LinePlot", "plotkit.figures.BasePlot.plot", "fast"],
+        "{:#?}",
+        main.sites
+    );
+    let held = |ty: &str, name: &str| atlas_engine::Held { ty: ty.into(), name: name.into() };
+    let settings = &main.sites[3];
+    assert_eq!(settings.gives, [held("plotkit.figures.Settings", "settings")]);
+    let plot = &main.sites[5];
+    assert_eq!(plot.on, "plotkit.figures.LinePlot", "a method called on a subclass's value runs on that subclass");
+    assert!(main.sites[4].hands.contains(&held("plotkit.figures.Settings", "settings")));
+    // a value whose type ty does not know is followed by the name that holds it
+    let fast = &main.sites[6];
+    assert_eq!((fast.hands.clone(), fast.gives.clone()), (vec![held("plotkit.figures.Settings", "settings")], vec![held("", "shown")]));
+    // in the library's own body, a call on `self` says so
+    let base = g.nodes.iter().find(|n| n.id == "plotkit.figures.BasePlot.plot").unwrap();
+    assert!(base.sites.iter().any(|s| s.to == "plotkit.figures.BasePlot.build" && s.this), "{:#?}", base.sites);
+}

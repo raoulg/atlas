@@ -660,3 +660,16 @@ impl<'e> Visitor<'e> for Reader<'_, '_> {
         visitor::walk_expr(self, expr);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::outer_classes;
+
+    #[test]
+    fn a_type_is_the_classes_of_the_values_it_holds() {
+        assert_eq!(outer_classes("ndarray[tuple[int], dtype[float64]]"), ["ndarray"]);
+        assert_eq!(outer_classes("tuple[Figure, Axes]"), ["Figure", "Axes"]);
+        assert_eq!(outer_classes("list[Node] | None"), ["Node", "None"]);
+        assert_eq!(outer_classes("dict[str, Series[Any]]"), ["str", "Series"]);
+    }
+}
