@@ -61,6 +61,9 @@ The rigorous half and the visual half are the same structure. Read `docs/design.
   or draws changes, the patch number for a fix, in the commit that makes the change. The
   build adds the commit it is made from (`0.2.0 (b0ead14)`).
 - Tests: `cargo test`. The Rust workspace itself is a test subject.
+- A change that should leave the pictures as they were is shown to with `tools/pictures.py`:
+  `uv run tools/pictures.py draw <atlas> <repo> <dir>` with the build before and after, then
+  `uv run tools/pictures.py compare <before> <after>` (Playwright on the installed Chrome).
 - `atlas check .` must find nothing on Atlas itself (`engine/tests/principles.rs` pins it).
   A new principle is a rule in `engine/src/principles.rs`, a case in the fixture, and a
   section in `docs/principles.md`; it checks what the graph holds, never a project.
