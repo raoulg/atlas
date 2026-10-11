@@ -839,6 +839,8 @@ entrySel.addEventListener("change", () => {
   else if (v.startsWith("kind:")) { entryKind = v.slice(5); routeEntry = null; partFilter = null; } else { entryKind = null; routeEntry = v || null; if (!v) partFilter = null; }
   expanded.clear(); plaatFit = true; render();
 });
+// a file named on the command line (`atlas view demo/x.ipynb`) opens on its route
+if (D.open && byId.has(D.open)) { routeEntry = D.open; entrySel.value = D.open; }
 // ---------- plaat: a route as places and steps ----------
 // The fiber of a route (an entry and the steps opened in it): every step a pill between what it takes and what it hands on, then
 // quotient types into their families. Zooming in is nesting: an opened step is a frame around its

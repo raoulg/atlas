@@ -116,6 +116,7 @@ cargo install --locked --git https://github.com/raoulg/atlas atlas
 ```bash
 atlas view                      # draw the repository you are in; opens in your browser
 atlas view ../api ../web        # two repositories as parts of one picture
+atlas view notebooks/explore.ipynb   # one file, with its project, opened on its route
 atlas view https://github.com/o/r/tree/main/src/pkg   # one folder of a repository, from its URL
 atlas check                     # where the code and the design principles disagree
 atlas changes                   # what your edits did to the routes, their places and the findings
@@ -126,13 +127,14 @@ atlas --help
 your machine. The page fetches only its drawing libraries (d3, elk, highlight.js) from a
 CDN. It has four views. The **Flowchart** is the one to start with. Architecture, Type
 lattice and Signature flow are earlier experiments. The header names the build that drew
-the page, as `atlas --version` does: `0.3.0 (b0ead14)`. The minor number goes up when what
+the page, as `atlas --version` does: `0.4.0 (b0ead14)`. The minor number goes up when what
 Atlas reads or draws changes, the patch number for a fix.
 
 Atlas reads:
 
 - **Python**, including the project's scripts and notebooks at any depth (`.py` and `.ipynb`
-  outside the package, its tests and what git ignores), with
+  outside the package, its tests and what git ignores; a project of only scripts and
+  notebooks needs no package, and a file you name is read even where git ignores it), with
   its types from [ty](https://docs.astral.sh/ty/). The library modules its code calls are
   read from its environment too, so a library's own steps can be opened in a route;
   `--libraries 2` reads one step further into those libraries, `--libraries 0` not at all.

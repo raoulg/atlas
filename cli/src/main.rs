@@ -39,6 +39,7 @@ fn examples() -> String {
     let rows = [
         ("atlas view", "draw the repository you are in and open it in the browser"),
         ("atlas view ../api ../web", "two repositories as parts of one picture"),
+        ("atlas view notebooks/explore.ipynb", "one file, read with its project, opened on its route"),
         ("atlas view https://github.com/o/r/tree/main/src/pkg", "one folder of a repository on GitHub"),
         ("atlas check", "where the code and the design principles disagree"),
         ("atlas changes", "what your edits did to the routes, their places and the findings"),
@@ -72,7 +73,7 @@ struct Cli {
 enum Cmd {
     /// Draw one or more repositories and open the picture in the browser.
     View {
-        /// Repository roots or git URLs (a `…/tree/<ref>/<folder>` URL names one folder); default:
+        /// Repository roots, files or git URLs (a `…/tree/<ref>/<folder>` URL names one folder; a file is read with its project, even where git ignores it, and the page opens on its route); default:
         /// the current directory. Several become parts of one page.
         repos: Vec<PathBuf>,
         /// An `architecture.yml` or `roles.json` for a single repo; default: the repo's own, else inferred.
@@ -139,6 +140,11 @@ fn view(repos: &[PathBuf], roles: Option<&std::path::Path>, out: Option<PathBuf>
         let [repo] = repos else { anyhow::bail!("--since compares one repository with its history") };
         page["changes"] = serde_json::to_value(atlas_engine::changes::since(repo, rev)?)?;
     }
+    // a file named on the command line opens on its route
+    let named: Vec<PathBuf> = NAMED.lock().unwrap().iter().filter_map(|f| std::fs::canonicalize(f).ok()).collect();
+    if let Some(n) = g.nodes.iter().find(|n| n.entry.is_some() && std::fs::canonicalize(&n.file).map_or(false, |f| named.contains(&f))) {
+        page["open"] = serde_json::Value::String(n.id.clone());
+    }
     projects.insert(g.root.clone(), page);
     let payload = serde_json::to_string(&serde_json::json!({ "projects": projects, "atlas": VERSION.as_str() }))?.replace("</", "<\\/");
     let html = VIEWER.replacen("/*__FONTS__*/", FONTS, 1).replacen("/*__DATA__*/null", &payload, 1);
@@ -166,9 +172,34 @@ fn view(repos: &[PathBuf], roles: Option<&std::path::Path>, out: Option<PathBuf>
 
 /// A repository argument as a folder on disk: a path as it is, a URL cloned for as long as the
 /// command runs.
+/// A file named instead of a folder is read as part of its project: the nearest folder above it
+/// with a manifest, else its own folder. It is read even where git ignores it, and the page opens
+/// on its route.
+fn project_of(file: &std::path::Path) -> PathBuf {
+    let file = std::fs::canonicalize(file).unwrap_or_else(|_| file.to_path_buf());
+    let dir = file.parent().unwrap_or(&file);
+    let root = dir.ancestors().find(|d| ["pyproject.toml", "Cargo.toml", "package.json"].iter().any(|m| d.join(m).exists())).unwrap_or(dir);
+    // the project is written from where atlas runs, as a folder named on the command line is
+    let here = std::env::current_dir().ok().and_then(|c| std::fs::canonicalize(c).ok());
+    match here.as_deref().and_then(|h| root.strip_prefix(h).ok()) {
+        Some(r) if r.as_os_str().is_empty() => PathBuf::from("."),
+        Some(r) => PathBuf::from(".").join(r),
+        None => root.to_path_buf(),
+    }
+}
+
+/// The files named among the arguments, which every reader reads as its project's.
+static NAMED: std::sync::Mutex<Vec<PathBuf>> = std::sync::Mutex::new(Vec::new());
+
 fn local(arg: PathBuf) -> Result<(PathBuf, Option<remote::Clone>)> {
     let spec = arg.to_string_lossy().to_string();
     if !remote::is_url(&spec) {
+        if arg.is_file() {
+            let mut named = NAMED.lock().unwrap();
+            named.push(arg.clone());
+            atlas_engine::python::read_named(&named);
+            return Ok((project_of(&arg), None));
+        }
         return Ok((arg, None));
     }
     eprintln!("cloning {spec}");

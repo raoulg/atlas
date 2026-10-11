@@ -27,15 +27,21 @@ impl Language for Python {
         "python"
     }
     fn detect(&self, repo: &Path) -> bool {
-        repo.join("pyproject.toml").exists() || python::discover_package(repo).is_ok()
+        repo.join("pyproject.toml").exists() || python::discover_package(repo).is_ok() || !python::named_under(repo).is_empty()
     }
     fn parse(&self, repo: &Path, package: Option<&Path>) -> Result<Graph> {
+        // a project of scripts and notebooks has no package: a file named on the command line
+        // in a folder without one, or a project file with none beside it
         let pkg_dir = match package {
-            Some(p) => p.to_path_buf(),
-            None => python::discover_package(repo)?,
+            Some(p) => Some(p.to_path_buf()),
+            None => match python::discover_package(repo) {
+                Ok(p) => Some(p),
+                Err(_) if repo.join("pyproject.toml").exists() || !python::named_under(repo).is_empty() => None,
+                Err(e) => return Err(e),
+            },
         };
-        let project_root = python::project_root(&pkg_dir).or_else(|| repo.join("pyproject.toml").exists().then(|| repo.to_path_buf()));
-        let (mut b, root) = python::parse(&pkg_dir, project_root.as_deref())?;
+        let project_root = pkg_dir.as_deref().and_then(python::project_root).or_else(|| (repo.join("pyproject.toml").exists() || pkg_dir.is_none()).then(|| repo.to_path_buf()));
+        let (mut b, root) = python::parse(pkg_dir.as_deref(), project_root.as_deref())?;
         entries::mark_scripts(&mut b, project_root.as_deref());
         Ok(b.finish(root, project_root.as_deref(), self.name()))
     }

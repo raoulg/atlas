@@ -303,9 +303,28 @@ fn notebook_source(path: &Path) -> Result<String> {
 /// The scripts and notebooks of a project: every `.py` and `.ipynb` outside its package, at any
 /// depth. Not its tests, what git ignores, hidden directories or environments, and not another
 /// package or project inside it (a directory with an `__init__.py` or a `pyproject.toml`).
-fn scripts(root_dir: &Path, pkg_dir: &Path) -> Vec<PathBuf> {
+/// The files named on the command line, resolved: each is read as one of its project's scripts
+/// or notebooks, even where git ignores it.
+static NAMED: std::sync::Mutex<Vec<PathBuf>> = std::sync::Mutex::new(Vec::new());
+
+/// Read these files as their projects' scripts and notebooks, whatever git ignores.
+pub fn read_named(files: &[PathBuf]) {
+    *NAMED.lock().unwrap() = files.iter().filter_map(|f| std::fs::canonicalize(f).ok()).collect();
+}
+
+/// The named files under `dir`, written from `dir` as the walk writes what it finds.
+pub fn named_under(dir: &Path) -> Vec<PathBuf> {
+    let Ok(d) = std::fs::canonicalize(dir) else { return vec![] };
+    NAMED.lock().unwrap().iter().filter_map(|f| f.strip_prefix(&d).ok().map(|r| dir.join(r))).collect()
+}
+
+fn scripts(root_dir: &Path, pkg_dir: Option<&Path>) -> Vec<PathBuf> {
     const NOT: &[&str] = &["tests", "test", "node_modules", "venv", "env", "build", "dist", "site-packages", "__pycache__"];
-    let pkg = std::fs::canonicalize(pkg_dir).unwrap_or_else(|_| pkg_dir.to_path_buf());
+    // without a package or a project file, the project is the files named
+    if pkg_dir.is_none() && !root_dir.join("pyproject.toml").exists() {
+        return named_under(root_dir);
+    }
+    let pkg = pkg_dir.map(|p| std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf())).unwrap_or_default();
     let mut out: Vec<PathBuf> = ignore::WalkBuilder::new(root_dir)
         .require_git(false)
         .git_global(false)
@@ -325,6 +344,8 @@ fn scripts(root_dir: &Path, pkg_dir: &Path) -> Vec<PathBuf> {
             !(name.starts_with("test_") || name.ends_with("_test.py") || name == "conftest.py")
         })
         .collect();
+    let found: HashSet<PathBuf> = out.iter().filter_map(|p| std::fs::canonicalize(p).ok()).collect();
+    out.extend(named_under(root_dir).into_iter().filter(|p| std::fs::canonicalize(p).map_or(false, |c| !found.contains(&c))));
     out.sort();
     out
 }
@@ -365,24 +386,29 @@ pub fn discover_package(repo: &Path) -> Result<PathBuf> {
 }
 
 /// Parse a package (and the scripts next to it) into a `GraphBuilder`. Returns the store and the root package name.
-pub fn parse(pkg_dir: &Path, project_root: Option<&Path>) -> Result<(GraphBuilder, String)> {
-    let root = pkg_dir.file_name().and_then(|n| n.to_str()).context("package dir has no name")?.to_string();
+pub fn parse(pkg_dir: Option<&Path>, project_root: Option<&Path>) -> Result<(GraphBuilder, String)> {
+    // a project without a package is named after its folder
+    let named = pkg_dir.or(project_root).context("no package and no project")?;
+    let named = std::fs::canonicalize(named).unwrap_or_else(|_| named.to_path_buf());
+    let root = named.file_name().and_then(|n| n.to_str()).context("package dir has no name")?.to_string();
     let mut parser = new_parser()?;
     let mut modules: IndexMap<String, Module> = IndexMap::new();
     let mut store = GraphBuilder::default();
 
-    let mut files: Vec<PathBuf> = WalkDir::new(pkg_dir)
+    let mut files: Vec<PathBuf> = pkg_dir
         .into_iter()
-        .filter_entry(|e| {
-            let n = e.file_name().to_str().unwrap_or("");
-            !(n.starts_with('.') || n == "__pycache__")
+        .flat_map(|d| {
+            WalkDir::new(d).into_iter().filter_entry(|e| {
+                let n = e.file_name().to_str().unwrap_or("");
+                !(n.starts_with('.') || n == "__pycache__")
+            })
         })
         .flatten()
         .filter(|e| e.file_type().is_file() && e.path().extension().and_then(|x| x.to_str()) == Some("py"))
         .map(|e| e.path().to_path_buf())
         .collect();
     files.sort();
-    let base = pkg_dir.parent().unwrap_or(pkg_dir);
+    let base = pkg_dir.and_then(Path::parent).unwrap_or(Path::new(""));
     for p in files {
         let rel = p.strip_prefix(base).unwrap_or(&p).with_extension("");
         let mut parts: Vec<String> = rel.components().map(|c| c.as_os_str().to_string_lossy().to_string()).collect();
