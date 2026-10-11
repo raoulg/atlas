@@ -65,7 +65,7 @@ Read it from left to right:
   *assign* each node its part, and hand back `g`. That is Atlas's whole job, and the code
   says it in four calls.
 - **`parse · one of 3`** is a choice: the same call goes to the Python, the Rust or the
-  TypeScript reader. `Language (4)` and `Graph (9)` are families: a type and the
+  TypeScript reader. `Language (4)` and `Graph (6)` are families: a type and the
   types that belong to it or that it holds, folded into one box. Click one to open it.
   A config opens the same way into what it holds (`folders: Folders`).
 - **Click any pill** to open it into its own steps, and **show code** to see its source.
