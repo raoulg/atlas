@@ -453,10 +453,21 @@ pub fn parse(pkg_dir: &Path, project_root: Option<&Path>) -> Result<(GraphBuilde
     Ok((store, root))
 }
 
-/// The libraries the project's code calls, read as code as far as those calls reach into them:
-/// each library module a call goes into is read, then the modules of the same library its own
-/// calls go into, until nothing new is reached. What a library calls in another library stays
-/// that library's call, as the project's own calls into an unread library do. A library is read
+/// How many rounds Atlas reads into the libraries the code calls: none, the modules the code's
+/// own calls go into (1), and in each further round the modules of the same library that the
+/// last round's calls go into.
+static LIBRARY_DEPTH: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(1);
+
+/// Read the libraries the code calls `depth` rounds deep (1 unless set).
+pub fn read_libraries_to(depth: usize) {
+    LIBRARY_DEPTH.store(depth, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// The libraries the project's code calls, read as code as far as those calls reach into them,
+/// `LIBRARY_DEPTH` rounds deep: the library modules the code's calls go into, then the modules
+/// of the same library their own calls go into. What a library calls in a module not read, or
+/// in another library, stays a library's call, as the project's own calls into an unread
+/// library do. A library is read
 /// only where its source can be followed: not the standard library (ty knows it by its stubs),
 /// not a package the effect tables describe, and not one with compiled code. Returns ty's
 /// answers for every module read.
@@ -470,7 +481,8 @@ fn read_libraries(parser: &mut Parser, modules: &mut IndexMap<String, Module>, s
     let mut readable = Readable::default();
     let here = std::fs::canonicalize(root_dir).unwrap_or_else(|_| root_dir.to_path_buf());
     let project = files.len();
-    loop {
+    let depth = LIBRARY_DEPTH.load(std::sync::atomic::Ordering::Relaxed);
+    for round in 1..=depth {
         let mut fresh = vec![];
         for (mid, path) in std::mem::take(&mut reached) {
             if modules.contains_key(&mid) || !used.contains(&package_of(&mid)) || !readable.reads(&mid, &path) {
@@ -499,7 +511,9 @@ fn read_libraries(parser: &mut Parser, modules: &mut IndexMap<String, Module>, s
         if fresh.is_empty() {
             break;
         }
-        reached = ty.read(&fresh, &fresh).libs;
+        if round < depth {
+            reached = ty.read(&fresh, &fresh).libs;
+        }
         files.extend(fresh);
     }
     // read together, a call into a library module read as code goes to its definition

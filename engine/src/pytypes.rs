@@ -8,7 +8,7 @@
 //! Where ty says a type is unknown, so does Atlas: a function without a return annotation
 //! gives back `Unknown`, and nothing is guessed behind it.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -174,25 +174,38 @@ impl Ty {
     /// its definition there, a call elsewhere into a library's module.
     pub fn read(&self, files: &[(String, PathBuf)], project: &[(String, PathBuf)]) -> Types {
         let db = &self.db;
-        let named = |list: &[(String, PathBuf)]| -> HashMap<SystemPathBuf, String> {
+        let named = |list: &[(String, PathBuf)]| -> Vec<(SystemPathBuf, String)> {
             list.iter().filter_map(|(name, path)| absolute(path).filter(|p| matches!(p.extension(), Some("py" | "ipynb"))).map(|p| (p, name.clone()))).collect()
         };
-        let here = named(project);
+        let here: HashMap<String, String> = named(project).into_iter().map(|(p, name)| (key(p.as_std_path()), name)).collect();
         let asked = named(files);
-        let project: HashSet<&SystemPathBuf> = here.keys().collect();
         let mut out = Types { files: HashMap::new(), environment: self.environment, libs: vec![] };
         let libs = std::cell::RefCell::new(std::collections::BTreeMap::new());
+        let keys = std::cell::RefCell::new(HashMap::new());
         for (path, name) in &asked {
             let Ok(file) = system_path_to_file(db, path) else { continue };
             let pf = db.program_file(file);
             let model = SemanticModel::new(db, pf);
             let parsed = parsed_module(db, pf.python_file(db)).load(db);
-            let mut reader = Reader { db, model: &model, project: &project, here: &here, libs: &libs, facts: Facts::default() };
+            let mut reader = Reader { db, model: &model, here: &here, keys: &keys, libs: &libs, facts: Facts::default() };
             reader.visit_body(parsed.suite());
             out.files.insert(name.clone(), reader.facts);
         }
         out.libs = libs.into_inner().into_iter().map(|(path, module)| (module, path)).collect();
         out
+    }
+}
+
+/// A file as one key whatever way its path is written: resolved, and on Windows without the
+/// verbatim prefix (`\\?\`) and in one case, as the file system compares it.
+fn key(p: &Path) -> String {
+    let resolved = std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
+    let s = resolved.to_string_lossy().replace('\\', "/");
+    let s = s.strip_prefix("//?/").unwrap_or(&s).to_string();
+    if cfg!(windows) {
+        s.to_lowercase()
+    } else {
+        s
     }
 }
 
@@ -393,8 +406,9 @@ impl salsa::Database for TyDb {}
 struct Reader<'a, 'db> {
     db: &'db TyDb,
     model: &'a SemanticModel<'db>,
-    project: &'a HashSet<&'a SystemPathBuf>,
-    here: &'a HashMap<SystemPathBuf, String>,
+    /// The files Atlas reads, by their keys: the name Atlas knows each by.
+    here: &'a HashMap<String, String>,
+    keys: &'a std::cell::RefCell<HashMap<PathBuf, String>>,
     /// The library files calls go into, with their modules' names.
     libs: &'a std::cell::RefCell<std::collections::BTreeMap<PathBuf, String>>,
     facts: Facts,
@@ -409,8 +423,9 @@ impl Reader<'_, '_> {
     fn target(&self, range: FileRange) -> Option<Target> {
         let file = range.file();
         if let FilePath::System(p) = file.path(self.db) {
-            if self.project.contains(&p.to_path_buf()) {
-                return Some(Target::Here { file: self.here[&p.to_path_buf()].clone(), at: range.range().start().to_usize() });
+            let k = self.keys.borrow_mut().entry(p.as_std_path().to_path_buf()).or_insert_with(|| key(p.as_std_path())).clone();
+            if let Some(name) = self.here.get(&k) {
+                return Some(Target::Here { file: name.clone(), at: range.range().start().to_usize() });
             }
         }
         let rf = self.db.program_file(file).resolver_file(self.db);

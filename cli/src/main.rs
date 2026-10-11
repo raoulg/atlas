@@ -63,6 +63,9 @@ fn examples() -> String {
 struct Cli {
     #[command(subcommand)]
     cmd: Cmd,
+    /// How far to read into the libraries the code calls: 0 not at all, 1 the modules its calls go into, 2 also the modules of those libraries they call, and so on
+    #[arg(long, global = true, default_value_t = 1, value_name = "ROUNDS")]
+    libraries: usize,
 }
 
 #[derive(Subcommand)]
@@ -191,7 +194,9 @@ fn check(repo: &std::path::Path, json: bool) -> Result<bool> {
 }
 
 fn main() -> Result<()> {
-    match Cli::parse().cmd {
+    let cli = Cli::parse();
+    atlas_engine::python::read_libraries_to(cli.libraries);
+    match cli.cmd {
         Cmd::View { repos, roles, out, no_open, since } => {
             let repos = if repos.is_empty() { vec![std::env::current_dir()?] } else { repos };
             let (repos, _clones): (Vec<PathBuf>, Vec<Option<remote::Clone>>) = repos.into_iter().map(local).collect::<Result<Vec<_>>>()?.into_iter().unzip();

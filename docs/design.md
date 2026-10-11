@@ -287,9 +287,10 @@ it has, and which classes that type names (`list[Node]` names `Node`). The two t
 tree-sitter's and ty's, meet at an expression's byte range; a notebook's cells are
 joined as ruff joins them, so the positions agree.
 
-A library the project's code calls is read as code where its source can be followed, as
-far as those calls reach into it: the module a call goes into, then the modules of the same
-library its own calls go into, until nothing new is reached. Its functions are steps like the
+A library the project's code calls is read as code where its source can be followed: the
+modules the project's calls go into, and with `--libraries N` the modules of the same library
+those call, N rounds deep (one by default). What the imports hold is then within reach, and
+the libraries behind them are not followed to the bottom. Its functions are steps like the
 project's, and what it reaches of the world is the world the project reaches through it
 (goad's `FileHandler.download` fetches a URL and writes the cache). What it holds but the
 project does not reach is dropped; what it calls in another library stays that library's call.
