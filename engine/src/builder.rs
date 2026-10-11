@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use indexmap::IndexMap;
 
-use crate::model::{Edge, EdgeKind, Graph, Node, NodeKind, Stats, Touch};
+use crate::model::{Edge, EdgeKind, Graph, Node, NodeKind, Stats, Touch, World};
 
 /// Per-class facts that only matter during resolution.
 #[derive(Default, Clone, Debug)]
@@ -66,7 +66,6 @@ impl GraphBuilder {
     /// Record a boundary call on a node; the same call again counts up.
     pub fn touch(&mut self, id: &str, t: Touch) {
         let Some(n) = self.nodes.get_mut(id) else { return };
-        *n.boundaries.entry(t.kind.clone()).or_insert(0) += 1;
         match n.touches.iter_mut().find(|x| x.kind == t.kind && x.what == t.what && x.op == t.op && x.artifact == t.artifact && x.dir == t.dir) {
             Some(x) => {
                 x.n += 1;
@@ -124,18 +123,12 @@ impl GraphBuilder {
             kind: NodeKind::External,
             name,
             module: module.into(),
-            door: crate::effects::library_place(package.strip_prefix('_').unwrap_or(package)).unwrap_or_default().into(),
+            door: crate::effects::library_place(package.strip_prefix('_').unwrap_or(package)),
             ..Default::default()
         });
     }
 }
 
-
-/// The part of the world a kind of touch is, when it is a service a door leads to: a database,
-/// the web, a model or a program. A file or the screen is not: a value may save or show itself.
-fn service(kind: &str) -> bool {
-    kind.starts_with("db_") || matches!(kind, "net" | "llm" | "model" | "process")
-}
 
 /// Mark the classes that are doors: one of their operations reaches a service, through what it
 /// calls. An operation is a method called on a value of the class, not on the class: an
@@ -146,13 +139,13 @@ fn mark_doors(nodes: &mut IndexMap<String, Node>, edges: &[Edge]) {
         out.entry(e.src.as_str()).or_default().push(e.dst.as_str());
     }
     let operation = |n: &Node| n.kind == NodeKind::Method && !n.on_class;
-    let reaches = |start: &str| -> Option<String> {
+    let reaches = |start: &str| -> Option<World> {
         let mut seen = HashSet::from([start.to_string()]);
         let mut stack = vec![start.to_string()];
         while let Some(id) = stack.pop() {
             let Some(n) = nodes.get(&id) else { continue };
-            if let Some(t) = n.touches.iter().find(|t| service(&t.kind)) {
-                return Some(t.kind.clone());
+            if let Some(t) = n.touches.iter().find(|t| t.kind.is_service()) {
+                return Some(t.kind);
             }
             let next = match n.kind {
                 NodeKind::Class => vec![format!("{id}.__init__")],
@@ -166,7 +159,7 @@ fn mark_doors(nodes: &mut IndexMap<String, Node>, edges: &[Edge]) {
         }
         None
     };
-    let doors: Vec<(String, String)> = nodes
+    let doors: Vec<(String, World)> = nodes
         .values()
         .filter(|n| n.kind == NodeKind::Class)
         .filter_map(|c| {
@@ -176,7 +169,7 @@ fn mark_doors(nodes: &mut IndexMap<String, Node>, edges: &[Edge]) {
         .collect();
     for (id, kind) in doors {
         if let Some(n) = nodes.get_mut(&id) {
-            n.door = kind;
+            n.door = Some(kind);
         }
     }
 }

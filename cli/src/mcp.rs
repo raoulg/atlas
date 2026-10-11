@@ -8,7 +8,7 @@ use std::io::{BufRead, Write};
 use std::path::PathBuf;
 
 use anyhow::Result;
-use atlas_engine::{principles, remote, story, Graph};
+use atlas_engine::{principles, remote, story, Graph, Options};
 use serde_json::{json, Value};
 
 /// Protocol versions this server speaks; a client asking for one gets it, else the newest.
@@ -26,8 +26,8 @@ ty: a value whose type ty does not know (a function without a return annotation,
 without an installed environment) is not followed, and `check` asks for the annotation. Atlas \
 sees Python best with the environment synced (`uv sync`) and Ruff's `ANN` rules on.";
 
-/// Answer every message on stdin until it closes.
-pub fn serve() -> Result<()> {
+/// Answer every message on stdin until it closes, reading repositories with `opts`.
+pub fn serve(opts: &Options) -> Result<()> {
     let mut stdout = std::io::stdout().lock();
     for line in std::io::stdin().lock().lines() {
         let line = line?;
@@ -35,8 +35,8 @@ pub fn serve() -> Result<()> {
             continue;
         }
         let replies: Vec<Value> = match serde_json::from_str::<Value>(&line) {
-            Ok(Value::Array(batch)) => batch.iter().filter_map(answer).collect(),
-            Ok(msg) => answer(&msg).into_iter().collect(),
+            Ok(Value::Array(batch)) => batch.iter().filter_map(|m| answer(m, opts)).collect(),
+            Ok(msg) => answer(&msg, opts).into_iter().collect(),
             Err(e) => vec![error(Value::Null, -32700, &format!("not JSON: {e}"))],
         };
         for r in replies {
@@ -48,7 +48,7 @@ pub fn serve() -> Result<()> {
 }
 
 /// The reply to one request; a notification, or a client's own reply, has none.
-fn answer(msg: &Value) -> Option<Value> {
+fn answer(msg: &Value, opts: &Options) -> Option<Value> {
     let method = msg.get("method").and_then(Value::as_str)?;
     let id = msg.get("id")?.clone();
     let params = msg.get("params").cloned().unwrap_or_else(|| json!({}));
@@ -59,7 +59,7 @@ fn answer(msg: &Value) -> Option<Value> {
         "tools/call" => {
             let name = params.get("name").and_then(Value::as_str).unwrap_or("");
             let args = params.get("arguments").cloned().unwrap_or_else(|| json!({}));
-            match call(name, &args) {
+            match call(name, &args, opts) {
                 Some(Ok(text)) => ok(id, json!({ "content": [{ "type": "text", "text": text }], "isError": false })),
                 Some(Err(e)) => ok(id, json!({ "content": [{ "type": "text", "text": e }], "isError": true })),
                 None => error(id, -32602, &format!("no tool called `{name}`")),
@@ -136,7 +136,7 @@ fn tools() -> Value {
 }
 
 /// A tool's text, or what went wrong; `None` for a tool that does not exist.
-fn call(name: &str, args: &Value) -> Option<Result<String, String>> {
+fn call(name: &str, args: &Value, opts: &Options) -> Option<Result<String, String>> {
     let text = |k: &str| args.get(k).and_then(Value::as_str);
     Some(match name {
         "principles" => Ok(principles::PRINCIPLES.iter().map(|p| format!("{} · {}", p.id, p.asks)).collect::<Vec<_>>().join("\n")),
@@ -144,7 +144,7 @@ fn call(name: &str, args: &Value) -> Option<Result<String, String>> {
             let id = text("principle").unwrap_or("");
             principles::explain(id).map(str::to_string).ok_or_else(|| unknown_principle(id))
         }
-        "check" => parts_of(text("path")).and_then(|gs| {
+        "check" => parts_of(text("path"), opts).and_then(|gs| {
             if let Some(p) = text("principle").filter(|p| !principles::PRINCIPLES.iter().any(|x| x.id == *p)) {
                 return Err(unknown_principle(p));
             }
@@ -158,16 +158,16 @@ fn call(name: &str, args: &Value) -> Option<Result<String, String>> {
                 .collect::<Vec<_>>()
                 .join("\n"))
         }),
-        "routes" => graph(text("path")).map(|g| {
+        "routes" => graph(text("path"), opts).map(|g| {
             let rows: Vec<String> = story::entries(&g).into_iter().map(|(k, label, id)| format!("{:<8} {label}  ({id})", story::kind_label(k))).collect();
             if rows.is_empty() { "No entry points found: no CLI command, script, export, MCP tool or test.".into() } else { rows.join("\n") }
         }),
         "changes" => {
             let repo = PathBuf::from(text("path").unwrap_or("."));
             let rev = text("rev").unwrap_or("HEAD");
-            atlas_engine::changes::since(&repo, rev).map(|c| atlas_engine::changes::report(&c)).map_err(|e| format!("Could not compare {} with {rev}: {e}", repo.display()))
+            atlas_engine::changes::since(&repo, rev, opts).map(|c| atlas_engine::changes::report(&c)).map_err(|e| format!("Could not compare {} with {rev}: {e}", repo.display()))
         }
-        "route" => graph(text("path")).and_then(|g| {
+        "route" => graph(text("path"), opts).and_then(|g| {
             let entry = text("entry").unwrap_or("");
             let depth = args.get("depth").and_then(Value::as_u64).unwrap_or(2) as usize;
             story::route(&g, entry, depth).ok_or_else(|| format!("No route `{entry}` in {}; `routes` lists them.", g.root))
@@ -184,15 +184,15 @@ fn located(path: Option<&str>) -> Result<(PathBuf, Option<remote::Clone>), Strin
     }
 }
 
-fn graph(path: Option<&str>) -> Result<Graph, String> {
+fn graph(path: Option<&str>, opts: &Options) -> Result<Graph, String> {
     let (repo, _clone) = located(path)?;
-    atlas_engine::parts::analyze_repo(&[repo.clone()], None).map_err(|e| format!("Could not read {}: {e}", repo.display()))
+    atlas_engine::parts::analyze_repo(&[repo.clone()], opts).map_err(|e| format!("Could not read {}: {e}", repo.display()))
 }
 
 /// Each part's own graph, checked in its own language.
-fn parts_of(path: Option<&str>) -> Result<Vec<Graph>, String> {
+fn parts_of(path: Option<&str>, opts: &Options) -> Result<Vec<Graph>, String> {
     let (repo, _clone) = located(path)?;
-    atlas_engine::parts::analyze_parts(&[repo.clone()], None).map_err(|e| format!("Could not read {}: {e}", repo.display()))
+    atlas_engine::parts::analyze_parts(&[repo.clone()], opts).map_err(|e| format!("Could not read {}: {e}", repo.display()))
 }
 
 fn unknown_principle(id: &str) -> String {

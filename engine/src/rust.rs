@@ -13,8 +13,8 @@ use indexmap::IndexMap;
 use tree_sitter::{Node as TsNode, Parser, Tree};
 use walkdir::WalkDir;
 
-use crate::effects;
-use crate::model::{Compare, EdgeKind, Entry, EntryKind, Held, Node, NodeKind, Site, Touch};
+use crate::effects::{self, Crossing};
+use crate::model::{Compare, EdgeKind, Entry, EntryKind, Held, Node, NodeKind, Site, Touch, World};
 use crate::builder::{ClassInfo, GraphBuilder, SigInfo};
 use crate::tree::{
     arms_of, decides, evaluation_order, literals, named_children, nth_of_kind, number_choices, payload_of, span, starts_at_literal, text, unquote, walk, what_of,
@@ -1016,20 +1016,20 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crat
     let mut touches: Vec<Touch> = vec![];
     let lit_kinds = &["string_literal", "raw_string_literal"];
     // a boundary call, refined by the literals that name its place
-    let touch = |c: tree_sitter::Node, kind: &'static str, op: &str, lits: &[String], locals: &HashMap<String, String>| {
+    let touch = |c: tree_sitter::Node, kind: Crossing, op: &str, lits: &[String], locals: &HashMap<String, String>| {
         let f = effects::facts(kind, None, op, lits);
         let what = what_of(c, src, lit_kinds, "arguments");
         let payload = payload_of(c, src, &what, "arguments", locals);
-        let fixed = effects::locates(f.kind) && starts_at_literal(c, src, lit_kinds, "arguments", effects::on_receiver(&op));
+        let fixed = f.kind.located() && starts_at_literal(c, src, lit_kinds, "arguments", effects::on_receiver(&op));
         f.places()
             .into_iter()
-            .map(|(artifact, dir)| Touch { kind: f.kind.into(), what: what.clone(), payload: payload.clone(), op: op.into(), artifact, dir: dir.into(), fixed, line: c.start_position().row as u32 + 1, n: 1 })
+            .map(|(artifact, dir)| Touch { what: what.clone(), payload: payload.clone(), op: op.into(), artifact, fixed, line: c.start_position().row as u32 + 1, ..Touch::new(f.kind, dir) })
             .collect::<Vec<_>>()
     };
     for mac in walk(body, &["macro_invocation"]) {
         let name = mac.child_by_field_name("macro").map(|x| text(x, src)).unwrap_or("");
         if effects::screen_macro(name) {
-            touches.push(Touch { kind: "screen".into(), op: name.into(), line: mac.start_position().row as u32 + 1, n: 1, ..Default::default() });
+            touches.push(Touch { op: name.into(), line: mac.start_position().row as u32 + 1, ..Touch::new(World::Screen, None) });
         }
     }
     let mut unresolved: Vec<String> = vec![];
@@ -1144,16 +1144,16 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crat
                         };
                         let moves = |i: usize, op: &str| match op {
                             _ if i < built || UNWRAPS.contains(&op) => None,
-                            _ if effects::RUST_PATH_READS.contains(&op) => Some("disk_read"),
+                            _ if effects::RUST_PATH_READS.contains(&op) => Some(Crossing::read(World::Disk)),
                             _ => effects::boundary_rust(&[&x.ty[..], &[op.to_string()]].concat()),
                         };
                         let n = x.before.len();
                         // the move is named by the first call a library knows by name, else the first that moves
-                        let (kind, op) = here.iter().enumerate().filter_map(|(i, (op, _))| moves(n + i, op).map(|k| (k, op.clone()))).min_by_key(|(k, _)| *k == "disk")?;
+                        let (kind, op) = here.iter().enumerate().filter_map(|(i, (op, _))| moves(n + i, op).map(|k| (k, op.clone()))).min_by_key(|(k, _)| *k == Crossing::to(World::Disk))?;
                         let touched = effects::boundary_rust(&x.ctor).is_some() || x.before.iter().enumerate().any(|(i, (op, _))| moves(i, op).is_some());
                         let writes = x.before.iter().chain(&here).any(|(o, _)| matches!(o.as_str(), "write" | "append" | "create" | "create_new" | "truncate"));
                         let own: Vec<String> = here.iter().flat_map(|(_, n)| n.child_by_field_name("arguments").map(|a| place_literals(a, src)).unwrap_or_default()).collect();
-                        Some((if writes && kind.starts_with("disk") { "disk_write" } else { kind }, op, touched, own))
+                        Some((if writes && kind.world == World::Disk { Crossing::write(World::Disk) } else { kind }, op, touched, own))
                     });
                     match moved {
                         // a value made by a touch is at that touch's place (`File::open(p)`,
@@ -1163,7 +1163,7 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crat
                         // a value built without touching anything touches where it is used, at the
                         // place its building named: `OpenOptions::new().append(true).open("log")`
                         Some((kind, op, false, _)) => touches.extend(touch(c, kind, &op, &subtree(), &locals)),
-                        None if effects::RUST_PATH_READS.contains(&method.as_str()) => touches.extend(touch(c, "disk_read", &method, &subtree(), &locals)),
+                        None if effects::RUST_PATH_READS.contains(&method.as_str()) => touches.extend(touch(c, Crossing::read(World::Disk), &method, &subtree(), &locals)),
                         None => {}
                     }
                     continue;

@@ -19,8 +19,8 @@ mod paths;
 use paths::{Arg, At, Eval};
 
 use crate::builder::{ClassInfo, GraphBuilder, SigInfo};
-use crate::effects;
-use crate::model::{Compare, EdgeKind, Entry, EntryKind, Held, Node, NodeKind, Site, Touch};
+use crate::effects::{self, Crossing};
+use crate::model::{Compare, EdgeKind, Entry, EntryKind, Held, Node, NodeKind, Site, Touch, World};
 use crate::tree::{
     arms_of, decides, evaluation_order, literals, named_children, nth_of_kind, number_choices, payload_of, span, starts_at_literal, text, unquote,
     walk, what_of, ChoiceSyntax, Part,
@@ -1316,10 +1316,10 @@ fn place_calls(store: &mut GraphBuilder, eval: &Eval, linked: Linked) {
             let rendered = crate::paths::render(b);
             // a request's method, when the code says it, and its URL
             let (method, url) = match rendered.split_once(' ') {
-                Some((m, u)) if t.kind == "net" => (m.to_ascii_uppercase(), u.to_string()),
+                Some((m, u)) if t.kind == World::Net => (m.to_ascii_uppercase(), u.to_string()),
                 _ => (String::new(), rendered.clone()),
             };
-            if t.kind == "net" {
+            if t.kind == World::Net {
                 if url.starts_with('/') {
                     let known = !method.contains('{');
                     let served: Vec<&(String, String, String)> = routes.iter().filter(|(_, m, p)| (!known || *m == method) && crate::parts::route_matches(p, &url)).collect();
@@ -1329,7 +1329,7 @@ fn place_calls(store: &mut GraphBuilder, eval: &Eval, linked: Linked) {
                         store.add_edge(holder, handler, EdgeKind::Requests, Some(path.clone()));
                         requested = true;
                     }
-                } else if let Some(host) = effects::facts("net", None, &t.op, &[url.clone()]).places().into_iter().next().map(|(a, _)| a).filter(|a| !a.is_empty()) {
+                } else if let Some(host) = effects::facts(Crossing::to(World::Net), None, &t.op, &[url.clone()]).places().into_iter().next().map(|(a, _)| a).filter(|a| !a.is_empty()) {
                     placed.push(host);
                 }
             } else if let Some(p) = crate::paths::place(b, &t.op) {
@@ -1341,7 +1341,7 @@ fn place_calls(store: &mut GraphBuilder, eval: &Eval, linked: Linked) {
         if placed.is_empty() {
             if !requested {
                 // a URL without a host is the page's own origin, decided by whoever serves it
-                let fixed = t.fixed && (t.kind != "net" || !t.artifact.is_empty());
+                let fixed = t.fixed && (t.kind != World::Net || !t.artifact.is_empty());
                 store.touch(&f, Touch { fixed, ..t });
             }
             continue;
@@ -1517,7 +1517,7 @@ fn link_calls<'t>(m: &'t Module, modules: &'t IndexMap<String, Module>, store: &
     let gives_of = |c: TsNode, to: Option<&str>| -> Vec<Held> {
         kept_as(c, src).map(|name| Held { ty: locals.get(&name).cloned().or_else(|| to.and_then(|t| returned.get(t).cloned())).unwrap_or_default(), name }).into_iter().collect()
     };
-    for c in sites {
+    for &c in &sites {
         let arms = arms_of(c, body, src, &choices, &CHOICES);
         let line = c.start_position().row as u32 + 1;
         match c.kind() {
@@ -1530,11 +1530,6 @@ fn link_calls<'t>(m: &'t Module, modules: &'t IndexMap<String, Module>, store: &
                         kept.extend(gives.into_iter().map(|g| g.name));
                         new_edges.push((r, EdgeKind::Instantiates, arms));
                     }
-                } else if matches!(parts.as_slice(), [g] if matches!(g.as_str(), "WebSocket" | "EventSource")) && !m.bindings.contains_key(&parts[0]) {
-                    // opening a socket or an event stream connects to its URL
-                    let kinds = &["string", "template_string"];
-                    let f = effects::facts("net", None, &parts[0], &literals(c, src, kinds));
-                    touches.push(Touch { kind: "net".into(), what: what_of(c, src, kinds, "arguments"), op: parts[0].clone(), artifact: f.artifact, line: c.start_position().row as u32 + 1, n: 1, ..Default::default() });
                 }
             }
             "jsx_opening_element" | "jsx_self_closing_element" => {
@@ -1636,43 +1631,31 @@ fn link_calls<'t>(m: &'t Module, modules: &'t IndexMap<String, Module>, store: &
                             _ => made.get(&parts[0]).cloned(),
                         };
                         // a language model is asked through a client the package made, not its helpers
-                        let kind = effects::boundary_ts(pkg.as_deref(), &parts).filter(|k| *k != "llm" || made.contains_key(&parts[0]));
+                        let kind = effects::boundary_ts(pkg.as_deref(), &parts).filter(|k| k.world != World::Llm || made.contains_key(&parts[0]));
                         if let Some(kind) = kind {
                             let op = parts.last().cloned().unwrap_or_default();
                             let kinds = &["string", "template_string"];
                             let f = effects::facts(kind, pkg.as_deref(), &op, &literals(c, src, kinds));
                             let what = what_of(c, src, kinds, "arguments");
                             let payload = payload_of(c, src, &what, "arguments", &HashMap::new());
-                            let fixed = effects::locates(f.kind) && starts_at_literal(c, src, kinds, "arguments", effects::on_receiver(&op));
+                            let fixed = f.kind.located() && starts_at_literal(c, src, kinds, "arguments", effects::on_receiver(&op));
                             let args = c.child_by_field_name("arguments").map(named_children).unwrap_or_default();
                             // the path a file call is handed, the URL a request is: placed once every call is known
-                            if effects::locates(f.kind) && !args.is_empty() {
+                            if f.kind.located() && !args.is_empty() {
                                 let at = At { m, scope, params: &params };
-                                let two = matches!(op.as_str(), "copyFile" | "copyFileSync" | "rename" | "renameSync" | "cp" | "cpSync") && args.len() > 1;
-                                let sides: Vec<(&str, TsNode)> = if two { vec![("disk_read", args[0]), ("disk_write", args[1])] } else { vec![(f.kind, args[0])] };
-                                for (kind, a) in sides {
-                                    let t = Touch { kind: kind.into(), what: text(a, src).to_string(), payload: payload.clone(), op: op.clone(), artifact: f.artifact.clone(), fixed, line: c.start_position().row as u32 + 1, n: 1, ..Default::default() };
+                                for (kind, a) in sides(&op, &args, &f) {
+                                    let t = Touch { what: text(a, src).to_string(), payload: payload.clone(), op: op.clone(), artifact: f.artifact.clone(), fixed, line: c.start_position().row as u32 + 1, ..Touch::new(kind.world, kind.dir) };
                                     let built = eval.of(at, a, 0);
                                     // a request is its method and its URL: `fetch(url, { method })`, `axios.post(url)`
-                                    let built = if kind == "net" { crate::paths::cross(&method_of_request(&op, &args, at, eval), &built, " ") } else { built };
+                                    let built = if kind.world == World::Net { crate::paths::cross(&method_of_request(&op, &args, at, eval), &built, " ") } else { built };
                                     linked.calls.push((id.to_string(), t, built));
                                 }
                                 continue;
                             }
                             for (artifact, dir) in f.places() {
                                 // a URL without a host is the page's own origin, decided by whoever serves it
-                                let fixed = fixed && (f.kind != "net" || !artifact.is_empty());
-                                touches.push(Touch {
-                                    kind: f.kind.into(),
-                                    what: what.clone(),
-                                    payload: payload.clone(),
-                                    op: op.clone(),
-                                    artifact,
-                                    dir: dir.into(),
-                                    fixed,
-                                    line: c.start_position().row as u32 + 1,
-                                    n: 1,
-                                });
+                                let fixed = fixed && (f.kind != World::Net || !artifact.is_empty());
+                                touches.push(Touch { what: what.clone(), payload: payload.clone(), op: op.clone(), artifact, fixed, line: c.start_position().row as u32 + 1, ..Touch::new(f.kind, dir) });
                             }
                         }
                     }
@@ -1680,10 +1663,16 @@ fn link_calls<'t>(m: &'t Module, modules: &'t IndexMap<String, Module>, store: &
             }
         }
     }
+    // a constructor of the platform's own that connects opens a connection: `new WebSocket(url)`
+    let opened = sites.iter().filter(|c| c.kind() == "new_expression").filter(|c| {
+        let parts = c.child_by_field_name("constructor").map(|x| member_parts(x, src)).unwrap_or_default();
+        resolve(m, &parts, modules, &store.nodes).filter(|r| own(r, store)).is_none()
+    });
+    touches.extend(opened.filter_map(|c| connects(*c, src, &m.bindings)));
     // a component renders what it returns to the screen: a page's route ends where the human sees it
     if !is_module {
         if let Some(jsx) = walk(body, &["jsx_element", "jsx_self_closing_element", "jsx_fragment"]).into_iter().next() {
-            touches.push(Touch { kind: "screen".into(), op: "render".into(), line: jsx.start_position().row as u32 + 1, n: 1, ..Default::default() });
+            touches.push(Touch { op: "render".into(), line: jsx.start_position().row as u32 + 1, ..Touch::new(World::Screen, None) });
         }
     }
     for (t, kind, arms) in new_edges {
@@ -1749,9 +1738,9 @@ fn chain_root<'a>(n: TsNode, src: &'a [u8]) -> Option<&'a str> {
 /// The names whose objects a body changes in place: the root of every assignment to a member
 /// or an item (`this.x = ..`, `p.items[k] += ..`, `p.n++`, `delete p.k`), and of every call to a
 /// method that changes its receiver (`p.rows.push(..)`). Changing a part changes the whole.
-fn changed_roots<'a>(body: TsNode, src: &'a [u8]) -> HashSet<&'a str> {
+fn changed_roots<'a>(body: TsNode, src: &'a [u8]) -> std::collections::BTreeSet<&'a str> {
     let member = |n: TsNode| matches!(n.kind(), "member_expression" | "subscript_expression");
-    let mut out = HashSet::new();
+    let mut out = std::collections::BTreeSet::new();
     for a in walk(body, &["assignment_expression", "augmented_assignment_expression"]) {
         out.extend(a.child_by_field_name("left").filter(|l| member(*l)).and_then(|l| chain_root(l, src)));
     }
@@ -1768,6 +1757,29 @@ fn changed_roots<'a>(body: TsNode, src: &'a [u8]) -> HashSet<&'a str> {
         }
     }
     out
+}
+
+/// A constructor of the platform's own that connects, as the touch it makes: `new WebSocket(url)`.
+/// A name the module imports is that import's, not the platform's.
+fn connects(c: TsNode, src: &[u8], bindings: &HashMap<String, Bound>) -> Option<Touch> {
+    let parts = c.child_by_field_name("constructor").map(|x| member_parts(x, src)).unwrap_or_default();
+    let [name] = parts.as_slice() else { return None };
+    if bindings.contains_key(name) {
+        return None;
+    }
+    let kind = effects::boundary_ts(None, &parts)?;
+    let kinds = &["string", "template_string"];
+    let f = effects::facts(kind, None, name, &literals(c, src, kinds));
+    Some(Touch { what: what_of(c, src, kinds, "arguments"), op: name.clone(), artifact: f.artifact, line: c.start_position().row as u32 + 1, ..Touch::new(f.kind, f.dir) })
+}
+
+/// The paths a file call is handed, each with the way it goes: a copy or a move reads its first and
+/// writes its second; any other call goes its own way with its first.
+fn sides<'t>(op: &str, args: &[TsNode<'t>], f: &effects::Facts) -> Vec<(Crossing, TsNode<'t>)> {
+    match matches!(op, "copyFile" | "copyFileSync" | "rename" | "renameSync" | "cp" | "cpSync") && args.len() > 1 {
+        true => vec![(Crossing::read(World::Disk), args[0]), (Crossing::write(World::Disk), args[1])],
+        false => vec![(Crossing { world: f.kind, dir: if f.kind == World::Disk { f.dir } else { None } }, args[0])],
+    }
 }
 
 /// Which parameter of the function a call reaches each argument is handed to, in order.

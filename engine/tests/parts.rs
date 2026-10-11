@@ -4,14 +4,14 @@
 use std::path::PathBuf;
 
 use atlas_engine::parts::{analyze_parts, analyze_repo, roots};
-use atlas_engine::{EdgeKind, EntryKind, Graph};
+use atlas_engine::{EdgeKind, EntryKind, Graph, Options};
 
 fn fixture() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixture-parts")
 }
 
 fn shop() -> Graph {
-    analyze_repo(&[fixture()], None).expect("the two-part fixture parses")
+    analyze_repo(&[fixture()], &Options::default()).expect("the two-part fixture parses")
 }
 
 fn label(g: &Graph, id: &str) -> String {
@@ -22,10 +22,10 @@ fn label(g: &Graph, id: &str) -> String {
 /// are not parts of their own.
 #[test]
 fn every_manifest_roots_a_part() {
-    let found: Vec<(String, &str)> = roots(&fixture()).into_iter().map(|(d, l)| (d.file_name().unwrap().to_string_lossy().to_string(), l)).collect();
+    let found: Vec<(String, &str)> = roots(&fixture(), &Options::default()).into_iter().map(|(d, l)| (d.file_name().unwrap().to_string_lossy().to_string(), l)).collect();
     assert_eq!(found, [("fixture-parts".to_string(), "python"), ("web".to_string(), "typescript")]);
     let atlas = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
-    assert_eq!(roots(&atlas).len(), 1, "the workspace is one root; engine/tests holds data");
+    assert_eq!(roots(&atlas, &Options::default()).len(), 1, "the workspace is one root; engine/tests holds data");
 }
 
 /// The parts side by side in one graph, every node in its part; checked part by part.
@@ -37,7 +37,7 @@ fn the_parts_are_one_graph() {
     assert_eq!(g.language, "", "read in two languages");
     assert_eq!(g.node("shop.api.item").unwrap().part, "shop");
     assert_eq!(g.node("web.lib.client.item").unwrap().part, "web");
-    let each: Vec<String> = analyze_parts(&[fixture()], None).unwrap().into_iter().map(|g| g.language).collect();
+    let each: Vec<String> = analyze_parts(&[fixture()], &Options::default()).unwrap().into_iter().map(|g| g.language).collect();
     assert_eq!(each, ["python", "typescript"]);
 }
 

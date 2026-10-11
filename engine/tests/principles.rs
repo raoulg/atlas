@@ -1,12 +1,12 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use atlas_engine::analyze;
+use atlas_engine::{analyze, Options};
 use atlas_engine::principles::{check, Finding, PRINCIPLES};
 
 fn findings(repo: &str) -> Vec<Finding> {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(repo);
-    check(&analyze(&root, None, None).expect("parses"))
+    check(&analyze(&root, &Options::default()).expect("parses"))
 }
 
 fn by_principle(fs: &[Finding]) -> BTreeMap<&'static str, Vec<&str>> {

@@ -4,7 +4,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::model::{Edge, EdgeKind, EntryKind, Graph, Node, NodeKind, Touch};
+use crate::model::{Dir, Edge, EdgeKind, EntryKind, Graph, Node, NodeKind, Touch, World};
 
 /// Every route into the program: its kind, its label and the id of the node it starts at.
 pub fn entries(g: &Graph) -> Vec<(EntryKind, &str, &str)> {
@@ -272,35 +272,35 @@ fn verb(t: &Touch) -> String {
         o if o.starts_with("remove") || o.starts_with("unlink") || o.starts_with("rmtree") => Some("removes"),
         _ => None,
     };
-    let by_dir = match (t.kind.as_str(), t.dir.as_str()) {
-        (k, "read") if k.starts_with("db_") => Some("reads"),
-        (k, "write") if k.starts_with("db_") => Some("writes"),
-        ("net", "read") => Some("downloads"),
-        ("net", "write") => Some("uploads"),
-        ("screen", _) if t.op == "render" => Some("renders"),
+    let by_dir = match (t.kind, t.dir) {
+        (World::Db(_), Some(Dir::Read)) => Some("reads"),
+        (World::Db(_), Some(Dir::Write)) => Some("writes"),
+        (World::Net, Some(Dir::Read)) => Some("downloads"),
+        (World::Net, Some(Dir::Write)) => Some("uploads"),
+        (World::Screen, _) if t.op == "render" => Some("renders"),
         _ => None,
     };
-    if let Some(v) = by_dir.filter(|_| t.kind.starts_with("db_")).or(by_op).or(by_dir) {
+    if let Some(v) = by_dir.filter(|_| matches!(t.kind, World::Db(_))).or(by_op).or(by_dir) {
         return v.into();
     }
-    match t.kind.as_str() {
-        "net" => "calls",
-        "disk_read" => "reads",
-        "disk_write" => "writes",
-        "disk" => "opens",
-        "llm" => "asks an LLM",
-        "model" => "runs a model",
-        "process" => "runs",
-        "screen" => "prints",
-        k if k.starts_with("db_") => "queries",
-        k => k,
+    match (t.kind, t.dir) {
+        (World::Net, _) => "calls",
+        (World::Disk, Some(Dir::Read)) => "reads",
+        (World::Disk, Some(Dir::Write)) => "writes",
+        (World::Disk, None) => "opens",
+        (World::Llm, _) => "asks an LLM",
+        (World::Model, _) => "runs a model",
+        (World::Process, _) => "runs",
+        (World::Screen, _) => "prints",
+        (World::Db(_), _) => "queries",
+        (World::Figure, _) => "figure",
     }
     .into()
 }
 
 /// Where a touch lands, as the code names it.
 fn place(t: &Touch) -> String {
-    if t.kind == "screen" {
+    if t.kind == World::Screen {
         return String::new();
     }
     if !t.artifact.is_empty() {

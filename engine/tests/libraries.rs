@@ -2,11 +2,11 @@
 
 use std::path::PathBuf;
 
-use atlas_engine::{analyze, principles, EdgeKind, Graph};
+use atlas_engine::{analyze, principles, EdgeKind, Graph, Options};
 
 fn fixture() -> Graph {
     let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixture-lib");
-    analyze(&repo, None, None).expect("fixture parses")
+    analyze(&repo, &Options::default()).expect("fixture parses")
 }
 
 fn edge(g: &Graph, src: &str, dst: &str, kind: EdgeKind) -> bool {
@@ -21,7 +21,7 @@ fn a_library_is_read_as_far_as_the_project_reaches() {
     let node = |id: &str| g.nodes.iter().find(|n| n.id == id);
     let load = node("plotkit.data.load").expect("the function the app calls is read");
     assert!(load.library, "a library's function is marked as one");
-    assert!(load.touches.iter().any(|t| t.kind == "disk_read"), "{:?}", load.touches);
+    assert!(load.touches.iter().any(|t| t.kind_name() == "disk_read"), "{:?}", load.touches);
     assert!(edge(&g, "app.main.main", "plotkit.data.load", EdgeKind::Calls));
     assert!(node("plotkit.data.unused").is_none(), "a function nothing reaches is not drawn");
     // a call on a subclass into its base's method reaches the subclass's override

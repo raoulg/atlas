@@ -14,11 +14,11 @@ use walkdir::WalkDir;
 
 mod paths;
 
-use crate::effects;
+use crate::effects::{self, Crossing};
 use crate::pytypes::{By, Facts, FileArg, Target, Ty, Types, Value};
 use paths::{At, Built, Eval, Passed, Seg};
 use crate::entries::entry_of;
-use crate::model::{Compare, EdgeKind, Entry, EntryKind, Held, Node, NodeKind, Site, Touch};
+use crate::model::{Compare, Dir, EdgeKind, Entry, EntryKind, Held, Node, NodeKind, Site, Touch, World};
 pub use crate::builder::{ClassInfo, GraphBuilder, SigInfo};
 use crate::tree::{
     argument, arms_of, decides, evaluation_order, field_children, literals, named_children, nth_of_kind, number_choices, payload_of, span, starts_at_literal, text, unquote, walk,
@@ -300,29 +300,22 @@ fn notebook_source(path: &Path) -> Result<String> {
     Ok(lines.concat())
 }
 
-/// The scripts and notebooks of a project: every `.py` and `.ipynb` outside its package, at any
-/// depth. Not its tests, what git ignores, hidden directories or environments, and not another
-/// package or project inside it (a directory with an `__init__.py` or a `pyproject.toml`).
-/// The files named on the command line, resolved: each is read as one of its project's scripts
-/// or notebooks, even where git ignores it.
-static NAMED: std::sync::Mutex<Vec<PathBuf>> = std::sync::Mutex::new(Vec::new());
-
-/// Read these files as their projects' scripts and notebooks, whatever git ignores.
-pub fn read_named(files: &[PathBuf]) {
-    *NAMED.lock().unwrap() = files.iter().filter_map(|f| std::fs::canonicalize(f).ok()).collect();
-}
-
-/// The named files under `dir`, written from `dir` as the walk writes what it finds.
-pub fn named_under(dir: &Path) -> Vec<PathBuf> {
+/// The files of `named` (canonical) under `dir`, written from `dir` as the walk writes what it
+/// finds.
+pub fn named_under(dir: &Path, named: &[PathBuf]) -> Vec<PathBuf> {
     let Ok(d) = std::fs::canonicalize(dir) else { return vec![] };
-    NAMED.lock().unwrap().iter().filter_map(|f| f.strip_prefix(&d).ok().map(|r| dir.join(r))).collect()
+    named.iter().filter_map(|f| f.strip_prefix(&d).ok().map(|r| dir.join(r))).collect()
 }
 
-fn scripts(root_dir: &Path, pkg_dir: Option<&Path>) -> Vec<PathBuf> {
+/// The scripts and notebooks of a project: every `.py` and `.ipynb` outside its package, at any
+/// depth, and the files named on the command line, even where git ignores them. Not its tests,
+/// what git ignores, hidden directories or environments, and not another package or project
+/// inside it (a directory with an `__init__.py` or a `pyproject.toml`).
+fn scripts(root_dir: &Path, pkg_dir: Option<&Path>, named: &[PathBuf]) -> Vec<PathBuf> {
     const NOT: &[&str] = &["tests", "test", "node_modules", "venv", "env", "build", "dist", "site-packages", "__pycache__"];
     // without a package or a project file, the project is the files named
     if pkg_dir.is_none() && !root_dir.join("pyproject.toml").exists() {
-        return named_under(root_dir);
+        return named_under(root_dir, named);
     }
     let pkg = pkg_dir.map(|p| std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf())).unwrap_or_default();
     let mut out: Vec<PathBuf> = ignore::WalkBuilder::new(root_dir)
@@ -345,7 +338,7 @@ fn scripts(root_dir: &Path, pkg_dir: Option<&Path>) -> Vec<PathBuf> {
         })
         .collect();
     let found: HashSet<PathBuf> = out.iter().filter_map(|p| std::fs::canonicalize(p).ok()).collect();
-    out.extend(named_under(root_dir).into_iter().filter(|p| std::fs::canonicalize(p).map_or(false, |c| !found.contains(&c))));
+    out.extend(named_under(root_dir, named).into_iter().filter(|p| std::fs::canonicalize(p).map_or(false, |c| !found.contains(&c))));
     out.sort();
     out
 }
@@ -386,7 +379,7 @@ pub fn discover_package(repo: &Path) -> Result<PathBuf> {
 }
 
 /// Parse a package (and the scripts next to it) into a `GraphBuilder`. Returns the store and the root package name.
-pub fn parse(pkg_dir: Option<&Path>, project_root: Option<&Path>) -> Result<(GraphBuilder, String)> {
+pub fn parse(pkg_dir: Option<&Path>, project_root: Option<&Path>, opts: &crate::Options) -> Result<(GraphBuilder, String)> {
     // a project without a package is named after its folder
     let named = pkg_dir.or(project_root).context("no package and no project")?;
     let named = std::fs::canonicalize(named).unwrap_or_else(|_| named.to_path_buf());
@@ -434,7 +427,7 @@ pub fn parse(pkg_dir: Option<&Path>, project_root: Option<&Path>) -> Result<(Gra
     }
     // the project's scripts and notebooks are routes into the package
     if let Some(root_dir) = project_root {
-        for p in scripts(root_dir, pkg_dir) {
+        for p in scripts(root_dir, pkg_dir, &opts.named) {
             let rel = p.strip_prefix(root_dir).unwrap_or(&p).to_path_buf();
             let stem = p.file_stem().and_then(|s| s.to_str()).unwrap_or("script").to_string();
             // a dot in a file's name is no module boundary
@@ -463,7 +456,7 @@ pub fn parse(pkg_dir: Option<&Path>, project_root: Option<&Path>) -> Result<(Gra
         }
     }
 
-    let types = read_libraries(&mut parser, &mut modules, &mut store, project_root.unwrap_or(base))?;
+    let types = read_libraries(&mut parser, &mut modules, &mut store, project_root.unwrap_or(base), opts.libraries)?;
     for m in modules.values_mut() {
         collect_symbols(m, &mut store);
     }
@@ -479,25 +472,15 @@ pub fn parse(pkg_dir: Option<&Path>, project_root: Option<&Path>) -> Result<(Gra
     Ok((store, root))
 }
 
-/// How many rounds Atlas reads into the libraries the code calls: none, the modules the code's
-/// own calls go into (1), and in each further round the modules of the same library that the
-/// last round's calls go into.
-static LIBRARY_DEPTH: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(1);
-
-/// Read the libraries the code calls `depth` rounds deep (1 unless set).
-pub fn read_libraries_to(depth: usize) {
-    LIBRARY_DEPTH.store(depth, std::sync::atomic::Ordering::Relaxed);
-}
-
 /// The libraries the project's code calls, read as code as far as those calls reach into them,
-/// `LIBRARY_DEPTH` rounds deep: the library modules the code's calls go into, then the modules
+/// `depth` rounds deep: the library modules the code's calls go into, then the modules
 /// of the same library their own calls go into. What a library calls in a module not read, or
 /// in another library, stays a library's call, as the project's own calls into an unread
 /// library do. A library is read
 /// only where its source can be followed: not the standard library (ty knows it by its stubs),
 /// not a package the effect tables describe, and not one with compiled code. Returns ty's
 /// answers for every module read.
-fn read_libraries(parser: &mut Parser, modules: &mut IndexMap<String, Module>, store: &mut GraphBuilder, root_dir: &Path) -> Result<Types> {
+fn read_libraries(parser: &mut Parser, modules: &mut IndexMap<String, Module>, store: &mut GraphBuilder, root_dir: &Path, depth: usize) -> Result<Types> {
     let entry = |m: &Module| (crate::tree::path_str(&m.path), m.path.clone());
     let mut files: Vec<(String, PathBuf)> = modules.values().map(entry).collect();
     let Some(ty) = Ty::new(root_dir) else { return Ok(Types::default()) };
@@ -507,7 +490,6 @@ fn read_libraries(parser: &mut Parser, modules: &mut IndexMap<String, Module>, s
     let mut readable = Readable::default();
     let here = std::fs::canonicalize(root_dir).unwrap_or_else(|_| root_dir.to_path_buf());
     let project = files.len();
-    let depth = LIBRARY_DEPTH.load(std::sync::atomic::Ordering::Relaxed);
     for round in 1..=depth {
         let mut fresh = vec![];
         for (mid, path) in std::mem::take(&mut reached) {
@@ -1098,8 +1080,8 @@ fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, root: &str
     // the work handed to a managed transaction (`session.execute_read(work)`) goes its way
     for (work, kind, dir) in handed {
         if let Some(n) = store.nodes.get_mut(&work) {
-            for t in n.touches.iter_mut().filter(|t| t.kind == kind && t.dir.is_empty()) {
-                t.dir = dir.into();
+            for t in n.touches.iter_mut().filter(|t| t.kind == kind && t.dir.is_none()) {
+                t.dir = Some(dir);
             }
         }
     }
@@ -1145,8 +1127,8 @@ fn root_name<'a>(n: TsNode, src: &'a [u8]) -> Option<&'a str> {
 /// attribute or item (`self.x = ..`, `p.items[k] = ..`), and of every call to a mutator
 /// (`self.nodes.append(..)`) or to a method known to change its receiver. Changing a part
 /// changes the whole.
-fn changed_roots<'a>(body: TsNode, src: &'a [u8], mutating: &dyn Fn(TsNode) -> bool) -> HashSet<&'a str> {
-    let mut out = HashSet::new();
+fn changed_roots<'a>(body: TsNode, src: &'a [u8], mutating: &dyn Fn(TsNode) -> bool) -> std::collections::BTreeSet<&'a str> {
+    let mut out = std::collections::BTreeSet::new();
     for a in walk(body, &["assignment", "augmented_assignment"]) {
         if let Some(left) = a.child_by_field_name("left").filter(|l| matches!(l.kind(), "attribute" | "subscript")) {
             out.extend(root_name(left, src));
@@ -1389,13 +1371,13 @@ impl<'a> Seen<'a> {
     /// as its types say: building a client (a web or LLM library's class) moves nothing, and a
     /// network library's call moves data only when it is handed a URL or sends on a socket. Where
     /// the types are not known, the table stands.
-    fn moves(&self, f: TsNode, kind: &str, lib: Option<&str>, op: &str) -> bool {
+    fn moves(&self, f: TsNode, kind: &Crossing, lib: Option<&str>, op: &str) -> bool {
         let reached = self.facts.map_or(&[][..], |x| x.callees(Self::range(f)));
         if lib.map_or(false, effects::client) && reached.iter().any(|c| c.by == By::Construct && matches!(c.target, Target::Lib(_))) {
             return false;
         }
         match self.facts.and_then(|x| x.signature(Self::range(f))) {
-            Some(sig) if kind == "net" && lib.map_or(false, effects::network) => effects::requests(&sig.iter().map(|p| p.name.as_str()).collect::<Vec<_>>(), op),
+            Some(sig) if kind.world == World::Net && lib.map_or(false, effects::network) => effects::requests(&sig.iter().map(|p| p.name.as_str()).collect::<Vec<_>>(), op),
             _ => true,
         }
     }
@@ -1669,7 +1651,7 @@ fn io_refs(m: &Module, n: TsNode, root: &str, what: &str) -> Vec<Touch> {
         let Some(tag) = effects::boundary(Some(pkg), &parts) else { continue };
         let op = parts.last().cloned().unwrap_or_default();
         let f = effects::facts(tag, Some(pkg), &op, &[]);
-        out.push(Touch { kind: f.kind.into(), what: what.into(), op, artifact: f.artifact, dir: f.dir.into(), n: 1, ..Default::default() });
+        out.push(Touch { what: what.into(), op, artifact: f.artifact, ..Touch::new(f.kind, f.dir) });
     }
     out
 }
@@ -1691,7 +1673,7 @@ struct Arg<'t> {
 /// are known), and the arguments of its calls.
 #[derive(Default)]
 struct Linked<'t> {
-    handed: Vec<(String, String, &'static str)>,
+    handed: Vec<(String, World, Dir)>,
     files: Vec<(Touch, Vec<Built>)>,
     args: Vec<Arg<'t>>,
 }
@@ -1704,13 +1686,13 @@ fn link_calls<'t>(modules: &'t IndexMap<String, Module>, store: &mut GraphBuilde
     let in_module = n.kind == NodeKind::Module;
     let body = if in_module { Some(d) } else { d.child_by_field_name("body") };
     let Some(body) = body else { return Linked::default() };
-    let mut handed: Vec<(String, String, &'static str)> = vec![];
+    let mut handed: Vec<(String, World, Dir)> = vec![];
     let mut files: Vec<(Touch, Vec<Built>)> = vec![];
     let mut args: Vec<Arg> = vec![];
     let own_params: Vec<String> = if in_module { vec![] } else { paths::parameters(d, src, false).into_iter().map(|(p, _)| p).collect() };
     let at = At { m, scope: (!in_module).then_some(d), params: &own_params };
     // the direction a body says to a database's driver, per database
-    let mut declared: Vec<(String, &'static str)> = vec![];
+    let mut declared: Vec<(World, Dir)> = vec![];
     let params = if in_module { HashMap::new() } else { param_types(m, d, modules, &store.nodes, root) };
     let mut touches: Vec<Touch> = vec![];
     let mut new_edges: Vec<(String, EdgeKind, Vec<(u32, u32)>)> = vec![];
@@ -1838,11 +1820,11 @@ fn link_calls<'t>(modules: &'t IndexMap<String, Module>, store: &mut GraphBuilde
                 unresolved.push(parts.iter().take(2).cloned().collect::<Vec<_>>().join("."));
             }
             let tag = effects::boundary(lib.as_deref(), &parts).filter(|t| seen.moves(fnode, t, lib.as_deref(), parts.last().map_or("", String::as_str)));
-            if let Some(tag) = tag.filter(|t| t.starts_with("disk")) {
+            if let Some(tag) = tag.filter(|t| t.world == World::Disk) {
                 let op = parts.last().cloned().unwrap_or_default();
                 for (kind, what, artifact, fixed, built) in file_calls(&seen, eval, at, c, fnode, tag, lib.as_deref(), &op) {
                     let payload = payload_of(c, src, &what, "arguments", &seen.handed(c));
-                    let t = Touch { kind: kind.into(), what: what.clone(), payload: payload.clone(), op: op.clone(), artifact, dir: String::new(), fixed, line: c.start_position().row as u32 + 1, n: 1 };
+                    let t = Touch { what: what.clone(), payload: payload.clone(), op: op.clone(), artifact, fixed, line: c.start_position().row as u32 + 1, ..Touch::new(kind.world, kind.dir) };
                     match built.is_empty() {
                         true => touches.push(t),
                         false => files.push((t, built)),
@@ -1852,33 +1834,36 @@ fn link_calls<'t>(modules: &'t IndexMap<String, Module>, store: &mut GraphBuilde
                 let op = parts.last().cloned().unwrap_or_default();
                 let f = effects::facts(tag, lib.as_deref(), &op, &literals(c, src, &["string"]));
                 // on a hub, what moves is the repository the call names
-                let what = match f.kind == "net" && !f.artifact.is_empty() {
+                let what = match f.kind == World::Net && !f.artifact.is_empty() {
                     true => argument(c, src, "repo_id").unwrap_or_else(|| what_of(c, src, &["string"], "arguments")),
                     false => what_of(c, src, &["string"], "arguments"),
                 };
                 let payload = payload_of(c, src, &what, "arguments", &seen.handed(c));
-                let fixed = effects::locates(f.kind) && starts_at_literal(c, src, &["string"], "arguments", effects::on_receiver(&op));
-                let said = effects::access(f.kind, &op, keyword(c, src, &["routing_", "default_access_mode"]).as_deref());
-                if !said.is_empty() {
-                    declared.push((f.kind.to_string(), said));
+                let fixed = f.kind.located() && starts_at_literal(c, src, &["string"], "arguments", effects::on_receiver(&op));
+                let said = match f.kind {
+                    World::Db(db) => effects::access(db, &op, keyword(c, src, &["routing_", "default_access_mode"]).as_deref()),
+                    _ => None,
+                };
+                if let Some(said) = said {
+                    declared.push((f.kind, said));
                     // the work a managed transaction is handed runs in its direction
                     if effects::transaction(&op) {
                         if let Some(Callee::Def(work)) = positional(c).and_then(|a| seen.callee(a)) {
-                            handed.push((work, f.kind.to_string(), said));
+                            handed.push((work, f.kind, said));
                         }
                     }
                 }
                 for (artifact, dir) in f.places() {
-                    let dir = if dir.is_empty() { said } else { dir };
-                    touches.push(Touch { kind: f.kind.into(), what: what.clone(), payload: payload.clone(), op: op.clone(), artifact, dir: dir.into(), fixed, line: c.start_position().row as u32 + 1, n: 1 });
+                    let dir = dir.or(said);
+                    touches.push(Touch { what: what.clone(), payload: payload.clone(), op: op.clone(), artifact, fixed, line: c.start_position().row as u32 + 1, ..Touch::new(f.kind, dir) });
                 }
             }
         }
         // what a body runs inside the session or transaction it opened goes the way it said
-        for t in touches.iter_mut().filter(|t| t.dir.is_empty()) {
-            let said: HashSet<&str> = declared.iter().filter(|(k, _)| *k == t.kind).map(|(_, d)| *d).collect();
+        for t in touches.iter_mut().filter(|t| t.dir.is_none()) {
+            let said: HashSet<Dir> = declared.iter().filter(|(k, _)| *k == t.kind).map(|(_, d)| *d).collect();
             if let [dir] = said.into_iter().collect::<Vec<_>>()[..] {
-                t.dir = dir.into();
+                t.dir = Some(dir);
             }
         }
         // what the body changes of its inputs: `T -> T` for the receiver or a parameter it changes;
@@ -1945,7 +1930,7 @@ fn link_calls<'t>(modules: &'t IndexMap<String, Module>, store: &mut GraphBuilde
 /// whose types are not known hands its first argument. The direction is what the type says
 /// (`SupportsRead`, `SupportsWrite`), what the call's `mode` says, or for a call handed two paths
 /// the API's own names for them (`src`, `dst`); else the operation's.
-fn file_calls<'t>(seen: &Seen, eval: &Eval, at: At<'_, 't>, c: TsNode<'t>, fnode: TsNode<'t>, tag: &'static str, lib: Option<&str>, op: &str) -> Vec<(&'static str, String, String, bool, Vec<Built>)> {
+fn file_calls<'t>(seen: &Seen, eval: &Eval, at: At<'_, 't>, c: TsNode<'t>, fnode: TsNode<'t>, tag: Crossing, lib: Option<&str>, op: &str) -> Vec<(Crossing, String, String, bool, Vec<Built>)> {
     let src = &at.m.src;
     let sig = seen.facts.and_then(|x| x.signature(Seen::range(fnode)));
     let typed = sig.map(|s| paths::file_args(s, c, src)).unwrap_or_default();
@@ -1959,7 +1944,7 @@ fn file_calls<'t>(seen: &Seen, eval: &Eval, at: At<'_, 't>, c: TsNode<'t>, fnode
     if files.is_empty() {
         let f = effects::facts(tag, lib, op, &mode.into_iter().collect::<Vec<_>>());
         let what = what_of(c, src, &["string"], "arguments");
-        return f.places().into_iter().map(|(artifact, _)| (f.kind, what.clone(), artifact, false, vec![])).collect();
+        return f.places().into_iter().map(|(artifact, _)| (Crossing { world: f.kind, dir: f.dir }, what.clone(), artifact, false, vec![])).collect();
     }
     files
         .into_iter()
@@ -1971,13 +1956,7 @@ fn file_calls<'t>(seen: &Seen, eval: &Eval, at: At<'_, 't>, c: TsNode<'t>, fnode
             }
             lits.extend(mode.clone());
             let f = effects::facts(tag, lib, op, &lits);
-            let kind = match file {
-                Some(FileArg::Reads) => "disk_read",
-                Some(FileArg::Writes) => "disk_write",
-                _ if paths > 1 && matches!(name, "src" | "source" | "from_") => "disk_read",
-                _ if paths > 1 && matches!(name, "dst" | "destination" | "target" | "to") => "disk_write",
-                _ => f.kind,
-            };
+            let kind = file_direction(file, name, paths, &f);
             let artifact = f.places().into_iter().next().map(|(a, _)| a).unwrap_or_default();
             let what = match literals(a, src, &["string"]).into_iter().next() {
                 Some(l) => crate::tree::shown(&l),
@@ -1986,6 +1965,18 @@ fn file_calls<'t>(seen: &Seen, eval: &Eval, at: At<'_, 't>, c: TsNode<'t>, fnode
             (kind, what, artifact, crate::tree::head_literal(a, src, &["string"]), eval.of(at, a, 0))
         })
         .collect()
+}
+
+/// Which way a file argument goes: what its parameter's type says (a file to read from or to write
+/// to), for a call handed two paths the API's own names for them, else what the operation does.
+fn file_direction(file: Option<FileArg>, name: &str, paths: usize, f: &effects::Facts) -> Crossing {
+    match file {
+        Some(FileArg::Reads) => Crossing::read(World::Disk),
+        Some(FileArg::Writes) => Crossing::write(World::Disk),
+        _ if paths > 1 && matches!(name, "src" | "source" | "from_") => Crossing::read(World::Disk),
+        _ if paths > 1 && matches!(name, "dst" | "destination" | "target" | "to") => Crossing::write(World::Disk),
+        _ => Crossing { world: f.kind, dir: f.dir },
+    }
 }
 
 /// Which parameter of the function a call reaches each argument is handed to: positional

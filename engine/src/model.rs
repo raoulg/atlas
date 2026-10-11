@@ -18,9 +18,7 @@ pub enum NodeKind {
     Function,
     Method,
     External,
-    /// A file or table that data rests in between routes.
-    Artifact,
-    /// A resting place in the world: web, disk, a database, a hub type, the browser.
+    /// A class of a quotient: what a view makes of the nodes it identifies.
     Place,
 }
 
@@ -39,8 +37,6 @@ pub enum EdgeKind {
     Returns,
     /// Attribute of a type.
     Has,
-    Reads,
-    Writes,
     /// A parameter or the receiver the body changes in place; `via` names which.
     Mutates,
     /// A sum type and one of the types it may be: `Result = FitResult | FailedFit`.
@@ -104,11 +100,8 @@ pub struct Node {
     pub returns: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub entry: Option<Entry>,
-    /// Calls that leave the package, by the part of the world they touch.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub boundaries: BTreeMap<String, u32>,
-    /// The same calls with what they touch: a path literal, a table, a command, or the
-    /// argument's name when nothing better is known.
+    /// The calls that leave the package, with what they touch: a path literal, a table, a
+    /// command, or the argument's name when nothing better is known.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub touches: Vec<Touch>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -129,8 +122,9 @@ pub struct Node {
     /// what its library's calls reach (`db_sqlite` for `sqlite3.Connection`). A class of the
     /// package: what one of its operations reaches, through what it calls (a sink, a repository,
     /// a client).
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub door: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(type = "string")]
+    pub door: Option<World>,
     /// The part of the repository the node belongs to.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub part: String,
@@ -191,34 +185,265 @@ impl Default for NodeKind {
     }
 }
 
-/// One kind of boundary call and what it touches.
-#[derive(Serialize, Deserialize, TS, Clone, Debug, Default, PartialEq, Eq)]
-#[ts(export)]
+/// The part of the world a call reaches outside the program: where data rests besides memory.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, PartialOrd, Ord)]
+pub enum World {
+    /// Files and directories.
+    Disk,
+    /// The web, or another program over a socket.
+    Net,
+    Db(Db),
+    /// A language model behind an API.
+    Llm,
+    /// A model run in the program on weights it loaded.
+    Model,
+    /// Another program, run by this one.
+    Process,
+    /// The terminal or a page: what a human sees.
+    Screen,
+    /// A figure, drawn to be seen.
+    Figure,
+}
+
+/// The kind of database a driver reaches, named the same in every language.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, PartialOrd, Ord)]
+pub enum Db {
+    Sql,
+    Sqlite,
+    Duckdb,
+    Graph,
+    Kv,
+}
+
+/// Which way data goes between the program and a place.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, PartialOrd, Ord)]
+pub enum Dir {
+    Read,
+    Write,
+}
+
+impl World {
+    /// The name the graph's JSON gives it: `disk`, `net`, `db_sqlite`.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            World::Disk => "disk",
+            World::Net => "net",
+            World::Db(Db::Sql) => "db_sql",
+            World::Db(Db::Sqlite) => "db_sqlite",
+            World::Db(Db::Duckdb) => "db_duckdb",
+            World::Db(Db::Graph) => "db_graph",
+            World::Db(Db::Kv) => "db_kv",
+            World::Llm => "llm",
+            World::Model => "model",
+            World::Process => "process",
+            World::Screen => "screen",
+            World::Figure => "figure",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<World> {
+        ALL_WORLDS.iter().copied().find(|w| w.as_str() == s)
+    }
+
+    /// A service a door leads to: a database, the web, a model or a program. A file or the screen
+    /// is none: a value may save or show itself.
+    pub fn is_service(self) -> bool {
+        matches!(self, World::Db(_) | World::Net | World::Llm | World::Model | World::Process)
+    }
+
+    /// Whether a literal handed to the call names a place someone could want elsewhere: a file
+    /// or a URL. A table in a statement or a command line is what the call does, not where.
+    pub fn located(self) -> bool {
+        matches!(self, World::Disk | World::Net)
+    }
+}
+
+const ALL_WORLDS: &[World] = &[
+    World::Disk,
+    World::Net,
+    World::Db(Db::Sql),
+    World::Db(Db::Sqlite),
+    World::Db(Db::Duckdb),
+    World::Db(Db::Graph),
+    World::Db(Db::Kv),
+    World::Llm,
+    World::Model,
+    World::Process,
+    World::Screen,
+    World::Figure,
+];
+
+impl Dir {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Dir::Read => "read",
+            Dir::Write => "write",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Dir> {
+        match s {
+            "read" => Some(Dir::Read),
+            "write" => Some(Dir::Write),
+            _ => None,
+        }
+    }
+}
+
+impl Serialize for World {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for World {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let s = String::deserialize(d)?;
+        World::parse(&s).ok_or_else(|| serde::de::Error::custom(format!("no part of the world called `{s}`")))
+    }
+}
+
+impl TS for World {
+    type WithoutGenerics = Self;
+    type OptionInnerType = Self;
+    fn name(_: &ts_rs::Config) -> String {
+        "string".into()
+    }
+    fn inline(_: &ts_rs::Config) -> String {
+        "string".into()
+    }
+}
+
+/// A boundary a call crosses: the part of the world it reaches, and which way when the call
+/// says (`fs::write` writes; `open(p)` may go either way until its mode is read).
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub struct Crossing {
+    pub world: World,
+    pub dir: Option<Dir>,
+}
+
+impl Crossing {
+    pub const fn to(world: World) -> Crossing {
+        Crossing { world, dir: None }
+    }
+    pub const fn read(world: World) -> Crossing {
+        Crossing { world, dir: Some(Dir::Read) }
+    }
+    pub const fn write(world: World) -> Crossing {
+        Crossing { world, dir: Some(Dir::Write) }
+    }
+
+    /// The kind the graph's JSON gives a touch: a file's carries its direction (`disk_read`,
+    /// `disk_write`, `disk` when the call does not say which way); another's is its world's name,
+    /// with the direction beside it.
+    pub fn kind_name(self) -> &'static str {
+        match (self.world, self.dir) {
+            (World::Disk, Some(Dir::Read)) => "disk_read",
+            (World::Disk, Some(Dir::Write)) => "disk_write",
+            (w, _) => w.as_str(),
+        }
+    }
+
+    /// The direction the graph's JSON writes beside the kind: none for a file, whose kind says it.
+    pub fn dir_name(self) -> &'static str {
+        match (self.world, self.dir) {
+            (World::Disk, _) | (_, None) => "",
+            (_, Some(d)) => d.as_str(),
+        }
+    }
+
+    /// The crossing a JSON kind and direction name.
+    pub fn named(kind: &str, dir: &str) -> Option<Crossing> {
+        match kind {
+            "disk_read" => Some(Crossing::read(World::Disk)),
+            "disk_write" => Some(Crossing::write(World::Disk)),
+            k => World::parse(k).map(|world| Crossing { world, dir: Dir::parse(dir) }),
+        }
+    }
+}
+
+/// One kind of boundary call and what it touches. A file's direction is written into its kind
+/// in the graph's JSON (`disk_read`, `disk_write`, `disk` when the call does not say); another
+/// place's is `dir`.
+#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq, Eq)]
+#[serde(into = "TouchJson", try_from = "TouchJson")]
+#[ts(export, as = "TouchJson")]
 pub struct Touch {
-    pub kind: String,
+    pub kind: World,
+    /// Which way data goes, when the call says: a file's mode, a database statement's verb, a
+    /// download or an upload.
+    pub dir: Option<Dir>,
     pub what: String,
     pub n: u32,
     /// What flows through the boundary, as the author named it, with its type when known.
-    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub payload: String,
     /// The operation as called: `write`, `create_dir_all`, `read_text`, `get`.
-    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub op: String,
     /// The file or table as the code names it: a literal path or pattern (`out.json`,
     /// `{name}.png`), `*.csv` when only the format is known, a table after a SQL verb. Empty
     /// when only a variable says which.
-    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub artifact: String,
-    /// `read` or `write`, when the kind does not say: a database statement's verb decides.
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub dir: String,
     /// The code alone decides where: the path or URL starts at a literal (`"out.csv"`,
     /// `Path("data") / name`), not at a value a caller hands in (`root / "out.csv"`).
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub fixed: bool,
     /// The line of the first such call, 1-based.
+    pub line: u32,
+}
+
+impl Touch {
+    /// A touch of `kind`, going `dir` when the call says, with nothing else known yet.
+    pub fn new(kind: World, dir: Option<Dir>) -> Touch {
+        Touch { kind, dir, what: String::new(), n: 1, payload: String::new(), op: String::new(), artifact: String::new(), fixed: false, line: 0 }
+    }
+
+    pub fn crossing(&self) -> Crossing {
+        Crossing { world: self.kind, dir: self.dir }
+    }
+
+    /// The kind as the graph's JSON names it: `disk_read`, `net`, `db_sqlite`.
+    pub fn kind_name(&self) -> &'static str {
+        self.crossing().kind_name()
+    }
+
+    /// The direction as the graph's JSON writes it beside the kind.
+    pub fn dir_name(&self) -> &'static str {
+        self.crossing().dir_name()
+    }
+}
+
+/// A touch as the graph's JSON writes it.
+#[derive(Serialize, Deserialize, TS, Clone, Debug, Default, PartialEq, Eq)]
+pub struct TouchJson {
+    pub kind: String,
+    pub what: String,
+    pub n: u32,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub payload: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub op: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub artifact: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub dir: String,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub fixed: bool,
     #[serde(default, skip_serializing_if = "is_zero")]
     pub line: u32,
+}
+
+impl From<Touch> for TouchJson {
+    fn from(t: Touch) -> TouchJson {
+        let (kind, dir) = (t.kind_name().to_string(), t.dir_name().to_string());
+        TouchJson { kind, what: t.what, n: t.n, payload: t.payload, op: t.op, artifact: t.artifact, dir, fixed: t.fixed, line: t.line }
+    }
+}
+
+impl TryFrom<TouchJson> for Touch {
+    type Error = String;
+    fn try_from(j: TouchJson) -> Result<Touch, String> {
+        let c = Crossing::named(&j.kind, &j.dir).ok_or_else(|| format!("no part of the world called `{}`", j.kind))?;
+        Ok(Touch { kind: c.world, dir: c.dir, what: j.what, n: j.n, payload: j.payload, op: j.op, artifact: j.artifact, fixed: j.fixed, line: j.line })
+    }
 }
 
 fn is_zero(n: &u32) -> bool {

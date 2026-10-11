@@ -2,11 +2,20 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 
 use atlas_engine::view::{by_role, hide_private, reach_from, Compose, View};
-use atlas_engine::{analyze, EdgeKind, EntryKind, Graph, NodeKind};
+use atlas_engine::{analyze, EdgeKind, EntryKind, Graph, NodeKind, Options};
 
 fn fixture() -> Graph {
     let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixture");
-    analyze(&repo, None, None).expect("fixture parses")
+    analyze(&repo, &Options::default()).expect("fixture parses")
+}
+
+/// How many calls of a node cross to each kind of place, by the names the graph's JSON gives them.
+fn boundaries(n: &atlas_engine::Node) -> std::collections::BTreeMap<&'static str, u32> {
+    let mut out = std::collections::BTreeMap::new();
+    for t in &n.touches {
+        *out.entry(t.kind_name()).or_insert(0) += t.n;
+    }
+    out
 }
 
 fn edges(g: &Graph, kind: EdgeKind) -> HashSet<(String, String)> {
@@ -87,7 +96,7 @@ fn types_compose_from_their_parts() {
     assert!(call("store.merged", "schema.Graph.first"), "`for g in graphs`");
     assert!(call("build.reread", "store.Reader.nodes"), "`reader()` is defined in a module read after this one");
     assert!(edges(&g, EdgeKind::Has).contains(&("fixture.store.Store".into(), "fixture.store.Connection".into())), "the class `or` makes");
-    let b = |id: &str| g.node(id).unwrap().boundaries.clone();
+    let b = |id: &str| boundaries(g.node(id).unwrap());
     assert_eq!(b("fixture.store.pull").get("net"), Some(&1), "`SESSION = _session()` with `-> requests.Session`, at module level");
     assert_eq!(b("fixture.store.unpack").get("disk_write"), Some(&1), "`with zipfile.ZipFile(..) as zf: zf.extractall(..)`");
     assert!(b("fixture.store.Connection.driver").contains_key("db_graph"), "`GraphDatabase.driver(..)`");
@@ -101,14 +110,14 @@ fn types_compose_from_their_parts() {
 #[test]
 fn a_driver_says_which_way_the_data_goes() {
     let g = fixture();
-    let dirs = |id: &str| g.node(id).unwrap().touches.iter().filter(|t| t.kind == "db_graph").map(|t| (t.op.as_str(), t.dir.as_str())).collect::<HashSet<_>>();
+    let dirs = |id: &str| g.node(id).unwrap().touches.iter().filter(|t| t.kind_name() == "db_graph").map(|t| (t.op.as_str(), t.dir_name())).collect::<HashSet<_>>();
     let set = |xs: &[(&'static str, &'static str)]| xs.iter().copied().collect::<HashSet<_>>();
     assert_eq!(dirs("fixture.store.Connection.read"), set(&[("session", "read"), ("execute_read", "read"), ("run", "read")]), "`session.execute_read(lambda tx: tx.run(..))`");
     assert_eq!(dirs("fixture.store.Connection.write"), set(&[("session", "write"), ("execute_write", "write")]));
     assert_eq!(dirs("fixture.store._write"), set(&[("run", "write")]), "the work `execute_write` is handed");
     assert_eq!(dirs("fixture.store.Connection.count"), set(&[("execute_query", "read")]), "`routing_=RoutingControl.READ`");
     let peek = g.node("fixture.store.Connection.peek").unwrap().touches.iter().find(|t| t.op == "run").unwrap();
-    assert_eq!((peek.dir.as_str(), peek.artifact.as_str()), ("", ""), "`session.run(\"MATCH (n:Graph) ..\")` says nothing in Python");
+    assert_eq!((peek.dir_name(), peek.artifact.as_str()), ("", ""), "`session.run(\"MATCH (n:Graph) ..\")` says nothing in Python");
 }
 
 /// SQL is read by its grammar: a statement writes the table it changes and reads the ones it
@@ -116,7 +125,7 @@ fn a_driver_says_which_way_the_data_goes() {
 #[test]
 fn sql_names_the_tables_it_reads_and_writes() {
     let g = fixture();
-    let sides = g.node("fixture.store.Ledger.keep").unwrap().touches.iter().filter(|t| t.kind == "db_sqlite").map(|t| (t.op.as_str(), t.artifact.as_str(), t.dir.as_str())).collect::<HashSet<_>>();
+    let sides = g.node("fixture.store.Ledger.keep").unwrap().touches.iter().filter(|t| t.kind_name() == "db_sqlite").map(|t| (t.op.as_str(), t.artifact.as_str(), t.dir_name())).collect::<HashSet<_>>();
     let expected: HashSet<_> = [("execute", "", ""), ("execute", "log", "write"), ("execute", "nodes", "read"), ("execute", "", "write")].into_iter().collect();
     assert_eq!(sides, expected, "PRAGMA; CREATE TABLE IF NOT EXISTS log; INSERT INTO log SELECT .. FROM nodes; DELETE FROM {{table}}");
 }
@@ -155,7 +164,7 @@ fn entry_points_from_decorators_scripts_and_makefile() {
 #[test]
 fn boundaries_are_tagged() {
     let g = fixture();
-    let b = |id: &str| g.node(id).unwrap().boundaries.clone();
+    let b = |id: &str| boundaries(g.node(id).unwrap());
     assert_eq!(b("fixture.build.download").get("net"), Some(&1));
     let write = b("fixture.sinks.duck.DuckSink.write");
     assert_eq!(write.get("db_duckdb"), Some(&1), "con.execute with duckdb imported");
@@ -187,7 +196,7 @@ fn a_notebook_is_a_script() {
     // a notebook found at any depth, named by its path
     let deep = g.node("notebooks.les1.01_1-verken").expect("notebooks/les1/01.1-verken.ipynb is read");
     assert_eq!(deep.entry.as_ref().map(|e| e.label.as_str()), Some("notebooks/les1/01.1-verken.ipynb"));
-    assert_eq!(nb.boundaries.get("screen"), Some(&1), "print in the last cell");
+    assert_eq!(boundaries(nb).get("screen"), Some(&1), "print in the last cell");
 }
 
 /// The Hugging Face Hub is a host on the web: a download reads it, an upload writes it, and
@@ -196,7 +205,7 @@ fn a_notebook_is_a_script() {
 #[test]
 fn the_hub_is_a_host_and_a_shape_is_a_type() {
     let g = fixture();
-    let t = |id: &str| g.node(id).unwrap().touches.iter().map(|t| (t.kind.as_str(), t.artifact.as_str(), t.dir.as_str(), t.what.as_str())).collect::<Vec<_>>();
+    let t = |id: &str| g.node(id).unwrap().touches.iter().map(|t| (t.kind_name(), t.artifact.as_str(), t.dir_name(), t.what.as_str())).collect::<Vec<_>>();
     assert_eq!(t("fixture.build.fetch"), [("net", "huggingface.co", "read", "repo_id")]);
     assert_eq!(t("fixture.build.publish"), [("net", "huggingface.co", "write", "repo_id")], "`api.upload_folder` through the client `api`");
     assert!(t("fixture.build.pool").is_empty(), "tensor arithmetic stays in memory");
@@ -218,7 +227,7 @@ fn alternatives_carry_their_arms() {
     let cmp = &g.node("fixture.build.prepare").unwrap().compares;
     assert_eq!(cmp.iter().map(|c| (c.subject.as_str(), c.choice)).collect::<Vec<_>>(), [("mode", Some(0)), ("mode", Some(1))]);
 
-    let atlas = analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(".."), None, None).unwrap();
+    let atlas = analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(".."), &Options::default()).unwrap();
     let arms = |dst: &str| atlas.edges.iter().find(|e| e.src == "atlas-engine.roles.resolve" && e.dst == dst).map(|e| e.arms.clone()).unwrap();
     assert_eq!(arms("atlas-engine.roles.load"), [(0, 0)], "match arm `Some(p)`");
     assert_eq!(arms("atlas-engine.roles.find"), [(0, 1), (1, 0)], "`None`, then the receiver of `unwrap_or_else`");
@@ -230,7 +239,7 @@ fn alternatives_carry_their_arms() {
 #[test]
 fn files_and_tables_are_places() {
     let g = fixture();
-    let t = |id: &str| g.node(id).unwrap().touches.iter().map(|t| (t.kind.as_str(), t.artifact.as_str(), t.dir.as_str())).collect::<HashSet<_>>();
+    let t = |id: &str| g.node(id).unwrap().touches.iter().map(|t| (t.kind_name(), t.artifact.as_str(), t.dir_name())).collect::<HashSet<_>>();
     let write = t("fixture.sinks.duck.DuckSink.write");
     assert!(write.contains(&("db_duckdb", "nodes", "write")), "INSERT INTO nodes");
     assert!(write.contains(&("disk_write", "out.json", "")), "Path(\"out.json\").write_text");
@@ -272,7 +281,7 @@ fn roles_are_inferred_when_nothing_is_declared() {
 #[test]
 fn rust_workspace_parses() {
     let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
-    let g = analyze(&repo, None, None).expect("the Atlas workspace parses");
+    let g = analyze(&repo, &Options::default()).expect("the Atlas workspace parses");
     let ids: HashSet<&str> = g.nodes.iter().map(|n| n.id.as_str()).collect();
     for id in ["atlas-engine", "atlas-engine.model", "atlas-engine.view", "atlas-engine.python", "atlas-engine.rust", "atlas"] {
         assert!(ids.contains(id), "module {id}");
@@ -295,11 +304,11 @@ fn rust_workspace_parses() {
     assert!(calls.contains(&("atlas-engine.analyze".into(), "atlas-engine.language.Language.parse".into())));
     // typed parameters give receivers a type: `store.add_edge(..)` with `store: &mut GraphBuilder`
     assert!(calls.contains(&("atlas-engine.python.collect_symbols".into(), "atlas-engine.builder.GraphBuilder.add_edge".into())));
-    assert!(g.node("atlas-engine.rust.parse").unwrap().boundaries.get("disk_read").is_some(), "walkdir and fs::read");
-    let arts = |id: &str| g.node(id).unwrap().touches.iter().map(|t| (t.kind.clone(), t.artifact.clone())).collect::<HashSet<_>>();
+    assert!(boundaries(g.node("atlas-engine.rust.parse").unwrap()).get("disk_read").is_some(), "walkdir and fs::read");
+    let arts = |id: &str| g.node(id).unwrap().touches.iter().map(|t| (t.kind_name().to_string(), t.artifact.clone())).collect::<HashSet<_>>();
     assert!(arts("atlas-engine.entries.read_makefile").contains(&("disk_read".into(), "Makefile".into())));
     assert!(arts("atlas-engine.language.Python.detect").contains(&("disk_read".into(), "pyproject.toml".into())), "repo.join(..).exists()");
-    assert!(g.node("atlas.view").unwrap().boundaries.contains_key("screen"), "eprintln!");
+    assert!(boundaries(g.node("atlas.view").unwrap()).contains_key("screen"), "eprintln!");
     let m = edges(&g, EdgeKind::Mutates);
     assert!(m.contains(&("atlas-engine.model.Graph.recount".into(), "atlas-engine.model.Graph".into())), "&mut self");
     // the declared picture: parse -> view -> layout, model underneath
@@ -308,13 +317,14 @@ fn rust_workspace_parses() {
     assert_eq!(g.node("atlas-engine.model.Node").unwrap().role, "Model");
 }
 
-/// Atlas obeys its own algebra: the steps of `analyze` move data between the repo on disk, a
-/// `Language`, the `Graph` and its `Architecture`, and nothing else. A new type between parse
-/// and Graph is a box the algebra does not have, and the code changes, not the picture.
+/// Atlas obeys its own algebra: the steps of `analyze` move data between the repo on disk, the
+/// `Options` of the reading, a `Language`, the `Graph` and its `Architecture`, and nothing else.
+/// A new type between parse and Graph is a box the algebra does not have, and the code changes,
+/// not the picture.
 #[test]
 fn atlas_reads_as_its_algebra() {
     let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
-    let g = analyze(&repo, None, None).expect("the Atlas workspace parses");
+    let g = analyze(&repo, &Options::default()).expect("the Atlas workspace parses");
     let classes: HashSet<&str> = g.nodes.iter().filter(|n| n.kind == NodeKind::Class).map(|n| n.id.as_str()).collect();
     let name = |id: &str| id.rsplit('.').next().unwrap().to_string();
     let steps: Vec<&str> = g.edges.iter().filter(|e| e.src == "atlas-engine.analyze" && e.kind == EdgeKind::Calls).map(|e| e.dst.as_str()).collect();
@@ -323,12 +333,14 @@ fn atlas_reads_as_its_algebra() {
     for step in steps {
         for e in g.edges.iter().filter(|e| e.src == step && matches!(e.kind, EdgeKind::Takes | EdgeKind::Returns | EdgeKind::Mutates)) {
             if classes.contains(e.dst.as_str()) {
-                assert!(["Graph", "Language", "Architecture"].contains(&name(&e.dst).as_str()), "{step} moves a {}: the algebra has no such place", e.dst);
+                assert!(["Graph", "Language", "Architecture", "Options"].contains(&name(&e.dst).as_str()), "{step} moves a {}: the algebra has no such place", e.dst);
             }
         }
     }
     let returns = edges(&g, EdgeKind::Returns);
-    assert!(returns.contains(&("atlas-engine.language.Language.parse".into(), "atlas-engine.model.Graph".into())), "parse: Disk(repo) -> Graph");
+    assert!(returns.contains(&("atlas-engine.language.Language.parse".into(), "atlas-engine.model.Graph".into())), "parse: Disk(repo) × Options -> Graph");
+    let takes = edges(&g, EdgeKind::Takes);
+    assert!(takes.contains(&("atlas-engine.language.Language.parse".into(), "atlas-engine.Options".into())), "what a reading depends on is its argument, not a global");
     let mutates = edges(&g, EdgeKind::Mutates);
     assert!(mutates.contains(&("atlas-engine.roles.assign".into(), "atlas-engine.model.Graph".into())), "assign: Graph -> Graph");
 }
@@ -360,7 +372,7 @@ fn views_are_fibers_and_quotients() {
 #[test]
 fn an_unknown_type_is_not_guessed() {
     let g = fixture();
-    let kinds = |id: &str| g.node(id).unwrap().touches.iter().map(|t| t.kind.clone()).collect::<HashSet<_>>();
+    let kinds = |id: &str| g.node(id).unwrap().touches.iter().map(|t| t.kind_name()).collect::<HashSet<_>>();
     assert!(kinds("fixture.store.Ledger.keep").contains("db_sqlite"), "`self.con = sqlite3.connect(..)`");
     assert!(kinds("fixture.store.Journal.connection").contains("db_sqlite"), "`sqlite3.connect(..)` itself");
     assert!(!kinds("fixture.store.Journal.entries").contains("db_sqlite"), "`con = self.connection()`, which says nothing");
@@ -374,9 +386,9 @@ fn an_unknown_type_is_not_guessed() {
 #[test]
 fn a_client_is_a_door() {
     let g = fixture();
-    assert_eq!(g.node("ext:requests.Session").map(|n| n.door.as_str()), Some("net"));
-    assert_eq!(g.node("ext:neo4j.Driver").map(|n| n.door.as_str()), Some("db_graph"));
-    assert_eq!(g.node("ext:pandas.DataFrame").map(|n| n.door.as_str()), Some(""));
+    assert_eq!(g.node("ext:requests.Session").map(|n| n.door.map_or("", |d| d.as_str())), Some("net"));
+    assert_eq!(g.node("ext:neo4j.Driver").map(|n| n.door.map_or("", |d| d.as_str())), Some("db_graph"));
+    assert_eq!(g.node("ext:pandas.DataFrame").map(|n| n.door.map_or("", |d| d.as_str())), Some(""));
 }
 
 /// Two routes meet on the disk where one writes the place the other reads. A path is evaluated
@@ -387,7 +399,7 @@ fn a_client_is_a_door() {
 #[test]
 fn routes_meet_on_the_disk() {
     let g = fixture();
-    let places = |id: &str| g.node(id).unwrap().touches.iter().map(|t| (t.kind.as_str(), t.artifact.as_str())).collect::<HashSet<_>>();
+    let places = |id: &str| g.node(id).unwrap().touches.iter().map(|t| (t.kind_name(), t.artifact.as_str())).collect::<HashSet<_>>();
     assert!(places("fixture.files.unpack").contains(&("disk_write", "data/raw/")), "{:?}", places("fixture.files.unpack"));
     assert!(places("fixture.files.kinds").contains(&("disk_read", "data/raw/")), "{:?}", places("fixture.files.kinds"));
     assert!(places("fixture.files.report").contains(&("disk_write", "data/*/report.json")), "{:?}", places("fixture.files.report"));
@@ -402,7 +414,7 @@ fn a_function_handed_on_is_called() {
     let calls = edges(&g, EdgeKind::Calls);
     assert!(calls.contains(&("fixture.run.run_all".into(), "fixture.run.work".into())), "`pool.submit(work, n)`");
     assert!(calls.contains(&("fixture.run.run_all".into(), "fixture.run.done".into())), "`Thread(target=done)`");
-    let rs = analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixture-rs"), None, None).unwrap();
+    let rs = analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixture-rs"), &Options::default()).unwrap();
     let calls = edges(&rs, EdgeKind::Calls);
     assert!(calls.contains(&("handed.doubled".into(), "handed.double".into())), "`.map(double)`: {calls:?}");
     assert!(calls.contains(&("handed.Item.labels".into(), "handed.Item.label".into())), "`.map(Self::label)`: {calls:?}");
@@ -413,7 +425,7 @@ fn a_function_handed_on_is_called() {
 /// as a comparison, and a library's value moving data where it is used, not where it is built.
 #[test]
 fn rust_is_read_by_rusts_semantics() {
-    let g = analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixture-rs"), None, None).unwrap();
+    let g = analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixture-rs"), &Options::default()).unwrap();
     let entry = |id: &str| g.node(id).and_then(|n| n.entry.as_ref()).map(|e| (e.kind, e.label.clone()));
     assert_eq!(entry("handed.main.main"), Some((EntryKind::Cli, "handed".into())), "src/main.rs is the bin named after the crate");
     assert_eq!(entry("handed.bin.tool.main"), Some((EntryKind::Cli, "tool".into())), "src/bin/tool.rs");
@@ -427,7 +439,7 @@ fn rust_is_read_by_rusts_semantics() {
     assert!(!edges(&g, EdgeKind::Has).iter().any(|(s, _)| s == "handed.world.Line"), "an enum is one of its variants, not all of them");
     let weight = &g.node("handed.world.weight").unwrap().compares;
     assert_eq!((weight[0].subject.as_str(), weight[0].cases.clone()), ("kind", vec!["page".to_string(), "log".to_string()]), "`matches!(kind, \"page\" | \"log\")`");
-    let t = |id: &str| g.node(id).unwrap().touches.iter().map(|t| (t.kind.clone(), t.op.clone(), t.artifact.clone())).collect::<Vec<_>>();
+    let t = |id: &str| g.node(id).unwrap().touches.iter().map(|t| (t.kind_name().to_string(), t.op.clone(), t.artifact.clone())).collect::<Vec<_>>();
     assert!(t("handed.world.client").is_empty(), "building a client moves nothing: {:?}", t("handed.world.client"));
     assert_eq!(t("handed.world.fetch"), [("net".into(), "get".into(), String::new())], "`client.get(url).send()` on a `Client::new()`");
     assert!(t("handed.world.record").contains(&("db_sqlite".into(), "execute".into(), "log".into())), "{:?}", t("handed.world.record"));
@@ -440,7 +452,7 @@ fn rust_is_read_by_rusts_semantics() {
 /// `atlas check .` inside a crate reads the crate: the walk's root is read whatever it is called.
 #[test]
 fn a_crate_reads_from_inside() {
-    let g = analyze(std::path::Path::new("."), None, None).expect("the engine crate, from its own directory");
+    let g = analyze(std::path::Path::new("."), &Options::default()).expect("the engine crate, from its own directory");
     assert!(g.nodes.iter().filter(|n| n.kind == NodeKind::Module).count() > 10);
 }
 
@@ -452,7 +464,7 @@ fn a_crate_reads_from_inside() {
 #[test]
 fn a_file_is_what_the_api_types_as_one() {
     let g = fixture();
-    let t = |id: &str| g.node(id).unwrap().touches.iter().map(|t| (t.kind.clone(), t.op.clone(), t.artifact.clone(), t.fixed)).collect::<Vec<_>>();
+    let t = |id: &str| g.node(id).unwrap().touches.iter().map(|t| (t.kind_name().to_string(), t.op.clone(), t.artifact.clone(), t.fixed)).collect::<Vec<_>>();
     let keep = t("fixture.files.keep");
     assert!(keep.iter().all(|(_, _, a, fixed)| !fixed && a != "w"), "`cache_file.open(\"w\")`: the path is the parameter: {keep:?}");
     assert!(keep.iter().any(|(k, op, _, _)| k == "disk_write" && op == "dump"), "`json.dump(.., f)` writes the file `f` was opened at: {keep:?}");
@@ -472,7 +484,7 @@ fn a_file_is_what_the_api_types_as_one() {
 #[test]
 fn building_a_client_moves_nothing() {
     let g = fixture();
-    let n = |id: &str, kind: &str| g.node(id).unwrap().touches.iter().filter(|t| t.kind == kind).map(|t| t.op.clone()).collect::<Vec<_>>();
+    let n = |id: &str, kind: &str| g.node(id).unwrap().touches.iter().filter(|t| t.kind_name() == kind).map(|t| t.op.clone()).collect::<Vec<_>>();
     assert_eq!(n("fixture.clients.content_type", "net"), ["get"], "`requests.get(url)`, and not `headers.get`");
     assert_eq!(n("fixture.clients.ask", "llm"), ["create"], "`messages.create(..)`, and not `Anthropic()`");
 }
@@ -483,7 +495,7 @@ fn building_a_client_moves_nothing() {
 #[test]
 fn a_door_reaches_a_service() {
     let g = fixture();
-    let door = |id: &str| g.node(id).unwrap().door.clone();
+    let door = |id: &str| g.node(id).unwrap().door.map_or("", |d| d.as_str());
     assert_eq!(door("fixture.sinks.duck.DuckSink"), "db_duckdb");
     assert_eq!(door("fixture.store.Connection"), "db_graph");
     assert_eq!(door("fixture.files.Report"), "", "`from_file` and `show` make no door");
@@ -497,13 +509,27 @@ fn a_door_reaches_a_service() {
 #[test]
 fn a_rust_body_lists_its_calls() {
     let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
-    let g = analyze(&repo, None, None).expect("the Atlas workspace parses");
+    let g = analyze(&repo, &Options::default()).expect("the Atlas workspace parses");
     let analyze_fn = g.nodes.iter().find(|n| n.id == "atlas-engine.analyze").unwrap();
     let step = |to: &str| analyze_fn.sites.iter().find(|s| s.to == to).unwrap_or_else(|| panic!("{to} in {:#?}", analyze_fn.sites));
     let held = |ty: &str, name: &str| atlas_engine::Held { ty: ty.into(), name: name.into() };
     assert_eq!(step("atlas-engine.language.Language.parse").gives, [held("atlas-engine.model.Graph", "g")], "a method gives what it returns, not its receiver's type");
     let resolve = step("atlas-engine.roles.resolve");
-    assert_eq!((resolve.hands.clone(), resolve.gives.clone()), (vec![held("atlas-engine.model.Graph", "g")], vec![held("atlas-engine.model.Architecture", "arch")]));
+    assert_eq!((resolve.hands.clone(), resolve.gives.clone()), (vec![held("atlas-engine.model.Graph", "g"), held("atlas-engine.Options", "opts")], vec![held("atlas-engine.model.Architecture", "arch")]));
     let order: Vec<&str> = analyze_fn.sites.iter().map(|s| s.to.as_str()).collect();
     assert!(order.iter().position(|t| *t == "atlas-engine.roles.resolve") < order.iter().position(|t| *t == "atlas-engine.roles.assign"), "{order:?}");
+}
+
+/// `parse` is a function: the same files read with the same options give the same graph, to the
+/// order of its edges. Each `HashMap` and `HashSet` seeds its order afresh, so a reading that
+/// iterates one into the graph differs from run to run.
+#[test]
+fn parse_is_a_function() {
+    let json = |repo: &str| serde_json::to_string(&analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(repo), &Options::default()).unwrap()).unwrap();
+    for repo in ["tests/fixture", "tests/fixture-rs", "tests/fixture-ts", ".."] {
+        let first = json(repo);
+        for _ in 0..3 {
+            assert!(json(repo) == first, "{repo} reads differently the second time");
+        }
+    }
 }

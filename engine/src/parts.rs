@@ -11,6 +11,7 @@ use regex::Regex;
 use walkdir::WalkDir;
 
 use crate::model::{Edge, EdgeKind, EntryKind, Graph, NodeKind, Part};
+use crate::Options;
 
 /// Directories that hold no part: dependencies, build output, and the data tests read.
 const SKIP_DIRS: &[&str] = &["node_modules", "target", "dist", "build", "venv", "site-packages", "__pycache__", "tests", "test", "__tests__", "fixtures", "testdata"];
@@ -21,7 +22,7 @@ const MANIFESTS: &[(&str, &str)] = &[("Cargo.toml", "rust"), ("pyproject.toml", 
 /// The directories whose manifests root a part: the repository itself, and every manifest
 /// below it in a language no enclosing part already reads (a workspace's member crates belong
 /// to the workspace).
-pub fn roots(repo: &Path) -> Vec<(PathBuf, &'static str)> {
+pub fn roots(repo: &Path, opts: &Options) -> Vec<(PathBuf, &'static str)> {
     let mut out: Vec<(PathBuf, &'static str)> = vec![];
     let walk = WalkDir::new(repo).max_depth(5).sort_by_file_name().into_iter().filter_entry(|e| {
         let n = e.file_name().to_str().unwrap_or("");
@@ -36,23 +37,24 @@ pub fn roots(repo: &Path) -> Vec<(PathBuf, &'static str)> {
         }
     }
     if out.is_empty() {
-        if let Some(lang) = crate::language::detect(repo, None) {
+        if let Some(lang) = crate::language::detect(repo, &Options { package: None, ..opts.clone() }) {
             out.push((repo.to_path_buf(), lang.name()));
         }
     }
     out
 }
 
-/// Each part's own graph, read in its language: what `atlas check` asks, part by part.
-pub fn analyze_parts(repos: &[PathBuf], roles: Option<&Path>) -> Result<Vec<Graph>> {
-    let found: Vec<PathBuf> = repos.iter().flat_map(|r| roots(r)).map(|(d, _)| d).collect();
+/// Each part's own graph, read in its language: what `atlas check` asks, part by part. A
+/// declaration of roles is a single part's.
+pub fn analyze_parts(repos: &[PathBuf], opts: &Options) -> Result<Vec<Graph>> {
+    let found: Vec<PathBuf> = repos.iter().flat_map(|r| roots(r, opts)).map(|(d, _)| d).collect();
     if found.is_empty() {
         anyhow::bail!("no part found in {} (looked for Cargo.toml, pyproject.toml, package.json, a Python package)", repos.iter().map(|r| r.display().to_string()).collect::<Vec<_>>().join(", "));
     }
-    let roles = if found.len() == 1 { roles } else { None };
+    let opts = Options { package: None, roles: if found.len() == 1 { opts.roles.clone() } else { None }, ..opts.clone() };
     let mut graphs = vec![];
     for dir in &found {
-        match crate::analyze(dir, None, roles) {
+        match crate::analyze(dir, &opts) {
             Ok(g) => graphs.push(g),
             // a manifest without code of its own (tooling, a docs site) is not a part
             Err(e) if found.len() > 1 => eprintln!("skipped {}: {e}", dir.display()),
@@ -64,8 +66,8 @@ pub fn analyze_parts(repos: &[PathBuf], roles: Option<&Path>) -> Result<Vec<Grap
 
 /// The repositories as one graph: their parts side by side, joined where one names a route
 /// another serves.
-pub fn analyze_repo(repos: &[PathBuf], roles: Option<&Path>) -> Result<Graph> {
-    let graphs = analyze_parts(repos, roles)?;
+pub fn analyze_repo(repos: &[PathBuf], opts: &Options) -> Result<Graph> {
+    let graphs = analyze_parts(repos, opts)?;
     let name = repos
         .iter()
         .map(|r| std::fs::canonicalize(r).ok().and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_string())).unwrap_or_else(|| "repo".into()))

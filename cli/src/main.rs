@@ -3,7 +3,7 @@ mod mcp;
 use std::path::PathBuf;
 
 use anyhow::Result;
-use atlas_engine::{parts, principles, remote};
+use atlas_engine::{parts, principles, remote, Options};
 use clap::builder::styling::{AnsiColor, Effects, Style, Styles};
 use clap::{Parser, Subcommand};
 
@@ -130,19 +130,18 @@ enum Cmd {
 const VIEWER: &str = include_str!("../../spike/viewer.html");
 const FONTS: &str = include_str!("../../spike/fonts.css");
 
-fn view(repos: &[PathBuf], roles: Option<&std::path::Path>, out: Option<PathBuf>, open: bool, since: Option<&str>) -> Result<()> {
-    let g = parts::analyze_repo(repos, roles)?;
+fn view(repos: &[PathBuf], opts: &Options, out: Option<PathBuf>, open: bool, since: Option<&str>) -> Result<()> {
+    let g = parts::analyze_repo(repos, opts)?;
     let parts: Vec<&str> = g.parts.iter().map(|p| p.id.as_str()).collect();
     eprintln!("{} · {} · {} modules · {} entries", g.root, parts.join(" + "), g.stats.modules, g.nodes.iter().filter(|n| n.entry.is_some()).count());
     let mut projects = serde_json::Map::new();
     let mut page = serde_json::to_value(&g)?;
     if let Some(rev) = since {
         let [repo] = repos else { anyhow::bail!("--since compares one repository with its history") };
-        page["changes"] = serde_json::to_value(atlas_engine::changes::since(repo, rev)?)?;
+        page["changes"] = serde_json::to_value(atlas_engine::changes::since(repo, rev, opts)?)?;
     }
     // a file named on the command line opens on its route
-    let named: Vec<PathBuf> = NAMED.lock().unwrap().iter().filter_map(|f| std::fs::canonicalize(f).ok()).collect();
-    if let Some(n) = g.nodes.iter().find(|n| n.entry.is_some() && std::fs::canonicalize(&n.file).map_or(false, |f| named.contains(&f))) {
+    if let Some(n) = g.nodes.iter().find(|n| n.entry.is_some() && std::fs::canonicalize(&n.file).map_or(false, |f| opts.named.contains(&f))) {
         page["open"] = serde_json::Value::String(n.id.clone());
     }
     projects.insert(g.root.clone(), page);
@@ -188,16 +187,12 @@ fn project_of(file: &std::path::Path) -> PathBuf {
     }
 }
 
-/// The files named among the arguments, which every reader reads as its project's.
-static NAMED: std::sync::Mutex<Vec<PathBuf>> = std::sync::Mutex::new(Vec::new());
-
-fn local(arg: PathBuf) -> Result<(PathBuf, Option<remote::Clone>)> {
+/// A file among the arguments is named: `opts` reads it as one of its project's files.
+fn local(arg: PathBuf, opts: &mut Options) -> Result<(PathBuf, Option<remote::Clone>)> {
     let spec = arg.to_string_lossy().to_string();
     if !remote::is_url(&spec) {
         if arg.is_file() {
-            let mut named = NAMED.lock().unwrap();
-            named.push(arg.clone());
-            atlas_engine::python::read_named(&named);
+            opts.named.extend(std::fs::canonicalize(&arg).ok());
             return Ok((project_of(&arg), None));
         }
         return Ok((arg, None));
@@ -209,10 +204,10 @@ fn local(arg: PathBuf) -> Result<(PathBuf, Option<remote::Clone>)> {
 
 /// The findings, grouped by principle, each ending in its question; exit status 1 when there
 /// is anything to ask.
-fn check(repo: &std::path::Path, json: bool) -> Result<bool> {
+fn check(repo: &std::path::Path, opts: &Options, json: bool) -> Result<bool> {
     let mut clean = true;
     // each part in its own language: what a Python package declares, a crate's compiler checks
-    for g in parts::analyze_parts(&[repo.to_path_buf()], None)? {
+    for g in parts::analyze_parts(&[repo.to_path_buf()], opts)? {
         let findings = principles::check(&g);
         if json {
             println!("{}", serde_json::to_string_pretty(&serde_json::json!({ "root": g.root, "findings": findings }))?);
@@ -226,20 +221,21 @@ fn check(repo: &std::path::Path, json: bool) -> Result<bool> {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
-    atlas_engine::python::read_libraries_to(cli.libraries);
+    let mut opts = Options { libraries: cli.libraries, ..Options::default() };
     match cli.cmd {
         Cmd::View { repos, roles, out, no_open, since } => {
             let repos = if repos.is_empty() { vec![std::env::current_dir()?] } else { repos };
-            let (repos, _clones): (Vec<PathBuf>, Vec<Option<remote::Clone>>) = repos.into_iter().map(local).collect::<Result<Vec<_>>>()?.into_iter().unzip();
-            view(&repos, roles.as_deref(), out, !no_open, since.as_deref())?
+            opts.roles = roles;
+            let (repos, _clones): (Vec<PathBuf>, Vec<Option<remote::Clone>>) = repos.into_iter().map(|r| local(r, &mut opts)).collect::<Result<Vec<_>>>()?.into_iter().unzip();
+            view(&repos, &opts, out, !no_open, since.as_deref())?
         }
-        Cmd::Mcp => mcp::serve()?,
+        Cmd::Mcp => mcp::serve(&opts)?,
         Cmd::Changes { rev, repo, json } => {
             let repo = match repo {
                 Some(r) => r,
                 None => std::env::current_dir()?,
             };
-            let c = atlas_engine::changes::since(&repo, rev.as_deref().unwrap_or("HEAD"))?;
+            let c = atlas_engine::changes::since(&repo, rev.as_deref().unwrap_or("HEAD"), &opts)?;
             if json {
                 println!("{}", serde_json::to_string_pretty(&c)?);
             } else {
@@ -247,19 +243,23 @@ fn main() -> Result<()> {
             }
         }
         Cmd::Check { repo, json } => {
-            let (repo, _clone) = local(match repo {
-                Some(r) => r,
-                None => std::env::current_dir()?,
-            })?;
-            if !check(&repo, json)? {
+            let (repo, _clone) = local(
+                match repo {
+                    Some(r) => r,
+                    None => std::env::current_dir()?,
+                },
+                &mut opts,
+            )?;
+            if !check(&repo, &opts, json)? {
                 std::process::exit(1);
             }
         }
         Cmd::Analyze { repo, package, roles, out } => {
-            let (repo, _clone) = local(repo)?;
+            let (repo, _clone) = local(repo, &mut opts)?;
+            opts.roles = roles;
             let g = match package {
-                Some(p) => atlas_engine::analyze(&repo, Some(&p), roles.as_deref())?,
-                None => parts::analyze_repo(&[repo.clone()], roles.as_deref())?,
+                Some(p) => atlas_engine::analyze(&repo, &Options { package: Some(p), ..opts })?,
+                None => parts::analyze_repo(&[repo.clone()], &opts)?,
             };
             std::fs::write(&out, serde_json::to_string(&g)?)?;
             let s = &g.stats;

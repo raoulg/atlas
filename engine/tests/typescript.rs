@@ -5,11 +5,11 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 
 use atlas_engine::principles::check;
-use atlas_engine::{analyze, EdgeKind, EntryKind, Graph, NodeKind};
+use atlas_engine::{analyze, EdgeKind, EntryKind, Graph, NodeKind, Options};
 
 fn fixture() -> Graph {
     let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixture-ts");
-    analyze(&repo, None, None).expect("the TypeScript fixture parses")
+    analyze(&repo, &Options::default()).expect("the TypeScript fixture parses")
 }
 
 fn edges(g: &Graph, kind: EdgeKind) -> HashSet<(String, String)> {
@@ -92,11 +92,11 @@ fn a_promise_is_kept_by_who_implements_it() {
 fn fetch_is_the_web_and_console_the_screen() {
     let g = fixture();
     let laad = g.node("fixture-ts.lib.api.laad").unwrap();
-    let touched: Vec<(&str, &str)> = laad.touches.iter().map(|t| (t.kind.as_str(), t.artifact.as_str())).collect();
+    let touched: Vec<(&str, &str)> = laad.touches.iter().map(|t| (t.kind_name(), t.artifact.as_str())).collect();
     assert!(touched.contains(&("net", "api.example.org")), "{touched:?}");
     assert!(touched.contains(&("screen", "")));
     let kaart = g.node("fixture-ts.components.Kaart.Kaart").unwrap();
-    assert!(kaart.touches.iter().any(|t| t.kind == "screen" && t.op == "render"), "a component renders to the screen");
+    assert!(kaart.touches.iter().any(|t| t.kind_name() == "screen" && t.op == "render"), "a component renders to the screen");
 }
 
 /// The principles read TypeScript as they read Python: `kies` tests `modus` twice.
@@ -129,7 +129,7 @@ fn a_server_registers_its_routes() {
 #[test]
 fn a_client_moves_data_where_it_is_used() {
     let g = fixture();
-    let t = |id: &str| g.node(&format!("fixture-ts.{id}")).unwrap().touches.iter().map(|t| (t.kind.clone(), t.op.clone(), t.artifact.clone(), t.dir.clone())).collect::<Vec<_>>();
+    let t = |id: &str| g.node(&format!("fixture-ts.{id}")).unwrap().touches.iter().map(|t| (t.kind_name().to_string(), t.op.clone(), t.artifact.clone(), t.dir_name().to_string())).collect::<Vec<_>>();
     let post = t("server.regels.regels.POST /");
     assert!(post.contains(&("db_sql".into(), "query".into(), "regels".into(), "write".into())), "{post:?}");
     assert!(post.iter().any(|x| x.0 == "process" && x.1 == "run"), "`promisify(execFile)`: {post:?}");
@@ -147,7 +147,7 @@ fn a_client_moves_data_where_it_is_used() {
 #[test]
 fn paths_and_requests_are_evaluated() {
     let g = fixture();
-    let t = |id: &str| g.node(&format!("fixture-ts.{id}")).unwrap().touches.iter().map(|t| (t.kind.clone(), t.artifact.clone())).collect::<Vec<_>>();
+    let t = |id: &str| g.node(&format!("fixture-ts.{id}")).unwrap().touches.iter().map(|t| (t.kind_name().to_string(), t.artifact.clone())).collect::<Vec<_>>();
     assert_eq!(t("server.opslag.lees"), [("disk_read".into(), "data/klanten.csv".into())], "`lees(\"klanten.csv\")` under `DATA`");
     assert_eq!(t("server.opslag.bewaar"), [("disk_write".into(), "uit/regels.pdf".into())], "`new URL(\"../../uit/regels.pdf\", import.meta.url)`");
     let requests = edges(&g, EdgeKind::Requests);

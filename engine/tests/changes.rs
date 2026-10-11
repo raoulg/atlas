@@ -38,7 +38,7 @@ fn a_new_write_and_a_removed_call_show_as_themselves() {
     let src = src.replace("import { Hono } from \"hono\";", "import fs from \"node:fs\";\nimport { Hono } from \"hono\";");
     let src = src.replace("    return c.json(rows);", "    fs.appendFileSync(\"logs/regels.log\", c.req.param(\"id\"));\n    return c.json(rows);");
     std::fs::write(&regels, src).unwrap();
-    let c = changes::since(&repo, "HEAD").expect("the working tree against HEAD");
+    let c = changes::since(&repo, "HEAD", &atlas_engine::Options::default()).expect("the working tree against HEAD");
     let routes: Vec<&str> = c.routes.iter().map(|r| r.route.as_str()).collect();
     assert_eq!(routes, ["API · GET /api/regels/{id}", "API · POST /api/regels"], "{}", changes::report(&c));
     let (get, post) = (&c.routes[0], &c.routes[1]);
@@ -46,7 +46,7 @@ fn a_new_write_and_a_removed_call_show_as_themselves() {
     assert!(get.places_removed.is_empty() && get.steps_added.is_empty() && get.steps_removed.is_empty());
     assert_eq!(post.steps_removed, ["fixture-ts.server.regels.vat"]);
     assert_eq!((post.id.as_str(), post.root.as_str()), ("fixture-ts.server.regels.regels.POST /", "fixture-ts"));
-    assert_eq!(get.touches_added.iter().map(|t| (t.kind.as_str(), t.artifact.as_str())).collect::<Vec<_>>(), [("disk_write", "logs/regels.log")]);
+    assert_eq!(get.touches_added.iter().map(|t| (t.kind_name(), t.artifact.as_str())).collect::<Vec<_>>(), [("disk_write", "logs/regels.log")]);
     assert!(post.places_removed.iter().all(|p| p.starts_with("asks an LLM")) && post.places_removed.len() == 1, "{:?}", post.places_removed);
     assert!(post.places_added.is_empty() && post.steps_added.is_empty());
     let report = changes::report(&c);
@@ -58,7 +58,7 @@ fn a_new_write_and_a_removed_call_show_as_themselves() {
 #[test]
 fn an_unchanged_tree_says_so() {
     let repo = repository("same");
-    let c = changes::since(&repo, "HEAD").unwrap();
+    let c = changes::since(&repo, "HEAD", &atlas_engine::Options::default()).unwrap();
     assert!(c.routes.is_empty() && c.findings_added.is_empty() && c.findings_resolved.is_empty(), "{}", changes::report(&c));
     assert!(changes::report(&c).starts_with("nothing changed"));
     let _ = std::fs::remove_dir_all(repo.parent().unwrap());

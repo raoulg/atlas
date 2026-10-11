@@ -10,7 +10,7 @@ use std::process::{Command, Stdio};
 
 use anyhow::{bail, Context, Result};
 
-use crate::model::{EdgeKind, Graph, NodeKind, Touch};
+use crate::model::{Dir, EdgeKind, Graph, NodeKind, Touch, World};
 use crate::principles::{self, Finding};
 use crate::story;
 
@@ -43,10 +43,10 @@ pub struct Changes {
 }
 
 /// The working tree of `repo` against revision `rev`.
-pub fn since(repo: &Path, rev: &str) -> Result<Changes> {
-    let after = crate::parts::analyze_parts(&[repo.to_path_buf()], None)?;
+pub fn since(repo: &Path, rev: &str, opts: &crate::Options) -> Result<Changes> {
+    let after = crate::parts::analyze_parts(&[repo.to_path_buf()], opts)?;
     let (base, root) = revision(repo, rev)?;
-    let before = crate::parts::analyze_parts(&[root], None);
+    let before = crate::parts::analyze_parts(&[root], opts);
     let _ = std::fs::remove_dir_all(&base);
     Ok(between(rev, &before?, &after))
 }
@@ -162,7 +162,7 @@ fn routes(parts: &[Graph], several: bool) -> HashMap<String, Route> {
                 if id != start && n.kind != NodeKind::External {
                     r.steps.insert(id.to_string());
                 }
-                for t in n.touches.iter().filter(|t| t.kind != "screen" || id == start) {
+                for t in n.touches.iter().filter(|t| t.kind != World::Screen || id == start) {
                     r.places.entry(place(t)).or_insert_with(|| t.clone());
                 }
                 for d in next.get(id).into_iter().flatten() {
@@ -179,19 +179,22 @@ fn routes(parts: &[Graph], several: bool) -> HashMap<String, Route> {
 
 /// A place as a route touches it: `writes logs/run.log`, `queries SQLite log (write)`.
 fn place(t: &Touch) -> String {
-    let verb = match t.kind.as_str() {
-        "net" => "calls the web",
-        "disk_read" => "reads",
-        "disk_write" => "writes",
-        "disk" => "opens",
-        "llm" => "asks an LLM",
-        "model" => "runs a model",
-        "process" => "runs",
-        "screen" => "prints",
-        k => k.strip_prefix("db_").unwrap_or(k),
+    let verb = match (t.kind, t.dir) {
+        (World::Net, _) => "calls the web",
+        (World::Disk, Some(Dir::Read)) => "reads",
+        (World::Disk, Some(Dir::Write)) => "writes",
+        (World::Disk, None) => "opens",
+        (World::Llm, _) => "asks an LLM",
+        (World::Model, _) => "runs a model",
+        (World::Process, _) => "runs",
+        (World::Screen, _) => "prints",
+        (k, _) => k.as_str().strip_prefix("db_").unwrap_or(k.as_str()),
     };
     let what = if t.artifact.is_empty() { t.what.clone() } else { t.artifact.clone() };
-    let dir = if t.dir.is_empty() { String::new() } else { format!(" ({})", t.dir) };
+    let dir = match (t.kind, t.dir) {
+        (World::Disk, _) | (_, None) => String::new(),
+        (_, Some(d)) => format!(" ({})", d.as_str()),
+    };
     format!("{verb} {what}{dir}").trim().to_string()
 }
 

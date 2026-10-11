@@ -55,13 +55,15 @@ Repo ──parse──▶ Graph ──view──▶ Graph ──layout──▶ 
 ```
 
 **Repo** is a directory at a commit. **Graph** is the one central type: typed nodes
-(modules, classes, functions, artifacts, resting places) and typed edges. Everything
-between parsing and drawing is `Graph → Graph`. **Picture** is geometry: positions,
-shapes, labels. **Source** is a span of text.
+(modules, classes, functions) and typed edges, and on each function the places in the
+world its calls touch. Everything between parsing and drawing is `Graph → Graph`.
+**Picture** is geometry: positions, shapes, labels. **Source** is a span of text.
 
-**parse: Repo → Graph.** Per language, per file; a repo is the union of its files'
-parses, plus what the repo declares about itself (scripts, Makefile targets,
-notebooks). *Decision: the engine may know languages and libraries, never a
+**parse: Repo × Options → Graph.** Per language, per file; a repo is the union of its
+files' parses, plus what the repo declares about itself (scripts, Makefile targets,
+notebooks). The options (how far to read into libraries, the files named on the command
+line) are an argument, never a setting of the process, so `parse` is a function: the same
+files read with the same options give the same graph, to the order of its edges. *Decision: the engine may know languages and libraries, never a
 project.* Knowing what a `requests.get` call means is the engine's job. Knowing that
 `rkg.sinks` is a sink is the project's job, declared in its own `architecture.yml`.
 Nothing about rkg, vectormesh or Atlas is hard-coded, so that Atlas cannot flatter
@@ -200,14 +202,20 @@ atlas/
 
 ## 3. The graph
 
-**Nodes** — `module`, `class`, `function`, `method`, `external`, `artifact`,
-`place` (a resting place in **W**); later `type_alias`, `constant`, `route`,
-`command`, `cell`. Fields: `id` (stable), `kind`, `name`, `file`, `span`, `doc`,
-`signature`, `decorators`, `role`, `role_source`, `entry`, `boundaries`.
+**Nodes** — `module`, `class`, `function`, `method`, `external`, and `place` for a class
+a quotient makes; later `type_alias`, `constant`, `route`, `command`, `cell`. Fields: `id`
+(stable), `kind`, `name`, `file`, `span`, `doc`, `signature`, `decorators`, `role`,
+`role_source`, `entry`, `touches`, `sites`.
+
+**Touches** — the calls of a body that leave the program, each typed by the part of the
+world it reaches (`World`: disk, web, a database by its kind, a language model, a model,
+a process, the screen, a figure) and the way the data goes (`Dir`: read or write) when the
+call says. In the JSON a file's direction is part of its kind (`disk_read`, `disk_write`,
+`disk` when the call does not say), another place's stands beside it (`dir`).
 
 **Edges** — `contains`, `imports`, `inherits`, `calls`, `instantiates`, `takes`,
-`returns`, `has`, `reads`, `writes`, `mutates`, `variant`, `requests`; later `yields`,
-`raises`, `decorates`.
+`returns`, `has`, `mutates`, `variant`, `requests`; later `yields`, `raises`,
+`decorates`.
 
 **Entry points** — CLI commands, API routes, MCP tools (by decorator), a router's
 registration calls (`app.get("/x", handler)`, at the prefixes of `app.route("/api", sub)`;
