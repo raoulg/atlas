@@ -266,14 +266,12 @@ A student's exam project: `run_standard_experiment(args)` tests `args.experiment
 places, and `"parallel"` comes back three times. One `Experiment` per name, holding
 `use_2d`, `weighted`, `parallel` and the model to build, makes it one place.
 
-In Atlas, `roles::resolve` is such a step: `load | find | infer` is its whole body.
-Written inline in `analyze`, the three calls would sit between parsing and assigning
-roles, and `atlas check` would ask for their name. Named, `analyze` reads as its
-algebra:
+In Atlas, `file_direction` is such a step: which way a file argument goes (`Reads |
+Writes | src | dst | what the operation does`) is its whole body. Written inline in
+`file_calls`, the five arms would sit between reading the call's literals and placing its
+file, and `atlas check` asks for their name. Named, the body reads as what it does:
 
 ```rust
-let mut g = lang.parse(repo, package)?;
-entries::read_makefile(&mut g);
-let arch = roles::resolve(&g, roles)?;
-roles::assign(&mut g, arch);
+let f = effects::facts(tag, lib, op, &lits);
+let kind = file_direction(file, name, paths, &f);
 ```

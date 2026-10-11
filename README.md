@@ -58,12 +58,12 @@ Read it from left to right:
 - **On the left** are the places the route reads: `File(Cargo.toml)`, `File(pyproject.toml)`,
   `Disk in` (the repository's files). The green `>_` box is where the route starts.
 - **In the middle** are the steps. A rounded pill is a function. A box with a coloured
-  bar is a value of a type in memory: `Language`, `Graph`, `Architecture`. Arrows run in
+  bar is a value of a type in memory: `Options`, `Language`, `Graph`. Arrows run in
   call order.
-- **Read it as a sentence:** *detect* the language, *parse* the repository into a `Graph g`,
-  add the Makefile's targets to `g` (`read_makefile`), *resolve* the architecture, *assign*
-  each node its role and then its part, and hand back `g`. That is Atlas's whole job, and
-  the code says it in six calls.
+- **Read it as a sentence:** *detect* the language, *parse* the repository into a `Graph g`
+  with the `Options` of the reading, add the Makefile's targets to `g` (`read_makefile`),
+  *assign* each node its part, and hand back `g`. That is Atlas's whole job, and the code
+  says it in four calls.
 - **`parse · one of 3`** is a choice: the same call goes to the Python, the Rust or the
   TypeScript reader. `Language (4)` and `Graph (9)` are families: a type and the
   types that belong to it or that it holds, folded into one box. Click one to open it.
@@ -125,8 +125,8 @@ atlas --help
 
 `atlas view` writes a single HTML file and opens it. No server runs and your code stays on
 your machine. The page fetches only its drawing libraries (d3, elk, highlight.js) from a
-CDN. It has four views. The **Flowchart** is the one to start with. Architecture, Type
-lattice and Signature flow are earlier experiments. The header names the build that drew
+CDN. It has three views. The **Flowchart** is the one to start with. Type lattice and
+Signature flow are earlier experiments. The header names the build that drew
 the page, as `atlas --version` does: `0.4.0 (b0ead14)`. The minor number goes up when what
 Atlas reads or draws changes, the patch number for a fix.
 
@@ -248,15 +248,15 @@ Atlas is a Rust workspace. `engine/` parses a repository with
 calls and the places they touch; Python's types come from
 [ty](https://github.com/astral-sh/ty). It computes routes, families and findings from that
 graph. `cli/` is the `atlas` command. The viewer is a single HTML file
-(`spike/viewer.html`) baked into the binary.
+(`viewer/index.html`) baked into the binary.
 
-The engine knows languages and libraries, never a particular project. A repository can
-name its own parts in an `architecture.yml`, but the picture always comes from the
-code. The full design, from the algebra to the views, is in [docs/design.md](docs/design.md).
+The engine knows languages and libraries, never a particular project, and a repository
+declares nothing to Atlas: the picture comes from the code alone. When it looks wrong, the
+code is what to change. The full design, from the algebra to the views, is in [docs/design.md](docs/design.md).
 
 ```bash
 cargo test                       # fixtures in three languages, and Atlas reading itself
-cargo install --path cli         # rebuild after editing spike/viewer.html
+cargo install --path cli         # rebuild after editing viewer/index.html
 ```
 
 ## Status

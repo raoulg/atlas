@@ -11,7 +11,7 @@ fn git(args: &[&str]) -> Option<String> {
 fn main() {
     // the build reruns when HEAD moves, a branch it points at moves, the index changes, or the
     // sources do (an edit not yet committed is marked `+`)
-    for p in ["src", "../engine/src", "../spike", "../docs"] {
+    for p in ["src", "../engine/src", "../viewer", "../docs"] {
         println!("cargo:rerun-if-changed={p}");
     }
     for p in ["HEAD", "index", "packed-refs"] {

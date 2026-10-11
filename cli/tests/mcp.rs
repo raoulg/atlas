@@ -46,7 +46,7 @@ fn a_client_initializes_lists_and_calls() {
     assert!(text(&replies[2]).contains("prepare tests `mode`"), "{}", text(&replies[2]));
     assert!(!text(&replies[2]).contains("\ndoors ·"), "only the principle asked for");
     assert!(text(&replies[3]).starts_with("A sum type is unwrapped where it arises."));
-    assert!(text(&replies[4]).contains("4.1a  load(path) → Architecture"), "{}", text(&replies[4]));
+    assert!(text(&replies[4]).contains("2a  Python.parse(repo, opts) → Graph"), "{}", text(&replies[4]));
     assert_eq!(replies[5]["result"]["isError"], true, "an unknown principle is the tool's error, said in words");
     assert_eq!(replies[6]["error"]["code"], -32602, "an unknown tool is a protocol error");
 }

@@ -44,14 +44,13 @@ pub fn roots(repo: &Path, opts: &Options) -> Vec<(PathBuf, &'static str)> {
     out
 }
 
-/// Each part's own graph, read in its language: what `atlas check` asks, part by part. A
-/// declaration of roles is a single part's.
+/// Each part's own graph, read in its language: what `atlas check` asks, part by part.
 pub fn analyze_parts(repos: &[PathBuf], opts: &Options) -> Result<Vec<Graph>> {
     let found: Vec<PathBuf> = repos.iter().flat_map(|r| roots(r, opts)).map(|(d, _)| d).collect();
     if found.is_empty() {
         anyhow::bail!("no part found in {} (looked for Cargo.toml, pyproject.toml, package.json, a Python package)", repos.iter().map(|r| r.display().to_string()).collect::<Vec<_>>().join(", "));
     }
-    let opts = Options { package: None, roles: if found.len() == 1 { opts.roles.clone() } else { None }, ..opts.clone() };
+    let opts = Options { package: None, ..opts.clone() };
     let mut graphs = vec![];
     for dir in &found {
         match crate::analyze(dir, &opts) {
@@ -96,8 +95,7 @@ pub fn assign(g: &mut Graph) {
     }
 }
 
-/// Graphs side by side: their nodes, edges, files and routes, their declared roles one after
-/// the other.
+/// Graphs side by side: their nodes, edges, files and routes.
 pub fn merge(name: &str, graphs: Vec<Graph>) -> Graph {
     let languages: HashSet<&str> = graphs.iter().map(|g| g.language.as_str()).collect();
     let mut out = Graph {
@@ -106,21 +104,8 @@ pub fn merge(name: &str, graphs: Vec<Graph>) -> Graph {
         project_root: graphs[0].project_root.clone(),
         ..Default::default()
     };
-    out.roles.dependencies = graphs[0].roles.dependencies.clone();
     let mut made = HashSet::new();
     for g in graphs {
-        let r = g.roles;
-        for role in r.order {
-            if !out.roles.order.contains(&role) {
-                out.roles.order.push(role);
-            }
-        }
-        out.roles.bands.top.extend(r.bands.top);
-        out.roles.bands.bottom.extend(r.bands.bottom);
-        out.roles.rules.0.extend(r.rules.0);
-        out.roles.base_roles.extend(r.base_roles);
-        out.roles.allowed.extend(r.allowed);
-        out.roles.inferred |= r.inferred;
         out.parts.extend(g.parts);
         out.nodes.extend(g.nodes);
         out.edges.extend(g.edges);

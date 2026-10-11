@@ -2,9 +2,9 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "spike",
+      "name": "pages",
       "runtimeExecutable": "python3",
-      "runtimeArgs": ["-m", "http.server", "8765", "--directory", "spike"],
+      "runtimeArgs": ["-m", "http.server", "8765", "--directory", "target/pages"],
       "port": 8765
     }
   ]

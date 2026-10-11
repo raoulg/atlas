@@ -76,9 +76,6 @@ enum Cmd {
         /// Repository roots, files or git URLs (a `…/tree/<ref>/<folder>` URL names one folder; a file is read with its project, even where git ignores it, and the page opens on its route); default:
         /// the current directory. Several become parts of one page.
         repos: Vec<PathBuf>,
-        /// An `architecture.yml` or `roles.json` for a single repo; default: the repo's own, else inferred.
-        #[arg(long)]
-        roles: Option<PathBuf>,
         /// Where to write the page; default: a temporary file.
         #[arg(long)]
         out: Option<PathBuf>,
@@ -117,18 +114,15 @@ enum Cmd {
         /// Package directory, when discovery picks the wrong one.
         #[arg(long)]
         package: Option<PathBuf>,
-        /// An `architecture.yml` or spike-style `roles.json`; default: the repo's own, else inferred.
-        #[arg(long)]
-        roles: Option<PathBuf>,
         /// Where to write the graph.
         #[arg(short, long, default_value = "graph.json")]
         out: PathBuf,
     },
 }
 
-/// The spike viewer, baked into the binary until the frontend replaces it, with its fonts.
-const VIEWER: &str = include_str!("../../spike/viewer.html");
-const FONTS: &str = include_str!("../../spike/fonts.css");
+/// The viewer, baked into the binary, with its fonts: the layout of the graph it is handed.
+const VIEWER: &str = include_str!("../../viewer/index.html");
+const FONTS: &str = include_str!("../../viewer/fonts.css");
 
 fn view(repos: &[PathBuf], opts: &Options, out: Option<PathBuf>, open: bool, since: Option<&str>) -> Result<()> {
     let g = parts::analyze_repo(repos, opts)?;
@@ -223,9 +217,8 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     let mut opts = Options { libraries: cli.libraries, ..Options::default() };
     match cli.cmd {
-        Cmd::View { repos, roles, out, no_open, since } => {
+        Cmd::View { repos, out, no_open, since } => {
             let repos = if repos.is_empty() { vec![std::env::current_dir()?] } else { repos };
-            opts.roles = roles;
             let (repos, _clones): (Vec<PathBuf>, Vec<Option<remote::Clone>>) = repos.into_iter().map(|r| local(r, &mut opts)).collect::<Result<Vec<_>>>()?.into_iter().unzip();
             view(&repos, &opts, out, !no_open, since.as_deref())?
         }
@@ -254,9 +247,8 @@ fn main() -> Result<()> {
                 std::process::exit(1);
             }
         }
-        Cmd::Analyze { repo, package, roles, out } => {
+        Cmd::Analyze { repo, package, out } => {
             let (repo, _clone) = local(repo, &mut opts)?;
-            opts.roles = roles;
             let g = match package {
                 Some(p) => atlas_engine::analyze(&repo, &Options { package: Some(p), ..opts })?,
                 None => parts::analyze_repo(&[repo.clone()], &opts)?,
@@ -272,13 +264,7 @@ fn main() -> Result<()> {
                 s.unresolved_calls_total,
                 s.unresolved_calls_top.iter().take(8).map(|(k, v)| format!("{k}×{v}")).collect::<Vec<_>>().join(", ")
             );
-            eprintln!(
-                "roles {}{:?} · entries {} · make targets {}",
-                if g.roles.inferred { "(inferred) " } else { "" },
-                g.roles.order,
-                g.nodes.iter().filter(|n| n.entry.is_some()).count(),
-                g.make.len()
-            );
+            eprintln!("entries {} · make targets {}", g.nodes.iter().filter(|n| n.entry.is_some()).count(), g.make.len());
             eprintln!("wrote {}", out.display());
         }
     }

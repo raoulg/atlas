@@ -36,9 +36,10 @@ The rigorous half and the visual half are the same structure. Read `docs/design.
 ## Rules that follow
 
 - **The engine knows languages and libraries, never a project.** Nothing about rkg,
-  vectormesh or Atlas is hard-coded. Project knowledge lives only in that project's
-  `architecture.yml`, and even that is an override on naming, never the source of
-  the picture. If a view only works because of a special case, it is wrong.
+  vectormesh or Atlas is hard-coded, and a project declares nothing to Atlas: no
+  `architecture.yml`, no roles. When the picture differs from what the author has in
+  mind, the code is what changes. If a view only works because of a special case, it is
+  wrong.
 - **Atlas is its own first subject.** `atlas view .` must read as the algebra:
   `Disk(repo) → Language.parse → Graph → View → File(html) → open`. When the
   self-picture shows a box the algebra does not have, the code changes, not the
@@ -55,7 +56,7 @@ The rigorous half and the visual half are the same structure. Read `docs/design.
 ## Practical
 
 - Build and run: `cargo build`, `atlas view .` (install with `cargo install --path cli`;
-  the viewer is baked into the binary, so rebuild after editing `spike/viewer.html`).
+  the viewer is baked into the binary, so rebuild after editing `viewer/index.html`).
 - Version: `version` in the root `Cargo.toml`. Raise the minor number when what Atlas reads
   or draws changes, the patch number for a fix, in the commit that makes the change. The
   build adds the commit it is made from (`0.2.0 (b0ead14)`).

@@ -347,7 +347,7 @@ pub fn parse(repo: &Path) -> Result<(GraphBuilder, String)> {
         .collect();
     paths.sort();
     let files: HashMap<PathBuf, String> = paths.iter().map(|p| (p.clone(), module_id(&root, &base, p))).collect();
-    // every directory is a package module, so roles follow the folders
+    // every directory is a package module, so the module quotient follows the folders
     let mut dirs: Vec<String> = vec![root.clone()];
     for p in &paths {
         let mut cur = p.parent();

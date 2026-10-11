@@ -6,9 +6,7 @@
 :root{
   --bg:#F4F1EC; --panel:#FFFFFF; --panel-2:#FAF8F5; --ink:#111111; --ink-2:#5A544D; --ink-3:#857D73;
   --line:#E2DCD3; --line-2:#ECE7E0; --alert:#C43A14; --focus:#1D5A73; --accent:#C43A14;
-  --role-Source:#1F8A7E; --role-Graph:#3F5FCF; --role-Sink:#C7862B; --role-Repository:#7E56B8;
-  --role-Analysis:#C44F70; --role-API:#4E9A4E; --role-CLI:#5C6B80; --role-Schema:#7D7A72;
-  --role-Config:#9A968C; --role-Other:#9A968C; --role-External:#A0A6AE;
+  --external:#A0A6AE;
   --syn-kw:#7E3FA8; --syn-str:#1F7A5C; --syn-com:#8A94A3; --syn-num:#B4551C; --syn-fn:#2B4FBF; --syn-dec:#A0641E; --syn-bi:#1F6E8C;
   --hue-1:#1F8A7E; --hue-2:#3F5FCF; --hue-3:#C7862B; --hue-4:#7E56B8; --hue-5:#C44F70; --hue-6:#4E9A4E; --hue-7:#5C6B80; --hue-8:#7D7A72;
   --k-cmd:#2F7D4F; --k-file:#B26A00; --k-db:#7E56B8; --k-web:#1F7A8C; --k-screen:#3F5FCF; --k-proc:#5C6B80; --k-model:#C44F70;
@@ -19,9 +17,7 @@
 @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
   --bg:#141210; --panel:#1B1815; --panel-2:#221E1A; --ink:#F4F1EC; --ink-2:#B8B0A5; --ink-3:#857C71;
   --line:#2B2621; --line-2:#221E1A; --alert:#F2643C; --focus:#86B9C9; --accent:#F2643C;
-  --role-Source:#3DB8A9; --role-Graph:#7B93E8; --role-Sink:#E0A24A; --role-Repository:#A98AD9;
-  --role-Analysis:#E27A96; --role-API:#77BF77; --role-CLI:#8C9BB0; --role-Schema:#A39F95;
-  --role-Config:#B0ABA0; --role-Other:#B0ABA0; --role-External:#7F8792;
+  --external:#7F8792;
   --syn-kw:#C792EA; --syn-str:#7FCFA8; --syn-com:#6F7987; --syn-num:#F0A070; --syn-fn:#8FB0FF; --syn-dec:#E0B070; --syn-bi:#7FC4E0;
   --hue-1:#3DB8A9; --hue-2:#7B93E8; --hue-3:#E0A24A; --hue-4:#A98AD9; --hue-5:#E27A96; --hue-6:#77BF77; --hue-7:#8C9BB0; --hue-8:#A39F95;
   --k-cmd:#6CC08C; --k-file:#E0A24A; --k-db:#B596E6; --k-web:#5CC0D4; --k-screen:#8FA6F0; --k-proc:#9AA8BC; --k-model:#E88AA4;
@@ -32,9 +28,7 @@
   --add:#6CC08C;
   --bg:#141210; --panel:#1B1815; --panel-2:#221E1A; --ink:#F4F1EC; --ink-2:#B8B0A5; --ink-3:#857C71;
   --line:#2B2621; --line-2:#221E1A; --alert:#F2643C; --focus:#86B9C9; --accent:#F2643C;
-  --role-Source:#3DB8A9; --role-Graph:#7B93E8; --role-Sink:#E0A24A; --role-Repository:#A98AD9;
-  --role-Analysis:#E27A96; --role-API:#77BF77; --role-CLI:#8C9BB0; --role-Schema:#A39F95;
-  --role-Config:#B0ABA0; --role-Other:#B0ABA0; --role-External:#7F8792;
+  --external:#7F8792;
   --syn-kw:#C792EA; --syn-str:#7FCFA8; --syn-com:#6F7987; --syn-num:#F0A070; --syn-fn:#8FB0FF; --syn-dec:#E0B070; --syn-bi:#7FC4E0;
   --hue-1:#3DB8A9; --hue-2:#7B93E8; --hue-3:#E0A24A; --hue-4:#A98AD9; --hue-5:#E27A96; --hue-6:#77BF77; --hue-7:#8C9BB0; --hue-8:#A39F95;
 }
@@ -68,11 +62,7 @@ header .brand img{width:22px;height:22px;align-self:center}
 .tabs{display:flex;gap:2px;align-self:stretch}
 .tabs button{border:0;border-bottom:2px solid transparent;background:transparent;color:var(--ink-2);font:inherit;font-weight:500;padding:4px 12px;border-radius:0;cursor:pointer}
 .tabs button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--accent)}
-.tabs button:focus-visible,.toggles label:focus-within,button:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
-.toggles{display:flex;gap:12px;align-items:center;color:var(--ink-2)}
-.toggles label{display:flex;align-items:center;gap:5px;cursor:pointer;user-select:none}
-.toggles input{accent-color:var(--ink)}
-.toggles .alert{color:var(--alert)}
+.tabs button:focus-visible,button:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
 .spacer{flex:1}
 .stats{font-family:var(--mono);font-size:11px;color:var(--ink-3);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 #search{font:inherit;font-family:var(--mono);font-size:12px;padding:5px 9px;border:1px solid var(--line);border-radius:0;background:var(--panel-2);color:var(--ink);width:240px}
@@ -152,7 +142,7 @@ aside{border-left:1px solid var(--line);background:var(--panel);overflow:auto;pa
 aside .empty{color:var(--ink-3);padding-top:40px;text-align:center;line-height:1.6}
 aside .empty b{color:var(--ink-2);display:block;margin-bottom:6px;font-weight:500}
 .eyebrow{display:flex;align-items:center;gap:8px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3)}
-.eyebrow .role{padding:1px 7px;border-radius:0;color:#fff;letter-spacing:.04em;font-weight:500}
+.eyebrow .pkg{padding:1px 7px;border-radius:0;color:#fff;letter-spacing:.04em;font-weight:500}
 h1.name{font-family:var(--mono);font-size:17px;font-weight:500;margin:6px 0 2px;word-break:break-all;text-wrap:balance}
 .path{font-family:var(--mono);font-size:11px;color:var(--ink-3);margin-bottom:12px;word-break:break-all}
 .sig{font-family:var(--mono);font-size:12px;background:var(--panel-2);border:1px solid var(--line-2);border-radius:0;padding:8px 10px;white-space:pre-wrap;word-break:break-word;margin-bottom:12px}
@@ -174,31 +164,9 @@ pre.code .l::before{counter-increment:ln;content:counter(ln);display:inline-bloc
 .hljs-number{color:var(--syn-num)} .hljs-title,.hljs-title.function_{color:var(--syn-fn)} .hljs-meta{color:var(--syn-dec)} .hljs-built_in{color:var(--syn-bi)}
 .hljs-params{color:var(--ink)}
 /* canvas */
-.card{cursor:pointer}
-.card rect.bg{fill:var(--panel);stroke:var(--line)}
-.card .title{font-family:var(--mono);font-size:12px;font-weight:500;fill:var(--ink)}
-.card .sub{font-family:var(--sans);font-size:10px;fill:var(--ink-3)}
-.card .strip{opacity:.9}
-.chip{cursor:pointer}
-.chip rect{stroke-width:1}
-.chip text{font-family:var(--mono);font-size:10.5px;fill:var(--ink)}
-.chip.more rect{fill:transparent;stroke:var(--line)}
-.chip.more text{fill:var(--ink-3)}
-.chip:hover rect{stroke-width:1.6}
-.edge{fill:none;opacity:.32;cursor:pointer}
-.edge.back{stroke:var(--alert)!important;opacity:.7}
 .edge-hit{fill:none;stroke:transparent;stroke-width:14;cursor:pointer}
-.arrow{opacity:.5}
-.scene.focus .edge.on{opacity:.9}.scene.focus .arrow.on{opacity:1}
-.arrow.back{fill:var(--alert)!important;opacity:.95}
-.scene.focus .edge:not(.on){opacity:.06}.scene.focus .arrow:not(.on){opacity:.06}
-.scene.focus .card:not(.on):not(.hover){opacity:.3}
 .scene.focus .tnode:not(.on){opacity:.3}
-.card.selected rect.bg,.tnode.selected rect.bg{stroke:var(--focus);stroke-width:2}
-.chip.selected rect{stroke:var(--focus);stroke-width:2}
-.band-label,.col-label{font-family:var(--sans);font-size:11px;letter-spacing:.08em;text-transform:uppercase;fill:var(--ink-3)}
-.col-label.role{font-weight:500;font-size:13px;letter-spacing:.06em}
-.col-line{stroke:var(--line);stroke-dasharray:2 4}
+.tnode.selected rect.bg{stroke:var(--focus);stroke-width:2}
 .tnode{cursor:pointer}
 .tnode rect.bg{fill:var(--panel);stroke:var(--line)}
 .tnode.ghost rect.bg{stroke-dasharray:4 3;fill:transparent}
@@ -211,7 +179,7 @@ pre.code .l::before{counter-increment:ln;content:counter(ln);display:inline-bloc
 .sedge.has{stroke-dasharray:2 3}
 .sedge-label{font-family:var(--mono);font-size:10px;fill:var(--ink-2);paint-order:stroke;stroke:var(--bg);stroke-width:4px;stroke-linejoin:round;pointer-events:none}
 .group-label{font-family:var(--sans);font-size:11px;letter-spacing:.06em;text-transform:uppercase;fill:var(--ink-3)}
-@media (prefers-reduced-motion:no-preference){ .card,.edge,.arrow,.tnode{transition:opacity .18s ease} }
+@media (prefers-reduced-motion:no-preference){ .tnode{transition:opacity .18s ease} }
 @media (max-width:900px){ #app{grid-template-columns:1fr 0} aside{display:none} }
 </style>
 
@@ -220,18 +188,10 @@ pre.code .l::before{counter-increment:ln;content:counter(ln);display:inline-bloc
     <div class="brand"><img alt="">Atlas <span id="version"></span><select id="project" aria-label="project"></select></div>
     <div class="tabs" role="tablist">
       <button role="tab" data-view="plaat" aria-selected="true">Flowchart</button>
-      <button role="tab" data-view="arch" aria-selected="false">Architecture</button>
       <button role="tab" data-view="types" aria-selected="false">Type lattice</button>
       <button role="tab" data-view="sig" aria-selected="false">Signature flow</button>
     </div>
     <select id="entry" aria-label="entry point"><option value="">All entry points</option></select>
-    <div class="toggles" id="toggles">
-      <label><input type="checkbox" data-kind="calls" checked> calls</label>
-      <label><input type="checkbox" data-kind="types" checked> types</label>
-      <label><input type="checkbox" data-kind="imports"> imports</label>
-      <label><input type="checkbox" data-kind="inherits"> inherits</label>
-      <label class="alert"><input type="checkbox" id="backflow" checked> mark backflow</label>
-    </div>
     <div class="spacer"></div>
     <div class="stats" id="stats"></div>
     <input id="search" list="symbols" placeholder="jump to symbol…" autocomplete="off">
@@ -290,7 +250,6 @@ const langOf = n => (PARTS.find(p => p.id === partOf(n)) || {}).language || D.la
 const partRank = n => Math.max(0, PARTS.findIndex(p => p.id === partOf(n)));
 let partFilter = null; const expandedParts = new Set();
 const short = id => id.startsWith(ROOT) ? id.slice(ROOT.length) : id.replace(/^ext:/, "");
-const roleVar = r => `var(--role-${r})`;
 const isPrivate = n => n.name.startsWith("_");
 const KG = {imports:"imports", calls:"calls", requests:"calls", instantiates:"calls", takes:"types", returns:"types", has:"types", mutates:"types", variant:"types", inherits:"inherits"};
 const NS = "http://www.w3.org/2000/svg";
@@ -308,27 +267,19 @@ for (const n of OWN) if (n.kind === "class" || n.kind === "function") { if (!sym
 const out = new Map(), inn = new Map();
 for (const e of D.edges) { if (!out.has(e.src)) out.set(e.src, []); out.get(e.src).push(e); if (!inn.has(e.dst)) inn.set(e.dst, []); inn.get(e.dst).push(e); }
 const modOf = n => n.kind === "module" ? n.id : n.module;
-const roleOrder = D.roles.order, bands = D.roles.bands || {top:[], bottom:[]};
-const allRoles = [...new Set(D.nodes.map(n => n.role))];
-for (const r of allRoles) if (!roleOrder.includes(r) && !bands.top.includes(r) && !bands.bottom.includes(r) && r !== "External") bands.bottom.push(r);
-// roles without a named colour get one of the eight hues, theme-aware
-{ const cs = getComputedStyle(document.documentElement); let i = 0;
-  for (const r of [...bands.top, ...roleOrder, ...bands.bottom]) if (!cs.getPropertyValue(`--role-${r}`).trim()) document.documentElement.style.setProperty(`--role-${r}`, `var(--hue-${(i++ % 8) + 1})`); }
-const rank = r => bands.top.includes(r) ? -1 : roleOrder.includes(r) ? roleOrder.indexOf(r) : roleOrder.length;
-// Dependencies (imports, calls, types) normally run *against* the data flow: a consumer calls its
-// provider, so Graph → Source is expected and Source → Graph is backflow. `dependencies: with_flow` flips it.
-const allowedPairs = new Set((D.roles.allowed || []).map(p => p.join(">")));
-const withFlow = D.roles.dependencies === "with_flow";
-const bandOf = r => bands.top.includes(r) ? "top" : bands.bottom.includes(r) ? "bottom" : "col";
-const isBack = (ra, rb) => {
-  if (ra === rb || allowedPairs.has(ra + ">" + rb)) return false;
-  const ba = bandOf(ra), bb = bandOf(rb);
-  if (ba === "top" || bb === "bottom") return false;   // orchestration may use anything; anything may use the foundation
-  if (bb === "top" || ba === "bottom") return true;    // depending on the orchestrator, or the foundation depending upward
-  const ia = roleOrder.indexOf(ra), ib = roleOrder.indexOf(rb);
-  if (ia < 0 || ib < 0) return false;
-  return withFlow ? ia > ib : ia < ib;
-};
+// a box takes the hue of its package: the first level of the code quotiented by module path, the
+// level a part's overview shows; what lies outside the code has no package
+let HUES = null;
+const unitCache = new Map();
+function unitOfNode(n) {
+  if (!n || n.kind === "external" || n.kind === "make" || !n.module) return null;
+  if (!unitCache.has(n.id)) unitCache.set(n.id, topUnits(partOf(n)).find(u => inUnit(n.id, u)) ?? null);
+  return unitCache.get(n.id);
+}
+function hueOf(n) {
+  if (!HUES) { HUES = new Map(); for (const p of PARTS.length ? PARTS.map(p => p.id) : [partOf({})]) for (const u of topUnits(p)) if (u !== "Makefile" && !HUES.has(u)) HUES.set(u, `var(--hue-${(HUES.size % 8) + 1})`); }
+  return HUES.get(unitOfNode(n)) || "var(--external)";
+}
 
 // aggregated module edges
 const agg = new Map();
@@ -416,146 +367,13 @@ let hoverTarget = null;  // shows what is under the pointer in the inspector
       if (peeking) peek(false); else if (hoverTarget) { hoverTarget(); peek(true); }
     } else if (ev.key === "Escape" && peeking) { peek(false); ev.stopPropagation(); }
   }, true);
-  document.getElementById("canvas").addEventListener("click", ev => { if (app.classList.contains("peek") && !ev.target.closest("g.tstep, g.tnode, g.card, .frame")) peek(false); });
+  document.getElementById("canvas").addEventListener("click", ev => { if (app.classList.contains("peek") && !ev.target.closest("g.tstep, g.tnode, .frame")) peek(false); });
   document.getElementById("peekclose").onclick = () => peek(false);
   document.getElementById("peekpin").onclick = () => { peek(false); document.getElementById("codetoggle").click(); }; }
 
 // ---------- state ----------
 let view = "plaat", selected = null;
-const enabled = () => Object.fromEntries([...document.querySelectorAll("#toggles input[data-kind]")].map(i => [i.dataset.kind, i.checked]));
-const showBack = () => document.getElementById("backflow").checked;
-document.querySelectorAll("#toggles input").forEach(i => i.addEventListener("change", render));
 document.querySelectorAll(".tabs button").forEach(b => b.addEventListener("click", () => { view = b.dataset.view; plaatFit = true; prevPos = new Map(); document.querySelectorAll(".tabs button").forEach(x => x.setAttribute("aria-selected", x === b)); render(); }));
-document.getElementById("toggles").style.visibility = "visible";
-
-// ---------- architecture view ----------
-function cardModel(m, wide) {
-  const W = wide ? 440 : 210, inner = W - 16, maxRows = wide ? 4 : 3;
-  const syms = (symsOf.get(m.id) || []).filter(s => !isPrivate(s)).sort((a, b) => (a.kind === b.kind ? a.name.localeCompare(b.name) : a.kind === "class" ? -1 : 1));
-  const rows = [[]]; let x = 0, hidden = 0;
-  for (const s of syms) {
-    const w = chipW(s.name);
-    if (x + w > inner && rows[rows.length-1].length) { if (rows.length >= maxRows) { hidden++; continue; } rows.push([]); x = 0; }
-    if (rows.length > maxRows) { hidden++; continue; }
-    rows[rows.length-1].push({s, x, w}); x += w + 5;
-  }
-  if (hidden) { const w = chipW(`+${hidden}`); const last = rows[rows.length-1]; const lx = last.length ? last[last.length-1].x + last[last.length-1].w + 5 : 0; if (lx + w <= inner) last.push({more: hidden, x: lx, w}); else rows.push([{more: hidden, x: 0, w}]); }
-  const nrows = syms.length ? rows.length : 0;
-  return {m, W, H: 34 + nrows * 22 + (nrows ? 8 : 4), rows, nsym: syms.length};
-}
-function subpath(m) { const p = short(m.id).split("."); return p.length > 1 ? p.slice(0, -1).join(".") : ""; }
-
-function drawCard(g, c, x, y) {
-  const {m, W, H} = c; c.x = x; c.y = y;
-  const grp = el("g", {class: "card", transform: `translate(${x},${y})`, "data-id": m.id}, g);
-  el("rect", {class: "bg", width: W, height: H}, grp);
-  el("rect", {class: "strip", x: 0, y: 0, width: 4, height: H, fill: roleVar(m.role)}, grp);
-  el("text", {class: "title", x: 14, y: 18}, grp).textContent = m.name + (m.is_pkg ? "/" : "");
-  const sp = subpath(m); if (sp) el("text", {class: "sub", x: 14 + (m.name.length + (m.is_pkg ? 1 : 0)) * 7.4 + 6, y: 18}, grp).textContent = sp;
-  c.rows.forEach((row, ri) => row.forEach(ch => {
-    const cy = 30 + ri * 22, cx = 10 + ch.x;
-    if (ch.more) { const cg = el("g", {class: "chip more", transform: `translate(${cx},${cy})`}, grp); el("rect", {width: ch.w, height: 18}, cg); el("text", {x: 7, y: 12.5}, cg).textContent = `+${ch.more}`; return; }
-    const s = ch.s, cg = el("g", {class: "chip " + s.kind, transform: `translate(${cx},${cy})`, "data-id": s.id}, grp);
-    el("rect", {width: ch.w, height: 18, rx: s.kind === "class" ? 0 : 9, fill: `color-mix(in oklab, ${roleVar(s.role)} ${s.kind === "class" ? 22 : 10}%, var(--panel))`, stroke: roleVar(s.role)}, cg);
-    el("text", {x: 7, y: 12.5}, cg).textContent = s.name;
-    cg.addEventListener("click", ev => { ev.stopPropagation(); select(s.id); });
-  }));
-  grp.addEventListener("click", () => select(m.id));
-  grp.addEventListener("mouseenter", () => focusModule(m.id, true));
-  grp.addEventListener("mouseleave", () => focusModule(m.id, false));
-  return grp;
-}
-
-let cards = new Map();
-function renderArch() {
-  cards = new Map();
-  const g = scene.node();
-  const visible = modules.filter(m => (symsOf.get(m.id) || []).length || out.has(m.id) || inn.has(m.id));
-  const byRole = r => visible.filter(m => m.role === r).sort((a, b) => (subpath(a) + a.name).localeCompare(subpath(b) + b.name));
-  const CW = 210, GAP = 110, SUB = 24, X0 = 40, colTop = 120, MAXH = 1100;
-  // top band
-  const topCards = bands.top.flatMap(r => byRole(r)).map(m => cardModel(m, true));
-  const cols = roleOrder.map(r => byRole(r).map(m => cardModel(m, false)));
-  // a role column wraps into sub-columns when it would be taller than MAXH
-  const plans = cols.map(col => {
-    const total = col.reduce((a, c) => a + c.H + 12, 0);
-    const nsub = Math.min(3, Math.max(1, Math.ceil(total / MAXH)));
-    const target = total / nsub, subs = [[]]; let acc = 0;
-    for (const c of col) { if (acc + c.H / 2 > target && subs.length < nsub) { subs.push([]); acc = 0; } subs[subs.length-1].push(c); acc += c.H + 12; }
-    return {subs, width: subs.length * CW + (subs.length - 1) * SUB};
-  });
-  const colX = []; let cx = X0; for (const p of plans) { colX.push(cx); cx += p.width + GAP; }
-  const totalW = cx - GAP + 40;
-  let tx = X0, topH = 0;
-  if (topCards.length) { el("text", {class: "band-label", x: X0, y: 28}, g).textContent = bands.top.join(" · ") + " — orchestration"; }
-  for (const c of topCards) { drawCard(g, c, tx, 40); cards.set(c.m.id, c); tx += c.W + 20; topH = Math.max(topH, c.H); }
-  const y0 = (topCards.length ? 40 + topH + 60 : 0) + colTop;
-  let maxH = 0;
-  plans.forEach((p, i) => {
-    const x = colX[i], col = cols[i];
-    el("text", {class: "col-label role", x: x, y: y0 - 40, fill: roleVar(roleOrder[i])}, g).textContent = roleOrder[i];
-    el("text", {class: "col-label", x: x, y: y0 - 22}, g).textContent = `${col.length} modules · ${col.reduce((a, c) => a + c.nsym, 0)} symbols`;
-    p.subs.forEach((sub, j) => {
-      let y = y0; const sx = x + j * (CW + SUB);
-      for (const c of sub) { drawCard(g, c, sx, y); cards.set(c.m.id, c); y += c.H + 12; }
-      maxH = Math.max(maxH, y - y0);
-    });
-    if (i < plans.length - 1) el("line", {class: "col-line", x1: x + p.width + GAP/2, x2: x + p.width + GAP/2, y1: y0 - 50, y2: y0 + maxH}, g);
-  });
-  // bottom band
-  const botCards = bands.bottom.flatMap(r => byRole(r)).map(m => cardModel(m, true));
-  const by = y0 + maxH + 70; let bx = X0;
-  if (botCards.length) el("text", {class: "band-label", x: X0, y: by - 14}, g).textContent = bands.bottom.join(" · ") + " — foundation, used by everything";
-  for (const c of botCards) { if (bx + c.W > totalW) { bx = X0; } drawCard(g, c, bx, by); cards.set(c.m.id, c); bx += c.W + 20; }
-  // edges (drawn under cards)
-  const eg = el("g", {class: "edges"}, g); g.insertBefore(eg, g.firstChild);
-  const en = enabled();
-  for (const a of agg.values()) {
-    const ca = cards.get(a.src), cb = cards.get(a.dst); if (!ca || !cb) continue;
-    const w = Object.entries(a.counts).reduce((s, [k, v]) => s + (en[k] ? v : 0), 0); if (!w) continue;
-    const back = showBack() && isBack(ca.m.role, cb.m.role);
-    drawEdge(eg, ca, cb, w, back, a);
-  }
-}
-function anchors(ca, cb) {
-  const acx = ca.x + ca.W/2, acy = ca.y + ca.H/2, bcx = cb.x + cb.W/2, bcy = cb.y + cb.H/2;
-  const dx = bcx - acx, dy = bcy - acy;
-  if (Math.abs(dx) > 150 && Math.abs(dx) >= Math.abs(dy) * 0.6) {
-    const p1 = dx > 0 ? [ca.x + ca.W, acy] : [ca.x, acy], p2 = dx > 0 ? [cb.x, bcy] : [cb.x + cb.W, bcy];
-    const k = Math.max(50, Math.abs(p2[0] - p1[0]) * 0.45);
-    return {p1, p2, c1: [p1[0] + (dx > 0 ? k : -k), p1[1]], c2: [p2[0] + (dx > 0 ? -k : k), p2[1]]};
-  }
-  if (Math.abs(dx) < 1) { // same column: bulge on the right
-    const p1 = [ca.x + ca.W, acy], p2 = [cb.x + cb.W, bcy]; return {p1, p2, c1: [p1[0] + 70, p1[1]], c2: [p2[0] + 70, p2[1]]};
-  }
-  const p1 = dy > 0 ? [acx, ca.y + ca.H] : [acx, ca.y], p2 = dy > 0 ? [bcx, cb.y] : [bcx, cb.y + cb.H];
-  const k = Math.max(40, Math.abs(p2[1] - p1[1]) * 0.45);
-  return {p1, p2, c1: [p1[0], p1[1] + (dy > 0 ? k : -k)], c2: [p2[0], p2[1] + (dy > 0 ? -k : k)]};
-}
-function drawEdge(eg, ca, cb, w, back, a) {
-  const {p1, p2, c1, c2} = anchors(ca, cb);
-  const d = `M${p1[0]},${p1[1]} C${c1[0]},${c1[1]} ${c2[0]},${c2[1]} ${p2[0]},${p2[1]}`;
-  const sw = 1 + Math.log2(w) * 0.9, color = roleVar(ca.m.role);
-  const p = el("path", {class: "edge" + (back ? " back" : ""), d, stroke: color, "stroke-width": sw.toFixed(2), "data-src": ca.m.id, "data-dst": cb.m.id}, eg);
-  const ang = Math.atan2(p2[1] - c2[1], p2[0] - c2[0]), L = 7 + sw, Wd = 3.5 + sw * 0.6;
-  const ax = p2[0], ay = p2[1];
-  const pts = [[ax, ay], [ax - L*Math.cos(ang) + Wd*Math.sin(ang), ay - L*Math.sin(ang) - Wd*Math.cos(ang)], [ax - L*Math.cos(ang) - Wd*Math.sin(ang), ay - L*Math.sin(ang) + Wd*Math.cos(ang)]];
-  el("polygon", {class: "arrow" + (back ? " back" : ""), points: pts.map(q => q.join(",")).join(" "), fill: color, "data-src": ca.m.id, "data-dst": cb.m.id}, eg);
-  const hit = el("path", {class: "edge-hit", d}, eg);
-  hit.addEventListener("click", () => selectEdge(a));
-  hit.addEventListener("mouseenter", () => { p.style.opacity = 1; });
-  hit.addEventListener("mouseleave", () => { p.style.opacity = ""; });
-}
-function focusModule(id, on) {
-  const s = scene.node(); s.classList.toggle("focus", on);
-  s.querySelectorAll(".on,.hover").forEach(x => x.classList.remove("on", "hover"));
-  if (!on) return;
-  const me = s.querySelector(`.card[data-id="${CSS.escape(id)}"]`); if (me) me.classList.add("hover");
-  s.querySelectorAll(`.edge[data-src="${CSS.escape(id)}"],.edge[data-dst="${CSS.escape(id)}"],.arrow[data-src="${CSS.escape(id)}"],.arrow[data-dst="${CSS.escape(id)}"]`).forEach(e => {
-    e.classList.add("on"); const o = e.dataset.src === id ? e.dataset.dst : e.dataset.src;
-    const c = s.querySelector(`.card[data-id="${CSS.escape(o)}"]`); if (c) c.classList.add("on");
-  });
-}
 
 // ---------- type lattice ----------
 function renderTypes() {
@@ -609,7 +427,7 @@ function renderTypes() {
   }
   y += rowH + 90; x = 40;
   el("text", {class: "group-label", x, y: y - 16}, g).textContent = `${singles.length} plain classes — no base, no subclasses`;
-  for (const id of singles.sort((a, b) => byId.get(a).role.localeCompare(byId.get(b).role) || byId.get(a).name.localeCompare(byId.get(b).name))) {
+  for (const id of singles.sort((a, b) => (unitOfNode(byId.get(a)) || "").localeCompare(unitOfNode(byId.get(b)) || "") || byId.get(a).name.localeCompare(byId.get(b).name))) {
     if (x + W > maxX) { x = 40; y += H + 16; }
     drawTypeNode(ng, byId.get(id), x, y, W, H, 0); x += W + HG;
   }
@@ -618,11 +436,10 @@ function drawTypeNode(g, n, x, y, W, H, nkids) {
   const ghost = n.kind === "external";
   const grp = el("g", {class: "tnode" + (ghost ? " ghost" : ""), transform: `translate(${x},${y})`, "data-id": n.id}, g);
   el("rect", {class: "bg", width: W, height: H}, grp);
-  if (!ghost) el("rect", {x: 0, y: 0, width: 4, height: H, fill: roleVar(n.role)}, grp);
+  if (!ghost) el("rect", {x: 0, y: 0, width: 4, height: H, fill: hueOf(n)}, grp);
   el("text", {class: "title", x: 12, y: 17}, grp).textContent = n.name;
   el("text", {class: "sub", x: 12, y: 31}, grp).textContent = ghost ? "external · " + (n.module || "builtins") : short(n.module);
   if (!ghost && (n.methods || []).length) el("text", {class: "badge", x: W - 8, y: 17, "text-anchor": "end"}, grp).textContent = `${n.methods.length}ƒ`;
-  if (!ghost && n.role_source === "base") el("circle", {cx: W - 10, cy: 29, r: 3, fill: roleVar(n.role)}, grp);
   grp.addEventListener("click", () => select(n.id));
   grp.addEventListener("mouseenter", () => focusType(n.id, true));
   grp.addEventListener("mouseleave", () => focusType(n.id, false));
@@ -678,7 +495,7 @@ async function renderSig() {
     const t = byId.get(n.id);
     const grp = el("g", {class: "tnode", transform: `translate(${n.x},${n.y})`, "data-id": n.id}, ng);
     el("rect", {class: "bg", width: n.width, height: n.height, rx: 22}, grp);
-    el("circle", {cx: 16, cy: n.height/2, r: 5, fill: roleVar(t.role)}, grp);
+    el("circle", {cx: 16, cy: n.height/2, r: 5, fill: hueOf(t)}, grp);
     el("text", {class: "title", x: 28, y: n.height/2 - 2}, grp).textContent = t.name;
     el("text", {class: "sub", x: 28, y: n.height/2 + 12}, grp).textContent = `${(producers.get(n.id) || []).length} producers · ${(consumers.get(n.id) || []).length} consumers`;
     grp.addEventListener("click", () => select(n.id, {producers: producers.get(n.id) || [], consumers: consumers.get(n.id) || []}));
@@ -1108,13 +925,13 @@ async function renderPlaat() {
   dirFold = {to: new Map(), n: new Map()};
   // the subject of a route stands as itself; other types stand in their family until it is opened
   const placeOfType = t => t === routeEntry || expandedFamilies.has(familyOf(t)) || expandedFamilies.has(kindOf(t)) ? t : kindOf(t);
-  const places = new Map();   // id -> {id, label, kind: world | type | ext, role, fam}
+  const places = new Map();   // id -> {id, label, kind: world | type | ext, hue, fam}
   const restLinks = new Map();  // in a focus: unit -> the types it takes from the rest and hands to it
   const addPlace = p => { if (!places.has(p.id)) places.set(p.id, p); return p.id; };
   const worldPlace = worldPlaceOf;
   const typePlace = t => {
     const pid = placeOfType(t), n = byId.get(pid), closedFam = opens(pid) && !expandedFamilies.has(pid);
-    return {id: "t:" + pid, label: typeLabel(pid) + (closedFam ? ` (${opensInto(pid)})` : ""), kind: n && n.kind === "external" ? "ext" : "type", role: n ? n.role : "", type: pid};
+    return {id: "t:" + pid, label: typeLabel(pid) + (closedFam ? ` (${opensInto(pid)})` : ""), kind: n && n.kind === "external" ? "ext" : "type", hue: hueOf(n), type: pid};
   };
   // a step's morphism: its own body, or (closed) its interface and everything it touches below
   // noReceiver: the step is seen from its own class (a library class's route), so the receiver is not an input
@@ -1221,7 +1038,7 @@ async function renderPlaat() {
     const m = step.startsWith("op:") ? {dom: new Map(), cod: new Map()} : morphism(step, own, isAnchor, false, {on, figure: key, label: stepLabel(key)});
     if (site && !own) {
       // a value whose type ty does not know is still the value its name holds
-      const held = h => addPlace(h.type ? typePlace(h.type) : {id: "v:" + h.name, label: h.name, kind: "type", role: "", type: null});
+      const held = h => addPlace(h.type ? typePlace(h.type) : {id: "v:" + h.name, label: h.name, kind: "type", hue: hueOf(null), type: null});
       for (const h of site.hands || []) { const k = held(h); if (!m.dom.has(k)) m.dom.set(k, false); if (h.name) dn.set(k, h.name); }
       for (const h of site.gives || []) { const k = held(h); if (!m.cod.has(k)) m.cod.set(k, false); if (h.name) cn.set(k, h.name); }
       // what the step changes is the value it was handed, under the same name: `read_makefile(&mut g)`
@@ -1346,10 +1163,10 @@ async function renderPlaat() {
     const inFam = new Set([f, ...(members.get(f) || [])]);
     const viaOf = m => (inn.get(m) || []).find(e => e.kind === "has" && inFam.has(e.src) && e.via)?.via;
     const isSub = m => { let cur = m; for (let i = 0; i < 10; i++) { const b = (out.get(cur) || []).find(e => e.kind === "inherits" && inFam.has(e.dst)); if (!b) return false; if (b.dst === f) return true; cur = b.dst; } return false; };
-    F.kids = (members.get(f) || []).map(m => ({id: "t:" + m, label: isSub(m) ? typeLabel(m) : `${viaOf(m) || "·"}: ${typeLabel(m)}`, kind: "type", role: byId.get(m)?.role || "", type: m}));
+    F.kids = (members.get(f) || []).map(m => ({id: "t:" + m, label: isSub(m) ? typeLabel(m) : `${viaOf(m) || "·"}: ${typeLabel(m)}`, kind: "type", hue: hueOf(byId.get(m)), type: m}));
     F.kids.push(...sharedOf(f).map(e => ({id: `r:${f}:${e.via}`, label: `${e.via}: ${typeLabel(e.dst)}`, kind: "ref", type: e.dst})));
     F.title = typeLabel(f) + (F.kids.some(k => k.kind === "type" && !k.label.includes(": ")) ? " ⊇" : "");
-    F.role = byId.get(f)?.role || "";
+    F.hue = hueOf(byId.get(f));
     for (const k of F.kids) { places.set(k.id, {...k, inFrame: F.id}); keep.add(k.id); }
   }
 
@@ -1474,7 +1291,7 @@ async function renderPlaat() {
     const grp = el("g", {class: "frame" + (isFam ? " fam" : "") + (F.choice ? " choice" : ""), "data-id": id}, fg);
     const r = el("rect", {class: "bg", width: P.w, height: P.h}, grp);
     if (F.hue) r.setAttribute("style", `stroke:${hueVar(F.hue)}`);
-    if (isFam) el("rect", {x: 0, y: 0, width: 5, height: P.h, fill: roleVar(F.role || "External")}, grp);
+    if (isFam) el("rect", {x: 0, y: 0, width: 5, height: P.h, fill: F.hue || hueOf(null)}, grp);
     const title = el("text", {class: "ftitle", x: 14, y: 20}, grp); title.textContent = (F.synthetic ? "" : "▾ ") + F.title;
     title.addEventListener("click", ev => {
       ev.stopPropagation(); if (F.synthetic) return; plaatAnchor = id;
@@ -1547,7 +1364,7 @@ async function renderPlaat() {
     if (kind) grp.style.setProperty("--k", `var(--k-${kind})`);
     el("rect", {class: "bg", width: Q.w, height: Q.h}, grp);
     if (kind) glyphAt(grp, kind, 11, Q.h / 2 - 7);
-    else if (p.kind !== "ref") el("rect", {x: 0, y: 0, width: 5, height: Q.h, fill: roleVar(p.role || "External")}, grp);
+    else if (p.kind !== "ref") el("rect", {x: 0, y: 0, width: 5, height: Q.h, fill: p.hue || hueOf(null)}, grp);
     el("text", {class: "title", x: kind ? 32 : 15, y: Q.h / 2 + 4}, grp).textContent = p.label;
     clicks(grp, () => {
       plaatAnchor = p.id;
@@ -1624,10 +1441,10 @@ function crumbs() {
 
 // ---------- inspector ----------
 const insp = document.getElementById("inspector");
-function roleChip(role) { const s = html("span", "role", role); s.style.background = roleVar(role); return s; }
+function packageChip(n) { const u = unitOfNode(n); const s = html("span", "pkg", u ? unitLabel(u) : n.kind === "external" ? "library" : "—"); s.style.background = hueOf(n); return s; }
 function linkList(ids, kindClass) {
   const d = html("div", "links");
-  for (const id of ids) { const n = byId.get(id); if (!n) continue; const b = html("button", n.kind === "class" ? "cls" : "fn", short(id)); const i = html("i"); i.style.background = roleVar(n.role); b.prepend(i); b.onclick = () => select(id); d.appendChild(b); }
+  for (const id of ids) { const n = byId.get(id); if (!n) continue; const b = html("button", n.kind === "class" ? "cls" : "fn", short(id)); const i = html("i"); i.style.background = hueOf(n); b.prepend(i); b.onclick = () => select(id); d.appendChild(b); }
   return d;
 }
 function section(title, count, node) { const s = html("div", "sec"); const h = html("h3", null, title); if (count != null) h.appendChild(html("span", null, String(count))); s.appendChild(h); s.appendChild(node); return s; }
@@ -1696,7 +1513,7 @@ function select(id, extra) {
   scene.node().querySelectorAll(".selected").forEach(x => x.classList.remove("selected"));
   scene.node().querySelectorAll(`[data-id="${CSS.escape(id)}"]`).forEach(x => x.classList.add("selected"));
   insp.innerHTML = "";
-  const eb = html("div", "eyebrow"); eb.appendChild(html("span", null, n.kind)); eb.appendChild(roleChip(n.role)); if (n.role_source === "base") eb.appendChild(html("span", null, "role from base class")); insp.appendChild(eb);
+  const eb = html("div", "eyebrow"); eb.appendChild(html("span", null, n.kind)); eb.appendChild(packageChip(n)); insp.appendChild(eb);
   insp.appendChild(html("h1", "name", n.name));
   insp.appendChild(html("div", "path", n.kind === "external" ? "external: " + id.slice(4) : `${short(n.kind === "module" ? n.id : n.module)}${n.span ? " · line " + n.span[0] + "–" + n.span[1] : ""}`));
   const es = [...(out.get(id) || []), ...(inn.get(id) || [])];
@@ -1731,15 +1548,14 @@ function select(id, extra) {
 }
 function aggList(list, side) {
   const d = html("div", "links");
-  for (const a of list.sort((x, y) => sumc(y) - sumc(x))) { const m = byId.get(a[side]); const b = html("button", null, `${short(m.id)} · ${sumc(a)}`); const i = html("i"); i.style.background = roleVar(m.role); b.prepend(i); b.onclick = () => selectEdge(a); d.appendChild(b); }
+  for (const a of list.sort((x, y) => sumc(y) - sumc(x))) { const m = byId.get(a[side]); const b = html("button", null, `${short(m.id)} · ${sumc(a)}`); const i = html("i"); i.style.background = hueOf(m); b.prepend(i); b.onclick = () => selectEdge(a); d.appendChild(b); }
   return d;
 }
 const sumc = a => Object.values(a.counts).reduce((s, v) => s + v, 0);
 function selectEdge(a) {
   const ma = byId.get(a.src), mb = byId.get(a.dst);
   insp.innerHTML = "";
-  const eb = html("div", "eyebrow"); eb.appendChild(html("span", null, "module → module")); eb.appendChild(roleChip(ma.role)); eb.appendChild(html("span", null, "→")); eb.appendChild(roleChip(mb.role));
-  if (isBack(ma.role, mb.role)) { const w = html("span", null, "backflow"); w.style.color = "var(--alert)"; eb.appendChild(w); }
+  const eb = html("div", "eyebrow"); eb.appendChild(html("span", null, "module → module")); eb.appendChild(packageChip(ma)); eb.appendChild(html("span", null, "→")); eb.appendChild(packageChip(mb));
   insp.appendChild(eb);
   insp.appendChild(html("h1", "name", `${short(ma.id)} → ${short(mb.id)}`));
   insp.appendChild(html("div", "path", Object.entries(a.counts).filter(([k, v]) => v).map(([k, v]) => `${v} ${k}`).join(" · ")));
@@ -1775,8 +1591,8 @@ let legendHelp = false; try { legendHelp = localStorage.getItem("atlas.legend.he
 function legend() {
   const L = document.getElementById("legend"); L.innerHTML = "";
   const row = html("div", "row");
-  const roles = [...bands.top, ...roleOrder, ...bands.bottom].filter(r => allRoles.includes(r));
-  for (const r of roles) { const sw = html("span", "sw"); const i = html("i"); i.style.background = roleVar(r); sw.appendChild(i); sw.appendChild(document.createTextNode(r)); row.appendChild(sw); }
+  hueOf(null);
+  for (const [u, hue] of HUES) { const sw = html("span", "sw"); const i = html("i"); i.style.background = hue; sw.appendChild(i); sw.appendChild(document.createTextNode(unitLabel(u))); row.appendChild(sw); }
   if (view === "plaat") {
     row.appendChild(html("span", "sep"));
     for (const k of Object.keys(GLYPH)) { const sw = html("span", "sw"); sw.innerHTML = `${glyphSvg(k)} ${KIND_NAME[k]}`; row.appendChild(sw); }
@@ -1790,10 +1606,8 @@ function legend() {
   const help = html("div", "help");
   help.innerHTML = view === "plaat"
     ? `<span class="k">left: what the route only reads · right: what it only writes · boxes with a coloured strip are types in memory; (n): click to open it into the n types it stands for and holds</span><span class="k">pill = a step, from what it takes to what it hands on · ▸ opens it into a frame · a frame's title closes it · one of: alternatives, each branch in its own colour (the overrides a call may run, or the arms of an if, a match or an or-else) · dashed: happens inside a closed step · dotted: a result handed back</span>`
-    : view === "arch"
-    ? `<span class="k">columns = roles ${D.roles.inferred ? "inferred from the package layout" : "declared in architecture.yml"}, not classes</span><span class="k"><svg width="26" height="8"><path d="M0,4 H26" stroke="currentColor" stroke-width="1.5"/></svg>module → module, width = count</span><span class="k" style="color:var(--alert)"><svg width="26" height="8"><path d="M0,4 H26" stroke="currentColor" stroke-width="2"/></svg>backflow: an earlier stage depends on a later one</span><span class="k"><i style="display:inline-block;width:18px;height:10px;border:1px solid currentColor;border-radius:0"></i>class</span><span class="k"><i style="display:inline-block;width:18px;height:10px;border:1px solid currentColor;border-radius:0"></i>function</span>`
     : view === "types"
-    ? `<span class="k"><i style="display:inline-block;width:18px;height:10px;border:1px dashed currentColor;border-radius:0"></i>external base</span><span class="k">● role comes from the base class</span><span class="k"><b style="font-family:var(--mono)">nƒ</b> methods</span>`
+    ? `<span class="k"><i style="display:inline-block;width:18px;height:10px;border:1px dashed currentColor;border-radius:0"></i>external base</span><span class="k"><b style="font-family:var(--mono)">nƒ</b> methods</span>`
     : `<span class="k">node = type · arrow = functions A → B · width = how many</span><span class="k"><svg width="26" height="8"><path d="M0,4 H26" stroke="currentColor" stroke-dasharray="2 3"/></svg>has-a (fields)</span>`;
   L.appendChild(help);
 }
@@ -1802,16 +1616,15 @@ for (const n of OWN) if (n.kind !== "external" && n.kind !== "method") { const o
 document.getElementById("search").addEventListener("change", ev => {
   const v = ev.target.value.trim(); const n = D.nodes.find(x => short(x.id) === v || x.name === v); if (!n) return;
   select(n.id);
-  const target = scene.node().querySelector(`[data-id="${CSS.escape(n.id)}"]`) || (n.module && scene.node().querySelector(`.card[data-id="${CSS.escape(n.module)}"]`));
+  const target = scene.node().querySelector(`[data-id="${CSS.escape(n.id)}"]`);
   if (target) { const bb = target.getBBox(), m = target.getCTM(), W = svg.node().clientWidth, H = svg.node().clientHeight; const t = d3.zoomTransform(svg.node()); const cx = t.applyX(0), cy = t.applyY(0); const pt = svg.node().createSVGPoint(); pt.x = bb.x + bb.width/2; pt.y = bb.y + bb.height/2; const p = pt.matrixTransform(m); svg.transition().duration(350).call(zoom.translateBy, (W/2 - p.x) / t.k, (H/2 - p.y) / t.k); }
   ev.target.value = "";
 });
 async function render() {
   scene.node().innerHTML = ""; scene.node().classList.remove("focus");
-  document.getElementById("toggles").style.visibility = view === "arch" ? "visible" : "hidden";
   entrySel.style.display = view === "plaat" ? "" : "none";
   crumbs();
-  if (view === "plaat") { await renderPlaat(); } else if (view === "arch") { renderArch(); fit(); } else if (view === "types") { renderTypes(); fit(); } else { await renderSig(); }
+  if (view === "plaat") { await renderPlaat(); } else if (view === "types") { renderTypes(); fit(); } else { await renderSig(); }
   legend();
   markChanges();
   if (selected) scene.node().querySelectorAll(`[data-id="${CSS.escape(selected)}"]`).forEach(x => x.classList.add("selected"));

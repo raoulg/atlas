@@ -18,8 +18,6 @@ pub enum NodeKind {
     Function,
     Method,
     External,
-    /// A class of a quotient: what a view makes of the nodes it identifies.
-    Place,
 }
 
 #[derive(Serialize, Deserialize, TS, Clone, Copy, PartialEq, Eq, Hash, Debug, PartialOrd, Ord)]
@@ -81,10 +79,6 @@ pub struct Node {
     pub module: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub doc: String,
-    #[serde(default)]
-    pub role: String,
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub role_source: String,
     /// Owning class, for methods.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cls: Option<String>,
@@ -493,84 +487,6 @@ pub struct Compare {
 
 #[derive(Serialize, Deserialize, TS, Clone, Debug, Default)]
 #[ts(export)]
-pub struct Bands {
-    #[serde(default)]
-    pub top: Vec<String>,
-    #[serde(default)]
-    pub bottom: Vec<String>,
-}
-
-/// What a project declares about itself: an override on naming and on which flows are
-/// by design, never the source of the picture.
-#[derive(Serialize, Deserialize, TS, Clone, Debug, Default)]
-#[ts(export)]
-pub struct Architecture {
-    #[serde(default)]
-    pub order: Vec<String>,
-    #[serde(default)]
-    pub bands: Bands,
-    /// Package prefix -> role, longest prefix wins.
-    #[serde(default)]
-    pub rules: Rules,
-    /// Base class -> role; a class whose base chain reaches one takes that role.
-    #[serde(default)]
-    pub base_roles: BTreeMap<String, String>,
-    /// `against_flow` (consumers call providers) or `with_flow`.
-    #[serde(default = "against_flow")]
-    pub dependencies: String,
-    /// Role pairs that are fine in both directions.
-    #[serde(default)]
-    pub allowed: Vec<(String, String)>,
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub inferred: bool,
-}
-
-fn against_flow() -> String {
-    "against_flow".into()
-}
-
-/// Package prefix -> role pairs. Written as a map (`rkg.source: Source`) or as a list of
-/// pairs; serialized as a list.
-#[derive(TS, Clone, Debug, Default, PartialEq)]
-#[ts(export)]
-pub struct Rules(#[ts(type = "Array<[string, string]>")] pub Vec<(String, String)>);
-
-impl Serialize for Rules {
-    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        self.0.serialize(s)
-    }
-}
-
-impl<'de> Deserialize<'de> for Rules {
-    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        #[derive(Deserialize)]
-        #[serde(untagged)]
-        enum Input {
-            Map(IndexMap<String, String>),
-            List(Vec<(String, String)>),
-        }
-        Ok(Rules(match Input::deserialize(d)? {
-            Input::Map(m) => m.into_iter().collect(),
-            Input::List(l) => l,
-        }))
-    }
-}
-
-impl std::ops::Deref for Rules {
-    type Target = Vec<(String, String)>;
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl From<Vec<(String, String)>> for Rules {
-    fn from(v: Vec<(String, String)>) -> Self {
-        Rules(v)
-    }
-}
-
-#[derive(Serialize, Deserialize, TS, Clone, Debug, Default)]
-#[ts(export)]
 pub struct MakeTarget {
     pub id: String,
     pub label: String,
@@ -615,11 +531,9 @@ pub struct Graph {
     /// parts are read in several.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub language: String,
-    /// The directory that holds the repo's own declarations: Makefile, pyproject.toml,
-    /// Cargo.toml, architecture.yml.
+    /// The directory that holds the repo's own manifests: Makefile, pyproject.toml, Cargo.toml.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub project_root: String,
-    pub roles: Architecture,
     /// The parts of the repository, in the order they were found.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub parts: Vec<Part>,

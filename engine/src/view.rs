@@ -27,7 +27,6 @@ impl<F: Fn(&Node) -> bool> View for Fiber<F> {
             root: g.root.clone(),
             language: g.language.clone(),
             project_root: g.project_root.clone(),
-            roles: g.roles.clone(),
             parts: g.parts.clone(),
             nodes: g.nodes.iter().filter(|n| keep.contains(n.id.as_str())).cloned().collect(),
             edges: g
@@ -71,7 +70,6 @@ impl<F: Fn(&Node) -> Option<Node>> View for Quotient<F> {
             root: g.root.clone(),
             language: g.language.clone(),
             project_root: g.project_root.clone(),
-            roles: g.roles.clone(),
             parts: g.parts.clone(),
             nodes: classes.into_values().collect(),
             edges: agg
@@ -128,23 +126,6 @@ pub fn reach_from(g: &Graph, entry: &str) -> impl View {
     Fiber(move |n: &Node| seen.contains(&n.id))
 }
 
-/// One node per role; the class node carries the role as its name.
-pub fn by_role() -> impl View {
-    Quotient(|n: &Node| {
-        if n.kind == NodeKind::External || n.role.is_empty() {
-            return None;
-        }
-        Some(Node {
-            id: format!("role:{}", n.role),
-            kind: NodeKind::Place,
-            name: n.role.clone(),
-            module: String::new(),
-            role: n.role.clone(),
-            ..Default::default()
-        })
-    })
-}
-
 /// One node per module; symbols fold into the module that contains them.
 pub fn by_module() -> impl View {
     Quotient(|n: &Node| {
@@ -156,7 +137,6 @@ pub fn by_module() -> impl View {
             kind: NodeKind::Module,
             name: n.module.rsplit('.').next().unwrap_or(&n.module).to_string(),
             module: n.module.clone(),
-            role: n.role.clone(),
             file: n.file.clone(),
             ..Default::default()
         })

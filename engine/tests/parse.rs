@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use std::path::PathBuf;
 
-use atlas_engine::view::{by_role, hide_private, reach_from, Compose, View};
+use atlas_engine::view::{by_module, hide_private, reach_from, Compose, View};
 use atlas_engine::{analyze, EdgeKind, EntryKind, Graph, NodeKind, Options};
 
 fn fixture() -> Graph {
@@ -227,11 +227,11 @@ fn alternatives_carry_their_arms() {
     let cmp = &g.node("fixture.build.prepare").unwrap().compares;
     assert_eq!(cmp.iter().map(|c| (c.subject.as_str(), c.choice)).collect::<Vec<_>>(), [("mode", Some(0)), ("mode", Some(1))]);
 
-    let atlas = analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(".."), &Options::default()).unwrap();
-    let arms = |dst: &str| atlas.edges.iter().find(|e| e.src == "atlas-engine.roles.resolve" && e.dst == dst).map(|e| e.arms.clone()).unwrap();
-    assert_eq!(arms("atlas-engine.roles.load"), [(0, 0)], "match arm `Some(p)`");
-    assert_eq!(arms("atlas-engine.roles.find"), [(0, 1), (1, 0)], "`None`, then the receiver of `unwrap_or_else`");
-    assert_eq!(arms("atlas-engine.roles.infer"), [(0, 1), (1, 1)], "`None`, then its argument");
+    let rs = analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixture-rs"), &Options::default()).unwrap();
+    let arms = |dst: &str| rs.edges.iter().find(|e| e.src == "handed.choose.resolve" && e.dst == dst).map(|e| e.arms.clone()).unwrap();
+    assert_eq!(arms("handed.choose.load"), [(0, 0)], "match arm `Some(p)`");
+    assert_eq!(arms("handed.choose.find"), [(0, 1), (1, 0)], "`None`, then the receiver of `unwrap_or_else`");
+    assert_eq!(arms("handed.choose.infer"), [(0, 1), (1, 1)], "`None`, then its argument");
 }
 
 /// Where data rests is named as precisely as the code allows: a literal file, else its format;
@@ -268,16 +268,7 @@ fn files_and_tables_are_places() {
     assert!(returns.contains(&("fixture.build.describe".into(), "fixture.schema.Node".into())));
 }
 
-#[test]
-fn roles_are_inferred_when_nothing_is_declared() {
-    let g = fixture();
-    assert!(g.roles.inferred);
-    assert!(g.roles.rules.iter().any(|(p, r)| p == "fixture.sinks" && r == "Sinks"));
-    assert_eq!(g.node("fixture.sinks.duck.DuckSink").unwrap().role, "Sinks");
-    assert_eq!(g.node("fixture.cli.build").unwrap().role, "Root");
-}
-
-/// A Rust workspace parses; the sample is this workspace, which also declares its own picture.
+/// A Rust workspace parses; the sample is this workspace.
 #[test]
 fn rust_workspace_parses() {
     let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
@@ -311,14 +302,10 @@ fn rust_workspace_parses() {
     assert!(boundaries(g.node("atlas.view").unwrap()).contains_key("screen"), "eprintln!");
     let m = edges(&g, EdgeKind::Mutates);
     assert!(m.contains(&("atlas-engine.model.Graph.recount".into(), "atlas-engine.model.Graph".into())), "&mut self");
-    // the declared picture: parse -> view -> layout, model underneath
-    assert_eq!(g.roles.order, vec!["Parse", "View", "Layout"]);
-    assert_eq!(g.node("atlas-engine.view.Quotient").unwrap().role, "View");
-    assert_eq!(g.node("atlas-engine.model.Node").unwrap().role, "Model");
 }
 
 /// Atlas obeys its own algebra: the steps of `analyze` move data between the repo on disk, the
-/// `Options` of the reading, a `Language`, the `Graph` and its `Architecture`, and nothing else.
+/// `Options` of the reading, a `Language` and the `Graph`, and nothing else.
 /// A new type between parse and Graph is a box the algebra does not have, and the code changes,
 /// not the picture.
 #[test]
@@ -329,11 +316,11 @@ fn atlas_reads_as_its_algebra() {
     let name = |id: &str| id.rsplit('.').next().unwrap().to_string();
     let steps: Vec<&str> = g.edges.iter().filter(|e| e.src == "atlas-engine.analyze" && e.kind == EdgeKind::Calls).map(|e| e.dst.as_str()).collect();
     let short: Vec<&str> = steps.iter().map(|s| s.trim_start_matches("atlas-engine.")).collect();
-    assert_eq!(short, ["language.detect", "language.Language.parse", "entries.read_makefile", "roles.resolve", "roles.assign", "parts.assign"], "analyze is its algebra, step by step");
+    assert_eq!(short, ["language.detect", "language.Language.parse", "entries.read_makefile", "parts.assign"], "analyze is its algebra, step by step");
     for step in steps {
         for e in g.edges.iter().filter(|e| e.src == step && matches!(e.kind, EdgeKind::Takes | EdgeKind::Returns | EdgeKind::Mutates)) {
             if classes.contains(e.dst.as_str()) {
-                assert!(["Graph", "Language", "Architecture", "Options"].contains(&name(&e.dst).as_str()), "{step} moves a {}: the algebra has no such place", e.dst);
+                assert!(["Graph", "Language", "Options"].contains(&name(&e.dst).as_str()), "{step} moves a {}: the algebra has no such place", e.dst);
             }
         }
     }
@@ -342,7 +329,7 @@ fn atlas_reads_as_its_algebra() {
     let takes = edges(&g, EdgeKind::Takes);
     assert!(takes.contains(&("atlas-engine.language.Language.parse".into(), "atlas-engine.Options".into())), "what a reading depends on is its argument, not a global");
     let mutates = edges(&g, EdgeKind::Mutates);
-    assert!(mutates.contains(&("atlas-engine.roles.assign".into(), "atlas-engine.model.Graph".into())), "assign: Graph -> Graph");
+    assert!(mutates.contains(&("atlas-engine.parts.assign".into(), "atlas-engine.model.Graph".into())), "assign: Graph -> Graph");
 }
 
 #[test]
@@ -358,11 +345,11 @@ fn views_are_fibers_and_quotients() {
     assert!(priv_free.node("fixture.sinks.duck.DuckSink.__init__").is_none());
     assert!(priv_free.node("fixture.sinks").is_some(), "packages stay");
 
-    let q = Compose(vec![Box::new(hide_private()), Box::new(by_role())]).apply(&g);
-    let names: HashSet<&str> = q.nodes.iter().map(|n| n.name.as_str()).collect();
-    assert!(names.contains("Sinks") && names.contains("Root"));
-    let root_to_sinks = q.edges.iter().find(|e| e.src == "role:Root" && e.dst == "role:Sinks" && e.kind == EdgeKind::Instantiates);
-    assert!(root_to_sinks.unwrap().weight.unwrap() >= 1);
+    let q = Compose(vec![Box::new(hide_private()), Box::new(by_module())]).apply(&g);
+    let ids: HashSet<&str> = q.nodes.iter().map(|n| n.id.as_str()).collect();
+    assert!(ids.contains("fixture.cli") && ids.contains("fixture.sinks.duck"));
+    let cli_to_sink = q.edges.iter().find(|e| e.src == "fixture.cli" && e.dst == "fixture.sinks.duck" && e.kind == EdgeKind::Instantiates);
+    assert!(cli_to_sink.unwrap().weight.unwrap() >= 1);
     assert!(q.edges.iter().all(|e| e.src != e.dst), "edges inside a class vanish");
 }
 
@@ -514,10 +501,10 @@ fn a_rust_body_lists_its_calls() {
     let step = |to: &str| analyze_fn.sites.iter().find(|s| s.to == to).unwrap_or_else(|| panic!("{to} in {:#?}", analyze_fn.sites));
     let held = |ty: &str, name: &str| atlas_engine::Held { ty: ty.into(), name: name.into() };
     assert_eq!(step("atlas-engine.language.Language.parse").gives, [held("atlas-engine.model.Graph", "g")], "a method gives what it returns, not its receiver's type");
-    let resolve = step("atlas-engine.roles.resolve");
-    assert_eq!((resolve.hands.clone(), resolve.gives.clone()), (vec![held("atlas-engine.model.Graph", "g"), held("atlas-engine.Options", "opts")], vec![held("atlas-engine.model.Architecture", "arch")]));
+    let detect = step("atlas-engine.language.detect");
+    assert_eq!(detect.hands, [held("atlas-engine.Options", "opts")], "the repository is a path, not a value of the package");
     let order: Vec<&str> = analyze_fn.sites.iter().map(|s| s.to.as_str()).collect();
-    assert!(order.iter().position(|t| *t == "atlas-engine.roles.resolve") < order.iter().position(|t| *t == "atlas-engine.roles.assign"), "{order:?}");
+    assert!(order.iter().position(|t| *t == "atlas-engine.entries.read_makefile") < order.iter().position(|t| *t == "atlas-engine.parts.assign"), "{order:?}");
 }
 
 /// `parse` is a function: the same files read with the same options give the same graph, to the

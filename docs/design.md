@@ -30,7 +30,7 @@ box and saying "this should not exist" is a statement both can act on.
   Flows start at an entry and end at a place; both must be visible.
 - **Zoom is a quotient on types.** Three hierarchies exist in code and give three
   consistent zooms: by base class (`Language ⊇ {Python, Rust}`), by composition
-  (`Graph ⊇ {Node, Edge, Architecture}`), by module. A level is a choice of
+  (`Graph ⊇ {Node, Edge, Part}`), by module. A level is a choice of
   equivalence; zooming out coarsens it, zooming in refines one family at a time. The
   picture stays the same picture, only the boxes split or merge.
 - **Filters are fibers.** A route, an entry point, an edge kind, a commit range: the
@@ -64,10 +64,11 @@ files' parses, plus what the repo declares about itself (scripts, Makefile targe
 notebooks). The options (how far to read into libraries, the files named on the command
 line) are an argument, never a setting of the process, so `parse` is a function: the same
 files read with the same options give the same graph, to the order of its edges. *Decision: the engine may know languages and libraries, never a
-project.* Knowing what a `requests.get` call means is the engine's job. Knowing that
-`rkg.sinks` is a sink is the project's job, declared in its own `architecture.yml`.
-Nothing about rkg, vectormesh or Atlas is hard-coded, so that Atlas cannot flatter
-the repos it was built on.
+project.* Knowing what a `requests.get` call means is the engine's job. What `rkg.sinks`
+is follows from its code: the places its calls reach and the types it takes and gives.
+Nothing about rkg, vectormesh or Atlas is hard-coded, and a project declares nothing to
+Atlas, so that Atlas cannot flatter the repos it was built on. Where the picture differs
+from the design the author has in mind, the code is what changes.
 
 **view: Graph → Graph.** The whole middle of Atlas. Views compose, so a view spec is
 a list of views, and the order is meaning: fiber and quotient do not commute in
@@ -78,8 +79,7 @@ nothing else:
   the predicate, its nodes and the edges between them. Reachable from this entry point,
   hide private, hide tests, k-hop focus, only these edge kinds, only this commit range,
   only this part.
-- **Quotients** identify nodes (the coequalizer of the classes): by declared role, by base
-  class, by package, by effect signature, by artifact. A quotient carries a
+- **Quotients** identify nodes (the coequalizer of the classes): by base class, by package, by effect signature, by artifact. A quotient carries a
   refinement order, so "zoom in" is replacing a quotient by a finer one and "zoom
   out" by a coarser one. The quotients of a graph form a lattice; browsing is
   walking it.
@@ -100,8 +100,7 @@ databases, hub types in memory, the browser. The **effect signature** is a funct
 `F: Graph → W` that sends each function to the arrow from what it takes in to what
 it hands on. The high-level picture is the image of `F`. Refining **W** (Disk into
 named artifacts, DB into Memgraph and DuckDB, `Sink` into its subclasses) refines
-the picture; that is the zoom. The declared architecture is an override on the
-naming of the classes, never the source of the picture.
+the picture; that is the zoom.
 
 An opened route is the fiber of its calls, not of its functions. Each call is an arrow of
 its own, in the order the body runs them: a function called twice is two arrows, and a
@@ -154,8 +153,8 @@ picture that answers none is decoration.
 | Question | View | Layout |
 |---|---|---|
 | **Orient** — what does this do? | the fiber of a route, quotient by effect signature | plaat |
-| **Verify** — does it do what I designed? | quotient by declared role, diff against the declaration | plaat with conformance marks |
-| **Place** — where does new work land? | quotient by base class, k-hop focus | type lattice, architecture columns |
+| **Verify** — does it do what I designed? | the same views; the design is the author's, and where the picture differs from it the code changes | plaat |
+| **Place** — where does new work land? | quotient by base class, k-hop focus | type lattice, the package overview |
 | **Explain** — to a student or an agent | any of the above, saved as a view | the same, with notes |
 
 ### Atlas as its own subject
@@ -163,7 +162,7 @@ picture that answers none is decoration.
 If Atlas obeys the algebra, its own story is `parse → view → layout` with nothing
 else on the route, and Atlas can check that about itself. In Rust that maps
 directly: an enum per node and edge kind, a `View` trait with composition, and a
-conformance check on the Atlas repo in its own CI. If the picture of Atlas in Atlas
+check of the Atlas repo in its own tests. If the picture of Atlas in Atlas
 is not four boxes, the code has drifted, not the picture.
 
 ## 2. Framework
@@ -180,32 +179,29 @@ faster in Rust). A native shell (Tauri) can wrap the same code later.
 
 | Layer | Choice | Why |
 |---|---|---|
-| Engine | Rust: `tree-sitter` crate, `petgraph`, `serde`, `ts-rs` | Grammars compile in; SCC, dominators and paths from petgraph; quotients, fibers, effect signatures and conformance are small enough to own. `ts-rs` generates the TypeScript types so the graph model and the view spec are defined once. |
-| Server | `axum` + websocket, `notify` | JSON endpoints (`/graph`, `/view/{name}`, `/source`, `/git/log`), live reload when a file changes, and the same process serves the MCP endpoint (`rmcp`, the official Rust MCP SDK). |
-| Frontend | Vite, TypeScript, React 19, SVG | Boring and deep: the agent is most fluent in it. SVG (not canvas) so every element is CSS-styleable and design rounds are cheap. Canvas fallback only if a view exceeds ~2k elements. |
-| Layout | elkjs (layered / Sugiyama) in a web worker | The flows are DAG-shaped; layered layout is what a reader expects. Columns and outlines are small custom layouts; ELK handles layered flows. |
-| Code view | Shiki (read-only) | Editor-grade highlighting without an editor. "Open in editor" is a deep link (`vscode://`, `zed://`). |
-| Design | one `tokens.css` | Role hue, kind shape, edge style, type scale, spacing, light/dark. A design round changes tokens first, components second. |
-| Distribution | one static binary, frontend embedded (`rust-embed`) | `cargo install atlas` or a Homebrew tap, then `atlas serve .` |
+| Engine | Rust: the `tree-sitter` crates, ty's crates for Python's types, `sqlparser`, `serde` | Grammars compile in; Python's types come from a type checker, not from guesses; quotients, fibers and effect signatures are small enough to own. |
+| Viewer | one HTML file baked into the binary: SVG, d3 for pan and zoom, elkjs for layered layout, highlight.js for code | No server and no build step: `atlas view` writes a page and opens it. The flows are DAG-shaped, and layered layout is what a reader expects. |
+| Agent | `atlas mcp`: JSON-RPC over stdio | The agent asks the same engine the page is drawn from. |
+| Distribution | one static binary per platform, built by the release workflow | `cargo install --path cli`, or the install scripts. |
 
-Repository layout, which is also the plaat of Atlas:
+A server with live reload and a frontend of its own are planned (M2); until then the
+viewer is the one page.
+
+Repository layout:
 
 ```
 atlas/
-  engine/      Rust crate: parse · view (fiber, quotient) · effects · git
-  server/      Rust crate: axum app, MCP server, embeds frontend/dist
-  cli/         Rust binary: analyze · serve · check · mcp
-  frontend/    Vite + React: layouts, inspector, tokens.css; types generated by ts-rs
-  spike/       throwaway experiments (M0, Python)
+  engine/      Rust crate: parse · effects · view (fiber, quotient) · principles · changes
+  cli/         Rust binary: view · check · changes · mcp · analyze
+  viewer/      the page the CLI writes, with its fonts
   docs/
 ```
 
 ## 3. The graph
 
-**Nodes** — `module`, `class`, `function`, `method`, `external`, and `place` for a class
-a quotient makes; later `type_alias`, `constant`, `route`, `command`, `cell`. Fields: `id`
-(stable), `kind`, `name`, `file`, `span`, `doc`, `signature`, `decorators`, `role`,
-`role_source`, `entry`, `touches`, `sites`.
+**Nodes** — `module`, `class`, `function`, `method`, `external`; later `type_alias`, `constant`, `route`, `command`, `cell`. Fields: `id`
+(stable), `kind`, `name`, `file`, `span`, `doc`, `signature`, `decorators`, `entry`,
+`part`, `touches`, `sites`.
 
 **Touches** — the calls of a body that leave the program, each typed by the part of the
 world it reaches (`World`: disk, web, a database by its kind, a language model, a model,
@@ -262,30 +258,11 @@ Packages that call one another while no data joins them get a dotted line, from 
 caller: the quotient of the call graph, beside the quotient of the places. The package
 level stands whether or not entry points are found.
 
-**Architecture** — a small `architecture.yml` in the subject repo, an override on
-naming and on what counts as a legitimate flow, never the source of the picture:
-
-```yaml
-order: [Source, Graph, Sink, Repository, Analysis, API]   # data flow, left to right
-bands: {top: [CLI], bottom: [Schema, Config]}             # orchestration, foundation
-rules:                                                    # package prefix → role
-  rkg.source: Source
-  rkg.sinks: Sink
-base_roles:                                               # base class → role
-  rkg.sinks.base.Sink: Sink
-dependencies: against_flow                                # consumers call providers
-allowed:                                                  # fine in both directions
-  - [Sink, Repository]
-```
-
-`order` describes the *data* flow. Dependencies (imports, calls, types) normally
-run against it, consumer → provider: `Graph → Source` is expected, `Source → Graph`
-is backflow. `dependencies: with_flow` flips that for push-style code. Bands are
-exempt: the orchestration band may depend on anything, anything may depend on the
-foundation band. Role assignment is per class: a class whose base chain reaches a
-`base_roles` root takes that role wherever it lives. Without a yml, roles are
-inferred (one per subpackage, or per module in a flat package, columns ordered so
-providers stand left of consumers) and the UI says so.
+**No declared architecture.** A repository declares nothing to Atlas: no roles, no
+order, no layers. What a package is follows from its code, and the layers between
+packages are the order their dependencies make. Packages and the imports and calls
+between them form a preorder; where two packages depend on each other there is no such
+order, and that cycle is what the code shows.
 
 ## 4. Analytics, as views
 
@@ -368,10 +345,9 @@ that type. Artifacts by path
 pattern, hub types by arrow count, mutation detection, and the effect signature
 `F: Graph → W` per function and per route. This is the functor behind the plaat.
 
-**L3 Quotients.** By declared role, by base class, by package, by effect signature,
-by artifact; each with its refinement order. The quotient graph aggregates edges per
-class pair and kind. Conformance is the difference between the quotient by declared
-role and the declared flow.
+**L3 Quotients.** By base class, by package, by part, by effect signature, by artifact;
+each with its refinement order. The quotient graph aggregates edges per class pair and
+kind.
 
 **L4 Fibers and structure.** Reach from an entry point (dominator tree for
 "what does this command touch"), k-hop focus, edge-kind filters, commit ranges; SCC
@@ -383,7 +359,7 @@ declared.
 commit range is a fiber.
 
 **L6 Agent.** An MCP server over the same engine: `search`, `neighbourhood`,
-`effects`, `quotient`, `conformance_report`, `signature_paths`, `apply_view`.
+`effects`, `quotient`, `signature_paths`, `apply_view`.
 Views are JSON specs, a list of fibers and quotients plus a layout, that
 the agent writes and the browser renders. Annotations are agent explanations stored
 per symbol.
@@ -395,14 +371,14 @@ items, it is two views.
 
 | View | Question | Picture |
 |---|---|---|
-| **Flowchart** | Orient, Verify | The image of the effect functor: resting places as boxes, quotiented arrows between them, named by base class or package when declared and by signature otherwise. Click a box to refine it one level. Conformance marks where the declared flow disagrees. |
-| **Architecture** | Verify, Place | Role columns left → right; orchestration band above, foundation band below; modules as boxes with class/function chips; aggregated edges; backflow in the alert colour. |
+| **Flowchart** | Orient, Verify | The image of the effect functor: resting places as boxes, quotiented arrows between them, named by base class or package, and by signature otherwise. Click a box to refine it one level. |
 | **Type lattice** | Place | Inheritance forest; external bases as ghosts; wide leaf families as a grid; badges for abstract methods and overrides. |
 | **Signature flow** | Orient | Types as nodes, functions as arrows, ELK-layered; select two types and the composition paths light up. |
 | **Git graph** | Verify | Commit DAG; click a commit or drag a range → overlay on any view. |
 | **Inspector** | all | Read-only code with room for 100 columns, signature, docstring, in/out edges, annotation, open in editor. |
 
-**Design language.** Role = hue (one muted palette, the same in every view). Kind =
+**Design language.** Package = hue: the first level of the code quotiented by module
+path, the level a part's overview shows (one muted palette, the same in every view). Kind =
 shape (module: rounded box; class: box with a header strip; function: pill;
 external: dashed ghost; resting place: a plain rectangle). Edge kind = line style.
 Sans for labels, mono for identifiers. Light and dark from the same tokens. Motion
@@ -426,7 +402,7 @@ than two clicks from the code.
 
 1. Fiber and quotient do not commute. Is "fiber, then quotient" the only order a
    view list may use, or do both orders have a reading?
-2. Is the role the right unit for colour, or is the base type?
+2. Is the package the right unit for colour, or is the base type?
 3. Editing: probably never. "Open in editor" as a deep link should be enough.
 4. The browser as a resting place: a click in `apps/plusmin` is an arrow into an
    API route. Parts are joined where one names a route the other serves; the function

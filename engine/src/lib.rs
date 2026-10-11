@@ -15,7 +15,6 @@ pub mod principles;
 pub mod remote;
 pub mod python;
 pub mod pytypes;
-pub mod roles;
 pub mod rust;
 pub mod story;
 pub mod tree;
@@ -40,26 +39,23 @@ pub struct Options {
     pub named: Vec<PathBuf>,
     /// The Python package directory, when discovery picks the wrong one.
     pub package: Option<PathBuf>,
-    /// An `architecture.yml` or `roles.json`; otherwise the repo's own declaration, or inferred.
-    pub roles: Option<PathBuf>,
 }
 
 impl Default for Options {
     fn default() -> Self {
-        Options { libraries: 1, named: vec![], package: None, roles: None }
+        Options { libraries: 1, named: vec![], package: None }
     }
 }
 
 /// Parse a repository into its graph: `Disk(repo) -> Language.parse -> Graph`, then the
-/// routes its Makefile adds, the roles it declares (or that are inferred) and its parts.
-/// A repository whose parts are read in several languages is `parts::analyze_repo`.
+/// routes its Makefile adds and its parts. Nothing about the repository is declared to Atlas:
+/// what the picture shows is what the code says. A repository whose parts are read in several
+/// languages is `parts::analyze_repo`.
 pub fn analyze(repo: &Path, opts: &Options) -> Result<Graph> {
     let lang = language::detect(repo, opts)
         .ok_or_else(|| anyhow::anyhow!("no language recognised in {} (looked for Cargo.toml, pyproject.toml, a Python package, package.json)", repo.display()))?;
     let mut g = lang.parse(repo, opts)?;
     entries::read_makefile(&mut g);
-    let arch = roles::resolve(&g, opts.roles.as_deref())?;
-    roles::assign(&mut g, arch);
     parts::assign(&mut g);
     Ok(g)
 }
