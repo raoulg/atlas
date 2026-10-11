@@ -1759,6 +1759,7 @@ fn link_calls<'t>(modules: &'t IndexMap<String, Module>, store: &mut GraphBuilde
             // Atlas reads (`pipeline.add(DiffValues, ..)`) is built there
             for a in handed_on(c) {
                 if let Some(t) = seen.handed_function(a) {
+                    steps.push(Site { line, to: t.clone(), arms: arms.clone(), ..Default::default() });
                     new_edges.push((t, EdgeKind::Calls, arms_of(a, body, src, &choices, &CHOICES)));
                 } else if let (Some(Callee::Def(_)), Some(t)) = (&callee, seen.handed_class(a)) {
                     steps.push(Site { line, to: t.clone(), arms: arms.clone(), ..Default::default() });

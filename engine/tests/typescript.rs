@@ -170,3 +170,16 @@ fn a_change_to_an_input_is_a_change() {
     let asked: Vec<String> = check(&g).into_iter().filter(|f| f.principle == "changes").map(|f| f.what).collect();
     assert!(asked.iter().any(|w| w.contains("verzamel")) && !asked.iter().any(|w| w.contains("Teller.tel")), "{asked:?}");
 }
+
+/// A TypeScript body lists its calls, each with what it is handed and the name it is kept by:
+/// the `Laag` that `new Laag(..)` gives is the `laag` the next call is made on.
+#[test]
+fn a_typescript_body_lists_its_calls() {
+    let g = fixture();
+    let scherm = g.nodes.iter().find(|n| n.id.ends_with("routes.kaart.KaartScherm")).expect("KaartScherm");
+    let laag = scherm.sites.iter().find(|s| s.to.ends_with("model.Laag")).expect("new Laag");
+    assert!(laag.gives.iter().any(|h| h.name == "laag" && h.ty.ends_with("model.Laag")), "{:#?}", scherm.sites);
+    let toon = scherm.sites.iter().find(|s| s.to.ends_with("Laag.toon")).expect("laag.toon()");
+    assert!(toon.hands.iter().any(|h| h.name == "laag"), "{:#?}", toon);
+    assert!(scherm.sites.iter().position(|s| s.to.ends_with("model.Laag")) < scherm.sites.iter().position(|s| s.to.ends_with("Laag.toon")));
+}

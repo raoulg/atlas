@@ -26,6 +26,29 @@ pub fn field_children<'t>(n: TsNode<'t>, field: &str) -> Vec<TsNode<'t>> {
 }
 
 /// Pre-order, source order.
+/// What an expression hands a call, by the names in it: each name with the type the reader
+/// knows for it, or by its name alone where an earlier step of the body made it. A name the
+/// reader knows nothing of (a function, a module, a loop variable) hands nothing; `skip` are the
+/// body's own receiver (`self`, `this`), which a call on it does not hand.
+pub fn held_names(e: TsNode, src: &[u8], skip: &[&str], ty: &dyn Fn(&str) -> Option<String>, made: &std::collections::HashSet<String>) -> Vec<crate::model::Held> {
+    let mut out: Vec<crate::model::Held> = vec![];
+    for i in walk(e, &["identifier", "shorthand_property_identifier"]) {
+        let name = text(i, src);
+        if skip.contains(&name) {
+            continue;
+        }
+        let held = match ty(name) {
+            Some(t) => crate::model::Held { ty: t, name: name.to_string() },
+            None if made.contains(name) => crate::model::Held { ty: String::new(), name: name.to_string() },
+            None => continue,
+        };
+        if !out.contains(&held) {
+            out.push(held);
+        }
+    }
+    out
+}
+
 pub fn walk<'t>(n: TsNode<'t>, kinds: &[&str]) -> Vec<TsNode<'t>> {
     let mut out = vec![];
     let mut stack = vec![n];

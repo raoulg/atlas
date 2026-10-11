@@ -1222,6 +1222,8 @@ async function renderPlaat() {
       const held = h => addPlace(h.type ? typePlace(h.type) : {id: "v:" + h.name, label: h.name, kind: "type", role: "", type: null});
       for (const h of site.hands || []) { const k = held(h); if (!m.dom.has(k)) m.dom.set(k, false); if (h.name) dn.set(k, h.name); }
       for (const h of site.gives || []) { const k = held(h); if (!m.cod.has(k)) m.cod.set(k, false); if (h.name) cn.set(k, h.name); }
+      // what the step changes is the value it was handed, under the same name: `read_makefile(&mut g)`
+      for (const x of [...mutatesOf(step), ...(on && mutatesOf(step).includes(byId.get(step)?.cls) ? [on] : [])]) { const k = "t:" + placeOfType(x); if (m.cod.has(k) && dn.has(k) && !cn.has(k)) cn.set(k, dn.get(k)); }
     }
     return {dom: m.dom, cod: m.cod, dn, cn};
   };

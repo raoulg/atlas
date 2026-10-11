@@ -489,3 +489,21 @@ fn a_door_reaches_a_service() {
     assert_eq!(door("fixture.files.Report"), "", "`from_file` and `show` make no door");
     assert_eq!(door("fixture.schema.Graph"), "");
 }
+
+/// A Rust body lists its calls in the order they run, each with what it is handed and the name
+/// it is kept by: Atlas's own `analyze` hands the `Graph` one call gives to the next, and a
+/// local takes its type from what the function it is kept from gives back, wherever that is
+/// defined.
+#[test]
+fn a_rust_body_lists_its_calls() {
+    let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
+    let g = analyze(&repo, None, None).expect("the Atlas workspace parses");
+    let analyze_fn = g.nodes.iter().find(|n| n.id == "atlas-engine.analyze").unwrap();
+    let step = |to: &str| analyze_fn.sites.iter().find(|s| s.to == to).unwrap_or_else(|| panic!("{to} in {:#?}", analyze_fn.sites));
+    let held = |ty: &str, name: &str| atlas_engine::Held { ty: ty.into(), name: name.into() };
+    assert_eq!(step("atlas-engine.language.Language.parse").gives, [held("atlas-engine.model.Graph", "g")], "a method gives what it returns, not its receiver's type");
+    let resolve = step("atlas-engine.roles.resolve");
+    assert_eq!((resolve.hands.clone(), resolve.gives.clone()), (vec![held("atlas-engine.model.Graph", "g")], vec![held("atlas-engine.model.Architecture", "arch")]));
+    let order: Vec<&str> = analyze_fn.sites.iter().map(|s| s.to.as_str()).collect();
+    assert!(order.iter().position(|t| *t == "atlas-engine.roles.resolve") < order.iter().position(|t| *t == "atlas-engine.roles.assign"), "{order:?}");
+}

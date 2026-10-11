@@ -14,7 +14,7 @@ use tree_sitter::{Node as TsNode, Parser, Tree};
 use walkdir::WalkDir;
 
 use crate::effects;
-use crate::model::{Compare, EdgeKind, Entry, EntryKind, Node, NodeKind, Touch};
+use crate::model::{Compare, EdgeKind, Entry, EntryKind, Held, Node, NodeKind, Site, Touch};
 use crate::builder::{ClassInfo, GraphBuilder, SigInfo};
 use crate::tree::{
     arms_of, decides, evaluation_order, literals, named_children, nth_of_kind, number_choices, payload_of, span, starts_at_literal, text, unquote, walk, what_of,
@@ -797,7 +797,13 @@ fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crate_ids:
                 store.add_edge(id, &r, kind, None);
             }
         }
-        link_calls(modules, store, crate_ids, id);
+    }
+    // every signature before any body: a body's locals take their types from what the functions
+    // it calls give back, wherever those are defined
+    for id in &ids {
+        if matches!(store.nodes[id].kind, NodeKind::Function | NodeKind::Method) {
+            link_calls(modules, store, crate_ids, id);
+        }
     }
 }
 
@@ -832,7 +838,34 @@ fn place_literals(n: TsNode, src: &[u8]) -> Vec<String> {
 }
 
 /// Methods of std's `Result` and `Option`: they open what a call gave, and move nothing.
-const UNWRAPS: &[&str] = &["unwrap", "expect", "unwrap_or", "unwrap_or_else", "unwrap_or_default", "ok", "err", "map", "map_err", "and_then", "or_else", "context", "with_context"];
+/// The name a call's value is kept by: `let x = f(..)?`, `let x = f(..).unwrap()`, `x = f(..)`.
+fn kept_as(c: TsNode, src: &[u8]) -> Option<String> {
+    let mut n = c;
+    loop {
+        let p = n.parent()?;
+        match p.kind() {
+            "try_expression" | "await_expression" | "reference_expression" | "parenthesized_expression" => n = p,
+            // `.unwrap()` and its kind hand on the value they are called on
+            "field_expression" => {
+                let call = p.parent().filter(|x| x.kind() == "call_expression")?;
+                if !p.child_by_field_name("field").map_or(false, |f| UNWRAPS.contains(&text(f, src))) {
+                    return None;
+                }
+                n = call;
+            }
+            "let_declaration" => {
+                let pat = p.child_by_field_name("pattern").filter(|x| matches!(x.kind(), "identifier" | "mut_pattern"))?;
+                return Some(text(pat, src).trim_start_matches("mut ").to_string());
+            }
+            "assignment_expression" if p.child_by_field_name("right").map(|r| r.id()) == Some(n.id()) => {
+                return p.child_by_field_name("left").filter(|l| l.kind() == "identifier").map(|l| text(l, src).to_string());
+            }
+            _ => return None,
+        }
+    }
+}
+
+const UNWRAPS: &[&str] = &["unwrap", "expect", "unwrap_or", "unwrap_or_else", "unwrap_or_default", "ok", "err", "ok_or", "ok_or_else", "map", "map_err", "and_then", "or_else", "context", "with_context"];
 
 /// The library value a chain of method calls starts from: a call of a function on a library's
 /// type (`OpenOptions::new()`), reached through the locals that hold what it made
@@ -936,7 +969,7 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crat
                 "try_expression" | "await_expression" | "unary_expression" | "reference_expression" | "parenthesized_expression" => value = named_children(v).into_iter().next(),
                 // `.unwrap()`, `.expect(..)`, `.ok_or_else(..)`, `.context(..)`: the receiver decides the type
                 "call_expression" => match v.child_by_field_name("function") {
-                    Some(f) if f.kind() == "field_expression" => value = f.child_by_field_name("value"),
+                    Some(f) if f.kind() == "field_expression" && f.child_by_field_name("field").map_or(false, |x| UNWRAPS.contains(&text(x, src))) => value = f.child_by_field_name("value"),
                     _ => break,
                 },
                 _ => break,
@@ -949,6 +982,17 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crat
         let ty = match v.kind() {
             "identifier" => locals.get(text(v, src)).cloned(),
             "struct_expression" => resolve(m, &path_parts(v.child_by_field_name("name"), src), modules, &store.nodes, crate_ids).and_then(|r| class_of(&r)),
+            // a method gives what its signature gives back, on the type of the value it is called on
+            "call_expression" if v.child_by_field_name("function").map_or(false, |f| f.kind() == "field_expression") => {
+                let f = v.child_by_field_name("function").unwrap();
+                let on = match f.child_by_field_name("value") {
+                    Some(r) if r.kind() == "self" => cls.clone(),
+                    Some(r) if r.kind() == "identifier" => locals.get(text(r, src)).cloned(),
+                    _ => None,
+                };
+                let name = f.child_by_field_name("field").map(|x| text(x, src)).unwrap_or("");
+                on.and_then(|t| method_of(store, &t, name)).and_then(|t| returned_class(&t))
+            }
             "call_expression" => {
                 let parts = path_parts(v.child_by_field_name("function"), src);
                 if parts.is_empty() {
@@ -989,11 +1033,35 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crat
         }
     }
     let mut unresolved: Vec<String> = vec![];
+    // the calls as steps, in the order they run, and the names the steps so far have kept
+    let mut steps: Vec<Site> = vec![];
+    let mut made: HashSet<String> = HashSet::new();
+    let ty_of = |name: &str| locals.get(name).cloned();
+    // what a call is handed: the value it is called on, its arguments, a literal's fields
+    let hands_of = |parts: &[Option<TsNode>], made: &HashSet<String>| -> Vec<Held> {
+        let mut out: Vec<Held> = vec![];
+        for p in parts.iter().flatten() {
+            for h in crate::tree::held_names(*p, src, &["self"], &ty_of, made) {
+                if !out.contains(&h) {
+                    out.push(h);
+                }
+            }
+        }
+        out
+    };
+    // what it gives back, by the name the body keeps it by
+    let gives_of = |c: TsNode, to: Option<&str>| -> Vec<Held> {
+        kept_as(c, src).map(|name| Held { ty: locals.get(&name).cloned().or_else(|| to.and_then(returned_class)).unwrap_or_default(), name }).into_iter().collect()
+    };
     for c in evaluation_order(walk(body, &["call_expression", "struct_expression"])) {
+        let line = c.start_position().row as u32 + 1;
         if c.kind() == "struct_expression" {
             let parts = path_parts(c.child_by_field_name("name"), src);
             if let Some(r) = resolve(m, &parts, modules, &store.nodes, crate_ids).filter(|r| !r.starts_with("ext:")) {
                 if store.nodes.get(&r).map_or(false, |x| x.kind == NodeKind::Class) {
+                    let gives = gives_of(c, Some(&r));
+                    steps.push(Site { line, to: r.clone(), hands: hands_of(&[c.child_by_field_name("body")], &made), gives: gives.clone(), arms: arms_of(c, body, src, &choices, &CHOICES), ..Default::default() });
+                    made.extend(gives.into_iter().map(|g| g.name));
                     new_edges.push((r, EdgeKind::Instantiates, None, arms_of(c, body, src, &choices, &CHOICES)));
                 }
             }
@@ -1012,15 +1080,24 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crat
                 _ => resolve(m, &ps, modules, &store.nodes, crate_ids),
             };
             if let Some(t) = handed.filter(|t| store.nodes.get(t).map_or(false, |n| matches!(n.kind, NodeKind::Function | NodeKind::Method))) {
+                steps.push(Site { line, to: t.clone(), arms: arms_of(a, body, src, &choices, &CHOICES), ..Default::default() });
                 new_edges.push((t, EdgeKind::Calls, None, arms_of(a, body, src, &choices, &CHOICES)));
             }
         }
+        // a library's operation not read is a step where the body keeps what it gives
+        let library_step = |op: &str, recv: Option<TsNode>, made: &HashSet<String>| -> Option<Site> {
+            let hands = hands_of(&[recv, c.child_by_field_name("arguments")], made);
+            let gives = gives_of(c, None);
+            (!hands.is_empty() && !gives.is_empty()).then(|| Site { line, op: op.to_string(), hands, gives, arms: arms_of(c, body, src, &choices, &CHOICES), ..Default::default() })
+        };
         let mut target: Option<String> = None;
+        let mut recv: Option<TsNode> = None;
         let mut parts: Vec<String> = vec![];
         if f.kind() == "field_expression" {
             // a method call: receiver.method(..)
             let (Some(value), Some(field)) = (f.child_by_field_name("value"), f.child_by_field_name("field")) else { continue };
             let method = text(field, src).to_string();
+            recv = Some(value);
             let receiver: Option<String> = match value.kind() {
                 "self" => cls.clone(),
                 "identifier" => locals.get(text(value, src)).cloned(),
@@ -1043,6 +1120,10 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crat
                 // known; it builds nothing
                 Some(r) => target = method_of(store, &r, &method),
                 None => {
+                    if let Some(s) = library_step(&method, Some(value), &made) {
+                        made.extend(s.gives.iter().map(|g| g.name.clone()));
+                        steps.push(s);
+                    }
                     let made = library_chain(value, m, src, &made_by);
                     // the outer call of a chain stands for the chain: `client.get(url).send()`
                     if made.is_some() && c.parent().map_or(false, |p| p.kind() == "field_expression") {
@@ -1121,11 +1202,19 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crat
                 let kind = if store.nodes[&t].kind == NodeKind::Class { EdgeKind::Instantiates } else { EdgeKind::Calls };
                 // `Type::method(..)` with no such method known: keep the name, it is what was called
                 let via = if kind == EdgeKind::Instantiates && parts.len() > 1 && parts[0] != "Self" { parts.last().cloned() } else { None };
+                let this = recv.map_or(false, |r| r.kind() == "self");
+                let gives = gives_of(c, Some(&t));
+                steps.push(Site { line, to: t.clone(), this, hands: hands_of(&[recv, c.child_by_field_name("arguments")], &made), gives: gives.clone(), arms: arms_of(c, body, src, &choices, &CHOICES), ..Default::default() });
+                made.extend(gives.into_iter().map(|g| g.name));
                 new_edges.push((t, kind, via, arms_of(c, body, src, &choices, &CHOICES)));
             }
             _ => {
                 if parts.is_empty() {
                     continue;
+                }
+                if let Some(s) = library_step(parts.last().map(String::as_str).unwrap_or(""), None, &made) {
+                    made.extend(s.gives.iter().map(|g| g.name.clone()));
+                    steps.push(s);
                 }
                 let full = expand(m, &parts);
                 unresolved.push(full.iter().take(2).cloned().collect::<Vec<_>>().join("."));
@@ -1137,6 +1226,9 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crat
     }
     for (t, kind, via, arms) in new_edges {
         store.add_call(id, &t, kind, via, arms);
+    }
+    if let Some(node) = store.nodes.get_mut(id) {
+        node.sites = steps;
     }
     let compares = compares(body, src, &choices);
     if let Some(node) = store.nodes.get_mut(id) {

@@ -60,20 +60,21 @@ Read it from left to right:
 - **In the middle** are the steps. A rounded pill is a function. A box with a coloured
   bar is a value of a type in memory: `Language`, `Graph`, `Architecture`. Arrows run in
   call order.
-- **Read it as a sentence:** *detect* the language, *parse* the repository into a `Graph`,
-  add the Makefile's targets (`read_makefile`), *resolve* the architecture, *assign*
-  each part its role, and hand back the `Graph`. That is Atlas's whole job, and the code
-  says it in five steps.
+- **Read it as a sentence:** *detect* the language, *parse* the repository into a `Graph g`,
+  add the Makefile's targets to `g` (`read_makefile`), *resolve* the architecture, *assign*
+  each node its role and then its part, and hand back `g`. That is Atlas's whole job, and
+  the code says it in six calls.
 - **`parse · one of 3`** is a choice: the same call goes to the Python, the Rust or the
   TypeScript reader. `Language (4)` and `Graph (9)` are families: a type and the
   types that belong to it or that it holds, folded into one box. Click one to open it.
   A config opens the same way into what it holds (`folders: Folders`).
 - **Click any pill** to open it into its own steps, and **show code** to see its source.
-- **In Python a step is a call.** A function the route calls twice is two steps, and a
-  method called on a subclass's value is that subclass's (`ComparePlot.plot`). Values are
-  drawn by the names the code holds them by (`DataFrame · data`). A library operation
-  Atlas does not read is a step in italics where the code names its result (`to_numpy`). In
-  a notebook, each call that makes a figure makes its own (`Figure 3 · ResidualPlot.plot`).
+- **A step is a call.** A function the route calls twice is two steps, and a method called
+  on a subclass's value is that subclass's (`ComparePlot.plot`). Values are drawn by the
+  names the code holds them by (`Graph · g`, `DataFrame · data`), and a step that changes a
+  value hands it on under the same name. A library operation Atlas does not read is a step in
+  italics where the code names its result (`to_numpy`). In a notebook, each call that makes
+  a figure makes its own (`Figure 3 · ResidualPlot.plot`).
 - **Files fold into their folders** once a picture holds more than a column's worth:
   `File(artefacts/) · 8` opens into what is in it with a click.
 - **Shift-click a package** in the overview to focus on it: the picture keeps the packages
@@ -125,7 +126,7 @@ atlas --help
 your machine. The page fetches only its drawing libraries (d3, elk, highlight.js) from a
 CDN. It has four views. The **Flowchart** is the one to start with. Architecture, Type
 lattice and Signature flow are earlier experiments. The header names the build that drew
-the page, as `atlas --version` does: `0.2.0 (b0ead14)`. The minor number goes up when what
+the page, as `atlas --version` does: `0.3.0 (b0ead14)`. The minor number goes up when what
 Atlas reads or draws changes, the patch number for a fix.
 
 Atlas reads:

@@ -20,7 +20,7 @@ use paths::{Arg, At, Eval};
 
 use crate::builder::{ClassInfo, GraphBuilder, SigInfo};
 use crate::effects;
-use crate::model::{Compare, EdgeKind, Entry, EntryKind, Node, NodeKind, Touch};
+use crate::model::{Compare, EdgeKind, Entry, EntryKind, Held, Node, NodeKind, Site, Touch};
 use crate::tree::{
     arms_of, decides, evaluation_order, literals, named_children, nth_of_kind, number_choices, payload_of, span, starts_at_literal, text, unquote,
     walk, what_of, ChoiceSyntax, Part,
@@ -1353,6 +1353,24 @@ fn place_calls(store: &mut GraphBuilder, eval: &Eval, linked: Linked) {
 }
 
 /// The class a module-level value holds, in its own module or the one it is imported from.
+/// The name a call's value is kept by: `const x = await f(..)`, `x = f(..)`.
+fn kept_as(c: TsNode, src: &[u8]) -> Option<String> {
+    let mut n = c;
+    loop {
+        let p = n.parent()?;
+        match p.kind() {
+            "await_expression" | "parenthesized_expression" | "as_expression" | "non_null_expression" | "satisfies_expression" => n = p,
+            "variable_declarator" if p.child_by_field_name("value").map(|v| v.id()) == Some(n.id()) => {
+                return p.child_by_field_name("name").filter(|x| x.kind() == "identifier").map(|x| text(x, src).to_string());
+            }
+            "assignment_expression" if p.child_by_field_name("right").map(|r| r.id()) == Some(n.id()) => {
+                return p.child_by_field_name("left").filter(|l| l.kind() == "identifier").map(|l| text(l, src).to_string());
+            }
+            _ => return None,
+        }
+    }
+}
+
 fn value_type(m: &Module, name: &str, modules: &IndexMap<String, Module>, nodes: &IndexMap<String, Node>) -> Option<String> {
     let (home, local) = match m.values.contains_key(name) {
         true => (m, name.to_string()),
@@ -1481,13 +1499,35 @@ fn link_calls<'t>(m: &'t Module, modules: &'t IndexMap<String, Module>, store: &
         .into_iter()
         .filter(|x| mine(*x))
         .collect();
+    // the calls as steps, in the order they run, and the names the steps so far have kept
+    let mut steps: Vec<Site> = vec![];
+    let mut kept: HashSet<String> = HashSet::new();
+    let ty_of = |name: &str| locals.get(name).cloned().or_else(|| value_type(m, name, modules, &store.nodes));
+    let hands_of = |parts: &[Option<TsNode>], kept: &HashSet<String>| -> Vec<Held> {
+        let mut out: Vec<Held> = vec![];
+        for p in parts.iter().flatten() {
+            for h in crate::tree::held_names(*p, src, &[], &ty_of, kept) {
+                if !out.contains(&h) {
+                    out.push(h);
+                }
+            }
+        }
+        out
+    };
+    let gives_of = |c: TsNode, to: Option<&str>| -> Vec<Held> {
+        kept_as(c, src).map(|name| Held { ty: locals.get(&name).cloned().or_else(|| to.and_then(|t| returned.get(t).cloned())).unwrap_or_default(), name }).into_iter().collect()
+    };
     for c in sites {
         let arms = arms_of(c, body, src, &choices, &CHOICES);
+        let line = c.start_position().row as u32 + 1;
         match c.kind() {
             "new_expression" => {
                 let parts = c.child_by_field_name("constructor").map(|x| member_parts(x, src)).unwrap_or_default();
                 if let Some(r) = resolve(m, &parts, modules, &store.nodes).filter(|r| own(r, store)) {
                     if store.nodes[&r].kind == NodeKind::Class {
+                        let gives = gives_of(c, Some(&r));
+                        steps.push(Site { line, to: r.clone(), hands: hands_of(&[c.child_by_field_name("arguments")], &kept), gives: gives.clone(), arms: arms.clone(), ..Default::default() });
+                        kept.extend(gives.into_iter().map(|g| g.name));
                         new_edges.push((r, EdgeKind::Instantiates, arms));
                     }
                 } else if matches!(parts.as_slice(), [g] if matches!(g.as_str(), "WebSocket" | "EventSource")) && !m.bindings.contains_key(&parts[0]) {
@@ -1505,6 +1545,9 @@ fn link_calls<'t>(m: &'t Module, modules: &'t IndexMap<String, Module>, store: &
                 }
                 if let Some(r) = resolve(m, &parts, modules, &store.nodes).filter(|r| own(r, store)) {
                     let kind = if store.nodes[&r].kind == NodeKind::Class { EdgeKind::Instantiates } else { EdgeKind::Calls };
+                    // a component is handed its attributes
+                    let attrs: Vec<Option<TsNode>> = walk(c, &["jsx_attribute"]).into_iter().map(Some).collect();
+                    steps.push(Site { line, to: r.clone(), hands: hands_of(&attrs, &kept), arms: arms.clone(), ..Default::default() });
                     new_edges.push((r, kind, arms));
                 }
             }
@@ -1521,6 +1564,7 @@ fn link_calls<'t>(m: &'t Module, modules: &'t IndexMap<String, Module>, store: &
                 }
                 if let Some(r) = resolve(m, &[text(c, src).to_string()], modules, &store.nodes).filter(|r| own(r, store)) {
                     if matches!(store.nodes[&r].kind, NodeKind::Function | NodeKind::Method) {
+                        steps.push(Site { line, to: r.clone(), arms: arms.clone(), ..Default::default() });
                         new_edges.push((r, EdgeKind::Calls, arms));
                     }
                 }
@@ -1548,11 +1592,33 @@ fn link_calls<'t>(m: &'t Module, modules: &'t IndexMap<String, Module>, store: &
                     }
                 };
                 let on = (f.kind() == "member_expression").then(|| Some((f.child_by_field_name("object")?, text(f.child_by_field_name("property")?, src).to_string()))).flatten();
+                let object = on.as_ref().map(|(o, _)| *o);
+                let class = on.as_ref().and_then(|(o, _)| receiver(*o));
                 let target = match on.and_then(|(o, name)| receiver(o).and_then(|k| method_of(store, &k, &name, 0))) {
                     Some(t) => Some(t),
                     None if parts.is_empty() => continue,
                     None => resolve(m, &parts, modules, &store.nodes),
                 };
+                let hands = hands_of(&[object, c.child_by_field_name("arguments")], &kept);
+                match &target {
+                    Some(t) if own(t, store) => {
+                        // a method found on a base runs on the subclass the value is
+                        let sub = class.filter(|k| store.nodes[t].cls.as_deref().map_or(false, |b| b != k.as_str())).unwrap_or_default();
+                        let this = object.map_or(false, |o| o.kind() == "this");
+                        let gives = gives_of(c, Some(t));
+                        steps.push(Site { line, to: t.clone(), on: sub, this, hands, gives: gives.clone(), arms: arms.clone(), ..Default::default() });
+                        kept.extend(gives.into_iter().map(|g| g.name));
+                    }
+                    // a library's operation not read is a step where the body keeps what it gives
+                    _ => {
+                        let gives = gives_of(c, None);
+                        if !hands.is_empty() && !gives.is_empty() {
+                            let op = parts.last().cloned().unwrap_or_default();
+                            steps.push(Site { line, op, hands, gives: gives.clone(), arms: arms.clone(), ..Default::default() });
+                            kept.extend(gives.into_iter().map(|g| g.name));
+                        }
+                    }
+                }
                 match target {
                     Some(t) if own(&t, store) => {
                         let kind = if store.nodes[&t].kind == NodeKind::Class { EdgeKind::Instantiates } else { EdgeKind::Calls };
@@ -1622,6 +1688,9 @@ fn link_calls<'t>(m: &'t Module, modules: &'t IndexMap<String, Module>, store: &
     }
     for (t, kind, arms) in new_edges {
         store.add_call(id, &t, kind, None, arms);
+    }
+    if let Some(node) = store.nodes.get_mut(id) {
+        node.sites = steps;
     }
     for t in touches {
         store.touch(id, t);
