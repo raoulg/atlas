@@ -94,12 +94,55 @@ fn file_of(class: &str) -> Option<FileArg> {
 }
 
 /// A value's type: as ty writes it, the classes it names (`list[Node]` names `list` and
-/// `Node`), and whether the value is a class itself rather than an instance.
+/// `Node`) with each class's own name, whether the value is a class itself rather than an
+/// instance, and whether it is code (a function, a method, a module) rather than data.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Value {
     pub shown: String,
     pub classes: Vec<Target>,
+    pub names: Vec<String>,
     pub is_class: bool,
+    pub is_code: bool,
+}
+
+/// The classes a type is, as written: through the containers that hold values (`tuple`,
+/// `list`, `dict`, a union) to each value's own class, but not into a class's own parameters
+/// (`ndarray[tuple[int], dtype[float64]]` is an `ndarray`).
+pub fn outer_classes(label: &str) -> Vec<String> {
+    const HOLDERS: &[&str] = &[
+        "tuple", "list", "dict", "set", "frozenset", "Optional", "Union", "Sequence", "Iterable", "Iterator", "Mapping",
+        "Generator", "Collection", "Tuple", "List", "Dict", "Set",
+    ];
+    // split at depth 0 on `,` and `|`
+    fn parts(s: &str) -> Vec<&str> {
+        let (mut out, mut depth, mut start) = (vec![], 0, 0);
+        for (i, c) in s.char_indices() {
+            match c {
+                '[' => depth += 1,
+                ']' => depth -= 1,
+                ',' | '|' if depth == 0 => {
+                    out.push(s[start..i].trim());
+                    start = i + 1;
+                }
+                _ => {}
+            }
+        }
+        out.push(s[start..].trim());
+        out
+    }
+    let mut out = vec![];
+    for p in parts(label) {
+        let (head, inner) = match p.find('[') {
+            Some(i) if p.ends_with(']') => (&p[..i], Some(&p[i + 1..p.len() - 1])),
+            _ => (p, None),
+        };
+        match inner {
+            Some(inner) if HOLDERS.contains(&head) => out.extend(outer_classes(inner)),
+            _ if !head.is_empty() => out.push(head.to_string()),
+            _ => {}
+        }
+    }
+    out
 }
 
 /// What ty says about one file, by byte range.
@@ -432,10 +475,6 @@ impl Reader<'_, '_> {
         file_to_module(self.db, rf).map(|m| Target::Lib(m.name(self.db).to_string()))
     }
 
-    fn defined(&self, t: Type) -> Option<Target> {
-        let env = self.model.program_environment();
-        self.target(t.definition(self.db, &env)?.focus_range(self.db)?)
-    }
 
     /// Where a call goes, noting the library file it goes into.
     fn called(&self, range: FileRange) -> Option<Target> {
@@ -540,19 +579,22 @@ impl Reader<'_, '_> {
         }
         let env = self.model.program_environment();
         let parts = ty.display(self.db, &env).to_string_parts();
-        let classes = parts
-            .details
-            .iter()
-            .filter_map(|d| match d {
-                TypeDetail::Type(t) => match t.definition(self.db, &env)? {
-                    TypeDefinition::StaticClass(_) | TypeDefinition::DynamicClass(_) => self.defined(*t),
-                    _ => None,
-                },
-                _ => None,
-            })
-            .collect();
+        let (mut classes, mut names) = (vec![], vec![]);
+        for d in &parts.details {
+            let TypeDetail::Type(t) = d else { continue };
+            let Some(def @ (TypeDefinition::StaticClass(_) | TypeDefinition::DynamicClass(_))) = t.definition(self.db, &env) else { continue };
+            let Some(r) = def.focus_range(self.db) else { continue };
+            let Some(target) = self.target(r) else { continue };
+            let text = ruff_db::source::source_text(self.db, r.file());
+            names.push(text.as_str().get(r.range().start().to_usize()..r.range().end().to_usize()).unwrap_or("").to_string());
+            classes.push(target);
+        }
         let is_class = matches!(ty, Type::ClassLiteral(_) | Type::GenericAlias(_) | Type::SubclassOf(_));
-        Some(Value { shown: parts.label, classes, is_class })
+        let is_code = matches!(ty, Type::FunctionLiteral(_) | Type::BoundMethod(_) | Type::KnownBoundMethod(_) | Type::Callable(_) | Type::ModuleLiteral(_));
+        // the classes of the values it holds, not the parameters of their classes
+        let outer = outer_classes(&parts.label);
+        let (classes, names): (Vec<Target>, Vec<String>) = classes.into_iter().zip(names).filter(|(_, n)| outer.contains(n)).unzip();
+        Some(Value { shown: parts.label, classes, names, is_class, is_code })
     }
 }
 

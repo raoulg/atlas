@@ -137,6 +137,48 @@ pub struct Node {
     /// Code of a library the project uses, read as far as the project's calls reach into it.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub library: bool,
+    /// The calls of its body, in the order they run: the steps of a route through it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sites: Vec<Site>,
+}
+
+/// A call in a body, as a step of the route through it: what it reaches, what it is handed and
+/// what it gives back.
+#[derive(Serialize, Deserialize, TS, Clone, Debug, Default, PartialEq)]
+#[ts(export)]
+pub struct Site {
+    pub line: u32,
+    /// The function, method or class the call reaches, when Atlas reads it.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub to: String,
+    /// The operation of a library Atlas does not read, when it turns a value of one type into
+    /// another (`to_numpy`); `to` is then empty.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub op: String,
+    /// The class of the value a method is called on, when that is a subclass of the method's own
+    /// class (`ComparePlot(..).plot()` reaches `BasePlot.plot` on a `ComparePlot`).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub on: String,
+    /// The values the call is handed: its arguments and the value it is called on.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub hands: Vec<Held>,
+    /// What it gives back.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub gives: Vec<Held>,
+    /// The arms of the choices the call sits in, as `Edge::arms`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(type = "Array<[number, number]>")]
+    pub arms: Vec<(u32, u32)>,
+}
+
+/// A value by its type, and the name the code holds it by when it has one.
+#[derive(Serialize, Deserialize, TS, Clone, Debug, Default, PartialEq, Eq, Hash)]
+#[ts(export)]
+pub struct Held {
+    #[serde(rename = "type")]
+    pub ty: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub name: String,
 }
 
 impl Default for NodeKind {

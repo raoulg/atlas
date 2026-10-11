@@ -18,7 +18,7 @@ use crate::effects;
 use crate::pytypes::{By, Facts, FileArg, Target, Ty, Types, Value};
 use paths::{At, Built, Eval, Passed, Seg};
 use crate::entries::entry_of;
-use crate::model::{Compare, EdgeKind, Entry, EntryKind, Node, NodeKind, Touch};
+use crate::model::{Compare, EdgeKind, Entry, EntryKind, Held, Node, NodeKind, Site, Touch};
 pub use crate::builder::{ClassInfo, GraphBuilder, SigInfo};
 use crate::tree::{
     argument, arms_of, decides, evaluation_order, field_children, literals, named_children, nth_of_kind, number_choices, payload_of, span, starts_at_literal, text, unquote, walk,
@@ -1050,12 +1050,19 @@ fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, root: &str
     }
     // bodies -> calls / instantiates / boundaries
     let eval = Eval::new(modules, types, root_dir);
+    // a library's class by its package and its name, as the signatures name it
+    let ext: HashMap<(String, String), String> = store
+        .nodes
+        .keys()
+        .filter(|k| k.starts_with("ext:") && !k.contains('['))
+        .filter_map(|k| Some(((package_of(&k[4..]), k.rsplit('.').next()?.to_string()), k.clone())))
+        .collect();
     let mut handed = vec![];
     let mut files: Vec<(String, Touch, Vec<Built>)> = vec![];
     let mut args: Vec<Arg> = vec![];
     for id in &ids {
         if matches!(store.nodes[id].kind, NodeKind::Function | NodeKind::Method | NodeKind::Module) {
-            let linked = link_calls(modules, store, types, &sites, &eval, root, id);
+            let linked = link_calls(modules, store, types, &sites, &ext, &eval, root, id);
             handed.extend(linked.handed);
             files.extend(linked.files.into_iter().map(|(t, b)| (id.clone(), t, b)));
             args.extend(linked.args);
@@ -1269,6 +1276,81 @@ impl<'a> Seen<'a> {
             Some(Callee::Def(t)) if reached.is_empty() && function(&&t) => Some(t),
             _ => None,
         }
+    }
+
+    /// The types of a value that the picture draws: a class of the code Atlas reads, or a
+    /// library's class by its package and name, as a signature names it (`ext:pandas.DataFrame`).
+    fn drawn(&self, v: &Value, ext: &HashMap<(String, String), String>) -> Vec<String> {
+        let mut out: Vec<String> = vec![];
+        for (t, name) in v.classes.iter().zip(&v.names) {
+            let id = match t {
+                Target::Here { .. } => self.node(t).filter(|id| self.is_class(id)).cloned(),
+                Target::Lib(module) => {
+                    let pkg = package_of(module);
+                    let id = ext.get(&(pkg.clone(), name.clone())).cloned().unwrap_or_else(|| format!("ext:{pkg}.{name}"));
+                    foreign_type(&id).then_some(id)
+                }
+            };
+            if let Some(id) = id.filter(|id| !out.contains(id)) {
+                out.push(id);
+            }
+        }
+        out
+    }
+
+    /// What an expression hands a call: the value a call in it gives, and the names in it with
+    /// the values they hold (`data[before]` hands `data`). A class or a function named is no
+    /// value, and `self` is the call's receiver, not something handed.
+    fn held_in(&self, e: TsNode, ext: &HashMap<(String, String), String>, made: &HashSet<String>) -> Vec<Held> {
+        let mut out: Vec<Held> = vec![];
+        let mut add = |ty: String, name: String| {
+            if !out.iter().any(|h| h.ty == ty && h.name == name) {
+                out.push(Held { ty, name });
+            }
+        };
+        let data = |v: &&Value| !v.is_class && !v.is_code;
+        if e.kind() == "call" {
+            for ty in self.value(e).filter(data).map(|v| self.drawn(v, ext)).unwrap_or_default() {
+                add(ty, String::new());
+            }
+        }
+        for i in walk(e, &["identifier"]) {
+            let name = text(i, &self.m.src);
+            if matches!(name, "self" | "cls") {
+                continue;
+            }
+            let v = self.value(i);
+            if v.map_or(false, |v| v.is_class || v.is_code) {
+                continue;
+            }
+            let tys = v.map(|v| self.drawn(v, ext)).unwrap_or_default();
+            // a name whose type is not known is still a value the body made, when an earlier step made it
+            if tys.is_empty() && made.contains(name) {
+                add(String::new(), name.to_string());
+            }
+            for ty in tys {
+                add(ty, name.to_string());
+            }
+        }
+        // a value known by name is not also a nameless one
+        let named: HashSet<String> = out.iter().filter(|h| !h.name.is_empty()).map(|h| h.ty.clone()).collect();
+        out.retain(|h| !h.name.is_empty() || !named.contains(&h.ty));
+        out
+    }
+
+    /// Whether class `c` is `b` or descends from it.
+    fn descends(&self, c: &str, b: &str) -> bool {
+        let mut todo = vec![c.to_string()];
+        let mut seen = HashSet::new();
+        while let Some(x) = todo.pop() {
+            if x == b {
+                return true;
+            }
+            if seen.insert(x.clone()) {
+                todo.extend(self.store.classes.get(&x).map(|i| i.resolved.clone()).unwrap_or_default());
+            }
+        }
+        false
     }
 
     /// A class of the code Atlas reads, handed on as a value.
@@ -1588,7 +1670,7 @@ struct Linked<'t> {
     args: Vec<Arg<'t>>,
 }
 
-fn link_calls<'t>(modules: &'t IndexMap<String, Module>, store: &mut GraphBuilder, types: &Types, sites: &HashMap<(String, usize), String>, eval: &Eval, root: &str, id: &str) -> Linked<'t> {
+fn link_calls<'t>(modules: &'t IndexMap<String, Module>, store: &mut GraphBuilder, types: &Types, sites: &HashMap<(String, usize), String>, ext: &HashMap<(String, String), String>, eval: &Eval, root: &str, id: &str) -> Linked<'t> {
     let n = store.nodes[id].clone();
     let m = &modules[&n.module];
     let Some(d) = def_node(m, &n) else { return Linked::default() };
@@ -1610,6 +1692,11 @@ fn link_calls<'t>(modules: &'t IndexMap<String, Module>, store: &mut GraphBuilde
     let mut used: Vec<String> = vec![];
     let choices = number_choices(body, src, &CHOICES);
     let mut changes: Vec<(String, String)> = vec![];
+    // the calls as steps, in the order they run
+    let mut steps: Vec<Site> = vec![];
+    let mut new_ext: Vec<String> = vec![];
+    // the names the steps so far have assigned
+    let mut made: HashSet<String> = HashSet::new();
     {
         let seen = Seen::new(m, types, sites, modules, store, root);
         for c in evaluation_order(walk(body, &["call"])) {
@@ -1633,6 +1720,40 @@ fn link_calls<'t>(modules: &'t IndexMap<String, Module>, store: &mut GraphBuilde
             }
             let Some(fnode) = c.child_by_field_name("function") else { continue };
             let callee = seen.callee(fnode);
+            let line = c.start_position().row as u32 + 1;
+            let arms = arms_of(c, body, src, &choices, &CHOICES);
+            // what the call is handed: the value it is called on, and its arguments
+            let mut hands: Vec<Held> = vec![];
+            let receiver = (fnode.kind() == "attribute").then(|| fnode.child_by_field_name("object")).flatten();
+            if let Some(o) = receiver {
+                hands.extend(seen.held_in(o, ext, &made));
+            }
+            if let Some(a) = c.child_by_field_name("arguments") {
+                for x in named_children(a).into_iter().filter(|x| x.kind() != "comment") {
+                    let v = if x.kind() == "keyword_argument" { x.child_by_field_name("value").unwrap_or(x) } else { x };
+                    hands.extend(seen.held_in(v, ext, &made));
+                }
+            }
+            let mut seen_held = HashSet::new();
+            hands.retain(|h| seen_held.insert(h.clone()));
+            // what the call gives back, by the name it is assigned to
+            let assigned = c.parent().filter(|p| p.kind() == "assignment" && p.child_by_field_name("right").map_or(false, |r| r.id() == c.id())).and_then(|p| p.child_by_field_name("left")).filter(|l| l.kind() == "identifier").map(|l| text(l, src).to_string()).unwrap_or_default();
+            let known = seen.value(c).filter(|v| !v.is_class && !v.is_code);
+            let mut gives: Vec<Held> = known.map(|v| seen.drawn(v, ext)).unwrap_or_default().into_iter().map(|ty| Held { ty, name: assigned.clone() }).collect();
+            // a value whose type ty does not know is still made, and held by the name it is assigned to
+            if gives.is_empty() && known.map_or(true, |v| v.shown == "Unknown") && !assigned.is_empty() && !hands.is_empty() {
+                gives.push(Held { ty: String::new(), name: assigned.clone() });
+            }
+            new_ext.extend(hands.iter().chain(&gives).map(|h| h.ty.clone()).filter(|t| t.starts_with("ext:")));
+            made.extend(gives.iter().map(|g| g.name.clone()).filter(|n| !n.is_empty()));
+            // a method called on a subclass's value is that subclass's step
+            let on = match (&callee, receiver) {
+                (Some(Callee::Def(t)), Some(o)) => store.nodes.get(t).and_then(|n| n.cls.clone()).and_then(|b| {
+                    let mine = seen.value(o).map(|v| seen.drawn(v, ext)).unwrap_or_default();
+                    mine.into_iter().find(|c| *c != b && seen.is_class(c) && seen.descends(c, &b))
+                }),
+                _ => None,
+            };
             // a function of the package handed on as a value (`executor.submit(self.run, x)`,
             // `Thread(target=work)`) is called by whoever receives it; a class handed to code
             // Atlas reads (`pipeline.add(DiffValues, ..)`) is built there
@@ -1640,7 +1761,23 @@ fn link_calls<'t>(modules: &'t IndexMap<String, Module>, store: &mut GraphBuilde
                 if let Some(t) = seen.handed_function(a) {
                     new_edges.push((t, EdgeKind::Calls, arms_of(a, body, src, &choices, &CHOICES)));
                 } else if let (Some(Callee::Def(_)), Some(t)) = (&callee, seen.handed_class(a)) {
+                    steps.push(Site { line, to: t.clone(), arms: arms.clone(), ..Default::default() });
                     new_edges.push((t, EdgeKind::Instantiates, arms_of(a, body, src, &choices, &CHOICES)));
+                }
+            }
+            match &callee {
+                Some(Callee::Def(t)) => steps.push(Site { line, to: t.clone(), on: on.unwrap_or_default(), hands: hands.clone(), gives: gives.clone(), arms: arms.clone(), ..Default::default() }),
+                // a library's call not read that makes a value the body keeps under a name, from
+                // values it was handed, is a step of its own; what a call gives without a name
+                // goes into the call around it
+                _ => {
+                    if !assigned.is_empty() && !hands.is_empty() && !gives.is_empty() {
+                        let op = match fnode.kind() {
+                            "attribute" => fnode.child_by_field_name("attribute").map(|a| text(a, src).to_string()),
+                            _ => Some(text(fnode, src).rsplit('.').next().unwrap_or("").to_string()),
+                        };
+                        steps.push(Site { line, op: op.unwrap_or_default(), hands: hands.clone(), gives: gives.clone(), arms: arms.clone(), ..Default::default() });
+                    }
                 }
             }
             if let Some(Callee::Def(t)) = &callee {
@@ -1744,6 +1881,12 @@ fn link_calls<'t>(modules: &'t IndexMap<String, Module>, store: &mut GraphBuilde
     }
     for (t, kind, arms) in new_edges {
         store.add_call(id, &t, kind, None, arms);
+    }
+    for t in new_ext {
+        store.ext_node(&t);
+    }
+    if let Some(node) = store.nodes.get_mut(id) {
+        node.sites = steps;
     }
     for t in used {
         store.used.insert((id.to_string(), t));
@@ -2017,5 +2160,5 @@ fn compares(body: TsNode, src: &[u8], choices: &HashMap<usize, u32>) -> Vec<Comp
 fn foreign_type(id: &str) -> bool {
     let Some(full) = id.strip_prefix("ext:") else { return false };
     let head = full.split('.').next().unwrap_or("");
-    full.contains('.') && !["typing", "collections", "pathlib", "builtins", "datetime", "abc", "os", "enum", "dataclasses", "functools", "itertools"].contains(&head)
+    full.contains('.') && !["typing", "collections", "pathlib", "builtins", "datetime", "abc", "os", "enum", "dataclasses", "functools", "itertools", "types"].contains(&head)
 }
