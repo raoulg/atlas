@@ -139,6 +139,8 @@ pub struct Types {
     files: HashMap<String, Facts>,
     /// Whether an environment with libraries was found.
     pub environment: bool,
+    /// The library modules the files' calls go into: each module's name and its file.
+    pub libs: Vec<(String, PathBuf)>,
 }
 
 impl Types {
@@ -150,25 +152,46 @@ impl Types {
     /// Ask ty about `files`, read as part of the project at `root`. A file is named by the path
     /// Atlas knows it by; a notebook's positions are in its cells joined as ruff joins them.
     pub fn read(root: &Path, files: &[(String, PathBuf)]) -> Types {
-        let Some(root) = absolute(root) else { return Types::default() };
+        Ty::new(root).map(|ty| ty.read(files, files)).unwrap_or_default()
+    }
+}
+
+/// ty over one project, asked more than once: what it has inferred for a file is kept from one
+/// question to the next.
+pub struct Ty {
+    db: TyDb,
+    environment: bool,
+}
+
+impl Ty {
+    pub fn new(root: &Path) -> Option<Ty> {
+        let root = absolute(root)?;
         let (db, environment) = TyDb::new(&root);
-        let mut here: HashMap<SystemPathBuf, String> = HashMap::new();
-        for (name, path) in files {
-            if let Some(p) = absolute(path).filter(|p| matches!(p.extension(), Some("py" | "ipynb"))) {
-                here.insert(p, name.clone());
-            }
-        }
+        Some(Ty { db, environment })
+    }
+
+    /// Ask about `files`, with `project` the files Atlas reads: a call into one of them goes to
+    /// its definition there, a call elsewhere into a library's module.
+    pub fn read(&self, files: &[(String, PathBuf)], project: &[(String, PathBuf)]) -> Types {
+        let db = &self.db;
+        let named = |list: &[(String, PathBuf)]| -> HashMap<SystemPathBuf, String> {
+            list.iter().filter_map(|(name, path)| absolute(path).filter(|p| matches!(p.extension(), Some("py" | "ipynb"))).map(|p| (p, name.clone()))).collect()
+        };
+        let here = named(project);
+        let asked = named(files);
         let project: HashSet<&SystemPathBuf> = here.keys().collect();
-        let mut out = Types { files: HashMap::new(), environment };
-        for (path, name) in &here {
-            let Ok(file) = system_path_to_file(&db, path) else { continue };
+        let mut out = Types { files: HashMap::new(), environment: self.environment, libs: vec![] };
+        let libs = std::cell::RefCell::new(std::collections::BTreeMap::new());
+        for (path, name) in &asked {
+            let Ok(file) = system_path_to_file(db, path) else { continue };
             let pf = db.program_file(file);
-            let model = SemanticModel::new(&db, pf);
-            let parsed = parsed_module(&db, pf.python_file(&db)).load(&db);
-            let mut reader = Reader { db: &db, model: &model, project: &project, here: &here, facts: Facts::default() };
+            let model = SemanticModel::new(db, pf);
+            let parsed = parsed_module(db, pf.python_file(db)).load(db);
+            let mut reader = Reader { db, model: &model, project: &project, here: &here, libs: &libs, facts: Facts::default() };
             reader.visit_body(parsed.suite());
             out.files.insert(name.clone(), reader.facts);
         }
+        out.libs = libs.into_inner().into_iter().map(|(path, module)| (module, path)).collect();
         out
     }
 }
@@ -372,6 +395,8 @@ struct Reader<'a, 'db> {
     model: &'a SemanticModel<'db>,
     project: &'a HashSet<&'a SystemPathBuf>,
     here: &'a HashMap<SystemPathBuf, String>,
+    /// The library files calls go into, with their modules' names.
+    libs: &'a std::cell::RefCell<std::collections::BTreeMap<PathBuf, String>>,
     facts: Facts,
 }
 
@@ -397,6 +422,20 @@ impl Reader<'_, '_> {
         self.target(t.definition(self.db, &env)?.focus_range(self.db)?)
     }
 
+    /// Where a call goes, noting the library file it goes into.
+    fn called(&self, range: FileRange) -> Option<Target> {
+        let target = self.target(range)?;
+        if let (Target::Lib(module), FilePath::System(p)) = (&target, range.file().path(self.db)) {
+            self.libs.borrow_mut().insert(p.as_std_path().to_path_buf(), module.clone());
+        }
+        Some(target)
+    }
+
+    fn called_type(&self, t: Type) -> Option<Target> {
+        let env = self.model.program_environment();
+        self.called(t.definition(self.db, &env)?.focus_range(self.db)?)
+    }
+
     /// Where calling `func` goes: by its type when that is a function or a class, else by
     /// where its name is defined, and for an instance also its class. A decorator without a
     /// return type erases a function's type, not where it is defined; a name on a value whose
@@ -410,7 +449,7 @@ impl Reader<'_, '_> {
             _ => None,
         };
         if let Some(by) = by {
-            if let Some(target) = self.defined(ty) {
+            if let Some(target) = self.called_type(ty) {
                 return vec![Callee { target, by }];
             }
         }
@@ -421,11 +460,11 @@ impl Reader<'_, '_> {
         };
         let mut out: Vec<Callee> = names
             .iter()
-            .filter_map(|d| self.target(d.focus_range(self.db)))
+            .filter_map(|d| self.called(d.focus_range(self.db)))
             .map(|target| Callee { target, by: By::Name })
             .collect();
         if matches!(ty, Type::NominalInstance(_)) {
-            out.extend(self.defined(ty).map(|target| Callee { target, by: By::Instance }));
+            out.extend(self.called_type(ty).map(|target| Callee { target, by: By::Instance }));
         }
         out.dedup();
         out

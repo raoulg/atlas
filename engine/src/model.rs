@@ -134,6 +134,9 @@ pub struct Node {
     /// The part of the repository the node belongs to.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub part: String,
+    /// Code of a library the project uses, read as far as the project's calls reach into it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub library: bool,
 }
 
 impl Default for NodeKind {

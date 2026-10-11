@@ -287,6 +287,18 @@ it has, and which classes that type names (`list[Node]` names `Node`). The two t
 tree-sitter's and ty's, meet at an expression's byte range; a notebook's cells are
 joined as ruff joins them, so the positions agree.
 
+A library the project's code calls is read as code where its source can be followed, as
+far as those calls reach into it: the module a call goes into, then the modules of the same
+library its own calls go into, until nothing new is reached. Its functions are steps like the
+project's, and what it reaches of the world is the world the project reaches through it
+(goad's `FileHandler.download` fetches a URL and writes the cache). What it holds but the
+project does not reach is dropped; what it calls in another library stays that library's call.
+Not read: the standard library, a package the effect tables below already describe (a
+network, database, file or model library, plotly), and a package with compiled code, whose
+source cannot be followed to the bottom. A library's code is drawn where a route steps into it,
+not as a package of the project, and `atlas check` does not judge it. A class handed to code
+Atlas reads (`pipeline.add(DiffValues)`) is built there.
+
 Where ty does not know a type, Atlas does not guess. A function without a return
 annotation gives back `Unknown`, a call on that value reaches nothing, and `atlas
 check` asks for the annotation. Without an environment, a dotted name through an import
@@ -312,7 +324,9 @@ defines what is called and by what that library's API does: a network library's 
 that is handed a URL (or sends on a socket) moves data, and a statement, a connection
 or a commit reaches a database, while building a client (a web or LLM library's class)
 or reading a response or rows that have arrived moves nothing. A database is named by
-what its driver reaches: the Bolt driver (`neo4j`) a graph database, whichever one. Rust
+what its driver reaches: the Bolt driver (`neo4j`) a graph database, whichever one. A figure
+is drawn to be seen: `show()` puts it on the screen, and a notebook shows each figure its cells
+make (matplotlib's `figure`, `subplots`), so on a notebook's route a figure is on the screen. Rust
 has no type checker to ask, so a library's value is traced to the call of a function on its
 type that made it, through the locals that hold it: building (`new`, `builder()` up to
 `build()`, `default`) moves nothing, and the value moves data where it is used

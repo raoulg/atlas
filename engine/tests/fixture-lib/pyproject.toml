@@ -1,0 +1,8 @@
+[project]
+name = "app"
+version = "0.1.0"
+requires-python = ">=3.12"
+
+# the libraries the app uses, where ty finds them, as it finds an environment's
+[tool.ty.environment]
+extra-paths = ["site-packages"]

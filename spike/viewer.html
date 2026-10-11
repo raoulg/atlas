@@ -297,9 +297,11 @@ const esc = s => s.replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c
 const chipW = name => 14 + name.length * 6.4;
 
 // ---------- indexes ----------
-const modules = D.nodes.filter(n => n.kind === "module");
+// a library read as code is drawn where a route steps into it, not as code of the project
+const OWN = D.nodes.filter(n => !n.library);
+const modules = OWN.filter(n => n.kind === "module");
 const symsOf = new Map();  // module id -> [class/function nodes]
-for (const n of D.nodes) if (n.kind === "class" || n.kind === "function") { if (!symsOf.has(n.module)) symsOf.set(n.module, []); symsOf.get(n.module).push(n); }
+for (const n of OWN) if (n.kind === "class" || n.kind === "function") { if (!symsOf.has(n.module)) symsOf.set(n.module, []); symsOf.get(n.module).push(n); }
 const out = new Map(), inn = new Map();
 for (const e of D.edges) { if (!out.has(e.src)) out.set(e.src, []); out.get(e.src).push(e); if (!inn.has(e.dst)) inn.set(e.dst, []); inn.get(e.dst).push(e); }
 const modOf = n => n.kind === "module" ? n.id : n.module;
@@ -338,8 +340,8 @@ for (const e of D.edges) {
   const g = agg.get(k); g.counts[KG[e.kind]]++; g.items.push(e);
 }
 
-document.getElementById("stats").textContent =
-  `${modules.length} modules · ${D.stats.nodes.class} classes · ${D.stats.nodes.function} functions · ${D.edges.length - D.stats.edges.contains} edges`;
+{ const count = k => OWN.filter(n => n.kind === k).length;
+  document.getElementById("stats").textContent = `${modules.length} modules · ${count("class")} classes · ${count("function")} functions · ${D.edges.filter(e => e.kind !== "contains" && !byId.get(e.src)?.library).length} edges`; }
 
 // ---------- svg + zoom ----------
 const svg = d3.select("#canvas"), scene = d3.select("#scene");
@@ -555,7 +557,7 @@ function focusModule(id, on) {
 // ---------- type lattice ----------
 function renderTypes() {
   const g = scene.node();
-  const classes = D.nodes.filter(n => n.kind === "class");
+  const classes = OWN.filter(n => n.kind === "class");
   const parentOf = new Map(), kids = new Map();
   for (const c of classes) { const e = (out.get(c.id) || []).find(x => x.kind === "inherits"); if (e) { parentOf.set(c.id, e.dst); if (!kids.has(e.dst)) kids.set(e.dst, []); kids.get(e.dst).push(c.id); } }
   const roots = [...new Set([...kids.keys()].filter(k => k.startsWith("ext:") || !parentOf.has(k)))];
@@ -637,7 +639,7 @@ async function renderSig() {
   const g = scene.node();
   const pairs = new Map(), producers = new Map(), consumers = new Map(), typeSet = new Set();
   const addPair = (a, b, f, kind) => { const k = a + ">" + b; if (!pairs.has(k)) pairs.set(k, {src: a, dst: b, fns: [], kind}); pairs.get(k).fns.push(f); typeSet.add(a); typeSet.add(b); };
-  for (const n of D.nodes) {
+  for (const n of OWN) {
     if (n.kind === "function" || n.kind === "method") {
       const es = out.get(n.id) || [];
       const T = [...new Set(es.filter(e => e.kind === "takes").map(e => e.dst))], R = [...new Set(es.filter(e => e.kind === "returns").map(e => e.dst))];
@@ -705,6 +707,7 @@ function verbOf(t) {
   if (t.kind === "net" && /^(get|post|put|delete|patch)$/.test(op)) return `${op.toUpperCase()}s`;
   if (t.kind === "net" && t.dir) return t.dir === "read" ? "downloads" : "uploads";
   if (t.kind === "screen" && op === "render") return "renders";
+  if (t.kind === "screen" && /^(figure|subplots|subplot_mosaic|show)$/.test(op)) return "draws";
   return VERB[t.kind] || t.kind;
 }
 const KIND_LABEL = {make: "Make", cli: "CLI", script: "Script", route: "API", mcp: "MCP", notebook: "Notebook", export: "Library", test: "Test"}, KIND_ORDER = ["make", "cli", "export", "script", "notebook", "route", "mcp", "test"];
@@ -874,7 +877,7 @@ const mutatesOf = id => [...new Set((out.get(id) || []).filter(e => e.kind === "
 // (`rkg.serve$`). A part's top level is the children of its own package, and each tree beside it
 // (scripts, notebooks) as one; a level with a single child is passed through
 const expandedUnits = new Set();
-const moduleIds = part => [...byId.values()].filter(n => n.kind === "module" && partOf(n) === part).map(n => n.id);
+const moduleIds = part => modules.filter(n => partOf(n) === part).map(n => n.id);
 const inUnit = (id, u) => { const m = byId.get(id)?.module ?? ""; return u.endsWith("$") ? m === u.slice(0, -1) : m === u || m.startsWith(u + "."); };
 const hasCode = m => (out.get(m) || []).some(e => e.kind === "contains") || !!(byId.get(m)?.touches || []).length;
 function unitsBelow(prefix, part) {
@@ -944,6 +947,7 @@ const isData = t => { const n = byId.get(t); return (n?.kind === "class" || n?.k
 // two units when one makes it and the other takes it
 const typeUse = { makes: new Map(), takes: new Map() };
 for (const e of D.edges) {
+  if (byId.get(e.src)?.library) continue;
   const m = e.kind === "takes" ? typeUse.takes : ["returns", "instantiates", "mutates"].includes(e.kind) ? typeUse.makes : null;
   if (m) { if (!m.has(e.dst)) m.set(e.dst, new Set()); m.get(e.dst).add(e.src); }
 }
@@ -995,6 +999,9 @@ const filePlace = path => {
   const d = dirFold.to.get(path) || path, k = dirFold.n.get(d);
   return k ? {id: "w:File:" + d, label: `File(${d}) · ${k}`, short: `${d} · ${k}`, kind: "world", folded: d} : {id: "w:File:" + path, label: `File(${path})`, short: path, kind: "world"};
 };
+// a figure made is seen where a notebook runs the cell that made it: on a notebook's route it is
+// on the screen, elsewhere only `show` puts it there
+const shownAs = t => t.kind === "figure" && byId.get(routeEntry)?.entry?.kind === "notebook" ? {...t, kind: "screen"} : t;
 // a part of the world, as the Flowchart names it: a file the code names, else coarse disk; a
 // database, the screen, a program
 function worldPlaceOf(t) {
@@ -1092,9 +1099,10 @@ async function renderPlaat() {
       if (!own && f.cls) for (const o of overrides(f)) merge(morphism(o, false, false, noReceiver));
     }
     const ownKeys = new Set((f.touches || []).map(touchKey));
-    for (const tc of (own ? f.touches || [] : reachTouches(f.id))) {
+    for (const raw of (own ? f.touches || [] : reachTouches(f.id))) {
+      const tc = shownAs(raw);
       if (!WORLD[tc.kind]) continue;
-      (isIn(tc) ? dom : cod).push([addPlace(worldPlace(tc)), !ownKeys.has(touchKey(tc))]);
+      (isIn(tc) ? dom : cod).push([addPlace(worldPlace(tc)), !ownKeys.has(touchKey(raw))]);
     }
     const sig = arr => { const m = new Map(); for (const [p, r] of arr) m.set(p, (m.has(p) ? m.get(p) : true) && r); return m; };
     return {dom: sig(dom), cod: sig(cod)};
@@ -1573,7 +1581,7 @@ function selectPlace(pid, label) {
     return;
   }
   const calls = [];
-  for (const n of D.nodes) for (const t of n.touches || []) if (WORLD[t.kind] && worldPlaceOf(t).id === pid) calls.push({n, t});
+  for (const n of D.nodes) for (const t of n.touches || []) { const s = shownAs(t); if (WORLD[s.kind] && worldPlaceOf(s).id === pid) calls.push({n, t: s}); }
   calls.sort((a, b) => a.n.file.localeCompare(b.n.file) || (a.t.line || 0) - (b.t.line || 0));
   insp.appendChild(html("div", "path", `${calls.length} ${calls.length === 1 ? "call" : "calls"} in the code`));
   const d = html("div", "links");
@@ -1696,7 +1704,7 @@ function legend() {
   L.appendChild(help);
 }
 const dl = document.getElementById("symbols");
-for (const n of D.nodes) if (n.kind !== "external" && n.kind !== "method") { const o = document.createElement("option"); o.value = short(n.id); dl.appendChild(o); }
+for (const n of OWN) if (n.kind !== "external" && n.kind !== "method") { const o = document.createElement("option"); o.value = short(n.id); dl.appendChild(o); }
 document.getElementById("search").addEventListener("change", ev => {
   const v = ev.target.value.trim(); const n = D.nodes.find(x => short(x.id) === v || x.name === v); if (!n) return;
   select(n.id);

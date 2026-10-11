@@ -126,7 +126,10 @@ Atlas reads:
 
 - **Python**, including the project's scripts and notebooks at any depth (`.py` and `.ipynb`
   outside the package, its tests and what git ignores), with
-  its types from [ty](https://docs.astral.sh/ty/);
+  its types from [ty](https://docs.astral.sh/ty/). The libraries it calls are read from its
+  environment as far as its calls reach into them, so a library's own steps can be opened
+  in a route; libraries with compiled code and the ones Atlas already knows (pandas,
+  requests, torch, …) stay closed;
 - **Rust**, including workspaces;
 - **TypeScript and TSX**: React components, server routes (Hono, Express, Fastify), TanStack
   routes and server functions, `tsconfig` paths.

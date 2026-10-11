@@ -169,6 +169,17 @@ pub fn boundary_rust(parts: &[String]) -> Option<&'static str> {
     }
 }
 
+/// Whether these tables say what a Python package's calls do. Its code is then not read: its
+/// calls are places, or nothing.
+pub fn described(pkg: &str) -> bool {
+    NET_PKGS.contains(&pkg)
+        || LLM_PKGS.contains(&pkg)
+        || ML_PKGS.contains(&pkg)
+        || FILE_PKGS.contains(&pkg)
+        || db_pkg(pkg).is_some()
+        || matches!(pkg, "click" | "typer" | "rich" | "pprint" | "subprocess" | "sys" | "builtins" | "plotly")
+}
+
 /// Classify a call that leaves the package, by the package that defines what is called.
 ///
 /// `pkg` is that package: the library of the call's callee, or of its receiver's type, and
@@ -193,6 +204,13 @@ pub fn boundary(pkg: Option<&str>, parts: &[String]) -> Option<&'static str> {
         || (pkg == "sys" && parts.len() == 3 && matches!(parts[1].as_str(), "stdout" | "stderr"))
     {
         return Some("screen");
+    }
+    // a figure is drawn to be seen: `show` puts it on the screen, and what makes one is a
+    // `figure`, which a notebook shows when the cell that made it ends
+    match (pkg, last) {
+        ("matplotlib" | "plotly", "show") => return Some("screen"),
+        ("matplotlib", "figure" | "subplots" | "subplot_mosaic") => return Some("figure"),
+        _ => {}
     }
     if NET_PKGS.contains(&pkg) {
         return NET_OPS.contains(&last).then_some("net");

@@ -15,7 +15,7 @@ use walkdir::WalkDir;
 mod paths;
 
 use crate::effects;
-use crate::pytypes::{By, Facts, FileArg, Target, Types, Value};
+use crate::pytypes::{By, Facts, FileArg, Target, Ty, Types, Value};
 use paths::{At, Built, Eval, Passed, Seg};
 use crate::entries::entry_of;
 use crate::model::{Compare, EdgeKind, Entry, EntryKind, Node, NodeKind, Touch};
@@ -53,6 +53,8 @@ struct Module {
     package: String,
     bindings: HashMap<String, String>,
     symbols: HashMap<String, String>,
+    /// Where each definition is, by its first line and its name: its byte range.
+    defs: std::cell::OnceCell<HashMap<(u32, String), (usize, usize)>>,
 }
 
 // ---------- tree helpers ----------
@@ -274,6 +276,7 @@ fn load_module(parser: &mut Parser, id: &str, path: &Path, is_pkg: bool) -> Resu
         package,
         bindings: HashMap::new(),
         symbols: HashMap::new(),
+        defs: std::cell::OnceCell::new(),
     })
 }
 
@@ -434,6 +437,7 @@ pub fn parse(pkg_dir: &Path, project_root: Option<&Path>) -> Result<(GraphBuilde
         }
     }
 
+    let types = read_libraries(&mut parser, &mut modules, &mut store, project_root.unwrap_or(base))?;
     for m in modules.values_mut() {
         collect_symbols(m, &mut store);
     }
@@ -442,12 +446,170 @@ pub fn parse(pkg_dir: &Path, project_root: Option<&Path>) -> Result<(GraphBuilde
         collect_imports(m, &module_ids, &mut store, &root);
         store.bindings.insert(m.id.clone(), m.bindings.clone());
     }
-    let files: Vec<(String, PathBuf)> = modules.values().map(|m| (crate::tree::path_str(&m.path), m.path.clone())).collect();
-    let types = Types::read(project_root.unwrap_or(base), &files);
     link(&modules, &mut store, &root, &types, project_root.unwrap_or(base));
     mark_exports(&modules, &mut store, &root);
     route_prefixes(&modules, &mut store);
+    keep_reached(&mut store);
     Ok((store, root))
+}
+
+/// The libraries the project's code calls, read as code as far as those calls reach into them:
+/// each library module a call goes into is read, then the modules of the same library its own
+/// calls go into, until nothing new is reached. What a library calls in another library stays
+/// that library's call, as the project's own calls into an unread library do. A library is read
+/// only where its source can be followed: not the standard library (ty knows it by its stubs),
+/// not a package the effect tables describe, and not one with compiled code. Returns ty's
+/// answers for every module read.
+fn read_libraries(parser: &mut Parser, modules: &mut IndexMap<String, Module>, store: &mut GraphBuilder, root_dir: &Path) -> Result<Types> {
+    let entry = |m: &Module| (crate::tree::path_str(&m.path), m.path.clone());
+    let mut files: Vec<(String, PathBuf)> = modules.values().map(entry).collect();
+    let Some(ty) = Ty::new(root_dir) else { return Ok(Types::default()) };
+    let mut types = ty.read(&files, &files);
+    let mut reached = types.libs.clone();
+    let used: HashSet<String> = reached.iter().map(|(m, _)| package_of(m)).collect();
+    let mut readable = Readable::default();
+    let here = std::fs::canonicalize(root_dir).unwrap_or_else(|_| root_dir.to_path_buf());
+    let project = files.len();
+    loop {
+        let mut fresh = vec![];
+        for (mid, path) in std::mem::take(&mut reached) {
+            if modules.contains_key(&mid) || !used.contains(&package_of(&mid)) || !readable.reads(&mid, &path) {
+                continue;
+            }
+            // a library in the project's environment is named from the project, like its own files
+            let shown = path.strip_prefix(&here).map(|r| root_dir.join(r)).unwrap_or_else(|_| path.clone());
+            let is_pkg = path.file_stem().and_then(|s| s.to_str()) == Some("__init__");
+            let Ok(m) = load_module(parser, &mid, &shown, is_pkg) else { continue };
+            store.files.insert(crate::tree::path_str(&shown), String::from_utf8_lossy(&m.src).to_string());
+            store.add_node(Node {
+                id: mid.clone(),
+                kind: NodeKind::Module,
+                name: mid.rsplit('.').next().unwrap_or(&mid).to_string(),
+                file: crate::tree::path_str(&shown),
+                span: Some((1, m.tree.root_node().end_position().row as u32 + 1)),
+                module: mid.clone(),
+                doc: first_docline(Some(m.tree.root_node()), &m.src),
+                is_pkg,
+                library: true,
+                ..Default::default()
+            });
+            fresh.push(entry(&m));
+            modules.insert(mid, m);
+        }
+        if fresh.is_empty() {
+            break;
+        }
+        reached = ty.read(&fresh, &fresh).libs;
+        files.extend(fresh);
+    }
+    // read together, a call into a library module read as code goes to its definition
+    if files.len() > project {
+        types = ty.read(&files, &files);
+    }
+    Ok(types)
+}
+
+/// Which library packages Atlas reads, each decided once by its directory.
+#[derive(Default)]
+struct Readable {
+    compiled: HashMap<PathBuf, bool>,
+}
+
+impl Readable {
+    /// Whether the module `mid` at `path` is read: Python source, in a package the effect
+    /// tables do not describe and that holds no compiled code.
+    fn reads(&mut self, mid: &str, path: &Path) -> bool {
+        if path.extension().and_then(|x| x.to_str()) != Some("py") {
+            return false;
+        }
+        let parts = mid.split('.').count();
+        if crate::effects::described(&package_of(mid)) {
+            return false;
+        }
+        let is_pkg = path.file_stem().and_then(|s| s.to_str()) == Some("__init__");
+        let Some(top) = path.ancestors().nth(parts - 1 + usize::from(is_pkg)).map(Path::to_path_buf) else { return false };
+        let compiled = self.compiled.entry(top.clone()).or_insert_with(|| {
+            WalkDir::new(&top).into_iter().flatten().any(|e| matches!(e.path().extension().and_then(|x| x.to_str()), Some("so" | "pyd" | "dylib")))
+        });
+        !*compiled
+    }
+}
+
+/// A library read as code keeps what the project reaches in it: the functions and classes its
+/// calls, constructions, signatures and fields lead to, with the bases and constructors of the
+/// classes, and the modules that hold them. The rest of a module read for one call is dropped.
+fn keep_reached(store: &mut GraphBuilder) {
+    let library: HashSet<String> = store.nodes.values().filter(|n| n.library || store.nodes.get(&n.module).map_or(false, |m| m.library)).map(|n| n.id.clone()).collect();
+    if library.is_empty() {
+        return;
+    }
+    for id in &library {
+        if let Some(n) = store.nodes.get_mut(id) {
+            n.library = true;
+            n.entry = None;
+        }
+    }
+    let follows = |k: EdgeKind| matches!(k, EdgeKind::Calls | EdgeKind::Instantiates | EdgeKind::Takes | EdgeKind::Returns | EdgeKind::Has | EdgeKind::Mutates | EdgeKind::Inherits | EdgeKind::Variant);
+    let mut out: HashMap<&str, Vec<&str>> = HashMap::new();
+    for e in store.edges.iter().filter(|e| follows(e.kind)) {
+        out.entry(e.src.as_str()).or_default().push(e.dst.as_str());
+    }
+    let bases: HashMap<&str, Vec<&str>> = store.edges.iter().filter(|e| e.kind == EdgeKind::Inherits).fold(HashMap::new(), |mut m, e| {
+        m.entry(e.src.as_str()).or_default().push(e.dst.as_str());
+        m
+    });
+    let ancestors = |c: &str| -> Vec<String> {
+        let (mut out, mut todo) = (vec![], vec![c.to_string()]);
+        while let Some(x) = todo.pop() {
+            for b in bases.get(x.as_str()).into_iter().flatten() {
+                if !out.iter().any(|o: &String| o == b) && out.len() < 32 {
+                    out.push(b.to_string());
+                    todo.push(b.to_string());
+                }
+            }
+        }
+        out
+    };
+    let mut kept: HashSet<String> = HashSet::new();
+    let mut stack: Vec<String> = store.nodes.keys().filter(|id| !library.contains(*id)).cloned().collect();
+    loop {
+        while let Some(id) = stack.pop() {
+            let mut next: Vec<String> = out.get(id.as_str()).map(|v| v.iter().map(|s| s.to_string()).collect()).unwrap_or_default();
+            // a class built is built by its constructor
+            if store.nodes.get(&id).map_or(false, |n| n.kind == NodeKind::Class) {
+                next.push(format!("{id}.__init__"));
+            }
+            for d in next {
+                if library.contains(&d) && store.nodes.contains_key(&d) && kept.insert(d.clone()) {
+                    stack.push(d);
+                }
+            }
+        }
+        // a class kept answers the calls into its bases with its own methods
+        for c in kept.iter().filter(|id| store.nodes.get(*id).map_or(false, |n| n.kind == NodeKind::Class)) {
+            for b in ancestors(c) {
+                for m in store.nodes.values().filter(|n| n.cls.as_deref() == Some(b.as_str()) && (kept.contains(&n.id) || !library.contains(&n.id))) {
+                    let own = format!("{c}.{}", m.name);
+                    if library.contains(&own) && store.nodes.contains_key(&own) && !kept.contains(&own) {
+                        stack.push(own);
+                    }
+                }
+            }
+        }
+        if stack.is_empty() {
+            break;
+        }
+        kept.extend(stack.iter().cloned());
+    }
+    // what is kept stands in its class and its module
+    let holders: Vec<String> = kept.iter().filter_map(|id| store.nodes.get(id)).flat_map(|n| [n.cls.clone(), Some(n.module.clone())]).flatten().collect();
+    kept.extend(holders);
+    let drop: HashSet<String> = library.into_iter().filter(|id| !kept.contains(id)).collect();
+    store.nodes.retain(|id, _| !drop.contains(id));
+    store.edges.retain(|e| !drop.contains(&e.src) && !drop.contains(&e.dst));
+    store.edge_set.retain(|(a, b, _)| !drop.contains(a) && !drop.contains(b));
+    let files: HashSet<String> = store.nodes.values().map(|n| n.file.clone()).collect();
+    store.files.retain(|f, _| files.contains(f));
 }
 
 /// A web app's routes at the paths a client asks for: under the prefix an app is mounted at
@@ -774,9 +936,18 @@ fn def_node<'t>(m: &'t Module, n: &Node) -> Option<TsNode<'t>> {
         return Some(m.tree.root_node());
     }
     let (start, _) = n.span?;
-    walk(m.tree.root_node(), &["function_definition", "class_definition"]).into_iter().find(|d| {
-        d.start_position().row as u32 + 1 == start && d.child_by_field_name("name").map_or(false, |x| text(x, &m.src) == n.name)
-    })
+    let defs = m.defs.get_or_init(|| {
+        walk(m.tree.root_node(), &["function_definition", "class_definition"])
+            .into_iter()
+            .filter_map(|d| Some(((d.start_position().row as u32 + 1, text(d.child_by_field_name("name")?, &m.src).to_string()), (d.start_byte(), d.end_byte()))))
+            .collect()
+    });
+    let &(a, b) = defs.get(&(start, n.name.clone()))?;
+    let mut d = m.tree.root_node().descendant_for_byte_range(a, b)?;
+    while !(matches!(d.kind(), "function_definition" | "class_definition") && d.start_byte() == a && d.end_byte() == b) {
+        d = d.parent()?;
+    }
+    Some(d)
 }
 
 fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, root: &str, types: &Types, root_dir: &Path) {
@@ -1084,6 +1255,12 @@ impl<'a> Seen<'a> {
             Some(Callee::Def(t)) if reached.is_empty() && function(&&t) => Some(t),
             _ => None,
         }
+    }
+
+    /// A class of the code Atlas reads, handed on as a value.
+    fn handed_class(&self, a: TsNode) -> Option<String> {
+        let reached = self.facts.map_or(&[][..], |x| x.callees(Self::range(a)));
+        reached.iter().filter(|c| c.by == By::Construct).find_map(|c| self.node(&c.target).filter(|t| self.is_class(t)).cloned())
     }
 
     /// Whether a library call that its package's table marks as reaching a place does move data,
@@ -1441,14 +1618,17 @@ fn link_calls<'t>(modules: &'t IndexMap<String, Module>, store: &mut GraphBuilde
                 }
             }
             let Some(fnode) = c.child_by_field_name("function") else { continue };
+            let callee = seen.callee(fnode);
             // a function of the package handed on as a value (`executor.submit(self.run, x)`,
-            // `Thread(target=work)`) is called by whoever receives it
+            // `Thread(target=work)`) is called by whoever receives it; a class handed to code
+            // Atlas reads (`pipeline.add(DiffValues, ..)`) is built there
             for a in handed_on(c) {
                 if let Some(t) = seen.handed_function(a) {
                     new_edges.push((t, EdgeKind::Calls, arms_of(a, body, src, &choices, &CHOICES)));
+                } else if let (Some(Callee::Def(_)), Some(t)) = (&callee, seen.handed_class(a)) {
+                    new_edges.push((t, EdgeKind::Instantiates, arms_of(a, body, src, &choices, &CHOICES)));
                 }
             }
-            let callee = seen.callee(fnode);
             if let Some(Callee::Def(t)) = &callee {
                 let kind = if seen.is_class(t) { EdgeKind::Instantiates } else { EdgeKind::Calls };
                 if kind == EdgeKind::Calls && value_used(c) {

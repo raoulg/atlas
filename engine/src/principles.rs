@@ -88,7 +88,8 @@ pub fn check(g: &Graph) -> Vec<Finding> {
     let ix = Index::new(g);
     let mut out = vec![];
     for rule in [doors, sums, overrides, places, changes, gives, choices] {
-        let mut found = rule(&ix);
+        // a library read as code is not the project's to change
+        let mut found: Vec<Finding> = rule(&ix).into_iter().filter(|f| ix.node(&f.node).map_or(true, |n| !n.library)).collect();
         found.sort_by(|a, b| (&a.file, a.line).cmp(&(&b.file, b.line)));
         out.extend(found);
     }
