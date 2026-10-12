@@ -109,10 +109,6 @@ pub struct Value {
 /// `list`, `dict`, a union) to each value's own class, but not into a class's own parameters
 /// (`ndarray[tuple[int], dtype[float64]]` is an `ndarray`).
 pub fn outer_classes(label: &str) -> Vec<String> {
-    const HOLDERS: &[&str] = &[
-        "tuple", "list", "dict", "set", "frozenset", "Optional", "Union", "Sequence", "Iterable", "Iterator", "Mapping",
-        "Generator", "Collection", "Tuple", "List", "Dict", "Set",
-    ];
     // split at depth 0 on `,` and `|`
     fn parts(s: &str) -> Vec<&str> {
         let (mut out, mut depth, mut start) = (vec![], 0, 0);
@@ -137,7 +133,7 @@ pub fn outer_classes(label: &str) -> Vec<String> {
             _ => (p, None),
         };
         match inner {
-            Some(inner) if HOLDERS.contains(&head) => out.extend(outer_classes(inner)),
+            Some(inner) if crate::knowledge::PYTHON_HOLDERS.contains(&head) || crate::knowledge::PYTHON_ALTERNATIVES.contains(&head) => out.extend(outer_classes(inner)),
             _ if !head.is_empty() => out.push(head.to_string()),
             _ => {}
         }

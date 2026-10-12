@@ -20,6 +20,7 @@ use paths::{Arg, At, Eval};
 
 use crate::builder::{foreign_type, ClassInfo, GraphBuilder, OwnTypes, SigInfo};
 use crate::body::{Crosses, Step, Steps};
+use crate::knowledge;
 use crate::effects::{self, Crossing};
 use crate::model::{EdgeKind, Entry, EntryKind, Held, Node, NodeKind, Param, Returns, Touch, World};
 use crate::tree::{
@@ -27,22 +28,10 @@ use crate::tree::{
     walk, what_of, ChoiceSyntax, CompareSyntax, Part,
 };
 
-/// Directories that hold no code of the author's.
-const SKIP_DIRS: &[&str] = &["node_modules", "dist", "build", "out", "coverage", "public", ".next", ".output", ".wrangler", ".vercel", ".turbo"];
 const EXTENSIONS: &[&str] = &["ts", "tsx", "mts", "cts", "js", "jsx", "mjs", "cjs"];
-/// Generic types whose arguments are the values they hold or stand for: `Promise<Regel[]>`
-/// hands on Regels. A generic class of a package or a library is a value of that class.
-const CONTAINERS: &[&str] = &[
-    "Promise", "Array", "ReadonlyArray", "Set", "ReadonlySet", "Map", "ReadonlyMap", "Record", "Partial", "Required", "Readonly",
-    "Pick", "Omit", "NonNullable", "Awaited", "Iterable", "AsyncIterable", "Generator", "AsyncGenerator",
-];
 /// Packages whose types describe the code rather than data it moves: a UI framework's
 /// components and props, a schema library's schemas.
 const OWN: OwnTypes = OwnTypes { packages: &["react", "react-dom", "preact", "vue", "svelte", "solid-js", "zod", "yup", "valibot", "superstruct", "io-ts"], names: &[] };
-/// Web frameworks whose router registers a route by a call: `app.get("/x", handler)`.
-const ROUTERS: &[&str] = &["hono", "express", "fastify", "koa-router", "@koa/router", "elysia", "itty-router", "h3"];
-/// A router's registration calls, by HTTP method.
-const VERBS: &[&str] = &["get", "post", "put", "delete", "patch", "all"];
 
 #[derive(Clone, Debug)]
 enum Bound {
@@ -284,7 +273,7 @@ fn collect_types(n: TsNode, src: &[u8], out: &mut Vec<Vec<String>>) {
         "generic_type" => {
             let Some(name) = n.child_by_field_name("name") else { return };
             let parts: Vec<String> = text(name, src).split('.').map(str::to_string).collect();
-            if CONTAINERS.contains(&parts.last().map(String::as_str).unwrap_or("")) {
+            if knowledge::TYPESCRIPT_CONTAINERS.contains(&parts.last().map(String::as_str).unwrap_or("")) {
                 if let Some(args) = n.child_by_field_name("type_arguments") {
                     collect_types(args, src, out);
                 }
@@ -363,7 +352,7 @@ pub fn parse(repo: &Path) -> Result<(GraphBuilder, String)> {
         .into_iter()
         .filter_entry(|e| {
             let n = e.file_name().to_str().unwrap_or("");
-            e.depth() == 0 || !(n.starts_with('.') || SKIP_DIRS.contains(&n))
+            e.depth() == 0 || !(n.starts_with('.') || knowledge::MADE_DIRS.contains(&n))
         })
         .flatten()
         .filter(|e| e.file_type().is_file() && is_code(e.path()))
@@ -494,14 +483,13 @@ fn function_in<'t>(value: TsNode<'t>) -> Option<TsNode<'t>> {
 fn route_path(value: TsNode, src: &[u8]) -> Option<String> {
     walk(value, &["call_expression"]).into_iter().find_map(|c| {
         let f = c.child_by_field_name("function")?;
-        match text(f, src) {
-            "createFileRoute" | "createLazyFileRoute" => {
-                let lit = c.child_by_field_name("arguments").and_then(|a| named_children(a).into_iter().find(|x| x.kind() == "string"))?;
-                Some(unquote(text(lit, src)))
-            }
-            "createRootRoute" | "createRootRouteWithContext" => Some("__root".into()),
-            _ => None,
+        let maker = text(f, src);
+        if knowledge::ROOT_ROUTES.contains(&maker) {
+            return Some("__root".into());
         }
+        knowledge::FILE_ROUTES.contains(&maker).then_some(())?;
+        let lit = c.child_by_field_name("arguments").and_then(|a| named_children(a).into_iter().find(|x| x.kind() == "string"))?;
+        Some(unquote(text(lit, src)))
     })
 }
 
@@ -989,7 +977,7 @@ fn promisified(value: TsNode, m: &Module, src: &[u8]) -> Option<Bound> {
         Bound::Ext(e) => package_from_ext(e, &m.ext_pkgs),
         Bound::Own(_) => return None,
     };
-    (pkg == "util" && parts.last().map(String::as_str) == Some("promisify")).then_some(())?;
+    knowledge::PROMISIFIERS.contains(&(pkg.as_str(), parts.last()?.as_str())).then_some(())?;
     let arg = named_children(value.child_by_field_name("arguments")?).into_iter().next().filter(|a| a.kind() == "identifier")?;
     m.bindings.get(text(arg, src)).cloned()
 }
@@ -1017,7 +1005,7 @@ fn made_by_package(value: TsNode, m: &Module, src: &[u8]) -> Option<String> {
 
 fn router_pkg(parts: &[String], m: &Module) -> bool {
     match parts.first().and_then(|h| m.bindings.get(h)) {
-        Some(Bound::Ext(e)) => ROUTERS.contains(&package_from_ext(e, &m.ext_pkgs).as_str()),
+        Some(Bound::Ext(e)) => knowledge::ROUTERS.contains(&package_from_ext(e, &m.ext_pkgs).as_str()),
         _ => false,
     }
 }
@@ -1058,13 +1046,17 @@ fn collect_routes(m: &mut Module, store: &mut GraphBuilder) {
         };
         let args = c.child_by_field_name("arguments").map(named_children).unwrap_or_default();
         let Some(path) = args.first().filter(|a| lit(**a)).map(|a| unquote(text(*a, &src))) else { continue };
-        if matches!(verb.as_str(), "route" | "use") {
-            if let Some(sub) = args.get(1).filter(|a| a.kind() == "identifier") {
+        if let Some(mount) = knowledge::MOUNTS.iter().find(|mt| mt.verb == verb) {
+            let sub = match mount.child {
+                knowledge::Arg::At(i) => args.get(i).filter(|a| a.kind() == "identifier"),
+                knowledge::Arg::Named(_) => None,
+            };
+            if let Some(sub) = sub.filter(|_| matches!(mount.prefix, knowledge::Arg::At(0))) {
                 m.mounts.push((router.clone(), path, text(*sub, &src).to_string()));
             }
             continue;
         }
-        if !VERBS.contains(&verb.as_str()) {
+        if !knowledge::registers_route(&verb) {
             continue;
         }
         let method = if verb == "all" { "GET".to_string() } else { verb.to_uppercase() };
@@ -1738,8 +1730,7 @@ impl<'a, 't> Body<'a, 't> {
 /// The HTTP method of a request: `fetch`'s `init.method` (GET when it has none), or the verb
 /// of the call.
 fn method_of_request<'t>(op: &str, args: &[TsNode<'t>], at: At<'_, 't>, eval: &Eval) -> Vec<crate::paths::Built> {
-    const HTTP: &[&str] = &["get", "post", "put", "patch", "delete", "head", "options"];
-    if HTTP.contains(&op) {
+    if knowledge::HTTP_METHODS.contains(&op) {
         return vec![crate::paths::lit(&op.to_uppercase())];
     }
     let init = args.get(1).filter(|a| a.kind() == "object").and_then(|o| {
@@ -1754,9 +1745,6 @@ fn method_of_request<'t>(op: &str, args: &[TsNode<'t>], at: At<'_, 't>, eval: &E
         None => vec![crate::paths::lit("GET")],
     }
 }
-
-/// Methods that change their receiver: an array's, a map's or a set's.
-const MUTATORS: &[&str] = &["push", "pop", "shift", "unshift", "splice", "sort", "reverse", "fill", "copyWithin", "set", "delete", "clear", "add"];
 
 /// The name a chain like `this.items[0].x` starts from.
 fn chain_root<'a>(n: TsNode, src: &'a [u8]) -> Option<&'a str> {
@@ -1785,7 +1773,7 @@ fn changed_roots<'a>(body: TsNode, src: &'a [u8]) -> std::collections::BTreeSet<
     }
     for c in walk(body, &["call_expression"]) {
         let Some(f) = c.child_by_field_name("function").filter(|f| f.kind() == "member_expression") else { continue };
-        if f.child_by_field_name("property").map_or(false, |p| MUTATORS.contains(&text(p, src))) {
+        if f.child_by_field_name("property").map_or(false, |p| knowledge::mutators(&["typescript"]).contains(&text(p, src))) {
             out.extend(f.child_by_field_name("object").and_then(|o| chain_root(o, src)));
         }
     }

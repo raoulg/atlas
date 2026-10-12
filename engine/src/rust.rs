@@ -14,6 +14,7 @@ use tree_sitter::{Node as TsNode, Parser, Tree};
 use walkdir::WalkDir;
 
 use crate::body::{Crosses, Step, Steps};
+use crate::knowledge;
 use crate::effects::{self, Crossing};
 use crate::model::{EdgeKind, Entry, EntryKind, Held, Node, NodeKind, Param, Returns, Touch, World};
 use crate::builder::{foreign_type, ClassInfo, GraphBuilder, OwnTypes, SigInfo};
@@ -880,7 +881,7 @@ struct Made<'t> {
 /// a call gave (`unwrap`).
 fn moved_by(ty: &[String], op: &str) -> Option<Crossing> {
     match op {
-        _ if UNWRAPS.contains(&op) => None,
+        _ if knowledge::hands_on(op) => None,
         _ if effects::RUST_PATH_READS.contains(&op) => Some(Crossing::read(World::Disk)),
         _ => effects::boundary_rust(&[ty, &[op.to_string()]].concat()),
     }
@@ -895,7 +896,6 @@ fn place_literals(n: TsNode, src: &[u8]) -> Vec<String> {
     }
 }
 
-/// Methods of std's `Result` and `Option`: they open what a call gave, and move nothing.
 /// The name a call's value is kept by: `let x = f(..)?`, `let x = f(..).unwrap()`, `x = f(..)`.
 fn kept_as(c: TsNode, src: &[u8]) -> Option<String> {
     let mut n = c;
@@ -906,7 +906,7 @@ fn kept_as(c: TsNode, src: &[u8]) -> Option<String> {
             // `.unwrap()` and its kind hand on the value they are called on
             "field_expression" => {
                 let call = p.parent().filter(|x| x.kind() == "call_expression")?;
-                if !p.child_by_field_name("field").map_or(false, |f| UNWRAPS.contains(&text(f, src))) {
+                if !p.child_by_field_name("field").map_or(false, |f| knowledge::hands_on(text(f, src))) {
                     return None;
                 }
                 n = call;
@@ -922,8 +922,6 @@ fn kept_as(c: TsNode, src: &[u8]) -> Option<String> {
         }
     }
 }
-
-const UNWRAPS: &[&str] = &["unwrap", "expect", "unwrap_or", "unwrap_or_else", "unwrap_or_default", "ok", "err", "ok_or", "ok_or_else", "map", "map_err", "and_then", "or_else", "context", "with_context"];
 
 /// The library value a chain of method calls starts from: a call of a function on a library's
 /// type (`OpenOptions::new()`), reached through the locals that hold what it made
@@ -1099,7 +1097,7 @@ impl<'a, 't> Body<'a, 't> {
                 value = match v.kind() {
                     "try_expression" | "await_expression" | "unary_expression" | "reference_expression" | "parenthesized_expression" => named_children(v).into_iter().next(),
                     "call_expression" => match v.child_by_field_name("function") {
-                        Some(f) if f.kind() == "field_expression" && f.child_by_field_name("field").map_or(false, |x| UNWRAPS.contains(&text(x, src))) => f.child_by_field_name("value"),
+                        Some(f) if f.kind() == "field_expression" && f.child_by_field_name("field").map_or(false, |x| knowledge::hands_on(text(x, src))) => f.child_by_field_name("value"),
                         _ => break,
                     },
                     _ => break,
@@ -1274,13 +1272,14 @@ impl<'a, 't> Body<'a, 't> {
         let moved = made.as_ref().and_then(|x| {
             let here: Vec<(String, TsNode)> = x.here.iter().cloned().chain([(method.to_string(), c)]).collect();
             // a builder's calls up to its `build` build, and move nothing (C-BUILDER)
-            let built = if x.ctor.last().map(String::as_str) == Some("builder") { x.before.iter().chain(&here).position(|(op, _)| op == "build").map_or(usize::MAX, |i| i + 1) } else { 0 };
+            let (start, end) = knowledge::BUILDER;
+            let built = if x.ctor.last().map(String::as_str) == Some(start) { x.before.iter().chain(&here).position(|(op, _)| op == end).map_or(usize::MAX, |i| i + 1) } else { 0 };
             let moves = |i: usize, op: &str| if i < built { None } else { moved_by(&x.ty, op) };
             let n = x.before.len();
             // the move is named by the first call a library knows by name, else the first that moves
             let (kind, op) = here.iter().enumerate().filter_map(|(i, (op, _))| moves(n + i, op).map(|k| (k, op.clone()))).min_by_key(|(k, _)| *k == Crossing::to(World::Disk))?;
             let touched = effects::boundary_rust(&x.ctor).is_some() || x.before.iter().enumerate().any(|(i, (op, _))| moves(i, op).is_some());
-            let writes = x.before.iter().chain(&here).any(|(o, _)| matches!(o.as_str(), "write" | "append" | "create" | "create_new" | "truncate"));
+            let writes = x.before.iter().chain(&here).any(|(o, _)| knowledge::OPENS_TO_WRITE.contains(&o.as_str()));
             let own: Vec<String> = here.iter().flat_map(|(_, n)| n.child_by_field_name("arguments").map(|a| place_literals(a, src)).unwrap_or_default()).collect();
             Some((if writes && kind.world == World::Disk { Crossing::write(World::Disk) } else { kind }, op, touched, own))
         });

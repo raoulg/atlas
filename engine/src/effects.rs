@@ -152,7 +152,7 @@ pub fn boundary_rust(parts: &[String]) -> Option<Crossing> {
     let has = |p: &str| parts.iter().any(|x| x == p);
     // building moves nothing: `Client::new()`, `Client::builder()..build()`, `OpenOptions::new()`
     // (Rust's constructor conventions, C-CTOR and C-BUILDER)
-    let builds = matches!(last, "new" | "builder" | "default" | "build");
+    let builds = crate::knowledge::BUILDS.contains(&last);
     if has("fs") {
         if builds {
             return None;

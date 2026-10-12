@@ -11,10 +11,7 @@ use regex::Regex;
 use walkdir::WalkDir;
 
 use crate::model::{Edge, EdgeKind, EntryKind, Graph, NodeKind, Part};
-use crate::Options;
-
-/// Directories that hold no part: dependencies, build output, and the data tests read.
-const SKIP_DIRS: &[&str] = &["node_modules", "target", "dist", "build", "venv", "site-packages", "__pycache__", "tests", "test", "__tests__", "fixtures", "testdata"];
+use crate::{knowledge, Options};
 
 /// The directories whose manifests root a part: the repository itself, and every manifest
 /// below it in a language no enclosing part already reads (a workspace's member crates belong
@@ -23,7 +20,8 @@ pub fn roots(repo: &Path, opts: &Options) -> Vec<(PathBuf, &'static str)> {
     let mut out: Vec<(PathBuf, &'static str)> = vec![];
     let walk = WalkDir::new(repo).max_depth(5).sort_by_file_name().into_iter().filter_entry(|e| {
         let n = e.file_name().to_str().unwrap_or("");
-        e.depth() == 0 || !(n.starts_with('.') || SKIP_DIRS.contains(&n))
+        // no part is under what a tool made, or under tests and the data they read
+        e.depth() == 0 || !(n.starts_with('.') || knowledge::MADE_DIRS.contains(&n) || knowledge::TEST_DIRS.contains(&n))
     });
     for e in walk.flatten().filter(|e| e.file_type().is_dir()) {
         for l in crate::language::languages() {

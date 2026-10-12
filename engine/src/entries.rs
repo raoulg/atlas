@@ -9,8 +9,6 @@ use regex::Regex;
 use crate::model::{Entry, EntryKind, Graph, MakeTarget, NodeKind};
 use crate::builder::GraphBuilder;
 
-const HTTP_METHODS: &[&str] = &["get", "post", "put", "delete", "patch", "websocket"];
-
 fn deco_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| Regex::new(r#"^([\w.]+)\s*(?:\(\s*(?:['"]([^'"]*)['"])?)?"#).unwrap())
@@ -54,7 +52,7 @@ pub fn entry_of(decorators: &[String], name: &str) -> Option<Entry> {
             let label = arg.unwrap_or_else(|| name.replace('_', "-"));
             return Some(Entry { kind: EntryKind::Cli, label });
         }
-        if HTTP_METHODS.contains(&last) && parts.len() == 2 {
+        if crate::knowledge::registers_route(last) && parts.len() == 2 {
             let label = format!("{} {}", last.to_uppercase(), arg.unwrap_or_default()).trim().to_string();
             return Some(Entry { kind: EntryKind::Route, label });
         }

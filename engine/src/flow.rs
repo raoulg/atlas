@@ -346,7 +346,7 @@ impl Touch {
         match (self.kind, self.dir) {
             (World::Db(_), Some(Dir::Read)) => "reads".into(),
             (World::Db(_), Some(Dir::Write)) => "writes".into(),
-            (World::Net, _) if matches!(op, "get" | "post" | "put" | "delete" | "patch") => format!("{}s", op.to_uppercase()),
+            (World::Net, _) if crate::knowledge::HTTP_METHODS.contains(&op) => format!("{}s", op.to_uppercase()),
             (World::Net, Some(Dir::Read)) => "downloads".into(),
             (World::Net, Some(Dir::Write)) => "uploads".into(),
             (World::Net, None) => "calls".into(),

@@ -34,19 +34,6 @@ const BUILTIN_TYPES: &[&str] = &[
     "Annotated",
 ];
 
-/// Generic types whose parameters are the values they hold or stand for: `list[Graph]` holds
-/// Graphs, `Optional[Node]` is a Node or nothing. A generic class of a package or a library
-/// (`VectorCache[TVectorizer]`, `Dataset[Row]`) is a value of that class; its parameters are
-/// types, not values that come along.
-const CONTAINERS: &[&str] = &[
-    "list", "dict", "set", "tuple", "frozenset", "type", "Optional", "Union", "Iterable", "Iterator", "Sequence",
-    "Mapping", "Callable", "Generator", "AsyncIterator", "Awaitable", "Annotated", "ClassVar", "List", "Dict",
-    "Tuple", "Set", "FrozenSet", "Type", "Deque", "deque", "DefaultDict", "defaultdict", "OrderedDict", "Counter",
-    "ChainMap", "Collection", "Container", "AbstractSet", "MutableSet", "MutableSequence", "MutableMapping",
-    "AsyncIterable", "AsyncGenerator", "Coroutine", "Reversible", "Final", "Required", "NotRequired", "ReadOnly",
-    "TypeGuard", "TypeIs", "Unpack",
-];
-
 struct Module {
     id: String,
     path: PathBuf,
@@ -123,7 +110,7 @@ fn type_names(t: Option<TsNode>, src: &[u8]) -> Vec<Vec<String>> {
             "subscript" => (dotted(g.child_by_field_name("value"), src), field_children(g, "subscript")),
             _ => (dotted(named_children(g).first().copied(), src), named_children(g).into_iter().filter(|k| k.kind() == "type_parameter").collect()),
         };
-        if head.last().map_or(false, |h| !CONTAINERS.contains(&h.as_str())) {
+        if head.last().map_or(false, |h| !knowledge::python_container(h)) {
             params.extend(args);
         }
     }
@@ -176,7 +163,7 @@ fn quoted_values(lit: &str) -> Vec<&str> {
             last = w;
         }
         match c {
-            '[' => opaque.push(!CONTAINERS.contains(&last.rsplit('.').next().unwrap_or(last))),
+            '[' => opaque.push(!knowledge::python_container(last.rsplit('.').next().unwrap_or(last))),
             ']' => {
                 opaque.pop();
             }
@@ -330,7 +317,6 @@ pub fn named_under(dir: &Path, named: &[PathBuf]) -> Vec<PathBuf> {
 /// what git ignores, hidden directories or environments, and not another package or project
 /// inside it (a directory with an `__init__.py` or a `pyproject.toml`).
 fn scripts(root_dir: &Path, pkg_dir: Option<&Path>, named: &[PathBuf]) -> Vec<PathBuf> {
-    const NOT: &[&str] = &["tests", "test", "node_modules", "venv", "env", "build", "dist", "site-packages", "__pycache__"];
     // without a package or a project file, the project is the files named
     if pkg_dir.is_none() && !root_dir.join("pyproject.toml").exists() {
         return named_under(root_dir, named);
@@ -344,7 +330,7 @@ fn scripts(root_dir: &Path, pkg_dir: Option<&Path>, named: &[PathBuf]) -> Vec<Pa
             let dir = e.file_type().map_or(false, |t| t.is_dir());
             e.depth() == 0
                 || !dir
-                || !(NOT.contains(&name) || std::fs::canonicalize(p).map_or(false, |c| c == pkg) || p.join("__init__.py").exists() || p.join("pyproject.toml").exists())
+                || !(knowledge::MADE_DIRS.contains(&name) || knowledge::TEST_DIRS.contains(&name) || std::fs::canonicalize(p).map_or(false, |c| c == pkg) || p.join("__init__.py").exists() || p.join("pyproject.toml").exists())
         })
         .build()
         .flatten()
@@ -670,41 +656,47 @@ fn route_prefixes(modules: &IndexMap<String, Module>, store: &mut GraphBuilder) 
                 .into_iter()
                 .filter(|a| !matches!(a.kind(), "keyword_argument" | "comment"))
                 .collect();
-            let name_at = |i: usize| positional.get(i).filter(|a| a.kind() == "identifier").map(|a| text(*a, src).to_string());
-            match (f.kind(), f.child_by_field_name("attribute").map(|a| text(a, src))) {
-                ("attribute", Some("mount")) => {
-                    let parent = f.child_by_field_name("object").map(|o| text(o, src).to_string());
-                    let path = positional.first().filter(|a| a.kind() == "string").map(|a| unquote(text(*a, src)));
-                    if let (Some(parent), Some(path), Some(child)) = (parent, path, name_at(1)) {
-                        mounted.insert(key(&child), (key(&parent), path));
-                    }
+            // an argument as handed: a literal string or a name
+            let handed = |arg: &knowledge::Arg, kind: &str| match arg {
+                knowledge::Arg::At(i) => positional.get(*i).filter(|a| a.kind() == kind).map(|a| text(*a, src)),
+                knowledge::Arg::Named(k) => named_children(call.child_by_field_name("arguments")?)
+                    .into_iter()
+                    .find(|a| a.kind() == "keyword_argument" && a.child_by_field_name("name").map(|n| text(n, src)) == Some(*k))
+                    .and_then(|a| a.child_by_field_name("value"))
+                    .filter(|v| v.kind() == kind)
+                    .map(|v| text(v, src)),
+            };
+            let verb = (f.kind() == "attribute").then(|| f.child_by_field_name("attribute").map(|a| text(a, src))).flatten();
+            if let Some(mount) = knowledge::MOUNTS.iter().find(|mt| Some(mt.verb) == verb) {
+                let parent = f.child_by_field_name("object").map(|o| text(o, src).to_string());
+                let prefix = match handed(&mount.prefix, "string") {
+                    Some(p) => Some(unquote(p)),
+                    None => matches!(mount.prefix, knowledge::Arg::Named(_)).then(String::new),
+                };
+                if let (Some(parent), Some(prefix), Some(child)) = (parent, prefix, handed(&mount.child, "identifier")) {
+                    mounted.insert(key(child), (key(&parent), prefix));
                 }
-                ("attribute", Some("include_router")) => {
-                    let parent = f.child_by_field_name("object").map(|o| text(o, src).to_string());
-                    if let (Some(parent), Some(child)) = (parent, name_at(0)) {
-                        let prefix = lit_kw(call, src, "prefix").unwrap_or_default();
-                        mounted.insert(key(&child), (key(&parent), prefix));
-                    }
+            }
+            for (router, keyword) in knowledge::PREFIXED_ROUTERS {
+                if !text(f, src).ends_with(router) {
+                    continue;
                 }
-                _ if text(f, src).ends_with("APIRouter") => {
-                    let target = call.parent().filter(|p| p.kind() == "assignment").and_then(|a| a.child_by_field_name("left")).filter(|l| l.kind() == "identifier");
-                    if let (Some(t), Some(prefix)) = (target, lit_kw(call, src, "prefix")) {
-                        own.insert(key(text(t, src)), prefix);
-                    }
+                let target = call.parent().filter(|p| p.kind() == "assignment").and_then(|a| a.child_by_field_name("left")).filter(|l| l.kind() == "identifier");
+                if let (Some(t), Some(prefix)) = (target, lit_kw(call, src, keyword)) {
+                    own.insert(key(text(t, src)), prefix);
                 }
-                _ => {}
             }
         }
     }
     // each route by the app or router it is declared on: `@router.get(..)`
-    const VERBS: &[&str] = &["get(", "post(", "put(", "delete(", "patch(", "websocket("];
     let routes: Vec<(String, String)> = store
         .nodes
         .values()
         .filter(|n| n.entry.as_ref().map_or(false, |e| e.kind == EntryKind::Route))
         .filter_map(|n| {
             let m = modules.get(&n.module)?;
-            let recv = n.decorators.iter().find_map(|d| d.split_once('.').filter(|(_, rest)| VERBS.iter().any(|v| rest.starts_with(v))).map(|(r, _)| r.to_string()))?;
+            let registers = |rest: &str| rest.split_once('(').map_or(false, |(verb, _)| knowledge::registers_route(verb));
+            let recv = n.decorators.iter().find_map(|d| d.split_once('.').filter(|(_, rest)| registers(rest)).map(|(r, _)| r.to_string()))?;
             Some((n.id.clone(), m.bindings.get(&recv).cloned().unwrap_or_else(|| format!("{}.{recv}", m.id))))
         })
         .collect();
@@ -1118,12 +1110,6 @@ fn param_types(m: &Module, d: TsNode, modules: &IndexMap<String, Module>, nodes:
     out
 }
 
-/// Methods that change their library receiver: `xs.append(..)`, `g.add_node(..)`.
-const MUTATORS: &[&str] = &[
-    "append", "extend", "insert", "remove", "pop", "clear", "update", "add", "discard", "setdefault", "sort", "reverse",
-    "popitem", "add_node", "add_edge", "add_nodes_from", "add_edges_from", "remove_node", "remove_edge", "push",
-];
-
 /// The name a chain like `self.items[0].x` starts from.
 fn root_name<'a>(n: TsNode, src: &'a [u8]) -> Option<&'a str> {
     match n.kind() {
@@ -1149,7 +1135,7 @@ fn changed_roots<'a>(body: TsNode, src: &'a [u8], mutating: &dyn Fn(TsNode) -> b
         let Some(f) = c.child_by_field_name("function").filter(|f| f.kind() == "attribute") else { continue };
         let Some(obj) = f.child_by_field_name("object") else { continue };
         let name = f.child_by_field_name("attribute").map(|a| text(a, src)).unwrap_or("");
-        if MUTATORS.contains(&name) || mutating(c) {
+        if knowledge::mutators(&["python", "networkx"]).contains(&name) || mutating(c) {
             out.extend(root_name(obj, src));
         }
     }
@@ -2045,7 +2031,7 @@ fn crossed<'t>(seen: &Seen, eval: &Eval, at: At<'_, 't>, c: TsNode<'t>, fnode: T
                 cr.fixed = crate::tree::head_literal(a, src, &["string"]);
             }
             let said = match cr.facts.kind {
-                World::Db(db) => effects::access(db, op, keyword(c, src, &["routing_", "default_access_mode"]).as_deref()),
+                World::Db(db) => effects::access(db, op, keyword(c, src, knowledge::DRIVER_ACCESS).as_deref()),
                 _ => None,
             };
             // the work a managed transaction is handed runs in its direction
