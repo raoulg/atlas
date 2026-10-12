@@ -176,6 +176,12 @@ impl<'a> Eval<'a> {
             return Some(self.of(at.of_definition(m, offset), value, depth + 1));
         }
         match p.kind() {
+            // a field a value is built from (a dataclass's, a model's): what its builders hand it
+            "assignment" if p.child_by_field_name("type").is_some() && field_of(p, &m.src).is_some() => {
+                let class = field_of(p, &m.src)?;
+                let id = function_id(m, class)?;
+                Some(vec![vec![Seg::Held(format!("{id}.__init__"), name)]])
+            }
             "assignment" => {
                 let right = p.child_by_field_name("right")?;
                 let here = at.of_definition(m, offset);
@@ -302,6 +308,19 @@ fn function_id(m: &Module, d: TsNode) -> Option<String> {
     }
     names.reverse();
     Some(format!("{}.{}", m.id, names.join(".")))
+}
+
+/// The class an assignment declares a field of: one written in the body of a class that has no
+/// `__init__` of its own, so that it is built from its fields.
+fn field_of<'t>(a: TsNode<'t>, src: &[u8]) -> Option<TsNode<'t>> {
+    let st = a.parent().filter(|x| x.kind() == "expression_statement")?;
+    let class = st.parent().filter(|x| x.kind() == "block")?.parent().filter(|x| x.kind() == "class_definition")?;
+    let body = class.child_by_field_name("body")?;
+    let own_init = named_children(body).into_iter().any(|d| {
+        let d = if d.kind() == "decorated_definition" { d.child_by_field_name("definition").unwrap_or(d) } else { d };
+        d.kind() == "function_definition" && d.child_by_field_name("name").map(|n| text(n, src)) == Some("__init__")
+    });
+    (!own_init).then_some(class)
 }
 
 /// Whether a function is a method: defined in a class's body.

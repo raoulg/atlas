@@ -72,6 +72,14 @@ impl GraphBuilder {
     }
 
     /// Record a boundary call on a node; the same call again counts up.
+    /// A call as it was read, for the routes that reach none of the callers that make it whole.
+    pub fn instead(&mut self, id: &str, t: Touch) {
+        let Some(n) = self.nodes.get_mut(id) else { return };
+        if !n.instead.iter().any(|x| x.kind == t.kind && x.what == t.what && x.op == t.op && x.line == t.line) {
+            n.instead.push(Touch { n: 1, by: vec![], users_of: vec![], ..t });
+        }
+    }
+
     pub fn touch(&mut self, id: &str, t: Touch) {
         let Some(n) = self.nodes.get_mut(id) else { return };
         match n.touches.iter_mut().find(|x| x.kind == t.kind && x.what == t.what && x.op == t.op && x.artifact == t.artifact && x.dir == t.dir) {

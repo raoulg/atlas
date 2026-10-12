@@ -1584,12 +1584,15 @@ impl<'a, 't> Body<'a, 't> {
         }
     }
 
-    /// `new T(..)` of one of the program's classes.
-    fn constructed(&self, steps: &mut Steps, c: TsNode<'t>) {
+    /// `new T(..)` of one of the program's classes, handing its constructor its arguments.
+    fn constructed(&mut self, steps: &mut Steps, c: TsNode<'t>) {
         let parts = c.child_by_field_name("constructor").map(|x| member_parts(x, self.src)).unwrap_or_default();
         if let Some(r) = self.class(self.resolve(&parts).filter(|r| self.own(r))) {
             let step = Step { hands: self.hands(&[c.child_by_field_name("arguments")], &steps.kept), gives: self.gives(c, Some(&r)), ..Default::default() };
             steps.call(c, &r, EdgeKind::Instantiates, None, step);
+            if let Some(a) = argument(self.modules, self.store, &self.id, &format!("{r}.constructor"), c, self.m, self.scope, &self.params) {
+                self.read.args.push(a);
+            }
         }
     }
 

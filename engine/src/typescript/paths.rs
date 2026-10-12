@@ -135,6 +135,14 @@ impl<'a> Eval<'a> {
         if matches!(parts.as_slice(), [p, env, _] if p == "process" && env == "env") {
             return vec![hole(&format!("${last}"))];
         }
+        // what an object holds: a field its constructor sets from what it is handed
+        if let [this, name] = parts.as_slice() {
+            if this == "this" {
+                if let Some(v) = self.held(at, e, name, depth) {
+                    return v;
+                }
+            }
+        }
         // a constant of an own module imported whole: `paths.DATA_DIR`
         if let [head, name] = parts.as_slice() {
             if let Some(Bound::Own(target)) = at.m.bindings.get(head) {
@@ -146,6 +154,36 @@ impl<'a> Eval<'a> {
             }
         }
         vec![hole(&last)]
+    }
+
+    /// The field `name` of the class `e` is written in, as its constructor sets it: a parameter
+    /// property (`constructor(private dir: string)`) or `this.dir = ..` in the constructor's body,
+    /// from what the constructor's callers hand it; else the field's own initializer.
+    fn held<'t>(&self, at: At<'_, 't>, e: TsNode<'t>, name: &str, depth: u32) -> Option<Vec<Built>> {
+        let src = &at.m.src;
+        let mut class = e.parent();
+        while let Some(c) = class.filter(|c| !matches!(c.kind(), "class_declaration" | "class" | "abstract_class_declaration")) {
+            class = c.parent();
+        }
+        let class = class?;
+        let id = format!("{}.{}", at.m.id, text(class.child_by_field_name("name")?, src));
+        let members = named_children(class.child_by_field_name("body")?);
+        let ctor = members.iter().find(|m| m.kind() == "method_definition" && m.child_by_field_name("name").map(|n| text(n, src)) == Some("constructor"));
+        let held = |p: String| vec![vec![Seg::Held(format!("{id}.constructor"), p)]];
+        if let Some(ctor) = ctor {
+            let params = ctor.child_by_field_name("parameters").map(named_children).unwrap_or_default();
+            if params.iter().any(|p| named_children(*p).iter().any(|c| c.kind() == "accessibility_modifier") && p.child_by_field_name("pattern").map(|x| text(x, src)) == Some(name)) {
+                return Some(held(name.to_string()));
+            }
+            let set = walk(ctor.child_by_field_name("body")?, &["assignment_expression"]).into_iter().find(|a| a.child_by_field_name("left").map(|l| member_parts(l, src)) == Some(vec!["this".to_string(), name.to_string()]));
+            if let Some(right) = set.and_then(|a| a.child_by_field_name("right")) {
+                let names = param_names(*ctor, src);
+                let vals = self.of(At { m: at.m, scope: Some(*ctor), params: &names }, right, depth + 1);
+                return Some(vals.into_iter().map(|b| b.into_iter().map(|s| if let Seg::Param(x) = s { Seg::Held(format!("{id}.constructor"), x) } else { s }).collect()).collect());
+            }
+        }
+        let field = members.iter().find(|m| m.kind() == "public_field_definition" && m.child_by_field_name("name").map(|n| text(n, src)) == Some(name))?;
+        field.child_by_field_name("value").map(|v| self.of(At { m: at.m, scope: None, params: &[] }, v, depth + 1))
     }
 
     fn name<'t>(&self, at: At<'_, 't>, e: TsNode<'t>, depth: u32) -> Vec<Built> {

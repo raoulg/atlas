@@ -105,3 +105,23 @@ pub fn run(path: &str, sql: &str) -> usize {
 pub fn forget(path: &str) -> usize {
     run(path, "DELETE FROM seen")
 }
+
+/// Keeps lines in the folder it is built with.
+pub struct Store {
+    root: PathBuf,
+}
+
+impl Store {
+    pub fn new(root: PathBuf) -> Self {
+        Self { root }
+    }
+
+    pub fn keep(&self, line: &str) -> std::io::Result<()> {
+        std::fs::write(self.root.join("kept.txt"), line)
+    }
+}
+
+pub fn stock(line: &str) -> std::io::Result<()> {
+    let store = Store::new(PathBuf::from("stock"));
+    store.keep(line)
+}

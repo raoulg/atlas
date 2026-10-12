@@ -151,6 +151,18 @@ fn an_object_holds_what_its_constructor_was_handed() {
     let g = fixture();
     let keep: Vec<(&str, Vec<String>)> = g.node("fixture.store.Cache.keep").unwrap().touches.iter().map(|t| (t.artifact.as_str(), t.by.clone())).collect();
     assert_eq!(keep, [("warm/a.txt", vec!["fixture.store.warm".to_string()])]);
+    // a dataclass is built from its fields: `Bin(root=Path("tidy"))`
+    let drop: Vec<&str> = g.node("fixture.store.Bin.drop").unwrap().touches.iter().map(|t| t.artifact.as_str()).collect();
+    assert_eq!(drop, ["tidy/x.txt"]);
+    // a Rust struct literal sets its fields: `Self { root }` in `Store::new(root)`
+    let rs = analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixture-rs"), &Options::default()).unwrap();
+    let keep: Vec<&str> = rs.node("handed.world.Store.keep").unwrap().touches.iter().map(|t| t.artifact.as_str()).collect();
+    assert_eq!(keep, ["stock/kept.txt"], "`Store::new(PathBuf::from(\"stock\"))`");
+    // the place is `stock`'s: a route that does not build the value sees the call as it was read
+    let stock = atlas_engine::story::route(&rs, "handed.world.stock", 3).unwrap();
+    assert!(stock.contains("writes stock/kept.txt"), "{stock}");
+    let own = atlas_engine::story::route(&rs, "handed.world.Store.keep", 3).unwrap();
+    assert!(own.contains("writes") && !own.contains("stock/kept.txt"), "{own}");
 }
 
 /// SQL is read by its grammar: a statement writes the table it changes and reads the ones it

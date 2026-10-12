@@ -526,7 +526,7 @@ const entries = [...byId.values()].filter(n => n.entry).sort((a, b) => (partRank
 // calls in the order they run, a method called on a known class that class's), or on any value
 const FLOW = (D.flow || {}).bodies || {}, ARROWS = (D.flow || {}).arrows || {};
 // where each touch is drawn, as the flow says: the place it rests in, the side of its step, what it does there
-for (const n of D.nodes) (n.touches || []).forEach((t, i) => Object.assign(t, ((D.flow || {}).drawn || {})[n.id]?.[i]));
+for (const n of D.nodes) [...(n.touches || []), ...(n.instead || [])].forEach((t, i) => Object.assign(t, ((D.flow || {}).drawn || {})[n.id]?.[i]));
 const bodyOf = (id, on) => FLOW[on ? `${id}@${on}` : id] || {items: []};
 const stepsIn = b => b.items.flatMap(it => it.members ? it.members : [it]);
 // the functions a step runs: its body's steps, and the overrides it may run instead
@@ -543,13 +543,13 @@ const initializer = c => (byId.get(c)?.methods || []).map(m => `${c}.${m}`).find
 // everything a step touches, anywhere below it: the touches of every function its body runs, on the
 // class each runs on, and of every override it may run instead
 const reachCache = new Map();
-function reach(id, on) {
-  const k0 = on ? `${id}@${on}` : id;
-  if (reachCache.has(k0)) return reachCache.get(k0);
+function reach(id, on, root = null) {
+  const k0 = on ? `${id}@${on}` : id, kc = `${k0}#${root || ""}`;
+  if (reachCache.has(kc)) return reachCache.get(kc);
   const touches = new Map(), vis = new Set([k0]), stack = [[id, on]];
   while (stack.length) {
     const [cur, con] = stack.pop(), n = byId.get(cur); if (!n) continue;
-    for (const t of n.touches || []) { const k = touchKey(t) + "|" + (t.by || []).join(",") + "|" + (t.users_of || []).join(","); if (!touches.has(k)) touches.set(k, t); }
+    for (const t of touchesIn(n, root)) { const k = touchKey(t); if (!touches.has(k)) touches.set(k, t); }
     const b = bodyOf(cur, con);
     for (let [t, o] of [...stepsIn(b).map(s => [s.to, s.on || null]), ...(b.alts || []).map(a => [a, null])]) {
       if (byId.get(t)?.kind === "class") { t = initializer(t); o = null; }
@@ -557,11 +557,17 @@ function reach(id, on) {
       if (byId.has(t) && !vis.has(k)) { vis.add(k); stack.push([t, o]); }
     }
   }
-  const r = {touches: [...touches.values()], nodes: new Set([...vis].map(k => k.split("@")[0]))}; reachCache.set(k0, r); return r;
+  const r = {touches: [...touches.values()], nodes: new Set([...vis].map(k => k.split("@")[0]))}; reachCache.set(kc, r); return r;
 }
 // a route shows the places its own calls hand: a touch whose path or statement a caller makes
-// whole, when the route reaches that caller; one an entry's users hand, in that entry's route
-const inRoute = (t, root) => !root || (!(t.by || []).length && !(t.users_of || []).length) || (t.by || []).some(f => reach(root, null).nodes.has(f)) || (t.users_of || []).includes(root);
+// whole, when the route reaches that caller; one an entry's users hand, in that entry's route;
+// and a call none of whose touches it runs, as the call was read
+const inRoute = (t, root) => !root || (!(t.by || []).length && !(t.users_of || []).length) || (t.by || []).some(f => f.split("&").every(g => reach(root, null).nodes.has(g))) || (t.users_of || []).includes(root);
+function touchesIn(n, root) {
+  if (!root) return n.touches || [];
+  const runs = (n.touches || []).filter(t => inRoute(t, root));
+  return runs.concat((n.instead || []).filter(t => !runs.some(o => o.line === t.line && o.op === t.op && o.kind === t.kind)));
+}
 const touchKey = t => [t.kind, t.what, t.artifact || "", t.dir || "", t.op || ""].join("|");
 // the routes an overview shows: all of them, or those of one kind (all Library routes, all CLI routes)
 const overviewEntries = () => entries.filter(e => (V.kind ? e.entry.kind === V.kind : e.entry.kind !== "test") && (!V.part || partOf(e) === V.part));
@@ -845,11 +851,11 @@ async function renderPlaat() {
       // says which class it runs on
       if (!own && !opts.on) for (const o of bodyOf(f.id, null).alts || []) merge(morphism(o, false, false, noReceiver));
     }
-    const ownKeys = new Set((f.touches || []).map(touchKey));
     const root = V.route || (f.entry ? f.id : null);
-    for (const raw of (own ? f.touches || [] : reach(f.id, opts.on).touches)) {
+    const ownKeys = new Set(touchesIn(f, root).map(touchKey));
+    for (const raw of (own ? touchesIn(f, root) : reach(f.id, opts.on, root).touches)) {
       const tc = shownAs(raw);
-      if (!drawn(tc) || !inRoute(raw, root)) continue;
+      if (!drawn(tc)) continue;
       // each call that makes a figure makes one: a figure of its own on the screen
       const p = raw.kind === "figure" && tc.kind === "screen" && opts.figure ? figurePlace(opts.figure, opts.label) : worldPlace(tc);
       (isIn(tc) ? dom : cod).push([addPlace(p), !ownKeys.has(touchKey(raw))]);

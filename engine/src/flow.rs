@@ -128,13 +128,14 @@ pub struct Flow {
     pub arrows: BTreeMap<String, Arrow>,
     pub types: crate::families::Families,
     pub units: Units,
-    /// For each node with touches, where each of them is drawn, in the order of its touches.
+    /// For each node with touches, where each of them is drawn: its touches in order, then its
+    /// calls as read (`instead`).
     pub drawn: BTreeMap<String, Vec<Where>>,
 }
 
 /// The flow of a graph.
 pub fn of(g: &Graph) -> Flow {
-    let drawn = g.nodes.iter().filter(|n| !n.touches.is_empty()).map(|n| (n.id.clone(), n.touches.iter().map(Touch::drawn).collect())).collect();
+    let drawn = g.nodes.iter().filter(|n| !n.touches.is_empty() || !n.instead.is_empty()).map(|n| (n.id.clone(), n.touches.iter().chain(&n.instead).map(Touch::drawn).collect())).collect();
     Flow { bodies: bodies(g), arrows: arrows(g), types: crate::families::families(g), units: units(g), drawn }
 }
 

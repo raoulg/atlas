@@ -218,8 +218,9 @@ pub fn substitute(b: &Built, mut value: impl FnMut(&str) -> Vec<Built>) -> Vec<B
     out
 }
 
-/// Where a value built from parameters becomes whole: in a function, from what its call hands;
-/// or at an entry, from what the entry's users hand it.
+/// Where a value built from parameters becomes whole: in a function, from what its call hands
+/// (`a&b` where it takes two: the function that built an object and the one that handed the
+/// rest); or at an entry, from what the entry's users hand it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Whole {
     In(String),
@@ -233,20 +234,28 @@ pub enum Whole {
 /// program calls (an entry's declared defaults), which otherwise holds what its users hand it,
 /// unknown. An entry the program also calls is run by its users as well.
 pub fn at_callers<H: Handing>(calls: &[H], default: &dyn Fn(&str, &str) -> Vec<Built>, entry: &dyn Fn(&str) -> bool, f: &str, b: &Built, depth: u32) -> Vec<(Whole, Built)> {
-    // what an object holds is what the callers of the function that set it up hand that function.
-    // Which object a route runs `f` on is not followed, so the object's value is whole in `f`
-    // itself; only what `f`'s own callers hand is theirs
+    // what an object holds is what the callers of the function that set it up hand that function:
+    // whole where that is, unless `f`'s own callers still have to hand the rest
     if let Some((g, p)) = b.iter().find_map(|s| match s {
         Seg::Held(g, p) => Some((g.clone(), p.clone())),
         _ => None,
     }) {
-        let held: Vec<Built> = if depth > DEPTH { vec![hole(&p)] } else { at_callers(calls, default, entry, &g, &vec![Seg::Param(p.clone())], depth + 1).into_iter().map(|(_, v)| v).collect() };
+        let held = if depth > DEPTH { vec![(Whole::In(f.to_string()), hole(&p))] } else { at_callers(calls, default, entry, &g, &vec![Seg::Param(p.clone())], depth + 1) };
         let mut out = vec![];
-        for v in held {
+        for (w, v) in held {
             for x in fill(b, &g, &p, &v) {
-                out.extend(at_callers(calls, default, entry, f, &x, depth + 1));
-                if out.len() >= COMPLETIONS {
-                    return out;
+                for (w2, y) in at_callers(calls, default, entry, f, &x, depth + 1) {
+                    // whole where both are: a route reaches the one that built the object and the
+                    // one that handed `f` the rest
+                    let both = match (&w, w2) {
+                        (_, Whole::In(x)) if x == f => w.clone(),
+                        (Whole::In(a), Whole::In(x)) if a != f && *a != x => Whole::In(format!("{x}&{a}")),
+                        (_, w2) => w2,
+                    };
+                    out.push((both, y));
+                    if out.len() >= COMPLETIONS {
+                        return out;
+                    }
                 }
             }
         }
@@ -332,6 +341,10 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
                 wholes.push(w);
             }
         }
+        // a route that reaches none of the callers that make it whole sees the call as it was read
+        if wholes.iter().any(|w| **w != Whole::In(f.clone())) {
+            store.instead(&f, t.clone());
+        }
         for whole in wholes {
             let (by, users_of) = match whole {
                 Whole::In(h) if *h == f => (vec![], vec![]),
@@ -357,7 +370,7 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
                         // a literal segment serves before a parameter: `/years` before `/{year}`
                         let fewest = served.iter().map(|(_, _, p)| p.matches('{').count()).min().unwrap_or(0);
                         for (handler, _, path) in served.into_iter().filter(|(_, _, p)| p.matches('{').count() == fewest) {
-                            store.add_edge(holder, handler, EdgeKind::Requests, Some(path.clone()));
+                            store.add_edge(holder.split('&').next().unwrap_or(holder), handler, EdgeKind::Requests, Some(path.clone()));
                             requested = true;
                         }
                     } else if let Some(host) = crate::effects::facts(Crossing::to(World::Net), None, &t.op, std::slice::from_ref(&url)).places().into_iter().next().map(|(a, _)| a).filter(|a| !a.is_empty()) {

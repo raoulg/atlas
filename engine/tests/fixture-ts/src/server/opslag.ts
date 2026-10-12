@@ -16,3 +16,28 @@ export function klanten(): string {
 export function bewaar(tekst: string): void {
   fs.writeFileSync(fileURLToPath(new URL("../../uit/regels.pdf", import.meta.url)), tekst);
 }
+
+export class Archief {
+  constructor(private map: string) {}
+
+  bewaar(naam: string, tekst: string): void {
+    fs.writeFileSync(path.join(this.map, naam), tekst);
+  }
+}
+
+export class Logboek {
+  map: string;
+
+  constructor(map: string) {
+    this.map = map;
+  }
+
+  noteer(regel: string): void {
+    fs.appendFileSync(path.join(this.map, "log.txt"), regel);
+  }
+}
+
+export function archiveer(): void {
+  new Archief("archief").bewaar("a.txt", "b");
+  new Logboek("logs").noteer("x");
+}

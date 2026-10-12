@@ -2,6 +2,7 @@
 
 import sqlite3
 import zipfile
+from dataclasses import dataclass
 from pathlib import Path
 
 import requests
@@ -164,3 +165,17 @@ class Cache:
 
 def warm() -> None:
     Cache(Path("warm")).keep("a", "b")
+
+
+@dataclass
+class Bin:
+    """A value built from its fields: it keeps what it is handed under its root."""
+
+    root: Path = Path("bin")
+
+    def drop(self, name: str) -> None:
+        (self.root / name).write_text(name)
+
+
+def tidy() -> None:
+    Bin(root=Path("tidy")).drop("x.txt")

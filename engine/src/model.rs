@@ -99,6 +99,10 @@ pub struct Node {
     /// command, or the argument's name when nothing better is known.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub touches: Vec<Touch>,
+    /// Calls as they were read, before their callers made their paths whole: a route that
+    /// reaches none of those callers shows the call this way.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub instead: Vec<Touch>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub is_pkg: bool,
     /// For a method: it is called on its class, not on a value of it, so the class is no input.
@@ -486,7 +490,7 @@ pub struct Touch {
     /// The line of the first such call, 1-based.
     pub line: u32,
     /// The functions whose calls hand what makes its path or statement whole, where that is not
-    /// its own function: a route shows it when it reaches one of them.
+    /// its own function: a route shows it when it reaches one of them (`a&b`: both).
     pub by: Vec<String>,
     /// The entries whose users hand what makes it whole: their own routes show it.
     pub users_of: Vec<String>,
@@ -502,7 +506,7 @@ impl Touch {
     /// in its own function always, one whole by what callers hand when the route reaches one of
     /// them, one whole by what an entry's users hand in that entry's route.
     pub fn in_route(&self, entry: &str, reached: &dyn Fn(&str) -> bool) -> bool {
-        (self.by.is_empty() && self.users_of.is_empty()) || self.by.iter().any(|f| reached(f)) || self.users_of.iter().any(|e| e == entry)
+        (self.by.is_empty() && self.users_of.is_empty()) || self.by.iter().any(|f| f.split('&').all(reached)) || self.users_of.iter().any(|e| e == entry)
     }
 
     pub fn crossing(&self) -> Crossing {
@@ -682,6 +686,17 @@ pub struct Graph {
     pub make: Vec<MakeTarget>,
     #[serde(default)]
     pub stats: Stats,
+}
+
+impl Node {
+    /// What the route that starts at `entry` and reaches `reached` touches here: the touches it
+    /// runs, and a call none of whose touches it runs as it was read.
+    pub fn touches_in(&self, entry: &str, reached: &dyn Fn(&str) -> bool) -> Vec<&Touch> {
+        let runs: Vec<&Touch> = self.touches.iter().filter(|t| t.in_route(entry, reached)).collect();
+        let same_call = |a: &Touch, b: &Touch| a.line == b.line && a.op == b.op && a.kind == b.kind;
+        let read: Vec<&Touch> = self.instead.iter().filter(|t| !runs.iter().any(|o| same_call(o, t))).collect();
+        runs.into_iter().chain(read).collect()
+    }
 }
 
 impl Graph {

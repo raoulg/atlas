@@ -185,7 +185,10 @@ Three things make `F` honest, and each is an engine task:
    literals and constants, `Path(..) / ..`, a property's or function's `return` (followed
    through ty's definitions), what a parameter is handed by its callers, and what an
    object holds: an attribute set in `__init__` from its parameters (`self.cache_dir =
-   Path(cache_dir)`) holds what the constructor's callers hand it, or its default. That is carried
+   Path(cache_dir)`) holds what the constructor's callers hand it, or its default; so does a
+   field of a class built from its fields (a dataclass, a model), TypeScript's `this.dir`
+   set in the constructor or declared as a parameter property, and a Rust field as the
+   struct literals that build its type set it (`Self { root }` in `new(root)`). That is carried
    out one call at a time, through each caller's own parameters in turn, so two parameters a
    call hands together stay together; where a call leaves a parameter out it holds its
    declared default, and an entry nobody calls holds what it is run with (`@click.option(..,
@@ -204,8 +207,11 @@ Three things make `F` honest, and each is an engine task:
    function whose call made it whole, and a route shows it only when it reaches that
    function: `analyze` reads the folder its user names, and `changes` also reads the
    revision it writes under `$TMPDIR`. An entry the program also calls is run by its users
-   as well, with what they hand it, in its own route. Outside a route (the principles, one
-   function on its own) every place counts.
+   as well, with what they hand it, in its own route. What an object holds is whole where
+   the object was built, and a path that takes both that and what the method's own callers
+   hand is whole where both are. A route that reaches none of the callers that make a call
+   whole (it was handed the object) sees the call as it was read. Outside a route (the
+   principles, one function on its own) every place counts.
 
 Where the composition happens outside the package (vectormesh wires `VectorCache →
 Serial → Trainer` in scripts and notebooks), the resting places are types, the

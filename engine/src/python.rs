@@ -987,6 +987,10 @@ fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, root: &str
     let completed = {
         let store = &*store;
         let default = |f: &str, p: &str| -> Vec<Built> {
+            // a value built from its fields: the field's declared default
+            if let Some((m, d)) = field_default(modules, store, f, p) {
+                return eval.of(At { m, scope: None, params: &[] }, d, 0);
+            }
             let Some(n) = store.nodes.get(f) else { return vec![] };
             let Some(m) = modules.get(&n.module) else { return vec![] };
             let Some(def) = def_node(m, n) else { return vec![] };
@@ -2069,10 +2073,15 @@ fn arguments<'t>(modules: &'t IndexMap<String, Module>, store: &GraphBuilder, ca
         NodeKind::Class => format!("{target}.__init__"),
         _ => target.to_string(),
     };
-    let cn = store.nodes.get(&callee)?;
-    let cm = modules.get(&cn.module)?;
-    let def = def_node(cm, cn)?;
-    let params = paths::parameters(def, &cm.src, cn.kind == NodeKind::Method);
+    // a class without an `__init__` of its own is built from the fields it declares, in order
+    let params: Vec<(String, Option<TsNode>)> = match store.nodes.get(&callee) {
+        Some(cn) => {
+            let cm = modules.get(&cn.module)?;
+            let def = def_node(cm, cn)?;
+            paths::parameters(def, &cm.src, cn.kind == NodeKind::Method)
+        }
+        None => store.classes.get(target)?.fields.iter().map(|(f, _)| (f.clone(), None)).collect(),
+    };
     let mut passed = vec![];
     let mut i = 0;
     for a in named_children(c.child_by_field_name("arguments")?).into_iter().filter(|a| a.kind() != "comment") {
@@ -2094,6 +2103,22 @@ fn arguments<'t>(modules: &'t IndexMap<String, Module>, store: &GraphBuilder, ca
     Some(Arg { caller: caller.to_string(), callee, module: at.m.id.clone(), scope: at.scope, params: at.params.to_vec(), passed })
 }
 
+
+/// For a class built from its fields (no `__init__` of its own, `f` is `Class.__init__`): the
+/// default its body declares for field `p`, with its module.
+fn field_default<'t>(modules: &'t IndexMap<String, Module>, store: &GraphBuilder, f: &str, p: &str) -> Option<(&'t Module, TsNode<'t>)> {
+    let class = f.strip_suffix(".__init__").filter(|_| !store.nodes.contains_key(f))?;
+    let cn = store.nodes.get(class).filter(|n| n.kind == NodeKind::Class)?;
+    let m = modules.get(&cn.module)?;
+    let body = def_node(m, cn)?.child_by_field_name("body")?;
+    named_children(body)
+        .into_iter()
+        .filter(|st| st.kind() == "expression_statement")
+        .filter_map(|st| named_children(st).into_iter().next().filter(|a| a.kind() == "assignment"))
+        .find(|a| a.child_by_field_name("type").is_some() && a.child_by_field_name("left").map(|l| text(l, &m.src)) == Some(p))?
+        .child_by_field_name("right")
+        .map(|d| (m, d))
+}
 
 /// The arguments of a call that name a value without computing one: a name or an attribute,
 /// handed positionally or by keyword.

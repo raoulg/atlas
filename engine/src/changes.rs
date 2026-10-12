@@ -172,7 +172,7 @@ fn routes(parts: &[Graph], several: bool) -> HashMap<String, Route> {
                 if *id != start && n.kind != NodeKind::External {
                     r.steps.insert(id.to_string());
                 }
-                for t in n.touches.iter().filter(|t| (t.kind != World::Screen || *id == start) && t.in_route(start, &|f| seen.contains(f))) {
+                for t in n.touches_in(start, &|f| seen.contains(f)).into_iter().filter(|t| t.kind != World::Screen || *id == start) {
                     r.places.entry(place(t)).or_insert_with(|| t.clone());
                 }
             }

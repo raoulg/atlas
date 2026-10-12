@@ -72,7 +72,11 @@ impl<'a> Eval<'a> {
                 let parts = path_parts(Some(e), src);
                 self.constant(at.m, &parts, depth).unwrap_or_else(|| vec![hole(parts.last().map(String::as_str).unwrap_or("value"))])
             }
-            "field_expression" => vec![hole(e.child_by_field_name("field").map(|f| text(f, src)).unwrap_or("value"))],
+            "field_expression" => {
+                let field = e.child_by_field_name("field").map(|f| text(f, src)).unwrap_or("value");
+                let on_self = e.child_by_field_name("value").map_or(false, |v| v.kind() == "self");
+                on_self.then(|| self.held(at, field, depth)).flatten().unwrap_or_else(|| vec![hole(field)])
+            }
             "binary_expression" if e.child_by_field_name("operator").map(|o| text(o, src)) == Some("+") => cross(&field("left"), &field("right"), ""),
             "call_expression" => self.call(at, e, depth),
             "macro_invocation" => self.macro_value(at, e, depth),
@@ -124,6 +128,58 @@ impl<'a> Eval<'a> {
         };
         let v = const_in(home.tree.root_node(), name, &home.src)?;
         Some(self.of(At { m: home, scope: None, params: &[] }, v, depth + 1))
+    }
+
+    /// A field of the value a method runs on, as the struct literals that build that type set it
+    /// (`Self { root }` in `new(root)`), from what the functions they are in are handed.
+    fn held(&self, at: At<'a, '_>, field: &str, depth: u32) -> Option<Vec<Built>> {
+        let ty = self.impl_type(at.m, at.scope?)?;
+        let mut out = vec![];
+        for m in self.modules.values() {
+            for lit in walk(m.tree.root_node(), &["struct_expression"]) {
+                let name = path_parts(lit.child_by_field_name("name"), &m.src);
+                let built = match name.as_slice() {
+                    [s] if s == "Self" => self.impl_type(m, lit),
+                    _ => resolve(m, &name, self.modules, &self.nodes, self.crate_ids),
+                };
+                if built.as_deref() != Some(ty.as_str()) {
+                    continue;
+                }
+                let value = lit.child_by_field_name("body").map(named_children).unwrap_or_default().into_iter().find_map(|fi| match fi.kind() {
+                    "field_initializer" if fi.child_by_field_name("field").map(|f| text(f, &m.src)) == Some(field) => fi.child_by_field_name("value"),
+                    "shorthand_field_initializer" if named_children(fi).first().map(|x| text(*x, &m.src)) == Some(field) => named_children(fi).into_iter().next(),
+                    _ => None,
+                });
+                let (Some(value), Some(f)) = (value, enclosing_fn(lit)) else { continue };
+                let Some(id) = self.fn_id(m, f) else { continue };
+                let names = param_names(f, &m.src);
+                let vals = self.of(At { m, scope: Some(f), params: &names }, value, depth + 1);
+                out = union(out, vals.into_iter().map(|b| b.into_iter().map(|s| if let Seg::Param(x) = s { Seg::Held(id.clone(), x) } else { s }).collect()).collect());
+            }
+        }
+        (!out.is_empty()).then_some(out)
+    }
+
+    /// The type of the `impl` a node is written in.
+    fn impl_type(&self, m: &'a Module, n: TsNode<'a>) -> Option<String> {
+        let mut p = n.parent();
+        while let Some(x) = p.filter(|x| x.kind() != "impl_item") {
+            p = x.parent();
+        }
+        resolve(m, &path_parts(p?.child_by_field_name("type"), &m.src), self.modules, &self.nodes, self.crate_ids).filter(|r| !r.starts_with("ext:"))
+    }
+
+    /// The id the graph knows a function by: its type's and its name for a method, its module's
+    /// and its name for a free function; none for one inside another function.
+    fn fn_id(&self, m: &'a Module, f: TsNode<'a>) -> Option<String> {
+        let name = text(f.child_by_field_name("name")?, &m.src);
+        if enclosing_fn(f).is_some() {
+            return None;
+        }
+        Some(match self.impl_type(m, f) {
+            Some(ty) => format!("{ty}.{name}"),
+            None => format!("{}.{name}", m.id),
+        })
     }
 
     fn call(&self, at: At<'a, '_>, c: TsNode<'a>, depth: u32) -> Vec<Built> {
@@ -265,6 +321,18 @@ impl<'a> Eval<'a> {
             _ => vec![hole(g.iter().find(|t| t.kind() == "identifier").map(|t| text(*t, src)).unwrap_or("value"))],
         }
     }
+}
+
+/// The function a node is written in.
+fn enclosing_fn(n: TsNode) -> Option<TsNode> {
+    let mut p = n.parent();
+    while let Some(x) = p {
+        if x.kind() == "function_item" {
+            return Some(x);
+        }
+        p = x.parent();
+    }
+    None
 }
 
 /// The value a `const` or `static` of this name is declared with, directly under `n`.

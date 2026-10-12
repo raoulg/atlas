@@ -187,7 +187,7 @@ impl<'g> Story<'g> {
     /// What a step's own body does at the edges: `reads Makefile · writes *.png · prints`.
     fn effects(&self, n: &Node) -> String {
         let mut groups: Vec<(String, Vec<String>)> = vec![];
-        for t in n.touches.iter().filter(|t| t.in_route(&self.entry, &|f| self.reached.contains(f))) {
+        for t in n.touches_in(&self.entry, &|f| self.reached.contains(f)) {
             let (v, what) = (t.verb(), place(t));
             match groups.iter_mut().find(|(g, _)| *g == v) {
                 Some((_, items)) => {
