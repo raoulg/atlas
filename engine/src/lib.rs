@@ -56,7 +56,7 @@ impl Default for Options {
 /// about the repository is declared to Atlas: what the picture shows is what the code says. A
 /// repository whose parts are read in several languages is `parts::analyze_repo`.
 pub fn analyze(dir: &Path, opts: &Options) -> Result<Graph> {
-    let repo = repo::Repo::read(dir, &opts.named)?;
+    let repo = language::read(dir, opts)?;
     graph_of(&repo, opts)
 }
 

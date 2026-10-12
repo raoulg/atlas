@@ -64,6 +64,8 @@ text and the page are read from the same Flow, so the two see the same route.
 ignores, no dependency or build directory) and the files named on the command line. **read: Disk
 → Repo** is the one place the engine touches a repository: the listing is read once, a file's
 text once, when a reader first asks, and a part of the repository is a view of the same reading.
+A package named on its own (`atlas view src/pkg`) is read as the project it is in, asked for that
+package: finding the project is part of reading, and nothing after it looks at the disk.
 What a library's code and types are is the environment's, read by ty. **Graph** is the one central type: typed nodes
 (modules, classes, functions) and typed edges, and on each function the places in the
 world its calls touch. Everything between parsing and drawing is `Graph → Graph`.

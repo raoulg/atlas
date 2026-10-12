@@ -26,3 +26,16 @@ fn a_named_file_is_read_where_git_ignores_it() {
     let modules: Vec<&str> = g.nodes.iter().filter(|n| n.kind == atlas_engine::NodeKind::Module).map(|n| n.name.as_str()).collect();
     assert_eq!(modules, ["named"], "only the named file is read");
 }
+
+/// A package named on its own is read with the project it is in, once: the same graph as the
+/// project's, whether the path is written relative or absolute.
+#[test]
+fn a_package_named_on_its_own_is_its_project() {
+    let here = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let project = serde_json::to_string(&analyze(&here.join("tests/fixture"), &Options::default()).unwrap()).unwrap();
+    let package = serde_json::to_string(&analyze(&here.join("tests/fixture/src/fixture"), &Options::default()).unwrap()).unwrap();
+    assert!(project == package, "the package named on its own reads as its project");
+    let g = analyze(Path::new("tests/fixture/src/fixture"), &Options::default()).unwrap();
+    assert_eq!(g.project_root, "tests/fixture", "a relative path finds the project above it too");
+    assert!(!g.make.is_empty(), "the project's Makefile is read with it");
+}

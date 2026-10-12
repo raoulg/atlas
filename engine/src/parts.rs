@@ -47,8 +47,15 @@ pub fn roots(repo: &Repo, opts: &Options) -> Vec<(PathBuf, &'static str)> {
 /// Each part's own graph, read in its language: what `atlas check` asks, part by part. Each
 /// repository is read once; a part is a view of its reading.
 pub fn analyze_parts(repos: &[PathBuf], opts: &Options) -> Result<Vec<Graph>> {
-    let read: Vec<Repo> = repos.iter().map(|r| Repo::read(r, &opts.named)).collect::<Result<_>>()?;
-    let found: Vec<Repo> = read.iter().flat_map(|r| roots(r, opts).into_iter().map(|(d, _)| r.under(d.strip_prefix(r.root()).unwrap_or(&d)))).collect();
+    let read: Vec<Repo> = repos.iter().map(|r| crate::language::read(r, opts)).collect::<Result<_>>()?;
+    // a package named on its own is one part: the project it is in, asked for that package
+    let found: Vec<Repo> = read
+        .iter()
+        .flat_map(|r| match r.asked() {
+            Some(_) => vec![r.clone()],
+            None => roots(r, opts).into_iter().map(|(d, _)| r.under(d.strip_prefix(r.root()).unwrap_or(&d))).collect(),
+        })
+        .collect();
     if found.is_empty() {
         anyhow::bail!("no part found in {} ({})", repos.iter().map(|r| r.display().to_string()).collect::<Vec<_>>().join(", "), crate::language::looked_for());
     }

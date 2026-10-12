@@ -328,9 +328,12 @@ fn rust_workspace_parses() {
     // the repository is read in one place, and a reader reads what was read
     assert!(boundaries(g.node("atlas-engine.repo.Repo.read").unwrap()).get("disk_read").is_some(), "the listing");
     assert!(boundaries(g.node("atlas-engine.repo.Repo.bytes").unwrap()).get("disk_read").is_some(), "a file's text, once");
-    for reader in ["atlas-engine.rust.parse", "atlas-engine.typescript.parse", "atlas-engine.entries.read_makefile", "atlas-engine.language.Python.detect"] {
+    for reader in ["atlas-engine.rust.parse", "atlas-engine.typescript.parse", "atlas-engine.entries.read_makefile", "atlas-engine.language.Python.detect", "atlas-engine.language.Python.parse"] {
         assert!(!boundaries(g.node(reader).unwrap()).contains_key("disk_read"), "{reader} reads the Repo, not the disk");
     }
+    let test = |id: &str| g.node(id).and_then(|n| n.entry.as_ref()).map_or(false, |e| e.kind == EntryKind::Test);
+    let readers: Vec<&str> = g.edges.iter().filter(|e| e.kind == EdgeKind::Calls && e.dst == "atlas-engine.repo.Repo.read" && !test(&e.src)).map(|e| e.src.as_str()).collect();
+    assert_eq!(readers, ["atlas-engine.language.read"], "the repository is read in one place, and what it is depends on nothing read after it");
     assert!(boundaries(g.node("atlas.view").unwrap()).contains_key("screen"), "eprintln!");
     let m = edges(&g, EdgeKind::Mutates);
     assert!(m.contains(&("atlas-engine.model.Graph.recount".into(), "atlas-engine.model.Graph".into())), "&mut self");
@@ -349,7 +352,7 @@ fn atlas_reads_as_its_algebra() {
     let name = |id: &str| id.rsplit('.').next().unwrap().to_string();
     let steps_of = |f: &str| g.edges.iter().filter(|e| e.src == f && e.kind == EdgeKind::Calls).map(|e| e.dst.as_str()).collect::<Vec<_>>();
     let short = |steps: &[&str]| steps.iter().map(|s| s.trim_start_matches("atlas-engine.").to_string()).collect::<Vec<_>>();
-    assert_eq!(short(&steps_of("atlas-engine.analyze")), ["repo.Repo.read", "graph_of"], "analyze: Disk(repo) -> read -> Repo -> parse -> Graph");
+    assert_eq!(short(&steps_of("atlas-engine.analyze")), ["language.read", "graph_of"], "analyze: Disk(repo) -> read -> Repo -> parse -> Graph");
     let steps = steps_of("atlas-engine.graph_of");
     assert_eq!(short(&steps), ["language.detect", "language.Language.parse", "entries.read_makefile", "parts.assign", "view.reached", "view.View.apply"], "the graph of what was read, step by step");
     for step in steps {

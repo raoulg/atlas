@@ -30,6 +30,8 @@ pub struct Repo {
     /// Where it stands in the listing.
     at: PathBuf,
     listing: Arc<Listing>,
+    /// The directory the reading was asked for, when what was read is the project around it.
+    asked: Option<PathBuf>,
 }
 
 impl Repo {
@@ -63,7 +65,17 @@ impl Repo {
         }
         dirs.insert(PathBuf::new());
         let listing = Listing { files, dirs, named: listed, texts: Mutex::new(HashMap::new()) };
-        Ok(Repo { root: dir.to_path_buf(), at: PathBuf::new(), listing: Arc::new(listing) })
+        Ok(Repo { root: dir.to_path_buf(), at: PathBuf::new(), listing: Arc::new(listing), asked: None })
+    }
+
+    /// The project read for a directory inside it, `asked`.
+    pub fn asked_for(self, asked: PathBuf) -> Repo {
+        Repo { asked: Some(asked), ..self }
+    }
+
+    /// The directory the reading was asked for, when what was read is the project around it.
+    pub fn asked(&self) -> Option<&Path> {
+        self.asked.as_deref()
     }
 
     /// The directory, as the caller named it.
@@ -81,7 +93,7 @@ impl Repo {
         if rel.as_os_str().is_empty() {
             return self.clone();
         }
-        Repo { root: self.root.join(rel), at: self.at.join(rel), listing: self.listing.clone() }
+        Repo { root: self.root.join(rel), at: self.at.join(rel), listing: self.listing.clone(), asked: None }
     }
 
     /// Where a path the caller writes from the root stands in the listing: `root/x` and `x` alike.
@@ -139,16 +151,6 @@ impl Repo {
     /// them.
     pub fn named(&self) -> Vec<PathBuf> {
         self.listing.named.iter().filter_map(|f| f.strip_prefix(&self.at).ok()).map(|f| self.root.join(f)).collect()
-    }
-
-    /// Whether a file is there: in the listing for a path under the repository, on the disk for
-    /// one above it (the project a package named on its own is in).
-    pub fn has(&self, p: &Path) -> bool {
-        let inside = p.starts_with(&self.root) || (p.is_relative() && !p.components().any(|c| c == std::path::Component::ParentDir) && self.root.is_relative());
-        match inside {
-            true => self.is_file(p),
-            false => p.is_file(),
-        }
     }
 
     /// Every directory under `dir`, at any depth and the directory itself, in order.

@@ -315,7 +315,7 @@ fn notebook_source(text: &str) -> Result<String> {
 fn scripts(repo: &Repo, root_dir: &Path, pkg_dir: Option<&Path>) -> Vec<PathBuf> {
     let named: Vec<PathBuf> = repo.named().into_iter().filter(|p| p.starts_with(root_dir)).collect();
     // without a package or a project file, the project is the files named
-    if pkg_dir.is_none() && !repo.has(&root_dir.join("pyproject.toml")) {
+    if pkg_dir.is_none() && !repo.is_file(root_dir.join("pyproject.toml")) {
         return named;
     }
     // what a tool made, tests, the package, and another package or project inside the project
@@ -347,7 +347,7 @@ pub fn project_root(repo: &Repo, pkg_dir: &Path) -> Option<PathBuf> {
     let mut cur = Some(pkg_dir);
     for _ in 0..4 {
         let p = cur?;
-        if repo.has(&p.join("pyproject.toml")) {
+        if repo.is_file(p.join("pyproject.toml")) {
             return Some(p.to_path_buf());
         }
         cur = p.parent();

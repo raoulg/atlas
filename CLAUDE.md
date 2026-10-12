@@ -85,8 +85,10 @@ The rigorous half and the visual half are the same structure. Read `docs/design.
   says in which order its steps run.
 - `engine/src/repo.rs` is the one place the engine reads a repository: the listing once (with the
   `ignore` crate: no hidden directory, nothing git ignores, no dependency or build directory), a
-  file's text once, when a reader first asks. Readers, parts and the Makefile take the `Repo`, never
-  the disk; a part is a view of the same reading. Library code is the environment's, read by ty.
+  file's text once, when a reader first asks. `language::read` is the step that reads: the
+  repository, or for a package named on its own the project it is in (`Repo::asked`). Readers,
+  parts and the Makefile take the `Repo`, never the disk; a part is a view of the same reading.
+  Library code is the environment's, read by ty.
 - What Atlas knows of libraries and frameworks is a table in `engine/src/knowledge.rs`, one per
   kind of fact; a reader looks it up and never tests a library's name in its control flow
   (`engine/tests/readers.rs` checks both this and that no project's name stands in the engine).

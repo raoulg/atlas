@@ -47,7 +47,7 @@ fn a_client_initializes_lists_and_calls() {
     assert!(!text(&replies[2]).contains("\ndoors ·"), "only the principle asked for");
     assert!(text(&replies[3]).starts_with("A sum type is unwrapped where it arises."));
     // analyze is its algebra: Disk(repo) -> read -> Repo -> parse -> Graph
-    assert!(text(&replies[4]).contains("1  Repo.read(dir, named) → Repo   ·   reads dir"), "{}", text(&replies[4]));
+    assert!(text(&replies[4]).contains("\n1  read(dir, opts) → Repo\n  1.1  Repo.read(dir, named) → Repo   ·   reads dir"), "{}", text(&replies[4]));
     assert!(text(&replies[4]).contains("2.2  Language.parse(repo, opts) → Graph   ·   one of 3"), "{}", text(&replies[4]));
     assert_eq!(replies[5]["result"]["isError"], true, "an unknown principle is the tool's error, said in words");
     assert_eq!(replies[6]["error"]["code"], -32602, "an unknown tool is a protocol error");

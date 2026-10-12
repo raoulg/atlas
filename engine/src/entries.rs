@@ -95,16 +95,8 @@ pub fn read_makefile(repo: &Repo, g: &mut Graph) {
         return;
     }
     let root = Path::new(&g.project_root).to_path_buf();
-    // the project a package named on its own is in
-    let project = match root.starts_with(repo.root()) {
-        true => repo.clone(),
-        false => match Repo::read(&root, &[]) {
-            Ok(r) => r,
-            Err(_) => return,
-        },
-    };
-    let Some(text) = project.text(root.join("Makefile")) else { return };
-    let scripts = programs(&project, &root);
+    let Some(text) = repo.text(root.join("Makefile")) else { return };
+    let scripts = programs(repo, &root);
     let target_re = Regex::new(r"^([A-Za-z0-9_-]+):(.*)$").unwrap();
     let mut targets: Vec<MakeTarget> = vec![];
     let mut open = false;

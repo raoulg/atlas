@@ -64,8 +64,9 @@ Read it from left to right:
   with the `Options` of the reading. That is Atlas's whole job, and the code says it in two
   calls.
 - **A solid line is what a step itself takes, a dashed line what a closed pill reaches
-  inside.** `graph_of` takes no file, but the readers inside it ask the `Repo` for a file's
-  text, which is read from disk the first time it is asked for.
+  inside.** `read` lists the files through `Repo.read`, and finds the project of a package
+  named on its own; `graph_of` takes no file, but the readers inside it ask the `Repo` for a
+  file's text, which is read from disk the first time it is asked for.
 - **`Repo (2)` and `Graph (7)` are families**: a type and the types that belong to it or
   that it holds, folded into one box. Click one to open it. A config opens the same way
   into what it holds (`folders: Folders`). Inside `graph_of`, `parse · one of 3` is a
