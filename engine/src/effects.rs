@@ -47,7 +47,7 @@ pub fn boundary_rust(parts: &[String]) -> Option<Crossing> {
     let has = |p: &str| parts.iter().any(|x| x == p);
     // building moves nothing: `Client::new()`, `Client::builder()..build()`, `OpenOptions::new()`
     let builds = k::BUILDS.contains(&last);
-    if has("fs") {
+    if has(k::RUST_FS_MODULE) {
         if builds {
             return None;
         }
@@ -280,7 +280,7 @@ pub fn facts(kind: Crossing, pkg: Option<&str>, op: &str, literals: &[String]) -
     if kind.world == World::Net {
         // a dataset built by one of the library's own loaders (`load_dataset("csv", data_files=..)`)
         // is read from local files
-        if op == "load_dataset" && literals.first().map_or(false, |l| k::HF_LOADERS.contains(&l.as_str())) {
+        if op == k::HUB_LOADER && literals.first().map_or(false, |l| k::HF_LOADERS.contains(&l.as_str())) {
             return Facts::of(DISK_READ, literals.iter().skip(1).find(|l| path_like(l)).cloned().unwrap_or_default());
         }
         // pretrained weights named by a local path are a file, by a name a download from the Hub

@@ -17,7 +17,8 @@ use crate::body::{Crosses, Step, Steps};
 use crate::knowledge;
 use crate::effects::{self, Crossing};
 use crate::model::{EdgeKind, Entry, EntryKind, Held, Node, NodeKind, Param, Returns, Touch, World};
-use crate::builder::{foreign_type, ClassInfo, GraphBuilder, OwnTypes, SigInfo};
+use crate::builder::{foreign_type, ClassInfo, GraphBuilder, SigInfo};
+use crate::knowledge::OwnTypes;
 use crate::tree::{
     evaluation_order, literals, named_children, nth_of_kind, span, text, unquote, walk,
     ChoiceSyntax, CompareSyntax, Part,
@@ -1449,7 +1450,4 @@ fn matched<'t>(n: TsNode<'t>, src: &[u8]) -> Option<(String, Vec<String>, Option
 
 /// Rust's own types: std, core and alloc, the containers and wrappers, and the associated types
 /// a trait names (`Self::Target`, `S::Ok`).
-const OWN: OwnTypes = OwnTypes {
-    packages: &["std", "core", "alloc"],
-    names: &["Result", "Option", "Vec", "Box", "HashMap", "HashSet", "BTreeMap", "String", "Path", "PathBuf", "Ok", "Err", "Error", "Target", "Output", "Item", "Self"],
-};
+const OWN: OwnTypes = knowledge::RUST_OWN_TYPES;

@@ -279,9 +279,6 @@ fn first_arg(args: TsNode) -> Option<TsNode> {
     named_children(args).into_iter().find(|a| a.kind() != "comment")
 }
 
-/// Functions and constructors that build a path or a URL from their first argument.
-const PATH_BUILDERS: &[&str] = &["Path", "PurePath", "PosixPath", "WindowsPath", "Path::new", "PathBuf::from", "URL", "new URL"];
-
 /// Whether an expression's value starts at a literal: the leftmost operand of a `/` or a
 /// `+`, the receiver of a method, the first argument of a constructor like `Path(..)`.
 pub fn head_literal(e: TsNode, src: &[u8], string_kinds: &[&str]) -> bool {
@@ -303,7 +300,7 @@ pub fn head_literal(e: TsNode, src: &[u8], string_kinds: &[&str]) -> bool {
                 Some(r) => head_literal(r, src, string_kinds),
                 // only a path or URL builder starts the place at its argument; what any other
                 // function makes of a string (a key, a name) is not known here
-                None if PATH_BUILDERS.contains(&text(f, src)) => child("arguments").and_then(first_arg).map_or(false, |a| head_literal(a, src, string_kinds)),
+                None if crate::knowledge::PATH_MAKERS.contains(&text(f, src)) => child("arguments").and_then(first_arg).map_or(false, |a| head_literal(a, src, string_kinds)),
                 None => false,
             }
         }

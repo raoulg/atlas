@@ -125,16 +125,16 @@ pub const TYPESCRIPT_CONTAINERS: &[&str] = &[
 ];
 
 /// Methods that change the value they are called on: a language's own containers', and a
-/// library's (networkx's graphs). By language or package.
-pub const MUTATORS: &[(&str, &[&str])] = &[
-    ("python", &["append", "extend", "insert", "remove", "pop", "clear", "update", "add", "discard", "setdefault", "sort", "reverse", "popitem"]),
-    ("networkx", &["add_node", "add_edge", "add_nodes_from", "add_edges_from", "remove_node", "remove_edge"]),
-    ("typescript", &["push", "pop", "shift", "unshift", "splice", "sort", "reverse", "fill", "copyWithin", "set", "delete", "clear", "add"]),
+/// library's (networkx's graphs). By registry and source.
+pub const MUTATORS: &[(Registry, &str, &[&str])] = &[
+    (Registry::PyPi, "builtins", &["append", "extend", "insert", "remove", "pop", "clear", "update", "add", "discard", "setdefault", "sort", "reverse", "popitem"]),
+    (Registry::PyPi, "networkx", &["add_node", "add_edge", "add_nodes_from", "add_edges_from", "remove_node", "remove_edge"]),
+    (Registry::Npm, "javascript", &["push", "pop", "shift", "unshift", "splice", "sort", "reverse", "fill", "copyWithin", "set", "delete", "clear", "add"]),
 ];
 
-/// The methods of these sources that change what they are called on.
-pub fn mutators(sources: &[&str]) -> Vec<&'static str> {
-    MUTATORS.iter().filter(|(s, _)| sources.contains(s)).flat_map(|(_, ms)| ms.iter().copied()).collect()
+/// The methods that change what they are called on, in the code of one registry's languages.
+pub fn mutators(from: Registry) -> Vec<&'static str> {
+    MUTATORS.iter().filter(|(r, _, _)| *r == from).flat_map(|(_, _, ms)| ms.iter().copied()).collect()
 }
 
 /// Functions that wrap a callback-taking function into one that returns a promise: what they
@@ -362,3 +362,77 @@ pub const CONSOLE: &str = "console";
 pub const BROWSER_STORES: &[&str] = &["localStorage", "sessionStorage"];
 pub const BROWSER_STORE_OPS: &[&str] = &["getItem", "setItem", "removeItem", "clear"];
 pub const CLIENT_MAKERS: &[&str] = &["create", "createClient"];
+
+/// Parts of the world a library reaches only through a client the code made from it: its other
+/// functions are helpers (a language model's SDK formats a file or a schema without asking the
+/// model anything).
+pub const THROUGH_A_CLIENT: &[World] = &[World::Llm];
+
+/// Rust's std module whose functions read and write files.
+pub const RUST_FS_MODULE: &str = "fs";
+
+/// The datasets library's function that loads a dataset, from the Hub or by a builtin loader.
+pub const HUB_LOADER: &str = "load_dataset";
+
+// ---------- paths ----------
+
+/// The constructors a path is made by from its parts: pathlib's, Rust's `Path::new` and
+/// `PathBuf::from`, the web platform's `URL`.
+pub const PATH_MAKERS: &[&str] = &["Path", "PurePath", "PosixPath", "WindowsPath", "PurePosixPath", "PureWindowsPath", "Path::new", "PathBuf::from", "URL", "new URL"];
+
+/// Libraries whose values are paths: a method of one names its file by the path it is called on.
+pub const PATH_LIBRARIES: &[&str] = &["pathlib"];
+
+/// A path's methods that give back the path they are called on, written another way.
+pub const SAME_PATH: &[&str] = &["resolve", "absolute", "expanduser", "as_posix", "__fspath__"];
+
+/// What a path library's function makes of what it is handed.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum PathFn {
+    /// Its arguments, one below the other.
+    Join,
+    /// The directory its first argument is in.
+    Parent,
+    /// Its first argument, as it is.
+    Same,
+    /// The user's home directory.
+    Home,
+    /// The directory the program runs in.
+    Here,
+}
+
+/// Path functions, by the package or global object they are on and their name.
+pub const PATH_FUNCTIONS: &[(&str, &str, PathFn)] = &[
+    ("path", "join", PathFn::Join),
+    ("path", "resolve", PathFn::Join),
+    ("path", "dirname", PathFn::Parent),
+    ("url", "fileURLToPath", PathFn::Same),
+    ("os", "homedir", PathFn::Home),
+    ("process", "cwd", PathFn::Here),
+];
+
+// ---------- a language's own types ----------
+
+/// The types a language's code describes itself with rather than holds data in: its standard
+/// library and the packages that describe code (a UI library's components, a schema library's
+/// validators), and the names that wrap or stand for a value.
+pub struct OwnTypes {
+    pub packages: &'static [&'static str],
+    pub names: &'static [&'static str],
+}
+
+/// Python's: the standard library's modules that describe code, not data.
+pub const PYTHON_OWN_TYPES: OwnTypes = OwnTypes {
+    packages: &["typing", "collections", "pathlib", "builtins", "datetime", "abc", "os", "enum", "dataclasses", "functools", "itertools", "types"],
+    names: &[],
+};
+
+/// Rust's: std, core and alloc, the containers and wrappers, and the associated types a trait
+/// names (`Self::Target`, `S::Ok`).
+pub const RUST_OWN_TYPES: OwnTypes = OwnTypes {
+    packages: &["std", "core", "alloc"],
+    names: &["Result", "Option", "Vec", "Box", "HashMap", "HashSet", "BTreeMap", "String", "Path", "PathBuf", "Ok", "Err", "Error", "Target", "Output", "Item", "Self"],
+};
+
+/// TypeScript's: a UI framework's components and props, a schema library's schemas.
+pub const TYPESCRIPT_OWN_TYPES: OwnTypes = OwnTypes { packages: &["react", "react-dom", "preact", "vue", "svelte", "solid-js", "zod", "yup", "valibot", "superstruct", "io-ts"], names: &[] };

@@ -21,7 +21,8 @@ use paths::{At, Built, Eval};
 use crate::entries::entry_of;
 use crate::knowledge;
 use crate::model::{Dir, EdgeKind, Entry, EntryKind, Held, Node, NodeKind, Param, Returns, Touch, World};
-pub use crate::builder::{foreign_type, ClassInfo, GraphBuilder, OwnTypes, SigInfo};
+pub use crate::builder::{foreign_type, ClassInfo, GraphBuilder, SigInfo};
+use crate::knowledge::OwnTypes;
 use crate::tree::{
     evaluation_order, field_children, literals, named_children, nth_of_kind, payload_of, span, text, unquote, walk,
     what_of, ChoiceSyntax, CompareSyntax, Part,
@@ -1135,7 +1136,7 @@ fn changed_roots<'a>(body: TsNode, src: &'a [u8], mutating: &dyn Fn(TsNode) -> b
         let Some(f) = c.child_by_field_name("function").filter(|f| f.kind() == "attribute") else { continue };
         let Some(obj) = f.child_by_field_name("object") else { continue };
         let name = f.child_by_field_name("attribute").map(|a| text(a, src)).unwrap_or("");
-        if knowledge::mutators(&["python", "networkx"]).contains(&name) || mutating(c) {
+        if knowledge::mutators(knowledge::Registry::PyPi).contains(&name) || mutating(c) {
             out.extend(root_name(obj, src));
         }
     }
@@ -2062,7 +2063,7 @@ fn file_calls<'t>(seen: &Seen, eval: &Eval, at: At<'_, 't>, c: TsNode<'t>, fnode
     let sig = seen.facts.and_then(|x| x.signature(Seen::range(fnode)));
     let typed = sig.map(|s| paths::file_args(s, c, src)).unwrap_or_default();
     let mode = typed.iter().find(|(p, _)| p.name == "mode").map(|(_, a)| unquote(text(*a, src)));
-    let files: Vec<(Option<FileArg>, &str, TsNode)> = match (fnode.kind() == "attribute" && lib == Some("pathlib"), sig) {
+    let files: Vec<(Option<FileArg>, &str, TsNode)> = match (fnode.kind() == "attribute" && lib.map_or(false, |l| knowledge::PATH_LIBRARIES.contains(&l)), sig) {
         (true, _) => fnode.child_by_field_name("object").map(|o| vec![(Some(FileArg::Path), "self", o)]).unwrap_or_default(),
         (false, Some(_)) => typed.iter().filter(|(p, _)| p.file.is_some()).map(|(p, a)| (p.file, p.name.as_str(), *a)).collect(),
         (false, None) => positional(c).map(|a| vec![(None, "", a)]).unwrap_or_default(),
@@ -2290,7 +2291,4 @@ fn matched<'t>(n: TsNode<'t>, src: &[u8]) -> Option<(String, Vec<String>, Option
 }
 
 /// Python's own types: the standard library's modules that describe code, not data.
-const OWN: OwnTypes = OwnTypes {
-    packages: &["typing", "collections", "pathlib", "builtins", "datetime", "abc", "os", "enum", "dataclasses", "functools", "itertools", "types"],
-    names: &[],
-};
+const OWN: OwnTypes = knowledge::PYTHON_OWN_TYPES;

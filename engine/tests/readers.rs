@@ -29,3 +29,51 @@ fn only_the_readers_know_a_language() {
     }
     assert!(found.is_empty(), "a language's own names outside its reader:\n{}", found.join("\n"));
 }
+
+/// Library knowledge is data: a library's or a framework's name stands in knowledge.rs and
+/// nowhere else, and no project's name or idiom stands anywhere in the engine or the viewer.
+#[test]
+fn library_knowledge_is_data() {
+    use atlas_engine::knowledge as k;
+    let mut names: Vec<&str> = vec![];
+    names.extend(k::PACKAGES.iter().map(|(_, p, _)| *p));
+    names.extend(k::OPERATIONS.iter().map(|(p, _, _)| *p));
+    names.extend(k::TOOL_SERVERS.iter().flat_map(|(p, c)| [*p, *c]));
+    names.extend(k::PROMISIFIERS.iter().flat_map(|(p, f)| [*p, *f]));
+    names.extend(k::PREFIXED_ROUTERS.iter().map(|(r, _)| *r));
+    names.extend(k::MUTATORS.iter().map(|(_, s, _)| *s).filter(|s| !matches!(*s, "builtins" | "javascript")));
+    names.extend(k::HANDS_ON.iter().map(|(c, _)| *c).filter(|c| *c != "std"));
+    for table in [k::ML_PACKAGES, k::HUB_PACKAGES, k::FILE_PACKAGES, k::ROUTERS, k::NODE_FS, k::FILE_ROUTES, k::ROOT_ROUTES, k::DRIVER_ACCESS, k::HUB_READ, k::HUB_WRITE] {
+        names.extend(table.iter().copied());
+    }
+    // what the engine once tested by name
+    names.extend(["cmd_", "repo_id", "plt", "np", "pd", "OpenOptions", "pathlib"]);
+    let quoted: Vec<String> = names.iter().map(|n| format!("\"{n}\"")).collect();
+    // in the viewer as well, where a library's name is also a word of the page (an event, a kind)
+    let anywhere = Regex::new(r"\b(rkg|plusmin|vectormesh|goad|huggingface|cmd_)\b").unwrap();
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let mut files: Vec<PathBuf> = std::fs::read_dir(root.join("src")).unwrap().flatten().map(|e| e.path()).collect();
+    for sub in ["python", "typescript"] {
+        files.extend(std::fs::read_dir(root.join("src").join(sub)).unwrap().flatten().map(|e| e.path()));
+    }
+    files.retain(|p| p.extension().map_or(false, |e| e == "rs") && !p.ends_with("knowledge.rs"));
+    files.push(root.join("../viewer/index.html"));
+    let mut found = vec![];
+    for f in &files {
+        let text = std::fs::read_to_string(f).unwrap();
+        let code = text.split("#[cfg(test)]").next().unwrap_or("");
+        for (i, line) in code.lines().enumerate() {
+            let line = line.split("// ").next().unwrap_or("");
+            if line.trim_start().starts_with("//") {
+                continue;
+            }
+            let rust = f.extension().map_or(false, |e| e == "rs");
+            let named = quoted.iter().find(|q| rust && line.contains(q.as_str())).map(|q| q.to_string());
+            let hit = named.or_else(|| anywhere.find(line).map(|m| m.as_str().to_string()));
+            if let Some(h) = hit {
+                found.push(format!("{}:{}: {h}: {}", f.file_name().unwrap().to_string_lossy(), i + 1, line.trim()));
+            }
+        }
+    }
+    assert!(found.is_empty(), "library knowledge outside knowledge.rs, or a project's name:\n{}", found.join("\n"));
+}

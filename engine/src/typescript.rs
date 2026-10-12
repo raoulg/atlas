@@ -18,7 +18,8 @@ mod paths;
 
 use paths::{Arg, At, Eval};
 
-use crate::builder::{foreign_type, ClassInfo, GraphBuilder, OwnTypes, SigInfo};
+use crate::builder::{foreign_type, ClassInfo, GraphBuilder, SigInfo};
+use crate::knowledge::OwnTypes;
 use crate::body::{Crosses, Step, Steps};
 use crate::knowledge;
 use crate::effects::{self, Crossing};
@@ -29,9 +30,7 @@ use crate::tree::{
 };
 
 const EXTENSIONS: &[&str] = &["ts", "tsx", "mts", "cts", "js", "jsx", "mjs", "cjs"];
-/// Packages whose types describe the code rather than data it moves: a UI framework's
-/// components and props, a schema library's schemas.
-const OWN: OwnTypes = OwnTypes { packages: &["react", "react-dom", "preact", "vue", "svelte", "solid-js", "zod", "yup", "valibot", "superstruct", "io-ts"], names: &[] };
+const OWN: OwnTypes = knowledge::TYPESCRIPT_OWN_TYPES;
 
 #[derive(Clone, Debug)]
 enum Bound {
@@ -1680,8 +1679,8 @@ impl<'a, 't> Body<'a, 't> {
             Some(Bound::Ext(e)) => Some(package_from_ext(e, &m.ext_pkgs)),
             _ => self.made.get(&parts[0]).cloned(),
         };
-        // a language model is asked through a client the package made, not its helpers
-        let Some(kind) = effects::boundary_ts(pkg.as_deref(), parts).filter(|k| k.world != World::Llm || self.made.contains_key(&parts[0])) else { return };
+        // some parts of the world are reached only through a client the package made, not its helpers
+        let Some(kind) = effects::boundary_ts(pkg.as_deref(), parts).filter(|k| !knowledge::THROUGH_A_CLIENT.contains(&k.world) || self.made.contains_key(&parts[0])) else { return };
         let op = parts.last().cloned().unwrap_or_default();
         let cr = Crosses::read(c, src, kind, pkg.as_deref(), &op, &literals(c, src, STRINGS), STRINGS, &HashMap::new());
         let args = c.child_by_field_name("arguments").map(named_children).unwrap_or_default();
@@ -1773,7 +1772,7 @@ fn changed_roots<'a>(body: TsNode, src: &'a [u8]) -> std::collections::BTreeSet<
     }
     for c in walk(body, &["call_expression"]) {
         let Some(f) = c.child_by_field_name("function").filter(|f| f.kind() == "member_expression") else { continue };
-        if f.child_by_field_name("property").map_or(false, |p| knowledge::mutators(&["typescript"]).contains(&text(p, src))) {
+        if f.child_by_field_name("property").map_or(false, |p| knowledge::mutators(knowledge::Registry::Npm).contains(&text(p, src))) {
             out.extend(f.child_by_field_name("object").and_then(|o| chain_root(o, src)));
         }
     }

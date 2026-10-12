@@ -8,6 +8,7 @@ use indexmap::IndexMap;
 use tree_sitter::Node as TsNode;
 
 use super::{declarations, function_in, member_parts, Bound, Module};
+use crate::knowledge::{self, PathFn};
 use crate::paths::{cross, hole, lit, parent, union, Built, Seg};
 use crate::tree::{named_children, path_str, text, unquote, walk};
 
@@ -190,8 +191,10 @@ impl<'a> Eval<'a> {
         let arg = |i: usize| args.get(i).map(|a| self.of(at, *a, depth + 1)).unwrap_or_else(|| vec![hole("value")]);
         let last = parts.last().map(String::as_str).unwrap_or("call");
         let pkg = parts.first().and_then(|h| self.package(at.m, h)).unwrap_or_default();
-        match (pkg.as_str(), last) {
-            ("path", "join" | "resolve") => args.iter().fold(vec![vec![]], |acc: Vec<Built>, a| {
+        // a path function by the package it is imported from, or by the global object it is on
+        let on = if pkg.is_empty() && parts.len() == 2 { parts[0].as_str() } else { pkg.as_str() };
+        match knowledge::PATH_FUNCTIONS.iter().find(|(p, f, _)| *p == on && *f == last).map(|(_, _, k)| *k) {
+            Some(PathFn::Join) => args.iter().fold(vec![vec![]], |acc: Vec<Built>, a| {
                 let next = self.of(at, *a, depth + 1);
                 if acc == vec![Vec::<Seg>::new()] {
                     next
@@ -199,13 +202,14 @@ impl<'a> Eval<'a> {
                     cross(&acc, &next, "/")
                 }
             }),
-            ("path", "dirname") => arg(0).iter().map(parent).collect(),
-            ("url", "fileURLToPath") => arg(0),
-            ("os", "homedir") => vec![lit("~")],
-            _ if parts.as_slice() == ["process", "cwd"] => vec![lit(".")],
-            _ if parts.as_slice() == ["String"] => arg(0),
-            _ if last == "toString" => f.child_by_field_name("object").map(|o| self.of(at, o, depth + 1)).unwrap_or_else(|| vec![hole("value")]),
-            _ => vec![hole(last)],
+            Some(PathFn::Parent) => arg(0).iter().map(parent).collect(),
+            Some(PathFn::Same) => arg(0),
+            Some(PathFn::Home) => vec![lit("~")],
+            Some(PathFn::Here) => vec![lit(".")],
+            // the language's own conversions to a string
+            None if parts.as_slice() == ["String"] => arg(0),
+            None if last == "toString" => f.child_by_field_name("object").map(|o| self.of(at, o, depth + 1)).unwrap_or_else(|| vec![hole("value")]),
+            None => vec![hole(last)],
         }
     }
 }

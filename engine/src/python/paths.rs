@@ -13,13 +13,10 @@ use crate::pytypes::{FileArg, Param, Target, Types};
 use crate::tree::{named_children, path_str, text, unquote, walk};
 
 pub(super) use crate::paths::{Built, Seg};
+use crate::knowledge;
 use crate::paths::{cross, hole, lit, parent, union};
 
 const DEPTH: u32 = 12;
-/// Constructors of a path from its parts.
-const PATH_CTORS: &[&str] = &["Path", "PurePath", "PosixPath", "WindowsPath", "PurePosixPath", "PureWindowsPath"];
-/// Methods that give back the path they are called on, written another way.
-const SAME_PATH: &[&str] = &["resolve", "absolute", "expanduser", "as_posix", "__fspath__"];
 
 /// Evaluates paths in the modules of one project.
 pub(super) struct Eval<'a> {
@@ -52,7 +49,7 @@ impl<'a> Eval<'a> {
 
     /// Whether calling `f` reaches a method of `pathlib`.
     fn of_pathlib(&self, m: &Module, f: TsNode) -> bool {
-        self.types.of(&path_str(&m.path)).map_or(false, |x| x.callees((f.start_byte(), f.end_byte())).iter().any(|c| matches!(&c.target, Target::Lib(m) if m == "pathlib")))
+        self.types.of(&path_str(&m.path)).map_or(false, |x| x.callees((f.start_byte(), f.end_byte())).iter().any(|c| matches!(&c.target, Target::Lib(m) if knowledge::PATH_LIBRARIES.contains(&m.as_str()))))
     }
 
     fn callee_def(&self, m: &Module, f: TsNode) -> Option<(String, usize)> {
@@ -194,7 +191,7 @@ impl<'a> Eval<'a> {
         let last = parts.last().map(String::as_str).or_else(|| f.child_by_field_name("attribute").map(|a| text(a, src))).unwrap_or("");
         let receiver = || f.child_by_field_name("object").map(|o| self.of(at, o, depth + 1)).unwrap_or_else(|| vec![hole("value")]);
         let joined = |xs: &[TsNode]| xs.iter().fold(vec![vec![]], |acc: Vec<Built>, a| if acc == vec![Vec::<Seg>::new()] { self.of(at, *a, depth + 1) } else { cross(&acc, &self.of(at, *a, depth + 1), "/") });
-        if PATH_CTORS.contains(&last) {
+        if knowledge::PATH_MAKERS.contains(&last) {
             return if positional.is_empty() { vec![lit(".")] } else { joined(&positional) };
         }
         match last {
@@ -220,7 +217,7 @@ impl<'a> Eval<'a> {
                 }).collect();
             }
             "with_name" => return cross(&receiver().iter().map(parent).collect::<Vec<_>>(), &joined(&positional), "/"),
-            m if SAME_PATH.contains(&m) => return receiver(),
+            m if knowledge::SAME_PATH.contains(&m) => return receiver(),
             _ => {}
         }
         // a method of a path gives back something at that path: `p.open("w")`
