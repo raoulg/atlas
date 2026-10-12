@@ -280,3 +280,32 @@ file, and `atlas check` asks for their name. Named, the body reads as what it do
 let f = effects::facts(tag, lib, op, &lits);
 let kind = file_direction(file, name, paths, &f);
 ```
+
+## A call leaves something behind.
+
+Id: `nothing`.
+
+A function is an arrow from what it takes to what it gives, writes or changes. One that gives
+nothing back, cannot fail, changes nothing it is handed and reaches no place is an arrow into
+nothing: whoever calls it learns nothing and nothing is different afterwards. Either it is
+dead, or it changes something the code does not show: a value it was handed, reached through
+an item or a loop; a global; a library's own state. Then the change belongs where a reader
+sees it.
+
+- **Rust.** `&mut T` and `-> Result<()>` say what a function changes and that it may fail.
+  What stays hidden is a `static` or a value behind a `RefCell`.
+- **Python.** A function that fills a value it is handed (`for node in graph.nodes:
+  node.status = ...`) can be a method of that value, or hand back what it makes. A function
+  that only writes a global (`SEEN[name] = name`) can hold that state in a value of its own.
+- **TypeScript.** The same as Python; a function that sets fields on the elements of an
+  array it is handed can hand back the array.
+
+Atlas checks: a function another function of the project calls, that gives nothing back
+(Python `-> None`, TypeScript `void`, Rust no return type), whose body does not raise, throw
+or panic and whose return type does not say it may fail (`Result`, `Promise`), and where
+nothing it runs (what it calls, what it builds, the overrides a call may reach, down to the
+end) touches a place, changes a value or a parameter, fails, or calls a function it was handed.
+
+rkg: `stempel_herkomst(graph, herkomst) -> None` sets the author, status and date on every
+node of the graph it is handed, through a loop. Atlas sees a function into nothing; what it
+does is change the Graph. As a method of the graph, the change shows as what it is.

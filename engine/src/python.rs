@@ -255,7 +255,7 @@ fn returns(rt: TsNode, src: &[u8]) -> Returns {
         _ if written.rsplit('.').next() == Some("Self") => (String::new(), true),
         _ => (written.clone(), false),
     };
-    Returns { written, value, own }
+    Returns { written, value, own, fails: false }
 }
 
 // ---------- loading ----------
@@ -1666,6 +1666,9 @@ fn link_calls<'t>(modules: &'t IndexMap<String, Module>, store: &mut GraphBuilde
     };
     let compares = (!in_module).then(|| crate::tree::compares(body, &m.src, steps.choices(), &COMPARES, &CHOICES));
     steps.finish(store, id);
+    if let Some(node) = store.nodes.get_mut(id) {
+        node.calls_handed = read.unresolved.iter().any(|u| n.params.iter().any(|p| &p.name == u));
+    }
     for key in read.unresolved {
         *store.unresolved.entry(key).or_insert(0) += 1;
     }
@@ -1677,6 +1680,7 @@ fn link_calls<'t>(modules: &'t IndexMap<String, Module>, store: &mut GraphBuilde
     }
     if let (Some(compares), Some(node)) = (compares, store.nodes.get_mut(id)) {
         node.compares = compares;
+        node.raises = crate::tree::holds(body, &m.src, |n, _| matches!(n.kind(), "raise_statement" | "assert_statement"), &["function_definition", "class_definition"]);
     }
     for (t, input) in read.changes {
         store.add_edge(id, &t, EdgeKind::Mutates, Some(input));

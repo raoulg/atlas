@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Generic, Type, TypeVar, Union
+from typing import Callable, Generic, Type, TypeVar, Union
 
 import pandas as pd
 import requests
@@ -55,6 +55,29 @@ def seed_graph(text: str, seed: bool) -> Graph:
 
 def seeded_by_name(text: str, seed: bool) -> None:
     enrich(seed_graph(text, seed), Node(id="end"))
+
+
+SEEN: dict[str, str] = {}
+
+
+def remember(name: str) -> None:
+    SEEN[name] = name
+
+
+def check_name(name: str) -> None:
+    if not name:
+        raise ValueError("a name")
+
+
+def each(names: list[str], fn: Callable[[str], None]) -> None:
+    for n in names:
+        fn(n)
+
+
+def register_names(names: list[str]) -> None:
+    for n in names:
+        check_name(n)
+    each(names, remember)
 
 
 def reread() -> int:

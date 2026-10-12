@@ -113,6 +113,13 @@ pub struct Node {
     /// Only the code beside it may use it: its module, or for a member its class.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub private: bool,
+    /// Its body may end it without giving back: it raises, throws or panics, outside the
+    /// functions it defines.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub raises: bool,
+    /// It calls a function it is handed: what that function does is its caller's to say.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub calls_handed: bool,
     /// For a function handed to a call where it is declared (`memo((props) => ..)`,
     /// `createServerFn(..).handler(..)`): the call, which gives its parameters their types.
     #[serde(default, skip_serializing_if = "String::is_empty")]
@@ -191,6 +198,10 @@ pub struct Returns {
     /// It gives a value of the class it runs on, whichever subclass that is.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub own: bool,
+    /// The effect it is wrapped in says it may end without its value: a `Result` that fails, a
+    /// `Promise` that rejects.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub fails: bool,
 }
 
 /// A call in a body, as a step of the route through it: what it reaches, what it is handed and

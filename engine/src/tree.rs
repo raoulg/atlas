@@ -49,6 +49,18 @@ pub fn held_names(e: TsNode, src: &[u8], skip: &[&str], ty: &dyn Fn(&str) -> Opt
     out
 }
 
+/// Whether a body holds a node `is` picks out, outside the definitions of kind `nested` it holds.
+pub fn holds(body: TsNode, src: &[u8], is: fn(TsNode, &[u8]) -> bool, nested: &[&str]) -> bool {
+    let mut stack = vec![body];
+    while let Some(n) = stack.pop() {
+        if is(n, src) {
+            return true;
+        }
+        stack.extend(named_children(n).into_iter().filter(|k| !nested.contains(&k.kind())));
+    }
+    false
+}
+
 pub fn walk<'t>(n: TsNode<'t>, kinds: &[&str]) -> Vec<TsNode<'t>> {
     let mut out = vec![];
     let mut stack = vec![n];

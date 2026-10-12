@@ -324,6 +324,7 @@ fn signature(params: Option<TsNode>, ret: Option<TsNode>, src: &[u8]) -> (Vec<Pa
 /// value, `this` a value of the class it runs on.
 fn returns(rt: TsNode, src: &[u8]) -> Returns {
     let mut t = rt;
+    let fails = t.kind() == "generic_type" && t.child_by_field_name("name").map_or(false, |n| text(n, src) == "Promise");
     while t.kind() == "generic_type" && t.child_by_field_name("name").map_or(false, |n| text(n, src) == "Promise") {
         match t.child_by_field_name("type_arguments").and_then(|a| named_children(a).into_iter().next()) {
             Some(i) => t = i,
@@ -335,7 +336,7 @@ fn returns(rt: TsNode, src: &[u8]) -> Returns {
         ("this_type", _) => (String::new(), true),
         (_, v) => (v.to_string(), false),
     };
-    Returns { written: text(rt, src).to_string(), value, own }
+    Returns { written: text(rt, src).to_string(), value, own, fails }
 }
 
 // ---------- pass 1: files, symbols, imports ----------
@@ -1382,6 +1383,9 @@ fn link_calls<'t>(m: &'t Module, modules: &'t IndexMap<String, Module>, store: &
     };
     let compares = (n.kind != NodeKind::Module).then(|| crate::tree::compares(body, &m.src, steps.choices(), &COMPARES, &CHOICES));
     steps.finish(store, id);
+    if let Some(node) = store.nodes.get_mut(id) {
+        node.calls_handed = read.unresolved.iter().any(|u| n.params.iter().any(|p| &p.name == u));
+    }
     for u in read.unresolved {
         *store.unresolved.entry(u).or_insert(0) += 1;
     }
@@ -1393,6 +1397,7 @@ fn link_calls<'t>(m: &'t Module, modules: &'t IndexMap<String, Module>, store: &
     }
     if let (Some(compares), Some(node)) = (compares, store.nodes.get_mut(id)) {
         node.compares = compares;
+        node.raises = crate::tree::holds(body, &m.src, |n, _| n.kind() == "throw_statement", &["function_declaration", "class_declaration", "method_definition"]);
     }
     linked.args.extend(read.args);
     linked.calls.extend(read.calls.into_iter().map(|(t, built)| (id.to_string(), t, built)));

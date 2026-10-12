@@ -26,6 +26,7 @@ pub const PRINCIPLES: &[Principle] = &[
     Principle { id: "changes", asks: "A change to an input shows in the signature." },
     Principle { id: "gives", asks: "A function whose value is used says what it gives back." },
     Principle { id: "choices", asks: "A choice is made once, in a place with a name." },
+    Principle { id: "nothing", asks: "A call leaves something behind." },
 ];
 
 /// One place where the code and a principle disagree.
@@ -86,7 +87,7 @@ pub fn report(root: &str, findings: &[Finding]) -> String {
 pub fn check(g: &Graph) -> Vec<Finding> {
     let ix = Index::new(g);
     let mut out = vec![];
-    for rule in [doors, sums, overrides, places, changes, gives, choices] {
+    for rule in [doors, sums, overrides, places, changes, gives, choices, nothing] {
         // a library read as code is not the project's to change
         let mut found: Vec<Finding> = rule(&ix).into_iter().filter(|f| ix.node(&f.node).map_or(true, |n| !n.library)).collect();
         found.sort_by(|a, b| (&a.file, a.line).cmp(&(&b.file, b.line)));
@@ -669,3 +670,78 @@ fn unnamed<'g>(ix: &Index<'g>, f: &'g Node) -> Vec<Finding> {
     }
     out
 }
+
+// ---------- nothing ----------
+
+/// A function that is called and leaves nothing behind: it gives nothing back and cannot fail,
+/// changes nothing it is handed, and nothing it runs (what it calls, what it builds, the overrides
+/// a call may reach) touches a place, changes a value or fails. An arrow into the terminal object
+/// carries no information: the function is dead, or it writes a place the graph does not hold.
+fn nothing(ix: &Index) -> Vec<Finding> {
+    // a method -> the methods that override it
+    let mut overridden: HashMap<String, Vec<&str>> = HashMap::new();
+    for m in ix.g.nodes.iter().filter(|n| is_function(n)) {
+        for a in m.cls.as_deref().map(|c| ix.ancestors(c)).unwrap_or_default() {
+            let base = format!("{a}.{}", m.name);
+            if ix.node(&base).is_some() {
+                overridden.entry(base).or_default().push(m.id.as_str());
+            }
+        }
+    }
+    let leaves_something = |n: &Node| {
+        !n.touches.is_empty() || n.raises || n.calls_handed || n.returns.as_ref().map_or(false, |r| r.fails) || n.params.iter().any(|p| p.changes) || !ix.targets(&n.id, EdgeKind::Mutates).is_empty()
+    };
+    let mut out = vec![];
+    for f in ix.g.nodes.iter().filter(|f| is_function(f) && !f.library && !f.ctor && f.entry.is_none()) {
+        let gives_nothing = match &f.returns {
+            Some(r) => r.value.is_empty() && !r.own,
+            None => !ix.leaves(&f.id).returns,
+        };
+        let callers: Vec<&str> = ix.sources(&f.id, EdgeKind::Calls).into_iter().filter(|c| *c != f.id && ix.node(c).map_or(false, |n| !n.library)).collect();
+        if !gives_nothing || callers.is_empty() {
+            continue;
+        }
+        // what it runs, down to the end
+        let mut runs: Vec<&str> = vec![];
+        let mut seen: HashSet<&str> = HashSet::from([f.id.as_str()]);
+        let mut todo = vec![f.id.as_str()];
+        let mut something = false;
+        while let Some(id) = todo.pop() {
+            let Some(n) = ix.node(id) else { continue };
+            if leaves_something(n) {
+                something = true;
+                break;
+            }
+            let built = ix.targets(id, EdgeKind::Instantiates).into_iter().filter_map(|c| ix.node(c)?.initializer(|i| ix.node(i)));
+            let next: Vec<String> = ix.targets(id, EdgeKind::Calls).into_iter().map(str::to_string).chain(built).chain(overridden.get(id).into_iter().flatten().map(|o| o.to_string())).collect();
+            for t in next {
+                if let Some(t) = ix.node(&t).map(|n| n.id.as_str()).filter(|t| seen.insert(t)) {
+                    runs.push(t);
+                    todo.push(t);
+                }
+            }
+        }
+        if something {
+            continue;
+        }
+        let name = ix.label(&f.id);
+        let mut by: Vec<String> = callers.iter().map(|c| format!("`{}`", ix.label(c))).collect();
+        by.sort();
+        by.dedup();
+        let mut evidence = vec![signature(f), format!("called by {}", list(&by))];
+        if !runs.is_empty() {
+            evidence.push(format!("runs {}, none of which touches a place or changes a value", list(&runs.iter().map(|r| format!("`{}`", ix.label(r))).collect::<Vec<_>>())));
+        }
+        out.push(ix.finding(
+            "nothing",
+            f,
+            format!("{name} gives nothing back, and Atlas sees no change and no place it reaches"),
+            evidence,
+            format!(
+                "As far as Atlas can see, a call to {name} leaves nothing behind. Is it dead, or does it change what Atlas cannot see: a value it is handed (through an item or a loop), a global, a library's own state? Could it hand back what it makes, or let that value change itself through a method of its own?"
+            ),
+        ));
+    }
+    out
+}
+

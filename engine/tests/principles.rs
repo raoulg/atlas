@@ -43,6 +43,9 @@ fn each_principle_finds_its_case() {
     // with one constructor in both arms, between other steps; `seeded_by_name` leaves that
     // choice to `seed_graph`
     assert_eq!(got["choices"], ["fixture.build.prepare", "fixture.build.prepare", "fixture.build.seeded"]);
+    // `remember` only writes a global and `Mixin.close` does nothing; `check_name` raises, `each`
+    // calls the function it is handed, and `register_names` runs both
+    assert_eq!(got["nothing"], ["fixture.build.remember", "fixture.sinks.base.Mixin.close"]);
     assert!(fs.iter().all(|f| f.question.ends_with('?')), "a finding ends in a question");
 }
 

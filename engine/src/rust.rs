@@ -262,14 +262,24 @@ fn signature(f: TsNode, src: &[u8]) -> (Vec<Param>, Option<Returns>, SigInfo) {
     (params, rt.map(|r| returns(r, src)), info)
 }
 
+/// The macros that end a body by panicking.
+const PANICS: &[&str] = &["panic", "assert", "assert_eq", "assert_ne", "unreachable", "todo", "unimplemented"];
+
+/// A `panic!` and the macros that panic when what they check does not hold.
+fn panics(n: TsNode, src: &[u8]) -> bool {
+    n.kind() == "macro_invocation" && n.child_by_field_name("macro").map_or(false, |m| PANICS.contains(&text(m, src)))
+}
+
 /// What a return type gives: a `Result<T, E>` gives `T` when it does not fail, a reference what
 /// it refers to, `()` no value, `Self` a value of the type the `impl` is for.
 fn returns(rt: TsNode, src: &[u8]) -> Returns {
     let mut t = rt;
+    let mut fails = false;
     loop {
         let inner = match t.kind() {
             "reference_type" => t.child_by_field_name("type"),
             "generic_type" if t.child_by_field_name("type").map_or(false, |n| text(n, src).rsplit("::").next() == Some("Result")) => {
+                fails = true;
                 t.child_by_field_name("type_arguments").and_then(|a| named_children(a).into_iter().next())
             }
             _ => None,
@@ -284,7 +294,7 @@ fn returns(rt: TsNode, src: &[u8]) -> Returns {
         (_, "Self") => (String::new(), true),
         (_, v) => (v.to_string(), false),
     };
-    Returns { written: text(rt, src).to_string(), value, own }
+    Returns { written: text(rt, src).to_string(), value, own, fails }
 }
 
 /// A method whose first parameter is the value it is called on.
@@ -983,9 +993,13 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crat
     steps.finish(store, id);
     if let Some(node) = store.nodes.get_mut(id) {
         node.compares = compares;
+        node.raises = crate::tree::holds(body, &m.src, panics, &["function_item", "impl_item", "trait_item", "mod_item"]);
     }
     for (t, input) in read.mutates {
         store.add_edge(id, &t, EdgeKind::Mutates, Some(input));
+    }
+    if let Some(node) = store.nodes.get_mut(id) {
+        node.calls_handed = read.unresolved.iter().any(|u| n.params.iter().any(|p| &p.name == u));
     }
     for u in read.unresolved {
         *store.unresolved.entry(u).or_insert(0) += 1;
