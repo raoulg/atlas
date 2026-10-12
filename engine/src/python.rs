@@ -2017,7 +2017,8 @@ fn file_calls<'t>(seen: &Seen, eval: &Eval, at: At<'_, 't>, c: TsNode<'t>, fnode
 }
 
 /// The name the body keeps a call's value by: the target of the assignment (or `:=`) it is the
-/// value of, through parentheses and `await`. A value assigned to `_` is not kept.
+/// value of, through parentheses, `await` and the arms of a choice (`a if c else b`, `x or y`).
+/// A value assigned to `_` is not kept.
 fn kept_as(c: TsNode, src: &[u8]) -> Option<String> {
     let mut n = c;
     loop {
@@ -2025,6 +2026,7 @@ fn kept_as(c: TsNode, src: &[u8]) -> Option<String> {
         let value = |field: &str| p.child_by_field_name(field).map(|v| v.id()) == Some(n.id());
         match p.kind() {
             "parenthesized_expression" | "await" => n = p,
+            _ if (CHOICES.chooses)(p, src) && matches!((CHOICES.part)(p, n, src), Part::Arm(_)) => n = p,
             "assignment" if value("right") => return p.child_by_field_name("left").filter(|l| l.kind() == "identifier" && text(*l, src) != "_").map(|l| text(l, src).to_string()),
             "named_expression" if value("value") => return p.child_by_field_name("name").map(|l| text(l, src).to_string()),
             _ => return None,

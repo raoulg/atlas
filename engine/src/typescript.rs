@@ -1302,13 +1302,15 @@ fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, repo: &Pat
 
 
 /// The class a module-level value holds, in its own module or the one it is imported from.
-/// The name a call's value is kept by: `const x = await f(..)`, `x = f(..)`.
+/// The name a call's value is kept by: `const x = await f(..)`, `x = f(..)`, through the arms of
+/// a choice (`c ? a : b`, `x ?? y`).
 fn kept_as(c: TsNode, src: &[u8]) -> Option<String> {
     let mut n = c;
     loop {
         let p = n.parent()?;
         match p.kind() {
             "await_expression" | "parenthesized_expression" | "as_expression" | "non_null_expression" | "satisfies_expression" => n = p,
+            _ if (CHOICES.chooses)(p, src) && matches!((CHOICES.part)(p, n, src), Part::Arm(_)) => n = p,
             "variable_declarator" if p.child_by_field_name("value").map(|v| v.id()) == Some(n.id()) => {
                 return p.child_by_field_name("name").filter(|x| x.kind() == "identifier").map(|x| text(x, src).to_string());
             }

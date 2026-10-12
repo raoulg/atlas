@@ -39,8 +39,10 @@ fn each_principle_finds_its_case() {
     // door `Graph.first` is asked about by `doors`
     assert_eq!(got["gives"], ["fixture.store.Journal.connection"]);
     // `prepare` tests `mode` twice and picks where its Graph comes from between other steps;
-    // `fresh_or_empty` is nothing but that choice, so it has a name
-    assert_eq!(got["choices"], ["fixture.build.prepare", "fixture.build.prepare"]);
+    // `fresh_or_empty` is nothing but that choice, so it has a name. `seeded` builds its Graph
+    // with one constructor in both arms, between other steps; `seeded_by_name` leaves that
+    // choice to `seed_graph`
+    assert_eq!(got["choices"], ["fixture.build.prepare", "fixture.build.prepare", "fixture.build.seeded"]);
     assert!(fs.iter().all(|f| f.question.ends_with('?')), "a finding ends in a question");
 }
 

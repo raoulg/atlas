@@ -34,6 +34,19 @@ pub(super) struct At<'a, 't> {
     pub params: &'a [String],
 }
 
+impl<'a, 't> At<'a, 't> {
+    /// Where a definition written at `offset` in `m` is evaluated: in this scope when it is written
+    /// inside it, else at the top of `m`.
+    fn of_definition(self, m: &'a Module, offset: usize) -> At<'a, 't> {
+        let inside = std::ptr::eq(m, self.m) && self.scope.map_or(false, |s| s.start_byte() <= offset && offset < s.end_byte());
+        if inside {
+            At { m, ..self }
+        } else {
+            At { m, scope: None, params: &[] }
+        }
+    }
+}
+
 impl<'a> Eval<'a> {
     pub fn new(modules: &'a IndexMap<String, Module>, types: &'a Types, root: &'a Path) -> Self {
         Eval { by_file: modules.values().map(|m| (path_str(&m.path), m)).collect(), types, root }
@@ -160,14 +173,12 @@ impl<'a> Eval<'a> {
         // `with open(p) as f`: `f` is what the context gives, the file at `p`
         if p.kind() == "as_pattern_target" {
             let value = p.parent().filter(|a| a.kind() == "as_pattern").and_then(|a| named_children(a).into_iter().next())?;
-            let here = if within(at.scope) { At { m, ..at } } else { At { m, scope: None, params: &[] } };
-            return Some(self.of(here, value, depth + 1));
+            return Some(self.of(at.of_definition(m, offset), value, depth + 1));
         }
         match p.kind() {
             "assignment" => {
                 let right = p.child_by_field_name("right")?;
-                let here = if within(at.scope) { At { m, ..at } } else { At { m, scope: None, params: &[] } };
-                Some(self.of(here, right, depth + 1))
+                Some(self.of(at.of_definition(m, offset), right, depth + 1))
             }
             "function_definition" => {
                 let body = p.child_by_field_name("body")?;

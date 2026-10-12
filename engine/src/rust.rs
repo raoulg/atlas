@@ -435,6 +435,19 @@ fn mark_exports(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, cr
     }
 }
 
+/// The route a function is: a test, the `main` of a binary, or what the crate exports.
+fn entry_of(m: &Module, item: TsNode, src: &[u8], name: &str, attrs: &[String]) -> Option<Entry> {
+    if attrs.iter().any(|a| a == "test") {
+        Some(Entry { kind: EntryKind::Test, label: name.to_string() })
+    } else if let Some(bin) = m.bin.as_ref().filter(|_| name == "main") {
+        Some(Entry { kind: EntryKind::Cli, label: bin.clone() })
+    } else if exported(m, item, src) {
+        Some(Entry { kind: EntryKind::Export, label: name.to_string() })
+    } else {
+        None
+    }
+}
+
 fn collect_symbols(m: &mut Module, store: &mut GraphBuilder) {
     let src = &m.src;
     let file = crate::tree::path_str(&m.path);
@@ -447,15 +460,7 @@ fn collect_symbols(m: &mut Module, store: &mut GraphBuilder) {
                 let (params, returns, sig) = signature(item, src);
                 store.sigs.insert(nid.clone(), sig);
                 let attrs = attrs_of(item, src);
-                let entry = if attrs.iter().any(|a| a == "test") {
-                    Some(Entry { kind: EntryKind::Test, label: name.clone() })
-                } else if let Some(bin) = m.bin.as_ref().filter(|_| name == "main") {
-                    Some(Entry { kind: EntryKind::Cli, label: bin.clone() })
-                } else if exported(m, item, src) {
-                    Some(Entry { kind: EntryKind::Export, label: name.clone() })
-                } else {
-                    None
-                };
+                let entry = entry_of(m, item, src, &name, &attrs);
                 store.add_node(Node {
                     id: nid.clone(),
                     kind: NodeKind::Function,
@@ -880,13 +885,19 @@ fn place_literals(n: TsNode, src: &[u8]) -> Vec<String> {
     }
 }
 
-/// The name a call's value is kept by: `let x = f(..)?`, `let x = f(..).unwrap()`, `x = f(..)`.
+/// The name a call's value is kept by: `let x = f(..)?`, `let x = f(..).unwrap()`, `x = f(..)`,
+/// through what an arm of a choice gives (`let x = if c { Some(f(..)) } else { None }`): the last
+/// expression of a block, a `match` arm, `Some`, `Ok` and `Err`.
 fn kept_as(c: TsNode, src: &[u8]) -> Option<String> {
     let mut n = c;
     loop {
         let p = n.parent()?;
         match p.kind() {
-            "try_expression" | "await_expression" | "reference_expression" | "parenthesized_expression" => n = p,
+            "try_expression" | "await_expression" | "reference_expression" | "parenthesized_expression" | "else_clause" => n = p,
+            "match_expression" if p.child_by_field_name("body").map(|b| b.id()) == Some(n.id()) => n = p,
+            "block" if p.named_child(p.named_child_count().saturating_sub(1)).map(|x| x.id()) == Some(n.id()) && n.kind() != "expression_statement" => n = p,
+            "arguments" if p.named_child_count() == 1 && p.parent().and_then(|c| c.child_by_field_name("function")).map_or(false, |f| matches!(text(f, src), "Some" | "Ok" | "Err")) => n = p.parent()?,
+            _ if (CHOICES.chooses)(p, src) && !matches!((CHOICES.part)(p, n, src), Part::Decides) => n = p,
             // `.unwrap()` and its kind hand on the value they are called on
             "field_expression" => {
                 let call = p.parent().filter(|x| x.kind() == "call_expression")?;
@@ -1138,9 +1149,11 @@ impl<'a, 't> Body<'a, 't> {
         out
     }
 
-    /// What a call gives back, by the name the body keeps it by.
+    /// What a call gives back, by the name the body keeps it by: the type the local is declared
+    /// with, else the class the call builds or returns.
     fn gives(&self, c: TsNode, to: Option<&str>) -> Vec<Held> {
-        kept_as(c, self.src).map(|name| Held::new(self.locals.get(&name).cloned().or_else(|| to.and_then(|t| self.returned_class(t))).unwrap_or_default(), name)).into_iter().collect()
+        let made = |t: &str| self.class_of(t).or_else(|| self.returned_class(t));
+        kept_as(c, self.src).map(|name| Held::new(self.locals.get(&name).cloned().or_else(|| to.and_then(made)).unwrap_or_default(), name)).into_iter().collect()
     }
 
     /// A boundary call's touches, refined by the literals that name its place.

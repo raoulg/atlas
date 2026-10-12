@@ -237,6 +237,16 @@ pub enum Side {
     Out,
 }
 
+impl Side {
+    /// The disk a step reads from (in) or writes to (out), where no file is named.
+    pub fn disk(self) -> Place {
+        match self {
+            Side::In => place("w:Disk:in".into(), "Disk in".into(), "Disk in".into(), "file"),
+            Side::Out => place("w:Disk:out".into(), "Disk out".into(), "Disk out".into(), "file"),
+        }
+    }
+}
+
 impl World {
     /// The name the picture gives this part of the world.
     pub fn name(self) -> &'static str {
@@ -315,10 +325,7 @@ impl Touch {
                     let a = &self.artifact;
                     return Place { file: a.clone(), ..place(format!("w:File:{a}"), format!("File({a})"), a.clone(), "file") };
                 }
-                let coarse = match self.side() {
-                    Side::In => place("w:Disk:in".into(), "Disk in".into(), "Disk in".into(), "file"),
-                    Side::Out => place("w:Disk:out".into(), "Disk out".into(), "Disk out".into(), "file"),
-                };
+                let coarse = self.side().disk();
                 if self.what.is_empty() {
                     return coarse;
                 }

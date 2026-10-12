@@ -44,6 +44,19 @@ def fresh_or_empty(text: str, fresh: bool) -> Graph:
     return build_graph(text) if fresh else empty()
 
 
+def seeded(text: str, seed: bool) -> None:
+    g = Graph(nodes=[Node(id=text)]) if seed else Graph(nodes=[])
+    enrich(g, Node(id="end"))
+
+
+def seed_graph(text: str, seed: bool) -> Graph:
+    return Graph(nodes=[Node(id=text)]) if seed else Graph(nodes=[])
+
+
+def seeded_by_name(text: str, seed: bool) -> None:
+    enrich(seed_graph(text, seed), Node(id="end"))
+
+
 def reread() -> int:
     r = reader()
     return len(r.nodes())

@@ -258,10 +258,14 @@ Two shapes of the same problem:
 
 Atlas records, for every call, the arms of the choices it sits in (`if`/`elif`/`else`,
 `match`, `try`/`except`, `a if c else b`, `x or y`; Rust's `if`, `match` and
-`unwrap_or_else`/`or_else`), and for every comparison of a value with string literals,
+`unwrap_or_else`/`or_else`), the name the body keeps its value by, through the arms of a
+choice (`g = a() if c else b()`), and for every comparison of a value with string literals,
 the choice it decides. It checks: a parameter (or `self`) tested against the same literal
-in two or more places, and a body whose alternatives each produce the same type while it
-also takes other steps.
+in two or more places, and alternatives in two or more arms that each make a value of one
+type for one later step of the body, by the name it is kept by or handed straight on. It
+reads every call as its own step, so the same constructor in two arms is two alternatives.
+A choice whose value the body returns, or whose arms each finish their own case, is the
+body's name, not a step without one.
 
 A student's exam project: `run_standard_experiment(args)` tests `args.experiment` in four
 places, and `"parallel"` comes back three times. One `Experiment` per name, holding

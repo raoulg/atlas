@@ -10,7 +10,7 @@ use std::path::Path;
 
 use serde::Serialize;
 
-use crate::model::{Edge, EdgeKind, EntryKind, Graph, Leaves, Node, NodeKind};
+use crate::model::{Edge, EdgeKind, EntryKind, Graph, Leaves, Node, NodeKind, Site};
 
 /// A principle by its id and what it asks of code.
 pub struct Principle {
@@ -614,41 +614,55 @@ fn repeated(ix: &Index, f: &Node) -> Vec<Finding> {
     out
 }
 
-/// Alternatives that each produce the same type, in a body that does more than choose.
-fn unnamed<'g>(ix: &Index<'g>, f: &Node) -> Vec<Finding> {
-    let calls: Vec<&'g Edge> = ix.out.get(f.id.as_str()).into_iter().flatten().filter(|e| matches!(e.kind, EdgeKind::Calls | EdgeKind::Instantiates)).copied().collect();
-    // the type a step hands on: what it constructs, or the class it returns
-    let made = |e: &'g Edge| -> Vec<&'g str> {
-        if e.kind == EdgeKind::Instantiates {
-            return vec![e.dst.as_str()];
+/// Alternatives that each produce the same type for one later step: ways to get one value in
+/// the middle of a body. Read from the body's steps, one per call with its own arms, as the route
+/// draws them, and from what each step is handed; a choice nested in an arm is read among the
+/// steps of that arm.
+fn unnamed<'g>(ix: &Index<'g>, f: &'g Node) -> Vec<Finding> {
+    let body: Vec<&'g Site> = f.sites.iter().filter(|s| !s.to.is_empty()).collect();
+    // the type a step hands on: the class it constructs, or the class it returns
+    let made = |s: &'g Site| -> Vec<&'g str> {
+        match ix.node(&s.to) {
+            Some(n) if n.kind == NodeKind::Class => vec![s.to.as_str()],
+            _ => ix.targets(&s.to, EdgeKind::Returns).into_iter().filter(|t| ix.node(t).map_or(false, |n| n.kind == NodeKind::Class)).collect(),
         }
-        ix.targets(&e.dst, EdgeKind::Returns).into_iter().filter(|t| ix.node(t).map_or(false, |n| n.kind == NodeKind::Class)).collect()
     };
-    // the choices the body itself makes; one nested in an arm is part of the arm
-    let choice_ids: BTreeSet<u32> = calls.iter().filter_map(|e| e.arms.first().map(|(c, _)| *c)).collect();
+    // every choice, by the arms around it: the steps of that arm are its scope
+    let choices: BTreeSet<(&'g [(u32, u32)], u32)> = body.iter().flat_map(|s| (0..s.arms.len()).map(move |d| (&s.arms[..d], s.arms[d].0))).collect();
     let mut out = vec![];
-    for c in choice_ids {
-        let inside: Vec<&'g Edge> = calls.iter().copied().filter(|e| e.arms.first().map_or(false, |(ch, _)| *ch == c)).collect();
-        if inside.len() == calls.len() {
-            continue; // the body is the choice: it has a name, the function's
-        }
-        // type -> arm -> the steps in that arm that produce it
-        let mut by_type: BTreeMap<&str, BTreeMap<u32, Vec<&str>>> = BTreeMap::new();
-        for e in &inside {
-            let arm = e.arms.first().map_or(0, |(_, a)| *a);
-            for t in made(e) {
-                by_type.entry(t).or_default().entry(arm).or_default().push(e.dst.as_str());
+    for (around, c) in choices {
+        let d = around.len();
+        let (inside, outside): (Vec<&'g Site>, Vec<&'g Site>) = body.iter().copied().filter(|s| s.arms.starts_with(around)).partition(|s| s.arms.get(d).map_or(false, |(ch, _)| *ch == c));
+        // type -> (arm -> the steps in it that make the value, the steps outside handed it); a
+        // value returned, dropped or used inside its arm goes to no step outside
+        let mut by_type: BTreeMap<&str, (BTreeMap<u32, BTreeSet<&str>>, Vec<String>)> = BTreeMap::new();
+        for next in &outside {
+            let handed: HashSet<&str> = next.hands.iter().map(|h| h.name.as_str()).filter(|n| !n.is_empty()).collect();
+            let mut arms: BTreeMap<&str, BTreeMap<u32, BTreeSet<&str>>> = BTreeMap::new();
+            for s in inside.iter().filter(|s| s.gives.iter().any(|g| handed.contains(g.name.as_str()))) {
+                for t in made(s) {
+                    arms.entry(t).or_default().entry(s.arms[d].1).or_default().insert(s.to.as_str());
+                }
+            }
+            for (t, arms) in arms.into_iter().filter(|(_, arms)| arms.len() > 1) {
+                let (all, nexts) = by_type.entry(t).or_default();
+                for (arm, steps) in arms {
+                    all.entry(arm).or_default().extend(steps);
+                }
+                let label = ix.label(&next.to);
+                if !nexts.contains(&label) {
+                    nexts.push(label);
+                }
             }
         }
-        for (t, arms) in by_type.into_iter().filter(|(_, arms)| arms.len() > 1) {
+        for (t, (arms, next)) in by_type {
             let steps: Vec<String> = arms.values().flatten().map(|s| ix.label(s)).collect();
-            let others: Vec<String> = calls.iter().filter(|e| e.arms.first().map_or(true, |(ch, _)| *ch != c)).map(|e| ix.label(&e.dst)).collect();
             let ty = ix.label(t);
             out.push(ix.finding(
                 "choices",
                 f,
-                format!("{} chooses where its {ty} comes from ({}) between its other steps", ix.label(&f.id), steps.join(" | ")),
-                vec![format!("alternatives: {}", steps.join(" | ")), format!("around them: {}", list(&others))],
+                format!("{} chooses where its {ty} comes from ({}) and goes on with it", ix.label(&f.id), steps.join(" | ")),
+                vec![format!("alternatives: {}", steps.join(" | ")), format!("then: {}", list(&next))],
                 format!("Where the {ty} comes from is a step of its own, with {} as its arms. What would that step be called?", list(&steps)),
             ));
         }
