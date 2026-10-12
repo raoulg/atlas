@@ -111,8 +111,9 @@ fn ts_db(pkg: &str) -> Option<World> {
 
 /// The part of the world a library's calls reach, for a library that is a client of one: a
 /// database, the network, a language model, a process. A value of its types is a door to that
-/// place, not data at rest.
+/// place, not data at rest. A package's own implementation (`_sqlite3`) is the package.
 pub fn library_place(pkg: &str) -> Option<World> {
+    let pkg = pkg.strip_prefix('_').unwrap_or(pkg);
     if NET_PKGS.contains(&pkg) || RUST_NET.contains(&pkg) || TS_NET.contains(&pkg) {
         return Some(World::Net);
     }

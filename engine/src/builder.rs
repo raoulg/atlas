@@ -124,7 +124,7 @@ impl GraphBuilder {
             kind: NodeKind::External,
             name,
             module: module.into(),
-            door: crate::effects::library_place(package.strip_prefix('_').unwrap_or(package)),
+            door: crate::effects::library_place(package),
             ..Default::default()
         });
     }
@@ -149,7 +149,7 @@ fn mark_doors(nodes: &mut IndexMap<String, Node>, edges: &[Edge]) {
                 return Some(t.kind);
             }
             let next = match n.kind {
-                NodeKind::Class => vec![format!("{id}.__init__")],
+                NodeKind::Class => n.initializer(|m| nodes.get(m)).into_iter().collect::<Vec<String>>(),
                 _ => out.get(id.as_str()).into_iter().flatten().map(|d| d.to_string()).collect(),
             };
             for d in next {

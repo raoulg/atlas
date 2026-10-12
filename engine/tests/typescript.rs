@@ -31,8 +31,10 @@ fn files_are_modules_and_types_are_types() {
     assert_eq!(kind("lib"), Some(NodeKind::Module), "lib/index.ts stands for lib");
     assert!(g.node("fixture-ts.lib").unwrap().is_pkg);
     assert_eq!(kind("lib.model.Regel"), Some(NodeKind::Class), "an interface is a type");
-    let ctor = g.node("fixture-ts.lib.model.Laag.__init__").expect("a constructor is the class's __init__");
-    assert_eq!(ctor.name, "constructor");
+    let ctor = g.node("fixture-ts.lib.model.Laag.constructor").unwrap();
+    assert!(ctor.ctor && !ctor.on_class, "the constructor initializes what `new Laag()` makes");
+    let laag = g.node("fixture-ts.lib.model.Laag").unwrap();
+    assert_eq!(laag.initializer(|id| g.node(id)).as_deref(), Some("fixture-ts.lib.model.Laag.constructor"));
     let fields = edges(&g, EdgeKind::Has);
     assert!(has(&fields, "lib.model.Regel", "lib.model.Laag"), "an interface's typed property");
     assert!(has(&fields, "lib.model.Laag", "lib.model.Bron"), "`constructor(private bron: Bron)` declares a field");

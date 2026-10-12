@@ -73,5 +73,5 @@ fn a_body_lists_its_calls() {
     assert_eq!((fast.hands.clone(), fast.gives.clone()), (vec![held("plotkit.figures.Settings", "settings")], vec![held("", "shown")]));
     // in the library's own body, a call on `self` says so
     let base = g.nodes.iter().find(|n| n.id == "plotkit.figures.BasePlot.plot").unwrap();
-    assert!(base.sites.iter().any(|s| s.to == "plotkit.figures.BasePlot.build" && s.this), "{:#?}", base.sites);
+    assert!(base.sites.iter().any(|s| s.to == "plotkit.figures.BasePlot.build" && s.on_receiver), "{:#?}", base.sites);
 }

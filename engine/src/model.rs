@@ -89,9 +89,10 @@ pub struct Node {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub decorators: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub params: Vec<String>,
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub returns: String,
+    pub params: Vec<Param>,
+    /// What the signature says it gives back; none when it does not say.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub returns: Option<Returns>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub entry: Option<Entry>,
     /// The calls that leave the package, with what they touch: a path literal, a table, a
@@ -105,6 +106,13 @@ pub struct Node {
     /// TypeScript `static` method.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub on_class: bool,
+    /// Calling it makes a value of its class: an initializer, which fills in the value a call to
+    /// the class makes (so it is not `on_class`), or a function on the class that gives one.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub ctor: bool,
+    /// Only the code beside it may use it: its module, or for a member its class.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub private: bool,
     /// For a function handed to a call where it is declared (`memo((props) => ..)`,
     /// `createServerFn(..).handler(..)`): the call, which gives its parameters their types.
     #[serde(default, skip_serializing_if = "String::is_empty")]
@@ -130,6 +138,61 @@ pub struct Node {
     pub sites: Vec<Site>,
 }
 
+impl Node {
+    /// For a class: what a call to it runs, among its methods: its initializer.
+    pub fn initializer<'a>(&self, node: impl Fn(&str) -> Option<&'a Node>) -> Option<String> {
+        self.methods.iter().map(|m| format!("{}.{m}", self.id)).find(|id| node(id).map_or(false, |m| m.ctor && !m.on_class))
+    }
+}
+
+/// A parameter, as the signature declares it.
+#[derive(Serialize, Deserialize, TS, Clone, Debug, Default, PartialEq, Eq)]
+#[ts(export)]
+pub struct Param {
+    /// The name the body holds it by: `args` for `*args`, `xs` for `...xs`, a pattern as written.
+    pub name: String,
+    /// Its type as written; empty when the signature does not say.
+    #[serde(default, rename = "type", skip_serializing_if = "String::is_empty")]
+    pub ty: String,
+    /// The value the function is called on, or the class it is called through: no input of its
+    /// own.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub receiver: bool,
+    /// It takes whatever arguments are left.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub rest: bool,
+    /// The signature says the body may change it in place.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub changes: bool,
+}
+
+/// `name: type`, and `…name` for one that takes whatever arguments are left.
+impl std::fmt::Display for Param {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{}{}", if self.rest { "…" } else { "" }, self.name)?;
+        if !self.ty.is_empty() {
+            write!(f, ": {}", self.ty)?;
+        }
+        Ok(())
+    }
+}
+
+/// What a signature says a function gives back.
+#[derive(Serialize, Deserialize, TS, Clone, Debug, Default, PartialEq, Eq)]
+#[ts(export)]
+pub struct Returns {
+    /// The type as written.
+    pub written: String,
+    /// The type of the value it gives, out of the effect its language wraps a value in (it may
+    /// fail, it arrives later) and out of a reference. Empty when it gives no value: the unit
+    /// type, or a value of the class it runs on (`own`).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub value: String,
+    /// It gives a value of the class it runs on, whichever subclass that is.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub own: bool,
+}
+
 /// A call in a body, as a step of the route through it: what it reaches, what it is handed and
 /// what it gives back.
 #[derive(Serialize, Deserialize, TS, Clone, Debug, Default, PartialEq)]
@@ -149,8 +212,8 @@ pub struct Site {
     pub on: String,
     /// The call is made on the body's own receiver (`self.build(..)`): on a value of a
     /// subclass, it reaches that subclass's method.
-    #[serde(default, rename = "self", skip_serializing_if = "std::ops::Not::not")]
-    pub this: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub on_receiver: bool,
     /// The values the call is handed: its arguments and the value it is called on.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub hands: Vec<Held>,
@@ -560,6 +623,23 @@ pub struct Part {
     /// The directory that holds the part's manifest.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub dir: String,
+    /// What its language leaves to the author.
+    #[serde(default)]
+    pub leaves: Leaves,
+}
+
+/// What a language leaves its author to write: what its compiler neither asks for nor works out,
+/// so that code may leave it out and a reader then does not know it.
+#[derive(Serialize, Deserialize, TS, Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[ts(export)]
+pub struct Leaves {
+    /// What a package offers: whatever its root binds, unless the author names it.
+    pub exports: bool,
+    /// The types of a signature: it may say none, and nothing works them out.
+    pub types: bool,
+    /// What a function gives back, as its declaration reads: left out, or worked out where a
+    /// reader of the declaration does not see it.
+    pub returns: bool,
 }
 
 #[derive(Serialize, Deserialize, TS, Clone, Debug, Default)]

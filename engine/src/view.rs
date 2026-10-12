@@ -100,9 +100,9 @@ impl View for Compose {
 
 // ---------- the built-in views ----------
 
-/// Drop private symbols (leading underscore, dunders included); modules always stay.
+/// Drop what only the code beside it may use; modules always stay.
 pub fn hide_private() -> impl View {
-    Fiber(|n: &Node| n.kind == NodeKind::Module || !n.name.starts_with('_'))
+    Fiber(|n: &Node| n.kind == NodeKind::Module || !n.private)
 }
 
 /// Keep what an entry point reaches through calls and instantiations, the entry included.

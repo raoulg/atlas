@@ -31,7 +31,31 @@ fn modules_classes_and_functions_are_found() {
     assert!(g.node("fixture.sinks").unwrap().is_pkg);
     assert_eq!(g.node("fixture.schema.Graph").unwrap().doc, "Nodes and edges.");
     assert_eq!(g.node("fixture.sinks.duck.DuckSink").unwrap().bases, vec!["Sink", "Mixin"]);
-    assert_eq!(g.node("fixture.build.build_graph").unwrap().returns, "Graph");
+    assert_eq!(g.node("fixture.build.build_graph").unwrap().returns.as_ref().unwrap().value, "Graph");
+}
+
+/// A signature is data each reader writes the same way: a parameter by name and type, the value
+/// or class a method is called on as its receiver, and what it gives out of the effect its
+/// language wraps it in. `None`, `()`, `Result<()>` and `void` give no value; `Self` gives one of
+/// the class it runs on.
+#[test]
+fn a_signature_is_data_in_every_language() {
+    let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let read = |dir: &str| analyze(&manifest.join(dir), &Options::default()).unwrap();
+    let (py, rs, ts) = (fixture(), read("tests/fixture-rs"), read("tests/fixture-ts"));
+    let gives = |g: &Graph, id: &str| g.node(id).unwrap_or_else(|| panic!("{id}")).returns.clone().map(|r| (r.value, r.own));
+    let params = |g: &Graph, id: &str| g.node(id).unwrap().params.iter().map(|p| (p.to_string(), p.receiver)).collect::<Vec<_>>();
+
+    assert_eq!(params(&py, "fixture.files.Report.from_file"), [("cls".into(), true), ("path: Path".into(), false)]);
+    assert_eq!(gives(&py, "fixture.sinks.base.Sink.write"), Some((String::new(), false)));
+    assert_eq!(gives(&py, "fixture.schema.Graph.first"), None, "a signature that does not say");
+
+    assert_eq!(params(&rs, "handed.world.Log.append"), [("self".into(), true), ("line: &str".into(), false)]);
+    assert_eq!(gives(&rs, "handed.world.Log.append"), Some((String::new(), false)), "std::io::Result<()>");
+    assert_eq!(gives(&rs, "handed.shapes.Shape.square"), Some((String::new(), true)), "Self");
+
+    assert_eq!(gives(&ts, "fixture-ts.lib.klant.vraag"), Some(("Response".into(), false)), "Promise<Response>");
+    assert_eq!(gives(&ts, "fixture-ts.server.opslag.bewaar"), Some((String::new(), false)), "void");
 }
 
 #[test]
@@ -572,4 +596,19 @@ fn types_fall_into_families() {
     assert!(t.members["fixture.sinks.base.Sink"].contains(&"fixture.sinks.duck.DuckSink".to_string()));
     assert!(t.doors.contains(&"fixture.sinks.base.Sink".to_string()), "DuckSink writes to DuckDB, so a Sink is a door");
     assert!(!t.doors.contains(&"fixture.schema.Graph".to_string()), "a Graph is data");
+}
+
+/// Making a value is one arrow in every language: into `Memory(T)` from what it takes, with no
+/// value it runs on. Python's `Report(lines)` runs the initializer, `Report.from_file(path)`
+/// constructs one on the class, and so does Rust's `Shape::square()`.
+#[test]
+fn a_constructor_is_an_arrow_into_its_type() {
+    let rs = analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixture-rs"), &Options::default()).unwrap();
+    let py = fixture();
+    let (rs_arrows, py_arrows) = (atlas_engine::flow::arrows(&rs), atlas_engine::flow::arrows(&py));
+    let into = |a: &atlas_engine::flow::Arrow| (a.receiver.clone(), a.builds.clone());
+    assert_eq!(into(&rs_arrows["handed.shapes.Shape.square"]), (String::new(), "handed.shapes.Shape".into()));
+    assert_eq!(into(&py_arrows["fixture.files.Report.__init__"]), (String::new(), "fixture.files.Report".into()));
+    assert_eq!(into(&py_arrows["fixture.files.Report.from_file"]), (String::new(), "fixture.files.Report".into()));
+    assert_eq!(py.node("fixture.files.Report").unwrap().initializer(|id| py.node(id)).as_deref(), Some("fixture.files.Report.__init__"));
 }

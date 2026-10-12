@@ -18,7 +18,7 @@ use crate::effects::{self, Crossing};
 use crate::pytypes::{By, Facts, FileArg, Target, Ty, Types, Value};
 use paths::{At, Built, Eval, Passed, Seg};
 use crate::entries::entry_of;
-use crate::model::{Compare, Dir, EdgeKind, Entry, EntryKind, Held, Node, NodeKind, Site, Touch, World};
+use crate::model::{Compare, Dir, EdgeKind, Entry, EntryKind, Held, Node, NodeKind, Param, Returns, Site, Touch, World};
 pub use crate::builder::{ClassInfo, GraphBuilder, SigInfo};
 use crate::tree::{
     argument, arms_of, decides, evaluation_order, field_children, literals, named_children, nth_of_kind, number_choices, payload_of, span, starts_at_literal, text, unquote, walk,
@@ -224,7 +224,9 @@ fn iter_defs<'t>(block: TsNode<'t>, src: &[u8]) -> Vec<(Vec<String>, TsNode<'t>)
     out
 }
 
-fn signature(f: TsNode, src: &[u8]) -> (Vec<String>, String, SigInfo) {
+/// A signature as data: each parameter by name, type and kind, and what it gives back. A method's
+/// first parameter is the value or the class it is called on, unless it is a `staticmethod`.
+fn signature(f: TsNode, src: &[u8], receiver: bool) -> (Vec<Param>, Option<Returns>, SigInfo) {
     let mut params = vec![];
     let mut info = SigInfo::default();
     if let Some(pn) = f.child_by_field_name("parameters") {
@@ -238,17 +240,31 @@ fn signature(f: TsNode, src: &[u8]) -> (Vec<String>, String, SigInfo) {
             };
             let pname = name_node.map(|n| text(n, src)).unwrap_or_else(|| text(p, src));
             let t = p.child_by_field_name("type");
-            params.push(match t {
-                Some(t) => format!("{pname}: {}", text(t, src)),
-                None => pname.to_string(),
+            params.push(Param {
+                name: pname.trim_start_matches('*').to_string(),
+                ty: t.map(|t| text(t, src).to_string()).unwrap_or_default(),
+                receiver: receiver && params.is_empty(),
+                rest: pname.starts_with('*'),
+                changes: false,
             });
             info.ptypes.extend(type_names(t, src));
         }
     }
     let rt = f.child_by_field_name("return_type");
-    let returns = rt.map(|r| text(r, src).to_string()).unwrap_or_default();
     info.rtypes = type_names(rt, src);
-    (params, returns, info)
+    (params, rt.map(|r| returns(r, src)), info)
+}
+
+/// What a return annotation gives: `None` no value, `Self` a value of the class it runs on.
+fn returns(rt: TsNode, src: &[u8]) -> Returns {
+    let written = text(rt, src).to_string();
+    let inner = if rt.kind() == "type" { named_children(rt).into_iter().next().unwrap_or(rt) } else { rt };
+    let (value, own) = match inner.kind() {
+        "none" => (String::new(), false),
+        _ if written.rsplit('.').next() == Some("Self") => (String::new(), true),
+        _ => (written.clone(), false),
+    };
+    Returns { written, value, own }
 }
 
 // ---------- loading ----------
@@ -736,7 +752,9 @@ fn collect_symbols(m: &mut Module, store: &mut GraphBuilder) {
                 for (mdecs, md) in iter_defs(body, src) {
                     let mname = md.child_by_field_name("name").map(|n| text(n, src)).unwrap_or("").to_string();
                     let mnid = format!("{nid}.{mname}");
-                    let (params, returns, sig) = signature(md, src);
+                    let on_class = mdecs.iter().any(|d| matches!(d.as_str(), "classmethod" | "staticmethod"));
+                    let (params, returns, sig) = signature(md, src, !mdecs.iter().any(|d| d == "staticmethod"));
+                    let gives_class = returns.as_ref().map_or(false, |r| r.own || r.value.trim_matches(['"', '\'']) == name);
                     store.sigs.insert(mnid.clone(), sig);
                     store.add_node(Node {
                         id: mnid.clone(),
@@ -747,7 +765,9 @@ fn collect_symbols(m: &mut Module, store: &mut GraphBuilder) {
                         module: m.id.clone(),
                         doc: first_docline(md.child_by_field_name("body"), src),
                         cls: Some(nid.clone()),
-                        on_class: mdecs.iter().any(|d| matches!(d.as_str(), "classmethod" | "staticmethod")),
+                        on_class,
+                        ctor: mname == "__init__" || on_class && gives_class,
+                        private: mname.starts_with('_'),
                         decorators: mdecs.clone(),
                         params,
                         returns,
@@ -773,6 +793,7 @@ fn collect_symbols(m: &mut Module, store: &mut GraphBuilder) {
                 }
             }
             store.classes.insert(nid.clone(), ClassInfo { bases: bases.clone(), fields, ..Default::default() });
+            let private = name.starts_with('_');
             store.add_node(Node {
                 id: nid.clone(),
                 kind: NodeKind::Class,
@@ -782,13 +803,14 @@ fn collect_symbols(m: &mut Module, store: &mut GraphBuilder) {
                 module: m.id.clone(),
                 doc: first_docline(body, src),
                 decorators: decs,
+                private,
                 bases: bases.iter().map(|b| b.join(".")).collect(),
                 methods,
                 ..Default::default()
             });
             store.add_edge(&m.id, &nid, EdgeKind::Contains, None);
         } else {
-            let (params, returns, sig) = signature(d, src);
+            let (params, returns, sig) = signature(d, src, false);
             store.sigs.insert(nid.clone(), sig);
             store.add_node(Node {
                 id: nid.clone(),
@@ -799,6 +821,7 @@ fn collect_symbols(m: &mut Module, store: &mut GraphBuilder) {
                 module: m.id.clone(),
                 doc: first_docline(body, src),
                 decorators: decs.clone(),
+                private: name.starts_with('_'),
                 params,
                 returns,
                 entry: entry_of(&decs, &name),
@@ -1777,7 +1800,7 @@ fn link_calls<'t>(modules: &'t IndexMap<String, Module>, store: &mut GraphBuilde
             match &callee {
                 Some(Callee::Def(t)) => {
                     let this = receiver.map_or(false, |o| o.kind() == "identifier" && text(o, src) == "self");
-                    steps.push(Site { line, to: t.clone(), on: on.unwrap_or_default(), this, hands: hands.clone(), gives: gives.clone(), arms: arms.clone(), span: (c.start_byte() as u32, c.end_byte() as u32), ..Default::default() })
+                    steps.push(Site { line, to: t.clone(), on: on.unwrap_or_default(), on_receiver: this, hands: hands.clone(), gives: gives.clone(), arms: arms.clone(), span: (c.start_byte() as u32, c.end_byte() as u32), ..Default::default() })
                 }
                 // a library's call not read that makes a value the body keeps under a name, from
                 // values it was handed, is a step of its own; what a call gives without a name

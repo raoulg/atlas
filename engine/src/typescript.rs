@@ -20,7 +20,7 @@ use paths::{Arg, At, Eval};
 
 use crate::builder::{ClassInfo, GraphBuilder, SigInfo};
 use crate::effects::{self, Crossing};
-use crate::model::{Compare, EdgeKind, Entry, EntryKind, Held, Node, NodeKind, Site, Touch, World};
+use crate::model::{Compare, EdgeKind, Entry, EntryKind, Held, Node, NodeKind, Param, Returns, Site, Touch, World};
 use crate::tree::{
     arms_of, decides, evaluation_order, literals, named_children, nth_of_kind, number_choices, payload_of, span, starts_at_literal, text, unquote,
     walk, what_of, ChoiceSyntax, Part,
@@ -301,31 +301,54 @@ fn collect_types(n: TsNode, src: &[u8], out: &mut Vec<Vec<String>>) {
     }
 }
 
-/// `(id: string, opt?: Opties)` as the author wrote each parameter, and the types they name.
-fn signature(params: Option<TsNode>, ret: Option<TsNode>, src: &[u8]) -> (Vec<String>, String, SigInfo) {
+/// A signature as data: each parameter by name and type (`(id: string, opt?: Opties)`), the types
+/// they name, and what it gives back. `...rest` takes whatever arguments are left; a `this`
+/// parameter is the value the function is called on.
+fn signature(params: Option<TsNode>, ret: Option<TsNode>, src: &[u8]) -> (Vec<Param>, Option<Returns>, SigInfo) {
     let mut out = vec![];
     let mut info = SigInfo::default();
     if let Some(ps) = params {
         // an arrow with one bare parameter: `x => ..`
         if ps.kind() == "identifier" {
-            out.push(text(ps, src).to_string());
+            out.push(Param { name: text(ps, src).to_string(), ..Default::default() });
         } else {
             for p in named_children(ps).into_iter().filter(|p| p.kind() != "comment") {
-                let pattern = p.child_by_field_name("pattern").map(|x| text(x, src)).unwrap_or_else(|| text(p, src));
-                let pattern = pattern.split_whitespace().collect::<Vec<_>>().join(" ");
-                let optional = if p.kind() == "optional_parameter" { "?" } else { "" };
+                let pattern = p.child_by_field_name("pattern");
+                let written = pattern.map(|x| text(x, src)).unwrap_or_else(|| text(p, src));
+                let name = written.split_whitespace().collect::<Vec<_>>().join(" ");
                 let ty = p.child_by_field_name("type");
-                out.push(match ty.and_then(|t| named_children(t).into_iter().next()) {
-                    Some(t) => format!("{pattern}{optional}: {}", text(t, src)),
-                    None => pattern.to_string(),
+                out.push(Param {
+                    name: name.trim_start_matches("...").to_string(),
+                    ty: ty.and_then(|t| named_children(t).into_iter().next()).map(|t| text(t, src).to_string()).unwrap_or_default(),
+                    receiver: pattern.map_or(false, |x| x.kind() == "this"),
+                    rest: pattern.map_or(false, |x| x.kind() == "rest_pattern"),
+                    changes: false,
                 });
                 info.ptypes.extend(type_names(ty, src));
             }
         }
     }
-    let returns = ret.and_then(|r| named_children(r).into_iter().next()).map(|r| text(r, src).to_string()).unwrap_or_default();
+    let returns = ret.and_then(|r| named_children(r).into_iter().next()).map(|r| returns(r, src));
     info.rtypes = type_names(ret, src);
     (out, returns, info)
+}
+
+/// What a return type gives: a `Promise<T>` gives `T` once it arrives, `void` and `undefined` no
+/// value, `this` a value of the class it runs on.
+fn returns(rt: TsNode, src: &[u8]) -> Returns {
+    let mut t = rt;
+    while t.kind() == "generic_type" && t.child_by_field_name("name").map_or(false, |n| text(n, src) == "Promise") {
+        match t.child_by_field_name("type_arguments").and_then(|a| named_children(a).into_iter().next()) {
+            Some(i) => t = i,
+            None => break,
+        }
+    }
+    let (value, own) = match (t.kind(), text(t, src)) {
+        ("predefined_type", "void" | "undefined") => (String::new(), false),
+        ("this_type", _) => (String::new(), true),
+        (_, v) => (v.to_string(), false),
+    };
+    Returns { written: text(rt, src).to_string(), value, own }
 }
 
 // ---------- pass 1: files, symbols, imports ----------
@@ -484,18 +507,23 @@ fn route_path(value: TsNode, src: &[u8]) -> Option<String> {
 fn add_function(m: &mut Module, store: &mut GraphBuilder, name: &str, def: TsNode, f: TsNode, body: TsNode, cls: Option<&str>) -> String {
     let src = &m.src;
     let id = match cls {
-        // a class's constructor is its __init__, the name the graph gives constructors
-        Some(c) if name == "constructor" => format!("{c}.__init__"),
         Some(c) => format!("{c}.{name}"),
         None => format!("{}.{name}", m.id),
     };
     let params = f.child_by_field_name("parameters").or_else(|| f.child_by_field_name("parameter"));
     let (params, returns, sig) = signature(params, f.child_by_field_name("return_type"), src);
     store.sigs.insert(id.clone(), sig);
+    let on_class = cls.is_some() && (0..def.child_count()).filter_map(|i| def.child(i)).any(|c| c.kind() == "static");
+    // the constructor initializes what `new` makes; a static method that gives its class constructs
+    let class_name = cls.map(|c| c.rsplit('.').next().unwrap_or(c));
+    let gives_class = returns.as_ref().map_or(false, |r| r.own || Some(r.value.as_str()) == class_name);
     store.add_node(Node {
         id: id.clone(),
         kind: if cls.is_some() { NodeKind::Method } else { NodeKind::Function },
-        on_class: cls.is_some() && (0..def.child_count()).filter_map(|i| def.child(i)).any(|c| c.kind() == "static"),
+        on_class,
+        ctor: cls.is_some() && (name == "constructor" || on_class && gives_class),
+        // a member is private when it says so; a module's own name is, unless the module exports it
+        private: cls.is_some() && (name.starts_with('#') || named_children(def).iter().any(|c| c.kind() == "accessibility_modifier" && text(*c, src) != "public")),
         name: name.to_string(),
         file: crate::tree::path_str(&m.path),
         span: span(def),
@@ -663,6 +691,10 @@ fn collect_symbols(m: &mut Module, store: &mut GraphBuilder) {
         if let Some(n) = store.nodes.get_mut(&m.id) {
             n.entry = Some(Entry { kind: EntryKind::Route, label: if path == "__root" { "/ (root)".into() } else { path } });
         }
+    }
+    for n in store.nodes.values_mut().filter(|n| n.module == m.id && n.cls.is_none() && matches!(n.kind, NodeKind::Function | NodeKind::Class)) {
+        let local = n.name.split('.').next().unwrap_or(&n.name);
+        n.private = !m.exported.iter().any(|e| e == local);
     }
 }
 
@@ -1387,7 +1419,6 @@ fn value_type(m: &Module, name: &str, modules: &IndexMap<String, Module>, nodes:
 
 /// The method `name` of a class or one of its bases.
 fn method_of(store: &GraphBuilder, cls: &str, name: &str, depth: u32) -> Option<String> {
-    let name = if name == "constructor" { "__init__" } else { name };
     let cand = format!("{cls}.{name}");
     if store.nodes.contains_key(&cand) {
         return Some(cand);
@@ -1442,10 +1473,9 @@ fn link_calls<'t>(m: &'t Module, modules: &'t IndexMap<String, Module>, store: &
     // parameters and locals with a class type give receivers a type
     let mut locals: HashMap<String, String> = HashMap::new();
     let sig_params = n.params.clone();
-    for p in &sig_params {
-        let Some((name, ty)) = p.split_once(':') else { continue };
-        let name = name.trim().trim_end_matches('?');
-        let ty = ty.trim().split(['<', '[', ' ', '|']).next().unwrap_or("").to_string();
+    for p in sig_params.iter().filter(|p| !p.ty.is_empty()) {
+        let name = p.name.as_str();
+        let ty = p.ty.split(['<', '[', ' ', '|']).next().unwrap_or("").to_string();
         if let Some(r) = resolve(m, &[ty], modules, &store.nodes).filter(|r| store.nodes.get(r).map_or(false, |x| x.kind == NodeKind::Class)) {
             locals.insert(name.to_string(), r);
         }
@@ -1601,7 +1631,7 @@ fn link_calls<'t>(m: &'t Module, modules: &'t IndexMap<String, Module>, store: &
                         let sub = class.filter(|k| store.nodes[t].cls.as_deref().map_or(false, |b| b != k.as_str())).unwrap_or_default();
                         let this = object.map_or(false, |o| o.kind() == "this");
                         let gives = gives_of(c, Some(t));
-                        steps.push(Site { line, to: t.clone(), on: sub, this, hands, gives: gives.clone(), arms: arms.clone(), span: (c.start_byte() as u32, c.end_byte() as u32), ..Default::default() });
+                        steps.push(Site { line, to: t.clone(), on: sub, on_receiver: this, hands, gives: gives.clone(), arms: arms.clone(), span: (c.start_byte() as u32, c.end_byte() as u32), ..Default::default() });
                         kept.extend(gives.into_iter().map(|g| g.name));
                     }
                     // a library's operation not read is a step where the body keeps what it gives
@@ -1617,7 +1647,7 @@ fn link_calls<'t>(m: &'t Module, modules: &'t IndexMap<String, Module>, store: &
                 match target {
                     Some(t) if own(&t, store) => {
                         let kind = if store.nodes[&t].kind == NodeKind::Class { EdgeKind::Instantiates } else { EdgeKind::Calls };
-                        let callee = if kind == EdgeKind::Instantiates { format!("{t}.__init__") } else { t.clone() };
+                        let callee = if kind == EdgeKind::Instantiates { format!("{t}.constructor") } else { t.clone() };
                         if let Some(a) = argument(modules, store, id, &callee, c, m, scope, &params) {
                             linked.args.push(a);
                         }
@@ -1688,7 +1718,7 @@ fn link_calls<'t>(m: &'t Module, modules: &'t IndexMap<String, Module>, store: &
     // a constructor builds its object, it does not change it
     if !is_module {
         for r in changed_roots(body, src) {
-            let ty = if r == "this" { cls.clone().filter(|_| !id.ends_with(".__init__")) } else { param_types.get(r).cloned() };
+            let ty = if r == "this" { cls.clone().filter(|_| !id.ends_with(".constructor")) } else { param_types.get(r).cloned() };
             if let Some(t) = ty {
                 store.add_edge(id, &t, EdgeKind::Mutates, Some(r.to_string()));
             }

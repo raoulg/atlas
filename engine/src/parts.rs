@@ -16,9 +16,6 @@ use crate::Options;
 /// Directories that hold no part: dependencies, build output, and the data tests read.
 const SKIP_DIRS: &[&str] = &["node_modules", "target", "dist", "build", "venv", "site-packages", "__pycache__", "tests", "test", "__tests__", "fixtures", "testdata"];
 
-/// The manifest that roots a part in each language.
-const MANIFESTS: &[(&str, &str)] = &[("Cargo.toml", "rust"), ("pyproject.toml", "python"), ("package.json", "typescript")];
-
 /// The directories whose manifests root a part: the repository itself, and every manifest
 /// below it in a language no enclosing part already reads (a workspace's member crates belong
 /// to the workspace).
@@ -29,10 +26,10 @@ pub fn roots(repo: &Path, opts: &Options) -> Vec<(PathBuf, &'static str)> {
         e.depth() == 0 || !(n.starts_with('.') || SKIP_DIRS.contains(&n))
     });
     for e in walk.flatten().filter(|e| e.file_type().is_dir()) {
-        for (manifest, lang) in MANIFESTS {
-            let inside = out.iter().any(|(d, l)| l == lang && e.path().starts_with(d));
-            if e.path().join(manifest).exists() && !inside {
-                out.push((e.path().to_path_buf(), *lang));
+        for l in crate::language::languages() {
+            let inside = out.iter().any(|(d, name)| *name == l.name() && e.path().starts_with(d));
+            if e.path().join(l.manifest()).exists() && !inside {
+                out.push((e.path().to_path_buf(), l.name()));
             }
         }
     }
@@ -48,7 +45,7 @@ pub fn roots(repo: &Path, opts: &Options) -> Vec<(PathBuf, &'static str)> {
 pub fn analyze_parts(repos: &[PathBuf], opts: &Options) -> Result<Vec<Graph>> {
     let found: Vec<PathBuf> = repos.iter().flat_map(|r| roots(r, opts)).map(|(d, _)| d).collect();
     if found.is_empty() {
-        anyhow::bail!("no part found in {} (looked for Cargo.toml, pyproject.toml, package.json, a Python package)", repos.iter().map(|r| r.display().to_string()).collect::<Vec<_>>().join(", "));
+        anyhow::bail!("no part found in {} ({})", repos.iter().map(|r| r.display().to_string()).collect::<Vec<_>>().join(", "), crate::language::looked_for());
     }
     let opts = Options { package: None, ..opts.clone() };
     let mut graphs = vec![];
@@ -87,7 +84,8 @@ pub fn assign(g: &mut Graph) {
     }
     // the package named after the graph comes first: scripts and notebooks are routes into it
     ids.sort_by_key(|id| id != &g.root);
-    g.parts = ids.iter().map(|id| Part { id: id.clone(), language: g.language.clone(), dir: g.project_root.clone() }).collect();
+    let leaves = crate::language::leaves(&g.language);
+    g.parts = ids.iter().map(|id| Part { id: id.clone(), language: g.language.clone(), dir: g.project_root.clone(), leaves }).collect();
     let known: HashSet<&String> = ids.iter().collect();
     for n in &mut g.nodes {
         let head = n.id.split('.').next().unwrap_or("").to_string();

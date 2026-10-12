@@ -55,7 +55,7 @@ impl Default for Options {
 /// languages is `parts::analyze_repo`.
 pub fn analyze(repo: &Path, opts: &Options) -> Result<Graph> {
     let lang = language::detect(repo, opts)
-        .ok_or_else(|| anyhow::anyhow!("no language recognised in {} (looked for Cargo.toml, pyproject.toml, a Python package, package.json)", repo.display()))?;
+        .ok_or_else(|| anyhow::anyhow!("no language recognised in {} ({})", repo.display(), language::looked_for()))?;
     let mut g = lang.parse(repo, opts)?;
     entries::read_makefile(&mut g);
     parts::assign(&mut g);

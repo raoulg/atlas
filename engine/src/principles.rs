@@ -10,8 +10,7 @@ use std::path::Path;
 
 use serde::Serialize;
 
-use crate::language::{author_declares, door_may_omit_return};
-use crate::model::{Edge, EdgeKind, EntryKind, Graph, Node, NodeKind};
+use crate::model::{Edge, EdgeKind, EntryKind, Graph, Leaves, Node, NodeKind};
 
 /// A principle by its id and what it asks of code.
 pub struct Principle {
@@ -144,6 +143,12 @@ impl<'g> Index<'g> {
         Path::new(&n.file).strip_prefix(root).map(crate::tree::path_str).unwrap_or_else(|_| n.file.clone())
     }
 
+    /// What the language of a node's part leaves to its author.
+    fn leaves(&self, id: &str) -> Leaves {
+        let part = self.node(id).map_or("", |n| n.part.as_str());
+        self.g.parts.iter().find(|p| p.id == part).or(self.g.parts.first()).map_or_else(Leaves::default, |p| p.leaves)
+    }
+
     fn at(&self, n: &Node) -> String {
         format!("{}:{}", self.file(n), n.span.map_or(1, |s| s.0))
     }
@@ -156,7 +161,7 @@ impl<'g> Index<'g> {
         for c in std::iter::once(cls).chain(self.ancestors(cls)) {
             let Some(n) = self.node(c) else { continue };
             for m in n.methods.iter().filter_map(|m| self.node(&format!("{c}.{m}"))) {
-                if (public(m) || m.name == "__init__") && seen.insert(m.name.as_str()) {
+                if (!m.private || m.ctor) && seen.insert(m.name.as_str()) {
                     out.push(m);
                 }
             }
@@ -183,24 +188,14 @@ fn is_function(n: &Node) -> bool {
     matches!(n.kind, NodeKind::Function | NodeKind::Method)
 }
 
-fn public(n: &Node) -> bool {
-    !n.name.starts_with('_')
-}
-
-/// The name a parameter is called by: `*args` -> `args`, `mut g: &mut Graph` -> `g`.
-fn param_name(p: &str) -> &str {
-    let name = p.split([':', '=']).next().unwrap_or(p).trim();
-    name.trim_start_matches('*').trim_start_matches("mut ").trim()
-}
-
-/// `self`, `cls`, `&self`, `&mut self`, `mut self`: the receiver, not something handed in.
-fn is_receiver(p: &str) -> bool {
-    matches!(param_name(p).trim_start_matches('&').trim_start_matches("mut ").trim(), "self" | "cls")
-}
-
 fn signature(n: &Node) -> String {
-    let ret = if n.returns.is_empty() { String::new() } else { format!(" -> {}", n.returns) };
-    format!("{}({}){ret}", n.name, n.params.join(", "))
+    let ret = n.returns.as_ref().map_or(String::new(), |r| format!(" -> {}", r.written));
+    format!("{}({}){ret}", n.name, n.params.iter().map(|p| p.to_string()).collect::<Vec<_>>().join(", "))
+}
+
+/// What a function says it gives, as written.
+fn written(n: &Node) -> &str {
+    n.returns.as_ref().map_or("", |r| r.written.as_str())
 }
 
 fn same_type(a: &str, b: &str) -> bool {
@@ -242,7 +237,7 @@ fn doors(ix: &Index) -> Vec<Finding> {
     let g = ix.g;
     let exports: Vec<&Node> = g.nodes.iter().filter(|n| n.entry.as_ref().map_or(false, |e| e.kind == EntryKind::Export)).collect();
     let mut out = vec![];
-    let declared = author_declares(&g.language);
+    let declared = ix.leaves(&g.root).exports;
     // `src/` is where packages live, not a name: installed, it collides with every other project laid out the same way
     if declared && g.root == "src" {
         if let Some(root) = ix.node(&g.root) {
@@ -270,11 +265,11 @@ fn doors(ix: &Index) -> Vec<Finding> {
         let untyped: Vec<String> = f
             .params
             .iter()
-            .filter(|p| f.typed_by.is_empty() && !p.contains(':') && !is_receiver(p) && !p.starts_with('*'))
-            .map(|p| format!("`{}`", param_name(p)))
+            .filter(|p| f.typed_by.is_empty() && p.ty.is_empty() && !p.receiver && !p.rest)
+            .map(|p| format!("`{}`", p.name))
             .collect();
-        // a constructor gives its class: TypeScript's is `constructor`, the graph's `__init__`
-        let gives_unknown = door_may_omit_return(&g.language) && f.returns.is_empty() && !f.id.ends_with(".__init__");
+        // a constructor gives its class
+        let gives_unknown = ix.leaves(&f.id).returns && f.returns.is_none() && !f.ctor;
         if untyped.is_empty() && !gives_unknown {
             continue;
         }
@@ -309,12 +304,12 @@ fn sums(ix: &Index) -> Vec<Finding> {
             .sources(&s.id, EdgeKind::Takes)
             .iter()
             .filter_map(|c| ix.node(c))
-            .filter(|c| public(c) && !homes.contains(c.module.as_str()))
+            .filter(|c| !c.private && !homes.contains(c.module.as_str()))
             .collect();
         if producers.is_empty() || consumers.is_empty() {
             continue;
         }
-        let mut evidence: Vec<String> = producers.iter().filter(|p| public(p)).map(|p| format!("returned by {} ({})", ix.label(&p.id), ix.at(p))).collect();
+        let mut evidence: Vec<String> = producers.iter().filter(|p| !p.private).map(|p| format!("returned by {} ({})", ix.label(&p.id), ix.at(p))).collect();
         evidence.extend(consumers.iter().map(|c| format!("taken by {} ({})", ix.label(&c.id), ix.at(c))));
         let taken_by: Vec<String> = consumers.iter().map(|c| ix.label(&c.id)).collect();
         out.push(ix.finding(
@@ -337,15 +332,15 @@ fn sums(ix: &Index) -> Vec<Finding> {
 /// An override that gives something its base does not promise: a caller written against the
 /// base cannot take it in its place (Liskov). A subclass of the promised type is fine.
 fn overrides(ix: &Index) -> Vec<Finding> {
-    const CONSTRUCTORS: &[&str] = &["__init__", "__new__", "__post_init__", "__init_subclass__", "new", "default"];
     let mut broken: Vec<(&Node, Vec<&Node>)> = vec![];
-    for m in ix.g.nodes.iter().filter(|n| n.kind == NodeKind::Method && !CONSTRUCTORS.contains(&n.name.as_str())) {
+    for m in ix.g.nodes.iter().filter(|n| n.kind == NodeKind::Method && !n.ctor) {
         let Some(cls) = m.cls.as_deref() else { continue };
         let Some(base) = ix.ancestors(cls).into_iter().find_map(|a| ix.node(&format!("{a}.{}", m.name))) else { continue };
-        if base.returns.is_empty() || m.returns.is_empty() || same_type(&base.returns, &m.returns) {
+        let (Some(promised), Some(given)) = (&base.returns, &m.returns) else { continue };
+        if same_type(&promised.written, &given.written) {
             continue;
         }
-        if base.returns.contains("Self") || m.returns.contains("Self") || keeps(ix, base, m) {
+        if promised.own || given.own || keeps(ix, base, m) {
             continue;
         }
         match broken.iter_mut().find(|(b, _)| b.id == base.id) {
@@ -356,7 +351,7 @@ fn overrides(ix: &Index) -> Vec<Finding> {
     broken
         .into_iter()
         .map(|(base, ms)| {
-            let evidence = ms.iter().map(|m| format!("{} gives {} ({})", ix.label(&m.id), m.returns, ix.at(m))).collect();
+            let evidence = ms.iter().map(|m| format!("{} gives {} ({})", ix.label(&m.id), written(m), ix.at(m))).collect();
             let classes: Vec<String> = ms.iter().filter_map(|m| m.cls.as_deref()).map(|c| ix.label(c)).collect();
             let base_cls = base.cls.as_deref().map(|c| ix.label(c)).unwrap_or_default();
             ix.finding(
@@ -365,7 +360,7 @@ fn overrides(ix: &Index) -> Vec<Finding> {
                 format!(
                     "{} promises {}; {} something else",
                     ix.label(&base.id),
-                    base.returns,
+                    written(base),
                     if ms.len() == 1 { "1 override gives".to_string() } else { format!("{} overrides give", ms.len()) },
                 ),
                 evidence,
@@ -387,11 +382,11 @@ fn overrides(ix: &Index) -> Vec<Finding> {
 /// `Float[Tensor, "..."]` is promised), or, when the base names one type, a subclass of it,
 /// one of the variants of a sum it names, or an array of a shape it allows.
 fn keeps(ix: &Index, base: &Node, m: &Node) -> bool {
-    let (promised, given) = (arrays(&base.returns), arrays(&m.returns));
+    let (promised, given) = (arrays(written(base)), arrays(written(m)));
     if promised.0 == given.0 && promised.1.len() == given.1.len() && promised.1.iter().zip(&given.1).all(|(p, g)| array_fits(g, p)) {
         return true;
     }
-    let bare = base.returns.trim_matches(|c| c == '"' || c == '\'').chars().all(|c| c.is_alphanumeric() || matches!(c, '_' | '.'));
+    let bare = written(base).trim_matches(|c| c == '"' || c == '\'').chars().all(|c| c.is_alphanumeric() || matches!(c, '_' | '.'));
     if !bare {
         return false;
     }
@@ -510,10 +505,10 @@ fn places(ix: &Index) -> Vec<Finding> {
 fn changes(ix: &Index) -> Vec<Finding> {
     let mut out = vec![];
     for e in ix.g.edges.iter().filter(|e| e.kind == EdgeKind::Mutates) {
-        let Some(input) = e.via.as_deref().filter(|v| !matches!(*v, "self" | "this")) else { continue };
+        let Some(input) = e.via.as_deref() else { continue };
         let Some(f) = ix.node(&e.src).filter(|f| is_function(f)) else { continue };
-        let declared = f.params.iter().find(|p| param_name(p) == input).map_or(false, |p| p.split_once(':').map_or(false, |(_, t)| t.trim().starts_with("&mut")));
-        if declared {
+        // an input handed in, not the value the function is called on, that the signature does not say changes
+        if !f.params.iter().any(|p| p.name == input && !p.receiver && !p.changes) {
             continue;
         }
         let ty = ix.label(&e.dst);
@@ -534,15 +529,12 @@ fn changes(ix: &Index) -> Vec<Finding> {
 // ---------- gives ----------
 
 /// A function whose callers use what it gives back, with no return annotation: what they get
-/// has no type, so neither a reader nor Atlas can follow it further. Python leaves the type to
-/// the author; a door is asked about by `doors`.
+/// has no type, so neither a reader nor Atlas can follow it further, where the language leaves
+/// types to the author; a door is asked about by `doors`.
 fn gives(ix: &Index) -> Vec<Finding> {
-    if !author_declares(&ix.g.language) {
-        return vec![];
-    }
     let doors: HashSet<&str> = door_fns(ix).into_iter().map(|f| f.id.as_str()).collect();
     let mut out = vec![];
-    for f in ix.g.nodes.iter().filter(|f| is_function(f) && f.returns.is_empty() && f.name != "__init__" && !doors.contains(f.id.as_str())) {
+    for f in ix.g.nodes.iter().filter(|f| is_function(f) && f.returns.is_none() && !f.ctor && !doors.contains(f.id.as_str()) && ix.leaves(&f.id).types) {
         let mut users: Vec<String> = ix.into.get(f.id.as_str()).into_iter().flatten().filter(|e| e.kind == EdgeKind::Calls && e.uses).map(|e| format!("`{}`", ix.label(&e.src))).collect();
         if users.is_empty() {
             continue;
@@ -582,7 +574,7 @@ fn choices(ix: &Index) -> Vec<Finding> {
 /// The literals a body tests a value it was handed against in more than one place: a
 /// parameter, or `self`, that picks behaviour by name.
 fn repeated(ix: &Index, f: &Node) -> Vec<Finding> {
-    let handed: HashSet<&str> = f.params.iter().map(|p| param_name(p).trim_start_matches('&').trim_start_matches("mut ").trim()).collect();
+    let handed: HashSet<&str> = f.params.iter().map(|p| p.name.as_str()).collect();
     let root = |s: &str| s.split(|c: char| !(c.is_alphanumeric() || c == '_')).next().unwrap_or("").to_string();
     // a place is a choice, or a comparison that decides none on its own line
     let mut places: BTreeMap<&str, BTreeMap<&str, BTreeSet<(Option<u32>, u32)>>> = BTreeMap::new();

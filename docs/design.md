@@ -233,8 +233,25 @@ atlas/
 ## 3. The graph
 
 **Nodes** — `module`, `class`, `function`, `method`, `external`; later `type_alias`, `constant`, `route`, `command`, `cell`. Fields: `id`
-(stable), `kind`, `name`, `file`, `span`, `doc`, `signature`, `decorators`, `entry`,
+(stable), `kind`, `name`, `file`, `span`, `doc`, `params`, `returns`, `decorators`, `entry`,
 `part`, `touches`, `sites`.
+
+**Facts a reader records.** Each language says the same things in its own words; its reader
+writes them down as facts, and nothing after the reader reads a language's names for them.
+A signature is data: each parameter by name and type, with the one a method is called on
+(Python's `self` or `cls`, Rust's `&self`) marked as the receiver, the one that takes the
+remaining arguments as rest, and one whose type says the body may change it (Rust's `&mut`).
+What it gives back is the type as written and the value it gives: out of the effect the
+language wraps a value in (`Result<T, E>` may fail, `Promise<T>` arrives later) and out of a
+reference; no value for the unit type (`None`, `()`, `void`); a value of the class it runs on
+for `Self`. A constructor is a fact (`ctor`): calling it makes a value of its class. An
+initializer fills in the value a call to the class makes (Python's `__init__`, a TypeScript
+`constructor`); a function on the class that gives one constructs it too (Rust's `new`, a
+Python classmethod `-> Self`). Either way the arrow goes into `Memory(T)`. A private name
+(`private`) is one only the code beside it may use: a Python name with a leading `_`, a Rust
+item without `pub`, a TypeScript member marked `private`, `protected` or `#`, or a name its
+module does not export. What a language leaves to its author is a fact on the part
+(`leaves`): a package's exports, a signature's types, what a function gives back.
 
 **Touches** — the calls of a body that leave the program, each typed by the part of the
 world it reaches (`World`: disk, web, a database by its kind, a language model, a model,

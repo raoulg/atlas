@@ -396,20 +396,6 @@ pub struct Arrow {
     pub returns_value: bool,
 }
 
-/// The types that stand for nothing given back, in the languages Atlas reads: Python's `None`,
-/// Rust's `()`, TypeScript's `void` and `undefined`, and `Self`, the value the method was
-/// called on.
-fn unit(ty: &str) -> bool {
-    matches!(ty, "None" | "()" | "Self" | "void" | "undefined")
-}
-
-/// A `Result<T, E>` or a `Promise<T>` as the `T` it gives on success.
-fn unwrapped(ty: &str) -> &str {
-    static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
-    let re = RE.get_or_init(|| regex::Regex::new(r"^(?:[\w:]*::)?(?:Result|Promise)<(.*?)(?:,.*)?>$").unwrap());
-    re.captures(ty).and_then(|c| c.get(1)).map_or(ty, |m| m.as_str())
-}
-
 impl<'g> Ix<'g> {
     fn targets(&self, id: &str, kind: EdgeKind) -> Vec<String> {
         let mut out: Vec<String> = vec![];
@@ -421,9 +407,9 @@ impl<'g> Ix<'g> {
         out
     }
 
+    /// What a call to the class runs: its initializer.
     fn ctor(&self, class: &str) -> Option<String> {
-        let c = format!("{class}.__init__");
-        self.nodes.contains_key(c.as_str()).then_some(c)
+        self.nodes.get(class)?.initializer(|id| self.nodes.get(id).copied())
     }
 
     /// What building a class takes: its constructor's parameters, or its nearest base's when it
@@ -444,10 +430,9 @@ fn arrow_of(ix: &Ix, n: &Node) -> Arrow {
     if n.kind == NodeKind::Class {
         return Arrow { takes: ix.built_from(&n.id, 0), gives: vec![n.id.clone()], ..Default::default() };
     }
-    let ctor = n.cls.as_deref().map_or(false, |c| n.id == format!("{c}.__init__"));
+    let ctor = n.ctor;
     let gives = ix.targets(&n.id, EdgeKind::Returns);
-    let returned = unwrapped(&n.returns);
-    let returns_value = !returned.is_empty() && !unit(returned);
+    let returns_value = n.returns.as_ref().map_or(false, |r| !r.value.is_empty());
     Arrow {
         receiver: n.cls.clone().filter(|_| !ctor && !n.on_class).unwrap_or_default(),
         takes: ix.targets(&n.id, EdgeKind::Takes),
@@ -640,7 +625,7 @@ fn body_of(ix: &Ix, n: &Node, on: &str) -> Body {
             .iter()
             .enumerate()
             .map(|(i, s)| {
-                let runs_on = if !s.on.is_empty() { s.on.as_str() } else if s.this { on } else { "" };
+                let runs_on = if !s.on.is_empty() { s.on.as_str() } else if s.on_receiver { on } else { "" };
                 let mut to = if s.to.is_empty() { format!("op:{}", s.op) } else { s.to.clone() };
                 if let Some(m) = ix.nodes.get(s.to.as_str()).filter(|m| m.cls.is_some() && !runs_on.is_empty()) {
                     to = ix.method_on(runs_on, &m.name, 0).unwrap_or(to);
@@ -651,9 +636,8 @@ fn body_of(ix: &Ix, n: &Node, on: &str) -> Body {
         return Body { alts, items: grouped(steps), made_from: vec![] };
     }
     let callees: Vec<String> = if n.kind == NodeKind::Class && n.entry.is_some() {
-        let ctor = format!("{}.__init__", n.id);
-        let mut out: Vec<String> = ix.nodes.contains_key(ctor.as_str()).then_some(ctor).into_iter().collect();
-        out.extend(ix.out(&n.id, EdgeKind::Contains).map(|e| e.dst.clone()).filter(|m| ix.nodes.get(m.as_str()).map_or(false, |m| m.kind == NodeKind::Method && !m.name.starts_with('_'))));
+        let mut out: Vec<String> = ix.ctor(&n.id).into_iter().collect();
+        out.extend(ix.out(&n.id, EdgeKind::Contains).map(|e| e.dst.clone()).filter(|m| ix.nodes.get(m.as_str()).map_or(false, |m| m.kind == NodeKind::Method && !m.private)));
         out
     } else {
         let mut seen = HashSet::new();
@@ -745,16 +729,6 @@ mod tests {
 
     /// `lang = detect(opts).unwrap()` read by a language that names the unwrapped value already:
     /// the arrow from `lang` to `lang` is the identity.
-    /// `Result<(), E>` and `Promise<void>` give nothing back on success; `Result<Graph>` gives a
-    /// `Graph`.
-    #[test]
-    fn a_unit_wrapped_is_nothing_given_back() {
-        assert_eq!(unwrapped("std::io::Result<()>"), "()");
-        assert_eq!(unwrapped("Promise<void>"), "void");
-        assert_eq!(unwrapped("Result<Vec<String>, Error>"), "Vec<String>");
-        assert!(unit(unwrapped("anyhow::Result<()>")) && !unit(unwrapped("Result<Graph>")));
-    }
-
     #[test]
     fn an_identity_on_a_named_value_is_not_drawn() {
         let mut sites = vec![

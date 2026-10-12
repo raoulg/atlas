@@ -8,16 +8,20 @@ use std::path::Path;
 
 use anyhow::Result;
 
-use crate::model::Graph;
+use crate::model::{Graph, Leaves};
 use crate::{entries, python, rust, typescript, Options};
 
 pub trait Language {
     fn name(&self) -> &'static str;
+    /// The file that roots a part in the language.
+    fn manifest(&self) -> &'static str;
     /// Does this repo look like one of mine?
     fn detect(&self, repo: &Path, opts: &Options) -> bool;
     /// `Disk(repo) -> Graph`: every file, its symbols, the calls and types between them, the
     /// routes into the program, and the calls that leave it.
     fn parse(&self, repo: &Path, opts: &Options) -> Result<Graph>;
+    /// What the language leaves its author to write.
+    fn leaves(&self) -> Leaves;
 }
 
 pub struct Python;
@@ -25,6 +29,9 @@ pub struct Python;
 impl Language for Python {
     fn name(&self) -> &'static str {
         "python"
+    }
+    fn manifest(&self) -> &'static str {
+        "pyproject.toml"
     }
     fn detect(&self, repo: &Path, opts: &Options) -> bool {
         repo.join("pyproject.toml").exists() || python::discover_package(repo).is_ok() || !python::named_under(repo, &opts.named).is_empty()
@@ -45,6 +52,11 @@ impl Language for Python {
         entries::mark_scripts(&mut b, project_root.as_deref());
         Ok(b.finish(root, project_root.as_deref(), self.name()))
     }
+    /// A signature may say nothing, and a package offers whatever its root binds unless
+    /// `__all__` names it.
+    fn leaves(&self) -> Leaves {
+        Leaves { exports: true, types: true, returns: true }
+    }
 }
 
 pub struct Rust;
@@ -53,12 +65,19 @@ impl Language for Rust {
     fn name(&self) -> &'static str {
         "rust"
     }
+    fn manifest(&self) -> &'static str {
+        "Cargo.toml"
+    }
     fn detect(&self, repo: &Path, _opts: &Options) -> bool {
         repo.join("Cargo.toml").exists()
     }
     fn parse(&self, repo: &Path, _opts: &Options) -> Result<Graph> {
         let (b, root) = rust::parse(repo)?;
         Ok(b.finish(root, Some(repo), self.name()))
+    }
+    /// The compiler asks for every type, and `pub` is the export.
+    fn leaves(&self) -> Leaves {
+        Leaves::default()
     }
 }
 
@@ -68,6 +87,9 @@ impl Language for TypeScript {
     fn name(&self) -> &'static str {
         "typescript"
     }
+    fn manifest(&self) -> &'static str {
+        "package.json"
+    }
     fn detect(&self, repo: &Path, _opts: &Options) -> bool {
         typescript::detect(repo)
     }
@@ -75,20 +97,22 @@ impl Language for TypeScript {
         let (b, root) = typescript::parse(repo)?;
         Ok(b.finish(root, Some(repo), self.name()))
     }
+    /// The compiler works out what a function gives, which a reader of its declaration does not
+    /// see (`isolatedDeclarations` asks for it).
+    fn leaves(&self) -> Leaves {
+        Leaves { returns: true, ..Default::default() }
+    }
 }
 
-/// Whether a language leaves types and exports to the author: a Python signature may say
-/// nothing, and a Python package offers whatever its root binds. Rust's compiler asks for
-/// every type, and `pub` is the export.
-pub fn author_declares(language: &str) -> bool {
-    language == "python"
+/// What the languages look for: the manifests that root a part, and a package directory.
+pub fn looked_for() -> String {
+    let manifests: Vec<&str> = languages().iter().map(|l| l.manifest()).collect();
+    format!("looked for {}, or a package directory", manifests.join(", "))
 }
 
-/// Whether a door's signature may leave out what it gives: Python's may, and TypeScript infers
-/// it, which a reader of the declaration does not see (`isolatedDeclarations` asks for it).
-/// Rust's compiler asks for every type.
-pub fn door_may_omit_return(language: &str) -> bool {
-    matches!(language, "python" | "typescript")
+/// What the language of that name leaves its author to write.
+pub fn leaves(name: &str) -> Leaves {
+    languages().into_iter().find(|l| l.name() == name).map_or_else(Leaves::default, |l| l.leaves())
 }
 
 /// All known languages, in detection order.

@@ -256,7 +256,6 @@ const partRank = n => Math.max(0, PARTS.findIndex(p => p.id === partOf(n)));
 // members, coarse places into their parts, directories into their files
 const V = {route: null, kind: null, part: null, focus: new Set(), open: {parts: new Set(), units: new Set(), steps: new Set(), functions: new Set(), families: new Set(), places: new Set(), dirs: new Set()}};
 const short = id => id.startsWith(ROOT) ? id.slice(ROOT.length) : id.replace(/^ext:/, "");
-const isPrivate = n => n.name.startsWith("_");
 const KG = {imports:"imports", calls:"calls", requests:"calls", instantiates:"calls", takes:"types", returns:"types", has:"types", mutates:"types", variant:"types", inherits:"inherits"};
 const NS = "http://www.w3.org/2000/svg";
 const el = (tag, attrs={}, parent) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; };
@@ -530,8 +529,10 @@ const callees = (id, on) => { const b = bodyOf(id, on); return [...new Set([...s
 // path through the route, so two calls of one function are two steps
 const treeInfo = new Map();
 const stepOf = key => treeInfo.get(key)?.step ?? key;
-// a constructor, whatever the language calls it: the function that builds its class
+// a constructor, whatever the language calls it: the function that builds its class; its
+// initializer is what a call to the class runs, the one named after the class
 const isCtor = n => !!(n && ARROWS[n.id]?.builds);
+const initializer = c => (byId.get(c)?.methods || []).map(m => `${c}.${m}`).find(id => byId.get(id)?.ctor && !byId.get(id).on_class);
 // everything a step touches, anywhere below it: the touches of every function its body runs, on the
 // class each runs on, and of every override it may run instead
 const reachCache = new Map();
@@ -544,7 +545,7 @@ function reach(id, on) {
     for (const t of n.touches || []) { const k = touchKey(t); if (!touches.has(k)) touches.set(k, t); }
     const b = bodyOf(cur, con);
     for (let [t, o] of [...stepsIn(b).map(s => [s.to, s.on || null]), ...(b.alts || []).map(a => [a, null])]) {
-      if (byId.get(t)?.kind === "class") { t = t + ".__init__"; o = null; }
+      if (byId.get(t)?.kind === "class") { t = initializer(t); o = null; }
       const k = o ? `${t}@${o}` : t;
       if (byId.has(t) && !vis.has(k)) { vis.add(k); stack.push([t, o]); }
     }
@@ -912,7 +913,7 @@ async function renderPlaat() {
   };
   // build the nested picture: frames for open steps, pills for closed ones (siblings with the same places are one pill)
   const pills = new Map(), frames = new Map();  // id -> {...}
-  const stepName = id => { if (id.startsWith("part:")) { const p = PARTS.find(x => x.id === id.slice(5)) || {}; return `${p.id} · ${p.language}`; } if (id.startsWith("unit:")) return unitLabel(id.slice(5)); const n = byId.get(id); if (!V.route && n.entry) return ENTRY_PLACE[n.entry.kind](n.entry.label, n); if (n.kind === "class") return n.name + "()"; if (n.make) return n.name; if (isCtor(n)) return typeLabel(n.cls) + "()"; return n.cls ? `${typeLabel(n.cls)}.${n.name}` : n.name; };
+  const stepName = id => { if (id.startsWith("part:")) { const p = PARTS.find(x => x.id === id.slice(5)) || {}; return `${p.id} · ${p.language}`; } if (id.startsWith("unit:")) return unitLabel(id.slice(5)); const n = byId.get(id); if (!V.route && n.entry) return ENTRY_PLACE[n.entry.kind](n.entry.label, n); if (n.kind === "class") return n.name + "()"; if (n.make) return n.name; if (isCtor(n) && !n.on_class) return typeLabel(n.cls) + "()"; return n.cls ? `${typeLabel(n.cls)}.${n.name}` : n.name; };
   // a step's name: a method run on a subclass is that class's, a library's operation is its own name
   const stepLabel = key => {
     const info = treeInfo.get(key);
@@ -1395,7 +1396,8 @@ function select(id, extra) {
   const outK = k => es.filter(e => e.src === id && e.kind === k).map(e => e.dst), inK = k => es.filter(e => e.dst === id && e.kind === k).map(e => e.src);
   if (n.kind === "function" || n.kind === "method") {
     const [kw, arrow] = {rust: ["fn", " -> "], typescript: ["function", ": "]}[langOf(n)] || ["def", " -> "];
-    insp.appendChild(html("div", "sig", `${kw} ${n.name}(${(n.params || []).join(", ")})${n.returns ? arrow + n.returns : ""}`));
+    const param = p => (p.rest ? "…" : "") + p.name + (p.type ? ": " + p.type : "");
+    insp.appendChild(html("div", "sig", `${kw} ${n.name}(${(n.params || []).map(param).join(", ")})${n.returns ? arrow + n.returns.written : ""}`));
     if (n.cls) insp.appendChild(section("method of", null, linkList([n.cls])));
   } else if (n.kind === "class") {
     insp.appendChild(html("div", "sig", `class ${n.name}(${(n.bases || []).join(", ")})`));

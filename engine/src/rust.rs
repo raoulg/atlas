@@ -14,7 +14,7 @@ use tree_sitter::{Node as TsNode, Parser, Tree};
 use walkdir::WalkDir;
 
 use crate::effects::{self, Crossing};
-use crate::model::{Compare, EdgeKind, Entry, EntryKind, Held, Node, NodeKind, Site, Touch, World};
+use crate::model::{Compare, EdgeKind, Entry, EntryKind, Held, Node, NodeKind, Param, Returns, Site, Touch, World};
 use crate::builder::{ClassInfo, GraphBuilder, SigInfo};
 use crate::tree::{
     arms_of, decides, evaluation_order, literals, named_children, nth_of_kind, number_choices, payload_of, span, starts_at_literal, text, unquote, walk, what_of,
@@ -232,29 +232,76 @@ fn items<'t>(root: TsNode<'t>) -> Vec<TsNode<'t>> {
     out
 }
 
-fn signature(f: TsNode, src: &[u8]) -> (Vec<String>, String, SigInfo) {
+/// A signature as data: each parameter by name, type and kind, and what it gives back. `self`,
+/// `&self`, `&mut self` and `self: Box<Self>` are the value the method is called on; a `&mut`
+/// says the body may change what it is handed.
+fn signature(f: TsNode, src: &[u8]) -> (Vec<Param>, Option<Returns>, SigInfo) {
     let mut params = vec![];
     let mut info = SigInfo::default();
     if let Some(pn) = f.child_by_field_name("parameters") {
         for p in named_children(pn) {
-            if p.kind() == "attribute_item" {
-                continue;
-            }
-            params.push(text(p, src).to_string());
-            if p.kind() == "parameter" {
-                info.ptypes.extend(type_names(p.child_by_field_name("type"), src));
+            let mutable = |t: TsNode| t.kind() == "reference_type" && named_children(t).iter().any(|c| c.kind() == "mutable_specifier");
+            match p.kind() {
+                "self_parameter" => params.push(Param { name: "self".into(), receiver: true, changes: text(p, src).contains("mut"), ..Default::default() }),
+                "parameter" => {
+                    let pattern = p.child_by_field_name("pattern");
+                    let ty = p.child_by_field_name("type");
+                    params.push(Param {
+                        name: pattern.map(|x| text(x, src).trim_start_matches("mut ").to_string()).unwrap_or_default(),
+                        ty: ty.map(|t| text(t, src).to_string()).unwrap_or_default(),
+                        receiver: pattern.map_or(false, |x| x.kind() == "self"),
+                        changes: ty.map_or(false, mutable),
+                        rest: false,
+                    });
+                    info.ptypes.extend(type_names(ty, src));
+                }
+                _ => {}
             }
         }
     }
     let rt = f.child_by_field_name("return_type");
     info.rtypes = type_names(rt, src);
-    (params, rt.map(|r| text(r, src).to_string()).unwrap_or_default(), info)
+    (params, rt.map(|r| returns(r, src)), info)
 }
 
-/// A method whose first parameter is the value it is called on: `&self`, `&'a mut self`,
-/// `self: Box<Self>`.
-fn takes_self(params: &[String]) -> bool {
-    params.first().map_or(false, |p| p.split(':').next().unwrap_or("").trim_start_matches('&').split_whitespace().last() == Some("self"))
+/// What a return type gives: a `Result<T, E>` gives `T` when it does not fail, a reference what
+/// it refers to, `()` no value, `Self` a value of the type the `impl` is for.
+fn returns(rt: TsNode, src: &[u8]) -> Returns {
+    let mut t = rt;
+    loop {
+        let inner = match t.kind() {
+            "reference_type" => t.child_by_field_name("type"),
+            "generic_type" if t.child_by_field_name("type").map_or(false, |n| text(n, src).rsplit("::").next() == Some("Result")) => {
+                t.child_by_field_name("type_arguments").and_then(|a| named_children(a).into_iter().next())
+            }
+            _ => None,
+        };
+        match inner {
+            Some(i) => t = i,
+            None => break,
+        }
+    }
+    let (value, own) = match (t.kind(), text(t, src)) {
+        ("unit_type", _) => (String::new(), false),
+        (_, "Self") => (String::new(), true),
+        (_, v) => (v.to_string(), false),
+    };
+    Returns { written: text(rt, src).to_string(), value, own }
+}
+
+/// A method whose first parameter is the value it is called on.
+fn takes_self(params: &[Param]) -> bool {
+    params.first().map_or(false, |p| p.receiver)
+}
+
+/// A function on a type that gives a value of it: `new`, `default`, `from_yaml`.
+fn constructs(params: &[Param], returns: &Option<Returns>, ty: &str) -> bool {
+    !takes_self(params) && returns.as_ref().map_or(false, |r| r.own || r.value == ty)
+}
+
+/// Visible outside its module: `pub`, `pub(crate)`, `pub(super)`.
+fn visible(item: TsNode) -> bool {
+    named_children(item).iter().any(|c| c.kind() == "visibility_modifier")
 }
 
 fn fn_name(f: TsNode, src: &[u8]) -> String {
@@ -428,6 +475,7 @@ fn collect_symbols(m: &mut Module, store: &mut GraphBuilder) {
                 store.add_node(Node {
                     id: nid.clone(),
                     kind: NodeKind::Function,
+                    private: !visible(item),
                     name,
                     file: file.clone(),
                     span: span(item),
@@ -466,6 +514,7 @@ fn collect_symbols(m: &mut Module, store: &mut GraphBuilder) {
                                 cls: Some(nid.clone()),
                                 decorators: attrs_of(f, src),
                                 on_class: !takes_self(&params),
+                                ctor: constructs(&params, &returns, &name),
                                 params,
                                 returns,
                                 ..Default::default()
@@ -489,6 +538,7 @@ fn collect_symbols(m: &mut Module, store: &mut GraphBuilder) {
                 store.add_node(Node {
                     id: nid.clone(),
                     kind: NodeKind::Class,
+                    private: !visible(item),
                     name,
                     file: file.clone(),
                     span: span(item),
@@ -716,6 +766,8 @@ fn collect_impls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, c
                 entry: attrs.iter().any(|a| a == "test").then(|| Entry { kind: EntryKind::Test, label: mname.clone() }),
                 decorators: attrs,
                 on_class: !takes_self(&params),
+                ctor: constructs(&params, &returns, cls.rsplit('.').next().unwrap_or(&cls)),
+                private: im.trait_parts.is_empty() && !visible(f),
                 params,
                 returns,
                 ..Default::default()
@@ -1204,7 +1256,7 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crat
                 let via = if kind == EdgeKind::Instantiates && parts.len() > 1 && parts[0] != "Self" { parts.last().cloned() } else { None };
                 let this = recv.map_or(false, |r| r.kind() == "self");
                 let gives = gives_of(c, Some(&t));
-                steps.push(Site { line, to: t.clone(), this, hands: hands_of(&[recv, c.child_by_field_name("arguments")], &made), gives: gives.clone(), arms: arms_of(c, body, src, &choices, &CHOICES), span: (c.start_byte() as u32, c.end_byte() as u32), ..Default::default() });
+                steps.push(Site { line, to: t.clone(), on_receiver: this, hands: hands_of(&[recv, c.child_by_field_name("arguments")], &made), gives: gives.clone(), arms: arms_of(c, body, src, &choices, &CHOICES), span: (c.start_byte() as u32, c.end_byte() as u32), ..Default::default() });
                 made.extend(gives.into_iter().map(|g| g.name));
                 new_edges.push((t, kind, via, arms_of(c, body, src, &choices, &CHOICES)));
             }
