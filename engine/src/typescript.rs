@@ -1377,244 +1377,361 @@ fn member_parts(n: TsNode, src: &[u8]) -> Vec<String> {
 
 fn link_calls<'t>(m: &'t Module, modules: &'t IndexMap<String, Module>, store: &mut GraphBuilder, id: &str, returned: &HashMap<String, String>, eval: &Eval, linked: &mut Linked<'t>) {
     let n = store.nodes[id].clone();
-    let src = &m.src;
     let root = m.tree.root_node();
-    let is_module = n.kind == NodeKind::Module;
-    let body = if is_module {
-        root
-    } else {
-        let Some((s, e)) = m.bodies.get(id).copied() else { return };
-        let Some(b) = root.descendant_for_byte_range(s, e) else { return };
-        b
+    let body = match n.kind {
+        NodeKind::Module => root,
+        _ => match m.bodies.get(id).and_then(|(s, e)| root.descendant_for_byte_range(*s, *e)) {
+            Some(b) => b,
+            None => return,
+        },
     };
-    // within a module's own body, a function's body is the function's
-    let others: HashMap<String, (usize, usize)> = if is_module { m.bodies.clone() } else { HashMap::new() };
-    let scope = if is_module { None } else { paths::function_node(body) };
-    let params: Vec<String> = scope.map(|f| paths::param_names(f, src)).unwrap_or_default();
-    let mine = |x: TsNode| !is_module || module_level(x, root, &others);
-    // parameters and locals with a class type give receivers a type
-    let mut locals: HashMap<String, String> = HashMap::new();
-    let sig_params = n.params.clone();
-    for p in sig_params.iter().filter(|p| !p.ty.is_empty()) {
-        let name = p.name.as_str();
-        let ty = p.ty.split(['<', '[', ' ', '|']).next().unwrap_or("").to_string();
-        if let Some(r) = resolve(m, &[ty], modules, &store.nodes).filter(|r| store.nodes.get(r).map_or(false, |x| x.kind == NodeKind::Class)) {
-            locals.insert(name.to_string(), r);
+    let mut steps = Steps::new(body, &m.src, &CHOICES);
+    let read = {
+        let mut b = Body::new(m, modules, store, &n, body, returned, eval);
+        for c in b.sites.clone() {
+            b.call(&mut steps, c);
         }
+        b.ends();
+        b.read
+    };
+    let compares = (n.kind != NodeKind::Module).then(|| crate::tree::compares(body, &m.src, steps.choices(), &COMPARES, &CHOICES));
+    steps.finish(store, id);
+    for u in read.unresolved {
+        *store.unresolved.entry(u).or_insert(0) += 1;
     }
-    let param_types = locals.clone();
-    for v in walk(body, &["variable_declarator"]).into_iter().filter(|v| mine(*v)) {
-        let (Some(name), Some(value)) = (v.child_by_field_name("name"), v.child_by_field_name("value")) else { continue };
-        if name.kind() != "identifier" {
-            continue;
-        }
-        let declared = v.child_by_field_name("type").and_then(|t| named_children(t).into_iter().next()).map(|t| member_parts(t, src));
-        let built = (value.kind() == "new_expression").then(|| value.child_by_field_name("constructor").map(|c| member_parts(c, src))).flatten();
-        let typed = declared.or(built).and_then(|t| resolve(m, &t, modules, &store.nodes)).filter(|r| store.nodes.get(r).map_or(false, |x| x.kind == NodeKind::Class));
-        // `const p = await getProvider()`: what the function hands on
-        let handed = || {
-            let call = walk(value, &["call_expression"]).into_iter().next()?;
-            let f = resolve(m, &member_parts(call.child_by_field_name("function")?, src), modules, &store.nodes)?;
-            returned.get(&f).cloned()
+    for t in read.touches {
+        store.touch(id, t);
+    }
+    for (t, input) in read.mutates {
+        store.add_edge(id, &t, EdgeKind::Mutates, Some(input));
+    }
+    if let (Some(compares), Some(node)) = (compares, store.nodes.get_mut(id)) {
+        node.compares = compares;
+    }
+    linked.args.extend(read.args);
+    linked.calls.extend(read.calls.into_iter().map(|(t, built)| (id.to_string(), t, built)));
+}
+
+/// What reading a body finds besides its steps: what it touches, the calls Atlas could not
+/// follow, the inputs it changes in place, the calls of the package's functions with the
+/// arguments they pass, and the file and network calls whose path or URL waits for them.
+#[derive(Default)]
+struct Read<'t> {
+    touches: Vec<Touch>,
+    unresolved: Vec<String>,
+    mutates: Vec<(String, String)>,
+    args: Vec<Arg<'t>>,
+    calls: Vec<(Touch, Vec<crate::paths::Built>)>,
+}
+
+/// A function's body, or a module's own code, as TypeScript reads it: the program around it,
+/// and the classes and packages its names hold.
+struct Body<'a, 't> {
+    m: &'t Module,
+    modules: &'t IndexMap<String, Module>,
+    store: &'a GraphBuilder,
+    src: &'t [u8],
+    root: TsNode<'t>,
+    body: TsNode<'t>,
+    id: String,
+    is_module: bool,
+    /// The function the body belongs to, and its parameters by name.
+    scope: Option<TsNode<'t>>,
+    params: Vec<String>,
+    cls: Option<String>,
+    initializer: bool,
+    /// The classes the fields of the body's own class hold.
+    attrs: std::collections::BTreeMap<String, String>,
+    /// The class each of the program's functions hands on.
+    returned: &'a HashMap<String, String>,
+    eval: &'a Eval<'a>,
+    /// The classes the body's names hold: its typed parameters, and locals declared with a type,
+    /// built with `new`, or handed on by a function.
+    locals: HashMap<String, String>,
+    param_types: HashMap<String, String>,
+    /// The values a package made, by the package: a call on one is the package's.
+    made: HashMap<String, String>,
+    /// The calls, constructors, elements and names of the body, in the order they run.
+    sites: Vec<TsNode<'t>>,
+    read: Read<'t>,
+}
+
+const STRINGS: &[&str] = &["string", "template_string"];
+
+impl<'a, 't> Body<'a, 't> {
+    fn new(m: &'t Module, modules: &'t IndexMap<String, Module>, store: &'a GraphBuilder, n: &Node, body: TsNode<'t>, returned: &'a HashMap<String, String>, eval: &'a Eval<'a>) -> Self {
+        let is_module = n.kind == NodeKind::Module;
+        let scope = if is_module { None } else { paths::function_node(body) };
+        let cls = n.cls.clone();
+        let attrs = cls.as_ref().and_then(|c| store.classes.get(c)).map(|c| c.attr_types.clone()).unwrap_or_default();
+        let mut b = Body {
+            m,
+            modules,
+            store,
+            src: &m.src,
+            root: m.tree.root_node(),
+            body,
+            id: n.id.clone(),
+            is_module,
+            scope,
+            params: scope.map(|f| paths::param_names(f, &m.src)).unwrap_or_default(),
+            cls,
+            initializer: n.ctor && !n.on_class,
+            attrs,
+            returned,
+            eval,
+            locals: HashMap::new(),
+            param_types: HashMap::new(),
+            made: HashMap::new(),
+            sites: vec![],
+            read: Read::default(),
         };
-        if let Some(r) = typed.or_else(handed) {
-            locals.insert(text(name, src).to_string(), r);
-        }
+        b.typed(n);
+        b.made();
+        b.sites = evaluation_order(walk(body, &["call_expression", "new_expression", "jsx_opening_element", "jsx_self_closing_element", "identifier"])).into_iter().filter(|x| b.mine(*x)).collect();
+        b
     }
-    // values a package made, by the package: a call on one is the package's
-    let mut made: HashMap<String, String> = HashMap::new();
-    for v in walk(if is_module { root } else { body }, &["variable_declarator"]) {
-        let (Some(name), Some(value)) = (v.child_by_field_name("name"), v.child_by_field_name("value")) else { continue };
-        if name.kind() == "identifier" && (mine(v) || is_module || module_level(v, root, &m.bodies)) {
-            if let Some(p) = made_by_package(value, m, src) {
-                made.insert(text(name, src).to_string(), p);
+
+    /// Whether a node is the body's own: inside a module's own code, not in a function it defines.
+    fn mine(&self, x: TsNode) -> bool {
+        !self.is_module || module_level(x, self.root, &self.m.bodies)
+    }
+
+    fn resolve(&self, parts: &[String]) -> Option<String> {
+        resolve(self.m, parts, self.modules, &self.store.nodes)
+    }
+
+    fn class(&self, r: Option<String>) -> Option<String> {
+        r.filter(|r| self.store.nodes.get(r).map_or(false, |x| x.kind == NodeKind::Class))
+    }
+
+    /// Whether `r` is one of the program's own functions or classes.
+    fn own(&self, r: &str) -> bool {
+        !r.starts_with("ext:") && self.store.nodes.contains_key(r)
+    }
+
+    /// Parameters and locals with a class type give receivers a type.
+    fn typed(&mut self, n: &Node) {
+        let src = self.src;
+        for p in n.params.iter().filter(|p| !p.ty.is_empty()) {
+            let ty = p.ty.split(['<', '[', ' ', '|']).next().unwrap_or("").to_string();
+            if let Some(r) = self.class(self.resolve(&[ty])) {
+                self.locals.insert(p.name.clone(), r);
+            }
+        }
+        self.param_types = self.locals.clone();
+        let declarators: Vec<TsNode> = walk(self.body, &["variable_declarator"]).into_iter().filter(|v| self.mine(*v)).collect();
+        for v in declarators {
+            let (Some(name), Some(value)) = (v.child_by_field_name("name"), v.child_by_field_name("value")) else { continue };
+            if name.kind() != "identifier" {
+                continue;
+            }
+            let declared = v.child_by_field_name("type").and_then(|t| named_children(t).into_iter().next()).map(|t| member_parts(t, src));
+            let built = (value.kind() == "new_expression").then(|| value.child_by_field_name("constructor").map(|c| member_parts(c, src))).flatten();
+            let typed = self.class(declared.or(built).and_then(|t| self.resolve(&t)));
+            // `const p = await getProvider()`: what the function hands on
+            let handed = || {
+                let call = walk(value, &["call_expression"]).into_iter().next()?;
+                let f = self.resolve(&member_parts(call.child_by_field_name("function")?, src))?;
+                self.returned.get(&f).cloned()
+            };
+            if let Some(r) = typed.or_else(handed) {
+                self.locals.insert(text(name, src).to_string(), r);
             }
         }
     }
-    if !is_module {
-        for v in walk(root, &["variable_declarator"]).into_iter().filter(|v| module_level(*v, root, &m.bodies)) {
-            let (Some(name), Some(value)) = (v.child_by_field_name("name"), v.child_by_field_name("value")) else { continue };
-            if name.kind() == "identifier" {
+
+    /// The values a package made, by the package, in the body and at its module's top level.
+    fn made(&mut self) {
+        let (m, src, root) = (self.m, self.src, self.root);
+        let named = |v: TsNode<'t>| Some((v.child_by_field_name("name").filter(|n| n.kind() == "identifier")?, v.child_by_field_name("value")?));
+        for v in walk(if self.is_module { root } else { self.body }, &["variable_declarator"]) {
+            let Some((name, value)) = named(v) else { continue };
+            if self.mine(v) || self.is_module || module_level(v, root, &m.bodies) {
                 if let Some(p) = made_by_package(value, m, src) {
-                    made.entry(text(name, src).to_string()).or_insert(p);
+                    self.made.insert(text(name, src).to_string(), p);
+                }
+            }
+        }
+        if !self.is_module {
+            for v in walk(root, &["variable_declarator"]).into_iter().filter(|v| module_level(*v, root, &m.bodies)) {
+                let Some((name, value)) = named(v) else { continue };
+                if let Some(p) = made_by_package(value, m, src) {
+                    self.made.entry(text(name, src).to_string()).or_insert(p);
                 }
             }
         }
     }
-    let cls = n.cls.clone();
-    let attrs = cls.as_ref().and_then(|c| store.classes.get(c)).map(|c| c.attr_types.clone()).unwrap_or_default();
-    let mut steps = Steps::new(body, src, &CHOICES);
-    let mut touches: Vec<Touch> = vec![];
-    let own = |r: &str, store: &GraphBuilder| !r.starts_with("ext:") && store.nodes.contains_key(r);
-    let sites: Vec<TsNode> = evaluation_order(walk(body, &["call_expression", "new_expression", "jsx_opening_element", "jsx_self_closing_element", "identifier"]))
-        .into_iter()
-        .filter(|x| mine(*x))
-        .collect();
-    let ty_of = |name: &str| locals.get(name).cloned().or_else(|| value_type(m, name, modules, &store.nodes));
-    let hands_of = |parts: &[Option<TsNode>], kept: &HashSet<String>| -> Vec<Held> {
+
+    /// What a call is handed: the value it is called on, its arguments, an element's attributes.
+    fn hands(&self, parts: &[Option<TsNode>], kept: &HashSet<String>) -> Vec<Held> {
+        let ty_of = |name: &str| self.locals.get(name).cloned().or_else(|| value_type(self.m, name, self.modules, &self.store.nodes));
         let mut out: Vec<Held> = vec![];
         for p in parts.iter().flatten() {
-            for h in crate::tree::held_names(*p, src, &[], &ty_of, kept) {
+            for h in crate::tree::held_names(*p, self.src, &[], &ty_of, kept) {
                 if !out.contains(&h) {
                     out.push(h);
                 }
             }
         }
         out
-    };
-    let gives_of = |c: TsNode, to: Option<&str>| -> Vec<Held> {
-        kept_as(c, src).map(|name| Held::new(locals.get(&name).cloned().or_else(|| to.and_then(|t| returned.get(t).cloned())).unwrap_or_default(), name)).into_iter().collect()
-    };
-    for &c in &sites {
+    }
+
+    /// What a call gives back, by the name the body keeps it by.
+    fn gives(&self, c: TsNode, to: Option<&str>) -> Vec<Held> {
+        kept_as(c, self.src).map(|name| Held::new(self.locals.get(&name).cloned().or_else(|| to.and_then(|t| self.returned.get(t).cloned())).unwrap_or_default(), name)).into_iter().collect()
+    }
+
+    /// One site of the body, as the step it is.
+    fn call(&mut self, steps: &mut Steps, c: TsNode<'t>) {
         match c.kind() {
-            "new_expression" => {
-                let parts = c.child_by_field_name("constructor").map(|x| member_parts(x, src)).unwrap_or_default();
-                if let Some(r) = resolve(m, &parts, modules, &store.nodes).filter(|r| own(r, store)) {
-                    if store.nodes[&r].kind == NodeKind::Class {
-                        let step = Step { hands: hands_of(&[c.child_by_field_name("arguments")], &steps.kept), gives: gives_of(c, Some(&r)), ..Default::default() };
-                        steps.call(c, &r, EdgeKind::Instantiates, None, step);
-                    }
+            "new_expression" => self.constructed(steps, c),
+            "jsx_opening_element" | "jsx_self_closing_element" => self.rendered(steps, c),
+            "identifier" => self.handed_on(steps, c),
+            _ => self.called(steps, c),
+        }
+    }
+
+    /// `new T(..)` of one of the program's classes.
+    fn constructed(&self, steps: &mut Steps, c: TsNode<'t>) {
+        let parts = c.child_by_field_name("constructor").map(|x| member_parts(x, self.src)).unwrap_or_default();
+        if let Some(r) = self.class(self.resolve(&parts).filter(|r| self.own(r))) {
+            let step = Step { hands: self.hands(&[c.child_by_field_name("arguments")], &steps.kept), gives: self.gives(c, Some(&r)), ..Default::default() };
+            steps.call(c, &r, EdgeKind::Instantiates, None, step);
+        }
+    }
+
+    /// `<Kaart/>` renders a component, handed its attributes; a lowercase name is an element of
+    /// the page.
+    fn rendered(&self, steps: &mut Steps, c: TsNode<'t>) {
+        let parts = c.child_by_field_name("name").map(|x| member_parts(x, self.src)).unwrap_or_default();
+        if parts.first().map_or(true, |p| !p.starts_with(|ch: char| ch.is_uppercase()) && parts.len() == 1) {
+            return;
+        }
+        if let Some(r) = self.resolve(&parts).filter(|r| self.own(r)) {
+            let kind = if self.store.nodes[&r].kind == NodeKind::Class { EdgeKind::Instantiates } else { EdgeKind::Calls };
+            let attrs: Vec<Option<TsNode>> = walk(c, &["jsx_attribute"]).into_iter().map(Some).collect();
+            steps.call(c, &r, kind, None, Step { hands: self.hands(&attrs, &steps.kept), ..Default::default() });
+        }
+    }
+
+    /// An own function handed on as a value: called by whoever receives it.
+    fn handed_on(&self, steps: &mut Steps, c: TsNode<'t>) {
+        let handed = c.parent().map_or(false, |p| match p.kind() {
+            "arguments" | "array" | "jsx_expression" | "return_statement" => true,
+            "pair" | "variable_declarator" => p.child_by_field_name("value").map(|v| v.id()) == Some(c.id()),
+            _ => false,
+        });
+        let fun = |r: &String| matches!(self.store.nodes[r].kind, NodeKind::Function | NodeKind::Method);
+        if let Some(r) = self.resolve(&[text(c, self.src).to_string()]).filter(|r| handed && self.own(r) && fun(r)) {
+            steps.handed(c, c, &r, EdgeKind::Calls);
+        }
+    }
+
+    /// The class of the value a method is called on, typed however the body knows it.
+    fn receiver(&self, o: TsNode) -> Option<String> {
+        let src = self.src;
+        let mut o = o;
+        while matches!(o.kind(), "parenthesized_expression" | "await_expression" | "non_null_expression") {
+            o = named_children(o).into_iter().next()?;
+        }
+        match o.kind() {
+            "this" => self.cls.clone(),
+            "identifier" => self.locals.get(text(o, src)).cloned().or_else(|| value_type(self.m, text(o, src), self.modules, &self.store.nodes)),
+            "call_expression" => self.returned.get(&self.resolve(&member_parts(o.child_by_field_name("function")?, src))?).cloned(),
+            "member_expression" if o.child_by_field_name("object").map(|x| x.kind()) == Some("this") => self.attrs.get(text(o.child_by_field_name("property")?, src)).cloned(),
+            _ => None,
+        }
+    }
+
+    /// `f(..)` or `x.m(..)`: the program's function or method, found on the class of the value it
+    /// is called on, or a library's operation, which may cross into the world.
+    fn called(&mut self, steps: &mut Steps, c: TsNode<'t>) {
+        let src = self.src;
+        let Some(f) = c.child_by_field_name("function") else { return };
+        let parts = member_parts(f, src);
+        let on = (f.kind() == "member_expression").then(|| Some((f.child_by_field_name("object")?, text(f.child_by_field_name("property")?, src).to_string()))).flatten();
+        let object = on.as_ref().map(|(o, _)| *o);
+        let class = object.and_then(|o| self.receiver(o));
+        let target = match on.and_then(|(o, name)| self.receiver(o).and_then(|k| self.store.method_of(&k, &name))) {
+            Some(t) => Some(t),
+            None if parts.is_empty() => return,
+            None => self.resolve(&parts),
+        };
+        let hands = self.hands(&[object, c.child_by_field_name("arguments")], &steps.kept);
+        match target {
+            Some(t) if self.own(&t) => {
+                // a method found on a base runs on the subclass the value is
+                let on = class.filter(|k| self.store.nodes[&t].cls.as_deref().map_or(false, |b| b != k.as_str())).unwrap_or_default();
+                let on_receiver = object.map_or(false, |o| o.kind() == "this");
+                let kind = if self.store.nodes[&t].kind == NodeKind::Class { EdgeKind::Instantiates } else { EdgeKind::Calls };
+                steps.call(c, &t, kind, None, Step { on, on_receiver, hands, gives: self.gives(c, Some(&t)) });
+                let callee = if kind == EdgeKind::Instantiates { format!("{t}.constructor") } else { t.clone() };
+                if let Some(a) = argument(self.modules, self.store, &self.id, &callee, c, self.m, self.scope, &self.params) {
+                    self.read.args.push(a);
                 }
             }
-            "jsx_opening_element" | "jsx_self_closing_element" => {
-                // `<Kaart/>` renders a component; a lowercase name is an element of the page
-                let parts = c.child_by_field_name("name").map(|x| member_parts(x, src)).unwrap_or_default();
-                if parts.first().map_or(true, |p| !p.starts_with(|ch: char| ch.is_uppercase()) && parts.len() == 1) {
-                    continue;
-                }
-                if let Some(r) = resolve(m, &parts, modules, &store.nodes).filter(|r| own(r, store)) {
-                    let kind = if store.nodes[&r].kind == NodeKind::Class { EdgeKind::Instantiates } else { EdgeKind::Calls };
-                    // a component is handed its attributes
-                    let attrs: Vec<Option<TsNode>> = walk(c, &["jsx_attribute"]).into_iter().map(Some).collect();
-                    let step = Step { hands: hands_of(&attrs, &steps.kept), ..Default::default() };
-                    steps.call(c, &r, kind, None, step);
-                }
-            }
-            "identifier" => {
-                // an own function handed on as a value is called by whoever receives it
-                let handed = c.parent().map_or(false, |p| match p.kind() {
-                    "arguments" | "array" | "jsx_expression" | "return_statement" => true,
-                    "pair" => p.child_by_field_name("value").map(|v| v.id()) == Some(c.id()),
-                    "variable_declarator" => p.child_by_field_name("value").map(|v| v.id()) == Some(c.id()),
-                    _ => false,
-                });
-                if !handed {
-                    continue;
-                }
-                if let Some(r) = resolve(m, &[text(c, src).to_string()], modules, &store.nodes).filter(|r| own(r, store)) {
-                    if matches!(store.nodes[&r].kind, NodeKind::Function | NodeKind::Method) {
-                        steps.handed(c, c, &r, EdgeKind::Calls);
-                    }
-                }
-            }
+            // a library's operation not read is a step where the body keeps what it gives
             _ => {
-                let Some(f) = c.child_by_field_name("function") else { continue };
-                let parts = member_parts(f, src);
-                // the receiver of a method, typed however the body knows it
-                let receiver = |o: TsNode| -> Option<String> {
-                    let mut o = o;
-                    while matches!(o.kind(), "parenthesized_expression" | "await_expression" | "non_null_expression") {
-                        o = named_children(o).into_iter().next()?;
-                    }
-                    match o.kind() {
-                        "this" => cls.clone(),
-                        "identifier" => locals.get(text(o, src)).cloned().or_else(|| value_type(m, text(o, src), modules, &store.nodes)),
-                        "call_expression" => {
-                            let fid = resolve(m, &member_parts(o.child_by_field_name("function")?, src), modules, &store.nodes)?;
-                            returned.get(&fid).cloned()
-                        }
-                        "member_expression" if o.child_by_field_name("object").map(|x| x.kind()) == Some("this") => {
-                            attrs.get(text(o.child_by_field_name("property")?, src)).cloned()
-                        }
-                        _ => None,
-                    }
-                };
-                let on = (f.kind() == "member_expression").then(|| Some((f.child_by_field_name("object")?, text(f.child_by_field_name("property")?, src).to_string()))).flatten();
-                let object = on.as_ref().map(|(o, _)| *o);
-                let class = on.as_ref().and_then(|(o, _)| receiver(*o));
-                let target = match on.and_then(|(o, name)| receiver(o).and_then(|k| store.method_of(&k, &name))) {
-                    Some(t) => Some(t),
-                    None if parts.is_empty() => continue,
-                    None => resolve(m, &parts, modules, &store.nodes),
-                };
-                let hands = hands_of(&[object, c.child_by_field_name("arguments")], &steps.kept);
-                match target {
-                    Some(t) if own(&t, store) => {
-                        // a method found on a base runs on the subclass the value is
-                        let on = class.filter(|k| store.nodes[&t].cls.as_deref().map_or(false, |b| b != k.as_str())).unwrap_or_default();
-                        let on_receiver = object.map_or(false, |o| o.kind() == "this");
-                        let kind = if store.nodes[&t].kind == NodeKind::Class { EdgeKind::Instantiates } else { EdgeKind::Calls };
-                        steps.call(c, &t, kind, None, Step { on, on_receiver, hands, gives: gives_of(c, Some(&t)) });
-                        let callee = if kind == EdgeKind::Instantiates { format!("{t}.constructor") } else { t.clone() };
-                        if let Some(a) = argument(modules, store, id, &callee, c, m, scope, &params) {
-                            linked.args.push(a);
-                        }
-                    }
-                    // a library's operation not read is a step where the body keeps what it gives
-                    _ => {
-                        steps.op(c, parts.last().map_or("", String::as_str), hands, gives_of(c, None));
-                        let key = parts.iter().take(2).cloned().collect::<Vec<_>>().join(".");
-                        *store.unresolved.entry(key).or_insert(0) += 1;
-                        let pkg = match m.bindings.get(&parts[0]) {
-                            Some(Bound::Ext(e)) => Some(package_from_ext(e, &m.ext_pkgs)),
-                            _ => made.get(&parts[0]).cloned(),
-                        };
-                        // a language model is asked through a client the package made, not its helpers
-                        let kind = effects::boundary_ts(pkg.as_deref(), &parts).filter(|k| k.world != World::Llm || made.contains_key(&parts[0]));
-                        if let Some(kind) = kind {
-                            let op = parts.last().cloned().unwrap_or_default();
-                            let kinds = &["string", "template_string"];
-                            let cr = Crosses::read(c, src, kind, pkg.as_deref(), &op, &literals(c, src, kinds), kinds, &HashMap::new());
-                            let (f, payload, fixed) = (&cr.facts, &cr.payload, cr.fixed);
-                            let args = c.child_by_field_name("arguments").map(named_children).unwrap_or_default();
-                            // the path a file call is handed, the URL a request is: placed once every call is known
-                            if f.kind.located() && !args.is_empty() {
-                                let at = At { m, scope, params: &params };
-                                for (kind, a) in sides(&op, &args, &f) {
-                                    let t = Touch { what: text(a, src).to_string(), payload: payload.clone(), op: op.clone(), artifact: f.artifact.clone(), fixed, line: c.start_position().row as u32 + 1, ..Touch::new(kind.world, kind.dir) };
-                                    let built = eval.of(at, a, 0);
-                                    // a request is its method and its URL: `fetch(url, { method })`, `axios.post(url)`
-                                    let built = if kind.world == World::Net { crate::paths::cross(&method_of_request(&op, &args, at, eval), &built, " ") } else { built };
-                                    linked.calls.push((id.to_string(), t, built));
-                                }
-                                continue;
-                            }
-                            touches.extend(cr.touches(None));
-                        }
-                    }
-                }
+                steps.op(c, parts.last().map_or("", String::as_str), hands, self.gives(c, None));
+                self.read.unresolved.push(parts.iter().take(2).cloned().collect::<Vec<_>>().join("."));
+                self.crossed(c, &parts);
             }
         }
     }
-    // a constructor of the platform's own that connects opens a connection: `new WebSocket(url)`
-    let opened = sites.iter().filter(|c| c.kind() == "new_expression").filter(|c| {
-        let parts = c.child_by_field_name("constructor").map(|x| member_parts(x, src)).unwrap_or_default();
-        resolve(m, &parts, modules, &store.nodes).filter(|r| own(r, store)).is_none()
-    });
-    touches.extend(opened.filter_map(|c| connects(*c, src, &m.bindings)));
-    // a component renders what it returns to the screen: a page's route ends where the human sees it
-    if !is_module {
-        if let Some(jsx) = walk(body, &["jsx_element", "jsx_self_closing_element", "jsx_fragment"]).into_iter().next() {
-            touches.push(Touch { op: "render".into(), line: jsx.start_position().row as u32 + 1, ..Touch::new(World::Screen, None) });
+
+    /// What a library's call crosses into: a file call or a request waits for the path or URL it
+    /// is handed, placed once every call is known; any other touches what its facts name.
+    fn crossed(&mut self, c: TsNode<'t>, parts: &[String]) {
+        let (m, src) = (self.m, self.src);
+        let pkg = match m.bindings.get(&parts[0]) {
+            Some(Bound::Ext(e)) => Some(package_from_ext(e, &m.ext_pkgs)),
+            _ => self.made.get(&parts[0]).cloned(),
+        };
+        // a language model is asked through a client the package made, not its helpers
+        let Some(kind) = effects::boundary_ts(pkg.as_deref(), parts).filter(|k| k.world != World::Llm || self.made.contains_key(&parts[0])) else { return };
+        let op = parts.last().cloned().unwrap_or_default();
+        let cr = Crosses::read(c, src, kind, pkg.as_deref(), &op, &literals(c, src, STRINGS), STRINGS, &HashMap::new());
+        let args = c.child_by_field_name("arguments").map(named_children).unwrap_or_default();
+        if !cr.facts.kind.located() || args.is_empty() {
+            self.read.touches.extend(cr.touches(None));
+            return;
+        }
+        let at = At { m, scope: self.scope, params: &self.params };
+        for (kind, a) in sides(&op, &args, &cr.facts) {
+            let t = Touch { what: text(a, src).to_string(), payload: cr.payload.clone(), op: op.clone(), artifact: cr.facts.artifact.clone(), fixed: cr.fixed, line: cr.line, ..Touch::new(kind.world, kind.dir) };
+            let built = self.eval.of(at, a, 0);
+            // a request is its method and its URL: `fetch(url, { method })`, `axios.post(url)`
+            let built = if kind.world == World::Net { crate::paths::cross(&method_of_request(&op, &args, at, self.eval), &built, " ") } else { built };
+            self.read.calls.push((t, built));
         }
     }
-    let compares = (!is_module).then(|| crate::tree::compares(body, src, steps.choices(), &COMPARES, &CHOICES));
-    steps.finish(store, id);
-    for t in touches {
-        store.touch(id, t);
-    }
-    // what the body changes of its inputs: `T -> T` for the receiver or a parameter it changes;
-    // a constructor builds its object, it does not change it
-    if !is_module {
-        for r in changed_roots(body, src) {
-            let ty = if r == "this" { cls.clone().filter(|_| !id.ends_with(".constructor")) } else { param_types.get(r).cloned() };
+
+    /// What the body does besides its calls: the connections the platform's own constructors
+    /// open (`new WebSocket(url)`), the page a component renders, and the inputs it changes in
+    /// place (`T -> T` for the receiver or a parameter; an initializer builds its object).
+    fn ends(&mut self) {
+        let src = self.src;
+        let opened: Vec<Touch> = self
+            .sites
+            .iter()
+            .filter(|c| c.kind() == "new_expression")
+            .filter(|c| self.resolve(&c.child_by_field_name("constructor").map(|x| member_parts(x, src)).unwrap_or_default()).filter(|r| self.own(r)).is_none())
+            .filter_map(|c| connects(*c, src, &self.m.bindings))
+            .collect();
+        self.read.touches.extend(opened);
+        if self.is_module {
+            return;
+        }
+        if let Some(jsx) = walk(self.body, &["jsx_element", "jsx_self_closing_element", "jsx_fragment"]).into_iter().next() {
+            self.read.touches.push(Touch { op: "render".into(), line: jsx.start_position().row as u32 + 1, ..Touch::new(World::Screen, None) });
+        }
+        for r in changed_roots(self.body, src) {
+            let ty = if r == "this" { self.cls.clone().filter(|_| !self.initializer) } else { self.param_types.get(r).cloned() };
             if let Some(t) = ty {
-                store.add_edge(id, &t, EdgeKind::Mutates, Some(r.to_string()));
+                self.read.mutates.push((t, r.to_string()));
             }
         }
-    }
-    if let (Some(compares), Some(node)) = (compares, store.nodes.get_mut(id)) {
-        node.compares = compares;
     }
 }
 
