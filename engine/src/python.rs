@@ -1709,189 +1709,270 @@ fn link_calls<'t>(modules: &'t IndexMap<String, Module>, store: &mut GraphBuilde
     let n = store.nodes[id].clone();
     let m = &modules[&n.module];
     let Some(d) = def_node(m, &n) else { return Linked::default() };
-    let src = &m.src;
     let in_module = n.kind == NodeKind::Module;
-    let body = if in_module { Some(d) } else { d.child_by_field_name("body") };
-    let Some(body) = body else { return Linked::default() };
-    let mut handed: Vec<(String, World, Dir)> = vec![];
-    let mut files: Vec<(Touch, Vec<Built>)> = vec![];
-    let mut args: Vec<Arg> = vec![];
-    let own_params: Vec<String> = if in_module { vec![] } else { paths::parameters(d, src, false).into_iter().map(|(p, _)| p).collect() };
-    let at = At { m, scope: (!in_module).then_some(d), params: &own_params };
-    // the direction a body says to a database's driver, per database
-    let mut declared: Vec<(World, Dir)> = vec![];
-    let params = if in_module { HashMap::new() } else { param_types(m, d, modules, &store.nodes, root) };
-    let mut touches: Vec<Touch> = vec![];
-    let mut unresolved: Vec<String> = vec![];
-    let mut used: Vec<String> = vec![];
-    let mut changes: Vec<(String, String)> = vec![];
-    let mut steps = Steps::new(body, src, &CHOICES);
-    let mut new_ext: Vec<String> = vec![];
-    {
-        let seen = Seen::new(m, types, sites, modules, store, root);
-        for c in evaluation_order(walk(body, &["call"])) {
-            if in_module {
-                // calls inside a definition belong to that definition
-                let mut p = c.parent();
-                let mut inner = false;
-                while let Some(pp) = p {
-                    if pp.id() == body.id() {
-                        break;
-                    }
-                    if matches!(pp.kind(), "function_definition" | "class_definition") {
-                        inner = true;
-                        break;
-                    }
-                    p = pp.parent();
-                }
-                if inner {
-                    continue;
-                }
-            }
-            let Some(fnode) = c.child_by_field_name("function") else { continue };
-            let callee = seen.callee(fnode);
-            // what the call is handed: the value it is called on, and its arguments
-            let mut hands: Vec<Held> = vec![];
-            let receiver = (fnode.kind() == "attribute").then(|| fnode.child_by_field_name("object")).flatten();
-            if let Some(o) = receiver {
-                hands.extend(seen.held_in(o, ext, &steps.kept));
-            }
-            if let Some(a) = c.child_by_field_name("arguments") {
-                for x in named_children(a).into_iter().filter(|x| x.kind() != "comment") {
-                    let v = if x.kind() == "keyword_argument" { x.child_by_field_name("value").unwrap_or(x) } else { x };
-                    hands.extend(seen.held_in(v, ext, &steps.kept));
-                }
-            }
-            let mut seen_held = HashSet::new();
-            hands.retain(|h| seen_held.insert(h.clone()));
-            // what the call gives back, by the name it is assigned to
-            let assigned = kept_as(c, src).unwrap_or_default();
-            let known = seen.value(c).filter(|v| !v.is_class && !v.is_code);
-            let mut gives: Vec<Held> = known.map(|v| seen.drawn(v, ext)).unwrap_or_default().into_iter().map(|ty| Held::new(ty, assigned.clone())).collect();
-            // a value whose type ty does not know is still made, and held by the name it is assigned to
-            if gives.is_empty() && known.map_or(true, |v| v.shown == "Unknown") && !assigned.is_empty() && !hands.is_empty() {
-                gives.push(Held::new(String::new(), assigned.clone()));
-            }
-            new_ext.extend(hands.iter().chain(&gives).map(|h| h.ty.clone()).filter(|t| t.starts_with("ext:")));
-            steps.keep(&gives);
-            // a method called on a subclass's value is that subclass's step
-            let on = match (&callee, receiver) {
-                (Some(Callee::Def(t)), Some(o)) => store.nodes.get(t).and_then(|n| n.cls.clone()).and_then(|b| {
-                    let mine = seen.value(o).map(|v| seen.drawn(v, ext)).unwrap_or_default();
-                    mine.into_iter().find(|c| *c != b && seen.is_class(c) && seen.descends(c, &b))
-                }),
-                _ => None,
-            };
-            // a function of the package handed on as a value (`executor.submit(self.run, x)`,
-            // `Thread(target=work)`) is called by whoever receives it; a class handed to code
-            // Atlas reads (`pipeline.add(DiffValues, ..)`) is built there
-            for a in handed_on(c) {
-                if let Some(t) = seen.handed_function(a) {
-                    steps.handed(c, a, &t, EdgeKind::Calls);
-                } else if let (Some(Callee::Def(_)), Some(t)) = (&callee, seen.handed_class(a)) {
-                    steps.handed(c, a, &t, EdgeKind::Instantiates);
-                }
-            }
-            if let Some(Callee::Def(t)) = &callee {
-                let kind = if seen.is_class(t) { EdgeKind::Instantiates } else { EdgeKind::Calls };
-                let on_receiver = receiver.map_or(false, |o| o.kind() == "identifier" && text(o, src) == "self");
-                steps.call(c, t, kind, None, Step { on: on.unwrap_or_default(), on_receiver, hands, gives });
-                if kind == EdgeKind::Calls && value_used(c) {
-                    used.push(t.clone());
-                }
-                args.extend(arguments(modules, store, id, t, c, at));
-                continue;
-            }
-            // a library's call not read that makes a value the body keeps under a name, from
-            // values it was handed, is a step of its own; what a call gives without a name goes
-            // into the call around it
-            if !assigned.is_empty() {
-                let op = match fnode.kind() {
-                    "attribute" => fnode.child_by_field_name("attribute").map(|a| text(a, src).to_string()),
-                    _ => Some(text(fnode, src).rsplit('.').next().unwrap_or("").to_string()),
-                };
-                steps.op(c, &op.unwrap_or_default(), hands, gives);
-            }
-            // a method on a value written out (`(root / name).write_text`) is its name alone
-            let parts = match call_path(fnode, src) {
-                p if p.is_empty() => fnode.child_by_field_name("attribute").map(|a| vec![text(a, src).to_string()]).unwrap_or_default(),
-                p => p,
-            };
-            if parts.is_empty() {
-                continue;
-            }
-            let lib = match callee {
-                Some(Callee::Lib(lib)) => Some(lib),
-                _ => None,
-            };
-            if let Some(cls) = lib.as_ref().and(seen.made_on(c, fnode)) {
-                steps.edge(c, &cls, EdgeKind::Instantiates);
-            }
-            if lib.is_none() {
-                unresolved.push(parts.iter().take(2).cloned().collect::<Vec<_>>().join("."));
-            }
-            let tag = effects::boundary(lib.as_deref(), &parts).filter(|t| seen.moves(fnode, t, lib.as_deref(), parts.last().map_or("", String::as_str)));
-            if let Some(tag) = tag {
-                let crossed = crossed(&seen, eval, at, c, fnode, tag, lib.as_deref(), parts.last().map_or("", String::as_str));
-                touches.extend(crossed.touches);
-                files.extend(crossed.files);
-                declared.extend(crossed.said);
-                handed.extend(crossed.handed);
-            }
+    let Some(body) = (if in_module { Some(d) } else { d.child_by_field_name("body") }) else { return Linked::default() };
+    let mut steps = Steps::new(body, &m.src, &CHOICES);
+    let read = {
+        let mut b = Body::new(Seen::new(m, types, sites, modules, store, root), modules, ext, eval, &n, d, body);
+        for c in b.calls() {
+            b.call(&mut steps, c);
         }
-        // what a body runs inside the session or transaction it opened goes the way it said
-        for t in touches.iter_mut().filter(|t| t.dir.is_none()) {
-            let said: HashSet<Dir> = declared.iter().filter(|(k, _)| *k == t.kind).map(|(_, d)| *d).collect();
-            if let [dir] = said.into_iter().collect::<Vec<_>>()[..] {
-                t.dir = Some(dir);
-            }
-        }
-        // what the body changes of its inputs: `T -> T` for the receiver or a parameter it changes;
-        // a value the body constructs itself is built, not changed
-        if !in_module {
-            let receiver_mutates = |c: TsNode| match c.child_by_field_name("function").filter(|f| f.kind() == "attribute" && f.child_by_field_name("object").map_or(false, |o| o.kind() == "identifier")) {
-                Some(f) => matches!(seen.callee(f), Some(Callee::Def(t)) if store.mutating.contains(&t)),
-                None => false,
-            };
-            for r in changed_roots(body, src, &receiver_mutates) {
-                let ty = if r == "self" { n.cls.clone().filter(|_| n.name != "__init__") } else { params.get(r).cloned() };
-                if let Some(t) = ty {
-                    changes.push((t, r.to_string()));
-                }
-            }
-        }
-    }
-    for key in unresolved {
+        b.ends();
+        b.read
+    };
+    let compares = (!in_module).then(|| crate::tree::compares(body, &m.src, steps.choices(), &COMPARES, &CHOICES));
+    steps.finish(store, id);
+    for key in read.unresolved {
         *store.unresolved.entry(key).or_insert(0) += 1;
     }
-    // I/O functions referenced, directly or through a module-level table, may be called later
-    if n.kind != NodeKind::Module {
-        touches.extend(io_refs(m, body, root, ""));
-        let tables = io_tables(m, root);
-        for ident in walk(body, &["identifier"]) {
-            if let Some(ts) = tables.get(text(ident, src)) {
-                touches.extend(ts.iter().cloned());
-            }
-        }
-    }
-    let compares = (n.kind != NodeKind::Module).then(|| crate::tree::compares(body, src, steps.choices(), &COMPARES, &CHOICES));
-    steps.finish(store, id);
-    for t in new_ext {
+    for t in read.new_ext {
         store.ext_node(&t);
     }
-    for t in used {
+    for t in read.used {
         store.used.insert((id.to_string(), t));
     }
     if let (Some(compares), Some(node)) = (compares, store.nodes.get_mut(id)) {
         node.compares = compares;
     }
-    for (t, input) in changes {
+    for (t, input) in read.changes {
         store.add_edge(id, &t, EdgeKind::Mutates, Some(input));
     }
-    for t in touches {
+    for t in read.touches {
         store.touch(id, t);
     }
-    Linked { handed, files, args }
+    Linked { handed: read.handed, files: read.files, args: read.args }
+}
+
+/// What reading a body finds besides its steps: what it touches, the file calls whose paths wait
+/// for what callers hand, the calls of the package's functions with their arguments, the work a
+/// managed transaction is handed, the directions the body says to a database's driver, the
+/// calls Atlas could not follow, the functions whose value it uses, the inputs it changes in
+/// place, and the library types its values have.
+#[derive(Default)]
+struct Read<'t> {
+    touches: Vec<Touch>,
+    files: Vec<(Touch, Vec<Built>)>,
+    args: Vec<Arg<'t>>,
+    handed: Vec<(String, World, Dir)>,
+    declared: Vec<(World, Dir)>,
+    unresolved: Vec<String>,
+    used: Vec<String>,
+    changes: Vec<(String, String)>,
+    new_ext: Vec<String>,
+}
+
+/// A function's body, or a module's own code, as Python reads it: the types ty gives its
+/// expressions, and where its parameters come from.
+struct Body<'a, 't> {
+    seen: Seen<'a>,
+    modules: &'t IndexMap<String, Module>,
+    m: &'t Module,
+    src: &'t [u8],
+    ext: &'a HashMap<(String, String), String>,
+    eval: &'a Eval<'a>,
+    id: String,
+    cls: Option<String>,
+    initializer: bool,
+    in_module: bool,
+    body: TsNode<'t>,
+    /// The function the body belongs to, and its parameters by name.
+    scope: Option<TsNode<'t>>,
+    own_params: Vec<String>,
+    /// The classes the parameters hold.
+    params: HashMap<String, String>,
+    root: &'a str,
+    read: Read<'t>,
+}
+
+impl<'a, 't> Body<'a, 't> {
+    #[allow(clippy::too_many_arguments)]
+    fn new(seen: Seen<'a>, modules: &'t IndexMap<String, Module>, ext: &'a HashMap<(String, String), String>, eval: &'a Eval<'a>, n: &Node, d: TsNode<'t>, body: TsNode<'t>) -> Self {
+        let m = &modules[&n.module];
+        let in_module = n.kind == NodeKind::Module;
+        let root = seen.root;
+        let own_params = if in_module { vec![] } else { paths::parameters(d, &m.src, false).into_iter().map(|(p, _)| p).collect() };
+        let params = if in_module { HashMap::new() } else { param_types(m, d, modules, &seen.store.nodes, root) };
+        Body {
+            seen,
+            modules,
+            m,
+            src: &m.src,
+            ext,
+            eval,
+            id: n.id.clone(),
+            cls: n.cls.clone(),
+            initializer: n.ctor && !n.on_class,
+            in_module,
+            body,
+            scope: (!in_module).then_some(d),
+            own_params,
+            params,
+            root,
+            read: Read::default(),
+        }
+    }
+
+    /// Where an expression of the body is evaluated.
+    fn at(&self) -> At<'_, 't> {
+        At { m: self.m, scope: self.scope, params: &self.own_params }
+    }
+
+    /// The body's calls in the order they run; in a module's own code, not those inside a
+    /// definition, which belong to that definition.
+    fn calls(&self) -> Vec<TsNode<'t>> {
+        let inner = |c: TsNode| {
+            let mut p = c.parent();
+            while let Some(pp) = p.filter(|pp| pp.id() != self.body.id()) {
+                if matches!(pp.kind(), "function_definition" | "class_definition") {
+                    return true;
+                }
+                p = pp.parent();
+            }
+            false
+        };
+        evaluation_order(walk(self.body, &["call"])).into_iter().filter(|c| !self.in_module || !inner(*c)).collect()
+    }
+
+    /// What a call is handed: the value it is called on, and its arguments.
+    fn hands(&self, c: TsNode, receiver: Option<TsNode>, kept: &HashSet<String>) -> Vec<Held> {
+        let args = c.child_by_field_name("arguments").map(named_children).unwrap_or_default();
+        let values = args.into_iter().filter(|x| x.kind() != "comment").map(|x| if x.kind() == "keyword_argument" { x.child_by_field_name("value").unwrap_or(x) } else { x });
+        let mut hands: Vec<Held> = receiver.into_iter().chain(values).flat_map(|v| self.seen.held_in(v, self.ext, kept)).collect();
+        let mut seen = HashSet::new();
+        hands.retain(|h| seen.insert(h.clone()));
+        hands
+    }
+
+    /// What a call gives back, by the name it is assigned to: the type ty says, or, for a value
+    /// whose type ty does not know, the name alone, when the call made it from what it was handed.
+    fn gives(&self, c: TsNode, assigned: &str, hands: &[Held]) -> Vec<Held> {
+        let known = self.seen.value(c).filter(|v| !v.is_class && !v.is_code);
+        let mut gives: Vec<Held> = known.map(|v| self.seen.drawn(v, self.ext)).unwrap_or_default().into_iter().map(|ty| Held::new(ty, assigned)).collect();
+        if gives.is_empty() && known.map_or(true, |v| v.shown == "Unknown") && !assigned.is_empty() && !hands.is_empty() {
+            gives.push(Held::new(String::new(), assigned));
+        }
+        gives
+    }
+
+    /// One call of the body, as the step it is: the program's own function or class, or a
+    /// library's, which may make a value the body keeps and may cross into the world.
+    fn call(&mut self, steps: &mut Steps, c: TsNode<'t>) {
+        let Some(fnode) = c.child_by_field_name("function") else { return };
+        let callee = self.seen.callee(fnode);
+        let receiver = (fnode.kind() == "attribute").then(|| fnode.child_by_field_name("object")).flatten();
+        let hands = self.hands(c, receiver, &steps.kept);
+        let assigned = kept_as(c, self.src).unwrap_or_default();
+        let gives = self.gives(c, &assigned, &hands);
+        self.read.new_ext.extend(hands.iter().chain(&gives).map(|h| h.ty.clone()).filter(|t| t.starts_with("ext:")));
+        steps.keep(&gives);
+        // a function of the package handed on as a value (`executor.submit(self.run, x)`,
+        // `Thread(target=work)`) is called by whoever receives it; a class handed to code Atlas
+        // reads (`pipeline.add(DiffValues, ..)`) is built there
+        for a in handed_on(c) {
+            if let Some(t) = self.seen.handed_function(a) {
+                steps.handed(c, a, &t, EdgeKind::Calls);
+            } else if let (Some(Callee::Def(_)), Some(t)) = (&callee, self.seen.handed_class(a)) {
+                steps.handed(c, a, &t, EdgeKind::Instantiates);
+            }
+        }
+        match callee {
+            Some(Callee::Def(t)) => self.own(steps, c, &t, receiver, hands, gives),
+            callee => {
+                // a library's call not read that makes a value the body keeps under a name, from
+                // values it was handed, is a step of its own; what a call gives without a name
+                // goes into the call around it
+                if !assigned.is_empty() {
+                    let op = match fnode.kind() {
+                        "attribute" => fnode.child_by_field_name("attribute").map(|a| text(a, self.src).to_string()),
+                        _ => Some(text(fnode, self.src).rsplit('.').next().unwrap_or("").to_string()),
+                    };
+                    steps.op(c, &op.unwrap_or_default(), hands, gives);
+                }
+                let lib = match callee {
+                    Some(Callee::Lib(lib)) => Some(lib),
+                    _ => None,
+                };
+                self.library(steps, c, fnode, lib);
+            }
+        }
+    }
+
+    /// A call of the program's own function or class; a method called on a subclass's value is
+    /// that subclass's step.
+    fn own(&mut self, steps: &mut Steps, c: TsNode<'t>, t: &str, receiver: Option<TsNode<'t>>, hands: Vec<Held>, gives: Vec<Held>) {
+        let seen = &self.seen;
+        let on = receiver.and_then(|o| {
+            let b = seen.store.nodes.get(t)?.cls.clone()?;
+            seen.value(o).map(|v| seen.drawn(v, self.ext)).unwrap_or_default().into_iter().find(|c| *c != b && seen.is_class(c) && seen.descends(c, &b))
+        });
+        let kind = if seen.is_class(t) { EdgeKind::Instantiates } else { EdgeKind::Calls };
+        let on_receiver = receiver.map_or(false, |o| o.kind() == "identifier" && text(o, self.src) == "self");
+        steps.call(c, t, kind, None, Step { on: on.unwrap_or_default(), on_receiver, hands, gives });
+        if kind == EdgeKind::Calls && value_used(c) {
+            self.read.used.push(t.to_string());
+        }
+        let args = arguments(self.modules, seen.store, &self.id, t, c, self.at());
+        self.read.args.extend(args);
+    }
+
+    /// A library's call: a class it makes, the calls Atlas could not follow, and what it crosses
+    /// into. A method on a value written out (`(root / name).write_text`) is its name alone.
+    fn library(&mut self, steps: &mut Steps, c: TsNode<'t>, fnode: TsNode<'t>, lib: Option<String>) {
+        let parts = match call_path(fnode, self.src) {
+            p if p.is_empty() => fnode.child_by_field_name("attribute").map(|a| vec![text(a, self.src).to_string()]).unwrap_or_default(),
+            p => p,
+        };
+        if parts.is_empty() {
+            return;
+        }
+        if let Some(cls) = lib.as_ref().and(self.seen.made_on(c, fnode)) {
+            steps.edge(c, &cls, EdgeKind::Instantiates);
+        }
+        if lib.is_none() {
+            self.read.unresolved.push(parts.iter().take(2).cloned().collect::<Vec<_>>().join("."));
+        }
+        let op = parts.last().map_or("", String::as_str);
+        let Some(tag) = effects::boundary(lib.as_deref(), &parts).filter(|t| self.seen.moves(fnode, t, lib.as_deref(), op)) else { return };
+        let crossed = crossed(&self.seen, self.eval, self.at(), c, fnode, tag, lib.as_deref(), op);
+        self.read.touches.extend(crossed.touches);
+        self.read.files.extend(crossed.files);
+        self.read.declared.extend(crossed.said);
+        self.read.handed.extend(crossed.handed);
+    }
+
+    /// What the body does besides its calls one by one: what it runs inside the session or
+    /// transaction it opened goes the way it said; the inputs it changes in place (`T -> T` for
+    /// the receiver or a parameter; an initializer builds its object); and the I/O functions it
+    /// refers to, directly or through a module-level table, which may be called later.
+    fn ends(&mut self) {
+        for t in self.read.touches.iter_mut().filter(|t| t.dir.is_none()) {
+            let said: HashSet<Dir> = self.read.declared.iter().filter(|(k, _)| *k == t.kind).map(|(_, d)| *d).collect();
+            if let [dir] = said.into_iter().collect::<Vec<_>>()[..] {
+                t.dir = Some(dir);
+            }
+        }
+        if self.in_module {
+            return;
+        }
+        let seen = &self.seen;
+        let receiver_mutates = |c: TsNode| match c.child_by_field_name("function").filter(|f| f.kind() == "attribute" && f.child_by_field_name("object").map_or(false, |o| o.kind() == "identifier")) {
+            Some(f) => matches!(seen.callee(f), Some(Callee::Def(t)) if seen.store.mutating.contains(&t)),
+            None => false,
+        };
+        for r in changed_roots(self.body, self.src, &receiver_mutates) {
+            let ty = if r == "self" { self.cls.clone().filter(|_| !self.initializer) } else { self.params.get(r).cloned() };
+            if let Some(t) = ty {
+                self.read.changes.push((t, r.to_string()));
+            }
+        }
+        self.read.touches.extend(io_refs(self.m, self.body, self.root, ""));
+        let tables = io_tables(self.m, self.root);
+        for ident in walk(self.body, &["identifier"]) {
+            if let Some(ts) = tables.get(text(ident, self.src)) {
+                self.read.touches.extend(ts.iter().cloned());
+            }
+        }
+    }
 }
 
 /// What a call that crosses into the world leaves: the touches it makes, the file touches whose
