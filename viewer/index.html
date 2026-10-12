@@ -248,7 +248,12 @@ const PARTS = D.parts || [], multi = PARTS.length > 1;
 const partOf = n => n.part || (PARTS[0] || {}).id || D.root;
 const langOf = n => (PARTS.find(p => p.id === partOf(n)) || {}).language || D.language;
 const partRank = n => Math.max(0, PARTS.findIndex(p => p.id === partOf(n)));
-let partFilter = null; const expandedParts = new Set();
+// what the picture shows, as data: a view. Its fibers keep the part of the code the reader looks at
+// (one route, the routes of one kind, one part, the packages in focus, with the rest of the code
+// quotiented to either side); its opened sets are order ideals of the code's hierarchies, each the
+// refinement of a quotient: parts into packages, packages into subpackages, steps into their bodies,
+// families into their members, coarse places into their parts, directories into their files
+const V = {route: null, kind: null, part: null, focus: new Set(), open: {parts: new Set(), units: new Set(), steps: new Set(), families: new Set(), places: new Set(), dirs: new Set()}};
 const short = id => id.startsWith(ROOT) ? id.slice(ROOT.length) : id.replace(/^ext:/, "");
 const isPrivate = n => n.name.startsWith("_");
 const KG = {imports:"imports", calls:"calls", requests:"calls", instantiates:"calls", takes:"types", returns:"types", has:"types", mutates:"types", variant:"types", inherits:"inherits"};
@@ -546,9 +551,8 @@ function reach(id, on) {
   const r = {touches: [...touches.values()]}; reachCache.set(k0, r); return r;
 }
 const touchKey = t => [t.kind, t.what, t.artifact || "", t.dir || "", t.op || ""].join("|");
-let routeEntry = null, entryKind = null; const expanded = new Set();
 // the routes an overview shows: all of them, or those of one kind (all Library routes, all CLI routes)
-const overviewEntries = () => entries.filter(e => (entryKind ? e.entry.kind === entryKind : e.entry.kind !== "test") && (!partFilter || partOf(e) === partFilter));
+const overviewEntries = () => entries.filter(e => (V.kind ? e.entry.kind === V.kind : e.entry.kind !== "test") && (!V.part || partOf(e) === V.part));
 const entrySel = document.getElementById("entry");
 if (multi) {
   const og = document.createElement("optgroup"); og.label = "Parts";
@@ -564,12 +568,38 @@ for (const k of KIND_ORDER) {
 }
 entrySel.addEventListener("change", () => {
   const v = entrySel.value;
-  if (v.startsWith("part:")) { partFilter = v.slice(5); entryKind = null; routeEntry = null; }
-  else if (v.startsWith("kind:")) { entryKind = v.slice(5); routeEntry = null; partFilter = null; } else { entryKind = null; routeEntry = v || null; if (!v) partFilter = null; }
-  expanded.clear(); plaatFit = true; render();
+  if (v.startsWith("part:")) { V.part = v.slice(5); V.kind = null; V.route = null; }
+  else if (v.startsWith("kind:")) { V.kind = v.slice(5); V.route = null; V.part = null; } else { V.kind = null; V.route = v || null; if (!v) V.part = null; }
+  V.open.steps.clear(); plaatFit = true; render();
 });
 // a file named on the command line (`atlas view demo/x.ipynb`) opens on its route
-if (D.open && byId.has(D.open)) { routeEntry = D.open; entrySel.value = D.open; }
+if (D.open && byId.has(D.open)) { V.route = D.open; entrySel.value = D.open; }
+// a view written down: in the address, so that a picture can be linked, or handed to the page by
+// `atlas view --view` (an agent's); the address comes first
+const viewData = () => {
+  const o = {};
+  if (V.route) o.route = V.route;
+  if (V.kind) o.kind = V.kind;
+  if (V.part) o.part = V.part;
+  if (V.focus.size) o.focus = [...V.focus];
+  const open = {};
+  for (const [k, set] of Object.entries(V.open)) if (set.size) open[k] = [...set];
+  if (Object.keys(open).length) o.open = open;
+  return o;
+};
+function setView(o) {
+  V.route = o.route && byId.has(o.route) ? o.route : null;
+  V.kind = o.kind || null;
+  V.part = o.part || null;
+  V.focus = new Set(o.focus || []);
+  for (const k of Object.keys(V.open)) V.open[k] = new Set((o.open || {})[k] || []);
+  entrySel.value = V.route || (V.kind ? "kind:" + V.kind : V.part ? "part:" + V.part : "");
+}
+{
+  const linked = (location.hash.match(/[#&]v=([^&]*)/) || [])[1];
+  try { if (linked) setView(JSON.parse(decodeURIComponent(linked))); else if (D.view) setView(D.view); } catch {}
+}
+const writeView = () => { const o = viewData(); try { history.replaceState(null, "", `#p=${current}` + (Object.keys(o).length ? `&v=${encodeURIComponent(JSON.stringify(o))}` : "")); } catch {} };
 // ---------- plaat: a route as places and steps ----------
 // The fiber of a route (an entry and the steps opened in it): every step a pill between what it takes and what it hands on, then
 // quotient types into their families. Zooming in is nesting: an opened step is a frame around its
@@ -591,9 +621,6 @@ const sharedOf = f => ((TYPES.shared || {})[f] || []).map(s => ({via: s.via, dst
 // a type opens when it has kinds or parts of its own, or holds what it shares; (n) counts the types it opens into
 const opens = t => members.has(t) || sharedOf(t).length > 0;
 const opensInto = t => (members.get(t) || []).length + sharedOf(t).length + 1;
-const expandedFamilies = new Set(), refined = new Set();
-// the directories opened by a click, and the packages the reader focuses on (a fiber of the picture)
-const openedDirs = new Set(), focusUnits = new Set();
 const bare = id => byId.has(id) ? byId.get(id).name : id.replace(/^ext:/, "").split(".").pop();
 const nameCount = new Map(); for (const n of D.nodes) if (n.kind === "class" || n.kind === "external") nameCount.set(bare(n.id), (nameCount.get(bare(n.id)) || 0) + 1);
 const typeLabel = id => { const b = bare(id); if ((nameCount.get(b) || 0) > 1) { const mod = (byId.get(id)?.module || id.replace(/^ext:/, "").split(".").slice(0, -1).join(".")).split(".").pop(); return mod ? `${mod}.${b}` : b; } return b; };
@@ -604,7 +631,6 @@ const entryTitle = id => { const n = byId.get(id); return n.entry ? `${KIND_LABE
 // a unit is a module path: a package with everything under it, or a package's own module by itself
 // (`rkg.serve$`). A part's top level is the children of its own package, and each tree beside it
 // (scripts, notebooks) as one; a level with a single child is passed through
-const expandedUnits = new Set();
 const moduleIds = part => modules.filter(n => partOf(n) === part).map(n => n.id);
 const inUnit = (id, u) => { const m = byId.get(id)?.module ?? ""; return u.endsWith("$") ? m === u.slice(0, -1) : m === u || m.startsWith(u + "."); };
 const hasCode = m => (out.get(m) || []).some(e => e.kind === "contains") || !!(byId.get(m)?.touches || []).length;
@@ -623,7 +649,7 @@ function topUnits(part) {
 }
 const unitLabel = u => { if (u === "~in" || u === "~out") { const n = aroundFocus().length; return `the rest · ${n} ${n === 1 ? "package" : "packages"}`; } if (u.startsWith("~")) return unitLabel(u.slice(4)); const base = u.replace(/\$$/, ""), last = base === "_root" ? "scripts at the root" : base.split(".").pop(); return u.endsWith("$") ? `${last} itself` : last; };
 const partOfUnit = u => { const m = [...byId.values()].find(n => n.kind === "module" && inUnit(n.id, u)); return m ? partOf(m) : partOf({}); };
-const inFocus = id => [...focusUnits].some(u => inUnit(id, u));
+const inFocus = id => [...V.focus].some(u => inUnit(id, u));
 // the rest of the code around a focus: `~in` hands data to it, `~out` takes data from it; opened, each
 // is the packages it holds (`~in:rkg.serve`)
 const isRest = u => u.startsWith("~");
@@ -641,8 +667,8 @@ function restExchange(side) {
 }
 // the packages of the focus's parts that are not in it, nor around or inside one that is
 function aroundFocus() {
-  const parts = new Set([...focusUnits].map(partOfUnit));
-  return [...parts].flatMap(p => topUnits(p)).filter(u => u !== "Makefile" && ![...focusUnits].some(f => { const a = f.replace(/\$$/, ""), b = u.replace(/\$$/, ""); return a === b || a.startsWith(b + ".") || b.startsWith(a + "."); }));
+  const parts = new Set([...V.focus].map(partOfUnit));
+  return [...parts].flatMap(p => topUnits(p)).filter(u => u !== "Makefile" && ![...V.focus].some(f => { const a = f.replace(/\$$/, ""), b = u.replace(/\$$/, ""); return a === b || a.startsWith(b + ".") || b.startsWith(a + "."); }));
 }
 // the packages around a focus: those that hand data to it or take data from it, the most first
 function neighbours() {
@@ -702,10 +728,10 @@ function foldDirs(paths) {
     const ds = dirsOf(p);
     let at = p;
     for (let i = 0; i < ds.length; i++) {
-      if (openedDirs.has(ds[i])) continue;
+      if (V.open.dirs.has(ds[i])) continue;
       const k = holds(ds[i]);
       if (k < 2) break;
-      let j = i; while (j + 1 < ds.length && !openedDirs.has(ds[j + 1]) && holds(ds[j + 1]) === k) j++;
+      let j = i; while (j + 1 < ds.length && !V.open.dirs.has(ds[j + 1]) && holds(ds[j + 1]) === k) j++;
       at = ds[j]; break;
     }
     if (at !== p) { to.set(p, at); n.set(at, holds(at)); }
@@ -718,7 +744,7 @@ const filePlace = path => {
 };
 // a figure made is seen where a notebook runs the cell that made it: on a notebook's route it is
 // on the screen, elsewhere only `show` puts it there
-const shownAs = t => t.kind === "figure" && byId.get(routeEntry)?.entry?.kind === "notebook" ? {...t, kind: "screen", side: "out", place: {id: "w:Screen", label: "Screen", short: "Screen", glyph: "screen"}} : t;
+const shownAs = t => t.kind === "figure" && byId.get(V.route)?.entry?.kind === "notebook" ? {...t, kind: "screen", side: "out", place: {id: "w:Screen", label: "Screen", short: "Screen", glyph: "screen"}} : t;
 // a touch is drawn where it rests; a figure that no notebook shows is not on the screen
 const drawn = t => t.kind !== "figure";
 // a part of the world as the picture draws it now: the place the engine names, its coarser place
@@ -726,7 +752,7 @@ const drawn = t => t.kind !== "figure";
 const placeGlyph = new Map();
 function worldPlaceOf(t) {
   let p = t.place;
-  if (p.coarse && !refined.has(p.group)) p = p.coarse;
+  if (p.coarse && !V.open.places.has(p.group)) p = p.coarse;
   const q = p.file ? filePlace(p.file) : {id: p.id, label: p.label, short: p.short, kind: "world"};
   placeGlyph.set(q.id, p.glyph);
   return q;
@@ -734,25 +760,25 @@ function worldPlaceOf(t) {
 // the route as a tree: an open step holds its own steps; a call into a family holds its members' overrides as branches
 function routeTree() {
   const closedRoutes = es => es.map(e => ({id: e.id, open: false, kids: [], hue: null}));
-  if (!routeEntry && !entryKind) {
-    const unitNodes = (us, part) => us.map(u => { const open = expandedUnits.has(u); return {id: "unit:" + u, open, kids: open ? unitKids(u, part) : [], hue: null, choice: false}; });
+  if (!V.route && !V.kind) {
+    const unitNodes = (us, part) => us.map(u => { const open = V.open.units.has(u); return {id: "unit:" + u, open, kids: open ? unitKids(u, part) : [], hue: null, choice: false}; });
     const unitKids = (u, part) => { const below = u.endsWith("$") || u === "Makefile" ? [] : unitsBelow(u, part); return below.length > 1 ? unitNodes(below, part) : closedRoutes(unitRoutes(u)); };
     // a focus: the packages chosen, each opened as before, and the rest of the code on either side
-    if (focusUnits.size) {
-      const rest = r => { const open = expandedUnits.has(r); return {id: "unit:" + r, open, kids: open ? [...restExchange(r).keys()].sort().map(p => ({id: `unit:${r}:${p}`, open: false, kids: [], hue: null, choice: false})) : [], hue: null, choice: false}; };
-      return [...[...focusUnits].sort().flatMap(u => unitNodes([u], partOfUnit(u))), rest("~in"), rest("~out")];
+    if (V.focus.size) {
+      const rest = r => { const open = V.open.units.has(r); return {id: "unit:" + r, open, kids: open ? [...restExchange(r).keys()].sort().map(p => ({id: `unit:${r}:${p}`, open: false, kids: [], hue: null, choice: false})) : [], hue: null, choice: false}; };
+      return [...[...V.focus].sort().flatMap(u => unitNodes([u], partOfUnit(u))), rest("~in"), rest("~out")];
     }
-    if (multi && !partFilter) return PARTS.map(p => { const open = expandedParts.has(p.id); return {id: "part:" + p.id, open, kids: open ? unitNodes(topUnits(p.id), p.id) : [], hue: null, choice: false}; });
-    const part = partFilter || partOf({});
+    if (multi && !V.part) return PARTS.map(p => { const open = V.open.parts.has(p.id); return {id: "part:" + p.id, open, kids: open ? unitNodes(topUnits(p.id), p.id) : [], hue: null, choice: false}; });
+    const part = V.part || partOf({});
     return unitNodes(topUnits(part), part);
   }
-  if (!routeEntry) return closedRoutes(overviewEntries());
+  if (!V.route) return closedRoutes(overviewEntries());
   treeInfo.clear();
   // what a step runs is its body, as the engine reads it: the overrides the call may run instead,
   // then its own steps, each choice's branches in a frame, each branch in its own colour
   const visit = (key, step, on, site, hue, path) => {
     treeInfo.set(key, {step, on, site});
-    const n = byId.get(step), open = key === routeEntry || expanded.has(key), node = {id: key, open, kids: [], hue, choice: false};
+    const n = byId.get(step), open = key === V.route || V.open.steps.has(key), node = {id: key, open, kids: [], hue, choice: false};
     if (!open || !n) return node;
     const deeper = new Set([...path, step]), body = bodyOf(step, on);
     node.choice = (body.alts || []).length > 0;
@@ -766,7 +792,7 @@ function routeTree() {
     }
     return node;
   };
-  return [visit(routeEntry, routeEntry, null, null, null, new Set())];
+  return [visit(V.route, V.route, null, null, null, new Set())];
 }
 const altCount = id => (bodyOf(id, null).alts || []).length;
 let prevPos = new Map(), plaatAnchor = null, plaatFit = true;
@@ -774,13 +800,13 @@ async function renderPlaat() {
   const g = scene.node(), DUR = matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 380;
   dirFold = {to: new Map(), n: new Map()};
   // the subject of a route stands as itself; other types stand in their family until it is opened
-  const placeOfType = t => t === routeEntry || expandedFamilies.has(familyOf(t)) || expandedFamilies.has(kindOf(t)) ? t : kindOf(t);
+  const placeOfType = t => t === V.route || V.open.families.has(familyOf(t)) || V.open.families.has(kindOf(t)) ? t : kindOf(t);
   const places = new Map();   // id -> {id, label, kind: world | type | ext, hue, fam}
   const restLinks = new Map();  // in a focus: unit -> the types it takes from the rest and hands to it
   const addPlace = p => { if (!places.has(p.id)) places.set(p.id, p); return p.id; };
   const worldPlace = worldPlaceOf;
   const typePlace = t => {
-    const pid = placeOfType(t), n = byId.get(pid), closedFam = opens(pid) && !expandedFamilies.has(pid);
+    const pid = placeOfType(t), n = byId.get(pid), closedFam = opens(pid) && !V.open.families.has(pid);
     return {id: "t:" + pid, label: typeLabel(pid) + (closedFam ? ` (${opensInto(pid)})` : ""), kind: n && n.kind === "external" ? "ext" : "type", hue: hueOf(n), type: pid};
   };
   // a step's morphism: its own body, or (closed) its interface and everything it touches below
@@ -792,7 +818,7 @@ async function renderPlaat() {
     if (!f) return {dom: new Map(), cod: new Map()};
     if (isAnchor && f.entry) dom.push([addPlace(entryPlace(id)), false]);
     const merge = r => { r.dom.forEach((v, k) => dom.push([k, v])); r.cod.forEach((v, k) => cod.push([k, v])); };
-    if (f.kind === "class" && f.entry && !routeEntry) {
+    if (f.kind === "class" && f.entry && !V.route) {
       // a library class among all routes: what it is built from and what its public methods take and hand on,
       // together; inside a route, building one is a step like any constructor, handing on what it builds
       // seen from inside the class, getting the class back (`add` returns self to chain) is not an output
@@ -857,7 +883,7 @@ async function renderPlaat() {
     const side = (xs, put, way, t) => {
       const other = theirs(xs);
       if (!other.length) return;
-      if (!focusUnits.size || other.some(inFocus)) { put.set(addPlace(typePlace(t)), false); return; }
+      if (!V.focus.size || other.some(inFocus)) { put.set(addPlace(typePlace(t)), false); return; }
       if (!restLinks.has(u)) restLinks.set(u, {in: new Set(), out: new Set()});
       restLinks.get(u)[way].add(t);
     };
@@ -896,7 +922,7 @@ async function renderPlaat() {
   };
   // build the nested picture: frames for open steps, pills for closed ones (siblings with the same places are one pill)
   const pills = new Map(), frames = new Map();  // id -> {...}
-  const stepName = id => { if (id.startsWith("part:")) { const p = PARTS.find(x => x.id === id.slice(5)) || {}; return `${p.id} · ${p.language}`; } if (id.startsWith("unit:")) return unitLabel(id.slice(5)); const n = byId.get(id); if (!routeEntry && n.entry) return ENTRY_PLACE[n.entry.kind](n.entry.label, n); if (n.kind === "class") return n.name + "()"; if (n.make) return n.name; if (isCtor(n)) return typeLabel(n.cls) + "()"; return n.cls ? `${typeLabel(n.cls)}.${n.name}` : n.name; };
+  const stepName = id => { if (id.startsWith("part:")) { const p = PARTS.find(x => x.id === id.slice(5)) || {}; return `${p.id} · ${p.language}`; } if (id.startsWith("unit:")) return unitLabel(id.slice(5)); const n = byId.get(id); if (!V.route && n.entry) return ENTRY_PLACE[n.entry.kind](n.entry.label, n); if (n.kind === "class") return n.name + "()"; if (n.make) return n.name; if (isCtor(n)) return typeLabel(n.cls) + "()"; return n.cls ? `${typeLabel(n.cls)}.${n.name}` : n.name; };
   // a step's name: a method run on a subclass is that class's, a library's operation is its own name
   const stepLabel = key => {
     const info = treeInfo.get(key);
@@ -905,7 +931,7 @@ async function renderPlaat() {
     const n = byId.get(info.step);
     return info.on && n && n.cls && !isCtor(n) ? `${typeLabel(info.on)}.${n.name}` : stepName(info.step);
   };
-  const openable = key => { const s = stepOf(key); return key !== routeEntry && !expanded.has(key) && !s.startsWith("op:") && callees(s, treeInfo.get(key)?.on).length + stepsIn(bodyOf(s, treeInfo.get(key)?.on)).length > 0; };
+  const openable = key => { const s = stepOf(key); return key !== V.route && !V.open.steps.has(key) && !s.startsWith("op:") && callees(s, treeInfo.get(key)?.on).length + stepsIn(bodyOf(s, treeInfo.get(key)?.on)).length > 0; };
   // an exported class has no body of its own: its route starts at each public method the caller can call
   const libraryClass = id => byId.get(id)?.kind === "class" && !!byId.get(id).entry;
   const build = (node, parent, caller) => {
@@ -916,10 +942,10 @@ async function renderPlaat() {
     }
     if (node.open) {
       const fid = "n:" + node.id, kids = [];
-      frames.set(fid, {id: fid, step: node.id, parent, hue: node.hue, choice: node.choice, anchor: node.id === routeEntry, title: (node.id === routeEntry ? entryTitle(node.id) : stepLabel(node.id)) + (node.choice ? " · one of" : "")});
+      frames.set(fid, {id: fid, step: node.id, parent, hue: node.hue, choice: node.choice, anchor: node.id === V.route, title: (node.id === V.route ? entryTitle(node.id) : stepLabel(node.id)) + (node.choice ? " · one of" : "")});
       const lib = libraryClass(stepOf(node.id));
-      const own = lib || node.id.startsWith("unit:") ? {dom: new Map(), cod: new Map()} : stepMorphism(node.id, true, node.id === routeEntry);
-      const back = node.kids.flatMap(k => build(k, fid, lib && node.id === routeEntry ? node.id : null));
+      const own = lib || node.id.startsWith("unit:") ? {dom: new Map(), cod: new Map()} : stepMorphism(node.id, true, node.id === V.route);
+      const back = node.kids.flatMap(k => build(k, fid, lib && node.id === V.route ? node.id : null));
       if (own.dom.size || own.cod.size || (back.length && !lib && !node.id.startsWith("unit:"))) {
         const oid = "o:" + node.id;
         pills.set(oid, {id: oid, steps: [node.id], D: own.dom, C: own.cod, dn: own.dn, cn: own.cn, parent: fid, hue: node.hue, own: true});
@@ -940,11 +966,11 @@ async function renderPlaat() {
   // cross; an opened rest has one arrow per package in it, from the package that makes the types or
   // to the one that takes them, and holds only the packages with an arrow
   const restArrows = [];  // [rest pill, unit pill, side, types]
-  const around = focusUnits.size ? aroundFocus() : [];
+  const around = V.focus.size ? aroundFocus() : [];
   for (const [u, {in: ins, out: outs}] of restLinks) {
     for (const [r, ts] of [["~in", ins], ["~out", outs]]) {
       if (!ts.size) continue;
-      if (!expandedUnits.has(r)) { restArrows.push(["n:unit:" + r, "n:unit:" + u, r, ts]); continue; }
+      if (!V.open.units.has(r)) { restArrows.push(["n:unit:" + r, "n:unit:" + u, r, ts]); continue; }
       const byPkg = new Map();
       for (const t of ts) for (const p of around) if ([...((r === "~in" ? typeUse.makes : typeUse.takes).get(t) || [])].some(x => inUnit(x, p))) { if (!byPkg.has(p)) byPkg.set(p, new Set()); byPkg.get(p).add(t); }
       for (const [p, s] of byPkg) restArrows.push([`n:unit:${r}:${p}`, "n:unit:" + u, r, s]);
@@ -964,7 +990,7 @@ async function renderPlaat() {
   // a type a step takes and hands on is two moments of the data, not one box: memory is versioned in
   // call order (a step that hands on T makes a new T, later steps take the latest); in the overview,
   // where routes have no order between them, every route takes the same inputs and hands on the same outputs
-  const isMem = k => k.startsWith("v:") || (k.startsWith("t:") && !expandedFamilies.has(familyOf(places.get(k)?.type)));
+  const isMem = k => k.startsWith("v:") || (k.startsWith("t:") && !V.open.families.has(familyOf(places.get(k)?.type)));
   const version = (k, v) => { if (!places.has(v)) places.set(v, {...places.get(k), id: v}); return v; };
   const choiceOf = P => frames.get(P.parent)?.choice ? P.parent : P.id;
   const latest = new Map();
@@ -976,9 +1002,9 @@ async function renderPlaat() {
     P.D.forEach((r, k) => { const v = isMem(k) ? latest.get(k + "|" + name(P.dn, k)) || latest.get(k + "|") : null; Dv.set(v || k, r); });
     P.C.forEach((r, k) => {
       if (!isMem(k)) { Cv.set(k, r); return; }
-      const nm = name(P.cn, k), v = version(k, `${k}@${routeEntry ? choiceOf(P) : "out"}`);
+      const nm = name(P.cn, k), v = version(k, `${k}@${V.route ? choiceOf(P) : "out"}`);
       if (nm && !nm.startsWith("#") && !k.startsWith("v:")) places.get(v).label = `${places.get(k).label} · ${nm}`;
-      if (routeEntry) { latest.set(k + "|" + nm, v); latest.set(k + "|", v); }
+      if (V.route) { latest.set(k + "|" + nm, v); latest.set(k + "|", v); }
       Cv.set(v, r);
     });
     P.D = Dv; P.C = Cv;
@@ -1012,7 +1038,7 @@ async function renderPlaat() {
   for (const p of places.values()) {
     if (!p.type) continue;
     const f = familyOf(p.type);
-    if (!expandedFamilies.has(f) || !opens(f)) continue;
+    if (!V.open.families.has(f) || !opens(f)) continue;
     if (!famFrames.has(f)) famFrames.set(f, {id: "t:" + f, fam: f});
   }
   for (const [f, F] of famFrames) {
@@ -1054,7 +1080,7 @@ async function renderPlaat() {
     if (P.own) return stepLabel(P.steps[0]);
     const ns = [...new Set(P.steps.map(stepLabel))], text = ns.length <= 2 ? ns.join(", ") : `${ns.slice(0, 2).join(", ")} +${ns.length - 2}`;
     const alts = P.steps.length === 1 && !treeInfo.get(P.steps[0])?.on && !stepOf(P.steps[0]).startsWith("op:") ? altCount(stepOf(P.steps[0])) : 0;
-    return (P.steps.some(openable) || !routeEntry ? "▸ " : "") + text + (alts ? ` · one of ${alts}` : "");
+    return (P.steps.some(openable) || !V.route ? "▸ " : "") + text + (alts ? ` · one of ${alts}` : "");
   };
   for (const P of pills.values()) { P.label = pillLabel(P); holder(P.parent).children.push(leaf(P.id, 24 + textW(P.label, 6.9), 26)); }
   // memory lives in the smallest open step that holds every step using it
@@ -1107,12 +1133,12 @@ async function renderPlaat() {
   const walkPos = (n, ox, oy, depth) => { for (const c of n.children || []) { pos.set(c.id, {x: c.x + ox, y: c.y + oy, w: c.width, h: c.height, depth}); walkPos(c, c.x + ox, c.y + oy, depth + 1); } };
   walkPos(layout, OX, OY, 0);
   const parentOf = new Map(); const walkPar = n => { for (const c of n.children || []) { parentOf.set(c.id, n.id); walkPar(c); } }; walkPar(layout);
-  const focused = focusUnits.size && !routeEntry && !entryKind;
-  el("text", {class: "route-title", x: 20, y: 24}, g).textContent = routeEntry ? `Route · ${entryTitle(routeEntry)}` : entryKind ? `All ${KIND_LABEL[entryKind]} routes` : focused ? `Focus · ${[...focusUnits].sort().map(unitLabel).join(", ")}` : partFilter ? `${partFilter} by package` : multi ? `${PARTS.length} parts` : `${D.root} by package`;
-  el("text", {class: "route-sub", x: 20, y: 41}, g).textContent = routeEntry ? `${short(routeEntry)} · what it reads on the left, what it writes on the right · click a pill to open it, a frame's title to close it, double-click a box to pin its lines`
+  const focused = V.focus.size && !V.route && !V.kind;
+  el("text", {class: "route-title", x: 20, y: 24}, g).textContent = V.route ? `Route · ${entryTitle(V.route)}` : V.kind ? `All ${KIND_LABEL[V.kind]} routes` : focused ? `Focus · ${[...V.focus].sort().map(unitLabel).join(", ")}` : V.part ? `${V.part} by package` : multi ? `${PARTS.length} parts` : `${D.root} by package`;
+  el("text", {class: "route-sub", x: 20, y: 41}, g).textContent = V.route ? `${short(V.route)} · what it reads on the left, what it writes on the right · click a pill to open it, a frame's title to close it, double-click a box to pin its lines`
     : focused ? "the packages in focus, the types that cross between them and the places they touch; the rest of the code on either side · shift-click a package to add or drop it"
-    : multi && !partFilter && !entryKind ? "each part from what it reads to what it writes; one part's requests are another's HTTP · click a part to open it"
-    : !entryKind ? "each package from what its own code reads to what it writes, joined by the types that cross between packages; a dotted line where one only calls another · click a package to open it, shift-click to focus on it, double-click a box to pin its lines"
+    : multi && !V.part && !V.kind ? "each part from what it reads to what it writes; one part's requests are another's HTTP · click a part to open it"
+    : !V.kind ? "each package from what its own code reads to what it writes, joined by the types that cross between packages; a dotted line where one only calls another · click a package to open it, shift-click to focus on it, double-click a box to pin its lines"
     : "each route from what it reads to what it writes · click a route to open it";
   if (!pos.size) el("text", {class: "route-sub", x: 20, y: 70}, g).textContent = "No step on this route takes or hands on a place: it calls nothing that does. Pick another route.";
   const fg = el("g", {}, g), eg = el("g", {}, g), ng = el("g", {}, g);
@@ -1153,7 +1179,7 @@ async function renderPlaat() {
     const title = el("text", {class: "ftitle", x: 14, y: 20}, grp); title.textContent = (F.synthetic ? "" : "▾ ") + F.title;
     title.addEventListener("click", ev => {
       ev.stopPropagation(); if (F.synthetic) return; plaatAnchor = id;
-      if (isFam) expandedFamilies.delete(F.fam); else if (F.step && F.step.startsWith("part:")) expandedParts.delete(F.step.slice(5)); else if (F.step && F.step.startsWith("unit:")) { const u = F.step.slice(5); for (const x of [...expandedUnits]) if (x === u || x.startsWith(u + ".")) expandedUnits.delete(x); } else if (F.anchor) { routeEntry = null; entrySel.value = ""; expanded.clear(); plaatAnchor = "n:" + F.step; } else expanded.delete(F.step);
+      if (isFam) V.open.families.delete(F.fam); else if (F.step && F.step.startsWith("part:")) V.open.parts.delete(F.step.slice(5)); else if (F.step && F.step.startsWith("unit:")) { const u = F.step.slice(5); for (const x of [...V.open.units]) if (x === u || x.startsWith(u + ".")) V.open.units.delete(x); } else if (F.anchor) { V.route = null; entrySel.value = ""; V.open.steps.clear(); plaatAnchor = "n:" + F.step; } else V.open.steps.delete(F.step);
       render();
     });
     place(grp, id, (from, to) => { if (!from.fresh) d3.select(r).attr("width", from.w).attr("height", from.h).transition().duration(DUR).attr("width", to.w).attr("height", to.h); });
@@ -1196,18 +1222,18 @@ async function renderPlaat() {
       if (P.steps[0].startsWith("unit:")) {
         const u = P.steps[0].slice(5);
         // the rest opens into its packages; a package of it joins the focus
-        if (u === "~in" || u === "~out") { expandedUnits.add(u); plaatAnchor = P.id; render(); focusPanel(); return; }
-        if (isRest(u)) { focusUnits.add(u.slice(4)); plaatFit = true; render(); focusPanel(); return; }
-        if (ev.shiftKey) { if (focusUnits.has(u)) focusUnits.delete(u); else focusUnits.add(u); plaatFit = true; render(); focusPanel(); return; }
+        if (u === "~in" || u === "~out") { V.open.units.add(u); plaatAnchor = P.id; render(); focusPanel(); return; }
+        if (isRest(u)) { V.focus.add(u.slice(4)); plaatFit = true; render(); focusPanel(); return; }
+        if (ev.shiftKey) { if (V.focus.has(u)) V.focus.delete(u); else V.focus.add(u); plaatFit = true; render(); focusPanel(); return; }
       }
-      if (P.steps[0].startsWith("part:")) { if (!P.own) { expandedParts.add(P.steps[0].slice(5)); plaatAnchor = P.id; render(); } return; }
-      if (P.steps[0].startsWith("unit:")) { expandedUnits.add(P.steps[0].slice(5)); plaatAnchor = P.id; render(); return; }
+      if (P.steps[0].startsWith("part:")) { if (!P.own) { V.open.parts.add(P.steps[0].slice(5)); plaatAnchor = P.id; render(); } return; }
+      if (P.steps[0].startsWith("unit:")) { V.open.units.add(P.steps[0].slice(5)); plaatAnchor = P.id; render(); return; }
       if (stepOf(P.steps[0]).startsWith("op:")) return;
       if (P.steps.length === 1) select(stepOf(P.steps[0])); else selectArrows({fns: P.steps.map(stepOf), kind: "steps"});
       if (P.own) return;
-      if (!routeEntry) { if (P.steps.length === 1) { routeEntry = P.steps[0]; entrySel.value = routeEntry; expanded.clear(); plaatAnchor = P.id; render(); } return; }
+      if (!V.route) { if (P.steps.length === 1) { V.route = P.steps[0]; entrySel.value = V.route; V.open.steps.clear(); plaatAnchor = P.id; render(); } return; }
       const opens = P.steps.filter(openable);
-      if (opens.length) { opens.forEach(id => expanded.add(id)); plaatAnchor = P.id; render(); }
+      if (opens.length) { opens.forEach(id => V.open.steps.add(id)); plaatAnchor = P.id; render(); }
     }, () => pin(P.id));
     place(grp, P.id);
   }
@@ -1226,12 +1252,12 @@ async function renderPlaat() {
     el("text", {class: "title", x: kind ? 32 : 15, y: Q.h / 2 + 4}, grp).textContent = p.label;
     clicks(grp, () => {
       plaatAnchor = p.id;
-      if (p.folded) { selectPlace(p.id, p.label); openedDirs.add(p.folded); render(); return; }
-      if (p.id.startsWith("e:")) { const id = p.id.slice(2); if (!routeEntry) { routeEntry = id; entrySel.value = id; expanded.clear(); render(); } else select(id); return; }
+      if (p.folded) { selectPlace(p.id, p.label); V.open.dirs.add(p.folded); render(); return; }
+      if (p.id.startsWith("e:")) { const id = p.id.slice(2); if (!V.route) { V.route = id; entrySel.value = id; V.open.steps.clear(); render(); } else select(id); return; }
       if (kind) selectPlace(p.id, p.label);
-      if (kind) { if (p.id.startsWith("w:Disk") || kind === "db") { const base = p.id.split(":").slice(0, 2).join(":"); if (refined.has(base)) refined.delete(base); else refined.add(base); render(); } return; }
+      if (kind) { if (p.id.startsWith("w:Disk") || kind === "db") { const base = p.id.split(":").slice(0, 2).join(":"); if (V.open.places.has(base)) V.open.places.delete(base); else V.open.places.add(base); render(); } return; }
       const tid = p.type;
-      if (opens(tid) && !expandedFamilies.has(tid)) { expandedFamilies.add(tid); render(); }
+      if (opens(tid) && !V.open.families.has(tid)) { V.open.families.add(tid); render(); }
       else if (byId.has(tid)) select(tid);
     }, () => pin(p.id));
     place(grp, p.id);
@@ -1271,29 +1297,29 @@ function crumbs() {
   const lbl = t => C.appendChild(html("span", "lbl", t));
   const chip = (text, undo) => { const b = html("button", null, text + " ✕"); b.title = "undo"; b.onclick = () => { undo(); render(); }; C.appendChild(b); };
   lbl("route");
-  if (partFilter) chip(`Only ${partFilter}`, () => { partFilter = null; if (!routeEntry) entrySel.value = ""; });
-  if (entryKind) chip(`All ${KIND_LABEL[entryKind]}`, () => { entryKind = null; if (!routeEntry) entrySel.value = ""; });
-  if (routeEntry) chip(entryTitle(routeEntry), () => { routeEntry = null; entrySel.value = entryKind ? "kind:" + entryKind : ""; expanded.clear(); });
-  if (!entryKind && !routeEntry && !partFilter) C.appendChild(html("span", "none", entries.length ? "all" : "none"));
+  if (V.part) chip(`Only ${V.part}`, () => { V.part = null; if (!V.route) entrySel.value = ""; });
+  if (V.kind) chip(`All ${KIND_LABEL[V.kind]}`, () => { V.kind = null; if (!V.route) entrySel.value = ""; });
+  if (V.route) chip(entryTitle(V.route), () => { V.route = null; entrySel.value = V.kind ? "kind:" + V.kind : ""; V.open.steps.clear(); });
+  if (!V.kind && !V.route && !V.part) C.appendChild(html("span", "none", entries.length ? "all" : "none"));
   if (view === "plaat" && pinned.size) { lbl("pinned"); chip(`${pinned.size} ${pinned.size === 1 ? "box" : "boxes"}`, () => pinned.clear()); }
-  if (expandedParts.size && !routeEntry) { lbl("parts"); for (const p of expandedParts) chip(p, () => expandedParts.delete(p)); }
+  if (V.open.parts.size && !V.route) { lbl("parts"); for (const p of V.open.parts) chip(p, () => V.open.parts.delete(p)); }
   const opened = u => u === "~in" ? "the rest, handing in" : u === "~out" ? "the rest, taking" : unitLabel(u);
-  if (expandedUnits.size && !routeEntry && !entryKind) { lbl("packages"); for (const u of expandedUnits) chip(opened(u), () => expandedUnits.delete(u)); }
-  if (expanded.size) {
+  if (V.open.units.size && !V.route && !V.kind) { lbl("packages"); for (const u of V.open.units) chip(opened(u), () => V.open.units.delete(u)); }
+  if (V.open.steps.size) {
     lbl("opened");
-    for (const id of expanded) { const info = treeInfo.get(id), n = byId.get(stepOf(id)), name = n?.name || short(stepOf(id)); chip(info?.on && n?.cls ? `${typeLabel(info.on)}.${name}` : name, () => expanded.delete(id)); }
+    for (const id of V.open.steps) { const info = treeInfo.get(id), n = byId.get(stepOf(id)), name = n?.name || short(stepOf(id)); chip(info?.on && n?.cls ? `${typeLabel(info.on)}.${name}` : name, () => V.open.steps.delete(id)); }
   }
-  if (expandedFamilies.size) { lbl("families"); for (const f of expandedFamilies) chip(typeLabel(f), () => expandedFamilies.delete(f)); }
-  if (refined.size) { lbl("split"); for (const r of refined) chip(r.slice(2), () => refined.delete(r)); }
-  if (openedDirs.size) { lbl("folders"); for (const d of openedDirs) chip(d, () => openedDirs.delete(d)); }
-  if (focusUnits.size && view === "plaat") {
-    lbl("focus"); for (const u of focusUnits) chip(unitLabel(u), () => focusUnits.delete(u));
+  if (V.open.families.size) { lbl("families"); for (const f of V.open.families) chip(typeLabel(f), () => V.open.families.delete(f)); }
+  if (V.open.places.size) { lbl("split"); for (const r of V.open.places) chip(r.slice(2), () => V.open.places.delete(r)); }
+  if (V.open.dirs.size) { lbl("folders"); for (const d of V.open.dirs) chip(d, () => V.open.dirs.delete(d)); }
+  if (V.focus.size && view === "plaat") {
+    lbl("focus"); for (const u of V.focus) chip(unitLabel(u), () => V.focus.delete(u));
     // around the focus: the packages it exchanges the most data with, to add with a click
     const add = (text, title, act) => { const b = html("button", "add", text); b.title = title; b.onclick = () => { act(); plaatFit = true; render(); }; C.appendChild(b); };
     const ns = neighbours();
     if (ns.length) lbl("around");
-    for (const {u, n} of ns.slice(0, 5)) add(`+ ${unitLabel(u)} · ${n}`, `add ${u} to the focus: ${n} ${n === 1 ? "type" : "types"} across`, () => focusUnits.add(u));
-    if (ns.length > 5) add(`+${ns.length - 5} more`, "open the rest beside the focus", () => { expandedUnits.add("~in"); expandedUnits.add("~out"); });
+    for (const {u, n} of ns.slice(0, 5)) add(`+ ${unitLabel(u)} · ${n}`, `add ${u} to the focus: ${n} ${n === 1 ? "type" : "types"} across`, () => V.focus.add(u));
+    if (ns.length > 5) add(`+${ns.length - 5} more`, "open the rest beside the focus", () => { V.open.units.add("~in"); V.open.units.add("~out"); });
   }
 }
 
@@ -1322,15 +1348,15 @@ function focusPanel() {
   selected = null;
   insp.innerHTML = "";
   insp.appendChild(html("div", "eyebrow", "focus"));
-  insp.appendChild(html("h1", "name", focusUnits.size ? [...focusUnits].sort().map(unitLabel).join(", ") : "nothing in focus"));
+  insp.appendChild(html("h1", "name", V.focus.size ? [...V.focus].sort().map(unitLabel).join(", ") : "nothing in focus"));
   insp.appendChild(html("div", "path", "shift-click a package in the picture to add or drop it"));
   const redraw = () => { plaatFit = true; render(); focusPanel(); };
   const inside = html("div", "links");
-  for (const u of [...focusUnits].sort()) { const b = html("button", "fn", `− ${unitLabel(u)}`); b.title = u; b.onclick = () => { focusUnits.delete(u); redraw(); }; inside.appendChild(b); }
-  insp.appendChild(section("in focus", focusUnits.size, inside));
-  if (!focusUnits.size) return;
+  for (const u of [...V.focus].sort()) { const b = html("button", "fn", `− ${unitLabel(u)}`); b.title = u; b.onclick = () => { V.focus.delete(u); redraw(); }; inside.appendChild(b); }
+  insp.appendChild(section("in focus", V.focus.size, inside));
+  if (!V.focus.size) return;
   const ns = neighbours(), around = html("div", "links");
-  for (const {u, n} of ns) { const b = html("button", "fn", `+ ${unitLabel(u)} · ${n} ${n === 1 ? "type" : "types"} across`); b.title = u; b.onclick = () => { focusUnits.add(u); redraw(); }; around.appendChild(b); }
+  for (const {u, n} of ns) { const b = html("button", "fn", `+ ${unitLabel(u)} · ${n} ${n === 1 ? "type" : "types"} across`); b.title = u; b.onclick = () => { V.focus.add(u); redraw(); }; around.appendChild(b); }
   insp.appendChild(section("around it", ns.length, around));
 }
 function selectPlace(pid, label) {
@@ -1483,6 +1509,7 @@ async function render() {
   shownUnits = new Set();
   entrySel.style.display = view === "plaat" ? "" : "none";
   crumbs();
+  writeView();
   if (view === "plaat") { await renderPlaat(); } else if (view === "types") { renderTypes(); fit(); } else { await renderSig(); }
   legend();
   markChanges();
@@ -1492,7 +1519,7 @@ async function render() {
 function markChanges() {
   if (!CH) return;
   const s = scene.node(), mark = (id, cls) => s.querySelectorAll(`[data-id="${CSS.escape(id)}"]`).forEach(x => x.classList.add(cls));
-  for (const r of CH.routes.filter(r => !routeEntry || r.id === routeEntry)) {
+  for (const r of CH.routes.filter(r => !V.route || r.id === V.route)) {
     r.steps_added.forEach(id => mark(id, "added"));
     r.touches_added.forEach(t => mark(worldPlaceOf(t).id, "added"));
   }
@@ -1505,7 +1532,7 @@ function changesPanel() {
   for (const r of CH.routes) {
     const d = html("div", "chg");
     const b = html("button", "chg-route", `${r.status === "added" ? "+" : r.status === "removed" ? "−" : "~"} ${r.route}`);
-    if (r.status !== "removed") b.onclick = () => { routeEntry = r.id; entrySel.value = r.id; expanded.clear(); plaatFit = true; render(); };
+    if (r.status !== "removed") b.onclick = () => { V.route = r.id; entrySel.value = r.id; V.open.steps.clear(); plaatFit = true; render(); };
     d.appendChild(b);
     const sh = id => id.startsWith(r.root + ".") ? id.slice(r.root.length + 1) : id;
     const steps = r.status === "changed" ? [["add", r.steps_added.map(sh)], ["del", r.steps_removed.map(sh)]] : [];
