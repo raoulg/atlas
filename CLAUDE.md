@@ -82,3 +82,6 @@ The rigorous half and the visual half are the same structure. Read `docs/design.
   project under review: in a directory with a `pyproject.toml`, uv makes a `.venv`, installs the
   project and re-locks `uv.lock`, and ty then reads that `.venv` as the project's environment.
   Pass the project's path as an argument instead.
+- The shell is zsh: a loop over subjects must not name its variable `path` (`while read name path`),
+  since zsh ties `path` to `$PATH` and every command in the body is then "not found". `atlas analyze`
+  writes `graph.json` into the current directory unless given `-o`.
