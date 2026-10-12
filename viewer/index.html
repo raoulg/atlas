@@ -525,6 +525,8 @@ const entries = [...byId.values()].filter(n => n.entry).sort((a, b) => (partRank
 // what running a function means, from the engine's reading: its body on a value of class `on` (the
 // calls in the order they run, a method called on a known class that class's), or on any value
 const FLOW = (D.flow || {}).bodies || {}, ARROWS = (D.flow || {}).arrows || {};
+// where each touch is drawn, as the flow says: the place it rests in, the side of its step, what it does there
+for (const n of D.nodes) (n.touches || []).forEach((t, i) => Object.assign(t, ((D.flow || {}).drawn || {})[n.id]?.[i]));
 const bodyOf = (id, on) => FLOW[on ? `${id}@${on}` : id] || {items: []};
 const stepsIn = b => b.items.flatMap(it => it.members ? it.members : [it]);
 // the functions a step runs: its body's steps, and the overrides it may run instead

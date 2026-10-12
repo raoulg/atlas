@@ -27,7 +27,7 @@ fn modules_classes_and_functions_are_found() {
     let g = fixture();
     assert_eq!(g.root, "fixture");
     let kinds = |k: NodeKind| g.nodes.iter().filter(|n| n.kind == k).count();
-    assert_eq!(kinds(NodeKind::Module), 13, "the package's ten, a root script and two notebooks");
+    assert_eq!(kinds(NodeKind::Module), 16, "the package's thirteen, a root script and two notebooks");
     assert!(g.node("fixture.sinks").unwrap().is_pkg);
     assert_eq!(g.node("fixture.schema.Graph").unwrap().doc, "Nodes and edges.");
     assert_eq!(g.node("fixture.sinks.duck.DuckSink").unwrap().bases, vec!["Sink", "Mixin"]);

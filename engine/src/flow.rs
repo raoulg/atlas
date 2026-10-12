@@ -120,18 +120,22 @@ fn drop_identities(sites: &mut Vec<Site>) {
 }
 
 /// The image of the effect functor: what every step runs, what every function takes and gives as
-/// types, and how the types group. The agent and the page read routes from it alike.
+/// types, how the types group, and where each touch is drawn. The agent and the page read routes
+/// from it alike.
 #[derive(Serialize, Clone, Debug, Default, PartialEq)]
 pub struct Flow {
     pub bodies: BTreeMap<String, Body>,
     pub arrows: BTreeMap<String, Arrow>,
     pub types: crate::families::Families,
     pub units: Units,
+    /// For each node with touches, where each of them is drawn, in the order of its touches.
+    pub drawn: BTreeMap<String, Vec<Where>>,
 }
 
 /// The flow of a graph.
 pub fn of(g: &Graph) -> Flow {
-    Flow { bodies: bodies(g), arrows: arrows(g), types: crate::families::families(g), units: units(g) }
+    let drawn = g.nodes.iter().filter(|n| !n.touches.is_empty()).map(|n| (n.id.clone(), n.touches.iter().map(Touch::drawn).collect())).collect();
+    Flow { bodies: bodies(g), arrows: arrows(g), types: crate::families::families(g), units: units(g), drawn }
 }
 
 /// The code quotiented by module path, one level at a time. A part's top level is the children
@@ -229,6 +233,24 @@ pub struct Place {
     pub group: String,
 }
 
+/// Where a touch is drawn: the place it rests in, the side of its step it stands on, and what it
+/// does there.
+#[derive(Serialize, Clone, Debug, PartialEq)]
+pub struct Where {
+    pub place: Place,
+    pub side: Side,
+    pub verb: String,
+}
+
+/// A touch and where it is drawn, for whoever reads it apart from its graph.
+#[derive(Serialize, Clone, Debug, PartialEq)]
+pub struct Drawn {
+    #[serde(flatten)]
+    pub touch: Touch,
+    #[serde(flatten)]
+    pub at: Where,
+}
+
 /// Which side of its step a touch stands on.
 #[derive(Serialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -292,6 +314,11 @@ pub fn shown(text: &str) -> String {
 }
 
 impl Touch {
+    /// Where the picture draws it.
+    pub fn drawn(&self) -> Where {
+        Where { place: self.place(), side: self.side(), verb: self.verb() }
+    }
+
     /// Which side of its step the touch stands on: what the call says (a file's mode, a
     /// statement's verb, a download), else what its kind of place does by default. The web and a
     /// file whose way is not said are read; everything else is written to.

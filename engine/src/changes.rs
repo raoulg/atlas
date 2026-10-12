@@ -10,6 +10,7 @@ use std::process::{Command, Stdio};
 
 use anyhow::{bail, Context, Result};
 
+use crate::flow::Drawn;
 use crate::model::{EdgeKind, Graph, NodeKind, Touch, World};
 use crate::principles::{self, Finding};
 use crate::story;
@@ -30,8 +31,8 @@ pub struct RouteChange {
     /// Places in words (`writes logs/run.log`), and the touches that reach them.
     pub places_added: Vec<String>,
     pub places_removed: Vec<String>,
-    pub touches_added: Vec<Touch>,
-    pub touches_removed: Vec<Touch>,
+    pub touches_added: Vec<Drawn>,
+    pub touches_removed: Vec<Drawn>,
 }
 
 #[derive(Debug, Default, serde::Serialize)]
@@ -62,7 +63,7 @@ pub fn between(rev: &str, before: &[Graph], after: &[Graph]) -> Changes {
         let empty = Route::default();
         let (a2, b2) = (a.unwrap_or(&empty), b.unwrap_or(&empty));
         let diff = |x: &BTreeSet<String>, y: &BTreeSet<String>| x.difference(y).cloned().collect::<Vec<_>>();
-        let gone = |x: &BTreeMap<String, Touch>, y: &BTreeMap<String, Touch>| x.iter().filter(|(p, _)| !y.contains_key(*p)).map(|(p, t)| (p.clone(), t.clone())).unzip::<_, _, Vec<_>, Vec<_>>();
+        let gone = |x: &BTreeMap<String, Touch>, y: &BTreeMap<String, Touch>| x.iter().filter(|(p, _)| !y.contains_key(*p)).map(|(p, t)| (p.clone(), Drawn { at: t.drawn(), touch: t.clone() })).unzip::<_, _, Vec<_>, Vec<_>>();
         let ((places_added, touches_added), (places_removed, touches_removed)) = (gone(&b2.places, &a2.places), gone(&a2.places, &b2.places));
         let here = b.or(a).unwrap_or(&empty);
         let c = RouteChange {

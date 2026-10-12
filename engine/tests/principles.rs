@@ -46,6 +46,8 @@ fn each_principle_finds_its_case() {
     // `remember` only writes a global and `Mixin.close` does nothing; `check_name` raises, `each`
     // calls the function it is handed, and `register_names` runs both
     assert_eq!(got["nothing"], ["fixture.build.remember", "fixture.sinks.base.Mixin.close"]);
+    // `_rank.low.peek` calls back up into `_rank.high`, which builds on `low`
+    assert_eq!(got["layers"], ["fixture._rank"]);
     assert!(fs.iter().all(|f| f.question.ends_with('?')), "a finding ends in a question");
 }
 

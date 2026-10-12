@@ -5,6 +5,40 @@
 //! what one route unpacks into `D/{kind}/{id}` and another lists in `D` meet at `D/`.
 
 
+use std::sync::OnceLock;
+
+use regex::Regex;
+
+/// A regex compiled once, at its first use.
+pub fn re(cell: &'static OnceLock<Regex>, pattern: &str) -> &'static Regex {
+    cell.get_or_init(|| Regex::new(pattern).unwrap())
+}
+
+// ---------- routes: the paths a request asks for and a route serves ----------
+
+/// A placeholder in a route or a template: `{id}`, `${id}`.
+pub fn placeholder_re() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    re(&RE, r"\$?\{[^}]*\}")
+}
+
+/// A route path as a pattern: `{id}` is one segment, `{rest:path}` any number.
+pub fn route_pattern(path: &str) -> Option<Regex> {
+    static PIECE: OnceLock<Regex> = OnceLock::new();
+    let mut out = String::from("^");
+    for piece in re(&PIECE, r"\{[^}]*\}|[^{]+").find_iter(path.trim_end_matches('/')) {
+        let p = piece.as_str();
+        out += &if !p.starts_with('{') { regex::escape(p) } else if p.ends_with(":path}") { ".+".into() } else { "[^/]+".into() };
+    }
+    Regex::new(&(out + "/?$")).ok()
+}
+
+/// Whether a route (`/api/customers/{id}`) serves a path (`/api/customers/x`).
+pub fn route_matches(route: &str, path: &str) -> bool {
+    let path = placeholder_re().replace_all(path.split(['?', '#']).next().unwrap_or(path), "x");
+    route_pattern(route).map_or(false, |re| re.is_match(&path))
+}
+
 /// A part of a path as the code builds it.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Seg {
@@ -244,7 +278,7 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
             if t.kind == World::Net {
                 if url.starts_with('/') {
                     let known = !method.contains('{');
-                    let served: Vec<&(String, String, String)> = routes.iter().filter(|(_, m, p)| (!known || *m == method) && crate::parts::route_matches(p, &url)).collect();
+                    let served: Vec<&(String, String, String)> = routes.iter().filter(|(_, m, p)| (!known || *m == method) && route_matches(p, &url)).collect();
                     // a literal segment serves before a parameter: `/years` before `/{year}`
                     let fewest = served.iter().map(|(_, _, p)| p.matches('{').count()).min().unwrap_or(0);
                     for (handler, _, path) in served.into_iter().filter(|(_, _, p)| p.matches('{').count() == fewest) {

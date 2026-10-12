@@ -27,6 +27,7 @@ pub const PRINCIPLES: &[Principle] = &[
     Principle { id: "gives", asks: "A function whose value is used says what it gives back." },
     Principle { id: "choices", asks: "A choice is made once, in a place with a name." },
     Principle { id: "nothing", asks: "A call leaves something behind." },
+    Principle { id: "layers", asks: "The packages of a part depend on one another in one direction." },
 ];
 
 /// One place where the code and a principle disagree.
@@ -87,7 +88,7 @@ pub fn report(root: &str, findings: &[Finding]) -> String {
 pub fn check(g: &Graph) -> Vec<Finding> {
     let ix = Index::new(g);
     let mut out = vec![];
-    for rule in [doors, sums, overrides, places, changes, gives, choices, nothing] {
+    for rule in [doors, sums, overrides, places, changes, gives, choices, nothing, layers] {
         // a library read as code is not the project's to change
         let mut found: Vec<Finding> = rule(&ix).into_iter().filter(|f| ix.node(&f.node).map_or(true, |n| !n.library)).collect();
         found.sort_by(|a, b| (&a.file, a.line).cmp(&(&b.file, b.line)));
@@ -743,5 +744,122 @@ fn nothing(ix: &Index) -> Vec<Finding> {
         ));
     }
     out
+}
+
+// ---------- layers ----------
+
+/// Packages that depend on one another in a cycle. The code quotiented by package is a preorder,
+/// and only where it is a partial order do its packages have layers. Read at every level of the
+/// package forest, among the packages under one parent, from what their code calls, builds,
+/// imports and extends; a test is a way in from outside, not a layer.
+fn layers(ix: &Index) -> Vec<Finding> {
+    let module = |id: &str| -> Option<&str> {
+        let n = ix.node(id).filter(|n| !n.library && n.kind != NodeKind::External && n.entry.as_ref().map_or(true, |e| e.kind != EntryKind::Test))?;
+        Some(if n.kind == NodeKind::Module { n.id.as_str() } else { n.module.as_str() })
+    };
+    let modules: Vec<&str> = ix.g.nodes.iter().filter(|n| n.kind == NodeKind::Module && !n.library).map(|n| n.id.as_str()).collect();
+    let parents: BTreeSet<String> = modules.iter().flat_map(|m| m.match_indices('.').map(move |(i, _)| m[..i].to_string())).collect();
+    let mut out = vec![];
+    for parent in parents {
+        // the package under `parent` that holds a module
+        let under = |m: &str| -> Option<String> {
+            let rest = m.strip_prefix(parent.as_str())?.strip_prefix('.')?;
+            Some(format!("{parent}.{}", rest.split('.').next()?))
+        };
+        // package -> package it depends on -> the edges that make it so
+        let mut deps: BTreeMap<String, BTreeMap<String, Vec<&Edge>>> = BTreeMap::new();
+        for e in ix.g.edges.iter().filter(|e| matches!(e.kind, EdgeKind::Calls | EdgeKind::Instantiates | EdgeKind::Imports | EdgeKind::Inherits)) {
+            let (Some(a), Some(b)) = (module(&e.src).and_then(under), module(&e.dst).and_then(under)) else { continue };
+            if a != b {
+                deps.entry(a).or_default().entry(b).or_default().push(e);
+            }
+        }
+        for cycle in strongly_connected(&deps) {
+            let name = |p: &str| p.rsplit('.').next().unwrap_or(p).to_string();
+            // the links inside the cycle, the thinnest first: the likeliest to run against the flow
+            let mut links: Vec<(&str, &str, &Vec<&Edge>)> = vec![];
+            for a in &cycle {
+                for (b, es) in deps.get(a.as_str()).into_iter().flatten().filter(|(b, _)| cycle.contains(b)) {
+                    links.push((a.as_str(), b.as_str(), es));
+                }
+            }
+            links.sort_by_key(|(a, b, es)| (es.len(), *a, *b));
+            // a call says more than an import
+            let example = |es: &Vec<&Edge>| {
+                let e = es.iter().find(|e| e.kind != EdgeKind::Imports).unwrap_or(&es[0]);
+                format!("`{}` → `{}`", ix.label(&e.src), ix.label(&e.dst))
+            };
+            let evidence: Vec<String> = links.iter().map(|(a, b, es)| format!("{} → {}: {} ({} in all)", name(a), name(b), example(es), es.len())).collect();
+            let Some(at) = ix.node(&parent).filter(|n| !n.file.is_empty()).or_else(|| ix.node(&cycle[0])) else { continue };
+            let members: Vec<String> = cycle.iter().map(|c| name(c)).collect();
+            let ask = match links.as_slice() {
+                [(a, b, es), rest @ ..] if rest.iter().all(|(_, _, more)| more.len() > es.len()) => {
+                    format!("The thinnest link is {} → {} ({}). Does what it uses belong in {}, or in a package below both?", name(a), name(b), example(es), name(a))
+                }
+                _ => "Which of these links runs against the flow, and where does what it uses belong?".to_string(),
+            };
+            out.push(ix.finding(
+                "layers",
+                at,
+                format!("{} depend on one another", list(&members)),
+                evidence,
+                format!("Packages in a cycle have no order: none can be read, tested or replaced without the others. {ask}"),
+            ));
+        }
+    }
+    out
+}
+
+/// The strongly connected components of more than one node (Tarjan).
+fn strongly_connected<V>(deps: &BTreeMap<String, BTreeMap<String, V>>) -> Vec<Vec<String>> {
+    struct Walk<'d, V> {
+        deps: &'d BTreeMap<String, BTreeMap<String, V>>,
+        index: HashMap<&'d str, usize>,
+        low: HashMap<&'d str, usize>,
+        stack: Vec<&'d str>,
+        on: HashSet<&'d str>,
+        out: Vec<Vec<String>>,
+    }
+    impl<'d, V> Walk<'d, V> {
+        fn visit(&mut self, v: &'d str) {
+            let i = self.index.len();
+            self.index.insert(v, i);
+            self.low.insert(v, i);
+            self.stack.push(v);
+            self.on.insert(v);
+            for w in self.deps.get(v).into_iter().flat_map(|m| m.keys()) {
+                if !self.index.contains_key(w.as_str()) {
+                    self.visit(w);
+                    let lw = self.low[w.as_str()];
+                    self.low.insert(v, self.low[v].min(lw));
+                } else if self.on.contains(w.as_str()) {
+                    let iw = self.index[w.as_str()];
+                    self.low.insert(v, self.low[v].min(iw));
+                }
+            }
+            if self.low[v] == self.index[v] {
+                let mut comp = vec![];
+                while let Some(w) = self.stack.pop() {
+                    self.on.remove(w);
+                    comp.push(w.to_string());
+                    if w == v {
+                        break;
+                    }
+                }
+                if comp.len() > 1 {
+                    comp.sort();
+                    self.out.push(comp);
+                }
+            }
+        }
+    }
+    let mut walk = Walk { deps, index: HashMap::new(), low: HashMap::new(), stack: vec![], on: HashSet::new(), out: vec![] };
+    let all: BTreeSet<&str> = deps.iter().flat_map(|(a, bs)| std::iter::once(a.as_str()).chain(bs.keys().map(String::as_str))).collect();
+    for v in all {
+        if !walk.index.contains_key(v) {
+            walk.visit(v);
+        }
+    }
+    walk.out
 }
 

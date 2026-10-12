@@ -526,22 +526,12 @@ pub struct TouchJson {
     pub fixed: bool,
     #[serde(default, skip_serializing_if = "is_zero")]
     pub line: u32,
-    /// Where it rests, which side of its step it stands on and what it does there: written for
-    /// whoever reads the graph, never read back.
-    #[serde(default, skip_deserializing, skip_serializing_if = "Option::is_none")]
-    #[ts(skip)]
-    pub place: Option<crate::flow::Place>,
-    #[serde(default, skip_deserializing, skip_serializing_if = "Option::is_none")]
-    #[ts(skip)]
-    pub side: Option<crate::flow::Side>,
-    #[serde(default, skip_deserializing, skip_serializing_if = "String::is_empty")]
-    pub verb: String,
 }
 
 impl From<Touch> for TouchJson {
     fn from(t: Touch) -> TouchJson {
-        let (kind, dir, place, side, verb) = (t.kind_name().to_string(), t.dir_name().to_string(), Some(t.place()), Some(t.side()), t.verb());
-        TouchJson { kind, what: t.what, n: t.n, payload: t.payload, op: t.op, artifact: t.artifact, dir, fixed: t.fixed, line: t.line, place, side, verb }
+        let (kind, dir) = (t.kind_name().to_string(), t.dir_name().to_string());
+        TouchJson { kind, what: t.what, n: t.n, payload: t.payload, op: t.op, artifact: t.artifact, dir, fixed: t.fixed, line: t.line }
     }
 }
 

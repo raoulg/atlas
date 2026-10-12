@@ -10,6 +10,7 @@ use anyhow::Result;
 use regex::Regex;
 
 use crate::model::{Edge, EdgeKind, EntryKind, Graph, NodeKind, Part};
+use crate::paths::{placeholder_re, re, route_pattern};
 use crate::repo::Repo;
 use crate::{knowledge, Options};
 
@@ -122,37 +123,11 @@ pub fn merge(name: &str, graphs: Vec<Graph>) -> Graph {
     out
 }
 
-fn re(cell: &'static OnceLock<Regex>, pattern: &str) -> &'static Regex {
-    cell.get_or_init(|| Regex::new(pattern).unwrap())
-}
 
 /// A string literal in any of the three quotes.
 fn literal_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     re(&RE, r#""([^"\s]*)"|'([^'\s]*)'|`([^`\s]*)`"#)
-}
-
-/// A placeholder in a route or a template: `{id}`, `${id}`.
-fn placeholder_re() -> &'static Regex {
-    static RE: OnceLock<Regex> = OnceLock::new();
-    re(&RE, r"\$?\{[^}]*\}")
-}
-
-/// A route path as a pattern: `{id}` is one segment, `{rest:path}` any number.
-fn route_pattern(path: &str) -> Option<Regex> {
-    static PIECE: OnceLock<Regex> = OnceLock::new();
-    let mut out = String::from("^");
-    for piece in re(&PIECE, r"\{[^}]*\}|[^{]+").find_iter(path.trim_end_matches('/')) {
-        let p = piece.as_str();
-        out += &if !p.starts_with('{') { regex::escape(p) } else if p.ends_with(":path}") { ".+".into() } else { "[^/]+".into() };
-    }
-    Regex::new(&(out + "/?$")).ok()
-}
-
-/// Whether a route (`/api/customers/{id}`) serves a path (`/api/customers/x`).
-pub fn route_matches(route: &str, path: &str) -> bool {
-    let path = placeholder_re().replace_all(path.split(['?', '#']).next().unwrap_or(path), "x");
-    route_pattern(route).map_or(false, |re| re.is_match(&path))
 }
 
 /// The path a string literal asks for: without its host (written out, or a leading `${base}`)

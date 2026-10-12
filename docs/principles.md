@@ -309,3 +309,29 @@ end) touches a place, changes a value or a parameter, fails, or calls a function
 rkg: `stempel_herkomst(graph, herkomst) -> None` sets the author, status and date on every
 node of the graph it is handed, through a loop. Atlas sees a function into nothing; what it
 does is change the Graph. As a method of the graph, the change shows as what it is.
+
+## The packages of a part depend on one another in one direction.
+
+Id: `layers`.
+
+The code of a part, quotiented by package, is a preorder: a package depends on another when its
+code calls, builds, imports or extends what the other holds. Where that preorder is a partial
+order, the packages have layers: each can be read, tested and replaced with only what lies below
+it. A cycle has no below. The packages in it are one package in all but name, and the link that
+closes it is usually one call against the flow.
+
+- **Python.** A package that imports from the package that imports it, often inside a function
+  to get past the import cycle, is the sign. What both need moves down into a module of its own.
+- **Rust.** A crate's modules may use one another freely; the compiler does not stop a cycle.
+  What belongs to the lower module moves there, and the higher one calls it.
+- **TypeScript.** An interface module that also picks the implementation (`kiesBron` beside
+  `BronLike`) imports the implementations that import it. The choice moves up, to whoever uses
+  the interface.
+
+Atlas checks: at every level of the package forest, the packages under one parent, from the
+calls, constructions, imports and base classes of their code (a test is a way in from outside,
+not a layer). It names each cycle with its links, the thinnest first.
+
+In Atlas, `model` serialized a touch with where the picture draws it, calling up into `flow`,
+and `paths` asked `parts` whether a route serves a path. The first now stands in the flow
+(`Flow::drawn`), the second in `paths`, and the engine's modules are layered.

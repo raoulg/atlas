@@ -46,7 +46,7 @@ fn a_new_write_and_a_removed_call_show_as_themselves() {
     assert!(get.places_removed.is_empty() && get.steps_added.is_empty() && get.steps_removed.is_empty());
     assert_eq!(post.steps_removed, ["fixture-ts.server.regels.vat"]);
     assert_eq!((post.id.as_str(), post.root.as_str()), ("fixture-ts.server.regels.regels.POST /", "fixture-ts"));
-    assert_eq!(get.touches_added.iter().map(|t| (t.kind_name(), t.artifact.as_str())).collect::<Vec<_>>(), [("disk_write", "logs/regels.log")]);
+    assert_eq!(get.touches_added.iter().map(|t| (t.touch.kind_name(), t.touch.artifact.as_str())).collect::<Vec<_>>(), [("disk_write", "logs/regels.log")]);
     assert!(post.places_removed.iter().all(|p| p.starts_with("asks an LLM")) && post.places_removed.len() == 1, "{:?}", post.places_removed);
     assert!(post.places_added.is_empty() && post.steps_added.is_empty());
     let report = changes::report(&c);
