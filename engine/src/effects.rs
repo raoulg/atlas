@@ -7,142 +7,37 @@ use sqlparser::ast::{visit_relations, Query, SetExpr, Statement, Visit, Visitor}
 use sqlparser::dialect::{Dialect, DuckDbDialect, GenericDialect, SQLiteDialect};
 use sqlparser::parser::Parser;
 
+use crate::knowledge::{self as k, Registry};
 pub use crate::model::Crossing;
 use crate::model::{Db, Dir, World};
 
 const DISK_READ: Crossing = Crossing::read(World::Disk);
 const DISK_WRITE: Crossing = Crossing::write(World::Disk);
 
-const NET_PKGS: &[&str] = &["requests", "httpx", "urllib", "http", "socket", "aiohttp"];
-/// What a network library does that moves data: a request, by its verb, and a socket's sending
-/// and receiving. Building a client, or reading a response that has arrived, moves nothing.
-const NET_OPS: &[&str] = &[
-    "get", "post", "put", "patch", "delete", "head", "options", "request", "send", "stream", "urlopen", "urlretrieve",
-    "connect", "sendall", "sendto", "recv", "recvfrom", "recv_into",
-];
-const LLM_PKGS: &[&str] = &["openai", "anthropic"];
-/// Libraries that compute in memory. Most of their calls stay in the program (`torch.cat`,
-/// `nn.Linear`); `ml` names the few that cross to a place.
-const ML_PKGS: &[&str] = &["sentence_transformers", "torch", "transformers", "huggingface_hub", "datasets", "torchvision"];
-/// The Hugging Face Hub: what comes down, and what goes up.
-const HUB_READ: &[&str] = &["snapshot_download", "hf_hub_download", "load_dataset", "repo_info", "dataset_info", "model_info", "list_repo_files"];
-/// Pretrained weights, downloaded from the Hub by name: `AutoModel.from_pretrained(name)`.
-const HUB_MODELS: &[&str] = &["from_pretrained", "SentenceTransformer", "CrossEncoder", "pipeline"];
-const HUB_WRITE: &[&str] = &["upload_folder", "upload_file", "upload_large_folder", "create_repo", "create_commit", "delete_file", "delete_folder", "push_to_hub"];
-const HUB_HOST: &str = "huggingface.co";
-/// The datasets library's builtin loaders: a dataset made by one of them comes from local files.
-const HF_LOADERS: &[&str] = &["csv", "json", "parquet", "text", "arrow", "pandas", "imagefolder", "audiofolder", "videofolder", "webdataset", "xml", "sql"];
-const FILE_PKGS: &[&str] = &[
-    "json", "yaml", "pickle", "csv", "tarfile", "zipfile", "shutil", "os", "pathlib", "pandas",
-    "geopandas", "numpy", "rasterio", "lxml", "PIL", "matplotlib", "ruamel",
-];
-const READ_BOUND: &[&str] = &[
-    "read_text", "read_bytes", "read_csv", "read_parquet", "read_file", "read_json", "read_excel",
-    "iterdir", "glob", "rglob", "load", "load_workbook", "parse", "fromfile", "imread",
-    "open_dataset", "read", "readlines", "safe_load", "listdir", "walk", "open",
-];
-const WRITE_BOUND: &[&str] = &[
-    "write_text", "write_bytes", "to_csv", "to_parquet", "to_json", "dump", "safe_dump", "savefig",
-    "save", "mkdir", "copy", "copyfile", "copytree", "move", "unlink", "rmtree", "touch", "imwrite",
-    "extractall", "makedirs", "rename", "replace", "writelines",
-];
-/// Writes that move or remove files rather than store data: only the file system's own libraries
-/// do them, and a frame's `copy()` or `replace(..)` stays in memory.
-const FILE_OPS: &[&str] = &["copy", "copyfile", "copytree", "move", "unlink", "rmtree", "rename", "replace", "mkdir", "makedirs", "touch"];
-const FS_PKGS: &[&str] = &["shutil", "os", "pathlib"];
-
-/// What a database driver does that reaches the database: open a connection or a session, run
-/// a statement, or flush or commit what a session holds. Handing an object to an ORM's session
-/// (`add`, `merge`, `delete`) only stages it, and reading the rows a statement gave back or
-/// closing is part of what already ran.
-const DB_OPS: &[&str] = &[
-    "connect", "driver", "session", "execute", "executemany", "executescript", "sql", "query", "run", "execute_query",
-    "execute_read", "execute_write", "read_transaction", "write_transaction", "register", "read_csv", "read_parquet",
-    "read_json", "flush", "commit",
-];
-
-/// A socket's sending and receiving: the network calls that are handed no URL.
-const SOCKET_OPS: &[&str] = &["connect", "send", "sendall", "sendto", "recv", "recvfrom", "recv_into"];
-
 /// Whether a network library's call moves data, by its signature: it is handed a URL (or a
 /// socket's address), or it sends or receives on a socket. Building a client, or reading a
 /// response that has arrived (`resp.headers.get(..)`), is handed none.
 pub fn requests(params: &[&str], op: &str) -> bool {
-    params.iter().any(|p| matches!(*p, "url" | "uri" | "address")) || SOCKET_OPS.contains(&op)
+    params.iter().any(|p| matches!(*p, "url" | "uri" | "address")) || k::SOCKET_OPS.contains(&op)
 }
 
-/// Whether a package is a network library, whose calls `requests` decides.
+/// Whether a Python package is a network library, whose calls `requests` decides.
 pub fn network(pkg: &str) -> bool {
-    NET_PKGS.contains(&pkg)
+    k::reaches(pkg, Some(Registry::PyPi)) == Some(World::Net)
 }
 
-/// Whether a package is a client of a place (the web, a language model): building one of its
-/// clients moves nothing. A model library's class is no client: building a pretrained model
+/// Whether a Python package is a client of a place (the web, a language model): building one of
+/// its clients moves nothing. A model library's class is no client: building a pretrained model
 /// downloads its weights.
 pub fn client(pkg: &str) -> bool {
-    NET_PKGS.contains(&pkg) || LLM_PKGS.contains(&pkg)
-}
-
-/// The database a Rust crate is a driver for.
-fn rust_db(krate: &str) -> World {
-    World::Db(match krate {
-        "rusqlite" => Db::Sqlite,
-        "duckdb" => Db::Duckdb,
-        _ => Db::Sql,
-    })
-}
-
-const RUST_NET: &[&str] = &["reqwest", "ureq", "hyper", "tungstenite", "tokio_tungstenite", "curl", "axum", "TcpStream", "TcpListener"];
-const RUST_DB: &[&str] = &["rusqlite", "sqlx", "diesel", "duckdb", "postgres", "tokio_postgres", "sea_orm"];
-const TS_NET: &[&str] = &["axios", "ky", "ofetch", "node-fetch", "undici", "got", "ws"];
-const TS_LLM: &[&str] = &["@anthropic-ai/sdk", "openai", "@google/generative-ai", "@google/genai", "@mistralai/mistralai", "ollama"];
-
-/// The database an npm package is a driver or an ORM for.
-fn ts_db(pkg: &str) -> Option<World> {
-    Some(World::Db(match pkg {
-        "pg" | "postgres" | "mysql2" | "mysql" | "@prisma/client" | "drizzle-orm" | "kysely" | "knex" | "@neondatabase/serverless" => Db::Sql,
-        "better-sqlite3" | "sqlite3" | "sqlite" | "@libsql/client" => Db::Sqlite,
-        "duckdb" | "@duckdb/node-api" | "@duckdb/duckdb-wasm" => Db::Duckdb,
-        "neo4j-driver" => Db::Graph,
-        "redis" | "ioredis" | "@upstash/redis" | "idb-keyval" => Db::Kv,
-        _ => return None,
-    }))
+    matches!(k::reaches(pkg, Some(Registry::PyPi)), Some(World::Net | World::Llm))
 }
 
 /// The part of the world a library's calls reach, for a library that is a client of one: a
 /// database, the network, a language model, a process. A value of its types is a door to that
 /// place, not data at rest. A package's own implementation (`_sqlite3`) is the package.
 pub fn library_place(pkg: &str) -> Option<World> {
-    let pkg = pkg.strip_prefix('_').unwrap_or(pkg);
-    if NET_PKGS.contains(&pkg) || RUST_NET.contains(&pkg) || TS_NET.contains(&pkg) {
-        return Some(World::Net);
-    }
-    if let Some(db) = db_pkg(pkg) {
-        return Some(db);
-    }
-    if RUST_DB.contains(&pkg) {
-        return Some(rust_db(pkg));
-    }
-    if LLM_PKGS.contains(&pkg) || TS_LLM.contains(&pkg) {
-        return Some(World::Llm);
-    }
-    if let Some(db) = ts_db(pkg) {
-        return Some(db);
-    }
-    match pkg {
-        "subprocess" | "child_process" | "execa" => Some(World::Process),
-        _ => None,
-    }
-}
-
-fn db_pkg(pkg: &str) -> Option<World> {
-    Some(World::Db(match pkg {
-        "duckdb" => Db::Duckdb,
-        "neo4j" | "mgclient" => Db::Graph,
-        "sqlite3" => Db::Sqlite,
-        "psycopg2" | "sqlalchemy" => Db::Sql,
-        _ => return None,
-    }))
+    k::reaches(pkg.strip_prefix('_').unwrap_or(pkg), None)
 }
 
 /// Classify a Rust call by its full path, e.g. `std::fs::read_to_string` reads the disk.
@@ -151,40 +46,40 @@ pub fn boundary_rust(parts: &[String]) -> Option<Crossing> {
     let last = parts.last().map(String::as_str).unwrap_or("");
     let has = |p: &str| parts.iter().any(|x| x == p);
     // building moves nothing: `Client::new()`, `Client::builder()..build()`, `OpenOptions::new()`
-    // (Rust's constructor conventions, C-CTOR and C-BUILDER)
-    let builds = crate::knowledge::BUILDS.contains(&last);
+    let builds = k::BUILDS.contains(&last);
     if has("fs") {
         if builds {
             return None;
         }
-        return Some(match last {
-            "read" | "read_to_string" | "read_to_end" | "read_exact" | "read_line" | "read_dir" | "metadata" | "canonicalize" | "exists" | "open" | "read_link" => DISK_READ,
-            "write" | "write_all" | "write_fmt" | "set_len" | "sync_all" | "create" | "create_dir" | "create_dir_all" | "remove_file" | "remove_dir" | "remove_dir_all" | "rename" | "copy" | "set_permissions" => DISK_WRITE,
-            _ => Crossing::to(World::Disk),
+        return Some(if k::RUST_FS_READS.contains(&last) {
+            DISK_READ
+        } else if k::RUST_FS_WRITES.contains(&last) {
+            DISK_WRITE
+        } else {
+            Crossing::to(World::Disk)
         });
     }
     // a program is run by a `Command`; `process::exit` ends this one and runs none
-    if has("Command") {
+    if has(k::RUST_COMMAND) {
         return Some(Crossing::to(World::Process));
     }
-    match head {
-        "walkdir" | "WalkDir" | "glob" | "notify" => Some(DISK_READ),
-        h if RUST_NET.contains(&h) => (!builds).then_some(Crossing::to(World::Net)),
-        h if RUST_DB.contains(&h) => Some(Crossing::to(rust_db(h))),
-        "git2" | "gix" => Some(DISK_READ),
-        _ => None,
+    if k::RUST_FILE_TREES.contains(&head) {
+        return Some(DISK_READ);
+    }
+    match k::reaches(head, Some(Registry::Crates))? {
+        World::Net => (!builds).then_some(Crossing::to(World::Net)),
+        w => Some(Crossing::to(w)),
     }
 }
 
 /// Whether these tables say what a Python package's calls do. Its code is then not read: its
 /// calls are places, or nothing.
 pub fn described(pkg: &str) -> bool {
-    NET_PKGS.contains(&pkg)
-        || LLM_PKGS.contains(&pkg)
-        || ML_PKGS.contains(&pkg)
-        || FILE_PKGS.contains(&pkg)
-        || db_pkg(pkg).is_some()
-        || matches!(pkg, "click" | "typer" | "rich" | "pprint" | "subprocess" | "sys" | "builtins" | "plotly")
+    k::reaches(pkg, Some(Registry::PyPi)).is_some()
+        || k::ML_PACKAGES.contains(&pkg)
+        || k::FILE_PACKAGES.contains(&pkg)
+        || k::OPERATIONS.iter().any(|(p, _, _)| *p == pkg)
+        || k::PYTHON_OWN.contains(&pkg)
 }
 
 /// Classify a call that leaves the package, by the package that defines what is called.
@@ -196,49 +91,38 @@ pub fn described(pkg: &str) -> bool {
 pub fn boundary(pkg: Option<&str>, parts: &[String]) -> Option<Crossing> {
     let head = parts.first().map(String::as_str).unwrap_or("");
     let last = parts.last().map(String::as_str).unwrap_or("");
-    let builtin = |name: &str| match name {
-        "print" => Some(Crossing::to(World::Screen)),
-        "open" => Some(Crossing::to(World::Disk)),
-        _ => None,
-    };
+    let builtin = |name: &str| k::PYTHON_BUILTINS.iter().find(|(b, _)| *b == name).map(|(_, w)| Crossing::to(*w));
     let Some(pkg) = pkg else {
         return if parts.len() == 1 { builtin(head) } else { None };
     };
     if pkg == "builtins" {
         return builtin(last);
     }
-    if matches!((pkg, last), ("click" | "typer", "echo" | "secho") | ("rich", "print") | ("pprint", "pprint" | "pp"))
-        || (pkg == "sys" && parts.len() == 3 && matches!(parts[1].as_str(), "stdout" | "stderr"))
-    {
+    // what prints, shows a figure, draws one, runs a model or saves a file, by itself
+    let stream = parts.len() == 3 && k::STREAMS.contains(&(pkg, parts[1].as_str()));
+    if stream {
         return Some(Crossing::to(World::Screen));
     }
-    // a figure is drawn to be seen: `show` puts it on the screen, and what makes one is a
-    // `figure`, which a notebook shows when the cell that made it ends
-    match (pkg, last) {
-        ("matplotlib" | "plotly", "show") => return Some(Crossing::to(World::Screen)),
-        ("matplotlib", "figure" | "subplots" | "subplot_mosaic") => return Some(Crossing::to(World::Figure)),
+    if let Some(c) = k::operation(pkg, last).filter(|c| matches!(c.world, World::Screen | World::Figure)) {
+        return Some(c);
+    }
+    match k::reaches(pkg, Some(Registry::PyPi)) {
+        Some(World::Net) => return k::moves_on_the_web(last).then_some(Crossing::to(World::Net)),
+        Some(db @ World::Db(_)) => return k::DB_OPS.contains(&last).then_some(Crossing::to(db)),
+        Some(World::Llm) => return Some(Crossing::to(World::Llm)),
         _ => {}
     }
-    if NET_PKGS.contains(&pkg) {
-        return NET_OPS.contains(&last).then_some(Crossing::to(World::Net));
-    }
-    if let Some(db) = db_pkg(pkg) {
-        return DB_OPS.contains(&last).then_some(Crossing::to(db));
-    }
-    if LLM_PKGS.contains(&pkg) {
-        return Some(Crossing::to(World::Llm));
-    }
-    if ML_PKGS.contains(&pkg) {
+    if k::ML_PACKAGES.contains(&pkg) {
         return ml(pkg, parts, last);
     }
-    if pkg == "subprocess" {
+    if k::reaches(pkg, Some(Registry::PyPi)) == Some(World::Process) {
         return Some(Crossing::to(World::Process));
     }
-    if FILE_PKGS.contains(&pkg) {
-        if WRITE_BOUND.contains(&last) && (!FILE_OPS.contains(&last) || FS_PKGS.contains(&pkg)) {
+    if k::FILE_PACKAGES.contains(&pkg) {
+        if k::FILE_WRITES.contains(&last) && (!k::FILE_SYSTEM_OPS.contains(&last) || k::FILE_SYSTEM_PACKAGES.contains(&pkg)) {
             return Some(DISK_WRITE);
         }
-        if READ_BOUND.contains(&last) {
+        if k::FILE_READS.contains(&last) {
             return Some(DISK_READ);
         }
     }
@@ -249,61 +133,62 @@ pub fn boundary(pkg: Option<&str>, parts: &[String]) -> Option<Crossing> {
 /// model, the Hub sends and receives files, a checkpoint or a saved dataset is a file.
 fn ml(pkg: &str, parts: &[String], last: &str) -> Option<Crossing> {
     let net = Some(Crossing::to(World::Net));
-    let hub_load = pkg == "torch" && parts.iter().any(|p| p == "hub") && last == "load";
-    let pretrained = last == "from_pretrained" || matches!((pkg, last), ("sentence_transformers", "SentenceTransformer" | "CrossEncoder") | ("transformers", "pipeline"));
-    if pretrained || hub_load {
+    let hub_load = k::MODEL_HUBS.iter().any(|(p, hub, op)| *p == pkg && parts.iter().any(|x| x == hub) && last == *op);
+    if hub_load || k::HUB_MODELS.contains(&last) {
         return net;
     }
-    if matches!(pkg, "huggingface_hub" | "datasets") && (HUB_READ.contains(&last) || HUB_WRITE.contains(&last)) {
+    if k::HUB_PACKAGES.contains(&pkg) && (k::HUB_READ.contains(&last) || k::HUB_WRITE.contains(&last)) {
         return net;
     }
-    if pkg == "transformers" && last == "push_to_hub" {
-        return net;
-    }
-    match (pkg, last) {
-        ("sentence_transformers", "encode" | "embed") => Some(Crossing::to(World::Model)),
-        ("transformers" | "sentence_transformers", "save_pretrained") => Some(DISK_WRITE),
-        ("torch" | "datasets", "load" | "load_from_disk") => Some(DISK_READ),
-        ("torch" | "datasets", "save" | "save_to_disk") => Some(DISK_WRITE),
-        _ => None,
-    }
+    k::operation(pkg, last)
 }
 
 /// The boundary a TypeScript or JavaScript call crosses: `fetch` and HTTP clients go to the
 /// web, `console` to the screen, `node:fs` reads and writes files, `child_process` runs a
 /// program. `pkg` is the package the call's head was imported from, if any.
 pub fn boundary_ts(pkg: Option<&str>, parts: &[String]) -> Option<Crossing> {
-    let head = parts.first().map(String::as_str).unwrap_or("");
     let last = parts.last().map(String::as_str).unwrap_or("");
-    match pkg {
-        None if matches!(parts, [f] if f == "fetch") || (matches!(head, "window" | "globalThis") && last == "fetch") => Some(Crossing::to(World::Net)),
-        // opening a socket or an event stream connects to its URL: `new WebSocket(url)`
-        None if matches!(parts, [g] if g == "WebSocket" || g == "EventSource") => Some(Crossing::to(World::Net)),
-        None if head == "console" || (head == "process" && matches!(parts.get(1).map(String::as_str), Some("stdout" | "stderr"))) => Some(Crossing::to(World::Screen)),
-        // the browser's own key-value stores
-        None if matches!(head, "localStorage" | "sessionStorage") && matches!(last, "getItem" | "setItem" | "removeItem" | "clear") => Some(Crossing::to(World::Db(Db::Kv))),
-        // building a client moves nothing: `axios.create(..)`
-        Some(_) if matches!(last, "create" | "createClient") && parts.len() == 2 && !TS_LLM.contains(&pkg.unwrap_or("")) => None,
-        // a request, by its verb, or the package called as one (`got(url)`); a response read moves nothing
-        Some(p) if TS_NET.contains(&p) => (parts.len() == 1 || NET_OPS.contains(&last) || last == "fetch").then_some(Crossing::to(World::Net)),
-        Some(p) if library_place(p).is_some() => library_place(p).map(Crossing::to),
-        Some("fs" | "fs/promises") => {
-            const READS: &[&str] = &["readFile", "readFileSync", "readdir", "readdirSync", "createReadStream", "existsSync", "stat", "statSync", "access"];
-            const WRITES: &[&str] = &[
-                "writeFile", "writeFileSync", "appendFile", "appendFileSync", "mkdir", "mkdirSync", "rm", "rmSync", "unlink", "unlinkSync", "rename",
-                "renameSync", "copyFile", "copyFileSync", "createWriteStream",
-            ];
-            if READS.contains(&last) {
-                Some(DISK_READ)
-            } else if WRITES.contains(&last) {
-                Some(DISK_WRITE)
-            } else {
-                None
-            }
-        }
-        Some("child_process" | "execa") => Some(Crossing::to(World::Process)),
-        _ => None,
+    let Some(pkg) = pkg else { return platform(parts) };
+    // building a client moves nothing: `axios.create(..)`
+    if k::CLIENT_MAKERS.contains(&last) && parts.len() == 2 && k::reaches(pkg, Some(Registry::Npm)) != Some(World::Llm) {
+        return None;
     }
+    // a request, by its method, or the package called as one (`got(url)`); a response read moves nothing
+    if k::reaches(pkg, Some(Registry::Npm)) == Some(World::Net) {
+        return (parts.len() == 1 || k::moves_on_the_web(last) || last == "fetch").then_some(Crossing::to(World::Net));
+    }
+    if let Some(w) = library_place(pkg) {
+        return Some(Crossing::to(w));
+    }
+    if k::NODE_FS.contains(&pkg) {
+        return if k::NODE_FS_READS.contains(&last) {
+            Some(DISK_READ)
+        } else if k::NODE_FS_WRITES.contains(&last) {
+            Some(DISK_WRITE)
+        } else {
+            None
+        };
+    }
+    None
+}
+
+/// What the platform's own names cross to, where no import binds them: `fetch` and a socket or
+/// an event stream to the web (also through `window` or `globalThis`), `console` and the
+/// process's streams to the screen, the browser's own key-value stores.
+fn platform(parts: &[String]) -> Option<Crossing> {
+    let parts: Vec<&str> = parts.iter().map(String::as_str).collect();
+    let parts = match parts.as_slice() {
+        [g, rest @ ..] if k::GLOBAL_OBJECTS.contains(g) && !rest.is_empty() => rest,
+        p => p,
+    };
+    let (head, last) = (parts.first().copied().unwrap_or(""), parts.last().copied().unwrap_or(""));
+    if parts.len() == 1 && k::WEB_GLOBALS.contains(&head) {
+        return Some(Crossing::to(World::Net));
+    }
+    if head == k::CONSOLE || (parts.len() > 1 && k::STREAMS.contains(&(head, parts[1]))) {
+        return Some(Crossing::to(World::Screen));
+    }
+    (k::BROWSER_STORES.contains(&head) && k::BROWSER_STORE_OPS.contains(&last)).then_some(Crossing::to(World::Db(Db::Kv)))
 }
 
 /// What a file operation does to the file system, by its name in the languages Atlas reads: look
@@ -322,23 +207,27 @@ pub enum FsOp {
 }
 
 pub fn fs_op(op: &str) -> FsOp {
-    match op {
-        "exists" | "try_exists" | "is_file" | "is_dir" | "is_symlink" | "canonicalize" | "metadata" | "symlink_metadata" | "existsSync" | "stat" | "statSync" | "access" => FsOp::Checks,
-        "read_dir" | "iterdir" | "glob" | "rglob" | "listdir" | "scandir" | "walk" | "readdir" | "readdirSync" | "opendir" | "opendirSync" => FsOp::Lists,
-        o if o.starts_with("create_dir") || o.starts_with("mkdir") || o.starts_with("makedirs") || o == "touch" => FsOp::Creates,
-        o if o.starts_with("remove") || o.starts_with("unlink") || o.starts_with("rmtree") || o.starts_with("rm") => FsOp::Removes,
-        o if o.starts_with("rename") || o.starts_with("move") || o.starts_with("replace") => FsOp::Moves,
-        o if o.starts_with("copy") || o == "cp" || o == "cpSync" => FsOp::Copies,
-        _ => FsOp::Data,
+    let starts = |table: &[&str]| table.iter().any(|t| op.starts_with(t));
+    if k::PROBES.contains(&op) {
+        FsOp::Checks
+    } else if k::LISTINGS.contains(&op) {
+        FsOp::Lists
+    } else if starts(k::CREATES) {
+        FsOp::Creates
+    } else if starts(k::REMOVES) {
+        FsOp::Removes
+    } else if starts(k::MOVES) {
+        FsOp::Moves
+    } else if starts(k::COPIES) {
+        FsOp::Copies
+    } else {
+        FsOp::Data
     }
 }
 
-/// `Path.exists()` and friends on a receiver whose type is unknown still read the disk.
-pub const RUST_PATH_READS: &[&str] = &["exists", "try_exists", "is_file", "is_dir", "read_dir", "canonicalize", "symlink_metadata"];
-
 /// `println!` and friends print to the terminal.
 pub fn screen_macro(name: &str) -> bool {
-    matches!(name, "println" | "print" | "eprintln" | "eprint")
+    k::RUST_SCREEN_MACROS.contains(&name)
 }
 
 /// What a boundary call is, once the string literals under it have been read: the part of the
@@ -391,19 +280,19 @@ pub fn facts(kind: Crossing, pkg: Option<&str>, op: &str, literals: &[String]) -
     if kind.world == World::Net {
         // a dataset built by one of the library's own loaders (`load_dataset("csv", data_files=..)`)
         // is read from local files
-        if op == "load_dataset" && literals.first().map_or(false, |l| HF_LOADERS.contains(&l.as_str())) {
+        if op == "load_dataset" && literals.first().map_or(false, |l| k::HF_LOADERS.contains(&l.as_str())) {
             return Facts::of(DISK_READ, literals.iter().skip(1).find(|l| path_like(l)).cloned().unwrap_or_default());
         }
         // pretrained weights named by a local path are a file, by a name a download from the Hub
-        if HUB_MODELS.contains(&op) {
+        if k::HUB_MODELS.contains(&op) {
             if let Some(local) = literals.first().filter(|l| l.starts_with(['.', '/', '~'])) {
                 return Facts::of(DISK_READ, local.clone());
             }
         }
         // a web place is named by its host; the Hub's operations say which way the files go
-        let hub = HUB_READ.contains(&op) || HUB_WRITE.contains(&op) || HUB_MODELS.contains(&op);
-        let artifact = if hub { HUB_HOST.to_string() } else { literals.iter().find_map(|l| host(l)).unwrap_or_default() };
-        let dir = if HUB_WRITE.contains(&op) { Some(Dir::Write) } else if hub { Some(Dir::Read) } else { None };
+        let hub = k::HUB_READ.contains(&op) || k::HUB_WRITE.contains(&op) || k::HUB_MODELS.contains(&op);
+        let artifact = if hub { k::HUB_HOST.to_string() } else { literals.iter().find_map(|l| host(l)).unwrap_or_default() };
+        let dir = if k::HUB_WRITE.contains(&op) { Some(Dir::Write) } else if hub { Some(Dir::Read) } else { None };
         return Facts::of(Crossing { world: World::Net, dir }, artifact);
     }
     if kind.world != World::Disk {
@@ -420,15 +309,10 @@ pub fn facts(kind: Crossing, pkg: Option<&str>, op: &str, literals: &[String]) -
     Facts::of(kind, artifact)
 }
 
-/// A file mode literal: `r`, `wb`, `a+`.
 /// Path operations whose place is the path they are called on; their argument is a pattern
 /// below it or what is written: `cache_dir.glob("*.arrow")`, `p.write_text("done")`.
 pub fn on_receiver(op: &str) -> bool {
-    matches!(
-        op,
-        "glob" | "rglob" | "iterdir" | "joinpath" | "read_text" | "read_bytes" | "write_text" | "write_bytes" | "exists" | "is_file"
-            | "is_dir" | "mkdir" | "unlink" | "rmdir" | "touch" | "stat"
-    )
+    k::ON_THE_PATH.contains(&op)
 }
 
 /// The host of a URL: `https://huggingface.co/api/x` -> `huggingface.co`.
@@ -438,36 +322,16 @@ fn host(s: &str) -> Option<String> {
     (!h.is_empty() && !h.contains('{')).then(|| h.to_string())
 }
 
+/// A file mode literal: `r`, `wb`, `a+`.
 pub fn is_mode(s: &str) -> bool {
     (1..=3).contains(&s.len()) && s.chars().all(|c| "rwabxt+".contains(c))
 }
 
 /// The format a call implies when the code names no file.
 fn format_of(pkg: Option<&str>, op: &str) -> Option<&'static str> {
-    let by_op = match op {
-        "read_csv" | "to_csv" => Some("csv"),
-        "read_parquet" | "to_parquet" => Some("parquet"),
-        "read_json" | "to_json" => Some("json"),
-        "read_excel" | "to_excel" | "load_workbook" => Some("xlsx"),
-        "read_feather" | "to_feather" => Some("feather"),
-        "savefig" | "imsave" => Some("png"),
-        "safe_load" | "safe_dump" => Some("yaml"),
-        _ => None,
-    };
-    if by_op.is_some() {
-        return by_op;
-    }
-    match pkg? {
-        "json" => Some("json"),
-        "yaml" | "ruamel" => Some("yaml"),
-        "pickle" => Some("pkl"),
-        "csv" => Some("csv"),
-        "toml" | "tomllib" | "tomli" => Some("toml"),
-        "lxml" => Some("xml"),
-        "rasterio" => Some("tif"),
-        "numpy" | "np" if matches!(op, "save" | "load") => Some("npy"),
-        _ => None,
-    }
+    let find = |table: &'static [(&'static str, &'static str)], key: &str| table.iter().find(|(x, _)| *x == key).map(|(_, f)| *f);
+    let (array, ops, format) = k::ARRAY_FORMAT;
+    find(k::FORMATS_BY_OP, op).or_else(|| find(k::FORMATS_BY_PACKAGE, pkg?)).or_else(|| (pkg? == array && ops.contains(&op)).then_some(format))
 }
 
 /// A literal that names a file: `out.json`, `assets/{id}/x.xml`, `Makefile`. Not a mode, an
@@ -664,9 +528,10 @@ const SQL_DBS: &[Db] = &[Db::Duckdb, Db::Sqlite, Db::Sql];
 pub fn access(db: Db, op: &str, mode: Option<&str>) -> Option<Dir> {
     if db == Db::Kv {
         let op = op.to_ascii_lowercase();
-        return if ["get", "mget", "hget", "keys", "scan", "exists"].iter().any(|r| op.starts_with(r)) {
+        let starts = |table: &[&str]| table.iter().any(|t| op.starts_with(t));
+        return if starts(k::KV_READS) {
             Some(Dir::Read)
-        } else if ["set", "mset", "hset", "del", "remove", "clear", "incr", "decr", "expire", "lpush", "rpush", "sadd"].iter().any(|w| op.starts_with(w)) {
+        } else if starts(k::KV_WRITES) {
             Some(Dir::Write)
         } else {
             None
@@ -675,22 +540,16 @@ pub fn access(db: Db, op: &str, mode: Option<&str>) -> Option<Dir> {
     if db != Db::Graph {
         return None;
     }
-    match op {
-        "execute_read" | "read_transaction" => return Some(Dir::Read),
-        "execute_write" | "write_transaction" => return Some(Dir::Write),
-        _ => {}
+    if let Some((_, d)) = k::TRANSACTIONS.iter().find(|(t, _)| *t == op) {
+        return Some(*d);
     }
     let mode = mode.map(|m| m.trim_matches(['"', '\'']).rsplit('.').next().unwrap_or("").to_ascii_uppercase()).unwrap_or_default();
-    match mode.as_str() {
-        "READ" | "R" | "READ_ACCESS" => Some(Dir::Read),
-        "WRITE" | "W" | "WRITE_ACCESS" => Some(Dir::Write),
-        _ => None,
-    }
+    k::ACCESS_MODES.iter().find(|(m, _)| *m == mode).map(|(_, d)| *d)
 }
 
 /// A managed transaction, handed the work it runs: `session.execute_read(work, ..)`.
 pub fn transaction(op: &str) -> bool {
-    matches!(op, "execute_read" | "execute_write" | "read_transaction" | "write_transaction")
+    k::TRANSACTIONS.iter().any(|(t, _)| *t == op)
 }
 
 #[cfg(test)]

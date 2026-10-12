@@ -882,7 +882,7 @@ struct Made<'t> {
 fn moved_by(ty: &[String], op: &str) -> Option<Crossing> {
     match op {
         _ if knowledge::hands_on(op) => None,
-        _ if effects::RUST_PATH_READS.contains(&op) => Some(Crossing::read(World::Disk)),
+        _ if knowledge::RUST_PATH_READS.contains(&op) => Some(Crossing::read(World::Disk)),
         _ => effects::boundary_rust(&[ty, &[op.to_string()]].concat()),
     }
 }
@@ -1286,7 +1286,7 @@ impl<'a, 't> Body<'a, 't> {
         match moved {
             Some((kind, op, true, own)) => self.touch(c, kind, &op, &own).into_iter().filter(|t| !t.artifact.is_empty()).collect(),
             Some((kind, op, false, _)) => self.touch(c, kind, &op, &subtree()),
-            None if effects::RUST_PATH_READS.contains(&method) => self.touch(c, Crossing::read(World::Disk), method, &subtree()),
+            None if knowledge::RUST_PATH_READS.contains(&method) => self.touch(c, Crossing::read(World::Disk), method, &subtree()),
             None => vec![],
         }
     }
