@@ -29,10 +29,14 @@ fn each_principle_finds_its_case() {
     assert_eq!(got["sums"], ["fixture.build.Loaded"]);
     // `CountingSink.write` gives an int where `Sink.write` promises None; `clone` narrows to a
     // subclass. `MeanEncoder` keeps `...` with `batch dim`, `PatchEncoder` breaks `batch dim`
-    // with three dims; `GraphReader` gives one variant of the `Loaded` that `Reader` promises
-    assert_eq!(got["overrides"], ["fixture.build.MeanEncoder.encode", "fixture.sinks.base.Sink.write"]);
-    // `Path("out.json")` in a sink; `save` writes where its caller says
-    assert_eq!(got["places"], ["fixture.sinks.duck.DuckSink.write"]);
+    // with three dims; `GraphReader` gives one variant of the `Loaded` that `Reader` promises.
+    // `Archive` says what `Catalog` promises in other words (`List[Node]`, `Node | None`, an
+    // `Annotated[str, ..]`) or narrower (a list for a `Sequence`), as ty decides; its `head`
+    // gives one Node where a list was promised
+    assert_eq!(got["overrides"], ["fixture.build.MeanEncoder.encode", "fixture.catalog.Catalog.head", "fixture.sinks.base.Sink.write"]);
+    // `Path("out.json")` in a sink, and `summary` beside the command `export`, which names its own
+    // file as an entry may; `save` writes where its caller says
+    assert_eq!(got["places"], ["fixture.export.summary", "fixture.sinks.duck.DuckSink.write"]);
     // `enrich` changes the Graph it is handed; `Graph.add` changes itself
     assert_eq!(got["changes"], ["fixture.build.enrich"]);
     // `Journal.connection` gives back a connection `entries` uses, without saying so; the
@@ -53,6 +57,17 @@ fn each_principle_finds_its_case() {
     // database and gets only a list of nodes
     assert_eq!(got["lens"], ["fixture.notes.Notes", "fixture.store.Copier"]);
     assert!(fs.iter().all(|f| f.question.ends_with('?')), "a finding ends in a question");
+}
+
+/// The principles read Rust by what its types and entries mean: `Disk.page` gives the
+/// `anyhow::Result<Page>` that `Source.page` promises as `Result<Page>`, and the test beside
+/// `ledger` names its own file without making `ledger` one that may.
+#[test]
+fn rust_is_read_by_meaning() {
+    let fs = findings("tests/fixture-rs");
+    let got = by_principle(&fs);
+    assert!(!got.contains_key("overrides"), "{:?}", got.get("overrides"));
+    assert_eq!(got["places"], ["handed.ledger.ledger", "handed.world.notes", "handed.world.stamp"]);
 }
 
 /// `src/` holds packages; a package called `src` has no name of its own yet, and that comes first.

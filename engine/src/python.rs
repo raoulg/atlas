@@ -936,6 +936,15 @@ fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, root: &str
             }
         }
     }
+    // whether an override keeps its base's promise, as ty decides it
+    for id in &ids {
+        let n = &store.nodes[id];
+        let at = (n.kind == NodeKind::Method).then(|| def_node(&modules[&n.module], n)).flatten().and_then(|d| d.child_by_field_name("name")).map(|x| x.start_byte());
+        let keeps = at.and_then(|at| types.of(&n.file)?.keeps(at));
+        if let Some(n) = store.nodes.get_mut(id) {
+            n.keeps = keeps;
+        }
+    }
     // what the attributes hold, as ty types what the methods assign them
     let sites = sites(modules, store);
     mark_tools(modules, store, types, &sites, root);

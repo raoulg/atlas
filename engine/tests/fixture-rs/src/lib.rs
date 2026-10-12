@@ -1,6 +1,7 @@
 //! Functions handed on as values, to be called by whoever receives them.
 
 pub mod choose;
+pub mod ledger;
 pub mod world;
 mod shapes;
 

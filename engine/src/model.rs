@@ -93,6 +93,11 @@ pub struct Node {
     /// What the signature says it gives back; none when it does not say.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub returns: Option<Returns>,
+    /// For a method that overrides another: whether what it gives back can stand where the
+    /// overridden method's promise stood, as the language's type checker decides; none where no
+    /// checker decided.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub keeps: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub entry: Option<Entry>,
     /// The calls that leave the package, with what they touch: a path literal, a table, a

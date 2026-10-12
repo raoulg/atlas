@@ -131,13 +131,26 @@ does not promise breaks that: the caller expected a `Tuple[Figure, Axes]` and go
 `Figure`, or `None`. Handing back a subclass of the promised type is fine.
 
 - **Python.** Type checkers report it as an incompatible override; pyright's
-  `reportIncompatibleMethodOverride`. A `# type: ignore[override]` on the line is the
-  code saying it knows.
+  `reportIncompatibleMethodOverride`, ty's `invalid-method-override`. A
+  `# type: ignore[override]` on the line is the code saying it knows.
 - **Rust.** A trait implementation must match the trait's signature; the compiler
   checks it.
+- **TypeScript.** A method must be assignable to the one it overrides; the compiler checks
+  it.
 
-Atlas checks: an override whose annotated return differs from the one its nearest
-base declares, grouped per base method.
+Atlas checks: an override whose return type cannot stand where the one its nearest base
+declares stood, grouped per base method. It decides by what the types mean, not by how they
+are written. For Python, ty decides whether the type is assignable: `List[Node]` is
+`list[Node]`, `Optional[Node]` is `Node | None`, `Annotated[str, "a note"]` is a `str`, and a
+`list[Node]` may stand where a `Sequence[Node]` is promised. Where ty does not know a type
+(a library the environment does not hold), it has nothing against it, and neither has Atlas.
+For Rust and TypeScript, whose compilers already hold an override to its base, Atlas compares
+the program's types the two signatures name: each type the override gives is one its base
+promises, a subclass of one, or a variant of a sum it promises. `anyhow::Result<Page>` keeps
+the `Result<Page>` a trait promises. An array's shape is a promise no type checker reads
+(jaxtyping's `Float[Tensor, "batch dim"]`): each array an override gives has a shape its
+base allows, where `...` stands for any run of dimensions, a name for any one, and a number
+for itself.
 
 goad: `BasePlot.plot` promises `Tuple[Figure, Axes]`; `DecomposePlot.plot` and
 `PlotFits.plot` give a `Figure`, and their `build` gives `None`. The question is
@@ -160,8 +173,11 @@ elsewhere.
 Atlas checks: a read or a write in library code whose path or URL starts at a literal
 (`open("out.csv")`, `Path("data") / name`, `f"out/{x}.png"`). A path that starts at a
 value from elsewhere (`root / "out.csv"`, `root.join("Cargo.toml")`) is decided by the
-caller. Modules that hold a script, a CLI command, an MCP tool or a test are where the
-program starts, and may name places.
+caller. Where the program starts may name places: an entry itself (a CLI command, a route, an
+MCP tool, a test, a binary's `main`), and a file that runs as a whole (a script, a notebook, a
+test file) with the code it defines. A function beside an entry is library code all the same:
+a helper in the module of a CLI command, or a function in a Rust file whose `#[test]`s sit
+below it, takes its place from whoever calls it.
 
 goad: `BasePlot.save(path)` takes the place, and the demo script, where the program
 starts, names it:
@@ -213,7 +229,8 @@ there.
 
 Atlas checks: a Python function or method without a return annotation, whose value at
 least one caller uses. A call that stands as a statement does not use it. A door is asked
-about by `doors`.
+about by `doors`. The finding names three of the callers that use the value and counts the
+rest.
 
 rkg: `RegisterSink.transaction(self)` returns a connection to the register's SQLite
 database. Every `with sink.transaction() as con: con.execute(..)` then runs on a value

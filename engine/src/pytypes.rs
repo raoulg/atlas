@@ -8,7 +8,7 @@
 //! Where ty says a type is unknown, so does Atlas: a function without a return annotation
 //! gives back `Unknown`, and nothing is guessed behind it.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -30,7 +30,7 @@ use ty_python_semantic::lint::{LintRegistry, RuleSelection};
 use ty_python_semantic::types::{Type, TypeDefinition, TypeDetail};
 use ty_python_semantic::{
     check_file_unwrap, default_lint_registry, definitions_for_attribute, definitions_for_name, AnalysisSettings, Db,
-    HasType, ImportAliasResolution, PythonEnvironment, PythonVersionSource, PythonVersionWithSource, SemanticModel,
+    HasType, ImportAliasResolution, ProgramEnvironment, PythonEnvironment, PythonVersionSource, PythonVersionWithSource, SemanticModel,
     SysPrefixPathOrigin,
 };
 
@@ -148,6 +148,7 @@ pub struct Facts {
     values: HashMap<(usize, usize), Value>,
     defs: HashMap<(usize, usize), Target>,
     signatures: HashMap<(usize, usize), Vec<Param>>,
+    keeps: HashMap<usize, bool>,
 }
 
 impl Facts {
@@ -169,6 +170,14 @@ impl Facts {
     /// Where the name or attribute at `range` is defined, as a reader's goto-definition finds it.
     pub fn def(&self, range: (usize, usize)) -> Option<&Target> {
         self.defs.get(&range)
+    }
+
+    /// For the method whose name is written at `at`, when it overrides one of a base class
+    /// read with it: whether the type its return annotation stands for is assignable to the one
+    /// the overridden method's stands for. None where either says nothing, or names a type
+    /// variable a base fills in.
+    pub fn keeps(&self, at: usize) -> Option<bool> {
+        self.keeps.get(&at).copied()
     }
 }
 
@@ -221,18 +230,66 @@ impl Ty {
         let mut out = Types { files: HashMap::new(), environment: self.environment, libs: vec![] };
         let libs = std::cell::RefCell::new(std::collections::BTreeMap::new());
         let keys = std::cell::RefCell::new(HashMap::new());
+        let mut classes = vec![];
         for (path, name) in &asked {
             let Ok(file) = system_path_to_file(db, path) else { continue };
             let pf = db.program_file(file);
             let model = SemanticModel::new(db, pf);
             let parsed = parsed_module(db, pf.python_file(db)).load(db);
-            let mut reader = Reader { db, model: &model, here: &here, keys: &keys, libs: &libs, facts: Facts::default() };
+            let mut reader = Reader { db, model: &model, here: &here, keys: &keys, libs: &libs, file: name, facts: Facts::default(), classes: vec![] };
             reader.visit_body(parsed.suite());
+            classes.extend(reader.classes);
             out.files.insert(name.clone(), reader.facts);
+        }
+        for (file, at, keeps) in overrides(db, &classes) {
+            if let Some(f) = out.files.get_mut(&file) {
+                f.keeps.insert(at, keeps);
+            }
         }
         out.libs = libs.into_inner().into_iter().map(|(path, module)| (module, path)).collect();
         out
     }
+}
+
+/// A class as ty sees it, for what its methods override: where each of its bases is defined,
+/// and each method by its name, where that name is written and the type its return annotation
+/// stands for.
+struct Class<'db> {
+    file: String,
+    at: usize,
+    program: ProgramFile<'db>,
+    bases: Vec<(String, usize)>,
+    methods: Vec<(String, usize, Option<Type<'db>>)>,
+}
+
+/// For each method that overrides one of a class read with it: the file, where its name is
+/// written, and whether what it gives is assignable to what the overridden method promises. The
+/// overridden method is the one of the nearest base that defines it, breadth first through the
+/// bases as written, as the graph finds it.
+fn overrides<'db>(db: &'db TyDb, classes: &[Class<'db>]) -> Vec<(String, usize, bool)> {
+    let by_place: HashMap<(&str, usize), &Class> = classes.iter().map(|c| ((c.file.as_str(), c.at), c)).collect();
+    let mut out = vec![];
+    for c in classes {
+        let env = ProgramEnvironment::from_file(c.program);
+        for (name, at, given) in &c.methods {
+            let Some(given) = given else { continue };
+            let mut seen = HashSet::new();
+            let mut queue: VecDeque<&(String, usize)> = c.bases.iter().collect();
+            let mut promised = None;
+            while let Some(b) = queue.pop_front() {
+                let Some(base) = by_place.get(&(b.0.as_str(), b.1)).filter(|_| seen.insert(b)) else { continue };
+                if let Some((_, _, p)) = base.methods.iter().find(|(n, _, _)| n == name) {
+                    promised = Some(*p);
+                    break;
+                }
+                queue.extend(&base.bases);
+            }
+            if let Some(Some(promised)) = promised {
+                out.push((c.file.clone(), *at, given.is_assignable_to(db, &env, promised)));
+            }
+        }
+    }
+    out
 }
 
 /// A file as one key whatever way its path is written: resolved, and on Windows without the
@@ -451,7 +508,10 @@ struct Reader<'a, 'db> {
     keys: &'a std::cell::RefCell<HashMap<PathBuf, String>>,
     /// The library files calls go into, with their modules' names.
     libs: &'a std::cell::RefCell<std::collections::BTreeMap<PathBuf, String>>,
+    /// The name Atlas knows the file by.
+    file: &'a str,
     facts: Facts,
+    classes: Vec<Class<'db>>,
 }
 
 fn span(e: &impl Ranged) -> (usize, usize) {
@@ -595,8 +655,40 @@ impl Reader<'_, '_> {
     }
 }
 
+impl<'db> Reader<'_, 'db> {
+    /// A class with what it takes for its overrides: its bases where they are defined, its
+    /// methods with the types their return annotations stand for. A type that names a type
+    /// variable stands for what a subclass fills in, so it is left out.
+    fn class(&self, c: &ast::StmtClassDef) -> Class<'db> {
+        let env = self.model.program_environment();
+        let variable = |t: Type<'db>| {
+            matches!(t, Type::TypeVar(_)) || t.display(self.db, &env).to_string_parts().details.iter().any(|d| matches!(d, TypeDetail::Type(Type::TypeVar(_))))
+        };
+        let bases = c
+            .bases()
+            .iter()
+            .filter_map(|b| self.target(b.inferred_type(self.model)?.definition(self.db, &env)?.focus_range(self.db)?))
+            .filter_map(|t| match t {
+                Target::Here { file, at } => Some((file, at)),
+                Target::Lib(_) => None,
+            })
+            .collect();
+        let methods = c
+            .body
+            .iter()
+            .filter_map(|s| if let ast::Stmt::FunctionDef(f) = s { Some(f) } else { None })
+            .map(|f| (f.name.to_string(), f.name.range.start().to_usize(), f.returns.as_deref().and_then(|r| r.inferred_type(self.model)).filter(|t| !variable(*t))))
+            .collect();
+        Class { file: self.file.to_string(), at: c.name.range.start().to_usize(), program: self.model.program_file(), bases, methods }
+    }
+}
+
 impl<'e> Visitor<'e> for Reader<'_, '_> {
     fn visit_stmt(&mut self, stmt: &'e ast::Stmt) {
+        if let ast::Stmt::ClassDef(c) = stmt {
+            let class = self.class(c);
+            self.classes.push(class);
+        }
         let value = match stmt {
             ast::Stmt::Assign(a) => Some(&*a.value),
             ast::Stmt::AnnAssign(a) => a.value.as_deref(),

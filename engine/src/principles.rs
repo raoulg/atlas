@@ -206,11 +206,6 @@ fn written(n: &Node) -> &str {
     n.returns.as_ref().map_or("", |r| r.written.as_str())
 }
 
-fn same_type(a: &str, b: &str) -> bool {
-    let norm = |s: &str| s.chars().filter(|c| !c.is_whitespace() && *c != '"' && *c != '\'').collect::<String>();
-    norm(a) == norm(b)
-}
-
 fn list(xs: &[String]) -> String {
     match xs {
         [] => String::new(),
@@ -345,9 +340,6 @@ fn overrides(ix: &Index) -> Vec<Finding> {
         let Some(cls) = m.cls.as_deref() else { continue };
         let Some(base) = ix.ancestors(cls).into_iter().find_map(|a| ix.node(&format!("{a}.{}", m.name))) else { continue };
         let (Some(promised), Some(given)) = (&base.returns, &m.returns) else { continue };
-        if same_type(&promised.written, &given.written) {
-            continue;
-        }
         if promised.own || given.own || keeps(ix, base, m) {
             continue;
         }
@@ -385,28 +377,19 @@ fn overrides(ix: &Index) -> Vec<Finding> {
         .collect()
 }
 
-/// Whether what an override gives is something its base promised: the same shape of
-/// annotation with each array at least as specific (`Float[Tensor, "batch dim"]` where
-/// `Float[Tensor, "..."]` is promised), or, when the base names one type, a subclass of it,
-/// one of the variants of a sum it names, or an array of a shape it allows.
+/// Whether what an override gives keeps what its base promised. Where the language's type
+/// checker decided it (ty, for Python), by its answer. Elsewhere by the types the two
+/// signatures resolve to: each type the override gives is one the base promises, a subclass of
+/// one, or a variant of a sum it promises; a promise that resolves to none of the program's
+/// types gives these nothing to compare. Either way an array's shape is a promise no checker
+/// reads: each array the override gives fits one the base promises (`Float[Tensor, "batch
+/// dim"]` where `Float[Tensor, "..."]` is promised).
 fn keeps(ix: &Index, base: &Node, m: &Node) -> bool {
-    let (promised, given) = (arrays(written(base)), arrays(written(m)));
-    if promised.0 == given.0 && promised.1.len() == given.1.len() && promised.1.iter().zip(&given.1).all(|(p, g)| array_fits(g, p)) {
-        return true;
-    }
-    let bare = written(base).trim_matches(|c| c == '"' || c == '\'').chars().all(|c| c.is_alphanumeric() || matches!(c, '_' | '.'));
-    if !bare {
-        return false;
-    }
-    let mut allowed: Vec<&str> = vec![];
-    for p in ix.targets(&base.id, EdgeKind::Returns) {
-        allowed.push(p);
-        allowed.extend(ix.targets(p, EdgeKind::Variant));
-    }
-    let gives = ix.targets(&m.id, EdgeKind::Returns);
-    !allowed.is_empty()
-        && !gives.is_empty()
-        && gives.iter().all(|g| allowed.iter().any(|p| p == g || ix.ancestors(g).contains(p) || array_id_fits(g, p)))
+    let (promised, given) = (ix.targets(&base.id, EdgeKind::Returns), ix.targets(&m.id, EdgeKind::Returns));
+    let allowed: Vec<&str> = promised.iter().flat_map(|p| std::iter::once(*p).chain(ix.targets(p, EdgeKind::Variant))).collect();
+    let typed = m.keeps.unwrap_or_else(|| promised.is_empty() || given.iter().all(|g| allowed.iter().any(|p| p == g || ix.ancestors(g).contains(p) || array_id_fits(g, p))));
+    let shapes: Vec<Array> = promised.iter().filter_map(|p| array_of_id(p)).collect();
+    typed && (shapes.is_empty() || given.iter().filter_map(|g| array_of_id(g)).all(|g| shapes.iter().any(|p| array_fits(&g, p))))
 }
 
 /// An array annotation, jaxtyping style: dtype, array type and dims (`Float`, `Tensor`, `batch dim`).
@@ -415,22 +398,6 @@ struct Array {
     dtype: String,
     array: String,
     dims: Vec<String>,
-}
-
-/// An annotation with its arrays taken out: `dict[str, list[Float[Tensor, "_ dim"]]]` is
-/// `dict[str,list[#]]` and one array.
-fn arrays(annotation: &str) -> (String, Vec<Array>) {
-    let re = regex::Regex::new(r#"([A-Za-z_][\w.]*)\[\s*([A-Za-z_][\w.]*)\s*,\s*["']([^"']*)["']\s*\]"#).unwrap();
-    let found = re
-        .captures_iter(annotation)
-        .map(|c| Array {
-            dtype: c[1].rsplit('.').next().unwrap_or("").to_string(),
-            array: c[2].rsplit('.').next().unwrap_or("").to_string(),
-            dims: c[3].split_whitespace().map(str::to_string).collect(),
-        })
-        .collect();
-    let skeleton = re.replace_all(annotation, "#").chars().filter(|c| !c.is_whitespace() && *c != '"' && *c != '\'').collect();
-    (skeleton, found)
 }
 
 /// `ext:jaxtyping.Float[Tensor, batch dim]` as an array.
@@ -467,18 +434,14 @@ fn array_fits(given: &Array, promised: &Array) -> bool {
 
 /// A file or URL that library code names itself. Where data lives is decided where the
 /// program starts: a script, a CLI, a test, a notebook. Code those call takes the place as an
-/// argument, so each of them can choose.
+/// argument, so each of them can choose. Where the program starts is the entry itself (a
+/// command, a route, a test), or a file that is one as a whole (a script, a notebook, a test
+/// file) with the code it defines; a library function beside an entry is library code.
 fn places(ix: &Index) -> Vec<Finding> {
-    let starts: HashSet<&str> = ix
-        .g
-        .nodes
-        .iter()
-        .filter(|n| n.entry.as_ref().map_or(false, |e| e.kind != EntryKind::Export))
-        .map(|n| n.module.as_str())
-        .collect();
+    let entry = |id: &str| ix.node(id).and_then(|n| n.entry.as_ref()).map_or(false, |e| e.kind != EntryKind::Export);
     let mut out = vec![];
     for n in &ix.g.nodes {
-        if starts.contains(n.module.as_str()) {
+        if entry(&n.id) || entry(&n.module) {
             continue;
         }
         let fixed: Vec<String> = n
