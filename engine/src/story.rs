@@ -208,5 +208,5 @@ fn place(t: &Touch) -> String {
     if !t.artifact.is_empty() {
         return t.artifact.clone();
     }
-    t.what.clone()
+    crate::flow::shown(&t.what)
 }

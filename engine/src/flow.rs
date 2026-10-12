@@ -272,6 +272,15 @@ fn place(id: String, label: String, short: String, glyph: &'static str) -> Place
     Place { id, label, short, glyph, file: String::new(), coarse: None, group: String::new() }
 }
 
+/// A text as a label: its first three words, at most 48 characters. A place is named by all of
+/// its text and labelled by this.
+pub fn shown(text: &str) -> String {
+    let text = text.trim();
+    let words: Vec<&str> = text.split_whitespace().collect();
+    let out = if words.len() > 3 { words[..3].join(" ") + " …" } else { text.to_string() };
+    out.chars().take(48).collect()
+}
+
 impl Touch {
     /// Which side of its step the touch stands on: what the call says (a file's mode, a
     /// statement's verb, a download), else what its kind of place does by default. The web and a
@@ -298,7 +307,7 @@ impl Touch {
         match w {
             World::Process => {
                 let what = if self.what.is_empty() { "process" } else { self.what.as_str() };
-                place(format!("w:open:{what}"), what.to_string(), what.to_string(), "proc")
+                place(format!("w:open:{what}"), shown(what), shown(what), "proc")
             }
             World::Disk => {
                 let shape = crate::effects::fs_op(&self.op) != crate::effects::FsOp::Data;
@@ -314,7 +323,7 @@ impl Touch {
                     return coarse;
                 }
                 let w = &self.what;
-                Place { coarse: Some(Box::new(coarse)), group: "w:Disk".into(), ..place(format!("w:Disk:{w}"), format!("Disk({w})"), w.clone(), "file") }
+                Place { coarse: Some(Box::new(coarse)), group: "w:Disk".into(), ..place(format!("w:Disk:{w}"), format!("Disk({})", shown(w)), shown(w), "file") }
             }
             World::Db(_) if !self.artifact.is_empty() => {
                 let label = format!("{name}({})", self.artifact);
@@ -725,6 +734,21 @@ mod tests {
         nest(&mut sites, &HashMap::from([("g".to_string(), "Z".to_string())]), &mut 0);
         assert_eq!(sites[0].gives, [Held::new("Z", "#0")]);
         assert_eq!(sites[1].hands, [Held::new("Y", "y"), Held::new("Z", "#0")]);
+    }
+
+    /// Two commands that start with the same words are two places, and two touches of a body:
+    /// a place is named by all of its text, and only its label is cut, where it is drawn.
+    #[test]
+    fn a_place_is_named_by_all_of_its_text() {
+        let run = |what: &str| Touch { what: what.into(), ..Touch::new(World::Process, None) };
+        let (since, until) = (run("git log --format=%H --since=yesterday"), run("git log --format=%H --until=today"));
+        assert_ne!(since.place().id, until.place().id);
+        assert_eq!(since.place().label, until.place().label, "both drawn as `git log --format=%H …`");
+        let mut b = crate::builder::GraphBuilder::default();
+        b.add_node(crate::model::Node { id: "f".into(), ..Default::default() });
+        b.touch("f", since);
+        b.touch("f", until);
+        assert_eq!(b.nodes["f"].touches.len(), 2);
     }
 
     /// `lang = detect(opts).unwrap()` read by a language that names the unwrapped value already:

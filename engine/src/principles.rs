@@ -477,12 +477,12 @@ fn places(ix: &Index) -> Vec<Finding> {
             .touches
             .iter()
             .filter(|t| t.fixed)
-            .map(|t| format!("{}({})", t.op, if t.artifact.is_empty() { &t.what } else { &t.artifact }))
+            .map(|t| format!("{}({})", t.op, if t.artifact.is_empty() { crate::flow::shown(&t.what) } else { t.artifact.clone() }))
             .collect();
         if fixed.is_empty() {
             continue;
         }
-        let what = n.touches.iter().filter(|t| t.fixed).map(|t| if t.artifact.is_empty() { t.what.clone() } else { t.artifact.clone() }).collect::<Vec<_>>();
+        let what = n.touches.iter().filter(|t| t.fixed).map(|t| if t.artifact.is_empty() { crate::flow::shown(&t.what) } else { t.artifact.clone() }).collect::<Vec<_>>();
         out.push(ix.finding(
             "places",
             n,

@@ -1343,7 +1343,7 @@ impl<'a, 't> Body<'a, 't> {
         for (kind, a) in sides.into_iter().zip(args) {
             let lits = literals(a, self.src, STRINGS);
             let mut cr = Crosses::read(c, self.src, kind, None, op, &lits, STRINGS, &self.locals);
-            cr.what = lits.first().map(|l| crate::tree::shown(l)).unwrap_or_else(|| text(a, self.src).to_string());
+            cr.what = lits.first().map(|l| l.trim().to_string()).unwrap_or_else(|| text(a, self.src).to_string());
             cr.fixed = crate::tree::head_literal(a, self.src, STRINGS);
             out.extend(cr.touches(None));
         }

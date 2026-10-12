@@ -216,27 +216,19 @@ pub fn span(n: TsNode) -> Option<(u32, u32)> {
 }
 
 /// What a boundary call touches: the first string literal under the call (a path, a
-/// table, a command), else the first argument's own text, else nothing. Long literals
-/// are cut; a long statement keeps its first three words.
+/// table, a command), else the first argument's own text, else nothing. All of it: a label is
+/// cut where it is drawn.
 pub fn what_of(call: TsNode, src: &[u8], string_kinds: &[&str], arg_field: &str) -> String {
     if let Some(lit) = literals(call, src, string_kinds).into_iter().find(|l| !crate::effects::is_mode(l)) {
-        return shown(&lit);
+        return lit.trim().to_string();
     }
     let Some(args) = call.child_by_field_name(arg_field) else { return String::new() };
     match named_children(args).into_iter().next() {
         Some(a) if matches!(a.kind(), "identifier" | "attribute" | "field_expression" | "reference_expression" | "scoped_identifier") => {
-            text(a, src).trim_start_matches('&').trim_start_matches("mut ").chars().take(40).collect()
+            text(a, src).trim_start_matches('&').trim_start_matches("mut ").to_string()
         }
         _ => String::new(),
     }
-}
-
-/// A literal as a label: its first three words, at most 48 characters.
-pub fn shown(lit: &str) -> String {
-    let lit = lit.trim();
-    let words: Vec<&str> = lit.split_whitespace().collect();
-    let out = if words.len() > 3 { words[..3].join(" ") + " …" } else { lit.to_string() };
-    out.chars().take(48).collect()
 }
 
 /// Every string literal under a call, unquoted, in source order: `f"{name}.png"` -> `{name}.png`.
@@ -366,5 +358,20 @@ mod tests {
         assert!(rs("fn f() { Path::new(\"a.toml\").exists(); }"));
         assert!(!rs("fn f() { std::fs::read_to_string(root.join(\"Cargo.toml\")); }"));
         assert!(!rs("fn f() { std::fs::write(&out, html); }"));
+    }
+
+    /// What a call touches is read whole: two long commands that start alike stay two.
+    #[test]
+    fn what_a_call_touches_is_not_cut() {
+        let mut p = tree_sitter::Parser::new();
+        p.set_language(&tree_sitter_python::LANGUAGE.into()).unwrap();
+        let mut what = |code: &str| {
+            let tree = p.parse(code, None).unwrap();
+            what_of(walk(tree.root_node(), &["call"])[0], code.as_bytes(), &["string"], "arguments")
+        };
+        let since = what("subprocess.run('git log --format=%H --since=yesterday --reverse')");
+        assert_eq!(since, "git log --format=%H --since=yesterday --reverse");
+        assert_ne!(since, what("subprocess.run('git log --format=%H --until=today --reverse')"));
+        assert_eq!(what("open(config.paths.templates_directory_of_the_creation_wizard)"), "config.paths.templates_directory_of_the_creation_wizard");
     }
 }

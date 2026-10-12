@@ -179,7 +179,7 @@ fn routes(parts: &[Graph], several: bool) -> HashMap<String, Route> {
 
 /// A place as a route touches it, in words: `writes logs/run.log`, `writes SQLite(log)`.
 fn place(t: &Touch) -> String {
-    let what = if t.artifact.is_empty() { t.what.clone() } else { t.artifact.clone() };
+    let what = if t.artifact.is_empty() { crate::flow::shown(&t.what) } else { t.artifact.clone() };
     format!("{} {what}", t.verb()).trim().to_string()
 }
 

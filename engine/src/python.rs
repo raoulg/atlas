@@ -2027,7 +2027,7 @@ fn crossed<'t>(seen: &Seen, eval: &Eval, at: At<'_, 't>, c: TsNode<'t>, fnode: T
             let mut cr = Crosses::read(c, src, tag, lib, op, &literals(c, src, &["string"]), &["string"], &seen.handed(c));
             // on the web, what a call asks for is the argument its library names so
             if let Some(a) = asked(seen, c, fnode).filter(|_| cr.facts.kind == World::Net) {
-                cr.what = literals(a, src, &["string"]).first().map(|l| crate::tree::shown(l)).unwrap_or_else(|| text(a, src).to_string());
+                cr.what = literals(a, src, &["string"]).first().map(|l| l.trim().to_string()).unwrap_or_else(|| text(a, src).to_string());
                 cr.payload = payload_of(c, src, &cr.what, "arguments", &seen.handed(c));
                 cr.fixed = crate::tree::head_literal(a, src, &["string"]);
             }
@@ -2091,8 +2091,8 @@ fn file_calls<'t>(seen: &Seen, eval: &Eval, at: At<'_, 't>, c: TsNode<'t>, fnode
             let kind = file_direction(file, nth, sides, &f);
             let artifact = f.places().into_iter().next().map(|(a, _)| a).unwrap_or_default();
             let what = match literals(a, src, &["string"]).into_iter().next() {
-                Some(l) => crate::tree::shown(&l),
-                None => text(a, src).chars().take(40).collect(),
+                Some(l) => l.trim().to_string(),
+                None => text(a, src).to_string(),
             };
             (touch(kind, what, artifact, crate::tree::head_literal(a, src, &["string"])), eval.of(at, a, 0))
         })
