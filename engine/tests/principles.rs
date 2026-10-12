@@ -48,6 +48,9 @@ fn each_principle_finds_its_case() {
     assert_eq!(got["nothing"], ["fixture.build.remember", "fixture.sinks.base.Mixin.close"]);
     // `_rank.low.peek` calls back up into `_rank.high`, which builds on `low`
     assert_eq!(got["layers"], ["fixture._rank"]);
+    // `Notes` puts a Note into its file and gets a dict back, `Shelf` gets the Note; `Copier`
+    // puts a Graph into the graph database and gets only a list of nodes
+    assert_eq!(got["lens"], ["fixture.notes.Notes", "fixture.store.Copier"]);
     assert!(fs.iter().all(|f| f.question.ends_with('?')), "a finding ends in a question");
 }
 

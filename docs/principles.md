@@ -335,3 +335,32 @@ not a layer). It names each cycle with its links, the thinnest first.
 In Atlas, `model` serialized a touch with where the picture draws it, calling up into `flow`,
 and `paths` asked `parts` whether a route serves a path. The first now stands in the flow
 (`Flow::drawn`), the second in `paths`, and the engine's modules are layered.
+
+## What a lens puts, it gets back.
+
+Id: `lens`.
+
+A class that writes a place where data rests and reads it again is a lens on that place. Its
+puts take a value and change the place, `A × S → S`; its gets give a value from it, `S → A`. Put
+a value, get it again, and it is the value you put: `get(put(a, s)) = a`. When that holds, the
+place has a type, and a route through it composes: a `Graph` goes in and a `Graph` comes out.
+When a put takes a `Graph` and the gets give back a `dict`, or a list of rows, or nothing, the
+place holds something no type names, and the flow through it falls apart into pieces.
+
+Where data comes in from the world it comes in as the world has it (a CSV from the web, a JSON
+payload); a lens is where the code turns that into its own types, once.
+
+- **Python.** A store that saves a model (`noteer_verbruik(v: Verbruik)`) reads it back as
+  that model (`lees_verbruik() -> list[Verbruik]`), not as `list[dict]`.
+- **Rust.** `serde` gives both directions from one type: `save(&T)` and `load() -> T`.
+- **TypeScript.** The same as Python: what a store puts as a `Regel` it gets back as a `Regel`.
+
+Atlas checks: a class whose public operations both write and read one place (a database as a
+whole, a file by itself; through what they call), for each type of data a put takes that no
+get of the class gives back from that place. A class that only reads a place (what comes in
+from the world) or only writes it (an end product) is no lens on it. Where another class gets
+that type from the same place, Atlas says which: the lens is then split over two classes.
+
+rkg: `RegisterSink` puts `Graph`, `Oordeel` and `Verbruik` into SQLite. `Graph` and `Oordeel`
+come back through `RegisterRepository`, a second class on the same place; `Verbruik` comes
+back from `lees_verbruik` as `list[dict]`.

@@ -10,7 +10,8 @@ use std::path::Path;
 
 use serde::Serialize;
 
-use crate::model::{Edge, EdgeKind, EntryKind, Graph, Leaves, Node, NodeKind, Site};
+use crate::flow::Side;
+use crate::model::{Edge, EdgeKind, EntryKind, Graph, Leaves, Node, NodeKind, Site, World};
 
 /// A principle by its id and what it asks of code.
 pub struct Principle {
@@ -28,6 +29,7 @@ pub const PRINCIPLES: &[Principle] = &[
     Principle { id: "choices", asks: "A choice is made once, in a place with a name." },
     Principle { id: "nothing", asks: "A call leaves something behind." },
     Principle { id: "layers", asks: "The packages of a part depend on one another in one direction." },
+    Principle { id: "lens", asks: "What a lens puts, it gets back." },
 ];
 
 /// One place where the code and a principle disagree.
@@ -88,7 +90,7 @@ pub fn report(root: &str, findings: &[Finding]) -> String {
 pub fn check(g: &Graph) -> Vec<Finding> {
     let ix = Index::new(g);
     let mut out = vec![];
-    for rule in [doors, sums, overrides, places, changes, gives, choices, nothing, layers] {
+    for rule in [doors, sums, overrides, places, changes, gives, choices, nothing, layers, lens] {
         // a library read as code is not the project's to change
         let mut found: Vec<Finding> = rule(&ix).into_iter().filter(|f| ix.node(&f.node).map_or(true, |n| !n.library)).collect();
         found.sort_by(|a, b| (&a.file, a.line).cmp(&(&b.file, b.line)));
@@ -863,3 +865,119 @@ fn strongly_connected<V>(deps: &BTreeMap<String, BTreeMap<String, V>>) -> Vec<Ve
     walk.out
 }
 
+// ---------- lens ----------
+
+/// A class whose operations both write and read one place where data rests (a file, a database)
+/// is a lens on it: its puts take a value and change the place (`A × S → S`), its gets give a
+/// value from it (`S → A`). Put then get gives back what was put. Asked about each type of data a
+/// put takes that no get of the same class gives from that place: what the place holds is then
+/// another type than what goes in, or another class reads it. A class that only reads a place
+/// (input from the world) or only writes it (an end product) is no lens on it.
+fn lens(ix: &Index) -> Vec<Finding> {
+    let data = |t: &str, own: &str| t != own && ix.node(t).map_or(false, |n| matches!(n.kind, NodeKind::Class | NodeKind::External) && n.door.is_none());
+    // the place a touch holds data at, as a lens sees it: a database as a whole, a file by itself
+    let held = |t: &crate::model::Touch| -> Option<(String, String)> {
+        match t.kind {
+            World::Db(_) => Some((t.kind.name().to_string(), t.kind.name().to_string())),
+            World::Disk if !t.what.is_empty() || !t.artifact.is_empty() => {
+                let p = t.place();
+                Some((p.id, p.label))
+            }
+            _ => None,
+        }
+    };
+    // a place the code names, not only the variable that holds it: what two classes do there is
+    // done to the same place
+    let named = |place: &str| !place.starts_with("w:Disk:");
+    // the places an operation puts to and gets from, through what it calls: id -> label
+    let reaches = |m: &Node| -> (BTreeMap<String, String>, BTreeMap<String, String>) {
+        let (mut puts, mut gets) = (BTreeMap::new(), BTreeMap::new());
+        let mut seen: HashSet<&str> = HashSet::from([m.id.as_str()]);
+        let mut todo = vec![m.id.as_str()];
+        while let Some(id) = todo.pop() {
+            let Some(n) = ix.node(id).filter(|n| !n.library) else { continue };
+            for t in &n.touches {
+                if let Some((place, label)) = held(t) {
+                    match t.side() {
+                        Side::Out => puts.insert(place, label),
+                        Side::In => gets.insert(place, label),
+                    };
+                }
+            }
+            todo.extend(ix.targets(id, EdgeKind::Calls).into_iter().filter(|t| seen.insert(t)));
+        }
+        (puts, gets)
+    };
+    let operations = |c: &Node| -> Vec<(&Node, BTreeMap<String, String>, BTreeMap<String, String>)> {
+        ix.interface(&c.id).into_iter().filter(|m| is_function(m) && !m.ctor && !m.private).map(|m| {
+            let (puts, gets) = reaches(m);
+            (m, puts, gets)
+        }).collect()
+    };
+    let classes: Vec<&Node> = ix.g.nodes.iter().filter(|n| n.kind == NodeKind::Class && !n.library).collect();
+    // what each class's operations get from each place: (place, type) -> `Class.method`
+    let mut got_from: BTreeMap<(String, &str), Vec<String>> = BTreeMap::new();
+    for c in &classes {
+        for (m, _, gets) in operations(c) {
+            for place in gets.keys() {
+                for t in ix.targets(&m.id, EdgeKind::Returns).into_iter().filter(|t| data(t, &c.id)) {
+                    got_from.entry((place.clone(), t)).or_default().push(ix.label(&m.id));
+                }
+            }
+        }
+    }
+    let mut out = vec![];
+    for c in classes {
+        let ops = operations(c);
+        let name = ix.label(&c.id);
+        // the places this class both puts to and gets from
+        let places: BTreeMap<&String, &String> = ops.iter().flat_map(|(_, puts, _)| puts.iter()).filter(|(p, _)| ops.iter().any(|(_, _, gets)| gets.contains_key(*p))).collect();
+        let (mut lost_all, mut labels, mut evidence): (Vec<String>, Vec<String>, Vec<String>) = (vec![], vec![], vec![]);
+        for (place, label) in places {
+            let (mut put, mut got, mut given): (BTreeMap<&str, Vec<String>>, Vec<String>, HashSet<&str>) = (BTreeMap::new(), vec![], HashSet::new());
+            for (m, puts, gets) in &ops {
+                if puts.contains_key(place) {
+                    for t in ix.targets(&m.id, EdgeKind::Takes).into_iter().filter(|t| data(t, &c.id)) {
+                        put.entry(t).or_default().push(format!("{}: {} × {label} → {label}", ix.label(&m.id), ix.label(t)));
+                    }
+                }
+                if gets.contains_key(place) && m.returns.as_ref().map_or(false, |r| !r.value.is_empty() || r.own) {
+                    let types: Vec<&str> = ix.targets(&m.id, EdgeKind::Returns).into_iter().filter(|t| data(t, &c.id)).collect();
+                    given.extend(&types);
+                    let gives = if types.is_empty() { written(m).to_string() } else { types.iter().map(|t| ix.label(t)).collect::<Vec<_>>().join(", ") };
+                    got.push(format!("{}: {label} → {gives}", ix.label(&m.id)));
+                }
+            }
+            let lost: Vec<&str> = put.keys().copied().filter(|t| !given.contains(t)).collect();
+            if lost.is_empty() {
+                continue;
+            }
+            for t in &lost {
+                if !lost_all.contains(&ix.label(t)) {
+                    lost_all.push(ix.label(t));
+                }
+            }
+            labels.push(label.clone());
+            evidence.extend(put.values().flatten().map(|p| format!("put {p}")));
+            evidence.extend(got.iter().map(|g| format!("get {g}")));
+            for t in lost.iter().filter(|_| named(place)) {
+                let elsewhere: Vec<String> = got_from.get(&(place.clone(), *t)).into_iter().flatten().filter(|m| !m.starts_with(&format!("{}.", c.name))).map(|m| format!("`{m}`")).collect();
+                if !elsewhere.is_empty() {
+                    evidence.push(format!("{} is got from {label} by {}", ix.label(t), elsewhere.join(", ")));
+                }
+            }
+        }
+        if lost_all.is_empty() {
+            continue;
+        }
+        let (types, at) = (list(&lost_all), list(&labels));
+        out.push(ix.finding(
+            "lens",
+            c,
+            format!("{name} puts {types} into {at} and gets no {types} back"),
+            evidence,
+            format!("A lens gives back what it is given: put then get. {name} puts {types}, and none of its gets gives that back. What does {at} hold, and could {name} get it back as it went in?"),
+        ));
+    }
+    out
+}
