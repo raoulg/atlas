@@ -55,19 +55,21 @@ reads a repository.
 
 Read it from left to right:
 
-- **On the left** are the places the route reads: `File(Cargo.toml)`, `File(pyproject.toml)`,
-  `Disk in` (the repository's files). The green `>_` box is where the route starts.
+- **On the left** are the places the route reads: `Disk in`, the repository's files. The
+  green `>_` box is where the route starts.
 - **In the middle** are the steps. A rounded pill is a function. A box with a coloured
-  bar is a value of a type in memory: `Options`, `Language`, `Graph`. Arrows run in
+  bar is a value of a type in memory: `Options`, `Repo`, `Graph`. Arrows run in
   call order.
-- **Read it as a sentence:** *detect* the language, *parse* the repository into a `Graph g`
-  with the `Options` of the reading, add the Makefile's targets to `g` (`read_makefile`),
-  *assign* each node its part, and hand back `g`. That is Atlas's whole job, and the code
-  says it in four calls.
-- **`parse · one of 3`** is a choice: the same call goes to the Python, the Rust or the
-  TypeScript reader. `Language (4)` and `Graph (6)` are families: a type and the
-  types that belong to it or that it holds, folded into one box. Click one to open it.
-  A config opens the same way into what it holds (`folders: Folders`).
+- **Read it as a sentence:** *read* the repository into a `Repo`, and make its `graph_of`
+  with the `Options` of the reading. That is Atlas's whole job, and the code says it in two
+  calls.
+- **A solid line is what a step itself takes, a dashed line what a closed pill reaches
+  inside.** `graph_of` takes no file, but the readers inside it ask the `Repo` for a file's
+  text, which is read from disk the first time it is asked for.
+- **`Repo (2)` and `Graph (7)` are families**: a type and the types that belong to it or
+  that it holds, folded into one box. Click one to open it. A config opens the same way
+  into what it holds (`folders: Folders`). Inside `graph_of`, `parse · one of 3` is a
+  choice: the same call goes to the Python, the Rust or the TypeScript reader.
 - **Click any pill** to open it into its own steps, and **show code** to see its source.
 - **A step is a call.** A function the route calls twice is two steps, and a method called
   on a subclass's value is that subclass's (`ComparePlot.plot`). Values are drawn by the
