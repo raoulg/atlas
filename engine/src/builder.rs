@@ -63,6 +63,14 @@ impl GraphBuilder {
         }
     }
 
+    /// A name a package exports, as a route into it: a function or a class, by its label, unless
+    /// it is already a route of another kind.
+    pub fn export(&mut self, id: &str, label: String) {
+        if let Some(n) = self.nodes.get_mut(id).filter(|n| matches!(n.kind, NodeKind::Function | NodeKind::Class) && n.entry.is_none()) {
+            n.entry = Some(crate::model::Entry { kind: crate::model::EntryKind::Export, label });
+        }
+    }
+
     /// Record a boundary call on a node; the same call again counts up.
     pub fn touch(&mut self, id: &str, t: Touch) {
         let Some(n) = self.nodes.get_mut(id) else { return };

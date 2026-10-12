@@ -938,9 +938,8 @@ fn mark_exports(repo: &Path, files: &HashMap<PathBuf, String>, modules: &IndexMa
         }
     }
     for (name, target) in names {
-        let Some(id) = defined(&target, modules, &store.nodes, 0) else { continue };
-        if let Some(n) = store.nodes.get_mut(&id).filter(|n| matches!(n.kind, NodeKind::Function | NodeKind::Class) && n.entry.is_none()) {
-            n.entry = Some(Entry { kind: EntryKind::Export, label: name });
+        if let Some(id) = defined(&target, modules, &store.nodes, 0) {
+            store.export(&id, name);
         }
     }
 }
@@ -1115,24 +1114,18 @@ fn route_prefixes(modules: &IndexMap<String, Module>, store: &mut GraphBuilder) 
             }
         }
     }
-    let full = |key: &str| {
-        let (mut key, mut out) = (key.to_string(), String::new());
-        for _ in 0..10 {
-            let Some((parent, prefix)) = mounted.get(&key) else { break };
-            out = format!("{}{out}", prefix.trim_end_matches('/'));
-            key = parent.clone();
-        }
-        out
-    };
-    for m in modules.values() {
-        for (id, router) in &m.routes {
-            let prefix = key_of(m, router, modules, 0).map(|k| full(&k)).unwrap_or_default();
-            let Some(e) = store.nodes.get_mut(id).and_then(|n| n.entry.as_mut()) else { continue };
-            let Some((method, path)) = e.label.split_once(' ') else { continue };
-            let path = if path == "/" && !prefix.is_empty() { String::new() } else { path.to_string() };
-            let segs: Vec<String> = format!("{prefix}{path}").split('/').map(|s| if let Some(p) = s.strip_prefix(':') { format!("{{{}}}", p.trim_end_matches('?')) } else if s == "*" { "{rest:path}".into() } else { s.to_string() }).collect();
-            e.label = format!("{method} {}", segs.join("/"));
-        }
+    let routes: Vec<(String, String)> = modules.values().flat_map(|m| m.routes.iter().map(move |(id, router)| (id.clone(), key_of(m, router, modules, 0).unwrap_or_default()))).collect();
+    crate::entries::mount_routes(store, &routes, &HashMap::new(), &mounted, express_segment);
+}
+
+/// A part of a route's path as the graph writes it: Express's `:id` is `{id}`, its `*` the rest.
+fn express_segment(s: &str) -> String {
+    if let Some(p) = s.strip_prefix(':') {
+        format!("{{{}}}", p.trim_end_matches('?'))
+    } else if s == "*" {
+        "{rest:path}".into()
+    } else {
+        s.to_string()
     }
 }
 

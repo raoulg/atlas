@@ -695,31 +695,19 @@ fn route_prefixes(modules: &IndexMap<String, Module>, store: &mut GraphBuilder) 
             }
         }
     }
-    // from the app or router a route is declared on, out to the app nobody mounts
-    let full = |start: &str| {
-        let trim = |p: &str| p.trim_end_matches('/').to_string();
-        let (mut key, mut out) = (start.to_string(), trim(own.get(start).map(String::as_str).unwrap_or("")));
-        for _ in 0..10 {
-            let Some((parent, prefix)) = mounted.get(&key) else { break };
-            out = format!("{}{}{out}", trim(own.get(parent).map(String::as_str).unwrap_or("")), trim(prefix));
-            key = parent.clone();
-        }
-        out
-    };
-    for n in store.nodes.values_mut() {
-        let Some(e) = n.entry.as_mut().filter(|e| e.kind == EntryKind::Route) else { continue };
-        let Some(m) = modules.get(&n.module) else { continue };
-        const VERBS: &[&str] = &["get(", "post(", "put(", "delete(", "patch(", "websocket("];
-        let Some(recv) = n.decorators.iter().find_map(|d| d.split_once('.').filter(|(_, rest)| VERBS.iter().any(|v| rest.starts_with(v))).map(|(r, _)| r.to_string())) else { continue };
-        let prefix = full(&m.bindings.get(&recv).cloned().unwrap_or_else(|| format!("{}.{recv}", m.id)));
-        if prefix.is_empty() {
-            continue;
-        }
-        if let Some((method, path)) = e.label.split_once(' ') {
-            let path = if path == "/" { String::new() } else { path.to_string() };
-            e.label = format!("{method} {}{path}", prefix.trim_end_matches('/'));
-        }
-    }
+    // each route by the app or router it is declared on: `@router.get(..)`
+    const VERBS: &[&str] = &["get(", "post(", "put(", "delete(", "patch(", "websocket("];
+    let routes: Vec<(String, String)> = store
+        .nodes
+        .values()
+        .filter(|n| n.entry.as_ref().map_or(false, |e| e.kind == EntryKind::Route))
+        .filter_map(|n| {
+            let m = modules.get(&n.module)?;
+            let recv = n.decorators.iter().find_map(|d| d.split_once('.').filter(|(_, rest)| VERBS.iter().any(|v| rest.starts_with(v))).map(|(r, _)| r.to_string()))?;
+            Some((n.id.clone(), m.bindings.get(&recv).cloned().unwrap_or_else(|| format!("{}.{recv}", m.id))))
+        })
+        .collect();
+    crate::entries::mount_routes(store, &routes, &own, &mounted, str::to_string);
 }
 
 /// A keyword argument that is a string literal.
@@ -1483,12 +1471,7 @@ fn mark_exports(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, ro
         for name in names {
             let Some(t) = m.symbols.get(&name).or_else(|| m.bindings.get(&name)).filter(|t| t.starts_with(&format!("{root}."))) else { continue };
             let Some(t) = defined(t, modules, &store.nodes) else { continue };
-            if let Some(n) = store.nodes.get_mut(&t) {
-                if matches!(n.kind, NodeKind::Function | NodeKind::Class) && n.entry.is_none() {
-                    let label = if path.is_empty() { name.clone() } else { format!("{path}.{name}") };
-                    n.entry = Some(Entry { kind: EntryKind::Export, label });
-                }
-            }
+            store.export(&t, if path.is_empty() { name.clone() } else { format!("{path}.{name}") });
         }
     }
 }

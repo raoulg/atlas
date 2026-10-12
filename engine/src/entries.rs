@@ -1,6 +1,6 @@
 //! Routes into a program: decorators, `[project.scripts]`, Makefile targets.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 use std::sync::OnceLock;
 
@@ -14,6 +14,32 @@ const HTTP_METHODS: &[&str] = &["get", "post", "put", "delete", "patch", "websoc
 fn deco_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| Regex::new(r#"^([\w.]+)\s*(?:\(\s*(?:['"]([^'"]*)['"])?)?"#).unwrap())
+}
+
+/// Where an app's routes are served: each route by the router it is declared on (`routes`, its
+/// node and the router's key), each router under the one it is mounted on with a prefix
+/// (`mounted`, by key), and the prefix a router gives its own routes (`own`). A route's path
+/// is its prefixes from the app nobody mounts, down to the router it is declared on, then its
+/// own; `segment` writes a part of a path as the graph writes one.
+pub fn mount_routes(store: &mut GraphBuilder, routes: &[(String, String)], own: &HashMap<String, String>, mounted: &HashMap<String, (String, String)>, segment: fn(&str) -> String) {
+    let trim = |p: &str| p.trim_end_matches('/').to_string();
+    let full = |start: &str| {
+        let (mut key, mut out) = (start.to_string(), trim(own.get(start).map(String::as_str).unwrap_or("")));
+        for _ in 0..10 {
+            let Some((parent, prefix)) = mounted.get(&key) else { break };
+            out = format!("{}{}{out}", trim(own.get(parent).map(String::as_str).unwrap_or("")), trim(prefix));
+            key = parent.clone();
+        }
+        out
+    };
+    for (id, router) in routes {
+        let prefix = full(router);
+        let Some(e) = store.nodes.get_mut(id).and_then(|n| n.entry.as_mut()).filter(|e| e.kind == EntryKind::Route) else { continue };
+        let Some((method, path)) = e.label.split_once(' ') else { continue };
+        let path = if path == "/" && !prefix.is_empty() { "" } else { path };
+        let segs: Vec<String> = format!("{prefix}{path}").split('/').map(segment).collect();
+        e.label = format!("{method} {}", segs.join("/"));
+    }
 }
 
 /// A decorator that makes a function a route into the program.

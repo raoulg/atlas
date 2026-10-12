@@ -445,9 +445,7 @@ fn mark_exports(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, cr
         }
         names.extend(pub_items(m));
         for (name, id) in names {
-            if let Some(n) = store.nodes.get_mut(&id).filter(|n| matches!(n.kind, NodeKind::Function | NodeKind::Class) && n.entry.is_none()) {
-                n.entry = Some(Entry { kind: EntryKind::Export, label: label(&name) });
-            }
+            store.export(&id, label(&name));
         }
     }
 }
