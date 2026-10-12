@@ -23,7 +23,7 @@ use crate::knowledge;
 use crate::model::{Dir, EdgeKind, Entry, EntryKind, Held, Node, NodeKind, Param, Returns, Touch, World};
 pub use crate::builder::{foreign_type, ClassInfo, GraphBuilder, OwnTypes, SigInfo};
 use crate::tree::{
-    argument, evaluation_order, field_children, literals, named_children, nth_of_kind, payload_of, span, text, unquote, walk,
+    evaluation_order, field_children, literals, named_children, nth_of_kind, payload_of, span, text, unquote, walk,
     what_of, ChoiceSyntax, CompareSyntax, Part,
 };
 
@@ -2038,10 +2038,11 @@ fn crossed<'t>(seen: &Seen, eval: &Eval, at: At<'_, 't>, c: TsNode<'t>, fnode: T
         }
         _ => {
             let mut cr = Crosses::read(c, src, tag, lib, op, &literals(c, src, &["string"]), &["string"], &seen.handed(c));
-            // on a hub, what moves is the repository the call names
-            if let Some(repo) = argument(c, src, "repo_id").filter(|_| cr.facts.kind == World::Net && !cr.facts.artifact.is_empty()) {
-                cr.payload = payload_of(c, src, &repo, "arguments", &seen.handed(c));
-                cr.what = repo;
+            // on the web, what a call asks for is the argument its library names so
+            if let Some(a) = asked(seen, c, fnode).filter(|_| cr.facts.kind == World::Net) {
+                cr.what = literals(a, src, &["string"]).first().map(|l| crate::tree::shown(l)).unwrap_or_else(|| text(a, src).to_string());
+                cr.payload = payload_of(c, src, &cr.what, "arguments", &seen.handed(c));
+                cr.fixed = crate::tree::head_literal(a, src, &["string"]);
             }
             let said = match cr.facts.kind {
                 World::Db(db) => effects::access(db, op, keyword(c, src, &["routing_", "default_access_mode"]).as_deref()),
@@ -2199,6 +2200,23 @@ fn value_used(call: TsNode) -> bool {
 /// A call's first positional argument.
 fn positional(call: TsNode) -> Option<TsNode> {
     named_children(call.child_by_field_name("arguments")?).into_iter().find(|a| !matches!(a.kind(), "keyword_argument" | "comment" | "list_splat" | "dictionary_splat"))
+}
+
+/// The argument a call to the web names what it asks for by: the one handed to the parameter its
+/// library calls so (knowledge::ASKED_BY), by the library's signature; where ty knows none, the
+/// one handed by such a keyword, else the first.
+fn asked<'t>(seen: &Seen, c: TsNode<'t>, fnode: TsNode<'t>) -> Option<TsNode<'t>> {
+    let src = &seen.m.src;
+    let bound: Vec<(&str, TsNode)> = match seen.facts.and_then(|x| x.signature(Seen::range(fnode))) {
+        Some(sig) => paths::file_args(sig, c, src).into_iter().map(|(p, a)| (p.name.as_str(), a)).collect(),
+        None => {
+            let args = named_children(c.child_by_field_name("arguments")?);
+            let keywords = args.iter().filter(|a| a.kind() == "keyword_argument").filter_map(|a| Some((text(a.child_by_field_name("name")?, src), a.child_by_field_name("value")?)));
+            let first = positional(c).map(|a| (knowledge::ASKED_BY[0], a));
+            keywords.chain(first).collect()
+        }
+    };
+    knowledge::ASKED_BY.iter().find_map(|name| bound.iter().find(|(p, _)| p == name).map(|(_, a)| *a))
 }
 
 /// The text of the first of these keyword arguments a call is given.
