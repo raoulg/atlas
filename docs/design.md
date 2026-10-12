@@ -267,7 +267,8 @@ call says. In the JSON a file's direction is part of its kind (`disk_read`, `dis
 `returns`, `has`, `mutates`, `variant`, `requests`; later `yields`, `raises`,
 `decorates`.
 
-**Entry points** — CLI commands, API routes, MCP tools (by decorator), a router's
+**Entry points** — CLI commands, API routes, MCP tools (a function decorated by `tool`,
+`resource` or `prompt` on a value ty types as a tool server, whatever the value is called), a router's
 registration calls (`app.get("/x", handler)`, at the prefixes of `app.route("/api", sub)`;
 an inline handler is a function named by its route), `[project.scripts]`, `package.json`
 `bin` and the scripts that run a file of the package, Makefile targets (recipes resolved to the commands they run),
@@ -344,11 +345,18 @@ the libraries behind them are not followed to the bottom. Its functions are step
 project's, and what it reaches of the world is the world the project reaches through it
 (goad's `FileHandler.download` fetches a URL and writes the cache). What it holds but the
 project does not reach is dropped; what it calls in another library stays that library's call.
-Not read: the standard library, a package the effect tables below already describe (a
+Not read: the standard library, a package the effect tables already describe (a
 network, database, file or model library, plotly), and a package with compiled code, whose
 source cannot be followed to the bottom. A library's code is drawn where a route steps into it,
 not as a package of the project, and `atlas check` does not judge it. A class handed to code
 Atlas reads (`pipeline.add(DiffValues)`) is built there.
+
+What Atlas knows of libraries and frameworks is data: `engine/src/knowledge.rs`, one table per
+kind of fact. Which package reaches which part of the world (by registry: PyPI, crates.io,
+npm), a library's operations that cross by themselves, the HTTP methods and how a framework
+mounts a router, the parameter a web call names what it asks for by (`url`, `repo_id`), which
+methods change or hand on what they are called on, a path library's functions. A reader looks
+a fact up; no reader tests a library's name in its control flow, and a test keeps it so.
 
 Where ty does not know a type, Atlas does not guess. A function without a return
 annotation gives back `Unknown`, a call on that value reaches nothing, and `atlas
@@ -357,8 +365,9 @@ is still what the import binds (`requests.get` is `get` of `requests`); what the
 gives back has no type.
 
 Rust's and TypeScript's signatures carry their types, and a receiver's type is
-composed from them. In Rust, `Self` is the impl's type, a method the type does not define
-(`to_string`, `clone`, a trait's default) reaches nothing, an `enum` is a sum of the types
+composed from them. In Rust, `Self` is the impl's type, a trait's provided method is reached
+through a type that implements the trait, a method neither defines (`to_string`, `clone`)
+reaches nothing, an `enum` is a sum of the types
 its variants carry, and `matches!(k, "a" | "b")` compares like `match`. A function in an
 `impl` without `self`, a Python class or static method and a TypeScript `static` method are
 called on the class, so the class is not their input.

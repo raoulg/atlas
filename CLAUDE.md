@@ -80,6 +80,9 @@ The rigorous half and the visual half are the same structure. Read `docs/design.
   URLs to the callers and placing them (`paths.rs`), exports and route prefixes (`builder.rs`,
   `entries.rs`), `method_of` and `foreign_type` (`builder.rs`). Each reader's `link_calls` only
   says in which order its steps run.
+- What Atlas knows of libraries and frameworks is a table in `engine/src/knowledge.rs`, one per
+  kind of fact; a reader looks it up and never tests a library's name in its control flow
+  (`engine/tests/readers.rs` checks both this and that no project's name stands in the engine).
 - Python's types come from ty (`engine/src/pytypes.rs`): the `ty_*` and `ruff_*` crates are
   pinned to one version together, and need the Rust in `rust-version`. The Python fixture has
   no environment; its libraries are stubs in `engine/tests/fixture/typings`, found through
