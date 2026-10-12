@@ -161,9 +161,9 @@ database, and the database is drawn. A dotted line joins a package to one it onl
 A package opens into its subpackages, and a module into its routes and the functions other
 packages call in it. This overview stands even when Atlas finds no entry points.
 
-Atlas reads Python's types through ty, Astral's type checker, the way `ty check` reads the
-project: the environment it finds (`.venv`, `VIRTUAL_ENV`) and `[tool.ty.environment]` in
-`pyproject.toml`. Where ty does not know a type, Atlas does not guess, so the picture is as
+Atlas reads Python's types through ty, Astral's type checker, with the project's own
+environment: the one `[tool.ty.environment]` in `pyproject.toml` names, else the project's
+`.venv`. A venv that is active in your shell is not the project's and is not read. Where ty does not know a type, Atlas does not guess, so the picture is as
 precise as the code's annotations. It sees best when:
 
 - the environment is synced (`uv sync`), so that libraries have types. Without one, Atlas

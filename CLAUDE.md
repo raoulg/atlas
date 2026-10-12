@@ -91,7 +91,8 @@ The rigorous half and the visual half are the same structure. Read `docs/design.
   kind of fact; a reader looks it up and never tests a library's name in its control flow
   (`engine/tests/readers.rs` checks both this and that no project's name stands in the engine).
 - Python's types come from ty (`engine/src/pytypes.rs`): the `ty_*` and `ruff_*` crates are
-  pinned to one version together, and need the Rust in `rust-version`. The Python fixture has
+  pinned to one version together, and need the Rust in `rust-version`. The environment is the
+  project's own (`[tool.ty.environment]`, else its `.venv`), never `VIRTUAL_ENV` or `PATH`. The Python fixture has
   no environment; its libraries are stubs in `engine/tests/fixture/typings`, found through
   `[tool.ty.environment] extra-paths`.
 - Run `uv` from the repo root or the scratchpad, never inside `engine/tests/fixture` or a

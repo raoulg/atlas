@@ -20,7 +20,6 @@ closed; it fails when there is one.
 """
 
 import json
-import os
 import pathlib
 import re
 import subprocess
@@ -31,9 +30,7 @@ def page_of(atlas: str, repo: str, out: pathlib.Path) -> tuple[pathlib.Path, str
     """The page an Atlas build draws of a repository: its file, its text, where its project is named, its graph."""
     out.mkdir(parents=True, exist_ok=True)
     page_file = out / "page.html"
-    # Atlas runs outside this script's own environment, so that ty finds the project's
-    env = {k: v for k, v in os.environ.items() if k not in ("VIRTUAL_ENV", "CONDA_PREFIX")}
-    subprocess.run([atlas, "view", repo, "--no-open", "--out", str(page_file)], check=True, capture_output=True, env=env)
+    subprocess.run([atlas, "view", repo, "--no-open", "--out", str(page_file)], check=True, capture_output=True)
     html = page_file.read_text()
     project = re.search(r'"projects":\{"([^"]+)":\{', html)
     start = html.index("window.DATA = ") + len("window.DATA = ")

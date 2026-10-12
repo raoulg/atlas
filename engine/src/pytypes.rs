@@ -1,9 +1,9 @@
 //! Python's types, as ty sees them: where a call goes, and what a value is.
 //!
 //! Atlas reads a Python project's structure with tree-sitter and asks ty, Astral's type
-//! checker, for its types. ty reads the project as its own `ty check` would: the environment
-//! it finds (`VIRTUAL_ENV`, `.venv`) and the project's `[tool.ty.environment]`. The two trees
-//! meet at an expression's byte range in its file.
+//! checker, for its types. ty reads the project with the project's own environment: the one its
+//! `[tool.ty.environment]` names, else its `.venv`, never what is active in the shell Atlas runs
+//! in. The two trees meet at an expression's byte range in its file.
 //!
 //! Where ty says a type is unknown, so does Atlas: a function without a return annotation
 //! gives back `Unknown`, and nothing is guessed behind it.
@@ -333,7 +333,8 @@ impl TyDb {
                 let origin = SysPrefixPathOrigin::ConfigFileSetting(Arc::new(settings.file.clone().unwrap_or_else(|| root.join("pyproject.toml"))), None);
                 PythonEnvironment::new(root.join(p), origin, &db.system).ok()
             }
-            None => PythonEnvironment::discover(Some(root), &db.system).ok().flatten(),
+            // the project's `.venv`; a `VIRTUAL_ENV`, a conda environment or a python on `PATH` are the shell's
+            None => Some(root.join(".venv")).filter(|v| db.system.is_directory(v)).and_then(|v| PythonEnvironment::new(v, SysPrefixPathOrigin::LocalVenv, &db.system).ok()),
         };
         let mut version = settings.python_version.as_deref().and_then(|v| v.parse::<PythonVersion>().ok());
         let mut environment = false;

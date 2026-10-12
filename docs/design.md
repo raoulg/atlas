@@ -340,8 +340,9 @@ string literals at boundary calls. A new language is new queries, not new code.
 **L1 Resolution.** Names become node ids: imports (absolute, relative, re-exports),
 bases, and calls through the type of their receiver.
 
-Python's types are ty's, Astral's type checker, which reads the project as `ty check`
-would: the environment it finds (`VIRTUAL_ENV`, `.venv`) and `[tool.ty.environment]`.
+Python's types are ty's, Astral's type checker, which reads the project with its own
+environment: the one `[tool.ty.environment]` names, else the project's `.venv`, never what is
+active in the shell (*Decision, PTT-487*: the same files give the same graph wherever Atlas runs).
 For each call ty says where it goes: a definition of the package, matched to its node
 by where its name is written, or a library's module. For each value it says what type
 it has, and which classes that type names (`list[Node]` names `Node`). The two trees,
