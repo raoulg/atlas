@@ -632,22 +632,11 @@ const entryTitle = id => { const n = byId.get(id); return n.entry ? `${KIND_LABE
 // a unit is a module path: a package with everything under it, or a package's own module by itself
 // (`rkg.serve$`). A part's top level is the children of its own package, and each tree beside it
 // (scripts, notebooks) as one; a level with a single child is passed through
-const moduleIds = part => modules.filter(n => partOf(n) === part).map(n => n.id);
 const inUnit = (id, u) => { const m = byId.get(id)?.module ?? ""; return u.endsWith("$") ? m === u.slice(0, -1) : m === u || m.startsWith(u + "."); };
-const hasCode = m => (out.get(m) || []).some(e => e.kind === "contains") || !!(byId.get(m)?.touches || []).length;
-function unitsBelow(prefix, part) {
-  const mods = moduleIds(part), depth = prefix.split(".").length;
-  const kids = [...new Set(mods.filter(m => m.startsWith(prefix + ".")).map(m => m.split(".").slice(0, depth + 1).join(".")))].sort();
-  if (kids.length === 1 && mods.some(m => m.startsWith(kids[0] + ".")) && !hasCode(prefix)) return unitsBelow(kids[0], part);
-  if (kids.length && byId.has(prefix) && hasCode(prefix)) kids.unshift(prefix + "$");
-  return kids;
-}
-function topUnits(part) {
-  const heads = [...new Set(moduleIds(part).map(m => m.split(".")[0]))];
-  const us = heads.flatMap(h => { const below = h === part ? unitsBelow(h, part) : []; return below.length ? below : [h]; });
-  if ((D.make || []).length && part === partOf({})) us.push("Makefile");
-  return us;
-}
+// the units of each level, as the engine reads them
+const UNITS = (D.flow || {}).units || {tops: [], kids: {}};
+const unitsBelow = u => UNITS.kids[u] || [];
+const topUnits = part => (UNITS.tops.find(([p]) => p === part) || [null, []])[1];
 const unitLabel = u => { if (u === "~in" || u === "~out") { const n = aroundFocus().length; return `the rest · ${n} ${n === 1 ? "package" : "packages"}`; } if (u.startsWith("~")) return unitLabel(u.slice(4)); const base = u.replace(/\$$/, ""), last = base === "_root" ? "scripts at the root" : base.split(".").pop(); return u.endsWith("$") ? `${last} itself` : last; };
 const partOfUnit = u => { const m = [...byId.values()].find(n => n.kind === "module" && inUnit(n.id, u)); return m ? partOf(m) : partOf({}); };
 const inFocus = id => [...V.focus].some(u => inUnit(id, u));

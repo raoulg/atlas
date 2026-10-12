@@ -126,11 +126,86 @@ pub struct Flow {
     pub bodies: BTreeMap<String, Body>,
     pub arrows: BTreeMap<String, Arrow>,
     pub types: crate::families::Families,
+    pub units: Units,
 }
 
 /// The flow of a graph.
 pub fn of(g: &Graph) -> Flow {
-    Flow { bodies: bodies(g), arrows: arrows(g), types: crate::families::families(g) }
+    Flow { bodies: bodies(g), arrows: arrows(g), types: crate::families::families(g), units: units(g) }
+}
+
+/// The code quotiented by module path, one level at a time. A part's top level is the children
+/// of its own package, and each tree beside it (scripts, notebooks) as one; a level with a single
+/// child is passed through; a package with code of its own has that code beside its children as a
+/// unit of its own (`rkg.serve$`); a Makefile is a unit of the first part.
+#[derive(Serialize, Clone, Debug, Default, PartialEq)]
+pub struct Units {
+    /// Each part's top level, in the order of the parts.
+    pub tops: Vec<(String, Vec<String>)>,
+    /// What a unit opens into.
+    pub kids: BTreeMap<String, Vec<String>>,
+}
+
+pub fn units(g: &Graph) -> Units {
+    let first = g.parts.first().map_or_else(|| g.root.clone(), |p| p.id.clone());
+    let part_of = |n: &Node| if n.part.is_empty() { first.clone() } else { n.part.clone() };
+    let modules: Vec<(&str, String)> = g.nodes.iter().filter(|n| n.kind == NodeKind::Module && !n.library).map(|n| (n.id.as_str(), part_of(n))).collect();
+    let holds: HashSet<&str> = g.edges.iter().filter(|e| e.kind == EdgeKind::Contains).map(|e| e.src.as_str()).collect();
+    let nodes: HashMap<&str, &Node> = g.nodes.iter().map(|n| (n.id.as_str(), n)).collect();
+    let has_code = |m: &str| holds.contains(m) || nodes.get(m).map_or(false, |n| !n.touches.is_empty());
+    let mods_of = |part: &str| modules.iter().filter(|(_, p)| p == part).map(|(m, _)| *m).collect::<Vec<&str>>();
+    fn below(prefix: &str, mods: &[&str], has_code: &dyn Fn(&str) -> bool, known: &dyn Fn(&str) -> bool) -> Vec<String> {
+        let depth = prefix.split('.').count();
+        let inside = format!("{prefix}.");
+        let mut kids: Vec<String> = mods.iter().filter(|m| m.starts_with(&inside)).map(|m| m.split('.').take(depth + 1).collect::<Vec<_>>().join(".")).collect();
+        kids.sort();
+        kids.dedup();
+        if let [only] = kids.as_slice() {
+            if mods.iter().any(|m| m.starts_with(&format!("{only}."))) && !has_code(prefix) {
+                return below(only, mods, has_code, known);
+            }
+        }
+        if !kids.is_empty() && known(prefix) && has_code(prefix) {
+            kids.insert(0, format!("{prefix}$"));
+        }
+        kids
+    }
+    let known = |id: &str| nodes.contains_key(id);
+    let parts: Vec<String> = if g.parts.is_empty() { vec![first.clone()] } else { g.parts.iter().map(|p| p.id.clone()).collect() };
+    let mut out = Units::default();
+    for part in parts {
+        let mods = mods_of(&part);
+        let mut heads: Vec<&str> = vec![];
+        for m in &mods {
+            let h = m.split('.').next().unwrap_or(m);
+            if !heads.contains(&h) {
+                heads.push(h);
+            }
+        }
+        let mut top: Vec<String> = heads
+            .iter()
+            .flat_map(|h| {
+                let kids = if *h == part { below(h, &mods, &has_code, &known) } else { vec![] };
+                if kids.is_empty() { vec![h.to_string()] } else { kids }
+            })
+            .collect();
+        if !g.make.is_empty() && part == first {
+            top.push("Makefile".into());
+        }
+        let mut todo = top.clone();
+        while let Some(u) = todo.pop() {
+            if u.ends_with('$') || u == "Makefile" || out.kids.contains_key(&u) {
+                continue;
+            }
+            let kids = below(&u, &mods, &has_code, &known);
+            if !kids.is_empty() {
+                todo.extend(kids.iter().cloned());
+                out.kids.insert(u, kids);
+            }
+        }
+        out.tops.push((part, top));
+    }
+    out
 }
 
 // ---------- places: where a touch rests, which side of its step, and what it does there ----------
