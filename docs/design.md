@@ -49,9 +49,9 @@ Everything below is the engineering of that language.
 Five objects, five kinds of arrows.
 
 ```
-Repo ──parse──▶ Graph ──F──▶ Flow ──view──▶ Flow ──layout──▶ Picture
-                  │
-                  └──inspect──▶ Source
+Disk ──read──▶ Repo ──parse──▶ Graph ──F──▶ Flow ──view──▶ Flow ──layout──▶ Picture
+                                   │
+                                   └──inspect──▶ Source
 ```
 
 **Flow** is the image of the effect functor `F` (below): what every step of every body runs, in
@@ -60,7 +60,11 @@ call order and with dispatch (`bodies`), what every function takes and gives as 
 where it rests, which side of its step it stands on and what it does there. The agent's route
 text and the page are read from the same Flow, so the two see the same route.
 
-**Repo** is a directory at a commit. **Graph** is the one central type: typed nodes
+**Repo** is a directory as read: the files its author wrote (no hidden directory, nothing git
+ignores, no dependency or build directory) and the files named on the command line. **read: Disk
+→ Repo** is the one place the engine touches a repository: the listing is read once, a file's
+text once, when a reader first asks, and a part of the repository is a view of the same reading.
+What a library's code and types are is the environment's, read by ty. **Graph** is the one central type: typed nodes
 (modules, classes, functions) and typed edges, and on each function the places in the
 world its calls touch. Everything between parsing and drawing is `Graph → Graph`.
 **Picture** is geometry: positions, shapes, labels. **Source** is a span of text.
@@ -271,7 +275,7 @@ call says. In the JSON a file's direction is part of its kind (`disk_read`, `dis
 `resource` or `prompt` on a value ty types as a tool server, whatever the value is called), a router's
 registration calls (`app.get("/x", handler)`, at the prefixes of `app.route("/api", sub)`;
 an inline handler is a function named by its route), `[project.scripts]`, `package.json`
-`bin` and the scripts that run a file of the package, Makefile targets (recipes resolved to the commands they run),
+`bin` and the scripts that run a file of the package, Makefile targets (a recipe's line resolved to the program the project installs that it runs, a Python script, a crate's binary or an npm `bin`, and to the subcommand it hands that program when the program has one by that name),
 the project's scripts and notebooks at any depth (every `.py` and `.ipynb` outside the package,
 its tests, what git ignores and another package or project inside it), and what
 a package exports (`__all__` or the public names its root `__init__.py` binds, and the

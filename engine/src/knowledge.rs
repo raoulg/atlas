@@ -342,7 +342,7 @@ pub const RUST_FS_WRITES: &[&str] = &[
     "set_permissions",
 ];
 pub const RUST_PATH_READS: &[&str] = &["exists", "try_exists", "is_file", "is_dir", "read_dir", "canonicalize", "symlink_metadata"];
-pub const RUST_FILE_TREES: &[&str] = &["walkdir", "WalkDir", "glob", "notify", "git2", "gix"];
+pub const RUST_FILE_TREES: &[&str] = &["walkdir", "WalkDir", "ignore", "glob", "notify", "git2", "gix"];
 pub const RUST_COMMAND: &str = "Command";
 pub const RUST_SCREEN_MACROS: &[&str] = &["println", "print", "eprintln", "eprint"];
 

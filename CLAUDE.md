@@ -41,7 +41,7 @@ The rigorous half and the visual half are the same structure. Read `docs/design.
   mind, the code is what changes. If a view only works because of a special case, it is
   wrong.
 - **Atlas is its own first subject.** `atlas view .` must read as the algebra:
-  `Disk(repo) → Language.parse → Graph → Flow → View → File(html) → open`. When the
+  `Disk(repo) → Repo.read → Repo → Language.parse → Graph → Flow → View → File(html) → open`. When the
   self-picture shows a box the algebra does not have, the code changes, not the
   picture. `cargo test` pins the self-picture.
 - **If the code is good, the picture is good, automatically.** Views are computed
@@ -80,6 +80,10 @@ The rigorous half and the visual half are the same structure. Read `docs/design.
   URLs to the callers and placing them (`paths.rs`), exports and route prefixes (`builder.rs`,
   `entries.rs`), `method_of` and `foreign_type` (`builder.rs`). Each reader's `link_calls` only
   says in which order its steps run.
+- `engine/src/repo.rs` is the one place the engine reads a repository: the listing once (with the
+  `ignore` crate: no hidden directory, nothing git ignores, no dependency or build directory), a
+  file's text once, when a reader first asks. Readers, parts and the Makefile take the `Repo`, never
+  the disk; a part is a view of the same reading. Library code is the environment's, read by ty.
 - What Atlas knows of libraries and frameworks is a table in `engine/src/knowledge.rs`, one per
   kind of fact; a reader looks it up and never tests a library's name in its control flow
   (`engine/tests/readers.rs` checks both this and that no project's name stands in the engine).

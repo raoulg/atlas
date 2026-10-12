@@ -4,6 +4,7 @@
 use std::path::PathBuf;
 
 use atlas_engine::parts::{analyze_parts, analyze_repo, roots};
+use atlas_engine::repo::Repo;
 use atlas_engine::{EdgeKind, EntryKind, Graph, Options};
 
 fn fixture() -> PathBuf {
@@ -22,10 +23,10 @@ fn label(g: &Graph, id: &str) -> String {
 /// are not parts of their own.
 #[test]
 fn every_manifest_roots_a_part() {
-    let found: Vec<(String, &str)> = roots(&fixture(), &Options::default()).into_iter().map(|(d, l)| (d.file_name().unwrap().to_string_lossy().to_string(), l)).collect();
+    let found: Vec<(String, &str)> = roots(&Repo::read(&fixture(), &[]).unwrap(), &Options::default()).into_iter().map(|(d, l)| (d.file_name().unwrap().to_string_lossy().to_string(), l)).collect();
     assert_eq!(found, [("fixture-parts".to_string(), "python"), ("web".to_string(), "typescript")]);
     let atlas = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
-    assert_eq!(roots(&atlas, &Options::default()).len(), 1, "the workspace is one root; engine/tests holds data");
+    assert_eq!(roots(&Repo::read(&atlas, &[]).unwrap(), &Options::default()).len(), 1, "the workspace is one root; engine/tests holds data");
 }
 
 /// The parts side by side in one graph, every node in its part; checked part by part.

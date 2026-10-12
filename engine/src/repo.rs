@@ -1,0 +1,164 @@
+//! `Disk(repo) -> read -> Repo`: the one place the engine reads a repository. The listing is read
+//! once (what the author wrote: not a hidden directory, not what git ignores, not a dependency or
+//! a build), with the files named on the command line beside it; a file's text is read once,
+//! when a reader first asks for it. A part of the repository is a view of the same reading.
+//!
+//! What a library's code and its types are is the environment's, read by ty, not the repository.
+
+use std::collections::{BTreeSet, HashMap};
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
+
+use anyhow::Result;
+
+/// Directories no author writes in, never walked: dependencies and a build's output.
+const NEVER: &[&str] = &["node_modules", "target", "site-packages", "__pycache__"];
+
+struct Listing {
+    files: BTreeSet<PathBuf>,
+    dirs: BTreeSet<PathBuf>,
+    /// The files named on the command line.
+    named: BTreeSet<PathBuf>,
+    texts: Mutex<HashMap<PathBuf, Arc<Vec<u8>>>>,
+}
+
+/// A repository, or a part of one, as read.
+#[derive(Clone)]
+pub struct Repo {
+    /// The directory as the caller named it: the paths the graph writes start here.
+    root: PathBuf,
+    /// Where it stands in the listing.
+    at: PathBuf,
+    listing: Arc<Listing>,
+}
+
+impl Repo {
+    /// Read the listing of `dir`, and the files of `named` (canonical) under it, wherever git
+    /// ignores them.
+    pub fn read(dir: &Path, named: &[PathBuf]) -> Result<Repo> {
+        let mut files = BTreeSet::new();
+        let mut dirs = BTreeSet::new();
+        let walk = ignore::WalkBuilder::new(dir)
+            .require_git(false)
+            .git_global(false)
+            .filter_entry(|e| e.depth() == 0 || !(e.file_type().map_or(false, |t| t.is_dir()) && NEVER.contains(&e.file_name().to_str().unwrap_or(""))))
+            .build();
+        for e in walk.flatten() {
+            let Ok(rel) = e.path().strip_prefix(dir) else { continue };
+            match e.file_type() {
+                Some(t) if t.is_dir() => dirs.insert(rel.to_path_buf()),
+                Some(t) if t.is_file() => files.insert(rel.to_path_buf()),
+                _ => false,
+            };
+        }
+        let mut listed = BTreeSet::new();
+        if let Ok(d) = std::fs::canonicalize(dir) {
+            for f in named {
+                if let Ok(rel) = f.strip_prefix(&d) {
+                    listed.insert(rel.to_path_buf());
+                    files.insert(rel.to_path_buf());
+                    dirs.extend(rel.ancestors().skip(1).filter(|a| !a.as_os_str().is_empty()).map(Path::to_path_buf));
+                }
+            }
+        }
+        dirs.insert(PathBuf::new());
+        let listing = Listing { files, dirs, named: listed, texts: Mutex::new(HashMap::new()) };
+        Ok(Repo { root: dir.to_path_buf(), at: PathBuf::new(), listing: Arc::new(listing) })
+    }
+
+    /// The directory, as the caller named it.
+    pub fn root(&self) -> &Path {
+        &self.root
+    }
+
+    /// The directory's own name: `atlas` for `.` read in `~/code/atlas`.
+    pub fn name(&self) -> Option<String> {
+        std::fs::canonicalize(&self.root).ok().and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_string()))
+    }
+
+    /// The part of the repository under `rel`, read in the same reading.
+    pub fn under(&self, rel: &Path) -> Repo {
+        if rel.as_os_str().is_empty() {
+            return self.clone();
+        }
+        Repo { root: self.root.join(rel), at: self.at.join(rel), listing: self.listing.clone() }
+    }
+
+    /// Where a path the caller writes from the root stands in the listing: `root/x` and `x` alike.
+    fn key(&self, p: &Path) -> PathBuf {
+        let rel = p.strip_prefix(&self.root).unwrap_or(p);
+        normal(&self.at.join(rel))
+    }
+
+    pub fn is_file(&self, p: impl AsRef<Path>) -> bool {
+        self.listing.files.contains(&self.key(p.as_ref()))
+    }
+
+    pub fn is_dir(&self, p: impl AsRef<Path>) -> bool {
+        self.listing.dirs.contains(&self.key(p.as_ref()))
+    }
+
+    pub fn exists(&self, p: impl AsRef<Path>) -> bool {
+        self.is_file(p.as_ref()) || self.is_dir(p.as_ref())
+    }
+
+    /// A file's bytes, read once.
+    pub fn bytes(&self, p: impl AsRef<Path>) -> Option<Arc<Vec<u8>>> {
+        let key = self.key(p.as_ref());
+        if !self.listing.files.contains(&key) {
+            return None;
+        }
+        let mut texts = self.listing.texts.lock().ok()?;
+        if let Some(t) = texts.get(&key) {
+            return Some(t.clone());
+        }
+        let bytes = Arc::new(std::fs::read(self.root.join(key.strip_prefix(&self.at).unwrap_or(&key))).ok()?);
+        texts.insert(key, bytes.clone());
+        Some(bytes)
+    }
+
+    /// A file's text, read once.
+    pub fn text(&self, p: impl AsRef<Path>) -> Option<String> {
+        self.bytes(p).map(|b| String::from_utf8_lossy(&b).into_owned())
+    }
+
+    /// Every file under `dir` (a path from the root), at any depth, as the root's path joined
+    /// with it, in order.
+    pub fn files_under(&self, dir: impl AsRef<Path>) -> Vec<PathBuf> {
+        let at = self.key(dir.as_ref());
+        self.listing.files.iter().filter(|f| f.starts_with(&at)).filter_map(|f| f.strip_prefix(&self.at).ok()).map(|f| self.root.join(f)).collect()
+    }
+
+    /// The directories right under `dir`, as the root's path joined with them, in order.
+    pub fn dirs_in(&self, dir: impl AsRef<Path>) -> Vec<PathBuf> {
+        let at = self.key(dir.as_ref());
+        self.listing.dirs.iter().filter(|d| d.parent() == Some(at.as_path()) && !d.as_os_str().is_empty()).filter_map(|d| d.strip_prefix(&self.at).ok()).map(|d| self.root.join(d)).collect()
+    }
+
+    /// The files named on the command line under the repository, as the root's path joined with
+    /// them.
+    pub fn named(&self) -> Vec<PathBuf> {
+        self.listing.named.iter().filter_map(|f| f.strip_prefix(&self.at).ok()).map(|f| self.root.join(f)).collect()
+    }
+
+    /// Whether a file is there: in the listing for a path under the repository, on the disk for
+    /// one above it (the project a package named on its own is in).
+    pub fn has(&self, p: &Path) -> bool {
+        let inside = p.starts_with(&self.root) || (p.is_relative() && !p.components().any(|c| c == std::path::Component::ParentDir) && self.root.is_relative());
+        match inside {
+            true => self.is_file(p),
+            false => p.is_file(),
+        }
+    }
+
+    /// Every directory under `dir`, at any depth and the directory itself, in order.
+    pub fn dirs_under(&self, dir: impl AsRef<Path>) -> Vec<PathBuf> {
+        let at = self.key(dir.as_ref());
+        self.listing.dirs.iter().filter(|d| d.starts_with(&at)).filter_map(|d| d.strip_prefix(&self.at).ok()).map(|d| self.root.join(d)).collect()
+    }
+}
+
+/// A path with its `.` parts taken out.
+fn normal(p: &Path) -> PathBuf {
+    p.components().filter(|c| !matches!(c, std::path::Component::CurDir)).collect()
+}

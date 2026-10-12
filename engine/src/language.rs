@@ -4,11 +4,11 @@
 //! module ids, how names resolve, which calls are boundaries, what counts as an entry
 //! point. The grammar itself is reused from tree-sitter.
 
-use std::path::Path;
 
 use anyhow::Result;
 
 use crate::model::{Graph, Leaves};
+use crate::repo::Repo;
 use crate::{entries, python, rust, typescript, Options};
 
 pub trait Language {
@@ -16,10 +16,10 @@ pub trait Language {
     /// The file that roots a part in the language.
     fn manifest(&self) -> &'static str;
     /// Does this repo look like one of mine?
-    fn detect(&self, repo: &Path, opts: &Options) -> bool;
+    fn detect(&self, repo: &Repo, opts: &Options) -> bool;
     /// `Disk(repo) -> Graph`: every file, its symbols, the calls and types between them, the
     /// routes into the program, and the calls that leave it.
-    fn parse(&self, repo: &Path, opts: &Options) -> Result<Graph>;
+    fn parse(&self, repo: &Repo, opts: &Options) -> Result<Graph>;
     /// What the language leaves its author to write.
     fn leaves(&self) -> Leaves;
 }
@@ -33,23 +33,28 @@ impl Language for Python {
     fn manifest(&self) -> &'static str {
         "pyproject.toml"
     }
-    fn detect(&self, repo: &Path, opts: &Options) -> bool {
-        repo.join("pyproject.toml").exists() || python::discover_package(repo).is_ok() || !python::named_under(repo, &opts.named).is_empty()
+    fn detect(&self, repo: &Repo, _opts: &Options) -> bool {
+        repo.is_file("pyproject.toml") || python::discover_package(repo).is_ok() || !repo.named().is_empty()
     }
-    fn parse(&self, repo: &Path, opts: &Options) -> Result<Graph> {
+    fn parse(&self, repo: &Repo, opts: &Options) -> Result<Graph> {
         // a project of scripts and notebooks has no package: a file named on the command line
         // in a folder without one, or a project file with none beside it
         let pkg_dir = match &opts.package {
             Some(p) => Some(p.clone()),
             None => match python::discover_package(repo) {
                 Ok(p) => Some(p),
-                Err(_) if repo.join("pyproject.toml").exists() || !python::named_under(repo, &opts.named).is_empty() => None,
+                Err(_) if repo.is_file("pyproject.toml") || !repo.named().is_empty() => None,
                 Err(e) => return Err(e),
             },
         };
-        let project_root = pkg_dir.as_deref().and_then(python::project_root).or_else(|| (repo.join("pyproject.toml").exists() || pkg_dir.is_none()).then(|| repo.to_path_buf()));
-        let (mut b, root) = python::parse(pkg_dir.as_deref(), project_root.as_deref(), opts)?;
-        entries::mark_scripts(&mut b, project_root.as_deref());
+        let project_root = pkg_dir.as_deref().and_then(|p| python::project_root(repo, p)).or_else(|| (repo.is_file("pyproject.toml") || pkg_dir.is_none()).then(|| repo.root().to_path_buf()));
+        // a package named on its own is read with the project it is in
+        let project = match &project_root {
+            Some(r) if !r.starts_with(repo.root()) => Repo::read(r, &opts.named)?,
+            _ => repo.clone(),
+        };
+        let (mut b, root) = python::parse(&project, pkg_dir.as_deref(), project_root.as_deref(), opts)?;
+        entries::mark_scripts(&project, &mut b, project_root.as_deref());
         Ok(b.finish(root, project_root.as_deref(), self.name()))
     }
     /// A signature may say nothing, and a package offers whatever its root binds unless
@@ -68,12 +73,12 @@ impl Language for Rust {
     fn manifest(&self) -> &'static str {
         "Cargo.toml"
     }
-    fn detect(&self, repo: &Path, _opts: &Options) -> bool {
-        repo.join("Cargo.toml").exists()
+    fn detect(&self, repo: &Repo, _opts: &Options) -> bool {
+        repo.is_file("Cargo.toml")
     }
-    fn parse(&self, repo: &Path, _opts: &Options) -> Result<Graph> {
+    fn parse(&self, repo: &Repo, _opts: &Options) -> Result<Graph> {
         let (b, root) = rust::parse(repo)?;
-        Ok(b.finish(root, Some(repo), self.name()))
+        Ok(b.finish(root, Some(repo.root()), self.name()))
     }
     /// The compiler asks for every type, and `pub` is the export.
     fn leaves(&self) -> Leaves {
@@ -90,12 +95,12 @@ impl Language for TypeScript {
     fn manifest(&self) -> &'static str {
         "package.json"
     }
-    fn detect(&self, repo: &Path, _opts: &Options) -> bool {
+    fn detect(&self, repo: &Repo, _opts: &Options) -> bool {
         typescript::detect(repo)
     }
-    fn parse(&self, repo: &Path, _opts: &Options) -> Result<Graph> {
+    fn parse(&self, repo: &Repo, _opts: &Options) -> Result<Graph> {
         let (b, root) = typescript::parse(repo)?;
-        Ok(b.finish(root, Some(repo), self.name()))
+        Ok(b.finish(root, Some(repo.root()), self.name()))
     }
     /// The compiler works out what a function gives, which a reader of its declaration does not
     /// see (`isolatedDeclarations` asks for it).
@@ -121,7 +126,7 @@ pub fn languages() -> Vec<Box<dyn Language>> {
 }
 
 /// The language a repo is written in; an explicit package directory means Python.
-pub fn detect(repo: &Path, opts: &Options) -> Option<Box<dyn Language>> {
+pub fn detect(repo: &Repo, opts: &Options) -> Option<Box<dyn Language>> {
     if opts.package.is_some() {
         return Some(Box::new(Python));
     }

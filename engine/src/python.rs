@@ -15,6 +15,7 @@ use walkdir::WalkDir;
 mod paths;
 
 use crate::body::{Crosses, Step, Steps};
+use crate::repo::Repo;
 use crate::effects::{self, Crossing};
 use crate::pytypes::{By, Facts, FileArg, Target, Ty, Types, Value};
 use paths::{At, Built, Eval};
@@ -267,10 +268,11 @@ fn new_parser() -> Result<Parser> {
     Ok(parser)
 }
 
-fn load_module(parser: &mut Parser, id: &str, path: &Path, is_pkg: bool) -> Result<Module> {
+/// A module from its text: a notebook's is the script its code cells make.
+fn load_module(parser: &mut Parser, id: &str, path: &Path, is_pkg: bool, text: &[u8]) -> Result<Module> {
     let src = match path.extension().and_then(|x| x.to_str()) {
-        Some("ipynb") => notebook_source(path)?.into_bytes(),
-        _ => std::fs::read(path).with_context(|| format!("reading {}", path.display()))?,
+        Some("ipynb") => notebook_source(&String::from_utf8_lossy(text)).with_context(|| format!("parsing {}", path.display()))?.into_bytes(),
+        _ => text.to_vec(),
     };
     let tree = parser.parse(&src, None).with_context(|| format!("parsing {}", path.display()))?;
     let package = if is_pkg { id.to_string() } else { id.rsplit_once('.').map(|x| x.0).unwrap_or(id).to_string() };
@@ -290,8 +292,8 @@ fn load_module(parser: &mut Parser, id: &str, path: &Path, is_pkg: bool) -> Resu
 /// so that a position in it is the same for both trees (a cell that starts with a cell magic
 /// is left out, as ty leaves it out). A line for IPython (`%matplotlib`, `!pip install`) becomes
 /// a comment of the same length, so the rest still parses as Python.
-fn notebook_source(path: &Path) -> Result<String> {
-    let nb = ruff_notebook::Notebook::from_path(path).map_err(|e| anyhow::anyhow!("parsing {}: {e}", path.display()))?;
+fn notebook_source(text: &str) -> Result<String> {
+    let nb = ruff_notebook::Notebook::from_source_code(text).map_err(|e| anyhow::anyhow!("{e}"))?;
     let lines: Vec<String> = nb
         .source_code()
         .split_inclusive('\n')
@@ -306,54 +308,46 @@ fn notebook_source(path: &Path) -> Result<String> {
     Ok(lines.concat())
 }
 
-/// The files of `named` (canonical) under `dir`, written from `dir` as the walk writes what it
-/// finds.
-pub fn named_under(dir: &Path, named: &[PathBuf]) -> Vec<PathBuf> {
-    let Ok(d) = std::fs::canonicalize(dir) else { return vec![] };
-    named.iter().filter_map(|f| f.strip_prefix(&d).ok().map(|r| dir.join(r))).collect()
-}
-
 /// The scripts and notebooks of a project: every `.py` and `.ipynb` outside its package, at any
 /// depth, and the files named on the command line, even where git ignores them. Not its tests,
 /// what git ignores, hidden directories or environments, and not another package or project
 /// inside it (a directory with an `__init__.py` or a `pyproject.toml`).
-fn scripts(root_dir: &Path, pkg_dir: Option<&Path>, named: &[PathBuf]) -> Vec<PathBuf> {
+fn scripts(repo: &Repo, root_dir: &Path, pkg_dir: Option<&Path>) -> Vec<PathBuf> {
+    let named: Vec<PathBuf> = repo.named().into_iter().filter(|p| p.starts_with(root_dir)).collect();
     // without a package or a project file, the project is the files named
-    if pkg_dir.is_none() && !root_dir.join("pyproject.toml").exists() {
-        return named_under(root_dir, named);
+    if pkg_dir.is_none() && !repo.has(&root_dir.join("pyproject.toml")) {
+        return named;
     }
-    let pkg = pkg_dir.map(|p| std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf())).unwrap_or_default();
-    let mut out: Vec<PathBuf> = ignore::WalkBuilder::new(root_dir)
-        .require_git(false)
-        .git_global(false)
-        .filter_entry(move |e| {
-            let (p, name) = (e.path(), e.file_name().to_str().unwrap_or(""));
-            let dir = e.file_type().map_or(false, |t| t.is_dir());
-            e.depth() == 0
-                || !dir
-                || !(knowledge::MADE_DIRS.contains(&name) || knowledge::TEST_DIRS.contains(&name) || std::fs::canonicalize(p).map_or(false, |c| c == pkg) || p.join("__init__.py").exists() || p.join("pyproject.toml").exists())
-        })
-        .build()
-        .flatten()
-        .map(|e| e.into_path())
-        .filter(|p| p.is_file() && matches!(p.extension().and_then(|x| x.to_str()), Some("py" | "ipynb")))
+    // what a tool made, tests, the package, and another package or project inside the project
+    let elsewhere = |d: &Path| {
+        let name = d.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        knowledge::MADE_DIRS.contains(&name) || knowledge::TEST_DIRS.contains(&name) || Some(d) == pkg_dir || repo.is_file(d.join("__init__.py")) || repo.is_file(d.join("pyproject.toml"))
+    };
+    let mut out: Vec<PathBuf> = repo
+        .files_under(root_dir)
+        .into_iter()
+        .filter(|p| matches!(p.extension().and_then(|x| x.to_str()), Some("py" | "ipynb")))
+        .filter(|p| !p.ancestors().skip(1).take_while(|a| *a != root_dir).any(elsewhere))
         .filter(|p| {
             let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
             !(name.starts_with("test_") || name.ends_with("_test.py") || name == "conftest.py")
         })
         .collect();
-    let found: HashSet<PathBuf> = out.iter().filter_map(|p| std::fs::canonicalize(p).ok()).collect();
-    out.extend(named_under(root_dir, named).into_iter().filter(|p| std::fs::canonicalize(p).map_or(false, |c| !found.contains(&c))));
+    for f in named {
+        if !out.contains(&f) {
+            out.push(f);
+        }
+    }
     out.sort();
     out
 }
 
 /// The nearest ancestor of the package that holds a `pyproject.toml`.
-pub fn project_root(pkg_dir: &Path) -> Option<PathBuf> {
+pub fn project_root(repo: &Repo, pkg_dir: &Path) -> Option<PathBuf> {
     let mut cur = Some(pkg_dir);
     for _ in 0..4 {
         let p = cur?;
-        if p.join("pyproject.toml").exists() {
+        if repo.has(&p.join("pyproject.toml")) {
             return Some(p.to_path_buf());
         }
         cur = p.parent();
@@ -362,29 +356,26 @@ pub fn project_root(pkg_dir: &Path) -> Option<PathBuf> {
 }
 
 /// The importable package inside a repo: `src/<pkg>` or `<pkg>/`, the first with an `__init__.py`.
-pub fn discover_package(repo: &Path) -> Result<PathBuf> {
-    if repo.join("__init__.py").exists() {
-        return Ok(repo.to_path_buf());
+pub fn discover_package(repo: &Repo) -> Result<PathBuf> {
+    if repo.is_file("__init__.py") {
+        return Ok(repo.root().to_path_buf());
     }
-    for base in [repo.join("src"), repo.to_path_buf()] {
-        let Ok(rd) = std::fs::read_dir(&base) else { continue };
-        let mut dirs: Vec<PathBuf> = rd.flatten().map(|e| e.path()).filter(|p| p.is_dir()).collect();
-        dirs.sort();
-        for d in dirs {
+    for base in ["src", ""] {
+        for d in repo.dirs_in(base) {
             let name = d.file_name().and_then(|n| n.to_str()).unwrap_or("");
             if name.starts_with('.') || ["tests", "test", "node_modules", "docs"].contains(&name) {
                 continue;
             }
-            if d.join("__init__.py").exists() {
+            if repo.is_file(d.join("__init__.py")) {
                 return Ok(d);
             }
         }
     }
-    anyhow::bail!("no Python package found under {} (looked for src/<pkg>/__init__.py and <pkg>/__init__.py)", repo.display())
+    anyhow::bail!("no Python package found under {} (looked for src/<pkg>/__init__.py and <pkg>/__init__.py)", repo.root().display())
 }
 
 /// Parse a package (and the scripts next to it) into a `GraphBuilder`. Returns the store and the root package name.
-pub fn parse(pkg_dir: Option<&Path>, project_root: Option<&Path>, opts: &crate::Options) -> Result<(GraphBuilder, String)> {
+pub fn parse(repo: &Repo, pkg_dir: Option<&Path>, project_root: Option<&Path>, opts: &crate::Options) -> Result<(GraphBuilder, String)> {
     // a project without a package is named after its folder
     let named = pkg_dir.or(project_root).context("no package and no project")?;
     let named = std::fs::canonicalize(named).unwrap_or_else(|_| named.to_path_buf());
@@ -393,18 +384,7 @@ pub fn parse(pkg_dir: Option<&Path>, project_root: Option<&Path>, opts: &crate::
     let mut modules: IndexMap<String, Module> = IndexMap::new();
     let mut store = GraphBuilder::default();
 
-    let mut files: Vec<PathBuf> = pkg_dir
-        .into_iter()
-        .flat_map(|d| {
-            WalkDir::new(d).into_iter().filter_entry(|e| {
-                let n = e.file_name().to_str().unwrap_or("");
-                !(n.starts_with('.') || n == "__pycache__")
-            })
-        })
-        .flatten()
-        .filter(|e| e.file_type().is_file() && e.path().extension().and_then(|x| x.to_str()) == Some("py"))
-        .map(|e| e.path().to_path_buf())
-        .collect();
+    let mut files: Vec<PathBuf> = pkg_dir.into_iter().flat_map(|d| repo.files_under(d)).filter(|p| p.extension().and_then(|x| x.to_str()) == Some("py")).collect();
     files.sort();
     let base = pkg_dir.and_then(Path::parent).unwrap_or(Path::new(""));
     for p in files {
@@ -415,7 +395,7 @@ pub fn parse(pkg_dir: Option<&Path>, project_root: Option<&Path>, opts: &crate::
             parts.pop();
         }
         let mid = parts.join(".");
-        let m = load_module(&mut parser, &mid, &p, is_pkg)?;
+        let m = load_module(&mut parser, &mid, &p, is_pkg, &repo.bytes(&p).with_context(|| format!("reading {}", p.display()))?)?;
         store.files.insert(crate::tree::path_str(&p), String::from_utf8_lossy(&m.src).to_string());
         store.add_node(Node {
             id: mid.clone(),
@@ -432,7 +412,7 @@ pub fn parse(pkg_dir: Option<&Path>, project_root: Option<&Path>, opts: &crate::
     }
     // the project's scripts and notebooks are routes into the package
     if let Some(root_dir) = project_root {
-        for p in scripts(root_dir, pkg_dir, &opts.named) {
+        for p in scripts(repo, root_dir, pkg_dir) {
             let rel = p.strip_prefix(root_dir).unwrap_or(&p).to_path_buf();
             let stem = p.file_stem().and_then(|s| s.to_str()).unwrap_or("script").to_string();
             // a dot in a file's name is no module boundary
@@ -441,7 +421,7 @@ pub fn parse(pkg_dir: Option<&Path>, project_root: Option<&Path>, opts: &crate::
                 false => format!("{}.{}", dirs.join("."), stem.replace('.', "_")),
                 true => format!("_root.{}", stem.replace('.', "_")),
             };
-            let m = load_module(&mut parser, &mid, &p, false)?;
+            let m = load_module(&mut parser, &mid, &p, false, &repo.bytes(&p).with_context(|| format!("reading {}", p.display()))?)?;
             store.files.insert(crate::tree::path_str(&p), String::from_utf8_lossy(&m.src).to_string());
             store.add_node(Node {
                 id: mid.clone(),
@@ -504,7 +484,9 @@ fn read_libraries(parser: &mut Parser, modules: &mut IndexMap<String, Module>, s
             // a library in the project's environment is named from the project, like its own files
             let shown = path.strip_prefix(&here).map(|r| root_dir.join(r)).unwrap_or_else(|_| path.clone());
             let is_pkg = path.file_stem().and_then(|s| s.to_str()) == Some("__init__");
-            let Ok(m) = load_module(parser, &mid, &shown, is_pkg) else { continue };
+            // a library's code is the environment's, not the repository's
+            let Ok(text) = std::fs::read(&path) else { continue };
+            let Ok(m) = load_module(parser, &mid, &shown, is_pkg, &text) else { continue };
             store.files.insert(crate::tree::path_str(&shown), String::from_utf8_lossy(&m.src).to_string());
             store.add_node(Node {
                 id: mid.clone(),

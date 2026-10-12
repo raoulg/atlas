@@ -12,7 +12,6 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use indexmap::IndexMap;
 use tree_sitter::{Node as TsNode, Parser, Tree};
-use walkdir::WalkDir;
 
 mod paths;
 
@@ -21,6 +20,7 @@ use paths::{Arg, At, Eval};
 use crate::builder::{foreign_type, ClassInfo, GraphBuilder, SigInfo};
 use crate::knowledge::OwnTypes;
 use crate::body::{Crosses, Step, Steps};
+use crate::repo::Repo;
 use crate::knowledge;
 use crate::effects::{self, Crossing};
 use crate::model::{EdgeKind, Entry, EntryKind, Held, Node, NodeKind, Param, Returns, Touch, World};
@@ -72,8 +72,8 @@ struct Module {
 
 /// Does this look like a JavaScript or TypeScript package: a `package.json` with a
 /// `tsconfig.json`, a `jsconfig.json` or a `src/` beside it.
-pub fn detect(repo: &Path) -> bool {
-    repo.join("package.json").exists() && (repo.join("tsconfig.json").exists() || repo.join("jsconfig.json").exists() || repo.join("src").is_dir())
+pub fn detect(repo: &Repo) -> bool {
+    repo.is_file("package.json") && (repo.is_file("tsconfig.json") || repo.is_file("jsconfig.json") || repo.is_dir("src"))
 }
 
 fn ts_parser(tsx: bool) -> Result<Parser> {
@@ -84,9 +84,8 @@ fn ts_parser(tsx: bool) -> Result<Parser> {
 }
 
 /// The package's name for the graph: its directory, as Python's is its package directory.
-fn root_name(repo: &Path) -> String {
-    let dir = std::fs::canonicalize(repo).ok().and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_string())).unwrap_or_else(|| "app".into());
-    segment(&dir)
+fn root_name(repo: &Repo) -> String {
+    segment(&repo.name().unwrap_or_else(|| "app".into()))
 }
 
 /// A path segment as part of a dotted id: dots inside a file name (`punt.functions`) are not
@@ -96,9 +95,8 @@ fn segment(s: &str) -> String {
 }
 
 /// Where module paths start: `src/` when there is one.
-fn code_base(repo: &Path) -> PathBuf {
-    let src = repo.join("src");
-    if src.is_dir() { src } else { repo.to_path_buf() }
+fn code_base(repo: &Repo) -> PathBuf {
+    if repo.is_dir("src") { repo.root().join("src") } else { repo.root().to_path_buf() }
 }
 
 fn is_code(p: &Path) -> bool {
@@ -120,13 +118,13 @@ fn module_id(root: &str, base: &Path, path: &Path) -> String {
 }
 
 /// tsconfig `paths`: alias prefix -> directory, `"@/*": ["./src/*"]` -> (`@/`, `<repo>/src/`).
-fn path_aliases(repo: &Path) -> Vec<(String, PathBuf)> {
+fn path_aliases(repo: &Repo) -> Vec<(String, PathBuf)> {
     let mut out = vec![];
     for cfg in ["tsconfig.json", "jsconfig.json"] {
-        let Ok(text) = std::fs::read_to_string(repo.join(cfg)) else { continue };
+        let Some(text) = repo.text(cfg) else { continue };
         let Ok(json) = serde_json::from_str::<serde_json::Value>(&jsonc(&text)) else { continue };
         let opts = &json["compilerOptions"];
-        let base = repo.join(opts["baseUrl"].as_str().unwrap_or("."));
+        let base = repo.root().join(opts["baseUrl"].as_str().unwrap_or("."));
         if let Some(paths) = opts["paths"].as_object() {
             for (alias, targets) in paths {
                 let Some(first) = targets.as_array().and_then(|t| t.first()).and_then(|t| t.as_str()) else { continue };
@@ -342,21 +340,14 @@ fn returns(rt: TsNode, src: &[u8]) -> Returns {
 
 // ---------- pass 1: files, symbols, imports ----------
 
-pub fn parse(repo: &Path) -> Result<(GraphBuilder, String)> {
+pub fn parse(repo: &Repo) -> Result<(GraphBuilder, String)> {
     let root = root_name(repo);
     let base = code_base(repo);
     let aliases = path_aliases(repo);
     let mut store = GraphBuilder::default();
-    let mut paths: Vec<PathBuf> = WalkDir::new(&base)
-        .into_iter()
-        .filter_entry(|e| {
-            let n = e.file_name().to_str().unwrap_or("");
-            e.depth() == 0 || !(n.starts_with('.') || knowledge::MADE_DIRS.contains(&n))
-        })
-        .flatten()
-        .filter(|e| e.file_type().is_file() && is_code(e.path()))
-        .map(|e| normalize(e.path()))
-        .collect();
+    // not under what a tool made
+    let made = |p: &Path| p.strip_prefix(&base).map_or(false, |r| r.components().any(|c| knowledge::MADE_DIRS.contains(&c.as_os_str().to_str().unwrap_or(""))));
+    let mut paths: Vec<PathBuf> = repo.files_under(&base).into_iter().filter(|p| is_code(p) && !made(p)).map(|p| normalize(&p)).collect();
     paths.sort();
     let files: HashMap<PathBuf, String> = paths.iter().map(|p| (p.clone(), module_id(&root, &base, p))).collect();
     // every directory is a package module, so the module quotient follows the folders
@@ -377,12 +368,12 @@ pub fn parse(repo: &Path) -> Result<(GraphBuilder, String)> {
     let (mut ts, mut tsx) = (ts_parser(false)?, ts_parser(true)?);
     for p in &paths {
         let id = files[p].clone();
-        let src = std::fs::read(p).with_context(|| format!("reading {}", p.display()))?;
+        let src = repo.bytes(p).with_context(|| format!("reading {}", p.display()))?.to_vec();
         let jsx = matches!(p.extension().and_then(|e| e.to_str()), Some("tsx" | "jsx" | "js" | "mjs" | "cjs"));
         let tree = (if jsx { &mut tsx } else { &mut ts }).parse(&src, None).with_context(|| format!("parsing {}", p.display()))?;
         store.files.insert(crate::tree::path_str(p), String::from_utf8_lossy(&src).to_string());
         let is_index = p.file_stem().and_then(|s| s.to_str()) == Some("index");
-        let rel = crate::tree::path_str(p.strip_prefix(repo).unwrap_or(p));
+        let rel = crate::tree::path_str(p.strip_prefix(repo.root()).unwrap_or(p));
         let entry = test_file(p).then(|| Entry { kind: EntryKind::Test, label: rel.clone() });
         let node = Node {
             id: id.clone(),
@@ -428,7 +419,7 @@ pub fn parse(repo: &Path) -> Result<(GraphBuilder, String)> {
     route_prefixes(&modules, &mut store);
     mark_bins(repo, &files, &mut store);
     mark_exports(repo, &files, &modules, &mut store);
-    link(&modules, &mut store, repo);
+    link(&modules, &mut store, repo.root());
     Ok((store, root))
 }
 
@@ -872,8 +863,9 @@ fn module_at(repo: &Path, path: &str, files: &HashMap<PathBuf, String>) -> Optio
 
 /// `package.json` `bin`, and each script that runs a file of the package (`tsx server/index.ts`):
 /// a command, a CLI route into the module it runs. Scripts that run one module name it together.
-fn mark_bins(repo: &Path, files: &HashMap<PathBuf, String>, store: &mut GraphBuilder) {
-    let Ok(text) = std::fs::read_to_string(repo.join("package.json")) else { return };
+fn mark_bins(repo: &Repo, files: &HashMap<PathBuf, String>, store: &mut GraphBuilder) {
+    let Some(text) = repo.text("package.json") else { return };
+    let repo = repo.root();
     let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) else { return };
     let bins: Vec<(String, String)> = match &json["bin"] {
         serde_json::Value::String(p) => vec![(json["name"].as_str().unwrap_or("bin").to_string(), p.clone())],
@@ -903,8 +895,9 @@ fn mark_bins(repo: &Path, files: &HashMap<PathBuf, String>, store: &mut GraphBui
 /// What a package exports is a route into it: the names its entry module exports, the module
 /// `package.json` points to (`exports`, `module`, `main`) or else the index at its root. A
 /// name re-exported is followed to where it is defined.
-fn mark_exports(repo: &Path, files: &HashMap<PathBuf, String>, modules: &IndexMap<String, Module>, store: &mut GraphBuilder) {
-    let json = std::fs::read_to_string(repo.join("package.json")).ok().and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok()).unwrap_or_default();
+fn mark_exports(repo: &Repo, files: &HashMap<PathBuf, String>, modules: &IndexMap<String, Module>, store: &mut GraphBuilder) {
+    let json = repo.text("package.json").and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok()).unwrap_or_default();
+    let repo = repo.root();
     let dot = |v: &serde_json::Value| -> Option<String> {
         match v {
             serde_json::Value::String(s) => Some(s.clone()),

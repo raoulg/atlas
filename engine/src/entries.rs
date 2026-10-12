@@ -8,6 +8,7 @@ use regex::Regex;
 
 use crate::model::{Entry, EntryKind, Graph, MakeTarget, NodeKind};
 use crate::builder::GraphBuilder;
+use crate::repo::Repo;
 
 fn deco_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
@@ -61,9 +62,9 @@ pub fn entry_of(decorators: &[String], name: &str) -> Option<Entry> {
 }
 
 /// `[project.scripts]` in the project's pyproject.toml are entry points too.
-pub fn mark_scripts(store: &mut GraphBuilder, project_root: Option<&Path>) {
+pub fn mark_scripts(repo: &Repo, store: &mut GraphBuilder, project_root: Option<&Path>) {
     let Some(root) = project_root else { return };
-    let Ok(text) = std::fs::read_to_string(root.join("pyproject.toml")) else { return };
+    let Some(text) = repo.text(root.join("pyproject.toml")) else { return };
     let Ok(doc) = text.parse::<toml::Table>() else { return };
     let Some(table) = doc.get("project").and_then(|p| p.get("scripts")).and_then(|s| s.as_table()) else {
         return;
@@ -89,13 +90,21 @@ pub fn mark_scripts(store: &mut GraphBuilder, project_root: Option<&Path>) {
 
 /// Makefile targets are the routes a developer actually uses: each becomes a `make:` entry
 /// whose steps are the CLI commands and other targets its recipe invokes.
-pub fn read_makefile(g: &mut Graph) {
+pub fn read_makefile(repo: &Repo, g: &mut Graph) {
     if g.project_root.is_empty() {
         return;
     }
     let root = Path::new(&g.project_root).to_path_buf();
-    let Ok(text) = std::fs::read_to_string(root.join("Makefile")) else { return };
-    let scripts = script_names(&root);
+    // the project a package named on its own is in
+    let project = match root.starts_with(repo.root()) {
+        true => repo.clone(),
+        false => match Repo::read(&root, &[]) {
+            Ok(r) => r,
+            Err(_) => return,
+        },
+    };
+    let Some(text) = project.text(root.join("Makefile")) else { return };
+    let scripts = programs(&project, &root);
     let target_re = Regex::new(r"^([A-Za-z0-9_-]+):(.*)$").unwrap();
     let mut targets: Vec<MakeTarget> = vec![];
     let mut open = false;
@@ -128,11 +137,13 @@ pub fn read_makefile(g: &mut Graph) {
         .iter()
         .filter_map(|n| n.entry.as_ref().filter(|e| e.kind == EntryKind::Cli).map(|e| (e.label.clone(), n.id.clone())))
         .collect();
+    // a program the project installs, run as a word or a path's last part, and the subcommand
+    // it is handed
     let script_re = if scripts.is_empty() {
         None
     } else {
         let names: Vec<String> = scripts.iter().map(|s| regex::escape(s)).collect();
-        Some(Regex::new(&format!(r"\b(?:{})\s+([a-z0-9][a-z0-9-]*)", names.join("|"))).unwrap())
+        Some(Regex::new(&format!(r"(?:^|[\s/])({})(?:\s+([a-z0-9][a-z0-9-]*))?(?:$|[\s;&|)])", names.join("|"))).unwrap())
     };
     let make_re = Regex::new(r"(?:\$\(MAKE\)|\bmake)\s+([A-Za-z0-9_-]+)").unwrap();
     let echo_re = Regex::new(r"^\s*@?echo\b").unwrap();
@@ -151,10 +162,10 @@ pub fn read_makefile(g: &mut Graph) {
             }
             if let Some(re) = &script_re {
                 for m in re.captures_iter(line) {
-                    if let Some(id) = cli.get(&m[1]) {
-                        if !seen.contains(id) {
-                            seen.push(id.clone());
-                        }
+                    // the subcommand when the program has one by that name, else the program
+                    let id = m.get(2).and_then(|sub| cli.get(sub.as_str())).or_else(|| cli.get(&m[1]));
+                    if let Some(id) = id.filter(|id| !seen.contains(id)) {
+                        seen.push(id.clone());
                     }
                 }
             }
@@ -171,9 +182,26 @@ pub fn read_makefile(g: &mut Graph) {
     g.make = targets.into_iter().filter(|t| !t.recipe.is_empty() || !t.calls.is_empty()).collect();
 }
 
-/// The commands a project installs (`[project.scripts]`), as a recipe would call them.
-fn script_names(root: &Path) -> Vec<String> {
-    let Ok(text) = std::fs::read_to_string(root.join("pyproject.toml")) else { return vec![] };
-    let Ok(doc) = text.parse::<toml::Table>() else { return vec![] };
-    doc.get("project").and_then(|p| p.get("scripts")).and_then(|s| s.as_table()).map(|t| t.keys().cloned().collect()).unwrap_or_default()
+/// The programs a project installs, by the names a recipe runs them by: a Python project's
+/// `[project.scripts]`, a crate's package and its binaries in `src/bin`, an npm package's `bin`.
+fn programs(repo: &Repo, root: &Path) -> Vec<String> {
+    let toml = |file: &str| repo.text(root.join(file)).and_then(|t| t.parse::<toml::Table>().ok());
+    let mut out: Vec<String> = vec![];
+    if let Some(doc) = toml("pyproject.toml") {
+        out.extend(doc.get("project").and_then(|p| p.get("scripts")).and_then(|s| s.as_table()).map(|t| t.keys().cloned().collect::<Vec<_>>()).unwrap_or_default());
+    }
+    if let Some(doc) = toml("Cargo.toml") {
+        out.extend(doc.get("package").and_then(|p| p.get("name")).and_then(|n| n.as_str()).map(str::to_string));
+        out.extend(repo.files_under(root.join("src/bin")).iter().filter(|p| p.extension().map_or(false, |e| e == "rs")).filter_map(|p| p.file_stem()?.to_str().map(str::to_string)));
+    }
+    if let Some(json) = repo.text(root.join("package.json")).and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok()) {
+        match &json["bin"] {
+            serde_json::Value::String(_) => out.extend(json["name"].as_str().map(str::to_string)),
+            serde_json::Value::Object(o) => out.extend(o.keys().cloned()),
+            _ => {}
+        }
+    }
+    out.sort();
+    out.dedup();
+    out
 }

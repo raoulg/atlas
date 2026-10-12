@@ -8,50 +8,56 @@ use std::sync::OnceLock;
 
 use anyhow::Result;
 use regex::Regex;
-use walkdir::WalkDir;
 
 use crate::model::{Edge, EdgeKind, EntryKind, Graph, NodeKind, Part};
+use crate::repo::Repo;
 use crate::{knowledge, Options};
 
 /// The directories whose manifests root a part: the repository itself, and every manifest
 /// below it in a language no enclosing part already reads (a workspace's member crates belong
 /// to the workspace).
-pub fn roots(repo: &Path, opts: &Options) -> Vec<(PathBuf, &'static str)> {
+pub fn roots(repo: &Repo, opts: &Options) -> Vec<(PathBuf, &'static str)> {
     let mut out: Vec<(PathBuf, &'static str)> = vec![];
-    let walk = WalkDir::new(repo).max_depth(5).sort_by_file_name().into_iter().filter_entry(|e| {
-        let n = e.file_name().to_str().unwrap_or("");
-        // no part is under what a tool made, or under tests and the data they read
-        e.depth() == 0 || !(n.starts_with('.') || knowledge::MADE_DIRS.contains(&n) || knowledge::TEST_DIRS.contains(&n))
-    });
-    for e in walk.flatten().filter(|e| e.file_type().is_dir()) {
+    // no part is under what a tool made, or under tests and the data they read, nor more than five levels down
+    let skipped = |d: &Path| {
+        let rel = d.strip_prefix(repo.root()).unwrap_or(d);
+        rel.components().count() > 5
+            || rel.components().any(|c| {
+                let n = c.as_os_str().to_str().unwrap_or("");
+                n.starts_with('.') || knowledge::MADE_DIRS.contains(&n) || knowledge::TEST_DIRS.contains(&n)
+            })
+    };
+    for d in repo.dirs_under("").into_iter().filter(|d| !skipped(d)) {
         for l in crate::language::languages() {
-            let inside = out.iter().any(|(d, name)| *name == l.name() && e.path().starts_with(d));
-            if e.path().join(l.manifest()).exists() && !inside {
-                out.push((e.path().to_path_buf(), l.name()));
+            let inside = out.iter().any(|(o, name)| *name == l.name() && d.starts_with(o));
+            if repo.is_file(d.join(l.manifest())) && !inside {
+                out.push((d.clone(), l.name()));
             }
         }
     }
     if out.is_empty() {
         if let Some(lang) = crate::language::detect(repo, &Options { package: None, ..opts.clone() }) {
-            out.push((repo.to_path_buf(), lang.name()));
+            out.push((repo.root().to_path_buf(), lang.name()));
         }
     }
     out
 }
 
-/// Each part's own graph, read in its language: what `atlas check` asks, part by part.
+/// Each part's own graph, read in its language: what `atlas check` asks, part by part. Each
+/// repository is read once; a part is a view of its reading.
 pub fn analyze_parts(repos: &[PathBuf], opts: &Options) -> Result<Vec<Graph>> {
-    let found: Vec<PathBuf> = repos.iter().flat_map(|r| roots(r, opts)).map(|(d, _)| d).collect();
+    let read: Vec<Repo> = repos.iter().map(|r| Repo::read(r, &opts.named)).collect::<Result<_>>()?;
+    let found: Vec<Repo> = read.iter().flat_map(|r| roots(r, opts).into_iter().map(|(d, _)| r.under(d.strip_prefix(r.root()).unwrap_or(&d)))).collect();
     if found.is_empty() {
         anyhow::bail!("no part found in {} ({})", repos.iter().map(|r| r.display().to_string()).collect::<Vec<_>>().join(", "), crate::language::looked_for());
     }
     let opts = Options { package: None, ..opts.clone() };
     let mut graphs = vec![];
-    for dir in &found {
-        match crate::analyze(dir, &opts) {
+    for part in &found {
+        match crate::graph_of(part, &opts) {
             Ok(g) => graphs.push(g),
             // a manifest without code of its own (tooling, a docs site) is not a part
-            Err(e) if found.len() > 1 => eprintln!("skipped {}: {e}", dir.display()),
+            Err(e) if found.len() > 1 => eprintln!("skipped {}: {e}", part.root().display()),
             Err(e) => return Err(e),
         }
     }

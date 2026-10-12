@@ -17,6 +17,7 @@ pub mod parts;
 pub mod paths;
 pub mod principles;
 pub mod remote;
+pub mod repo;
 pub mod python;
 pub mod pytypes;
 pub mod rust;
@@ -51,15 +52,21 @@ impl Default for Options {
     }
 }
 
-/// Parse a repository into its graph: `Disk(repo) -> Language.parse -> Graph`, then the
-/// routes its Makefile adds and its parts. Nothing about the repository is declared to Atlas:
-/// what the picture shows is what the code says. A repository whose parts are read in several
-/// languages is `parts::analyze_repo`.
-pub fn analyze(repo: &Path, opts: &Options) -> Result<Graph> {
+/// Read a repository into its graph: `Disk(repo) -> read -> Repo -> parse -> Graph`. Nothing
+/// about the repository is declared to Atlas: what the picture shows is what the code says. A
+/// repository whose parts are read in several languages is `parts::analyze_repo`.
+pub fn analyze(dir: &Path, opts: &Options) -> Result<Graph> {
+    let repo = repo::Repo::read(dir, &opts.named)?;
+    graph_of(&repo, opts)
+}
+
+/// The graph of a repository as read: parsed in its language, with the routes its Makefile adds
+/// and its parts, kept to what the program reaches.
+pub fn graph_of(repo: &repo::Repo, opts: &Options) -> Result<Graph> {
     let lang = language::detect(repo, opts)
-        .ok_or_else(|| anyhow::anyhow!("no language recognised in {} ({})", repo.display(), language::looked_for()))?;
+        .ok_or_else(|| anyhow::anyhow!("no language recognised in {} ({})", repo.root().display(), language::looked_for()))?;
     let mut g = lang.parse(repo, opts)?;
-    entries::read_makefile(&mut g);
+    entries::read_makefile(repo, &mut g);
     parts::assign(&mut g);
     Ok(view::View::apply(&view::reached(&g), &g))
 }

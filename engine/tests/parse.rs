@@ -317,25 +317,28 @@ fn rust_workspace_parses() {
     assert!(calls.contains(&("atlas.view".into(), "atlas.page".into())), "the command writes the page");
     assert!(calls.contains(&("atlas.page".into(), "atlas-engine.parts.analyze_repo".into())), "cli calls into the engine");
     assert!(calls.contains(&("atlas.page".into(), "atlas-engine.flow.of".into())), "the page is drawn from the Flow: Graph -> Flow -> File(html)");
-    assert!(calls.contains(&("atlas-engine.parts.analyze_parts".into(), "atlas-engine.analyze".into())), "each part is analyzed in its language");
+    assert!(calls.contains(&("atlas-engine.parts.analyze_parts".into(), "atlas-engine.graph_of".into())), "each part is analyzed in its language");
     assert!(calls.contains(&("atlas-engine.language.Rust.parse".into(), "atlas-engine.rust.parse".into())), "trait impl calls the module");
     let returns = edges(&g, EdgeKind::Returns);
     assert!(returns.contains(&("atlas-engine.analyze".into(), "atlas-engine.model.Graph".into())), "`pub use model::*` resolves Graph");
     // `let lang = language::detect(..)?; lang.parse(..)`: a local typed by the callee's return
-    assert!(calls.contains(&("atlas-engine.analyze".into(), "atlas-engine.language.Language.parse".into())));
+    assert!(calls.contains(&("atlas-engine.graph_of".into(), "atlas-engine.language.Language.parse".into())));
     // typed parameters give receivers a type: `store.add_edge(..)` with `store: &mut GraphBuilder`
     assert!(calls.contains(&("atlas-engine.python.collect_symbols".into(), "atlas-engine.builder.GraphBuilder.add_edge".into())));
-    assert!(boundaries(g.node("atlas-engine.rust.parse").unwrap()).get("disk_read").is_some(), "walkdir and fs::read");
-    let arts = |id: &str| g.node(id).unwrap().touches.iter().map(|t| (t.kind_name().to_string(), t.artifact.clone())).collect::<HashSet<_>>();
-    assert!(arts("atlas-engine.entries.read_makefile").contains(&("disk_read".into(), "Makefile".into())));
-    assert!(arts("atlas-engine.language.Python.detect").contains(&("disk_read".into(), "pyproject.toml".into())), "repo.join(..).exists()");
+    // the repository is read in one place, and a reader reads what was read
+    assert!(boundaries(g.node("atlas-engine.repo.Repo.read").unwrap()).get("disk_read").is_some(), "the listing");
+    assert!(boundaries(g.node("atlas-engine.repo.Repo.bytes").unwrap()).get("disk_read").is_some(), "a file's text, once");
+    for reader in ["atlas-engine.rust.parse", "atlas-engine.typescript.parse", "atlas-engine.entries.read_makefile", "atlas-engine.language.Python.detect"] {
+        assert!(!boundaries(g.node(reader).unwrap()).contains_key("disk_read"), "{reader} reads the Repo, not the disk");
+    }
     assert!(boundaries(g.node("atlas.view").unwrap()).contains_key("screen"), "eprintln!");
     let m = edges(&g, EdgeKind::Mutates);
     assert!(m.contains(&("atlas-engine.model.Graph.recount".into(), "atlas-engine.model.Graph".into())), "&mut self");
 }
 
-/// Atlas obeys its own algebra: the steps of `analyze` move data between the repo on disk, the
-/// `Options` of the reading, a `Language` and the `Graph`, and nothing else.
+/// Atlas obeys its own algebra: the steps of `analyze` move data between the repository as read
+/// (`Repo`), the `Options` of the reading, a `Language`, the `Graph` and a `View` of it, and
+/// nothing else.
 /// A new type between parse and Graph is a box the algebra does not have, and the code changes,
 /// not the picture.
 #[test]
@@ -344,13 +347,15 @@ fn atlas_reads_as_its_algebra() {
     let g = analyze(&repo, &Options::default()).expect("the Atlas workspace parses");
     let classes: HashSet<&str> = g.nodes.iter().filter(|n| n.kind == NodeKind::Class).map(|n| n.id.as_str()).collect();
     let name = |id: &str| id.rsplit('.').next().unwrap().to_string();
-    let steps: Vec<&str> = g.edges.iter().filter(|e| e.src == "atlas-engine.analyze" && e.kind == EdgeKind::Calls).map(|e| e.dst.as_str()).collect();
-    let short: Vec<&str> = steps.iter().map(|s| s.trim_start_matches("atlas-engine.")).collect();
-    assert_eq!(short, ["language.detect", "language.Language.parse", "entries.read_makefile", "parts.assign", "view.reached", "view.View.apply"], "analyze is its algebra, step by step");
+    let steps_of = |f: &str| g.edges.iter().filter(|e| e.src == f && e.kind == EdgeKind::Calls).map(|e| e.dst.as_str()).collect::<Vec<_>>();
+    let short = |steps: &[&str]| steps.iter().map(|s| s.trim_start_matches("atlas-engine.").to_string()).collect::<Vec<_>>();
+    assert_eq!(short(&steps_of("atlas-engine.analyze")), ["repo.Repo.read", "graph_of"], "analyze: Disk(repo) -> read -> Repo -> parse -> Graph");
+    let steps = steps_of("atlas-engine.graph_of");
+    assert_eq!(short(&steps), ["language.detect", "language.Language.parse", "entries.read_makefile", "parts.assign", "view.reached", "view.View.apply"], "the graph of what was read, step by step");
     for step in steps {
         for e in g.edges.iter().filter(|e| e.src == step && matches!(e.kind, EdgeKind::Takes | EdgeKind::Returns | EdgeKind::Mutates)) {
             if classes.contains(e.dst.as_str()) {
-                assert!(["Graph", "Language", "Options", "View"].contains(&name(&e.dst).as_str()), "{step} moves a {}: the algebra has no such place", e.dst);
+                assert!(["Repo", "Graph", "Language", "Options", "View"].contains(&name(&e.dst).as_str()), "{step} moves a {}: the algebra has no such place", e.dst);
             }
         }
     }
@@ -446,6 +451,8 @@ fn rust_is_read_by_rusts_semantics() {
     let entry = |id: &str| g.node(id).and_then(|n| n.entry.as_ref()).map(|e| (e.kind, e.label.clone()));
     assert_eq!(entry("handed.main.main"), Some((EntryKind::Cli, "handed".into())), "src/main.rs is the bin named after the crate");
     assert_eq!(entry("handed.bin.tool.main"), Some((EntryKind::Cli, "tool".into())), "src/bin/tool.rs");
+    let make = |t: &str| g.make.iter().find(|m| m.label == t).map(|m| m.calls.clone()).unwrap_or_default();
+    assert_eq!((make("run"), make("tool")), (vec!["handed.main.main".to_string()], vec!["handed.bin.tool.main".to_string()]), "a recipe runs the crate's binaries by name");
     assert_eq!(entry("handed.doubled"), Some((EntryKind::Export, "doubled".into())), "the lib keeps its exports beside a bin");
     assert_eq!(entry("handed.shapes.Shape"), Some((EntryKind::Export, "Shape".into())), "`pub use shapes::Shape` from a private module");
     assert_eq!(entry("handed.world.fetch"), Some((EntryKind::Export, "world::fetch".into())), "`pub mod world`");
@@ -527,12 +534,12 @@ fn a_door_reaches_a_service() {
 fn a_rust_body_lists_its_calls() {
     let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
     let g = analyze(&repo, &Options::default()).expect("the Atlas workspace parses");
-    let analyze_fn = g.nodes.iter().find(|n| n.id == "atlas-engine.analyze").unwrap();
+    let analyze_fn = g.nodes.iter().find(|n| n.id == "atlas-engine.graph_of").unwrap();
     let step = |to: &str| analyze_fn.sites.iter().find(|s| s.to == to).unwrap_or_else(|| panic!("{to} in {:#?}", analyze_fn.sites));
     let held = |ty: &str, name: &str| atlas_engine::Held::new(ty, name);
     assert_eq!(step("atlas-engine.language.Language.parse").gives, [held("atlas-engine.model.Graph", "g")], "a method gives what it returns, not its receiver's type");
     let detect = step("atlas-engine.language.detect");
-    assert_eq!(detect.hands, [held("atlas-engine.Options", "opts")], "the repository is a path, not a value of the package");
+    assert_eq!(detect.hands, [held("atlas-engine.repo.Repo", "repo"), held("atlas-engine.Options", "opts")], "the repository is a value: what was read");
     let order: Vec<&str> = analyze_fn.sites.iter().map(|s| s.to.as_str()).collect();
     assert!(order.iter().position(|t| *t == "atlas-engine.entries.read_makefile") < order.iter().position(|t| *t == "atlas-engine.parts.assign"), "{order:?}");
 }
@@ -567,7 +574,7 @@ fn a_call_inside_a_call_is_composition() {
 
     // `let lang = language::detect(repo, opts).ok_or_else(..)?`: the unwrapping is an identity
     let atlas = analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(".."), &Options::default()).unwrap();
-    let analyze_steps: Vec<&str> = atlas.node("atlas-engine.analyze").unwrap().sites.iter().map(|s| if s.to.is_empty() { s.op.as_str() } else { s.to.as_str() }).collect();
+    let analyze_steps: Vec<&str> = atlas.node("atlas-engine.graph_of").unwrap().sites.iter().map(|s| if s.to.is_empty() { s.op.as_str() } else { s.to.as_str() }).collect();
     assert_eq!(analyze_steps, ["atlas-engine.language.detect", "atlas-engine.language.Language.parse", "atlas-engine.entries.read_makefile", "atlas-engine.parts.assign", "atlas-engine.view.reached", "atlas-engine.view.View.apply"]);
 }
 
