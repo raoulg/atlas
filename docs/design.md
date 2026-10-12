@@ -76,7 +76,7 @@ Nothing about rkg, vectormesh or Atlas is hard-coded, and a project declares not
 Atlas, so that Atlas cannot flatter the repos it was built on. Where the picture differs
 from the design the author has in mind, the code is what changes.
 
-**view: Graph → Graph.** The whole middle of Atlas. Views compose, so a view spec is
+**view: Flow → Flow.** The whole middle of Atlas. Views compose, so a view spec is
 a list of views, and the order is meaning: fiber and quotient do not commute in
 general. A view only reads: it is the `get` of a lens with no `put`. Two families and
 nothing else:
@@ -89,6 +89,33 @@ nothing else:
   refinement order, so "zoom in" is replacing a quotient by a finer one and "zoom
   out" by a coarser one. The quotients of a graph form a lattice; browsing is
   walking it.
+
+**A view is data.** The code has hierarchies, each a forest the engine reads: parts into
+packages into modules (`flow.units`), a route's steps into their bodies (`flow.bodies`),
+families into their members (`flow.types`), a coarse place into the places it stands for, a
+directory into its files. A zoom is an *order ideal* of such a forest: the set of nodes opened,
+closed downwards (what is opened inside a closed box does not show). Its cut, the nodes
+reached but not opened, is a partition of what the forest holds, so every ideal is a quotient,
+zooming in adds one node to the ideal and zooming out takes a maximal one away. The ideals of a
+forest form a distributive lattice (Birkhoff), and ideals of two forests (packages and families)
+meet in their common refinement, so any combination of zooms is one picture.
+
+A view is its fibers and its ideals: `{route, kind, part, focus, open: {parts, units, steps,
+functions, families, places, dirs}}`. The page writes it to its address after every drawing, so
+a picture is a link, and `atlas view --view` and the MCP tool `view` draw a page in a view an
+agent wrote. A step opens by its path through the route (`pkg.cli.build/2`, the third call of
+`build`) or, for whoever names functions rather than calls, every step of a function at once
+(`open.functions`). The page applies the fibers first, then the quotients by the ideals' cuts.
+
+**When order matters.** For a quotient `q` by an equivalence `~` and a fiber by a predicate
+`p`, filtering then grouping and grouping then filtering give the same picture exactly when `p`
+is *saturated* by `~`: constant on every class, so that no class is cut in two. Keeping one part
+is saturated by the package quotient (a package lies in one part), so its place in a view is
+free. Hiding private names is not saturated by the module quotient (a module holds both), and
+neither is a focus by the zoom that closes the focus's parent: there the order is meaning, and
+Atlas takes the fiber first, so the reader decides what exists before the quotient decides how
+it groups. One quotient is still chosen by the picture rather than the reader: files fold into
+their directories when there are more than a column holds.
 
 **layout: Graph → Picture.** The only place geometry exists: columns, outline,
 inheritance forest, layered flow. Nothing upstream knows about pixels.
@@ -406,8 +433,8 @@ than two clicks from the code.
 
 ## 7. Open questions
 
-1. Fiber and quotient do not commute. Is "fiber, then quotient" the only order a
-   view list may use, or do both orders have a reading?
+1. Files fold into directories by how many a column holds: a default the layout chooses.
+   Which default ideal of the file tree follows from the code instead?
 2. Is the package the right unit for colour, or is the base type?
 3. Editing: probably never. "Open in editor" as a deep link should be enough.
 4. The browser as a resting place: a click in `apps/plusmin` is an arrow into an
