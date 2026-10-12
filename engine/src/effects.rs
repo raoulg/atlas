@@ -34,7 +34,7 @@ const HUB_HOST: &str = "huggingface.co";
 const HF_LOADERS: &[&str] = &["csv", "json", "parquet", "text", "arrow", "pandas", "imagefolder", "audiofolder", "videofolder", "webdataset", "xml", "sql"];
 const FILE_PKGS: &[&str] = &[
     "json", "yaml", "pickle", "csv", "tarfile", "zipfile", "shutil", "os", "pathlib", "pandas",
-    "geopandas", "numpy", "rasterio", "lxml", "PIL", "matplotlib", "plt", "ruamel", "np", "pd",
+    "geopandas", "numpy", "rasterio", "lxml", "PIL", "matplotlib", "ruamel",
 ];
 const READ_BOUND: &[&str] = &[
     "read_text", "read_bytes", "read_csv", "read_parquet", "read_file", "read_json", "read_excel",

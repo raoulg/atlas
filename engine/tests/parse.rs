@@ -171,6 +171,10 @@ fn entry_points_from_decorators_scripts_and_makefile() {
     assert_eq!(entry("fixture.cli.build").label, "build");
     assert_eq!(entry("fixture.cli.cmd_report").label, "report");
     assert_eq!(entry("fixture.cli.main").label, "fixture", "[project.scripts]");
+    // a tool server's tools, by the type of the value its decorators are on, not by its name
+    assert_eq!((entry("fixture.cli.describe").kind, entry("fixture.cli.describe").label), (EntryKind::Mcp, "describe".to_string()));
+    assert_eq!(entry("fixture.cli.summarise").label, "summary");
+    assert!(g.node("fixture.cli.kept").unwrap().entry.is_none(), "`mcp_prompts` is no tool server");
     // what the package exports at its root (`__all__`) are routes into it as a library
     assert_eq!(entry("fixture.schema.Graph").kind, EntryKind::Export);
     assert_eq!(entry("fixture.sinks.base.Sink").label, "Sink", "exported by the root and by `sinks`: the root's label");

@@ -119,7 +119,7 @@ fn is_code(p: &Path) -> bool {
     EXTENSIONS.contains(&ext) && !name.ends_with(".d.ts") && !name.contains(".gen.") && !name.contains(".min.") && !name.contains(".config.")
 }
 
-/// `src/lib/kaart/lagen.ts` -> `plusmin.lib.kaart.lagen`; `src/lib/index.ts` -> `plusmin.lib`.
+/// `src/lib/map/layers.ts` -> `app.lib.map.layers`; `src/lib/index.ts` -> `app.lib`.
 fn module_id(root: &str, base: &Path, path: &Path) -> String {
     let rel = path.strip_prefix(base).unwrap_or(path);
     let mut parts: Vec<String> = rel.parent().map(|d| d.components().map(|c| segment(&c.as_os_str().to_string_lossy())).collect()).unwrap_or_default();
@@ -490,7 +490,7 @@ fn function_in<'t>(value: TsNode<'t>) -> Option<TsNode<'t>> {
     }
 }
 
-/// The path of the file route a declaration makes: `createFileRoute("/kaart")({..})`.
+/// The path of the file route a declaration makes: `createFileRoute("/map")({..})`.
 fn route_path(value: TsNode, src: &[u8]) -> Option<String> {
     walk(value, &["call_expression"]).into_iter().find_map(|c| {
         let f = c.child_by_field_name("function")?;

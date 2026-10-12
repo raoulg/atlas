@@ -51,15 +51,12 @@ pub fn entry_of(decorators: &[String], name: &str) -> Option<Entry> {
         let parts: Vec<&str> = dn.split('.').collect();
         let last = *parts.last().unwrap_or(&"");
         if last == "command" {
-            let label = arg.unwrap_or_else(|| name.strip_prefix("cmd_").unwrap_or(name).replace('_', "-"));
+            let label = arg.unwrap_or_else(|| name.replace('_', "-"));
             return Some(Entry { kind: EntryKind::Cli, label });
         }
         if HTTP_METHODS.contains(&last) && parts.len() == 2 {
             let label = format!("{} {}", last.to_uppercase(), arg.unwrap_or_default()).trim().to_string();
             return Some(Entry { kind: EntryKind::Route, label });
-        }
-        if ["tool", "resource", "prompt"].contains(&last) && dn.to_lowercase().contains("mcp") {
-            return Some(Entry { kind: EntryKind::Mcp, label: arg.unwrap_or_else(|| name.to_string()) });
         }
     }
     None

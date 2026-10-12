@@ -137,7 +137,7 @@ pub fn of(g: &Graph) -> Flow {
 /// The code quotiented by module path, one level at a time. A part's top level is the children
 /// of its own package, and each tree beside it (scripts, notebooks) as one; a level with a single
 /// child is passed through; a package with code of its own has that code beside its children as a
-/// unit of its own (`rkg.serve$`); a Makefile is a unit of the first part.
+/// unit of its own (`app.serve$`); a Makefile is a unit of the first part.
 #[derive(Serialize, Clone, Debug, Default, PartialEq)]
 pub struct Units {
     /// Each part's top level, in the order of the parts.

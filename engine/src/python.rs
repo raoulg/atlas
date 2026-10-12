@@ -19,6 +19,7 @@ use crate::effects::{self, Crossing};
 use crate::pytypes::{By, Facts, FileArg, Target, Ty, Types, Value};
 use paths::{At, Built, Eval};
 use crate::entries::entry_of;
+use crate::knowledge;
 use crate::model::{Dir, EdgeKind, Entry, EntryKind, Held, Node, NodeKind, Param, Returns, Touch, World};
 pub use crate::builder::{foreign_type, ClassInfo, GraphBuilder, OwnTypes, SigInfo};
 use crate::tree::{
@@ -1027,6 +1028,7 @@ fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, root: &str
     }
     // what the attributes hold, as ty types what the methods assign them
     let sites = sites(modules, store);
+    mark_tools(modules, store, types, &sites, root);
     attributes(modules, store, types, &sites, root);
     // methods that change their receiver, directly or through another such method on self
     for _ in 0..5 {
@@ -1463,9 +1465,47 @@ fn attributes(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, type
     }
 }
 
+/// The functions a tool server registers for an agent, by a decorator on a value of the server's
+/// class (`@geo.tool`, `@server.prompt("name")`): each a route into the program, by the name it
+/// registers. What the value is, ty says, whatever it is called.
+fn mark_tools(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, types: &Types, sites: &HashMap<(String, usize), String>, root: &str) {
+    let mut tools: Vec<(String, String)> = vec![];
+    for m in modules.values() {
+        let seen = Seen::new(m, types, sites, modules, store, root);
+        // the package a class is in: a library's module, or the library code Atlas reads
+        let package = |t: &Target| match t {
+            Target::Lib(module) => Some(package_of(module)),
+            Target::Here { .. } => seen.node(t).map(|id| id.split('.').next().unwrap_or("").to_string()),
+        };
+        let server = |o: TsNode| {
+            seen.value(o).map_or(false, |v| v.classes.iter().zip(&v.names).any(|(t, name)| package(t).map_or(false, |p| knowledge::TOOL_SERVERS.contains(&(p.as_str(), name.as_str())))))
+        };
+        for n in store.nodes.values().filter(|n| n.module == m.id && matches!(n.kind, NodeKind::Function | NodeKind::Method) && n.entry.is_none()) {
+            let Some(decorated) = def_node(m, n).and_then(|d| d.parent()).filter(|p| p.kind() == "decorated_definition") else { continue };
+            for d in named_children(decorated).into_iter().filter(|d| d.kind() == "decorator").filter_map(|d| named_children(d).into_iter().next()) {
+                let (f, call) = match d.kind() {
+                    "call" => (d.child_by_field_name("function"), Some(d)),
+                    _ => (Some(d), None),
+                };
+                let Some(f) = f.filter(|f| f.kind() == "attribute") else { continue };
+                let registers = f.child_by_field_name("attribute").map_or(false, |a| knowledge::TOOL_DECORATORS.contains(&text(a, &m.src)));
+                if registers && f.child_by_field_name("object").map_or(false, server) {
+                    let named = call.and_then(positional).filter(|a| a.kind() == "string").map(|a| unquote(text(a, &m.src)));
+                    tools.push((n.id.clone(), named.unwrap_or_else(|| n.name.clone())));
+                }
+            }
+        }
+    }
+    for (id, label) in tools {
+        if let Some(n) = store.nodes.get_mut(&id) {
+            n.entry = Some(Entry { kind: EntryKind::Mcp, label });
+        }
+    }
+}
+
 /// What a package exports is a route into it: the names in `__all__` of its `__init__.py`,
 /// else (at the root) the public names that module imports from the package or defines. A
-/// public subpackage that declares `__all__` is a door too (`from vectormesh.components import
+/// public subpackage that declares `__all__` is a door too (`from pkg.components import
 /// Serial`), labelled by its path from the root; a name the root exports keeps the root's label.
 fn mark_exports(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, root: &str) {
     let public = |id: &str| id.split('.').all(|p| !p.starts_with('_'));
@@ -1491,7 +1531,7 @@ fn mark_exports(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, ro
 }
 
 /// A name followed through the packages that re-export it to where it is defined:
-/// `vectormesh.VectorCache` -> `vectormesh.data.VectorCache` -> `vectormesh.data.cache.VectorCache`.
+/// `pkg.Cache` -> `pkg.data.Cache` -> `pkg.data.cache.Cache`.
 fn defined(target: &str, modules: &IndexMap<String, Module>, nodes: &IndexMap<String, Node>) -> Option<String> {
     let mut t = target.to_string();
     for _ in 0..8 {

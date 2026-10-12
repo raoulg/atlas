@@ -631,7 +631,7 @@ const entryTitle = id => { const n = byId.get(id); return n.entry ? `${KIND_LABE
 
 // ---------- layers: the code quotiented by module path, one level at a time ----------
 // a unit is a module path: a package with everything under it, or a package's own module by itself
-// (`rkg.serve$`). A part's top level is the children of its own package, and each tree beside it
+// (`app.serve$`). A part's top level is the children of its own package, and each tree beside it
 // (scripts, notebooks) as one; a level with a single child is passed through
 const inUnit = (id, u) => { const m = byId.get(id)?.module ?? ""; return u.endsWith("$") ? m === u.slice(0, -1) : m === u || m.startsWith(u + "."); };
 // the units of each level, as the engine reads them
@@ -642,7 +642,7 @@ const unitLabel = u => { if (u === "~in" || u === "~out") { const n = aroundFocu
 const partOfUnit = u => { const m = [...byId.values()].find(n => n.kind === "module" && inUnit(n.id, u)); return m ? partOf(m) : partOf({}); };
 const inFocus = id => [...V.focus].some(u => inUnit(id, u));
 // the rest of the code around a focus: `~in` hands data to it, `~out` takes data from it; opened, each
-// is the packages it holds (`~in:rkg.serve`)
+// is the packages it holds (`~in:app.serve`)
 const isRest = u => u.startsWith("~");
 // the packages of the rest that hand the focus data (`~in`) or take data from it (`~out`), each with the types
 function restExchange(side) {
@@ -1374,7 +1374,8 @@ function selectPlace(pid, label) {
   const d = html("div", "links");
   for (const {n, t} of calls) {
     const step = n.kind === "module" ? short(n.id) : n.cls && byId.has(n.cls) ? `${byId.get(n.cls).name}.${n.name}` : n.name;
-    const where = t.kind === "screen" ? "" : ` ${t.artifact && !t.artifact.startsWith("huggingface") ? t.artifact : t.what || t.artifact}`;
+    // a file or a table by its name; on the web the place is the host, and the call names what it asks for
+    const where = t.kind === "screen" ? "" : ` ${t.kind === "net" ? t.what || t.artifact : t.artifact || t.what}`;
     const b = html("button", "fn", `${step} · ${verbOf(t)}${where}${t.line ? ` · line ${t.line}` : ""}`);
     b.onclick = () => { select(n.id); const c = codeBlock(n, t.line); if (c) insp.appendChild(section(`line ${t.line}`, null, c)); };
     d.appendChild(b);
