@@ -875,6 +875,17 @@ struct Made<'t> {
     origin: Option<TsNode<'t>>,
 }
 
+/// What an operation on a value of a library's type `ty` moves: a read of the path the value
+/// holds (`read_to_string`), or what the effect tables say of `ty::op`; nothing for opening what
+/// a call gave (`unwrap`).
+fn moved_by(ty: &[String], op: &str) -> Option<Crossing> {
+    match op {
+        _ if UNWRAPS.contains(&op) => None,
+        _ if effects::RUST_PATH_READS.contains(&op) => Some(Crossing::read(World::Disk)),
+        _ => effects::boundary_rust(&[ty, &[op.to_string()]].concat()),
+    }
+}
+
 /// The string literals under a node that can name a place: a closure's are its own code's.
 fn place_literals(n: TsNode, src: &[u8]) -> Vec<String> {
     match n.kind() {
@@ -965,19 +976,99 @@ fn expand(m: &Module, parts: &[String]) -> Vec<String> {
 fn link_calls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crate_ids: &HashMap<String, String>, id: &str) {
     let n = store.nodes[id].clone();
     let m = &modules[&n.module];
-    let src = &m.src;
     let Some(d) = def_node(m, &n) else { return };
     let Some(body) = d.child_by_field_name("body") else { return };
-    // typed parameters give receivers a type: `store.add_edge(..)` with `store: &mut GraphBuilder`
-    let mut locals: HashMap<String, String> = HashMap::new();
-    // locals a call made, by the call: `let c = reqwest::Client::new()`
-    let mut made_by: HashMap<String, TsNode> = HashMap::new();
-    // `&mut T` and `&mut self` hand the value back changed: `T -> T`
-    let mut mutates: Vec<(String, String)> = vec![];
-    if let Some(pn) = d.child_by_field_name("parameters") {
+    let mut steps = Steps::new(body, &m.src, &CHOICES);
+    let read = {
+        let mut b = Body::new(modules, store, crate_ids, m, &n, d, body);
+        for c in evaluation_order(walk(body, &["call_expression", "struct_expression"])) {
+            b.call(&mut steps, c);
+        }
+        b.read
+    };
+    let compares = crate::tree::compares(body, &m.src, steps.choices(), &COMPARES, &CHOICES);
+    steps.finish(store, id);
+    if let Some(node) = store.nodes.get_mut(id) {
+        node.compares = compares;
+    }
+    for (t, input) in read.mutates {
+        store.add_edge(id, &t, EdgeKind::Mutates, Some(input));
+    }
+    for u in read.unresolved {
+        *store.unresolved.entry(u).or_insert(0) += 1;
+    }
+    for t in read.touches {
+        store.touch(id, t);
+    }
+}
+
+/// What reading a body finds besides its steps: what it touches, the calls Atlas could not
+/// follow, and the inputs it changes in place.
+#[derive(Default)]
+struct Read {
+    touches: Vec<Touch>,
+    unresolved: Vec<String>,
+    mutates: Vec<(String, String)>,
+}
+
+/// A function's body as Rust reads it: the program around it, and the classes its names hold.
+struct Body<'a, 't> {
+    modules: &'a IndexMap<String, Module>,
+    store: &'a GraphBuilder,
+    crate_ids: &'a HashMap<String, String>,
+    m: &'t Module,
+    src: &'t [u8],
+    cls: Option<String>,
+    /// The classes the body's names hold: its typed parameters, and locals assigned from a
+    /// constructor, a struct literal or a function with a typed return.
+    locals: HashMap<String, String>,
+    /// The locals a call made, by the call: `let c = reqwest::Client::new()`.
+    made_by: HashMap<String, TsNode<'t>>,
+    /// The classes the fields of the body's own class hold.
+    attr_types: std::collections::BTreeMap<String, String>,
+    read: Read,
+}
+
+const STRINGS: &[&str] = &["string_literal", "raw_string_literal"];
+
+impl<'a, 't> Body<'a, 't> {
+    fn new(modules: &'a IndexMap<String, Module>, store: &'a GraphBuilder, crate_ids: &'a HashMap<String, String>, m: &'t Module, n: &Node, d: TsNode<'t>, body: TsNode<'t>) -> Self {
+        let cls = n.cls.clone();
+        let attr_types = cls.as_ref().and_then(|c| store.classes.get(c)).map(|c| c.attr_types.clone()).unwrap_or_default();
+        let mut b = Body { modules, store, crate_ids, m, src: &m.src, cls, locals: HashMap::new(), made_by: HashMap::new(), attr_types, read: Read::default() };
+        b.parameters(d);
+        b.lets(body);
+        // a macro that prints shows the human something
+        for mac in walk(body, &["macro_invocation"]) {
+            let name = mac.child_by_field_name("macro").map(|x| text(x, b.src)).unwrap_or("");
+            if effects::screen_macro(name) {
+                b.read.touches.push(Touch { op: name.into(), line: mac.start_position().row as u32 + 1, ..Touch::new(World::Screen, None) });
+            }
+        }
+        b
+    }
+
+    fn resolve(&self, parts: &[String]) -> Option<String> {
+        resolve(self.m, parts, self.modules, &self.store.nodes, self.crate_ids)
+    }
+
+    fn class_of(&self, id: &str) -> Option<String> {
+        self.store.nodes.get(id).filter(|x| x.kind == NodeKind::Class).map(|_| id.to_string())
+    }
+
+    /// The class a function gives back, by its signature.
+    fn returned_class(&self, id: &str) -> Option<String> {
+        self.store.edges.iter().find(|e| e.src == id && e.kind == EdgeKind::Returns && self.class_of(&e.dst).is_some()).map(|e| e.dst.clone())
+    }
+
+    /// Typed parameters give receivers a type (`store.add_edge(..)` with `store: &mut
+    /// GraphBuilder`), and `&mut T` and `&mut self` hand the value back changed: `T -> T`.
+    fn parameters(&mut self, d: TsNode<'t>) {
+        let src = self.src;
+        let Some(pn) = d.child_by_field_name("parameters") else { return };
         for p in named_children(pn) {
             if p.kind() == "self_parameter" && text(p, src).contains("mut") {
-                mutates.extend(n.cls.clone().map(|c| (c, "self".to_string())));
+                self.read.mutates.extend(self.cls.clone().map(|c| (c, "self".to_string())));
                 continue;
             }
             if p.kind() != "parameter" {
@@ -986,278 +1077,258 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crat
             let Some(pat) = p.child_by_field_name("pattern") else { continue };
             let pname = text(pat, src).trim_start_matches("mut ").to_string();
             let by_mut_ref = p.child_by_field_name("type").map_or(false, |t| text(t, src).starts_with("&mut"));
-            for t in type_names(p.child_by_field_name("type"), src) {
-                if let Some(r) = resolve(m, &t, modules, &store.nodes, crate_ids).filter(|r| !r.starts_with("ext:")) {
-                    if store.nodes.get(&r).map_or(false, |x| x.kind == NodeKind::Class) {
-                        if by_mut_ref {
-                            mutates.push((r.clone(), pname.clone()));
-                        }
-                        locals.insert(pname.clone(), r);
-                        break;
-                    }
+            let class = type_names(p.child_by_field_name("type"), src).iter().find_map(|t| self.resolve(t).filter(|r| !r.starts_with("ext:")).and_then(|r| self.class_of(&r)));
+            if let Some(r) = class {
+                if by_mut_ref {
+                    self.read.mutates.push((r.clone(), pname.clone()));
                 }
+                self.locals.insert(pname, r);
             }
         }
     }
-    let cls = n.cls.clone();
-    // locals assigned from a constructor, a struct literal, or a function with a typed return
-    let class_of = |id: &str| store.nodes.get(id).filter(|x| x.kind == NodeKind::Class).map(|_| id.to_string());
-    let returned_class = |id: &str| store.edges.iter().find(|e| e.src == id && e.kind == EdgeKind::Returns && store.nodes.get(&e.dst).map_or(false, |x| x.kind == NodeKind::Class)).map(|e| e.dst.clone());
-    for l in walk(body, &["let_declaration"]) {
-        let Some(pat) = l.child_by_field_name("pattern") else { continue };
-        if pat.kind() != "identifier" && pat.kind() != "mut_pattern" {
-            continue;
-        }
-        let name = text(pat, src).trim_start_matches("mut ").to_string();
-        let mut value = l.child_by_field_name("value");
-        loop {
-            let Some(v) = value else { break };
-            match v.kind() {
-                "try_expression" | "await_expression" | "unary_expression" | "reference_expression" | "parenthesized_expression" => value = named_children(v).into_iter().next(),
-                // `.unwrap()`, `.expect(..)`, `.ok_or_else(..)`, `.context(..)`: the receiver decides the type
-                "call_expression" => match v.child_by_field_name("function") {
-                    Some(f) if f.kind() == "field_expression" && f.child_by_field_name("field").map_or(false, |x| UNWRAPS.contains(&text(x, src))) => value = f.child_by_field_name("value"),
+
+    /// Locals assigned from a constructor, a struct literal, or a function with a typed return;
+    /// `.unwrap()`, `.expect(..)`, `.context(..)` hand on the type of the value they are called on.
+    fn lets(&mut self, body: TsNode<'t>) {
+        let src = self.src;
+        for l in walk(body, &["let_declaration"]) {
+            let Some(pat) = l.child_by_field_name("pattern").filter(|p| matches!(p.kind(), "identifier" | "mut_pattern")) else { continue };
+            let name = text(pat, src).trim_start_matches("mut ").to_string();
+            let mut value = l.child_by_field_name("value");
+            while let Some(v) = value {
+                value = match v.kind() {
+                    "try_expression" | "await_expression" | "unary_expression" | "reference_expression" | "parenthesized_expression" => named_children(v).into_iter().next(),
+                    "call_expression" => match v.child_by_field_name("function") {
+                        Some(f) if f.kind() == "field_expression" && f.child_by_field_name("field").map_or(false, |x| UNWRAPS.contains(&text(x, src))) => f.child_by_field_name("value"),
+                        _ => break,
+                    },
                     _ => break,
-                },
-                _ => break,
+                };
+            }
+            if let Some(made) = l.child_by_field_name("value") {
+                self.made_by.insert(name.clone(), made);
+            }
+            if let Some(t) = value.and_then(|v| self.value_class(v)) {
+                self.locals.insert(name, t);
             }
         }
-        if let Some(made) = l.child_by_field_name("value") {
-            made_by.insert(name.clone(), made);
-        }
-        let Some(v) = value else { continue };
-        let ty = match v.kind() {
-            "identifier" => locals.get(text(v, src)).cloned(),
-            "struct_expression" => resolve(m, &path_parts(v.child_by_field_name("name"), src), modules, &store.nodes, crate_ids).and_then(|r| class_of(&r)),
-            // a method gives what its signature gives back, on the type of the value it is called on
+    }
+
+    /// The class a value is of, where the body says: a name it holds, a struct literal, a method
+    /// by what its signature gives back on the class of its receiver, a function by its return.
+    fn value_class(&self, v: TsNode) -> Option<String> {
+        let src = self.src;
+        match v.kind() {
+            "identifier" => self.locals.get(text(v, src)).cloned(),
+            "struct_expression" => self.resolve(&path_parts(v.child_by_field_name("name"), src)).and_then(|r| self.class_of(&r)),
             "call_expression" if v.child_by_field_name("function").map_or(false, |f| f.kind() == "field_expression") => {
-                let f = v.child_by_field_name("function").unwrap();
+                let f = v.child_by_field_name("function")?;
                 let on = match f.child_by_field_name("value") {
-                    Some(r) if r.kind() == "self" => cls.clone(),
-                    Some(r) if r.kind() == "identifier" => locals.get(text(r, src)).cloned(),
+                    Some(r) if r.kind() == "self" => self.cls.clone(),
+                    Some(r) if r.kind() == "identifier" => self.locals.get(text(r, src)).cloned(),
                     _ => None,
                 };
                 let name = f.child_by_field_name("field").map(|x| text(x, src)).unwrap_or("");
-                on.and_then(|t| store.method_of(&t, name)).and_then(|t| returned_class(&t))
+                on.and_then(|t| self.store.method_of(&t, name)).and_then(|t| self.returned_class(&t))
             }
             "call_expression" => {
                 let parts = path_parts(v.child_by_field_name("function"), src);
                 if parts.is_empty() {
-                    None
-                } else {
-                    let full = resolve(m, &parts, modules, &store.nodes, crate_ids);
-                    full.as_deref().and_then(returned_class).or_else(|| {
-                        resolve(m, &parts[..parts.len().saturating_sub(1)], modules, &store.nodes, crate_ids).and_then(|r| class_of(&r))
-                    })
+                    return None;
                 }
+                self.resolve(&parts).as_deref().and_then(|f| self.returned_class(f)).or_else(|| self.resolve(&parts[..parts.len() - 1]).and_then(|r| self.class_of(&r)))
             }
             _ => None,
-        };
-        if let Some(t) = ty {
-            locals.insert(name, t);
         }
     }
-    let attr_types = cls.as_ref().and_then(|c| store.classes.get(c)).map(|c| c.attr_types.clone()).unwrap_or_default();
-    let mut steps = Steps::new(body, src, &CHOICES);
-    let mut touches: Vec<Touch> = vec![];
-    let lit_kinds = &["string_literal", "raw_string_literal"];
-    // a boundary call, refined by the literals that name its place
-    let touch = |c: tree_sitter::Node, kind: Crossing, op: &str, lits: &[String], locals: &HashMap<String, String>| Crosses::read(c, src, kind, None, op, lits, lit_kinds, locals).touches(None);
-    for mac in walk(body, &["macro_invocation"]) {
-        let name = mac.child_by_field_name("macro").map(|x| text(x, src)).unwrap_or("");
-        if effects::screen_macro(name) {
-            touches.push(Touch { op: name.into(), line: mac.start_position().row as u32 + 1, ..Touch::new(World::Screen, None) });
-        }
-    }
-    let mut unresolved: Vec<String> = vec![];
-    let ty_of = |name: &str| locals.get(name).cloned();
-    // what a call is handed: the value it is called on, its arguments, a literal's fields
-    let hands_of = |parts: &[Option<TsNode>], made: &HashSet<String>| -> Vec<Held> {
+
+    /// What a call is handed: the value it is called on, its arguments, a literal's fields.
+    fn hands(&self, parts: &[Option<TsNode>], kept: &HashSet<String>) -> Vec<Held> {
+        let ty_of = |name: &str| self.locals.get(name).cloned();
         let mut out: Vec<Held> = vec![];
         for p in parts.iter().flatten() {
-            for h in crate::tree::held_names(*p, src, &["self"], &ty_of, made) {
+            for h in crate::tree::held_names(*p, self.src, &["self"], &ty_of, kept) {
                 if !out.contains(&h) {
                     out.push(h);
                 }
             }
         }
         out
-    };
-    // what it gives back, by the name the body keeps it by
-    let gives_of = |c: TsNode, to: Option<&str>| -> Vec<Held> {
-        kept_as(c, src).map(|name| Held::new(locals.get(&name).cloned().or_else(|| to.and_then(returned_class)).unwrap_or_default(), name)).into_iter().collect()
-    };
-    for c in evaluation_order(walk(body, &["call_expression", "struct_expression"])) {
+    }
+
+    /// What a call gives back, by the name the body keeps it by.
+    fn gives(&self, c: TsNode, to: Option<&str>) -> Vec<Held> {
+        kept_as(c, self.src).map(|name| Held::new(self.locals.get(&name).cloned().or_else(|| to.and_then(|t| self.returned_class(t))).unwrap_or_default(), name)).into_iter().collect()
+    }
+
+    /// A boundary call's touches, refined by the literals that name its place.
+    fn touch(&self, c: TsNode, kind: Crossing, op: &str, lits: &[String]) -> Vec<Touch> {
+        Crosses::read(c, self.src, kind, None, op, lits, STRINGS, &self.locals).touches(None)
+    }
+
+    /// One call of the body, as the step it is: a struct literal, a method on a value, or a path.
+    fn call(&mut self, steps: &mut Steps, c: TsNode<'t>) {
         if c.kind() == "struct_expression" {
-            let parts = path_parts(c.child_by_field_name("name"), src);
-            if let Some(r) = resolve(m, &parts, modules, &store.nodes, crate_ids).filter(|r| !r.starts_with("ext:")) {
-                if store.nodes.get(&r).map_or(false, |x| x.kind == NodeKind::Class) {
-                    let step = Step { hands: hands_of(&[c.child_by_field_name("body")], &steps.kept), gives: gives_of(c, Some(&r)), ..Default::default() };
-                    steps.call(c, &r, EdgeKind::Instantiates, None, step);
-                }
-            }
-            continue;
+            return self.literal(steps, c);
         }
-        let Some(f) = c.child_by_field_name("function") else { continue };
-        // an own function handed on as a value (`xs.iter().map(Self::label)`, `thread::spawn(run)`)
-        // is called by whoever receives it
+        let Some(f) = c.child_by_field_name("function") else { return };
+        self.handed_on(steps, c);
+        if f.kind() == "field_expression" {
+            self.method_call(steps, c, f);
+        } else {
+            self.path_call(steps, c, f);
+        }
+    }
+
+    /// `Type { .. }`: a value of one of the program's types, built from its fields.
+    fn literal(&self, steps: &mut Steps, c: TsNode<'t>) {
+        let Some(r) = self.resolve(&path_parts(c.child_by_field_name("name"), self.src)).filter(|r| !r.starts_with("ext:")).and_then(|r| self.class_of(&r)) else { return };
+        let step = Step { hands: self.hands(&[c.child_by_field_name("body")], &steps.kept), gives: self.gives(c, Some(&r)), ..Default::default() };
+        steps.call(c, &r, EdgeKind::Instantiates, None, step);
+    }
+
+    /// An own function handed on as a value (`xs.iter().map(Self::label)`, `thread::spawn(run)`):
+    /// called by whoever receives it.
+    fn handed_on(&self, steps: &mut Steps, c: TsNode<'t>) {
         for a in c.child_by_field_name("arguments").map(named_children).unwrap_or_default() {
-            if !matches!(a.kind(), "identifier" | "scoped_identifier") || locals.contains_key(text(a, src)) {
+            if !matches!(a.kind(), "identifier" | "scoped_identifier") || self.locals.contains_key(text(a, self.src)) {
                 continue;
             }
-            let ps = path_parts(Some(a), src);
-            let handed = match (ps.first().map(String::as_str), &cls) {
-                (Some("Self"), Some(c)) => ps.get(1).and_then(|m| store.method_of(c, m)),
-                _ => resolve(m, &ps, modules, &store.nodes, crate_ids),
+            let ps = path_parts(Some(a), self.src);
+            let handed = match (ps.first().map(String::as_str), &self.cls) {
+                (Some("Self"), Some(c)) => ps.get(1).and_then(|m| self.store.method_of(c, m)),
+                _ => self.resolve(&ps),
             };
-            if let Some(t) = handed.filter(|t| store.nodes.get(t).map_or(false, |n| matches!(n.kind, NodeKind::Function | NodeKind::Method))) {
+            if let Some(t) = handed.filter(|t| self.store.nodes.get(t).map_or(false, |n| matches!(n.kind, NodeKind::Function | NodeKind::Method))) {
                 steps.handed(c, a, &t, EdgeKind::Calls);
             }
         }
-        // a library's operation not read is a step where the body keeps what it gives
-        let library_step = |steps: &mut Steps, op: &str, recv: Option<TsNode>| {
-            let hands = hands_of(&[recv, c.child_by_field_name("arguments")], &steps.kept);
-            steps.op(c, op, hands, gives_of(c, None));
+    }
+
+    /// A library's operation not read: a step where the body keeps what it gives.
+    fn library_step(&self, steps: &mut Steps, c: TsNode<'t>, op: &str, recv: Option<TsNode<'t>>) {
+        let hands = self.hands(&[recv, c.child_by_field_name("arguments")], &steps.kept);
+        steps.op(c, op, hands, self.gives(c, None));
+    }
+
+    /// A step to one of the program's own functions or types.
+    fn own_step(&self, steps: &mut Steps, c: TsNode<'t>, t: &str, recv: Option<TsNode<'t>>, via: Option<String>) {
+        let kind = if self.store.nodes[t].kind == NodeKind::Class { EdgeKind::Instantiates } else { EdgeKind::Calls };
+        let on_receiver = recv.map_or(false, |r| r.kind() == "self");
+        let step = Step { on_receiver, hands: self.hands(&[recv, c.child_by_field_name("arguments")], &steps.kept), gives: self.gives(c, Some(t)), ..Default::default() };
+        steps.call(c, t, kind, via.filter(|_| kind == EdgeKind::Instantiates), step);
+    }
+
+    /// `receiver.method(..)`: the program's method on the class the receiver holds, or a
+    /// library's operation, which may touch the world through the value its chain made.
+    fn method_call(&mut self, steps: &mut Steps, c: TsNode<'t>, f: TsNode<'t>) {
+        let src = self.src;
+        let (Some(value), Some(field)) = (f.child_by_field_name("value"), f.child_by_field_name("field")) else { return };
+        let method = text(field, src).to_string();
+        let receiver = match value.kind() {
+            "self" => self.cls.clone(),
+            "identifier" => self.locals.get(text(value, src)).cloned(),
+            "field_expression" => {
+                let v = value.child_by_field_name("value");
+                let fld = value.child_by_field_name("field").map(|x| text(x, src)).unwrap_or("");
+                match v.map(|v| v.kind()) {
+                    Some("self") => self.attr_types.get(fld).cloned(),
+                    Some("identifier") => v.and_then(|v| self.locals.get(text(v, src))).and_then(|t| self.store.classes.get(t)).and_then(|c| c.attr_types.get(fld).cloned()),
+                    _ => None,
+                }
+            }
+            _ => None,
         };
-        let mut target: Option<String> = None;
-        let mut recv: Option<TsNode> = None;
-        let mut parts: Vec<String> = vec![];
-        if f.kind() == "field_expression" {
-            // a method call: receiver.method(..)
-            let (Some(value), Some(field)) = (f.child_by_field_name("value"), f.child_by_field_name("field")) else { continue };
-            let method = text(field, src).to_string();
-            recv = Some(value);
-            let receiver: Option<String> = match value.kind() {
-                "self" => cls.clone(),
-                "identifier" => locals.get(text(value, src)).cloned(),
-                "field_expression" => {
-                    let v = value.child_by_field_name("value");
-                    let fld = value.child_by_field_name("field").map(|x| text(x, src)).unwrap_or("");
-                    match v.map(|v| v.kind()) {
-                        Some("self") => attr_types.get(fld).cloned(),
-                        Some("identifier") => locals
-                            .get(text(v.unwrap(), src))
-                            .and_then(|t| store.classes.get(t))
-                            .and_then(|c| c.attr_types.get(fld).cloned()),
-                        _ => None,
-                    }
-                }
-                _ => None,
-            };
-            match receiver {
-                // a method not found on the type (`to_string`, `clone`, a trait's default) is not
-                // known; it builds nothing
-                Some(r) => target = store.method_of(&r, &method),
-                None => {
-                    library_step(&mut steps, &method, Some(value));
-                    let made = library_chain(value, m, src, &made_by);
-                    // the outer call of a chain stands for the chain: `client.get(url).send()`
-                    if made.is_some() && c.parent().map_or(false, |p| p.kind() == "field_expression") {
-                        continue;
-                    }
-                    let subtree = || {
-                        let mut l = place_literals(c, src);
-                        l.extend(made.as_ref().and_then(|x| x.origin).map(|o| place_literals(o, src)).unwrap_or_default());
-                        l
-                    };
-                    let moved = made.as_ref().and_then(|x| {
-                        let here: Vec<(String, TsNode)> = x.here.iter().cloned().chain([(method.clone(), c)]).collect();
-                        // a builder's calls up to its `build` build, and move nothing (C-BUILDER)
-                        let built = if x.ctor.last().map(String::as_str) == Some("builder") {
-                            x.before.iter().chain(&here).position(|(op, _)| op == "build").map_or(usize::MAX, |i| i + 1)
-                        } else {
-                            0
-                        };
-                        let moves = |i: usize, op: &str| match op {
-                            _ if i < built || UNWRAPS.contains(&op) => None,
-                            _ if effects::RUST_PATH_READS.contains(&op) => Some(Crossing::read(World::Disk)),
-                            _ => effects::boundary_rust(&[&x.ty[..], &[op.to_string()]].concat()),
-                        };
-                        let n = x.before.len();
-                        // the move is named by the first call a library knows by name, else the first that moves
-                        let (kind, op) = here.iter().enumerate().filter_map(|(i, (op, _))| moves(n + i, op).map(|k| (k, op.clone()))).min_by_key(|(k, _)| *k == Crossing::to(World::Disk))?;
-                        let touched = effects::boundary_rust(&x.ctor).is_some() || x.before.iter().enumerate().any(|(i, (op, _))| moves(i, op).is_some());
-                        let writes = x.before.iter().chain(&here).any(|(o, _)| matches!(o.as_str(), "write" | "append" | "create" | "create_new" | "truncate"));
-                        let own: Vec<String> = here.iter().flat_map(|(_, n)| n.child_by_field_name("arguments").map(|a| place_literals(a, src)).unwrap_or_default()).collect();
-                        Some((if writes && kind.world == World::Disk { Crossing::write(World::Disk) } else { kind }, op, touched, own))
-                    });
-                    match moved {
-                        // a value made by a touch is at that touch's place (`File::open(p)`,
-                        // `Command::new("git")`): a call on it adds a place only when it names its
-                        // own, `conn.execute("INSERT INTO log ..")`
-                        Some((kind, op, true, own)) => touches.extend(touch(c, kind, &op, &own, &locals).into_iter().filter(|t| !t.artifact.is_empty())),
-                        // a value built without touching anything touches where it is used, at the
-                        // place its building named: `OpenOptions::new().append(true).open("log")`
-                        Some((kind, op, false, _)) => touches.extend(touch(c, kind, &op, &subtree(), &locals)),
-                        None if effects::RUST_PATH_READS.contains(&method.as_str()) => touches.extend(touch(c, Crossing::read(World::Disk), &method, &subtree(), &locals)),
-                        None => {}
-                    }
-                    continue;
+        match receiver {
+            // a method not found on the type (`to_string`, `clone`) is not known; it builds nothing
+            Some(r) => {
+                if let Some(t) = self.store.method_of(&r, &method).filter(|t| !t.starts_with("ext:")) {
+                    self.own_step(steps, c, &t, Some(value), None);
                 }
             }
-            if target.is_none() {
-                continue;
-            }
-        } else {
-            parts = path_parts(Some(f), src);
-            if parts.is_empty() {
-                continue;
-            }
-            if parts[0] == "Self" {
-                if let Some(c) = &cls {
-                    let mut p = vec![c.clone()];
-                    p.extend(parts[1..].iter().cloned());
-                    target = store.method_of(c, parts.get(1).map(String::as_str).unwrap_or("")).or_else(|| Some(c.clone()));
-                    parts = p;
-                }
-            } else {
-                target = resolve(m, &parts, modules, &store.nodes, crate_ids);
-                if target.as_deref().map_or(true, |t| t.starts_with("ext:") && false) {}
-                if target.is_none() && parts.len() > 1 {
-                    // `Type::new(..)`: a function on a type
-                    if let Some(r) = resolve(m, &parts[..parts.len() - 1], modules, &store.nodes, crate_ids).filter(|r| !r.starts_with("ext:")) {
-                        if store.nodes.get(&r).map_or(false, |x| x.kind == NodeKind::Class) {
-                            target = store.method_of(&r, &parts[parts.len() - 1]).or(Some(r));
-                        }
-                    }
-                }
+            None => {
+                self.library_step(steps, c, &method, Some(value));
+                let touches = self.chain_touches(c, value, &method);
+                self.read.touches.extend(touches);
             }
         }
+    }
+
+    /// What a library's method call touches, through the value its chain made: a value made by a
+    /// touch is at that touch's place (`File::open(p)`, `Command::new("git")`), and a call on it
+    /// adds a place only when it names its own (`conn.execute("INSERT INTO log ..")`); a value
+    /// built without touching anything touches where it is used, at the place its building
+    /// named (`OpenOptions::new().append(true).open("log")`).
+    fn chain_touches(&self, c: TsNode<'t>, value: TsNode<'t>, method: &str) -> Vec<Touch> {
+        let src = self.src;
+        let made = library_chain(value, self.m, src, &self.made_by);
+        // the outer call of a chain stands for the chain: `client.get(url).send()`
+        if made.is_some() && c.parent().map_or(false, |p| p.kind() == "field_expression") {
+            return vec![];
+        }
+        let subtree = || {
+            let mut l = place_literals(c, src);
+            l.extend(made.as_ref().and_then(|x| x.origin).map(|o| place_literals(o, src)).unwrap_or_default());
+            l
+        };
+        let moved = made.as_ref().and_then(|x| {
+            let here: Vec<(String, TsNode)> = x.here.iter().cloned().chain([(method.to_string(), c)]).collect();
+            // a builder's calls up to its `build` build, and move nothing (C-BUILDER)
+            let built = if x.ctor.last().map(String::as_str) == Some("builder") { x.before.iter().chain(&here).position(|(op, _)| op == "build").map_or(usize::MAX, |i| i + 1) } else { 0 };
+            let moves = |i: usize, op: &str| if i < built { None } else { moved_by(&x.ty, op) };
+            let n = x.before.len();
+            // the move is named by the first call a library knows by name, else the first that moves
+            let (kind, op) = here.iter().enumerate().filter_map(|(i, (op, _))| moves(n + i, op).map(|k| (k, op.clone()))).min_by_key(|(k, _)| *k == Crossing::to(World::Disk))?;
+            let touched = effects::boundary_rust(&x.ctor).is_some() || x.before.iter().enumerate().any(|(i, (op, _))| moves(i, op).is_some());
+            let writes = x.before.iter().chain(&here).any(|(o, _)| matches!(o.as_str(), "write" | "append" | "create" | "create_new" | "truncate"));
+            let own: Vec<String> = here.iter().flat_map(|(_, n)| n.child_by_field_name("arguments").map(|a| place_literals(a, src)).unwrap_or_default()).collect();
+            Some((if writes && kind.world == World::Disk { Crossing::write(World::Disk) } else { kind }, op, touched, own))
+        });
+        match moved {
+            Some((kind, op, true, own)) => self.touch(c, kind, &op, &own).into_iter().filter(|t| !t.artifact.is_empty()).collect(),
+            Some((kind, op, false, _)) => self.touch(c, kind, &op, &subtree()),
+            None if effects::RUST_PATH_READS.contains(&method) => self.touch(c, Crossing::read(World::Disk), method, &subtree()),
+            None => vec![],
+        }
+    }
+
+    /// `path::to::f(..)`, `Self::f(..)`, `Type::new(..)`: the program's function or type, or a
+    /// library's, which may cross into the world.
+    fn path_call(&mut self, steps: &mut Steps, c: TsNode<'t>, f: TsNode<'t>) {
+        let mut parts = path_parts(Some(f), self.src);
+        if parts.is_empty() {
+            return;
+        }
+        let target = match (parts[0].as_str(), &self.cls) {
+            ("Self", Some(cls)) => {
+                let t = self.store.method_of(cls, parts.get(1).map(String::as_str).unwrap_or("")).unwrap_or_else(|| cls.clone());
+                parts[0] = cls.clone();
+                Some(t)
+            }
+            ("Self", None) => None,
+            // `Type::new(..)`: a function on a type
+            _ => self.resolve(&parts).or_else(|| {
+                let r = self.resolve(&parts[..parts.len().saturating_sub(1)]).filter(|r| !r.starts_with("ext:") && parts.len() > 1).and_then(|r| self.class_of(&r))?;
+                Some(self.store.method_of(&r, &parts[parts.len() - 1]).unwrap_or(r))
+            }),
+        };
         match target {
+            // `Type::method(..)` with no such method known: keep the name, it is what was called
             Some(t) if !t.starts_with("ext:") => {
-                let kind = if store.nodes[&t].kind == NodeKind::Class { EdgeKind::Instantiates } else { EdgeKind::Calls };
-                // `Type::method(..)` with no such method known: keep the name, it is what was called
-                let via = if kind == EdgeKind::Instantiates && parts.len() > 1 && parts[0] != "Self" { parts.last().cloned() } else { None };
-                let on_receiver = recv.map_or(false, |r| r.kind() == "self");
-                let step = Step { on_receiver, hands: hands_of(&[recv, c.child_by_field_name("arguments")], &steps.kept), gives: gives_of(c, Some(&t)), ..Default::default() };
-                steps.call(c, &t, kind, via, step);
+                let via = (parts.len() > 1 && parts[0] != "Self").then(|| parts.last().cloned()).flatten();
+                self.own_step(steps, c, &t, None, via);
             }
             _ => {
-                if parts.is_empty() {
-                    continue;
-                }
-                library_step(&mut steps, parts.last().map(String::as_str).unwrap_or(""), None);
-                let full = expand(m, &parts);
-                unresolved.push(full.iter().take(2).cloned().collect::<Vec<_>>().join("."));
+                let op = parts.last().cloned().unwrap_or_default();
+                self.library_step(steps, c, &op, None);
+                let full = expand(self.m, &parts);
+                self.read.unresolved.push(full.iter().take(2).cloned().collect::<Vec<_>>().join("."));
                 if let Some(tag) = effects::boundary_rust(&full) {
-                    touches.extend(touch(c, tag, parts.last().map(String::as_str).unwrap_or(""), &literals(c, src, lit_kinds), &locals));
+                    let touches = self.touch(c, tag, &op, &literals(c, self.src, STRINGS));
+                    self.read.touches.extend(touches);
                 }
             }
         }
-    }
-    let compares = crate::tree::compares(body, src, steps.choices(), &COMPARES, &CHOICES);
-    steps.finish(store, id);
-    if let Some(node) = store.nodes.get_mut(id) {
-        node.compares = compares;
-    }
-    for (t, input) in mutates {
-        store.add_edge(id, &t, EdgeKind::Mutates, Some(input));
-    }
-    for u in unresolved {
-        *store.unresolved.entry(u).or_insert(0) += 1;
-    }
-    for t in touches {
-        store.touch(id, t);
     }
 }
 
