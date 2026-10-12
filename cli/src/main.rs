@@ -85,6 +85,10 @@ enum Cmd {
         /// Mark what the working tree changed since this git revision (one repository).
         #[arg(long)]
         since: Option<String>,
+        /// Open the page in this view, as JSON: `{"route": <entry id>, "open": {"functions": [<id>, ..]}}`, and
+        /// `kind`, `part`, `focus`, and the opened `parts`, `units`, `steps`, `families`, `places`, `dirs`, as the page's address writes them.
+        #[arg(long, value_name = "JSON")]
+        view: Option<String>,
     },
     /// List where the code and the design principles disagree, each with a question.
     Check {
@@ -105,7 +109,7 @@ enum Cmd {
         #[arg(long)]
         json: bool,
     },
-    /// Serve Atlas to a coding agent over MCP (stdio): principles, check, explain, routes, route, changes.
+    /// Serve Atlas to a coding agent over MCP (stdio): principles, check, explain, routes, route, view, changes.
     Mcp,
     /// Write a repository's graph as JSON.
     Analyze {
@@ -124,7 +128,10 @@ enum Cmd {
 const VIEWER: &str = include_str!("../../viewer/index.html");
 const FONTS: &str = include_str!("../../viewer/fonts.css");
 
-fn view(repos: &[PathBuf], opts: &Options, out: Option<PathBuf>, open: bool, since: Option<&str>) -> Result<()> {
+/// The page of one or more repositories, drawn in `shown` when it is given (a view: its route,
+/// kind, part, focus and opened sets), else on the route of a file named on the command line.
+/// Gives the page and the name of its project.
+pub(crate) fn page(repos: &[PathBuf], opts: &Options, since: Option<&str>, shown: Option<serde_json::Value>) -> Result<(String, String)> {
     let g = parts::analyze_repo(repos, opts)?;
     let parts: Vec<&str> = g.parts.iter().map(|p| p.id.as_str()).collect();
     eprintln!("{} · {} · {} modules · {} entries", g.root, parts.join(" + "), g.stats.modules, g.nodes.iter().filter(|n| n.entry.is_some()).count());
@@ -141,15 +148,24 @@ fn view(repos: &[PathBuf], opts: &Options, out: Option<PathBuf>, open: bool, sin
     if let Some(n) = g.nodes.iter().find(|n| n.entry.is_some() && std::fs::canonicalize(&n.file).map_or(false, |f| opts.named.contains(&f))) {
         page["open"] = serde_json::Value::String(n.id.clone());
     }
+    if let Some(v) = shown {
+        page["view"] = v;
+    }
     projects.insert(g.root.clone(), page);
     let payload = serde_json::to_string(&serde_json::json!({ "projects": projects, "atlas": VERSION.as_str() }))?.replace("</", "<\\/");
-    let html = VIEWER.replacen("/*__FONTS__*/", FONTS, 1).replacen("/*__DATA__*/null", &payload, 1);
-    let out = out.unwrap_or_else(|| {
-        let dir = std::env::temp_dir().join("atlas");
-        let _ = std::fs::create_dir_all(&dir);
-        let name = projects.keys().cloned().collect::<Vec<_>>().join("+");
-        dir.join(format!("{name}.html"))
-    });
+    Ok((g.root.clone(), VIEWER.replacen("/*__FONTS__*/", FONTS, 1).replacen("/*__DATA__*/null", &payload, 1)))
+}
+
+/// Where a page is written when no place is asked for: a temporary folder, by its project's name.
+pub(crate) fn page_file(name: &str) -> PathBuf {
+    let dir = std::env::temp_dir().join("atlas");
+    let _ = std::fs::create_dir_all(&dir);
+    dir.join(format!("{name}.html"))
+}
+
+fn view(repos: &[PathBuf], opts: &Options, out: Option<PathBuf>, open: bool, since: Option<&str>, shown: Option<serde_json::Value>) -> Result<()> {
+    let (name, html) = page(repos, opts, since, shown)?;
+    let out = out.unwrap_or_else(|| page_file(&name));
     std::fs::write(&out, html)?;
     eprintln!("wrote {}", out.display());
     if open {
@@ -220,10 +236,11 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     let mut opts = Options { libraries: cli.libraries, ..Options::default() };
     match cli.cmd {
-        Cmd::View { repos, out, no_open, since } => {
+        Cmd::View { repos, out, no_open, since, view: shown } => {
             let repos = if repos.is_empty() { vec![std::env::current_dir()?] } else { repos };
+            let shown = shown.map(|v| serde_json::from_str::<serde_json::Value>(&v)).transpose().map_err(|e| anyhow::anyhow!("--view is not JSON: {e}"))?;
             let (repos, _clones): (Vec<PathBuf>, Vec<Option<remote::Clone>>) = repos.into_iter().map(|r| local(r, &mut opts)).collect::<Result<Vec<_>>>()?.into_iter().unzip();
-            view(&repos, &opts, out, !no_open, since.as_deref())?
+            view(&repos, &opts, out, !no_open, since.as_deref(), shown)?
         }
         Cmd::Mcp => mcp::serve(&opts)?,
         Cmd::Changes { rev, repo, json } => {

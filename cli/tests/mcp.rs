@@ -42,7 +42,7 @@ fn a_client_initializes_lists_and_calls() {
     assert_eq!(replies[0]["result"]["protocolVersion"], "2025-06-18", "the client's version, when spoken");
     assert!(replies[0]["result"]["instructions"].as_str().unwrap().contains("coaches"));
     let tools: Vec<&str> = replies[1]["result"]["tools"].as_array().unwrap().iter().map(|t| t["name"].as_str().unwrap()).collect();
-    assert_eq!(tools, ["principles", "check", "explain", "routes", "route", "changes"]);
+    assert_eq!(tools, ["principles", "check", "explain", "routes", "route", "view", "changes"]);
     assert!(text(&replies[2]).contains("prepare tests `mode`"), "{}", text(&replies[2]));
     assert!(!text(&replies[2]).contains("\ndoors ·"), "only the principle asked for");
     assert!(text(&replies[3]).starts_with("A sum type is unwrapped where it arises."));
@@ -81,4 +81,16 @@ fn changes_shows_an_edit() {
     let t = text(&replies[0]);
     assert!(t.contains("~ API · POST /api/regels\n    - step server.regels.vat\n"), "{t}");
     let _ = std::fs::remove_dir_all(repo.parent().unwrap());
+}
+
+/// An agent draws the picture it means: a view, written as a page the human opens.
+#[test]
+fn view_writes_the_page_in_a_view() {
+    let out = std::env::temp_dir().join(format!("atlas-mcp-view-{}.html", std::process::id()));
+    let shown = json!({ "route": "fixture.cli.build", "open": { "functions": ["fixture.build.Pipeline.run"] } });
+    let replies = session(&[call(1, "view", json!({ "path": "engine/tests/fixture", "view": shown, "out": out.to_string_lossy() }))]);
+    assert!(text(&replies[0]).starts_with("Wrote "), "{}", text(&replies[0]));
+    let page = std::fs::read_to_string(&out).unwrap();
+    assert!(page.contains(r#""view":{"open":{"functions":["fixture.build.Pipeline.run"]},"route":"fixture.cli.build"}"#), "the page opens in the view");
+    let _ = std::fs::remove_file(&out);
 }
