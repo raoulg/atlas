@@ -61,5 +61,5 @@ pub fn analyze(repo: &Path, opts: &Options) -> Result<Graph> {
     let mut g = lang.parse(repo, opts)?;
     entries::read_makefile(&mut g);
     parts::assign(&mut g);
-    Ok(g)
+    Ok(view::View::apply(&view::reached(&g), &g))
 }

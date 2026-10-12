@@ -346,11 +346,11 @@ fn atlas_reads_as_its_algebra() {
     let name = |id: &str| id.rsplit('.').next().unwrap().to_string();
     let steps: Vec<&str> = g.edges.iter().filter(|e| e.src == "atlas-engine.analyze" && e.kind == EdgeKind::Calls).map(|e| e.dst.as_str()).collect();
     let short: Vec<&str> = steps.iter().map(|s| s.trim_start_matches("atlas-engine.")).collect();
-    assert_eq!(short, ["language.detect", "language.Language.parse", "entries.read_makefile", "parts.assign"], "analyze is its algebra, step by step");
+    assert_eq!(short, ["language.detect", "language.Language.parse", "entries.read_makefile", "parts.assign", "view.reached", "view.View.apply"], "analyze is its algebra, step by step");
     for step in steps {
         for e in g.edges.iter().filter(|e| e.src == step && matches!(e.kind, EdgeKind::Takes | EdgeKind::Returns | EdgeKind::Mutates)) {
             if classes.contains(e.dst.as_str()) {
-                assert!(["Graph", "Language", "Options"].contains(&name(&e.dst).as_str()), "{step} moves a {}: the algebra has no such place", e.dst);
+                assert!(["Graph", "Language", "Options", "View"].contains(&name(&e.dst).as_str()), "{step} moves a {}: the algebra has no such place", e.dst);
             }
         }
     }
@@ -568,7 +568,7 @@ fn a_call_inside_a_call_is_composition() {
     // `let lang = language::detect(repo, opts).ok_or_else(..)?`: the unwrapping is an identity
     let atlas = analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(".."), &Options::default()).unwrap();
     let analyze_steps: Vec<&str> = atlas.node("atlas-engine.analyze").unwrap().sites.iter().map(|s| if s.to.is_empty() { s.op.as_str() } else { s.to.as_str() }).collect();
-    assert_eq!(analyze_steps, ["atlas-engine.language.detect", "atlas-engine.language.Language.parse", "atlas-engine.entries.read_makefile", "atlas-engine.parts.assign"]);
+    assert_eq!(analyze_steps, ["atlas-engine.language.detect", "atlas-engine.language.Language.parse", "atlas-engine.entries.read_makefile", "atlas-engine.parts.assign", "atlas-engine.view.reached", "atlas-engine.view.View.apply"]);
 }
 
 /// What a step runs is the same for the agent and the page: the engine's bodies. A method called

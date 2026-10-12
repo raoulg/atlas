@@ -473,7 +473,7 @@ pub fn parse(pkg_dir: Option<&Path>, project_root: Option<&Path>, opts: &crate::
     link(&modules, &mut store, &root, &types, project_root.unwrap_or(base));
     mark_exports(&modules, &mut store, &root);
     route_prefixes(&modules, &mut store);
-    keep_reached(&mut store);
+    mark_library(&mut store);
     Ok((store, root))
 }
 
@@ -562,81 +562,16 @@ impl Readable {
     }
 }
 
-/// A library read as code keeps what the project reaches in it: the functions and classes its
-/// calls, constructions, signatures and fields lead to, with the bases and constructors of the
-/// classes, and the modules that hold them. The rest of a module read for one call is dropped.
-fn keep_reached(store: &mut GraphBuilder) {
+/// Library code read as code: every node of a library module is the library's, and no route
+/// into the program.
+fn mark_library(store: &mut GraphBuilder) {
     let library: HashSet<String> = store.nodes.values().filter(|n| n.library || store.nodes.get(&n.module).map_or(false, |m| m.library)).map(|n| n.id.clone()).collect();
-    if library.is_empty() {
-        return;
-    }
     for id in &library {
         if let Some(n) = store.nodes.get_mut(id) {
             n.library = true;
             n.entry = None;
         }
     }
-    let follows = |k: EdgeKind| matches!(k, EdgeKind::Calls | EdgeKind::Instantiates | EdgeKind::Takes | EdgeKind::Returns | EdgeKind::Has | EdgeKind::Mutates | EdgeKind::Inherits | EdgeKind::Variant);
-    let mut out: HashMap<&str, Vec<&str>> = HashMap::new();
-    for e in store.edges.iter().filter(|e| follows(e.kind)) {
-        out.entry(e.src.as_str()).or_default().push(e.dst.as_str());
-    }
-    let bases: HashMap<&str, Vec<&str>> = store.edges.iter().filter(|e| e.kind == EdgeKind::Inherits).fold(HashMap::new(), |mut m, e| {
-        m.entry(e.src.as_str()).or_default().push(e.dst.as_str());
-        m
-    });
-    let ancestors = |c: &str| -> Vec<String> {
-        let (mut out, mut todo) = (vec![], vec![c.to_string()]);
-        while let Some(x) = todo.pop() {
-            for b in bases.get(x.as_str()).into_iter().flatten() {
-                if !out.iter().any(|o: &String| o == b) && out.len() < 32 {
-                    out.push(b.to_string());
-                    todo.push(b.to_string());
-                }
-            }
-        }
-        out
-    };
-    let mut kept: HashSet<String> = HashSet::new();
-    let mut stack: Vec<String> = store.nodes.keys().filter(|id| !library.contains(*id)).cloned().collect();
-    loop {
-        while let Some(id) = stack.pop() {
-            let mut next: Vec<String> = out.get(id.as_str()).map(|v| v.iter().map(|s| s.to_string()).collect()).unwrap_or_default();
-            // a class built is built by its constructor
-            if store.nodes.get(&id).map_or(false, |n| n.kind == NodeKind::Class) {
-                next.push(format!("{id}.__init__"));
-            }
-            for d in next {
-                if library.contains(&d) && store.nodes.contains_key(&d) && kept.insert(d.clone()) {
-                    stack.push(d);
-                }
-            }
-        }
-        // a class kept answers the calls into its bases with its own methods
-        for c in kept.iter().filter(|id| store.nodes.get(*id).map_or(false, |n| n.kind == NodeKind::Class)) {
-            for b in ancestors(c) {
-                for m in store.nodes.values().filter(|n| n.cls.as_deref() == Some(b.as_str()) && (kept.contains(&n.id) || !library.contains(&n.id))) {
-                    let own = format!("{c}.{}", m.name);
-                    if library.contains(&own) && store.nodes.contains_key(&own) && !kept.contains(&own) {
-                        stack.push(own);
-                    }
-                }
-            }
-        }
-        if stack.is_empty() {
-            break;
-        }
-        kept.extend(stack.iter().cloned());
-    }
-    // what is kept stands in its class and its module
-    let holders: Vec<String> = kept.iter().filter_map(|id| store.nodes.get(id)).flat_map(|n| [n.cls.clone(), Some(n.module.clone())]).flatten().collect();
-    kept.extend(holders);
-    let drop: HashSet<String> = library.into_iter().filter(|id| !kept.contains(id)).collect();
-    store.nodes.retain(|id, _| !drop.contains(id));
-    store.edges.retain(|e| !drop.contains(&e.src) && !drop.contains(&e.dst));
-    store.edge_set.retain(|(a, b, _)| !drop.contains(a) && !drop.contains(b));
-    let files: HashSet<String> = store.nodes.values().map(|n| n.file.clone()).collect();
-    store.files.retain(|f, _| files.contains(f));
 }
 
 /// A web app's routes at the paths a client asks for: under the prefix an app is mounted at

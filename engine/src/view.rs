@@ -23,6 +23,9 @@ pub struct Fiber<F: Fn(&Node) -> bool>(pub F);
 impl<F: Fn(&Node) -> bool> View for Fiber<F> {
     fn apply(&self, g: &Graph) -> Graph {
         let keep: HashSet<&str> = g.nodes.iter().filter(|n| (self.0)(n)).map(|n| n.id.as_str()).collect();
+        // a file's text goes with its nodes: kept while one of them is
+        let kept_files: HashSet<&str> = g.nodes.iter().filter(|n| keep.contains(n.id.as_str())).map(|n| n.file.as_str()).collect();
+        let dropped_files: HashSet<&str> = g.nodes.iter().filter(|n| !keep.contains(n.id.as_str())).map(|n| n.file.as_str()).collect();
         let mut out = Graph {
             root: g.root.clone(),
             language: g.language.clone(),
@@ -35,9 +38,9 @@ impl<F: Fn(&Node) -> bool> View for Fiber<F> {
                 .filter(|e| keep.contains(e.src.as_str()) && keep.contains(e.dst.as_str()))
                 .cloned()
                 .collect(),
-            files: g.files.clone(),
+            files: g.files.iter().filter(|(f, _)| kept_files.contains(f.as_str()) || !dropped_files.contains(f.as_str())).map(|(f, t)| (f.clone(), t.clone())).collect(),
             make: g.make.clone(),
-            stats: Default::default(),
+            stats: g.stats.clone(),
         };
         out.recount();
         out
@@ -99,6 +102,73 @@ impl View for Compose {
 }
 
 // ---------- the built-in views ----------
+
+/// What the program reaches: its own code, and of a library read as code what its code reaches
+/// into, through calls, the types its signatures and fields name, and the bases of what it
+/// reaches. A class reached is built by its initializer and answers its bases' calls with its own
+/// methods; what is kept stands in its class and its module.
+pub fn reached(g: &Graph) -> impl View {
+    let nodes: HashMap<&str, &Node> = g.nodes.iter().map(|n| (n.id.as_str(), n)).collect();
+    let library: HashSet<&str> = g.nodes.iter().filter(|n| n.library).map(|n| n.id.as_str()).collect();
+    let follows = |k: EdgeKind| matches!(k, EdgeKind::Calls | EdgeKind::Instantiates | EdgeKind::Takes | EdgeKind::Returns | EdgeKind::Has | EdgeKind::Mutates | EdgeKind::Inherits | EdgeKind::Variant);
+    let mut out: HashMap<&str, Vec<&str>> = HashMap::new();
+    let mut bases: HashMap<&str, Vec<&str>> = HashMap::new();
+    for e in &g.edges {
+        if follows(e.kind) {
+            out.entry(e.src.as_str()).or_default().push(e.dst.as_str());
+        }
+        if e.kind == EdgeKind::Inherits {
+            bases.entry(e.src.as_str()).or_default().push(e.dst.as_str());
+        }
+    }
+    let ancestors = |c: &str| -> Vec<String> {
+        let (mut out, mut todo) = (vec![], vec![c.to_string()]);
+        while let Some(x) = todo.pop() {
+            for b in bases.get(x.as_str()).into_iter().flatten() {
+                if !out.iter().any(|o: &String| o == b) && out.len() < 32 {
+                    out.push(b.to_string());
+                    todo.push(b.to_string());
+                }
+            }
+        }
+        out
+    };
+    let mut kept: HashSet<String> = HashSet::new();
+    let mut stack: Vec<String> = g.nodes.iter().filter(|n| !library.contains(n.id.as_str())).map(|n| n.id.clone()).collect();
+    loop {
+        while let Some(id) = stack.pop() {
+            let mut next: Vec<String> = out.get(id.as_str()).map(|v| v.iter().map(|s| s.to_string()).collect()).unwrap_or_default();
+            // a class built is built by its initializer
+            if let Some(n) = nodes.get(id.as_str()).filter(|n| n.kind == NodeKind::Class) {
+                next.extend(n.initializer(|m| nodes.get(m).copied()));
+            }
+            for d in next {
+                if library.contains(d.as_str()) && kept.insert(d.clone()) {
+                    stack.push(d);
+                }
+            }
+        }
+        // a class kept answers the calls into its bases with its own methods
+        for c in kept.iter().filter(|id| nodes.get(id.as_str()).map_or(false, |n| n.kind == NodeKind::Class)) {
+            for b in ancestors(c) {
+                for m in g.nodes.iter().filter(|n| n.cls.as_deref() == Some(b.as_str()) && (kept.contains(&n.id) || !library.contains(n.id.as_str()))) {
+                    let own = format!("{c}.{}", m.name);
+                    if library.contains(own.as_str()) && !kept.contains(&own) {
+                        stack.push(own);
+                    }
+                }
+            }
+        }
+        if stack.is_empty() {
+            break;
+        }
+        kept.extend(stack.iter().cloned());
+    }
+    let holders: Vec<String> = kept.iter().filter_map(|id| nodes.get(id.as_str())).flat_map(|n| [n.cls.clone(), Some(n.module.clone())]).flatten().collect();
+    kept.extend(holders);
+    let library: HashSet<String> = library.into_iter().map(str::to_string).collect();
+    Fiber(move |n: &Node| !library.contains(&n.id) || kept.contains(&n.id))
+}
 
 /// Drop what only the code beside it may use; modules always stay.
 pub fn hide_private() -> impl View {
