@@ -178,7 +178,17 @@ impl<'a> Eval<'a> {
         match p.kind() {
             "assignment" => {
                 let right = p.child_by_field_name("right")?;
-                Some(self.of(at.of_definition(m, offset), right, depth + 1))
+                let here = at.of_definition(m, offset);
+                // set in another function from what it was handed (`self.cache_dir = Path(cache_dir)`
+                // in `__init__`): what that function's callers hand it
+                match enclosing_def(p).filter(|_| here.scope.is_none()).and_then(|d| function_id(m, d).map(|id| (d, id))) {
+                    Some((d, id)) => {
+                        let names: Vec<String> = parameters(d, &m.src, in_class(d)).into_iter().map(|(n, _)| n).collect();
+                        let vals = self.of(At { m, scope: Some(d), params: &names }, right, depth + 1);
+                        Some(vals.into_iter().map(|b| b.into_iter().map(|s| if let Seg::Param(x) = s { Seg::Held(id.clone(), x) } else { s }).collect()).collect())
+                    }
+                    None => Some(self.of(here, right, depth + 1)),
+                }
             }
             "function_definition" => {
                 let body = p.child_by_field_name("body")?;
@@ -275,6 +285,36 @@ pub(super) fn file_args<'s, 't>(sig: &'s [Param], call: TsNode<'t>, src: &[u8]) 
         }
     }
     out
+}
+
+/// The id the graph knows a function by: its module, the classes around it, its name. A
+/// function inside a function has none of its own.
+fn function_id(m: &Module, d: TsNode) -> Option<String> {
+    let mut names = vec![text(d.child_by_field_name("name")?, &m.src).to_string()];
+    let mut p = d.parent();
+    while let Some(x) = p {
+        match x.kind() {
+            "class_definition" => names.push(text(x.child_by_field_name("name")?, &m.src).to_string()),
+            "function_definition" => return None,
+            _ => {}
+        }
+        p = x.parent();
+    }
+    names.reverse();
+    Some(format!("{}.{}", m.id, names.join(".")))
+}
+
+/// Whether a function is a method: defined in a class's body.
+fn in_class(d: TsNode) -> bool {
+    let mut p = d.parent();
+    while let Some(x) = p {
+        match x.kind() {
+            "class_definition" => return true,
+            "function_definition" | "module" => return false,
+            _ => p = x.parent(),
+        }
+    }
+    false
 }
 
 /// The function a node sits in.

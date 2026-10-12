@@ -183,7 +183,9 @@ Three things make `F` honest, and each is an engine task:
    (`shutil.move(src, dst)`, `fs::copy(a, b)`, `copyFile(a, b)`); else the operation's. A file
    handle is the file it was opened at. A file's place is its path evaluated from the code:
    literals and constants, `Path(..) / ..`, a property's or function's `return` (followed
-   through ty's definitions), and what a parameter is handed by its callers. That is carried
+   through ty's definitions), what a parameter is handed by its callers, and what an
+   object holds: an attribute set in `__init__` from its parameters (`self.cache_dir =
+   Path(cache_dir)`) holds what the constructor's callers hand it, or its default. That is carried
    out one call at a time, through each caller's own parameters in turn, so two parameters a
    call hands together stay together; where a call leaves a parameter out it holds its
    declared default, and an entry nobody calls holds what it is run with (`@click.option(..,

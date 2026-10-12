@@ -46,6 +46,9 @@ pub enum Seg {
     Lit(String),
     /// A parameter of the function the path is built in.
     Param(String),
+    /// A parameter of another function, through the object it set up: `self.cache_dir`, set in
+    /// `__init__` from its `cache_dir`, by the function's id and the parameter's name.
+    Held(String, String),
     /// What cannot be known, by the name the code gives it.
     Hole(String),
 }
@@ -129,7 +132,7 @@ pub fn render(b: &Built) -> String {
     b.iter()
         .map(|s| match s {
             Seg::Lit(x) => x.clone(),
-            Seg::Param(x) | Seg::Hole(x) => format!("{{{x}}}"),
+            Seg::Param(x) | Seg::Held(_, x) | Seg::Hole(x) => format!("{{{x}}}"),
         })
         .collect()
 }
@@ -140,7 +143,7 @@ pub fn render(b: &Built) -> String {
 pub fn is_statement(db: crate::model::Db, built: &[Built]) -> bool {
     crate::effects::reads_statements(db)
         && built.iter().any(|b| match b.first() {
-            Some(Seg::Param(_)) => true,
+            Some(Seg::Param(_) | Seg::Held(..)) => true,
             Some(Seg::Lit(l)) => crate::effects::starts_statement(l),
             _ => false,
         })
@@ -230,6 +233,25 @@ pub enum Whole {
 /// program calls (an entry's declared defaults), which otherwise holds what its users hand it,
 /// unknown. An entry the program also calls is run by its users as well.
 pub fn at_callers<H: Handing>(calls: &[H], default: &dyn Fn(&str, &str) -> Vec<Built>, entry: &dyn Fn(&str) -> bool, f: &str, b: &Built, depth: u32) -> Vec<(Whole, Built)> {
+    // what an object holds is what the callers of the function that set it up hand that function.
+    // Which object a route runs `f` on is not followed, so the object's value is whole in `f`
+    // itself; only what `f`'s own callers hand is theirs
+    if let Some((g, p)) = b.iter().find_map(|s| match s {
+        Seg::Held(g, p) => Some((g.clone(), p.clone())),
+        _ => None,
+    }) {
+        let held: Vec<Built> = if depth > DEPTH { vec![hole(&p)] } else { at_callers(calls, default, entry, &g, &vec![Seg::Param(p.clone())], depth + 1).into_iter().map(|(_, v)| v).collect() };
+        let mut out = vec![];
+        for v in held {
+            for x in fill(b, &g, &p, &v) {
+                out.extend(at_callers(calls, default, entry, f, &x, depth + 1));
+                if out.len() >= COMPLETIONS {
+                    return out;
+                }
+            }
+        }
+        return out;
+    }
     if !b.iter().any(|s| matches!(s, Seg::Param(_))) {
         return vec![(Whole::In(f.to_string()), b.clone())];
     }
@@ -249,6 +271,19 @@ pub fn at_callers<H: Handing>(calls: &[H], default: &dyn Fn(&str, &str) -> Vec<B
                 return out;
             }
         }
+    }
+    out
+}
+
+/// `b` with what the object holds for parameter `p` of `g` written in.
+fn fill(b: &Built, g: &str, p: &str, v: &Built) -> Vec<Built> {
+    let mut out: Vec<Built> = vec![vec![]];
+    for s in b {
+        let piece = match s {
+            Seg::Held(h, q) if h == g && q == p => vec![v.clone()],
+            s => vec![vec![s.clone()]],
+        };
+        out = cross(&out, &piece, "");
     }
     out
 }

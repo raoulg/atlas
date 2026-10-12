@@ -2,6 +2,7 @@
 
 import sqlite3
 import zipfile
+from pathlib import Path
 
 import requests
 from neo4j import Driver, GraphDatabase, ManagedTransaction, RoutingControl
@@ -149,3 +150,17 @@ def seen(path: str) -> int:
     con = sqlite3.connect(path)
     con.executescript(SCHEMA)
     return count(con, "SELECT count(*) FROM seen")
+
+
+class Cache:
+    """Keeps entries under the folder it was set up with."""
+
+    def __init__(self, root: Path = Path(".cache")) -> None:
+        self.root = Path(root)
+
+    def keep(self, key: str, text: str) -> None:
+        (self.root / f"{key}.txt").write_text(text)
+
+
+def warm() -> None:
+    Cache(Path("warm")).keep("a", "b")

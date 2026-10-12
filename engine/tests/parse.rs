@@ -144,6 +144,15 @@ fn a_driver_says_which_way_the_data_goes() {
     assert_eq!((peek.dir_name(), peek.artifact.as_str()), ("", ""), "`session.run(\"MATCH (n:Graph) ..\")` says nothing in Python");
 }
 
+/// An object holds what its constructor was handed: `Cache(Path("warm"))` sets `self.root` in
+/// `__init__`, and `keep` writes under it, at the key its caller hands.
+#[test]
+fn an_object_holds_what_its_constructor_was_handed() {
+    let g = fixture();
+    let keep: Vec<(&str, Vec<String>)> = g.node("fixture.store.Cache.keep").unwrap().touches.iter().map(|t| (t.artifact.as_str(), t.by.clone())).collect();
+    assert_eq!(keep, [("warm/a.txt", vec!["fixture.store.warm".to_string()])]);
+}
+
 /// SQL is read by its grammar: a statement writes the table it changes and reads the ones it
 /// takes from; a setting names no table, and a table named at run time is not named.
 #[test]
