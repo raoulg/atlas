@@ -18,11 +18,11 @@ use crate::effects::{self, Crossing};
 use crate::pytypes::{By, Facts, FileArg, Target, Ty, Types, Value};
 use paths::{At, Built, Eval, Passed, Seg};
 use crate::entries::entry_of;
-use crate::model::{Compare, Dir, EdgeKind, Entry, EntryKind, Held, Node, NodeKind, Param, Returns, Site, Touch, World};
+use crate::model::{Dir, EdgeKind, Entry, EntryKind, Held, Node, NodeKind, Param, Returns, Site, Touch, World};
 pub use crate::builder::{ClassInfo, GraphBuilder, SigInfo};
 use crate::tree::{
-    argument, arms_of, decides, evaluation_order, field_children, literals, named_children, nth_of_kind, number_choices, payload_of, span, starts_at_literal, text, unquote, walk,
-    what_of, ChoiceSyntax, Part,
+    argument, arms_of, evaluation_order, field_children, literals, named_children, nth_of_kind, number_choices, payload_of, span, starts_at_literal, text, unquote, walk,
+    what_of, ChoiceSyntax, CompareSyntax, Part,
 };
 
 const BUILTIN_TYPES: &[&str] = &[
@@ -1930,7 +1930,7 @@ fn link_calls<'t>(modules: &'t IndexMap<String, Module>, store: &mut GraphBuilde
         store.used.insert((id.to_string(), t));
     }
     if n.kind != NodeKind::Module {
-        let compares = compares(body, src, &choices);
+        let compares = crate::tree::compares(body, src, &choices, &COMPARES, &CHOICES);
         if let Some(node) = store.nodes.get_mut(id) {
             node.compares = compares;
         }
@@ -2186,34 +2186,29 @@ fn string_cases(n: TsNode, src: &[u8]) -> Option<Vec<String>> {
     }
 }
 
-/// Where a body compares one value with string literals, and the choice each comparison decides.
-fn compares(body: TsNode, src: &[u8], choices: &HashMap<usize, u32>) -> Vec<Compare> {
-    let mut out = vec![];
-    for n in walk(body, &["comparison_operator", "match_statement"]) {
-        let line = n.start_position().row as u32 + 1;
-        if n.kind() == "match_statement" {
-            let (Some(subject), Some(block)) = (n.child_by_field_name("subject"), n.child_by_field_name("body")) else { continue };
-            let cases: Vec<String> = walk(block, &["case_pattern"]).into_iter().flat_map(|p| walk(p, &["string"])).map(|s| unquote(text(s, src))).collect();
-            if !cases.is_empty() {
-                out.push(Compare { subject: text(subject, src).to_string(), cases, line, choice: choices.get(&block.id()).copied() });
-            }
-            continue;
-        }
-        let op = field_children(n, "operators").iter().map(|o| text(*o, src)).collect::<Vec<_>>().join(" ");
-        let operands = named_children(n);
-        if !matches!(op.as_str(), "==" | "!=" | "in" | "not in") || operands.len() != 2 {
-            continue;
-        }
-        let (subject, cases) = match (string_cases(operands[0], src), string_cases(operands[1], src)) {
-            (None, Some(c)) => (operands[0], c),
-            (Some(c), None) => (operands[1], c),
-            _ => continue,
-        };
-        if matches!(subject.kind(), "identifier" | "attribute" | "subscript") {
-            out.push(Compare { subject: text(subject, src).to_string(), cases, line, choice: decides(n, body, src, choices, &CHOICES) });
-        }
+/// Python's comparisons: `==`, `!=`, `in` and `not in` against strings, and a `match` over them.
+const COMPARES: CompareSyntax = CompareSyntax {
+    kinds: &["comparison_operator", "match_statement"],
+    operands: tested,
+    cases: string_cases,
+    subject: |n| matches!(n.kind(), "identifier" | "attribute" | "subscript"),
+    over: matched,
+};
+
+/// The two operands of a test of equality or membership.
+fn tested<'t>(n: TsNode<'t>, src: &[u8]) -> Option<(TsNode<'t>, TsNode<'t>)> {
+    let op = field_children(n, "operators").iter().map(|o| text(*o, src)).collect::<Vec<_>>().join(" ");
+    match (op.as_str(), named_children(n).as_slice()) {
+        ("==" | "!=" | "in" | "not in", [l, r]) => Some((*l, *r)),
+        _ => None,
     }
-    out
+}
+
+/// A `match`: its subject, the strings of its case patterns, and the block that holds the cases.
+fn matched<'t>(n: TsNode<'t>, src: &[u8]) -> Option<(String, Vec<String>, Option<TsNode<'t>>)> {
+    let (Some(subject), Some(block)) = (n.child_by_field_name("subject"), n.child_by_field_name("body")) else { return None };
+    let cases = walk(block, &["case_pattern"]).into_iter().flat_map(|p| walk(p, &["string"])).map(|s| unquote(text(s, src))).collect();
+    Some((text(subject, src).to_string(), cases, Some(block)))
 }
 
 /// A foreign type worth keeping in a signature: bound to a third-party package, not a builtin.

@@ -154,6 +154,50 @@ pub fn decides(n: TsNode, body: TsNode, src: &[u8], ids: &std::collections::Hash
     None
 }
 
+/// How a language writes a comparison of one value with literals: `mode == "train"`,
+/// `mode in {"a", "b"}`, a `match` or a `switch` over strings.
+pub struct CompareSyntax {
+    /// The kinds of node that may compare.
+    pub kinds: &'static [&'static str],
+    /// A test of equality or membership: its two operands.
+    pub operands: for<'t> fn(TsNode<'t>, &[u8]) -> Option<(TsNode<'t>, TsNode<'t>)>,
+    /// The literals an operand names, when it names nothing else.
+    pub cases: fn(TsNode, &[u8]) -> Option<Vec<String>>,
+    /// Whether an operand is a value a body can test: a name, a member, an item.
+    pub subject: fn(TsNode) -> bool,
+    /// A choice over cases (`match`, `switch`): the value as written, its literal cases, and the
+    /// node that holds the cases when the choice is numbered there rather than where it is decided.
+    pub over: for<'t> fn(TsNode<'t>, &[u8]) -> Option<(String, Vec<String>, Option<TsNode<'t>>)>,
+}
+
+/// Where a body compares one value with literals, and the choice each comparison decides.
+pub fn compares(body: TsNode, src: &[u8], choices: &std::collections::HashMap<usize, u32>, cmp: &CompareSyntax, syn: &ChoiceSyntax) -> Vec<crate::model::Compare> {
+    let mut out = vec![];
+    for n in walk(body, cmp.kinds) {
+        let line = n.start_position().row as u32 + 1;
+        if let Some((subject, cases, held)) = (cmp.over)(n, src) {
+            if !cases.is_empty() {
+                let choice = match held {
+                    Some(b) => choices.get(&b.id()).copied(),
+                    None => decides(n, body, src, choices, syn),
+                };
+                out.push(crate::model::Compare { subject, cases, line, choice });
+            }
+            continue;
+        }
+        let Some((l, r)) = (cmp.operands)(n, src) else { continue };
+        let (subject, cases) = match ((cmp.cases)(l, src), (cmp.cases)(r, src)) {
+            (None, Some(c)) => (l, c),
+            (Some(c), None) => (r, c),
+            _ => continue,
+        };
+        if (cmp.subject)(subject) {
+            out.push(crate::model::Compare { subject: text(subject, src).to_string(), cases, line, choice: decides(n, body, src, choices, syn) });
+        }
+    }
+    out
+}
+
 /// The position of `child` among the named children of `parent` of the same kind.
 pub fn nth_of_kind(parent: TsNode, child: TsNode) -> u32 {
     named_children(parent).into_iter().filter(|c| c.kind() == child.kind()).take_while(|c| c.id() != child.id()).count() as u32

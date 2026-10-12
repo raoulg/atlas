@@ -14,11 +14,11 @@ use tree_sitter::{Node as TsNode, Parser, Tree};
 use walkdir::WalkDir;
 
 use crate::effects::{self, Crossing};
-use crate::model::{Compare, EdgeKind, Entry, EntryKind, Held, Node, NodeKind, Param, Returns, Site, Touch, World};
+use crate::model::{EdgeKind, Entry, EntryKind, Held, Node, NodeKind, Param, Returns, Site, Touch, World};
 use crate::builder::{ClassInfo, GraphBuilder, SigInfo};
 use crate::tree::{
-    arms_of, decides, evaluation_order, literals, named_children, nth_of_kind, number_choices, payload_of, span, starts_at_literal, text, unquote, walk, what_of,
-    ChoiceSyntax, Part,
+    arms_of, evaluation_order, literals, named_children, nth_of_kind, number_choices, payload_of, span, starts_at_literal, text, unquote, walk, what_of,
+    ChoiceSyntax, CompareSyntax, Part,
 };
 
 struct Crate {
@@ -1282,7 +1282,7 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crat
     if let Some(node) = store.nodes.get_mut(id) {
         node.sites = steps;
     }
-    let compares = compares(body, src, &choices);
+    let compares = crate::tree::compares(body, src, &choices, &COMPARES, &CHOICES);
     if let Some(node) = store.nodes.get_mut(id) {
         node.compares = compares;
     }
@@ -1354,61 +1354,44 @@ const CHOICES: ChoiceSyntax = ChoiceSyntax {
     },
 };
 
-/// Where a body compares one value with string literals (`kind == "net"`, a `match` on
-/// `&str`), and the choice each comparison decides.
-fn compares(body: TsNode, src: &[u8], choices: &HashMap<usize, u32>) -> Vec<Compare> {
-    let lit = |n: TsNode| matches!(n.kind(), "string_literal" | "raw_string_literal");
-    let mut out = vec![];
-    for n in walk(body, &["binary_expression", "match_expression", "macro_invocation"]) {
-        let line = n.start_position().row as u32 + 1;
-        if n.kind() == "macro_invocation" {
-            // `matches!(kind, "a" | "b")`: the value before the comma, the literals of the pattern after it
-            if n.child_by_field_name("macro").map(|x| text(x, src)) != Some("matches") {
-                continue;
-            }
-            let Some(tt) = named_children(n).into_iter().find(|c| c.kind() == "token_tree") else { continue };
-            // a nested `( .. )` is a token tree of its own, so the first comma among the tokens splits
-            let kids: Vec<TsNode> = (0..tt.child_count()).filter_map(|i| tt.child(i)).collect();
-            let Some(comma) = kids.iter().position(|k| k.kind() == ",").filter(|c| *c > 1) else { continue };
-            let guard = kids.iter().skip(comma).position(|k| text(*k, src) == "if").map_or(kids.len() - 1, |i| comma + i);
-            let (from, to) = (kids[comma].end_byte(), kids[guard].start_byte());
-            let cases: Vec<String> = walk(tt, &["string_literal", "raw_string_literal"])
-                .into_iter()
-                .filter(|s| s.start_byte() >= from && s.end_byte() <= to)
-                .map(|s| unquote(text(s, src)))
-                .collect();
-            if !cases.is_empty() {
-                let subject = String::from_utf8_lossy(&src[kids[1].start_byte()..kids[comma - 1].end_byte()]).to_string();
-                out.push(Compare { subject, cases, line, choice: decides(n, body, src, choices, &CHOICES) });
-            }
-            continue;
-        }
-        if n.kind() == "match_expression" {
-            let (Some(value), Some(block)) = (n.child_by_field_name("value"), n.child_by_field_name("body")) else { continue };
-            let cases: Vec<String> = named_children(block)
-                .into_iter()
-                .filter_map(|a| a.child_by_field_name("pattern"))
-                .flat_map(|p| walk(p, &["string_literal", "raw_string_literal"]))
-                .map(|s| unquote(text(s, src)))
-                .collect();
-            if !cases.is_empty() {
-                out.push(Compare { subject: text(value, src).to_string(), cases, line, choice: choices.get(&block.id()).copied() });
-            }
-            continue;
-        }
-        let op = n.child_by_field_name("operator").map(|o| text(o, src)).unwrap_or("");
-        let (Some(l), Some(r)) = (n.child_by_field_name("left"), n.child_by_field_name("right")) else { continue };
-        if !matches!(op, "==" | "!=") {
-            continue;
-        }
-        let (subject, case) = match (lit(l), lit(r)) {
-            (false, true) => (l, r),
-            (true, false) => (r, l),
-            _ => continue,
-        };
-        out.push(Compare { subject: text(subject, src).to_string(), cases: vec![unquote(text(case, src))], line, choice: decides(n, body, src, choices, &CHOICES) });
+/// Rust's comparisons: `==` and `!=` against a string, a `match` on `&str`, and `matches!`.
+const COMPARES: CompareSyntax = CompareSyntax {
+    kinds: &["binary_expression", "match_expression", "macro_invocation"],
+    operands: tested,
+    cases: |n, src| matches!(n.kind(), "string_literal" | "raw_string_literal").then(|| vec![unquote(text(n, src))]),
+    subject: |_| true,
+    over: matched,
+};
+
+/// The two operands of a test of equality.
+fn tested<'t>(n: TsNode<'t>, src: &[u8]) -> Option<(TsNode<'t>, TsNode<'t>)> {
+    let op = n.child_by_field_name("operator").map(|o| text(o, src)).unwrap_or("");
+    matches!(op, "==" | "!=").then_some((n.child_by_field_name("left")?, n.child_by_field_name("right")?))
+}
+
+/// A `match`, with the block that holds its arms, or a `matches!(kind, "a" | "b")`, decided where
+/// it stands: the value and the strings of the patterns.
+fn matched<'t>(n: TsNode<'t>, src: &[u8]) -> Option<(String, Vec<String>, Option<TsNode<'t>>)> {
+    fn strings(p: TsNode) -> Vec<TsNode> {
+        walk(p, &["string_literal", "raw_string_literal"])
     }
-    out
+    if n.kind() == "match_expression" {
+        let (Some(value), Some(block)) = (n.child_by_field_name("value"), n.child_by_field_name("body")) else { return None };
+        let cases = named_children(block).into_iter().filter_map(|a| a.child_by_field_name("pattern")).flat_map(strings).map(|s| unquote(text(s, src))).collect();
+        return Some((text(value, src).to_string(), cases, Some(block)));
+    }
+    if n.kind() != "macro_invocation" || n.child_by_field_name("macro").map(|x| text(x, src)) != Some("matches") {
+        return None;
+    }
+    let tt = named_children(n).into_iter().find(|c| c.kind() == "token_tree")?;
+    // a nested `( .. )` is a token tree of its own, so the first comma among the tokens splits
+    let kids: Vec<TsNode> = (0..tt.child_count()).filter_map(|i| tt.child(i)).collect();
+    let comma = kids.iter().position(|k| k.kind() == ",").filter(|c| *c > 1)?;
+    let guard = kids.iter().skip(comma).position(|k| text(*k, src) == "if").map_or(kids.len() - 1, |i| comma + i);
+    let (from, to) = (kids[comma].end_byte(), kids[guard].start_byte());
+    let cases = strings(tt).into_iter().filter(|s| s.start_byte() >= from && s.end_byte() <= to).map(|s| unquote(text(s, src))).collect();
+    let subject = String::from_utf8_lossy(&src[kids[1].start_byte()..kids[comma - 1].end_byte()]).to_string();
+    Some((subject, cases, None))
 }
 
 /// A foreign type worth keeping in a signature: from a third-party crate, not std or a container.

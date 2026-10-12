@@ -20,10 +20,10 @@ use paths::{Arg, At, Eval};
 
 use crate::builder::{ClassInfo, GraphBuilder, SigInfo};
 use crate::effects::{self, Crossing};
-use crate::model::{Compare, EdgeKind, Entry, EntryKind, Held, Node, NodeKind, Param, Returns, Site, Touch, World};
+use crate::model::{EdgeKind, Entry, EntryKind, Held, Node, NodeKind, Param, Returns, Site, Touch, World};
 use crate::tree::{
-    arms_of, decides, evaluation_order, literals, named_children, nth_of_kind, number_choices, payload_of, span, starts_at_literal, text, unquote,
-    walk, what_of, ChoiceSyntax, Part,
+    arms_of, evaluation_order, literals, named_children, nth_of_kind, number_choices, payload_of, span, starts_at_literal, text, unquote,
+    walk, what_of, ChoiceSyntax, CompareSyntax, Part,
 };
 
 /// Directories that hold no code of the author's.
@@ -1725,7 +1725,7 @@ fn link_calls<'t>(m: &'t Module, modules: &'t IndexMap<String, Module>, store: &
         }
     }
     if !is_module {
-        let cmp = compares(body, src, &choices);
+        let cmp = crate::tree::compares(body, src, &choices, &COMPARES, &CHOICES);
         if let Some(node) = store.nodes.get_mut(id) {
             node.compares = cmp;
         }
@@ -1886,40 +1886,24 @@ const CHOICES: ChoiceSyntax = ChoiceSyntax {
     },
 };
 
-/// Where a body compares one value with string literals (`mode === "kaart"`, a `switch` over
-/// strings), and the choice each comparison decides.
-fn compares(body: TsNode, src: &[u8], choices: &HashMap<usize, u32>) -> Vec<Compare> {
-    let lit = |n: TsNode| n.kind() == "string";
-    let mut out = vec![];
-    for n in walk(body, &["binary_expression", "switch_statement"]) {
-        let line = n.start_position().row as u32 + 1;
-        if n.kind() == "switch_statement" {
-            let (Some(value), Some(sbody)) = (n.child_by_field_name("value"), n.child_by_field_name("body")) else { continue };
-            let cases: Vec<String> = named_children(sbody)
-                .into_iter()
-                .filter_map(|c| c.child_by_field_name("value"))
-                .filter(|v| lit(*v))
-                .map(|v| unquote(text(v, src)))
-                .collect();
-            if !cases.is_empty() {
-                let subject = text(value, src).trim_start_matches('(').trim_end_matches(')').to_string();
-                out.push(Compare { subject, cases, line, choice: choices.get(&sbody.id()).copied() });
-            }
-            continue;
-        }
-        let op = n.child_by_field_name("operator").map(|o| text(o, src)).unwrap_or("");
-        if !matches!(op, "===" | "==" | "!==" | "!=") {
-            continue;
-        }
-        let (Some(l), Some(r)) = (n.child_by_field_name("left"), n.child_by_field_name("right")) else { continue };
-        let (subject, case) = match (lit(l), lit(r)) {
-            (false, true) => (l, r),
-            (true, false) => (r, l),
-            _ => continue,
-        };
-        if matches!(subject.kind(), "identifier" | "member_expression") {
-            out.push(Compare { subject: text(subject, src).to_string(), cases: vec![unquote(text(case, src))], line, choice: decides(n, body, src, choices, &CHOICES) });
-        }
-    }
-    out
+/// TypeScript's comparisons: `===`, `==`, `!==` and `!=` against a string, and a `switch` over strings.
+const COMPARES: CompareSyntax = CompareSyntax {
+    kinds: &["binary_expression", "switch_statement"],
+    operands: tested,
+    cases: |n, src| (n.kind() == "string").then(|| vec![unquote(text(n, src))]),
+    subject: |n| matches!(n.kind(), "identifier" | "member_expression"),
+    over: switched,
+};
+
+/// The two operands of a test of equality.
+fn tested<'t>(n: TsNode<'t>, src: &[u8]) -> Option<(TsNode<'t>, TsNode<'t>)> {
+    let op = n.child_by_field_name("operator").map(|o| text(o, src)).unwrap_or("");
+    matches!(op, "===" | "==" | "!==" | "!=").then_some((n.child_by_field_name("left")?, n.child_by_field_name("right")?))
+}
+
+/// A `switch`: its value, the strings of its cases, and the body that holds them.
+fn switched<'t>(n: TsNode<'t>, src: &[u8]) -> Option<(String, Vec<String>, Option<TsNode<'t>>)> {
+    let (Some(value), Some(body)) = (n.child_by_field_name("value"), n.child_by_field_name("body")) else { return None };
+    let cases = named_children(body).into_iter().filter_map(|c| c.child_by_field_name("value")).filter(|v| v.kind() == "string").map(|v| unquote(text(v, src))).collect();
+    Some((text(value, src).trim_start_matches('(').trim_end_matches(')').to_string(), cases, Some(body)))
 }
