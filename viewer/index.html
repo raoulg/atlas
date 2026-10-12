@@ -97,6 +97,10 @@ svg#canvas:active{cursor:grabbing}
 #keys dd{margin:0;color:var(--ink-2);font-size:12.5px}
 #keys kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--line);border-bottom-width:2px;padding:0 5px;background:var(--panel-2)}
 #zoomctl{position:absolute;right:14px;top:14px;display:flex;gap:4px}
+#fault{position:absolute;left:14px;top:52px;max-width:min(720px,calc(100% - 28px));background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--alert);border-radius:4px;padding:12px 14px;font-size:12px;line-height:1.5;color:var(--ink-2);z-index:5}
+#fault b{display:block;color:var(--ink);font-weight:600;margin-bottom:2px}
+#fault pre{font-family:var(--mono);font-size:11px;color:var(--ink);white-space:pre-wrap;word-break:break-word;margin:8px 0;max-height:180px;overflow:auto}
+#fault button{font:inherit;font-size:11px;color:var(--ink-2);background:var(--panel-2);border:1px solid var(--line);border-radius:3px;padding:2px 8px;cursor:pointer}
 #crumbs{position:absolute;left:14px;top:14px;right:200px;display:flex;flex-wrap:wrap;gap:5px 6px;align-items:center;font-size:11px;color:var(--ink-3)}
 #crumbs .lbl{letter-spacing:.06em;text-transform:uppercase;font-size:10px;margin-left:8px}
 #crumbs .lbl:first-child{margin-left:0}
@@ -200,6 +204,7 @@ pre.code .l::before{counter-increment:ln;content:counter(ln);display:inline-bloc
   <main>
     <svg id="canvas"><g id="scene" class="scene"></g></svg>
     <div id="crumbs" aria-label="what this picture shows"></div>
+    <div id="fault" role="alert" hidden></div>
     <div id="zoomctl"><button id="zout" type="button" title="zoom out">−</button><button id="fit" type="button">fit</button><button id="zone" type="button" title="actual size">1:1</button><button id="zin" type="button" title="zoom in">+</button><button id="codetoggle" type="button" title="show or hide the code panel">hide code</button></div>
     <div id="resizer" title="drag to resize the inspector"></div>
     <div id="legend"></div>
@@ -750,7 +755,7 @@ function worldPlaceOf(t) {
 }
 // the route as a tree: an open step holds its own steps; a call into a family holds its members' overrides as branches
 function routeTree() {
-  const closedRoutes = es => es.map(e => ({id: e.id, open: false, kids: [], hue: null}));
+  const closedRoutes = ids => ids.map(id => ({id, open: false, kids: [], hue: null}));
   if (!V.route && !V.kind) {
     const unitNodes = (us, part) => us.map(u => { const open = V.open.units.has(u); return {id: "unit:" + u, open, kids: open ? unitKids(u, part) : [], hue: null, choice: false}; });
     const unitKids = (u, part) => { const below = u.endsWith("$") || u === "Makefile" ? [] : unitsBelow(u, part); return below.length > 1 ? unitNodes(below, part) : closedRoutes(unitRoutes(u)); };
@@ -763,7 +768,7 @@ function routeTree() {
     const part = V.part || partOf({});
     return unitNodes(topUnits(part), part);
   }
-  if (!V.route) return closedRoutes(overviewEntries());
+  if (!V.route) return closedRoutes(overviewEntries().map(e => e.id));
   treeInfo.clear();
   // what a step runs is its body, as the engine reads it: the overrides the call may run instead,
   // then its own steps, each choice's branches in a frame, each branch in its own colour
@@ -796,9 +801,12 @@ async function renderPlaat() {
   const restLinks = new Map();  // in a focus: unit -> the types it takes from the rest and hands to it
   const addPlace = p => { if (!places.has(p.id)) places.set(p.id, p); return p.id; };
   const worldPlace = worldPlaceOf;
+  // a type is a place of its own while its moments are counted; then a closed one stands in its kind.
+  // The kind is the type's (its base class), not the view's: the route's subject is its own
+  const kindKey = k => k.startsWith("t:") && places.get(k)?.type ? "t:" + (places.get(k).type === V.route ? V.route : kindOf(places.get(k).type)) : k;
   const typePlace = t => {
-    const pid = placeOfType(t), n = byId.get(pid), closedFam = opens(pid) && !V.open.families.has(pid);
-    return {id: "t:" + pid, label: typeLabel(pid) + (closedFam ? ` (${opensInto(pid)})` : ""), kind: n && n.kind === "external" ? "ext" : "type", hue: hueOf(n), type: pid};
+    const n = byId.get(t), closedFam = opens(t) && !V.open.families.has(t);
+    return {id: "t:" + t, label: typeLabel(t) + (closedFam ? ` (${opensInto(t)})` : ""), kind: n && n.kind === "external" ? "ext" : "type", hue: hueOf(n), type: t};
   };
   // a step's morphism: its own body, or (closed) its interface and everything it touches below
   // noReceiver: the step is seen from its own class (a library class's route), so the receiver is not an input
@@ -813,7 +821,7 @@ async function renderPlaat() {
       // a library class among all routes: what it is built from and what its public methods take and hand on,
       // together; inside a route, building one is a step like any constructor, handing on what it builds
       // seen from inside the class, getting the class back (`add` returns self to chain) is not an output
-      if (!own) { const self = "t:" + placeOfType(f.id); for (const m of callees(f.id)) { const r = morphism(m, false, false, true); r.cod.delete(self); merge(r); } }
+      if (!own) { const self = "t:" + f.id; for (const m of callees(f.id)) { const r = morphism(m, false, false, true); r.cod.delete(self); merge(r); } }
     } else {
       // what the engine says the function takes and gives; the receiver is the class the call
       // says it runs on, when it says; seen from its own class (noReceiver), the value it runs on
@@ -824,7 +832,8 @@ async function renderPlaat() {
       for (const x of a.takes || []) dom.push([addPlace(typePlace(x)), false]);
       for (const x of a.gives || []) cod.push([addPlace(typePlace(x)), false]);
       if (a.builds && !noReceiver) cod.push([addPlace(typePlace(a.builds)), false]);
-      for (const x of a.changes || []) if (!((noReceiver || a.builds) && x === f.cls)) cod.push([addPlace(typePlace(x)), false]);
+      // a method that changes its own class changes the value it runs on
+      for (const x of a.changes || []) if (!((noReceiver || a.builds) && x === f.cls)) cod.push([addPlace(typePlace(x === f.cls && recv ? recv : x)), false]);
       // an open step's body makes what it gives back from what its steps make
       if (own && a.gives_back) for (const x of bodyOf(f.id, opts.on).made_from || []) dom.push([addPlace(typePlace(x)), false]);
       // a closed call into a family takes and hands on what any of its branches does, unless the call
@@ -902,12 +911,16 @@ async function renderPlaat() {
     if (site && !own) {
       // a value whose type ty does not know is still the value its name holds; a value no name holds
       // (`#3`, one call's result handed straight to the next) is drawn without one
-      const held = h => addPlace(h.type ? typePlace(h.type) : {id: "v:" + h.name, label: h.name.startsWith("#") ? "·" : h.name, kind: "type", hue: hueOf(null), type: null});
+      // two values of one type a call hands on are two values, each by the name that holds it
+      const held = h => addPlace(h.type ? (h.name ? {...typePlace(h.type), id: `t:${h.type}~${h.name}`} : typePlace(h.type)) : {id: "v:" + h.name, label: h.name.startsWith("#") ? "·" : h.name, kind: "type", hue: hueOf(null), type: null});
       for (const h of site.hands || []) { const k = held(h); if (!m.dom.has(k)) m.dom.set(k, false); if (h.name) dn.set(k, h.name); }
       for (const h of site.gives || []) { const k = held(h); if (!m.cod.has(k)) m.cod.set(k, false); if (h.name) cn.set(k, h.name); }
       // what the step changes is the value it was handed, under the same name: `read_makefile(&mut g)`
       const changes = ARROWS[step]?.changes || [];
-      for (const x of [...changes, ...(on && changes.includes(byId.get(step)?.cls) ? [on] : [])]) { const k = "t:" + placeOfType(x); if (m.cod.has(k) && dn.has(k) && !cn.has(k)) cn.set(k, dn.get(k)); }
+      for (const x of [...changes, ...(on && changes.includes(byId.get(step)?.cls) ? [on] : [])]) {
+        const kind = kindKey(addPlace(typePlace(x))), held = [...dn.keys()].find(d => kindKey(d) === kind);
+        for (const k of m.cod.keys()) if (held && kindKey(k) === kind && !cn.has(k)) cn.set(k, dn.get(held));
+      }
     }
     return {dom: m.dom, cod: m.cod, dn, cn};
   };
@@ -980,26 +993,58 @@ async function renderPlaat() {
   }
   // a type a step takes and hands on is two moments of the data, not one box: memory is versioned in
   // call order (a step that hands on T makes a new T, later steps take the latest); in the overview,
-  // where routes have no order between them, every route takes the same inputs and hands on the same outputs
-  const isMem = k => k.startsWith("v:") || (k.startsWith("t:") && !V.open.families.has(familyOf(places.get(k)?.type)));
+  // where routes have no order between them, every route takes the same inputs and hands on the same outputs.
+  // Zoom does not touch the moments: an opened family opens at each of them
+  const isMem = k => k.startsWith("v:") || k.startsWith("t:");
   const version = (k, v) => { if (!places.has(v)) places.set(v, {...places.get(k), id: v}); return v; };
   const choiceOf = P => frames.get(P.parent)?.choice ? P.parent : P.id;
   const latest = new Map();
+  // what the call hands a step and what the function says it takes are one value when they are of one
+  // kind and at most one of them has a name: the value by the name and the type the call gives it.
+  // Two values of a kind with names of their own are two values
+  const oneOfKind = (m, names) => {
+    const out = new Map(), unnamed = new Map(), named = new Map();
+    const has = k => !!names?.get(k);
+    m.forEach((r, k) => {
+      const kind = kindKey(k);
+      if (has(k)) { if (!named.has(kind)) named.set(kind, k); out.set(k, r); return; }
+      const prev = unnamed.get(kind);
+      if (!prev) { unnamed.set(kind, k); out.set(k, r); return; }
+      if (places.get(prev)?.type === kindOf(places.get(prev)?.type) && places.get(k)?.type !== places.get(prev)?.type) { out.delete(prev); unnamed.set(kind, k); out.set(k, r); }
+    });
+    for (const [kind, k] of unnamed) if (named.has(kind)) out.delete(k);
+    return out;
+  };
+  for (const P of pills.values()) if (!P.steps[0].startsWith("unit:")) { P.D = oneOfKind(P.D, P.dn); P.C = oneOfKind(P.C, P.cn); }
   for (const P of pills.values()) {
     // between units a type is the joint itself: one unit makes it, the next takes it
     if (P.steps[0].startsWith("unit:")) continue;
-    // a value is taken by the name that holds it, else as the latest of its type
+    // a value is taken by the name that holds it, else as the latest of its kind: an override runs on
+    // the value its call runs on, and a subclass's value is its base's
     const Dv = new Map(), Cv = new Map(), name = (m, k) => (m && m.get(k)) || "";
-    P.D.forEach((r, k) => { const v = isMem(k) ? latest.get(k + "|" + name(P.dn, k)) || latest.get(k + "|") : null; Dv.set(v || k, r); });
+    P.D.forEach((r, k) => { const v = isMem(k) ? latest.get(kindKey(k) + "|" + name(P.dn, k)) || latest.get(kindKey(k) + "|") : null; Dv.set(v || k, r); });
     P.C.forEach((r, k) => {
       if (!isMem(k)) { Cv.set(k, r); return; }
       const nm = name(P.cn, k), v = version(k, `${k}@${V.route ? choiceOf(P) : "out"}`);
-      if (nm && !nm.startsWith("#") && !k.startsWith("v:")) places.get(v).label = `${places.get(k).label} · ${nm}`;
-      if (V.route) { latest.set(k + "|" + nm, v); latest.set(k + "|", v); }
+      if (nm && !nm.startsWith("#") && !k.startsWith("v:")) Object.assign(places.get(v), {label: `${places.get(k).label} · ${nm}`, held: nm});
+      if (V.route) { latest.set(kindKey(k) + "|" + nm, v); latest.set(kindKey(k) + "|", v); }
       Cv.set(v, r);
     });
     P.D = Dv; P.C = Cv;
   }
+  // zoom does not touch the moments: they are counted on the values themselves, and then a value
+  // stands where the view puts its type, a closed kind at each of its moments
+  const momentOf = id => id.includes("@") ? id.slice(id.indexOf("@")) : "";
+  const standsAt = k => {
+    const p = places.get(k);
+    if (!p?.type || !k.startsWith("t:")) return k;
+    const pid = placeOfType(p.type), id = "t:" + pid + momentOf(k);
+    if (id === k) return k;
+    if (!places.has(id)) { const q = typePlace(pid); places.set(id, {...q, id, label: q.label + (p.held ? ` · ${p.held}` : "")}); }
+    return id;
+  };
+  const toShown = m => { const out = new Map(); m.forEach((r, k) => { const k2 = standsAt(k); out.set(k2, out.has(k2) ? out.get(k2) && r : r); }); return out; };
+  for (const P of pills.values()) { P.D = toShown(P.D); P.C = toShown(P.C); }
   // siblings that take and hand on the same places (the same versions) are one pill
   const merged = new Map();
   for (const P of [...pills.values()]) {
@@ -1024,22 +1069,26 @@ async function renderPlaat() {
   const referenced = new Set([...pills.values()].flatMap(P => [...P.D.keys(), ...P.C.keys()]));
   for (const k of [...places.keys()]) if ((k.startsWith("t:") || k.startsWith("v:")) && !referenced.has(k)) places.delete(k);
   const keep = new Set(places.keys());
-  // open families are frames around their members; a member stands inside, the family itself is the frame
+  // open families are frames around their members, one at each moment of the data; a member stands
+  // inside the frame of its moment, the family itself is the frame. A type opens where it stood closed:
+  // in the kind it is a kind of, or as itself; a part stands on its own, as it did closed
   const famFrames = new Map();
+  const frameOf = t => [kindOf(t), t].find(f => V.open.families.has(f) && opens(f));
   for (const p of places.values()) {
     if (!p.type) continue;
-    const f = familyOf(p.type);
-    if (!V.open.families.has(f) || !opens(f)) continue;
-    if (!famFrames.has(f)) famFrames.set(f, {id: "t:" + f, fam: f});
+    const f = frameOf(p.type), at = momentOf(p.id), id = "t:" + f + at;
+    if (!f) continue;
+    if (!famFrames.has(id)) famFrames.set(id, {id, fam: f, at, label: places.get(id)?.label});
   }
-  for (const [f, F] of famFrames) {
-    places.delete("t:" + f); keep.delete("t:" + f);
+  for (const F of famFrames.values()) {
+    const f = F.fam, at = F.at;
+    places.delete(F.id); keep.delete(F.id);
     const inFam = new Set([f, ...(members.get(f) || [])]);
     const viaOf = m => (inn.get(m) || []).find(e => e.kind === "has" && inFam.has(e.src) && e.via)?.via;
     const isSub = m => { let cur = m; for (let i = 0; i < 10; i++) { const b = (out.get(cur) || []).find(e => e.kind === "inherits" && inFam.has(e.dst)); if (!b) return false; if (b.dst === f) return true; cur = b.dst; } return false; };
-    F.kids = (members.get(f) || []).map(m => ({id: "t:" + m, label: isSub(m) ? typeLabel(m) : `${viaOf(m) || "·"}: ${typeLabel(m)}`, kind: "type", hue: hueOf(byId.get(m)), type: m}));
-    F.kids.push(...sharedOf(f).map(e => ({id: `r:${f}:${e.via}`, label: `${e.via}: ${typeLabel(e.dst)}`, kind: "ref", type: e.dst})));
-    F.title = typeLabel(f) + (F.kids.some(k => k.kind === "type" && !k.label.includes(": ")) ? " ⊇" : "");
+    F.kids = (members.get(f) || []).map(m => ({id: "t:" + m + at, label: isSub(m) ? typeLabel(m) : `${viaOf(m) || "·"}: ${typeLabel(m)}`, kind: "type", hue: hueOf(byId.get(m)), type: m}));
+    F.kids.push(...sharedOf(f).map(e => ({id: `r:${f}:${e.via}${at}`, label: `${e.via}: ${typeLabel(e.dst)}`, kind: "ref", type: e.dst})));
+    F.title = (F.label || typeLabel(f)) + (F.kids.some(k => k.kind === "type" && !k.label.includes(": ")) ? " ⊇" : "");
     F.hue = hueOf(byId.get(f));
     for (const k of F.kids) { places.set(k.id, {...k, inFrame: F.id}); keep.add(k.id); }
   }
@@ -1049,7 +1098,6 @@ async function renderPlaat() {
   const use = (p, side) => { if (!used.has(p)) used.set(p, {in: false, out: false}); used.get(p)[side] = true; };
   for (const P of pills.values()) { P.D.forEach((_, k) => use(k, "in")); P.C.forEach((_, k) => use(k, "out")); }
   const famOf = pid => { const p = places.get(pid); return p && p.inFrame ? p.inFrame : pid; };
-  const exists = id => keep.has(id) || famFrames.has(id.slice(2)) && id.startsWith("t:");
   // ---- the ELK graph, in an order the layout keeps from one refinement to the next ----
   const textW = (s, c = 7.3) => s.length * c;
   const nodeOf = new Map();
@@ -1161,8 +1209,8 @@ async function renderPlaat() {
   };
   const hueVar = h => h ? `var(--hue-${h})` : null;
   // frames: open steps (choices dashed) and open families
-  for (const id of [...pos.keys()].filter(id => frames.has(id) || famFrames.has(id.slice(2)) && id.startsWith("t:")).sort((a, b) => pos.get(a).depth - pos.get(b).depth)) {
-    const P = pos.get(id), F = frames.get(id) || famFrames.get(id.slice(2)), isFam = !frames.has(id);
+  for (const id of [...pos.keys()].filter(id => frames.has(id) || famFrames.has(id)).sort((a, b) => pos.get(a).depth - pos.get(b).depth)) {
+    const P = pos.get(id), F = frames.get(id) || famFrames.get(id), isFam = !frames.has(id);
     const grp = el("g", {class: "frame" + (isFam ? " fam" : "") + (F.choice ? " choice" : ""), "data-id": id}, fg);
     const r = el("rect", {class: "bg", width: P.w, height: P.h}, grp);
     if (F.hue) r.setAttribute("style", `stroke:${hueVar(F.hue)}`);
@@ -1301,7 +1349,7 @@ function crumbs() {
     for (const id of V.open.steps) { const info = treeInfo.get(id), n = byId.get(stepOf(id)), name = n?.name || short(stepOf(id)); chip(info?.on && n?.cls ? `${typeLabel(info.on)}.${name}` : name, () => V.open.steps.delete(id)); }
     for (const f of V.open.functions) chip(`every ${byId.get(f)?.name || short(f)}`, () => V.open.functions.delete(f));
   }
-  if (V.open.families.size) { lbl("families"); for (const f of V.open.families) chip(typeLabel(f), () => V.open.families.delete(f)); }
+  if (V.open.families.size) { lbl("opened types"); for (const f of V.open.families) chip(typeLabel(f), () => V.open.families.delete(f)); }
   if (V.open.places.size) { lbl("split"); for (const r of V.open.places) chip(r.slice(2), () => V.open.places.delete(r)); }
   if (V.open.dirs.size) { lbl("folders"); for (const d of V.open.dirs) chip(d, () => V.open.dirs.delete(d)); }
   if (V.focus.size && view === "plaat") {
@@ -1498,13 +1546,30 @@ document.getElementById("search").addEventListener("change", ev => {
   if (target) { const bb = target.getBBox(), m = target.getCTM(), W = svg.node().clientWidth, H = svg.node().clientHeight; const t = d3.zoomTransform(svg.node()); const cx = t.applyX(0), cy = t.applyY(0); const pt = svg.node().createSVGPoint(); pt.x = bb.x + bb.width/2; pt.y = bb.y + bb.height/2; const p = pt.matrixTransform(m); svg.transition().duration(350).call(zoom.translateBy, (W/2 - p.x) / t.k, (H/2 - p.y) / t.k); }
   ev.target.value = "";
 });
+// a view Atlas cannot draw says so where the picture would be: what went wrong, where, and the view,
+// so that the last step can be undone and the fault reported
+const faultEl = document.getElementById("fault");
+function fault(err) {
+  const where = String(err?.stack || "").split("\n").find(l => /^\s*at /.test(l))?.trim();
+  const text = [String(err?.message || err), where, `view: ${JSON.stringify(viewData())}`, `atlas ${window.DATA.atlas || ""}`].filter(Boolean).join("\n");
+  faultEl.replaceChildren(html("b", null, "Atlas could not draw this view."), html("div", null, "Undo the last step with its ✕ above. What went wrong:"), html("pre", null, text));
+  const copy = html("button", null, "copy");
+  copy.onclick = () => navigator.clipboard?.writeText(text).then(() => { copy.textContent = "copied"; }, () => {});
+  faultEl.appendChild(copy);
+  faultEl.hidden = false;
+}
+window.addEventListener("error", e => fault(e.error || e.message));
+window.addEventListener("unhandledrejection", e => fault(e.reason));
 async function render() {
   scene.node().innerHTML = ""; scene.node().classList.remove("focus");
+  faultEl.hidden = true;
   shownUnits = new Set();
   entrySel.style.display = view === "plaat" ? "" : "none";
   crumbs();
   writeView();
-  if (view === "plaat") { await renderPlaat(); } else if (view === "types") { renderTypes(); fit(); } else { await renderSig(); }
+  try {
+    if (view === "plaat") { await renderPlaat(); } else if (view === "types") { renderTypes(); fit(); } else { await renderSig(); }
+  } catch (err) { fault(err); return; }
   legend();
   markChanges();
   if (selected) scene.node().querySelectorAll(`[data-id="${CSS.escape(selected)}"]`).forEach(x => x.classList.add("selected"));

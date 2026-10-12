@@ -82,7 +82,8 @@ pub fn analyze_repo(repos: &[PathBuf], opts: &Options) -> Result<Graph> {
 /// workspace, a Python package, an app); what sits beside them (scripts, notebooks) belongs
 /// to the first.
 pub fn assign(g: &mut Graph) {
-    let mut ids: Vec<String> = g.nodes.iter().filter(|n| n.kind == NodeKind::Module && n.is_pkg && !n.id.contains('.')).map(|n| n.id.clone()).collect();
+    // a library read for its types is the environment's, not a part of the repository
+    let mut ids: Vec<String> = g.nodes.iter().filter(|n| n.kind == NodeKind::Module && n.is_pkg && !n.library && !n.id.contains('.')).map(|n| n.id.clone()).collect();
     if ids.is_empty() {
         ids.push(g.root.clone());
     }

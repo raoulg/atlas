@@ -64,6 +64,9 @@ The rigorous half and the visual half are the same structure. Read `docs/design.
 - A change that should leave the pictures as they were is shown to with `tools/pictures.py`:
   `uv run tools/pictures.py draw <atlas> <repo> <dir>` with the build before and after, then
   `uv run tools/pictures.py compare <before> <after>` (Playwright on the installed Chrome).
+- A viewer change is walked on the subjects before it is committed: `uv run tools/pictures.py
+  walk <atlas> <repo> <dir>` opens every package, every route and every family in a route, and
+  must report no view that throws, draws nothing, or opens a family into other moments.
 - `atlas check .` must find nothing on Atlas itself (`engine/tests/principles.rs` pins it).
   A new principle is a rule in `engine/src/principles.rs`, a case in the fixture, and a
   section in `docs/principles.md`; it checks what the graph holds, never a project.

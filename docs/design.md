@@ -102,7 +102,13 @@ closed downwards (what is opened inside a closed box does not show). Its cut, th
 reached but not opened, is a partition of what the forest holds, so every ideal is a quotient,
 zooming in adds one node to the ideal and zooming out takes a maximal one away. The ideals of a
 forest form a distributive lattice (Birkhoff), and ideals of two forests (packages and families)
-meet in their common refinement, so any combination of zooms is one picture.
+meet in their common refinement, so any combination of zooms is one picture. A zoom on types
+identifies types, never moments: a value is versioned in call order (a step that hands on a `T`
+makes a new one), and an opened family opens at each moment of its values, so the closed picture
+is the quotient of the opened one, moment by moment. The moments are counted on the values, not
+on the boxes the view draws: a step takes a value by the name that holds it, else the latest of
+its kind (an override runs on the value its call runs on); two values with names of their own
+are two values, also when they have one type (`Serial([a, b])` takes both).
 
 A view is its fibers and its ideals: `{route, kind, part, focus, open: {parts, units, steps,
 functions, families, places, dirs}}`. The page writes it to its address after every drawing, so
