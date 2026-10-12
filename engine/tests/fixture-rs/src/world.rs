@@ -2,6 +2,7 @@
 
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use reqwest::blocking::Client;
@@ -64,4 +65,43 @@ pub fn weight(kind: &str) -> u32 {
     } else {
         1
     }
+}
+
+const REPORT: &str = "report.html";
+const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS seen (id TEXT)";
+
+/// Writes the report into the directory its caller names.
+pub fn report(dir: &Path, body: &str) -> std::io::Result<()> {
+    std::fs::write(dir.join(REPORT), body)
+}
+
+pub fn publish(body: &str) -> std::io::Result<()> {
+    report(Path::new("site"), body)
+}
+
+pub fn stamp(name: &str) -> std::io::Result<()> {
+    std::fs::write(format!("out/{name}.txt"), "")
+}
+
+pub fn scratch() -> PathBuf {
+    std::env::temp_dir().join("handed").join("scratch.log")
+}
+
+pub fn keep_scratch(line: &str) -> std::io::Result<()> {
+    std::fs::write(scratch(), line)
+}
+
+pub fn prepare(path: &str) {
+    let conn = Connection::open(path).unwrap();
+    conn.execute(SCHEMA, []).unwrap();
+}
+
+/// Runs whatever statement its caller hands it.
+pub fn run(path: &str, sql: &str) -> usize {
+    let conn = Connection::open(path).unwrap();
+    conn.execute(sql, []).unwrap()
+}
+
+pub fn forget(path: &str) -> usize {
+    run(path, "DELETE FROM seen")
 }

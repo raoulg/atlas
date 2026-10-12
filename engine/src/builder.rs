@@ -77,8 +77,26 @@ impl GraphBuilder {
         match n.touches.iter_mut().find(|x| x.kind == t.kind && x.what == t.what && x.op == t.op && x.artifact == t.artifact && x.dir == t.dir) {
             Some(x) => {
                 x.n += 1;
+                // whole in its own function is whole in every route; else in the routes of each
+                let whole_here = |y: &Touch| y.by.is_empty() && y.users_of.is_empty();
+                let here = whole_here(x) || whole_here(&t);
                 if x.payload.is_empty() {
                     x.payload = t.payload;
+                }
+                if here {
+                    x.by.clear();
+                    x.users_of.clear();
+                } else {
+                    for f in t.by {
+                        if !x.by.contains(&f) {
+                            x.by.push(f);
+                        }
+                    }
+                    for e in t.users_of {
+                        if !x.users_of.contains(&e) {
+                            x.users_of.push(e);
+                        }
+                    }
                 }
             }
             None => n.touches.push(Touch { n: 1, ..t }),

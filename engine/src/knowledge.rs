@@ -399,7 +399,13 @@ pub enum PathFn {
     Home,
     /// The directory the program runs in.
     Here,
+    /// The system's directory for temporary files.
+    Temp,
 }
+
+/// How a path under the system's directory for temporary files is written: a place of its own,
+/// as `~` is the user's home.
+pub const TEMP_DIR: &str = "$TMPDIR";
 
 /// Path functions, by the package or global object they are on and their name.
 pub const PATH_FUNCTIONS: &[(&str, &str, PathFn)] = &[
@@ -408,7 +414,56 @@ pub const PATH_FUNCTIONS: &[(&str, &str, PathFn)] = &[
     ("path", "dirname", PathFn::Parent),
     ("url", "fileURLToPath", PathFn::Same),
     ("os", "homedir", PathFn::Home),
+    ("os", "tmpdir", PathFn::Temp),
     ("process", "cwd", PathFn::Here),
+];
+
+/// Rust's path functions, by the type or module they are on and their name.
+pub const RUST_PATH_FUNCTIONS: &[(&str, &str, PathFn)] = &[
+    ("Path", "new", PathFn::Same),
+    ("PathBuf", "from", PathFn::Same),
+    ("OsStr", "new", PathFn::Same),
+    ("OsString", "from", PathFn::Same),
+    ("String", "from", PathFn::Same),
+    ("env", "current_dir", PathFn::Here),
+    ("env", "home_dir", PathFn::Home),
+    ("dirs", "home_dir", PathFn::Home),
+    ("env", "temp_dir", PathFn::Temp),
+];
+
+/// What a method of a path makes of the path it is called on.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum PathMethod {
+    /// The path with its arguments below it.
+    Join,
+    /// The directory the path is in.
+    Parent,
+    /// The path, written another way.
+    Same,
+    /// The path with its first argument as its extension.
+    Extension,
+    /// Its first argument, in the directory the path is in.
+    Sibling,
+}
+
+/// Rust's methods of a path and of a string, by name.
+pub const RUST_PATH_METHODS: &[(&str, PathMethod)] = &[
+    ("join", PathMethod::Join),
+    ("parent", PathMethod::Parent),
+    ("with_extension", PathMethod::Extension),
+    ("with_file_name", PathMethod::Sibling),
+    ("to_path_buf", PathMethod::Same),
+    ("as_path", PathMethod::Same),
+    ("into_os_string", PathMethod::Same),
+    ("canonicalize", PathMethod::Same),
+    ("display", PathMethod::Same),
+    ("to_string_lossy", PathMethod::Same),
+    ("to_string", PathMethod::Same),
+    ("to_owned", PathMethod::Same),
+    ("as_str", PathMethod::Same),
+    ("as_ref", PathMethod::Same),
+    ("clone", PathMethod::Same),
+    ("into", PathMethod::Same),
 ];
 
 // ---------- a language's own types ----------

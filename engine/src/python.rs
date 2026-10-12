@@ -995,7 +995,8 @@ fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, root: &str
             [entry, declared].into_iter().flatten().flat_map(|d| eval.of(At { m, scope: None, params: &[] }, d, 0)).collect()
         };
         let handing: Vec<Evaluated> = args.iter().map(|arg| Evaluated { arg, modules, eval: &eval }).collect();
-        crate::paths::complete(waiting, &handing, &default)
+        let entry = |f: &str| store.nodes.get(f).map_or(false, |n| n.entry.is_some());
+        crate::paths::complete(waiting, &handing, &default, &entry)
     };
     crate::paths::place_calls(store, completed);
     // the work handed to a managed transaction (`session.execute_read(work)`) goes its way

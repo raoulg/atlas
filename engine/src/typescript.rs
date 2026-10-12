@@ -1297,7 +1297,8 @@ fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, repo: &Pat
         }
     }
     let handing: Vec<paths::Evaluated> = linked.args.iter().map(|arg| paths::Evaluated { arg, eval: &eval }).collect();
-    let completed = crate::paths::complete(linked.calls, &handing, &|_, _| vec![]);
+    let entry = |f: &str| store.nodes.get(f).map_or(false, |n| n.entry.is_some());
+    let completed = crate::paths::complete(linked.calls, &handing, &|_, _| vec![], &entry);
     crate::paths::place_calls(store, completed);
 }
 

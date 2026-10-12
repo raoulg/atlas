@@ -153,7 +153,9 @@ fn a_client_moves_data_where_it_is_used() {
 fn paths_and_requests_are_evaluated() {
     let g = fixture();
     let t = |id: &str| g.node(&format!("fixture-ts.{id}")).unwrap().touches.iter().map(|t| (t.kind_name().to_string(), t.artifact.clone())).collect::<Vec<_>>();
-    assert_eq!(t("server.opslag.lees"), [("disk_read".into(), "data/klanten.csv".into())], "`lees(\"klanten.csv\")` under `DATA`");
+    // the file `klanten` hands `lees`, in the routes that reach `klanten`
+    let lees: Vec<(&str, &[String])> = g.node("fixture-ts.server.opslag.lees").unwrap().touches.iter().map(|t| (t.artifact.as_str(), t.by.as_slice())).collect();
+    assert_eq!(lees, [("data/klanten.csv", &["fixture-ts.server.opslag.klanten".to_string()][..])], "`lees(\"klanten.csv\")` under `DATA`");
     assert_eq!(t("server.opslag.bewaar"), [("disk_write".into(), "uit/regels.pdf".into())], "`new URL(\"../../uit/regels.pdf\", import.meta.url)`");
     let requests = edges(&g, EdgeKind::Requests);
     assert!(has(&requests, "lib.klant.regel", "server.regels.regels.GET /:id"), "{requests:?}");

@@ -485,12 +485,24 @@ pub struct Touch {
     pub fixed: bool,
     /// The line of the first such call, 1-based.
     pub line: u32,
+    /// The functions whose calls hand what makes its path or statement whole, where that is not
+    /// its own function: a route shows it when it reaches one of them.
+    pub by: Vec<String>,
+    /// The entries whose users hand what makes it whole: their own routes show it.
+    pub users_of: Vec<String>,
 }
 
 impl Touch {
     /// A touch of `kind`, going `dir` when the call says, with nothing else known yet.
     pub fn new(kind: World, dir: Option<Dir>) -> Touch {
-        Touch { kind, dir, what: String::new(), n: 1, payload: String::new(), op: String::new(), artifact: String::new(), fixed: false, line: 0 }
+        Touch { kind, dir, what: String::new(), n: 1, payload: String::new(), op: String::new(), artifact: String::new(), fixed: false, line: 0, by: vec![], users_of: vec![] }
+    }
+
+    /// Whether the route that starts at `entry` and reaches `reached` runs this touch: one whole
+    /// in its own function always, one whole by what callers hand when the route reaches one of
+    /// them, one whole by what an entry's users hand in that entry's route.
+    pub fn in_route(&self, entry: &str, reached: &dyn Fn(&str) -> bool) -> bool {
+        (self.by.is_empty() && self.users_of.is_empty()) || self.by.iter().any(|f| reached(f)) || self.users_of.iter().any(|e| e == entry)
     }
 
     pub fn crossing(&self) -> Crossing {
@@ -526,12 +538,16 @@ pub struct TouchJson {
     pub fixed: bool,
     #[serde(default, skip_serializing_if = "is_zero")]
     pub line: u32,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub by: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub users_of: Vec<String>,
 }
 
 impl From<Touch> for TouchJson {
     fn from(t: Touch) -> TouchJson {
         let (kind, dir) = (t.kind_name().to_string(), t.dir_name().to_string());
-        TouchJson { kind, what: t.what, n: t.n, payload: t.payload, op: t.op, artifact: t.artifact, dir, fixed: t.fixed, line: t.line }
+        TouchJson { kind, what: t.what, n: t.n, payload: t.payload, op: t.op, artifact: t.artifact, dir, fixed: t.fixed, line: t.line, by: t.by, users_of: t.users_of }
     }
 }
 
@@ -539,7 +555,7 @@ impl TryFrom<TouchJson> for Touch {
     type Error = String;
     fn try_from(j: TouchJson) -> Result<Touch, String> {
         let c = Crossing::named(&j.kind, &j.dir).ok_or_else(|| format!("no part of the world called `{}`", j.kind))?;
-        Ok(Touch { kind: c.world, dir: c.dir, what: j.what, n: j.n, payload: j.payload, op: j.op, artifact: j.artifact, fixed: j.fixed, line: j.line })
+        Ok(Touch { kind: c.world, dir: c.dir, what: j.what, n: j.n, payload: j.payload, op: j.op, artifact: j.artifact, fixed: j.fixed, line: j.line, by: j.by, users_of: j.users_of })
     }
 }
 
@@ -671,6 +687,28 @@ pub struct Graph {
 impl Graph {
     pub fn node(&self, id: &str) -> Option<&Node> {
         self.nodes.iter().find(|n| n.id == id)
+    }
+
+    /// What the route that starts at `start` can run: the functions it calls, the classes it
+    /// builds with their methods, and the handlers it requests, through every step.
+    pub fn reach(&self, start: &str) -> std::collections::HashSet<String> {
+        let classes: std::collections::HashSet<&str> = self.nodes.iter().filter(|n| n.kind == NodeKind::Class).map(|n| n.id.as_str()).collect();
+        let mut next: std::collections::HashMap<&str, Vec<&str>> = std::collections::HashMap::new();
+        for e in &self.edges {
+            if matches!(e.kind, EdgeKind::Calls | EdgeKind::Instantiates | EdgeKind::Requests) || (e.kind == EdgeKind::Contains && classes.contains(e.src.as_str())) {
+                next.entry(e.src.as_str()).or_default().push(e.dst.as_str());
+            }
+        }
+        let mut seen = std::collections::HashSet::from([start.to_string()]);
+        let mut stack = vec![start];
+        while let Some(id) = stack.pop() {
+            for d in next.get(id).into_iter().flatten() {
+                if seen.insert(d.to_string()) {
+                    stack.push(d);
+                }
+            }
+        }
+        seen
     }
 
     /// Nodes by id, in insertion order.

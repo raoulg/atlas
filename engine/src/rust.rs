@@ -24,6 +24,9 @@ use crate::tree::{
     ChoiceSyntax, CompareSyntax, Part,
 };
 
+mod paths;
+use paths::{Arg, At, Eval, Evaluated};
+
 struct Crate {
     name: String,
     dir: PathBuf,
@@ -847,11 +850,20 @@ fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crate_ids:
     }
     // every signature before any body: a body's locals take their types from what the functions
     // it calls give back, wherever those are defined
+    let eval = Eval::new(modules, &store.nodes, crate_ids);
+    let (mut waiting, mut args) = (vec![], vec![]);
     for id in &ids {
         if matches!(store.nodes[id].kind, NodeKind::Function | NodeKind::Method) {
-            link_calls(modules, store, crate_ids, id);
+            let linked = link_calls(modules, store, crate_ids, &eval, id);
+            waiting.extend(linked.waiting.into_iter().map(|(t, b)| (id.clone(), t, b)));
+            args.extend(linked.args);
         }
     }
+    // a path or a statement built from a function's parameters is whole where its callers hand them
+    let handing: Vec<Evaluated> = args.iter().map(|arg| Evaluated { arg, eval: &eval }).collect();
+    let entry = |f: &str| store.nodes.get(f).map_or(false, |n| n.entry.is_some());
+    let completed = crate::paths::complete(waiting, &handing, &|_, _| vec![], &entry);
+    crate::paths::place_calls(store, completed);
 }
 
 /// A function on a type, by the casing Rust's names follow (C-CASE): `File::open`, not
@@ -976,14 +988,23 @@ fn expand(m: &Module, parts: &[String]) -> Vec<String> {
     }
 }
 
-fn link_calls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crate_ids: &HashMap<String, String>, id: &str) {
+/// What reading a body gives besides its edges and touches: its file and database calls with
+/// their paths and statements as built (placed once the parameters' values are known), and the
+/// arguments of its calls of the program's functions.
+#[derive(Default)]
+struct Linked<'t> {
+    waiting: Vec<(Touch, Vec<crate::paths::Built>)>,
+    args: Vec<Arg<'t>>,
+}
+
+fn link_calls<'t>(modules: &'t IndexMap<String, Module>, store: &mut GraphBuilder, crate_ids: &HashMap<String, String>, eval: &Eval<'t>, id: &str) -> Linked<'t> {
     let n = store.nodes[id].clone();
     let m = &modules[&n.module];
-    let Some(d) = def_node(m, &n) else { return };
-    let Some(body) = d.child_by_field_name("body") else { return };
+    let Some(d) = def_node(m, &n) else { return Linked::default() };
+    let Some(body) = d.child_by_field_name("body") else { return Linked::default() };
     let mut steps = Steps::new(body, &m.src, &CHOICES);
     let read = {
-        let mut b = Body::new(modules, store, crate_ids, m, &n, d, body);
+        let mut b = Body::new(modules, store, crate_ids, eval, m, &n, d, body);
         for c in evaluation_order(walk(body, &["call_expression", "struct_expression"])) {
             b.call(&mut steps, c);
         }
@@ -1007,13 +1028,17 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crat
     for t in read.touches {
         store.touch(id, t);
     }
+    Linked { waiting: read.waiting, args: read.args }
 }
 
-/// What reading a body finds besides its steps: what it touches, the calls Atlas could not
-/// follow, and the inputs it changes in place.
+/// What reading a body finds besides its steps: what it touches, the file and database calls
+/// whose paths and statements wait for what callers hand, the calls of the program's functions
+/// with their arguments, the calls Atlas could not follow, and the inputs it changes in place.
 #[derive(Default)]
-struct Read {
+struct Read<'t> {
     touches: Vec<Touch>,
+    waiting: Vec<(Touch, Vec<crate::paths::Built>)>,
+    args: Vec<Arg<'t>>,
     unresolved: Vec<String>,
     mutates: Vec<(String, String)>,
 }
@@ -1023,8 +1048,13 @@ struct Body<'a, 't> {
     modules: &'a IndexMap<String, Module>,
     store: &'a GraphBuilder,
     crate_ids: &'a HashMap<String, String>,
+    eval: &'a Eval<'t>,
     m: &'t Module,
     src: &'t [u8],
+    /// The function the body is of, its id, and its parameters by name.
+    id: String,
+    def: TsNode<'t>,
+    params: Vec<String>,
     cls: Option<String>,
     /// The classes the body's names hold: its typed parameters, and locals assigned from a
     /// constructor, a struct literal or a function with a typed return.
@@ -1033,16 +1063,18 @@ struct Body<'a, 't> {
     made_by: HashMap<String, TsNode<'t>>,
     /// The classes the fields of the body's own class hold.
     attr_types: std::collections::BTreeMap<String, String>,
-    read: Read,
+    read: Read<'t>,
 }
 
 const STRINGS: &[&str] = &["string_literal", "raw_string_literal"];
 
 impl<'a, 't> Body<'a, 't> {
-    fn new(modules: &'a IndexMap<String, Module>, store: &'a GraphBuilder, crate_ids: &'a HashMap<String, String>, m: &'t Module, n: &Node, d: TsNode<'t>, body: TsNode<'t>) -> Self {
+    #[allow(clippy::too_many_arguments)]
+    fn new(modules: &'a IndexMap<String, Module>, store: &'a GraphBuilder, crate_ids: &'a HashMap<String, String>, eval: &'a Eval<'t>, m: &'t Module, n: &Node, d: TsNode<'t>, body: TsNode<'t>) -> Self {
         let cls = n.cls.clone();
         let attr_types = cls.as_ref().and_then(|c| store.classes.get(c)).map(|c| c.attr_types.clone()).unwrap_or_default();
-        let mut b = Body { modules, store, crate_ids, m, src: &m.src, cls, locals: HashMap::new(), made_by: HashMap::new(), attr_types, read: Read::default() };
+        let params = paths::param_names(d, &m.src);
+        let mut b = Body { modules, store, crate_ids, eval, m, src: &m.src, id: n.id.clone(), def: d, params, cls, locals: HashMap::new(), made_by: HashMap::new(), attr_types, read: Read::default() };
         b.parameters(d);
         b.lets(body);
         // a macro that prints shows the human something
@@ -1221,11 +1253,42 @@ impl<'a, 't> Body<'a, 't> {
     }
 
     /// A step to one of the program's own functions or types.
-    fn own_step(&self, steps: &mut Steps, c: TsNode<'t>, t: &str, recv: Option<TsNode<'t>>, via: Option<String>) {
+    fn own_step(&mut self, steps: &mut Steps, c: TsNode<'t>, t: &str, recv: Option<TsNode<'t>>, via: Option<String>) {
         let kind = if self.store.nodes[t].kind == NodeKind::Class { EdgeKind::Instantiates } else { EdgeKind::Calls };
         let on_receiver = recv.map_or(false, |r| r.kind() == "self");
         let step = Step { on_receiver, hands: self.hands(&[recv, c.child_by_field_name("arguments")], &steps.kept), gives: self.gives(c, Some(t)), ..Default::default() };
         steps.call(c, t, kind, via.filter(|_| kind == EdgeKind::Instantiates), step);
+        if let Some(arg) = self.argument(c, t, recv.is_some()) {
+            self.read.args.push(arg);
+        }
+    }
+
+    /// What a call of the program's function `t` hands each of its parameters: a method called
+    /// on a value is handed the rest, one called by its path its receiver first.
+    fn argument(&self, c: TsNode<'t>, t: &str, on_value: bool) -> Option<Arg<'t>> {
+        let n = self.store.nodes.get(t).filter(|n| matches!(n.kind, NodeKind::Function | NodeKind::Method))?;
+        let home = self.modules.get(&n.module)?;
+        let def = def_node(home, n)?;
+        let skip = usize::from(!on_value && paths::takes_self(def));
+        let args = c.child_by_field_name("arguments").map(named_children).unwrap_or_default().into_iter().filter(|a| !a.kind().ends_with("comment"));
+        let passed = paths::param_names(def, &home.src).into_iter().zip(args.skip(skip)).filter(|(p, _)| !p.is_empty()).collect();
+        Some(Arg { caller: self.id.clone(), callee: t.to_string(), module: self.m.id.clone(), scope: Some(self.def), params: self.params.clone(), passed })
+    }
+
+    /// Where an expression of the body is evaluated.
+    fn at(&self) -> At<'t, '_> {
+        At { m: self.m, scope: Some(self.def), params: &self.params }
+    }
+
+    /// A call's touches, each with the path or statement it waits for when it has one.
+    fn keep(&mut self, touches: Vec<(Touch, Vec<crate::paths::Built>)>) {
+        for (t, built) in touches {
+            if built.is_empty() {
+                self.read.touches.push(t);
+            } else {
+                self.read.waiting.push((t, built));
+            }
+        }
     }
 
     /// `receiver.method(..)`: the program's method on the class the receiver holds, or a
@@ -1258,7 +1321,7 @@ impl<'a, 't> Body<'a, 't> {
             None => {
                 self.library_step(steps, c, &method, Some(value));
                 let touches = self.chain_touches(c, value, &method);
-                self.read.touches.extend(touches);
+                self.keep(touches);
             }
         }
     }
@@ -1268,7 +1331,9 @@ impl<'a, 't> Body<'a, 't> {
     /// adds a place only when it names its own (`conn.execute("INSERT INTO log ..")`); a value
     /// built without touching anything touches where it is used, at the place its building
     /// named (`OpenOptions::new().append(true).open("log")`).
-    fn chain_touches(&self, c: TsNode<'t>, value: TsNode<'t>, method: &str) -> Vec<Touch> {
+    /// The path a file is at is the one the call that names it is handed, as built, and a statement
+    /// is what the call that runs it is handed.
+    fn chain_touches(&self, c: TsNode<'t>, value: TsNode<'t>, method: &str) -> Vec<(Touch, Vec<crate::paths::Built>)> {
         let src = self.src;
         let made = library_chain(value, self.m, src, &self.made_by);
         // the outer call of a chain stands for the chain: `client.get(url).send()`
@@ -1288,18 +1353,40 @@ impl<'a, 't> Body<'a, 't> {
             let moves = |i: usize, op: &str| if i < built { None } else { moved_by(&x.ty, op) };
             let n = x.before.len();
             // the move is named by the first call a library knows by name, else the first that moves
-            let (kind, op) = here.iter().enumerate().filter_map(|(i, (op, _))| moves(n + i, op).map(|k| (k, op.clone()))).min_by_key(|(k, _)| *k == Crossing::to(World::Disk))?;
+            let (kind, op, call) = here.iter().enumerate().filter_map(|(i, (op, node))| moves(n + i, op).map(|k| (k, op.clone(), *node))).min_by_key(|(k, _, _)| *k == Crossing::to(World::Disk))?;
             let touched = effects::boundary_rust(&x.ctor).is_some() || x.before.iter().enumerate().any(|(i, (op, _))| moves(i, op).is_some());
             let writes = x.before.iter().chain(&here).any(|(o, _)| knowledge::OPENS_TO_WRITE.contains(&o.as_str()));
             let own: Vec<String> = here.iter().flat_map(|(_, n)| n.child_by_field_name("arguments").map(|a| place_literals(a, src)).unwrap_or_default()).collect();
-            Some((if writes && kind.world == World::Disk { Crossing::write(World::Disk) } else { kind }, op, touched, own))
+            Some((if writes && kind.world == World::Disk { Crossing::write(World::Disk) } else { kind }, op, call, touched, own))
         });
+        let first = |call: TsNode<'t>| call.child_by_field_name("arguments").and_then(|a| named_children(a).into_iter().find(|x| !x.kind().ends_with("comment")));
+        let now = |ts: Vec<Touch>| ts.into_iter().map(|t| (t, vec![])).collect::<Vec<_>>();
         match moved {
-            Some((kind, op, true, own)) => self.touch(c, kind, &op, &own).into_iter().filter(|t| !t.artifact.is_empty()).collect(),
-            Some((kind, op, false, _)) => self.touch(c, kind, &op, &subtree()),
-            None if knowledge::RUST_PATH_READS.contains(&method) => self.touch(c, Crossing::read(World::Disk), method, &subtree()),
+            // a statement run on a connection
+            Some((kind, op, call, _, _)) if matches!(kind.world, World::Db(_)) && self.statement(kind, first(call)).is_some() => {
+                let built = self.statement(kind, first(call)).unwrap_or_default();
+                self.touch(c, kind, &op, &[]).into_iter().take(1).map(|t| (Touch { artifact: String::new(), dir: None, ..t }, built.clone())).collect()
+            }
+            Some((kind, op, _, true, own)) => now(self.touch(c, kind, &op, &own).into_iter().filter(|t| !t.artifact.is_empty()).collect()),
+            // a file opened where a builder's value is used, at the path its `open` is handed
+            Some((kind, op, call, false, _)) if kind.world == World::Disk && first(call).is_some() => {
+                let built = first(call).map(|a| self.eval.of(self.at(), a, 0)).unwrap_or_default();
+                self.touch(c, kind, &op, &subtree()).into_iter().map(|t| (t, built.clone())).collect()
+            }
+            Some((kind, op, _, false, _)) => now(self.touch(c, kind, &op, &subtree())),
+            // a method of a path reads the file the path is
+            None if knowledge::RUST_PATH_READS.contains(&method) => {
+                let built = self.eval.of(self.at(), value, 0);
+                self.touch(c, Crossing::read(World::Disk), method, &subtree()).into_iter().map(|t| (t, built.clone())).collect()
+            }
             None => vec![],
         }
+    }
+
+    /// The statement a call to a database whose statements have a grammar is handed, as built.
+    fn statement(&self, kind: Crossing, arg: Option<TsNode<'t>>) -> Option<Vec<crate::paths::Built>> {
+        let World::Db(db) = kind.world else { return None };
+        arg.map(|a| self.eval.of(self.at(), a, 0)).filter(|b| crate::paths::is_statement(db, b))
     }
 
     /// `path::to::f(..)`, `Self::f(..)`, `Type::new(..)`: the program's function or type, or a
@@ -1335,27 +1422,38 @@ impl<'a, 't> Body<'a, 't> {
                 self.read.unresolved.push(full.iter().take(2).cloned().collect::<Vec<_>>().join("."));
                 if let Some(tag) = effects::boundary_rust(&full) {
                     let touches = self.crossed(c, tag, &op);
-                    self.read.touches.extend(touches);
+                    self.keep(touches);
                 }
             }
         }
     }
 
-    /// What a library's call by path touches: one that moves or copies a file reads the path it
-    /// is handed first and writes the one it is handed second (`fs::copy(a, b)`); any other
-    /// touches what its literals name.
-    fn crossed(&self, c: TsNode<'t>, tag: Crossing, op: &str) -> Vec<Touch> {
-        let args = c.child_by_field_name("arguments").map(named_children).unwrap_or_default();
-        let Some(sides) = crate::body::sides(op, args.len()).filter(|_| tag.world == World::Disk) else {
-            return self.touch(c, tag, op, &literals(c, self.src, STRINGS));
+    /// What a library's call by path touches: a file call the file at the path it is handed, as
+    /// built (one that moves or copies reads the path it is handed first and writes the one it
+    /// is handed second: `fs::copy(a, b)`); a database call the tables its statement names; any
+    /// other what its literals name.
+    fn crossed(&self, c: TsNode<'t>, tag: Crossing, op: &str) -> Vec<(Touch, Vec<crate::paths::Built>)> {
+        let args: Vec<TsNode<'t>> = c.child_by_field_name("arguments").map(named_children).unwrap_or_default().into_iter().filter(|a| !a.kind().ends_with("comment")).collect();
+        let now = |ts: Vec<Touch>| ts.into_iter().map(|t| (t, vec![])).collect::<Vec<_>>();
+        if let Some(built) = self.statement(tag, args.first().copied()) {
+            return self.touch(c, tag, op, &[]).into_iter().take(1).map(|t| (Touch { artifact: String::new(), dir: None, ..t }, built.clone())).collect();
+        }
+        let files: Vec<(Crossing, TsNode<'t>)> = match crate::body::sides(op, args.len()) {
+            Some(sides) if tag.world == World::Disk => sides.into_iter().zip(args).collect(),
+            _ if tag.world == World::Disk && !args.is_empty() => vec![(tag, args[0])],
+            _ => return now(self.touch(c, tag, op, &literals(c, self.src, STRINGS))),
         };
-        let mut out = vec![];
-        for (kind, a) in sides.into_iter().zip(args) {
+        let (mut out, two) = (vec![], files.len() > 1);
+        for (kind, a) in files {
             let lits = literals(a, self.src, STRINGS);
             let mut cr = Crosses::read(c, self.src, kind, None, op, &lits, STRINGS, &self.locals);
-            cr.what = lits.first().map(|l| l.trim().to_string()).unwrap_or_else(|| text(a, self.src).to_string());
+            // a call handed two paths names each by its own argument
+            if two {
+                cr.what = lits.first().map(|l| l.trim().to_string()).unwrap_or_else(|| text(a, self.src).to_string());
+            }
             cr.fixed = crate::tree::head_literal(a, self.src, STRINGS);
-            out.extend(cr.touches(None));
+            let built = self.eval.of(self.at(), a, 0);
+            out.extend(cr.touches(None).into_iter().map(|t| (t, built.clone())));
         }
         out
     }

@@ -17,8 +17,11 @@ pub fn entries(g: &Graph) -> Vec<(EntryKind, &str, &str)> {
 /// The route that starts at `entry` (an id, or an entry's label), its steps opened `depth`
 /// levels deep: the same steps, from the same bodies, as the page draws.
 pub fn route(g: &Graph, entry: &str, depth: usize) -> Option<String> {
-    let s = Story::new(g);
+    let mut s = Story::new(g);
     let start = s.find(entry)?;
+    // the route shows the places its own calls hand
+    s.reached = g.reach(start);
+    s.entry = start.to_string();
     let n = s.nodes[start];
     let kind = n.entry.as_ref().map(|e| format!("{} · {}", kind_label(e.kind), e.label)).unwrap_or_else(|| s.name(start, ""));
     let mut out = format!("{kind}\n{}{}", n.id, s.signature(n));
@@ -57,6 +60,9 @@ struct Story<'g> {
     nodes: HashMap<&'g str, &'g Node>,
     out: HashMap<&'g str, Vec<&'g Edge>>,
     bodies: BTreeMap<String, Body>,
+    /// The route's entry, and what it can run.
+    entry: String,
+    reached: std::collections::HashSet<String>,
 }
 
 impl<'g> Story<'g> {
@@ -65,7 +71,7 @@ impl<'g> Story<'g> {
         for e in &g.edges {
             out.entry(e.src.as_str()).or_default().push(e);
         }
-        Story { g, nodes: g.nodes.iter().map(|n| (n.id.as_str(), n)).collect(), out, bodies: flow::bodies(g) }
+        Story { g, nodes: g.nodes.iter().map(|n| (n.id.as_str(), n)).collect(), out, bodies: flow::bodies(g), entry: String::new(), reached: Default::default() }
     }
 
     fn find(&self, entry: &str) -> Option<&'g str> {
@@ -181,7 +187,7 @@ impl<'g> Story<'g> {
     /// What a step's own body does at the edges: `reads Makefile · writes *.png · prints`.
     fn effects(&self, n: &Node) -> String {
         let mut groups: Vec<(String, Vec<String>)> = vec![];
-        for t in &n.touches {
+        for t in n.touches.iter().filter(|t| t.in_route(&self.entry, &|f| self.reached.contains(f))) {
             let (v, what) = (t.verb(), place(t));
             match groups.iter_mut().find(|(g, _)| *g == v) {
                 Some((_, items)) => {

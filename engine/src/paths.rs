@@ -58,7 +58,7 @@ pub const MAX: usize = 4;
 /// Operations whose path is a directory: what they list, unpack into or make.
 pub const DIR_OPS: &[&str] = &[
     "iterdir", "glob", "rglob", "listdir", "scandir", "walk", "extractall", "mkdir", "makedirs", "rmtree", "copytree", "readdir", "readdirSync", "opendir",
-    "opendirSync", "mkdirSync", "cp", "cpSync",
+    "opendirSync", "mkdirSync", "cp", "cpSync", "create_dir", "create_dir_all", "remove_dir", "remove_dir_all", "read_dir",
 ];
 
 pub fn lit(s: &str) -> Built {
@@ -203,7 +203,7 @@ pub trait Handing {
 }
 
 /// Each parameter of `b` replaced by what `value` says it holds, over every combination.
-fn substitute(b: &Built, mut value: impl FnMut(&str) -> Vec<Built>) -> Vec<Built> {
+pub fn substitute(b: &Built, mut value: impl FnMut(&str) -> Vec<Built>) -> Vec<Built> {
     let mut out: Vec<Built> = vec![vec![]];
     for s in b {
         let piece = match s {
@@ -215,15 +215,23 @@ fn substitute(b: &Built, mut value: impl FnMut(&str) -> Vec<Built>) -> Vec<Built
     out
 }
 
+/// Where a value built from parameters becomes whole: in a function, from what its call hands;
+/// or at an entry, from what the entry's users hand it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Whole {
+    In(String),
+    Users(String),
+}
+
 /// What a value built from the parameters of `f` is at each call that hands them, followed out
-/// through the callers' parameters in turn, with the function where it is complete: the URL
+/// through the callers' parameters in turn, with where it is whole: the URL
 /// `request(method, path)` fetches is `/api/customers` where `api.get("/customers")` is called.
 /// A parameter a call leaves out holds its `default`; so does one of a function nobody in the
 /// program calls (an entry's declared defaults), which otherwise holds what its users hand it,
-/// unknown.
-pub fn at_callers<H: Handing>(calls: &[H], default: &dyn Fn(&str, &str) -> Vec<Built>, f: &str, b: &Built, depth: u32) -> Vec<(String, Built)> {
+/// unknown. An entry the program also calls is run by its users as well.
+pub fn at_callers<H: Handing>(calls: &[H], default: &dyn Fn(&str, &str) -> Vec<Built>, entry: &dyn Fn(&str) -> bool, f: &str, b: &Built, depth: u32) -> Vec<(Whole, Built)> {
     if !b.iter().any(|s| matches!(s, Seg::Param(_))) {
-        return vec![(f.to_string(), b.clone())];
+        return vec![(Whole::In(f.to_string()), b.clone())];
     }
     let unknown = |p: &str| match default(f, p) {
         d if d.is_empty() => vec![hole(p)],
@@ -231,12 +239,12 @@ pub fn at_callers<H: Handing>(calls: &[H], default: &dyn Fn(&str, &str) -> Vec<B
     };
     let sites: Vec<&H> = calls.iter().filter(|a| a.callee() == f).collect();
     if sites.is_empty() || depth > DEPTH {
-        return substitute(b, unknown).into_iter().map(|x| (f.to_string(), x)).collect();
+        return substitute(b, unknown).into_iter().map(|x| (Whole::In(f.to_string()), x)).collect();
     }
-    let mut out = vec![];
+    let mut out: Vec<(Whole, Built)> = if entry(f) { substitute(b, unknown).into_iter().map(|x| (Whole::Users(f.to_string()), x)).collect() } else { vec![] };
     for a in sites {
         for x in substitute(b, |p| a.hands(p).filter(|v| !v.is_empty()).unwrap_or_else(|| unknown(p))) {
-            out.extend(at_callers(calls, default, a.caller(), &x, depth + 1));
+            out.extend(at_callers(calls, default, entry, a.caller(), &x, depth + 1));
             if out.len() >= COMPLETIONS {
                 return out;
             }
@@ -249,16 +257,16 @@ pub fn at_callers<H: Handing>(calls: &[H], default: &dyn Fn(&str, &str) -> Vec<B
 /// hand: the function that makes it, its touch, and the path, URL or statement as built.
 pub type Waiting = (String, crate::model::Touch, Vec<Built>);
 
-/// A waiting call with its path or URL complete at each call that completes it, by the function
-/// where it is complete.
-pub type Completed = (String, crate::model::Touch, Vec<(String, Built)>);
+/// A waiting call with its path, URL or statement at each call that completes it, with where it
+/// is whole.
+pub type Completed = (String, crate::model::Touch, Vec<(Whole, Built)>);
 
-/// Complete the waiting calls through their callers.
-pub fn complete<H: Handing>(calls: Vec<Waiting>, handing: &[H], default: &dyn Fn(&str, &str) -> Vec<Built>) -> Vec<Completed> {
+/// Complete the waiting calls through their callers; `entry` says which functions are entries.
+pub fn complete<H: Handing>(calls: Vec<Waiting>, handing: &[H], default: &dyn Fn(&str, &str) -> Vec<Built>, entry: &dyn Fn(&str) -> bool) -> Vec<Completed> {
     calls
         .into_iter()
         .map(|(f, t, built)| {
-            let found = built.iter().flat_map(|b| at_callers(handing, default, &f, b, 0)).collect();
+            let found = built.iter().flat_map(|b| at_callers(handing, default, entry, &f, b, 0)).collect();
             (f, t, found)
         })
         .collect()
@@ -268,7 +276,8 @@ pub fn complete<H: Handing>(calls: Vec<Waiting>, handing: &[H], default: &dyn Fn
 /// it is opened at; a URL without a host that one of the program's routes serves is a request
 /// from the function that completes it to the route's handler; a statement is read by its
 /// grammar, and the function that runs it touches each table it names, the way it goes there.
-/// Where nothing completes to a place, the call keeps the touch it was read with.
+/// Each touch keeps where it became whole, so a route shows the places its own calls hand; where
+/// a completion names no place, the call keeps the touch it was read with.
 pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Completed>) {
     use crate::model::{Crossing, EdgeKind, EntryKind, Touch, World};
     let routes: Vec<(String, String, String)> = store
@@ -281,46 +290,64 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
         })
         .collect();
     for (f, t, found) in completed {
-        let mut placed: Vec<(String, Option<crate::model::Dir>)> = vec![];
-        let mut requested = false;
-        for (holder, b) in &found {
-            let rendered = render(b);
-            // a request's method, when the code says it, and its URL
-            let (method, url) = match rendered.split_once(' ') {
-                Some((m, u)) if t.kind == World::Net => (m.to_ascii_uppercase(), u.to_string()),
-                _ => (String::new(), rendered.clone()),
+        // what each place of completion makes of it: the alternatives one caller hands are one
+        let mut wholes: Vec<&Whole> = vec![];
+        for (w, _) in &found {
+            if !wholes.contains(&w) {
+                wholes.push(w);
+            }
+        }
+        for whole in wholes {
+            let (by, users_of) = match whole {
+                Whole::In(h) if *h == f => (vec![], vec![]),
+                Whole::In(h) => (vec![h.clone()], vec![]),
+                Whole::Users(e) => (vec![], vec![e.clone()]),
             };
-            if t.kind == World::Net {
-                if url.starts_with('/') {
-                    let known = !method.contains('{');
-                    let served: Vec<&(String, String, String)> = routes.iter().filter(|(_, m, p)| (!known || *m == method) && route_matches(p, &url)).collect();
-                    // a literal segment serves before a parameter: `/years` before `/{year}`
-                    let fewest = served.iter().map(|(_, _, p)| p.matches('{').count()).min().unwrap_or(0);
-                    for (handler, _, path) in served.into_iter().filter(|(_, _, p)| p.matches('{').count() == fewest) {
-                        store.add_edge(holder, handler, EdgeKind::Requests, Some(path.clone()));
-                        requested = true;
+            let holder = match whole {
+                Whole::In(h) | Whole::Users(h) => h,
+            };
+            let mut placed: Vec<(String, Option<crate::model::Dir>)> = vec![];
+            let mut requested = false;
+            for b in found.iter().filter(|(w, _)| w == whole).map(|(_, b)| b) {
+                let rendered = render(b);
+                // a request's method, when the code says it, and its URL
+                let (method, url) = match rendered.split_once(' ') {
+                    Some((m, u)) if t.kind == World::Net => (m.to_ascii_uppercase(), u.to_string()),
+                    _ => (String::new(), rendered.clone()),
+                };
+                if t.kind == World::Net {
+                    if url.starts_with('/') {
+                        let known = !method.contains('{');
+                        let served: Vec<&(String, String, String)> = routes.iter().filter(|(_, m, p)| (!known || *m == method) && route_matches(p, &url)).collect();
+                        // a literal segment serves before a parameter: `/years` before `/{year}`
+                        let fewest = served.iter().map(|(_, _, p)| p.matches('{').count()).min().unwrap_or(0);
+                        for (handler, _, path) in served.into_iter().filter(|(_, _, p)| p.matches('{').count() == fewest) {
+                            store.add_edge(holder, handler, EdgeKind::Requests, Some(path.clone()));
+                            requested = true;
+                        }
+                    } else if let Some(host) = crate::effects::facts(Crossing::to(World::Net), None, &t.op, std::slice::from_ref(&url)).places().into_iter().next().map(|(a, _)| a).filter(|a| !a.is_empty()) {
+                        placed.push((host, t.dir));
                     }
-                } else if let Some(host) = crate::effects::facts(Crossing::to(World::Net), None, &t.op, &[url.clone()]).places().into_iter().next().map(|(a, _)| a).filter(|a| !a.is_empty()) {
-                    placed.push((host, t.dir));
+                } else if let World::Db(db) = t.kind {
+                    placed.extend(crate::effects::sql(db, std::slice::from_ref(&rendered)).unwrap_or_default().into_iter().map(|(table, dir)| (table, dir.or(t.dir))));
+                } else if let Some(p) = place(b, &t.op) {
+                    placed.push((p, t.dir));
                 }
-            } else if let World::Db(db) = t.kind {
-                placed.extend(crate::effects::sql(db, &[rendered.clone()]).unwrap_or_default().into_iter().map(|(table, dir)| (table, dir.or(t.dir))));
-            } else if let Some(p) = place(b, &t.op) {
-                placed.push((p, t.dir));
             }
-        }
-        placed.sort();
-        placed.dedup();
-        if placed.is_empty() {
-            if !requested {
-                // a URL without a host is the page's own origin, decided by whoever serves it
-                let fixed = t.fixed && (t.kind != World::Net || !t.artifact.is_empty());
-                store.touch(&f, Touch { fixed, ..t });
+            placed.sort();
+            placed.dedup();
+            let at = |artifact: String, dir, fixed| Touch { artifact, dir, fixed, by: by.clone(), users_of: users_of.clone(), ..t.clone() };
+            if placed.is_empty() {
+                if !requested {
+                    // a URL without a host is the page's own origin, decided by whoever serves it
+                    let fixed = t.fixed && (t.kind != World::Net || !t.artifact.is_empty());
+                    store.touch(&f, at(t.artifact.clone(), t.dir, fixed));
+                }
+                continue;
             }
-            continue;
-        }
-        for (artifact, dir) in placed {
-            store.touch(&f, Touch { artifact, dir, ..t.clone() });
+            for (artifact, dir) in placed {
+                store.touch(&f, at(artifact, dir, t.fixed));
+            }
         }
     }
 }

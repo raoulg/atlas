@@ -206,6 +206,7 @@ impl<'a> Eval<'a> {
             Some(PathFn::Same) => arg(0),
             Some(PathFn::Home) => vec![lit("~")],
             Some(PathFn::Here) => vec![lit(".")],
+            Some(PathFn::Temp) => vec![lit(knowledge::TEMP_DIR)],
             // the language's own conversions to a string
             None if parts.as_slice() == ["String"] => arg(0),
             None if last == "toString" => f.child_by_field_name("object").map(|o| self.of(at, o, depth + 1)).unwrap_or_else(|| vec![hole("value")]),

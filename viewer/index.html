@@ -549,7 +549,7 @@ function reach(id, on) {
   const touches = new Map(), vis = new Set([k0]), stack = [[id, on]];
   while (stack.length) {
     const [cur, con] = stack.pop(), n = byId.get(cur); if (!n) continue;
-    for (const t of n.touches || []) { const k = touchKey(t); if (!touches.has(k)) touches.set(k, t); }
+    for (const t of n.touches || []) { const k = touchKey(t) + "|" + (t.by || []).join(",") + "|" + (t.users_of || []).join(","); if (!touches.has(k)) touches.set(k, t); }
     const b = bodyOf(cur, con);
     for (let [t, o] of [...stepsIn(b).map(s => [s.to, s.on || null]), ...(b.alts || []).map(a => [a, null])]) {
       if (byId.get(t)?.kind === "class") { t = initializer(t); o = null; }
@@ -557,8 +557,11 @@ function reach(id, on) {
       if (byId.has(t) && !vis.has(k)) { vis.add(k); stack.push([t, o]); }
     }
   }
-  const r = {touches: [...touches.values()]}; reachCache.set(k0, r); return r;
+  const r = {touches: [...touches.values()], nodes: new Set([...vis].map(k => k.split("@")[0]))}; reachCache.set(k0, r); return r;
 }
+// a route shows the places its own calls hand: a touch whose path or statement a caller makes
+// whole, when the route reaches that caller; one an entry's users hand, in that entry's route
+const inRoute = (t, root) => !root || (!(t.by || []).length && !(t.users_of || []).length) || (t.by || []).some(f => reach(root, null).nodes.has(f)) || (t.users_of || []).includes(root);
 const touchKey = t => [t.kind, t.what, t.artifact || "", t.dir || "", t.op || ""].join("|");
 // the routes an overview shows: all of them, or those of one kind (all Library routes, all CLI routes)
 const overviewEntries = () => entries.filter(e => (V.kind ? e.entry.kind === V.kind : e.entry.kind !== "test") && (!V.part || partOf(e) === V.part));
@@ -843,9 +846,10 @@ async function renderPlaat() {
       if (!own && !opts.on) for (const o of bodyOf(f.id, null).alts || []) merge(morphism(o, false, false, noReceiver));
     }
     const ownKeys = new Set((f.touches || []).map(touchKey));
+    const root = V.route || (f.entry ? f.id : null);
     for (const raw of (own ? f.touches || [] : reach(f.id, opts.on).touches)) {
       const tc = shownAs(raw);
-      if (!drawn(tc)) continue;
+      if (!drawn(tc) || !inRoute(raw, root)) continue;
       // each call that makes a figure makes one: a figure of its own on the screen
       const p = raw.kind === "figure" && tc.kind === "screen" && opts.figure ? figurePlace(opts.figure, opts.label) : worldPlace(tc);
       (isIn(tc) ? dom : cod).push([addPlace(p), !ownKeys.has(touchKey(raw))]);

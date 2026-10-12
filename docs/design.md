@@ -187,12 +187,23 @@ Three things make `F` honest, and each is an engine task:
    out one call at a time, through each caller's own parameters in turn, so two parameters a
    call hands together stay together; where a call leaves a parameter out it holds its
    declared default, and an entry nobody calls holds what it is run with (`@click.option(..,
-   default=..)`). A reader evaluates an expression in its own syntax; carrying it to the
-   callers and placing it is the same for every language. A file named under a directory that is not known is that name under
+   default=..)`). A reader evaluates an expression in its own syntax (Rust: literals,
+   `const`s, `format!`, `Path::new`, `.join`, `.with_extension`, what a function of the
+   program gives); carrying it to the callers and placing it is the same for every
+   language. The user's home is `~`, the system's folder for temporary files `$TMPDIR`. A
+   file named under a directory that is not known is that name under
    any (`artefacts/*/report.json`); a path whose last part is not known rests in the
    directory before it, so what one route unpacks into `D/{kind}/{id}` and what another
    lists in `D` meet at `D/`. The same place connects the route that writes it to the
    route that reads it.
+
+   A path built from a function's parameters is a parameter of its arrow: `Repo::read(dir)`
+   is `Disk(dir) → Repo`, and a route fixes it by composition. Each place keeps the
+   function whose call made it whole, and a route shows it only when it reaches that
+   function: `analyze` reads the folder its user names, and `changes` also reads the
+   revision it writes under `$TMPDIR`. An entry the program also calls is run by its users
+   as well, with what they hand it, in its own route. Outside a route (the principles, one
+   function on its own) every place counts.
 
 Where the composition happens outside the package (vectormesh wires `VectorCache →
 Serial → Trainer` in scripts and notebooks), the resting places are types, the

@@ -157,19 +157,23 @@ fn routes(parts: &[Graph], several: bool) -> HashMap<String, Route> {
             let name = format!("{}{} · {label}", if several { format!("{} · ", g.root) } else { String::new() }, story::kind_label(kind));
             let mut r = Route { id: start.to_string(), root: g.root.clone(), ..Default::default() };
             let mut seen = HashSet::from([start]);
-            let mut stack = vec![start];
+            let (mut stack, mut order) = (vec![start], vec![]);
             while let Some(id) = stack.pop() {
-                let Some(n) = by_id.get(id) else { continue };
-                if id != start && n.kind != NodeKind::External {
-                    r.steps.insert(id.to_string());
-                }
-                for t in n.touches.iter().filter(|t| t.kind != World::Screen || id == start) {
-                    r.places.entry(place(t)).or_insert_with(|| t.clone());
-                }
+                order.push(id);
                 for d in next.get(id).into_iter().flatten() {
                     if seen.insert(d) {
                         stack.push(d);
                     }
+                }
+            }
+            // the places its own calls hand
+            for id in &order {
+                let Some(n) = by_id.get(id) else { continue };
+                if *id != start && n.kind != NodeKind::External {
+                    r.steps.insert(id.to_string());
+                }
+                for t in n.touches.iter().filter(|t| (t.kind != World::Screen || *id == start) && t.in_route(start, &|f| seen.contains(f))) {
+                    r.places.entry(place(t)).or_insert_with(|| t.clone());
                 }
             }
             out.insert(name, r);

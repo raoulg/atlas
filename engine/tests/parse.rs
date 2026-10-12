@@ -486,6 +486,32 @@ fn rust_is_read_by_rusts_semantics() {
     assert!(t("handed.world.quit").is_empty(), "`process::exit` runs no program");
 }
 
+/// Rust reads a path as built, and a statement where it is whole: through `join`, `format!`,
+/// a `const`, a function of the program that gives the path, and what a caller hands. A place a
+/// caller hands is that caller's; an entry the program also calls is run by its users too.
+#[test]
+fn rust_reads_paths_as_built() {
+    let g = analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixture-rs"), &Options::default()).unwrap();
+    let t = |id: &str| {
+        let mut out: Vec<(String, String, Vec<String>, Vec<String>)> = g.node(&format!("handed.world.{id}")).unwrap().touches.iter().filter(|t| t.op != "open").map(|t| (t.kind_name().to_string(), t.artifact.clone(), t.by.clone(), t.users_of.clone())).collect();
+        out.sort();
+        out
+    };
+    let here = |kind: &str, artifact: &str| (kind.to_string(), artifact.to_string(), vec![], vec![]);
+    let by = |kind: &str, artifact: &str, f: &str| (kind.to_string(), artifact.to_string(), vec![format!("handed.world.{f}")], vec![]);
+    let users = |kind: &str, f: &str| (kind.to_string(), String::new(), vec![], vec![format!("handed.world.{f}")]);
+    assert_eq!(t("report"), [users("disk_write", "report"), by("disk_write", "site/report.html", "publish")], "`dir.join(REPORT)`: `publish` hands `Path::new(\"site\")`, and `report` is exported");
+    assert_eq!(t("stamp"), [here("disk_write", "out/")], "`format!(\"out/{{name}}.txt\")`: the directory before what is not known");
+    assert_eq!(t("keep_scratch"), [here("disk_write", "$TMPDIR/handed/scratch.log")], "the path `scratch()` gives, under `env::temp_dir()`");
+    assert_eq!(t("prepare"), [here("db_sqlite", "seen")], "`conn.execute(SCHEMA, [])`");
+    assert_eq!(t("run"), [users("db_sqlite", "run"), by("db_sqlite", "seen", "forget")], "`run(path, \"DELETE FROM seen\")`");
+    // a route shows what its own calls hand
+    let publish = atlas_engine::story::route(&g, "handed.world.publish", 3).unwrap();
+    assert!(publish.contains("writes site/report.html") && !publish.contains("writes dir"), "{publish}");
+    let report = atlas_engine::story::route(&g, "handed.world.report", 3).unwrap();
+    assert!(!report.contains("site/report.html"), "{report}");
+}
+
 /// `atlas check .` inside a crate reads the crate: the walk's root is read whatever it is called.
 #[test]
 fn a_crate_reads_from_inside() {
