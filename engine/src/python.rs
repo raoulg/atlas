@@ -2041,14 +2041,18 @@ fn file_calls<'t>(seen: &Seen, eval: &Eval, at: At<'_, 't>, c: TsNode<'t>, fnode
         (false, None) => positional(c).map(|a| vec![(None, "", a)]).unwrap_or_default(),
     };
     let paths = files.iter().filter(|(k, _, _)| *k == Some(FileArg::Path)).count();
+    let sides = crate::body::sides(op, paths);
     if files.is_empty() {
         let f = effects::facts(tag, lib, op, &mode.into_iter().collect::<Vec<_>>());
         let what = what_of(c, src, &["string"], "arguments");
         return f.places().into_iter().map(|(artifact, _)| (touch(Crossing { world: f.kind, dir: f.dir }, what.clone(), artifact, false), vec![])).collect();
     }
+    let mut nth_path = 0;
     files
         .into_iter()
         .map(|(file, name, a)| {
+            let nth = nth_path;
+            nth_path += usize::from(file == Some(FileArg::Path));
             // a method of a path names its file by the path and by its own arguments (a pattern)
             let mut lits = literals(a, src, &["string"]);
             if name == "self" {
@@ -2056,7 +2060,7 @@ fn file_calls<'t>(seen: &Seen, eval: &Eval, at: At<'_, 't>, c: TsNode<'t>, fnode
             }
             lits.extend(mode.clone());
             let f = effects::facts(tag, lib, op, &lits);
-            let kind = file_direction(file, name, paths, &f);
+            let kind = file_direction(file, nth, sides, &f);
             let artifact = f.places().into_iter().next().map(|(a, _)| a).unwrap_or_default();
             let what = match literals(a, src, &["string"]).into_iter().next() {
                 Some(l) => crate::tree::shown(&l),
@@ -2084,13 +2088,13 @@ fn kept_as(c: TsNode, src: &[u8]) -> Option<String> {
 }
 
 /// Which way a file argument goes: what its parameter's type says (a file to read from or to write
-/// to), for a call handed two paths the API's own names for them, else what the operation does.
-fn file_direction(file: Option<FileArg>, name: &str, paths: usize, f: &effects::Facts) -> Crossing {
-    match file {
-        Some(FileArg::Reads) => Crossing::read(World::Disk),
-        Some(FileArg::Writes) => Crossing::write(World::Disk),
-        _ if paths > 1 && matches!(name, "src" | "source" | "from_") => Crossing::read(World::Disk),
-        _ if paths > 1 && matches!(name, "dst" | "destination" | "target" | "to") => Crossing::write(World::Disk),
+/// to); for the `nth` of the paths a call that moves or copies is handed, the side it is on;
+/// else what the operation does.
+fn file_direction(file: Option<FileArg>, nth: usize, sides: Option<[Crossing; 2]>, f: &effects::Facts) -> Crossing {
+    match (file, sides) {
+        (Some(FileArg::Reads), _) => Crossing::read(World::Disk),
+        (Some(FileArg::Writes), _) => Crossing::write(World::Disk),
+        (Some(FileArg::Path), Some(sides)) if nth < 2 => sides[nth],
         _ => Crossing { world: f.kind, dir: f.dir },
     }
 }

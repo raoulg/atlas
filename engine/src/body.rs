@@ -52,6 +52,13 @@ impl Crosses {
     }
 }
 
+/// The ways a file call goes with the first two paths it is handed: one that moves or copies
+/// reads the first and writes the second (`fs::copy(a, b)`, `shutil.move(src, dst)`,
+/// `copyFile(a, b)`); any other goes its own way with each.
+pub fn sides(op: &str, paths: usize) -> Option<[Crossing; 2]> {
+    (paths > 1 && matches!(effects::fs_op(op), effects::FsOp::Moves | effects::FsOp::Copies)).then_some([Crossing::read(World::Disk), Crossing::write(World::Disk)])
+}
+
 /// One call as a step of the route through its body: what it runs, on which class, what it is
 /// handed and what it gives back.
 #[derive(Default)]
@@ -146,4 +153,21 @@ fn line(c: TsNode) -> u32 {
 
 fn span(c: TsNode) -> (u32, u32) {
     (c.start_byte() as u32, c.end_byte() as u32)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `fs::copy(a, b)`, `shutil.move(src, dst)`, `os.replace(a, b)` and `copyFile(a, b)` all read
+    /// their first path and write their second.
+    #[test]
+    fn a_move_or_a_copy_reads_its_first_path_and_writes_its_second() {
+        let both = Some([Crossing::read(World::Disk), Crossing::write(World::Disk)]);
+        for op in ["copy", "copyfile", "copyFile", "cpSync", "rename", "renameSync", "move", "replace"] {
+            assert_eq!(sides(op, 2), both, "{op}");
+        }
+        assert_eq!(sides("copy", 1), None, "one path is the operation's own way");
+        assert_eq!(sides("write_text", 2), None);
+    }
 }

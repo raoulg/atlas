@@ -327,7 +327,7 @@ pub fn fs_op(op: &str) -> FsOp {
         "read_dir" | "iterdir" | "glob" | "rglob" | "listdir" | "scandir" | "walk" | "readdir" | "readdirSync" | "opendir" | "opendirSync" => FsOp::Lists,
         o if o.starts_with("create_dir") || o.starts_with("mkdir") || o.starts_with("makedirs") || o == "touch" => FsOp::Creates,
         o if o.starts_with("remove") || o.starts_with("unlink") || o.starts_with("rmtree") || o.starts_with("rm") => FsOp::Removes,
-        o if o.starts_with("rename") || o.starts_with("move") => FsOp::Moves,
+        o if o.starts_with("rename") || o.starts_with("move") || o.starts_with("replace") => FsOp::Moves,
         o if o.starts_with("copy") || o == "cp" || o == "cpSync" => FsOp::Copies,
         _ => FsOp::Data,
     }

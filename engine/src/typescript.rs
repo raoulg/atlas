@@ -1809,9 +1809,9 @@ fn connects(c: TsNode, src: &[u8], bindings: &HashMap<String, Bound>) -> Option<
 /// The paths a file call is handed, each with the way it goes: a copy or a move reads its first and
 /// writes its second; any other call goes its own way with its first.
 fn sides<'t>(op: &str, args: &[TsNode<'t>], f: &effects::Facts) -> Vec<(Crossing, TsNode<'t>)> {
-    match matches!(op, "copyFile" | "copyFileSync" | "rename" | "renameSync" | "cp" | "cpSync") && args.len() > 1 {
-        true => vec![(Crossing::read(World::Disk), args[0]), (Crossing::write(World::Disk), args[1])],
-        false => vec![(Crossing { world: f.kind, dir: if f.kind == World::Disk { f.dir } else { None } }, args[0])],
+    match crate::body::sides(op, args.len()) {
+        Some([from, to]) => vec![(from, args[0]), (to, args[1])],
+        None => vec![(Crossing { world: f.kind, dir: if f.kind == World::Disk { f.dir } else { None } }, args[0])],
     }
 }
 

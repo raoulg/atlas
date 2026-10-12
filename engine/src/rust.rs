@@ -1324,11 +1324,30 @@ impl<'a, 't> Body<'a, 't> {
                 let full = expand(self.m, &parts);
                 self.read.unresolved.push(full.iter().take(2).cloned().collect::<Vec<_>>().join("."));
                 if let Some(tag) = effects::boundary_rust(&full) {
-                    let touches = self.touch(c, tag, &op, &literals(c, self.src, STRINGS));
+                    let touches = self.crossed(c, tag, &op);
                     self.read.touches.extend(touches);
                 }
             }
         }
+    }
+
+    /// What a library's call by path touches: one that moves or copies a file reads the path it
+    /// is handed first and writes the one it is handed second (`fs::copy(a, b)`); any other
+    /// touches what its literals name.
+    fn crossed(&self, c: TsNode<'t>, tag: Crossing, op: &str) -> Vec<Touch> {
+        let args = c.child_by_field_name("arguments").map(named_children).unwrap_or_default();
+        let Some(sides) = crate::body::sides(op, args.len()).filter(|_| tag.world == World::Disk) else {
+            return self.touch(c, tag, op, &literals(c, self.src, STRINGS));
+        };
+        let mut out = vec![];
+        for (kind, a) in sides.into_iter().zip(args) {
+            let lits = literals(a, self.src, STRINGS);
+            let mut cr = Crosses::read(c, self.src, kind, None, op, &lits, STRINGS, &self.locals);
+            cr.what = lits.first().map(|l| crate::tree::shown(l)).unwrap_or_else(|| text(a, self.src).to_string());
+            cr.fixed = crate::tree::head_literal(a, self.src, STRINGS);
+            out.extend(cr.touches(None));
+        }
+        out
     }
 }
 
