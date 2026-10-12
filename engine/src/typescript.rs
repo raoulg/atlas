@@ -19,11 +19,11 @@ mod paths;
 use paths::{Arg, At, Eval};
 
 use crate::builder::{foreign_type, ClassInfo, GraphBuilder, OwnTypes, SigInfo};
-use crate::body::Crosses;
+use crate::body::{Crosses, Step, Steps};
 use crate::effects::{self, Crossing};
-use crate::model::{EdgeKind, Entry, EntryKind, Held, Node, NodeKind, Param, Returns, Site, Touch, World};
+use crate::model::{EdgeKind, Entry, EntryKind, Held, Node, NodeKind, Param, Returns, Touch, World};
 use crate::tree::{
-    arms_of, evaluation_order, literals, named_children, nth_of_kind, number_choices, span, text, unquote,
+    evaluation_order, literals, named_children, nth_of_kind, span, text, unquote,
     walk, what_of, ChoiceSyntax, CompareSyntax, Part,
 };
 
@@ -1505,17 +1505,13 @@ fn link_calls<'t>(m: &'t Module, modules: &'t IndexMap<String, Module>, store: &
     }
     let cls = n.cls.clone();
     let attrs = cls.as_ref().and_then(|c| store.classes.get(c)).map(|c| c.attr_types.clone()).unwrap_or_default();
-    let choices = number_choices(body, src, &CHOICES);
-    let mut new_edges: Vec<(String, EdgeKind, Vec<(u32, u32)>)> = vec![];
+    let mut steps = Steps::new(body, src, &CHOICES);
     let mut touches: Vec<Touch> = vec![];
     let own = |r: &str, store: &GraphBuilder| !r.starts_with("ext:") && store.nodes.contains_key(r);
     let sites: Vec<TsNode> = evaluation_order(walk(body, &["call_expression", "new_expression", "jsx_opening_element", "jsx_self_closing_element", "identifier"]))
         .into_iter()
         .filter(|x| mine(*x))
         .collect();
-    // the calls as steps, in the order they run, and the names the steps so far have kept
-    let mut steps: Vec<Site> = vec![];
-    let mut kept: HashSet<String> = HashSet::new();
     let ty_of = |name: &str| locals.get(name).cloned().or_else(|| value_type(m, name, modules, &store.nodes));
     let hands_of = |parts: &[Option<TsNode>], kept: &HashSet<String>| -> Vec<Held> {
         let mut out: Vec<Held> = vec![];
@@ -1532,17 +1528,13 @@ fn link_calls<'t>(m: &'t Module, modules: &'t IndexMap<String, Module>, store: &
         kept_as(c, src).map(|name| Held::new(locals.get(&name).cloned().or_else(|| to.and_then(|t| returned.get(t).cloned())).unwrap_or_default(), name)).into_iter().collect()
     };
     for &c in &sites {
-        let arms = arms_of(c, body, src, &choices, &CHOICES);
-        let line = c.start_position().row as u32 + 1;
         match c.kind() {
             "new_expression" => {
                 let parts = c.child_by_field_name("constructor").map(|x| member_parts(x, src)).unwrap_or_default();
                 if let Some(r) = resolve(m, &parts, modules, &store.nodes).filter(|r| own(r, store)) {
                     if store.nodes[&r].kind == NodeKind::Class {
-                        let gives = gives_of(c, Some(&r));
-                        steps.push(Site { line, to: r.clone(), hands: hands_of(&[c.child_by_field_name("arguments")], &kept), gives: gives.clone(), arms: arms.clone(), span: (c.start_byte() as u32, c.end_byte() as u32), ..Default::default() });
-                        kept.extend(gives.into_iter().map(|g| g.name));
-                        new_edges.push((r, EdgeKind::Instantiates, arms));
+                        let step = Step { hands: hands_of(&[c.child_by_field_name("arguments")], &steps.kept), gives: gives_of(c, Some(&r)), ..Default::default() };
+                        steps.call(c, &r, EdgeKind::Instantiates, None, step);
                     }
                 }
             }
@@ -1556,8 +1548,8 @@ fn link_calls<'t>(m: &'t Module, modules: &'t IndexMap<String, Module>, store: &
                     let kind = if store.nodes[&r].kind == NodeKind::Class { EdgeKind::Instantiates } else { EdgeKind::Calls };
                     // a component is handed its attributes
                     let attrs: Vec<Option<TsNode>> = walk(c, &["jsx_attribute"]).into_iter().map(Some).collect();
-                    steps.push(Site { line, to: r.clone(), hands: hands_of(&attrs, &kept), arms: arms.clone(), span: (c.start_byte() as u32, c.end_byte() as u32), ..Default::default() });
-                    new_edges.push((r, kind, arms));
+                    let step = Step { hands: hands_of(&attrs, &steps.kept), ..Default::default() };
+                    steps.call(c, &r, kind, None, step);
                 }
             }
             "identifier" => {
@@ -1573,8 +1565,7 @@ fn link_calls<'t>(m: &'t Module, modules: &'t IndexMap<String, Module>, store: &
                 }
                 if let Some(r) = resolve(m, &[text(c, src).to_string()], modules, &store.nodes).filter(|r| own(r, store)) {
                     if matches!(store.nodes[&r].kind, NodeKind::Function | NodeKind::Method) {
-                        steps.push(Site { line, to: r.clone(), arms: arms.clone(), ..Default::default() });
-                        new_edges.push((r, EdgeKind::Calls, arms));
+                        steps.handed(c, c, &r, EdgeKind::Calls);
                     }
                 }
             }
@@ -1608,36 +1599,22 @@ fn link_calls<'t>(m: &'t Module, modules: &'t IndexMap<String, Module>, store: &
                     None if parts.is_empty() => continue,
                     None => resolve(m, &parts, modules, &store.nodes),
                 };
-                let hands = hands_of(&[object, c.child_by_field_name("arguments")], &kept);
-                match &target {
-                    Some(t) if own(t, store) => {
-                        // a method found on a base runs on the subclass the value is
-                        let sub = class.filter(|k| store.nodes[t].cls.as_deref().map_or(false, |b| b != k.as_str())).unwrap_or_default();
-                        let this = object.map_or(false, |o| o.kind() == "this");
-                        let gives = gives_of(c, Some(t));
-                        steps.push(Site { line, to: t.clone(), on: sub, on_receiver: this, hands, gives: gives.clone(), arms: arms.clone(), span: (c.start_byte() as u32, c.end_byte() as u32), ..Default::default() });
-                        kept.extend(gives.into_iter().map(|g| g.name));
-                    }
-                    // a library's operation not read is a step where the body keeps what it gives
-                    _ => {
-                        let gives = gives_of(c, None);
-                        if !hands.is_empty() && !gives.is_empty() {
-                            let op = parts.last().cloned().unwrap_or_default();
-                            steps.push(Site { line, op, hands, gives: gives.clone(), arms: arms.clone(), span: (c.start_byte() as u32, c.end_byte() as u32), ..Default::default() });
-                            kept.extend(gives.into_iter().map(|g| g.name));
-                        }
-                    }
-                }
+                let hands = hands_of(&[object, c.child_by_field_name("arguments")], &steps.kept);
                 match target {
                     Some(t) if own(&t, store) => {
+                        // a method found on a base runs on the subclass the value is
+                        let on = class.filter(|k| store.nodes[&t].cls.as_deref().map_or(false, |b| b != k.as_str())).unwrap_or_default();
+                        let on_receiver = object.map_or(false, |o| o.kind() == "this");
                         let kind = if store.nodes[&t].kind == NodeKind::Class { EdgeKind::Instantiates } else { EdgeKind::Calls };
+                        steps.call(c, &t, kind, None, Step { on, on_receiver, hands, gives: gives_of(c, Some(&t)) });
                         let callee = if kind == EdgeKind::Instantiates { format!("{t}.constructor") } else { t.clone() };
                         if let Some(a) = argument(modules, store, id, &callee, c, m, scope, &params) {
                             linked.args.push(a);
                         }
-                        new_edges.push((t, kind, arms));
                     }
+                    // a library's operation not read is a step where the body keeps what it gives
                     _ => {
+                        steps.op(c, parts.last().map_or("", String::as_str), hands, gives_of(c, None));
                         let key = parts.iter().take(2).cloned().collect::<Vec<_>>().join(".");
                         *store.unresolved.entry(key).or_insert(0) += 1;
                         let pkg = match m.bindings.get(&parts[0]) {
@@ -1683,12 +1660,8 @@ fn link_calls<'t>(m: &'t Module, modules: &'t IndexMap<String, Module>, store: &
             touches.push(Touch { op: "render".into(), line: jsx.start_position().row as u32 + 1, ..Touch::new(World::Screen, None) });
         }
     }
-    for (t, kind, arms) in new_edges {
-        store.add_call(id, &t, kind, None, arms);
-    }
-    if let Some(node) = store.nodes.get_mut(id) {
-        node.sites = steps;
-    }
+    let compares = (!is_module).then(|| crate::tree::compares(body, src, steps.choices(), &COMPARES, &CHOICES));
+    steps.finish(store, id);
     for t in touches {
         store.touch(id, t);
     }
@@ -1702,11 +1675,8 @@ fn link_calls<'t>(m: &'t Module, modules: &'t IndexMap<String, Module>, store: &
             }
         }
     }
-    if !is_module {
-        let cmp = crate::tree::compares(body, src, &choices, &COMPARES, &CHOICES);
-        if let Some(node) = store.nodes.get_mut(id) {
-            node.compares = cmp;
-        }
+    if let (Some(compares), Some(node)) = (compares, store.nodes.get_mut(id)) {
+        node.compares = compares;
     }
 }
 

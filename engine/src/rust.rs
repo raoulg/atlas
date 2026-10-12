@@ -13,12 +13,12 @@ use indexmap::IndexMap;
 use tree_sitter::{Node as TsNode, Parser, Tree};
 use walkdir::WalkDir;
 
-use crate::body::Crosses;
+use crate::body::{Crosses, Step, Steps};
 use crate::effects::{self, Crossing};
-use crate::model::{EdgeKind, Entry, EntryKind, Held, Node, NodeKind, Param, Returns, Site, Touch, World};
+use crate::model::{EdgeKind, Entry, EntryKind, Held, Node, NodeKind, Param, Returns, Touch, World};
 use crate::builder::{foreign_type, ClassInfo, GraphBuilder, OwnTypes, SigInfo};
 use crate::tree::{
-    arms_of, evaluation_order, literals, named_children, nth_of_kind, number_choices, span, text, unquote, walk,
+    evaluation_order, literals, named_children, nth_of_kind, span, text, unquote, walk,
     ChoiceSyntax, CompareSyntax, Part,
 };
 
@@ -1060,8 +1060,7 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crat
         }
     }
     let attr_types = cls.as_ref().and_then(|c| store.classes.get(c)).map(|c| c.attr_types.clone()).unwrap_or_default();
-    let mut new_edges: Vec<(String, EdgeKind, Option<String>, Vec<(u32, u32)>)> = vec![];
-    let choices = number_choices(body, src, &CHOICES);
+    let mut steps = Steps::new(body, src, &CHOICES);
     let mut touches: Vec<Touch> = vec![];
     let lit_kinds = &["string_literal", "raw_string_literal"];
     // a boundary call, refined by the literals that name its place
@@ -1073,9 +1072,6 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crat
         }
     }
     let mut unresolved: Vec<String> = vec![];
-    // the calls as steps, in the order they run, and the names the steps so far have kept
-    let mut steps: Vec<Site> = vec![];
-    let mut made: HashSet<String> = HashSet::new();
     let ty_of = |name: &str| locals.get(name).cloned();
     // what a call is handed: the value it is called on, its arguments, a literal's fields
     let hands_of = |parts: &[Option<TsNode>], made: &HashSet<String>| -> Vec<Held> {
@@ -1094,15 +1090,12 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crat
         kept_as(c, src).map(|name| Held::new(locals.get(&name).cloned().or_else(|| to.and_then(returned_class)).unwrap_or_default(), name)).into_iter().collect()
     };
     for c in evaluation_order(walk(body, &["call_expression", "struct_expression"])) {
-        let line = c.start_position().row as u32 + 1;
         if c.kind() == "struct_expression" {
             let parts = path_parts(c.child_by_field_name("name"), src);
             if let Some(r) = resolve(m, &parts, modules, &store.nodes, crate_ids).filter(|r| !r.starts_with("ext:")) {
                 if store.nodes.get(&r).map_or(false, |x| x.kind == NodeKind::Class) {
-                    let gives = gives_of(c, Some(&r));
-                    steps.push(Site { line, to: r.clone(), hands: hands_of(&[c.child_by_field_name("body")], &made), gives: gives.clone(), arms: arms_of(c, body, src, &choices, &CHOICES), span: (c.start_byte() as u32, c.end_byte() as u32), ..Default::default() });
-                    made.extend(gives.into_iter().map(|g| g.name));
-                    new_edges.push((r, EdgeKind::Instantiates, None, arms_of(c, body, src, &choices, &CHOICES)));
+                    let step = Step { hands: hands_of(&[c.child_by_field_name("body")], &steps.kept), gives: gives_of(c, Some(&r)), ..Default::default() };
+                    steps.call(c, &r, EdgeKind::Instantiates, None, step);
                 }
             }
             continue;
@@ -1120,15 +1113,13 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crat
                 _ => resolve(m, &ps, modules, &store.nodes, crate_ids),
             };
             if let Some(t) = handed.filter(|t| store.nodes.get(t).map_or(false, |n| matches!(n.kind, NodeKind::Function | NodeKind::Method))) {
-                steps.push(Site { line, to: t.clone(), arms: arms_of(a, body, src, &choices, &CHOICES), ..Default::default() });
-                new_edges.push((t, EdgeKind::Calls, None, arms_of(a, body, src, &choices, &CHOICES)));
+                steps.handed(c, a, &t, EdgeKind::Calls);
             }
         }
         // a library's operation not read is a step where the body keeps what it gives
-        let library_step = |op: &str, recv: Option<TsNode>, made: &HashSet<String>| -> Option<Site> {
-            let hands = hands_of(&[recv, c.child_by_field_name("arguments")], made);
-            let gives = gives_of(c, None);
-            (!hands.is_empty() && !gives.is_empty()).then(|| Site { line, op: op.to_string(), hands, gives, arms: arms_of(c, body, src, &choices, &CHOICES), span: (c.start_byte() as u32, c.end_byte() as u32), ..Default::default() })
+        let library_step = |steps: &mut Steps, op: &str, recv: Option<TsNode>| {
+            let hands = hands_of(&[recv, c.child_by_field_name("arguments")], &steps.kept);
+            steps.op(c, op, hands, gives_of(c, None));
         };
         let mut target: Option<String> = None;
         let mut recv: Option<TsNode> = None;
@@ -1160,10 +1151,7 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crat
                 // known; it builds nothing
                 Some(r) => target = store.method_of(&r, &method),
                 None => {
-                    if let Some(s) = library_step(&method, Some(value), &made) {
-                        made.extend(s.gives.iter().map(|g| g.name.clone()));
-                        steps.push(s);
-                    }
+                    library_step(&mut steps, &method, Some(value));
                     let made = library_chain(value, m, src, &made_by);
                     // the outer call of a chain stands for the chain: `client.get(url).send()`
                     if made.is_some() && c.parent().map_or(false, |p| p.kind() == "field_expression") {
@@ -1242,20 +1230,15 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crat
                 let kind = if store.nodes[&t].kind == NodeKind::Class { EdgeKind::Instantiates } else { EdgeKind::Calls };
                 // `Type::method(..)` with no such method known: keep the name, it is what was called
                 let via = if kind == EdgeKind::Instantiates && parts.len() > 1 && parts[0] != "Self" { parts.last().cloned() } else { None };
-                let this = recv.map_or(false, |r| r.kind() == "self");
-                let gives = gives_of(c, Some(&t));
-                steps.push(Site { line, to: t.clone(), on_receiver: this, hands: hands_of(&[recv, c.child_by_field_name("arguments")], &made), gives: gives.clone(), arms: arms_of(c, body, src, &choices, &CHOICES), span: (c.start_byte() as u32, c.end_byte() as u32), ..Default::default() });
-                made.extend(gives.into_iter().map(|g| g.name));
-                new_edges.push((t, kind, via, arms_of(c, body, src, &choices, &CHOICES)));
+                let on_receiver = recv.map_or(false, |r| r.kind() == "self");
+                let step = Step { on_receiver, hands: hands_of(&[recv, c.child_by_field_name("arguments")], &steps.kept), gives: gives_of(c, Some(&t)), ..Default::default() };
+                steps.call(c, &t, kind, via, step);
             }
             _ => {
                 if parts.is_empty() {
                     continue;
                 }
-                if let Some(s) = library_step(parts.last().map(String::as_str).unwrap_or(""), None, &made) {
-                    made.extend(s.gives.iter().map(|g| g.name.clone()));
-                    steps.push(s);
-                }
+                library_step(&mut steps, parts.last().map(String::as_str).unwrap_or(""), None);
                 let full = expand(m, &parts);
                 unresolved.push(full.iter().take(2).cloned().collect::<Vec<_>>().join("."));
                 if let Some(tag) = effects::boundary_rust(&full) {
@@ -1264,13 +1247,8 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crat
             }
         }
     }
-    for (t, kind, via, arms) in new_edges {
-        store.add_call(id, &t, kind, via, arms);
-    }
-    if let Some(node) = store.nodes.get_mut(id) {
-        node.sites = steps;
-    }
-    let compares = crate::tree::compares(body, src, &choices, &COMPARES, &CHOICES);
+    let compares = crate::tree::compares(body, src, steps.choices(), &COMPARES, &CHOICES);
+    steps.finish(store, id);
     if let Some(node) = store.nodes.get_mut(id) {
         node.compares = compares;
     }

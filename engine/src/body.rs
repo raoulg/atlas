@@ -1,13 +1,15 @@
-//! What a body does, read the same way in every language. A reader says which call crosses into
-//! the world and how its language writes a string; what the call then touches is read here.
+//! What a body does, read the same way in every language: its steps in the order they run, the
+//! edges they make, and what its calls touch. A reader says what each call is and how its
+//! language writes a string and a choice; the rest is read here.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use tree_sitter::Node as TsNode;
 
+use crate::builder::GraphBuilder;
 use crate::effects::{self, Facts};
-use crate::model::{Crossing, Dir, Touch, World};
-use crate::tree::{payload_of, starts_at_literal, what_of};
+use crate::model::{Crossing, Dir, EdgeKind, Held, Site, Touch, World};
+use crate::tree::{arms_of, number_choices, payload_of, starts_at_literal, what_of, ChoiceSyntax};
 
 /// A call that crosses into the world, as the code writes it.
 pub struct Crosses {
@@ -48,4 +50,100 @@ impl Crosses {
             })
             .collect()
     }
+}
+
+/// One call as a step of the route through its body: what it runs, on which class, what it is
+/// handed and what it gives back.
+#[derive(Default)]
+pub struct Step {
+    pub on: String,
+    pub on_receiver: bool,
+    pub hands: Vec<Held>,
+    pub gives: Vec<Held>,
+}
+
+/// The steps of a body in the order they run, the names they keep, and the edges they make: read
+/// the same way for every language. The reader says what each call is; where it sits among the
+/// body's choices is read here.
+pub struct Steps<'t, 's> {
+    body: TsNode<'t>,
+    src: &'s [u8],
+    syntax: &'s ChoiceSyntax,
+    choices: HashMap<usize, u32>,
+    sites: Vec<Site>,
+    edges: Vec<(String, EdgeKind, Option<String>, Vec<(u32, u32)>)>,
+    /// The names the steps so far have kept.
+    pub kept: HashSet<String>,
+}
+
+impl<'t, 's> Steps<'t, 's> {
+    pub fn new(body: TsNode<'t>, src: &'s [u8], syntax: &'s ChoiceSyntax) -> Self {
+        let choices = number_choices(body, src, syntax);
+        Steps { body, src, syntax, choices, sites: vec![], edges: vec![], kept: HashSet::new() }
+    }
+
+    /// The choices of the body, numbered.
+    pub fn choices(&self) -> &HashMap<usize, u32> {
+        &self.choices
+    }
+
+    /// The arms of the choices `n` sits in.
+    pub fn arms(&self, n: TsNode) -> Vec<(u32, u32)> {
+        arms_of(n, self.body, self.src, &self.choices, self.syntax)
+    }
+
+    /// Keep the names a call's value is held by.
+    pub fn keep(&mut self, gives: &[Held]) {
+        self.kept.extend(gives.iter().map(|g| g.name.clone()).filter(|n| !n.is_empty()));
+    }
+
+    /// A call `c` of the program's own code: a step to `to`, and an edge of `kind` (`via` the
+    /// name it was called by, when no such function is known).
+    pub fn call(&mut self, c: TsNode, to: &str, kind: EdgeKind, via: Option<String>, step: Step) {
+        let arms = self.arms(c);
+        self.keep(&step.gives);
+        self.sites.push(Site { line: line(c), to: to.to_string(), on: step.on, on_receiver: step.on_receiver, hands: step.hands, gives: step.gives, arms: arms.clone(), span: span(c), ..Default::default() });
+        self.edges.push((to.to_string(), kind, via, arms));
+    }
+
+    /// A function or class `to`, handed on as a value at `a` inside call `c`: run by whoever
+    /// receives it.
+    pub fn handed(&mut self, c: TsNode, a: TsNode, to: &str, kind: EdgeKind) {
+        let arms = self.arms(a);
+        self.sites.push(Site { line: line(c), to: to.to_string(), arms: arms.clone(), ..Default::default() });
+        self.edges.push((to.to_string(), kind, None, arms));
+    }
+
+    /// A library's operation `op` that the body reads no further: a step when it makes a value
+    /// the body keeps from values it hands it.
+    pub fn op(&mut self, c: TsNode, op: &str, hands: Vec<Held>, gives: Vec<Held>) {
+        if hands.is_empty() || gives.is_empty() {
+            return;
+        }
+        self.keep(&gives);
+        self.sites.push(Site { line: line(c), op: op.to_string(), hands, gives, arms: self.arms(c), span: span(c), ..Default::default() });
+    }
+
+    /// An edge of `kind` to `to` at call `c`, with no step of its own.
+    pub fn edge(&mut self, c: TsNode, to: &str, kind: EdgeKind) {
+        self.edges.push((to.to_string(), kind, None, self.arms(c)));
+    }
+
+    /// Write the body's edges and its steps to the graph.
+    pub fn finish(self, store: &mut GraphBuilder, id: &str) {
+        for (t, kind, via, arms) in self.edges {
+            store.add_call(id, &t, kind, via, arms);
+        }
+        if let Some(n) = store.nodes.get_mut(id) {
+            n.sites = self.sites;
+        }
+    }
+}
+
+fn line(c: TsNode) -> u32 {
+    c.start_position().row as u32 + 1
+}
+
+fn span(c: TsNode) -> (u32, u32) {
+    (c.start_byte() as u32, c.end_byte() as u32)
 }

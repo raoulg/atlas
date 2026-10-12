@@ -14,15 +14,15 @@ use walkdir::WalkDir;
 
 mod paths;
 
-use crate::body::Crosses;
+use crate::body::{Crosses, Step, Steps};
 use crate::effects::{self, Crossing};
 use crate::pytypes::{By, Facts, FileArg, Target, Ty, Types, Value};
 use paths::{At, Built, Eval, Passed, Seg};
 use crate::entries::entry_of;
-use crate::model::{Dir, EdgeKind, Entry, EntryKind, Held, Node, NodeKind, Param, Returns, Site, Touch, World};
+use crate::model::{Dir, EdgeKind, Entry, EntryKind, Held, Node, NodeKind, Param, Returns, Touch, World};
 pub use crate::builder::{foreign_type, ClassInfo, GraphBuilder, OwnTypes, SigInfo};
 use crate::tree::{
-    argument, arms_of, evaluation_order, field_children, literals, named_children, nth_of_kind, number_choices, payload_of, span, text, unquote, walk,
+    argument, evaluation_order, field_children, literals, named_children, nth_of_kind, payload_of, span, text, unquote, walk,
     what_of, ChoiceSyntax, CompareSyntax, Part,
 };
 
@@ -1702,16 +1702,11 @@ fn link_calls<'t>(modules: &'t IndexMap<String, Module>, store: &mut GraphBuilde
     let mut declared: Vec<(World, Dir)> = vec![];
     let params = if in_module { HashMap::new() } else { param_types(m, d, modules, &store.nodes, root) };
     let mut touches: Vec<Touch> = vec![];
-    let mut new_edges: Vec<(String, EdgeKind, Vec<(u32, u32)>)> = vec![];
     let mut unresolved: Vec<String> = vec![];
     let mut used: Vec<String> = vec![];
-    let choices = number_choices(body, src, &CHOICES);
     let mut changes: Vec<(String, String)> = vec![];
-    // the calls as steps, in the order they run
-    let mut steps: Vec<Site> = vec![];
+    let mut steps = Steps::new(body, src, &CHOICES);
     let mut new_ext: Vec<String> = vec![];
-    // the names the steps so far have assigned
-    let mut made: HashSet<String> = HashSet::new();
     {
         let seen = Seen::new(m, types, sites, modules, store, root);
         for c in evaluation_order(walk(body, &["call"])) {
@@ -1735,18 +1730,16 @@ fn link_calls<'t>(modules: &'t IndexMap<String, Module>, store: &mut GraphBuilde
             }
             let Some(fnode) = c.child_by_field_name("function") else { continue };
             let callee = seen.callee(fnode);
-            let line = c.start_position().row as u32 + 1;
-            let arms = arms_of(c, body, src, &choices, &CHOICES);
             // what the call is handed: the value it is called on, and its arguments
             let mut hands: Vec<Held> = vec![];
             let receiver = (fnode.kind() == "attribute").then(|| fnode.child_by_field_name("object")).flatten();
             if let Some(o) = receiver {
-                hands.extend(seen.held_in(o, ext, &made));
+                hands.extend(seen.held_in(o, ext, &steps.kept));
             }
             if let Some(a) = c.child_by_field_name("arguments") {
                 for x in named_children(a).into_iter().filter(|x| x.kind() != "comment") {
                     let v = if x.kind() == "keyword_argument" { x.child_by_field_name("value").unwrap_or(x) } else { x };
-                    hands.extend(seen.held_in(v, ext, &made));
+                    hands.extend(seen.held_in(v, ext, &steps.kept));
                 }
             }
             let mut seen_held = HashSet::new();
@@ -1760,7 +1753,7 @@ fn link_calls<'t>(modules: &'t IndexMap<String, Module>, store: &mut GraphBuilde
                 gives.push(Held::new(String::new(), assigned.clone()));
             }
             new_ext.extend(hands.iter().chain(&gives).map(|h| h.ty.clone()).filter(|t| t.starts_with("ext:")));
-            made.extend(gives.iter().map(|g| g.name.clone()).filter(|n| !n.is_empty()));
+            steps.keep(&gives);
             // a method called on a subclass's value is that subclass's step
             let on = match (&callee, receiver) {
                 (Some(Callee::Def(t)), Some(o)) => store.nodes.get(t).and_then(|n| n.cls.clone()).and_then(|b| {
@@ -1774,39 +1767,30 @@ fn link_calls<'t>(modules: &'t IndexMap<String, Module>, store: &mut GraphBuilde
             // Atlas reads (`pipeline.add(DiffValues, ..)`) is built there
             for a in handed_on(c) {
                 if let Some(t) = seen.handed_function(a) {
-                    steps.push(Site { line, to: t.clone(), arms: arms.clone(), ..Default::default() });
-                    new_edges.push((t, EdgeKind::Calls, arms_of(a, body, src, &choices, &CHOICES)));
+                    steps.handed(c, a, &t, EdgeKind::Calls);
                 } else if let (Some(Callee::Def(_)), Some(t)) = (&callee, seen.handed_class(a)) {
-                    steps.push(Site { line, to: t.clone(), arms: arms.clone(), ..Default::default() });
-                    new_edges.push((t, EdgeKind::Instantiates, arms_of(a, body, src, &choices, &CHOICES)));
-                }
-            }
-            match &callee {
-                Some(Callee::Def(t)) => {
-                    let this = receiver.map_or(false, |o| o.kind() == "identifier" && text(o, src) == "self");
-                    steps.push(Site { line, to: t.clone(), on: on.unwrap_or_default(), on_receiver: this, hands: hands.clone(), gives: gives.clone(), arms: arms.clone(), span: (c.start_byte() as u32, c.end_byte() as u32), ..Default::default() })
-                }
-                // a library's call not read that makes a value the body keeps under a name, from
-                // values it was handed, is a step of its own; what a call gives without a name
-                // goes into the call around it
-                _ => {
-                    if !assigned.is_empty() && !hands.is_empty() && !gives.is_empty() {
-                        let op = match fnode.kind() {
-                            "attribute" => fnode.child_by_field_name("attribute").map(|a| text(a, src).to_string()),
-                            _ => Some(text(fnode, src).rsplit('.').next().unwrap_or("").to_string()),
-                        };
-                        steps.push(Site { line, op: op.unwrap_or_default(), hands: hands.clone(), gives: gives.clone(), arms: arms.clone(), span: (c.start_byte() as u32, c.end_byte() as u32), ..Default::default() });
-                    }
+                    steps.handed(c, a, &t, EdgeKind::Instantiates);
                 }
             }
             if let Some(Callee::Def(t)) = &callee {
                 let kind = if seen.is_class(t) { EdgeKind::Instantiates } else { EdgeKind::Calls };
+                let on_receiver = receiver.map_or(false, |o| o.kind() == "identifier" && text(o, src) == "self");
+                steps.call(c, t, kind, None, Step { on: on.unwrap_or_default(), on_receiver, hands, gives });
                 if kind == EdgeKind::Calls && value_used(c) {
                     used.push(t.clone());
                 }
                 args.extend(arguments(modules, store, id, t, c, at));
-                new_edges.push((t.clone(), kind, arms_of(c, body, src, &choices, &CHOICES)));
                 continue;
+            }
+            // a library's call not read that makes a value the body keeps under a name, from
+            // values it was handed, is a step of its own; what a call gives without a name goes
+            // into the call around it
+            if !assigned.is_empty() {
+                let op = match fnode.kind() {
+                    "attribute" => fnode.child_by_field_name("attribute").map(|a| text(a, src).to_string()),
+                    _ => Some(text(fnode, src).rsplit('.').next().unwrap_or("").to_string()),
+                };
+                steps.op(c, &op.unwrap_or_default(), hands, gives);
             }
             // a method on a value written out (`(root / name).write_text`) is its name alone
             let parts = match call_path(fnode, src) {
@@ -1821,7 +1805,7 @@ fn link_calls<'t>(modules: &'t IndexMap<String, Module>, store: &mut GraphBuilde
                 _ => None,
             };
             if let Some(cls) = lib.as_ref().and(seen.made_on(c, fnode)) {
-                new_edges.push((cls, EdgeKind::Instantiates, arms_of(c, body, src, &choices, &CHOICES)));
+                steps.edge(c, &cls, EdgeKind::Instantiates);
             }
             if lib.is_none() {
                 unresolved.push(parts.iter().take(2).cloned().collect::<Vec<_>>().join("."));
@@ -1870,23 +1854,16 @@ fn link_calls<'t>(modules: &'t IndexMap<String, Module>, store: &mut GraphBuilde
             }
         }
     }
-    for (t, kind, arms) in new_edges {
-        store.add_call(id, &t, kind, None, arms);
-    }
+    let compares = (n.kind != NodeKind::Module).then(|| crate::tree::compares(body, src, steps.choices(), &COMPARES, &CHOICES));
+    steps.finish(store, id);
     for t in new_ext {
         store.ext_node(&t);
-    }
-    if let Some(node) = store.nodes.get_mut(id) {
-        node.sites = steps;
     }
     for t in used {
         store.used.insert((id.to_string(), t));
     }
-    if n.kind != NodeKind::Module {
-        let compares = crate::tree::compares(body, src, &choices, &COMPARES, &CHOICES);
-        if let Some(node) = store.nodes.get_mut(id) {
-            node.compares = compares;
-        }
+    if let (Some(compares), Some(node)) = (compares, store.nodes.get_mut(id)) {
+        node.compares = compares;
     }
     for (t, input) in changes {
         store.add_edge(id, &t, EdgeKind::Mutates, Some(input));
