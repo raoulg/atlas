@@ -359,7 +359,9 @@ Atlas checks: a class whose public operations both write and read one place (a d
 whole, a file by itself; through what they call), for each type of data a put takes that no
 get of the class gives back from that place. A class that only reads a place (what comes in
 from the world) or only writes it (an end product) is no lens on it. Where another class gets
-that type from the same place, Atlas says which: the lens is then split over two classes.
+that type from the same place, Atlas says which: the lens is then split over two classes. A put
+is asked about in the class that defines it; a subclass's gets count, but the puts it inherits
+are asked about once, in its base.
 
 rkg: `RegisterSink` puts `Graph`, `Oordeel` and `Verbruik` into SQLite. `Graph` and `Oordeel`
 come back through `RegisterRepository`, a second class on the same place; `Verbruik` comes

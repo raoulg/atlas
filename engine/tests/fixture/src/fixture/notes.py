@@ -32,3 +32,10 @@ class Shelf:
 
     def get(self) -> Note:
         return Note.model_validate_json(self.path.read_text())
+
+
+class Diary(Notes):
+    """Inherits the put of Notes, which is asked about there, and gets the text back."""
+
+    def text(self) -> str:
+        return self.path.read_text()

@@ -156,7 +156,12 @@ impl<'g> Index<'g> {
         format!("{}:{}", self.file(n), n.span.map_or(1, |s| s.0))
     }
 
-/// A class's public methods (and its constructor), its own and those it inherits from
+    /// Whether the method `m` is defined in `cls` itself rather than inherited from a base.
+    fn declares(&self, cls: &str, m: &Node) -> bool {
+        m.id.rsplit_once('.').map_or(false, |(owner, _)| owner == cls)
+    }
+
+    /// A class's public methods (and its constructor), its own and those it inherits from
     /// the package's classes, each from the nearest class that defines it.
     fn interface(&self, cls: &str) -> Vec<&'g Node> {
         let mut seen = HashSet::new();
@@ -871,7 +876,9 @@ fn strongly_connected<V>(deps: &BTreeMap<String, BTreeMap<String, V>>) -> Vec<Ve
 /// value from it (`S → A`). Put then get gives back what was put. Asked about each type of data a
 /// put takes that no get of the same class gives from that place: what the place holds is then
 /// another type than what goes in, or another class reads it. A class that only reads a place
-/// (input from the world) or only writes it (an end product) is no lens on it.
+/// (input from the world) or only writes it (an end product) is no lens on it. A put is asked
+/// about in the class that defines it: a subclass's gets all count, but the puts it inherits
+/// are its base's question.
 fn lens(ix: &Index) -> Vec<Finding> {
     let data = |t: &str, own: &str| t != own && ix.node(t).map_or(false, |n| matches!(n.kind, NodeKind::Class | NodeKind::External) && n.door.is_none());
     // the place a touch holds data at, as a lens sees it: a database as a whole, a file by itself
@@ -937,7 +944,7 @@ fn lens(ix: &Index) -> Vec<Finding> {
         for (place, label) in places {
             let (mut put, mut got, mut given): (BTreeMap<&str, Vec<String>>, Vec<String>, HashSet<&str>) = (BTreeMap::new(), vec![], HashSet::new());
             for (m, puts, gets) in &ops {
-                if puts.contains_key(place) {
+                if puts.contains_key(place) && ix.declares(&c.id, m) {
                     for t in ix.targets(&m.id, EdgeKind::Takes).into_iter().filter(|t| data(t, &c.id)) {
                         put.entry(t).or_default().push(format!("{}: {} × {label} → {label}", ix.label(&m.id), ix.label(t)));
                     }
