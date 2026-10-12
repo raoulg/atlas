@@ -19,10 +19,11 @@ mod paths;
 use paths::{Arg, At, Eval};
 
 use crate::builder::{foreign_type, ClassInfo, GraphBuilder, OwnTypes, SigInfo};
+use crate::body::Crosses;
 use crate::effects::{self, Crossing};
 use crate::model::{EdgeKind, Entry, EntryKind, Held, Node, NodeKind, Param, Returns, Site, Touch, World};
 use crate::tree::{
-    arms_of, evaluation_order, literals, named_children, nth_of_kind, number_choices, payload_of, span, starts_at_literal, text, unquote,
+    arms_of, evaluation_order, literals, named_children, nth_of_kind, number_choices, span, text, unquote,
     walk, what_of, ChoiceSyntax, CompareSyntax, Part,
 };
 
@@ -1648,10 +1649,8 @@ fn link_calls<'t>(m: &'t Module, modules: &'t IndexMap<String, Module>, store: &
                         if let Some(kind) = kind {
                             let op = parts.last().cloned().unwrap_or_default();
                             let kinds = &["string", "template_string"];
-                            let f = effects::facts(kind, pkg.as_deref(), &op, &literals(c, src, kinds));
-                            let what = what_of(c, src, kinds, "arguments");
-                            let payload = payload_of(c, src, &what, "arguments", &HashMap::new());
-                            let fixed = f.kind.located() && starts_at_literal(c, src, kinds, "arguments", effects::on_receiver(&op));
+                            let cr = Crosses::read(c, src, kind, pkg.as_deref(), &op, &literals(c, src, kinds), kinds, &HashMap::new());
+                            let (f, payload, fixed) = (&cr.facts, &cr.payload, cr.fixed);
                             let args = c.child_by_field_name("arguments").map(named_children).unwrap_or_default();
                             // the path a file call is handed, the URL a request is: placed once every call is known
                             if f.kind.located() && !args.is_empty() {
@@ -1665,11 +1664,7 @@ fn link_calls<'t>(m: &'t Module, modules: &'t IndexMap<String, Module>, store: &
                                 }
                                 continue;
                             }
-                            for (artifact, dir) in f.places() {
-                                // a URL without a host is the page's own origin, decided by whoever serves it
-                                let fixed = fixed && (f.kind != World::Net || !artifact.is_empty());
-                                touches.push(Touch { what: what.clone(), payload: payload.clone(), op: op.clone(), artifact, fixed, line: c.start_position().row as u32 + 1, ..Touch::new(f.kind, dir) });
-                            }
+                            touches.extend(cr.touches(None));
                         }
                     }
                 }

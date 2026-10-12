@@ -14,6 +14,7 @@ use walkdir::WalkDir;
 
 mod paths;
 
+use crate::body::Crosses;
 use crate::effects::{self, Crossing};
 use crate::pytypes::{By, Facts, FileArg, Target, Ty, Types, Value};
 use paths::{At, Built, Eval, Passed, Seg};
@@ -21,7 +22,7 @@ use crate::entries::entry_of;
 use crate::model::{Dir, EdgeKind, Entry, EntryKind, Held, Node, NodeKind, Param, Returns, Site, Touch, World};
 pub use crate::builder::{foreign_type, ClassInfo, GraphBuilder, OwnTypes, SigInfo};
 use crate::tree::{
-    argument, arms_of, evaluation_order, field_children, literals, named_children, nth_of_kind, number_choices, payload_of, span, starts_at_literal, text, unquote, walk,
+    argument, arms_of, evaluation_order, field_children, literals, named_children, nth_of_kind, number_choices, payload_of, span, text, unquote, walk,
     what_of, ChoiceSyntax, CompareSyntax, Part,
 };
 
@@ -1826,43 +1827,12 @@ fn link_calls<'t>(modules: &'t IndexMap<String, Module>, store: &mut GraphBuilde
                 unresolved.push(parts.iter().take(2).cloned().collect::<Vec<_>>().join("."));
             }
             let tag = effects::boundary(lib.as_deref(), &parts).filter(|t| seen.moves(fnode, t, lib.as_deref(), parts.last().map_or("", String::as_str)));
-            if let Some(tag) = tag.filter(|t| t.world == World::Disk) {
-                let op = parts.last().cloned().unwrap_or_default();
-                for (kind, what, artifact, fixed, built) in file_calls(&seen, eval, at, c, fnode, tag, lib.as_deref(), &op) {
-                    let payload = payload_of(c, src, &what, "arguments", &seen.handed(c));
-                    let t = Touch { what: what.clone(), payload: payload.clone(), op: op.clone(), artifact, fixed, line: c.start_position().row as u32 + 1, ..Touch::new(kind.world, kind.dir) };
-                    match built.is_empty() {
-                        true => touches.push(t),
-                        false => files.push((t, built)),
-                    }
-                }
-            } else if let Some(tag) = tag {
-                let op = parts.last().cloned().unwrap_or_default();
-                let f = effects::facts(tag, lib.as_deref(), &op, &literals(c, src, &["string"]));
-                // on a hub, what moves is the repository the call names
-                let what = match f.kind == World::Net && !f.artifact.is_empty() {
-                    true => argument(c, src, "repo_id").unwrap_or_else(|| what_of(c, src, &["string"], "arguments")),
-                    false => what_of(c, src, &["string"], "arguments"),
-                };
-                let payload = payload_of(c, src, &what, "arguments", &seen.handed(c));
-                let fixed = f.kind.located() && starts_at_literal(c, src, &["string"], "arguments", effects::on_receiver(&op));
-                let said = match f.kind {
-                    World::Db(db) => effects::access(db, &op, keyword(c, src, &["routing_", "default_access_mode"]).as_deref()),
-                    _ => None,
-                };
-                if let Some(said) = said {
-                    declared.push((f.kind, said));
-                    // the work a managed transaction is handed runs in its direction
-                    if effects::transaction(&op) {
-                        if let Some(Callee::Def(work)) = positional(c).and_then(|a| seen.callee(a)) {
-                            handed.push((work, f.kind, said));
-                        }
-                    }
-                }
-                for (artifact, dir) in f.places() {
-                    let dir = dir.or(said);
-                    touches.push(Touch { what: what.clone(), payload: payload.clone(), op: op.clone(), artifact, fixed, line: c.start_position().row as u32 + 1, ..Touch::new(f.kind, dir) });
-                }
+            if let Some(tag) = tag {
+                let crossed = crossed(&seen, eval, at, c, fnode, tag, lib.as_deref(), parts.last().map_or("", String::as_str));
+                touches.extend(crossed.touches);
+                files.extend(crossed.files);
+                declared.extend(crossed.said);
+                handed.extend(crossed.handed);
             }
         }
         // what a body runs inside the session or transaction it opened goes the way it said
@@ -1927,17 +1897,63 @@ fn link_calls<'t>(modules: &'t IndexMap<String, Module>, store: &mut GraphBuilde
     Linked { handed, files, args }
 }
 
-/// The files a file call touches, each with its direction, what the code calls it (the literal
-/// it is built from, else the expression that holds it: `datafile` in `datafile.open(..)`), its
-/// name when the code writes it out,
-/// whether the code alone decides it, and its path as built (placed once the parameters' values
-/// are known). The file is what the call's library types as one: the path a method of a path is
+/// What a call that crosses into the world leaves: the touches it makes, the file touches whose
+/// paths wait for what the callers hand, and the direction it says to a database's driver, with
+/// the work a managed transaction it opens is handed.
+#[derive(Default)]
+struct Crossed {
+    touches: Vec<Touch>,
+    files: Vec<(Touch, Vec<Built>)>,
+    said: Option<(World, Dir)>,
+    handed: Option<(String, World, Dir)>,
+}
+
+/// A call that crosses `tag`: a file call by the files it is handed, any other by what its facts
+/// and literals name.
+#[allow(clippy::too_many_arguments)]
+fn crossed<'t>(seen: &Seen, eval: &Eval, at: At<'_, 't>, c: TsNode<'t>, fnode: TsNode<'t>, tag: Crossing, lib: Option<&str>, op: &str) -> Crossed {
+    let src = &at.m.src;
+    match tag.world {
+        World::Disk => {
+            let (touches, files): (Vec<(Touch, Vec<Built>)>, _) = file_calls(seen, eval, at, c, fnode, tag, lib, op).into_iter().partition(|(_, built)| built.is_empty());
+            Crossed { touches: touches.into_iter().map(|(t, _)| t).collect(), files, ..Default::default() }
+        }
+        _ => {
+            let mut cr = Crosses::read(c, src, tag, lib, op, &literals(c, src, &["string"]), &["string"], &seen.handed(c));
+            // on a hub, what moves is the repository the call names
+            if let Some(repo) = argument(c, src, "repo_id").filter(|_| cr.facts.kind == World::Net && !cr.facts.artifact.is_empty()) {
+                cr.payload = payload_of(c, src, &repo, "arguments", &seen.handed(c));
+                cr.what = repo;
+            }
+            let said = match cr.facts.kind {
+                World::Db(db) => effects::access(db, op, keyword(c, src, &["routing_", "default_access_mode"]).as_deref()),
+                _ => None,
+            };
+            // the work a managed transaction is handed runs in its direction
+            let work = said.filter(|_| effects::transaction(op)).and_then(|_| positional(c)).and_then(|a| seen.callee(a));
+            let handed = match (work, said) {
+                (Some(Callee::Def(w)), Some(d)) => Some((w, cr.facts.kind, d)),
+                _ => None,
+            };
+            Crossed { touches: cr.touches(said), said: said.map(|d| (cr.facts.kind, d)), handed, ..Default::default() }
+        }
+    }
+}
+
+/// The files a file call touches, each a touch with its direction, what the code calls it (the
+/// literal it is built from, else the expression that holds it: `datafile` in
+/// `datafile.open(..)`), its name when the code writes it out and whether the code alone decides
+/// it, and with its path as built (placed once the parameters' values are known). The file is what the call's library types as one: the path a method of a path is
 /// called on, an argument typed as a path, or a file opened to read from or write to; a library
 /// whose types are not known hands its first argument. The direction is what the type says
 /// (`SupportsRead`, `SupportsWrite`), what the call's `mode` says, or for a call handed two paths
 /// the API's own names for them (`src`, `dst`); else the operation's.
-fn file_calls<'t>(seen: &Seen, eval: &Eval, at: At<'_, 't>, c: TsNode<'t>, fnode: TsNode<'t>, tag: Crossing, lib: Option<&str>, op: &str) -> Vec<(Crossing, String, String, bool, Vec<Built>)> {
+fn file_calls<'t>(seen: &Seen, eval: &Eval, at: At<'_, 't>, c: TsNode<'t>, fnode: TsNode<'t>, tag: Crossing, lib: Option<&str>, op: &str) -> Vec<(Touch, Vec<Built>)> {
     let src = &at.m.src;
+    let touch = |kind: Crossing, what: String, artifact: String, fixed: bool| {
+        let payload = payload_of(c, src, &what, "arguments", &seen.handed(c));
+        Touch { what, payload, op: op.to_string(), artifact, fixed, line: c.start_position().row as u32 + 1, ..Touch::new(kind.world, kind.dir) }
+    };
     let sig = seen.facts.and_then(|x| x.signature(Seen::range(fnode)));
     let typed = sig.map(|s| paths::file_args(s, c, src)).unwrap_or_default();
     let mode = typed.iter().find(|(p, _)| p.name == "mode").map(|(_, a)| unquote(text(*a, src)));
@@ -1950,7 +1966,7 @@ fn file_calls<'t>(seen: &Seen, eval: &Eval, at: At<'_, 't>, c: TsNode<'t>, fnode
     if files.is_empty() {
         let f = effects::facts(tag, lib, op, &mode.into_iter().collect::<Vec<_>>());
         let what = what_of(c, src, &["string"], "arguments");
-        return f.places().into_iter().map(|(artifact, _)| (Crossing { world: f.kind, dir: f.dir }, what.clone(), artifact, false, vec![])).collect();
+        return f.places().into_iter().map(|(artifact, _)| (touch(Crossing { world: f.kind, dir: f.dir }, what.clone(), artifact, false), vec![])).collect();
     }
     files
         .into_iter()
@@ -1968,7 +1984,7 @@ fn file_calls<'t>(seen: &Seen, eval: &Eval, at: At<'_, 't>, c: TsNode<'t>, fnode
                 Some(l) => crate::tree::shown(&l),
                 None => text(a, src).chars().take(40).collect(),
             };
-            (kind, what, artifact, crate::tree::head_literal(a, src, &["string"]), eval.of(at, a, 0))
+            (touch(kind, what, artifact, crate::tree::head_literal(a, src, &["string"])), eval.of(at, a, 0))
         })
         .collect()
 }

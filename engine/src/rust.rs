@@ -13,11 +13,12 @@ use indexmap::IndexMap;
 use tree_sitter::{Node as TsNode, Parser, Tree};
 use walkdir::WalkDir;
 
+use crate::body::Crosses;
 use crate::effects::{self, Crossing};
 use crate::model::{EdgeKind, Entry, EntryKind, Held, Node, NodeKind, Param, Returns, Site, Touch, World};
 use crate::builder::{foreign_type, ClassInfo, GraphBuilder, OwnTypes, SigInfo};
 use crate::tree::{
-    arms_of, evaluation_order, literals, named_children, nth_of_kind, number_choices, payload_of, span, starts_at_literal, text, unquote, walk, what_of,
+    arms_of, evaluation_order, literals, named_children, nth_of_kind, number_choices, span, text, unquote, walk,
     ChoiceSyntax, CompareSyntax, Part,
 };
 
@@ -1064,16 +1065,7 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crat
     let mut touches: Vec<Touch> = vec![];
     let lit_kinds = &["string_literal", "raw_string_literal"];
     // a boundary call, refined by the literals that name its place
-    let touch = |c: tree_sitter::Node, kind: Crossing, op: &str, lits: &[String], locals: &HashMap<String, String>| {
-        let f = effects::facts(kind, None, op, lits);
-        let what = what_of(c, src, lit_kinds, "arguments");
-        let payload = payload_of(c, src, &what, "arguments", locals);
-        let fixed = f.kind.located() && starts_at_literal(c, src, lit_kinds, "arguments", effects::on_receiver(&op));
-        f.places()
-            .into_iter()
-            .map(|(artifact, dir)| Touch { what: what.clone(), payload: payload.clone(), op: op.into(), artifact, fixed, line: c.start_position().row as u32 + 1, ..Touch::new(f.kind, dir) })
-            .collect::<Vec<_>>()
-    };
+    let touch = |c: tree_sitter::Node, kind: Crossing, op: &str, lits: &[String], locals: &HashMap<String, String>| Crosses::read(c, src, kind, None, op, lits, lit_kinds, locals).touches(None);
     for mac in walk(body, &["macro_invocation"]) {
         let name = mac.child_by_field_name("macro").map(|x| text(x, src)).unwrap_or("");
         if effects::screen_macro(name) {
