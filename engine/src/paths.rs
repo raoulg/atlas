@@ -1,8 +1,8 @@
 //! Paths as code builds them, in any language: literal text, the parameters of the function a
-//! path is built in, and what cannot be known (a hole, named). A parameter holds what its
-//! callers pass, over all its call sites; the place of a path with an unknown part is the
-//! directory before that part, so what one route unpacks into `D/{kind}/{id}` and another lists
-//! in `D` meet at `D/`.
+//! path is built in, and what cannot be known (a hole, named). A path built from a function's
+//! parameters is completed at each call that hands them, out through the callers' own
+//! parameters; the place of a path with an unknown part is the directory before that part, so
+//! what one route unpacks into `D/{kind}/{id}` and another lists in `D` meet at `D/`.
 
 
 /// A part of a path as the code builds it.

@@ -162,13 +162,17 @@ Three things make `F` honest, and each is an engine task:
    Which argument of a call is a file is what its library's types say: a parameter typed
    as a path (`PathLike`), a file to read from (`SupportsRead`) or to write to
    (`SupportsWrite`) in any of its overloads, the path a method of a path is called on.
-   The direction is what those types say, the call's own `mode`, or, for a call handed
-   two paths, the API's names for them (`src`, `dst`); else the operation's. A file handle
-   is the file it was opened at. A file's place is its path evaluated from the code: literals and constants,
-   `Path(..) / ..`, a property's or function's `return` (followed through ty's
-   definitions), and what a parameter is handed by its callers, carried back through
-   the callers' own parameters to an entry's declared default (`@click.option(..,
-   default=..)`). A file named under a directory that is not known is that name under
+   The direction is what those types say or the call's own `mode`; a call that moves or
+   copies reads the first path it is handed and writes the second, in every language
+   (`shutil.move(src, dst)`, `fs::copy(a, b)`, `copyFile(a, b)`); else the operation's. A file
+   handle is the file it was opened at. A file's place is its path evaluated from the code:
+   literals and constants, `Path(..) / ..`, a property's or function's `return` (followed
+   through ty's definitions), and what a parameter is handed by its callers. That is carried
+   out one call at a time, through each caller's own parameters in turn, so two parameters a
+   call hands together stay together; where a call leaves a parameter out it holds its
+   declared default, and an entry nobody calls holds what it is run with (`@click.option(..,
+   default=..)`). A reader evaluates an expression in its own syntax; carrying it to the
+   callers and placing it is the same for every language. A file named under a directory that is not known is that name under
    any (`artefacts/*/report.json`); a path whose last part is not known rests in the
    directory before it, so what one route unpacks into `D/{kind}/{id}` and what another
    lists in `D` meet at `D/`. The same place connects the route that writes it to the

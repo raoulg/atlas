@@ -72,8 +72,14 @@ The rigorous half and the visual half are the same structure. Read `docs/design.
 - Languages: `engine/src/language.rs` is the trait; `python.rs`, `rust.rs` and
   `typescript.rs` implement it. `parts.rs` finds a repository's parts (one per manifest),
   reads each in its language, merges them and joins them where one requests another's
-  routes; `atlas view` and the MCP routes use the merged graph, `atlas check` each part. Grammars are reused from tree-sitter crates; what a module writes
-  itself is resolution, entry points and boundaries.
+  routes; `atlas view` and the MCP routes use the merged graph, `atlas check` each part. Grammars
+  are reused from tree-sitter crates. A reader supplies its language's syntax and facts:
+  resolution, how its names get their types, entry points, which calls cross into the world,
+  and syntax tables (`ChoiceSyntax`, `CompareSyntax`, `OwnTypes`). What every language shares is
+  written once: a body's steps and the touches its calls make (`body.rs`), carrying paths and
+  URLs to the callers and placing them (`paths.rs`), exports and route prefixes (`builder.rs`,
+  `entries.rs`), `method_of` and `foreign_type` (`builder.rs`). Each reader's `link_calls` only
+  says in which order its steps run.
 - Python's types come from ty (`engine/src/pytypes.rs`): the `ty_*` and `ruff_*` crates are
   pinned to one version together, and need the Rust in `rust-version`. The Python fixture has
   no environment; its libraries are stubs in `engine/tests/fixture/typings`, found through
