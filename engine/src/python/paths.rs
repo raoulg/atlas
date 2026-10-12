@@ -12,7 +12,7 @@ use super::{call_path, dotted, Module};
 use crate::pytypes::{FileArg, Param, Target, Types};
 use crate::tree::{named_children, path_str, text, unquote, walk};
 
-pub(super) use crate::paths::{bind, handed, place, Built, Passed, Seg};
+pub(super) use crate::paths::{Built, Seg};
 use crate::paths::{cross, hole, lit, parent, union};
 
 const DEPTH: u32 = 12;

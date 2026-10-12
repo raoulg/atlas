@@ -17,7 +17,7 @@ mod paths;
 use crate::body::{Crosses, Step, Steps};
 use crate::effects::{self, Crossing};
 use crate::pytypes::{By, Facts, FileArg, Target, Ty, Types, Value};
-use paths::{At, Built, Eval, Passed, Seg};
+use paths::{At, Built, Eval};
 use crate::entries::entry_of;
 use crate::model::{Dir, EdgeKind, Entry, EntryKind, Held, Node, NodeKind, Param, Returns, Touch, World};
 pub use crate::builder::{foreign_type, ClassInfo, GraphBuilder, OwnTypes, SigInfo};
@@ -1071,7 +1071,21 @@ fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, root: &str
             args.extend(linked.args);
         }
     }
-    place_files(modules, store, &eval, files, &args);
+    // a parameter a call leaves out holds its declared default, and an entry's what it is run with
+    let completed = {
+        let store = &*store;
+        let default = |f: &str, p: &str| -> Vec<Built> {
+            let Some(n) = store.nodes.get(f) else { return vec![] };
+            let Some(m) = modules.get(&n.module) else { return vec![] };
+            let Some(def) = def_node(m, n) else { return vec![] };
+            let declared = paths::parameters(def, &m.src, n.kind == NodeKind::Method).into_iter().find(|(q, _)| q == p).and_then(|(_, d)| d);
+            let entry = n.entry.is_some().then(|| paths::entry_defaults(def, &m.src).into_iter().find(|(q, _)| q == p).map(|(_, d)| d)).flatten();
+            [entry, declared].into_iter().flatten().flat_map(|d| eval.of(At { m, scope: None, params: &[] }, d, 0)).collect()
+        };
+        let handing: Vec<Evaluated> = args.iter().map(|arg| Evaluated { arg, modules, eval: &eval }).collect();
+        crate::paths::complete(files, &handing, &default)
+    };
+    crate::paths::place_calls(store, completed);
     // the work handed to a managed transaction (`session.execute_read(work)`) goes its way
     for (work, kind, dir) in handed {
         if let Some(n) = store.nodes.get_mut(&work) {
@@ -1655,7 +1669,30 @@ struct Arg<'t> {
     callee: String,
     module: String,
     scope: Option<TsNode<'t>>,
+    /// The caller's parameters.
+    params: Vec<String>,
     passed: Vec<(String, TsNode<'t>)>,
+}
+
+/// A call with what it hands each parameter, evaluated in the caller.
+struct Evaluated<'a, 't> {
+    arg: &'a Arg<'t>,
+    modules: &'a IndexMap<String, Module>,
+    eval: &'a Eval<'a>,
+}
+
+impl crate::paths::Handing for Evaluated<'_, '_> {
+    fn caller(&self) -> &str {
+        &self.arg.caller
+    }
+    fn callee(&self) -> &str {
+        &self.arg.callee
+    }
+    fn hands(&self, p: &str) -> Option<Vec<Built>> {
+        let (_, node) = self.arg.passed.iter().find(|(q, _)| q == p)?;
+        let m = self.modules.get(&self.arg.module)?;
+        Some(self.eval.of(At { m, scope: self.arg.scope, params: &self.arg.params }, *node, 0))
+    }
 }
 
 /// What reading a body gives besides its edges and touches: the work it hands a managed
@@ -2007,56 +2044,9 @@ fn arguments<'t>(modules: &'t IndexMap<String, Module>, store: &GraphBuilder, ca
             }
         }
     }
-    Some(Arg { caller: caller.to_string(), callee, module: at.m.id.clone(), scope: at.scope, passed })
+    Some(Arg { caller: caller.to_string(), callee, module: at.m.id.clone(), scope: at.scope, params: at.params.to_vec(), passed })
 }
 
-/// Place the file calls: each path, with its function's parameters bound to what its callers
-/// hand them. Only the parameters a path depends on are followed, back through the callers'
-/// own parameters; a default counts where a call leaves its parameter out, and an entry's
-/// declared defaults count as its call.
-fn place_files(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, eval: &Eval, files: Vec<(String, Touch, Vec<Built>)>, args: &[Arg]) {
-    let needs = |b: &Built, f: &str| b.iter().filter_map(|s| if let Seg::Param(p) = s { Some((f.to_string(), p.clone())) } else { None }).collect::<Vec<_>>();
-    let mut queue: Vec<(String, String)> = files.iter().flat_map(|(f, _, bs)| bs.iter().flat_map(|b| needs(b, f)).collect::<Vec<_>>()).collect();
-    let mut seen: HashSet<(String, String)> = HashSet::new();
-    let mut passed: Vec<Passed> = vec![];
-    let mut base: HashMap<(String, String), Vec<Built>> = HashMap::new();
-    while let Some((f, p)) = queue.pop() {
-        if !seen.insert((f.clone(), p.clone())) {
-            continue;
-        }
-        let calls: Vec<&Arg> = args.iter().filter(|a| a.callee == f).collect();
-        for a in &calls {
-            let Some(&(_, node)) = a.passed.iter().find(|(q, _)| *q == p) else { continue };
-            let Some(m) = modules.get(&a.module) else { continue };
-            let caller_params: Vec<String> = a.scope.map(|s| paths::parameters(s, &m.src, false).into_iter().map(|(q, _)| q).collect()).unwrap_or_default();
-            let values = eval.of(At { m, scope: a.scope, params: &caller_params }, node, 0);
-            queue.extend(values.iter().flat_map(|b| needs(b, &a.caller)));
-            passed.push(Passed { caller: a.caller.clone(), callee: f.clone(), param: p.clone(), values });
-        }
-        // a default: where a call leaves the parameter out, or as an entry is run
-        let Some(n) = store.nodes.get(&f) else { continue };
-        let Some(m) = modules.get(&n.module) else { continue };
-        let Some(def) = def_node(m, n) else { continue };
-        let omitted = calls.is_empty() || calls.iter().any(|a| !a.passed.iter().any(|(q, _)| *q == p));
-        let declared = paths::parameters(def, &m.src, n.kind == NodeKind::Method).into_iter().find(|(q, _)| *q == p).and_then(|(_, d)| d);
-        let entry = n.entry.is_some().then(|| paths::entry_defaults(def, &m.src).into_iter().find(|(q, _)| *q == p).map(|(_, d)| d)).flatten();
-        for d in [entry, omitted.then_some(declared).flatten()].into_iter().flatten() {
-            base.entry((f.clone(), p.clone())).or_default().extend(eval.of(At { m, scope: None, params: &[] }, d, 0));
-        }
-    }
-    let values = paths::handed(&passed, base);
-    for (f, t, built) in files {
-        let mut placed: Vec<String> = built.iter().flat_map(|b| paths::bind(b, &f, &values)).filter_map(|b| paths::place(&b, &t.op)).collect();
-        placed.dedup();
-        if placed.is_empty() {
-            store.touch(&f, t);
-            continue;
-        }
-        for artifact in placed {
-            store.touch(&f, Touch { artifact, ..t.clone() });
-        }
-    }
-}
 
 /// The arguments of a call that name a value without computing one: a name or an attribute,
 /// handed positionally or by keyword.

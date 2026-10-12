@@ -12,8 +12,6 @@ use crate::paths::{cross, hole, lit, parent, union, Built, Seg};
 use crate::tree::{named_children, path_str, text, unquote, walk};
 
 const DEPTH: u32 = 12;
-/// The most URLs a request is followed to, over all the call sites that build one.
-const URLS: usize = 64;
 
 /// Evaluates paths and URLs in the modules of one package.
 pub(super) struct Eval<'a> {
@@ -229,40 +227,22 @@ pub(super) struct Arg<'t> {
     pub passed: Vec<(String, TsNode<'t>)>,
 }
 
-/// What a value built from the parameters of `f` is at each call that hands them, followed
-/// out through the callers' parameters in turn, with the function where it is complete: the
-/// URL `request(method, path)` fetches is `/api/customers` where `api.get("/customers")` is
-/// called.
-pub(super) fn at_callers(eval: &Eval, args: &[Arg], f: &str, b: &Built, depth: u32) -> Vec<(String, Built)> {
-    if !b.iter().any(|s| matches!(s, Seg::Param(_))) {
-        return vec![(f.to_string(), b.clone())];
+/// A call with what it hands each parameter, evaluated in the caller.
+pub(super) struct Evaluated<'a, 't> {
+    pub arg: &'a Arg<'t>,
+    pub eval: &'a Eval<'a>,
+}
+
+impl crate::paths::Handing for Evaluated<'_, '_> {
+    fn caller(&self) -> &str {
+        &self.arg.caller
     }
-    let sites: Vec<&Arg> = args.iter().filter(|a| a.callee == f).collect();
-    // nobody in the package calls `f`: its parameters are whatever its users hand it
-    if sites.is_empty() || depth > DEPTH {
-        return vec![(f.to_string(), b.iter().map(|s| if let Seg::Param(p) = s { Seg::Hole(p.clone()) } else { s.clone() }).collect())];
+    fn callee(&self) -> &str {
+        &self.arg.callee
     }
-    let mut out = vec![];
-    for a in sites {
-        let Some(m) = eval.modules.get(&a.module) else { continue };
-        let at = At { m, scope: a.scope, params: &a.params };
-        let mut built: Vec<Built> = vec![vec![]];
-        for s in b {
-            let piece = match s {
-                Seg::Param(p) => match a.passed.iter().find(|(q, _)| q == p) {
-                    Some((_, node)) => eval.of(at, *node, 0),
-                    None => vec![hole(p)],
-                },
-                s => vec![vec![s.clone()]],
-            };
-            built = cross(&built, &piece, "");
-        }
-        for x in built {
-            out.extend(at_callers(eval, args, &a.caller, &x, depth + 1));
-            if out.len() >= URLS {
-                return out;
-            }
-        }
+    fn hands(&self, p: &str) -> Option<Vec<Built>> {
+        let (_, node) = self.arg.passed.iter().find(|(q, _)| q == p)?;
+        let m = self.eval.modules.get(&self.arg.module)?;
+        Some(self.eval.of(At { m, scope: self.arg.scope, params: &self.arg.params }, *node, 0))
     }
-    out
 }

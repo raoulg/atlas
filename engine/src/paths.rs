@@ -4,7 +4,6 @@
 //! directory before that part, so what one route unpacks into `D/{kind}/{id}` and another lists
 //! in `D` meet at `D/`.
 
-use std::collections::{HashMap, HashSet};
 
 /// A part of a path as the code builds it.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -142,52 +141,135 @@ pub fn place(b: &Built, op: &str) -> Option<String> {
     (!matches!(p.as_str(), "" | "." | "./" | "/" | "*")).then_some(p)
 }
 
-/// One argument a call hands a parameter, as the caller builds it.
-pub struct Passed {
-    pub caller: String,
-    pub callee: String,
-    pub param: String,
-    pub values: Vec<Built>,
+/// The deepest a value is followed out through the callers.
+const DEPTH: u32 = 12;
+/// The most completions one built value is followed to, over all the calls that complete it.
+const COMPLETIONS: usize = 64;
+
+/// A call of one of the program's functions, as the paths pass reads it: who calls whom, and what
+/// the call hands each parameter, built where the caller builds it.
+pub trait Handing {
+    fn caller(&self) -> &str;
+    fn callee(&self) -> &str;
+    /// What the call hands parameter `p`; none when it leaves `p` out.
+    fn hands(&self, p: &str) -> Option<Vec<Built>>;
 }
 
-/// What each function's parameters hold: what their callers pass, carried through the
-/// parameters of the callers in turn, until nothing changes.
-pub fn handed(passed: &[Passed], base: HashMap<(String, String), Vec<Built>>) -> HashMap<(String, String), Vec<Built>> {
-    let mut values = base;
-    for _ in 0..10 {
-        let mut changed = false;
-        for p in passed {
-            let got: Vec<Built> = p.values.iter().flat_map(|b| bind(b, &p.caller, &values)).collect();
-            let slot = values.entry((p.callee.clone(), p.param.clone())).or_default();
-            for g in got {
-                if slot.len() < MAX && !slot.contains(&g) {
-                    slot.push(g);
-                    changed = true;
-                }
-            }
-        }
-        if !changed {
-            break;
-        }
-    }
-    values
-}
-
-/// A path with the parameters of `f` replaced by what they hold; one that holds nothing known
-/// stays a hole.
-pub fn bind(b: &Built, f: &str, values: &HashMap<(String, String), Vec<Built>>) -> Vec<Built> {
+/// Each parameter of `b` replaced by what `value` says it holds, over every combination.
+fn substitute(b: &Built, mut value: impl FnMut(&str) -> Vec<Built>) -> Vec<Built> {
     let mut out: Vec<Built> = vec![vec![]];
     for s in b {
-        let piece: Vec<Built> = match s {
-            Seg::Param(p) => match values.get(&(f.to_string(), p.clone())).filter(|v| !v.is_empty()) {
-                Some(v) => v.iter().map(|x| x.iter().map(|s| if let Seg::Param(q) = s { Seg::Hole(q.clone()) } else { s.clone() }).collect()).collect(),
-                None => vec![hole(p)],
-            },
+        let piece = match s {
+            Seg::Param(p) => value(p),
             s => vec![vec![s.clone()]],
         };
         out = cross(&out, &piece, "");
     }
-    let mut seen = HashSet::new();
-    out.retain(|b| seen.insert(b.clone()));
     out
+}
+
+/// What a value built from the parameters of `f` is at each call that hands them, followed out
+/// through the callers' parameters in turn, with the function where it is complete: the URL
+/// `request(method, path)` fetches is `/api/customers` where `api.get("/customers")` is called.
+/// A parameter a call leaves out holds its `default`; so does one of a function nobody in the
+/// program calls (an entry's declared defaults), which otherwise holds what its users hand it,
+/// unknown.
+pub fn at_callers<H: Handing>(calls: &[H], default: &dyn Fn(&str, &str) -> Vec<Built>, f: &str, b: &Built, depth: u32) -> Vec<(String, Built)> {
+    if !b.iter().any(|s| matches!(s, Seg::Param(_))) {
+        return vec![(f.to_string(), b.clone())];
+    }
+    let unknown = |p: &str| match default(f, p) {
+        d if d.is_empty() => vec![hole(p)],
+        d => d,
+    };
+    let sites: Vec<&H> = calls.iter().filter(|a| a.callee() == f).collect();
+    if sites.is_empty() || depth > DEPTH {
+        return substitute(b, unknown).into_iter().map(|x| (f.to_string(), x)).collect();
+    }
+    let mut out = vec![];
+    for a in sites {
+        for x in substitute(b, |p| a.hands(p).filter(|v| !v.is_empty()).unwrap_or_else(|| unknown(p))) {
+            out.extend(at_callers(calls, default, a.caller(), &x, depth + 1));
+            if out.len() >= COMPLETIONS {
+                return out;
+            }
+        }
+    }
+    out
+}
+
+/// A file or network call whose path or URL waits for what its callers hand: the function that
+/// makes it, its touch, and the path or URL as built.
+pub type Waiting = (String, crate::model::Touch, Vec<Built>);
+
+/// A waiting call with its path or URL complete at each call that completes it, by the function
+/// where it is complete.
+pub type Completed = (String, crate::model::Touch, Vec<(String, Built)>);
+
+/// Complete the waiting calls through their callers.
+pub fn complete<H: Handing>(calls: Vec<Waiting>, handing: &[H], default: &dyn Fn(&str, &str) -> Vec<Built>) -> Vec<Completed> {
+    calls
+        .into_iter()
+        .map(|(f, t, built)| {
+            let found = built.iter().flat_map(|b| at_callers(handing, default, &f, b, 0)).collect();
+            (f, t, found)
+        })
+        .collect()
+}
+
+/// Place the completed calls: a file is touched by the function that opens it, at every place
+/// it is opened at; a URL without a host that one of the program's routes serves is a request
+/// from the function that completes it to the route's handler.
+pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Completed>) {
+    use crate::model::{Crossing, EdgeKind, EntryKind, Touch, World};
+    let routes: Vec<(String, String, String)> = store
+        .nodes
+        .values()
+        .filter_map(|n| {
+            let e = n.entry.as_ref().filter(|e| e.kind == EntryKind::Route)?;
+            let (method, path) = e.label.split_once(' ')?;
+            Some((n.id.clone(), method.to_string(), path.to_string()))
+        })
+        .collect();
+    for (f, t, found) in completed {
+        let mut placed: Vec<String> = vec![];
+        let mut requested = false;
+        for (holder, b) in &found {
+            let rendered = render(b);
+            // a request's method, when the code says it, and its URL
+            let (method, url) = match rendered.split_once(' ') {
+                Some((m, u)) if t.kind == World::Net => (m.to_ascii_uppercase(), u.to_string()),
+                _ => (String::new(), rendered.clone()),
+            };
+            if t.kind == World::Net {
+                if url.starts_with('/') {
+                    let known = !method.contains('{');
+                    let served: Vec<&(String, String, String)> = routes.iter().filter(|(_, m, p)| (!known || *m == method) && crate::parts::route_matches(p, &url)).collect();
+                    // a literal segment serves before a parameter: `/years` before `/{year}`
+                    let fewest = served.iter().map(|(_, _, p)| p.matches('{').count()).min().unwrap_or(0);
+                    for (handler, _, path) in served.into_iter().filter(|(_, _, p)| p.matches('{').count() == fewest) {
+                        store.add_edge(holder, handler, EdgeKind::Requests, Some(path.clone()));
+                        requested = true;
+                    }
+                } else if let Some(host) = crate::effects::facts(Crossing::to(World::Net), None, &t.op, &[url.clone()]).places().into_iter().next().map(|(a, _)| a).filter(|a| !a.is_empty()) {
+                    placed.push(host);
+                }
+            } else if let Some(p) = place(b, &t.op) {
+                placed.push(p);
+            }
+        }
+        placed.sort();
+        placed.dedup();
+        if placed.is_empty() {
+            if !requested {
+                // a URL without a host is the page's own origin, decided by whoever serves it
+                let fixed = t.fixed && (t.kind != World::Net || !t.artifact.is_empty());
+                store.touch(&f, Touch { fixed, ..t });
+            }
+            continue;
+        }
+        for artifact in placed {
+            store.touch(&f, Touch { artifact, ..t.clone() });
+        }
+    }
 }

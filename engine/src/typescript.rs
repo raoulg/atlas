@@ -1311,66 +1311,11 @@ fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, repo: &Pat
             link_calls(m, modules, store, id, &returned, &eval, &mut linked);
         }
     }
-    place_calls(store, &eval, linked);
+    let handing: Vec<paths::Evaluated> = linked.args.iter().map(|arg| paths::Evaluated { arg, eval: &eval }).collect();
+    let completed = crate::paths::complete(linked.calls, &handing, &|_, _| vec![]);
+    crate::paths::place_calls(store, completed);
 }
 
-/// Place the file and network calls: each path or URL, with its function's parameters bound to
-/// what each call of it hands them. A file is touched by the function that opens it, at every
-/// place it is opened at; a URL without a host that one of the package's routes serves is a
-/// request from the function that names it to the route's handler.
-fn place_calls(store: &mut GraphBuilder, eval: &Eval, linked: Linked) {
-    let routes: Vec<(String, String, String)> = store
-        .nodes
-        .values()
-        .filter_map(|n| {
-            let e = n.entry.as_ref().filter(|e| e.kind == EntryKind::Route)?;
-            let (method, path) = e.label.split_once(' ')?;
-            Some((n.id.clone(), method.to_string(), path.to_string()))
-        })
-        .collect();
-    for (f, t, built) in linked.calls {
-        let found: Vec<(String, crate::paths::Built)> = built.iter().flat_map(|b| paths::at_callers(eval, &linked.args, &f, b, 0)).collect();
-        let mut placed: Vec<String> = vec![];
-        let mut requested = false;
-        for (holder, b) in &found {
-            let rendered = crate::paths::render(b);
-            // a request's method, when the code says it, and its URL
-            let (method, url) = match rendered.split_once(' ') {
-                Some((m, u)) if t.kind == World::Net => (m.to_ascii_uppercase(), u.to_string()),
-                _ => (String::new(), rendered.clone()),
-            };
-            if t.kind == World::Net {
-                if url.starts_with('/') {
-                    let known = !method.contains('{');
-                    let served: Vec<&(String, String, String)> = routes.iter().filter(|(_, m, p)| (!known || *m == method) && crate::parts::route_matches(p, &url)).collect();
-                    // a literal segment serves before a parameter: `/years` before `/{year}`
-                    let fewest = served.iter().map(|(_, _, p)| p.matches('{').count()).min().unwrap_or(0);
-                    for (handler, _, path) in served.into_iter().filter(|(_, _, p)| p.matches('{').count() == fewest) {
-                        store.add_edge(holder, handler, EdgeKind::Requests, Some(path.clone()));
-                        requested = true;
-                    }
-                } else if let Some(host) = effects::facts(Crossing::to(World::Net), None, &t.op, &[url.clone()]).places().into_iter().next().map(|(a, _)| a).filter(|a| !a.is_empty()) {
-                    placed.push(host);
-                }
-            } else if let Some(p) = crate::paths::place(b, &t.op) {
-                placed.push(p);
-            }
-        }
-        placed.sort();
-        placed.dedup();
-        if placed.is_empty() {
-            if !requested {
-                // a URL without a host is the page's own origin, decided by whoever serves it
-                let fixed = t.fixed && (t.kind != World::Net || !t.artifact.is_empty());
-                store.touch(&f, Touch { fixed, ..t });
-            }
-            continue;
-        }
-        for artifact in placed {
-            store.touch(&f, Touch { artifact, ..t.clone() });
-        }
-    }
-}
 
 /// The class a module-level value holds, in its own module or the one it is imported from.
 /// The name a call's value is kept by: `const x = await f(..)`, `x = f(..)`.
