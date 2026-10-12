@@ -1671,8 +1671,9 @@ impl<'a, 't> Body<'a, 't> {
         }
     }
 
-    /// What a library's call crosses into: a file call or a request waits for the path or URL it
-    /// is handed, placed once every call is known; any other touches what its facts name.
+    /// What a library's call crosses into: a file call, a request or a database statement waits
+    /// for the path, URL or statement it is handed, placed once every call is known; any other
+    /// touches what its facts name.
     fn crossed(&mut self, c: TsNode<'t>, parts: &[String]) {
         let (m, src) = (self.m, self.src);
         let pkg = match m.bindings.get(&parts[0]) {
@@ -1684,11 +1685,22 @@ impl<'a, 't> Body<'a, 't> {
         let op = parts.last().cloned().unwrap_or_default();
         let cr = Crosses::read(c, src, kind, pkg.as_deref(), &op, &literals(c, src, STRINGS), STRINGS, &HashMap::new());
         let args = c.child_by_field_name("arguments").map(named_children).unwrap_or_default();
+        let at = At { m, scope: self.scope, params: &self.params };
+        // a statement is read where it is whole: from a constant, a template, or what the callers
+        // hand the parameters it is built from
+        let statement = match (cr.facts.kind, args.first()) {
+            (World::Db(db), Some(a)) => Some(self.eval.of(at, *a, 0)).filter(|b| crate::paths::is_statement(db, b)),
+            _ => None,
+        };
+        if let Some(built) = statement {
+            let t = Touch { what: cr.what.clone(), payload: cr.payload.clone(), op: op.clone(), line: cr.line, ..Touch::new(cr.facts.kind, None) };
+            self.read.calls.push((t, built));
+            return;
+        }
         if !cr.facts.kind.located() || args.is_empty() {
             self.read.touches.extend(cr.touches(None));
             return;
         }
-        let at = At { m, scope: self.scope, params: &self.params };
         for (kind, a) in sides(&op, &args, &cr.facts) {
             let t = Touch { what: text(a, src).to_string(), payload: cr.payload.clone(), op: op.clone(), artifact: cr.facts.artifact.clone(), fixed: cr.fixed, line: cr.line, ..Touch::new(kind.world, kind.dir) };
             let built = self.eval.of(at, a, 0);

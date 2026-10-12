@@ -134,6 +134,9 @@ fn a_client_moves_data_where_it_is_used() {
     let t = |id: &str| g.node(&format!("fixture-ts.{id}")).unwrap().touches.iter().map(|t| (t.kind_name().to_string(), t.op.clone(), t.artifact.clone(), t.dir_name().to_string())).collect::<Vec<_>>();
     let post = t("server.regels.regels.POST /");
     assert!(post.contains(&("db_sql".into(), "query".into(), "regels".into(), "write".into())), "{post:?}");
+    // a statement is read where it is whole: from a constant, and from what a caller hands `tel`
+    assert!(t("server.regels.regels.GET /:id").contains(&("db_sql".into(), "query".into(), "bezoek".into(), "write".into())), "`pool.query(BEZOEK)`");
+    assert_eq!(t("server.regels.tel"), [("db_sql".into(), "query".into(), "bezoek".into(), "read".into())], "`tel(\"SELECT count(*) FROM bezoek\")`");
     assert!(post.iter().any(|x| x.0 == "process" && x.1 == "run"), "`promisify(execFile)`: {post:?}");
     assert_eq!(t("server.regels.vat"), [("llm".into(), "create".into(), String::new(), String::new())], "the client, not `zodOutputFormat`");
     assert_eq!(t("lib.thema.thema"), [("db_kv".into(), "getItem".into(), "thema".into(), "read".into())]);

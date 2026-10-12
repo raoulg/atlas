@@ -2,8 +2,9 @@
 //! path is built in, and what cannot be known (a hole, named). A path built from a function's
 //! parameters is completed at each call that hands them, out through the callers' own
 //! parameters; the place of a path with an unknown part is the directory before that part, so
-//! what one route unpacks into `D/{kind}/{id}` and another lists in `D` meet at `D/`.
-
+//! what one route unpacks into `D/{kind}/{id}` and another lists in `D` meet at `D/`. A
+//! database statement is built and completed the same way, and read by its grammar where it is
+//! whole: `count(con, sql)` reads the table its caller's `"SELECT count(*) FROM t"` names.
 
 use std::sync::OnceLock;
 
@@ -133,6 +134,18 @@ pub fn render(b: &Built) -> String {
         .collect()
 }
 
+/// Whether what a call to a database is handed, as built, is a statement Atlas reads once it is
+/// whole: the database's statements have a grammar, and the text starts with a verb or with
+/// what a caller hands.
+pub fn is_statement(db: crate::model::Db, built: &[Built]) -> bool {
+    crate::effects::reads_statements(db)
+        && built.iter().any(|b| match b.first() {
+            Some(Seg::Param(_)) => true,
+            Some(Seg::Lit(l)) => crate::effects::starts_statement(l),
+            _ => false,
+        })
+}
+
 /// The place a path names: the file, or for an operation on a directory that directory. A file
 /// whose name is known under a directory that is not (`artefacts/{variant}/report.json`) is
 /// that name under any such directory (`artefacts/*/report.json`); a path whose last part is
@@ -232,8 +245,8 @@ pub fn at_callers<H: Handing>(calls: &[H], default: &dyn Fn(&str, &str) -> Vec<B
     out
 }
 
-/// A file or network call whose path or URL waits for what its callers hand: the function that
-/// makes it, its touch, and the path or URL as built.
+/// A file, network or database call whose path, URL or statement waits for what its callers
+/// hand: the function that makes it, its touch, and the path, URL or statement as built.
 pub type Waiting = (String, crate::model::Touch, Vec<Built>);
 
 /// A waiting call with its path or URL complete at each call that completes it, by the function
@@ -253,7 +266,9 @@ pub fn complete<H: Handing>(calls: Vec<Waiting>, handing: &[H], default: &dyn Fn
 
 /// Place the completed calls: a file is touched by the function that opens it, at every place
 /// it is opened at; a URL without a host that one of the program's routes serves is a request
-/// from the function that completes it to the route's handler.
+/// from the function that completes it to the route's handler; a statement is read by its
+/// grammar, and the function that runs it touches each table it names, the way it goes there.
+/// Where nothing completes to a place, the call keeps the touch it was read with.
 pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Completed>) {
     use crate::model::{Crossing, EdgeKind, EntryKind, Touch, World};
     let routes: Vec<(String, String, String)> = store
@@ -266,7 +281,7 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
         })
         .collect();
     for (f, t, found) in completed {
-        let mut placed: Vec<String> = vec![];
+        let mut placed: Vec<(String, Option<crate::model::Dir>)> = vec![];
         let mut requested = false;
         for (holder, b) in &found {
             let rendered = render(b);
@@ -286,10 +301,12 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
                         requested = true;
                     }
                 } else if let Some(host) = crate::effects::facts(Crossing::to(World::Net), None, &t.op, &[url.clone()]).places().into_iter().next().map(|(a, _)| a).filter(|a| !a.is_empty()) {
-                    placed.push(host);
+                    placed.push((host, t.dir));
                 }
+            } else if let World::Db(db) = t.kind {
+                placed.extend(crate::effects::sql(db, &[rendered.clone()]).unwrap_or_default().into_iter().map(|(table, dir)| (table, dir.or(t.dir))));
             } else if let Some(p) = place(b, &t.op) {
-                placed.push(p);
+                placed.push((p, t.dir));
             }
         }
         placed.sort();
@@ -302,8 +319,8 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
             }
             continue;
         }
-        for artifact in placed {
-            store.touch(&f, Touch { artifact, ..t.clone() });
+        for (artifact, dir) in placed {
+            store.touch(&f, Touch { artifact, dir, ..t.clone() });
         }
     }
 }

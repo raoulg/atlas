@@ -167,7 +167,11 @@ Three things make `F` honest, and each is an engine task:
    open. Python's own database interface (PEP 249) has only `execute(sql)`, so SQL is
    read, by its grammar and in its database's dialect: a statement writes the table it
    changes and reads the tables it takes from (`INSERT INTO a SELECT .. FROM b`), a
-   setting names no table, and a table filled in at run time is not named.
+   setting names no table, and a table filled in at run time is not named. A statement
+   is read where it is whole, evaluated as a path is: from a constant (`executescript(SCHEMA)`),
+   an f-string or a template, the value a method of the program gives
+   (`self._cte() + "SELECT .."`), or what the callers hand the parameter it is built from
+   (`_scalar(con, sql)` reads the table its caller's `"SELECT count(*) FROM t"` names).
 2. In-place mutation hides arrows: a function that takes a hub type and calls a
    mutator on it is an endomorphism `Graph → Graph`, not `Graph → ()`.
 3. Disk is too coarse: `.env` and `assets/regelingen` are different resting places.

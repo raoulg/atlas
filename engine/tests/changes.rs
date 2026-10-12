@@ -36,7 +36,7 @@ fn a_new_write_and_a_removed_call_show_as_themselves() {
     let src = std::fs::read_to_string(&regels).unwrap();
     let src = src.replace("[await vat(\"x\")]", "[\"x\"]");
     let src = src.replace("import { Hono } from \"hono\";", "import fs from \"node:fs\";\nimport { Hono } from \"hono\";");
-    let src = src.replace("    return c.json(rows);", "    fs.appendFileSync(\"logs/regels.log\", c.req.param(\"id\"));\n    return c.json(rows);");
+    let src = src.replace("    await pool.query(BEZOEK);", "    fs.appendFileSync(\"logs/regels.log\", c.req.param(\"id\"));\n    await pool.query(BEZOEK);");
     std::fs::write(&regels, src).unwrap();
     let c = changes::since(&repo, "HEAD", &atlas_engine::Options::default()).expect("the working tree against HEAD");
     let routes: Vec<&str> = c.routes.iter().map(|r| r.route.as_str()).collect();

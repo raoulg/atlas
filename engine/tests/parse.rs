@@ -154,6 +154,16 @@ fn sql_names_the_tables_it_reads_and_writes() {
     assert_eq!(sides, expected, "PRAGMA; CREATE TABLE IF NOT EXISTS log; INSERT INTO log SELECT .. FROM nodes; DELETE FROM {{table}}");
 }
 
+/// A statement is read where it is whole: from the constant a call is handed, and from what its
+/// callers hand the parameter it is.
+#[test]
+fn a_statement_is_read_where_it_is_whole() {
+    let g = fixture();
+    let sides = |id: &str| g.node(id).unwrap().touches.iter().filter(|t| t.kind_name() == "db_sqlite" && t.op != "connect").map(|t| (t.op.as_str(), t.artifact.as_str(), t.dir_name())).collect::<Vec<_>>();
+    assert_eq!(sides("fixture.store.seen"), [("executescript", "seen", "write")], "`con.executescript(SCHEMA)`");
+    assert_eq!(sides("fixture.store.count"), [("execute", "seen", "read")], "`count(con, \"SELECT count(*) FROM seen\")`");
+}
+
 #[test]
 fn signatures_become_takes_and_returns() {
     let g = fixture();

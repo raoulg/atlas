@@ -135,3 +135,17 @@ class Journal:
     def entries(self) -> int:
         con = self.connection()
         return con.execute("SELECT count(*) FROM log").fetchone()[0]
+
+
+SCHEMA = "CREATE TABLE IF NOT EXISTS seen (id TEXT)"
+
+
+def count(con: sqlite3.Connection, sql: str) -> int:
+    """Runs whatever statement its caller hands it."""
+    return con.execute(sql).fetchone()[0]
+
+
+def seen(path: str) -> int:
+    con = sqlite3.connect(path)
+    con.executescript(SCHEMA)
+    return count(con, "SELECT count(*) FROM seen")

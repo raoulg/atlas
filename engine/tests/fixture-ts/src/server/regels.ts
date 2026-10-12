@@ -7,6 +7,12 @@ import { Pool } from "pg";
 
 const pool = new Pool();
 const run = promisify(execFile);
+const BEZOEK = "CREATE TABLE IF NOT EXISTS bezoek (id TEXT)";
+
+async function tel(sql: string): Promise<number> {
+  const r = await pool.query(sql);
+  return r.rowCount ?? 0;
+}
 
 export async function vat(tekst: string): Promise<string> {
   const client = new Anthropic();
@@ -17,7 +23,8 @@ export async function vat(tekst: string): Promise<string> {
 export const regels = new Hono()
   .get("/:id", async (c) => {
     const rows = await pool.query("SELECT * FROM regels WHERE id = $1", [c.req.param("id")]);
-    return c.json(rows);
+    await pool.query(BEZOEK);
+    return c.json({ rows, bezoeken: await tel("SELECT count(*) FROM bezoek") });
   })
   .post("/", async (c) => {
     await pool.query("INSERT INTO regels (tekst) VALUES ($1)", [await vat("x")]);

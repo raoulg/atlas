@@ -520,6 +520,16 @@ fn sides(st: &Statement) -> Vec<(String, Dir)> {
 /// The databases whose statements are SQL.
 const SQL_DBS: &[Db] = &[Db::Duckdb, Db::Sqlite, Db::Sql];
 
+/// Whether a database's statements are read by their grammar.
+pub fn reads_statements(db: Db) -> bool {
+    SQL_DBS.contains(&db)
+}
+
+/// Whether a text starts as a statement does: with a verb that asks, changes or sets.
+pub fn starts_statement(text: &str) -> bool {
+    verb(text).is_some()
+}
+
 /// Which way a graph database's data goes, where the Python code says it to the driver: a
 /// managed transaction (`session.execute_read(work)`, `execute_write`), a query's routing
 /// (`execute_query(q, routing_=RoutingControl.READ)`) or a session's access mode

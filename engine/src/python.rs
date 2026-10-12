@@ -973,13 +973,13 @@ fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, root: &str
         .filter_map(|k| Some(((package_of(&k[4..]), k.rsplit('.').next()?.to_string()), k.clone())))
         .collect();
     let mut handed = vec![];
-    let mut files: Vec<(String, Touch, Vec<Built>)> = vec![];
+    let mut waiting: Vec<(String, Touch, Vec<Built>)> = vec![];
     let mut args: Vec<Arg> = vec![];
     for id in &ids {
         if matches!(store.nodes[id].kind, NodeKind::Function | NodeKind::Method | NodeKind::Module) {
             let linked = link_calls(modules, store, types, &sites, &ext, &eval, root, id);
             handed.extend(linked.handed);
-            files.extend(linked.files.into_iter().map(|(t, b)| (id.clone(), t, b)));
+            waiting.extend(linked.waiting.into_iter().map(|(t, b)| (id.clone(), t, b)));
             args.extend(linked.args);
         }
     }
@@ -995,7 +995,7 @@ fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, root: &str
             [entry, declared].into_iter().flatten().flat_map(|d| eval.of(At { m, scope: None, params: &[] }, d, 0)).collect()
         };
         let handing: Vec<Evaluated> = args.iter().map(|arg| Evaluated { arg, modules, eval: &eval }).collect();
-        crate::paths::complete(files, &handing, &default)
+        crate::paths::complete(waiting, &handing, &default)
     };
     crate::paths::place_calls(store, completed);
     // the work handed to a managed transaction (`session.execute_read(work)`) goes its way
@@ -1640,12 +1640,12 @@ impl crate::paths::Handing for Evaluated<'_, '_> {
 }
 
 /// What reading a body gives besides its edges and touches: the work it hands a managed
-/// transaction, its file calls with their paths as built (placed once the parameters' values
-/// are known), and the arguments of its calls.
+/// transaction, its file and database calls with their paths and statements as built (placed
+/// once the parameters' values are known), and the arguments of its calls.
 #[derive(Default)]
 struct Linked<'t> {
     handed: Vec<(String, World, Dir)>,
-    files: Vec<(Touch, Vec<Built>)>,
+    waiting: Vec<(Touch, Vec<Built>)>,
     args: Vec<Arg<'t>>,
 }
 
@@ -1688,18 +1688,18 @@ fn link_calls<'t>(modules: &'t IndexMap<String, Module>, store: &mut GraphBuilde
     for t in read.touches {
         store.touch(id, t);
     }
-    Linked { handed: read.handed, files: read.files, args: read.args }
+    Linked { handed: read.handed, waiting: read.waiting, args: read.args }
 }
 
-/// What reading a body finds besides its steps: what it touches, the file calls whose paths wait
-/// for what callers hand, the calls of the package's functions with their arguments, the work a
+/// What reading a body finds besides its steps: what it touches, the file and database calls
+/// whose paths and statements wait for what callers hand, the calls of the package's functions with their arguments, the work a
 /// managed transaction is handed, the directions the body says to a database's driver, the
 /// calls Atlas could not follow, the functions whose value it uses, the inputs it changes in
 /// place, and the library types its values have.
 #[derive(Default)]
 struct Read<'t> {
     touches: Vec<Touch>,
-    files: Vec<(Touch, Vec<Built>)>,
+    waiting: Vec<(Touch, Vec<Built>)>,
     args: Vec<Arg<'t>>,
     handed: Vec<(String, World, Dir)>,
     declared: Vec<(World, Dir)>,
@@ -1883,7 +1883,7 @@ impl<'a, 't> Body<'a, 't> {
         let Some(tag) = effects::boundary(lib.as_deref(), &parts).filter(|t| self.seen.moves(fnode, t, lib.as_deref(), op)) else { return };
         let crossed = crossed(&self.seen, self.eval, self.at(), c, fnode, tag, lib.as_deref(), op);
         self.read.touches.extend(crossed.touches);
-        self.read.files.extend(crossed.files);
+        self.read.waiting.extend(crossed.waiting);
         self.read.declared.extend(crossed.said);
         self.read.handed.extend(crossed.handed);
     }
@@ -1923,26 +1923,26 @@ impl<'a, 't> Body<'a, 't> {
     }
 }
 
-/// What a call that crosses into the world leaves: the touches it makes, the file touches whose
-/// paths wait for what the callers hand, and the direction it says to a database's driver, with
-/// the work a managed transaction it opens is handed.
+/// What a call that crosses into the world leaves: the touches it makes, the file and database
+/// touches whose paths and statements wait for what the callers hand, and the direction it says
+/// to a database's driver, with the work a managed transaction it opens is handed.
 #[derive(Default)]
 struct Crossed {
     touches: Vec<Touch>,
-    files: Vec<(Touch, Vec<Built>)>,
+    waiting: Vec<(Touch, Vec<Built>)>,
     said: Option<(World, Dir)>,
     handed: Option<(String, World, Dir)>,
 }
 
-/// A call that crosses `tag`: a file call by the files it is handed, any other by what its facts
-/// and literals name.
+/// A call that crosses `tag`: a file call by the files it is handed, a database call by the
+/// statement it is handed, any other by what its facts and literals name.
 #[allow(clippy::too_many_arguments)]
 fn crossed<'t>(seen: &Seen, eval: &Eval, at: At<'_, 't>, c: TsNode<'t>, fnode: TsNode<'t>, tag: Crossing, lib: Option<&str>, op: &str) -> Crossed {
     let src = &at.m.src;
     match tag.world {
         World::Disk => {
-            let (touches, files): (Vec<(Touch, Vec<Built>)>, _) = file_calls(seen, eval, at, c, fnode, tag, lib, op).into_iter().partition(|(_, built)| built.is_empty());
-            Crossed { touches: touches.into_iter().map(|(t, _)| t).collect(), files, ..Default::default() }
+            let (touches, waiting): (Vec<(Touch, Vec<Built>)>, _) = file_calls(seen, eval, at, c, fnode, tag, lib, op).into_iter().partition(|(_, built)| built.is_empty());
+            Crossed { touches: touches.into_iter().map(|(t, _)| t).collect(), waiting, ..Default::default() }
         }
         _ => {
             let mut cr = Crosses::read(c, src, tag, lib, op, &literals(c, src, &["string"]), &["string"], &seen.handed(c));
@@ -1962,6 +1962,16 @@ fn crossed<'t>(seen: &Seen, eval: &Eval, at: At<'_, 't>, c: TsNode<'t>, fnode: T
                 (Some(Callee::Def(w)), Some(d)) => Some((w, cr.facts.kind, d)),
                 _ => None,
             };
+            // a statement is read where it is whole: from a constant, an f-string, or what the
+            // callers hand the parameters it is built from
+            let statement = match cr.facts.kind {
+                World::Db(db) => positional(c).map(|a| eval.of(at, a, 0)).filter(|b| crate::paths::is_statement(db, b)),
+                _ => None,
+            };
+            if let Some(built) = statement {
+                let t = Touch { what: cr.what.clone(), payload: cr.payload.clone(), op: cr.op.clone(), line: cr.line, ..Touch::new(cr.facts.kind, said) };
+                return Crossed { waiting: vec![(t, built)], said: said.map(|d| (cr.facts.kind, d)), handed, ..Default::default() };
+            }
             Crossed { touches: cr.touches(said), said: said.map(|d| (cr.facts.kind, d)), handed, ..Default::default() }
         }
     }

@@ -79,8 +79,8 @@ The rigorous half and the visual half are the same structure. Read `docs/design.
   are reused from tree-sitter crates. A reader supplies its language's syntax and facts:
   resolution, how its names get their types, entry points, which calls cross into the world,
   and syntax tables (`ChoiceSyntax`, `CompareSyntax`, `OwnTypes`). What every language shares is
-  written once: a body's steps and the touches its calls make (`body.rs`), carrying paths and
-  URLs to the callers and placing them (`paths.rs`), exports and route prefixes (`builder.rs`,
+  written once: a body's steps and the touches its calls make (`body.rs`), carrying paths, URLs
+  and statements to the callers and placing them (`paths.rs`), exports and route prefixes (`builder.rs`,
   `entries.rs`), `method_of` and `foreign_type` (`builder.rs`). Each reader's `link_calls` only
   says in which order its steps run.
 - `engine/src/repo.rs` is the one place the engine reads a repository: the listing once (with the
