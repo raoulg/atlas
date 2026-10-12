@@ -10,8 +10,7 @@ use std::path::Path;
 
 use serde::Serialize;
 
-use crate::flow::Side;
-use crate::model::{Edge, EdgeKind, EntryKind, Graph, Leaves, Node, NodeKind, Site, World};
+use crate::model::{Dir, Edge, EdgeKind, EntryKind, Graph, Leaves, Node, NodeKind, Site, World};
 
 /// A principle by its id and what it asks of code.
 pub struct Principle {
@@ -896,11 +895,13 @@ fn lens(ix: &Index) -> Vec<Finding> {
         let mut todo = vec![m.id.as_str()];
         while let Some(id) = todo.pop() {
             let Some(n) = ix.node(id).filter(|n| !n.library) else { continue };
+            // a call that does not say which way the data goes is neither: a lens is not guessed
             for t in &n.touches {
                 if let Some((place, label)) = held(t) {
-                    match t.side() {
-                        Side::Out => puts.insert(place, label),
-                        Side::In => gets.insert(place, label),
+                    match t.dir {
+                        Some(Dir::Write) => puts.insert(place, label),
+                        Some(Dir::Read) => gets.insert(place, label),
+                        None => None,
                     };
                 }
             }
