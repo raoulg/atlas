@@ -15,7 +15,7 @@ use walkdir::WalkDir;
 
 use crate::effects::{self, Crossing};
 use crate::model::{EdgeKind, Entry, EntryKind, Held, Node, NodeKind, Param, Returns, Site, Touch, World};
-use crate::builder::{ClassInfo, GraphBuilder, SigInfo};
+use crate::builder::{foreign_type, ClassInfo, GraphBuilder, OwnTypes, SigInfo};
 use crate::tree::{
     arms_of, evaluation_order, literals, named_children, nth_of_kind, number_choices, payload_of, span, starts_at_literal, text, unquote, walk, what_of,
     ChoiceSyntax, CompareSyntax, Part,
@@ -814,7 +814,7 @@ fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crate_ids:
         let mut seen: Vec<String> = vec![];
         for t in variants {
             let Some(r) = resolve(m, &t, modules, &store.nodes, crate_ids) else { continue };
-            let known = if r.starts_with("ext:") { foreign_type(&r) } else { store.nodes.get(&r).map_or(false, |x| x.kind == NodeKind::Class) };
+            let known = if r.starts_with("ext:") { foreign_type(&r, &OWN) } else { store.nodes.get(&r).map_or(false, |x| x.kind == NodeKind::Class) };
             if known && r != *id && !seen.contains(&r) {
                 if r.starts_with("ext:") {
                     store.ext_node(&r);
@@ -841,7 +841,7 @@ fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crate_ids:
                 };
                 let Some(r) = resolved else { continue };
                 if r.starts_with("ext:") {
-                    if !foreign_type(&r) {
+                    if !foreign_type(&r, &OWN) {
                         continue;
                     }
                     store.ext_node(&r);
@@ -1394,15 +1394,9 @@ fn matched<'t>(n: TsNode<'t>, src: &[u8]) -> Option<(String, Vec<String>, Option
     Some((subject, cases, None))
 }
 
-/// A foreign type worth keeping in a signature: from a third-party crate, not std or a container.
-fn foreign_type(id: &str) -> bool {
-    let Some(full) = id.strip_prefix("ext:") else { return false };
-    let head = full.split('.').next().unwrap_or("");
-    let name = full.rsplit('.').next().unwrap_or("");
-    full.contains('.')
-        && !["std", "core", "alloc"].contains(&head)
-        && !["Result", "Option", "Vec", "Box", "HashMap", "HashSet", "BTreeMap", "String", "Path", "PathBuf"].contains(&name)
-        // `D::Error`, `S::Ok`, `Self::Target`: associated types on generic parameters, not places
-        && !(head.len() == 1 && head.chars().all(|c| c.is_ascii_uppercase()))
-        && !["Ok", "Err", "Error", "Target", "Output", "Item", "Self"].contains(&name)
-}
+/// Rust's own types: std, core and alloc, the containers and wrappers, and the associated types
+/// a trait names (`Self::Target`, `S::Ok`).
+const OWN: OwnTypes = OwnTypes {
+    packages: &["std", "core", "alloc"],
+    names: &["Result", "Option", "Vec", "Box", "HashMap", "HashSet", "BTreeMap", "String", "Path", "PathBuf", "Ok", "Err", "Error", "Target", "Output", "Item", "Self"],
+};

@@ -19,7 +19,7 @@ use crate::pytypes::{By, Facts, FileArg, Target, Ty, Types, Value};
 use paths::{At, Built, Eval, Passed, Seg};
 use crate::entries::entry_of;
 use crate::model::{Dir, EdgeKind, Entry, EntryKind, Held, Node, NodeKind, Param, Returns, Site, Touch, World};
-pub use crate::builder::{ClassInfo, GraphBuilder, SigInfo};
+pub use crate::builder::{foreign_type, ClassInfo, GraphBuilder, OwnTypes, SigInfo};
 use crate::tree::{
     argument, arms_of, evaluation_order, field_children, literals, named_children, nth_of_kind, number_choices, payload_of, span, starts_at_literal, text, unquote, walk,
     what_of, ChoiceSyntax, CompareSyntax, Part,
@@ -1044,7 +1044,7 @@ fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, root: &str
                 .collect();
             for r in targets {
                 if r.starts_with("ext:") {
-                    if !foreign_type(&r) {
+                    if !foreign_type(&r, &OWN) {
                         continue;
                     }
                     store.ext_node(&r);
@@ -1319,7 +1319,7 @@ impl<'a> Seen<'a> {
                 Target::Lib(module) => {
                     let pkg = package_of(module);
                     let id = ext.get(&(pkg.clone(), name.clone())).cloned().unwrap_or_else(|| format!("ext:{pkg}.{name}"));
-                    foreign_type(&id).then_some(id)
+                    foreign_type(&id, &OWN).then_some(id)
                 }
             };
             if let Some(id) = id.filter(|id| !out.contains(id)) {
@@ -1567,7 +1567,7 @@ fn add_sums(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, aliase
         let m = &modules[&a.module];
         let mut variants: Vec<String> = vec![];
         for r in a.names.iter().filter_map(|n| resolve(m, n, modules, &store.nodes, root)) {
-            if (!r.starts_with("ext:") || foreign_type(&r)) && !variants.contains(&r) {
+            if (!r.starts_with("ext:") || foreign_type(&r, &OWN)) && !variants.contains(&r) {
                 variants.push(r);
             }
         }
@@ -2211,9 +2211,8 @@ fn matched<'t>(n: TsNode<'t>, src: &[u8]) -> Option<(String, Vec<String>, Option
     Some((text(subject, src).to_string(), cases, Some(block)))
 }
 
-/// A foreign type worth keeping in a signature: bound to a third-party package, not a builtin.
-fn foreign_type(id: &str) -> bool {
-    let Some(full) = id.strip_prefix("ext:") else { return false };
-    let head = full.split('.').next().unwrap_or("");
-    full.contains('.') && !["typing", "collections", "pathlib", "builtins", "datetime", "abc", "os", "enum", "dataclasses", "functools", "itertools", "types"].contains(&head)
-}
+/// Python's own types: the standard library's modules that describe code, not data.
+const OWN: OwnTypes = OwnTypes {
+    packages: &["typing", "collections", "pathlib", "builtins", "datetime", "abc", "os", "enum", "dataclasses", "functools", "itertools", "types"],
+    names: &[],
+};

@@ -174,3 +174,21 @@ fn mark_doors(nodes: &mut IndexMap<String, Node>, edges: &[Edge]) {
         }
     }
 }
+
+/// The types a language's code describes itself with rather than holds data in: its standard
+/// library and the packages that describe code (a UI library's components, a schema library's
+/// validators), and the names that wrap or stand for a value.
+pub struct OwnTypes {
+    pub packages: &'static [&'static str],
+    pub names: &'static [&'static str],
+}
+
+/// A foreign type worth a place: a package's type that holds data. Not one of the language's
+/// own, and not one reached through a type parameter (`D::Error`, `T.Item`).
+pub fn foreign_type(id: &str, own: &OwnTypes) -> bool {
+    let Some(full) = id.strip_prefix("ext:") else { return false };
+    let head = full.split('.').next().unwrap_or("");
+    let name = full.rsplit('.').next().unwrap_or("");
+    let parameter = head.len() == 1 && head.chars().all(|c| c.is_ascii_uppercase());
+    full.contains('.') && !own.packages.contains(&head) && !own.names.contains(&name) && !parameter
+}

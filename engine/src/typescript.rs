@@ -18,7 +18,7 @@ mod paths;
 
 use paths::{Arg, At, Eval};
 
-use crate::builder::{ClassInfo, GraphBuilder, SigInfo};
+use crate::builder::{foreign_type, ClassInfo, GraphBuilder, OwnTypes, SigInfo};
 use crate::effects::{self, Crossing};
 use crate::model::{EdgeKind, Entry, EntryKind, Held, Node, NodeKind, Param, Returns, Site, Touch, World};
 use crate::tree::{
@@ -37,7 +37,7 @@ const CONTAINERS: &[&str] = &[
 ];
 /// Packages whose types describe the code rather than data it moves: a UI framework's
 /// components and props, a schema library's schemas.
-const CODE_PACKAGES: &[&str] = &["react", "react-dom", "preact", "vue", "svelte", "solid-js", "zod", "yup", "valibot", "superstruct", "io-ts"];
+const OWN: OwnTypes = OwnTypes { packages: &["react", "react-dom", "preact", "vue", "svelte", "solid-js", "zod", "yup", "valibot", "superstruct", "io-ts"], names: &[] };
 /// Web frameworks whose router registers a route by a call: `app.get("/x", handler)`.
 const ROUTERS: &[&str] = &["hono", "express", "fastify", "koa-router", "@koa/router", "elysia", "itty-router", "h3"];
 /// A router's registration calls, by HTTP method.
@@ -1175,12 +1175,6 @@ fn defined(target: &str, modules: &IndexMap<String, Module>, nodes: &IndexMap<St
     m.wildcards.iter().find_map(|w| defined(&format!("{w}.{name}"), modules, nodes, depth + 1))
 }
 
-/// A foreign type worth a place: a package's type, not one that describes the code.
-fn foreign_type(id: &str) -> bool {
-    let Some(full) = id.strip_prefix("ext:") else { return false };
-    let head = full.split('.').next().unwrap_or("");
-    full.contains('.') && !CODE_PACKAGES.contains(&head)
-}
 
 /// What the bodies hand the places pass: file and network calls with what their path or URL
 /// is built from, and the calls of the package's functions with the arguments they pass.
@@ -1202,7 +1196,7 @@ fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, repo: &Pat
             }
             let mut variants: Vec<String> = vec![];
             for r in types.iter().filter_map(|t| resolve(m, t, modules, &store.nodes)) {
-                if (!r.starts_with("ext:") || foreign_type(&r)) && !variants.contains(&r) {
+                if (!r.starts_with("ext:") || foreign_type(&r, &OWN)) && !variants.contains(&r) {
                     variants.push(r);
                 }
             }
@@ -1274,7 +1268,7 @@ fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, repo: &Pat
         store.classes.entry(id.clone()).or_default().resolved = resolved;
         for (fname, types) in &info.fields {
             for t in types {
-                for r in type_of(m, t, &store.nodes).into_iter().filter(|r| !r.starts_with("ext:") || foreign_type(r)) {
+                for r in type_of(m, t, &store.nodes).into_iter().filter(|r| !r.starts_with("ext:") || foreign_type(r, &OWN)) {
                     if r.starts_with("ext:") {
                         store.ext_node(&r);
                     } else {
@@ -1295,7 +1289,7 @@ fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, repo: &Pat
                 for t in types {
                     for r in type_of(m, t, &store.nodes) {
                         if r.starts_with("ext:") {
-                            if !foreign_type(&r) {
+                            if !foreign_type(&r, &OWN) {
                                 continue;
                             }
                             store.ext_node(&r);
