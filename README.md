@@ -184,11 +184,13 @@ precise as the code's annotations. It sees best when:
 
 Entry points come from the code itself. Atlas finds:
 
-- `[project.scripts]`, `package.json` `bin` and scripts that run a file of the package, and a
-  Rust binary's `main`;
-- commands (`@app.command`, as in click and typer);
-- web routes (`@app.get("/…")` as in FastAPI, `app.get("/…", handler)` as in Hono and Express,
-  each at the full path of the routers it is mounted on, and TanStack file routes);
+- the programs and plugins a `pyproject.toml` declares (`[project.scripts]`,
+  `[project.gui-scripts]`, `[project.entry-points]`, `[tool.poetry.scripts]`), `package.json`
+  `bin` and scripts that run a file of the package, and a Rust binary's `main`;
+- commands (`@app.command` from click or typer, by the name that framework gives it);
+- web routes (`@app.get("/…")` and `@app.route("/…", methods=[…])` from FastAPI or Flask,
+  Litestar's `@get("/…")`, `app.get("/…", handler)` as in Hono and Express, each at the full
+  path of the routers it is mounted on, and TanStack file routes);
 - MCP tools, Makefile targets, scripts, notebooks and tests;
 - what a library exports: at its root (in TypeScript the module `package.json` points to), and
   in Rust also through `pub mod` and `pub use`.

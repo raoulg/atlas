@@ -16,6 +16,39 @@ pub fn registers_route(verb: &str) -> bool {
     HTTP_METHODS.contains(&verb) || ROUTE_KINDS.contains(&verb)
 }
 
+/// Web frameworks that register a function as a route by a decorator, by package. A decorator
+/// named for what it serves (`registers_route`) serves that: `@app.get("/x")`, Litestar's
+/// `@get("/x")`. A decorator among `routes` serves the methods it is handed by the keyword that
+/// `methods` names, and DEFAULT_METHOD when handed none: `@app.route("/x", methods=["POST"])`.
+/// The path is the first argument or the keyword that `path` names, and `/` when none is handed.
+pub struct WebFramework {
+    pub package: &'static str,
+    pub routes: &'static [&'static str],
+    pub methods: &'static str,
+    pub path: &'static str,
+}
+
+pub const WEB_FRAMEWORKS: &[WebFramework] = &[
+    WebFramework { package: "fastapi", routes: &["api_route", "route"], methods: "methods", path: "path" },
+    WebFramework { package: "starlette", routes: &["route"], methods: "methods", path: "path" },
+    WebFramework { package: "flask", routes: &["route"], methods: "methods", path: "rule" },
+    WebFramework { package: "quart", routes: &["route"], methods: "methods", path: "rule" },
+    WebFramework { package: "litestar", routes: &["route"], methods: "http_method", path: "path" },
+];
+
+/// The method a route serves when its decorator names none.
+pub const DEFAULT_METHOD: &str = "get";
+
+/// The web framework a package is.
+pub fn web_framework(package: &str) -> Option<&'static WebFramework> {
+    WEB_FRAMEWORKS.iter().find(|w| w.package == package)
+}
+
+/// Whether a decorator of this name registers a route in some web framework.
+pub fn registers_route_by_decorator(name: &str) -> bool {
+    registers_route(name) || WEB_FRAMEWORKS.iter().any(|w| w.routes.contains(&name))
+}
+
 /// Where a call hands an argument: by position, or by keyword.
 pub enum Arg {
     At(usize),
@@ -66,6 +99,71 @@ pub const TOOL_SERVERS: &[(&str, &str)] = &[("fastmcp", "FastMCP"), ("mcp", "Fas
 
 /// The decorators of a tool server that register a function.
 pub const TOOL_DECORATORS: &[&str] = &["tool", "resource", "prompt"];
+
+// ---------- command lines ----------
+
+/// Command-line frameworks that register a function as a command by a decorator, by package:
+/// the decorators that do (`@cli.command()`, `@click.command`), and the suffixes their naming
+/// rule drops. A command is run by the name its decorator is handed, first or as COMMAND_NAME,
+/// else by its function's name lowercased with `_` written `-`, less a last part among the
+/// suffixes (click's `export_cmd` is `export`).
+pub struct CliFramework {
+    pub package: &'static str,
+    pub commands: &'static [&'static str],
+    pub drops: &'static [&'static str],
+}
+
+const CLICK_DROPS: &[&str] = &["command", "cmd", "group", "grp"];
+
+pub const CLI_FRAMEWORKS: &[CliFramework] = &[
+    CliFramework { package: "click", commands: &["command"], drops: CLICK_DROPS },
+    CliFramework { package: "rich_click", commands: &["command"], drops: CLICK_DROPS },
+    CliFramework { package: "typer", commands: &["command"], drops: &[] },
+];
+
+/// The keyword a command's decorator is handed the command's name by.
+pub const COMMAND_NAME: &str = "name";
+
+/// The command-line framework a package is.
+pub fn cli_framework(package: &str) -> Option<&'static CliFramework> {
+    CLI_FRAMEWORKS.iter().find(|c| c.package == package)
+}
+
+impl CliFramework {
+    /// The name a command is run by when its decorator names none.
+    pub fn command_name(&self, function: &str) -> String {
+        let name = function.to_lowercase().replace('_', "-");
+        match name.rsplit_once('-') {
+            Some((rest, suffix)) if self.drops.contains(&suffix) => rest.to_string(),
+            _ => name,
+        }
+    }
+}
+
+// ---------- a Python project's manifest ----------
+
+/// What a table of entry points declares: programs, run by their names, or plugins, each loaded
+/// by the host that names its group.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Declares {
+    Programs,
+    Plugins,
+}
+
+/// The tables of `pyproject.toml` that declare a project's entry points, by their path in the
+/// file: the standard's and Poetry's. An entry names its object as `module:object`, by itself or
+/// under one of ENTRY_REFERENCES.
+pub const ENTRY_TABLES: &[(&[&str], Declares)] = &[
+    (&["project", "scripts"], Declares::Programs),
+    (&["project", "gui-scripts"], Declares::Programs),
+    (&["tool", "poetry", "scripts"], Declares::Programs),
+    (&["project", "entry-points"], Declares::Plugins),
+    (&["tool", "poetry", "plugins"], Declares::Plugins),
+];
+
+/// The keys an entry written as a table names its object by: Poetry's `{ callable = .. }` and
+/// `{ reference = .. }`.
+pub const ENTRY_REFERENCES: &[&str] = &["callable", "reference"];
 
 // ---------- the files of a project ----------
 

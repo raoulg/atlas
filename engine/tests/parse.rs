@@ -27,7 +27,7 @@ fn modules_classes_and_functions_are_found() {
     let g = fixture();
     assert_eq!(g.root, "fixture");
     let kinds = |k: NodeKind| g.nodes.iter().filter(|n| n.kind == k).count();
-    assert_eq!(kinds(NodeKind::Module), 19, "the package's sixteen, a root script and two notebooks");
+    assert_eq!(kinds(NodeKind::Module), 21, "the package's eighteen, a root script and two notebooks");
     assert!(g.node("fixture.sinks").unwrap().is_pkg);
     assert_eq!(g.node("fixture.schema.Graph").unwrap().doc, "Nodes and edges.");
     assert_eq!(g.node("fixture.sinks.duck.DuckSink").unwrap().bases, vec!["Sink", "Mixin"]);
@@ -202,6 +202,18 @@ fn entry_points_from_decorators_scripts_and_makefile() {
     assert_eq!(entry("fixture.cli.build").label, "build");
     assert_eq!(entry("fixture.cli.cmd_report").label, "report");
     assert_eq!(entry("fixture.cli.main").label, "fixture", "[project.scripts]");
+    // a command rests on the framework its decorator comes from, and is named by that framework's
+    // rule: click drops `_cmd`, typer keeps it; a `command` of the project's own is no command line
+    assert_eq!(entry("fixture.cli.export_cmd").label, "export");
+    assert_eq!(entry("fixture.cli.count_notes").label, "tally", "`name=`");
+    assert!(g.node("fixture.cli.ping").unwrap().entry.is_none(), "`bot.command` is the project's own");
+    assert_eq!((entry("fixture.tasks.clean_cache_cmd").kind, entry("fixture.tasks.clean_cache_cmd").label), (EntryKind::Cli, "clean-cache-cmd".to_string()));
+    assert_eq!(entry("fixture.tasks.synchronise").label, "sync");
+    // what pyproject.toml declares beside `[project.scripts]`: a graphical program (its extras
+    // left out), Poetry's program, and a plugin its host loads by group and name
+    assert_eq!((entry("fixture.launch.window").kind, entry("fixture.launch.window").label), (EntryKind::Cli, "fixture-window".to_string()));
+    assert_eq!(entry("fixture.launch.nightly").label, "fixture-nightly", "[tool.poetry.scripts]");
+    assert_eq!((entry("fixture.launch.Exporter").kind, entry("fixture.launch.Exporter").label), (EntryKind::Export, "fixture.exporters:plain".to_string()));
     // a tool server's tools, by the type of the value its decorators are on, not by its name
     assert_eq!((entry("fixture.cli.describe").kind, entry("fixture.cli.describe").label), (EntryKind::Mcp, "describe".to_string()));
     assert_eq!(entry("fixture.cli.summarise").label, "summary");
@@ -218,6 +230,8 @@ fn entry_points_from_decorators_scripts_and_makefile() {
     assert!(g.make.iter().all(|t| t.label != "DEPS"), "assignments are not targets");
     let all = g.make.iter().find(|t| t.label == "all").unwrap();
     assert_eq!(all.calls, vec!["make:build".to_string()], "deps count, echo lines do not");
+    let window = g.make.iter().find(|t| t.label == "window").unwrap();
+    assert_eq!(window.calls, vec!["fixture.launch.window".to_string()], "a declared graphical program is a program a recipe runs");
 }
 
 #[test]

@@ -24,6 +24,31 @@ def cmd_report():
     click.echo("done")
 
 
+@cli.command()
+def export_cmd():
+    click.echo("exported")
+
+
+@cli.command(name="tally")
+def count_notes():
+    click.echo("counted")
+
+
+class Bot:
+    """A chat bot's commands are no command line, whatever their decorator is called."""
+
+    def command(self) -> Callable[[Callable[[], str]], Callable[[], str]]:
+        return lambda fn: fn
+
+
+bot = Bot()
+
+
+@bot.command()
+def ping() -> str:
+    return "pong"
+
+
 server = FastMCP("fixture")
 
 

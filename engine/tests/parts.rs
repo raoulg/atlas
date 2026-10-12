@@ -53,6 +53,24 @@ fn routes_are_served_at_their_full_path() {
     assert_eq!(g.node("web.routes.health").unwrap().entry.as_ref().unwrap().kind, EntryKind::Route);
 }
 
+/// A route rests on the web framework its decorator comes from, with the method it serves and
+/// its path: by a decorator named for the method (FastAPI's `app.get`, Flask's `app.post`,
+/// Litestar's `get`), or handed the methods (Flask's `methods=`, Litestar's `http_method=`, GET
+/// when none), at `/` when handed no path. A `get` of the project's own registers nothing.
+#[test]
+fn each_web_framework_registers_its_routes() {
+    let g = shop();
+    let kind = |id: &str| g.node(id).and_then(|n| n.entry.as_ref()).map(|e| e.kind);
+    assert_eq!(kind("shop.admin.notes"), Some(EntryKind::Route));
+    assert_eq!(label(&g, "shop.admin.notes"), "GET|POST /notes", "Flask, handed its methods");
+    assert_eq!(label(&g, "shop.admin.index"), "GET /", "Flask, handed none");
+    assert_eq!(label(&g, "shop.admin.reset"), "POST /reset", "Flask, named for its method");
+    assert_eq!(kind("shop.admin.cached"), None, "the project's own `cache.get`");
+    assert_eq!(label(&g, "shop.stock.stock"), "GET /stock/{item_id:str}", "Litestar's `get`");
+    assert_eq!(label(&g, "shop.stock.overview"), "GET /", "Litestar's `get()` serves `/`");
+    assert_eq!(label(&g, "shop.stock.restock"), "POST|PUT /restock", "Litestar's `route`, handed its methods");
+}
+
 /// A literal that is another part's route is a request to its handler; a part's own page of
 /// the same name is a link within it.
 #[test]

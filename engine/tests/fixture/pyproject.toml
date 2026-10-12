@@ -5,6 +5,15 @@ version = "0.0.0"
 [project.scripts]
 fixture = "fixture.cli:main"
 
+[project.gui-scripts]
+fixture-window = "fixture.launch:window [ui]"
+
+[project.entry-points."fixture.exporters"]
+plain = "fixture.launch:Exporter"
+
+[tool.poetry.scripts]
+fixture-nightly = { callable = "fixture.launch:nightly" }
+
 # The libraries the fixture imports, as their stubs: in place of an installed environment.
 [tool.ty.environment]
 extra-paths = ["typings"]

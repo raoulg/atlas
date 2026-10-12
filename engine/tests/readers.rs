@@ -41,6 +41,9 @@ fn library_knowledge_is_data() {
     names.extend(k::TOOL_SERVERS.iter().flat_map(|(p, c)| [*p, *c]));
     names.extend(k::PROMISIFIERS.iter().flat_map(|(p, f)| [*p, *f]));
     names.extend(k::PREFIXED_ROUTERS.iter().map(|(r, _)| *r));
+    names.extend(k::CLI_FRAMEWORKS.iter().map(|c| c.package));
+    names.extend(k::WEB_FRAMEWORKS.iter().map(|w| w.package));
+    names.extend(k::ENTRY_TABLES.iter().flat_map(|(path, _)| path.iter().copied()).filter(|p| !matches!(*p, "project" | "tool" | "scripts")));
     names.extend(k::MUTATORS.iter().map(|(_, s, _)| *s).filter(|s| !matches!(*s, "builtins" | "javascript")));
     names.extend(k::HANDS_ON.iter().map(|(c, _)| *c).filter(|c| *c != "std"));
     for table in [k::ML_PACKAGES, k::HUB_PACKAGES, k::FILE_PACKAGES, k::ROUTERS, k::NODE_FS, k::FILE_ROUTES, k::ROOT_ROUTES, k::DRIVER_ACCESS, k::HUB_READ, k::HUB_WRITE] {

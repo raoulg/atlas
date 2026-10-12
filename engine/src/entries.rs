@@ -1,19 +1,15 @@
-//! Routes into a program: decorators, `[project.scripts]`, Makefile targets.
+//! Routes into a program: where a web app serves its routes, the entry points a Python project's
+//! `pyproject.toml` declares, Makefile targets.
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
-use std::sync::OnceLock;
 
 use regex::Regex;
 
 use crate::model::{Entry, EntryKind, Graph, MakeTarget, NodeKind};
 use crate::builder::GraphBuilder;
+use crate::knowledge::{self, Declares};
 use crate::repo::Repo;
-
-fn deco_re() -> &'static Regex {
-    static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| Regex::new(r#"^([\w.]+)\s*(?:\(\s*(?:['"]([^'"]*)['"])?)?"#).unwrap())
-}
 
 /// Where an app's routes are served: each route by the router it is declared on (`routes`, its
 /// node and the router's key), each router under the one it is mounted on with a prefix
@@ -41,49 +37,64 @@ pub fn mount_routes(store: &mut GraphBuilder, routes: &[(String, String)], own: 
     }
 }
 
-/// A decorator that makes a function a route into the program.
-pub fn entry_of(decorators: &[String], name: &str) -> Option<Entry> {
-    for d in decorators {
-        let Some(m) = deco_re().captures(d) else { continue };
-        let dn = m.get(1).map_or("", |x| x.as_str());
-        let arg = m.get(2).map(|x| x.as_str().to_string());
-        let parts: Vec<&str> = dn.split('.').collect();
-        let last = *parts.last().unwrap_or(&"");
-        if last == "command" {
-            let label = arg.unwrap_or_else(|| name.replace('_', "-"));
-            return Some(Entry { kind: EntryKind::Cli, label });
-        }
-        if crate::knowledge::registers_route(last) && parts.len() == 2 {
-            let label = format!("{} {}", last.to_uppercase(), arg.unwrap_or_default()).trim().to_string();
-            return Some(Entry { kind: EntryKind::Route, label });
-        }
-    }
-    None
+/// An entry point a Python project's `pyproject.toml` declares: the name it is declared by, the
+/// object it names (`module:object`), and for a plugin the group its host loads it from.
+struct Declared {
+    name: String,
+    object: String,
+    group: Option<String>,
 }
 
-/// `[project.scripts]` in the project's pyproject.toml are entry points too.
+/// The entry points a Python project's `pyproject.toml` declares, in every table that declares
+/// them (knowledge::ENTRY_TABLES).
+fn declared(repo: &Repo, root: &Path) -> Vec<Declared> {
+    let Some(doc) = repo.text(root.join("pyproject.toml")).and_then(|t| t.parse::<toml::Table>().ok()) else { return vec![] };
+    // the object an entry names, without the extras it asks for: `pkg.cli:main [ui]`
+    let object = |v: &toml::Value| {
+        let named = match v {
+            toml::Value::Table(t) => knowledge::ENTRY_REFERENCES.iter().find_map(|k| t.get(*k)?.as_str()),
+            _ => v.as_str(),
+        };
+        named.map(|o| o.split('[').next().unwrap_or(o).trim().to_string())
+    };
+    let mut out = vec![];
+    for (path, declares) in knowledge::ENTRY_TABLES {
+        let Some((first, rest)) = path.split_first() else { continue };
+        let Some(table) = doc.get(*first).and_then(|v| rest.iter().try_fold(v, |v, k| v.get(*k))).and_then(|t| t.as_table()) else { continue };
+        let groups: Vec<(Option<&String>, &toml::Table)> = match declares {
+            Declares::Programs => vec![(None, table)],
+            Declares::Plugins => table.iter().filter_map(|(g, t)| Some((Some(g), t.as_table()?))).collect(),
+        };
+        for (group, entries) in groups {
+            for (name, v) in entries {
+                if let Some(object) = object(v) {
+                    out.push(Declared { name: name.clone(), object, group: group.cloned() });
+                }
+            }
+        }
+    }
+    out
+}
+
+/// The entry points a Python project's `pyproject.toml` declares are routes into it: a program
+/// is a command run by its name, a plugin a door its host loads, by `group:name`.
 pub fn mark_scripts(repo: &Repo, store: &mut GraphBuilder, project_root: Option<&Path>) {
     let Some(root) = project_root else { return };
-    let Some(text) = repo.text(root.join("pyproject.toml")) else { return };
-    let Ok(doc) = text.parse::<toml::Table>() else { return };
-    let Some(table) = doc.get("project").and_then(|p| p.get("scripts")).and_then(|s| s.as_table()) else {
-        return;
-    };
-    for (name, target) in table {
-        let Some(target) = target.as_str() else { continue };
-        let (module, func) = target.split_once(':').unwrap_or((target, ""));
+    for d in declared(repo, root) {
+        let (module, func) = d.object.split_once(':').unwrap_or((&d.object, ""));
         let mut nid = if func.is_empty() { module.to_string() } else { format!("{module}.{func}") };
         if !store.nodes.contains_key(&nid) && !func.is_empty() {
             if let Some(re) = store.bindings.get(module).and_then(|b| b.get(func)) {
                 nid = re.clone(); // re-exported main
             }
         }
-        if let Some(n) = store.nodes.get_mut(&nid) {
-            if matches!(n.kind, NodeKind::Function | NodeKind::Method) {
-                if n.entry.is_none() {
-                    n.entry = Some(Entry { kind: EntryKind::Cli, label: name.clone() });
-                }
-            }
+        // a program runs a function; a host loads a module or a class as well
+        let (entry, loads) = match &d.group {
+            None => (Entry { kind: EntryKind::Cli, label: d.name }, &[NodeKind::Function, NodeKind::Method][..]),
+            Some(g) => (Entry { kind: EntryKind::Export, label: format!("{g}:{}", d.name) }, &[NodeKind::Function, NodeKind::Method, NodeKind::Class, NodeKind::Module][..]),
+        };
+        if let Some(n) = store.nodes.get_mut(&nid).filter(|n| loads.contains(&n.kind) && n.entry.is_none()) {
+            n.entry = Some(entry);
         }
     }
 }
@@ -174,15 +185,11 @@ pub fn read_makefile(repo: &Repo, g: &mut Graph) {
     g.make = targets.into_iter().filter(|t| !t.recipe.is_empty() || !t.calls.is_empty()).collect();
 }
 
-/// The programs a project installs, by the names a recipe runs them by: a Python project's
-/// `[project.scripts]`, a crate's package and its binaries in `src/bin`, an npm package's `bin`.
+/// The programs a project installs, by the names a recipe runs them by: the programs a Python
+/// project declares, a crate's package and its binaries in `src/bin`, an npm package's `bin`.
 fn programs(repo: &Repo, root: &Path) -> Vec<String> {
-    let toml = |file: &str| repo.text(root.join(file)).and_then(|t| t.parse::<toml::Table>().ok());
-    let mut out: Vec<String> = vec![];
-    if let Some(doc) = toml("pyproject.toml") {
-        out.extend(doc.get("project").and_then(|p| p.get("scripts")).and_then(|s| s.as_table()).map(|t| t.keys().cloned().collect::<Vec<_>>()).unwrap_or_default());
-    }
-    if let Some(doc) = toml("Cargo.toml") {
+    let mut out: Vec<String> = declared(repo, root).into_iter().filter(|d| d.group.is_none()).map(|d| d.name).collect();
+    if let Some(doc) = repo.text(root.join("Cargo.toml")).and_then(|t| t.parse::<toml::Table>().ok()) {
         out.extend(doc.get("package").and_then(|p| p.get("name")).and_then(|n| n.as_str()).map(str::to_string));
         out.extend(repo.files_under(root.join("src/bin")).iter().filter(|p| p.extension().map_or(false, |e| e == "rs")).filter_map(|p| p.file_stem()?.to_str().map(str::to_string)));
     }

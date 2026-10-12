@@ -11,3 +11,6 @@ build: ## build the thing
 
 report:
 	uv run fixture report
+
+window: ## the graphical program
+	uv run fixture-window

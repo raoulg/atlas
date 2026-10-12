@@ -302,10 +302,15 @@ call says. In the JSON a file's direction is part of its kind (`disk_read`, `dis
 `returns`, `has`, `mutates`, `variant`, `requests`; later `yields`, `raises`,
 `decorates`.
 
-**Entry points** — CLI commands, API routes, MCP tools (a function decorated by `tool`,
+**Entry points** — CLI commands and API routes (a function decorated by a command-line or a web
+framework's decorator, by the library ty says the decorator comes from, whatever it is called: a
+command by the name that framework gives it, a route by the method it serves and its path),
+MCP tools (a function decorated by `tool`,
 `resource` or `prompt` on a value ty types as a tool server, whatever the value is called), a router's
 registration calls (`app.get("/x", handler)`, at the prefixes of `app.route("/api", sub)`;
-an inline handler is a function named by its route), `[project.scripts]`, `package.json`
+an inline handler is a function named by its route), the programs and plugins `pyproject.toml`
+declares (`[project.scripts]`, `[project.gui-scripts]`, `[project.entry-points]`,
+`[tool.poetry.scripts]`), `package.json`
 `bin` and the scripts that run a file of the package, Makefile targets (a recipe's line resolved to the program the project installs that it runs, a Python script, a crate's binary or an npm `bin`, and to the subcommand it hands that program when the program has one by that name),
 the project's scripts and notebooks at any depth (every `.py` and `.ipynb` outside the package,
 its tests, what git ignores and another package or project inside it), and what

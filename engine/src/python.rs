@@ -19,7 +19,6 @@ use crate::repo::Repo;
 use crate::effects::{self, Crossing};
 use crate::pytypes::{By, Facts, FileArg, Target, Ty, Types, Value};
 use paths::{At, Built, Eval};
-use crate::entries::entry_of;
 use crate::knowledge;
 use crate::model::{Dir, EdgeKind, Entry, EntryKind, Held, Node, NodeKind, Param, Returns, Touch, World};
 pub use crate::builder::{foreign_type, ClassInfo, GraphBuilder, SigInfo};
@@ -613,7 +612,7 @@ fn route_prefixes(modules: &IndexMap<String, Module>, store: &mut GraphBuilder) 
         .filter(|n| n.entry.as_ref().map_or(false, |e| e.kind == EntryKind::Route))
         .filter_map(|n| {
             let m = modules.get(&n.module)?;
-            let registers = |rest: &str| rest.split_once('(').map_or(false, |(verb, _)| knowledge::registers_route(verb));
+            let registers = |rest: &str| rest.split_once('(').map_or(false, |(verb, _)| knowledge::registers_route_by_decorator(verb));
             let recv = n.decorators.iter().find_map(|d| d.split_once('.').filter(|(_, rest)| registers(rest)).map(|(r, _)| r.to_string()))?;
             Some((n.id.clone(), m.bindings.get(&recv).cloned().unwrap_or_else(|| format!("{}.{recv}", m.id))))
         })
@@ -671,7 +670,6 @@ fn collect_symbols(m: &mut Module, store: &mut GraphBuilder) {
                         decorators: mdecs.clone(),
                         params,
                         returns,
-                        entry: entry_of(&mdecs, &mname),
                         ..Default::default()
                     });
                     methods.push(mname);
@@ -724,7 +722,6 @@ fn collect_symbols(m: &mut Module, store: &mut GraphBuilder) {
                 private: name.starts_with('_'),
                 params,
                 returns,
-                entry: entry_of(&decs, &name),
                 ..Default::default()
             });
             store.add_edge(&m.id, &nid, EdgeKind::Contains, None);
@@ -945,9 +942,9 @@ fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, root: &str
             n.keeps = keeps;
         }
     }
-    // what the attributes hold, as ty types what the methods assign them
+    // what a framework registers, and what the attributes hold, as ty types them
     let sites = sites(modules, store);
-    mark_tools(modules, store, types, &sites, root);
+    mark_registered(modules, store, types, &sites, root);
     attributes(modules, store, types, &sites, root);
     // methods that change their receiver, directly or through another such method on self
     for _ in 0..5 {
@@ -1193,6 +1190,27 @@ impl<'a> Seen<'a> {
         self.bound(f)
     }
 
+    /// The package a definition is in: a library's, by its module, or one Atlas reads as code, by
+    /// the first part of its node's name.
+    fn package(&self, t: &Target) -> Option<String> {
+        match t {
+            Target::Lib(module) => Some(package_of(module)),
+            Target::Here { .. } => self.node(t).map(|id| id.split('.').next().unwrap_or("").to_string()),
+        }
+    }
+
+    /// The package a name or an attribute comes from: where calling it goes, else where it is
+    /// defined (`@cli.command` written without a call), else what the module imports it as.
+    fn library(&self, f: TsNode) -> Option<String> {
+        let reached = self.facts.map_or(&[][..], |x| x.callees(Self::range(f)));
+        let defined = || self.facts.and_then(|x| x.def(Self::range(f))).and_then(|t| self.package(t));
+        let imported = || match self.bound(f) {
+            Some(Callee::Lib(lib)) => Some(lib),
+            _ => None,
+        };
+        reached.iter().find_map(|c| self.package(&c.target)).or_else(defined).or_else(imported)
+    }
+
     /// The function of the package a value handed on is called as: a function or method, or an
     /// instance's `__call__`. Reading a property hands nothing on.
     fn handed_function(&self, a: TsNode) -> Option<String> {
@@ -1383,42 +1401,105 @@ fn attributes(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, type
     }
 }
 
-/// The functions a tool server registers for an agent, by a decorator on a value of the server's
-/// class (`@geo.tool`, `@server.prompt("name")`): each a route into the program, by the name it
-/// registers. What the value is, ty says, whatever it is called.
-fn mark_tools(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, types: &Types, sites: &HashMap<(String, usize), String>, root: &str) {
-    let mut tools: Vec<(String, String)> = vec![];
+/// The functions a framework registers by a decorator, each a route into the program by the name
+/// it registers: a command line's commands (`@cli.command()`), a web app's routes
+/// (`@app.get("/x")`, `@app.route("/x", methods=[..])`, Litestar's `@get("/x")`), and a tool
+/// server's tools for an agent, by a decorator on a value of the server's class (`@geo.tool`,
+/// `@server.prompt("name")`). What registers is the library the decorator comes from, or the
+/// class of the value it is on, as ty says, whatever either is called.
+fn mark_registered(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, types: &Types, sites: &HashMap<(String, usize), String>, root: &str) {
+    let mut found: Vec<(String, Entry)> = vec![];
     for m in modules.values() {
         let seen = Seen::new(m, types, sites, modules, store, root);
-        // the package a class is in: a library's module, or the library code Atlas reads
-        let package = |t: &Target| match t {
-            Target::Lib(module) => Some(package_of(module)),
-            Target::Here { .. } => seen.node(t).map(|id| id.split('.').next().unwrap_or("").to_string()),
-        };
         let server = |o: TsNode| {
-            seen.value(o).map_or(false, |v| v.classes.iter().zip(&v.names).any(|(t, name)| package(t).map_or(false, |p| knowledge::TOOL_SERVERS.contains(&(p.as_str(), name.as_str())))))
+            seen.value(o).map_or(false, |v| v.classes.iter().zip(&v.names).any(|(t, name)| seen.package(t).map_or(false, |p| knowledge::TOOL_SERVERS.contains(&(p.as_str(), name.as_str())))))
         };
         for n in store.nodes.values().filter(|n| n.module == m.id && matches!(n.kind, NodeKind::Function | NodeKind::Method) && n.entry.is_none()) {
             let Some(decorated) = def_node(m, n).and_then(|d| d.parent()).filter(|p| p.kind() == "decorated_definition") else { continue };
-            for d in named_children(decorated).into_iter().filter(|d| d.kind() == "decorator").filter_map(|d| named_children(d).into_iter().next()) {
+            let registered = named_children(decorated).into_iter().filter(|d| d.kind() == "decorator").filter_map(|d| named_children(d).into_iter().next()).find_map(|d| {
                 let (f, call) = match d.kind() {
-                    "call" => (d.child_by_field_name("function"), Some(d)),
-                    _ => (Some(d), None),
+                    "call" => (d.child_by_field_name("function")?, Some(d)),
+                    _ => (d, None),
                 };
-                let Some(f) = f.filter(|f| f.kind() == "attribute") else { continue };
-                let registers = f.child_by_field_name("attribute").map_or(false, |a| knowledge::TOOL_DECORATORS.contains(&text(a, &m.src)));
-                if registers && f.child_by_field_name("object").map_or(false, server) {
-                    let named = call.and_then(positional).filter(|a| a.kind() == "string").map(|a| unquote(text(a, &m.src)));
-                    tools.push((n.id.clone(), named.unwrap_or_else(|| n.name.clone())));
+                let name = match f.kind() {
+                    "attribute" => text(f.child_by_field_name("attribute")?, &m.src),
+                    "identifier" => text(f, &m.src),
+                    _ => return None,
+                };
+                let from = seen.library(f);
+                if let Some(cli) = from.as_deref().and_then(knowledge::cli_framework).filter(|c| c.commands.contains(&name)) {
+                    let named = call.and_then(|c| handed(c, 0, knowledge::COMMAND_NAME, &m.src)).filter(|a| a.kind() == "string").map(|a| unquote(text(a, &m.src)));
+                    return Some(Entry { kind: EntryKind::Cli, label: named.unwrap_or_else(|| cli.command_name(&n.name)) });
                 }
-            }
+                if let Some(web) = from.as_deref().and_then(knowledge::web_framework) {
+                    return route(web, name, call, &m.src).map(|label| Entry { kind: EntryKind::Route, label });
+                }
+                let on_server = f.kind() == "attribute" && f.child_by_field_name("object").map_or(false, server);
+                (on_server && knowledge::TOOL_DECORATORS.contains(&name)).then(|| {
+                    let named = call.and_then(positional).filter(|a| a.kind() == "string").map(|a| unquote(text(a, &m.src)));
+                    Entry { kind: EntryKind::Mcp, label: named.unwrap_or_else(|| n.name.clone()) }
+                })
+            });
+            found.extend(registered.map(|e| (n.id.clone(), e)));
         }
     }
-    for (id, label) in tools {
+    for (id, entry) in found {
         if let Some(n) = store.nodes.get_mut(&id) {
-            n.entry = Some(Entry { kind: EntryKind::Mcp, label });
+            n.entry = Some(entry);
         }
     }
+}
+
+/// The route a web framework's decorator registers, as `METHOD /path`: the method it is named for,
+/// else the methods it is handed (`GET|POST`, a string or an enum's member each), and the path it
+/// is handed. A path that is not a literal leaves the label at the method.
+fn route(web: &knowledge::WebFramework, name: &str, call: Option<TsNode>, src: &[u8]) -> Option<String> {
+    let methods: Vec<String> = if knowledge::registers_route(name) {
+        vec![name.to_uppercase()]
+    } else if web.routes.contains(&name) {
+        let listed = match call.and_then(|c| by_name(c, web.methods, src)) {
+            Some(h) if matches!(h.kind(), "list" | "tuple" | "set") => named_children(h),
+            Some(h) => vec![h],
+            None => vec![],
+        };
+        let handed: Vec<String> = listed
+            .into_iter()
+            .filter_map(|x| match x.kind() {
+                "string" => Some(unquote(text(x, src))),
+                "attribute" => x.child_by_field_name("attribute").map(|a| text(a, src).to_string()),
+                _ => None,
+            })
+            .map(|x| x.to_uppercase())
+            .collect();
+        if handed.is_empty() {
+            vec![knowledge::DEFAULT_METHOD.to_uppercase()]
+        } else {
+            handed
+        }
+    } else {
+        return None;
+    };
+    let method = methods.join("|");
+    Some(match call.and_then(|c| handed(c, 0, web.path, src)) {
+        None => format!("{method} /"),
+        Some(p) if p.kind() == "string" && walk(p, &["interpolation"]).is_empty() => format!("{method} {}", unquote(text(p, src))),
+        Some(_) => method,
+    })
+}
+
+/// What a call hands a parameter: at its position, or by its name.
+fn handed<'t>(call: TsNode<'t>, at: usize, name: &str, src: &[u8]) -> Option<TsNode<'t>> {
+    let args = named_children(call.child_by_field_name("arguments")?);
+    let positional = args.into_iter().filter(|a| !matches!(a.kind(), "keyword_argument" | "comment" | "list_splat" | "dictionary_splat")).nth(at);
+    positional.or_else(|| by_name(call, name, src))
+}
+
+/// What a call hands a parameter by its name.
+fn by_name<'t>(call: TsNode<'t>, name: &str, src: &[u8]) -> Option<TsNode<'t>> {
+    named_children(call.child_by_field_name("arguments")?)
+        .into_iter()
+        .find(|a| a.kind() == "keyword_argument" && a.child_by_field_name("name").map(|n| text(n, src)) == Some(name))
+        .and_then(|a| a.child_by_field_name("value"))
 }
 
 /// What a package exports is a route into it: the names in `__all__` of its `__init__.py`,
