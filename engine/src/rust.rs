@@ -712,10 +712,6 @@ fn resolve(m: &Module, parts: &[String], modules: &IndexMap<String, Module>, nod
     nodes.contains_key(re).then(|| re.clone())
 }
 
-fn method_of(store: &GraphBuilder, cls_id: &str, name: &str) -> Option<String> {
-    let cand = format!("{cls_id}.{name}");
-    store.nodes.contains_key(&cand).then_some(cand)
-}
 
 // ---------- pass 1c: impl blocks ----------
 
@@ -1043,7 +1039,7 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crat
                     _ => None,
                 };
                 let name = f.child_by_field_name("field").map(|x| text(x, src)).unwrap_or("");
-                on.and_then(|t| method_of(store, &t, name)).and_then(|t| returned_class(&t))
+                on.and_then(|t| store.method_of(&t, name)).and_then(|t| returned_class(&t))
             }
             "call_expression" => {
                 let parts = path_parts(v.child_by_field_name("function"), src);
@@ -1128,7 +1124,7 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crat
             }
             let ps = path_parts(Some(a), src);
             let handed = match (ps.first().map(String::as_str), &cls) {
-                (Some("Self"), Some(c)) => ps.get(1).and_then(|m| method_of(store, c, m)),
+                (Some("Self"), Some(c)) => ps.get(1).and_then(|m| store.method_of(c, m)),
                 _ => resolve(m, &ps, modules, &store.nodes, crate_ids),
             };
             if let Some(t) = handed.filter(|t| store.nodes.get(t).map_or(false, |n| matches!(n.kind, NodeKind::Function | NodeKind::Method))) {
@@ -1170,7 +1166,7 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crat
             match receiver {
                 // a method not found on the type (`to_string`, `clone`, a trait's default) is not
                 // known; it builds nothing
-                Some(r) => target = method_of(store, &r, &method),
+                Some(r) => target = store.method_of(&r, &method),
                 None => {
                     if let Some(s) = library_step(&method, Some(value), &made) {
                         made.extend(s.gives.iter().map(|g| g.name.clone()));
@@ -1233,7 +1229,7 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crat
                 if let Some(c) = &cls {
                     let mut p = vec![c.clone()];
                     p.extend(parts[1..].iter().cloned());
-                    target = method_of(store, c, parts.get(1).map(String::as_str).unwrap_or("")).or_else(|| Some(c.clone()));
+                    target = store.method_of(c, parts.get(1).map(String::as_str).unwrap_or("")).or_else(|| Some(c.clone()));
                     parts = p;
                 }
             } else {
@@ -1243,7 +1239,7 @@ fn link_calls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crat
                     // `Type::new(..)`: a function on a type
                     if let Some(r) = resolve(m, &parts[..parts.len() - 1], modules, &store.nodes, crate_ids).filter(|r| !r.starts_with("ext:")) {
                         if store.nodes.get(&r).map_or(false, |x| x.kind == NodeKind::Class) {
-                            target = method_of(store, &r, &parts[parts.len() - 1]).or(Some(r));
+                            target = store.method_of(&r, &parts[parts.len() - 1]).or(Some(r));
                         }
                     }
                 }

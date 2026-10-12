@@ -957,23 +957,6 @@ fn resolve(m: &Module, parts: &[String], modules: &IndexMap<String, Module>, nod
     Some(format!("ext:{target}"))
 }
 
-fn method_of(store: &GraphBuilder, cls_id: &str, name: &str, depth: u32) -> Option<String> {
-    if depth > 8 {
-        return None;
-    }
-    let cand = format!("{cls_id}.{name}");
-    if store.nodes.contains_key(&cand) {
-        return Some(cand);
-    }
-    for b in store.classes.get(cls_id).map(|c| c.resolved.clone()).unwrap_or_default() {
-        if !b.starts_with("ext:") {
-            if let Some(r) = method_of(store, &b, name, depth + 1) {
-                return Some(r);
-            }
-        }
-    }
-    None
-}
 
 /// The definition node of a symbol, found again by its line and name.
 fn def_node<'t>(m: &'t Module, n: &Node) -> Option<TsNode<'t>> {
@@ -1068,7 +1051,7 @@ fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, root: &str
                 let f = c.child_by_field_name("function").filter(|f| f.kind() == "attribute");
                 let obj = f.and_then(|f| f.child_by_field_name("object")).map(|o| text(o, &m.src));
                 let name = f.and_then(|f| f.child_by_field_name("attribute")).map(|a| text(a, &m.src)).unwrap_or("");
-                obj == Some("self") && method_of(store, &cls, name, 0).map_or(false, |t| store.mutating.contains(&t))
+                obj == Some("self") && store.method_of(&cls, name).map_or(false, |t| store.mutating.contains(&t))
             };
             if changed_roots(body, &m.src, &on_self).contains("self") {
                 let id = id.clone();
@@ -1267,7 +1250,7 @@ impl<'a> Seen<'a> {
                     lib.get_or_insert_with(|| package_of(m));
                     None
                 }
-                (t, By::Instance) => self.node(t).and_then(|cls| method_of(self.store, cls, "__call__", 0)),
+                (t, By::Instance) => self.node(t).and_then(|cls| self.store.method_of(cls, "__call__")),
                 (t, By::Call | By::Construct) => self.node(t).cloned(),
                 (t, By::Name) => self.node(t).filter(|id| self.store.nodes.get(*id).map_or(false, |n| matches!(n.kind, NodeKind::Function | NodeKind::Method | NodeKind::Class))).cloned(),
             };
@@ -1295,7 +1278,7 @@ impl<'a> Seen<'a> {
         for c in reached {
             let def = match c.by {
                 By::Call => self.node(&c.target).cloned(),
-                By::Instance => self.node(&c.target).and_then(|cls| method_of(self.store, cls, "__call__", 0)),
+                By::Instance => self.node(&c.target).and_then(|cls| self.store.method_of(cls, "__call__")),
                 By::Name => self.node(&c.target).filter(function).cloned(),
                 By::Construct => None,
             };

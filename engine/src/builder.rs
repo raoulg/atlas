@@ -107,6 +107,24 @@ impl GraphBuilder {
         g
     }
 
+    /// The method `name` a value of class `cls` runs: the class's own, else the first its bases
+    /// give in the order they are written, each base before the next (a trait's provided
+    /// method, an inherited one).
+    pub fn method_of(&self, cls: &str, name: &str) -> Option<String> {
+        self.method_in(cls, name, 0)
+    }
+
+    fn method_in(&self, cls: &str, name: &str, depth: u32) -> Option<String> {
+        let cand = format!("{cls}.{name}");
+        if self.nodes.contains_key(&cand) {
+            return Some(cand);
+        }
+        if depth > 8 {
+            return None;
+        }
+        self.classes.get(cls)?.resolved.iter().filter(|b| !b.starts_with("ext:")).find_map(|b| self.method_in(b, name, depth + 1))
+    }
+
     pub fn ext_node(&mut self, eid: &str) {
         if self.nodes.contains_key(eid) {
             return;

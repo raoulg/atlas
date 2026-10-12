@@ -1411,17 +1411,6 @@ fn value_type(m: &Module, name: &str, modules: &IndexMap<String, Module>, nodes:
     resolve(home, home.values.get(&local)?, modules, nodes).filter(|r| nodes.get(r).map_or(false, |x| x.kind == NodeKind::Class))
 }
 
-/// The method `name` of a class or one of its bases.
-fn method_of(store: &GraphBuilder, cls: &str, name: &str, depth: u32) -> Option<String> {
-    let cand = format!("{cls}.{name}");
-    if store.nodes.contains_key(&cand) {
-        return Some(cand);
-    }
-    if depth > 8 {
-        return None;
-    }
-    store.classes.get(cls)?.resolved.iter().filter(|b| !b.starts_with("ext:")).find_map(|b| method_of(store, b, name, depth + 1))
-}
 
 /// Inside a module's body, what belongs to the module and not to a function defined in it.
 fn module_level(n: TsNode, root: TsNode, bodies: &HashMap<String, (usize, usize)>) -> bool {
@@ -1613,7 +1602,7 @@ fn link_calls<'t>(m: &'t Module, modules: &'t IndexMap<String, Module>, store: &
                 let on = (f.kind() == "member_expression").then(|| Some((f.child_by_field_name("object")?, text(f.child_by_field_name("property")?, src).to_string()))).flatten();
                 let object = on.as_ref().map(|(o, _)| *o);
                 let class = on.as_ref().and_then(|(o, _)| receiver(*o));
-                let target = match on.and_then(|(o, name)| receiver(o).and_then(|k| method_of(store, &k, &name, 0))) {
+                let target = match on.and_then(|(o, name)| receiver(o).and_then(|k| store.method_of(&k, &name))) {
                     Some(t) => Some(t),
                     None if parts.is_empty() => continue,
                     None => resolve(m, &parts, modules, &store.nodes),
