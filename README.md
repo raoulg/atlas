@@ -202,7 +202,7 @@ Entry points come from the code itself. Atlas finds:
 
 ### Check: the picture as a list of questions
 
-`atlas check` reads the same graph and lists where the code and seven design principles
+`atlas check` reads the same graph and lists where the code and ten design principles
 disagree. Each finding ends in a question for the author. Atlas coaches; it does not fix.
 
 | Principle | In one line |
@@ -214,6 +214,9 @@ disagree. Each finding ends in a question for the author. Atlas coaches; it does
 | `changes` | A change to an input shows in the signature. |
 | `gives` | A function whose value is used says what it gives back. |
 | `choices` | A choice is made once, in a place with a name. |
+| `nothing` | A call leaves something behind. |
+| `layers` | The packages of a part depend on one another in one direction. |
+| `lens` | What a lens puts, it gets back. |
 
 Each principle, with its reasoning and the Python and Rust idioms behind it, is in
 [docs/principles.md](docs/principles.md). Atlas holds itself to them: `atlas check` on
@@ -271,7 +274,8 @@ cargo install --path cli         # rebuild after editing viewer/index.html
 
 ## Status
 
-Atlas is young and moves fast. The viewer is still the prototype that proved the idea.
+**Alpha.** Atlas is young and moves fast: what it reads and draws changes from one minor
+version to the next. The viewer is still the prototype that proved the idea.
 Python, Rust and TypeScript are read. More languages, one graph for a project that spans
 several languages, and git history are next.
 
