@@ -107,8 +107,12 @@ opening a box puts its fiber in its place.
 sets are the unions of its blocks.
 **In Atlas.** A zoom level divides the nodes into boxes, so each level is a topology on them.
 Zooming in moves to a finer one and zooming out to a coarser one, so the picture stays the same
+picture. The code's hierarchies say which levels exist: parts into packages into modules, a
+route's steps into their bodies, families into their members. A zoom is the set of boxes that
+are open, closed downwards; the boxes reached but not opened are the blocks of its partition.
+Zooms in two hierarchies meet in their common refinement, so any combination of zooms is one
 picture.
-**Where.** `design.md` §0 and §1.
+**Where.** `design.md` §0, and §1, "A view is data".
 
 ### Saturation: when the order of a view does not matter
 **What.** A set is saturated by an equivalence when it never cuts a class in two.
@@ -116,22 +120,6 @@ picture.
 the quotient's equivalence. Otherwise the order of a view is meaning, and Atlas takes the filter
 first, so the reader decides what exists before the quotient decides how it groups.
 **Where.** `design.md` §1, "When order matters".
-
-## Order theory
-
-### The lattice of zooms
-**What.** The order ideals of a forest (sets closed downwards) form a distributive lattice
-(Birkhoff).
-**In Atlas.** The code has forests: parts into packages into modules, a route's steps into their
-bodies, families into their members. A zoom is an order ideal of such a forest: the nodes that
-are open. Its cut, the nodes reached but not opened, is a partition, so every zoom is a quotient.
-Zooms in two forests meet in their common refinement, so any combination of zooms is one picture.
-**Where.** `design.md` §1, "A view is data".
-
-### One direction
-**What.** A partial order: a relation without cycles.
-**In Atlas.** The packages of a part depend on one another in one direction.
-**Where.** Principle `layers`.
 
 ## Type theory
 
@@ -170,6 +158,12 @@ whose value is used says what it gives back.
 **In Atlas.** What a step reaches is the closure of its calls; it is drawn apart from the step's
 own arrow.
 **Where.** `flow.rs`; sentence 6.
+
+### One direction
+**What.** A directed graph without cycles.
+**In Atlas.** The packages of a part depend on one another in one direction: no package reaches
+back to one that depends on it.
+**Where.** Principle `layers`.
 
 ### Layered drawing
 **What.** A graph without cycles can be drawn in layers, every edge pointing one way.
