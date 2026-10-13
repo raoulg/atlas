@@ -115,7 +115,17 @@ footer{border-top:1px solid var(--line);padding-top:20px;color:var(--ink-3);font
 <section id="port">
   <h2>Ported to Rust. A picture alike.</h2>
   <p class="lede">Code gets rewritten in another language: for speed, for one binary to ship, for a team, and more and more often by an agent. Tests tell you the port gives the same figure. They don't tell you whether the design survived: the same steps, the same values handed between them, the same places. Atlas draws every language in the same terms, so the original and the port can lie side by side: the same shape where the design survived, and differences where it did not, or where the language works otherwise.</p>
-  <p class="explain">The differences are the interesting part. A step gone or a place moved is drift, and Atlas shows where. The rest is the language speaking:</p>
+  <div class="pair">
+    <figure class="elegant">
+      <figcaption><b>Python, typed</b><span class="tag">original</span></figcaption>
+      <a href="showcase/python-clean.html"><img src="img/showcase/python-clean.png" style="--w:1758" alt="Atlas's picture of the typed Python pipeline: download, load, smooth, Trend.save"></a>
+    </figure>
+    <figure class="elegant">
+      <figcaption><b>Rust, ported</b><span class="tag">port</span></figcaption>
+      <a href="showcase/rust-clean.html"><img src="img/showcase/rust-clean.png" style="--w:2094" alt="Atlas's picture of the Rust port: the same steps, the same places"></a>
+    </figure>
+  </div>
+  <p class="explain">The shape is the same: the web, the raw CSV and the figure, and between them <code>download</code>, <code>load</code>, <code>smooth</code> and <code>Trend.save</code>. The differences are the interesting part. A step gone or a place moved would be drift, and Atlas would show where. Here it is the language speaking. Rust parses the command line into a value of its own (<code>Cli · cli</code>), starts its settings from <code>Settings.default</code>, since Rust has no default arguments, and hands <code>Trend.save</code> the months and their smoothed means as two lists of its own records, where Python adds a column to one <code>DataFrame</code>. The rest is in the types:</p>
   <table class="diff">
     <tr><th></th><th>Python</th><th>Rust</th></tr>
     <tr><th>The values</th><td>a pandas <code>DataFrame</code></td><td>the program's own records: <code>Vec&lt;Month&gt;</code>, <code>Vec&lt;Smoothed&gt;</code></td></tr>

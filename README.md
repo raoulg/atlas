@@ -59,8 +59,23 @@ Atlas draws every language in the same terms, so the original and the port can l
 the same shape where the design survived, and differences where it did not, or where the language
 works otherwise.
 
-The differences are the interesting part. A step gone or a place moved is drift, and Atlas shows
-where. The rest is the language speaking:
+<h3 align="center">Python, typed</h3>
+<p align="center">
+  <a href="https://raoulg.github.io/atlas/showcase/python-clean.html"><img src="docs/img/showcase/python-clean.png" width="100%" alt="Atlas's picture of the typed Python pipeline: download, load, smooth, Trend.save"></a>
+</p>
+
+<h3 align="center">Rust, ported</h3>
+<p align="center">
+  <a href="https://raoulg.github.io/atlas/showcase/rust-clean.html"><img src="docs/img/showcase/rust-clean.png" width="100%" alt="Atlas's picture of the Rust port: the same steps and places, with the command line as a value of its own and the records Month and Smoothed"></a>
+</p>
+
+The shape is the same: the web, the raw CSV and the figure, and between them `download`, `load`,
+`smooth` and `Trend.save`. The differences are the interesting part. A step gone or a place moved
+would be drift, and Atlas would show where. Here it is the language speaking. Rust parses the
+command line into a value of its own (`Cli · cli`), starts its settings from `Settings.default`,
+since Rust has no default arguments, and hands `Trend.save` the months and their smoothed means as
+two lists of its own records, where Python adds a column to one `DataFrame`. The rest is in the
+types:
 
 | | Python | Rust |
 |---|---|---|

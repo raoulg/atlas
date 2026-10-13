@@ -126,6 +126,14 @@ precise as the code's annotations. It sees best when:
   (`nodes: list[Node] = []`) or `None` to begin with (`self.conn: Connection | None = None`).
   ty infers the rest.
 
+Rust says most of this itself, since every signature is typed. Atlas follows a value through
+`if let`, `let .. else`, a `match` arm and `Ok(..)` or `Some(..)`; a method called on what a call
+gives (`Trend::new(settings).save(..)`) is a step on that type; a field of clap's derived options
+holds the `default_value` its attribute declares; and a name a module takes from a single library
+glob (`use plotters::prelude::*`) is that library's. In TypeScript, what `parseArgs` gives for an
+option holds its `default:`, and an object literal declared as one of the program's types
+(`const settings: Settings = {..}`) is a step that makes that value.
+
 `atlas check` asks for a return annotation where callers use what a function gives back.
 
 Entry points come from the code itself. Atlas finds:
