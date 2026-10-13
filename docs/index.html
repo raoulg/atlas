@@ -52,10 +52,11 @@ figure.output img{width:100%;height:auto;display:block;padding:14px 18px}
 .output .tag{color:var(--ink-2)}
 .lede a{color:var(--ink);text-decoration-color:var(--accent);text-underline-offset:3px}
 .inside{background:var(--panel);border:1px solid var(--line);max-width:80ch}
-.inside h3{font-size:17px;font-weight:500;margin:0;padding:14px 18px 10px}
-.inside dl{margin:0;padding:4px 18px 18px;display:grid;grid-template-columns:minmax(0,15em) 1fr;gap:10px 20px;font-size:15px}
+.inside h3{font-size:17px;font-weight:500;margin:0;padding:14px 18px 4px}
+.inside h4{font-family:var(--mono);font-size:12px;font-weight:500;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-3);margin:0;padding:12px 18px 6px}
+.inside h4 a{color:inherit;text-decoration-color:var(--accent);text-underline-offset:3px}
+.inside dl{margin:0;padding:0 18px 10px;display:grid;grid-template-columns:minmax(0,15em) 1fr;gap:10px 20px;font-size:15px}
 .inside dt{font-weight:500}
-.inside dt a{text-decoration-color:var(--accent);text-underline-offset:3px}
 .inside dd{margin:0;color:var(--ink-2)}
 .inside code{font-family:var(--mono);font-size:13px}
 @media (max-width:760px){.inside dl{grid-template-columns:1fr;gap:2px}.inside dd{margin-bottom:10px}}
@@ -135,14 +136,25 @@ footer{border-top:1px solid var(--line);padding-top:20px;color:var(--ink-3);font
   <p class="lede">Mathematics is a language that allows you to make things consistent. Best practices in coding are consistent, so it makes sense to view your computer code through a mathematical perspective. Because we can turn the mathematics of the code into a visual, you can literally see the consistency of your code, if you followed best practices. This is independent of the language you use: every program is drawn by the same mathematical rules.</p>
   <div class="inside">
     <h3>What is inside</h3>
+    <h4><a href="https://pttrn.io/#content/category-theory">Category theory</a></h4>
     <dl>
-      <dt>A <a href="https://pttrn.io/#content/category-theory">category</a> of types</dt><dd>Types are objects, functions are arrows, call order is composition. A route is a composite from an entry point to a place.</dd>
-      <dt>Effects in the type</dt><dd>A function's domain is its parameters plus what it reads; its codomain is what it returns plus what it writes, sends or runs, as in an effect system.</dd>
-      <dt>Zoom is a quotient, a filter is a fiber</dt><dd>Zooming out folds a family of types into one box; keeping to one route is the fiber over it. They don't commute, so the order of a view is meaning.</dd>
+      <dt>A category of types</dt><dd>Types are objects, functions are arrows, call order is composition. A route is a composite from an entry point to a place.</dd>
+      <dt>Zoom is a quotient, a filter is a fiber</dt><dd>Zooming out folds a family of types (by base class, by composition, by module) into one box; keeping to one route is the fiber over it. The two don't commute, so the order of a view is meaning.</dd>
       <dt>Sum types are coproducts</dt><dd>Taken apart where they arise.</dd>
-      <dt>Lawful lenses</dt><dd>A class that writes a place and reads it back is a lens on it. Atlas asks the put-get law at the level of types: what goes in as a <code>Graph</code> comes back as a <code>Graph</code>.</dd>
-      <dt>Subtypes keep their promise</dt><dd>An override does what its base says (Liskov).</dd>
-      <dt>A step and its reach</dt><dd>A function's own arrow and the composite it starts are different quantities, never merged.</dd>
+      <dt>Lawful lenses</dt><dd>A class that writes a place and reads it back is a lens on that place. Atlas asks the put-get law at the level of types: what goes in as a <code>Graph</code> comes back as a <code>Graph</code>.</dd>
+    </dl>
+    <h4>Type theory</h4>
+    <dl>
+      <dt>Effects in the type</dt><dd>A function's domain is its parameters plus what it reads; its codomain is what it returns plus what it writes, sends or runs, as in a type-and-effect system. Files, tables and URLs are objects like any other.</dd>
+      <dt>Subtypes keep their promise</dt><dd>An override does what its base says (behavioural subtyping, Liskov).</dd>
+    </dl>
+    <h4>Order theory</h4>
+    <dl>
+      <dt>The zoom levels form a lattice</dt><dd>Every grouping refines or coarsens another. Zooming in and out moves through that order, so the picture stays the same picture.</dd>
+    </dl>
+    <h4>Graph theory</h4>
+    <dl>
+      <dt>A step and its reach</dt><dd>A function's own arrow and everything it reaches are different quantities, never merged.</dd>
     </dl>
   </div>
 </section>

@@ -68,20 +68,34 @@ use: every program is drawn by the same mathematical rules.
 
 **What is inside:**
 
-- **A [category](https://pttrn.io/#content/category-theory) of types.** Types are objects, functions are arrows, call order is composition. A
+*[Category theory](https://pttrn.io/#content/category-theory)*
+
+- **A category of types.** Types are objects, functions are arrows, call order is composition. A
   route is a composite from an entry point to a place.
-- **Effects in the type.** A function's domain is its parameters plus what it reads; its codomain
-  is what it returns plus what it writes, sends or runs. Files, tables and URLs are objects like
-  any other, as in an effect system.
-- **Zoom is a quotient, a filter is a fiber.** Zooming out folds a family of types (by base
-  class, by composition, by module) into one box; keeping to one route is the fiber over it. The
-  two don't commute, so the order of a view is meaning.
-- **Sum types are coproducts**, taken apart where they arise.
+- **Zoom is a quotient, a filter is a fiber.** Zooming out folds a family of types (by base class,
+  by composition, by module) into one box; keeping to one route is the fiber over it. The two don't
+  commute, so the order of a view is meaning.
+- **Sum types are coproducts.** Taken apart where they arise.
 - **Lawful lenses.** A class that writes a place and reads it back is a lens on that place. Atlas
   asks the put-get law at the level of types: what goes in as a `Graph` comes back as a `Graph`.
-- **Subtypes keep their promise.** An override does what its base says (Liskov).
-- **A step and its reach are different quantities.** A function's own arrow and the composite it
-  starts are never merged.
+
+*Type theory*
+
+- **Effects in the type.** A function's domain is its parameters plus what it reads; its codomain
+  is what it returns plus what it writes, sends or runs, as in a type-and-effect system. Files,
+  tables and URLs are objects like any other.
+- **Subtypes keep their promise.** An override does what its base says (behavioural subtyping,
+  Liskov).
+
+*Order theory*
+
+- **The zoom levels form a lattice.** Every grouping refines or coarsens another. Zooming in and
+  out moves through that order, so the picture stays the same picture.
+
+*Graph theory*
+
+- **A step and its reach.** A function's own arrow and everything it reaches are different
+  quantities, never merged.
 
 The structure is laid out in [the design](docs/reference/design.md); what Atlas checks against it
 is in [the ten principles](docs/reference/principles.md).
