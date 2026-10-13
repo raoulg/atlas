@@ -59,6 +59,12 @@ pub fn boundary_rust(parts: &[String]) -> Option<Crossing> {
             Crossing::to(World::Disk)
         });
     }
+    // a crate's type that opens the file it is handed: `csv::Reader::from_path(p)`
+    if let [.., ty, f] = parts {
+        if let Some((_, _, dir)) = k::RUST_FILE_OPENERS.iter().find(|(t, op, _)| t == ty && op == f) {
+            return Some(Crossing { world: World::Disk, dir: Some(*dir) });
+        }
+    }
     // what the human types: `io::stdin()`
     if let [.., module, name] = parts {
         if k::INPUT_STREAMS.contains(&(module.as_str(), name.as_str())) {

@@ -549,6 +549,13 @@ pub const RUST_FS_WRITES: &[&str] = &[
 ];
 pub const RUST_PATH_READS: &[&str] = &["exists", "try_exists", "is_file", "is_dir", "read_dir", "canonicalize", "symlink_metadata"];
 pub const RUST_FILE_TREES: &[&str] = &["walkdir", "WalkDir", "ignore", "glob", "notify", "git2", "gix"];
+/// A crate's type whose function opens the file at the path it is handed first, and which way:
+/// csv's readers and writers, plotters' image backends.
+pub const RUST_FILE_OPENERS: &[(&str, &str, Dir)] = &[
+    ("ReaderBuilder", "from_path", Dir::Read), ("Reader", "from_path", Dir::Read),
+    ("WriterBuilder", "from_path", Dir::Write), ("Writer", "from_path", Dir::Write),
+    ("BitMapBackend", "new", Dir::Write), ("SVGBackend", "new", Dir::Write),
+];
 pub const RUST_COMMAND: &str = "Command";
 pub const RUST_SCREEN_MACROS: &[&str] = &["println", "print", "eprintln", "eprint"];
 

@@ -164,7 +164,6 @@ fn the_same_from_outside_the_students_main_block_is_a_way_in() {
 
 /// From the Rust `main`, the route reaches the program's outside.
 #[test]
-#[ignore = "Atlas (a): the csv and plotters crates are unknown, so the raw file read and the PNG written are no places"]
 fn the_same_from_outside_rust() {
     assert_eq!(program(rust()), "sunspots.main");
     assert_eq!(outside(rust(), "sunspots.main"), the_outside());
@@ -360,12 +359,12 @@ fn rust_the_compiler_asks_for_every_type() {
     assert_eq!(names(&step(r, main, "sunspots.plot").hands), ["rows", "smoothed"]);
 }
 
-/// What the compiler does not repair: where data lives. `download` and `plot` name their URL and
-/// their paths inside, and `places` asks both.
+/// What the compiler does not repair: where data lives. `download`, `load` and `plot` name their
+/// URL and their paths inside, and `places` asks all three.
 #[test]
 fn rust_the_compiler_does_not_ask_where_data_lives() {
     let r = rust();
-    assert_eq!(findings(r), [("places", "sunspots.download".to_string()), ("places", "sunspots.plot".to_string())]);
+    assert_eq!(findings(r), [("places", "sunspots.download".to_string()), ("places", "sunspots.load".to_string()), ("places", "sunspots.plot".to_string())]);
     for (f, kind, artifact) in [
         ("sunspots.download", "net", "www.sidc.be"),
         ("sunspots.download", "disk_write", "data/raw/sunspots.csv"),
@@ -391,7 +390,6 @@ fn rust_a_pair_names_no_what() {
 /// `load` reads the raw file through the csv crate (`ReaderBuilder::from_path`), at a path it names
 /// itself, so `places` asks it too.
 #[test]
-#[ignore = "Atlas (a): the csv crate is unknown, so `ReaderBuilder::from_path(..)` reads no file"]
 fn rust_load_reads_the_raw_file_through_the_csv_crate() {
     let r = rust();
     let read = touches(r, "sunspots.load", "disk_read");
@@ -402,7 +400,6 @@ fn rust_load_reads_the_raw_file_through_the_csv_crate() {
 /// `plot` writes the PNG through plotters (`BitMapBackend::new(path, ..)`), at a path it names
 /// itself.
 #[test]
-#[ignore = "Atlas (a): the plotters crate is unknown, so `BitMapBackend::new(path, ..)` writes no file"]
 fn rust_plot_writes_the_png_through_plotters() {
     let written = touches(rust(), "sunspots.plot", "disk_write");
     assert!(written.iter().any(|t| t.artifact == "figures/sunspots.png" && t.fixed), "{written:#?}");
