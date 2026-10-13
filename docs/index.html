@@ -47,6 +47,15 @@ table.diff td code{font-family:var(--mono);font-size:13px}
 .sloppy .tag{color:var(--accent)}
 .elegant .tag{color:var(--good)}
 .note{font-family:var(--mono);font-size:13px;color:var(--ink-3);margin-top:14px}
+.lede a{color:var(--ink);text-decoration-color:var(--accent);text-underline-offset:3px}
+details.inside{background:var(--panel);border:1px solid var(--line);max-width:80ch}
+details.inside summary{cursor:pointer;padding:14px 18px;color:var(--ink-2)}
+details.inside summary b{color:var(--ink);font-weight:500}
+details.inside dl{margin:0;padding:4px 18px 18px;display:grid;grid-template-columns:minmax(0,15em) 1fr;gap:10px 20px;font-size:15px}
+details.inside dt{font-weight:500}
+details.inside dd{margin:0;color:var(--ink-2)}
+details.inside code{font-family:var(--mono);font-size:13px}
+@media (max-width:760px){details.inside dl{grid-template-columns:1fr;gap:2px}details.inside dd{margin-bottom:10px}}
 .cmds{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:20px}
 .cmds div{background:var(--panel);border:1px solid var(--line);padding:18px}
 .cmds code{font-family:var(--mono);font-size:14px;display:block;margin-bottom:6px}
@@ -111,6 +120,23 @@ footer{border-top:1px solid var(--line);padding-top:20px;color:var(--ink-3);font
     <tr><th>The figure</th><td>a matplotlib <code>Figure</code></td><td>SVG text</td><td>a PNG drawn through a backend</td></tr>
     <tr><th>Types</th><td>written by the author, read by ty</td><td>written by the author, checked by tsc</td><td>forced by the compiler</td></tr>
   </table>
+</section>
+
+<section>
+  <h2>The mathematics of your code.</h2>
+  <p class="lede">Atlas draws mathematics. Beneath it lies a small piece of <a href="https://pttrn.io/#content/category-theory">category theory</a>, and every construct has one shape: data at rest is a box of its kind, a function is an arrow, a route runs from a way in to the places it reaches. Nothing is guessed, and every program is drawn by the same rules. So you need none of the mathematics to read the picture: consistent code draws as a consistent picture, and where the picture looks off, so is the code.</p>
+  <details class="inside">
+    <summary><b>What is inside</b>, for the mathematically inclined</summary>
+    <dl>
+      <dt>A category of types</dt><dd>Types are objects, functions are arrows, call order is composition. A route is a composite from an entry point to a place.</dd>
+      <dt>Effects in the type</dt><dd>A function's domain is its parameters plus what it reads; its codomain is what it returns plus what it writes, sends or runs, as in an effect system.</dd>
+      <dt>Zoom is a quotient, a filter is a fiber</dt><dd>Zooming out folds a family of types into one box; keeping to one route is the fiber over it. They don't commute, so the order of a view is meaning.</dd>
+      <dt>Sum types are coproducts</dt><dd>Taken apart where they arise.</dd>
+      <dt>Lawful lenses</dt><dd>A class that writes a place and reads it back is a lens on it. Atlas asks the put-get law at the level of types: what goes in as a <code>Graph</code> comes back as a <code>Graph</code>.</dd>
+      <dt>Subtypes keep their promise</dt><dd>An override does what its base says (Liskov).</dd>
+      <dt>A step and its reach</dt><dd>A function's own arrow and the composite it starts are different quantities, never merged.</dd>
+    </dl>
+  </details>
 </section>
 
 <section id="install">

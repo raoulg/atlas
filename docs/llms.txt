@@ -18,9 +18,11 @@ Atlas is a metalanguage above programming languages: a proof machine whose proof
 
 The mathematics:
 
-- **Category theory gives the structure.** Types are objects and functions are arrows. Call order is composition, and a route is a composite from an entry point to the places it reaches. Zooming out is a quotient (a family of types becomes one box); keeping to one route, one package or one kind of edge is a fiber.
+- **Category theory gives the structure** ([an introduction](https://pttrn.io/#content/category-theory)). Types are objects and functions are arrows. Call order is composition, and a route is a composite from an entry point to the places it reaches. Zooming out is a quotient (a family of types becomes one box); keeping to one route, one package or one kind of edge is a fiber. The two don't commute, so the order of a view is meaning.
 - **Effects are part of a function's type, as in an effect system.** A function's domain is its parameters plus what it reads; its codomain is what it returns plus what it writes, sends or runs.
-- **Type theory gives what Atlas checks.** A sum type is unwrapped where it arises; an override keeps its base's promise (Liskov); what a lens puts, it gets back; a function whose value is used says what it gives.
+- **What Atlas checks are the laws of that structure.** A sum type is a coproduct, taken apart where it arises. A class that writes a place and reads it back is a lens, and a lawful one at the level of types: what it puts as `A` it gets back as `A` (put-get). An override keeps its base's promise (behavioural subtyping, Liskov). A function whose value is used says what it gives.
+
+The mathematics is there so that a human needs none of it. Every construct has one shape and every program is drawn by the same rules, so a person sees at a glance whether a picture is consistent. Keep it that way: a special case in the engine is a shape that means something else in one place, and it breaks exactly that.
 
 ## Using Atlas as an agent
 

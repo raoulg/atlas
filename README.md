@@ -43,18 +43,38 @@ the four functions give back? Click a picture to open it.
 
 ## The mathematics behind it
 
-Atlas reads a program the way category theory reads mathematics. Types are objects, functions are
-arrows between them, and a program is what you get by composing arrows: call order is
-composition. A function that writes a file or asks a database does more than turn its input into
-its output, so Atlas counts that as part of its type, as an effect system does. Zooming out folds a
-family of types into one box; keeping to one route picks out the part of the picture where it runs.
-What Atlas checks comes from type theory: a sum type is unwrapped where it arises, an override
-keeps the promise of its base, what a lens puts it gets back.
+Atlas draws mathematics. Beneath it lies a small piece of
+[category theory](https://pttrn.io/#content/category-theory), and every construct in it has one
+shape: data at rest is a box of its kind, a function is an arrow, a route runs from a way in to the
+places it reaches. Every box and arrow is derived from the code, nothing is guessed, and every
+program is drawn by the same rules. So you need none of the mathematics to read the picture:
+consistent code draws as a consistent picture, and where the picture looks off, so is the code.
 
-None of this belongs to Python, TypeScript or Rust. That makes Atlas a proof machine whose proofs
-are pictures: every box and arrow is derived from the code, nothing is guessed, so a picture that
-looks wrong is a fact about the code. And the same program in two languages gives the same picture,
-so a port can be laid over its original. Where the pictures differ, the languages do.
+The rules don't belong to Python, TypeScript or Rust. The same program in two languages draws the
+same picture, so a port can be laid over its original. Where the pictures differ, the languages do.
+
+<details>
+<summary><b>What is inside</b>, for the mathematically inclined</summary>
+<br>
+
+- **A category of types.** Types are objects, functions are arrows, call order is composition. A
+  route is a composite from an entry point to a place.
+- **Effects in the type.** A function's domain is its parameters plus what it reads; its codomain
+  is what it returns plus what it writes, sends or runs. Files, tables and URLs are objects like
+  any other, as in an effect system.
+- **Zoom is a quotient, a filter is a fiber.** Zooming out folds a family of types (by base
+  class, by composition, by module) into one box; keeping to one route is the fiber over it. The
+  two don't commute, so the order of a view is meaning.
+- **Sum types are coproducts**, taken apart where they arise.
+- **Lawful lenses.** A class that writes a place and reads it back is a lens on that place. Atlas
+  asks the put-get law at the level of types: what goes in as a `Graph` comes back as a `Graph`.
+- **Subtypes keep their promise.** An override does what its base says (Liskov).
+- **A step and its reach are different quantities.** A function's own arrow and the composite it
+  starts are never merged.
+
+The structure is laid out in [the design](docs/reference/design.md); what Atlas checks against it
+is in [the ten principles](docs/reference/principles.md).
+</details>
 
 ## Install
 
