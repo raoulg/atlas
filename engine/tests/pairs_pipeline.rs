@@ -1,8 +1,9 @@
-//! One program written three ways: web → data → preprocess → figure. It downloads SILSO's monthly
+//! One program written four ways: web → data → preprocess → figure. It downloads SILSO's monthly
 //! mean sunspot numbers (`https://www.sidc.be/SILSO/DATA/SN_m_tot_V2.0.csv`), keeps the raw file at
 //! `data/raw/sunspots.csv`, loads it with a date per month and without the months that have no
 //! mean (`-1`), smooths it with a 13-month rolling mean, and saves a line chart at
-//! `figures/sunspots.png`. Each version is read as a repository of its own:
+//! `figures/sunspots.png`, or `figures/sunspots.svg` where the language's plotting path writes an
+//! SVG document. Each version is read as a repository of its own:
 //!
 //! - `python-clean/` as a scientific toolkit is written: typed functions that take their places as
 //!   arguments, a frozen dataclass of settings, a `Plot` family, and a typer command that names the
@@ -11,9 +12,13 @@
 //!   module-level `df`, name their URL and files inside, and are called in a row under
 //!   `if __name__ == "__main__":`;
 //! - `rust/` the quick way: the compiler asks for every type, but the paths and the URL are written
-//!   inside the functions that use them, and `main` calls them in a row.
+//!   inside the functions that use them, and `main` calls them in a row;
+//! - `typescript/` as a TypeScript developer writes it: a command in `bin` that names the URL and
+//!   the files and hands them down, typed records (`Month`, `Smoothed`, `Settings`), `fetch` and
+//!   `node:fs`, and the figure drawn as an SVG document with d3's scales and lines and written as
+//!   text.
 //!
-//! From outside the three are the same program: they reach the same places. Inside, Atlas lays bare
+//! From outside the four are the same program: they reach the same places. Inside, Atlas lays bare
 //! what differs: what the language repairs (types, what a function gives back) and what it cannot
 //! (where data lives, where a choice is made, a value shared through a global). A statement Atlas
 //! does not meet yet is a test of its own, ignored with what Atlas gets wrong: (a) where it misreads
@@ -43,6 +48,11 @@ fn sloppy() -> &'static Graph {
 fn rust() -> &'static Graph {
     static G: OnceLock<Graph> = OnceLock::new();
     G.get_or_init(|| read("rust"))
+}
+
+fn typescript() -> &'static Graph {
+    static G: OnceLock<Graph> = OnceLock::new();
+    G.get_or_init(|| read("typescript"))
 }
 
 fn node<'g>(g: &'g Graph, id: &str) -> &'g Node {
@@ -120,15 +130,28 @@ fn the_outside() -> BTreeSet<(String, String)> {
     .collect()
 }
 
+/// The outside with the figure's format left out. matplotlib and plotters write the figure as a
+/// PNG, the TypeScript version as an SVG document: the same place in the format each language's
+/// plotting path writes. Only the extension of a file in `figures/` is left out; every other place,
+/// the directory `figures/` with them, is compared as it is.
+fn in_any_format(out: BTreeSet<(String, String)>) -> BTreeSet<(String, String)> {
+    out.into_iter()
+        .map(|(kind, artifact)| match artifact.strip_prefix("figures/").and_then(|file| file.rsplit_once('.')) {
+            Some((stem, _)) => (kind, format!("figures/{stem}.*")),
+            None => (kind, artifact),
+        })
+        .collect()
+}
+
 /// The module whose `if __name__ == "__main__":` block runs the student's program: the calls of
 /// the block are the module's own steps.
 const STUDENT: &str = "sunspots";
 
-/// The three ask SILSO and keep its file at `data/raw/sunspots.csv`, each from where its program
-/// starts: the clean command, the student's main block, the Rust `main`.
+/// The four ask SILSO and keep its file at `data/raw/sunspots.csv`, each from where its program
+/// starts: the clean command, the student's main block, the Rust `main`, the TypeScript command.
 #[test]
 fn the_same_from_outside_the_request_and_the_raw_file() {
-    for (g, start) in [(clean(), program(clean())), (sloppy(), STUDENT), (rust(), program(rust()))] {
+    for (g, start) in [(clean(), program(clean())), (sloppy(), STUDENT), (rust(), program(rust())), (typescript(), program(typescript()))] {
         let out = outside(g, start);
         for place in [("net", "www.sidc.be"), ("disk_write", "data/raw/sunspots.csv")] {
             assert!(out.contains(&(place.0.to_string(), place.1.to_string())), "{start} reaches {place:?}: {out:#?}");
@@ -171,6 +194,32 @@ fn the_same_from_outside_rust() {
     assert_eq!(outside(rust(), "sunspots.main"), the_outside());
 }
 
+/// The places the TypeScript command names are the program's outside: the request to SILSO, the
+/// raw file written and read again, the directories, and the figure, written as an SVG document
+/// where the others write a PNG. The command is the module `package.json` names in `bin`, whose
+/// own code runs `main`. Beside them the route reaches a file read and a file written that the
+/// code does not name: what `--raw` and `--figure` say (`values.raw ?? RAW`), read as what the
+/// environment says beside the default the code holds.
+#[test]
+fn the_same_from_outside_typescript_names_the_same_places() {
+    let t = typescript();
+    assert_eq!(program(t), "typescript.cli");
+    let out = outside(t, "typescript.cli");
+    assert!(out.contains(&("disk_write".to_string(), "figures/sunspots.svg".to_string())), "{out:#?}");
+    let (named, unnamed): (BTreeSet<_>, BTreeSet<_>) = out.into_iter().partition(|(_, artifact)| !artifact.is_empty());
+    assert_eq!(in_any_format(named), in_any_format(the_outside()));
+    assert_eq!(unnamed, [("disk_read".to_string(), String::new()), ("disk_write".to_string(), String::new())].into_iter().collect());
+}
+
+/// From the TypeScript command, the route reaches the program's outside, as from the clean Python
+/// command: both take the raw file and the figure as options of the command line with a default
+/// (`raw: Path = RAW` in typer's signature, `values.raw ?? RAW` after `parseArgs`).
+#[test]
+#[ignore = "Atlas (a): an option of the command line with a default is read two ways: TypeScript's `values.raw ?? RAW` as the default and a file the code does not name, typer's `raw: Path = RAW` as the default alone"]
+fn the_same_from_outside_typescript() {
+    assert_eq!(in_any_format(outside(typescript(), "typescript.cli")), in_any_format(the_outside()));
+}
+
 /// The clean `load` reads the file the command names: `load(download(SILSO, raw))` hands it what
 /// `download` gives back, which is `to`, the path the command handed `download`.
 #[test]
@@ -186,6 +235,24 @@ fn the_same_from_outside_python_clean_creates_the_parent_of_the_path_handed_in()
     for (f, dir) in [("sunspots.download.download", "data/raw/"), ("sunspots.plot.Plot.save", "figures/")] {
         let made: Vec<&Touch> = touches(clean(), f, "disk_write").into_iter().filter(|t| t.op == "mkdir").collect();
         assert!(made.iter().all(|t| t.artifact == dir && t.by == ["sunspots.cli.run"]) && !made.is_empty(), "{f}: {made:#?}");
+    }
+}
+
+/// The TypeScript `load` reads the file the command names: `load(await download(SILSO, raw))` hands
+/// it what `download` gives back, which is `to`, the path the command handed `download`.
+#[test]
+fn the_same_from_outside_typescript_reads_the_path_download_gives_back() {
+    let read = touches(typescript(), "typescript.series.load", "disk_read");
+    assert!(read.iter().any(|t| t.artifact == "data/raw/sunspots.csv" && !t.fixed && t.by == ["typescript.cli.main"]), "{read:#?}");
+}
+
+/// The TypeScript functions create the directory their file goes in: `mkdir(dirname(to), ..)`
+/// creates the directory of the path the command hands in.
+#[test]
+fn the_same_from_outside_typescript_creates_the_parent_of_the_path_handed_in() {
+    for (f, dir) in [("typescript.download.download", "data/raw/"), ("typescript.plot.saveSvg", "figures/")] {
+        let made: Vec<&Touch> = touches(typescript(), f, "disk_write").into_iter().filter(|t| t.op == "mkdir" && !t.artifact.is_empty()).collect();
+        assert!(made.iter().all(|t| t.artifact == dir && t.by == ["typescript.cli.main"]) && !made.is_empty(), "{f}: {made:#?}");
     }
 }
 
@@ -406,4 +473,95 @@ fn rust_load_reads_the_raw_file_through_the_csv_crate() {
 fn rust_plot_writes_the_png_through_plotters() {
     let written = touches(rust(), "sunspots.plot", "disk_write");
     assert!(written.iter().any(|t| t.artifact == "figures/sunspots.png" && t.fixed), "{written:#?}");
+}
+
+// ---------- TypeScript ----------
+
+/// The TypeScript version follows every principle: `atlas check` has nothing to ask. The package
+/// names its doors in `index.ts`, each typed: the four steps, `parse` beside `load`, and the
+/// records they hand on.
+#[test]
+fn typescript_follows_every_principle() {
+    let t = typescript();
+    let fs = check(t);
+    assert!(fs.is_empty(), "{:#?}", fs.iter().map(|f| format!("{} {} {}", f.principle, f.node, f.what)).collect::<Vec<_>>());
+    let doors: BTreeSet<&str> = t.nodes.iter().filter(|n| n.entry.as_ref().map_or(false, |e| e.kind == EntryKind::Export)).map(|n| n.id.as_str()).collect();
+    let want = [
+        "typescript.download.download",
+        "typescript.series.load",
+        "typescript.series.parse",
+        "typescript.series.smooth",
+        "typescript.plot.trend",
+        "typescript.plot.saveSvg",
+        "typescript.series.Month",
+        "typescript.series.Smoothed",
+        "typescript.settings.Settings",
+    ];
+    assert_eq!(doors, want.into_iter().collect());
+}
+
+/// Composition is call order, and every step says what it takes and gives. TypeScript names the
+/// records the program keeps: `load` gives `Month`s, `smooth` takes them and gives `Smoothed`
+/// means, and `trend` draws both with the `Settings`. The command hands them from step to step by
+/// the names it keeps them by, and nothing is changed in place.
+#[test]
+fn typescript_the_records_go_from_step_to_step() {
+    let t = typescript();
+    let (month, smoothed, settings) = ("typescript.series.Month", "typescript.series.Smoothed", "typescript.settings.Settings");
+    assert!(edge(t, EdgeKind::Returns, "typescript.series.load", month));
+    assert!(edge(t, EdgeKind::Takes, "typescript.series.smooth", month));
+    assert!(edge(t, EdgeKind::Returns, "typescript.series.smooth", smoothed));
+    for ty in [month, smoothed, settings] {
+        assert!(edge(t, EdgeKind::Takes, "typescript.plot.trend", ty), "trend takes {ty}");
+    }
+    let main = "typescript.cli.main";
+    let loading = step(t, main, "typescript.series.load");
+    assert_eq!((names(&loading.gives), types(&loading.gives)), (vec!["series"], vec![month]));
+    let smoothing = step(t, main, "typescript.series.smooth");
+    assert!(smoothing.hands.iter().any(|h| h.name == "series" && h.ty == month), "{:?}", smoothing.hands);
+    assert_eq!((names(&smoothing.gives), types(&smoothing.gives)), (vec!["smoothed"], vec![smoothed]));
+    let drawing = step(t, main, "typescript.plot.trend");
+    assert_eq!((names(&drawing.hands), types(&drawing.hands)), (vec!["series", "smoothed", "settings"], vec![month, smoothed, settings]));
+    assert!(t.edges.iter().all(|e| e.kind != EdgeKind::Mutates));
+}
+
+/// The figure travels as its document: `trend` gives the SVG as a `string`, and `saveSvg` writes the
+/// text it is handed. A string is a value of the language, not of the program, as the path
+/// `download` gives back is; Python's `Trend.draw` gives a matplotlib `Figure`.
+#[test]
+fn typescript_the_figure_is_a_document() {
+    let t = typescript();
+    assert_eq!(node(t, "typescript.plot.trend").returns.as_ref().map(|r| r.written.as_str()), Some("string"));
+    let main = "typescript.cli.main";
+    let drawing = step(t, main, "typescript.plot.trend");
+    assert_eq!(types(&drawing.gives), [""]);
+    assert_eq!(step(t, main, "typescript.plot.saveSvg").hands, drawing.gives);
+}
+
+/// Library code does not decide where data lives: the command names the URL and the files and hands
+/// them down, and `--raw` and `--figure` may name others. Each place is made whole at `main`.
+#[test]
+fn typescript_the_places_are_made_whole_at_the_entry() {
+    let t = typescript();
+    assert_eq!(found(t, "places"), Vec::<String>::new());
+    for (f, kind, artifact) in [
+        ("typescript.download.download", "net", "www.sidc.be"),
+        ("typescript.download.download", "disk_write", "data/raw/sunspots.csv"),
+        ("typescript.series.load", "disk_read", "data/raw/sunspots.csv"),
+        ("typescript.plot.saveSvg", "disk_write", "figures/sunspots.svg"),
+    ] {
+        let ts = touches(t, f, kind);
+        assert!(ts.iter().any(|x| x.artifact == artifact && !x.fixed && x.by == ["typescript.cli.main"]), "{f} {kind} {artifact}: {ts:#?}");
+    }
+}
+
+/// Creating a value is an arrow into Memory(T). The command makes its `Settings` from the defaults
+/// and `--months` (`const settings: Settings = { ...DEFAULT_SETTINGS, months: .. }`), and a step of
+/// `main` gives `settings`, as Python's `Settings(months=months)` does.
+#[test]
+#[ignore = "Atlas (a): a value built by an object literal of a declared type (`const settings: Settings = {..}`) is made by no step, so `settings` enters `main`'s route from nowhere"]
+fn typescript_main_makes_its_settings() {
+    let main = node(typescript(), "typescript.cli.main");
+    let made = main.sites.iter().any(|s| s.gives.iter().any(|g| g.name == "settings" && g.ty == "typescript.settings.Settings"));
+    assert!(made, "{:#?}", main.sites);
 }

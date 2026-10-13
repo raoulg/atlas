@@ -1,0 +1,23 @@
+{
+  "name": "sunspots",
+  "version": "0.1.0",
+  "description": "The monthly mean sunspot number from SILSO, smoothed and drawn",
+  "private": true,
+  "type": "module",
+  "bin": { "sunspots": "./src/cli.ts" },
+  "exports": "./src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "d3-scale": "^4.0.2",
+    "d3-shape": "^3.2.0"
+  },
+  "devDependencies": {
+    "@types/d3-scale": "^4.0.8",
+    "@types/d3-shape": "^3.1.6",
+    "@types/node": "^22.10.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}
