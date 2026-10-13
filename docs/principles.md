@@ -37,6 +37,14 @@ annotation only where a route stops without one.
 The two work together. A linter makes a signature precise; Atlas asks whether it is
 the right one.
 
+Each principle is stated once, on the graph, for every language. A language decides how
+much of it can be traced: where the careless form says to any reader exactly what the careful
+one says, no fact in the graph tells them apart, and in that language the difference does not
+exist. A language whose signatures say more (a Rust parameter that is `&mut`, a sum type the
+compiler makes you unwrap) lets Atlas find what it cannot find in one whose signatures say less.
+A new language brings a reader, never a principle. The pairs in `engine/tests/pairs` show, per
+language, which principles it traces and by which fact.
+
 Atlas follows these principles itself: `atlas check` on Atlas's own repository finds
 nothing, and `cargo test` keeps it that way.
 

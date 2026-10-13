@@ -58,7 +58,9 @@ The rigorous half and the visual half are the same structure. Read `docs/design.
   per language, clean and sloppy) grow with Atlas. For every change to what Atlas reads, draws or
   checks, answer three questions in them before it lands: what does this lay bare, how does the
   perfect code look, how does the sloppy code look? Then show in `pairs_<language>.rs` that Atlas
-  tells the two apart.
+  tells the two apart. Only what can be traced exists: a difference is a fact in the graph that
+  differs. Principles are stated once, on the graph; each language traces what it can, and a
+  new language brings a reader, never a principle.
 - **Keep it simple.** The basic elements first, rigorous and consistent across all
   future codebases, before any richness. One question per feedback round.
 - **Plan in Linear first**, project *Atlas — code at the level of types and flows*.
