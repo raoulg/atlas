@@ -347,7 +347,7 @@ pub fn parse(repo: &Repo) -> Result<(GraphBuilder, String)> {
     let aliases = path_aliases(repo);
     let mut store = GraphBuilder::default();
     // not under what a tool made
-    let made = |p: &Path| p.strip_prefix(&base).map_or(false, |r| r.components().any(|c| knowledge::MADE_DIRS.contains(&c.as_os_str().to_str().unwrap_or(""))));
+    let made = |p: &Path| p.strip_prefix(&base).map_or(false, |r| r.components().any(|c| knowledge::made_dir(c.as_os_str().to_str().unwrap_or(""))));
     let mut paths: Vec<PathBuf> = repo.files_under(&base).into_iter().filter(|p| is_code(p) && !made(p)).map(|p| normalize(&p)).collect();
     paths.sort();
     let files: HashMap<PathBuf, String> = paths.iter().map(|p| (p.clone(), module_id(&root, &base, p))).collect();

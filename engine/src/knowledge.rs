@@ -228,11 +228,18 @@ pub const PROJECT_NAMES: &[&[&str]] = &[&["project", "name"], &["tool", "poetry"
 
 // ---------- the files of a project ----------
 
-/// Directories a tool made rather than the author: dependencies, environments, build output.
-pub const MADE_DIRS: &[&str] = &[
-    "node_modules", "target", "dist", "build", "out", "coverage", "venv", "env", "site-packages", "__pycache__", ".next", ".output", ".wrangler",
-    ".vercel", ".turbo", "public",
-];
+/// Directories never listed at all: installed dependencies and build output, too large to read
+/// and never the author's.
+pub const NEVER_READ: &[&str] = &["node_modules", "target", "site-packages", "__pycache__"];
+
+/// Directories a tool made rather than the author, beside those never read: environments,
+/// build output, a framework's output.
+pub const MADE_DIRS: &[&str] = &["dist", "build", "out", "coverage", "venv", "env", ".next", ".output", ".wrangler", ".vercel", ".turbo", "public"];
+
+/// Whether a directory of this name is one a tool made.
+pub fn made_dir(name: &str) -> bool {
+    NEVER_READ.contains(&name) || MADE_DIRS.contains(&name)
+}
 
 /// Directories that hold tests and the data they read.
 pub const TEST_DIRS: &[&str] = &["tests", "test", "__tests__", "fixtures", "testdata"];

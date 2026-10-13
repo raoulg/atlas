@@ -320,7 +320,7 @@ fn scripts(repo: &Repo, root_dir: &Path, packages: &[PathBuf]) -> Vec<PathBuf> {
     // what a tool made, tests, and another project inside the project
     let elsewhere = |d: &Path| {
         let name = d.file_name().and_then(|n| n.to_str()).unwrap_or("");
-        knowledge::MADE_DIRS.contains(&name) || knowledge::TEST_DIRS.contains(&name) || repo.is_file(d.join("pyproject.toml"))
+        knowledge::made_dir(name) || knowledge::TEST_DIRS.contains(&name) || repo.is_file(d.join("pyproject.toml"))
     };
     let packaged: HashSet<PathBuf> = packages.iter().flat_map(|d| repo.files_under(d)).collect();
     let mut out: Vec<PathBuf> = repo
@@ -343,10 +343,14 @@ fn scripts(repo: &Repo, root_dir: &Path, packages: &[PathBuf]) -> Vec<PathBuf> {
     out
 }
 
+/// How many directories, from a package up, are looked through for its `pyproject.toml`: the
+/// package, `src`, the project, and one more for a nested layout.
+pub const PROJECT_ABOVE: usize = 4;
+
 /// The nearest ancestor of the package that holds a `pyproject.toml`.
 pub fn project_root(repo: &Repo, pkg_dir: &Path) -> Option<PathBuf> {
     let mut cur = Some(pkg_dir);
-    for _ in 0..4 {
+    for _ in 0..PROJECT_ABOVE {
         let p = cur?;
         if repo.is_file(p.join("pyproject.toml")) {
             return Some(p.to_path_buf());
@@ -370,7 +374,7 @@ pub fn packages(repo: &Repo) -> Vec<PathBuf> {
     for base in package_bases(&manifest) {
         for d in repo.dirs_in(&base) {
             let name = d.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            let elsewhere = knowledge::MADE_DIRS.contains(&name) || knowledge::TEST_DIRS.contains(&name) || repo.is_file(d.join("pyproject.toml"));
+            let elsewhere = knowledge::made_dir(name) || knowledge::TEST_DIRS.contains(&name) || repo.is_file(d.join("pyproject.toml"));
             // a package inside another is read with it
             if !elsewhere && repo.is_file(d.join("__init__.py")) && !out.iter().any(|p| d.starts_with(p) || p.starts_with(&d)) {
                 out.push(d);
@@ -1678,8 +1682,10 @@ fn mark_exports(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, ro
 /// A name followed through the packages that re-export it to where it is defined:
 /// `pkg.Cache` -> `pkg.data.Cache` -> `pkg.data.cache.Cache`.
 fn defined(target: &str, modules: &IndexMap<String, Module>, nodes: &IndexMap<String, Node>) -> Option<String> {
+    // a name re-exported through more packages than this goes round in a cycle
+    const REEXPORTS: usize = 8;
     let mut t = target.to_string();
-    for _ in 0..8 {
+    for _ in 0..REEXPORTS {
         if nodes.contains_key(&t) {
             return Some(t);
         }

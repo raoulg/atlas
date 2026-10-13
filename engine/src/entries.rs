@@ -23,7 +23,9 @@ pub fn mount_routes(store: &mut GraphBuilder, routes: &[(String, String)], own: 
     // mounted router's own
     let full = |start: &str| {
         let (mut key, mut below) = (start.to_string(), String::new());
-        for _ in 0..10 {
+        // a router mounted under more routers than this is mounted in a cycle
+        const MOUNTED: usize = 10;
+        for _ in 0..MOUNTED {
             let Some((parent, prefix, replaces)) = mounted.get(&key) else { break };
             below = format!("{}{}{below}", trim(prefix), if *replaces { String::new() } else { mine(&key) });
             key = parent.clone();

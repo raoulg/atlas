@@ -12,7 +12,6 @@ use std::sync::{Arc, Mutex};
 use anyhow::Result;
 
 /// Directories no author writes in, never walked: dependencies and a build's output.
-const NEVER: &[&str] = &["node_modules", "target", "site-packages", "__pycache__"];
 
 struct Listing {
     files: BTreeSet<PathBuf>,
@@ -43,7 +42,7 @@ impl Repo {
         let walk = ignore::WalkBuilder::new(dir)
             .require_git(false)
             .git_global(false)
-            .filter_entry(|e| e.depth() == 0 || !(e.file_type().map_or(false, |t| t.is_dir()) && NEVER.contains(&e.file_name().to_str().unwrap_or(""))))
+            .filter_entry(|e| e.depth() == 0 || !(e.file_type().map_or(false, |t| t.is_dir()) && crate::knowledge::NEVER_READ.contains(&e.file_name().to_str().unwrap_or(""))))
             .build();
         for e in walk.flatten() {
             let Ok(rel) = e.path().strip_prefix(dir) else { continue };

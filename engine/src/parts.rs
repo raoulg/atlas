@@ -24,7 +24,7 @@ pub fn roots(repo: &Repo, opts: &Options) -> Vec<(PathBuf, &'static str)> {
     let skipped = |d: &Path| {
         rel(d).components().any(|c| {
             let n = c.as_os_str().to_str().unwrap_or("");
-            n.starts_with('.') || knowledge::MADE_DIRS.contains(&n) || knowledge::TEST_DIRS.contains(&n)
+            n.starts_with('.') || knowledge::made_dir(n) || knowledge::TEST_DIRS.contains(&n)
         })
     };
     // a directory comes after the directories around it
@@ -169,14 +169,13 @@ fn requested(lit: &str) -> Option<String> {
 /// another part serves, and none of its own, is a `requests` edge from the node that holds it
 /// (the innermost function, class or module around it) to the route's handler.
 pub fn join(g: &mut Graph) {
-    const METHODS: &[&str] = &["GET", "POST", "PUT", "DELETE", "PATCH", "WEBSOCKET"];
     let routes: Vec<(String, String, String, Regex)> = g
         .nodes
         .iter()
         .filter_map(|n| {
             let e = n.entry.as_ref().filter(|e| e.kind == EntryKind::Route)?;
             let (method, path) = e.label.split_once(' ')?;
-            (method.split('|').all(|m| METHODS.contains(&m)) && path.len() > 1).then_some(())?;
+            (method.split('|').all(|m| knowledge::registers_route(&m.to_ascii_lowercase())) && path.len() > 1).then_some(())?;
             Some((n.part.clone(), n.id.clone(), path.to_string(), route_pattern(path)?))
         })
         .collect();

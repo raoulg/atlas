@@ -90,7 +90,7 @@ impl Language for Python {
             return None;
         }
         let package = opts.package.clone().or_else(|| python::packages(repo).into_iter().next())?;
-        let root = package.ancestors().take(4).find(|p| match p.starts_with(repo.root()) {
+        let root = package.ancestors().take(python::PROJECT_ABOVE).find(|p| match p.starts_with(repo.root()) {
             true => repo.is_file(p.join("pyproject.toml")),
             false => p.join("pyproject.toml").is_file(),
         })?;

@@ -55,7 +55,8 @@ pub enum Seg {
 
 pub type Built = Vec<Seg>;
 
-/// The most values a path or a parameter keeps.
+/// The most values a path or a parameter keeps: the alternatives of a choice multiply through
+/// each join, so a bound keeps a path built from several choices from growing without end.
 pub const MAX: usize = 4;
 
 /// Operations whose path is a directory: what they list, unpack into or make.
