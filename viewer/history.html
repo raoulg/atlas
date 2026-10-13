@@ -1,9 +1,591 @@
 <!doctype html>
+<html lang="en">
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Atlas history</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 128 128%22 width=%22128%22 height=%22128%22 role=%22img%22 aria-label=%22Atlas%22%3E%3Crect width=%22128%22 height=%22128%22 fill=%22%23141210%22/%3E%3Cg fill=%22%232b2621%22%3E%3Crect x=%221.08%22 y=%221.08%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%2210.92%22 y=%221.08%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%2220.77%22 y=%221.08%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%2230.62%22 y=%221.08%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%2240.46%22 y=%221.08%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%2250.31%22 y=%221.08%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%2279.85%22 y=%221.08%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%2289.69%22 y=%221.08%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%22109.38%22 y=%221.08%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%221.08%22 y=%2210.92%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%2260.15%22 y=%2210.92%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%2270.00%22 y=%2210.92%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%2279.85%22 y=%2210.92%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%22109.38%22 y=%2210.92%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%22119.23%22 y=%2210.92%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%2210.92%22 y=%2220.77%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%2250.31%22 y=%2220.77%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%2289.69%22 y=%2220.77%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%2299.54%22 y=%2220.77%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%22109.38%22 y=%2220.77%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%2210.92%22 y=%2230.62%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%2220.77%22 y=%2230.62%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%2240.46%22 y=%2230.62%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%2250.31%22 y=%2230.62%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%2279.85%22 y=%2230.62%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%2289.69%22 y=%2230.62%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%22119.23%22 y=%2230.62%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%2210.92%22 y=%2240.46%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%2240.46%22 y=%2240.46%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%2299.54%22 y=%2240.46%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%22109.38%22 y=%2240.46%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%22119.23%22 y=%2240.46%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%2210.92%22 y=%2250.31%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%2220.77%22 y=%2250.31%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%2230.62%22 y=%2250.31%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%2240.46%22 y=%2250.31%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%2260.15%22 y=%2250.31%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%2270.00%22 y=%2250.31%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%2289.69%22 y=%2250.31%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%2299.54%22 y=%2250.31%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%221.08%22 y=%2260.15%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%2210.92%22 y=%2260.15%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%22109.38%22 y=%2260.15%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%22119.23%22 y=%2260.15%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%2220.77%22 y=%2270.00%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%2299.54%22 y=%2270.00%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%22109.38%22 y=%2270.00%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%2210.92%22 y=%2279.85%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%2220.77%22 y=%2279.85%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%2299.54%22 y=%2279.85%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%22119.23%22 y=%2279.85%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%2210.92%22 y=%2289.69%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%2240.46%22 y=%2289.69%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%2279.85%22 y=%2289.69%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%2289.69%22 y=%2289.69%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%22119.23%22 y=%2289.69%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%2210.92%22 y=%2299.54%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%2230.62%22 y=%2299.54%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%2240.46%22 y=%2299.54%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%2250.31%22 y=%2299.54%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%2270.00%22 y=%2299.54%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%2279.85%22 y=%2299.54%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%22109.38%22 y=%2299.54%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%22119.23%22 y=%2299.54%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%2210.92%22 y=%22109.38%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%2270.00%22 y=%22109.38%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%2299.54%22 y=%22109.38%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%2210.92%22 y=%22119.23%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%2220.77%22 y=%22119.23%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%2260.15%22 y=%22119.23%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%2270.00%22 y=%22119.23%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%2279.85%22 y=%22119.23%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%2289.69%22 y=%22119.23%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%2299.54%22 y=%22119.23%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%22109.38%22 y=%22119.23%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%22119.23%22 y=%22119.23%22 width=%227.69%22 height=%227.69%22/%3E%3C/g%3E%3Cg fill=%22%234a433c%22%3E%3Crect x=%2240.46%22 y=%2260.15%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%2230.62%22 y=%2289.69%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%2260.15%22 y=%2279.85%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%2289.69%22 y=%2270.00%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%2250.31%22 y=%2240.46%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%2270.00%22 y=%2279.85%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%2240.46%22 y=%2270.00%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%2279.85%22 y=%2260.15%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%2240.46%22 y=%2279.85%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%2299.54%22 y=%2289.69%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%2250.31%22 y=%2250.31%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%2260.15%22 y=%2230.62%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%2279.85%22 y=%2250.31%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%2250.31%22 y=%2279.85%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%2279.85%22 y=%2279.85%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%2270.00%22 y=%2230.62%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%2270.00%22 y=%2240.46%22 width=%227.69%22 height=%227.69%22/%3E%3C/g%3E%3Cg fill=%22%2386b9c9%22%3E%3Crect x=%2220.77%22 y=%2299.54%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%2260.15%22 y=%2220.77%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%2230.62%22 y=%2279.85%22 width=%227.69%22 height=%227.69%22/%3E%3Crect x=%2289.69%22 y=%2279.85%22 width=%227.69%22 height=%227.69%22/%3E%3C/g%3E%3Cg fill=%22%23f2643c%22%3E%3Crect x=%2299.54%22 y=%2299.54%22 width=%227.69%22 height=%227.69%22/%3E%3C/g%3E%3Cpath d=%22M27.35 97.92 L31.73 89.15 M31.73 89.15 L31.97 93.08 M31.73 89.15 L28.44 91.32 M37.19 78.23 L61.27 30.08 M61.27 30.08 L61.51 34.01 M61.27 30.08 L57.98 32.25 M66.73 30.08 L90.81 78.23 M90.81 78.23 L87.52 76.06 M90.81 78.23 L91.04 74.30 M96.27 89.15 L100.65 97.92 M100.65 97.92 L97.37 95.75 M100.65 97.92 L100.89 93.99%22 stroke=%22%23f4f1ec%22 fill=%22none%22 stroke-opacity=%220.6%22 stroke-width=%220.98%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22/%3E%3Cpath d=%22M40.57 83.69 L87.43 83.69 M87.43 83.69 L84.02 85.66 M87.43 83.69 L84.02 81.72%22 stroke=%22%23f4f1ec%22 fill=%22none%22 stroke-opacity=%220.6%22 stroke-width=%220.98%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22/%3E%3C/svg%3E">
 <style>
 /*__FONTS__*/
+:root{
+  --bg:#F4F1EC; --panel:#FFFFFF; --panel-2:#FAF8F5; --ink:#111111; --ink-2:#5A544D; --ink-3:#857D73;
+  --line:#E2DCD3; --line-2:#ECE7E0; --alert:#C43A14; --focus:#1D5A73; --accent:#C43A14;
+  --hue-1:#1F8A7E; --hue-2:#3F5FCF; --hue-3:#C7862B; --hue-4:#7E56B8; --hue-5:#C44F70; --hue-6:#4E9A4E; --hue-7:#5C6B80; --hue-8:#7D7A72;
+  --sans:"Outfit","Helvetica Neue",Helvetica,system-ui,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  --scheme:light;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --bg:#141210; --panel:#1B1815; --panel-2:#221E1A; --ink:#F4F1EC; --ink-2:#B8B0A5; --ink-3:#857C71;
+  --line:#2B2621; --line-2:#221E1A; --alert:#F2643C; --focus:#86B9C9; --accent:#F2643C;
+  --hue-1:#3DB8A9; --hue-2:#7B93E8; --hue-3:#E0A24A; --hue-4:#A98AD9; --hue-5:#E27A96; --hue-6:#77BF77; --hue-7:#8C9BB0; --hue-8:#A39F95;
+  --scheme:dark;
+}}
+:root[data-theme="dark"]{
+  --bg:#141210; --panel:#1B1815; --panel-2:#221E1A; --ink:#F4F1EC; --ink-2:#B8B0A5; --ink-3:#857C71;
+  --line:#2B2621; --line-2:#221E1A; --alert:#F2643C; --focus:#86B9C9; --accent:#F2643C;
+  --hue-1:#3DB8A9; --hue-2:#7B93E8; --hue-3:#E0A24A; --hue-4:#A98AD9; --hue-5:#E27A96; --hue-6:#77BF77; --hue-7:#8C9BB0; --hue-8:#A39F95;
+  --scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:13px;line-height:1.45;overflow:hidden}
+#app{display:grid;grid-template-rows:46px minmax(0,1fr);grid-template-columns:var(--hist-w,420px) minmax(0,1fr);height:100vh}
+#app.nohist{grid-template-columns:0 minmax(0,1fr)}
+#app.nohist #hist{display:none}
+button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+
+/* the top bar */
+header{grid-column:1/3;display:flex;align-items:center;gap:14px;padding:0 16px;border-bottom:1px solid var(--line);background:var(--panel);min-width:0;color-scheme:var(--scheme)}
+header .brand{font-weight:500;letter-spacing:.01em;display:flex;align-items:center;gap:8px;white-space:nowrap}
+header .brand img{width:22px;height:22px}
+header .brand b{font-weight:inherit}
+header .brand span{color:var(--ink-3);font-weight:400}
+.cmp{display:flex;align-items:center;gap:8px;min-width:0;padding:4px 10px;border:1px solid var(--line);background:var(--panel-2);white-space:nowrap;overflow:hidden}
+.cmp .side{display:flex;align-items:center;gap:7px;min-width:0;overflow:hidden}
+.cmp .h{font-family:var(--mono);font-size:12px;flex:none}
+.cmp .s{overflow:hidden;text-overflow:ellipsis;color:var(--ink-2);min-width:0;max-width:280px}
+.cmp .side.wt .s{color:var(--ink);font-family:var(--mono);font-size:12px}
+.cmp .arrow{color:var(--ink-3);flex:none}
+.cmp .alone{color:var(--ink-3);font-size:12px;flex:none}
+.badge{display:inline-flex;align-items:center;justify-content:center;flex:none;width:18px;height:18px;border-radius:50%;font:500 11px var(--sans);color:var(--panel);line-height:1}
+.badge.a{background:var(--ink-2)} .badge.b{background:var(--focus)}
+header .spacer{flex:1}
+header .ctl{font:inherit;font-size:12px;border:1px solid var(--line);background:var(--panel);color:var(--ink-2);border-radius:0;padding:3px 9px;cursor:pointer;text-decoration:none;white-space:nowrap}
+header .ctl:hover{color:var(--ink);border-color:var(--ink-3)}
+#histbtn{display:flex;align-items:center;padding:4px 7px}
+#histbtn[aria-expanded="false"] .pane{opacity:.25}
+
+/* the history */
+#hist{position:relative;border-right:1px solid var(--line);background:var(--panel);display:flex;flex-direction:column;min-height:0;min-width:0;color-scheme:var(--scheme)}
+#hist>.top{display:flex;justify-content:space-between;align-items:center;padding:10px 14px 9px;border-bottom:1px solid var(--line-2)}
+#hist>.top b{font-weight:500}
+#hist>.top label{font-size:12px;color:var(--ink-2);display:flex;align-items:center;gap:6px;cursor:pointer}
+#hist>.top input{accent-color:var(--focus);margin:0}
+#rows{position:relative;flex:1;min-height:0;overflow:auto;outline:none}
+#lanes{position:absolute;left:0;top:0;z-index:1;pointer-events:none}
+#lanes path{fill:none;stroke-width:2}
+#lanes path.tail{stroke-dasharray:2 3;opacity:.55}
+/* a row is 32px high; ROW in the script is the same number */
+.row{position:relative;display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;height:32px;padding:0 12px 0 var(--graph-w,40px);cursor:pointer;user-select:none;-webkit-user-select:none}
+.row:hover::after{content:"";position:absolute;inset:0;background:color-mix(in oklab, var(--ink) 4%, transparent);pointer-events:none}
+.row.range{background:color-mix(in oklab, var(--focus) 7%, transparent)}
+.row.sel-a{box-shadow:inset 3px 0 0 var(--ink-2);background:color-mix(in oklab, var(--ink-2) 12%, transparent)}
+.row.sel-b{box-shadow:inset 3px 0 0 var(--focus);background:color-mix(in oklab, var(--focus) 16%, transparent)}
+.row.cur{outline:1px dashed color-mix(in oklab, var(--ink-3) 70%, transparent);outline-offset:-2px}
+#rows:focus .row.cur{outline:1px solid var(--focus)}
+.row .msg{min-width:0;white-space:nowrap;overflow:hidden;display:flex;align-items:center;gap:6px}
+/* the subject gives way first, down to a few letters; only then do the pills */
+.row .t{overflow:hidden;text-overflow:ellipsis;flex:1 50 auto;min-width:6ch}
+.row .hash,.row .when{font-family:var(--mono);font-size:11px;color:var(--ink-3);padding-left:10px;white-space:nowrap}
+.row .when{min-width:58px;text-align:right}
+.row.wt .t{color:var(--ink-3)}
+.row.wt .t b{color:var(--ink-2);font-weight:400}
+.ref{display:inline-block;flex:none;max-width:min(180px,50%);overflow:hidden;text-overflow:ellipsis;font:11px/16px var(--mono);padding:0 6px;border:1px solid var(--c);color:var(--c);border-radius:2px;white-space:nowrap}
+.ref.head{background:var(--c);color:var(--panel)}
+.ref.remote{border-color:transparent;background:color-mix(in oklab, var(--c) 15%, transparent)}
+.ref i{font-style:normal}
+.ref .pre{opacity:.7}
+.ref .rm{display:inline-block;margin:0 -6px 0 6px;padding:0 5px;border-left:1px solid var(--c);background:color-mix(in oklab, var(--c) 18%, var(--panel));color:var(--c)}
+.ref.tag{--c:var(--ink-2);border-style:dashed}
+.ref.later{flex:0 1 auto;min-width:4em}
+.ref.extra{--c:var(--ink-3)}
+/* the list asks its own width how many pills a row has room for */
+#list{container-type:inline-size}
+.ref.extra.few{display:none}
+@container (max-width:520px){
+  .ref.later,.ref.extra.many{display:none}
+  .ref.extra.few{display:inline-block}
+}
+#foot{display:flex;align-items:center;gap:10px;min-height:44px;padding:6px 12px 10px var(--graph-w,40px);font-size:12px;color:var(--ink-3)}
+#more{font:inherit;font-size:12px;border:1px solid var(--line);background:var(--panel);color:var(--ink-2);border-radius:0;padding:3px 10px;cursor:pointer}
+#more:hover{color:var(--ink);border-color:var(--ink-3)}
+#more[hidden]{display:none}
+.hint{border-top:1px solid var(--line-2);padding:9px 14px 11px;font-size:12px;color:var(--ink-2);display:grid;grid-template-columns:auto 1fr;gap:3px 12px}
+kbd{font:11px var(--mono);border:1px solid var(--line);border-bottom-width:2px;padding:0 5px;background:var(--panel-2);color:var(--ink)}
+#resizer{position:absolute;right:-4px;top:0;bottom:0;width:7px;cursor:col-resize;z-index:3}
+#resizer:hover,#app.drag #resizer{background:color-mix(in oklab, var(--ink-3) 30%, transparent)}
+#app.drag{cursor:col-resize;user-select:none}
+
+/* the picture: the viewer's own page, and a veil over it while a commit is being read */
+main{position:relative;min-width:0;min-height:0;background:var(--bg)}
+#pic{position:absolute;inset:0;width:100%;height:100%;border:0;display:block;background:var(--bg);color-scheme:normal}
+#app.drag #pic{pointer-events:none}
+#reading{position:absolute;inset:0;display:flex;align-items:flex-start;justify-content:center;padding-top:18vh;background:color-mix(in oklab, var(--bg) 55%, transparent);z-index:2}
+#reading[hidden]{display:none}
+#reading .card{position:relative;overflow:hidden;background:var(--panel);border:1px solid var(--line);box-shadow:0 14px 40px rgba(0,0,0,.18);padding:12px 18px 14px;font-family:var(--mono);font-size:12px;color:var(--ink-2);max-width:calc(100% - 32px)}
+#reading .card b{color:var(--ink);font-weight:400}
+#reading .bar{position:absolute;left:0;bottom:0;height:2px;width:35%;background:var(--focus);animation:slide 1.2s ease-in-out infinite}
+@keyframes slide{from{transform:translateX(-100%)}to{transform:translateX(300%)}}
+@media (prefers-reduced-motion:reduce){ #reading .bar{animation:none;width:100%;opacity:.5} }
+
+/* a narrow window: the history lies over the picture when it is open, and starts closed */
+@media (max-width:760px){
+  #app{grid-template-columns:0 minmax(0,1fr)}
+  #hist{position:fixed;left:0;top:46px;bottom:0;width:min(var(--hist-w,420px),calc(100vw - 36px));z-index:20;box-shadow:18px 0 40px rgba(0,0,0,.28)}
+  #resizer{display:none}
+  header{gap:10px;padding:0 10px}
+  .hint{display:none}
+}
+@media (max-width:520px){
+  header .brand b,header .brand span,.cmp .s{display:none}
+  .cmp .side.wt .s{display:inline}
+}
 </style>
-<body>
-<p>The history page: commits on the left, the picture of what changed between two of them on the right.</p>
-</body>
+
+<div id="app">
+  <header>
+    <div class="brand"><img alt=""><b>Atlas</b><span>history</span></div>
+    <button class="ctl" id="histbtn" type="button" aria-controls="hist"><svg viewBox="0 0 16 14" width="16" height="14" aria-hidden="true"><rect x=".5" y=".5" width="15" height="13" fill="none" stroke="currentColor"/><rect class="pane" x="2" y="2" width="4.5" height="10" fill="currentColor"/></svg></button>
+    <div class="cmp" id="cmp" aria-live="polite"></div>
+    <div class="spacer"></div>
+    <a class="ctl" id="open" target="_blank" rel="noopener" title="open this picture alone in a new tab">open ↗</a>
+  </header>
+  <section id="hist" aria-label="history">
+    <div class="top"><b>History</b><label><input type="checkbox" id="all"> all branches</label></div>
+    <div id="rows" tabindex="0" role="listbox" aria-label="commits">
+      <svg id="lanes" aria-hidden="true"></svg>
+      <div id="list"></div>
+      <div id="foot"><button id="more" type="button" hidden></button><span id="status"></span></div>
+    </div>
+    <div class="hint">
+      <span><kbd>↑</kbd> <kbd>↓</kbd></span><span>move through the history</span>
+      <span><kbd>Enter</kbd></span><span>compare this commit (A) with the working tree (B)</span>
+      <span><kbd>⇧</kbd> <kbd>Enter</kbd> · <kbd>⇧</kbd> click</span><span>make this commit B</span>
+      <span><kbd>Esc</kbd></span><span>B alone</span>
+    </div>
+    <div id="resizer" title="drag to resize the history"></div>
+  </section>
+  <main>
+    <iframe id="pic" title="the Atlas picture of A and B"></iframe>
+    <div id="reading" hidden><div class="card"><span id="readwhat"></span><span class="bar"></span></div></div>
+  </main>
+</div>
+
+<script>
+(function(){
+"use strict";
+const PAGE = 300;   // commits per page of the history
+const ROW = 32;     // the height of a row in pixels, as in the CSS
+const WT = "worktree";
+// a line of descent takes the next of the viewer's hues
+const HUES = ["--hue-2", "--hue-5", "--hue-1", "--hue-3", "--hue-4", "--hue-6", "--hue-7"];
+const hue = c => `var(${HUES[c % HUES.length]})`;
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+const $ = id => document.getElementById(id);
+const app = $("app"), rowsEl = $("rows"), list = $("list"), svg = $("lanes"), frame = $("pic");
+const reading = $("reading"), openLink = $("open"), more = $("more"), statusEl = $("status"), allBox = $("all");
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch {} },
+};
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+const NS = "http://www.w3.org/2000/svg";
+const sv = (tag, attrs, parent) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); parent.appendChild(e); return e; };
+
+document.querySelector("header .brand img").src = document.querySelector("link[rel=icon]").href;
+
+// A and B, and the viewer's own hash, live in this page's hash, so a reload keeps them
+const own = new URLSearchParams(location.hash.slice(1));
+const S = {
+  all: store.get("atlas.history.all") !== "0",
+  pages: 1,
+  log: null,
+  rows: [],          // the working tree, then the commits, in the order they are drawn
+  at: new Map(),     // hash → row
+  lay: null,
+  known: new Map(),  // every commit seen, so A and B keep their names when their rows are not loaded
+  a: own.get("a") || null,
+  b: own.get("b") || WT,
+  cursor: 0,
+  first: true,
+};
+allBox.checked = S.all;
+
+/* ---- the picture ---- */
+// `sent` is the view the picture was asked with, `kept` the view this page's hash holds
+let shown = "", sent = own.get("v") || "", kept = sent, settled = false, veil = 0;
+const viewURL = () => { const q = new URLSearchParams({b: S.b}); if (S.a) q.set("a", S.a); return "/view?" + q; };
+// the viewer keeps its view in its own hash; while a picture is on its way, the hash it was sent with stands for it
+const viewHash = () => {
+  if (!settled) return sent;
+  try { return frame.contentWindow.location.hash; } catch { return sent; }
+};
+const remember = view => {
+  const q = new URLSearchParams();
+  if (S.a) q.set("a", S.a);
+  if (S.b !== WT) q.set("b", S.b);
+  if (view) q.set("v", view);
+  const s = q.toString();
+  try { history.replaceState(null, "", s ? "#" + s : location.pathname + location.search); } catch {}
+};
+const label = h => {
+  if (h === WT) return {short: "", subject: "working tree"};
+  const c = S.known.get(h);
+  return c || {short: h.slice(0, 7), subject: ""};
+};
+function show() {
+  const url = viewURL();
+  if (url === shown) return;
+  sent = viewHash(); shown = url; settled = false;
+  frame.src = url + sent;
+  openLink.href = url + sent;
+  remember(kept = sent);
+  const what = $("readwhat"); what.replaceChildren("reading ");
+  [S.a, S.b].filter(Boolean).forEach((h, i) => {
+    if (i) what.append(" and ");
+    what.append(el("b", null, h === WT ? "the working tree" : label(h).short));
+  });
+  what.append("…");
+  clearTimeout(veil);
+  veil = setTimeout(() => { if (!settled) reading.hidden = false; }, 150);
+}
+frame.addEventListener("load", () => {
+  try { if (frame.contentWindow.location.href === "about:blank") return; } catch {}
+  settled = true; clearTimeout(veil); reading.hidden = true;
+});
+const freshen = () => { openLink.href = shown + viewHash(); };
+for (const ev of ["pointerenter", "focus", "click"]) openLink.addEventListener(ev, freshen);
+// the viewer writes its view with replaceState, which raises no event: the page looks once a second,
+// so that a reload finds the reader where they were
+setInterval(() => {
+  if (!settled || document.hidden) return;
+  const v = viewHash();
+  if (v !== kept) remember(kept = v);
+}, 1000);
+
+/* ---- the lanes ----
+   One lane per line of descent. The rows come children first; a slot of `lanes` holds a line that waits
+   for a commit further down (`want`), in the colour of its line, leaving the row above from lane `from`.
+   A commit takes the lane of a line that waits for it, preferring one that reaches it as a first parent,
+   and the other lines that wait for it bend into it there. Its first parent continues its lane; a further
+   parent joins the line that already waits for it, or starts a new line in a free slot to its right.
+   A line whose commit lies beyond the loaded rows runs off the bottom. */
+function layout(rows) {
+  const n = rows.length, nodes = new Array(n), segs = [];
+  let lanes = [], joins = [], next = 0, width = 1;
+  const free = from => { let k = from; while (k < lanes.length && lanes[k]) k++; return k; };
+  for (let i = 0; i < n; i++) {
+    const c = rows[i], waiting = [];
+    lanes.forEach((l, k) => { if (l && l.want === c.hash) waiting.push(k); });
+    const lane = waiting.length ? (waiting.find(k => lanes[k].first) ?? waiting[0]) : free(0);
+    const color = waiting.length ? lanes[lane].color : next++;
+    nodes[i] = {lane, color};
+    if (i > 0) {
+      lanes.forEach((l, k) => { if (l) segs.push({r: i - 1, x1: l.from, x2: l.want === c.hash ? lane : k, color: l.color}); });
+      for (const j of joins) segs.push({r: i - 1, x1: j.from, x2: j.want === c.hash ? lane : j.to, color: j.color});
+    }
+    joins = [];
+    for (const k of waiting) lanes[k] = null;
+    lanes.forEach((l, k) => { if (l) l.from = k; });
+    [...new Set(c.parents || [])].forEach((p, j) => {
+      if (j === 0) { lanes[lane] = {want: p, color, first: true, from: lane}; return; }
+      const m = lanes.findIndex(l => l && l.want === p);
+      if (m >= 0) { joins.push({want: p, from: lane, to: m, color: lanes[m].color}); return; }
+      lanes[free(lane + 1)] = {want: p, color: next++, first: false, from: lane};
+    });
+    while (lanes.length && !lanes[lanes.length - 1]) lanes.pop();
+    width = Math.max(width, lanes.length, lane + 1);
+  }
+  lanes.forEach((l, k) => { if (l) segs.push({r: n - 1, x1: l.from, x2: k, color: l.color, tail: true}); });
+  for (const j of joins) segs.push({r: n - 1, x1: j.from, x2: j.to, color: j.color, tail: true});
+  return {nodes, segs, width};
+}
+
+let X = k => 14 + k * 16;
+const Y = i => i * ROW + ROW / 2;
+function drawLanes() {
+  const {nodes, segs, width} = S.lay, n = S.rows.length;
+  const sp = Math.max(8, Math.min(16, Math.floor(150 / width)));
+  X = k => 14 + k * sp;
+  const graphW = Math.min(X(width - 1) + 16, 260);
+  rowsEl.style.setProperty("--graph-w", graphW + "px");
+  svg.setAttribute("width", graphW);
+  svg.setAttribute("height", n * ROW + ROW);
+  svg.replaceChildren();
+  // one path per colour, and one per colour for the lines that run off the bottom
+  const paths = new Map();
+  for (const s of segs) {
+    const key = (s.color % HUES.length) + (s.tail ? "t" : "");
+    const x1 = X(s.x1), x2 = X(s.x2), y1 = Y(s.r), y2 = s.tail ? y1 + ROW : Y(s.r + 1), ym = (y1 + y2) / 2;
+    const d = x1 === x2 ? `M${x1} ${y1}V${y2}` : `M${x1} ${y1}C${x1} ${ym} ${x2} ${ym} ${x2} ${y2}`;
+    paths.set(key, (paths.get(key) || "") + d);
+  }
+  for (const [key, d] of paths) sv("path", {d, class: key.endsWith("t") ? "tail" : "", style: `stroke:${hue(parseInt(key, 10))}`}, svg);
+  sv("g", {id: "rings"}, svg);
+  nodes.forEach((nd, i) => {
+    const wt = S.rows[i].hash === WT;
+    sv("circle", {cx: X(nd.lane), cy: Y(i), r: wt ? 5 : 4.5, "data-i": i,
+      style: wt ? "fill:var(--panel);stroke:var(--ink-3);stroke-width:2" : `fill:${hue(nd.color)};stroke:var(--panel);stroke-width:1.5`}, svg);
+  });
+}
+
+/* ---- the rows ---- */
+function when(t) {
+  if (t == null) return "";
+  const d = new Date(t * 1000), now = new Date(), s = (now - d) / 1000;
+  if (s < 60) return "now";
+  if (s < 3600) return Math.floor(s / 60) + " min";
+  const day = x => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const days = Math.round((day(now) - day(d)) / 864e5);
+  if (days === 0) return Math.floor(s / 3600) + " h";
+  if (days === 1) return "yest.";
+  if (d.getFullYear() === now.getFullYear()) return `${d.getDate()} ${MONTHS[d.getMonth()]}`;
+  return `${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+}
+// the working tree's state: `dirty` is a flag or a count of files; a count may also come as `changed`
+function treeState(log) {
+  const count = typeof log.dirty === "number" ? log.dirty
+    : typeof log.changed === "number" ? log.changed
+    : Array.isArray(log.changed) ? log.changed.length : null;
+  if (!log.dirty && !count) return "clean";
+  if (count == null) return "uncommitted changes";
+  return count === 1 ? "1 file changed" : `${count} files changed`;
+}
+const KIND = {head: 0, branch: 1, remote: 2, tag: 3};
+const KIND_NAME = {head: "HEAD's branch", branch: "branch", remote: "remote branch", tag: "tag"};
+// A commit's refs as pills: HEAD's branch, then branches, remotes and tags. A remote that carries a branch
+// of the same commit rides in that branch's pill. A narrow history shows the first pill and "+n".
+function pills(c, color) {
+  const rs = (c.refs || []).filter(r => !(r.kind === "remote" && /\/HEAD$/.test(r.name)));
+  const heads = new Set(rs.filter(r => r.kind === "head").map(r => r.name));
+  const own = rs.filter(r => !(r.kind === "branch" && heads.has(r.name)));
+  const local = new Map(own.filter(r => r.kind === "head" || r.kind === "branch").map(r => [r.name, []]));
+  const refs = [];
+  for (const r of own) {
+    const cut = r.kind === "remote" ? r.name.indexOf("/") : -1;
+    if (cut > 0 && local.has(r.name.slice(cut + 1))) local.get(r.name.slice(cut + 1)).push(r.name.slice(0, cut));
+    else refs.push(r);
+  }
+  refs.sort((x, y) => (KIND[x.kind] ?? 4) - (KIND[y.kind] ?? 4));
+  const out = refs.slice(0, 3).map((r, i) => {
+    const e = el("span", "ref " + r.kind + (i ? " later" : ""));
+    e.style.setProperty("--c", hue(color));
+    const cut = r.kind === "remote" ? r.name.indexOf("/") : -1;
+    const remotes = r.kind === "head" || r.kind === "branch" ? local.get(r.name) : [];
+    if (cut > 0) e.append(el("i", "pre", r.name.slice(0, cut + 1)), r.name.slice(cut + 1));
+    else e.append(r.name);
+    for (const rm of remotes) e.append(el("i", "rm", rm));
+    e.title = `${KIND_NAME[r.kind] || r.kind} ${r.name}` + (remotes.length ? `, as ${remotes.map(rm => rm + "/" + r.name).join(" and ")}` : "");
+    return e;
+  });
+  const extra = (from, cls) => {
+    const e = el("span", "ref extra " + cls, "+" + (refs.length - from));
+    e.title = refs.slice(from).map(r => r.name).join("\n");
+    return e;
+  };
+  if (refs.length > 1) out.push(extra(1, "few"));
+  if (refs.length > 3) out.push(extra(3, "many"));
+  return out;
+}
+function drawRows() {
+  const frag = document.createDocumentFragment();
+  S.rows.forEach((c, i) => {
+    const r = el("div", "row"), msg = el("span", "msg");
+    r.id = "r" + i; r.dataset.i = i; r.setAttribute("role", "option");
+    msg.appendChild(el("span"));
+    if (c.hash === WT) {
+      r.classList.add("wt");
+      const t = el("span", "t"); t.append(el("b", null, "Working tree"), " · " + treeState(S.log));
+      msg.appendChild(t);
+      r.append(msg, el("span", "hash"), el("span", "when", "now"));
+    } else {
+      msg.append(...pills(c, S.lay.nodes[i].color), el("span", "t", c.subject));
+      r.append(msg, el("span", "hash", c.short), el("span", "when", when(c.time)));
+      r.title = `${c.hash}\n${c.author} · ${new Date(c.time * 1000).toLocaleString()}\n\n${c.subject}`;
+    }
+    frag.appendChild(r);
+  });
+  list.replaceChildren(frag);
+}
+
+/* ---- A, B and the cursor ---- */
+const ancestors = i => {
+  const seen = new Set([i]), todo = [i];
+  while (todo.length) for (const p of S.rows[todo.pop()].parents || []) {
+    const k = S.at.get(p);
+    if (k !== undefined && !seen.has(k)) { seen.add(k); todo.push(k); }
+  }
+  return seen;
+};
+// the rows between A and B: the commits one of them reaches and the other does not
+function between(ia, ib) {
+  const out = new Set();
+  if (ia === undefined || ib === undefined) return out;
+  const A = ancestors(ia), B = ancestors(ib);
+  for (const k of B) if (!A.has(k)) out.add(k);
+  for (const k of A) if (!B.has(k)) out.add(k);
+  out.delete(ia); out.delete(ib);
+  return out;
+}
+function side(h, which) {
+  const s = el("span", "side" + (h === WT ? " wt" : "")), l = label(h);
+  s.appendChild(el("span", "badge " + which, which.toUpperCase()));
+  if (l.short) s.appendChild(el("span", "h", l.short));
+  s.appendChild(el("span", "s", l.subject));
+  s.title = h === WT ? "the working tree" : `${h}\n${l.subject || ""}`;
+  return s;
+}
+function paint() {
+  const ia = S.a ? S.at.get(S.a) : undefined, ib = S.at.get(S.b), tint = between(ia, ib);
+  Array.prototype.forEach.call(list.children, (r, i) => {
+    const a = i === ia, b = i === ib, slot = r.firstChild.firstChild;
+    r.classList.toggle("sel-a", a);
+    r.classList.toggle("sel-b", b);
+    r.classList.toggle("range", tint.has(i));
+    r.setAttribute("aria-selected", a || b ? "true" : "false");
+    slot.className = a ? "badge a" : b ? "badge b" : "";
+    slot.textContent = a ? "A" : b ? "B" : "";
+  });
+  const rings = svg.querySelector("#rings");
+  if (rings) {
+    rings.replaceChildren();
+    for (const [i, color] of [[ia, "var(--ink-2)"], [ib, "var(--focus)"]]) if (i !== undefined)
+      sv("circle", {cx: X(S.lay.nodes[i].lane), cy: Y(i), r: 8, style: `fill:none;stroke:${color};stroke-width:2`}, rings);
+  }
+  const cmp = $("cmp");
+  cmp.replaceChildren();
+  if (S.a) cmp.append(side(S.a, "a"), el("span", "arrow", "→"));
+  cmp.append(side(S.b, "b"));
+  if (!S.a) cmp.append(el("span", "alone", "alone"));
+  document.title = S.a ? `${label(S.a).short} → ${S.b === WT ? "working tree" : label(S.b).short} · Atlas history` : "Atlas history";
+}
+function cursorTo(i, scroll) {
+  const old = list.children[S.cursor];
+  if (old) old.classList.remove("cur");
+  S.cursor = i;
+  const r = list.children[i];
+  if (!r) return;
+  r.classList.add("cur");
+  rowsEl.setAttribute("aria-activedescendant", r.id);
+  if (scroll) r.scrollIntoView({block: "nearest"});
+}
+function pick(a, b) {
+  S.b = b;
+  S.a = a === b ? null : a;
+  paint(); show();
+}
+
+// keys act while the history (or nothing) has the focus; inside the picture they are the viewer's
+document.addEventListener("keydown", e => {
+  if (e.target !== rowsEl && e.target !== document.body) return;
+  if (e.ctrlKey || e.metaKey || e.altKey || !S.rows.length || app.classList.contains("nohist")) return;
+  const n = S.rows.length, page = Math.max(1, Math.floor(rowsEl.clientHeight / ROW) - 1);
+  let to;
+  switch (e.key) {
+    case "ArrowDown": to = S.cursor + 1; break;
+    case "ArrowUp": to = S.cursor - 1; break;
+    case "PageDown": to = S.cursor + page; break;
+    case "PageUp": to = S.cursor - page; break;
+    case "Home": to = 0; break;
+    case "End": to = n - 1; break;
+    case "Enter": {
+      const h = S.rows[S.cursor].hash;
+      if (e.shiftKey) pick(S.a, h);
+      else pick(h === WT ? null : h, WT);
+      e.preventDefault();
+      return;
+    }
+    case "Escape":
+      if (S.a) pick(null, S.b);
+      e.preventDefault();
+      return;
+    default: return;
+  }
+  e.preventDefault();
+  cursorTo(Math.max(0, Math.min(n - 1, to)), true);
+});
+list.addEventListener("click", e => {
+  const r = e.target.closest(".row");
+  if (!r) return;
+  const i = +r.dataset.i, h = S.rows[i].hash;
+  cursorTo(i, false);
+  rowsEl.focus({preventScroll: true});
+  if (e.shiftKey) pick(S.a, h);
+  // the working tree can only be B: a click on it makes it B, or shows B alone when it is B already
+  else if (h === WT) pick(S.b === WT ? null : S.a, WT);
+  else pick(h, S.b);
+});
+
+/* ---- reading the history ---- */
+let asked = 0;
+async function load() {
+  const n = PAGE * S.pages, ask = ++asked;
+  more.disabled = true;
+  statusEl.textContent = "reading the history…";
+  let log;
+  try {
+    const r = await fetch(`/api/log?all=${S.all ? 1 : 0}&n=${n}`);
+    if (!r.ok) throw new Error(`${r.status} ${r.statusText}`.trim());
+    log = await r.json();
+  } catch (err) {
+    if (ask === asked) { statusEl.textContent = "the history could not be read: " + err.message; more.disabled = false; }
+    return;
+  }
+  if (ask !== asked) return;
+  const commits = log.commits || [];
+  for (const c of commits) S.known.set(c.hash, c);
+  const keep = S.rows[S.cursor] ? S.rows[S.cursor].hash : null;
+  S.log = log;
+  S.rows = [{hash: WT, parents: log.head ? [log.head] : [], refs: [], subject: "", time: null}, ...commits];
+  S.at = new Map(S.rows.map((c, i) => [c.hash, i]));
+  S.lay = layout(S.rows);
+  drawLanes();
+  drawRows();
+  paint();
+  const at = S.first ? (S.a && S.at.get(S.a)) : S.at.get(keep);
+  cursorTo(at ?? 0, S.first);
+  more.hidden = commits.length < n;
+  more.disabled = false;
+  more.textContent = `${PAGE} more`;
+  statusEl.textContent = commits.length < n ? (commits.length ? "the first commit" : "no commits yet") : "";
+  if (S.first) { S.first = false; rowsEl.focus({preventScroll: true}); }
+}
+more.addEventListener("click", () => { S.pages++; more.textContent = "reading…"; load(); });
+allBox.addEventListener("change", () => {
+  S.all = allBox.checked; S.pages = 1;
+  store.set("atlas.history.all", S.all ? "1" : "0");
+  load();
+});
+
+/* ---- the layout: a resizable history, closed by default in a narrow window ---- */
+{ const rz = $("resizer"); let drag = false;
+  const saved = parseInt(store.get("atlas.history.width"), 10);
+  if (saved > 0) app.style.setProperty("--hist-w", saved + "px");
+  rz.addEventListener("pointerdown", e => { drag = true; rz.setPointerCapture(e.pointerId); app.classList.add("drag"); e.preventDefault(); });
+  rz.addEventListener("pointermove", e => {
+    if (!drag) return;
+    const w = Math.round(Math.max(260, Math.min(window.innerWidth - 320, e.clientX)));
+    app.style.setProperty("--hist-w", w + "px");
+  });
+  const end = () => {
+    if (!drag) return;
+    drag = false; app.classList.remove("drag");
+    store.set("atlas.history.width", parseInt(getComputedStyle(app).getPropertyValue("--hist-w"), 10) || "");
+  };
+  rz.addEventListener("pointerup", end);
+  rz.addEventListener("pointercancel", end); }
+{ const btn = $("histbtn"), narrow = window.matchMedia("(max-width: 760px)");
+  let wide = store.get("atlas.history.open") !== "0", small = false;
+  const apply = () => {
+    const open = narrow.matches ? small : wide;
+    app.classList.toggle("nohist", !open);
+    btn.title = open ? "hide the history" : "show the history";
+    btn.setAttribute("aria-label", btn.title);
+    btn.setAttribute("aria-expanded", open ? "true" : "false");
+  };
+  btn.addEventListener("click", () => {
+    if (narrow.matches) small = !small;
+    else { wide = !wide; store.set("atlas.history.open", wide ? "1" : "0"); }
+    apply();
+    if (!app.classList.contains("nohist")) rowsEl.focus({preventScroll: true});
+  });
+  narrow.addEventListener("change", () => { small = false; apply(); });
+  apply(); }
+
+paint();
+show();
+load();
+})();
+</script>
+</html>
