@@ -1,8 +1,10 @@
 """The command line."""
 
+import os
 from pathlib import Path
 
 import typer
+import uvicorn
 
 from harvest.harvester import build_harvester
 from harvest.model import Fetched, Outage
@@ -37,3 +39,10 @@ def report(station: str) -> None:
     path = harvester.report(station, Path(config["report_dir"]))
     typer.echo(summarise(harvester.store.history(station)).to_string())
     typer.echo(f"wrote {path}")
+
+
+@app.command()
+def serve() -> None:
+    """Serve the API on the database the settings name."""
+    os.environ["HARVEST_DB"] = load_settings()["database"]
+    uvicorn.run("harvest.api:app")

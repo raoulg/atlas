@@ -1232,6 +1232,18 @@ fn globals(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, types: 
         // where a name of the module's scope is kept: its own top level, or the module it is imported from
         let kept = |n: &str| if top.contains(n) { Some(format!("{}.{n}", m.id)) } else { m.bindings.get(n).cloned() };
         let facts = types.of(&crate::tree::path_str(&m.path));
+        // a module is code, not a value, and so are a class and a function: what an `import` binds,
+        // or what ty says is code
+        let imported: HashSet<&str> = walk(m.tree.root_node(), &["import_statement"])
+            .into_iter()
+            .flat_map(|st| field_children(st, "name"))
+            .filter_map(|n| match n.kind() {
+                "aliased_import" => n.child_by_field_name("alias").map(|a| text(a, src)),
+                _ => text(n, src).split('.').next(),
+            })
+            .collect();
+        let value = |x: TsNode| facts.and_then(|f| f.value((x.start_byte(), x.end_byte())));
+        let code = |x: TsNode| imported.contains(text(x, src)) || value(x).map_or(false, |v| v.is_code || v.is_class);
         let fns: Vec<(String, TsNode)> = store.nodes.values().filter(|n| n.module == m.id && matches!(n.kind, NodeKind::Function | NodeKind::Method)).filter_map(|n| Some((n.id.clone(), def_node(m, n)?))).collect();
         for (id, def) in &fns {
             let Some(body) = def.child_by_field_name("body") else { continue };
@@ -1245,7 +1257,35 @@ fn globals(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, types: 
                 }
             }
             own.retain(|n| !declared.contains(n));
-            let module_name = |n: &str| if own.contains(n) { None } else { kept(n) };
+            // the value of the module's scope a chain reaches, and the chain's name for it: the name it
+            // starts from (`LATEST[s]`), or, from a module, the value the module holds, when ty says it
+            // is data (`os.environ[k]`, not `mpl.colors` or `pd.DataFrame`)
+            let held = |x: TsNode| -> Option<(String, String)> {
+                let (mut root, mut first) = (x, x);
+                while let Some(inner) = match root.kind() {
+                    "attribute" => root.child_by_field_name("object"),
+                    "subscript" => root.child_by_field_name("value"),
+                    _ => None,
+                } {
+                    (first, root) = (root, inner);
+                }
+                let name = text(root, src);
+                if root.kind() != "identifier" || own.contains(name) {
+                    return None;
+                }
+                if !code(root) {
+                    return kept(name).map(|k| (k, name.to_string()));
+                }
+                let attr = first.child_by_field_name("attribute").filter(|_| first.kind() == "attribute")?;
+                if !value(first).map_or(false, |v| !v.is_code && !v.is_class) {
+                    return None;
+                }
+                let module = match facts.and_then(|f| f.def((first.start_byte(), first.end_byte()))) {
+                    Some(Target::Lib(lib)) => lib.clone(),
+                    _ => kept(name)?,
+                };
+                Some((format!("{module}.{}", text(attr, src)), text(first, src).to_string()))
+            };
             let line = |n: TsNode| n.start_position().row as u32 + 1;
             let mut writes: Vec<(String, String, u32)> = vec![];
             for a in walk(body, &["assignment", "augmented_assignment"]).into_iter().filter(mine) {
@@ -1253,14 +1293,13 @@ fn globals(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, types: 
                     writes.extend(kept(text(l, src)).map(|k| (k, text(l, src).to_string(), line(a))));
                 }
             }
-            for n in changed_roots(body, src, &|c| library_change(facts, c, src)) {
-                if let Some(k) = module_name(n).filter(|k| !writes.iter().any(|(w, _, _)| w == k)) {
-                    writes.push((k, n.to_string(), line(body)));
+            for x in changed(body, &|c| library_change(facts, c, src)) {
+                if let Some((k, n)) = held(x).filter(|(k, _)| !writes.iter().any(|(w, _, _)| w == k)) {
+                    writes.push((k, n, line(x)));
                 }
             }
             let mut reads: Vec<(String, String, u32)> = vec![];
             for x in walk(body, &["identifier"]) {
-                let name = text(x, src);
                 let named_here = x.parent().map_or(false, |p| {
                     // a name the code binds or labels, not the value it holds
                     matches!(p.kind(), "global_statement" | "keyword_argument" | "function_definition" | "parameters" | "default_parameter" | "typed_parameter" | "typed_default_parameter")
@@ -1270,8 +1309,9 @@ fn globals(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, types: 
                 if named_here {
                     continue;
                 }
-                if let Some(k) = module_name(name).filter(|k| !reads.iter().any(|(r, _, _)| r == k)) {
-                    reads.push((k, name.to_string(), line(x)));
+                let chain = x.parent().filter(|p| p.kind() == "attribute" && p.child_by_field_name("object").map(|o| o.id()) == Some(x.id())).unwrap_or(x);
+                if let Some((k, n)) = held(chain).filter(|(k, _)| !reads.iter().any(|(r, _, _)| r == k)) {
+                    reads.push((k, n, line(x)));
                 }
             }
             uses.push((id.clone(), writes, reads));
@@ -1318,28 +1358,25 @@ fn root_name<'a>(n: TsNode, src: &'a [u8]) -> Option<&'a str> {
     }
 }
 
-/// The names whose objects a body changes in place: the root of every assignment to an
-/// attribute or item (`self.x = ..`, `p.items[k] = ..`), and of every call to a mutator
-/// (`self.nodes.append(..)`) or to a method known to change its receiver. Changing a part
-/// changes the whole.
+/// The names whose objects a body changes in place: the root of everything it changes. Changing
+/// a part changes the whole.
 fn changed_roots<'a, 't>(body: TsNode<'t>, src: &'a [u8], changes: &dyn Fn(TsNode<'t>) -> Option<TsNode<'t>>) -> std::collections::BTreeSet<&'a str> {
-    let mut out = std::collections::BTreeSet::new();
+    changed(body, changes).into_iter().filter_map(|x| root_name(x, src)).collect()
+}
+
+/// What a body changes in place: every attribute or item it assigns (`self.x = ..`,
+/// `p.items[k] = ..`) or deletes, and what a call to a mutator (`self.nodes.append(..)`) or to a
+/// method known to change its receiver changes.
+fn changed<'t>(body: TsNode<'t>, changes: &dyn Fn(TsNode<'t>) -> Option<TsNode<'t>>) -> Vec<TsNode<'t>> {
+    let mut out = vec![];
     for a in walk(body, &["assignment", "augmented_assignment"]) {
-        if let Some(left) = a.child_by_field_name("left").filter(|l| matches!(l.kind(), "attribute" | "subscript")) {
-            out.extend(root_name(left, src));
-        }
+        out.extend(a.child_by_field_name("left").filter(|l| matches!(l.kind(), "attribute" | "subscript")));
     }
     // `del d[k]`, `del obj.x`
     for d in walk(body, &["delete_statement"]) {
-        for t in walk(d, &["attribute", "subscript"]).into_iter().filter(|t| t.parent().map_or(false, |p| p.kind() == "delete_statement" || p.kind() == "expression_list")) {
-            out.extend(root_name(t, src));
-        }
+        out.extend(walk(d, &["attribute", "subscript"]).into_iter().filter(|t| t.parent().map_or(false, |p| p.kind() == "delete_statement" || p.kind() == "expression_list")));
     }
-    for c in walk(body, &["call"]) {
-        if let Some(changed) = changes(c) {
-            out.extend(root_name(changed, src));
-        }
-    }
+    out.extend(walk(body, &["call"]).into_iter().filter_map(changes));
     out
 }
 

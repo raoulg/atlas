@@ -13,7 +13,7 @@ use std::path::PathBuf;
 use std::sync::OnceLock;
 
 use atlas_engine::principles::{check, Finding};
-use atlas_engine::{analyze, EdgeKind, EntryKind, Graph, Options, Touch};
+use atlas_engine::{analyze, EdgeKind, EntryKind, Graph, Options, Touch, World};
 
 fn side(name: &str) -> Graph {
     analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/python").join(name), &Options::default()).unwrap()
@@ -211,6 +211,12 @@ fn nothing_a_call_leaves_something_behind() {
     assert!(global("harvest.harvester.remember", "write") && global("harvest.api.latest", "read"));
     assert!(found(s, "nothing").is_empty(), "a call that keeps its value in a global leaves it behind");
     assert!(touches(c, "harvest.harvester.Harvester.collect", "global").is_empty(), "the clean side keeps nothing in a global");
+    // the shortcut's `serve` hands the API its database through the environment: a library's
+    // value it changes, `os.environ`, not the module `os`, which is code
+    let environ = |f: &str, dir: &str| touches(s, f, "global").iter().any(|t| t.artifact == "os.environ" && t.what == "os.environ" && t.dir_name() == dir);
+    assert!(environ("harvest.cli.serve", "write") && environ("harvest.api.get_store", "read"));
+    assert!(s.nodes.iter().flat_map(|n| n.touches.iter()).all(|t| t.kind != World::Global || t.artifact != "os"), "a module is no place");
+    assert!(c.nodes.iter().flat_map(|n| n.touches.iter()).all(|t| t.kind != World::Global), "the clean side names its database where it runs");
 }
 
 /// The packages of a part depend on one another in one direction. On the clean side the harvester

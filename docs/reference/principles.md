@@ -347,7 +347,11 @@ dead, or it changes something the code does not show: a value it was handed, rea
 an item or a loop; a library's own state. Then the change belongs where a reader sees it. A
 global the function changes is shown: a value a module keeps between calls is a place,
 `Global(module.name)`, written by whoever changes it and read by whoever uses it. Atlas draws it
-and does not judge it, since a global is sometimes the right choice.
+and does not judge it, since a global is sometimes the right choice. A library's module is code,
+so what it holds is the place: a function that sets `os.environ["DB"]` for another to read
+writes `Global(os.environ)`, and a call of `os.path.join` reads nothing. In Rust the place is a
+`static mut`, or a `static` of a type that changes in place (a lock, a cell, an atomic); one a
+function's body declares is named after the function.
 
 - **Rust.** `&mut T` and `-> Result<()>` say what a function changes and that it may fail.
   What stays hidden is a value behind a `RefCell`.
