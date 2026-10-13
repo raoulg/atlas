@@ -54,6 +54,11 @@ The rigorous half and the visual half are the same structure. Read `docs/design.
   benchmark: settle "Atlas or the code?" with a pair in `engine/tests/pairs`, the same program
   once as good practice writes it and once with the usual shortcut. The clean side must read as
   the algebra says, the shortcut must show as a shortcut (`engine/tests/pairs.rs`).
+- **Every change to Atlas moves the pairs.** The mockups in `engine/tests/pairs` (one program
+  per language, clean and sloppy) grow with Atlas. For every change to what Atlas reads, draws or
+  checks, answer three questions in them before it lands: what does this lay bare, how does the
+  perfect code look, how does the sloppy code look? Then show in `pairs_<language>.rs` that Atlas
+  tells the two apart.
 - **Keep it simple.** The basic elements first, rigorous and consistent across all
   future codebases, before any richness. One question per feedback round.
 - **Plan in Linear first**, project *Atlas — code at the level of types and flows*.
@@ -74,8 +79,9 @@ The rigorous half and the visual half are the same structure. Read `docs/design.
   walk <atlas> <repo> <dir>` opens every package, every route and every family in a route, and
   must report no view that throws, draws nothing, or opens a family into other moments.
 - `atlas check .` must find nothing on Atlas itself (`engine/tests/principles.rs` pins it).
-  A new principle is a rule in `engine/src/principles.rs`, a case in the fixture, and a
-  section in `docs/principles.md`; it checks what the graph holds, never a project.
+  A new principle is a rule in `engine/src/principles.rs`, a case in the fixture, a clean and a
+  sloppy case in the pairs, and a section in `docs/principles.md`; it checks what the graph
+  holds, never a project.
 - tree-sitter is pinned to the 0.25 crate line; `tree-sitter-python` 0.25,
   `tree-sitter-rust` 0.24, `tree-sitter-typescript` 0.23.
 - Languages: `engine/src/language.rs` is the trait; `python.rs`, `rust.rs` and
