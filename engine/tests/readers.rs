@@ -38,6 +38,7 @@ fn library_knowledge_is_data() {
     let mut names: Vec<&str> = vec![];
     names.extend(k::PACKAGES.iter().map(|(_, p, _)| *p));
     names.extend(k::OPERATIONS.iter().map(|(p, _, _)| *p));
+    names.extend(k::DRIVER_OPS.iter().map(|(p, _)| *p));
     names.extend(k::TOOL_SERVERS.iter().flat_map(|(p, c)| [*p, *c]));
     names.extend(k::PROMISIFIERS.iter().flat_map(|(p, f)| [*p, *f]));
     names.extend(k::PREFIXED_ROUTERS.iter().flat_map(|r| [r.package, r.class]));

@@ -1,0 +1,9 @@
+from typing import Any
+
+from nbformat import NotebookNode
+
+class NotebookClient:
+    def __init__(self, nb: NotebookNode, **kwargs: Any) -> None: ...
+    def execute(self, **kwargs: Any) -> NotebookNode: ...
+
+def execute(nb: NotebookNode, **kwargs: Any) -> NotebookNode: ...

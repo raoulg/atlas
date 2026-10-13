@@ -386,7 +386,8 @@ pub const PACKAGES: &[(Registry, &str, World)] = &[
     (Npm, "axios", NET), (Npm, "ky", NET), (Npm, "ofetch", NET), (Npm, "node-fetch", NET), (Npm, "undici", NET), (Npm, "got", NET), (Npm, "ws", NET),
     (PyPi, "openai", LLM), (PyPi, "anthropic", LLM),
     (Npm, "@anthropic-ai/sdk", LLM), (Npm, "openai", LLM), (Npm, "@google/generative-ai", LLM), (Npm, "@google/genai", LLM), (Npm, "@mistralai/mistralai", LLM), (Npm, "ollama", LLM),
-    (PyPi, "duckdb", DUCKDB), (PyPi, "neo4j", GRAPH), (PyPi, "mgclient", GRAPH), (PyPi, "sqlite3", SQLITE), (PyPi, "psycopg2", SQL), (PyPi, "sqlalchemy", SQL),
+    (PyPi, "duckdb", DUCKDB), (PyPi, "neo4j", GRAPH), (PyPi, "mgclient", GRAPH), (PyPi, "sqlite3", SQLITE), (PyPi, "psycopg2", SQL), (PyPi, "psycopg", SQL),
+    (PyPi, "asyncpg", SQL), (PyPi, "sqlalchemy", SQL), (PyPi, "redis", KV),
     (Crates, "rusqlite", SQLITE), (Crates, "duckdb", DUCKDB), (Crates, "sqlx", SQL), (Crates, "diesel", SQL), (Crates, "postgres", SQL), (Crates, "tokio_postgres", SQL),
     (Crates, "sea_orm", SQL),
     (Npm, "pg", SQL), (Npm, "postgres", SQL), (Npm, "mysql2", SQL), (Npm, "mysql", SQL), (Npm, "@prisma/client", SQL), (Npm, "drizzle-orm", SQL), (Npm, "kysely", SQL),
@@ -422,15 +423,26 @@ pub const DB_OPS: &[&str] = &[
     "read_transaction", "write_transaction", "register", "read_csv", "read_parquet", "read_json", "flush", "commit",
 ];
 
+/// A driver's own operations that reach the database beside DB_OPS, by package: asyncpg's
+/// queries that hand back their rows and its pool of connections.
+pub const DRIVER_OPS: &[(&str, &[&str])] = &[("asyncpg", &["fetch", "fetchrow", "fetchval", "create_pool"])];
+
+/// Whether a database driver's operation reaches the database: one of DB_OPS, or one of the
+/// driver's own.
+pub fn reaches_the_database(pkg: &str, op: &str) -> bool {
+    DB_OPS.contains(&op) || DRIVER_OPS.iter().any(|(p, ops)| *p == pkg && ops.contains(&op))
+}
+
 /// A graph database driver's managed transactions, by the way their work goes.
 pub const TRANSACTIONS: &[(&str, Dir)] = &[("execute_read", Dir::Read), ("read_transaction", Dir::Read), ("execute_write", Dir::Write), ("write_transaction", Dir::Write)];
 
 /// The access modes a graph database's driver is told, by the way they go.
 pub const ACCESS_MODES: &[(&str, Dir)] = &[("READ", Dir::Read), ("R", Dir::Read), ("READ_ACCESS", Dir::Read), ("WRITE", Dir::Write), ("W", Dir::Write), ("WRITE_ACCESS", Dir::Write)];
 
-/// A key-value store's operations, by the start of their name and the way they go.
-pub const KV_READS: &[&str] = &["get", "mget", "hget", "keys", "scan", "exists"];
-pub const KV_WRITES: &[&str] = &["set", "mset", "hset", "del", "remove", "clear", "incr", "decr", "expire", "lpush", "rpush", "sadd"];
+/// A key-value store's operations, by the start of their name and the way they go: a key's,
+/// and those of a hash, a list, a set and a sorted set kept under one.
+pub const KV_READS: &[&str] = &["get", "mget", "hget", "hmget", "hkeys", "hvals", "keys", "scan", "exists", "lrange", "llen", "smembers", "sismember", "scard", "zrange", "zscore"];
+pub const KV_WRITES: &[&str] = &["set", "mset", "hset", "hdel", "hincr", "del", "remove", "clear", "incr", "decr", "expire", "lpush", "rpush", "sadd", "srem", "zadd", "zrem"];
 
 /// Libraries that compute in memory: most of their calls stay in the program (`torch.cat`,
 /// `nn.Linear`); OPERATIONS and the Hub's tables name the few that cross to a place.
@@ -451,7 +463,8 @@ pub const MODEL_HUBS: &[(&str, &str, &str)] = &[("torch", "hub", "load")];
 pub const HF_LOADERS: &[&str] = &["csv", "json", "parquet", "text", "arrow", "pandas", "imagefolder", "audiofolder", "videofolder", "webdataset", "xml", "sql"];
 
 /// A library's operations that cross to a place by themselves, by package and operation: what
-/// prints, what shows or draws a figure, what runs a model, and what saves or loads a file.
+/// prints, what shows or draws a figure, what runs a model, what saves or loads a file, what runs
+/// another program, and what reads or writes a database through the connection it is handed.
 pub const OPERATIONS: &[(&str, &str, Crossing)] = &[
     ("click", "echo", Crossing::to(World::Screen)), ("click", "secho", Crossing::to(World::Screen)),
     ("typer", "echo", Crossing::to(World::Screen)), ("typer", "secho", Crossing::to(World::Screen)),
@@ -466,13 +479,22 @@ pub const OPERATIONS: &[(&str, &str, Crossing)] = &[
     ("curses", "addstr", Crossing::to(World::Screen)), ("curses", "addnstr", Crossing::to(World::Screen)), ("curses", "addch", Crossing::to(World::Screen)),
     ("curses", "insstr", Crossing::to(World::Screen)),
     ("matplotlib", "figure", Crossing::to(World::Figure)), ("matplotlib", "subplots", Crossing::to(World::Figure)), ("matplotlib", "subplot_mosaic", Crossing::to(World::Figure)),
+    // what runs a model on its input
     ("sentence_transformers", "encode", Crossing::to(World::Model)), ("sentence_transformers", "embed", Crossing::to(World::Model)),
+    ("transformers", "generate", Crossing::to(World::Model)),
+    // what saves or loads weights, a checkpoint or a dataset, or sends them to the Hub
     ("transformers", "save_pretrained", Crossing::write(World::Disk)), ("sentence_transformers", "save_pretrained", Crossing::write(World::Disk)),
     ("transformers", "push_to_hub", Crossing::to(World::Net)),
     ("torch", "load", Crossing::read(World::Disk)), ("torch", "load_from_disk", Crossing::read(World::Disk)),
     ("datasets", "load", Crossing::read(World::Disk)), ("datasets", "load_from_disk", Crossing::read(World::Disk)),
     ("torch", "save", Crossing::write(World::Disk)), ("torch", "save_to_disk", Crossing::write(World::Disk)),
     ("datasets", "save", Crossing::write(World::Disk)), ("datasets", "save_to_disk", Crossing::write(World::Disk)),
+    // what runs another program: a command line, a notebook in a kernel
+    ("os", "system", Crossing::to(PROCESS)), ("asyncio", "create_subprocess_exec", Crossing::to(PROCESS)), ("asyncio", "create_subprocess_shell", Crossing::to(PROCESS)),
+    ("nbclient", "execute", Crossing::to(PROCESS)),
+    // a frame read from a database by a statement or a table's name, and written to a table
+    ("pandas", "read_sql", Crossing::read(SQL)), ("pandas", "read_sql_query", Crossing::read(SQL)), ("pandas", "read_sql_table", Crossing::read(SQL)),
+    ("pandas", "to_sql", Crossing::write(SQL)),
 ];
 
 /// What a package's operation crosses by itself.

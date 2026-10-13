@@ -123,12 +123,18 @@ pub fn boundary(pkg: Option<&str>, parts: &[String]) -> Option<Crossing> {
     }
     match k::reaches(pkg, Some(Registry::PyPi)) {
         Some(World::Net) => return k::moves_on_the_web(last).then_some(Crossing::to(World::Net)),
-        Some(db @ World::Db(_)) => return k::DB_OPS.contains(&last).then_some(Crossing::to(db)),
+        // a driver's call that runs or opens something, or whose name says which way a key goes
+        Some(World::Db(db)) => return (k::reaches_the_database(pkg, last) || access(db, last, None).is_some()).then_some(Crossing::to(World::Db(db))),
         Some(World::Llm) => return Some(Crossing::to(World::Llm)),
         _ => {}
     }
     if k::ML_PACKAGES.contains(&pkg) {
         return ml(pkg, parts, last);
+    }
+    // what any other library's operation crosses by itself: `os.system` runs a program,
+    // `pd.read_sql` reads a database
+    if let Some(c) = k::operation(pkg, last) {
+        return Some(c);
     }
     if k::reaches(pkg, Some(Registry::PyPi)) == Some(World::Process) {
         return Some(Crossing::to(World::Process));
@@ -292,9 +298,11 @@ pub fn facts(kind: Crossing, pkg: Option<&str>, op: &str, literals: &[String]) -
     if let World::Db(db) = kind.world {
         let sides = SQL_DBS.contains(&db).then(|| sql(db, literals)).flatten();
         let Some(mut sides) = sides.filter(|s| !s.is_empty()) else {
-            // a key-value store's place is the key it is handed
+            // a key-value store's place is the key it is handed; without a statement, the way the
+            // data goes is what the operation's name says, else what its library's table says
+            // (`to_sql` writes)
             let key = if db == Db::Kv { literals.first().cloned().unwrap_or_default() } else { String::new() };
-            return Facts::of(Crossing { world: kind.world, dir: access(db, op, None) }, key);
+            return Facts::of(Crossing { world: kind.world, dir: access(db, op, None).or(kind.dir) }, key);
         };
         let (artifact, dir) = sides.remove(0);
         return Facts { kind: kind.world, artifact, dir, also: sides };
@@ -656,6 +664,32 @@ mod tests {
         let model = facts(c("net"), Some("transformers"), "from_pretrained", &lits(&["facebook/dinov2-small", "auto"]));
         assert_eq!((kind(&model), model.artifact.as_str(), dir(model.dir)), ("net", "huggingface.co", "read"));
         assert_eq!(kind(&facts(c("net"), Some("transformers"), "from_pretrained", &lits(&["./checkpoints/best"]))), "disk_read", "a local checkpoint is a file");
+    }
+
+    /// What a library's call reaches is a fact of its table: a driver's own queries, a key-value
+    /// store's verbs, a frame's database, a program run, a model run.
+    #[test]
+    fn a_table_says_where_a_call_goes() {
+        let b = |pkg: &str, xs: &[&str]| boundary(Some(pkg), &parts(xs));
+        let n = |pkg: &str, xs: &[&str]| name(b(pkg, xs));
+        assert_eq!(n("asyncpg", &["conn", "fetchval"]), Some("db_sql"), "asyncpg's query hands back its rows");
+        assert_eq!(n("neo4j", &["result", "fetch"]), None, "a driver's own query is no other driver's");
+        assert_eq!(n("psycopg", &["cur", "fetchall"]), None, "reading the rows a statement gave back");
+        assert_eq!(n("redis", &["r", "hgetall"]), Some("db_kv"));
+        assert_eq!(n("redis", &["redis", "Redis"]), None, "building a client moves nothing");
+        assert_eq!((dir(access(Db::Kv, "zadd", None)), dir(access(Db::Kv, "smembers", None))), ("write", "read"));
+        let to_sql = b("pandas", &["frame", "to_sql"]).unwrap();
+        let written = facts(to_sql, Some("pandas"), "to_sql", &lits(&["readings", "append"]));
+        assert_eq!((kind(&written), written.artifact.as_str(), dir(written.dir)), ("db_sql", "", "write"), "a table handed by its name is no statement");
+        let read = facts(b("pandas", &["pd", "read_sql"]).unwrap(), Some("pandas"), "read_sql", &lits(&["SELECT * FROM readings"]));
+        assert_eq!((read.artifact.as_str(), dir(read.dir)), ("readings", "read"));
+        assert_eq!(n("pandas", &["pd", "read_csv"]), Some("disk_read"), "a frame's file is still a file");
+        assert_eq!(n("os", &["os", "system"]), Some("process"));
+        assert_eq!(n("os", &["os", "listdir"]), Some("disk_read"));
+        assert_eq!(n("asyncio", &["asyncio", "create_subprocess_exec"]), Some("process"));
+        assert_eq!(n("asyncio", &["proc", "wait"]), None);
+        assert_eq!(n("nbclient", &["NotebookClient", "execute"]), Some("process"), "a notebook run in a kernel");
+        assert_eq!(n("transformers", &["model", "generate"]), Some("model"));
     }
 
     #[test]

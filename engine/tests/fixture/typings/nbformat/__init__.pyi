@@ -1,0 +1,3 @@
+from typing import Any
+
+class NotebookNode(dict[str, Any]): ...

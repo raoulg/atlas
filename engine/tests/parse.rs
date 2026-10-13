@@ -27,7 +27,8 @@ fn modules_classes_and_functions_are_found() {
     let g = fixture();
     assert_eq!(g.root, "fixture");
     let kinds = |k: NodeKind| g.nodes.iter().filter(|n| n.kind == k).count();
-    assert_eq!(kinds(NodeKind::Module), 24, "the package's twenty, a root script, a script and two notebooks");
+    // `services` holds the places a library reaches by its table alone
+    assert_eq!(kinds(NodeKind::Module), 25, "the package's twenty-two, a script and two notebooks");
     assert!(g.node("fixture.sinks").unwrap().is_pkg);
     assert_eq!(g.node("fixture.schema.Graph").unwrap().doc, "Nodes and edges.");
     assert_eq!(g.node("fixture.sinks.duck.DuckSink").unwrap().bases, vec!["Sink", "Mixin"]);
@@ -226,6 +227,36 @@ fn a_statement_is_read_where_it_is_whole() {
     let sides = |id: &str| g.node(id).unwrap().touches.iter().filter(|t| t.kind_name() == "db_sqlite" && t.op != "connect").map(|t| (t.op.as_str(), t.artifact.as_str(), t.dir_name())).collect::<Vec<_>>();
     assert_eq!(sides("fixture.store.seen"), [("executescript", "seen", "write")], "`con.executescript(SCHEMA)`");
     assert_eq!(sides("fixture.store.count"), [("execute", "seen", "read")], "`count(con, \"SELECT count(*) FROM seen\")`");
+}
+
+/// What a library's call reaches is a fact of its table: psycopg and asyncpg run statements on a
+/// SQL server, read by their grammar; redis reads and writes the key it is handed, and building
+/// its client moves nothing; pandas reads a frame from a database by a statement or a table's
+/// name and writes one to a table; `os.system` and asyncio's subprocesses run a program, nbclient
+/// runs a notebook in a kernel, and transformers' `generate` runs a model.
+#[test]
+fn a_library_table_says_where_its_calls_go() {
+    let g = fixture();
+    let t = |id: &str| g.node(&format!("fixture.services.{id}")).unwrap().touches.iter().map(|t| (t.kind_name(), t.op.as_str(), t.artifact.as_str(), t.dir_name())).collect::<Vec<_>>();
+    assert_eq!(t("latest"), [("db_sql", "connect", "", ""), ("db_sql", "execute", "readings", "read")], "psycopg");
+    assert_eq!(t("total"), [("db_sql", "fetchval", "readings", "read")], "asyncpg's query that hands back a value");
+    assert_eq!(t("record"), [("db_sql", "execute", "readings", "write")], "`INSERT INTO readings .. ($1)`");
+    assert!(t("cache").is_empty(), "`redis.Redis(..)` builds a client");
+    assert_eq!(t("remember"), [("db_kv", "set", "session", "write")]);
+    assert_eq!(t("recall"), [("db_kv", "get", "session", "read")]);
+    assert_eq!(t("frame"), [("db_sql", "read_sql", "readings", "read")], "`pd.read_sql(\"SELECT * FROM readings\", con)`");
+    // a table handed by its name is no statement: which way it goes is known, the table is what
+    // the code names it
+    assert_eq!(t("table"), [("db_sql", "read_sql_table", "", "read")]);
+    assert_eq!(t("keep"), [("db_sql", "to_sql", "", "write")]);
+    let what = |id: &str| g.node(&format!("fixture.services.{id}")).unwrap().touches.iter().map(|t| (t.kind_name(), t.op.as_str(), t.what.as_str())).collect::<Vec<_>>();
+    assert_eq!(what("table"), [("db_sql", "read_sql_table", "readings")]);
+    assert_eq!(what("rebuild"), [("process", "system", "make report")]);
+    assert_eq!(what("convert"), [("process", "create_subprocess_exec", "pandoc")], "`proc.wait()` runs nothing more");
+    assert_eq!(what("shell"), [("process", "create_subprocess_shell", "command")]);
+    assert_eq!(what("run_notebook"), [("process", "execute", "")], "`NotebookClient(nb).execute()`");
+    assert_eq!(what("run_quick"), [("process", "execute", "nb")], "`nbclient.execute(nb)`");
+    assert_eq!(what("complete"), [("model", "generate", "ids")], "`model.generate(ids, ..)`");
 }
 
 #[test]
