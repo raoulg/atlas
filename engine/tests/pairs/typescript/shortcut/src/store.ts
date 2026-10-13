@@ -17,6 +17,7 @@ const SELECT_ALL = "SELECT * FROM expenses ORDER BY date";
 /** The expenses, kept in a SQLite database. */
 export class ExpenseStore {
   private readonly db: Database.Database;
+  private rows?: Record<string, unknown>[];
 
   constructor() {
     this.db = new Database(process.env.DB_FILE ?? "data/expenses.db");
@@ -28,6 +29,7 @@ export class ExpenseStore {
   }
 
   all(): Record<string, unknown>[] {
-    return this.db.prepare(SELECT_ALL).all() as Record<string, unknown>[];
+    this.rows ??= this.db.prepare(SELECT_ALL).all() as Record<string, unknown>[];
+    return this.rows;
   }
 }

@@ -158,8 +158,9 @@ fn paths_and_requests_are_evaluated() {
     let lees: Vec<(&str, &[String])> = g.node("fixture-ts.server.opslag.lees").unwrap().touches.iter().map(|t| (t.artifact.as_str(), t.by.as_slice())).collect();
     let klanten = &["fixture-ts.server.opslag.klanten".to_string()][..];
     assert_eq!(lees, [("data/klanten.csv", klanten), ("", klanten)], "`lees(\"klanten.csv\")` under `DATA`");
-    // an object holds what its constructor was handed: a parameter property, and `this.map = map`
-    assert_eq!(t("server.opslag.Archief.bewaar"), [("disk_write".into(), "archief/".into())], "`constructor(private map: string)`");
+    // an object holds what its constructor was handed: a parameter property, and `this.map = map`;
+    // `new Archief("archief").bewaar("a.txt", ..)` hands the method the rest of the path
+    assert_eq!(t("server.opslag.Archief.bewaar"), [("disk_write".into(), "archief/a.txt".into())], "`constructor(private map: string)`");
     assert_eq!(t("server.opslag.Logboek.noteer"), [("disk_write".into(), "logs/log.txt".into())], "`this.map = map`");
     assert_eq!(t("server.opslag.bewaar"), [("disk_write".into(), "uit/regels.pdf".into())], "`new URL(\"../../uit/regels.pdf\", import.meta.url)`");
     let requests = edges(&g, EdgeKind::Requests);

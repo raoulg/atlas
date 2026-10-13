@@ -288,9 +288,15 @@ fn collect_types(n: TsNode, src: &[u8], out: &mut Vec<Vec<String>>) {
     }
 }
 
+/// Whether a type says what a value is: `any` says no more than leaving the type out. `unknown`
+/// does say: it is the type of what is still to be checked.
+fn says(t: TsNode, src: &[u8]) -> bool {
+    !(t.kind() == "predefined_type" && text(t, src) == "any")
+}
+
 /// A signature as data: each parameter by name and type (`(id: string, opt?: Opties)`), the types
 /// they name, and what it gives back. `...rest` takes whatever arguments are left; a `this`
-/// parameter is the value the function is called on.
+/// parameter is the value the function is called on; a parameter typed `any` has no type.
 fn signature(params: Option<TsNode>, ret: Option<TsNode>, src: &[u8]) -> (Vec<Param>, Option<Returns>, SigInfo) {
     let mut out = vec![];
     let mut info = SigInfo::default();
@@ -306,7 +312,7 @@ fn signature(params: Option<TsNode>, ret: Option<TsNode>, src: &[u8]) -> (Vec<Pa
                 let ty = p.child_by_field_name("type");
                 out.push(Param {
                     name: name.trim_start_matches("...").to_string(),
-                    ty: ty.and_then(|t| named_children(t).into_iter().next()).map(|t| text(t, src).to_string()).unwrap_or_default(),
+                    ty: ty.and_then(|t| named_children(t).into_iter().next()).filter(|t| says(*t, src)).map(|t| text(t, src).to_string()).unwrap_or_default(),
                     receiver: pattern.map_or(false, |x| x.kind() == "this"),
                     rest: pattern.map_or(false, |x| x.kind() == "rest_pattern"),
                     changes: false,
@@ -315,14 +321,14 @@ fn signature(params: Option<TsNode>, ret: Option<TsNode>, src: &[u8]) -> (Vec<Pa
             }
         }
     }
-    let returns = ret.and_then(|r| named_children(r).into_iter().next()).map(|r| returns(r, src));
+    let returns = ret.and_then(|r| named_children(r).into_iter().next()).and_then(|r| returns(r, src));
     info.rtypes = type_names(ret, src);
     (out, returns, info)
 }
 
 /// What a return type gives: a `Promise<T>` gives `T` once it arrives, `void` and `undefined` no
-/// value, `this` a value of the class it runs on.
-fn returns(rt: TsNode, src: &[u8]) -> Returns {
+/// value, `this` a value of the class it runs on; `any`, also once it arrives, says nothing.
+fn returns(rt: TsNode, src: &[u8]) -> Option<Returns> {
     let mut t = rt;
     let fails = t.kind() == "generic_type" && t.child_by_field_name("name").map_or(false, |n| text(n, src) == "Promise");
     while t.kind() == "generic_type" && t.child_by_field_name("name").map_or(false, |n| text(n, src) == "Promise") {
@@ -331,12 +337,15 @@ fn returns(rt: TsNode, src: &[u8]) -> Returns {
             None => break,
         }
     }
+    if !says(t, src) {
+        return None;
+    }
     let (value, own) = match (t.kind(), text(t, src)) {
         ("predefined_type", "void" | "undefined") => (String::new(), false),
         ("this_type", _) => (String::new(), true),
         (_, v) => (v.to_string(), false),
     };
-    Returns { written: text(rt, src).to_string(), value, own, fails }
+    Some(Returns { written: text(rt, src).to_string(), value, own, fails })
 }
 
 // ---------- pass 1: files, symbols, imports ----------
@@ -1295,8 +1304,26 @@ fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, repo: &Pat
             returned.entry(e.src.clone()).or_insert_with(|| e.dst.clone());
         }
     }
-    // bodies -> calls / instantiates / boundaries
     let eval = Eval::new(modules, repo);
+    // methods that change their receiver, directly or through another such method of the
+    // program's: until nothing changes, which ends, as the set only grows and the methods are finite
+    loop {
+        let mut found = vec![];
+        for id in &ids {
+            let n = &store.nodes[id];
+            let Some(m) = modules.get(&n.module).filter(|_| n.kind == NodeKind::Method && !store.mutating.contains(id)) else { continue };
+            let Some(body) = m.bodies.get(id).and_then(|(s, e)| m.tree.root_node().descendant_for_byte_range(*s, *e)) else { continue };
+            let b = Body::new(m, modules, store, n, body, &returned, &eval);
+            if !b.initializer && b.changed().contains("this") {
+                found.push(id.clone());
+            }
+        }
+        if found.is_empty() {
+            break;
+        }
+        store.mutating.extend(found);
+    }
+    // bodies -> calls / instantiates / boundaries
     let mut linked = Linked::default();
     for id in &ids {
         let n = &store.nodes[id];
@@ -1401,6 +1428,9 @@ fn link_calls<'t>(m: &'t Module, modules: &'t IndexMap<String, Module>, store: &
     for (name, bucket) in read.unresolved {
         store.not_followed(name, bucket);
     }
+    for t in read.used {
+        store.used.insert((id.to_string(), t));
+    }
     for t in read.touches {
         store.touch(id, t);
     }
@@ -1416,12 +1446,14 @@ fn link_calls<'t>(m: &'t Module, modules: &'t IndexMap<String, Module>, store: &
 }
 
 /// What reading a body finds besides its steps: what it touches, the calls Atlas could not
-/// follow, the inputs it changes in place, the calls of the package's functions with the
-/// arguments they pass, and the file and network calls whose path or URL waits for them.
+/// follow, the functions whose value it uses, the inputs it changes in place, the calls of the
+/// package's functions with the arguments they pass, and the file and network calls whose path
+/// or URL waits for them.
 #[derive(Default)]
 struct Read<'t> {
     touches: Vec<Touch>,
     unresolved: Vec<(String, Bucket)>,
+    used: Vec<String>,
     mutates: Vec<(String, String)>,
     args: Vec<Arg<'t>>,
     calls: Vec<(Touch, Vec<crate::paths::Built>)>,
@@ -1535,7 +1567,7 @@ impl<'a, 't> Body<'a, 't> {
             // `const p = await getProvider()`: what the function hands on
             let handed = || {
                 let call = walk(value, &["call_expression"]).into_iter().next()?;
-                let f = self.resolve(&member_parts(call.child_by_field_name("function")?, src))?;
+                let f = self.resolve(&member_parts(function_of(call)?, src))?;
                 self.returned.get(&f).cloned()
             };
             if let Some(r) = typed.or_else(handed) {
@@ -1613,9 +1645,13 @@ impl<'a, 't> Body<'a, 't> {
         out
     }
 
-    /// What a call gives back, by the name the body keeps it by.
+    /// What a call gives back, by the name the body keeps it by. Its type is one a step gives: what
+    /// the program's function `to` hands on, as the name it is kept by is declared or as the
+    /// function says. A call Atlas does not follow gives no type the program names: a cast or an
+    /// annotation on its value (`JSON.parse(..) as Config`) is asserted, not given.
     fn gives(&self, c: TsNode, to: Option<&str>) -> Vec<Held> {
-        kept_as(c, self.src).map(|name| Held::new(self.locals.get(&name).cloned().or_else(|| to.and_then(|t| self.returned.get(t).cloned())).unwrap_or_default(), name)).into_iter().collect()
+        let ty = |name: &String| to.and_then(|t| self.locals.get(name).cloned().or_else(|| self.returned.get(t).cloned())).unwrap_or_default();
+        kept_as(c, self.src).map(|name| Held::new(ty(&name), name)).into_iter().collect()
     }
 
     /// One site of the body, as the step it is.
@@ -1667,7 +1703,8 @@ impl<'a, 't> Body<'a, 't> {
         }
     }
 
-    /// The class of the value a method is called on, typed however the body knows it.
+    /// The class of the value a method is called on, typed however the body knows it: built with
+    /// `new`, or `super`, the class the body's own class extends.
     fn receiver(&self, o: TsNode) -> Option<String> {
         let src = self.src;
         let mut o = o;
@@ -1676,27 +1713,46 @@ impl<'a, 't> Body<'a, 't> {
         }
         match o.kind() {
             "this" => self.cls.clone(),
+            "super" => self.class(self.resolve(self.extends()?)).filter(|r| self.own(r)),
             "identifier" => self.locals.get(text(o, src)).cloned().or_else(|| value_type(self.m, text(o, src), self.modules, &self.store.nodes)),
-            "call_expression" => self.returned.get(&self.resolve(&member_parts(o.child_by_field_name("function")?, src))?).cloned(),
+            "call_expression" => self.returned.get(&self.resolve(&member_parts(function_of(o)?, src))?).cloned(),
+            "new_expression" => self.class(self.resolve(&member_parts(o.child_by_field_name("constructor")?, src))).filter(|r| self.own(r)),
             "member_expression" if o.child_by_field_name("object").map(|x| x.kind()) == Some("this") => self.attrs.get(text(o.child_by_field_name("property")?, src)).cloned(),
             _ => None,
         }
     }
 
+    /// The class the body's own class extends, as written: the first of its bases.
+    fn extends(&self) -> Option<&[String]> {
+        self.store.classes.get(self.cls.as_deref()?)?.bases.first().map(Vec::as_slice)
+    }
+
+    /// What call `c` reaches: the method of the class of the value it is called on, else what
+    /// the name it is called by is bound to; nothing when it is called through a value the body
+    /// cannot name (`EXPORTERS[format](..)`, `make()(..)`).
+    fn callee(&self, c: TsNode) -> Option<String> {
+        let f = function_of(c)?;
+        let method = (f.kind() == "member_expression").then(|| Some((f.child_by_field_name("object")?, text(f.child_by_field_name("property")?, self.src)))).flatten();
+        if let Some(t) = method.and_then(|(o, name)| self.store.method_of(&self.receiver(o)?, name)) {
+            return Some(t);
+        }
+        let parts = member_parts(f, self.src);
+        if parts.is_empty() { None } else { self.resolve(&parts) }
+    }
+
     /// `f(..)` or `x.m(..)`: the program's function or method, found on the class of the value it
-    /// is called on, or a library's operation, which may cross into the world.
+    /// is called on, or a call Atlas does not follow: a library's operation, which may cross into
+    /// the world, or a call through a value the body cannot name.
     fn called(&mut self, steps: &mut Steps, c: TsNode<'t>) {
         let src = self.src;
-        let Some(f) = c.child_by_field_name("function") else { return };
+        let Some(f) = function_of(c) else { return };
+        if read_in_place(f) {
+            return;
+        }
         let parts = member_parts(f, src);
-        let on = (f.kind() == "member_expression").then(|| Some((f.child_by_field_name("object")?, text(f.child_by_field_name("property")?, src).to_string()))).flatten();
-        let object = on.as_ref().map(|(o, _)| *o);
+        let object = (f.kind() == "member_expression").then(|| f.child_by_field_name("object")).flatten();
         let class = object.and_then(|o| self.receiver(o));
-        let target = match on.and_then(|(o, name)| self.receiver(o).and_then(|k| self.store.method_of(&k, &name))) {
-            Some(t) => Some(t),
-            None if parts.is_empty() => return,
-            None => self.resolve(&parts),
-        };
+        let target = self.callee(c);
         let hands = self.hands(&[object, c.child_by_field_name("arguments")], &steps.kept);
         match target {
             Some(t) if self.own(&t) => {
@@ -1704,6 +1760,9 @@ impl<'a, 't> Body<'a, 't> {
                 let on = class.filter(|k| self.store.nodes[&t].cls.as_deref().map_or(false, |b| b != k.as_str())).unwrap_or_default();
                 let on_receiver = object.map_or(false, |o| o.kind() == "this");
                 let kind = if self.store.nodes[&t].kind == NodeKind::Class { EdgeKind::Instantiates } else { EdgeKind::Calls };
+                if kind == EdgeKind::Calls && value_used(c) {
+                    self.read.used.push(t.clone());
+                }
                 steps.call(c, &t, kind, None, Step { on, on_receiver, hands, gives: self.gives(c, Some(&t)) });
                 let callee = if kind == EdgeKind::Instantiates { format!("{t}.constructor") } else { t.clone() };
                 if let Some(mut a) = argument(self.modules, self.store, &self.id, &callee, c, self.m, self.scope, &self.params) {
@@ -1711,15 +1770,56 @@ impl<'a, 't> Body<'a, 't> {
                     self.read.args.push(a);
                 }
             }
-            // a library's operation not read is a step where the body keeps what it gives
+            // a call not followed is a step where the body keeps what it gives, and is counted
+            // by the name the code calls it by
+            _ if parts.is_empty() => {
+                let name = written_callee(f, src);
+                steps.op(c, &name, hands, self.gives(c, None));
+                self.read.unresolved.push((name, self.bucket_of(f)));
+            }
             _ => {
                 steps.op(c, parts.last().map_or("", String::as_str), hands, self.gives(c, None));
-                // a field that holds what a package made is that package's, as a local is
-                let field = (parts.len() > 2 && parts[0] == "this").then(|| format!("this.{}", parts[1])).filter(|f| self.made.contains_key(f));
-                self.read.unresolved.push((parts.iter().take(2).cloned().collect::<Vec<_>>().join("."), self.bucket(field.as_deref().unwrap_or(&parts[0]))));
+                self.read.unresolved.push((parts.iter().take(2).cloned().collect::<Vec<_>>().join("."), self.bucket_path(&parts)));
                 self.crossed(c, &parts);
             }
         }
+    }
+
+    /// What a callee no name path reaches starts from, as `bucket` reads a name: the first name
+    /// path it is written on (`this.db.prepare(..).run` starts at `this.db`). A method on what a
+    /// call Atlas follows gives is on a value the body made; one on a literal or on what an
+    /// operator computes is the language's own (`"a,b".split`, `[..xs].sort`, `(a - b).toFixed`);
+    /// `super` is the class the body's class extends.
+    fn bucket_of(&self, n: TsNode) -> Bucket {
+        let parts = member_parts(n, self.src);
+        if !parts.is_empty() {
+            return self.bucket_path(&parts);
+        }
+        let logical = || n.child_by_field_name("operator").map_or(false, |o| matches!(text(o, self.src), "??" | "||" | "&&"));
+        let inner = match n.kind() {
+            // what a step Atlas follows gives, or what the body builds of its own classes, is a
+            // value the body made
+            "call_expression" if self.callee(n).map_or(false, |t| self.own(&t)) => return Bucket::Local,
+            "new_expression" if self.receiver(n).is_some() => return Bucket::Local,
+            "member_expression" | "subscript_expression" => n.child_by_field_name("object"),
+            "call_expression" => function_of(n),
+            "new_expression" => n.child_by_field_name("constructor"),
+            "parenthesized_expression" | "await_expression" | "non_null_expression" | "as_expression" | "satisfies_expression" => named_children(n).into_iter().next(),
+            // `a ?? b` is one of its operands, any other operator's value the language's own
+            "binary_expression" if logical() => n.child_by_field_name("left"),
+            "ternary_expression" => n.child_by_field_name("consequence"),
+            "binary_expression" | "unary_expression" | "string" | "template_string" | "number" | "array" | "object" | "regex" | "true" | "false" => return Bucket::Builtin,
+            "super" => return self.extends().and_then(|b| b.first()).map_or(Bucket::Unknown, |b| self.bucket(b)),
+            _ => None,
+        };
+        inner.map_or(Bucket::Unknown, |i| self.bucket_of(i))
+    }
+
+    /// What a call's name path starts from is bound to; a field that holds what a package made is
+    /// that package's, as a local is.
+    fn bucket_path(&self, parts: &[String]) -> Bucket {
+        let field = (parts.len() > 2 && parts[0] == "this").then(|| format!("this.{}", parts[1])).filter(|f| self.made.contains_key(f));
+        self.bucket(field.as_deref().unwrap_or(&parts[0]))
     }
 
     /// What the name a call not followed starts from is bound to: in the body (a parameter, a
@@ -1820,6 +1920,21 @@ impl<'a, 't> Body<'a, 't> {
         }
     }
 
+    /// The names whose values the body changes in place. A method of the program's own changes
+    /// the value it is called on when its body changes its own receiver; the language's table of
+    /// methods that change their receiver speaks only for the calls Atlas does not follow.
+    fn changed(&self) -> std::collections::BTreeSet<&'t str> {
+        let changes = |c: TsNode<'t>| -> Option<TsNode<'t>> {
+            let f = function_of(c).filter(|f| f.kind() == "member_expression")?;
+            let changing = match self.callee(c).filter(|t| self.own(t)) {
+                Some(t) => self.store.mutating.contains(&t),
+                None => f.child_by_field_name("property").map_or(false, |p| knowledge::mutators(knowledge::Registry::Npm).contains(&text(p, self.src))),
+            };
+            changing.then(|| f.child_by_field_name("object")).flatten()
+        };
+        changed_roots(self.body, self.src, &changes)
+    }
+
     /// What the body does besides its calls: the connections the platform's own constructors
     /// open (`new WebSocket(url)`), the page a component renders, and the inputs it changes in
     /// place (`T -> T` for the receiver or a parameter; an initializer builds its object).
@@ -1839,13 +1954,54 @@ impl<'a, 't> Body<'a, 't> {
         if let Some(jsx) = walk(self.body, &["jsx_element", "jsx_self_closing_element", "jsx_fragment"]).into_iter().next() {
             self.read.touches.push(Touch { op: "render".into(), line: jsx.start_position().row as u32 + 1, ..Touch::new(World::Screen, None) });
         }
-        for r in changed_roots(self.body, src) {
+        for r in self.changed() {
             let ty = if r == "this" { self.cls.clone().filter(|_| !self.initializer) } else { self.param_types.get(r).cloned() };
             if let Some(t) = ty {
                 self.read.mutates.push((t, r.to_string()));
             }
         }
     }
+}
+
+/// The function a call calls. The grammar reads an awaited generic call, `await f<T>(..)`, as a
+/// call of `await f`: the function is `f`.
+fn function_of(c: TsNode) -> Option<TsNode> {
+    let f = c.child_by_field_name("function")?;
+    match f.kind() {
+        "await_expression" => named_children(f).into_iter().next(),
+        _ => Some(f),
+    }
+}
+
+/// Whether a callee is read where it stands rather than called: a function written where it is
+/// called (`(() => ..)()`), whose steps are the body's own, and `import(..)`, which binds a module.
+fn read_in_place(f: TsNode) -> bool {
+    let mut f = f;
+    while f.kind() == "parenthesized_expression" {
+        match named_children(f).into_iter().next() {
+            Some(x) => f = x,
+            None => return false,
+        }
+    }
+    matches!(f.kind(), "arrow_function" | "function_expression" | "function" | "import")
+}
+
+/// The name of a call no name path reaches, as the code writes it: a method on a value written out
+/// is its name alone (`(..).trim`), any other callee its text (`EXPORTERS[format]`).
+fn written_callee(f: TsNode, src: &[u8]) -> String {
+    match f.child_by_field_name("property").filter(|_| f.kind() == "member_expression") {
+        Some(p) => text(p, src).to_string(),
+        None => text(f, src).split_whitespace().collect::<Vec<_>>().join(" "),
+    }
+}
+
+/// Whether what a call gives back is used: anything but a call standing as a statement.
+fn value_used(call: TsNode) -> bool {
+    let mut n = call;
+    while let Some(p) = n.parent().filter(|p| matches!(p.kind(), "await_expression" | "parenthesized_expression")) {
+        n = p;
+    }
+    n.parent().map_or(false, |p| p.kind() != "expression_statement")
 }
 
 /// The HTTP method of a request: `fetch`'s `init.method` (GET when it has none), or the verb
@@ -1878,9 +2034,10 @@ fn chain_root<'a>(n: TsNode, src: &'a [u8]) -> Option<&'a str> {
 }
 
 /// The names whose objects a body changes in place: the root of every assignment to a member
-/// or an item (`this.x = ..`, `p.items[k] += ..`, `p.n++`, `delete p.k`), and of every call to a
-/// method that changes its receiver (`p.rows.push(..)`). Changing a part changes the whole.
-fn changed_roots<'a>(body: TsNode, src: &'a [u8]) -> std::collections::BTreeSet<&'a str> {
+/// or an item (`this.x = ..`, `p.items[k] += ..`, `p.n++`, `delete p.k`), and of the value every
+/// call that changes something is made on, as `changes` says (`p.rows.push(..)`). Changing a part
+/// changes the whole.
+fn changed_roots<'a, 't>(body: TsNode<'t>, src: &'a [u8], changes: &dyn Fn(TsNode<'t>) -> Option<TsNode<'t>>) -> std::collections::BTreeSet<&'a str> {
     let member = |n: TsNode| matches!(n.kind(), "member_expression" | "subscript_expression");
     let mut out = std::collections::BTreeSet::new();
     for a in walk(body, &["assignment_expression", "augmented_assignment_expression"]) {
@@ -1893,10 +2050,7 @@ fn changed_roots<'a>(body: TsNode, src: &'a [u8]) -> std::collections::BTreeSet<
         }
     }
     for c in walk(body, &["call_expression"]) {
-        let Some(f) = c.child_by_field_name("function").filter(|f| f.kind() == "member_expression") else { continue };
-        if f.child_by_field_name("property").map_or(false, |p| knowledge::mutators(knowledge::Registry::Npm).contains(&text(p, src))) {
-            out.extend(f.child_by_field_name("object").and_then(|o| chain_root(o, src)));
-        }
+        out.extend(changes(c).and_then(|o| chain_root(o, src)));
     }
     out
 }

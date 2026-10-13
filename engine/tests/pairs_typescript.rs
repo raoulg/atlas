@@ -84,11 +84,27 @@ fn doors_say_what_goes_in() {
     assert!(edge(c, EdgeKind::Calls, "server.app.POST /api/expenses", "expense.parseExpense"), "the route checks the body into one");
     assert!(!asked(c, "doors", "ledger.Ledger.record"));
     // the shortcut: the door takes no type
-    assert_eq!(node(s, "ledger.Ledger.record").params.iter().map(|p| p.ty.as_str()).collect::<Vec<_>>(), ["any"]);
+    assert_eq!(node(s, "ledger.Ledger.record").params.iter().map(|p| p.ty.as_str()).collect::<Vec<_>>(), [""], "`any` says nothing");
     assert!(!s.edges.iter().any(|e| e.kind == EdgeKind::Takes && e.src == "shortcut.ledger.Ledger.record"), "`any` names no type");
+    assert!(asked(s, "doors", "ledger.Ledger.record"), "{:?}", asked_anywhere(s, "doors"));
     // and it is still the door the route goes through
     assert!(edge(s, EdgeKind::Calls, "server.app.POST /api/expenses", "ledger.Ledger.record"));
     assert!(node(s, "ledger.Ledger").entry.is_some(), "Ledger is still exported");
+}
+
+/// A door says what goes in, and `any` says nothing: it is a parameter without a type. `unknown`
+/// is a type: the one for what is still to be checked, which TypeScript writes where data from the
+/// world comes in (`parseConfig(raw: unknown)`, `parseExpense`, `parseRates`). The shortcut's
+/// `record(input: any)` is asked what it takes.
+#[test]
+fn doors_any_says_nothing() {
+    let (c, s) = (clean(), shortcut());
+    for f in ["config.parseConfig", "expense.parseExpense", "rates.source.parseRates"] {
+        assert_eq!(node(c, f).params.iter().map(|p| p.ty.as_str()).collect::<Vec<_>>(), ["unknown"], "{f}");
+        assert!(node(c, f).entry.is_some() && !asked(c, "doors", f), "{f} is a door that says what it takes");
+    }
+    let record = asked_anywhere(s, "doors").into_iter().find(|f| f.starts_with("shortcut.ledger.Ledger.record ")).unwrap_or_default();
+    assert!(record.contains("`input`"), "{record}");
 }
 
 /// A door says what comes out. TypeScript writes it as a return type on what the package exports
@@ -124,6 +140,25 @@ fn gives_a_used_value_has_a_type() {
     assert_eq!(touches(s, "rates.http.getJson", "net").len(), 1);
 }
 
+/// A function whose value is used says what it gives back, and a call says whether its value is
+/// used: `parseRates(await getJson(..))` and `return getJson(..)` use it, `this.store.add(filed)`
+/// standing as a statement does not. Every value the clean side uses comes from a function that
+/// says what it is; the shortcut uses what `getJson` gives without saying.
+#[test]
+fn gives_a_call_says_whether_its_value_is_used() {
+    let (c, s) = (clean(), shortcut());
+    let uses = |g: &Graph, src: &str, dst: &str| g.edges.iter().any(|e| e.kind == EdgeKind::Calls && e.uses && e.src == format!("{}.{src}", g.root) && e.dst == format!("{}.{dst}", g.root));
+    for g in [c, s] {
+        assert!(uses(g, "rates.http.HttpRates.latest", "rates.http.getJson"), "{}", g.root);
+        assert!(edge(g, EdgeKind::Calls, "ledger.Ledger.record", "store.ExpenseStore.add") && !uses(g, "ledger.Ledger.record", "store.ExpenseStore.add"), "{}: a call standing as a statement", g.root);
+    }
+    let unsaid = |g: &Graph| -> Vec<String> {
+        g.edges.iter().filter(|e| e.kind == EdgeKind::Calls && e.uses && g.node(&e.dst).map_or(false, |f| f.returns.is_none() && !f.ctor)).map(|e| format!("{} -> {}", e.src, e.dst)).collect()
+    };
+    assert!(unsaid(c).is_empty(), "{:?}", unsaid(c));
+    assert!(unsaid(s).contains(&"shortcut.rates.http.HttpRates.latest -> shortcut.rates.http.getJson".to_string()), "{:?}", unsaid(s));
+}
+
 // ---------- morphisms: a type is made by an arrow ----------
 
 /// Morphisms are functions: what a value is, is what the arrow that makes it gives. Data from the
@@ -145,7 +180,7 @@ fn morphisms_a_type_comes_from_a_step() {
 /// Morphisms are functions: a type no arrow gives is no type of the route. The shortcut's asserted
 /// types show as what they are: the value `JSON.parse` gives is a step that gives no type.
 #[test]
-#[ignore = "Atlas: a value whose type is only asserted (`JSON.parse(..) as Config`, `const t: RateTable = JSON.parse(..)`) leaves no trace: no step gives it, so the route shows a Config made by nothing"]
+#[ignore = "Atlas: a library's call is a step only when it is handed a value the body holds by name (`body::Steps::op`); `JSON.parse(readFileSync(..))` is handed another call's value, so the parsed JSON is no step, and the route shows a Config made by nothing"]
 fn morphisms_an_asserted_type_shows() {
     let s = shortcut();
     for f in ["config.loadConfig", "rates.file.FileRates.latest"] {
@@ -181,7 +216,6 @@ fn composition_a_route_reaches_its_place() {
 /// Composition is call order: a call whose callee the code does not say is a step all the same,
 /// one Atlas does not follow. The shortcut's call through the table shows as such a call.
 #[test]
-#[ignore = "Atlas: a call through a value looked up by a key (`EXPORTERS[format](report)`) is dropped: no step, and not counted among the calls not followed"]
 fn composition_a_call_not_followed_shows() {
     let s = shortcut();
     let exported = node(s, "ledger.Ledger.exportReport");
@@ -260,6 +294,28 @@ fn changes_show_in_the_signature() {
     assert!(asked_anywhere(c, "changes").is_empty(), "{:?}", asked_anywhere(c, "changes"));
     assert!(asked(s, "changes", "expense.normalize"), "{:?}", asked_anywhere(s, "changes"));
     assert!(edge(s, EdgeKind::Calls, "ledger.Ledger.record", "expense.normalize"), "still a step of record");
+}
+
+/// A call changes the value it is made on when the method it reaches changes its own; a method of
+/// the program's is read, not looked up among the language's methods that change their receiver.
+/// TypeScript keeps the expenses in the database, so `this.store.add(filed)` writes a row and the
+/// Ledger that holds the store stays as it was. The shortcut also keeps the rows it read in the
+/// store (`this.rows ??= ..`): reading changes the store, and with it the Ledger that asks.
+#[test]
+fn changes_are_what_the_method_reached_changes() {
+    let (c, s) = (clean(), shortcut());
+    let changes = |g: &Graph, f: &str| g.edges.iter().filter(|e| e.kind == EdgeKind::Mutates && e.src == format!("{}.{f}", g.root)).map(|e| e.dst.clone()).collect::<Vec<_>>();
+    for g in [c, s] {
+        assert!(edge(g, EdgeKind::Calls, "ledger.Ledger.record", "store.ExpenseStore.add"), "{}", g.root);
+        assert!(changes(g, "store.ExpenseStore.add").is_empty() && changes(g, "ledger.Ledger.record").is_empty(), "{}: `add` keeps a row and changes no value", g.root);
+    }
+    for f in ["store.ExpenseStore.all", "ledger.Ledger.report", "ledger.Ledger.expenses"] {
+        assert!(changes(c, f).is_empty(), "{f}");
+    }
+    // the shortcut: a read that changes what it reads through
+    assert_eq!(changes(s, "store.ExpenseStore.all"), ["shortcut.store.ExpenseStore"]);
+    assert_eq!(changes(s, "ledger.Ledger.report"), ["shortcut.ledger.Ledger"], "through `this.store.all()`");
+    assert_eq!(changes(s, "ledger.Ledger.expenses"), ["shortcut.ledger.Ledger"]);
 }
 
 // ---------- nothing ----------
