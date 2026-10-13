@@ -27,7 +27,7 @@ fn modules_classes_and_functions_are_found() {
     let g = fixture();
     assert_eq!(g.root, "fixture");
     let kinds = |k: NodeKind| g.nodes.iter().filter(|n| n.kind == k).count();
-    assert_eq!(kinds(NodeKind::Module), 21, "the package's eighteen, a root script and two notebooks");
+    assert_eq!(kinds(NodeKind::Module), 22, "the package's eighteen, a root script, a script and two notebooks");
     assert!(g.node("fixture.sinks").unwrap().is_pkg);
     assert_eq!(g.node("fixture.schema.Graph").unwrap().doc, "Nodes and edges.");
     assert_eq!(g.node("fixture.sinks.duck.DuckSink").unwrap().bases, vec!["Sink", "Mixin"]);
@@ -163,6 +163,15 @@ fn an_object_holds_what_its_constructor_was_handed() {
     assert!(stock.contains("writes stock/kept.txt"), "{stock}");
     let own = atlas_engine::story::route(&rs, "handed.world.Store.keep", 3).unwrap();
     assert!(own.contains("writes") && !own.contains("stock/kept.txt"), "{own}");
+}
+
+/// A script's command line, run as written, holds the defaults its parser declares: `args.out_file`
+/// is `--out-file`'s `default=`.
+#[test]
+fn a_script_runs_with_its_declared_defaults() {
+    let g = fixture();
+    let main: Vec<&str> = g.node("scripts.report.main").unwrap().touches.iter().map(|t| t.artifact.as_str()).collect();
+    assert_eq!(main, ["out/report.txt"]);
 }
 
 /// SQL is read by its grammar: a statement writes the table it changes and reads the ones it

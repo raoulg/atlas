@@ -501,6 +501,19 @@ pub enum PathFn {
     Temp,
 }
 
+/// A command-line parser whose parsed values are attributes of one object (`args.out`): its
+/// library, the object's class, the method that declares an argument, and that method's keywords
+/// for the argument's default and for the attribute's name.
+pub struct ArgParser {
+    pub package: &'static str,
+    pub namespace: &'static str,
+    pub declares: &'static str,
+    pub default: &'static str,
+    pub dest: &'static str,
+}
+
+pub const ARG_PARSERS: &[ArgParser] = &[ArgParser { package: "argparse", namespace: "Namespace", declares: "add_argument", default: "default", dest: "dest" }];
+
 /// How a path under the system's directory for temporary files is written: a place of its own,
 /// as `~` is the user's home.
 pub const TEMP_DIR: &str = "$TMPDIR";

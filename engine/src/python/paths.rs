@@ -104,7 +104,7 @@ impl<'a> Eval<'a> {
                 match text(attr, src) {
                     "parent" => self.of(at, obj, depth + 1).iter().map(parent).collect(),
                     "stem" | "name" | "suffix" | "suffixes" | "parts" => vec![named()],
-                    _ => self.defined(at, e, depth).unwrap_or_else(|| vec![named()]),
+                    a => self.parsed(at, obj, a, depth).or_else(|| self.defined(at, e, depth)).unwrap_or_else(|| vec![named()]),
                 }
             }
             "subscript" => {
@@ -148,6 +148,48 @@ impl<'a> Eval<'a> {
             return vec![lit(&rel)];
         }
         self.defined(at, e, depth).unwrap_or_else(|| vec![hole(name)])
+    }
+
+    /// An attribute of the object a command-line parser gives (`args.out`): the default of the
+    /// argument that declares it, what the program runs with when its command line leaves it out.
+    /// The attribute is named by the argument's `dest`, else its longest `--option` (`-` as
+    /// `_`), else its positional name.
+    fn parsed(&self, at: At, obj: TsNode, name: &str, depth: u32) -> Option<Vec<Built>> {
+        let Target::Here { file, at: offset } = self.def(at.m, obj)? else { return None };
+        let m = *self.by_file.get(&file)?;
+        let facts = self.types.of(&file)?;
+        let assigned = m.tree.root_node().descendant_for_byte_range(offset, offset)?.parent().filter(|p| p.kind() == "assignment")?;
+        let right = assigned.child_by_field_name("right")?;
+        let value = facts.value((right.start_byte(), right.end_byte()))?;
+        let of_lib = |t: &Target, lib: &str| matches!(t, Target::Lib(l) if l == lib || l.starts_with(&format!("{lib}.")));
+        let parser = knowledge::ARG_PARSERS.iter().find(|p| value.names.iter().any(|n| n == p.namespace) && value.classes.iter().any(|c| of_lib(c, p.package)))?;
+        for call in walk(m.tree.root_node(), &["call"]) {
+            let Some(f) = call.child_by_field_name("function").filter(|f| f.kind() == "attribute") else { continue };
+            if f.child_by_field_name("attribute").map(|a| text(a, &m.src)) != Some(parser.declares) || !facts.callees((f.start_byte(), f.end_byte())).iter().any(|c| of_lib(&c.target, parser.package)) {
+                continue;
+            }
+            let (mut flags, mut dest, mut default) = (vec![], None, None);
+            for a in call.child_by_field_name("arguments").map(named_children).unwrap_or_default() {
+                match a.kind() {
+                    "string" => flags.push(unquote(text(a, &m.src))),
+                    "keyword_argument" => match a.child_by_field_name("name").map(|k| text(k, &m.src)) {
+                        Some(k) if k == parser.dest => dest = a.child_by_field_name("value").map(|v| unquote(text(v, &m.src))),
+                        Some(k) if k == parser.default => default = a.child_by_field_name("value"),
+                        _ => {}
+                    },
+                    _ => {}
+                }
+            }
+            let option = |f: &String| f.trim_start_matches('-').replace('-', "_");
+            let declared = dest
+                .or_else(|| flags.iter().filter(|f| f.starts_with("--")).max_by_key(|f| f.len()).map(option))
+                .or_else(|| flags.iter().find(|f| !f.starts_with('-')).cloned())
+                .or_else(|| flags.first().map(option));
+            if declared.as_deref() == Some(name) {
+                return default.map(|d| self.of(At { m, scope: enclosing_def(call), params: &[] }, d, depth + 1));
+            }
+        }
+        None
     }
 
     /// The values of what a name or attribute is defined as.
