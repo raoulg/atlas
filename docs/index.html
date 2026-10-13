@@ -29,13 +29,20 @@ header nav a:hover{color:var(--ink)}
 h2{font-size:34px;font-weight:500;letter-spacing:-.015em;margin:0 0 6px;line-height:1.15}
 .lede{color:var(--ink-2);margin:0 0 28px;max-width:62ch}
 section{margin-bottom:88px}
-.pair{display:flex;flex-direction:column;gap:18px}
-figure{margin:0;background:var(--panel);border:1px solid var(--line)}
+.pair{display:flex;flex-direction:column;align-items:center;gap:18px;width:min(calc(100vw - 32px), 1840px);position:relative;left:50%;transform:translateX(-50%)}
+figure{margin:0;background:var(--panel);border:1px solid var(--line);max-width:100%}
 figcaption{border-bottom:1px solid var(--line);padding:12px 18px;display:flex;justify-content:space-between;align-items:baseline;gap:12px}
 figcaption b{font-weight:500}
-figure a{display:block;padding:14px 18px;overflow-x:auto}
-/* one scale for every picture: the widest fills the column, the others keep their size to it */
-figure img{width:calc(var(--w) / 1760 * 100%);min-width:calc(var(--w) * .42px);height:auto;display:block}
+figure a{display:block;padding:14px 18px}
+/* every picture at its actual size where the screen allows, so its text reads as text */
+figure img{width:min(calc(var(--w) * 1px), 100%);height:auto;display:block}
+.explain{color:var(--ink-2);font-size:15px;margin:14px 0 0;max-width:80ch}
+.explain code{font-family:var(--mono);font-size:13px}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--accent);vertical-align:1px;margin-right:4px}
+table.diff{border-collapse:collapse;margin-top:22px;font-size:15px;background:var(--panel);border:1px solid var(--line)}
+table.diff th,table.diff td{text-align:left;padding:9px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+table.diff th{font-weight:500;color:var(--ink-2)}
+table.diff td code{font-family:var(--mono);font-size:13px}
 .tag{font-family:var(--mono);font-size:12px;padding:2px 8px;border:1px solid currentColor;white-space:nowrap}
 .sloppy .tag{color:var(--accent)}
 .elegant .tag{color:var(--good)}
@@ -70,33 +77,40 @@ footer{border-top:1px solid var(--line);padding-top:20px;color:var(--ink-3);font
 
 <section>
   <h2>The same program. The same figure.</h2>
-  <p class="lede">Fetch a CSV from the web, keep it, clean it, smooth it, draw a figure. Written twice in Python. Atlas draws what each one does.</p>
+  <p class="lede">Fetch sunspot counts from the web, keep the CSV, clean it, smooth it, draw a figure. Written twice in Python: once as a sloppy script, once typed and elegant. Atlas draws what each one does.</p>
   <div class="pair">
     <figure class="sloppy">
-      <figcaption><b>A student's script</b><span class="tag">6 questions</span></figcaption>
-      <a href="showcase/python-sloppy.html"><img src="img/showcase/python-sloppy.png" style="--w:1044" alt="Atlas's picture of the student's script: the web and the files hang off two functions; nothing passes between the steps"></a>
+      <figcaption><b>A sloppy script</b><span class="tag">sloppy</span></figcaption>
+      <a href="showcase/python-sloppy.html"><img src="img/showcase/python-sloppy.png" style="--w:1323" alt="Atlas's picture of the sloppy script: every step reads and changes one global, Global(sunspots.df), and two of them pick their own files"></a>
     </figure>
     <figure class="elegant">
-      <figcaption><b>Typed, in small steps</b><span class="tag">no questions</span></figcaption>
-      <a href="showcase/python-clean.html"><img src="img/showcase/python-clean.png" style="--w:1758" alt="Atlas's picture of the clean pipeline: a DataFrame passes from load to smooth to Trend.save"></a>
+      <figcaption><b>Typed and elegant</b><span class="tag">elegant</span></figcaption>
+      <a href="showcase/python-clean.html"><img src="img/showcase/python-clean.png" style="--w:1758" alt="Atlas's picture of the typed pipeline: a DataFrame passes from load to smooth to Trend.save, and the command names every file"></a>
     </figure>
   </div>
-  <p class="note">the same places on both sides · click a picture to open it in Atlas</p>
+  <p class="explain">Both reach the same places: the web, the raw CSV, the figure. Inside they part. In the sloppy script every step reads and changes one global, <code>Global(sunspots.df)</code>; nothing is handed from step to step. In the typed one a <code>DataFrame</code> goes from <code>load</code> to <code>smooth</code> to <code>Trend.save</code>, and the command names every file. <span class="dot"></span>A red dot is a question Atlas asks the author: why do <code>get_data</code> and <code>plot</code> pick their own files, and what do the four functions give back?</p>
+  <p class="note">click a picture to open it in Atlas</p>
 </section>
 
 <section>
-  <h2>The same program in another language.</h2>
-  <p class="lede">Written quickly in Rust, the compiler forces every type. It does not decide where data lives.</p>
+  <h2>Ported to another language, the same picture.</h2>
+  <p class="lede">The typed pipeline ported to TypeScript and Rust. Atlas draws the same shape: the same steps, the same places. Where the pictures differ, the languages do.</p>
   <div class="pair">
-    <figure class="sloppy">
-      <figcaption><b>Rust, written quickly</b><span class="tag">3 questions</span></figcaption>
-      <a href="showcase/rust.html"><img src="img/showcase/rust.png" style="--w:1397" alt="Atlas's picture of the Rust pipeline: typed steps, and three functions that pick their own files"></a>
+    <figure class="elegant">
+      <figcaption><b>Python</b><span class="tag">port</span></figcaption>
+      <a href="showcase/python-clean.html"><img src="img/showcase/python-clean.png" style="--w:1758" alt="Atlas's picture of the Python pipeline"></a>
     </figure>
     <figure class="elegant">
-      <figcaption><b>Python, typed</b><span class="tag">no questions</span></figcaption>
-      <a href="showcase/python-clean.html"><img src="img/showcase/python-clean.png" style="--w:1758" alt="Atlas's picture of the clean Python pipeline"></a>
+      <figcaption><b>TypeScript</b><span class="tag">port</span></figcaption>
+      <a href="showcase/typescript.html"><img src="img/showcase/typescript.png" style="--w:1018" alt="Atlas's picture of the TypeScript port"></a>
     </figure>
   </div>
+  <table class="diff">
+    <tr><th></th><th>Python</th><th>TypeScript</th><th>Rust</th></tr>
+    <tr><th>The values</th><td>a pandas <code>DataFrame</code></td><td>the program's own records</td><td>the program's own records</td></tr>
+    <tr><th>The figure</th><td>a matplotlib <code>Figure</code></td><td>SVG text</td><td>a PNG drawn through a backend</td></tr>
+    <tr><th>Types</th><td>written by the author, read by ty</td><td>written by the author, checked by tsc</td><td>forced by the compiler</td></tr>
+  </table>
 </section>
 
 <section id="install">

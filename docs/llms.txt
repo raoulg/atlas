@@ -1,20 +1,42 @@
 # Atlas
 
-> Atlas reads code (Python, Rust, TypeScript) into a graph of places where data rests, functions as arrows between them, and routes from entry points to places; it draws that graph, and `atlas check` asks ten design principles of it. A human and a coding agent share the picture: pointing at a box is a statement both can act on. Atlas never guesses: a place, a type or a call the code does not say is drawn as one it does not say.
+> Atlas reads code (Python, TypeScript, Rust) into a small piece of mathematics and draws it: types are objects, functions are arrows between them, a program is what composing those arrows gives, and every place where data rests (a file, a table, a URL, the screen, a module's global) is part of the arrows that reach it. The picture is a proof, not an illustration: every box and arrow is derived from the code, nothing is guessed. A human and a coding agent share it, so that pointing at a box and saying "this should not exist" is a statement both can act on.
 
-The documents below are written to be read whole. Start with the design's first section, the shared language.
+## Read this first: Atlas lays problems bare, it does not solve them
+
+Agents who work on or with Atlas tend to make one mistake, and it is the mistake that matters most. When a picture looks wrong, the reflex is to make Atlas read the code better: a special case, a regex over strings, a table entry for one project, a heuristic that guesses what the author meant. With Atlas that reflex is the error.
+
+- **When the picture looks wrong, first ask whether the code says what is missing.** If it does not, because a type is not annotated, a path is looked up by a key at run time, or a call goes through a dictionary, then the gap in the picture is the finding. Atlas draws it as a gap: a place the code does not name, a call it cannot follow, a step without a type. The code is what should change.
+- **Never add a rule to Atlas so a picture looks the way someone expects.** An expected picture is no target. A rule that only fits one project, one library call or one picture is a hack. The engine knows languages and libraries, never a project.
+- **Only what can be traced exists.** A difference between careful and careless code is real for Atlas only if some fact in the graph differs. Where a language lets the careless form say exactly what the careful one says, Atlas shows nothing, and that is correct. Where a language forbids the careless form (Rust's signatures are always typed), there is nothing to lay bare.
+- **When Atlas does misread clean code, fix Atlas, generally.** Settle "Atlas or the code?" with a pair: the same program written as good practice has it and with the usual shortcut. The careful side must read as the mathematics says; the careless side must show as careless, never as clean and never not at all. The pairs live in `engine/tests/pairs`.
+- **A finding is a question for the author, not an error to suppress.** Atlas coaches; it does not fix.
+
+## What Atlas is
+
+Atlas is a metalanguage above programming languages: a proof machine whose proofs are pictures. The principles are stated once, on the graph, for every language. A new language brings a reader, never a principle. The same program written in Python, TypeScript and Rust gives the same picture where the languages agree, so a port can be checked against its original. Where the pictures differ, the languages differ.
+
+The mathematics:
+
+- **Category theory gives the structure.** Types are objects and functions are arrows. Call order is composition, and a route is a composite from an entry point to the places it reaches. Zooming out is a quotient (a family of types becomes one box); keeping to one route, one package or one kind of edge is a fiber.
+- **Effects are part of a function's type, as in an effect system.** A function's domain is its parameters plus what it reads; its codomain is what it returns plus what it writes, sends or runs.
+- **Type theory gives what Atlas checks.** A sum type is unwrapped where it arises; an override keeps its base's promise (Liskov); what a lens puts, it gets back; a function whose value is used says what it gives.
+
+## Using Atlas as an agent
+
+- `atlas check [repo] --json` lists where the code and the ten principles disagree.
+- `atlas changes [rev]` says what an edit did to the routes, their places and the findings. Run it after an edit to see whether the edit did what it was meant to, and nothing else.
+- `atlas mcp` serves the same over stdio: the tools `principles`, `check`, `explain`, `routes`, `route`, `view` and `changes`.
+- `atlas view [repo]` writes the picture for the human as one HTML file.
 
 ## Docs
 
-- [Design](https://raw.githubusercontent.com/raoulg/atlas/main/docs/reference/design.md): the shared language (places, arrows, composition, zoom as a quotient, filters as fibers), the algebra, how each language is read, and the views.
-- [Principles](https://raw.githubusercontent.com/raoulg/atlas/main/docs/reference/principles.md): the ten principles `atlas check` asks, each with its reasoning, its idioms, and what each language lets Atlas trace.
+- [Design](https://raw.githubusercontent.com/raoulg/atlas/main/docs/reference/design.md): the shared language, the algebra, how each language is read, and the views. Start with §0.
+- [Principles](https://raw.githubusercontent.com/raoulg/atlas/main/docs/reference/principles.md): the ten principles `atlas check` asks, each with its reasoning and idioms, and a table of what each language lets Atlas trace.
 - [Guide](https://raw.githubusercontent.com/raoulg/atlas/main/docs/reference/guide.md): how to read the picture, what Atlas reads in each language, entry points, `check`, `changes` and the MCP tools.
-
-## Use
-
-- `atlas view [repo]` draws a repository as one HTML file; `atlas check [repo] --json` gives the findings; `atlas changes [rev]` what an edit did to the routes; `atlas mcp` serves the tools `principles`, `check`, `explain`, `routes`, `route`, `view` and `changes` over stdio.
 
 ## Optional
 
-- [The pairs](https://github.com/raoulg/atlas/tree/main/engine/tests/pairs): the same programs written carefully and carelessly, the tests that state what Atlas shows of each.
+- [The pairs](https://github.com/raoulg/atlas/tree/main/engine/tests/pairs): programs written carefully and carelessly, and the tests that state what Atlas shows of each. The sunspot pipeline (`pairs/pipeline`) is one program written as a sloppy script, typed Python, TypeScript and Rust.
+- [The showcase](https://raoulg.github.io/atlas/): the same pictures, for people.
 - [README](https://raw.githubusercontent.com/raoulg/atlas/main/README.md)
