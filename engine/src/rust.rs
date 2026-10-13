@@ -16,7 +16,7 @@ use crate::body::{Crosses, Step, Steps};
 use crate::repo::Repo;
 use crate::knowledge;
 use crate::effects::{self, Crossing};
-use crate::model::{EdgeKind, Entry, EntryKind, Held, Node, NodeKind, Param, Returns, Touch, World};
+use crate::model::{Bucket, EdgeKind, Entry, EntryKind, Held, Node, NodeKind, Param, Returns, Touch, World};
 use crate::builder::{foreign_type, ClassInfo, GraphBuilder, SigInfo};
 use crate::knowledge::OwnTypes;
 use crate::tree::{
@@ -1020,15 +1020,55 @@ fn link_calls<'t>(modules: &'t IndexMap<String, Module>, store: &mut GraphBuilde
         store.add_edge(id, &t, EdgeKind::Mutates, Some(input));
     }
     if let Some(node) = store.nodes.get_mut(id) {
-        node.calls_handed = read.unresolved.iter().any(|u| n.params.iter().any(|p| &p.name == u));
+        node.calls_handed = read.unresolved.iter().any(|(u, _)| n.params.iter().any(|p| &p.name == u));
     }
-    for u in read.unresolved {
-        *store.unresolved.entry(u).or_insert(0) += 1;
+    for (name, bucket) in read.unresolved {
+        store.not_followed(name, bucket);
     }
     for t in read.touches {
         store.touch(id, t);
     }
     Linked { waiting: read.waiting, args: read.args }
+}
+
+/// The names a function binds: its parameters, its type parameters and those of the impl or
+/// trait it is in, and in its body each `let`, closure parameter, loop or match binding, and
+/// function declared there.
+fn bound_in(def: TsNode, src: &[u8]) -> HashSet<String> {
+    fn pattern(p: TsNode, src: &[u8], out: &mut HashSet<String>) {
+        match p.kind() {
+            "identifier" | "shorthand_field_identifier" => {
+                out.insert(text(p, src).to_string());
+            }
+            // the type a pattern takes apart (`Some(x)`) and a guard bind nothing
+            _ => {
+                let skipped = [p.child_by_field_name("type"), p.child_by_field_name("condition")];
+                for c in named_children(p).into_iter().filter(|c| !skipped.contains(&Some(*c))) {
+                    pattern(c, src, out);
+                }
+            }
+        }
+    }
+    let mut out = HashSet::new();
+    let mut scope = Some(def);
+    while let Some(s) = scope {
+        if s.id() == def.id() || matches!(s.kind(), "impl_item" | "trait_item") {
+            for t in s.child_by_field_name("type_parameters").map(named_children).unwrap_or_default() {
+                let name = if t.kind() == "type_identifier" { Some(t) } else { t.child_by_field_name("left").or_else(|| t.child_by_field_name("name")) };
+                out.extend(name.map(|n| text(n, src).to_string()));
+            }
+        }
+        scope = s.parent();
+    }
+    for n in walk(def, &["parameter", "closure_parameters", "let_declaration", "for_expression", "match_arm", "let_condition", "function_item"]) {
+        match n.kind() {
+            "closure_parameters" => named_children(n).into_iter().for_each(|p| pattern(p, src, &mut out)),
+            "function_item" if n.id() != def.id() => out.extend(n.child_by_field_name("name").map(|x| text(x, src).to_string())),
+            "function_item" => {}
+            _ => n.child_by_field_name("pattern").into_iter().for_each(|p| pattern(p, src, &mut out)),
+        }
+    }
+    out
 }
 
 /// What reading a body finds besides its steps: what it touches, the file and database calls
@@ -1039,7 +1079,7 @@ struct Read<'t> {
     touches: Vec<Touch>,
     waiting: Vec<(Touch, Vec<crate::paths::Built>)>,
     args: Vec<Arg<'t>>,
-    unresolved: Vec<String>,
+    unresolved: Vec<(String, Bucket)>,
     mutates: Vec<(String, String)>,
 }
 
@@ -1419,12 +1459,36 @@ impl<'a, 't> Body<'a, 't> {
                 let op = parts.last().cloned().unwrap_or_default();
                 self.library_step(steps, c, &op, None);
                 let full = expand(self.m, &parts);
-                self.read.unresolved.push(full.iter().take(2).cloned().collect::<Vec<_>>().join("."));
+                self.read.unresolved.push((full.iter().take(2).cloned().collect::<Vec<_>>().join("."), self.bucket(&parts)));
                 if let Some(tag) = effects::boundary_rust(&full) {
                     let touches = self.crossed(c, tag, &op);
                     self.keep(touches);
                 }
             }
+        }
+    }
+
+    /// What the path a call not followed starts from is bound to: a name the function binds, a
+    /// `use` of a library, one of the program's own items, or nothing the program binds: the
+    /// prelude, or a crate the program depends on, where a longer path starts (`std::fs::read`,
+    /// `serde_json::to_string`).
+    fn bucket(&self, parts: &[String]) -> Bucket {
+        let head = parts[0].as_str();
+        if bound_in(self.def, self.src).contains(head) {
+            return Bucket::Local;
+        }
+        if self.m.bindings.get(head).map_or(false, |b| b.starts_with("ext:")) {
+            return Bucket::Library;
+        }
+        let free = head != "Self" && self.resolve(parts).map_or(false, |r| r.starts_with("ext:"));
+        if !free {
+            Bucket::Unknown
+        } else if knowledge::RUST_PRELUDE.contains(&head) {
+            Bucket::Builtin
+        } else if parts.len() > 1 {
+            Bucket::Library
+        } else {
+            Bucket::Unknown
         }
     }
 

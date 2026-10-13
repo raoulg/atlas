@@ -20,7 +20,7 @@ use crate::effects::{self, Crossing};
 use crate::pytypes::{By, Facts, FileArg, Target, Ty, Types, Value};
 use paths::{At, Built, Eval};
 use crate::knowledge;
-use crate::model::{Dir, EdgeKind, Entry, EntryKind, Held, Node, NodeKind, Param, Returns, Touch, World};
+use crate::model::{Bucket, Dir, EdgeKind, Entry, EntryKind, Held, Node, NodeKind, Param, Returns, Touch, World};
 pub use crate::builder::{foreign_type, ClassInfo, GraphBuilder, SigInfo};
 use crate::knowledge::OwnTypes;
 use crate::tree::{
@@ -1841,10 +1841,10 @@ fn link_calls<'t>(modules: &'t IndexMap<String, Module>, store: &mut GraphBuilde
     let compares = (!in_module).then(|| crate::tree::compares(body, &m.src, steps.choices(), &COMPARES, &CHOICES));
     steps.finish(store, id);
     if let Some(node) = store.nodes.get_mut(id) {
-        node.calls_handed = read.unresolved.iter().any(|u| n.params.iter().any(|p| &p.name == u));
+        node.calls_handed = read.unresolved.iter().any(|(u, _)| n.params.iter().any(|p| &p.name == u));
     }
-    for key in read.unresolved {
-        *store.unresolved.entry(key).or_insert(0) += 1;
+    for (name, bucket) in read.unresolved {
+        store.not_followed(name, bucket);
     }
     for t in read.new_ext {
         store.ext_node(&t);
@@ -1877,7 +1877,7 @@ struct Read<'t> {
     args: Vec<Arg<'t>>,
     handed: Vec<(String, World, Dir)>,
     declared: Vec<(World, Dir)>,
-    unresolved: Vec<String>,
+    unresolved: Vec<(String, Bucket)>,
     used: Vec<String>,
     changes: Vec<(String, String)>,
     new_ext: Vec<String>,
@@ -2051,7 +2051,7 @@ impl<'a, 't> Body<'a, 't> {
             steps.edge(c, &cls, EdgeKind::Instantiates);
         }
         if lib.is_none() {
-            self.read.unresolved.push(parts.iter().take(2).cloned().collect::<Vec<_>>().join("."));
+            self.read.unresolved.push((parts.iter().take(2).cloned().collect::<Vec<_>>().join("."), self.bucket(fnode)));
         }
         let op = parts.last().map_or("", String::as_str);
         let Some(tag) = effects::boundary(lib.as_deref(), &parts).filter(|t| self.seen.moves(fnode, t, lib.as_deref(), op)) else { return };
@@ -2060,6 +2060,34 @@ impl<'a, 't> Body<'a, 't> {
         self.read.waiting.extend(crossed.waiting);
         self.read.declared.extend(crossed.said);
         self.read.handed.extend(crossed.handed);
+    }
+
+    /// What the name a call not followed starts from is bound to, as ty finds where it is
+    /// defined: in the body (a parameter, a local), in the builtins or a library, or elsewhere in
+    /// the program.
+    fn bucket(&self, f: TsNode) -> Bucket {
+        // the name its path starts from, through what it is written on: `G.nodes[n].get`,
+        // `G.nodes(..).items`
+        let mut head = f;
+        while let Some(o) = match head.kind() {
+            "attribute" => head.child_by_field_name("object"),
+            "subscript" => head.child_by_field_name("value"),
+            "call" => head.child_by_field_name("function"),
+            _ => None,
+        } {
+            head = o;
+        }
+        if head.kind() != "identifier" {
+            return Bucket::Unknown;
+        }
+        let in_body = |at: &usize| self.scope.map_or(true, |d| d.byte_range().contains(at));
+        match self.seen.facts.and_then(|x| x.def(Seen::range(head))) {
+            Some(Target::Lib(m)) if m == knowledge::PYTHON_BUILTINS_MODULE => Bucket::Builtin,
+            Some(Target::Lib(_)) => Bucket::Library,
+            Some(Target::Here { file, at }) if *file == crate::tree::path_str(&self.m.path) && in_body(at) => Bucket::Local,
+            None if self.own_params.iter().any(|p| p == text(head, self.src)) => Bucket::Local,
+            _ => Bucket::Unknown,
+        }
     }
 
     /// What the body does besides its calls one by one: what it runs inside the session or

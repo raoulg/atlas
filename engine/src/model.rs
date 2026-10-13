@@ -637,6 +637,66 @@ pub struct Stats {
     pub edges: BTreeMap<String, usize>,
     pub unresolved_calls_total: u32,
     pub unresolved_calls_top: Vec<(String, u32)>,
+    /// The same calls by what the name each starts from is bound to.
+    #[serde(default)]
+    pub unresolved_calls: Unresolved,
+}
+
+impl Stats {
+    /// The share of the calls not followed that the engine should have followed.
+    pub fn unknown_share(&self) -> f64 {
+        if self.unresolved_calls_total == 0 {
+            return 0.0;
+        }
+        f64::from(self.unresolved_calls.unknown) / f64::from(self.unresolved_calls_total)
+    }
+}
+
+/// The calls a reader could not follow, by what the name each starts from is bound to, as the
+/// reader knows it at the call. Only `unknown` counts against the engine.
+#[derive(Serialize, Deserialize, TS, Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[ts(export)]
+pub struct Unresolved {
+    /// The language's own, which nothing in the program binds: `len`, `Some`, `console`.
+    pub builtin: u32,
+    /// Imported from a library, or holding a value a library made: `click.echo`, `logger.info`.
+    pub library: u32,
+    /// Bound in the body: a parameter, the receiver, a local.
+    pub local: u32,
+    /// The rest: one of the program's own names that did not resolve, a name bound nowhere that
+    /// is not the language's own, a call on a value an expression gives.
+    pub unknown: u32,
+}
+
+/// What the name a call not followed starts from is bound to: one of `Unresolved`'s counts.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Bucket {
+    Builtin,
+    Library,
+    Local,
+    Unknown,
+}
+
+impl Unresolved {
+    /// One more call in bucket `b`.
+    pub fn count(&mut self, b: Bucket) {
+        *match b {
+            Bucket::Builtin => &mut self.builtin,
+            Bucket::Library => &mut self.library,
+            Bucket::Local => &mut self.local,
+            Bucket::Unknown => &mut self.unknown,
+        } += 1;
+    }
+}
+
+/// The calls of graphs read side by side.
+impl std::ops::AddAssign for Unresolved {
+    fn add_assign(&mut self, o: Unresolved) {
+        self.builtin += o.builtin;
+        self.library += o.library;
+        self.local += o.local;
+        self.unknown += o.unknown;
+    }
 }
 
 /// One part of a repository: what one manifest roots (a crate, a Python package, an app),

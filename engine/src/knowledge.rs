@@ -639,3 +639,37 @@ pub const RUST_OWN_TYPES: OwnTypes = OwnTypes {
 
 /// TypeScript's: a UI framework's components and props, a schema library's schemas.
 pub const TYPESCRIPT_OWN_TYPES: OwnTypes = OwnTypes { packages: &["react", "react-dom", "preact", "vue", "svelte", "solid-js", "zod", "yup", "valibot", "superstruct", "io-ts"], names: &[] };
+
+// ---------- what a language binds without an import ----------
+
+/// Python's module of the names every module has without an import (`len`, `isinstance`), as ty
+/// names where they are defined.
+pub const PYTHON_BUILTINS_MODULE: &str = "builtins";
+
+/// Rust's names in scope without a `use`: the prelude's types, variants, traits and `drop`, and
+/// the primitive types (`u32::from`). Its macros (`println!`, `vec!`) are not calls.
+pub const RUST_PRELUDE: &[&str] = &[
+    "Box", "Vec", "String", "Option", "Some", "None", "Result", "Ok", "Err", "drop",
+    "Copy", "Send", "Sized", "Sync", "Unpin", "Drop", "Fn", "FnMut", "FnOnce", "AsMut", "AsRef", "From", "Into", "DoubleEndedIterator",
+    "ExactSizeIterator", "Extend", "IntoIterator", "Iterator", "Clone", "Default", "Eq", "Ord", "PartialEq", "PartialOrd", "ToOwned", "ToString",
+    "TryFrom", "TryInto", "FromIterator", "Future", "IntoFuture",
+    "bool", "char", "str", "u8", "u16", "u32", "u64", "u128", "usize", "i8", "i16", "i32", "i64", "i128", "isize", "f32", "f64",
+];
+
+/// TypeScript's names in scope without an import: the language's global objects and functions,
+/// and those of the hosts it runs in (a browser, Node).
+pub const TYPESCRIPT_GLOBALS: &[&str] = &[
+    "globalThis", "eval", "isFinite", "isNaN", "parseFloat", "parseInt", "decodeURI", "decodeURIComponent", "encodeURI", "encodeURIComponent",
+    "Object", "Function", "Boolean", "Symbol", "Error", "AggregateError", "EvalError", "RangeError", "ReferenceError", "SyntaxError", "TypeError",
+    "URIError", "Number", "BigInt", "Math", "Date", "String", "RegExp", "Array", "Int8Array", "Uint8Array", "Uint8ClampedArray", "Int16Array",
+    "Uint16Array", "Int32Array", "Uint32Array", "Float32Array", "Float64Array", "BigInt64Array", "BigUint64Array", "Map", "Set", "WeakMap", "WeakSet",
+    "WeakRef", "FinalizationRegistry", "ArrayBuffer", "SharedArrayBuffer", "DataView", "Atomics", "JSON", "Promise", "Reflect", "Proxy", "Intl",
+    "structuredClone",
+    "console", "window", "self", "document", "navigator", "location", "history", "localStorage", "sessionStorage", "indexedDB", "caches", "crypto",
+    "performance", "customElements", "fetch", "Request", "Response", "Headers", "URL", "URLSearchParams", "FormData", "Blob", "File", "FileReader",
+    "TextEncoder", "TextDecoder", "AbortController", "AbortSignal", "Event", "CustomEvent", "EventTarget", "EventSource", "WebSocket", "Worker",
+    "Image", "Audio", "atob", "btoa", "setTimeout", "clearTimeout", "setInterval", "clearInterval", "queueMicrotask", "requestAnimationFrame",
+    "cancelAnimationFrame", "alert", "confirm", "prompt", "getComputedStyle", "matchMedia", "ResizeObserver", "IntersectionObserver",
+    "MutationObserver",
+    "process", "Buffer", "require", "module", "exports", "global", "__dirname", "__filename", "setImmediate", "clearImmediate",
+];

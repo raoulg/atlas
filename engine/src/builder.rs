@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use indexmap::IndexMap;
 
-use crate::model::{Edge, EdgeKind, Graph, Node, NodeKind, Stats, Touch, World};
+use crate::model::{Bucket, Edge, EdgeKind, Graph, Node, NodeKind, Stats, Touch, Unresolved, World};
 
 /// Per-class facts that only matter during resolution.
 #[derive(Default, Clone, Debug)]
@@ -32,7 +32,9 @@ pub struct GraphBuilder {
     pub edge_set: HashSet<(String, String, EdgeKind)>,
     pub classes: HashMap<String, ClassInfo>,
     pub sigs: HashMap<String, SigInfo>,
+    /// The calls not followed: by the name each is written with, and by what that name is bound to.
     pub unresolved: HashMap<String, u32>,
+    pub unresolved_by: Unresolved,
     pub files: BTreeMap<String, String>,
     /// Module id -> local name -> fully qualified target, kept for re-export lookups.
     pub bindings: HashMap<String, HashMap<String, String>>,
@@ -69,6 +71,13 @@ impl GraphBuilder {
         if let Some(n) = self.nodes.get_mut(id).filter(|n| matches!(n.kind, NodeKind::Function | NodeKind::Class) && n.entry.is_none()) {
             n.entry = Some(crate::model::Entry { kind: crate::model::EntryKind::Export, label });
         }
+    }
+
+    /// A call the reader could not follow, by the name it is written with (its first two parts)
+    /// and what the name it starts from is bound to.
+    pub fn not_followed(&mut self, name: String, bucket: Bucket) {
+        *self.unresolved.entry(name).or_insert(0) += 1;
+        self.unresolved_by.count(bucket);
     }
 
     /// Record a boundary call on a node; the same call again counts up.
@@ -133,6 +142,7 @@ impl GraphBuilder {
             stats: Stats {
                 unresolved_calls_total: self.unresolved.values().sum(),
                 unresolved_calls_top: top.into_iter().take(25).collect(),
+                unresolved_calls: self.unresolved_by,
                 ..Default::default()
             },
             ..Default::default()

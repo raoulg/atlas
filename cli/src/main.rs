@@ -284,6 +284,15 @@ fn main() -> Result<()> {
                 s.unresolved_calls_total,
                 s.unresolved_calls_top.iter().take(8).map(|(k, v)| format!("{k}×{v}")).collect::<Vec<_>>().join(", ")
             );
+            let u = &s.unresolved_calls;
+            eprintln!(
+                "  builtin {} · library {} · local {} · unknown {} ({:.1}% of the calls not followed)",
+                u.builtin,
+                u.library,
+                u.local,
+                u.unknown,
+                100.0 * s.unknown_share()
+            );
             eprintln!("entries {} · make targets {}", g.nodes.iter().filter(|n| n.entry.is_some()).count(), g.make.len());
             eprintln!("wrote {}", out.display());
         }

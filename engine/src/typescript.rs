@@ -23,7 +23,7 @@ use crate::body::{Crosses, Step, Steps};
 use crate::repo::Repo;
 use crate::knowledge;
 use crate::effects::{self, Crossing};
-use crate::model::{EdgeKind, Entry, EntryKind, Held, Node, NodeKind, Param, Returns, Touch, World};
+use crate::model::{Bucket, EdgeKind, Entry, EntryKind, Held, Node, NodeKind, Param, Returns, Touch, World};
 use crate::tree::{
     evaluation_order, literals, named_children, nth_of_kind, span, text, unquote,
     walk, what_of, ChoiceSyntax, CompareSyntax, Part,
@@ -1385,10 +1385,10 @@ fn link_calls<'t>(m: &'t Module, modules: &'t IndexMap<String, Module>, store: &
     let compares = (n.kind != NodeKind::Module).then(|| crate::tree::compares(body, &m.src, steps.choices(), &COMPARES, &CHOICES));
     steps.finish(store, id);
     if let Some(node) = store.nodes.get_mut(id) {
-        node.calls_handed = read.unresolved.iter().any(|u| n.params.iter().any(|p| &p.name == u));
+        node.calls_handed = read.unresolved.iter().any(|(u, _)| n.params.iter().any(|p| &p.name == u));
     }
-    for u in read.unresolved {
-        *store.unresolved.entry(u).or_insert(0) += 1;
+    for (name, bucket) in read.unresolved {
+        store.not_followed(name, bucket);
     }
     for t in read.touches {
         store.touch(id, t);
@@ -1410,7 +1410,7 @@ fn link_calls<'t>(m: &'t Module, modules: &'t IndexMap<String, Module>, store: &
 #[derive(Default)]
 struct Read<'t> {
     touches: Vec<Touch>,
-    unresolved: Vec<String>,
+    unresolved: Vec<(String, Bucket)>,
     mutates: Vec<(String, String)>,
     args: Vec<Arg<'t>>,
     calls: Vec<(Touch, Vec<crate::paths::Built>)>,
@@ -1669,10 +1669,63 @@ impl<'a, 't> Body<'a, 't> {
             // a library's operation not read is a step where the body keeps what it gives
             _ => {
                 steps.op(c, parts.last().map_or("", String::as_str), hands, self.gives(c, None));
-                self.read.unresolved.push(parts.iter().take(2).cloned().collect::<Vec<_>>().join("."));
+                self.read.unresolved.push((parts.iter().take(2).cloned().collect::<Vec<_>>().join("."), self.bucket(&parts[0])));
                 self.crossed(c, &parts);
             }
         }
+    }
+
+    /// What the name a call not followed starts from is bound to: in the body (a parameter, a
+    /// local, the receiver), imported from a package, the module's own, or nothing the program
+    /// binds: the language's globals. A name that holds a value a package made is the package's.
+    fn bucket(&self, head: &str) -> Bucket {
+        let made = self.made.contains_key(head);
+        if head == "this" || self.params.iter().any(|p| p == head) || self.bound_in().contains(head) {
+            return if made { Bucket::Library } else { Bucket::Local };
+        }
+        match self.m.bindings.get(head) {
+            Some(Bound::Ext(_)) => Bucket::Library,
+            Some(Bound::Own(_)) => Bucket::Unknown,
+            None if made => Bucket::Library,
+            None if !self.m.symbols.contains_key(head) && knowledge::TYPESCRIPT_GLOBALS.contains(&head) => Bucket::Builtin,
+            None => Bucket::Unknown,
+        }
+    }
+
+    /// The names the body binds: its parameters, each variable it declares, the parameters of
+    /// the functions in it, a caught error, a loop's variable, and the functions it declares.
+    fn bound_in(&self) -> HashSet<String> {
+        fn pattern(p: TsNode, src: &[u8], out: &mut HashSet<String>) {
+            match p.kind() {
+                "identifier" | "shorthand_property_identifier_pattern" => {
+                    out.insert(text(p, src).to_string());
+                }
+                // a default's value binds nothing
+                "assignment_pattern" | "object_assignment_pattern" => p.child_by_field_name("left").into_iter().for_each(|l| pattern(l, src, out)),
+                "pair_pattern" => p.child_by_field_name("value").into_iter().for_each(|v| pattern(v, src, out)),
+                "object_pattern" | "array_pattern" | "rest_pattern" => named_children(p).into_iter().for_each(|c| pattern(c, src, out)),
+                _ => {}
+            }
+        }
+        let fields: &[(&str, &str)] = &[
+            ("variable_declarator", "name"),
+            ("required_parameter", "pattern"),
+            ("optional_parameter", "pattern"),
+            ("arrow_function", "parameter"),
+            ("catch_clause", "parameter"),
+            ("for_in_statement", "left"),
+            ("function_declaration", "name"),
+            ("generator_function_declaration", "name"),
+        ];
+        let kinds: Vec<&str> = fields.iter().map(|(k, _)| *k).collect();
+        let mut out = HashSet::new();
+        for n in walk(self.scope.unwrap_or(self.body), &kinds).into_iter().filter(|n| self.mine(*n)) {
+            let field = fields.iter().find(|(k, _)| *k == n.kind()).map_or("", |(_, f)| *f);
+            if let Some(p) = n.child_by_field_name(field) {
+                pattern(p, self.src, &mut out);
+            }
+        }
+        out
     }
 
     /// What a library's call crosses into: a file call, a request or a database statement waits
