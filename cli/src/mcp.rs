@@ -20,7 +20,7 @@ handful of design principles. `check` finds where code and principle disagree, `
 why a principle matters and how it looks in Python and Rust, `routes` and `route` read what an \
 entry point does, step by step, `view` writes the picture opened where you point (a route, \
 the functions in it to open) as a page for the human, and `changes` shows what the working tree did to the routes, \
-their places and the findings since a commit: check a change against what it was meant to do. Atlas coaches: every finding ends in a question for the author. \
+their places and the findings since a commit, or what one commit did against another: check a change against what it was meant to do. Atlas coaches: every finding ends in a question for the author. \
 When you help a student, put that question to them and help them reason about the answer; let \
 them make the change, then run `check` again to see the finding go. Python's types come from \
 ty: a value whose type ty does not know (a function without a return annotation, a library \
@@ -136,10 +136,11 @@ fn tools() -> Value {
         },
         {
             "name": "changes",
-            "description": "What the working tree changes against a git revision: the routes added and removed, the steps and places each route gains and loses, and the findings raised and resolved. Use it after an edit to see whether the change does what it was meant to.",
+            "description": "What the working tree changes against a git revision, or what one revision changes against another: the routes added and removed, the steps and places each route gains and loses, and the findings raised and resolved. Use it after an edit to see whether the change does what it was meant to, or on a commit range to see what it did.",
             "inputSchema": { "type": "object", "properties": {
                 "path": path,
-                "rev": { "type": "string", "description": "The revision to compare with. Default: HEAD." },
+                "rev": { "type": "string", "description": "The revision to compare from. Default: HEAD." },
+                "until": { "type": "string", "description": "The revision to compare to. Default: the working tree." },
             } },
             "annotations": read_only,
         },
@@ -176,7 +177,7 @@ fn call(name: &str, args: &Value, opts: &Options) -> Option<Result<String, Strin
         "changes" => {
             let repo = PathBuf::from(text("path").unwrap_or("."));
             let rev = text("rev").unwrap_or("HEAD");
-            atlas_engine::changes::since(&repo, rev, opts).map(|c| atlas_engine::changes::report(&c)).map_err(|e| format!("Could not compare {} with {rev}: {e}", repo.display()))
+            atlas_engine::changes::compare(&repo, rev, text("until"), opts).map(|c| atlas_engine::changes::report(&c)).map_err(|e| format!("Could not compare {} with {rev}: {e}", repo.display()))
         }
         "view" => {
             let (repo, _clone) = match located(text("path")) {
@@ -184,7 +185,7 @@ fn call(name: &str, args: &Value, opts: &Options) -> Option<Result<String, Strin
                 Err(e) => return Some(Err(e)),
             };
             let shown = args.get("view").cloned().filter(Value::is_object);
-            crate::page(&[repo.clone()], opts, None, shown).map_err(|e| format!("Could not read {}: {e}", repo.display())).and_then(|(name, html)| {
+            crate::page(&[repo.clone()], opts, None, None, shown).map_err(|e| format!("Could not read {}: {e}", repo.display())).and_then(|(name, html)| {
                 let out = text("out").map(PathBuf::from).unwrap_or_else(|| crate::page_file(&format!("{name}.view")));
                 std::fs::write(&out, html).map_err(|e| format!("Could not write {}: {e}", out.display()))?;
                 Ok(format!("Wrote {}. Open it in a browser; its address then holds the view, to share as a link.", out.display()))

@@ -67,6 +67,8 @@ atlas view notebooks/explore.ipynb   # one file, with its project, opened on its
 atlas view https://github.com/o/r/tree/main/src/pkg   # one folder of a repository, from its URL
 atlas check                     # where the code and the design principles disagree
 atlas changes                   # what your edits did to the routes, their places and the findings
+atlas changes v1..main          # what one revision did against another
+atlas history                   # the history in your browser: pick two commits, see them as one picture
 atlas --help
 ```
 
@@ -181,12 +183,11 @@ this repository finds nothing, and the tests keep it that way.
 
 `atlas changes [<rev>]` reads the working tree against a git revision (`HEAD` by default)
 and lists what the edit did: the routes added and removed, the steps and places each route
-gains and loses, and the findings it raises and resolves. In a design loop, that is the
-question after every step: does the change do what it was meant to, and nothing else? The
+gains and loses, and the findings it raises and resolves. `atlas changes A..B` compares two
+revisions the same way (a side left out is `HEAD`, as in git). In a design loop, that is the
+question after every step: does the change do what it was meant to, and nothing else? A
 revision is read from git into a directory of its own; the working tree and the index stay
-as they are. `atlas view --since <rev>` draws the same changes on the picture: a changed route
-is marked in the route list, the steps and places it gained are outlined, and the inspector
-lists what came and what went.
+as they are.
 
 ```text
 since HEAD
@@ -196,12 +197,38 @@ since HEAD
     - place asks an LLM create
 ```
 
+`atlas view --since <rev>` draws the revision and the working tree as one picture
+(`--until <rev>` draws two revisions): what both hold, drawn once, with what changed marked as a
+diff marks lines.
+
+- **Added** in B: a green border and `+`.
+- **Removed** in B: a red dashed border, the name struck through, `−`.
+- **Changed**: an amber border and `~`; the tooltip says what it was. A function is changed when
+  its own arrow differs (what it takes and gives, what its own calls read and write, its usage
+  line); a place or a value when the arrows into or out of it differ. A step a body gains or loses
+  is marked itself, and a change marks only the step that changed, never what runs before or after
+  it. A function renamed with the same relations is one function, changed, and reads `old → new`.
+
+The same marks go on the lines. The header names A and B, counts what was added, removed and
+changed, and switches between **A**, **A ∪ B** and **B**: a switch hides boxes and never moves
+one. The route list marks a route `+`, `−` or `~`.
+
+## History: two commits as one picture
+
+`atlas history [repo]` serves the repository's history on this machine and opens it in the
+browser: the commits of every branch and tag, and beside them the picture of the one you pick, or
+of two you pick as one picture, marked as above. The working tree is the newest row. It answers
+at `127.0.0.1` only (`--port N` picks the port, `--no-open` leaves the browser closed), reads each
+commit once for as long as it runs, and reads the working tree again on every request, so an edit
+shows when you pick it again.
+
 ## Give your coding agent the same picture
 
 `atlas mcp` serves Atlas over the [Model Context Protocol](https://modelcontextprotocol.io).
 The tools are `principles`, `check`, `explain`, `routes`, `route` and `changes`; `route`
 returns what one entry point does, step by step, and `changes` what the working tree did
-since a commit, so an agent can check its edit against what it was meant to do. In [Claude Code](https://claude.com/claude-code):
+since a commit (or, with `until`, what one commit did against another), so an agent can check its
+edit against what it was meant to do. In [Claude Code](https://claude.com/claude-code):
 
 ```bash
 claude mcp add atlas -- atlas mcp

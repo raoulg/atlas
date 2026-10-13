@@ -1,9 +1,11 @@
+mod history;
 mod mcp;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::Result;
-use atlas_engine::{parts, principles, remote, Options};
+use atlas_engine::changes::{self, Named};
+use atlas_engine::{parts, principles, remote, Graph, Options};
 use clap::builder::styling::{AnsiColor, Effects, Style, Styles};
 use clap::{Parser, Subcommand};
 
@@ -43,6 +45,8 @@ fn examples() -> String {
         ("atlas view https://github.com/o/r/tree/main/src/pkg", "one folder of a repository on GitHub"),
         ("atlas check", "where the code and the design principles disagree"),
         ("atlas changes", "what your edits did to the routes, their places and the findings"),
+        ("atlas changes v1..main", "what changed between two revisions"),
+        ("atlas history", "the history in the browser: pick two commits, see one picture of both"),
         ("claude mcp add atlas -- atlas mcp", "give Claude Code the same picture"),
     ];
     let mut s = format!("{head}Examples:{head:#}\n");
@@ -82,9 +86,13 @@ enum Cmd {
         /// Write the page without opening a browser.
         #[arg(long)]
         no_open: bool,
-        /// Mark what the working tree changed since this git revision (one repository).
+        /// Draw this git revision and the working tree as one picture, marking what was added,
+        /// removed and changed since it (one repository).
         #[arg(long)]
         since: Option<String>,
+        /// With `--since`: compare with this revision instead of the working tree.
+        #[arg(long, requires = "since")]
+        until: Option<String>,
         /// Open the page in this view, as JSON: `{"route": <entry id>, "open": {"functions": [<id>, ..]}}`, and
         /// `kind`, `part`, `focus`, and the opened `parts`, `units`, `steps`, `families`, `places`, `dirs`, as the page's address writes them.
         #[arg(long, value_name = "JSON")]
@@ -98,9 +106,10 @@ enum Cmd {
         #[arg(long)]
         json: bool,
     },
-    /// What the working tree changes against a git revision: routes, their steps and places, findings.
+    /// What the working tree changes against a git revision, or one revision against another:
+    /// routes, their steps and places, findings.
     Changes {
-        /// The revision to compare with; default: HEAD.
+        /// The revision to compare with (`HEAD~2`), or two revisions (`v1..main`); default: HEAD.
         rev: Option<String>,
         /// Repository root; default: the current directory.
         #[arg(long)]
@@ -111,6 +120,18 @@ enum Cmd {
     },
     /// Serve Atlas to a coding agent over MCP (stdio): principles, check, explain, routes, route, view, changes.
     Mcp,
+    /// Serve a repository's history on this machine and open it in the browser: its commits, and
+    /// the picture of one of them or of two as one.
+    History {
+        /// Repository root; default: the current directory.
+        repo: Option<PathBuf>,
+        /// The port to serve at, on 127.0.0.1; default: a free one.
+        #[arg(long, default_value_t = 0)]
+        port: u16,
+        /// Serve without opening a browser.
+        #[arg(long)]
+        no_open: bool,
+    },
     /// Write a repository's graph as JSON.
     Analyze {
         /// Repository root, a package directory, or a git URL.
@@ -128,38 +149,105 @@ enum Cmd {
 const VIEWER: &str = include_str!("../../viewer/index.html");
 const FONTS: &str = include_str!("../../viewer/fonts.css");
 
-/// The page of one or more repositories, drawn in `shown` when it is given (a view: its route,
-/// kind, part, focus and opened sets), else on the route of a file named on the command line.
-/// Gives the page and the name of its project.
-pub(crate) fn page(repos: &[PathBuf], opts: &Options, since: Option<&str>, shown: Option<serde_json::Value>) -> Result<(String, String)> {
-    // each part in its own language, as `atlas check` reads it, then the parts as one graph
-    let graphs = parts::analyze_parts(repos, opts)?;
-    let findings: Vec<principles::Finding> = graphs.iter().flat_map(principles::check).collect();
-    let g = parts::merged(repos, graphs);
-    let parts: Vec<&str> = g.parts.iter().map(|p| p.id.as_str()).collect();
-    eprintln!("{} · {} · {} modules · {} entries", g.root, parts.join(" + "), g.stats.modules, g.nodes.iter().filter(|n| n.entry.is_some()).count());
-    let mut projects = serde_json::Map::new();
-    let mut page = serde_json::to_value(&g)?;
+/// What a page draws: one graph, what the principles ask of it, and, where two readings are drawn
+/// as one, how its things stand to them.
+pub(crate) struct Drawing {
+    graph: Graph,
+    findings: Vec<principles::Finding>,
+    diff: Option<serde_json::Value>,
+}
+
+/// One reading as a drawing: its parts, each read and checked in its own language, as one graph.
+pub(crate) fn single(repos: &[PathBuf], graphs: Vec<Graph>) -> Drawing {
+    let findings = graphs.iter().flat_map(principles::check).collect();
+    Drawing { graph: parts::merged(repos, graphs), findings, diff: None }
+}
+
+/// Two readings of `repo` as one drawing: the union of the parts read at A and at B, the findings
+/// of B, and how each thing of the union stands to the two, with the revisions they were read at
+/// and how many findings B raises and resolves.
+pub(crate) fn union(repo: &Path, a: (Named, Vec<Graph>), b: (Named, Vec<Graph>)) -> Result<Drawing> {
+    let name = std::fs::canonicalize(repo).ok().and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_string())).unwrap_or_else(|| "repo".into());
+    let (fa, fb): (Vec<principles::Finding>, Vec<principles::Finding>) = (a.1.iter().flat_map(principles::check).collect(), b.1.iter().flat_map(principles::check).collect());
+    let (raised, resolved) = changes::raised(&fa, &fb);
+    let (graph, d) = atlas_engine::diff::union(&name, a.1, b.1);
+    let mut diff = serde_json::to_value(&d)?;
+    diff["a"] = serde_json::to_value(&a.0)?;
+    diff["b"] = serde_json::to_value(&b.0)?;
+    diff["findings"] = serde_json::json!({ "raised": raised.len(), "resolved": resolved.len() });
+    Ok(Drawing { graph, findings: fb, diff: Some(diff) })
+}
+
+/// Revision `a` of `repo` and revision `b` (the working tree when there is none) as one drawing.
+fn compared(repo: &Path, a: &str, b: Option<&str>, opts: &Options) -> Result<Drawing> {
+    let (_, named_a) = changes::resolve(repo, a)?;
+    let named_b = b.map(|b| changes::resolve(repo, b).map(|(_, n)| n)).transpose()?.unwrap_or_else(changes::worktree);
+    let before = changes::parts_at(repo, Some(a), opts)?;
+    union(repo, (named_a, before), (named_b, changes::parts_at(repo, b, opts)?))
+}
+
+/// What `atlas view` draws: the repositories as they are, or one repository since a revision.
+fn reading(repos: &[PathBuf], opts: &Options, since: Option<&str>, until: Option<&str>) -> Result<Drawing> {
+    match (since, repos) {
+        (None, _) => Ok(single(repos, parts::analyze_parts(repos, opts)?)),
+        (Some(a), [repo]) => compared(repo, a, until, opts),
+        (Some(_), _) => anyhow::bail!("--since compares one repository with its history"),
+    }
+}
+
+/// The viewer holding one drawing: its graph, the flow its routes are read from, the findings at
+/// the nodes they are about, how its things stand to two readings when it is their union, and
+/// what else the page is handed (`open`, `view`).
+pub(crate) fn viewer(d: &Drawing, extra: serde_json::Map<String, serde_json::Value>) -> Result<String> {
+    let mut page = serde_json::to_value(&d.graph)?;
     // what each route runs and what each step takes and gives: the flow the agent reads its routes from
-    let flow = atlas_engine::flow::of(&g);
-    page["flow"] = serde_json::to_value(&flow)?;
+    page["flow"] = serde_json::to_value(atlas_engine::flow::of(&d.graph))?;
     // what the principles ask, each at the node it is about, where the page marks it; the merged
     // graph keeps every part's nodes, so each finding is about a node the picture knows
-    page["findings"] = serde_json::to_value(&findings)?;
-    if let Some(rev) = since {
-        let [repo] = repos else { anyhow::bail!("--since compares one repository with its history") };
-        page["changes"] = serde_json::to_value(atlas_engine::changes::since(repo, rev, opts)?)?;
+    page["findings"] = serde_json::to_value(&d.findings)?;
+    if let Some(diff) = &d.diff {
+        page["diff"] = diff.clone();
     }
+    for (k, v) in extra {
+        page[k] = v;
+    }
+    let mut projects = serde_json::Map::new();
+    projects.insert(d.graph.root.clone(), page);
+    let payload = serde_json::to_string(&serde_json::json!({ "projects": projects, "atlas": VERSION.as_str() }))?.replace("</", "<\\/");
+    Ok(VIEWER.replacen("/*__FONTS__*/", FONTS, 1).replacen("/*__DATA__*/null", &payload, 1))
+}
+
+/// The page of one or more repositories, or of one repository since a revision (`since`, until
+/// `until` or the working tree), drawn in `shown` when it is given (a view: its route, kind,
+/// part, focus and opened sets), else on the route of a file named on the command line. Gives the
+/// page and the name of its project.
+pub(crate) fn page(repos: &[PathBuf], opts: &Options, since: Option<&str>, until: Option<&str>, shown: Option<serde_json::Value>) -> Result<(String, String)> {
+    let d = reading(repos, opts, since, until)?;
+    let g = &d.graph;
+    let parts: Vec<&str> = g.parts.iter().map(|p| p.id.as_str()).collect();
+    eprintln!("{} · {} · {} modules · {} entries", g.root, parts.join(" + "), g.stats.modules, g.nodes.iter().filter(|n| n.entry.is_some()).count());
+    let mut extra = serde_json::Map::new();
     // a file named on the command line opens on its route
     if let Some(n) = g.nodes.iter().find(|n| n.entry.is_some() && std::fs::canonicalize(&n.file).map_or(false, |f| opts.named.contains(&f))) {
-        page["open"] = serde_json::Value::String(n.id.clone());
+        extra.insert("open".into(), serde_json::Value::String(n.id.clone()));
     }
     if let Some(v) = shown {
-        page["view"] = v;
+        extra.insert("view".into(), v);
     }
-    projects.insert(g.root.clone(), page);
-    let payload = serde_json::to_string(&serde_json::json!({ "projects": projects, "atlas": VERSION.as_str() }))?.replace("</", "<\\/");
-    Ok((g.root.clone(), VIEWER.replacen("/*__FONTS__*/", FONTS, 1).replacen("/*__DATA__*/null", &payload, 1)))
+    Ok((g.root.clone(), viewer(&d, extra)?))
+}
+
+/// Open a page or an address in the browser the system names.
+pub(crate) fn open(target: &std::ffi::OsStr) {
+    #[cfg(target_os = "macos")]
+    let status = std::process::Command::new("open").arg(target).status();
+    #[cfg(target_os = "linux")]
+    let status = std::process::Command::new("xdg-open").arg(target).status();
+    #[cfg(target_os = "windows")]
+    let status = std::process::Command::new("cmd").args(["/C", "start", ""]).arg(target).status();
+    if let Err(e) = status {
+        eprintln!("could not open a browser ({e}); open {} yourself", target.to_string_lossy());
+    }
 }
 
 /// Where a page is written when no place is asked for: a temporary folder, by its project's name.
@@ -169,21 +257,13 @@ pub(crate) fn page_file(name: &str) -> PathBuf {
     dir.join(format!("{name}.html"))
 }
 
-fn view(repos: &[PathBuf], opts: &Options, out: Option<PathBuf>, open: bool, since: Option<&str>, shown: Option<serde_json::Value>) -> Result<()> {
-    let (name, html) = page(repos, opts, since, shown)?;
+fn view(repos: &[PathBuf], opts: &Options, out: Option<PathBuf>, shown_in_browser: bool, range: (Option<&str>, Option<&str>), shown: Option<serde_json::Value>) -> Result<()> {
+    let (name, html) = page(repos, opts, range.0, range.1, shown)?;
     let out = out.unwrap_or_else(|| page_file(&name));
     std::fs::write(&out, html)?;
     eprintln!("wrote {}", out.display());
-    if open {
-        #[cfg(target_os = "macos")]
-        let status = std::process::Command::new("open").arg(&out).status();
-        #[cfg(target_os = "linux")]
-        let status = std::process::Command::new("xdg-open").arg(&out).status();
-        #[cfg(target_os = "windows")]
-        let status = std::process::Command::new("cmd").args(["/C", "start", ""]).arg(&out).status();
-        if let Err(e) = status {
-            eprintln!("could not open a browser ({e}); open the file yourself");
-        }
+    if shown_in_browser {
+        open(out.as_os_str());
     }
     Ok(())
 }
@@ -242,19 +322,28 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     let mut opts = Options { libraries: cli.libraries, ..Options::default() };
     match cli.cmd {
-        Cmd::View { repos, out, no_open, since, view: shown } => {
+        Cmd::View { repos, out, no_open, since, until, view: shown } => {
             let repos = if repos.is_empty() { vec![std::env::current_dir()?] } else { repos };
             let shown = shown.map(|v| serde_json::from_str::<serde_json::Value>(&v)).transpose().map_err(|e| anyhow::anyhow!("--view is not JSON: {e}"))?;
             let (repos, _clones): (Vec<PathBuf>, Vec<Option<remote::Clone>>) = repos.into_iter().map(|r| local(r, &mut opts)).collect::<Result<Vec<_>>>()?.into_iter().unzip();
-            view(&repos, &opts, out, !no_open, since.as_deref(), shown)?
+            view(&repos, &opts, out, !no_open, (since.as_deref(), until.as_deref()), shown)?
         }
         Cmd::Mcp => mcp::serve(&opts)?,
+        Cmd::History { repo, port, no_open } => {
+            let repo = match repo {
+                Some(r) => r,
+                None => std::env::current_dir()?,
+            };
+            // this machine only: the page shows the repository's code
+            history::serve(&repo, std::net::SocketAddr::from(([127, 0, 0, 1], port)), &opts, !no_open)?
+        }
         Cmd::Changes { rev, repo, json } => {
             let repo = match repo {
                 Some(r) => r,
                 None => std::env::current_dir()?,
             };
-            let c = atlas_engine::changes::since(&repo, rev.as_deref().unwrap_or("HEAD"), &opts)?;
+            let (a, b) = changes::range(rev.as_deref().unwrap_or("HEAD"));
+            let c = changes::compare(&repo, a, b, &opts)?;
             if json {
                 println!("{}", serde_json::to_string_pretty(&c)?);
             } else {

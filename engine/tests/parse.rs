@@ -441,8 +441,11 @@ fn rust_workspace_parses() {
     let calls = edges(&g, EdgeKind::Calls);
     assert!(calls.contains(&("atlas.main".into(), "atlas.view".into())));
     assert!(calls.contains(&("atlas.view".into(), "atlas.page".into())), "the command writes the page");
-    assert!(calls.contains(&("atlas.page".into(), "atlas-engine.parts.analyze_parts".into())) && calls.contains(&("atlas.page".into(), "atlas-engine.parts.merged".into())), "cli calls into the engine");
-    assert!(calls.contains(&("atlas.page".into(), "atlas-engine.flow.of".into())), "the page is drawn from the Flow: Graph -> Flow -> File(html)");
+    // the page reads the repository (one reading, or two as one) and draws what it read
+    assert!(calls.contains(&("atlas.page".into(), "atlas.reading".into())) && calls.contains(&("atlas.page".into(), "atlas.viewer".into())), "the command reads, then draws");
+    assert!(calls.contains(&("atlas.reading".into(), "atlas-engine.parts.analyze_parts".into())) && calls.contains(&("atlas.single".into(), "atlas-engine.parts.merged".into())), "cli calls into the engine");
+    assert!(calls.contains(&("atlas.union".into(), "atlas-engine.diff.union".into())), "two readings are one graph, their union");
+    assert!(calls.contains(&("atlas.viewer".into(), "atlas-engine.flow.of".into())), "the page is drawn from the Flow: Graph -> Flow -> File(html)");
     assert!(calls.contains(&("atlas-engine.parts.analyze_parts".into(), "atlas-engine.graph_of".into())), "each part is analyzed in its language");
     assert!(calls.contains(&("atlas-engine.language.Rust.parse".into(), "atlas-engine.rust.parse".into())), "trait impl calls the module");
     let returns = edges(&g, EdgeKind::Returns);
@@ -475,9 +478,9 @@ fn rust_workspace_parses() {
     assert!(places("atlas.main").contains(&("disk_write".into(), "write".into(), "graph.json".into())), "{:?}", places("atlas.main"));
     let graph = g.node("atlas.main").unwrap().touches.iter().find(|t| t.artifact == "graph.json").unwrap();
     assert!(!graph.fixed && graph.by.is_empty(), "{graph:?}");
-    // a `let` holds the type of the parameter it is handed to: `merged`'s graph, the one graph
+    // a `let` holds the type of the parameter it is handed to: `joined`'s graph, the one graph
     // read or the merge of several, is the `Graph` that `join(g: &mut Graph)` takes
-    let joining = g.node("atlas-engine.parts.merged").unwrap().sites.iter().find(|s| s.to == "atlas-engine.parts.join").unwrap();
+    let joining = g.node("atlas-engine.parts.joined").unwrap().sites.iter().find(|s| s.to == "atlas-engine.parts.join").unwrap();
     assert_eq!(joining.hands.iter().map(|h| (h.name.as_str(), h.ty.as_str())).collect::<Vec<_>>(), [("g", "atlas-engine.model.Graph")]);
     // a generic's arguments are values where it holds them: `analyze_parts` gives the Graphs of a
     // `Result<Vec<Graph>>`, `merged` takes the Graphs of a `Vec<Graph>`, a Graph has the Nodes of

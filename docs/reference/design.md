@@ -266,15 +266,16 @@ faster in Rust). A native shell (Tauri) can wrap the same code later.
 | Agent | `atlas mcp`: JSON-RPC over stdio | The agent asks the same engine the page is drawn from. |
 | Distribution | one static binary per platform, built by the release workflow | `cargo install --path cli`, or the install scripts. |
 
-A server with live reload and a frontend of its own are planned (M2); until then the
-viewer is the one page.
+`atlas history` serves the viewer beside a repository's history, on 127.0.0.1 only, with the
+standard library's TCP and nothing else: GET requests, one thread per connection, each revision
+read once per commit and the working tree on every request. Live reload is planned (M2).
 
 Repository layout:
 
 ```
 atlas/
-  engine/      Rust crate: parse · effects · view (fiber, quotient) · principles · changes
-  cli/         Rust binary: view · check · changes · mcp · analyze
+  engine/      Rust crate: parse · effects · view (fiber, quotient) · principles · changes · diff
+  cli/         Rust binary: view · check · changes · history · mcp · analyze
   viewer/      the page the CLI writes, with its fonts
   docs/
 ```
@@ -491,8 +492,32 @@ condensation for import cycles; betweenness for hubs; k-shortest paths between t
 types for the signature flow; Leiden as the honest fallback when nothing is
 declared.
 
-**L5 Git.** Commit DAG; diff hunks × spans → symbols; churn and age per symbol; a
-commit range is a fiber.
+**L5 Git.** Two revisions are two readings, A and B, each read from git into a directory of its
+own. The picture of a change is their union A ∪ B, marked as a diff marks lines: what B adds is
+added (green, `+`), what B no longer has is removed (red, dashed and struck through, `−`), and what
+both hold is changed (amber, `~`) when its own arrows differ. The layout is the union's, so a
+switch between A, A ∪ B and B hides boxes and never moves one.
+
+*Decision (PTT-509): changed is Yoneda, applied to the generators.* An object is determined up to
+isomorphism by the arrows into and out of it. A place or a type is changed when the arrows directly
+into or out of it differ: the same file, written by `plot` in A and by `Trend.save` in B, is
+changed, and keeps its name. A function is an arrow, so its identity is its own arrow: what it
+takes and gives, what its own calls read and write, and for an entry its usage line. A step its body
+gains or loses is marked itself, as added or removed. Only direct arrows count (sentence 6): a
+change upstream marks the step that changed, never what runs before or after it, and a place a
+caller makes whole is the caller's arrow.
+
+*Renames.* A node B no longer has and a node B adds whose direct relations are isomorphic (the same
+typed arrows in and out, the node itself and what is named under it counting as the same) are one
+node, renamed: it is changed, and reads `old → new`. Only a match that is the only one either way
+counts; two that could match either way are removed and added, since Atlas never guesses.
+
+The engine marks the nodes, the edges, the steps and touches of a node both readings hold (by
+index), and the places, by the calls that touch them. In a picture a value stands at its moments,
+so a box of a value is changed when a line drawn into or out of it is in one reading only: the page
+draws each reading by itself and marks what their union holds once. The page shows no list of
+changes; `atlas changes A..B` and the MCP tool `changes` give the agent the list. `atlas history`
+serves the commits and these pictures on this machine.
 
 **L6 Agent.** An MCP server over the same engine: `search`, `neighbourhood`,
 `effects`, `quotient`, `signature_paths`, `apply_view`.

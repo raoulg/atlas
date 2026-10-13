@@ -5,6 +5,7 @@
 pub mod body;
 pub mod builder;
 pub mod changes;
+pub mod diff;
 pub mod effects;
 pub mod entries;
 pub mod knowledge;
