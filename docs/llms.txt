@@ -37,6 +37,7 @@ The mathematics is there so that a human needs none of it. Every construct has o
 ## Docs
 
 - [Design](https://raw.githubusercontent.com/raoulg/atlas/main/docs/reference/design.md): the shared language, the algebra, how each language is read, and the views. Start with §0.
+- [Mathematics](https://raw.githubusercontent.com/raoulg/atlas/main/docs/reference/mathematics.md): every mathematical notion Atlas uses, once, with what it is in Atlas and where it lives.
 - [Principles](https://raw.githubusercontent.com/raoulg/atlas/main/docs/reference/principles.md): the ten principles `atlas check` asks, each with its reasoning and idioms, and a table of what each language lets Atlas trace.
 - [Guide](https://raw.githubusercontent.com/raoulg/atlas/main/docs/reference/guide.md): how to read the picture, what Atlas reads in each language, entry points, `check`, `changes` and the MCP tools.
 

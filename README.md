@@ -120,6 +120,7 @@ use: every program is drawn by the same mathematical rules.
 - **A step and its reach.** A function's own arrow and everything it reaches are different
   quantities, never merged.
 
+Every notion, with where it lives in Atlas, is in [the mathematics](docs/reference/mathematics.md).
 The structure is laid out in [the design](docs/reference/design.md); what Atlas checks against it
 is in [the ten principles](docs/reference/principles.md).
 

@@ -67,6 +67,9 @@ The rigorous half and the visual half are the same structure. Read `docs/referen
   parseArgs' `default:` are each an option the caller can override. Their pushout is the construct
   Atlas draws, and some level of the picture shows it as one thing; zooming in may show the
   language's form beneath it. Before a reader treats a form its own way, ask what it is isomorphic to.
+- **The mathematics has one home.** Every notion Atlas uses (a functor, a fiber, Yoneda, a
+  lattice) has an entry in `docs/reference/mathematics.md`: what it is, what it is in Atlas, where
+  it lives. A notion Atlas starts to use is written there first.
 - **Keep it simple.** The basic elements first, rigorous and consistent across all
   future codebases, before any richness. One question per feedback round.
 - **Plan in Linear first**, project *Atlas — code at the level of types and flows*.
