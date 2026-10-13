@@ -72,12 +72,19 @@ use: every program is drawn by the same mathematical rules.
 
 - **A category of types.** Types are objects, functions are arrows, call order is composition. A
   route is a composite from an entry point to a place.
-- **Zoom is a quotient, a filter is a fiber.** Zooming out folds a family of types (by base class,
-  by composition, by module) into one box; keeping to one route is the fiber over it. The two don't
-  commute, so the order of a view is meaning.
 - **Sum types are coproducts.** Taken apart where they arise.
 - **Lawful lenses.** A class that writes a place and reads it back is a lens on that place. Atlas
   asks the put-get law at the level of types: what goes in as a `Graph` comes back as a `Graph`.
+
+*Topology*
+
+- **Zooming out glues, a filter is a fiber.** Zooming out glues each family of types (by base
+  class, by composition, by module) into one point: a quotient. Keeping to one route is the fiber
+  over it, the part that lies above one point. Gluing and taking a fiber don't commute, so the
+  order of a view is meaning.
+- **Fine and coarse.** A zoom level divides the nodes into boxes, and each such division is a
+  topology on them. Zooming in and out moves between finer and coarser ones, so the picture stays
+  the same picture.
 
 *Type theory*
 
@@ -86,11 +93,6 @@ use: every program is drawn by the same mathematical rules.
   tables and URLs are objects like any other.
 - **Subtypes keep their promise.** An override does what its base says (behavioural subtyping,
   Liskov).
-
-*Order theory*
-
-- **The zoom levels form a lattice.** Every grouping refines or coarsens another. Zooming in and
-  out moves through that order, so the picture stays the same picture.
 
 *Graph theory*
 

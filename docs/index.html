@@ -139,18 +139,18 @@ footer{border-top:1px solid var(--line);padding-top:20px;color:var(--ink-3);font
     <h4><a href="https://pttrn.io/#content/category-theory">Category theory</a></h4>
     <dl>
       <dt>A category of types</dt><dd>Types are objects, functions are arrows, call order is composition. A route is a composite from an entry point to a place.</dd>
-      <dt>Zoom is a quotient, a filter is a fiber</dt><dd>Zooming out folds a family of types (by base class, by composition, by module) into one box; keeping to one route is the fiber over it. The two don't commute, so the order of a view is meaning.</dd>
       <dt>Sum types are coproducts</dt><dd>Taken apart where they arise.</dd>
       <dt>Lawful lenses</dt><dd>A class that writes a place and reads it back is a lens on that place. Atlas asks the put-get law at the level of types: what goes in as a <code>Graph</code> comes back as a <code>Graph</code>.</dd>
+    </dl>
+    <h4>Topology</h4>
+    <dl>
+      <dt>Zooming out glues, a filter is a fiber</dt><dd>Zooming out glues each family of types into one point: a quotient. Keeping to one route is the fiber over it, the part that lies above one point. Gluing and taking a fiber don't commute, so the order of a view is meaning.</dd>
+      <dt>Fine and coarse</dt><dd>A zoom level divides the nodes into boxes, and each such division is a topology on them. Zooming in and out moves between finer and coarser ones, so the picture stays the same picture.</dd>
     </dl>
     <h4>Type theory</h4>
     <dl>
       <dt>Effects in the type</dt><dd>A function's domain is its parameters plus what it reads; its codomain is what it returns plus what it writes, sends or runs, as in a type-and-effect system. Files, tables and URLs are objects like any other.</dd>
       <dt>Subtypes keep their promise</dt><dd>An override does what its base says (behavioural subtyping, Liskov).</dd>
-    </dl>
-    <h4>Order theory</h4>
-    <dl>
-      <dt>The zoom levels form a lattice</dt><dd>Every grouping refines or coarsens another. Zooming in and out moves through that order, so the picture stays the same picture.</dd>
     </dl>
     <h4>Graph theory</h4>
     <dl>
