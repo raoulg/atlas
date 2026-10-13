@@ -1,0 +1,9 @@
+# Poetry names its package and the directory it is in, under a name of the project's own.
+[tool.poetry]
+name = "poems"
+version = "0.1.0"
+packages = [{ include = "verse", from = "source" }]
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

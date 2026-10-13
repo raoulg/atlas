@@ -1,0 +1,5 @@
+# Its package is the one its name names (`src/zoo_keeper`), not `src/aardvark`, which sorts
+# first and is a second package beside it, as `benchmarks` is at the root.
+[project]
+name = "zoo-keeper"
+version = "0.1.0"

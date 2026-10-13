@@ -323,8 +323,15 @@ where it is defined. Each is the
 start of a route; an exported class is a route whose steps are its public methods.
 
 **Parts** — a repository is one or more parts: what one manifest roots (`Cargo.toml`,
-`pyproject.toml`, `package.json`), read in its own language; a workspace's crates are
-parts of one root, and nothing under `tests/` or `node_modules/` is a part. A crate is read
+`pyproject.toml`, `package.json`), at any depth, read in its own language. A manifest that
+a part around it reads is that part's: a Cargo workspace reads its member crates (a crate
+beside them that is no member, `fuzz/`, is a part of its own), a Python project its
+packages (each member of a uv workspace is a part), a package the code under it. Nothing
+under `tests/` or `node_modules/` is a part, nor a manifest without code of its own (a
+workspace's root). A Python project's packages are the ones its `pyproject.toml` names (its
+build backend's `packages`, else the project's name, which also finds a namespace package),
+then every other package beside them; the graph is named after the first, and each package
+is a part. A crate is read
 by Cargo's targets: one library (`src/lib.rs`) and a binary per `main` (`src/main.rs`,
 `src/bin/*.rs`), each a root of its own; a directory with its own `Cargo.toml` is another
 package. The graph holds them side by side and every node knows its part. Parts meet over HTTP: a web framework's

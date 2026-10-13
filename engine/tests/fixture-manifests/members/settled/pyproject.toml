@@ -1,0 +1,12 @@
+# setuptools names the packages by their import names, in the directory `package-dir` gives.
+[project]
+name = "settlement"
+version = "0.1.0"
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["settled", "settled.inner"]
+package-dir = { "" = "code" }

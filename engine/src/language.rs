@@ -24,6 +24,9 @@ pub trait Language {
     fn parse(&self, repo: &Repo, opts: &Options) -> Result<Graph>;
     /// What the language leaves its author to write.
     fn leaves(&self) -> Leaves;
+    /// Whether the part read at `part` reads the directory `dir` below it, which holds a manifest
+    /// of the language, as its own; a manifest no part around it reads roots a part.
+    fn reads(&self, part: &Repo, dir: &Path) -> bool;
     /// The project a package named on its own is in, when it lies above what was read: its
     /// directory, and the package.
     fn project_above(&self, _repo: &Repo, _opts: &Options) -> Option<(PathBuf, PathBuf)> {
@@ -52,23 +55,28 @@ impl Language for Python {
         "pyproject.toml"
     }
     fn detect(&self, repo: &Repo, _opts: &Options) -> bool {
-        repo.is_file("pyproject.toml") || python::discover_package(repo).is_ok() || !repo.named().is_empty()
+        repo.is_file("pyproject.toml") || !python::packages(repo).is_empty() || !repo.named().is_empty()
     }
     fn parse(&self, repo: &Repo, opts: &Options) -> Result<Graph> {
+        // the package asked for comes first, then the project's others
+        let asked = opts.package.as_deref().or(repo.asked());
+        let mut packages: Vec<PathBuf> = asked.map(Path::to_path_buf).into_iter().collect();
+        packages.extend(python::packages(repo).into_iter().filter(|p| Some(p.as_path()) != asked));
         // a project of scripts and notebooks has no package: a file named on the command line
         // in a folder without one, or a project file with none beside it
-        let pkg_dir = match opts.package.as_deref().or(repo.asked()) {
-            Some(p) => Some(p.to_path_buf()),
-            None => match python::discover_package(repo) {
-                Ok(p) => Some(p),
-                Err(_) if repo.is_file("pyproject.toml") || !repo.named().is_empty() => None,
-                Err(e) => return Err(e),
-            },
-        };
-        let project_root = pkg_dir.as_deref().and_then(|p| python::project_root(repo, p)).or_else(|| (repo.is_file("pyproject.toml") || pkg_dir.is_none()).then(|| repo.root().to_path_buf()));
-        let (mut b, root) = python::parse(repo, pkg_dir.as_deref(), project_root.as_deref(), opts)?;
+        if packages.is_empty() && !repo.is_file("pyproject.toml") && repo.named().is_empty() {
+            anyhow::bail!("no Python package found under {} (looked for a pyproject.toml, src/<pkg>/__init__.py and <pkg>/__init__.py)", repo.root().display());
+        }
+        let first = packages.first().map(PathBuf::as_path);
+        let project_root = first.and_then(|p| python::project_root(repo, p)).or_else(|| (repo.is_file("pyproject.toml") || first.is_none()).then(|| repo.root().to_path_buf()));
+        let (mut b, root) = python::parse(repo, &packages, project_root.as_deref(), opts)?;
         entries::mark_scripts(repo, &mut b, project_root.as_deref());
         Ok(b.finish(root, project_root.as_deref(), self.name()))
+    }
+    /// A project reads its packages; a project file anywhere else below it roots a project of
+    /// its own (a workspace's member).
+    fn reads(&self, part: &Repo, dir: &Path) -> bool {
+        python::packages(part).iter().any(|p| dir.starts_with(p))
     }
     /// A signature may say nothing, and a package offers whatever its root binds unless
     /// `__all__` names it.
@@ -81,7 +89,7 @@ impl Language for Python {
         if repo.is_file("pyproject.toml") {
             return None;
         }
-        let package = opts.package.clone().or_else(|| python::discover_package(repo).ok())?;
+        let package = opts.package.clone().or_else(|| python::packages(repo).into_iter().next())?;
         let root = package.ancestors().take(4).find(|p| match p.starts_with(repo.root()) {
             true => repo.is_file(p.join("pyproject.toml")),
             false => p.join("pyproject.toml").is_file(),
@@ -110,6 +118,10 @@ impl Language for Rust {
     fn leaves(&self) -> Leaves {
         Leaves::default()
     }
+    /// A workspace reads its members; a crate below it that is none (`fuzz/`) is a part of its own.
+    fn reads(&self, part: &Repo, dir: &Path) -> bool {
+        rust::crates(part).map_or(false, |cs| cs.iter().any(|c| c.dir == dir))
+    }
 }
 
 pub struct TypeScript;
@@ -132,6 +144,10 @@ impl Language for TypeScript {
     /// see (`isolatedDeclarations` asks for it).
     fn leaves(&self) -> Leaves {
         Leaves { returns: true, ..Default::default() }
+    }
+    /// A package reads every file under its code, the packages there with it.
+    fn reads(&self, part: &Repo, dir: &Path) -> bool {
+        dir.starts_with(typescript::code_base(part))
     }
 }
 

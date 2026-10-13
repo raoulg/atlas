@@ -135,9 +135,11 @@ Atlas reads or draws changes, the patch number for a fix.
 
 Atlas reads:
 
-- **Python**, including the project's scripts and notebooks at any depth (`.py` and `.ipynb`
-  outside the package, its tests and what git ignores; a project of only scripts and
-  notebooks needs no package, and a file you name is read even where git ignores it), with
+- **Python**: the packages `pyproject.toml` names (Hatch's, setuptools' or Poetry's
+  `packages`, else the project's name) and every other package beside them, and the
+  project's scripts and notebooks at any depth (`.py` and `.ipynb` outside the packages,
+  its tests and what git ignores; a project of only scripts and notebooks needs no package,
+  and a file you name is read even where git ignores it), with
   its types from [ty](https://docs.astral.sh/ty/). The library modules its code calls are
   read from its environment too, so a library's own steps can be opened in a route;
   `--libraries 2` reads one step further into those libraries, `--libraries 0` not at all.
@@ -148,8 +150,8 @@ Atlas reads:
   routes and server functions, `tsconfig` paths.
 
 A repository can hold several parts: a Python API and a TypeScript app, the crates of a
-workspace. Atlas finds every `Cargo.toml`, `pyproject.toml` and `package.json` itself and
-reads each part in its own language. The overview then shows each part as one step, from
+workspace, the members of a uv workspace. Atlas finds every `Cargo.toml`, `pyproject.toml`
+and `package.json` itself, at any depth, and reads each part in its own language. The overview then shows each part as one step, from
 what it reads to what it writes. Where one part names a route another part serves (the app
 asks for `/api/items/{id}`, a FastAPI app mounted at `/api` serves `/items/{id}`), the two
 meet in that part's `HTTP`. Click a part to open it; **Only *part*** in the menu keeps to

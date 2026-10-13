@@ -1,0 +1,4 @@
+# A namespace package: `src/spaced` has no `__init__.py`, and the project's name finds it.
+[project]
+name = "spaced"
+version = "0.1.0"

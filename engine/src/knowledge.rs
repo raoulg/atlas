@@ -181,6 +181,51 @@ pub const ENTRY_TABLES: &[(&[&str], Declares)] = &[
 /// `{ reference = .. }`.
 pub const ENTRY_REFERENCES: &[&str] = &["callable", "reference"];
 
+/// How a build backend's setting names the packages it builds.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Names {
+    /// Each a package's directory: Hatch's `packages = ["src/pkg"]`.
+    Dirs,
+    /// Each a package's import name, `pkg` or `pkg.sub`, found in the directories PACKAGE_ROOTS
+    /// give: setuptools' `packages = ["pkg"]`, uv's `module-name = "pkg"`.
+    Imports,
+    /// A table of import names, each with its package's directory; the empty name's is the
+    /// directory the others are in, one of PACKAGE_ROOTS: setuptools'
+    /// `package-dir = { pkg = "lib/pkg" }`.
+    DirsByName,
+    /// Each a table that names the package under `name` and the directory it is in under `dir`:
+    /// Poetry's `packages = [{ include = "pkg", from = "src" }]`.
+    Tables { name: &'static str, dir: &'static str },
+}
+
+/// The settings of `pyproject.toml` by which a build backend names the packages it builds, by
+/// their path in the file, in the order they are asked. A setting holds one name or a list.
+pub const PACKAGE_SETTINGS: &[(&[&str], Names)] = &[
+    (&["tool", "hatch", "build", "targets", "wheel", "packages"], Names::Dirs),
+    (&["tool", "hatch", "build", "packages"], Names::Dirs),
+    (&["tool", "setuptools", "packages"], Names::Imports),
+    (&["tool", "setuptools", "package-dir"], Names::DirsByName),
+    (&["tool", "poetry", "packages"], Names::Tables { name: "include", dir: "from" }),
+    (&["tool", "uv", "build-backend", "module-name"], Names::Imports),
+];
+
+/// The settings of `pyproject.toml` that name the directories a build backend finds packages
+/// in, by their path in the file: setuptools' `package-dir = { "" = "src" }` and
+/// `packages.find.where`, uv's `module-root`. Each holds a directory or a list.
+pub const PACKAGE_ROOTS: &[&[&str]] = &[
+    &["tool", "setuptools", "package-dir", ""],
+    &["tool", "setuptools", "packages", "find", "where"],
+    &["tool", "uv", "build-backend", "module-root"],
+];
+
+/// The directories a Python project keeps its packages in beside those PACKAGE_ROOTS name: the
+/// src layout's `src/` and the flat layout's root.
+pub const PACKAGE_LAYOUTS: &[&str] = &["src", ""];
+
+/// Where a project names itself: the standard's `[project]` and Poetry's own table. Without a
+/// setting of PACKAGE_SETTINGS, the backends build the package of the project's name.
+pub const PROJECT_NAMES: &[&[&str]] = &[&["project", "name"], &["tool", "poetry", "name"]];
+
 // ---------- the files of a project ----------
 
 /// Directories a tool made rather than the author: dependencies, environments, build output.

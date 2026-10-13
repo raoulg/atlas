@@ -15,23 +15,26 @@ use crate::repo::Repo;
 use crate::{knowledge, Options};
 
 /// The directories whose manifests root a part: the repository itself, and every manifest
-/// below it in a language no enclosing part already reads (a workspace's member crates belong
-/// to the workspace).
+/// below it, at any depth, that no part around it reads as its own (a workspace reads its
+/// members, a project its packages).
 pub fn roots(repo: &Repo, opts: &Options) -> Vec<(PathBuf, &'static str)> {
     let mut out: Vec<(PathBuf, &'static str)> = vec![];
-    // no part is under what a tool made, or under tests and the data they read, nor more than five levels down
+    let rel = |d: &Path| d.strip_prefix(repo.root()).unwrap_or(d).to_path_buf();
+    // no part is under what a tool made, or under tests and the data they read
     let skipped = |d: &Path| {
-        let rel = d.strip_prefix(repo.root()).unwrap_or(d);
-        rel.components().count() > 5
-            || rel.components().any(|c| {
-                let n = c.as_os_str().to_str().unwrap_or("");
-                n.starts_with('.') || knowledge::MADE_DIRS.contains(&n) || knowledge::TEST_DIRS.contains(&n)
-            })
+        rel(d).components().any(|c| {
+            let n = c.as_os_str().to_str().unwrap_or("");
+            n.starts_with('.') || knowledge::MADE_DIRS.contains(&n) || knowledge::TEST_DIRS.contains(&n)
+        })
     };
+    // a directory comes after the directories around it
     for d in repo.dirs_under("").into_iter().filter(|d| !skipped(d)) {
         for l in crate::language::languages() {
-            let inside = out.iter().any(|(o, name)| *name == l.name() && d.starts_with(o));
-            if repo.is_file(d.join(l.manifest())) && !inside {
+            if !repo.is_file(d.join(l.manifest())) {
+                continue;
+            }
+            let read = out.iter().any(|(o, name)| *name == l.name() && d.starts_with(o) && l.reads(&repo.under(&rel(o)), &d));
+            if !read {
                 out.push((d.clone(), l.name()));
             }
         }
@@ -63,11 +66,15 @@ pub fn analyze_parts(repos: &[PathBuf], opts: &Options) -> Result<Vec<Graph>> {
     let mut graphs = vec![];
     for part in &found {
         match crate::graph_of(part, &opts) {
+            // a manifest without code of its own (tooling, a docs site, a workspace's root) is not a part
+            Ok(g) if g.nodes.is_empty() && found.len() > 1 => eprintln!("skipped {}: no code of its own", part.root().display()),
             Ok(g) => graphs.push(g),
-            // a manifest without code of its own (tooling, a docs site) is not a part
             Err(e) if found.len() > 1 => eprintln!("skipped {}: {e}", part.root().display()),
             Err(e) => return Err(e),
         }
+    }
+    if graphs.is_empty() {
+        anyhow::bail!("no code found in {}", repos.iter().map(|r| r.display().to_string()).collect::<Vec<_>>().join(", "));
     }
     Ok(graphs)
 }

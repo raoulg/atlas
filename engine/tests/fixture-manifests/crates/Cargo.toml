@@ -1,0 +1,4 @@
+# A Cargo workspace: `keeper` is its member, `fuzz` a workspace of its own beside it.
+[workspace]
+members = ["keeper"]
+resolver = "2"

@@ -29,6 +29,71 @@ fn every_manifest_roots_a_part() {
     assert_eq!(roots(&Repo::read(&atlas, &[]).unwrap(), &Options::default()).len(), 1, "the workspace is one root; engine/tests holds data");
 }
 
+fn manifests() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixture-manifests")
+}
+
+/// A manifest roots a part, at any depth, unless a part around it reads it: a Python project
+/// reads only its packages, so each member of a uv workspace is a part; a Cargo workspace reads
+/// its member (`crates/keeper`) and not the crate beside it that is none (`crates/fuzz`).
+#[test]
+fn a_manifest_no_part_reads_roots_one() {
+    let repo = Repo::read(&manifests(), &[]).unwrap();
+    let found: Vec<(String, &str)> = roots(&repo, &Options::default())
+        .into_iter()
+        .map(|(d, l)| (d.strip_prefix(manifests()).unwrap().to_string_lossy().to_string(), l))
+        .collect();
+    let want = [
+        ("", "python"),
+        ("crates", "rust"),
+        ("crates/fuzz", "rust"),
+        ("deep/a/b/c/d/e", "python"),
+        ("members/hatched", "python"),
+        ("members/poems", "python"),
+        ("members/settled", "python"),
+        ("members/spaced", "python"),
+        ("members/zoo", "python"),
+    ];
+    assert_eq!(found, want.map(|(d, l)| (d.to_string(), l)));
+}
+
+/// A Python project's package is the one its manifest names, and the graph is named after it:
+/// by the project's name (`zoo-keeper` is `src/zoo_keeper`, though `src/aardvark` sorts first),
+/// a namespace package without an `__init__.py` by its name (`spaced`), by Hatch's `packages`
+/// (`lib/hatched`, though `aaa` sorts first), setuptools' `packages` in its `package-dir`
+/// (`code/settled`) and Poetry's `packages` (`source/verse`). Every other package beside it is a
+/// part after it. The workspace's root holds no code and is no part.
+#[test]
+fn the_manifest_names_the_package() {
+    let graphs = analyze_parts(&[manifests()], &Options::default()).unwrap();
+    let found: Vec<(String, Vec<String>)> = graphs.iter().map(|g| (g.root.clone(), g.parts.iter().map(|p| p.id.clone()).collect())).collect();
+    let want: [(&str, &[&str]); 8] = [
+        ("keeper", &["keeper"]),
+        ("keeper-fuzz", &["keeper-fuzz"]),
+        ("deep", &["deep"]),
+        ("hatched", &["hatched", "aaa"]),
+        ("verse", &["verse"]),
+        ("settled", &["settled"]),
+        ("spaced", &["spaced"]),
+        ("zoo_keeper", &["zoo_keeper", "aardvark", "benchmarks"]),
+    ];
+    assert_eq!(found, want.map(|(root, parts)| (root.to_string(), parts.iter().map(|p| p.to_string()).collect::<Vec<_>>())));
+}
+
+/// A package beside the package is read as the package it is: its modules are named by their
+/// import path and a call into it is resolved; a script beside them stays a script.
+#[test]
+fn a_package_beside_the_package_is_read() {
+    let g = analyze_repo(&[manifests()], &Options::default()).unwrap();
+    assert!(g.edges.iter().any(|e| e.kind == EdgeKind::Calls && e.src == "zoo_keeper.keep.keep" && e.dst == "aardvark.feed.feed"));
+    assert!(g.edges.iter().any(|e| e.kind == EdgeKind::Calls && e.src == "benchmarks.timing.keep_many" && e.dst == "zoo_keeper.keep.keep"));
+    assert_eq!(g.node("aardvark.feed").unwrap().part, "aardvark");
+    assert_eq!(g.node("benchmarks.timing").unwrap().entry, None, "a module of a package is no script");
+    assert_eq!(g.node("scripts.morning").and_then(|n| n.entry.as_ref()).map(|e| e.kind), Some(EntryKind::Script));
+    assert_eq!(g.node("scripts.morning").unwrap().part, "zoo_keeper", "a script belongs to the package the project is named after");
+    assert!(g.node("settled.inner").is_some() && g.node("spaced.tool").is_some());
+}
+
 /// The parts side by side in one graph, every node in its part; checked part by part.
 #[test]
 fn the_parts_are_one_graph() {

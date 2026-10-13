@@ -95,7 +95,7 @@ fn segment(s: &str) -> String {
 }
 
 /// Where module paths start: `src/` when there is one.
-fn code_base(repo: &Repo) -> PathBuf {
+pub(crate) fn code_base(repo: &Repo) -> PathBuf {
     if repo.is_dir("src") { repo.root().join("src") } else { repo.root().to_path_buf() }
 }
 

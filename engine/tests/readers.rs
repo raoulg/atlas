@@ -47,6 +47,8 @@ fn library_knowledge_is_data() {
     names.extend(k::CLI_FRAMEWORKS.iter().map(|c| c.package));
     names.extend(k::WEB_FRAMEWORKS.iter().map(|w| w.package));
     names.extend(k::ENTRY_TABLES.iter().flat_map(|(path, _)| path.iter().copied()).filter(|p| !matches!(*p, "project" | "tool" | "scripts")));
+    // the build backends, by the tool table each keeps its settings in
+    names.extend(k::PACKAGE_SETTINGS.iter().map(|(path, _)| path[1]).chain(k::PACKAGE_ROOTS.iter().map(|path| path[1])));
     names.extend(k::MUTATORS.iter().map(|(_, s, _)| *s).filter(|s| !matches!(*s, "builtins" | "javascript")));
     names.extend(k::HANDS_ON.iter().map(|(c, _)| *c).filter(|c| *c != "std"));
     for table in [k::ML_PACKAGES, k::HUB_PACKAGES, k::FILE_PACKAGES, k::ROUTERS, k::NODE_FS, k::FILE_ROUTES, k::ROOT_ROUTES, k::DRIVER_ACCESS, k::HUB_READ, k::HUB_WRITE] {

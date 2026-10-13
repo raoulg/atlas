@@ -27,9 +27,9 @@ use crate::tree::{
 mod paths;
 use paths::{Arg, At, Eval, Evaluated};
 
-struct Crate {
+pub(crate) struct Crate {
     name: String,
-    dir: PathBuf,
+    pub(crate) dir: PathBuf,
 }
 
 struct Module {
@@ -57,7 +57,7 @@ struct Impl<'t> {
 
 // ---------- crates and modules ----------
 
-fn crates(repo: &Repo) -> Result<Vec<Crate>> {
+pub(crate) fn crates(repo: &Repo) -> Result<Vec<Crate>> {
     let manifest = repo.root().join("Cargo.toml");
     let doc: toml::Table = repo.text(&manifest).with_context(|| format!("reading {}", manifest.display()))?.parse().with_context(|| format!("parsing {}", manifest.display()))?;
     let mut out = vec![];

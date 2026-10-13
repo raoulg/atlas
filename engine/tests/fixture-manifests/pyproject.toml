@@ -1,0 +1,3 @@
+# A uv workspace without code of its own: each member is a project, and a part.
+[tool.uv.workspace]
+members = ["members/*"]

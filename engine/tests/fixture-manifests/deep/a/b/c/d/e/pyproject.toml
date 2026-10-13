@@ -1,0 +1,4 @@
+# A project six directories below the repository's root.
+[project]
+name = "deep"
+version = "0.1.0"

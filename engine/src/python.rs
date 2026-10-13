@@ -307,25 +307,27 @@ fn notebook_source(text: &str) -> Result<String> {
     Ok(lines.concat())
 }
 
-/// The scripts and notebooks of a project: every `.py` and `.ipynb` outside its package, at any
+/// The scripts and notebooks of a project: every `.py` and `.ipynb` outside its packages, at any
 /// depth, and the files named on the command line, even where git ignores them. Not its tests,
-/// what git ignores, hidden directories or environments, and not another package or project
-/// inside it (a directory with an `__init__.py` or a `pyproject.toml`).
-fn scripts(repo: &Repo, root_dir: &Path, pkg_dir: Option<&Path>) -> Vec<PathBuf> {
+/// what git ignores, hidden directories or environments, and not another project inside it (a
+/// directory with a `pyproject.toml`: a part of its own).
+fn scripts(repo: &Repo, root_dir: &Path, packages: &[PathBuf]) -> Vec<PathBuf> {
     let named: Vec<PathBuf> = repo.named().into_iter().filter(|p| p.starts_with(root_dir)).collect();
     // without a package or a project file, the project is the files named
-    if pkg_dir.is_none() && !repo.is_file(root_dir.join("pyproject.toml")) {
+    if packages.is_empty() && !repo.is_file(root_dir.join("pyproject.toml")) {
         return named;
     }
-    // what a tool made, tests, the package, and another package or project inside the project
+    // what a tool made, tests, and another project inside the project
     let elsewhere = |d: &Path| {
         let name = d.file_name().and_then(|n| n.to_str()).unwrap_or("");
-        knowledge::MADE_DIRS.contains(&name) || knowledge::TEST_DIRS.contains(&name) || Some(d) == pkg_dir || repo.is_file(d.join("__init__.py")) || repo.is_file(d.join("pyproject.toml"))
+        knowledge::MADE_DIRS.contains(&name) || knowledge::TEST_DIRS.contains(&name) || repo.is_file(d.join("pyproject.toml"))
     };
+    let packaged: HashSet<PathBuf> = packages.iter().flat_map(|d| repo.files_under(d)).collect();
     let mut out: Vec<PathBuf> = repo
         .files_under(root_dir)
         .into_iter()
         .filter(|p| matches!(p.extension().and_then(|x| x.to_str()), Some("py" | "ipynb")))
+        .filter(|p| !packaged.contains(p))
         .filter(|p| !p.ancestors().skip(1).take_while(|a| *a != root_dir).any(elsewhere))
         .filter(|p| {
             let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
@@ -354,46 +356,124 @@ pub fn project_root(repo: &Repo, pkg_dir: &Path) -> Option<PathBuf> {
     None
 }
 
-/// The importable package inside a repo: `src/<pkg>` or `<pkg>/`, the first with an `__init__.py`.
-pub fn discover_package(repo: &Repo) -> Result<PathBuf> {
+/// The packages of a project, the one it is named after first: the packages its manifest names,
+/// then every other directory with an `__init__.py` where the project keeps its packages (the
+/// directories its manifest names for them, `src/`, the root), each read as the package it is.
+/// Not its tests, what a tool made, or another project inside it. A directory with an
+/// `__init__.py` of its own is a package named on its own.
+pub fn packages(repo: &Repo) -> Vec<PathBuf> {
     if repo.is_file("__init__.py") {
-        return Ok(repo.root().to_path_buf());
+        return vec![repo.root().to_path_buf()];
     }
-    for base in ["src", ""] {
-        for d in repo.dirs_in(base) {
+    let manifest = repo.text("pyproject.toml").and_then(|t| t.parse::<toml::Table>().ok()).unwrap_or_default();
+    let mut out = named_packages(repo, &manifest);
+    for base in package_bases(&manifest) {
+        for d in repo.dirs_in(&base) {
             let name = d.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            if name.starts_with('.') || ["tests", "test", "node_modules", "docs"].contains(&name) {
-                continue;
-            }
-            if repo.is_file(d.join("__init__.py")) {
-                return Ok(d);
+            let elsewhere = knowledge::MADE_DIRS.contains(&name) || knowledge::TEST_DIRS.contains(&name) || repo.is_file(d.join("pyproject.toml"));
+            // a package inside another is read with it
+            if !elsewhere && repo.is_file(d.join("__init__.py")) && !out.iter().any(|p| d.starts_with(p) || p.starts_with(&d)) {
+                out.push(d);
             }
         }
     }
-    anyhow::bail!("no Python package found under {} (looked for src/<pkg>/__init__.py and <pkg>/__init__.py)", repo.root().display())
+    out
 }
 
-/// Parse a package (and the scripts next to it) into a `GraphBuilder`. Returns the store and the root package name.
-pub fn parse(repo: &Repo, pkg_dir: Option<&Path>, project_root: Option<&Path>, opts: &crate::Options) -> Result<(GraphBuilder, String)> {
+/// The packages a project's manifest names, in its order, where they are: by the settings of its
+/// build backend (knowledge::PACKAGE_SETTINGS), else by the project's name as an import name
+/// (`my-pkg` is `my_pkg`). A package named by its import name is a directory under one of the
+/// directories the project keeps its packages in, with or without an `__init__.py` (a namespace
+/// package). A package inside another named one is read with it.
+fn named_packages(repo: &Repo, manifest: &toml::Table) -> Vec<PathBuf> {
+    let bases = package_bases(manifest);
+    let found = |name: &str| bases.iter().map(|b| b.join(name.replace('.', "/"))).find(|d| repo.is_dir(d)).map(|d| repo.root().join(d));
+    let mut out: Vec<PathBuf> = vec![];
+    for (path, names) in knowledge::PACKAGE_SETTINGS {
+        let Some(v) = setting(manifest, path) else { continue };
+        match names {
+            knowledge::Names::Dirs => out.extend(strings(v).iter().map(|d| repo.root().join(d))),
+            knowledge::Names::Imports => out.extend(strings(v).iter().filter_map(|n| found(n))),
+            knowledge::Names::DirsByName => out.extend(v.as_table().into_iter().flatten().filter(|(name, _)| !name.is_empty()).filter_map(|(_, d)| d.as_str()).map(|d| repo.root().join(d))),
+            knowledge::Names::Tables { name: by_name, dir: by_dir } => {
+                for t in v.as_array().into_iter().flatten().filter_map(|t| t.as_table()) {
+                    let Some(name) = t.get(*by_name).and_then(|n| n.as_str()) else { continue };
+                    out.push(repo.root().join(t.get(*by_dir).and_then(|d| d.as_str()).unwrap_or("")).join(name));
+                }
+            }
+        }
+    }
+    out.retain(|d| repo.is_dir(d));
+    if out.is_empty() {
+        let names = knowledge::PROJECT_NAMES.iter().filter_map(|p| setting(manifest, p)?.as_str());
+        out.extend(names.map(|n| n.replace(['-', '.'], "_")).find_map(|n| found(&n).or_else(|| found(&n.to_lowercase()))));
+    }
+    let mut packages: Vec<PathBuf> = vec![];
+    for d in out {
+        if !packages.iter().any(|p| d.starts_with(p)) {
+            packages.retain(|p| !p.starts_with(&d));
+            packages.push(d);
+        }
+    }
+    packages
+}
+
+/// The directories a project keeps its packages in, from its root: those its manifest names
+/// (knowledge::PACKAGE_ROOTS), then the usual layouts.
+fn package_bases(manifest: &toml::Table) -> Vec<PathBuf> {
+    let mut bases: Vec<PathBuf> = knowledge::PACKAGE_ROOTS.iter().filter_map(|p| setting(manifest, p)).flat_map(strings).map(PathBuf::from).collect();
+    bases.extend(knowledge::PACKAGE_LAYOUTS.iter().map(PathBuf::from));
+    let mut seen = HashSet::new();
+    bases.retain(|b| seen.insert(b.clone()));
+    bases
+}
+
+/// The value at a path of keys in a manifest.
+fn setting<'t>(manifest: &'t toml::Table, path: &[&str]) -> Option<&'t toml::Value> {
+    let (first, rest) = path.split_first()?;
+    rest.iter().try_fold(manifest.get(*first)?, |v, k| v.get(*k))
+}
+
+/// A setting's strings: one, or a list.
+fn strings(v: &toml::Value) -> Vec<String> {
+    match v {
+        toml::Value::String(s) => vec![s.clone()],
+        toml::Value::Array(a) => a.iter().filter_map(|s| s.as_str()).map(str::to_string).collect(),
+        _ => vec![],
+    }
+}
+
+/// Parse a project's packages (and the scripts next to them) into a `GraphBuilder`. Returns the
+/// store and the name of the first package, the root.
+pub fn parse(repo: &Repo, packages: &[PathBuf], project_root: Option<&Path>, opts: &crate::Options) -> Result<(GraphBuilder, String)> {
     // a project without a package is named after its folder
-    let named = pkg_dir.or(project_root).context("no package and no project")?;
+    let named = packages.first().map(PathBuf::as_path).or(project_root).context("no package and no project")?;
     let named = std::fs::canonicalize(named).unwrap_or_else(|_| named.to_path_buf());
     let root = named.file_name().and_then(|n| n.to_str()).context("package dir has no name")?.to_string();
     let mut parser = new_parser()?;
     let mut modules: IndexMap<String, Module> = IndexMap::new();
     let mut store = GraphBuilder::default();
 
-    let mut files: Vec<PathBuf> = pkg_dir.into_iter().flat_map(|d| repo.files_under(d)).filter(|p| p.extension().and_then(|x| x.to_str()) == Some("py")).collect();
-    files.sort();
-    let base = pkg_dir.and_then(Path::parent).unwrap_or(Path::new(""));
-    for p in files {
-        let rel = p.strip_prefix(base).unwrap_or(&p).with_extension("");
+    // each package's modules are named from the directory it is in
+    let mut files: Vec<(PathBuf, &Path)> = vec![];
+    for d in packages {
+        let mut own: Vec<PathBuf> = repo.files_under(d).into_iter().filter(|p| p.extension().and_then(|x| x.to_str()) == Some("py")).collect();
+        own.sort();
+        files.extend(own.into_iter().map(|p| (p, d.parent().unwrap_or(Path::new("")))));
+    }
+    let base = packages.first().and_then(|d| d.parent()).unwrap_or(Path::new(""));
+    for (p, at) in files {
+        let rel = p.strip_prefix(at).unwrap_or(&p).with_extension("");
         let mut parts: Vec<String> = rel.components().map(|c| c.as_os_str().to_string_lossy().to_string()).collect();
         let is_pkg = parts.last().map_or(false, |l| l == "__init__");
         if is_pkg {
             parts.pop();
         }
         let mid = parts.join(".");
+        // a package found twice, by two names for its directory, is read once
+        if modules.contains_key(&mid) {
+            continue;
+        }
         let m = load_module(&mut parser, &mid, &p, is_pkg, &repo.bytes(&p).with_context(|| format!("reading {}", p.display()))?)?;
         store.files.insert(crate::tree::path_str(&p), String::from_utf8_lossy(&m.src).to_string());
         store.add_node(Node {
@@ -409,9 +489,9 @@ pub fn parse(repo: &Repo, pkg_dir: Option<&Path>, project_root: Option<&Path>, o
         });
         modules.insert(mid, m);
     }
-    // the project's scripts and notebooks are routes into the package
+    // the project's scripts and notebooks are routes into its packages
     if let Some(root_dir) = project_root {
-        for p in scripts(repo, root_dir, pkg_dir) {
+        for p in scripts(repo, root_dir, packages) {
             let rel = p.strip_prefix(root_dir).unwrap_or(&p).to_path_buf();
             let stem = p.file_stem().and_then(|s| s.to_str()).unwrap_or("script").to_string();
             // a dot in a file's name is no module boundary
