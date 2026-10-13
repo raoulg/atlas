@@ -48,6 +48,9 @@ fn a_client_initializes_lists_and_calls() {
     assert!(text(&replies[3]).starts_with("A sum type is unwrapped where it arises."));
     // analyze is its algebra: Disk(repo) -> read -> Repo -> parse -> Graph
     assert!(text(&replies[4]).contains("\n1  read(dir, opts) → Repo\n  1.1  Repo.read(dir, named) → Repo   ·   reads dir"), "{}", text(&replies[4]));
+    // a package named on its own is read as the project it is in, asked for that package:
+    // `Repo::read(&root, ..)?.asked_for(package)`, a method on what the call before it gives
+    assert!(text(&replies[4]).contains("\n  1.4  Repo.asked_for(asked) → Repo\n"), "{}", text(&replies[4]));
     // the places other routes hand `analyze` (a revision `changes` reads into a temporary folder) are theirs
     assert!(!text(&replies[4]).contains("$TMPDIR"), "{}", text(&replies[4]));
     assert!(text(&replies[4]).contains("2.2  Language.parse(repo, opts) → Graph   ·   one of 3"), "{}", text(&replies[4]));

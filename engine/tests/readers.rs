@@ -46,6 +46,7 @@ fn library_knowledge_is_data() {
     names.extend(k::CONTROLLERS.iter().flat_map(|(p, c, _)| [*p, *c]));
     names.extend(k::ARG_PARSERS.iter().flat_map(|a| [a.package, a.namespace]));
     names.extend(k::OPTION_PARSERS.iter().map(|o| o.function));
+    names.extend(k::DERIVED_PARSERS.iter().flat_map(|d| std::iter::once(d.package).chain(d.derives.iter().copied())));
     names.extend(k::RUST_INTERIOR.iter().flat_map(|i| i.types.iter().copied()));
     names.extend(k::CLI_FRAMEWORKS.iter().map(|c| c.package));
     names.extend(k::WEB_FRAMEWORKS.iter().map(|w| w.package));

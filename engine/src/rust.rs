@@ -42,6 +42,11 @@ struct Module {
     tree: Tree,
     bindings: HashMap<String, String>,
     wildcards: Vec<String>,
+    /// The libraries' modules a glob import brings every name of: `ext:plotters.prelude` for
+    /// `use plotters::prelude::*`.
+    globs: Vec<String>,
+    /// The names the module's items declare as type parameters (`DB` in `fn draw<DB: Backend>`).
+    generics: HashSet<String>,
     symbols: HashMap<String, String>,
     is_root: bool,
     /// For the root of a binary target (`src/main.rs`, `src/bin/x.rs`): the binary's name.
@@ -377,9 +382,10 @@ pub fn parse(repo: &Repo) -> Result<(GraphBuilder, String)> {
                 ..Default::default()
             });
             let defs = definitions(&tree, &src);
+            let generics = type_parameters(&tree, &src);
             modules.insert(
                 mid.clone(),
-                Module { id: mid, krate: c.name.clone(), parent, path: p, src, tree, bindings: HashMap::new(), wildcards: vec![], symbols: HashMap::new(), is_root, bin, defs },
+                Module { id: mid, krate: c.name.clone(), parent, path: p, src, tree, bindings: HashMap::new(), wildcards: vec![], globs: vec![], generics, symbols: HashMap::new(), is_root, bin, defs },
             );
         }
     }
@@ -675,7 +681,13 @@ fn collect_uses(m: &mut Module, crate_ids: &HashMap<String, String>, module_ids:
     }
     for w in wild {
         let id = path_to_id(m, &w, crate_ids, &is_module);
-        if !id.starts_with("ext:") {
+        // a glob over a name the module binds (`use Kind::*` of its own enum) is no library's
+        let bound = w.first().map_or(false, |h| m.symbols.contains_key(h) || bindings.iter().any(|(a, _)| a == h));
+        if id.starts_with("ext:") {
+            if !bound && !m.globs.contains(&id) {
+                m.globs.push(id);
+            }
+        } else {
             edges.push(id.clone());
             m.wildcards.push(id);
         }
@@ -696,20 +708,44 @@ fn collect_uses(m: &mut Module, crate_ids: &HashMap<String, String>, module_ids:
 
 // ---------- resolution ----------
 
+/// The names a file's items declare as type parameters: a function's, an impl's, a trait's, a
+/// type's.
+fn type_parameters(tree: &Tree, src: &[u8]) -> HashSet<String> {
+    walk(tree.root_node(), &["type_parameters"])
+        .into_iter()
+        .flat_map(named_children)
+        .filter_map(|t| match t.kind() {
+            "type_identifier" => Some(t),
+            "type_parameter" | "constrained_type_parameter" | "optional_type_parameter" => t.child_by_field_name("name").or_else(|| t.child_by_field_name("left")),
+            _ => None,
+        })
+        .map(|n| text(n, src).to_string())
+        .collect()
+}
+
+/// A path as written -> what it names: one of the program's items, or `ext:..` a library's. Rust
+/// keeps types and modules apart from values, and the head of a longer path (`download::f`) is a
+/// module or a type, never a function bound by the same name (`pub use download::download`).
+/// A name the module neither declares nor imports by name is the prelude's, or one a library's
+/// glob import brings in (`DrawingArea` after `use plotters::prelude::*`), when the module has
+/// one such glob.
 fn resolve(m: &Module, parts: &[String], modules: &IndexMap<String, Module>, nodes: &IndexMap<String, Node>, crate_ids: &HashMap<String, String>) -> Option<String> {
     let head = parts.first()?;
     let is_module = |id: &str| nodes.get(id).map_or(false, |n| n.kind == NodeKind::Module);
+    let value = |id: &&String| parts.len() > 1 && nodes.get(*id).map_or(false, |n| matches!(n.kind, NodeKind::Function | NodeKind::Method));
     let (mut target, rest): (String, &[String]) = if matches!(head.as_str(), "crate" | "self" | "super") || crate_ids.contains_key(head) {
         (path_to_id(m, parts, crate_ids, &is_module), &[])
-    } else if let Some(s) = m.symbols.get(head) {
+    } else if let Some(s) = m.symbols.get(head).filter(|s| !value(s)) {
         (s.clone(), &parts[1..])
-    } else if let Some(b) = m.bindings.get(head) {
+    } else if let Some(b) = m.bindings.get(head).filter(|b| !value(b)) {
         (b.clone(), &parts[1..])
     } else if let Some(w) = m.wildcards.iter().find(|w| nodes.contains_key(&format!("{w}.{head}"))) {
         (format!("{w}.{head}"), &parts[1..])
     } else if nodes.get(&format!("{}.{head}", m.id)).map_or(false, |n| n.kind == NodeKind::Module) {
         // a child module declared with `mod x;`, addressed as `x::f`
         (format!("{}.{head}", m.id), &parts[1..])
+    } else if let Some(glob) = glob_of(m, parts) {
+        (format!("{glob}.{head}"), &[])
     } else {
         return Some(format!("ext:{}", parts.join(".")));
     };
@@ -724,6 +760,29 @@ fn resolve(m: &Module, parts: &[String], modules: &IndexMap<String, Module>, nod
     let (modid, nm) = target.rsplit_once('.')?;
     let re = modules.get(modid)?.bindings.get(nm)?;
     nodes.contains_key(re).then(|| re.clone())
+}
+
+/// The library glob a name is brought in by: a name of one segment the module neither declares
+/// nor imports by name, which is not the prelude's nor a type parameter, when the module has one
+/// library glob; with two the code does not say which.
+fn glob_of<'m>(m: &'m Module, parts: &[String]) -> Option<&'m String> {
+    let ([name], [glob]) = (parts, m.globs.as_slice()) else { return None };
+    (name != "Self" && !knowledge::RUST_PRELUDE.contains(&name.as_str()) && !m.generics.contains(name)).then_some(glob)
+}
+
+/// What a path names where a value is wanted, as where it is called: where it names a module,
+/// the function of that name the module's parent declares or re-exports
+/// (`mod download; pub use download::download;`), since Rust keeps modules apart from values.
+fn resolve_value(m: &Module, parts: &[String], modules: &IndexMap<String, Module>, nodes: &IndexMap<String, Node>, crate_ids: &HashMap<String, String>) -> Option<String> {
+    let r = resolve(m, parts, modules, nodes, crate_ids)?;
+    if nodes.get(&r).map_or(true, |n| n.kind != NodeKind::Module) {
+        return Some(r);
+    }
+    let value = r.rsplit_once('.').and_then(|(parent, name)| {
+        let home = modules.get(parent)?;
+        resolve(home, &[name.to_string()], modules, nodes, crate_ids).filter(|v| nodes.get(v).map_or(false, |n| n.kind != NodeKind::Module))
+    });
+    Some(value.unwrap_or(r))
 }
 
 
@@ -1408,6 +1467,10 @@ impl<'a, 't> Body<'a, 't> {
         resolve(self.m, parts, self.modules, &self.store.nodes, self.crate_ids)
     }
 
+    fn resolve_value(&self, parts: &[String]) -> Option<String> {
+        resolve_value(self.m, parts, self.modules, &self.store.nodes, self.crate_ids)
+    }
+
     fn class_of(&self, id: &str) -> Option<String> {
         self.store.nodes.get(id).filter(|x| x.kind == NodeKind::Class).map(|_| id.to_string())
     }
@@ -1519,19 +1582,18 @@ impl<'a, 't> Body<'a, 't> {
     }
 
     /// The class a value is of, where the body says: a name it holds, a struct literal, a method
-    /// by what its signature gives back on the class of its receiver, a function by its return.
+    /// by what its signature gives back on the class of its receiver (a name, `self`, or the value
+    /// another call gives), a function by its return.
     fn value_class(&self, v: TsNode) -> Option<String> {
         let src = self.src;
         match v.kind() {
+            "try_expression" | "await_expression" | "reference_expression" | "parenthesized_expression" => self.value_class(named_children(v).into_iter().next()?),
+            "self" => self.cls.clone(),
             "identifier" => self.locals.get(text(v, src)).cloned(),
             "struct_expression" => self.resolve(&path_parts(v.child_by_field_name("name"), src)).and_then(|r| self.class_of(&r)),
             "call_expression" if v.child_by_field_name("function").map_or(false, |f| f.kind() == "field_expression") => {
                 let f = v.child_by_field_name("function")?;
-                let on = match f.child_by_field_name("value") {
-                    Some(r) if r.kind() == "self" => self.cls.clone(),
-                    Some(r) if r.kind() == "identifier" => self.locals.get(text(r, src)).cloned(),
-                    _ => None,
-                };
+                let on = self.value_class(f.child_by_field_name("value")?);
                 let name = f.child_by_field_name("field").map(|x| text(x, src)).unwrap_or("");
                 on.and_then(|t| self.store.method_of(&t, name)).and_then(|t| self.returned_class(&t))
             }
@@ -1540,7 +1602,7 @@ impl<'a, 't> Body<'a, 't> {
                 if parts.is_empty() {
                     return None;
                 }
-                self.resolve(&parts).as_deref().and_then(|f| self.returned_class(f)).or_else(|| self.resolve(&parts[..parts.len() - 1]).and_then(|r| self.class_of(&r)))
+                self.resolve_value(&parts).as_deref().and_then(|f| self.returned_class(f)).or_else(|| self.resolve(&parts[..parts.len() - 1]).and_then(|r| self.class_of(&r)))
             }
             _ => None,
         }
@@ -1615,7 +1677,7 @@ impl<'a, 't> Body<'a, 't> {
             // a method not found on the type (`to_string`, `len`) is not known; it builds nothing
             Some(r) => {
                 if let Some(t) = self.store.method_of(&r, &method).filter(|t| !t.starts_with("ext:")) {
-                    self.own_step(steps, c, &t, recv.last().copied(), None);
+                    self.own_step(steps, c, &t, recv.last().copied(), Some(&r), None);
                 }
             }
             None => self.library_step(steps, c, &method, recv.last().copied()),
@@ -1664,7 +1726,7 @@ impl<'a, 't> Body<'a, 't> {
             let ps = path_parts(Some(a), self.src);
             let handed = match (ps.first().map(String::as_str), &self.cls) {
                 (Some("Self"), Some(c)) => ps.get(1).and_then(|m| self.store.method_of(c, m)),
-                _ => self.resolve(&ps),
+                _ => self.resolve_value(&ps),
             };
             if let Some(t) = handed.filter(|t| self.store.nodes.get(t).map_or(false, |n| matches!(n.kind, NodeKind::Function | NodeKind::Method))) {
                 steps.handed(c, a, &t, EdgeKind::Calls);
@@ -1688,11 +1750,13 @@ impl<'a, 't> Body<'a, 't> {
         self.hands(&parts, kept)
     }
 
-    /// A step to one of the program's own functions or types.
-    fn own_step(&mut self, steps: &mut Steps, c: TsNode<'t>, t: &str, recv: Option<TsNode<'t>>, via: Option<String>) {
+    /// A step to one of the program's own functions or types; a method called on a value of a
+    /// kind of its own type (a trait's method on a type that implements it) runs on that kind.
+    fn own_step(&mut self, steps: &mut Steps, c: TsNode<'t>, t: &str, recv: Option<TsNode<'t>>, class: Option<&str>, via: Option<String>) {
         let kind = if self.store.nodes[t].kind == NodeKind::Class { EdgeKind::Instantiates } else { EdgeKind::Calls };
         let on_receiver = recv.map_or(false, |r| r.kind() == "self");
-        let step = Step { on_receiver, hands: self.call_hands(c, recv, &steps.kept), gives: self.gives(c, Some(t)), ..Default::default() };
+        let on = class.filter(|k| self.store.nodes[t].cls.as_deref().map_or(false, |b| b != *k)).unwrap_or_default().to_string();
+        let step = Step { on, on_receiver, hands: self.call_hands(c, recv, &steps.kept), gives: self.gives(c, Some(t)) };
         steps.call(c, t, kind, via.filter(|_| kind == EdgeKind::Instantiates), step);
         if let Some(arg) = self.argument(c, t, recv.is_some()) {
             self.read.args.push(arg);
@@ -1744,16 +1808,18 @@ impl<'a, 't> Body<'a, 't> {
                     _ => None,
                 }
             }
-            _ => None,
+            // the value a call gives (`Trend::new(settings).save(..)`), or one written another way:
+            // the class the body says it is
+            _ => self.value_class(value),
         };
-        match receiver {
-            // a method not found on the type (`to_string`, `clone`) is not known; it builds nothing
-            Some(r) => {
-                if let Some(t) = self.store.method_of(&r, &method).filter(|t| !t.starts_with("ext:")) {
-                    self.own_step(steps, c, &t, Some(value), None);
-                }
-            }
-            None => {
+        let own = receiver.as_deref().and_then(|r| self.store.method_of(r, &method)).filter(|t| !t.starts_with("ext:"));
+        match (own, receiver) {
+            (Some(t), r) => self.own_step(steps, c, &t, Some(value), r.as_deref(), None),
+            // a method not found on a name's type (`to_string`, `clone`) is not known; it builds nothing
+            (None, Some(_)) if matches!(value.kind(), "self" | "identifier" | "field_expression") => {}
+            // a library's operation; on what a call gives, also one its class does not have, which
+            // is the wrapper's the class is given in (`map_or` of the `Option<&Node>` of `ix.node(..)`)
+            _ => {
                 self.library_step(steps, c, &method, Some(value));
                 let touches = self.chain_touches(c, value, &method);
                 self.keep(touches);
@@ -1890,7 +1956,7 @@ impl<'a, 't> Body<'a, 't> {
             }
             ("Self", None) => None,
             // `Type::new(..)`: a function on a type
-            _ => self.resolve(&parts).or_else(|| {
+            _ => self.resolve_value(&parts).or_else(|| {
                 let r = self.resolve(&parts[..parts.len().saturating_sub(1)]).filter(|r| !r.starts_with("ext:") && parts.len() > 1).and_then(|r| self.class_of(&r))?;
                 Some(self.store.method_of(&r, &parts[parts.len() - 1]).unwrap_or(r))
             }),
@@ -1899,7 +1965,7 @@ impl<'a, 't> Body<'a, 't> {
             // `Type::method(..)` with no such method known: keep the name, it is what was called
             Some(t) if !t.starts_with("ext:") => {
                 let via = (parts.len() > 1 && parts[0] != "Self").then(|| parts.last().cloned()).flatten();
-                self.own_step(steps, c, &t, None, via);
+                self.own_step(steps, c, &t, None, None, via);
             }
             _ => {
                 let op = parts.last().cloned().unwrap_or_default();
@@ -1973,6 +2039,10 @@ impl<'a, 't> Body<'a, 't> {
         out
     }
 }
+
+/// The variants of `Option` and `Result` that hold the value they give: where a value is followed,
+/// `Some(x)` and `Ok(x)` are `x`.
+const HOLDING: &[&str] = &["Some", "Ok"];
 
 // ---------- choices ----------
 

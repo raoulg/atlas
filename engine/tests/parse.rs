@@ -456,6 +456,15 @@ fn rust_workspace_parses() {
     assert!(boundaries(g.node("atlas.view").unwrap()).contains_key("screen"), "eprintln!");
     let m = edges(&g, EdgeKind::Mutates);
     assert!(m.contains(&("atlas-engine.model.Graph.recount".into(), "atlas-engine.model.Graph".into())), "&mut self");
+    // a method runs on the value the call before it gives: `Repo::read(&root, ..)?.asked_for(package)`
+    let read: Vec<&str> = g.node("atlas-engine.language.read").unwrap().sites.iter().map(|s| s.to.as_str()).collect();
+    assert_eq!(read, ["atlas-engine.repo.Repo.read", "atlas-engine.language.languages", "atlas-engine.repo.Repo.read", "atlas-engine.repo.Repo.asked_for"]);
+    let places = |id: &str| g.node(id).unwrap().touches.iter().map(|t| (t.kind_name().to_string(), t.op.clone(), t.artifact.clone())).collect::<Vec<_>>();
+    // a name bound by `if let`: `if let Some(d) = dest.parent()` under the revision's `env::temp_dir()`
+    assert!(places("atlas-engine.changes.revision").contains(&("disk_write".into(), "create_dir_all".into(), "$TMPDIR/".into())), "{:?}", places("atlas-engine.changes.revision"));
+    // clap's options hold their defaults where the command line leaves them out: `atlas analyze`
+    // writes `graph.json` unless given `-o` (`Cmd::Analyze { out, .. }`, `default_value = "graph.json"`)
+    assert!(places("atlas.main").contains(&("disk_write".into(), "write".into(), "graph.json".into())), "{:?}", places("atlas.main"));
 }
 
 /// Atlas obeys its own algebra: the steps of `analyze` move data between the repository as read

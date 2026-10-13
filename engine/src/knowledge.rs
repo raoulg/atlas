@@ -737,6 +737,25 @@ pub struct OptionParser {
 
 pub const OPTION_PARSERS: &[OptionParser] = &[OptionParser { package: "util", function: "parseArgs", options: "options", default: "default", values: "values" }];
 
+/// A command-line parser derived from a type, whose values are the fields of that type
+/// (`cli.raw`): its package, the derives that make a type one, the attributes that declare a
+/// field's option, and an option's keys for its default.
+pub struct DerivedParser {
+    pub package: &'static str,
+    pub derives: &'static [&'static str],
+    pub attributes: &'static [&'static str],
+    pub defaults: &'static [&'static str],
+}
+
+/// clap's derive: `#[derive(Parser)] struct Cli { #[arg(long, default_value = RAW)] raw: PathBuf }`,
+/// with the options a struct of `Args` or a variant of `Subcommand` adds to it.
+pub const DERIVED_PARSERS: &[DerivedParser] = &[DerivedParser {
+    package: "clap",
+    derives: &["Parser", "Args", "Subcommand"],
+    attributes: &["arg", "clap"],
+    defaults: &["default_value", "default_value_t", "default_value_os"],
+}];
+
 /// How a path under the system's directory for temporary files is written: a place of its own,
 /// as `~` is the user's home.
 pub const TEMP_DIR: &str = "$TMPDIR";

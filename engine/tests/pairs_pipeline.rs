@@ -276,7 +276,6 @@ fn the_same_from_outside_typescript_creates_the_parent_of_the_path_handed_in() {
 /// command: `main` names the URL, and clap's `--raw` and `--figure` name the raw file and the
 /// figure with their defaults (`#[arg(long, default_value = RAW)]`).
 #[test]
-#[ignore = "Atlas (a): five forms of the clean Rust are misread, each a test of its own: `download` re-exported under the name of its module, `save` called on the value `Trend::new(..)` gives, clap's `--raw` and `--figure`, a directory bound by `if let`, and the path `download` gives inside `Ok(..)`"]
 fn the_same_from_outside_rust_clean() {
     assert_eq!(program(rust_clean()), "sunspots.main.main");
     assert_eq!(outside(rust_clean(), "sunspots.main.main"), the_outside());
@@ -285,7 +284,6 @@ fn the_same_from_outside_rust_clean() {
 /// The clean Rust `load` reads the file the command names: `load(&download(SILSO, &cli.raw)?)`
 /// hands it what `download` gives back, `Ok(to.to_path_buf())`, the path `main` handed `download`.
 #[test]
-#[ignore = "Atlas (a): a path a function gives inside `Ok(..)` is not followed, so `load(&download(..)?)` reads a file the code does not name; the path is lost to clap's `--raw` and to `download` read as its module as well"]
 fn the_same_from_outside_rust_clean_reads_the_path_download_gives_back() {
     let read = touches(rust_clean(), "sunspots.series.load", "disk_read");
     assert!(read.iter().any(|t| t.artifact == "data/raw/sunspots.csv" && !t.fixed && t.by == ["sunspots.main.main"]), "{read:#?}");
@@ -295,7 +293,6 @@ fn the_same_from_outside_rust_clean_reads_the_path_download_gives_back() {
 /// `if let Some(dir) = to.parent() { fs::create_dir_all(dir)? }` creates the directory of the path
 /// `main` hands in.
 #[test]
-#[ignore = "Atlas (a): a name bound by `if let` (`if let Some(dir) = to.parent()`) is not followed, so the directory `create_dir_all` makes is no place; the paths are lost to clap's options, to `download` read as its module and to `save` called on the value `Trend::new(..)` gives as well"]
 fn the_same_from_outside_rust_clean_creates_the_parent_of_the_path_handed_in() {
     for (f, dir) in [("sunspots.download.download", "data/raw/"), ("sunspots.plot.Plot.save", "figures/")] {
         let made: Vec<&Touch> = touches(rust_clean(), f, "disk_write").into_iter().filter(|t| t.op == "create_dir_all" && !t.artifact.is_empty()).collect();
@@ -672,7 +669,6 @@ fn rust_clean_trend_is_a_plot() {
 /// `download` gives back. The crate's root re-exports `download` from the module of that name, as
 /// Python's `__init__` and TypeScript's `index.ts` do, so it is a door.
 #[test]
-#[ignore = "Atlas (a): a function re-exported under the name of its module (`mod download; pub use download::download;`) is read as the module: `main` calls the module `sunspots.download`, and the function is no door"]
 fn rust_clean_main_downloads_the_file() {
     let r = rust_clean();
     let main = "sunspots.main.main";
@@ -686,7 +682,6 @@ fn rust_clean_main_downloads_the_file() {
 /// `Trend::new(settings).save(..)` runs the trait's `save` on a `Trend`, handed the series and the
 /// smoothed means, as Python's `Trend(settings).save(frame, figure)` runs `Plot.save` on a `Trend`.
 #[test]
-#[ignore = "Atlas (a): a method called on the value a call gives (`Trend::new(settings).save(..)`) is no step, and a trait's own method called on a value of a kind records no kind it runs on (`on`)"]
 fn rust_clean_main_saves_a_trend() {
     let saving = step(rust_clean(), "sunspots.main.main", "sunspots.plot.Plot.save");
     assert_eq!(saving.on, "sunspots.plot.Trend");
@@ -697,7 +692,6 @@ fn rust_clean_main_saves_a_trend() {
 /// `--figure` name the files with their defaults, and each step is handed its place. Each place is
 /// made whole at `main`.
 #[test]
-#[ignore = "Atlas (a): clap's derived options are not read, so `cli.raw` and `cli.figure` name no file, where typer's `raw: Path = RAW` is read as its default; the places are lost to `download` read as its module and to `save` called on the value `Trend::new(..)` gives as well"]
 fn rust_clean_the_places_are_made_whole_at_main() {
     let r = rust_clean();
     for (f, kind, artifact) in [
@@ -713,7 +707,6 @@ fn rust_clean_the_places_are_made_whole_at_main() {
 /// The figure is drawn on the area it is handed: `draw` takes plotters' `DrawingArea`, on whatever
 /// backend `save` makes.
 #[test]
-#[ignore = "Atlas (a): a library type a glob import brings in (`use plotters::prelude::*`) is no type, so `area: &DrawingArea<DB, Shift>` takes only its type argument `Shift`, imported by name"]
 fn rust_clean_trend_draws_on_the_area_it_is_handed() {
     let r = rust_clean();
     let area = |f: &str| r.edges.iter().any(|e| e.kind == EdgeKind::Takes && e.src == f && e.dst.starts_with("ext:plotters.") && e.dst.ends_with(".DrawingArea"));
@@ -786,7 +779,6 @@ fn the_port_shares_its_principles_and_its_steps() {
 
 /// The three run the same steps in the same order: download, load, smooth, save the figure.
 #[test]
-#[ignore = "Atlas (a): the clean Rust `main` loses two of its steps: `download`, re-exported under the name of its module, is read as the module, and `save`, called on the value `Trend::new(settings)` gives, is no step"]
 fn the_port_the_same_steps_in_the_same_order() {
     for p in ports() {
         let sites = &node(p.g, p.run).sites;
@@ -801,7 +793,6 @@ fn the_port_the_same_steps_in_the_same_order() {
 /// The three reach the same places, the figure in the format each writes: the request to SILSO,
 /// the raw file written and read again, the directories, and the figure.
 #[test]
-#[ignore = "Atlas (a): the clean Rust route names none of its files: `download` is read as its module, `save` called on the value `Trend::new(..)` gives is no step, and clap's `--raw` and `--figure`, a directory bound by `if let` and the path `download` gives inside `Ok(..)` name no place"]
 fn the_port_the_same_places() {
     for p in ports() {
         let named: BTreeSet<_> = outside(p.g, program(p.g)).into_iter().filter(|(_, artifact)| !artifact.is_empty()).collect();
