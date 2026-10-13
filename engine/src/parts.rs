@@ -124,6 +124,7 @@ pub fn merge(name: &str, graphs: Vec<Graph>) -> Graph {
         out.make.extend(g.make.into_iter().filter(|t| made.insert(t.id.clone())));
         out.stats.modules += g.stats.modules;
         out.stats.unresolved_calls_total += g.stats.unresolved_calls_total;
+        out.stats.unresolved_calls += g.stats.unresolved_calls;
         out.stats.unresolved_calls_top.extend(g.stats.unresolved_calls_top);
     }
     out.recount();
