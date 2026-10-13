@@ -130,12 +130,11 @@ fn places_where_the_program_starts_names_the_config_file() {
 /// The shortcut's library code opens the file a module constant names: the code alone decides
 /// where, and `places` asks.
 #[test]
-#[ignore = "Atlas: a path named through a module constant (`open(CONFIG_FILE)`) is placed but not fixed, so `places` does not ask"]
 fn places_a_library_that_names_its_config_file_through_a_constant_is_asked() {
     let s = shortcut();
     let read = touches(s, "harvest.settings.load_settings", "disk_read");
     assert!(read.iter().any(|t| t.fixed), "{read:?}");
-    assert_eq!(found(s, "places"), ["harvest.settings.load_settings"]);
+    assert!(found(s, "places").contains(&"harvest.settings.load_settings".to_string()), "{:?}", found(s, "places"));
 }
 
 /// A change to an input shows in the signature. Python's clean form keeps `Reading` frozen and
@@ -244,15 +243,15 @@ fn lens_what_a_lens_puts_it_gets_back() {
 /// Every place carries a what: a request names the service it goes to. In Python the clean
 /// client takes `base_url` and the entry hands it `API_URL`; the shortcut's client module reads
 /// `os.environ.get("WEATHER_API_URL", ...)` at import, so where it asks is decided at run time,
-/// in library code.
+/// in library code: what the environment says, a place the code does not name, or the default the
+/// library holds, which `places` asks about.
 #[test]
-#[ignore = "Atlas (b): an environment variable with a default in library code is drawn as the default alone, and `places` does not ask (PTT-502)"]
 fn a_place_carries_a_what_the_service_url() {
     let s = shortcut();
     let net = touches(s, "harvest.client.WeatherClient.latest", "net");
-    assert_eq!(net.len(), 1, "the request is in the graph: {net:?}");
-    let unnamed = net.iter().all(|t| t.artifact.is_empty() && !t.fixed);
-    assert!(unnamed || found(s, "places") == ["harvest.client.WeatherClient.latest"], "an address from the environment is no address the code says: {net:?}");
+    assert!(!net.is_empty(), "the request is in the graph");
+    assert!(net.iter().any(|t| t.artifact.is_empty() && !t.fixed), "what the environment says is no address the code says: {net:?}");
+    assert!(found(s, "places").contains(&"harvest.client.WeatherClient.latest".to_string()), "the default is the library's own choice: {:?}", found(s, "places"));
 }
 
 /// The clean client's request goes to the host the entry hands it, through the object it built.
@@ -348,7 +347,7 @@ fn zoom_is_a_quotient_by_composition() {
     let collect = route(s, "harvest.cli.collect");
     assert!(!collect.contains("GETs") && !collect.contains("writes readings"), "{collect}");
     // the parts still touch their places
-    assert_eq!(touches(s, "harvest.client.WeatherClient.latest", "net").len(), 1);
+    assert!(!touches(s, "harvest.client.WeatherClient.latest", "net").is_empty());
     assert!(touches(s, "harvest.store.ReadingStore.save", "db_sqlite").iter().any(|t| t.artifact == "readings"));
 }
 

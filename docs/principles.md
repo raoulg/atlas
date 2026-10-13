@@ -55,7 +55,7 @@ lets it be traced and Atlas does not yet; each gap is an ignored test in `pairs_
 | doors | finding; `__all__` exports | finding on an untyped export; gap (b): `any` counts as a type | forbidden: every signature is typed |
 | sums | finding; variant edges | traceable (a union alias) | gap (b): a `Result` handed on is not asked |
 | overrides | `keeps` from ty; finding | forbidden: the compiler holds an override to its base | forbidden |
-| places | `fixed`; finding; gap (b): a path named by a constant is not `fixed` | where the path is made whole; gap (b): no finding, the environment's value dropped | where the path is made whole; gap (b): no finding, the environment's value dropped |
+| places | finding; where the path is made whole | finding; where the path is made whole | finding; where the path is made whole |
 | changes | mutates edge; finding | mutates edge; finding | forbidden: a change is `&mut` in the signature |
 | gives | finding; the call not followed | no returns edge | returns edge; gap (a): `Result<T, E>` read as giving `E` |
 | choices | finding | finding | finding |
@@ -203,10 +203,13 @@ elsewhere.
   (`Path("data") / "raw.csv"`) and hand it in.
 - **Rust.** Take `impl AsRef<Path>`; let `main` decide.
 
-Atlas checks: a read or a write in library code whose path or URL starts at a literal
-(`open("out.csv")`, `Path("data") / name`, `f"out/{x}.png"`). A path that starts at a
-value from elsewhere (`root / "out.csv"`, `root.join("Cargo.toml")`) is decided by the
-caller. Where the program starts may name places: an entry itself (a CLI command, a route, an
+Atlas checks: a read or a write in library code whose path or URL starts at something the code
+holds, a literal or a constant (`open("out.csv")`, `Path("data") / name`, `f"out/{x}.png"`,
+`DATA / "raw"` with `DATA = Path("data")`). A path that starts at a value from elsewhere
+(`root / "out.csv"`, `root.join("Cargo.toml")`) is decided by the caller, and one that starts at
+what the environment says (a variable, the user's home, the system's temporary directory) by the
+environment. A variable with a default (`os.environ.get("URL", "https://..")`) is both: the
+environment's place, which the code does not name, and the default, which the library decides. Where the program starts may name places: an entry itself (a CLI command, a route, an
 MCP tool, a test, a binary's `main`), and a file that runs as a whole (a script, a notebook, a
 test file) with the code it defines. A function beside an entry is library code all the same:
 a helper in the module of a CLI command, or a function in a Rust file whose `#[test]`s sit

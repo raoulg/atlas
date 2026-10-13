@@ -34,9 +34,13 @@ fn each_principle_finds_its_case() {
     // `Annotated[str, ..]`) or narrower (a list for a `Sequence`), as ty decides; its `head`
     // gives one Node where a list was promised
     assert_eq!(got["overrides"], ["fixture.build.MeanEncoder.encode", "fixture.catalog.Catalog.head", "fixture.sinks.base.Sink.write"]);
-    // `Path("out.json")` in a sink, and `summary` beside the command `export`, which names its own
-    // file as an entry may; `save` writes where its caller says
-    assert_eq!(got["places"], ["fixture.export.summary", "fixture.sinks.duck.DuckSink.write"]);
+    // `Path("out.json")` in a sink, `summary` beside the command `export`, which names its own
+    // file as an entry may, and the functions of `files` that keep their data under the module's
+    // constant `DATA`; `save` writes where its caller says
+    assert_eq!(
+        got["places"],
+        ["fixture.export.summary", "fixture.files.kinds", "fixture.files.report", "fixture.files.read_report", "fixture.files.install", "fixture.files.export", "fixture.sinks.duck.DuckSink.write"]
+    );
     // `enrich` changes the Graph it is handed, so do `rename` (`setattr`) and `forget` (`del`);
     // `Graph.add` changes itself, and `deeper` calls an `update` that changes nothing
     assert_eq!(got["changes"], ["fixture.build.enrich", "fixture.edits.rename", "fixture.edits.forget"]);

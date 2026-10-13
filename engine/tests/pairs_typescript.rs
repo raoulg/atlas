@@ -139,7 +139,7 @@ fn morphisms_a_type_comes_from_a_step() {
     assert!(edge(c, EdgeKind::Calls, "rates.file.FileRates.latest", "rates.source.parseRates"));
     // the shortcut still reads the files
     assert_eq!(places(s, "config.loadConfig", "disk_read").iter().filter(|(a, _)| a == "config/expenses.json").count(), 1);
-    assert_eq!(touches(s, "rates.file.FileRates.latest", "disk_read").len(), 1);
+    assert!(!touches(s, "rates.file.FileRates.latest", "disk_read").is_empty());
 }
 
 /// Morphisms are functions: a type no arrow gives is no type of the route. The shortcut's asserted
@@ -173,7 +173,7 @@ fn composition_a_route_reaches_its_place() {
     for writer in ["exporters.csv.writeCsv", "exporters.json.writeJson"] {
         assert!(!edge(s, EdgeKind::Calls, "ledger.Ledger.exportReport", writer));
         // and the writers and their files are still there
-        assert_eq!(touches(s, writer, "disk_write").len(), 1, "{writer} writes the report");
+        assert!(!touches(s, writer, "disk_write").is_empty(), "{writer} writes the report");
     }
     assert!(edge(s, EdgeKind::Calls, "cli.run", "ledger.Ledger.exportReport"));
 }
@@ -206,8 +206,7 @@ fn places_are_decided_where_the_program_starts() {
     // the shortcut's reads and writes are still there, decided in the library itself
     for (f, kind) in [("rates.file.FileRates.latest", "disk_read"), ("exporters.csv.writeCsv", "disk_write"), ("exporters.json.writeJson", "disk_write")] {
         let found = places(s, f, kind);
-        assert_eq!(found.len(), 1, "{f}: {found:?}");
-        assert!(found[0].1.is_empty(), "{f} makes its own path whole: {found:?}");
+        assert!(!found.is_empty() && found.iter().all(|(_, by)| by.is_empty()), "{f} makes its own path whole: {found:?}");
     }
 }
 
@@ -215,7 +214,6 @@ fn places_are_decided_where_the_program_starts() {
 /// shows as what it is: a place the code does not name, or one the library decides itself, which
 /// `places` asks about.
 #[test]
-#[ignore = "Atlas: a path read from an environment variable with a literal fallback (`process.env.X ?? \"data/rates.json\"`) is drawn as the fallback alone, and `places` does not ask about library code that decides it"]
 fn places_decided_in_library_code_show() {
     let s = shortcut();
     for (f, kind) in [("rates.file.FileRates.latest", "disk_read"), ("exporters.csv.writeCsv", "disk_write"), ("exporters.json.writeJson", "disk_write")] {

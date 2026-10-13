@@ -162,7 +162,7 @@ fn a_place_carries_a_what_settings_in_memory() {
     let handed = &step(s, "spend.run", "spend.rates.fetch").hands;
     assert!(handed.iter().any(|h| h.name == "config" && h.ty.is_empty()), "{handed:?}");
     // the settings are still read
-    assert_eq!(touches(s, "spend.config.load", "disk_read").len(), 1);
+    assert!(!touches(s, "spend.config.load", "disk_read").is_empty());
 }
 
 /// A place carries a what: data from the world becomes a value of the program's own type where it
@@ -238,15 +238,13 @@ fn places_where_data_lives_is_decided_where_the_program_starts() {
     // the shortcut's settings are still read, at a place made whole in the library itself
     let s = shortcut();
     let settings = touches(s, "spend.config.load", "disk_read");
-    assert_eq!(settings.len(), 1, "{settings:#?}");
-    assert!(settings[0].by.is_empty() && settings[0].users_of.is_empty(), "{settings:#?}");
+    assert!(!settings.is_empty() && settings.iter().all(|t| t.by.is_empty() && t.users_of.is_empty()), "{settings:#?}");
 }
 
 /// Library code does not decide where data lives. A library function that falls back to a path of
 /// its own when an environment variable is not set decides where its data lives: the default is
 /// its choice, and the variable a place the code does not name.
 #[test]
-#[ignore = "Atlas (b): a path from `env::var(..).unwrap_or_else(|_| default)` is drawn as the default, not fixed, so `places` does not ask"]
 fn places_a_library_that_picks_its_own_place_is_asked() {
     let asked = found(shortcut(), "places");
     for f in ["spend.config.load", "spend.report.write"] {

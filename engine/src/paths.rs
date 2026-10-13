@@ -399,14 +399,32 @@ pub type Waiting = (String, crate::model::Touch, Vec<Built>);
 
 /// A waiting call with its path, URL or statement at each call that completes it, with where it
 /// is whole.
-pub type Completed = (String, crate::model::Touch, Vec<(Whole, Built)>);
+/// Each completion says whether the code decided it: the value starts at something the function
+/// itself holds (a literal, a constant), not at what a caller or the environment hands it.
+pub type Completed = (String, crate::model::Touch, Vec<(Whole, Built, bool)>);
+
+/// Whether the function a path or URL is built in decides it: it starts at something the code
+/// holds, a literal or a constant, not at what a caller hands or the environment says (a value,
+/// the user's home `~`, the system's `$TMPDIR`). A request's URL is decided only with its host.
+fn decided(b: &Built, kind: crate::model::World) -> bool {
+    let rendered = render(b);
+    let given = |s: &str| s.is_empty() || s.starts_with(['{', '$', '~']);
+    match kind {
+        crate::model::World::Net => {
+            let url = rendered.split_once(' ').map_or(rendered.as_str(), |(_, u)| u);
+            url.contains("://") && !given(url)
+        }
+        crate::model::World::Disk => !given(&rendered),
+        _ => false,
+    }
+}
 
 /// Complete the waiting calls through their callers; `entry` says which functions are entries.
 pub fn complete<H: Handing>(calls: Vec<Waiting>, handing: &[H], family: &crate::builder::Family, default: &dyn Fn(&str, &str) -> Vec<Built>, entry: &dyn Fn(&str) -> bool) -> Vec<Completed> {
     calls
         .into_iter()
         .map(|(f, t, built)| {
-            let found = built.iter().flat_map(|b| at_callers(handing, family, default, entry, &f, b, 0)).collect();
+            let found = built.iter().flat_map(|b| at_callers(handing, family, default, entry, &f, b, 0).into_iter().map(|(w, x)| (w, x, decided(b, t.kind)))).collect();
             (f, t, found)
         })
         .collect()
@@ -434,7 +452,7 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
     for (f, t, found) in completed {
         // what each place of completion makes of it: the alternatives one caller hands are one
         let mut wholes: Vec<&Whole> = vec![];
-        for (w, _) in &found {
+        for (w, _, _) in &found {
             if !wholes.contains(&w) {
                 wholes.push(w);
             }
@@ -452,10 +470,12 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
             let holder = match whole {
                 Whole::In(h) | Whole::Users(h) => h,
             };
-            let mut placed: Vec<(String, Option<crate::model::Dir>)> = vec![];
-            let mut requested = false;
-            for b in found.iter().filter(|(w, _)| w == whole).map(|(_, b)| b) {
+            let mut placed: Vec<(String, Option<crate::model::Dir>, bool)> = vec![];
+            let (mut requested, mut unnamed, mut decides) = (false, false, false);
+            for (b, fixed) in found.iter().filter(|(w, _, _)| w == whole).map(|(_, b, fixed)| (b, *fixed)) {
                 let rendered = render(b);
+                let before = placed.len();
+                decides |= fixed;
                 // a request's method, when the code says it, and its URL
                 let (method, url) = match rendered.split_once(' ') {
                     Some((m, u)) if t.kind == World::Net => (m.to_ascii_uppercase(), u.to_string()),
@@ -470,32 +490,47 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
                             served = true;
                         }
                     } else if let Some(host) = crate::effects::facts(Crossing::to(World::Net), None, &t.op, std::slice::from_ref(&url)).places().into_iter().next().map(|(a, _)| a).filter(|a| !a.is_empty()) {
-                        placed.push((host, t.dir));
+                        placed.push((host, t.dir, fixed));
                     }
                     requested |= served;
+                    unnamed |= !served && placed.len() == before;
                     // a request no route of the part serves may be another part's
                     if let Some(path) = asked_path(&url).filter(|_| !served) {
                         store.ask(asker, request(&method, &path));
                     }
                 } else if let World::Db(db) = t.kind {
-                    placed.extend(crate::effects::sql(db, std::slice::from_ref(&rendered)).unwrap_or_default().into_iter().map(|(table, dir)| (table, dir.or(t.dir))));
+                    placed.extend(crate::effects::sql(db, std::slice::from_ref(&rendered)).unwrap_or_default().into_iter().map(|(table, dir)| (table, dir.or(t.dir), false)));
                 } else if let Some(p) = place(b, &t.op) {
-                    placed.push((p, t.dir));
+                    placed.push((p, t.dir, fixed));
+                } else {
+                    unnamed = true;
                 }
             }
+            // a place two alternatives name is decided where either decides it
             placed.sort();
-            placed.dedup();
+            placed.dedup_by(|b, a| {
+                let same = a.0 == b.0 && a.1 == b.1;
+                if same {
+                    a.2 |= b.2;
+                }
+                same
+            });
             let at = |artifact: String, dir, fixed| Touch { artifact, dir, fixed, by: by.clone(), users_of: users_of.clone(), ..t.clone() };
             if placed.is_empty() {
                 if !requested {
                     // a URL without a host is the page's own origin, decided by whoever serves it
-                    let fixed = t.fixed && (t.kind != World::Net || !t.artifact.is_empty());
+                    let fixed = decides && (t.kind != World::Net || !t.artifact.is_empty());
                     store.touch(&f, at(t.artifact.clone(), t.dir, fixed));
                 }
                 continue;
             }
-            for (artifact, dir) in placed {
-                store.touch(&f, at(artifact, dir, t.fixed));
+            for (artifact, dir, fixed) in placed {
+                store.touch(&f, at(artifact, dir, fixed));
+            }
+            // an alternative that names no place stays one the code does not name: what the
+            // environment says beside the default the code holds
+            if unnamed {
+                store.touch(&f, at(String::new(), t.dir, false));
             }
         }
     }

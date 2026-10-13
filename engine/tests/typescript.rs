@@ -153,9 +153,11 @@ fn a_client_moves_data_where_it_is_used() {
 fn paths_and_requests_are_evaluated() {
     let g = fixture();
     let t = |id: &str| g.node(&format!("fixture-ts.{id}")).unwrap().touches.iter().map(|t| (t.kind_name().to_string(), t.artifact.clone())).collect::<Vec<_>>();
-    // the file `klanten` hands `lees`, in the routes that reach `klanten`
+    // the file `klanten` hands `lees`, in the routes that reach `klanten`: under `DATA`'s default,
+    // or wherever `DATA_DIR` says, a place the code does not name
     let lees: Vec<(&str, &[String])> = g.node("fixture-ts.server.opslag.lees").unwrap().touches.iter().map(|t| (t.artifact.as_str(), t.by.as_slice())).collect();
-    assert_eq!(lees, [("data/klanten.csv", &["fixture-ts.server.opslag.klanten".to_string()][..])], "`lees(\"klanten.csv\")` under `DATA`");
+    let klanten = &["fixture-ts.server.opslag.klanten".to_string()][..];
+    assert_eq!(lees, [("data/klanten.csv", klanten), ("", klanten)], "`lees(\"klanten.csv\")` under `DATA`");
     // an object holds what its constructor was handed: a parameter property, and `this.map = map`
     assert_eq!(t("server.opslag.Archief.bewaar"), [("disk_write".into(), "archief/".into())], "`constructor(private map: string)`");
     assert_eq!(t("server.opslag.Logboek.noteer"), [("disk_write".into(), "logs/log.txt".into())], "`this.map = map`");
