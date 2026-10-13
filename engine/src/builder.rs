@@ -13,6 +13,8 @@ pub struct ClassInfo {
     pub bases: Vec<Vec<String>>,
     pub resolved: Vec<String>,
     pub attr_types: BTreeMap<String, String>,
+    /// The library types its fields hold, by field: `conn` holds `ext:rusqlite.Connection`.
+    pub foreign: BTreeMap<String, String>,
     pub fields: Vec<(String, Vec<Vec<String>>)>,
     /// For a sum (a Rust `enum`): the types its variants carry.
     pub variants: Vec<Vec<String>>,

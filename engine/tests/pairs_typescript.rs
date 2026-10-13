@@ -67,7 +67,6 @@ fn places(g: &Graph, id: &str, kind: &str) -> Vec<(String, Vec<String>)> {
 
 /// The clean side follows every principle `atlas check` asks about.
 #[test]
-#[ignore = "Atlas: a database client held in a field (`this.db.prepare(..)`) is not read, so ExpenseStore.add reaches no place and `nothing` asks about it"]
 fn the_clean_side_follows_every_principle() {
     let fs = findings(clean());
     assert!(fs.is_empty(), "{:#?}", fs.iter().map(|f| format!("{} {}: {}", f.principle, f.node, f.what)).collect::<Vec<_>>());
@@ -335,7 +334,6 @@ fn lens_gives_back_what_it_puts() {
 /// What a lens puts, it gets back, at one place. The store's table is that place: the clean
 /// store puts and gets an Expense there, and `lens` asks the shortcut what the table holds.
 #[test]
-#[ignore = "Atlas: a database client held in a field (`this.db.prepare(SQL)`) is not read, so neither store reaches its table and `lens` has nothing to ask"]
 fn lens_puts_and_gets_at_the_table() {
     let (c, s) = (clean(), shortcut());
     for g in [c, s] {

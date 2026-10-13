@@ -996,6 +996,15 @@ fn made_by_package(value: TsNode, m: &Module, src: &[u8]) -> Option<String> {
     }
 }
 
+/// The package a type annotation names: `Database.Database`, `Pool`, `: Client`.
+fn typed_package(ty: TsNode, m: &Module, src: &[u8]) -> Option<String> {
+    let head = text(ty, src).trim_start_matches(':').trim().split(|c: char| !(c.is_alphanumeric() || c == '_' || c == '$')).next()?;
+    match m.bindings.get(head)? {
+        Bound::Ext(e) => Some(package_from_ext(e, &m.ext_pkgs)),
+        Bound::Own(_) => None,
+    }
+}
+
 fn router_pkg(parts: &[String], m: &Module) -> bool {
     match parts.first().and_then(|h| m.bindings.get(h)) {
         Some(Bound::Ext(e)) => knowledge::ROUTERS.contains(&package_from_ext(e, &m.ext_pkgs).as_str()),
@@ -1545,6 +1554,39 @@ impl<'a, 't> Body<'a, 't> {
                 }
             }
         }
+        // a parameter declared with a library's type holds a value its package made
+        for p in self.scope.and_then(|f| f.child_by_field_name("parameters")).map(named_children).unwrap_or_default() {
+            if let (Some(name), Some(pkg)) = (p.child_by_field_name("pattern").filter(|x| x.kind() == "identifier"), p.child_by_field_name("type").and_then(|t| typed_package(t, m, src))) {
+                self.made.insert(text(name, src).to_string(), pkg);
+            }
+        }
+        // so does a field of the body's class: declared with a library's type, set from what a
+        // package made, or a constructor's parameter property (`this.db`)
+        let mut class = self.body.parent();
+        while let Some(c) = class.filter(|c| !matches!(c.kind(), "class_declaration" | "class" | "abstract_class_declaration")) {
+            class = c.parent();
+        }
+        if let Some(class) = class.filter(|_| !self.is_module) {
+            let field = |name: TsNode| format!("this.{}", text(name, src));
+            for f in walk(class, &["public_field_definition"]) {
+                if let (Some(name), Some(pkg)) = (f.child_by_field_name("name"), f.child_by_field_name("type").and_then(|t| typed_package(t, m, src))) {
+                    self.made.insert(field(name), pkg);
+                }
+            }
+            for p in walk(class, &["required_parameter", "optional_parameter"]).into_iter().filter(|p| named_children(*p).iter().any(|c| c.kind() == "accessibility_modifier")) {
+                if let (Some(name), Some(pkg)) = (p.child_by_field_name("pattern"), p.child_by_field_name("type").and_then(|t| typed_package(t, m, src))) {
+                    self.made.insert(field(name), pkg);
+                }
+            }
+            for a in walk(class, &["assignment_expression"]) {
+                let (Some(l), Some(r)) = (a.child_by_field_name("left"), a.child_by_field_name("right")) else { continue };
+                if let ([this, name], Some(pkg)) = (member_parts(l, src).as_slice(), made_by_package(r, m, src)) {
+                    if this == "this" {
+                        self.made.entry(format!("this.{name}")).or_insert(pkg);
+                    }
+                }
+            }
+        }
         if !self.is_module {
             for v in walk(root, &["variable_declarator"]).into_iter().filter(|v| module_level(*v, root, &m.bodies)) {
                 let Some((name, value)) = named(v) else { continue };
@@ -1669,7 +1711,9 @@ impl<'a, 't> Body<'a, 't> {
             // a library's operation not read is a step where the body keeps what it gives
             _ => {
                 steps.op(c, parts.last().map_or("", String::as_str), hands, self.gives(c, None));
-                self.read.unresolved.push((parts.iter().take(2).cloned().collect::<Vec<_>>().join("."), self.bucket(&parts[0])));
+                // a field that holds what a package made is that package's, as a local is
+                let field = (parts.len() > 2 && parts[0] == "this").then(|| format!("this.{}", parts[1])).filter(|f| self.made.contains_key(f));
+                self.read.unresolved.push((parts.iter().take(2).cloned().collect::<Vec<_>>().join("."), self.bucket(field.as_deref().unwrap_or(&parts[0]))));
                 self.crossed(c, &parts);
             }
         }
@@ -1733,12 +1777,18 @@ impl<'a, 't> Body<'a, 't> {
     /// touches what its facts name.
     fn crossed(&mut self, c: TsNode<'t>, parts: &[String]) {
         let (m, src) = (self.m, self.src);
-        let pkg = match m.bindings.get(&parts[0]) {
+        // a call on a field of the class is a call on the value the field holds: `this.db.prepare`
+        let held = (parts.len() > 2 && parts[0] == "this").then(|| format!("this.{}", parts[1])).filter(|f| self.made.contains_key(f));
+        let (head, parts) = match held {
+            Some(f) => (f, &parts[1..]),
+            None => (parts[0].clone(), parts),
+        };
+        let pkg = match m.bindings.get(&head) {
             Some(Bound::Ext(e)) => Some(package_from_ext(e, &m.ext_pkgs)),
-            _ => self.made.get(&parts[0]).cloned(),
+            _ => self.made.get(&head).cloned(),
         };
         // some parts of the world are reached only through a client the package made, not its helpers
-        let Some(kind) = effects::boundary_ts(pkg.as_deref(), parts).filter(|k| !knowledge::THROUGH_A_CLIENT.contains(&k.world) || self.made.contains_key(&parts[0])) else { return };
+        let Some(kind) = effects::boundary_ts(pkg.as_deref(), parts).filter(|k| !knowledge::THROUGH_A_CLIENT.contains(&k.world) || self.made.contains_key(&head)) else { return };
         let op = parts.last().cloned().unwrap_or_default();
         let cr = Crosses::read(c, src, kind, pkg.as_deref(), &op, &literals(c, src, STRINGS), STRINGS, &HashMap::new());
         let args = c.child_by_field_name("arguments").map(named_children).unwrap_or_default();

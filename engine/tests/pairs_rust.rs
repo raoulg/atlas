@@ -345,7 +345,6 @@ fn lens_what_is_put_is_got_back() {
 /// table and reads it again. In Rust the store holds its `rusqlite::Connection` in a field and runs
 /// each statement on `self.conn`.
 #[test]
-#[ignore = "Atlas (a): a statement run on a connection held in a field (or handed in) touches no table"]
 fn lens_a_store_touches_the_tables_it_runs_statements_on() {
     let c = clean();
     let at = |f: &str| touches(c, f, "db_sqlite").iter().map(|t| (t.artifact.clone(), t.dir_name())).collect::<Vec<_>>();
@@ -358,7 +357,6 @@ fn lens_a_store_touches_the_tables_it_runs_statements_on() {
 /// What a lens puts, it gets back: a store that saves an `Expense` and reads back tuples is asked
 /// where its `Expense` went. The shortcut's store holds its connection as the clean one does.
 #[test]
-#[ignore = "Atlas (b): the store's statements are dropped (connection in a field), so no lens is asked and `save` reads as a call into nothing"]
 fn lens_a_store_that_gets_back_rows_is_asked() {
     let s = shortcut();
     assert!(!touches(s, "spend.store.Store.save", "db_sqlite").is_empty(), "the shortcut's insert is in the graph");

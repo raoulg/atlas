@@ -443,13 +443,15 @@ what its driver reaches: the Bolt driver (`neo4j`) a graph database, whichever o
 is drawn to be seen: `show()` puts it on the screen, and a notebook shows each figure its cells
 make (matplotlib's `figure`, `subplots`), so on a notebook's route a figure is on the screen. Rust
 has no type checker to ask, so a library's value is traced to the call of a function on its
-type that made it, through the locals that hold it: building (`new`, `builder()` up to
+type that made it, through the locals that hold it, or is of the library's type its parameter or
+its field declares (`conn: &Connection`, `self.conn`), made wherever it was: building (`new`, `builder()` up to
 `build()`, `default`) moves nothing, and the value moves data where it is used
 (`client.get(url).send()`, `OpenOptions::new().append(true).open(p)` writes). A value whose
 making touched a place (`File::open(p)`, `Command::new("git")`) is at that place; a call on it
 adds one only when it names its own (`conn.execute("INSERT INTO log ..")`). In TypeScript a
 client is what a package's constructor or `create…` factory made (`new Pool()`,
-`new Anthropic()`, `axios.create()`): a call on it is the package's, and a language model is
+`new Anthropic()`, `axios.create()`), or what a parameter or a field of the class is declared as
+or set from (`private db: Database`, `this.db = new Database(file)`): a call on it is the package's, and a language model is
 asked only through one. The browser's `localStorage` is a key-value store, keyed by the literal
 it is handed; a URL without a host is the page's own origin. A TypeScript path or URL is
 evaluated as a Python one: from the module's own file (`import.meta.url`, `__dirname`),

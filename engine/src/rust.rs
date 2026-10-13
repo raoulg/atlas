@@ -801,11 +801,12 @@ fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crate_ids:
         let (fields, variants) = store.classes.get(id).map(|c| (c.fields.clone(), c.variants.clone())).unwrap_or_default();
         for (fname, types) in fields {
             for t in types {
-                if let Some(r) = resolve(m, &t, modules, &store.nodes, crate_ids).filter(|r| !r.starts_with("ext:")) {
-                    if store.nodes.get(&r).map_or(false, |x| x.kind == NodeKind::Class) {
-                        store.classes.entry(id.clone()).or_default().attr_types.insert(fname.clone(), r.clone());
-                        store.add_edge(id, &r, EdgeKind::Has, Some(fname.clone()));
-                    }
+                let Some(r) = resolve(m, &t, modules, &store.nodes, crate_ids) else { continue };
+                if r.starts_with("ext:") {
+                    store.classes.entry(id.clone()).or_default().foreign.entry(fname.clone()).or_insert(r);
+                } else if store.nodes.get(&r).map_or(false, |x| x.kind == NodeKind::Class) {
+                    store.classes.entry(id.clone()).or_default().attr_types.insert(fname.clone(), r.clone());
+                    store.add_edge(id, &r, EdgeKind::Has, Some(fname.clone()));
                 }
             }
         }
@@ -942,13 +943,20 @@ fn kept_as(c: TsNode, src: &[u8]) -> Option<String> {
 
 /// The library value a chain of method calls starts from: a call of a function on a library's
 /// type (`OpenOptions::new()`), reached through the locals that hold what it made
-/// (`c` from `let c = reqwest::Client::new()`).
-fn library_chain<'t>(mut v: TsNode<'t>, m: &Module, src: &[u8], made_by: &HashMap<String, TsNode<'t>>) -> Option<Made<'t>> {
+/// (`c` from `let c = reqwest::Client::new()`), or a value `declared` of a library's type (a
+/// parameter `conn: &Connection`, a field `self.conn`), made wherever it was.
+fn library_chain<'t>(mut v: TsNode<'t>, m: &Module, src: &[u8], made_by: &HashMap<String, TsNode<'t>>, declared: &dyn Fn(TsNode<'t>) -> Option<Vec<String>>) -> Option<Made<'t>> {
     let (mut before, mut here, mut origin) = (vec![], vec![], None);
     let mut locals = 0;
     loop {
         match v.kind() {
             "try_expression" | "await_expression" | "reference_expression" | "parenthesized_expression" => v = named_children(v).into_iter().next()?,
+            "identifier" | "field_expression" if !made_by.contains_key(text(v, src)) => {
+                let ty = declared(v)?;
+                before.reverse();
+                here.reverse();
+                return Some(Made { ty, ctor: vec![], before, here, origin });
+            }
             "identifier" if locals < 8 => {
                 v = *made_by.get(text(v, src))?;
                 origin.get_or_insert(v);
@@ -1103,6 +1111,8 @@ struct Body<'a, 't> {
     made_by: HashMap<String, TsNode<'t>>,
     /// The classes the fields of the body's own class hold.
     attr_types: std::collections::BTreeMap<String, String>,
+    /// The library types its parameters are declared with: `conn` is `ext:rusqlite.Connection`.
+    foreign: HashMap<String, String>,
     read: Read<'t>,
 }
 
@@ -1114,7 +1124,7 @@ impl<'a, 't> Body<'a, 't> {
         let cls = n.cls.clone();
         let attr_types = cls.as_ref().and_then(|c| store.classes.get(c)).map(|c| c.attr_types.clone()).unwrap_or_default();
         let params = paths::param_names(d, &m.src);
-        let mut b = Body { modules, store, crate_ids, eval, m, src: &m.src, id: n.id.clone(), def: d, params, cls, locals: HashMap::new(), made_by: HashMap::new(), attr_types, read: Read::default() };
+        let mut b = Body { modules, store, crate_ids, eval, m, src: &m.src, id: n.id.clone(), def: d, params, cls, locals: HashMap::new(), made_by: HashMap::new(), attr_types, foreign: HashMap::new(), read: Read::default() };
         b.parameters(d);
         b.lets(body);
         // a macro that prints shows the human something
@@ -1156,7 +1166,11 @@ impl<'a, 't> Body<'a, 't> {
             let Some(pat) = p.child_by_field_name("pattern") else { continue };
             let pname = text(pat, src).trim_start_matches("mut ").to_string();
             let by_mut_ref = p.child_by_field_name("type").map_or(false, |t| text(t, src).starts_with("&mut"));
-            let class = type_names(p.child_by_field_name("type"), src).iter().find_map(|t| self.resolve(t).filter(|r| !r.starts_with("ext:")).and_then(|r| self.class_of(&r)));
+            let types = type_names(p.child_by_field_name("type"), src);
+            if let Some(lib) = types.iter().find_map(|t| self.resolve(t).filter(|r| r.starts_with("ext:"))) {
+                self.foreign.insert(pname.clone(), lib);
+            }
+            let class = types.iter().find_map(|t| self.resolve(t).filter(|r| !r.starts_with("ext:")).and_then(|r| self.class_of(&r)));
             if let Some(r) = class {
                 if by_mut_ref {
                     self.read.mutates.push((r.clone(), pname.clone()));
@@ -1366,6 +1380,27 @@ impl<'a, 't> Body<'a, 't> {
         }
     }
 
+    /// The library type a value is declared to be: a parameter's (`conn: &Connection`), or a
+    /// field's of the body's own class or of a local's class (`self.conn`, `store.conn`).
+    fn declared(&self, v: TsNode) -> Option<Vec<String>> {
+        let src = self.src;
+        let ext = match v.kind() {
+            "identifier" => self.foreign.get(text(v, src)).cloned(),
+            "field_expression" => {
+                let field = text(v.child_by_field_name("field")?, src);
+                let owner = v.child_by_field_name("value")?;
+                let cls = match owner.kind() {
+                    "self" => self.cls.clone(),
+                    "identifier" => self.locals.get(text(owner, src)).cloned(),
+                    _ => None,
+                }?;
+                self.store.classes.get(&cls)?.foreign.get(field).cloned()
+            }
+            _ => None,
+        }?;
+        Some(ext.strip_prefix("ext:")?.split('.').map(String::from).collect())
+    }
+
     /// What a library's method call touches, through the value its chain made: a value made by a
     /// touch is at that touch's place (`File::open(p)`, `Command::new("git")`), and a call on it
     /// adds a place only when it names its own (`conn.execute("INSERT INTO log ..")`); a value
@@ -1375,7 +1410,7 @@ impl<'a, 't> Body<'a, 't> {
     /// is what the call that runs it is handed.
     fn chain_touches(&self, c: TsNode<'t>, value: TsNode<'t>, method: &str) -> Vec<(Touch, Vec<crate::paths::Built>)> {
         let src = self.src;
-        let made = library_chain(value, self.m, src, &self.made_by);
+        let made = library_chain(value, self.m, src, &self.made_by, &|v| self.declared(v));
         // the outer call of a chain stands for the chain: `client.get(url).send()`
         if made.is_some() && c.parent().map_or(false, |p| p.kind() == "field_expression") {
             return vec![];
