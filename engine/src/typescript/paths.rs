@@ -8,7 +8,7 @@ use std::path::Path;
 use indexmap::IndexMap;
 use tree_sitter::Node as TsNode;
 
-use super::{declarations, function_in, member_parts, Bound, Module};
+use super::{declarations, function_in, member_parts, top_variables, Bound, Module};
 use crate::knowledge::{self, PathFn};
 use crate::paths::{cross, hole, lit, parent, substitute, union, Built, Seg};
 use crate::tree::{named_children, path_str, text, unquote, walk};
@@ -154,7 +154,82 @@ impl<'a> Eval<'a> {
                 }
             }
         }
+        if let Some(v) = self.option(at, e, depth) {
+            return v;
+        }
         vec![hole(&last)]
+    }
+
+    /// An option of the command line as a parser gives it (`values.raw`, `parsed.values.raw`): the
+    /// entry's input, as a parameter of the command is. It holds what the program runs with when
+    /// its command line leaves the option out: the option's default, else no value, so that
+    /// `values.raw ?? RAW` is `RAW`.
+    fn option<'t>(&self, at: At<'_, 't>, e: TsNode<'t>, depth: u32) -> Option<Vec<Built>> {
+        let src = &at.m.src;
+        let parts = member_parts(e, src);
+        let (option, path) = parts.split_last()?;
+        let head = path.first()?;
+        for (v, scope) in self.declared(at, head, e.start_byte()) {
+            let (Some(pattern), Some(value)) = (v.child_by_field_name("name"), v.child_by_field_name("value")) else { continue };
+            let Some((call, parser)) = self.parser_call(at.m, value) else { continue };
+            // the values stand under their field: `{ values }`, `{ values: opts }`, or the whole result
+            let whole = pattern.kind() == "identifier" && matches!(path, [_, field] if field == parser.values);
+            let picked = pattern.kind() == "object_pattern" && path.len() == 1 && binds(pattern, parser.values, head, src);
+            if !(whole || picked) {
+                continue;
+            }
+            let here = At { m: at.m, scope, params: if scope.is_some() { at.params } else { &[] } };
+            let handed = call.child_by_field_name("arguments").map(named_children).unwrap_or_default().into_iter().next()?;
+            let options = self.object(here, handed, 0).and_then(|o| field(o, parser.options, src)).and_then(|o| self.object(here, o, 0))?;
+            let declared = field(options, option, src).and_then(|o| self.object(here, o, 0))?;
+            return Some(field(declared, parser.default, src).map_or_else(Vec::new, |d| self.of(here, d, depth + 1)));
+        }
+        None
+    }
+
+    /// The declarations that may bind `name` where the code at `before` reads it: in the function
+    /// it is in, written before it, then at the module's top level; each with the function it is in.
+    fn declared<'s>(&self, at: At<'s, 's>, name: &str, before: usize) -> Vec<(TsNode<'s>, Option<TsNode<'s>>)> {
+        let src = &at.m.src;
+        let binds_name = |v: &TsNode| v.child_by_field_name("name").map_or(false, |p| match p.kind() {
+            "identifier" => text(p, src) == name,
+            _ => walk(p, &["shorthand_property_identifier_pattern", "identifier"]).iter().any(|x| text(*x, src) == name),
+        });
+        let local = at.scope.map(|s| walk(s, &["variable_declarator"])).unwrap_or_default().into_iter().filter(|v| v.start_byte() < before && binds_name(v)).map(|v| (v, at.scope));
+        let top = top_variables(at.m.tree.root_node()).into_iter().filter(binds_name).map(|v| (v, None));
+        local.rev().chain(top).collect()
+    }
+
+    /// The call of a command-line parser a value is, with the parser: `parseArgs({..})` as the
+    /// package that exports it names it, however the module imports it.
+    fn parser_call<'t>(&self, m: &Module, value: TsNode<'t>) -> Option<(TsNode<'t>, &'static knowledge::OptionParser)> {
+        let mut v = value;
+        while matches!(v.kind(), "await_expression" | "parenthesized_expression" | "as_expression" | "satisfies_expression" | "non_null_expression") {
+            v = named_children(v).into_iter().next()?;
+        }
+        let parts = member_parts(v.child_by_field_name("function").filter(|_| v.kind() == "call_expression")?, &m.src);
+        let Bound::Ext(ext) = m.bindings.get(parts.first()?)? else { return None };
+        let package = super::package_from_ext(ext, &m.ext_pkgs);
+        let full = std::iter::once(ext.clone()).chain(parts[1..].iter().cloned()).collect::<Vec<_>>().join(".");
+        let function = full.rsplit('.').next()?;
+        knowledge::OPTION_PARSERS.iter().find(|p| p.package == package && p.function == function).map(|p| (v, p))
+    }
+
+    /// The object literal an expression is: written where it stands, or held by a constant.
+    fn object<'s>(&self, at: At<'s, 's>, e: TsNode<'s>, depth: u32) -> Option<TsNode<'s>> {
+        if depth > DEPTH {
+            return None;
+        }
+        let src = &at.m.src;
+        match e.kind() {
+            "object" => Some(e),
+            "parenthesized_expression" | "as_expression" | "satisfies_expression" => self.object(at, named_children(e).into_iter().next()?, depth + 1),
+            "identifier" | "shorthand_property_identifier" => {
+                let (v, scope) = self.declared(at, text(e, src), e.start_byte()).into_iter().find(|(v, _)| v.child_by_field_name("name").map_or(false, |p| p.kind() == "identifier"))?;
+                self.object(At { scope, ..at }, v.child_by_field_name("value")?, depth + 1)
+            }
+            _ => None,
+        }
     }
 
     /// The field `name` of the class `e` is written in, as its constructor sets it: a parameter
@@ -311,11 +386,35 @@ fn returns(f: TsNode) -> Vec<TsNode> {
     walk(body, &["return_statement"]).into_iter().filter(own).filter_map(|r| named_children(r).into_iter().next()).collect()
 }
 
+/// Whether a destructuring pattern binds the field `key` to the name `local`: `{ values }`,
+/// `{ values: opts }`.
+fn binds(pattern: TsNode, key: &str, local: &str, src: &[u8]) -> bool {
+    named_children(pattern).into_iter().any(|p| match p.kind() {
+        "shorthand_property_identifier_pattern" => text(p, src) == key && key == local,
+        "pair_pattern" => {
+            p.child_by_field_name("key").map(|k| key_text(k, src)) == Some(key.to_string()) && p.child_by_field_name("value").map_or(false, |v| v.kind() == "identifier" && text(v, src) == local)
+        }
+        _ => false,
+    })
+}
+
+/// A key of an object or of a pattern as it names a field: `raw`, `"dry-run"`.
+fn key_text(k: TsNode, src: &[u8]) -> String {
+    if k.kind() == "string" { unquote(text(k, src)) } else { text(k, src).to_string() }
+}
+
+/// What an object literal holds under `key`: `{ key: value }`, or the name `{ key }` stands for.
+fn field<'t>(object: TsNode<'t>, key: &str, src: &[u8]) -> Option<TsNode<'t>> {
+    named_children(object).into_iter().find_map(|p| match p.kind() {
+        "pair" if p.child_by_field_name("key").map(|k| key_text(k, src)) == Some(key.to_string()) => p.child_by_field_name("value"),
+        "shorthand_property_identifier" if text(p, src) == key => Some(p),
+        _ => None,
+    })
+}
+
 /// The value a module-level `const` is declared with.
 fn top_value<'t>(m: &'t Module, name: &str) -> Option<TsNode<'t>> {
-    declarations(m.tree.root_node()).into_iter().filter(|(d, _, _)| matches!(d.kind(), "lexical_declaration" | "variable_declaration")).find_map(|(d, _, _)| {
-        named_children(d).into_iter().find(|v| v.kind() == "variable_declarator" && v.child_by_field_name("name").map(|n| text(n, &m.src)) == Some(name))?.child_by_field_name("value")
-    })
+    top_variables(m.tree.root_node()).into_iter().find(|v| v.child_by_field_name("name").map(|n| text(n, &m.src)) == Some(name))?.child_by_field_name("value")
 }
 
 /// One call of a function of the package, with the argument each parameter is handed.

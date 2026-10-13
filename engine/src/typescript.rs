@@ -23,7 +23,7 @@ use crate::body::{Crosses, Step, Steps};
 use crate::repo::Repo;
 use crate::knowledge;
 use crate::effects::{self, Crossing};
-use crate::model::{Bucket, EdgeKind, Entry, EntryKind, Held, Node, NodeKind, Param, Returns, Touch, World};
+use crate::model::{Bucket, Dir, EdgeKind, Entry, EntryKind, Held, Node, NodeKind, Param, Returns, Touch, World};
 use crate::tree::{
     evaluation_order, literals, named_children, nth_of_kind, span, text, unquote,
     walk, what_of, ChoiceSyntax, CompareSyntax, Part,
@@ -452,6 +452,16 @@ fn declarations<'t>(root: TsNode<'t>) -> Vec<(TsNode<'t>, bool, bool)> {
         }
     }
     out
+}
+
+/// The variables a module declares at its top level, unwrapping `export`: `const x = ..`, `let y`.
+fn top_variables<'t>(root: TsNode<'t>) -> Vec<TsNode<'t>> {
+    declarations(root)
+        .into_iter()
+        .filter(|(d, _, _)| matches!(d.kind(), "lexical_declaration" | "variable_declaration"))
+        .flat_map(|(d, _, _)| named_children(d))
+        .filter(|v| v.kind() == "variable_declarator")
+        .collect()
 }
 
 /// The function a top-level `const` stands for: an arrow or function expression, or the last
@@ -1338,6 +1348,136 @@ fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, repo: &Pat
     let completed = crate::paths::complete(linked.calls, &handing, &family, &|_, _| vec![], &entry);
     // a page's request without a host goes to the page's own origin
     crate::paths::place_calls(store, completed, true);
+    globals(modules, store, &returned, &eval);
+}
+
+/// One use of a module's value by a function: where the value is kept (`module.name`), the name
+/// the function uses it by, and the line.
+type Use = (String, String, u32);
+
+/// The values a module keeps between calls, which its functions change: a name a module declares
+/// at its top level that a function assigns anew (`current = config`, `count++`) or changes in
+/// place (`LATEST[k] = v`, `seen.n = ..`, `delete seen[k]`, `queue.push(..)` and the language's
+/// other methods that change their receiver), in its own module or where another imports it.
+/// Every function that changes one writes it and every one that uses it reads it: a place,
+/// `Global(module.name)`. A name no function changes is a constant of the code, and no place; the
+/// methods of a value a package made are the package's, and change no value of the language.
+fn globals(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, returned: &HashMap<String, String>, eval: &Eval) {
+    let tops: HashMap<&str, HashSet<String>> = modules.values().map(|m| (m.id.as_str(), top_names(m))).collect();
+    let mutators = knowledge::mutators(knowledge::Registry::Npm);
+    let mut uses: Vec<(String, Vec<Use>, Vec<Use>)> = vec![];
+    for m in modules.values() {
+        let (src, root) = (&m.src[..], m.tree.root_node());
+        let kept = |n: &str| if tops[m.id.as_str()].contains(n) { Some(format!("{}.{n}", m.id)) } else { kept_in(modules, &tops, m.bindings.get(n)?, 0) };
+        for n in store.nodes.values().filter(|n| n.module == m.id && matches!(n.kind, NodeKind::Function | NodeKind::Method)) {
+            let Some(&(s, e)) = m.bodies.get(&n.id) else { continue };
+            let Some(body) = root.descendant_for_byte_range(s, e) else { continue };
+            // a function defined in this one is a function of its own
+            let inner: Vec<(usize, usize)> = m.bodies.values().copied().filter(|&(a, b)| s <= a && b <= e && (a, b) != (s, e)).collect();
+            let mine = |x: &TsNode| !inner.iter().any(|&(a, b)| a <= x.start_byte() && x.end_byte() <= b);
+            let b = Body::new(m, modules, store, n, body, returned, eval);
+            let bound = b.bound_in();
+            let module_value = |x: &str| if bound.contains(x) { None } else { kept(x) };
+            let line = |x: TsNode| x.start_position().row as u32 + 1;
+            let mut writes: Vec<Use> = vec![];
+            for a in walk(body, &["assignment_expression", "augmented_assignment_expression", "update_expression"]).into_iter().filter(mine) {
+                if let Some(t) = a.child_by_field_name("left").or_else(|| a.child_by_field_name("argument")).filter(|t| t.kind() == "identifier") {
+                    note(&mut writes, module_value(text(t, src)), text(t, src), line(a));
+                }
+            }
+            // a method of the language's own that changes its receiver, on a value no package made
+            let language: &dyn Fn(TsNode) -> Option<TsNode> = &|c| {
+                let f = function_of(c).filter(|f| f.kind() == "member_expression")?;
+                let changing = f.child_by_field_name("property").map_or(false, |p| mutators.contains(&text(p, src)));
+                if !changing || b.callee(c).map_or(false, |t| b.own(&t)) {
+                    return None;
+                }
+                let o = f.child_by_field_name("object")?;
+                let made = chain_root(o, src).and_then(module_value).map_or(false, |k| package_value(modules, &k));
+                (!made).then_some(o)
+            };
+            for (at, name) in changes_in(body, src, language).into_iter().filter(|(x, _)| mine(x)) {
+                note(&mut writes, module_value(name), name, line(at));
+            }
+            let mut reads: Vec<Use> = vec![];
+            for x in walk(body, &["identifier", "shorthand_property_identifier"]).into_iter().filter(mine) {
+                // what an assignment puts in a name, not the value the name held
+                let assigned = x.parent().map_or(false, |p| p.kind() == "assignment_expression" && p.child_by_field_name("left").map(|l| l.id()) == Some(x.id()));
+                if !assigned {
+                    note(&mut reads, module_value(text(x, src)), text(x, src), line(x));
+                }
+            }
+            uses.push((n.id.clone(), writes, reads));
+        }
+    }
+    let state: HashSet<String> = uses.iter().flat_map(|(_, w, _)| w.iter().map(|(k, _, _)| k.clone())).collect();
+    for (id, writes, reads) in uses {
+        for (dir, names) in [(Dir::Write, writes), (Dir::Read, reads)] {
+            for (kept, name, at) in names.into_iter().filter(|(k, _, _)| state.contains(k)) {
+                store.touch(&id, Touch { what: name.clone(), artifact: kept, op: name, line: at, ..Touch::new(World::Global, Some(dir)) });
+            }
+        }
+    }
+}
+
+/// A use of a module's value, once per value.
+fn note(uses: &mut Vec<Use>, kept: Option<String>, name: &str, line: u32) {
+    if let Some(k) = kept.filter(|k| !uses.iter().any(|(u, _, _)| u == k)) {
+        uses.push((k, name.to_string(), line));
+    }
+}
+
+/// The values a module declares at its top level: `let current = ..`, `const LATEST = new Map()`.
+fn top_names(m: &Module) -> HashSet<String> {
+    top_variables(m.tree.root_node()).into_iter().filter_map(|v| v.child_by_field_name("name").filter(|n| n.kind() == "identifier")).map(|n| text(n, &m.src).to_string()).collect()
+}
+
+/// Where a name a module imports is kept: the top-level value of the module it comes from,
+/// followed through re-exports.
+fn kept_in(modules: &IndexMap<String, Module>, tops: &HashMap<&str, HashSet<String>>, bound: &Bound, depth: u32) -> Option<String> {
+    let Bound::Own(target) = bound else { return None };
+    let (mid, name) = target.rsplit_once('.')?;
+    let home = modules.get(mid)?;
+    if tops.get(mid).map_or(false, |t| t.contains(name)) {
+        return Some(target.clone());
+    }
+    if depth > 8 {
+        return None;
+    }
+    match if name == "default" { home.default.as_ref() } else { home.bindings.get(name) } {
+        Some(b) => kept_in(modules, tops, b, depth + 1),
+        None => home.wildcards.iter().find_map(|w| kept_in(modules, tops, &Bound::Own(format!("{w}.{name}")), depth + 1)),
+    }
+}
+
+/// Whether the top-level value kept at `kept` is one a package made: built by a package's
+/// constructor or function (`new Pool()`, `express()`, `new Hono().basePath(..)`), or declared
+/// with a package's type (`let pool: Pool`).
+fn package_value(modules: &IndexMap<String, Module>, kept: &str) -> bool {
+    let Some((home, name)) = kept.rsplit_once('.').and_then(|(mid, name)| Some((modules.get(mid)?, name))) else { return false };
+    let src = &home.src[..];
+    let Some(v) = top_variables(home.tree.root_node()).into_iter().find(|v| v.child_by_field_name("name").map(|n| text(n, src)) == Some(name)) else { return false };
+    if v.child_by_field_name("type").and_then(|t| typed_package(t, home, src)).is_some() {
+        return true;
+    }
+    let package = |n: TsNode| matches!(member_parts(n, src).first().and_then(|h| home.bindings.get(h)), Some(Bound::Ext(_)));
+    let mut value = v.child_by_field_name("value");
+    while let Some(x) = value {
+        match x.kind() {
+            "await_expression" | "parenthesized_expression" | "as_expression" | "satisfies_expression" | "non_null_expression" => value = named_children(x).into_iter().next(),
+            "new_expression" => return x.child_by_field_name("constructor").map_or(false, package),
+            // a chain of calls on what a package made: `new Hono().basePath("/api")`
+            "call_expression" => match function_of(x) {
+                Some(f) if f.kind() == "member_expression" && f.child_by_field_name("object").map_or(false, |o| matches!(o.kind(), "call_expression" | "new_expression")) => {
+                    value = f.child_by_field_name("object");
+                }
+                Some(f) => return package(f),
+                None => return false,
+            },
+            _ => return false,
+        }
+    }
+    false
 }
 
 
@@ -1523,7 +1663,7 @@ impl<'a, 't> Body<'a, 't> {
         };
         b.typed(n);
         b.made();
-        b.sites = evaluation_order(walk(body, &["call_expression", "new_expression", "jsx_opening_element", "jsx_self_closing_element", "identifier"])).into_iter().filter(|x| b.mine(*x)).collect();
+        b.sites = evaluation_order(walk(body, &["call_expression", "new_expression", "object", "jsx_opening_element", "jsx_self_closing_element", "identifier"])).into_iter().filter(|x| b.mine(*x)).collect();
         b
     }
 
@@ -1658,6 +1798,7 @@ impl<'a, 't> Body<'a, 't> {
     fn call(&mut self, steps: &mut Steps, c: TsNode<'t>) {
         match c.kind() {
             "new_expression" => self.constructed(steps, c),
+            "object" => self.literal(steps, c),
             "jsx_opening_element" | "jsx_self_closing_element" => self.rendered(steps, c),
             "identifier" => self.handed_on(steps, c),
             _ => self.called(steps, c),
@@ -1673,6 +1814,22 @@ impl<'a, 't> Body<'a, 't> {
             if let Some(a) = argument(self.modules, self.store, &self.id, &format!("{r}.constructor"), c, self.m, self.scope, &self.params) {
                 self.read.args.push(a);
             }
+        }
+    }
+
+    /// `const settings: Settings = { .. }`: an object literal declared as a type of the program's,
+    /// which the compiler checks it against, makes a value of that type, as `new` does: a step to
+    /// the type, handed what the literal is built from.
+    fn literal(&self, steps: &mut Steps, c: TsNode<'t>) {
+        let mut v = c;
+        while let Some(p) = v.parent().filter(|p| p.kind() == "parenthesized_expression") {
+            v = p;
+        }
+        let Some(d) = v.parent().filter(|d| d.kind() == "variable_declarator" && d.child_by_field_name("value").map(|x| x.id()) == Some(v.id())) else { return };
+        let Some(ty) = d.child_by_field_name("type").and_then(|t| named_children(t).into_iter().next()) else { return };
+        if let Some(r) = self.class(self.resolve(&type_head(ty, self.src))).filter(|r| self.own(r)) {
+            let step = Step { hands: self.hands(&[Some(c)], &steps.kept), gives: self.gives(c, Some(&r)), ..Default::default() };
+            steps.call(c, &r, EdgeKind::Instantiates, None, step);
         }
     }
 
@@ -1929,7 +2086,12 @@ impl<'a, 't> Body<'a, 't> {
             let built = self.eval.of(at, a, 0);
             // a request is its method and its URL: `fetch(url, { method })`, `axios.post(url)`
             let built = if kind.world == World::Net { crate::paths::cross(&method_of_request(&op, &args, at, self.eval), &built, " ") } else { built };
-            self.read.calls.push((t, built));
+            // a value the code holds none of (an option without a default) is the call as read
+            if built.is_empty() {
+                self.read.touches.push(t);
+            } else {
+                self.read.calls.push((t, built));
+            }
         }
     }
 
@@ -2051,19 +2213,25 @@ fn chain_root<'a>(n: TsNode, src: &'a [u8]) -> Option<&'a str> {
 /// call that changes something is made on, as `changes` says (`p.rows.push(..)`). Changing a part
 /// changes the whole.
 fn changed_roots<'a, 't>(body: TsNode<'t>, src: &'a [u8], changes: &dyn Fn(TsNode<'t>) -> Option<TsNode<'t>>) -> std::collections::BTreeSet<&'a str> {
+    changes_in(body, src, changes).into_iter().map(|(_, root)| root).collect()
+}
+
+/// Each change a body makes in place, as `changed_roots` reads them: the node that makes it, and
+/// the name whose object it changes.
+fn changes_in<'a, 't>(body: TsNode<'t>, src: &'a [u8], changes: &dyn Fn(TsNode<'t>) -> Option<TsNode<'t>>) -> Vec<(TsNode<'t>, &'a str)> {
     let member = |n: TsNode| matches!(n.kind(), "member_expression" | "subscript_expression");
-    let mut out = std::collections::BTreeSet::new();
+    let mut out = vec![];
     for a in walk(body, &["assignment_expression", "augmented_assignment_expression"]) {
-        out.extend(a.child_by_field_name("left").filter(|l| member(*l)).and_then(|l| chain_root(l, src)));
+        out.extend(a.child_by_field_name("left").filter(|l| member(*l)).and_then(|l| chain_root(l, src)).map(|r| (a, r)));
     }
     for u in walk(body, &["update_expression", "unary_expression"]) {
         let deletes = u.kind() == "update_expression" || (0..u.child_count()).filter_map(|i| u.child(i)).any(|c| c.kind() == "delete");
         if deletes {
-            out.extend(u.child_by_field_name("argument").filter(|a| member(*a)).and_then(|a| chain_root(a, src)));
+            out.extend(u.child_by_field_name("argument").filter(|a| member(*a)).and_then(|a| chain_root(a, src)).map(|r| (u, r)));
         }
     }
     for c in walk(body, &["call_expression"]) {
-        out.extend(changes(c).and_then(|o| chain_root(o, src)));
+        out.extend(changes(c).and_then(|o| chain_root(o, src)).map(|r| (c, r)));
     }
     out
 }

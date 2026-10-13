@@ -196,3 +196,178 @@ fn a_typescript_body_lists_its_calls() {
     assert!(toon.hands.iter().any(|h| h.name == "laag"), "{:#?}", toon);
     assert!(scherm.sites.iter().position(|s| s.to.ends_with("model.Laag")) < scherm.sites.iter().position(|s| s.to.ends_with("Laag.toon")));
 }
+
+/// A small package written to a directory of its own, read, and removed.
+fn written(name: &str, files: &[(&str, &str)]) -> Graph {
+    let dir = std::env::temp_dir().join(format!("atlas-{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    for (path, text) in files {
+        let file = dir.join(path);
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        std::fs::write(file, text).unwrap();
+    }
+    let g = analyze(&dir, &Options::default());
+    let _ = std::fs::remove_dir_all(&dir);
+    g.expect("the package parses")
+}
+
+/// A value a module keeps between calls, which its functions change, is a place:
+/// `Global(module.name)`, written by each function that changes it and read by each that uses
+/// it, in its own module or where another imports it. A function changes it when it assigns the
+/// name anew (`current = name`, `count++`) or changes its value in place: an item or a member
+/// assigned or deleted, or a method of the language's own that changes its receiver
+/// (`LATEST.set`, `QUEUE.push`). A name no function changes is a constant, a parameter of the same
+/// name is the function's own, and a value a package made changes through the package's methods,
+/// not the language's.
+#[test]
+fn a_value_a_module_keeps_is_a_global_place() {
+    let g = written(
+        "kept",
+        &[
+            ("package.json", r#"{ "name": "kept" }"#),
+            ("tsconfig.json", "{}"),
+            (
+                "src/state.ts",
+                r#"import { LRUCache } from "lru-cache";
+
+export let current = "";
+export const LATEST = new Map<string, number>();
+export const SEEN: Record<string, boolean> = {};
+export const QUEUE: string[] = [];
+export const LIMITS = { max: 10 };
+export const NAMES = ["a", "b"];
+let count = 0;
+const cache = new LRUCache<string, string>({ max: 10 });
+
+export function choose(name: string): void {
+  current = name;
+}
+
+export function remember(key: string, n: number): void {
+  LATEST.set(key, n);
+  count++;
+}
+
+export function mark(key: string): void {
+  SEEN[key] = true;
+}
+
+export function forget(key: string): void {
+  delete SEEN[key];
+}
+
+export function enqueue(item: string): void {
+  QUEUE.push(item);
+}
+
+export function raise(max: number): void {
+  LIMITS.max = max;
+}
+
+export function keep(key: string, value: string): void {
+  cache.set(key, value);
+}
+
+export function echo(current: string): string {
+  return current;
+}
+
+export function first(): string {
+  return NAMES[0] ?? "";
+}
+"#,
+            ),
+            (
+                "src/view.ts",
+                r#"import { LATEST, choose, current } from "./state.js";
+
+export function show(key: string): string {
+  return `${current}: ${LATEST.get(key)}`;
+}
+
+export function pick(name: string): void {
+  choose(name);
+}
+"#,
+            ),
+        ],
+    );
+    let root = format!("{}.", g.root);
+    let globals = |f: &str| -> Vec<(String, String)> {
+        let n = g.node(&format!("{root}{f}")).unwrap_or_else(|| panic!("{f}"));
+        let mut out: Vec<(String, String)> = n.touches.iter().filter(|t| t.kind_name() == "global").map(|t| (t.artifact.trim_start_matches(&root).to_string(), t.dir_name().to_string())).collect();
+        out.sort();
+        out
+    };
+    let place = |uses: &[(&str, &str)]| -> Vec<(String, String)> { uses.iter().map(|(k, d)| (k.to_string(), d.to_string())).collect() };
+    assert_eq!(globals("state.choose"), place(&[("state.current", "write")]), "assigned anew, and not read");
+    assert_eq!(globals("state.remember"), place(&[("state.LATEST", "read"), ("state.LATEST", "write"), ("state.count", "read"), ("state.count", "write")]));
+    for (f, kept) in [("state.mark", "state.SEEN"), ("state.forget", "state.SEEN"), ("state.enqueue", "state.QUEUE"), ("state.raise", "state.LIMITS")] {
+        assert_eq!(globals(f), place(&[(kept, "read"), (kept, "write")]), "{f}");
+    }
+    assert_eq!(globals("view.show"), place(&[("state.LATEST", "read"), ("state.current", "read")]), "read where another module imports them");
+    assert!(globals("state.keep").is_empty(), "a package's value changes through the package's methods");
+    assert!(globals("state.echo").is_empty(), "a parameter is the function's own");
+    assert!(globals("state.first").is_empty(), "a name no function changes is a constant");
+    assert!(check(&g).iter().all(|f| f.principle != "nothing"), "a function that changes a global leaves it behind");
+}
+
+/// An option of the command line is the entry's input, as a parameter of a command is: what
+/// `parseArgs` gives for it holds what the program runs with when the command line leaves the
+/// option out, its `default`, else no value. `values.input ?? IN` is `IN`; an option with a
+/// default is that default, from an options object written where it is handed or held by a
+/// constant; one with neither is a file the code does not name. An object literal declared as a
+/// type of the program's makes a value of it: a step to the type.
+#[test]
+fn an_option_holds_its_default_and_a_typed_literal_is_made() {
+    let g = written(
+        "options",
+        &[
+            ("package.json", r#"{ "name": "options", "bin": { "options": "./src/cli.ts" } }"#),
+            ("tsconfig.json", "{}"),
+            (
+                "src/cli.ts",
+                r#"import { readFile, writeFile } from "node:fs/promises";
+import * as util from "node:util";
+import { parseArgs } from "node:util";
+
+const IN = "data/in.txt";
+const OUT = "data/out.txt";
+const OPTIONS = { log: { type: "string", default: "logs/run.log" } } as const;
+
+interface Settings {
+  size: number;
+}
+
+async function main(argv: string[]): Promise<void> {
+  const { values } = parseArgs({
+    args: argv,
+    options: { input: { type: "string" }, output: { type: "string", default: OUT }, extra: { type: "string" } },
+  });
+  const settings: Settings = { size: 3 };
+  const counts: Record<string, number> = { a: 1 };
+  const text = await readFile(values.input ?? IN, "utf8");
+  await writeFile(values.output, text.repeat(settings.size + (counts.a ?? 0)));
+  await writeFile(values.extra, text);
+  const parsed = util.parseArgs({ args: argv, options: OPTIONS, strict: false });
+  await writeFile(parsed.values.log, text);
+}
+
+await main(process.argv.slice(2));
+"#,
+            ),
+        ],
+    );
+    let main = g.node(&format!("{}.cli.main", g.root)).expect("main");
+    let places = |kind: &str| -> Vec<&str> {
+        let mut out: Vec<&str> = main.touches.iter().filter(|t| t.kind_name() == kind).map(|t| t.artifact.as_str()).collect();
+        out.sort();
+        out
+    };
+    assert_eq!(places("disk_read"), ["data/in.txt"], "`values.input ?? IN`");
+    assert_eq!(places("disk_write"), ["", "data/out.txt", "logs/run.log"], "`default: OUT`, a constant's `default`, and `--extra`");
+    let settings = format!("{}.cli.Settings", g.root);
+    let made: Vec<(&str, Vec<(&str, &str)>)> = main.sites.iter().filter(|s| !s.to.is_empty()).map(|s| (s.to.as_str(), s.gives.iter().map(|h| (h.name.as_str(), h.ty.as_str())).collect())).collect();
+    assert_eq!(made, [(settings.as_str(), vec![("settings", settings.as_str())])], "a literal of a type the program declares, and no other");
+    assert!(g.edges.iter().any(|e| e.kind == EdgeKind::Instantiates && e.src == main.id && e.dst == settings), "`const settings: Settings = {{..}}`");
+}

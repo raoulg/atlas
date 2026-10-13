@@ -321,15 +321,20 @@ fn changes_are_what_the_method_reached_changes() {
 
 /// A call leaves something behind. TypeScript writes the configuration as a value handed to the
 /// object that uses it (`new Ledger(config, ..)`, a `Config` the Ledger has). The shortcut keeps it
-/// in a module-level `let`, set by `configure(config): void` and read back through `settings()`.
+/// in a module-level `let`, set by `configure(config): void` and read back through `settings()`:
+/// a global, the place `Global(config.current)`, which `configure` writes and its users read.
+/// Drawn, not asked: a global is sometimes the right choice.
 #[test]
 fn nothing_a_call_leaves_something_behind() {
     let (c, s) = (clean(), shortcut());
     assert!(c.edges.iter().any(|e| e.kind == EdgeKind::Has && e.src == "clean.ledger.Ledger" && e.dst == "clean.config.Config"));
     assert!(!findings(c).iter().any(|f| f.principle == "nothing" && f.node.starts_with("clean.config")));
-    assert!(asked(s, "nothing", "config.configure"), "{:?}", asked_anywhere(s, "nothing"));
+    let global = |f: &str, dir: &str| touches(s, f, "global").iter().any(|t| t.artifact == "shortcut.config.current" && t.dir_name() == dir);
+    assert!(global("config.configure", "write") && global("config.settings", "read"));
+    assert!(asked_anywhere(s, "nothing").is_empty(), "a call that keeps its value in a global leaves it behind: {:?}", asked_anywhere(s, "nothing"));
     assert!(edge(s, EdgeKind::Calls, "cli.run", "config.configure") && edge(s, EdgeKind::Calls, "server", "config.configure"), "still called where the program starts");
     assert!(edge(s, EdgeKind::Calls, "ledger.Ledger.record", "config.settings"));
+    assert!(c.nodes.iter().all(|n| n.touches.iter().all(|t| t.kind_name() != "global")), "the clean side keeps nothing in a global");
 }
 
 // ---------- choices ----------

@@ -197,9 +197,8 @@ fn the_same_from_outside_rust() {
 /// The places the TypeScript command names are the program's outside: the request to SILSO, the
 /// raw file written and read again, the directories, and the figure, written as an SVG document
 /// where the others write a PNG. The command is the module `package.json` names in `bin`, whose
-/// own code runs `main`. Beside them the route reaches a file read and a file written that the
-/// code does not name: what `--raw` and `--figure` say (`values.raw ?? RAW`), read as what the
-/// environment says beside the default the code holds.
+/// own code runs `main`. What `--raw` and `--figure` say is the command's input, which holds its
+/// default (`values.raw ?? RAW`), so the route reaches no place the code does not name.
 #[test]
 fn the_same_from_outside_typescript_names_the_same_places() {
     let t = typescript();
@@ -208,14 +207,13 @@ fn the_same_from_outside_typescript_names_the_same_places() {
     assert!(out.contains(&("disk_write".to_string(), "figures/sunspots.svg".to_string())), "{out:#?}");
     let (named, unnamed): (BTreeSet<_>, BTreeSet<_>) = out.into_iter().partition(|(_, artifact)| !artifact.is_empty());
     assert_eq!(in_any_format(named), in_any_format(the_outside()));
-    assert_eq!(unnamed, [("disk_read".to_string(), String::new()), ("disk_write".to_string(), String::new())].into_iter().collect());
+    assert!(unnamed.is_empty(), "{unnamed:?}");
 }
 
 /// From the TypeScript command, the route reaches the program's outside, as from the clean Python
 /// command: both take the raw file and the figure as options of the command line with a default
 /// (`raw: Path = RAW` in typer's signature, `values.raw ?? RAW` after `parseArgs`).
 #[test]
-#[ignore = "Atlas (a): an option of the command line with a default is read two ways: TypeScript's `values.raw ?? RAW` as the default and a file the code does not name, typer's `raw: Path = RAW` as the default alone"]
 fn the_same_from_outside_typescript() {
     assert_eq!(in_any_format(outside(typescript(), "typescript.cli")), in_any_format(the_outside()));
 }
@@ -559,7 +557,6 @@ fn typescript_the_places_are_made_whole_at_the_entry() {
 /// and `--months` (`const settings: Settings = { ...DEFAULT_SETTINGS, months: .. }`), and a step of
 /// `main` gives `settings`, as Python's `Settings(months=months)` does.
 #[test]
-#[ignore = "Atlas (a): a value built by an object literal of a declared type (`const settings: Settings = {..}`) is made by no step, so `settings` enters `main`'s route from nowhere"]
 fn typescript_main_makes_its_settings() {
     let main = node(typescript(), "typescript.cli.main");
     let made = main.sites.iter().any(|s| s.gives.iter().any(|g| g.name == "settings" && g.ty == "typescript.settings.Settings"));

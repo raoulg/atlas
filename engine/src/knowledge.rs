@@ -724,6 +724,19 @@ pub struct ArgParser {
 
 pub const ARG_PARSERS: &[ArgParser] = &[ArgParser { package: "argparse", namespace: "Namespace", declares: "add_argument", default: "default", dest: "dest" }];
 
+/// A command-line parser handed every option at once, in an object, which gives their values as
+/// the fields of one object (`values.out`): its package, its function, the key its options stand
+/// under, an option's key for its default, and the field of what it gives that holds the values.
+pub struct OptionParser {
+    pub package: &'static str,
+    pub function: &'static str,
+    pub options: &'static str,
+    pub default: &'static str,
+    pub values: &'static str,
+}
+
+pub const OPTION_PARSERS: &[OptionParser] = &[OptionParser { package: "util", function: "parseArgs", options: "options", default: "default", values: "values" }];
+
 /// How a path under the system's directory for temporary files is written: a place of its own,
 /// as `~` is the user's home.
 pub const TEMP_DIR: &str = "$TMPDIR";
