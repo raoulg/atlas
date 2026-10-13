@@ -24,6 +24,11 @@
 Two programs can show you the same screen. One is sloppy code with lots of shortcuts and
 inconsistent structure. The other is an elegant orchestration of logic. Atlas shows which is which.
 
+<p align="center">
+  <img src="docs/img/showcase/sunspots.png" width="100%" alt="SILSO's monthly mean sunspot number since 1749, a thin grey line, with its 13-month mean in blue over it: the eleven-year solar cycle">
+  <br><sub>What both programs below make: the monthly sunspot number since 1749, smoothed over 13 months.</sub>
+</p>
+
 <h3 align="center">A sloppy script</h3>
 <p align="center">
   <a href="https://raoulg.github.io/atlas/showcase/python-sloppy.html"><img src="docs/img/showcase/python-sloppy.png" width="100%" alt="Atlas's picture of the sloppy script: every step reads and changes one global, Global(sunspots.df), and two of them pick their own files"></a>

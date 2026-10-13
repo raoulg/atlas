@@ -47,6 +47,9 @@ table.diff td code{font-family:var(--mono);font-size:13px}
 .sloppy .tag{color:var(--accent)}
 .elegant .tag{color:var(--good)}
 .note{font-family:var(--mono);font-size:13px;color:var(--ink-3);margin-top:14px}
+figure.output{max-width:960px}
+figure.output img{width:100%;height:auto;display:block;padding:14px 18px}
+.output .tag{color:var(--ink-2)}
 .lede a{color:var(--ink);text-decoration-color:var(--accent);text-underline-offset:3px}
 details.inside{background:var(--panel);border:1px solid var(--line);max-width:80ch}
 details.inside summary{cursor:pointer;padding:14px 18px;color:var(--ink-2)}
@@ -87,6 +90,11 @@ footer{border-top:1px solid var(--line);padding-top:20px;color:var(--ink-3);font
 <section>
   <h2>The same program. The same figure.</h2>
   <p class="lede">Fetch sunspot counts from the web, keep the CSV, clean it, smooth it, draw a figure. Written twice in Python: once as a sloppy script, once typed and elegant. Atlas draws what each one does.</p>
+  <figure class="output">
+    <figcaption><b>What both make</b><span class="tag">the figure</span></figcaption>
+    <img src="img/showcase/sunspots.png" alt="SILSO's monthly mean sunspot number since 1749, a thin grey line, with its 13-month mean in blue over it: the eleven-year solar cycle">
+  </figure>
+  <p class="note" style="margin:10px 0 36px">the monthly mean sunspot number since 1749 (SILSO, Royal Observatory of Belgium), smoothed over 13 months · drawn by the typed pipeline</p>
   <div class="pair">
     <figure class="sloppy">
       <figcaption><b>A sloppy script</b><span class="tag">sloppy</span></figcaption>
