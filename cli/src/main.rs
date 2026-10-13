@@ -132,7 +132,10 @@ const FONTS: &str = include_str!("../../viewer/fonts.css");
 /// kind, part, focus and opened sets), else on the route of a file named on the command line.
 /// Gives the page and the name of its project.
 pub(crate) fn page(repos: &[PathBuf], opts: &Options, since: Option<&str>, shown: Option<serde_json::Value>) -> Result<(String, String)> {
-    let g = parts::analyze_repo(repos, opts)?;
+    // each part in its own language, as `atlas check` reads it, then the parts as one graph
+    let graphs = parts::analyze_parts(repos, opts)?;
+    let findings: Vec<principles::Finding> = graphs.iter().flat_map(principles::check).collect();
+    let g = parts::merged(repos, graphs);
     let parts: Vec<&str> = g.parts.iter().map(|p| p.id.as_str()).collect();
     eprintln!("{} · {} · {} modules · {} entries", g.root, parts.join(" + "), g.stats.modules, g.nodes.iter().filter(|n| n.entry.is_some()).count());
     let mut projects = serde_json::Map::new();
@@ -140,10 +143,8 @@ pub(crate) fn page(repos: &[PathBuf], opts: &Options, since: Option<&str>, shown
     // what each route runs and what each step takes and gives: the flow the agent reads its routes from
     let flow = atlas_engine::flow::of(&g);
     page["flow"] = serde_json::to_value(&flow)?;
-    // what the principles ask, each at the node it is about, where the page marks it: each part
-    // checked in its own language, as `atlas check` checks it; the merged graph keeps every
-    // part's nodes, so each finding is about a node the picture knows
-    let findings: Vec<principles::Finding> = parts::analyze_parts(repos, opts)?.iter().flat_map(principles::check).collect();
+    // what the principles ask, each at the node it is about, where the page marks it; the merged
+    // graph keeps every part's nodes, so each finding is about a node the picture knows
     page["findings"] = serde_json::to_value(&findings)?;
     if let Some(rev) = since {
         let [repo] = repos else { anyhow::bail!("--since compares one repository with its history") };

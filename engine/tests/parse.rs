@@ -383,7 +383,7 @@ fn rust_workspace_parses() {
     let calls = edges(&g, EdgeKind::Calls);
     assert!(calls.contains(&("atlas.main".into(), "atlas.view".into())));
     assert!(calls.contains(&("atlas.view".into(), "atlas.page".into())), "the command writes the page");
-    assert!(calls.contains(&("atlas.page".into(), "atlas-engine.parts.analyze_repo".into())), "cli calls into the engine");
+    assert!(calls.contains(&("atlas.page".into(), "atlas-engine.parts.analyze_parts".into())) && calls.contains(&("atlas.page".into(), "atlas-engine.parts.merged".into())), "cli calls into the engine");
     assert!(calls.contains(&("atlas.page".into(), "atlas-engine.flow.of".into())), "the page is drawn from the Flow: Graph -> Flow -> File(html)");
     assert!(calls.contains(&("atlas-engine.parts.analyze_parts".into(), "atlas-engine.graph_of".into())), "each part is analyzed in its language");
     assert!(calls.contains(&("atlas-engine.language.Rust.parse".into(), "atlas-engine.rust.parse".into())), "trait impl calls the module");

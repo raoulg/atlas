@@ -82,7 +82,12 @@ pub fn analyze_parts(repos: &[PathBuf], opts: &Options) -> Result<Vec<Graph>> {
 /// The repositories as one graph: their parts side by side, joined where one names a route
 /// another serves.
 pub fn analyze_repo(repos: &[PathBuf], opts: &Options) -> Result<Graph> {
-    let graphs = analyze_parts(repos, opts)?;
+    Ok(merged(repos, analyze_parts(repos, opts)?))
+}
+
+/// The parts of the repositories as one graph, named after them, joined where one part requests
+/// another's routes.
+pub fn merged(repos: &[PathBuf], graphs: Vec<Graph>) -> Graph {
     let name = repos
         .iter()
         .map(|r| std::fs::canonicalize(r).ok().and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_string())).unwrap_or_else(|| "repo".into()))
@@ -90,7 +95,7 @@ pub fn analyze_repo(repos: &[PathBuf], opts: &Options) -> Result<Graph> {
         .join("+");
     let mut g = if graphs.len() == 1 { graphs.into_iter().next().unwrap() } else { merge(&name, graphs) };
     join(&mut g);
-    Ok(g)
+    g
 }
 
 /// A graph's parts and every node's part: the top-level packages it holds (a crate of a
