@@ -45,6 +45,9 @@ struct Module {
     is_root: bool,
     /// For the root of a binary target (`src/main.rs`, `src/bin/x.rs`): the binary's name.
     bin: Option<String>,
+    /// The items a node of the graph is defined by, by their first line and name: where they are
+    /// in the file.
+    defs: HashMap<(u32, String), (usize, usize)>,
 }
 
 /// A trait impl found in a module, resolved once bindings exist.
@@ -233,7 +236,8 @@ fn items<'t>(root: TsNode<'t>) -> Vec<TsNode<'t>> {
     out
 }
 
-/// A signature as data: each parameter by name, type and kind, and what it gives back. `self`,
+/// A signature as data: each parameter by name, type and kind, and what it gives back: the value,
+/// which for a `Result<T, E>` is `T`, whatever that is; `E` is what it fails with. `self`,
 /// `&self`, `&mut self` and `self: Box<Self>` are the value the method is called on; a `&mut`
 /// says the body may change what it is handed.
 fn signature(f: TsNode, src: &[u8]) -> (Vec<Param>, Option<Returns>, SigInfo) {
@@ -261,7 +265,7 @@ fn signature(f: TsNode, src: &[u8]) -> (Vec<Param>, Option<Returns>, SigInfo) {
         }
     }
     let rt = f.child_by_field_name("return_type");
-    info.rtypes = type_names(rt, src);
+    info.rtypes = type_names(rt.map(|r| value_of(r, src).0), src);
     (params, rt.map(|r| returns(r, src)), info)
 }
 
@@ -273,9 +277,9 @@ fn panics(n: TsNode, src: &[u8]) -> bool {
     n.kind() == "macro_invocation" && n.child_by_field_name("macro").map_or(false, |m| PANICS.contains(&text(m, src)))
 }
 
-/// What a return type gives: a `Result<T, E>` gives `T` when it does not fail, a reference what
-/// it refers to, `()` no value, `Self` a value of the type the `impl` is for.
-fn returns(rt: TsNode, src: &[u8]) -> Returns {
+/// The value a return type gives, and whether it may fail instead: a `Result<T, E>` gives `T`
+/// when it does not fail, a reference what it refers to.
+fn value_of<'t>(rt: TsNode<'t>, src: &[u8]) -> (TsNode<'t>, bool) {
     let mut t = rt;
     let mut fails = false;
     loop {
@@ -289,9 +293,15 @@ fn returns(rt: TsNode, src: &[u8]) -> Returns {
         };
         match inner {
             Some(i) => t = i,
-            None => break,
+            None => return (t, fails),
         }
     }
+}
+
+/// What a return type gives: its value (`T` of a `Result<T, E>`), `()` no value, `Self` a value
+/// of the type the `impl` is for.
+fn returns(rt: TsNode, src: &[u8]) -> Returns {
+    let (t, fails) = value_of(rt, src);
     let (value, own) = match (t.kind(), text(t, src)) {
         ("unit_type", _) => (String::new(), false),
         (_, "Self") => (String::new(), true),
@@ -365,9 +375,10 @@ pub fn parse(repo: &Repo) -> Result<(GraphBuilder, String)> {
                 is_pkg: is_root,
                 ..Default::default()
             });
+            let defs = definitions(&tree, &src);
             modules.insert(
                 mid.clone(),
-                Module { id: mid, krate: c.name.clone(), parent, path: p, src, tree, bindings: HashMap::new(), wildcards: vec![], symbols: HashMap::new(), is_root, bin },
+                Module { id: mid, krate: c.name.clone(), parent, path: p, src, tree, bindings: HashMap::new(), wildcards: vec![], symbols: HashMap::new(), is_root, bin, defs },
             );
         }
     }
@@ -780,14 +791,33 @@ fn collect_impls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, c
 
 // ---------- pass 2: fields, signatures, calls ----------
 
+/// The kinds of item a node of the graph is defined by.
+const DEFINES: &[&str] = &["function_item", "function_signature_item", "struct_item", "enum_item", "trait_item"];
+
+/// A file's items by their first line and name, at their place in the file; the first of two
+/// alike.
+fn definitions(tree: &Tree, src: &[u8]) -> HashMap<(u32, String), (usize, usize)> {
+    let mut out = HashMap::new();
+    for d in walk(tree.root_node(), DEFINES) {
+        if let Some(name) = d.child_by_field_name("name") {
+            out.entry((d.start_position().row as u32 + 1, text(name, src).to_string())).or_insert((d.start_byte(), d.end_byte()));
+        }
+    }
+    out
+}
+
+/// The item a node is defined by: the module's file, or the function, struct, enum or trait.
 fn def_node<'t>(m: &'t Module, n: &Node) -> Option<TsNode<'t>> {
     if n.kind == NodeKind::Module {
         return Some(m.tree.root_node());
     }
     let (start, _) = n.span?;
-    walk(m.tree.root_node(), &["function_item", "function_signature_item", "struct_item", "enum_item", "trait_item"])
-        .into_iter()
-        .find(|d| d.start_position().row as u32 + 1 == start && d.child_by_field_name("name").map_or(false, |x| text(x, &m.src) == n.name))
+    let &(from, to) = m.defs.get(&(start, n.name.clone()))?;
+    let mut d = m.tree.root_node().descendant_for_byte_range(from, to)?;
+    while !DEFINES.contains(&d.kind()) || d.byte_range() != (from..to) {
+        d = d.parent()?;
+    }
+    Some(d)
 }
 
 fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crate_ids: &HashMap<String, String>) {
@@ -848,6 +878,7 @@ fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crate_ids:
                 store.add_edge(id, &r, kind, None);
             }
         }
+        take_sums(modules, store, crate_ids, id);
     }
     // every signature before any body: a body's locals take their types from what the functions
     // it calls give back, wherever those are defined
@@ -866,6 +897,74 @@ fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crate_ids:
     let family = store.family();
     let completed = crate::paths::complete(waiting, &handing, &family, &|_, _| vec![], &entry);
     crate::paths::place_calls(store, completed, false);
+}
+
+/// The library's sums a function takes, each a type of its own: `fetched: Result<Value,
+/// reqwest::Error>` takes a `Result<Value, reqwest::Error>`, a sum whose variants are the types
+/// it is written with, as an enum of the program is a sum of the types its variants hold (a type
+/// of the program's or a library's that holds data). Its id is the type with each name resolved,
+/// so one sum written two ways is one; a sum of none of those is none the graph holds.
+fn take_sums(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crate_ids: &HashMap<String, String>, id: &str) {
+    let n = store.nodes[id].clone();
+    let m = &modules[&n.module];
+    let src = &m.src;
+    let Some(params) = def_node(m, &n).and_then(|d| d.child_by_field_name("parameters")) else { return };
+    let resolved = |parts: &[String], nodes: &IndexMap<String, Node>| match (parts, &n.cls) {
+        ([s], Some(c)) if s == "Self" => Some(c.clone()),
+        _ => resolve(m, parts, modules, nodes, crate_ids),
+    };
+    for p in named_children(params).into_iter().filter(|p| p.kind() == "parameter") {
+        let Some(mut t) = p.child_by_field_name("type") else { continue };
+        while let Some(inner) = (t.kind() == "reference_type").then(|| t.child_by_field_name("type")).flatten() {
+            t = inner;
+        }
+        let generic = path_parts(t.child_by_field_name("type").filter(|_| t.kind() == "generic_type"), src);
+        if !generic.last().map_or(false, |g| knowledge::RUST_SUMS.contains(&g.as_str())) {
+            continue;
+        }
+        // the program's own enum of that name is read as the program's
+        let of = resolved(&generic, &store.nodes);
+        if of.as_ref().map_or(false, |r| store.nodes.get(r).map_or(false, |x| x.kind == NodeKind::Class)) {
+            continue;
+        }
+        let mut variants: Vec<String> = vec![];
+        for a in t.child_by_field_name("type_arguments").map(named_children).unwrap_or_default() {
+            for r in type_names(Some(a), src).iter().filter_map(|x| resolved(x, &store.nodes)) {
+                let known = if r.starts_with("ext:") { foreign_type(&r, &OWN) } else { store.nodes.get(&r).map_or(false, |x| x.kind == NodeKind::Class) };
+                if known && !variants.contains(&r) {
+                    variants.push(r);
+                }
+            }
+        }
+        if variants.is_empty() {
+            continue;
+        }
+        let mut meant = String::new();
+        let mut at = t.start_byte();
+        for x in walk(t, &["type_identifier", "scoped_type_identifier"]) {
+            if x.start_byte() < at || (x.kind() == "type_identifier" && x.parent().map_or(false, |p| p.kind() == "scoped_type_identifier")) {
+                continue;
+            }
+            let parts = path_parts(Some(x), src);
+            meant.push_str(&String::from_utf8_lossy(&src[at..x.start_byte()]));
+            let r = resolved(&parts, &store.nodes).unwrap_or_else(|| parts.join("."));
+            meant.push_str(r.strip_prefix("ext:").unwrap_or(&r));
+            at = x.end_byte();
+        }
+        meant.push_str(&String::from_utf8_lossy(&src[at..t.end_byte()]));
+        let sum = format!("ext:{}", meant.split_whitespace().collect::<String>());
+        if !store.nodes.contains_key(&sum) {
+            let home = of.as_deref().map(|r| r.trim_start_matches("ext:")).and_then(|r| r.rsplit_once('.')).map_or("", |(h, _)| h);
+            store.add_node(Node { id: sum.clone(), kind: NodeKind::External, name: text(t, src).split_whitespace().collect::<Vec<_>>().join(" "), module: home.to_string(), ..Default::default() });
+            for v in variants {
+                if v.starts_with("ext:") {
+                    store.ext_node(&v);
+                }
+                store.add_edge(&sum, &v, EdgeKind::Variant, None);
+            }
+        }
+        store.add_edge(id, &sum, EdgeKind::Takes, None);
+    }
 }
 
 /// A function on a type, by the casing Rust's names follow (C-CASE): `File::open`, not
@@ -985,6 +1084,170 @@ fn library_chain<'t>(mut v: TsNode<'t>, m: &Module, src: &[u8], made_by: &HashMa
     }
 }
 
+// ---------- calls among a macro's tokens ----------
+
+/// What a parenthesised group among a macro's tokens calls.
+enum Called<'t> {
+    /// A path: `round2`, `Self::label`, `crate::report::round2`, `Vec::<u8>::new`.
+    Path(Vec<String>),
+    /// A method, with the names its receiver is reached by (`store` in `store.rows()`, `self`
+    /// and `conn` in `self.conn.f()`); none when the receiver is no name (`a.f().g()`).
+    Method(Vec<TsNode<'t>>, String),
+}
+
+/// The keywords after which a name and a group declare (`fn f(..)`, `struct S(..)`), name a
+/// type (`dyn Fn(..)`) or start a pattern (`let Some(x) = ..`): no call. Among a macro's tokens
+/// some are names to tree-sitter (`dyn`), so they are known by how they are written.
+const NOT_CALLED_AFTER: &[&str] = &["fn", "struct", "enum", "union", "trait", "type", "dyn", "impl", "let"];
+
+/// What a group among a macro's tokens calls: the path or the method written right before it. A
+/// macro's tokens are no expression to tree-sitter, so they are read as Rust writes a call: a path
+/// followed by a parenthesised group. A group in a pattern calls nothing: one an arm, a binding
+/// or a guard follows (`Some(x) =>`, `Some(x) =`), or one where a macro takes a pattern
+/// (`matches!(v, Some(_))`).
+fn token_callee<'t>(g: TsNode<'t>, src: &[u8]) -> Option<Called<'t>> {
+    if g.child(0).map(|x| x.kind()) != Some("(") || !in_macro(g) || in_pattern(g, src) {
+        return None;
+    }
+    if g.next_sibling().map_or(false, |n| matches!(n.kind(), "=>" | "=" | "if" | "@")) {
+        return None;
+    }
+    let mut name = g.prev_sibling()?;
+    if name.kind() == ">" {
+        name = turbofish(name)?;
+    }
+    if name.kind() != "identifier" {
+        return None;
+    }
+    let mut parts = vec![text(name, src).to_string()];
+    let mut at = name.prev_sibling();
+    while let Some(sep) = at.filter(|t| t.kind() == "::") {
+        let mut before = sep.prev_sibling()?;
+        if before.kind() == ">" {
+            before = turbofish(before)?;
+        }
+        if !matches!(before.kind(), "identifier" | "self" | "super" | "crate") {
+            return None;
+        }
+        parts.insert(0, text(before, src).to_string());
+        at = before.prev_sibling();
+    }
+    match at {
+        Some(dot) if dot.kind() == "." => {
+            let [method] = <[String; 1]>::try_from(parts).ok()?;
+            Some(Called::Method(receiver(dot), method))
+        }
+        Some(k) if NOT_CALLED_AFTER.contains(&text(k, src)) => None,
+        _ => Some(Called::Path(parts)),
+    }
+}
+
+/// The names a method's receiver is reached by, from the `.` before the method: `self.conn` ->
+/// `self`, `conn`; none when the chain passes through something that is not a name (`a.f().g()`,
+/// `Type::X.g()`).
+fn receiver(dot: TsNode) -> Vec<TsNode> {
+    let mut names = vec![];
+    let mut t = dot.prev_sibling();
+    while let Some(n) = t {
+        if !matches!(n.kind(), "identifier" | "self") {
+            return vec![];
+        }
+        names.insert(0, n);
+        match n.prev_sibling() {
+            Some(d) if d.kind() == "." => t = d.prev_sibling(),
+            Some(d) if d.kind() == "::" => return vec![],
+            _ => return names,
+        }
+    }
+    vec![]
+}
+
+/// The token before the turbofish that `close` ends (`f` of `f::<T>`); none when `close` ends no
+/// turbofish (`a > (b)`).
+fn turbofish(close: TsNode) -> Option<TsNode> {
+    let mut depth = 0;
+    let mut t = Some(close);
+    while let Some(x) = t {
+        match x.kind() {
+            ">" => depth += 1,
+            "<" => {
+                depth -= 1;
+                if depth == 0 {
+                    return x.prev_sibling().filter(|s| s.kind() == "::")?.prev_sibling();
+                }
+            }
+            _ => {}
+        }
+        t = x.prev_sibling();
+    }
+    None
+}
+
+/// Whether a group sits among the tokens of a macro's invocation, below its own arguments.
+fn in_macro(g: TsNode) -> bool {
+    let mut t = g.parent().filter(|p| p.kind() == "token_tree");
+    while let Some(x) = t {
+        match x.parent() {
+            Some(p) if p.kind() == "token_tree" => t = Some(p),
+            Some(p) => return p.kind() == "macro_invocation",
+            None => return false,
+        }
+    }
+    false
+}
+
+/// Whether a group stands in the pattern of a macro that takes one: after its first argument,
+/// before a guard's `if`.
+fn in_pattern(g: TsNode, src: &[u8]) -> bool {
+    let mut child = g;
+    while let Some(t) = child.parent().filter(|t| t.kind() == "token_tree") {
+        let name = match t.parent() {
+            Some(m) if m.kind() == "macro_invocation" => m.child_by_field_name("macro").and_then(|x| path_parts(Some(x), src).pop()),
+            _ => t.prev_sibling().filter(|b| b.kind() == "!").and_then(|b| b.prev_sibling()).map(|x| text(x, src).to_string()),
+        };
+        if name.map_or(false, |n| knowledge::RUST_PATTERN_MACROS.contains(&n.as_str())) {
+            let kids: Vec<TsNode> = (0..t.child_count()).filter_map(|i| t.child(i)).collect();
+            let at = kids.iter().position(|k| k.id() == child.id());
+            let comma = kids.iter().position(|k| k.kind() == ",");
+            let guard = comma.and_then(|c| kids.iter().skip(c).position(|k| text(*k, src) == "if").map(|i| c + i));
+            if let (Some(at), Some(comma)) = (at, comma) {
+                if at > comma && guard.map_or(true, |g| at < g) {
+                    return true;
+                }
+            }
+        }
+        child = t;
+    }
+    false
+}
+
+/// The names among a call's tokens that stand for values: not a field after a `.`, not a part of
+/// a path, not a macro.
+fn token_values(g: TsNode) -> Vec<TsNode> {
+    walk(g, &["identifier"])
+        .into_iter()
+        .filter(|i| !matches!(i.prev_sibling().map(|p| p.kind()), Some("." | "::")) && !matches!(i.next_sibling().map(|n| n.kind()), Some("::" | "!")))
+        .collect()
+}
+
+/// What a call is handed, by place: its arguments; among a macro's tokens, each argument that is
+/// one name or literal (`&x` is `x`), and none for one written another way.
+fn positional(c: TsNode) -> Vec<Option<TsNode>> {
+    if c.kind() != "token_tree" {
+        return c.child_by_field_name("arguments").map(named_children).unwrap_or_default().into_iter().filter(|a| !a.kind().ends_with("comment")).map(Some).collect();
+    }
+    paths::token_groups(c)
+        .into_iter()
+        .map(|g| {
+            let rest: Vec<TsNode> = g.into_iter().skip_while(|t| matches!(t.kind(), "&" | "mut" | "mutable_specifier")).collect();
+            match rest.as_slice() {
+                [one] if one.is_named() && one.kind() != "token_tree" => Some(*one),
+                _ => None,
+            }
+        })
+        .collect()
+}
+
 /// Expand the head of a call path through its binding, so `fs::read` becomes `std.fs.read`.
 fn expand(m: &Module, parts: &[String]) -> Vec<String> {
     match parts.first().and_then(|h| m.bindings.get(h)) {
@@ -1014,7 +1277,7 @@ fn link_calls<'t>(modules: &'t IndexMap<String, Module>, store: &mut GraphBuilde
     let mut steps = Steps::new(body, &m.src, &CHOICES);
     let read = {
         let mut b = Body::new(modules, store, crate_ids, eval, m, &n, d, body);
-        for c in evaluation_order(walk(body, &["call_expression", "struct_expression", "identifier", "scoped_identifier"])) {
+        for c in evaluation_order(walk(body, &["call_expression", "struct_expression", "identifier", "scoped_identifier", "token_tree"])) {
             b.call(&mut steps, c);
         }
         b.read
@@ -1307,7 +1570,8 @@ impl<'a, 't> Body<'a, 't> {
         Crosses::read(c, self.src, kind, None, op, lits, STRINGS, &self.locals).touches(None)
     }
 
-    /// One call of the body, as the step it is: a struct literal, a method on a value, or a path.
+    /// One call of the body, as the step it is: a struct literal, a method on a value, or a path,
+    /// written as an expression or among a macro's tokens.
     fn call(&mut self, steps: &mut Steps, c: TsNode<'t>) {
         if c.kind() == "struct_expression" {
             return self.literal(steps, c);
@@ -1315,12 +1579,44 @@ impl<'a, 't> Body<'a, 't> {
         if matches!(c.kind(), "identifier" | "scoped_identifier") {
             return self.unit(steps, c);
         }
+        if c.kind() == "token_tree" {
+            return self.token_call(steps, c);
+        }
         let Some(f) = c.child_by_field_name("function") else { return };
         self.handed_on(steps, c);
         if f.kind() == "field_expression" {
             self.method_call(steps, c, f);
         } else {
-            self.path_call(steps, c, f);
+            self.path_call(steps, c, path_parts(Some(f), self.src));
+        }
+    }
+
+    /// A call among a macro's tokens, `c` the group it is handed (`(e.amount)` of `round2` in
+    /// `params![.., round2(e.amount)]`): it runs like any call, so it is followed like one. A
+    /// method is followed on a receiver the body knows the class of (`store.rows()`, `self.f()`,
+    /// `self.conn.f()`).
+    fn token_call(&mut self, steps: &mut Steps, c: TsNode<'t>) {
+        let src = self.src;
+        let Some(called) = token_callee(c, src) else { return };
+        self.handed_on(steps, c);
+        let (recv, method) = match called {
+            Called::Path(parts) => return self.path_call(steps, c, parts),
+            Called::Method(recv, method) => (recv, method),
+        };
+        let owner = |t: TsNode| if t.kind() == "self" { self.cls.clone() } else { self.locals.get(text(t, src)).cloned() };
+        let class = match recv.as_slice() {
+            [r] => owner(*r),
+            [o, f] => owner(*o).and_then(|c| self.store.classes.get(&c)).and_then(|k| k.attr_types.get(text(*f, src)).cloned()),
+            _ => None,
+        };
+        match class {
+            // a method not found on the type (`to_string`, `len`) is not known; it builds nothing
+            Some(r) => {
+                if let Some(t) = self.store.method_of(&r, &method).filter(|t| !t.starts_with("ext:")) {
+                    self.own_step(steps, c, &t, recv.last().copied(), None);
+                }
+            }
+            None => self.library_step(steps, c, &method, recv.last().copied()),
         }
     }
 
@@ -1359,7 +1655,7 @@ impl<'a, 't> Body<'a, 't> {
     /// An own function handed on as a value (`xs.iter().map(Self::label)`, `thread::spawn(run)`):
     /// called by whoever receives it.
     fn handed_on(&self, steps: &mut Steps, c: TsNode<'t>) {
-        for a in c.child_by_field_name("arguments").map(named_children).unwrap_or_default() {
+        for a in positional(c).into_iter().flatten() {
             if !matches!(a.kind(), "identifier" | "scoped_identifier") || self.locals.contains_key(text(a, self.src)) {
                 continue;
             }
@@ -1376,15 +1672,25 @@ impl<'a, 't> Body<'a, 't> {
 
     /// A library's operation not read: a step where the body keeps what it gives.
     fn library_step(&self, steps: &mut Steps, c: TsNode<'t>, op: &str, recv: Option<TsNode<'t>>) {
-        let hands = self.hands(&[recv, c.child_by_field_name("arguments")], &steps.kept);
+        let hands = self.call_hands(c, recv, &steps.kept);
         steps.op(c, op, hands, self.gives(c, None));
+    }
+
+    /// What a call is handed: the value it is called on, and the names that stand for values in
+    /// its arguments.
+    fn call_hands(&self, c: TsNode<'t>, recv: Option<TsNode<'t>>, kept: &HashSet<String>) -> Vec<Held> {
+        let parts: Vec<Option<TsNode>> = match c.kind() {
+            "token_tree" => std::iter::once(recv).chain(token_values(c).into_iter().map(Some)).collect(),
+            _ => vec![recv, c.child_by_field_name("arguments")],
+        };
+        self.hands(&parts, kept)
     }
 
     /// A step to one of the program's own functions or types.
     fn own_step(&mut self, steps: &mut Steps, c: TsNode<'t>, t: &str, recv: Option<TsNode<'t>>, via: Option<String>) {
         let kind = if self.store.nodes[t].kind == NodeKind::Class { EdgeKind::Instantiates } else { EdgeKind::Calls };
         let on_receiver = recv.map_or(false, |r| r.kind() == "self");
-        let step = Step { on_receiver, hands: self.hands(&[recv, c.child_by_field_name("arguments")], &steps.kept), gives: self.gives(c, Some(t)), ..Default::default() };
+        let step = Step { on_receiver, hands: self.call_hands(c, recv, &steps.kept), gives: self.gives(c, Some(t)), ..Default::default() };
         steps.call(c, t, kind, via.filter(|_| kind == EdgeKind::Instantiates), step);
         if let Some(arg) = self.argument(c, t, recv.is_some()) {
             self.read.args.push(arg);
@@ -1398,8 +1704,7 @@ impl<'a, 't> Body<'a, 't> {
         let home = self.modules.get(&n.module)?;
         let def = def_node(home, n)?;
         let skip = usize::from(!on_value && paths::takes_self(def));
-        let args = c.child_by_field_name("arguments").map(named_children).unwrap_or_default().into_iter().filter(|a| !a.kind().ends_with("comment"));
-        let passed = paths::param_names(def, &home.src).into_iter().zip(args.skip(skip)).filter(|(p, _)| !p.is_empty()).collect();
+        let passed = paths::param_names(def, &home.src).into_iter().zip(positional(c).into_iter().skip(skip)).filter_map(|(p, a)| Some((p, a?))).filter(|(p, _)| !p.is_empty()).collect();
         Some(Arg { caller: self.id.clone(), callee: t.to_string(), module: self.m.id.clone(), scope: Some(self.def), params: self.params.clone(), passed })
     }
 
@@ -1537,6 +1842,32 @@ impl<'a, 't> Body<'a, 't> {
         }
     }
 
+    /// The touches of a call that names what it reaches by what it is handed first (the program
+    /// `Command::new` runs): the value the function holds there, a constant's as much as a
+    /// literal's, one touch for each value it can be; as written when the function does not hold
+    /// it whole.
+    fn touch_handed(&self, c: TsNode<'t>, tag: Crossing, op: &str, first: Option<TsNode<'t>>) -> Vec<Touch> {
+        let lits = literals(c, self.src, STRINGS);
+        let values: Vec<String> = match first.filter(|a| literals(*a, self.src, STRINGS).is_empty()) {
+            Some(a) => {
+                let built = self.eval.of(self.at(), a, 0);
+                let whole = built.iter().all(|b| b.iter().all(|s| matches!(s, crate::paths::Seg::Lit(_))));
+                if whole { built.iter().map(crate::paths::render).collect() } else { vec![] }
+            }
+            None => vec![],
+        };
+        if values.is_empty() {
+            return self.touch(c, tag, op, &lits);
+        }
+        let mut out = vec![];
+        for v in values {
+            let mut cr = Crosses::read(c, self.src, tag, None, op, &[vec![v.clone()], lits.clone()].concat(), STRINGS, &self.locals);
+            cr.what = v;
+            out.extend(cr.touches(None));
+        }
+        out
+    }
+
     /// The statement a call to a database whose statements have a grammar is handed, as built.
     fn statement(&self, kind: Crossing, arg: Option<TsNode<'t>>) -> Option<Vec<crate::paths::Built>> {
         let World::Db(db) = kind.world else { return None };
@@ -1545,8 +1876,7 @@ impl<'a, 't> Body<'a, 't> {
 
     /// `path::to::f(..)`, `Self::f(..)`, `Type::new(..)`: the program's function or type, or a
     /// library's, which may cross into the world.
-    fn path_call(&mut self, steps: &mut Steps, c: TsNode<'t>, f: TsNode<'t>) {
-        let mut parts = path_parts(Some(f), self.src);
+    fn path_call(&mut self, steps: &mut Steps, c: TsNode<'t>, mut parts: Vec<String>) {
         if parts.is_empty() {
             return;
         }
@@ -1611,7 +1941,7 @@ impl<'a, 't> Body<'a, 't> {
     /// is handed second: `fs::copy(a, b)`); a database call the tables its statement names; any
     /// other what its literals name.
     fn crossed(&self, c: TsNode<'t>, tag: Crossing, op: &str) -> Vec<(Touch, Vec<crate::paths::Built>)> {
-        let args: Vec<TsNode<'t>> = c.child_by_field_name("arguments").map(named_children).unwrap_or_default().into_iter().filter(|a| !a.kind().ends_with("comment")).collect();
+        let args: Vec<TsNode<'t>> = positional(c).into_iter().map_while(|a| a).collect();
         let now = |ts: Vec<Touch>| ts.into_iter().map(|t| (t, vec![])).collect::<Vec<_>>();
         if let Some(built) = self.statement(tag, args.first().copied()) {
             return self.touch(c, tag, op, &[]).into_iter().take(1).map(|t| (Touch { artifact: String::new(), dir: None, ..t }, built.clone())).collect();
@@ -1624,7 +1954,7 @@ impl<'a, 't> Body<'a, 't> {
                 let built = crate::paths::request_of(op, self.eval.of(self.at(), args[0], 0));
                 return self.touch(c, tag, op, &literals(c, self.src, STRINGS)).into_iter().map(|t| (t, built.clone())).collect();
             }
-            _ => return now(self.touch(c, tag, op, &literals(c, self.src, STRINGS))),
+            _ => return now(self.touch_handed(c, tag, op, args.first().copied())),
         };
         let (mut out, two) = (vec![], files.len() > 1);
         for (kind, a) in files {

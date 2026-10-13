@@ -185,7 +185,6 @@ fn a_place_carries_a_what_a_response_in_memory() {
 /// A place carries a what: a program a route runs is Process(command). Rust's clean form names the
 /// program once, as a constant (`const VIEWER: &str = "open"`), and runs `Command::new(VIEWER)`.
 #[test]
-#[ignore = "Atlas (a): a program named by a constant is drawn as the constant's name, not the program"]
 fn a_place_carries_a_what_a_program_named_by_a_constant() {
     let run = touches(clean(), "spend.main", "process");
     assert_eq!(run.iter().map(|t| t.what.as_str()).collect::<Vec<_>>(), ["open"]);
@@ -213,7 +212,6 @@ fn gives_what_a_function_gives_has_a_type() {
 /// A function gives back what its signature says. In Rust, `Result<PathBuf, Error>` gives a
 /// `PathBuf` (the path the report is written at) and fails with an `Error`.
 #[test]
-#[ignore = "Atlas (a): a step whose function gives `Result<T, E>` with T no type of the program gives E"]
 fn gives_a_result_gives_its_value_not_its_error() {
     let write = step(clean(), "spend.main", "spend.report.write");
     assert!(write.gives.iter().all(|h| h.ty != "spend.error.Error"), "{:?}", write.gives);
@@ -314,7 +312,6 @@ fn layers_modules_depend_in_one_direction() {
 /// written as a macro's argument (`params![.., round2(e.amount), ..]`, `format!("{}", f(x))`) runs
 /// like any other.
 #[test]
-#[ignore = "Atlas (b): a call inside a macro's arguments is no step, so the store's call into the report is dropped"]
 fn composition_a_call_in_a_macro_argument_is_a_step() {
     assert!(edge(shortcut(), EdgeKind::Calls, "spend.store.Store.save", "spend.report.round2"));
 }
@@ -380,7 +377,6 @@ fn sums_a_choice_is_made_where_it_arises() {
 /// A sum type is unwrapped where it arises: a function that takes a `Result` has received a
 /// choice its caller should have made (docs/principles.md, Rust).
 #[test]
-#[ignore = "Atlas (b): a `Result` taken as an argument is no sum to the `sums` check, which reads only the program's own enums"]
 fn sums_a_result_handed_on_is_asked() {
     assert!(!found(shortcut(), "sums").is_empty());
 }

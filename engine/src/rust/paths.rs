@@ -241,18 +241,7 @@ impl<'a> Eval<'a> {
         let src = &at.m.src;
         let name = mac.child_by_field_name("macro").map(|x| path_parts(Some(x), src)).and_then(|p| p.last().cloned()).unwrap_or_default();
         let Some(tt) = named_children(mac).into_iter().find(|x| x.kind() == "token_tree") else { return vec![hole(&name)] };
-        // the arguments: the tokens between the commas, inside the delimiters
-        let mut cur = tt.walk();
-        let tokens: Vec<TsNode<'a>> = tt.children(&mut cur).collect();
-        let mut groups: Vec<Vec<TsNode<'a>>> = vec![vec![]];
-        for t in tokens.iter().skip(1).take(tokens.len().saturating_sub(2)) {
-            if t.kind() == "," {
-                groups.push(vec![]);
-            } else if let Some(g) = groups.last_mut() {
-                g.push(*t);
-            }
-        }
-        groups.retain(|g| !g.is_empty());
+        let groups = token_groups(tt);
         match name.as_str() {
             "format" | "format_args" => self.format(at, mac.start_byte(), &groups, depth),
             "concat" => groups.iter().fold(vec![vec![]], |acc, g| cross(&acc, &self.tokens(at, g, depth), "")),
@@ -323,6 +312,23 @@ impl<'a> Eval<'a> {
             _ => vec![hole(g.iter().find(|t| t.kind() == "identifier").map(|t| text(*t, src)).unwrap_or("value"))],
         }
     }
+}
+
+/// The arguments among a token tree's tokens: the tokens between its commas, inside its
+/// delimiters.
+pub(super) fn token_groups(tt: TsNode) -> Vec<Vec<TsNode>> {
+    let mut cur = tt.walk();
+    let tokens: Vec<TsNode> = tt.children(&mut cur).collect();
+    let mut groups: Vec<Vec<TsNode>> = vec![vec![]];
+    for t in tokens.iter().skip(1).take(tokens.len().saturating_sub(2)).filter(|t| !t.kind().ends_with("comment")) {
+        if t.kind() == "," {
+            groups.push(vec![]);
+        } else if let Some(g) = groups.last_mut() {
+            g.push(*t);
+        }
+    }
+    groups.retain(|g| !g.is_empty());
+    groups
 }
 
 /// The function a node is written in.

@@ -296,10 +296,14 @@ fn doors(ix: &Index) -> Vec<Finding> {
 
 /// A sum type that a module returns and that functions in other modules take as input: each
 /// of them has to choose between the variants again. Unwrapped where it arises, the choice is
-/// made once, and what travels on is the variant each consumer needs.
+/// made once, and what travels on is the variant each consumer needs. A library's sum arises
+/// where a call gives it, outside every module of the program, so a public function that takes
+/// one has been handed it unopened, whatever module it is in; the finding stands at the first
+/// that takes it, where the program has code to change.
 fn sums(ix: &Index) -> Vec<Finding> {
     let mut out = vec![];
     for s in ix.g.nodes.iter().filter(|n| !ix.targets(&n.id, EdgeKind::Variant).is_empty()) {
+        let library = s.kind == NodeKind::External;
         let variants: Vec<String> = ix.targets(&s.id, EdgeKind::Variant).iter().map(|v| ix.label(v)).collect();
         let producers: Vec<&Node> = ix.sources(&s.id, EdgeKind::Returns).iter().filter_map(|p| ix.node(p)).collect();
         let homes: HashSet<&str> = producers.iter().map(|p| p.module.as_str()).collect();
@@ -309,22 +313,26 @@ fn sums(ix: &Index) -> Vec<Finding> {
             .filter_map(|c| ix.node(c))
             .filter(|c| !c.private && !homes.contains(c.module.as_str()))
             .collect();
-        if producers.is_empty() || consumers.is_empty() {
+        if (producers.is_empty() && !library) || consumers.is_empty() {
             continue;
         }
         let mut evidence: Vec<String> = producers.iter().filter(|p| !p.private).map(|p| format!("returned by {} ({})", ix.label(&p.id), ix.at(p))).collect();
         evidence.extend(consumers.iter().map(|c| format!("taken by {} ({})", ix.label(&c.id), ix.at(c))));
         let taken_by: Vec<String> = consumers.iter().map(|c| ix.label(&c.id)).collect();
-        out.push(ix.finding(
-            "sums",
-            s,
-            format!("{} ({}) is handed on unopened: {} {} it", s.name, variants.join(" | "), list(&taken_by), if taken_by.len() == 1 { "takes" } else { "take" }),
-            evidence,
-            format!(
+        let choose = match variants.as_slice() {
+            [one] => format!("Each of them looks again whether it holds a {one}. Could the code that makes a {} hand on only the {one}?", s.name),
+            _ => format!(
                 "Each of them chooses again between {}. Does each need all of them, or could the code that makes a {} hand on only what each one uses?",
                 list(&variants),
                 s.name
             ),
+        };
+        out.push(ix.finding(
+            "sums",
+            if library { consumers[0] } else { s },
+            format!("{} ({}) is handed on unopened: {} {} it", s.name, variants.join(" | "), list(&taken_by), if taken_by.len() == 1 { "takes" } else { "take" }),
+            evidence,
+            choose,
         ));
     }
     out

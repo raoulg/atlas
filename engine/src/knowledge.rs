@@ -552,6 +552,16 @@ pub const RUST_FILE_TREES: &[&str] = &["walkdir", "WalkDir", "ignore", "glob", "
 pub const RUST_COMMAND: &str = "Command";
 pub const RUST_SCREEN_MACROS: &[&str] = &["println", "print", "eprintln", "eprint"];
 
+/// Rust's macros whose arguments after the first are a pattern, not values: `Some(_)` in
+/// `matches!(x, Some(_))` builds nothing.
+pub const RUST_PATTERN_MACROS: &[&str] = &["matches", "assert_matches", "debug_assert_matches"];
+
+/// The library types whose value is one of their type arguments, each a variant, by the name Rust
+/// code writes them with: std's `Result<T, E>` is a `T` or an `E`, either's `Either<L, R>` an `L`
+/// or an `R`. An `Option<T>` is no sum here: it holds a `T` or nothing, and an argument that may be
+/// left out is a door like any other, not a choice between outcomes made elsewhere.
+pub const RUST_SUMS: &[&str] = &["Result", "Either"];
+
 /// The JavaScript platform's: `node:fs`'s packages and what of them reads and writes, the global
 /// objects a name may be reached through, the functions and constructors that go to the web, the
 /// object that prints, the browser's key-value stores and their operations, and the names a
