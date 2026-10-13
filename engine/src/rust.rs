@@ -3,7 +3,7 @@
 //! Crates become root modules, files become modules, structs/enums/traits become
 //! classes, `impl` blocks attach methods to their type and `impl Trait for` edges,
 //! `use` declarations become bindings. Calls resolve through paths, `self`, typed
-//! struct fields and typed parameters.
+//! struct fields and typed parameters. A static the functions change is a place (`globals.rs`).
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -24,6 +24,7 @@ use crate::tree::{
     ChoiceSyntax, CompareSyntax, Part,
 };
 
+mod globals;
 mod paths;
 use paths::{Arg, At, Eval, Evaluated};
 
@@ -897,6 +898,7 @@ fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crate_ids:
     let family = store.family();
     let completed = crate::paths::complete(waiting, &handing, &family, &|_, _| vec![], &entry);
     crate::paths::place_calls(store, completed, false);
+    globals::read(modules, store, crate_ids);
 }
 
 /// The library's sums a function takes, each a type of its own: `fetched: Result<Value,

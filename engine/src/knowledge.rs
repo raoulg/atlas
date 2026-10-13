@@ -595,6 +595,65 @@ pub const RUST_PATTERN_MACROS: &[&str] = &["matches", "assert_matches", "debug_a
 /// left out is a door like any other, not a choice between outcomes made elsewhere.
 pub const RUST_SUMS: &[&str] = &["Result", "Either"];
 
+/// A Rust type whose value changes through a shared reference (interior mutability), so that a
+/// `static` of it is a value its functions change: its names, the methods that change it, and
+/// those that give a guard on what it holds, through which that changes.
+pub struct Interior {
+    pub types: &'static [&'static str],
+    pub changes: &'static [&'static str],
+    pub guards: &'static [&'static str],
+}
+
+/// Rust's types that change in place: std's and parking_lot's locks, std's cells (a thread-local's
+/// key changes its cell by the cell's own methods and hands out a guard in `with_borrow_mut`), the
+/// atomics, and the cells set once (std's and once_cell's `OnceLock` and `OnceCell`), which
+/// `get_or_init` only reads. A cell made at its first use (`LazyLock`, once_cell's and
+/// lazy_static's `Lazy`) changes through what it holds: `LazyLock<Mutex<..>>`.
+pub const RUST_INTERIOR: &[Interior] = &[
+    Interior { types: &["Mutex"], changes: &[], guards: &["lock", "try_lock"] },
+    Interior { types: &["RwLock"], changes: &[], guards: &["write", "try_write"] },
+    Interior { types: &["RefCell"], changes: &["set", "replace", "replace_with", "swap", "take"], guards: &["borrow_mut", "try_borrow_mut", "with_borrow_mut"] },
+    Interior { types: &["Cell"], changes: &["set", "replace", "swap", "take", "update"], guards: &[] },
+    Interior {
+        types: &[
+            "AtomicBool", "AtomicI8", "AtomicI16", "AtomicI32", "AtomicI64", "AtomicIsize", "AtomicU8", "AtomicU16", "AtomicU32", "AtomicU64", "AtomicUsize",
+            "AtomicPtr",
+        ],
+        changes: &[
+            "store", "swap", "fetch_add", "fetch_sub", "fetch_and", "fetch_nand", "fetch_or", "fetch_xor", "fetch_max", "fetch_min", "fetch_not",
+            "fetch_update", "compare_exchange", "compare_exchange_weak",
+        ],
+        guards: &[],
+    },
+    Interior { types: &["OnceLock", "OnceCell"], changes: &["set"], guards: &[] },
+];
+
+/// The methods that change the value a guard gives: those of std's collections, `String` and
+/// `Option` that take `&mut self`.
+pub const RUST_GUARDED_CHANGES: &[&str] = &[
+    "push", "push_str", "push_back", "push_front", "pop", "pop_back", "pop_front", "pop_first", "pop_last", "insert", "insert_str", "extend",
+    "extend_from_slice", "append", "remove", "remove_entry", "swap_remove", "clear", "truncate", "retain", "retain_mut", "drain", "splice", "split_off",
+    "dedup", "dedup_by", "dedup_by_key", "sort", "sort_by", "sort_by_key", "sort_unstable", "sort_unstable_by", "sort_unstable_by_key", "reverse",
+    "resize", "resize_with", "fill", "swap", "entry", "get_mut", "first_mut", "last_mut", "iter_mut", "values_mut", "take", "replace",
+    "get_or_insert", "get_or_insert_with",
+];
+
+/// Whether a Rust type of this name changes in place.
+pub fn rust_interior(ty: &str) -> bool {
+    RUST_INTERIOR.iter().any(|i| i.types.contains(&ty))
+}
+
+/// Whether a method changes the value it is called on: a type's that changes in place, or, on
+/// what a guard gives, one that takes `&mut self`.
+pub fn rust_changes(method: &str, guarded: bool) -> bool {
+    RUST_INTERIOR.iter().any(|i| i.changes.contains(&method)) || (guarded && RUST_GUARDED_CHANGES.contains(&method))
+}
+
+/// Whether a method gives a guard through which what a value holds changes.
+pub fn rust_guards(method: &str) -> bool {
+    RUST_INTERIOR.iter().any(|i| i.guards.contains(&method))
+}
+
 /// The JavaScript platform's: `node:fs`'s packages and what of them reads and writes, the global
 /// objects a name may be reached through, the functions and constructors that go to the web, the
 /// object that prints, the browser's key-value stores and their operations, and the names a

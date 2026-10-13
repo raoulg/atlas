@@ -277,17 +277,22 @@ fn a_route_ends_at_a_visible_place_through_a_client() {
 
 /// A call leaves something behind: what it gives, what it changes in the open, or a place it
 /// reaches. Rust's clean form hands the rates on as a value (`report::lines(&expenses, &rates)`);
-/// the sloppy form keeps them in a global (`static LATEST: Mutex<..>`) that `remember` fills and
-/// `to_base` reads.
+/// the sloppy form keeps them in a global (`static LATEST: Mutex<..>`) that `remember` fills: the
+/// place `Global(spend.rates.LATEST)`, which `remember` writes and `to_base` reads. Drawn, not
+/// asked: a global is sometimes the right choice.
 #[test]
 fn nothing_a_call_leaves_something_behind() {
     let c = clean();
     assert_eq!(found(c, "nothing"), Vec::<String>::new());
     assert!(step(c, "spend.main", "spend.report.lines").hands.iter().any(|h| h.ty == "spend.rates.Rates"));
+    assert!(c.nodes.iter().all(|n| n.touches.iter().all(|t| t.kind_name() != "global")), "the clean side keeps nothing in a global");
 
     let s = shortcut();
-    assert!(found(s, "nothing").contains(&"spend.rates.remember".to_string()), "{:?}", found(s, "nothing"));
     step(s, "spend.run", "spend.rates.remember");
+    let global = |f: &str| touches(s, f, "global").iter().filter(|t| t.artifact == "spend.rates.LATEST").map(|t| t.dir_name()).collect::<Vec<_>>();
+    assert_eq!(global("spend.rates.remember"), ["write"]);
+    assert_eq!(global("spend.rates.to_base"), ["read"]);
+    assert!(found(s, "nothing").is_empty(), "a call that keeps its value in a global leaves it behind: {:?}", found(s, "nothing"));
     assert_eq!(node(s, "spend.rates.to_base").params.iter().map(|p| p.name.as_str()).collect::<Vec<_>>(), ["currency"], "the rates come from the global");
 }
 
