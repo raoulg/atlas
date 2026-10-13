@@ -163,7 +163,7 @@ pub fn join(g: &mut Graph) {
         .filter_map(|n| {
             let e = n.entry.as_ref().filter(|e| e.kind == EntryKind::Route)?;
             let (method, path) = e.label.split_once(' ')?;
-            (METHODS.contains(&method) && path.len() > 1).then_some(())?;
+            (method.split('|').all(|m| METHODS.contains(&m)) && path.len() > 1).then_some(())?;
             Some((n.part.clone(), n.id.clone(), path.to_string(), route_pattern(path)?))
         })
         .collect();

@@ -868,7 +868,7 @@ async function renderPlaat() {
   const httpPlace = p => ({id: "w:Web:http:" + p, label: `HTTP(${p})`, short: `HTTP(${p})`, kind: "world"});
   const partMorphism = (p, own) => {
     const dom = new Map(), cod = new Map();
-    if (entries.some(e => partOf(e) === p && e.entry.kind === "route" && /^[A-Z]+ \//.test(e.entry.label))) dom.set(addPlace(httpPlace(p)), false);
+    if (entries.some(e => partOf(e) === p && e.entry.kind === "route" && /^[A-Z|]+ \//.test(e.entry.label))) dom.set(addPlace(httpPlace(p)), false);
     for (const e of D.edges) if (e.kind === "requests") {
       const a = partOf(byId.get(e.src) || {}), b = partOf(byId.get(e.dst) || {});
       if (a === p && b !== p) cod.set(addPlace(httpPlace(b)), false);

@@ -366,7 +366,7 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
                 if t.kind == World::Net {
                     if url.starts_with('/') {
                         let known = !method.contains('{');
-                        let served: Vec<&(String, String, String)> = routes.iter().filter(|(_, m, p)| (!known || *m == method) && route_matches(p, &url)).collect();
+                        let served: Vec<&(String, String, String)> = routes.iter().filter(|(_, m, p)| (!known || m.split('|').any(|x| x == method)) && route_matches(p, &url)).collect();
                         // a literal segment serves before a parameter: `/years` before `/{year}`
                         let fewest = served.iter().map(|(_, _, p)| p.matches('{').count()).min().unwrap_or(0);
                         for (handler, _, path) in served.into_iter().filter(|(_, _, p)| p.matches('{').count() == fewest) {
