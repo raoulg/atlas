@@ -473,6 +473,22 @@ fn rust_workspace_parses() {
     // read or the merge of several, is the `Graph` that `join(g: &mut Graph)` takes
     let joining = g.node("atlas-engine.parts.merged").unwrap().sites.iter().find(|s| s.to == "atlas-engine.parts.join").unwrap();
     assert_eq!(joining.hands.iter().map(|h| (h.name.as_str(), h.ty.as_str())).collect::<Vec<_>>(), [("g", "atlas-engine.model.Graph")]);
+    // a generic's arguments are values where it holds them: `analyze_parts` gives the Graphs of a
+    // `Result<Vec<Graph>>`, `merged` takes the Graphs of a `Vec<Graph>`, a Graph has the Nodes of
+    // its `Vec<Node>`, and `Ix::out` gives the Edges of an `impl Iterator<Item = &Edge>`, whose
+    // `Item` names what it gives, not flow's `Item`
+    let takes = edges(&g, EdgeKind::Takes);
+    let has = edges(&g, EdgeKind::Has);
+    let pair = |a: &str, b: &str| (a.to_string(), b.to_string());
+    assert!(returns.contains(&pair("atlas-engine.parts.analyze_parts", "atlas-engine.model.Graph")));
+    assert!(takes.contains(&pair("atlas-engine.parts.merged", "atlas-engine.model.Graph")));
+    assert!(has.contains(&pair("atlas-engine.model.Graph", "atlas-engine.model.Node")));
+    assert!(returns.contains(&pair("atlas-engine.flow.Ix.out", "atlas-engine.model.Edge")));
+    assert!(!returns.contains(&pair("atlas-engine.flow.Ix.out", "atlas-engine.flow.Item")));
+    // a callback is handed no value: `initializer(node: impl Fn(&str) -> Option<&Node>)` takes no
+    // Node, and the `fn(..) -> Part` a `ChoiceSyntax` keeps holds no Part
+    assert!(!takes.contains(&pair("atlas-engine.model.Node.initializer", "atlas-engine.model.Node")));
+    assert!(!has.contains(&pair("atlas-engine.tree.ChoiceSyntax", "atlas-engine.tree.Part")));
 }
 
 /// Atlas obeys its own algebra: the steps of `analyze` move data between the repository as read

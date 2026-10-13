@@ -294,6 +294,25 @@ pub const TYPESCRIPT_CONTAINERS: &[&str] = &[
     "NonNullable", "Awaited", "Iterable", "AsyncIterable", "Generator", "AsyncGenerator",
 ];
 
+/// Rust's generic types whose arguments are the values they hold or stand for, by the name Rust
+/// code writes them with: std's collections, pointers, cells and locks with their guards, an
+/// `Option`; what an iterator, a future or a stream gives (`impl Iterator<Item = Month>` gives
+/// Months); a value that converts to or borrows as its argument (`impl Into<Settings>`); and the
+/// containers of common crates (indexmap's, smallvec's, arrayvec's, dashmap's, once_cell's
+/// `Lazy`). The library's sums (`RUST_SUMS`) are their arguments as well. Any other generic's
+/// arguments are types: `DrawingArea<DB, Shift>` is a `DrawingArea`.
+pub const RUST_CONTAINERS: &[&str] = &[
+    "Vec", "VecDeque", "HashMap", "HashSet", "BTreeMap", "BTreeSet", "BinaryHeap", "LinkedList", "Box", "Rc", "Arc", "Weak", "Cow", "Pin", "Cell",
+    "RefCell", "Ref", "RefMut", "Mutex", "MutexGuard", "RwLock", "RwLockReadGuard", "RwLockWriteGuard", "OnceLock", "OnceCell", "LazyLock",
+    "LazyCell", "Option", "Iterator", "IntoIterator", "DoubleEndedIterator", "ExactSizeIterator", "Future", "IntoFuture", "Stream", "AsRef",
+    "AsMut", "Borrow", "BorrowMut", "Into", "IndexMap", "IndexSet", "SmallVec", "ArrayVec", "DashMap", "DashSet", "Lazy",
+];
+
+/// Whether a Rust generic type's arguments are the values it holds or stands for.
+pub fn rust_container(name: &str) -> bool {
+    RUST_CONTAINERS.contains(&name) || RUST_SUMS.contains(&name)
+}
+
 /// Methods that change the value they are called on: a language's own containers', and a
 /// library's (networkx's graphs). By registry and source.
 /// The builtins' row is the methods of Python's `MutableSequence`, `MutableMapping` and

@@ -708,12 +708,18 @@ fn rust_clean_the_places_are_made_whole_at_main() {
 }
 
 /// The figure is drawn on the area it is handed: `draw` takes plotters' `DrawingArea`, on whatever
-/// backend `save` makes.
+/// backend `save` makes. `DrawingArea<DB, Shift>` is a `DrawingArea`, as Python's
+/// `ndarray[..]` is an `ndarray`: `Shift`, the kind of coordinates the area has, is a type of the
+/// class, not a value `draw` takes or `save` hands it.
 #[test]
 fn rust_clean_trend_draws_on_the_area_it_is_handed() {
     let r = rust_clean();
-    let area = |f: &str| r.edges.iter().any(|e| e.kind == EdgeKind::Takes && e.src == f && e.dst.starts_with("ext:plotters.") && e.dst.ends_with(".DrawingArea"));
-    assert!(area("sunspots.plot.Plot.draw") && area("sunspots.plot.Trend.draw"));
+    let takes = |f: &str, ty: &str| r.edges.iter().any(|e| e.kind == EdgeKind::Takes && e.src == f && e.dst.starts_with("ext:plotters.") && e.dst.ends_with(ty));
+    for f in ["sunspots.plot.Plot.draw", "sunspots.plot.Trend.draw"] {
+        assert!(takes(f, ".DrawingArea") && !takes(f, ".Shift"), "{f}");
+    }
+    let drawing = step(r, "sunspots.plot.Plot.save", "sunspots.plot.Plot.draw");
+    assert!(!types(&drawing.hands).iter().any(|ty| ty.ends_with(".Shift")), "{:?}", drawing.hands);
 }
 
 // ---------- the port ----------

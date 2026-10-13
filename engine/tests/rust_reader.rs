@@ -197,3 +197,62 @@ fn main() {
     assert_eq!(written("options.log"), [""], "a parameter holds what its callers hand");
     assert_eq!(written("options.grammar"), [""], "pest's `Parser` is no command line");
 }
+
+/// A generic type's arguments are values only where it holds or stands for them: std's and a
+/// crate's containers (`IndexMap<String, Sheet>` holds Sheets), an `Option`, what an iterator
+/// gives. Any other generic is its own name, a library's (`Area<Rgb, Shift>` is an `Area`, on
+/// whatever colour and coordinates) and the program's own (`Layer<Sheet>` is a `Layer`) alike, in
+/// a signature and in a struct's field. A callback (`impl Fn(&Sheet) -> Rgb`) is handed no value.
+#[test]
+fn a_generic_is_its_values_only_where_it_holds_them() {
+    let g = written(
+        "generic",
+        &[(
+            "src/lib.rs",
+            r#"use canvas::{Area, Shift};
+use indexmap::IndexMap;
+
+pub struct Sheet {
+    pub n: u8,
+}
+
+pub struct Rgb;
+
+/// Values of one kind, stacked: `T` is the kind.
+pub struct Layer<T> {
+    items: Vec<T>,
+}
+
+pub struct Shelf {
+    sheets: Vec<Sheet>,
+    layer: Layer<Rgb>,
+    area: Area<Rgb, Shift>,
+}
+
+pub fn kept(sheets: IndexMap<String, Sheet>, first: Option<Box<Sheet>>) -> impl Iterator<Item = Sheet> {
+    sheets.into_values()
+}
+
+pub fn draw(area: &Area<Rgb, Shift>) {}
+
+pub fn stack(layer: &Layer<Sheet>) -> Layer<Rgb> {
+    Layer { items: vec![] }
+}
+
+pub fn each(paint: impl Fn(&Sheet) -> Rgb) {}
+"#,
+        )],
+    );
+    let of = |kind: EdgeKind, f: &str| {
+        let mut out: Vec<String> = g.edges.iter().filter(|e| e.kind == kind && e.src == f).map(|e| e.dst.clone()).collect();
+        out.sort();
+        out
+    };
+    assert_eq!(of(EdgeKind::Takes, "generic.kept"), ["ext:indexmap.IndexMap", "generic.Sheet"]);
+    assert_eq!(of(EdgeKind::Returns, "generic.kept"), ["generic.Sheet"]);
+    assert_eq!(of(EdgeKind::Takes, "generic.draw"), ["ext:canvas.Area"]);
+    assert_eq!(of(EdgeKind::Takes, "generic.stack"), ["generic.Layer"]);
+    assert_eq!(of(EdgeKind::Returns, "generic.stack"), ["generic.Layer"]);
+    assert_eq!(of(EdgeKind::Takes, "generic.each"), Vec::<String>::new());
+    assert_eq!(of(EdgeKind::Has, "generic.Shelf"), ["generic.Layer", "generic.Sheet"]);
+}

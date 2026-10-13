@@ -157,20 +157,50 @@ fn path_parts(n: Option<TsNode>, src: &[u8]) -> Vec<String> {
     }
 }
 
-/// All type names mentioned in a type, e.g. `Option<Vec<Node>>` -> `[[Option], [Vec], [Node]]`.
+/// The type names a type mentions as values, as written: each generic's own name, and its
+/// arguments only where it holds or stands for them (`Option<Vec<Node>>` -> `[[Option], [Vec],
+/// [Node]]`, `impl Iterator<Item = Node>` -> `[[Iterator], [Node]]`), never a generic class's
+/// own parameters (`DrawingArea<DB, Shift>` -> `[[DrawingArea]]`). References, slices, arrays,
+/// tuples, `impl` and `dyn` go through to what they hold; a `fn(..)` or `Fn(..)` type is a
+/// callback and names none.
 fn type_names(t: Option<TsNode>, src: &[u8]) -> Vec<Vec<String>> {
     let Some(t) = t else { return vec![] };
     let mut out = vec![];
-    for n in walk(t, &["type_identifier", "scoped_type_identifier"]) {
-        if n.kind() == "type_identifier" && n.parent().map_or(false, |p| p.kind() == "scoped_type_identifier") {
-            continue;
+    collect_types(t, src, &mut out);
+    out
+}
+
+fn collect_types(n: TsNode, src: &[u8], out: &mut Vec<Vec<String>>) {
+    match n.kind() {
+        "type_identifier" | "scoped_type_identifier" => {
+            let parts = path_parts(Some(n), src);
+            if !parts.is_empty() {
+                out.push(parts);
+            }
         }
-        let parts = path_parts(Some(n), src);
-        if !parts.is_empty() {
-            out.push(parts);
+        "generic_type" => {
+            let parts = path_parts(n.child_by_field_name("type"), src);
+            let holds = parts.last().map_or(false, |g| knowledge::rust_container(g));
+            if !parts.is_empty() {
+                out.push(parts);
+            }
+            if let Some(args) = n.child_by_field_name("type_arguments").filter(|_| holds) {
+                collect_types(args, src, out);
+            }
+        }
+        // `Item = Node` names the value an iterator gives, not a type called `Item`
+        "type_binding" => {
+            if let Some(t) = n.child_by_field_name("type") {
+                collect_types(t, src, out);
+            }
+        }
+        "function_type" => {}
+        _ => {
+            for c in named_children(n) {
+                collect_types(c, src, out);
+            }
         }
     }
-    out
 }
 
 /// Attributes (`#[test]`, `#[derive(..)]`) sit before an item as siblings.
