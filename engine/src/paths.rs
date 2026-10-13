@@ -1,7 +1,9 @@
 //! Paths as code builds them, in any language: literal text, the parameters of the function a
-//! path is built in, and what cannot be known (a hole, named). A path built from a function's
-//! parameters is completed at each call that hands them, out through the callers' own
-//! parameters; the place of a path with an unknown part is the directory before that part, so
+//! path is built in, the options of the command line, and what cannot be known (a hole, named).
+//! A path built from a function's parameters is completed at each call that hands them, out
+//! through the callers' own parameters; an option holds its default where the command line is
+//! read, and like a parameter it is an input, so the code never decides a place it names alone.
+//! The place of a path with an unknown part is the directory before that part, so
 //! what one route unpacks into `D/{kind}/{id}` and another lists in `D` meet at `D/`. A
 //! database statement is built and completed the same way, and read by its grammar where it is
 //! whole: `count(con, sql)` reads the table its caller's `"SELECT count(*) FROM t"` names. A
@@ -110,9 +112,40 @@ pub enum Seg {
     Held(String, String),
     /// What cannot be known, by the name the code gives it.
     Hole(String),
+    /// An option of the command line, by its name, holding its default: what the entry runs with
+    /// where the command line leaves it out, and which the command line may override. It is an
+    /// input of the entry, as a parameter of a command is (typer's `raw: Path = RAW`), whatever
+    /// parser reads it (clap's `default_value`, parseArgs' `default`, argparse's `default=`):
+    /// whole where the command line is read, and never decided by the code alone.
+    Option(String, Built),
 }
 
 pub type Built = Vec<Seg>;
+
+/// The values an option of the command line holds: its default, each as reached through the
+/// option; no value where it declares none.
+pub fn option(name: &str, default: Vec<Built>) -> Vec<Built> {
+    default.into_iter().map(|d| vec![Seg::Option(name.to_string(), d)]).collect()
+}
+
+/// Whether a value is known as text throughout: literal, or an option's default that is.
+pub fn known(b: &Built) -> bool {
+    b.iter().all(|s| match s {
+        Seg::Lit(_) => true,
+        Seg::Option(_, d) => known(d),
+        _ => false,
+    })
+}
+
+/// The literal text a value ends in, inside the option it ends in, if any: where a file's name
+/// and its extension are written.
+pub fn last_lit(b: &mut Built) -> Option<&mut String> {
+    match b.last_mut()? {
+        Seg::Lit(s) => Some(s),
+        Seg::Option(_, d) => last_lit(d),
+        _ => None,
+    }
+}
 
 /// The most values a path or a parameter keeps: the alternatives of a choice multiply through
 /// each join, so a bound keeps a path built from several choices from growing without end.
@@ -183,18 +216,30 @@ pub fn parent(b: &Built) -> Built {
     }
     match b.as_slice() {
         [Seg::Lit(_)] => lit("."),
-        // a path a caller hands: its directory, once the caller says the path (`{to}/..`)
-        [.., Seg::Param(_) | Seg::Held(..)] => [b.clone(), lit("/..")].concat(),
+        // a path a caller hands or an option names: its directory, once the path is said (`{to}/..`)
+        [.., Seg::Param(_) | Seg::Held(..) | Seg::Option(..)] => [b.clone(), lit("/..")].concat(),
         _ => hole("parent"),
     }
 }
 
-/// A path with its unknown parts written as `{name}`.
+/// A path with its unknown parts written as `{name}`, and an option as its default.
 pub fn render(b: &Built) -> String {
     b.iter()
         .map(|s| match s {
             Seg::Lit(x) => x.clone(),
             Seg::Param(x) | Seg::Held(_, x) | Seg::Hole(x) => format!("{{{x}}}"),
+            Seg::Option(_, d) => render(d),
+        })
+        .collect()
+}
+
+/// A path with what is given to the function written as `{name}`: what a caller hands, what the
+/// environment says, and an option of the command line.
+fn inputs(b: &Built) -> String {
+    b.iter()
+        .map(|s| match s {
+            Seg::Option(x, _) => format!("{{{x}}}"),
+            s => render(&vec![s.clone()]),
         })
         .collect()
 }
@@ -203,12 +248,15 @@ pub fn render(b: &Built) -> String {
 /// whole: the database's statements have a grammar, and the text starts with a verb or with
 /// what a caller hands.
 pub fn is_statement(db: crate::model::Db, built: &[Built]) -> bool {
-    crate::effects::reads_statements(db)
-        && built.iter().any(|b| match b.first() {
+    fn starts(b: &Built) -> bool {
+        match b.first() {
             Some(Seg::Param(_) | Seg::Held(..)) => true,
             Some(Seg::Lit(l)) => crate::effects::starts_statement(l),
+            Some(Seg::Option(_, d)) => starts(d),
             _ => false,
-        })
+        }
+    }
+    crate::effects::reads_statements(db) && built.iter().any(starts)
 }
 
 /// The place a path names: the file, or for an operation on a directory that directory. A file
@@ -408,10 +456,11 @@ pub type Waiting = (String, crate::model::Touch, Vec<Built>);
 pub type Completed = (String, crate::model::Touch, Vec<(Whole, Built, bool)>);
 
 /// Whether the function a path or URL is built in decides it: it starts at something the code
-/// holds, a literal or a constant, not at what a caller hands or the environment says (a value,
-/// the user's home `~`, the system's `$TMPDIR`). A request's URL is decided only with its host.
+/// holds, a literal or a constant, not at what a caller hands, the command line or the
+/// environment says (a value, an option, the user's home `~`, the system's `$TMPDIR`). A
+/// request's URL is decided only with its host.
 fn decided(b: &Built, kind: crate::model::World) -> bool {
-    let rendered = render(b);
+    let rendered = inputs(b);
     let given = |s: &str| s.is_empty() || s.starts_with(['{', '$', '~']);
     match kind {
         crate::model::World::Net => {

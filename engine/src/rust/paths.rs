@@ -219,8 +219,9 @@ impl<'a> Eval<'a> {
 
     /// A field of what a command-line parser derived from the command line (clap's
     /// `#[derive(Parser)]`), of a struct or of a variant of an enum (`#[derive(Subcommand)] enum
-    /// Cmd`), as the program runs when the command line leaves its option out: the default its
-    /// attribute declares (`#[arg(long, default_value = RAW)]`), else no value the code says.
+    /// Cmd`): the option, holding what the program runs with when the command line leaves it out,
+    /// the default its attribute declares (`#[arg(long, default_value = RAW)]`), else no value the
+    /// code says.
     fn option(&self, ty: &str, variant: Option<&str>, field: &str, depth: u32) -> Option<Vec<Built>> {
         let n = self.nodes.get(ty)?;
         let home = self.modules.get(&n.module)?;
@@ -232,7 +233,7 @@ impl<'a> Eval<'a> {
             Some(v) => walk(item, &["enum_variant"]).into_iter().find(|x| x.child_by_field_name("name").map(|n| text(n, src)) == Some(v))?.child_by_field_name("body")?,
         };
         let declared = named_children(body).into_iter().find(|d| d.kind() == "field_declaration" && d.child_by_field_name("name").map(|x| text(x, src)) == Some(field))?;
-        Some(self.default(home, declared, parser, depth))
+        Some(crate::paths::option(field, self.default(home, declared, parser, depth)))
     }
 
     /// The field a struct pattern takes out of `value`, what it matches (`Cmd::Analyze { out, .. }`
@@ -577,7 +578,7 @@ fn returns(body: TsNode) -> Vec<TsNode> {
 fn with_extension(b: &Built, ext: &Built) -> Built {
     let [Seg::Lit(ext)] = ext.as_slice() else { return b.clone() };
     let mut out = b.clone();
-    if let Some(Seg::Lit(s)) = out.last_mut() {
+    if let Some(s) = crate::paths::last_lit(&mut out) {
         let name_at = s.rfind('/').map_or(0, |i| i + 1);
         if let Some(dot) = s[name_at..].rfind('.').filter(|d| *d > 0) {
             s.truncate(name_at + dot);

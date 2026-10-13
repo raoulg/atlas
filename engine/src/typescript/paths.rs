@@ -162,8 +162,8 @@ impl<'a> Eval<'a> {
 
     /// An option of the command line as a parser gives it (`values.raw`, `parsed.values.raw`): the
     /// entry's input, as a parameter of the command is. It holds what the program runs with when
-    /// its command line leaves the option out: the option's default, else no value, so that
-    /// `values.raw ?? RAW` is `RAW`.
+    /// its command line leaves the option out: the option's default, reached through the option,
+    /// else no value, so that `values.raw ?? RAW` is `RAW`.
     fn option<'t>(&self, at: At<'_, 't>, e: TsNode<'t>, depth: u32) -> Option<Vec<Built>> {
         let src = &at.m.src;
         let parts = member_parts(e, src);
@@ -182,7 +182,7 @@ impl<'a> Eval<'a> {
             let handed = call.child_by_field_name("arguments").map(named_children).unwrap_or_default().into_iter().next()?;
             let options = self.object(here, handed, 0).and_then(|o| field(o, parser.options, src)).and_then(|o| self.object(here, o, 0))?;
             let declared = field(options, option, src).and_then(|o| self.object(here, o, 0))?;
-            return Some(field(declared, parser.default, src).map_or_else(Vec::new, |d| self.of(here, d, depth + 1)));
+            return Some(field(declared, parser.default, src).map_or_else(Vec::new, |d| crate::paths::option(option, self.of(here, d, depth + 1))));
         }
         None
     }

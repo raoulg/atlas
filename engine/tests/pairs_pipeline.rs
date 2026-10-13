@@ -153,12 +153,15 @@ fn the_outside() -> BTreeSet<(String, String)> {
 /// plotting path writes. Only the extension of a file in `figures/` is left out; every other place,
 /// the directory `figures/` with them, is compared as it is.
 fn in_any_format(out: BTreeSet<(String, String)>) -> BTreeSet<(String, String)> {
-    out.into_iter()
-        .map(|(kind, artifact)| match artifact.strip_prefix("figures/").and_then(|file| file.rsplit_once('.')) {
-            Some((stem, _)) => (kind, format!("figures/{stem}.*")),
-            None => (kind, artifact),
-        })
-        .collect()
+    out.into_iter().map(|(kind, artifact)| (kind, any_format(&artifact))).collect()
+}
+
+/// A place with the extension of a file in `figures/` left out.
+fn any_format(artifact: &str) -> String {
+    match artifact.strip_prefix("figures/").and_then(|file| file.rsplit_once('.')) {
+        Some((stem, _)) => format!("figures/{stem}.*"),
+        None => artifact.to_string(),
+    }
 }
 
 /// The module whose `if __name__ == "__main__":` block runs the student's program: the calls of
@@ -800,6 +803,30 @@ fn the_port_the_same_places() {
     }
 }
 
+/// The raw file and the figure are options of the run, each with its default: typer's
+/// `raw: Path = RAW`, parseArgs' `values.raw ?? RAW`, clap's `#[arg(long, default_value = RAW)]`.
+/// An option is the run's input whatever parser reads it, as a parameter of a command is, so the
+/// three reach the two files the same way: the step that writes or reads a file is handed it, the
+/// place is made whole at the run, and the code does not alone decide it, since the command line
+/// may name another. The run itself opens neither.
+#[test]
+fn the_port_reaches_the_raw_file_and_the_figure_through_its_options() {
+    let raw = "data/raw/sunspots.csv";
+    let named = |t: &&Touch| t.artifact == raw || t.artifact.starts_with("figures/sunspots.");
+    let want: BTreeSet<(&str, String, String, bool, bool)> = [("download", "disk_write", raw), ("load", "disk_read", raw), ("save", "disk_write", "figures/sunspots.*")]
+        .into_iter()
+        .map(|(step, kind, artifact)| (step, kind.to_string(), artifact.to_string(), false, true))
+        .collect();
+    for p in ports() {
+        let reached: BTreeSet<(&str, String, String, bool, bool)> = [("download", p.download), ("load", p.load), ("save", p.save)]
+            .into_iter()
+            .flat_map(|(step, f)| node(p.g, f).touches.iter().filter(named).map(move |t| (step, t.kind_name().to_string(), any_format(&t.artifact), t.fixed, t.by == [p.run] && t.users_of.is_empty())))
+            .collect();
+        assert_eq!(reached, want, "{}", p.language);
+        assert!(!node(p.g, p.run).touches.iter().any(|t| named(&t)), "{}", p.language);
+    }
+}
+
 /// Where the three differ, each the language's doing:
 ///
 /// - The values. pandas is how Python keeps a table, so `load` and `smooth` give a `DataFrame`, a
@@ -809,7 +836,9 @@ fn the_port_the_same_places() {
 ///   (`savefig`). d3 computes the scales and the lines, so `trend` writes the SVG document itself
 ///   and gives it as a `string`, which `saveSvg` writes (`writeFile`). plotters draws on the area
 ///   of a backend, so `Trend::draw` gives no value: `save` makes the backend that writes the file
-///   (`BitMapBackend::new`) and hands `draw` its area.
+///   (`BitMapBackend::new`) and hands `draw` its area. Opening `Plot.save` shows it: in Python
+///   `draw` gives `save` a `Figure`, in Rust `save` hands `draw` a `DrawingArea`, the type Rust
+///   fixes for the `let` that holds it by the parameter it is handed to.
 /// - Errors. A Rust step that may fail says so in what it gives (`Result<_, Error>`, with the
 ///   program's own error), every step but `smooth`, which cannot fail, and none of them throws.
 ///   TypeScript says it only of the steps that wait (`Promise`); `download` and `trend` throw as
@@ -841,7 +870,14 @@ fn the_port_differs_by_language() {
     let draw = node(rs.g, "sunspots.plot.Trend.draw").returns.as_ref().unwrap();
     assert_eq!((draw.written.as_str(), draw.value.as_str()), ("Result<(), Error>", ""));
     assert!(wrote(&rs, "new"));
-    assert_eq!(names(&step(rs.g, rs.save, "sunspots.plot.Plot.draw").hands), ["area", "series", "smoothed"]);
+    let pairs = |hs: &[Held]| hs.iter().map(|h| (h.name.clone(), h.ty.clone())).collect::<Vec<_>>();
+    let drawing = |p: &Port| step(p.g, p.save, "sunspots.plot.Plot.draw");
+    assert_eq!(pairs(&drawing(&py).gives), [("figure".to_string(), "ext:matplotlib.figure.Figure".to_string())]);
+    assert_eq!(names(&drawing(&rs).hands), ["area", "series", "smoothed"]);
+    assert_eq!(types(&drawing(&rs).hands), ["ext:plotters.prelude.DrawingArea", "sunspots.series.Month", "sunspots.series.Smoothed"]);
+    assert!(drawing(&rs).gives.is_empty());
+    let made = node(rs.g, rs.save).sites.iter().find(|s| s.op == "into_drawing_area").expect("save makes the area");
+    assert_eq!(pairs(&made.gives), [("area".to_string(), "ext:plotters.prelude.DrawingArea".to_string())]);
 
     // errors
     let fails = |p: &Port, f: &str| node(p.g, f).returns.as_ref().map_or(false, |r| r.fails);

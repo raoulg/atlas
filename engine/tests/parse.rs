@@ -167,12 +167,13 @@ fn an_object_holds_what_its_constructor_was_handed() {
 }
 
 /// A script's command line, run as written, holds the defaults its parser declares: `args.out_file`
-/// is `--out-file`'s `default=`.
+/// is `--out-file`'s `default=`. The option is the script's input, as a parameter of a command is,
+/// so the code does not alone decide the place it names.
 #[test]
 fn a_script_runs_with_its_declared_defaults() {
     let g = fixture();
-    let main: Vec<&str> = g.node("scripts.report.main").unwrap().touches.iter().map(|t| t.artifact.as_str()).collect();
-    assert_eq!(main, ["out/report.txt"]);
+    let main: Vec<(&str, bool)> = g.node("scripts.report.main").unwrap().touches.iter().map(|t| (t.artifact.as_str(), t.fixed)).collect();
+    assert_eq!(main, [("out/report.txt", false)]);
 }
 
 /// What changes in place is what the call does, as ty says where it goes: `setattr(graph, ..)` and
@@ -463,8 +464,15 @@ fn rust_workspace_parses() {
     // a name bound by `if let`: `if let Some(d) = dest.parent()` under the revision's `env::temp_dir()`
     assert!(places("atlas-engine.changes.revision").contains(&("disk_write".into(), "create_dir_all".into(), "$TMPDIR/".into())), "{:?}", places("atlas-engine.changes.revision"));
     // clap's options hold their defaults where the command line leaves them out: `atlas analyze`
-    // writes `graph.json` unless given `-o` (`Cmd::Analyze { out, .. }`, `default_value = "graph.json"`)
+    // writes `graph.json` unless given `-o` (`Cmd::Analyze { out, .. }`, `default_value = "graph.json"`);
+    // `-o` is the command's input, so the code does not alone decide where the graph goes
     assert!(places("atlas.main").contains(&("disk_write".into(), "write".into(), "graph.json".into())), "{:?}", places("atlas.main"));
+    let graph = g.node("atlas.main").unwrap().touches.iter().find(|t| t.artifact == "graph.json").unwrap();
+    assert!(!graph.fixed && graph.by.is_empty(), "{graph:?}");
+    // a `let` holds the type of the parameter it is handed to: `merged`'s graph, the one graph
+    // read or the merge of several, is the `Graph` that `join(g: &mut Graph)` takes
+    let joining = g.node("atlas-engine.parts.merged").unwrap().sites.iter().find(|s| s.to == "atlas-engine.parts.join").unwrap();
+    assert_eq!(joining.hands.iter().map(|h| (h.name.as_str(), h.ty.as_str())).collect::<Vec<_>>(), [("g", "atlas-engine.model.Graph")]);
 }
 
 /// Atlas obeys its own algebra: the steps of `analyze` move data between the repository as read

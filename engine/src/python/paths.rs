@@ -189,10 +189,10 @@ impl<'a> Eval<'a> {
         self.defined(at, e, depth).unwrap_or_else(|| vec![hole(name)])
     }
 
-    /// An attribute of the object a command-line parser gives (`args.out`): the default of the
-    /// argument that declares it, what the program runs with when its command line leaves it out.
-    /// The attribute is named by the argument's `dest`, else its longest `--option` (`-` as
-    /// `_`), else its positional name.
+    /// An attribute of the object a command-line parser gives (`args.out`): the option, holding the
+    /// default of the argument that declares it, what the program runs with when its command line
+    /// leaves it out. The attribute is named by the argument's `dest`, else its longest
+    /// `--option` (`-` as `_`), else its positional name.
     fn parsed(&self, at: At, obj: TsNode, name: &str, depth: u32) -> Option<Vec<Built>> {
         let Target::Here { file, at: offset } = self.def(at.m, obj)? else { return None };
         let m = *self.by_file.get(&file)?;
@@ -225,7 +225,7 @@ impl<'a> Eval<'a> {
                 .or_else(|| flags.iter().find(|f| !f.starts_with('-')).cloned())
                 .or_else(|| flags.first().map(option));
             if declared.as_deref() == Some(name) {
-                return default.map(|d| self.of(At { m, scope: enclosing_def(call), params: &[] }, d, depth + 1));
+                return default.map(|d| crate::paths::option(name, self.of(At { m, scope: enclosing_def(call), params: &[] }, d, depth + 1)));
             }
         }
         None
@@ -316,7 +316,7 @@ impl<'a> Eval<'a> {
             "with_suffix" => {
                 let suffix = positional.first().map(|a| unquote(text(*a, src))).unwrap_or_default();
                 return receiver().into_iter().map(|mut b| {
-                    if let Some(Seg::Lit(s)) = b.last_mut() {
+                    if let Some(s) = crate::paths::last_lit(&mut b) {
                         let stem_end = s.rfind('.').filter(|&i| i > s.rfind('/').map_or(0, |j| j + 1)).unwrap_or(s.len());
                         s.truncate(stem_end);
                         s.push_str(&suffix);

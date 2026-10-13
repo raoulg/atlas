@@ -1430,7 +1430,8 @@ struct Body<'a, 't> {
     params: Vec<String>,
     cls: Option<String>,
     /// The classes the body's names hold: its typed parameters, and locals assigned from a
-    /// constructor, a struct literal or a function with a typed return.
+    /// constructor, a struct literal or a function with a typed return, or handed to a parameter
+    /// that takes one.
     locals: HashMap<String, String>,
     /// The locals a call made, by the call: `let c = reqwest::Client::new()`.
     made_by: HashMap<String, TsNode<'t>>,
@@ -1438,6 +1439,9 @@ struct Body<'a, 't> {
     attr_types: std::collections::BTreeMap<String, String>,
     /// The library types its parameters are declared with: `conn` is `ext:rusqlite.Connection`.
     foreign: HashMap<String, String>,
+    /// The library types its `let`s hold by the parameter they are handed to: `area` is a
+    /// `DrawingArea` where `draw(&area, ..)` takes one.
+    taken: HashMap<String, String>,
     read: Read<'t>,
 }
 
@@ -1449,10 +1453,11 @@ impl<'a, 't> Body<'a, 't> {
         let cls = n.cls.clone();
         let attr_types = cls.as_ref().and_then(|c| store.classes.get(c)).map(|c| c.attr_types.clone()).unwrap_or_default();
         let params = paths::param_names(d, &m.src);
-        let mut b = Body { modules, store, crate_ids, eval, m, src: &m.src, id: n.id.clone(), def: d, params, cls, locals: HashMap::new(), made_by: HashMap::new(), attr_types, foreign: HashMap::new(), read: Read::default() };
+        let mut b = Body { modules, store, crate_ids, eval, m, src: &m.src, id: n.id.clone(), def: d, params, cls, locals: HashMap::new(), made_by: HashMap::new(), attr_types, foreign: HashMap::new(), taken: HashMap::new(), read: Read::default() };
         b.parameters(d);
-        b.lets(body);
+        let untyped = b.lets(body);
         b.patterns(body);
+        b.handed_to(body, untyped);
         // a macro that prints shows the human something
         for mac in walk(body, &["macro_invocation"]) {
             let name = mac.child_by_field_name("macro").map(|x| text(x, b.src)).unwrap_or("");
@@ -1556,8 +1561,10 @@ impl<'a, 't> Body<'a, 't> {
 
     /// Locals assigned from a constructor, a struct literal, or a function with a typed return;
     /// `.unwrap()`, `.expect(..)`, `.context(..)` hand on the type of the value they are called on.
-    fn lets(&mut self, body: TsNode<'t>) {
+    /// Gives the `let`s that write no type and whose value is of none the body knows.
+    fn lets(&mut self, body: TsNode<'t>) -> Vec<String> {
         let src = self.src;
+        let mut untyped = vec![];
         for l in walk(body, &["let_declaration"]) {
             let Some(pat) = l.child_by_field_name("pattern").filter(|p| matches!(p.kind(), "identifier" | "mut_pattern")) else { continue };
             let name = text(pat, src).trim_start_matches("mut ").to_string();
@@ -1575,10 +1582,77 @@ impl<'a, 't> Body<'a, 't> {
             if let Some(made) = l.child_by_field_name("value") {
                 self.made_by.insert(name.clone(), made);
             }
-            if let Some(t) = value.and_then(|v| self.value_class(v)) {
-                self.locals.insert(name, t);
+            match value.and_then(|v| self.value_class(v)) {
+                Some(t) => {
+                    self.locals.insert(name, t);
+                }
+                None if l.child_by_field_name("type").is_none() => untyped.push(name),
+                None => {}
             }
         }
+        untyped
+    }
+
+    /// Rust fixes the type of a `let` that writes none by how the value is used: a `let` whose
+    /// value is of no type the body knows, handed whole to a parameter of one of the program's
+    /// functions (`draw(&area, ..)`), holds that parameter's type, read in the module that
+    /// declares it: a class of the program's, or a library's (`area: &DrawingArea<DB, Shift>`
+    /// through `use plotters::prelude::*`).
+    fn handed_to(&mut self, body: TsNode<'t>, untyped: Vec<String>) {
+        let src = self.src;
+        let mut open: HashSet<String> = untyped.into_iter().filter(|n| !self.locals.contains_key(n)).collect();
+        for c in walk(body, &["call_expression"]) {
+            if open.is_empty() {
+                return;
+            }
+            let Some((t, on_value)) = self.callee(c) else { continue };
+            let Some(n) = self.store.nodes.get(&t) else { continue };
+            let Some(home) = self.modules.get(&n.module) else { continue };
+            let Some(def) = def_node(home, n) else { continue };
+            let declared: Vec<TsNode> = def.child_by_field_name("parameters").map(named_children).unwrap_or_default().into_iter().filter(|p| p.kind() == "parameter").collect();
+            let skip = usize::from(!on_value && paths::takes_self(def));
+            for (p, a) in declared.into_iter().zip(positional(c).into_iter().skip(skip)) {
+                let mut a = a;
+                while let Some(x) = a.filter(|x| matches!(x.kind(), "reference_expression" | "parenthesized_expression")) {
+                    a = x.child_by_field_name("value").or_else(|| named_children(x).into_iter().next());
+                }
+                let Some(name) = a.filter(|x| x.kind() == "identifier").map(|x| text(x, src).to_string()).filter(|x| open.contains(x)) else { continue };
+                let ty = p.child_by_field_name("type");
+                let named = |parts: &Vec<String>| match parts.as_slice() {
+                    [s] if s == "Self" => n.cls.clone(),
+                    _ => resolve(home, parts, self.modules, &self.store.nodes, self.crate_ids),
+                };
+                // a class of the program's as its parameter is typed, the records it holds
+                // (`&[Month]`); a library's type only where it is the parameter's own, never one
+                // it holds (`&[(NaiveDate, f64)]` names no what)
+                let class = type_names(ty, &home.src).iter().filter_map(named).find(|r| !r.starts_with("ext:") && self.class_of(r).is_some());
+                let lib = Some(path_parts(ty, &home.src)).filter(|parts| !parts.is_empty()).as_ref().and_then(named).filter(|r| foreign_type(r, &OWN));
+                match (class, lib) {
+                    (Some(class), _) => self.locals.insert(name.clone(), class),
+                    (None, Some(lib)) => self.taken.insert(name.clone(), lib),
+                    (None, None) => continue,
+                };
+                open.remove(&name);
+            }
+        }
+    }
+
+    /// The program's function a call runs, and whether it is a method called on a value: one on
+    /// the class its receiver holds, or one its path names.
+    fn callee(&self, c: TsNode) -> Option<(String, bool)> {
+        let src = self.src;
+        let f = c.child_by_field_name("function")?;
+        let own = |t: String| self.store.nodes.get(&t).filter(|n| matches!(n.kind, NodeKind::Function | NodeKind::Method)).map(|_| t);
+        if f.kind() == "field_expression" {
+            let class = self.value_class(f.child_by_field_name("value")?)?;
+            return own(self.store.method_of(&class, text(f.child_by_field_name("field")?, src))?).map(|t| (t, true));
+        }
+        let parts = path_parts(Some(f), src);
+        let t = match (parts.first().map(String::as_str), &self.cls) {
+            (Some("Self"), Some(cls)) => self.store.method_of(cls, parts.get(1)?)?,
+            _ => self.resolve_value(&parts)?,
+        };
+        own(t).map(|t| (t, false))
     }
 
     /// The class a value is of, where the body says: a name it holds, a struct literal, a method
@@ -1608,9 +1682,15 @@ impl<'a, 't> Body<'a, 't> {
         }
     }
 
+    /// The type a name of the body holds: a class of the program's, else the library's type a
+    /// `let` takes from the parameter it is handed to.
+    fn held_type(&self, name: &str) -> Option<String> {
+        self.locals.get(name).or_else(|| self.taken.get(name)).cloned()
+    }
+
     /// What a call is handed: the value it is called on, its arguments, a literal's fields.
     fn hands(&self, parts: &[Option<TsNode>], kept: &HashSet<String>) -> Vec<Held> {
-        let ty_of = |name: &str| self.locals.get(name).cloned();
+        let ty_of = |name: &str| self.held_type(name);
         let mut out: Vec<Held> = vec![];
         for p in parts.iter().flatten() {
             for h in crate::tree::held_names(*p, self.src, &["self"], &ty_of, kept) {
@@ -1626,7 +1706,7 @@ impl<'a, 't> Body<'a, 't> {
     /// with, else the class the call builds or returns.
     fn gives(&self, c: TsNode, to: Option<&str>) -> Vec<Held> {
         let made = |t: &str| self.class_of(t).or_else(|| self.returned_class(t));
-        kept_as(c, self.src).map(|name| Held::new(self.locals.get(&name).cloned().or_else(|| to.and_then(made)).unwrap_or_default(), name)).into_iter().collect()
+        kept_as(c, self.src).map(|name| Held::new(self.held_type(&name).or_else(|| to.and_then(made)).unwrap_or_default(), name)).into_iter().collect()
     }
 
     /// A boundary call's touches, refined by the literals that name its place.
@@ -1919,7 +1999,7 @@ impl<'a, 't> Body<'a, 't> {
         let values: Vec<String> = match first.filter(|a| literals(*a, self.src, STRINGS).is_empty()) {
             Some(a) => {
                 let built = self.eval.of(self.at(), a, 0);
-                let whole = built.iter().all(|b| b.iter().all(|s| matches!(s, crate::paths::Seg::Lit(_))));
+                let whole = built.iter().all(crate::paths::known);
                 if whole { built.iter().map(crate::paths::render).collect() } else { vec![] }
             }
             None => vec![],

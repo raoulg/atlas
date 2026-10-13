@@ -101,6 +101,35 @@ fn a_library_glob_brings_in_its_names() {
     assert_eq!(takes("globs.two.draw"), Vec::<String>::new());
 }
 
+/// Rust fixes the type of a `let` that writes none by how the value is used: a value Atlas cannot
+/// type, handed to a parameter of one of the program's functions, holds that parameter's type,
+/// read in the module that declares the function (here through its glob `use canvas::prelude::*`,
+/// which the caller does not have). A class of the program's is the class the `let` holds, so its
+/// methods run on it; a library's type that the parameter only holds (`&[(Area<Rgb>, u8)]`) is no
+/// type of the value.
+#[test]
+fn a_let_holds_the_type_of_the_parameter_it_is_handed_to() {
+    let g = written(
+        "handed",
+        &[
+            (
+                "src/lib.rs",
+                "mod paint;\n\npub struct Sheet {\n    pub n: u8,\n}\n\nimpl Sheet {\n    pub fn size(&self) -> u8 {\n        self.n\n    }\n}\n\npub fn save() {\n    let area = canvas::Backend::new().into_area();\n    let sheet = sheets::first();\n    let rows = Vec::new();\n    paint::draw(&area, &sheet);\n    paint::pairs(&rows);\n    sheet.size();\n}\n",
+            ),
+            ("src/paint.rs", "use canvas::prelude::*;\n\nuse crate::Sheet;\n\npub fn draw<B: Backend>(area: &Area<B>, sheet: &Sheet) {}\n\npub fn pairs(rows: &[(Area<Rgb>, u8)]) {}\n"),
+        ],
+    );
+    let save = &g.node("handed.save").unwrap().sites;
+    let values = |hs: &[atlas_engine::Held]| hs.iter().map(|h| (h.name.clone(), h.ty.clone())).collect::<Vec<_>>();
+    let pair = |name: &str, ty: &str| (name.to_string(), ty.to_string());
+    let hands = |to: &str| values(&save.iter().find(|s| s.to == to).unwrap_or_else(|| panic!("no step to {to}: {save:#?}")).hands);
+    assert_eq!(hands("handed.paint.draw"), [pair("area", "ext:canvas.prelude.Area"), pair("sheet", "handed.Sheet")]);
+    assert_eq!(hands("handed.paint.pairs"), [pair("rows", "")]);
+    let made = save.iter().find(|s| s.op == "into_area").expect("the step that makes the area");
+    assert_eq!(values(&made.gives), [pair("area", "ext:canvas.prelude.Area")]);
+    assert!(save.iter().any(|s| s.to == "handed.Sheet.size"), "{save:#?}");
+}
+
 /// clap's options are read from the type it derives the command line from: where the command line
 /// leaves an option out, a field holds the default its attribute declares, through a `let`, a
 /// struct pattern and a subcommand's variant. A value of that type handed in as a parameter holds

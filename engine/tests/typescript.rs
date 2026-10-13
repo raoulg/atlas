@@ -316,7 +316,8 @@ export function pick(name: string): void {
 /// `parseArgs` gives for it holds what the program runs with when the command line leaves the
 /// option out, its `default`, else no value. `values.input ?? IN` is `IN`; an option with a
 /// default is that default, from an options object written where it is handed or held by a
-/// constant; one with neither is a file the code does not name. An object literal declared as a
+/// constant, a place the code does not alone decide; one with neither is a file the code does not
+/// name. An object literal declared as a
 /// type of the program's makes a value of it: a step to the type.
 #[test]
 fn an_option_holds_its_default_and_a_typed_literal_is_made() {
@@ -366,6 +367,10 @@ await main(process.argv.slice(2));
     };
     assert_eq!(places("disk_read"), ["data/in.txt"], "`values.input ?? IN`");
     assert_eq!(places("disk_write"), ["", "data/out.txt", "logs/run.log"], "`default: OUT`, a constant's `default`, and `--extra`");
+    // an option is the entry's input, as a parameter of a command is: the code does not alone
+    // decide the place its default names
+    let defaults: Vec<&atlas_engine::Touch> = main.touches.iter().filter(|t| matches!(t.artifact.as_str(), "data/out.txt" | "logs/run.log")).collect();
+    assert!(defaults.len() == 2 && defaults.iter().all(|t| !t.fixed && t.by.is_empty()), "{defaults:#?}");
     let settings = format!("{}.cli.Settings", g.root);
     let made: Vec<(&str, Vec<(&str, &str)>)> = main.sites.iter().filter(|s| !s.to.is_empty()).map(|s| (s.to.as_str(), s.gives.iter().map(|h| (h.name.as_str(), h.ty.as_str())).collect())).collect();
     assert_eq!(made, [(settings.as_str(), vec![("settings", settings.as_str())])], "a literal of a type the program declares, and no other");
