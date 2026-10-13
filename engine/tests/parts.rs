@@ -41,7 +41,8 @@ fn a_manifest_no_part_reads_roots_one() {
     let repo = Repo::read(&manifests(), &[]).unwrap();
     let found: Vec<(String, &str)> = roots(&repo, &Options::default())
         .into_iter()
-        .map(|(d, l)| (d.strip_prefix(manifests()).unwrap().to_string_lossy().to_string(), l))
+        // a part's directory as a path relative to the repository, written with `/` on every system
+        .map(|(d, l)| (d.strip_prefix(manifests()).unwrap().to_string_lossy().replace('\\', "/"), l))
         .collect();
     let want = [
         ("", "python"),
