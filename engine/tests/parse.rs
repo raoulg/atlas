@@ -442,8 +442,7 @@ fn atlas_reads_as_its_algebra() {
     let short = |steps: &[&str]| steps.iter().map(|s| s.trim_start_matches("atlas-engine.").to_string()).collect::<Vec<_>>();
     assert_eq!(short(&steps_of("atlas-engine.analyze")), ["language.read", "graph_of"], "analyze: Disk(repo) -> read -> Repo -> parse -> Graph");
     let steps = steps_of("atlas-engine.graph_of");
-    // `repo.root()` and `looked_for()` write the error of a repository in no language Atlas reads
-    assert_eq!(short(&steps), ["language.detect", "repo.Repo.root", "language.looked_for", "language.Language.parse", "entries.read_makefile", "parts.assign", "view.reached", "view.View.apply"], "the graph of what was read, step by step");
+    assert_eq!(short(&steps), ["language.of", "language.Language.parse", "entries.read_makefile", "parts.assign", "view.reached", "view.View.apply"], "the graph of what was read, step by step");
     for step in steps {
         for e in g.edges.iter().filter(|e| e.src == step && matches!(e.kind, EdgeKind::Takes | EdgeKind::Returns | EdgeKind::Mutates)) {
             if classes.contains(e.dst.as_str()) {
@@ -658,7 +657,7 @@ fn a_rust_body_lists_its_calls() {
     let step = |to: &str| analyze_fn.sites.iter().find(|s| s.to == to).unwrap_or_else(|| panic!("{to} in {:#?}", analyze_fn.sites));
     let held = |ty: &str, name: &str| atlas_engine::Held::new(ty, name);
     assert_eq!(step("atlas-engine.language.Language.parse").gives, [held("atlas-engine.model.Graph", "g")], "a method gives what it returns, not its receiver's type");
-    let detect = step("atlas-engine.language.detect");
+    let detect = step("atlas-engine.language.of");
     assert_eq!(detect.hands, [held("atlas-engine.repo.Repo", "repo"), held("atlas-engine.Options", "opts")], "the repository is a value: what was read");
     let order: Vec<&str> = analyze_fn.sites.iter().map(|s| s.to.as_str()).collect();
     assert!(order.iter().position(|t| *t == "atlas-engine.entries.read_makefile") < order.iter().position(|t| *t == "atlas-engine.parts.assign"), "{order:?}");
@@ -692,12 +691,10 @@ fn a_call_inside_a_call_is_composition() {
     assert!(steps[1].hands.contains(sink), "Pipeline is handed the sink: {:?}", steps[1].hands);
     assert!(steps[2].hands.contains(&steps[1].gives[0]), "run is called on what Pipeline gives");
 
-    // `let lang = language::detect(repo, opts).ok_or_else(|| anyhow!(.., repo.root().display(),
-    // language::looked_for()))?`: the calls written in the macro are steps, and what they give is
-    // handed to the unwrapping, which is then no identity
+    // `let lang = language::of(repo, opts)?`: the unwrapping is an identity
     let atlas = analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(".."), &Options::default()).unwrap();
     let analyze_steps: Vec<&str> = atlas.node("atlas-engine.graph_of").unwrap().sites.iter().map(|s| if s.to.is_empty() { s.op.as_str() } else { s.to.as_str() }).collect();
-    assert_eq!(analyze_steps, ["atlas-engine.language.detect", "atlas-engine.repo.Repo.root", "atlas-engine.language.looked_for", "ok_or_else", "atlas-engine.language.Language.parse", "atlas-engine.entries.read_makefile", "atlas-engine.parts.assign", "atlas-engine.view.reached", "atlas-engine.view.View.apply"]);
+    assert_eq!(analyze_steps, ["atlas-engine.language.of", "atlas-engine.language.Language.parse", "atlas-engine.entries.read_makefile", "atlas-engine.parts.assign", "atlas-engine.view.reached", "atlas-engine.view.View.apply"]);
 }
 
 /// What a step runs is the same for the agent and the page: the engine's bodies. A method called
@@ -716,7 +713,7 @@ fn a_body_is_what_a_route_runs() {
     alts.sort();
     assert_eq!(alts, ["atlas-engine.language.Python.parse", "atlas-engine.language.Rust.parse", "atlas-engine.language.TypeScript.parse"]);
     let route = atlas_engine::story::route(&atlas, "atlas-engine.analyze", 2).unwrap();
-    assert!(route.contains("2.5  Language.parse(repo, opts) → Graph   ·   one of 3"), "the agent reads the same alternatives: {route}");
+    assert!(route.contains("2.2  Language.parse(repo, opts) → Graph   ·   one of 3"), "the agent reads the same alternatives: {route}");
 }
 
 /// A subclass stands in the place of the base the program uses as a type, and a family whose

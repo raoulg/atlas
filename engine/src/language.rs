@@ -174,3 +174,8 @@ pub fn detect(repo: &Repo, opts: &Options) -> Option<Box<dyn Language>> {
     }
     languages().into_iter().find(|l| l.detect(repo, opts))
 }
+
+/// The language a repository is read in, or why there is none: what was looked for, and where.
+pub fn of(repo: &Repo, opts: &Options) -> anyhow::Result<Box<dyn Language>> {
+    detect(repo, opts).ok_or_else(|| anyhow::anyhow!("no language recognised in {} ({})", repo.root().display(), looked_for()))
+}

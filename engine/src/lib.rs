@@ -63,8 +63,7 @@ pub fn analyze(dir: &Path, opts: &Options) -> Result<Graph> {
 /// The graph of a repository as read: parsed in its language, with the routes its Makefile adds
 /// and its parts, kept to what the program reaches.
 pub fn graph_of(repo: &repo::Repo, opts: &Options) -> Result<Graph> {
-    let lang = language::detect(repo, opts)
-        .ok_or_else(|| anyhow::anyhow!("no language recognised in {} ({})", repo.root().display(), language::looked_for()))?;
+    let lang = language::of(repo, opts)?;
     let mut g = lang.parse(repo, opts)?;
     entries::read_makefile(repo, &mut g);
     parts::assign(&mut g);
