@@ -108,6 +108,10 @@ pub struct Node {
     /// reaches none of those callers shows the call this way.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub instead: Vec<Touch>,
+    /// The requests it makes whole that no route of its own part serves: the method when the code
+    /// says it, and the path (`GET /api/items/{id}`). Another part's route may serve them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub asks: Vec<String>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub is_pkg: bool,
     /// For a method: it is called on its class, not on a value of it, so the class is no input.

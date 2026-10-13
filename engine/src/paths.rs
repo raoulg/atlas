@@ -40,6 +40,45 @@ pub fn route_matches(route: &str, path: &str) -> bool {
     route_pattern(route).map_or(false, |re| re.is_match(&path))
 }
 
+/// The path a request asks for wherever it is sent: its URL without the host, written out or a
+/// value the URL starts with (`{BASE}/api/items/{id}`), and without its query.
+pub fn asked_path(url: &str) -> Option<String> {
+    let rest = match url.find("://") {
+        Some(i) => &url[i + 3..][url[i + 3..].find('/')?..],
+        None if url.starts_with('{') => &url[url.find('}')? + 1..],
+        None => url,
+    };
+    let path = rest.split(['?', '#']).next()?;
+    (path.starts_with('/') && path.len() > 1).then(|| path.to_string())
+}
+
+/// A request as its method and path, the method left out where the code does not say it.
+pub fn request(method: &str, path: &str) -> String {
+    if method.is_empty() {
+        path.to_string()
+    } else {
+        format!("{method} {path}")
+    }
+}
+
+/// A request's method and path; the method is empty where the code does not say it.
+pub fn method_and_path(request: &str) -> (&str, &str) {
+    match request.split_once(' ') {
+        Some((m, p)) if !m.starts_with('/') => (m, p),
+        _ => ("", request),
+    }
+}
+
+/// The routes of `routes` (handler, method, path) that serve a request: by its method when the
+/// code says it, and its path; a literal segment serves before a parameter (`/years` before
+/// `/{year}`).
+pub fn serving<'r>(routes: &'r [(String, String, String)], method: &str, path: &str) -> Vec<&'r (String, String, String)> {
+    let known = !method.is_empty() && !method.contains('{');
+    let served: Vec<&(String, String, String)> = routes.iter().filter(|(_, m, p)| (!known || m.split('|').any(|x| x == method)) && route_matches(p, path)).collect();
+    let fewest = served.iter().map(|(_, _, p)| p.matches('{').count()).min().unwrap_or(0);
+    served.into_iter().filter(|(_, _, p)| p.matches('{').count() == fewest).collect()
+}
+
 /// A part of a path as the code builds it.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Seg {
@@ -365,17 +404,20 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
                     _ => (String::new(), rendered.clone()),
                 };
                 if t.kind == World::Net {
+                    let asker = holder.split('&').next().unwrap_or(holder);
+                    let mut served = false;
                     if url.starts_with('/') {
-                        let known = !method.contains('{');
-                        let served: Vec<&(String, String, String)> = routes.iter().filter(|(_, m, p)| (!known || m.split('|').any(|x| x == method)) && route_matches(p, &url)).collect();
-                        // a literal segment serves before a parameter: `/years` before `/{year}`
-                        let fewest = served.iter().map(|(_, _, p)| p.matches('{').count()).min().unwrap_or(0);
-                        for (handler, _, path) in served.into_iter().filter(|(_, _, p)| p.matches('{').count() == fewest) {
-                            store.add_edge(holder.split('&').next().unwrap_or(holder), handler, EdgeKind::Requests, Some(path.clone()));
-                            requested = true;
+                        for (handler, _, path) in serving(&routes, &method, &url) {
+                            store.add_edge(asker, handler, EdgeKind::Requests, Some(path.clone()));
+                            served = true;
                         }
                     } else if let Some(host) = crate::effects::facts(Crossing::to(World::Net), None, &t.op, std::slice::from_ref(&url)).places().into_iter().next().map(|(a, _)| a).filter(|a| !a.is_empty()) {
                         placed.push((host, t.dir));
+                    }
+                    requested |= served;
+                    // a request no route of the part serves may be another part's
+                    if let Some(path) = asked_path(&url).filter(|_| !served) {
+                        store.ask(asker, request(&method, &path));
                     }
                 } else if let World::Db(db) = t.kind {
                     placed.extend(crate::effects::sql(db, std::slice::from_ref(&rendered)).unwrap_or_default().into_iter().map(|(table, dir)| (table, dir.or(t.dir))));
@@ -398,5 +440,24 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
                 store.touch(&f, at(artifact, dir, t.fixed));
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_request_asks_for_a_route() {
+        assert!(route_matches("/api/graphs/graph/rond/{uuid:path}", "/api/graphs/graph/rond/a/b"));
+        let item = |url: &str| asked_path(url).map_or(false, |p| route_matches("/api/items/{id}", &p));
+        assert!(item("http://localhost:8000/api/items/{id}?full=1"));
+        assert!(item("{$BASE}/api/items/{id}"), "a value the URL starts with is the host");
+        assert!(!item("/api/items"));
+        assert_eq!(asked_path("/"), None, "the root names no route");
+        assert_eq!(asked_path("{url}"), None, "a URL not known at all asks for no path");
+        assert_eq!(asked_path("data/raw.csv"), None, "a relative path is a file");
+        assert_eq!(method_and_path("POST /v1/orders"), ("POST", "/v1/orders"));
+        assert_eq!(method_and_path("/v1/orders"), ("", "/v1/orders"));
     }
 }

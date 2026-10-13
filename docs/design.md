@@ -341,10 +341,12 @@ by Cargo's targets: one library (`src/lib.rs`) and a binary per `main` (`src/mai
 `src/bin/*.rs`), each a root of its own; a directory with its own `Cargo.toml` is another
 package. The graph holds them side by side and every node knows its part. Parts meet over HTTP: a web framework's
 routes stand at their full path (through `app.mount(prefix, sub_app)`,
-`include_router(router, prefix=…)`, `APIRouter(prefix=…)`), and a string literal in one
-part that is the full path of a route another part serves is a `requests` edge from the
-node that holds it to the handler. A literal that names one of its own part's routes is a
-link within that part. In the views, parts are a zoom level like families: the overview
+`include_router(router, prefix=…)`, `APIRouter(prefix=…)`), and a request one part makes
+whole that none of its own routes serves is a `requests` edge from the function that makes it
+whole to the handler of another part's route that serves it, by method and path; the host,
+written out or a value the URL starts with, is left aside. A request whose path the code does
+not say (a key looked up at run time, an environment variable that may stand in for it) asks
+for no route: it stays on the picture, sent to an address the code does not name. In the views, parts are a zoom level like families: the overview
 is one step per part (memory stays inside it; what it reads and writes in the world, and
 the HTTP of the parts it requests, stand outside), a click opens a part into its packages,
 and keeping to one part is its fiber, in which another part is the web place it is
@@ -452,7 +454,8 @@ asked only through one. The browser's `localStorage` is a key-value store, keyed
 it is handed; a URL without a host is the page's own origin. A TypeScript path or URL is
 evaluated as a Python one: from the module's own file (`import.meta.url`, `__dirname`),
 through `path.join`, `path.resolve`, `path.dirname` and `new URL(rel, base)`, across the
-constants it names, and at each call that hands its function's parameters, out to the
+constants it names, through what a function of the program gives back (its parameters bound to
+what the call hands them), and at each call that hands its function's parameters, out to the
 function where it is complete. A request is its method and its URL; one the package's own
 routes serve is a `requests` edge from the function that names it to the route's handler, the
 most literal route first (`/years` before `/{year}`). An object of functions
@@ -520,8 +523,6 @@ than two clicks from the code.
    Which default ideal of the file tree follows from the code instead?
 2. Is the package the right unit for colour, or is the base type?
 3. Editing: probably never. "Open in editor" as a deep link should be enough.
-4. The browser as a resting place: a click in `apps/plusmin` is an arrow into an
-   API route. Parts are joined where one names a route the other serves; the function
-   that sends the request, when the path reaches it through configuration
-   (`requireRestApiEndpoint("tables")`), needs data flow.
+4. The browser as a resting place: a click in a frontend is an arrow into an API route,
+   where the request names the path it asks for.
 5. Analysis cache across runs: a `.atlas/` directory next to `.git`.

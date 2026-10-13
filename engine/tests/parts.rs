@@ -182,8 +182,9 @@ fn each_web_framework_registers_its_routes() {
     assert_eq!(label(&g, "shop.board.Shelves.shelf"), "GET /v2/shelves/{shelf:int}", "a controller's `path`, under its router's");
 }
 
-/// A literal that is another part's route is a request to its handler; a part's own page of
-/// the same name is a link within it.
+/// A request one part makes to a path another part's route serves is a request to its handler,
+/// by method and path; nothing asks for `/health`, so neither of the parts' pages of that name
+/// is requested.
 #[test]
 fn a_client_requests_what_a_server_serves() {
     let g = shop();

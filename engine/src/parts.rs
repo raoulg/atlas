@@ -4,13 +4,11 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
 
 use anyhow::Result;
-use regex::Regex;
 
 use crate::model::{Edge, EdgeKind, EntryKind, Graph, NodeKind, Part};
-use crate::paths::{placeholder_re, re, route_pattern};
+use crate::paths::{method_and_path, serving};
 use crate::repo::Repo;
 use crate::{knowledge, Options};
 
@@ -144,78 +142,31 @@ pub fn merge(name: &str, graphs: Vec<Graph>) -> Graph {
 }
 
 
-/// A string literal in any of the three quotes.
-fn literal_re() -> &'static Regex {
-    static RE: OnceLock<Regex> = OnceLock::new();
-    re(&RE, r#""([^"\s]*)"|'([^'\s]*)'|`([^`\s]*)`"#)
-}
-
-/// The path a string literal asks for: without its host (written out, or a leading `${base}`)
-/// and its query; a placeholder is a segment.
-fn requested(lit: &str) -> Option<String> {
-    let lit = lit.strip_prefix('$').and_then(|r| r.strip_prefix('{')).and_then(|r| r.split_once('}')).map_or(lit, |(_, rest)| rest);
-    let path = match lit.find("://") {
-        Some(i) => &lit[i + 3..][lit[i + 3..].find('/')?..],
-        None => lit,
-    };
-    let path = path.split(['?', '#']).next()?;
-    if !path.starts_with('/') || path.len() < 2 {
-        return None;
-    }
-    Some(placeholder_re().replace_all(path, "x").into_owned())
-}
-
-/// Requests between parts: a string literal in one part that is the full path of a route
-/// another part serves, and none of its own, is a `requests` edge from the node that holds it
-/// (the innermost function, class or module around it) to the route's handler.
+/// Requests between parts: a request one part makes whole and none of its own routes serves is a
+/// `requests` edge from the function that makes it whole to the handler of another part's route
+/// that serves it, by method and path.
 pub fn join(g: &mut Graph) {
-    let routes: Vec<(String, String, String, Regex)> = g
-        .nodes
-        .iter()
-        .filter_map(|n| {
-            let e = n.entry.as_ref().filter(|e| e.kind == EntryKind::Route)?;
-            let (method, path) = e.label.split_once(' ')?;
-            (method.split('|').all(|m| knowledge::registers_route(&m.to_ascii_lowercase())) && path.len() > 1).then_some(())?;
-            Some((n.part.clone(), n.id.clone(), path.to_string(), route_pattern(path)?))
-        })
-        .collect();
-    if routes.is_empty() || g.parts.len() < 2 {
+    if g.parts.len() < 2 {
         return;
     }
-    // a path a part routes itself (a page, its own API) is a link within it, not a request
-    let own: Vec<(String, Regex)> = g
-        .nodes
-        .iter()
-        .filter_map(|n| {
-            let e = n.entry.as_ref().filter(|e| e.kind == EntryKind::Route)?;
-            let path = e.label.split_once(' ').map_or(e.label.as_str(), |(_, p)| p);
-            Some((n.part.clone(), route_pattern(path)?))
-        })
-        .collect();
-    // per file: its part and its nodes by span, innermost first
-    let mut by_file: HashMap<&str, Vec<(u32, u32, &str, &str)>> = HashMap::new();
+    let mut routes: HashMap<&str, Vec<(String, String, String)>> = HashMap::new();
     for n in &g.nodes {
-        if let Some((a, b)) = n.span {
-            by_file.entry(n.file.as_str()).or_default().push((a, b, n.id.as_str(), n.part.as_str()));
+        let Some(e) = n.entry.as_ref().filter(|e| e.kind == EntryKind::Route) else { continue };
+        let Some((method, path)) = e.label.split_once(' ') else { continue };
+        if method.split('|').all(|m| knowledge::registers_route(&m.to_ascii_lowercase())) && path.len() > 1 {
+            routes.entry(n.part.as_str()).or_default().push((n.id.clone(), method.to_string(), path.to_string()));
         }
     }
-    for spans in by_file.values_mut() {
-        spans.sort_by_key(|(a, b, _, _)| b - a);
-    }
     let mut edges: BTreeMap<(String, String), String> = BTreeMap::new();
-    for (file, src) in &g.files {
-        let Some(spans) = by_file.get(file.as_str()) else { continue };
-        for c in literal_re().captures_iter(src) {
-            let m = c.get(1).or(c.get(2)).or(c.get(3)).unwrap();
-            let Some(path) = requested(m.as_str()) else { continue };
-            let line = src[..m.start()].matches('\n').count() as u32 + 1;
-            let Some(&(_, _, holder, part)) = spans.iter().find(|(a, b, _, _)| *a <= line && line <= *b) else { continue };
-            if own.iter().any(|(p, re)| p == part && re.is_match(&path)) {
-                continue;
-            }
-            for (rpart, handler, rpath, re) in &routes {
-                if rpart != part && re.is_match(&path) {
-                    edges.entry((holder.to_string(), handler.clone())).or_insert_with(|| rpath.clone());
+    for n in g.nodes.iter().filter(|n| !n.asks.is_empty()) {
+        for ask in &n.asks {
+            let (method, path) = method_and_path(ask);
+            for (part, served) in &routes {
+                if *part == n.part {
+                    continue;
+                }
+                for (handler, _, route) in serving(served, method, path) {
+                    edges.entry((n.id.clone(), handler.clone())).or_insert_with(|| route.clone());
                 }
             }
         }
@@ -224,21 +175,4 @@ pub fn join(g: &mut Graph) {
         g.edges.push(Edge { src, dst, kind: EdgeKind::Requests, via: Some(via), weight: None, arms: vec![], uses: false });
     }
     g.recount();
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_literal_asks_for_a_route() {
-        let re = route_pattern("/api/graphs/graph/rond/{uuid:path}").unwrap();
-        assert!(re.is_match(&requested("/api/graphs/graph/rond/a/b").unwrap()));
-        let re = route_pattern("/api/items/{id}").unwrap();
-        assert!(re.is_match(&requested("http://localhost:8000/api/items/${id}?full=1").unwrap()));
-        assert!(re.is_match(&requested("${BASE}/api/items/${id}").unwrap()), "a leading placeholder is the host");
-        assert!(!re.is_match(&requested("/api/items").unwrap()));
-        assert_eq!(requested("/"), None, "the root names no route");
-        assert_eq!(requested("data/raw.csv"), None, "a relative path is a file");
-    }
 }

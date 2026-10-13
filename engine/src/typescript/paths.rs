@@ -2,6 +2,7 @@
 //! from the code, through the constants it names (across imports), and through the values a
 //! function's parameters are handed by its callers.
 
+use std::collections::HashMap;
 use std::path::Path;
 
 use indexmap::IndexMap;
@@ -9,7 +10,7 @@ use tree_sitter::Node as TsNode;
 
 use super::{declarations, function_in, member_parts, Bound, Module};
 use crate::knowledge::{self, PathFn};
-use crate::paths::{cross, hole, lit, parent, union, Built, Seg};
+use crate::paths::{cross, hole, lit, parent, substitute, union, Built, Seg};
 use crate::tree::{named_children, path_str, text, unquote, walk};
 
 const DEPTH: u32 = 12;
@@ -248,9 +249,66 @@ impl<'a> Eval<'a> {
             // the language's own conversions to a string
             None if parts.as_slice() == ["String"] => arg(0),
             None if last == "toString" => f.child_by_field_name("object").map(|o| self.of(at, o, depth + 1)).unwrap_or_else(|| vec![hole("value")]),
-            None => vec![hole(last)],
+            None => self.given(at, &parts, &args, depth).unwrap_or_else(|| vec![hole(last)]),
         }
     }
+
+    /// What one of the program's functions gives back, its parameters bound to what the call
+    /// hands them: a function the module declares, or one it imports from another of its modules.
+    fn given<'t>(&self, at: At<'_, 't>, parts: &[String], args: &[TsNode<'t>], depth: u32) -> Option<Vec<Built>> {
+        let [name] = parts else { return None };
+        let mut found = top_function(at.m, name).map(|d| (at.m, d));
+        let mut bound = at.m.bindings.get(name).cloned();
+        for _ in 0..8 {
+            if found.is_some() {
+                break;
+            }
+            let Some(Bound::Own(target)) = bound else { break };
+            let Some((mid, n)) = target.rsplit_once('.') else { break };
+            let Some(home) = self.modules.get(mid) else { break };
+            found = top_function(home, n).map(|d| (home, d));
+            bound = home.bindings.get(n).cloned();
+        }
+        let (home, def) = found?;
+        let names = param_names(def, &home.src);
+        let inner = At { m: home, scope: Some(def), params: &names };
+        let gives = returns(def).into_iter().fold(vec![], |acc, x| union(acc, self.of(inner, x, depth + 1)));
+        if gives.is_empty() {
+            return None;
+        }
+        let handed: HashMap<&str, Vec<Built>> = names.iter().zip(args).map(|(p, a)| (p.as_str(), self.of(at, *a, depth + 1))).collect();
+        Some(gives.iter().flat_map(|b| substitute(b, |p| handed.get(p).cloned().unwrap_or_else(|| vec![hole(p)]))).collect())
+    }
+}
+
+/// The function a module declares at its top level under `name`: `function api(..)`, or a
+/// constant that is one (`const api = (..) => ..`).
+fn top_function<'t>(m: &'t Module, name: &str) -> Option<TsNode<'t>> {
+    let declared = declarations(m.tree.root_node())
+        .into_iter()
+        .map(|(d, _, _)| d)
+        .find(|d| matches!(d.kind(), "function_declaration" | "function") && d.child_by_field_name("name").map(|n| text(n, &m.src)) == Some(name));
+    declared.or_else(|| top_value(m, name).filter(|v| matches!(v.kind(), "arrow_function" | "function_expression" | "function")))
+}
+
+/// What a function gives back: the expression an arrow is, and what each `return` in its body
+/// (not in a function inside it) gives.
+fn returns(f: TsNode) -> Vec<TsNode> {
+    let Some(body) = f.child_by_field_name("body") else { return vec![] };
+    if body.kind() != "statement_block" {
+        return vec![body];
+    }
+    let own = |r: &TsNode| {
+        let mut p = r.parent();
+        while let Some(x) = p.filter(|x| x.id() != f.id()) {
+            if function_node(x) == Some(x) {
+                return false;
+            }
+            p = x.parent();
+        }
+        true
+    };
+    walk(body, &["return_statement"]).into_iter().filter(own).filter_map(|r| named_children(r).into_iter().next()).collect()
 }
 
 /// The value a module-level `const` is declared with.

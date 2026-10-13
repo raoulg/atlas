@@ -48,6 +48,12 @@ The rigorous half and the visual half are the same structure. Read `docs/design.
   from types and effects, never from file layout. Hierarchies in the code
   (base classes, composition) are the zoom levels; there is no other source of
   organisation.
+- **Atlas lays problems bare; it does not solve them.** When a subject draws oddly, first ask
+  whether the code says what is missing. If it does not, the gap is the finding, drawn as a
+  place the code does not name; Atlas never guesses on the code's behalf. A subject is no
+  benchmark: settle "Atlas or the code?" with a pair in `engine/tests/pairs`, the same program
+  once as good practice writes it and once with the usual shortcut. The clean side must read as
+  the algebra says, the shortcut must show as a shortcut (`engine/tests/pairs.rs`).
 - **Keep it simple.** The basic elements first, rigorous and consistent across all
   future codebases, before any richness. One question per feedback round.
 - **Plan in Linear first**, project *Atlas — code at the level of types and flows*.

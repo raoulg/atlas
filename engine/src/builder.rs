@@ -89,6 +89,14 @@ impl GraphBuilder {
         }
     }
 
+    /// A request `id` makes whole that no route of its part serves.
+    pub fn ask(&mut self, id: &str, request: String) {
+        let Some(n) = self.nodes.get_mut(id) else { return };
+        if !n.asks.contains(&request) {
+            n.asks.push(request);
+        }
+    }
+
     pub fn touch(&mut self, id: &str, t: Touch) {
         let Some(n) = self.nodes.get_mut(id) else { return };
         match n.touches.iter_mut().find(|x| x.kind == t.kind && x.what == t.what && x.op == t.op && x.artifact == t.artifact && x.dir == t.dir) {
