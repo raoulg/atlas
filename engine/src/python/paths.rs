@@ -81,8 +81,8 @@ impl<'a> Eval<'a> {
         let src = &at.m.src;
         let named = || hole(dotted(Some(e), src).last().map(String::as_str).unwrap_or("value"));
         match e.kind() {
-            "string" => vec![self.string(at, e, depth)],
-            "concatenated_string" => named_children(e).into_iter().fold(vec![vec![]], |acc, s| cross(&acc, &[self.string(at, s, depth)], "")),
+            "string" => self.string(at, e, depth),
+            "concatenated_string" => named_children(e).into_iter().fold(vec![vec![]], |acc, s| cross(&acc, &self.string(at, s, depth), "")),
             "parenthesized_expression" => named_children(e).first().map(|x| self.of(at, *x, depth + 1)).unwrap_or_default(),
             "conditional_expression" => {
                 let k = named_children(e);
@@ -123,11 +123,11 @@ impl<'a> Eval<'a> {
         }
     }
 
-    /// A string literal, an f-string's holes evaluated.
-    fn string(&self, at: At, s: TsNode, depth: u32) -> Built {
+    /// A string literal, an f-string's holes evaluated: one value for each the holes can hold.
+    fn string(&self, at: At, s: TsNode, depth: u32) -> Vec<Built> {
         let parts: Vec<TsNode> = named_children(s);
         if !parts.iter().any(|p| p.kind() == "interpolation") {
-            return lit(&unquote(text(s, &at.m.src)));
+            return vec![lit(&unquote(text(s, &at.m.src)))];
         }
         let mut out: Vec<Built> = vec![vec![]];
         for p in parts {
@@ -138,7 +138,7 @@ impl<'a> Eval<'a> {
             };
             out = cross(&out, &piece, "");
         }
-        out.into_iter().next().unwrap_or_default()
+        out
     }
 
     fn name(&self, at: At, e: TsNode, depth: u32) -> Vec<Built> {

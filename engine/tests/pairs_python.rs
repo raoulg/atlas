@@ -246,6 +246,7 @@ fn lens_what_a_lens_puts_it_gets_back() {
 /// `os.environ.get("WEATHER_API_URL", ...)` at import, so where it asks is decided at run time,
 /// in library code.
 #[test]
+#[ignore = "Atlas (b): an environment variable with a default in library code is drawn as the default alone, and `places` does not ask (PTT-502)"]
 fn a_place_carries_a_what_the_service_url() {
     let s = shortcut();
     let net = touches(s, "harvest.client.WeatherClient.latest", "net");

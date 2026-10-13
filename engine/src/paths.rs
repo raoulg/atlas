@@ -43,7 +43,7 @@ pub fn route_matches(route: &str, path: &str) -> bool {
 /// The path a request may ask of another part's route: one sent to the machine it runs on
 /// (`http://localhost:8000/api/items/{id}`), or to a host the code does not say, a value the
 /// URL starts with (`{BASE}/api/items/{id}`); without its query. A host the code writes out
-/// that is no local one is another machine's.
+/// that is no local one is another machine's, and a path of nothing but values names no route.
 pub fn asked_path(url: &str) -> Option<String> {
     let rest = match url.find("://") {
         Some(i) => {
@@ -59,7 +59,8 @@ pub fn asked_path(url: &str) -> Option<String> {
         None => url,
     };
     let path = rest.split(['?', '#']).next()?;
-    (path.starts_with('/') && path.len() > 1).then(|| path.to_string())
+    let named = path.split('/').any(|s| !s.is_empty() && !s.contains('{'));
+    (path.starts_with('/') && named).then(|| path.to_string())
 }
 
 /// A request as built: its method, where the operation names one (`get`, `post`), else a hole,
@@ -515,6 +516,7 @@ mod tests {
         assert!(!item("/api/items"));
         assert_eq!(asked_path("/"), None, "the root names no route");
         assert_eq!(asked_path("{url}"), None, "a URL not known at all asks for no path");
+        assert_eq!(asked_path("{endpoint}/{id}"), None, "a path of nothing but values names no route");
         assert_eq!(asked_path("data/raw.csv"), None, "a relative path is a file");
         assert_eq!(method_and_path("POST /v1/orders"), ("POST", "/v1/orders"));
         assert_eq!(method_and_path("/v1/orders"), ("", "/v1/orders"));
