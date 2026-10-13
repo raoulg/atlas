@@ -46,6 +46,18 @@ author; here: why do <code>get_data</code> and <code>plot</code> pick their own 
 the four functions give back? Click a picture to open it.
 </sub></p>
 
+## Check a port
+
+Code gets rewritten in another language: for speed, for one binary to ship, for a team, and more
+and more often by an agent. Tests tell you the port gives the same output. They don't tell you the
+design survived: the same steps, the same values handed between them, the same places. A port can
+pass every test and still have folded five steps into one `main`.
+
+Atlas's rules belong to no language: it draws the program, not the language, so a faithful port
+draws the same picture. Lay the two side by side and every difference is one of two things. Either
+the port drifted (a step gone, a place moved), or the language asks for it (a pandas `DataFrame`
+becomes a `Vec<Month>`). [See the sunspot pipeline ported to Rust.](https://raoulg.github.io/atlas/#port)
+
 ## The mathematics behind it
 
 Atlas draws mathematics. Beneath it lies a small piece of
@@ -54,9 +66,6 @@ shape: data at rest is a box of its kind, a function is an arrow, a route runs f
 places it reaches. Every box and arrow is derived from the code, nothing is guessed, and every
 program is drawn by the same rules. So you need none of the mathematics to read the picture:
 consistent code draws as a consistent picture, and where the picture looks off, so is the code.
-
-The rules don't belong to Python, TypeScript or Rust. The same program in two languages draws the
-same picture, so a port can be laid over its original. Where the pictures differ, the languages do.
 
 <details>
 <summary><b>What is inside</b>, for the mathematically inclined</summary>
@@ -113,7 +122,7 @@ atlas mcp       # the same picture for your coding agent
 ## More
 
 - [**See it**](https://raoulg.github.io/atlas/): the examples, side by side, to click through, and the
-  same program ported to TypeScript and Rust.
+  same program ported to Rust.
 - [**For agents**](docs/llms.txt): what Atlas is for and how an agent should use it, then the design,
   the principles and the guide, written to be read in one go.
 
