@@ -61,27 +61,23 @@ works otherwise.
 
 <h3 align="center">Python, typed</h3>
 <p align="center">
-  <a href="https://raoulg.github.io/atlas/showcase/python-clean.html"><img src="docs/img/showcase/python-clean.png" width="100%" alt="Atlas's picture of the typed Python pipeline: download, load, smooth, Trend.save"></a>
+  <a href="https://raoulg.github.io/atlas/showcase/python-clean-save.html"><img src="docs/img/showcase/python-clean-save.png" width="100%" alt="Atlas's picture of the typed Python pipeline with Trend.save open: draw gives a Figure, which save writes"></a>
 </p>
 
 <h3 align="center">Rust, ported</h3>
 <p align="center">
-  <a href="https://raoulg.github.io/atlas/showcase/rust-clean.html"><img src="docs/img/showcase/rust-clean.png" width="100%" alt="Atlas's picture of the Rust port: the same steps and places, with the command line as a value of its own and the records Month and Smoothed"></a>
+  <a href="https://raoulg.github.io/atlas/showcase/rust-clean.html"><img src="docs/img/showcase/rust-clean.png" width="100%" alt="Atlas's picture of the Rust port with Trend.save open: a drawing area on the file, which draw draws into"></a>
 </p>
 
 The shape is the same: the web, the raw CSV and the figure, and between them `download`, `load`,
-`smooth` and `Trend.save`. The differences are the interesting part. A step gone or a place moved
-would be drift, and Atlas would show where. Here it is the language speaking. Rust parses the
-command line into a value of its own (`Cli · cli`), starts its settings from `Settings.default`,
-since Rust has no default arguments, and hands `Trend.save` the months and their smoothed means as
-two lists of its own records, where Python adds a column to one `DataFrame`. The rest is in the
-types:
+`smooth` and `Trend.save`, open here. The differences are the interesting part. A step gone or a
+place moved would be drift, and Atlas would show where. Here it is the language speaking:
 
 | | Python | Rust |
 |---|---|---|
-| **The values** | a pandas `DataFrame` | the program's own records: `Vec<Month>`, `Vec<Smoothed>` |
-| **The figure** | a matplotlib `Figure`, then saved | drawn by plotters straight into a PNG |
-| **Failing** | no signature says a step may fail | every step that may fail says so: `Result<_, Error>` |
+| **The values** | one pandas `DataFrame`, in and out of `smooth` | the program's own records: `Month · series` in, `Smoothed · smoothed` out |
+| **The figure** | `Trend.draw` gives a `Figure`, and `save` writes it | `save` opens a `DrawingArea` on the file first, and `draw` draws straight into it |
+| **Defaults** | in the signature | a function, `Settings.default`: Rust has no default arguments |
 
 ## The mathematics of your code
 
