@@ -61,10 +61,10 @@ lets it be traced and Atlas does not yet; each gap is an ignored test in `pairs_
 | choices | finding | finding | finding |
 | nothing | finding | finding | finding |
 | layers | finding | finding | finding; gap (b): a call inside a macro's arguments is no step |
-| lens | finding; takes and returns | gap (a): a client held in a field touches no table | gap (a): a connection held in a field touches no table |
+| lens | finding; takes and returns | finding; takes and returns; the tables a store's client runs statements on | finding; takes and returns; the tables a store's connection runs statements on |
 | a place carries a what | a file's path; gap (a): no URL is carried to its request | a file's path, a request's host | the type a step gives; gap (a): no URL is carried, a program named by a constant |
 | a route ends at a visible place | the places a route reaches; gap (b): a call not followed is no step | gap (b): a call through a key is no step | gap (a): a request on a client held in a field |
-| zoom by base type and composition | inherits and has edges; gap (a): what a base method is handed does not reach the overrides | inherits and has edges; gap (a): the same | inherits and has edges; gap (a): a value bound by a match has no type |
+| zoom by base type and composition | inherits and has edges; what a base's method is handed reaches its overrides | inherits and has edges; the member a parameter is runs | inherits and has edges; a unit struct named is built, a matched value has its variant's type |
 | a type comes from a step | ty | gap (b): a cast (`as Config`) reads as a step's type | forbidden: no cast between unrelated types |
 
 Blind in all three: a statement with its values spliced in (`f"INSERT INTO t VALUES ({x})"`) names

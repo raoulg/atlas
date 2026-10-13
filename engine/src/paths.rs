@@ -243,6 +243,15 @@ pub trait Handing {
     fn callee(&self) -> &str;
     /// What the call hands parameter `p`; none when it leaves `p` out.
     fn hands(&self, p: &str) -> Option<Vec<Built>>;
+    /// The caller's parameter the call is made on, when it is one: `exporter` in
+    /// `exporter.write(..)`.
+    fn on(&self) -> Option<&str> {
+        None
+    }
+    /// The class of what the call hands parameter `p`, where the code says it: `new CsvExporter()`.
+    fn class_handed(&self, _p: &str) -> Option<String> {
+        None
+    }
 }
 
 /// Each parameter of `b` replaced by what `value` says it holds, over every combination.
@@ -273,18 +282,25 @@ pub enum Whole {
 /// A parameter a call leaves out holds its `default`; so does one of a function nobody in the
 /// program calls (an entry's declared defaults), which otherwise holds what its users hand it,
 /// unknown. An entry the program also calls is run by its users as well.
-pub fn at_callers<H: Handing>(calls: &[H], default: &dyn Fn(&str, &str) -> Vec<Built>, entry: &dyn Fn(&str) -> bool, f: &str, b: &Built, depth: u32) -> Vec<(Whole, Built)> {
+pub fn at_callers<H: Handing>(calls: &[H], family: &crate::builder::Family, default: &dyn Fn(&str, &str) -> Vec<Built>, entry: &dyn Fn(&str) -> bool, f: &str, b: &Built, depth: u32) -> Vec<(Whole, Built)> {
+    callers_of(calls, family, default, entry, f, b, None, depth)
+}
+
+/// `at_callers`, keeping to the calls of `f` that hand its parameter `only.0` a value that is an
+/// `only.1`, or one the code does not say: the member of a family a call on that parameter runs.
+#[allow(clippy::too_many_arguments)]
+fn callers_of<H: Handing>(calls: &[H], family: &crate::builder::Family, default: &dyn Fn(&str, &str) -> Vec<Built>, entry: &dyn Fn(&str) -> bool, f: &str, b: &Built, only: Option<(&str, &str)>, depth: u32) -> Vec<(Whole, Built)> {
     // what an object holds is what the callers of the function that set it up hand that function:
     // whole where that is, unless `f`'s own callers still have to hand the rest
     if let Some((g, p)) = b.iter().find_map(|s| match s {
         Seg::Held(g, p) => Some((g.clone(), p.clone())),
         _ => None,
     }) {
-        let held = if depth > DEPTH { vec![(Whole::In(f.to_string()), hole(&p))] } else { at_callers(calls, default, entry, &g, &vec![Seg::Param(p.clone())], depth + 1) };
+        let held = if depth > DEPTH { vec![(Whole::In(f.to_string()), hole(&p))] } else { at_callers(calls, family, default, entry, &g, &vec![Seg::Param(p.clone())], depth + 1) };
         let mut out = vec![];
         for (w, v) in held {
             for x in fill(b, &g, &p, &v) {
-                for (w2, y) in at_callers(calls, default, entry, f, &x, depth + 1) {
+                for (w2, y) in at_callers(calls, family, default, entry, f, &x, depth + 1) {
                     // whole where both are: a route reaches the one that built the object and the
                     // one that handed `f` the rest
                     let both = match (&w, w2) {
@@ -308,14 +324,36 @@ pub fn at_callers<H: Handing>(calls: &[H], default: &dyn Fn(&str, &str) -> Vec<B
         d if d.is_empty() => vec![hole(p)],
         d => d,
     };
-    let sites: Vec<&H> = calls.iter().filter(|a| a.callee() == f).collect();
+    // a call of a method `f` overrides is a call of `f`, handing its parameters by place
+    let none = vec![];
+    let theirs = |named: Option<&Vec<(String, String)>>, p: &str| -> Option<String> {
+        match named {
+            None => Some(p.to_string()),
+            Some(named) => named.iter().find(|(own, _)| own == p).map(|(_, theirs)| theirs.clone()),
+        }
+    };
+    let sites: Vec<(&H, Option<&Vec<(String, String)>>)> = calls
+        .iter()
+        .filter(|a| a.callee() == f)
+        .map(|a| (a, None))
+        .chain(family.overrides.get(f).unwrap_or(&none).iter().flat_map(|(base, named)| calls.iter().filter(move |a| a.callee() == base).map(move |a| (a, Some(named)))))
+        .filter(|(a, named)| match only {
+            Some((p, class)) => theirs(*named, p).and_then(|q| a.class_handed(&q)).map_or(true, |k| family.is_a(&k, class)),
+            None => true,
+        })
+        .collect();
     if sites.is_empty() || depth > DEPTH {
         return substitute(b, unknown).into_iter().map(|x| (Whole::In(f.to_string()), x)).collect();
     }
     let mut out: Vec<(Whole, Built)> = if entry(f) { substitute(b, unknown).into_iter().map(|x| (Whole::Users(f.to_string()), x)).collect() } else { vec![] };
-    for a in sites {
-        for x in substitute(b, |p| a.hands(p).filter(|v| !v.is_empty()).unwrap_or_else(|| unknown(p))) {
-            out.extend(at_callers(calls, default, entry, a.caller(), &x, depth + 1));
+    for (a, named) in sites {
+        let hands = |p: &str| theirs(named, p).and_then(|q| a.hands(&q));
+        // through a base's method called on a parameter, the callers that hand that parameter
+        // decide which member runs: the one `f` is a method of
+        let class = f.rsplit_once('.').map_or("", |(c, _)| c);
+        let next = named.and(a.on()).map(|q| (q, class));
+        for x in substitute(b, |p| hands(p).filter(|v| !v.is_empty()).unwrap_or_else(|| unknown(p))) {
+            out.extend(callers_of(calls, family, default, entry, a.caller(), &x, next, depth + 1));
             if out.len() >= COMPLETIONS {
                 return out;
             }
@@ -346,11 +384,11 @@ pub type Waiting = (String, crate::model::Touch, Vec<Built>);
 pub type Completed = (String, crate::model::Touch, Vec<(Whole, Built)>);
 
 /// Complete the waiting calls through their callers; `entry` says which functions are entries.
-pub fn complete<H: Handing>(calls: Vec<Waiting>, handing: &[H], default: &dyn Fn(&str, &str) -> Vec<Built>, entry: &dyn Fn(&str) -> bool) -> Vec<Completed> {
+pub fn complete<H: Handing>(calls: Vec<Waiting>, handing: &[H], family: &crate::builder::Family, default: &dyn Fn(&str, &str) -> Vec<Built>, entry: &dyn Fn(&str) -> bool) -> Vec<Completed> {
     calls
         .into_iter()
         .map(|(f, t, built)| {
-            let found = built.iter().flat_map(|b| at_callers(handing, default, entry, &f, b, 0)).collect();
+            let found = built.iter().flat_map(|b| at_callers(handing, family, default, entry, &f, b, 0)).collect();
             (f, t, found)
         })
         .collect()

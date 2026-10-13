@@ -284,7 +284,6 @@ fn a_place_carries_a_what_files_named_in_a_config_dict() {
 /// The clean report file is the directory the entry hands down to the base's `export`, which
 /// writes through `self.write`, the override of the exporter it runs on.
 #[test]
-#[ignore = "Atlas (a): a call on the receiver to a base method (`self.write(..)`) does not hand its arguments to the overrides it reaches"]
 fn a_place_carries_a_what_the_report_file_through_the_exporter_base() {
     for o in ["harvest.export.JsonExporter.write", "harvest.export.CsvExporter.write"] {
         let w = touches(clean(), o, "disk_write");

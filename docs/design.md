@@ -194,7 +194,10 @@ Three things make `F` honest, and each is an engine task:
    set in the constructor or declared as a parameter property, and a Rust field as the
    struct literals that build its type set it (`Self { root }` in `new(root)`). That is carried
    out one call at a time, through each caller's own parameters in turn, so two parameters a
-   call hands together stay together; where a call leaves a parameter out it holds its
+   call hands together stay together. A call of a method a family's member overrides is a call
+   of that member, handing its parameters by place (`exporter.write(report, file)` reaches
+   `CsvExporter.write`); made on a parameter, it runs the member the caller hands
+   (`exportReport(new CsvExporter(), CSV_REPORT)`). Where a call leaves a parameter out it holds its
    declared default, and an entry nobody calls holds what it is run with (`@click.option(..,
    default=..)`). A reader evaluates an expression in its own syntax (Rust: literals,
    `const`s, `format!`, `Path::new`, `.join`, `.with_extension`, what a function of the

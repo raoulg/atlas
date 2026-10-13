@@ -863,7 +863,8 @@ fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crate_ids:
     // a path or a statement built from a function's parameters is whole where its callers hand them
     let handing: Vec<Evaluated> = args.iter().map(|arg| Evaluated { arg, eval: &eval }).collect();
     let entry = |f: &str| store.nodes.get(f).map_or(false, |n| n.entry.is_some());
-    let completed = crate::paths::complete(waiting, &handing, &|_, _| vec![], &entry);
+    let family = store.family();
+    let completed = crate::paths::complete(waiting, &handing, &family, &|_, _| vec![], &entry);
     crate::paths::place_calls(store, completed);
 }
 
@@ -1013,7 +1014,7 @@ fn link_calls<'t>(modules: &'t IndexMap<String, Module>, store: &mut GraphBuilde
     let mut steps = Steps::new(body, &m.src, &CHOICES);
     let read = {
         let mut b = Body::new(modules, store, crate_ids, eval, m, &n, d, body);
-        for c in evaluation_order(walk(body, &["call_expression", "struct_expression"])) {
+        for c in evaluation_order(walk(body, &["call_expression", "struct_expression", "identifier", "scoped_identifier"])) {
             b.call(&mut steps, c);
         }
         b.read
@@ -1127,6 +1128,7 @@ impl<'a, 't> Body<'a, 't> {
         let mut b = Body { modules, store, crate_ids, eval, m, src: &m.src, id: n.id.clone(), def: d, params, cls, locals: HashMap::new(), made_by: HashMap::new(), attr_types, foreign: HashMap::new(), read: Read::default() };
         b.parameters(d);
         b.lets(body);
+        b.patterns(body);
         // a macro that prints shows the human something
         for mac in walk(body, &["macro_invocation"]) {
             let name = mac.child_by_field_name("macro").map(|x| text(x, b.src)).unwrap_or("");
@@ -1178,6 +1180,50 @@ impl<'a, 't> Body<'a, 't> {
                 self.locals.insert(pname, r);
             }
         }
+    }
+
+    /// The names a pattern binds hold the types its struct or enum variant declares for them:
+    /// `Command::Report { format, .. }` binds `format` to the `Format` the variant's field is.
+    fn patterns(&mut self, body: TsNode<'t>) {
+        let src = self.src;
+        for p in walk(body, &["struct_pattern"]) {
+            let Some(fields) = self.declared_fields(&path_parts(p.child_by_field_name("type"), src)) else { continue };
+            for f in named_children(p).into_iter().filter(|f| f.kind() == "field_pattern") {
+                // `format` binds the field, `format: f` binds `f`
+                let Some(field) = f.child_by_field_name("name").map(|x| text(x, src)) else { continue };
+                let bound = match f.child_by_field_name("pattern") {
+                    Some(x) if x.kind() == "identifier" => text(x, src),
+                    Some(_) => continue,
+                    None => field,
+                };
+                if let Some((_, class)) = fields.iter().find(|(n, _)| n == field) {
+                    self.locals.insert(bound.to_string(), class.clone());
+                }
+            }
+        }
+    }
+
+    /// The program's classes a struct pattern's fields hold, by field: a struct's, or an enum
+    /// variant's (`Command::Report`), read where the enum declares it.
+    fn declared_fields(&self, parts: &[String]) -> Option<Vec<(String, String)>> {
+        if let Some(r) = self.resolve(parts).filter(|r| !r.starts_with("ext:")).and_then(|r| self.class_of(&r)) {
+            return self.store.classes.get(&r).map(|c| c.attr_types.clone().into_iter().collect());
+        }
+        let (variant, owner) = parts.split_last()?;
+        let e = self.resolve(owner).filter(|r| !r.starts_with("ext:")).and_then(|r| self.class_of(&r))?;
+        let n = self.store.nodes.get(&e)?;
+        let home = self.modules.get(&n.module)?;
+        let item = def_node(home, n).filter(|d| d.kind() == "enum_item")?;
+        let v = walk(item, &["enum_variant"]).into_iter().find(|v| v.child_by_field_name("name").map(|x| text(x, &home.src)) == Some(variant.as_str()))?;
+        let list = v.child_by_field_name("body").filter(|b| b.kind() == "field_declaration_list")?;
+        let class = |t: Vec<String>| resolve(home, &t, self.modules, &self.store.nodes, self.crate_ids).filter(|r| !r.starts_with("ext:")).and_then(|r| self.class_of(&r));
+        Some(
+            named_children(list)
+                .into_iter()
+                .filter(|f| f.kind() == "field_declaration")
+                .filter_map(|f| Some((text(f.child_by_field_name("name")?, &home.src).to_string(), type_names(f.child_by_field_name("type"), &home.src).into_iter().find_map(class)?)))
+                .collect(),
+        )
     }
 
     /// Locals assigned from a constructor, a struct literal, or a function with a typed return;
@@ -1266,6 +1312,9 @@ impl<'a, 't> Body<'a, 't> {
         if c.kind() == "struct_expression" {
             return self.literal(steps, c);
         }
+        if matches!(c.kind(), "identifier" | "scoped_identifier") {
+            return self.unit(steps, c);
+        }
         let Some(f) = c.child_by_field_name("function") else { return };
         self.handed_on(steps, c);
         if f.kind() == "field_expression" {
@@ -1279,6 +1328,31 @@ impl<'a, 't> Body<'a, 't> {
     fn literal(&self, steps: &mut Steps, c: TsNode<'t>) {
         let Some(r) = self.resolve(&path_parts(c.child_by_field_name("name"), self.src)).filter(|r| !r.starts_with("ext:")).and_then(|r| self.class_of(&r)) else { return };
         let step = Step { hands: self.hands(&[c.child_by_field_name("body")], &steps.kept), gives: self.gives(c, Some(&r)), ..Default::default() };
+        steps.call(c, &r, EdgeKind::Instantiates, None, step);
+    }
+
+    /// `Markdown`, named where a value goes: a unit struct named as a value is a value of it,
+    /// built.
+    fn unit(&self, steps: &mut Steps, c: TsNode<'t>) {
+        let src = self.src;
+        let is = |p: TsNode, field: &str| p.child_by_field_name(field).map(|v| v.id()) == Some(c.id());
+        let value = c.parent().map_or(false, |p| match p.kind() {
+            "arguments" | "return_expression" | "array_expression" | "tuple_expression" | "reference_expression" => true,
+            "let_declaration" | "field_initializer" | "match_arm" => is(p, "value"),
+            "assignment_expression" => is(p, "right"),
+            "block" => p.named_child(p.named_child_count().saturating_sub(1)).map(|x| x.id()) == Some(c.id()),
+            _ => false,
+        });
+        // a unit struct's name cannot be bound by a pattern: it is the struct wherever it is in scope
+        if !value {
+            return;
+        }
+        let Some(r) = self.resolve(&path_parts(Some(c), src)).filter(|r| !r.starts_with("ext:")).and_then(|r| self.class_of(&r)) else { return };
+        // a struct with fields, or an enum, is no value by its name alone
+        if self.store.classes.get(&r).map_or(false, |k| !k.fields.is_empty() || !k.variants.is_empty()) {
+            return;
+        }
+        let step = Step { gives: self.gives(c, Some(&r)), ..Default::default() };
         steps.call(c, &r, EdgeKind::Instantiates, None, step);
     }
 

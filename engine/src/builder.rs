@@ -20,6 +20,31 @@ pub struct ClassInfo {
     pub variants: Vec<Vec<String>>,
 }
 
+/// What the program's classes say of one another: the methods each method overrides, each with
+/// the method's parameters named as the base's at the same place, and the classes each class
+/// inherits from.
+#[derive(Default)]
+pub struct Family {
+    pub overrides: HashMap<String, Vec<(String, Vec<(String, String)>)>>,
+    pub bases: HashMap<String, Vec<String>>,
+}
+
+impl Family {
+    /// Whether `class` is `of` or inherits from it.
+    pub fn is_a(&self, class: &str, of: &str) -> bool {
+        let (mut todo, mut seen) = (vec![class], HashSet::new());
+        while let Some(c) = todo.pop() {
+            if c == of {
+                return true;
+            }
+            if seen.insert(c) {
+                todo.extend(self.bases.get(c).into_iter().flatten().map(String::as_str));
+            }
+        }
+        false
+    }
+}
+
 #[derive(Default, Clone, Debug)]
 pub struct SigInfo {
     pub ptypes: Vec<Vec<String>>,
@@ -89,6 +114,31 @@ impl GraphBuilder {
         if !n.instead.iter().any(|x| x.kind == t.kind && x.what == t.what && x.op == t.op && x.line == t.line) {
             n.instead.push(Touch { n: 1, by: vec![], users_of: vec![], ..t });
         }
+    }
+
+    /// The classes the program's classes inherit from, and the methods each method overrides
+    /// through them, each with the method's parameters named as the base's at the same place.
+    pub fn family(&self) -> Family {
+        let mut family = Family::default();
+        for e in self.edges.iter().filter(|e| e.kind == EdgeKind::Inherits) {
+            family.bases.entry(e.src.clone()).or_default().push(e.dst.clone());
+        }
+        for n in self.nodes.values().filter(|n| n.kind == NodeKind::Method) {
+            let Some(cls) = n.cls.as_deref() else { continue };
+            let (mut todo, mut seen) = (family.bases.get(cls).cloned().unwrap_or_default(), HashSet::new());
+            while let Some(b) = todo.pop() {
+                if !seen.insert(b.clone()) {
+                    continue;
+                }
+                let base = format!("{b}.{}", n.name);
+                if let Some(m) = self.nodes.get(&base).filter(|m| m.kind == NodeKind::Method) {
+                    let named = n.params.iter().zip(&m.params).map(|(own, theirs)| (own.name.clone(), theirs.name.clone())).collect();
+                    family.overrides.entry(n.id.clone()).or_default().push((base, named));
+                }
+                todo.extend(family.bases.get(&b).cloned().unwrap_or_default());
+            }
+        }
+        family
     }
 
     /// A request `id` makes whole that no route of its part serves.

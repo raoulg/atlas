@@ -130,7 +130,6 @@ fn zoom_a_family_is_a_base_type_with_its_kinds() {
 /// values a `match` arm binds (`Command::Report { format, open }`) have the types the variant
 /// declares, so `format.renderer()` is a call of `Format::renderer`.
 #[test]
-#[ignore = "Atlas (a): a value bound by a match pattern has no type, so a method called on it is no step"]
 fn composition_a_method_on_a_matched_value_is_a_step() {
     let c = clean();
     assert!(edge(c, EdgeKind::Calls, "spend.main", "spend.Format.renderer"), "{:?}", targets(c, EdgeKind::Calls, "spend.main"));
@@ -139,7 +138,6 @@ fn composition_a_method_on_a_matched_value_is_a_step() {
 /// Zoom is a quotient by base type, and a route opens the family at the kinds it builds. In Rust a
 /// unit struct is built by naming it: `Box::new(Markdown)` makes a `Markdown`.
 #[test]
-#[ignore = "Atlas (a): a unit struct named as a value (`Box::new(Markdown)`) is no construction"]
 fn zoom_a_unit_struct_named_as_a_value_is_built() {
     let c = clean();
     let built = targets(c, EdgeKind::Instantiates, "spend.Format.renderer");

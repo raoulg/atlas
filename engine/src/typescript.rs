@@ -1307,7 +1307,8 @@ fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, repo: &Pat
     }
     let handing: Vec<paths::Evaluated> = linked.args.iter().map(|arg| paths::Evaluated { arg, eval: &eval }).collect();
     let entry = |f: &str| store.nodes.get(f).map_or(false, |n| n.entry.is_some());
-    let completed = crate::paths::complete(linked.calls, &handing, &|_, _| vec![], &entry);
+    let family = store.family();
+    let completed = crate::paths::complete(linked.calls, &handing, &family, &|_, _| vec![], &entry);
     crate::paths::place_calls(store, completed);
 }
 
@@ -1704,7 +1705,8 @@ impl<'a, 't> Body<'a, 't> {
                 let kind = if self.store.nodes[&t].kind == NodeKind::Class { EdgeKind::Instantiates } else { EdgeKind::Calls };
                 steps.call(c, &t, kind, None, Step { on, on_receiver, hands, gives: self.gives(c, Some(&t)) });
                 let callee = if kind == EdgeKind::Instantiates { format!("{t}.constructor") } else { t.clone() };
-                if let Some(a) = argument(self.modules, self.store, &self.id, &callee, c, self.m, self.scope, &self.params) {
+                if let Some(mut a) = argument(self.modules, self.store, &self.id, &callee, c, self.m, self.scope, &self.params) {
+                    a.on = object.filter(|o| o.kind() == "identifier").map(|o| text(o, src).to_string()).filter(|o| self.params.contains(o));
                     self.read.args.push(a);
                 }
             }
@@ -1927,7 +1929,9 @@ fn argument<'t>(modules: &'t IndexMap<String, Module>, store: &GraphBuilder, cal
     let cn = store.nodes.get(callee)?;
     let cm = modules.get(&cn.module)?;
     let (s, e) = *cm.bodies.get(callee)?;
-    let def = paths::function_node(cm.tree.root_node().descendant_for_byte_range(s, e)?)?;
+    let at = cm.tree.root_node().descendant_for_byte_range(s, e)?;
+    // a method an interface or an abstract class only declares is its signature
+    let def = if matches!(at.kind(), "method_signature" | "abstract_method_signature") { at } else { paths::function_node(at)? };
     let names = paths::param_names(def, &cm.src);
     let passed = named_children(c.child_by_field_name("arguments")?)
         .into_iter()
@@ -1936,7 +1940,7 @@ fn argument<'t>(modules: &'t IndexMap<String, Module>, store: &GraphBuilder, cal
         .filter(|(_, n)| !n.is_empty())
         .map(|(a, n)| (n, a))
         .collect();
-    Some(Arg { caller: caller.to_string(), callee: callee.to_string(), module: m.id.clone(), scope, params: params.to_vec(), passed })
+    Some(Arg { caller: caller.to_string(), callee: callee.to_string(), module: m.id.clone(), scope, params: params.to_vec(), passed, on: None })
 }
 
 /// The package an `ext:` binding came from, as the module imported it.

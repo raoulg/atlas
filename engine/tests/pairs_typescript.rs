@@ -228,7 +228,6 @@ fn places_decided_in_library_code_show() {
 /// clean exporters write where the command says: the file is handed through the base type's
 /// method, `ReportExporter.write(report, file)`, to the class the command built.
 #[test]
-#[ignore = "Atlas: an argument handed to an interface's method (`exporter.write(report, file)`) does not reach the parameters of the classes that implement it, so the file the command names is not their place"]
 fn places_handed_through_a_base_type_are_named() {
     let c = clean();
     assert_eq!(places(c, "exporters.csv.CsvExporter.write", "disk_write").iter().map(|(a, _)| a.as_str()).collect::<Vec<_>>(), ["out/report.csv"]);

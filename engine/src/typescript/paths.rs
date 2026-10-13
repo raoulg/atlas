@@ -326,6 +326,8 @@ pub(super) struct Arg<'t> {
     pub scope: Option<TsNode<'t>>,
     pub params: Vec<String>,
     pub passed: Vec<(String, TsNode<'t>)>,
+    /// The caller's parameter the call is made on: `exporter` in `exporter.write(..)`.
+    pub on: Option<String>,
 }
 
 /// A call with what it hands each parameter, evaluated in the caller.
@@ -345,5 +347,18 @@ impl crate::paths::Handing for Evaluated<'_, '_> {
         let (_, node) = self.arg.passed.iter().find(|(q, _)| q == p)?;
         let m = self.eval.modules.get(&self.arg.module)?;
         Some(self.eval.of(At { m, scope: self.arg.scope, params: &self.arg.params }, *node, 0))
+    }
+    fn on(&self) -> Option<&str> {
+        self.arg.on.as_deref()
+    }
+    fn class_handed(&self, p: &str) -> Option<String> {
+        let (_, node) = self.arg.passed.iter().find(|(q, _)| q == p)?;
+        let m = self.eval.modules.get(&self.arg.module)?;
+        let name = text(node.child_by_field_name("constructor").filter(|_| node.kind() == "new_expression")?, &m.src);
+        match m.bindings.get(name) {
+            Some(Bound::Own(target)) => Some(target.clone()),
+            Some(Bound::Ext(_)) => None,
+            None => m.symbols.get(name).cloned(),
+        }
     }
 }
