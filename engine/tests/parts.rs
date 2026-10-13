@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use atlas_engine::parts::{analyze_parts, analyze_repo, roots};
 use atlas_engine::repo::Repo;
-use atlas_engine::{EdgeKind, EntryKind, Graph, Options};
+use atlas_engine::{EdgeKind, EntryKind, Graph, NodeKind, Options};
 
 fn fixture() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixture-parts")
@@ -51,6 +51,7 @@ fn a_manifest_no_part_reads_roots_one() {
         ("members/hatched", "python"),
         ("members/poems", "python"),
         ("members/settled", "python"),
+        ("members/single", "python"),
         ("members/spaced", "python"),
         ("members/zoo", "python"),
     ];
@@ -61,19 +62,21 @@ fn a_manifest_no_part_reads_roots_one() {
 /// by the project's name (`zoo-keeper` is `src/zoo_keeper`, though `src/aardvark` sorts first),
 /// a namespace package without an `__init__.py` by its name (`spaced`), by Hatch's `packages`
 /// (`lib/hatched`, though `aaa` sorts first), setuptools' `packages` in its `package-dir`
-/// (`code/settled`) and Poetry's `packages` (`source/verse`). Every other package beside it is a
-/// part after it. The workspace's root holds no code and is no part.
+/// (`code/settled`) and Poetry's `packages` (`source/verse`); a module of one file by the
+/// project's name (`solo.py` in `members/single`). Every other package beside it is a part after
+/// it. The workspace's root holds no code and is no part.
 #[test]
 fn the_manifest_names_the_package() {
     let graphs = analyze_parts(&[manifests()], &Options::default()).unwrap();
     let found: Vec<(String, Vec<String>)> = graphs.iter().map(|g| (g.root.clone(), g.parts.iter().map(|p| p.id.clone()).collect())).collect();
-    let want: [(&str, &[&str]); 8] = [
+    let want: [(&str, &[&str]); 9] = [
         ("keeper", &["keeper"]),
         ("keeper-fuzz", &["keeper-fuzz"]),
         ("deep", &["deep"]),
         ("hatched", &["hatched", "aaa"]),
         ("verse", &["verse"]),
         ("settled", &["settled"]),
+        ("solo", &["solo"]),
         ("spaced", &["spaced"]),
         ("zoo_keeper", &["zoo_keeper", "aardvark", "benchmarks"]),
     ];
@@ -92,6 +95,44 @@ fn a_package_beside_the_package_is_read() {
     assert_eq!(g.node("scripts.morning").and_then(|n| n.entry.as_ref()).map(|e| e.kind), Some(EntryKind::Script));
     assert_eq!(g.node("scripts.morning").unwrap().part, "zoo_keeper", "a script belongs to the package the project is named after");
     assert!(g.node("settled.inner").is_some() && g.node("spaced.tool").is_some());
+}
+
+/// A second package is the project's own as the first is: an import of it is an `imports` edge
+/// (`zoo_keeper.keep` imports `aardvark`, `aardvark` its own `feed`, `aardvark.feed` the first
+/// package's `Animal`), a name it re-exports is followed to where it is defined (`keep` returns
+/// `aardvark.feed.Meal`, not a library's `aardvark.Meal`), and its root offers its doors: the
+/// names in its `__all__` (`Meal`, not `feed`), else its public names (`aaa.first`).
+#[test]
+fn a_second_package_is_the_projects_own() {
+    let g = analyze_repo(&[manifests()], &Options::default()).unwrap();
+    let edge = |kind: EdgeKind, src: &str, dst: &str| g.edges.iter().any(|e| e.kind == kind && e.src == src && e.dst == dst);
+    assert!(edge(EdgeKind::Imports, "zoo_keeper.keep", "aardvark"), "`from aardvark import Meal`");
+    assert!(edge(EdgeKind::Imports, "zoo_keeper.keep", "aardvark.feed.feed"), "`from aardvark.feed import feed`");
+    assert!(edge(EdgeKind::Imports, "aardvark", "aardvark.feed.Meal"), "the second package imports its own module");
+    assert!(edge(EdgeKind::Imports, "aardvark.feed", "zoo_keeper.Animal"), "the second package imports from the first");
+    assert!(edge(EdgeKind::Returns, "zoo_keeper.keep.keep", "aardvark.feed.Meal"));
+    assert!(g.node("ext:aardvark.Meal").is_none(), "a package of the project's own is no library");
+    let export = |id: &str| g.node(id).and_then(|n| n.entry.as_ref()).filter(|e| e.kind == EntryKind::Export).map(|e| e.label.clone());
+    assert_eq!(export("aardvark.feed.Meal").as_deref(), Some("Meal"), "named in `__all__`");
+    assert_eq!(export("aardvark.feed.feed"), None, "not named in `__all__`");
+    assert_eq!(export("aaa.first").as_deref(), Some("first"), "a root without `__all__` offers its public names");
+}
+
+/// A project whose name names a module of one file (`solo.py`) is a package of that one module:
+/// the package the graph and its part are named after, with no entry of its own, offering its
+/// public names; a script beside it imports from it.
+#[test]
+fn a_single_module_is_a_package() {
+    let g = analyze_repo(&[manifests()], &Options::default()).unwrap();
+    let solo = g.node("solo").unwrap();
+    assert!(solo.kind == NodeKind::Module && solo.is_pkg && solo.entry.is_none(), "a package, not a script");
+    assert_eq!(solo.part, "solo");
+    let entry = |id: &str| g.node(id).and_then(|n| n.entry.as_ref()).map(|e| (e.kind, e.label.clone()));
+    assert_eq!(entry("solo.tune"), Some((EntryKind::Export, "tune".to_string())));
+    assert_eq!(entry("solo._octave"), None);
+    assert_eq!(entry("_root.run"), Some((EntryKind::Script, "run.py".to_string())));
+    assert!(g.edges.iter().any(|e| e.kind == EdgeKind::Imports && e.src == "_root.run" && e.dst == "solo.tune"));
+    assert!(g.node("_root.solo").is_none(), "the module is not read as a script as well");
 }
 
 /// The parts side by side in one graph, every node in its part; checked part by part.

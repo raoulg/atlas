@@ -1,0 +1,9 @@
+# A package of one module: the project's name names `solo.py`, which Hatch builds; `run.py`
+# beside it is a script.
+[project]
+name = "solo"
+version = "0.1.0"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
