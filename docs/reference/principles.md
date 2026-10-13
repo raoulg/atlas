@@ -52,20 +52,20 @@ lets it be traced and Atlas does not yet; each gap is an ignored test in `pairs_
 
 | Principle | Python | TypeScript | Rust |
 |---|---|---|---|
-| doors | finding; `__all__` exports | finding on an untyped export; gap (b): `any` counts as a type | forbidden: every signature is typed |
-| sums | finding; variant edges | traceable (a union alias) | gap (b): a `Result` handed on is not asked |
+| doors | finding; `__all__` exports | finding on an untyped export or one typed `any` | forbidden: every signature is typed |
+| sums | finding; variant edges | traceable (a union alias) | finding; a library's sum handed on (`Result`) is asked |
 | overrides | `keeps` from ty; finding | forbidden: the compiler holds an override to its base | forbidden |
 | places | finding; where the path is made whole | finding; where the path is made whole | finding; where the path is made whole |
 | changes | mutates edge; finding | mutates edge; finding | forbidden: a change is `&mut` in the signature |
-| gives | finding; the call not followed | no returns edge | returns edge; gap (a): `Result<T, E>` read as giving `E` |
+| gives | finding; the call not followed | no returns edge; `uses` on the call | returns edge; `Result<T, E>` gives `T` |
 | choices | finding | finding | finding |
 | nothing | finding | finding | finding |
-| layers | finding | finding | finding; gap (b): a call inside a macro's arguments is no step |
+| layers | finding | finding | finding; a call among a macro's tokens is a step |
 | lens | finding; takes and returns | finding; takes and returns; the tables a store's client runs statements on | finding; takes and returns; the tables a store's connection runs statements on |
-| a place carries a what | a file's path, a request's host | a file's path, a request's host | the type a step gives, a request's host; gap (a): a program named by a constant |
-| a route ends at a visible place | the places a route reaches; gap (b): a call not followed is no step | gap (b): a call through a key is no step | the places a route reaches, through a client held in a field |
+| a place carries a what | a file's path, a request's host | a file's path, a request's host | the type a step gives, a request's host, a program by its constant's value |
+| a route ends at a visible place | the places a route reaches; a call not followed is a step | the places a route reaches; a call through a key is a step | the places a route reaches, through a client held in a field |
 | zoom by base type and composition | inherits and has edges; what a base's method is handed reaches its overrides | inherits and has edges; the member a parameter is runs | inherits and has edges; a unit struct named is built, a matched value has its variant's type |
-| a type comes from a step | ty | gap (b): a cast (`as Config`) reads as a step's type | forbidden: no cast between unrelated types |
+| a type comes from a step | ty | a step's return; a cast (`as Config`) is no step's type | forbidden: no cast between unrelated types |
 
 Blind in all three: a statement with its values spliced in (`f"INSERT INTO t VALUES ({x})"`) names
 the same table, the same way, as one that binds them.
