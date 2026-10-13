@@ -11,7 +11,7 @@ one picture per construct, so that pointing at a box and saying "this should not
 exist" is a statement both sides can act on, and so that the agent can see what the
 human means from where the human is pointing.
 
-The rigorous half and the visual half are the same structure. Read `docs/design.md`
+The rigorous half and the visual half are the same structure. Read `docs/reference/design.md`
 §0 before changing either.
 
 ## The shared language, in six sentences
@@ -82,7 +82,7 @@ The rigorous half and the visual half are the same structure. Read `docs/design.
   must report no view that throws, draws nothing, or opens a family into other moments.
 - `atlas check .` must find nothing on Atlas itself (`engine/tests/principles.rs` pins it).
   A new principle is a rule in `engine/src/principles.rs`, a case in the fixture, a clean and a
-  sloppy case in the pairs, and a section in `docs/principles.md`; it checks what the graph
+  sloppy case in the pairs, and a section in `docs/reference/principles.md`; it checks what the graph
   holds, never a project.
 - tree-sitter is pinned to the 0.25 crate line; `tree-sitter-python` 0.25,
   `tree-sitter-rust` 0.24, `tree-sitter-typescript` 0.23.

@@ -93,9 +93,9 @@ fn atlas_obeys_its_principles() {
 /// The docs explain every principle the engine checks.
 #[test]
 fn every_principle_is_explained() {
-    let docs = std::fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../docs/principles.md")).expect("docs/principles.md");
+    let docs = std::fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../docs/reference/principles.md")).expect("docs/reference/principles.md");
     for p in PRINCIPLES {
-        assert!(docs.contains(&format!("## {}", p.asks)), "docs/principles.md has a section `## {}`", p.asks);
-        assert!(docs.contains(&format!("`{}`", p.id)), "docs/principles.md names the id `{}`", p.id);
+        assert!(docs.contains(&format!("## {}", p.asks)), "docs/reference/principles.md has a section `## {}`", p.asks);
+        assert!(docs.contains(&format!("`{}`", p.id)), "docs/reference/principles.md names the id `{}`", p.id);
     }
 }

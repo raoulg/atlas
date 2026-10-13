@@ -4,7 +4,7 @@
 //! is the same program as it is written under time pressure. Each side is read as a repository of
 //! its own, so a node has the same id on both sides where the shortcut keeps the shape.
 //!
-//! Each test is named after a general principle (`docs/principles.md`, or the shared language in
+//! Each test is named after a general principle (`docs/reference/principles.md`, or the shared language in
 //! `CLAUDE.md`) and states three things: the clean side reads as the algebra says, the shortcut
 //! shows as a shortcut, and the shortcut is still in the graph. A statement Atlas does not meet
 //! yet is a test of its own, ignored with what Atlas gets wrong: `cargo test --test pairs_rust --
@@ -375,7 +375,7 @@ fn sums_a_choice_is_made_where_it_arises() {
 }
 
 /// A sum type is unwrapped where it arises: a function that takes a `Result` has received a
-/// choice its caller should have made (docs/principles.md, Rust).
+/// choice its caller should have made (docs/reference/principles.md, Rust).
 #[test]
 fn sums_a_result_handed_on_is_asked() {
     assert!(!found(shortcut(), "sums").is_empty());

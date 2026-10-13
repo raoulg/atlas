@@ -1,0 +1,20 @@
+# Atlas
+
+> Atlas reads code (Python, Rust, TypeScript) into a graph of places where data rests, functions as arrows between them, and routes from entry points to places; it draws that graph, and `atlas check` asks ten design principles of it. A human and a coding agent share the picture: pointing at a box is a statement both can act on. Atlas never guesses: a place, a type or a call the code does not say is drawn as one it does not say.
+
+The documents below are written to be read whole. Start with the design's first section, the shared language.
+
+## Docs
+
+- [Design](https://raw.githubusercontent.com/raoulg/atlas/main/docs/reference/design.md): the shared language (places, arrows, composition, zoom as a quotient, filters as fibers), the algebra, how each language is read, and the views.
+- [Principles](https://raw.githubusercontent.com/raoulg/atlas/main/docs/reference/principles.md): the ten principles `atlas check` asks, each with its reasoning, its idioms, and what each language lets Atlas trace.
+- [Guide](https://raw.githubusercontent.com/raoulg/atlas/main/docs/reference/guide.md): how to read the picture, what Atlas reads in each language, entry points, `check`, `changes` and the MCP tools.
+
+## Use
+
+- `atlas view [repo]` draws a repository as one HTML file; `atlas check [repo] --json` gives the findings; `atlas changes [rev]` what an edit did to the routes; `atlas mcp` serves the tools `principles`, `check`, `explain`, `routes`, `route`, `view` and `changes` over stdio.
+
+## Optional
+
+- [The pairs](https://github.com/raoulg/atlas/tree/main/engine/tests/pairs): the same programs written carefully and carelessly, the tests that state what Atlas shows of each.
+- [README](https://raw.githubusercontent.com/raoulg/atlas/main/README.md)

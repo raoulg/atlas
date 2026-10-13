@@ -3,7 +3,7 @@
 //! A finding names its principle, the symbol it is about, the evidence the graph holds and a
 //! question for the author. It coaches; it does not fix. Atlas sees types, routes and places,
 //! so these are the principles that live there; what a single line should look like belongs
-//! to ruff, pyright and clippy. `docs/principles.md` explains each one.
+//! to ruff, pyright and clippy. `docs/reference/principles.md` explains each one.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::path::Path;
@@ -48,8 +48,8 @@ pub struct Finding {
     pub question: String,
 }
 
-/// `docs/principles.md`, the explanation of every principle, carried in the binary.
-const DOCS: &str = include_str!("../../docs/principles.md");
+/// `docs/reference/principles.md`, the explanation of every principle, carried in the binary.
+const DOCS: &str = include_str!("../../docs/reference/principles.md");
 
 /// A principle's section of the docs: what it asks, why, its PEP or Rust idiom, how Atlas
 /// sees it, an example.
