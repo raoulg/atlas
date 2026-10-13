@@ -1,4 +1,4 @@
-//! One program written four ways: web → data → preprocess → figure. It downloads SILSO's monthly
+//! One program written five ways: web → data → preprocess → figure. It downloads SILSO's monthly
 //! mean sunspot numbers (`https://www.sidc.be/SILSO/DATA/SN_m_tot_V2.0.csv`), keeps the raw file at
 //! `data/raw/sunspots.csv`, loads it with a date per month and without the months that have no
 //! mean (`-1`), smooths it with a 13-month rolling mean, and saves a line chart at
@@ -16,20 +16,28 @@
 //! - `typescript/` as a TypeScript developer writes it: a command in `bin` that names the URL and
 //!   the files and hands them down, typed records (`Month`, `Smoothed`, `Settings`), `fetch` and
 //!   `node:fs`, and the figure drawn as an SVG document with d3's scales and lines and written as
-//!   text.
+//!   text;
+//! - `rust-clean/` as a Rust developer writes it, the port of `python-clean/` and `typescript/`: a
+//!   library crate whose root re-exports its steps and records (`Month`, `Smoothed`, `Settings`),
+//!   the raw file read into serde records through the csv crate, a `Plot` trait whose `Trend`
+//!   draws through plotters, an error type that every step that may fail gives in its `Result`,
+//!   and a binary whose `main` parses its options with clap, names the URL and hands the files
+//!   down.
 //!
-//! From outside the four are the same program: they reach the same places. Inside, Atlas lays bare
+//! From outside the five are the same program: they reach the same places. Inside, Atlas lays bare
 //! what differs: what the language repairs (types, what a function gives back) and what it cannot
-//! (where data lives, where a choice is made, a value shared through a global). A statement Atlas
-//! does not meet yet is a test of its own, ignored with what Atlas gets wrong: (a) where it misreads
-//! code that is fine, (b) where it drops a shortcut or draws it as if it were clean.
+//! (where data lives, where a choice is made, a value shared through a global). The three clean
+//! versions are one port, each written well, so what differs between them is the language's doing.
+//! A statement Atlas does not meet yet is a test of its own, ignored with what Atlas gets wrong:
+//! (a) where it misreads code that is fine, (b) where it drops a shortcut or draws it as if it were
+//! clean.
 
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::sync::OnceLock;
 
 use atlas_engine::principles::check;
-use atlas_engine::{analyze, EdgeKind, EntryKind, Graph, Held, Node, Options, Site, Touch, World};
+use atlas_engine::{analyze, EdgeKind, EntryKind, Graph, Held, Node, NodeKind, Options, Site, Touch, World};
 
 fn read(version: &str) -> Graph {
     analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/pipeline").join(version), &Options::default()).unwrap()
@@ -53,6 +61,11 @@ fn rust() -> &'static Graph {
 fn typescript() -> &'static Graph {
     static G: OnceLock<Graph> = OnceLock::new();
     G.get_or_init(|| read("typescript"))
+}
+
+fn rust_clean() -> &'static Graph {
+    static G: OnceLock<Graph> = OnceLock::new();
+    G.get_or_init(|| read("rust-clean"))
 }
 
 fn node<'g>(g: &'g Graph, id: &str) -> &'g Node {
@@ -91,6 +104,11 @@ fn types(hs: &[Held]) -> Vec<&str> {
 /// The names the body keeps those values by.
 fn names(hs: &[Held]) -> Vec<&str> {
     hs.iter().map(|h| h.name.as_str()).collect()
+}
+
+/// Whether a type is one of the program's own.
+fn own(g: &Graph, ty: &str) -> bool {
+    g.node(ty).map_or(false, |n| n.kind == NodeKind::Class)
 }
 
 // ---------- the same from outside ----------
@@ -251,6 +269,37 @@ fn the_same_from_outside_typescript_creates_the_parent_of_the_path_handed_in() {
     for (f, dir) in [("typescript.download.download", "data/raw/"), ("typescript.plot.saveSvg", "figures/")] {
         let made: Vec<&Touch> = touches(typescript(), f, "disk_write").into_iter().filter(|t| t.op == "mkdir" && !t.artifact.is_empty()).collect();
         assert!(made.iter().all(|t| t.artifact == dir && t.by == ["typescript.cli.main"]) && !made.is_empty(), "{f}: {made:#?}");
+    }
+}
+
+/// From the clean Rust `main`, the route reaches the program's outside, as from the clean Python
+/// command: `main` names the URL, and clap's `--raw` and `--figure` name the raw file and the
+/// figure with their defaults (`#[arg(long, default_value = RAW)]`).
+#[test]
+#[ignore = "Atlas (a): five forms of the clean Rust are misread, each a test of its own: `download` re-exported under the name of its module, `save` called on the value `Trend::new(..)` gives, clap's `--raw` and `--figure`, a directory bound by `if let`, and the path `download` gives inside `Ok(..)`"]
+fn the_same_from_outside_rust_clean() {
+    assert_eq!(program(rust_clean()), "sunspots.main.main");
+    assert_eq!(outside(rust_clean(), "sunspots.main.main"), the_outside());
+}
+
+/// The clean Rust `load` reads the file the command names: `load(&download(SILSO, &cli.raw)?)`
+/// hands it what `download` gives back, `Ok(to.to_path_buf())`, the path `main` handed `download`.
+#[test]
+#[ignore = "Atlas (a): a path a function gives inside `Ok(..)` is not followed, so `load(&download(..)?)` reads a file the code does not name; the path is lost to clap's `--raw` and to `download` read as its module as well"]
+fn the_same_from_outside_rust_clean_reads_the_path_download_gives_back() {
+    let read = touches(rust_clean(), "sunspots.series.load", "disk_read");
+    assert!(read.iter().any(|t| t.artifact == "data/raw/sunspots.csv" && !t.fixed && t.by == ["sunspots.main.main"]), "{read:#?}");
+}
+
+/// The clean Rust functions create the directory their file goes in:
+/// `if let Some(dir) = to.parent() { fs::create_dir_all(dir)? }` creates the directory of the path
+/// `main` hands in.
+#[test]
+#[ignore = "Atlas (a): a name bound by `if let` (`if let Some(dir) = to.parent()`) is not followed, so the directory `create_dir_all` makes is no place; the paths are lost to clap's options, to `download` read as its module and to `save` called on the value `Trend::new(..)` gives as well"]
+fn the_same_from_outside_rust_clean_creates_the_parent_of_the_path_handed_in() {
+    for (f, dir) in [("sunspots.download.download", "data/raw/"), ("sunspots.plot.Plot.save", "figures/")] {
+        let made: Vec<&Touch> = touches(rust_clean(), f, "disk_write").into_iter().filter(|t| t.op == "create_dir_all" && !t.artifact.is_empty()).collect();
+        assert!(made.iter().all(|t| t.artifact == dir && t.by == ["sunspots.main.main"]) && !made.is_empty(), "{f}: {made:#?}");
     }
 }
 
@@ -561,4 +610,266 @@ fn typescript_main_makes_its_settings() {
     let main = node(typescript(), "typescript.cli.main");
     let made = main.sites.iter().any(|s| s.gives.iter().any(|g| g.name == "settings" && g.ty == "typescript.settings.Settings"));
     assert!(made, "{:#?}", main.sites);
+}
+
+// ---------- Rust, clean ----------
+
+/// The clean Rust version follows every principle: `atlas check` has nothing to ask. The binary's
+/// `main` is the program's way in.
+#[test]
+fn rust_clean_follows_every_principle() {
+    let r = rust_clean();
+    let fs = check(r);
+    assert!(fs.is_empty(), "{:#?}", fs.iter().map(|f| format!("{} {} {}", f.principle, f.node, f.what)).collect::<Vec<_>>());
+    assert_eq!(program(r), "sunspots.main.main");
+}
+
+/// Composition is call order, and every step says what it takes and gives. Rust names the records
+/// the program keeps, as TypeScript does: `load` gives `Month`s, `smooth` takes them and gives
+/// `Smoothed` means, and `main` hands them from step to step by the names it keeps them by.
+/// Creating a value is an arrow into Memory(T): `main` makes its `Settings` from `--months` and the
+/// defaults (`Settings { months: cli.months, ..Settings::default() }`), as Python's
+/// `Settings(months=months)`, and hands them to `smooth` and to the plot. Nothing is changed in
+/// place.
+#[test]
+fn rust_clean_the_records_go_from_step_to_step() {
+    let r = rust_clean();
+    let (month, smoothed, settings) = ("sunspots.series.Month", "sunspots.series.Smoothed", "sunspots.settings.Settings");
+    assert!(edge(r, EdgeKind::Returns, "sunspots.series.load", month));
+    assert!(edge(r, EdgeKind::Takes, "sunspots.series.smooth", month));
+    assert!(edge(r, EdgeKind::Returns, "sunspots.series.smooth", smoothed));
+    for ty in [month, smoothed] {
+        assert!(edge(r, EdgeKind::Takes, "sunspots.plot.Plot.save", ty), "save takes {ty}");
+    }
+    let main = "sunspots.main.main";
+    assert_eq!(names(&step(r, main, settings).gives), ["settings"]);
+    let loading = step(r, main, "sunspots.series.load");
+    assert_eq!((names(&loading.gives), types(&loading.gives)), (vec!["series"], vec![month]));
+    let smoothing = step(r, main, "sunspots.series.smooth");
+    assert_eq!((names(&smoothing.hands), types(&smoothing.hands)), (vec!["series", "settings"], vec![month, settings]));
+    assert_eq!((names(&smoothing.gives), types(&smoothing.gives)), (vec!["smoothed"], vec![smoothed]));
+    assert_eq!(names(&step(r, main, "sunspots.plot.Trend.new").hands), ["settings"]);
+    assert!(r.edges.iter().all(|e| e.kind != EdgeKind::Mutates));
+}
+
+/// Zoom is a quotient by base type: `Trend` is a `Plot` and draws what the trait asks it to, and
+/// the trait's own `save` draws through `draw` before it writes the figure. What the trait's
+/// methods take, its kind takes.
+#[test]
+fn rust_clean_trend_is_a_plot() {
+    let r = rust_clean();
+    assert!(edge(r, EdgeKind::Inherits, "sunspots.plot.Trend", "sunspots.plot.Plot"));
+    assert!(edge(r, EdgeKind::Contains, "sunspots.plot.Trend", "sunspots.plot.Trend.draw"));
+    assert!(edge(r, EdgeKind::Calls, "sunspots.plot.Plot.save", "sunspots.plot.Plot.draw"));
+    for f in ["sunspots.plot.Plot.draw", "sunspots.plot.Trend.draw"] {
+        for ty in ["sunspots.series.Month", "sunspots.series.Smoothed"] {
+            assert!(edge(r, EdgeKind::Takes, f, ty), "{f} takes {ty}");
+        }
+    }
+}
+
+/// Composition is call order: `main` downloads SILSO's file, and `load` is handed the path
+/// `download` gives back. The crate's root re-exports `download` from the module of that name, as
+/// Python's `__init__` and TypeScript's `index.ts` do, so it is a door.
+#[test]
+#[ignore = "Atlas (a): a function re-exported under the name of its module (`mod download; pub use download::download;`) is read as the module: `main` calls the module `sunspots.download`, and the function is no door"]
+fn rust_clean_main_downloads_the_file() {
+    let r = rust_clean();
+    let main = "sunspots.main.main";
+    let pairs = |hs: &[Held]| hs.iter().map(|h| (h.name.clone(), h.ty.clone())).collect::<Vec<_>>();
+    let downloading = step(r, main, "sunspots.download.download");
+    assert_eq!(pairs(&step(r, main, "sunspots.series.load").hands), pairs(&downloading.gives));
+    assert_eq!(node(r, "sunspots.download.download").entry.as_ref().map(|e| e.kind), Some(EntryKind::Export));
+}
+
+/// Zoom is a quotient by base type, and a route opens the family at the kind it builds:
+/// `Trend::new(settings).save(..)` runs the trait's `save` on a `Trend`, handed the series and the
+/// smoothed means, as Python's `Trend(settings).save(frame, figure)` runs `Plot.save` on a `Trend`.
+#[test]
+#[ignore = "Atlas (a): a method called on the value a call gives (`Trend::new(settings).save(..)`) is no step, and a trait's own method called on a value of a kind records no kind it runs on (`on`)"]
+fn rust_clean_main_saves_a_trend() {
+    let saving = step(rust_clean(), "sunspots.main.main", "sunspots.plot.Plot.save");
+    assert_eq!(saving.on, "sunspots.plot.Trend");
+    assert!(names(&saving.hands).contains(&"series") && names(&saving.hands).contains(&"smoothed"), "{:?}", saving.hands);
+}
+
+/// Library code does not decide where data lives: `main` names the URL, clap's `--raw` and
+/// `--figure` name the files with their defaults, and each step is handed its place. Each place is
+/// made whole at `main`.
+#[test]
+#[ignore = "Atlas (a): clap's derived options are not read, so `cli.raw` and `cli.figure` name no file, where typer's `raw: Path = RAW` is read as its default; the places are lost to `download` read as its module and to `save` called on the value `Trend::new(..)` gives as well"]
+fn rust_clean_the_places_are_made_whole_at_main() {
+    let r = rust_clean();
+    for (f, kind, artifact) in [
+        ("sunspots.download.download", "net", "www.sidc.be"),
+        ("sunspots.download.download", "disk_write", "data/raw/sunspots.csv"),
+        ("sunspots.plot.Plot.save", "disk_write", "figures/sunspots.png"),
+    ] {
+        let ts = touches(r, f, kind);
+        assert!(ts.iter().any(|t| t.artifact == artifact && !t.fixed && t.by == ["sunspots.main.main"]), "{f} {kind} {artifact}: {ts:#?}");
+    }
+}
+
+/// The figure is drawn on the area it is handed: `draw` takes plotters' `DrawingArea`, on whatever
+/// backend `save` makes.
+#[test]
+#[ignore = "Atlas (a): a library type a glob import brings in (`use plotters::prelude::*`) is no type, so `area: &DrawingArea<DB, Shift>` takes only its type argument `Shift`, imported by name"]
+fn rust_clean_trend_draws_on_the_area_it_is_handed() {
+    let r = rust_clean();
+    let area = |f: &str| r.edges.iter().any(|e| e.kind == EdgeKind::Takes && e.src == f && e.dst.starts_with("ext:plotters.") && e.dst.ends_with(".DrawingArea"));
+    assert!(area("sunspots.plot.Plot.draw") && area("sunspots.plot.Trend.draw"));
+}
+
+// ---------- the port ----------
+
+/// The program written well in each language: the function whose steps a run is, and the steps
+/// that download SILSO's file, load it, smooth it and save the figure.
+struct Port {
+    language: &'static str,
+    g: &'static Graph,
+    run: &'static str,
+    download: &'static str,
+    load: &'static str,
+    smooth: &'static str,
+    save: &'static str,
+}
+
+fn ports() -> [Port; 3] {
+    [
+        Port {
+            language: "Python",
+            g: clean(),
+            run: "sunspots.cli.run",
+            download: "sunspots.download.download",
+            load: "sunspots.series.load",
+            smooth: "sunspots.series.smooth",
+            save: "sunspots.plot.Plot.save",
+        },
+        Port {
+            language: "TypeScript",
+            g: typescript(),
+            run: "typescript.cli.main",
+            download: "typescript.download.download",
+            load: "typescript.series.load",
+            smooth: "typescript.series.smooth",
+            save: "typescript.plot.saveSvg",
+        },
+        Port {
+            language: "Rust",
+            g: rust_clean(),
+            run: "sunspots.main.main",
+            download: "sunspots.download.download",
+            load: "sunspots.series.load",
+            smooth: "sunspots.series.smooth",
+            save: "sunspots.plot.Plot.save",
+        },
+    ]
+}
+
+/// What the three clean versions share: no principle has anything to ask, and a run loads the
+/// months before it smooths them, handing `smooth` what `load` gives and the run's `Settings`, a
+/// type of the program in each language.
+#[test]
+fn the_port_shares_its_principles_and_its_steps() {
+    for p in ports() {
+        let fs = check(p.g);
+        assert!(fs.is_empty(), "{}: {:#?}", p.language, fs.iter().map(|f| format!("{} {}", f.principle, f.node)).collect::<Vec<_>>());
+        let sites = &node(p.g, p.run).sites;
+        let at = |to: &str| sites.iter().position(|s| s.to == to).unwrap_or_else(|| panic!("{}: {} has no step to {to}", p.language, p.run));
+        assert!(at(p.load) < at(p.smooth), "{}", p.language);
+        let pairs = |hs: &[Held]| hs.iter().map(|h| (h.name.clone(), h.ty.clone())).collect::<Vec<_>>();
+        let (loaded, handed) = (pairs(&step(p.g, p.run, p.load).gives), pairs(&step(p.g, p.run, p.smooth).hands));
+        assert!(!loaded.is_empty() && loaded.iter().all(|h| handed.contains(h)), "{}: {loaded:?} {handed:?}", p.language);
+        assert!(handed.iter().any(|(name, ty)| name == "settings" && ty.ends_with(".settings.Settings") && own(p.g, ty)), "{}: {handed:?}", p.language);
+    }
+}
+
+/// The three run the same steps in the same order: download, load, smooth, save the figure.
+#[test]
+#[ignore = "Atlas (a): the clean Rust `main` loses two of its steps: `download`, re-exported under the name of its module, is read as the module, and `save`, called on the value `Trend::new(settings)` gives, is no step"]
+fn the_port_the_same_steps_in_the_same_order() {
+    for p in ports() {
+        let sites = &node(p.g, p.run).sites;
+        let at: Vec<usize> = [p.download, p.load, p.smooth, p.save]
+            .iter()
+            .map(|to| sites.iter().position(|s| s.to == *to).unwrap_or_else(|| panic!("{}: {} has no step to {to}", p.language, p.run)))
+            .collect();
+        assert!(at.windows(2).all(|w| w[0] < w[1]), "{}: {at:?}", p.language);
+    }
+}
+
+/// The three reach the same places, the figure in the format each writes: the request to SILSO,
+/// the raw file written and read again, the directories, and the figure.
+#[test]
+#[ignore = "Atlas (a): the clean Rust route names none of its files: `download` is read as its module, `save` called on the value `Trend::new(..)` gives is no step, and clap's `--raw` and `--figure`, a directory bound by `if let` and the path `download` gives inside `Ok(..)` name no place"]
+fn the_port_the_same_places() {
+    for p in ports() {
+        let named: BTreeSet<_> = outside(p.g, program(p.g)).into_iter().filter(|(_, artifact)| !artifact.is_empty()).collect();
+        assert_eq!(in_any_format(named), in_any_format(the_outside()), "{}", p.language);
+    }
+}
+
+/// Where the three differ, each the language's doing:
+///
+/// - The values. pandas is how Python keeps a table, so `load` and `smooth` give a `DataFrame`, a
+///   type of the library. TypeScript and Rust keep a month as a record the program declares:
+///   `load` gives `Month`s and `smooth` gives `Smoothed` means.
+/// - The figure. matplotlib makes a `Figure`, which `Trend.draw` gives and `Plot.save` writes
+///   (`savefig`). d3 computes the scales and the lines, so `trend` writes the SVG document itself
+///   and gives it as a `string`, which `saveSvg` writes (`writeFile`). plotters draws on the area
+///   of a backend, so `Trend::draw` gives no value: `save` makes the backend that writes the file
+///   (`BitMapBackend::new`) and hands `draw` its area.
+/// - Errors. A Rust step that may fail says so in what it gives (`Result<_, Error>`, with the
+///   program's own error), every step but `smooth`, which cannot fail, and none of them throws.
+///   TypeScript says it only of the steps that wait (`Promise`); `download` and `trend` throw as
+///   well, which no signature says. Python's signatures say it of no step.
+#[test]
+fn the_port_differs_by_language() {
+    let [py, ts, rs] = ports();
+    let gives = |p: &Port, to: &str| types(&step(p.g, p.run, to).gives).into_iter().map(String::from).collect::<Vec<_>>();
+
+    // the values
+    for to in [py.load, py.smooth] {
+        assert_eq!(gives(&py, to), ["ext:pandas.DataFrame"], "{to}");
+    }
+    assert!(!own(py.g, "ext:pandas.DataFrame"));
+    for (p, scope) in [(&ts, "typescript"), (&rs, "sunspots")] {
+        let (month, smoothed) = (format!("{scope}.series.Month"), format!("{scope}.series.Smoothed"));
+        assert_eq!(gives(p, p.load), [month.clone()], "{}", p.language);
+        assert_eq!(gives(p, p.smooth), [smoothed.clone()], "{}", p.language);
+        assert!(own(p.g, &month) && own(p.g, &smoothed), "{}", p.language);
+    }
+
+    // the figure
+    let wrote = |p: &Port, op: &str| touches(p.g, p.save, "disk_write").iter().any(|t| t.op == op);
+    assert!(edge(py.g, EdgeKind::Returns, "sunspots.plot.Trend.draw", "ext:matplotlib.figure.Figure"));
+    assert!(wrote(&py, "savefig"));
+    let trend = node(ts.g, "typescript.plot.trend").returns.as_ref().unwrap();
+    assert_eq!((trend.written.as_str(), trend.value.as_str()), ("string", "string"));
+    assert!(wrote(&ts, "writeFile"));
+    let draw = node(rs.g, "sunspots.plot.Trend.draw").returns.as_ref().unwrap();
+    assert_eq!((draw.written.as_str(), draw.value.as_str()), ("Result<(), Error>", ""));
+    assert!(wrote(&rs, "new"));
+    assert_eq!(names(&step(rs.g, rs.save, "sunspots.plot.Plot.draw").hands), ["area", "series", "smoothed"]);
+
+    // errors
+    let fails = |p: &Port, f: &str| node(p.g, f).returns.as_ref().map_or(false, |r| r.fails);
+    let raises = |p: &Port, f: &str| node(p.g, f).raises;
+    for f in [rs.download, rs.load, rs.save, "sunspots.plot.Trend.draw"] {
+        let written = &node(rs.g, f).returns.as_ref().unwrap().written;
+        assert!(fails(&rs, f) && written.starts_with("Result<") && written.ends_with(", Error>"), "{f}: {written}");
+    }
+    assert!(own(rs.g, "sunspots.error.Error"));
+    assert!(!fails(&rs, rs.smooth));
+    for f in [rs.download, rs.load, rs.smooth, rs.save, "sunspots.plot.Trend.draw"] {
+        assert!(!raises(&rs, f), "{f}");
+    }
+    let effects = |f: &str| (fails(&ts, f), raises(&ts, f));
+    assert_eq!(
+        [ts.download, ts.load, ts.smooth, "typescript.plot.trend", ts.save].map(effects),
+        [(true, true), (true, false), (false, false), (false, true), (true, false)]
+    );
+    for f in [py.download, py.load, py.smooth, py.save, "sunspots.plot.Trend.draw"] {
+        assert!(!fails(&py, f) && !raises(&py, f), "{f}");
+    }
 }
