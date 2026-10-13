@@ -556,7 +556,9 @@ fn rust_is_read_by_rusts_semantics() {
     assert_eq!((weight[0].subject.as_str(), weight[0].cases.clone()), ("kind", vec!["page".to_string(), "log".to_string()]), "`matches!(kind, \"page\" | \"log\")`");
     let t = |id: &str| g.node(id).unwrap().touches.iter().map(|t| (t.kind_name().to_string(), t.op.clone(), t.artifact.clone())).collect::<Vec<_>>();
     assert!(t("handed.world.client").is_empty(), "building a client moves nothing: {:?}", t("handed.world.client"));
-    assert_eq!(t("handed.world.fetch"), [("net".into(), "get".into(), String::new())], "`client.get(url).send()` on a `Client::new()`");
+    // `client.get(url).send()` on a `Client::new()`: at the address `main` hands it, and at the
+    // one the export's users hand
+    assert_eq!(t("handed.world.fetch"), [("net".into(), "get".into(), String::new()), ("net".into(), "get".into(), "example.org".into())]);
     assert!(t("handed.world.record").contains(&("db_sqlite".into(), "execute".into(), "log".into())), "{:?}", t("handed.world.record"));
     assert_eq!(t("handed.world.notes"), [("disk_read".into(), "open".into(), "notes.txt".into())], "the handle reads where it was opened");
     assert_eq!(t("handed.world.Log.append"), [("disk_write".into(), "open".into(), String::new())], "`OpenOptions::new().append(true)` writes");

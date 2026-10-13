@@ -256,7 +256,6 @@ fn a_place_carries_a_what_the_service_url() {
 
 /// The clean client's request goes to the host the entry hands it, through the object it built.
 #[test]
-#[ignore = "Atlas (a): Python does not carry a URL from the caller or the constructor to the request; only file paths and statements wait for callers"]
 fn a_place_carries_a_what_the_url_the_entry_hands_the_client() {
     let net = touches(clean(), "harvest.client.WeatherClient.latest", "net");
     assert!(net.iter().any(|t| t.artifact == "api.weather.example" && t.by.iter().any(|b| b.contains("harvest.cli.collect"))), "{net:?}");

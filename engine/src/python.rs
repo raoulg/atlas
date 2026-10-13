@@ -1187,7 +1187,7 @@ fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, own: &Own,
         let family = store.family();
         crate::paths::complete(waiting, &handing, &family, &default, &entry)
     };
-    crate::paths::place_calls(store, completed);
+    crate::paths::place_calls(store, completed, false);
     // the work handed to a managed transaction (`session.execute_read(work)`) goes its way
     for (work, kind, dir) in handed {
         if let Some(n) = store.nodes.get_mut(&work) {
@@ -2313,7 +2313,8 @@ fn crossed<'t>(seen: &Seen, eval: &Eval, at: At<'_, 't>, c: TsNode<'t>, fnode: T
         _ => {
             let mut cr = Crosses::read(c, src, tag, lib, op, &literals(c, src, &["string"]), &["string"], &seen.handed(c));
             // on the web, what a call asks for is the argument its library names so
-            if let Some(a) = asked(seen, c, fnode).filter(|_| cr.facts.kind == World::Net) {
+            let url = asked(seen, c, fnode).filter(|_| cr.facts.kind == World::Net);
+            if let Some(a) = url {
                 cr.what = literals(a, src, &["string"]).first().map(|l| l.trim().to_string()).unwrap_or_else(|| text(a, src).to_string());
                 cr.payload = payload_of(c, src, &cr.what, "arguments", &seen.handed(c));
                 cr.fixed = crate::tree::head_literal(a, src, &["string"]);
@@ -2336,6 +2337,11 @@ fn crossed<'t>(seen: &Seen, eval: &Eval, at: At<'_, 't>, c: TsNode<'t>, fnode: T
             };
             if let Some(built) = statement {
                 let t = Touch { what: cr.what.clone(), payload: cr.payload.clone(), op: cr.op.clone(), line: cr.line, ..Touch::new(cr.facts.kind, said) };
+                return Crossed { waiting: vec![(t, built)], said: said.map(|d| (cr.facts.kind, d)), handed, ..Default::default() };
+            }
+            // a request is its method and its URL, whole where the callers make it, as a path is
+            let request = url.filter(|_| lib.map_or(false, effects::network)).map(|a| crate::paths::request_of(op, eval.of(at, a, 0)));
+            if let (Some(built), Some(t)) = (request, cr.touches(said).into_iter().next()) {
                 return Crossed { waiting: vec![(t, built)], said: said.map(|d| (cr.facts.kind, d)), handed, ..Default::default() };
             }
             Crossed { touches: cr.touches(said), said: said.map(|d| (cr.facts.kind, d)), handed, ..Default::default() }

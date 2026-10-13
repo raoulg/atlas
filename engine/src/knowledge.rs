@@ -7,6 +7,10 @@
 /// The methods a request goes by.
 pub const HTTP_METHODS: &[&str] = &["get", "post", "put", "patch", "delete", "head", "options"];
 
+/// The hosts that are the machine a program runs on, where the other parts of a repository may
+/// serve their routes.
+pub const LOCAL_HOSTS: &[&str] = &["localhost", "127.0.0.1", "0.0.0.0", "[::1]"];
+
 /// What else an app or a router registers a route by, beside an HTTP method: a websocket
 /// (FastAPI), any method (Express's `all`).
 pub const ROUTE_KINDS: &[&str] = &["websocket", "all"];

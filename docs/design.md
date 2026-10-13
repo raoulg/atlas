@@ -346,8 +346,9 @@ package. The graph holds them side by side and every node knows its part. Parts 
 routes stand at their full path (through `app.mount(prefix, sub_app)`,
 `include_router(router, prefix=…)`, `APIRouter(prefix=…)`), and a request one part makes
 whole that none of its own routes serves is a `requests` edge from the function that makes it
-whole to the handler of another part's route that serves it, by method and path; the host,
-written out or a value the URL starts with, is left aside. A request whose path the code does
+whole to the handler of another part's route that serves it, by method and path. Only a request
+to the machine the parts run on (`localhost`) or to a host the code does not say (a value the URL
+starts with) may meet another part; a host the code writes out is another machine's. A request whose path the code does
 not say (a key looked up at run time, an environment variable that may stand in for it) asks
 for no route: it stays on the picture, sent to an address the code does not name. In the views, parts are a zoom level like families: the overview
 is one step per part (memory stays inside it; what it reads and writes in the world, and
@@ -461,9 +462,13 @@ evaluated as a Python one: from the module's own file (`import.meta.url`, `__dir
 through `path.join`, `path.resolve`, `path.dirname` and `new URL(rel, base)`, across the
 constants it names, through what a function of the program gives back (its parameters bound to
 what the call hands them), and at each call that hands its function's parameters, out to the
-function where it is complete. A request is its method and its URL; one the package's own
-routes serve is a `requests` edge from the function that names it to the route's handler, the
-most literal route first (`/years` before `/{year}`). An object of functions
+function where it is complete. A request is its method and its URL, in every language: the URL
+waits for the callers that make it whole as a path does, and the method is the operation's
+(`get`, `post`) or what the call is handed (`fetch(url, { method })`). A page's request without a
+host goes to the page's own origin, so one the package's own routes serve is a `requests` edge
+from the function that names it to the route's handler, the most literal route first (`/years`
+before `/{year}`); a client that is no page (Python's, Rust's) sends such a URL where it
+connects, which the code says apart from the request. An object of functions
 (`const api = { get: (path) => .. }`) is a namespace; one with a declared type is a value of
 that type. Artifacts by path
 pattern, hub types by arrow count, mutation detection, and the effect signature

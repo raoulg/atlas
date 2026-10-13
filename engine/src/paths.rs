@@ -40,16 +40,33 @@ pub fn route_matches(route: &str, path: &str) -> bool {
     route_pattern(route).map_or(false, |re| re.is_match(&path))
 }
 
-/// The path a request asks for wherever it is sent: its URL without the host, written out or a
-/// value the URL starts with (`{BASE}/api/items/{id}`), and without its query.
+/// The path a request may ask of another part's route: one sent to the machine it runs on
+/// (`http://localhost:8000/api/items/{id}`), or to a host the code does not say, a value the
+/// URL starts with (`{BASE}/api/items/{id}`); without its query. A host the code writes out
+/// that is no local one is another machine's.
 pub fn asked_path(url: &str) -> Option<String> {
     let rest = match url.find("://") {
-        Some(i) => &url[i + 3..][url[i + 3..].find('/')?..],
+        Some(i) => {
+            let after = &url[i + 3..];
+            let slash = after.find('/')?;
+            let host = after[..slash].rsplit_once(':').map_or(&after[..slash], |(h, port)| if port.chars().all(|c| c.is_ascii_digit()) { h } else { &after[..slash] });
+            if !crate::knowledge::LOCAL_HOSTS.contains(&host) && !host.contains('{') {
+                return None;
+            }
+            &after[slash..]
+        }
         None if url.starts_with('{') => &url[url.find('}')? + 1..],
         None => url,
     };
     let path = rest.split(['?', '#']).next()?;
     (path.starts_with('/') && path.len() > 1).then(|| path.to_string())
+}
+
+/// A request as built: its method, where the operation names one (`get`, `post`), else a hole,
+/// and its URL.
+pub fn request_of(op: &str, url: Vec<Built>) -> Vec<Built> {
+    let method = if crate::knowledge::HTTP_METHODS.contains(&op) { lit(&op.to_uppercase()) } else { hole("method") };
+    cross(&[method], &url, " ")
 }
 
 /// A request as its method and path, the method left out where the code does not say it.
@@ -395,12 +412,14 @@ pub fn complete<H: Handing>(calls: Vec<Waiting>, handing: &[H], family: &crate::
 }
 
 /// Place the completed calls: a file is touched by the function that opens it, at every place
-/// it is opened at; a URL without a host that one of the program's routes serves is a request
-/// from the function that completes it to the route's handler; a statement is read by its
+/// it is opened at; where the language's requests are a page's (`origin`), a URL without a host
+/// is the page's own, and one that one of the program's routes serves is a request from the
+/// function that completes it to the route's handler (elsewhere it goes where the client
+/// connects, which the code says apart from the request); a statement is read by its
 /// grammar, and the function that runs it touches each table it names, the way it goes there.
 /// Each touch keeps where it became whole, so a route shows the places its own calls hand; where
 /// a completion names no place, the call keeps the touch it was read with.
-pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Completed>) {
+pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Completed>, origin: bool) {
     use crate::model::{Crossing, EdgeKind, EntryKind, Touch, World};
     let routes: Vec<(String, String, String)> = store
         .nodes
@@ -444,7 +463,7 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
                 if t.kind == World::Net {
                     let asker = holder.split('&').next().unwrap_or(holder);
                     let mut served = false;
-                    if url.starts_with('/') {
+                    if url.starts_with('/') && origin {
                         for (handler, _, path) in serving(&routes, &method, &url) {
                             store.add_edge(asker, handler, EdgeKind::Requests, Some(path.clone()));
                             served = true;
@@ -491,6 +510,8 @@ mod tests {
         let item = |url: &str| asked_path(url).map_or(false, |p| route_matches("/api/items/{id}", &p));
         assert!(item("http://localhost:8000/api/items/{id}?full=1"));
         assert!(item("{$BASE}/api/items/{id}"), "a value the URL starts with is the host");
+        assert!(!item("https://example.org/api/items/{id}"), "another machine serves no part of the repository");
+        assert!(item("http://127.0.0.1/api/items/{id}"));
         assert!(!item("/api/items"));
         assert_eq!(asked_path("/"), None, "the root names no route");
         assert_eq!(asked_path("{url}"), None, "a URL not known at all asks for no path");

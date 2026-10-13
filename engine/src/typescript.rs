@@ -1309,7 +1309,8 @@ fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, repo: &Pat
     let entry = |f: &str| store.nodes.get(f).map_or(false, |n| n.entry.is_some());
     let family = store.family();
     let completed = crate::paths::complete(linked.calls, &handing, &family, &|_, _| vec![], &entry);
-    crate::paths::place_calls(store, completed);
+    // a page's request without a host goes to the page's own origin
+    crate::paths::place_calls(store, completed, true);
 }
 
 

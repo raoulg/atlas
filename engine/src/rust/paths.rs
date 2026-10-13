@@ -317,6 +317,8 @@ impl<'a> Eval<'a> {
         match g {
             [x] if matches!(x.kind(), "string_literal" | "raw_string_literal" | "identifier") => self.of(at, *x, depth + 1),
             [x] if x.kind() == "integer_literal" => vec![lit(text(*x, src))],
+            // a field of the value the method is called on: what its type's struct literals set it to
+            [s, dot, field] if text(*s, src) == "self" && dot.kind() == "." && field.kind() == "identifier" => self.held(at, text(*field, src), depth).unwrap_or_else(|| vec![hole(text(*field, src))]),
             [x, dot, m, call] if x.kind() == "identifier" && dot.kind() == "." && call.kind() == "token_tree" && knowledge::RUST_PATH_METHODS.iter().any(|(n, k)| *n == text(*m, src) && *k == PathMethod::Same) => self.of(at, *x, depth + 1),
             _ => vec![hole(g.iter().find(|t| t.kind() == "identifier").map(|t| text(*t, src)).unwrap_or("value"))],
         }

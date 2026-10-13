@@ -272,7 +272,6 @@ fn a_route_ends_at_a_visible_place() {
 /// rates API. In Rust the client and its address are fields of `RatesClient`, set by `new` from
 /// what `main` hands it, and `latest` sends the request on `self.http`.
 #[test]
-#[ignore = "Atlas (a): a request on a client held in a field touches nothing, and a URL handed in by a caller is not carried to the request"]
 fn a_route_ends_at_a_visible_place_through_a_client() {
     let asked = touches(clean(), "spend.rates.RatesClient.latest", "net");
     assert!(asked.iter().any(|t| t.artifact == "api.frankfurter.app"), "{asked:#?}");

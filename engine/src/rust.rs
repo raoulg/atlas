@@ -865,7 +865,7 @@ fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crate_ids:
     let entry = |f: &str| store.nodes.get(f).map_or(false, |n| n.entry.is_some());
     let family = store.family();
     let completed = crate::paths::complete(waiting, &handing, &family, &|_, _| vec![], &entry);
-    crate::paths::place_calls(store, completed);
+    crate::paths::place_calls(store, completed, false);
 }
 
 /// A function on a type, by the casing Rust's names follow (C-CASE): `File::open`, not
@@ -1522,6 +1522,11 @@ impl<'a, 't> Body<'a, 't> {
                 let built = first(call).map(|a| self.eval.of(self.at(), a, 0)).unwrap_or_default();
                 self.touch(c, kind, &op, &subtree()).into_iter().map(|t| (t, built.clone())).collect()
             }
+            // a request on a client, at the URL its method is handed
+            Some((kind, op, call, false, _)) if kind.world == World::Net && first(call).is_some() => {
+                let built = crate::paths::request_of(&op, first(call).map(|a| self.eval.of(self.at(), a, 0)).unwrap_or_default());
+                self.touch(c, kind, &op, &subtree()).into_iter().map(|t| (t, built.clone())).collect()
+            }
             Some((kind, op, _, false, _)) => now(self.touch(c, kind, &op, &subtree())),
             // a method of a path reads the file the path is
             None if knowledge::RUST_PATH_READS.contains(&method) => {
@@ -1614,6 +1619,11 @@ impl<'a, 't> Body<'a, 't> {
         let files: Vec<(Crossing, TsNode<'t>)> = match crate::body::sides(op, args.len()) {
             Some(sides) if tag.world == World::Disk => sides.into_iter().zip(args).collect(),
             _ if tag.world == World::Disk && !args.is_empty() => vec![(tag, args[0])],
+            // a request is its method and its URL, whole where the callers make it, as a path is
+            _ if tag.world == World::Net && !args.is_empty() => {
+                let built = crate::paths::request_of(op, self.eval.of(self.at(), args[0], 0));
+                return self.touch(c, tag, op, &literals(c, self.src, STRINGS)).into_iter().map(|t| (t, built.clone())).collect();
+            }
             _ => return now(self.touch(c, tag, op, &literals(c, self.src, STRINGS))),
         };
         let (mut out, two) = (vec![], files.len() > 1);
