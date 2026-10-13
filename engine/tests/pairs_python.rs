@@ -174,7 +174,6 @@ fn gives_a_function_whose_value_is_used_says_what_it_gives() {
 /// A call on a value Atlas has no type for is still a step of its body: the route shows that
 /// `readings` asks something of what `get_store` gave, and that Atlas cannot say what.
 #[test]
-#[ignore = "Atlas: a call on a value without a type is no step of its body; only the count of calls not followed keeps it"]
 fn gives_a_call_on_an_untyped_value_stays_a_step() {
     let readings = shortcut().node("harvest.api.readings").unwrap();
     assert_eq!(readings.sites.len(), 2, "get_store() and .history(station): {:#?}", readings.sites);
@@ -294,7 +293,6 @@ fn a_place_carries_a_what_the_report_file_through_the_exporter_base() {
 /// `readings` table; the shortcut builds its `INSERT` as an f-string of the reading's fields.
 /// The values are no place: in a route of its own, `save` writes `readings` on both sides.
 #[test]
-#[ignore = "Atlas (a): an f-string statement whose holes are only values waits for the callers, so `save` alone draws no table and no direction"]
 fn a_place_carries_a_what_the_table_of_a_statement_built_from_values() {
     // the second line of a route is its start, with that function's own effects
     let own = |g: &Graph| route(g, "harvest.store.ReadingStore.save").lines().nth(1).unwrap_or_default().to_string();
@@ -319,13 +317,14 @@ fn a_route_ends_at_a_visible_place() {
     assert!(s.node("harvest.harvester.Harvester.collect").is_some() && s.node("harvest.harvester.Harvester.report").is_some());
 }
 
-/// The call a catch-all makes by name is a step of its body, or at least a call not followed.
+/// The call a catch-all makes by name is a step of its body, named as the code writes it, and a
+/// call not followed.
 #[test]
-#[ignore = "Atlas (b): `getattr(self, kind)(**kw)` is neither a step of its body nor counted among the calls not followed"]
 fn a_route_ends_at_a_visible_place_a_call_by_name_stays_a_step() {
     let s = shortcut();
     let run = s.node("harvest.harvester.Harvester.run").unwrap();
-    assert!(!run.sites.is_empty() || s.stats.unresolved_calls_top.iter().any(|(n, _)| n.contains("getattr")), "{:#?} {:?}", run.sites, s.stats.unresolved_calls_top);
+    assert!(run.sites.iter().any(|x| x.op == "getattr(self, kind)"), "{:#?}", run.sites);
+    assert!(s.stats.unresolved_calls_top.iter().any(|(n, _)| n.contains("getattr")), "{:?}", s.stats.unresolved_calls_top);
 }
 
 /// Zoom is a quotient by base type and by composition: a class holds its parts by their types.
@@ -354,7 +353,6 @@ fn zoom_is_a_quotient_by_composition() {
 /// The calls the shortcut's harvester makes on its `Any` parts are steps of its body, with no
 /// target Atlas can name.
 #[test]
-#[ignore = "Atlas (b): a call on an `Any` attribute is no step of its body; only the count of calls not followed keeps it"]
 fn zoom_is_a_quotient_by_composition_a_call_on_any_stays_a_step() {
     let collect = shortcut().node("harvest.harvester.Harvester.collect").unwrap();
     assert_eq!(collect.sites.len(), 3, "self.client.latest, convert, self.store.save: {:#?}", collect.sites);

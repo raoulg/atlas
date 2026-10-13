@@ -1322,6 +1322,21 @@ fn call_path(f: TsNode, src: &[u8]) -> Vec<String> {
     inner
 }
 
+/// The names a call is written with: its dotted path, or for a method on a value written out
+/// (`(root / name).write_text`) its name alone; none for a call of what an expression gives
+/// (`getattr(self, kind)(..)`, `handlers[kind](..)`).
+fn named_path(f: TsNode, src: &[u8]) -> Vec<String> {
+    match call_path(f, src) {
+        p if p.is_empty() => f.child_by_field_name("attribute").map(|a| vec![text(a, src).to_string()]).unwrap_or_default(),
+        p => p,
+    }
+}
+
+/// What a call calls, as the code writes it, on one line.
+fn written(f: TsNode, src: &[u8]) -> String {
+    text(f, src).split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
 /// The nodes of the package's definitions, by where their names are written: the file and the
 /// byte offset. This is where ty's answers meet the graph.
 fn sites(modules: &IndexMap<String, Module>, store: &GraphBuilder) -> HashMap<(String, usize), String> {
@@ -2153,7 +2168,7 @@ impl<'a, 't> Body<'a, 't> {
         }
         match callee {
             Some(Callee::Def(t)) => self.own(steps, c, &t, receiver, hands, gives),
-            callee => {
+            Some(Callee::Lib(lib)) => {
                 // a library's call not read that makes a value the body keeps under a name, from
                 // values it was handed, is a step of its own; what a call gives without a name
                 // goes into the call around it
@@ -2164,11 +2179,24 @@ impl<'a, 't> Body<'a, 't> {
                     };
                     steps.op(c, &op.unwrap_or_default(), hands, gives);
                 }
-                let lib = match callee {
-                    Some(Callee::Lib(lib)) => Some(lib),
-                    _ => None,
+                self.library(steps, c, fnode, Some(lib));
+            }
+            None => {
+                // a call Atlas cannot follow runs all the same: a step named as the code writes
+                // it, giving the value the body keeps by the name it assigns, and a call not
+                // followed
+                let mut gives = gives;
+                if gives.is_empty() && !assigned.is_empty() {
+                    gives.push(Held::new(String::new(), &assigned));
+                }
+                let written = written(fnode, self.src);
+                steps.not_followed(c, &written, hands, gives);
+                let name = match named_path(fnode, self.src) {
+                    p if p.is_empty() => written,
+                    p => p.iter().take(2).cloned().collect::<Vec<_>>().join("."),
                 };
-                self.library(steps, c, fnode, lib);
+                self.read.unresolved.push((name, self.bucket(fnode)));
+                self.library(steps, c, fnode, None);
             }
         }
     }
@@ -2191,21 +2219,15 @@ impl<'a, 't> Body<'a, 't> {
         self.read.args.extend(args);
     }
 
-    /// A library's call: a class it makes, the calls Atlas could not follow, and what it crosses
-    /// into. A method on a value written out (`(root / name).write_text`) is its name alone.
+    /// A library's call, or one Atlas cannot follow: a class it makes, and what it crosses into. A
+    /// method on a value written out (`(root / name).write_text`) is its name alone.
     fn library(&mut self, steps: &mut Steps, c: TsNode<'t>, fnode: TsNode<'t>, lib: Option<String>) {
-        let parts = match call_path(fnode, self.src) {
-            p if p.is_empty() => fnode.child_by_field_name("attribute").map(|a| vec![text(a, self.src).to_string()]).unwrap_or_default(),
-            p => p,
-        };
+        let parts = named_path(fnode, self.src);
         if parts.is_empty() {
             return;
         }
         if let Some(cls) = lib.as_ref().and(self.seen.made_on(c, fnode)) {
             steps.edge(c, &cls, EdgeKind::Instantiates);
-        }
-        if lib.is_none() {
-            self.read.unresolved.push((parts.iter().take(2).cloned().collect::<Vec<_>>().join("."), self.bucket(fnode)));
         }
         let op = parts.last().map_or("", String::as_str);
         let Some(tag) = effects::boundary(lib.as_deref(), &parts).filter(|t| self.seen.moves(fnode, t, lib.as_deref(), op)) else { return };

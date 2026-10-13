@@ -127,8 +127,14 @@ impl<'t, 's> Steps<'t, 's> {
         if hands.is_empty() || gives.is_empty() {
             return;
         }
+        self.not_followed(c, op, hands, gives);
+    }
+
+    /// A call Atlas cannot follow, `name`d as the code writes it: it runs all the same, so it is
+    /// a step of the body, whatever it is handed and gives.
+    pub fn not_followed(&mut self, c: TsNode, name: &str, hands: Vec<Held>, gives: Vec<Held>) {
         self.keep(&gives);
-        self.sites.push(Site { line: line(c), op: op.to_string(), hands, gives, arms: self.arms(c), span: span(c), ..Default::default() });
+        self.sites.push(Site { line: line(c), op: name.to_string(), hands, gives, arms: self.arms(c), span: span(c), ..Default::default() });
     }
 
     /// An edge of `kind` to `to` at call `c`, with no step of its own.

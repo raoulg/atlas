@@ -427,6 +427,16 @@ fn verb(text: &str) -> Option<Option<Dir>> {
 
 /// A SQL text the grammar reads whole: the sides of its statements.
 fn parsed(db: Db, text: &str) -> Option<Vec<(String, Option<Dir>)>> {
+    let stmts = grammar(db, text)?;
+    let mut out: Vec<(String, Option<Dir>)> = stmts.iter().flat_map(sides).map(|(n, d)| (n, Some(d))).collect();
+    out.sort_by_key(|(_, d)| *d != Some(Dir::Write));
+    out.dedup();
+    Some(out)
+}
+
+/// The statements of a SQL text that starts with a verb, as its database's dialect reads them,
+/// each placeholder a name.
+fn grammar(db: Db, text: &str) -> Option<Vec<Statement>> {
     verb(text)?;
     let sql = sql_holes(text);
     let dialect: Box<dyn Dialect> = match db {
@@ -434,11 +444,14 @@ fn parsed(db: Db, text: &str) -> Option<Vec<(String, Option<Dir>)>> {
         Db::Duckdb => Box::new(DuckDbDialect {}),
         _ => Box::new(GenericDialect {}),
     };
-    let stmts = Parser::parse_sql(dialect.as_ref(), &sql).or_else(|_| Parser::parse_sql(&GenericDialect {}, &sql)).ok()?;
-    let mut out: Vec<(String, Option<Dir>)> = stmts.iter().flat_map(sides).map(|(n, d)| (n, Some(d))).collect();
-    out.sort_by_key(|(_, d)| *d != Some(Dir::Write));
-    out.dedup();
-    Some(out)
+    Parser::parse_sql(dialect.as_ref(), &sql).or_else(|_| Parser::parse_sql(&GenericDialect {}, &sql)).ok()
+}
+
+/// Whether a statement names its tables whatever its placeholders hold: its verb is written out,
+/// the grammar reads it, and no table it names is a placeholder. A placeholder anywhere else
+/// holds a value (`VALUES ('{station}', {t})`, `WHERE id = {id}`), which names no place.
+pub fn names_its_tables(db: Db, text: &str) -> bool {
+    grammar(db, text).map_or(false, |stmts| stmts.iter().all(|st| tables(st).iter().all(|n| !n.contains(HOLE))))
 }
 
 /// The verbs a statement starts with: those that change data or its shape, those that ask, and
@@ -490,6 +503,14 @@ fn relations(st: &Statement) -> Vec<String> {
     names
 }
 
+/// The tables a statement names: those it drops, or every one it reads or changes.
+fn tables(st: &Statement) -> Vec<String> {
+    match st {
+        Statement::Drop { names, .. } => names.iter().map(|n| n.to_string().trim_matches(['"', '`']).to_string()).collect(),
+        _ => relations(st),
+    }
+}
+
 /// The tables one statement writes and reads: a statement that changes data writes the first
 /// table it names (`INSERT INTO a SELECT .. FROM b`) and reads the others; a query reads all of
 /// them; a setting names none.
@@ -505,10 +526,7 @@ fn sides(st: &Statement) -> Vec<(String, Dir)> {
             return out;
         }
     }
-    let mut names = relations(st);
-    if let Statement::Drop { names: dropped, .. } = st {
-        names = dropped.iter().map(|n| n.to_string().trim_matches(['"', '`']).to_string()).collect();
-    }
+    let names = tables(st);
     let writes = match st {
         Statement::Query(_) => false,
         Statement::Copy { to, .. } => !*to,
@@ -684,6 +702,20 @@ mod tests {
         assert_eq!(statement(db("db_sqlite"), "hello world"), None);
         assert_eq!(sql(db("db_sqlite"), &lits(&["SELECT a ", "FROM t"])), Some(t(&[("t", "read")])), "a statement split over literals");
         assert_eq!(sql(db("db_sqlite"), &lits(&["INSERT INTO verbruik (moment, ", "model) VALUES (?, ?)", "seconds"])), Some(t(&[("verbruik", "write")])), "and the call's other literals");
+    }
+
+    /// A statement names its tables whatever values fill its placeholders; one whose table or verb
+    /// is a placeholder does not.
+    #[test]
+    fn a_statement_names_its_tables_whatever_values_fill_it() {
+        let sqlite = db("db_sqlite");
+        assert!(names_its_tables(sqlite, "INSERT INTO readings VALUES ('{station}', {t})"));
+        assert!(names_its_tables(sqlite, "SELECT * FROM readings WHERE station = '{station}' ORDER BY {column}"));
+        assert!(names_its_tables(sqlite, "UPDATE readings SET unit = %s WHERE station = %s"));
+        assert!(!names_its_tables(sqlite, "SELECT count(*) FROM {tabel}"), "a table named at run time");
+        assert!(!names_its_tables(sqlite, "SELECT * FROM {schema}.readings"));
+        assert!(!names_its_tables(sqlite, "DROP TABLE IF EXISTS {tabel}"));
+        assert!(!names_its_tables(sqlite, "{verb} INTO readings VALUES (1)"), "a verb named at run time");
     }
 
     /// A graph database's direction is what the Python code says to the driver, never the query.

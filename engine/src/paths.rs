@@ -4,7 +4,9 @@
 //! parameters; the place of a path with an unknown part is the directory before that part, so
 //! what one route unpacks into `D/{kind}/{id}` and another lists in `D` meet at `D/`. A
 //! database statement is built and completed the same way, and read by its grammar where it is
-//! whole: `count(con, sql)` reads the table its caller's `"SELECT count(*) FROM t"` names.
+//! whole: `count(con, sql)` reads the table its caller's `"SELECT count(*) FROM t"` names. A
+//! statement whose verb and tables are written out is whole where it is built; the values it is
+//! built from name no place.
 
 use std::sync::OnceLock;
 
@@ -419,12 +421,28 @@ fn decided(b: &Built, kind: crate::model::World) -> bool {
     }
 }
 
+/// Whether a statement as built names its places whatever its callers hand: its grammar names
+/// the verb and every table without them, so what they hand are values.
+fn names_its_places(b: &Built, kind: crate::model::World) -> bool {
+    match kind {
+        crate::model::World::Db(db) => crate::effects::reads_statements(db) && crate::effects::names_its_tables(db, &render(b)),
+        _ => false,
+    }
+}
+
 /// Complete the waiting calls through their callers; `entry` says which functions are entries.
+/// A statement that names its places is whole where it is built.
 pub fn complete<H: Handing>(calls: Vec<Waiting>, handing: &[H], family: &crate::builder::Family, default: &dyn Fn(&str, &str) -> Vec<Built>, entry: &dyn Fn(&str) -> bool) -> Vec<Completed> {
     calls
         .into_iter()
         .map(|(f, t, built)| {
-            let found = built.iter().flat_map(|b| at_callers(handing, family, default, entry, &f, b, 0).into_iter().map(|(w, x)| (w, x, decided(b, t.kind)))).collect();
+            let found = built
+                .iter()
+                .flat_map(|b| {
+                    let wholes = if names_its_places(b, t.kind) { vec![(Whole::In(f.clone()), b.clone())] } else { at_callers(handing, family, default, entry, &f, b, 0) };
+                    wholes.into_iter().map(|(w, x)| (w, x, decided(b, t.kind)))
+                })
+                .collect();
             (f, t, found)
         })
         .collect()
