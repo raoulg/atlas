@@ -23,12 +23,13 @@ fn a_call_not_followed_is_bound_somewhere() {
     // `con.execute` start from a parameter or a local; `READERS[kind](..)` from the module's table
     // and `Note.model_validate_json` from the program's own class, which the engine does not follow
     assert_eq!(buckets(&read("tests/fixture")), Unresolved { builtin: 0, library: 0, local: 8, unknown: 2 });
-    // `Some`, `Ok` and `String::new` are the prelude's; `std::fs`, `reqwest::blocking` and
-    // `rusqlite::Connection` crates the program depends on
-    assert_eq!(buckets(&read("tests/fixture-rs")), Unresolved { builtin: 3, library: 18, local: 0, unknown: 0 });
-    // `fetch`, `console` and `localStorage` are globals; `path.join` and `useState` imports,
-    // `pool.query` and `app.get` calls on what a package made; `c.json` a handler's parameter
-    assert_eq!(buckets(&read("tests/fixture-ts")), Unresolved { builtin: 8, library: 29, local: 6, unknown: 0 });
+    // `Some`, `Ok` and `String::new` are the prelude's; `std::fs`, `std::io`, `reqwest::blocking`
+    // and `rusqlite::Connection` crates the program depends on
+    assert_eq!(buckets(&read("tests/fixture-rs")), Unresolved { builtin: 4, library: 19, local: 0, unknown: 0 });
+    // `fetch`, `console`, `process` and `localStorage` are globals; `path.join` and `useState`
+    // imports, `pool.query` and `app.get` calls on what a package made; `c.json` a handler's
+    // parameter
+    assert_eq!(buckets(&read("tests/fixture-ts")), Unresolved { builtin: 10, library: 29, local: 6, unknown: 0 });
 }
 
 /// Atlas reads itself: of the calls it does not follow, all but a few are the prelude's, a

@@ -1216,6 +1216,11 @@ fn library_change<'t>(facts: Option<&Facts>, c: TsNode<'t>, src: &[u8]) -> Optio
     }
 }
 
+/// The value a call hands by keyword `k`.
+fn keyword_node<'t>(call: TsNode<'t>, src: &[u8], k: &str) -> Option<TsNode<'t>> {
+    named_children(call.child_by_field_name("arguments")?).into_iter().find(|a| a.kind() == "keyword_argument" && a.child_by_field_name("name").map(|n| text(n, src)) == Some(k))?.child_by_field_name("value")
+}
+
 /// The argument a call hands at position `i`.
 fn positional_at(call: TsNode, i: usize) -> Option<TsNode> {
     named_children(call.child_by_field_name("arguments")?).into_iter().filter(|a| !matches!(a.kind(), "keyword_argument" | "comment" | "list_splat" | "dictionary_splat")).nth(i)
@@ -2141,6 +2146,12 @@ impl<'a, 't> Body<'a, 't> {
         }
         let op = parts.last().map_or("", String::as_str);
         let Some(tag) = effects::boundary(lib.as_deref(), &parts).filter(|t| self.seen.moves(fnode, t, lib.as_deref(), op)) else { return };
+        // a print handed a file writes that file (where it was opened), not the screen; one handed
+        // a stream the human sees (`file=sys.stderr`) still shows it
+        let to = (tag.world == World::Screen).then(|| keyword_node(c, self.src, knowledge::PRINT_TO)).flatten();
+        if to.map_or(false, |f| !matches!(dotted(Some(f), self.src).as_slice(), [m, s] if knowledge::STREAMS.contains(&(m.as_str(), s.as_str())))) {
+            return;
+        }
         let crossed = crossed(&self.seen, self.eval, self.at(), c, fnode, tag, lib.as_deref(), op);
         self.read.touches.extend(crossed.touches);
         self.read.waiting.extend(crossed.waiting);

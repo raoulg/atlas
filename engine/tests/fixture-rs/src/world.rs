@@ -125,3 +125,9 @@ pub fn stock(line: &str) -> std::io::Result<()> {
     let store = Store::new(PathBuf::from("stock"));
     store.keep(line)
 }
+
+pub fn answer() -> String {
+    let mut line = String::new();
+    std::io::stdin().read_line(&mut line).unwrap();
+    line
+}

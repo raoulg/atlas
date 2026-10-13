@@ -403,6 +403,7 @@ impl Touch {
             (World::Process, _) => "runs".into(),
             (World::Screen, _) if op == "render" => "renders".into(),
             (World::Screen, _) if matches!(op, "figure" | "subplots" | "subplot_mosaic" | "show") => "draws".into(),
+            (World::Screen, Some(Dir::Read)) => "asks".into(),
             (World::Screen, _) => "prints".into(),
             (World::Figure, _) => "draws".into(),
         }

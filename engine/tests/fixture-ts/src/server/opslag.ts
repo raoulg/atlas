@@ -41,3 +41,7 @@ export function archiveer(): void {
   new Archief("archief").bewaar("a.txt", "b");
   new Logboek("logs").noteer("x");
 }
+
+export function echo(): void {
+  process.stdin.on("data", (d) => process.stdout.write(d));
+}

@@ -27,7 +27,7 @@ fn modules_classes_and_functions_are_found() {
     let g = fixture();
     assert_eq!(g.root, "fixture");
     let kinds = |k: NodeKind| g.nodes.iter().filter(|n| n.kind == k).count();
-    assert_eq!(kinds(NodeKind::Module), 23, "the package's nineteen, a root script, a script and two notebooks");
+    assert_eq!(kinds(NodeKind::Module), 24, "the package's twenty, a root script, a script and two notebooks");
     assert!(g.node("fixture.sinks").unwrap().is_pkg);
     assert_eq!(g.node("fixture.schema.Graph").unwrap().doc, "Nodes and edges.");
     assert_eq!(g.node("fixture.sinks.duck.DuckSink").unwrap().bases, vec!["Sink", "Mixin"]);
@@ -186,6 +186,26 @@ fn a_change_is_what_the_call_does() {
     assert!(!m.iter().any(|(s, _)| s == "fixture.edits.deeper"), "the program's own `update` that changes nothing");
     let variants = edges(&g, EdgeKind::Variant);
     assert!(variants.contains(&("fixture.edits.Part".into(), "fixture.schema.Graph".into())) && variants.contains(&("fixture.edits.Part".into(), "fixture.schema.Node".into())), "{variants:?}");
+}
+
+/// The terminal is a place both ways, in every language: what the human types is read from the
+/// screen (`input`, `getpass`, `sys.stdin`, a curses window's `getch`, Rust's `io::stdin()`,
+/// `process.stdin`), what a window or a stream shows is written to it, and a print handed a file
+/// writes the file.
+#[test]
+fn the_terminal_is_a_place_both_ways() {
+    let t = |g: &atlas_engine::model::Graph, id: &str| g.node(id).unwrap().touches.iter().map(|t| (t.kind_name().to_string(), t.op.clone(), t.dir_name().to_string())).collect::<Vec<_>>();
+    let read = |op: &str| ("screen".to_string(), op.to_string(), "read".to_string());
+    let py = fixture();
+    assert_eq!(t(&py, "fixture.terminal.ask_name"), [read("input")]);
+    assert_eq!(t(&py, "fixture.terminal.ask_secret"), [read("getpass")]);
+    assert_eq!(t(&py, "fixture.terminal.first_line"), [read("readline")], "`sys.stdin.readline()`");
+    assert!(!t(&py, "fixture.terminal.keep").iter().any(|x| x.0 == "screen"), "`print(.., file=f)` writes the file");
+    assert_eq!(t(&py, "fixture.terminal.draw"), [("screen".into(), "addstr".into(), String::new()), read("getch")], "a curses window");
+    let rs = analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixture-rs"), &Options::default()).unwrap();
+    assert_eq!(t(&rs, "handed.world.answer"), [read("stdin")], "`io::stdin().read_line(..)`");
+    let ts = analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixture-ts"), &Options::default()).unwrap();
+    assert!(t(&ts, "fixture-ts.server.opslag.echo").contains(&read("on")), "`process.stdin.on(..)`");
 }
 
 /// SQL is read by its grammar: a statement writes the table it changes and reads the ones it

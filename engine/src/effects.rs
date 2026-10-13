@@ -59,6 +59,12 @@ pub fn boundary_rust(parts: &[String]) -> Option<Crossing> {
             Crossing::to(World::Disk)
         });
     }
+    // what the human types: `io::stdin()`
+    if let [.., module, name] = parts {
+        if k::INPUT_STREAMS.contains(&(module.as_str(), name.as_str())) {
+            return Some(Crossing::read(World::Screen));
+        }
+    }
     // a program is run by a `Command`; `process::exit` ends this one and runs none
     if has(k::RUST_COMMAND) {
         return Some(Crossing::to(World::Process));
@@ -91,7 +97,7 @@ pub fn described(pkg: &str) -> bool {
 pub fn boundary(pkg: Option<&str>, parts: &[String]) -> Option<Crossing> {
     let head = parts.first().map(String::as_str).unwrap_or("");
     let last = parts.last().map(String::as_str).unwrap_or("");
-    let builtin = |name: &str| k::PYTHON_BUILTINS.iter().find(|(b, _)| *b == name).map(|(_, w)| Crossing::to(*w));
+    let builtin = |name: &str| k::PYTHON_BUILTINS.iter().find(|(b, _)| *b == name).map(|(_, c)| *c);
     let Some(pkg) = pkg else {
         return if parts.len() == 1 { builtin(head) } else { None };
     };
@@ -102,6 +108,9 @@ pub fn boundary(pkg: Option<&str>, parts: &[String]) -> Option<Crossing> {
     let stream = parts.len() == 3 && k::STREAMS.contains(&(pkg, parts[1].as_str()));
     if stream {
         return Some(Crossing::to(World::Screen));
+    }
+    if parts.len() == 3 && k::INPUT_STREAMS.contains(&(pkg, parts[1].as_str())) {
+        return Some(Crossing::read(World::Screen));
     }
     if let Some(c) = k::operation(pkg, last).filter(|c| matches!(c.world, World::Screen | World::Figure)) {
         return Some(c);
@@ -149,6 +158,10 @@ fn ml(pkg: &str, parts: &[String], last: &str) -> Option<Crossing> {
 pub fn boundary_ts(pkg: Option<&str>, parts: &[String]) -> Option<Crossing> {
     let last = parts.last().map(String::as_str).unwrap_or("");
     let Some(pkg) = pkg else { return platform(parts) };
+    // what shows the human something or reads what they type, by the package's own operation
+    if let Some(c) = k::operation(pkg, last).filter(|c| c.world == World::Screen) {
+        return Some(c);
+    }
     // building a client moves nothing: `axios.create(..)`
     if k::CLIENT_MAKERS.contains(&last) && parts.len() == 2 && k::reaches(pkg, Some(Registry::Npm)) != Some(World::Llm) {
         return None;
@@ -187,6 +200,9 @@ fn platform(parts: &[String]) -> Option<Crossing> {
     }
     if head == k::CONSOLE || (parts.len() > 1 && k::STREAMS.contains(&(head, parts[1]))) {
         return Some(Crossing::to(World::Screen));
+    }
+    if parts.len() > 1 && k::INPUT_STREAMS.contains(&(head, parts[1])) {
+        return Some(Crossing::read(World::Screen));
     }
     (k::BROWSER_STORES.contains(&head) && k::BROWSER_STORE_OPS.contains(&last)).then_some(Crossing::to(World::Db(Db::Kv)))
 }

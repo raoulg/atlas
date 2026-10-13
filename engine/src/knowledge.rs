@@ -449,6 +449,14 @@ pub const OPERATIONS: &[(&str, &str, Crossing)] = &[
     ("typer", "echo", Crossing::to(World::Screen)), ("typer", "secho", Crossing::to(World::Screen)),
     ("rich", "print", Crossing::to(World::Screen)), ("pprint", "pprint", Crossing::to(World::Screen)), ("pprint", "pp", Crossing::to(World::Screen)),
     ("matplotlib", "show", Crossing::to(World::Screen)), ("plotly", "show", Crossing::to(World::Screen)),
+    // what the human types: a prompt, a password, a key in a terminal window
+    ("getpass", "getpass", Crossing::read(World::Screen)), ("click", "prompt", Crossing::read(World::Screen)), ("click", "confirm", Crossing::read(World::Screen)),
+    ("typer", "prompt", Crossing::read(World::Screen)), ("typer", "confirm", Crossing::read(World::Screen)), ("readline", "question", Crossing::read(World::Screen)),
+    ("curses", "getch", Crossing::read(World::Screen)), ("curses", "getkey", Crossing::read(World::Screen)), ("curses", "getstr", Crossing::read(World::Screen)),
+    ("curses", "get_wch", Crossing::read(World::Screen)),
+    // what a terminal window shows
+    ("curses", "addstr", Crossing::to(World::Screen)), ("curses", "addnstr", Crossing::to(World::Screen)), ("curses", "addch", Crossing::to(World::Screen)),
+    ("curses", "insstr", Crossing::to(World::Screen)),
     ("matplotlib", "figure", Crossing::to(World::Figure)), ("matplotlib", "subplots", Crossing::to(World::Figure)), ("matplotlib", "subplot_mosaic", Crossing::to(World::Figure)),
     ("sentence_transformers", "encode", Crossing::to(World::Model)), ("sentence_transformers", "embed", Crossing::to(World::Model)),
     ("transformers", "save_pretrained", Crossing::write(World::Disk)), ("sentence_transformers", "save_pretrained", Crossing::write(World::Disk)),
@@ -467,11 +475,18 @@ pub fn operation(pkg: &str, op: &str) -> Option<Crossing> {
 /// A program's streams that a write to shows the human: `sys.stdout`, `process.stderr`.
 pub const STREAMS: &[(&str, &str)] = &[("sys", "stdout"), ("sys", "stderr"), ("process", "stdout"), ("process", "stderr")];
 
+/// A program's streams that read what the human types: `sys.stdin`, `process.stdin`, Rust's
+/// `io::stdin()`.
+pub const INPUT_STREAMS: &[(&str, &str)] = &[("sys", "stdin"), ("process", "stdin"), ("io", "stdin")];
+
+/// The keyword a print is handed a file by: such a print writes that file, not the screen.
+pub const PRINT_TO: &str = "file";
+
 /// Python's own modules whose calls these tables describe: `print` and `open`, a stream.
 pub const PYTHON_OWN: &[&str] = &["builtins", "sys"];
 
 /// Python's builtins that cross: by name.
-pub const PYTHON_BUILTINS: &[(&str, World)] = &[("print", World::Screen), ("open", World::Disk)];
+pub const PYTHON_BUILTINS: &[(&str, Crossing)] = &[("print", Crossing::to(World::Screen)), ("input", Crossing::read(World::Screen)), ("open", Crossing::to(World::Disk))];
 
 // ---------- files ----------
 
