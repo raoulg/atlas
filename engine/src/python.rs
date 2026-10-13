@@ -307,6 +307,15 @@ fn notebook_source(text: &str) -> Result<String> {
     Ok(lines.concat())
 }
 
+/// Whether a module runs as a program when it is run itself: `if __name__ == "__main__":` at its
+/// top level.
+fn runs_as_main(root: TsNode, src: &[u8]) -> bool {
+    named_children(root).into_iter().filter(|s| s.kind() == "if_statement").any(|s| {
+        let condition: String = s.child_by_field_name("condition").map(|c| text(c, src)).unwrap_or("").chars().filter(|c| !c.is_whitespace()).collect::<String>().replace('\'', "\"");
+        condition == "__name__==\"__main__\"" || condition == "\"__main__\"==__name__"
+    })
+}
+
 /// The scripts and notebooks of a project: every `.py` and `.ipynb` outside its packages, at any
 /// depth, and the files named on the command line, even where git ignores them. Not its tests,
 /// what git ignores, hidden directories or environments, and not another project inside it (a
@@ -544,6 +553,8 @@ pub fn parse(repo: &Repo, packages: &[PathBuf], project_root: Option<&Path>, opt
             module: mid.clone(),
             doc: first_docline(Some(m.tree.root_node()), &m.src),
             is_pkg,
+            // a module of a package that runs as a command, by `python -m`
+            entry: runs_as_main(m.tree.root_node(), &m.src).then(|| Entry { kind: EntryKind::Cli, label: format!("python -m {mid}") }),
             ..Default::default()
         });
         modules.insert(mid, m);

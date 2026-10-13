@@ -213,7 +213,9 @@ environment's place, which the code does not name, and the default, which the li
 MCP tool, a test, a binary's `main`), and a file that runs as a whole (a script, a notebook, a
 test file) with the code it defines. A function beside an entry is library code all the same:
 a helper in the module of a CLI command, or a function in a Rust file whose `#[test]`s sit
-below it, takes its place from whoever calls it.
+below it, takes its place from whoever calls it. So is a function of a module that runs as a
+command when it is run itself (`if __name__ == "__main__":`): the module can be imported, and a
+notebook that calls the function gets the place it picked.
 
 goad: `BasePlot.save(path)` takes the place, and the demo script, where the program
 starts, names it:

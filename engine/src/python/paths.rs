@@ -14,7 +14,7 @@ use crate::tree::{named_children, path_str, text, unquote, walk};
 
 pub(super) use crate::paths::{Built, Seg};
 use crate::knowledge;
-use crate::paths::{cross, hole, lit, parent, union};
+use crate::paths::{cross, hole, lit, parent, substitute, union};
 
 const DEPTH: u32 = 12;
 
@@ -71,6 +71,45 @@ impl<'a> Eval<'a> {
             Target::Here { file, at } => Some((file.clone(), *at)),
             Target::Lib(_) => None,
         })
+    }
+
+    /// What a function of the package defined at `offset` in `file` gives back at call `c`: each
+    /// `return` evaluated with the function's parameters bound to what `c` hands them, by place
+    /// or by keyword, and to their defaults where it hands nothing.
+    fn given(&self, at: At, file: &str, offset: usize, c: TsNode, depth: u32) -> Option<Vec<Built>> {
+        let m = *self.by_file.get(file)?;
+        let def = m.tree.root_node().descendant_for_byte_range(offset, offset)?.parent().filter(|d| d.kind() == "function_definition")?;
+        let declared = parameters(def, &m.src, in_class(def));
+        let names: Vec<String> = declared.iter().map(|(n, _)| n.clone()).collect();
+        let inner = At { m, scope: Some(def), params: &names };
+        let returns = walk(def.child_by_field_name("body")?, &["return_statement"]).into_iter().filter(|r| enclosing_def(*r).map(|d| d.id()) == Some(def.id()));
+        let gives = returns.filter_map(|r| named_children(r).into_iter().next()).fold(vec![], |acc, x| union(acc, self.of(inner, x, depth + 1)));
+        if gives.is_empty() {
+            return None;
+        }
+        let mut handed: HashMap<String, Vec<Built>> = HashMap::new();
+        let mut i = 0;
+        for a in c.child_by_field_name("arguments").map(named_children).unwrap_or_default().into_iter().filter(|a| a.kind() != "comment") {
+            match a.kind() {
+                "keyword_argument" => {
+                    if let (Some(k), Some(v)) = (a.child_by_field_name("name"), a.child_by_field_name("value")) {
+                        handed.insert(text(k, &at.m.src).to_string(), self.of(at, v, depth + 1));
+                    }
+                }
+                "list_splat" | "dictionary_splat" => break,
+                _ => {
+                    if let Some(p) = names.get(i) {
+                        handed.insert(p.clone(), self.of(at, a, depth + 1));
+                    }
+                    i += 1;
+                }
+            }
+        }
+        let value = |p: &str| match handed.get(p) {
+            Some(v) => v.clone(),
+            None => declared.iter().find(|(n, _)| n == p).and_then(|(_, d)| *d).map(|d| self.of(At { m, scope: None, params: &[] }, d, depth + 1)).unwrap_or_else(|| vec![hole(p)]),
+        };
+        Some(gives.iter().flat_map(|b| substitute(b, value)).collect())
     }
 
     /// The values `e` can have.
@@ -299,8 +338,12 @@ impl<'a> Eval<'a> {
                 return self.of(at, a, depth + 1);
             }
         }
-        // a function of the package: what it gives back
+        // a function of the package: what it gives back, its parameters bound to what the call
+        // hands them
         if let Some((file, offset)) = self.callee_def(at.m, f) {
+            if let Some(v) = self.given(at, &file, offset, c, depth).filter(|v| !v.is_empty()) {
+                return v;
+            }
             if let Some(v) = self.follow(At { scope: None, params: &[], ..at }, &file, offset, depth).filter(|v| !v.is_empty()) {
                 return v;
             }

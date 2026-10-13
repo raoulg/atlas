@@ -183,6 +183,8 @@ pub fn parent(b: &Built) -> Built {
     }
     match b.as_slice() {
         [Seg::Lit(_)] => lit("."),
+        // a path a caller hands: its directory, once the caller says the path (`{to}/..`)
+        [.., Seg::Param(_) | Seg::Held(..)] => [b.clone(), lit("/..")].concat(),
         _ => hole("parent"),
     }
 }

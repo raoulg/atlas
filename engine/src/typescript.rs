@@ -1773,13 +1773,16 @@ impl<'a, 't> Body<'a, 't> {
             // a call not followed is a step where the body keeps what it gives, and is counted
             // by the name the code calls it by
             _ if parts.is_empty() => {
-                let name = written_callee(f, src);
-                steps.op(c, &name, hands, self.gives(c, None));
-                self.read.unresolved.push((name, self.bucket_of(f)));
+                let (name, bucket) = (written_callee(f, src), self.bucket_of(f));
+                self.unread(steps, c, &name, bucket, hands);
+                self.read.unresolved.push((name, bucket));
             }
             _ => {
-                steps.op(c, parts.last().map_or("", String::as_str), hands, self.gives(c, None));
-                self.read.unresolved.push((parts.iter().take(2).cloned().collect::<Vec<_>>().join("."), self.bucket_path(&parts)));
+                let bucket = self.bucket_path(&parts);
+                // a library's operation by its name, a call Atlas cannot follow as written
+                let name = if matches!(bucket, Bucket::Library | Bucket::Builtin) { parts.last().cloned().unwrap_or_default() } else { text(f, src).to_string() };
+                self.unread(steps, c, &name, bucket, hands);
+                self.read.unresolved.push((parts.iter().take(2).cloned().collect::<Vec<_>>().join("."), bucket));
                 self.crossed(c, &parts);
             }
         }
@@ -1817,6 +1820,16 @@ impl<'a, 't> Body<'a, 't> {
 
     /// What a call's name path starts from is bound to; a field that holds what a package made is
     /// that package's, as a local is.
+    /// A call the body reads no further, as a step: a library's operation where the body keeps what
+    /// it gives, any other call Atlas cannot follow always, since it runs all the same.
+    fn unread(&self, steps: &mut Steps, c: TsNode<'t>, name: &str, bucket: Bucket, hands: Vec<Held>) {
+        if matches!(bucket, Bucket::Library | Bucket::Builtin) {
+            steps.op(c, name, hands, self.gives(c, None));
+        } else {
+            steps.not_followed(c, name, hands, self.gives(c, None));
+        }
+    }
+
     fn bucket_path(&self, parts: &[String]) -> Bucket {
         let field = (parts.len() > 2 && parts[0] == "this").then(|| format!("this.{}", parts[1])).filter(|f| self.made.contains_key(f));
         self.bucket(field.as_deref().unwrap_or(&parts[0]))

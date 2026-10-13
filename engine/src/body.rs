@@ -121,10 +121,10 @@ impl<'t, 's> Steps<'t, 's> {
         self.edges.push((to.to_string(), kind, None, arms));
     }
 
-    /// A library's operation `op` that the body reads no further: a step when it makes a value
-    /// the body keeps from values it hands it.
+    /// A library's operation `op` that the body reads no further: a step when it makes a value the
+    /// body keeps, whatever it is handed.
     pub fn op(&mut self, c: TsNode, op: &str, hands: Vec<Held>, gives: Vec<Held>) {
-        if hands.is_empty() || gives.is_empty() {
+        if gives.is_empty() {
             return;
         }
         self.not_followed(c, op, hands, gives);

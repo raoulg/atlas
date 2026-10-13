@@ -180,7 +180,6 @@ fn morphisms_a_type_comes_from_a_step() {
 /// Morphisms are functions: a type no arrow gives is no type of the route. The shortcut's asserted
 /// types show as what they are: the value `JSON.parse` gives is a step that gives no type.
 #[test]
-#[ignore = "Atlas: a library's call is a step only when it is handed a value the body holds by name (`body::Steps::op`); `JSON.parse(readFileSync(..))` is handed another call's value, so the parsed JSON is no step, and the route shows a Config made by nothing"]
 fn morphisms_an_asserted_type_shows() {
     let s = shortcut();
     for f in ["config.loadConfig", "rates.file.FileRates.latest"] {

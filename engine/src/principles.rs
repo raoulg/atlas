@@ -440,8 +440,11 @@ fn array_fits(given: &Array, promised: &Array) -> bool {
 fn places(ix: &Index) -> Vec<Finding> {
     let entry = |id: &str| ix.node(id).and_then(|n| n.entry.as_ref()).map_or(false, |e| e.kind != EntryKind::Export);
     let mut out = vec![];
+    // a file that runs as a whole names its places with the code it defines; a module that runs as
+    // a command is imported all the same, and its functions are library code
+    let whole = |id: &str| ix.node(id).and_then(|n| n.entry.as_ref()).map_or(false, |e| !matches!(e.kind, EntryKind::Export | EntryKind::Cli));
     for n in &ix.g.nodes {
-        if entry(&n.id) || entry(&n.module) {
+        if entry(&n.id) || whole(&n.module) {
             continue;
         }
         let fixed: Vec<String> = n

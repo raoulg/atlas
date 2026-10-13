@@ -136,7 +136,6 @@ fn the_same_from_outside_the_request_and_the_raw_file() {
 
 /// From the clean command, the route reaches the program's outside.
 #[test]
-#[ignore = "Atlas (a): the path `download` gives back and a path's `.parent` are not carried from the command, so the raw file read is `*.csv` and the directories have no name"]
 fn the_same_from_outside_python_clean() {
     assert_eq!(program(clean()), "sunspots.cli.run");
     assert_eq!(outside(clean(), "sunspots.cli.run"), the_outside());
@@ -153,12 +152,13 @@ fn the_same_from_outside_python_sloppy_and_pyplots_figure() {
     assert_eq!(outside(sloppy(), STUDENT), want);
 }
 
-/// The student's main block is where the program starts: the module that holds it is a way in,
-/// read as a script, as it is when the file is named `main.py`, after no package.
+/// The student's main block is where the program starts: the module that holds it runs as a
+/// command (`python -m sunspots`), a way in. It is still a module others import, so its functions
+/// stay library code.
 #[test]
-#[ignore = "Atlas (b): an `if __name__ == \"__main__\":` block in a module of the package is no entry, so the student's program has no route"]
 fn the_same_from_outside_the_students_main_block_is_a_way_in() {
-    assert_eq!(node(sloppy(), STUDENT).entry.as_ref().map(|e| e.kind), Some(EntryKind::Script));
+    let entry = node(sloppy(), STUDENT).entry.clone().map(|e| (e.kind, e.label));
+    assert_eq!(entry, Some((EntryKind::Cli, "python -m sunspots".to_string())));
     assert_eq!(program(sloppy()), STUDENT);
 }
 
@@ -173,7 +173,6 @@ fn the_same_from_outside_rust() {
 /// The clean `load` reads the file the command names: `load(download(SILSO, raw))` hands it what
 /// `download` gives back, which is `to`, the path the command handed `download`.
 #[test]
-#[ignore = "Atlas (a): a function that gives back the path it was handed is not followed, so `load(download(url, raw))` reads `*.csv`"]
 fn the_same_from_outside_python_clean_reads_the_path_download_gives_back() {
     let read = touches(clean(), "sunspots.series.load", "disk_read");
     assert!(read.iter().any(|t| t.artifact == "data/raw/sunspots.csv" && !t.fixed && t.by == ["sunspots.cli.run"]), "{read:#?}");
@@ -182,7 +181,6 @@ fn the_same_from_outside_python_clean_reads_the_path_download_gives_back() {
 /// The clean functions create the directory their file goes in: `to.parent.mkdir(..)` creates
 /// the directory of the path the command hands in.
 #[test]
-#[ignore = "Atlas (a): Python's `path.parent` is no path carried from the caller, so `to.parent.mkdir()` creates a directory without a name"]
 fn the_same_from_outside_python_clean_creates_the_parent_of_the_path_handed_in() {
     for (f, dir) in [("sunspots.download.download", "data/raw/"), ("sunspots.plot.Plot.save", "figures/")] {
         let made: Vec<&Touch> = touches(clean(), f, "disk_write").into_iter().filter(|t| t.op == "mkdir").collect();
