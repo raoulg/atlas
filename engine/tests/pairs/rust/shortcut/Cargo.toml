@@ -1,0 +1,11 @@
+[package]
+name = "spend"
+version = "0.1.0"
+edition = "2021"
+description = "Keeps a ledger of expenses and reports them in one currency"
+
+[dependencies]
+reqwest = { version = "0.12", features = ["blocking", "json"] }
+rusqlite = "0.32"
+serde_json = "1"
+toml = "0.8"
