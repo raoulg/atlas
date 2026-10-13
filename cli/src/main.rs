@@ -140,6 +140,11 @@ pub(crate) fn page(repos: &[PathBuf], opts: &Options, since: Option<&str>, shown
     // what each route runs and what each step takes and gives: the flow the agent reads its routes from
     let flow = atlas_engine::flow::of(&g);
     page["flow"] = serde_json::to_value(&flow)?;
+    // what the principles ask, each at the node it is about, where the page marks it: each part
+    // checked in its own language, as `atlas check` checks it; the merged graph keeps every
+    // part's nodes, so each finding is about a node the picture knows
+    let findings: Vec<principles::Finding> = parts::analyze_parts(repos, opts)?.iter().flat_map(principles::check).collect();
+    page["findings"] = serde_json::to_value(&findings)?;
     if let Some(rev) = since {
         let [repo] = repos else { anyhow::bail!("--since compares one repository with its history") };
         page["changes"] = serde_json::to_value(atlas_engine::changes::since(repo, rev, opts)?)?;

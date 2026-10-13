@@ -86,6 +86,9 @@ Read it from left to right:
   packages that hand the focus data or take data from it, and click one of those to add
   it to the focus. The state bar names the packages around the focus, the most exchanged
   first, to add with one click.
+- **A vermilion dot in a corner is a finding** of `atlas check` (below) about that box, pill
+  or route: hover the dot for what Atlas sees there and the question it asks. The dot sits
+  inside its box, so findings move no box and no line. Atlas's own picture has none.
 - **Double-click a box** to pin its lines, to study or compare what it connects.
 - **Space over a box** shows its details and code over the picture while the code panel is
   closed; space, Esc or a click on the picture puts them away, and **pin** keeps the panel

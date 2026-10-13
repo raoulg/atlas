@@ -118,6 +118,16 @@ svg#canvas:active{cursor:grabbing}
 .chg .add,.chg .del{font-family:var(--mono);font-size:11px;padding-left:14px}
 .chg .add{color:var(--add)}
 .chg .del{color:var(--alert);text-decoration:line-through}
+/* a finding marks the box it is about with a dot inside its corner; the pointer on the dot shows
+   what the graph shows there and the question it asks */
+.ask circle{fill:var(--accent)}
+.ask rect{fill:transparent}
+#ask{position:fixed;z-index:30;max-width:360px;background:var(--panel);border:1px solid var(--line);border-left:2px solid var(--accent);box-shadow:0 10px 28px rgba(0,0,0,.2);padding:9px 12px 10px;font-size:12px;line-height:1.45;pointer-events:none}
+#ask[hidden]{display:none}
+#ask .f+.f{margin-top:9px;padding-top:9px;border-top:1px solid var(--line)}
+#ask .at{font-family:var(--mono);font-size:10.5px;color:var(--ink-3);margin-bottom:3px;word-break:break-all}
+#ask .what{color:var(--ink-2)}
+#ask .q{color:var(--ink);font-weight:500;margin-top:5px}
 .tstep.own rect.bg{fill:var(--panel);stroke-dasharray:none}
 .tstep.op{cursor:default}
 .tstep.op rect.bg{stroke-dasharray:3 3}
@@ -224,6 +234,7 @@ pre.code .l::before{counter-increment:ln;content:counter(ln);display:inline-bloc
     </dl>
   </div></div>
   <div id="peekbar"><button id="peekpin" type="button" title="keep the panel open beside the picture">pin</button><button id="peekclose" type="button" title="close (Esc, space)">✕</button></div>
+  <div id="ask" role="tooltip" hidden></div>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
@@ -309,6 +320,33 @@ for (const e of D.edges) {
 
 { const count = k => OWN.filter(n => n.kind === k).length;
   document.getElementById("stats").textContent = `${modules.length} modules · ${count("class")} classes · ${count("function")} functions · ${D.edges.filter(e => e.kind !== "contains" && !byId.get(e.src)?.library).length} edges`; }
+
+// ---------- findings: what the principles ask of the code, as `atlas check` lists them ----------
+// each finding by the node it is about
+const ASKS = new Map();
+for (const f of D.findings || []) { if (!ASKS.has(f.node)) ASKS.set(f.node, []); ASKS.get(f.node).push(f); }
+const findingAt = f => `${f.principle} · ${f.file}:${f.line}`;
+// a finding's card beside what the pointer is on: where it is, what the graph shows, the question
+const askEl = document.getElementById("ask");
+function showAsks(fs, at) {
+  askEl.replaceChildren(...fs.map(f => { const d = html("div", "f"); d.append(html("div", "at", findingAt(f)), html("div", "what", f.what), html("div", "q", f.question)); return d; }));
+  askEl.hidden = false;
+  const r = at.getBoundingClientRect(), w = askEl.offsetWidth, h = askEl.offsetHeight;
+  askEl.style.left = (r.right + 10 + w <= innerWidth - 8 ? r.right + 10 : Math.max(8, r.left - 10 - w)) + "px";
+  askEl.style.top = Math.max(8, Math.min(r.top - 6, innerHeight - h - 8)) + "px";
+}
+const hideAsks = () => { askEl.hidden = true; };
+const asking = (node, fs) => { node.addEventListener("mouseenter", () => showAsks(fs, node)); node.addEventListener("mouseleave", hideAsks); };
+// a finding marks the box, pill or frame of the node it is about: a dot centred at (x, y), inside
+// the box, so that findings move no box and no line
+function markAsks(grp, ids, x, y) {
+  const fs = [...new Set(ids)].flatMap(id => ASKS.get(id) || []);
+  if (!fs.length) return;
+  const m = el("g", {class: "ask", transform: `translate(${x},${y})`}, grp);
+  el("rect", {x: -7, y: -7, width: 14, height: 14}, m);
+  el("circle", {r: 3.5}, m);
+  asking(m, fs);
+}
 
 // ---------- svg + zoom ----------
 const svg = d3.select("#canvas"), scene = d3.select("#scene");
@@ -453,6 +491,7 @@ function drawTypeNode(g, n, x, y, W, H, nkids) {
   el("text", {class: "title", x: 12, y: 17}, grp).textContent = n.name;
   el("text", {class: "sub", x: 12, y: 31}, grp).textContent = ghost ? "external · " + (n.module || "builtins") : short(n.module);
   if (!ghost && (n.methods || []).length) el("text", {class: "badge", x: W - 8, y: 17, "text-anchor": "end"}, grp).textContent = `${n.methods.length}ƒ`;
+  markAsks(grp, [n.id], W - 7, 7);
   grp.addEventListener("click", () => select(n.id));
   grp.addEventListener("mouseenter", () => focusType(n.id, true));
   grp.addEventListener("mouseleave", () => focusType(n.id, false));
@@ -511,6 +550,7 @@ async function renderSig() {
     el("circle", {cx: 16, cy: n.height/2, r: 5, fill: hueOf(t)}, grp);
     el("text", {class: "title", x: 28, y: n.height/2 - 2}, grp).textContent = t.name;
     el("text", {class: "sub", x: 28, y: n.height/2 + 12}, grp).textContent = `${(producers.get(n.id) || []).length} producers · ${(consumers.get(n.id) || []).length} consumers`;
+    markAsks(grp, [n.id], n.width - 12, 8);
     grp.addEventListener("click", () => select(n.id, {producers: producers.get(n.id) || [], consumers: consumers.get(n.id) || []}));
   }
   fit();
@@ -1134,6 +1174,11 @@ async function renderPlaat() {
     return (P.steps.some(openable) || !V.route ? "▸ " : "") + text + (alts ? ` · one of ${alts}` : "");
   };
   for (const P of pills.values()) { P.label = pillLabel(P); holder(P.parent).children.push(leaf(P.id, 24 + textW(P.label, 6.9), 26)); }
+  // the node a step stands for, as a finding names it: a package (not its own module beside its
+  // subpackages), a part, the function a call runs. An open step's own pill stands for its
+  // function, so its frame is marked where that pill is not drawn; an open part's own pill is only
+  // the code in it that names other parts' routes
+  const askedOf = s => s.startsWith("unit:") ? (isRest(s.slice(5)) || s.endsWith("$") ? null : s.slice(5)) : s.startsWith("part:") ? s.slice(5) : stepOf(s);
   // memory lives in the smallest open step that holds every step using it
   const chain = fid => { const c = []; for (let f = fid; f; f = frames.get(f)?.parent) c.unshift(f); return c; };
   const usersOf = new Map();
@@ -1228,6 +1273,8 @@ async function renderPlaat() {
     if (F.hue) r.setAttribute("style", `stroke:${hueVar(F.hue)}`);
     if (isFam) el("rect", {x: 0, y: 0, width: 5, height: P.h, fill: F.hue || hueOf(null)}, grp);
     const title = el("text", {class: "ftitle", x: 14, y: 20}, grp); title.textContent = (F.synthetic ? "" : "▾ ") + F.title;
+    const asked = isFam ? F.fam : F.step && (F.step.startsWith("part:") || !pos.has("o:" + F.step)) ? askedOf(F.step) : null;
+    if (asked) markAsks(grp, [asked], P.w - 8, 8);
     title.addEventListener("click", ev => {
       ev.stopPropagation(); if (F.synthetic) return; plaatAnchor = id;
       if (isFam) V.open.families.delete(F.fam); else if (F.step && F.step.startsWith("part:")) V.open.parts.delete(F.step.slice(5)); else if (F.step && F.step.startsWith("unit:")) { const u = F.step.slice(5); for (const x of [...V.open.units]) if (x === u || x.startsWith(u + ".")) V.open.units.delete(x); } else if (F.anchor) { V.route = null; entrySel.value = ""; V.open.steps.clear(); V.open.functions.clear(); plaatAnchor = "n:" + F.step; } else { V.open.steps.delete(F.step); V.open.functions.delete(stepOf(F.step)); }
@@ -1269,6 +1316,7 @@ async function renderPlaat() {
     const r = el("rect", {class: "bg", width: Q.w, height: Q.h, rx: Q.h / 2}, grp);
     if (P.hue) r.setAttribute("style", `stroke:${hueVar(P.hue)};stroke-width:1.6`);
     el("text", {class: "title", x: 11, y: Q.h / 2 + 4}, grp).textContent = P.label;
+    if (!(P.own && P.steps[0].startsWith("part:"))) markAsks(grp, P.steps.map(askedOf), Q.w - 10, 7);
     clicks(grp, ev => {
       if (P.steps[0].startsWith("unit:")) {
         const u = P.steps[0].slice(5);
@@ -1301,6 +1349,7 @@ async function renderPlaat() {
     if (kind) glyphAt(grp, kind, 11, Q.h / 2 - 7);
     else if (p.kind !== "ref") el("rect", {x: 0, y: 0, width: 5, height: Q.h, fill: p.hue || hueOf(null)}, grp);
     el("text", {class: "title", x: kind ? 32 : 15, y: Q.h / 2 + 4}, grp).textContent = p.label;
+    if (p.type && p.kind !== "ref") markAsks(grp, [p.type], Q.w - 7, 7);
     clicks(grp, () => {
       plaatAnchor = p.id;
       if (p.folded) { selectPlace(p.id, p.label); V.open.dirs.add(p.folded); render(); return; }
@@ -1535,6 +1584,7 @@ function legend() {
     row.appendChild(html("span", "sep"));
     for (const k of Object.keys(GLYPH)) { const sw = html("span", "sw"); sw.innerHTML = `${glyphSvg(k)} ${KIND_NAME[k]}`; row.appendChild(sw); }
   }
+  if (scene.node().querySelector(".ask")) { const sw = html("span", "sw asks"); sw.innerHTML = `<svg width="8" height="8"><circle cx="4" cy="4" r="3.5" fill="var(--accent)"/></svg> finding: hover it`; row.appendChild(sw); }
   const toggle = html("button", "help-toggle", "?");
   toggle.setAttribute("aria-expanded", String(legendHelp)); toggle.setAttribute("aria-label", "How to read this view"); toggle.title = "How to read this view";
   toggle.onclick = () => { legendHelp = !legendHelp; try { localStorage.setItem("atlas.legend.help", legendHelp ? "1" : "0"); } catch {} legend(); };
@@ -1575,6 +1625,7 @@ window.addEventListener("unhandledrejection", e => fault(e.reason));
 async function render() {
   scene.node().innerHTML = ""; scene.node().classList.remove("focus");
   faultEl.hidden = true;
+  hideAsks();
   shownUnits = new Set();
   entrySel.style.display = view === "plaat" ? "" : "none";
   crumbs();
@@ -1613,7 +1664,7 @@ function changesPanel() {
   for (const [title, cls, fs] of [["findings raised", "add", CH.findings_added], ["findings resolved", "del", CH.findings_resolved]]) {
     if (!fs.length) continue;
     const d = html("div", "chg"); d.appendChild(html("div", "eyebrow", title));
-    for (const f of fs) d.appendChild(html("div", cls, `${f.principle} · ${f.file}:${f.line} ${f.what}`));
+    for (const f of fs) { const row = html("div", cls, `${findingAt(f)} ${f.what}`); asking(row, [f]); d.appendChild(row); }
     insp.appendChild(d);
   }
 }
