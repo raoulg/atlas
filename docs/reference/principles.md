@@ -344,14 +344,15 @@ A function is an arrow from what it takes to what it gives, writes or changes. O
 nothing back, cannot fail, changes nothing it is handed and reaches no place is an arrow into
 nothing: whoever calls it learns nothing and nothing is different afterwards. Either it is
 dead, or it changes something the code does not show: a value it was handed, reached through
-an item or a loop; a global; a library's own state. Then the change belongs where a reader
-sees it.
+an item or a loop; a library's own state. Then the change belongs where a reader sees it. A
+global the function changes is shown: a value a module keeps between calls is a place,
+`Global(module.name)`, written by whoever changes it and read by whoever uses it. Atlas draws it
+and does not judge it, since a global is sometimes the right choice.
 
 - **Rust.** `&mut T` and `-> Result<()>` say what a function changes and that it may fail.
-  What stays hidden is a `static` or a value behind a `RefCell`.
+  What stays hidden is a value behind a `RefCell`.
 - **Python.** A function that fills a value it is handed (`for node in graph.nodes:
-  node.status = ...`) can be a method of that value, or hand back what it makes. A function
-  that only writes a global (`SEEN[name] = name`) can hold that state in a value of its own.
+  node.status = ...`) can be a method of that value, or hand back what it makes.
 - **TypeScript.** The same as Python; a function that sets fields on the elements of an
   array it is handed can hand back the array.
 

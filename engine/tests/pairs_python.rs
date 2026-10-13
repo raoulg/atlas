@@ -197,16 +197,20 @@ fn choices_a_choice_is_made_once() {
 
 /// A call leaves something behind. On the clean side the latest reading of a station rests in a
 /// place, the `readings` table, written by `ReadingStore.save`. The shortcut also keeps it in a
-/// module-level `LATEST` dict that `remember(reading) -> None` fills: a call into nothing Atlas
-/// can see.
+/// module-level `LATEST` dict that `remember(reading) -> None` fills: a global, the place
+/// `Global(harvest.harvester.LATEST)`, which `remember` writes and the API's `latest` reads in
+/// another module. Drawn, not asked: a global is sometimes the right choice.
 #[test]
 fn nothing_a_call_leaves_something_behind() {
     let (c, s) = (clean(), shortcut());
     assert!(found(c, "nothing").is_empty());
     assert!(edge(c, "harvest.harvester.Harvester.collect", "harvest.store.ReadingStore.save", EdgeKind::Calls));
     assert!(touches(c, "harvest.store.ReadingStore.save", "db_sqlite").iter().any(|t| t.artifact == "readings" && t.dir_name() == "write"));
-    assert_eq!(found(s, "nothing"), ["harvest.harvester.remember"]);
     assert!(edge(s, "harvest.store.ReadingStore.save", "harvest.harvester.remember", EdgeKind::Calls));
+    let global = |f: &str, dir: &str| touches(s, f, "global").iter().any(|t| t.artifact == "harvest.harvester.LATEST" && t.dir_name() == dir);
+    assert!(global("harvest.harvester.remember", "write") && global("harvest.api.latest", "read"));
+    assert!(found(s, "nothing").is_empty(), "a call that keeps its value in a global leaves it behind");
+    assert!(touches(c, "harvest.harvester.Harvester.collect", "global").is_empty(), "the clean side keeps nothing in a global");
 }
 
 /// The packages of a part depend on one another in one direction. On the clean side the harvester

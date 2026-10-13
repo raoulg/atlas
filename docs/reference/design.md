@@ -21,7 +21,9 @@ box and saying "this should not exist" is a statement both can act on.
 - **Objects are places where data rests.** Memory(type), File(path), Database(table),
   Network(url), Process(command), Screen(human), Library(what a dependency produces).
   Creating an object is an arrow into Memory(T), the same kind of thing as writing a
-  file. Every place carries a *what*: the type, the path, the table, the command. The
+  file. A value a module keeps between calls, which its functions change, is a place too,
+  Global(module.name): written by whoever changes it, read by whoever uses it, drawn and
+  not judged. Every place carries a *what*: the type, the path, the table, the command. The
   screen is the terminal both ways: a print, a stream or a terminal window shows the
   human something, and `input`, a prompt, a key or standard input reads what they type,
   in every language alike; a print handed a file writes the file, and a logging library

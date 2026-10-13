@@ -17,7 +17,8 @@ The rigorous half and the visual half are the same structure. Read `docs/referen
 ## The shared language, in six sentences
 
 1. Objects are places where data rests: Memory(type), File(path), Database(table),
-   Network(url), Process(command), Screen(human), Library(what a dependency produces).
+   Network(url), Process(command), Screen(human), Library(what a dependency produces),
+   Global(a value a module keeps, which its functions change).
    Every place carries a *what*.
 2. Morphisms are functions. Domain: parameters plus what the body consumes.
    Codomain: what is returned plus what is written, sent or run. The author's names

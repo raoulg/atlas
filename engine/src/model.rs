@@ -313,6 +313,8 @@ pub enum World {
     Screen,
     /// A figure, drawn to be seen.
     Figure,
+    /// A value a module keeps between calls, which its functions change: a global.
+    Global,
 }
 
 /// The kind of database a driver reaches, named the same in every language.
@@ -348,6 +350,7 @@ impl World {
             World::Process => "process",
             World::Screen => "screen",
             World::Figure => "figure",
+            World::Global => "global",
         }
     }
 
@@ -381,6 +384,7 @@ const ALL_WORLDS: &[World] = &[
     World::Process,
     World::Screen,
     World::Figure,
+    World::Global,
 ];
 
 impl Dir {

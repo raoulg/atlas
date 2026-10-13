@@ -286,6 +286,7 @@ impl World {
             World::Process => "open",
             World::Screen => "Screen",
             World::Figure => "Figure",
+            World::Global => "Global",
         }
     }
 
@@ -297,6 +298,7 @@ impl World {
             World::Screen | World::Figure => "screen",
             World::Process => "proc",
             World::Llm | World::Model => "model",
+            World::Global => "global",
         }
     }
 }
@@ -364,7 +366,7 @@ impl Touch {
                 let label = format!("{name}({})", self.artifact);
                 Place { coarse: Some(Box::new(world())), group: base.clone(), ..place(format!("{base}:{}", self.artifact), label.clone(), label, "db") }
             }
-            World::Net | World::Model if !self.artifact.is_empty() => place(format!("{base}:{}", self.artifact), format!("{name}({})", self.artifact), self.artifact.clone(), w.glyph()),
+            World::Net | World::Model | World::Global if !self.artifact.is_empty() => place(format!("{base}:{}", self.artifact), format!("{name}({})", self.artifact), self.artifact.clone(), w.glyph()),
             _ => world(),
         }
     }
@@ -406,6 +408,8 @@ impl Touch {
             (World::Screen, Some(Dir::Read)) => "asks".into(),
             (World::Screen, _) => "prints".into(),
             (World::Figure, _) => "draws".into(),
+            (World::Global, Some(Dir::Read)) => "reads".into(),
+            (World::Global, _) => "changes".into(),
         }
     }
 }

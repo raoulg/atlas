@@ -24,7 +24,7 @@ use std::path::PathBuf;
 use std::sync::OnceLock;
 
 use atlas_engine::principles::check;
-use atlas_engine::{analyze, EdgeKind, EntryKind, Graph, Held, Node, Options, Site, Touch};
+use atlas_engine::{analyze, EdgeKind, EntryKind, Graph, Held, Node, Options, Site, Touch, World};
 
 fn read(version: &str) -> Graph {
     analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/pipeline").join(version), &Options::default()).unwrap()
@@ -99,7 +99,9 @@ fn program(g: &Graph) -> &str {
 fn outside(g: &Graph, start: &str) -> BTreeSet<(String, String)> {
     let reached = g.reach(start);
     let runs = |f: &str| reached.contains(f);
-    reached.iter().filter_map(|id| g.node(id)).flat_map(|n| n.touches_in(start, &runs)).map(|t| (t.kind_name().to_string(), t.artifact.clone())).collect()
+    // a module's global is the program's own memory, not the world's
+    let world = |t: &&Touch| t.kind != World::Global;
+    reached.iter().filter_map(|id| g.node(id)).flat_map(|n| n.touches_in(start, &runs)).filter(world).map(|t| (t.kind_name().to_string(), t.artifact.clone())).collect()
 }
 
 /// The places every version reaches: the request to SILSO, the raw file written and read again, the
@@ -314,28 +316,29 @@ fn python_sloppy_the_functions_name_their_own_places() {
 }
 
 /// Composition is call order, and a step hands on what the next one takes. The student's frame
-/// travels outside the route, through the module's `df`: no function takes or gives a value, and
-/// the main block's steps hand on nothing. `clean` and `smooth` are steps that reach no place and
-/// give nothing back.
+/// travels beside the route, through the module's `df`: no function takes or gives a value, and
+/// the main block's steps hand on nothing.
 #[test]
-fn python_sloppy_the_frame_travels_outside_the_route() {
+fn python_sloppy_the_frame_travels_beside_the_route() {
     let s = sloppy();
     assert!(s.edges.iter().all(|e| !matches!(e.kind, EdgeKind::Takes | EdgeKind::Returns)), "no function takes or gives a type");
     let steps = &node(s, STUDENT).sites;
     assert_eq!(steps.iter().map(|st| st.to.as_str()).collect::<Vec<_>>(), ["sunspots.get_data", "sunspots.clean", "sunspots.smooth", "sunspots.plot"]);
     assert!(steps.iter().all(|st| st.hands.is_empty() && st.gives.is_empty()), "{steps:#?}");
-    for f in ["sunspots.clean", "sunspots.smooth"] {
-        assert!(node(s, f).touches.is_empty(), "{f} reaches no place");
-    }
 }
 
-/// A change shows where a reader sees it. The student's `clean` changes the module's frame in place
-/// (`df.drop(.., inplace=True)`): the graph holds that change, as it holds one to a parameter.
+/// A value a module keeps between calls, which its functions change, is a place: the student's
+/// frame is `Global(sunspots.df)`. `get_data` writes it, `clean` and `smooth` read and change it
+/// (`df.drop(.., inplace=True)`, `df["smooth"] = ..`), `plot` reads it. Drawn, not judged: a global
+/// is sometimes the right choice.
 #[test]
-#[ignore = "Atlas (b): a change to a module global (`df.drop(.., inplace=True)`) is no mutates edge, so `clean` reads as an arrow from nothing to nothing"]
-fn python_sloppy_clean_changes_the_global_frame() {
+fn python_sloppy_the_frame_is_a_global_place() {
     let s = sloppy();
-    assert!(s.edges.iter().any(|e| e.kind == EdgeKind::Mutates && e.src == "sunspots.clean" && e.via.as_deref() == Some("df")), "{:#?}", s.edges.iter().filter(|e| e.src == "sunspots.clean").collect::<Vec<_>>());
+    let global = |f: &str| node(s, f).touches.iter().filter(|t| t.kind == World::Global && t.artifact == "sunspots.df").map(|t| t.dir_name()).collect::<BTreeSet<_>>();
+    assert_eq!(global("sunspots.get_data"), BTreeSet::from(["read", "write"]));
+    assert_eq!(global("sunspots.clean"), BTreeSet::from(["read", "write"]));
+    assert_eq!(global("sunspots.smooth"), BTreeSet::from(["read", "write"]));
+    assert_eq!(global("sunspots.plot"), BTreeSet::from(["read"]));
 }
 
 // ---------- Rust, the quick way ----------

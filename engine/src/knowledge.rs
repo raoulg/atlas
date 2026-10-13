@@ -305,6 +305,10 @@ pub const MUTATORS: &[(Registry, &str, &[&str])] = &[
     (Registry::Npm, "javascript", &["push", "pop", "shift", "unshift", "splice", "sort", "reverse", "fill", "copyWithin", "set", "delete", "clear", "add"]),
 ];
 
+/// A package whose methods change the value they are called on when handed this keyword as
+/// `True`: pandas' `inplace=True`.
+pub const IN_PLACE: &[(&str, &str)] = &[("pandas", "inplace")];
+
 /// The methods that change what they are called on, in the code of one registry's languages.
 pub fn mutators(from: Registry) -> Vec<&'static str> {
     MUTATORS.iter().filter(|(r, _, _)| *r == from).flat_map(|(_, _, ms)| ms.iter().copied()).collect()

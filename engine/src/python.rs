@@ -1199,11 +1199,90 @@ fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, own: &Own,
         crate::paths::complete(waiting, &handing, &family, &default, &entry)
     };
     crate::paths::place_calls(store, completed, false);
+    globals(modules, store, types);
     // the work handed to a managed transaction (`session.execute_read(work)`) goes its way
     for (work, kind, dir) in handed {
         if let Some(n) = store.nodes.get_mut(&work) {
             for t in n.touches.iter_mut().filter(|t| t.kind == kind && t.dir.is_none()) {
                 t.dir = Some(dir);
+            }
+        }
+    }
+}
+
+/// The values a module keeps between calls, which its functions change: a name a module binds at
+/// its top level that a function rebinds (`global df`) or changes in place (`df.drop(..,
+/// inplace=True)`, `LATEST[k] = v`), in its own module or where another imports it. Every
+/// function that changes one writes it and every one that uses it reads it: a place,
+/// `Global(module.name)`. A name no function changes is a constant of the code, and no place.
+fn globals(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, types: &Types) {
+    type Uses = (String, Vec<(String, String, u32)>, Vec<(String, String, u32)>);
+    let mut uses: Vec<Uses> = vec![];
+    for m in modules.values() {
+        let src = &m.src;
+        let top: HashSet<String> = named_children(m.tree.root_node())
+            .into_iter()
+            .filter(|s| s.kind() == "expression_statement")
+            .filter_map(|s| named_children(s).into_iter().next())
+            .filter(|a| a.kind() == "assignment")
+            .filter_map(|a| a.child_by_field_name("left"))
+            .filter(|l| l.kind() == "identifier")
+            .map(|l| text(l, src).to_string())
+            .collect();
+        // where a name of the module's scope is kept: its own top level, or the module it is imported from
+        let kept = |n: &str| if top.contains(n) { Some(format!("{}.{n}", m.id)) } else { m.bindings.get(n).cloned() };
+        let facts = types.of(&crate::tree::path_str(&m.path));
+        let fns: Vec<(String, TsNode)> = store.nodes.values().filter(|n| n.module == m.id && matches!(n.kind, NodeKind::Function | NodeKind::Method)).filter_map(|n| Some((n.id.clone(), def_node(m, n)?))).collect();
+        for (id, def) in &fns {
+            let Some(body) = def.child_by_field_name("body") else { continue };
+            let mine = |n: &TsNode| paths::enclosing_def(*n).map(|d| d.id()) == Some(def.id());
+            let declared: HashSet<String> = walk(body, &["global_statement"]).into_iter().filter(mine).flat_map(|g| named_children(g).into_iter().map(|x| text(x, src).to_string())).collect();
+            // what the function binds itself, unless it says the name is the module's
+            let mut own: HashSet<String> = paths::parameters(*def, src, false).into_iter().map(|(n, _)| n).collect();
+            for a in walk(body, &["assignment", "augmented_assignment", "for_statement"]).into_iter().filter(mine) {
+                if let Some(l) = a.child_by_field_name("left").filter(|l| l.kind() == "identifier") {
+                    own.insert(text(l, src).to_string());
+                }
+            }
+            own.retain(|n| !declared.contains(n));
+            let module_name = |n: &str| if own.contains(n) { None } else { kept(n) };
+            let line = |n: TsNode| n.start_position().row as u32 + 1;
+            let mut writes: Vec<(String, String, u32)> = vec![];
+            for a in walk(body, &["assignment", "augmented_assignment"]).into_iter().filter(mine) {
+                if let Some(l) = a.child_by_field_name("left").filter(|l| l.kind() == "identifier" && declared.contains(text(*l, src))) {
+                    writes.extend(kept(text(l, src)).map(|k| (k, text(l, src).to_string(), line(a))));
+                }
+            }
+            for n in changed_roots(body, src, &|c| library_change(facts, c, src)) {
+                if let Some(k) = module_name(n).filter(|k| !writes.iter().any(|(w, _, _)| w == k)) {
+                    writes.push((k, n.to_string(), line(body)));
+                }
+            }
+            let mut reads: Vec<(String, String, u32)> = vec![];
+            for x in walk(body, &["identifier"]) {
+                let name = text(x, src);
+                let named_here = x.parent().map_or(false, |p| {
+                    // a name the code binds or labels, not the value it holds
+                    matches!(p.kind(), "global_statement" | "keyword_argument" | "function_definition" | "parameters" | "default_parameter" | "typed_parameter" | "typed_default_parameter")
+                        || (p.kind() == "attribute" && p.child_by_field_name("attribute").map(|a| a.id()) == Some(x.id()))
+                        || (p.kind() == "assignment" && p.child_by_field_name("left").map(|l| l.id()) == Some(x.id()))
+                });
+                if named_here {
+                    continue;
+                }
+                if let Some(k) = module_name(name).filter(|k| !reads.iter().any(|(r, _, _)| r == k)) {
+                    reads.push((k, name.to_string(), line(x)));
+                }
+            }
+            uses.push((id.clone(), writes, reads));
+        }
+    }
+    let state: HashSet<String> = uses.iter().flat_map(|(_, w, _)| w.iter().map(|(k, _, _)| k.clone())).collect();
+    for (id, writes, reads) in uses {
+        for (dir, names) in [(Dir::Write, writes), (Dir::Read, reads)] {
+            for (kept, name, at) in names.into_iter().filter(|(k, _, _)| state.contains(k)) {
+                let t = Touch { what: name.clone(), artifact: kept, op: name, line: at, ..Touch::new(World::Global, Some(dir)) };
+                store.touch(&id, t);
             }
         }
     }
@@ -1273,8 +1352,10 @@ fn library_change<'t>(facts: Option<&Facts>, c: TsNode<'t>, src: &[u8]) -> Optio
         Target::Lib(m) => Some(package_of(m)),
         Target::Here { .. } => None,
     })?;
+    // a method handed its package's in-place keyword as `True` changes its receiver
+    let in_place = knowledge::IN_PLACE.iter().any(|(p, k)| *p == package && keyword_node(c, src, k).map_or(false, |v| text(v, src) == "True"));
     match f.kind() {
-        "attribute" if knowledge::mutates(&package, text(f.child_by_field_name("attribute")?, src)) => f.child_by_field_name("object"),
+        "attribute" if in_place || knowledge::mutates(&package, text(f.child_by_field_name("attribute")?, src)) => f.child_by_field_name("object"),
         _ => {
             let name = dotted(Some(f), src).last().cloned()?;
             let (_, _, i) = knowledge::CHANGES_ARGUMENT.iter().find(|(p, n, _)| *p == package && *n == name)?;
