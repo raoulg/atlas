@@ -236,6 +236,60 @@ impl<'a> Eval<'a> {
         Some(crate::paths::option(field, self.default(home, declared, parser, depth)))
     }
 
+    /// The options of the command line a call parses, where it parses the one the program is run
+    /// with: a function the derive of a command-line parser defines that reads that command line
+    /// (`Cli::parse()`), on a type of the program that derives it.
+    pub fn command_line(&self, m: &Module, call: TsNode) -> Option<Vec<String>> {
+        let parts = path_parts(call.child_by_field_name("function"), &m.src);
+        let (function, ty) = parts.split_last()?;
+        let ty = self.deriving(m, ty)?;
+        let n = self.nodes.get(&ty)?;
+        let home = self.modules.get(&n.module)?;
+        let parser = derived_parser(home, def_node(home, n)?)?;
+        parser.reads.contains(&function.as_str()).then(|| self.options(&ty, 0))
+    }
+
+    /// The options a type a command-line parser derives declares, in the order of its fields, each
+    /// as the human types it: a field whose attribute names it long or short is an option
+    /// (`#[arg(short, long)] out` is `--out`), any other a positional argument (`<out>`). A
+    /// subcommand is no option of its own, and a flattened field adds the options of its type.
+    fn options(&self, ty: &str, depth: u32) -> Vec<String> {
+        let Some(n) = self.nodes.get(ty) else { return vec![] };
+        let Some(home) = self.modules.get(&n.module) else { return vec![] };
+        let Some(item) = def_node(home, n) else { return vec![] };
+        let Some(parser) = derived_parser(home, item).filter(|_| depth <= DEPTH) else { return vec![] };
+        let src = &home.src;
+        let fields = item.child_by_field_name("body").map(named_children).unwrap_or_default();
+        let mut out = vec![];
+        for d in fields.into_iter().filter(|d| d.kind() == "field_declaration") {
+            let Some(name) = d.child_by_field_name("name").map(|x| text(x, src).to_string()) else { continue };
+            let groups: Vec<Vec<TsNode>> = attributes(d)
+                .into_iter()
+                .filter(|a| attribute_name(*a, src).map_or(false, |n| parser.attributes.contains(&n)))
+                .flat_map(|a| a.child_by_field_name("arguments").map(token_groups).unwrap_or_default())
+                .collect();
+            let key = |g: &Vec<TsNode>| g.first().map(|k| text(*k, src)).unwrap_or("");
+            if groups.iter().any(|g| parser.not_options.contains(&key(g))) {
+                continue;
+            }
+            if groups.iter().any(|g| key(g) == parser.flatten) {
+                let field_type = path_parts(d.child_by_field_name("type"), src);
+                out.extend(self.deriving(home, &field_type).map(|t| self.options(&t, depth + 1)).unwrap_or_default());
+                continue;
+            }
+            // the flag a key names: its value when it is handed one, else the field's name
+            let named = |which: &str, dashes: &str, own: String| {
+                groups.iter().find(|g| key(g) == which).map(|g| match g.as_slice() {
+                    [_, eq, v, ..] if eq.kind() == "=" => format!("{dashes}{}", unquote(text(*v, src)).trim_matches('\'')),
+                    _ => format!("{dashes}{own}"),
+                })
+            };
+            let flags: Vec<String> = [named(parser.short, "-", name.chars().take(1).collect()), named(parser.long, "--", name.replace('_', "-"))].into_iter().flatten().collect();
+            out.push(if flags.is_empty() { crate::entries::argument(&name) } else { crate::entries::flag(&flags, &name) });
+        }
+        out
+    }
+
     /// The field a struct pattern takes out of `value`, what it matches (`Cmd::Analyze { out, .. }`
     /// in a `match` on `cli.cmd`), where the code says what that field holds: an option, of what
     /// the function parsed from the command line.

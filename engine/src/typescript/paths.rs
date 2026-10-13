@@ -200,6 +200,22 @@ impl<'a> Eval<'a> {
         local.rev().chain(top).collect()
     }
 
+    /// The options of the command line a call of a command-line parser parses, each as the human
+    /// types it: the keys of the options it is handed (`parseArgs({ options: { raw: .. } })` is
+    /// `--raw`), in the order they are written.
+    pub fn command_line<'t>(&self, at: At<'_, 't>, call: TsNode<'t>) -> Option<Vec<String>> {
+        let src = &at.m.src;
+        let (call, parser) = self.parser_call(at.m, call)?;
+        let handed = call.child_by_field_name("arguments").map(named_children).unwrap_or_default().into_iter().next();
+        let options = handed.and_then(|h| self.object(at, h, 0)).and_then(|o| field(o, parser.options, src)).and_then(|o| self.object(at, o, 0));
+        let keys = options.map(named_children).unwrap_or_default().into_iter().filter_map(|p| match p.kind() {
+            "pair" => p.child_by_field_name("key").map(|k| key_text(k, src)),
+            "shorthand_property_identifier" => Some(text(p, src).to_string()),
+            _ => None,
+        });
+        Some(keys.map(|k| crate::entries::flag(&[format!("--{k}")], &k)).collect())
+    }
+
     /// The call of a command-line parser a value is, with the parser: `parseArgs({..})` as the
     /// package that exports it names it, however the module imports it.
     fn parser_call<'t>(&self, m: &Module, value: TsNode<'t>) -> Option<(TsNode<'t>, &'static knowledge::OptionParser)> {

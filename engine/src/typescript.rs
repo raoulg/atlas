@@ -384,7 +384,7 @@ pub fn parse(repo: &Repo) -> Result<(GraphBuilder, String)> {
         store.files.insert(crate::tree::path_str(p), String::from_utf8_lossy(&src).to_string());
         let is_index = p.file_stem().and_then(|s| s.to_str()) == Some("index");
         let rel = crate::tree::path_str(p.strip_prefix(repo.root()).unwrap_or(p));
-        let entry = test_file(p).then(|| Entry { kind: EntryKind::Test, label: rel.clone() });
+        let entry = test_file(p).then(|| Entry::new(EntryKind::Test, rel.clone()));
         let node = Node {
             id: id.clone(),
             kind: NodeKind::Module,
@@ -688,7 +688,7 @@ fn collect_symbols(m: &mut Module, store: &mut GraphBuilder) {
     }
     if let Some(path) = route {
         if let Some(n) = store.nodes.get_mut(&m.id) {
-            n.entry = Some(Entry { kind: EntryKind::Route, label: if path == "__root" { "/ (root)".into() } else { path } });
+            n.entry = Some(Entry::new(EntryKind::Route, if path == "__root" { "/ (root)".into() } else { path }));
         }
     }
     for n in store.nodes.values_mut().filter(|n| n.module == m.id && n.cls.is_none() && matches!(n.kind, NodeKind::Function | NodeKind::Class)) {
@@ -894,7 +894,7 @@ fn mark_bins(repo: &Repo, files: &HashMap<PathBuf, String>, store: &mut GraphBui
     };
     for (name, path) in bins {
         if let Some(n) = module_at(repo, &path, files).and_then(|id| store.nodes.get_mut(&id)) {
-            n.entry = Some(Entry { kind: EntryKind::Cli, label: name });
+            n.entry = Some(Entry::new(EntryKind::Cli, name));
         }
     }
     let mut scripts: IndexMap<String, Vec<String>> = IndexMap::new();
@@ -907,7 +907,7 @@ fn mark_bins(repo: &Repo, files: &HashMap<PathBuf, String>, store: &mut GraphBui
     for (id, mut names) in scripts {
         names.sort_by_key(|n| (n.len(), n.clone()));
         if let Some(n) = store.nodes.get_mut(&id).filter(|n| n.entry.is_none()) {
-            n.entry = Some(Entry { kind: EntryKind::Cli, label: names.join(" · ") });
+            n.entry = Some(Entry::new(EntryKind::Cli, names.join(" · ")));
         }
     }
 }
@@ -1100,7 +1100,7 @@ fn collect_routes(m: &mut Module, store: &mut GraphBuilder) {
             _ => continue,
         };
         if let Some(n) = store.nodes.get_mut(&id).filter(|n| n.entry.is_none()) {
-            n.entry = Some(Entry { kind: EntryKind::Route, label });
+            n.entry = Some(Entry::new(EntryKind::Route, label));
             m.routes.push((id, router.clone()));
         }
     }
@@ -1794,6 +1794,28 @@ impl<'a, 't> Body<'a, 't> {
         kept_as(c, self.src).map(|name| Held::new(ty(&name), name)).into_iter().collect()
     }
 
+    /// The values the body keeps of what a parse of the command line gives: the name it is kept
+    /// by, or the names a pattern takes out of it (`const { values } = parseArgs(..)`).
+    fn parsed_into(&self, c: TsNode) -> Vec<Held> {
+        let mut v = c;
+        while let Some(p) = v.parent().filter(|p| matches!(p.kind(), "await_expression" | "parenthesized_expression" | "as_expression" | "non_null_expression" | "satisfies_expression")) {
+            v = p;
+        }
+        let pattern = v.parent().filter(|d| d.kind() == "variable_declarator" && d.child_by_field_name("value").map(|x| x.id()) == Some(v.id())).and_then(|d| d.child_by_field_name("name"));
+        match pattern.filter(|p| p.kind() == "object_pattern") {
+            Some(p) => named_children(p)
+                .into_iter()
+                .filter_map(|x| match x.kind() {
+                    "shorthand_property_identifier_pattern" => Some(x),
+                    "pair_pattern" => x.child_by_field_name("value").filter(|v| v.kind() == "identifier"),
+                    _ => None,
+                })
+                .map(|x| Held::new("", text(x, self.src)))
+                .collect(),
+            None => self.gives(c, None),
+        }
+    }
+
     /// One site of the body, as the step it is.
     fn call(&mut self, steps: &mut Steps, c: TsNode<'t>) {
         match c.kind() {
@@ -1920,7 +1942,7 @@ impl<'a, 't> Body<'a, 't> {
                 if kind == EdgeKind::Calls && value_used(c) {
                     self.read.used.push(t.clone());
                 }
-                steps.call(c, &t, kind, None, Step { on, on_receiver, hands, gives: self.gives(c, Some(&t)) });
+                steps.call(c, &t, kind, None, Step { on, on_receiver, hands, gives: self.gives(c, Some(&t)), ..Default::default() });
                 let callee = if kind == EdgeKind::Instantiates { format!("{t}.constructor") } else { t.clone() };
                 if let Some(mut a) = argument(self.modules, self.store, &self.id, &callee, c, self.m, self.scope, &self.params) {
                     a.on = object.filter(|o| o.kind() == "identifier").map(|o| text(o, src).to_string()).filter(|o| self.params.contains(o));
@@ -1938,7 +1960,10 @@ impl<'a, 't> Body<'a, 't> {
                 let bucket = self.bucket_path(&parts);
                 // a library's operation by its name, a call Atlas cannot follow as written
                 let name = if matches!(bucket, Bucket::Library | Bucket::Builtin) { parts.last().cloned().unwrap_or_default() } else { text(f, src).to_string() };
-                self.unread(steps, c, &name, bucket, hands);
+                match self.eval.command_line(At { m: self.m, scope: self.scope, params: &self.params }, c) {
+                    Some(options) => steps.parses(c, &name, hands, self.parsed_into(c), options),
+                    None => self.unread(steps, c, &name, bucket, hands),
+                }
                 self.read.unresolved.push((parts.iter().take(2).cloned().collect::<Vec<_>>().join("."), bucket));
                 self.crossed(c, &parts);
             }

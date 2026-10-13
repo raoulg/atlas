@@ -499,11 +499,11 @@ fn mark_exports(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, cr
 /// The route a function is: a test, the `main` of a binary, or what the crate exports.
 fn entry_of(m: &Module, item: TsNode, src: &[u8], name: &str, attrs: &[String]) -> Option<Entry> {
     if attrs.iter().any(|a| a == "test") {
-        Some(Entry { kind: EntryKind::Test, label: name.to_string() })
+        Some(Entry::new(EntryKind::Test, name.to_string()))
     } else if let Some(bin) = m.bin.as_ref().filter(|_| name == "main") {
-        Some(Entry { kind: EntryKind::Cli, label: bin.clone() })
+        Some(Entry::new(EntryKind::Cli, bin.clone()))
     } else if exported(m, item, src) {
-        Some(Entry { kind: EntryKind::Export, label: name.to_string() })
+        Some(Entry::new(EntryKind::Export, name.to_string()))
     } else {
         None
     }
@@ -584,7 +584,7 @@ fn collect_symbols(m: &mut Module, store: &mut GraphBuilder) {
                     }
                 }
                 store.classes.insert(nid.clone(), ClassInfo { fields, variants, ..Default::default() });
-                let entry = exported(m, item, src).then(|| Entry { kind: EntryKind::Export, label: name.clone() });
+                let entry = exported(m, item, src).then(|| Entry::new(EntryKind::Export, name.clone()));
                 store.add_node(Node {
                     id: nid.clone(),
                     kind: NodeKind::Class,
@@ -862,7 +862,7 @@ fn collect_impls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, c
                 module: m.id.clone(),
                 doc: doc_of(f, src),
                 cls: Some(cls.clone()),
-                entry: attrs.iter().any(|a| a == "test").then(|| Entry { kind: EntryKind::Test, label: mname.clone() }),
+                entry: attrs.iter().any(|a| a == "test").then(|| Entry::new(EntryKind::Test, mname.clone())),
                 decorators: attrs,
                 on_class: !takes_self(&params),
                 ctor: constructs(&params, &returns, cls.rsplit('.').next().unwrap_or(&cls)),
@@ -1866,7 +1866,9 @@ impl<'a, 't> Body<'a, 't> {
         let kind = if self.store.nodes[t].kind == NodeKind::Class { EdgeKind::Instantiates } else { EdgeKind::Calls };
         let on_receiver = recv.map_or(false, |r| r.kind() == "self");
         let on = class.filter(|k| self.store.nodes[t].cls.as_deref().map_or(false, |b| b != *k)).unwrap_or_default().to_string();
-        let step = Step { on, on_receiver, hands: self.call_hands(c, recv, &steps.kept), gives: self.gives(c, Some(t)) };
+        // a type built by parsing the command line the program is run with (`Cli::parse()`)
+        let command_line = (kind == EdgeKind::Instantiates && c.kind() == "call_expression").then(|| self.eval.command_line(self.m, c)).flatten();
+        let step = Step { on, on_receiver, hands: self.call_hands(c, recv, &steps.kept), gives: self.gives(c, Some(t)), command_line };
         steps.call(c, t, kind, via.filter(|_| kind == EdgeKind::Instantiates), step);
         if let Some(arg) = self.argument(c, t, recv.is_some()) {
             self.read.args.push(arg);

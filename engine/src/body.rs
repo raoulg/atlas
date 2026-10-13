@@ -60,13 +60,15 @@ pub fn sides(op: &str, paths: usize) -> Option<[Crossing; 2]> {
 }
 
 /// One call as a step of the route through its body: what it runs, on which class, what it is
-/// handed and what it gives back.
+/// handed and what it gives back, and the options of the command line it parses when it parses
+/// the one the program is run with.
 #[derive(Default)]
 pub struct Step {
     pub on: String,
     pub on_receiver: bool,
     pub hands: Vec<Held>,
     pub gives: Vec<Held>,
+    pub command_line: Option<Vec<String>>,
 }
 
 /// The steps of a body in the order they run, the names they keep, and the edges they make: read
@@ -109,7 +111,8 @@ impl<'t, 's> Steps<'t, 's> {
     pub fn call(&mut self, c: TsNode, to: &str, kind: EdgeKind, via: Option<String>, step: Step) {
         let arms = self.arms(c);
         self.keep(&step.gives);
-        self.sites.push(Site { line: line(c), to: to.to_string(), on: step.on, on_receiver: step.on_receiver, hands: step.hands, gives: step.gives, arms: arms.clone(), span: span(c), ..Default::default() });
+        let site = Site { line: line(c), to: to.to_string(), on: step.on, on_receiver: step.on_receiver, hands: step.hands, gives: step.gives, arms: arms.clone(), span: span(c), command_line: step.command_line, ..Default::default() };
+        self.sites.push(site);
         self.edges.push((to.to_string(), kind, via, arms));
     }
 
@@ -128,6 +131,16 @@ impl<'t, 's> Steps<'t, 's> {
             return;
         }
         self.not_followed(c, op, hands, gives);
+    }
+
+    /// A library's call `op` that parses the command line the program is run with into values,
+    /// with the `options` it declares: a step whatever it gives, since what it gives is the
+    /// entry's.
+    pub fn parses(&mut self, c: TsNode, op: &str, hands: Vec<Held>, gives: Vec<Held>, options: Vec<String>) {
+        self.not_followed(c, op, hands, gives);
+        if let Some(s) = self.sites.last_mut() {
+            s.command_line = Some(options);
+        }
     }
 
     /// A call Atlas cannot follow, `name`d as the code writes it: it runs all the same, so it is

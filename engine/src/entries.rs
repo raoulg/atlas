@@ -1,5 +1,5 @@
 //! Routes into a program: where a web app serves its routes, the entry points a Python project's
-//! `pyproject.toml` declares, Makefile targets.
+//! `pyproject.toml` declares, what the human hands an entry on the command line, Makefile targets.
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
@@ -95,13 +95,28 @@ pub fn mark_scripts(repo: &Repo, store: &mut GraphBuilder, project_root: Option<
         }
         // a program runs a function; a host loads a module or a class as well
         let (entry, loads) = match &d.group {
-            None => (Entry { kind: EntryKind::Cli, label: d.name }, &[NodeKind::Function, NodeKind::Method][..]),
-            Some(g) => (Entry { kind: EntryKind::Export, label: format!("{g}:{}", d.name) }, &[NodeKind::Function, NodeKind::Method, NodeKind::Class, NodeKind::Module][..]),
+            None => (Entry::new(EntryKind::Cli, d.name), &[NodeKind::Function, NodeKind::Method][..]),
+            Some(g) => (Entry::new(EntryKind::Export, format!("{g}:{}", d.name)), &[NodeKind::Function, NodeKind::Method, NodeKind::Class, NodeKind::Module][..]),
         };
         if let Some(n) = store.nodes.get_mut(&nid).filter(|n| loads.contains(&n.kind) && n.entry.is_none()) {
             n.entry = Some(entry);
         }
     }
+}
+
+// ---------- the command line: what the human hands an entry ----------
+
+/// An option as the human types it, from the flags it is declared with: its longest `--` flag,
+/// else its first flag; declared with none, `--` and its name with `_` written `-`.
+pub fn flag(flags: &[String], name: &str) -> String {
+    let flags: Vec<&String> = flags.iter().filter(|f| f.starts_with('-')).collect();
+    let long = flags.iter().filter(|f| f.starts_with("--")).max_by_key(|f| f.len());
+    long.or(flags.first()).map(|f| f.to_string()).unwrap_or_else(|| format!("--{}", name.replace('_', "-")))
+}
+
+/// A positional argument as a usage line writes it: `<name>`.
+pub fn argument(name: &str) -> String {
+    format!("<{name}>")
 }
 
 /// Makefile targets are the routes a developer actually uses: each becomes a `make:` entry

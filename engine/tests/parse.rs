@@ -427,6 +427,12 @@ fn rust_workspace_parses() {
     }
     assert!(ids.contains("atlas-engine.model.Graph") && ids.contains("atlas-engine.view.View"));
     assert_eq!(g.node("atlas.main").unwrap().entry.as_ref().unwrap().kind, EntryKind::Cli);
+    // `atlas` is handed what clap parses its command line into: the global `--libraries`; the
+    // subcommand is no option of its own, and `Cli::parse()` is the step that reads it
+    let main = g.node("atlas.main").unwrap();
+    assert_eq!(main.entry.as_ref().unwrap().options, ["--libraries"]);
+    let parse = main.sites.iter().find(|s| s.command_line.is_some()).expect("main parses its command line");
+    assert_eq!((parse.to.as_str(), parse.command_line.clone().unwrap()), ("atlas.Cli", vec!["--libraries".to_string()]));
     assert_eq!(g.node("atlas-engine.analyze").unwrap().entry.as_ref().unwrap().kind, EntryKind::Export, "pub fn at the root of a library crate");
     let hide = g.node("atlas-engine.view.hide_private").unwrap().entry.as_ref().unwrap();
     assert_eq!((hide.kind, hide.label.as_str()), (EntryKind::Export, "view::hide_private"), "pub in a `pub mod`, by its path");

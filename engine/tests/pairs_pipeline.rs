@@ -573,8 +573,9 @@ fn typescript_the_records_go_from_step_to_step() {
 }
 
 /// The figure travels as its document: `trend` gives the SVG as a `string`, and `saveSvg` writes the
-/// text it is handed. A string is a value of the language, not of the program, as the path
-/// `download` gives back is; Python's `Trend.draw` gives a matplotlib `Figure`.
+/// text it is handed, where the command line's `values` say. A string is a value of the language,
+/// not of the program, as the path `download` gives back is; Python's `Trend.draw` gives a
+/// matplotlib `Figure`.
 #[test]
 fn typescript_the_figure_is_a_document() {
     let t = typescript();
@@ -582,7 +583,10 @@ fn typescript_the_figure_is_a_document() {
     let main = "typescript.cli.main";
     let drawing = step(t, main, "typescript.plot.trend");
     assert_eq!(types(&drawing.gives), [""]);
-    assert_eq!(step(t, main, "typescript.plot.saveSvg").hands, drawing.gives);
+    let saving = step(t, main, "typescript.plot.saveSvg");
+    let document: Vec<&Held> = saving.hands.iter().filter(|h| h.name != "values").collect();
+    assert_eq!(document, drawing.gives.iter().collect::<Vec<_>>());
+    assert_eq!(names(&saving.hands), ["values", drawing.gives[0].name.as_str()]);
 }
 
 /// Library code does not decide where data lives: the command names the URL and the files and hands
@@ -831,6 +835,42 @@ fn the_port_reaches_the_raw_file_and_the_figure_through_its_options() {
         assert_eq!(reached, want, "{}", p.language);
         assert!(!node(p.g, p.run).touches.iter().any(|t| named(&t)), "{}", p.language);
     }
+}
+
+/// An entry is an arrow, and its domain is what the human hands it on the command line. The three
+/// commands take the same options in the same order, whatever declares them: typer's parameters
+/// with a default (`raw: Path = RAW`), the keys of parseArgs' `options`, clap's fields named
+/// `#[arg(long, ..)]`. Each entry reads as its usage line; Python's command is named by typer's rule
+/// for its function, `run`, where the TypeScript `bin` and the Rust binary are `sunspots`.
+#[test]
+fn the_port_entry_reads_as_its_usage_line() {
+    let usage = |g: &Graph| node(g, program(g)).entry.as_ref().map(atlas_engine::story::usage).unwrap();
+    for p in ports() {
+        assert_eq!(node(p.g, program(p.g)).entry.as_ref().unwrap().options, ["--raw", "--figure", "--months"], "{}", p.language);
+    }
+    assert_eq!([usage(clean()), usage(typescript()), usage(rust_clean())], ["run --raw --figure --months", "sunspots --raw --figure --months", "sunspots --raw --figure --months"]);
+}
+
+/// The step that turns the command line into values belongs to the entry, not to the route: clap's
+/// `Cli::parse()` and parseArgs' call read the command line, with the options they declare, and
+/// what they give (`cli`, `values`) is handed to the steps that use an option, as typer hands
+/// `raw` to `download`. typer parses before the command runs, so the Python command has no such
+/// step. The route as text starts at the usage line and leaves the parse out, as the page does.
+#[test]
+fn the_port_parses_its_command_line_in_the_entry() {
+    let options = ["--raw", "--figure", "--months"].map(String::from).to_vec();
+    let parse = step(rust_clean(), "sunspots.main.main", "sunspots.main.Cli");
+    assert_eq!((parse.command_line.as_ref(), names(&parse.gives)), (Some(&options), vec!["cli"]));
+    assert_eq!(names(&step(rust_clean(), "sunspots.main.main", "sunspots.download.download").hands), ["cli"]);
+    let main = node(typescript(), "typescript.cli.main");
+    let parse = main.sites.iter().find(|s| s.op == "parseArgs").expect("main parses its command line");
+    assert_eq!((parse.command_line.as_ref(), names(&parse.gives)), (Some(&options), vec!["values"]));
+    assert_eq!(names(&step(typescript(), "typescript.cli.main", "typescript.download.download").hands), ["values"]);
+    assert!(node(clean(), "sunspots.cli.run").sites.iter().all(|s| s.command_line.is_none()));
+    let rs = atlas_engine::story::route(rust_clean(), "sunspots.main.main", 1).unwrap();
+    assert!(rs.starts_with("CLI · sunspots --raw --figure --months\n") && !rs.contains("Cli()"), "{rs}");
+    let ts = atlas_engine::story::route(typescript(), "typescript.cli", 2).unwrap();
+    assert!(ts.starts_with("CLI · sunspots --raw --figure --months\n") && ts.contains("download") && !ts.contains("parseArgs"), "{ts}");
 }
 
 /// Where the three differ, each the language's doing:

@@ -376,3 +376,54 @@ await main(process.argv.slice(2));
     assert_eq!(made, [(settings.as_str(), vec![("settings", settings.as_str())])], "a literal of a type the program declares, and no other");
     assert!(g.edges.iter().any(|e| e.kind == EdgeKind::Instantiates && e.src == main.id && e.dst == settings), "`const settings: Settings = {{..}}`");
 }
+
+/// An entry's domain is what the human hands it on the command line: the command `bin` names takes
+/// the options of the parses of the command line its route runs, in the order it runs them, each a
+/// key of the options parseArgs is handed, written where it is handed or held by a constant
+/// (`out` is `--out`, `"dry-run"` is `--dry-run`). The parse is a step that reads the command line,
+/// whatever the body keeps of it: the names a pattern takes out (`{ values, positionals }`) or the
+/// whole result, handed on to the steps that use them.
+#[test]
+fn parse_args_options_are_the_entrys_domain() {
+    let g = written(
+        "usage",
+        &[
+            ("package.json", r#"{ "name": "usage", "bin": { "usage": "./src/cli.ts" } }"#),
+            ("tsconfig.json", "{}"),
+            ("src/run.ts", "export function run(out: string, rest: string[]): void {}\n"),
+            (
+                "src/cli.ts",
+                r#"import * as util from "node:util";
+import { parseArgs } from "node:util";
+
+import { run } from "./run.js";
+
+const OPTIONS = { "dry-run": { type: "boolean" }, level: { type: "string", short: "l" } } as const;
+
+function main(argv: string[]): void {
+  const { values, positionals } = parseArgs({ args: argv, options: { out: { type: "string", short: "o" }, verbose: { type: "boolean" } }, allowPositionals: true });
+  run(values.out ?? "out", positionals);
+}
+
+function extra(): void {
+  const parsed = util.parseArgs({ options: OPTIONS });
+  run(parsed.values.level ?? "info", []);
+}
+
+main(process.argv.slice(2));
+extra();
+"#,
+            ),
+        ],
+    );
+    let cli = g.node(&format!("{}.cli", g.root)).unwrap();
+    assert_eq!(cli.entry.as_ref().map(|e| (e.kind, e.options.clone())), Some((EntryKind::Cli, ["--out", "--verbose", "--dry-run", "--level"].map(String::from).to_vec())));
+    let parse = |f: &str| g.node(&format!("{}.cli.{f}", g.root)).unwrap().sites.iter().find(|s| s.command_line.is_some()).unwrap_or_else(|| panic!("{f} parses its command line")).clone();
+    let names = |hs: &[atlas_engine::Held]| hs.iter().map(|h| h.name.clone()).collect::<Vec<_>>();
+    let main = parse("main");
+    assert_eq!((main.op.as_str(), main.command_line.clone().unwrap(), names(&main.gives)), ("parseArgs", vec!["--out".to_string(), "--verbose".to_string()], vec!["values".to_string(), "positionals".to_string()]));
+    let running = g.node(&format!("{}.cli.main", g.root)).unwrap().sites.iter().find(|s| s.to.ends_with(".run.run")).unwrap().clone();
+    assert_eq!(names(&running.hands), ["values", "positionals"]);
+    let extra = parse("extra");
+    assert_eq!((extra.command_line.unwrap(), names(&extra.gives)), (vec!["--dry-run".to_string(), "--level".to_string()], vec!["parsed".to_string()]));
+}

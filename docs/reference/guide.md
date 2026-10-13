@@ -149,6 +149,12 @@ Entry points come from the code itself. Atlas finds:
 - what a library exports: at its root (in TypeScript the module `package.json` points to), and
   in Rust also through `pub mod` and `pub use`.
 
+A command or script shows what you hand it on the command line, as its usage line:
+`$ sunspots --raw --figure --months`, from typer's parameters, click's decorators, clap's fields,
+the keys of `parseArgs`' options or argparse's `add_argument`. The step that parses the command
+line (`Cli::parse()`, `parseArgs(..)`, `parser.parse_args()`) belongs to that entry: the route's
+steps take what it gives straight from the entry, and clicking the entry shows the parse.
+
 ## Check: the picture as a list of questions
 
 `atlas check` reads the same graph and lists where the code and ten design principles

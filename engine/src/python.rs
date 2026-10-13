@@ -554,7 +554,7 @@ pub fn parse(repo: &Repo, packages: &[PathBuf], project_root: Option<&Path>, opt
             doc: first_docline(Some(m.tree.root_node()), &m.src),
             is_pkg,
             // a module of a package that runs as a command, by `python -m`
-            entry: runs_as_main(m.tree.root_node(), &m.src).then(|| Entry { kind: EntryKind::Cli, label: format!("python -m {mid}") }),
+            entry: runs_as_main(m.tree.root_node(), &m.src).then(|| Entry::new(EntryKind::Cli, format!("python -m {mid}"))),
             ..Default::default()
         });
         modules.insert(mid, m);
@@ -580,10 +580,10 @@ pub fn parse(repo: &Repo, packages: &[PathBuf], project_root: Option<&Path>, opt
                 span: Some((1, m.tree.root_node().end_position().row as u32 + 1)),
                 module: mid.clone(),
                 doc: first_docline(Some(m.tree.root_node()), &m.src),
-                entry: Some(Entry {
-                    kind: if p.extension().and_then(|x| x.to_str()) == Some("ipynb") { EntryKind::Notebook } else { EntryKind::Script },
-                    label: crate::tree::path_str(&rel),
-                }),
+                entry: Some(Entry::new(
+                    if p.extension().and_then(|x| x.to_str()) == Some("ipynb") { EntryKind::Notebook } else { EntryKind::Script },
+                    crate::tree::path_str(&rel),
+                )),
                 ..Default::default()
             });
             modules.insert(mid, m);
@@ -1784,15 +1784,17 @@ fn mark_registered(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
                 let from = seen.library(f);
                 if let Some(cli) = from.as_deref().and_then(knowledge::cli_framework).filter(|c| c.commands.contains(&name)) {
                     let named = call.and_then(|c| handed(c, 0, knowledge::COMMAND_NAME, &m.src)).filter(|a| a.kind() == "string").map(|a| unquote(text(a, &m.src)));
-                    return Some(Entry { kind: EntryKind::Cli, label: named.unwrap_or_else(|| cli.command_name(&n.name)) });
+                    let mut entry = Entry::new(EntryKind::Cli, named.unwrap_or_else(|| cli.command_name(&n.name)));
+                    entry.options = command_options(&seen, cli, decorated, &m.src);
+                    return Some(entry);
                 }
                 if let Some(web) = from.as_deref().and_then(knowledge::web_framework) {
-                    return route(web, name, call, &m.src).map(|label| Entry { kind: EntryKind::Route, label });
+                    return route(web, name, call, &m.src).map(|label| Entry::new(EntryKind::Route, label));
                 }
                 let on_server = f.kind() == "attribute" && f.child_by_field_name("object").map_or(false, server);
                 (on_server && knowledge::TOOL_DECORATORS.contains(&name)).then(|| {
                     let named = call.and_then(positional).filter(|a| a.kind() == "string").map(|a| unquote(text(a, &m.src)));
-                    Entry { kind: EntryKind::Mcp, label: named.unwrap_or_else(|| n.name.clone()) }
+                    Entry::new(EntryKind::Mcp, named.unwrap_or_else(|| n.name.clone()))
                 })
             });
             found.extend(registered.map(|e| (n.id.clone(), e)));
@@ -1803,6 +1805,55 @@ fn mark_registered(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
             n.entry = Some(entry);
         }
     }
+}
+
+/// What a command of a command-line framework takes from the command line, each as the human
+/// types it, in the order the code declares them: by the command's parameters (typer's
+/// `raw: Path = RAW` is `--raw`, `name: str` is `<name>`) or by its decorators
+/// (`@click.option("--out", "-o")` is `--out`, `@click.argument("src")` is `<src>`). A call
+/// declares one only where it is the framework's.
+fn command_options(seen: &Seen, cli: &knowledge::CliFramework, decorated: TsNode, src: &[u8]) -> Vec<String> {
+    let strings = |call: TsNode| call.child_by_field_name("arguments").map(named_children).unwrap_or_default().into_iter().filter(|a| a.kind() == "string").map(|a| unquote(text(a, src))).collect::<Vec<String>>();
+    // the framework's declaring function a call is, by its last name
+    let declares = |call: TsNode| -> Option<String> {
+        let f = call.child_by_field_name("function")?;
+        let name = call_path(f, src).last().cloned()?;
+        (seen.library(f).as_deref() == Some(cli.package)).then_some(name)
+    };
+    let mut out = vec![];
+    match cli.options {
+        knowledge::OptionsBy::Parameters { option, argument } => {
+            let Some(params) = named_children(decorated).into_iter().find(|d| d.kind() == "function_definition").and_then(|d| d.child_by_field_name("parameters")) else { return out };
+            for p in named_children(params) {
+                let (name, ty, default) = match p.kind() {
+                    "identifier" => (Some(p), None, None),
+                    "typed_parameter" => (named_children(p).into_iter().find(|c| c.kind() == "identifier"), p.child_by_field_name("type"), None),
+                    "default_parameter" | "typed_default_parameter" => (p.child_by_field_name("name"), p.child_by_field_name("type"), p.child_by_field_name("value")),
+                    _ => continue,
+                };
+                let Some(name) = name.map(|x| text(x, src).to_string()) else { continue };
+                // what the default or the annotation declares (`= typer.Option(..)`, `Annotated[.., typer.Argument()]`)
+                let declared = [default, ty].into_iter().flatten().flat_map(|x| walk(x, &["call"])).find_map(|c| declares(c).filter(|d| d == option || d == argument).map(|d| (d, c)));
+                out.push(match declared {
+                    Some((d, _)) if d == argument => crate::entries::argument(&name),
+                    Some((_, c)) => crate::entries::flag(&strings(c), &name),
+                    None if default.is_some() => crate::entries::flag(&[], &name),
+                    None => crate::entries::argument(&name),
+                });
+            }
+        }
+        knowledge::OptionsBy::Decorators { option, argument } => {
+            for d in named_children(decorated).into_iter().filter(|d| d.kind() == "decorator").filter_map(|d| named_children(d).into_iter().find(|c| c.kind() == "call")) {
+                let given = strings(d);
+                match declares(d) {
+                    Some(k) if k == option => out.push(crate::entries::flag(&given, given.iter().find(|s| !s.starts_with('-')).map_or("", String::as_str))),
+                    Some(k) if k == argument => out.extend(given.first().map(|a| crate::entries::argument(a))),
+                    _ => {}
+                }
+            }
+        }
+    }
+    out
 }
 
 /// The route a web framework's decorator registers, as `METHOD /path`: the method it is named for,
@@ -2300,8 +2351,11 @@ impl<'a, 't> Body<'a, 't> {
             Some(Callee::Lib(lib)) => {
                 // a library's call not read that makes a value the body keeps under a name, from
                 // values it was handed, is a step of its own; what a call gives without a name
-                // goes into the call around it
-                if !assigned.is_empty() {
+                // goes into the call around it. A parse of the command line is a step whatever
+                // it gives.
+                if let Some((op, options)) = self.command_line(&lib, fnode) {
+                    steps.parses(c, &op, hands, gives, options);
+                } else if !assigned.is_empty() {
                     let op = match fnode.kind() {
                         "attribute" => fnode.child_by_field_name("attribute").map(|a| text(a, self.src).to_string()),
                         _ => Some(text(fnode, self.src).rsplit('.').next().unwrap_or("").to_string()),
@@ -2340,12 +2394,40 @@ impl<'a, 't> Body<'a, 't> {
         });
         let kind = if seen.is_class(t) { EdgeKind::Instantiates } else { EdgeKind::Calls };
         let on_receiver = receiver.map_or(false, |o| o.kind() == "identifier" && text(o, self.src) == "self");
-        steps.call(c, t, kind, None, Step { on: on.unwrap_or_default(), on_receiver, hands, gives });
+        steps.call(c, t, kind, None, Step { on: on.unwrap_or_default(), on_receiver, hands, gives, ..Default::default() });
         if kind == EdgeKind::Calls && value_used(c) {
             self.read.used.push(t.to_string());
         }
         let args = arguments(self.modules, seen.store, &self.id, t, c, self.at());
         self.read.args.extend(args);
+    }
+
+    /// The method a call of library `lib` is, with the options of the command line it parses,
+    /// where it parses the command line into an object (`parser.parse_args()`): each argument the
+    /// parser it is made on declares in the module (`parser.add_argument("-o", "--out")` is
+    /// `--out`, `parser.add_argument("title")` is `<title>`), in the order they are written.
+    fn command_line(&self, lib: &str, fnode: TsNode) -> Option<(String, Vec<String>)> {
+        let src = self.src;
+        let parser = knowledge::ARG_PARSERS.iter().find(|p| p.package == lib)?;
+        let op = text(fnode.child_by_field_name("attribute").filter(|_| fnode.kind() == "attribute")?, src).to_string();
+        if !parser.parses.contains(&op.as_str()) {
+            return None;
+        }
+        let on = fnode.child_by_field_name("object").filter(|o| o.kind() == "identifier").map(|o| text(o, src));
+        let mut options = vec![];
+        for call in walk(self.m.tree.root_node(), &["call"]) {
+            let Some(f) = call.child_by_field_name("function").filter(|f| f.kind() == "attribute") else { continue };
+            let declares = f.child_by_field_name("attribute").map(|a| text(a, src)) == Some(parser.declares);
+            if !declares || on.is_none() || f.child_by_field_name("object").map(|o| text(o, src)) != on || self.seen.library(f).as_deref() != Some(lib) {
+                continue;
+            }
+            let flags: Vec<String> = call.child_by_field_name("arguments").map(named_children).unwrap_or_default().into_iter().filter(|a| a.kind() == "string").map(|a| unquote(text(a, src))).collect();
+            match flags.iter().any(|f| f.starts_with('-')) {
+                true => options.push(crate::entries::flag(&flags, "")),
+                false => options.extend(flags.first().map(|a| crate::entries::argument(a))),
+            }
+        }
+        Some((op, options))
     }
 
     /// A library's call, or one Atlas cannot follow: a class it makes, and what it crosses into. A

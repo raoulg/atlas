@@ -2,10 +2,10 @@
 //! own effects. Alternatives share a number and are lettered by branch:
 //! the arms of a choice in the body, or the overrides a call may run.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::flow::{self, Body, Item, Step};
-use crate::model::{Edge, EdgeKind, EntryKind, Graph, Held, Node, NodeKind, Site, Touch, World};
+use crate::model::{Edge, EdgeKind, Entry, EntryKind, Graph, Held, Node, NodeKind, Site, Touch, World};
 
 /// Every route into the program: its kind, its label and the id of the node it starts at.
 pub fn entries(g: &Graph) -> Vec<(EntryKind, &str, &str)> {
@@ -23,7 +23,8 @@ pub fn route(g: &Graph, entry: &str, depth: usize) -> Option<String> {
     s.reached = g.reach(start);
     s.entry = start.to_string();
     let n = s.nodes[start];
-    let kind = n.entry.as_ref().map(|e| format!("{} · {}", kind_label(e.kind), e.label)).unwrap_or_else(|| s.name(start, ""));
+    s.parses = n.entry.as_ref().map_or(false, |e| matches!(e.kind, EntryKind::Cli | EntryKind::Script));
+    let kind = n.entry.as_ref().map(|e| format!("{} · {}", kind_label(e.kind), usage(e))).unwrap_or_else(|| s.name(start, ""));
     let mut out = format!("{kind}\n{}{}", n.id, s.signature(n));
     let effects = s.effects(n);
     if !effects.is_empty() {
@@ -33,6 +34,26 @@ pub fn route(g: &Graph, entry: &str, depth: usize) -> Option<String> {
     let mut shown: HashMap<String, String> = HashMap::from([(start.to_string(), "the entry".to_string())]);
     s.walk(start, "", depth.max(1), &mut shown, &mut out);
     Some(out)
+}
+
+/// An entry as the human runs it: its label, then what it is handed on the command line
+/// (`sunspots --raw --figure --months`).
+pub fn usage(e: &Entry) -> String {
+    std::iter::once(e.label.as_str()).chain(e.options.iter().map(String::as_str)).collect::<Vec<_>>().join(" ")
+}
+
+/// The steps of a body that belong to the entry of a route run from the command line: the parses
+/// of the command line, and the steps whose values only those parses take.
+pub fn entry_steps(sites: &[Site]) -> HashSet<usize> {
+    let parses: HashSet<usize> = (0..sites.len()).filter(|&i| sites[i].command_line.is_some()).collect();
+    let takers = |name: &str| (0..sites.len()).filter(|&i| sites[i].hands.iter().any(|h| h.name == name)).collect::<Vec<_>>();
+    let only_parsed = |name: &str| {
+        let t = takers(name);
+        !name.is_empty() && !t.is_empty() && t.iter().all(|i| parses.contains(i))
+    };
+    let mut out = parses.clone();
+    out.extend((0..sites.len()).filter(|&i| !sites[i].gives.is_empty() && sites[i].gives.iter().all(|g| only_parsed(&g.name))));
+    out
 }
 
 pub fn kind_label(k: EntryKind) -> &'static str {
@@ -62,7 +83,9 @@ struct Story<'g> {
     bodies: BTreeMap<String, Body>,
     /// The route's entry, and what it can run.
     entry: String,
-    reached: std::collections::HashSet<String>,
+    reached: HashSet<String>,
+    /// The route is run from the command line: its parses of the command line are the entry's.
+    parses: bool,
 }
 
 impl<'g> Story<'g> {
@@ -71,7 +94,7 @@ impl<'g> Story<'g> {
         for e in &g.edges {
             out.entry(e.src.as_str()).or_default().push(e);
         }
-        Story { g, nodes: g.nodes.iter().map(|n| (n.id.as_str(), n)).collect(), out, bodies: flow::bodies(g), entry: String::new(), reached: Default::default() }
+        Story { g, nodes: g.nodes.iter().map(|n| (n.id.as_str(), n)).collect(), out, bodies: flow::bodies(g), entry: String::new(), reached: Default::default(), parses: false }
     }
 
     fn find(&self, entry: &str) -> Option<&'g str> {
@@ -95,10 +118,18 @@ impl<'g> Story<'g> {
             if prefix.is_empty() { seq.to_string() } else { format!("{prefix}.{seq}") }
         };
         let level = prefix.matches('.').count() + usize::from(!prefix.is_empty());
+        // the parse of the command line is the entry's, not a step of the route
+        let entrys = if self.parses { entry_steps(sites) } else { HashSet::new() };
+        let shown_step = |st: &Step| !st.site.map_or(false, |i| entrys.contains(&i));
         for item in &b.items {
             match item {
+                Item::Step(st) if !shown_step(st) => {}
                 Item::Step(st) => self.step(st, st.site.and_then(|i| sites.get(i)), &next(), level, depth, shown, out),
                 Item::Choice { members, .. } => {
+                    let members: Vec<_> = members.iter().filter(|m| shown_step(&m.step)).collect();
+                    if members.is_empty() {
+                        continue;
+                    }
                     let k = next();
                     for m in members {
                         self.step(&m.step, m.step.site.and_then(|i| sites.get(i)), &format!("{k}{}", letter(m.branch)), level, depth, shown, out);

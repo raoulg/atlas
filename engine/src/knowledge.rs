@@ -131,14 +131,29 @@ pub struct CliFramework {
     pub package: &'static str,
     pub commands: &'static [&'static str],
     pub drops: &'static [&'static str],
+    /// Where a command declares what the command line hands it.
+    pub options: OptionsBy,
+}
+
+/// How a command-line framework declares a command's options and arguments, by the names of the
+/// framework's functions that declare one of each.
+pub enum OptionsBy {
+    /// By the command's parameters (typer): one with a default is an option, one without an
+    /// argument; a default or an annotation that calls `option` or `argument` says which, and
+    /// `option` may be handed the option's flags (`typer.Option("--out", "-o")`).
+    Parameters { option: &'static str, argument: &'static str },
+    /// By decorators on the command (click), in the order they are written: `option` handed the
+    /// option's flags (`@click.option("--out", "-o")`), `argument` the argument's name.
+    Decorators { option: &'static str, argument: &'static str },
 }
 
 const CLICK_DROPS: &[&str] = &["command", "cmd", "group", "grp"];
+const CLICK_OPTIONS: OptionsBy = OptionsBy::Decorators { option: "option", argument: "argument" };
 
 pub const CLI_FRAMEWORKS: &[CliFramework] = &[
-    CliFramework { package: "click", commands: &["command"], drops: CLICK_DROPS },
-    CliFramework { package: "rich_click", commands: &["command"], drops: CLICK_DROPS },
-    CliFramework { package: "typer", commands: &["command"], drops: &[] },
+    CliFramework { package: "click", commands: &["command"], drops: CLICK_DROPS, options: CLICK_OPTIONS },
+    CliFramework { package: "rich_click", commands: &["command"], drops: CLICK_DROPS, options: CLICK_OPTIONS },
+    CliFramework { package: "typer", commands: &["command"], drops: &[], options: OptionsBy::Parameters { option: "Option", argument: "Argument" } },
 ];
 
 /// The keyword a command's decorator is handed the command's name by.
@@ -731,17 +746,26 @@ pub enum PathFn {
 }
 
 /// A command-line parser whose parsed values are attributes of one object (`args.out`): its
-/// library, the object's class, the method that declares an argument, and that method's keywords
-/// for the argument's default and for the attribute's name.
+/// library, the object's class, the method that declares an argument, that method's keywords
+/// for the argument's default and for the attribute's name, and the methods that parse the
+/// command line into the object.
 pub struct ArgParser {
     pub package: &'static str,
     pub namespace: &'static str,
     pub declares: &'static str,
     pub default: &'static str,
     pub dest: &'static str,
+    pub parses: &'static [&'static str],
 }
 
-pub const ARG_PARSERS: &[ArgParser] = &[ArgParser { package: "argparse", namespace: "Namespace", declares: "add_argument", default: "default", dest: "dest" }];
+pub const ARG_PARSERS: &[ArgParser] = &[ArgParser {
+    package: "argparse",
+    namespace: "Namespace",
+    declares: "add_argument",
+    default: "default",
+    dest: "dest",
+    parses: &["parse_args", "parse_known_args", "parse_intermixed_args", "parse_known_intermixed_args"],
+}];
 
 /// A command-line parser handed every option at once, in an object, which gives their values as
 /// the fields of one object (`values.out`): its package, its function, the key its options stand
@@ -758,12 +782,21 @@ pub const OPTION_PARSERS: &[OptionParser] = &[OptionParser { package: "util", fu
 
 /// A command-line parser derived from a type, whose values are the fields of that type
 /// (`cli.raw`): its package, the derives that make a type one, the attributes that declare a
-/// field's option, and an option's keys for its default.
+/// field's option, an option's keys for its default, the functions the derive defines that parse
+/// the command line the program is run with, the keys that name a field's option long (`--raw`)
+/// and short (`-r`) where a field without either is a positional argument, the keys that make a
+/// field no option of the command (a subcommand, a field the parser skips), and the key that adds
+/// the options of the field's own type.
 pub struct DerivedParser {
     pub package: &'static str,
     pub derives: &'static [&'static str],
     pub attributes: &'static [&'static str],
     pub defaults: &'static [&'static str],
+    pub reads: &'static [&'static str],
+    pub long: &'static str,
+    pub short: &'static str,
+    pub not_options: &'static [&'static str],
+    pub flatten: &'static str,
 }
 
 /// clap's derive: `#[derive(Parser)] struct Cli { #[arg(long, default_value = RAW)] raw: PathBuf }`,
@@ -771,8 +804,13 @@ pub struct DerivedParser {
 pub const DERIVED_PARSERS: &[DerivedParser] = &[DerivedParser {
     package: "clap",
     derives: &["Parser", "Args", "Subcommand"],
-    attributes: &["arg", "clap"],
+    attributes: &["arg", "clap", "command"],
     defaults: &["default_value", "default_value_t", "default_value_os"],
+    reads: &["parse", "try_parse"],
+    long: "long",
+    short: "short",
+    not_options: &["subcommand", "skip"],
+    flatten: "flatten",
 }];
 
 /// How a path under the system's directory for temporary files is written: a place of its own,

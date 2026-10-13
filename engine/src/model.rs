@@ -65,6 +65,17 @@ pub enum EntryKind {
 pub struct Entry {
     pub kind: EntryKind,
     pub label: String,
+    /// What the human hands the entry on the command line, in the code's order, each as they type
+    /// it: `--raw` for a named option, `<name>` for a positional argument. The domain of the entry:
+    /// it reads as its usage line, `$ sunspots --raw --figure --months`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub options: Vec<String>,
+}
+
+impl Entry {
+    pub fn new(kind: EntryKind, label: impl Into<String>) -> Entry {
+        Entry { kind, label: label.into(), options: vec![] }
+    }
 }
 
 #[derive(Serialize, Deserialize, TS, Clone, Debug, Default)]
@@ -248,6 +259,12 @@ pub struct Site {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[ts(type = "Array<[number, number]>")]
     pub arms: Vec<(u32, u32)>,
+    /// For a call that parses the command line the program is run with into values (clap's
+    /// `Cli::parse()`, `parseArgs(..)`, argparse's `parser.parse_args()`): the options it declares,
+    /// as `Entry::options` writes them. What it gives is the entry's domain, so the step belongs to
+    /// the entry, not to the route.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub command_line: Option<Vec<String>>,
     /// Where the call is written, as a byte range of its file; `(0, 0)` for a step no expression
     /// of the body is (a function handed on, called by whoever receives it).
     #[serde(skip)]

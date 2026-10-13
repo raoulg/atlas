@@ -198,6 +198,84 @@ fn main() {
     assert_eq!(written("options.grammar"), [""], "pest's `Parser` is no command line");
 }
 
+/// An entry's domain is what the human hands it on the command line: the binary's `main` takes the
+/// options of the type clap parses its command line into, in the order of its fields, each as the
+/// human types it. `#[arg(long)]` and `#[arg(short, long)]` name `--kebab-name`, `long = ".."` its
+/// own name, `short` alone `-x`; a field with neither is a positional `<name>`; a flattened field
+/// adds its type's options; a subcommand and a skipped field are no option. `Cli::parse()` and
+/// `Cli::try_parse()` read the program's command line and are marked so; `Cli::parse_from(..)`
+/// parses what it is handed and is not.
+#[test]
+fn clap_options_are_the_entrys_domain() {
+    let g = written(
+        "usage",
+        &[(
+            "src/main.rs",
+            r#"use std::path::PathBuf;
+
+use clap::{Args, Parser, Subcommand};
+
+#[derive(Parser)]
+struct Cli {
+    #[arg(short, long)]
+    out_dir: PathBuf,
+    #[arg(long = "dry-run")]
+    dry: bool,
+    #[arg(short)]
+    verbose: bool,
+    name: String,
+    #[command(flatten)]
+    common: Common,
+    #[command(subcommand)]
+    cmd: Option<Cmd>,
+    #[arg(skip)]
+    seen: u8,
+}
+
+#[derive(Args)]
+struct Common {
+    #[arg(long, default_value = "info")]
+    log_level: String,
+}
+
+#[derive(Subcommand)]
+enum Cmd {
+    Clean {
+        #[arg(long)]
+        all: bool,
+    },
+}
+
+fn run(cli: &Cli) {}
+
+fn tried() -> Result<(), clap::Error> {
+    let cli = Cli::try_parse()?;
+    run(&cli);
+    Ok(())
+}
+
+fn given() {
+    let cli = Cli::parse_from(["usage", "x"]);
+    run(&cli);
+}
+
+fn main() {
+    let cli = Cli::parse();
+    run(&cli);
+}
+"#,
+        )],
+    );
+    let options = ["--out-dir", "--dry-run", "-v", "<name>", "--log-level"].map(String::from).to_vec();
+    let main = g.node("usage.main").unwrap();
+    assert_eq!(main.entry.as_ref().map(|e| (e.kind, e.options.clone())), Some((EntryKind::Cli, options.clone())));
+    let parse = main.sites.iter().find(|s| s.to == "usage.Cli").expect("main builds its Cli");
+    assert_eq!(parse.command_line.as_ref(), Some(&options));
+    let reads = |f: &str| g.node(f).unwrap().sites.iter().any(|s| s.command_line.is_some());
+    assert!(reads("usage.tried") && !reads("usage.given"), "`try_parse` reads the command line, `parse_from` what it is handed");
+    assert!(main.sites.iter().find(|s| s.to == "usage.run").unwrap().hands.iter().any(|h| h.name == "cli"), "what the parse gives is handed on");
+}
+
 /// A generic type's arguments are values only where it holds or stands for them: std's and a
 /// crate's containers (`IndexMap<String, Sheet>` holds Sheets), an `Option`, what an iterator
 /// gives. Any other generic is its own name, a library's (`Area<Rgb, Shift>` is an `Area`, on

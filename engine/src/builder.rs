@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use indexmap::IndexMap;
 
-use crate::model::{Bucket, Edge, EdgeKind, Graph, Node, NodeKind, Stats, Touch, Unresolved, World};
+use crate::model::{Bucket, Edge, EdgeKind, Entry, EntryKind, Graph, Node, NodeKind, Stats, Touch, Unresolved, World};
 
 /// Per-class facts that only matter during resolution.
 #[derive(Default, Clone, Debug)]
@@ -96,7 +96,7 @@ impl GraphBuilder {
     /// it is already a route of another kind.
     pub fn export(&mut self, id: &str, label: String) {
         if let Some(n) = self.nodes.get_mut(id).filter(|n| matches!(n.kind, NodeKind::Function | NodeKind::Class) && n.entry.is_none()) {
-            n.entry = Some(crate::model::Entry { kind: crate::model::EntryKind::Export, label });
+            n.entry = Some(crate::model::Entry::new(crate::model::EntryKind::Export, label));
         }
     }
 
@@ -187,6 +187,7 @@ impl GraphBuilder {
         let mut nodes = self.nodes;
         crate::flow::wire(&mut nodes, &self.edges);
         mark_doors(&mut nodes, &self.edges);
+        mark_options(&mut nodes);
         let mut edges = self.edges;
         for e in edges.iter_mut().filter(|e| e.kind == EdgeKind::Calls) {
             e.uses = self.used.contains(&(e.src.clone(), e.dst.clone()));
@@ -293,6 +294,54 @@ fn mark_doors(nodes: &mut IndexMap<String, Node>, edges: &[Edge]) {
     for (id, kind) in doors {
         if let Some(n) = nodes.get_mut(&id) {
             n.door = Some(kind);
+        }
+    }
+}
+
+/// An entry run from the command line (a command, a script) is handed what the human types: the
+/// options its own declaration names (a command's parameters), else those of the parses of the
+/// command line its route runs, in the order it runs them.
+fn mark_options(nodes: &mut IndexMap<String, Node>) {
+    let run = |e: &Entry| matches!(e.kind, EntryKind::Cli | EntryKind::Script) && e.options.is_empty();
+    let mut found = vec![];
+    for n in nodes.values().filter(|n| n.entry.as_ref().map_or(false, run)) {
+        let mut options = vec![];
+        parsed(nodes, &n.id, &mut HashSet::new(), &mut options);
+        if !options.is_empty() {
+            found.push((n.id.clone(), options));
+        }
+    }
+    for (id, options) in found {
+        if let Some(e) = nodes.get_mut(&id).and_then(|n| n.entry.as_mut()) {
+            e.options = options;
+        }
+    }
+}
+
+/// The options of the parses of the command line a function runs, in its own steps or through
+/// the functions they run, in the order they run; a class runs its initializer.
+fn parsed(nodes: &IndexMap<String, Node>, id: &str, seen: &mut HashSet<String>, out: &mut Vec<String>) {
+    if !seen.insert(id.to_string()) {
+        return;
+    }
+    let Some(n) = nodes.get(id) else { return };
+    if n.kind == NodeKind::Class {
+        if let Some(i) = n.initializer(|m| nodes.get(m)) {
+            parsed(nodes, &i, seen, out);
+        }
+        return;
+    }
+    for s in &n.sites {
+        match &s.command_line {
+            Some(options) => {
+                for o in options {
+                    if !out.contains(o) {
+                        out.push(o.clone());
+                    }
+                }
+            }
+            None if !s.to.is_empty() => parsed(nodes, &s.to, seen, out),
+            None => {}
         }
     }
 }
