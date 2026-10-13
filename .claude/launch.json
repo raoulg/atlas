@@ -24,6 +24,18 @@
         "docs"
       ],
       "port": 8766
+    },
+    {
+      "name": "history",
+      "runtimeExecutable": "target/release/atlas",
+      "runtimeArgs": [
+        "history",
+        ".",
+        "--port",
+        "8777",
+        "--no-open"
+      ],
+      "port": 8777
     }
   ]
 }
