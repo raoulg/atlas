@@ -333,9 +333,10 @@ beside them that is no member, `fuzz/`, is a part of its own), a Python project 
 packages (each member of a uv workspace is a part), a package the code under it. Nothing
 under `tests/` or `node_modules/` is a part, nor a manifest without code of its own (a
 workspace's root). A Python project's packages are the ones its `pyproject.toml` names (its
-build backend's `packages`, else the project's name, which also finds a namespace package),
-then every other package beside them; the graph is named after the first, and each package
-is a part. A crate is read
+build backend's `packages`, else the project's name, found as Python imports it: a directory
+with `__init__.py`, a single `name.py`, or a namespace package), then every other package
+beside them; the graph is named after the first, each package is a part, and every package is
+the project's own (its imports, its exports). A crate is read
 by Cargo's targets: one library (`src/lib.rs`) and a binary per `main` (`src/main.rs`,
 `src/bin/*.rs`), each a root of its own; a directory with its own `Cargo.toml` is another
 package. The graph holds them side by side and every node knows its part. Parts meet over HTTP: a web framework's
