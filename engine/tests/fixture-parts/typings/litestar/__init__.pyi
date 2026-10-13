@@ -17,3 +17,9 @@ class post(HTTPRouteHandler):
 
 class route(HTTPRouteHandler):
     def __init__(self, path: str | Sequence[str] | None = None, *, http_method: str | Sequence[str], **kwargs: Any) -> None: ...
+
+class Router:
+    def __init__(self, path: str, route_handlers: Sequence[Any]) -> None: ...
+
+class Controller:
+    path: str

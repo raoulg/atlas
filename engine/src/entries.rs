@@ -16,16 +16,19 @@ use crate::repo::Repo;
 /// (`mounted`, by key), and the prefix a router gives its own routes (`own`). A route's path
 /// is its prefixes from the app nobody mounts, down to the router it is declared on, then its
 /// own; `segment` writes a part of a path as the graph writes one.
-pub fn mount_routes(store: &mut GraphBuilder, routes: &[(String, String)], own: &HashMap<String, String>, mounted: &HashMap<String, (String, String)>, segment: fn(&str) -> String) {
+pub fn mount_routes(store: &mut GraphBuilder, routes: &[(String, String)], own: &HashMap<String, String>, mounted: &HashMap<String, (String, String, bool)>, segment: fn(&str) -> String) {
     let trim = |p: &str| p.trim_end_matches('/').to_string();
+    let mine = |key: &str| trim(own.get(key).map(String::as_str).unwrap_or(""));
+    // out through the routers a router is mounted on; a prefix that replaces stands in for the
+    // mounted router's own
     let full = |start: &str| {
-        let (mut key, mut out) = (start.to_string(), trim(own.get(start).map(String::as_str).unwrap_or("")));
+        let (mut key, mut below) = (start.to_string(), String::new());
         for _ in 0..10 {
-            let Some((parent, prefix)) = mounted.get(&key) else { break };
-            out = format!("{}{}{out}", trim(own.get(parent).map(String::as_str).unwrap_or("")), trim(prefix));
+            let Some((parent, prefix, replaces)) = mounted.get(&key) else { break };
+            below = format!("{}{}{below}", trim(prefix), if *replaces { String::new() } else { mine(&key) });
             key = parent.clone();
         }
-        out
+        format!("{}{below}", mine(&key))
     };
     for (id, router) in routes {
         let prefix = full(router);

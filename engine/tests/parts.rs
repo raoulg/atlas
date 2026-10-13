@@ -69,6 +69,11 @@ fn each_web_framework_registers_its_routes() {
     assert_eq!(label(&g, "shop.stock.stock"), "GET /stock/{item_id:str}", "Litestar's `get`");
     assert_eq!(label(&g, "shop.stock.overview"), "GET /", "Litestar's `get()` serves `/`");
     assert_eq!(label(&g, "shop.stock.restock"), "POST|PUT /restock", "Litestar's `route`, handed its methods");
+    // prefixes as each framework gives them
+    assert_eq!(label(&g, "shop.board.pins"), "GET /board/pins", "a blueprint's own `url_prefix`");
+    assert_eq!(label(&g, "shop.board.moved_notes"), "GET /new/notes", "`register_blueprint(.., url_prefix=..)` stands in for the blueprint's own");
+    assert_eq!(label(&g, "shop.board.levels"), "GET /v2/levels", "a handler a Litestar `Router(path=..)` is handed");
+    assert_eq!(label(&g, "shop.board.Shelves.shelf"), "GET /v2/shelves/{shelf:int}", "a controller's `path`, under its router's");
 }
 
 /// A literal that is another part's route is a request to its handler; a part's own page of

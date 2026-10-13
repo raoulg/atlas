@@ -451,7 +451,7 @@ pub fn parse(repo: &Repo, pkg_dir: Option<&Path>, project_root: Option<&Path>, o
     }
     link(&modules, &mut store, &root, &types, project_root.unwrap_or(base));
     mark_exports(&modules, &mut store, &root);
-    route_prefixes(&modules, &mut store);
+    route_prefixes(&modules, &mut store, &types, &root);
     mark_library(&mut store);
     Ok((store, root))
 }
@@ -556,16 +556,23 @@ fn mark_library(store: &mut GraphBuilder) {
 }
 
 /// A web app's routes at the paths a client asks for: under the prefix an app is mounted at
-/// (`app.mount("/api", sub)`), a router is included with (`app.include_router(r, prefix="/v1")`)
-/// and a router declares (`APIRouter(prefix="/items")`).
-fn route_prefixes(modules: &IndexMap<String, Module>, store: &mut GraphBuilder) {
+/// (`app.mount("/api", sub)`), a router is included with (`app.include_router(r, prefix="/v1")`,
+/// `app.register_blueprint(bp, url_prefix="/new")`, which stands in for the blueprint's own), a
+/// router declares (`APIRouter(prefix="/items")`, `Blueprint(.., url_prefix=..)`,
+/// `Router(path=.., route_handlers=[..])`) and a controller names (`Controller.path`), each as
+/// the framework the call goes to does it.
+fn route_prefixes(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, types: &Types, root: &str) {
     let mut own: HashMap<String, String> = HashMap::new();
-    let mut mounted: HashMap<String, (String, String)> = HashMap::new();
+    let mut mounted: HashMap<String, (String, String, bool)> = HashMap::new();
+    let sites = sites(modules, store);
     for m in modules.values() {
+        let seen = Seen::new(m, types, &sites, modules, store, root);
         let src = &m.src;
         let key = |name: &str| m.bindings.get(name).cloned().unwrap_or_else(|| format!("{}.{name}", m.id));
         for call in walk(m.tree.root_node(), &["call"]) {
             let Some(f) = call.child_by_field_name("function") else { continue };
+            // what a call does to routes is what the framework it goes to says
+            let lib = seen.library(f);
             let positional: Vec<TsNode> = call
                 .child_by_field_name("arguments")
                 .map(named_children)
@@ -573,39 +580,60 @@ fn route_prefixes(modules: &IndexMap<String, Module>, store: &mut GraphBuilder) 
                 .into_iter()
                 .filter(|a| !matches!(a.kind(), "keyword_argument" | "comment"))
                 .collect();
+            let keyword = |k: &str| {
+                named_children(call.child_by_field_name("arguments")?)
+                    .into_iter()
+                    .find(|a| a.kind() == "keyword_argument" && a.child_by_field_name("name").map(|n| text(n, src)) == Some(k))
+                    .and_then(|a| a.child_by_field_name("value"))
+            };
             // an argument as handed: a literal string or a name
             let handed = |arg: &knowledge::Arg, kind: &str| match arg {
                 knowledge::Arg::At(i) => positional.get(*i).filter(|a| a.kind() == kind).map(|a| text(*a, src)),
-                knowledge::Arg::Named(k) => named_children(call.child_by_field_name("arguments")?)
-                    .into_iter()
-                    .find(|a| a.kind() == "keyword_argument" && a.child_by_field_name("name").map(|n| text(n, src)) == Some(*k))
-                    .and_then(|a| a.child_by_field_name("value"))
-                    .filter(|v| v.kind() == kind)
-                    .map(|v| text(v, src)),
+                knowledge::Arg::Named(k) => keyword(k).filter(|v| v.kind() == kind).map(|v| text(v, src)),
             };
             let verb = (f.kind() == "attribute").then(|| f.child_by_field_name("attribute").map(|a| text(a, src))).flatten();
-            if let Some(mount) = knowledge::MOUNTS.iter().find(|mt| Some(mt.verb) == verb) {
+            if let Some(mount) = knowledge::MOUNTS.iter().find(|mt| Some(mt.verb) == verb && lib.as_deref() == Some(mt.package)) {
                 let parent = f.child_by_field_name("object").map(|o| text(o, src).to_string());
                 let prefix = match handed(&mount.prefix, "string") {
                     Some(p) => Some(unquote(p)),
                     None => matches!(mount.prefix, knowledge::Arg::Named(_)).then(String::new),
                 };
                 if let (Some(parent), Some(prefix), Some(child)) = (parent, prefix, handed(&mount.child, "identifier")) {
-                    mounted.insert(key(child), (key(&parent), prefix));
+                    let replaces = mount.replaces && !prefix.is_empty();
+                    mounted.insert(key(child), (key(&parent), prefix, replaces));
                 }
             }
-            for (router, keyword) in knowledge::PREFIXED_ROUTERS {
-                if !text(f, src).ends_with(router) {
-                    continue;
-                }
+            // a router that carries its own prefix, and the handlers it is handed
+            let name = call_path(f, src).last().cloned().unwrap_or_default();
+            if let Some(router) = knowledge::PREFIXED_ROUTERS.iter().find(|r| r.class == name && lib.as_deref() == Some(r.package)) {
                 let target = call.parent().filter(|p| p.kind() == "assignment").and_then(|a| a.child_by_field_name("left")).filter(|l| l.kind() == "identifier");
-                if let (Some(t), Some(prefix)) = (target, lit_kw(call, src, keyword)) {
-                    own.insert(key(text(t, src)), prefix);
+                let Some(t) = target.map(|t| key(text(t, src))) else { continue };
+                if let Some(prefix) = lit_kw(call, src, router.prefix) {
+                    own.insert(t.clone(), prefix);
+                }
+                let handlers = router.handlers.and_then(|k| keyword(k)).filter(|l| l.kind() == "list").map(named_children).unwrap_or_default();
+                for h in handlers.into_iter().filter(|h| h.kind() == "identifier") {
+                    mounted.insert(key(text(h, src)), (t.clone(), String::new(), false));
                 }
             }
         }
     }
-    // each route by the app or router it is declared on: `@router.get(..)`
+    // a controller's routes are under the path the class names
+    for (id, _) in store.classes.iter() {
+        let bases: Vec<&str> = store.edges.iter().filter(|e| e.src == *id && e.kind == EdgeKind::Inherits).map(|e| e.dst.as_str()).collect();
+        let Some((_, _, attr)) = knowledge::CONTROLLERS.iter().find(|(pkg, base, _)| bases.iter().any(|b| lib_of(b).map(|l| package_of(&l)).as_deref() == Some(*pkg) && b.rsplit('.').next() == Some(*base))) else { continue };
+        let Some(n) = store.nodes.get(id) else { continue };
+        let Some(m) = modules.get(&n.module) else { continue };
+        let body = def_node(m, n).and_then(|d| d.child_by_field_name("body"));
+        let path = body.map(named_children).unwrap_or_default().into_iter().filter_map(|st| named_children(st).into_iter().next().filter(|a| a.kind() == "assignment")).find_map(|a| {
+            (a.child_by_field_name("left").map(|l| text(l, &m.src)) == Some(*attr)).then(|| a.child_by_field_name("right")).flatten().filter(|v| v.kind() == "string").map(|v| unquote(text(v, &m.src)))
+        });
+        if let Some(path) = path {
+            own.insert(id.clone(), path);
+        }
+    }
+    // each route by the app or router it is declared on (`@router.get(..)`), else by the class it
+    // is a method of, else by itself (a handler a router is handed)
     let routes: Vec<(String, String)> = store
         .nodes
         .values()
@@ -613,8 +641,12 @@ fn route_prefixes(modules: &IndexMap<String, Module>, store: &mut GraphBuilder) 
         .filter_map(|n| {
             let m = modules.get(&n.module)?;
             let registers = |rest: &str| rest.split_once('(').map_or(false, |(verb, _)| knowledge::registers_route_by_decorator(verb));
-            let recv = n.decorators.iter().find_map(|d| d.split_once('.').filter(|(_, rest)| registers(rest)).map(|(r, _)| r.to_string()))?;
-            Some((n.id.clone(), m.bindings.get(&recv).cloned().unwrap_or_else(|| format!("{}.{recv}", m.id))))
+            let recv = n.decorators.iter().find_map(|d| d.split_once('.').filter(|(_, rest)| registers(rest)).map(|(r, _)| r.to_string()));
+            let router = match recv {
+                Some(r) => m.bindings.get(&r).cloned().unwrap_or_else(|| format!("{}.{r}", m.id)),
+                None => n.cls.clone().unwrap_or_else(|| n.id.clone()),
+            };
+            Some((n.id.clone(), router))
         })
         .collect();
     crate::entries::mount_routes(store, &routes, &own, &mounted, str::to_string);

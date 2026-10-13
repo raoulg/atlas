@@ -1091,11 +1091,11 @@ fn route_prefixes(modules: &IndexMap<String, Module>, store: &mut GraphBuilder) 
         let (mid, name) = target.rsplit_once('.').filter(|_| depth < 8)?;
         key_of(modules.get(mid)?, name, modules, depth + 1)
     }
-    let mut mounted: HashMap<String, (String, String)> = HashMap::new();
+    let mut mounted: HashMap<String, (String, String, bool)> = HashMap::new();
     for m in modules.values() {
         for (parent, prefix, sub) in &m.mounts {
             if let (Some(p), Some(s)) = (key_of(m, parent, modules, 0), key_of(m, sub, modules, 0)) {
-                mounted.insert(s, (p, prefix.clone()));
+                mounted.insert(s, (p, prefix.clone(), false));
             }
         }
     }

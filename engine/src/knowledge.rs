@@ -55,29 +55,45 @@ pub enum Arg {
     Named(&'static str),
 }
 
-/// How an app takes another app's or a router's routes under a prefix: the method, and where it
-/// is handed the prefix and what it mounts. A prefix handed by position must be there; one by
-/// keyword may be left out.
+/// How an app takes another app's or a router's routes under a prefix: the package whose app
+/// does it, the method, and where it is handed the prefix and what it mounts. A prefix handed by
+/// position must be there; one by keyword may be left out. A prefix that `replaces` stands in
+/// for the mounted router's own (Flask's `register_blueprint(bp, url_prefix=..)`).
 pub struct Mount {
+    pub package: &'static str,
     pub verb: &'static str,
     pub prefix: Arg,
     pub child: Arg,
+    pub replaces: bool,
 }
 
 pub const MOUNTS: &[Mount] = &[
-    // Starlette
-    Mount { verb: "mount", prefix: Arg::At(0), child: Arg::At(1) },
-    // FastAPI
-    Mount { verb: "include_router", prefix: Arg::Named("prefix"), child: Arg::At(0) },
-    // Express
-    Mount { verb: "use", prefix: Arg::At(0), child: Arg::At(1) },
-    // Hono
-    Mount { verb: "route", prefix: Arg::At(0), child: Arg::At(1) },
+    Mount { package: "starlette", verb: "mount", prefix: Arg::At(0), child: Arg::At(1), replaces: false },
+    Mount { package: "fastapi", verb: "mount", prefix: Arg::At(0), child: Arg::At(1), replaces: false },
+    Mount { package: "fastapi", verb: "include_router", prefix: Arg::Named("prefix"), child: Arg::At(0), replaces: false },
+    Mount { package: "flask", verb: "register_blueprint", prefix: Arg::Named("url_prefix"), child: Arg::At(0), replaces: true },
+    Mount { package: "express", verb: "use", prefix: Arg::At(0), child: Arg::At(1), replaces: false },
+    Mount { package: "hono", verb: "route", prefix: Arg::At(0), child: Arg::At(1), replaces: false },
 ];
 
-/// Routers that carry their own prefix, and the keyword they are handed it by: FastAPI's
-/// `APIRouter(prefix=..)`.
-pub const PREFIXED_ROUTERS: &[(&str, &str)] = &[("APIRouter", "prefix")];
+/// A router that carries its own prefix: its package and class, the keyword it is handed the
+/// prefix by, and the keyword it is handed its handlers by, when it is handed them.
+pub struct PrefixedRouter {
+    pub package: &'static str,
+    pub class: &'static str,
+    pub prefix: &'static str,
+    pub handlers: Option<&'static str>,
+}
+
+pub const PREFIXED_ROUTERS: &[PrefixedRouter] = &[
+    PrefixedRouter { package: "fastapi", class: "APIRouter", prefix: "prefix", handlers: None },
+    PrefixedRouter { package: "flask", class: "Blueprint", prefix: "url_prefix", handlers: None },
+    PrefixedRouter { package: "litestar", class: "Router", prefix: "path", handlers: Some("route_handlers") },
+];
+
+/// A class whose methods' routes are under a path the class names: its package, the base class,
+/// and the attribute that holds the path (Litestar's `Controller.path`).
+pub const CONTROLLERS: &[(&str, &str, &str)] = &[("litestar", "Controller", "path")];
 
 /// Packages whose app or router registers a route by a call: `app.get("/x", handler)`.
 pub const ROUTERS: &[&str] = &["hono", "express", "fastify", "koa-router", "@koa/router", "elysia", "itty-router", "h3"];

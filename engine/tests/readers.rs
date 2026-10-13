@@ -40,7 +40,10 @@ fn library_knowledge_is_data() {
     names.extend(k::OPERATIONS.iter().map(|(p, _, _)| *p));
     names.extend(k::TOOL_SERVERS.iter().flat_map(|(p, c)| [*p, *c]));
     names.extend(k::PROMISIFIERS.iter().flat_map(|(p, f)| [*p, *f]));
-    names.extend(k::PREFIXED_ROUTERS.iter().map(|(r, _)| *r));
+    names.extend(k::PREFIXED_ROUTERS.iter().flat_map(|r| [r.package, r.class]));
+    names.extend(k::MOUNTS.iter().map(|m| m.package));
+    names.extend(k::CONTROLLERS.iter().flat_map(|(p, c, _)| [*p, *c]));
+    names.extend(k::ARG_PARSERS.iter().flat_map(|a| [a.package, a.namespace]));
     names.extend(k::CLI_FRAMEWORKS.iter().map(|c| c.package));
     names.extend(k::WEB_FRAMEWORKS.iter().map(|w| w.package));
     names.extend(k::ENTRY_TABLES.iter().flat_map(|(path, _)| path.iter().copied()).filter(|p| !matches!(*p, "project" | "tool" | "scripts")));
@@ -56,7 +59,7 @@ fn library_knowledge_is_data() {
     let anywhere = Regex::new(r"\b(rkg|plusmin|vectormesh|goad|huggingface|cmd_)\b").unwrap();
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let mut files: Vec<PathBuf> = std::fs::read_dir(root.join("src")).unwrap().flatten().map(|e| e.path()).collect();
-    for sub in ["python", "typescript"] {
+    for sub in ["python", "typescript", "rust"] {
         files.extend(std::fs::read_dir(root.join("src").join(sub)).unwrap().flatten().map(|e| e.path()));
     }
     files.retain(|p| p.extension().map_or(false, |e| e == "rs") && !p.ends_with("knowledge.rs"));
