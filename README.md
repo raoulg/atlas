@@ -50,15 +50,17 @@ In the typed one a `DataFrame` goes from `load` to `smooth` to `Trend.save`, and
 every file. A red dot is a question Atlas asks the author: why do `get_data` and `plot` pick their
 own files, and what do the four functions give back? Click a picture to open it in Atlas.
 
-## Ported to Rust. The same picture.
+## Ported to Rust. A picture alike.
 
 Code gets rewritten in another language: for speed, for one binary to ship, for a team, and more
-and more often by an agent. Tests tell you the port gives the same figure. They don't tell you the
-design survived: the same steps, the same values handed between them, the same places. Atlas draws
-the program, not the language, so a faithful port draws the same picture.
+and more often by an agent. Tests tell you the port gives the same figure. They don't tell you
+whether the design survived: the same steps, the same values handed between them, the same places.
+Atlas draws every language in the same terms, so the original and the port can lie side by side:
+the same shape where the design survived, and differences where it did not, or where the language
+works otherwise.
 
-Where two pictures differ, it is one of two things. Either the port drifted, a step gone or a place
-moved, and Atlas shows where. Or the language asks for it, and only the names change:
+The differences are the interesting part. A step gone or a place moved is drift, and Atlas shows
+where. The rest is the language speaking:
 
 | | Python | Rust |
 |---|---|---|

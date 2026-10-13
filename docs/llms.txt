@@ -32,7 +32,7 @@ The mathematics is there so that a human needs none of it. Every construct has o
 - `atlas changes [rev]` says what an edit did to the routes, their places and the findings. Run it after an edit to see whether the edit did what it was meant to, and nothing else.
 - `atlas mcp` serves the same over stdio: the tools `principles`, `check`, `explain`, `routes`, `route`, `view` and `changes`.
 - `atlas view [repo]` writes the picture for the human as one HTML file.
-- **Porting a program to another language** (or checking someone's port): draw the original and the port, and compare their routes (`atlas mcp`'s `route`, or the two pictures). A faithful port draws the same picture: the same steps in the same order, the same values handed between them, the same places. Every difference is either drift, which the port should fix (a step folded into `main`, a file picked inside a function, a global that was not there), or the language, which you name (a pandas `DataFrame` becomes a `Vec<Month>`, a function that may fail says so with `Result`). Tests show the output survived; the picture shows the design did.
+- **Porting a program to another language** (or checking someone's port): draw the original and the port, and compare their routes (`atlas mcp`'s `route`, or the two pictures). A faithful port draws the same shape: the same steps in the same order, the same values handed between them, the same places. Every difference is either drift, which the port should fix (a step folded into `main`, a file picked inside a function, a global that was not there), or the language, which you name (a pandas `DataFrame` becomes a `Vec<Month>`, a function that may fail says so with `Result`). Tests show the output survived; the picture shows the design did.
 
 ## Docs
 
