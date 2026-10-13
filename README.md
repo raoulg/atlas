@@ -24,9 +24,14 @@
 Two programs can show you the same screen. One is sloppy code with lots of shortcuts and
 inconsistent structure. The other is an elegant orchestration of logic. Atlas shows which is which.
 
+## The same program. The same figure.
+
+Fetch sunspot counts from the web, keep the CSV, clean it, smooth it, draw a figure. Written twice in
+Python: once as a sloppy script, once typed and elegant. Atlas draws what each one does.
+
 <p align="center">
   <img src="docs/img/showcase/sunspots.png" width="100%" alt="SILSO's monthly mean sunspot number since 1749, a thin grey line, with its 13-month mean in blue over it: the eleven-year solar cycle">
-  <br><sub>What both programs below make: the monthly sunspot number since 1749, smoothed over 13 months.</sub>
+  <br><sub>What both make: the monthly mean sunspot number since 1749 (SILSO, Royal Observatory of Belgium), smoothed over 13 months.</sub>
 </p>
 
 <h3 align="center">A sloppy script</h3>
@@ -39,24 +44,27 @@ inconsistent structure. The other is an elegant orchestration of logic. Atlas sh
   <a href="https://raoulg.github.io/atlas/showcase/python-clean.html"><img src="docs/img/showcase/python-clean.png" width="100%" alt="Atlas's picture of the typed pipeline: a DataFrame passes from load to smooth to Trend.save, and the command names every file"></a>
 </p>
 
-<p align="center"><sub>
-The same pipeline: fetch sunspot counts from the web, keep the CSV, clean it, smooth it, draw a
-figure. The same places at the edges, the same figure out. A red dot is a question Atlas asks the
-author; here: why do <code>get_data</code> and <code>plot</code> pick their own files, and what do
-the four functions give back? Click a picture to open it.
-</sub></p>
+Both reach the same places: the web, the raw CSV, the figure. Inside they part. In the sloppy script
+every step reads and changes one global, `Global(sunspots.df)`; nothing is handed from step to step.
+In the typed one a `DataFrame` goes from `load` to `smooth` to `Trend.save`, and the command names
+every file. A red dot is a question Atlas asks the author: why do `get_data` and `plot` pick their
+own files, and what do the four functions give back? Click a picture to open it in Atlas.
 
-## Check a port
+## Ported to Rust. The same picture.
 
 Code gets rewritten in another language: for speed, for one binary to ship, for a team, and more
-and more often by an agent. Tests tell you the port gives the same output. They don't tell you the
-design survived: the same steps, the same values handed between them, the same places. A port can
-pass every test and still have folded five steps into one `main`.
+and more often by an agent. Tests tell you the port gives the same figure. They don't tell you the
+design survived: the same steps, the same values handed between them, the same places. Atlas draws
+the program, not the language, so a faithful port draws the same picture.
 
-Atlas's rules belong to no language: it draws the program, not the language, so a faithful port
-draws the same picture. Lay the two side by side and every difference is one of two things. Either
-the port drifted (a step gone, a place moved), or the language asks for it (a pandas `DataFrame`
-becomes a `Vec<Month>`). [See the sunspot pipeline ported to Rust.](https://raoulg.github.io/atlas/#port)
+Where two pictures differ, it is one of two things. Either the port drifted, a step gone or a place
+moved, and Atlas shows where. Or the language asks for it, and only the names change:
+
+| | Python | Rust |
+|---|---|---|
+| **The values** | a pandas `DataFrame` | the program's own records: `Vec<Month>`, `Vec<Smoothed>` |
+| **The figure** | a matplotlib `Figure`, then saved | drawn by plotters straight into a PNG |
+| **Failing** | no signature says a step may fail | every step that may fail says so: `Result<_, Error>` |
 
 ## The mathematics of your code
 
@@ -133,8 +141,7 @@ atlas mcp       # the same picture for your coding agent
 
 ## More
 
-- [**See it**](https://raoulg.github.io/atlas/): the examples, side by side, to click through, and the
-  same program ported to Rust.
+- [**See it**](https://raoulg.github.io/atlas/): the same pictures on one page, to click through.
 - [**For agents**](docs/llms.txt): what Atlas is for and how an agent should use it, then the design,
   the principles and the guide, written to be read in one go.
 

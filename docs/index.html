@@ -64,6 +64,8 @@ figure.output img{width:100%;height:auto;display:block;padding:14px 18px}
 .cmds div{background:var(--panel);border:1px solid var(--line);padding:18px}
 .cmds code{font-family:var(--mono);font-size:14px;display:block;margin-bottom:6px}
 .cmds span{color:var(--ink-2);font-size:15px}
+.os{font-size:14px;color:var(--ink-2);margin:16px 0 6px}
+.os:first-of-type{margin-top:0}
 pre{font-family:var(--mono);font-size:13px;background:var(--panel);border:1px solid var(--line);padding:14px 16px;overflow-x:auto;margin:0}
 footer{border-top:1px solid var(--line);padding-top:20px;color:var(--ink-3);font-size:14px;display:flex;flex-wrap:wrap;gap:20px}
 @media (max-width:760px){
@@ -110,24 +112,15 @@ footer{border-top:1px solid var(--line);padding-top:20px;color:var(--ink-3);font
   <p class="note">click a picture to open it in Atlas</p>
 </section>
 
-<section>
-  <h2>Ported to another language, the same picture.</h2>
-  <p class="lede">The typed pipeline ported to TypeScript and Rust. Atlas draws the same shape: the same steps, the same places. Where the pictures differ, the languages do.</p>
-  <div class="pair">
-    <figure class="elegant">
-      <figcaption><b>Python</b><span class="tag">port</span></figcaption>
-      <a href="showcase/python-clean.html"><img src="img/showcase/python-clean.png" style="--w:1758" alt="Atlas's picture of the Python pipeline"></a>
-    </figure>
-    <figure class="elegant">
-      <figcaption><b>TypeScript</b><span class="tag">port</span></figcaption>
-      <a href="showcase/typescript.html"><img src="img/showcase/typescript.png" style="--w:1018" alt="Atlas's picture of the TypeScript port"></a>
-    </figure>
-  </div>
+<section id="port">
+  <h2>Ported to Rust. The same picture.</h2>
+  <p class="lede">Code gets rewritten in another language: for speed, for one binary to ship, for a team, and more and more often by an agent. Tests tell you the port gives the same figure. They don't tell you the design survived: the same steps, the same values handed between them, the same places. Atlas draws the program, not the language, so a faithful port draws the same picture.</p>
+  <p class="explain">Where two pictures differ, it is one of two things. Either the port drifted, a step gone or a place moved, and Atlas shows where. Or the language asks for it, and only the names change:</p>
   <table class="diff">
-    <tr><th></th><th>Python</th><th>TypeScript</th><th>Rust</th></tr>
-    <tr><th>The values</th><td>a pandas <code>DataFrame</code></td><td>the program's own records</td><td>the program's own records</td></tr>
-    <tr><th>The figure</th><td>a matplotlib <code>Figure</code></td><td>SVG text</td><td>a PNG drawn through a backend</td></tr>
-    <tr><th>Types</th><td>written by the author, read by ty</td><td>written by the author, checked by tsc</td><td>forced by the compiler</td></tr>
+    <tr><th></th><th>Python</th><th>Rust</th></tr>
+    <tr><th>The values</th><td>a pandas <code>DataFrame</code></td><td>the program's own records: <code>Vec&lt;Month&gt;</code>, <code>Vec&lt;Smoothed&gt;</code></td></tr>
+    <tr><th>The figure</th><td>a matplotlib <code>Figure</code>, then saved</td><td>drawn by plotters straight into a PNG</td></tr>
+    <tr><th>Failing</th><td>no signature says a step may fail</td><td>every step that may fail says so: <code>Result&lt;_, Error&gt;</code></td></tr>
   </table>
 </section>
 
@@ -162,7 +155,12 @@ footer{border-top:1px solid var(--line);padding-top:20px;color:var(--ink-3);font
 <section id="install">
   <h2>Try it on your own code.</h2>
   <p class="lede">One binary. Your code stays on your machine.</p>
+  <p class="os">macOS and Linux</p>
   <pre>curl -fsSL https://raw.githubusercontent.com/raoulg/atlas/main/install.sh | sh</pre>
+  <p class="os">Windows, in PowerShell</p>
+  <pre>irm https://raw.githubusercontent.com/raoulg/atlas/main/install.ps1 | iex</pre>
+  <p class="os">From source, with a <a href="https://rustup.rs">Rust toolchain</a></p>
+  <pre>cargo install --locked --git https://github.com/raoulg/atlas atlas</pre>
   <div class="cmds" style="margin-top:20px">
     <div><code>atlas view</code><span>draw the repository you are in</span></div>
     <div><code>atlas check</code><span>where the code and ten design principles disagree</span></div>
