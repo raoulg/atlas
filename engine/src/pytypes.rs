@@ -318,6 +318,9 @@ struct Settings {
     extra_paths: Vec<String>,
     roots: Vec<String>,
     file: Option<SystemPathBuf>,
+    /// The project's name and the lowest Python it supports, from `[project]`.
+    name: Option<String>,
+    requires: Option<String>,
 }
 
 impl Settings {
@@ -330,7 +333,10 @@ impl Settings {
                 root.join("pyproject.toml"),
             ),
         };
-        let Some(env) = table else { return Settings::default() };
+        let project = read("pyproject.toml").and_then(|t| t.get("project").cloned());
+        let name = project.as_ref().and_then(|p| p.get("name")?.as_str().map(String::from));
+        let requires = project.as_ref().and_then(|p| p.get("requires-python")?.as_str().map(lowest_version)).flatten();
+        let Some(env) = table else { return Settings { name, requires, ..Settings::default() } };
         let strings = |key: &str| -> Vec<String> {
             match env.get(key) {
                 Some(toml::Value::Array(xs)) => xs.iter().filter_map(|x| x.as_str().map(String::from)).collect(),
@@ -344,8 +350,17 @@ impl Settings {
             extra_paths: strings("extra-paths"),
             roots: strings("root"),
             file: Some(file),
+            name,
+            requires,
         }
     }
+}
+
+/// The lowest version a `requires-python` allows: `>=3.11` and `~=3.11.2` are `3.11`.
+fn lowest_version(spec: &str) -> Option<String> {
+    let lower = spec.split(',').map(str::trim).find(|c| c.starts_with(">=") || c.starts_with("~=") || c.starts_with("=="))?;
+    let v: Vec<&str> = lower.trim_start_matches(['>', '=', '~']).trim().split('.').take(2).collect();
+    (v.len() == 2 && v.iter().all(|x| x.chars().all(|c| c.is_ascii_digit()))).then(|| v.join("."))
 }
 
 /// ty's database over the files on disk.
@@ -378,9 +393,19 @@ impl TyDb {
         let settings = Settings::of(root);
         let mut roots: Vec<SystemPathBuf> = settings.roots.iter().map(|r| root.join(r)).collect();
         if roots.is_empty() {
+            // the layouts ty finds by itself: the root, `src` and maturin's `python` where they are
+            // no package, and a nested `<name>/<name>`
             roots.push(root.to_path_buf());
-            if db.system.is_directory(&root.join("src")) {
-                roots.push(root.join("src"));
+            for dir in ["src", "python"] {
+                let d = root.join(dir);
+                if db.system.is_directory(&d) && !db.system.is_file(&d.join("__init__.py")) {
+                    roots.push(d);
+                }
+            }
+            if let Some(name) = settings.name.as_deref().map(|n| n.replace('-', "_")) {
+                if db.system.is_directory(&root.join(&name).join(&name)) {
+                    roots.push(root.join(&name));
+                }
             }
         }
         let mut search = SearchPathSettings::new(roots);
@@ -393,7 +418,9 @@ impl TyDb {
             // the project's `.venv`; a `VIRTUAL_ENV`, a conda environment or a python on `PATH` are the shell's
             None => Some(root.join(".venv")).filter(|v| db.system.is_directory(v)).and_then(|v| PythonEnvironment::new(v, SysPrefixPathOrigin::LocalVenv, &db.system).ok()),
         };
-        let mut version = settings.python_version.as_deref().and_then(|v| v.parse::<PythonVersion>().ok());
+        // the version ty reads with: the one configured, else the lowest the project supports
+        // (`requires-python`), else the environment's
+        let mut version = settings.python_version.as_deref().or(settings.requires.as_deref()).and_then(|v| v.parse::<PythonVersion>().ok());
         let mut environment = false;
         if let Some(env) = &found {
             if version.is_none() {
@@ -743,6 +770,12 @@ impl<'e> Visitor<'e> for Reader<'_, '_> {
                 if let Some(t) = definitions_for_attribute(self.model, a).first().and_then(|d| self.target(d.focus_range(self.db))) {
                     self.facts.defs.insert(span(expr), t);
                 }
+                // what a module's or a class's name holds: a function, a constant (`pd.read_csv`)
+                if matches!(&*a.value, ast::Expr::Name(_)) {
+                    if let Some(t) = self.value(expr) {
+                        self.facts.values.insert(span(expr), t);
+                    }
+                }
             }
             _ => {}
         }
@@ -753,6 +786,15 @@ impl<'e> Visitor<'e> for Reader<'_, '_> {
 #[cfg(test)]
 mod tests {
     use super::outer_classes;
+
+    #[test]
+    fn a_project_is_read_with_the_lowest_python_it_supports() {
+        use super::lowest_version;
+        assert_eq!(lowest_version(">=3.11").as_deref(), Some("3.11"));
+        assert_eq!(lowest_version(">=3.10, <4").as_deref(), Some("3.10"));
+        assert_eq!(lowest_version("~=3.12.1").as_deref(), Some("3.12"));
+        assert_eq!(lowest_version("<4"), None);
+    }
 
     #[test]
     fn a_type_is_the_classes_of_the_values_it_holds() {

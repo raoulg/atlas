@@ -866,10 +866,11 @@ fn collect_imports(m: &mut Module, module_ids: &HashSet<String>, store: &mut Gra
 /// Dotted name in module scope -> node id, `ext:<name>`, or None.
 fn resolve(m: &Module, parts: &[String], modules: &IndexMap<String, Module>, nodes: &IndexMap<String, Node>, root: &str) -> Option<String> {
     // a shaped array is its dtype's type with the shape kept: `ext:jaxtyping.Float[Tensor, batch dim]`
+    // (knowledge::SHAPED_ARRAYS)
     if let [one] = parts {
         if let Some((head, shape)) = one.split_once('[') {
             let base = resolve(m, &head.split('.').map(str::to_string).collect::<Vec<_>>(), modules, nodes, root)?;
-            return Some(if base.starts_with("ext:jaxtyping.") { format!("{base}[{shape}") } else { base });
+            return Some(if knowledge::shaped(&base).is_some() { format!("{base}[{shape}") } else { base });
         }
     }
     let head = parts.first()?;
@@ -978,21 +979,27 @@ fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, root: &str
     let sites = sites(modules, store);
     mark_registered(modules, store, types, &sites, root);
     attributes(modules, store, types, &sites, root);
-    // methods that change their receiver, directly or through another such method on self
-    for _ in 0..5 {
+    // methods that change their receiver, directly or through another such method on self: until
+    // nothing changes, which ends, as the set only grows and the methods are finite
+    loop {
         let before = store.mutating.len();
         for id in &ids {
             let n = &store.nodes[id];
             let (Some(cls), true) = (n.cls.clone(), n.kind == NodeKind::Method && n.name != "__init__") else { continue };
             let m = &modules[&n.module];
             let Some(body) = def_node(m, n).and_then(|d| d.child_by_field_name("body")) else { continue };
-            let on_self = |c: TsNode| {
-                let f = c.child_by_field_name("function").filter(|f| f.kind() == "attribute");
-                let obj = f.and_then(|f| f.child_by_field_name("object")).map(|o| text(o, &m.src));
-                let name = f.and_then(|f| f.child_by_field_name("attribute")).map(|a| text(a, &m.src)).unwrap_or("");
-                obj == Some("self") && store.method_of(&cls, name).map_or(false, |t| store.mutating.contains(&t))
-            };
-            if changed_roots(body, &m.src, &on_self).contains("self") {
+            let seen = Seen::new(m, types, &sites, modules, store, root);
+            // a method of the package that changes what it is called on (`self.add(..)`,
+            // `self.pipeline.add(..)`), or a library call that changes a value
+            let changed = changed_roots(body, &m.src, &|c| {
+                let f = c.child_by_field_name("function").filter(|f| f.kind() == "attribute")?;
+                let obj = f.child_by_field_name("object");
+                let name = f.child_by_field_name("attribute").map(|a| text(a, &m.src)).unwrap_or("");
+                let on_self = obj.map(|o| text(o, &m.src)) == Some("self") && store.method_of(&cls, name).map_or(false, |t| store.mutating.contains(&t));
+                let own = on_self || matches!(seen.callee(f), Some(Callee::Def(t)) if store.mutating.contains(&t));
+                if own { obj } else { library_change(seen.facts, c, &m.src) }
+            });
+            if changed.contains("self") {
                 let id = id.clone();
                 store.mutating.insert(id);
             }
@@ -1085,22 +1092,49 @@ fn root_name<'a>(n: TsNode, src: &'a [u8]) -> Option<&'a str> {
 /// attribute or item (`self.x = ..`, `p.items[k] = ..`), and of every call to a mutator
 /// (`self.nodes.append(..)`) or to a method known to change its receiver. Changing a part
 /// changes the whole.
-fn changed_roots<'a>(body: TsNode, src: &'a [u8], mutating: &dyn Fn(TsNode) -> bool) -> std::collections::BTreeSet<&'a str> {
+fn changed_roots<'a, 't>(body: TsNode<'t>, src: &'a [u8], changes: &dyn Fn(TsNode<'t>) -> Option<TsNode<'t>>) -> std::collections::BTreeSet<&'a str> {
     let mut out = std::collections::BTreeSet::new();
     for a in walk(body, &["assignment", "augmented_assignment"]) {
         if let Some(left) = a.child_by_field_name("left").filter(|l| matches!(l.kind(), "attribute" | "subscript")) {
             out.extend(root_name(left, src));
         }
     }
+    // `del d[k]`, `del obj.x`
+    for d in walk(body, &["delete_statement"]) {
+        for t in walk(d, &["attribute", "subscript"]).into_iter().filter(|t| t.parent().map_or(false, |p| p.kind() == "delete_statement" || p.kind() == "expression_list")) {
+            out.extend(root_name(t, src));
+        }
+    }
     for c in walk(body, &["call"]) {
-        let Some(f) = c.child_by_field_name("function").filter(|f| f.kind() == "attribute") else { continue };
-        let Some(obj) = f.child_by_field_name("object") else { continue };
-        let name = f.child_by_field_name("attribute").map(|a| text(a, src)).unwrap_or("");
-        if knowledge::mutators(knowledge::Registry::PyPi).contains(&name) || mutating(c) {
-            out.extend(root_name(obj, src));
+        if let Some(changed) = changes(c) {
+            out.extend(root_name(changed, src));
         }
     }
     out
+}
+
+/// What a call to a library changes in place, as ty says where it goes: the value a mutating
+/// method is called on (`xs.append(x)` on a list), or the argument a function changes
+/// (`setattr(obj, ..)`, `random.shuffle(xs)`).
+fn library_change<'t>(facts: Option<&Facts>, c: TsNode<'t>, src: &[u8]) -> Option<TsNode<'t>> {
+    let f = c.child_by_field_name("function")?;
+    let package = facts?.callees((f.start_byte(), f.end_byte())).iter().find_map(|x| match &x.target {
+        Target::Lib(m) => Some(package_of(m)),
+        Target::Here { .. } => None,
+    })?;
+    match f.kind() {
+        "attribute" if knowledge::mutates(&package, text(f.child_by_field_name("attribute")?, src)) => f.child_by_field_name("object"),
+        _ => {
+            let name = dotted(Some(f), src).last().cloned()?;
+            let (_, _, i) = knowledge::CHANGES_ARGUMENT.iter().find(|(p, n, _)| *p == package && *n == name)?;
+            positional_at(c, *i)
+        }
+    }
+}
+
+/// The argument a call hands at position `i`.
+fn positional_at(call: TsNode, i: usize) -> Option<TsNode> {
+    named_children(call.child_by_field_name("arguments")?).into_iter().filter(|a| !matches!(a.kind(), "keyword_argument" | "comment" | "list_splat" | "dictionary_splat")).nth(i)
 }
 
 // ---------- the types of expressions, from ty ----------
@@ -1590,6 +1624,19 @@ struct Alias {
 fn type_aliases(modules: &IndexMap<String, Module>) -> HashMap<String, Alias> {
     let mut out = HashMap::new();
     for (mid, m) in modules {
+        // `type X = A | B`: a named union like any other
+        for st in named_children(m.tree.root_node()).into_iter().filter(|st| st.kind() == "type_alias_statement") {
+            let (Some(left), Some(right)) = (st.child_by_field_name("left"), st.child_by_field_name("right")) else { continue };
+            let name = text(left, &m.src).split('[').next().unwrap_or("").trim().to_string();
+            let value = named_children(right).into_iter().next().unwrap_or(right);
+            let head = dotted(value.child_by_field_name("value"), &m.src).last().cloned().unwrap_or_default();
+            let sum = text(value, &m.src).contains('|') || matches!(head.as_str(), "Union");
+            if name.is_empty() || !(sum || head == "Optional") {
+                continue;
+            }
+            let alias = Alias { module: mid.clone(), names: type_names(Some(value), &m.src), sum, span: span(st), text: text(value, &m.src).to_string() };
+            out.insert(format!("{mid}.{name}"), alias);
+        }
         for a in top_assignments(m) {
             let (Some(left), Some(right)) = (a.child_by_field_name("left"), a.child_by_field_name("right")) else { continue };
             if left.kind() != "identifier" {
@@ -1692,14 +1739,14 @@ fn alias_targets(m: &Module, t: &[String], modules: &IndexMap<String, Module>, a
 
 /// I/O functions named without being called: `READERS = {".csv": pd.read_csv}` reads csv
 /// wherever `READERS` is used. Keyed by the module-level name that holds them.
-fn io_tables(m: &Module, root: &str) -> HashMap<String, Vec<Touch>> {
+fn io_tables(m: &Module, facts: Option<&Facts>, root: &str) -> HashMap<String, Vec<Touch>> {
     let mut out: HashMap<String, Vec<Touch>> = HashMap::new();
     for a in top_assignments(m) {
         let (Some(left), Some(right)) = (a.child_by_field_name("left"), a.child_by_field_name("right")) else { continue };
         if left.kind() != "identifier" {
             continue;
         }
-        let ts = io_refs(m, right, root, text(left, &m.src));
+        let ts = io_refs(m, facts, right, root, text(left, &m.src));
         if !ts.is_empty() {
             out.insert(text(left, &m.src).to_string(), ts);
         }
@@ -1708,7 +1755,7 @@ fn io_tables(m: &Module, root: &str) -> HashMap<String, Vec<Touch>> {
 }
 
 /// Attributes under `n` that name an I/O function of a library without calling it.
-fn io_refs(m: &Module, n: TsNode, root: &str, what: &str) -> Vec<Touch> {
+fn io_refs(m: &Module, facts: Option<&Facts>, n: TsNode, root: &str, what: &str) -> Vec<Touch> {
     let mut out = vec![];
     for a in walk(n, &["attribute"]) {
         let called = a.parent().map_or(false, |p| p.kind() == "call" && p.child_by_field_name("function").map(|f| f.id()) == Some(a.id()));
@@ -1718,8 +1765,8 @@ fn io_refs(m: &Module, n: TsNode, root: &str, what: &str) -> Vec<Touch> {
             continue;
         }
         let parts = dotted(Some(a), &m.src);
-        // a function is named in lower case; `RoutingControl.READ` is a constant, not a call to come
-        if parts.last().map_or(true, |l| l.starts_with(char::is_uppercase)) {
+        // a function, as ty types it; `RoutingControl.READ` is a constant, not a call to come
+        if !facts.and_then(|f| f.value((a.start_byte(), a.end_byte()))).map_or(false, |v| v.is_code) {
             continue;
         }
         let Some(pkg) = parts.first().and_then(|h| m.bindings.get(h)).filter(|b| !b.starts_with(root)).and_then(|b| b.split('.').next()) else { continue };
@@ -2030,18 +2077,22 @@ impl<'a, 't> Body<'a, 't> {
             return;
         }
         let seen = &self.seen;
-        let receiver_mutates = |c: TsNode| match c.child_by_field_name("function").filter(|f| f.kind() == "attribute" && f.child_by_field_name("object").map_or(false, |o| o.kind() == "identifier")) {
-            Some(f) => matches!(seen.callee(f), Some(Callee::Def(t)) if seen.store.mutating.contains(&t)),
-            None => false,
+        // a method of the package that changes its receiver, or a library call that changes a value
+        let changes = |c: TsNode<'t>| {
+            let own = c.child_by_field_name("function").filter(|f| f.kind() == "attribute");
+            match own {
+                Some(f) if matches!(seen.callee(f), Some(Callee::Def(t)) if seen.store.mutating.contains(&t)) => f.child_by_field_name("object"),
+                _ => library_change(seen.facts, c, self.src),
+            }
         };
-        for r in changed_roots(self.body, self.src, &receiver_mutates) {
+        for r in changed_roots(self.body, self.src, &changes) {
             let ty = if r == "self" { self.cls.clone().filter(|_| !self.initializer) } else { self.params.get(r).cloned() };
             if let Some(t) = ty {
                 self.read.changes.push((t, r.to_string()));
             }
         }
-        self.read.touches.extend(io_refs(self.m, self.body, self.root, ""));
-        let tables = io_tables(self.m, self.root);
+        self.read.touches.extend(io_refs(self.m, self.seen.facts, self.body, self.root, ""));
+        let tables = io_tables(self.m, self.seen.facts, self.root);
         for ident in walk(self.body, &["identifier"]) {
             if let Some(ts) = tables.get(text(ident, self.src)) {
                 self.read.touches.extend(ts.iter().cloned());

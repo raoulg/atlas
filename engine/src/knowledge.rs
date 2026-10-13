@@ -240,6 +240,9 @@ pub const TYPESCRIPT_CONTAINERS: &[&str] = &[
 
 /// Methods that change the value they are called on: a language's own containers', and a
 /// library's (networkx's graphs). By registry and source.
+/// The builtins' row is the methods of Python's `MutableSequence`, `MutableMapping` and
+/// `MutableSet`, with `list.sort`; a call changes its receiver when ty says it goes to the
+/// package of its row.
 pub const MUTATORS: &[(Registry, &str, &[&str])] = &[
     (Registry::PyPi, "builtins", &["append", "extend", "insert", "remove", "pop", "clear", "update", "add", "discard", "setdefault", "sort", "reverse", "popitem"]),
     (Registry::PyPi, "networkx", &["add_node", "add_edge", "add_nodes_from", "add_edges_from", "remove_node", "remove_edge"]),
@@ -249,6 +252,24 @@ pub const MUTATORS: &[(Registry, &str, &[&str])] = &[
 /// The methods that change what they are called on, in the code of one registry's languages.
 pub fn mutators(from: Registry) -> Vec<&'static str> {
     MUTATORS.iter().filter(|(r, _, _)| *r == from).flat_map(|(_, _, ms)| ms.iter().copied()).collect()
+}
+
+/// Whether a method of a package changes what it is called on.
+pub fn mutates(package: &str, method: &str) -> bool {
+    MUTATORS.iter().any(|(r, p, ms)| *r == Registry::PyPi && *p == package && ms.contains(&method))
+}
+
+/// Functions that change an argument they are handed, by package, name and the argument's
+/// position: `setattr(obj, ..)`, `random.shuffle(xs)`.
+pub const CHANGES_ARGUMENT: &[(&str, &str, usize)] = &[("builtins", "setattr", 0), ("builtins", "delattr", 0), ("random", "shuffle", 0)];
+
+/// Libraries whose array types carry their shape in the annotation (`Float[Tensor, "batch dim"]`):
+/// such a type keeps its shape in its name.
+pub const SHAPED_ARRAYS: &[&str] = &["jaxtyping"];
+
+/// A shaped array's id without its library: `Float[Tensor, batch dim]`.
+pub fn shaped(id: &str) -> Option<&str> {
+    SHAPED_ARRAYS.iter().find_map(|p| id.strip_prefix("ext:")?.strip_prefix(p)?.strip_prefix('.'))
 }
 
 /// Functions that wrap a callback-taking function into one that returns a promise: what they

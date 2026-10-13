@@ -37,8 +37,9 @@ fn each_principle_finds_its_case() {
     // `Path("out.json")` in a sink, and `summary` beside the command `export`, which names its own
     // file as an entry may; `save` writes where its caller says
     assert_eq!(got["places"], ["fixture.export.summary", "fixture.sinks.duck.DuckSink.write"]);
-    // `enrich` changes the Graph it is handed; `Graph.add` changes itself
-    assert_eq!(got["changes"], ["fixture.build.enrich"]);
+    // `enrich` changes the Graph it is handed, so do `rename` (`setattr`) and `forget` (`del`);
+    // `Graph.add` changes itself, and `deeper` calls an `update` that changes nothing
+    assert_eq!(got["changes"], ["fixture.build.enrich", "fixture.edits.rename", "fixture.edits.forget"]);
     // `Journal.connection` gives back a connection `entries` uses, without saying so; the
     // door `Graph.first` is asked about by `doors`
     assert_eq!(got["gives"], ["fixture.store.Journal.connection"]);

@@ -400,9 +400,9 @@ struct Array {
     dims: Vec<String>,
 }
 
-/// `ext:jaxtyping.Float[Tensor, batch dim]` as an array.
+/// A shaped array's id (`ext:jaxtyping.Float[Tensor, batch dim]`) as an array.
 fn array_of_id(id: &str) -> Option<Array> {
-    let rest = id.strip_prefix("ext:jaxtyping.")?;
+    let rest = crate::knowledge::shaped(id)?;
     let (dtype, inner) = rest.split_once('[')?;
     let (array, dims) = inner.strip_suffix(']')?.split_once(',')?;
     Some(Array { dtype: dtype.into(), array: array.trim().into(), dims: dims.split_whitespace().map(str::to_string).collect() })

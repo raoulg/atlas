@@ -27,7 +27,7 @@ fn modules_classes_and_functions_are_found() {
     let g = fixture();
     assert_eq!(g.root, "fixture");
     let kinds = |k: NodeKind| g.nodes.iter().filter(|n| n.kind == k).count();
-    assert_eq!(kinds(NodeKind::Module), 22, "the package's eighteen, a root script, a script and two notebooks");
+    assert_eq!(kinds(NodeKind::Module), 23, "the package's nineteen, a root script, a script and two notebooks");
     assert!(g.node("fixture.sinks").unwrap().is_pkg);
     assert_eq!(g.node("fixture.schema.Graph").unwrap().doc, "Nodes and edges.");
     assert_eq!(g.node("fixture.sinks.duck.DuckSink").unwrap().bases, vec!["Sink", "Mixin"]);
@@ -172,6 +172,20 @@ fn a_script_runs_with_its_declared_defaults() {
     let g = fixture();
     let main: Vec<&str> = g.node("scripts.report.main").unwrap().touches.iter().map(|t| t.artifact.as_str()).collect();
     assert_eq!(main, ["out/report.txt"]);
+}
+
+/// What changes in place is what the call does, as ty says where it goes: `setattr(graph, ..)` and
+/// `del graph.nodes[0]` change the Graph; a method of the program called `update` that gives a new
+/// value changes nothing. `type Part = Graph | Node` is a sum.
+#[test]
+fn a_change_is_what_the_call_does() {
+    let g = fixture();
+    let m = edges(&g, EdgeKind::Mutates);
+    assert!(m.contains(&("fixture.edits.rename".into(), "fixture.schema.Graph".into())), "`setattr`: {m:?}");
+    assert!(m.contains(&("fixture.edits.forget".into(), "fixture.schema.Graph".into())), "`del graph.nodes[0]`");
+    assert!(!m.iter().any(|(s, _)| s == "fixture.edits.deeper"), "the program's own `update` that changes nothing");
+    let variants = edges(&g, EdgeKind::Variant);
+    assert!(variants.contains(&("fixture.edits.Part".into(), "fixture.schema.Graph".into())) && variants.contains(&("fixture.edits.Part".into(), "fixture.schema.Node".into())), "{variants:?}");
 }
 
 /// SQL is read by its grammar: a statement writes the table it changes and reads the ones it
