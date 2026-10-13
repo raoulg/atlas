@@ -45,6 +45,31 @@ compiler makes you unwrap) lets Atlas find what it cannot find in one whose sign
 A new language brings a reader, never a principle. The pairs in `engine/tests/pairs` show, per
 language, which principles it traces and by which fact.
 
+Per principle and language, the fact that tells the careful form from the careless one. *Forbidden*:
+the language cannot write the careless form, so there is nothing to lay bare. *Gap*: the language
+lets it be traced and Atlas does not yet; each gap is an ignored test in `pairs_<language>.rs`,
+(a) where Atlas misreads the careful form, (b) where it draws the careless one as careful or drops it.
+
+| Principle | Python | TypeScript | Rust |
+|---|---|---|---|
+| doors | finding; `__all__` exports | finding on an untyped export; gap (b): `any` counts as a type | forbidden: every signature is typed |
+| sums | finding; variant edges | traceable (a union alias) | gap (b): a `Result` handed on is not asked |
+| overrides | `keeps` from ty; finding | forbidden: the compiler holds an override to its base | forbidden |
+| places | `fixed`; finding; gap (b): a path named by a constant is not `fixed` | where the path is made whole; gap (b): no finding, the environment's value dropped | where the path is made whole; gap (b): no finding, the environment's value dropped |
+| changes | mutates edge; finding | mutates edge; finding | forbidden: a change is `&mut` in the signature |
+| gives | finding; the call not followed | no returns edge | returns edge; gap (a): `Result<T, E>` read as giving `E` |
+| choices | finding | finding | finding |
+| nothing | finding | finding | finding |
+| layers | finding | finding | finding; gap (b): a call inside a macro's arguments is no step |
+| lens | finding; takes and returns | gap (a): a client held in a field touches no table | gap (a): a connection held in a field touches no table |
+| a place carries a what | a file's path; gap (a): no URL is carried to its request | a file's path, a request's host | the type a step gives; gap (a): no URL is carried, a program named by a constant |
+| a route ends at a visible place | the places a route reaches; gap (b): a call not followed is no step | gap (b): a call through a key is no step | gap (a): a request on a client held in a field |
+| zoom by base type and composition | inherits and has edges; gap (a): what a base method is handed does not reach the overrides | inherits and has edges; gap (a): the same | inherits and has edges; gap (a): a value bound by a match has no type |
+| a type comes from a step | ty | gap (b): a cast (`as Config`) reads as a step's type | forbidden: no cast between unrelated types |
+
+Blind in all three: a statement with its values spliced in (`f"INSERT INTO t VALUES ({x})"`) names
+the same table, the same way, as one that binds them.
+
 Atlas follows these principles itself: `atlas check` on Atlas's own repository finds
 nothing, and `cargo test` keeps it that way.
 
