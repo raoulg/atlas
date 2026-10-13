@@ -58,20 +58,17 @@ draws the same picture. Lay the two side by side and every difference is one of 
 the port drifted (a step gone, a place moved), or the language asks for it (a pandas `DataFrame`
 becomes a `Vec<Month>`). [See the sunspot pipeline ported to Rust.](https://raoulg.github.io/atlas/#port)
 
-## The mathematics behind it
+## The mathematics of your code
 
-Atlas draws mathematics. Beneath it lies a small piece of
-[category theory](https://pttrn.io/#content/category-theory), and every construct in it has one
-shape: data at rest is a box of its kind, a function is an arrow, a route runs from a way in to the
-places it reaches. Every box and arrow is derived from the code, nothing is guessed, and every
-program is drawn by the same rules. So you need none of the mathematics to read the picture:
-consistent code draws as a consistent picture, and where the picture looks off, so is the code.
+Mathematics is a language that allows you to make things consistent. Best practices in coding are
+consistent, so it makes sense to view your computer code through a mathematical perspective.
+Because we can turn the mathematics of the code into a visual, you can literally see the
+consistency of your code, if you followed best practices. This is independent of the language you
+use: every program is drawn by the same mathematical rules.
 
-<details>
-<summary><b>What is inside</b>, for the mathematically inclined</summary>
-<br>
+**What is inside:**
 
-- **A category of types.** Types are objects, functions are arrows, call order is composition. A
+- **A [category](https://pttrn.io/#content/category-theory) of types.** Types are objects, functions are arrows, call order is composition. A
   route is a composite from an entry point to a place.
 - **Effects in the type.** A function's domain is its parameters plus what it reads; its codomain
   is what it returns plus what it writes, sends or runs. Files, tables and URLs are objects like
@@ -88,7 +85,6 @@ consistent code draws as a consistent picture, and where the picture looks off, 
 
 The structure is laid out in [the design](docs/reference/design.md); what Atlas checks against it
 is in [the ten principles](docs/reference/principles.md).
-</details>
 
 ## Install
 
