@@ -11,10 +11,10 @@ fn storage_places_keep_the_evidence_for_their_quotient() {
         let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/storage").join(side);
         let graph = analyze(&repo, &Options::default()).unwrap();
         let joining = graph.node("storage.join").unwrap();
+        let reading = graph.node("storage.read_pair").unwrap();
         let drawn = flow::of(&graph);
-        let places = &drawn.drawn[&joining.id];
-        let reads: Vec<_> = joining.touches.iter().zip(places).filter(|(t, _)| t.kind_name() == "disk_read").collect();
-        let writes: Vec<_> = joining.touches.iter().zip(places).filter(|(t, _)| t.kind_name() == "disk_write").collect();
+        let reads: Vec<_> = reading.touches.iter().zip(&drawn.drawn[&reading.id]).filter(|(t, _)| t.kind_name() == "disk_read").collect();
+        let writes: Vec<_> = joining.touches.iter().zip(&drawn.drawn[&joining.id]).filter(|(t, _)| t.kind_name() == "disk_write").collect();
         assert_eq!(reads.len(), 2, "{side}: {reads:?}");
         assert_eq!(writes.len(), 1, "{side}: {writes:?}");
         assert_eq!(reads.iter().map(|(_, p)| &p.place.id).collect::<BTreeSet<_>>().len(), 2);

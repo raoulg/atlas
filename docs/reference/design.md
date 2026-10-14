@@ -126,6 +126,12 @@ agent wrote. A step opens by its path through the route (`pkg.cli.build/2`, the 
 `build`) or, for whoever names functions rather than calls, every step of a function at once
 (`open.functions`). The page applies the fibers first, then the quotients by the ideals' cuts.
 
+A storage quotient groups only places in the current fiber. A single member stands as itself,
+including its symbolic path when the concrete path is not known. Opening a group with several
+members retains its name and frame around the members; the connections still end at the same
+places. A closed step's reached effects cross its border and meet ports inside it. Its own
+effects meet its border. Opening the step exposes the nested steps those ports stand for.
+
 **When order matters.** For a quotient `q` by an equivalence `~` and a fiber by a predicate
 `p`, filtering then grouping and grouping then filtering give the same picture exactly when `p`
 is *saturated* by `~`: constant on every class, so that no class is cut in two. Keeping one part

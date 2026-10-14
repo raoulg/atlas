@@ -4,11 +4,15 @@ import os
 from pathlib import Path
 
 
+def read_pair(first: Path, second: Path) -> str:
+    return first.read_text() + second.read_text()
+
+
 def join() -> None:
     first = Path(os.environ["FIRST"])
     second = Path(os.environ["SECOND"])
     destination = Path(os.environ["DESTINATION"])
-    destination.write_text(first.read_text() + second.read_text())
+    destination.write_text(read_pair(first, second))
 
 
 def run() -> None:

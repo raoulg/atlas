@@ -1377,7 +1377,9 @@ async function renderPlaat() {
       for (const k of F.kids) worldParent.set(k, F.id);
     } else {
       const sides = new Set([...F.kids].flatMap(k => [...(places.get(k)?.sides || [])]));
-      const p = {id: F.id, label: F.label, short: F.label, kind: "world", toggleGroup: F.group, members: [...F.kids], ...(DIFF ? {sides} : {})};
+      const glyph = placeGlyph.get([...F.kids][0]);
+      const p = {id: F.id, label: F.label, short: F.label, glyph, kind: "world", toggleGroup: F.group, members: [...F.kids], ...(DIFF ? {sides} : {})};
+      placeGlyph.set(p.id, glyph);
       for (const k of F.kids) { worldShown.set(k, p); places.delete(k); }
       places.set(p.id, p);
     }
@@ -1513,7 +1515,7 @@ async function renderPlaat() {
     return I;
   };
   const standsFor = p => p.members ? p.members.filter(id => id !== p.id).map(id => ({id, label: COARSE.get(p.id)?.get(id)?.label || id})) : p.folded ? [...dirFold.to].filter(([, d]) => d === p.folded).map(([f]) => ({id: "w:File:" + f, label: `File(${f})`}))
-    : [...(COARSE.get(p.id)?.values() || [])].filter(q => q.id !== p.id && !V.open.places.has(q.group));
+    : [];
   const insidePlace = p => {
     const I = marks();
     for (const q of standsFor(p)) { const st = DIFF?.places[q.id]; if (st) I.marks.set("p:" + q.id, {st, label: q.label}); }
@@ -1800,7 +1802,7 @@ async function renderPlaat() {
   // pills
   for (const P of pills.values()) {
     if (!pos.has(P.id)) continue;
-    const Q = pos.get(P.id), grp = el("g", {class: "tstep" + (P.own ? " own" : "") + (stepOf(P.steps[0]).startsWith("op:") ? " op" : ""), "data-id": stepOf(P.steps[0])}, ng);
+    const Q = pos.get(P.id), grp = el("g", {class: "tstep" + (P.own ? " own" : "") + (stepOf(P.steps[0]).startsWith("op:") ? " op" : ""), "data-id": stepOf(P.steps[0]), "data-layout-id": P.id}, ng);
     pointable(grp, P.id);
     // what a peek shows of a pill: its step (or steps), a package's module, the focus around the rest
     const shows = () => {

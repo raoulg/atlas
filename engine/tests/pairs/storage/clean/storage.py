@@ -3,8 +3,12 @@
 from pathlib import Path
 
 
+def read_pair(first: Path, second: Path) -> str:
+    return first.read_text() + second.read_text()
+
+
 def join(first: Path, second: Path, destination: Path) -> None:
-    destination.write_text(first.read_text() + second.read_text())
+    destination.write_text(read_pair(first, second))
 
 
 def run() -> None:
