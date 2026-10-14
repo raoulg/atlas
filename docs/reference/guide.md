@@ -245,10 +245,15 @@ request, so an edit shows when you pick it again.
 ## Serve: one view, shared with your agent
 
 `atlas serve [repo]` serves the picture of the working tree on this machine (`127.0.0.1`,
-`--port N`, `--no-open`), and shares it with the agent you work with through `atlas mcp`. It
-keeps the picture while no file Atlas reads changes, so a reload is at once. Its terminal says
-that it runs and where, then a line for each thing worth knowing: the picture drawn, an export,
-a note, and what the agent did with it.
+`--port N`, `--no-open`), and shares it with the agent you work with through `atlas mcp`. Its
+terminal says that it runs and where, then a line for each thing worth knowing: the files that
+changed, the picture drawn, an export, a note, and what the agent did with it.
+
+- **The code as it is now.** The server looks at the files Atlas reads every second. When one
+  changes, it draws the picture anew, and the page reloads to it in the view you had: the route,
+  what you opened, the box you selected, the pinned ones and the zoom. While you write a note or
+  a symbol to jump to, the page waits and the header says **the code changed ↻**. While nothing
+  changes the picture is kept, so a reload is at once.
 
 - **What you have open.** The page tells the server its view, the box you selected, and the
   boxes and lines it draws. The agent reads them with `shown` when you say "this box".

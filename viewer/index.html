@@ -69,6 +69,7 @@ header .brand img{width:22px;height:22px;align-self:center}
 #search:focus{outline:2px solid var(--focus);outline-offset:1px}
 #histlink,.histlink{font-family:var(--mono);font-size:12px;padding:5px 9px;border:1px solid var(--line);background:var(--panel-2);color:var(--ink);text-decoration:none;white-space:nowrap;cursor:pointer}
 #histlink:hover,.histlink:hover{border-color:var(--ink-3)}
+#fresh{color:var(--focus);border-color:var(--focus)}
 main{position:relative;overflow:hidden}
 svg#canvas{width:100%;height:100%;display:block;cursor:grab}
 svg#canvas:active{cursor:grabbing}
@@ -2417,6 +2418,22 @@ function markNotes() {
     });
   }
 }
+// the code changed: the server has drawn the page anew, and the page reloads to it, in the view it
+// was in. The route and what is opened are in the address; the tab, the selected box, the pinned
+// ones and where the picture stands are kept for the reload here
+let back = null;
+function redraw() {
+  const t = d3.zoomTransform(svg.node());
+  try { sessionStorage.setItem("atlas.redraw", JSON.stringify({view, selected, pinned: [...pinned], t: [t.x, t.y, t.k]})); } catch {}
+  location.reload();
+}
+function comeBack() {
+  if (!back) return;
+  if (back.selected && byId.has(back.selected)) select(back.selected);
+  for (const id of back.pinned || []) pinned.add(id);
+  if (pinned.size) { repaintPins(); crumbs(); }
+  svg.call(zoom.transform, d3.zoomIdentity.translate(back.t[0], back.t[1]).scale(back.t[2]));
+}
 // alt-click on a box or a line: a note on it, for the agent
 const noteEl = html("div"); noteEl.id = "notefield"; noteEl.hidden = true; document.body.appendChild(noteEl);
 // the field goes with Esc, wherever the focus is, with its ✕, and with a click beside it
@@ -2466,6 +2483,22 @@ if (D.served) {
   }, 1000);
   setInterval(loadNotes, 3000);
   loadNotes();
+  try { back = JSON.parse(sessionStorage.getItem("atlas.redraw")); sessionStorage.removeItem("atlas.redraw"); } catch {}
+  if (back) { view = back.view; document.querySelectorAll(".tabs button").forEach(x => x.setAttribute("aria-selected", x.dataset.view === view)); }
+  // the page follows the code, a moment after the server has drawn it; not while the reader writes a
+  // note or a symbol to jump to, when the header says that the code changed instead
+  const fresh = html("a", "histlink"); fresh.id = "fresh"; fresh.hidden = true;
+  fresh.onclick = redraw;
+  setInterval(async () => {
+    try {
+      const s = await (await fetch("/api/drawn")).json();
+      const ready = s.drawn && s.drawn !== D.drawn, busy = !noteEl.hidden || document.activeElement?.id === "search";
+      if (ready && !busy) return redraw();
+      fresh.hidden = !ready && !s.drawing;
+      fresh.textContent = ready ? "the code changed ↻" : "the code changed · drawing…";
+      fresh.title = ready ? "draw the page as the code is now, in this view" : "atlas serve is drawing the changed code; the page follows when it is done";
+    } catch {}
+  }, 1000);
   // the history beside the page, from the same server
   const hl = html("a", null, "history");
   hl.id = "histlink"; hl.href = "/history"; hl.title = "the commits: pick one, or two to see as one picture";
@@ -2473,11 +2506,11 @@ if (D.served) {
   const ex = html("a", null, "export");
   ex.className = "histlink"; ex.title = "keep this picture as one HTML file, opened in this view";
   ex.onclick = () => { ex.href = "/export?v=" + encodeURIComponent(JSON.stringify(viewData())); };
-  document.getElementById("search").before(hl, ex);
+  document.getElementById("search").before(fresh, hl, ex);
   document.getElementById("hint").prepend(html("span", null, "alt-click: a note for the agent · "));
   const dl = document.querySelector("#keys dl");
   dl.append(html("dt", null, "alt-click a box or a line"), html("dd", null, "write a note on it for the agent (atlas serve); its answer shows once on the ring"));
 }
-render();
+render().then(comeBack);
 })();
 </script>

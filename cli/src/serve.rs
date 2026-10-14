@@ -2,30 +2,45 @@
 //! says what it shows, goes where an agent points it, and keeps the notes its reader writes on boxes
 //! and lines; all three are files of `.atlas/` (`shared`), which `atlas mcp` reads and writes too.
 //!
-//! The page is the working tree's, read anew on every load; beside it, at `/history`, the history of
-//! `atlas history`, so that two commits are a click away.
+//! The page is the working tree's, and follows it: when a file Atlas reads changes, the server draws
+//! the page anew and the open page reloads in the view it was in. Beside it, at `/history`, the
+//! history of `atlas history`, so that two commits are a click away.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::hash::{Hash, Hasher};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use anyhow::{Context, Result};
+use atlas_engine::repo::Stamp;
 use atlas_engine::{changes, Options};
-use serde_json::Value;
+use serde_json::{json, Value};
 
 use crate::http::{reply, request, Answer, Request};
 use crate::log::{Log, Who};
 use crate::shared::{self, Note, State};
+
+/// The working tree as far as Atlas reads it: each file by its size and the time it was written.
+type Stamps = BTreeMap<PathBuf, Stamp>;
+
+/// A page of the working tree, with the files it was drawn from and the name the page knows it by.
+struct Drawn {
+    stamps: Stamps,
+    id: String,
+    html: String,
+}
 
 struct Server {
     repo: PathBuf,
     opts: Options,
     hosts: Vec<String>,
     log: Arc<Log>,
-    /// The page of the working tree last drawn, by the fingerprint of the files it was drawn from.
-    kept: Mutex<Option<(u64, String)>>,
+    /// The page of the working tree last drawn.
+    kept: Mutex<Option<Arc<Drawn>>>,
+    /// Held while the page is drawn: it is drawn once, however many ask for it at a time.
+    drawing: Mutex<()>,
 }
 
 /// Serve the page of `repo` at `addr` until the process stops, opening it in the browser when
@@ -40,11 +55,14 @@ pub fn serve(repo: &Path, addr: SocketAddr, opts: &Options, shown: bool) -> Resu
         hosts: vec![at.to_string(), format!("localhost:{}", at.port())],
         log: Arc::clone(&log),
         kept: Mutex::new(None),
+        drawing: Mutex::new(()),
     });
     let url = format!("http://{at}/");
     log.start(&repo.display().to_string(), &url);
     let (watched, told) = (repo.to_path_buf(), Arc::clone(&log));
     std::thread::spawn(move || watch_notes(&watched, &told));
+    let code = Arc::clone(&server);
+    std::thread::spawn(move || code.watch());
     if shown {
         crate::open(url.as_ref());
     }
@@ -75,7 +93,8 @@ impl Server {
         }
         let json = |v: Result<Value>| v.map_or_else(Answer::failed, |v| Answer::json(v.to_string()));
         match (req.method.as_str(), req.path.as_str()) {
-            ("GET", "/") => self.page().map_or_else(Answer::failed, Answer::page),
+            ("GET", "/") => self.page().map_or_else(Answer::failed, |d| Answer::page(d.html.clone())),
+            ("GET", "/api/drawn") => Answer::json(self.drawn().to_string()),
             ("GET", "/export") => {
                 self.export(req).map_or_else(Answer::failed, |(name, html)| Answer::download(format!("{name}.html"), html))
             }
@@ -100,21 +119,53 @@ impl Server {
         Ok((name, html))
     }
 
-    /// The page of the working tree: the one drawn before while no file Atlas reads has changed, so
-    /// that a reload, or a return from the history, is at once; else drawn now.
-    fn page(&self) -> Result<String> {
-        let now = fingerprint(&self.repo, &self.opts);
-        if let Some((fp, html)) = self.kept.lock().ok().and_then(|k| k.clone()) {
-            if Some(fp) == now {
-                return Ok(html);
-            }
+    /// The page of the working tree as its files are now: the one kept while none has changed, so
+    /// that a reload, or a return from the history, is at once; else drawn anew.
+    fn page(&self) -> Result<Arc<Drawn>> {
+        let now = stamps(&self.repo, &self.opts)?;
+        let _drawing = self.drawing.lock().unwrap_or_else(|e| e.into_inner());
+        let kept = self.kept();
+        match &kept {
+            Some(d) if d.stamps == now => return Ok(Arc::clone(d)),
+            Some(d) => self.log.say(Who::Atlas, &format!("changed {}", changed(&d.stamps, &now))),
+            None => {}
         }
-        let (html, summary) = crate::served_page(&self.repo, &self.opts)?;
+        let id = name(&now);
+        let (html, summary) = crate::served_page(&self.repo, &self.opts, &id)?;
         self.log.say(Who::Atlas, &format!("drew {summary}"));
-        if let (Some(fp), Ok(mut kept)) = (now, self.kept.lock()) {
-            *kept = Some((fp, html.clone()));
+        let drawn = Arc::new(Drawn { stamps: now, id, html });
+        *self.kept.lock().unwrap_or_else(|e| e.into_inner()) = Some(Arc::clone(&drawn));
+        Ok(drawn)
+    }
+
+    fn kept(&self) -> Option<Arc<Drawn>> {
+        self.kept.lock().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
+    /// Which page the server has drawn, and whether it is drawing one: the open page compares the
+    /// first with its own, and follows.
+    fn drawn(&self) -> Value {
+        json!({"drawn": self.kept().map(|d| d.id.clone()), "drawing": self.drawing.try_lock().is_err()})
+    }
+
+    /// The working tree, looked at every second: when a file Atlas reads has changed and has stayed
+    /// so for a second, the page is drawn anew, for the open page to follow. A drawing that fails is
+    /// said once, and tried again when the files change again.
+    fn watch(&self) {
+        let (mut last, mut failed): (Option<Stamps>, Option<Stamps>) = (None, None);
+        loop {
+            if let Ok(now) = stamps(&self.repo, &self.opts) {
+                let kept = self.kept().map(|d| d.stamps == now);
+                if kept != Some(true) && (kept.is_none() || last.as_ref() == Some(&now)) && failed.as_ref() != Some(&now) {
+                    if let Err(e) = self.page() {
+                        self.log.say(Who::Atlas, &format!("could not draw: {e:#}"));
+                        failed = Some(now.clone());
+                    }
+                }
+                last = Some(now);
+            }
+            std::thread::sleep(Duration::from_secs(1));
         }
-        Ok(html)
     }
 
     fn body(&self, req: &Request) -> Result<Value> {
@@ -161,7 +212,24 @@ fn watch_notes(repo: &Path, log: &Log) {
     }
 }
 
-/// The working tree as far as Atlas reads it, as a fingerprint: one fingerprint is one page.
-fn fingerprint(repo: &Path, opts: &Options) -> Option<u64> {
-    atlas_engine::language::read(repo, opts).ok().map(|r| r.fingerprint())
+/// The working tree as far as Atlas reads it: equal stamps are one page.
+fn stamps(repo: &Path, opts: &Options) -> Result<Stamps> {
+    Ok(atlas_engine::language::read(repo, opts)?.stamps())
+}
+
+/// The name a page knows its drawing by: the stamps it was drawn from, hashed.
+fn name(stamps: &Stamps) -> String {
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    stamps.hash(&mut h);
+    format!("{:016x}", h.finish())
+}
+
+/// The files two readings differ in, for the log: the first three, and how many more.
+fn changed(before: &Stamps, now: &Stamps) -> String {
+    let files: BTreeSet<&PathBuf> = before.keys().chain(now.keys()).filter(|f| before.get(*f) != now.get(*f)).collect();
+    let names: Vec<String> = files.iter().take(3).map(|f| f.display().to_string()).collect();
+    match files.len() {
+        0..=3 => names.join(", "),
+        n => format!("{}, and {} more", names.join(", "), n - 3),
+    }
 }

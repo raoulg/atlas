@@ -1,6 +1,7 @@
 //! `atlas serve` and `atlas mcp` sharing one page: the page says what it shows and an agent reads
 //! it, an agent points and the page goes there once, and a note the reader writes is resolved by an
-//! agent's answer, never by its reading alone.
+//! agent's answer, never by its reading alone. The page follows the code: a changed file is drawn
+//! anew, and the page knows which drawing it is.
 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpStream;
@@ -9,9 +10,9 @@ use std::process::{Child, Command, Stdio};
 
 use serde_json::{json, Value};
 
-/// A Python program in a repository of its own.
-fn repository() -> PathBuf {
-    let repo = std::env::temp_dir().join(format!("atlas-serve-{}", std::process::id())).join("spots");
+/// A Python program in a repository of its own, one per test.
+fn repository(test: &str) -> PathBuf {
+    let repo = std::env::temp_dir().join(format!("atlas-serve-{}-{test}", std::process::id())).join("spots");
     let _ = std::fs::remove_dir_all(&repo);
     std::fs::create_dir_all(repo.join("src/spots")).unwrap();
     std::fs::create_dir_all(repo.join(".git")).unwrap();
@@ -66,7 +67,7 @@ fn tool(repo: &Path, name: &str, mut args: Value) -> String {
 
 #[test]
 fn the_page_and_the_agent_share_one_view() {
-    let repo = repository();
+    let repo = repository("shared");
     let (mut server, at) = serve(&repo);
 
     let (status, page) = send(&at, "GET", "/", None, false);
@@ -115,4 +116,37 @@ fn the_page_and_the_agent_share_one_view() {
     server.kill().ok();
     let _ = std::fs::remove_dir_all(repo.parent().unwrap());
     assert!(ignored.lines().any(|l| l == "*"), "what the page and the agent share stays out of git");
+}
+
+/// What the server has drawn: the name of the drawing a page shows.
+fn drawn(at: &str) -> Option<String> {
+    let (_, body) = send(at, "GET", "/api/drawn", None, false);
+    serde_json::from_str::<Value>(&body).ok()?["drawn"].as_str().map(String::from)
+}
+
+#[test]
+fn the_page_follows_the_code() {
+    let repo = repository("follows");
+    let (mut server, at) = serve(&repo);
+
+    let (_, page) = send(&at, "GET", "/", None, false);
+    let first = drawn(&at).expect("a drawing, once the page is asked for");
+    assert!(page.contains(&format!("\"drawn\":\"{first}\"")), "the page knows which drawing it is");
+
+    std::fs::write(
+        repo.join("src/spots/__init__.py"),
+        "def count(n: int) -> int:\n    return n + 1\n\n\ndef twice(n: int) -> int:\n    return count(count(n))\n",
+    )
+    .unwrap();
+    let next = (0..60)
+        .find_map(|_| {
+            std::thread::sleep(std::time::Duration::from_millis(500));
+            drawn(&at).filter(|d| *d != first)
+        })
+        .expect("the server draws the changed code by itself");
+    let (_, page) = send(&at, "GET", "/", None, false);
+    assert!(page.contains(&format!("\"drawn\":\"{next}\"")) && page.contains("spots.twice"), "the page asked for next is the new drawing");
+
+    server.kill().ok();
+    let _ = std::fs::remove_dir_all(repo.parent().unwrap());
 }

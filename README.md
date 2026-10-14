@@ -154,7 +154,8 @@ atlas changes   # what your edit did to the routes
 atlas mcp       # the picture for your coding agent
 ```
 
-`atlas serve` is the page to work in. It shares what you have open with your agent, which can
+`atlas serve` is the page to work in. It follows the code: when a file changes, the picture is
+drawn anew in the view you have. It shares what you have open with your agent, which can
 also point you to a view. Alt-click a box or a line to leave it a note; the agent answers on the
 box. The history of commits is a click away, and **export** keeps the picture as a file.
 `atlas view` writes that file straight from the command line, for a script or an agent.

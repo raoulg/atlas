@@ -6,7 +6,7 @@
 //! What a library's code and its types are is the environment's, not the repository's: read by ty,
 //! from `node_modules`, from where Cargo keeps a crate.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
@@ -21,6 +21,9 @@ struct Listing {
     named: BTreeSet<PathBuf>,
     texts: Mutex<HashMap<PathBuf, Arc<Vec<u8>>>>,
 }
+
+/// A listed file as it is now: its size and the time it was written; nothing when it is gone.
+pub type Stamp = Option<(u64, Option<std::time::SystemTime>)>;
 
 /// A repository, or a part of one, as read.
 #[derive(Clone)]
@@ -121,16 +124,11 @@ impl Repo {
         self.is_file(p.as_ref()) || self.is_dir(p.as_ref())
     }
 
-    /// The files read as they are now: each listed file by its path, size and the time it was
-    /// written. Two readings with one fingerprint read the same files.
-    pub fn fingerprint(&self) -> u64 {
-        use std::hash::{Hash, Hasher};
-        let mut h = std::collections::hash_map::DefaultHasher::new();
-        for f in &self.listing.files {
-            let meta = std::fs::metadata(self.root.join(f.strip_prefix(&self.at).unwrap_or(f))).ok();
-            (f, meta.map(|m| (m.len(), m.modified().ok()))).hash(&mut h);
-        }
-        h.finish()
+    /// The files read as they are now: each listed file by its path, with its size and the time it
+    /// was written. Two readings with the same stamps read the same files.
+    pub fn stamps(&self) -> BTreeMap<PathBuf, Stamp> {
+        let stamp = |f: &PathBuf| std::fs::metadata(self.root.join(f.strip_prefix(&self.at).unwrap_or(f))).ok();
+        self.listing.files.iter().map(|f| (f.clone(), stamp(f).map(|m| (m.len(), m.modified().ok())))).collect()
     }
 
     /// A file's bytes, read once.

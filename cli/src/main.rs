@@ -151,9 +151,9 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Cmd {
-    /// Serve a repository's page on this machine, shared with an agent: what the page shows, where
-    /// the agent points it, and the notes written on its boxes and lines (`atlas mcp`: `shown`,
-    /// `look`, `notes`, `answer`)
+    /// Serve a repository's page on this machine, drawn anew when its code changes and shared with
+    /// an agent: what the page shows, where the agent points it, and the notes written on its boxes
+    /// and lines (`atlas mcp`: `shown`, `look`, `notes`, `answer`)
     Serve {
         /// Repository root; default: the current directory.
         repo: Option<PathBuf>,
@@ -343,14 +343,15 @@ pub(crate) fn page(
 }
 
 /// The page of the working tree of `repo`, served: it tells its server what it shows, asks it where
-/// an agent points, and keeps notes through it.
-pub(crate) fn served_page(repo: &Path, opts: &Options) -> Result<(String, String)> {
+/// an agent points, keeps notes through it, and knows its drawing as `drawn`, to follow the next.
+pub(crate) fn served_page(repo: &Path, opts: &Options, drawn: &str) -> Result<(String, String)> {
     let d = reading(&[repo.to_path_buf()], opts, None, None)?;
     let g = &d.graph;
     let parts: Vec<&str> = g.parts.iter().map(|p| p.id.as_str()).collect();
     let summary = format!("{} · {} · {} modules", g.root, parts.join(" + "), g.stats.modules);
     let mut extra = serde_json::Map::new();
     extra.insert("served".into(), serde_json::Value::Bool(true));
+    extra.insert("drawn".into(), serde_json::Value::String(drawn.into()));
     Ok((viewer(&d, extra)?, summary))
 }
 
