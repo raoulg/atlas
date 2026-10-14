@@ -89,7 +89,10 @@ The rigorous half and the visual half are the same structure. Read `docs/referen
 - Version: `version` in the root `Cargo.toml`. Raise the minor number when what Atlas reads
   or draws changes, the patch number for a fix, in the commit that makes the change. The
   build adds the commit it is made from (`0.2.0 (b0ead14)`).
-- Tests: `cargo test`. The Rust workspace itself is a test subject.
+- Tests: `cargo test`. The Rust workspace itself is a test subject. CI runs them on Linux, macOS
+  and Windows: a test that writes files builds them as the platform lays them out (a virtual
+  environment keeps its packages in `Lib\site-packages` on Windows) and compares paths as `Path`s,
+  never as strings with `/`.
 - Format: `cargo fmt` before every commit (`rustfmt.toml`: 140 columns); CI checks it. It
   formats the workspace only: the fixtures and pairs under `engine/tests` are subjects, written
   as their authors would, and their line numbers are pinned.
