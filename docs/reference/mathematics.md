@@ -55,9 +55,16 @@ choice between alternatives is made once, in a place with a name.
 ### Lenses
 **What.** A lens on S has `get: S → A` and `put: A × S → S`, and a lawful one gets back what
 it puts: `get(put(a, s)) = a`.
+Lenses compose: a lens `S ⇄ B` followed by the projection of `B` onto one of its fields `B ⇄ A`
+is a lens `S ⇄ A`. Through a variant of a sum the projection is partial (a prism), and the
+composite gives `A` back when the value is that variant. A family of lenses `S ⇄ A_k` indexed by
+a key `k` (a row by its id, a tile by a point it holds) takes the key to choose the lens, not as
+the value it puts.
 **In Atlas.** A class that writes a place and reads it back is a lens on that place. Atlas asks
-the law at the level of types: what goes in as a `Graph` comes back as a `Graph`. A view is the
-`get` of a lens with no `put`: it only reads.
+the law at the level of types: what goes in as a `Graph` comes back as a `Graph`, as it is or
+inside what a get gives (`has` and `variant` edges). What a put takes is what reaches the place
+through its body's steps, by what each is handed and gives; a parameter handed only to reads is
+a key. A view is the `get` of a lens with no `put`: it only reads.
 **Where.** Principle `lens`; `design.md` §1.
 
 ### Pullback: a filter

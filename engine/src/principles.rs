@@ -5,12 +5,13 @@
 //! so these are the principles that live there; what a single line should look like belongs
 //! to ruff, pyright and clippy. `docs/reference/principles.md` explains each one.
 
+use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::path::Path;
 
 use serde::Serialize;
 
-use crate::model::{Dir, Edge, EdgeKind, EntryKind, Graph, Leaves, Node, NodeKind, Site, World};
+use crate::model::{Dir, Edge, EdgeKind, EntryKind, Graph, Held, Leaves, Node, NodeKind, Site, Touch, World};
 
 /// A principle by its id and what it asks of code.
 pub struct Principle {
@@ -1098,67 +1099,56 @@ fn strongly_connected<V>(deps: &BTreeMap<String, BTreeMap<String, V>>) -> Vec<Ve
 /// A class whose operations both write and read one place where data rests (a file, a database)
 /// is a lens on it: its puts take a value and change the place (`A × S → S`), its gets give a
 /// value from it (`S → A`). Put then get gives back what was put. Asked about each type of data a
-/// put takes that no get of the same class gives from that place: what the place holds is then
-/// another type than what goes in, or another class reads it. A class that only reads a place
-/// (input from the world) or only writes it (an end product) is no lens on it. A put is asked
-/// about in the class that defines it: a subclass's gets all count, but the puts it inherits
-/// are its base's question.
-fn lens(ix: &Index) -> Vec<Finding> {
+/// put takes that no get of the same class gives from that place, as it is or inside what it
+/// gives (`holds`): what the place holds is then another type than what goes in, or another class
+/// reads it. A class that only reads a place (input from the world) or only writes it (an end
+/// product) is no lens on it. A put is asked about in the class that defines it: a subclass's
+/// gets all count, but the puts it inherits are its base's question. What a put takes is what
+/// reaches the place (`Places::reached`).
+fn lens<'g>(ix: &Index<'g>) -> Vec<Finding> {
     let data = |t: &str, own: &str| {
         t != own && ix.node(t).map_or(false, |n| matches!(n.kind, NodeKind::Class | NodeKind::External) && n.door.is_none())
-    };
-    // the place a touch holds data at, as a lens sees it: a database as a whole, a file by itself
-    let held = |t: &crate::model::Touch| -> Option<(String, String)> {
-        match t.kind {
-            World::Db(_) => Some((t.kind.name().to_string(), t.kind.name().to_string())),
-            World::Disk if !t.what.is_empty() || !t.artifact.is_empty() => {
-                let p = t.place();
-                Some((p.id, p.label))
-            }
-            _ => None,
-        }
     };
     // a place the code names, not only the variable that holds it: what two classes do there is
     // done to the same place
     let named = |place: &str| !place.starts_with("w:Disk:");
-    // the places an operation puts to and gets from, through what it calls: id -> label
-    let reaches = |m: &Node| -> (BTreeMap<String, String>, BTreeMap<String, String>) {
-        let (mut puts, mut gets) = (BTreeMap::new(), BTreeMap::new());
-        let mut seen: HashSet<&str> = HashSet::from([m.id.as_str()]);
-        let mut todo = vec![m.id.as_str()];
-        while let Some(id) = todo.pop() {
-            let Some(n) = ix.node(id).filter(|n| !n.library) else { continue };
-            // a call that does not say which way the data goes is neither: a lens is not guessed
-            for t in &n.touches {
-                if let Some((place, label)) = held(t) {
-                    match t.dir {
-                        Some(Dir::Write) => puts.insert(place, label),
-                        Some(Dir::Read) => gets.insert(place, label),
-                        None => None,
-                    };
-                }
-            }
-            todo.extend(ix.targets(id, EdgeKind::Calls).into_iter().filter(|t| seen.insert(t)));
-        }
-        (puts, gets)
-    };
-    let operations = |c: &Node| -> Vec<(&Node, BTreeMap<String, String>, BTreeMap<String, String>)> {
+    let places = Places { ix, reached: RefCell::default(), into: RefCell::default() };
+    let operations = |c: &Node| -> Vec<(&'g Node, BTreeMap<String, String>, BTreeMap<String, String>)> {
         ix.interface(&c.id)
             .into_iter()
             .filter(|m| is_function(m) && !m.ctor && !m.private)
             .map(|m| {
-                let (puts, gets) = reaches(m);
+                let (puts, gets) = places.reaches(&m.id);
                 (m, puts, gets)
             })
             .collect()
     };
-    let classes: Vec<&Node> = ix.g.nodes.iter().filter(|n| n.kind == NodeKind::Class && !n.library).collect();
-    // what each class's operations get from each place: (place, type) -> `Class.method`
+    // the types of data operation `m` of class `c` puts into `place`, among `ops`, the operations
+    // of `c`: those of the parameters that reach it, and a type no parameter is handed on as when
+    // a parameter the graph does not follow does
+    let put_types = |c: &Node, m: &'g Node, place: &str, ops: &HashSet<&str>| -> Vec<&'g str> {
+        let reached = places.reached(m, place, ops);
+        let hands = || m.sites.iter().flat_map(|s| &s.hands);
+        let unseen = reached.iter().any(|p| !hands().any(|h| h.name == *p));
+        let shown: BTreeSet<&str> =
+            m.params.iter().flat_map(|p| hands().filter(move |h| h.name == p.name)).map(|h| h.ty.as_str()).collect();
+        let put: BTreeSet<&str> = hands().filter(|h| reached.contains(h.name.as_str())).map(|h| h.ty.as_str()).collect();
+        ix.targets(&m.id, EdgeKind::Takes)
+            .into_iter()
+            .filter(|t| data(t, &c.id))
+            .filter(|t| put.contains(t) || (unseen && !shown.contains(t)))
+            .collect()
+    };
+    let classes: Vec<&'g Node> = ix.g.nodes.iter().filter(|n| n.kind == NodeKind::Class && !n.library).collect();
+    // what each class's operations get from each place, as it is or inside what they give:
+    // (place, type) -> `Class.method`
     let mut got_from: BTreeMap<(String, &str), Vec<String>> = BTreeMap::new();
     for c in &classes {
         for (m, _, gets) in operations(c) {
             for place in gets.keys() {
-                for t in ix.targets(&m.id, EdgeKind::Returns).into_iter().filter(|t| data(t, &c.id)) {
+                let given: BTreeSet<&str> =
+                    ix.targets(&m.id, EdgeKind::Returns).into_iter().filter(|t| data(t, &c.id)).flat_map(|t| holds(ix, t)).collect();
+                for t in given {
                     got_from.entry((place.clone(), t)).or_default().push(ix.label(&m.id));
                 }
             }
@@ -1167,6 +1157,7 @@ fn lens(ix: &Index) -> Vec<Finding> {
     let mut out = vec![];
     for c in classes {
         let ops = operations(c);
+        let ids: HashSet<&str> = ops.iter().map(|(m, _, _)| m.id.as_str()).collect();
         let name = ix.label(&c.id);
         // the places this class both puts to and gets from
         let places: BTreeMap<&String, &String> =
@@ -1177,13 +1168,13 @@ fn lens(ix: &Index) -> Vec<Finding> {
                 (BTreeMap::new(), vec![], HashSet::new());
             for (m, puts, gets) in &ops {
                 if puts.contains_key(place) && ix.declares(&c.id, m) {
-                    for t in ix.targets(&m.id, EdgeKind::Takes).into_iter().filter(|t| data(t, &c.id)) {
+                    for t in put_types(c, m, place, &ids) {
                         put.entry(t).or_default().push(format!("{}: {} × {label} → {label}", ix.label(&m.id), ix.label(t)));
                     }
                 }
                 if gets.contains_key(place) && m.returns.as_ref().map_or(false, |r| !r.value.is_empty() || r.own) {
                     let types: Vec<&str> = ix.targets(&m.id, EdgeKind::Returns).into_iter().filter(|t| data(t, &c.id)).collect();
-                    given.extend(&types);
+                    given.extend(types.iter().flat_map(|t| holds(ix, t)));
                     let gives = if types.is_empty() {
                         written(m).to_string()
                     } else {
@@ -1230,4 +1221,153 @@ fn lens(ix: &Index) -> Vec<Finding> {
         ));
     }
     out
+}
+
+/// What a value of type `t` holds, `t` among it: its fields and theirs in turn, the elements of
+/// its lists, the variants of its sums. A get that gives `t` gives back each of these: a lens
+/// composed with the projection to a part of what it gives is a lens on that part.
+fn holds<'g>(ix: &Index<'g>, t: &'g str) -> HashSet<&'g str> {
+    let mut seen = HashSet::from([t]);
+    let mut todo = vec![t];
+    while let Some(x) = todo.pop() {
+        for y in ix.targets(x, EdgeKind::Has).into_iter().chain(ix.targets(x, EdgeKind::Variant)) {
+            if seen.insert(y) {
+                todo.push(y);
+            }
+        }
+    }
+    seen
+}
+
+/// The place a touch holds data at, as a lens sees it: a database as a whole, a file by itself.
+fn held(t: &Touch) -> Option<(String, String)> {
+    match t.kind {
+        World::Db(_) => Some((t.kind.name().to_string(), t.kind.name().to_string())),
+        World::Disk if !t.what.is_empty() || !t.artifact.is_empty() => {
+            let p = t.place();
+            Some((p.id, p.label))
+        }
+        _ => None,
+    }
+}
+
+/// The places a function puts to and gets from, through what it calls: id -> label.
+type Reached = (BTreeMap<String, String>, BTreeMap<String, String>);
+
+/// What the functions of a graph do at the places where data rests, each worked out once.
+struct Places<'a, 'g> {
+    ix: &'a Index<'g>,
+    reached: RefCell<HashMap<String, Reached>>,
+    into: RefCell<HashMap<(String, String), bool>>,
+}
+
+impl<'g> Places<'_, 'g> {
+    /// The places a function puts to and gets from, through what it calls. A call that does not
+    /// say which way the data goes is neither: a lens is not guessed.
+    fn reaches(&self, from: &str) -> Reached {
+        if let Some(r) = self.reached.borrow().get(from) {
+            return r.clone();
+        }
+        let (mut puts, mut gets) = (BTreeMap::new(), BTreeMap::new());
+        let mut seen: HashSet<&str> = HashSet::from([from]);
+        let mut todo = vec![from];
+        while let Some(id) = todo.pop() {
+            let Some(n) = self.ix.node(id).filter(|n| !n.library) else { continue };
+            for t in &n.touches {
+                if let Some((place, label)) = held(t) {
+                    match t.dir {
+                        Some(Dir::Write) => puts.insert(place, label),
+                        Some(Dir::Read) => gets.insert(place, label),
+                        None => None,
+                    };
+                }
+            }
+            todo.extend(self.ix.targets(id, EdgeKind::Calls).into_iter().filter(|t| seen.insert(t)));
+        }
+        self.reached.borrow_mut().insert(from.to_string(), (puts.clone(), gets.clone()));
+        (puts, gets)
+    }
+
+    /// Whether function `f` puts what it is handed into `place`: one of its parameters reaches it.
+    fn into(&self, f: &str, place: &str) -> bool {
+        let key = (f.to_string(), place.to_string());
+        if let Some(b) = self.into.borrow().get(&key) {
+            return *b;
+        }
+        // a function that calls itself puts nothing more on the way round
+        self.into.borrow_mut().insert(key.clone(), false);
+        let b =
+            self.ix.node(f).filter(|n| !n.library && is_function(n)).map_or(false, |n| !self.reached(n, place, &HashSet::new()).is_empty());
+        self.into.borrow_mut().insert(key, b);
+        b
+    }
+
+    /// The parameters of `f` that reach `place`, by name: those whose value, or what the body's
+    /// steps make of it, is handed to a step that puts what it is handed there. A step that reads
+    /// and puts nothing it is handed there gives what the place holds, so what it is handed is a
+    /// key (a `WHERE`, a filter, a file's name) and goes no further. What `f` hands an operation
+    /// among `theirs` that takes that type is that operation's to put, and asked about there.
+    ///
+    /// Where the graph does not show where a value goes, it may go anywhere: a call of `f`'s own
+    /// into the place may be handed any of its parameters, since the graph does not say what a
+    /// call into the world is handed; a call Atlas cannot follow may put what it is handed
+    /// wherever `f` puts; a value no step gives and no parameter is (`for r in readings`,
+    /// `x = p.field`) is taken from any parameter whose type holds its type; and a parameter no
+    /// step is handed by name reaches the place when any step puts there.
+    fn reached(&self, f: &'g Node, place: &str, theirs: &HashSet<&str>) -> BTreeSet<&'g str> {
+        let ix = self.ix;
+        let params: Vec<&'g str> = f.params.iter().filter(|p| !p.receiver).map(|p| p.name.as_str()).collect();
+        // a call of its own into the place may be handed any of them
+        if f.touches.iter().any(|t| t.dir == Some(Dir::Write) && held(t).map_or(false, |(p, _)| p == place)) {
+            return params.into_iter().collect();
+        }
+        let hands = || f.sites.iter().flat_map(|s| &s.hands);
+        let unseen: Vec<&'g str> = params.iter().copied().filter(|p| !hands().any(|h| h.name == *p)).collect();
+        let given: HashSet<&str> = f.sites.iter().flat_map(|s| &s.gives).map(|g| g.name.as_str()).collect();
+        let holding: Vec<(&'g str, HashSet<&'g str>)> = params
+            .iter()
+            .map(|p| (*p, hands().filter(|h| h.name == *p && !h.ty.is_empty()).flat_map(|h| holds(ix, h.ty.as_str())).collect()))
+            .collect();
+        // the parameters each value of the body is made from, by the name the body holds it by
+        let mut made: HashMap<&'g str, BTreeSet<&'g str>> = params.iter().map(|p| (*p, BTreeSet::from([*p]))).collect();
+        let mut out = BTreeSet::new();
+        for s in &f.sites {
+            let to = s.to.as_str();
+            // a call Atlas cannot follow may put what it is handed wherever `f` puts
+            let puts = if s.not_followed { self.reaches(&f.id).0.contains_key(place) } else { !to.is_empty() && self.into(to, place) };
+            // and a parameter no step is handed by name may be handed to this one
+            if puts {
+                out.extend(&unseen);
+            }
+            let inputs: Vec<(&Held, BTreeSet<&'g str>)> = s
+                .hands
+                .iter()
+                .map(|h| {
+                    let from = match made.get(h.name.as_str()) {
+                        Some(ps) => ps.clone(),
+                        None if given.contains(h.name.as_str()) => BTreeSet::new(),
+                        None => holding.iter().filter(|(_, ts)| ts.contains(h.ty.as_str())).map(|(p, _)| *p).collect(),
+                    };
+                    (h, from)
+                })
+                .filter(|(_, from)| !from.is_empty())
+                .collect();
+            if inputs.is_empty() {
+                continue;
+            }
+            if puts {
+                // what an operation among `theirs` takes, it puts as its own
+                let own: Vec<&str> = if theirs.contains(to) { ix.targets(to, EdgeKind::Takes) } else { vec![] };
+                out.extend(inputs.iter().filter(|(h, _)| !own.contains(&h.ty.as_str())).flat_map(|(_, from)| from.iter().copied()));
+            } else if !to.is_empty() && !self.reaches(to).1.is_empty() {
+                // it reads, and gives what the place holds: what it was handed is a key
+                continue;
+            }
+            let from: BTreeSet<&'g str> = inputs.iter().flat_map(|(_, from)| from.iter().copied()).collect();
+            for g in s.gives.iter().filter(|g| !g.name.is_empty()) {
+                made.entry(g.name.as_str()).or_default().extend(&from);
+            }
+        }
+        out
+    }
 }

@@ -32,6 +32,8 @@ class Harvester:
             if isinstance(result, Reading):
                 convert(result, self.unit)
                 self.store.save(result)
+            else:
+                self.store.save_outage(result)
             results.append(result)
         return results
 

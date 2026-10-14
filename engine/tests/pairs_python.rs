@@ -275,6 +275,48 @@ fn lens_what_a_lens_puts_it_gets_back() {
         .any(|t| t.artifact == "readings" && t.dir_name() == "read"));
 }
 
+/// What `lens` says of the store: what it puts and does not get back; empty when it asks nothing.
+fn lens_says(g: &Graph) -> String {
+    check(g).into_iter().find(|f| f.principle == "lens" && f.node == "harvest.store.ReadingStore").map(|f| f.what).unwrap_or_default()
+}
+
+/// What a lens puts, it gets back, also inside what a get gives. Both stores keep the outages of a
+/// harvest. The clean store gives them back inside a station's `Harvest`, beside its readings; the
+/// shortcut's `outages` gives the rows as `list[dict]`.
+#[test]
+fn lens_what_a_lens_puts_it_gets_back_inside_what_it_gives() {
+    let (c, s) = (clean(), shortcut());
+    assert!(edge(c, "harvest.store.ReadingStore.save_outage", "harvest.model.Outage", EdgeKind::Takes));
+    assert!(edge(c, "harvest.store.ReadingStore.kept", "harvest.model.Harvest", EdgeKind::Returns));
+    assert!(edge(c, "harvest.model.Harvest", "harvest.model.Outage", EdgeKind::Has));
+    assert_eq!(lens_says(c), "");
+    assert!(edge(s, "harvest.store.ReadingStore.save_outage", "harvest.model.Outage", EdgeKind::Takes));
+    assert_eq!(s.node("harvest.store.ReadingStore.outages").unwrap().returns.as_ref().unwrap().written, "list[dict]");
+    assert!(lens_says(s).contains("Outage"), "{}", lens_says(s));
+}
+
+/// What a lens puts is what reaches the place, not the key it looks a value up by. Both stores
+/// summarise a station's day once and keep the summary. The clean `summary(day)` hands its `Day`
+/// to `kept_summary`, which reads, and to `day_summary`, whose `Summary` it hands to
+/// `keep_summary` to put: the Day is the key the summary is kept under, and what is put comes
+/// back. The shortcut's `summary(day)` runs its own `INSERT` inside the lookup, and what a call
+/// into the database is handed is not in the graph; it gives a `dict`, and is asked about the Day.
+#[test]
+fn lens_what_a_lens_puts_is_what_reaches_the_place() {
+    let (c, s) = (clean(), shortcut());
+    assert!(edge(c, "harvest.store.ReadingStore.summary", "harvest.model.Day", EdgeKind::Takes));
+    assert!(edge(c, "harvest.store.ReadingStore.summary", "harvest.store.ReadingStore.keep_summary", EdgeKind::Calls));
+    assert!(touches(c, "harvest.store.ReadingStore.keep_summary", "db_sqlite")
+        .iter()
+        .any(|t| t.artifact == "summaries" && t.dir_name() == "write"));
+    assert_eq!(lens_says(c), "");
+    assert!(edge(s, "harvest.store.ReadingStore.summary", "harvest.model.Day", EdgeKind::Takes));
+    assert!(touches(s, "harvest.store.ReadingStore.summary", "db_sqlite")
+        .iter()
+        .any(|t| t.artifact == "summaries" && t.dir_name() == "write"));
+    assert!(lens_says(s).contains("Day"), "{}", lens_says(s));
+}
+
 /// Every place carries a what: a request names the service it goes to. In Python the clean
 /// client takes `base_url` and the entry hands it `API_URL`; the shortcut's client module reads
 /// `os.environ.get("WEATHER_API_URL", ...)` at import, so where it asks is decided at run time,
@@ -406,5 +448,5 @@ fn zoom_is_a_quotient_by_composition() {
 #[test]
 fn zoom_is_a_quotient_by_composition_a_call_on_any_stays_a_step() {
     let collect = shortcut().node("harvest.harvester.Harvester.collect").unwrap();
-    assert_eq!(collect.sites.len(), 3, "self.client.latest, convert, self.store.save: {:#?}", collect.sites);
+    assert_eq!(collect.sites.len(), 4, "self.client.latest, convert, self.store.save, self.store.save_outage: {:#?}", collect.sites);
 }

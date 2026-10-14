@@ -20,6 +20,12 @@ class Outage:
     reason: str
 
 
+@dataclass
+class Day:
+    station: str
+    date: str
+
+
 Fetched = Reading | Outage
 
 

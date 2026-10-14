@@ -190,7 +190,8 @@ def main(atlas, destination, diff_page=None):
         frame = page.locator('.frame.storage[data-id="group:w:SQLite"]')
         assert frame.count() == 1
         assert {'w:SQLite', 'w:SQLite:readings'} <= {n for n, _ in opened['nodes']}
-        assert projected_edges(opened, {'w:SQLite:readings': 'w:SQLite'}) == projected_edges(closed, {})
+        tables = {n: 'w:SQLite' for n, _ in opened['nodes'] if n.startswith('w:SQLite:')}
+        assert projected_edges(opened, tables) == projected_edges(closed, {})
         shoot(page, out / 'database-open.png')
         click_render(page, frame.locator('.ftitle'))
         assert canonical(snapshot(page)) == canonical(closed), 'Closing a DB group changes the graph'

@@ -254,6 +254,9 @@ request, so an edit shows when you pick it again.
   answers. Hover the ring for the note and the answer; once you have read the answer, the
   note is closed. The agent resolves notes with `answer`; reading one does not.
 
+- **History.** The page's **history** button opens the commits beside it, as `atlas history`
+  does, from the same process; **working tree** leads back.
+
 What the page and the agent share is kept in `.atlas/` (`shown.json`, `look.json`,
 `notes.json`), so the two need not run together, and git never sees it.
 

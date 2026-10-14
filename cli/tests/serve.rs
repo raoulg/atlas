@@ -71,6 +71,8 @@ fn the_page_and_the_agent_share_one_view() {
 
     let (status, page) = send(&at, "GET", "/", None, false);
     assert!(status.contains("200") && page.contains("\"served\":true"), "the page knows it is served: {status}");
+    let (history, page) = send(&at, "GET", "/history", None, false);
+    assert!(history.contains("200") && page.contains("Atlas history"), "the history beside the page: {history}");
     let shown = json!({"view": {"route": "spots.count"}, "selected": "spots.count", "boxes": [{"id": "spots.count", "label": "count"}], "lines": []});
     let (refused, _) = send(&at, "POST", "/api/shown", Some(&shown), false);
     assert!(refused.contains("403"), "a page of another site changes nothing: {refused}");
