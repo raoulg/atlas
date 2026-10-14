@@ -636,7 +636,7 @@ fn collect_symbols(m: &mut Module, store: &mut GraphBuilder) {
                                 // `constructor(private bron: Bron)` declares a field
                                 if mname == "constructor" {
                                     for p in member.child_by_field_name("parameters").map(named_children).unwrap_or_default() {
-                                        if named_children(p).iter().any(|c| c.kind() == "accessibility_modifier") {
+                                        if is_property(p) {
                                             if let Some(pat) = p.child_by_field_name("pattern") {
                                                 fields.push((text(pat, &src).to_string(), type_names(p.child_by_field_name("type"), &src)));
                                             }
@@ -812,6 +812,12 @@ fn type_head(t: TsNode, src: &[u8]) -> Vec<String> {
 }
 
 /// The typed members of an interface or object type: `{ id: string; laag: Laag }`.
+/// Whether a constructor's parameter declares a field of its class as well: one written with an
+/// access modifier, `readonly` or `override` (`constructor(readonly nodes: Node[])`).
+pub(crate) fn is_property(p: TsNode) -> bool {
+    (0..p.child_count()).filter_map(|i| p.child(i)).any(|c| matches!(c.kind(), "accessibility_modifier" | "readonly" | "override_modifier"))
+}
+
 fn fields_of(body: TsNode, src: &[u8]) -> Vec<(String, Vec<Vec<String>>)> {
     named_children(body)
         .into_iter()
@@ -1513,10 +1519,7 @@ fn class_made(class: TsNode, m: &Module) -> HashMap<String, String> {
             out.insert(field(name), pkg);
         }
     }
-    for p in walk(class, &["required_parameter", "optional_parameter"])
-        .into_iter()
-        .filter(|p| named_children(*p).iter().any(|c| c.kind() == "accessibility_modifier"))
-    {
+    for p in walk(class, &["required_parameter", "optional_parameter"]).into_iter().filter(|p| is_property(*p)) {
         if let (Some(name), Some(pkg)) =
             (p.child_by_field_name("pattern"), p.child_by_field_name("type").and_then(|t| typed_package(t, m, src)))
         {

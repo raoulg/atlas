@@ -427,3 +427,22 @@ fn lens_what_is_pushed_onto_what_is_put_is_put() {
     let observe = node(&s, "gathering.observe");
     assert!(observe.sites.iter().flat_map(|x| &x.gives).all(|g| g.name != "frozen" && g.name != "path"), "{:?}", observe.sites);
 }
+
+/// One side of the sum pair (`tests/pairs/sums`): a knowledge base that adds a source and gives
+/// back the graph of its nodes, in Python, Rust and TypeScript alike.
+fn kennis(side: &str) -> Graph {
+    analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/sums/rust").join(side), &Options::default()).expect("reads")
+}
+
+/// What a lens puts may come back as a variant of a sum a get gives. Rust names its sums: `enum
+/// Node { Begrip(Begrip), Bron(Bron) }` in `Graaf.nodes: Vec<Node>` holds a Bron. The clean store
+/// gives the `Graaf` back and is asked nothing; the shortcut gives lines, and `lens` asks.
+#[test]
+fn lens_what_is_put_comes_back_as_a_variant_of_a_named_sum() {
+    let (c, s) = (kennis("clean"), kennis("shortcut"));
+    let fs = check(&c);
+    assert!(fs.is_empty(), "{:#?}", fs.iter().map(|f| format!("{} {} {}", f.principle, f.node, f.what)).collect::<Vec<_>>());
+    assert!(edge(&c, EdgeKind::Has, "kennis.Graaf", "kennis.Node"));
+    assert!(edge(&c, EdgeKind::Variant, "kennis.Node", "kennis.Bron"));
+    assert_eq!(found(&s, "lens"), ["kennis.Kennisbank"]);
+}

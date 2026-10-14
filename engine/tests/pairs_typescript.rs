@@ -489,3 +489,26 @@ fn lens_what_is_pushed_onto_what_is_put_is_put() {
     let observe = s.node(&format!("{}.gathering.observe", s.root)).unwrap();
     assert!(observe.sites.iter().flat_map(|x| &x.gives).all(|g| g.name != "frozen"), "{:?}", observe.sites);
 }
+
+/// One side of the sum pair (`tests/pairs/sums`): a knowledge base that adds a source and gives
+/// back the graph of its nodes, in Python, Rust and TypeScript alike.
+fn kennis(side: &str) -> Graph {
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/sums/typescript").join(side);
+    analyze(&dir, &Options::default()).expect("reads")
+}
+
+/// What a lens puts may come back as a variant of a sum a get gives. A named sum is the sum it
+/// names: `nodes: Node[]` with `type Node = Begrip | Bron` holds a Bron. A constructor's
+/// `readonly` parameter is a field of its class, as an access modifier makes one. The clean store
+/// gives the `Graaf` back and is asked nothing; the shortcut gives rows, and `lens` asks.
+#[test]
+fn lens_what_is_put_comes_back_as_a_variant_of_a_named_sum() {
+    let (c, s) = (kennis("clean"), kennis("shortcut"));
+    assert!(findings(&c).is_empty(), "{:?}", findings(&c).iter().map(|f| format!("{} {}", f.node, f.what)).collect::<Vec<_>>());
+    let has = |src: &str, dst: &str, kind: EdgeKind| {
+        c.edges.iter().any(|e| e.kind == kind && e.src == format!("{}.{src}", c.root) && e.dst == format!("{}.{dst}", c.root))
+    };
+    assert!(has("bank.Graaf", "bank.Node", EdgeKind::Has));
+    assert!(has("bank.Node", "bank.Bron", EdgeKind::Variant));
+    assert!(asked(&s, "lens", "bank.Kennisbank"), "{:?}", asked_anywhere(&s, "lens"));
+}

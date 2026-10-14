@@ -424,7 +424,13 @@ payload); a lens is where the code turns that into its own types, once.
 What comes back may come back inside what a get gives: a lens composed with the projection to a
 field is a lens on that field. A register that puts a `Verificatie` and gives back the
 `Definitie` that holds it (`Definitie.verantwoording: ... | Geverifieerd`,
-`Geverifieerd.verificatie: Verificatie`) gives back what it put.
+`Geverifieerd.verificatie: Verificatie`) gives back what it put. A store that updates one field
+(`Boek.auteur`) or adds one node to a graph puts through such a composite: the key that picks
+the value, the field or the list that holds it, and the variant it is. A sum given a name is the
+sum it names: `nodes: list[Node]` with `Node = Begrip | Bron` (a Python alias, a TypeScript
+`type`) holds a `Bron` as `list[Begrip | Bron]` does, and so does a Rust `enum Node`. A
+TypeScript constructor's `readonly` parameter is a field of its class, as one with an access
+modifier is.
 
 What a put takes is what reaches the place. A tile store that looks a tile up by a `Punt` and,
 when none holds it, fetches the area around it through its own `materialiseer(gebied: BBox)`,

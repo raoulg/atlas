@@ -1168,9 +1168,10 @@ fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, own: &Own,
             resolved.push(r);
         }
         store.classes.entry(id.clone()).or_default().resolved = resolved;
+        // a field's type is read as a signature's: a name the module aliases is the sum it names
         for (fname, types) in &info.fields {
             for t in types {
-                if let Some(r) = resolve(m, t, modules, &store.nodes, own).filter(|r| !r.starts_with("ext:")) {
+                for r in type_targets(m, t, modules, &aliases, &store.nodes, own).into_iter().filter(|r| !r.starts_with("ext:")) {
                     store.classes.entry(id.clone()).or_default().attr_types.insert(fname.clone(), r.clone());
                     store.add_edge(id, &r, EdgeKind::Has, Some(fname.clone()));
                 }
@@ -1186,13 +1187,7 @@ fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, own: &Own,
         let m = &modules[&module];
         let sig = store.sigs.get(id).cloned().unwrap_or_default();
         for (types, kind) in [(&sig.ptypes, EdgeKind::Takes), (&sig.rtypes, EdgeKind::Returns)] {
-            let targets: Vec<String> = types
-                .iter()
-                .flat_map(|t| match resolve(m, t, modules, &store.nodes, own) {
-                    Some(r) => vec![r],
-                    None => alias_targets(m, t, modules, &aliases, &store.nodes, own),
-                })
-                .collect();
+            let targets: Vec<String> = types.iter().flat_map(|t| type_targets(m, t, modules, &aliases, &store.nodes, own)).collect();
             for r in targets {
                 if r.starts_with("ext:") {
                     if !foreign_type(&r, &OWN) {
@@ -2299,6 +2294,22 @@ fn top_assignments<'t>(m: &'t Module) -> Vec<TsNode<'t>> {
         .flat_map(named_children)
         .filter(|a| a.kind() == "assignment")
         .collect()
+}
+
+/// What a type written in a signature or a field names: the definition it resolves to, else what
+/// the alias of that name stands for.
+fn type_targets(
+    m: &Module,
+    t: &[String],
+    modules: &IndexMap<String, Module>,
+    aliases: &HashMap<String, Alias>,
+    nodes: &IndexMap<String, Node>,
+    own: &Own,
+) -> Vec<String> {
+    match resolve(m, t, modules, nodes, own) {
+        Some(r) => vec![r],
+        None => alias_targets(m, t, modules, aliases, nodes, own),
+    }
 }
 
 /// What an alias stands for, resolved in the module that defines it: the sum it names, else

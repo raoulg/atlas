@@ -57,7 +57,8 @@ choice between alternatives is made once, in a place with a name.
 it puts: `get(put(a, s)) = a`.
 Lenses compose: a lens `S ⇄ B` followed by the projection of `B` onto one of its fields `B ⇄ A`
 is a lens `S ⇄ A`. Through a variant of a sum the projection is partial (a prism), and the
-composite gives `A` back when the value is that variant. A family of lenses `S ⇄ A_k` indexed by
+composite gives `A` back when the value is that variant; a sum given a name is the same sum, so
+the prism goes through the name. A family of lenses `S ⇄ A_k` indexed by
 a key `k` (a row by its id, a tile by a point it holds) takes the key to choose the lens, not as
 the value it puts.
 **In Atlas.** A class that writes a place and reads it back is a lens on that place. Atlas asks

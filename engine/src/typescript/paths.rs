@@ -8,7 +8,7 @@ use std::path::Path;
 use indexmap::IndexMap;
 use tree_sitter::Node as TsNode;
 
-use super::{declarations, function_in, member_parts, top_variables, Bound, Module};
+use super::{declarations, function_in, is_property, member_parts, top_variables, Bound, Module};
 use crate::knowledge::{self, PathFn};
 use crate::paths::{cross, hole, lit, parent, substitute, union, Built, Seg};
 use crate::tree::{named_children, path_str, text, unquote, walk};
@@ -302,10 +302,7 @@ impl<'a> Eval<'a> {
         let held = |p: String| vec![vec![Seg::Held(format!("{id}.constructor"), p)]];
         if let Some(ctor) = ctor {
             let params = ctor.child_by_field_name("parameters").map(named_children).unwrap_or_default();
-            if params.iter().any(|p| {
-                named_children(*p).iter().any(|c| c.kind() == "accessibility_modifier")
-                    && p.child_by_field_name("pattern").map(|x| text(x, src)) == Some(name)
-            }) {
+            if params.iter().any(|p| is_property(*p) && p.child_by_field_name("pattern").map(|x| text(x, src)) == Some(name)) {
                 return Some(held(name.to_string()));
             }
             let set = walk(ctor.child_by_field_name("body")?, &["assignment_expression"])
