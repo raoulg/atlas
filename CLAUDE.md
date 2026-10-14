@@ -138,4 +138,5 @@ The rigorous half and the visual half are the same structure. Read `docs/referen
   Pass the project's path as an argument instead.
 - The shell is zsh: a loop over subjects must not name its variable `path` (`while read name path`),
   since zsh ties `path` to `$PATH` and every command in the body is then "not found". `atlas analyze`
-  writes `graph.json` into the current directory unless given `-o`.
+  and `atlas view` write into `.atlas/` at the top of the subject's git repository unless given
+  `-o`/`--out`; give the scratchpad when the subject is not ours.

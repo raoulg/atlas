@@ -602,11 +602,13 @@ fn rust_workspace_parses() {
         "{:?}",
         places("atlas-engine.changes.revision")
     );
-    // clap's options hold their defaults where the command line leaves them out: `atlas analyze`
-    // writes `graph.json` unless given `-o` (`Cmd::Analyze { out, .. }`, `default_value = "graph.json"`);
-    // `-o` is the command's input, so the code does not alone decide where the graph goes
-    assert!(places("atlas.main").contains(&("disk_write".into(), "write".into(), "graph.json".into())), "{:?}", places("atlas.main"));
-    let graph = g.node("atlas.main").unwrap().touches.iter().find(|t| t.artifact == "graph.json").unwrap();
+    // `atlas analyze` writes its graph where `-o` says, else where `made` puts it: in `.atlas/` at
+    // the top of the git repository, a folder found on disk that the code cannot name, or for a
+    // clone in the system's temporary folder; the command line decides, not the code alone
+    let written = places("atlas.main");
+    assert!(written.contains(&("disk_write".into(), "write".into(), "$TMPDIR/atlas/graph.json".into())), "{written:?}");
+    assert!(written.contains(&("disk_write".into(), "write".into(), "".into())), "the folder found on disk has no name: {written:?}");
+    let graph = g.node("atlas.main").unwrap().touches.iter().find(|t| t.artifact == "$TMPDIR/atlas/graph.json").unwrap();
     assert!(!graph.fixed && graph.by.is_empty(), "{graph:?}");
     // a `let` holds the type of the parameter it is handed to: `joined`'s graph, the one graph
     // read or the merge of several, is the `Graph` that `join(g: &mut Graph)` takes

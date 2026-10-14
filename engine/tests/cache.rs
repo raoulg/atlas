@@ -194,8 +194,14 @@ fn python(dir: &Path) -> PathBuf {
     repo
 }
 
+/// Where the environment keeps its packages: `Lib\site-packages` on Windows, else under the
+/// Python version.
 fn site(repo: &Path) -> PathBuf {
-    repo.join(".venv/lib/python3.13/site-packages")
+    if cfg!(windows) {
+        repo.join(".venv").join("Lib").join("site-packages")
+    } else {
+        repo.join(".venv/lib/python3.13/site-packages")
+    }
 }
 
 /// `kit` at version 1.0, its `read_config` written as `body`.

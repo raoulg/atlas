@@ -130,7 +130,7 @@ fn tools() -> Value {
             "inputSchema": { "type": "object", "properties": {
                 "path": path,
                 "view": { "type": "object", "description": "The view, e.g. `{\"route\": \"pkg.cli.build\", \"open\": {\"functions\": [\"pkg.build.Pipeline.run\"]}}`." },
-                "out": { "type": "string", "description": "Where to write the page. Default: a temporary file named after the project." },
+                "out": { "type": "string", "description": "Where to write the page. Default: `.atlas/<project>.view.html` at the top of the git repository it is in, where you and the person you work with can open it." },
             }, "required": ["view"] },
             "annotations": { "readOnlyHint": false, "destructiveHint": false, "openWorldHint": false },
         },
@@ -188,16 +188,20 @@ fn call(name: &str, args: &Value, opts: &Options) -> Option<Result<String, Strin
                 .map_err(|e| format!("Could not compare {} with {rev}: {e}", repo.display()))
         }
         "view" => {
-            let (repo, _clone) = match located(text("path")) {
+            let (repo, clone) = match located(text("path")) {
                 Ok(r) => r,
                 Err(e) => return Some(Err(e)),
             };
             let shown = args.get("view").cloned().filter(Value::is_object);
             crate::page(&[repo.clone()], opts, None, None, shown).map_err(|e| format!("Could not read {}: {e}", repo.display())).and_then(
                 |(name, html)| {
-                    let out = text("out").map(PathBuf::from).unwrap_or_else(|| crate::page_file(&format!("{name}.view")));
+                    let home = clone.is_none().then_some(repo.as_path());
+                    let out = text("out").map(PathBuf::from).unwrap_or_else(|| crate::made(home, &format!("{name}.view.html")));
                     std::fs::write(&out, html).map_err(|e| format!("Could not write {}: {e}", out.display()))?;
-                    Ok(format!("Wrote {}. Open it in a browser; its address then holds the view, to share as a link.", out.display()))
+                    Ok(format!(
+                        "Wrote {}. Open it in a browser, or hand the file to the person you work with; once open, its address holds the view, to share as a link.",
+                        out.display()
+                    ))
                 },
             )
         }
