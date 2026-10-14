@@ -49,11 +49,10 @@ export function trend(series: readonly Month[], smoothed: readonly Smoothed[], s
   ].join("\n");
 }
 
-/** Writes `svg` to `to`, creating the directory it goes in; gives `to`. */
-export async function saveSvg(svg: string, to: string): Promise<string> {
+/** Writes `svg` to `to`, creating the directory it goes in. */
+export async function saveSvg(svg: string, to: string): Promise<void> {
   await mkdir(dirname(to), { recursive: true });
   await writeFile(to, svg);
-  return to;
 }
 
 function escape(text: string): string {

@@ -2,7 +2,7 @@
 //! its figure as a PNG.
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use plotters::coord::Shift;
 use plotters::prelude::*;
@@ -23,15 +23,15 @@ pub trait Plot {
     fn draw<DB: DrawingBackend>(&self, area: &DrawingArea<DB, Shift>, series: &[Month], smoothed: &[Smoothed]) -> Result<(), Error>;
 
     /// Draws `series` and `smoothed` and writes the figure to `to` as a PNG, creating the
-    /// directory it goes in; gives `to`.
-    fn save(&self, series: &[Month], smoothed: &[Smoothed], to: &Path) -> Result<PathBuf, Error> {
+    /// directory it goes in.
+    fn save(&self, series: &[Month], smoothed: &[Smoothed], to: &Path) -> Result<(), Error> {
         if let Some(dir) = to.parent() {
             fs::create_dir_all(dir)?;
         }
         let area = BitMapBackend::new(to, self.settings().size).into_drawing_area();
         self.draw(&area, series, smoothed)?;
         area.present()?;
-        Ok(to.to_path_buf())
+        Ok(())
     }
 }
 

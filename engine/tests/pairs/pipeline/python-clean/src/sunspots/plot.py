@@ -18,12 +18,11 @@ class Plot(ABC):
     @abstractmethod
     def draw(self, frame: pd.DataFrame) -> Figure: ...
 
-    def save(self, frame: pd.DataFrame, to: Path) -> Path:
-        """Draw `frame` and write the figure to `to`; returns `to`."""
+    def save(self, frame: pd.DataFrame, to: Path) -> None:
+        """Draw `frame` and write the figure to `to`."""
         figure = self.draw(frame)
         to.parent.mkdir(parents=True, exist_ok=True)
         figure.savefig(to, dpi=self.settings.dpi)
-        return to
 
 
 class Trend(Plot):
