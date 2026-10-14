@@ -13,7 +13,7 @@
 //! the disk, never from the repository's listing.
 
 use std::collections::{HashMap, HashSet};
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 
 use indexmap::IndexMap;
 use tree_sitter::{Parser, Tree};
@@ -24,26 +24,11 @@ use crate::builder::GraphBuilder;
 use crate::effects;
 use crate::knowledge::{self, Registry};
 use crate::model::{Node, NodeKind};
-use crate::repo::Repo;
+use crate::repo::{normal, Repo};
 use crate::tree::{named_children, span, text, unquote, walk};
 
 /// How many re-exports a path is followed through.
 const DEPTH: u32 = 8;
-
-/// A path with its `.` and `..` parts taken out.
-fn normal(p: &Path) -> PathBuf {
-    let mut out = PathBuf::new();
-    for c in p.components() {
-        match c {
-            Component::ParentDir if out.file_name().is_some() => {
-                out.pop();
-            }
-            Component::CurDir => {}
-            other => out.push(other),
-        }
-    }
-    out
-}
 
 /// The directories Cargo keeps the source of fetched crates in: one per registry, below Cargo's
 /// home (`CARGO_HOME`, else `.cargo` in the user's home).

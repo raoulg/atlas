@@ -7,7 +7,7 @@
 //! from `node_modules`, from where Cargo keeps a crate.
 
 use std::collections::{BTreeSet, HashMap};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
@@ -65,7 +65,8 @@ impl Repo {
         }
         dirs.insert(PathBuf::new());
         let listing = Listing { files, dirs, named: listed, texts: Mutex::new(HashMap::new()) };
-        Ok(Repo { root: dir.to_path_buf(), at: PathBuf::new(), listing: Arc::new(listing), asked: None })
+        let root = normal(&std::path::absolute(dir)?);
+        Ok(Repo { root, at: PathBuf::new(), listing: Arc::new(listing), asked: None })
     }
 
     /// The project read for a directory inside it, `asked`.
@@ -78,7 +79,8 @@ impl Repo {
         self.asked.as_deref()
     }
 
-    /// The directory, as the caller named it.
+    /// The directory, from the root of the file system: `api`, `./api` and `../atlas/api`, named
+    /// in `~/code/atlas`, are each `~/code/atlas/api`.
     pub fn root(&self) -> &Path {
         &self.root
     }
@@ -98,7 +100,8 @@ impl Repo {
 
     /// Where a path the caller writes from the root stands in the listing: `root/x` and `x` alike.
     fn key(&self, p: &Path) -> PathBuf {
-        let rel = p.strip_prefix(&self.root).unwrap_or(p);
+        let p = normal(p);
+        let rel = p.strip_prefix(&self.root).unwrap_or(&p);
         normal(&self.at.join(rel))
     }
 
@@ -160,7 +163,18 @@ impl Repo {
     }
 }
 
-/// A path with its `.` parts taken out.
-fn normal(p: &Path) -> PathBuf {
-    p.components().filter(|c| !matches!(c, std::path::Component::CurDir)).collect()
+/// A path with its `.` parts taken out and each `..` taken back over the part before it; a `..`
+/// with nothing before it stays: `../api/./src/../x` is `../api/x`.
+pub(crate) fn normal(p: &Path) -> PathBuf {
+    let mut out = PathBuf::new();
+    for c in p.components() {
+        match c {
+            Component::CurDir => {}
+            Component::ParentDir if out.file_name().is_some() => {
+                out.pop();
+            }
+            other => out.push(other),
+        }
+    }
+    out
 }

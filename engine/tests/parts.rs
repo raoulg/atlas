@@ -149,6 +149,17 @@ fn the_parts_are_one_graph() {
     assert_eq!(each, ["python", "typescript"]);
 }
 
+/// A repository named by a relative path, through `.` or `..`, is the same repository.
+#[test]
+fn a_relative_path_reads_the_same() {
+    let ids = |g: Graph| g.nodes.into_iter().map(|n| n.id).collect::<Vec<_>>();
+    let whole = ids(shop());
+    for rel in ["./tests/fixture-parts", "tests/../tests/fixture-parts"] {
+        let g = analyze_repo(&[PathBuf::from(rel)], &Options::default()).unwrap_or_else(|e| panic!("{rel}: {e}"));
+        assert_eq!(ids(g), whole, "{rel}");
+    }
+}
+
 /// A route is the path a client asks for: under the prefix its app is mounted at, and the
 /// prefixes its router is declared and included with.
 #[test]

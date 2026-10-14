@@ -36,6 +36,6 @@ fn a_package_named_on_its_own_is_its_project() {
     let package = serde_json::to_string(&analyze(&here.join("tests/fixture/src/fixture"), &Options::default()).unwrap()).unwrap();
     assert!(project == package, "the package named on its own reads as its project");
     let g = analyze(Path::new("tests/fixture/src/fixture"), &Options::default()).unwrap();
-    assert_eq!(g.project_root, "tests/fixture", "a relative path finds the project above it too");
+    assert!(serde_json::to_string(&g).unwrap() == project, "a relative path finds the project above it too, and reads it the same");
     assert!(!g.make.is_empty(), "the project's Makefile is read with it");
 }

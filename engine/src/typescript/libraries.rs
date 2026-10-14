@@ -18,12 +18,12 @@ use serde_json::Value;
 use tree_sitter::Parser;
 use walkdir::WalkDir;
 
-use super::{collect_imports, collect_symbols, collect_wrapped, function_of, is_code, member_parts, module_id, normalize, package_of, segment, ts_parser, Bound, Module, EXTENSIONS};
+use super::{collect_imports, collect_symbols, collect_wrapped, function_of, is_code, member_parts, module_id, package_of, segment, ts_parser, Bound, Module, EXTENSIONS};
 use crate::builder::GraphBuilder;
 use crate::effects;
 use crate::knowledge::{self, Registry};
 use crate::model::{Node, NodeKind};
-use crate::repo::Repo;
+use crate::repo::{normal, Repo};
 use crate::tree::{span, text, walk};
 
 /// The conditions of a package's `exports` that an import of its code meets, the first a
@@ -62,7 +62,7 @@ impl Package {
                 return None;
             }
             if e.file_type().is_file() && is_code(e.path()) {
-                paths.push(normalize(e.path()));
+                paths.push(normal(e.path()));
             }
         }
         paths.sort();
@@ -95,7 +95,7 @@ impl Package {
     /// The code file a path in the package names, with or without its extension, or the index
     /// of the directory it names.
     fn file_at(&self, target: &str) -> Option<PathBuf> {
-        let base = normalize(&self.dir.join(target));
+        let base = normal(&self.dir.join(target));
         let stripped = base.with_extension("");
         let mut candidates = vec![base.clone()];
         for b in [&base, &stripped] {
@@ -194,7 +194,7 @@ impl Libraries {
         // read as its own part
         let own = |d: &PathBuf| std::fs::canonicalize(d).map_or(false, |abs| abs.starts_with(&self.here) && !abs.components().any(|c| c.as_os_str() == knowledge::NODE_PACKAGES));
         // a package below the repository is named from it, like its own files
-        let found = found.filter(|d| !own(d)).map(|d| d.strip_prefix(&self.here).map(|r| normalize(&self.root.join(r))).unwrap_or(d));
+        let found = found.filter(|d| !own(d)).map(|d| d.strip_prefix(&self.here).map(|r| normal(&self.root.join(r))).unwrap_or(d));
         self.found.insert(key, found.clone());
         found
     }

@@ -21,7 +21,7 @@ use paths::{Arg, At, Eval};
 use crate::builder::{foreign_type, ClassInfo, GraphBuilder, SigInfo};
 use crate::knowledge::OwnTypes;
 use crate::body::{Crosses, Step, Steps};
-use crate::repo::Repo;
+use crate::repo::{normal, Repo};
 use crate::knowledge;
 use crate::effects::{self, Crossing};
 use crate::model::{Bucket, Dir, EdgeKind, Entry, EntryKind, Held, Node, NodeKind, Param, Returns, Touch, World};
@@ -234,7 +234,7 @@ fn resolve_spec(spec: &str, from: &Path, aliases: &[(String, PathBuf)], files: &
         let (alias, dir) = aliases.iter().find(|(a, _)| !a.is_empty() && spec.starts_with(a.as_str()))?;
         dir.join(&spec[alias.len()..])
     };
-    let base = normalize(&base);
+    let base = normal(&base);
     let stripped = base.with_extension("");
     let mut candidates = vec![base.clone()];
     for b in [&base, &stripped] {
@@ -244,20 +244,6 @@ fn resolve_spec(spec: &str, from: &Path, aliases: &[(String, PathBuf)], files: &
         }
     }
     candidates.into_iter().find_map(|c| files.get(&c).cloned())
-}
-
-fn normalize(p: &Path) -> PathBuf {
-    let mut out = PathBuf::new();
-    for c in p.components() {
-        match c {
-            std::path::Component::ParentDir => {
-                out.pop();
-            }
-            std::path::Component::CurDir => {}
-            other => out.push(other),
-        }
-    }
-    out
 }
 
 /// The package an import comes from: `@tanstack/react-router/x` -> `@tanstack/react-router`,
@@ -408,7 +394,7 @@ pub fn parse(repo: &Repo, opts: &crate::Options) -> Result<(GraphBuilder, String
     let mut store = GraphBuilder::default();
     // not under what a tool made
     let made = |p: &Path| p.strip_prefix(&base).map_or(false, |r| r.components().any(|c| knowledge::made_dir(c.as_os_str().to_str().unwrap_or(""))));
-    let mut paths: Vec<PathBuf> = repo.files_under(&base).into_iter().filter(|p| is_code(p) && !made(p)).map(|p| normalize(&p)).collect();
+    let mut paths: Vec<PathBuf> = repo.files_under(&base).into_iter().filter(|p| is_code(p) && !made(p)).map(|p| normal(&p)).collect();
     paths.sort();
     let files: HashMap<PathBuf, String> = paths.iter().map(|p| (p.clone(), module_id(&root, &base, p))).collect();
     // every directory is a package module, so the module quotient follows the folders
@@ -921,7 +907,7 @@ fn collect_imports(m: &mut Module, aliases: &[(String, PathBuf)], files: &HashMa
 
 /// The module a path in `package.json` names, with or without its extension.
 fn module_at(repo: &Path, path: &str, files: &HashMap<PathBuf, String>) -> Option<String> {
-    let p = normalize(&repo.join(path));
+    let p = normal(&repo.join(path));
     files.get(&p).cloned().or_else(|| files.iter().find(|(f, _)| f.with_extension("") == p.with_extension("")).map(|(_, id)| id.clone()))
 }
 
