@@ -67,6 +67,8 @@ header .brand img{width:22px;height:22px;align-self:center}
 .stats{font-family:var(--mono);font-size:11px;color:var(--ink-3);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 #search{font:inherit;font-family:var(--mono);font-size:12px;padding:5px 9px;border:1px solid var(--line);border-radius:0;background:var(--panel-2);color:var(--ink);width:240px}
 #search:focus{outline:2px solid var(--focus);outline-offset:1px}
+#histlink{font-family:var(--mono);font-size:12px;padding:5px 9px;border:1px solid var(--line);background:var(--panel-2);color:var(--ink);text-decoration:none;white-space:nowrap}
+#histlink:hover{border-color:var(--ink-3)}
 main{position:relative;overflow:hidden}
 svg#canvas{width:100%;height:100%;display:block;cursor:grab}
 svg#canvas:active{cursor:grabbing}
@@ -479,11 +481,12 @@ window.addEventListener("resize", () => { if (!userZoomed) fit(); });
   window.addEventListener("mousemove", e => { if (!drag) return; const w = Math.max(360, Math.min(window.innerWidth - 420, window.innerWidth - e.clientX)); document.documentElement.style.setProperty("--aside-w", w + "px"); });
   window.addEventListener("mouseup", () => { if (drag) { drag = false; document.body.style.cursor = ""; if (!userZoomed) fit(); } }); }
 let defs = el("defs", {}, svg.node());
-// the code panel can be closed; the canvas takes the width, and the choice is remembered in this browser
+// the code panel opens on demand (space shows the code over the picture); opened, the canvas gives it
+// room, and the choice is remembered in this browser
 { const app = document.getElementById("app"), btn = document.getElementById("codetoggle");
   const set = open => { app.classList.toggle("noaside", !open); btn.textContent = open ? "hide code" : "show code"; try { localStorage.setItem("atlas.code", open ? "1" : "0"); } catch {} };
   let saved = null; try { saved = localStorage.getItem("atlas.code"); } catch {}
-  set(saved !== "0");
+  set(saved === "1");
   btn.onclick = () => { set(app.classList.contains("noaside")); if (!userZoomed) setTimeout(() => fit(true), 30); }; }
 
 // every key and click on one card: `?` opens and closes it, Esc or a click beside it closes it
@@ -2365,6 +2368,10 @@ if (D.served) {
   }, 1000);
   setInterval(loadNotes, 3000);
   loadNotes();
+  // the history beside the page, from the same server
+  const hl = html("a", null, "history");
+  hl.id = "histlink"; hl.href = "/history"; hl.title = "the commits: pick one, or two to see as one picture";
+  document.getElementById("search").before(hl);
   document.getElementById("hint").prepend(html("span", null, "alt-click: a note for the agent · "));
   const dl = document.querySelector("#keys dl");
   dl.append(html("dt", null, "alt-click a box or a line"), html("dd", null, "write a note on it for the agent (atlas serve); its answer shows once on the ring"));

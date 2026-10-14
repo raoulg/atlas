@@ -2,7 +2,8 @@
 //! says what it shows, goes where an agent points it, and keeps the notes its reader writes on boxes
 //! and lines; all three are files of `.atlas/` (`shared`), which `atlas mcp` reads and writes too.
 //!
-//! The page is the working tree's, read anew on every load.
+//! The page is the working tree's, read anew on every load; beside it, at `/history`, the history of
+//! `atlas history`, so that two commits are a click away.
 
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
@@ -54,6 +55,9 @@ impl Server {
         }
         if req.method == "POST" && !req.own {
             return Answer::text("403 Forbidden", "atlas serve takes changes from its own page only".into());
+        }
+        if let Some(answer) = crate::history::respond(&self.repo, &self.opts, req, "/history") {
+            return answer;
         }
         let json = |v: Result<Value>| v.map_or_else(Answer::failed, |v| Answer::json(v.to_string()));
         match (req.method.as_str(), req.path.as_str()) {

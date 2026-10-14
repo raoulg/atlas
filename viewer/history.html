@@ -138,6 +138,7 @@ main{position:relative;min-width:0;min-height:0;background:var(--bg)}
     <button class="ctl" id="histbtn" type="button" aria-controls="hist"><svg viewBox="0 0 16 14" width="16" height="14" aria-hidden="true"><rect x=".5" y=".5" width="15" height="13" fill="none" stroke="currentColor"/><rect class="pane" x="2" y="2" width="4.5" height="10" fill="currentColor"/></svg></button>
     <div class="cmp" id="cmp" aria-live="polite"></div>
     <div class="spacer"></div>
+    <a class="ctl" id="live" href="/" title="the working tree's page, shared with your agent" hidden>working tree</a>
     <a class="ctl" id="open" target="_blank" rel="noopener" title="open this picture alone in a new tab">open ↗</a>
   </header>
   <section id="hist" aria-label="history">
@@ -205,6 +206,8 @@ allBox.checked = S.all;
 /* ---- the picture ---- */
 // `sent` is the view the picture was asked with, `kept` the view this page's hash holds
 let shown = "", sent = own.get("v") || "", kept = sent, settled = false, veil = 0;
+// served by `atlas serve` beside the working tree's page, the history links back to it
+document.getElementById("live").hidden = location.pathname !== "/history";
 const viewURL = () => { const q = new URLSearchParams({b: S.b}); if (S.a) q.set("a", S.a); return "/view?" + q; };
 // the viewer keeps its view in its own hash; while a picture is on its way, the hash it was sent with stands for it
 const viewHash = () => {
