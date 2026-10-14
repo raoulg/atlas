@@ -4,6 +4,7 @@
 
 pub mod body;
 pub mod builder;
+pub mod cache;
 pub mod changes;
 pub mod diff;
 pub mod effects;
@@ -46,11 +47,14 @@ pub struct Options {
     pub named: Vec<PathBuf>,
     /// The Python package directory, when discovery picks the wrong one.
     pub package: Option<PathBuf>,
+    /// Where what does not change is kept between readings; none reads everything anew. What is
+    /// kept is what a reading gives anew, so the graph is the same either way.
+    pub cache: Option<cache::Cache>,
 }
 
 impl Default for Options {
     fn default() -> Self {
-        Options { libraries: 1, named: vec![], package: None }
+        Options { libraries: 1, named: vec![], package: None, cache: None }
     }
 }
 

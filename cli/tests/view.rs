@@ -10,8 +10,10 @@ fn root() -> PathBuf {
     PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/.."))
 }
 
+/// Atlas run in the workspace root, keeping what it keeps in a cache of the tests' own.
 fn atlas(args: &[&str]) -> String {
-    let out = Command::new(env!("CARGO_BIN_EXE_atlas")).args(args).current_dir(root()).output().expect("atlas runs");
+    let cache = std::env::temp_dir().join(format!("atlas-view-cache-{}", std::process::id()));
+    let out = Command::new(env!("CARGO_BIN_EXE_atlas")).args(args).current_dir(root()).env("XDG_CACHE_HOME", cache).output().expect("atlas runs");
     String::from_utf8(out.stdout).unwrap()
 }
 

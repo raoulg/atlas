@@ -32,9 +32,11 @@ fn repository() -> PathBuf {
     repo
 }
 
-/// The server, and the address it serves at, read from what it says when it starts.
+/// The server, keeping what it keeps in a cache of the tests' own, and the address it serves at,
+/// read from what it says when it starts.
 fn serve(repo: &Path) -> (Child, String) {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_atlas")).args(["history", "--no-open", "--port", "0"]).arg(repo).stderr(Stdio::piped()).spawn().expect("atlas history starts");
+    let cache = std::env::temp_dir().join(format!("atlas-history-cache-{}", std::process::id()));
+    let mut child = Command::new(env!("CARGO_BIN_EXE_atlas")).args(["history", "--no-open", "--port", "0"]).arg(repo).env("XDG_CACHE_HOME", cache).stderr(Stdio::piped()).spawn().expect("atlas history starts");
     let mut line = String::new();
     BufReader::new(child.stderr.take().unwrap()).read_line(&mut line).unwrap();
     let at = line.split("http://").nth(1).and_then(|r| r.split('/').next()).unwrap_or_else(|| panic!("an address: {line}")).to_string();

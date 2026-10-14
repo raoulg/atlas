@@ -139,6 +139,9 @@ struct Cli {
     /// How far to read into the libraries the code calls: 0 not at all, 1 the modules its calls go into, 2 also the modules of those libraries they call, and so on
     #[arg(long, global = true, default_value_t = 1, value_name = "ROUNDS")]
     libraries: usize,
+    /// Read everything anew: use nothing earlier readings kept, and keep nothing
+    #[arg(long, global = true)]
+    no_cache: bool,
 }
 
 #[derive(Subcommand)]
@@ -432,7 +435,8 @@ fn columns() -> Option<usize> {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
-    let mut opts = Options { libraries: cli.libraries, ..Options::default() };
+    let cache = if cli.no_cache { None } else { atlas_engine::cache::Cache::new(VERSION.as_str()) };
+    let mut opts = Options { libraries: cli.libraries, cache, ..Options::default() };
     match cli.cmd {
         Cmd::View { repos, out, no_open, since, until, view: shown } => {
             let repos = if repos.is_empty() { vec![std::env::current_dir()?] } else { repos };

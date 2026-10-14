@@ -21,6 +21,7 @@ use walkdir::WalkDir;
 
 use super::{attrs_of, collect_impls, collect_symbols, collect_uses, def_node, definitions, module_doc, new_parser, returned_classes, type_parameters, Body, Crate, Eval, Module};
 use crate::builder::GraphBuilder;
+use crate::cache::Check;
 use crate::effects;
 use crate::knowledge::{self, Registry};
 use crate::model::{Node, NodeKind};
@@ -31,12 +32,14 @@ use crate::tree::{named_children, span, text, unquote, walk};
 const DEPTH: u32 = 8;
 
 /// The directories Cargo keeps the source of fetched crates in: one per registry, below Cargo's
-/// home (`CARGO_HOME`, else `.cargo` in the user's home).
-fn sources() -> Vec<PathBuf> {
+/// home (`CARGO_HOME`, else `.cargo` in the user's home). What decides them is noted in `asked`.
+fn sources(asked: &mut Vec<Check>) -> Vec<PathBuf> {
+    asked.extend(["CARGO_HOME", "HOME", "USERPROFILE"].map(|v| Check::Var(v.to_string())));
     let user = || ["HOME", "USERPROFILE"].iter().find_map(std::env::var_os).map(|h| PathBuf::from(h).join(".cargo"));
     let home = std::env::var_os("CARGO_HOME").map(PathBuf::from).or_else(user);
     let Some(home) = home else { return vec![] };
     let dir = knowledge::CARGO_SOURCES.iter().fold(home, |d, p| d.join(p));
+    asked.push(Check::Names(dir.clone()));
     let mut out: Vec<PathBuf> = std::fs::read_dir(dir).map(|r| r.flatten().map(|e| e.path()).filter(|p| p.is_dir()).collect()).unwrap_or_default();
     out.sort();
     out
@@ -72,14 +75,17 @@ fn version<'l>(locked: Option<&'l toml::Table>, packages: &[&'l toml::Table], pa
 
 /// The crates the workspace's crates depend on, by the name their code calls them by, where
 /// their source is on disk: a path dependency outside the repository, or the version the lock
-/// names in Cargo's registry sources. A crate of the repository is read as its own part.
-fn dependencies(repo: &Repo, crates: &[Crate]) -> HashMap<String, PathBuf> {
+/// names in Cargo's registry sources. A crate of the repository is read as its own part. With
+/// them, what was asked of the disk to find them: a path dependency's code, which changes without
+/// a version, and whether each locked version is fetched, whose code is its version's.
+fn dependencies(repo: &Repo, crates: &[Crate]) -> (HashMap<String, PathBuf>, Vec<Check>) {
     let lock: toml::Table = repo.text("Cargo.lock").and_then(|t| t.parse().ok()).unwrap_or_default();
     let packages: Vec<&toml::Table> = lock.get("package").and_then(|p| p.as_array()).into_iter().flatten().filter_map(|p| p.as_table()).collect();
     let root: toml::Table = repo.text("Cargo.toml").and_then(|t| t.parse().ok()).unwrap_or_default();
     let shared = root.get("workspace").and_then(|w| w.get("dependencies")).and_then(|d| d.as_table());
     let here = std::fs::canonicalize(repo.root()).unwrap_or_else(|_| repo.root().to_path_buf());
-    let sources = sources();
+    let mut asked = vec![];
+    let sources = sources(&mut asked);
     let mut out = HashMap::new();
     for c in crates {
         let Some(manifest) = repo.text(c.dir.join("Cargo.toml")).and_then(|t| t.parse::<toml::Table>().ok()) else { continue };
@@ -100,14 +106,20 @@ fn dependencies(repo: &Repo, crates: &[Crate]) -> HashMap<String, PathBuf> {
                 let dir = match spec.get("path").and_then(|p| p.as_str()) {
                     Some(p) => {
                         let d = normal(&base.join(p));
-                        if std::fs::canonicalize(&d).map_or(true, |abs| abs.starts_with(&here)) {
+                        let inside = std::fs::canonicalize(&d).map(|abs| abs.starts_with(&here));
+                        if !matches!(inside, Ok(true)) {
+                            asked.push(Check::Tree(d.clone()));
+                        }
+                        if inside.unwrap_or(true) {
                             continue;
                         }
                         d
                     }
                     None => {
                         let Some(v) = version(locked, &packages, package) else { continue };
-                        let Some(d) = sources.iter().map(|s| s.join(format!("{package}-{v}"))).find(|d| d.join("Cargo.toml").is_file()) else { continue };
+                        let fetched: Vec<PathBuf> = sources.iter().map(|s| s.join(format!("{package}-{v}"))).collect();
+                        asked.extend(fetched.iter().map(|d| Check::File(d.join("Cargo.toml"))));
+                        let Some(d) = fetched.into_iter().find(|d| d.join("Cargo.toml").is_file()) else { continue };
                         d
                     }
                 };
@@ -115,7 +127,13 @@ fn dependencies(repo: &Repo, crates: &[Crate]) -> HashMap<String, PathBuf> {
             }
         }
     }
-    out
+    (out, asked)
+}
+
+/// What a reading of the workspace's crates takes from where Cargo keeps the crates they depend
+/// on, as checks of how each stands.
+pub(super) fn environment(repo: &Repo, crates: &[Crate]) -> Vec<Check> {
+    dependencies(repo, crates).1
 }
 
 /// The crates the workspace depends on, as read for their code.
@@ -335,7 +353,7 @@ pub(super) fn read(repo: &Repo, crates: &[Crate], modules: &mut IndexMap<String,
     if depth == 0 {
         return;
     }
-    let deps = dependencies(repo, crates);
+    let (deps, _) = dependencies(repo, crates);
     if deps.is_empty() {
         return;
     }

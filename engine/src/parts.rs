@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 
+use crate::cache::Check;
 use crate::model::{Edge, EdgeKind, EntryKind, Graph, NodeKind, Part};
 use crate::paths::{method_and_path, serving};
 use crate::repo::Repo;
@@ -49,14 +50,7 @@ pub fn roots(repo: &Repo, opts: &Options) -> Vec<(PathBuf, &'static str)> {
 /// repository is read once; a part is a view of its reading.
 pub fn analyze_parts(repos: &[PathBuf], opts: &Options) -> Result<Vec<Graph>> {
     let read: Vec<Repo> = repos.iter().map(|r| crate::language::read(r, opts)).collect::<Result<_>>()?;
-    // a package named on its own is one part: the project it is in, asked for that package
-    let found: Vec<Repo> = read
-        .iter()
-        .flat_map(|r| match r.asked() {
-            Some(_) => vec![r.clone()],
-            None => roots(r, opts).into_iter().map(|(d, _)| r.under(d.strip_prefix(r.root()).unwrap_or(&d))).collect(),
-        })
-        .collect();
+    let found = found(&read, opts);
     if found.is_empty() {
         anyhow::bail!("no part found in {} ({})", repos.iter().map(|r| r.display().to_string()).collect::<Vec<_>>().join(", "), crate::language::looked_for());
     }
@@ -75,6 +69,26 @@ pub fn analyze_parts(repos: &[PathBuf], opts: &Options) -> Result<Vec<Graph>> {
         anyhow::bail!("no code found in {}", repos.iter().map(|r| r.display().to_string()).collect::<Vec<_>>().join(", "));
     }
     Ok(graphs)
+}
+
+/// The parts of the repositories as read: each root's, and for a package named on its own the
+/// project it is in, asked for that package, as one part.
+fn found(read: &[Repo], opts: &Options) -> Vec<Repo> {
+    read.iter()
+        .flat_map(|r| match r.asked() {
+            Some(_) => vec![r.clone()],
+            None => roots(r, opts).into_iter().map(|(d, _)| r.under(d.strip_prefix(r.root()).unwrap_or(&d))).collect(),
+        })
+        .collect()
+}
+
+/// What reading the repository at `dir` takes from outside it, part by part: where the code of
+/// the libraries each part reads lies, as checks of how each place stands.
+pub fn environment(dir: &Path, opts: &Options) -> Result<Vec<Check>> {
+    let read = [crate::language::read(dir, opts)?];
+    let parts = found(&read, opts);
+    let opts = Options { package: None, ..opts.clone() };
+    Ok(parts.iter().filter_map(|part| Some(crate::language::detect(part, &opts)?.environment(part, &opts))).flatten().collect())
 }
 
 /// The repositories as one graph: their parts side by side, joined where one names a route

@@ -227,8 +227,25 @@ one. The route list marks a route `+`, `−` or `~`.
 browser: the commits of every branch and tag, and beside them the picture of the one you pick, or
 of two you pick as one picture, marked as above. The working tree is the newest row. It answers
 at `127.0.0.1` only (`--port N` picks the port, `--no-open` leaves the browser closed), reads each
-commit once for as long as it runs, and reads the working tree again on every request, so an edit
-shows when you pick it again.
+commit once and keeps it from one run to the next, and reads the working tree again on every
+request, so an edit shows when you pick it again.
+
+## What Atlas keeps
+
+What does not change is kept between readings, in `$XDG_CACHE_HOME/atlas` (else
+`~/Library/Caches/atlas` on macOS, `%LOCALAPPDATA%\atlas` on Windows, `~/.cache/atlas`), a
+directory per build of Atlas:
+
+- what ty says of a file of an installed Python library, by the file's bytes and the environment
+  it is read in: the distributions installed, the `.pth` files, the Python ty reads with, and the
+  names the project's own modules take before a library's;
+- the parts of a commit, for `atlas changes`, `atlas view --since` and `atlas history`, while what
+  the reading took from outside the commit (a crate by its path, a fetched crate, the environment
+  beside the repository) stands as it did.
+
+The working tree is read anew every time, and so are the crates and packages it reads: their code
+is linked together with yours. What is kept is what a reading anew gives, so the picture is the
+same either way. `--no-cache` reads everything anew and keeps nothing.
 
 ## Give your coding agent the same picture
 

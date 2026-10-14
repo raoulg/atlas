@@ -371,6 +371,12 @@ fn fn_name(f: TsNode, src: &[u8]) -> String {
 
 // ---------- loading ----------
 
+/// What a reading of the workspace at `repo` takes from outside it: the crates its crates depend
+/// on, where Cargo keeps them.
+pub fn environment(repo: &Repo) -> Vec<crate::cache::Check> {
+    crates(repo).map(|cs| libraries::environment(repo, &cs)).unwrap_or_default()
+}
+
 /// Parse a Cargo workspace or crate into a `GraphBuilder`, with the crates its calls go into read
 /// as far as `opts.libraries` says; returns the store and the workspace name.
 pub fn parse(repo: &Repo, opts: &crate::Options) -> Result<(GraphBuilder, String)> {

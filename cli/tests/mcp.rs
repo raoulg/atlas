@@ -5,10 +5,12 @@ use std::process::{Command, Stdio};
 
 use serde_json::{json, Value};
 
-/// Send `msgs` to a fresh server in the workspace root and collect its replies.
+/// Send `msgs` to a fresh server in the workspace root, keeping what it keeps in a cache of the
+/// tests' own, and collect its replies.
 fn session(msgs: &[Value]) -> Vec<Value> {
     let root = concat!(env!("CARGO_MANIFEST_DIR"), "/..");
-    let mut child = Command::new(env!("CARGO_BIN_EXE_atlas")).arg("mcp").current_dir(root).stdin(Stdio::piped()).stdout(Stdio::piped()).spawn().expect("atlas mcp starts");
+    let cache = std::env::temp_dir().join(format!("atlas-mcp-cache-{}", std::process::id()));
+    let mut child = Command::new(env!("CARGO_BIN_EXE_atlas")).arg("mcp").current_dir(root).env("XDG_CACHE_HOME", cache).stdin(Stdio::piped()).stdout(Stdio::piped()).spawn().expect("atlas mcp starts");
     let mut stdin = child.stdin.take().unwrap();
     for m in msgs {
         writeln!(stdin, "{m}").unwrap();

@@ -503,6 +503,12 @@ fn strings(v: &toml::Value) -> Vec<String> {
     }
 }
 
+/// The directory ty reads a project from: the project's root, else the directory its first
+/// package is in.
+pub fn types_root(packages: &[PathBuf], project_root: Option<&Path>) -> PathBuf {
+    project_root.or_else(|| packages.first().and_then(|d| d.parent())).unwrap_or(Path::new("")).to_path_buf()
+}
+
 /// Parse a project's packages (and the scripts next to them) into a `GraphBuilder`. Returns the
 /// store and the name of the first package, the root.
 pub fn parse(repo: &Repo, packages: &[PathBuf], project_root: Option<&Path>, opts: &crate::Options) -> Result<(GraphBuilder, String)> {
@@ -528,7 +534,7 @@ pub fn parse(repo: &Repo, packages: &[PathBuf], project_root: Option<&Path>, opt
         let single = single_module(repo, d);
         files.extend(found.into_iter().map(|p| (p, d.parent().unwrap_or(Path::new("")), single)));
     }
-    let base = packages.first().and_then(|d| d.parent()).unwrap_or(Path::new(""));
+    let types_root = types_root(packages, project_root);
     for (p, at, single) in files {
         let rel = p.strip_prefix(at).unwrap_or(&p).with_extension("");
         let mut parts: Vec<String> = rel.components().map(|c| c.as_os_str().to_string_lossy().to_string()).collect();
@@ -590,7 +596,7 @@ pub fn parse(repo: &Repo, packages: &[PathBuf], project_root: Option<&Path>, opt
         }
     }
 
-    let types = read_libraries(&mut parser, &mut modules, &mut store, project_root.unwrap_or(base), opts.libraries)?;
+    let types = read_libraries(&mut parser, &mut modules, &mut store, &types_root, opts)?;
     for m in modules.values_mut() {
         collect_symbols(m, &mut store);
     }
@@ -599,7 +605,7 @@ pub fn parse(repo: &Repo, packages: &[PathBuf], project_root: Option<&Path>, opt
         collect_imports(m, &module_ids, &mut store, &own);
         store.bindings.insert(m.id.clone(), m.bindings.clone());
     }
-    link(&modules, &mut store, &own, &types, project_root.unwrap_or(base));
+    link(&modules, &mut store, &own, &types, &types_root);
     mark_exports(&modules, &mut store, &own);
     route_prefixes(&modules, &mut store, &types, &own);
     store.mark_library();
@@ -607,23 +613,24 @@ pub fn parse(repo: &Repo, packages: &[PathBuf], project_root: Option<&Path>, opt
 }
 
 /// The libraries the project's code calls, read as code as far as those calls reach into them,
-/// `depth` rounds deep: the library modules the code's calls go into, then the modules
+/// `opts.libraries` rounds deep: the library modules the code's calls go into, then the modules
 /// of the same library their own calls go into. What a library calls in a module not read, or
 /// in another library, stays a library's call, as the project's own calls into an unread
 /// library do. A library is read
 /// only where its source can be followed: not the standard library (ty knows it by its stubs),
 /// not a package the effect tables describe, and not one with compiled code. Returns ty's
 /// answers for every module read.
-fn read_libraries(parser: &mut Parser, modules: &mut IndexMap<String, Module>, store: &mut GraphBuilder, root_dir: &Path, depth: usize) -> Result<Types> {
+fn read_libraries(parser: &mut Parser, modules: &mut IndexMap<String, Module>, store: &mut GraphBuilder, root_dir: &Path, opts: &crate::Options) -> Result<Types> {
     let entry = |m: &Module| (crate::tree::path_str(&m.path), m.path.clone());
     let mut files: Vec<(String, PathBuf)> = modules.values().map(entry).collect();
-    let Some(ty) = Ty::new(root_dir) else { return Ok(Types::default()) };
+    let Some(ty) = Ty::new(root_dir, &files, opts.cache.as_ref()) else { return Ok(Types::default()) };
     let mut types = ty.read(&files, &files);
     let mut reached = types.libs.clone();
     let used: HashSet<String> = reached.iter().map(|(m, _)| package_of(m)).collect();
     let mut readable = Readable::default();
     let here = std::fs::canonicalize(root_dir).unwrap_or_else(|_| root_dir.to_path_buf());
     let project = files.len();
+    let depth = opts.libraries;
     for round in 1..=depth {
         let mut fresh = vec![];
         for (mid, path) in std::mem::take(&mut reached) {
@@ -656,7 +663,7 @@ fn read_libraries(parser: &mut Parser, modules: &mut IndexMap<String, Module>, s
             break;
         }
         if round < depth {
-            reached = ty.read(&fresh, &fresh).libs;
+            reached = ty.libs(&fresh, &fresh);
         }
         files.extend(fresh);
     }
