@@ -27,7 +27,8 @@ const STYLES: Styles = Styles::styled()
     .error(AnsiColor::Red.on_default().effects(Effects::BOLD));
 
 /// The logo's A, over the window of Rule 30 the logo shows (generations 37 to 49, columns 4 to 16
-/// from the seed): `a` a cell of the A, `P` a place its route joins, `R` the place where it ends.
+/// from the seed): `a` a cell of the route, light grey; `P` a place it joins, petrol; `R` the
+/// place where it ends, vermilion.
 const LOGO_A: [&str; 13] = [
     ".............",
     ".............",
@@ -69,7 +70,7 @@ fn banner() -> String {
         let x = c - 4;
         if (0..13).contains(&x) {
             match LOGO_A[r].as_bytes()[x as usize] {
-                b'a' => return Some(AnsiColor::Red),
+                b'a' => return Some(AnsiColor::White),
                 b'P' => return Some(AnsiColor::Cyan),
                 b'R' => return Some(AnsiColor::Red),
                 _ => {}
