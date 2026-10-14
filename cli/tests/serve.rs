@@ -30,8 +30,8 @@ fn serve(repo: &Path) -> (Child, String) {
         .stderr(Stdio::piped())
         .spawn()
         .expect("atlas serve starts");
-    let mut line = String::new();
-    BufReader::new(child.stderr.take().unwrap()).read_line(&mut line).unwrap();
+    let lines = BufReader::new(child.stderr.take().unwrap()).lines().map_while(Result::ok);
+    let line = lines.take(8).find(|l| l.contains("http://")).expect("the server says where it serves");
     let at = line.split("http://").nth(1).and_then(|r| r.split('/').next()).unwrap_or_else(|| panic!("an address: {line}")).to_string();
     (child, at)
 }
@@ -73,6 +73,15 @@ fn the_page_and_the_agent_share_one_view() {
     assert!(status.contains("200") && page.contains("\"served\":true"), "the page knows it is served: {status}");
     let (history, page) = send(&at, "GET", "/history", None, false);
     assert!(history.contains("200") && page.contains("Atlas history"), "the history beside the page: {history}");
+    let mut conn = TcpStream::connect(&at).unwrap();
+    write!(conn, "GET /export?v=%7B%22route%22%3A%22spots.count%22%7D HTTP/1.1\r\nHost: {at}\r\n\r\n").unwrap();
+    let mut export = String::new();
+    conn.read_to_string(&mut export).unwrap();
+    assert!(export.contains("Content-Disposition: attachment; filename=\"spots.html\""), "the page to keep as a file");
+    assert!(
+        export.contains("\"view\":{\"route\":\"spots.count\"}") && !export.contains("\"served\":true"),
+        "opened in the reader's view, and needing no server"
+    );
     let shown = json!({"view": {"route": "spots.count"}, "selected": "spots.count", "boxes": [{"id": "spots.count", "label": "count"}], "lines": []});
     let (refused, _) = send(&at, "POST", "/api/shown", Some(&shown), false);
     assert!(refused.contains("403"), "a page of another site changes nothing: {refused}");

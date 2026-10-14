@@ -1,5 +1,6 @@
 mod history;
 mod http;
+mod log;
 mod mcp;
 mod serve;
 mod shared;
@@ -106,7 +107,8 @@ fn banner() -> String {
 fn examples() -> String {
     let (head, cmd, dim) = (STYLES.get_header(), STYLES.get_literal(), Style::new().effects(Effects::DIMMED));
     let rows = [
-        ("atlas view", "draw the repository you are in and open it in the browser"),
+        ("atlas serve", "the repository you are in, as a page to work in with your agent"),
+        ("atlas view", "the same picture as one HTML file, opened in the browser"),
         ("atlas view ../api ../web", "two repositories as parts of one picture"),
         ("atlas view notebooks/explore.ipynb", "one file, read with its project, opened on its route"),
         ("atlas view https://github.com/o/r/tree/main/src/pkg", "one folder of a repository on GitHub"),
@@ -114,7 +116,6 @@ fn examples() -> String {
         ("atlas changes", "what your edits did to the routes, their places and the findings"),
         ("atlas changes v1..main", "what changed between two revisions"),
         ("atlas history", "the history in the browser: pick two commits, see one picture of both"),
-        ("atlas serve", "one page you and your agent share: what you see, where it points, your notes"),
         ("claude mcp add atlas -- atlas mcp", "give Claude Code the same picture"),
     ];
     let mut s = format!("{head}Examples:{head:#}\n");
@@ -150,7 +151,21 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Cmd {
-    /// Draw one or more repositories and open the picture in the browser.
+    /// Serve a repository's page on this machine, shared with an agent: what the page shows, where
+    /// the agent points it, and the notes written on its boxes and lines (`atlas mcp`: `shown`,
+    /// `look`, `notes`, `answer`)
+    Serve {
+        /// Repository root; default: the current directory.
+        repo: Option<PathBuf>,
+        /// The port to serve at, on 127.0.0.1; default: a free one.
+        #[arg(long, default_value_t = 0)]
+        port: u16,
+        /// Serve without opening a browser.
+        #[arg(long)]
+        no_open: bool,
+    },
+    /// Write the picture of one or more repositories as one HTML file and open it: what `atlas serve`
+    /// exports.
     View {
         /// Repository roots, files or git URLs (a `…/tree/<ref>/<folder>` URL names one folder; a file is read with its project, even where git ignores it, and the page opens on its route); default:
         /// the current directory. Several become parts of one page.
@@ -194,24 +209,11 @@ enum Cmd {
         #[arg(long)]
         json: bool,
     },
-    /// Serve Atlas to a coding agent over MCP (stdio): principles, check, explain, routes, route, view, changes.
+    /// Serve Atlas to a coding agent over MCP (stdio): principles, check, explain, routes, route, view, changes, and with `atlas serve`, shown, look, notes, answer.
     Mcp,
     /// Serve a repository's history on this machine and open it in the browser: its commits, and
     /// the picture of one of them or of two as one.
     History {
-        /// Repository root; default: the current directory.
-        repo: Option<PathBuf>,
-        /// The port to serve at, on 127.0.0.1; default: a free one.
-        #[arg(long, default_value_t = 0)]
-        port: u16,
-        /// Serve without opening a browser.
-        #[arg(long)]
-        no_open: bool,
-    },
-    /// Serve a repository's page on this machine, shared with an agent: what the page shows, where
-    /// the agent points it, and the notes written on its boxes and lines (`atlas mcp`: `shown`,
-    /// `look`, `notes`, `answer`)
-    Serve {
         /// Repository root; default: the current directory.
         repo: Option<PathBuf>,
         /// The port to serve at, on 127.0.0.1; default: a free one.
@@ -321,17 +323,13 @@ pub(crate) fn page(
     since: Option<&str>,
     until: Option<&str>,
     shown: Option<serde_json::Value>,
-) -> Result<(String, String)> {
+) -> Result<(String, String, String)> {
     let d = reading(repos, opts, since, until)?;
     let g = &d.graph;
+    // what the page draws, in a line
     let parts: Vec<&str> = g.parts.iter().map(|p| p.id.as_str()).collect();
-    eprintln!(
-        "{} · {} · {} modules · {} entries",
-        g.root,
-        parts.join(" + "),
-        g.stats.modules,
-        g.nodes.iter().filter(|n| n.entry.is_some()).count()
-    );
+    let entries = g.nodes.iter().filter(|n| n.entry.is_some()).count();
+    let summary = format!("{} · {} · {} modules · {entries} entries", g.root, parts.join(" + "), g.stats.modules);
     let mut extra = serde_json::Map::new();
     // a file named on the command line opens on its route
     if let Some(n) = g.nodes.iter().find(|n| n.entry.is_some() && std::fs::canonicalize(&n.file).map_or(false, |f| opts.named.contains(&f)))
@@ -341,16 +339,19 @@ pub(crate) fn page(
     if let Some(v) = shown {
         extra.insert("view".into(), v);
     }
-    Ok((g.root.clone(), viewer(&d, extra)?))
+    Ok((g.root.clone(), viewer(&d, extra)?, summary))
 }
 
 /// The page of the working tree of `repo`, served: it tells its server what it shows, asks it where
 /// an agent points, and keeps notes through it.
-pub(crate) fn served_page(repo: &Path, opts: &Options) -> Result<String> {
+pub(crate) fn served_page(repo: &Path, opts: &Options) -> Result<(String, String)> {
     let d = reading(&[repo.to_path_buf()], opts, None, None)?;
+    let g = &d.graph;
+    let parts: Vec<&str> = g.parts.iter().map(|p| p.id.as_str()).collect();
+    let summary = format!("{} · {} · {} modules", g.root, parts.join(" + "), g.stats.modules);
     let mut extra = serde_json::Map::new();
     extra.insert("served".into(), serde_json::Value::Bool(true));
-    viewer(&d, extra)
+    Ok((viewer(&d, extra)?, summary))
 }
 
 /// Open a page or an address in the browser the system names.
@@ -395,10 +396,10 @@ fn view(
     range: (Option<&str>, Option<&str>),
     shown: Option<serde_json::Value>,
 ) -> Result<()> {
-    let (name, html) = page(repos, opts, range.0, range.1, shown)?;
+    let (name, html, summary) = page(repos, opts, range.0, range.1, shown)?;
     let out = out.unwrap_or_else(|| made(home, &format!("{name}.html")));
     std::fs::write(&out, html)?;
-    eprintln!("wrote {}", out.display());
+    eprintln!("{summary} · wrote {}", out.display());
     if shown_in_browser {
         open(out.as_os_str());
     }

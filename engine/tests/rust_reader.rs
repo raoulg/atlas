@@ -36,6 +36,21 @@ fn place(kind: &str, op: &str, artifact: &str, by: &[&str]) -> (String, String, 
     (kind.to_string(), op.to_string(), artifact.to_string(), by.iter().map(|b| b.to_string()).collect())
 }
 
+/// Isomorphic is the same: a line written to `io::stderr()` or `io::stdout()` is shown to the human
+/// as `eprintln!` and `println!` show it, and the stream the human types into is read from.
+#[test]
+fn a_standard_stream_is_the_screen() {
+    let g = written(
+        "streams",
+        &[(
+            "src/main.rs",
+            "use std::io::Write;\n\nfn said(line: &str) {\n    let mut terminal = std::io::stderr();\n    let _ = writeln!(terminal, \"{line}\");\n}\n\nfn shown(line: &str) {\n    let mut out = std::io::stdout();\n    let _ = writeln!(out, \"{line}\");\n}\n\nfn printed(line: &str) {\n    eprintln!(\"{line}\");\n}\n\nfn main() {\n    said(\"a\");\n    shown(\"b\");\n    printed(\"c\");\n}\n",
+        )],
+    );
+    let screen = |id: &str| places(&g, id).iter().filter(|p| p.0 == "screen").count();
+    assert_eq!((screen("streams.said"), screen("streams.shown"), screen("streams.printed")), (1, 1, 1), "{:?}", places(&g, "streams.said"));
+}
+
 /// Rust keeps modules apart from values: `pub use fetch::fetch` re-exports the function from the
 /// module of that name, a call of `fetch` calls the function, and the head of `fetch::fetch` is
 /// the module.

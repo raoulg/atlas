@@ -121,6 +121,18 @@ impl Repo {
         self.is_file(p.as_ref()) || self.is_dir(p.as_ref())
     }
 
+    /// The files read as they are now: each listed file by its path, size and the time it was
+    /// written. Two readings with one fingerprint read the same files.
+    pub fn fingerprint(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        for f in &self.listing.files {
+            let meta = std::fs::metadata(self.root.join(f.strip_prefix(&self.at).unwrap_or(f))).ok();
+            (f, meta.map(|m| (m.len(), m.modified().ok()))).hash(&mut h);
+        }
+        h.finish()
+    }
+
     /// A file's bytes, read once.
     pub fn bytes(&self, p: impl AsRef<Path>) -> Option<Arc<Vec<u8>>> {
         let key = self.key(p.as_ref());

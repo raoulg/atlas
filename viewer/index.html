@@ -67,8 +67,8 @@ header .brand img{width:22px;height:22px;align-self:center}
 .stats{font-family:var(--mono);font-size:11px;color:var(--ink-3);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 #search{font:inherit;font-family:var(--mono);font-size:12px;padding:5px 9px;border:1px solid var(--line);border-radius:0;background:var(--panel-2);color:var(--ink);width:240px}
 #search:focus{outline:2px solid var(--focus);outline-offset:1px}
-#histlink{font-family:var(--mono);font-size:12px;padding:5px 9px;border:1px solid var(--line);background:var(--panel-2);color:var(--ink);text-decoration:none;white-space:nowrap}
-#histlink:hover{border-color:var(--ink-3)}
+#histlink,.histlink{font-family:var(--mono);font-size:12px;padding:5px 9px;border:1px solid var(--line);background:var(--panel-2);color:var(--ink);text-decoration:none;white-space:nowrap;cursor:pointer}
+#histlink:hover,.histlink:hover{border-color:var(--ink-3)}
 main{position:relative;overflow:hidden}
 svg#canvas{width:100%;height:100%;display:block;cursor:grab}
 svg#canvas:active{cursor:grabbing}
@@ -187,6 +187,8 @@ header:has(#diffbar:not([hidden])) #project{max-width:160px}
 #notefield .on{font-family:var(--mono);font-size:10.5px;color:var(--ink-3);margin-bottom:5px;word-break:break-all}
 #notefield textarea{width:100%;box-sizing:border-box;min-height:54px;font:inherit;color:var(--ink);background:var(--panel-2);border:1px solid var(--line);padding:5px 7px;resize:vertical}
 #notefield .keys{color:var(--ink-3);font-size:10.5px;margin-top:4px}
+#notefield .x{float:right;border:0;background:none;color:var(--ink-3);cursor:pointer;font-size:12px;padding:0 0 0 8px}
+#notefield .x:hover{color:var(--ink)}
 #ask .note-q{color:var(--ink)}
 #ask .note-a{margin-top:6px;padding-top:6px;border-top:1px solid var(--line);color:var(--focus)}
 /* what a closed box holds inside: a tag across its lower edge, dashed as what happens inside is */
@@ -2291,12 +2293,15 @@ let NOTES = [];
 async function loadNotes() {
   try { NOTES = await (await fetch("/api/notes")).json(); markNotes(); } catch {}
 }
-// a note's mark: a numbered ring on the box or the line it is on, open, seen by an agent, or
-// answered; marks sit on what is drawn and move nothing
+// the notes on one box or line share one ring, numbered by how many there are: filled when an agent
+// has answered one, dimmed when it has read them all, open while one waits; marks sit on what is
+// drawn and move nothing
 function markNotes() {
   scene.node().querySelectorAll("g.note").forEach(x => x.remove());
-  for (const n of NOTES.filter(n => n.state !== "closed")) {
-    const [a, b] = n.on.includes(">") ? n.on.split(">") : [null, null];
+  const on = new Map();
+  for (const n of NOTES.filter(n => n.state !== "closed")) { if (!on.has(n.on)) on.set(n.on, []); on.get(n.on).push(n); }
+  for (const [at, ns] of on) {
+    const [a, b] = at.includes(">") ? at.split(">") : [null, null];
     let parent, x, y;
     if (a) {
       const line = scene.node().querySelector(`path[data-a="${CSS.escape(a)}"][data-b="${CSS.escape(b)}"]`);
@@ -2304,39 +2309,52 @@ function markNotes() {
       const mid = line.getPointAtLength(line.getTotalLength() / 2);
       [parent, x, y] = [line.parentNode, mid.x, mid.y];
     } else {
-      const box = scene.node().querySelector(`[data-id="${CSS.escape(n.on)}"]`);
+      const box = scene.node().querySelector(`[data-id="${CSS.escape(at)}"]`);
       if (!box) continue;
       [parent, x, y] = [box, 0, 0];
     }
-    const m = el("g", {class: `note ${n.state}`, transform: `translate(${x},${y})`}, parent);
+    const state = ns.some(n => n.state === "answered") ? "answered" : ns.every(n => n.state === "seen") ? "seen" : "open";
+    const m = el("g", {class: `note ${state}`, transform: `translate(${x},${y})`}, parent);
     el("circle", {r: 7}, m);
-    el("text", {y: 3}, m).textContent = n.id;
+    el("text", {y: 3}, m).textContent = ns.length;
     m.addEventListener("mouseenter", () => {
-      const q = html("div", "f");
-      q.append(html("div", "at", `note ${n.id} · ${n.label} · ${n.state}`), html("div", "note-q", n.text));
-      if (n.answer) q.append(html("div", "note-a", n.answer));
-      askEl.replaceChildren(q);
+      askEl.replaceChildren(...ns.map(n => {
+        const q = html("div", "f");
+        q.append(html("div", "at", `note ${n.id} · ${n.label} · ${n.state}`), html("div", "note-q", n.text));
+        if (n.answer) q.append(html("div", "note-a", n.answer));
+        return q;
+      }));
       askEl.hidden = false;
       const r = m.getBoundingClientRect();
       askEl.style.left = Math.min(r.right + 10, innerWidth - askEl.offsetWidth - 8) + "px";
       askEl.style.top = Math.max(8, Math.min(r.top - 6, innerHeight - askEl.offsetHeight - 8)) + "px";
     });
-    // an answer is shown once: read, the note is closed
-    m.addEventListener("mouseleave", () => { hideAsks(); if (n.state === "answered") post("/api/notes/read", {id: n.id}).then(loadNotes).catch(() => {}); });
+    // an answer is shown once: read, its note is closed
+    m.addEventListener("mouseleave", () => {
+      hideAsks();
+      const read = ns.filter(n => n.state === "answered");
+      if (read.length) Promise.all(read.map(n => post("/api/notes/read", {id: n.id}))).then(loadNotes).catch(() => {});
+    });
   }
 }
 // alt-click on a box or a line: a note on it, for the agent
 const noteEl = html("div"); noteEl.id = "notefield"; noteEl.hidden = true; document.body.appendChild(noteEl);
+// the field goes with Esc, wherever the focus is, with its ✕, and with a click beside it
+const dropNote = () => { noteEl.hidden = true; };
+document.addEventListener("keydown", ev => { if (ev.key === "Escape" && !noteEl.hidden) { dropNote(); ev.stopImmediatePropagation(); } }, true);
+document.addEventListener("mousedown", ev => { if (!noteEl.hidden && !noteEl.contains(ev.target)) dropNote(); }, true);
 function noteField(x, y, on, label) {
-  const ta = html("textarea");
+  const ta = html("textarea"), close = html("button", "x", "✕");
   ta.placeholder = "what do you see, or not understand, here?";
-  noteEl.replaceChildren(html("div", "on", `note on ${label}`), ta, html("div", "keys", "enter: keep · shift-enter: new line · esc: drop"));
+  close.type = "button"; close.title = "drop the note (Esc)"; close.onclick = dropNote;
+  const head = html("div", "on", `note on ${label}`);
+  head.prepend(close);
+  noteEl.replaceChildren(head, ta, html("div", "keys", "enter: keep · shift-enter: new line · esc or a click beside it: drop"));
   noteEl.hidden = false;
   noteEl.style.left = Math.min(x + 8, innerWidth - 316) + "px";
   noteEl.style.top = Math.min(y + 8, innerHeight - 130) + "px";
   ta.focus();
   ta.onkeydown = ev => {
-    if (ev.key === "Escape") { noteEl.hidden = true; return; }
     if (ev.key !== "Enter" || ev.shiftKey) return;
     ev.preventDefault();
     const text = ta.value.trim();
@@ -2371,7 +2389,11 @@ if (D.served) {
   // the history beside the page, from the same server
   const hl = html("a", null, "history");
   hl.id = "histlink"; hl.href = "/history"; hl.title = "the commits: pick one, or two to see as one picture";
-  document.getElementById("search").before(hl);
+  // the page as `atlas view` writes it, opened where the reader is: a file to keep or send
+  const ex = html("a", null, "export");
+  ex.className = "histlink"; ex.title = "keep this picture as one HTML file, opened in this view";
+  ex.onclick = () => { ex.href = "/export?v=" + encodeURIComponent(JSON.stringify(viewData())); };
+  document.getElementById("search").before(hl, ex);
   document.getElementById("hint").prepend(html("span", null, "alt-click: a note for the agent · "));
   const dl = document.querySelector("#keys dl");
   dl.append(html("dt", null, "alt-click a box or a line"), html("dd", null, "write a note on it for the agent (atlas serve); its answer shows once on the ring"));

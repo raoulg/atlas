@@ -230,7 +230,7 @@ fn call(name: &str, args: &Value, opts: &Options) -> Option<Result<String, Strin
             };
             let shown = args.get("view").cloned().filter(Value::is_object);
             crate::page(&[repo.clone()], opts, None, None, shown).map_err(|e| format!("Could not read {}: {e}", repo.display())).and_then(
-                |(name, html)| {
+                |(name, html, _)| {
                     let home = clone.is_none().then_some(repo.as_path());
                     let out = text("out").map(PathBuf::from).unwrap_or_else(|| crate::made(home, &format!("{name}.view.html")));
                     std::fs::write(&out, html).map_err(|e| format!("Could not write {}: {e}", out.display()))?;

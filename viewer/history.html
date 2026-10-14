@@ -52,8 +52,9 @@ header .brand span{color:var(--ink-3);font-weight:400}
 header .spacer{flex:1}
 header .ctl{font:inherit;font-size:12px;border:1px solid var(--line);background:var(--panel);color:var(--ink-2);border-radius:0;padding:3px 9px;cursor:pointer;text-decoration:none;white-space:nowrap}
 header .ctl:hover{color:var(--ink);border-color:var(--ink-3)}
-#histbtn{display:flex;align-items:center;padding:4px 7px}
-#histbtn[aria-expanded="false"] .pane{opacity:.25}
+#histbtn{display:flex;align-items:center;padding:4px 9px;font-family:var(--mono);font-size:12px}
+#pick{position:absolute;inset:0;display:flex;align-items:flex-start;justify-content:center;padding-top:18vh;font-size:13px;color:var(--ink-2)}
+#pick[hidden]{display:none}
 
 /* the history */
 #hist{position:relative;border-right:1px solid var(--line);background:var(--panel);display:flex;flex-direction:column;min-height:0;min-width:0;color-scheme:var(--scheme)}
@@ -134,11 +135,11 @@ main{position:relative;min-width:0;min-height:0;background:var(--bg)}
 
 <div id="app">
   <header>
+    <a class="ctl" id="live" href="/" title="back to the working tree's page" hidden>✕ close history</a>
     <div class="brand"><img alt=""><b>Atlas</b><span>history</span></div>
-    <button class="ctl" id="histbtn" type="button" aria-controls="hist"><svg viewBox="0 0 16 14" width="16" height="14" aria-hidden="true"><rect x=".5" y=".5" width="15" height="13" fill="none" stroke="currentColor"/><rect class="pane" x="2" y="2" width="4.5" height="10" fill="currentColor"/></svg></button>
+    <button class="ctl" id="histbtn" type="button" aria-controls="hist">hide commits</button>
     <div class="cmp" id="cmp" aria-live="polite"></div>
     <div class="spacer"></div>
-    <a class="ctl" id="live" href="/" title="the working tree's page, shared with your agent" hidden>working tree</a>
     <a class="ctl" id="open" target="_blank" rel="noopener" title="open this picture alone in a new tab">open ↗</a>
   </header>
   <section id="hist" aria-label="history">
@@ -158,6 +159,7 @@ main{position:relative;min-width:0;min-height:0;background:var(--bg)}
   </section>
   <main>
     <iframe id="pic" title="the Atlas picture of A and B"></iframe>
+    <div id="pick" hidden><div>Pick a commit to see it beside the working tree (<kbd>Enter</kbd>), or two to see as one (<kbd>⇧</kbd> click).</div></div>
     <div id="reading" hidden><div class="card"><span id="readwhat"></span><span class="bar"></span></div></div>
   </main>
 </div>
@@ -206,8 +208,11 @@ allBox.checked = S.all;
 /* ---- the picture ---- */
 // `sent` is the view the picture was asked with, `kept` the view this page's hash holds
 let shown = "", sent = own.get("v") || "", kept = sent, settled = false, veil = 0;
-// served by `atlas serve` beside the working tree's page, the history links back to it
-document.getElementById("live").hidden = location.pathname !== "/history";
+// served by `atlas serve` beside the working tree's page, the history closes back to it, which the
+// browser keeps, and draws nothing before a commit is picked: the working tree is the page just left
+const served = location.pathname === "/history", liveEl = document.getElementById("live");
+liveEl.hidden = !served;
+liveEl.addEventListener("click", e => { if (document.referrer === location.origin + "/" || document.referrer.startsWith(location.origin + "/#")) { e.preventDefault(); history.back(); } });
 const viewURL = () => { const q = new URLSearchParams({b: S.b}); if (S.a) q.set("a", S.a); return "/view?" + q; };
 // the viewer keeps its view in its own hash; while a picture is on its way, the hash it was sent with stands for it
 const viewHash = () => {
@@ -230,6 +235,7 @@ const label = h => {
 function show() {
   const url = viewURL();
   if (url === shown) return;
+  $("pick").hidden = true;
   sent = viewHash(); shown = url; settled = false;
   frame.src = url + sent;
   openLink.href = url + sent;
@@ -573,8 +579,8 @@ allBox.addEventListener("change", () => {
   const apply = () => {
     const open = narrow.matches ? small : wide;
     app.classList.toggle("nohist", !open);
-    btn.title = open ? "hide the history" : "show the history";
-    btn.setAttribute("aria-label", btn.title);
+    btn.textContent = open ? "hide commits" : "show commits";
+    btn.title = open ? "hide the list of commits" : "show the list of commits";
     btn.setAttribute("aria-expanded", open ? "true" : "false");
   };
   btn.addEventListener("click", () => {
@@ -587,7 +593,7 @@ allBox.addEventListener("change", () => {
   apply(); }
 
 paint();
-show();
+if (served && !own.get("a") && !own.get("b")) $("pick").hidden = false; else show();
 load();
 })();
 </script>

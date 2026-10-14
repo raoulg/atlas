@@ -21,11 +21,13 @@ pub struct Request {
     pub body: Vec<u8>,
 }
 
-/// An answer: its status line, the type of its body, and the body.
+/// An answer: its status line, the type of its body, the body, and the name of the file it is when
+/// the browser is to keep it.
 pub struct Answer {
     pub status: &'static str,
     pub kind: &'static str,
     pub body: Vec<u8>,
+    pub file: Option<String>,
 }
 
 /// The largest body a request may carry.
@@ -33,15 +35,20 @@ const MOST: usize = 4 << 20;
 
 impl Answer {
     pub fn page(html: String) -> Answer {
-        Answer { status: "200 OK", kind: "text/html; charset=utf-8", body: html.into_bytes() }
+        Answer { status: "200 OK", kind: "text/html; charset=utf-8", body: html.into_bytes(), file: None }
+    }
+
+    /// A page for the browser to keep as the file `name`.
+    pub fn download(name: String, html: String) -> Answer {
+        Answer { file: Some(name), ..Answer::page(html) }
     }
 
     pub fn json(json: String) -> Answer {
-        Answer { status: "200 OK", kind: "application/json", body: json.into_bytes() }
+        Answer { status: "200 OK", kind: "application/json", body: json.into_bytes(), file: None }
     }
 
     pub fn text(status: &'static str, text: String) -> Answer {
-        Answer { status, kind: "text/plain; charset=utf-8", body: text.into_bytes() }
+        Answer { status, kind: "text/plain; charset=utf-8", body: text.into_bytes(), file: None }
     }
 
     /// What went wrong, in words, where the page would have been.
@@ -51,7 +58,7 @@ impl Answer {
 
     /// Nothing to say.
     pub fn none() -> Answer {
-        Answer { status: "204 No Content", kind: "text/plain", body: vec![] }
+        Answer { status: "204 No Content", kind: "text/plain", body: vec![], file: None }
     }
 }
 
@@ -106,9 +113,14 @@ fn decoded(s: &str) -> String {
 
 /// Write an answer and close the connection.
 pub fn reply(mut conn: TcpStream, a: Answer) -> Result<()> {
+    // a file name the browser keeps: what a name may hold in a header, nothing else
+    let keep = a.file.map_or(String::new(), |f| {
+        let name: String = f.chars().filter(|c| c.is_ascii_alphanumeric() || "._-".contains(*c)).collect();
+        format!("Content-Disposition: attachment; filename=\"{name}\"\r\n")
+    });
     write!(
         conn,
-        "HTTP/1.1 {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n",
+        "HTTP/1.1 {}\r\nContent-Type: {}\r\nContent-Length: {}\r\n{keep}Cache-Control: no-cache\r\nConnection: close\r\n\r\n",
         a.status,
         a.kind,
         a.body.len()

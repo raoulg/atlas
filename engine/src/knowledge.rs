@@ -872,8 +872,10 @@ pub fn operation(pkg: &str, op: &str) -> Option<Crossing> {
     OPERATIONS.iter().find(|(p, o, _)| *p == pkg && *o == op).map(|(_, _, c)| *c)
 }
 
-/// A program's streams that a write to shows the human: `sys.stdout`, `process.stderr`.
-pub const STREAMS: &[(&str, &str)] = &[("sys", "stdout"), ("sys", "stderr"), ("process", "stdout"), ("process", "stderr")];
+/// A program's streams that a write to shows the human: `sys.stdout`, `process.stderr`, Rust's
+/// `io::stderr()`.
+pub const STREAMS: &[(&str, &str)] =
+    &[("sys", "stdout"), ("sys", "stderr"), ("process", "stdout"), ("process", "stderr"), ("io", "stdout"), ("io", "stderr")];
 
 /// A program's streams that read what the human types: `sys.stdin`, `process.stdin`, Rust's
 /// `io::stdin()`.

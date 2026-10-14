@@ -66,7 +66,8 @@ The same route as text, with its steps in call order, is the MCP tool `route` (s
 ## Use
 
 ```bash
-atlas view                      # draw the repository you are in; opens in your browser
+atlas serve                     # the repository you are in, as a page to work in with your agent
+atlas view                      # the same picture as one HTML file; opens in your browser
 atlas view ../api ../web        # two repositories as parts of one picture
 atlas view notebooks/explore.ipynb   # one file, with its project, opened on its route
 atlas view https://github.com/o/r/tree/main/src/pkg   # one folder of a repository, from its URL
@@ -74,12 +75,12 @@ atlas check                     # where the code and the design principles disag
 atlas changes                   # what your edits did to the routes, their places and the findings
 atlas changes v1..main          # what one revision did against another
 atlas history                   # the history in your browser: pick two commits, see them as one picture
-atlas serve                     # one page you and your agent share: what you see, where it points, your notes
 atlas --help
 ```
 
-`atlas view` writes a single HTML file and opens it. No server runs and your code stays on
-your machine. The file goes to `.atlas/` at the top of the git repository (`--out` names
+`atlas serve` is the page to work in (see Serve, below). `atlas view` writes the same page as a
+single HTML file and opens it, to keep, to send, or for a script or an agent to make. No server
+runs and your code stays on your machine. The file goes to `.atlas/` at the top of the git repository (`--out` names
 another place), where you and an agent working there both find it; the folder ignores itself,
 so git never sees it. `atlas analyze` writes its `graph.json` there too. The page fetches only its drawing libraries (d3, elk, highlight.js) from a
 CDN. It has three views. The **Flowchart** is the one to start with. Type lattice and
@@ -241,18 +242,25 @@ request, so an edit shows when you pick it again.
 ## Serve: one view, shared with your agent
 
 `atlas serve [repo]` serves the picture of the working tree on this machine (`127.0.0.1`,
-`--port N`, `--no-open`), and shares it with the agent you work with through `atlas mcp`:
+`--port N`, `--no-open`), and shares it with the agent you work with through `atlas mcp`. It
+keeps the picture while no file Atlas reads changes, so a reload is at once. Its terminal says
+that it runs and where, then a line for each thing worth knowing: the picture drawn, an export,
+a note, and what the agent did with it.
 
 - **What you have open.** The page tells the server its view, the box you selected, and the
   boxes and lines it draws. The agent reads them with `shown` when you say "this box".
 - **Look here.** The agent hands the page a view with `look`, and the page goes there.
 - **Notes.** Alt-click a box or a line to write a note on it ("I do not understand this line").
   The ring on it is open until the agent reads it, dimmed once it has, and filled once it
-  answers. Hover the ring for the note and the answer; once you have read the answer, the
-  note is closed. The agent resolves notes with `answer`; reading one does not.
-
-- **History.** The page's **history** button opens the commits beside it, as `atlas history`
-  does, from the same process; **working tree** leads back.
+  answers. The notes on one box share its ring, numbered by how many there are. Hover the ring
+  for the notes and the answers; once you have read an answer, its note is closed. The agent
+  resolves notes with `answer`; reading one does not. Esc, the field's ✕ or a click beside it
+  drops a note before it is kept.
+- **History.** **history** opens the commits beside the page, as `atlas history` does, from the
+  same process. Pick a commit to see it beside the working tree, or two to see as one; **✕ close
+  history** goes back to the page.
+- **Export.** **export** keeps the picture as one HTML file, opened in the view you have: the
+  file `atlas view` writes.
 
 What the page and the agent share is kept in `.atlas/` (`shown.json`, `look.json`,
 `notes.json`), so the two need not run together, and git never sees it.

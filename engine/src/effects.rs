@@ -65,10 +65,13 @@ pub fn boundary_rust(parts: &[String]) -> Option<Crossing> {
             return Some(Crossing { world: World::Disk, dir: Some(*dir) });
         }
     }
-    // what the human types: `io::stdin()`
+    // what the human types: `io::stdin()`; what the human is shown: `io::stderr()`, as `eprintln!`
     if let [.., module, name] = parts {
         if k::INPUT_STREAMS.contains(&(module.as_str(), name.as_str())) {
             return Some(Crossing::read(World::Screen));
+        }
+        if k::STREAMS.contains(&(module.as_str(), name.as_str())) {
+            return Some(Crossing::to(World::Screen));
         }
     }
     // a program is run by a `Command`; `process::exit` ends this one and runs none
