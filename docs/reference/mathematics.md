@@ -147,8 +147,10 @@ each one type, in every language.
 ### Behavioural subtyping
 **What.** A subtype can stand wherever its base stands (Liskov).
 **In Atlas.** An override keeps the promise of its base: it takes what the base takes and gives
-what the base gives.
-**Where.** Principle `overrides`.
+what the base gives. A subclass of a generic base stands where the base stands as the subclass
+fills it in: `Boekwinkel(Winkel[Boek])` keeps the promise of `Winkel[Boek]`, the base's `R`
+replaced by `Boek` wherever the promise names it.
+**Where.** Principle `overrides`; for Python ty decides it (`pytypes.rs`).
 
 ### Signatures say the arrow
 **What.** A function's type is its domain and its codomain.

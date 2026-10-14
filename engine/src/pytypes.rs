@@ -21,7 +21,7 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
-use ruff_db::diagnostic::Diagnostic;
+use ruff_db::diagnostic::{Diagnostic, Severity};
 use ruff_db::files::{system_path_to_file, File, FilePath, FileRange, FileRootKind, Files};
 use ruff_db::parsed::parsed_module;
 use ruff_db::system::{OsSystem, System, SystemPath, SystemPathBuf};
@@ -29,18 +29,17 @@ use ruff_db::vendored::VendoredFileSystem;
 use ruff_db::Db as SourceDb;
 use ruff_python_ast::visitor::{self, Visitor};
 use ruff_python_ast::{self as ast, AnyNodeRef, PythonVersion};
-use ruff_text_size::Ranged;
+use ruff_text_size::{Ranged, TextRange};
 use ty_module_resolver::{file_to_module, Db as ModuleResolverDb, FallibleStrategy, SearchPathSettings, SearchPaths};
 use ty_python_core::platform::PythonPlatform;
 use ty_python_core::program::{Program, ProgramSettings};
 use ty_python_core::{Db as PythonCoreDb, ProgramFile};
 use ty_python_semantic::dependency::DependencyMetadata;
-use ty_python_semantic::lint::{LintRegistry, RuleSelection};
+use ty_python_semantic::lint::{LintRegistry, LintSource, RuleSelection};
 use ty_python_semantic::types::{Type, TypeDefinition, TypeDetail};
 use ty_python_semantic::{
     check_file_unwrap, default_lint_registry, definitions_for_attribute, definitions_for_name, AnalysisSettings, Db, HasType,
-    ImportAliasResolution, ProgramEnvironment, PythonEnvironment, PythonVersionSource, PythonVersionWithSource, SemanticModel,
-    SysPrefixPathOrigin,
+    ImportAliasResolution, PythonEnvironment, PythonVersionSource, PythonVersionWithSource, SemanticModel, SysPrefixPathOrigin,
 };
 
 use crate::cache::{Cache, Check, Imports};
@@ -184,10 +183,9 @@ impl Facts {
         self.defs.get(&range)
     }
 
-    /// For the method whose name is written at `at`, when it overrides one of a base class
-    /// read with it: whether the type its return annotation stands for is assignable to the one
-    /// the overridden method's stands for. None where either says nothing, or names a type
-    /// variable a base fills in.
+    /// For the method whose name is written at `at`, when it overrides one of a class of the
+    /// project's own: whether it keeps the promise of the method it overrides, as ty's check of an
+    /// override decides it.
     pub fn keeps(&self, at: usize) -> Option<bool> {
         self.keeps.get(&at).copied()
     }
@@ -424,9 +422,16 @@ impl Ty {
         for (path, name) in asked(files) {
             let Some(said) = self.said(&path) else { continue };
             out.files.insert(name.clone(), here.facts(&said));
-            classes.extend(self.classes(&path, &name));
+            // a library read as code is not the project's to change: what it overrides is not asked
+            if self.own.contains(&key(path.as_std_path())) {
+                classes.extend(self.classes(&path, &name));
+            }
         }
-        for (file, at, keeps) in overrides(&self.db, &classes, &names) {
+        let mut broken: HashMap<String, Vec<TextRange>> = HashMap::new();
+        for (file, at) in overrides(&classes, &names) {
+            let path = classes.iter().find(|c| c.file == file).map(|c| &c.path);
+            let ranges = broken.entry(file.clone()).or_insert_with(|| path.map_or_else(Vec::new, |p| self.broken(p)));
+            let keeps = !ranges.iter().any(|r| r.start().to_usize() <= at && at < r.end().to_usize());
             if let Some(f) = out.files.get_mut(&file) {
                 f.keeps.insert(at, keeps);
             }
@@ -489,7 +494,7 @@ impl Ty {
     }
 
     /// The classes of the file at `path`, known by `name`, for what their methods override.
-    fn classes(&self, path: &SystemPathBuf, name: &str) -> Vec<Class<'_>> {
+    fn classes(&self, path: &SystemPathBuf, name: &str) -> Vec<Class> {
         let db = &self.db;
         let Ok(file) = system_path_to_file(db, path) else { return vec![] };
         let pf = db.program_file(file);
@@ -497,9 +502,16 @@ impl Ty {
         let parsed = parsed_module(db, pf.python_file(db)).load(db);
         let none = HashSet::new();
         let reader = Reader { db, model: &model, certain: &none, keys: &self.keys, said: Said::default() };
-        let mut found = Classes { reader, file: name, key: key(path.as_std_path()), out: vec![] };
+        let mut found = Classes { reader, file: name, path, key: key(path.as_std_path()), out: vec![] };
         found.visit_body(parsed.suite());
         found.out
+    }
+
+    /// Where ty's check of the file at `path` finds a method that does not keep the promise of
+    /// the one it overrides: the range of each such method's signature.
+    fn broken(&self, path: &SystemPathBuf) -> Vec<TextRange> {
+        let Ok(file) = system_path_to_file(&self.db, path) else { return vec![] };
+        self.db.check_file(file).iter().filter(|d| d.id().is_lint_named(OVERRIDES)).filter_map(|d| d.range()).collect()
     }
 }
 
@@ -515,23 +527,36 @@ fn keyed(list: &[(String, PathBuf)]) -> HashMap<String, String> {
     asked(list).into_iter().map(|(p, name)| (key(p.as_std_path()), name)).collect()
 }
 
-/// A class as ty sees it, for what its methods override: where each of its bases is defined,
-/// and each method by its name, where that name is written and the type its return annotation
-/// stands for.
-struct Class<'db> {
-    file: String,
-    key: String,
-    at: usize,
-    program: ProgramFile<'db>,
-    bases: Vec<Place>,
-    methods: Vec<(String, usize, Option<Type<'db>>)>,
+/// The check of ty's that Atlas asks for: whether a method keeps the promise of the one it
+/// overrides. It reads the whole promise, what the method takes and what it gives, and reads a
+/// generic base as the subclass sees it: in `class Boekwinkel(Winkel[Boek])`, a `-> Versie[R]`
+/// of `Winkel[R]` promises `Versie[Boek]`.
+const OVERRIDES: &str = "invalid-method-override";
+
+/// The checks ty runs: only the one Atlas asks for.
+fn checks() -> RuleSelection {
+    let mut rules = RuleSelection::default();
+    if let Ok(lint) = default_lint_registry().get(OVERRIDES) {
+        rules.enable(lint, Severity::Error, LintSource::Default);
+    }
+    rules
 }
 
-/// For each method that overrides one of a class read with it: the file, where its name is
-/// written, and whether what it gives is assignable to what the overridden method promises. The
-/// overridden method is the one of the nearest base that defines it, breadth first through the
+/// A class as ty sees it, for what its methods override: its file, where each of its bases is
+/// defined, and each method by its name and where that name is written.
+struct Class {
+    file: String,
+    path: SystemPathBuf,
+    key: String,
+    at: usize,
+    bases: Vec<Place>,
+    methods: Vec<(String, usize)>,
+}
+
+/// Each method that overrides one of a class read with it: its file, and where its name is
+/// written. The overridden method is one of a base that defines it, breadth first through the
 /// bases as written, as the graph finds it.
-fn overrides<'db>(db: &'db TyDb, classes: &[Class<'db>], here: &HashMap<String, String>) -> Vec<(String, usize, bool)> {
+fn overrides(classes: &[Class], here: &HashMap<String, String>) -> Vec<(String, usize)> {
     let by_place: HashMap<(&str, usize), &Class> = classes.iter().map(|c| ((c.key.as_str(), c.at), c)).collect();
     // the bases a class is read with: those defined in a file Atlas reads
     let bases = |c: &Class| -> Vec<(String, usize)> {
@@ -539,25 +564,19 @@ fn overrides<'db>(db: &'db TyDb, classes: &[Class<'db>], here: &HashMap<String, 
     };
     let mut out = vec![];
     for c in classes {
-        let env = ProgramEnvironment::from_file(c.program);
-        for (name, at, given) in &c.methods {
-            let Some(given) = given else { continue };
+        for (name, at) in &c.methods {
             let mut seen = HashSet::new();
             let mut queue: VecDeque<(String, usize)> = bases(c).into();
-            let mut promised = None;
             while let Some(b) = queue.pop_front() {
                 let Some(base) = by_place.get(&(b.0.as_str(), b.1)).copied() else { continue };
                 if !seen.insert(b) {
                     continue;
                 }
-                if let Some((_, _, p)) = base.methods.iter().find(|(n, _, _)| n == name) {
-                    promised = Some(*p);
+                if base.methods.iter().any(|(n, _)| n == name) {
+                    out.push((c.file.clone(), *at));
                     break;
                 }
                 queue.extend(bases(base));
-            }
-            if let Some(Some(promised)) = promised {
-                out.push((c.file.clone(), *at, given.is_assignable_to(db, &env, promised)));
             }
         }
     }
@@ -985,7 +1004,7 @@ impl TyDb {
             system,
             vendored,
             files: Files::default(),
-            rule_selection: Arc::new(RuleSelection::from_registry(default_lint_registry())),
+            rule_selection: Arc::new(checks()),
             analysis_settings: AnalysisSettings::default().into(),
         };
         db.files().try_add_root(&db, root, FileRootKind::Project);
@@ -1266,15 +1285,10 @@ impl Reader<'_, '_> {
 }
 
 impl<'db> Reader<'_, 'db> {
-    /// A class with what it takes for its overrides: its bases where they are defined, its
-    /// methods with the types their return annotations stand for. A type that names a type
-    /// variable stands for what a subclass fills in, so it is left out.
-    fn class(&self, c: &ast::StmtClassDef, file: &str, key: &str) -> Class<'db> {
+    /// A class with what it takes for its overrides: its bases where they are defined, and its
+    /// methods.
+    fn class(&self, c: &ast::StmtClassDef, file: &str, path: &SystemPathBuf, key: &str) -> Class {
         let env = self.model.program_environment();
-        let variable = |t: Type<'db>| {
-            matches!(t, Type::TypeVar(_))
-                || t.display(self.db, &env).to_string_parts().details.iter().any(|d| matches!(d, TypeDetail::Type(Type::TypeVar(_))))
-        };
         let bases = c
             .bases()
             .iter()
@@ -1284,22 +1298,9 @@ impl<'db> Reader<'_, 'db> {
             .body
             .iter()
             .filter_map(|s| if let ast::Stmt::FunctionDef(f) = s { Some(f) } else { None })
-            .map(|f| {
-                (
-                    f.name.to_string(),
-                    f.name.range.start().to_usize(),
-                    f.returns.as_deref().and_then(|r| r.inferred_type(self.model)).filter(|t| !variable(*t)),
-                )
-            })
+            .map(|f| (f.name.to_string(), f.name.range.start().to_usize()))
             .collect();
-        Class {
-            file: file.to_string(),
-            key: key.to_string(),
-            at: c.name.range.start().to_usize(),
-            program: self.model.program_file(),
-            bases,
-            methods,
-        }
+        Class { file: file.to_string(), path: path.clone(), key: key.to_string(), at: c.name.range.start().to_usize(), bases, methods }
     }
 }
 
@@ -1358,16 +1359,17 @@ impl<'e> Visitor<'e> for Reader<'_, '_> {
 /// Walks one file's statements for its classes.
 struct Classes<'a, 'db> {
     reader: Reader<'a, 'db>,
-    /// The name Atlas knows the file by, and its key.
+    /// The name Atlas knows the file by, its path and its key.
     file: &'a str,
+    path: &'a SystemPathBuf,
     key: String,
-    out: Vec<Class<'db>>,
+    out: Vec<Class>,
 }
 
 impl<'e> Visitor<'e> for Classes<'_, '_> {
     fn visit_stmt(&mut self, stmt: &'e ast::Stmt) {
         if let ast::Stmt::ClassDef(c) = stmt {
-            let class = self.reader.class(c, self.file, &self.key);
+            let class = self.reader.class(c, self.file, self.path, &self.key);
             self.out.push(class);
         }
         visitor::walk_stmt(self, stmt);

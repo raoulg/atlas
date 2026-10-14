@@ -16,7 +16,7 @@ class Harvester:
 
     client: WeatherClient
     store: ReadingStore
-    exporter: Exporter
+    exporter: Exporter[Reading]
     unit: Unit
 
     def collect(self, stations: list[str]) -> Harvest:

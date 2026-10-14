@@ -96,18 +96,27 @@ fn sums_a_sum_is_unwrapped_where_it_arises() {
 }
 
 /// An override keeps the promise of its base. Both sides have one family, `Exporter` with
-/// `JsonExporter` and `CsvExporter`; on the shortcut, `CsvExporter.write` gives the number of rows
-/// where `Exporter.write` promises `None`, which ty reports as an incompatible override.
+/// `JsonExporter` and `CsvExporter`. The clean `Exporter[R]` writes a station's records, whatever
+/// they are, and each format fills it in with `Reading`: its `write` takes the `list[Reading]` that
+/// `Exporter[Reading]` makes of `list[R]`, under the name its base gives it. On the shortcut,
+/// `CsvExporter.write` gives the number of rows where `Exporter.write` promises `None`, which ty
+/// reports as an incompatible override.
 #[test]
 fn overrides_an_override_keeps_the_promise_of_its_base() {
     let (c, s) = (clean(), shortcut());
     assert!(found(c, "overrides").is_empty());
+    let takes = |g: &Graph, id: &str| g.node(id).unwrap().params.iter().map(|p| p.to_string()).collect::<Vec<_>>();
+    assert_eq!(takes(c, "harvest.export.Exporter.write"), ["self", "records: list[R]", "path: Path"]);
     for o in ["harvest.export.JsonExporter.write", "harvest.export.CsvExporter.write"] {
         assert_eq!(c.node(o).unwrap().keeps, Some(true), "{o}");
+        assert_eq!(takes(c, o), ["self", "records: list[Reading]", "path: Path"]);
         assert!(edge(c, &o.replace(".write", ""), "harvest.export.Exporter", EdgeKind::Inherits));
     }
     assert_eq!(found(s, "overrides"), ["harvest.export.Exporter.write"]);
     assert_eq!(s.node("harvest.export.CsvExporter.write").unwrap().keeps, Some(false));
+    let broken = check(s).into_iter().find(|f| f.principle == "overrides").unwrap();
+    assert_eq!(broken.what, "Exporter.write promises (rows: list[dict], path: Path) -> None; 1 override breaks it");
+    assert_eq!(broken.evidence, ["CsvExporter.write(rows: list[dict], path: Path) -> int (src/harvest/export.py:35)"]);
     // the override is still a member of the family, and still writes its file
     assert!(edge(s, "harvest.export.CsvExporter", "harvest.export.Exporter", EdgeKind::Inherits));
     assert_eq!(touches(s, "harvest.export.CsvExporter.write", "disk_write").len(), 1);

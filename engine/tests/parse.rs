@@ -28,7 +28,7 @@ fn modules_classes_and_functions_are_found() {
     assert_eq!(g.root, "fixture");
     let kinds = |k: NodeKind| g.nodes.iter().filter(|n| n.kind == k).count();
     // `services` holds the places a library reaches by its table alone
-    assert_eq!(kinds(NodeKind::Module), 25, "the package's twenty-two, a script and two notebooks");
+    assert_eq!(kinds(NodeKind::Module), 26, "the package's twenty-three, a script and two notebooks");
     assert!(g.node("fixture.sinks").unwrap().is_pkg);
     assert_eq!(g.node("fixture.schema.Graph").unwrap().doc, "Nodes and edges.");
     assert_eq!(g.node("fixture.sinks.duck.DuckSink").unwrap().bases, vec!["Sink", "Mixin"]);

@@ -507,15 +507,14 @@ fn sums(ix: &Index) -> Vec<Finding> {
 
 // ---------- overrides ----------
 
-/// An override that gives something its base does not promise: a caller written against the
-/// base cannot take it in its place (Liskov). A subclass of the promised type is fine.
+/// An override that does not keep the promise of its base: a caller written against the base
+/// cannot take it in its place (Liskov). A subclass of the promised type is fine.
 fn overrides(ix: &Index) -> Vec<Finding> {
     let mut broken: Vec<(&Node, Vec<&Node>)> = vec![];
     for m in ix.g.nodes.iter().filter(|n| n.kind == NodeKind::Method && !n.ctor) {
         let Some(cls) = m.cls.as_deref() else { continue };
         let Some(base) = ix.ancestors(cls).into_iter().find_map(|a| ix.node(&format!("{a}.{}", m.name))) else { continue };
-        let (Some(promised), Some(given)) = (&base.returns, &m.returns) else { continue };
-        if promised.own || given.own || keeps(ix, base, m) {
+        if keeps(ix, base, m) {
             continue;
         }
         match broken.iter_mut().find(|(b, _)| b.id == base.id) {
@@ -526,17 +525,17 @@ fn overrides(ix: &Index) -> Vec<Finding> {
     broken
         .into_iter()
         .map(|(base, ms)| {
-            let evidence = ms.iter().map(|m| format!("{} gives {} ({})", ix.label(&m.id), written(m), ix.at(m))).collect();
+            let evidence = ms.iter().map(|m| format!("{}{} ({})", ix.label(&m.id), promise(m), ix.at(m))).collect();
             let classes: Vec<String> = ms.iter().filter_map(|m| m.cls.as_deref()).map(|c| ix.label(c)).collect();
             let base_cls = base.cls.as_deref().map(|c| ix.label(c)).unwrap_or_default();
             ix.finding(
                 "overrides",
                 base,
                 format!(
-                    "{} promises {}; {} something else",
+                    "{} promises {}; {} it",
                     ix.label(&base.id),
-                    written(base),
-                    if ms.len() == 1 { "1 override gives".to_string() } else { format!("{} overrides give", ms.len()) },
+                    promise(base),
+                    if ms.len() == 1 { "1 override breaks".to_string() } else { format!("{} overrides break", ms.len()) },
                 ),
                 evidence,
                 format!(
@@ -552,18 +551,32 @@ fn overrides(ix: &Index) -> Vec<Finding> {
         .collect()
 }
 
-/// Whether what an override gives keeps what its base promised. Where the language's type
-/// checker decided it (ty, for Python), by its answer. Elsewhere by the types the two
-/// signatures resolve to: each type the override gives is one the base promises, a subclass of
-/// one, or a variant of a sum it promises; a promise that resolves to none of the program's
-/// types gives these nothing to compare. Either way an array's shape is a promise no checker
-/// reads: each array the override gives fits one the base promises (`Float[Tensor, "batch
-/// dim"]` where `Float[Tensor, "..."]` is promised).
+/// What a method promises: what it takes, without the value it runs on, and what it gives, as
+/// written (`(rij: tuple[str, int]) -> Versie[R]`).
+fn promise(n: &Node) -> String {
+    let takes: Vec<String> = n.params.iter().filter(|p| !p.receiver).map(|p| p.to_string()).collect();
+    let ret = n.returns.as_ref().map_or(String::new(), |r| format!(" -> {}", r.written));
+    format!("({}){ret}", takes.join(", "))
+}
+
+/// Whether an override keeps the promise of its base. Where the language's type checker decided
+/// it (ty, for Python), by its answer: what the override takes and what it gives, against the
+/// base as the subclass sees it, its type parameters filled in. Elsewhere, where both signatures
+/// say what they give, by the types they resolve to: each type the override gives is one the
+/// base promises, a subclass of one, or a variant of a sum it promises; a promise that resolves
+/// to none of the program's types, or a value of the class it runs on, gives these nothing to
+/// compare. Either way an array's shape is a promise no checker reads: each array the override
+/// gives fits one the base promises (`Float[Tensor, "batch dim"]` where `Float[Tensor, "..."]`
+/// is promised).
 fn keeps(ix: &Index, base: &Node, m: &Node) -> bool {
     let (promised, given) = (ix.targets(&base.id, EdgeKind::Returns), ix.targets(&m.id, EdgeKind::Returns));
     let allowed: Vec<&str> = promised.iter().flat_map(|p| std::iter::once(*p).chain(ix.targets(p, EdgeKind::Variant))).collect();
-    let typed = m.keeps.unwrap_or_else(|| {
-        promised.is_empty() || given.iter().all(|g| allowed.iter().any(|p| p == g || ix.ancestors(g).contains(p) || array_id_fits(g, p)))
+    let typed = m.keeps.unwrap_or_else(|| match (&base.returns, &m.returns) {
+        (Some(p), Some(g)) if !p.own && !g.own => {
+            promised.is_empty()
+                || given.iter().all(|g| allowed.iter().any(|p| p == g || ix.ancestors(g).contains(p) || array_id_fits(g, p)))
+        }
+        _ => true,
     });
     let shapes: Vec<Array> = promised.iter().filter_map(|p| array_of_id(p)).collect();
     typed && (shapes.is_empty() || given.iter().filter_map(|g| array_of_id(g)).all(|g| shapes.iter().any(|p| array_fits(&g, p))))
