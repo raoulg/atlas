@@ -1112,6 +1112,28 @@ fn made_by_package(value: TsNode, m: &Module, src: &[u8]) -> Option<String> {
 }
 
 /// The package a type annotation names: `Database.Database`, `Pool`, `: Client`.
+/// Whether a type as written is one of the language's own containers that change in place
+/// (`Row[]`, `Array<Row>`, `Map<string, Row>`) where the module names nothing of its own so; a
+/// read-only one is not.
+fn container_type(t: &str, m: &Module) -> bool {
+    let t = t.trim().trim_start_matches(':').trim();
+    if t.starts_with("readonly ") || t.starts_with("Readonly") {
+        return false;
+    }
+    let head = t.split(|c: char| !(c.is_alphanumeric() || c == '_' || c == '$')).next().unwrap_or("");
+    t.ends_with("[]")
+        || (knowledge::TYPESCRIPT_CHANGEABLE.contains(&head) && !m.bindings.contains_key(head) && !m.symbols.contains_key(head))
+}
+
+/// Whether a value as written builds one: `[]`, `new Map()`, `new Set<string>()`.
+fn builds_container(v: TsNode, m: &Module, src: &[u8]) -> bool {
+    match v.kind() {
+        "array" => true,
+        "new_expression" => v.child_by_field_name("constructor").map_or(false, |c| container_type(text(c, src), m)),
+        _ => false,
+    }
+}
+
 fn typed_package(ty: TsNode, m: &Module, src: &[u8]) -> Option<String> {
     let head = text(ty, src).trim_start_matches(':').trim().split(|c: char| !(c.is_alphanumeric() || c == '_' || c == '$')).next()?;
     match m.bindings.get(head)? {
@@ -1851,6 +1873,9 @@ struct Body<'a, 't> {
     param_types: HashMap<String, String>,
     /// The values a package made, by the package: a call on one is the package's.
     made: HashMap<String, String>,
+    /// The names that hold one of the language's own containers, as the body declares or builds
+    /// them: `rows: Row[]`, `const seen = new Set<string>()`, `const out = []`.
+    containers: HashSet<String>,
     /// The calls, constructors, elements and names of the body, in the order they run.
     sites: Vec<TsNode<'t>>,
     read: Read<'t>,
@@ -1891,6 +1916,7 @@ impl<'a, 't> Body<'a, 't> {
             locals: HashMap::new(),
             param_types: HashMap::new(),
             made: HashMap::new(),
+            containers: HashSet::new(),
             sites: vec![],
             read: Read::default(),
         };
@@ -1928,6 +1954,9 @@ impl<'a, 't> Body<'a, 't> {
     fn typed(&mut self, n: &Node) {
         let src = self.src;
         for p in n.params.iter().filter(|p| !p.ty.is_empty()) {
+            if container_type(&p.ty, self.m) {
+                self.containers.insert(p.name.clone());
+            }
             let ty = p.ty.split(['<', '[', ' ', '|']).next().unwrap_or("").to_string();
             if let Some(r) = self.class(self.resolve(&[ty])) {
                 self.locals.insert(p.name.clone(), r);
@@ -1939,6 +1968,10 @@ impl<'a, 't> Body<'a, 't> {
             let (Some(name), Some(value)) = (v.child_by_field_name("name"), v.child_by_field_name("value")) else { continue };
             if name.kind() != "identifier" {
                 continue;
+            }
+            let written = v.child_by_field_name("type").map(|t| text(t, src));
+            if written.map_or_else(|| builds_container(value, self.m, src), |t| container_type(t, self.m)) {
+                self.containers.insert(text(name, src).to_string());
             }
             let declared = v.child_by_field_name("type").and_then(|t| named_children(t).into_iter().next()).map(|t| member_parts(t, src));
             let built = (value.kind() == "new_expression")
@@ -2222,11 +2255,12 @@ impl<'a, 't> Body<'a, 't> {
             // by the name the code calls it by
             _ if parts.is_empty() => {
                 let (name, bucket) = (written_callee(f, src), self.bucket_of(f));
-                self.unread(steps, c, &name, bucket, hands);
+                self.unread(steps, c, &name, bucket, hands, vec![]);
                 self.read.unresolved.push((name, bucket));
             }
             _ => {
-                let bucket = self.bucket_path(&parts);
+                let changed = self.changes(c);
+                let bucket = if changed.is_empty() { self.bucket_path(&parts) } else { Bucket::Builtin };
                 // a library's operation by its name, a call Atlas cannot follow as written
                 let name = if matches!(bucket, Bucket::Library | Bucket::Builtin) {
                     parts.last().cloned().unwrap_or_default()
@@ -2235,7 +2269,7 @@ impl<'a, 't> Body<'a, 't> {
                 };
                 match self.eval.command_line(At { m: self.m, scope: self.scope, params: &self.params }, c) {
                     Some(options) => steps.parses(c, &name, hands, self.parsed_into(c), options),
-                    None => self.unread(steps, c, &name, bucket, hands),
+                    None => self.unread(steps, c, &name, bucket, hands, changed),
                 }
                 self.read.unresolved.push((parts.iter().take(2).cloned().collect::<Vec<_>>().join("."), bucket));
                 self.crossed(c, &parts);
@@ -2279,13 +2313,32 @@ impl<'a, 't> Body<'a, 't> {
     /// What a call's name path starts from is bound to; a field that holds what a package made is
     /// that package's, as a local is.
     /// A call the body reads no further, as a step: a library's operation where the body keeps what
-    /// it gives, any other call Atlas cannot follow always, since it runs all the same.
-    fn unread(&self, steps: &mut Steps, c: TsNode<'t>, name: &str, bucket: Bucket, hands: Vec<Held>) {
-        if matches!(bucket, Bucket::Library | Bucket::Builtin) {
+    /// it gives or what it `changed`, any other call Atlas cannot follow always, since it runs all
+    /// the same.
+    fn unread(&self, steps: &mut Steps, c: TsNode<'t>, name: &str, bucket: Bucket, hands: Vec<Held>, changed: Vec<Held>) {
+        if !changed.is_empty() {
+            steps.changes(c, name, hands, self.gives(c, None), changed);
+        } else if matches!(bucket, Bucket::Library | Bucket::Builtin) {
             steps.op(c, name, hands, self.gives(c, None));
         } else {
             steps.not_followed(c, name, hands, self.gives(c, None));
         }
+    }
+
+    /// The container a method of the language's own changes, as the value the call gives: `rows`
+    /// for `rows.push(row)`, where the body holds an array, a `Map` or a `Set` by that name.
+    fn changes(&self, c: TsNode) -> Vec<Held> {
+        let Some(f) = function_of(c).filter(|f| f.kind() == "member_expression") else { return vec![] };
+        let (Some(o), Some(p)) = (f.child_by_field_name("object"), f.child_by_field_name("property")) else { return vec![] };
+        let name = text(o, self.src);
+        if o.kind() != "identifier"
+            || !self.containers.contains(name)
+            || !knowledge::mutates(knowledge::Registry::Npm, "javascript", text(p, self.src))
+        {
+            return vec![];
+        }
+        let ty = self.locals.get(name).cloned().unwrap_or_default();
+        vec![Held { ty, name: name.to_string(), at: o.start_byte() as u32 }]
     }
 
     fn bucket_path(&self, parts: &[String]) -> Bucket {

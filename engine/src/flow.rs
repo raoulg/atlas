@@ -100,13 +100,14 @@ fn nest(sites: &mut [Site], gives_class: &HashMap<String, String>, next: &mut us
 
 /// A library's operation handed one value and giving a value of the same type, either the result of
 /// the step before it or the value it is named for, is an identity (`option.ok_or_else(..)`,
-/// `x = x.copy()`): the arrow is not drawn, and the step before it gives what it names.
+/// `x = x.copy()`): the arrow is not drawn, and the step before it gives what it names. A call that
+/// changes what it is called on is none, even where the graph follows nothing else it is handed.
 fn drop_identities(sites: &mut Vec<Site>) {
     let mut gone = vec![];
     for b in 0..sites.len() {
         let s = &sites[b];
         let ([h], [g]) = (s.hands.as_slice(), s.gives.as_slice()) else { continue };
-        if !s.to.is_empty() || g.ty.is_empty() || g.ty != h.ty || !(h.name.starts_with('#') || h.name == g.name) {
+        if !s.to.is_empty() || s.changes || g.ty.is_empty() || g.ty != h.ty || !(h.name.starts_with('#') || h.name == g.name) {
             continue;
         }
         let (h, g) = (h.clone(), g.clone());

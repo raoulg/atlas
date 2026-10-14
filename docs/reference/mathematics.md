@@ -163,8 +163,12 @@ replaced by `Boek` wherever the promise names it.
 **What.** A function's type is its domain and its codomain.
 **In Atlas.** A package names its doors, and each door says what goes in and what comes out. A
 change to an input is part of the codomain (`T → T`) and shows in the signature. A function
-whose value is used says what it gives back.
-**Where.** Principles `doors`, `changes` and `gives`.
+whose value is used says what it gives back. A call that changes the value it is called on is
+such an arrow inside a body, `T × A → T`: a step that makes its receiver anew from what it is
+handed (`rows.append(row)`), so a value gathered into a container is followed to where the
+container goes.
+**Where.** Principles `doors`, `changes` and `gives`; the steps of a body (`body.rs`), with the
+calls that change their receiver in `knowledge::MUTATORS`.
 
 ## Graph theory
 

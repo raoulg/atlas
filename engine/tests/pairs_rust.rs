@@ -397,3 +397,33 @@ fn sums_a_choice_is_made_where_it_arises() {
 fn sums_a_result_handed_on_is_asked() {
     assert!(!found(shortcut(), "sums").is_empty());
 }
+
+/// One side of the collection pair (`tests/pairs/collections`): a store that reads its rows,
+/// pushes one and writes them back, in Python, Rust and TypeScript alike.
+fn gathering(side: &str) -> Graph {
+    analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/collections/rust").join(side), &Options::default()).expect("reads")
+}
+
+/// What a call changes in place, it gives: `rows.push(Row { .. })` on a `Vec` is a step that makes
+/// `rows` from what it is handed (std's row of the mutators), so the Reading reaches what
+/// `write(&rows)` puts. The clean `get` gives the Readings back; the shortcut's gives the lines, and
+/// `lens` asks where the Reading went. `DroppedStore` pushes onto another `Vec`: it puts no
+/// Reading and is not asked. The program's own `Frozen::push` returns a new value, and
+/// `path.exists()` only looks: neither changes what it is called on. The file a write names is
+/// its path (`&self.path`), not the `"\n"` it joins the lines with.
+#[test]
+fn lens_what_is_pushed_onto_what_is_put_is_put() {
+    let (c, s) = (gathering("clean"), gathering("shortcut"));
+    let fs = check(&c);
+    assert!(fs.is_empty(), "{:#?}", fs.iter().map(|f| format!("{} {} {}", f.principle, f.node, f.what)).collect::<Vec<_>>());
+    let put = node(&s, "gathering.Store.put");
+    assert!(
+        put.sites.iter().any(|x| x.op == "push" && x.hands.iter().any(|h| h.name == "rows") && x.gives.iter().any(|g| g.name == "rows")),
+        "{:?}",
+        put.sites
+    );
+    assert!(node(&s, "gathering.Store.write").touches.iter().any(|t| t.what == "self.path"));
+    assert_eq!(found(&s, "lens"), ["gathering.Store"]);
+    let observe = node(&s, "gathering.observe");
+    assert!(observe.sites.iter().flat_map(|x| &x.gives).all(|g| g.name != "frozen" && g.name != "path"), "{:?}", observe.sites);
+}

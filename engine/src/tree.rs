@@ -256,8 +256,17 @@ pub fn what_of(call: TsNode, src: &[u8], string_kinds: &[&str], arg_field: &str)
         return lit.trim().to_string();
     }
     let Some(args) = call.child_by_field_name(arg_field) else { return String::new() };
-    match named_children(args).into_iter().next() {
-        Some(a) if matches!(a.kind(), "identifier" | "attribute" | "field_expression" | "reference_expression" | "scoped_identifier") => {
+    named_children(args).into_iter().next().map_or(String::new(), |a| what_in(a, src, string_kinds))
+}
+
+/// What one argument names a place by: the first string literal in it, else the name it is
+/// written as (`&self.path` is `self.path`).
+pub fn what_in(a: TsNode, src: &[u8], string_kinds: &[&str]) -> String {
+    if let Some(lit) = literals(a, src, string_kinds).into_iter().find(|l| !crate::effects::is_mode(l)) {
+        return lit.trim().to_string();
+    }
+    match a.kind() {
+        "identifier" | "attribute" | "field_expression" | "reference_expression" | "scoped_identifier" => {
             text(a, src).trim_start_matches('&').trim_start_matches("mut ").to_string()
         }
         _ => String::new(),

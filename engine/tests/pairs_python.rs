@@ -444,9 +444,43 @@ fn zoom_is_a_quotient_by_composition() {
 }
 
 /// The calls the shortcut's harvester makes on its `Any` parts are steps of its body, with no
-/// target Atlas can name.
+/// target Atlas can name; beside them, `convert` and the `append` that gathers the results.
 #[test]
 fn zoom_is_a_quotient_by_composition_a_call_on_any_stays_a_step() {
     let collect = shortcut().node("harvest.harvester.Harvester.collect").unwrap();
-    assert_eq!(collect.sites.len(), 4, "self.client.latest, convert, self.store.save, self.store.save_outage: {:#?}", collect.sites);
+    assert_eq!(
+        collect.sites.len(),
+        5,
+        "self.client.latest, convert, self.store.save, self.store.save_outage, results.append: {:#?}",
+        collect.sites
+    );
+}
+
+/// One side of the collection pair (`tests/pairs/collections`): a store that reads its rows,
+/// appends one and writes them back, in Python, Rust and TypeScript alike.
+fn gathering(side: &str) -> Graph {
+    analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/collections/python").join(side), &Options::default()).unwrap()
+}
+
+/// What a call changes in place, it gives: `rows.append(Row(reading))` is a step that makes `rows`
+/// from what it is handed, so the Reading reaches what `_write(rows)` puts. Both stores read their
+/// rows, append the new one and write them back. The clean `get` gives the Readings back; the
+/// shortcut's gives the lines, and `lens` asks where the Reading went. `DroppedStore` appends to
+/// another list and writes the rows as they were: it puts no Reading and is not asked. A method of
+/// the program's own that returns a new value (`Frozen.append`) and an observation whose result is
+/// dropped (`path.exists()`) change nothing.
+#[test]
+fn lens_what_is_appended_to_what_is_put_is_put() {
+    let (c, s) = (gathering("clean"), gathering("shortcut"));
+    let fs = check(&c);
+    assert!(fs.is_empty(), "{:#?}", fs.iter().map(|f| format!("{} {} {}", f.principle, f.node, f.what)).collect::<Vec<_>>());
+    let put = s.node("gathering.store.Store.put").unwrap();
+    assert!(
+        put.sites.iter().any(|x| x.op == "append" && x.hands.iter().any(|h| h.name == "rows") && x.gives.iter().any(|g| g.name == "rows")),
+        "{:?}",
+        put.sites
+    );
+    assert_eq!(found(&s, "lens"), ["gathering.store.Store"]);
+    let observe = s.node("gathering.store.observe").unwrap();
+    assert!(observe.sites.iter().flat_map(|x| &x.gives).all(|g| g.name != "frozen" && g.name != "path"), "{:?}", observe.sites);
 }

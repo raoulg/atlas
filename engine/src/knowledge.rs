@@ -531,7 +531,8 @@ pub fn rust_container(name: &str) -> bool {
 /// library's (networkx's graphs). By registry and source.
 /// The builtins' row is the methods of Python's `MutableSequence`, `MutableMapping` and
 /// `MutableSet`, with `list.sort`; a call changes its receiver when ty says it goes to the
-/// package of its row.
+/// package of its row. The `std` row is the methods of Rust's collections (`Vec`, `String`,
+/// `VecDeque`, the maps and sets) that take `&mut self` and change what they hold.
 pub const MUTATORS: &[(Registry, &str, &[&str])] = &[
     (
         Registry::PyPi,
@@ -544,7 +545,42 @@ pub const MUTATORS: &[(Registry, &str, &[&str])] = &[
         "javascript",
         &["push", "pop", "shift", "unshift", "splice", "sort", "reverse", "fill", "copyWithin", "set", "delete", "clear", "add"],
     ),
+    (
+        Registry::Crates,
+        "std",
+        &[
+            "push",
+            "push_str",
+            "push_back",
+            "push_front",
+            "append",
+            "extend",
+            "insert",
+            "remove",
+            "swap_remove",
+            "pop",
+            "pop_back",
+            "pop_front",
+            "clear",
+            "retain",
+            "truncate",
+            "resize",
+            "drain",
+            "split_off",
+            "dedup",
+            "sort",
+            "sort_by",
+            "sort_by_key",
+            "sort_unstable",
+            "reverse",
+        ],
+    ),
 ];
+
+/// The language's own containers that change in place, as TypeScript names them in a type or a
+/// `new`: an array (`Row[]`, `Array<Row>`), a `Map` and a `Set`. What changes them is the
+/// `javascript` row of `MUTATORS`.
+pub const TYPESCRIPT_CHANGEABLE: &[&str] = &["Array", "Map", "Set", "WeakMap", "WeakSet"];
 
 /// A package whose methods change the value they are called on when handed this keyword as
 /// `True`: pandas' `inplace=True`.
@@ -556,8 +592,8 @@ pub fn mutators(from: Registry) -> Vec<&'static str> {
 }
 
 /// Whether a method of a package changes what it is called on.
-pub fn mutates(package: &str, method: &str) -> bool {
-    MUTATORS.iter().any(|(r, p, ms)| *r == Registry::PyPi && *p == package && ms.contains(&method))
+pub fn mutates(from: Registry, package: &str, method: &str) -> bool {
+    MUTATORS.iter().any(|(r, p, ms)| *r == from && *p == package && ms.contains(&method))
 }
 
 /// Functions that change an argument they are handed, by package, name and the argument's
@@ -1488,6 +1524,9 @@ pub const TYPESCRIPT_OWN_TYPES: OwnTypes = OwnTypes {
 /// Python's module of the names every module has without an import (`len`, `isinstance`), as ty
 /// names where they are defined.
 pub const PYTHON_BUILTINS_MODULE: &str = "builtins";
+
+/// The crate the prelude's types are of: `Vec` and `String` are `std`'s.
+pub const RUST_PRELUDE_CRATE: &str = "std";
 
 /// Rust's names in scope without a `use`: the prelude's types, variants, traits and `drop`, and
 /// the primitive types (`u32::from`). Its macros (`println!`, `vec!`) are not calls.

@@ -37,7 +37,8 @@ Read it from left to right:
   on a subclass's value is that subclass's (`ComparePlot.plot`). Values are drawn by the
   names the code holds them by (`Graph · g`, `DataFrame · data`), and a step that changes a
   value hands it on under the same name. A library operation Atlas does not read is a step in
-  italics where the code names its result (`to_numpy`). In a notebook, each call that makes
+  italics where the code names its result (`to_numpy`), or where it changes the container it is
+  called on (`rows.append(row)` hands on `rows`). In a notebook, each call that makes
   a figure makes its own (`Figure 3 · ResidualPlot.plot`).
 - **Files fold into their folders** once a picture holds more than a column's worth:
   `File(artefacts/) · 8` opens into what is in it with a click.

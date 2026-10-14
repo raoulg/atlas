@@ -246,6 +246,10 @@ pub struct Site {
     /// graph does not say.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub not_followed: bool,
+    /// The call changes the value it is called on, and gives it (`rows.append(row)`): a step
+    /// `T × A → T`, never an identity, however much of `A` the graph follows.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub changes: bool,
     /// The class of the value a method is called on, when that is a subclass of the method's own
     /// class (`ComparePlot(..).plot()` reaches `BasePlot.plot` on a `ComparePlot`).
     #[serde(default, skip_serializing_if = "String::is_empty")]

@@ -89,6 +89,17 @@ pub struct Step {
     pub command_line: Option<Vec<String>>,
 }
 
+/// What a call gives: the values it returns, and the named values it changes in place
+/// (`rows.append(row)` gives `rows`).
+fn changed_values(mut gives: Vec<Held>, changed: Vec<Held>) -> Vec<Held> {
+    for value in changed.into_iter().filter(|h| !h.name.is_empty()) {
+        if !gives.contains(&value) {
+            gives.push(value);
+        }
+    }
+    gives
+}
+
 /// The steps of a body in the order they run, the names they keep, and the edges they make: read
 /// the same way for every language. The reader says what each call is; where it sits among the
 /// body's choices is read here.
@@ -160,6 +171,20 @@ impl<'t, 's> Steps<'t, 's> {
             return;
         }
         self.unread(c, op, hands, gives, false);
+    }
+
+    /// A call `op` the body reads no further that changes the values `changed` it is called on
+    /// (`rows.append(row)`, `random.shuffle(xs)`): a step that gives them anew from what it is
+    /// handed, `T × A → T`, beside what it returns.
+    pub fn changes(&mut self, c: TsNode, op: &str, hands: Vec<Held>, gives: Vec<Held>, changed: Vec<Held>) {
+        let gives = changed_values(gives, changed);
+        if gives.is_empty() {
+            return;
+        }
+        self.unread(c, op, hands, gives, false);
+        if let Some(s) = self.sites.last_mut() {
+            s.changes = true;
+        }
     }
 
     /// A library's call `op` that parses the command line the program is run with into values,

@@ -61,7 +61,7 @@ lets it be traced and Atlas does not yet; each gap is an ignored test in `pairs_
 | choices | finding | finding | finding |
 | nothing | finding | finding | finding |
 | layers | finding | finding | finding; a call among a macro's tokens is a step |
-| lens | finding; takes, returns and has; the steps a value is handed to | finding; takes and returns; the tables a store's client runs statements on | finding; takes and returns; the tables a store's connection runs statements on |
+| lens | finding; takes, returns and has; the steps a value is handed to, a container's `append` among them | finding; takes and returns; the tables a store's client runs statements on; a `push` onto an array the body declares | finding; takes and returns; the tables a store's connection runs statements on; a `push` onto a `Vec` |
 | a place carries a what | a file's path, a request's host | a file's path, a request's host | the type a step gives, a request's host, a program by its constant's value |
 | a route ends at a visible place | the places a route reaches; a call not followed is a step | the places a route reaches; a call through a key is a step | the places a route reaches, through a client held in a field |
 | zoom by base type and composition | inherits and has edges; what a base's method is handed reaches its overrides | inherits and has edges; the member a parameter is runs | inherits and has edges; a unit struct named is built, a matched value has its variant's type |
@@ -451,9 +451,17 @@ is handed), a call Atlas cannot follow may put what it is handed wherever its fu
 value no step makes (`for r in readings`, `x = p.field`) is part of any parameter whose type holds
 its type, and a parameter no step is handed by name reaches the place when any step puts there.
 
-Blind: a value put into a container through a call whose result no one keeps (`rows.append(row)`)
-is no step of the graph, so what is made of a parameter and gathered that way, then written,
-does not reach the place.
+A call that changes the value it is called on is a step that makes that value anew from what it
+is handed, `T × A → T`: `rows.append(row)`, `rows.push(row)`, `seen.add(key)`. What is made of a
+parameter and gathered into a container that way, then written, reaches the place; what is
+gathered into a container that is not written does not. Which calls change what they are called
+on is a fact of the language or the library, never of a method's name alone: in Python, a method
+ty says is one of `builtins`' mutable containers (or a library's, networkx's graphs); in Rust, a
+method of a std collection on a value the body declares or makes as one (`Vec`, `String`,
+`VecDeque`, the maps and sets); in TypeScript, the language's own on a name the body declares or
+builds as an array, a `Map` or a `Set`. A method of the program's own changes its receiver when
+its body does. One that returns a new value (`Frozen.append(row) -> Frozen`) changes nothing, and
+neither does an observation whose result is dropped (`path.exists()`).
 
 rkg: `RegisterSink` puts `Graph`, `Oordeel` and `Verbruik` into SQLite. `Graph` and `Oordeel`
 come back through `RegisterRepository`, a second class on the same place; `Verbruik` comes

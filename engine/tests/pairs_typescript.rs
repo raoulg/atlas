@@ -456,3 +456,36 @@ fn lens_puts_and_gets_at_the_table() {
     assert!(!asked(c, "lens", "store.ExpenseStore"));
     assert!(asked(s, "lens", "store.ExpenseStore"), "{:?}", asked_anywhere(s, "lens"));
 }
+
+/// One side of the collection pair (`tests/pairs/collections`): a store that reads its rows,
+/// pushes one and writes them back, in Python, Rust and TypeScript alike.
+fn gathering(side: &str) -> Graph {
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/collections/typescript").join(side);
+    analyze(&dir, &Options::default()).expect("reads")
+}
+
+/// What a call changes in place, it gives: `rows.push(new Row(reading))` on a name the body
+/// declares an array is the language's own step, which makes `rows` from what it is handed, so the
+/// Reading reaches what `this.write(rows)` puts. It is no call Atlas cannot follow, which might put
+/// what it is handed anywhere. The clean `get` gives the Readings back; the shortcut's gives the
+/// lines, and `lens` asks where the Reading went. `DroppedStore` pushes onto another array: it puts
+/// no Reading and is not asked. The program's own `Frozen.push` returns a new value and changes
+/// nothing.
+#[test]
+fn lens_what_is_pushed_onto_what_is_put_is_put() {
+    let (c, s) = (gathering("clean"), gathering("shortcut"));
+    assert!(findings(&c).is_empty(), "{:?}", findings(&c).iter().map(|f| format!("{} {}", f.node, f.what)).collect::<Vec<_>>());
+    let put = s.node(&format!("{}.gathering.Store.put", s.root)).unwrap();
+    assert!(
+        put.sites.iter().any(|x| x.op == "push"
+            && !x.not_followed
+            && x.hands.iter().any(|h| h.name == "rows")
+            && x.gives.iter().any(|g| g.name == "rows")),
+        "{:?}",
+        put.sites
+    );
+    assert!(asked(&s, "lens", "gathering.Store"), "{:?}", asked_anywhere(&s, "lens"));
+    assert!(!asked(&s, "lens", "gathering.DroppedStore"), "{:?}", asked_anywhere(&s, "lens"));
+    let observe = s.node(&format!("{}.gathering.observe", s.root)).unwrap();
+    assert!(observe.sites.iter().flat_map(|x| &x.gives).all(|g| g.name != "frozen"), "{:?}", observe.sites);
+}

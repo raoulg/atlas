@@ -1832,6 +1832,11 @@ impl<'a, 't> Body<'a, 't> {
         for l in walk(body, &["let_declaration"]) {
             let Some(pat) = l.child_by_field_name("pattern").filter(|p| matches!(p.kind(), "identifier" | "mut_pattern")) else { continue };
             let name = text(pat, src).trim_start_matches("mut ").to_string();
+            let declared = type_names(l.child_by_field_name("type"), src);
+            if let Some(t) = declared.iter().find_map(|t| self.resolve(t).filter(|r| r.starts_with("ext:"))) {
+                self.foreign.insert(name.clone(), t);
+            }
+            let annotated = declared.iter().find_map(|t| self.resolve(t).and_then(|t| self.class_of(&t)));
             let mut value = l.child_by_field_name("value");
             while let Some(v) = value {
                 value = match v.kind() {
@@ -1853,7 +1858,7 @@ impl<'a, 't> Body<'a, 't> {
             if let Some(made) = l.child_by_field_name("value") {
                 self.made_by.insert(name.clone(), made);
             }
-            match value.and_then(|v| self.value_class(v)) {
+            match annotated.or_else(|| value.and_then(|v| self.value_class(v))) {
                 Some(t) => {
                     self.locals.insert(name, t);
                 }
@@ -2233,6 +2238,12 @@ impl<'a, 't> Body<'a, 't> {
             _ => self.value_class(value),
         };
         let own = receiver.as_deref().and_then(|r| self.store.method_of(r, &method)).filter(|t| !t.starts_with("ext:"));
+        if own.is_none() && self.changes_library_value(value, &method) {
+            let hands = self.call_hands(c, Some(value), &steps.kept);
+            let changed = self.hands(&[Some(value)], &steps.kept);
+            steps.changes(c, &method, hands, self.gives(c, None), changed);
+            return;
+        }
         match (own, receiver) {
             (Some(t), r) => self.own_step(steps, c, &t, Some(value), r.as_deref(), None),
             // a method not found on a name's type (`to_string`, `clone`) is not known; it builds nothing
@@ -2245,6 +2256,27 @@ impl<'a, 't> Body<'a, 't> {
                 self.keep(touches);
             }
         }
+    }
+
+    /// Whether `method` changes the library value it is called on: the value's type, as the body
+    /// declares it or else as it makes it, is of a crate whose row of `knowledge::MUTATORS` has
+    /// the method. A prelude type (`Vec`, `String`) is std's.
+    fn changes_library_value(&self, value: TsNode<'t>, method: &str) -> bool {
+        let ty = match self.declared(value) {
+            Some(ty) => ty,
+            None => match library_chain(value, self.m, self.src, &self.made_by, &|v| self.declared(v)) {
+                Some(made) => made.ty,
+                None => return false,
+            },
+        };
+        let Some(t) = self.resolve(&ty) else { return false };
+        let Some(path) = t.strip_prefix("ext:") else { return false };
+        let krate = match path.split_once('.') {
+            Some((k, _)) => k,
+            None if knowledge::RUST_PRELUDE.contains(&path) => knowledge::RUST_PRELUDE_CRATE,
+            None => return false,
+        };
+        knowledge::mutates(knowledge::Registry::Crates, krate, method)
     }
 
     /// The library type a value is declared to be: a parameter's (`conn: &Connection`), or a
@@ -2478,10 +2510,13 @@ impl<'a, 't> Body<'a, 't> {
         for (kind, a) in files {
             let lits = literals(a, self.src, STRINGS);
             let mut cr = Crosses::read(c, self.src, kind, None, op, &lits, STRINGS, &self.locals);
-            // a call handed two paths names each by its own argument
-            if two {
-                cr.what = lits.first().map(|l| l.trim().to_string()).unwrap_or_else(|| text(a, self.src).to_string());
-            }
+            // a file is named by the argument that is its path, not by what is written into it; a
+            // call handed two paths names each by its own
+            cr.what = if two {
+                lits.first().map(|l| l.trim().to_string()).unwrap_or_else(|| text(a, self.src).to_string())
+            } else {
+                crate::tree::what_in(a, self.src, STRINGS)
+            };
             cr.fixed = crate::tree::head_literal(a, self.src, STRINGS);
             let built = self.eval.of(self.at(), a, 0);
             out.extend(cr.touches(None).into_iter().map(|t| (t, built.clone())));

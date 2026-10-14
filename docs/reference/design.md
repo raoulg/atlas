@@ -167,7 +167,9 @@ method called on a value of a subclass is that subclass's (the language's own di
 receiver's type: ty's in Python, the declared and constructed types in Rust and TypeScript). An arrow takes what its function declares and what its call
 hands it, and hands on what it gives back; each value is the one the body holds by its
 name, so `data` from one call is the `data` the next takes. A library's operation Atlas does
-not read is an arrow where the body names its result (`tests = data["x"].to_numpy()`);
+not read is an arrow where the body names its result (`tests = data["x"].to_numpy()`), or
+where it changes the value it is called on (`rows.append(row)`: `list[Row] × Row → list[Row]`,
+by the language's or the library's table of what changes its receiver, never by a name alone);
 what it gives without a name goes into the call around it. Where ty does not know a value's
 type, the value is still followed by its name, and no type is guessed. A body that gives
 nothing back has only its own effects as its own arrow.

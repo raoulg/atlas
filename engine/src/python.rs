@@ -1526,7 +1526,9 @@ fn library_change<'t>(facts: Option<&Facts>, c: TsNode<'t>, src: &[u8]) -> Optio
     let in_place =
         knowledge::IN_PLACE.iter().any(|(p, k)| *p == package && keyword_node(c, src, k).map_or(false, |v| text(v, src) == "True"));
     match f.kind() {
-        "attribute" if in_place || knowledge::mutates(&package, text(f.child_by_field_name("attribute")?, src)) => {
+        "attribute"
+            if in_place || knowledge::mutates(knowledge::Registry::PyPi, &package, text(f.child_by_field_name("attribute")?, src)) =>
+        {
             f.child_by_field_name("object")
         }
         _ => {
@@ -2619,6 +2621,10 @@ impl<'a, 't> Body<'a, 't> {
                 // it gives.
                 if let Some((op, options)) = self.command_line(&lib, fnode) {
                     steps.parses(c, &op, hands, gives, options);
+                } else if let Some(changed) = library_change(self.seen.facts, c, self.src) {
+                    let changed = self.seen.held_in(changed, self.ext, &steps.kept);
+                    let op = text(fnode, self.src).rsplit('.').next().unwrap_or("");
+                    steps.changes(c, op, hands, gives, changed);
                 } else if !assigned.is_empty() {
                     let op = match fnode.kind() {
                         "attribute" => fnode.child_by_field_name("attribute").map(|a| text(a, self.src).to_string()),
@@ -2662,6 +2668,16 @@ impl<'a, 't> Body<'a, 't> {
         });
         let kind = if seen.is_class(t) { EdgeKind::Instantiates } else { EdgeKind::Calls };
         let on_receiver = receiver.map_or(false, |o| o.kind() == "identifier" && text(o, self.src) == "self");
+        // a method of the program's own that changes its receiver gives it, beside what it returns
+        let mut gives = gives;
+        if seen.store.mutating.contains(t) {
+            for r in receiver.map(|r| seen.held_in(r, self.ext, &steps.kept)).unwrap_or_default().into_iter().filter(|h| !h.name.is_empty())
+            {
+                if !gives.contains(&r) {
+                    gives.push(r);
+                }
+            }
+        }
         steps.call(c, t, kind, None, Step { on: on.unwrap_or_default(), on_receiver, hands, gives, ..Default::default() });
         if kind == EdgeKind::Calls && value_used(c) {
             self.read.used.push(t.to_string());
