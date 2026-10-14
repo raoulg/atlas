@@ -1576,21 +1576,30 @@ async function renderPlaat() {
     const info = {label: `${ts.size} ${ts.size === 1 ? "type" : "types"}`, title: [...ts].map(typeLabel).sort().join(", "), sides};
     if (r === "~in") addEdge(rest, at, info); else addEdge(at, rest, info);
   }
-  // units that call one another while no data joins them: a dotted line, from the caller; in a union,
-  // in each reading that holds both, makes the call and joins them by no data
-  const unitPills = [...pills.values()].filter(P => P.steps[0].startsWith("unit:") && !isRest(P.steps[0].slice(5)));
-  const unitAt = id => unitPills.find(P => inUnit(id, P.steps[0].slice(5)));
+  // units that call one another while no data joins them: a dotted line, from the caller, between the
+  // smallest boxes drawn for the packages the two lie in, a closed package or an opened one's frame.
+  // Opening a package refines the line, to what inside it is called, and never takes it away; a box
+  // draws none to what it holds. In a union, a line is in each reading that holds both, makes the
+  // call and joins them by no data
+  const unitOf = B => (B.steps ? B.steps[0] : B.step || "").slice(5);
+  const unitBoxes = [...pills.values(), ...frames.values()].filter(B => (B.steps ? B.steps[0] : B.step || "").startsWith("unit:") && !isRest(unitOf(B)));
+  const unitAt = id => unitBoxes.filter(B => inUnit(id, unitOf(B))).reduce((a, B) => (!a || unitOf(B).length > unitOf(a).length ? B : a), null);
+  const holds = (B, X) => { for (let p = X.parent; p; p = frames.get(p)?.parent) if (p === B.id) return true; return false; };
+  // the data a box takes and hands on: a pill's own, a frame's the pills it holds
+  const dataOf = B => (pills.has(B.id) ? [B] : [...pills.values()].filter(P => holds(B, P)));
   const calling = new Map();  // `A>B` -> the readings in which code of A calls code of B
   for (const e of D.edges) if (e.kind === "calls" || e.kind === "instantiates") {
-    const A = unitAt(e.src), B = A && unitAt(e.dst), k = A && B && A.id + ">" + B.id;
-    if (!k || A === B) continue;
-    if (!calling.has(k)) calling.set(k, new Set());
-    for (const s of DIFF ? ["a", "b"] : ["u"]) if (!DIFF || inReading(e, s)) calling.get(k).add(s);
+    const A = unitAt(e.src), B = A && unitAt(e.dst);
+    if (!A || !B || A === B || holds(A, B) || holds(B, A)) continue;
+    const k = A.id + ">" + B.id;
+    if (!calling.has(k)) calling.set(k, {A, B, sides: new Set()});
+    for (const s of DIFF ? ["a", "b"] : ["u"]) if (!DIFF || inReading(e, s)) calling.get(k).sides.add(s);
   }
-  const joinedIn = (A, B, s) => [[A, B], [B, A]].some(([X, Y]) => [...X.C.keys()].some(k => Y.D.has(k) && (!DIFF || (X.Cs.get(k)?.has(s) && Y.Ds.get(k)?.has(s)))));
-  for (const A of unitPills) for (const B of unitPills) {
-    if (A === B || A.parent !== B.parent || !calling.has(A.id + ">" + B.id)) continue;
-    const sides = [...calling.get(A.id + ">" + B.id)].filter(s => !joinedIn(A, B, s) && (!DIFF || (A.sides.has(s) && B.sides.has(s))));
+  const joinedIn = (A, B, s) =>
+    [[A, B], [B, A]].some(([X0, Y0]) => dataOf(X0).some(X => dataOf(Y0).some(Y => [...X.C.keys()].some(k => Y.D.has(k) && (!DIFF || (X.Cs.get(k)?.has(s) && Y.Ds.get(k)?.has(s)))))));
+  const sidesOf = B => B.sides || new Set(["a", "b"]);
+  for (const {A, B, sides: made} of calling.values()) {
+    const sides = [...made].filter(s => !joinedIn(A, B, s) && (!DIFF || (sidesOf(A).has(s) && sidesOf(B).has(s))));
     if (sides.length) addEdge(A.id, B.id, {uses: true, sides: DIFF ? new Set(sides) : undefined});
   }
   // how each box of a union stands to the two readings. A step and a world place drawn from both are
