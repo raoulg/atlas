@@ -3,8 +3,9 @@
 //! (`/view`) in the viewer `atlas view` writes.
 //!
 //! The server answers GET requests over HTTP/1.1, one thread per connection, from the browser of
-//! this machine only. Each revision is read once, by its commit, for as long as the server runs;
-//! the working tree is read anew on every request, since it changes under the server.
+//! this machine only. Each revision is read once, by its commit, for as long as the server runs,
+//! and from one run to the next it is kept in the cache (`changes::parts_at`); the working tree is
+//! read anew on every request, since it changes under the server.
 
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
@@ -85,7 +86,11 @@ impl Server {
         }
         match req.path.as_str() {
             "/" => Answer::page(PAGE.replacen("/*__FONTS__*/", crate::FONTS, 1)),
-            "/api/log" => self.log(req).map_or_else(Answer::failed, |json| Answer { status: "200 OK", kind: "application/json", body: json.into_bytes() }),
+            "/api/log" => self.log(req).map_or_else(Answer::failed, |json| Answer {
+                status: "200 OK",
+                kind: "application/json",
+                body: json.into_bytes(),
+            }),
             "/view" => self.view(req).map_or_else(Answer::failed, Answer::page),
             _ => Answer::text("404 Not Found", format!("nothing at {}", req.path)),
         }
@@ -114,7 +119,8 @@ impl Server {
         }
     }
 
-    /// The parts of a revision, read once per commit; of the working tree (`worktree`), read now.
+    /// The parts of a revision, read once per commit, or kept from a run before; of the working
+    /// tree (`worktree`), read now.
     fn reading(&self, rev: &str) -> Result<(Named, Vec<Graph>)> {
         if rev == "worktree" {
             return Ok((changes::worktree(), changes::parts_at(&self.repo, None, &self.opts)?));
@@ -166,7 +172,12 @@ fn request(conn: &TcpStream) -> Result<Request> {
         }
     }
     let (path, query) = target.split_once('?').unwrap_or((&target, ""));
-    let query = query.split('&').filter(|kv| !kv.is_empty()).map(|kv| kv.split_once('=').unwrap_or((kv, ""))).map(|(k, v)| (decoded(k), decoded(v))).collect();
+    let query = query
+        .split('&')
+        .filter(|kv| !kv.is_empty())
+        .map(|kv| kv.split_once('=').unwrap_or((kv, "")))
+        .map(|(k, v)| (decoded(k), decoded(v)))
+        .collect();
     Ok(Request { method, path: decoded(path), query, host })
 }
 
@@ -188,7 +199,13 @@ fn decoded(s: &str) -> String {
 
 /// Write an answer and close the connection.
 fn reply(mut conn: TcpStream, a: Answer) -> Result<()> {
-    write!(conn, "HTTP/1.1 {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n", a.status, a.kind, a.body.len())?;
+    write!(
+        conn,
+        "HTTP/1.1 {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n",
+        a.status,
+        a.kind,
+        a.body.len()
+    )?;
     conn.write_all(&a.body)?;
     Ok(conn.flush()?)
 }

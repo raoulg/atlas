@@ -33,7 +33,13 @@ pub fn route_pattern(path: &str) -> Option<Regex> {
     let mut out = String::from("^");
     for piece in re(&PIECE, r"\{[^}]*\}|[^{]+").find_iter(path.trim_end_matches('/')) {
         let p = piece.as_str();
-        out += &if !p.starts_with('{') { regex::escape(p) } else if p.ends_with(":path}") { ".+".into() } else { "[^/]+".into() };
+        out += &if !p.starts_with('{') {
+            regex::escape(p)
+        } else if p.ends_with(":path}") {
+            ".+".into()
+        } else {
+            "[^/]+".into()
+        };
     }
     Regex::new(&(out + "/?$")).ok()
 }
@@ -53,7 +59,13 @@ pub fn asked_path(url: &str) -> Option<String> {
         Some(i) => {
             let after = &url[i + 3..];
             let slash = after.find('/')?;
-            let host = after[..slash].rsplit_once(':').map_or(&after[..slash], |(h, port)| if port.chars().all(|c| c.is_ascii_digit()) { h } else { &after[..slash] });
+            let host = after[..slash].rsplit_once(':').map_or(&after[..slash], |(h, port)| {
+                if port.chars().all(|c| c.is_ascii_digit()) {
+                    h
+                } else {
+                    &after[..slash]
+                }
+            });
             if !crate::knowledge::LOCAL_HOSTS.contains(&host) && !host.contains('{') {
                 return None;
             }
@@ -96,7 +108,8 @@ pub fn method_and_path(request: &str) -> (&str, &str) {
 /// `/{year}`).
 pub fn serving<'r>(routes: &'r [(String, String, String)], method: &str, path: &str) -> Vec<&'r (String, String, String)> {
     let known = !method.is_empty() && !method.contains('{');
-    let served: Vec<&(String, String, String)> = routes.iter().filter(|(_, m, p)| (!known || m.split('|').any(|x| x == method)) && route_matches(p, path)).collect();
+    let served: Vec<&(String, String, String)> =
+        routes.iter().filter(|(_, m, p)| (!known || m.split('|').any(|x| x == method)) && route_matches(p, path)).collect();
     let fewest = served.iter().map(|(_, _, p)| p.matches('{').count()).min().unwrap_or(0);
     served.into_iter().filter(|(_, _, p)| p.matches('{').count() == fewest).collect()
 }
@@ -153,8 +166,29 @@ pub const MAX: usize = 4;
 
 /// Operations whose path is a directory: what they list, unpack into or make.
 pub const DIR_OPS: &[&str] = &[
-    "iterdir", "glob", "rglob", "listdir", "scandir", "walk", "extractall", "mkdir", "makedirs", "rmtree", "copytree", "readdir", "readdirSync", "opendir",
-    "opendirSync", "mkdirSync", "cp", "cpSync", "create_dir", "create_dir_all", "remove_dir", "remove_dir_all", "read_dir",
+    "iterdir",
+    "glob",
+    "rglob",
+    "listdir",
+    "scandir",
+    "walk",
+    "extractall",
+    "mkdir",
+    "makedirs",
+    "rmtree",
+    "copytree",
+    "readdir",
+    "readdirSync",
+    "opendir",
+    "opendirSync",
+    "mkdirSync",
+    "cp",
+    "cpSync",
+    "create_dir",
+    "create_dir_all",
+    "remove_dir",
+    "remove_dir_all",
+    "read_dir",
 ];
 
 pub fn lit(s: &str) -> Built {
@@ -352,21 +386,42 @@ pub enum Whole {
 /// A parameter a call leaves out holds its `default`; so does one of a function nobody in the
 /// program calls (an entry's declared defaults), which otherwise holds what its users hand it,
 /// unknown. An entry the program also calls is run by its users as well.
-pub fn at_callers<H: Handing>(calls: &[H], family: &crate::builder::Family, default: &dyn Fn(&str, &str) -> Vec<Built>, entry: &dyn Fn(&str) -> bool, f: &str, b: &Built, depth: u32) -> Vec<(Whole, Built)> {
+pub fn at_callers<H: Handing>(
+    calls: &[H],
+    family: &crate::builder::Family,
+    default: &dyn Fn(&str, &str) -> Vec<Built>,
+    entry: &dyn Fn(&str) -> bool,
+    f: &str,
+    b: &Built,
+    depth: u32,
+) -> Vec<(Whole, Built)> {
     callers_of(calls, family, default, entry, f, b, None, depth)
 }
 
 /// `at_callers`, keeping to the calls of `f` that hand its parameter `only.0` a value that is an
 /// `only.1`, or one the code does not say: the member of a family a call on that parameter runs.
 #[allow(clippy::too_many_arguments)]
-fn callers_of<H: Handing>(calls: &[H], family: &crate::builder::Family, default: &dyn Fn(&str, &str) -> Vec<Built>, entry: &dyn Fn(&str) -> bool, f: &str, b: &Built, only: Option<(&str, &str)>, depth: u32) -> Vec<(Whole, Built)> {
+fn callers_of<H: Handing>(
+    calls: &[H],
+    family: &crate::builder::Family,
+    default: &dyn Fn(&str, &str) -> Vec<Built>,
+    entry: &dyn Fn(&str) -> bool,
+    f: &str,
+    b: &Built,
+    only: Option<(&str, &str)>,
+    depth: u32,
+) -> Vec<(Whole, Built)> {
     // what an object holds is what the callers of the function that set it up hand that function:
     // whole where that is, unless `f`'s own callers still have to hand the rest
     if let Some((g, p)) = b.iter().find_map(|s| match s {
         Seg::Held(g, p) => Some((g.clone(), p.clone())),
         _ => None,
     }) {
-        let held = if depth > DEPTH { vec![(Whole::In(f.to_string()), hole(&p))] } else { at_callers(calls, family, default, entry, &g, &vec![Seg::Param(p.clone())], depth + 1) };
+        let held = if depth > DEPTH {
+            vec![(Whole::In(f.to_string()), hole(&p))]
+        } else {
+            at_callers(calls, family, default, entry, &g, &vec![Seg::Param(p.clone())], depth + 1)
+        };
         let mut out = vec![];
         for (w, v) in held {
             for x in fill(b, &g, &p, &v) {
@@ -406,7 +461,14 @@ fn callers_of<H: Handing>(calls: &[H], family: &crate::builder::Family, default:
         .iter()
         .filter(|a| a.callee() == f)
         .map(|a| (a, None))
-        .chain(family.overrides.get(f).unwrap_or(&none).iter().flat_map(|(base, named)| calls.iter().filter(move |a| a.callee() == base).map(move |a| (a, Some(named)))))
+        .chain(
+            family
+                .overrides
+                .get(f)
+                .unwrap_or(&none)
+                .iter()
+                .flat_map(|(base, named)| calls.iter().filter(move |a| a.callee() == base).map(move |a| (a, Some(named)))),
+        )
         .filter(|(a, named)| match only {
             Some((p, class)) => theirs(*named, p).and_then(|q| a.class_handed(&q)).map_or(true, |k| family.is_a(&k, class)),
             None => true,
@@ -415,7 +477,8 @@ fn callers_of<H: Handing>(calls: &[H], family: &crate::builder::Family, default:
     if sites.is_empty() || depth > DEPTH {
         return substitute(b, unknown).into_iter().map(|x| (Whole::In(f.to_string()), x)).collect();
     }
-    let mut out: Vec<(Whole, Built)> = if entry(f) { substitute(b, unknown).into_iter().map(|x| (Whole::Users(f.to_string()), x)).collect() } else { vec![] };
+    let mut out: Vec<(Whole, Built)> =
+        if entry(f) { substitute(b, unknown).into_iter().map(|x| (Whole::Users(f.to_string()), x)).collect() } else { vec![] };
     for (a, named) in sites {
         let hands = |p: &str| theirs(named, p).and_then(|q| a.hands(&q));
         // through a base's method called on a parameter, the callers that hand that parameter
@@ -483,14 +546,24 @@ fn names_its_places(b: &Built, kind: crate::model::World) -> bool {
 
 /// Complete the waiting calls through their callers; `entry` says which functions are entries.
 /// A statement that names its places is whole where it is built.
-pub fn complete<H: Handing>(calls: Vec<Waiting>, handing: &[H], family: &crate::builder::Family, default: &dyn Fn(&str, &str) -> Vec<Built>, entry: &dyn Fn(&str) -> bool) -> Vec<Completed> {
+pub fn complete<H: Handing>(
+    calls: Vec<Waiting>,
+    handing: &[H],
+    family: &crate::builder::Family,
+    default: &dyn Fn(&str, &str) -> Vec<Built>,
+    entry: &dyn Fn(&str) -> bool,
+) -> Vec<Completed> {
     calls
         .into_iter()
         .map(|(f, t, built)| {
             let found = built
                 .iter()
                 .flat_map(|b| {
-                    let wholes = if names_its_places(b, t.kind) { vec![(Whole::In(f.clone()), b.clone())] } else { at_callers(handing, family, default, entry, &f, b, 0) };
+                    let wholes = if names_its_places(b, t.kind) {
+                        vec![(Whole::In(f.clone()), b.clone())]
+                    } else {
+                        at_callers(handing, family, default, entry, &f, b, 0)
+                    };
                     wholes.into_iter().map(|(w, x)| (w, x, decided(b, t.kind)))
                 })
                 .collect();
@@ -558,7 +631,13 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
                             store.add_edge(asker, handler, EdgeKind::Requests, Some(path.clone()));
                             served = true;
                         }
-                    } else if let Some(host) = crate::effects::facts(Crossing::to(World::Net), None, &t.op, std::slice::from_ref(&url)).places().into_iter().next().map(|(a, _)| a).filter(|a| !a.is_empty()) {
+                    } else if let Some(host) = crate::effects::facts(Crossing::to(World::Net), None, &t.op, std::slice::from_ref(&url))
+                        .places()
+                        .into_iter()
+                        .next()
+                        .map(|(a, _)| a)
+                        .filter(|a| !a.is_empty())
+                    {
                         placed.push((host, t.dir, fixed));
                     }
                     requested |= served;
@@ -568,7 +647,12 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
                         store.ask(asker, request(&method, &path));
                     }
                 } else if let World::Db(db) = t.kind {
-                    placed.extend(crate::effects::sql(db, std::slice::from_ref(&rendered)).unwrap_or_default().into_iter().map(|(table, dir)| (table, dir.or(t.dir), false)));
+                    placed.extend(
+                        crate::effects::sql(db, std::slice::from_ref(&rendered))
+                            .unwrap_or_default()
+                            .into_iter()
+                            .map(|(table, dir)| (table, dir.or(t.dir), false)),
+                    );
                 } else if let Some(p) = place(b, &t.op) {
                     placed.push((p, t.dir, fixed));
                 } else {

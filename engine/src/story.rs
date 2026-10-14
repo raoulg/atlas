@@ -9,7 +9,8 @@ use crate::model::{Edge, EdgeKind, Entry, EntryKind, Graph, Held, Node, NodeKind
 
 /// Every route into the program: its kind, its label and the id of the node it starts at.
 pub fn entries(g: &Graph) -> Vec<(EntryKind, &str, &str)> {
-    let mut out: Vec<(EntryKind, &str, &str)> = g.nodes.iter().filter_map(|n| n.entry.as_ref().map(|e| (e.kind, e.label.as_str(), n.id.as_str()))).collect();
+    let mut out: Vec<(EntryKind, &str, &str)> =
+        g.nodes.iter().filter_map(|n| n.entry.as_ref().map(|e| (e.kind, e.label.as_str(), n.id.as_str()))).collect();
     out.sort_by_key(|(k, l, _)| (kind_order(*k), *l));
     out
 }
@@ -70,10 +71,19 @@ pub fn kind_label(k: EntryKind) -> &'static str {
 }
 
 fn kind_order(k: EntryKind) -> usize {
-    [EntryKind::Make, EntryKind::Cli, EntryKind::Export, EntryKind::Script, EntryKind::Notebook, EntryKind::Route, EntryKind::Mcp, EntryKind::Test]
-        .iter()
-        .position(|x| *x == k)
-        .unwrap_or(9)
+    [
+        EntryKind::Make,
+        EntryKind::Cli,
+        EntryKind::Export,
+        EntryKind::Script,
+        EntryKind::Notebook,
+        EntryKind::Route,
+        EntryKind::Mcp,
+        EntryKind::Test,
+    ]
+    .iter()
+    .position(|x| *x == k)
+    .unwrap_or(9)
 }
 
 struct Story<'g> {
@@ -94,11 +104,24 @@ impl<'g> Story<'g> {
         for e in &g.edges {
             out.entry(e.src.as_str()).or_default().push(e);
         }
-        Story { g, nodes: g.nodes.iter().map(|n| (n.id.as_str(), n)).collect(), out, bodies: flow::bodies(g), entry: String::new(), reached: Default::default(), parses: false }
+        Story {
+            g,
+            nodes: g.nodes.iter().map(|n| (n.id.as_str(), n)).collect(),
+            out,
+            bodies: flow::bodies(g),
+            entry: String::new(),
+            reached: Default::default(),
+            parses: false,
+        }
     }
 
     fn find(&self, entry: &str) -> Option<&'g str> {
-        let n = self.g.nodes.iter().find(|n| n.id == entry).or_else(|| self.g.nodes.iter().find(|n| n.entry.as_ref().map_or(false, |e| e.label == entry)))?;
+        let n = self
+            .g
+            .nodes
+            .iter()
+            .find(|n| n.id == entry)
+            .or_else(|| self.g.nodes.iter().find(|n| n.entry.as_ref().map_or(false, |e| e.label == entry)))?;
         Some(n.id.as_str())
     }
 
@@ -115,7 +138,11 @@ impl<'g> Story<'g> {
         let mut seq = 0;
         let mut next = || {
             seq += 1;
-            if prefix.is_empty() { seq.to_string() } else { format!("{prefix}.{seq}") }
+            if prefix.is_empty() {
+                seq.to_string()
+            } else {
+                format!("{prefix}.{seq}")
+            }
         };
         let level = prefix.matches('.').count() + usize::from(!prefix.is_empty());
         // the parse of the command line is the entry's, not a step of the route
@@ -132,7 +159,15 @@ impl<'g> Story<'g> {
                     }
                     let k = next();
                     for m in members {
-                        self.step(&m.step, m.step.site.and_then(|i| sites.get(i)), &format!("{k}{}", letter(m.branch)), level, depth, shown, out);
+                        self.step(
+                            &m.step,
+                            m.step.site.and_then(|i| sites.get(i)),
+                            &format!("{k}{}", letter(m.branch)),
+                            level,
+                            depth,
+                            shown,
+                            out,
+                        );
                     }
                 }
             }
@@ -143,14 +178,28 @@ impl<'g> Story<'g> {
         }
     }
 
-    fn step(&self, st: &Step, site: Option<&Site>, num: &str, level: usize, depth: usize, shown: &mut HashMap<String, String>, out: &mut String) {
+    fn step(
+        &self,
+        st: &Step,
+        site: Option<&Site>,
+        num: &str,
+        level: usize,
+        depth: usize,
+        shown: &mut HashMap<String, String>,
+        out: &mut String,
+    ) {
         let indent = "  ".repeat(level);
         let Some(n) = self.nodes.get(st.to.as_str()) else {
             // a library's operation: what the call hands it and what it gives, by name
-            let names = |hs: &[Held]| hs.iter().map(|h| if h.name.starts_with('#') { "·".to_string() } else { h.name.clone() }).collect::<Vec<_>>().join(", ");
+            let names = |hs: &[Held]| {
+                hs.iter().map(|h| if h.name.starts_with('#') { "·".to_string() } else { h.name.clone() }).collect::<Vec<_>>().join(", ")
+            };
             let (hands, gives) = site.map(|s| (names(&s.hands), names(&s.gives))).unwrap_or_default();
             let op = st.to.strip_prefix("op:").unwrap_or(&st.to);
-            out.push_str(&format!("{indent}{num}  {op}({hands}){}\n", if gives.is_empty() { String::new() } else { format!(" → {gives}") }));
+            out.push_str(&format!(
+                "{indent}{num}  {op}({hands}){}\n",
+                if gives.is_empty() { String::new() } else { format!(" → {gives}") }
+            ));
             return;
         };
         let k = flow::key(&st.to, &st.on);
@@ -204,7 +253,8 @@ impl<'g> Story<'g> {
             Some(r) => r.value.clone(),
             None => String::new(),
         };
-        let changes: Vec<String> = self.edges(&n.id, EdgeKind::Mutates).filter_map(|e| self.nodes.get(e.dst.as_str()).map(|t| t.name.clone())).collect();
+        let changes: Vec<String> =
+            self.edges(&n.id, EdgeKind::Mutates).filter_map(|e| self.nodes.get(e.dst.as_str()).map(|t| t.name.clone())).collect();
         let mut out = format!("({})", names.join(", "));
         if !ret.is_empty() {
             out.push_str(&format!(" → {ret}"));
@@ -229,7 +279,11 @@ impl<'g> Story<'g> {
                 None => groups.push((v, if what.is_empty() { vec![] } else { vec![what] })),
             }
         }
-        groups.into_iter().map(|(v, items)| if items.is_empty() { v } else { format!("{v} {}", items.join(" | ")) }).collect::<Vec<_>>().join(" · ")
+        groups
+            .into_iter()
+            .map(|(v, items)| if items.is_empty() { v } else { format!("{v} {}", items.join(" | ")) })
+            .collect::<Vec<_>>()
+            .join(" · ")
     }
 }
 

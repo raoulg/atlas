@@ -29,7 +29,16 @@ impl Crosses {
     /// Read a call that crosses `kind` through operation `op` of `lib`: the facts its literals
     /// refine, what it touches, what flows (by the types of the names `held`), and whether its
     /// place starts at a literal. `strings` are the kinds of node a string is in the language.
-    pub fn read(c: TsNode, src: &[u8], kind: Crossing, lib: Option<&str>, op: &str, literals: &[String], strings: &[&str], held: &HashMap<String, String>) -> Crosses {
+    pub fn read(
+        c: TsNode,
+        src: &[u8],
+        kind: Crossing,
+        lib: Option<&str>,
+        op: &str,
+        literals: &[String],
+        strings: &[&str],
+        held: &HashMap<String, String>,
+    ) -> Crosses {
         let facts = effects::facts(kind, lib, op, literals);
         let what = what_of(c, src, strings, "arguments");
         let payload = payload_of(c, src, &what, "arguments", held);
@@ -46,7 +55,15 @@ impl Crosses {
             .map(|(artifact, dir)| {
                 // a URL without a host is the page's own origin, decided by whoever serves it
                 let fixed = self.fixed && (self.facts.kind != World::Net || !artifact.is_empty());
-                Touch { what: self.what.clone(), payload: self.payload.clone(), op: self.op.clone(), artifact, fixed, line: self.line, ..Touch::new(self.facts.kind, dir.or(said)) }
+                Touch {
+                    what: self.what.clone(),
+                    payload: self.payload.clone(),
+                    op: self.op.clone(),
+                    artifact,
+                    fixed,
+                    line: self.line,
+                    ..Touch::new(self.facts.kind, dir.or(said))
+                }
             })
             .collect()
     }
@@ -56,7 +73,8 @@ impl Crosses {
 /// reads the first and writes the second (`fs::copy(a, b)`, `shutil.move(src, dst)`,
 /// `copyFile(a, b)`); any other goes its own way with each.
 pub fn sides(op: &str, paths: usize) -> Option<[Crossing; 2]> {
-    (paths > 1 && matches!(effects::fs_op(op), effects::FsOp::Moves | effects::FsOp::Copies)).then_some([Crossing::read(World::Disk), Crossing::write(World::Disk)])
+    (paths > 1 && matches!(effects::fs_op(op), effects::FsOp::Moves | effects::FsOp::Copies))
+        .then_some([Crossing::read(World::Disk), Crossing::write(World::Disk)])
 }
 
 /// One call as a step of the route through its body: what it runs, on which class, what it is
@@ -111,7 +129,18 @@ impl<'t, 's> Steps<'t, 's> {
     pub fn call(&mut self, c: TsNode, to: &str, kind: EdgeKind, via: Option<String>, step: Step) {
         let arms = self.arms(c);
         self.keep(&step.gives);
-        let site = Site { line: line(c), to: to.to_string(), on: step.on, on_receiver: step.on_receiver, hands: step.hands, gives: step.gives, arms: arms.clone(), span: span(c), command_line: step.command_line, ..Default::default() };
+        let site = Site {
+            line: line(c),
+            to: to.to_string(),
+            on: step.on,
+            on_receiver: step.on_receiver,
+            hands: step.hands,
+            gives: step.gives,
+            arms: arms.clone(),
+            span: span(c),
+            command_line: step.command_line,
+            ..Default::default()
+        };
         self.sites.push(site);
         self.edges.push((to.to_string(), kind, via, arms));
     }
@@ -147,7 +176,15 @@ impl<'t, 's> Steps<'t, 's> {
     /// a step of the body, whatever it is handed and gives.
     pub fn not_followed(&mut self, c: TsNode, name: &str, hands: Vec<Held>, gives: Vec<Held>) {
         self.keep(&gives);
-        self.sites.push(Site { line: line(c), op: name.to_string(), hands, gives, arms: self.arms(c), span: span(c), ..Default::default() });
+        self.sites.push(Site {
+            line: line(c),
+            op: name.to_string(),
+            hands,
+            gives,
+            arms: self.arms(c),
+            span: span(c),
+            ..Default::default()
+        });
     }
 
     /// An edge of `kind` to `to` at call `c`, with no step of its own.

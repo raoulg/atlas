@@ -35,7 +35,8 @@ pub(super) fn read(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
         let nodes = &store.nodes;
         // a library's type that changes in place, not one of the program's of the same name
         let in_place = |m: &Module, ty: &[String]| {
-            ty.last().map_or(false, |t| knowledge::rust_interior(t)) && !resolve(m, ty, modules, nodes, crate_ids).and_then(|r| nodes.get(&r)).map_or(false, |n| n.kind == NodeKind::Class)
+            ty.last().map_or(false, |t| knowledge::rust_interior(t))
+                && !resolve(m, ty, modules, nodes, crate_ids).and_then(|r| nodes.get(&r)).map_or(false, |n| n.kind == NodeKind::Class)
         };
         let mut kept: HashMap<String, bool> = HashMap::new();
         for m in modules.values() {
@@ -48,7 +49,11 @@ pub(super) fn read(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
             let Some(def) = def_node(m, n) else { continue };
             let Some(body) = def.child_by_field_name("body") else { continue };
             let src = &m.src;
-            let own: HashMap<String, bool> = walk(body, &["static_item", "macro_invocation"]).into_iter().flat_map(|i| declared(i, m, &|t| in_place(m, t))).map(|s| (s.name, s.mutable)).collect();
+            let own: HashMap<String, bool> = walk(body, &["static_item", "macro_invocation"])
+                .into_iter()
+                .flat_map(|i| declared(i, m, &|t| in_place(m, t)))
+                .map(|s| (s.name, s.mutable))
+                .collect();
             let bound = bound_in(def, src);
             let mut found: Uses = vec![];
             for x in walk(body, &["identifier", "scoped_identifier"]) {
@@ -71,7 +76,8 @@ pub(super) fn read(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
             uses.push((n.id.clone(), found));
         }
     }
-    let changed: HashSet<String> = uses.iter().flat_map(|(_, u)| u.iter().filter(|(_, _, d, _)| *d == Dir::Write).map(|(k, ..)| k.clone())).collect();
+    let changed: HashSet<String> =
+        uses.iter().flat_map(|(_, u)| u.iter().filter(|(_, _, d, _)| *d == Dir::Write).map(|(k, ..)| k.clone())).collect();
     for (f, found) in uses {
         for (artifact, name, dir, line) in found.into_iter().filter(|(k, ..)| changed.contains(k)) {
             store.touch(&f, Touch { what: name.clone(), artifact, op: name, line, ..Touch::new(World::Global, Some(dir)) });
@@ -93,7 +99,9 @@ fn declared(item: TsNode, m: &Module, in_place: &dyn Fn(&[String]) -> bool) -> V
                 vec![]
             }
         }
-        "macro_invocation" => named_children(item).into_iter().filter(|t| t.kind() == "token_tree").flat_map(|t| in_tokens(t, src, in_place)).collect(),
+        "macro_invocation" => {
+            named_children(item).into_iter().filter(|t| t.kind() == "token_tree").flat_map(|t| in_tokens(t, src, in_place)).collect()
+        }
         _ => vec![],
     }
 }
@@ -108,8 +116,15 @@ fn in_tokens(tt: TsNode, src: &[u8], in_place: &dyn Fn(&[String]) -> bool) -> Ve
             mutable |= k == "mut";
             j += 1;
         }
-        let (Some(name), Some(":")) = (kids.get(j).filter(|k| k.kind() == "identifier"), kids.get(j + 1).map(|k| k.kind())) else { continue };
-        let ty: Vec<String> = kids[j + 2..].iter().take_while(|k| !matches!(k.kind(), "=" | ";")).filter(|k| k.kind() == "identifier").map(|k| text(*k, src).to_string()).collect();
+        let (Some(name), Some(":")) = (kids.get(j).filter(|k| k.kind() == "identifier"), kids.get(j + 1).map(|k| k.kind())) else {
+            continue;
+        };
+        let ty: Vec<String> = kids[j + 2..]
+            .iter()
+            .take_while(|k| !matches!(k.kind(), "=" | ";"))
+            .filter(|k| k.kind() == "identifier")
+            .map(|k| text(*k, src).to_string())
+            .collect();
         if mutable || ty.iter().any(|t| in_place(std::slice::from_ref(t))) {
             out.push(Static { name: text(*name, src).to_string(), mutable });
         }
@@ -123,7 +138,10 @@ fn in_tokens(tt: TsNode, src: &[u8], in_place: &dyn Fn(&[String]) -> bool) -> Ve
 fn used(x: TsNode, src: &[u8]) -> Option<Vec<String>> {
     let p = x.parent()?;
     if p.kind() != "token_tree" {
-        if matches!(p.kind(), "scoped_identifier" | "static_item" | "use_declaration" | "use_list" | "scoped_use_list" | "use_as_clause" | "use_wildcard") {
+        if matches!(
+            p.kind(),
+            "scoped_identifier" | "static_item" | "use_declaration" | "use_list" | "scoped_use_list" | "use_as_clause" | "use_wildcard"
+        ) {
             return None;
         }
         return Some(path_parts(Some(x), src)).filter(|p| !p.is_empty());
@@ -148,7 +166,13 @@ fn used(x: TsNode, src: &[u8]) -> Option<Vec<String>> {
 /// The static a path names, by where it is kept: by its name in its own module, through a `use`
 /// (one of its name, of its module, or of everything in its module), as a child module's
 /// (`rates::LATEST`), by a path from the crate, or where a `pub use` re-exports it.
-fn named(m: &Module, parts: &[String], kept: &HashMap<String, bool>, modules: &IndexMap<String, Module>, crate_ids: &HashMap<String, String>) -> Option<String> {
+fn named(
+    m: &Module,
+    parts: &[String],
+    kept: &HashMap<String, bool>,
+    modules: &IndexMap<String, Module>,
+    crate_ids: &HashMap<String, String>,
+) -> Option<String> {
     let head = parts.first()?;
     let rest: String = parts[1..].iter().map(|p| format!(".{p}")).collect();
     let mut ids: Vec<String> = vec![];
@@ -213,7 +237,10 @@ fn follow(mut n: TsNode, mut open: bool, mut refers: bool, src: &[u8], depth: u3
         match p.kind() {
             "field_expression" if is("value") => {
                 let method = p.child_by_field_name("field").map_or("", |f| text(f, src));
-                let Some(call) = p.parent().filter(|c| c.kind() == "call_expression" && c.child_by_field_name("function").map(|f| f.id()) == Some(p.id())) else {
+                let Some(call) = p
+                    .parent()
+                    .filter(|c| c.kind() == "call_expression" && c.child_by_field_name("function").map(|f| f.id()) == Some(p.id()))
+                else {
                     // a field of the value
                     refers = false;
                     n = p;
@@ -223,7 +250,9 @@ fn follow(mut n: TsNode, mut open: bool, mut refers: bool, src: &[u8], depth: u3
                     return handed.and(Effect::WRITES);
                 }
                 let guard = knowledge::rust_guards(method);
-                let here = closures(call, src).into_iter().fold(Effect::default(), |e, (body, name)| e.and(kept_in(body, &name, 0, open || guard, src, depth)));
+                let here = closures(call, src)
+                    .into_iter()
+                    .fold(Effect::default(), |e, (body, name)| e.and(kept_in(body, &name, 0, open || guard, src, depth)));
                 // what a method gives after handing the value to a closure is the closure's
                 if here.any() && !knowledge::hands_on(method) {
                     return handed.and(here);
@@ -252,7 +281,9 @@ fn follow(mut n: TsNode, mut open: bool, mut refers: bool, src: &[u8], depth: u3
                 refers = false;
                 n = p;
             }
-            "assignment_expression" | "compound_assignment_expr" if is("left") => return handed.and(if open { Effect::WRITES } else { Effect::READS }),
+            "assignment_expression" | "compound_assignment_expr" if is("left") => {
+                return handed.and(if open { Effect::WRITES } else { Effect::READS })
+            }
             "let_declaration" if is("value") && refers => return handed.and(local(p, open, src, depth)),
             _ => return handed.and(Effect::READS),
         }
@@ -262,7 +293,10 @@ fn follow(mut n: TsNode, mut open: bool, mut refers: bool, src: &[u8], depth: u3
 /// What a local that keeps a guard or a reference does with the static (`let mut g =
 /// X.lock().unwrap()`): what its uses after the `let` do. A `let` that binds a pattern reads it.
 fn local(decl: TsNode, open: bool, src: &[u8], depth: u32) -> Effect {
-    let name = decl.child_by_field_name("pattern").filter(|x| matches!(x.kind(), "identifier" | "mut_pattern")).map(|x| text(x, src).trim_start_matches("mut ").to_string());
+    let name = decl
+        .child_by_field_name("pattern")
+        .filter(|x| matches!(x.kind(), "identifier" | "mut_pattern"))
+        .map(|x| text(x, src).trim_start_matches("mut ").to_string());
     match (name, decl.parent()) {
         (Some(name), Some(scope)) => kept_in(scope, &name, decl.end_byte(), open, src, depth),
         _ => Effect::READS,
@@ -293,7 +327,10 @@ fn kept_in(scope: TsNode, name: &str, from: usize, open: bool, src: &[u8], depth
     if depth > 4 {
         return Effect::READS;
     }
-    let uses: Vec<TsNode> = walk(scope, &["identifier"]).into_iter().filter(|x| x.start_byte() >= from && text(*x, src) == name && used(*x, src).map_or(false, |p| p.len() == 1)).collect();
+    let uses: Vec<TsNode> = walk(scope, &["identifier"])
+        .into_iter()
+        .filter(|x| x.start_byte() >= from && text(*x, src) == name && used(*x, src).map_or(false, |p| p.len() == 1))
+        .collect();
     uses.iter().fold(Effect { writes: false, reads: uses.is_empty() }, |e, x| e.and(effect(*x, open, true, src, depth + 1)))
 }
 

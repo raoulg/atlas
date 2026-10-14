@@ -73,7 +73,7 @@ ignores, no dependency or build directory) and the files named on the command li
 text once, when a reader first asks, and a part of the repository is a view of the same reading.
 A package named on its own (`atlas view src/pkg`) is read as the project it is in, asked for that
 package: finding the project is part of reading, and nothing after it looks at the disk.
-What a library's code and types are is the environment's, read by ty. **Graph** is the one central type: typed nodes
+What a library's code and types are is the environment's, not the repository's: read by ty, from `node_modules`, from where Cargo keeps a crate. **Graph** is the one central type: typed nodes
 (modules, classes, functions) and typed edges, and on each function the places in the
 world its calls touch. Everything between parsing and drawing is `Graph → Graph`.
 **Picture** is geometry: positions, shapes, labels. **Source** is a span of text.
@@ -417,6 +417,18 @@ network, database, file or model library, plotly), and a package with compiled c
 source cannot be followed to the bottom. A library's code is drawn where a route steps into it,
 not as a package of the project, and `atlas check` does not judge it. A class handed to code
 Atlas reads (`pipeline.add(DiffValues)`) is built there.
+
+The rule is the same in every language. TypeScript reads a package in `node_modules` from what
+its `package.json` exports as code, through its re-exports; Rust reads a crate where Cargo keeps
+it, a path dependency or the version the lock names, through its `pub use`. What the graph keeps
+of a library is the fiber over "reached from the project" (`view::reached`): the functions the
+project's calls reach within the N rounds, a round a call, and the types those take, give and
+run on; the rest of a module read is dropped, so the graph grows with what the project uses, not
+with the size of the library (*Decision, PTT-491*). What lies beyond the fiber is not lost but
+glued into the library function at its border: every body of the code read is traced, and a
+kept library function is one arrow that touches every place its code reaches inside the library,
+as an operation the tables describe does; the project's own functions keep their own arrows apart
+from what they reach. Of a library's file the graph keeps only the lines its kept nodes show.
 
 What Atlas knows of libraries and frameworks is data: `engine/src/knowledge.rs`, one table per
 kind of fact. Which package reaches which part of the world (by registry: PyPI, crates.io,

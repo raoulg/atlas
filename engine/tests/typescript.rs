@@ -39,7 +39,10 @@ fn files_are_modules_and_types_are_types() {
     assert!(has(&fields, "lib.model.Regel", "lib.model.Laag"), "an interface's typed property");
     assert!(has(&fields, "lib.model.Laag", "lib.model.Bron"), "`constructor(private bron: Bron)` declares a field");
     let variants = edges(&g, EdgeKind::Variant);
-    assert!(has(&variants, "lib.model.Uitkomst", "lib.model.Treffer") && has(&variants, "lib.model.Uitkomst", "lib.model.Mis"), "a union alias is a sum");
+    assert!(
+        has(&variants, "lib.model.Uitkomst", "lib.model.Treffer") && has(&variants, "lib.model.Uitkomst", "lib.model.Mis"),
+        "a union alias is a sum"
+    );
 }
 
 /// Types in signatures are takes and returns; `Promise<Regel[]>` hands on Regels.
@@ -79,12 +82,18 @@ fn routes_render_components_and_hand_on_functions() {
 #[test]
 fn a_promise_is_kept_by_who_implements_it() {
     let g = fixture();
-    assert_eq!(g.node("fixture-ts.lib.bron.BronLike.lees").map(|n| n.kind), Some(NodeKind::Method), "a method signature of a named object type");
+    assert_eq!(
+        g.node("fixture-ts.lib.bron.BronLike.lees").map(|n| n.kind),
+        Some(NodeKind::Method),
+        "a method signature of a named object type"
+    );
     let calls = edges(&g, EdgeKind::Calls);
     assert!(has(&calls, "lib.bron.haal", "lib.bron.BronLike.lees"), "`bron.lees()` through the value's declared type");
     let inherits = edges(&g, EdgeKind::Inherits);
     assert!(has(&inherits, "lib.echte-bron.EchteBron", "lib.bron.BronLike"), "`implements BronLike`");
-    let arms = |dst: &str| g.edges.iter().find(|e| e.src == "fixture-ts.lib.bron.kiesBron" && e.dst == dst).map(|e| e.arms.clone()).unwrap_or_default();
+    let arms = |dst: &str| {
+        g.edges.iter().find(|e| e.src == "fixture-ts.lib.bron.kiesBron" && e.dst == dst).map(|e| e.arms.clone()).unwrap_or_default()
+    };
     let (nep, echt) = (arms("fixture-ts.lib.nep-bron.NepBron"), arms("fixture-ts.lib.echte-bron.EchteBron"));
     assert!(!nep.is_empty() && !echt.is_empty() && nep != echt, "two branches of one choice: {nep:?} | {echt:?}");
 }
@@ -116,7 +125,11 @@ fn a_server_registers_its_routes() {
     let g = fixture();
     let entry = |id: &str| g.node(&format!("fixture-ts.{id}")).and_then(|n| n.entry.clone()).map(|e| (e.kind, e.label));
     assert_eq!(entry("server.app.GET /api/health"), Some((EntryKind::Route, "GET /api/health".into())));
-    assert_eq!(entry("server.regels.regels.GET /:id"), Some((EntryKind::Route, "GET /api/regels/{id}".into())), "`app.route(\"/api/regels\", regels)`");
+    assert_eq!(
+        entry("server.regels.regels.GET /:id"),
+        Some((EntryKind::Route, "GET /api/regels/{id}".into())),
+        "`app.route(\"/api/regels\", regels)`"
+    );
     assert_eq!(entry("server.regels.regels.POST /"), Some((EntryKind::Route, "POST /api/regels".into())));
     assert!(g.node("fixture-ts.server.regels.regels").is_none(), "a router is no function");
     assert_eq!(entry("server"), Some((EntryKind::Cli, "dev · serve".into())), "the scripts that run server/index.ts");
@@ -131,14 +144,32 @@ fn a_server_registers_its_routes() {
 #[test]
 fn a_client_moves_data_where_it_is_used() {
     let g = fixture();
-    let t = |id: &str| g.node(&format!("fixture-ts.{id}")).unwrap().touches.iter().map(|t| (t.kind_name().to_string(), t.op.clone(), t.artifact.clone(), t.dir_name().to_string())).collect::<Vec<_>>();
+    let t = |id: &str| {
+        g.node(&format!("fixture-ts.{id}"))
+            .unwrap()
+            .touches
+            .iter()
+            .map(|t| (t.kind_name().to_string(), t.op.clone(), t.artifact.clone(), t.dir_name().to_string()))
+            .collect::<Vec<_>>()
+    };
     let post = t("server.regels.regels.POST /");
     assert!(post.contains(&("db_sql".into(), "query".into(), "regels".into(), "write".into())), "{post:?}");
     // a statement is read where it is whole: from a constant, and from what a caller hands `tel`
-    assert!(t("server.regels.regels.GET /:id").contains(&("db_sql".into(), "query".into(), "bezoek".into(), "write".into())), "`pool.query(BEZOEK)`");
-    assert_eq!(t("server.regels.tel"), [("db_sql".into(), "query".into(), "bezoek".into(), "read".into())], "`tel(\"SELECT count(*) FROM bezoek\")`");
+    assert!(
+        t("server.regels.regels.GET /:id").contains(&("db_sql".into(), "query".into(), "bezoek".into(), "write".into())),
+        "`pool.query(BEZOEK)`"
+    );
+    assert_eq!(
+        t("server.regels.tel"),
+        [("db_sql".into(), "query".into(), "bezoek".into(), "read".into())],
+        "`tel(\"SELECT count(*) FROM bezoek\")`"
+    );
     assert!(post.iter().any(|x| x.0 == "process" && x.1 == "run"), "`promisify(execFile)`: {post:?}");
-    assert_eq!(t("server.regels.vat"), [("llm".into(), "create".into(), String::new(), String::new())], "the client, not `zodOutputFormat`");
+    assert_eq!(
+        t("server.regels.vat"),
+        [("llm".into(), "create".into(), String::new(), String::new())],
+        "the client, not `zodOutputFormat`"
+    );
     assert_eq!(t("lib.thema.thema"), [("db_kv".into(), "getItem".into(), "thema".into(), "read".into())]);
     assert!(t("lib.thema.bewaar").contains(&("screen".into(), "write".into(), String::new(), String::new())), "process.stdout");
     assert_eq!(t("lib.thema.luister"), [("net".into(), "WebSocket".into(), "live.example.org".into(), String::new())]);
@@ -152,17 +183,29 @@ fn a_client_moves_data_where_it_is_used() {
 #[test]
 fn paths_and_requests_are_evaluated() {
     let g = fixture();
-    let t = |id: &str| g.node(&format!("fixture-ts.{id}")).unwrap().touches.iter().map(|t| (t.kind_name().to_string(), t.artifact.clone())).collect::<Vec<_>>();
+    let t = |id: &str| {
+        g.node(&format!("fixture-ts.{id}"))
+            .unwrap()
+            .touches
+            .iter()
+            .map(|t| (t.kind_name().to_string(), t.artifact.clone()))
+            .collect::<Vec<_>>()
+    };
     // the file `klanten` hands `lees`, in the routes that reach `klanten`: under `DATA`'s default,
     // or wherever `DATA_DIR` says, a place the code does not name
-    let lees: Vec<(&str, &[String])> = g.node("fixture-ts.server.opslag.lees").unwrap().touches.iter().map(|t| (t.artifact.as_str(), t.by.as_slice())).collect();
+    let lees: Vec<(&str, &[String])> =
+        g.node("fixture-ts.server.opslag.lees").unwrap().touches.iter().map(|t| (t.artifact.as_str(), t.by.as_slice())).collect();
     let klanten = &["fixture-ts.server.opslag.klanten".to_string()][..];
     assert_eq!(lees, [("data/klanten.csv", klanten), ("", klanten)], "`lees(\"klanten.csv\")` under `DATA`");
     // an object holds what its constructor was handed: a parameter property, and `this.map = map`;
     // `new Archief("archief").bewaar("a.txt", ..)` hands the method the rest of the path
     assert_eq!(t("server.opslag.Archief.bewaar"), [("disk_write".into(), "archief/a.txt".into())], "`constructor(private map: string)`");
     assert_eq!(t("server.opslag.Logboek.noteer"), [("disk_write".into(), "logs/log.txt".into())], "`this.map = map`");
-    assert_eq!(t("server.opslag.bewaar"), [("disk_write".into(), "uit/regels.pdf".into())], "`new URL(\"../../uit/regels.pdf\", import.meta.url)`");
+    assert_eq!(
+        t("server.opslag.bewaar"),
+        [("disk_write".into(), "uit/regels.pdf".into())],
+        "`new URL(\"../../uit/regels.pdf\", import.meta.url)`"
+    );
     let requests = edges(&g, EdgeKind::Requests);
     assert!(has(&requests, "lib.klant.regel", "server.regels.regels.GET /:id"), "{requests:?}");
     assert!(has(&requests, "lib.klant.nieuw", "server.regels.regels.POST /"), "{requests:?}");
@@ -199,6 +242,12 @@ fn a_typescript_body_lists_its_calls() {
 
 /// A small package written to a directory of its own, read, and removed.
 fn written(name: &str, files: &[(&str, &str)]) -> Graph {
+    read_with(name, files, &[Options::default()]).remove(0)
+}
+
+/// A small package written to a directory of its own, read once with each of `options`, and
+/// removed.
+fn read_with(name: &str, files: &[(&str, &str)], options: &[Options]) -> Vec<Graph> {
     let dir = std::env::temp_dir().join(format!("atlas-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     for (path, text) in files {
@@ -206,9 +255,150 @@ fn written(name: &str, files: &[(&str, &str)]) -> Graph {
         std::fs::create_dir_all(file.parent().unwrap()).unwrap();
         std::fs::write(file, text).unwrap();
     }
-    let g = analyze(&dir, &Options::default());
+    let gs: Vec<_> = options.iter().map(|o| analyze(&dir, o)).collect();
     let _ = std::fs::remove_dir_all(&dir);
-    g.expect("the package parses")
+    gs.into_iter().map(|g| g.expect("the package parses")).collect()
+}
+
+/// A package the program calls is read as code as far as the program's calls go into it: the file
+/// in `node_modules` that defines what the program calls, found from what `package.json` exports
+/// as code (never its `.d.ts`), through the package's re-exports and `export *`. Its function is a
+/// step on the program's route, and what it reaches of the world is what the program reaches
+/// through it: no table names the package, yet the call reads the file the program hands it. Each
+/// round of `--libraries` reaches one call further into the same package; `--libraries 0` reads
+/// none. Not read: a package the tables describe, one with compiled code, and Node's own modules.
+/// What the program does not reach of a package's file is no part of the picture, and `atlas
+/// check` does not judge a library's code.
+#[test]
+fn a_package_is_read_as_far_as_the_program_calls_into_it() {
+    let files: &[(&str, &str)] = &[
+        ("package.json", r#"{ "name": "reads" }"#),
+        ("tsconfig.json", "{}"),
+        (
+            "src/main.ts",
+            r#"import { readConfig } from "filekit";
+import * as fk from "filekit";
+import { sum } from "fastsum";
+import axios from "axios";
+
+export function main(): string {
+  const text = readConfig("settings.json");
+  fk.listed("data");
+  sum([1, 2]);
+  axios.get("https://example.org/rows");
+  return text;
+}
+"#,
+        ),
+        (
+            "node_modules/filekit/package.json",
+            r#"{ "name": "filekit", "exports": { ".": { "types": "./index.d.ts", "import": "./index.js" } } }"#,
+        ),
+        ("node_modules/filekit/index.d.ts", "export declare function readConfig(path: string): string;\n"),
+        ("node_modules/filekit/index.js", "export { readConfig } from \"./lib/read.js\";\nexport * from \"./lib/list.js\";\n"),
+        (
+            "node_modules/filekit/lib/read.js",
+            r#"import { readFileSync } from "node:fs";
+import { clean } from "./clean.js";
+
+export function readConfig(path) {
+  return clean(readFileSync(path, "utf8"));
+}
+
+export function unused() {}
+"#,
+        ),
+        ("node_modules/filekit/lib/clean.js", "export function clean(text) {\n  return text.trim();\n}\n"),
+        (
+            "node_modules/filekit/lib/list.js",
+            "import { readdirSync } from \"node:fs\";\n\nexport function listed(dir) {\n  return readdirSync(dir);\n}\n",
+        ),
+        ("node_modules/fastsum/package.json", r#"{ "name": "fastsum", "main": "index.js" }"#),
+        ("node_modules/fastsum/index.js", "export function sum(xs) {\n  return xs.reduce((a, b) => a + b, 0);\n}\n"),
+        ("node_modules/fastsum/build/sum.node", ""),
+        ("node_modules/axios/package.json", r#"{ "name": "axios", "main": "index.js" }"#),
+        ("node_modules/axios/index.js", "export default { get(url) {} };\n"),
+    ];
+    let rounds = |n: usize| Options { libraries: n, ..Options::default() };
+    let [none, one, two]: [Graph; 3] = read_with("libraries", files, &[rounds(0), rounds(1), rounds(2)]).try_into().ok().unwrap();
+    let main = |g: &Graph| g.node(&format!("{}.main.main", g.root)).unwrap().clone();
+    let read = one.node("filekit.lib.read.readConfig").expect("the function the program calls is read");
+    assert!(read.library, "a library's function is marked as one");
+    let file = read.touches.iter().find(|t| t.kind_name() == "disk_read").expect("the package's own code reads the disk");
+    assert_eq!((file.op.as_str(), file.artifact.as_str()), ("readFileSync", "settings.json"), "at the path the program hands it: {file:?}");
+    let to: Vec<String> = main(&one).sites.iter().map(|s| if s.to.is_empty() { s.op.clone() } else { s.to.clone() }).collect();
+    assert_eq!(
+        to,
+        ["filekit.lib.read.readConfig", "filekit.lib.list.listed"],
+        "the package's functions are steps, through `export *` and a namespace"
+    );
+    assert!(one.edges.iter().any(|e| e.src == main(&one).id && e.dst == "filekit.lib.read.readConfig" && e.kind == EdgeKind::Calls));
+    assert!(one.node("filekit.lib.read.unused").is_none(), "what the program does not reach is no part of the picture");
+    assert!(
+        one.node("filekit.lib.clean.clean").is_none() && two.node("filekit.lib.clean.clean").is_some(),
+        "each round reaches one call further"
+    );
+    assert!(main(&one).touches.iter().any(|t| t.kind_name() == "net"), "a package the tables describe stays a table's call");
+    for g in [&one, &two] {
+        assert!(
+            g.nodes.iter().all(|n| !n.id.starts_with("fastsum") && !n.id.starts_with("axios")),
+            "neither compiled code nor a package the tables describe is read"
+        );
+        assert!(check(g).iter().all(|f| !f.node.starts_with("filekit")), "a library's code is not judged");
+    }
+    assert!(none.nodes.iter().all(|n| !n.library), "no round reads no package");
+    assert!(main(&none).sites.iter().all(|s| s.to.is_empty()), "a package not read is a call Atlas does not follow");
+}
+
+/// What lies beyond the rounds is glued into the package's function at the border: the program
+/// calls `save`, whose file is written two calls deeper, in functions the graph does not hold.
+/// `save` is one arrow that writes the file the program hands it, drawn at its own call that leads
+/// there, so the program's route reaches the place. Where the rounds reach the function that
+/// writes, the touch is that function's own, not `save`'s.
+#[test]
+fn what_lies_beyond_the_rounds_is_the_border_functions() {
+    let files: &[(&str, &str)] = &[
+        ("package.json", r#"{ "name": "deep" }"#),
+        ("tsconfig.json", "{}"),
+        ("src/main.ts", "import { save } from \"deepkit\";\n\nexport function main(): void {\n  save(\"out.txt\", \"rows\");\n}\n"),
+        ("node_modules/deepkit/package.json", r#"{ "name": "deepkit", "main": "index.js" }"#),
+        (
+            "node_modules/deepkit/index.js",
+            r#"import { writeFileSync } from "node:fs";
+
+export function save(path, text) {
+  prepare(path, text);
+}
+
+function prepare(path, text) {
+  write(path, text.trim());
+}
+
+function write(path, text) {
+  writeFileSync(path, text);
+}
+"#,
+        ),
+    ];
+    let rounds = |n: usize| Options { libraries: n, ..Options::default() };
+    let [one, three]: [Graph; 2] = read_with("beyond", files, &[rounds(1), rounds(3)]).try_into().ok().unwrap();
+    assert!(one.node("deepkit.prepare").is_none() && one.node("deepkit.write").is_none(), "what lies beyond the rounds is not drawn");
+    let save = one.node("deepkit.save").expect("the function the program calls");
+    let wrote = save
+        .touches
+        .iter()
+        .find(|t| t.kind_name() == "disk_write")
+        .unwrap_or_else(|| panic!("the border writes what its code beyond writes: {:?}", save.touches));
+    assert_eq!(wrote.artifact, "out.txt", "at the path the program hands it: {wrote:?}");
+    let call = save.sites.iter().find(|s| s.to == "deepkit.prepare").expect("save's call into what lies beyond");
+    assert_eq!(wrote.line, call.line, "drawn at the border's call that leads there");
+    let route = atlas_engine::story::route(&one, &format!("{}.main.main", one.root), 2).unwrap();
+    assert!(route.contains("out.txt"), "the program's route reaches the place:\n{route}");
+    assert!(three.node("deepkit.write").unwrap().touches.iter().any(|t| t.kind_name() == "disk_write"));
+    assert!(
+        three.node("deepkit.save").unwrap().touches.iter().all(|t| t.kind_name() != "disk_write"),
+        "a function's own arrow is not what it reaches"
+    );
 }
 
 /// A value a module keeps between calls, which its functions change, is a place:
@@ -295,17 +485,31 @@ export function pick(name: string): void {
     let root = format!("{}.", g.root);
     let globals = |f: &str| -> Vec<(String, String)> {
         let n = g.node(&format!("{root}{f}")).unwrap_or_else(|| panic!("{f}"));
-        let mut out: Vec<(String, String)> = n.touches.iter().filter(|t| t.kind_name() == "global").map(|t| (t.artifact.trim_start_matches(&root).to_string(), t.dir_name().to_string())).collect();
+        let mut out: Vec<(String, String)> = n
+            .touches
+            .iter()
+            .filter(|t| t.kind_name() == "global")
+            .map(|t| (t.artifact.trim_start_matches(&root).to_string(), t.dir_name().to_string()))
+            .collect();
         out.sort();
         out
     };
     let place = |uses: &[(&str, &str)]| -> Vec<(String, String)> { uses.iter().map(|(k, d)| (k.to_string(), d.to_string())).collect() };
     assert_eq!(globals("state.choose"), place(&[("state.current", "write")]), "assigned anew, and not read");
-    assert_eq!(globals("state.remember"), place(&[("state.LATEST", "read"), ("state.LATEST", "write"), ("state.count", "read"), ("state.count", "write")]));
-    for (f, kept) in [("state.mark", "state.SEEN"), ("state.forget", "state.SEEN"), ("state.enqueue", "state.QUEUE"), ("state.raise", "state.LIMITS")] {
+    assert_eq!(
+        globals("state.remember"),
+        place(&[("state.LATEST", "read"), ("state.LATEST", "write"), ("state.count", "read"), ("state.count", "write")])
+    );
+    for (f, kept) in
+        [("state.mark", "state.SEEN"), ("state.forget", "state.SEEN"), ("state.enqueue", "state.QUEUE"), ("state.raise", "state.LIMITS")]
+    {
         assert_eq!(globals(f), place(&[(kept, "read"), (kept, "write")]), "{f}");
     }
-    assert_eq!(globals("view.show"), place(&[("state.LATEST", "read"), ("state.current", "read")]), "read where another module imports them");
+    assert_eq!(
+        globals("view.show"),
+        place(&[("state.LATEST", "read"), ("state.current", "read")]),
+        "read where another module imports them"
+    );
     assert!(globals("state.keep").is_empty(), "a package's value changes through the package's methods");
     assert!(globals("state.echo").is_empty(), "a parameter is the function's own");
     assert!(globals("state.first").is_empty(), "a name no function changes is a constant");
@@ -369,12 +573,25 @@ await main(process.argv.slice(2));
     assert_eq!(places("disk_write"), ["", "data/out.txt", "logs/run.log"], "`default: OUT`, a constant's `default`, and `--extra`");
     // an option is the entry's input, as a parameter of a command is: the code does not alone
     // decide the place its default names
-    let defaults: Vec<&atlas_engine::Touch> = main.touches.iter().filter(|t| matches!(t.artifact.as_str(), "data/out.txt" | "logs/run.log")).collect();
+    let defaults: Vec<&atlas_engine::Touch> =
+        main.touches.iter().filter(|t| matches!(t.artifact.as_str(), "data/out.txt" | "logs/run.log")).collect();
     assert!(defaults.len() == 2 && defaults.iter().all(|t| !t.fixed && t.by.is_empty()), "{defaults:#?}");
     let settings = format!("{}.cli.Settings", g.root);
-    let made: Vec<(&str, Vec<(&str, &str)>)> = main.sites.iter().filter(|s| !s.to.is_empty()).map(|s| (s.to.as_str(), s.gives.iter().map(|h| (h.name.as_str(), h.ty.as_str())).collect())).collect();
-    assert_eq!(made, [(settings.as_str(), vec![("settings", settings.as_str())])], "a literal of a type the program declares, and no other");
-    assert!(g.edges.iter().any(|e| e.kind == EdgeKind::Instantiates && e.src == main.id && e.dst == settings), "`const settings: Settings = {{..}}`");
+    let made: Vec<(&str, Vec<(&str, &str)>)> = main
+        .sites
+        .iter()
+        .filter(|s| !s.to.is_empty())
+        .map(|s| (s.to.as_str(), s.gives.iter().map(|h| (h.name.as_str(), h.ty.as_str())).collect()))
+        .collect();
+    assert_eq!(
+        made,
+        [(settings.as_str(), vec![("settings", settings.as_str())])],
+        "a literal of a type the program declares, and no other"
+    );
+    assert!(
+        g.edges.iter().any(|e| e.kind == EdgeKind::Instantiates && e.src == main.id && e.dst == settings),
+        "`const settings: Settings = {{..}}`"
+    );
 }
 
 /// An entry's domain is what the human hands it on the command line: the command `bin` names takes
@@ -417,13 +634,30 @@ extra();
         ],
     );
     let cli = g.node(&format!("{}.cli", g.root)).unwrap();
-    assert_eq!(cli.entry.as_ref().map(|e| (e.kind, e.options.clone())), Some((EntryKind::Cli, ["--out", "--verbose", "--dry-run", "--level"].map(String::from).to_vec())));
-    let parse = |f: &str| g.node(&format!("{}.cli.{f}", g.root)).unwrap().sites.iter().find(|s| s.command_line.is_some()).unwrap_or_else(|| panic!("{f} parses its command line")).clone();
+    assert_eq!(
+        cli.entry.as_ref().map(|e| (e.kind, e.options.clone())),
+        Some((EntryKind::Cli, ["--out", "--verbose", "--dry-run", "--level"].map(String::from).to_vec()))
+    );
+    let parse = |f: &str| {
+        g.node(&format!("{}.cli.{f}", g.root))
+            .unwrap()
+            .sites
+            .iter()
+            .find(|s| s.command_line.is_some())
+            .unwrap_or_else(|| panic!("{f} parses its command line"))
+            .clone()
+    };
     let names = |hs: &[atlas_engine::Held]| hs.iter().map(|h| h.name.clone()).collect::<Vec<_>>();
     let main = parse("main");
-    assert_eq!((main.op.as_str(), main.command_line.clone().unwrap(), names(&main.gives)), ("parseArgs", vec!["--out".to_string(), "--verbose".to_string()], vec!["values".to_string(), "positionals".to_string()]));
+    assert_eq!(
+        (main.op.as_str(), main.command_line.clone().unwrap(), names(&main.gives)),
+        ("parseArgs", vec!["--out".to_string(), "--verbose".to_string()], vec!["values".to_string(), "positionals".to_string()])
+    );
     let running = g.node(&format!("{}.cli.main", g.root)).unwrap().sites.iter().find(|s| s.to.ends_with(".run.run")).unwrap().clone();
     assert_eq!(names(&running.hands), ["values", "positionals"]);
     let extra = parse("extra");
-    assert_eq!((extra.command_line.unwrap(), names(&extra.gives)), (vec!["--dry-run".to_string(), "--level".to_string()], vec!["parsed".to_string()]));
+    assert_eq!(
+        (extra.command_line.unwrap(), names(&extra.gives)),
+        (vec!["--dry-run".to_string(), "--level".to_string()], vec!["parsed".to_string()])
+    );
 }

@@ -51,6 +51,11 @@ Read it from left to right:
   or route: hover the dot for what Atlas sees there and the question it asks. The dot sits
   inside its box, so findings move no box and no line. Atlas's own picture has none.
 - **Double-click a box** to pin its lines, to study or compare what it connects.
+- **Jump to symbol** opens what lies above the symbol and nothing beside it, and centres on
+  it: in a route, the steps that call it; in the overview, its part and package. A symbol
+  the route does not reach is shown in the first route that does. **close all ✕** at the
+  end of the state bar closes everything opened and lets go of what is pinned, and keeps the
+  route and the focus.
 - **Space over a box** shows its details and code over the picture while the code panel is
   closed; space, Esc or a click on the picture puts them away, and **pin** keeps the panel
   open beside the picture.
@@ -73,7 +78,9 @@ atlas --help
 ```
 
 `atlas view` writes a single HTML file and opens it. No server runs and your code stays on
-your machine. The page fetches only its drawing libraries (d3, elk, highlight.js) from a
+your machine. The file goes to `.atlas/` at the top of the git repository (`--out` names
+another place), where you and an agent working there both find it; the folder ignores itself,
+so git never sees it. `atlas analyze` writes its `graph.json` there too. The page fetches only its drawing libraries (d3, elk, highlight.js) from a
 CDN. It has three views. The **Flowchart** is the one to start with. Type lattice and
 Signature flow are earlier experiments. The header names the build that drew
 the page, as `atlas --version` does: `0.4.0 (b0ead14)`. The minor number goes up when what
@@ -91,9 +98,14 @@ Atlas reads:
   `--libraries 2` reads one step further into those libraries, `--libraries 0` not at all.
   Libraries with compiled code and the ones Atlas already knows (pandas, requests, torch, …)
   stay closed;
-- **Rust**, including workspaces;
+- **Rust**, including workspaces; the crates its code calls are read where Cargo keeps them (a
+  path dependency, or the version `Cargo.lock` names in Cargo's registry sources), never fetched;
 - **TypeScript and TSX**: React components, server routes (Hono, Express, Fastify), TanStack
-  routes and server functions, `tsconfig` paths.
+  routes and server functions, `tsconfig` paths; the packages its code calls are read from
+  `node_modules`, from what each package exports as code.
+
+In every language a library is drawn as far as your code reaches it: the functions your calls
+go into, each round of `--libraries` one call further, with the types they take and give.
 
 A repository can hold several parts: a Python API and a TypeScript app, the crates of a
 workspace, the members of a uv workspace. Atlas finds every `Cargo.toml`, `pyproject.toml`
@@ -161,6 +173,9 @@ steps take what it gives straight from the entry, and clicking the entry shows t
 
 `atlas check` reads the same graph and lists where the code and ten design principles
 disagree. Each finding ends in a question for the author. Atlas coaches; it does not fix.
+The questions are grouped by principle, and the reason they share is said once, above them.
+Below them a table counts the questions of each principle in each part. `--json` gives the
+findings as data.
 
 | Principle | In one line |
 | --- | --- |
@@ -219,8 +234,25 @@ one. The route list marks a route `+`, `−` or `~`.
 browser: the commits of every branch and tag, and beside them the picture of the one you pick, or
 of two you pick as one picture, marked as above. The working tree is the newest row. It answers
 at `127.0.0.1` only (`--port N` picks the port, `--no-open` leaves the browser closed), reads each
-commit once for as long as it runs, and reads the working tree again on every request, so an edit
-shows when you pick it again.
+commit once and keeps it from one run to the next, and reads the working tree again on every
+request, so an edit shows when you pick it again.
+
+## What Atlas keeps
+
+What does not change is kept between readings, in `$XDG_CACHE_HOME/atlas` (else
+`~/Library/Caches/atlas` on macOS, `%LOCALAPPDATA%\atlas` on Windows, `~/.cache/atlas`), a
+directory per build of Atlas:
+
+- what ty says of a file of an installed Python library, by the file's bytes and the environment
+  it is read in: the distributions installed, the `.pth` files, the Python ty reads with, and the
+  names the project's own modules take before a library's;
+- the parts of a commit, for `atlas changes`, `atlas view --since` and `atlas history`, while what
+  the reading took from outside the commit (a crate by its path, a fetched crate, the environment
+  beside the repository) stands as it did.
+
+The working tree is read anew every time, and so are the crates and packages it reads: their code
+is linked together with yours. What is kept is what a reading anew gives, so the picture is the
+same either way. `--no-cache` reads everything anew and keeps nothing.
 
 ## Give your coding agent the same picture
 

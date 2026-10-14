@@ -171,15 +171,21 @@ does not promise breaks that: the caller expected a `Tuple[Figure, Axes]` and go
 - **TypeScript.** A method must be assignable to the one it overrides; the compiler checks
   it.
 
-Atlas checks: an override whose return type cannot stand where the one its nearest base
-declares stood, grouped per base method. It decides by what the types mean, not by how they
-are written. For Python, ty decides whether the type is assignable: `List[Node]` is
+Atlas checks: an override that cannot stand where the method of its nearest base stood,
+grouped per base method. The finding shows what the base promises, what it takes and what it
+gives, and what each override that breaks it says instead. It decides by what the types mean,
+not by how they are written. For Python, ty decides, by its own check of an override
+(`invalid-method-override`), what the override takes as well as what it gives: `List[Node]` is
 `list[Node]`, `Optional[Node]` is `Node | None`, `Annotated[str, "a note"]` is a `str`, and a
-`list[Node]` may stand where a `Sequence[Node]` is promised. Where ty does not know a type
-(a library the environment does not hold), it has nothing against it, and neither has Atlas.
-For Rust and TypeScript, whose compilers already hold an override to its base, Atlas compares
-the program's types the two signatures name: each type the override gives is one its base
-promises, a subclass of one, or a variant of a sum it promises. `anyhow::Result<Page>` keeps
+`list[Node]` may stand where a `Sequence[Node]` is promised. A generic base promises what its
+subclass fills in: in `class Boekwinkel(Winkel[Boek])`, the `-> Versie[R]` of `Winkel[R]` promises
+a `Versie[Boek]`, whether the base writes its type parameter as `class Winkel[R]` or with
+`Generic[R]`, and through any generic base between the two. A parameter the override names
+otherwise than its base breaks the promise too, since a caller may pass it by name. Where ty does
+not know a type (a library the environment does not hold), it has nothing against it, and neither
+has Atlas. For Rust and TypeScript, whose compilers already hold an override to its base, Atlas
+compares the program's types the two signatures give: each type the override gives is one its
+base promises, a subclass of one, or a variant of a sum it promises. `anyhow::Result<Page>` keeps
 the `Result<Page>` a trait promises. An array's shape is a promise no type checker reads
 (jaxtyping's `Float[Tensor, "batch dim"]`): each array an override gives has a shape its
 base allows, where `...` stands for any run of dimensions, a name for any one, and a number

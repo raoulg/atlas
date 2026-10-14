@@ -96,18 +96,27 @@ fn sums_a_sum_is_unwrapped_where_it_arises() {
 }
 
 /// An override keeps the promise of its base. Both sides have one family, `Exporter` with
-/// `JsonExporter` and `CsvExporter`; on the shortcut, `CsvExporter.write` gives the number of rows
-/// where `Exporter.write` promises `None`, which ty reports as an incompatible override.
+/// `JsonExporter` and `CsvExporter`. The clean `Exporter[R]` writes a station's records, whatever
+/// they are, and each format fills it in with `Reading`: its `write` takes the `list[Reading]` that
+/// `Exporter[Reading]` makes of `list[R]`, under the name its base gives it. On the shortcut,
+/// `CsvExporter.write` gives the number of rows where `Exporter.write` promises `None`, which ty
+/// reports as an incompatible override.
 #[test]
 fn overrides_an_override_keeps_the_promise_of_its_base() {
     let (c, s) = (clean(), shortcut());
     assert!(found(c, "overrides").is_empty());
+    let takes = |g: &Graph, id: &str| g.node(id).unwrap().params.iter().map(|p| p.to_string()).collect::<Vec<_>>();
+    assert_eq!(takes(c, "harvest.export.Exporter.write"), ["self", "records: list[R]", "path: Path"]);
     for o in ["harvest.export.JsonExporter.write", "harvest.export.CsvExporter.write"] {
         assert_eq!(c.node(o).unwrap().keeps, Some(true), "{o}");
+        assert_eq!(takes(c, o), ["self", "records: list[Reading]", "path: Path"]);
         assert!(edge(c, &o.replace(".write", ""), "harvest.export.Exporter", EdgeKind::Inherits));
     }
     assert_eq!(found(s, "overrides"), ["harvest.export.Exporter.write"]);
     assert_eq!(s.node("harvest.export.CsvExporter.write").unwrap().keeps, Some(false));
+    let broken = check(s).into_iter().find(|f| f.principle == "overrides").unwrap();
+    assert_eq!(broken.what, "Exporter.write promises (rows: list[dict], path: Path) -> None; 1 override breaks it");
+    assert_eq!(broken.evidence, ["CsvExporter.write(rows: list[dict], path: Path) -> int (src/harvest/export.py:35)"]);
     // the override is still a member of the family, and still writes its file
     assert!(edge(s, "harvest.export.CsvExporter", "harvest.export.Exporter", EdgeKind::Inherits));
     assert_eq!(touches(s, "harvest.export.CsvExporter.write", "disk_write").len(), 1);
@@ -147,7 +156,10 @@ fn changes_a_change_to_an_input_shows_in_the_signature() {
     assert!(c.edges.iter().all(|e| e.kind != EdgeKind::Mutates), "nothing is changed in place");
     assert!(edge(c, "harvest.model.in_unit", "harvest.model.Reading", EdgeKind::Returns));
     assert_eq!(found(s, "changes"), ["harvest.model.convert"]);
-    assert!(s.edges.iter().any(|e| e.kind == EdgeKind::Mutates && e.src == "harvest.model.convert" && e.dst == "harvest.model.Reading" && e.via.as_deref() == Some("reading")));
+    assert!(s.edges.iter().any(|e| e.kind == EdgeKind::Mutates
+        && e.src == "harvest.model.convert"
+        && e.dst == "harvest.model.Reading"
+        && e.via.as_deref() == Some("reading")));
     assert!(edge(s, "harvest.harvester.Harvester.collect", "harvest.model.convert", EdgeKind::Calls));
 }
 
@@ -162,7 +174,10 @@ fn gives_a_function_whose_value_is_used_says_what_it_gives() {
     assert!(edge(c, "harvest.api.readings", "harvest.store.ReadingStore.history", EdgeKind::Calls));
     assert!(route(c, "harvest.api.readings").contains("reads readings"), "{}", route(c, "harvest.api.readings"));
     assert_eq!(found(s, "gives"), ["harvest.api.get_store"]);
-    assert!(!edge(s, "harvest.api.readings", "harvest.store.ReadingStore.history", EdgeKind::Calls), "the call on the store is not followed");
+    assert!(
+        !edge(s, "harvest.api.readings", "harvest.store.ReadingStore.history", EdgeKind::Calls),
+        "the call on the store is not followed"
+    );
     assert!(not_followed(s, "get_store.history"));
     assert!(!route(s, "harvest.api.readings").contains("reads readings"), "{}", route(s, "harvest.api.readings"));
     // the factory is still a step of the route, and the store still reads its table
@@ -207,16 +222,22 @@ fn nothing_a_call_leaves_something_behind() {
     assert!(edge(c, "harvest.harvester.Harvester.collect", "harvest.store.ReadingStore.save", EdgeKind::Calls));
     assert!(touches(c, "harvest.store.ReadingStore.save", "db_sqlite").iter().any(|t| t.artifact == "readings" && t.dir_name() == "write"));
     assert!(edge(s, "harvest.store.ReadingStore.save", "harvest.harvester.remember", EdgeKind::Calls));
-    let global = |f: &str, dir: &str| touches(s, f, "global").iter().any(|t| t.artifact == "harvest.harvester.LATEST" && t.dir_name() == dir);
+    let global =
+        |f: &str, dir: &str| touches(s, f, "global").iter().any(|t| t.artifact == "harvest.harvester.LATEST" && t.dir_name() == dir);
     assert!(global("harvest.harvester.remember", "write") && global("harvest.api.latest", "read"));
     assert!(found(s, "nothing").is_empty(), "a call that keeps its value in a global leaves it behind");
     assert!(touches(c, "harvest.harvester.Harvester.collect", "global").is_empty(), "the clean side keeps nothing in a global");
     // the shortcut's `serve` hands the API its database through the environment: a library's
     // value it changes, `os.environ`, not the module `os`, which is code
-    let environ = |f: &str, dir: &str| touches(s, f, "global").iter().any(|t| t.artifact == "os.environ" && t.what == "os.environ" && t.dir_name() == dir);
+    let environ = |f: &str, dir: &str| {
+        touches(s, f, "global").iter().any(|t| t.artifact == "os.environ" && t.what == "os.environ" && t.dir_name() == dir)
+    };
     assert!(environ("harvest.cli.serve", "write") && environ("harvest.api.get_store", "read"));
     assert!(s.nodes.iter().flat_map(|n| n.touches.iter()).all(|t| t.kind != World::Global || t.artifact != "os"), "a module is no place");
-    assert!(c.nodes.iter().flat_map(|n| n.touches.iter()).all(|t| t.kind != World::Global), "the clean side names its database where it runs");
+    assert!(
+        c.nodes.iter().flat_map(|n| n.touches.iter()).all(|t| t.kind != World::Global),
+        "the clean side names its database where it runs"
+    );
 }
 
 /// The packages of a part depend on one another in one direction. On the clean side the harvester
@@ -228,7 +249,10 @@ fn layers_the_packages_depend_in_one_direction() {
     let (c, s) = (clean(), shortcut());
     assert!(found(c, "layers").is_empty());
     assert!(edge(c, "harvest.harvester.build_harvester", "harvest.store.ReadingStore", EdgeKind::Instantiates));
-    assert!(c.edges.iter().all(|e| !(e.src.starts_with("harvest.store.") && e.dst.starts_with("harvest.harvester."))), "the store calls nothing of the harvester");
+    assert!(
+        c.edges.iter().all(|e| !(e.src.starts_with("harvest.store.") && e.dst.starts_with("harvest.harvester."))),
+        "the store calls nothing of the harvester"
+    );
     assert_eq!(found(s, "layers"), ["harvest"]);
     assert!(edge(s, "harvest.harvester.build_harvester", "harvest.store.ReadingStore", EdgeKind::Instantiates));
     assert!(edge(s, "harvest.store.ReadingStore.save", "harvest.harvester.remember", EdgeKind::Calls));
@@ -246,7 +270,9 @@ fn lens_what_a_lens_puts_it_gets_back() {
     assert_eq!(found(s, "lens"), ["harvest.store.ReadingStore"]);
     assert!(edge(s, "harvest.store.ReadingStore.save", "harvest.model.Reading", EdgeKind::Takes));
     assert_eq!(s.node("harvest.store.ReadingStore.history").unwrap().returns.as_ref().unwrap().written, "list[dict]");
-    assert!(touches(s, "harvest.store.ReadingStore.history", "db_sqlite").iter().any(|t| t.artifact == "readings" && t.dir_name() == "read"));
+    assert!(touches(s, "harvest.store.ReadingStore.history", "db_sqlite")
+        .iter()
+        .any(|t| t.artifact == "readings" && t.dir_name() == "read"));
 }
 
 /// Every place carries a what: a request names the service it goes to. In Python the clean
@@ -260,7 +286,11 @@ fn a_place_carries_a_what_the_service_url() {
     let net = touches(s, "harvest.client.WeatherClient.latest", "net");
     assert!(!net.is_empty(), "the request is in the graph");
     assert!(net.iter().any(|t| t.artifact.is_empty() && !t.fixed), "what the environment says is no address the code says: {net:?}");
-    assert!(found(s, "places").contains(&"harvest.client.WeatherClient.latest".to_string()), "the default is the library's own choice: {:?}", found(s, "places"));
+    assert!(
+        found(s, "places").contains(&"harvest.client.WeatherClient.latest".to_string()),
+        "the default is the library's own choice: {:?}",
+        found(s, "places")
+    );
 }
 
 /// The clean client's request goes to the host the entry hands it, through the object it built.
@@ -321,7 +351,10 @@ fn a_route_ends_at_a_visible_place() {
     assert!(edge(c, "harvest.api.collect", "harvest.harvester.Harvester.collect", EdgeKind::Calls));
     let task = route(s, "harvest.api.run_task");
     assert!(!task.contains("GETs") && !task.contains("writes readings"), "{task}");
-    assert!(s.edges.iter().all(|e| !(e.src == "harvest.harvester.Harvester.run" && e.kind == EdgeKind::Calls)), "run calls nothing Atlas follows");
+    assert!(
+        s.edges.iter().all(|e| !(e.src == "harvest.harvester.Harvester.run" && e.kind == EdgeKind::Calls)),
+        "run calls nothing Atlas follows"
+    );
     // the catch-all is a step of the route, and what it may run is still in the graph
     assert!(edge(s, "harvest.api.run_task", "harvest.harvester.Harvester.run", EdgeKind::Calls));
     assert!(s.node("harvest.harvester.Harvester.collect").is_some() && s.node("harvest.harvester.Harvester.report").is_some());
@@ -343,8 +376,16 @@ fn a_route_ends_at_a_visible_place_a_call_by_name_stays_a_step() {
 #[test]
 fn zoom_is_a_quotient_by_composition() {
     let (c, s) = (clean(), shortcut());
-    for (part, via) in [("harvest.client.WeatherClient", "client"), ("harvest.store.ReadingStore", "store"), ("harvest.export.Exporter", "exporter")] {
-        assert!(c.edges.iter().any(|e| e.kind == EdgeKind::Has && e.src == "harvest.harvester.Harvester" && e.dst == part && e.via.as_deref() == Some(via)), "{part}");
+    for (part, via) in
+        [("harvest.client.WeatherClient", "client"), ("harvest.store.ReadingStore", "store"), ("harvest.export.Exporter", "exporter")]
+    {
+        assert!(
+            c.edges.iter().any(|e| e.kind == EdgeKind::Has
+                && e.src == "harvest.harvester.Harvester"
+                && e.dst == part
+                && e.via.as_deref() == Some(via)),
+            "{part}"
+        );
     }
     assert!(edge(c, "harvest.harvester.Harvester.collect", "harvest.client.WeatherClient.latest", EdgeKind::Calls));
     let collect = route(c, "harvest.cli.collect");

@@ -13,20 +13,20 @@ use anyhow::{Context, Result};
 use indexmap::IndexMap;
 use tree_sitter::{Node as TsNode, Parser, Tree};
 
+mod libraries;
 mod paths;
 
 use paths::{Arg, At, Eval};
 
-use crate::builder::{foreign_type, ClassInfo, GraphBuilder, SigInfo};
-use crate::knowledge::OwnTypes;
 use crate::body::{Crosses, Step, Steps};
-use crate::repo::Repo;
-use crate::knowledge;
+use crate::builder::{foreign_type, ClassInfo, GraphBuilder, SigInfo};
 use crate::effects::{self, Crossing};
+use crate::knowledge;
+use crate::knowledge::OwnTypes;
 use crate::model::{Bucket, Dir, EdgeKind, Entry, EntryKind, Held, Node, NodeKind, Param, Returns, Touch, World};
+use crate::repo::{normal, Repo};
 use crate::tree::{
-    evaluation_order, literals, named_children, nth_of_kind, span, text, unquote,
-    walk, what_of, ChoiceSyntax, CompareSyntax, Part,
+    evaluation_order, literals, named_children, nth_of_kind, span, text, unquote, walk, what_of, ChoiceSyntax, CompareSyntax, Part,
 };
 
 const EXTENSIONS: &[&str] = &["ts", "tsx", "mts", "cts", "js", "jsx", "mjs", "cjs"];
@@ -68,6 +68,56 @@ struct Module {
     routes: Vec<(String, String)>,
     /// Routers mounted on another under a prefix: (router, prefix, mounted router).
     mounts: Vec<(String, String, String)>,
+    /// The names imported from a file not the package's own (a package's, or one of a library's
+    /// files): each by its local name, the specifier and its name there (`default` for a default
+    /// import, none for the module itself).
+    imported: Vec<Imported>,
+    /// The names bound to a library's code Atlas reads, by local name: the file each comes from
+    /// and its name there.
+    links: HashMap<String, (PathBuf, Option<String>)>,
+    /// What those names stand for where the library's code is read as code: the definition, by
+    /// the name as written (`readConfig`, or a namespace's member `fk.readConfig`).
+    read: HashMap<String, String>,
+    /// The values a package made that every body of the module sees, by name: the module's own,
+    /// and each class's fields by where the class starts. Found once, when a body first asks.
+    made: std::cell::RefCell<HashMap<Option<usize>, HashMap<String, String>>>,
+}
+
+/// A name imported from a file not the package's own, as written.
+#[derive(Clone, Debug)]
+struct Imported {
+    local: String,
+    spec: String,
+    name: Option<String>,
+}
+
+impl Module {
+    /// A module of a file read from `src`, before its imports and symbols are collected.
+    fn new(id: String, path: PathBuf, src: Vec<u8>, tree: Tree) -> Module {
+        Module {
+            id,
+            path,
+            src,
+            tree,
+            bindings: HashMap::new(),
+            symbols: HashMap::new(),
+            default: None,
+            wildcards: vec![],
+            aliases: HashMap::new(),
+            bodies: HashMap::new(),
+            ext_pkgs: HashSet::new(),
+            values: HashMap::new(),
+            dynamic: HashMap::new(),
+            exported: vec![],
+            routers: HashSet::new(),
+            routes: vec![],
+            mounts: vec![],
+            imported: vec![],
+            links: HashMap::new(),
+            read: HashMap::new(),
+            made: Default::default(),
+        }
+    }
 }
 
 /// Does this look like a JavaScript or TypeScript package: a `package.json` with a
@@ -78,7 +128,8 @@ pub fn detect(repo: &Repo) -> bool {
 
 fn ts_parser(tsx: bool) -> Result<Parser> {
     let mut p = Parser::new();
-    let lang: tree_sitter::Language = if tsx { tree_sitter_typescript::LANGUAGE_TSX.into() } else { tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into() };
+    let lang: tree_sitter::Language =
+        if tsx { tree_sitter_typescript::LANGUAGE_TSX.into() } else { tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into() };
     p.set_language(&lang).context("loading the TypeScript grammar")?;
     Ok(p)
 }
@@ -96,19 +147,28 @@ fn segment(s: &str) -> String {
 
 /// Where module paths start: `src/` when there is one.
 pub(crate) fn code_base(repo: &Repo) -> PathBuf {
-    if repo.is_dir("src") { repo.root().join("src") } else { repo.root().to_path_buf() }
+    if repo.is_dir("src") {
+        repo.root().join("src")
+    } else {
+        repo.root().to_path_buf()
+    }
 }
 
 fn is_code(p: &Path) -> bool {
     let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
     let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("");
-    EXTENSIONS.contains(&ext) && !name.ends_with(".d.ts") && !name.contains(".gen.") && !name.contains(".min.") && !name.contains(".config.")
+    EXTENSIONS.contains(&ext)
+        && !name.ends_with(".d.ts")
+        && !name.contains(".gen.")
+        && !name.contains(".min.")
+        && !name.contains(".config.")
 }
 
 /// `src/lib/map/layers.ts` -> `app.lib.map.layers`; `src/lib/index.ts` -> `app.lib`.
 fn module_id(root: &str, base: &Path, path: &Path) -> String {
     let rel = path.strip_prefix(base).unwrap_or(path);
-    let mut parts: Vec<String> = rel.parent().map(|d| d.components().map(|c| segment(&c.as_os_str().to_string_lossy())).collect()).unwrap_or_default();
+    let mut parts: Vec<String> =
+        rel.parent().map(|d| d.components().map(|c| segment(&c.as_os_str().to_string_lossy())).collect()).unwrap_or_default();
     let stem = rel.file_name().and_then(|n| n.to_str()).unwrap_or("");
     let stem = stem.rsplit_once('.').map(|(s, _)| s).unwrap_or(stem);
     if stem != "index" {
@@ -156,9 +216,7 @@ fn jsonc(text: &str) -> String {
                 in_string = true;
                 out.push(c);
             }
-            ('/', Some('/')) => {
-                while chars.next_if(|&n| n != '\n').is_some() {}
-            }
+            ('/', Some('/')) => while chars.next_if(|&n| n != '\n').is_some() {},
             ('/', Some('*')) => {
                 chars.next();
                 let mut prev = ' ';
@@ -183,7 +241,7 @@ fn resolve_spec(spec: &str, from: &Path, aliases: &[(String, PathBuf)], files: &
         let (alias, dir) = aliases.iter().find(|(a, _)| !a.is_empty() && spec.starts_with(a.as_str()))?;
         dir.join(&spec[alias.len()..])
     };
-    let base = normalize(&base);
+    let base = normal(&base);
     let stripped = base.with_extension("");
     let mut candidates = vec![base.clone()];
     for b in [&base, &stripped] {
@@ -193,20 +251,6 @@ fn resolve_spec(spec: &str, from: &Path, aliases: &[(String, PathBuf)], files: &
         }
     }
     candidates.into_iter().find_map(|c| files.get(&c).cloned())
-}
-
-fn normalize(p: &Path) -> PathBuf {
-    let mut out = PathBuf::new();
-    for c in p.components() {
-        match c {
-            std::path::Component::ParentDir => {
-                out.pop();
-            }
-            std::path::Component::CurDir => {}
-            other => out.push(other),
-        }
-    }
-    out
 }
 
 /// The package an import comes from: `@tanstack/react-router/x` -> `@tanstack/react-router`,
@@ -312,7 +356,11 @@ fn signature(params: Option<TsNode>, ret: Option<TsNode>, src: &[u8]) -> (Vec<Pa
                 let ty = p.child_by_field_name("type");
                 out.push(Param {
                     name: name.trim_start_matches("...").to_string(),
-                    ty: ty.and_then(|t| named_children(t).into_iter().next()).filter(|t| says(*t, src)).map(|t| text(t, src).to_string()).unwrap_or_default(),
+                    ty: ty
+                        .and_then(|t| named_children(t).into_iter().next())
+                        .filter(|t| says(*t, src))
+                        .map(|t| text(t, src).to_string())
+                        .unwrap_or_default(),
                     receiver: pattern.map_or(false, |x| x.kind() == "this"),
                     rest: pattern.map_or(false, |x| x.kind() == "rest_pattern"),
                     changes: false,
@@ -350,14 +398,23 @@ fn returns(rt: TsNode, src: &[u8]) -> Option<Returns> {
 
 // ---------- pass 1: files, symbols, imports ----------
 
-pub fn parse(repo: &Repo) -> Result<(GraphBuilder, String)> {
+/// What a reading of the package at `repo` takes from outside it: the packages installed in a
+/// `node_modules` above it, which Node finds from its files as well.
+pub fn environment(repo: &Repo) -> Vec<crate::cache::Check> {
+    let root = std::fs::canonicalize(repo.root()).unwrap_or_else(|_| repo.root().to_path_buf());
+    root.ancestors().skip(1).map(|a| crate::cache::Check::Tree(a.join(knowledge::NODE_PACKAGES))).collect()
+}
+
+pub fn parse(repo: &Repo, opts: &crate::Options) -> Result<(GraphBuilder, String)> {
     let root = root_name(repo);
     let base = code_base(repo);
     let aliases = path_aliases(repo);
     let mut store = GraphBuilder::default();
     // not under what a tool made
-    let made = |p: &Path| p.strip_prefix(&base).map_or(false, |r| r.components().any(|c| knowledge::made_dir(c.as_os_str().to_str().unwrap_or(""))));
-    let mut paths: Vec<PathBuf> = repo.files_under(&base).into_iter().filter(|p| is_code(p) && !made(p)).map(|p| normalize(&p)).collect();
+    let made = |p: &Path| {
+        p.strip_prefix(&base).map_or(false, |r| r.components().any(|c| knowledge::made_dir(c.as_os_str().to_str().unwrap_or(""))))
+    };
+    let mut paths: Vec<PathBuf> = repo.files_under(&base).into_iter().filter(|p| is_code(p) && !made(p)).map(|p| normal(&p)).collect();
     paths.sort();
     let files: HashMap<PathBuf, String> = paths.iter().map(|p| (p.clone(), module_id(&root, &base, p))).collect();
     // every directory is a package module, so the module quotient follows the folders
@@ -372,7 +429,14 @@ pub fn parse(repo: &Repo) -> Result<(GraphBuilder, String)> {
     dirs.sort();
     dirs.dedup();
     for d in &dirs {
-        store.add_node(Node { id: d.clone(), kind: NodeKind::Module, name: d.rsplit('.').next().unwrap_or(d).to_string(), module: d.clone(), is_pkg: true, ..Default::default() });
+        store.add_node(Node {
+            id: d.clone(),
+            kind: NodeKind::Module,
+            name: d.rsplit('.').next().unwrap_or(d).to_string(),
+            module: d.clone(),
+            is_pkg: true,
+            ..Default::default()
+        });
     }
     let mut modules: IndexMap<String, Module> = IndexMap::new();
     let (mut ts, mut tsx) = (ts_parser(false)?, ts_parser(true)?);
@@ -397,28 +461,7 @@ pub fn parse(repo: &Repo) -> Result<(GraphBuilder, String)> {
             ..Default::default()
         };
         store.add_node(node);
-        modules.insert(
-            id.clone(),
-            Module {
-                id,
-                path: p.clone(),
-                src,
-                tree,
-                bindings: HashMap::new(),
-                symbols: HashMap::new(),
-                default: None,
-                wildcards: vec![],
-                aliases: HashMap::new(),
-                bodies: HashMap::new(),
-                ext_pkgs: HashSet::new(),
-                values: HashMap::new(),
-                dynamic: HashMap::new(),
-                exported: vec![],
-                routers: HashSet::new(),
-                routes: vec![],
-                mounts: vec![],
-            },
-        );
+        modules.insert(id.clone(), Module::new(id, p.clone(), src, tree));
     }
     for m in modules.values_mut() {
         collect_imports(m, &aliases, &files);
@@ -426,10 +469,12 @@ pub fn parse(repo: &Repo) -> Result<(GraphBuilder, String)> {
         collect_symbols(m, &mut store);
         collect_routes(m, &mut store);
     }
+    libraries::read(repo, &mut modules, &mut store, opts.libraries);
     route_prefixes(&modules, &mut store);
     mark_bins(repo, &files, &mut store);
     mark_exports(repo, &files, &modules, &mut store);
     link(&modules, &mut store, repo.root());
+    store.mark_library();
     Ok((store, root))
 }
 
@@ -470,7 +515,12 @@ fn top_variables<'t>(root: TsNode<'t>) -> Vec<TsNode<'t>> {
 fn function_in<'t>(value: TsNode<'t>) -> Option<TsNode<'t>> {
     match value.kind() {
         "arrow_function" | "function_expression" | "function" => Some(value),
-        "call_expression" | "await_expression" | "parenthesized_expression" | "as_expression" | "satisfies_expression" | "member_expression" => {
+        "call_expression"
+        | "await_expression"
+        | "parenthesized_expression"
+        | "as_expression"
+        | "satisfies_expression"
+        | "member_expression" => {
             let mut found = None;
             for c in named_children(value) {
                 if c.kind() == "arguments" {
@@ -522,7 +572,9 @@ fn add_function(m: &mut Module, store: &mut GraphBuilder, name: &str, def: TsNod
         on_class,
         ctor: cls.is_some() && (name == "constructor" || on_class && gives_class),
         // a member is private when it says so; a module's own name is, unless the module exports it
-        private: cls.is_some() && (name.starts_with('#') || named_children(def).iter().any(|c| c.kind() == "accessibility_modifier" && text(*c, src) != "public")),
+        private: cls.is_some()
+            && (name.starts_with('#')
+                || named_children(def).iter().any(|c| c.kind() == "accessibility_modifier" && text(*c, src) != "public")),
         name: name.to_string(),
         file: crate::tree::path_str(&m.path),
         span: span(def),
@@ -563,7 +615,8 @@ fn collect_symbols(m: &mut Module, store: &mut GraphBuilder) {
                 for h in walk(d, &["class_heritage"]).into_iter().take(1) {
                     for c in walk(h, &["extends_clause", "implements_clause"]) {
                         for v in named_children(c).into_iter().filter(|v| v.kind() != "type_arguments") {
-                            let parts: Vec<String> = text(v, &src).split('<').next().unwrap_or("").split('.').map(|s| s.trim().to_string()).collect();
+                            let parts: Vec<String> =
+                                text(v, &src).split('<').next().unwrap_or("").split('.').map(|s| s.trim().to_string()).collect();
                             if !parts.iter().any(String::is_empty) {
                                 bases.push(parts);
                             }
@@ -662,8 +715,11 @@ fn collect_symbols(m: &mut Module, store: &mut GraphBuilder) {
                         continue;
                     }
                     let Some(f) = function_in(value) else {
-                        let declared = v.child_by_field_name("type").and_then(|t| named_children(t).into_iter().next()).map(|t| type_head(t, &src));
-                        let built = (value.kind() == "new_expression").then(|| value.child_by_field_name("constructor").map(|c| member_parts(c, &src))).flatten();
+                        let declared =
+                            v.child_by_field_name("type").and_then(|t| named_children(t).into_iter().next()).map(|t| type_head(t, &src));
+                        let built = (value.kind() == "new_expression")
+                            .then(|| value.child_by_field_name("constructor").map(|c| member_parts(c, &src)))
+                            .flatten();
                         if let Some(t) = declared.or(built).filter(|t| !t.is_empty()) {
                             m.values.insert(vname, t);
                         }
@@ -672,7 +728,9 @@ fn collect_symbols(m: &mut Module, store: &mut GraphBuilder) {
                     let id = add_function(m, store, &vname, d, f, value, None);
                     // an arrow handed to a call takes its parameters' types from the call
                     if f.id() != value.id() {
-                        if let (Some(n), Some(call)) = (store.nodes.get_mut(&id), f.parent().and_then(|a| a.parent()).filter(|c| c.kind() == "call_expression")) {
+                        if let (Some(n), Some(call)) =
+                            (store.nodes.get_mut(&id), f.parent().and_then(|a| a.parent()).filter(|c| c.kind() == "call_expression"))
+                        {
                             n.typed_by = call.child_by_field_name("function").map(|x| text(x, &src).to_string()).unwrap_or_default();
                         }
                     }
@@ -691,7 +749,9 @@ fn collect_symbols(m: &mut Module, store: &mut GraphBuilder) {
             n.entry = Some(Entry::new(EntryKind::Route, if path == "__root" { "/ (root)".into() } else { path }));
         }
     }
-    for n in store.nodes.values_mut().filter(|n| n.module == m.id && n.cls.is_none() && matches!(n.kind, NodeKind::Function | NodeKind::Class)) {
+    for n in
+        store.nodes.values_mut().filter(|n| n.module == m.id && n.cls.is_none() && matches!(n.kind, NodeKind::Function | NodeKind::Class))
+    {
         let local = n.name.split('.').next().unwrap_or(&n.name);
         n.private = !m.exported.iter().any(|e| e == local);
     }
@@ -704,7 +764,10 @@ fn namespace(m: &mut Module, store: &mut GraphBuilder, name: &str, object: TsNod
     let mut any = false;
     for member in named_children(object) {
         let (key, f, body) = match member.kind() {
-            "pair" => match (member.child_by_field_name("key"), member.child_by_field_name("value").filter(|v| matches!(v.kind(), "arrow_function" | "function_expression" | "function"))) {
+            "pair" => match (
+                member.child_by_field_name("key"),
+                member.child_by_field_name("value").filter(|v| matches!(v.kind(), "arrow_function" | "function_expression" | "function")),
+            ) {
                 (Some(k), Some(v)) => (k, v, v),
                 _ => continue,
             },
@@ -757,7 +820,15 @@ fn fields_of(body: TsNode, src: &[u8]) -> Vec<(String, Vec<Vec<String>>)> {
         .collect()
 }
 
-fn add_type(m: &mut Module, store: &mut GraphBuilder, name: &str, d: TsNode, bases: Vec<Vec<String>>, fields: Vec<(String, Vec<Vec<String>>)>, methods: Vec<String>) {
+fn add_type(
+    m: &mut Module,
+    store: &mut GraphBuilder,
+    name: &str,
+    d: TsNode,
+    bases: Vec<Vec<String>>,
+    fields: Vec<(String, Vec<Vec<String>>)>,
+    methods: Vec<String>,
+) {
     let id = format!("{}.{name}", m.id);
     store.classes.insert(id.clone(), ClassInfo { bases: bases.clone(), fields, ..Default::default() });
     store.add_node(Node {
@@ -799,6 +870,9 @@ fn collect_imports(m: &mut Module, aliases: &[(String, PathBuf)], files: &HashMa
                 Some(id) => Bound::Own(format!("{id}.{name}")),
                 None => Bound::Ext(ext_id(&spec, Some(&name))),
             };
+            if own.is_none() {
+                m.imported.push(Imported { local: name.clone(), spec: spec.clone(), name: Some(name.clone()) });
+            }
             m.dynamic.insert(name, bound);
         }
     }
@@ -829,6 +903,11 @@ fn collect_imports(m: &mut Module, aliases: &[(String, PathBuf)], files: &HashMa
             }),
             None => Bound::Ext(ext_id(&spec, name)),
         };
+        let imported = |into: &mut Vec<Imported>, local: &str, name: Option<&str>| {
+            if own.is_none() {
+                into.push(Imported { local: local.to_string(), spec: spec.clone(), name: name.map(str::to_string) });
+            }
+        };
         match st.kind() {
             "import_statement" => {
                 for clause in named_children(st).into_iter().filter(|c| c.kind() == "import_clause") {
@@ -836,10 +915,12 @@ fn collect_imports(m: &mut Module, aliases: &[(String, PathBuf)], files: &HashMa
                         match c.kind() {
                             "identifier" => {
                                 let local = text(c, &src).to_string();
+                                imported(&mut m.imported, &local, Some("default"));
                                 m.bindings.insert(local, if own.is_some() { member(Some("default")) } else { member(None) });
                             }
                             "namespace_import" => {
                                 if let Some(id) = named_children(c).into_iter().find(|x| x.kind() == "identifier") {
+                                    imported(&mut m.imported, text(id, &src), None);
                                     m.bindings.insert(text(id, &src).to_string(), member(None));
                                 }
                             }
@@ -847,6 +928,7 @@ fn collect_imports(m: &mut Module, aliases: &[(String, PathBuf)], files: &HashMa
                                 for s in named_children(c).into_iter().filter(|s| s.kind() == "import_specifier") {
                                     let Some(n) = s.child_by_field_name("name") else { continue };
                                     let local = s.child_by_field_name("alias").unwrap_or(n);
+                                    imported(&mut m.imported, text(local, &src), Some(text(n, &src)));
                                     m.bindings.insert(text(local, &src).to_string(), member(Some(text(n, &src))));
                                 }
                             }
@@ -866,6 +948,7 @@ fn collect_imports(m: &mut Module, aliases: &[(String, PathBuf)], files: &HashMa
                 for s in specs {
                     let Some(n) = s.child_by_field_name("name") else { continue };
                     let local = s.child_by_field_name("alias").unwrap_or(n);
+                    imported(&mut m.imported, text(local, &src), Some(text(n, &src)));
                     m.exported.push(text(local, &src).to_string());
                     m.bindings.insert(text(local, &src).to_string(), member(Some(text(n, &src))));
                 }
@@ -877,7 +960,7 @@ fn collect_imports(m: &mut Module, aliases: &[(String, PathBuf)], files: &HashMa
 
 /// The module a path in `package.json` names, with or without its extension.
 fn module_at(repo: &Path, path: &str, files: &HashMap<PathBuf, String>) -> Option<String> {
-    let p = normalize(&repo.join(path));
+    let p = normal(&repo.join(path));
     files.get(&p).cloned().or_else(|| files.iter().find(|(f, _)| f.with_extension("") == p.with_extension("")).map(|(_, id)| id.clone()))
 }
 
@@ -921,12 +1004,22 @@ fn mark_exports(repo: &Repo, files: &HashMap<PathBuf, String>, modules: &IndexMa
     let dot = |v: &serde_json::Value| -> Option<String> {
         match v {
             serde_json::Value::String(s) => Some(s.clone()),
-            serde_json::Value::Object(o) => ["import", "default", "types", "require"].iter().find_map(|k| o.get(*k).and_then(|x| x.as_str()).map(str::to_string)),
+            serde_json::Value::Object(o) => {
+                ["import", "default", "types", "require"].iter().find_map(|k| o.get(*k).and_then(|x| x.as_str()).map(str::to_string))
+            }
             _ => None,
         }
     };
-    let declared = [json["exports"].get(".").and_then(dot), dot(&json["exports"]), json["module"].as_str().map(str::to_string), json["main"].as_str().map(str::to_string)];
-    let root = files.values().find(|id| modules.get(*id).map_or(false, |m| m.path.file_stem().and_then(|s| s.to_str()) == Some("index") && !id.contains('.'))).cloned();
+    let declared = [
+        json["exports"].get(".").and_then(dot),
+        dot(&json["exports"]),
+        json["module"].as_str().map(str::to_string),
+        json["main"].as_str().map(str::to_string),
+    ];
+    let root = files
+        .values()
+        .find(|id| modules.get(*id).map_or(false, |m| m.path.file_stem().and_then(|s| s.to_str()) == Some("index") && !id.contains('.')))
+        .cloned();
     let Some(entry) = declared.into_iter().flatten().find_map(|p| module_at(repo, &p, files)).or(root) else { return };
     let mut names: Vec<(String, String)> = vec![];
     let mut stack = vec![(entry.clone(), 0)];
@@ -950,7 +1043,10 @@ fn router_made(mut v: TsNode, m: &Module, src: &[u8]) -> bool {
     loop {
         match v.kind() {
             "call_expression" => match v.child_by_field_name("function") {
-                Some(f) if f.kind() == "member_expression" && f.child_by_field_name("object").map_or(false, |o| matches!(o.kind(), "call_expression" | "new_expression")) => {
+                Some(f)
+                    if f.kind() == "member_expression"
+                        && f.child_by_field_name("object").map_or(false, |o| matches!(o.kind(), "call_expression" | "new_expression")) =>
+                {
                     v = f.child_by_field_name("object").unwrap();
                 }
                 Some(f) => return router_pkg(&member_parts(f, src), m),
@@ -1047,10 +1143,14 @@ fn collect_routes(m: &mut Module, store: &mut GraphBuilder) {
             "identifier" if m.routers.contains(text(obj, &src)) => text(obj, &src).to_string(),
             _ => {
                 let mut up = c.parent();
-                while let Some(p) = up.filter(|p| matches!(p.kind(), "member_expression" | "call_expression" | "parenthesized_expression")) {
+                while let Some(p) = up.filter(|p| matches!(p.kind(), "member_expression" | "call_expression" | "parenthesized_expression"))
+                {
                     up = p.parent();
                 }
-                let declared = up.filter(|p| p.kind() == "variable_declarator").and_then(|d| d.child_by_field_name("name")).map(|n| text(n, &src).to_string());
+                let declared = up
+                    .filter(|p| p.kind() == "variable_declarator")
+                    .and_then(|d| d.child_by_field_name("name"))
+                    .map(|n| text(n, &src).to_string());
                 // or a chain of registrations on a named router: `app.get(..).post(..)`
                 let chained = || {
                     let mut base = obj;
@@ -1127,7 +1227,10 @@ fn route_prefixes(modules: &IndexMap<String, Module>, store: &mut GraphBuilder) 
             }
         }
     }
-    let routes: Vec<(String, String)> = modules.values().flat_map(|m| m.routes.iter().map(move |(id, router)| (id.clone(), key_of(m, router, modules, 0).unwrap_or_default()))).collect();
+    let routes: Vec<(String, String)> = modules
+        .values()
+        .flat_map(|m| m.routes.iter().map(move |(id, router)| (id.clone(), key_of(m, router, modules, 0).unwrap_or_default())))
+        .collect();
     crate::entries::mount_routes(store, &routes, &HashMap::new(), &mounted, express_segment);
 }
 
@@ -1152,6 +1255,8 @@ fn resolve(m: &Module, parts: &[String], modules: &IndexMap<String, Module>, nod
         None => m.bindings.get(head).or_else(|| m.dynamic.get(head))?.clone(),
     };
     match bound {
+        // a name of a library's code read as code is its definition there
+        Bound::Ext(_) if read_as_code(m, parts).is_some() => read_as_code(m, parts),
         Bound::Ext(id) => Some(if parts.len() > 1 { format!("{id}.{}", parts[1..].join(".")) } else { id }),
         Bound::Own(target) => {
             let full = if parts.len() > 1 { format!("{target}.{}", parts[1..].join(".")) } else { target };
@@ -1176,12 +1281,20 @@ fn defined(target: &str, modules: &IndexMap<String, Module>, nodes: &IndexMap<St
     let next = if name == "default" { m.default.clone() } else { m.bindings.get(name).cloned() };
     match next {
         Some(Bound::Own(t)) => return defined(&t, modules, nodes, depth + 1),
-        Some(Bound::Ext(id)) => return Some(id),
+        Some(Bound::Ext(id)) => return Some(m.read.get(name).cloned().unwrap_or(id)),
         None => {}
     }
     m.wildcards.iter().find_map(|w| defined(&format!("{w}.{name}"), modules, nodes, depth + 1))
 }
 
+/// What a name path written in `m` stands for in a library's code read as code: the definition its
+/// head (`readConfig`, `Client` of `Client.create`) or a namespace's member (`fk.readConfig`)
+/// stands for, with the rest of the path below it.
+fn read_as_code(m: &Module, parts: &[String]) -> Option<String> {
+    let member = parts.get(1).and_then(|p| m.read.get(&format!("{}.{p}", parts[0])).map(|d| (d, 2)));
+    let (def, used) = member.or_else(|| m.read.get(parts.first()?).map(|d| (d, 1)))?;
+    Some(std::iter::once(def.as_str()).chain(parts[used..].iter().map(String::as_str)).collect::<Vec<_>>().join("."))
+}
 
 /// What the bodies hand the places pass: file and network calls with what their path or URL
 /// is built from, and the calls of the package's functions with the arguments they pass.
@@ -1191,6 +1304,8 @@ struct Linked<'t> {
     args: Vec<Arg<'t>>,
 }
 
+/// Types, signatures and bodies into edges: the program's, and the functions of the library's code
+/// read.
 fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, repo: &Path) {
     // a union of two or more known types is a sum; any other alias stands for what it names
     for m in modules.values() {
@@ -1315,12 +1430,17 @@ fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, repo: &Pat
         }
     }
     let eval = Eval::new(modules, repo);
+    // of a library's code, the methods of the classes the program names, and of their bases
+    let named = named_classes(modules, store);
     // methods that change their receiver, directly or through another such method of the
     // program's: until nothing changes, which ends, as the set only grows and the methods are finite
     loop {
         let mut found = vec![];
         for id in &ids {
             let n = &store.nodes[id];
+            if n.library && !n.cls.as_ref().map_or(false, |c| named.contains(c)) {
+                continue;
+            }
             let Some(m) = modules.get(&n.module).filter(|_| n.kind == NodeKind::Method && !store.mutating.contains(id)) else { continue };
             let Some(body) = m.bodies.get(id).and_then(|(s, e)| m.tree.root_node().descendant_for_byte_range(*s, *e)) else { continue };
             let b = Body::new(m, modules, store, n, body, &returned, &eval);
@@ -1333,14 +1453,21 @@ fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, repo: &Pat
         }
         store.mutating.extend(found);
     }
-    // bodies -> calls / instantiates / boundaries
+    // bodies -> calls / instantiates / boundaries: the program's, then the functions of the
+    // library's code read; a library's module runs its own code on import, by no call of the
+    // program's
     let mut linked = Linked::default();
-    for id in &ids {
-        let n = &store.nodes[id];
-        let Some(m) = modules.get(&n.module) else { continue };
-        if matches!(n.kind, NodeKind::Function | NodeKind::Method) || (n.kind == NodeKind::Module && modules.contains_key(id)) {
-            link_calls(m, modules, store, id, &returned, &eval, &mut linked);
-        }
+    let (own, library): (Vec<&String>, Vec<&String>) = ids
+        .iter()
+        .filter(|id| {
+            let n = &store.nodes[*id];
+            matches!(n.kind, NodeKind::Function | NodeKind::Method)
+                || (n.kind == NodeKind::Module && !n.library && modules.contains_key(*id))
+        })
+        .partition(|id| !store.nodes[*id].library);
+    for id in own.into_iter().chain(library) {
+        let Some(m) = store.nodes.get(id).and_then(|n| modules.get(&n.module)) else { continue };
+        link_calls(m, modules, store, id, &returned, &eval, &mut linked);
     }
     let handing: Vec<paths::Evaluated> = linked.args.iter().map(|arg| paths::Evaluated { arg, eval: &eval }).collect();
     let entry = |f: &str| store.nodes.get(f).map_or(false, |n| n.entry.is_some());
@@ -1349,6 +1476,69 @@ fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, repo: &Pat
     // a page's request without a host goes to the page's own origin
     crate::paths::place_calls(store, completed, true);
     globals(modules, store, &returned, &eval);
+}
+
+/// The fields of a class that hold what a package made: declared with a library's type, set from
+/// what a package made, or a constructor's parameter property (`this.db`).
+fn class_made(class: TsNode, m: &Module) -> HashMap<String, String> {
+    let src = &m.src[..];
+    let field = |name: TsNode| format!("this.{}", text(name, src));
+    let mut out = HashMap::new();
+    for f in walk(class, &["public_field_definition"]) {
+        if let (Some(name), Some(pkg)) =
+            (f.child_by_field_name("name"), f.child_by_field_name("type").and_then(|t| typed_package(t, m, src)))
+        {
+            out.insert(field(name), pkg);
+        }
+    }
+    for p in walk(class, &["required_parameter", "optional_parameter"])
+        .into_iter()
+        .filter(|p| named_children(*p).iter().any(|c| c.kind() == "accessibility_modifier"))
+    {
+        if let (Some(name), Some(pkg)) =
+            (p.child_by_field_name("pattern"), p.child_by_field_name("type").and_then(|t| typed_package(t, m, src)))
+        {
+            out.insert(field(name), pkg);
+        }
+    }
+    for a in walk(class, &["assignment_expression"]) {
+        let (Some(l), Some(r)) = (a.child_by_field_name("left"), a.child_by_field_name("right")) else { continue };
+        if let ([this, name], Some(pkg)) = (member_parts(l, src).as_slice(), made_by_package(r, m, src)) {
+            if this == "this" {
+                out.entry(format!("this.{name}")).or_insert(pkg);
+            }
+        }
+    }
+    out
+}
+
+/// The library's classes the program names (imports, builds or calls a method of), with the
+/// classes of the library they inherit from.
+fn named_classes(modules: &IndexMap<String, Module>, store: &GraphBuilder) -> HashSet<String> {
+    let class = |id: &str| {
+        store.nodes.get(id).filter(|n| n.library).and_then(|n| if n.kind == NodeKind::Class { Some(n.id.clone()) } else { n.cls.clone() })
+    };
+    let mut todo: Vec<String> = modules
+        .values()
+        .filter(|m| !store.nodes.get(&m.id).map_or(false, |n| n.library))
+        .flat_map(|m| m.read.values())
+        .filter_map(|d| class(d))
+        .collect();
+    let mut out = HashSet::new();
+    while let Some(c) = todo.pop() {
+        if out.insert(c.clone()) {
+            todo.extend(
+                store
+                    .classes
+                    .get(&c)
+                    .map(|i| i.resolved.clone())
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter(|b| store.nodes.get(b).map_or(false, |n| n.library)),
+            );
+        }
+    }
+    out
 }
 
 /// One use of a module's value by a function: where the value is kept (`module.name`), the name
@@ -1368,7 +1558,13 @@ fn globals(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, returne
     let mut uses: Vec<(String, Vec<Use>, Vec<Use>)> = vec![];
     for m in modules.values() {
         let (src, root) = (&m.src[..], m.tree.root_node());
-        let kept = |n: &str| if tops[m.id.as_str()].contains(n) { Some(format!("{}.{n}", m.id)) } else { kept_in(modules, &tops, m.bindings.get(n)?, 0) };
+        let kept = |n: &str| {
+            if tops[m.id.as_str()].contains(n) {
+                Some(format!("{}.{n}", m.id))
+            } else {
+                kept_in(modules, &tops, m.bindings.get(n)?, 0)
+            }
+        };
         for n in store.nodes.values().filter(|n| n.module == m.id && matches!(n.kind, NodeKind::Function | NodeKind::Method)) {
             let Some(&(s, e)) = m.bodies.get(&n.id) else { continue };
             let Some(body) = root.descendant_for_byte_range(s, e) else { continue };
@@ -1380,8 +1576,11 @@ fn globals(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, returne
             let module_value = |x: &str| if bound.contains(x) { None } else { kept(x) };
             let line = |x: TsNode| x.start_position().row as u32 + 1;
             let mut writes: Vec<Use> = vec![];
-            for a in walk(body, &["assignment_expression", "augmented_assignment_expression", "update_expression"]).into_iter().filter(mine) {
-                if let Some(t) = a.child_by_field_name("left").or_else(|| a.child_by_field_name("argument")).filter(|t| t.kind() == "identifier") {
+            for a in walk(body, &["assignment_expression", "augmented_assignment_expression", "update_expression"]).into_iter().filter(mine)
+            {
+                if let Some(t) =
+                    a.child_by_field_name("left").or_else(|| a.child_by_field_name("argument")).filter(|t| t.kind() == "identifier")
+                {
                     note(&mut writes, module_value(text(t, src)), text(t, src), line(a));
                 }
             }
@@ -1402,7 +1601,9 @@ fn globals(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, returne
             let mut reads: Vec<Use> = vec![];
             for x in walk(body, &["identifier", "shorthand_property_identifier"]).into_iter().filter(mine) {
                 // what an assignment puts in a name, not the value the name held
-                let assigned = x.parent().map_or(false, |p| p.kind() == "assignment_expression" && p.child_by_field_name("left").map(|l| l.id()) == Some(x.id()));
+                let assigned = x.parent().map_or(false, |p| {
+                    p.kind() == "assignment_expression" && p.child_by_field_name("left").map(|l| l.id()) == Some(x.id())
+                });
                 if !assigned {
                     note(&mut reads, module_value(text(x, src)), text(x, src), line(x));
                 }
@@ -1429,7 +1630,11 @@ fn note(uses: &mut Vec<Use>, kept: Option<String>, name: &str, line: u32) {
 
 /// The values a module declares at its top level: `let current = ..`, `const LATEST = new Map()`.
 fn top_names(m: &Module) -> HashSet<String> {
-    top_variables(m.tree.root_node()).into_iter().filter_map(|v| v.child_by_field_name("name").filter(|n| n.kind() == "identifier")).map(|n| text(n, &m.src).to_string()).collect()
+    top_variables(m.tree.root_node())
+        .into_iter()
+        .filter_map(|v| v.child_by_field_name("name").filter(|n| n.kind() == "identifier"))
+        .map(|n| text(n, &m.src).to_string())
+        .collect()
 }
 
 /// Where a name a module imports is kept: the top-level value of the module it comes from,
@@ -1456,7 +1661,11 @@ fn kept_in(modules: &IndexMap<String, Module>, tops: &HashMap<&str, HashSet<Stri
 fn package_value(modules: &IndexMap<String, Module>, kept: &str) -> bool {
     let Some((home, name)) = kept.rsplit_once('.').and_then(|(mid, name)| Some((modules.get(mid)?, name))) else { return false };
     let src = &home.src[..];
-    let Some(v) = top_variables(home.tree.root_node()).into_iter().find(|v| v.child_by_field_name("name").map(|n| text(n, src)) == Some(name)) else { return false };
+    let Some(v) =
+        top_variables(home.tree.root_node()).into_iter().find(|v| v.child_by_field_name("name").map(|n| text(n, src)) == Some(name))
+    else {
+        return false;
+    };
     if v.child_by_field_name("type").and_then(|t| typed_package(t, home, src)).is_some() {
         return true;
     }
@@ -1464,11 +1673,16 @@ fn package_value(modules: &IndexMap<String, Module>, kept: &str) -> bool {
     let mut value = v.child_by_field_name("value");
     while let Some(x) = value {
         match x.kind() {
-            "await_expression" | "parenthesized_expression" | "as_expression" | "satisfies_expression" | "non_null_expression" => value = named_children(x).into_iter().next(),
+            "await_expression" | "parenthesized_expression" | "as_expression" | "satisfies_expression" | "non_null_expression" => {
+                value = named_children(x).into_iter().next()
+            }
             "new_expression" => return x.child_by_field_name("constructor").map_or(false, package),
             // a chain of calls on what a package made: `new Hono().basePath("/api")`
             "call_expression" => match function_of(x) {
-                Some(f) if f.kind() == "member_expression" && f.child_by_field_name("object").map_or(false, |o| matches!(o.kind(), "call_expression" | "new_expression")) => {
+                Some(f)
+                    if f.kind() == "member_expression"
+                        && f.child_by_field_name("object").map_or(false, |o| matches!(o.kind(), "call_expression" | "new_expression")) =>
+                {
                     value = f.child_by_field_name("object");
                 }
                 Some(f) => return package(f),
@@ -1479,7 +1693,6 @@ fn package_value(modules: &IndexMap<String, Module>, kept: &str) -> bool {
     }
     false
 }
-
 
 /// The class a module-level value holds, in its own module or the one it is imported from.
 /// The name a call's value is kept by: `const x = await f(..)`, `x = f(..)`, through the arms of
@@ -1516,7 +1729,6 @@ fn value_type(m: &Module, name: &str, modules: &IndexMap<String, Module>, nodes:
     resolve(home, home.values.get(&local)?, modules, nodes).filter(|r| nodes.get(r).map_or(false, |x| x.kind == NodeKind::Class))
 }
 
-
 /// Inside a module's body, what belongs to the module and not to a function defined in it.
 fn module_level(n: TsNode, root: TsNode, bodies: &HashMap<String, (usize, usize)>) -> bool {
     let inside = bodies.values().any(|(s, e)| *s <= n.start_byte() && n.end_byte() <= *e);
@@ -1541,7 +1753,15 @@ fn member_parts(n: TsNode, src: &[u8]) -> Vec<String> {
     }
 }
 
-fn link_calls<'t>(m: &'t Module, modules: &'t IndexMap<String, Module>, store: &mut GraphBuilder, id: &str, returned: &HashMap<String, String>, eval: &Eval, linked: &mut Linked<'t>) {
+fn link_calls<'t>(
+    m: &'t Module,
+    modules: &'t IndexMap<String, Module>,
+    store: &mut GraphBuilder,
+    id: &str,
+    returned: &HashMap<String, String>,
+    eval: &Eval,
+    linked: &mut Linked<'t>,
+) {
     let n = store.nodes[id].clone();
     let root = m.tree.root_node();
     let body = match n.kind {
@@ -1579,7 +1799,12 @@ fn link_calls<'t>(m: &'t Module, modules: &'t IndexMap<String, Module>, store: &
     }
     if let (Some(compares), Some(node)) = (compares, store.nodes.get_mut(id)) {
         node.compares = compares;
-        node.raises = crate::tree::holds(body, &m.src, |n, _| n.kind() == "throw_statement", &["function_declaration", "class_declaration", "method_definition"]);
+        node.raises = crate::tree::holds(
+            body,
+            &m.src,
+            |n, _| n.kind() == "throw_statement",
+            &["function_declaration", "class_declaration", "method_definition"],
+        );
     }
     linked.args.extend(read.args);
     linked.calls.extend(read.calls.into_iter().map(|(t, built)| (id.to_string(), t, built)));
@@ -1634,7 +1859,15 @@ struct Body<'a, 't> {
 const STRINGS: &[&str] = &["string", "template_string"];
 
 impl<'a, 't> Body<'a, 't> {
-    fn new(m: &'t Module, modules: &'t IndexMap<String, Module>, store: &'a GraphBuilder, n: &Node, body: TsNode<'t>, returned: &'a HashMap<String, String>, eval: &'a Eval<'a>) -> Self {
+    fn new(
+        m: &'t Module,
+        modules: &'t IndexMap<String, Module>,
+        store: &'a GraphBuilder,
+        n: &Node,
+        body: TsNode<'t>,
+        returned: &'a HashMap<String, String>,
+        eval: &'a Eval<'a>,
+    ) -> Self {
         let is_module = n.kind == NodeKind::Module;
         let scope = if is_module { None } else { paths::function_node(body) };
         let cls = n.cls.clone();
@@ -1663,7 +1896,13 @@ impl<'a, 't> Body<'a, 't> {
         };
         b.typed(n);
         b.made();
-        b.sites = evaluation_order(walk(body, &["call_expression", "new_expression", "object", "jsx_opening_element", "jsx_self_closing_element", "identifier"])).into_iter().filter(|x| b.mine(*x)).collect();
+        b.sites = evaluation_order(walk(
+            body,
+            &["call_expression", "new_expression", "object", "jsx_opening_element", "jsx_self_closing_element", "identifier"],
+        ))
+        .into_iter()
+        .filter(|x| b.mine(*x))
+        .collect();
         b
     }
 
@@ -1702,7 +1941,9 @@ impl<'a, 't> Body<'a, 't> {
                 continue;
             }
             let declared = v.child_by_field_name("type").and_then(|t| named_children(t).into_iter().next()).map(|t| member_parts(t, src));
-            let built = (value.kind() == "new_expression").then(|| value.child_by_field_name("constructor").map(|c| member_parts(c, src))).flatten();
+            let built = (value.kind() == "new_expression")
+                .then(|| value.child_by_field_name("constructor").map(|c| member_parts(c, src)))
+                .flatten();
             let typed = self.class(declared.or(built).and_then(|t| self.resolve(&t)));
             // `const p = await getProvider()`: what the function hands on
             let handed = || {
@@ -1719,7 +1960,8 @@ impl<'a, 't> Body<'a, 't> {
     /// The values a package made, by the package, in the body and at its module's top level.
     fn made(&mut self) {
         let (m, src, root) = (self.m, self.src, self.root);
-        let named = |v: TsNode<'t>| Some((v.child_by_field_name("name").filter(|n| n.kind() == "identifier")?, v.child_by_field_name("value")?));
+        let named =
+            |v: TsNode<'t>| Some((v.child_by_field_name("name").filter(|n| n.kind() == "identifier")?, v.child_by_field_name("value")?));
         for v in walk(if self.is_module { root } else { self.body }, &["variable_declarator"]) {
             let Some((name, value)) = named(v) else { continue };
             if self.mine(v) || self.is_module || module_level(v, root, &m.bodies) {
@@ -1730,7 +1972,10 @@ impl<'a, 't> Body<'a, 't> {
         }
         // a parameter declared with a library's type holds a value its package made
         for p in self.scope.and_then(|f| f.child_by_field_name("parameters")).map(named_children).unwrap_or_default() {
-            if let (Some(name), Some(pkg)) = (p.child_by_field_name("pattern").filter(|x| x.kind() == "identifier"), p.child_by_field_name("type").and_then(|t| typed_package(t, m, src))) {
+            if let (Some(name), Some(pkg)) = (
+                p.child_by_field_name("pattern").filter(|x| x.kind() == "identifier"),
+                p.child_by_field_name("type").and_then(|t| typed_package(t, m, src)),
+            ) {
                 self.made.insert(text(name, src).to_string(), pkg);
             }
         }
@@ -1741,32 +1986,27 @@ impl<'a, 't> Body<'a, 't> {
             class = c.parent();
         }
         if let Some(class) = class.filter(|_| !self.is_module) {
-            let field = |name: TsNode| format!("this.{}", text(name, src));
-            for f in walk(class, &["public_field_definition"]) {
-                if let (Some(name), Some(pkg)) = (f.child_by_field_name("name"), f.child_by_field_name("type").and_then(|t| typed_package(t, m, src))) {
-                    self.made.insert(field(name), pkg);
-                }
-            }
-            for p in walk(class, &["required_parameter", "optional_parameter"]).into_iter().filter(|p| named_children(*p).iter().any(|c| c.kind() == "accessibility_modifier")) {
-                if let (Some(name), Some(pkg)) = (p.child_by_field_name("pattern"), p.child_by_field_name("type").and_then(|t| typed_package(t, m, src))) {
-                    self.made.insert(field(name), pkg);
-                }
-            }
-            for a in walk(class, &["assignment_expression"]) {
-                let (Some(l), Some(r)) = (a.child_by_field_name("left"), a.child_by_field_name("right")) else { continue };
-                if let ([this, name], Some(pkg)) = (member_parts(l, src).as_slice(), made_by_package(r, m, src)) {
-                    if this == "this" {
-                        self.made.entry(format!("this.{name}")).or_insert(pkg);
-                    }
-                }
-            }
+            let fields = m.made.borrow_mut().entry(Some(class.start_byte())).or_insert_with(|| class_made(class, m)).clone();
+            self.made.extend(fields);
         }
         if !self.is_module {
-            for v in walk(root, &["variable_declarator"]).into_iter().filter(|v| module_level(*v, root, &m.bodies)) {
-                let Some((name, value)) = named(v) else { continue };
-                if let Some(p) = made_by_package(value, m, src) {
-                    self.made.entry(text(name, src).to_string()).or_insert(p);
-                }
+            let tops = m
+                .made
+                .borrow_mut()
+                .entry(None)
+                .or_insert_with(|| {
+                    let mut out = HashMap::new();
+                    for v in walk(root, &["variable_declarator"]).into_iter().filter(|v| module_level(*v, root, &m.bodies)) {
+                        let Some((name, value)) = named(v) else { continue };
+                        if let Some(p) = made_by_package(value, m, src) {
+                            out.entry(text(name, src).to_string()).or_insert(p);
+                        }
+                    }
+                    out
+                })
+                .clone();
+            for (k, p) in tops {
+                self.made.entry(k).or_insert(p);
             }
         }
     }
@@ -1790,7 +2030,8 @@ impl<'a, 't> Body<'a, 't> {
     /// function says. A call Atlas does not follow gives no type the program names: a cast or an
     /// annotation on its value (`JSON.parse(..) as Config`) is asserted, not given.
     fn gives(&self, c: TsNode, to: Option<&str>) -> Vec<Held> {
-        let ty = |name: &String| to.and_then(|t| self.locals.get(name).cloned().or_else(|| self.returned.get(t).cloned())).unwrap_or_default();
+        let ty =
+            |name: &String| to.and_then(|t| self.locals.get(name).cloned().or_else(|| self.returned.get(t).cloned())).unwrap_or_default();
         kept_as(c, self.src).map(|name| Held::new(ty(&name), name)).into_iter().collect()
     }
 
@@ -1798,10 +2039,18 @@ impl<'a, 't> Body<'a, 't> {
     /// by, or the names a pattern takes out of it (`const { values } = parseArgs(..)`).
     fn parsed_into(&self, c: TsNode) -> Vec<Held> {
         let mut v = c;
-        while let Some(p) = v.parent().filter(|p| matches!(p.kind(), "await_expression" | "parenthesized_expression" | "as_expression" | "non_null_expression" | "satisfies_expression")) {
+        while let Some(p) = v.parent().filter(|p| {
+            matches!(
+                p.kind(),
+                "await_expression" | "parenthesized_expression" | "as_expression" | "non_null_expression" | "satisfies_expression"
+            )
+        }) {
             v = p;
         }
-        let pattern = v.parent().filter(|d| d.kind() == "variable_declarator" && d.child_by_field_name("value").map(|x| x.id()) == Some(v.id())).and_then(|d| d.child_by_field_name("name"));
+        let pattern = v
+            .parent()
+            .filter(|d| d.kind() == "variable_declarator" && d.child_by_field_name("value").map(|x| x.id()) == Some(v.id()))
+            .and_then(|d| d.child_by_field_name("name"));
         match pattern.filter(|p| p.kind() == "object_pattern") {
             Some(p) => named_children(p)
                 .into_iter()
@@ -1831,9 +2080,14 @@ impl<'a, 't> Body<'a, 't> {
     fn constructed(&mut self, steps: &mut Steps, c: TsNode<'t>) {
         let parts = c.child_by_field_name("constructor").map(|x| member_parts(x, self.src)).unwrap_or_default();
         if let Some(r) = self.class(self.resolve(&parts).filter(|r| self.own(r))) {
-            let step = Step { hands: self.hands(&[c.child_by_field_name("arguments")], &steps.kept), gives: self.gives(c, Some(&r)), ..Default::default() };
+            let step = Step {
+                hands: self.hands(&[c.child_by_field_name("arguments")], &steps.kept),
+                gives: self.gives(c, Some(&r)),
+                ..Default::default()
+            };
             steps.call(c, &r, EdgeKind::Instantiates, None, step);
-            if let Some(a) = argument(self.modules, self.store, &self.id, &format!("{r}.constructor"), c, self.m, self.scope, &self.params) {
+            if let Some(a) = argument(self.modules, self.store, &self.id, &format!("{r}.constructor"), c, self.m, self.scope, &self.params)
+            {
                 self.read.args.push(a);
             }
         }
@@ -1847,7 +2101,11 @@ impl<'a, 't> Body<'a, 't> {
         while let Some(p) = v.parent().filter(|p| p.kind() == "parenthesized_expression") {
             v = p;
         }
-        let Some(d) = v.parent().filter(|d| d.kind() == "variable_declarator" && d.child_by_field_name("value").map(|x| x.id()) == Some(v.id())) else { return };
+        let Some(d) =
+            v.parent().filter(|d| d.kind() == "variable_declarator" && d.child_by_field_name("value").map(|x| x.id()) == Some(v.id()))
+        else {
+            return;
+        };
         let Some(ty) = d.child_by_field_name("type").and_then(|t| named_children(t).into_iter().next()) else { return };
         if let Some(r) = self.class(self.resolve(&type_head(ty, self.src))).filter(|r| self.own(r)) {
             let step = Step { hands: self.hands(&[Some(c)], &steps.kept), gives: self.gives(c, Some(&r)), ..Default::default() };
@@ -1893,10 +2151,14 @@ impl<'a, 't> Body<'a, 't> {
         match o.kind() {
             "this" => self.cls.clone(),
             "super" => self.class(self.resolve(self.extends()?)).filter(|r| self.own(r)),
-            "identifier" => self.locals.get(text(o, src)).cloned().or_else(|| value_type(self.m, text(o, src), self.modules, &self.store.nodes)),
+            "identifier" => {
+                self.locals.get(text(o, src)).cloned().or_else(|| value_type(self.m, text(o, src), self.modules, &self.store.nodes))
+            }
             "call_expression" => self.returned.get(&self.resolve(&member_parts(function_of(o)?, src))?).cloned(),
             "new_expression" => self.class(self.resolve(&member_parts(o.child_by_field_name("constructor")?, src))).filter(|r| self.own(r)),
-            "member_expression" if o.child_by_field_name("object").map(|x| x.kind()) == Some("this") => self.attrs.get(text(o.child_by_field_name("property")?, src)).cloned(),
+            "member_expression" if o.child_by_field_name("object").map(|x| x.kind()) == Some("this") => {
+                self.attrs.get(text(o.child_by_field_name("property")?, src)).cloned()
+            }
             _ => None,
         }
     }
@@ -1911,12 +2173,18 @@ impl<'a, 't> Body<'a, 't> {
     /// cannot name (`EXPORTERS[format](..)`, `make()(..)`).
     fn callee(&self, c: TsNode) -> Option<String> {
         let f = function_of(c)?;
-        let method = (f.kind() == "member_expression").then(|| Some((f.child_by_field_name("object")?, text(f.child_by_field_name("property")?, self.src)))).flatten();
+        let method = (f.kind() == "member_expression")
+            .then(|| Some((f.child_by_field_name("object")?, text(f.child_by_field_name("property")?, self.src))))
+            .flatten();
         if let Some(t) = method.and_then(|(o, name)| self.store.method_of(&self.receiver(o)?, name)) {
             return Some(t);
         }
         let parts = member_parts(f, self.src);
-        if parts.is_empty() { None } else { self.resolve(&parts) }
+        if parts.is_empty() {
+            None
+        } else {
+            self.resolve(&parts)
+        }
     }
 
     /// `f(..)` or `x.m(..)`: the program's function or method, found on the class of the value it
@@ -1945,7 +2213,8 @@ impl<'a, 't> Body<'a, 't> {
                 steps.call(c, &t, kind, None, Step { on, on_receiver, hands, gives: self.gives(c, Some(&t)), ..Default::default() });
                 let callee = if kind == EdgeKind::Instantiates { format!("{t}.constructor") } else { t.clone() };
                 if let Some(mut a) = argument(self.modules, self.store, &self.id, &callee, c, self.m, self.scope, &self.params) {
-                    a.on = object.filter(|o| o.kind() == "identifier").map(|o| text(o, src).to_string()).filter(|o| self.params.contains(o));
+                    a.on =
+                        object.filter(|o| o.kind() == "identifier").map(|o| text(o, src).to_string()).filter(|o| self.params.contains(o));
                     self.read.args.push(a);
                 }
             }
@@ -1959,7 +2228,11 @@ impl<'a, 't> Body<'a, 't> {
             _ => {
                 let bucket = self.bucket_path(&parts);
                 // a library's operation by its name, a call Atlas cannot follow as written
-                let name = if matches!(bucket, Bucket::Library | Bucket::Builtin) { parts.last().cloned().unwrap_or_default() } else { text(f, src).to_string() };
+                let name = if matches!(bucket, Bucket::Library | Bucket::Builtin) {
+                    parts.last().cloned().unwrap_or_default()
+                } else {
+                    text(f, src).to_string()
+                };
                 match self.eval.command_line(At { m: self.m, scope: self.scope, params: &self.params }, c) {
                     Some(options) => steps.parses(c, &name, hands, self.parsed_into(c), options),
                     None => self.unread(steps, c, &name, bucket, hands),
@@ -1989,11 +2262,14 @@ impl<'a, 't> Body<'a, 't> {
             "member_expression" | "subscript_expression" => n.child_by_field_name("object"),
             "call_expression" => function_of(n),
             "new_expression" => n.child_by_field_name("constructor"),
-            "parenthesized_expression" | "await_expression" | "non_null_expression" | "as_expression" | "satisfies_expression" => named_children(n).into_iter().next(),
+            "parenthesized_expression" | "await_expression" | "non_null_expression" | "as_expression" | "satisfies_expression" => {
+                named_children(n).into_iter().next()
+            }
             // `a ?? b` is one of its operands, any other operator's value the language's own
             "binary_expression" if logical() => n.child_by_field_name("left"),
             "ternary_expression" => n.child_by_field_name("consequence"),
-            "binary_expression" | "unary_expression" | "string" | "template_string" | "number" | "array" | "object" | "regex" | "true" | "false" => return Bucket::Builtin,
+            "binary_expression" | "unary_expression" | "string" | "template_string" | "number" | "array" | "object" | "regex" | "true"
+            | "false" => return Bucket::Builtin,
             "super" => return self.extends().and_then(|b| b.first()).map_or(Bucket::Unknown, |b| self.bucket(b)),
             _ => None,
         };
@@ -2043,7 +2319,9 @@ impl<'a, 't> Body<'a, 't> {
                     out.insert(text(p, src).to_string());
                 }
                 // a default's value binds nothing
-                "assignment_pattern" | "object_assignment_pattern" => p.child_by_field_name("left").into_iter().for_each(|l| pattern(l, src, out)),
+                "assignment_pattern" | "object_assignment_pattern" => {
+                    p.child_by_field_name("left").into_iter().for_each(|l| pattern(l, src, out))
+                }
                 "pair_pattern" => p.child_by_field_name("value").into_iter().for_each(|v| pattern(v, src, out)),
                 "object_pattern" | "array_pattern" | "rest_pattern" => named_children(p).into_iter().for_each(|c| pattern(c, src, out)),
                 _ => {}
@@ -2086,7 +2364,11 @@ impl<'a, 't> Body<'a, 't> {
             _ => self.made.get(&head).cloned(),
         };
         // some parts of the world are reached only through a client the package made, not its helpers
-        let Some(kind) = effects::boundary_ts(pkg.as_deref(), parts).filter(|k| !knowledge::THROUGH_A_CLIENT.contains(&k.world) || self.made.contains_key(&head)) else { return };
+        let Some(kind) = effects::boundary_ts(pkg.as_deref(), parts)
+            .filter(|k| !knowledge::THROUGH_A_CLIENT.contains(&k.world) || self.made.contains_key(&head))
+        else {
+            return;
+        };
         let op = parts.last().cloned().unwrap_or_default();
         let cr = Crosses::read(c, src, kind, pkg.as_deref(), &op, &literals(c, src, STRINGS), STRINGS, &HashMap::new());
         let args = c.child_by_field_name("arguments").map(named_children).unwrap_or_default();
@@ -2098,7 +2380,13 @@ impl<'a, 't> Body<'a, 't> {
             _ => None,
         };
         if let Some(built) = statement {
-            let t = Touch { what: cr.what.clone(), payload: cr.payload.clone(), op: op.clone(), line: cr.line, ..Touch::new(cr.facts.kind, None) };
+            let t = Touch {
+                what: cr.what.clone(),
+                payload: cr.payload.clone(),
+                op: op.clone(),
+                line: cr.line,
+                ..Touch::new(cr.facts.kind, None)
+            };
             self.read.calls.push((t, built));
             return;
         }
@@ -2107,10 +2395,22 @@ impl<'a, 't> Body<'a, 't> {
             return;
         }
         for (kind, a) in sides(&op, &args, &cr.facts) {
-            let t = Touch { what: text(a, src).to_string(), payload: cr.payload.clone(), op: op.clone(), artifact: cr.facts.artifact.clone(), fixed: cr.fixed, line: cr.line, ..Touch::new(kind.world, kind.dir) };
+            let t = Touch {
+                what: text(a, src).to_string(),
+                payload: cr.payload.clone(),
+                op: op.clone(),
+                artifact: cr.facts.artifact.clone(),
+                fixed: cr.fixed,
+                line: cr.line,
+                ..Touch::new(kind.world, kind.dir)
+            };
             let built = self.eval.of(at, a, 0);
             // a request is its method and its URL: `fetch(url, { method })`, `axios.post(url)`
-            let built = if kind.world == World::Net { crate::paths::cross(&method_of_request(&op, &args, at, self.eval), &built, " ") } else { built };
+            let built = if kind.world == World::Net {
+                crate::paths::cross(&method_of_request(&op, &args, at, self.eval), &built, " ")
+            } else {
+                built
+            };
             // a value the code holds none of (an option without a default) is the call as read
             if built.is_empty() {
                 self.read.touches.push(t);
@@ -2128,7 +2428,9 @@ impl<'a, 't> Body<'a, 't> {
             let f = function_of(c).filter(|f| f.kind() == "member_expression")?;
             let changing = match self.callee(c).filter(|t| self.own(t)) {
                 Some(t) => self.store.mutating.contains(&t),
-                None => f.child_by_field_name("property").map_or(false, |p| knowledge::mutators(knowledge::Registry::Npm).contains(&text(p, self.src))),
+                None => f
+                    .child_by_field_name("property")
+                    .map_or(false, |p| knowledge::mutators(knowledge::Registry::Npm).contains(&text(p, self.src))),
             };
             changing.then(|| f.child_by_field_name("object")).flatten()
         };
@@ -2144,7 +2446,11 @@ impl<'a, 't> Body<'a, 't> {
             .sites
             .iter()
             .filter(|c| c.kind() == "new_expression")
-            .filter(|c| self.resolve(&c.child_by_field_name("constructor").map(|x| member_parts(x, src)).unwrap_or_default()).filter(|r| self.own(r)).is_none())
+            .filter(|c| {
+                self.resolve(&c.child_by_field_name("constructor").map(|x| member_parts(x, src)).unwrap_or_default())
+                    .filter(|r| self.own(r))
+                    .is_none()
+            })
             .filter_map(|c| connects(*c, src, &self.m.bindings))
             .collect();
         self.read.touches.extend(opened);
@@ -2152,7 +2458,11 @@ impl<'a, 't> Body<'a, 't> {
             return;
         }
         if let Some(jsx) = walk(self.body, &["jsx_element", "jsx_self_closing_element", "jsx_fragment"]).into_iter().next() {
-            self.read.touches.push(Touch { op: "render".into(), line: jsx.start_position().row as u32 + 1, ..Touch::new(World::Screen, None) });
+            self.read.touches.push(Touch {
+                op: "render".into(),
+                line: jsx.start_position().row as u32 + 1,
+                ..Touch::new(World::Screen, None)
+            });
         }
         for r in self.changed() {
             let ty = if r == "this" { self.cls.clone().filter(|_| !self.initializer) } else { self.param_types.get(r).cloned() };
@@ -2237,7 +2547,11 @@ fn chain_root<'a>(n: TsNode, src: &'a [u8]) -> Option<&'a str> {
 /// or an item (`this.x = ..`, `p.items[k] += ..`, `p.n++`, `delete p.k`), and of the value every
 /// call that changes something is made on, as `changes` says (`p.rows.push(..)`). Changing a part
 /// changes the whole.
-fn changed_roots<'a, 't>(body: TsNode<'t>, src: &'a [u8], changes: &dyn Fn(TsNode<'t>) -> Option<TsNode<'t>>) -> std::collections::BTreeSet<&'a str> {
+fn changed_roots<'a, 't>(
+    body: TsNode<'t>,
+    src: &'a [u8],
+    changes: &dyn Fn(TsNode<'t>) -> Option<TsNode<'t>>,
+) -> std::collections::BTreeSet<&'a str> {
     changes_in(body, src, changes).into_iter().map(|(_, root)| root).collect()
 }
 
@@ -2272,7 +2586,13 @@ fn connects(c: TsNode, src: &[u8], bindings: &HashMap<String, Bound>) -> Option<
     let kind = effects::boundary_ts(None, &parts)?;
     let kinds = &["string", "template_string"];
     let f = effects::facts(kind, None, name, &literals(c, src, kinds));
-    Some(Touch { what: what_of(c, src, kinds, "arguments"), op: name.clone(), artifact: f.artifact, line: c.start_position().row as u32 + 1, ..Touch::new(f.kind, f.dir) })
+    Some(Touch {
+        what: what_of(c, src, kinds, "arguments"),
+        op: name.clone(),
+        artifact: f.artifact,
+        line: c.start_position().row as u32 + 1,
+        ..Touch::new(f.kind, f.dir)
+    })
 }
 
 /// The paths a file call is handed, each with the way it goes: a copy or a move reads its first and
@@ -2286,7 +2606,16 @@ fn sides<'t>(op: &str, args: &[TsNode<'t>], f: &effects::Facts) -> Vec<(Crossing
 
 /// Which parameter of the function a call reaches each argument is handed to, in order.
 #[allow(clippy::too_many_arguments)]
-fn argument<'t>(modules: &'t IndexMap<String, Module>, store: &GraphBuilder, caller: &str, callee: &str, c: TsNode<'t>, m: &'t Module, scope: Option<TsNode<'t>>, params: &[String]) -> Option<Arg<'t>> {
+fn argument<'t>(
+    modules: &'t IndexMap<String, Module>,
+    store: &GraphBuilder,
+    caller: &str,
+    callee: &str,
+    c: TsNode<'t>,
+    m: &'t Module,
+    scope: Option<TsNode<'t>>,
+    params: &[String],
+) -> Option<Arg<'t>> {
     let cn = store.nodes.get(callee)?;
     let cm = modules.get(&cn.module)?;
     let (s, e) = *cm.bodies.get(callee)?;
@@ -2301,7 +2630,15 @@ fn argument<'t>(modules: &'t IndexMap<String, Module>, store: &GraphBuilder, cal
         .filter(|(_, n)| !n.is_empty())
         .map(|(a, n)| (n, a))
         .collect();
-    Some(Arg { caller: caller.to_string(), callee: callee.to_string(), module: m.id.clone(), scope, params: params.to_vec(), passed, on: None })
+    Some(Arg {
+        caller: caller.to_string(),
+        callee: callee.to_string(),
+        module: m.id.clone(),
+        scope,
+        params: params.to_vec(),
+        passed,
+        on: None,
+    })
 }
 
 /// The package an `ext:` binding came from, as the module imported it.
@@ -2329,7 +2666,9 @@ const CHOICES: ChoiceSyntax = ChoiceSyntax {
         let depth = || {
             let mut d = 0;
             let mut cur = c;
-            while let Some(up) = cur.parent().filter(|p| p.kind() == "else_clause").and_then(|e| e.parent()).filter(|p| p.kind() == "if_statement") {
+            while let Some(up) =
+                cur.parent().filter(|p| p.kind() == "else_clause").and_then(|e| e.parent()).filter(|p| p.kind() == "if_statement")
+            {
                 d += 1;
                 cur = up;
             }
@@ -2350,7 +2689,9 @@ const CHOICES: ChoiceSyntax = ChoiceSyntax {
             "ternary_expression" if is("alternative") => Part::Arm(1),
             "switch_body" if child.kind() == "switch_case" => Part::Arm(nth_of_kind(c, child)),
             // `default` comes after every case
-            "switch_body" if child.kind() == "switch_default" => Part::Arm(named_children(c).iter().filter(|x| x.kind() == "switch_case").count() as u32),
+            "switch_body" if child.kind() == "switch_default" => {
+                Part::Arm(named_children(c).iter().filter(|x| x.kind() == "switch_case").count() as u32)
+            }
             "try_statement" if is("body") => Part::Arm(0),
             "try_statement" if is("handler") => Part::Arm(1),
             "binary_expression" if is("left") => Part::Arm(0),
@@ -2378,6 +2719,11 @@ fn tested<'t>(n: TsNode<'t>, src: &[u8]) -> Option<(TsNode<'t>, TsNode<'t>)> {
 /// A `switch`: its value, the strings of its cases, and the body that holds them.
 fn switched<'t>(n: TsNode<'t>, src: &[u8]) -> Option<(String, Vec<String>, Option<TsNode<'t>>)> {
     let (Some(value), Some(body)) = (n.child_by_field_name("value"), n.child_by_field_name("body")) else { return None };
-    let cases = named_children(body).into_iter().filter_map(|c| c.child_by_field_name("value")).filter(|v| v.kind() == "string").map(|v| unquote(text(v, src))).collect();
+    let cases = named_children(body)
+        .into_iter()
+        .filter_map(|c| c.child_by_field_name("value"))
+        .filter(|v| v.kind() == "string")
+        .map(|v| unquote(text(v, src)))
+        .collect();
     Some((text(value, src).trim_start_matches('(').trim_end_matches(')').to_string(), cases, Some(body)))
 }

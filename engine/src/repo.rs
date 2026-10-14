@@ -3,10 +3,11 @@
 //! a build), with the files named on the command line beside it; a file's text is read once,
 //! when a reader first asks for it. A part of the repository is a view of the same reading.
 //!
-//! What a library's code and its types are is the environment's, read by ty, not the repository.
+//! What a library's code and its types are is the environment's, not the repository's: read by ty,
+//! from `node_modules`, from where Cargo keeps a crate.
 
 use std::collections::{BTreeSet, HashMap};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
@@ -42,7 +43,11 @@ impl Repo {
         let walk = ignore::WalkBuilder::new(dir)
             .require_git(false)
             .git_global(false)
-            .filter_entry(|e| e.depth() == 0 || !(e.file_type().map_or(false, |t| t.is_dir()) && crate::knowledge::NEVER_READ.contains(&e.file_name().to_str().unwrap_or(""))))
+            .filter_entry(|e| {
+                e.depth() == 0
+                    || !(e.file_type().map_or(false, |t| t.is_dir())
+                        && crate::knowledge::NEVER_READ.contains(&e.file_name().to_str().unwrap_or("")))
+            })
             .build();
         for e in walk.flatten() {
             let Ok(rel) = e.path().strip_prefix(dir) else { continue };
@@ -64,7 +69,8 @@ impl Repo {
         }
         dirs.insert(PathBuf::new());
         let listing = Listing { files, dirs, named: listed, texts: Mutex::new(HashMap::new()) };
-        Ok(Repo { root: dir.to_path_buf(), at: PathBuf::new(), listing: Arc::new(listing), asked: None })
+        let root = normal(&std::path::absolute(dir)?);
+        Ok(Repo { root, at: PathBuf::new(), listing: Arc::new(listing), asked: None })
     }
 
     /// The project read for a directory inside it, `asked`.
@@ -77,7 +83,8 @@ impl Repo {
         self.asked.as_deref()
     }
 
-    /// The directory, as the caller named it.
+    /// The directory, from the root of the file system: `api`, `./api` and `../atlas/api`, named
+    /// in `~/code/atlas`, are each `~/code/atlas/api`.
     pub fn root(&self) -> &Path {
         &self.root
     }
@@ -97,7 +104,8 @@ impl Repo {
 
     /// Where a path the caller writes from the root stands in the listing: `root/x` and `x` alike.
     fn key(&self, p: &Path) -> PathBuf {
-        let rel = p.strip_prefix(&self.root).unwrap_or(p);
+        let p = normal(p);
+        let rel = p.strip_prefix(&self.root).unwrap_or(&p);
         normal(&self.at.join(rel))
     }
 
@@ -137,13 +145,25 @@ impl Repo {
     /// with it, in order.
     pub fn files_under(&self, dir: impl AsRef<Path>) -> Vec<PathBuf> {
         let at = self.key(dir.as_ref());
-        self.listing.files.iter().filter(|f| f.starts_with(&at)).filter_map(|f| f.strip_prefix(&self.at).ok()).map(|f| self.root.join(f)).collect()
+        self.listing
+            .files
+            .iter()
+            .filter(|f| f.starts_with(&at))
+            .filter_map(|f| f.strip_prefix(&self.at).ok())
+            .map(|f| self.root.join(f))
+            .collect()
     }
 
     /// The directories right under `dir`, as the root's path joined with them, in order.
     pub fn dirs_in(&self, dir: impl AsRef<Path>) -> Vec<PathBuf> {
         let at = self.key(dir.as_ref());
-        self.listing.dirs.iter().filter(|d| d.parent() == Some(at.as_path()) && !d.as_os_str().is_empty()).filter_map(|d| d.strip_prefix(&self.at).ok()).map(|d| self.root.join(d)).collect()
+        self.listing
+            .dirs
+            .iter()
+            .filter(|d| d.parent() == Some(at.as_path()) && !d.as_os_str().is_empty())
+            .filter_map(|d| d.strip_prefix(&self.at).ok())
+            .map(|d| self.root.join(d))
+            .collect()
     }
 
     /// The files named on the command line under the repository, as the root's path joined with
@@ -155,11 +175,28 @@ impl Repo {
     /// Every directory under `dir`, at any depth and the directory itself, in order.
     pub fn dirs_under(&self, dir: impl AsRef<Path>) -> Vec<PathBuf> {
         let at = self.key(dir.as_ref());
-        self.listing.dirs.iter().filter(|d| d.starts_with(&at)).filter_map(|d| d.strip_prefix(&self.at).ok()).map(|d| self.root.join(d)).collect()
+        self.listing
+            .dirs
+            .iter()
+            .filter(|d| d.starts_with(&at))
+            .filter_map(|d| d.strip_prefix(&self.at).ok())
+            .map(|d| self.root.join(d))
+            .collect()
     }
 }
 
-/// A path with its `.` parts taken out.
-fn normal(p: &Path) -> PathBuf {
-    p.components().filter(|c| !matches!(c, std::path::Component::CurDir)).collect()
+/// A path with its `.` parts taken out and each `..` taken back over the part before it; a `..`
+/// with nothing before it stays: `../api/./src/../x` is `../api/x`.
+pub fn normal(p: &Path) -> PathBuf {
+    let mut out = PathBuf::new();
+    for c in p.components() {
+        match c {
+            Component::CurDir => {}
+            Component::ParentDir if out.file_name().is_some() => {
+                out.pop();
+            }
+            other => out.push(other),
+        }
+    }
+    out
 }

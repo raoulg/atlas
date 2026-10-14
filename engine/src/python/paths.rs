@@ -12,9 +12,9 @@ use super::{call_path, dotted, Module};
 use crate::pytypes::{FileArg, Param, Target, Types};
 use crate::tree::{named_children, path_str, text, unquote, walk};
 
-pub(super) use crate::paths::{Built, Seg};
 use crate::knowledge;
 use crate::paths::{cross, hole, lit, parent, substitute, union};
+pub(super) use crate::paths::{Built, Seg};
 
 const DEPTH: u32 = 12;
 
@@ -62,7 +62,11 @@ impl<'a> Eval<'a> {
 
     /// Whether calling `f` reaches a method of `pathlib`.
     fn of_pathlib(&self, m: &Module, f: TsNode) -> bool {
-        self.types.of(&path_str(&m.path)).map_or(false, |x| x.callees((f.start_byte(), f.end_byte())).iter().any(|c| matches!(&c.target, Target::Lib(m) if knowledge::PATH_LIBRARIES.contains(&m.as_str()))))
+        self.types.of(&path_str(&m.path)).map_or(false, |x| {
+            x.callees((f.start_byte(), f.end_byte()))
+                .iter()
+                .any(|c| matches!(&c.target, Target::Lib(m) if knowledge::PATH_LIBRARIES.contains(&m.as_str())))
+        })
     }
 
     fn callee_def(&self, m: &Module, f: TsNode) -> Option<(String, usize)> {
@@ -82,8 +86,11 @@ impl<'a> Eval<'a> {
         let declared = parameters(def, &m.src, in_class(def));
         let names: Vec<String> = declared.iter().map(|(n, _)| n.clone()).collect();
         let inner = At { m, scope: Some(def), params: &names };
-        let returns = walk(def.child_by_field_name("body")?, &["return_statement"]).into_iter().filter(|r| enclosing_def(*r).map(|d| d.id()) == Some(def.id()));
-        let gives = returns.filter_map(|r| named_children(r).into_iter().next()).fold(vec![], |acc, x| union(acc, self.of(inner, x, depth + 1)));
+        let returns = walk(def.child_by_field_name("body")?, &["return_statement"])
+            .into_iter()
+            .filter(|r| enclosing_def(*r).map(|d| d.id()) == Some(def.id()));
+        let gives =
+            returns.filter_map(|r| named_children(r).into_iter().next()).fold(vec![], |acc, x| union(acc, self.of(inner, x, depth + 1)));
         if gives.is_empty() {
             return None;
         }
@@ -107,7 +114,12 @@ impl<'a> Eval<'a> {
         }
         let value = |p: &str| match handed.get(p) {
             Some(v) => v.clone(),
-            None => declared.iter().find(|(n, _)| n == p).and_then(|(_, d)| *d).map(|d| self.of(At { m, scope: None, params: &[] }, d, depth + 1)).unwrap_or_else(|| vec![hole(p)]),
+            None => declared
+                .iter()
+                .find(|(n, _)| n == p)
+                .and_then(|(_, d)| *d)
+                .map(|d| self.of(At { m, scope: None, params: &[] }, d, depth + 1))
+                .unwrap_or_else(|| vec![hole(p)]),
         };
         Some(gives.iter().flat_map(|b| substitute(b, value)).collect())
     }
@@ -125,7 +137,10 @@ impl<'a> Eval<'a> {
             "parenthesized_expression" => named_children(e).first().map(|x| self.of(at, *x, depth + 1)).unwrap_or_default(),
             "conditional_expression" => {
                 let k = named_children(e);
-                union(k.first().map(|x| self.of(at, *x, depth + 1)).unwrap_or_default(), k.get(2).map(|x| self.of(at, *x, depth + 1)).unwrap_or_default())
+                union(
+                    k.first().map(|x| self.of(at, *x, depth + 1)).unwrap_or_default(),
+                    k.get(2).map(|x| self.of(at, *x, depth + 1)).unwrap_or_default(),
+                )
             }
             "boolean_operator" => named_children(e).into_iter().fold(vec![], |acc, x| union(acc, self.of(at, x, depth + 1))),
             "binary_operator" => {
@@ -139,7 +154,9 @@ impl<'a> Eval<'a> {
             }
             "identifier" => self.name(at, e, depth),
             "attribute" => {
-                let (Some(obj), Some(attr)) = (e.child_by_field_name("object"), e.child_by_field_name("attribute")) else { return vec![named()] };
+                let (Some(obj), Some(attr)) = (e.child_by_field_name("object"), e.child_by_field_name("attribute")) else {
+                    return vec![named()];
+                };
                 match text(attr, src) {
                     "parent" => self.of(at, obj, depth + 1).iter().map(parent).collect(),
                     "stem" | "name" | "suffix" | "suffixes" | "parts" => vec![named()],
@@ -152,7 +169,9 @@ impl<'a> Eval<'a> {
                 let parents = v.filter(|v| v.child_by_field_name("attribute").map(|a| text(a, src)) == Some("parents"));
                 let n = e.child_by_field_name("subscript").and_then(|s| text(s, src).parse::<usize>().ok());
                 match (parents.and_then(|v| v.child_by_field_name("object")), n) {
-                    (Some(obj), Some(n)) => self.of(at, obj, depth + 1).iter().map(|b| (0..=n).fold(b.clone(), |b, _| parent(&b))).collect(),
+                    (Some(obj), Some(n)) => {
+                        self.of(at, obj, depth + 1).iter().map(|b| (0..=n).fold(b.clone(), |b, _| parent(&b))).collect()
+                    }
                     _ => vec![named()],
                 }
             }
@@ -201,10 +220,14 @@ impl<'a> Eval<'a> {
         let right = assigned.child_by_field_name("right")?;
         let value = facts.value((right.start_byte(), right.end_byte()))?;
         let of_lib = |t: &Target, lib: &str| matches!(t, Target::Lib(l) if l == lib || l.starts_with(&format!("{lib}.")));
-        let parser = knowledge::ARG_PARSERS.iter().find(|p| value.names.iter().any(|n| n == p.namespace) && value.classes.iter().any(|c| of_lib(c, p.package)))?;
+        let parser = knowledge::ARG_PARSERS
+            .iter()
+            .find(|p| value.names.iter().any(|n| n == p.namespace) && value.classes.iter().any(|c| of_lib(c, p.package)))?;
         for call in walk(m.tree.root_node(), &["call"]) {
             let Some(f) = call.child_by_field_name("function").filter(|f| f.kind() == "attribute") else { continue };
-            if f.child_by_field_name("attribute").map(|a| text(a, &m.src)) != Some(parser.declares) || !facts.callees((f.start_byte(), f.end_byte())).iter().any(|c| of_lib(&c.target, parser.package)) {
+            if f.child_by_field_name("attribute").map(|a| text(a, &m.src)) != Some(parser.declares)
+                || !facts.callees((f.start_byte(), f.end_byte())).iter().any(|c| of_lib(&c.target, parser.package))
+            {
                 continue;
             }
             let (mut flags, mut dest, mut default) = (vec![], None, None);
@@ -225,7 +248,8 @@ impl<'a> Eval<'a> {
                 .or_else(|| flags.iter().find(|f| !f.starts_with('-')).cloned())
                 .or_else(|| flags.first().map(option));
             if declared.as_deref() == Some(name) {
-                return default.map(|d| crate::paths::option(name, self.of(At { m, scope: enclosing_def(call), params: &[] }, d, depth + 1)));
+                return default
+                    .map(|d| crate::paths::option(name, self.of(At { m, scope: enclosing_def(call), params: &[] }, d, depth + 1)));
             }
         }
         None
@@ -272,18 +296,33 @@ impl<'a> Eval<'a> {
                     Some((d, id)) => {
                         let names: Vec<String> = parameters(d, &m.src, in_class(d)).into_iter().map(|(n, _)| n).collect();
                         let vals = self.of(At { m, scope: Some(d), params: &names }, right, depth + 1);
-                        Some(vals.into_iter().map(|b| b.into_iter().map(|s| if let Seg::Param(x) = s { Seg::Held(id.clone(), x) } else { s }).collect()).collect())
+                        Some(
+                            vals.into_iter()
+                                .map(|b| b.into_iter().map(|s| if let Seg::Param(x) = s { Seg::Held(id.clone(), x) } else { s }).collect())
+                                .collect(),
+                        )
                     }
                     None => Some(self.of(here, right, depth + 1)),
                 }
             }
             "function_definition" => {
                 let body = p.child_by_field_name("body")?;
-                let returns: Vec<TsNode> = walk(body, &["return_statement"]).into_iter().filter(|r| enclosing_def(*r).map(|d| d.id()) == Some(p.id())).collect();
+                let returns: Vec<TsNode> =
+                    walk(body, &["return_statement"]).into_iter().filter(|r| enclosing_def(*r).map(|d| d.id()) == Some(p.id())).collect();
                 let here = At { m, scope: Some(p), params: &[] };
-                Some(returns.into_iter().filter_map(|r| named_children(r).into_iter().next()).fold(vec![], |acc, x| union(acc, self.of(here, x, depth + 1))))
+                Some(
+                    returns
+                        .into_iter()
+                        .filter_map(|r| named_children(r).into_iter().next())
+                        .fold(vec![], |acc, x| union(acc, self.of(here, x, depth + 1))),
+                )
             }
-            "parameters" | "default_parameter" | "typed_parameter" | "typed_default_parameter" | "list_splat_pattern" | "dictionary_splat_pattern" => {
+            "parameters"
+            | "default_parameter"
+            | "typed_parameter"
+            | "typed_default_parameter"
+            | "list_splat_pattern"
+            | "dictionary_splat_pattern" => {
                 Some(vec![if within(at.scope) && at.params.contains(&name) { vec![Seg::Param(name)] } else { hole(&name) }])
             }
             _ => None,
@@ -293,12 +332,27 @@ impl<'a> Eval<'a> {
     fn call(&self, at: At, c: TsNode, depth: u32) -> Vec<Built> {
         let src = &at.m.src;
         let Some(f) = c.child_by_field_name("function") else { return vec![hole("call")] };
-        let args: Vec<TsNode> = c.child_by_field_name("arguments").map(named_children).unwrap_or_default().into_iter().filter(|a| a.kind() != "comment").collect();
-        let positional: Vec<TsNode> = args.iter().copied().filter(|a| !matches!(a.kind(), "keyword_argument" | "list_splat" | "dictionary_splat")).collect();
+        let args: Vec<TsNode> = c
+            .child_by_field_name("arguments")
+            .map(named_children)
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|a| a.kind() != "comment")
+            .collect();
+        let positional: Vec<TsNode> =
+            args.iter().copied().filter(|a| !matches!(a.kind(), "keyword_argument" | "list_splat" | "dictionary_splat")).collect();
         let parts = call_path(f, src);
         let last = parts.last().map(String::as_str).or_else(|| f.child_by_field_name("attribute").map(|a| text(a, src))).unwrap_or("");
         let receiver = || f.child_by_field_name("object").map(|o| self.of(at, o, depth + 1)).unwrap_or_else(|| vec![hole("value")]);
-        let joined = |xs: &[TsNode]| xs.iter().fold(vec![vec![]], |acc: Vec<Built>, a| if acc == vec![Vec::<Seg>::new()] { self.of(at, *a, depth + 1) } else { cross(&acc, &self.of(at, *a, depth + 1), "/") });
+        let joined = |xs: &[TsNode]| {
+            xs.iter().fold(vec![vec![]], |acc: Vec<Built>, a| {
+                if acc == vec![Vec::<Seg>::new()] {
+                    self.of(at, *a, depth + 1)
+                } else {
+                    cross(&acc, &self.of(at, *a, depth + 1), "/")
+                }
+            })
+        };
         if knowledge::PATH_MAKERS.contains(&last) {
             return if positional.is_empty() { vec![lit(".")] } else { joined(&positional) };
         }
@@ -315,14 +369,17 @@ impl<'a> Eval<'a> {
             }
             "with_suffix" => {
                 let suffix = positional.first().map(|a| unquote(text(*a, src))).unwrap_or_default();
-                return receiver().into_iter().map(|mut b| {
-                    if let Some(s) = crate::paths::last_lit(&mut b) {
-                        let stem_end = s.rfind('.').filter(|&i| i > s.rfind('/').map_or(0, |j| j + 1)).unwrap_or(s.len());
-                        s.truncate(stem_end);
-                        s.push_str(&suffix);
-                    }
-                    b
-                }).collect();
+                return receiver()
+                    .into_iter()
+                    .map(|mut b| {
+                        if let Some(s) = crate::paths::last_lit(&mut b) {
+                            let stem_end = s.rfind('.').filter(|&i| i > s.rfind('/').map_or(0, |j| j + 1)).unwrap_or(s.len());
+                            s.truncate(stem_end);
+                            s.push_str(&suffix);
+                        }
+                        b
+                    })
+                    .collect();
             }
             "with_name" => return cross(&receiver().iter().map(parent).collect::<Vec<_>>(), &joined(&positional), "/"),
             m if knowledge::SAME_PATH.contains(&m) => return receiver(),
@@ -462,8 +519,17 @@ pub(super) fn entry_defaults<'t>(def: TsNode<'t>, src: &[u8]) -> Vec<(String, Ts
     for (name, default) in parameters(def, src, false) {
         if let Some(d) = default {
             let given = match d.kind() {
-                "call" if call_path(d.child_by_field_name("function").unwrap_or(d), src).last().map_or(false, |l| l == "Option" || l == "Argument") => {
-                    d.child_by_field_name("arguments").and_then(|a| named_children(a).into_iter().find(|x| x.kind() != "keyword_argument" && x.kind() != "comment").or_else(|| keyword(a, src, "default")))
+                "call"
+                    if call_path(d.child_by_field_name("function").unwrap_or(d), src)
+                        .last()
+                        .map_or(false, |l| l == "Option" || l == "Argument") =>
+                {
+                    d.child_by_field_name("arguments").and_then(|a| {
+                        named_children(a)
+                            .into_iter()
+                            .find(|x| x.kind() != "keyword_argument" && x.kind() != "comment")
+                            .or_else(|| keyword(a, src, "default"))
+                    })
                 }
                 _ => Some(d),
             };
@@ -471,7 +537,8 @@ pub(super) fn entry_defaults<'t>(def: TsNode<'t>, src: &[u8]) -> Vec<(String, Ts
         }
     }
     let decorated = def.parent().filter(|p| p.kind() == "decorated_definition");
-    for dec in decorated.map(|p| named_children(p).into_iter().filter(|c| c.kind() == "decorator").collect::<Vec<_>>()).unwrap_or_default() {
+    for dec in decorated.map(|p| named_children(p).into_iter().filter(|c| c.kind() == "decorator").collect::<Vec<_>>()).unwrap_or_default()
+    {
         let Some(call) = named_children(dec).into_iter().find(|c| c.kind() == "call") else { continue };
         let head = call_path(call.child_by_field_name("function").unwrap_or(call), src);
         if !matches!(head.last().map(String::as_str), Some("option" | "argument")) {
@@ -480,7 +547,12 @@ pub(super) fn entry_defaults<'t>(def: TsNode<'t>, src: &[u8]) -> Vec<(String, Ts
         let Some(args) = call.child_by_field_name("arguments") else { continue };
         let Some(default) = keyword(args, src, "default") else { continue };
         let names: Vec<String> = named_children(args).into_iter().filter(|a| a.kind() == "string").map(|a| unquote(text(a, src))).collect();
-        let name = names.iter().find(|n| !n.starts_with('-')).cloned().or_else(|| names.iter().filter(|n| n.starts_with("--")).max_by_key(|n| n.len()).cloned()).or_else(|| names.first().cloned());
+        let name = names
+            .iter()
+            .find(|n| !n.starts_with('-'))
+            .cloned()
+            .or_else(|| names.iter().filter(|n| n.starts_with("--")).max_by_key(|n| n.len()).cloned())
+            .or_else(|| names.first().cloned());
         if let Some(n) = name {
             out.push((n.trim_start_matches('-').replace('-', "_"), default));
         }
@@ -489,6 +561,9 @@ pub(super) fn entry_defaults<'t>(def: TsNode<'t>, src: &[u8]) -> Vec<(String, Ts
 }
 
 fn keyword<'t>(args: TsNode<'t>, src: &[u8], name: &str) -> Option<TsNode<'t>> {
-    named_children(args).into_iter().find_map(|a| (a.kind() == "keyword_argument" && a.child_by_field_name("name").map(|n| text(n, src)) == Some(name)).then(|| a.child_by_field_name("value")).flatten())
+    named_children(args).into_iter().find_map(|a| {
+        (a.kind() == "keyword_argument" && a.child_by_field_name("name").map(|n| text(n, src)) == Some(name))
+            .then(|| a.child_by_field_name("value"))
+            .flatten()
+    })
 }
-

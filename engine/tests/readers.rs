@@ -50,7 +50,9 @@ fn library_knowledge_is_data() {
     names.extend(k::RUST_INTERIOR.iter().flat_map(|i| i.types.iter().copied()));
     names.extend(k::CLI_FRAMEWORKS.iter().map(|c| c.package));
     names.extend(k::WEB_FRAMEWORKS.iter().map(|w| w.package));
-    names.extend(k::ENTRY_TABLES.iter().flat_map(|(path, _)| path.iter().copied()).filter(|p| !matches!(*p, "project" | "tool" | "scripts")));
+    names.extend(
+        k::ENTRY_TABLES.iter().flat_map(|(path, _)| path.iter().copied()).filter(|p| !matches!(*p, "project" | "tool" | "scripts")),
+    );
     // the build backends, by the tool table each keeps its settings in
     names.extend(k::PACKAGE_SETTINGS.iter().map(|(path, _)| path[1]).chain(k::PACKAGE_ROOTS.iter().map(|path| path[1])));
     names.extend(k::MUTATORS.iter().map(|(_, s, _)| *s).filter(|s| !matches!(*s, "builtins" | "javascript")));
@@ -58,7 +60,18 @@ fn library_knowledge_is_data() {
     names.extend(k::RUST_FILE_OPENERS.iter().map(|(t, _, _)| *t).filter(|t| !matches!(*t, "Reader" | "Writer")));
     // `Iterator` and `Option` are Python's words as well: typing's `Iterator`, typer's `Option`
     names.extend(k::RUST_CONTAINERS.iter().copied().filter(|c| !matches!(*c, "Iterator" | "Option")));
-    for table in [k::ML_PACKAGES, k::HUB_PACKAGES, k::FILE_PACKAGES, k::ROUTERS, k::NODE_FS, k::FILE_ROUTES, k::ROOT_ROUTES, k::DRIVER_ACCESS, k::HUB_READ, k::HUB_WRITE] {
+    for table in [
+        k::ML_PACKAGES,
+        k::HUB_PACKAGES,
+        k::FILE_PACKAGES,
+        k::ROUTERS,
+        k::NODE_FS,
+        k::FILE_ROUTES,
+        k::ROOT_ROUTES,
+        k::DRIVER_ACCESS,
+        k::HUB_READ,
+        k::HUB_WRITE,
+    ] {
         names.extend(table.iter().copied());
     }
     // what the engine once tested by name

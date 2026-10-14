@@ -151,7 +151,11 @@ impl GraphBuilder {
 
     pub fn touch(&mut self, id: &str, t: Touch) {
         let Some(n) = self.nodes.get_mut(id) else { return };
-        match n.touches.iter_mut().find(|x| x.kind == t.kind && x.what == t.what && x.op == t.op && x.artifact == t.artifact && x.dir == t.dir) {
+        match n
+            .touches
+            .iter_mut()
+            .find(|x| x.kind == t.kind && x.what == t.what && x.op == t.op && x.artifact == t.artifact && x.dir == t.dir)
+        {
             Some(x) => {
                 x.n += 1;
                 // whole in its own function is whole in every route; else in the routes of each
@@ -230,6 +234,23 @@ impl GraphBuilder {
         self.classes.get(cls)?.resolved.iter().filter(|b| !b.starts_with("ext:")).find_map(|b| self.method_in(b, name, depth + 1))
     }
 
+    /// Library code read as code: every node of a library module is the library's, and no route
+    /// into the program. A name outside the code is no code of its own.
+    pub fn mark_library(&mut self) {
+        let library: HashSet<String> = self
+            .nodes
+            .values()
+            .filter(|n| n.kind != NodeKind::External && (n.library || self.nodes.get(&n.module).map_or(false, |m| m.library)))
+            .map(|n| n.id.clone())
+            .collect();
+        for id in &library {
+            if let Some(n) = self.nodes.get_mut(id) {
+                n.library = true;
+                n.entry = None;
+            }
+        }
+    }
+
     pub fn ext_node(&mut self, eid: &str) {
         if self.nodes.contains_key(eid) {
             return;
@@ -252,7 +273,6 @@ impl GraphBuilder {
         });
     }
 }
-
 
 /// Mark the classes that are doors: one of their operations reaches a service, through what it
 /// calls. An operation is a method called on a value of the class, not on the class: an
@@ -288,7 +308,12 @@ fn mark_doors(nodes: &mut IndexMap<String, Node>, edges: &[Edge]) {
         .filter(|n| n.kind == NodeKind::Class)
         .filter_map(|c| {
             let prefix = format!("{}.", c.id);
-            nodes.values().filter(|m| m.cls.as_deref() == Some(c.id.as_str()) || m.id.starts_with(&prefix) && m.kind == NodeKind::Method).filter(|m| operation(m)).find_map(|m| reaches(&m.id)).map(|k| (c.id.clone(), k))
+            nodes
+                .values()
+                .filter(|m| m.cls.as_deref() == Some(c.id.as_str()) || m.id.starts_with(&prefix) && m.kind == NodeKind::Method)
+                .filter(|m| operation(m))
+                .find_map(|m| reaches(&m.id))
+                .map(|k| (c.id.clone(), k))
         })
         .collect();
     for (id, kind) in doors {

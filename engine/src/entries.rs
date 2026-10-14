@@ -6,9 +6,9 @@ use std::path::Path;
 
 use regex::Regex;
 
-use crate::model::{Entry, EntryKind, Graph, MakeTarget, NodeKind};
 use crate::builder::GraphBuilder;
 use crate::knowledge::{self, Declares};
+use crate::model::{Entry, EntryKind, Graph, MakeTarget, NodeKind};
 use crate::repo::Repo;
 
 /// Where an app's routes are served: each route by the router it is declared on (`routes`, its
@@ -16,7 +16,13 @@ use crate::repo::Repo;
 /// (`mounted`, by key), and the prefix a router gives its own routes (`own`). A route's path
 /// is its prefixes from the app nobody mounts, down to the router it is declared on, then its
 /// own; `segment` writes a part of a path as the graph writes one.
-pub fn mount_routes(store: &mut GraphBuilder, routes: &[(String, String)], own: &HashMap<String, String>, mounted: &HashMap<String, (String, String, bool)>, segment: fn(&str) -> String) {
+pub fn mount_routes(
+    store: &mut GraphBuilder,
+    routes: &[(String, String)],
+    own: &HashMap<String, String>,
+    mounted: &HashMap<String, (String, String, bool)>,
+    segment: fn(&str) -> String,
+) {
     let trim = |p: &str| p.trim_end_matches('/').to_string();
     let mine = |key: &str| trim(own.get(key).map(String::as_str).unwrap_or(""));
     // out through the routers a router is mounted on; a prefix that replaces stands in for the
@@ -65,7 +71,9 @@ fn declared(repo: &Repo, root: &Path) -> Vec<Declared> {
     let mut out = vec![];
     for (path, declares) in knowledge::ENTRY_TABLES {
         let Some((first, rest)) = path.split_first() else { continue };
-        let Some(table) = doc.get(*first).and_then(|v| rest.iter().try_fold(v, |v, k| v.get(*k))).and_then(|t| t.as_table()) else { continue };
+        let Some(table) = doc.get(*first).and_then(|v| rest.iter().try_fold(v, |v, k| v.get(*k))).and_then(|t| t.as_table()) else {
+            continue;
+        };
         let groups: Vec<(Option<&String>, &toml::Table)> = match declares {
             Declares::Programs => vec![(None, table)],
             Declares::Plugins => table.iter().filter_map(|(g, t)| Some((Some(g), t.as_table()?))).collect(),
@@ -96,7 +104,10 @@ pub fn mark_scripts(repo: &Repo, store: &mut GraphBuilder, project_root: Option<
         // a program runs a function; a host loads a module or a class as well
         let (entry, loads) = match &d.group {
             None => (Entry::new(EntryKind::Cli, d.name), &[NodeKind::Function, NodeKind::Method][..]),
-            Some(g) => (Entry::new(EntryKind::Export, format!("{g}:{}", d.name)), &[NodeKind::Function, NodeKind::Method, NodeKind::Class, NodeKind::Module][..]),
+            Some(g) => (
+                Entry::new(EntryKind::Export, format!("{g}:{}", d.name)),
+                &[NodeKind::Function, NodeKind::Method, NodeKind::Class, NodeKind::Module][..],
+            ),
         };
         if let Some(n) = store.nodes.get_mut(&nid).filter(|n| loads.contains(&n.kind) && n.entry.is_none()) {
             n.entry = Some(entry);
@@ -211,7 +222,12 @@ fn programs(repo: &Repo, root: &Path) -> Vec<String> {
     let mut out: Vec<String> = declared(repo, root).into_iter().filter(|d| d.group.is_none()).map(|d| d.name).collect();
     if let Some(doc) = repo.text(root.join("Cargo.toml")).and_then(|t| t.parse::<toml::Table>().ok()) {
         out.extend(doc.get("package").and_then(|p| p.get("name")).and_then(|n| n.as_str()).map(str::to_string));
-        out.extend(repo.files_under(root.join("src/bin")).iter().filter(|p| p.extension().map_or(false, |e| e == "rs")).filter_map(|p| p.file_stem()?.to_str().map(str::to_string)));
+        out.extend(
+            repo.files_under(root.join("src/bin"))
+                .iter()
+                .filter(|p| p.extension().map_or(false, |e| e == "rs"))
+                .filter_map(|p| p.file_stem()?.to_str().map(str::to_string)),
+        );
     }
     if let Some(json) = repo.text(root.join("package.json")).and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok()) {
         match &json["bin"] {

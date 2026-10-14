@@ -4,14 +4,14 @@
 //! module ids, how names resolve, which calls are boundaries, what counts as an entry
 //! point. The grammar itself is reused from tree-sitter.
 
-
 use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 
+use crate::cache::Check;
 use crate::model::{Graph, Leaves};
 use crate::repo::Repo;
-use crate::{entries, python, rust, typescript, Options};
+use crate::{entries, python, pytypes, rust, typescript, Options};
 
 pub trait Language {
     fn name(&self) -> &'static str;
@@ -31,6 +31,11 @@ pub trait Language {
     /// directory, and the package.
     fn project_above(&self, _repo: &Repo, _opts: &Options) -> Option<(PathBuf, PathBuf)> {
         None
+    }
+    /// What a reading of the part at `repo` takes from outside the repository: where the code of
+    /// the libraries it reads lies, as checks of how each place stands.
+    fn environment(&self, _repo: &Repo, _opts: &Options) -> Vec<Check> {
+        vec![]
     }
 }
 
@@ -58,17 +63,15 @@ impl Language for Python {
         repo.is_file("pyproject.toml") || !python::packages(repo).is_empty() || !repo.named().is_empty()
     }
     fn parse(&self, repo: &Repo, opts: &Options) -> Result<Graph> {
-        // the package asked for comes first, then the project's others
-        let asked = opts.package.as_deref().or(repo.asked());
-        let mut packages: Vec<PathBuf> = asked.map(Path::to_path_buf).into_iter().collect();
-        packages.extend(python::packages(repo).into_iter().filter(|p| Some(p.as_path()) != asked));
+        let (packages, project_root) = Python::reading(repo, opts);
         // a project of scripts and notebooks has no package: a file named on the command line
         // in a folder without one, or a project file with none beside it
         if packages.is_empty() && !repo.is_file("pyproject.toml") && repo.named().is_empty() {
-            anyhow::bail!("no Python package found under {} (looked for a pyproject.toml, src/<pkg>/__init__.py and <pkg>/__init__.py)", repo.root().display());
+            anyhow::bail!(
+                "no Python package found under {} (looked for a pyproject.toml, src/<pkg>/__init__.py and <pkg>/__init__.py)",
+                repo.root().display()
+            );
         }
-        let first = packages.first().map(PathBuf::as_path);
-        let project_root = first.and_then(|p| python::project_root(repo, p)).or_else(|| (repo.is_file("pyproject.toml") || first.is_none()).then(|| repo.root().to_path_buf()));
         let (mut b, root) = python::parse(repo, &packages, project_root.as_deref(), opts)?;
         entries::mark_scripts(repo, &mut b, project_root.as_deref());
         Ok(b.finish(root, project_root.as_deref(), self.name()))
@@ -96,6 +99,26 @@ impl Language for Python {
         })?;
         (!root.starts_with(repo.root())).then(|| (root.to_path_buf(), package.clone()))
     }
+    /// Where ty finds the modules the project and its libraries import: the project's types come
+    /// from there however far its libraries are read.
+    fn environment(&self, repo: &Repo, opts: &Options) -> Vec<Check> {
+        let (packages, project_root) = Python::reading(repo, opts);
+        pytypes::environment(&python::types_root(&packages, project_root.as_deref()))
+    }
+}
+
+impl Python {
+    /// The packages a reading reads, the one asked for first, and the project they are in.
+    fn reading(repo: &Repo, opts: &Options) -> (Vec<PathBuf>, Option<PathBuf>) {
+        let asked = opts.package.as_deref().or(repo.asked());
+        let mut packages: Vec<PathBuf> = asked.map(Path::to_path_buf).into_iter().collect();
+        packages.extend(python::packages(repo).into_iter().filter(|p| Some(p.as_path()) != asked));
+        let first = packages.first().map(PathBuf::as_path);
+        let project_root = first
+            .and_then(|p| python::project_root(repo, p))
+            .or_else(|| (repo.is_file("pyproject.toml") || first.is_none()).then(|| repo.root().to_path_buf()));
+        (packages, project_root)
+    }
 }
 
 pub struct Rust;
@@ -110,8 +133,8 @@ impl Language for Rust {
     fn detect(&self, repo: &Repo, _opts: &Options) -> bool {
         repo.is_file("Cargo.toml")
     }
-    fn parse(&self, repo: &Repo, _opts: &Options) -> Result<Graph> {
-        let (b, root) = rust::parse(repo)?;
+    fn parse(&self, repo: &Repo, opts: &Options) -> Result<Graph> {
+        let (b, root) = rust::parse(repo, opts)?;
         Ok(b.finish(root, Some(repo.root()), self.name()))
     }
     /// The compiler asks for every type, and `pub` is the export.
@@ -121,6 +144,13 @@ impl Language for Rust {
     /// A workspace reads its members; a crate below it that is none (`fuzz/`) is a part of its own.
     fn reads(&self, part: &Repo, dir: &Path) -> bool {
         rust::crates(part).map_or(false, |cs| cs.iter().any(|c| c.dir == dir))
+    }
+    /// The crates read where Cargo keeps them, when any are read.
+    fn environment(&self, repo: &Repo, opts: &Options) -> Vec<Check> {
+        if opts.libraries == 0 {
+            return vec![];
+        }
+        rust::environment(repo)
     }
 }
 
@@ -136,8 +166,8 @@ impl Language for TypeScript {
     fn detect(&self, repo: &Repo, _opts: &Options) -> bool {
         typescript::detect(repo)
     }
-    fn parse(&self, repo: &Repo, _opts: &Options) -> Result<Graph> {
-        let (b, root) = typescript::parse(repo)?;
+    fn parse(&self, repo: &Repo, opts: &Options) -> Result<Graph> {
+        let (b, root) = typescript::parse(repo, opts)?;
         Ok(b.finish(root, Some(repo.root()), self.name()))
     }
     /// The compiler works out what a function gives, which a reader of its declaration does not
@@ -148,6 +178,13 @@ impl Language for TypeScript {
     /// A package reads every file under its code, the packages there with it.
     fn reads(&self, part: &Repo, dir: &Path) -> bool {
         dir.starts_with(typescript::code_base(part))
+    }
+    /// The packages read from a `node_modules` above the package, when any are read.
+    fn environment(&self, repo: &Repo, opts: &Options) -> Vec<Check> {
+        if opts.libraries == 0 {
+            return vec![];
+        }
+        typescript::environment(repo)
     }
 }
 

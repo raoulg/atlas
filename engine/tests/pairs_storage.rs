@@ -1,9 +1,9 @@
 //! A file join with caller-named paths and the same operation with hidden environment paths.
 //! The viewer can refine symbolic places without inventing concrete file names.
 
+use atlas_engine::{analyze, flow, Options};
 use std::collections::BTreeSet;
 use std::path::PathBuf;
-use atlas_engine::{analyze, flow, Options};
 
 #[test]
 fn storage_places_keep_the_evidence_for_their_quotient() {

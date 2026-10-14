@@ -57,7 +57,12 @@ impl<'g> Ix<'g> {
             out.entry(e.src.as_str()).or_default().push(e);
             into.entry(e.dst.as_str()).or_default().push(e);
         }
-        let used_as_type = g.edges.iter().filter(|e| matches!(e.kind, EdgeKind::Takes | EdgeKind::Returns | EdgeKind::Has | EdgeKind::Mutates | EdgeKind::Variant)).map(|e| e.dst.as_str()).collect();
+        let used_as_type = g
+            .edges
+            .iter()
+            .filter(|e| matches!(e.kind, EdgeKind::Takes | EdgeKind::Returns | EdgeKind::Has | EdgeKind::Mutates | EdgeKind::Variant))
+            .map(|e| e.dst.as_str())
+            .collect();
         Ix { kinds: g.nodes.iter().map(|n| (n.id.as_str(), n.kind)).collect(), out, into, used_as_type }
     }
 
@@ -67,7 +72,14 @@ impl<'g> Ix<'g> {
 
     /// The outermost ancestor the program uses as a type, through bases that only share code.
     fn used_base(&self, id: &str, depth: usize) -> Option<String> {
-        let bases: Vec<&str> = self.out.get(id).into_iter().flatten().filter(|e| e.kind == EdgeKind::Inherits && self.is_class(&e.dst)).map(|e| e.dst.as_str()).collect();
+        let bases: Vec<&str> = self
+            .out
+            .get(id)
+            .into_iter()
+            .flatten()
+            .filter(|e| e.kind == EdgeKind::Inherits && self.is_class(&e.dst))
+            .map(|e| e.dst.as_str())
+            .collect();
         for b in bases {
             if let Some(up) = (depth < 10).then(|| self.used_base(b, depth + 1)).flatten() {
                 return Some(up);
@@ -108,7 +120,8 @@ pub fn families(g: &Graph) -> Families {
     let ix = Ix::new(g);
     let mut out = Families::default();
     let mut memo = HashMap::new();
-    let types: Vec<&str> = g.nodes.iter().filter(|n| matches!(n.kind, NodeKind::Class | NodeKind::External)).map(|n| n.id.as_str()).collect();
+    let types: Vec<&str> =
+        g.nodes.iter().filter(|n| matches!(n.kind, NodeKind::Class | NodeKind::External)).map(|n| n.id.as_str()).collect();
     for &t in &types {
         let f = ix.family_of(t, 0, &mut memo);
         if f != t {
@@ -143,7 +156,8 @@ pub fn families(g: &Graph) -> Families {
     let door: HashSet<&str> = g.nodes.iter().filter(|n| n.door.is_some()).map(|n| n.id.as_str()).collect();
     for &t in &types {
         let fam = memo.get(t).cloned().unwrap_or_else(|| t.to_string());
-        let kin = std::iter::once(t.to_string()).chain(std::iter::once(fam.clone())).chain(out.members.get(&fam).into_iter().flatten().cloned());
+        let kin =
+            std::iter::once(t.to_string()).chain(std::iter::once(fam.clone())).chain(out.members.get(&fam).into_iter().flatten().cloned());
         if kin.into_iter().any(|k| door.contains(k.as_str())) {
             out.doors.push(t.to_string());
         }

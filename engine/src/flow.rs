@@ -87,7 +87,10 @@ fn nest(sites: &mut [Site], gives_class: &HashMap<String, String>, next: &mut us
     }
     // what a step written inside another is handed is that step's, not the outer one's
     for j in 0..sites.len() {
-        let inner: Vec<(u32, u32)> = (0..sites.len()).filter(|&i| i != j && written(&sites[i]) && written(&sites[j]) && inside(sites[i].span, sites[j].span)).map(|i| sites[i].span).collect();
+        let inner: Vec<(u32, u32)> = (0..sites.len())
+            .filter(|&i| i != j && written(&sites[i]) && written(&sites[j]) && inside(sites[i].span, sites[j].span))
+            .map(|i| sites[i].span)
+            .collect();
         if inner.is_empty() {
             continue;
         }
@@ -135,7 +138,12 @@ pub struct Flow {
 
 /// The flow of a graph.
 pub fn of(g: &Graph) -> Flow {
-    let drawn = g.nodes.iter().filter(|n| !n.touches.is_empty() || !n.instead.is_empty()).map(|n| (n.id.clone(), n.touches.iter().chain(&n.instead).map(Touch::drawn).collect())).collect();
+    let drawn = g
+        .nodes
+        .iter()
+        .filter(|n| !n.touches.is_empty() || !n.instead.is_empty())
+        .map(|n| (n.id.clone(), n.touches.iter().chain(&n.instead).map(Touch::drawn).collect()))
+        .collect();
     Flow { bodies: bodies(g), arrows: arrows(g), types: crate::families::families(g), units: units(g), drawn }
 }
 
@@ -154,7 +162,8 @@ pub struct Units {
 pub fn units(g: &Graph) -> Units {
     let first = g.parts.first().map_or_else(|| g.root.clone(), |p| p.id.clone());
     let part_of = |n: &Node| if n.part.is_empty() { first.clone() } else { n.part.clone() };
-    let modules: Vec<(&str, String)> = g.nodes.iter().filter(|n| n.kind == NodeKind::Module && !n.library).map(|n| (n.id.as_str(), part_of(n))).collect();
+    let modules: Vec<(&str, String)> =
+        g.nodes.iter().filter(|n| n.kind == NodeKind::Module && !n.library).map(|n| (n.id.as_str(), part_of(n))).collect();
     let holds: HashSet<&str> = g.edges.iter().filter(|e| e.kind == EdgeKind::Contains).map(|e| e.src.as_str()).collect();
     let nodes: HashMap<&str, &Node> = g.nodes.iter().map(|n| (n.id.as_str(), n)).collect();
     let has_code = |m: &str| holds.contains(m) || nodes.get(m).map_or(false, |n| !n.touches.is_empty());
@@ -162,7 +171,8 @@ pub fn units(g: &Graph) -> Units {
     fn below(prefix: &str, mods: &[&str], has_code: &dyn Fn(&str) -> bool, known: &dyn Fn(&str) -> bool) -> Vec<String> {
         let depth = prefix.split('.').count();
         let inside = format!("{prefix}.");
-        let mut kids: Vec<String> = mods.iter().filter(|m| m.starts_with(&inside)).map(|m| m.split('.').take(depth + 1).collect::<Vec<_>>().join(".")).collect();
+        let mut kids: Vec<String> =
+            mods.iter().filter(|m| m.starts_with(&inside)).map(|m| m.split('.').take(depth + 1).collect::<Vec<_>>().join(".")).collect();
         kids.sort();
         kids.dedup();
         if let [only] = kids.as_slice() {
@@ -191,7 +201,11 @@ pub fn units(g: &Graph) -> Units {
             .iter()
             .flat_map(|h| {
                 let kids = if *h == part { below(h, &mods, &has_code, &known) } else { vec![] };
-                if kids.is_empty() { vec![h.to_string()] } else { kids }
+                if kids.is_empty() {
+                    vec![h.to_string()]
+                } else {
+                    kids
+                }
             })
             .collect();
         if !g.make.is_empty() && part == first {
@@ -360,13 +374,23 @@ impl Touch {
                     return coarse;
                 }
                 let w = &self.what;
-                Place { coarse: Some(Box::new(coarse)), group: "w:Disk".into(), ..place(format!("w:Disk:{w}"), format!("Disk({})", shown(w)), shown(w), "file") }
+                Place {
+                    coarse: Some(Box::new(coarse)),
+                    group: "w:Disk".into(),
+                    ..place(format!("w:Disk:{w}"), format!("Disk({})", shown(w)), shown(w), "file")
+                }
             }
             World::Db(_) if !self.artifact.is_empty() => {
                 let label = format!("{name}({})", self.artifact);
-                Place { coarse: Some(Box::new(world())), group: base.clone(), ..place(format!("{base}:{}", self.artifact), label.clone(), label, "db") }
+                Place {
+                    coarse: Some(Box::new(world())),
+                    group: base.clone(),
+                    ..place(format!("{base}:{}", self.artifact), label.clone(), label, "db")
+                }
             }
-            World::Net | World::Model | World::Global if !self.artifact.is_empty() => place(format!("{base}:{}", self.artifact), format!("{name}({})", self.artifact), self.artifact.clone(), w.glyph()),
+            World::Net | World::Model | World::Global if !self.artifact.is_empty() => {
+                place(format!("{base}:{}", self.artifact), format!("{name}({})", self.artifact), self.artifact.clone(), w.glyph())
+            }
             _ => world(),
         }
     }
@@ -467,7 +491,8 @@ impl<'g> Ix<'g> {
         if let Some(c) = self.ctor(class) {
             return self.targets(&c, EdgeKind::Takes);
         }
-        let base = self.out(class, EdgeKind::Inherits).find(|e| self.nodes.get(e.dst.as_str()).map_or(false, |n| n.kind == NodeKind::Class));
+        let base =
+            self.out(class, EdgeKind::Inherits).find(|e| self.nodes.get(e.dst.as_str()).map_or(false, |n| n.kind == NodeKind::Class));
         match base {
             Some(b) if depth < 10 => self.built_from(&b.dst, depth + 1),
             _ => vec![],
@@ -496,7 +521,12 @@ fn arrow_of(ix: &Ix, n: &Node) -> Arrow {
 /// The arrow of every function, method and class.
 pub fn arrows(g: &Graph) -> BTreeMap<String, Arrow> {
     let ix = Ix::new(g);
-    g.nodes.iter().filter(|n| matches!(n.kind, NodeKind::Class | NodeKind::Function | NodeKind::Method)).map(|n| (n.id.clone(), arrow_of(&ix, n))).filter(|(_, a)| *a != Arrow::default()).collect()
+    g.nodes
+        .iter()
+        .filter(|n| matches!(n.kind, NodeKind::Class | NodeKind::Function | NodeKind::Method))
+        .map(|n| (n.id.clone(), arrow_of(&ix, n)))
+        .filter(|(_, a)| *a != Arrow::default())
+        .collect()
 }
 
 /// What a body's steps make: the class a step builds, else what the function it runs gives back.
@@ -579,7 +609,11 @@ impl Body {
 
 /// The key of a body: the function, and `@` the class it runs on when that is known.
 pub fn key(to: &str, on: &str) -> String {
-    if on.is_empty() { to.to_string() } else { format!("{to}@{on}") }
+    if on.is_empty() {
+        to.to_string()
+    } else {
+        format!("{to}@{on}")
+    }
 }
 
 /// The edges of a graph by their ends, in the order the graph holds them.
@@ -656,7 +690,8 @@ fn grouped(steps: Vec<(Step, Vec<(u32, u32)>)>) -> Vec<Item> {
         if paths.len() < 2 {
             items.push(Item::Step(step.clone()));
         } else if placed.insert(k) {
-            let members = group.iter().map(|(s, a)| Member { step: s.clone(), branch: paths.iter().position(|p| *p == a).unwrap_or(0) }).collect();
+            let members =
+                group.iter().map(|(s, a)| Member { step: s.clone(), branch: paths.iter().position(|p| *p == a).unwrap_or(0) }).collect();
             items.push(Item::Choice { choice: k, members });
         }
     }
@@ -673,20 +708,37 @@ fn body_of(ix: &Ix, n: &Node, on: &str) -> Body {
             .sites
             .iter()
             .enumerate()
-            .map(|(i, s)| {
-                let runs_on = if !s.on.is_empty() { s.on.as_str() } else if s.on_receiver { on } else { "" };
-                let mut to = if s.to.is_empty() { format!("op:{}", s.op) } else { s.to.clone() };
+            .filter_map(|(i, s)| {
+                let runs_on = if !s.on.is_empty() {
+                    s.on.as_str()
+                } else if s.on_receiver {
+                    on
+                } else {
+                    ""
+                };
+                let mut to = match ix.nodes.get(s.to.as_str()) {
+                    _ if s.to.is_empty() => format!("op:{}", s.op),
+                    Some(_) => s.to.clone(),
+                    // a call into a library's code the graph does not hold is the library's
+                    // operation: a step where the body keeps what it gives
+                    None if !s.gives.is_empty() => format!("op:{}", s.to.rsplit('.').next().unwrap_or(&s.to)),
+                    None => return None,
+                };
                 if let Some(m) = ix.nodes.get(s.to.as_str()).filter(|m| m.cls.is_some() && !runs_on.is_empty()) {
                     to = ix.method_on(runs_on, &m.name, 0).unwrap_or(to);
                 }
-                (Step { to, on: runs_on.to_string(), site: Some(i) }, s.arms.clone())
+                Some((Step { to, on: runs_on.to_string(), site: Some(i) }, s.arms.clone()))
             })
             .collect();
         return Body { alts, items: grouped(steps), made_from: vec![] };
     }
     let callees: Vec<String> = if n.kind == NodeKind::Class && n.entry.is_some() {
         let mut out: Vec<String> = ix.ctor(&n.id).into_iter().collect();
-        out.extend(ix.out(&n.id, EdgeKind::Contains).map(|e| e.dst.clone()).filter(|m| ix.nodes.get(m.as_str()).map_or(false, |m| m.kind == NodeKind::Method && !m.private)));
+        out.extend(
+            ix.out(&n.id, EdgeKind::Contains)
+                .map(|e| e.dst.clone())
+                .filter(|m| ix.nodes.get(m.as_str()).map_or(false, |m| m.kind == NodeKind::Method && !m.private)),
+        );
         out
     } else {
         let mut seen = HashSet::new();
@@ -700,10 +752,19 @@ fn body_of(ix: &Ix, n: &Node, on: &str) -> Body {
             .collect()
     };
     let mut arms: HashMap<&str, Vec<(u32, u32)>> = HashMap::new();
-    for e in ix.out.get(n.id.as_str()).into_iter().flatten().filter(|e| matches!(e.kind, EdgeKind::Calls | EdgeKind::Instantiates) && !e.arms.is_empty()) {
+    for e in ix
+        .out
+        .get(n.id.as_str())
+        .into_iter()
+        .flatten()
+        .filter(|e| matches!(e.kind, EdgeKind::Calls | EdgeKind::Instantiates) && !e.arms.is_empty())
+    {
         arms.entry(e.dst.as_str()).or_insert_with(|| e.arms.clone());
     }
-    let steps = callees.iter().map(|c| (Step { to: c.clone(), on: String::new(), site: None }, arms.get(c.as_str()).cloned().unwrap_or_default())).collect();
+    let steps = callees
+        .iter()
+        .map(|c| (Step { to: c.clone(), on: String::new(), site: None }, arms.get(c.as_str()).cloned().unwrap_or_default()))
+        .collect();
     Body { alts, items: grouped(steps), made_from: vec![] }
 }
 
@@ -714,7 +775,12 @@ pub fn bodies(g: &Graph) -> BTreeMap<String, Body> {
     let ix = Ix::new(g);
     let mut out = BTreeMap::new();
     for t in &g.make {
-        let items: Vec<Item> = t.calls.iter().filter(|c| ix.nodes.contains_key(c.as_str()) || g.make.iter().any(|m| &m.id == *c)).map(|c| Item::Step(Step { to: c.clone(), on: String::new(), site: None })).collect();
+        let items: Vec<Item> = t
+            .calls
+            .iter()
+            .filter(|c| ix.nodes.contains_key(c.as_str()) || g.make.iter().any(|m| &m.id == *c))
+            .map(|c| Item::Step(Step { to: c.clone(), on: String::new(), site: None }))
+            .collect();
         if !items.is_empty() {
             out.insert(t.id.clone(), Body { alts: vec![], items, made_from: vec![] });
         }
@@ -764,13 +830,19 @@ mod tests {
         assert_eq!(sites[1].hands, [Held::new("Language", "#0")], "the outer call is handed the inner one's result, not its arguments");
         drop_identities(&mut sites);
         assert_eq!(sites.len(), 1, "an identity is not drawn");
-        assert_eq!((sites[0].hands.clone(), sites[0].gives.clone()), (vec![Held::new("Options", "opts")], vec![Held::new("Language", "lang")]));
+        assert_eq!(
+            (sites[0].hands.clone(), sites[0].gives.clone()),
+            (vec![Held::new("Options", "opts")], vec![Held::new("Language", "lang")])
+        );
     }
 
     /// `f(g(x), y)`: `g` takes `x`, `f` takes what `g` gives and `y`.
     #[test]
     fn composition_is_wired() {
-        let mut sites = vec![site("g", "", (2, 6), vec![at("X", "x", 4)], vec![]), site("f", "", (0, 10), vec![at("X", "x", 4), at("Y", "y", 8)], vec![])];
+        let mut sites = vec![
+            site("g", "", (2, 6), vec![at("X", "x", 4)], vec![]),
+            site("f", "", (0, 10), vec![at("X", "x", 4), at("Y", "y", 8)], vec![]),
+        ];
         nest(&mut sites, &HashMap::from([("g".to_string(), "Z".to_string())]), &mut 0);
         assert_eq!(sites[0].gives, [Held::new("Z", "#0")]);
         assert_eq!(sites[1].hands, [Held::new("Y", "y"), Held::new("Z", "#0")]);

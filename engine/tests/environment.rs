@@ -23,7 +23,8 @@ fn the_active_venv_is_not_the_projects() {
     std::fs::create_dir_all(project.join("app")).unwrap();
     std::fs::write(project.join("pyproject.toml"), "[project]\nname = \"app\"\nversion = \"0\"\n").unwrap();
     std::fs::write(project.join("app/__init__.py"), "").unwrap();
-    std::fs::write(project.join("app/main.py"), "from elsewhere import Thing\n\n\ndef size(t: Thing) -> int:\n    return t.size()\n").unwrap();
+    std::fs::write(project.join("app/main.py"), "from elsewhere import Thing\n\n\ndef size(t: Thing) -> int:\n    return t.size()\n")
+        .unwrap();
     venv(&other);
 
     let graph = || serde_json::to_string(&analyze(&project, &Options::default()).unwrap()).unwrap();

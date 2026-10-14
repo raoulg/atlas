@@ -58,29 +58,178 @@ pub fn explain(id: &str) -> Option<&'static str> {
     DOCS.split("\n## ").skip(1).find(|s| s.contains(&marker)).map(|s| s.trim_end())
 }
 
-/// The findings as text, grouped by principle, each ending in its question; the principles
-/// with nothing to ask are named at the end.
-pub fn report(root: &str, findings: &[Finding]) -> String {
-    let n = findings.len();
-    let mut out = format!("{root} · {n} {}\n", if n == 1 { "finding" } else { "findings" });
-    let mut clear = vec![];
+/// What a piece of a report is, so that whoever prints it can give each piece its own look.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Ink {
+    /// A part's name.
+    Part,
+    /// A number of questions.
+    Count,
+    /// A principle's id.
+    Principle,
+    /// What a principle asks.
+    Asks,
+    /// The reason all of a principle's questions give, said once above them.
+    Why,
+    /// Where a finding stands, `file:line`.
+    At,
+    /// What a finding says, and its question.
+    Text,
+    /// The signatures, edges and touches that show a finding.
+    Evidence,
+    /// The mark before a question.
+    Ask,
+    /// A count drawn as a bar, for the eye; plain text leaves it out.
+    Bar,
+    /// What there is nothing to say about.
+    Quiet,
+}
+
+/// How a report looks: what each piece is wrapped in, and the width its lines wrap at.
+pub struct Look {
+    pub ink: fn(Ink, &str) -> String,
+    pub width: Option<usize>,
+}
+
+impl Look {
+    /// Text without colour, one line per piece: for an agent, a pipe or a file.
+    pub fn plain() -> Look {
+        Look { ink: |ink, s| if ink == Ink::Bar { String::new() } else { s.to_string() }, width: None }
+    }
+
+    fn paint(&self, ink: Ink, s: &str) -> String {
+        (self.ink)(ink, s)
+    }
+
+    /// `text` in `ink`, starting at column `start` and wrapped onto lines that start at column
+    /// `indent`.
+    fn wrapped(&self, ink: Ink, text: &str, start: usize, indent: usize) -> String {
+        let mut lines = vec![];
+        let mut line = String::new();
+        let mut col = start;
+        for word in text.split(' ') {
+            let w = word.chars().count();
+            if !line.is_empty() && self.width.is_some_and(|width| col + 1 + w > width) {
+                lines.push(std::mem::take(&mut line));
+                col = indent;
+            }
+            if !line.is_empty() {
+                line.push(' ');
+                col += 1;
+            }
+            line += word;
+            col += w;
+        }
+        lines.push(line);
+        lines.iter().map(|l| self.paint(ink, l)).collect::<Vec<_>>().join(&format!("\n{}", " ".repeat(indent)))
+    }
+}
+
+fn questions(n: usize) -> String {
+    format!("{n} {}", if n == 1 { "question" } else { "questions" })
+}
+
+/// A question's sentences, each with its closing mark.
+fn sentences(q: &str) -> Vec<&str> {
+    let mut out = vec![];
+    let mut start = 0;
+    for (i, b) in q.bytes().enumerate() {
+        if matches!(b, b'.' | b'?' | b'!') && q.as_bytes().get(i + 1) == Some(&b' ') {
+            out.push(&q[start..=i]);
+            start = i + 2;
+        }
+    }
+    if start < q.len() {
+        out.push(&q[start..]);
+    }
+    out
+}
+
+/// How many sentences all the questions open with alike, keeping at least the last one of each:
+/// the reason a principle gives, said once above its questions.
+fn shared_lead(qs: &[Vec<&str>]) -> usize {
+    if qs.len() < 2 {
+        return 0;
+    }
+    let most = qs.iter().map(Vec::len).min().unwrap_or(0).saturating_sub(1);
+    (0..most).take_while(|&i| qs.iter().all(|q| q[i] == qs[0][i])).count()
+}
+
+/// The findings of one part as text: by principle, what it asks and the reason its questions
+/// share, then each finding with its evidence and what is left of its question.
+pub fn report(root: &str, findings: &[Finding], look: &Look) -> String {
+    let mut out = format!("{} · {}\n", look.paint(Ink::Part, root), look.paint(Ink::Count, &questions(findings.len())));
     for p in PRINCIPLES {
         let mine: Vec<&Finding> = findings.iter().filter(|f| f.principle == p.id).collect();
         if mine.is_empty() {
-            clear.push(p.id);
             continue;
         }
-        out.push_str(&format!("\n{} · {}\n", p.id, p.asks));
-        for f in mine {
-            out.push_str(&format!("  {}:{}  {}\n", f.file, f.line, f.what));
+        let asked: Vec<Vec<&str>> = mine.iter().map(|f| sentences(&f.question)).collect();
+        let lead = shared_lead(&asked);
+        let hang = p.id.len() + 3;
+        out += &format!("\n{} · {}\n", look.paint(Ink::Principle, p.id), look.wrapped(Ink::Asks, p.asks, hang, hang));
+        if lead > 0 {
+            out += &format!("{}{}\n", " ".repeat(hang), look.wrapped(Ink::Why, &asked[0][..lead].join(" "), hang, hang));
+        }
+        for (f, q) in mine.iter().zip(&asked) {
+            // a finding about packages together stands in no one file
+            let (at, gap) = if f.file.is_empty() { (String::new(), "") } else { (format!("{}:{}", f.file, f.line), "  ") };
+            out += &format!("\n  {}{gap}{}\n", look.paint(Ink::At, &at), look.wrapped(Ink::Text, &f.what, 2 + at.len() + gap.len(), 4));
             for e in &f.evidence {
-                out.push_str(&format!("      {e}\n"));
+                out += &format!("      {}\n", look.wrapped(Ink::Evidence, e, 6, 8));
             }
-            out.push_str(&format!("    ? {}\n", f.question));
+            out += &format!("    {} {}\n", look.paint(Ink::Ask, "?"), look.wrapped(Ink::Text, &q[lead..].join(" "), 6, 6));
         }
     }
-    if !clear.is_empty() {
-        out.push_str(&format!("\nnothing to ask about {}\n", clear.join(", ")));
+    out
+}
+
+/// Every part's questions counted by principle, to read after the reports: a row for each
+/// principle with something to ask, a column for each part, and on one line the principles in
+/// `asked` with nothing to ask.
+pub fn summary(parts: &[(&str, &[Finding])], asked: &[&Principle], look: &Look) -> String {
+    let count = |part: &[Finding], p: &Principle| part.iter().filter(|f| f.principle == p.id).count();
+    let total: usize = parts.iter().map(|(_, fs)| fs.iter().filter(|f| asked.iter().any(|p| p.id == f.principle)).count()).sum();
+    let rows: Vec<(&Principle, Vec<usize>)> = asked
+        .iter()
+        .map(|p| (*p, parts.iter().map(|(_, fs)| count(fs, p)).collect::<Vec<_>>()))
+        .filter(|(_, n)| n.iter().any(|&n| n > 0))
+        .collect();
+    let quiet: Vec<String> = asked.iter().filter(|p| !rows.iter().any(|(r, _)| r.id == p.id)).map(|p| p.id.to_string()).collect();
+    let rule = "─".repeat(look.width.unwrap_or(60).min(60));
+    let mut out = format!("\n{}\n", look.paint(Ink::Quiet, &rule));
+    out += &look.paint(Ink::Count, &questions(total));
+    if parts.len() > 1 {
+        out += &format!(" in {} parts", parts.len());
+    }
+    out += "\n";
+    if !rows.is_empty() {
+        let label = rows.iter().map(|(p, _)| p.id.len()).max().unwrap_or(0);
+        let widths: Vec<usize> = parts.iter().map(|(name, _)| name.chars().count().max(3)).collect();
+        out += &format!("  {:label$}", "");
+        for ((name, _), w) in parts.iter().zip(&widths) {
+            out += &format!("  {}", look.paint(Ink::Part, &format!("{name:>w$}")));
+        }
+        out += "\n";
+        let most = rows.iter().map(|(_, n)| n.iter().sum::<usize>()).max().unwrap_or(1);
+        for (p, ns) in &rows {
+            out += &format!("  {}", look.paint(Ink::Principle, &format!("{:label$}", p.id)));
+            for (n, w) in ns.iter().zip(&widths) {
+                out += &match n {
+                    0 => format!("  {}", look.paint(Ink::Quiet, &format!("{:>w$}", "·"))),
+                    n => format!("  {}", look.paint(Ink::Count, &format!("{n:>w$}"))),
+                };
+            }
+            let sum: usize = ns.iter().sum();
+            let bar = look.paint(Ink::Bar, &"▇".repeat(if most > 24 { (sum * 24).div_ceil(most) } else { sum }));
+            if !bar.is_empty() {
+                out += &format!("  {bar}");
+            }
+            out += "\n";
+        }
+    }
+    if !quiet.is_empty() {
+        out += &format!("  {}\n", look.wrapped(Ink::Quiet, &format!("nothing to ask: {}", quiet.join(", ")), 2, 2));
     }
     out
 }
@@ -206,8 +355,11 @@ fn written(n: &Node) -> &str {
     n.returns.as_ref().map_or("", |r| r.written.as_str())
 }
 
+/// `a, b and c`, each named once.
 fn list(xs: &[String]) -> String {
-    match xs {
+    let mut seen = HashSet::new();
+    let xs: Vec<String> = xs.iter().filter(|x| seen.insert(x.as_str())).cloned().collect();
+    match xs.as_slice() {
         [] => String::new(),
         [x] => x.clone(),
         [init @ .., last] => format!("{} and {last}", init.join(", ")),
@@ -259,7 +411,10 @@ fn doors(ix: &Index) -> Vec<Finding> {
                 root,
                 format!("{} exports nothing at its root", g.root),
                 vec![format!("{}: no `__all__`, and no public name of the package bound there", ix.file(root))],
-                format!("Named in `__all__`, each door becomes a route Atlas can draw. What may a user of {} import, and from where?", g.root),
+                format!(
+                    "Named in `__all__`, each door becomes a route Atlas can draw. What may a user of {} import, and from where?",
+                    g.root
+                ),
             ));
         }
     }
@@ -278,7 +433,9 @@ fn doors(ix: &Index) -> Vec<Finding> {
         }
         let what = match (untyped.is_empty(), gives_unknown) {
             (false, true) => format!("{} does not say what {} are, nor what it gives", ix.label(&f.id), list(&untyped)),
-            (false, false) => format!("{} does not say what {} {}", ix.label(&f.id), list(&untyped), if untyped.len() == 1 { "is" } else { "are" }),
+            (false, false) => {
+                format!("{} does not say what {} {}", ix.label(&f.id), list(&untyped), if untyped.len() == 1 { "is" } else { "are" })
+            }
             _ => format!("{} does not say what it gives", ix.label(&f.id)),
         };
         out.push(ix.finding(
@@ -286,7 +443,10 @@ fn doors(ix: &Index) -> Vec<Finding> {
             f,
             what,
             vec![signature(f)],
-            format!("Until its signature says so, a reader and Atlas both lose the route at this door. What does {} take and give?", ix.label(&f.id)),
+            format!(
+                "Until its signature says so, a reader and Atlas both lose the route at this door. What does {} take and give?",
+                ix.label(&f.id)
+            ),
         ));
     }
     out
@@ -316,7 +476,8 @@ fn sums(ix: &Index) -> Vec<Finding> {
         if (producers.is_empty() && !library) || consumers.is_empty() {
             continue;
         }
-        let mut evidence: Vec<String> = producers.iter().filter(|p| !p.private).map(|p| format!("returned by {} ({})", ix.label(&p.id), ix.at(p))).collect();
+        let mut evidence: Vec<String> =
+            producers.iter().filter(|p| !p.private).map(|p| format!("returned by {} ({})", ix.label(&p.id), ix.at(p))).collect();
         evidence.extend(consumers.iter().map(|c| format!("taken by {} ({})", ix.label(&c.id), ix.at(c))));
         let taken_by: Vec<String> = consumers.iter().map(|c| ix.label(&c.id)).collect();
         let choose = match variants.as_slice() {
@@ -330,7 +491,13 @@ fn sums(ix: &Index) -> Vec<Finding> {
         out.push(ix.finding(
             "sums",
             if library { consumers[0] } else { s },
-            format!("{} ({}) is handed on unopened: {} {} it", s.name, variants.join(" | "), list(&taken_by), if taken_by.len() == 1 { "takes" } else { "take" }),
+            format!(
+                "{} ({}) is handed on unopened: {} {} it",
+                s.name,
+                variants.join(" | "),
+                list(&taken_by),
+                if taken_by.len() == 1 { "takes" } else { "take" }
+            ),
             evidence,
             choose,
         ));
@@ -340,15 +507,14 @@ fn sums(ix: &Index) -> Vec<Finding> {
 
 // ---------- overrides ----------
 
-/// An override that gives something its base does not promise: a caller written against the
-/// base cannot take it in its place (Liskov). A subclass of the promised type is fine.
+/// An override that does not keep the promise of its base: a caller written against the base
+/// cannot take it in its place (Liskov). A subclass of the promised type is fine.
 fn overrides(ix: &Index) -> Vec<Finding> {
     let mut broken: Vec<(&Node, Vec<&Node>)> = vec![];
     for m in ix.g.nodes.iter().filter(|n| n.kind == NodeKind::Method && !n.ctor) {
         let Some(cls) = m.cls.as_deref() else { continue };
         let Some(base) = ix.ancestors(cls).into_iter().find_map(|a| ix.node(&format!("{a}.{}", m.name))) else { continue };
-        let (Some(promised), Some(given)) = (&base.returns, &m.returns) else { continue };
-        if promised.own || given.own || keeps(ix, base, m) {
+        if keeps(ix, base, m) {
             continue;
         }
         match broken.iter_mut().find(|(b, _)| b.id == base.id) {
@@ -359,17 +525,17 @@ fn overrides(ix: &Index) -> Vec<Finding> {
     broken
         .into_iter()
         .map(|(base, ms)| {
-            let evidence = ms.iter().map(|m| format!("{} gives {} ({})", ix.label(&m.id), written(m), ix.at(m))).collect();
+            let evidence = ms.iter().map(|m| format!("{}{} ({})", ix.label(&m.id), promise(m), ix.at(m))).collect();
             let classes: Vec<String> = ms.iter().filter_map(|m| m.cls.as_deref()).map(|c| ix.label(c)).collect();
             let base_cls = base.cls.as_deref().map(|c| ix.label(c)).unwrap_or_default();
             ix.finding(
                 "overrides",
                 base,
                 format!(
-                    "{} promises {}; {} something else",
+                    "{} promises {}; {} it",
                     ix.label(&base.id),
-                    written(base),
-                    if ms.len() == 1 { "1 override gives".to_string() } else { format!("{} overrides give", ms.len()) },
+                    promise(base),
+                    if ms.len() == 1 { "1 override breaks".to_string() } else { format!("{} overrides break", ms.len()) },
                 ),
                 evidence,
                 format!(
@@ -385,17 +551,33 @@ fn overrides(ix: &Index) -> Vec<Finding> {
         .collect()
 }
 
-/// Whether what an override gives keeps what its base promised. Where the language's type
-/// checker decided it (ty, for Python), by its answer. Elsewhere by the types the two
-/// signatures resolve to: each type the override gives is one the base promises, a subclass of
-/// one, or a variant of a sum it promises; a promise that resolves to none of the program's
-/// types gives these nothing to compare. Either way an array's shape is a promise no checker
-/// reads: each array the override gives fits one the base promises (`Float[Tensor, "batch
-/// dim"]` where `Float[Tensor, "..."]` is promised).
+/// What a method promises: what it takes, without the value it runs on, and what it gives, as
+/// written (`(rij: tuple[str, int]) -> Versie[R]`).
+fn promise(n: &Node) -> String {
+    let takes: Vec<String> = n.params.iter().filter(|p| !p.receiver).map(|p| p.to_string()).collect();
+    let ret = n.returns.as_ref().map_or(String::new(), |r| format!(" -> {}", r.written));
+    format!("({}){ret}", takes.join(", "))
+}
+
+/// Whether an override keeps the promise of its base. Where the language's type checker decided
+/// it (ty, for Python), by its answer: what the override takes and what it gives, against the
+/// base as the subclass sees it, its type parameters filled in. Elsewhere, where both signatures
+/// say what they give, by the types they resolve to: each type the override gives is one the
+/// base promises, a subclass of one, or a variant of a sum it promises; a promise that resolves
+/// to none of the program's types, or a value of the class it runs on, gives these nothing to
+/// compare. Either way an array's shape is a promise no checker reads: each array the override
+/// gives fits one the base promises (`Float[Tensor, "batch dim"]` where `Float[Tensor, "..."]`
+/// is promised).
 fn keeps(ix: &Index, base: &Node, m: &Node) -> bool {
     let (promised, given) = (ix.targets(&base.id, EdgeKind::Returns), ix.targets(&m.id, EdgeKind::Returns));
     let allowed: Vec<&str> = promised.iter().flat_map(|p| std::iter::once(*p).chain(ix.targets(p, EdgeKind::Variant))).collect();
-    let typed = m.keeps.unwrap_or_else(|| promised.is_empty() || given.iter().all(|g| allowed.iter().any(|p| p == g || ix.ancestors(g).contains(p) || array_id_fits(g, p))));
+    let typed = m.keeps.unwrap_or_else(|| match (&base.returns, &m.returns) {
+        (Some(p), Some(g)) if !p.own && !g.own => {
+            promised.is_empty()
+                || given.iter().all(|g| allowed.iter().any(|p| p == g || ix.ancestors(g).contains(p) || array_id_fits(g, p)))
+        }
+        _ => true,
+    });
     let shapes: Vec<Array> = promised.iter().filter_map(|p| array_of_id(p)).collect();
     typed && (shapes.is_empty() || given.iter().filter_map(|g| array_of_id(g)).all(|g| shapes.iter().any(|p| array_fits(&g, p))))
 }
@@ -433,7 +615,9 @@ fn array_fits(given: &Array, promised: &Array) -> bool {
         None => p.len() == g.len() && p.iter().zip(g).all(|(p, g)| one(p, g)),
         Some(i) => {
             let tail = p.len() - i - 1;
-            g.len() >= i + tail && p[..i].iter().zip(g).all(|(p, g)| one(p, g)) && p[i + 1..].iter().zip(&g[g.len() - tail..]).all(|(p, g)| one(p, g))
+            g.len() >= i + tail
+                && p[..i].iter().zip(g).all(|(p, g)| one(p, g))
+                && p[i + 1..].iter().zip(&g[g.len() - tail..]).all(|(p, g)| one(p, g))
         }
     }
 }
@@ -450,7 +634,8 @@ fn places(ix: &Index) -> Vec<Finding> {
     let mut out = vec![];
     // a file that runs as a whole names its places with the code it defines; a module that runs as
     // a command is imported all the same, and its functions are library code
-    let whole = |id: &str| ix.node(id).and_then(|n| n.entry.as_ref()).map_or(false, |e| !matches!(e.kind, EntryKind::Export | EntryKind::Cli));
+    let whole =
+        |id: &str| ix.node(id).and_then(|n| n.entry.as_ref()).map_or(false, |e| !matches!(e.kind, EntryKind::Export | EntryKind::Cli));
     for n in &ix.g.nodes {
         if entry(&n.id) || whole(&n.module) {
             continue;
@@ -464,7 +649,12 @@ fn places(ix: &Index) -> Vec<Finding> {
         if fixed.is_empty() {
             continue;
         }
-        let what = n.touches.iter().filter(|t| t.fixed).map(|t| if t.artifact.is_empty() { crate::flow::shown(&t.what) } else { t.artifact.clone() }).collect::<Vec<_>>();
+        let what = n
+            .touches
+            .iter()
+            .filter(|t| t.fixed)
+            .map(|t| if t.artifact.is_empty() { crate::flow::shown(&t.what) } else { t.artifact.clone() })
+            .collect::<Vec<_>>();
         out.push(ix.finding(
             "places",
             n,
@@ -516,8 +706,19 @@ fn changes(ix: &Index) -> Vec<Finding> {
 fn gives(ix: &Index) -> Vec<Finding> {
     let doors: HashSet<&str> = door_fns(ix).into_iter().map(|f| f.id.as_str()).collect();
     let mut out = vec![];
-    for f in ix.g.nodes.iter().filter(|f| is_function(f) && f.returns.is_none() && !f.ctor && !doors.contains(f.id.as_str()) && ix.leaves(&f.id).types) {
-        let mut users: Vec<String> = ix.into.get(f.id.as_str()).into_iter().flatten().filter(|e| e.kind == EdgeKind::Calls && e.uses).map(|e| format!("`{}`", ix.label(&e.src))).collect();
+    for f in
+        ix.g.nodes
+            .iter()
+            .filter(|f| is_function(f) && f.returns.is_none() && !f.ctor && !doors.contains(f.id.as_str()) && ix.leaves(&f.id).types)
+    {
+        let mut users: Vec<String> = ix
+            .into
+            .get(f.id.as_str())
+            .into_iter()
+            .flatten()
+            .filter(|e| e.kind == EdgeKind::Calls && e.uses)
+            .map(|e| format!("`{}`", ix.label(&e.src)))
+            .collect();
         if users.is_empty() {
             continue;
         }
@@ -532,7 +733,9 @@ fn gives(ix: &Index) -> Vec<Finding> {
             f,
             format!("{name} gives back a value its callers use, and does not say what it is"),
             vec![signature(f), format!("used by {}", list(&users))],
-            format!("Without a return annotation, what its callers get has no type, and the route stops there. What does {name} give back?"),
+            format!(
+                "Without a return annotation, what its callers get has no type, and the route stops there. What does {name} give back?"
+            ),
         ));
     }
     out
@@ -575,13 +778,21 @@ fn repeated(ix: &Index, f: &Node) -> Vec<Finding> {
         if spread.is_empty() {
             continue;
         }
-        let n_places = f.compares.iter().filter(|c| c.subject == subject).map(|c| c.choice.map_or((None, c.line), |ch| (Some(ch), 0))).collect::<BTreeSet<_>>().len();
+        let n_places = f
+            .compares
+            .iter()
+            .filter(|c| c.subject == subject)
+            .map(|c| c.choice.map_or((None, c.line), |ch| (Some(ch), 0)))
+            .collect::<BTreeSet<_>>()
+            .len();
         let named: Vec<String> = spread.iter().map(|(l, n)| format!("\"{l}\" ({n}×)")).collect();
         let evidence = f
             .compares
             .iter()
             .filter(|c| c.subject == subject)
-            .map(|c| format!("line {}: {subject} against {}", c.line, c.cases.iter().map(|x| format!("\"{x}\"")).collect::<Vec<_>>().join(", ")))
+            .map(|c| {
+                format!("line {}: {subject} against {}", c.line, c.cases.iter().map(|x| format!("\"{x}\"")).collect::<Vec<_>>().join(", "))
+            })
             .collect();
         out.push(ix.finding(
             "choices",
@@ -601,20 +812,28 @@ fn repeated(ix: &Index, f: &Node) -> Vec<Finding> {
 /// draws them, and from what each step is handed; a choice nested in an arm is read among the
 /// steps of that arm.
 fn unnamed<'g>(ix: &Index<'g>, f: &'g Node) -> Vec<Finding> {
-    let body: Vec<&'g Site> = f.sites.iter().filter(|s| !s.to.is_empty()).collect();
+    // the program's own steps: a call into a library is the library's operation, however far
+    // Atlas reads its code
+    let body: Vec<&'g Site> = f.sites.iter().filter(|s| ix.node(&s.to).map_or(false, |n| !n.library)).collect();
     // the type a step hands on: the class it constructs, or the class it returns
     let made = |s: &'g Site| -> Vec<&'g str> {
         match ix.node(&s.to) {
             Some(n) if n.kind == NodeKind::Class => vec![s.to.as_str()],
-            _ => ix.targets(&s.to, EdgeKind::Returns).into_iter().filter(|t| ix.node(t).map_or(false, |n| n.kind == NodeKind::Class)).collect(),
+            _ => ix
+                .targets(&s.to, EdgeKind::Returns)
+                .into_iter()
+                .filter(|t| ix.node(t).map_or(false, |n| n.kind == NodeKind::Class))
+                .collect(),
         }
     };
     // every choice, by the arms around it: the steps of that arm are its scope
-    let choices: BTreeSet<(&'g [(u32, u32)], u32)> = body.iter().flat_map(|s| (0..s.arms.len()).map(move |d| (&s.arms[..d], s.arms[d].0))).collect();
+    let choices: BTreeSet<(&'g [(u32, u32)], u32)> =
+        body.iter().flat_map(|s| (0..s.arms.len()).map(move |d| (&s.arms[..d], s.arms[d].0))).collect();
     let mut out = vec![];
     for (around, c) in choices {
         let d = around.len();
-        let (inside, outside): (Vec<&'g Site>, Vec<&'g Site>) = body.iter().copied().filter(|s| s.arms.starts_with(around)).partition(|s| s.arms.get(d).map_or(false, |(ch, _)| *ch == c));
+        let (inside, outside): (Vec<&'g Site>, Vec<&'g Site>) =
+            body.iter().copied().filter(|s| s.arms.starts_with(around)).partition(|s| s.arms.get(d).map_or(false, |(ch, _)| *ch == c));
         // type -> (arm -> the steps in it that make the value, the steps outside handed it); a
         // value returned, dropped or used inside its arm goes to no step outside
         let mut by_type: BTreeMap<&str, (BTreeMap<u32, BTreeSet<&str>>, Vec<String>)> = BTreeMap::new();
@@ -645,7 +864,10 @@ fn unnamed<'g>(ix: &Index<'g>, f: &'g Node) -> Vec<Finding> {
                 f,
                 format!("{} chooses where its {ty} comes from ({}) and goes on with it", ix.label(&f.id), steps.join(" | ")),
                 vec![format!("alternatives: {}", steps.join(" | ")), format!("then: {}", list(&next))],
-                format!("Where the {ty} comes from is a step of its own, with {} as its arms. What would that step be called?", list(&steps)),
+                format!(
+                    "Where the {ty} comes from is a step of its own, with {} as its arms. What would that step be called?",
+                    list(&steps)
+                ),
             ));
         }
     }
@@ -670,7 +892,12 @@ fn nothing(ix: &Index) -> Vec<Finding> {
         }
     }
     let leaves_something = |n: &Node| {
-        !n.touches.is_empty() || n.raises || n.calls_handed || n.returns.as_ref().map_or(false, |r| r.fails) || n.params.iter().any(|p| p.changes) || !ix.targets(&n.id, EdgeKind::Mutates).is_empty()
+        !n.touches.is_empty()
+            || n.raises
+            || n.calls_handed
+            || n.returns.as_ref().map_or(false, |r| r.fails)
+            || n.params.iter().any(|p| p.changes)
+            || !ix.targets(&n.id, EdgeKind::Mutates).is_empty()
     };
     let mut out = vec![];
     for f in ix.g.nodes.iter().filter(|f| is_function(f) && !f.library && !f.ctor && f.entry.is_none()) {
@@ -678,7 +905,8 @@ fn nothing(ix: &Index) -> Vec<Finding> {
             Some(r) => r.value.is_empty() && !r.own,
             None => !ix.leaves(&f.id).returns,
         };
-        let callers: Vec<&str> = ix.sources(&f.id, EdgeKind::Calls).into_iter().filter(|c| *c != f.id && ix.node(c).map_or(false, |n| !n.library)).collect();
+        let callers: Vec<&str> =
+            ix.sources(&f.id, EdgeKind::Calls).into_iter().filter(|c| *c != f.id && ix.node(c).map_or(false, |n| !n.library)).collect();
         if !gives_nothing || callers.is_empty() {
             continue;
         }
@@ -694,7 +922,13 @@ fn nothing(ix: &Index) -> Vec<Finding> {
                 break;
             }
             let built = ix.targets(id, EdgeKind::Instantiates).into_iter().filter_map(|c| ix.node(c)?.initializer(|i| ix.node(i)));
-            let next: Vec<String> = ix.targets(id, EdgeKind::Calls).into_iter().map(str::to_string).chain(built).chain(overridden.get(id).into_iter().flatten().map(|o| o.to_string())).collect();
+            let next: Vec<String> = ix
+                .targets(id, EdgeKind::Calls)
+                .into_iter()
+                .map(str::to_string)
+                .chain(built)
+                .chain(overridden.get(id).into_iter().flatten().map(|o| o.to_string()))
+                .collect();
             for t in next {
                 if let Some(t) = ix.node(&t).map(|n| n.id.as_str()).filter(|t| seen.insert(t)) {
                     runs.push(t);
@@ -711,7 +945,10 @@ fn nothing(ix: &Index) -> Vec<Finding> {
         by.dedup();
         let mut evidence = vec![signature(f), format!("called by {}", list(&by))];
         if !runs.is_empty() {
-            evidence.push(format!("runs {}, none of which touches a place or changes a value", list(&runs.iter().map(|r| format!("`{}`", ix.label(r))).collect::<Vec<_>>())));
+            evidence.push(format!(
+                "runs {}, none of which touches a place or changes a value",
+                list(&runs.iter().map(|r| format!("`{}`", ix.label(r))).collect::<Vec<_>>())
+            ));
         }
         out.push(ix.finding(
             "nothing",
@@ -734,7 +971,9 @@ fn nothing(ix: &Index) -> Vec<Finding> {
 /// imports and extends; a test is a way in from outside, not a layer.
 fn layers(ix: &Index) -> Vec<Finding> {
     let module = |id: &str| -> Option<&str> {
-        let n = ix.node(id).filter(|n| !n.library && n.kind != NodeKind::External && n.entry.as_ref().map_or(true, |e| e.kind != EntryKind::Test))?;
+        let n = ix
+            .node(id)
+            .filter(|n| !n.library && n.kind != NodeKind::External && n.entry.as_ref().map_or(true, |e| e.kind != EntryKind::Test))?;
         Some(if n.kind == NodeKind::Module { n.id.as_str() } else { n.module.as_str() })
     };
     let modules: Vec<&str> = ix.g.nodes.iter().filter(|n| n.kind == NodeKind::Module && !n.library).map(|n| n.id.as_str()).collect();
@@ -748,7 +987,11 @@ fn layers(ix: &Index) -> Vec<Finding> {
         };
         // package -> package it depends on -> the edges that make it so
         let mut deps: BTreeMap<String, BTreeMap<String, Vec<&Edge>>> = BTreeMap::new();
-        for e in ix.g.edges.iter().filter(|e| matches!(e.kind, EdgeKind::Calls | EdgeKind::Instantiates | EdgeKind::Imports | EdgeKind::Inherits)) {
+        for e in
+            ix.g.edges
+                .iter()
+                .filter(|e| matches!(e.kind, EdgeKind::Calls | EdgeKind::Instantiates | EdgeKind::Imports | EdgeKind::Inherits))
+        {
             let (Some(a), Some(b)) = (module(&e.src).and_then(under), module(&e.dst).and_then(under)) else { continue };
             if a != b {
                 deps.entry(a).or_default().entry(b).or_default().push(e);
@@ -769,12 +1012,19 @@ fn layers(ix: &Index) -> Vec<Finding> {
                 let e = es.iter().find(|e| e.kind != EdgeKind::Imports).unwrap_or(&es[0]);
                 format!("`{}` → `{}`", ix.label(&e.src), ix.label(&e.dst))
             };
-            let evidence: Vec<String> = links.iter().map(|(a, b, es)| format!("{} → {}: {} ({} in all)", name(a), name(b), example(es), es.len())).collect();
+            let evidence: Vec<String> =
+                links.iter().map(|(a, b, es)| format!("{} → {}: {} ({} in all)", name(a), name(b), example(es), es.len())).collect();
             let Some(at) = ix.node(&parent).filter(|n| !n.file.is_empty()).or_else(|| ix.node(&cycle[0])) else { continue };
             let members: Vec<String> = cycle.iter().map(|c| name(c)).collect();
             let ask = match links.as_slice() {
                 [(a, b, es), rest @ ..] if rest.iter().all(|(_, _, more)| more.len() > es.len()) => {
-                    format!("The thinnest link is {} → {} ({}). Does what it uses belong in {}, or in a package below both?", name(a), name(b), example(es), name(a))
+                    format!(
+                        "The thinnest link is {} → {} ({}). Does what it uses belong in {}, or in a package below both?",
+                        name(a),
+                        name(b),
+                        example(es),
+                        name(a)
+                    )
                 }
                 _ => "Which of these links runs against the flow, and where does what it uses belong?".to_string(),
             };
@@ -854,7 +1104,9 @@ fn strongly_connected<V>(deps: &BTreeMap<String, BTreeMap<String, V>>) -> Vec<Ve
 /// about in the class that defines it: a subclass's gets all count, but the puts it inherits
 /// are its base's question.
 fn lens(ix: &Index) -> Vec<Finding> {
-    let data = |t: &str, own: &str| t != own && ix.node(t).map_or(false, |n| matches!(n.kind, NodeKind::Class | NodeKind::External) && n.door.is_none());
+    let data = |t: &str, own: &str| {
+        t != own && ix.node(t).map_or(false, |n| matches!(n.kind, NodeKind::Class | NodeKind::External) && n.door.is_none())
+    };
     // the place a touch holds data at, as a lens sees it: a database as a whole, a file by itself
     let held = |t: &crate::model::Touch| -> Option<(String, String)> {
         match t.kind {
@@ -891,10 +1143,14 @@ fn lens(ix: &Index) -> Vec<Finding> {
         (puts, gets)
     };
     let operations = |c: &Node| -> Vec<(&Node, BTreeMap<String, String>, BTreeMap<String, String>)> {
-        ix.interface(&c.id).into_iter().filter(|m| is_function(m) && !m.ctor && !m.private).map(|m| {
-            let (puts, gets) = reaches(m);
-            (m, puts, gets)
-        }).collect()
+        ix.interface(&c.id)
+            .into_iter()
+            .filter(|m| is_function(m) && !m.ctor && !m.private)
+            .map(|m| {
+                let (puts, gets) = reaches(m);
+                (m, puts, gets)
+            })
+            .collect()
     };
     let classes: Vec<&Node> = ix.g.nodes.iter().filter(|n| n.kind == NodeKind::Class && !n.library).collect();
     // what each class's operations get from each place: (place, type) -> `Class.method`
@@ -913,10 +1169,12 @@ fn lens(ix: &Index) -> Vec<Finding> {
         let ops = operations(c);
         let name = ix.label(&c.id);
         // the places this class both puts to and gets from
-        let places: BTreeMap<&String, &String> = ops.iter().flat_map(|(_, puts, _)| puts.iter()).filter(|(p, _)| ops.iter().any(|(_, _, gets)| gets.contains_key(*p))).collect();
+        let places: BTreeMap<&String, &String> =
+            ops.iter().flat_map(|(_, puts, _)| puts.iter()).filter(|(p, _)| ops.iter().any(|(_, _, gets)| gets.contains_key(*p))).collect();
         let (mut lost_all, mut labels, mut evidence): (Vec<String>, Vec<String>, Vec<String>) = (vec![], vec![], vec![]);
         for (place, label) in places {
-            let (mut put, mut got, mut given): (BTreeMap<&str, Vec<String>>, Vec<String>, HashSet<&str>) = (BTreeMap::new(), vec![], HashSet::new());
+            let (mut put, mut got, mut given): (BTreeMap<&str, Vec<String>>, Vec<String>, HashSet<&str>) =
+                (BTreeMap::new(), vec![], HashSet::new());
             for (m, puts, gets) in &ops {
                 if puts.contains_key(place) && ix.declares(&c.id, m) {
                     for t in ix.targets(&m.id, EdgeKind::Takes).into_iter().filter(|t| data(t, &c.id)) {
@@ -926,7 +1184,11 @@ fn lens(ix: &Index) -> Vec<Finding> {
                 if gets.contains_key(place) && m.returns.as_ref().map_or(false, |r| !r.value.is_empty() || r.own) {
                     let types: Vec<&str> = ix.targets(&m.id, EdgeKind::Returns).into_iter().filter(|t| data(t, &c.id)).collect();
                     given.extend(&types);
-                    let gives = if types.is_empty() { written(m).to_string() } else { types.iter().map(|t| ix.label(t)).collect::<Vec<_>>().join(", ") };
+                    let gives = if types.is_empty() {
+                        written(m).to_string()
+                    } else {
+                        types.iter().map(|t| ix.label(t)).collect::<Vec<_>>().join(", ")
+                    };
                     got.push(format!("{}: {label} → {gives}", ix.label(&m.id)));
                 }
             }
@@ -943,7 +1205,13 @@ fn lens(ix: &Index) -> Vec<Finding> {
             evidence.extend(put.values().flatten().map(|p| format!("put {p}")));
             evidence.extend(got.iter().map(|g| format!("get {g}")));
             for t in lost.iter().filter(|_| named(place)) {
-                let elsewhere: Vec<String> = got_from.get(&(place.clone(), *t)).into_iter().flatten().filter(|m| !m.starts_with(&format!("{}.", c.name))).map(|m| format!("`{m}`")).collect();
+                let elsewhere: Vec<String> = got_from
+                    .get(&(place.clone(), *t))
+                    .into_iter()
+                    .flatten()
+                    .filter(|m| !m.starts_with(&format!("{}.", c.name)))
+                    .map(|m| format!("`{m}`"))
+                    .collect();
                 if !elsewhere.is_empty() {
                     evidence.push(format!("{} is got from {label} by {}", ix.label(t), elsewhere.join(", ")));
                 }

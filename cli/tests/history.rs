@@ -9,7 +9,14 @@ use std::process::{Child, Command, Stdio};
 use serde_json::Value;
 
 fn git(dir: &Path, args: &[&str]) {
-    let ok = Command::new("git").arg("-C").arg(dir).args(["-c", "user.name=atlas", "-c", "user.email=atlas@example.org", "-c", "commit.gpgsign=false", "-c", "tag.gpgsign=false"]).args(args).status().unwrap().success();
+    let ok = Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(["-c", "user.name=atlas", "-c", "user.email=atlas@example.org", "-c", "commit.gpgsign=false", "-c", "tag.gpgsign=false"])
+        .args(args)
+        .status()
+        .unwrap()
+        .success();
     assert!(ok, "git {args:?}");
 }
 
@@ -18,9 +25,15 @@ fn repository() -> PathBuf {
     let repo = std::env::temp_dir().join(format!("atlas-history-{}", std::process::id())).join("spots");
     let _ = std::fs::remove_dir_all(&repo);
     std::fs::create_dir_all(repo.join("src/spots")).unwrap();
-    std::fs::write(repo.join("pyproject.toml"), "[project]\nname = \"spots\"\nversion = \"0.1.0\"\n\n[project.scripts]\nspots = \"spots.cli:main\"\n").unwrap();
+    std::fs::write(
+        repo.join("pyproject.toml"),
+        "[project]\nname = \"spots\"\nversion = \"0.1.0\"\n\n[project.scripts]\nspots = \"spots.cli:main\"\n",
+    )
+    .unwrap();
     std::fs::write(repo.join("src/spots/__init__.py"), "").unwrap();
-    let cli = |draw: &str| format!("from pathlib import Path\n\n\ndef {draw}(out: Path) -> None:\n    out.write_text(\"spots\")\n\n\ndef main() -> None:\n    {draw}(Path(\"figures/spots.txt\"))\n");
+    let cli = |draw: &str| {
+        format!("from pathlib import Path\n\n\ndef {draw}(out: Path) -> None:\n    out.write_text(\"spots\")\n\n\ndef main() -> None:\n    {draw}(Path(\"figures/spots.txt\"))\n")
+    };
     std::fs::write(repo.join("src/spots/cli.py"), cli("plot")).unwrap();
     git(&repo, &["init", "-q", "-b", "main"]);
     git(&repo, &["add", "."]);
@@ -32,9 +45,17 @@ fn repository() -> PathBuf {
     repo
 }
 
-/// The server, and the address it serves at, read from what it says when it starts.
+/// The server, keeping what it keeps in a cache of the tests' own, and the address it serves at,
+/// read from what it says when it starts.
 fn serve(repo: &Path) -> (Child, String) {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_atlas")).args(["history", "--no-open", "--port", "0"]).arg(repo).stderr(Stdio::piped()).spawn().expect("atlas history starts");
+    let cache = std::env::temp_dir().join(format!("atlas-history-cache-{}", std::process::id()));
+    let mut child = Command::new(env!("CARGO_BIN_EXE_atlas"))
+        .args(["history", "--no-open", "--port", "0"])
+        .arg(repo)
+        .env("XDG_CACHE_HOME", cache)
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("atlas history starts");
     let mut line = String::new();
     BufReader::new(child.stderr.take().unwrap()).read_line(&mut line).unwrap();
     let at = line.split("http://").nth(1).and_then(|r| r.split('/').next()).unwrap_or_else(|| panic!("an address: {line}")).to_string();
@@ -73,7 +94,11 @@ fn the_history_serves_its_log_and_the_union_of_two_commits() {
     assert_eq!((&log["dirty"], &log["changed"]), (&Value::Bool(false), &serde_json::json!(0)));
     let (_, older) = get(&at, &at, "/api/log?all=1&n=300&skip=1");
     let older: Value = serde_json::from_str(&older).unwrap();
-    assert_eq!(older["commits"].as_array().unwrap().iter().map(|c| &c["hash"]).collect::<Vec<_>>(), [&commits[1]["hash"]], "skip leaves out the newest");
+    assert_eq!(
+        older["commits"].as_array().unwrap().iter().map(|c| &c["hash"]).collect::<Vec<_>>(),
+        [&commits[1]["hash"]],
+        "skip leaves out the newest"
+    );
     assert_eq!(commits[0]["refs"], serde_json::json!([{ "name": "main", "kind": "head" }]));
     assert_eq!(commits[1]["refs"], serde_json::json!([{ "name": "v0.1", "kind": "tag" }]));
     assert_eq!(commits[0]["parents"], serde_json::json!([commits[1]["hash"]]));

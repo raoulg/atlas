@@ -8,7 +8,11 @@ use tree_sitter::Node as TsNode;
 /// same wherever it was made.
 pub fn path_str(p: &Path) -> String {
     let s = p.to_string_lossy();
-    if cfg!(windows) { s.replace('\\', "/") } else { s.into_owned() }
+    if cfg!(windows) {
+        s.replace('\\', "/")
+    } else {
+        s.into_owned()
+    }
 }
 
 pub fn text<'a>(n: TsNode, src: &'a [u8]) -> &'a str {
@@ -30,7 +34,13 @@ pub fn field_children<'t>(n: TsNode<'t>, field: &str) -> Vec<TsNode<'t>> {
 /// knows for it, or by its name alone where an earlier step of the body made it. A name the
 /// reader knows nothing of (a function, a module, a loop variable) hands nothing; `skip` are the
 /// body's own receiver (`self`, `this`), which a call on it does not hand.
-pub fn held_names(e: TsNode, src: &[u8], skip: &[&str], ty: &dyn Fn(&str) -> Option<String>, made: &std::collections::HashSet<String>) -> Vec<crate::model::Held> {
+pub fn held_names(
+    e: TsNode,
+    src: &[u8],
+    skip: &[&str],
+    ty: &dyn Fn(&str) -> Option<String>,
+    made: &std::collections::HashSet<String>,
+) -> Vec<crate::model::Held> {
     let mut out: Vec<crate::model::Held> = vec![];
     for i in walk(e, &["identifier", "shorthand_property_identifier"]) {
         let name = text(i, src);
@@ -183,7 +193,13 @@ pub struct CompareSyntax {
 }
 
 /// Where a body compares one value with literals, and the choice each comparison decides.
-pub fn compares(body: TsNode, src: &[u8], choices: &std::collections::HashMap<usize, u32>, cmp: &CompareSyntax, syn: &ChoiceSyntax) -> Vec<crate::model::Compare> {
+pub fn compares(
+    body: TsNode,
+    src: &[u8],
+    choices: &std::collections::HashMap<usize, u32>,
+    cmp: &CompareSyntax,
+    syn: &ChoiceSyntax,
+) -> Vec<crate::model::Compare> {
     let mut out = vec![];
     for n in walk(body, cmp.kinds) {
         let line = n.start_position().row as u32 + 1;
@@ -204,7 +220,12 @@ pub fn compares(body: TsNode, src: &[u8], choices: &std::collections::HashMap<us
             _ => continue,
         };
         if (cmp.subject)(subject) {
-            out.push(crate::model::Compare { subject: text(subject, src).to_string(), cases, line, choice: decides(n, body, src, choices, syn) });
+            out.push(crate::model::Compare {
+                subject: text(subject, src).to_string(),
+                cases,
+                line,
+                choice: decides(n, body, src, choices, syn),
+            });
         }
     }
     out
@@ -304,7 +325,9 @@ pub fn head_literal(e: TsNode, src: &[u8], string_kinds: &[&str]) -> bool {
                 Some(r) => head_literal(r, src, string_kinds),
                 // only a path or URL builder starts the place at its argument; what any other
                 // function makes of a string (a key, a name) is not known here
-                None if crate::knowledge::PATH_MAKERS.contains(&text(f, src)) => child("arguments").and_then(first_arg).map_or(false, |a| head_literal(a, src, string_kinds)),
+                None if crate::knowledge::PATH_MAKERS.contains(&text(f, src)) => {
+                    child("arguments").and_then(first_arg).map_or(false, |a| head_literal(a, src, string_kinds))
+                }
                 None => false,
             }
         }
@@ -321,7 +344,18 @@ pub fn head_literal(e: TsNode, src: &[u8], string_kinds: &[&str]) -> bool {
 pub fn payload_of(call: TsNode, src: &[u8], what: &str, arg_field: &str, locals: &std::collections::HashMap<String, String>) -> String {
     let Some(args) = call.child_by_field_name(arg_field) else { return String::new() };
     for id in walk(args, &["identifier"]) {
-        let bad_parent = id.parent().map_or(false, |p| matches!(p.kind(), "scoped_identifier" | "attribute" | "field_expression" | "generic_function" | "keyword_argument" | "call_expression" | "call"));
+        let bad_parent = id.parent().map_or(false, |p| {
+            matches!(
+                p.kind(),
+                "scoped_identifier"
+                    | "attribute"
+                    | "field_expression"
+                    | "generic_function"
+                    | "keyword_argument"
+                    | "call_expression"
+                    | "call"
+            )
+        });
         if bad_parent {
             continue;
         }
@@ -347,7 +381,10 @@ mod tests {
         p.set_language(&lang).unwrap();
         let tree = p.parse(code, None).unwrap();
         let c = walk(tree.root_node(), &[call])[0];
-        let op = c.child_by_field_name("function").map(|f| text(f, code.as_bytes()).rsplit(['.', ':']).next().unwrap_or("").to_string()).unwrap_or_default();
+        let op = c
+            .child_by_field_name("function")
+            .map(|f| text(f, code.as_bytes()).rsplit(['.', ':']).next().unwrap_or("").to_string())
+            .unwrap_or_default();
         starts_at_literal(c, code.as_bytes(), strings, "arguments", crate::effects::on_receiver(&op))
     }
 
@@ -384,6 +421,9 @@ mod tests {
         let since = what("subprocess.run('git log --format=%H --since=yesterday --reverse')");
         assert_eq!(since, "git log --format=%H --since=yesterday --reverse");
         assert_ne!(since, what("subprocess.run('git log --format=%H --until=today --reverse')"));
-        assert_eq!(what("open(config.paths.templates_directory_of_the_creation_wizard)"), "config.paths.templates_directory_of_the_creation_wizard");
+        assert_eq!(
+            what("open(config.paths.templates_directory_of_the_creation_wizard)"),
+            "config.paths.templates_directory_of_the_creation_wizard"
+        );
     }
 }

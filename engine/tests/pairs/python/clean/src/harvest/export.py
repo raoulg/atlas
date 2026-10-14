@@ -21,38 +21,38 @@ def row(reading: Reading) -> dict[str, str | float]:
     }
 
 
-class Exporter(ABC):
-    """Writes a station's readings to a file in its own format."""
+class Exporter[R](ABC):
+    """Writes a station's records to a file in its own format."""
 
     suffix: str
 
     @abstractmethod
-    def write(self, readings: list[Reading], path: Path) -> None: ...
+    def write(self, records: list[R], path: Path) -> None: ...
 
-    def export(self, readings: list[Reading], directory: Path, station: str) -> Path:
+    def export(self, records: list[R], directory: Path, station: str) -> Path:
         path = directory / f"{station}{self.suffix}"
-        self.write(readings, path)
+        self.write(records, path)
         return path
 
 
-class JsonExporter(Exporter):
+class JsonExporter(Exporter[Reading]):
     suffix = ".json"
 
-    def write(self, readings: list[Reading], path: Path) -> None:
-        path.write_text(json.dumps([row(r) for r in readings], indent=2))
+    def write(self, records: list[Reading], path: Path) -> None:
+        path.write_text(json.dumps([row(r) for r in records], indent=2))
 
 
-class CsvExporter(Exporter):
+class CsvExporter(Exporter[Reading]):
     suffix = ".csv"
 
-    def write(self, readings: list[Reading], path: Path) -> None:
+    def write(self, records: list[Reading], path: Path) -> None:
         with path.open("w", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=FIELDS)
             writer.writeheader()
-            writer.writerows(row(r) for r in readings)
+            writer.writerows(row(r) for r in records)
 
 
-def exporter_for(report_format: ReportFormat) -> Exporter:
+def exporter_for(report_format: ReportFormat) -> Exporter[Reading]:
     match report_format:
         case ReportFormat.JSON:
             return JsonExporter()

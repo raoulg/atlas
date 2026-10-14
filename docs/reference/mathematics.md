@@ -95,9 +95,12 @@ reaching the border is counted beside it, not marked on it.
 ## Topology
 
 ### Gluing: zooming out
-**What.** A quotient space glues the points an equivalence relates into one.
-**In Atlas.** Zooming out glues each family of types into one point, one box.
-**Where.** `design.md` §0, "Zoom is a quotient on types".
+**What.** A quotient space glues the points an equivalence relates into one. Gluing is a pushout:
+collapsing a part R of G onto a point b is the pushout of `G ← R → {b}`.
+**In Atlas.** Zooming out glues each family of types into one point, one box. Of a library, what
+lies beyond the fiber the project reaches is glued into the function at the fiber's border: that
+function is one arrow, whose effects are all its code reaches inside the library.
+**Where.** `design.md` §0, "Zoom is a quotient on types"; `view::reached`.
 
 ### Fibers: one route
 **What.** The fiber of a map over a point is everything that lies above that point.
@@ -144,8 +147,10 @@ each one type, in every language.
 ### Behavioural subtyping
 **What.** A subtype can stand wherever its base stands (Liskov).
 **In Atlas.** An override keeps the promise of its base: it takes what the base takes and gives
-what the base gives.
-**Where.** Principle `overrides`.
+what the base gives. A subclass of a generic base stands where the base stands as the subclass
+fills it in: `Boekwinkel(Winkel[Boek])` keeps the promise of `Winkel[Boek]`, the base's `R`
+replaced by `Boek` wherever the promise names it.
+**Where.** Principle `overrides`; for Python ty decides it (`pytypes.rs`).
 
 ### Signatures say the arrow
 **What.** A function's type is its domain and its codomain.

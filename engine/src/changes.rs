@@ -11,6 +11,7 @@ use std::process::{Command, Stdio};
 
 use anyhow::{bail, Context, Result};
 
+use crate::cache::{Cache, Check};
 use crate::flow::Drawn;
 use crate::model::{EdgeKind, Graph, NodeKind, Touch, World};
 use crate::principles::{self, Finding};
@@ -78,13 +79,168 @@ pub fn compare(repo: &Path, a: &str, b: Option<&str>, opts: &crate::Options) -> 
 }
 
 /// The parts of `repo` as they are at revision `rev`, each read in its own language; the working
-/// tree's when there is no revision.
+/// tree's when there is no revision. A commit never changes, so its parts are kept in the cache
+/// and read from there while what the reading took from outside the commit (where its libraries
+/// lie) stands as it did; the working tree is read anew each time.
 pub fn parts_at(repo: &Path, rev: Option<&str>, opts: &crate::Options) -> Result<Vec<Graph>> {
     let Some(rev) = rev else { return crate::parts::analyze_parts(&[repo.to_path_buf()], opts) };
-    let (base, root) = revision(repo, rev)?;
+    // the commit the revision names now, read and kept as that commit
+    let (commit, _) = resolve(repo, rev)?;
+    let key = match &opts.cache {
+        Some(_) => Some(revision_key(repo, &commit, opts)?),
+        None => None,
+    };
+    if let Some(parts) = opts.cache.as_ref().zip(key.as_ref()).and_then(|(cache, key)| kept(cache, key)) {
+        return Ok(parts);
+    }
+    let (base, root) = revision(repo, &commit)?;
+    // what the reading takes from outside the commit, asked before it reads: a change while it
+    // reads is a change the next reading sees
+    let witness = opts.cache.as_ref().map(|_| outside(repo, &base, &root, opts));
     let parts = crate::parts::analyze_parts(&[root], opts);
+    if let (Ok(parts), Some(cache), Some(key), Some(witness)) = (&parts, &opts.cache, &key, witness) {
+        keep(cache, &key, &base, witness, parts);
+    }
     let _ = std::fs::remove_dir_all(&base);
     parts
+}
+
+/// What a revision's parts are kept under: the commit, the repository's place in it and its
+/// name, how it is read, and where revisions are read. The commit names its content, so the same
+/// commit of another clone is the same reading.
+fn revision_key(repo: &Path, commit: &str, opts: &crate::Options) -> Result<String> {
+    let (_, rel, name) = located(repo)?;
+    let crate::Options { libraries, named, package, cache: _ } = opts;
+    Ok(format!(
+        "{commit}\n{}\n{}\nlibraries {libraries}\npackage {package:?}\nnamed {named:?}\nin {}",
+        crate::tree::path_str(&rel),
+        name.to_string_lossy(),
+        std::env::temp_dir().display()
+    ))
+}
+
+/// The kind of entry a revision's parts are kept as.
+const REVISION: &str = "revision";
+
+/// The ways a reading writes the directory a revision was written to: as the file system
+/// resolves it and as it was named, each with `/` and as the platform writes it. The resolved
+/// ones come first, since the other may stand inside them (`/private/var/..` and `/var/..`).
+fn written_as(base: &Path) -> [String; 4] {
+    let resolved = std::fs::canonicalize(base.parent().unwrap_or(base))
+        .map(|p| p.join(base.file_name().unwrap_or_default()))
+        .unwrap_or_else(|_| base.to_path_buf());
+    [
+        crate::tree::path_str(&resolved),
+        resolved.to_string_lossy().to_string(),
+        crate::tree::path_str(base),
+        base.to_string_lossy().to_string(),
+    ]
+}
+
+/// What stands in a kept reading for each way of writing the directory the revision was written
+/// to: no path holds it.
+fn standing(i: usize) -> String {
+    format!("\u{0}checkout {i}\u{0}")
+}
+
+/// A revision's parts as kept: what the reading took from outside the commit with how each
+/// stood, where its steps and values are written, and the parts, with the directory the revision
+/// was written to standing for itself.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct Kept {
+    witness: Vec<(Check, String)>,
+    written: Written,
+    parts: serde_json::Value,
+}
+
+/// The parts kept under `key`, while what their reading took from outside the commit stands as
+/// it did, written to a directory of their own as a reading now would be.
+fn kept(cache: &Cache, key: &str) -> Option<Vec<Graph>> {
+    let kept: Kept = serde_json::from_slice(&cache.get(REVISION, key)?).ok()?;
+    if !crate::cache::holds(&kept.witness) {
+        return None;
+    }
+    let forms = written_as(&std::env::temp_dir().join(reading_dir()));
+    let pairs: Vec<(String, &str)> = forms.iter().enumerate().map(|(i, f)| (standing(i), f.as_str())).collect();
+    let mut parts = kept.parts;
+    replaced(&mut parts, &pairs.iter().map(|(s, f)| (s.as_str(), *f)).collect::<Vec<_>>());
+    let mut graphs: Vec<Graph> = serde_json::from_value(parts).ok()?;
+    kept.written.apply(&mut graphs).then_some(graphs)
+}
+
+/// Keep a revision's parts under `key`, read from `base`.
+fn keep(cache: &Cache, key: &str, base: &Path, witness: Vec<(Check, String)>, parts: &[Graph]) {
+    let Ok(mut value) = serde_json::to_value(parts) else { return };
+    let forms = written_as(base);
+    let pairs: Vec<(&str, String)> = forms.iter().enumerate().map(|(i, f)| (f.as_str(), standing(i))).collect();
+    replaced(&mut value, &pairs.iter().map(|(f, s)| (*f, s.as_str())).collect::<Vec<_>>());
+    let kept = Kept { witness, written: Written::of(parts), parts: value };
+    if let Ok(bytes) = serde_json::to_vec(&kept) {
+        cache.put(REVISION, key, &bytes);
+    }
+}
+
+/// What reading the revision written to `root` takes from outside the commit, as checks of how
+/// each stands: where the libraries of each part lie, and whether the environment beside the
+/// repository is there to be linked in. What lies in the directory the revision was written to
+/// is the commit's.
+fn outside(repo: &Path, base: &Path, root: &Path, opts: &crate::Options) -> Vec<(Check, String)> {
+    let mut checks = crate::parts::environment(root, opts).unwrap_or_default();
+    checks.push(Check::Names(repo.join(".venv")));
+    let resolved = std::fs::canonicalize(base).unwrap_or_else(|_| base.to_path_buf());
+    let inside = |c: &Check| c.path().map_or(false, |p| p.starts_with(base) || p.starts_with(&resolved));
+    crate::cache::witness(checks).into_iter().filter(|(c, _)| !inside(c)).collect()
+}
+
+/// Every string of a JSON value, the keys of its objects among them, with each `from` replaced
+/// by its `to`, in order.
+fn replaced(v: &mut serde_json::Value, pairs: &[(&str, &str)]) {
+    let swap = |s: &str| pairs.iter().fold(s.to_string(), |s, (from, to)| if s.contains(from) { s.replace(from, to) } else { s });
+    match v {
+        serde_json::Value::String(s) => *s = swap(s),
+        serde_json::Value::Array(xs) => xs.iter_mut().for_each(|x| replaced(x, pairs)),
+        serde_json::Value::Object(o) => {
+            let entries: Vec<(String, serde_json::Value)> = std::mem::take(o).into_iter().collect();
+            for (k, mut x) in entries {
+                replaced(&mut x, pairs);
+                o.insert(swap(&k), x);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Where each step and each value a step hands or gives is written in its file: what a reading
+/// knows and the graph's JSON leaves out, kept beside it.
+#[derive(Default, serde::Serialize, serde::Deserialize)]
+struct Written {
+    steps: Vec<(u32, u32)>,
+    values: Vec<u32>,
+}
+
+impl Written {
+    fn of(parts: &[Graph]) -> Written {
+        let mut w = Written::default();
+        for s in parts.iter().flat_map(|g| &g.nodes).flat_map(|n| &n.sites) {
+            w.steps.push(s.span);
+            w.values.extend(s.hands.iter().chain(&s.gives).map(|h| h.at));
+        }
+        w
+    }
+
+    /// Write it back into the parts, in the same order; whether it fits them.
+    fn apply(&self, parts: &mut [Graph]) -> bool {
+        let (mut steps, mut values) = (self.steps.iter(), self.values.iter());
+        for s in parts.iter_mut().flat_map(|g| g.nodes.iter_mut()).flat_map(|n| n.sites.iter_mut()) {
+            let Some(span) = steps.next() else { return false };
+            s.span = *span;
+            for h in s.hands.iter_mut().chain(s.gives.iter_mut()) {
+                let Some(at) = values.next() else { return false };
+                h.at = *at;
+            }
+        }
+        steps.next().is_none() && values.next().is_none()
+    }
 }
 
 /// The findings of `after` that `before` does not have (raised), and those of `before` that
@@ -107,8 +263,14 @@ pub fn between(a: &str, b: Option<&str>, before: &[Graph], after: &[Graph]) -> C
         let empty = Route::default();
         let (a2, b2) = (a.unwrap_or(&empty), b.unwrap_or(&empty));
         let diff = |x: &BTreeSet<String>, y: &BTreeSet<String>| x.difference(y).cloned().collect::<Vec<_>>();
-        let gone = |x: &BTreeMap<String, Touch>, y: &BTreeMap<String, Touch>| x.iter().filter(|(p, _)| !y.contains_key(*p)).map(|(p, t)| (p.clone(), Drawn { at: t.drawn(), touch: t.clone() })).unzip::<_, _, Vec<_>, Vec<_>>();
-        let ((places_added, touches_added), (places_removed, touches_removed)) = (gone(&b2.places, &a2.places), gone(&a2.places, &b2.places));
+        let gone = |x: &BTreeMap<String, Touch>, y: &BTreeMap<String, Touch>| {
+            x.iter()
+                .filter(|(p, _)| !y.contains_key(*p))
+                .map(|(p, t)| (p.clone(), Drawn { at: t.drawn(), touch: t.clone() }))
+                .unzip::<_, _, Vec<_>, Vec<_>>()
+        };
+        let ((places_added, touches_added), (places_removed, touches_removed)) =
+            (gone(&b2.places, &a2.places), gone(&a2.places, &b2.places));
         let here = b.or(a).unwrap_or(&empty);
         let c = RouteChange {
             route: k.clone(),
@@ -126,11 +288,14 @@ pub fn between(a: &str, b: Option<&str>, before: &[Graph], after: &[Graph]) -> C
             touches_added,
             touches_removed,
         };
-        if c.status != "changed" || !(c.steps_added.is_empty() && c.steps_removed.is_empty() && c.places_added.is_empty() && c.places_removed.is_empty()) {
+        if c.status != "changed"
+            || !(c.steps_added.is_empty() && c.steps_removed.is_empty() && c.places_added.is_empty() && c.places_removed.is_empty())
+        {
             out.routes.push(c);
         }
     }
-    let (fa, fb): (Vec<Finding>, Vec<Finding>) = (before.iter().flat_map(principles::check).collect(), after.iter().flat_map(principles::check).collect());
+    let (fa, fb): (Vec<Finding>, Vec<Finding>) =
+        (before.iter().flat_map(principles::check).collect(), after.iter().flat_map(principles::check).collect());
     (out.findings_added, out.findings_resolved) = raised(&fa, &fb);
     out
 }
@@ -154,7 +319,12 @@ pub fn report(c: &Changes) -> String {
         };
         out.push_str(&format!("\n{mark} {}\n", r.route));
         let short = |id: &str| id.strip_prefix(&format!("{}.", r.root)).unwrap_or(id).to_string();
-        for (sign, what, xs) in [("+", "step", &r.steps_added), ("-", "step", &r.steps_removed), ("+", "place", &r.places_added), ("-", "place", &r.places_removed)] {
+        for (sign, what, xs) in [
+            ("+", "step", &r.steps_added),
+            ("-", "step", &r.steps_removed),
+            ("+", "place", &r.places_added),
+            ("-", "place", &r.places_removed),
+        ] {
             if r.status != "changed" && what == "step" {
                 continue;
             }
@@ -195,7 +365,11 @@ fn routes(parts: &[Graph], several: bool) -> HashMap<String, Route> {
             next.entry(e.src.as_str()).or_default().push(e.dst.as_str());
         }
         // an exported class's route is its methods
-        for e in g.edges.iter().filter(|e| e.kind == EdgeKind::Contains && by_id.get(e.src.as_str()).map_or(false, |n| n.kind == NodeKind::Class)) {
+        for e in g
+            .edges
+            .iter()
+            .filter(|e| e.kind == EdgeKind::Contains && by_id.get(e.src.as_str()).map_or(false, |n| n.kind == NodeKind::Class))
+        {
             next.entry(e.src.as_str()).or_default().push(e.dst.as_str());
         }
         for (kind, label, start) in story::entries(g) {
@@ -285,7 +459,13 @@ pub enum RefKind {
 }
 
 /// How git writes each kind of ref it decorates a commit with, in full, the most specific first.
-const REFS: &[(&str, RefKind)] = &[("HEAD -> refs/heads/", RefKind::Head), ("tag: refs/tags/", RefKind::Tag), ("refs/heads/", RefKind::Branch), ("refs/remotes/", RefKind::Remote), ("HEAD", RefKind::Head)];
+const REFS: &[(&str, RefKind)] = &[
+    ("HEAD -> refs/heads/", RefKind::Head),
+    ("tag: refs/tags/", RefKind::Tag),
+    ("refs/heads/", RefKind::Branch),
+    ("refs/remotes/", RefKind::Remote),
+    ("HEAD", RefKind::Head),
+];
 
 /// The refs of git's full decoration of a commit (`HEAD -> refs/heads/main, tag: refs/tags/v1`);
 /// another kind of ref (a stash, a note) is no name of the history.
@@ -304,7 +484,14 @@ pub fn refs(decoration: &str) -> Vec<Ref> {
 /// `all`, else of HEAD's history.
 pub fn log(repo: &Path, all: bool, n: usize, skip: usize) -> Result<Log> {
     let (count, skipped) = (format!("-n{n}"), format!("--skip={skip}"));
-    let mut args = vec!["log", "--topo-order", "--decorate=full", "--format=%H%x1f%h%x1f%P%x1f%D%x1f%s%x1f%an%x1f%at%x1e", count.as_str(), skipped.as_str()];
+    let mut args = vec![
+        "log",
+        "--topo-order",
+        "--decorate=full",
+        "--format=%H%x1f%h%x1f%P%x1f%D%x1f%s%x1f%an%x1f%at%x1e",
+        count.as_str(),
+        skipped.as_str(),
+    ];
     args.extend(if all { ["--branches", "--tags", "--remotes", "HEAD"].as_slice() } else { ["HEAD"].as_slice() });
     let text = String::from_utf8_lossy(&git(repo, &args)?).to_string();
     let commits = text
@@ -351,28 +538,41 @@ pub fn worktree() -> Named {
 
 /// The commit revision `rev` of `repo` names: its full hash, and the revision as a page names it.
 pub fn resolve(repo: &Path, rev: &str) -> Result<(String, Named)> {
-    let found = git(repo, &["log", "-1", "--format=%H%x1f%h%x1f%s", "--end-of-options", rev, "--"]).with_context(|| format!("no commit `{rev}`"))?;
+    let found = git(repo, &["log", "-1", "--format=%H%x1f%h%x1f%s", "--end-of-options", rev, "--"])
+        .with_context(|| format!("no commit `{rev}`"))?;
     let text = String::from_utf8_lossy(&found).trim_end().to_string();
     let mut f = text.splitn(3, '\x1f');
     let (Some(hash), Some(short), subject) = (f.next(), f.next(), f.next().unwrap_or("")) else { bail!("no commit `{rev}`") };
     Ok((hash.to_string(), Named { rev: rev.to_string(), short: short.to_string(), subject: subject.to_string() }))
 }
 
+/// Where the repository sits in its git checkout: the checkout's top, the repository's place
+/// below it, and its name. git is handed paths as written; resolved ones only say where the
+/// repository sits in it.
+fn located(repo: &Path) -> Result<(PathBuf, PathBuf, std::ffi::OsString)> {
+    let top = PathBuf::from(String::from_utf8_lossy(&git(repo, &["rev-parse", "--show-toplevel"])?).trim());
+    let resolved = |p: &Path| std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
+    let rel = resolved(repo).strip_prefix(resolved(&top)).unwrap_or(Path::new("")).to_path_buf();
+    let name = resolved(repo).file_name().map(|n| n.to_os_string()).unwrap_or_else(|| "repo".into());
+    Ok((top, rel, name))
+}
+
+/// The name of a directory of its own for one reading of a revision, also when a process reads
+/// several at once.
+fn reading_dir() -> String {
+    static READ: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let n = READ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    format!("atlas-changes-{}-{n}", std::process::id())
+}
+
 /// The repository as it was at `rev`, written to a directory of its own under the same name,
 /// so the graph's names agree: (the directory to remove afterwards, the repository in it). A
 /// Python environment beside the repository is linked in, so its types are read the same way.
 fn revision(repo: &Path, rev: &str) -> Result<(PathBuf, PathBuf)> {
-    // git is handed paths as written; resolved ones only say where the repository sits in it
-    let top = PathBuf::from(String::from_utf8_lossy(&git(repo, &["rev-parse", "--show-toplevel"])?).trim());
-    let resolved = |p: &Path| std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
-    let rel = resolved(repo).strip_prefix(resolved(&top)).unwrap_or(Path::new("")).to_path_buf();
-    let repo = resolved(repo);
+    let (top, rel, name) = located(repo)?;
+    let repo = std::fs::canonicalize(repo).unwrap_or_else(|_| repo.to_path_buf());
     let rel_git = crate::tree::path_str(&rel);
-    let name = repo.file_name().map(|n| n.to_os_string()).unwrap_or_else(|| "repo".into());
-    // one directory per reading, also when a process reads several at once
-    static READ: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-    let n = READ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let base = std::env::temp_dir().join(format!("atlas-changes-{}-{n}", std::process::id()));
+    let base = std::env::temp_dir().join(reading_dir());
     let _ = std::fs::remove_dir_all(&base);
     let root = base.join(name);
     std::fs::create_dir_all(&root)?;
@@ -388,7 +588,14 @@ fn revision(repo: &Path, rev: &str) -> Result<(PathBuf, PathBuf)> {
             (kind == "blob" && mode != "120000").then(|| (sha.to_string(), PathBuf::from(path)))
         })
         .collect();
-    let mut cat = Command::new("git").arg("-C").arg(&top).args(["cat-file", "--batch"]).stdin(Stdio::piped()).stdout(Stdio::piped()).spawn().context("running git")?;
+    let mut cat = Command::new("git")
+        .arg("-C")
+        .arg(&top)
+        .args(["cat-file", "--batch"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .context("running git")?;
     let mut stdin = cat.stdin.take().context("git's input")?;
     let shas: Vec<String> = blobs.iter().map(|(s, _)| s.clone()).collect();
     let writer = std::thread::spawn(move || -> std::io::Result<()> {
@@ -401,7 +608,8 @@ fn revision(repo: &Path, rev: &str) -> Result<(PathBuf, PathBuf)> {
     for (_, path) in &blobs {
         let mut header = String::new();
         reader.read_line(&mut header)?;
-        let size: usize = header.split_whitespace().nth(2).and_then(|s| s.parse().ok()).with_context(|| format!("git cat-file: {header}"))?;
+        let size: usize =
+            header.split_whitespace().nth(2).and_then(|s| s.parse().ok()).with_context(|| format!("git cat-file: {header}"))?;
         let mut content = vec![0; size];
         reader.read_exact(&mut content)?;
         let mut newline = [0u8; 1];

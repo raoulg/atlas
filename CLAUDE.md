@@ -89,7 +89,13 @@ The rigorous half and the visual half are the same structure. Read `docs/referen
 - Version: `version` in the root `Cargo.toml`. Raise the minor number when what Atlas reads
   or draws changes, the patch number for a fix, in the commit that makes the change. The
   build adds the commit it is made from (`0.2.0 (b0ead14)`).
-- Tests: `cargo test`. The Rust workspace itself is a test subject.
+- Tests: `cargo test`. The Rust workspace itself is a test subject. CI runs them on Linux, macOS
+  and Windows: a test that writes files builds them as the platform lays them out (a virtual
+  environment keeps its packages in `Lib\site-packages` on Windows) and compares paths as `Path`s,
+  never as strings with `/`.
+- Format: `cargo fmt` before every commit (`rustfmt.toml`: 140 columns); CI checks it. It
+  formats the workspace only: the fixtures and pairs under `engine/tests` are subjects, written
+  as their authors would, and their line numbers are pinned.
 - A change that should leave the pictures as they were is shown to with `tools/pictures.py`:
   `uv run tools/pictures.py draw <atlas> <repo> <dir>` with the build before and after, then
   `uv run tools/pictures.py compare <before> <after>` (Playwright on the installed Chrome).
@@ -118,7 +124,9 @@ The rigorous half and the visual half are the same structure. Read `docs/referen
   file's text once, when a reader first asks. `language::read` is the step that reads: the
   repository, or for a package named on its own the project it is in (`Repo::asked`). Readers,
   parts and the Makefile take the `Repo`, never the disk; a part is a view of the same reading.
-  Library code is the environment's, read by ty.
+  Library code is the environment's: Python's through ty, TypeScript's in `node_modules`, Rust's
+  where Cargo keeps it (`--libraries N` rounds). The graph keeps of a library the fiber over what
+  the project reaches; what lies beyond it is glued into the library function at its border.
 - What Atlas knows of libraries and frameworks is a table in `engine/src/knowledge.rs`, one per
   kind of fact; a reader looks it up and never tests a library's name in its control flow
   (`engine/tests/readers.rs` checks both this and that no project's name stands in the engine).
@@ -133,4 +141,5 @@ The rigorous half and the visual half are the same structure. Read `docs/referen
   Pass the project's path as an argument instead.
 - The shell is zsh: a loop over subjects must not name its variable `path` (`while read name path`),
   since zsh ties `path` to `$PATH` and every command in the body is then "not found". `atlas analyze`
-  writes `graph.json` into the current directory unless given `-o`.
+  and `atlas view` write into `.atlas/` at the top of the subject's git repository unless given
+  `-o`/`--out`; give the scratchpad when the subject is not ours.

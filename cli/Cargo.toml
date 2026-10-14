@@ -1,6 +1,6 @@
 [package]
 name = "atlas"
-description = "See how code works: where data rests, and the functions that carry it there"
+description = "A mathematical panorama of your software code"
 readme = "../README.md"
 keywords = ["code-visualization", "tree-sitter", "architecture", "static-analysis", "mcp"]
 categories = ["development-tools", "visualization", "command-line-utilities"]
@@ -20,3 +20,6 @@ atlas-engine = { path = "../engine" }
 anyhow.workspace = true
 serde_json.workspace = true
 clap = { version = "4", features = ["derive"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

@@ -7,7 +7,14 @@ use std::process::Command;
 use atlas_engine::changes;
 
 fn git(dir: &Path, args: &[&str]) {
-    let ok = Command::new("git").arg("-C").arg(dir).args(["-c", "user.name=atlas", "-c", "user.email=atlas@example.org", "-c", "commit.gpgsign=false"]).args(args).status().expect("git runs").success();
+    let ok = Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(["-c", "user.name=atlas", "-c", "user.email=atlas@example.org", "-c", "commit.gpgsign=false"])
+        .args(args)
+        .status()
+        .expect("git runs")
+        .success();
     assert!(ok, "git {args:?}");
 }
 
@@ -36,7 +43,10 @@ fn a_new_write_and_a_removed_call_show_as_themselves() {
     let src = std::fs::read_to_string(&regels).unwrap();
     let src = src.replace("[await vat(\"x\")]", "[\"x\"]");
     let src = src.replace("import { Hono } from \"hono\";", "import fs from \"node:fs\";\nimport { Hono } from \"hono\";");
-    let src = src.replace("    await pool.query(BEZOEK);", "    fs.appendFileSync(\"logs/regels.log\", c.req.param(\"id\"));\n    await pool.query(BEZOEK);");
+    let src = src.replace(
+        "    await pool.query(BEZOEK);",
+        "    fs.appendFileSync(\"logs/regels.log\", c.req.param(\"id\"));\n    await pool.query(BEZOEK);",
+    );
     std::fs::write(&regels, src).unwrap();
     let c = changes::since(&repo, "HEAD", &atlas_engine::Options::default()).expect("the working tree against HEAD");
     let routes: Vec<&str> = c.routes.iter().map(|r| r.route.as_str()).collect();
@@ -46,8 +56,15 @@ fn a_new_write_and_a_removed_call_show_as_themselves() {
     assert!(get.places_removed.is_empty() && get.steps_added.is_empty() && get.steps_removed.is_empty());
     assert_eq!(post.steps_removed, ["fixture-ts.server.regels.vat"]);
     assert_eq!((post.id.as_str(), post.root.as_str()), ("fixture-ts.server.regels.regels.POST /", "fixture-ts"));
-    assert_eq!(get.touches_added.iter().map(|t| (t.touch.kind_name(), t.touch.artifact.as_str())).collect::<Vec<_>>(), [("disk_write", "logs/regels.log")]);
-    assert!(post.places_removed.iter().all(|p| p.starts_with("asks an LLM")) && post.places_removed.len() == 1, "{:?}", post.places_removed);
+    assert_eq!(
+        get.touches_added.iter().map(|t| (t.touch.kind_name(), t.touch.artifact.as_str())).collect::<Vec<_>>(),
+        [("disk_write", "logs/regels.log")]
+    );
+    assert!(
+        post.places_removed.iter().all(|p| p.starts_with("asks an LLM")) && post.places_removed.len() == 1,
+        "{:?}",
+        post.places_removed
+    );
     assert!(post.places_added.is_empty() && post.steps_added.is_empty());
     let report = changes::report(&c);
     assert!(report.contains("~ API · POST /api/regels\n    - step server.regels.vat\n"), "{report}");
