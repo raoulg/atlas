@@ -230,6 +230,57 @@ impl GraphBuilder {
         self.classes.get(cls)?.resolved.iter().filter(|b| !b.starts_with("ext:")).find_map(|b| self.method_in(b, name, depth + 1))
     }
 
+    /// The library's functions the edges from the `from`th on call into: a function or method
+    /// called, the initializer of a class built, and the methods of the library's classes below a
+    /// method's class that may run in its place. What a reader reads of a library's bodies, a
+    /// round at a time.
+    pub fn library_callees(&self, from: usize) -> Vec<String> {
+        let below = |cls: &str| -> Vec<String> {
+            let (mut out, mut todo) = (vec![], vec![cls.to_string()]);
+            while let Some(c) = todo.pop() {
+                for (sub, info) in &self.classes {
+                    if info.resolved.contains(&c) && !out.contains(sub) && out.len() < 32 {
+                        out.push(sub.clone());
+                        todo.push(sub.clone());
+                    }
+                }
+            }
+            out
+        };
+        let mut out = vec![];
+        for e in self.edges[from.min(self.edges.len())..].iter().filter(|e| matches!(e.kind, EdgeKind::Calls | EdgeKind::Instantiates)) {
+            let Some(n) = self.nodes.get(&e.dst).filter(|n| n.library) else { continue };
+            match n.kind {
+                NodeKind::Class => out.extend(n.initializer(|m| self.nodes.get(m))),
+                NodeKind::Function | NodeKind::Method => {
+                    out.push(n.id.clone());
+                    for sub in n.cls.as_deref().map(below).unwrap_or_default() {
+                        out.extend(Some(format!("{sub}.{}", n.name)).filter(|o| self.nodes.contains_key(o)));
+                    }
+                }
+                _ => {}
+            }
+        }
+        out
+    }
+
+    /// Library code read as code: every node of a library module is the library's, and no route
+    /// into the program. A name outside the code is no code of its own.
+    pub fn mark_library(&mut self) {
+        let library: HashSet<String> = self
+            .nodes
+            .values()
+            .filter(|n| n.kind != NodeKind::External && (n.library || self.nodes.get(&n.module).map_or(false, |m| m.library)))
+            .map(|n| n.id.clone())
+            .collect();
+        for id in &library {
+            if let Some(n) = self.nodes.get_mut(id) {
+                n.library = true;
+                n.entry = None;
+            }
+        }
+    }
+
     pub fn ext_node(&mut self, eid: &str) {
         if self.nodes.contains_key(eid) {
             return;

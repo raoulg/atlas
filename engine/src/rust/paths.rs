@@ -140,7 +140,9 @@ impl<'a> Eval<'a> {
     fn held(&self, at: At<'a, '_>, field: &str, depth: u32) -> Option<Vec<Built>> {
         let ty = self.impl_type(at.m, at.scope?)?;
         let mut out = vec![];
-        for m in self.modules.values() {
+        // a library's code builds none of the program's types
+        let own = self.nodes.get(&ty).map_or(true, |n| !n.library);
+        for m in self.modules.values().filter(|m| !(own && m.library)) {
             for lit in walk(m.tree.root_node(), &["struct_expression"]) {
                 let name = path_parts(lit.child_by_field_name("name"), &m.src);
                 let built = match name.as_slice() {

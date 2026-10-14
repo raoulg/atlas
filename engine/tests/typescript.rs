@@ -199,6 +199,12 @@ fn a_typescript_body_lists_its_calls() {
 
 /// A small package written to a directory of its own, read, and removed.
 fn written(name: &str, files: &[(&str, &str)]) -> Graph {
+    read_with(name, files, &[Options::default()]).remove(0)
+}
+
+/// A small package written to a directory of its own, read once with each of `options`, and
+/// removed.
+fn read_with(name: &str, files: &[(&str, &str)], options: &[Options]) -> Vec<Graph> {
     let dir = std::env::temp_dir().join(format!("atlas-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     for (path, text) in files {
@@ -206,9 +212,83 @@ fn written(name: &str, files: &[(&str, &str)]) -> Graph {
         std::fs::create_dir_all(file.parent().unwrap()).unwrap();
         std::fs::write(file, text).unwrap();
     }
-    let g = analyze(&dir, &Options::default());
+    let gs: Vec<_> = options.iter().map(|o| analyze(&dir, o)).collect();
     let _ = std::fs::remove_dir_all(&dir);
-    g.expect("the package parses")
+    gs.into_iter().map(|g| g.expect("the package parses")).collect()
+}
+
+/// A package the program calls is read as code as far as the program's calls go into it: the file
+/// in `node_modules` that defines what the program calls, found from what `package.json` exports
+/// as code (never its `.d.ts`), through the package's re-exports and `export *`. Its function is a
+/// step on the program's route, and what it reaches of the world is what the program reaches
+/// through it: no table names the package, yet the call reads the file the program hands it. Each
+/// round of `--libraries` reaches one call further into the same package; `--libraries 0` reads
+/// none. Not read: a package the tables describe, one with compiled code, and Node's own modules.
+/// What the program does not reach of a package's file is no part of the picture, and `atlas
+/// check` does not judge a library's code.
+#[test]
+fn a_package_is_read_as_far_as_the_program_calls_into_it() {
+    let files: &[(&str, &str)] = &[
+        ("package.json", r#"{ "name": "reads" }"#),
+        ("tsconfig.json", "{}"),
+        (
+            "src/main.ts",
+            r#"import { readConfig } from "filekit";
+import * as fk from "filekit";
+import { sum } from "fastsum";
+import axios from "axios";
+
+export function main(): string {
+  const text = readConfig("settings.json");
+  fk.listed("data");
+  sum([1, 2]);
+  axios.get("https://example.org/rows");
+  return text;
+}
+"#,
+        ),
+        ("node_modules/filekit/package.json", r#"{ "name": "filekit", "exports": { ".": { "types": "./index.d.ts", "import": "./index.js" } } }"#),
+        ("node_modules/filekit/index.d.ts", "export declare function readConfig(path: string): string;\n"),
+        ("node_modules/filekit/index.js", "export { readConfig } from \"./lib/read.js\";\nexport * from \"./lib/list.js\";\n"),
+        (
+            "node_modules/filekit/lib/read.js",
+            r#"import { readFileSync } from "node:fs";
+import { clean } from "./clean.js";
+
+export function readConfig(path) {
+  return clean(readFileSync(path, "utf8"));
+}
+
+export function unused() {}
+"#,
+        ),
+        ("node_modules/filekit/lib/clean.js", "export function clean(text) {\n  return text.trim();\n}\n"),
+        ("node_modules/filekit/lib/list.js", "import { readdirSync } from \"node:fs\";\n\nexport function listed(dir) {\n  return readdirSync(dir);\n}\n"),
+        ("node_modules/fastsum/package.json", r#"{ "name": "fastsum", "main": "index.js" }"#),
+        ("node_modules/fastsum/index.js", "export function sum(xs) {\n  return xs.reduce((a, b) => a + b, 0);\n}\n"),
+        ("node_modules/fastsum/build/sum.node", ""),
+        ("node_modules/axios/package.json", r#"{ "name": "axios", "main": "index.js" }"#),
+        ("node_modules/axios/index.js", "export default { get(url) {} };\n"),
+    ];
+    let rounds = |n: usize| Options { libraries: n, ..Options::default() };
+    let [none, one, two]: [Graph; 3] = read_with("libraries", files, &[rounds(0), rounds(1), rounds(2)]).try_into().ok().unwrap();
+    let main = |g: &Graph| g.node(&format!("{}.main.main", g.root)).unwrap().clone();
+    let read = one.node("filekit.lib.read.readConfig").expect("the function the program calls is read");
+    assert!(read.library, "a library's function is marked as one");
+    let file = read.touches.iter().find(|t| t.kind_name() == "disk_read").expect("the package's own code reads the disk");
+    assert_eq!((file.op.as_str(), file.artifact.as_str()), ("readFileSync", "settings.json"), "at the path the program hands it: {file:?}");
+    let to: Vec<String> = main(&one).sites.iter().map(|s| if s.to.is_empty() { s.op.clone() } else { s.to.clone() }).collect();
+    assert_eq!(to, ["filekit.lib.read.readConfig", "filekit.lib.list.listed"], "the package's functions are steps, through `export *` and a namespace");
+    assert!(one.edges.iter().any(|e| e.src == main(&one).id && e.dst == "filekit.lib.read.readConfig" && e.kind == EdgeKind::Calls));
+    assert!(one.node("filekit.lib.read.unused").is_none(), "what the program does not reach is no part of the picture");
+    assert!(one.node("filekit.lib.clean.clean").is_none() && two.node("filekit.lib.clean.clean").is_some(), "each round reaches one call further");
+    assert!(main(&one).touches.iter().any(|t| t.kind_name() == "net"), "a package the tables describe stays a table's call");
+    for g in [&one, &two] {
+        assert!(g.nodes.iter().all(|n| !n.id.starts_with("fastsum") && !n.id.starts_with("axios")), "neither compiled code nor a package the tables describe is read");
+        assert!(check(g).iter().all(|f| !f.node.starts_with("filekit")), "a library's code is not judged");
+    }
+    assert!(none.nodes.iter().all(|n| !n.library), "no round reads no package");
+    assert!(main(&none).sites.iter().all(|s| s.to.is_empty()), "a package not read is a call Atlas does not follow");
 }
 
 /// A value a module keeps between calls, which its functions change, is a place:

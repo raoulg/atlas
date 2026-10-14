@@ -673,13 +673,20 @@ fn body_of(ix: &Ix, n: &Node, on: &str) -> Body {
             .sites
             .iter()
             .enumerate()
-            .map(|(i, s)| {
+            .filter_map(|(i, s)| {
                 let runs_on = if !s.on.is_empty() { s.on.as_str() } else if s.on_receiver { on } else { "" };
-                let mut to = if s.to.is_empty() { format!("op:{}", s.op) } else { s.to.clone() };
+                let mut to = match ix.nodes.get(s.to.as_str()) {
+                    _ if s.to.is_empty() => format!("op:{}", s.op),
+                    Some(_) => s.to.clone(),
+                    // a call into a library's code the graph does not hold is the library's
+                    // operation: a step where the body keeps what it gives
+                    None if !s.gives.is_empty() => format!("op:{}", s.to.rsplit('.').next().unwrap_or(&s.to)),
+                    None => return None,
+                };
                 if let Some(m) = ix.nodes.get(s.to.as_str()).filter(|m| m.cls.is_some() && !runs_on.is_empty()) {
                     to = ix.method_on(runs_on, &m.name, 0).unwrap_or(to);
                 }
-                (Step { to, on: runs_on.to_string(), site: Some(i) }, s.arms.clone())
+                Some((Step { to, on: runs_on.to_string(), site: Some(i) }, s.arms.clone()))
             })
             .collect();
         return Body { alts, items: grouped(steps), made_from: vec![] };

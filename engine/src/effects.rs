@@ -84,14 +84,34 @@ pub fn boundary_rust(parts: &[String]) -> Option<Crossing> {
     }
 }
 
-/// Whether these tables say what a Python package's calls do. Its code is then not read: its
-/// calls are places, or nothing.
-pub fn described(pkg: &str) -> bool {
-    k::reaches(pkg, Some(Registry::PyPi)).is_some()
-        || k::ML_PACKAGES.contains(&pkg)
-        || k::FILE_PACKAGES.contains(&pkg)
-        || k::OPERATIONS.iter().any(|(p, _, _)| *p == pkg)
-        || k::PYTHON_OWN.contains(&pkg)
+/// Whether these tables say what a package of a registry does, or that it is the language's own.
+/// Its code is then not read: its calls are places, or nothing. A crate is named as the code
+/// names it (`tokio_postgres`).
+pub fn described(pkg: &str, from: Registry) -> bool {
+    if k::reaches(pkg, Some(from)).is_some() || k::OPERATIONS.iter().any(|(p, _, _)| *p == pkg) {
+        return true;
+    }
+    match from {
+        Registry::PyPi => k::ML_PACKAGES.contains(&pkg) || k::FILE_PACKAGES.contains(&pkg) || k::PYTHON_OWN.contains(&pkg),
+        Registry::Npm => {
+            k::NODE_BUILTINS.contains(&pkg)
+                || k::NODE_FS.contains(&pkg)
+                || k::ROUTERS.contains(&pkg)
+                || k::MOUNTS.iter().any(|m| m.package == pkg)
+                || k::PROMISIFIERS.iter().any(|(p, _)| *p == pkg)
+                || k::OPTION_PARSERS.iter().any(|o| o.package == pkg)
+                || k::PATH_FUNCTIONS.iter().any(|(p, _, _)| *p == pkg)
+                || k::TYPESCRIPT_OWN_TYPES.packages.contains(&pkg)
+        }
+        Registry::Crates => {
+            k::RUST_OWN_TYPES.packages.contains(&pkg)
+                || k::RUST_FILE_TREES.contains(&pkg)
+                || k::HANDS_ON.iter().any(|(c, _)| *c == pkg)
+                || k::DERIVED_PARSERS.iter().any(|d| d.package == pkg)
+                || k::RUST_PATH_FUNCTIONS.iter().any(|(m, _, _)| *m == pkg)
+                || k::RUST_NAMED_BY_TYPE.contains(&pkg)
+        }
+    }
 }
 
 /// Classify a call that leaves the package, by the package that defines what is called.

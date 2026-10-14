@@ -263,6 +263,39 @@ pub fn made_dir(name: &str) -> bool {
 /// Directories that hold tests and the data they read.
 pub const TEST_DIRS: &[&str] = &["tests", "test", "__tests__", "fixtures", "testdata"];
 
+// ---------- a library's code ----------
+
+/// The directory a JavaScript package is installed in, below the project or a directory above it.
+pub const NODE_PACKAGES: &str = "node_modules";
+
+/// Node's own modules, imported by their names (`fs`) or under `node:`: the language's library,
+/// never a package's.
+pub const NODE_BUILTINS: &[&str] = &[
+    "assert", "async_hooks", "buffer", "child_process", "cluster", "console", "constants", "crypto", "dgram", "diagnostics_channel", "dns", "domain",
+    "events", "fs", "http", "http2", "https", "inspector", "module", "net", "os", "path", "perf_hooks", "process", "punycode", "querystring",
+    "readline", "repl", "sqlite", "stream", "string_decoder", "sys", "test", "timers", "tls", "trace_events", "tty", "url", "util", "v8", "vm",
+    "wasi", "worker_threads", "zlib",
+];
+
+/// Where Cargo keeps the source of the crates it fetched from a registry, below its home: one
+/// directory per registry, holding `<crate>-<version>/`.
+pub const CARGO_SOURCES: &[&str] = &["registry", "src"];
+
+/// The files that say a package holds compiled code, by registry: Python's extension modules,
+/// Node's native addons and WebAssembly, the C and C++ a crate builds. What such a package does
+/// is in code no reader of its language reads, so Atlas reads none of it.
+pub const COMPILED: &[(Registry, &[&str])] = &[(PyPi, &["so", "pyd", "dylib"]), (Npm, &["node", "wasm"]), (Crates, &["c", "cc", "cpp", "cxx"])];
+
+/// The extensions of compiled code in a package of a registry.
+pub fn compiled(from: Registry) -> &'static [&'static str] {
+    COMPILED.iter().find(|(r, _)| *r == from).map_or(&[], |(_, exts)| exts)
+}
+
+/// The crates the tables name by a type or a function alone: csv's and plotters' file openers,
+/// the containers of indexmap, smallvec, arrayvec and dashmap, the cells of parking_lot,
+/// once_cell and lazy_static.
+pub const RUST_NAMED_BY_TYPE: &[&str] = &["csv", "plotters", "indexmap", "smallvec", "arrayvec", "dashmap", "parking_lot", "once_cell", "lazy_static"];
+
 // ---------- values ----------
 
 /// Methods that hand on the value they are called on, opened or unchanged: the standard

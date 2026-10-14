@@ -5,8 +5,13 @@ use std::path::PathBuf;
 use atlas_engine::{analyze, principles, EdgeKind, Graph, Options};
 
 fn fixture() -> Graph {
+    rounds(1)
+}
+
+/// The fixture, read `libraries` rounds into its libraries.
+fn rounds(libraries: usize) -> Graph {
     let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixture-lib");
-    analyze(&repo, &Options::default()).expect("fixture parses")
+    analyze(&repo, &Options { libraries, ..Options::default() }).expect("fixture parses")
 }
 
 fn edge(g: &Graph, src: &str, dst: &str, kind: EdgeKind) -> bool {
@@ -14,21 +19,24 @@ fn edge(g: &Graph, src: &str, dst: &str, kind: EdgeKind) -> bool {
 }
 
 /// The project's calls go into the library's own functions, which read the disk as the
-/// project's would; what the library holds but the project does not reach is not drawn.
+/// project's would; what the library holds but the project does not reach is not drawn. A
+/// library exists as far as the project reaches it: each round one call further into it, with the
+/// types those functions take, give and run on.
 #[test]
 fn a_library_is_read_as_far_as_the_project_reaches() {
-    let g = fixture();
+    let (g, two) = (fixture(), rounds(2));
     let node = |id: &str| g.nodes.iter().find(|n| n.id == id);
     let load = node("plotkit.data.load").expect("the function the app calls is read");
     assert!(load.library, "a library's function is marked as one");
     assert!(load.touches.iter().any(|t| t.kind_name() == "disk_read"), "{:?}", load.touches);
     assert!(edge(&g, "app.main.main", "plotkit.data.load", EdgeKind::Calls));
     assert!(node("plotkit.data.unused").is_none(), "a function nothing reaches is not drawn");
-    // a call on a subclass into its base's method reaches the subclass's override
-    assert!(node("plotkit.figures.LinePlot.build").is_some());
     assert!(node("plotkit.figures.BarPlot").is_none(), "a class the project never builds is not drawn");
-    // a class handed to code Atlas reads is built there
-    assert!(edge(&g, "plotkit.data.standard", "plotkit.data.Double", EdgeKind::Instantiates));
+    assert!(node("plotkit.data.Pipeline").is_some(), "the type a function the project calls gives");
+    // a call on a subclass into its base's method reaches the subclass's override, one call further
+    assert!(node("plotkit.figures.LinePlot.build").is_none() && two.node("plotkit.figures.LinePlot.build").is_some());
+    // a class handed to code Atlas reads is built there, one call further
+    assert!(node("plotkit.data.Double").is_none() && edge(&two, "plotkit.data.standard", "plotkit.data.Double", EdgeKind::Instantiates));
 }
 
 /// What a library calls in another library stays that library's call, and a package with

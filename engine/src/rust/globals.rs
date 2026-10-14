@@ -27,9 +27,9 @@ struct Static {
 /// and the line of the first such use.
 type Uses = Vec<(String, String, Dir, u32)>;
 
-/// Every function's reads and writes of the statics its crate changes, as touches of the places
-/// they are.
-pub(super) fn read(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crate_ids: &HashMap<String, String>) {
+/// Every body's reads and writes of the statics its crate changes, as touches of the places they
+/// are: the bodies `bodies`, the program's and those of a library's code its calls reach.
+pub(super) fn read(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crate_ids: &HashMap<String, String>, bodies: &HashSet<String>) {
     let mut uses: Vec<(String, Uses)> = vec![];
     {
         let nodes = &store.nodes;
@@ -43,7 +43,7 @@ pub(super) fn read(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
                 kept.insert(format!("{}.{}", m.id, s.name), s.mutable);
             }
         }
-        for n in nodes.values().filter(|n| matches!(n.kind, NodeKind::Function | NodeKind::Method)) {
+        for n in nodes.values().filter(|n| matches!(n.kind, NodeKind::Function | NodeKind::Method) && bodies.contains(&n.id)) {
             let m = &modules[&n.module];
             let Some(def) = def_node(m, n) else { continue };
             let Some(body) = def.child_by_field_name("body") else { continue };

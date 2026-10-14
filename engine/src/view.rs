@@ -103,19 +103,23 @@ impl View for Compose {
 
 // ---------- the built-in views ----------
 
-/// What the program reaches: its own code, and of a library read as code what its code reaches
-/// into, through calls, the types its signatures and fields name, and the bases of what it
-/// reaches. A class reached is built by its initializer and answers its bases' calls with its own
-/// methods; what is kept stands in its class and its module.
-pub fn reached(g: &Graph) -> impl View {
+/// What the program reaches: its own code, and of a library read as code only what the program
+/// reaches of it, `rounds` calls deep. A library's function or class is reached by the calls that
+/// lead to it from the program's own code: the program's calls go into the first, their calls
+/// into the second, up to `rounds`. A class built runs its initializer, and a class reached
+/// answers the calls into its bases with its own methods, as far as those calls reach. With them
+/// the types the program names and those functions take, give and run on. The rest of a
+/// library's module is no part of the picture, nor is a name outside the code that only the rest
+/// names; what is kept stands in its class and its module.
+pub fn reached(g: &Graph, rounds: usize) -> impl View {
     let nodes: HashMap<&str, &Node> = g.nodes.iter().map(|n| (n.id.as_str(), n)).collect();
     let library: HashSet<&str> = g.nodes.iter().filter(|n| n.library).map(|n| n.id.as_str()).collect();
-    let follows = |k: EdgeKind| matches!(k, EdgeKind::Calls | EdgeKind::Instantiates | EdgeKind::Takes | EdgeKind::Returns | EdgeKind::Has | EdgeKind::Mutates | EdgeKind::Inherits | EdgeKind::Variant);
-    let mut out: HashMap<&str, Vec<&str>> = HashMap::new();
-    let mut bases: HashMap<&str, Vec<&str>> = HashMap::new();
+    let (mut calls, mut types, mut bases): (HashMap<&str, Vec<&str>>, HashMap<&str, Vec<&str>>, HashMap<&str, Vec<&str>>) = Default::default();
     for e in &g.edges {
-        if follows(e.kind) {
-            out.entry(e.src.as_str()).or_default().push(e.dst.as_str());
+        match e.kind {
+            EdgeKind::Calls | EdgeKind::Instantiates => calls.entry(e.src.as_str()).or_default().push(e.dst.as_str()),
+            EdgeKind::Takes | EdgeKind::Returns | EdgeKind::Mutates | EdgeKind::Has | EdgeKind::Inherits | EdgeKind::Variant => types.entry(e.src.as_str()).or_default().push(e.dst.as_str()),
+            _ => {}
         }
         if e.kind == EdgeKind::Inherits {
             bases.entry(e.src.as_str()).or_default().push(e.dst.as_str());
@@ -133,41 +137,62 @@ pub fn reached(g: &Graph) -> impl View {
         }
         out
     };
-    let mut kept: HashSet<String> = HashSet::new();
-    let mut stack: Vec<String> = g.nodes.iter().filter(|n| !library.contains(n.id.as_str())).map(|n| n.id.clone()).collect();
+    // a library's function or class by the number of calls from the program's code it takes
+    let mut far: HashMap<String, usize> = HashMap::new();
+    // the library's types the program and those functions name
+    let mut named: HashSet<String> = HashSet::new();
+    let mut todo: VecDeque<(String, usize)> = VecDeque::new();
+    for n in g.nodes.iter().filter(|n| !library.contains(n.id.as_str())) {
+        todo.extend(calls.get(n.id.as_str()).into_iter().flatten().filter(|d| library.contains(**d)).map(|d| (d.to_string(), 1)));
+        named.extend(types.get(n.id.as_str()).into_iter().flatten().filter(|d| library.contains(**d)).map(|d| d.to_string()));
+    }
     loop {
-        while let Some(id) = stack.pop() {
-            let mut next: Vec<String> = out.get(id.as_str()).map(|v| v.iter().map(|s| s.to_string()).collect()).unwrap_or_default();
-            // a class built is built by its initializer
-            if let Some(n) = nodes.get(id.as_str()).filter(|n| n.kind == NodeKind::Class) {
-                next.extend(n.initializer(|m| nodes.get(m).copied()));
+        while let Some((id, d)) = todo.pop_front() {
+            if d > rounds || far.get(&id).map_or(false, |&f| f <= d) {
+                continue;
             }
-            for d in next {
-                if library.contains(d.as_str()) && kept.insert(d.clone()) {
-                    stack.push(d);
-                }
+            far.insert(id.clone(), d);
+            let Some(n) = nodes.get(id.as_str()) else { continue };
+            // a class built runs its initializer
+            if n.kind == NodeKind::Class {
+                todo.extend(n.initializer(|m| nodes.get(m).copied()).map(|i| (i, d)));
             }
+            // a function gives, takes and runs on its types
+            if matches!(n.kind, NodeKind::Function | NodeKind::Method) {
+                named.extend(types.get(id.as_str()).into_iter().flatten().filter(|t| library.contains(**t)).map(|t| t.to_string()));
+                named.extend(n.cls.clone());
+            }
+            todo.extend(calls.get(id.as_str()).into_iter().flatten().filter(|c| library.contains(**c)).map(|c| (c.to_string(), d + 1)));
         }
-        // a class kept answers the calls into its bases with its own methods
-        for c in kept.iter().filter(|id| nodes.get(id.as_str()).map_or(false, |n| n.kind == NodeKind::Class)) {
+        // a class reached answers the calls into its bases with its own methods
+        let classes: Vec<&String> = far.keys().chain(&named).filter(|id| nodes.get(id.as_str()).map_or(false, |n| n.kind == NodeKind::Class)).collect();
+        for c in classes {
             for b in ancestors(c) {
-                for m in g.nodes.iter().filter(|n| n.cls.as_deref() == Some(b.as_str()) && (kept.contains(&n.id) || !library.contains(n.id.as_str()))) {
+                for m in g.nodes.iter().filter(|n| n.cls.as_deref() == Some(b.as_str())) {
+                    let at = if library.contains(m.id.as_str()) { far.get(&m.id).copied() } else { Some(1) };
                     let own = format!("{c}.{}", m.name);
-                    if library.contains(own.as_str()) && !kept.contains(&own) {
-                        stack.push(own);
+                    if let Some(d) = at.filter(|&d| d <= rounds && library.contains(own.as_str()) && !far.contains_key(&own)) {
+                        todo.push_back((own, d));
                     }
                 }
             }
         }
-        if stack.is_empty() {
+        if todo.is_empty() {
             break;
         }
-        kept.extend(stack.iter().cloned());
     }
+    let mut kept: HashSet<String> = far.keys().cloned().chain(named).collect();
     let holders: Vec<String> = kept.iter().filter_map(|id| nodes.get(id.as_str())).flat_map(|n| [n.cls.clone(), Some(n.module.clone())]).flatten().collect();
     kept.extend(holders);
+    // a name outside the code that only the rest of a library names is none the program reaches
+    let mut outside: HashMap<&str, bool> = HashMap::new();
+    for e in g.edges.iter().filter(|e| nodes.get(e.dst.as_str()).map_or(false, |n| n.kind == NodeKind::External)) {
+        let by_program = !library.contains(e.src.as_str()) || far.contains_key(&e.src);
+        *outside.entry(e.dst.as_str()).or_insert(false) |= by_program;
+    }
+    let unnamed: HashSet<String> = outside.into_iter().filter(|(_, by_program)| !by_program).map(|(id, _)| id.to_string()).collect();
     let library: HashSet<String> = library.into_iter().map(str::to_string).collect();
-    Fiber(move |n: &Node| !library.contains(&n.id) || kept.contains(&n.id))
+    Fiber(move |n: &Node| (!library.contains(&n.id) || kept.contains(&n.id)) && !unnamed.contains(&n.id))
 }
 
 /// Drop what only the code beside it may use; modules always stay.

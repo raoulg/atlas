@@ -601,7 +601,9 @@ fn repeated(ix: &Index, f: &Node) -> Vec<Finding> {
 /// draws them, and from what each step is handed; a choice nested in an arm is read among the
 /// steps of that arm.
 fn unnamed<'g>(ix: &Index<'g>, f: &'g Node) -> Vec<Finding> {
-    let body: Vec<&'g Site> = f.sites.iter().filter(|s| !s.to.is_empty()).collect();
+    // the program's own steps: a call into a library is the library's operation, however far
+    // Atlas reads its code
+    let body: Vec<&'g Site> = f.sites.iter().filter(|s| ix.node(&s.to).map_or(false, |n| !n.library)).collect();
     // the type a step hands on: the class it constructs, or the class it returns
     let made = |s: &'g Site| -> Vec<&'g str> {
         match ix.node(&s.to) {

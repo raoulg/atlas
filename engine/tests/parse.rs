@@ -498,6 +498,15 @@ fn rust_workspace_parses() {
     // Node, and the `fn(..) -> Part` a `ChoiceSyntax` keeps holds no Part
     assert!(!takes.contains(&pair("atlas-engine.model.Node.initializer", "atlas-engine.model.Node")));
     assert!(!has.contains(&pair("atlas-engine.tree.ChoiceSyntax", "atlas-engine.tree.Part")));
+    // the crates Atlas calls are read where Cargo keeps them, as far as its calls reach: `Regex::new`
+    // is a step into regex's own code, the library's and no part of Atlas; of ty's `types`, a module
+    // of thousands of lines, only what Atlas calls is drawn; compiled code (tree-sitter) and the
+    // crates the tables describe (walkdir, ignore) are not read
+    let new = g.node("regex.regex.string.Regex.new").expect("a crate's function Atlas calls is read");
+    assert!(new.library && g.parts.iter().all(|p| !p.id.starts_with("regex")));
+    assert!(g.node("atlas-engine.entries.read_makefile").unwrap().sites.iter().any(|s| s.to == new.id));
+    assert!(g.nodes.iter().filter(|n| n.module == "ty_python_semantic.types").count() < 10);
+    assert!(g.nodes.iter().all(|n| !["tree_sitter", "walkdir", "ignore"].contains(&n.id.split('.').next().unwrap_or(""))));
 }
 
 /// Atlas obeys its own algebra: the steps of `analyze` move data between the repository as read

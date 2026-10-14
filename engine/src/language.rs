@@ -110,8 +110,8 @@ impl Language for Rust {
     fn detect(&self, repo: &Repo, _opts: &Options) -> bool {
         repo.is_file("Cargo.toml")
     }
-    fn parse(&self, repo: &Repo, _opts: &Options) -> Result<Graph> {
-        let (b, root) = rust::parse(repo)?;
+    fn parse(&self, repo: &Repo, opts: &Options) -> Result<Graph> {
+        let (b, root) = rust::parse(repo, opts)?;
         Ok(b.finish(root, Some(repo.root()), self.name()))
     }
     /// The compiler asks for every type, and `pub` is the export.
@@ -136,8 +136,8 @@ impl Language for TypeScript {
     fn detect(&self, repo: &Repo, _opts: &Options) -> bool {
         typescript::detect(repo)
     }
-    fn parse(&self, repo: &Repo, _opts: &Options) -> Result<Graph> {
-        let (b, root) = typescript::parse(repo)?;
+    fn parse(&self, repo: &Repo, opts: &Options) -> Result<Graph> {
+        let (b, root) = typescript::parse(repo, opts)?;
         Ok(b.finish(root, Some(repo.root()), self.name()))
     }
     /// The compiler works out what a function gives, which a reader of its declaration does not

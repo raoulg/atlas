@@ -38,7 +38,8 @@ pub use model::*;
 pub struct Options {
     /// How far to read into the libraries the code calls: 0 not at all, 1 the library modules the
     /// code's own calls go into, and in each further round the modules of the same library that
-    /// the last round's calls go into.
+    /// the last round's calls go into. The graph keeps of a library what the code's calls reach,
+    /// a round a call.
     pub libraries: usize,
     /// Files named on the command line, canonical: each is read as one of its project's scripts
     /// or notebooks, even where git ignores it.
@@ -68,5 +69,5 @@ pub fn graph_of(repo: &repo::Repo, opts: &Options) -> Result<Graph> {
     let mut g = lang.parse(repo, opts)?;
     entries::read_makefile(repo, &mut g);
     parts::assign(&mut g);
-    Ok(view::View::apply(&view::reached(&g), &g))
+    Ok(view::View::apply(&view::reached(&g, opts.libraries), &g))
 }

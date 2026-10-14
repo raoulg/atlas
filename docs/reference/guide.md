@@ -91,9 +91,14 @@ Atlas reads:
   `--libraries 2` reads one step further into those libraries, `--libraries 0` not at all.
   Libraries with compiled code and the ones Atlas already knows (pandas, requests, torch, …)
   stay closed;
-- **Rust**, including workspaces;
+- **Rust**, including workspaces; the crates its code calls are read where Cargo keeps them (a
+  path dependency, or the version `Cargo.lock` names in Cargo's registry sources), never fetched;
 - **TypeScript and TSX**: React components, server routes (Hono, Express, Fastify), TanStack
-  routes and server functions, `tsconfig` paths.
+  routes and server functions, `tsconfig` paths; the packages its code calls are read from
+  `node_modules`, from what each package exports as code.
+
+In every language a library is drawn as far as your code reaches it: the functions your calls
+go into, each round of `--libraries` one call further, with the types they take and give.
 
 A repository can hold several parts: a Python API and a TypeScript app, the crates of a
 workspace, the members of a uv workspace. Atlas finds every `Cargo.toml`, `pyproject.toml`

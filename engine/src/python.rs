@@ -602,7 +602,7 @@ pub fn parse(repo: &Repo, packages: &[PathBuf], project_root: Option<&Path>, opt
     link(&modules, &mut store, &own, &types, project_root.unwrap_or(base));
     mark_exports(&modules, &mut store, &own);
     route_prefixes(&modules, &mut store, &types, &own);
-    mark_library(&mut store);
+    store.mark_library();
     Ok((store, root))
 }
 
@@ -681,27 +681,16 @@ impl Readable {
             return false;
         }
         let parts = mid.split('.').count();
-        if crate::effects::described(&package_of(mid)) {
+        if crate::effects::described(&package_of(mid), knowledge::Registry::PyPi) {
             return false;
         }
         let is_pkg = path.file_stem().and_then(|s| s.to_str()) == Some("__init__");
         let Some(top) = path.ancestors().nth(parts - 1 + usize::from(is_pkg)).map(Path::to_path_buf) else { return false };
         let compiled = self.compiled.entry(top.clone()).or_insert_with(|| {
-            WalkDir::new(&top).into_iter().flatten().any(|e| matches!(e.path().extension().and_then(|x| x.to_str()), Some("so" | "pyd" | "dylib")))
+            let compiled = knowledge::compiled(knowledge::Registry::PyPi);
+            WalkDir::new(&top).into_iter().flatten().any(|e| e.path().extension().and_then(|x| x.to_str()).map_or(false, |x| compiled.contains(&x)))
         });
         !*compiled
-    }
-}
-
-/// Library code read as code: every node of a library module is the library's, and no route
-/// into the program.
-fn mark_library(store: &mut GraphBuilder) {
-    let library: HashSet<String> = store.nodes.values().filter(|n| n.library || store.nodes.get(&n.module).map_or(false, |m| m.library)).map(|n| n.id.clone()).collect();
-    for id in &library {
-        if let Some(n) = store.nodes.get_mut(id) {
-            n.library = true;
-            n.entry = None;
-        }
     }
 }
 

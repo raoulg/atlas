@@ -13,6 +13,7 @@ use anyhow::{Context, Result};
 use indexmap::IndexMap;
 use tree_sitter::{Node as TsNode, Parser, Tree};
 
+mod libraries;
 mod paths;
 
 use paths::{Arg, At, Eval};
@@ -68,6 +69,56 @@ struct Module {
     routes: Vec<(String, String)>,
     /// Routers mounted on another under a prefix: (router, prefix, mounted router).
     mounts: Vec<(String, String, String)>,
+    /// The names imported from a file not the package's own (a package's, or one of a library's
+    /// files): each by its local name, the specifier and its name there (`default` for a default
+    /// import, none for the module itself).
+    imported: Vec<Imported>,
+    /// The names bound to a library's code Atlas reads, by local name: the file each comes from
+    /// and its name there.
+    links: HashMap<String, (PathBuf, Option<String>)>,
+    /// What those names stand for where the library's code is read as code: the definition, by
+    /// the name as written (`readConfig`, or a namespace's member `fk.readConfig`).
+    read: HashMap<String, String>,
+    /// The values a package made that every body of the module sees, by name: the module's own,
+    /// and each class's fields by where the class starts. Found once, when a body first asks.
+    made: std::cell::RefCell<HashMap<Option<usize>, HashMap<String, String>>>,
+}
+
+/// A name imported from a file not the package's own, as written.
+#[derive(Clone, Debug)]
+struct Imported {
+    local: String,
+    spec: String,
+    name: Option<String>,
+}
+
+impl Module {
+    /// A module of a file read from `src`, before its imports and symbols are collected.
+    fn new(id: String, path: PathBuf, src: Vec<u8>, tree: Tree) -> Module {
+        Module {
+            id,
+            path,
+            src,
+            tree,
+            bindings: HashMap::new(),
+            symbols: HashMap::new(),
+            default: None,
+            wildcards: vec![],
+            aliases: HashMap::new(),
+            bodies: HashMap::new(),
+            ext_pkgs: HashSet::new(),
+            values: HashMap::new(),
+            dynamic: HashMap::new(),
+            exported: vec![],
+            routers: HashSet::new(),
+            routes: vec![],
+            mounts: vec![],
+            imported: vec![],
+            links: HashMap::new(),
+            read: HashMap::new(),
+            made: Default::default(),
+        }
+    }
 }
 
 /// Does this look like a JavaScript or TypeScript package: a `package.json` with a
@@ -350,7 +401,7 @@ fn returns(rt: TsNode, src: &[u8]) -> Option<Returns> {
 
 // ---------- pass 1: files, symbols, imports ----------
 
-pub fn parse(repo: &Repo) -> Result<(GraphBuilder, String)> {
+pub fn parse(repo: &Repo, opts: &crate::Options) -> Result<(GraphBuilder, String)> {
     let root = root_name(repo);
     let base = code_base(repo);
     let aliases = path_aliases(repo);
@@ -397,28 +448,7 @@ pub fn parse(repo: &Repo) -> Result<(GraphBuilder, String)> {
             ..Default::default()
         };
         store.add_node(node);
-        modules.insert(
-            id.clone(),
-            Module {
-                id,
-                path: p.clone(),
-                src,
-                tree,
-                bindings: HashMap::new(),
-                symbols: HashMap::new(),
-                default: None,
-                wildcards: vec![],
-                aliases: HashMap::new(),
-                bodies: HashMap::new(),
-                ext_pkgs: HashSet::new(),
-                values: HashMap::new(),
-                dynamic: HashMap::new(),
-                exported: vec![],
-                routers: HashSet::new(),
-                routes: vec![],
-                mounts: vec![],
-            },
-        );
+        modules.insert(id.clone(), Module::new(id, p.clone(), src, tree));
     }
     for m in modules.values_mut() {
         collect_imports(m, &aliases, &files);
@@ -426,10 +456,12 @@ pub fn parse(repo: &Repo) -> Result<(GraphBuilder, String)> {
         collect_symbols(m, &mut store);
         collect_routes(m, &mut store);
     }
+    libraries::read(repo, &mut modules, &mut store, opts.libraries);
     route_prefixes(&modules, &mut store);
     mark_bins(repo, &files, &mut store);
     mark_exports(repo, &files, &modules, &mut store);
-    link(&modules, &mut store, repo.root());
+    link(&modules, &mut store, repo.root(), opts.libraries);
+    store.mark_library();
     Ok((store, root))
 }
 
@@ -799,6 +831,9 @@ fn collect_imports(m: &mut Module, aliases: &[(String, PathBuf)], files: &HashMa
                 Some(id) => Bound::Own(format!("{id}.{name}")),
                 None => Bound::Ext(ext_id(&spec, Some(&name))),
             };
+            if own.is_none() {
+                m.imported.push(Imported { local: name.clone(), spec: spec.clone(), name: Some(name.clone()) });
+            }
             m.dynamic.insert(name, bound);
         }
     }
@@ -829,6 +864,11 @@ fn collect_imports(m: &mut Module, aliases: &[(String, PathBuf)], files: &HashMa
             }),
             None => Bound::Ext(ext_id(&spec, name)),
         };
+        let imported = |into: &mut Vec<Imported>, local: &str, name: Option<&str>| {
+            if own.is_none() {
+                into.push(Imported { local: local.to_string(), spec: spec.clone(), name: name.map(str::to_string) });
+            }
+        };
         match st.kind() {
             "import_statement" => {
                 for clause in named_children(st).into_iter().filter(|c| c.kind() == "import_clause") {
@@ -836,10 +876,12 @@ fn collect_imports(m: &mut Module, aliases: &[(String, PathBuf)], files: &HashMa
                         match c.kind() {
                             "identifier" => {
                                 let local = text(c, &src).to_string();
+                                imported(&mut m.imported, &local, Some("default"));
                                 m.bindings.insert(local, if own.is_some() { member(Some("default")) } else { member(None) });
                             }
                             "namespace_import" => {
                                 if let Some(id) = named_children(c).into_iter().find(|x| x.kind() == "identifier") {
+                                    imported(&mut m.imported, text(id, &src), None);
                                     m.bindings.insert(text(id, &src).to_string(), member(None));
                                 }
                             }
@@ -847,6 +889,7 @@ fn collect_imports(m: &mut Module, aliases: &[(String, PathBuf)], files: &HashMa
                                 for s in named_children(c).into_iter().filter(|s| s.kind() == "import_specifier") {
                                     let Some(n) = s.child_by_field_name("name") else { continue };
                                     let local = s.child_by_field_name("alias").unwrap_or(n);
+                                    imported(&mut m.imported, text(local, &src), Some(text(n, &src)));
                                     m.bindings.insert(text(local, &src).to_string(), member(Some(text(n, &src))));
                                 }
                             }
@@ -866,6 +909,7 @@ fn collect_imports(m: &mut Module, aliases: &[(String, PathBuf)], files: &HashMa
                 for s in specs {
                     let Some(n) = s.child_by_field_name("name") else { continue };
                     let local = s.child_by_field_name("alias").unwrap_or(n);
+                    imported(&mut m.imported, text(local, &src), Some(text(n, &src)));
                     m.exported.push(text(local, &src).to_string());
                     m.bindings.insert(text(local, &src).to_string(), member(Some(text(n, &src))));
                 }
@@ -1152,6 +1196,8 @@ fn resolve(m: &Module, parts: &[String], modules: &IndexMap<String, Module>, nod
         None => m.bindings.get(head).or_else(|| m.dynamic.get(head))?.clone(),
     };
     match bound {
+        // a name of a library's code read as code is its definition there
+        Bound::Ext(_) if read_as_code(m, parts).is_some() => read_as_code(m, parts),
         Bound::Ext(id) => Some(if parts.len() > 1 { format!("{id}.{}", parts[1..].join(".")) } else { id }),
         Bound::Own(target) => {
             let full = if parts.len() > 1 { format!("{target}.{}", parts[1..].join(".")) } else { target };
@@ -1176,10 +1222,19 @@ fn defined(target: &str, modules: &IndexMap<String, Module>, nodes: &IndexMap<St
     let next = if name == "default" { m.default.clone() } else { m.bindings.get(name).cloned() };
     match next {
         Some(Bound::Own(t)) => return defined(&t, modules, nodes, depth + 1),
-        Some(Bound::Ext(id)) => return Some(id),
+        Some(Bound::Ext(id)) => return Some(m.read.get(name).cloned().unwrap_or(id)),
         None => {}
     }
     m.wildcards.iter().find_map(|w| defined(&format!("{w}.{name}"), modules, nodes, depth + 1))
+}
+
+/// What a name path written in `m` stands for in a library's code read as code: the definition its
+/// head (`readConfig`, `Client` of `Client.create`) or a namespace's member (`fk.readConfig`)
+/// stands for, with the rest of the path below it.
+fn read_as_code(m: &Module, parts: &[String]) -> Option<String> {
+    let member = parts.get(1).and_then(|p| m.read.get(&format!("{}.{p}", parts[0])).map(|d| (d, 2)));
+    let (def, used) = member.or_else(|| m.read.get(parts.first()?).map(|d| (d, 1)))?;
+    Some(std::iter::once(def.as_str()).chain(parts[used..].iter().map(String::as_str)).collect::<Vec<_>>().join("."))
 }
 
 
@@ -1191,7 +1246,9 @@ struct Linked<'t> {
     args: Vec<Arg<'t>>,
 }
 
-fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, repo: &Path) {
+/// Types, signatures and bodies into edges; of a library's code only the bodies the program's
+/// calls reach within `rounds` calls.
+fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, repo: &Path, rounds: usize) {
     // a union of two or more known types is a sum; any other alias stands for what it names
     for m in modules.values() {
         let mut names: Vec<&String> = m.aliases.keys().collect();
@@ -1315,12 +1372,17 @@ fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, repo: &Pat
         }
     }
     let eval = Eval::new(modules, repo);
+    // of a library's code, the methods of the classes the program names, and of their bases
+    let named = named_classes(modules, store);
     // methods that change their receiver, directly or through another such method of the
     // program's: until nothing changes, which ends, as the set only grows and the methods are finite
     loop {
         let mut found = vec![];
         for id in &ids {
             let n = &store.nodes[id];
+            if n.library && !n.cls.as_ref().map_or(false, |c| named.contains(c)) {
+                continue;
+            }
             let Some(m) = modules.get(&n.module).filter(|_| n.kind == NodeKind::Method && !store.mutating.contains(id)) else { continue };
             let Some(body) = m.bodies.get(id).and_then(|(s, e)| m.tree.root_node().descendant_for_byte_range(*s, *e)) else { continue };
             let b = Body::new(m, modules, store, n, body, &returned, &eval);
@@ -1333,14 +1395,32 @@ fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, repo: &Pat
         }
         store.mutating.extend(found);
     }
-    // bodies -> calls / instantiates / boundaries
+    // bodies -> calls / instantiates / boundaries: the program's, then of a library's code the
+    // bodies its calls reach, a round at a time
     let mut linked = Linked::default();
-    for id in &ids {
-        let n = &store.nodes[id];
-        let Some(m) = modules.get(&n.module) else { continue };
-        if matches!(n.kind, NodeKind::Function | NodeKind::Method) || (n.kind == NodeKind::Module && modules.contains_key(id)) {
-            link_calls(m, modules, store, id, &returned, &eval, &mut linked);
+    let mut bodies: Vec<String> = ids
+        .iter()
+        .filter(|id| {
+            let n = &store.nodes[*id];
+            !n.library && (matches!(n.kind, NodeKind::Function | NodeKind::Method) || (n.kind == NodeKind::Module && modules.contains_key(*id)))
+        })
+        .cloned()
+        .collect();
+    let mut read: HashSet<String> = HashSet::new();
+    for round in 0..=rounds {
+        let mut next = vec![];
+        for id in bodies {
+            let Some(m) = store.nodes.get(&id).and_then(|n| modules.get(&n.module)) else { continue };
+            if !read.insert(id.clone()) {
+                continue;
+            }
+            let from = store.edges.len();
+            link_calls(m, modules, store, &id, &returned, &eval, &mut linked);
+            if round < rounds {
+                next.extend(store.library_callees(from));
+            }
         }
+        bodies = next;
     }
     let handing: Vec<paths::Evaluated> = linked.args.iter().map(|arg| paths::Evaluated { arg, eval: &eval }).collect();
     let entry = |f: &str| store.nodes.get(f).map_or(false, |n| n.entry.is_some());
@@ -1348,7 +1428,48 @@ fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, repo: &Pat
     let completed = crate::paths::complete(linked.calls, &handing, &family, &|_, _| vec![], &entry);
     // a page's request without a host goes to the page's own origin
     crate::paths::place_calls(store, completed, true);
-    globals(modules, store, &returned, &eval);
+    globals(modules, store, &returned, &eval, &read);
+}
+
+/// The fields of a class that hold what a package made: declared with a library's type, set from
+/// what a package made, or a constructor's parameter property (`this.db`).
+fn class_made(class: TsNode, m: &Module) -> HashMap<String, String> {
+    let src = &m.src[..];
+    let field = |name: TsNode| format!("this.{}", text(name, src));
+    let mut out = HashMap::new();
+    for f in walk(class, &["public_field_definition"]) {
+        if let (Some(name), Some(pkg)) = (f.child_by_field_name("name"), f.child_by_field_name("type").and_then(|t| typed_package(t, m, src))) {
+            out.insert(field(name), pkg);
+        }
+    }
+    for p in walk(class, &["required_parameter", "optional_parameter"]).into_iter().filter(|p| named_children(*p).iter().any(|c| c.kind() == "accessibility_modifier")) {
+        if let (Some(name), Some(pkg)) = (p.child_by_field_name("pattern"), p.child_by_field_name("type").and_then(|t| typed_package(t, m, src))) {
+            out.insert(field(name), pkg);
+        }
+    }
+    for a in walk(class, &["assignment_expression"]) {
+        let (Some(l), Some(r)) = (a.child_by_field_name("left"), a.child_by_field_name("right")) else { continue };
+        if let ([this, name], Some(pkg)) = (member_parts(l, src).as_slice(), made_by_package(r, m, src)) {
+            if this == "this" {
+                out.entry(format!("this.{name}")).or_insert(pkg);
+            }
+        }
+    }
+    out
+}
+
+/// The library's classes the program names (imports, builds or calls a method of), with the
+/// classes of the library they inherit from.
+fn named_classes(modules: &IndexMap<String, Module>, store: &GraphBuilder) -> HashSet<String> {
+    let class = |id: &str| store.nodes.get(id).filter(|n| n.library).and_then(|n| if n.kind == NodeKind::Class { Some(n.id.clone()) } else { n.cls.clone() });
+    let mut todo: Vec<String> = modules.values().filter(|m| !store.nodes.get(&m.id).map_or(false, |n| n.library)).flat_map(|m| m.read.values()).filter_map(|d| class(d)).collect();
+    let mut out = HashSet::new();
+    while let Some(c) = todo.pop() {
+        if out.insert(c.clone()) {
+            todo.extend(store.classes.get(&c).map(|i| i.resolved.clone()).unwrap_or_default().into_iter().filter(|b| store.nodes.get(b).map_or(false, |n| n.library)));
+        }
+    }
+    out
 }
 
 /// One use of a module's value by a function: where the value is kept (`module.name`), the name
@@ -1362,14 +1483,14 @@ type Use = (String, String, u32);
 /// Every function that changes one writes it and every one that uses it reads it: a place,
 /// `Global(module.name)`. A name no function changes is a constant of the code, and no place; the
 /// methods of a value a package made are the package's, and change no value of the language.
-fn globals(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, returned: &HashMap<String, String>, eval: &Eval) {
+fn globals(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, returned: &HashMap<String, String>, eval: &Eval, bodies: &HashSet<String>) {
     let tops: HashMap<&str, HashSet<String>> = modules.values().map(|m| (m.id.as_str(), top_names(m))).collect();
     let mutators = knowledge::mutators(knowledge::Registry::Npm);
     let mut uses: Vec<(String, Vec<Use>, Vec<Use>)> = vec![];
     for m in modules.values() {
         let (src, root) = (&m.src[..], m.tree.root_node());
         let kept = |n: &str| if tops[m.id.as_str()].contains(n) { Some(format!("{}.{n}", m.id)) } else { kept_in(modules, &tops, m.bindings.get(n)?, 0) };
-        for n in store.nodes.values().filter(|n| n.module == m.id && matches!(n.kind, NodeKind::Function | NodeKind::Method)) {
+        for n in store.nodes.values().filter(|n| n.module == m.id && matches!(n.kind, NodeKind::Function | NodeKind::Method) && bodies.contains(&n.id)) {
             let Some(&(s, e)) = m.bodies.get(&n.id) else { continue };
             let Some(body) = root.descendant_for_byte_range(s, e) else { continue };
             // a function defined in this one is a function of its own
@@ -1741,32 +1862,22 @@ impl<'a, 't> Body<'a, 't> {
             class = c.parent();
         }
         if let Some(class) = class.filter(|_| !self.is_module) {
-            let field = |name: TsNode| format!("this.{}", text(name, src));
-            for f in walk(class, &["public_field_definition"]) {
-                if let (Some(name), Some(pkg)) = (f.child_by_field_name("name"), f.child_by_field_name("type").and_then(|t| typed_package(t, m, src))) {
-                    self.made.insert(field(name), pkg);
-                }
-            }
-            for p in walk(class, &["required_parameter", "optional_parameter"]).into_iter().filter(|p| named_children(*p).iter().any(|c| c.kind() == "accessibility_modifier")) {
-                if let (Some(name), Some(pkg)) = (p.child_by_field_name("pattern"), p.child_by_field_name("type").and_then(|t| typed_package(t, m, src))) {
-                    self.made.insert(field(name), pkg);
-                }
-            }
-            for a in walk(class, &["assignment_expression"]) {
-                let (Some(l), Some(r)) = (a.child_by_field_name("left"), a.child_by_field_name("right")) else { continue };
-                if let ([this, name], Some(pkg)) = (member_parts(l, src).as_slice(), made_by_package(r, m, src)) {
-                    if this == "this" {
-                        self.made.entry(format!("this.{name}")).or_insert(pkg);
-                    }
-                }
-            }
+            let fields = m.made.borrow_mut().entry(Some(class.start_byte())).or_insert_with(|| class_made(class, m)).clone();
+            self.made.extend(fields);
         }
         if !self.is_module {
-            for v in walk(root, &["variable_declarator"]).into_iter().filter(|v| module_level(*v, root, &m.bodies)) {
-                let Some((name, value)) = named(v) else { continue };
-                if let Some(p) = made_by_package(value, m, src) {
-                    self.made.entry(text(name, src).to_string()).or_insert(p);
+            let tops = m.made.borrow_mut().entry(None).or_insert_with(|| {
+                let mut out = HashMap::new();
+                for v in walk(root, &["variable_declarator"]).into_iter().filter(|v| module_level(*v, root, &m.bodies)) {
+                    let Some((name, value)) = named(v) else { continue };
+                    if let Some(p) = made_by_package(value, m, src) {
+                        out.entry(text(name, src).to_string()).or_insert(p);
+                    }
                 }
+                out
+            }).clone();
+            for (k, p) in tops {
+                self.made.entry(k).or_insert(p);
             }
         }
     }

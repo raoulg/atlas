@@ -3,7 +3,8 @@
 //! a build), with the files named on the command line beside it; a file's text is read once,
 //! when a reader first asks for it. A part of the repository is a view of the same reading.
 //!
-//! What a library's code and its types are is the environment's, read by ty, not the repository.
+//! What a library's code and its types are is the environment's, not the repository's: read by ty,
+//! from `node_modules`, from where Cargo keeps a crate.
 
 use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};

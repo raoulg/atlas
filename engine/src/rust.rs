@@ -25,6 +25,7 @@ use crate::tree::{
 };
 
 mod globals;
+mod libraries;
 mod paths;
 use paths::{Arg, At, Eval, Evaluated};
 
@@ -54,6 +55,9 @@ struct Module {
     /// The items a node of the graph is defined by, by their first line and name: where they are
     /// in the file.
     defs: HashMap<(u32, String), (usize, usize)>,
+    /// Whether the module is a library's, read as far as the program's calls go into it: its
+    /// paths are the library's, `ext:` where Atlas does not read them.
+    library: bool,
 }
 
 /// A trait impl found in a module, resolved once bindings exist.
@@ -367,8 +371,9 @@ fn fn_name(f: TsNode, src: &[u8]) -> String {
 
 // ---------- loading ----------
 
-/// Parse a Cargo workspace or crate into a `GraphBuilder`; returns the store and the workspace name.
-pub fn parse(repo: &Repo) -> Result<(GraphBuilder, String)> {
+/// Parse a Cargo workspace or crate into a `GraphBuilder`, with the crates its calls go into read
+/// as far as `opts.libraries` says; returns the store and the workspace name.
+pub fn parse(repo: &Repo, opts: &crate::Options) -> Result<(GraphBuilder, String)> {
     let mut parser = new_parser()?;
     let mut modules: IndexMap<String, Module> = IndexMap::new();
     let mut store = GraphBuilder::default();
@@ -415,7 +420,7 @@ pub fn parse(repo: &Repo) -> Result<(GraphBuilder, String)> {
             let generics = type_parameters(&tree, &src);
             modules.insert(
                 mid.clone(),
-                Module { id: mid, krate: c.name.clone(), parent, path: p, src, tree, bindings: HashMap::new(), wildcards: vec![], globs: vec![], generics, symbols: HashMap::new(), is_root, bin, defs },
+                Module { id: mid, krate: c.name.clone(), parent, path: p, src, tree, bindings: HashMap::new(), wildcards: vec![], globs: vec![], generics, symbols: HashMap::new(), is_root, bin, defs, library: false },
             );
         }
     }
@@ -428,8 +433,11 @@ pub fn parse(repo: &Repo) -> Result<(GraphBuilder, String)> {
         store.bindings.insert(m.id.clone(), m.bindings.clone());
     }
     mark_exports(&modules, &mut store, &crate_ids);
-    collect_impls(&modules, &mut store, &crate_ids);
-    link(&modules, &mut store, &crate_ids);
+    let own: Vec<String> = modules.keys().cloned().collect();
+    collect_impls(&modules, &mut store, &crate_ids, &own);
+    libraries::read(repo, &crate_list, &mut modules, &mut store, &crate_ids, opts.libraries);
+    link(&modules, &mut store, &crate_ids, opts.libraries);
+    store.mark_library();
     Ok((store, root_name))
 }
 
@@ -690,6 +698,10 @@ fn path_to_id(m: &Module, parts: &[String], crate_ids: &HashMap<String, String>,
         id.push('.');
         id.push_str(p);
     }
+    // a library's path is its own, found where Atlas reads it
+    if m.library {
+        id.insert_str(0, "ext:");
+    }
     id
 }
 
@@ -777,19 +789,62 @@ fn resolve(m: &Module, parts: &[String], modules: &IndexMap<String, Module>, nod
     } else if let Some(glob) = glob_of(m, parts) {
         (format!("{glob}.{head}"), &[])
     } else {
-        return Some(format!("ext:{}", parts.join(".")));
+        (format!("ext:{}", parts.join(".")), &[])
     };
     for p in rest {
         target.push('.');
         target.push_str(p);
     }
-    if target.starts_with("ext:") || nodes.contains_key(&target) {
+    // a library's item where Atlas read its code
+    if let Some(lib) = target.strip_prefix("ext:") {
+        return Some(library_item(lib, modules, nodes, 0).unwrap_or(target));
+    }
+    if nodes.contains_key(&target) {
         return Some(target);
     }
     // a re-export through another module's `pub use`
     let (modid, nm) = target.rsplit_once('.')?;
     let re = modules.get(modid)?.bindings.get(nm)?;
     nodes.contains_key(re).then(|| re.clone())
+}
+
+/// The item of a library's code Atlas read that a library's path names (`serde_json.from_str`):
+/// followed from the crate's root through the modules the path names and the names they re-export
+/// or bring in by a glob. None where Atlas did not read it.
+fn library_item(path: &str, modules: &IndexMap<String, Module>, nodes: &IndexMap<String, Node>, depth: u32) -> Option<String> {
+    let parts: Vec<&str> = path.split('.').collect();
+    let mut cur = modules.get(parts[0]).filter(|m| m.library)?;
+    for (i, seg) in parts.iter().enumerate().skip(1) {
+        let below = format!("{}.{seg}", cur.id);
+        if let Some(child) = modules.get(&below) {
+            cur = child;
+            continue;
+        }
+        let rest: String = parts[i + 1..].iter().map(|p| format!(".{p}")).collect();
+        if nodes.contains_key(&below) {
+            let full = format!("{below}{rest}");
+            return nodes.contains_key(&full).then_some(full);
+        }
+        if depth >= 8 {
+            return None;
+        }
+        if let Some(b) = cur.bindings.get(*seg) {
+            return library_item(&format!("{}{rest}", b.strip_prefix("ext:").unwrap_or(b)), modules, nodes, depth + 1);
+        }
+        // a glob brings in the names of a module read
+        return cur.globs.iter().filter_map(|g| library_module(g.strip_prefix("ext:").unwrap_or(g), modules)).find_map(|g| library_item(&format!("{}.{seg}{rest}", g.id), modules, nodes, depth + 1));
+    }
+    Some(cur.id.clone())
+}
+
+/// The module of a library's code Atlas read that a path names through the modules alone.
+fn library_module<'m>(path: &str, modules: &'m IndexMap<String, Module>) -> Option<&'m Module> {
+    let mut parts = path.split('.');
+    let mut cur = modules.get(parts.next()?).filter(|m| m.library)?;
+    for seg in parts {
+        cur = modules.get(&format!("{}.{seg}", cur.id))?;
+    }
+    Some(cur)
 }
 
 /// The library glob a name is brought in by: a name of one segment the module neither declares
@@ -818,9 +873,10 @@ fn resolve_value(m: &Module, parts: &[String], modules: &IndexMap<String, Module
 
 // ---------- pass 1c: impl blocks ----------
 
-fn collect_impls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crate_ids: &HashMap<String, String>) {
+/// The `impl` blocks of the modules `ids`: methods on their types, and the traits they implement.
+fn collect_impls(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crate_ids: &HashMap<String, String>, ids: &[String]) {
     let mut impls: Vec<Impl> = vec![];
-    for m in modules.values() {
+    for m in ids.iter().filter_map(|id| modules.get(id)) {
         for item in items(m.tree.root_node()).into_iter().filter(|i| i.kind() == "impl_item") {
             impls.push(Impl {
                 module: m.id.clone(),
@@ -910,7 +966,9 @@ fn def_node<'t>(m: &'t Module, n: &Node) -> Option<TsNode<'t>> {
     Some(d)
 }
 
-fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crate_ids: &HashMap<String, String>) {
+/// Fields, signatures and bodies into edges; of a library's code only the bodies the program's calls
+/// reach within `rounds` calls.
+fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crate_ids: &HashMap<String, String>, rounds: usize) {
     let ids: Vec<String> = store.nodes.keys().cloned().collect();
     for id in &ids {
         let (kind, module) = (store.nodes[id].kind, store.nodes[id].module.clone());
@@ -973,13 +1031,26 @@ fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crate_ids:
     // every signature before any body: a body's locals take their types from what the functions
     // it calls give back, wherever those are defined
     let eval = Eval::new(modules, &store.nodes, crate_ids);
+    let returned = returned_classes(store);
     let (mut waiting, mut args) = (vec![], vec![]);
-    for id in &ids {
-        if matches!(store.nodes[id].kind, NodeKind::Function | NodeKind::Method) {
-            let linked = link_calls(modules, store, crate_ids, &eval, id);
-            waiting.extend(linked.waiting.into_iter().map(|(t, b)| (id.clone(), t, b)));
-            args.extend(linked.args);
+    // the program's bodies, then of a library's code the bodies its calls reach, a round at a time
+    let mut bodies: Vec<String> = ids.iter().filter(|id| matches!(store.nodes[*id].kind, NodeKind::Function | NodeKind::Method) && !store.nodes[*id].library).cloned().collect();
+    let mut linked: HashSet<String> = HashSet::new();
+    for round in 0..=rounds {
+        let mut next = vec![];
+        for id in bodies {
+            if !linked.insert(id.clone()) {
+                continue;
+            }
+            let from = store.edges.len();
+            let l = link_calls(modules, store, crate_ids, &eval, &returned, &id);
+            waiting.extend(l.waiting.into_iter().map(|(t, b)| (id.clone(), t, b)));
+            args.extend(l.args);
+            if round < rounds {
+                next.extend(store.library_callees(from));
+            }
         }
+        bodies = next;
     }
     // a path or a statement built from a function's parameters is whole where its callers hand them
     let handing: Vec<Evaluated> = args.iter().map(|arg| Evaluated { arg, eval: &eval }).collect();
@@ -987,7 +1058,16 @@ fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crate_ids:
     let family = store.family();
     let completed = crate::paths::complete(waiting, &handing, &family, &|_, _| vec![], &entry);
     crate::paths::place_calls(store, completed, false);
-    globals::read(modules, store, crate_ids);
+    globals::read(modules, store, crate_ids, &linked);
+}
+
+/// The class each function gives back, by the first of its signature's types that is one.
+fn returned_classes(store: &GraphBuilder) -> HashMap<String, String> {
+    let mut out: HashMap<String, String> = HashMap::new();
+    for e in store.edges.iter().filter(|e| e.kind == EdgeKind::Returns && store.nodes.get(&e.dst).map_or(false, |n| n.kind == NodeKind::Class)) {
+        out.entry(e.src.clone()).or_insert_with(|| e.dst.clone());
+    }
+    out
 }
 
 /// The library's sums a function takes, each a type of its own: `fetched: Result<Value,
@@ -1360,14 +1440,14 @@ struct Linked<'t> {
     args: Vec<Arg<'t>>,
 }
 
-fn link_calls<'t>(modules: &'t IndexMap<String, Module>, store: &mut GraphBuilder, crate_ids: &HashMap<String, String>, eval: &Eval<'t>, id: &str) -> Linked<'t> {
+fn link_calls<'t>(modules: &'t IndexMap<String, Module>, store: &mut GraphBuilder, crate_ids: &HashMap<String, String>, eval: &Eval<'t>, returned: &HashMap<String, String>, id: &str) -> Linked<'t> {
     let n = store.nodes[id].clone();
     let m = &modules[&n.module];
     let Some(d) = def_node(m, &n) else { return Linked::default() };
     let Some(body) = d.child_by_field_name("body") else { return Linked::default() };
     let mut steps = Steps::new(body, &m.src, &CHOICES);
     let read = {
-        let mut b = Body::new(modules, store, crate_ids, eval, m, &n, d, body);
+        let mut b = Body::new(modules, store, crate_ids, eval, returned, m, &n, d, body);
         for c in evaluation_order(walk(body, &["call_expression", "struct_expression", "identifier", "scoped_identifier", "token_tree"])) {
             b.call(&mut steps, c);
         }
@@ -1472,6 +1552,8 @@ struct Body<'a, 't> {
     /// The library types its `let`s hold by the parameter they are handed to: `area` is a
     /// `DrawingArea` where `draw(&area, ..)` takes one.
     taken: HashMap<String, String>,
+    /// The class each function gives back, by its signature.
+    returned: &'a HashMap<String, String>,
     read: Read<'t>,
 }
 
@@ -1479,11 +1561,11 @@ const STRINGS: &[&str] = &["string_literal", "raw_string_literal"];
 
 impl<'a, 't> Body<'a, 't> {
     #[allow(clippy::too_many_arguments)]
-    fn new(modules: &'a IndexMap<String, Module>, store: &'a GraphBuilder, crate_ids: &'a HashMap<String, String>, eval: &'a Eval<'t>, m: &'t Module, n: &Node, d: TsNode<'t>, body: TsNode<'t>) -> Self {
+    fn new(modules: &'a IndexMap<String, Module>, store: &'a GraphBuilder, crate_ids: &'a HashMap<String, String>, eval: &'a Eval<'t>, returned: &'a HashMap<String, String>, m: &'t Module, n: &Node, d: TsNode<'t>, body: TsNode<'t>) -> Self {
         let cls = n.cls.clone();
         let attr_types = cls.as_ref().and_then(|c| store.classes.get(c)).map(|c| c.attr_types.clone()).unwrap_or_default();
         let params = paths::param_names(d, &m.src);
-        let mut b = Body { modules, store, crate_ids, eval, m, src: &m.src, id: n.id.clone(), def: d, params, cls, locals: HashMap::new(), made_by: HashMap::new(), attr_types, foreign: HashMap::new(), taken: HashMap::new(), read: Read::default() };
+        let mut b = Body { modules, store, crate_ids, eval, m, src: &m.src, id: n.id.clone(), def: d, params, cls, locals: HashMap::new(), made_by: HashMap::new(), attr_types, foreign: HashMap::new(), taken: HashMap::new(), returned, read: Read::default() };
         b.parameters(d);
         let untyped = b.lets(body);
         b.patterns(body);
@@ -1512,7 +1594,7 @@ impl<'a, 't> Body<'a, 't> {
 
     /// The class a function gives back, by its signature.
     fn returned_class(&self, id: &str) -> Option<String> {
-        self.store.edges.iter().find(|e| e.src == id && e.kind == EdgeKind::Returns && self.class_of(&e.dst).is_some()).map(|e| e.dst.clone())
+        self.returned.get(id).cloned()
     }
 
     /// Typed parameters give receivers a type (`store.add_edge(..)` with `store: &mut
@@ -1842,6 +1924,24 @@ impl<'a, 't> Body<'a, 't> {
                 steps.handed(c, a, &t, EdgeKind::Calls);
             }
         }
+    }
+
+    /// The library path a call goes into, where it goes into a library's code Atlas has not read:
+    /// a function or a type's by its path (`serde_json.from_str`, `regex.Regex.new`), or a method
+    /// of the library type of the value it is called on (`regex.Regex.is_match`).
+    fn library_target(&self, c: TsNode<'t>) -> Option<Vec<String>> {
+        let f = c.child_by_field_name("function")?;
+        if f.kind() == "field_expression" {
+            if self.callee(c).is_some() {
+                return None;
+            }
+            let method = text(f.child_by_field_name("field")?, self.src).to_string();
+            let made = library_chain(f.child_by_field_name("value")?, self.m, self.src, &self.made_by, &|v| self.declared(v))?;
+            return Some(made.ty.into_iter().chain([method]).collect());
+        }
+        let parts = path_parts(Some(f), self.src);
+        let t = self.resolve_value(&parts)?;
+        Some(t.strip_prefix("ext:")?.split('.').map(String::from).collect())
     }
 
     /// A library's operation not read: a step where the body keeps what it gives.
