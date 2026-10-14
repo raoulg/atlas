@@ -17,20 +17,7 @@ sys.dont_write_bytecode = True
 from pipeline_views import CAPTURE, settled, shoot
 from playwright.sync_api import sync_playwright
 
-PROGRAM = """class Number:
-    def __init__(self, value: int) -> None:
-        self.value = value
-
-def add_one(value: Number) -> Number:
-    return Number(value.value + 1)
-
-def double(value: Number) -> Number:
-    return Number(value.value * 2)
-
-def run() -> None:
-    result = EXPRESSION
-    print(result.value)
-"""
+PROGRAM = (pathlib.Path(__file__).resolve().parents[1] / 'engine/tests/composition/number.py').read_text()
 
 
 def handoff(page, first, second):
@@ -116,6 +103,7 @@ def main(atlas, output):
                 assert calls == expected, (side, calls)
                 results[side] = visible
                 results[side + '_handoff_preserved'] = handoff(page, *(['add_one', 'double'] if side == 'a' else ['double', 'add_one']))
+                assert results[side + '_handoff_preserved'], f'{side}: union loses the nested result'
             assert page.evaluate('window.layouts') == layouts, 'Switching revisions must preserve layout'
             assert not errors, errors
             browser.close()

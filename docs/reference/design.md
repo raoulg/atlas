@@ -517,6 +517,12 @@ added (green, `+`), what B no longer has is removed (red, dashed and struck thro
 both hold is changed (amber, `~`) when its own arrows differ. The layout is the union's, so a
 switch between A, A ∪ B and B hides boxes and never moves one.
 
+A shared call occurrence has the same target, receiver, inputs and output bindings. An input
+made by another call is shared only when its producer is shared too. Anonymous output names
+belong to their reading; a shared producer aliases its outputs across the two readings, so
+each side retains its own value chain. Calls to one function with different inputs remain
+distinct occurrences without changing the function's own arrow.
+
 *Decision (PTT-509): changed is Yoneda, applied to the generators.* An object is determined up to
 isomorphism by the arrows into and out of it. A place or a type is changed when the arrows directly
 into or out of it differ: the same file, written by `plot` in A and by `Trend.save` in B, is

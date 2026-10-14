@@ -87,3 +87,92 @@ fn reversing_nested_calls_preserves_order_and_marks_occurrences_not_functions() 
     assert!(marks.values().any(|s| *s == Status::Added) && marks.values().any(|s| *s == Status::Removed));
     std::fs::remove_dir_all(base).unwrap();
 }
+
+#[test]
+fn each_union_side_keeps_its_own_nested_value_chain() {
+    let program = include_str!("composition/number.py");
+    for (case, first, second) in [
+        ("reverse", "double(add_one(Number(3)))", "add_one(double(Number(3)))"),
+        ("insert", "double(Number(3))", "double(add_one(Number(3)))"),
+    ] {
+        let base = std::env::temp_dir().join(format!("atlas-composition-{case}-{}", std::process::id()));
+        let repo = base.join("composition");
+        std::fs::create_dir_all(&repo).unwrap();
+        std::fs::write(
+            repo.join("pyproject.toml"),
+            "[project]\nname=\"composition\"\nversion=\"0.1.0\"\n[project.scripts]\ncomposition=\"composition:run\"\n",
+        )
+        .unwrap();
+        git(&repo, &["init", "-q", "-b", "main"]);
+        for expression in [first, second] {
+            std::fs::write(repo.join("composition.py"), program.replace("EXPRESSION", expression)).unwrap();
+            git(&repo, &["add", "composition.py", "pyproject.toml"]);
+            git(&repo, &["commit", "-q", "-m", "composition"]);
+        }
+        let a = changes::parts_at(&repo, Some("HEAD~1"), &Options::default()).unwrap();
+        let b = changes::parts_at(&repo, Some("HEAD"), &Options::default()).unwrap();
+        let (same, unchanged) = diff::union("composition", a.clone(), a.clone());
+        assert!(unchanged.nodes.is_empty() && unchanged.sites.is_empty(), "equal readings share every occurrence");
+        assert!(same
+            .node("composition.run")
+            .unwrap()
+            .sites
+            .iter()
+            .flat_map(|s| s.hands.iter().chain(&s.gives))
+            .all(|h| !h.name.starts_with("#a")));
+        let (union, d) = diff::union("composition", a.clone(), b.clone());
+        for id in ["composition.run", "composition.add_one", "composition.double"] {
+            assert!(!d.nodes.contains_key(id), "{id}'s own arrow is unchanged");
+        }
+        let marks = &d.sites["composition.run"];
+        assert_eq!(marks.get(&0), None, "the common Number constructor is one occurrence");
+        for (original, excluded) in [(&a[0], Status::Added), (&b[0], Status::Removed)] {
+            let sites: Vec<_> = union
+                .node("composition.run")
+                .unwrap()
+                .sites
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| marks.get(i) != Some(&excluded))
+                .map(|(_, s)| s)
+                .collect();
+            assert_eq!(sites.iter().map(|s| s.to.as_str()).collect::<Vec<_>>(), calls(original));
+            let mut produced = std::collections::HashSet::new();
+            for s in &sites {
+                for input in s.hands.iter().filter(|h| h.name.starts_with('#')) {
+                    assert!(produced.contains(&input.name), "{case}: {} consumes a value absent from its side: {}", s.to, input.name);
+                }
+                produced.extend(s.gives.iter().map(|h| h.name.clone()));
+            }
+            for pair in sites.windows(2) {
+                assert!(
+                    pair[1].hands.iter().any(|h| pair[0].gives.iter().any(|g| h.name == g.name)),
+                    "{case}: each call consumes its predecessor's result"
+                );
+            }
+        }
+        std::fs::remove_dir_all(base).unwrap();
+    }
+}
+
+#[test]
+fn the_clean_and_shortcut_pairs_have_an_empty_diff_against_themselves() {
+    let pairs = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/pairs");
+    for subject in [
+        "storage/clean",
+        "storage/shortcut",
+        "pipeline/python-clean",
+        "pipeline/python-sloppy",
+        "pipeline/rust-clean",
+        "pipeline/typescript",
+        "python/clean",
+        "python/shortcut",
+    ] {
+        let parts = atlas_engine::parts::analyze_parts(&[pairs.join(subject)], &Options::default()).unwrap();
+        let (_, d) = diff::union(subject, parts.clone(), parts);
+        assert!(
+            d.nodes.is_empty() && d.edges.is_empty() && d.sites.is_empty() && d.touches.is_empty() && d.places.is_empty(),
+            "{subject}: {d:?}"
+        );
+    }
+}
