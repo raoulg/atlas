@@ -1377,8 +1377,17 @@ async function renderPlaat() {
   // expression; an opened quotient retains a frame around the same members.
   const storage = new Map(), worldFrames = new Map(), worldParent = new Map();
   const usedWorld = new Set([...pills.values()].flatMap(P => [...P.D.keys(), ...P.C.keys()]));
+  const worldUses = new Map();
+  for (const P of pills.values()) for (const [way, m] of [["in", P.D], ["out", P.C]]) for (const k of m.keys()) {
+    if (!worldUses.has(k)) worldUses.set(k, new Set());
+    worldUses.get(k).add(way);
+  }
   for (const p of places.values()) if (p.coarse && usedWorld.has(p.id)) {
-    const c = p.coarse;
+    const disk = p.group === "w:Disk", ways = worldUses.get(p.id);
+    // A symbolic place used both ways is one place, rather than a member of two
+    // directional quotients. Its identity stays visible at this zoom.
+    if (disk && ways.size > 1) continue;
+    const way = [...ways][0], c = disk ? {...p.coarse, id: "w:Disk:" + way, label: "Disk " + way} : p.coarse;
     if (!storage.has(c.id)) storage.set(c.id, {id: c.id, label: c.label, group: p.group, kids: new Set()});
     storage.get(c.id).kids.add(p.id);
   }

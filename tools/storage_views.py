@@ -14,6 +14,8 @@ import json
 import pathlib
 import subprocess
 import sys
+import shutil
+import tempfile
 
 from playwright.sync_api import sync_playwright
 
@@ -42,6 +44,69 @@ def assert_ports(page):
     })""")
     assert ports and all(p['inside'] for p in ports), ports
     return ports
+
+
+def verify_served(ctx, atlas, subject):
+    """A reached line and an opened storage frame can be pointed at through MCP."""
+    with tempfile.TemporaryDirectory(prefix='atlas-storage-served-') as scratch:
+        repo = pathlib.Path(scratch) / 'storage'
+        shutil.copytree(subject, repo)
+        (repo / '.git').mkdir()
+        server = subprocess.Popen([atlas, 'serve', str(repo), '--port', '0', '--no-open'], stderr=subprocess.PIPE, text=True)
+        page = None
+        try:
+            address = server.stderr.readline().split('http://', 1)[1].split('/', 1)[0]
+            page = ctx.new_page()
+            page.set_default_timeout(8000)
+            page.goto('http://' + address + '/#p=storage&v=%7B%22route%22%3A%22storage.run%22%7D', wait_until='domcontentloaded')
+            settled(page)
+            line = page.locator('path.sedge.reach[data-b="n:storage.run/0"]').first
+            point = line.evaluate("""p => {
+              for (let f = .1; f < .95; f += .05) {
+                const q = p.getPointAtLength(p.getTotalLength()*f), pt = new DOMPoint(q.x,q.y).matrixTransform(p.getScreenCTM());
+                if (document.elementFromPoint(pt.x,pt.y)?.closest('path[data-a]') === p) return {x:pt.x,y:pt.y};
+              }
+            }""")
+            assert point, 'Interior connection must remain clickable'
+            page.keyboard.down('Alt')
+            page.mouse.click(point['x'], point['y'])
+            page.keyboard.up('Alt')
+            field = page.locator('#notefield textarea')
+            field.fill('Why does join read these sources?')
+            with page.expect_response(lambda r: r.url.endswith('/api/notes') and r.request.method == 'POST') as response:
+                field.press('Enter')
+            assert response.value.status == 200
+            notes_file = repo / '.atlas/notes.json'
+            assert json.loads(notes_file.read_text())[0]['on'] == 'w:Disk:in>n:storage.run/0'
+            click_render(page, page.locator('.tnode[data-id="w:Disk:in"]'))
+            page.locator('.frame.storage .ftitle').click(modifiers=['Alt'])
+            field.fill('Do these sources belong together?')
+            with page.expect_response(lambda r: r.url.endswith('/api/notes') and r.request.method == 'POST') as response:
+                field.press('Enter')
+            assert response.value.status == 200
+            assert json.loads(notes_file.read_text())[-1]['on'] == 'group:w:Disk:in'
+            shown_file = repo / '.atlas/shown.json'
+            for _ in range(40):
+                try:
+                    shown = json.loads(shown_file.read_text())
+                    if any(b['id'] == 'group:w:Disk:in' for b in shown['boxes']):
+                        break
+                except (FileNotFoundError, json.JSONDecodeError):
+                    pass
+                page.wait_for_timeout(100)
+            else:
+                raise AssertionError('Shared view must include the opened storage frame')
+            call = {'jsonrpc': '2.0', 'id': 1, 'method': 'tools/call', 'params':
+                    {'name': 'notes', 'arguments': {'path': str(repo)}}}
+            result = subprocess.run([atlas, 'mcp'], input=json.dumps(call)+'\n', text=True, capture_output=True, check=True)
+            assert 'Why does join read these sources?' in result.stdout
+            assert 'Do these sources belong together?' in result.stdout
+            assert page.locator('#fault').is_hidden()
+        finally:
+            if page:
+                page.close()
+            server.terminate()
+            server.wait(timeout=10)
 
 
 def main(atlas, destination, diff_page=None):
@@ -100,6 +165,19 @@ def main(atlas, destination, diff_page=None):
             assert not errors, errors
             shoot(page, out / (side + '.png'))
             page.close()
+        overwrite = out / 'overwrite.html'
+        subprocess.run([atlas, 'view', str(root / 'engine/tests/pairs/storage/clean'), '--no-open',
+                        '--view', json.dumps({'route': 'storage.overwrite'}), '--out', str(overwrite)], check=True)
+        page = ctx.new_page()
+        page.goto(overwrite.as_uri(), wait_until='domcontentloaded')
+        settled(page)
+        shared = snapshot(page)
+        assert page.locator('.tnode[data-id="w:Disk:path"]').count() == 1
+        assert any(a == 'w:Disk:path' for a, b in shared['edges'])
+        assert any(b == 'w:Disk:path' for a, b in shared['edges'])
+        assert not page.locator('.tnode[data-id="w:Disk:in"], .tnode[data-id="w:Disk:out"]').count()
+        assert not page.locator('.frame.storage').count()
+        page.close()
         database = out / 'database.html'
         subprocess.run([atlas, 'view', str(root / 'engine/tests/pairs/python/clean'), '--no-open',
                         '--view', json.dumps({'route': 'harvest.store.ReadingStore'}), '--out', str(database)], check=True)
@@ -132,11 +210,13 @@ def main(atlas, destination, diff_page=None):
             click_render(page, page.locator('.frame.storage[data-id="group:w:Disk:in"] .ftitle'))
             assert canonical(snapshot(page)) == canonical(closed), 'Closing a diff group changes the graph'
             page.close()
+        verify_served(ctx, atlas, root / 'engine/tests/pairs/storage/shortcut')
         browser.close()
     (out / 'checks.json').write_text(json.dumps(report, indent=2) + '\n')
     print('Storage pair and SQLite: singleton, frame membership, projected connections, interior ports and open/close cycles passed')
     if diff_page:
         print('Diff: storage frame round trip and reading switches without relayout passed')
+    print('Serve/MCP: notes on interior connections and storage frames, and shared frame identity passed')
 
 
 if __name__ == '__main__':

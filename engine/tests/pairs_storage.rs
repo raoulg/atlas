@@ -32,3 +32,19 @@ fn storage_places_keep_the_evidence_for_their_quotient() {
         }
     }
 }
+
+#[test]
+fn reading_and_writing_a_symbolic_path_touch_the_same_place() {
+    for side in ["clean", "shortcut"] {
+        let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/storage").join(side);
+        let graph = analyze(&repo, &Options::default()).unwrap();
+        let flow = flow::of(&graph);
+        let places = &flow.drawn["storage.overwrite"];
+        let reads: Vec<_> = places.iter().filter(|p| p.side == flow::Side::In).collect();
+        let writes: Vec<_> = places.iter().filter(|p| p.side == flow::Side::Out).collect();
+        assert_eq!(reads.len(), 1);
+        assert_eq!(writes.len(), 1);
+        assert_eq!(reads[0].place.id, writes[0].place.id);
+        assert_ne!(reads[0].place.coarse.as_ref().unwrap().id, writes[0].place.coarse.as_ref().unwrap().id);
+    }
+}

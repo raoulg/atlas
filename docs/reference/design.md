@@ -126,7 +126,8 @@ agent wrote. A step opens by its path through the route (`pkg.cli.build/2`, the 
 `build`) or, for whoever names functions rather than calls, every step of a function at once
 (`open.functions`). The page applies the fibers first, then the quotients by the ideals' cuts.
 
-A storage quotient groups only places in the current fiber. A single member stands as itself,
+A storage quotient groups only places in the current fiber. A symbolic disk place used both
+ways stands as one place, rather than belonging to both directional groups. A single member stands as itself,
 including its symbolic path when the concrete path is not known. Opening a group with several
 members retains its name and frame around the members; the connections still end at the same
 places. A closed step's reached effects cross its border and meet ports inside it. Its own

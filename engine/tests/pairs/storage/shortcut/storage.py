@@ -17,3 +17,7 @@ def join() -> None:
 
 def run() -> None:
     join()
+
+
+def overwrite(path: Path) -> None:
+    path.write_text(path.read_text().upper())
