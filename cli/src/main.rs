@@ -26,14 +26,77 @@ const STYLES: Styles = Styles::styled()
     .invalid(AnsiColor::Red.on_default().effects(Effects::BOLD))
     .error(AnsiColor::Red.on_default().effects(Effects::BOLD));
 
-/// The logo in a line: places joined by a route that ends in vermilion, where its data rests.
+/// The logo's A, over the window of Rule 30 the logo shows (generations 37 to 49, columns 4 to 16
+/// from the seed): `a` a cell of the A, `P` a place its route joins, `R` the place where it ends.
+const LOGO_A: [&str; 13] = [
+    ".............",
+    ".............",
+    "......P......",
+    "......aa.....",
+    ".....a.a.....",
+    ".....a..a....",
+    "....a...a....",
+    "....a....a...",
+    "...PaaaaaP...",
+    "...a......a..",
+    "..P.......R..",
+    ".............",
+    ".............",
+];
+
+/// The logo, wider: Rule 30 grown from one cell, the same generations, with the A where the logo
+/// has it. Two cells share a character (`▀`, `▄`, `█`), so a cell is about square.
 fn banner() -> String {
-    let (place, end) = (AnsiColor::Cyan.on_default(), AnsiColor::Red.on_default());
+    const FIRST: usize = 37;
+    const ROWS: usize = 13;
+    // the columns drawn, from the seed: the logo's 4..=16 in the middle
+    const LEFT: i32 = -14;
+    const COLS: i32 = 49;
+    let span = (FIRST + ROWS) as i32;
+    let width = (2 * span + 1) as usize;
+    let mut row = vec![false; width];
+    row[span as usize] = true;
+    let mut window = vec![];
+    for generation in 0..FIRST + ROWS {
+        if generation >= FIRST {
+            window.push(row.clone());
+        }
+        // Rule 30: a cell lives when its left neighbour differs from (itself or its right neighbour)
+        row = (0..width).map(|i| (i > 0 && row[i - 1]) ^ (row[i] || (i + 1 < width && row[i + 1]))).collect();
+    }
+    let rule = AnsiColor::BrightBlack;
+    let colour = |r: usize, c: i32| -> Option<AnsiColor> {
+        let x = c - 4;
+        if (0..13).contains(&x) {
+            match LOGO_A[r].as_bytes()[x as usize] {
+                b'a' => return Some(AnsiColor::Red),
+                b'P' => return Some(AnsiColor::Cyan),
+                b'R' => return Some(AnsiColor::Red),
+                _ => {}
+            }
+        }
+        window[r][(span + c) as usize].then_some(rule)
+    };
     let (dim, bold) = (Style::new().effects(Effects::DIMMED), Style::new().effects(Effects::BOLD));
-    format!(
-        "{place}■{place:#}{dim}──▶{dim:#}{place}■{place:#}{dim}──▶{dim:#}{end}■{end:#}  {bold}atlas{bold:#} {dim}{}{dim:#}",
-        VERSION.as_str()
-    )
+    let mut lines = vec![];
+    for pair in (0..ROWS).step_by(2) {
+        let mut line = String::new();
+        for c in LEFT..LEFT + COLS {
+            let (up, down) = (colour(pair, c), if pair + 1 < ROWS { colour(pair + 1, c) } else { None });
+            let (glyph, style) = match (up, down) {
+                (None, None) => (' ', Style::new()),
+                (Some(u), None) => ('▀', u.on_default()),
+                (None, Some(d)) => ('▄', d.on_default()),
+                (Some(u), Some(d)) if u == d => ('█', u.on_default()),
+                (Some(u), Some(d)) => ('▀', u.on(d)),
+            };
+            line += &format!("{style}{glyph}{style:#}");
+        }
+        lines.push(line);
+    }
+    lines[2] += &format!("   {bold}atlas{bold:#}");
+    lines[3] += &format!("   {dim}{}{dim:#}", VERSION.as_str());
+    lines.join("\n")
 }
 
 fn examples() -> String {
@@ -51,7 +114,11 @@ fn examples() -> String {
     ];
     let mut s = format!("{head}Examples:{head:#}\n");
     for (c, what) in rows {
-        s += &format!("  {cmd}{c:<36}{cmd:#}{dim}{what}{dim:#}\n");
+        // a command longer than its column gets the line to itself, and its words the next one
+        match c.chars().count() {
+            n if n < 36 => s += &format!("  {cmd}{c:<36}{cmd:#}{dim}{what}{dim:#}\n"),
+            _ => s += &format!("  {cmd}{c}{cmd:#}\n  {:<36}{dim}{what}{dim:#}\n", ""),
+        }
     }
     s
 }
