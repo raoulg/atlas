@@ -25,7 +25,11 @@ When you help a student, put that question to them and help them reason about th
 them make the change, then run `check` again to see the finding go. Python's types come from \
 ty: a value whose type ty does not know (a function without a return annotation, a library \
 without an installed environment) is not followed, and `check` asks for the annotation. Atlas \
-sees Python best with the environment synced (`uv sync`) and Ruff's `ANN` rules on.";
+sees Python best with the environment synced (`uv sync`) and Ruff's `ANN` rules on. When the \
+person you work with runs `atlas serve`, their page and you share one view: `shown` says what \
+they have open (read it when they say \"this box\" or \"here\"), `look` takes their page to a \
+view, and `notes` lists what they wrote on boxes and lines. Answer every note with `answer`: \
+reading a note does not resolve it.";
 
 /// Answer every message on stdin until it closes, reading repositories with `opts`.
 pub fn serve(opts: &Options) -> Result<()> {
@@ -84,6 +88,7 @@ fn initialize(params: &Value) -> Value {
 fn tools() -> Value {
     let path = json!({ "type": "string", "description": "The repository: its root, a package directory, or a git URL (a `…/tree/<ref>/<folder>` URL names one folder). Default: the directory the server runs in." });
     let read_only = json!({ "readOnlyHint": true, "openWorldHint": false });
+    let local = json!({ "type": "string", "description": "The repository `atlas serve` serves: its root or a directory in it. Default: the directory the server runs in." });
     json!([
         {
             "name": "principles",
@@ -143,6 +148,37 @@ fn tools() -> Value {
                 "until": { "type": "string", "description": "The revision to compare to. Default: the working tree." },
             } },
             "annotations": read_only,
+        },
+        {
+            "name": "shown",
+            "description": "What the person you work with has open in `atlas serve`: the view (route, opened sets, focus), the boxes and lines it draws, and the box they selected. Read it when they say \"this box\" or \"here\".",
+            "inputSchema": { "type": "object", "properties": { "path": local } },
+            "annotations": read_only,
+        },
+        {
+            "name": "look",
+            "description": "Take the page of `atlas serve` to a view: \"look here\". The view is JSON as `view` takes it (`route`, `open.functions`, `kind`, `part`, `focus`, the opened `parts`, `units`, `families`, `places`). The open page goes there within a second.",
+            "inputSchema": { "type": "object", "properties": {
+                "path": local,
+                "view": { "type": "object", "description": "The view, e.g. `{\"route\": \"pkg.cli.build\", \"open\": {\"functions\": [\"pkg.build.Pipeline.run\"]}}`." },
+            }, "required": ["view"] },
+            "annotations": { "readOnlyHint": false, "destructiveHint": false, "openWorldHint": false },
+        },
+        {
+            "name": "notes",
+            "description": "The notes the person you work with wrote on boxes and lines of `atlas serve`'s page that no agent has answered yet: what each is on, the view it was written in, the commit, and the text. Reading marks them seen, not resolved: answer each with `answer`.",
+            "inputSchema": { "type": "object", "properties": { "path": local } },
+            "annotations": { "readOnlyHint": false, "destructiveHint": false, "openWorldHint": false },
+        },
+        {
+            "name": "answer",
+            "description": "Answer a note from `notes`, which resolves it: the page shows the answer on the box or line the note is on, once.",
+            "inputSchema": { "type": "object", "properties": {
+                "path": local,
+                "id": { "type": "integer", "description": "The note's number, from `notes`." },
+                "text": { "type": "string", "description": "The answer." },
+            }, "required": ["id", "text"] },
+            "annotations": { "readOnlyHint": false, "destructiveHint": false, "openWorldHint": false },
         },
     ])
 }
@@ -205,6 +241,29 @@ fn call(name: &str, args: &Value, opts: &Options) -> Option<Result<String, Strin
                 },
             )
         }
+        "shown" => Ok(shown(&here(text("path")))),
+        "look" => match args.get("view").filter(|v| v.is_object()) {
+            Some(view) => crate::shared::look(&here(text("path")), view)
+                .map(|_| "The page of `atlas serve` goes to this view when it next asks, within a second while it is open.".to_string())
+                .map_err(|e| format!("Could not keep the view: {e}")),
+            None => Err("`view` is a JSON object: `{\"route\": …, \"open\": {…}}`.".into()),
+        },
+        "notes" => crate::shared::read_open(&here(text("path"))).map(|ns| notes(&ns)).map_err(|e| format!("Could not read the notes: {e}")),
+        "answer" => {
+            let (id, said) = (args.get("id").and_then(Value::as_u64), text("text").filter(|t| !t.trim().is_empty()));
+            match (id, said) {
+                (Some(id), Some(said)) => crate::shared::change(&here(text("path")), id as u32, |n| {
+                    n.state = crate::shared::State::Answered;
+                    n.answer = Some(said.to_string());
+                })
+                .map_err(|e| format!("Could not keep the answer: {e}"))
+                .and_then(|n| {
+                    n.map(|n| format!("Note {} on {} is answered; the page shows the answer once.", n.id, n.label))
+                        .ok_or_else(|| format!("No note {id}; `notes` lists them."))
+                }),
+                _ => Err("`answer` takes a note's `id` and the `text` of the answer.".into()),
+            }
+        }
         "route" => graph(text("path"), opts).and_then(|g| {
             let entry = text("entry").unwrap_or("");
             let depth = args.get("depth").and_then(Value::as_u64).unwrap_or(2) as usize;
@@ -212,6 +271,59 @@ fn call(name: &str, args: &Value, opts: &Options) -> Option<Result<String, Strin
         }),
         _ => return None,
     })
+}
+
+/// The repository `atlas serve` serves, as a tool names it: a directory, else where the server runs.
+fn here(path: Option<&str>) -> PathBuf {
+    PathBuf::from(path.unwrap_or("."))
+}
+
+/// What the page says it shows, as text: the view, the selected box, the boxes and the lines.
+fn shown(repo: &std::path::Path) -> String {
+    let Some(s) = crate::shared::shown(repo) else {
+        return "No page has said what it shows: run `atlas serve` in the repository and open it.".into();
+    };
+    let list = |k: &str, f: &dyn Fn(&Value) -> String| {
+        s.get(k).and_then(Value::as_array).map(|xs| xs.iter().map(|x| f(x)).collect::<Vec<_>>()).unwrap_or_default()
+    };
+    let str_of = |v: &Value, k: &str| v.get(k).and_then(Value::as_str).unwrap_or("").to_string();
+    let boxes = list("boxes", &|b| format!("  {} ({})", str_of(b, "label"), str_of(b, "id")));
+    let lines = list("lines", &|l| {
+        format!(
+            "  {} → {}{}",
+            str_of(l, "from"),
+            str_of(l, "to"),
+            Some(str_of(l, "kind")).filter(|k| !k.is_empty()).map_or(String::new(), |k| format!(" ({k})"))
+        )
+    });
+    let mut out = format!("View: {}\n", s.get("view").map_or("{}".into(), Value::to_string));
+    if let Some(sel) = s.get("selected").and_then(Value::as_str).filter(|x| !x.is_empty()) {
+        out += &format!("Selected: {sel}\n");
+    }
+    out += &format!("{} boxes:\n{}\n", boxes.len(), boxes.join("\n"));
+    out += &format!("{} lines:\n{}", lines.len(), lines.join("\n"));
+    out
+}
+
+/// The notes an agent has not answered, as text.
+fn notes(ns: &[crate::shared::Note]) -> String {
+    if ns.is_empty() {
+        return "No open notes.".into();
+    }
+    ns.iter()
+        .map(|n| {
+            format!(
+                "Note {} on {} ({}), written at {} in the view {}:\n  {}",
+                n.id,
+                n.label,
+                n.on,
+                &n.rev[..n.rev.len().min(7)],
+                n.view,
+                n.text
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n")
 }
 
 /// The repository a tool is handed: a path, or a URL cloned for as long as the tool runs.

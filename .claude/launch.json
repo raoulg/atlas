@@ -36,6 +36,18 @@
         "--no-open"
       ],
       "port": 8777
+    },
+    {
+      "name": "serve",
+      "runtimeExecutable": "target/release/atlas",
+      "runtimeArgs": [
+        "serve",
+        ".",
+        "--port",
+        "8778",
+        "--no-open"
+      ],
+      "port": 8778
     }
   ]
 }

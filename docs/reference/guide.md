@@ -74,6 +74,7 @@ atlas check                     # where the code and the design principles disag
 atlas changes                   # what your edits did to the routes, their places and the findings
 atlas changes v1..main          # what one revision did against another
 atlas history                   # the history in your browser: pick two commits, see them as one picture
+atlas serve                     # one page you and your agent share: what you see, where it points, your notes
 atlas --help
 ```
 
@@ -236,6 +237,22 @@ of two you pick as one picture, marked as above. The working tree is the newest 
 at `127.0.0.1` only (`--port N` picks the port, `--no-open` leaves the browser closed), reads each
 commit once and keeps it from one run to the next, and reads the working tree again on every
 request, so an edit shows when you pick it again.
+
+## Serve: one view, shared with your agent
+
+`atlas serve [repo]` serves the picture of the working tree on this machine (`127.0.0.1`,
+`--port N`, `--no-open`), and shares it with the agent you work with through `atlas mcp`:
+
+- **What you have open.** The page tells the server its view, the box you selected, and the
+  boxes and lines it draws. The agent reads them with `shown` when you say "this box".
+- **Look here.** The agent hands the page a view with `look`, and the page goes there.
+- **Notes.** Alt-click a box or a line to write a note on it ("I do not understand this line").
+  The ring on it is open until the agent reads it, dimmed once it has, and filled once it
+  answers. Hover the ring for the note and the answer; once you have read the answer, the
+  note is closed. The agent resolves notes with `answer`; reading one does not.
+
+What the page and the agent share is kept in `.atlas/` (`shown.json`, `look.json`,
+`notes.json`), so the two need not run together, and git never sees it.
 
 ## What Atlas keeps
 
