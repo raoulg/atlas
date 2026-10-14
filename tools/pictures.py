@@ -106,15 +106,16 @@ def walk(atlas: str, repo: str, out: pathlib.Path) -> int:
     with sync_playwright() as p:
         browser = p.chromium.launch(channel="chrome")
         ctx = browser.new_context(viewport={"width": 1400, "height": 900}, reduced_motion="reduce")
-        for v in views:
+        for i, v in enumerate(views):
             tab, errors = ctx.new_page(), []
             tab.on("pageerror", lambda e: errors.append(str(e)))
-            tab.goto(f"{page_file.as_uri()}#p={project.group(1)}&v={quote(json.dumps(v))}")
             try:
+                tab.goto(f"{page_file.as_uri()}#p={project.group(1)}&v={quote(json.dumps(v))}", wait_until="domcontentloaded")
                 tab.wait_for_function("document.querySelectorAll('#scene g[data-id]').length > 0 || !document.getElementById('fault')?.hidden", timeout=8000)
-            except Exception:
-                errors.append("draws nothing")
-            errors.extend(fault(tab))
+            except Exception as e:
+                errors.append(str(e).splitlines()[0])
+            if not errors:
+                errors.extend(fault(tab))
             if not errors and "route" in v:
                 for f, closed, opened in tab.evaluate(FAMILIES, [f for f, n in checked.items() if n >= 2]):
                     checked[f] = checked.get(f, 0) + 1
@@ -127,6 +128,8 @@ def walk(atlas: str, repo: str, out: pathlib.Path) -> int:
                 bad += 1
                 print(json.dumps(v), "·", errors[0])
             tab.close()
+            if (i + 1) % 40 == 0:
+                print(f"{i + 1}/{len(views)} views checked", flush=True)
         browser.close()
     print(f"{len(views)} views, {bad} that throw or draw nothing")
     return bad

@@ -30,11 +30,21 @@ pub struct RouteChange {
     /// Steps by node id.
     pub steps_added: Vec<String>,
     pub steps_removed: Vec<String>,
+    /// Ordered bodies that differ, independently of the set of functions a route reaches.
+    pub compositions_changed: Vec<CompositionChange>,
     /// Places in words (`writes logs/run.log`), and the touches that reach them.
     pub places_added: Vec<String>,
     pub places_removed: Vec<String>,
     pub touches_added: Vec<Drawn>,
     pub touches_removed: Vec<Drawn>,
+}
+
+/// The execution structure of one reachable function in two readings.
+#[derive(Debug, serde::Serialize)]
+pub struct CompositionChange {
+    pub function: String,
+    pub before: crate::flow::Body,
+    pub after: crate::flow::Body,
 }
 
 #[derive(Debug, Default, serde::Serialize)]
@@ -283,13 +293,25 @@ pub fn between(a: &str, b: Option<&str>, before: &[Graph], after: &[Graph]) -> C
             },
             steps_added: diff(&b2.steps, &a2.steps),
             steps_removed: diff(&a2.steps, &b2.steps),
+            compositions_changed: b2
+                .bodies
+                .iter()
+                .filter_map(|(id, after)| {
+                    let before = a2.bodies.get(id)?;
+                    (before != after).then(|| CompositionChange { function: id.clone(), before: before.clone(), after: after.clone() })
+                })
+                .collect(),
             places_added,
             places_removed,
             touches_added,
             touches_removed,
         };
         if c.status != "changed"
-            || !(c.steps_added.is_empty() && c.steps_removed.is_empty() && c.places_added.is_empty() && c.places_removed.is_empty())
+            || !(c.steps_added.is_empty()
+                && c.steps_removed.is_empty()
+                && c.compositions_changed.is_empty()
+                && c.places_added.is_empty()
+                && c.places_removed.is_empty())
         {
             out.routes.push(c);
         }
@@ -333,6 +355,15 @@ pub fn report(c: &Changes) -> String {
                 out.push_str(&format!("    {sign} {what} {x}\n"));
             }
         }
+        for composition in &r.compositions_changed {
+            let sequence = |body: &crate::flow::Body| body.steps().iter().map(|s| short(&s.to)).collect::<Vec<_>>().join(" → ");
+            out.push_str(&format!(
+                "    ~ composition {}: {} ⇒ {}\n",
+                short(&composition.function),
+                sequence(&composition.before),
+                sequence(&composition.after)
+            ));
+        }
     }
     for (title, fs) in [("findings raised", &c.findings_added), ("findings resolved", &c.findings_resolved)] {
         if fs.is_empty() {
@@ -352,6 +383,7 @@ struct Route {
     id: String,
     root: String,
     steps: BTreeSet<String>,
+    bodies: BTreeMap<String, crate::flow::Body>,
     places: BTreeMap<String, Touch>,
 }
 
@@ -359,6 +391,7 @@ struct Route {
 fn routes(parts: &[Graph], several: bool) -> HashMap<String, Route> {
     let mut out = HashMap::new();
     for g in parts {
+        let bodies = crate::flow::bodies(g);
         let by_id: HashMap<&str, &crate::model::Node> = g.nodes.iter().map(|n| (n.id.as_str(), n)).collect();
         let mut next: HashMap<&str, Vec<&str>> = HashMap::new();
         for e in g.edges.iter().filter(|e| matches!(e.kind, EdgeKind::Calls | EdgeKind::Instantiates | EdgeKind::Requests)) {
@@ -388,6 +421,7 @@ fn routes(parts: &[Graph], several: bool) -> HashMap<String, Route> {
             // the places its own calls hand
             for id in &order {
                 let Some(n) = by_id.get(id) else { continue };
+                r.bodies.insert(id.to_string(), bodies.get(*id).cloned().unwrap_or_default());
                 if *id != start && n.kind != NodeKind::External {
                     r.steps.insert(id.to_string());
                 }

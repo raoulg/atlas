@@ -1,0 +1,50 @@
+//! A file join with caller-named paths and the same operation with hidden environment paths.
+//! The viewer can refine symbolic places without inventing concrete file names.
+
+use atlas_engine::{analyze, flow, Options};
+use std::collections::BTreeSet;
+use std::path::PathBuf;
+
+#[test]
+fn storage_places_keep_the_evidence_for_their_quotient() {
+    for side in ["clean", "shortcut"] {
+        let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/storage").join(side);
+        let graph = analyze(&repo, &Options::default()).unwrap();
+        let joining = graph.node("storage.join").unwrap();
+        let reading = graph.node("storage.read_pair").unwrap();
+        let drawn = flow::of(&graph);
+        let reads: Vec<_> = reading.touches.iter().zip(&drawn.drawn[&reading.id]).filter(|(t, _)| t.kind_name() == "disk_read").collect();
+        let writes: Vec<_> = joining.touches.iter().zip(&drawn.drawn[&joining.id]).filter(|(t, _)| t.kind_name() == "disk_write").collect();
+        assert_eq!(reads.len(), 2, "{side}: {reads:?}");
+        assert_eq!(writes.len(), 1, "{side}: {writes:?}");
+        assert_eq!(reads.iter().map(|(_, p)| &p.place.id).collect::<BTreeSet<_>>().len(), 2);
+        for (touch, drawn) in reads.into_iter().chain(writes) {
+            if side == "clean" {
+                assert!(!touch.artifact.is_empty(), "{touch:?}");
+                assert!(drawn.place.coarse.is_none());
+                assert!(drawn.place.id.starts_with("w:File:"));
+            } else {
+                assert!(touch.artifact.is_empty());
+                assert!(!touch.what.is_empty());
+                assert_eq!(drawn.place.group, "w:Disk");
+                assert!(drawn.place.coarse.is_some());
+            }
+        }
+    }
+}
+
+#[test]
+fn reading_and_writing_a_symbolic_path_touch_the_same_place() {
+    for side in ["clean", "shortcut"] {
+        let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/storage").join(side);
+        let graph = analyze(&repo, &Options::default()).unwrap();
+        let flow = flow::of(&graph);
+        let places = &flow.drawn["storage.overwrite"];
+        let reads: Vec<_> = places.iter().filter(|p| p.side == flow::Side::In).collect();
+        let writes: Vec<_> = places.iter().filter(|p| p.side == flow::Side::Out).collect();
+        assert_eq!(reads.len(), 1);
+        assert_eq!(writes.len(), 1);
+        assert_eq!(reads[0].place.id, writes[0].place.id);
+        assert_ne!(reads[0].place.coarse.as_ref().unwrap().id, writes[0].place.coarse.as_ref().unwrap().id);
+    }
+}

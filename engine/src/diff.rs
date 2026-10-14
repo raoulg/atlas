@@ -483,11 +483,10 @@ fn short(id: &str) -> String {
 
 /// The steps of a body in both readings, in call order, and which of them only one reading has:
 /// the steps both have once, as B has them; where the two part, A's before B's, as a diff
-/// interleaves lines. A step is the function it reaches (or the library's operation) and the class
-/// it runs on.
+/// interleaves lines. A shared occurrence has the same call shape and consumes outputs of
+/// shared producers. Each shared output aliases A's anonymous name to B's name.
 fn merged_sites(a: &[Site], b: &[Site]) -> (Vec<Site>, BTreeMap<usize, Status>) {
-    let key = |s: &Site| (s.to.clone(), s.op.clone(), s.on.clone());
-    let (ka, kb): (Vec<_>, Vec<_>) = (a.iter().map(key).collect(), b.iter().map(key).collect());
+    let ((ka, da), (kb, db)) = (site_shapes(a), site_shapes(b));
     // the longest run of steps both share, from the end
     let mut lcs = vec![vec![0u32; kb.len() + 1]; ka.len() + 1];
     for i in (0..ka.len()).rev() {
@@ -496,9 +495,24 @@ fn merged_sites(a: &[Site], b: &[Site]) -> (Vec<Site>, BTreeMap<usize, Status>) 
         }
     }
     let (mut out, mut marks) = (vec![], BTreeMap::new());
+    let (mut shared, mut aliases) = (HashMap::new(), HashMap::new());
     let (mut i, mut j) = (0, 0);
     while i < ka.len() || j < kb.len() {
-        if i < ka.len() && j < kb.len() && ka[i] == kb[j] {
+        let same = i < ka.len()
+            && j < kb.len()
+            && ka[i] == kb[j]
+            && da[i].iter().zip(&db[j]).all(|(x, y)| match (x, y) {
+                (Some(x), Some(y)) => shared.get(x) == Some(y),
+                (None, None) => true,
+                _ => false,
+            });
+        if same {
+            shared.insert(i, j);
+            for (old, new) in a[i].gives.iter().zip(&b[j].gives) {
+                if old.name.starts_with('#') && !new.name.is_empty() {
+                    aliases.insert(old.name.clone(), new.name.clone());
+                }
+            }
             out.push(b[j].clone());
             i += 1;
             j += 1;
@@ -512,7 +526,70 @@ fn merged_sites(a: &[Site], b: &[Site]) -> (Vec<Site>, BTreeMap<usize, Status>) 
             j += 1;
         }
     }
+    for (&i, status) in &marks {
+        if *status == Status::Removed {
+            let s = &mut out[i];
+            for h in s.hands.iter_mut().chain(s.gives.iter_mut()) {
+                if let Some(name) = aliases.get(&h.name) {
+                    h.name = name.clone();
+                }
+            }
+        }
+    }
     (out, marks)
+}
+
+#[derive(PartialEq, Eq)]
+enum Input {
+    Named(String),
+    Output(usize),
+}
+
+#[derive(PartialEq, Eq)]
+struct SiteShape {
+    to: String,
+    op: String,
+    on: String,
+    hands: Vec<(String, Input)>,
+    gives: Vec<(String, Option<String>)>,
+}
+
+/// Call shapes are independent of step numbers. Dependencies retain each input's producer;
+/// an output slot is comparable only after the corresponding producers have been shared.
+fn site_shapes(sites: &[Site]) -> (Vec<SiteShape>, Vec<Vec<Option<usize>>>) {
+    let (mut shapes, mut dependencies, mut values) = (vec![], vec![], HashMap::new());
+    for (i, s) in sites.iter().enumerate() {
+        let mut deps = vec![];
+        let hands = s
+            .hands
+            .iter()
+            .map(|h| {
+                let value = values.get(&h.name).copied();
+                deps.push(value.map(|(producer, _)| producer));
+                (
+                    h.ty.clone(),
+                    match value {
+                        Some((_, slot)) => Input::Output(slot),
+                        None => Input::Named(h.name.clone()),
+                    },
+                )
+            })
+            .collect();
+        let gives = s
+            .gives
+            .iter()
+            .enumerate()
+            .map(|(slot, h)| {
+                if !h.name.is_empty() {
+                    values.insert(h.name.clone(), (i, slot));
+                }
+                (h.ty.clone(), (!h.name.starts_with('#')).then(|| h.name.clone()))
+            })
+            .collect();
+        shapes.push(SiteShape { to: s.to.clone(), op: s.op.clone(), on: s.on.clone(), hands, gives });
+        dependencies.push(deps);
+    }
+    (shapes, dependencies)
 }
 
 /// The touches of a node in both readings: B's, then A's that B no longer has, each by where it

@@ -200,7 +200,10 @@ this repository finds nothing, and the tests keep it that way.
 
 `atlas changes [<rev>]` reads the working tree against a git revision (`HEAD` by default)
 and lists what the edit did: the routes added and removed, the steps and places each route
-gains and loses, and the findings it raises and resolves. `atlas changes A..B` compares two
+gains and loses, the ordered compositions that differ, and the findings it raises and resolves.
+Changing call order or repeating a call changes a composition even when the route reaches the
+same functions. JSON records each such function with its `before` and `after` bodies under
+`compositions_changed`; each body retains its choices and dispatch. `atlas changes A..B` compares two
 revisions the same way (a side left out is `HEAD`, as in git). In a design loop, that is the
 question after every step: does the change do what it was meant to, and nothing else? A
 revision is read from git into a directory of its own; the working tree and the index stay

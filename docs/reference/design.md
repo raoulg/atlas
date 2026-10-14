@@ -126,6 +126,13 @@ agent wrote. A step opens by its path through the route (`pkg.cli.build/2`, the 
 `build`) or, for whoever names functions rather than calls, every step of a function at once
 (`open.functions`). The page applies the fibers first, then the quotients by the ideals' cuts.
 
+A storage quotient groups only places in the current fiber. A symbolic disk place used both
+ways stands as one place, rather than belonging to both directional groups. A single member stands as itself,
+including its symbolic path when the concrete path is not known. Opening a group with several
+members retains its name and frame around the members; the connections still end at the same
+places. A closed step's reached effects cross its border and meet ports inside it. Its own
+effects meet its border. Opening the step exposes the nested steps those ports stand for.
+
 **When order matters.** For a quotient `q` by an equivalence `~` and a fiber by a predicate
 `p`, filtering then grouping and grouping then filtering give the same picture exactly when `p`
 is *saturated* by `~`: constant on every class, so that no class is cut in two. Keeping one part
@@ -509,6 +516,12 @@ own. The picture of a change is their union A ∪ B, marked as a diff marks line
 added (green, `+`), what B no longer has is removed (red, dashed and struck through, `−`), and what
 both hold is changed (amber, `~`) when its own arrows differ. The layout is the union's, so a
 switch between A, A ∪ B and B hides boxes and never moves one.
+
+A shared call occurrence has the same target, receiver, inputs and output bindings. An input
+made by another call is shared only when its producer is shared too. Anonymous output names
+belong to their reading; a shared producer aliases its outputs across the two readings, so
+each side retains its own value chain. Calls to one function with different inputs remain
+distinct occurrences without changing the function's own arrow.
 
 *Decision (PTT-509): changed is Yoneda, applied to the generators.* An object is determined up to
 isomorphism by the arrows into and out of it. A place or a type is changed when the arrows directly
