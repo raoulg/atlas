@@ -86,8 +86,11 @@ dually by the arrows out of it.
 **In Atlas.** Between two revisions, a place or a type is changed when its direct arrows differ,
 even when its name stays. A function is changed when its own arrow differs. An object that
 disappears and one that appears with isomorphic direct relations are one object renamed, when
-the match is unique.
-**Where.** `atlas history`, `atlas changes A..B`; the diff.
+the match is unique. In a picture, Yoneda is applied to the quotient it draws: a closed box (a
+part, a package, a family, a place that stands for others) is one object, and its own arrows are
+those that cross its border. It is changed when they differ; what changes inside it without
+reaching the border is counted beside it, not marked on it.
+**Where.** `atlas history`, `atlas changes A..B`; the diff; `design.md` §4, L5.
 
 ## Topology
 

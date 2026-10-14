@@ -519,6 +519,14 @@ draws each reading by itself and marks what their union holds once. The page sho
 changes; `atlas changes A..B` and the MCP tool `changes` give the agent the list. `atlas history`
 serves the commits and these pictures on this machine.
 
+*Decision (PTT-495): a closed box is a point of a quotient.* Its own arrows are the lines that cross
+its border, so its own mark comes from them alone: a part, a package, a family or a place that stands
+for others is changed when a line drawn into or out of it is in one reading only, and a closed step
+when its own arrow differs. What happens inside it without touching the border is reach, not the box
+(sentence 6): a dashed tag at its corner counts it, `+3 −1 ~2` for the diff and the number of findings
+for the principles, each marked node, step or place once, at the deepest level the picture draws it,
+and opening the box shows where they are.
+
 **L6 Agent.** An MCP server over the same engine: `search`, `neighbourhood`,
 `effects`, `quotient`, `signature_paths`, `apply_view`.
 Views are JSON specs, a list of fibers and quotients plus a layout, that
