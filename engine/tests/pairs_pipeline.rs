@@ -772,6 +772,60 @@ fn ports() -> [Port; 3] {
     ]
 }
 
+/// Saving has its result in the file the caller names. Completion and failure may be returned,
+/// but no destination value is needed to keep the write in the route or in its drawing.
+#[test]
+fn the_port_saves_without_returning_a_destination() {
+    for p in ports() {
+        let saving = node(p.g, p.save);
+        let returned = saving.returns.as_ref().expect("save declares its result");
+        assert!(returned.value.is_empty() && !returned.own, "{}: {returned:?}", p.language);
+        assert!(step(p.g, p.run, p.save).gives.is_empty(), "{}: save hands back no value", p.language);
+
+        let flow = atlas_engine::flow::of(p.g);
+        let arrow = flow.arrows.get(p.save).cloned().unwrap_or_default();
+        assert!(!arrow.gives_back && !arrow.returns_value && arrow.gives.is_empty(), "{}: {arrow:?}", p.language);
+        let writes: Vec<_> = saving.touches.iter().zip(&flow.drawn[p.save])
+            .filter(|(touch, _)| touch.kind_name() == "disk_write" && any_format(&touch.artifact) == "figures/sunspots.*")
+            .collect();
+        assert_eq!(writes.len(), 1, "{}: save writes one figure", p.language);
+        let (touch, drawn) = writes[0];
+        assert_eq!(touch.by, [p.run], "{}: the entry supplies the destination", p.language);
+        assert_eq!(drawn.side, atlas_engine::flow::Side::Out);
+        assert_eq!(drawn.place.id, format!("w:File:{}", touch.artifact));
+        assert!(outside(p.g, p.run).contains(&("disk_write".into(), touch.artifact.clone())));
+        assert!(check(p.g).is_empty(), "{}: a write needs no returned value", p.language);
+    }
+}
+
+/// A clean route hands the producer's value to the next step. A route through shared state has
+/// the same file destination, but each step touches the global instead of passing a frame.
+#[test]
+fn the_python_pair_exposes_how_the_frame_travels() {
+    let c = clean();
+    let loaded = step(c, program(c), "sunspots.series.load");
+    let smoothed = step(c, program(c), "sunspots.series.smooth");
+    let saved = step(c, program(c), "sunspots.plot.Plot.save");
+    assert!(!loaded.gives.is_empty() && !smoothed.gives.is_empty());
+    for (producer, consumer) in [(loaded, smoothed), (smoothed, saved)] {
+        for value in &producer.gives {
+            assert!(consumer.hands.iter().any(|h| h.name == value.name && h.ty == value.ty), "{} reaches {} as {value:?}", producer.to, consumer.to);
+        }
+    }
+    assert_ne!(loaded.gives[0].name, smoothed.gives[0].name, "successive frames are distinct values of one type");
+    for f in ["sunspots.series.load", "sunspots.series.smooth", "sunspots.plot.Plot.save"] {
+        assert!(node(c, f).touches.iter().all(|t| t.kind != World::Global));
+    }
+    let s = sloppy();
+    let flow = atlas_engine::flow::of(s);
+    for f in ["sunspots.get_data", "sunspots.clean", "sunspots.smooth", "sunspots.plot"] {
+        assert!(step(s, STUDENT, f).gives.is_empty(), "{f}: the frame is held globally");
+        assert!(node(s, f).touches.iter().zip(&flow.drawn[f]).any(|(t, d)| t.kind == World::Global && d.place.label.contains("sunspots.df")), "{f}: the shared frame has a visible place");
+    }
+    assert!(outside(c, program(c)).contains(&("disk_write".into(), "figures/sunspots.png".into())));
+    assert!(outside(s, STUDENT).contains(&("disk_write".into(), "figures/sunspots.png".into())));
+}
+
 /// What the three clean versions share: no principle has anything to ask, and a run loads the
 /// months before it smooths them, handing `smooth` what `load` gives and the run's `Settings`, a
 /// type of the program in each language.
