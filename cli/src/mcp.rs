@@ -160,15 +160,15 @@ fn call(name: &str, args: &Value, opts: &Options) -> Option<Result<String, Strin
             if let Some(p) = text("principle").filter(|p| !principles::PRINCIPLES.iter().any(|x| x.id == *p)) {
                 return Err(unknown_principle(p));
             }
-            Ok(gs
+            let asked: Vec<&principles::Principle> = principles::PRINCIPLES.iter().filter(|p| text("principle").map_or(true, |id| p.id == id)).collect();
+            let parts: Vec<(String, Vec<principles::Finding>)> = gs
                 .iter()
-                .map(|g| {
-                    let mut findings = principles::check(g);
-                    findings.retain(|f| text("principle").map_or(true, |p| f.principle == p));
-                    principles::report(&g.root, &findings)
-                })
-                .collect::<Vec<_>>()
-                .join("\n"))
+                .map(|g| (g.root.clone(), principles::check(g).into_iter().filter(|f| asked.iter().any(|p| p.id == f.principle)).collect()))
+                .collect();
+            let look = principles::Look::plain();
+            let reports: Vec<String> = parts.iter().map(|(root, findings)| principles::report(root, findings, &look)).collect();
+            let counted: Vec<(&str, &[principles::Finding])> = parts.iter().map(|(r, f)| (r.as_str(), f.as_slice())).collect();
+            Ok(reports.join("\n") + &principles::summary(&counted, &asked, &look))
         }),
         "routes" => graph(text("path"), opts).map(|g| {
             let rows: Vec<String> = story::entries(&g).into_iter().map(|(k, label, id)| format!("{:<8} {label}  ({id})", story::kind_label(k))).collect();

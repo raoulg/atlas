@@ -58,29 +58,178 @@ pub fn explain(id: &str) -> Option<&'static str> {
     DOCS.split("\n## ").skip(1).find(|s| s.contains(&marker)).map(|s| s.trim_end())
 }
 
-/// The findings as text, grouped by principle, each ending in its question; the principles
-/// with nothing to ask are named at the end.
-pub fn report(root: &str, findings: &[Finding]) -> String {
-    let n = findings.len();
-    let mut out = format!("{root} · {n} {}\n", if n == 1 { "finding" } else { "findings" });
-    let mut clear = vec![];
+/// What a piece of a report is, so that whoever prints it can give each piece its own look.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Ink {
+    /// A part's name.
+    Part,
+    /// A number of questions.
+    Count,
+    /// A principle's id.
+    Principle,
+    /// What a principle asks.
+    Asks,
+    /// The reason all of a principle's questions give, said once above them.
+    Why,
+    /// Where a finding stands, `file:line`.
+    At,
+    /// What a finding says, and its question.
+    Text,
+    /// The signatures, edges and touches that show a finding.
+    Evidence,
+    /// The mark before a question.
+    Ask,
+    /// A count drawn as a bar, for the eye; plain text leaves it out.
+    Bar,
+    /// What there is nothing to say about.
+    Quiet,
+}
+
+/// How a report looks: what each piece is wrapped in, and the width its lines wrap at.
+pub struct Look {
+    pub ink: fn(Ink, &str) -> String,
+    pub width: Option<usize>,
+}
+
+impl Look {
+    /// Text without colour, one line per piece: for an agent, a pipe or a file.
+    pub fn plain() -> Look {
+        Look { ink: |ink, s| if ink == Ink::Bar { String::new() } else { s.to_string() }, width: None }
+    }
+
+    fn paint(&self, ink: Ink, s: &str) -> String {
+        (self.ink)(ink, s)
+    }
+
+    /// `text` in `ink`, starting at column `start` and wrapped onto lines that start at column
+    /// `indent`.
+    fn wrapped(&self, ink: Ink, text: &str, start: usize, indent: usize) -> String {
+        let mut lines = vec![];
+        let mut line = String::new();
+        let mut col = start;
+        for word in text.split(' ') {
+            let w = word.chars().count();
+            if !line.is_empty() && self.width.is_some_and(|width| col + 1 + w > width) {
+                lines.push(std::mem::take(&mut line));
+                col = indent;
+            }
+            if !line.is_empty() {
+                line.push(' ');
+                col += 1;
+            }
+            line += word;
+            col += w;
+        }
+        lines.push(line);
+        lines.iter().map(|l| self.paint(ink, l)).collect::<Vec<_>>().join(&format!("\n{}", " ".repeat(indent)))
+    }
+}
+
+fn questions(n: usize) -> String {
+    format!("{n} {}", if n == 1 { "question" } else { "questions" })
+}
+
+/// A question's sentences, each with its closing mark.
+fn sentences(q: &str) -> Vec<&str> {
+    let mut out = vec![];
+    let mut start = 0;
+    for (i, b) in q.bytes().enumerate() {
+        if matches!(b, b'.' | b'?' | b'!') && q.as_bytes().get(i + 1) == Some(&b' ') {
+            out.push(&q[start..=i]);
+            start = i + 2;
+        }
+    }
+    if start < q.len() {
+        out.push(&q[start..]);
+    }
+    out
+}
+
+/// How many sentences all the questions open with alike, keeping at least the last one of each:
+/// the reason a principle gives, said once above its questions.
+fn shared_lead(qs: &[Vec<&str>]) -> usize {
+    if qs.len() < 2 {
+        return 0;
+    }
+    let most = qs.iter().map(Vec::len).min().unwrap_or(0).saturating_sub(1);
+    (0..most).take_while(|&i| qs.iter().all(|q| q[i] == qs[0][i])).count()
+}
+
+/// The findings of one part as text: by principle, what it asks and the reason its questions
+/// share, then each finding with its evidence and what is left of its question.
+pub fn report(root: &str, findings: &[Finding], look: &Look) -> String {
+    let mut out = format!("{} · {}\n", look.paint(Ink::Part, root), look.paint(Ink::Count, &questions(findings.len())));
     for p in PRINCIPLES {
         let mine: Vec<&Finding> = findings.iter().filter(|f| f.principle == p.id).collect();
         if mine.is_empty() {
-            clear.push(p.id);
             continue;
         }
-        out.push_str(&format!("\n{} · {}\n", p.id, p.asks));
-        for f in mine {
-            out.push_str(&format!("  {}:{}  {}\n", f.file, f.line, f.what));
+        let asked: Vec<Vec<&str>> = mine.iter().map(|f| sentences(&f.question)).collect();
+        let lead = shared_lead(&asked);
+        let hang = p.id.len() + 3;
+        out += &format!("\n{} · {}\n", look.paint(Ink::Principle, p.id), look.wrapped(Ink::Asks, p.asks, hang, hang));
+        if lead > 0 {
+            out += &format!("{}{}\n", " ".repeat(hang), look.wrapped(Ink::Why, &asked[0][..lead].join(" "), hang, hang));
+        }
+        for (f, q) in mine.iter().zip(&asked) {
+            // a finding about packages together stands in no one file
+            let (at, gap) = if f.file.is_empty() { (String::new(), "") } else { (format!("{}:{}", f.file, f.line), "  ") };
+            out += &format!("\n  {}{gap}{}\n", look.paint(Ink::At, &at), look.wrapped(Ink::Text, &f.what, 2 + at.len() + gap.len(), 4));
             for e in &f.evidence {
-                out.push_str(&format!("      {e}\n"));
+                out += &format!("      {}\n", look.wrapped(Ink::Evidence, e, 6, 8));
             }
-            out.push_str(&format!("    ? {}\n", f.question));
+            out += &format!("    {} {}\n", look.paint(Ink::Ask, "?"), look.wrapped(Ink::Text, &q[lead..].join(" "), 6, 6));
         }
     }
-    if !clear.is_empty() {
-        out.push_str(&format!("\nnothing to ask about {}\n", clear.join(", ")));
+    out
+}
+
+/// Every part's questions counted by principle, to read after the reports: a row for each
+/// principle with something to ask, a column for each part, and on one line the principles in
+/// `asked` with nothing to ask.
+pub fn summary(parts: &[(&str, &[Finding])], asked: &[&Principle], look: &Look) -> String {
+    let count = |part: &[Finding], p: &Principle| part.iter().filter(|f| f.principle == p.id).count();
+    let total: usize = parts.iter().map(|(_, fs)| fs.iter().filter(|f| asked.iter().any(|p| p.id == f.principle)).count()).sum();
+    let rows: Vec<(&Principle, Vec<usize>)> = asked
+        .iter()
+        .map(|p| (*p, parts.iter().map(|(_, fs)| count(fs, p)).collect::<Vec<_>>()))
+        .filter(|(_, n)| n.iter().any(|&n| n > 0))
+        .collect();
+    let quiet: Vec<String> = asked.iter().filter(|p| !rows.iter().any(|(r, _)| r.id == p.id)).map(|p| p.id.to_string()).collect();
+    let rule = "─".repeat(look.width.unwrap_or(60).min(60));
+    let mut out = format!("\n{}\n", look.paint(Ink::Quiet, &rule));
+    out += &look.paint(Ink::Count, &questions(total));
+    if parts.len() > 1 {
+        out += &format!(" in {} parts", parts.len());
+    }
+    out += "\n";
+    if !rows.is_empty() {
+        let label = rows.iter().map(|(p, _)| p.id.len()).max().unwrap_or(0);
+        let widths: Vec<usize> = parts.iter().map(|(name, _)| name.chars().count().max(3)).collect();
+        out += &format!("  {:label$}", "");
+        for ((name, _), w) in parts.iter().zip(&widths) {
+            out += &format!("  {}", look.paint(Ink::Part, &format!("{name:>w$}")));
+        }
+        out += "\n";
+        let most = rows.iter().map(|(_, n)| n.iter().sum::<usize>()).max().unwrap_or(1);
+        for (p, ns) in &rows {
+            out += &format!("  {}", look.paint(Ink::Principle, &format!("{:label$}", p.id)));
+            for (n, w) in ns.iter().zip(&widths) {
+                out += &match n {
+                    0 => format!("  {}", look.paint(Ink::Quiet, &format!("{:>w$}", "·"))),
+                    n => format!("  {}", look.paint(Ink::Count, &format!("{n:>w$}"))),
+                };
+            }
+            let sum: usize = ns.iter().sum();
+            let bar = look.paint(Ink::Bar, &"▇".repeat(if most > 24 { (sum * 24).div_ceil(most) } else { sum }));
+            if !bar.is_empty() {
+                out += &format!("  {bar}");
+            }
+            out += "\n";
+        }
+    }
+    if !quiet.is_empty() {
+        out += &format!("  {}\n", look.wrapped(Ink::Quiet, &format!("nothing to ask: {}", quiet.join(", ")), 2, 2));
     }
     out
 }
@@ -206,8 +355,11 @@ fn written(n: &Node) -> &str {
     n.returns.as_ref().map_or("", |r| r.written.as_str())
 }
 
+/// `a, b and c`, each named once.
 fn list(xs: &[String]) -> String {
-    match xs {
+    let mut seen = HashSet::new();
+    let xs: Vec<String> = xs.iter().filter(|x| seen.insert(x.as_str())).cloned().collect();
+    match xs.as_slice() {
         [] => String::new(),
         [x] => x.clone(),
         [init @ .., last] => format!("{} and {last}", init.join(", ")),

@@ -369,21 +369,65 @@ fn local(arg: PathBuf, opts: &mut Options) -> Result<(PathBuf, Option<remote::Cl
     Ok((c.dir.clone(), Some(c)))
 }
 
-/// The findings, grouped by principle, each ending in its question; exit status 1 when there
-/// is anything to ask.
+/// The findings, grouped by principle, each ending in its question, and below them how many
+/// each part has; exit status 1 when there is anything to ask.
 fn check(repo: &std::path::Path, opts: &Options, json: bool) -> Result<bool> {
-    let mut clean = true;
     // each part in its own language: what a Python package declares, a crate's compiler checks
-    for g in parts::analyze_parts(&[repo.to_path_buf()], opts)? {
-        let findings = principles::check(&g);
-        if json {
-            println!("{}", serde_json::to_string_pretty(&serde_json::json!({ "root": g.root, "findings": findings }))?);
-        } else {
-            print!("{}", principles::report(&g.root, &findings));
+    let parts: Vec<(String, Vec<principles::Finding>)> =
+        parts::analyze_parts(&[repo.to_path_buf()], opts)?.into_iter().map(|g| { let f = principles::check(&g); (g.root, f) }).collect();
+    if json {
+        for (root, findings) in &parts {
+            println!("{}", serde_json::to_string_pretty(&serde_json::json!({ "root": root, "findings": findings }))?);
         }
-        clean &= findings.is_empty();
+    } else {
+        let look = look();
+        for (i, (root, findings)) in parts.iter().enumerate() {
+            print!("{}{}", if i > 0 { "\n" } else { "" }, principles::report(root, findings, &look));
+        }
+        let counted: Vec<(&str, &[principles::Finding])> = parts.iter().map(|(r, f)| (r.as_str(), f.as_slice())).collect();
+        print!("{}", principles::summary(&counted, &principles::PRINCIPLES.iter().collect::<Vec<_>>(), &look));
     }
-    Ok(clean)
+    Ok(parts.iter().all(|(_, f)| f.is_empty()))
+}
+
+/// How a report looks here: in a terminal, the logo's colours (principles in petrol, a question's
+/// mark in vermilion) at the terminal's width, up to a hundred columns; elsewhere, or with
+/// `NO_COLOR`, plain text.
+fn look() -> principles::Look {
+    use principles::Ink;
+    use std::io::IsTerminal;
+    let terminal = std::io::stdout().is_terminal();
+    let mut look = principles::Look::plain();
+    look.width = terminal.then(columns).flatten().map(|c| c.min(100));
+    if terminal && std::env::var_os("NO_COLOR").is_none_or(|v| v.is_empty()) {
+        look.ink = |ink, s| {
+            let style = match ink {
+                Ink::Part | Ink::Count | Ink::Asks => Style::new().effects(Effects::BOLD),
+                Ink::Principle => AnsiColor::Cyan.on_default().effects(Effects::BOLD),
+                Ink::At | Ink::Bar => AnsiColor::Cyan.on_default(),
+                Ink::Text => Style::new(),
+                Ink::Why => Style::new().effects(Effects::DIMMED.insert(Effects::ITALIC)),
+                Ink::Evidence | Ink::Quiet => Style::new().effects(Effects::DIMMED),
+                Ink::Ask => AnsiColor::Red.on_default().effects(Effects::BOLD),
+            };
+            format!("{style}{s}{style:#}")
+        };
+    }
+    look
+}
+
+/// The terminal's width in columns.
+#[cfg(unix)]
+fn columns() -> Option<usize> {
+    let mut size: libc::winsize = unsafe { std::mem::zeroed() };
+    // SAFETY: TIOCGWINSZ writes a winsize for the descriptor and nothing else
+    let ok = unsafe { libc::ioctl(libc::STDOUT_FILENO, libc::TIOCGWINSZ, &mut size) } == 0;
+    (ok && size.ws_col > 0).then_some(size.ws_col as usize)
+}
+
+#[cfg(not(unix))]
+fn columns() -> Option<usize> {
+    None
 }
 
 fn main() -> Result<()> {

@@ -166,6 +166,9 @@ steps take what it gives straight from the entry, and clicking the entry shows t
 
 `atlas check` reads the same graph and lists where the code and ten design principles
 disagree. Each finding ends in a question for the author. Atlas coaches; it does not fix.
+The questions are grouped by principle, and the reason they share is said once, above them.
+Below them a table counts the questions of each principle in each part. `--json` gives the
+findings as data.
 
 | Principle | In one line |
 | --- | --- |
