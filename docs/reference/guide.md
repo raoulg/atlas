@@ -51,6 +51,11 @@ Read it from left to right:
   or route: hover the dot for what Atlas sees there and the question it asks. The dot sits
   inside its box, so findings move no box and no line. Atlas's own picture has none.
 - **Double-click a box** to pin its lines, to study or compare what it connects.
+- **Jump to symbol** opens what lies above the symbol and nothing beside it, and centres on
+  it: in a route, the steps that call it; in the overview, its part and package. A symbol
+  the route does not reach is shown in the first route that does. **close all ✕** at the
+  end of the state bar closes everything opened and lets go of what is pinned, and keeps the
+  route and the focus.
 - **Space over a box** shows its details and code over the picture while the code panel is
   closed; space, Esc or a click on the picture puts them away, and **pin** keeps the panel
   open beside the picture.
