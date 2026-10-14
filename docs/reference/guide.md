@@ -73,7 +73,9 @@ atlas --help
 ```
 
 `atlas view` writes a single HTML file and opens it. No server runs and your code stays on
-your machine. The page fetches only its drawing libraries (d3, elk, highlight.js) from a
+your machine. The file goes to `.atlas/` at the top of the git repository (`--out` names
+another place), where you and an agent working there both find it; the folder ignores itself,
+so git never sees it. `atlas analyze` writes its `graph.json` there too. The page fetches only its drawing libraries (d3, elk, highlight.js) from a
 CDN. It has three views. The **Flowchart** is the one to start with. Type lattice and
 Signature flow are earlier experiments. The header names the build that drew
 the page, as `atlas --version` does: `0.4.0 (b0ead14)`. The minor number goes up when what

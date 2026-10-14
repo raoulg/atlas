@@ -187,7 +187,7 @@ impl Repo {
 
 /// A path with its `.` parts taken out and each `..` taken back over the part before it; a `..`
 /// with nothing before it stays: `../api/./src/../x` is `../api/x`.
-pub(crate) fn normal(p: &Path) -> PathBuf {
+pub fn normal(p: &Path) -> PathBuf {
     let mut out = PathBuf::new();
     for c in p.components() {
         match c {

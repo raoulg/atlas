@@ -151,7 +151,8 @@ enum Cmd {
         /// Repository roots, files or git URLs (a `…/tree/<ref>/<folder>` URL names one folder; a file is read with its project, even where git ignores it, and the page opens on its route); default:
         /// the current directory. Several become parts of one page.
         repos: Vec<PathBuf>,
-        /// Where to write the page; default: a temporary file.
+        /// Where to write the page; default: `.atlas/<project>.html` at the top of the git
+        /// repository it is in.
         #[arg(long)]
         out: Option<PathBuf>,
         /// Write the page without opening a browser.
@@ -210,9 +211,10 @@ enum Cmd {
         /// Package directory, when discovery picks the wrong one.
         #[arg(long)]
         package: Option<PathBuf>,
-        /// Where to write the graph.
-        #[arg(short, long, default_value = "graph.json")]
-        out: PathBuf,
+        /// Where to write the graph; default: `.atlas/graph.json` at the top of the git repository
+        /// it is in.
+        #[arg(short, long)]
+        out: Option<PathBuf>,
     },
 }
 
@@ -338,23 +340,37 @@ pub(crate) fn open(target: &std::ffi::OsStr) {
     }
 }
 
-/// Where a page is written when no place is asked for: a temporary folder, by its project's name.
-pub(crate) fn page_file(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join("atlas");
-    let _ = std::fs::create_dir_all(&dir);
-    dir.join(format!("{name}.html"))
+/// Where Atlas puts what it makes when no place is asked for: `.atlas/` at the top of the git
+/// repository `dir` is in (else in `dir`), where whoever works there, a person or an agent, finds
+/// it. The folder ignores itself, so git never sees it. A clone is gone when the command ends, so
+/// what is made of one goes to a temporary folder.
+pub(crate) fn made(dir: Option<&Path>, file: &str) -> PathBuf {
+    let Some(dir) = dir else {
+        let tmp = std::env::temp_dir().join("atlas");
+        let _ = std::fs::create_dir_all(&tmp);
+        return tmp.join(file);
+    };
+    let dir = atlas_engine::repo::normal(&std::path::absolute(dir).unwrap_or_else(|_| dir.to_path_buf()));
+    let top = dir.ancestors().find(|a| a.join(".git").exists()).unwrap_or(&dir);
+    let home = top.join(".atlas");
+    if std::fs::create_dir_all(&home).is_ok() && !home.join(".gitignore").exists() {
+        let _ = std::fs::write(home.join(".gitignore"), "# What atlas makes: pages and graphs, never committed.\n*\n");
+    }
+    home.join(file)
 }
 
+/// The page of `repos`, written to `out`, else beside `home`, the folder of the first of them
+/// when it is not a clone.
 fn view(
     repos: &[PathBuf],
     opts: &Options,
-    out: Option<PathBuf>,
+    (out, home): (Option<PathBuf>, Option<&Path>),
     shown_in_browser: bool,
     range: (Option<&str>, Option<&str>),
     shown: Option<serde_json::Value>,
 ) -> Result<()> {
     let (name, html) = page(repos, opts, range.0, range.1, shown)?;
-    let out = out.unwrap_or_else(|| page_file(&name));
+    let out = out.unwrap_or_else(|| made(home, &format!("{name}.html")));
     std::fs::write(&out, html)?;
     eprintln!("wrote {}", out.display());
     if shown_in_browser {
@@ -473,9 +489,10 @@ fn main() -> Result<()> {
                 .map(|v| serde_json::from_str::<serde_json::Value>(&v))
                 .transpose()
                 .map_err(|e| anyhow::anyhow!("--view is not JSON: {e}"))?;
-            let (repos, _clones): (Vec<PathBuf>, Vec<Option<remote::Clone>>) =
+            let (repos, clones): (Vec<PathBuf>, Vec<Option<remote::Clone>>) =
                 repos.into_iter().map(|r| local(r, &mut opts)).collect::<Result<Vec<_>>>()?.into_iter().unzip();
-            view(&repos, &opts, out, !no_open, (since.as_deref(), until.as_deref()), shown)?
+            let home = clones[0].is_none().then(|| repos[0].as_path());
+            view(&repos, &opts, (out, home), !no_open, (since.as_deref(), until.as_deref()), shown)?
         }
         Cmd::Mcp => mcp::serve(&opts)?,
         Cmd::History { repo, port, no_open } => {
@@ -512,7 +529,8 @@ fn main() -> Result<()> {
             }
         }
         Cmd::Analyze { repo, package, out } => {
-            let (repo, _clone) = local(repo, &mut opts)?;
+            let (repo, clone) = local(repo, &mut opts)?;
+            let out = out.unwrap_or_else(|| made(clone.is_none().then_some(repo.as_path()), "graph.json"));
             let g = match package {
                 Some(p) => atlas_engine::analyze(&repo, &Options { package: Some(p), ..opts })?,
                 None => parts::analyze_repo(&[repo.clone()], &opts)?,

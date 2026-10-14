@@ -76,3 +76,24 @@ fn a_page_holds_what_check_finds() {
 fn atlas_marks_nothing_in_its_own_picture() {
     assert_eq!(page_of(".")["findings"], serde_json::json!([]));
 }
+
+/// Without `--out`, what Atlas makes goes to `.atlas/` at the top of the git repository the
+/// subject is in, read from a folder below it; the folder ignores itself, so git never sees it.
+#[test]
+fn what_atlas_makes_goes_to_atlas_at_the_top_of_the_repository() {
+    let repo = scratch("made");
+    let package = repo.join("src").join("made");
+    std::fs::create_dir_all(&package).unwrap();
+    std::fs::create_dir_all(repo.join(".git")).unwrap();
+    std::fs::write(repo.join("pyproject.toml"), "[project]\nname = \"made\"\nversion = \"0\"\n").unwrap();
+    std::fs::write(package.join("__init__.py"), "def go() -> int:\n    return 1\n").unwrap();
+    atlas(&["view", package.to_str().unwrap(), "--no-open"]);
+    atlas(&["analyze", package.to_str().unwrap()]);
+    let made = repo.join(".atlas");
+    let mut names: Vec<String> = std::fs::read_dir(&made).unwrap().flatten().map(|e| e.file_name().to_string_lossy().to_string()).collect();
+    names.sort();
+    let ignore = std::fs::read_to_string(made.join(".gitignore")).unwrap_or_default();
+    let _ = std::fs::remove_dir_all(&repo);
+    assert_eq!(names, [".gitignore", "graph.json", "made.html"]);
+    assert!(ignore.lines().any(|l| l == "*"), "the folder ignores itself: {ignore:?}");
+}
