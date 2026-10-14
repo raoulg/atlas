@@ -892,7 +892,7 @@ fn a_file_is_what_the_api_types_as_one() {
     );
     let named: Vec<&str> =
         g.node("fixture.files.keep").unwrap().touches.iter().filter(|t| t.op == "open").map(|t| t.what.as_str()).collect();
-    assert_eq!(named, ["cache_file"], "the file is the path it is opened at, not its encoding");
+    assert_eq!(named, ["keep.cache_file"], "the file is the path it is opened at, not its encoding: `keep`'s `cache_file`");
     let install = t("fixture.files.install");
     assert!(install.iter().any(|(k, _, a, _)| k == "disk_write" && a == "data/config.toml"), "{install:?}");
     assert!(install.iter().any(|(k, _, _, _)| k == "disk_read"), "the source is read: {install:?}");

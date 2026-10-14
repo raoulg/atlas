@@ -466,7 +466,8 @@ fn gathering(side: &str) -> Graph {
 
 /// What a call changes in place, it gives: `rows.push(new Row(reading))` on a name the body
 /// declares an array is the language's own step, which makes `rows` from what it is handed, so the
-/// Reading reaches what `this.write(rows)` puts. It is no call Atlas cannot follow, which might put
+/// Reading reaches what `writeRows(this.path, rows)` puts, at the place `get` reads: the path the
+/// store is made with, `Disk(Store.path)`. It is no call Atlas cannot follow, which might put
 /// what it is handed anywhere. The clean `get` gives the Readings back; the shortcut's gives the
 /// lines, and `lens` asks where the Reading went. `DroppedStore` pushes onto another array: it puts
 /// no Reading and is not asked, also where it takes `readings: Reading[]` and pushes in a loop
@@ -488,6 +489,10 @@ fn lens_what_is_pushed_onto_what_is_put_is_put() {
     let all = s.node(&format!("{}.gathering.Store.putAll", s.root)).unwrap();
     let element = |h: &atlas_engine::Held| h.name == "reading" && h.ty == format!("{}.gathering.Reading", s.root);
     assert!(all.sites.iter().any(|x| x.hands.iter().any(element)), "{:?}", all.sites);
+    for f in ["gathering.writeRows", "gathering.Store.get"] {
+        let n = s.node(&format!("{}.{f}", s.root)).unwrap();
+        assert!(n.touches.iter().any(|t| t.what == "Store.path"), "{f}: {:?}", n.touches);
+    }
     assert!(asked(&s, "lens", "gathering.Store"), "{:?}", asked_anywhere(&s, "lens"));
     assert!(!asked(&s, "lens", "gathering.DroppedStore"), "{:?}", asked_anywhere(&s, "lens"));
     let observe = s.node(&format!("{}.gathering.observe", s.root)).unwrap();

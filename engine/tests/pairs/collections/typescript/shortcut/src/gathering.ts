@@ -9,13 +9,17 @@ export class Row {
   constructor(readonly reading: Reading) {}
 }
 
+function writeRows(path: string, rows: Row[]): void {
+  writeFileSync(path, rows.map((row) => row.reading.text).join("\n"));
+}
+
 export class Store {
   constructor(private readonly path: string) {}
 
   put(reading: Reading): void {
     const rows: Row[] = this.rows();
     rows.push(new Row(reading));
-    this.write(rows);
+    writeRows(this.path, rows);
   }
 
   putAll(readings: Reading[]): void {
@@ -23,7 +27,7 @@ export class Store {
     for (const reading of readings) {
       rows.push(new Row(reading));
     }
-    this.write(rows);
+    writeRows(this.path, rows);
   }
 
   get(): string[] {
@@ -32,10 +36,6 @@ export class Store {
 
   private rows(): Row[] {
     return readFileSync(this.path, "utf8").split("\n").map((line) => new Row(new Reading(line)));
-  }
-
-  private write(rows: Row[]): void {
-    writeFileSync(this.path, rows.map((row) => row.reading.text).join("\n"));
   }
 }
 
@@ -46,7 +46,7 @@ export class DroppedStore {
     const rows: Row[] = this.rows();
     const added: Row[] = [];
     added.push(new Row(reading));
-    this.write(rows);
+    writeRows(this.path, rows);
   }
 
   putAll(readings: Reading[]): void {
@@ -55,7 +55,7 @@ export class DroppedStore {
     for (const reading of readings) {
       added.push(new Row(reading));
     }
-    this.write(rows);
+    writeRows(this.path, rows);
   }
 
   get(): string[] {
@@ -64,10 +64,6 @@ export class DroppedStore {
 
   private rows(): Row[] {
     return readFileSync(this.path, "utf8").split("\n").map((line) => new Row(new Reading(line)));
-  }
-
-  private write(rows: Row[]): void {
-    writeFileSync(this.path, rows.map((row) => row.reading.text).join("\n"));
   }
 }
 

@@ -406,7 +406,8 @@ fn gathering(side: &str) -> Graph {
 
 /// What a call changes in place, it gives: `rows.push(Row { .. })` on a `Vec` is a step that makes
 /// `rows` from what it is handed (std's row of the mutators), so the Reading reaches what
-/// `write(&rows)` puts. The clean `get` gives the Readings back; the shortcut's gives the lines, and
+/// `write_rows(&self.path, &rows)` puts, at the place `get` reads: the path the store is made with,
+/// `Disk(Store.path)`. The clean `get` gives the Readings back; the shortcut's gives the lines, and
 /// `lens` asks where the Reading went. `DroppedStore` pushes onto another `Vec`: it puts no
 /// Reading and is not asked, also where it takes `readings: &[Reading]` and pushes in a loop
 /// (`put_all`): `reading` is an element of the slice, and the parameter is followed through it. The program's own `Frozen::push` returns a new value, and
@@ -423,7 +424,12 @@ fn lens_what_is_pushed_onto_what_is_put_is_put() {
         "{:?}",
         put.sites
     );
-    assert!(node(&s, "gathering.Store.write").touches.iter().any(|t| t.what == "self.path"));
+    assert!(
+        node(&s, "gathering.write_rows").touches.iter().any(|t| t.what == "Store.path"),
+        "{:?}",
+        node(&s, "gathering.write_rows").touches
+    );
+    assert!(node(&s, "gathering.Store.get").touches.iter().any(|t| t.what == "Store.path"));
     let element = |h: &atlas_engine::Held| h.name == "reading" && h.ty == "gathering.Reading";
     assert!(
         node(&s, "gathering.Store.put_all").sites.iter().any(|x| x.hands.iter().any(element)),

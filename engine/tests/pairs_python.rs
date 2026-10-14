@@ -463,7 +463,9 @@ fn gathering(side: &str) -> Graph {
 }
 
 /// What a call changes in place, it gives: `rows.append(Row(reading))` is a step that makes `rows`
-/// from what it is handed, so the Reading reaches what `_write(rows)` puts. Both stores read their
+/// from what it is handed, so the Reading reaches what `write_rows(self.path, rows)` puts. The
+/// helper's `path` and the store's `self.path` are one value, the path the store is made with, so
+/// they are one place: `Disk(Store.path)`. Both stores read their
 /// rows, append the new one and write them back. The clean `get` gives the Readings back; the
 /// shortcut's gives the lines, and `lens` asks where the Reading went. `DroppedStore` appends to
 /// another list and writes the rows as they were: it puts no Reading and is not asked, also where it
@@ -483,6 +485,9 @@ fn lens_what_is_appended_to_what_is_put_is_put() {
         put.sites
     );
     assert_eq!(found(&s, "lens"), ["gathering.store.Store"]);
+    for f in ["gathering.store.write_rows", "gathering.store.Store.get"] {
+        assert!(s.node(f).unwrap().touches.iter().any(|t| t.what == "Store.path"), "{f}: {:?}", s.node(f).unwrap().touches);
+    }
     let observe = s.node("gathering.store.observe").unwrap();
     assert!(observe.sites.iter().flat_map(|x| &x.gives).all(|g| g.name != "frozen" && g.name != "path"), "{:?}", observe.sites);
 }

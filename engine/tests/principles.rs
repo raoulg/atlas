@@ -139,7 +139,7 @@ fn a_lens_puts_what_reaches_the_place_not_the_key_it_looks_up_by() {
     let lens: Vec<Finding> = check(&g).into_iter().filter(|f| f.principle == "lens").collect();
     assert!(lens.iter().all(|f| f.node != "fixture.tiles.Tiles"), "{:#?}", lens);
     let notes = lens.iter().find(|f| f.node == "fixture.notes.Notes").expect("Notes is asked");
-    assert_eq!(notes.evidence, ["put Notes.put: Note × Disk(self.path) → Disk(self.path)", "get Notes.get: Disk(self.path) → dict"]);
+    assert_eq!(notes.evidence, ["put Notes.put: Note × Disk(Notes.path) → Disk(Notes.path)", "get Notes.get: Disk(Notes.path) → dict"]);
 }
 
 /// The principles read Rust by what its types and entries mean: `Disk.page` gives the

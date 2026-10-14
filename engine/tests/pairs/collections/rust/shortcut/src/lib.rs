@@ -13,6 +13,11 @@ pub struct Row {
     pub reading: Reading,
 }
 
+fn write_rows(path: &Path, rows: &[Row]) -> io::Result<()> {
+    let lines: Vec<&str> = rows.iter().map(|row| row.reading.text.as_str()).collect();
+    fs::write(path, lines.join("\n"))
+}
+
 pub struct Store {
     path: PathBuf,
 }
@@ -25,7 +30,7 @@ impl Store {
     pub fn put(&self, reading: &Reading) -> io::Result<()> {
         let mut rows: Vec<Row> = self.rows()?;
         rows.push(Row { reading: reading.clone() });
-        self.write(&rows)
+        write_rows(&self.path, &rows)
     }
 
     pub fn put_all(&self, readings: &[Reading]) -> io::Result<()> {
@@ -33,7 +38,7 @@ impl Store {
         for reading in readings {
             rows.push(Row { reading: reading.clone() });
         }
-        self.write(&rows)
+        write_rows(&self.path, &rows)
     }
 
     pub fn get(&self) -> io::Result<Vec<String>> {
@@ -42,11 +47,6 @@ impl Store {
 
     fn rows(&self) -> io::Result<Vec<Row>> {
         Ok(fs::read_to_string(&self.path)?.lines().map(|line| Row { reading: Reading { text: line.to_string() } }).collect())
-    }
-
-    fn write(&self, rows: &[Row]) -> io::Result<()> {
-        let lines: Vec<&str> = rows.iter().map(|row| row.reading.text.as_str()).collect();
-        fs::write(&self.path, lines.join("\n"))
     }
 }
 
@@ -63,7 +63,7 @@ impl DroppedStore {
         let rows: Vec<Row> = self.rows()?;
         let mut added: Vec<Row> = Vec::new();
         added.push(Row { reading: reading.clone() });
-        self.write(&rows)
+        write_rows(&self.path, &rows)
     }
 
     pub fn put_all(&self, readings: &[Reading]) -> io::Result<()> {
@@ -72,7 +72,7 @@ impl DroppedStore {
         for reading in readings {
             added.push(Row { reading: reading.clone() });
         }
-        self.write(&rows)
+        write_rows(&self.path, &rows)
     }
 
     pub fn get(&self) -> io::Result<Vec<String>> {
@@ -81,11 +81,6 @@ impl DroppedStore {
 
     fn rows(&self) -> io::Result<Vec<Row>> {
         Ok(fs::read_to_string(&self.path)?.lines().map(|line| Row { reading: Reading { text: line.to_string() } }).collect())
-    }
-
-    fn write(&self, rows: &[Row]) -> io::Result<()> {
-        let lines: Vec<&str> = rows.iter().map(|row| row.reading.text.as_str()).collect();
-        fs::write(&self.path, lines.join("\n"))
     }
 }
 

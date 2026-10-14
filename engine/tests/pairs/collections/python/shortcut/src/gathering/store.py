@@ -14,6 +14,10 @@ class Row:
     reading: Reading
 
 
+def write_rows(path: Path, rows: list[Row]) -> None:
+    path.write_text("\n".join(row.reading.text for row in rows))
+
+
 class Store:
     def __init__(self, path: Path) -> None:
         self.path = path
@@ -21,13 +25,13 @@ class Store:
     def put(self, reading: Reading) -> None:
         rows = self._rows()
         rows.append(Row(reading))
-        self._write(rows)
+        write_rows(self.path, rows)
 
     def put_all(self, readings: list[Reading]) -> None:
         rows = self._rows()
         for reading in readings:
             rows.append(Row(reading))
-        self._write(rows)
+        write_rows(self.path, rows)
 
     def get(self) -> list[str]:
         return self.path.read_text().splitlines()
@@ -35,8 +39,6 @@ class Store:
     def _rows(self) -> list[Row]:
         return [Row(Reading(line)) for line in self.path.read_text().splitlines()]
 
-    def _write(self, rows: list[Row]) -> None:
-        self.path.write_text("\n".join(row.reading.text for row in rows))
 
 
 class DroppedStore:
@@ -47,14 +49,14 @@ class DroppedStore:
         rows = self._rows()
         added: list[Row] = []
         added.append(Row(reading))
-        self._write(rows)
+        write_rows(self.path, rows)
 
     def put_all(self, readings: list[Reading]) -> None:
         rows = self._rows()
         added: list[Row] = []
         for reading in readings:
             added.append(Row(reading))
-        self._write(rows)
+        write_rows(self.path, rows)
 
     def get(self) -> list[str]:
         return self.path.read_text().splitlines()
@@ -62,8 +64,6 @@ class DroppedStore:
     def _rows(self) -> list[Row]:
         return [Row(Reading(line)) for line in self.path.read_text().splitlines()]
 
-    def _write(self, rows: list[Row]) -> None:
-        self.path.write_text("\n".join(row.reading.text for row in rows))
 
 
 class Frozen:

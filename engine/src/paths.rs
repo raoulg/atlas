@@ -335,6 +335,29 @@ pub fn place(b: &Built, op: &str) -> Option<String> {
     (!matches!(p.as_str(), "" | "." | "./" | "/" | "*")).then_some(p)
 }
 
+/// The name of the one value `built` holds, where it is whole in `holder`, when it is one of
+/// `holder`'s parameters: the parameter a constructor takes is its class's (`Store.path`), any
+/// other function's its own (`main.out`). Nothing when the alternatives hold more than one value,
+/// or a value with a literal part.
+fn by_value<'b>(store: &crate::builder::GraphBuilder, holder: &str, mut built: impl Iterator<Item = &'b Built>) -> Option<String> {
+    let name = |b: &Built| match b.as_slice() {
+        [Seg::Hole(x) | Seg::Param(x) | Seg::Held(_, x)] => Some(x.clone()),
+        _ => None,
+    };
+    let first = name(built.next()?)?;
+    if !built.all(|b| name(b).as_ref() == Some(&first)) {
+        return None;
+    }
+    // a value of one of the holder's parameters; anything else unknown (what the environment
+    // says) keeps the name the code gives it
+    let n = store.nodes.get(holder).filter(|n| n.params.iter().any(|p| !p.receiver && p.name == first))?;
+    let owner = match (n.ctor, n.cls.as_deref()) {
+        (true, Some(cls)) => cls.rsplit('.').next().unwrap_or(cls),
+        _ => n.name.as_str(),
+    };
+    Some(format!("{owner}.{first}"))
+}
+
 /// The deepest a value is followed out through the callers.
 const DEPTH: u32 = 12;
 /// The most completions one built value is followed to, over all the calls that complete it.
@@ -669,11 +692,20 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
                 same
             });
             let at = |artifact: String, dir, fixed| Touch { artifact, dir, fixed, by: by.clone(), users_of: users_of.clone(), ..t.clone() };
+            // a file whose path is one value no literal makes is named by that value where it is
+            // whole, so every call handed it touches the same place: `path` in a helper and
+            // `self.path` in a method are both `Store.path` when the constructor takes it
+            let value = if t.kind == World::Disk {
+                by_value(store, holder, found.iter().filter(|(w, _, _)| w == whole).map(|(_, b, _)| b))
+            } else {
+                None
+            };
             if placed.is_empty() {
                 if !requested {
                     // a URL without a host is the page's own origin, decided by whoever serves it
                     let fixed = decides && (t.kind != World::Net || !t.artifact.is_empty());
-                    store.touch(&f, at(t.artifact.clone(), t.dir, fixed));
+                    let touch = at(t.artifact.clone(), t.dir, fixed);
+                    store.touch(&f, Touch { what: value.unwrap_or_else(|| touch.what.clone()), ..touch });
                 }
                 continue;
             }

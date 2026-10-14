@@ -57,7 +57,7 @@ fn a_client_initializes_lists_and_calls() {
     assert!(text(&replies[3]).starts_with("A sum type is unwrapped where it arises."));
     // analyze is its algebra: Disk(repo) -> read -> Repo -> parse -> Graph
     assert!(
-        text(&replies[4]).contains("\n1  read(dir, opts) → Repo\n  1.1  Repo.read(dir, named) → Repo   ·   reads dir"),
+        text(&replies[4]).contains("\n1  read(dir, opts) → Repo\n  1.1  Repo.read(dir, named) → Repo   ·   reads analyze.dir"),
         "{}",
         text(&replies[4])
     );

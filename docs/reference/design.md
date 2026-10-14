@@ -222,7 +222,11 @@ Three things make `F` honest, and each is an engine task:
    route that reads it.
 
    A path built from a function's parameters is a parameter of its arrow: `Repo::read(dir)`
-   is `Disk(dir) → Repo`, and a route fixes it by composition. Each place keeps the
+   is `Disk(dir) → Repo`, and a route fixes it by composition. A path no literal makes is
+   named by the value it holds where it is whole: the parameter of the function there
+   (`analyze.dir`), or of the class whose constructor takes it (`Store.path`). A helper's
+   `path` and a method's `self.path` handed the same value are one place, and two parameters
+   that only share a name are two. Each place keeps the
    function whose call made it whole, and a route shows it only when it reaches that
    function: `analyze` reads the folder its user names, and `changes` also reads the
    revision it writes under `$TMPDIR`. An entry the program also calls is run by its users
