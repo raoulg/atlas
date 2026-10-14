@@ -23,6 +23,12 @@ class Store:
         rows.append(Row(reading))
         self._write(rows)
 
+    def put_all(self, readings: list[Reading]) -> None:
+        rows = self._rows()
+        for reading in readings:
+            rows.append(Row(reading))
+        self._write(rows)
+
     def get(self) -> list[str]:
         return self.path.read_text().splitlines()
 
@@ -41,6 +47,13 @@ class DroppedStore:
         rows = self._rows()
         added: list[Row] = []
         added.append(Row(reading))
+        self._write(rows)
+
+    def put_all(self, readings: list[Reading]) -> None:
+        rows = self._rows()
+        added: list[Row] = []
+        for reading in readings:
+            added.append(Row(reading))
         self._write(rows)
 
     def get(self) -> list[str]:

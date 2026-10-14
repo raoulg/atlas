@@ -23,6 +23,12 @@ class Store:
         rows.append(Row(reading))
         self._write(rows)
 
+    def put_all(self, readings: list[Reading]) -> None:
+        rows = self._rows()
+        for reading in readings:
+            rows.append(Row(reading))
+        self._write(rows)
+
     def get(self) -> list[Reading]:
         return [row.reading for row in self._rows()]
 

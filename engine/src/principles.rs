@@ -1223,6 +1223,12 @@ fn lens<'g>(ix: &Index<'g>) -> Vec<Finding> {
     out
 }
 
+/// Whether a type as written names `name`: `list[Reading]`, `&[Reading]` and `Reading[]` name
+/// `Reading`.
+fn names(written: &str, name: &str) -> bool {
+    written.split(|c: char| !(c.is_alphanumeric() || c == '_')).any(|w| w == name)
+}
+
 /// What a value of type `t` holds, `t` among it: its fields and theirs in turn, the elements of
 /// its lists, the variants of its sums. A get that gives `t` gives back each of these: a lens
 /// composed with the projection to a part of what it gives is a lens on that part.
@@ -1312,8 +1318,9 @@ impl<'g> Places<'_, 'g> {
     /// into the place may be handed any of its parameters, since the graph does not say what a
     /// call into the world is handed; a call Atlas cannot follow may put what it is handed
     /// wherever `f` puts; a value no step gives and no parameter is (`for r in readings`,
-    /// `x = p.field`) is taken from any parameter whose type holds its type; and a parameter no
-    /// step is handed by name reaches the place when any step puts there.
+    /// `x = p.field`) is taken from any parameter whose type holds its type, as the parameter is
+    /// declared or handed; and a parameter neither handed to a step by name nor holding such a
+    /// value reaches the place when any step puts there.
     fn reached(&self, f: &'g Node, place: &str, theirs: &HashSet<&str>) -> BTreeSet<&'g str> {
         let ix = self.ix;
         let params: Vec<&'g str> = f.params.iter().filter(|p| !p.receiver).map(|p| p.name.as_str()).collect();
@@ -1322,12 +1329,25 @@ impl<'g> Places<'_, 'g> {
             return params.into_iter().collect();
         }
         let hands = || f.sites.iter().flat_map(|s| &s.hands);
-        let unseen: Vec<&'g str> = params.iter().copied().filter(|p| !hands().any(|h| h.name == *p)).collect();
         let given: HashSet<&str> = f.sites.iter().flat_map(|s| &s.gives).map(|g| g.name.as_str()).collect();
-        let holding: Vec<(&'g str, HashSet<&'g str>)> = params
+        // what each parameter holds: the types it is declared to take, and those it is handed as
+        let takes = ix.targets(&f.id, EdgeKind::Takes);
+        let holding: Vec<(&'g str, HashSet<&'g str>)> = f
+            .params
             .iter()
-            .map(|p| (*p, hands().filter(|h| h.name == *p && !h.ty.is_empty()).flat_map(|h| holds(ix, h.ty.as_str())).collect()))
+            .filter(|p| !p.receiver)
+            .map(|p| {
+                let declared = takes.iter().copied().filter(|t| ix.node(t).map_or(false, |n| names(&p.ty, &n.name)));
+                let handed = hands().filter(|h| h.name == p.name && !h.ty.is_empty()).map(|h| h.ty.as_str());
+                (p.name.as_str(), declared.chain(handed).flat_map(|t| holds(ix, t)).collect())
+            })
             .collect();
+        // a value no step gives and no parameter is, by the parameters that hold its type
+        let held_in =
+            |h: &Held| -> BTreeSet<&'g str> { holding.iter().filter(|(_, ts)| ts.contains(h.ty.as_str())).map(|(p, _)| *p).collect() };
+        let loose = |h: &&Held| !params.contains(&h.name.as_str()) && !given.contains(h.name.as_str());
+        let taken_from: HashSet<&'g str> = hands().filter(loose).flat_map(held_in).collect();
+        let unseen: Vec<&'g str> = params.iter().copied().filter(|p| !hands().any(|h| h.name == *p) && !taken_from.contains(p)).collect();
         // the parameters each value of the body is made from, by the name the body holds it by
         let mut made: HashMap<&'g str, BTreeSet<&'g str>> = params.iter().map(|p| (*p, BTreeSet::from([*p]))).collect();
         let mut out = BTreeSet::new();
@@ -1346,7 +1366,7 @@ impl<'g> Places<'_, 'g> {
                     let from = match made.get(h.name.as_str()) {
                         Some(ps) => ps.clone(),
                         None if given.contains(h.name.as_str()) => BTreeSet::new(),
-                        None => holding.iter().filter(|(_, ts)| ts.contains(h.ty.as_str())).map(|(p, _)| *p).collect(),
+                        None => held_in(h),
                     };
                     (h, from)
                 })

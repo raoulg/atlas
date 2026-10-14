@@ -469,8 +469,9 @@ fn gathering(side: &str) -> Graph {
 /// Reading reaches what `this.write(rows)` puts. It is no call Atlas cannot follow, which might put
 /// what it is handed anywhere. The clean `get` gives the Readings back; the shortcut's gives the
 /// lines, and `lens` asks where the Reading went. `DroppedStore` pushes onto another array: it puts
-/// no Reading and is not asked. The program's own `Frozen.push` returns a new value and changes
-/// nothing.
+/// no Reading and is not asked, also where it takes `readings: Reading[]` and pushes in a loop
+/// (`putAll`): `reading` is an element of the array, and the parameter is followed through it. The
+/// program's own `Frozen.push` returns a new value and changes nothing.
 #[test]
 fn lens_what_is_pushed_onto_what_is_put_is_put() {
     let (c, s) = (gathering("clean"), gathering("shortcut"));
@@ -484,6 +485,9 @@ fn lens_what_is_pushed_onto_what_is_put_is_put() {
         "{:?}",
         put.sites
     );
+    let all = s.node(&format!("{}.gathering.Store.putAll", s.root)).unwrap();
+    let element = |h: &atlas_engine::Held| h.name == "reading" && h.ty == format!("{}.gathering.Reading", s.root);
+    assert!(all.sites.iter().any(|x| x.hands.iter().any(element)), "{:?}", all.sites);
     assert!(asked(&s, "lens", "gathering.Store"), "{:?}", asked_anywhere(&s, "lens"));
     assert!(!asked(&s, "lens", "gathering.DroppedStore"), "{:?}", asked_anywhere(&s, "lens"));
     let observe = s.node(&format!("{}.gathering.observe", s.root)).unwrap();

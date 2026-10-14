@@ -28,6 +28,14 @@ impl Store {
         self.write(&rows)
     }
 
+    pub fn put_all(&self, readings: &[Reading]) -> io::Result<()> {
+        let mut rows: Vec<Row> = self.rows()?;
+        for reading in readings {
+            rows.push(Row { reading: reading.clone() });
+        }
+        self.write(&rows)
+    }
+
     pub fn get(&self) -> io::Result<Vec<String>> {
         Ok(fs::read_to_string(&self.path)?.lines().map(str::to_string).collect())
     }
@@ -55,6 +63,15 @@ impl DroppedStore {
         let rows: Vec<Row> = self.rows()?;
         let mut added: Vec<Row> = Vec::new();
         added.push(Row { reading: reading.clone() });
+        self.write(&rows)
+    }
+
+    pub fn put_all(&self, readings: &[Reading]) -> io::Result<()> {
+        let rows: Vec<Row> = self.rows()?;
+        let mut added: Vec<Row> = Vec::new();
+        for reading in readings {
+            added.push(Row { reading: reading.clone() });
+        }
         self.write(&rows)
     }
 

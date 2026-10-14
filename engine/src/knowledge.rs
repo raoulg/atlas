@@ -1525,6 +1525,13 @@ pub const TYPESCRIPT_OWN_TYPES: OwnTypes = OwnTypes {
 /// names where they are defined.
 pub const PYTHON_BUILTINS_MODULE: &str = "builtins";
 
+/// Rust's sequences: a loop over one (`for r in &rows`, `for r in rows.iter()`) goes over its
+/// elements, as does one over a slice or an array.
+pub const RUST_SEQUENCES: &[&str] = &["Vec", "VecDeque", "HashSet", "BTreeSet", "BinaryHeap", "LinkedList"];
+
+/// The methods that go over a sequence's elements, by reference or by value.
+pub const RUST_ELEMENTS: &[&str] = &["iter", "iter_mut", "into_iter", "drain"];
+
 /// The crate the prelude's types are of: `Vec` and `String` are `std`'s.
 pub const RUST_PRELUDE_CRATE: &str = "std";
 

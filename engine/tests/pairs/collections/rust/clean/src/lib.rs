@@ -28,6 +28,14 @@ impl Store {
         self.write(&rows)
     }
 
+    pub fn put_all(&self, readings: &[Reading]) -> io::Result<()> {
+        let mut rows: Vec<Row> = self.rows()?;
+        for reading in readings {
+            rows.push(Row { reading: reading.clone() });
+        }
+        self.write(&rows)
+    }
+
     pub fn get(&self) -> io::Result<Vec<Reading>> {
         Ok(self.rows()?.into_iter().map(|row| row.reading).collect())
     }

@@ -455,7 +455,11 @@ where a value goes, Atlas does not guess that it goes nowhere: a call of the ope
 the place may be handed any of its parameters (the graph does not say what a call into the world
 is handed), a call Atlas cannot follow may put what it is handed wherever its function puts, a
 value no step makes (`for r in readings`, `x = p.field`) is part of any parameter whose type holds
-its type, and a parameter no step is handed by name reaches the place when any step puts there.
+its type, as the parameter is declared or handed, and a parameter that is neither handed to a step
+by name nor holds such a value reaches the place when any step puts there. A loop variable is an
+element of what it goes over, in every language: ty types it in Python; in Rust and TypeScript it
+has the element type of the sequence the body declares (`readings: &[Reading]`,
+`readings: Reading[]`), so a parameter only iterated is followed through its elements.
 
 A call that changes the value it is called on is a step that makes that value anew from what it
 is handed, `T × A → T`: `rows.append(row)`, `rows.push(row)`, `seen.add(key)`. What is made of a

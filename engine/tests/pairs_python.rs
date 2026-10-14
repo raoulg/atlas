@@ -466,9 +466,11 @@ fn gathering(side: &str) -> Graph {
 /// from what it is handed, so the Reading reaches what `_write(rows)` puts. Both stores read their
 /// rows, append the new one and write them back. The clean `get` gives the Readings back; the
 /// shortcut's gives the lines, and `lens` asks where the Reading went. `DroppedStore` appends to
-/// another list and writes the rows as they were: it puts no Reading and is not asked. A method of
-/// the program's own that returns a new value (`Frozen.append`) and an observation whose result is
-/// dropped (`path.exists()`) change nothing.
+/// another list and writes the rows as they were: it puts no Reading and is not asked, also where it
+/// takes `readings: list[Reading]` and appends in a loop (`put_all`): the loop variable is an
+/// element of the parameter, which is followed through it. A method of the program's own that
+/// returns a new value (`Frozen.append`) and an observation whose result is dropped
+/// (`path.exists()`) change nothing.
 #[test]
 fn lens_what_is_appended_to_what_is_put_is_put() {
     let (c, s) = (gathering("clean"), gathering("shortcut"));

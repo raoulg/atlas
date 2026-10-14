@@ -408,7 +408,8 @@ fn gathering(side: &str) -> Graph {
 /// `rows` from what it is handed (std's row of the mutators), so the Reading reaches what
 /// `write(&rows)` puts. The clean `get` gives the Readings back; the shortcut's gives the lines, and
 /// `lens` asks where the Reading went. `DroppedStore` pushes onto another `Vec`: it puts no
-/// Reading and is not asked. The program's own `Frozen::push` returns a new value, and
+/// Reading and is not asked, also where it takes `readings: &[Reading]` and pushes in a loop
+/// (`put_all`): `reading` is an element of the slice, and the parameter is followed through it. The program's own `Frozen::push` returns a new value, and
 /// `path.exists()` only looks: neither changes what it is called on. The file a write names is
 /// its path (`&self.path`), not the `"\n"` it joins the lines with.
 #[test]
@@ -423,6 +424,12 @@ fn lens_what_is_pushed_onto_what_is_put_is_put() {
         put.sites
     );
     assert!(node(&s, "gathering.Store.write").touches.iter().any(|t| t.what == "self.path"));
+    let element = |h: &atlas_engine::Held| h.name == "reading" && h.ty == "gathering.Reading";
+    assert!(
+        node(&s, "gathering.Store.put_all").sites.iter().any(|x| x.hands.iter().any(element)),
+        "{:?}",
+        node(&s, "gathering.Store.put_all").sites
+    );
     assert_eq!(found(&s, "lens"), ["gathering.Store"]);
     let observe = node(&s, "gathering.observe");
     assert!(observe.sites.iter().flat_map(|x| &x.gives).all(|g| g.name != "frozen" && g.name != "path"), "{:?}", observe.sites);

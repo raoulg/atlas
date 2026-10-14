@@ -18,6 +18,14 @@ export class Store {
     this.write(rows);
   }
 
+  putAll(readings: Reading[]): void {
+    const rows: Row[] = this.rows();
+    for (const reading of readings) {
+      rows.push(new Row(reading));
+    }
+    this.write(rows);
+  }
+
   get(): string[] {
     return readFileSync(this.path, "utf8").split("\n");
   }
@@ -38,6 +46,15 @@ export class DroppedStore {
     const rows: Row[] = this.rows();
     const added: Row[] = [];
     added.push(new Row(reading));
+    this.write(rows);
+  }
+
+  putAll(readings: Reading[]): void {
+    const rows: Row[] = this.rows();
+    const added: Row[] = [];
+    for (const reading of readings) {
+      added.push(new Row(reading));
+    }
     this.write(rows);
   }
 

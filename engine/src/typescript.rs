@@ -1956,6 +1956,8 @@ impl<'a, 't> Body<'a, 't> {
     /// Parameters and locals with a class type give receivers a type.
     fn typed(&mut self, n: &Node) {
         let src = self.src;
+        // the types the body's names are written with: its parameters' and its typed locals'
+        let mut written: HashMap<String, String> = n.params.iter().map(|p| (p.name.clone(), p.ty.clone())).collect();
         for p in n.params.iter().filter(|p| !p.ty.is_empty()) {
             if container_type(&p.ty, self.m) {
                 self.containers.insert(p.name.clone());
@@ -1972,9 +1974,12 @@ impl<'a, 't> Body<'a, 't> {
             if name.kind() != "identifier" {
                 continue;
             }
-            let written = v.child_by_field_name("type").map(|t| text(t, src));
-            if written.map_or_else(|| builds_container(value, self.m, src), |t| container_type(t, self.m)) {
+            let ty = v.child_by_field_name("type").map(|t| text(t, src));
+            if ty.map_or_else(|| builds_container(value, self.m, src), |t| container_type(t, self.m)) {
                 self.containers.insert(text(name, src).to_string());
+            }
+            if let Some(t) = ty {
+                written.insert(text(name, src).to_string(), t.to_string());
             }
             let declared = v.child_by_field_name("type").and_then(|t| named_children(t).into_iter().next()).map(|t| member_parts(t, src));
             let built = (value.kind() == "new_expression")
@@ -1989,6 +1994,23 @@ impl<'a, 't> Body<'a, 't> {
             };
             if let Some(r) = typed.or_else(handed) {
                 self.locals.insert(text(name, src).to_string(), r);
+            }
+        }
+        // `for (const r of rows)`: an element of the container the loop goes over, as its type is
+        // written (`rows: Row[]`)
+        let loops: Vec<TsNode> = walk(self.body, &["for_in_statement"]).into_iter().filter(|l| self.mine(*l)).collect();
+        for l in loops {
+            let (Some(left), Some(right)) = (l.child_by_field_name("left"), l.child_by_field_name("right")) else { continue };
+            let of = l.child_by_field_name("operator").map_or(false, |o| text(o, src) == "of");
+            let Some(ty) = written.get(text(right, src)).filter(|t| of && left.kind() == "identifier" && container_type(t, self.m)) else {
+                continue;
+            };
+            let element = ty
+                .split(|c: char| !(c.is_alphanumeric() || c == '_' || c == '$'))
+                .filter(|w| !w.is_empty() && !knowledge::TYPESCRIPT_CHANGEABLE.contains(w))
+                .find_map(|w| self.class(self.resolve(&[w.to_string()])));
+            if let Some(r) = element {
+                self.locals.insert(text(left, src).to_string(), r);
             }
         }
     }

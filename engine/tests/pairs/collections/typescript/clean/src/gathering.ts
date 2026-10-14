@@ -18,6 +18,14 @@ export class Store {
     this.write(rows);
   }
 
+  putAll(readings: Reading[]): void {
+    const rows: Row[] = this.rows();
+    for (const reading of readings) {
+      rows.push(new Row(reading));
+    }
+    this.write(rows);
+  }
+
   get(): Reading[] {
     return this.rows().map((row) => row.reading);
   }

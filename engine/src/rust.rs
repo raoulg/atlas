@@ -1705,6 +1705,7 @@ impl<'a, 't> Body<'a, 't> {
         };
         b.parameters(d);
         let untyped = b.lets(body);
+        b.loops(d, body);
         b.patterns(body);
         b.handed_to(body, untyped);
         // a macro that prints shows the human something
@@ -1867,6 +1868,52 @@ impl<'a, 't> Body<'a, 't> {
             }
         }
         untyped
+    }
+
+    /// A loop variable over a sequence the body names (`for r in readings`, `&readings`,
+    /// `readings.iter()`) is an element of it, of the class the sequence's written type holds
+    /// (`readings: &[Reading]`, `let rows: Vec<Row>`).
+    fn loops(&mut self, d: TsNode<'t>, body: TsNode<'t>) {
+        let src = self.src;
+        let typed = |n: TsNode<'t>, name: &str| n.child_by_field_name("type").map(|t| (name.to_string(), text(t, src).to_string()));
+        let mut written: HashMap<String, String> = HashMap::new();
+        for p in d.child_by_field_name("parameters").map(named_children).unwrap_or_default() {
+            if let Some(pat) = p.child_by_field_name("pattern") {
+                written.extend(typed(p, text(pat, src).trim_start_matches("mut ")));
+            }
+        }
+        for l in walk(body, &["let_declaration"]) {
+            if let Some(pat) = l.child_by_field_name("pattern").filter(|p| matches!(p.kind(), "identifier" | "mut_pattern")) {
+                written.extend(typed(l, text(pat, src).trim_start_matches("mut ")));
+            }
+        }
+        let sequence = |t: &str| {
+            let head = t.trim_start_matches('&').trim_start_matches("mut ").trim();
+            head.starts_with('[')
+                || knowledge::RUST_SEQUENCES.contains(&head.split('<').next().unwrap_or("").rsplit("::").next().unwrap_or(""))
+        };
+        for l in walk(body, &["for_expression"]) {
+            let Some(pat) = l.child_by_field_name("pattern").filter(|p| matches!(p.kind(), "identifier" | "mut_pattern")) else { continue };
+            let mut over = l.child_by_field_name("value");
+            while let Some(v) = over {
+                over = match v.kind() {
+                    "reference_expression" | "parenthesized_expression" => named_children(v).into_iter().last(),
+                    "call_expression" => v.child_by_field_name("function").filter(|f| {
+                        f.kind() == "field_expression"
+                            && f.child_by_field_name("field").map_or(false, |x| knowledge::RUST_ELEMENTS.contains(&text(x, src)))
+                    }),
+                    "field_expression" if v.parent().map_or(false, |p| p.kind() == "call_expression") => v.child_by_field_name("value"),
+                    _ => break,
+                };
+            }
+            let Some(name) = over.filter(|v| v.kind() == "identifier").map(|v| text(v, src)) else { continue };
+            if !written.get(name).map_or(false, |t| sequence(t)) {
+                continue;
+            }
+            if let Some(class) = self.locals.get(name).cloned() {
+                self.locals.insert(text(pat, src).trim_start_matches("mut ").to_string(), class);
+            }
+        }
     }
 
     /// Rust fixes the type of a `let` that writes none by how the value is used: a `let` whose
