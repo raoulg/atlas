@@ -93,10 +93,12 @@ The rigorous half and the visual half are the same structure. Read `docs/referen
   and Windows: a test that writes files builds them as the platform lays them out (a virtual
   environment keeps its packages in `Lib\site-packages` on Windows) and compares paths as `Path`s,
   never as strings with `/`.
-- Disk: every version bump rebuilds the workspace, and `target/debug` grows by gigabytes per build
-  (it has reached 260 GB, in the checkout and in an agent's worktree). When `df -h ~` runs low,
-  remove your own `target/debug` (it is rebuilt), or `cargo clean -p atlas -p atlas-engine`; never
-  another session's target. While space is short, `cargo test --release` reuses the release build.
+- Disk: cargo names Atlas's builds by its version, so every raise leaves a full set of test
+  binaries behind (they reached 260 GB). A commit that raises the version removes them, in the
+  worktree it is made in: `lefthook.yml` runs `tools/clean-old-builds.sh` after each commit (`lefthook
+  install` once per clone; worktrees share it). Dependencies stay, so the next build stays quick.
+  When `df -h ~` still runs low, `cargo clean -p atlas -p atlas-engine` (and with `--release`) in
+  your own worktree; never another session's target.
 - Format: `cargo fmt` before every commit (`rustfmt.toml`: 140 columns); CI checks it. It
   formats the workspace only: the fixtures and pairs under `engine/tests` are subjects, written
   as their authors would, and their line numbers are pinned.

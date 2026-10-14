@@ -1,0 +1,6 @@
+# Git hooks for this repository; `lefthook install` puts them in place, for every worktree.
+post-commit:
+  commands:
+    # a raised version leaves the builds of the old one behind (tools/clean-old-builds.sh)
+    clean-old-builds:
+      run: sh tools/clean-old-builds.sh
