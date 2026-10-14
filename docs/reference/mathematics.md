@@ -95,7 +95,8 @@ reaching the border is counted beside it, not marked on it.
 ## Topology
 
 ### Gluing: zooming out
-**What.** A quotient space glues the points an equivalence relates into one.
+**What.** A quotient space glues the points an equivalence relates into one. Gluing is a pushout:
+collapsing a part R of G onto a point b is the pushout of `G ← R → {b}`.
 **In Atlas.** Zooming out glues each family of types into one point, one box. Of a library, what
 lies beyond the fiber the project reaches is glued into the function at the fiber's border: that
 function is one arrow, whose effects are all its code reaches inside the library.
