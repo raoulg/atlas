@@ -159,14 +159,14 @@ impl<'t, 's> Steps<'t, 's> {
         if gives.is_empty() {
             return;
         }
-        self.not_followed(c, op, hands, gives);
+        self.unread(c, op, hands, gives, false);
     }
 
     /// A library's call `op` that parses the command line the program is run with into values,
     /// with the `options` it declares: a step whatever it gives, since what it gives is the
     /// entry's.
     pub fn parses(&mut self, c: TsNode, op: &str, hands: Vec<Held>, gives: Vec<Held>, options: Vec<String>) {
-        self.not_followed(c, op, hands, gives);
+        self.unread(c, op, hands, gives, false);
         if let Some(s) = self.sites.last_mut() {
             s.command_line = Some(options);
         }
@@ -175,10 +175,17 @@ impl<'t, 's> Steps<'t, 's> {
     /// A call Atlas cannot follow, `name`d as the code writes it: it runs all the same, so it is
     /// a step of the body, whatever it is handed and gives.
     pub fn not_followed(&mut self, c: TsNode, name: &str, hands: Vec<Held>, gives: Vec<Held>) {
+        self.unread(c, name, hands, gives, true);
+    }
+
+    /// A call the body reads no further, `name`d as the code writes it: a library's operation,
+    /// or one Atlas cannot follow.
+    fn unread(&mut self, c: TsNode, name: &str, hands: Vec<Held>, gives: Vec<Held>, not_followed: bool) {
         self.keep(&gives);
         self.sites.push(Site {
             line: line(c),
             op: name.to_string(),
+            not_followed,
             hands,
             gives,
             arms: self.arms(c),

@@ -22,7 +22,7 @@ fn a_call_not_followed_is_bound_somewhere() {
     // where ty finds each name defined: `fn(..)`, `cls(..)`, `x.mean`, `note.model_dump_json` and
     // `con.execute` start from a parameter or a local; `READERS[kind](..)` from the module's table
     // and `Note.model_validate_json` from the program's own class, which the engine does not follow
-    assert_eq!(buckets(&read("tests/fixture")), Unresolved { builtin: 0, library: 0, local: 8, unknown: 2 });
+    assert_eq!(buckets(&read("tests/fixture")), Unresolved { builtin: 0, library: 0, local: 9, unknown: 2 });
     // `Some`, `Ok` and `String::new` are the prelude's; `std::fs`, `std::io`, `reqwest::blocking`
     // and `rusqlite::Connection` crates the program depends on
     assert_eq!(buckets(&read("tests/fixture-rs")), Unresolved { builtin: 4, library: 19, local: 0, unknown: 0 });

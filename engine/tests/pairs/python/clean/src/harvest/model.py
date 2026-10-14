@@ -1,7 +1,7 @@
 """What a harvest is about: a station's reading, or why there is none."""
 
 from dataclasses import dataclass, replace
-from datetime import datetime
+from datetime import date, datetime
 from enum import Enum
 
 
@@ -45,6 +45,25 @@ class Outage:
 
 
 @dataclass(frozen=True)
+class Day:
+    """A station on a date: what a summary is of."""
+
+    station: str
+    date: date
+
+
+@dataclass(frozen=True)
+class Summary:
+    """The lowest, highest and mean temperature a station had on a date."""
+
+    station: str
+    date: date
+    low: float
+    high: float
+    mean: float
+
+
+@dataclass(frozen=True)
 class Harvest:
     """What one harvest kept, and the stations it could not reach."""
 
@@ -55,3 +74,9 @@ class Harvest:
 def in_unit(reading: Reading, unit: Unit) -> Reading:
     """A reading the service gave in Celsius, with its temperature in `unit`."""
     return replace(reading, temperature=unit.from_celsius(reading.temperature), unit=unit)
+
+
+def day_summary(day: Day, readings: list[Reading]) -> Summary:
+    """The summary of the readings taken on the day."""
+    temperatures = [r.temperature for r in readings if r.taken_at.date() == day.date]
+    return Summary(day.station, day.date, min(temperatures), max(temperatures), sum(temperatures) / len(temperatures))

@@ -61,7 +61,7 @@ lets it be traced and Atlas does not yet; each gap is an ignored test in `pairs_
 | choices | finding | finding | finding |
 | nothing | finding | finding | finding |
 | layers | finding | finding | finding; a call among a macro's tokens is a step |
-| lens | finding; takes and returns | finding; takes and returns; the tables a store's client runs statements on | finding; takes and returns; the tables a store's connection runs statements on |
+| lens | finding; takes, returns and has; the steps a value is handed to | finding; takes and returns; the tables a store's client runs statements on | finding; takes and returns; the tables a store's connection runs statements on |
 | a place carries a what | a file's path, a request's host | a file's path, a request's host | the type a step gives, a request's host, a program by its constant's value |
 | a route ends at a visible place | the places a route reaches; a call not followed is a step | the places a route reaches; a call through a key is a step | the places a route reaches, through a client held in a field |
 | zoom by base type and composition | inherits and has edges; what a base's method is handed reaches its overrides | inherits and has edges; the member a parameter is runs | inherits and has edges; a unit struct named is built, a matched value has its variant's type |
@@ -421,13 +421,39 @@ payload); a lens is where the code turns that into its own types, once.
 - **Rust.** `serde` gives both directions from one type: `save(&T)` and `load() -> T`.
 - **TypeScript.** The same as Python: what a store puts as a `Regel` it gets back as a `Regel`.
 
+What comes back may come back inside what a get gives: a lens composed with the projection to a
+field is a lens on that field. A register that puts a `Verificatie` and gives back the
+`Definitie` that holds it (`Definitie.verantwoording: ... | Geverifieerd`,
+`Geverifieerd.verificatie: Verificatie`) gives back what it put.
+
+What a put takes is what reaches the place. A tile store that looks a tile up by a `Punt` and,
+when none holds it, fetches the area around it through its own `materialiseer(gebied: BBox)`,
+puts the `BBox`, not the `Punt`: the point is the key the tile is found by, as a `WHERE` is the
+key a row is found by.
+
 Atlas checks: a class whose public operations both write and read one place (a database as a
 whole, a file by itself; through what they call), for each type of data a put takes that no
-get of the class gives back from that place. A class that only reads a place (what comes in
-from the world) or only writes it (an end product) is no lens on it. Where another class gets
-that type from the same place, Atlas says which: the lens is then split over two classes. A put
-is asked about in the class that defines it; a subclass's gets count, but the puts it inherits
-are asked about once, in its base.
+get of the class gives back from that place, as it is or inside what the get gives (a field, an
+element, a variant, followed through `has` and `variant` edges). A class that only reads a place
+(what comes in from the world) or only writes it (an end product) is no lens on it. Where
+another class gets that type from the same place, Atlas says which: the lens is then split over
+two classes. A put is asked about in the class that defines it; a subclass's gets count, but the
+puts it inherits are asked about once, in its base.
+
+A put takes a parameter when the parameter's value, or what the body's steps make of it, is
+handed to a step that puts what it is handed into the place: one whose own parameters reach it,
+in turn. A step that reads and puts nothing it is handed there gives what the place holds, so
+what it is handed is a key and goes no further. What an operation hands another operation of its
+class that takes that type is put there, and asked about there. Where the graph does not show
+where a value goes, Atlas does not guess that it goes nowhere: a call of the operation's own into
+the place may be handed any of its parameters (the graph does not say what a call into the world
+is handed), a call Atlas cannot follow may put what it is handed wherever its function puts, a
+value no step makes (`for r in readings`, `x = p.field`) is part of any parameter whose type holds
+its type, and a parameter no step is handed by name reaches the place when any step puts there.
+
+Blind: a value put into a container through a call whose result no one keeps (`rows.append(row)`)
+is no step of the graph, so what is made of a parameter and gathered that way, then written,
+does not reach the place.
 
 rkg: `RegisterSink` puts `Graph`, `Oordeel` and `Verbruik` into SQLite. `Graph` and `Oordeel`
 come back through `RegisterRepository`, a second class on the same place; `Verbruik` comes

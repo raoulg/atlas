@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use atlas_engine::principles::{check, Finding, PRINCIPLES};
-use atlas_engine::{analyze, Options};
+use atlas_engine::{analyze, EdgeKind, Options};
 
 fn findings(repo: &str) -> Vec<Finding> {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(repo);
@@ -77,7 +77,8 @@ fn each_principle_finds_its_case() {
     assert_eq!(got["layers"], ["fixture._rank"]);
     // `Notes` puts a Note into its file and gets a dict back, `Shelf` gets the Note, and `Diary`
     // inherits the put of `Notes`, which is asked there; `Copier` puts a Graph into the graph
-    // database and gets only a list of nodes
+    // database and gets only a list of nodes. `Register` gets its Stamp back inside an Entry, and
+    // `Tiles` looks its tiles up by a Point it puts nowhere
     assert_eq!(got["lens"], ["fixture.notes.Notes", "fixture.store.Copier"]);
     assert!(fs.iter().all(|f| f.question.ends_with('?')), "a finding ends in a question");
 }
@@ -103,6 +104,42 @@ fn an_override_of_a_generic_base_keeps_what_its_subclass_fills_in() {
     let ledger = fs.iter().find(|f| f.node == "fixture.generic.Ledger.from_row").expect("Ledger.from_row is asked about");
     assert_eq!(ledger.what, "Ledger.from_row promises (row: tuple[str, int]) -> Version[R]; 1 override breaks it");
     assert_eq!(ledger.evidence, ["CountLedger.from_row(row: tuple[str, int]) -> Version[int] (src/fixture/generic.py:49)"]);
+}
+
+/// What a lens puts, it gets back, also inside what a get gives: a lens composed with the
+/// projection to a field, an element or a variant is a lens on that part. `Register.check` puts an
+/// Entry and the Stamp that checks it; `Register.entry` gives the Entry, whose `state` may be the
+/// variant `Checked`, which holds the Stamp.
+#[test]
+fn a_lens_gets_back_what_it_puts_inside_what_it_gives() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixture");
+    let g = analyze(&root, &Options::default()).expect("parses");
+    let edge = |src: &str, dst: &str, kind: EdgeKind| g.edges.iter().any(|e| e.src == src && e.dst == dst && e.kind == kind);
+    assert!(edge("fixture.notes.Register.check", "fixture.notes.Stamp", EdgeKind::Takes));
+    assert!(edge("fixture.notes.Register.entry", "fixture.notes.Entry", EdgeKind::Returns));
+    assert!(edge("fixture.notes.Entry", "fixture.notes.Checked", EdgeKind::Has));
+    assert!(edge("fixture.notes.Checked", "fixture.notes.Stamp", EdgeKind::Has));
+    let lens: Vec<Finding> = check(&g).into_iter().filter(|f| f.principle == "lens").collect();
+    assert!(lens.iter().all(|f| f.node != "fixture.notes.Register"), "{:#?}", lens);
+}
+
+/// What a lens puts is what reaches the place. `Tiles.tile` hands its Point to `find`, which only
+/// reads, and to `Area.around`, whose Area it hands to `fetch`: the Point is a key the tile is
+/// looked up by, and the Area is `fetch`'s to put, asked about there and got back as the tile's
+/// `area`. A put whose own call into the place may be handed anything still puts every parameter:
+/// `Notes.put` writes its file itself, and is asked.
+#[test]
+fn a_lens_puts_what_reaches_the_place_not_the_key_it_looks_up_by() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixture");
+    let g = analyze(&root, &Options::default()).expect("parses");
+    let edge = |src: &str, dst: &str, kind: EdgeKind| g.edges.iter().any(|e| e.src == src && e.dst == dst && e.kind == kind);
+    assert!(edge("fixture.tiles.Tiles.tile", "fixture.tiles.Point", EdgeKind::Takes));
+    assert!(edge("fixture.tiles.Tiles.tile", "fixture.tiles.Tiles.fetch", EdgeKind::Calls), "`tile` reaches the write");
+    assert!(edge("fixture.tiles.Tile", "fixture.tiles.Area", EdgeKind::Has));
+    let lens: Vec<Finding> = check(&g).into_iter().filter(|f| f.principle == "lens").collect();
+    assert!(lens.iter().all(|f| f.node != "fixture.tiles.Tiles"), "{:#?}", lens);
+    let notes = lens.iter().find(|f| f.node == "fixture.notes.Notes").expect("Notes is asked");
+    assert_eq!(notes.evidence, ["put Notes.put: Note × Disk(self.path) → Disk(self.path)", "get Notes.get: Disk(self.path) → dict"]);
 }
 
 /// The principles read Rust by what its types and entries mean: `Disk.page` gives the

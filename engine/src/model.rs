@@ -238,9 +238,14 @@ pub struct Site {
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub to: String,
     /// The operation of a library Atlas does not read, when it turns a value of one type into
-    /// another (`to_numpy`); `to` is then empty.
+    /// another (`to_numpy`), or a call Atlas cannot follow, as the code writes it; `to` is then
+    /// empty.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub op: String,
+    /// Atlas cannot follow the call: what it runs, and what becomes of what it is handed, the
+    /// graph does not say.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub not_followed: bool,
     /// The class of the value a method is called on, when that is a subclass of the method's own
     /// class (`ComparePlot(..).plot()` reaches `BasePlot.plot` on a `ComparePlot`).
     #[serde(default, skip_serializing_if = "String::is_empty")]

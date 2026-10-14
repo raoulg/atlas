@@ -26,7 +26,9 @@ class Harvester:
             try:
                 reading = in_unit(self.client.latest(station), self.unit)
             except StationUnavailable as error:
-                outages.append(Outage(station, str(error)))
+                outage = Outage(station, str(error))
+                self.store.save_outage(outage)
+                outages.append(outage)
                 continue
             self.store.save(reading)
             readings.append(reading)
