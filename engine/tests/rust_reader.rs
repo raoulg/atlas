@@ -432,3 +432,35 @@ fn a_crate_is_read_where_cargo_keeps_it() {
     assert!(g.nodes.iter().all(|n| !n.id.starts_with("absent")), "a crate not on disk is not read");
     assert!(g.node("app.main").unwrap().sites.iter().any(|s| s.to == "filekit.read.read_config"));
 }
+
+/// What lies beyond the rounds is glued into the crate's function at the border: the program
+/// calls `save`, whose file is written two calls deeper, in functions the graph does not hold.
+/// `save` is one arrow that writes the file the program hands it, drawn at its own call that leads
+/// there, so the program's route reaches the place. Where the rounds reach the function that
+/// writes, the touch is that function's own, not `save`'s.
+#[test]
+fn what_lies_beyond_the_rounds_is_the_border_functions() {
+    let files = below(
+        "",
+        &[
+            ("app/Cargo.toml", "[package]\nname = \"app\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[dependencies]\ndeepkit = { path = \"../deepkit\" }\n"),
+            ("app/src/main.rs", "fn main() {\n    deepkit::save(\"out.txt\", \"rows\");\n}\n"),
+            ("deepkit/Cargo.toml", "[package]\nname = \"deepkit\"\nversion = \"0.1.0\"\nedition = \"2021\"\n"),
+            (
+                "deepkit/src/lib.rs",
+                "use std::fs;\n\npub fn save(path: &str, text: &str) {\n    prepare(path, text);\n}\n\nfn prepare(path: &str, text: &str) {\n    write(path, text.trim());\n}\n\nfn write(path: &str, text: &str) {\n    fs::write(path, text).unwrap();\n}\n",
+            ),
+        ],
+    );
+    let rounds = |n: usize| Options { libraries: n, ..Options::default() };
+    let [one, three]: [Graph; 2] = crates("beyond", &files, &[rounds(1), rounds(3)]).try_into().ok().unwrap();
+    assert!(one.node("deepkit.prepare").is_none() && one.node("deepkit.write").is_none(), "what lies beyond the rounds is not drawn");
+    let save = one.node("deepkit.save").expect("the function the program calls");
+    assert!(places(&one, "deepkit.save").contains(&place("disk_write", "write", "out.txt", &["app.main"])), "the border writes what its code beyond writes, at the path the program hands it: {:?}", save.touches);
+    let call = save.sites.iter().find(|s| s.to == "deepkit.prepare").expect("save's call into what lies beyond");
+    assert!(save.touches.iter().all(|t| t.line == call.line), "drawn at the border's call that leads there");
+    let route = atlas_engine::story::route(&one, "app.main", 2).unwrap();
+    assert!(route.contains("out.txt"), "the program's route reaches the place:\n{route}");
+    assert!(places(&three, "deepkit.write").iter().any(|(kind, ..)| kind == "disk_write"));
+    assert!(places(&three, "deepkit.save").iter().all(|(kind, ..)| kind != "disk_write"), "a function's own arrow is not what it reaches");
+}

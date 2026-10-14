@@ -136,7 +136,16 @@ pub fn merge(name: &str, graphs: Vec<Graph>) -> Graph {
         out.parts.extend(g.parts);
         out.nodes.extend(g.nodes);
         out.edges.extend(g.edges);
-        out.files.extend(g.files);
+        for (file, text) in g.files {
+            // a library's file two parts read keeps the lines either shows
+            match out.files.get_mut(&file) {
+                Some(had) if *had != text => *had = had.split('\n').zip(text.split('\n')).map(|(a, b)| if a.is_empty() { b } else { a }).collect::<Vec<_>>().join("\n"),
+                Some(_) => {}
+                None => {
+                    out.files.insert(file, text);
+                }
+            }
+        }
         out.make.extend(g.make.into_iter().filter(|t| made.insert(t.id.clone())));
         out.stats.modules += g.stats.modules;
         out.stats.unresolved_calls_total += g.stats.unresolved_calls_total;

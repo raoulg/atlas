@@ -39,7 +39,7 @@ pub struct Options {
     /// How far to read into the libraries the code calls: 0 not at all, 1 the library modules the
     /// code's own calls go into, and in each further round the modules of the same library that
     /// the last round's calls go into. The graph keeps of a library what the code's calls reach,
-    /// a round a call.
+    /// a round a call; what lies beyond is the effect of the function at the border.
     pub libraries: usize,
     /// Files named on the command line, canonical: each is read as one of its project's scripts
     /// or notebooks, even where git ignores it.

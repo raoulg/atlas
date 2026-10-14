@@ -424,7 +424,11 @@ it, a path dependency or the version the lock names, through its `pub use`. What
 of a library is the fiber over "reached from the project" (`view::reached`): the functions the
 project's calls reach within the N rounds, a round a call, and the types those take, give and
 run on; the rest of a module read is dropped, so the graph grows with what the project uses, not
-with the size of the library (*Decision, PTT-491*).
+with the size of the library (*Decision, PTT-491*). What lies beyond the fiber is not lost but
+glued into the library function at its border: every body of the code read is traced, and a
+kept library function is one arrow that touches every place its code reaches inside the library,
+as an operation the tables describe does; the project's own functions keep their own arrows apart
+from what they reach. Of a library's file the graph keeps only the lines its kept nodes show.
 
 What Atlas knows of libraries and frameworks is data: `engine/src/knowledge.rs`, one table per
 kind of fact. Which package reaches which part of the world (by registry: PyPI, crates.io,

@@ -460,7 +460,7 @@ pub fn parse(repo: &Repo, opts: &crate::Options) -> Result<(GraphBuilder, String
     route_prefixes(&modules, &mut store);
     mark_bins(repo, &files, &mut store);
     mark_exports(repo, &files, &modules, &mut store);
-    link(&modules, &mut store, repo.root(), opts.libraries);
+    link(&modules, &mut store, repo.root());
     store.mark_library();
     Ok((store, root))
 }
@@ -1246,9 +1246,9 @@ struct Linked<'t> {
     args: Vec<Arg<'t>>,
 }
 
-/// Types, signatures and bodies into edges; of a library's code only the bodies the program's
-/// calls reach within `rounds` calls.
-fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, repo: &Path, rounds: usize) {
+/// Types, signatures and bodies into edges: the program's, and the functions of the library's code
+/// read.
+fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, repo: &Path) {
     // a union of two or more known types is a sum; any other alias stands for what it names
     for m in modules.values() {
         let mut names: Vec<&String> = m.aliases.keys().collect();
@@ -1395,32 +1395,20 @@ fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, repo: &Pat
         }
         store.mutating.extend(found);
     }
-    // bodies -> calls / instantiates / boundaries: the program's, then of a library's code the
-    // bodies its calls reach, a round at a time
+    // bodies -> calls / instantiates / boundaries: the program's, then the functions of the
+    // library's code read; a library's module runs its own code on import, by no call of the
+    // program's
     let mut linked = Linked::default();
-    let mut bodies: Vec<String> = ids
+    let (own, library): (Vec<&String>, Vec<&String>) = ids
         .iter()
         .filter(|id| {
             let n = &store.nodes[*id];
-            !n.library && (matches!(n.kind, NodeKind::Function | NodeKind::Method) || (n.kind == NodeKind::Module && modules.contains_key(*id)))
+            matches!(n.kind, NodeKind::Function | NodeKind::Method) || (n.kind == NodeKind::Module && !n.library && modules.contains_key(*id))
         })
-        .cloned()
-        .collect();
-    let mut read: HashSet<String> = HashSet::new();
-    for round in 0..=rounds {
-        let mut next = vec![];
-        for id in bodies {
-            let Some(m) = store.nodes.get(&id).and_then(|n| modules.get(&n.module)) else { continue };
-            if !read.insert(id.clone()) {
-                continue;
-            }
-            let from = store.edges.len();
-            link_calls(m, modules, store, &id, &returned, &eval, &mut linked);
-            if round < rounds {
-                next.extend(store.library_callees(from));
-            }
-        }
-        bodies = next;
+        .partition(|id| !store.nodes[*id].library);
+    for id in own.into_iter().chain(library) {
+        let Some(m) = store.nodes.get(id).and_then(|n| modules.get(&n.module)) else { continue };
+        link_calls(m, modules, store, id, &returned, &eval, &mut linked);
     }
     let handing: Vec<paths::Evaluated> = linked.args.iter().map(|arg| paths::Evaluated { arg, eval: &eval }).collect();
     let entry = |f: &str| store.nodes.get(f).map_or(false, |n| n.entry.is_some());
@@ -1428,7 +1416,7 @@ fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, repo: &Pat
     let completed = crate::paths::complete(linked.calls, &handing, &family, &|_, _| vec![], &entry);
     // a page's request without a host goes to the page's own origin
     crate::paths::place_calls(store, completed, true);
-    globals(modules, store, &returned, &eval, &read);
+    globals(modules, store, &returned, &eval);
 }
 
 /// The fields of a class that hold what a package made: declared with a library's type, set from
@@ -1483,14 +1471,14 @@ type Use = (String, String, u32);
 /// Every function that changes one writes it and every one that uses it reads it: a place,
 /// `Global(module.name)`. A name no function changes is a constant of the code, and no place; the
 /// methods of a value a package made are the package's, and change no value of the language.
-fn globals(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, returned: &HashMap<String, String>, eval: &Eval, bodies: &HashSet<String>) {
+fn globals(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, returned: &HashMap<String, String>, eval: &Eval) {
     let tops: HashMap<&str, HashSet<String>> = modules.values().map(|m| (m.id.as_str(), top_names(m))).collect();
     let mutators = knowledge::mutators(knowledge::Registry::Npm);
     let mut uses: Vec<(String, Vec<Use>, Vec<Use>)> = vec![];
     for m in modules.values() {
         let (src, root) = (&m.src[..], m.tree.root_node());
         let kept = |n: &str| if tops[m.id.as_str()].contains(n) { Some(format!("{}.{n}", m.id)) } else { kept_in(modules, &tops, m.bindings.get(n)?, 0) };
-        for n in store.nodes.values().filter(|n| n.module == m.id && matches!(n.kind, NodeKind::Function | NodeKind::Method) && bodies.contains(&n.id)) {
+        for n in store.nodes.values().filter(|n| n.module == m.id && matches!(n.kind, NodeKind::Function | NodeKind::Method)) {
             let Some(&(s, e)) = m.bodies.get(&n.id) else { continue };
             let Some(body) = root.descendant_for_byte_range(s, e) else { continue };
             // a function defined in this one is a function of its own

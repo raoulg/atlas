@@ -291,6 +291,50 @@ export function unused() {}
     assert!(main(&none).sites.iter().all(|s| s.to.is_empty()), "a package not read is a call Atlas does not follow");
 }
 
+/// What lies beyond the rounds is glued into the package's function at the border: the program
+/// calls `save`, whose file is written two calls deeper, in functions the graph does not hold.
+/// `save` is one arrow that writes the file the program hands it, drawn at its own call that leads
+/// there, so the program's route reaches the place. Where the rounds reach the function that
+/// writes, the touch is that function's own, not `save`'s.
+#[test]
+fn what_lies_beyond_the_rounds_is_the_border_functions() {
+    let files: &[(&str, &str)] = &[
+        ("package.json", r#"{ "name": "deep" }"#),
+        ("tsconfig.json", "{}"),
+        ("src/main.ts", "import { save } from \"deepkit\";\n\nexport function main(): void {\n  save(\"out.txt\", \"rows\");\n}\n"),
+        ("node_modules/deepkit/package.json", r#"{ "name": "deepkit", "main": "index.js" }"#),
+        (
+            "node_modules/deepkit/index.js",
+            r#"import { writeFileSync } from "node:fs";
+
+export function save(path, text) {
+  prepare(path, text);
+}
+
+function prepare(path, text) {
+  write(path, text.trim());
+}
+
+function write(path, text) {
+  writeFileSync(path, text);
+}
+"#,
+        ),
+    ];
+    let rounds = |n: usize| Options { libraries: n, ..Options::default() };
+    let [one, three]: [Graph; 2] = read_with("beyond", files, &[rounds(1), rounds(3)]).try_into().ok().unwrap();
+    assert!(one.node("deepkit.prepare").is_none() && one.node("deepkit.write").is_none(), "what lies beyond the rounds is not drawn");
+    let save = one.node("deepkit.save").expect("the function the program calls");
+    let wrote = save.touches.iter().find(|t| t.kind_name() == "disk_write").unwrap_or_else(|| panic!("the border writes what its code beyond writes: {:?}", save.touches));
+    assert_eq!(wrote.artifact, "out.txt", "at the path the program hands it: {wrote:?}");
+    let call = save.sites.iter().find(|s| s.to == "deepkit.prepare").expect("save's call into what lies beyond");
+    assert_eq!(wrote.line, call.line, "drawn at the border's call that leads there");
+    let route = atlas_engine::story::route(&one, &format!("{}.main.main", one.root), 2).unwrap();
+    assert!(route.contains("out.txt"), "the program's route reaches the place:\n{route}");
+    assert!(three.node("deepkit.write").unwrap().touches.iter().any(|t| t.kind_name() == "disk_write"));
+    assert!(three.node("deepkit.save").unwrap().touches.iter().all(|t| t.kind_name() != "disk_write"), "a function's own arrow is not what it reaches");
+}
+
 /// A value a module keeps between calls, which its functions change, is a place:
 /// `Global(module.name)`, written by each function that changes it and read by each that uses
 /// it, in its own module or where another imports it. A function changes it when it assigns the

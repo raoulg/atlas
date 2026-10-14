@@ -83,3 +83,56 @@ fn a_body_lists_its_calls() {
     let base = g.nodes.iter().find(|n| n.id == "plotkit.figures.BasePlot.plot").unwrap();
     assert!(base.sites.iter().any(|s| s.to == "plotkit.figures.BasePlot.build" && s.on_receiver), "{:#?}", base.sites);
 }
+
+/// A project written to a directory of its own with the library it calls beside it, where ty
+/// finds it as it finds an environment's, read `libraries` rounds deep, and removed.
+fn written(name: &str, files: &[(&str, &str)], libraries: usize) -> Graph {
+    let dir = std::env::temp_dir().join(format!("atlas-libraries-{name}-{libraries}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let manifest = format!("[project]\nname = \"{name}\"\nversion = \"0.1.0\"\n\n[tool.ty.environment]\nextra-paths = [\"site-packages\"]\n");
+    for (path, text) in std::iter::once(&("pyproject.toml", manifest.as_str())).chain(files) {
+        let file = dir.join(path);
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        std::fs::write(file, text).unwrap();
+    }
+    let g = analyze(&dir, &Options { libraries, ..Options::default() });
+    let _ = std::fs::remove_dir_all(&dir);
+    g.expect("the project parses")
+}
+
+/// What lies beyond the rounds is glued into the library's function at the border: the project
+/// calls `save`, whose file is written two calls deeper, in functions the graph does not hold.
+/// `save` is one arrow that writes the file the project hands it, drawn at its own call that
+/// leads there, so the project's route reaches the place. Where the rounds reach the function
+/// that writes, the touch is that function's own, not `save`'s. Of the library's file the graph
+/// keeps the text its nodes show, each line where it was.
+#[test]
+fn what_lies_beyond_the_rounds_is_the_border_functions() {
+    let padding = "# a line of the library's own\n".repeat(70);
+    let store = format!(
+        "from pathlib import Path\n\n\ndef save(path: str, text: str) -> None:\n    prepare(path, text)\n\n\n{padding}\ndef prepare(path: str, text: str) -> None:\n    write(path, text.strip())\n\n\ndef write(path: str, text: str) -> None:\n    Path(path).write_text(text)\n"
+    );
+    let files: &[(&str, &str)] = &[
+        ("src/deep/__init__.py", ""),
+        ("src/deep/main.py", "from deepkit.store import save\n\n\ndef main() -> None:\n    save(\"out.txt\", \"rows\")\n"),
+        ("site-packages/deepkit/__init__.py", ""),
+        ("site-packages/deepkit/store.py", &store),
+    ];
+    let (one, three) = (written("deep", files, 1), written("deep", files, 3));
+    assert!(one.node("deepkit.store.prepare").is_none() && one.node("deepkit.store.write").is_none(), "what lies beyond the rounds is not drawn");
+    let save = one.node("deepkit.store.save").expect("the function the project calls");
+    let wrote = save.touches.iter().find(|t| t.kind_name() == "disk_write").unwrap_or_else(|| panic!("the border writes what its code beyond writes: {:?}", save.touches));
+    assert_eq!(wrote.artifact, "out.txt", "at the path the project hands it: {wrote:?}");
+    let call = save.sites.iter().find(|s| s.to == "deepkit.store.prepare").expect("save's call into what lies beyond");
+    assert_eq!(wrote.line, call.line, "drawn at the border's call that leads there");
+    let route = atlas_engine::story::route(&one, "deep.main.main", 2).unwrap();
+    assert!(route.contains("out.txt"), "the project's route reaches the place:\n{route}");
+    assert!(principles::check(&one).iter().all(|f| f.node != "deep.main.main"), "main leaves a file behind");
+    // the rounds reach the function that writes: the touch is its own
+    assert!(three.node("deepkit.store.write").unwrap().touches.iter().any(|t| t.kind_name() == "disk_write"));
+    assert!(three.node("deepkit.store.save").unwrap().touches.iter().all(|t| t.kind_name() != "disk_write"), "a function's own arrow is not what it reaches");
+    // the text the graph keeps of the library's file
+    let text: Vec<&str> = one.files[&save.file].split('\n').collect();
+    assert_eq!(text.len(), store.split('\n').count(), "each line where it was");
+    assert!(text.contains(&"def save(path: str, text: str) -> None:") && !text.contains(&"def write(path: str, text: str) -> None:"), "{text:?}");
+}

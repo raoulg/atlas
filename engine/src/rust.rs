@@ -436,7 +436,7 @@ pub fn parse(repo: &Repo, opts: &crate::Options) -> Result<(GraphBuilder, String
     let own: Vec<String> = modules.keys().cloned().collect();
     collect_impls(&modules, &mut store, &crate_ids, &own);
     libraries::read(repo, &crate_list, &mut modules, &mut store, &crate_ids, opts.libraries);
-    link(&modules, &mut store, &crate_ids, opts.libraries);
+    link(&modules, &mut store, &crate_ids);
     store.mark_library();
     Ok((store, root_name))
 }
@@ -966,9 +966,8 @@ fn def_node<'t>(m: &'t Module, n: &Node) -> Option<TsNode<'t>> {
     Some(d)
 }
 
-/// Fields, signatures and bodies into edges; of a library's code only the bodies the program's calls
-/// reach within `rounds` calls.
-fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crate_ids: &HashMap<String, String>, rounds: usize) {
+/// Fields, signatures and bodies into edges: the program's, and those of the library's code read.
+fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crate_ids: &HashMap<String, String>) {
     let ids: Vec<String> = store.nodes.keys().cloned().collect();
     for id in &ids {
         let (kind, module) = (store.nodes[id].kind, store.nodes[id].module.clone());
@@ -1033,24 +1032,12 @@ fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crate_ids:
     let eval = Eval::new(modules, &store.nodes, crate_ids);
     let returned = returned_classes(store);
     let (mut waiting, mut args) = (vec![], vec![]);
-    // the program's bodies, then of a library's code the bodies its calls reach, a round at a time
-    let mut bodies: Vec<String> = ids.iter().filter(|id| matches!(store.nodes[*id].kind, NodeKind::Function | NodeKind::Method) && !store.nodes[*id].library).cloned().collect();
-    let mut linked: HashSet<String> = HashSet::new();
-    for round in 0..=rounds {
-        let mut next = vec![];
-        for id in bodies {
-            if !linked.insert(id.clone()) {
-                continue;
-            }
-            let from = store.edges.len();
-            let l = link_calls(modules, store, crate_ids, &eval, &returned, &id);
-            waiting.extend(l.waiting.into_iter().map(|(t, b)| (id.clone(), t, b)));
-            args.extend(l.args);
-            if round < rounds {
-                next.extend(store.library_callees(from));
-            }
-        }
-        bodies = next;
+    // the program's bodies, then those of the library's code read
+    let (own, library): (Vec<&String>, Vec<&String>) = ids.iter().filter(|id| matches!(store.nodes[*id].kind, NodeKind::Function | NodeKind::Method)).partition(|id| !store.nodes[*id].library);
+    for id in own.into_iter().chain(library) {
+        let l = link_calls(modules, store, crate_ids, &eval, &returned, id);
+        waiting.extend(l.waiting.into_iter().map(|(t, b)| (id.clone(), t, b)));
+        args.extend(l.args);
     }
     // a path or a statement built from a function's parameters is whole where its callers hand them
     let handing: Vec<Evaluated> = args.iter().map(|arg| Evaluated { arg, eval: &eval }).collect();
@@ -1058,7 +1045,7 @@ fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crate_ids:
     let family = store.family();
     let completed = crate::paths::complete(waiting, &handing, &family, &|_, _| vec![], &entry);
     crate::paths::place_calls(store, completed, false);
-    globals::read(modules, store, crate_ids, &linked);
+    globals::read(modules, store, crate_ids);
 }
 
 /// The class each function gives back, by the first of its signature's types that is one.
@@ -1554,6 +1541,8 @@ struct Body<'a, 't> {
     taken: HashMap<String, String>,
     /// The class each function gives back, by its signature.
     returned: &'a HashMap<String, String>,
+    /// The names the function binds, found when a call not followed first asks.
+    bound: std::cell::OnceCell<HashSet<String>>,
     read: Read<'t>,
 }
 
@@ -1565,7 +1554,7 @@ impl<'a, 't> Body<'a, 't> {
         let cls = n.cls.clone();
         let attr_types = cls.as_ref().and_then(|c| store.classes.get(c)).map(|c| c.attr_types.clone()).unwrap_or_default();
         let params = paths::param_names(d, &m.src);
-        let mut b = Body { modules, store, crate_ids, eval, m, src: &m.src, id: n.id.clone(), def: d, params, cls, locals: HashMap::new(), made_by: HashMap::new(), attr_types, foreign: HashMap::new(), taken: HashMap::new(), returned, read: Read::default() };
+        let mut b = Body { modules, store, crate_ids, eval, m, src: &m.src, id: n.id.clone(), def: d, params, cls, locals: HashMap::new(), made_by: HashMap::new(), attr_types, foreign: HashMap::new(), taken: HashMap::new(), returned, bound: Default::default(), read: Read::default() };
         b.parameters(d);
         let untyped = b.lets(body);
         b.patterns(body);
@@ -2198,7 +2187,7 @@ impl<'a, 't> Body<'a, 't> {
     /// `serde_json::to_string`).
     fn bucket(&self, parts: &[String]) -> Bucket {
         let head = parts[0].as_str();
-        if bound_in(self.def, self.src).contains(head) {
+        if self.bound.get_or_init(|| bound_in(self.def, self.src)).contains(head) {
             return Bucket::Local;
         }
         if self.m.bindings.get(head).map_or(false, |b| b.starts_with("ext:")) {

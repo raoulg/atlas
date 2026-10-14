@@ -2,6 +2,7 @@
 //! the code, through the constants it names (across `use`), the functions of the program that
 //! give it, and the values a function's parameters are handed by its callers.
 
+use std::cell::OnceCell;
 use std::collections::HashMap;
 
 use indexmap::IndexMap;
@@ -21,6 +22,9 @@ pub(super) struct Eval<'a> {
     /// The program's items, to find the function a value is given by.
     nodes: IndexMap<String, Node>,
     crate_ids: &'a HashMap<String, String>,
+    /// The struct literals of every module, by the type each builds: found once, when a field is
+    /// first asked for.
+    literals: OnceCell<HashMap<String, Vec<(&'a Module, TsNode<'a>)>>>,
 }
 
 /// Where an expression is evaluated: its module, and the function it is in with that function's
@@ -52,7 +56,7 @@ pub(super) fn takes_self(f: TsNode) -> bool {
 
 impl<'a> Eval<'a> {
     pub fn new(modules: &'a IndexMap<String, Module>, nodes: &IndexMap<String, Node>, crate_ids: &'a HashMap<String, String>) -> Self {
-        Eval { modules, nodes: nodes.clone(), crate_ids }
+        Eval { modules, nodes: nodes.clone(), crate_ids, literals: OnceCell::new() }
     }
 
     /// The values `e` can have.
@@ -142,29 +146,39 @@ impl<'a> Eval<'a> {
         let mut out = vec![];
         // a library's code builds none of the program's types
         let own = self.nodes.get(&ty).map_or(true, |n| !n.library);
-        for m in self.modules.values().filter(|m| !(own && m.library)) {
-            for lit in walk(m.tree.root_node(), &["struct_expression"]) {
-                let name = path_parts(lit.child_by_field_name("name"), &m.src);
-                let built = match name.as_slice() {
-                    [s] if s == "Self" => self.impl_type(m, lit),
-                    _ => resolve(m, &name, self.modules, &self.nodes, self.crate_ids),
-                };
-                if built.as_deref() != Some(ty.as_str()) {
-                    continue;
-                }
-                let value = lit.child_by_field_name("body").map(named_children).unwrap_or_default().into_iter().find_map(|fi| match fi.kind() {
-                    "field_initializer" if fi.child_by_field_name("field").map(|f| text(f, &m.src)) == Some(field) => fi.child_by_field_name("value"),
-                    "shorthand_field_initializer" if named_children(fi).first().map(|x| text(*x, &m.src)) == Some(field) => named_children(fi).into_iter().next(),
-                    _ => None,
-                });
-                let (Some(value), Some(f)) = (value, enclosing_fn(lit)) else { continue };
-                let Some(id) = self.fn_id(m, f) else { continue };
-                let names = param_names(f, &m.src);
-                let vals = self.of(At { m, scope: Some(f), params: &names }, value, depth + 1);
-                out = union(out, vals.into_iter().map(|b| b.into_iter().map(|s| if let Seg::Param(x) = s { Seg::Held(id.clone(), x) } else { s }).collect()).collect());
-            }
+        for &(m, lit) in self.literals().get(&ty).into_iter().flatten().filter(|(m, _)| !(own && m.library)) {
+            let value = lit.child_by_field_name("body").map(named_children).unwrap_or_default().into_iter().find_map(|fi| match fi.kind() {
+                "field_initializer" if fi.child_by_field_name("field").map(|f| text(f, &m.src)) == Some(field) => fi.child_by_field_name("value"),
+                "shorthand_field_initializer" if named_children(fi).first().map(|x| text(*x, &m.src)) == Some(field) => named_children(fi).into_iter().next(),
+                _ => None,
+            });
+            let (Some(value), Some(f)) = (value, enclosing_fn(lit)) else { continue };
+            let Some(id) = self.fn_id(m, f) else { continue };
+            let names = param_names(f, &m.src);
+            let vals = self.of(At { m, scope: Some(f), params: &names }, value, depth + 1);
+            out = union(out, vals.into_iter().map(|b| b.into_iter().map(|s| if let Seg::Param(x) = s { Seg::Held(id.clone(), x) } else { s }).collect()).collect());
         }
         (!out.is_empty()).then_some(out)
+    }
+
+    /// The struct literals of every module, by the type each builds.
+    fn literals(&self) -> &HashMap<String, Vec<(&'a Module, TsNode<'a>)>> {
+        self.literals.get_or_init(|| {
+            let mut out: HashMap<String, Vec<(&'a Module, TsNode<'a>)>> = HashMap::new();
+            for m in self.modules.values() {
+                for lit in walk(m.tree.root_node(), &["struct_expression"]) {
+                    let name = path_parts(lit.child_by_field_name("name"), &m.src);
+                    let built = match name.as_slice() {
+                        [s] if s == "Self" => self.impl_type(m, lit),
+                        _ => resolve(m, &name, self.modules, &self.nodes, self.crate_ids),
+                    };
+                    if let Some(ty) = built {
+                        out.entry(ty).or_default().push((m, lit));
+                    }
+                }
+            }
+            out
+        })
     }
 
     /// The type a command-line parser derives (clap's `#[derive(Parser)] struct Cli`) that a value
