@@ -128,7 +128,7 @@ fn examples() -> String {
 #[command(
     name = "atlas",
     version = VERSION.as_str(),
-    about = "See how code works: where data rests, and the functions that carry it there.",
+    about = "A mathematical panorama of your software code.",
     before_help = banner(),
     after_help = examples(),
     styles = STYLES
