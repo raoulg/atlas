@@ -107,6 +107,7 @@ svg#canvas:active{cursor:grabbing}
 #crumbs .none{font-family:var(--mono);color:var(--ink-2)}
 #crumbs button{font:inherit;font-family:var(--mono);font-size:11px;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:0;padding:1px 9px;cursor:pointer}
 #crumbs button:hover{border-color:var(--ink-3)}
+#crumbs button.all{margin-left:8px;font-weight:600}
 .sedge.reach{stroke-dasharray:5 4}
 .sedge.back{stroke-dasharray:1 3;stroke-linecap:round}
 .sedge.uses{stroke-dasharray:1 3;stroke-linecap:round;opacity:.7}
@@ -1865,6 +1866,15 @@ function crumbs() {
     for (const {u, n} of ns.slice(0, 5)) add(`+ ${unitLabel(u)} · ${n}`, `add ${u} to the focus: ${n} ${n === 1 ? "type" : "types"} across`, () => V.focus.add(u));
     if (ns.length > 5) add(`+${ns.length - 5} more`, "open the rest beside the focus", () => { V.open.units.add("~in"); V.open.units.add("~out"); });
   }
+  // one ✕ for every opened box and every pinned one: back to the coarsest zoom. The route, the
+  // filters and the focus stay: they chose what is drawn, and closing the quotient does not undo them
+  const count = Object.values(V.open).reduce((k, s) => k + s.size, 0) + pinned.size;
+  if (count > 1) {
+    const b = html("button", "all", "close all ✕");
+    b.title = "close every opened box and let go of the pinned ones; the route and the filters stay";
+    b.onclick = () => { for (const s of Object.values(V.open)) s.clear(); pinned.clear(); plaatFit = true; render(); };
+    C.appendChild(b);
+  }
 }
 
 // ---------- inspector ----------
@@ -2058,12 +2068,101 @@ function legend() {
 }
 const dl = document.getElementById("symbols");
 for (const n of OWN) if (n.kind !== "external" && n.kind !== "method") { const o = document.createElement("option"); o.value = short(n.id); dl.appendChild(o); }
-document.getElementById("search").addEventListener("change", ev => {
-  const v = ev.target.value.trim(); const n = D.nodes.find(x => short(x.id) === v || x.name === v); if (!n) return;
+// how long the picture takes to come to rest after a render: its boxes move, then fade in
+const SETTLED = matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 900;
+// the picture moved so that the box drawn as `id` stands in the middle
+function centre(id) {
+  const target = scene.node().querySelector(`[data-id="${CSS.escape(id)}"]`);
+  if (!target) return;
+  const bb = target.getBBox(), m = target.getCTM(), W = svg.node().clientWidth, H = svg.node().clientHeight, t = d3.zoomTransform(svg.node());
+  const pt = svg.node().createSVGPoint(); pt.x = bb.x + bb.width / 2; pt.y = bb.y + bb.height / 2;
+  const p = pt.matrixTransform(m);
+  svg.transition().duration(350).call(zoom.translateBy, (W / 2 - p.x) / t.k, (H / 2 - p.y) / t.k);
+}
+// what the view draws, each box with the box it is drawn in
+const treeNodes = () => {
+  const out = [];
+  const walk = (t, up) => { const w = {t, up}; out.push(w); t.kids.forEach(k => walk(k, w)); };
+  routeTree().forEach(t => walk(t, null));
+  return out;
+};
+const inModule = (n, u) => { const m = modOf(n) || ""; return u.endsWith("$") ? m === u.slice(0, -1) : m === u || m.startsWith(u + "."); };
+// the boxes a symbol may be drawn as, nearest first: itself (an open step is a frame around its
+// body, a closed one a pill named by its function), then each frame around it; a step that hands
+// nothing on has no pill, and stands in the frame of the step that calls it
+const boxesOf = w => { const out = [w.t.open ? "n:" + w.t.id : stepOf(w.t.id)]; for (let a = w.up; a; a = a.up) out.push("n:" + a.t.id); return out; };
+// the steps a symbol is in a route: a function's calls; a class's are the calls that build it,
+// named by the class or by its initializer
+const callsOf = n => (n.kind === "class" ? [n.id, initializer(n.id)].filter(Boolean) : [n.id]);
+// the boxes the view draws `n` as, opening what lies above it and nothing beside it, one level at a
+// time: in a route, the closed step whose reach holds it; in the overview, the part and the package
+// it lies in, and a package without a box of its own is drawn in the smallest box that holds it.
+// Null where the view does not hold it.
+function openTo(n) {
+  const ids = callsOf(n);
+  const holds = t => (t.id.startsWith("part:") ? partOf(n) === t.id.slice(5) : t.id.startsWith("unit:") && inModule(n, t.id.slice(5)));
+  const reaches = t => ids.some(id => reach(stepOf(t.id), treeInfo.get(t.id)?.on || null).nodes.has(id));
+  const is = t => (V.route ? ids.includes(stepOf(t.id)) : n.kind === "module" ? t.id === "unit:" + n.id || t.id === `unit:${n.id}$` : t.id === n.id);
+  for (let level = 0; level < 64; level++) {
+    const real = treeNodes().filter(w => !w.t.synthetic);
+    const here = real.find(w => is(w.t));
+    if (here) return boxesOf(here);
+    const way = real.find(w => !w.t.open && (V.route ? !stepOf(w.t.id).startsWith("op:") && reaches(w.t) : holds(w.t)));
+    if (!way) {
+      const holder = !V.route && n.kind === "module" && real.filter(w => holds(w.t)).at(-1);
+      return holder ? boxesOf(holder) : null;
+    }
+    if (V.route) V.open.steps.add(way.t.id);
+    else (way.t.id.startsWith("part:") ? V.open.parts : V.open.units).add(way.t.id.slice(5));
+  }
+  return null;
+}
+// a type's box in the picture: the type itself, or a value of it that a name holds
+const typeBox = id => [...scene.node().querySelectorAll("[data-id]")].map(e => e.dataset.id).find(d => d === "t:" + id || d.startsWith(`t:${id}~`));
+// jumping to a symbol opens the way to it and centres on it. A package is found in the overview.
+// In a route a class is its box, which stands in its family until the family is opened, else the
+// call that builds it. A symbol the view does not hold is shown in the first route that reaches
+// it, else in a route of its own; what was opened looking for it in this view closes again.
+async function jumpTo(n) {
   select(n.id);
-  const target = scene.node().querySelector(`[data-id="${CSS.escape(n.id)}"]`);
-  if (target) { const bb = target.getBBox(), m = target.getCTM(), W = svg.node().clientWidth, H = svg.node().clientHeight; const t = d3.zoomTransform(svg.node()); const cx = t.applyX(0), cy = t.applyY(0); const pt = svg.node().createSVGPoint(); pt.x = bb.x + bb.width/2; pt.y = bb.y + bb.height/2; const p = pt.matrixTransform(m); svg.transition().duration(350).call(zoom.translateBy, (W/2 - p.x) / t.k, (H/2 - p.y) / t.k); }
+  if (view !== "plaat") return centre(n.id);
+  const kept = Object.fromEntries(Object.entries(V.open).map(([k, s]) => [k, new Set(s)]));
+  const restore = () => { for (const k of Object.keys(V.open)) V.open[k] = kept[k]; };
+  if (n.kind === "module" && (V.route || V.kind)) {
+    V.route = null; V.kind = null; V.open.steps.clear(); V.open.functions.clear();
+    entrySel.value = V.part ? "part:" + V.part : "";
+    plaatFit = true;
+  }
+  if (n.kind === "class" && V.route) {
+    if (familyOf(n.id) !== n.id) V.open.families.add(familyOf(n.id));
+    await render();
+    const box = typeBox(n.id);
+    if (box) return setTimeout(() => centre(box), SETTLED);
+    restore();
+  }
+  let boxes = openTo(n);
+  const drawn = async () => { await render(); return (boxes || []).find(id => scene.node().querySelector(`[data-id="${CSS.escape(id)}"]`)); };
+  let target = await drawn();
+  // the overview draws a route only where it touches something: a symbol it does not draw as
+  // itself is looked for in a route
+  if (n.kind !== "module" && (!target || (!V.route && target !== boxes[0]))) {
+    restore();
+    const ids = callsOf(n), via = overviewEntries().find(e => ids.some(id => reach(e.id, null).nodes.has(id)));
+    V.route = via ? via.id : ids.at(-1);
+    entrySel.value = V.route;
+    V.open.steps.clear();
+    plaatFit = true;
+    boxes = openTo(n);
+    target = await drawn();
+  }
+  if (!target) return;
+  scene.node().querySelectorAll(`[data-id="${CSS.escape(target)}"]`).forEach(x => x.classList.add("selected"));
+  setTimeout(() => centre(target), SETTLED);
+}
+document.getElementById("search").addEventListener("change", ev => {
+  const v = ev.target.value.trim(), n = D.nodes.find(x => short(x.id) === v || x.name === v);
   ev.target.value = "";
+  if (n) jumpTo(n);
 });
 // a view Atlas cannot draw says so where the picture would be: what went wrong, where, and the view,
 // so that the last step can be undone and the fault reported
