@@ -151,6 +151,7 @@ atlas view      # draw the repository you are in
 atlas check     # where the code and ten design principles disagree
 atlas changes   # what your edit did to the routes
 atlas mcp       # the same picture for your coding agent
+atlas serve     # one page you and your agent share: what you see, where it points, your notes
 ```
 
 ## More

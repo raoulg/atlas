@@ -1,5 +1,8 @@
 mod history;
+mod http;
 mod mcp;
+mod serve;
+mod shared;
 
 use std::path::{Path, PathBuf};
 
@@ -111,6 +114,7 @@ fn examples() -> String {
         ("atlas changes", "what your edits did to the routes, their places and the findings"),
         ("atlas changes v1..main", "what changed between two revisions"),
         ("atlas history", "the history in the browser: pick two commits, see one picture of both"),
+        ("atlas serve", "one page you and your agent share: what you see, where it points, your notes"),
         ("claude mcp add atlas -- atlas mcp", "give Claude Code the same picture"),
     ];
     let mut s = format!("{head}Examples:{head:#}\n");
@@ -195,6 +199,19 @@ enum Cmd {
     /// Serve a repository's history on this machine and open it in the browser: its commits, and
     /// the picture of one of them or of two as one.
     History {
+        /// Repository root; default: the current directory.
+        repo: Option<PathBuf>,
+        /// The port to serve at, on 127.0.0.1; default: a free one.
+        #[arg(long, default_value_t = 0)]
+        port: u16,
+        /// Serve without opening a browser.
+        #[arg(long)]
+        no_open: bool,
+    },
+    /// Serve a repository's page on this machine, shared with an agent: what the page shows, where
+    /// the agent points it, and the notes written on its boxes and lines (`atlas mcp`: `shown`,
+    /// `look`, `notes`, `answer`)
+    Serve {
         /// Repository root; default: the current directory.
         repo: Option<PathBuf>,
         /// The port to serve at, on 127.0.0.1; default: a free one.
@@ -325,6 +342,15 @@ pub(crate) fn page(
         extra.insert("view".into(), v);
     }
     Ok((g.root.clone(), viewer(&d, extra)?))
+}
+
+/// The page of the working tree of `repo`, served: it tells its server what it shows, asks it where
+/// an agent points, and keeps notes through it.
+pub(crate) fn served_page(repo: &Path, opts: &Options) -> Result<String> {
+    let d = reading(&[repo.to_path_buf()], opts, None, None)?;
+    let mut extra = serde_json::Map::new();
+    extra.insert("served".into(), serde_json::Value::Bool(true));
+    viewer(&d, extra)
 }
 
 /// Open a page or an address in the browser the system names.
@@ -502,6 +528,14 @@ fn main() -> Result<()> {
             };
             // this machine only: the page shows the repository's code
             history::serve(&repo, std::net::SocketAddr::from(([127, 0, 0, 1], port)), &opts, !no_open)?
+        }
+        Cmd::Serve { repo, port, no_open } => {
+            let repo = match repo {
+                Some(r) => r,
+                None => std::env::current_dir()?,
+            };
+            // this machine only: the page shows the repository's code
+            serve::serve(&repo, std::net::SocketAddr::from(([127, 0, 0, 1], port)), &opts, !no_open)?
         }
         Cmd::Changes { rev, repo, json } => {
             let repo = match repo {

@@ -105,6 +105,7 @@ dependencies = [
  "atlas-engine",
  "clap",
  "libc",
+ "serde",
  "serde_json",
 ]
 

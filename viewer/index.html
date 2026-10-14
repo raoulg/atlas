@@ -174,6 +174,19 @@ header:has(#diffbar:not([hidden])) #project{max-width:160px}
 .ask rect{fill:transparent}
 #ask{position:fixed;z-index:30;max-width:360px;background:var(--panel);border:1px solid var(--line);border-left:2px solid var(--accent);box-shadow:0 10px 28px rgba(0,0,0,.2);padding:9px 12px 10px;font-size:12px;line-height:1.45;pointer-events:none}
 #ask[hidden]{display:none}
+.note circle{fill:var(--panel);stroke:var(--focus);stroke-width:1.4}
+.note text{fill:var(--focus);font-family:var(--mono);font-size:8.5px;font-weight:700;text-anchor:middle;pointer-events:none}
+.note.seen{opacity:.55}
+.note.answered circle{fill:var(--focus)}
+.note.answered text{fill:var(--panel)}
+.note{cursor:help}
+#notefield{position:fixed;z-index:31;width:300px;background:var(--panel);border:1px solid var(--line);border-left:2px solid var(--focus);box-shadow:0 10px 28px rgba(0,0,0,.2);padding:8px 10px 9px;font-size:12px}
+#notefield[hidden]{display:none}
+#notefield .on{font-family:var(--mono);font-size:10.5px;color:var(--ink-3);margin-bottom:5px;word-break:break-all}
+#notefield textarea{width:100%;box-sizing:border-box;min-height:54px;font:inherit;color:var(--ink);background:var(--panel-2);border:1px solid var(--line);padding:5px 7px;resize:vertical}
+#notefield .keys{color:var(--ink-3);font-size:10.5px;margin-top:4px}
+#ask .note-q{color:var(--ink)}
+#ask .note-a{margin-top:6px;padding-top:6px;border-top:1px solid var(--line);color:var(--focus)}
 /* what a closed box holds inside: a tag across its lower edge, dashed as what happens inside is */
 .inside rect{fill:var(--panel);stroke:var(--ink-3);stroke-width:1;stroke-dasharray:2 2}
 .inside text{font:600 9.5px var(--mono);fill:var(--ink-2)}
@@ -1061,6 +1074,8 @@ function insideTags(grp, w, h, I, pad) {
   }
 }
 let prevPos = new Map(), plaatAnchor = null, plaatFit = true;
+// what the last render drew: each box by its id in the layout, and each line by its two ends
+let PICTURE = {boxes: new Map(), lines: []};
 async function renderPlaat() {
   const g = scene.node(), DUR = matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 380;
   dirFold = {to: new Map(), n: new Map()};
@@ -1693,7 +1708,7 @@ async function renderPlaat() {
     : !V.kind ? "each package from what its own code reads to what it writes, joined by the types that cross between packages; a dotted line where one only calls another · click a package to open it, shift-click to focus on it, double-click a box to pin its lines"
     : "each route from what it reads to what it writes · click a route to open it";
   if (!pos.size) el("text", {class: "route-sub", x: 20, y: 70}, g).textContent = "No step on this route takes or hands on a place: it calls nothing that does. Pick another route.";
-  const fg = el("g", {}, g), eg = el("g", {}, g), ng = el("g", {}, g), ig = el("g", {class: "interior-ports", "pointer-events": "none"}, g);
+  const fg = el("g", {}, g), eg = el("g", {}, g), ng = el("g", {}, g), ig = el("g", {class: "interior-ports"}, g);
   // pointing at a box or a pill lights up its lines and what is at their other ends; the versions of
   // one type light up together, so a type can be followed through the route
   const nodeEls = new Map(), edgeEls = [], base = id => id.split("@")[0];
@@ -1781,13 +1796,13 @@ async function renderPlaat() {
       }
       const d = pts.map((q, i) => (i ? "L" : "M") + q.x + "," + q.y).join(" ");
       const layer = ports.length ? ig : eg;
-      const p = el("path", {class: "sedge fn" + (info.reach ? " reach" : "") + (info.back ? " back" : "") + (info.uses ? " uses" : ""), d, "data-from": info.a, "data-to": info.b, "stroke-width": info.uses ? 1 : 1.3}, layer);
+      const p = el("path", {class: "sedge fn" + (info.reach ? " reach" : "") + (info.back ? " back" : "") + (info.uses ? " uses" : ""), d, "stroke-width": info.uses ? 1 : 1.3, "data-a": e.sources[0], "data-b": e.targets[0]}, layer);
       const last = pts[pts.length - 1], prev = pts[pts.length - 2], ang = Math.atan2(last.y - prev.y, last.x - prev.x), L = 8, Wd = 4;
       const head = el("polygon", {points: [[last.x, last.y], [last.x - L * Math.cos(ang) + Wd * Math.sin(ang), last.y - L * Math.sin(ang) - Wd * Math.cos(ang)], [last.x - L * Math.cos(ang) - Wd * Math.sin(ang), last.y - L * Math.sin(ang) + Wd * Math.cos(ang)]].map(q => q.join(",")).join(" "), class: "sedge-head"}, layer);
       if (info.hue) { p.style.stroke = hueVar(info.hue); head.style.fill = hueVar(info.hue); }
       const els = [p, head];
       for (const port of ports) {
-        const bar = el("path", {class: "sedge interior-port", "data-step": port.id, d: `M${port.x - 6 * port.dy},${port.y + 6 * port.dx}L${port.x + 6 * port.dy},${port.y - 6 * port.dx}`, "stroke-width": 2}, ig);
+        const bar = el("path", {class: "sedge interior-port", "data-step": port.id, "pointer-events": "none", d: `M${port.x - 6 * port.dy},${port.y + 6 * port.dx}L${port.x + 6 * port.dy},${port.y - 6 * port.dx}`, "stroke-width": 2}, ig);
         if (info.hue) bar.style.stroke = hueVar(info.hue);
         els.push(bar);
       }
@@ -1795,7 +1810,7 @@ async function renderPlaat() {
       for (const l of e.labels || []) { const tx = el("text", {class: "sedge-label", x: l.x + c.x + l.width / 2, y: l.y + c.y + 10, "text-anchor": "middle"}, eg); tx.textContent = l.text; els.push(tx); }
       const st = standing(info.sides, false);
       if (st) for (const x of els) x.classList.add("d-" + st);
-      edgeEls.push({a: e.sources[0], b: e.targets[0], els});
+      edgeEls.push({a: e.sources[0], b: e.targets[0], els, kind: info.uses ? "calls, no data" : info.back ? "hands back" : info.reach ? "reaches" : "data"});
       if (DUR) for (const x of [p, head]) d3.select(x).attr("opacity", 0).transition().delay(DUR * .7).duration(DUR * .6).attr("opacity", 1);
     }
   }
@@ -1908,6 +1923,7 @@ async function renderPlaat() {
   }
   if (t1) { if (plaatFit || !DUR) svg.call(zoom.transform, t1); else svg.transition().duration(DUR).call(zoom.transform, t1); }
   prevPos = pos; plaatAnchor = null; plaatFit = false;
+  PICTURE = {boxes: nodeEls, lines: edgeEls};
 }
 // what the picture is a function of, each part undoable: the route, the opened steps, the open families, the split world boxes
 function crumbs() {
@@ -2031,6 +2047,7 @@ function selectPlace(pid, label) {
 }
 function select(id, extra) {
   selected = id; const n = byId.get(id); if (!n) return;
+  if (D.served) report();
   scene.node().querySelectorAll(".selected").forEach(x => x.classList.remove("selected"));
   scene.node().querySelectorAll(`[data-id="${CSS.escape(id)}"]`).forEach(x => x.classList.add("selected"));
   insp.innerHTML = "";
@@ -2260,6 +2277,7 @@ window.addEventListener("error", e => fault(e.error || e.message));
 window.addEventListener("unhandledrejection", e => fault(e.reason));
 async function render() {
   scene.node().innerHTML = ""; scene.node().classList.remove("focus");
+  PICTURE = {boxes: new Map(), lines: []};
   faultEl.hidden = true;
   hideAsks();
   shownUnits = new Set();
@@ -2272,6 +2290,7 @@ async function render() {
   legend();
   relabel();
   if (selected) scene.node().querySelectorAll(`[data-id="${CSS.escape(selected)}"]`).forEach(x => x.classList.add("selected"));
+  if (D.served) { markNotes(); report(); }
 }
 // ---------- a union of two readings: A → B, how many things B added, removed and changed, and the switch ----------
 // a label a union reads otherwise in A and in B shows the reading shown
@@ -2317,6 +2336,110 @@ function diffBar() {
   showSide(SHOWN, false);
 }
 diffBar();
+
+// ---------- served: one view shared with an agent (`atlas serve`) ----------
+// The page tells its server what it shows, goes where an agent points it, and keeps the notes its
+// reader writes on boxes and lines; `atlas mcp` reads and answers them. The server takes a change
+// only from its own page, which says so with `X-Atlas`.
+const post = (path, body) => fetch(path, {method: "POST", headers: {"X-Atlas": "1", "Content-Type": "application/json"}, body: JSON.stringify(body)});
+// a drawn box as the agent reads it: the id the page knows it by, and the words it shows
+const boxOf = id => { const g = PICTURE.boxes.get(id); return {id: g?.dataset.id || id, label: (g?.querySelector("text")?.textContent || id).replace(/^[▸▾] /, "")}; };
+let reportTimer = null;
+// what the page shows, a moment after it changes: the view, the selected box, the boxes and lines
+function report() {
+  clearTimeout(reportTimer);
+  reportTimer = setTimeout(() => {
+    const boxes = [...PICTURE.boxes.keys()].map(boxOf);
+    const lines = PICTURE.lines.map(e => ({from: boxOf(e.a).label, to: boxOf(e.b).label, kind: e.kind}));
+    post("/api/shown", {view: viewData(), selected: selected || "", boxes, lines}).catch(() => {});
+  }, 250);
+}
+// what the reader wrote, and what an agent answered; a closed note is history and not drawn
+let NOTES = [];
+async function loadNotes() {
+  try { NOTES = await (await fetch("/api/notes")).json(); markNotes(); } catch {}
+}
+// a note's mark: a numbered ring on the box or the line it is on, open, seen by an agent, or
+// answered; marks sit on what is drawn and move nothing
+function markNotes() {
+  scene.node().querySelectorAll("g.note").forEach(x => x.remove());
+  for (const n of NOTES.filter(n => n.state !== "closed")) {
+    const [a, b] = n.on.includes(">") ? n.on.split(">") : [null, null];
+    let parent, x, y;
+    if (a) {
+      const line = scene.node().querySelector(`path[data-a="${CSS.escape(a)}"][data-b="${CSS.escape(b)}"]`);
+      if (!line) continue;
+      const mid = line.getPointAtLength(line.getTotalLength() / 2);
+      [parent, x, y] = [line.parentNode, mid.x, mid.y];
+    } else {
+      const box = scene.node().querySelector(`[data-id="${CSS.escape(n.on)}"]`);
+      if (!box) continue;
+      [parent, x, y] = [box, 0, 0];
+    }
+    const m = el("g", {class: `note ${n.state}`, transform: `translate(${x},${y})`}, parent);
+    el("circle", {r: 7}, m);
+    el("text", {y: 3}, m).textContent = n.id;
+    m.addEventListener("mouseenter", () => {
+      const q = html("div", "f");
+      q.append(html("div", "at", `note ${n.id} · ${n.label} · ${n.state}`), html("div", "note-q", n.text));
+      if (n.answer) q.append(html("div", "note-a", n.answer));
+      askEl.replaceChildren(q);
+      askEl.hidden = false;
+      const r = m.getBoundingClientRect();
+      askEl.style.left = Math.min(r.right + 10, innerWidth - askEl.offsetWidth - 8) + "px";
+      askEl.style.top = Math.max(8, Math.min(r.top - 6, innerHeight - askEl.offsetHeight - 8)) + "px";
+    });
+    // an answer is shown once: read, the note is closed
+    m.addEventListener("mouseleave", () => { hideAsks(); if (n.state === "answered") post("/api/notes/read", {id: n.id}).then(loadNotes).catch(() => {}); });
+  }
+}
+// alt-click on a box or a line: a note on it, for the agent
+const noteEl = html("div"); noteEl.id = "notefield"; noteEl.hidden = true; document.body.appendChild(noteEl);
+function noteField(x, y, on, label) {
+  const ta = html("textarea");
+  ta.placeholder = "what do you see, or not understand, here?";
+  noteEl.replaceChildren(html("div", "on", `note on ${label}`), ta, html("div", "keys", "enter: keep · shift-enter: new line · esc: drop"));
+  noteEl.hidden = false;
+  noteEl.style.left = Math.min(x + 8, innerWidth - 316) + "px";
+  noteEl.style.top = Math.min(y + 8, innerHeight - 130) + "px";
+  ta.focus();
+  ta.onkeydown = ev => {
+    if (ev.key === "Escape") { noteEl.hidden = true; return; }
+    if (ev.key !== "Enter" || ev.shiftKey) return;
+    ev.preventDefault();
+    const text = ta.value.trim();
+    noteEl.hidden = true;
+    if (text) post("/api/notes", {on, label, view: viewData(), text}).then(loadNotes).catch(() => {});
+  };
+}
+if (D.served) {
+  scene.node().addEventListener("click", ev => {
+    if (!ev.altKey) return;
+    const line = ev.target.closest("path[data-a]"), box = !line && ev.target.closest("[data-id]");
+    if (!line && !box) return;
+    ev.stopPropagation(); ev.preventDefault();
+    if (line) noteField(ev.clientX, ev.clientY, `${line.dataset.a}>${line.dataset.b}`, `${boxOf(line.dataset.a).label} → ${boxOf(line.dataset.b).label}`);
+    else {
+      const id = [...PICTURE.boxes].find(([, g]) => g === box)?.[0];
+      noteField(ev.clientX, ev.clientY, box.dataset.id, id ? boxOf(id).label : box.dataset.id);
+    }
+  }, true);
+  // an agent's "look here": the view it asks for, taken once
+  setInterval(async () => {
+    try {
+      const r = await fetch("/api/look");
+      if (r.status !== 200) return;
+      setView(await r.json());
+      plaatFit = true;
+      if (view !== "plaat") document.querySelector('.tabs button[data-view="plaat"]')?.click(); else render();
+    } catch {}
+  }, 1000);
+  setInterval(loadNotes, 3000);
+  loadNotes();
+  document.getElementById("hint").prepend(html("span", null, "alt-click: a note for the agent · "));
+  const dl = document.querySelector("#keys dl");
+  dl.append(html("dt", null, "alt-click a box or a line"), html("dd", null, "write a note on it for the agent (atlas serve); its answer shows once on the ring"));
+}
 render();
 })();
 </script>
