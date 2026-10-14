@@ -116,7 +116,12 @@ fn own(g: &Graph, ty: &str) -> bool {
 /// The program's way in: a command, a script, a binary's `main`. A door of a library is a way into
 /// the library, not into the program.
 fn program(g: &Graph) -> &str {
-    let ways: Vec<&str> = g.nodes.iter().filter(|n| n.entry.as_ref().map_or(false, |e| matches!(e.kind, EntryKind::Cli | EntryKind::Script))).map(|n| n.id.as_str()).collect();
+    let ways: Vec<&str> = g
+        .nodes
+        .iter()
+        .filter(|n| n.entry.as_ref().map_or(false, |e| matches!(e.kind, EntryKind::Cli | EntryKind::Script)))
+        .map(|n| n.id.as_str())
+        .collect();
     assert_eq!(ways.len(), 1, "one way into the program: {ways:?}");
     ways[0]
 }
@@ -129,7 +134,13 @@ fn outside(g: &Graph, start: &str) -> BTreeSet<(String, String)> {
     let runs = |f: &str| reached.contains(f);
     // a module's global is the program's own memory, not the world's
     let world = |t: &&Touch| t.kind != World::Global;
-    reached.iter().filter_map(|id| g.node(id)).flat_map(|n| n.touches_in(start, &runs)).filter(world).map(|t| (t.kind_name().to_string(), t.artifact.clone())).collect()
+    reached
+        .iter()
+        .filter_map(|id| g.node(id))
+        .flat_map(|n| n.touches_in(start, &runs))
+        .filter(world)
+        .map(|t| (t.kind_name().to_string(), t.artifact.clone()))
+        .collect()
 }
 
 /// The places every version reaches: the request to SILSO, the raw file written and read again, the
@@ -270,7 +281,8 @@ fn the_same_from_outside_typescript_reads_the_path_download_gives_back() {
 #[test]
 fn the_same_from_outside_typescript_creates_the_parent_of_the_path_handed_in() {
     for (f, dir) in [("typescript.download.download", "data/raw/"), ("typescript.plot.saveSvg", "figures/")] {
-        let made: Vec<&Touch> = touches(typescript(), f, "disk_write").into_iter().filter(|t| t.op == "mkdir" && !t.artifact.is_empty()).collect();
+        let made: Vec<&Touch> =
+            touches(typescript(), f, "disk_write").into_iter().filter(|t| t.op == "mkdir" && !t.artifact.is_empty()).collect();
         assert!(made.iter().all(|t| t.artifact == dir && t.by == ["typescript.cli.main"]) && !made.is_empty(), "{f}: {made:#?}");
     }
 }
@@ -298,7 +310,8 @@ fn the_same_from_outside_rust_clean_reads_the_path_download_gives_back() {
 #[test]
 fn the_same_from_outside_rust_clean_creates_the_parent_of_the_path_handed_in() {
     for (f, dir) in [("sunspots.download.download", "data/raw/"), ("sunspots.plot.Plot.save", "figures/")] {
-        let made: Vec<&Touch> = touches(rust_clean(), f, "disk_write").into_iter().filter(|t| t.op == "create_dir_all" && !t.artifact.is_empty()).collect();
+        let made: Vec<&Touch> =
+            touches(rust_clean(), f, "disk_write").into_iter().filter(|t| t.op == "create_dir_all" && !t.artifact.is_empty()).collect();
         assert!(made.iter().all(|t| t.artifact == dir && t.by == ["sunspots.main.main"]) && !made.is_empty(), "{f}: {made:#?}");
     }
 }
@@ -407,7 +420,14 @@ fn python_sloppy_the_doors_say_nothing() {
     }
     let c = clean();
     assert_eq!(found(c, "doors"), Vec::<String>::new());
-    for door in ["sunspots.download.download", "sunspots.series.load", "sunspots.series.smooth", "sunspots.plot.Plot", "sunspots.plot.Trend", "sunspots.settings.Settings"] {
+    for door in [
+        "sunspots.download.download",
+        "sunspots.series.load",
+        "sunspots.series.smooth",
+        "sunspots.plot.Plot",
+        "sunspots.plot.Trend",
+        "sunspots.settings.Settings",
+    ] {
         assert_eq!(node(c, door).entry.as_ref().map(|e| e.kind), Some(EntryKind::Export), "{door} is a door");
     }
 }
@@ -437,7 +457,10 @@ fn python_sloppy_the_frame_travels_beside_the_route() {
     let s = sloppy();
     assert!(s.edges.iter().all(|e| !matches!(e.kind, EdgeKind::Takes | EdgeKind::Returns)), "no function takes or gives a type");
     let steps = &node(s, STUDENT).sites;
-    assert_eq!(steps.iter().map(|st| st.to.as_str()).collect::<Vec<_>>(), ["sunspots.get_data", "sunspots.clean", "sunspots.smooth", "sunspots.plot"]);
+    assert_eq!(
+        steps.iter().map(|st| st.to.as_str()).collect::<Vec<_>>(),
+        ["sunspots.get_data", "sunspots.clean", "sunspots.smooth", "sunspots.plot"]
+    );
     assert!(steps.iter().all(|st| st.hands.is_empty() && st.gives.is_empty()), "{steps:#?}");
 }
 
@@ -448,7 +471,14 @@ fn python_sloppy_the_frame_travels_beside_the_route() {
 #[test]
 fn python_sloppy_the_frame_is_a_global_place() {
     let s = sloppy();
-    let global = |f: &str| node(s, f).touches.iter().filter(|t| t.kind == World::Global && t.artifact == "sunspots.df").map(|t| t.dir_name()).collect::<BTreeSet<_>>();
+    let global = |f: &str| {
+        node(s, f)
+            .touches
+            .iter()
+            .filter(|t| t.kind == World::Global && t.artifact == "sunspots.df")
+            .map(|t| t.dir_name())
+            .collect::<BTreeSet<_>>()
+    };
     assert_eq!(global("sunspots.get_data"), BTreeSet::from(["read", "write"]));
     assert_eq!(global("sunspots.clean"), BTreeSet::from(["read", "write"]));
     assert_eq!(global("sunspots.smooth"), BTreeSet::from(["read", "write"]));
@@ -481,7 +511,10 @@ fn rust_the_compiler_asks_for_every_type() {
 #[test]
 fn rust_the_compiler_does_not_ask_where_data_lives() {
     let r = rust();
-    assert_eq!(findings(r), [("places", "sunspots.download".to_string()), ("places", "sunspots.load".to_string()), ("places", "sunspots.plot".to_string())]);
+    assert_eq!(
+        findings(r),
+        [("places", "sunspots.download".to_string()), ("places", "sunspots.load".to_string()), ("places", "sunspots.plot".to_string())]
+    );
     for (f, kind, artifact) in [
         ("sunspots.download", "net", "www.sidc.be"),
         ("sunspots.download", "disk_write", "data/raw/sunspots.csv"),
@@ -532,7 +565,8 @@ fn typescript_follows_every_principle() {
     let t = typescript();
     let fs = check(t);
     assert!(fs.is_empty(), "{:#?}", fs.iter().map(|f| format!("{} {} {}", f.principle, f.node, f.what)).collect::<Vec<_>>());
-    let doors: BTreeSet<&str> = t.nodes.iter().filter(|n| n.entry.as_ref().map_or(false, |e| e.kind == EntryKind::Export)).map(|n| n.id.as_str()).collect();
+    let doors: BTreeSet<&str> =
+        t.nodes.iter().filter(|n| n.entry.as_ref().map_or(false, |e| e.kind == EntryKind::Export)).map(|n| n.id.as_str()).collect();
     let want = [
         "typescript.download.download",
         "typescript.series.load",
@@ -718,7 +752,9 @@ fn rust_clean_the_places_are_made_whole_at_main() {
 #[test]
 fn rust_clean_trend_draws_on_the_area_it_is_handed() {
     let r = rust_clean();
-    let takes = |f: &str, ty: &str| r.edges.iter().any(|e| e.kind == EdgeKind::Takes && e.src == f && e.dst.starts_with("ext:plotters.") && e.dst.ends_with(ty));
+    let takes = |f: &str, ty: &str| {
+        r.edges.iter().any(|e| e.kind == EdgeKind::Takes && e.src == f && e.dst.starts_with("ext:plotters.") && e.dst.ends_with(ty))
+    };
     for f in ["sunspots.plot.Plot.draw", "sunspots.plot.Trend.draw"] {
         assert!(takes(f, ".DrawingArea") && !takes(f, ".Shift"), "{f}");
     }
@@ -785,7 +821,10 @@ fn the_port_saves_without_returning_a_destination() {
         let flow = atlas_engine::flow::of(p.g);
         let arrow = flow.arrows.get(p.save).cloned().unwrap_or_default();
         assert!(!arrow.gives_back && !arrow.returns_value && arrow.gives.is_empty(), "{}: {arrow:?}", p.language);
-        let writes: Vec<_> = saving.touches.iter().zip(&flow.drawn[p.save])
+        let writes: Vec<_> = saving
+            .touches
+            .iter()
+            .zip(&flow.drawn[p.save])
             .filter(|(touch, _)| touch.kind_name() == "disk_write" && any_format(&touch.artifact) == "figures/sunspots.*")
             .collect();
         assert_eq!(writes.len(), 1, "{}: save writes one figure", p.language);
@@ -809,7 +848,12 @@ fn the_python_pair_exposes_how_the_frame_travels() {
     assert!(!loaded.gives.is_empty() && !smoothed.gives.is_empty());
     for (producer, consumer) in [(loaded, smoothed), (smoothed, saved)] {
         for value in &producer.gives {
-            assert!(consumer.hands.iter().any(|h| h.name == value.name && h.ty == value.ty), "{} reaches {} as {value:?}", producer.to, consumer.to);
+            assert!(
+                consumer.hands.iter().any(|h| h.name == value.name && h.ty == value.ty),
+                "{} reaches {} as {value:?}",
+                producer.to,
+                consumer.to
+            );
         }
     }
     assert_ne!(loaded.gives[0].name, smoothed.gives[0].name, "successive frames are distinct values of one type");
@@ -820,7 +864,10 @@ fn the_python_pair_exposes_how_the_frame_travels() {
     let flow = atlas_engine::flow::of(s);
     for f in ["sunspots.get_data", "sunspots.clean", "sunspots.smooth", "sunspots.plot"] {
         assert!(step(s, STUDENT, f).gives.is_empty(), "{f}: the frame is held globally");
-        assert!(node(s, f).touches.iter().zip(&flow.drawn[f]).any(|(t, d)| t.kind == World::Global && d.place.label.contains("sunspots.df")), "{f}: the shared frame has a visible place");
+        assert!(
+            node(s, f).touches.iter().zip(&flow.drawn[f]).any(|(t, d)| t.kind == World::Global && d.place.label.contains("sunspots.df")),
+            "{f}: the shared frame has a visible place"
+        );
     }
     assert!(outside(c, program(c)).contains(&("disk_write".into(), "figures/sunspots.png".into())));
     assert!(outside(s, STUDENT).contains(&("disk_write".into(), "figures/sunspots.png".into())));
@@ -835,12 +882,17 @@ fn the_port_shares_its_principles_and_its_steps() {
         let fs = check(p.g);
         assert!(fs.is_empty(), "{}: {:#?}", p.language, fs.iter().map(|f| format!("{} {}", f.principle, f.node)).collect::<Vec<_>>());
         let sites = &node(p.g, p.run).sites;
-        let at = |to: &str| sites.iter().position(|s| s.to == to).unwrap_or_else(|| panic!("{}: {} has no step to {to}", p.language, p.run));
+        let at =
+            |to: &str| sites.iter().position(|s| s.to == to).unwrap_or_else(|| panic!("{}: {} has no step to {to}", p.language, p.run));
         assert!(at(p.load) < at(p.smooth), "{}", p.language);
         let pairs = |hs: &[Held]| hs.iter().map(|h| (h.name.clone(), h.ty.clone())).collect::<Vec<_>>();
         let (loaded, handed) = (pairs(&step(p.g, p.run, p.load).gives), pairs(&step(p.g, p.run, p.smooth).hands));
         assert!(!loaded.is_empty() && loaded.iter().all(|h| handed.contains(h)), "{}: {loaded:?} {handed:?}", p.language);
-        assert!(handed.iter().any(|(name, ty)| name == "settings" && ty.ends_with(".settings.Settings") && own(p.g, ty)), "{}: {handed:?}", p.language);
+        assert!(
+            handed.iter().any(|(name, ty)| name == "settings" && ty.ends_with(".settings.Settings") && own(p.g, ty)),
+            "{}: {handed:?}",
+            p.language
+        );
     }
 }
 
@@ -877,14 +929,19 @@ fn the_port_the_same_places() {
 fn the_port_reaches_the_raw_file_and_the_figure_through_its_options() {
     let raw = "data/raw/sunspots.csv";
     let named = |t: &&Touch| t.artifact == raw || t.artifact.starts_with("figures/sunspots.");
-    let want: BTreeSet<(&str, String, String, bool, bool)> = [("download", "disk_write", raw), ("load", "disk_read", raw), ("save", "disk_write", "figures/sunspots.*")]
-        .into_iter()
-        .map(|(step, kind, artifact)| (step, kind.to_string(), artifact.to_string(), false, true))
-        .collect();
+    let want: BTreeSet<(&str, String, String, bool, bool)> =
+        [("download", "disk_write", raw), ("load", "disk_read", raw), ("save", "disk_write", "figures/sunspots.*")]
+            .into_iter()
+            .map(|(step, kind, artifact)| (step, kind.to_string(), artifact.to_string(), false, true))
+            .collect();
     for p in ports() {
         let reached: BTreeSet<(&str, String, String, bool, bool)> = [("download", p.download), ("load", p.load), ("save", p.save)]
             .into_iter()
-            .flat_map(|(step, f)| node(p.g, f).touches.iter().filter(named).map(move |t| (step, t.kind_name().to_string(), any_format(&t.artifact), t.fixed, t.by == [p.run] && t.users_of.is_empty())))
+            .flat_map(|(step, f)| {
+                node(p.g, f).touches.iter().filter(named).map(move |t| {
+                    (step, t.kind_name().to_string(), any_format(&t.artifact), t.fixed, t.by == [p.run] && t.users_of.is_empty())
+                })
+            })
             .collect();
         assert_eq!(reached, want, "{}", p.language);
         assert!(!node(p.g, p.run).touches.iter().any(|t| named(&t)), "{}", p.language);
@@ -902,7 +959,10 @@ fn the_port_entry_reads_as_its_usage_line() {
     for p in ports() {
         assert_eq!(node(p.g, program(p.g)).entry.as_ref().unwrap().options, ["--raw", "--figure", "--months"], "{}", p.language);
     }
-    assert_eq!([usage(clean()), usage(typescript()), usage(rust_clean())], ["run --raw --figure --months", "sunspots --raw --figure --months", "sunspots --raw --figure --months"]);
+    assert_eq!(
+        [usage(clean()), usage(typescript()), usage(rust_clean())],
+        ["run --raw --figure --months", "sunspots --raw --figure --months", "sunspots --raw --figure --months"]
+    );
 }
 
 /// The step that turns the command line into values belongs to the entry, not to the route: clap's

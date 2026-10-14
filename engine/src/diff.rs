@@ -217,7 +217,12 @@ impl Renames {
     /// The names of the types A renamed, old against new, as signatures write them.
     fn types(&self, a: &Graph) -> Vec<(String, String)> {
         let short = |id: &str| id.rsplit('.').next().unwrap_or(id).to_string();
-        a.nodes.iter().filter(|n| n.kind == NodeKind::Class && self.direct.contains_key(&n.id)).map(|n| (short(&n.id), short(&self.direct[&n.id]))).filter(|(o, n)| o != n).collect()
+        a.nodes
+            .iter()
+            .filter(|n| n.kind == NodeKind::Class && self.direct.contains_key(&n.id))
+            .map(|n| (short(&n.id), short(&self.direct[&n.id])))
+            .filter(|(o, n)| o != n)
+            .collect()
     }
 
     /// A with every renamed node under its name in B, and every id that names one.
@@ -369,14 +374,17 @@ fn arrow(ix: &Index, n: &Node, types: &[(String, String)]) -> (String, Vec<Strin
     let renamed = |text: &str| {
         let mut t = text.to_string();
         for (old, new) in types {
-            t = regex::Regex::new(&format!(r"\b{}\b", regex::escape(old))).map(|re| re.replace_all(&t, new.as_str()).to_string()).unwrap_or(t);
+            t = regex::Regex::new(&format!(r"\b{}\b", regex::escape(old)))
+                .map(|re| re.replace_all(&t, new.as_str()).to_string())
+                .unwrap_or(t);
         }
         t
     };
     let params: Vec<String> = n.params.iter().map(|p| renamed(&format!("{}{p}", if p.changes { "mut " } else { "" }))).collect();
     let gives = n.returns.as_ref().map(|r| renamed(&r.written)).unwrap_or_default();
     let mut parts = vec![format!("({}){}", params.join(", "), if gives.is_empty() { String::new() } else { format!(" → {gives}") })];
-    let changes: Vec<String> = ix.out(&n.id).filter(|e| e.kind == EdgeKind::Mutates).map(|e| e.via.clone().unwrap_or_else(|| short(&e.dst))).collect();
+    let changes: Vec<String> =
+        ix.out(&n.id).filter(|e| e.kind == EdgeKind::Mutates).map(|e| e.via.clone().unwrap_or_else(|| short(&e.dst))).collect();
     if !changes.is_empty() {
         parts.push(format!("changes {}", changes.join(", ")));
     }
@@ -400,8 +408,20 @@ fn arrow(ix: &Index, n: &Node, types: &[(String, String)]) -> (String, Vec<Strin
 /// takes it, gives it, builds it, changes it, holds it or is held by it, its bases and variants,
 /// and its members.
 fn typed(ix: &Index, id: &str) -> Vec<String> {
-    let typing = |k: EdgeKind| matches!(k, EdgeKind::Takes | EdgeKind::Returns | EdgeKind::Has | EdgeKind::Mutates | EdgeKind::Variant | EdgeKind::Inherits | EdgeKind::Instantiates);
-    let mut out: Vec<String> = ix.out(id).filter(|e| typing(e.kind) || e.kind == EdgeKind::Contains).map(|e| format!("→ {:?} {}", e.kind, e.dst)).collect();
+    let typing = |k: EdgeKind| {
+        matches!(
+            k,
+            EdgeKind::Takes
+                | EdgeKind::Returns
+                | EdgeKind::Has
+                | EdgeKind::Mutates
+                | EdgeKind::Variant
+                | EdgeKind::Inherits
+                | EdgeKind::Instantiates
+        )
+    };
+    let mut out: Vec<String> =
+        ix.out(id).filter(|e| typing(e.kind) || e.kind == EdgeKind::Contains).map(|e| format!("→ {:?} {}", e.kind, e.dst)).collect();
     out.extend(ix.into(id).filter(|e| typing(e.kind)).map(|e| format!("← {:?} {}", e.kind, e.src)));
     out.sort();
     out

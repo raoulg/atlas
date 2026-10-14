@@ -238,8 +238,12 @@ pub(crate) fn single(repos: &[PathBuf], graphs: Vec<Graph>) -> Drawing {
 /// of B, and how each thing of the union stands to the two, with the revisions they were read at
 /// and how many findings B raises and resolves.
 pub(crate) fn union(repo: &Path, a: (Named, Vec<Graph>), b: (Named, Vec<Graph>)) -> Result<Drawing> {
-    let name = std::fs::canonicalize(repo).ok().and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_string())).unwrap_or_else(|| "repo".into());
-    let (fa, fb): (Vec<principles::Finding>, Vec<principles::Finding>) = (a.1.iter().flat_map(principles::check).collect(), b.1.iter().flat_map(principles::check).collect());
+    let name = std::fs::canonicalize(repo)
+        .ok()
+        .and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_string()))
+        .unwrap_or_else(|| "repo".into());
+    let (fa, fb): (Vec<principles::Finding>, Vec<principles::Finding>) =
+        (a.1.iter().flat_map(principles::check).collect(), b.1.iter().flat_map(principles::check).collect());
     let (raised, resolved) = changes::raised(&fa, &fb);
     let (graph, d) = atlas_engine::diff::union(&name, a.1, b.1);
     let mut diff = serde_json::to_value(&d)?;
@@ -292,14 +296,27 @@ pub(crate) fn viewer(d: &Drawing, extra: serde_json::Map<String, serde_json::Val
 /// `until` or the working tree), drawn in `shown` when it is given (a view: its route, kind,
 /// part, focus and opened sets), else on the route of a file named on the command line. Gives the
 /// page and the name of its project.
-pub(crate) fn page(repos: &[PathBuf], opts: &Options, since: Option<&str>, until: Option<&str>, shown: Option<serde_json::Value>) -> Result<(String, String)> {
+pub(crate) fn page(
+    repos: &[PathBuf],
+    opts: &Options,
+    since: Option<&str>,
+    until: Option<&str>,
+    shown: Option<serde_json::Value>,
+) -> Result<(String, String)> {
     let d = reading(repos, opts, since, until)?;
     let g = &d.graph;
     let parts: Vec<&str> = g.parts.iter().map(|p| p.id.as_str()).collect();
-    eprintln!("{} · {} · {} modules · {} entries", g.root, parts.join(" + "), g.stats.modules, g.nodes.iter().filter(|n| n.entry.is_some()).count());
+    eprintln!(
+        "{} · {} · {} modules · {} entries",
+        g.root,
+        parts.join(" + "),
+        g.stats.modules,
+        g.nodes.iter().filter(|n| n.entry.is_some()).count()
+    );
     let mut extra = serde_json::Map::new();
     // a file named on the command line opens on its route
-    if let Some(n) = g.nodes.iter().find(|n| n.entry.is_some() && std::fs::canonicalize(&n.file).map_or(false, |f| opts.named.contains(&f))) {
+    if let Some(n) = g.nodes.iter().find(|n| n.entry.is_some() && std::fs::canonicalize(&n.file).map_or(false, |f| opts.named.contains(&f)))
+    {
         extra.insert("open".into(), serde_json::Value::String(n.id.clone()));
     }
     if let Some(v) = shown {
@@ -328,7 +345,14 @@ pub(crate) fn page_file(name: &str) -> PathBuf {
     dir.join(format!("{name}.html"))
 }
 
-fn view(repos: &[PathBuf], opts: &Options, out: Option<PathBuf>, shown_in_browser: bool, range: (Option<&str>, Option<&str>), shown: Option<serde_json::Value>) -> Result<()> {
+fn view(
+    repos: &[PathBuf],
+    opts: &Options,
+    out: Option<PathBuf>,
+    shown_in_browser: bool,
+    range: (Option<&str>, Option<&str>),
+    shown: Option<serde_json::Value>,
+) -> Result<()> {
     let (name, html) = page(repos, opts, range.0, range.1, shown)?;
     let out = out.unwrap_or_else(|| page_file(&name));
     std::fs::write(&out, html)?;
@@ -376,8 +400,13 @@ fn local(arg: PathBuf, opts: &mut Options) -> Result<(PathBuf, Option<remote::Cl
 /// each part has; exit status 1 when there is anything to ask.
 fn check(repo: &std::path::Path, opts: &Options, json: bool) -> Result<bool> {
     // each part in its own language: what a Python package declares, a crate's compiler checks
-    let parts: Vec<(String, Vec<principles::Finding>)> =
-        parts::analyze_parts(&[repo.to_path_buf()], opts)?.into_iter().map(|g| { let f = principles::check(&g); (g.root, f) }).collect();
+    let parts: Vec<(String, Vec<principles::Finding>)> = parts::analyze_parts(&[repo.to_path_buf()], opts)?
+        .into_iter()
+        .map(|g| {
+            let f = principles::check(&g);
+            (g.root, f)
+        })
+        .collect();
     if json {
         for (root, findings) in &parts {
             println!("{}", serde_json::to_string_pretty(&serde_json::json!({ "root": root, "findings": findings }))?);
@@ -440,8 +469,12 @@ fn main() -> Result<()> {
     match cli.cmd {
         Cmd::View { repos, out, no_open, since, until, view: shown } => {
             let repos = if repos.is_empty() { vec![std::env::current_dir()?] } else { repos };
-            let shown = shown.map(|v| serde_json::from_str::<serde_json::Value>(&v)).transpose().map_err(|e| anyhow::anyhow!("--view is not JSON: {e}"))?;
-            let (repos, _clones): (Vec<PathBuf>, Vec<Option<remote::Clone>>) = repos.into_iter().map(|r| local(r, &mut opts)).collect::<Result<Vec<_>>>()?.into_iter().unzip();
+            let shown = shown
+                .map(|v| serde_json::from_str::<serde_json::Value>(&v))
+                .transpose()
+                .map_err(|e| anyhow::anyhow!("--view is not JSON: {e}"))?;
+            let (repos, _clones): (Vec<PathBuf>, Vec<Option<remote::Clone>>) =
+                repos.into_iter().map(|r| local(r, &mut opts)).collect::<Result<Vec<_>>>()?.into_iter().unzip();
             view(&repos, &opts, out, !no_open, (since.as_deref(), until.as_deref()), shown)?
         }
         Cmd::Mcp => mcp::serve(&opts)?,
@@ -486,10 +519,7 @@ fn main() -> Result<()> {
             };
             std::fs::write(&out, serde_json::to_string(&g)?)?;
             let s = &g.stats;
-            eprintln!(
-                "{} · {} modules · nodes {:?} · edges {:?}",
-                g.root, s.modules, s.nodes, s.edges
-            );
+            eprintln!("{} · {} modules · nodes {:?} · edges {:?}", g.root, s.modules, s.nodes, s.edges);
             eprintln!(
                 "unresolved {} (top: {})",
                 s.unresolved_calls_total,

@@ -151,7 +151,11 @@ impl GraphBuilder {
 
     pub fn touch(&mut self, id: &str, t: Touch) {
         let Some(n) = self.nodes.get_mut(id) else { return };
-        match n.touches.iter_mut().find(|x| x.kind == t.kind && x.what == t.what && x.op == t.op && x.artifact == t.artifact && x.dir == t.dir) {
+        match n
+            .touches
+            .iter_mut()
+            .find(|x| x.kind == t.kind && x.what == t.what && x.op == t.op && x.artifact == t.artifact && x.dir == t.dir)
+        {
             Some(x) => {
                 x.n += 1;
                 // whole in its own function is whole in every route; else in the routes of each
@@ -270,7 +274,6 @@ impl GraphBuilder {
     }
 }
 
-
 /// Mark the classes that are doors: one of their operations reaches a service, through what it
 /// calls. An operation is a method called on a value of the class, not on the class: an
 /// alternative constructor (`Config.from_yaml`) reads into a value and leaves it data.
@@ -305,7 +308,12 @@ fn mark_doors(nodes: &mut IndexMap<String, Node>, edges: &[Edge]) {
         .filter(|n| n.kind == NodeKind::Class)
         .filter_map(|c| {
             let prefix = format!("{}.", c.id);
-            nodes.values().filter(|m| m.cls.as_deref() == Some(c.id.as_str()) || m.id.starts_with(&prefix) && m.kind == NodeKind::Method).filter(|m| operation(m)).find_map(|m| reaches(&m.id)).map(|k| (c.id.clone(), k))
+            nodes
+                .values()
+                .filter(|m| m.cls.as_deref() == Some(c.id.as_str()) || m.id.starts_with(&prefix) && m.kind == NodeKind::Method)
+                .filter(|m| operation(m))
+                .find_map(|m| reaches(&m.id))
+                .map(|k| (c.id.clone(), k))
         })
         .collect();
     for (id, kind) in doors {

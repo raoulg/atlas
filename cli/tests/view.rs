@@ -13,7 +13,8 @@ fn root() -> PathBuf {
 /// Atlas run in the workspace root, keeping what it keeps in a cache of the tests' own.
 fn atlas(args: &[&str]) -> String {
     let cache = std::env::temp_dir().join(format!("atlas-view-cache-{}", std::process::id()));
-    let out = Command::new(env!("CARGO_BIN_EXE_atlas")).args(args).current_dir(root()).env("XDG_CACHE_HOME", cache).output().expect("atlas runs");
+    let out =
+        Command::new(env!("CARGO_BIN_EXE_atlas")).args(args).current_dir(root()).env("XDG_CACHE_HOME", cache).output().expect("atlas runs");
     String::from_utf8(out.stdout).unwrap()
 }
 
@@ -35,7 +36,10 @@ fn page_of(repo: &str) -> Value {
 /// What `atlas check --json` prints: one report per part, each part's findings in turn.
 fn checked(repo: &str) -> Vec<Value> {
     let text = atlas(&["check", repo, "--json"]);
-    serde_json::Deserializer::from_str(&text).into_iter::<Value>().flat_map(|r| r.unwrap()["findings"].as_array().unwrap().clone()).collect()
+    serde_json::Deserializer::from_str(&text)
+        .into_iter::<Value>()
+        .flat_map(|r| r.unwrap()["findings"].as_array().unwrap().clone())
+        .collect()
 }
 
 fn analyzed(repo: &str) -> Value {

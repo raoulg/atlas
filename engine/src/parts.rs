@@ -52,7 +52,11 @@ pub fn analyze_parts(repos: &[PathBuf], opts: &Options) -> Result<Vec<Graph>> {
     let read: Vec<Repo> = repos.iter().map(|r| crate::language::read(r, opts)).collect::<Result<_>>()?;
     let found = found(&read, opts);
     if found.is_empty() {
-        anyhow::bail!("no part found in {} ({})", repos.iter().map(|r| r.display().to_string()).collect::<Vec<_>>().join(", "), crate::language::looked_for());
+        anyhow::bail!(
+            "no part found in {} ({})",
+            repos.iter().map(|r| r.display().to_string()).collect::<Vec<_>>().join(", "),
+            crate::language::looked_for()
+        );
     }
     let opts = Options { package: None, ..opts.clone() };
     let mut graphs = vec![];
@@ -102,7 +106,12 @@ pub fn analyze_repo(repos: &[PathBuf], opts: &Options) -> Result<Graph> {
 pub fn merged(repos: &[PathBuf], graphs: Vec<Graph>) -> Graph {
     let name = repos
         .iter()
-        .map(|r| std::fs::canonicalize(r).ok().and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_string())).unwrap_or_else(|| "repo".into()))
+        .map(|r| {
+            std::fs::canonicalize(r)
+                .ok()
+                .and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_string()))
+                .unwrap_or_else(|| "repo".into())
+        })
         .collect::<Vec<_>>()
         .join("+");
     joined(&name, graphs)
@@ -121,7 +130,12 @@ pub fn joined(name: &str, graphs: Vec<Graph>) -> Graph {
 /// to the first.
 pub fn assign(g: &mut Graph) {
     // a library read for its types is the environment's, not a part of the repository
-    let mut ids: Vec<String> = g.nodes.iter().filter(|n| n.kind == NodeKind::Module && n.is_pkg && !n.library && !n.id.contains('.')).map(|n| n.id.clone()).collect();
+    let mut ids: Vec<String> = g
+        .nodes
+        .iter()
+        .filter(|n| n.kind == NodeKind::Module && n.is_pkg && !n.library && !n.id.contains('.'))
+        .map(|n| n.id.clone())
+        .collect();
     if ids.is_empty() {
         ids.push(g.root.clone());
     }
@@ -153,7 +167,10 @@ pub fn merge(name: &str, graphs: Vec<Graph>) -> Graph {
         for (file, text) in g.files {
             // a library's file two parts read keeps the lines either shows
             match out.files.get_mut(&file) {
-                Some(had) if *had != text => *had = had.split('\n').zip(text.split('\n')).map(|(a, b)| if a.is_empty() { b } else { a }).collect::<Vec<_>>().join("\n"),
+                Some(had) if *had != text => {
+                    *had =
+                        had.split('\n').zip(text.split('\n')).map(|(a, b)| if a.is_empty() { b } else { a }).collect::<Vec<_>>().join("\n")
+                }
                 Some(_) => {}
                 None => {
                     out.files.insert(file, text);
@@ -169,7 +186,6 @@ pub fn merge(name: &str, graphs: Vec<Graph>) -> Graph {
     out.recount();
     out
 }
-
 
 /// Requests between parts: a request one part makes whole and none of its own routes serves is a
 /// `requests` edge from the function that makes it whole to the handler of another part's route

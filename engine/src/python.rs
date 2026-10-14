@@ -15,23 +15,49 @@ use walkdir::WalkDir;
 mod paths;
 
 use crate::body::{Crosses, Step, Steps};
-use crate::repo::Repo;
-use crate::effects::{self, Crossing};
-use crate::pytypes::{By, Facts, FileArg, Target, Ty, Types, Value};
-use paths::{At, Built, Eval};
-use crate::knowledge;
-use crate::model::{Bucket, Dir, EdgeKind, Entry, EntryKind, Held, Node, NodeKind, Param, Returns, Touch, World};
 pub use crate::builder::{foreign_type, ClassInfo, GraphBuilder, SigInfo};
+use crate::effects::{self, Crossing};
+use crate::knowledge;
 use crate::knowledge::OwnTypes;
+use crate::model::{Bucket, Dir, EdgeKind, Entry, EntryKind, Held, Node, NodeKind, Param, Returns, Touch, World};
+use crate::pytypes::{By, Facts, FileArg, Target, Ty, Types, Value};
+use crate::repo::Repo;
 use crate::tree::{
-    evaluation_order, field_children, literals, named_children, nth_of_kind, payload_of, span, text, unquote, walk,
-    what_of, ChoiceSyntax, CompareSyntax, Part,
+    evaluation_order, field_children, literals, named_children, nth_of_kind, payload_of, span, text, unquote, walk, what_of, ChoiceSyntax,
+    CompareSyntax, Part,
 };
+use paths::{At, Built, Eval};
 
 const BUILTIN_TYPES: &[&str] = &[
-    "str", "int", "float", "bool", "bytes", "list", "dict", "set", "tuple", "None", "Any", "Optional",
-    "Union", "Iterable", "Iterator", "Sequence", "Mapping", "Callable", "Path", "Literal", "TypeVar",
-    "Self", "ClassVar", "type", "object", "frozenset", "Generator", "AsyncIterator", "Awaitable",
+    "str",
+    "int",
+    "float",
+    "bool",
+    "bytes",
+    "list",
+    "dict",
+    "set",
+    "tuple",
+    "None",
+    "Any",
+    "Optional",
+    "Union",
+    "Iterable",
+    "Iterator",
+    "Sequence",
+    "Mapping",
+    "Callable",
+    "Path",
+    "Literal",
+    "TypeVar",
+    "Self",
+    "ClassVar",
+    "type",
+    "object",
+    "frozenset",
+    "Generator",
+    "AsyncIterator",
+    "Awaitable",
     "Annotated",
 ];
 
@@ -79,13 +105,20 @@ fn shaped<'t>(n: TsNode<'t>, src: &[u8]) -> Option<String> {
         "subscript" => (dotted(n.child_by_field_name("value"), src), field_children(n, "subscript")),
         "generic_type" => {
             let kids = named_children(n);
-            let params = kids.iter().find(|k| k.kind() == "type_parameter").map(|tp| named_children(*tp).into_iter().map(unwrap).collect()).unwrap_or_default();
+            let params = kids
+                .iter()
+                .find(|k| k.kind() == "type_parameter")
+                .map(|tp| named_children(*tp).into_iter().map(unwrap).collect())
+                .unwrap_or_default();
             (dotted(kids.first().copied(), src), params)
         }
         _ => return None,
     };
     let ([array, shape], Some(dtype)) = (args.as_slice(), head.last()) else { return None };
-    if shape.kind() != "string" || named_children(*shape).iter().any(|c| c.kind() == "interpolation") || matches!(dtype.as_str(), "Literal" | "Annotated") {
+    if shape.kind() != "string"
+        || named_children(*shape).iter().any(|c| c.kind() == "interpolation")
+        || matches!(dtype.as_str(), "Literal" | "Annotated")
+    {
         return None;
     }
     let array = text(*array, src).rsplit('.').next().unwrap_or("");
@@ -109,14 +142,20 @@ fn type_names(t: Option<TsNode>, src: &[u8]) -> Vec<Vec<String>> {
     for g in walk(t, &["subscript", "generic_type"]) {
         let (head, args) = match g.kind() {
             "subscript" => (dotted(g.child_by_field_name("value"), src), field_children(g, "subscript")),
-            _ => (dotted(named_children(g).first().copied(), src), named_children(g).into_iter().filter(|k| k.kind() == "type_parameter").collect()),
+            _ => (
+                dotted(named_children(g).first().copied(), src),
+                named_children(g).into_iter().filter(|k| k.kind() == "type_parameter").collect(),
+            ),
         };
         if head.last().map_or(false, |h| !knowledge::python_container(h)) {
             params.extend(args);
         }
     }
     let inside = |n: TsNode| arrays.iter().chain(params.iter()).any(|a| a.start_byte() <= n.start_byte() && n.end_byte() <= a.end_byte());
-    for a in arrays.iter().filter(|a| !arrays.iter().any(|b| b.id() != a.id() && b.start_byte() <= a.start_byte() && a.end_byte() <= b.end_byte())) {
+    for a in arrays
+        .iter()
+        .filter(|a| !arrays.iter().any(|b| b.id() != a.id() && b.start_byte() <= a.start_byte() && a.end_byte() <= b.end_byte()))
+    {
         keep(vec![shaped(*a, src).unwrap_or_default()]);
     }
     for n in walk(t, &["identifier", "attribute", "string"]) {
@@ -261,16 +300,16 @@ fn returns(rt: TsNode, src: &[u8]) -> Returns {
 
 fn new_parser() -> Result<Parser> {
     let mut parser = Parser::new();
-    parser
-        .set_language(&tree_sitter::Language::new(tree_sitter_python::LANGUAGE))
-        .context("loading the Python grammar")?;
+    parser.set_language(&tree_sitter::Language::new(tree_sitter_python::LANGUAGE)).context("loading the Python grammar")?;
     Ok(parser)
 }
 
 /// A module from its text: a notebook's is the script its code cells make.
 fn load_module(parser: &mut Parser, id: &str, path: &Path, is_pkg: bool, text: &[u8]) -> Result<Module> {
     let src = match path.extension().and_then(|x| x.to_str()) {
-        Some("ipynb") => notebook_source(&String::from_utf8_lossy(text)).with_context(|| format!("parsing {}", path.display()))?.into_bytes(),
+        Some("ipynb") => {
+            notebook_source(&String::from_utf8_lossy(text)).with_context(|| format!("parsing {}", path.display()))?.into_bytes()
+        }
         _ => text.to_vec(),
     };
     let tree = parser.parse(&src, None).with_context(|| format!("parsing {}", path.display()))?;
@@ -311,7 +350,14 @@ fn notebook_source(text: &str) -> Result<String> {
 /// top level.
 fn runs_as_main(root: TsNode, src: &[u8]) -> bool {
     named_children(root).into_iter().filter(|s| s.kind() == "if_statement").any(|s| {
-        let condition: String = s.child_by_field_name("condition").map(|c| text(c, src)).unwrap_or("").chars().filter(|c| !c.is_whitespace()).collect::<String>().replace('\'', "\"");
+        let condition: String = s
+            .child_by_field_name("condition")
+            .map(|c| text(c, src))
+            .unwrap_or("")
+            .chars()
+            .filter(|c| !c.is_whitespace())
+            .collect::<String>()
+            .replace('\'', "\"");
         condition == "__name__==\"__main__\"" || condition == "\"__main__\"==__name__"
     })
 }
@@ -421,7 +467,14 @@ fn named_packages(repo: &Repo, manifest: &toml::Table) -> Vec<PathBuf> {
         match names {
             knowledge::Names::Dirs => out.extend(strings(v).iter().map(|d| repo.root().join(d))),
             knowledge::Names::Imports => out.extend(strings(v).iter().filter_map(|n| found(n))),
-            knowledge::Names::DirsByName => out.extend(v.as_table().into_iter().flatten().filter(|(name, _)| !name.is_empty()).filter_map(|(_, d)| d.as_str()).map(|d| repo.root().join(d))),
+            knowledge::Names::DirsByName => out.extend(
+                v.as_table()
+                    .into_iter()
+                    .flatten()
+                    .filter(|(name, _)| !name.is_empty())
+                    .filter_map(|(_, d)| d.as_str())
+                    .map(|d| repo.root().join(d)),
+            ),
             knowledge::Names::Tables { name: by_name, dir: by_dir } => {
                 for t in v.as_array().into_iter().flatten().filter_map(|t| t.as_table()) {
                     let Some(name) = t.get(*by_name).and_then(|n| n.as_str()) else { continue };
@@ -481,7 +534,8 @@ impl Own {
 /// The directories a project keeps its packages in, from its root: those its manifest names
 /// (knowledge::PACKAGE_ROOTS), then the usual layouts.
 fn package_bases(manifest: &toml::Table) -> Vec<PathBuf> {
-    let mut bases: Vec<PathBuf> = knowledge::PACKAGE_ROOTS.iter().filter_map(|p| setting(manifest, p)).flat_map(strings).map(PathBuf::from).collect();
+    let mut bases: Vec<PathBuf> =
+        knowledge::PACKAGE_ROOTS.iter().filter_map(|p| setting(manifest, p)).flat_map(strings).map(PathBuf::from).collect();
     bases.extend(knowledge::PACKAGE_LAYOUTS.iter().map(PathBuf::from));
     let mut seen = HashSet::new();
     bases.retain(|b| seen.insert(b.clone()));
@@ -529,7 +583,8 @@ pub fn parse(repo: &Repo, packages: &[PathBuf], project_root: Option<&Path>, opt
     // that module
     let mut files: Vec<(PathBuf, &Path, bool)> = vec![];
     for d in packages {
-        let mut found: Vec<PathBuf> = repo.files_under(d).into_iter().filter(|p| p.extension().and_then(|x| x.to_str()) == Some("py")).collect();
+        let mut found: Vec<PathBuf> =
+            repo.files_under(d).into_iter().filter(|p| p.extension().and_then(|x| x.to_str()) == Some("py")).collect();
         found.sort();
         let single = single_module(repo, d);
         files.extend(found.into_iter().map(|p| (p, d.parent().unwrap_or(Path::new("")), single)));
@@ -571,7 +626,10 @@ pub fn parse(repo: &Repo, packages: &[PathBuf], project_root: Option<&Path>, opt
             let rel = p.strip_prefix(root_dir).unwrap_or(&p).to_path_buf();
             let stem = p.file_stem().and_then(|s| s.to_str()).unwrap_or("script").to_string();
             // a dot in a file's name is no module boundary
-            let dirs: Vec<String> = rel.parent().map(|d| d.components().map(|c| c.as_os_str().to_string_lossy().replace('.', "_")).collect()).unwrap_or_default();
+            let dirs: Vec<String> = rel
+                .parent()
+                .map(|d| d.components().map(|c| c.as_os_str().to_string_lossy().replace('.', "_")).collect())
+                .unwrap_or_default();
             let mid = match dirs.is_empty() {
                 false => format!("{}.{}", dirs.join("."), stem.replace('.', "_")),
                 true => format!("_root.{}", stem.replace('.', "_")),
@@ -620,7 +678,13 @@ pub fn parse(repo: &Repo, packages: &[PathBuf], project_root: Option<&Path>, opt
 /// only where its source can be followed: not the standard library (ty knows it by its stubs),
 /// not a package the effect tables describe, and not one with compiled code. Returns ty's
 /// answers for every module read.
-fn read_libraries(parser: &mut Parser, modules: &mut IndexMap<String, Module>, store: &mut GraphBuilder, root_dir: &Path, opts: &crate::Options) -> Result<Types> {
+fn read_libraries(
+    parser: &mut Parser,
+    modules: &mut IndexMap<String, Module>,
+    store: &mut GraphBuilder,
+    root_dir: &Path,
+    opts: &crate::Options,
+) -> Result<Types> {
     let entry = |m: &Module| (crate::tree::path_str(&m.path), m.path.clone());
     let mut files: Vec<(String, PathBuf)> = modules.values().map(entry).collect();
     let Some(ty) = Ty::new(root_dir, &files, opts.cache.as_ref()) else { return Ok(Types::default()) };
@@ -695,7 +759,10 @@ impl Readable {
         let Some(top) = path.ancestors().nth(parts - 1 + usize::from(is_pkg)).map(Path::to_path_buf) else { return false };
         let compiled = self.compiled.entry(top.clone()).or_insert_with(|| {
             let compiled = knowledge::compiled(knowledge::Registry::PyPi);
-            WalkDir::new(&top).into_iter().flatten().any(|e| e.path().extension().and_then(|x| x.to_str()).map_or(false, |x| compiled.contains(&x)))
+            WalkDir::new(&top)
+                .into_iter()
+                .flatten()
+                .any(|e| e.path().extension().and_then(|x| x.to_str()).map_or(false, |x| compiled.contains(&x)))
         });
         !*compiled
     }
@@ -752,12 +819,17 @@ fn route_prefixes(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, 
             // a router that carries its own prefix, and the handlers it is handed
             let name = call_path(f, src).last().cloned().unwrap_or_default();
             if let Some(router) = knowledge::PREFIXED_ROUTERS.iter().find(|r| r.class == name && lib.as_deref() == Some(r.package)) {
-                let target = call.parent().filter(|p| p.kind() == "assignment").and_then(|a| a.child_by_field_name("left")).filter(|l| l.kind() == "identifier");
+                let target = call
+                    .parent()
+                    .filter(|p| p.kind() == "assignment")
+                    .and_then(|a| a.child_by_field_name("left"))
+                    .filter(|l| l.kind() == "identifier");
                 let Some(t) = target.map(|t| key(text(t, src))) else { continue };
                 if let Some(prefix) = lit_kw(call, src, router.prefix) {
                     declared.insert(t.clone(), prefix);
                 }
-                let handlers = router.handlers.and_then(|k| keyword(k)).filter(|l| l.kind() == "list").map(named_children).unwrap_or_default();
+                let handlers =
+                    router.handlers.and_then(|k| keyword(k)).filter(|l| l.kind() == "list").map(named_children).unwrap_or_default();
                 for h in handlers.into_iter().filter(|h| h.kind() == "identifier") {
                     mounted.insert(key(text(h, src)), (t.clone(), String::new(), false));
                 }
@@ -766,14 +838,28 @@ fn route_prefixes(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, 
     }
     // a controller's routes are under the path the class names
     for (id, _) in store.classes.iter() {
-        let bases: Vec<&str> = store.edges.iter().filter(|e| e.src == *id && e.kind == EdgeKind::Inherits).map(|e| e.dst.as_str()).collect();
-        let Some((_, _, attr)) = knowledge::CONTROLLERS.iter().find(|(pkg, base, _)| bases.iter().any(|b| lib_of(b).map(|l| package_of(&l)).as_deref() == Some(*pkg) && b.rsplit('.').next() == Some(*base))) else { continue };
+        let bases: Vec<&str> =
+            store.edges.iter().filter(|e| e.src == *id && e.kind == EdgeKind::Inherits).map(|e| e.dst.as_str()).collect();
+        let Some((_, _, attr)) = knowledge::CONTROLLERS.iter().find(|(pkg, base, _)| {
+            bases.iter().any(|b| lib_of(b).map(|l| package_of(&l)).as_deref() == Some(*pkg) && b.rsplit('.').next() == Some(*base))
+        }) else {
+            continue;
+        };
         let Some(n) = store.nodes.get(id) else { continue };
         let Some(m) = modules.get(&n.module) else { continue };
         let body = def_node(m, n).and_then(|d| d.child_by_field_name("body"));
-        let path = body.map(named_children).unwrap_or_default().into_iter().filter_map(|st| named_children(st).into_iter().next().filter(|a| a.kind() == "assignment")).find_map(|a| {
-            (a.child_by_field_name("left").map(|l| text(l, &m.src)) == Some(*attr)).then(|| a.child_by_field_name("right")).flatten().filter(|v| v.kind() == "string").map(|v| unquote(text(v, &m.src)))
-        });
+        let path = body
+            .map(named_children)
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|st| named_children(st).into_iter().next().filter(|a| a.kind() == "assignment"))
+            .find_map(|a| {
+                (a.child_by_field_name("left").map(|l| text(l, &m.src)) == Some(*attr))
+                    .then(|| a.child_by_field_name("right"))
+                    .flatten()
+                    .filter(|v| v.kind() == "string")
+                    .map(|v| unquote(text(v, &m.src)))
+            });
         if let Some(path) = path {
             declared.insert(id.clone(), path);
         }
@@ -992,13 +1078,15 @@ fn collect_imports(m: &mut Module, module_ids: &HashSet<String>, store: &mut Gra
         .into_iter()
         .filter_map(|a| {
             let (left, right) = (a.child_by_field_name("left")?, a.child_by_field_name("right")?);
-            if left.kind() != "identifier" || !matches!(right.kind(), "identifier" | "attribute") || a.child_by_field_name("type").is_some() {
+            if left.kind() != "identifier" || !matches!(right.kind(), "identifier" | "attribute") || a.child_by_field_name("type").is_some()
+            {
                 return None;
             }
             let parts = dotted(Some(right), &m.src);
             let head = m.symbols.get(parts.first()?).or_else(|| m.bindings.get(&parts[0]))?;
             let name = text(left, &m.src).to_string();
-            (!m.symbols.contains_key(&name)).then(|| (name, std::iter::once(head.clone()).chain(parts[1..].iter().cloned()).collect::<Vec<_>>().join(".")))
+            (!m.symbols.contains_key(&name))
+                .then(|| (name, std::iter::once(head.clone()).chain(parts[1..].iter().cloned()).collect::<Vec<_>>().join(".")))
         })
         .collect();
     m.bindings.extend(renamed);
@@ -1033,7 +1121,6 @@ fn resolve(m: &Module, parts: &[String], modules: &IndexMap<String, Module>, nod
     Some(format!("ext:{target}"))
 }
 
-
 /// The definition node of a symbol, found again by its line and name.
 fn def_node<'t>(m: &'t Module, n: &Node) -> Option<TsNode<'t>> {
     if n.kind == NodeKind::Module {
@@ -1043,7 +1130,12 @@ fn def_node<'t>(m: &'t Module, n: &Node) -> Option<TsNode<'t>> {
     let defs = m.defs.get_or_init(|| {
         walk(m.tree.root_node(), &["function_definition", "class_definition"])
             .into_iter()
-            .filter_map(|d| Some(((d.start_position().row as u32 + 1, text(d.child_by_field_name("name")?, &m.src).to_string()), (d.start_byte(), d.end_byte()))))
+            .filter_map(|d| {
+                Some((
+                    (d.start_position().row as u32 + 1, text(d.child_by_field_name("name")?, &m.src).to_string()),
+                    (d.start_byte(), d.end_byte()),
+                ))
+            })
             .collect()
     });
     let &(a, b) = defs.get(&(start, n.name.clone()))?;
@@ -1115,7 +1207,11 @@ fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, own: &Own,
     // whether an override keeps its base's promise, as ty decides it
     for id in &ids {
         let n = &store.nodes[id];
-        let at = (n.kind == NodeKind::Method).then(|| def_node(&modules[&n.module], n)).flatten().and_then(|d| d.child_by_field_name("name")).map(|x| x.start_byte());
+        let at = (n.kind == NodeKind::Method)
+            .then(|| def_node(&modules[&n.module], n))
+            .flatten()
+            .and_then(|d| d.child_by_field_name("name"))
+            .map(|x| x.start_byte());
         let keeps = at.and_then(|at| types.of(&n.file)?.keeps(at));
         if let Some(n) = store.nodes.get_mut(id) {
             n.keeps = keeps;
@@ -1141,9 +1237,14 @@ fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, own: &Own,
                 let f = c.child_by_field_name("function").filter(|f| f.kind() == "attribute")?;
                 let obj = f.child_by_field_name("object");
                 let name = f.child_by_field_name("attribute").map(|a| text(a, &m.src)).unwrap_or("");
-                let on_self = obj.map(|o| text(o, &m.src)) == Some("self") && store.method_of(&cls, name).map_or(false, |t| store.mutating.contains(&t));
+                let on_self = obj.map(|o| text(o, &m.src)) == Some("self")
+                    && store.method_of(&cls, name).map_or(false, |t| store.mutating.contains(&t));
                 let own = on_self || matches!(seen.callee(f), Some(Callee::Def(t)) if store.mutating.contains(&t));
-                if own { obj } else { library_change(seen.facts, c, &m.src) }
+                if own {
+                    obj
+                } else {
+                    library_change(seen.facts, c, &m.src)
+                }
             });
             if changed.contains("self") {
                 let id = id.clone();
@@ -1185,8 +1286,10 @@ fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, own: &Own,
             let Some(n) = store.nodes.get(f) else { return vec![] };
             let Some(m) = modules.get(&n.module) else { return vec![] };
             let Some(def) = def_node(m, n) else { return vec![] };
-            let declared = paths::parameters(def, &m.src, n.kind == NodeKind::Method).into_iter().find(|(q, _)| q == p).and_then(|(_, d)| d);
-            let entry = n.entry.is_some().then(|| paths::entry_defaults(def, &m.src).into_iter().find(|(q, _)| q == p).map(|(_, d)| d)).flatten();
+            let declared =
+                paths::parameters(def, &m.src, n.kind == NodeKind::Method).into_iter().find(|(q, _)| q == p).and_then(|(_, d)| d);
+            let entry =
+                n.entry.is_some().then(|| paths::entry_defaults(def, &m.src).into_iter().find(|(q, _)| q == p).map(|(_, d)| d)).flatten();
             [entry, declared].into_iter().flatten().flat_map(|d| eval.of(At { m, scope: None, params: &[] }, d, 0)).collect()
         };
         let handing: Vec<Evaluated> = args.iter().map(|arg| Evaluated { arg, modules, eval: &eval }).collect();
@@ -1240,11 +1343,20 @@ fn globals(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, types: 
             .collect();
         let value = |x: TsNode| facts.and_then(|f| f.value((x.start_byte(), x.end_byte())));
         let code = |x: TsNode| imported.contains(text(x, src)) || value(x).map_or(false, |v| v.is_code || v.is_class);
-        let fns: Vec<(String, TsNode)> = store.nodes.values().filter(|n| n.module == m.id && matches!(n.kind, NodeKind::Function | NodeKind::Method)).filter_map(|n| Some((n.id.clone(), def_node(m, n)?))).collect();
+        let fns: Vec<(String, TsNode)> = store
+            .nodes
+            .values()
+            .filter(|n| n.module == m.id && matches!(n.kind, NodeKind::Function | NodeKind::Method))
+            .filter_map(|n| Some((n.id.clone(), def_node(m, n)?)))
+            .collect();
         for (id, def) in &fns {
             let Some(body) = def.child_by_field_name("body") else { continue };
             let mine = |n: &TsNode| paths::enclosing_def(*n).map(|d| d.id()) == Some(def.id());
-            let declared: HashSet<String> = walk(body, &["global_statement"]).into_iter().filter(mine).flat_map(|g| named_children(g).into_iter().map(|x| text(x, src).to_string())).collect();
+            let declared: HashSet<String> = walk(body, &["global_statement"])
+                .into_iter()
+                .filter(mine)
+                .flat_map(|g| named_children(g).into_iter().map(|x| text(x, src).to_string()))
+                .collect();
             // what the function binds itself, unless it says the name is the module's
             let mut own: HashSet<String> = paths::parameters(*def, src, false).into_iter().map(|(n, _)| n).collect();
             for a in walk(body, &["assignment", "augmented_assignment", "for_statement"]).into_iter().filter(mine) {
@@ -1298,14 +1410,25 @@ fn globals(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, types: 
             for x in walk(body, &["identifier"]) {
                 let named_here = x.parent().map_or(false, |p| {
                     // a name the code binds or labels, not the value it holds
-                    matches!(p.kind(), "global_statement" | "keyword_argument" | "function_definition" | "parameters" | "default_parameter" | "typed_parameter" | "typed_default_parameter")
-                        || (p.kind() == "attribute" && p.child_by_field_name("attribute").map(|a| a.id()) == Some(x.id()))
+                    matches!(
+                        p.kind(),
+                        "global_statement"
+                            | "keyword_argument"
+                            | "function_definition"
+                            | "parameters"
+                            | "default_parameter"
+                            | "typed_parameter"
+                            | "typed_default_parameter"
+                    ) || (p.kind() == "attribute" && p.child_by_field_name("attribute").map(|a| a.id()) == Some(x.id()))
                         || (p.kind() == "assignment" && p.child_by_field_name("left").map(|l| l.id()) == Some(x.id()))
                 });
                 if named_here {
                     continue;
                 }
-                let chain = x.parent().filter(|p| p.kind() == "attribute" && p.child_by_field_name("object").map(|o| o.id()) == Some(x.id())).unwrap_or(x);
+                let chain = x
+                    .parent()
+                    .filter(|p| p.kind() == "attribute" && p.child_by_field_name("object").map(|o| o.id()) == Some(x.id()))
+                    .unwrap_or(x);
                 if let Some((k, n)) = held(chain).filter(|(k, _)| !reads.iter().any(|(r, _, _)| r == k)) {
                     reads.push((k, n, line(x)));
                 }
@@ -1325,7 +1448,13 @@ fn globals(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, types: 
 }
 
 /// Typed parameters that are classes of the package, by name: `graph: Graph` -> Graph.
-fn param_types(m: &Module, d: TsNode, modules: &IndexMap<String, Module>, nodes: &IndexMap<String, Node>, own: &Own) -> HashMap<String, String> {
+fn param_types(
+    m: &Module,
+    d: TsNode,
+    modules: &IndexMap<String, Module>,
+    nodes: &IndexMap<String, Node>,
+    own: &Own,
+) -> HashMap<String, String> {
     let mut out = HashMap::new();
     let Some(pn) = d.child_by_field_name("parameters") else { return out };
     for p in named_children(pn) {
@@ -1356,7 +1485,11 @@ fn root_name<'a>(n: TsNode, src: &'a [u8]) -> Option<&'a str> {
 
 /// The names whose objects a body changes in place: the root of everything it changes. Changing
 /// a part changes the whole.
-fn changed_roots<'a, 't>(body: TsNode<'t>, src: &'a [u8], changes: &dyn Fn(TsNode<'t>) -> Option<TsNode<'t>>) -> std::collections::BTreeSet<&'a str> {
+fn changed_roots<'a, 't>(
+    body: TsNode<'t>,
+    src: &'a [u8],
+    changes: &dyn Fn(TsNode<'t>) -> Option<TsNode<'t>>,
+) -> std::collections::BTreeSet<&'a str> {
     changed(body, changes).into_iter().filter_map(|x| root_name(x, src)).collect()
 }
 
@@ -1370,7 +1503,11 @@ fn changed<'t>(body: TsNode<'t>, changes: &dyn Fn(TsNode<'t>) -> Option<TsNode<'
     }
     // `del d[k]`, `del obj.x`
     for d in walk(body, &["delete_statement"]) {
-        out.extend(walk(d, &["attribute", "subscript"]).into_iter().filter(|t| t.parent().map_or(false, |p| p.kind() == "delete_statement" || p.kind() == "expression_list")));
+        out.extend(
+            walk(d, &["attribute", "subscript"])
+                .into_iter()
+                .filter(|t| t.parent().map_or(false, |p| p.kind() == "delete_statement" || p.kind() == "expression_list")),
+        );
     }
     out.extend(walk(body, &["call"]).into_iter().filter_map(changes));
     out
@@ -1386,9 +1523,12 @@ fn library_change<'t>(facts: Option<&Facts>, c: TsNode<'t>, src: &[u8]) -> Optio
         Target::Here { .. } => None,
     })?;
     // a method handed its package's in-place keyword as `True` changes its receiver
-    let in_place = knowledge::IN_PLACE.iter().any(|(p, k)| *p == package && keyword_node(c, src, k).map_or(false, |v| text(v, src) == "True"));
+    let in_place =
+        knowledge::IN_PLACE.iter().any(|(p, k)| *p == package && keyword_node(c, src, k).map_or(false, |v| text(v, src) == "True"));
     match f.kind() {
-        "attribute" if in_place || knowledge::mutates(&package, text(f.child_by_field_name("attribute")?, src)) => f.child_by_field_name("object"),
+        "attribute" if in_place || knowledge::mutates(&package, text(f.child_by_field_name("attribute")?, src)) => {
+            f.child_by_field_name("object")
+        }
         _ => {
             let name = dotted(Some(f), src).last().cloned()?;
             let (_, _, i) = knowledge::CHANGES_ARGUMENT.iter().find(|(p, n, _)| *p == package && *n == name)?;
@@ -1399,12 +1539,18 @@ fn library_change<'t>(facts: Option<&Facts>, c: TsNode<'t>, src: &[u8]) -> Optio
 
 /// The value a call hands by keyword `k`.
 fn keyword_node<'t>(call: TsNode<'t>, src: &[u8], k: &str) -> Option<TsNode<'t>> {
-    named_children(call.child_by_field_name("arguments")?).into_iter().find(|a| a.kind() == "keyword_argument" && a.child_by_field_name("name").map(|n| text(n, src)) == Some(k))?.child_by_field_name("value")
+    named_children(call.child_by_field_name("arguments")?)
+        .into_iter()
+        .find(|a| a.kind() == "keyword_argument" && a.child_by_field_name("name").map(|n| text(n, src)) == Some(k))?
+        .child_by_field_name("value")
 }
 
 /// The argument a call hands at position `i`.
 fn positional_at(call: TsNode, i: usize) -> Option<TsNode> {
-    named_children(call.child_by_field_name("arguments")?).into_iter().filter(|a| !matches!(a.kind(), "keyword_argument" | "comment" | "list_splat" | "dictionary_splat")).nth(i)
+    named_children(call.child_by_field_name("arguments")?)
+        .into_iter()
+        .filter(|a| !matches!(a.kind(), "keyword_argument" | "comment" | "list_splat" | "dictionary_splat"))
+        .nth(i)
 }
 
 // ---------- the types of expressions, from ty ----------
@@ -1487,7 +1633,14 @@ struct Seen<'a> {
 }
 
 impl<'a> Seen<'a> {
-    fn new(m: &'a Module, types: &'a Types, sites: &'a HashMap<(String, usize), String>, modules: &'a IndexMap<String, Module>, store: &'a GraphBuilder, own: &'a Own) -> Self {
+    fn new(
+        m: &'a Module,
+        types: &'a Types,
+        sites: &'a HashMap<(String, usize), String>,
+        modules: &'a IndexMap<String, Module>,
+        store: &'a GraphBuilder,
+        own: &'a Own,
+    ) -> Self {
         Seen { m, facts: types.of(&crate::tree::path_str(&m.path)), sites, modules, store, own }
     }
 
@@ -1523,7 +1676,15 @@ impl<'a> Seen<'a> {
                 }
                 (t, By::Instance) => self.node(t).and_then(|cls| self.store.method_of(cls, "__call__")),
                 (t, By::Call | By::Construct) => self.node(t).cloned(),
-                (t, By::Name) => self.node(t).filter(|id| self.store.nodes.get(*id).map_or(false, |n| matches!(n.kind, NodeKind::Function | NodeKind::Method | NodeKind::Class))).cloned(),
+                (t, By::Name) => self
+                    .node(t)
+                    .filter(|id| {
+                        self.store
+                            .nodes
+                            .get(*id)
+                            .map_or(false, |n| matches!(n.kind, NodeKind::Function | NodeKind::Method | NodeKind::Class))
+                    })
+                    .cloned(),
             };
             if let Some(d) = def {
                 return Some(Callee::Def(d));
@@ -1675,7 +1836,9 @@ impl<'a> Seen<'a> {
             return false;
         }
         match self.facts.and_then(|x| x.signature(Self::range(f))) {
-            Some(sig) if kind.world == World::Net && lib.map_or(false, effects::network) => effects::requests(&sig.iter().map(|p| p.name.as_str()).collect::<Vec<_>>(), op),
+            Some(sig) if kind.world == World::Net && lib.map_or(false, effects::network) => {
+                effects::requests(&sig.iter().map(|p| p.name.as_str()).collect::<Vec<_>>(), op)
+            }
             _ => true,
         }
     }
@@ -1728,7 +1891,13 @@ impl<'a> Seen<'a> {
 
 /// What a class's attributes hold, as its methods assign them (`self.store = Store(..)`). An
 /// attribute whose type names a class of the package is an edge `has`.
-fn attributes(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, types: &Types, sites: &HashMap<(String, usize), String>, own: &Own) {
+fn attributes(
+    modules: &IndexMap<String, Module>,
+    store: &mut GraphBuilder,
+    types: &Types,
+    sites: &HashMap<(String, usize), String>,
+    own: &Own,
+) {
     let mut found: Vec<(String, String, String)> = vec![];
     for n in store.nodes.values().filter(|n| n.kind == NodeKind::Method) {
         let (Some(cls), Some(m)) = (n.cls.clone(), modules.get(&n.module)) else { continue };
@@ -1758,41 +1927,63 @@ fn attributes(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, type
 /// server's tools for an agent, by a decorator on a value of the server's class (`@geo.tool`,
 /// `@server.prompt("name")`). What registers is the library the decorator comes from, or the
 /// class of the value it is on, as ty says, whatever either is called.
-fn mark_registered(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, types: &Types, sites: &HashMap<(String, usize), String>, own: &Own) {
+fn mark_registered(
+    modules: &IndexMap<String, Module>,
+    store: &mut GraphBuilder,
+    types: &Types,
+    sites: &HashMap<(String, usize), String>,
+    own: &Own,
+) {
     let mut found: Vec<(String, Entry)> = vec![];
     for m in modules.values() {
         let seen = Seen::new(m, types, sites, modules, store, own);
         let server = |o: TsNode| {
-            seen.value(o).map_or(false, |v| v.classes.iter().zip(&v.names).any(|(t, name)| seen.package(t).map_or(false, |p| knowledge::TOOL_SERVERS.contains(&(p.as_str(), name.as_str())))))
+            seen.value(o).map_or(false, |v| {
+                v.classes
+                    .iter()
+                    .zip(&v.names)
+                    .any(|(t, name)| seen.package(t).map_or(false, |p| knowledge::TOOL_SERVERS.contains(&(p.as_str(), name.as_str()))))
+            })
         };
-        for n in store.nodes.values().filter(|n| n.module == m.id && matches!(n.kind, NodeKind::Function | NodeKind::Method) && n.entry.is_none()) {
+        for n in store
+            .nodes
+            .values()
+            .filter(|n| n.module == m.id && matches!(n.kind, NodeKind::Function | NodeKind::Method) && n.entry.is_none())
+        {
             let Some(decorated) = def_node(m, n).and_then(|d| d.parent()).filter(|p| p.kind() == "decorated_definition") else { continue };
-            let registered = named_children(decorated).into_iter().filter(|d| d.kind() == "decorator").filter_map(|d| named_children(d).into_iter().next()).find_map(|d| {
-                let (f, call) = match d.kind() {
-                    "call" => (d.child_by_field_name("function")?, Some(d)),
-                    _ => (d, None),
-                };
-                let name = match f.kind() {
-                    "attribute" => text(f.child_by_field_name("attribute")?, &m.src),
-                    "identifier" => text(f, &m.src),
-                    _ => return None,
-                };
-                let from = seen.library(f);
-                if let Some(cli) = from.as_deref().and_then(knowledge::cli_framework).filter(|c| c.commands.contains(&name)) {
-                    let named = call.and_then(|c| handed(c, 0, knowledge::COMMAND_NAME, &m.src)).filter(|a| a.kind() == "string").map(|a| unquote(text(a, &m.src)));
-                    let mut entry = Entry::new(EntryKind::Cli, named.unwrap_or_else(|| cli.command_name(&n.name)));
-                    entry.options = command_options(&seen, cli, decorated, &m.src);
-                    return Some(entry);
-                }
-                if let Some(web) = from.as_deref().and_then(knowledge::web_framework) {
-                    return route(web, name, call, &m.src).map(|label| Entry::new(EntryKind::Route, label));
-                }
-                let on_server = f.kind() == "attribute" && f.child_by_field_name("object").map_or(false, server);
-                (on_server && knowledge::TOOL_DECORATORS.contains(&name)).then(|| {
-                    let named = call.and_then(positional).filter(|a| a.kind() == "string").map(|a| unquote(text(a, &m.src)));
-                    Entry::new(EntryKind::Mcp, named.unwrap_or_else(|| n.name.clone()))
-                })
-            });
+            let registered = named_children(decorated)
+                .into_iter()
+                .filter(|d| d.kind() == "decorator")
+                .filter_map(|d| named_children(d).into_iter().next())
+                .find_map(|d| {
+                    let (f, call) = match d.kind() {
+                        "call" => (d.child_by_field_name("function")?, Some(d)),
+                        _ => (d, None),
+                    };
+                    let name = match f.kind() {
+                        "attribute" => text(f.child_by_field_name("attribute")?, &m.src),
+                        "identifier" => text(f, &m.src),
+                        _ => return None,
+                    };
+                    let from = seen.library(f);
+                    if let Some(cli) = from.as_deref().and_then(knowledge::cli_framework).filter(|c| c.commands.contains(&name)) {
+                        let named = call
+                            .and_then(|c| handed(c, 0, knowledge::COMMAND_NAME, &m.src))
+                            .filter(|a| a.kind() == "string")
+                            .map(|a| unquote(text(a, &m.src)));
+                        let mut entry = Entry::new(EntryKind::Cli, named.unwrap_or_else(|| cli.command_name(&n.name)));
+                        entry.options = command_options(&seen, cli, decorated, &m.src);
+                        return Some(entry);
+                    }
+                    if let Some(web) = from.as_deref().and_then(knowledge::web_framework) {
+                        return route(web, name, call, &m.src).map(|label| Entry::new(EntryKind::Route, label));
+                    }
+                    let on_server = f.kind() == "attribute" && f.child_by_field_name("object").map_or(false, server);
+                    (on_server && knowledge::TOOL_DECORATORS.contains(&name)).then(|| {
+                        let named = call.and_then(positional).filter(|a| a.kind() == "string").map(|a| unquote(text(a, &m.src)));
+                        Entry::new(EntryKind::Mcp, named.unwrap_or_else(|| n.name.clone()))
+                    })
+                });
             found.extend(registered.map(|e| (n.id.clone(), e)));
         }
     }
@@ -1809,7 +2000,15 @@ fn mark_registered(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
 /// (`@click.option("--out", "-o")` is `--out`, `@click.argument("src")` is `<src>`). A call
 /// declares one only where it is the framework's.
 fn command_options(seen: &Seen, cli: &knowledge::CliFramework, decorated: TsNode, src: &[u8]) -> Vec<String> {
-    let strings = |call: TsNode| call.child_by_field_name("arguments").map(named_children).unwrap_or_default().into_iter().filter(|a| a.kind() == "string").map(|a| unquote(text(a, src))).collect::<Vec<String>>();
+    let strings = |call: TsNode| {
+        call.child_by_field_name("arguments")
+            .map(named_children)
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|a| a.kind() == "string")
+            .map(|a| unquote(text(a, src)))
+            .collect::<Vec<String>>()
+    };
     // the framework's declaring function a call is, by its last name
     let declares = |call: TsNode| -> Option<String> {
         let f = call.child_by_field_name("function")?;
@@ -1819,17 +2018,31 @@ fn command_options(seen: &Seen, cli: &knowledge::CliFramework, decorated: TsNode
     let mut out = vec![];
     match cli.options {
         knowledge::OptionsBy::Parameters { option, argument } => {
-            let Some(params) = named_children(decorated).into_iter().find(|d| d.kind() == "function_definition").and_then(|d| d.child_by_field_name("parameters")) else { return out };
+            let Some(params) = named_children(decorated)
+                .into_iter()
+                .find(|d| d.kind() == "function_definition")
+                .and_then(|d| d.child_by_field_name("parameters"))
+            else {
+                return out;
+            };
             for p in named_children(params) {
                 let (name, ty, default) = match p.kind() {
                     "identifier" => (Some(p), None, None),
-                    "typed_parameter" => (named_children(p).into_iter().find(|c| c.kind() == "identifier"), p.child_by_field_name("type"), None),
-                    "default_parameter" | "typed_default_parameter" => (p.child_by_field_name("name"), p.child_by_field_name("type"), p.child_by_field_name("value")),
+                    "typed_parameter" => {
+                        (named_children(p).into_iter().find(|c| c.kind() == "identifier"), p.child_by_field_name("type"), None)
+                    }
+                    "default_parameter" | "typed_default_parameter" => {
+                        (p.child_by_field_name("name"), p.child_by_field_name("type"), p.child_by_field_name("value"))
+                    }
                     _ => continue,
                 };
                 let Some(name) = name.map(|x| text(x, src).to_string()) else { continue };
                 // what the default or the annotation declares (`= typer.Option(..)`, `Annotated[.., typer.Argument()]`)
-                let declared = [default, ty].into_iter().flatten().flat_map(|x| walk(x, &["call"])).find_map(|c| declares(c).filter(|d| d == option || d == argument).map(|d| (d, c)));
+                let declared = [default, ty]
+                    .into_iter()
+                    .flatten()
+                    .flat_map(|x| walk(x, &["call"]))
+                    .find_map(|c| declares(c).filter(|d| d == option || d == argument).map(|d| (d, c)));
                 out.push(match declared {
                     Some((d, _)) if d == argument => crate::entries::argument(&name),
                     Some((_, c)) => crate::entries::flag(&strings(c), &name),
@@ -1839,10 +2052,16 @@ fn command_options(seen: &Seen, cli: &knowledge::CliFramework, decorated: TsNode
             }
         }
         knowledge::OptionsBy::Decorators { option, argument } => {
-            for d in named_children(decorated).into_iter().filter(|d| d.kind() == "decorator").filter_map(|d| named_children(d).into_iter().find(|c| c.kind() == "call")) {
+            for d in named_children(decorated)
+                .into_iter()
+                .filter(|d| d.kind() == "decorator")
+                .filter_map(|d| named_children(d).into_iter().find(|c| c.kind() == "call"))
+            {
                 let given = strings(d);
                 match declares(d) {
-                    Some(k) if k == option => out.push(crate::entries::flag(&given, given.iter().find(|s| !s.starts_with('-')).map_or("", String::as_str))),
+                    Some(k) if k == option => {
+                        out.push(crate::entries::flag(&given, given.iter().find(|s| !s.starts_with('-')).map_or("", String::as_str)))
+                    }
                     Some(k) if k == argument => out.extend(given.first().map(|a| crate::entries::argument(a))),
                     _ => {}
                 }
@@ -1892,7 +2111,8 @@ fn route(web: &knowledge::WebFramework, name: &str, call: Option<TsNode>, src: &
 /// What a call hands a parameter: at its position, or by its name.
 fn handed<'t>(call: TsNode<'t>, at: usize, name: &str, src: &[u8]) -> Option<TsNode<'t>> {
     let args = named_children(call.child_by_field_name("arguments")?);
-    let positional = args.into_iter().filter(|a| !matches!(a.kind(), "keyword_argument" | "comment" | "list_splat" | "dictionary_splat")).nth(at);
+    let positional =
+        args.into_iter().filter(|a| !matches!(a.kind(), "keyword_argument" | "comment" | "list_splat" | "dictionary_splat")).nth(at);
     positional.or_else(|| by_name(call, name, src))
 }
 
@@ -1979,7 +2199,13 @@ fn type_aliases(modules: &IndexMap<String, Module>) -> HashMap<String, Alias> {
             if name.is_empty() || !(sum || head == "Optional") {
                 continue;
             }
-            let alias = Alias { module: mid.clone(), names: type_names(Some(value), &m.src), sum, span: span(st), text: text(value, &m.src).to_string() };
+            let alias = Alias {
+                module: mid.clone(),
+                names: type_names(Some(value), &m.src),
+                sum,
+                span: span(st),
+                text: text(value, &m.src).to_string(),
+            };
             out.insert(format!("{mid}.{name}"), alias);
         }
         for a in top_assignments(m) {
@@ -1987,7 +2213,10 @@ fn type_aliases(modules: &IndexMap<String, Module>) -> HashMap<String, Alias> {
             if left.kind() != "identifier" {
                 continue;
             }
-            let head = dotted(right.child_by_field_name("value").or_else(|| right.child_by_field_name("function")), &m.src).last().cloned().unwrap_or_default();
+            let head = dotted(right.child_by_field_name("value").or_else(|| right.child_by_field_name("function")), &m.src)
+                .last()
+                .cloned()
+                .unwrap_or_default();
             let (names, sum) = match right.kind() {
                 "subscript" if matches!(head.as_str(), "Union" | "Optional") => (type_names(Some(right), &m.src), head == "Union"),
                 "binary_operator" if text(right, &m.src).contains('|') => (type_names(Some(right), &m.src), true),
@@ -2072,7 +2301,14 @@ fn top_assignments<'t>(m: &'t Module) -> Vec<TsNode<'t>> {
 
 /// What an alias stands for, resolved in the module that defines it: the sum it names, else
 /// the classes it ranges over.
-fn alias_targets(m: &Module, t: &[String], modules: &IndexMap<String, Module>, aliases: &HashMap<String, Alias>, nodes: &IndexMap<String, Node>, own: &Own) -> Vec<String> {
+fn alias_targets(
+    m: &Module,
+    t: &[String],
+    modules: &IndexMap<String, Module>,
+    aliases: &HashMap<String, Alias>,
+    nodes: &IndexMap<String, Node>,
+    own: &Own,
+) -> Vec<String> {
     let [name] = t else { return vec![] };
     let full = m.bindings.get(name).cloned().unwrap_or_else(|| format!("{}.{name}", m.id));
     if nodes.contains_key(&full) {
@@ -2105,7 +2341,8 @@ fn io_refs(m: &Module, facts: Option<&Facts>, n: TsNode, own: &Own, what: &str) 
     for a in walk(n, &["attribute"]) {
         let called = a.parent().map_or(false, |p| p.kind() == "call" && p.child_by_field_name("function").map(|f| f.id()) == Some(a.id()));
         // `openai.api_key = ..` assigns the attribute; it names no function
-        let assigned = a.parent().map_or(false, |p| p.kind() == "assignment" && p.child_by_field_name("left").map(|l| l.id()) == Some(a.id()));
+        let assigned =
+            a.parent().map_or(false, |p| p.kind() == "assignment" && p.child_by_field_name("left").map(|l| l.id()) == Some(a.id()));
         if called || assigned || a.parent().map_or(false, |p| p.kind() == "attribute") {
             continue;
         }
@@ -2114,7 +2351,9 @@ fn io_refs(m: &Module, facts: Option<&Facts>, n: TsNode, own: &Own, what: &str) 
         if !facts.and_then(|f| f.value((a.start_byte(), a.end_byte()))).map_or(false, |v| v.is_code) {
             continue;
         }
-        let Some(pkg) = parts.first().and_then(|h| m.bindings.get(h)).filter(|b| !own.holds(b)).and_then(|b| b.split('.').next()) else { continue };
+        let Some(pkg) = parts.first().and_then(|h| m.bindings.get(h)).filter(|b| !own.holds(b)).and_then(|b| b.split('.').next()) else {
+            continue;
+        };
         let Some(tag) = effects::boundary(Some(pkg), &parts) else { continue };
         let op = parts.last().cloned().unwrap_or_default();
         let f = effects::facts(tag, Some(pkg), &op, &[]);
@@ -2168,7 +2407,16 @@ struct Linked<'t> {
     args: Vec<Arg<'t>>,
 }
 
-fn link_calls<'t>(modules: &'t IndexMap<String, Module>, store: &mut GraphBuilder, types: &Types, sites: &HashMap<(String, usize), String>, ext: &HashMap<(String, String), String>, eval: &Eval, own: &Own, id: &str) -> Linked<'t> {
+fn link_calls<'t>(
+    modules: &'t IndexMap<String, Module>,
+    store: &mut GraphBuilder,
+    types: &Types,
+    sites: &HashMap<(String, usize), String>,
+    ext: &HashMap<(String, String), String>,
+    eval: &Eval,
+    own: &Own,
+    id: &str,
+) -> Linked<'t> {
     let n = store.nodes[id].clone();
     let m = &modules[&n.module];
     let Some(d) = def_node(m, &n) else { return Linked::default() };
@@ -2199,7 +2447,12 @@ fn link_calls<'t>(modules: &'t IndexMap<String, Module>, store: &mut GraphBuilde
     }
     if let (Some(compares), Some(node)) = (compares, store.nodes.get_mut(id)) {
         node.compares = compares;
-        node.raises = crate::tree::holds(body, &m.src, |n, _| matches!(n.kind(), "raise_statement" | "assert_statement"), &["function_definition", "class_definition"]);
+        node.raises = crate::tree::holds(
+            body,
+            &m.src,
+            |n, _| matches!(n.kind(), "raise_statement" | "assert_statement"),
+            &["function_definition", "class_definition"],
+        );
     }
     for (t, input) in read.changes {
         store.add_edge(id, &t, EdgeKind::Mutates, Some(input));
@@ -2253,7 +2506,15 @@ struct Body<'a, 't> {
 
 impl<'a, 't> Body<'a, 't> {
     #[allow(clippy::too_many_arguments)]
-    fn new(seen: Seen<'a>, modules: &'t IndexMap<String, Module>, ext: &'a HashMap<(String, String), String>, eval: &'a Eval<'a>, n: &Node, d: TsNode<'t>, body: TsNode<'t>) -> Self {
+    fn new(
+        seen: Seen<'a>,
+        modules: &'t IndexMap<String, Module>,
+        ext: &'a HashMap<(String, String), String>,
+        eval: &'a Eval<'a>,
+        n: &Node,
+        d: TsNode<'t>,
+        body: TsNode<'t>,
+    ) -> Self {
         let m = &modules[&n.module];
         let in_module = n.kind == NodeKind::Module;
         let own = seen.own;
@@ -2303,7 +2564,13 @@ impl<'a, 't> Body<'a, 't> {
     /// What a call is handed: the value it is called on, and its arguments.
     fn hands(&self, c: TsNode, receiver: Option<TsNode>, kept: &HashSet<String>) -> Vec<Held> {
         let args = c.child_by_field_name("arguments").map(named_children).unwrap_or_default();
-        let values = args.into_iter().filter(|x| x.kind() != "comment").map(|x| if x.kind() == "keyword_argument" { x.child_by_field_name("value").unwrap_or(x) } else { x });
+        let values = args.into_iter().filter(|x| x.kind() != "comment").map(|x| {
+            if x.kind() == "keyword_argument" {
+                x.child_by_field_name("value").unwrap_or(x)
+            } else {
+                x
+            }
+        });
         let mut hands: Vec<Held> = receiver.into_iter().chain(values).flat_map(|v| self.seen.held_in(v, self.ext, kept)).collect();
         let mut seen = HashSet::new();
         hands.retain(|h| seen.insert(h.clone()));
@@ -2314,7 +2581,8 @@ impl<'a, 't> Body<'a, 't> {
     /// whose type ty does not know, the name alone, when the call made it from what it was handed.
     fn gives(&self, c: TsNode, assigned: &str, hands: &[Held]) -> Vec<Held> {
         let known = self.seen.value(c).filter(|v| !v.is_class && !v.is_code);
-        let mut gives: Vec<Held> = known.map(|v| self.seen.drawn(v, self.ext)).unwrap_or_default().into_iter().map(|ty| Held::new(ty, assigned)).collect();
+        let mut gives: Vec<Held> =
+            known.map(|v| self.seen.drawn(v, self.ext)).unwrap_or_default().into_iter().map(|ty| Held::new(ty, assigned)).collect();
         if gives.is_empty() && known.map_or(true, |v| v.shown == "Unknown") && !assigned.is_empty() && !hands.is_empty() {
             gives.push(Held::new(String::new(), assigned));
         }
@@ -2386,7 +2654,11 @@ impl<'a, 't> Body<'a, 't> {
         let seen = &self.seen;
         let on = receiver.and_then(|o| {
             let b = seen.store.nodes.get(t)?.cls.clone()?;
-            seen.value(o).map(|v| seen.drawn(v, self.ext)).unwrap_or_default().into_iter().find(|c| *c != b && seen.is_class(c) && seen.descends(c, &b))
+            seen.value(o)
+                .map(|v| seen.drawn(v, self.ext))
+                .unwrap_or_default()
+                .into_iter()
+                .find(|c| *c != b && seen.is_class(c) && seen.descends(c, &b))
         });
         let kind = if seen.is_class(t) { EdgeKind::Instantiates } else { EdgeKind::Calls };
         let on_receiver = receiver.map_or(false, |o| o.kind() == "identifier" && text(o, self.src) == "self");
@@ -2414,10 +2686,21 @@ impl<'a, 't> Body<'a, 't> {
         for call in walk(self.m.tree.root_node(), &["call"]) {
             let Some(f) = call.child_by_field_name("function").filter(|f| f.kind() == "attribute") else { continue };
             let declares = f.child_by_field_name("attribute").map(|a| text(a, src)) == Some(parser.declares);
-            if !declares || on.is_none() || f.child_by_field_name("object").map(|o| text(o, src)) != on || self.seen.library(f).as_deref() != Some(lib) {
+            if !declares
+                || on.is_none()
+                || f.child_by_field_name("object").map(|o| text(o, src)) != on
+                || self.seen.library(f).as_deref() != Some(lib)
+            {
                 continue;
             }
-            let flags: Vec<String> = call.child_by_field_name("arguments").map(named_children).unwrap_or_default().into_iter().filter(|a| a.kind() == "string").map(|a| unquote(text(a, src))).collect();
+            let flags: Vec<String> = call
+                .child_by_field_name("arguments")
+                .map(named_children)
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|a| a.kind() == "string")
+                .map(|a| unquote(text(a, src)))
+                .collect();
             match flags.iter().any(|f| f.starts_with('-')) {
                 true => options.push(crate::entries::flag(&flags, "")),
                 false => options.extend(flags.first().map(|a| crate::entries::argument(a))),
@@ -2441,7 +2724,10 @@ impl<'a, 't> Body<'a, 't> {
         // a print handed a file writes that file (where it was opened), not the screen; one handed
         // a stream the human sees (`file=sys.stderr`) still shows it
         let to = (tag.world == World::Screen).then(|| keyword_node(c, self.src, knowledge::PRINT_TO)).flatten();
-        if to.map_or(false, |f| !matches!(dotted(Some(f), self.src).as_slice(), [m, s] if knowledge::STREAMS.contains(&(m.as_str(), s.as_str())))) {
+        if to.map_or(
+            false,
+            |f| !matches!(dotted(Some(f), self.src).as_slice(), [m, s] if knowledge::STREAMS.contains(&(m.as_str(), s.as_str()))),
+        ) {
             return;
         }
         let crossed = crossed(&self.seen, self.eval, self.at(), c, fnode, tag, lib.as_deref(), op);
@@ -2498,7 +2784,9 @@ impl<'a, 't> Body<'a, 't> {
         let changes = |c: TsNode<'t>| {
             let own = c.child_by_field_name("function").filter(|f| f.kind() == "attribute");
             match own {
-                Some(f) if matches!(seen.callee(f), Some(Callee::Def(t)) if seen.store.mutating.contains(&t)) => f.child_by_field_name("object"),
+                Some(f) if matches!(seen.callee(f), Some(Callee::Def(t)) if seen.store.mutating.contains(&t)) => {
+                    f.child_by_field_name("object")
+                }
                 _ => library_change(seen.facts, c, self.src),
             }
         };
@@ -2532,11 +2820,21 @@ struct Crossed {
 /// A call that crosses `tag`: a file call by the files it is handed, a database call by the
 /// statement it is handed, any other by what its facts and literals name.
 #[allow(clippy::too_many_arguments)]
-fn crossed<'t>(seen: &Seen, eval: &Eval, at: At<'_, 't>, c: TsNode<'t>, fnode: TsNode<'t>, tag: Crossing, lib: Option<&str>, op: &str) -> Crossed {
+fn crossed<'t>(
+    seen: &Seen,
+    eval: &Eval,
+    at: At<'_, 't>,
+    c: TsNode<'t>,
+    fnode: TsNode<'t>,
+    tag: Crossing,
+    lib: Option<&str>,
+    op: &str,
+) -> Crossed {
     let src = &at.m.src;
     match tag.world {
         World::Disk => {
-            let (touches, waiting): (Vec<(Touch, Vec<Built>)>, _) = file_calls(seen, eval, at, c, fnode, tag, lib, op).into_iter().partition(|(_, built)| built.is_empty());
+            let (touches, waiting): (Vec<(Touch, Vec<Built>)>, _) =
+                file_calls(seen, eval, at, c, fnode, tag, lib, op).into_iter().partition(|(_, built)| built.is_empty());
             Crossed { touches: touches.into_iter().map(|(t, _)| t).collect(), waiting, ..Default::default() }
         }
         _ => {
@@ -2565,7 +2863,13 @@ fn crossed<'t>(seen: &Seen, eval: &Eval, at: At<'_, 't>, c: TsNode<'t>, fnode: T
                 _ => None,
             };
             if let Some(built) = statement {
-                let t = Touch { what: cr.what.clone(), payload: cr.payload.clone(), op: cr.op.clone(), line: cr.line, ..Touch::new(cr.facts.kind, said) };
+                let t = Touch {
+                    what: cr.what.clone(),
+                    payload: cr.payload.clone(),
+                    op: cr.op.clone(),
+                    line: cr.line,
+                    ..Touch::new(cr.facts.kind, said)
+                };
                 return Crossed { waiting: vec![(t, built)], said: said.map(|d| (cr.facts.kind, d)), handed, ..Default::default() };
             }
             // a request is its method and its URL, whole where the callers make it, as a path is
@@ -2586,26 +2890,48 @@ fn crossed<'t>(seen: &Seen, eval: &Eval, at: At<'_, 't>, c: TsNode<'t>, fnode: T
 /// whose types are not known hands its first argument. The direction is what the type says
 /// (`SupportsRead`, `SupportsWrite`), what the call's `mode` says, or for a call handed two paths
 /// the API's own names for them (`src`, `dst`); else the operation's.
-fn file_calls<'t>(seen: &Seen, eval: &Eval, at: At<'_, 't>, c: TsNode<'t>, fnode: TsNode<'t>, tag: Crossing, lib: Option<&str>, op: &str) -> Vec<(Touch, Vec<Built>)> {
+fn file_calls<'t>(
+    seen: &Seen,
+    eval: &Eval,
+    at: At<'_, 't>,
+    c: TsNode<'t>,
+    fnode: TsNode<'t>,
+    tag: Crossing,
+    lib: Option<&str>,
+    op: &str,
+) -> Vec<(Touch, Vec<Built>)> {
     let src = &at.m.src;
     let touch = |kind: Crossing, what: String, artifact: String, fixed: bool| {
         let payload = payload_of(c, src, &what, "arguments", &seen.handed(c));
-        Touch { what, payload, op: op.to_string(), artifact, fixed, line: c.start_position().row as u32 + 1, ..Touch::new(kind.world, kind.dir) }
+        Touch {
+            what,
+            payload,
+            op: op.to_string(),
+            artifact,
+            fixed,
+            line: c.start_position().row as u32 + 1,
+            ..Touch::new(kind.world, kind.dir)
+        }
     };
     let sig = seen.facts.and_then(|x| x.signature(Seen::range(fnode)));
     let typed = sig.map(|s| paths::file_args(s, c, src)).unwrap_or_default();
     let mode = typed.iter().find(|(p, _)| p.name == "mode").map(|(_, a)| unquote(text(*a, src)));
-    let files: Vec<(Option<FileArg>, &str, TsNode)> = match (fnode.kind() == "attribute" && lib.map_or(false, |l| knowledge::PATH_LIBRARIES.contains(&l)), sig) {
-        (true, _) => fnode.child_by_field_name("object").map(|o| vec![(Some(FileArg::Path), "self", o)]).unwrap_or_default(),
-        (false, Some(_)) => typed.iter().filter(|(p, _)| p.file.is_some()).map(|(p, a)| (p.file, p.name.as_str(), *a)).collect(),
-        (false, None) => positional(c).map(|a| vec![(None, "", a)]).unwrap_or_default(),
-    };
+    let files: Vec<(Option<FileArg>, &str, TsNode)> =
+        match (fnode.kind() == "attribute" && lib.map_or(false, |l| knowledge::PATH_LIBRARIES.contains(&l)), sig) {
+            (true, _) => fnode.child_by_field_name("object").map(|o| vec![(Some(FileArg::Path), "self", o)]).unwrap_or_default(),
+            (false, Some(_)) => typed.iter().filter(|(p, _)| p.file.is_some()).map(|(p, a)| (p.file, p.name.as_str(), *a)).collect(),
+            (false, None) => positional(c).map(|a| vec![(None, "", a)]).unwrap_or_default(),
+        };
     let paths = files.iter().filter(|(k, _, _)| *k == Some(FileArg::Path)).count();
     let sides = crate::body::sides(op, paths);
     if files.is_empty() {
         let f = effects::facts(tag, lib, op, &mode.into_iter().collect::<Vec<_>>());
         let what = what_of(c, src, &["string"], "arguments");
-        return f.places().into_iter().map(|(artifact, _)| (touch(Crossing { world: f.kind, dir: f.dir }, what.clone(), artifact, false), vec![])).collect();
+        return f
+            .places()
+            .into_iter()
+            .map(|(artifact, _)| (touch(Crossing { world: f.kind, dir: f.dir }, what.clone(), artifact, false), vec![]))
+            .collect();
     }
     let mut nth_path = 0;
     files
@@ -2642,7 +2968,12 @@ fn kept_as(c: TsNode, src: &[u8]) -> Option<String> {
         match p.kind() {
             "parenthesized_expression" | "await" => n = p,
             _ if (CHOICES.chooses)(p, src) && matches!((CHOICES.part)(p, n, src), Part::Arm(_)) => n = p,
-            "assignment" if value("right") => return p.child_by_field_name("left").filter(|l| l.kind() == "identifier" && text(*l, src) != "_").map(|l| text(l, src).to_string()),
+            "assignment" if value("right") => {
+                return p
+                    .child_by_field_name("left")
+                    .filter(|l| l.kind() == "identifier" && text(*l, src) != "_")
+                    .map(|l| text(l, src).to_string())
+            }
             "named_expression" if value("value") => return p.child_by_field_name("name").map(|l| text(l, src).to_string()),
             _ => return None,
         }
@@ -2664,7 +2995,14 @@ fn file_direction(file: Option<FileArg>, nth: usize, sides: Option<[Crossing; 2]
 /// Which parameter of the function a call reaches each argument is handed to: positional
 /// arguments in order (after `self`), keyword arguments by name. A class's call reaches its
 /// `__init__`.
-fn arguments<'t>(modules: &'t IndexMap<String, Module>, store: &GraphBuilder, caller: &str, target: &str, c: TsNode<'t>, at: At<'_, 't>) -> Option<Arg<'t>> {
+fn arguments<'t>(
+    modules: &'t IndexMap<String, Module>,
+    store: &GraphBuilder,
+    caller: &str,
+    target: &str,
+    c: TsNode<'t>,
+    at: At<'_, 't>,
+) -> Option<Arg<'t>> {
     let callee = match store.nodes.get(target)?.kind {
         NodeKind::Class => format!("{target}.__init__"),
         _ => target.to_string(),
@@ -2698,7 +3036,6 @@ fn arguments<'t>(modules: &'t IndexMap<String, Module>, store: &GraphBuilder, ca
     }
     Some(Arg { caller: caller.to_string(), callee, module: at.m.id.clone(), scope: at.scope, params: at.params.to_vec(), passed })
 }
-
 
 /// For a class built from its fields (no `__init__` of its own, `f` is `Class.__init__`): the
 /// default its body declares for field `p`, with its module.
@@ -2741,7 +3078,9 @@ fn value_used(call: TsNode) -> bool {
 
 /// A call's first positional argument.
 fn positional(call: TsNode) -> Option<TsNode> {
-    named_children(call.child_by_field_name("arguments")?).into_iter().find(|a| !matches!(a.kind(), "keyword_argument" | "comment" | "list_splat" | "dictionary_splat"))
+    named_children(call.child_by_field_name("arguments")?)
+        .into_iter()
+        .find(|a| !matches!(a.kind(), "keyword_argument" | "comment" | "list_splat" | "dictionary_splat"))
 }
 
 /// The argument a call to the web names what it asks for by: the one handed to the parameter its
@@ -2753,7 +3092,10 @@ fn asked<'t>(seen: &Seen, c: TsNode<'t>, fnode: TsNode<'t>) -> Option<TsNode<'t>
         Some(sig) => paths::file_args(sig, c, src).into_iter().map(|(p, a)| (p.name.as_str(), a)).collect(),
         None => {
             let args = named_children(c.child_by_field_name("arguments")?);
-            let keywords = args.iter().filter(|a| a.kind() == "keyword_argument").filter_map(|a| Some((text(a.child_by_field_name("name")?, src), a.child_by_field_name("value")?)));
+            let keywords = args
+                .iter()
+                .filter(|a| a.kind() == "keyword_argument")
+                .filter_map(|a| Some((text(a.child_by_field_name("name")?, src), a.child_by_field_name("value")?)));
             let first = positional(c).map(|a| (knowledge::ASKED_BY[0], a));
             keywords.chain(first).collect()
         }
@@ -2764,7 +3106,9 @@ fn asked<'t>(seen: &Seen, c: TsNode<'t>, fnode: TsNode<'t>) -> Option<TsNode<'t>
 /// The text of the first of these keyword arguments a call is given.
 fn keyword(call: TsNode, src: &[u8], names: &[&str]) -> Option<String> {
     let args = named_children(call.child_by_field_name("arguments")?);
-    let k = args.iter().find(|a| a.kind() == "keyword_argument" && a.child_by_field_name("name").map_or(false, |n| names.contains(&text(n, src))))?;
+    let k = args
+        .iter()
+        .find(|a| a.kind() == "keyword_argument" && a.child_by_field_name("name").map_or(false, |n| names.contains(&text(n, src))))?;
     Some(text(k.child_by_field_name("value")?, src).to_string())
 }
 
@@ -2811,10 +3155,13 @@ const CHOICES: ChoiceSyntax = ChoiceSyntax {
 /// The string literals an operand names: `"a"`, or every element of `{"a", "b"}`.
 fn string_cases(n: TsNode, src: &[u8]) -> Option<Vec<String>> {
     match n.kind() {
-        "string" if n.child_by_field_name("interpolation").is_none() && !named_children(n).iter().any(|c| c.kind() == "interpolation") => Some(vec![unquote(text(n, src))]),
+        "string" if n.child_by_field_name("interpolation").is_none() && !named_children(n).iter().any(|c| c.kind() == "interpolation") => {
+            Some(vec![unquote(text(n, src))])
+        }
         "set" | "list" | "tuple" => {
             let items = named_children(n);
-            (!items.is_empty() && items.iter().all(|i| i.kind() == "string")).then(|| items.iter().map(|i| unquote(text(*i, src))).collect())
+            (!items.is_empty() && items.iter().all(|i| i.kind() == "string"))
+                .then(|| items.iter().map(|i| unquote(text(*i, src))).collect())
         }
         _ => None,
     }

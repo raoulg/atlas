@@ -32,13 +32,13 @@ impl<F: Fn(&Node) -> bool> View for Fiber<F> {
             project_root: g.project_root.clone(),
             parts: g.parts.clone(),
             nodes: g.nodes.iter().filter(|n| keep.contains(n.id.as_str())).cloned().collect(),
-            edges: g
-                .edges
+            edges: g.edges.iter().filter(|e| keep.contains(e.src.as_str()) && keep.contains(e.dst.as_str())).cloned().collect(),
+            files: g
+                .files
                 .iter()
-                .filter(|e| keep.contains(e.src.as_str()) && keep.contains(e.dst.as_str()))
-                .cloned()
+                .filter(|(f, _)| kept_files.contains(f.as_str()) || !dropped_files.contains(f.as_str()))
+                .map(|(f, t)| (f.clone(), t.clone()))
                 .collect(),
-            files: g.files.iter().filter(|(f, _)| kept_files.contains(f.as_str()) || !dropped_files.contains(f.as_str())).map(|(f, t)| (f.clone(), t.clone())).collect(),
             make: g.make.clone(),
             stats: g.stats.clone(),
         };
@@ -134,11 +134,18 @@ impl<'g> Library<'g> {
     fn of(g: &'g Graph) -> Self {
         let nodes: HashMap<&str, &Node> = g.nodes.iter().map(|n| (n.id.as_str(), n)).collect();
         let library: HashSet<&str> = g.nodes.iter().filter(|n| n.library).map(|n| n.id.as_str()).collect();
-        let (mut calls, mut types, mut bases, mut members): (HashMap<&str, Vec<(&str, EdgeKind)>>, HashMap<&str, Vec<&str>>, HashMap<&str, Vec<&str>>, HashMap<&str, Vec<&Node>>) = Default::default();
+        let (mut calls, mut types, mut bases, mut members): (
+            HashMap<&str, Vec<(&str, EdgeKind)>>,
+            HashMap<&str, Vec<&str>>,
+            HashMap<&str, Vec<&str>>,
+            HashMap<&str, Vec<&Node>>,
+        ) = Default::default();
         for e in &g.edges {
             match e.kind {
                 EdgeKind::Calls | EdgeKind::Instantiates => calls.entry(e.src.as_str()).or_default().push((e.dst.as_str(), e.kind)),
-                EdgeKind::Takes | EdgeKind::Returns | EdgeKind::Mutates | EdgeKind::Has | EdgeKind::Inherits | EdgeKind::Variant => types.entry(e.src.as_str()).or_default().push(e.dst.as_str()),
+                EdgeKind::Takes | EdgeKind::Returns | EdgeKind::Mutates | EdgeKind::Has | EdgeKind::Inherits | EdgeKind::Variant => {
+                    types.entry(e.src.as_str()).or_default().push(e.dst.as_str())
+                }
                 _ => {}
             }
             if e.kind == EdgeKind::Inherits {
@@ -175,7 +182,9 @@ impl<'g> Library<'g> {
         let mut named: HashSet<String> = HashSet::new();
         let mut todo: VecDeque<(String, usize)> = VecDeque::new();
         for n in nodes.values().filter(|n| !library.contains(n.id.as_str())) {
-            todo.extend(self.calls.get(n.id.as_str()).into_iter().flatten().filter(|(d, _)| library.contains(*d)).map(|(d, _)| (d.to_string(), 1)));
+            todo.extend(
+                self.calls.get(n.id.as_str()).into_iter().flatten().filter(|(d, _)| library.contains(*d)).map(|(d, _)| (d.to_string(), 1)),
+            );
             named.extend(self.types.get(n.id.as_str()).into_iter().flatten().filter(|d| library.contains(**d)).map(|d| d.to_string()));
         }
         loop {
@@ -191,10 +200,18 @@ impl<'g> Library<'g> {
                 }
                 // a function gives, takes and runs on its types
                 if matches!(n.kind, NodeKind::Function | NodeKind::Method) {
-                    named.extend(self.types.get(id.as_str()).into_iter().flatten().filter(|t| library.contains(**t)).map(|t| t.to_string()));
+                    named
+                        .extend(self.types.get(id.as_str()).into_iter().flatten().filter(|t| library.contains(**t)).map(|t| t.to_string()));
                     named.extend(n.cls.clone());
                 }
-                todo.extend(self.calls.get(id.as_str()).into_iter().flatten().filter(|(c, _)| library.contains(*c)).map(|(c, _)| (c.to_string(), d + 1)));
+                todo.extend(
+                    self.calls
+                        .get(id.as_str())
+                        .into_iter()
+                        .flatten()
+                        .filter(|(c, _)| library.contains(*c))
+                        .map(|(c, _)| (c.to_string(), d + 1)),
+                );
             }
             // a class reached answers the calls into its bases with its own methods
             let reach = Reach { far, named };
@@ -224,7 +241,9 @@ impl<'g> Library<'g> {
         for c in reach.classes(self) {
             for b in self.ancestors(c) {
                 for m in self.members.get(b.as_str()).into_iter().flatten() {
-                    if let Some((own, _)) = self.nodes.get_key_value(format!("{c}.{}", m.name).as_str()).filter(|(o, _)| self.library.contains(**o)) {
+                    if let Some((own, _)) =
+                        self.nodes.get_key_value(format!("{c}.{}", m.name).as_str()).filter(|(o, _)| self.library.contains(**o))
+                    {
                         out.entry(m.id.as_str()).or_default().push(own);
                     }
                 }
@@ -255,7 +274,8 @@ pub fn reached(g: &Graph, rounds: usize) -> impl View {
     let lib = Library::of(g);
     let reach = lib.reach(rounds);
     let mut kept: HashSet<String> = reach.far.keys().cloned().chain(reach.named.iter().cloned()).collect();
-    let holders: Vec<String> = kept.iter().filter_map(|id| lib.nodes.get(id.as_str())).flat_map(|n| [n.cls.clone(), Some(n.module.clone())]).flatten().collect();
+    let holders: Vec<String> =
+        kept.iter().filter_map(|id| lib.nodes.get(id.as_str())).flat_map(|n| [n.cls.clone(), Some(n.module.clone())]).flatten().collect();
     kept.extend(holders);
     // a name outside the code that only the rest of a library names is none the program reaches
     let mut outside: HashMap<&str, bool> = HashMap::new();
@@ -292,7 +312,8 @@ fn glue(lib: &Library, dropped: &HashSet<String>) -> HashMap<String, Glued> {
     let overrides = lib.overrides(&lib.reach(usize::MAX));
     let gone = |id: &str| dropped.contains(id) && lib.library.contains(id);
     let mut out = HashMap::new();
-    for f in lib.nodes.values().filter(|n| n.library && matches!(n.kind, NodeKind::Function | NodeKind::Method) && !dropped.contains(&n.id)) {
+    for f in lib.nodes.values().filter(|n| n.library && matches!(n.kind, NodeKind::Function | NodeKind::Method) && !dropped.contains(&n.id))
+    {
         let line = |to: &str| f.sites.iter().find(|s| s.to == to).map_or(0, |s| s.line);
         // a class built runs its initializer: dropped, it lies beyond the border
         let init = |x: &str, kind: EdgeKind| -> Option<&str> {
@@ -394,7 +415,15 @@ impl View for Reached {
             }
             for (to, kind) in &glued.runs {
                 if edges.insert((n.id.clone(), to.clone(), *kind)) {
-                    out.edges.push(Edge { src: n.id.clone(), dst: to.clone(), kind: *kind, via: None, weight: None, arms: vec![], uses: false });
+                    out.edges.push(Edge {
+                        src: n.id.clone(),
+                        dst: to.clone(),
+                        kind: *kind,
+                        via: None,
+                        weight: None,
+                        arms: vec![],
+                        uses: false,
+                    });
                 }
             }
         }
@@ -418,7 +447,12 @@ fn shown_text(g: &mut Graph) {
         .into_iter()
         .filter_map(|(file, spans)| {
             let text = g.files.get(file)?;
-            let kept: String = text.split('\n').enumerate().map(|(i, l)| if spans.iter().any(|(a, b)| (*a..=*b).contains(&(i as u32 + 1))) { l } else { "" }).collect::<Vec<_>>().join("\n");
+            let kept: String = text
+                .split('\n')
+                .enumerate()
+                .map(|(i, l)| if spans.iter().any(|(a, b)| (*a..=*b).contains(&(i as u32 + 1))) { l } else { "" })
+                .collect::<Vec<_>>()
+                .join("\n");
             Some((file.to_string(), kept))
         })
         .collect();

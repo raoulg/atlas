@@ -10,7 +10,14 @@ use serde_json::{json, Value};
 fn session(msgs: &[Value]) -> Vec<Value> {
     let root = concat!(env!("CARGO_MANIFEST_DIR"), "/..");
     let cache = std::env::temp_dir().join(format!("atlas-mcp-cache-{}", std::process::id()));
-    let mut child = Command::new(env!("CARGO_BIN_EXE_atlas")).arg("mcp").current_dir(root).env("XDG_CACHE_HOME", cache).stdin(Stdio::piped()).stdout(Stdio::piped()).spawn().expect("atlas mcp starts");
+    let mut child = Command::new(env!("CARGO_BIN_EXE_atlas"))
+        .arg("mcp")
+        .current_dir(root)
+        .env("XDG_CACHE_HOME", cache)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("atlas mcp starts");
     let mut stdin = child.stdin.take().unwrap();
     for m in msgs {
         writeln!(stdin, "{m}").unwrap();
@@ -49,7 +56,11 @@ fn a_client_initializes_lists_and_calls() {
     assert!(!text(&replies[2]).contains("\ndoors ·"), "only the principle asked for");
     assert!(text(&replies[3]).starts_with("A sum type is unwrapped where it arises."));
     // analyze is its algebra: Disk(repo) -> read -> Repo -> parse -> Graph
-    assert!(text(&replies[4]).contains("\n1  read(dir, opts) → Repo\n  1.1  Repo.read(dir, named) → Repo   ·   reads dir"), "{}", text(&replies[4]));
+    assert!(
+        text(&replies[4]).contains("\n1  read(dir, opts) → Repo\n  1.1  Repo.read(dir, named) → Repo   ·   reads dir"),
+        "{}",
+        text(&replies[4])
+    );
     // a package named on its own is read as the project it is in, asked for that package:
     // `Repo::read(&root, ..)?.asked_for(package)`, a method on what the call before it gives
     assert!(text(&replies[4]).contains("\n  1.4  Repo.asked_for(asked) → Repo\n"), "{}", text(&replies[4]));
@@ -79,7 +90,16 @@ fn changes_shows_an_edit() {
             }
         }
     }
-    let git = |args: &[&str]| assert!(Command::new("git").arg("-C").arg(&repo).args(["-c", "user.name=atlas", "-c", "user.email=atlas@example.org", "-c", "commit.gpgsign=false"]).args(args).status().unwrap().success());
+    let git = |args: &[&str]| {
+        assert!(Command::new("git")
+            .arg("-C")
+            .arg(&repo)
+            .args(["-c", "user.name=atlas", "-c", "user.email=atlas@example.org", "-c", "commit.gpgsign=false"])
+            .args(args)
+            .status()
+            .unwrap()
+            .success())
+    };
     git(&["init", "-q"]);
     git(&["add", "."]);
     git(&["commit", "-q", "-m", "fixture"]);
@@ -100,6 +120,9 @@ fn view_writes_the_page_in_a_view() {
     let replies = session(&[call(1, "view", json!({ "path": "engine/tests/fixture", "view": shown, "out": out.to_string_lossy() }))]);
     assert!(text(&replies[0]).starts_with("Wrote "), "{}", text(&replies[0]));
     let page = std::fs::read_to_string(&out).unwrap();
-    assert!(page.contains(r#""view":{"open":{"functions":["fixture.build.Pipeline.run"]},"route":"fixture.cli.build"}"#), "the page opens in the view");
+    assert!(
+        page.contains(r#""view":{"open":{"functions":["fixture.build.Pipeline.run"]},"route":"fixture.cli.build"}"#),
+        "the page opens in the view"
+    );
     let _ = std::fs::remove_file(&out);
 }

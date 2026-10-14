@@ -21,7 +21,13 @@ fn written(name: &str, files: &[(&str, &str)]) -> Graph {
 
 /// A function's touches as (kind, operation, place, the functions that make it whole).
 fn places(g: &Graph, id: &str) -> Vec<(String, String, String, Vec<String>)> {
-    let mut out: Vec<_> = g.node(id).unwrap_or_else(|| panic!("no node {id}")).touches.iter().map(|t| (t.kind_name().to_string(), t.op.clone(), t.artifact.clone(), t.by.clone())).collect();
+    let mut out: Vec<_> = g
+        .node(id)
+        .unwrap_or_else(|| panic!("no node {id}"))
+        .touches
+        .iter()
+        .map(|t| (t.kind_name().to_string(), t.op.clone(), t.artifact.clone(), t.by.clone()))
+        .collect();
     out.sort();
     out
 }
@@ -43,7 +49,10 @@ fn a_name_is_a_module_or_a_value_by_where_it_stands() {
             ("src/main.rs", "use reexport::fetch;\n\nfn main() {\n    fetch();\n}\n"),
         ],
     );
-    assert_eq!(g.node("reexport.fetch.fetch").and_then(|n| n.entry.as_ref()).map(|e| (e.kind, e.label.as_str())), Some((EntryKind::Export, "fetch")));
+    assert_eq!(
+        g.node("reexport.fetch.fetch").and_then(|n| n.entry.as_ref()).map(|e| (e.kind, e.label.as_str())),
+        Some((EntryKind::Export, "fetch"))
+    );
     let steps = |id: &str| g.node(id).unwrap().sites.iter().map(|s| s.to.clone()).collect::<Vec<_>>();
     assert_eq!(steps("reexport.main.main"), ["reexport.fetch.fetch"]);
     assert_eq!(steps("reexport.twice"), ["reexport.fetch.fetch", "reexport.fetch.fetch"]);
@@ -79,8 +88,15 @@ fn a_pattern_binds_what_a_variant_holds() {
         )],
     );
     let run = ["patterns.run"];
-    assert_eq!(places(&g, "patterns.kept"), [place("disk_write", "create_dir_all", "out/", &run), place("disk_write", "write", "out/seen", &run)]);
-    assert_eq!(places(&g, "patterns.read"), [place("disk_read", "read_to_string", "out/data.csv", &run)], "the path `kept` gives inside `Ok(..)`");
+    assert_eq!(
+        places(&g, "patterns.kept"),
+        [place("disk_write", "create_dir_all", "out/", &run), place("disk_write", "write", "out/seen", &run)]
+    );
+    assert_eq!(
+        places(&g, "patterns.read"),
+        [place("disk_read", "read_to_string", "out/data.csv", &run)],
+        "the path `kept` gives inside `Ok(..)`"
+    );
 }
 
 /// A name of one segment that the module neither declares nor imports by name is one its library
@@ -273,7 +289,10 @@ fn main() {
     assert_eq!(parse.command_line.as_ref(), Some(&options));
     let reads = |f: &str| g.node(f).unwrap().sites.iter().any(|s| s.command_line.is_some());
     assert!(reads("usage.tried") && !reads("usage.given"), "`try_parse` reads the command line, `parse_from` what it is handed");
-    assert!(main.sites.iter().find(|s| s.to == "usage.run").unwrap().hands.iter().any(|h| h.name == "cli"), "what the parse gives is handed on");
+    assert!(
+        main.sites.iter().find(|s| s.to == "usage.run").unwrap().hands.iter().any(|h| h.name == "cli"),
+        "what the parse gives is handed on"
+    );
 }
 
 /// A generic type's arguments are values only where it holds or stands for them: std's and a
@@ -393,13 +412,20 @@ fn a_crate_is_read_as_far_as_the_program_calls_into_it() {
     let [none, one, two]: [Graph; 3] = crates("libraries", &files, &[rounds(0), rounds(1), rounds(2)]).try_into().ok().unwrap();
     let read = one.node("filekit.read.read_config").expect("the function the program calls is read");
     assert!(read.library, "a library's function is marked as one");
-    assert!(places(&one, "filekit.read.read_config").contains(&place("disk_read", "read_to_string", "settings.toml", &["app.main"])), "{:?}", places(&one, "filekit.read.read_config"));
+    assert!(
+        places(&one, "filekit.read.read_config").contains(&place("disk_read", "read_to_string", "settings.toml", &["app.main"])),
+        "{:?}",
+        places(&one, "filekit.read.read_config")
+    );
     let steps = |g: &Graph| g.node("app.main").unwrap().sites.iter().map(|s| s.to.clone()).filter(|t| !t.is_empty()).collect::<Vec<_>>();
     assert_eq!(steps(&one), ["filekit.read.read_config"]);
     assert!(one.node("filekit.unused").is_none(), "what the program does not reach is no part of the picture");
     assert!(one.node("filekit.clean.clean").is_none() && two.node("filekit.clean.clean").is_some(), "each round reaches one call further");
     for g in [&one, &two] {
-        assert!(g.nodes.iter().all(|n| !n.id.starts_with("fastsum") && !n.id.starts_with("walkdir")), "neither compiled code nor a crate the tables describe is read");
+        assert!(
+            g.nodes.iter().all(|n| !n.id.starts_with("fastsum") && !n.id.starts_with("walkdir")),
+            "neither compiled code nor a crate the tables describe is read"
+        );
         assert!(atlas_engine::principles::check(g).iter().all(|f| !f.node.starts_with("filekit")), "a library's code is not judged");
     }
     assert!(none.nodes.iter().all(|n| !n.library) && steps(&none).is_empty(), "no round reads no crate");
@@ -421,7 +447,13 @@ fn a_crate_is_read_where_cargo_keeps_it() {
     let registry = "cargo/registry/src/index.example.org-0000000000000000/";
     files.extend(below(&format!("{registry}filekit-1.2.3/"), FILEKIT));
     // another version beside it, which the lock does not name
-    files.extend(below(&format!("{registry}filekit-1.0.0/"), &[("Cargo.toml", "[package]\nname = \"filekit\"\nversion = \"1.0.0\"\n"), ("src/lib.rs", "pub fn read_config(path: &str) -> String {\n    String::new()\n}\n")]));
+    files.extend(below(
+        &format!("{registry}filekit-1.0.0/"),
+        &[
+            ("Cargo.toml", "[package]\nname = \"filekit\"\nversion = \"1.0.0\"\n"),
+            ("src/lib.rs", "pub fn read_config(path: &str) -> String {\n    String::new()\n}\n"),
+        ],
+    ));
     let home = std::env::temp_dir().join(format!("atlas-rust-registry-{}", std::process::id())).join("cargo");
     std::env::set_var("CARGO_HOME", &home);
     let g = crates("registry", &files, &[Options::default()]).remove(0);
@@ -456,7 +488,11 @@ fn what_lies_beyond_the_rounds_is_the_border_functions() {
     let [one, three]: [Graph; 2] = crates("beyond", &files, &[rounds(1), rounds(3)]).try_into().ok().unwrap();
     assert!(one.node("deepkit.prepare").is_none() && one.node("deepkit.write").is_none(), "what lies beyond the rounds is not drawn");
     let save = one.node("deepkit.save").expect("the function the program calls");
-    assert!(places(&one, "deepkit.save").contains(&place("disk_write", "write", "out.txt", &["app.main"])), "the border writes what its code beyond writes, at the path the program hands it: {:?}", save.touches);
+    assert!(
+        places(&one, "deepkit.save").contains(&place("disk_write", "write", "out.txt", &["app.main"])),
+        "the border writes what its code beyond writes, at the path the program hands it: {:?}",
+        save.touches
+    );
     let call = save.sites.iter().find(|s| s.to == "deepkit.prepare").expect("save's call into what lies beyond");
     assert!(save.touches.iter().all(|t| t.line == call.line), "drawn at the border's call that leads there");
     let route = atlas_engine::story::route(&one, "app.main", 2).unwrap();

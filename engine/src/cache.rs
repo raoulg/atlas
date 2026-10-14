@@ -69,7 +69,12 @@ impl Cache {
         if std::fs::create_dir_all(dir).is_err() {
             return;
         }
-        let partial = dir.join(format!(".{}-{}-{}", file.file_name().and_then(|n| n.to_str()).unwrap_or("entry"), std::process::id(), WRITTEN.fetch_add(1, Ordering::Relaxed)));
+        let partial = dir.join(format!(
+            ".{}-{}-{}",
+            file.file_name().and_then(|n| n.to_str()).unwrap_or("entry"),
+            std::process::id(),
+            WRITTEN.fetch_add(1, Ordering::Relaxed)
+        ));
         let mut bytes = head(key).into_bytes();
         bytes.push(b'\n');
         bytes.extend_from_slice(value);
@@ -259,10 +264,13 @@ pub fn witness(checks: Vec<Check>) -> Vec<(Check, String)> {
     let mut checks: Vec<Check> = checks.into_iter().map(Check::resolved).collect();
     checks.sort();
     checks.dedup();
-    checks.into_iter().map(|c| {
-        let now = c.now();
-        (c, now)
-    }).collect()
+    checks
+        .into_iter()
+        .map(|c| {
+            let now = c.now();
+            (c, now)
+        })
+        .collect()
 }
 
 /// Whether everything a witness saw stands as it did.
@@ -293,7 +301,12 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("atlas-cache-check-{}", std::process::id()));
         std::fs::create_dir_all(dir.join("sub")).unwrap();
         std::fs::write(dir.join("sub/a.py"), "x = 1\n").unwrap();
-        let w = witness(vec![Check::Tree(dir.clone()), Check::Names(dir.clone()), Check::File(dir.join("sub/a.py")), Check::File(dir.join("none"))]);
+        let w = witness(vec![
+            Check::Tree(dir.clone()),
+            Check::Names(dir.clone()),
+            Check::File(dir.join("sub/a.py")),
+            Check::File(dir.join("none")),
+        ]);
         assert!(holds(&w));
         std::fs::write(dir.join("sub/a.py"), "x = 22\n").unwrap();
         assert!(!holds(&w), "a file grew");

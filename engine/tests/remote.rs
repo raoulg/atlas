@@ -6,7 +6,14 @@ use std::process::Command;
 use atlas_engine::{parts, remote, Options};
 
 fn git(dir: &Path, args: &[&str]) {
-    let ok = Command::new("git").arg("-C").arg(dir).args(["-c", "user.name=atlas", "-c", "user.email=atlas@example.org", "-c", "commit.gpgsign=false"]).args(args).status().expect("git runs").success();
+    let ok = Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(["-c", "user.name=atlas", "-c", "user.email=atlas@example.org", "-c", "commit.gpgsign=false"])
+        .args(args)
+        .status()
+        .expect("git runs")
+        .success();
     assert!(ok, "git {args:?}");
 }
 
@@ -22,7 +29,8 @@ fn a_tree_url_reads_one_folder() {
     git(&repo, &["add", "."]);
     git(&repo, &["commit", "-q", "-m", "tiny"]);
     let path = atlas_engine::tree::path_str(&repo);
-    let url = if path.starts_with('/') { format!("file://{path}/tree/main/src/tiny") } else { format!("file:///{path}/tree/main/src/tiny") };
+    let url =
+        if path.starts_with('/') { format!("file://{path}/tree/main/src/tiny") } else { format!("file:///{path}/tree/main/src/tiny") };
     assert!(remote::is_url(&url));
     let cloned = remote::clone(&url).expect("the folder is cloned");
     let g = parts::analyze_repo(&[cloned.dir.clone()], &Options::default()).unwrap();

@@ -108,7 +108,9 @@ if __name__ == "__main__":
             ),
         ],
     );
-    let entry = |id: &str| g.node(id).and_then(|n| n.entry.as_ref()).map(|e| (e.kind, e.options.join(" "))).unwrap_or_else(|| panic!("{id} is an entry"));
+    let entry = |id: &str| {
+        g.node(id).and_then(|n| n.entry.as_ref()).map(|e| (e.kind, e.options.join(" "))).unwrap_or_else(|| panic!("{id} is an entry"))
+    };
     assert_eq!(entry("usage.cli.run"), (EntryKind::Cli, "<source> --out-dir <name> --level --dry-run".to_string()));
     assert_eq!(entry("usage.legacy.copy"), (EntryKind::Cli, "--out <src> --force".to_string()));
     assert_eq!(entry("scripts.report"), (EntryKind::Script, "--out-file <title>".to_string()));

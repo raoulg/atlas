@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use atlas_engine::{analyze, Options};
 use atlas_engine::principles::{check, Finding, PRINCIPLES};
+use atlas_engine::{analyze, Options};
 
 fn findings(repo: &str) -> Vec<Finding> {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(repo);
@@ -39,7 +39,15 @@ fn each_principle_finds_its_case() {
     // constant `DATA`; `save` writes where its caller says
     assert_eq!(
         got["places"],
-        ["fixture.export.summary", "fixture.files.kinds", "fixture.files.report", "fixture.files.read_report", "fixture.files.install", "fixture.files.export", "fixture.sinks.duck.DuckSink.write"]
+        [
+            "fixture.export.summary",
+            "fixture.files.kinds",
+            "fixture.files.report",
+            "fixture.files.read_report",
+            "fixture.files.install",
+            "fixture.files.export",
+            "fixture.sinks.duck.DuckSink.write"
+        ]
     );
     // `enrich` changes the Graph it is handed, so do `rename` (`setattr`) and `forget` (`del`);
     // `Graph.add` changes itself, and `deeper` calls an `update` that changes nothing
@@ -93,7 +101,8 @@ fn atlas_obeys_its_principles() {
 /// The docs explain every principle the engine checks.
 #[test]
 fn every_principle_is_explained() {
-    let docs = std::fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../docs/reference/principles.md")).expect("docs/reference/principles.md");
+    let docs = std::fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../docs/reference/principles.md"))
+        .expect("docs/reference/principles.md");
     for p in PRINCIPLES {
         assert!(docs.contains(&format!("## {}", p.asks)), "docs/reference/principles.md has a section `## {}`", p.asks);
         assert!(docs.contains(&format!("`{}`", p.id)), "docs/reference/principles.md names the id `{}`", p.id);

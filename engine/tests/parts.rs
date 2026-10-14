@@ -23,10 +23,17 @@ fn label(g: &Graph, id: &str) -> String {
 /// are not parts of their own.
 #[test]
 fn every_manifest_roots_a_part() {
-    let found: Vec<(String, &str)> = roots(&Repo::read(&fixture(), &[]).unwrap(), &Options::default()).into_iter().map(|(d, l)| (d.file_name().unwrap().to_string_lossy().to_string(), l)).collect();
+    let found: Vec<(String, &str)> = roots(&Repo::read(&fixture(), &[]).unwrap(), &Options::default())
+        .into_iter()
+        .map(|(d, l)| (d.file_name().unwrap().to_string_lossy().to_string(), l))
+        .collect();
     assert_eq!(found, [("fixture-parts".to_string(), "python"), ("web".to_string(), "typescript")]);
     let atlas = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
-    assert_eq!(roots(&Repo::read(&atlas, &[]).unwrap(), &Options::default()).len(), 1, "the workspace is one root; engine/tests holds data");
+    assert_eq!(
+        roots(&Repo::read(&atlas, &[]).unwrap(), &Options::default()).len(),
+        1,
+        "the workspace is one root; engine/tests holds data"
+    );
 }
 
 fn manifests() -> PathBuf {
@@ -69,7 +76,8 @@ fn a_manifest_no_part_reads_roots_one() {
 #[test]
 fn the_manifest_names_the_package() {
     let graphs = analyze_parts(&[manifests()], &Options::default()).unwrap();
-    let found: Vec<(String, Vec<String>)> = graphs.iter().map(|g| (g.root.clone(), g.parts.iter().map(|p| p.id.clone()).collect())).collect();
+    let found: Vec<(String, Vec<String>)> =
+        graphs.iter().map(|g| (g.root.clone(), g.parts.iter().map(|p| p.id.clone()).collect())).collect();
     let want: [(&str, &[&str]); 9] = [
         ("keeper", &["keeper"]),
         ("keeper-fuzz", &["keeper-fuzz"]),
@@ -166,7 +174,11 @@ fn a_relative_path_reads_the_same() {
 fn routes_are_served_at_their_full_path() {
     let g = shop();
     assert_eq!(label(&g, "shop.api.item"), "GET /api/items/{item_id}", "`app.mount(\"/api\", items)`");
-    assert_eq!(label(&g, "shop.serve.create_order"), "POST /v1/orders", "`include_router(router, prefix=\"/v1\")` and `APIRouter(prefix=\"/orders\")`");
+    assert_eq!(
+        label(&g, "shop.serve.create_order"),
+        "POST /v1/orders",
+        "`include_router(router, prefix=\"/v1\")` and `APIRouter(prefix=\"/orders\")`"
+    );
     assert_eq!(label(&g, "shop.serve.health"), "GET /health");
     assert_eq!(g.node("web.routes.health").unwrap().entry.as_ref().unwrap().kind, EntryKind::Route);
 }
@@ -189,7 +201,11 @@ fn each_web_framework_registers_its_routes() {
     assert_eq!(label(&g, "shop.stock.restock"), "POST|PUT /restock", "Litestar's `route`, handed its methods");
     // prefixes as each framework gives them
     assert_eq!(label(&g, "shop.board.pins"), "GET /board/pins", "a blueprint's own `url_prefix`");
-    assert_eq!(label(&g, "shop.board.moved_notes"), "GET /new/notes", "`register_blueprint(.., url_prefix=..)` stands in for the blueprint's own");
+    assert_eq!(
+        label(&g, "shop.board.moved_notes"),
+        "GET /new/notes",
+        "`register_blueprint(.., url_prefix=..)` stands in for the blueprint's own"
+    );
     assert_eq!(label(&g, "shop.board.levels"), "GET /v2/levels", "a handler a Litestar `Router(path=..)` is handed");
     assert_eq!(label(&g, "shop.board.Shelves.shelf"), "GET /v2/shelves/{shelf:int}", "a controller's `path`, under its router's");
 }

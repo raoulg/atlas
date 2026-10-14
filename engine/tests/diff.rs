@@ -9,7 +9,14 @@ use atlas_engine::diff::{self, Diff, Status};
 use atlas_engine::{Graph, Options};
 
 fn git(dir: &Path, args: &[&str]) {
-    let ok = Command::new("git").arg("-C").arg(dir).args(["-c", "user.name=atlas", "-c", "user.email=atlas@example.org", "-c", "commit.gpgsign=false", "-c", "tag.gpgsign=false"]).args(args).status().expect("git runs").success();
+    let ok = Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(["-c", "user.name=atlas", "-c", "user.email=atlas@example.org", "-c", "commit.gpgsign=false", "-c", "tag.gpgsign=false"])
+        .args(args)
+        .status()
+        .expect("git runs")
+        .success();
     assert!(ok, "git {args:?}");
 }
 
@@ -91,7 +98,13 @@ def main() -> None:
 /// The steps of `id` in the union with their marks: (what each reaches, its status).
 fn steps(g: &Graph, d: &Diff, id: &str) -> Vec<(String, Option<Status>)> {
     let n = g.node(id).unwrap();
-    n.sites.iter().enumerate().map(|(i, s)| (if s.to.is_empty() { format!("op:{}", s.op) } else { s.to.clone() }, d.sites.get(id).and_then(|m| m.get(&i)).copied())).collect()
+    n.sites
+        .iter()
+        .enumerate()
+        .map(|(i, s)| {
+            (if s.to.is_empty() { format!("op:{}", s.op) } else { s.to.clone() }, d.sites.get(id).and_then(|m| m.get(&i)).copied())
+        })
+        .collect()
 }
 
 /// `plot` gives way to `Trend(frame).save(..)`: the step B no longer has is removed, the steps it
@@ -117,7 +130,13 @@ fn steps_come_and_go_and_a_place_changes_its_writer() {
     assert_eq!(d.places.get("w:File:figures/spots.txt"), Some(&Status::Changed), "{:?}", d.places);
     assert_eq!(d.was.get("w:File:figures/spots.txt").map(String::as_str), Some("plot writes"));
     assert_eq!(d.places.get("w:File:data/raw.csv"), None, "the file both read the same way is the same");
-    let removed = g.edges.iter().enumerate().filter(|(i, _)| d.edges.get(i) == Some(&Status::Removed)).map(|(_, e)| (e.src.as_str(), e.dst.as_str())).collect::<Vec<_>>();
+    let removed = g
+        .edges
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| d.edges.get(i) == Some(&Status::Removed))
+        .map(|(_, e)| (e.src.as_str(), e.dst.as_str()))
+        .collect::<Vec<_>>();
     assert!(removed.contains(&("spots.cli.main", "spots.cli.plot")), "{removed:?}");
     done(&repo);
 }
@@ -126,7 +145,10 @@ fn steps_come_and_go_and_a_place_changes_its_writer() {
 /// differs, and what it was is said in words.
 #[test]
 fn a_function_whose_return_type_changed_is_changed() {
-    let a = FRAME.replace("def smooth(frame: Frame) -> Frame:\n    return Frame(frame.values[1:])", "def smooth(frame: Frame) -> None:\n    frame.values = frame.values[1:]");
+    let a = FRAME.replace(
+        "def smooth(frame: Frame) -> Frame:\n    return Frame(frame.values[1:])",
+        "def smooth(frame: Frame) -> None:\n    frame.values = frame.values[1:]",
+    );
     let main_a = PLOT.replace("frame = smooth(load(Path(\"data/raw.csv\")))", "frame = load(Path(\"data/raw.csv\"))\n    smooth(frame)");
     let repo = repository("returns", &format!("{a}{main_a}"));
     commit(&repo, &format!("{FRAME}{PLOT}"), "smooth gives back a frame");
@@ -158,7 +180,9 @@ fn a_renamed_function_is_one_node() {
 /// guess, and both are removed and both added.
 #[test]
 fn two_renames_that_could_match_either_way_are_not_guessed() {
-    let two = |a: &str, b: &str| format!("{FRAME}\n\ndef {a}(frame: Frame) -> Frame:\n    return frame\n\n\ndef {b}(frame: Frame) -> Frame:\n    return frame\n\n\ndef main() -> None:\n    frame = load(Path(\"data/raw.csv\"))\n    {a}(frame)\n    {b}(frame)\n");
+    let two = |a: &str, b: &str| {
+        format!("{FRAME}\n\ndef {a}(frame: Frame) -> Frame:\n    return frame\n\n\ndef {b}(frame: Frame) -> Frame:\n    return frame\n\n\ndef main() -> None:\n    frame = load(Path(\"data/raw.csv\"))\n    {a}(frame)\n    {b}(frame)\n")
+    };
     let repo = repository("either", &two("first", "second"));
     commit(&repo, &two("alpha", "beta"), "renamed both");
     let (_, d) = union(&repo);
@@ -174,7 +198,10 @@ fn two_renames_that_could_match_either_way_are_not_guessed() {
 #[test]
 fn a_change_upstream_marks_only_the_step_that_changed() {
     let repo = repository("upstream", &format!("{FRAME}{PLOT}"));
-    let b = FRAME.replace("def load(path: Path) -> Frame:\n    return Frame([float(x) for x in path.read_text().split()])", "def load(path: Path, skip: int) -> Frame:\n    return Frame([float(x) for x in path.read_text().split()][skip:])");
+    let b = FRAME.replace(
+        "def load(path: Path) -> Frame:\n    return Frame([float(x) for x in path.read_text().split()])",
+        "def load(path: Path, skip: int) -> Frame:\n    return Frame([float(x) for x in path.read_text().split()][skip:])",
+    );
     commit(&repo, &format!("{b}{}", PLOT.replace("load(Path(\"data/raw.csv\"))", "load(Path(\"data/raw.csv\"), 1)")), "load skips");
     let (_, d) = union(&repo);
     assert_eq!(d.nodes.get("spots.cli.load"), Some(&Status::Changed));
@@ -200,7 +227,8 @@ fn the_log_names_branches_and_tags() {
     assert_eq!(subjects[2], "first", "the root comes last");
     assert_eq!(log.head, log.commits.iter().find(|c| c.subject == "plot is draw").unwrap().hash);
     assert!(!log.dirty && log.changed == 0);
-    let refs = |s: &str| log.commits.iter().find(|c| c.subject == s).unwrap().refs.iter().map(|r| (r.name.as_str(), r.kind)).collect::<Vec<_>>();
+    let refs =
+        |s: &str| log.commits.iter().find(|c| c.subject == s).unwrap().refs.iter().map(|r| (r.name.as_str(), r.kind)).collect::<Vec<_>>();
     assert_eq!(refs("plot is draw"), [("main", RefKind::Head)]);
     assert_eq!(refs("Trend draws"), [("trend", RefKind::Branch)]);
     assert_eq!(refs("first"), [("v0.1", RefKind::Tag)]);
@@ -210,7 +238,11 @@ fn the_log_names_branches_and_tags() {
     let own = changes::log(&repo, false, 300, 0).unwrap();
     assert_eq!(own.commits.iter().map(|c| c.subject.as_str()).collect::<Vec<_>>(), ["plot is draw", "first"]);
     let rest = changes::log(&repo, true, 300, 1).unwrap();
-    assert_eq!(rest.commits.iter().map(|c| c.hash.as_str()).collect::<Vec<_>>(), log.commits[1..].iter().map(|c| c.hash.as_str()).collect::<Vec<_>>(), "skip leaves out the newest");
+    assert_eq!(
+        rest.commits.iter().map(|c| c.hash.as_str()).collect::<Vec<_>>(),
+        log.commits[1..].iter().map(|c| c.hash.as_str()).collect::<Vec<_>>(),
+        "skip leaves out the newest"
+    );
     std::fs::write(repo.join("notes.txt"), "a file git does not know yet").unwrap();
     std::fs::write(repo.join("src/spots/cli.py"), FRAME).unwrap();
     git(&repo, &["mv", "src/spots/__init__.py", "src/spots/package.py"]);

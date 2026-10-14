@@ -66,7 +66,15 @@ fn a_body_lists_its_calls() {
     let to: Vec<&str> = main.sites.iter().map(|s| if s.to.is_empty() { s.op.as_str() } else { s.to.as_str() }).collect();
     assert_eq!(
         to,
-        ["plotkit.data.load", "plotkit.data.lines", "plotkit.data.standard", "plotkit.figures.Settings", "plotkit.figures.LinePlot", "plotkit.figures.BasePlot.plot", "fast"],
+        [
+            "plotkit.data.load",
+            "plotkit.data.lines",
+            "plotkit.data.standard",
+            "plotkit.figures.Settings",
+            "plotkit.figures.LinePlot",
+            "plotkit.figures.BasePlot.plot",
+            "fast"
+        ],
         "{:#?}",
         main.sites
     );
@@ -89,7 +97,8 @@ fn a_body_lists_its_calls() {
 fn written(name: &str, files: &[(&str, &str)], libraries: usize) -> Graph {
     let dir = std::env::temp_dir().join(format!("atlas-libraries-{name}-{libraries}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
-    let manifest = format!("[project]\nname = \"{name}\"\nversion = \"0.1.0\"\n\n[tool.ty.environment]\nextra-paths = [\"site-packages\"]\n");
+    let manifest =
+        format!("[project]\nname = \"{name}\"\nversion = \"0.1.0\"\n\n[tool.ty.environment]\nextra-paths = [\"site-packages\"]\n");
     for (path, text) in std::iter::once(&("pyproject.toml", manifest.as_str())).chain(files) {
         let file = dir.join(path);
         std::fs::create_dir_all(file.parent().unwrap()).unwrap();
@@ -119,9 +128,16 @@ fn what_lies_beyond_the_rounds_is_the_border_functions() {
         ("site-packages/deepkit/store.py", &store),
     ];
     let (one, three) = (written("deep", files, 1), written("deep", files, 3));
-    assert!(one.node("deepkit.store.prepare").is_none() && one.node("deepkit.store.write").is_none(), "what lies beyond the rounds is not drawn");
+    assert!(
+        one.node("deepkit.store.prepare").is_none() && one.node("deepkit.store.write").is_none(),
+        "what lies beyond the rounds is not drawn"
+    );
     let save = one.node("deepkit.store.save").expect("the function the project calls");
-    let wrote = save.touches.iter().find(|t| t.kind_name() == "disk_write").unwrap_or_else(|| panic!("the border writes what its code beyond writes: {:?}", save.touches));
+    let wrote = save
+        .touches
+        .iter()
+        .find(|t| t.kind_name() == "disk_write")
+        .unwrap_or_else(|| panic!("the border writes what its code beyond writes: {:?}", save.touches));
     assert_eq!(wrote.artifact, "out.txt", "at the path the project hands it: {wrote:?}");
     let call = save.sites.iter().find(|s| s.to == "deepkit.store.prepare").expect("save's call into what lies beyond");
     assert_eq!(wrote.line, call.line, "drawn at the border's call that leads there");
@@ -130,9 +146,15 @@ fn what_lies_beyond_the_rounds_is_the_border_functions() {
     assert!(principles::check(&one).iter().all(|f| f.node != "deep.main.main"), "main leaves a file behind");
     // the rounds reach the function that writes: the touch is its own
     assert!(three.node("deepkit.store.write").unwrap().touches.iter().any(|t| t.kind_name() == "disk_write"));
-    assert!(three.node("deepkit.store.save").unwrap().touches.iter().all(|t| t.kind_name() != "disk_write"), "a function's own arrow is not what it reaches");
+    assert!(
+        three.node("deepkit.store.save").unwrap().touches.iter().all(|t| t.kind_name() != "disk_write"),
+        "a function's own arrow is not what it reaches"
+    );
     // the text the graph keeps of the library's file
     let text: Vec<&str> = one.files[&save.file].split('\n').collect();
     assert_eq!(text.len(), store.split('\n').count(), "each line where it was");
-    assert!(text.contains(&"def save(path: str, text: str) -> None:") && !text.contains(&"def write(path: str, text: str) -> None:"), "{text:?}");
+    assert!(
+        text.contains(&"def save(path: str, text: str) -> None:") && !text.contains(&"def write(path: str, text: str) -> None:"),
+        "{text:?}"
+    );
 }

@@ -144,7 +144,9 @@ pub fn boundary(pkg: Option<&str>, parts: &[String]) -> Option<Crossing> {
     match k::reaches(pkg, Some(Registry::PyPi)) {
         Some(World::Net) => return k::moves_on_the_web(last).then_some(Crossing::to(World::Net)),
         // a driver's call that runs or opens something, or whose name says which way a key goes
-        Some(World::Db(db)) => return (k::reaches_the_database(pkg, last) || access(db, last, None).is_some()).then_some(Crossing::to(World::Db(db))),
+        Some(World::Db(db)) => {
+            return (k::reaches_the_database(pkg, last) || access(db, last, None).is_some()).then_some(Crossing::to(World::Db(db)))
+        }
         Some(World::Llm) => return Some(Crossing::to(World::Llm)),
         _ => {}
     }
@@ -342,7 +344,13 @@ pub fn facts(kind: Crossing, pkg: Option<&str>, op: &str, literals: &[String]) -
         // a web place is named by its host; the Hub's operations say which way the files go
         let hub = k::HUB_READ.contains(&op) || k::HUB_WRITE.contains(&op) || k::HUB_MODELS.contains(&op);
         let artifact = if hub { k::HUB_HOST.to_string() } else { literals.iter().find_map(|l| host(l)).unwrap_or_default() };
-        let dir = if k::HUB_WRITE.contains(&op) { Some(Dir::Write) } else if hub { Some(Dir::Read) } else { None };
+        let dir = if k::HUB_WRITE.contains(&op) {
+            Some(Dir::Write)
+        } else if hub {
+            Some(Dir::Read)
+        } else {
+            None
+        };
         return Facts::of(Crossing { world: World::Net, dir }, artifact);
     }
     if kind.world != World::Disk {
@@ -381,7 +389,9 @@ pub fn is_mode(s: &str) -> bool {
 fn format_of(pkg: Option<&str>, op: &str) -> Option<&'static str> {
     let find = |table: &'static [(&'static str, &'static str)], key: &str| table.iter().find(|(x, _)| *x == key).map(|(_, f)| *f);
     let (array, ops, format) = k::ARRAY_FORMAT;
-    find(k::FORMATS_BY_OP, op).or_else(|| find(k::FORMATS_BY_PACKAGE, pkg?)).or_else(|| (pkg? == array && ops.contains(&op)).then_some(format))
+    find(k::FORMATS_BY_OP, op)
+        .or_else(|| find(k::FORMATS_BY_PACKAGE, pkg?))
+        .or_else(|| (pkg? == array && ops.contains(&op)).then_some(format))
 }
 
 /// A literal that names a file: `out.json`, `assets/{id}/x.xml`, `Makefile`. Not a mode, an
@@ -456,7 +466,10 @@ pub fn statement(db: Db, text: &str) -> Option<Vec<(String, Option<Dir>)>> {
 fn verb(text: &str) -> Option<Option<Dir>> {
     let first = text.split_whitespace().next()?.to_ascii_lowercase();
     let first = first.as_str();
-    [(WRITE_VERBS, Some(Dir::Write)), (READ_VERBS, Some(Dir::Read)), (SETTINGS, None)].into_iter().find(|(verbs, _)| verbs.contains(&first)).map(|(_, dir)| dir)
+    [(WRITE_VERBS, Some(Dir::Write)), (READ_VERBS, Some(Dir::Read)), (SETTINGS, None)]
+        .into_iter()
+        .find(|(verbs, _)| verbs.contains(&first))
+        .map(|(_, dir)| dir)
 }
 
 /// A SQL text the grammar reads whole: the sides of its statements.
@@ -492,7 +505,22 @@ pub fn names_its_tables(db: Db, text: &str) -> bool {
 /// the settings around them.
 const WRITE_VERBS: &[&str] = &["insert", "update", "delete", "create", "merge", "copy", "drop", "alter", "replace", "upsert", "truncate"];
 const READ_VERBS: &[&str] = &["select", "with", "values", "show", "describe", "call"];
-const SETTINGS: &[&str] = &["pragma", "set", "install", "load", "begin", "commit", "rollback", "attach", "detach", "vacuum", "analyze", "explain", "checkpoint", "use"];
+const SETTINGS: &[&str] = &[
+    "pragma",
+    "set",
+    "install",
+    "load",
+    "begin",
+    "commit",
+    "rollback",
+    "attach",
+    "detach",
+    "vacuum",
+    "analyze",
+    "explain",
+    "checkpoint",
+    "use",
+];
 
 /// A placeholder the code fills in at run time (`{tabel}`, `${t}`, `%s`) as a name the grammar
 /// accepts and Atlas does not take for a table.
@@ -503,7 +531,11 @@ fn sql_holes(text: &str) -> String {
     let mut n = 0;
     re.replace_all(text, |c: &regex::Captures| {
         n += 1;
-        if c[0].starts_with('%') { "?".to_string() } else { format!("{HOLE}{n}") }
+        if c[0].starts_with('%') {
+            "?".to_string()
+        } else {
+            format!("{HOLE}{n}")
+        }
     })
     .into_owned()
 }
@@ -555,7 +587,11 @@ fn sides(st: &Statement) -> Vec<(String, Dir)> {
             let named = ctes(st);
             let mut out = sides(inner);
             out.retain(|(n, _)| !named.contains(n));
-            let read: Vec<(String, Dir)> = relations(st).into_iter().filter(|n| !n.contains(HOLE) && !out.iter().any(|(m, _)| m == n)).map(|n| (n, Dir::Read)).collect();
+            let read: Vec<(String, Dir)> = relations(st)
+                .into_iter()
+                .filter(|n| !n.contains(HOLE) && !out.iter().any(|(m, _)| m == n))
+                .map(|n| (n, Dir::Read))
+                .collect();
             out.extend(read);
             return out;
         }
@@ -577,7 +613,12 @@ fn sides(st: &Statement) -> Vec<(String, Dir)> {
         _ => return vec![],
     };
     let dir = if writes { Dir::Write } else { Dir::Read };
-    let mut out: Vec<(String, Dir)> = names.into_iter().enumerate().map(|(i, n)| (n, if writes && i == 0 { Dir::Write } else { Dir::Read })).filter(|(n, _)| !n.contains(HOLE)).collect();
+    let mut out: Vec<(String, Dir)> = names
+        .into_iter()
+        .enumerate()
+        .map(|(i, n)| (n, if writes && i == 0 { Dir::Write } else { Dir::Read }))
+        .filter(|(n, _)| !n.contains(HOLE))
+        .collect();
     // a table named at run time is unknown, but which way the statement goes is not
     if !out.iter().any(|(_, d)| *d == dir) {
         out.insert(0, (String::new(), dir));
@@ -672,7 +713,11 @@ mod tests {
     fn a_library_is_not_a_place() {
         assert_eq!(name(boundary(Some("torch"), &parts(&["torch", "cat"]))), None);
         assert_eq!(name(boundary(Some("torch"), &parts(&["nn", "Linear"]))), None);
-        assert_eq!(name(boundary(Some("transformers"), &parts(&["AutoModel", "from_pretrained"]))), Some("net"), "weights come down from the Hub");
+        assert_eq!(
+            name(boundary(Some("transformers"), &parts(&["AutoModel", "from_pretrained"]))),
+            Some("net"),
+            "weights come down from the Hub"
+        );
         assert_eq!(name(boundary(Some("torch"), &parts(&["torch", "save"]))), Some("disk_write"));
         assert_eq!(name(boundary(Some("huggingface_hub"), &parts(&["snapshot_download"]))), Some("net"));
         assert_eq!(name(boundary(Some("huggingface_hub"), &parts(&["HfApi"]))), None, "building a client moves nothing");
@@ -683,7 +728,11 @@ mod tests {
         assert_eq!(facts(c("net"), Some("requests"), "get", &lits(&["https://api.example.org/v1/x"])).artifact, "api.example.org");
         let model = facts(c("net"), Some("transformers"), "from_pretrained", &lits(&["facebook/dinov2-small", "auto"]));
         assert_eq!((kind(&model), model.artifact.as_str(), dir(model.dir)), ("net", "huggingface.co", "read"));
-        assert_eq!(kind(&facts(c("net"), Some("transformers"), "from_pretrained", &lits(&["./checkpoints/best"]))), "disk_read", "a local checkpoint is a file");
+        assert_eq!(
+            kind(&facts(c("net"), Some("transformers"), "from_pretrained", &lits(&["./checkpoints/best"]))),
+            "disk_read",
+            "a local checkpoint is a file"
+        );
     }
 
     /// What a library's call reaches is a fact of its table: a driver's own queries, a key-value
@@ -700,7 +749,11 @@ mod tests {
         assert_eq!((dir(access(Db::Kv, "zadd", None)), dir(access(Db::Kv, "smembers", None))), ("write", "read"));
         let to_sql = b("pandas", &["frame", "to_sql"]).unwrap();
         let written = facts(to_sql, Some("pandas"), "to_sql", &lits(&["readings", "append"]));
-        assert_eq!((kind(&written), written.artifact.as_str(), dir(written.dir)), ("db_sql", "", "write"), "a table handed by its name is no statement");
+        assert_eq!(
+            (kind(&written), written.artifact.as_str(), dir(written.dir)),
+            ("db_sql", "", "write"),
+            "a table handed by its name is no statement"
+        );
         let read = facts(b("pandas", &["pd", "read_sql"]).unwrap(), Some("pandas"), "read_sql", &lits(&["SELECT * FROM readings"]));
         assert_eq!((read.artifact.as_str(), dir(read.dir)), ("readings", "read"));
         assert_eq!(n("pandas", &["pd", "read_csv"]), Some("disk_read"), "a frame's file is still a file");
@@ -717,7 +770,11 @@ mod tests {
         let p = |xs: &[&str]| xs.iter().map(|s| s.to_string()).collect::<Vec<_>>();
         assert_eq!(name(boundary_rust(&p(&["reqwest", "Client", "new"]))), None, "building a client moves nothing");
         assert_eq!(name(boundary_rust(&p(&["reqwest", "get"]))), Some("net"));
-        assert_eq!(name(boundary_rust(&p(&["rusqlite", "Connection", "open"]))), Some("db_sqlite"), "one database, one name in every language");
+        assert_eq!(
+            name(boundary_rust(&p(&["rusqlite", "Connection", "open"]))),
+            Some("db_sqlite"),
+            "one database, one name in every language"
+        );
         assert_eq!(library_place("neo4j").map(World::as_str), Some("db_graph"), "the Bolt driver reaches a graph database, whichever");
         assert_eq!(library_place("duckdb").map(World::as_str), Some("db_duckdb"));
         let local = facts(c("net"), Some("datasets"), "load_dataset", &p(&["csv", "data/train.csv"]));
@@ -729,7 +786,11 @@ mod tests {
     fn files_are_named_by_literal_then_format() {
         assert_eq!(facts(c("disk_write"), None, "write_text", &lits(&["out.json"])).artifact, "out.json");
         assert_eq!(facts(c("disk_write"), None, "to_csv", &lits(&[";"])).artifact, "*.csv");
-        assert_eq!(facts(c("disk_write"), None, "savefig", &lits(&["{name}.svg"])).artifact, "*.svg", "a name made of a value is its format");
+        assert_eq!(
+            facts(c("disk_write"), None, "savefig", &lits(&["{name}.svg"])).artifact,
+            "*.svg",
+            "a name made of a value is its format"
+        );
         assert_eq!(facts(c("disk_write"), None, "savefig", &lits(&["plots/{name}.svg"])).artifact, "plots/{name}.svg");
         assert_eq!(facts(c("disk_write"), Some("json"), "dump", &[]).artifact, "*.json");
         assert_eq!(facts(c("disk_read"), None, "read_text", &lits(&["utf-8"])).artifact, "");
@@ -752,7 +813,11 @@ mod tests {
         assert_eq!(s("db_sqlite", "INSERT INTO nodes VALUES (?)"), t(&[("nodes", "write")]));
         assert_eq!(s("db_duckdb", "select * from edges e join nodes n on e.a = n.id"), t(&[("edges", "read"), ("nodes", "read")]));
         assert_eq!(s("db_sqlite", "INSERT INTO log SELECT * FROM oordeel WHERE status = :s"), t(&[("log", "write"), ("oordeel", "read")]));
-        assert_eq!(s("db_sqlite", "WITH t AS (SELECT * FROM a) INSERT INTO b SELECT * FROM t"), t(&[("b", "write"), ("a", "read")]), "`t` names a subquery, not a table");
+        assert_eq!(
+            s("db_sqlite", "WITH t AS (SELECT * FROM a) INSERT INTO b SELECT * FROM t"),
+            t(&[("b", "write"), ("a", "read")]),
+            "`t` names a subquery, not a table"
+        );
         assert_eq!(s("db_sqlite", "CREATE TABLE IF NOT EXISTS oordeel (uuid TEXT PRIMARY KEY)"), t(&[("oordeel", "write")]));
         assert_eq!(s("db_duckdb", "DROP TABLE IF EXISTS locaties"), t(&[("locaties", "write")]));
         assert_eq!(s("db_sqlite", "PRAGMA user_version = 3"), t(&[]), "a setting names no table");
@@ -761,7 +826,11 @@ mod tests {
         assert_eq!(s("db_sqlite", "SELECT count(*) FROM {tabel}"), t(&[("", "read")]));
         assert_eq!(statement(db("db_sqlite"), "hello world"), None);
         assert_eq!(sql(db("db_sqlite"), &lits(&["SELECT a ", "FROM t"])), Some(t(&[("t", "read")])), "a statement split over literals");
-        assert_eq!(sql(db("db_sqlite"), &lits(&["INSERT INTO verbruik (moment, ", "model) VALUES (?, ?)", "seconds"])), Some(t(&[("verbruik", "write")])), "and the call's other literals");
+        assert_eq!(
+            sql(db("db_sqlite"), &lits(&["INSERT INTO verbruik (moment, ", "model) VALUES (?, ?)", "seconds"])),
+            Some(t(&[("verbruik", "write")])),
+            "and the call's other literals"
+        );
     }
 
     /// A statement names its tables whatever values fill its placeholders; one whose table or verb
@@ -786,6 +855,9 @@ mod tests {
         assert_eq!(dir(access(Db::Graph, "execute_query", Some("RoutingControl.READ"))), "read");
         assert_eq!(dir(access(Db::Graph, "session", Some("neo4j.WRITE_ACCESS"))), "write");
         assert_eq!(access(Db::Graph, "run", None), None, "a query alone says nothing");
-        assert_eq!(facts(c("db_graph"), Some("neo4j"), "run", &lits(&["MATCH (n:Regeling) RETURN n"])), Facts::of(c("db_graph"), String::new()));
+        assert_eq!(
+            facts(c("db_graph"), Some("neo4j"), "run", &lits(&["MATCH (n:Regeling) RETURN n"])),
+            Facts::of(c("db_graph"), String::new())
+        );
     }
 }

@@ -1,0 +1,3 @@
+# One width for code; prose in comments wraps at 100 by hand.
+max_width = 140
+use_small_heuristics = "Max"

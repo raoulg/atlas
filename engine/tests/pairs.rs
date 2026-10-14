@@ -29,10 +29,17 @@ fn a_request_meets_the_route_it_names() {
         let at = |side: &str, f: &str| if side.starts_with("rs") { format!("{side}.{f}") } else { format!("{side}.client.{f}") };
         let want = [(at(clean, "item"), "shop.api.item".to_string()), (at(clean, "order"), "shop.api.order".to_string())];
         assert_eq!(requests(&format!("{clean}.")), want);
-        assert_eq!(requests(&format!("{shortcut}.")), [], "a path looked up at run time names no route, and a path in a table is no request");
+        assert_eq!(
+            requests(&format!("{shortcut}.")),
+            [],
+            "a path looked up at run time names no route, and a path in a table is no request"
+        );
         for f in ["item", "order"].map(|f| at(shortcut, f)) {
             let net = g.node(&f).unwrap().touches.iter().find(|t| t.kind == World::Net).cloned();
-            assert!(net.as_ref().map_or(false, |t| t.artifact.is_empty() && !t.fixed), "{f} asks an address the code does not say: {net:?}");
+            assert!(
+                net.as_ref().map_or(false, |t| t.artifact.is_empty() && !t.fixed),
+                "{f} asks an address the code does not say: {net:?}"
+            );
         }
     }
 }

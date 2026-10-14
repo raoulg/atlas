@@ -86,7 +86,11 @@ impl Server {
         }
         match req.path.as_str() {
             "/" => Answer::page(PAGE.replacen("/*__FONTS__*/", crate::FONTS, 1)),
-            "/api/log" => self.log(req).map_or_else(Answer::failed, |json| Answer { status: "200 OK", kind: "application/json", body: json.into_bytes() }),
+            "/api/log" => self.log(req).map_or_else(Answer::failed, |json| Answer {
+                status: "200 OK",
+                kind: "application/json",
+                body: json.into_bytes(),
+            }),
             "/view" => self.view(req).map_or_else(Answer::failed, Answer::page),
             _ => Answer::text("404 Not Found", format!("nothing at {}", req.path)),
         }
@@ -168,7 +172,12 @@ fn request(conn: &TcpStream) -> Result<Request> {
         }
     }
     let (path, query) = target.split_once('?').unwrap_or((&target, ""));
-    let query = query.split('&').filter(|kv| !kv.is_empty()).map(|kv| kv.split_once('=').unwrap_or((kv, ""))).map(|(k, v)| (decoded(k), decoded(v))).collect();
+    let query = query
+        .split('&')
+        .filter(|kv| !kv.is_empty())
+        .map(|kv| kv.split_once('=').unwrap_or((kv, "")))
+        .map(|(k, v)| (decoded(k), decoded(v)))
+        .collect();
     Ok(Request { method, path: decoded(path), query, host })
 }
 
@@ -190,7 +199,13 @@ fn decoded(s: &str) -> String {
 
 /// Write an answer and close the connection.
 fn reply(mut conn: TcpStream, a: Answer) -> Result<()> {
-    write!(conn, "HTTP/1.1 {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n", a.status, a.kind, a.body.len())?;
+    write!(
+        conn,
+        "HTTP/1.1 {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n",
+        a.status,
+        a.kind,
+        a.body.len()
+    )?;
     conn.write_all(&a.body)?;
     Ok(conn.flush()?)
 }

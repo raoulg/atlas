@@ -22,7 +22,7 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 use ruff_db::diagnostic::Diagnostic;
-use ruff_db::files::{File, FilePath, FileRange, FileRootKind, Files, system_path_to_file};
+use ruff_db::files::{system_path_to_file, File, FilePath, FileRange, FileRootKind, Files};
 use ruff_db::parsed::parsed_module;
 use ruff_db::system::{OsSystem, System, SystemPath, SystemPathBuf};
 use ruff_db::vendored::VendoredFileSystem;
@@ -38,8 +38,8 @@ use ty_python_semantic::dependency::DependencyMetadata;
 use ty_python_semantic::lint::{LintRegistry, RuleSelection};
 use ty_python_semantic::types::{Type, TypeDefinition, TypeDetail};
 use ty_python_semantic::{
-    check_file_unwrap, default_lint_registry, definitions_for_attribute, definitions_for_name, AnalysisSettings, Db,
-    HasType, ImportAliasResolution, ProgramEnvironment, PythonEnvironment, PythonVersionSource, PythonVersionWithSource, SemanticModel,
+    check_file_unwrap, default_lint_registry, definitions_for_attribute, definitions_for_name, AnalysisSettings, Db, HasType,
+    ImportAliasResolution, ProgramEnvironment, PythonEnvironment, PythonVersionSource, PythonVersionWithSource, SemanticModel,
     SysPrefixPathOrigin,
 };
 
@@ -97,9 +97,8 @@ fn file_of(class: &str) -> Option<FileArg> {
         "PathLike" | "PurePath" | "Path" | "PurePosixPath" | "PureWindowsPath" | "PosixPath" | "WindowsPath" => Some(FileArg::Path),
         "SupportsRead" | "SupportsReadline" => Some(FileArg::Reads),
         "SupportsWrite" => Some(FileArg::Writes),
-        "IO" | "TextIO" | "BinaryIO" | "IOBase" | "RawIOBase" | "BufferedIOBase" | "TextIOBase" | "TextIOWrapper" | "BufferedReader" | "BufferedWriter" | "BufferedRandom" | "FileIO" => {
-            Some(FileArg::Open)
-        }
+        "IO" | "TextIO" | "BinaryIO" | "IOBase" | "RawIOBase" | "BufferedIOBase" | "TextIOBase" | "TextIOWrapper" | "BufferedReader"
+        | "BufferedWriter" | "BufferedRandom" | "FileIO" => Some(FileArg::Open),
         _ => None,
     }
 }
@@ -144,7 +143,9 @@ pub fn outer_classes(label: &str) -> Vec<String> {
             _ => (p, None),
         };
         match inner {
-            Some(inner) if crate::knowledge::PYTHON_HOLDERS.contains(&head) || crate::knowledge::PYTHON_ALTERNATIVES.contains(&head) => out.extend(outer_classes(inner)),
+            Some(inner) if crate::knowledge::PYTHON_HOLDERS.contains(&head) || crate::knowledge::PYTHON_ALTERNATIVES.contains(&head) => {
+                out.extend(outer_classes(inner))
+            }
             _ if !head.is_empty() => out.push(head.to_string()),
             _ => {}
         }
@@ -388,7 +389,8 @@ impl Kept {
     /// and the standard library, or in a file ty names otherwise than the file system resolves
     /// it: it would then depend on more than the key holds.
     fn put(&self, key: &str, said: &Said) {
-        let inside = |p: &Place| p.key.as_ref().map_or(true, |k| self.holds(k) && p.path.as_deref().map_or(true, |path| keyed_as(path) == *k));
+        let inside =
+            |p: &Place| p.key.as_ref().map_or(true, |k| self.holds(k) && p.path.as_deref().map_or(true, |path| keyed_as(path) == *k));
         if said.places().all(inside) {
             if let Ok(bytes) = serde_json::to_vec(said) {
                 self.cache.put(KEPT, key, &bytes);
@@ -503,7 +505,9 @@ impl Ty {
 
 /// The files of a list ty reads, by their paths on disk, with the names Atlas knows them by.
 fn asked(list: &[(String, PathBuf)]) -> Vec<(SystemPathBuf, String)> {
-    list.iter().filter_map(|(name, path)| absolute(path).filter(|p| matches!(p.extension(), Some("py" | "ipynb"))).map(|p| (p, name.clone()))).collect()
+    list.iter()
+        .filter_map(|(name, path)| absolute(path).filter(|p| matches!(p.extension(), Some("py" | "ipynb"))).map(|p| (p, name.clone())))
+        .collect()
 }
 
 /// The files of a list by their keys, with the names Atlas knows them by.
@@ -530,7 +534,9 @@ struct Class<'db> {
 fn overrides<'db>(db: &'db TyDb, classes: &[Class<'db>], here: &HashMap<String, String>) -> Vec<(String, usize, bool)> {
     let by_place: HashMap<(&str, usize), &Class> = classes.iter().map(|c| ((c.key.as_str(), c.at), c)).collect();
     // the bases a class is read with: those defined in a file Atlas reads
-    let bases = |c: &Class| -> Vec<(String, usize)> { c.bases.iter().filter_map(|p| Some((p.key.clone().filter(|k| here.contains_key(k))?, p.at))).collect() };
+    let bases = |c: &Class| -> Vec<(String, usize)> {
+        c.bases.iter().filter_map(|p| Some((p.key.clone().filter(|k| here.contains_key(k))?, p.at))).collect()
+    };
     let mut out = vec![];
     for c in classes {
         let env = ProgramEnvironment::from_file(c.program);
@@ -598,10 +604,9 @@ impl Settings {
         let read = |name: &str| std::fs::read_to_string(root.join(name).as_std_path()).ok().and_then(|s| s.parse::<toml::Table>().ok());
         let (table, file) = match read("ty.toml") {
             Some(t) => (t.get("environment").cloned(), root.join("ty.toml")),
-            None => (
-                read("pyproject.toml").and_then(|t| t.get("tool")?.get("ty")?.get("environment").cloned()),
-                root.join("pyproject.toml"),
-            ),
+            None => {
+                (read("pyproject.toml").and_then(|t| t.get("tool")?.get("ty")?.get("environment").cloned()), root.join("pyproject.toml"))
+            }
         };
         let project = read("pyproject.toml").and_then(|t| t.get("project").cloned());
         let name = project.as_ref().and_then(|p| p.get("name")?.as_str().map(String::from));
@@ -673,13 +678,19 @@ impl Setup {
         search.extra_paths = settings.extra_paths.iter().map(|p| root.join(p)).collect();
         let (venv, found) = match &settings.python {
             Some(p) => {
-                let origin = SysPrefixPathOrigin::ConfigFileSetting(Arc::new(settings.file.clone().unwrap_or_else(|| root.join("pyproject.toml"))), None);
+                let origin = SysPrefixPathOrigin::ConfigFileSetting(
+                    Arc::new(settings.file.clone().unwrap_or_else(|| root.join("pyproject.toml"))),
+                    None,
+                );
                 (root.join(p), PythonEnvironment::new(root.join(p), origin, system).ok())
             }
             // the project's `.venv`; a `VIRTUAL_ENV`, a conda environment or a python on `PATH` are the shell's
             None => {
                 let v = root.join(".venv");
-                let found = system.is_directory(&v).then(|| PythonEnvironment::new(v.clone(), SysPrefixPathOrigin::LocalVenv, system).ok()).flatten();
+                let found = system
+                    .is_directory(&v)
+                    .then(|| PythonEnvironment::new(v.clone(), SysPrefixPathOrigin::LocalVenv, system).ok())
+                    .flatten();
                 (v, found)
             }
         };
@@ -763,7 +774,8 @@ impl Setup {
     /// code elsewhere, the modules it offers and the code of each that no place before it holds.
     fn checks(&self) -> Vec<(Whose, Check)> {
         let places = self.places();
-        let offers: Vec<BTreeMap<String, Offer>> = places.iter().map(|(p, w)| if *w == Whose::Standard { standard(self.version) } else { offered(p) }).collect();
+        let offers: Vec<BTreeMap<String, Offer>> =
+            places.iter().map(|(p, w)| if *w == Whose::Standard { standard(self.version) } else { offered(p) }).collect();
         let mut out = vec![];
         if let Some(v) = &self.venv {
             out.push((Whose::Installed, Check::File(v.join("pyvenv.cfg").into_std_path_buf())));
@@ -863,7 +875,8 @@ fn modules_in(dir: &Path) -> Check {
 /// The modules a directory offers an import, by name.
 fn offered(dir: &Path) -> BTreeMap<String, Offer> {
     let mut out: BTreeMap<String, Offer> = BTreeMap::new();
-    let identifier = |s: &str| s.chars().next().map_or(false, |c| c.is_alphabetic() || c == '_') && s.chars().all(|c| c.is_alphanumeric() || c == '_');
+    let identifier =
+        |s: &str| s.chars().next().map_or(false, |c| c.is_alphabetic() || c == '_') && s.chars().all(|c| c.is_alphanumeric() || c == '_');
     for e in std::fs::read_dir(dir).into_iter().flatten().flatten().filter(|e| e.file_name() != BYTECODE) {
         let (path, file) = (e.path(), e.file_name().to_string_lossy().to_string());
         let (name, regular) = if path.is_dir() {
@@ -933,7 +946,13 @@ fn elsewhere(dir: &Path, earlier: &[PathBuf], held: &dyn Fn(&str) -> bool, depth
 
 /// The files of a directory with an extension, in order.
 fn files_with(dir: &Path, ext: &str) -> Vec<PathBuf> {
-    let mut out: Vec<PathBuf> = std::fs::read_dir(dir).into_iter().flatten().flatten().map(|e| e.path()).filter(|p| p.is_file() && p.extension().and_then(|x| x.to_str()) == Some(ext)).collect();
+    let mut out: Vec<PathBuf> = std::fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.is_file() && p.extension().and_then(|x| x.to_str()) == Some(ext))
+        .collect();
     out.sort();
     out
 }
@@ -1129,7 +1148,9 @@ impl Reader<'_, '_> {
             }
         }
         let names = match func {
-            ast::Expr::Name(n) => definitions_for_name(self.model, n.id.as_str(), AnyNodeRef::from(n), ImportAliasResolution::ResolveAliases),
+            ast::Expr::Name(n) => {
+                definitions_for_name(self.model, n.id.as_str(), AnyNodeRef::from(n), ImportAliasResolution::ResolveAliases)
+            }
             ast::Expr::Attribute(a) => definitions_for_attribute(self.model, a),
             _ => vec![],
         };
@@ -1168,8 +1189,11 @@ impl Reader<'_, '_> {
             .into_iter()
             .map(|(name, (a, b))| {
                 let inside = parts.details.iter().zip(&parts.targets).filter(|(_, r)| u32::from(r.start()) >= a && u32::from(r.end()) <= b);
-                let kinds: Vec<FileArg> = inside.filter_map(|(d, _)| if let TypeDetail::Type(t) = d { class(t).and_then(|c| file_of(&c)) } else { None }).collect();
-                let annotation = parts.label.get(a as usize..b as usize).and_then(|s| s.split_once(':')).map(|(_, t)| t.trim()).unwrap_or("");
+                let kinds: Vec<FileArg> = inside
+                    .filter_map(|(d, _)| if let TypeDetail::Type(t) = d { class(t).and_then(|c| file_of(&c)) } else { None })
+                    .collect();
+                let annotation =
+                    parts.label.get(a as usize..b as usize).and_then(|s| s.split_once(':')).map(|(_, t)| t.trim()).unwrap_or("");
                 let file = [FileArg::Path, FileArg::Reads, FileArg::Writes, FileArg::Open]
                     .into_iter()
                     .find(|k| kinds.contains(k))
@@ -1200,7 +1224,9 @@ impl Reader<'_, '_> {
         let mut classes = vec![];
         for d in &parts.details {
             let TypeDetail::Type(t) = d else { continue };
-            let Some(def @ (TypeDefinition::StaticClass(_) | TypeDefinition::DynamicClass(_))) = t.definition(self.db, &env) else { continue };
+            let Some(def @ (TypeDefinition::StaticClass(_) | TypeDefinition::DynamicClass(_))) = t.definition(self.db, &env) else {
+                continue;
+            };
             let Some(r) = def.focus_range(self.db) else { continue };
             let text = ruff_db::source::source_text(self.db, r.file());
             let name = text.as_str().get(r.range().start().to_usize()..r.range().end().to_usize()).unwrap_or("").to_string();
@@ -1209,7 +1235,10 @@ impl Reader<'_, '_> {
             }
         }
         let is_class = matches!(ty, Type::ClassLiteral(_) | Type::GenericAlias(_) | Type::SubclassOf(_));
-        let is_code = matches!(ty, Type::FunctionLiteral(_) | Type::BoundMethod(_) | Type::KnownBoundMethod(_) | Type::Callable(_) | Type::ModuleLiteral(_));
+        let is_code = matches!(
+            ty,
+            Type::FunctionLiteral(_) | Type::BoundMethod(_) | Type::KnownBoundMethod(_) | Type::Callable(_) | Type::ModuleLiteral(_)
+        );
         Some(Shown { shown: parts.label, classes, is_class, is_code })
     }
 
@@ -1243,16 +1272,34 @@ impl<'db> Reader<'_, 'db> {
     fn class(&self, c: &ast::StmtClassDef, file: &str, key: &str) -> Class<'db> {
         let env = self.model.program_environment();
         let variable = |t: Type<'db>| {
-            matches!(t, Type::TypeVar(_)) || t.display(self.db, &env).to_string_parts().details.iter().any(|d| matches!(d, TypeDetail::Type(Type::TypeVar(_))))
+            matches!(t, Type::TypeVar(_))
+                || t.display(self.db, &env).to_string_parts().details.iter().any(|d| matches!(d, TypeDetail::Type(Type::TypeVar(_))))
         };
-        let bases = c.bases().iter().filter_map(|b| Some(self.place(b.inferred_type(self.model)?.definition(self.db, &env)?.focus_range(self.db)?))).collect();
+        let bases = c
+            .bases()
+            .iter()
+            .filter_map(|b| Some(self.place(b.inferred_type(self.model)?.definition(self.db, &env)?.focus_range(self.db)?)))
+            .collect();
         let methods = c
             .body
             .iter()
             .filter_map(|s| if let ast::Stmt::FunctionDef(f) = s { Some(f) } else { None })
-            .map(|f| (f.name.to_string(), f.name.range.start().to_usize(), f.returns.as_deref().and_then(|r| r.inferred_type(self.model)).filter(|t| !variable(*t))))
+            .map(|f| {
+                (
+                    f.name.to_string(),
+                    f.name.range.start().to_usize(),
+                    f.returns.as_deref().and_then(|r| r.inferred_type(self.model)).filter(|t| !variable(*t)),
+                )
+            })
             .collect();
-        Class { file: file.to_string(), key: key.to_string(), at: c.name.range.start().to_usize(), program: self.model.program_file(), bases, methods }
+        Class {
+            file: file.to_string(),
+            key: key.to_string(),
+            at: c.name.range.start().to_usize(),
+            program: self.model.program_file(),
+            bases,
+            methods,
+        }
     }
 }
 

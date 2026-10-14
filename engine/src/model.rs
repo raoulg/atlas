@@ -529,14 +529,28 @@ pub struct Touch {
 impl Touch {
     /// A touch of `kind`, going `dir` when the call says, with nothing else known yet.
     pub fn new(kind: World, dir: Option<Dir>) -> Touch {
-        Touch { kind, dir, what: String::new(), n: 1, payload: String::new(), op: String::new(), artifact: String::new(), fixed: false, line: 0, by: vec![], users_of: vec![] }
+        Touch {
+            kind,
+            dir,
+            what: String::new(),
+            n: 1,
+            payload: String::new(),
+            op: String::new(),
+            artifact: String::new(),
+            fixed: false,
+            line: 0,
+            by: vec![],
+            users_of: vec![],
+        }
     }
 
     /// Whether the route that starts at `entry` and reaches `reached` runs this touch: one whole
     /// in its own function always, one whole by what callers hand when the route reaches one of
     /// them, one whole by what an entry's users hand in that entry's route.
     pub fn in_route(&self, entry: &str, reached: &dyn Fn(&str) -> bool) -> bool {
-        (self.by.is_empty() && self.users_of.is_empty()) || self.by.iter().any(|f| f.split('&').all(reached)) || self.users_of.iter().any(|e| e == entry)
+        (self.by.is_empty() && self.users_of.is_empty())
+            || self.by.iter().any(|f| f.split('&').all(reached))
+            || self.users_of.iter().any(|e| e == entry)
     }
 
     pub fn crossing(&self) -> Crossing {
@@ -581,7 +595,19 @@ pub struct TouchJson {
 impl From<Touch> for TouchJson {
     fn from(t: Touch) -> TouchJson {
         let (kind, dir) = (t.kind_name().to_string(), t.dir_name().to_string());
-        TouchJson { kind, what: t.what, n: t.n, payload: t.payload, op: t.op, artifact: t.artifact, dir, fixed: t.fixed, line: t.line, by: t.by, users_of: t.users_of }
+        TouchJson {
+            kind,
+            what: t.what,
+            n: t.n,
+            payload: t.payload,
+            op: t.op,
+            artifact: t.artifact,
+            dir,
+            fixed: t.fixed,
+            line: t.line,
+            by: t.by,
+            users_of: t.users_of,
+        }
     }
 }
 
@@ -589,7 +615,19 @@ impl TryFrom<TouchJson> for Touch {
     type Error = String;
     fn try_from(j: TouchJson) -> Result<Touch, String> {
         let c = Crossing::named(&j.kind, &j.dir).ok_or_else(|| format!("no part of the world called `{}`", j.kind))?;
-        Ok(Touch { kind: c.world, dir: c.dir, what: j.what, n: j.n, payload: j.payload, op: j.op, artifact: j.artifact, fixed: j.fixed, line: j.line, by: j.by, users_of: j.users_of })
+        Ok(Touch {
+            kind: c.world,
+            dir: c.dir,
+            what: j.what,
+            n: j.n,
+            payload: j.payload,
+            op: j.op,
+            artifact: j.artifact,
+            fixed: j.fixed,
+            line: j.line,
+            by: j.by,
+            users_of: j.users_of,
+        })
     }
 }
 
@@ -797,10 +835,13 @@ impl Graph {
     /// What the route that starts at `start` can run: the functions it calls, the classes it
     /// builds with their methods, and the handlers it requests, through every step.
     pub fn reach(&self, start: &str) -> std::collections::HashSet<String> {
-        let classes: std::collections::HashSet<&str> = self.nodes.iter().filter(|n| n.kind == NodeKind::Class).map(|n| n.id.as_str()).collect();
+        let classes: std::collections::HashSet<&str> =
+            self.nodes.iter().filter(|n| n.kind == NodeKind::Class).map(|n| n.id.as_str()).collect();
         let mut next: std::collections::HashMap<&str, Vec<&str>> = std::collections::HashMap::new();
         for e in &self.edges {
-            if matches!(e.kind, EdgeKind::Calls | EdgeKind::Instantiates | EdgeKind::Requests) || (e.kind == EdgeKind::Contains && classes.contains(e.src.as_str())) {
+            if matches!(e.kind, EdgeKind::Calls | EdgeKind::Instantiates | EdgeKind::Requests)
+                || (e.kind == EdgeKind::Contains && classes.contains(e.src.as_str()))
+            {
                 next.entry(e.src.as_str()).or_default().push(e.dst.as_str());
             }
         }

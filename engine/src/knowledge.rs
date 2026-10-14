@@ -153,7 +153,12 @@ const CLICK_OPTIONS: OptionsBy = OptionsBy::Decorators { option: "option", argum
 pub const CLI_FRAMEWORKS: &[CliFramework] = &[
     CliFramework { package: "click", commands: &["command"], drops: CLICK_DROPS, options: CLICK_OPTIONS },
     CliFramework { package: "rich_click", commands: &["command"], drops: CLICK_DROPS, options: CLICK_OPTIONS },
-    CliFramework { package: "typer", commands: &["command"], drops: &[], options: OptionsBy::Parameters { option: "Option", argument: "Argument" } },
+    CliFramework {
+        package: "typer",
+        commands: &["command"],
+        drops: &[],
+        options: OptionsBy::Parameters { option: "Option", argument: "Argument" },
+    },
 ];
 
 /// The keyword a command's decorator is handed the command's name by.
@@ -253,7 +258,8 @@ pub const NEVER_READ: &[&str] = &["node_modules", "target", "site-packages", "__
 
 /// Directories a tool made rather than the author, beside those never read: environments,
 /// build output, a framework's output.
-pub const MADE_DIRS: &[&str] = &["dist", "build", "out", "coverage", "venv", "env", ".next", ".output", ".wrangler", ".vercel", ".turbo", "public"];
+pub const MADE_DIRS: &[&str] =
+    &["dist", "build", "out", "coverage", "venv", "env", ".next", ".output", ".wrangler", ".vercel", ".turbo", "public"];
 
 /// Whether a directory of this name is one a tool made.
 pub fn made_dir(name: &str) -> bool {
@@ -271,10 +277,50 @@ pub const NODE_PACKAGES: &str = "node_modules";
 /// Node's own modules, imported by their names (`fs`) or under `node:`: the language's library,
 /// never a package's.
 pub const NODE_BUILTINS: &[&str] = &[
-    "assert", "async_hooks", "buffer", "child_process", "cluster", "console", "constants", "crypto", "dgram", "diagnostics_channel", "dns", "domain",
-    "events", "fs", "http", "http2", "https", "inspector", "module", "net", "os", "path", "perf_hooks", "process", "punycode", "querystring",
-    "readline", "repl", "sqlite", "stream", "string_decoder", "sys", "test", "timers", "tls", "trace_events", "tty", "url", "util", "v8", "vm",
-    "wasi", "worker_threads", "zlib",
+    "assert",
+    "async_hooks",
+    "buffer",
+    "child_process",
+    "cluster",
+    "console",
+    "constants",
+    "crypto",
+    "dgram",
+    "diagnostics_channel",
+    "dns",
+    "domain",
+    "events",
+    "fs",
+    "http",
+    "http2",
+    "https",
+    "inspector",
+    "module",
+    "net",
+    "os",
+    "path",
+    "perf_hooks",
+    "process",
+    "punycode",
+    "querystring",
+    "readline",
+    "repl",
+    "sqlite",
+    "stream",
+    "string_decoder",
+    "sys",
+    "test",
+    "timers",
+    "tls",
+    "trace_events",
+    "tty",
+    "url",
+    "util",
+    "v8",
+    "vm",
+    "wasi",
+    "worker_threads",
+    "zlib",
 ];
 
 /// Where Cargo keeps the source of the crates it fetched from a registry, below its home: one
@@ -284,7 +330,8 @@ pub const CARGO_SOURCES: &[&str] = &["registry", "src"];
 /// The files that say a package holds compiled code, by registry: Python's extension modules,
 /// Node's native addons and WebAssembly, the C and C++ a crate builds. What such a package does
 /// is in code no reader of its language reads, so Atlas reads none of it.
-pub const COMPILED: &[(Registry, &[&str])] = &[(PyPi, &["so", "pyd", "dylib"]), (Npm, &["node", "wasm"]), (Crates, &["c", "cc", "cpp", "cxx"])];
+pub const COMPILED: &[(Registry, &[&str])] =
+    &[(PyPi, &["so", "pyd", "dylib"]), (Npm, &["node", "wasm"]), (Crates, &["c", "cc", "cpp", "cxx"])];
 
 /// The extensions of compiled code in a package of a registry.
 pub fn compiled(from: Registry) -> &'static [&'static str] {
@@ -294,14 +341,32 @@ pub fn compiled(from: Registry) -> &'static [&'static str] {
 /// The crates the tables name by a type or a function alone: csv's and plotters' file openers,
 /// the containers of indexmap, smallvec, arrayvec and dashmap, the cells of parking_lot,
 /// once_cell and lazy_static.
-pub const RUST_NAMED_BY_TYPE: &[&str] = &["csv", "plotters", "indexmap", "smallvec", "arrayvec", "dashmap", "parking_lot", "once_cell", "lazy_static"];
+pub const RUST_NAMED_BY_TYPE: &[&str] =
+    &["csv", "plotters", "indexmap", "smallvec", "arrayvec", "dashmap", "parking_lot", "once_cell", "lazy_static"];
 
 // ---------- values ----------
 
 /// Methods that hand on the value they are called on, opened or unchanged: the standard
 /// library's `Result` and `Option`, anyhow's context. By crate.
 pub const HANDS_ON: &[(&str, &[&str])] = &[
-    ("std", &["unwrap", "expect", "unwrap_or", "unwrap_or_else", "unwrap_or_default", "ok", "err", "ok_or", "ok_or_else", "map", "map_err", "and_then", "or_else"]),
+    (
+        "std",
+        &[
+            "unwrap",
+            "expect",
+            "unwrap_or",
+            "unwrap_or_else",
+            "unwrap_or_default",
+            "ok",
+            "err",
+            "ok_or",
+            "ok_or_else",
+            "map",
+            "map_err",
+            "and_then",
+            "or_else",
+        ],
+    ),
     ("anyhow", &["context", "with_context"]),
 ];
 
@@ -313,9 +378,38 @@ pub fn hands_on(method: &str) -> bool {
 /// Python's generic types whose parameters are the values they hold: `list[Graph]` holds
 /// Graphs.
 pub const PYTHON_HOLDERS: &[&str] = &[
-    "list", "dict", "set", "tuple", "frozenset", "Iterable", "Iterator", "Sequence", "Mapping", "Generator", "AsyncIterator", "List", "Dict",
-    "Tuple", "Set", "FrozenSet", "Deque", "deque", "DefaultDict", "defaultdict", "OrderedDict", "Counter", "ChainMap", "Collection", "Container",
-    "AbstractSet", "MutableSet", "MutableSequence", "MutableMapping", "AsyncIterable", "AsyncGenerator", "Reversible",
+    "list",
+    "dict",
+    "set",
+    "tuple",
+    "frozenset",
+    "Iterable",
+    "Iterator",
+    "Sequence",
+    "Mapping",
+    "Generator",
+    "AsyncIterator",
+    "List",
+    "Dict",
+    "Tuple",
+    "Set",
+    "FrozenSet",
+    "Deque",
+    "deque",
+    "DefaultDict",
+    "defaultdict",
+    "OrderedDict",
+    "Counter",
+    "ChainMap",
+    "Collection",
+    "Container",
+    "AbstractSet",
+    "MutableSet",
+    "MutableSequence",
+    "MutableMapping",
+    "AsyncIterable",
+    "AsyncGenerator",
+    "Reversible",
 ];
 
 /// Python's generic types whose value is one of their parameters: `Optional[Node]` is a Node or
@@ -326,7 +420,19 @@ pub const PYTHON_ALTERNATIVES: &[&str] = &["Optional", "Union"];
 /// `Annotated[T, ..]` is a `T` with notes, `Callable[[A], B]` takes an `A` and gives a `B`,
 /// `type[T]` is the class itself.
 pub const PYTHON_DESCRIBES: &[&str] = &[
-    "type", "Type", "Callable", "Awaitable", "Coroutine", "Annotated", "ClassVar", "Final", "Required", "NotRequired", "ReadOnly", "TypeGuard", "TypeIs",
+    "type",
+    "Type",
+    "Callable",
+    "Awaitable",
+    "Coroutine",
+    "Annotated",
+    "ClassVar",
+    "Final",
+    "Required",
+    "NotRequired",
+    "ReadOnly",
+    "TypeGuard",
+    "TypeIs",
     "Unpack",
 ];
 
@@ -338,8 +444,25 @@ pub fn python_container(name: &str) -> bool {
 /// TypeScript's generic types whose arguments are the values they hold or stand for:
 /// `Promise<Regel[]>` hands on Regels.
 pub const TYPESCRIPT_CONTAINERS: &[&str] = &[
-    "Promise", "Array", "ReadonlyArray", "Set", "ReadonlySet", "Map", "ReadonlyMap", "Record", "Partial", "Required", "Readonly", "Pick", "Omit",
-    "NonNullable", "Awaited", "Iterable", "AsyncIterable", "Generator", "AsyncGenerator",
+    "Promise",
+    "Array",
+    "ReadonlyArray",
+    "Set",
+    "ReadonlySet",
+    "Map",
+    "ReadonlyMap",
+    "Record",
+    "Partial",
+    "Required",
+    "Readonly",
+    "Pick",
+    "Omit",
+    "NonNullable",
+    "Awaited",
+    "Iterable",
+    "AsyncIterable",
+    "Generator",
+    "AsyncGenerator",
 ];
 
 /// Rust's generic types whose arguments are the values they hold or stand for, by the name Rust
@@ -350,10 +473,53 @@ pub const TYPESCRIPT_CONTAINERS: &[&str] = &[
 /// `Lazy`). The library's sums (`RUST_SUMS`) are their arguments as well. Any other generic's
 /// arguments are types: `DrawingArea<DB, Shift>` is a `DrawingArea`.
 pub const RUST_CONTAINERS: &[&str] = &[
-    "Vec", "VecDeque", "HashMap", "HashSet", "BTreeMap", "BTreeSet", "BinaryHeap", "LinkedList", "Box", "Rc", "Arc", "Weak", "Cow", "Pin", "Cell",
-    "RefCell", "Ref", "RefMut", "Mutex", "MutexGuard", "RwLock", "RwLockReadGuard", "RwLockWriteGuard", "OnceLock", "OnceCell", "LazyLock",
-    "LazyCell", "Option", "Iterator", "IntoIterator", "DoubleEndedIterator", "ExactSizeIterator", "Future", "IntoFuture", "Stream", "AsRef",
-    "AsMut", "Borrow", "BorrowMut", "Into", "IndexMap", "IndexSet", "SmallVec", "ArrayVec", "DashMap", "DashSet", "Lazy",
+    "Vec",
+    "VecDeque",
+    "HashMap",
+    "HashSet",
+    "BTreeMap",
+    "BTreeSet",
+    "BinaryHeap",
+    "LinkedList",
+    "Box",
+    "Rc",
+    "Arc",
+    "Weak",
+    "Cow",
+    "Pin",
+    "Cell",
+    "RefCell",
+    "Ref",
+    "RefMut",
+    "Mutex",
+    "MutexGuard",
+    "RwLock",
+    "RwLockReadGuard",
+    "RwLockWriteGuard",
+    "OnceLock",
+    "OnceCell",
+    "LazyLock",
+    "LazyCell",
+    "Option",
+    "Iterator",
+    "IntoIterator",
+    "DoubleEndedIterator",
+    "ExactSizeIterator",
+    "Future",
+    "IntoFuture",
+    "Stream",
+    "AsRef",
+    "AsMut",
+    "Borrow",
+    "BorrowMut",
+    "Into",
+    "IndexMap",
+    "IndexSet",
+    "SmallVec",
+    "ArrayVec",
+    "DashMap",
+    "DashSet",
+    "Lazy",
 ];
 
 /// Whether a Rust generic type's arguments are the values it holds or stands for.
@@ -367,9 +533,17 @@ pub fn rust_container(name: &str) -> bool {
 /// `MutableSet`, with `list.sort`; a call changes its receiver when ty says it goes to the
 /// package of its row.
 pub const MUTATORS: &[(Registry, &str, &[&str])] = &[
-    (Registry::PyPi, "builtins", &["append", "extend", "insert", "remove", "pop", "clear", "update", "add", "discard", "setdefault", "sort", "reverse", "popitem"]),
+    (
+        Registry::PyPi,
+        "builtins",
+        &["append", "extend", "insert", "remove", "pop", "clear", "update", "add", "discard", "setdefault", "sort", "reverse", "popitem"],
+    ),
     (Registry::PyPi, "networkx", &["add_node", "add_edge", "add_nodes_from", "add_edges_from", "remove_node", "remove_edge"]),
-    (Registry::Npm, "javascript", &["push", "pop", "shift", "unshift", "splice", "sort", "reverse", "fill", "copyWithin", "set", "delete", "clear", "add"]),
+    (
+        Registry::Npm,
+        "javascript",
+        &["push", "pop", "shift", "unshift", "splice", "sort", "reverse", "fill", "copyWithin", "set", "delete", "clear", "add"],
+    ),
 ];
 
 /// A package whose methods change the value they are called on when handed this keyword as
@@ -447,21 +621,76 @@ const KV: World = World::Db(Db::Kv);
 /// Libraries that are a client of a part of the world, by registry and package: their calls
 /// reach it, and a value of their types is a door to it.
 pub const PACKAGES: &[(Registry, &str, World)] = &[
-    (PyPi, "requests", NET), (PyPi, "httpx", NET), (PyPi, "urllib", NET), (PyPi, "http", NET), (PyPi, "socket", NET), (PyPi, "aiohttp", NET),
-    (Crates, "reqwest", NET), (Crates, "ureq", NET), (Crates, "hyper", NET), (Crates, "tungstenite", NET), (Crates, "tokio_tungstenite", NET),
-    (Crates, "curl", NET), (Crates, "axum", NET), (Crates, "TcpStream", NET), (Crates, "TcpListener", NET),
-    (Npm, "axios", NET), (Npm, "ky", NET), (Npm, "ofetch", NET), (Npm, "node-fetch", NET), (Npm, "undici", NET), (Npm, "got", NET), (Npm, "ws", NET),
-    (PyPi, "openai", LLM), (PyPi, "anthropic", LLM),
-    (Npm, "@anthropic-ai/sdk", LLM), (Npm, "openai", LLM), (Npm, "@google/generative-ai", LLM), (Npm, "@google/genai", LLM), (Npm, "@mistralai/mistralai", LLM), (Npm, "ollama", LLM),
-    (PyPi, "duckdb", DUCKDB), (PyPi, "neo4j", GRAPH), (PyPi, "mgclient", GRAPH), (PyPi, "sqlite3", SQLITE), (PyPi, "psycopg2", SQL), (PyPi, "psycopg", SQL),
-    (PyPi, "asyncpg", SQL), (PyPi, "sqlalchemy", SQL), (PyPi, "redis", KV),
-    (Crates, "rusqlite", SQLITE), (Crates, "duckdb", DUCKDB), (Crates, "sqlx", SQL), (Crates, "diesel", SQL), (Crates, "postgres", SQL), (Crates, "tokio_postgres", SQL),
+    (PyPi, "requests", NET),
+    (PyPi, "httpx", NET),
+    (PyPi, "urllib", NET),
+    (PyPi, "http", NET),
+    (PyPi, "socket", NET),
+    (PyPi, "aiohttp", NET),
+    (Crates, "reqwest", NET),
+    (Crates, "ureq", NET),
+    (Crates, "hyper", NET),
+    (Crates, "tungstenite", NET),
+    (Crates, "tokio_tungstenite", NET),
+    (Crates, "curl", NET),
+    (Crates, "axum", NET),
+    (Crates, "TcpStream", NET),
+    (Crates, "TcpListener", NET),
+    (Npm, "axios", NET),
+    (Npm, "ky", NET),
+    (Npm, "ofetch", NET),
+    (Npm, "node-fetch", NET),
+    (Npm, "undici", NET),
+    (Npm, "got", NET),
+    (Npm, "ws", NET),
+    (PyPi, "openai", LLM),
+    (PyPi, "anthropic", LLM),
+    (Npm, "@anthropic-ai/sdk", LLM),
+    (Npm, "openai", LLM),
+    (Npm, "@google/generative-ai", LLM),
+    (Npm, "@google/genai", LLM),
+    (Npm, "@mistralai/mistralai", LLM),
+    (Npm, "ollama", LLM),
+    (PyPi, "duckdb", DUCKDB),
+    (PyPi, "neo4j", GRAPH),
+    (PyPi, "mgclient", GRAPH),
+    (PyPi, "sqlite3", SQLITE),
+    (PyPi, "psycopg2", SQL),
+    (PyPi, "psycopg", SQL),
+    (PyPi, "asyncpg", SQL),
+    (PyPi, "sqlalchemy", SQL),
+    (PyPi, "redis", KV),
+    (Crates, "rusqlite", SQLITE),
+    (Crates, "duckdb", DUCKDB),
+    (Crates, "sqlx", SQL),
+    (Crates, "diesel", SQL),
+    (Crates, "postgres", SQL),
+    (Crates, "tokio_postgres", SQL),
     (Crates, "sea_orm", SQL),
-    (Npm, "pg", SQL), (Npm, "postgres", SQL), (Npm, "mysql2", SQL), (Npm, "mysql", SQL), (Npm, "@prisma/client", SQL), (Npm, "drizzle-orm", SQL), (Npm, "kysely", SQL),
-    (Npm, "knex", SQL), (Npm, "@neondatabase/serverless", SQL), (Npm, "better-sqlite3", SQLITE), (Npm, "sqlite3", SQLITE), (Npm, "sqlite", SQLITE),
-    (Npm, "@libsql/client", SQLITE), (Npm, "duckdb", DUCKDB), (Npm, "@duckdb/node-api", DUCKDB), (Npm, "@duckdb/duckdb-wasm", DUCKDB), (Npm, "neo4j-driver", GRAPH),
-    (Npm, "redis", KV), (Npm, "ioredis", KV), (Npm, "@upstash/redis", KV), (Npm, "idb-keyval", KV),
-    (PyPi, "subprocess", PROCESS), (Npm, "child_process", PROCESS), (Npm, "execa", PROCESS),
+    (Npm, "pg", SQL),
+    (Npm, "postgres", SQL),
+    (Npm, "mysql2", SQL),
+    (Npm, "mysql", SQL),
+    (Npm, "@prisma/client", SQL),
+    (Npm, "drizzle-orm", SQL),
+    (Npm, "kysely", SQL),
+    (Npm, "knex", SQL),
+    (Npm, "@neondatabase/serverless", SQL),
+    (Npm, "better-sqlite3", SQLITE),
+    (Npm, "sqlite3", SQLITE),
+    (Npm, "sqlite", SQLITE),
+    (Npm, "@libsql/client", SQLITE),
+    (Npm, "duckdb", DUCKDB),
+    (Npm, "@duckdb/node-api", DUCKDB),
+    (Npm, "@duckdb/duckdb-wasm", DUCKDB),
+    (Npm, "neo4j-driver", GRAPH),
+    (Npm, "redis", KV),
+    (Npm, "ioredis", KV),
+    (Npm, "@upstash/redis", KV),
+    (Npm, "idb-keyval", KV),
+    (PyPi, "subprocess", PROCESS),
+    (Npm, "child_process", PROCESS),
+    (Npm, "execa", PROCESS),
 ];
 
 /// The part of the world a package reaches, from one registry or from any.
@@ -486,8 +715,26 @@ pub fn moves_on_the_web(op: &str) -> bool {
 /// (`add`, `merge`, `delete`) only stages it, and reading the rows a statement gave back or
 /// closing is part of what already ran.
 pub const DB_OPS: &[&str] = &[
-    "connect", "driver", "session", "execute", "executemany", "executescript", "sql", "query", "run", "execute_query", "execute_read", "execute_write",
-    "read_transaction", "write_transaction", "register", "read_csv", "read_parquet", "read_json", "flush", "commit",
+    "connect",
+    "driver",
+    "session",
+    "execute",
+    "executemany",
+    "executescript",
+    "sql",
+    "query",
+    "run",
+    "execute_query",
+    "execute_read",
+    "execute_write",
+    "read_transaction",
+    "write_transaction",
+    "register",
+    "read_csv",
+    "read_parquet",
+    "read_json",
+    "flush",
+    "commit",
 ];
 
 /// A driver's own operations that reach the database beside DB_OPS, by package: asyncpg's
@@ -501,15 +748,43 @@ pub fn reaches_the_database(pkg: &str, op: &str) -> bool {
 }
 
 /// A graph database driver's managed transactions, by the way their work goes.
-pub const TRANSACTIONS: &[(&str, Dir)] = &[("execute_read", Dir::Read), ("read_transaction", Dir::Read), ("execute_write", Dir::Write), ("write_transaction", Dir::Write)];
+pub const TRANSACTIONS: &[(&str, Dir)] =
+    &[("execute_read", Dir::Read), ("read_transaction", Dir::Read), ("execute_write", Dir::Write), ("write_transaction", Dir::Write)];
 
 /// The access modes a graph database's driver is told, by the way they go.
-pub const ACCESS_MODES: &[(&str, Dir)] = &[("READ", Dir::Read), ("R", Dir::Read), ("READ_ACCESS", Dir::Read), ("WRITE", Dir::Write), ("W", Dir::Write), ("WRITE_ACCESS", Dir::Write)];
+pub const ACCESS_MODES: &[(&str, Dir)] = &[
+    ("READ", Dir::Read),
+    ("R", Dir::Read),
+    ("READ_ACCESS", Dir::Read),
+    ("WRITE", Dir::Write),
+    ("W", Dir::Write),
+    ("WRITE_ACCESS", Dir::Write),
+];
 
 /// A key-value store's operations, by the start of their name and the way they go: a key's,
 /// and those of a hash, a list, a set and a sorted set kept under one.
-pub const KV_READS: &[&str] = &["get", "mget", "hget", "hmget", "hkeys", "hvals", "keys", "scan", "exists", "lrange", "llen", "smembers", "sismember", "scard", "zrange", "zscore"];
-pub const KV_WRITES: &[&str] = &["set", "mset", "hset", "hdel", "hincr", "del", "remove", "clear", "incr", "decr", "expire", "lpush", "rpush", "sadd", "srem", "zadd", "zrem"];
+pub const KV_READS: &[&str] = &[
+    "get",
+    "mget",
+    "hget",
+    "hmget",
+    "hkeys",
+    "hvals",
+    "keys",
+    "scan",
+    "exists",
+    "lrange",
+    "llen",
+    "smembers",
+    "sismember",
+    "scard",
+    "zrange",
+    "zscore",
+];
+pub const KV_WRITES: &[&str] = &[
+    "set", "mset", "hset", "hdel", "hincr", "del", "remove", "clear", "incr", "decr", "expire", "lpush", "rpush", "sadd", "srem", "zadd",
+    "zrem",
+];
 
 /// Libraries that compute in memory: most of their calls stay in the program (`torch.cat`,
 /// `nn.Linear`); OPERATIONS and the Hub's tables name the few that cross to a place.
@@ -518,8 +793,10 @@ pub const ML_PACKAGES: &[&str] = &["sentence_transformers", "torch", "transforme
 /// The Hugging Face Hub: its libraries, what comes down, what goes up, and the weights a
 /// pretrained model downloads by name (`AutoModel.from_pretrained(name)`).
 pub const HUB_PACKAGES: &[&str] = &["huggingface_hub", "datasets"];
-pub const HUB_READ: &[&str] = &["snapshot_download", "hf_hub_download", "load_dataset", "repo_info", "dataset_info", "model_info", "list_repo_files"];
-pub const HUB_WRITE: &[&str] = &["upload_folder", "upload_file", "upload_large_folder", "create_repo", "create_commit", "delete_file", "delete_folder", "push_to_hub"];
+pub const HUB_READ: &[&str] =
+    &["snapshot_download", "hf_hub_download", "load_dataset", "repo_info", "dataset_info", "model_info", "list_repo_files"];
+pub const HUB_WRITE: &[&str] =
+    &["upload_folder", "upload_file", "upload_large_folder", "create_repo", "create_commit", "delete_file", "delete_folder", "push_to_hub"];
 pub const HUB_MODELS: &[&str] = &["from_pretrained", "SentenceTransformer", "CrossEncoder", "pipeline"];
 pub const HUB_HOST: &str = "huggingface.co";
 
@@ -527,40 +804,66 @@ pub const HUB_HOST: &str = "huggingface.co";
 pub const MODEL_HUBS: &[(&str, &str, &str)] = &[("torch", "hub", "load")];
 
 /// The datasets library's builtin loaders: a dataset made by one of them comes from local files.
-pub const HF_LOADERS: &[&str] = &["csv", "json", "parquet", "text", "arrow", "pandas", "imagefolder", "audiofolder", "videofolder", "webdataset", "xml", "sql"];
+pub const HF_LOADERS: &[&str] =
+    &["csv", "json", "parquet", "text", "arrow", "pandas", "imagefolder", "audiofolder", "videofolder", "webdataset", "xml", "sql"];
 
 /// A library's operations that cross to a place by themselves, by package and operation: what
 /// prints, what shows or draws a figure, what runs a model, what saves or loads a file, what runs
 /// another program, and what reads or writes a database through the connection it is handed.
 pub const OPERATIONS: &[(&str, &str, Crossing)] = &[
-    ("click", "echo", Crossing::to(World::Screen)), ("click", "secho", Crossing::to(World::Screen)),
-    ("typer", "echo", Crossing::to(World::Screen)), ("typer", "secho", Crossing::to(World::Screen)),
-    ("rich", "print", Crossing::to(World::Screen)), ("pprint", "pprint", Crossing::to(World::Screen)), ("pprint", "pp", Crossing::to(World::Screen)),
-    ("matplotlib", "show", Crossing::to(World::Screen)), ("plotly", "show", Crossing::to(World::Screen)),
+    ("click", "echo", Crossing::to(World::Screen)),
+    ("click", "secho", Crossing::to(World::Screen)),
+    ("typer", "echo", Crossing::to(World::Screen)),
+    ("typer", "secho", Crossing::to(World::Screen)),
+    ("rich", "print", Crossing::to(World::Screen)),
+    ("pprint", "pprint", Crossing::to(World::Screen)),
+    ("pprint", "pp", Crossing::to(World::Screen)),
+    ("matplotlib", "show", Crossing::to(World::Screen)),
+    ("plotly", "show", Crossing::to(World::Screen)),
     // what the human types: a prompt, a password, a key in a terminal window
-    ("getpass", "getpass", Crossing::read(World::Screen)), ("click", "prompt", Crossing::read(World::Screen)), ("click", "confirm", Crossing::read(World::Screen)),
-    ("typer", "prompt", Crossing::read(World::Screen)), ("typer", "confirm", Crossing::read(World::Screen)), ("readline", "question", Crossing::read(World::Screen)),
-    ("curses", "getch", Crossing::read(World::Screen)), ("curses", "getkey", Crossing::read(World::Screen)), ("curses", "getstr", Crossing::read(World::Screen)),
+    ("getpass", "getpass", Crossing::read(World::Screen)),
+    ("click", "prompt", Crossing::read(World::Screen)),
+    ("click", "confirm", Crossing::read(World::Screen)),
+    ("typer", "prompt", Crossing::read(World::Screen)),
+    ("typer", "confirm", Crossing::read(World::Screen)),
+    ("readline", "question", Crossing::read(World::Screen)),
+    ("curses", "getch", Crossing::read(World::Screen)),
+    ("curses", "getkey", Crossing::read(World::Screen)),
+    ("curses", "getstr", Crossing::read(World::Screen)),
     ("curses", "get_wch", Crossing::read(World::Screen)),
     // what a terminal window shows
-    ("curses", "addstr", Crossing::to(World::Screen)), ("curses", "addnstr", Crossing::to(World::Screen)), ("curses", "addch", Crossing::to(World::Screen)),
+    ("curses", "addstr", Crossing::to(World::Screen)),
+    ("curses", "addnstr", Crossing::to(World::Screen)),
+    ("curses", "addch", Crossing::to(World::Screen)),
     ("curses", "insstr", Crossing::to(World::Screen)),
-    ("matplotlib", "figure", Crossing::to(World::Figure)), ("matplotlib", "subplots", Crossing::to(World::Figure)), ("matplotlib", "subplot_mosaic", Crossing::to(World::Figure)),
+    ("matplotlib", "figure", Crossing::to(World::Figure)),
+    ("matplotlib", "subplots", Crossing::to(World::Figure)),
+    ("matplotlib", "subplot_mosaic", Crossing::to(World::Figure)),
     // what runs a model on its input
-    ("sentence_transformers", "encode", Crossing::to(World::Model)), ("sentence_transformers", "embed", Crossing::to(World::Model)),
+    ("sentence_transformers", "encode", Crossing::to(World::Model)),
+    ("sentence_transformers", "embed", Crossing::to(World::Model)),
     ("transformers", "generate", Crossing::to(World::Model)),
     // what saves or loads weights, a checkpoint or a dataset, or sends them to the Hub
-    ("transformers", "save_pretrained", Crossing::write(World::Disk)), ("sentence_transformers", "save_pretrained", Crossing::write(World::Disk)),
+    ("transformers", "save_pretrained", Crossing::write(World::Disk)),
+    ("sentence_transformers", "save_pretrained", Crossing::write(World::Disk)),
     ("transformers", "push_to_hub", Crossing::to(World::Net)),
-    ("torch", "load", Crossing::read(World::Disk)), ("torch", "load_from_disk", Crossing::read(World::Disk)),
-    ("datasets", "load", Crossing::read(World::Disk)), ("datasets", "load_from_disk", Crossing::read(World::Disk)),
-    ("torch", "save", Crossing::write(World::Disk)), ("torch", "save_to_disk", Crossing::write(World::Disk)),
-    ("datasets", "save", Crossing::write(World::Disk)), ("datasets", "save_to_disk", Crossing::write(World::Disk)),
+    ("torch", "load", Crossing::read(World::Disk)),
+    ("torch", "load_from_disk", Crossing::read(World::Disk)),
+    ("datasets", "load", Crossing::read(World::Disk)),
+    ("datasets", "load_from_disk", Crossing::read(World::Disk)),
+    ("torch", "save", Crossing::write(World::Disk)),
+    ("torch", "save_to_disk", Crossing::write(World::Disk)),
+    ("datasets", "save", Crossing::write(World::Disk)),
+    ("datasets", "save_to_disk", Crossing::write(World::Disk)),
     // what runs another program: a command line, a notebook in a kernel
-    ("os", "system", Crossing::to(PROCESS)), ("asyncio", "create_subprocess_exec", Crossing::to(PROCESS)), ("asyncio", "create_subprocess_shell", Crossing::to(PROCESS)),
+    ("os", "system", Crossing::to(PROCESS)),
+    ("asyncio", "create_subprocess_exec", Crossing::to(PROCESS)),
+    ("asyncio", "create_subprocess_shell", Crossing::to(PROCESS)),
     ("nbclient", "execute", Crossing::to(PROCESS)),
     // a frame read from a database by a statement or a table's name, and written to a table
-    ("pandas", "read_sql", Crossing::read(SQL)), ("pandas", "read_sql_query", Crossing::read(SQL)), ("pandas", "read_sql_table", Crossing::read(SQL)),
+    ("pandas", "read_sql", Crossing::read(SQL)),
+    ("pandas", "read_sql_query", Crossing::read(SQL)),
+    ("pandas", "read_sql_table", Crossing::read(SQL)),
     ("pandas", "to_sql", Crossing::write(SQL)),
 ];
 
@@ -583,50 +886,162 @@ pub const PRINT_TO: &str = "file";
 pub const PYTHON_OWN: &[&str] = &["builtins", "sys"];
 
 /// Python's builtins that cross: by name.
-pub const PYTHON_BUILTINS: &[(&str, Crossing)] = &[("print", Crossing::to(World::Screen)), ("input", Crossing::read(World::Screen)), ("open", Crossing::to(World::Disk))];
+pub const PYTHON_BUILTINS: &[(&str, Crossing)] =
+    &[("print", Crossing::to(World::Screen)), ("input", Crossing::read(World::Screen)), ("open", Crossing::to(World::Disk))];
 
 // ---------- files ----------
 
 /// Libraries whose calls read or write files: data formats, archives, arrays, images.
 pub const FILE_PACKAGES: &[&str] = &[
-    "json", "yaml", "pickle", "csv", "tarfile", "zipfile", "shutil", "os", "pathlib", "pandas", "geopandas", "numpy", "rasterio", "lxml", "PIL", "matplotlib",
+    "json",
+    "yaml",
+    "pickle",
+    "csv",
+    "tarfile",
+    "zipfile",
+    "shutil",
+    "os",
+    "pathlib",
+    "pandas",
+    "geopandas",
+    "numpy",
+    "rasterio",
+    "lxml",
+    "PIL",
+    "matplotlib",
     "ruamel",
 ];
 
 /// What such a library's operation does with a file, by its name.
 pub const FILE_READS: &[&str] = &[
-    "read_text", "read_bytes", "read_csv", "read_parquet", "read_file", "read_json", "read_excel", "iterdir", "glob", "rglob", "load", "load_workbook", "parse",
-    "fromfile", "imread", "open_dataset", "read", "readlines", "safe_load", "listdir", "walk", "open",
+    "read_text",
+    "read_bytes",
+    "read_csv",
+    "read_parquet",
+    "read_file",
+    "read_json",
+    "read_excel",
+    "iterdir",
+    "glob",
+    "rglob",
+    "load",
+    "load_workbook",
+    "parse",
+    "fromfile",
+    "imread",
+    "open_dataset",
+    "read",
+    "readlines",
+    "safe_load",
+    "listdir",
+    "walk",
+    "open",
 ];
 pub const FILE_WRITES: &[&str] = &[
-    "write_text", "write_bytes", "to_csv", "to_parquet", "to_json", "dump", "safe_dump", "savefig", "save", "mkdir", "copy", "copyfile", "copytree", "move",
-    "unlink", "rmtree", "touch", "imwrite", "extractall", "makedirs", "rename", "replace", "writelines",
+    "write_text",
+    "write_bytes",
+    "to_csv",
+    "to_parquet",
+    "to_json",
+    "dump",
+    "safe_dump",
+    "savefig",
+    "save",
+    "mkdir",
+    "copy",
+    "copyfile",
+    "copytree",
+    "move",
+    "unlink",
+    "rmtree",
+    "touch",
+    "imwrite",
+    "extractall",
+    "makedirs",
+    "rename",
+    "replace",
+    "writelines",
 ];
 
 /// Writes that move or remove files rather than store data, and the libraries of the file system
 /// that alone do them: a frame's `copy()` or `replace(..)` stays in memory.
-pub const FILE_SYSTEM_OPS: &[&str] = &["copy", "copyfile", "copytree", "move", "unlink", "rmtree", "rename", "replace", "mkdir", "makedirs", "touch"];
+pub const FILE_SYSTEM_OPS: &[&str] =
+    &["copy", "copyfile", "copytree", "move", "unlink", "rmtree", "rename", "replace", "mkdir", "makedirs", "touch"];
 pub const FILE_SYSTEM_PACKAGES: &[&str] = &["shutil", "os", "pathlib"];
 
 /// A path's methods whose place is the path they are called on; their argument is a pattern
 /// below it or what is written: `cache_dir.glob("*.arrow")`, `p.write_text("done")`.
-pub const ON_THE_PATH: &[&str] = &["glob", "rglob", "iterdir", "joinpath", "read_text", "read_bytes", "write_text", "write_bytes", "exists", "is_file", "is_dir", "mkdir", "unlink", "rmdir", "touch", "stat"];
+pub const ON_THE_PATH: &[&str] = &[
+    "glob",
+    "rglob",
+    "iterdir",
+    "joinpath",
+    "read_text",
+    "read_bytes",
+    "write_text",
+    "write_bytes",
+    "exists",
+    "is_file",
+    "is_dir",
+    "mkdir",
+    "unlink",
+    "rmdir",
+    "touch",
+    "stat",
+];
 
 /// The format an operation or a library implies when the code names no file.
 pub const FORMATS_BY_OP: &[(&str, &str)] = &[
-    ("read_csv", "csv"), ("to_csv", "csv"), ("read_parquet", "parquet"), ("to_parquet", "parquet"), ("read_json", "json"), ("to_json", "json"),
-    ("read_excel", "xlsx"), ("to_excel", "xlsx"), ("load_workbook", "xlsx"), ("read_feather", "feather"), ("to_feather", "feather"), ("savefig", "png"),
-    ("imsave", "png"), ("safe_load", "yaml"), ("safe_dump", "yaml"),
+    ("read_csv", "csv"),
+    ("to_csv", "csv"),
+    ("read_parquet", "parquet"),
+    ("to_parquet", "parquet"),
+    ("read_json", "json"),
+    ("to_json", "json"),
+    ("read_excel", "xlsx"),
+    ("to_excel", "xlsx"),
+    ("load_workbook", "xlsx"),
+    ("read_feather", "feather"),
+    ("to_feather", "feather"),
+    ("savefig", "png"),
+    ("imsave", "png"),
+    ("safe_load", "yaml"),
+    ("safe_dump", "yaml"),
 ];
-pub const FORMATS_BY_PACKAGE: &[(&str, &str)] = &[("json", "json"), ("yaml", "yaml"), ("ruamel", "yaml"), ("pickle", "pkl"), ("csv", "csv"), ("toml", "toml"), ("tomllib", "toml"), ("tomli", "toml"), ("lxml", "xml"), ("rasterio", "tif")];
+pub const FORMATS_BY_PACKAGE: &[(&str, &str)] = &[
+    ("json", "json"),
+    ("yaml", "yaml"),
+    ("ruamel", "yaml"),
+    ("pickle", "pkl"),
+    ("csv", "csv"),
+    ("toml", "toml"),
+    ("tomllib", "toml"),
+    ("tomli", "toml"),
+    ("lxml", "xml"),
+    ("rasterio", "tif"),
+];
 /// numpy's own format, for what it saves and loads.
 pub const ARRAY_FORMAT: (&str, &[&str], &str) = ("numpy", &["save", "load"], "npy");
 
 /// What a file operation does to the file system, by its name in the languages Atlas reads: the
 /// operations that look at a path's shape, those that list a directory, and the starts of the
 /// names of those that create, remove, move and copy.
-pub const PROBES: &[&str] = &["exists", "try_exists", "is_file", "is_dir", "is_symlink", "canonicalize", "metadata", "symlink_metadata", "existsSync", "stat", "statSync", "access"];
-pub const LISTINGS: &[&str] = &["read_dir", "iterdir", "glob", "rglob", "listdir", "scandir", "walk", "readdir", "readdirSync", "opendir", "opendirSync"];
+pub const PROBES: &[&str] = &[
+    "exists",
+    "try_exists",
+    "is_file",
+    "is_dir",
+    "is_symlink",
+    "canonicalize",
+    "metadata",
+    "symlink_metadata",
+    "existsSync",
+    "stat",
+    "statSync",
+    "access",
+];
+pub const LISTINGS: &[&str] =
+    &["read_dir", "iterdir", "glob", "rglob", "listdir", "scandir", "walk", "readdir", "readdirSync", "opendir", "opendirSync"];
 pub const CREATES: &[&str] = &["create_dir", "mkdir", "makedirs", "touch"];
 pub const REMOVES: &[&str] = &["remove", "unlink", "rmtree", "rm"];
 pub const MOVES: &[&str] = &["rename", "move", "replace"];
@@ -635,9 +1050,33 @@ pub const COPIES: &[&str] = &["copy", "cp", "cpSync"];
 /// Rust's: std's file system operations that read and that write, `Path`'s methods that read the
 /// disk when called on a value whose type is unknown, the crates that read a tree of files, the
 /// type that runs a program, and the macros that print.
-pub const RUST_FS_READS: &[&str] = &["read", "read_to_string", "read_to_end", "read_exact", "read_line", "read_dir", "metadata", "canonicalize", "exists", "open", "read_link"];
+pub const RUST_FS_READS: &[&str] = &[
+    "read",
+    "read_to_string",
+    "read_to_end",
+    "read_exact",
+    "read_line",
+    "read_dir",
+    "metadata",
+    "canonicalize",
+    "exists",
+    "open",
+    "read_link",
+];
 pub const RUST_FS_WRITES: &[&str] = &[
-    "write", "write_all", "write_fmt", "set_len", "sync_all", "create", "create_dir", "create_dir_all", "remove_file", "remove_dir", "remove_dir_all", "rename", "copy",
+    "write",
+    "write_all",
+    "write_fmt",
+    "set_len",
+    "sync_all",
+    "create",
+    "create_dir",
+    "create_dir_all",
+    "remove_file",
+    "remove_dir",
+    "remove_dir_all",
+    "rename",
+    "copy",
     "set_permissions",
 ];
 pub const RUST_PATH_READS: &[&str] = &["exists", "try_exists", "is_file", "is_dir", "read_dir", "canonicalize", "symlink_metadata"];
@@ -645,9 +1084,12 @@ pub const RUST_FILE_TREES: &[&str] = &["walkdir", "WalkDir", "ignore", "glob", "
 /// A crate's type whose function opens the file at the path it is handed first, and which way:
 /// csv's readers and writers, plotters' image backends.
 pub const RUST_FILE_OPENERS: &[(&str, &str, Dir)] = &[
-    ("ReaderBuilder", "from_path", Dir::Read), ("Reader", "from_path", Dir::Read),
-    ("WriterBuilder", "from_path", Dir::Write), ("Writer", "from_path", Dir::Write),
-    ("BitMapBackend", "new", Dir::Write), ("SVGBackend", "new", Dir::Write),
+    ("ReaderBuilder", "from_path", Dir::Read),
+    ("Reader", "from_path", Dir::Read),
+    ("WriterBuilder", "from_path", Dir::Write),
+    ("Writer", "from_path", Dir::Write),
+    ("BitMapBackend", "new", Dir::Write),
+    ("SVGBackend", "new", Dir::Write),
 ];
 pub const RUST_COMMAND: &str = "Command";
 pub const RUST_SCREEN_MACROS: &[&str] = &["println", "print", "eprintln", "eprint"];
@@ -679,16 +1121,42 @@ pub struct Interior {
 pub const RUST_INTERIOR: &[Interior] = &[
     Interior { types: &["Mutex"], changes: &[], guards: &["lock", "try_lock"] },
     Interior { types: &["RwLock"], changes: &[], guards: &["write", "try_write"] },
-    Interior { types: &["RefCell"], changes: &["set", "replace", "replace_with", "swap", "take"], guards: &["borrow_mut", "try_borrow_mut", "with_borrow_mut"] },
+    Interior {
+        types: &["RefCell"],
+        changes: &["set", "replace", "replace_with", "swap", "take"],
+        guards: &["borrow_mut", "try_borrow_mut", "with_borrow_mut"],
+    },
     Interior { types: &["Cell"], changes: &["set", "replace", "swap", "take", "update"], guards: &[] },
     Interior {
         types: &[
-            "AtomicBool", "AtomicI8", "AtomicI16", "AtomicI32", "AtomicI64", "AtomicIsize", "AtomicU8", "AtomicU16", "AtomicU32", "AtomicU64", "AtomicUsize",
+            "AtomicBool",
+            "AtomicI8",
+            "AtomicI16",
+            "AtomicI32",
+            "AtomicI64",
+            "AtomicIsize",
+            "AtomicU8",
+            "AtomicU16",
+            "AtomicU32",
+            "AtomicU64",
+            "AtomicUsize",
             "AtomicPtr",
         ],
         changes: &[
-            "store", "swap", "fetch_add", "fetch_sub", "fetch_and", "fetch_nand", "fetch_or", "fetch_xor", "fetch_max", "fetch_min", "fetch_not",
-            "fetch_update", "compare_exchange", "compare_exchange_weak",
+            "store",
+            "swap",
+            "fetch_add",
+            "fetch_sub",
+            "fetch_and",
+            "fetch_nand",
+            "fetch_or",
+            "fetch_xor",
+            "fetch_max",
+            "fetch_min",
+            "fetch_not",
+            "fetch_update",
+            "compare_exchange",
+            "compare_exchange_weak",
         ],
         guards: &[],
     },
@@ -698,11 +1166,54 @@ pub const RUST_INTERIOR: &[Interior] = &[
 /// The methods that change the value a guard gives: those of std's collections, `String` and
 /// `Option` that take `&mut self`.
 pub const RUST_GUARDED_CHANGES: &[&str] = &[
-    "push", "push_str", "push_back", "push_front", "pop", "pop_back", "pop_front", "pop_first", "pop_last", "insert", "insert_str", "extend",
-    "extend_from_slice", "append", "remove", "remove_entry", "swap_remove", "clear", "truncate", "retain", "retain_mut", "drain", "splice", "split_off",
-    "dedup", "dedup_by", "dedup_by_key", "sort", "sort_by", "sort_by_key", "sort_unstable", "sort_unstable_by", "sort_unstable_by_key", "reverse",
-    "resize", "resize_with", "fill", "swap", "entry", "get_mut", "first_mut", "last_mut", "iter_mut", "values_mut", "take", "replace",
-    "get_or_insert", "get_or_insert_with",
+    "push",
+    "push_str",
+    "push_back",
+    "push_front",
+    "pop",
+    "pop_back",
+    "pop_front",
+    "pop_first",
+    "pop_last",
+    "insert",
+    "insert_str",
+    "extend",
+    "extend_from_slice",
+    "append",
+    "remove",
+    "remove_entry",
+    "swap_remove",
+    "clear",
+    "truncate",
+    "retain",
+    "retain_mut",
+    "drain",
+    "splice",
+    "split_off",
+    "dedup",
+    "dedup_by",
+    "dedup_by_key",
+    "sort",
+    "sort_by",
+    "sort_by_key",
+    "sort_unstable",
+    "sort_unstable_by",
+    "sort_unstable_by_key",
+    "reverse",
+    "resize",
+    "resize_with",
+    "fill",
+    "swap",
+    "entry",
+    "get_mut",
+    "first_mut",
+    "last_mut",
+    "iter_mut",
+    "values_mut",
+    "take",
+    "replace",
+    "get_or_insert",
+    "get_or_insert_with",
 ];
 
 /// Whether a Rust type of this name changes in place.
@@ -726,10 +1237,24 @@ pub fn rust_guards(method: &str) -> bool {
 /// object that prints, the browser's key-value stores and their operations, and the names a
 /// package's client is made by.
 pub const NODE_FS: &[&str] = &["fs", "fs/promises"];
-pub const NODE_FS_READS: &[&str] = &["readFile", "readFileSync", "readdir", "readdirSync", "createReadStream", "existsSync", "stat", "statSync", "access"];
+pub const NODE_FS_READS: &[&str] =
+    &["readFile", "readFileSync", "readdir", "readdirSync", "createReadStream", "existsSync", "stat", "statSync", "access"];
 pub const NODE_FS_WRITES: &[&str] = &[
-    "writeFile", "writeFileSync", "appendFile", "appendFileSync", "mkdir", "mkdirSync", "rm", "rmSync", "unlink", "unlinkSync", "rename", "renameSync",
-    "copyFile", "copyFileSync", "createWriteStream",
+    "writeFile",
+    "writeFileSync",
+    "appendFile",
+    "appendFileSync",
+    "mkdir",
+    "mkdirSync",
+    "rm",
+    "rmSync",
+    "unlink",
+    "unlinkSync",
+    "rename",
+    "renameSync",
+    "copyFile",
+    "copyFileSync",
+    "createWriteStream",
 ];
 pub const GLOBAL_OBJECTS: &[&str] = &["window", "globalThis"];
 pub const WEB_GLOBALS: &[&str] = &["fetch", "WebSocket", "EventSource"];
@@ -753,7 +1278,8 @@ pub const HUB_LOADER: &str = "load_dataset";
 
 /// The constructors a path is made by from its parts: pathlib's, Rust's `Path::new` and
 /// `PathBuf::from`, the web platform's `URL`.
-pub const PATH_MAKERS: &[&str] = &["Path", "PurePath", "PosixPath", "WindowsPath", "PurePosixPath", "PureWindowsPath", "Path::new", "PathBuf::from", "URL", "new URL"];
+pub const PATH_MAKERS: &[&str] =
+    &["Path", "PurePath", "PosixPath", "WindowsPath", "PurePosixPath", "PureWindowsPath", "Path::new", "PathBuf::from", "URL", "new URL"];
 
 /// Libraries whose values are paths: a method of one names its file by the path it is called on.
 pub const PATH_LIBRARIES: &[&str] = &["pathlib"];
@@ -811,7 +1337,8 @@ pub struct OptionParser {
     pub values: &'static str,
 }
 
-pub const OPTION_PARSERS: &[OptionParser] = &[OptionParser { package: "util", function: "parseArgs", options: "options", default: "default", values: "values" }];
+pub const OPTION_PARSERS: &[OptionParser] =
+    &[OptionParser { package: "util", function: "parseArgs", options: "options", default: "default", values: "values" }];
 
 /// A command-line parser derived from a type, whose values are the fields of that type
 /// (`cli.raw`): its package, the derives that make a type one, the attributes that declare a
@@ -921,7 +1448,20 @@ pub struct OwnTypes {
 
 /// Python's: the standard library's modules that describe code, not data.
 pub const PYTHON_OWN_TYPES: OwnTypes = OwnTypes {
-    packages: &["typing", "collections", "pathlib", "builtins", "datetime", "abc", "os", "enum", "dataclasses", "functools", "itertools", "types"],
+    packages: &[
+        "typing",
+        "collections",
+        "pathlib",
+        "builtins",
+        "datetime",
+        "abc",
+        "os",
+        "enum",
+        "dataclasses",
+        "functools",
+        "itertools",
+        "types",
+    ],
     names: &[],
 };
 
@@ -929,11 +1469,17 @@ pub const PYTHON_OWN_TYPES: OwnTypes = OwnTypes {
 /// names (`Self::Target`, `S::Ok`).
 pub const RUST_OWN_TYPES: OwnTypes = OwnTypes {
     packages: &["std", "core", "alloc"],
-    names: &["Result", "Option", "Vec", "Box", "HashMap", "HashSet", "BTreeMap", "String", "Path", "PathBuf", "Ok", "Err", "Error", "Target", "Output", "Item", "Self"],
+    names: &[
+        "Result", "Option", "Vec", "Box", "HashMap", "HashSet", "BTreeMap", "String", "Path", "PathBuf", "Ok", "Err", "Error", "Target",
+        "Output", "Item", "Self",
+    ],
 };
 
 /// TypeScript's: a UI framework's components and props, a schema library's schemas.
-pub const TYPESCRIPT_OWN_TYPES: OwnTypes = OwnTypes { packages: &["react", "react-dom", "preact", "vue", "svelte", "solid-js", "zod", "yup", "valibot", "superstruct", "io-ts"], names: &[] };
+pub const TYPESCRIPT_OWN_TYPES: OwnTypes = OwnTypes {
+    packages: &["react", "react-dom", "preact", "vue", "svelte", "solid-js", "zod", "yup", "valibot", "superstruct", "io-ts"],
+    names: &[],
+};
 
 // ---------- what a language binds without an import ----------
 
@@ -944,27 +1490,186 @@ pub const PYTHON_BUILTINS_MODULE: &str = "builtins";
 /// Rust's names in scope without a `use`: the prelude's types, variants, traits and `drop`, and
 /// the primitive types (`u32::from`). Its macros (`println!`, `vec!`) are not calls.
 pub const RUST_PRELUDE: &[&str] = &[
-    "Box", "Vec", "String", "Option", "Some", "None", "Result", "Ok", "Err", "drop",
-    "Copy", "Send", "Sized", "Sync", "Unpin", "Drop", "Fn", "FnMut", "FnOnce", "AsMut", "AsRef", "From", "Into", "DoubleEndedIterator",
-    "ExactSizeIterator", "Extend", "IntoIterator", "Iterator", "Clone", "Default", "Eq", "Ord", "PartialEq", "PartialOrd", "ToOwned", "ToString",
-    "TryFrom", "TryInto", "FromIterator", "Future", "IntoFuture",
-    "bool", "char", "str", "u8", "u16", "u32", "u64", "u128", "usize", "i8", "i16", "i32", "i64", "i128", "isize", "f32", "f64",
+    "Box",
+    "Vec",
+    "String",
+    "Option",
+    "Some",
+    "None",
+    "Result",
+    "Ok",
+    "Err",
+    "drop",
+    "Copy",
+    "Send",
+    "Sized",
+    "Sync",
+    "Unpin",
+    "Drop",
+    "Fn",
+    "FnMut",
+    "FnOnce",
+    "AsMut",
+    "AsRef",
+    "From",
+    "Into",
+    "DoubleEndedIterator",
+    "ExactSizeIterator",
+    "Extend",
+    "IntoIterator",
+    "Iterator",
+    "Clone",
+    "Default",
+    "Eq",
+    "Ord",
+    "PartialEq",
+    "PartialOrd",
+    "ToOwned",
+    "ToString",
+    "TryFrom",
+    "TryInto",
+    "FromIterator",
+    "Future",
+    "IntoFuture",
+    "bool",
+    "char",
+    "str",
+    "u8",
+    "u16",
+    "u32",
+    "u64",
+    "u128",
+    "usize",
+    "i8",
+    "i16",
+    "i32",
+    "i64",
+    "i128",
+    "isize",
+    "f32",
+    "f64",
 ];
 
 /// TypeScript's names in scope without an import: the language's global objects and functions,
 /// and those of the hosts it runs in (a browser, Node).
 pub const TYPESCRIPT_GLOBALS: &[&str] = &[
-    "globalThis", "eval", "isFinite", "isNaN", "parseFloat", "parseInt", "decodeURI", "decodeURIComponent", "encodeURI", "encodeURIComponent",
-    "Object", "Function", "Boolean", "Symbol", "Error", "AggregateError", "EvalError", "RangeError", "ReferenceError", "SyntaxError", "TypeError",
-    "URIError", "Number", "BigInt", "Math", "Date", "String", "RegExp", "Array", "Int8Array", "Uint8Array", "Uint8ClampedArray", "Int16Array",
-    "Uint16Array", "Int32Array", "Uint32Array", "Float32Array", "Float64Array", "BigInt64Array", "BigUint64Array", "Map", "Set", "WeakMap", "WeakSet",
-    "WeakRef", "FinalizationRegistry", "ArrayBuffer", "SharedArrayBuffer", "DataView", "Atomics", "JSON", "Promise", "Reflect", "Proxy", "Intl",
+    "globalThis",
+    "eval",
+    "isFinite",
+    "isNaN",
+    "parseFloat",
+    "parseInt",
+    "decodeURI",
+    "decodeURIComponent",
+    "encodeURI",
+    "encodeURIComponent",
+    "Object",
+    "Function",
+    "Boolean",
+    "Symbol",
+    "Error",
+    "AggregateError",
+    "EvalError",
+    "RangeError",
+    "ReferenceError",
+    "SyntaxError",
+    "TypeError",
+    "URIError",
+    "Number",
+    "BigInt",
+    "Math",
+    "Date",
+    "String",
+    "RegExp",
+    "Array",
+    "Int8Array",
+    "Uint8Array",
+    "Uint8ClampedArray",
+    "Int16Array",
+    "Uint16Array",
+    "Int32Array",
+    "Uint32Array",
+    "Float32Array",
+    "Float64Array",
+    "BigInt64Array",
+    "BigUint64Array",
+    "Map",
+    "Set",
+    "WeakMap",
+    "WeakSet",
+    "WeakRef",
+    "FinalizationRegistry",
+    "ArrayBuffer",
+    "SharedArrayBuffer",
+    "DataView",
+    "Atomics",
+    "JSON",
+    "Promise",
+    "Reflect",
+    "Proxy",
+    "Intl",
     "structuredClone",
-    "console", "window", "self", "document", "navigator", "location", "history", "localStorage", "sessionStorage", "indexedDB", "caches", "crypto",
-    "performance", "customElements", "fetch", "Request", "Response", "Headers", "URL", "URLSearchParams", "FormData", "Blob", "File", "FileReader",
-    "TextEncoder", "TextDecoder", "AbortController", "AbortSignal", "Event", "CustomEvent", "EventTarget", "EventSource", "WebSocket", "Worker",
-    "Image", "Audio", "atob", "btoa", "setTimeout", "clearTimeout", "setInterval", "clearInterval", "queueMicrotask", "requestAnimationFrame",
-    "cancelAnimationFrame", "alert", "confirm", "prompt", "getComputedStyle", "matchMedia", "ResizeObserver", "IntersectionObserver",
+    "console",
+    "window",
+    "self",
+    "document",
+    "navigator",
+    "location",
+    "history",
+    "localStorage",
+    "sessionStorage",
+    "indexedDB",
+    "caches",
+    "crypto",
+    "performance",
+    "customElements",
+    "fetch",
+    "Request",
+    "Response",
+    "Headers",
+    "URL",
+    "URLSearchParams",
+    "FormData",
+    "Blob",
+    "File",
+    "FileReader",
+    "TextEncoder",
+    "TextDecoder",
+    "AbortController",
+    "AbortSignal",
+    "Event",
+    "CustomEvent",
+    "EventTarget",
+    "EventSource",
+    "WebSocket",
+    "Worker",
+    "Image",
+    "Audio",
+    "atob",
+    "btoa",
+    "setTimeout",
+    "clearTimeout",
+    "setInterval",
+    "clearInterval",
+    "queueMicrotask",
+    "requestAnimationFrame",
+    "cancelAnimationFrame",
+    "alert",
+    "confirm",
+    "prompt",
+    "getComputedStyle",
+    "matchMedia",
+    "ResizeObserver",
+    "IntersectionObserver",
     "MutationObserver",
-    "process", "Buffer", "require", "module", "exports", "global", "__dirname", "__filename", "setImmediate", "clearImmediate",
+    "process",
+    "Buffer",
+    "require",
+    "module",
+    "exports",
+    "global",
+    "__dirname",
+    "__filename",
+    "setImmediate",
+    "clearImmediate",
 ];

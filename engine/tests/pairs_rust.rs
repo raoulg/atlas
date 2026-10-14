@@ -86,7 +86,10 @@ fn choices_a_command_is_chosen_once() {
     let c = clean();
     assert_eq!(found(c, "choices"), Vec::<String>::new());
     // one choice in `main`, one arm per command, and no name tested against a string
-    let arms: Vec<(u32, u32)> = ["spend.expense.read_csv", "spend.rates.RatesClient.latest", "spend.report.write"].iter().map(|t| step(c, "spend.main", t).arms[0]).collect();
+    let arms: Vec<(u32, u32)> = ["spend.expense.read_csv", "spend.rates.RatesClient.latest", "spend.report.write"]
+        .iter()
+        .map(|t| step(c, "spend.main", t).arms[0])
+        .collect();
     assert!(arms.iter().all(|a| a.0 == arms[0].0), "{arms:?}");
     assert_eq!(arms.iter().map(|a| a.1).collect::<Vec<_>>(), [0, 1, 2]);
     assert!(node(c, "spend.main").compares.is_empty(), "{:?}", node(c, "spend.main").compares);
@@ -289,11 +292,16 @@ fn nothing_a_call_leaves_something_behind() {
 
     let s = shortcut();
     step(s, "spend.run", "spend.rates.remember");
-    let global = |f: &str| touches(s, f, "global").iter().filter(|t| t.artifact == "spend.rates.LATEST").map(|t| t.dir_name()).collect::<Vec<_>>();
+    let global =
+        |f: &str| touches(s, f, "global").iter().filter(|t| t.artifact == "spend.rates.LATEST").map(|t| t.dir_name()).collect::<Vec<_>>();
     assert_eq!(global("spend.rates.remember"), ["write"]);
     assert_eq!(global("spend.rates.to_base"), ["read"]);
     assert!(found(s, "nothing").is_empty(), "a call that keeps its value in a global leaves it behind: {:?}", found(s, "nothing"));
-    assert_eq!(node(s, "spend.rates.to_base").params.iter().map(|p| p.name.as_str()).collect::<Vec<_>>(), ["currency"], "the rates come from the global");
+    assert_eq!(
+        node(s, "spend.rates.to_base").params.iter().map(|p| p.name.as_str()).collect::<Vec<_>>(),
+        ["currency"],
+        "the rates come from the global"
+    );
 }
 
 // ---------- layers ----------
@@ -368,7 +376,11 @@ fn lens_a_store_that_gets_back_rows_is_asked() {
 #[test]
 fn sums_a_choice_is_made_where_it_arises() {
     let c = clean();
-    let takes_result: Vec<String> = c.nodes.iter().flat_map(|n| n.params.iter().filter(|p| p.ty.starts_with("Result")).map(move |p| format!("{}({})", n.id, p.name))).collect();
+    let takes_result: Vec<String> = c
+        .nodes
+        .iter()
+        .flat_map(|n| n.params.iter().filter(|p| p.ty.starts_with("Result")).map(move |p| format!("{}({})", n.id, p.name)))
+        .collect();
     assert_eq!(takes_result, Vec::<String>::new());
 
     let s = shortcut();

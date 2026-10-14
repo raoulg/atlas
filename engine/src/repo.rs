@@ -43,7 +43,11 @@ impl Repo {
         let walk = ignore::WalkBuilder::new(dir)
             .require_git(false)
             .git_global(false)
-            .filter_entry(|e| e.depth() == 0 || !(e.file_type().map_or(false, |t| t.is_dir()) && crate::knowledge::NEVER_READ.contains(&e.file_name().to_str().unwrap_or(""))))
+            .filter_entry(|e| {
+                e.depth() == 0
+                    || !(e.file_type().map_or(false, |t| t.is_dir())
+                        && crate::knowledge::NEVER_READ.contains(&e.file_name().to_str().unwrap_or("")))
+            })
             .build();
         for e in walk.flatten() {
             let Ok(rel) = e.path().strip_prefix(dir) else { continue };
@@ -141,13 +145,25 @@ impl Repo {
     /// with it, in order.
     pub fn files_under(&self, dir: impl AsRef<Path>) -> Vec<PathBuf> {
         let at = self.key(dir.as_ref());
-        self.listing.files.iter().filter(|f| f.starts_with(&at)).filter_map(|f| f.strip_prefix(&self.at).ok()).map(|f| self.root.join(f)).collect()
+        self.listing
+            .files
+            .iter()
+            .filter(|f| f.starts_with(&at))
+            .filter_map(|f| f.strip_prefix(&self.at).ok())
+            .map(|f| self.root.join(f))
+            .collect()
     }
 
     /// The directories right under `dir`, as the root's path joined with them, in order.
     pub fn dirs_in(&self, dir: impl AsRef<Path>) -> Vec<PathBuf> {
         let at = self.key(dir.as_ref());
-        self.listing.dirs.iter().filter(|d| d.parent() == Some(at.as_path()) && !d.as_os_str().is_empty()).filter_map(|d| d.strip_prefix(&self.at).ok()).map(|d| self.root.join(d)).collect()
+        self.listing
+            .dirs
+            .iter()
+            .filter(|d| d.parent() == Some(at.as_path()) && !d.as_os_str().is_empty())
+            .filter_map(|d| d.strip_prefix(&self.at).ok())
+            .map(|d| self.root.join(d))
+            .collect()
     }
 
     /// The files named on the command line under the repository, as the root's path joined with
@@ -159,7 +175,13 @@ impl Repo {
     /// Every directory under `dir`, at any depth and the directory itself, in order.
     pub fn dirs_under(&self, dir: impl AsRef<Path>) -> Vec<PathBuf> {
         let at = self.key(dir.as_ref());
-        self.listing.dirs.iter().filter(|d| d.starts_with(&at)).filter_map(|d| d.strip_prefix(&self.at).ok()).map(|d| self.root.join(d)).collect()
+        self.listing
+            .dirs
+            .iter()
+            .filter(|d| d.starts_with(&at))
+            .filter_map(|d| d.strip_prefix(&self.at).ok())
+            .map(|d| self.root.join(d))
+            .collect()
     }
 }
 

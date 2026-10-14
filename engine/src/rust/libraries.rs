@@ -19,7 +19,10 @@ use indexmap::IndexMap;
 use tree_sitter::{Parser, Tree};
 use walkdir::WalkDir;
 
-use super::{attrs_of, collect_impls, collect_symbols, collect_uses, def_node, definitions, module_doc, new_parser, returned_classes, type_parameters, Body, Crate, Eval, Module};
+use super::{
+    attrs_of, collect_impls, collect_symbols, collect_uses, def_node, definitions, module_doc, new_parser, returned_classes,
+    type_parameters, Body, Crate, Eval, Module,
+};
 use crate::builder::GraphBuilder;
 use crate::cache::Check;
 use crate::effects;
@@ -40,7 +43,8 @@ fn sources(asked: &mut Vec<Check>) -> Vec<PathBuf> {
     let Some(home) = home else { return vec![] };
     let dir = knowledge::CARGO_SOURCES.iter().fold(home, |d, p| d.join(p));
     asked.push(Check::Names(dir.clone()));
-    let mut out: Vec<PathBuf> = std::fs::read_dir(dir).map(|r| r.flatten().map(|e| e.path()).filter(|p| p.is_dir()).collect()).unwrap_or_default();
+    let mut out: Vec<PathBuf> =
+        std::fs::read_dir(dir).map(|r| r.flatten().map(|e| e.path()).filter(|p| p.is_dir()).collect()).unwrap_or_default();
     out.sort();
     out
 }
@@ -80,7 +84,8 @@ fn version<'l>(locked: Option<&'l toml::Table>, packages: &[&'l toml::Table], pa
 /// a version, and whether each locked version is fetched, whose code is its version's.
 fn dependencies(repo: &Repo, crates: &[Crate]) -> (HashMap<String, PathBuf>, Vec<Check>) {
     let lock: toml::Table = repo.text("Cargo.lock").and_then(|t| t.parse().ok()).unwrap_or_default();
-    let packages: Vec<&toml::Table> = lock.get("package").and_then(|p| p.as_array()).into_iter().flatten().filter_map(|p| p.as_table()).collect();
+    let packages: Vec<&toml::Table> =
+        lock.get("package").and_then(|p| p.as_array()).into_iter().flatten().filter_map(|p| p.as_table()).collect();
     let root: toml::Table = repo.text("Cargo.toml").and_then(|t| t.parse().ok()).unwrap_or_default();
     let shared = root.get("workspace").and_then(|w| w.get("dependencies")).and_then(|d| d.as_table());
     let here = std::fs::canonicalize(repo.root()).unwrap_or_else(|_| repo.root().to_path_buf());
@@ -89,7 +94,8 @@ fn dependencies(repo: &Repo, crates: &[Crate]) -> (HashMap<String, PathBuf>, Vec
     let mut out = HashMap::new();
     for c in crates {
         let Some(manifest) = repo.text(c.dir.join("Cargo.toml")).and_then(|t| t.parse::<toml::Table>().ok()) else { continue };
-        let locked = packages.iter().copied().find(|p| p.get("name").and_then(|n| n.as_str()) == Some(c.name.as_str()) && p.get("source").is_none());
+        let locked =
+            packages.iter().copied().find(|p| p.get("name").and_then(|n| n.as_str()) == Some(c.name.as_str()) && p.get("source").is_none());
         for table in dependency_tables(&manifest) {
             for (key, spec) in table {
                 let ident = key.replace('-', "_");
@@ -165,7 +171,10 @@ impl Libraries {
                 return None;
             }
             let compiled = knowledge::compiled(Registry::Crates);
-            let holds = WalkDir::new(dir).into_iter().flatten().any(|e| e.path().extension().and_then(|x| x.to_str()).map_or(false, |x| compiled.contains(&x)));
+            let holds = WalkDir::new(dir)
+                .into_iter()
+                .flatten()
+                .any(|e| e.path().extension().and_then(|x| x.to_str()).map_or(false, |x| compiled.contains(&x)));
             let lib = manifest.get("lib").and_then(|l| l.get("path")).and_then(|p| p.as_str()).unwrap_or("src/lib.rs");
             let file = normal(&dir.join(lib));
             (!holds && file.is_file()).then_some(file)
@@ -247,7 +256,9 @@ impl Libraries {
         let mut cur = ident.clone();
         for (i, seg) in path.iter().enumerate().skip(1) {
             let m = self.parsed(&cur, crate_ids)?;
-            let onward = |to: &str, from: &[String]| -> Vec<String> { to.trim_start_matches("ext:").split('.').map(String::from).chain(from.iter().cloned()).collect() };
+            let onward = |to: &str, from: &[String]| -> Vec<String> {
+                to.trim_start_matches("ext:").split('.').map(String::from).chain(from.iter().cloned()).collect()
+            };
             let (child, defines) = (children(m).remove(seg), m.symbols.contains_key(seg));
             let next: Vec<Vec<String>> = match m.bindings.get(seg) {
                 Some(b) => vec![onward(b, &path[i + 1..])],
@@ -281,7 +292,14 @@ impl Libraries {
 
     /// A library's module read as code: its functions and types, as the library's; none where it
     /// is read already.
-    fn read(&mut self, id: &str, file: &Path, modules: &mut IndexMap<String, Module>, store: &mut GraphBuilder, crate_ids: &HashMap<String, String>) -> Option<String> {
+    fn read(
+        &mut self,
+        id: &str,
+        file: &Path,
+        modules: &mut IndexMap<String, Module>,
+        store: &mut GraphBuilder,
+        crate_ids: &HashMap<String, String>,
+    ) -> Option<String> {
         if modules.contains_key(id) {
             return None;
         }
@@ -321,7 +339,8 @@ fn children(m: &Module) -> HashMap<String, Option<PathBuf>> {
             out.insert(name, None);
             continue;
         }
-        let at = attrs_of(item, &m.src).into_iter().find_map(|a| Some(unquote(a.strip_prefix("path")?.trim_start().strip_prefix('=')?.trim())));
+        let at =
+            attrs_of(item, &m.src).into_iter().find_map(|a| Some(unquote(a.strip_prefix("path")?.trim_start().strip_prefix('=')?.trim())));
         let candidates = match at {
             Some(p) => vec![dir.join(p)],
             None => vec![base.join(format!("{name}.rs")), base.join(&name).join("mod.rs")],
@@ -332,7 +351,12 @@ fn children(m: &Module) -> HashMap<String, Option<PathBuf>> {
 }
 
 /// The library paths the calls of the functions in `probe` go into.
-fn library_calls(modules: &IndexMap<String, Module>, store: &GraphBuilder, crate_ids: &HashMap<String, String>, probe: &HashSet<String>) -> Vec<Vec<String>> {
+fn library_calls(
+    modules: &IndexMap<String, Module>,
+    store: &GraphBuilder,
+    crate_ids: &HashMap<String, String>,
+    probe: &HashSet<String>,
+) -> Vec<Vec<String>> {
     let eval = Eval::new(modules, &store.nodes, crate_ids);
     let returned = returned_classes(store);
     let mut out = vec![];
@@ -349,7 +373,14 @@ fn library_calls(modules: &IndexMap<String, Module>, store: &GraphBuilder, crate
 /// Read the crates the program's code calls, `depth` rounds deep: the modules its calls go into
 /// (with the modules their paths go through), then the modules of the same crates that the last
 /// round's calls go into.
-pub(super) fn read(repo: &Repo, crates: &[Crate], modules: &mut IndexMap<String, Module>, store: &mut GraphBuilder, crate_ids: &HashMap<String, String>, depth: usize) {
+pub(super) fn read(
+    repo: &Repo,
+    crates: &[Crate],
+    modules: &mut IndexMap<String, Module>,
+    store: &mut GraphBuilder,
+    crate_ids: &HashMap<String, String>,
+    depth: usize,
+) {
     if depth == 0 {
         return;
     }
@@ -357,7 +388,15 @@ pub(super) fn read(repo: &Repo, crates: &[Crate], modules: &mut IndexMap<String,
     if deps.is_empty() {
         return;
     }
-    let mut lib = Libraries { deps, roots: HashMap::new(), files: HashMap::new(), parsed: HashMap::new(), followed: HashMap::new(), parser: new_parser().ok(), trees: HashMap::new() };
+    let mut lib = Libraries {
+        deps,
+        roots: HashMap::new(),
+        files: HashMap::new(),
+        parsed: HashMap::new(),
+        followed: HashMap::new(),
+        parser: new_parser().ok(),
+        trees: HashMap::new(),
+    };
     let mut probe: HashSet<String> = modules.keys().cloned().collect();
     let mut used: Option<HashSet<String>> = None;
     for _ in 0..depth {

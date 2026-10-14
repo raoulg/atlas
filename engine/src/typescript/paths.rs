@@ -33,7 +33,17 @@ pub(super) struct At<'a, 't> {
 /// The function a body belongs to: the body's own node, its parent, or the function a
 /// declaration's call chain is handed (`createServerFn(..).handler(async () => ..)`).
 pub(super) fn function_node(body: TsNode) -> Option<TsNode> {
-    let fun = |n: TsNode| matches!(n.kind(), "arrow_function" | "function_expression" | "function" | "function_declaration" | "generator_function_declaration" | "method_definition");
+    let fun = |n: TsNode| {
+        matches!(
+            n.kind(),
+            "arrow_function"
+                | "function_expression"
+                | "function"
+                | "function_declaration"
+                | "generator_function_declaration"
+                | "method_definition"
+        )
+    };
     if fun(body) {
         return Some(body);
     }
@@ -80,7 +90,8 @@ impl<'a> Eval<'a> {
             return vec![hole("…")];
         }
         let src = &at.m.src;
-        let inner = |e: TsNode<'t>| named_children(e).into_iter().next().map(|x| self.of(at, x, depth + 1)).unwrap_or_else(|| vec![hole("value")]);
+        let inner =
+            |e: TsNode<'t>| named_children(e).into_iter().next().map(|x| self.of(at, x, depth + 1)).unwrap_or_else(|| vec![hole("value")]);
         match e.kind() {
             "string" => vec![lit(&unquote(text(e, src)))],
             "template_string" => {
@@ -96,7 +107,9 @@ impl<'a> Eval<'a> {
             }
             "parenthesized_expression" | "as_expression" | "satisfies_expression" | "non_null_expression" | "await_expression" => inner(e),
             "binary_expression" => {
-                let (Some(l), Some(r)) = (e.child_by_field_name("left"), e.child_by_field_name("right")) else { return vec![hole("value")] };
+                let (Some(l), Some(r)) = (e.child_by_field_name("left"), e.child_by_field_name("right")) else {
+                    return vec![hole("value")];
+                };
                 match e.child_by_field_name("operator").map(|o| text(o, src)) {
                     Some("+") => cross(&self.of(at, l, depth + 1), &self.of(at, r, depth + 1), ""),
                     Some("??" | "||") => union(self.of(at, l, depth + 1), self.of(at, r, depth + 1)),
@@ -104,7 +117,9 @@ impl<'a> Eval<'a> {
                 }
             }
             "ternary_expression" => {
-                let (Some(a), Some(b)) = (e.child_by_field_name("consequence"), e.child_by_field_name("alternative")) else { return vec![hole("value")] };
+                let (Some(a), Some(b)) = (e.child_by_field_name("consequence"), e.child_by_field_name("alternative")) else {
+                    return vec![hole("value")];
+                };
                 union(self.of(at, a, depth + 1), self.of(at, b, depth + 1))
             }
             "identifier" | "shorthand_property_identifier" => self.name(at, e, depth),
@@ -114,7 +129,9 @@ impl<'a> Eval<'a> {
                 // `new URL("../data", import.meta.url)`: relative to the module's own file
                 let args = e.child_by_field_name("arguments").map(named_children).unwrap_or_default();
                 match (e.child_by_field_name("constructor").map(|c| text(c, src)), args.as_slice()) {
-                    (Some("URL"), [rel, base]) => cross(&self.of(at, *base, depth + 1).iter().map(parent).collect::<Vec<_>>(), &self.of(at, *rel, depth + 1), "/"),
+                    (Some("URL"), [rel, base]) => {
+                        cross(&self.of(at, *base, depth + 1).iter().map(parent).collect::<Vec<_>>(), &self.of(at, *rel, depth + 1), "/")
+                    }
                     (Some("URL"), [x]) => self.of(at, *x, depth + 1),
                     _ => vec![hole("value")],
                 }
@@ -182,7 +199,9 @@ impl<'a> Eval<'a> {
             let handed = call.child_by_field_name("arguments").map(named_children).unwrap_or_default().into_iter().next()?;
             let options = self.object(here, handed, 0).and_then(|o| field(o, parser.options, src)).and_then(|o| self.object(here, o, 0))?;
             let declared = field(options, option, src).and_then(|o| self.object(here, o, 0))?;
-            return Some(field(declared, parser.default, src).map_or_else(Vec::new, |d| crate::paths::option(option, self.of(here, d, depth + 1))));
+            return Some(
+                field(declared, parser.default, src).map_or_else(Vec::new, |d| crate::paths::option(option, self.of(here, d, depth + 1))),
+            );
         }
         None
     }
@@ -191,11 +210,19 @@ impl<'a> Eval<'a> {
     /// it is in, written before it, then at the module's top level; each with the function it is in.
     fn declared<'s>(&self, at: At<'s, 's>, name: &str, before: usize) -> Vec<(TsNode<'s>, Option<TsNode<'s>>)> {
         let src = &at.m.src;
-        let binds_name = |v: &TsNode| v.child_by_field_name("name").map_or(false, |p| match p.kind() {
-            "identifier" => text(p, src) == name,
-            _ => walk(p, &["shorthand_property_identifier_pattern", "identifier"]).iter().any(|x| text(*x, src) == name),
-        });
-        let local = at.scope.map(|s| walk(s, &["variable_declarator"])).unwrap_or_default().into_iter().filter(|v| v.start_byte() < before && binds_name(v)).map(|v| (v, at.scope));
+        let binds_name = |v: &TsNode| {
+            v.child_by_field_name("name").map_or(false, |p| match p.kind() {
+                "identifier" => text(p, src) == name,
+                _ => walk(p, &["shorthand_property_identifier_pattern", "identifier"]).iter().any(|x| text(*x, src) == name),
+            })
+        };
+        let local = at
+            .scope
+            .map(|s| walk(s, &["variable_declarator"]))
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|v| v.start_byte() < before && binds_name(v))
+            .map(|v| (v, at.scope));
         let top = top_variables(at.m.tree.root_node()).into_iter().filter(binds_name).map(|v| (v, None));
         local.rev().chain(top).collect()
     }
@@ -207,7 +234,8 @@ impl<'a> Eval<'a> {
         let src = &at.m.src;
         let (call, parser) = self.parser_call(at.m, call)?;
         let handed = call.child_by_field_name("arguments").map(named_children).unwrap_or_default().into_iter().next();
-        let options = handed.and_then(|h| self.object(at, h, 0)).and_then(|o| field(o, parser.options, src)).and_then(|o| self.object(at, o, 0));
+        let options =
+            handed.and_then(|h| self.object(at, h, 0)).and_then(|o| field(o, parser.options, src)).and_then(|o| self.object(at, o, 0));
         let keys = options.map(named_children).unwrap_or_default().into_iter().filter_map(|p| match p.kind() {
             "pair" => p.child_by_field_name("key").map(|k| key_text(k, src)),
             "shorthand_property_identifier" => Some(text(p, src).to_string()),
@@ -220,7 +248,10 @@ impl<'a> Eval<'a> {
     /// package that exports it names it, however the module imports it.
     fn parser_call<'t>(&self, m: &Module, value: TsNode<'t>) -> Option<(TsNode<'t>, &'static knowledge::OptionParser)> {
         let mut v = value;
-        while matches!(v.kind(), "await_expression" | "parenthesized_expression" | "as_expression" | "satisfies_expression" | "non_null_expression") {
+        while matches!(
+            v.kind(),
+            "await_expression" | "parenthesized_expression" | "as_expression" | "satisfies_expression" | "non_null_expression"
+        ) {
             v = named_children(v).into_iter().next()?;
         }
         let parts = member_parts(v.child_by_field_name("function").filter(|_| v.kind() == "call_expression")?, &m.src);
@@ -239,9 +270,14 @@ impl<'a> Eval<'a> {
         let src = &at.m.src;
         match e.kind() {
             "object" => Some(e),
-            "parenthesized_expression" | "as_expression" | "satisfies_expression" => self.object(at, named_children(e).into_iter().next()?, depth + 1),
+            "parenthesized_expression" | "as_expression" | "satisfies_expression" => {
+                self.object(at, named_children(e).into_iter().next()?, depth + 1)
+            }
             "identifier" | "shorthand_property_identifier" => {
-                let (v, scope) = self.declared(at, text(e, src), e.start_byte()).into_iter().find(|(v, _)| v.child_by_field_name("name").map_or(false, |p| p.kind() == "identifier"))?;
+                let (v, scope) = self
+                    .declared(at, text(e, src), e.start_byte())
+                    .into_iter()
+                    .find(|(v, _)| v.child_by_field_name("name").map_or(false, |p| p.kind() == "identifier"))?;
                 self.object(At { scope, ..at }, v.child_by_field_name("value")?, depth + 1)
             }
             _ => None,
@@ -260,21 +296,38 @@ impl<'a> Eval<'a> {
         let class = class?;
         let id = format!("{}.{}", at.m.id, text(class.child_by_field_name("name")?, src));
         let members = named_children(class.child_by_field_name("body")?);
-        let ctor = members.iter().find(|m| m.kind() == "method_definition" && m.child_by_field_name("name").map(|n| text(n, src)) == Some("constructor"));
+        let ctor = members
+            .iter()
+            .find(|m| m.kind() == "method_definition" && m.child_by_field_name("name").map(|n| text(n, src)) == Some("constructor"));
         let held = |p: String| vec![vec![Seg::Held(format!("{id}.constructor"), p)]];
         if let Some(ctor) = ctor {
             let params = ctor.child_by_field_name("parameters").map(named_children).unwrap_or_default();
-            if params.iter().any(|p| named_children(*p).iter().any(|c| c.kind() == "accessibility_modifier") && p.child_by_field_name("pattern").map(|x| text(x, src)) == Some(name)) {
+            if params.iter().any(|p| {
+                named_children(*p).iter().any(|c| c.kind() == "accessibility_modifier")
+                    && p.child_by_field_name("pattern").map(|x| text(x, src)) == Some(name)
+            }) {
                 return Some(held(name.to_string()));
             }
-            let set = walk(ctor.child_by_field_name("body")?, &["assignment_expression"]).into_iter().find(|a| a.child_by_field_name("left").map(|l| member_parts(l, src)) == Some(vec!["this".to_string(), name.to_string()]));
+            let set = walk(ctor.child_by_field_name("body")?, &["assignment_expression"])
+                .into_iter()
+                .find(|a| a.child_by_field_name("left").map(|l| member_parts(l, src)) == Some(vec!["this".to_string(), name.to_string()]));
             if let Some(right) = set.and_then(|a| a.child_by_field_name("right")) {
                 let names = param_names(*ctor, src);
                 let vals = self.of(At { m: at.m, scope: Some(*ctor), params: &names }, right, depth + 1);
-                return Some(vals.into_iter().map(|b| b.into_iter().map(|s| if let Seg::Param(x) = s { Seg::Held(format!("{id}.constructor"), x) } else { s }).collect()).collect());
+                return Some(
+                    vals.into_iter()
+                        .map(|b| {
+                            b.into_iter()
+                                .map(|s| if let Seg::Param(x) = s { Seg::Held(format!("{id}.constructor"), x) } else { s })
+                                .collect()
+                        })
+                        .collect(),
+                );
             }
         }
-        let field = members.iter().find(|m| m.kind() == "public_field_definition" && m.child_by_field_name("name").map(|n| text(n, src)) == Some(name))?;
+        let field = members
+            .iter()
+            .find(|m| m.kind() == "public_field_definition" && m.child_by_field_name("name").map(|n| text(n, src)) == Some(name))?;
         field.child_by_field_name("value").map(|v| self.of(At { m: at.m, scope: None, params: &[] }, v, depth + 1))
     }
 
@@ -288,7 +341,9 @@ impl<'a> Eval<'a> {
         }
         // a local of the function, then its parameters
         if let Some(scope) = at.scope {
-            let local = walk(scope, &["variable_declarator"]).into_iter().find(|v| v.child_by_field_name("name").map(|n| text(n, src)) == Some(name.as_str()) && v.start_byte() < e.start_byte());
+            let local = walk(scope, &["variable_declarator"])
+                .into_iter()
+                .find(|v| v.child_by_field_name("name").map(|n| text(n, src)) == Some(name.as_str()) && v.start_byte() < e.start_byte());
             if let Some(v) = local.and_then(|v| v.child_by_field_name("value")) {
                 return self.of(at, v, depth + 1);
             }
@@ -339,7 +394,9 @@ impl<'a> Eval<'a> {
             Some(PathFn::Temp) => vec![lit(knowledge::TEMP_DIR)],
             // the language's own conversions to a string
             None if parts.as_slice() == ["String"] => arg(0),
-            None if last == "toString" => f.child_by_field_name("object").map(|o| self.of(at, o, depth + 1)).unwrap_or_else(|| vec![hole("value")]),
+            None if last == "toString" => {
+                f.child_by_field_name("object").map(|o| self.of(at, o, depth + 1)).unwrap_or_else(|| vec![hole("value")])
+            }
             None => self.given(at, &parts, &args, depth).unwrap_or_else(|| vec![hole(last)]),
         }
     }
@@ -375,10 +432,9 @@ impl<'a> Eval<'a> {
 /// The function a module declares at its top level under `name`: `function api(..)`, or a
 /// constant that is one (`const api = (..) => ..`).
 fn top_function<'t>(m: &'t Module, name: &str) -> Option<TsNode<'t>> {
-    let declared = declarations(m.tree.root_node())
-        .into_iter()
-        .map(|(d, _, _)| d)
-        .find(|d| matches!(d.kind(), "function_declaration" | "function") && d.child_by_field_name("name").map(|n| text(n, &m.src)) == Some(name));
+    let declared = declarations(m.tree.root_node()).into_iter().map(|(d, _, _)| d).find(|d| {
+        matches!(d.kind(), "function_declaration" | "function") && d.child_by_field_name("name").map(|n| text(n, &m.src)) == Some(name)
+    });
     declared.or_else(|| top_value(m, name).filter(|v| matches!(v.kind(), "arrow_function" | "function_expression" | "function")))
 }
 
@@ -408,7 +464,8 @@ fn binds(pattern: TsNode, key: &str, local: &str, src: &[u8]) -> bool {
     named_children(pattern).into_iter().any(|p| match p.kind() {
         "shorthand_property_identifier_pattern" => text(p, src) == key && key == local,
         "pair_pattern" => {
-            p.child_by_field_name("key").map(|k| key_text(k, src)) == Some(key.to_string()) && p.child_by_field_name("value").map_or(false, |v| v.kind() == "identifier" && text(v, src) == local)
+            p.child_by_field_name("key").map(|k| key_text(k, src)) == Some(key.to_string())
+                && p.child_by_field_name("value").map_or(false, |v| v.kind() == "identifier" && text(v, src) == local)
         }
         _ => false,
     })
@@ -416,7 +473,11 @@ fn binds(pattern: TsNode, key: &str, local: &str, src: &[u8]) -> bool {
 
 /// A key of an object or of a pattern as it names a field: `raw`, `"dry-run"`.
 fn key_text(k: TsNode, src: &[u8]) -> String {
-    if k.kind() == "string" { unquote(text(k, src)) } else { text(k, src).to_string() }
+    if k.kind() == "string" {
+        unquote(text(k, src))
+    } else {
+        text(k, src).to_string()
+    }
 }
 
 /// What an object literal holds under `key`: `{ key: value }`, or the name `{ key }` stands for.
@@ -430,7 +491,10 @@ fn field<'t>(object: TsNode<'t>, key: &str, src: &[u8]) -> Option<TsNode<'t>> {
 
 /// The value a module-level `const` is declared with.
 fn top_value<'t>(m: &'t Module, name: &str) -> Option<TsNode<'t>> {
-    top_variables(m.tree.root_node()).into_iter().find(|v| v.child_by_field_name("name").map(|n| text(n, &m.src)) == Some(name))?.child_by_field_name("value")
+    top_variables(m.tree.root_node())
+        .into_iter()
+        .find(|v| v.child_by_field_name("name").map(|n| text(n, &m.src)) == Some(name))?
+        .child_by_field_name("value")
 }
 
 /// One call of a function of the package, with the argument each parameter is handed.

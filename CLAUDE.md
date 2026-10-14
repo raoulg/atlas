@@ -90,6 +90,9 @@ The rigorous half and the visual half are the same structure. Read `docs/referen
   or draws changes, the patch number for a fix, in the commit that makes the change. The
   build adds the commit it is made from (`0.2.0 (b0ead14)`).
 - Tests: `cargo test`. The Rust workspace itself is a test subject.
+- Format: `cargo fmt` before every commit (`rustfmt.toml`: 140 columns); CI checks it. It
+  formats the workspace only: the fixtures and pairs under `engine/tests` are subjects, written
+  as their authors would, and their line numbers are pinned.
 - A change that should leave the pictures as they were is shown to with `tools/pictures.py`:
   `uv run tools/pictures.py draw <atlas> <repo> <dir>` with the build before and after, then
   `uv run tools/pictures.py compare <before> <after>` (Playwright on the installed Chrome).

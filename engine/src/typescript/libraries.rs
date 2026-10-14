@@ -18,7 +18,10 @@ use serde_json::Value;
 use tree_sitter::Parser;
 use walkdir::WalkDir;
 
-use super::{collect_imports, collect_symbols, collect_wrapped, function_of, is_code, member_parts, module_id, package_of, segment, ts_parser, Bound, Module, EXTENSIONS};
+use super::{
+    collect_imports, collect_symbols, collect_wrapped, function_of, is_code, member_parts, module_id, package_of, segment, ts_parser,
+    Bound, Module, EXTENSIONS,
+};
 use crate::builder::GraphBuilder;
 use crate::effects;
 use crate::knowledge::{self, Registry};
@@ -85,7 +88,9 @@ impl Package {
     fn entry(&self, sub: &str) -> Option<PathBuf> {
         let exports = &self.manifest["exports"];
         let target = match exports {
-            Value::Null if sub.is_empty() => ["module", "main"].iter().find_map(|k| self.manifest[*k].as_str()).unwrap_or("index").to_string(),
+            Value::Null if sub.is_empty() => {
+                ["module", "main"].iter().find_map(|k| self.manifest[*k].as_str()).unwrap_or("index").to_string()
+            }
             Value::Null => sub.to_string(),
             _ => exported(exports, &if sub.is_empty() { ".".to_string() } else { format!("./{sub}") })?,
         };
@@ -192,7 +197,10 @@ impl Libraries {
         let found = dir.ancestors().map(|a| a.join(knowledge::NODE_PACKAGES).join(name)).find(|d| d.join("package.json").is_file());
         // a package of the repository's own, linked into `node_modules` (a workspace's member), is
         // read as its own part
-        let own = |d: &PathBuf| std::fs::canonicalize(d).map_or(false, |abs| abs.starts_with(&self.here) && !abs.components().any(|c| c.as_os_str() == knowledge::NODE_PACKAGES));
+        let own = |d: &PathBuf| {
+            std::fs::canonicalize(d)
+                .map_or(false, |abs| abs.starts_with(&self.here) && !abs.components().any(|c| c.as_os_str() == knowledge::NODE_PACKAGES))
+        };
         // a package below the repository is named from it, like its own files
         let found = found.filter(|d| !own(d)).map(|d| d.strip_prefix(&self.here).map(|r| normal(&self.root.join(r))).unwrap_or(d));
         self.found.insert(key, found.clone());
@@ -337,7 +345,12 @@ impl Libraries {
         }
         let mut m = self.parse(file)?;
         let pkg = self.holding(file)?;
-        let local: Vec<(String, String)> = m.bindings.iter().chain(&m.dynamic).filter_map(|(k, b)| if let Bound::Own(t) = b { Some((k.clone(), t.clone())) } else { None }).collect();
+        let local: Vec<(String, String)> = m
+            .bindings
+            .iter()
+            .chain(&m.dynamic)
+            .filter_map(|(k, b)| if let Bound::Own(t) = b { Some((k.clone(), t.clone())) } else { None })
+            .collect();
         for (k, t) in local {
             let (f, name) = match pkg.by_id.get(&t) {
                 Some(f) => (f.clone(), None),
@@ -404,7 +417,11 @@ fn members(m: &Module, ns: &str) -> Vec<String> {
     let mut out: Vec<String> = vec![];
     for n in walk(m.tree.root_node(), &["member_expression", "nested_type_identifier", "nested_identifier"]) {
         let written = text(n, &m.src);
-        let Some(member) = written.strip_prefix(ns).and_then(|r| r.strip_prefix('.')).map(|r| r.split('.').next().unwrap_or("").to_string()) else { continue };
+        let Some(member) =
+            written.strip_prefix(ns).and_then(|r| r.strip_prefix('.')).map(|r| r.split('.').next().unwrap_or("").to_string())
+        else {
+            continue;
+        };
         if !member.is_empty() && member.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '$') && !out.contains(&member) {
             out.push(member);
         }

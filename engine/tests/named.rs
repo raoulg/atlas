@@ -12,9 +12,14 @@ fn named(files: &[&Path]) -> Options {
 #[test]
 fn a_named_file_is_read_where_git_ignores_it() {
     let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixture-lib");
-    let has = |g: &atlas_engine::Graph| g.nodes.iter().any(|n| n.id == "drafts.scratch" && n.entry.as_ref().map(|e| e.kind) == Some(EntryKind::Script));
+    let has = |g: &atlas_engine::Graph| {
+        g.nodes.iter().any(|n| n.id == "drafts.scratch" && n.entry.as_ref().map(|e| e.kind) == Some(EntryKind::Script))
+    };
     assert!(!has(&analyze(&repo, &named(&[])).unwrap()), "an ignored file is not read unless it is named");
-    assert!(has(&analyze(&repo, &named(&[&repo.join("drafts/scratch.py")])).unwrap()), "a named file is read as one of its project's scripts");
+    assert!(
+        has(&analyze(&repo, &named(&[&repo.join("drafts/scratch.py")])).unwrap()),
+        "a named file is read as one of its project's scripts"
+    );
 
     // outside any project, the project is the files named, not their folder
     let dir = std::env::temp_dir().join(format!("atlas-named-{}", std::process::id()));

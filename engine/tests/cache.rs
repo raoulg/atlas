@@ -22,7 +22,14 @@ fn write(dir: &Path, files: &[(&str, &str)]) {
 }
 
 fn git(dir: &Path, args: &[&str]) {
-    let ok = Command::new("git").arg("-C").arg(dir).args(["-c", "user.name=atlas", "-c", "user.email=atlas@example.org", "-c", "commit.gpgsign=false"]).args(args).status().expect("git runs").success();
+    let ok = Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(["-c", "user.name=atlas", "-c", "user.email=atlas@example.org", "-c", "commit.gpgsign=false"])
+        .args(args)
+        .status()
+        .expect("git runs")
+        .success();
     assert!(ok, "git {args:?}");
 }
 
@@ -66,7 +73,10 @@ fn textkit(repo: &Path, body: &str) {
         repo,
         &[
             ("web/node_modules/textkit/package.json", r#"{ "name": "textkit", "version": "2.0.0", "main": "index.js" }"#),
-            ("web/node_modules/textkit/index.js", &format!("import {{ readFileSync }} from \"node:fs\";\n\nexport function load(path) {{\n{body}\n}}\n")),
+            (
+                "web/node_modules/textkit/index.js",
+                &format!("import {{ readFileSync }} from \"node:fs\";\n\nexport function load(path) {{\n{body}\n}}\n"),
+            ),
         ],
     );
 }
@@ -79,11 +89,20 @@ fn project(dir: &Path) -> PathBuf {
     write(
         &repo,
         &[
-            ("Cargo.toml", &format!("[package]\nname = \"app\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[dependencies]\nfilekit = {{ path = {:?} }}\n", kit.to_string_lossy())),
+            (
+                "Cargo.toml",
+                &format!(
+                    "[package]\nname = \"app\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[dependencies]\nfilekit = {{ path = {:?} }}\n",
+                    kit.to_string_lossy()
+                ),
+            ),
             ("src/main.rs", "fn main() {\n    let text = filekit::read_config(\"settings.toml\");\n    println!(\"{text}\");\n}\n"),
             ("web/package.json", r#"{ "name": "web" }"#),
             ("web/tsconfig.json", "{}"),
-            ("web/src/main.ts", "import { load } from \"textkit\";\n\nexport function main(): string {\n  return load(\"page.html\");\n}\n"),
+            (
+                "web/src/main.ts",
+                "import { load } from \"textkit\";\n\nexport function main(): string {\n  return load(\"page.html\");\n}\n",
+            ),
         ],
     );
     textkit(&repo, "  return readFileSync(path, \"utf8\");");
@@ -123,7 +142,11 @@ fn a_revision_is_read_once_and_anew_when_its_libraries_change() {
     let third = changes::parts_at(&repo, Some("HEAD"), &opts).unwrap();
     assert_eq!(opts.cache.as_ref().unwrap().hits(), 2, "the kept reading is found");
     assert_eq!(shown(&third), shown(&fresh()), "and not used: the crate it read changed");
-    assert!(touched(&third, "filekit.read_config").contains(&("disk_write".into(), "write".into())), "{:?}", touched(&third, "filekit.read_config"));
+    assert!(
+        touched(&third, "filekit.read_config").contains(&("disk_write".into(), "write".into())),
+        "{:?}",
+        touched(&third, "filekit.read_config")
+    );
 
     // the package's code changes in the working tree, its version does not
     textkit(&repo, "  return readFileSync(path, \"latin1\").trim();");
@@ -178,7 +201,13 @@ fn site(repo: &Path) -> PathBuf {
 /// `kit` at version 1.0, its `read_config` written as `body`.
 fn kit(repo: &Path, body: &str) {
     let site = site(repo);
-    write(&site, &[("kit-1.0.dist-info/METADATA", "Name: kit\nVersion: 1.0\n"), ("kit/__init__.py", &format!("from helper import size\n\n\ndef read_config(path):\n    n = size()\n{body}\n"))]);
+    write(
+        &site,
+        &[
+            ("kit-1.0.dist-info/METADATA", "Name: kit\nVersion: 1.0\n"),
+            ("kit/__init__.py", &format!("from helper import size\n\n\ndef read_config(path):\n    n = size()\n{body}\n")),
+        ],
+    );
 }
 
 /// `helper` at `version`, its `size` giving `ty`.
@@ -187,7 +216,13 @@ fn helper(repo: &Path, version: &str, ty: &str) {
     for e in std::fs::read_dir(&site).into_iter().flatten().flatten().filter(|e| e.file_name().to_string_lossy().starts_with("helper-")) {
         let _ = std::fs::remove_dir_all(e.path());
     }
-    write(&site, &[(&format!("helper-{version}.dist-info/METADATA"), &format!("Name: helper\nVersion: {version}\n")), ("helper.py", &format!("def size() -> {ty}:\n    ...\n"))]);
+    write(
+        &site,
+        &[
+            (&format!("helper-{version}.dist-info/METADATA"), &format!("Name: helper\nVersion: {version}\n")),
+            ("helper.py", &format!("def size() -> {ty}:\n    ...\n")),
+        ],
+    );
 }
 
 /// What ty says of an installed library's file is kept: the second reading is served from the

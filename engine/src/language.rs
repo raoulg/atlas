@@ -4,7 +4,6 @@
 //! module ids, how names resolve, which calls are boundaries, what counts as an entry
 //! point. The grammar itself is reused from tree-sitter.
 
-
 use std::path::{Path, PathBuf};
 
 use anyhow::Result;
@@ -68,7 +67,10 @@ impl Language for Python {
         // a project of scripts and notebooks has no package: a file named on the command line
         // in a folder without one, or a project file with none beside it
         if packages.is_empty() && !repo.is_file("pyproject.toml") && repo.named().is_empty() {
-            anyhow::bail!("no Python package found under {} (looked for a pyproject.toml, src/<pkg>/__init__.py and <pkg>/__init__.py)", repo.root().display());
+            anyhow::bail!(
+                "no Python package found under {} (looked for a pyproject.toml, src/<pkg>/__init__.py and <pkg>/__init__.py)",
+                repo.root().display()
+            );
         }
         let (mut b, root) = python::parse(repo, &packages, project_root.as_deref(), opts)?;
         entries::mark_scripts(repo, &mut b, project_root.as_deref());
@@ -112,7 +114,9 @@ impl Python {
         let mut packages: Vec<PathBuf> = asked.map(Path::to_path_buf).into_iter().collect();
         packages.extend(python::packages(repo).into_iter().filter(|p| Some(p.as_path()) != asked));
         let first = packages.first().map(PathBuf::as_path);
-        let project_root = first.and_then(|p| python::project_root(repo, p)).or_else(|| (repo.is_file("pyproject.toml") || first.is_none()).then(|| repo.root().to_path_buf()));
+        let project_root = first
+            .and_then(|p| python::project_root(repo, p))
+            .or_else(|| (repo.is_file("pyproject.toml") || first.is_none()).then(|| repo.root().to_path_buf()));
         (packages, project_root)
     }
 }

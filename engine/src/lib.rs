@@ -9,23 +9,23 @@ pub mod changes;
 pub mod diff;
 pub mod effects;
 pub mod entries;
-pub mod knowledge;
 pub mod families;
 pub mod flow;
+pub mod knowledge;
 pub mod language;
-pub mod view;
 pub mod model;
 pub mod parts;
 pub mod paths;
 pub mod principles;
-pub mod remote;
-pub mod repo;
 pub mod python;
 pub mod pytypes;
+pub mod remote;
+pub mod repo;
 pub mod rust;
 pub mod story;
 pub mod tree;
 pub mod typescript;
+pub mod view;
 
 use std::path::{Path, PathBuf};
 

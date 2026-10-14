@@ -147,13 +147,26 @@ fn gives_a_used_value_has_a_type() {
 #[test]
 fn gives_a_call_says_whether_its_value_is_used() {
     let (c, s) = (clean(), shortcut());
-    let uses = |g: &Graph, src: &str, dst: &str| g.edges.iter().any(|e| e.kind == EdgeKind::Calls && e.uses && e.src == format!("{}.{src}", g.root) && e.dst == format!("{}.{dst}", g.root));
+    let uses = |g: &Graph, src: &str, dst: &str| {
+        g.edges
+            .iter()
+            .any(|e| e.kind == EdgeKind::Calls && e.uses && e.src == format!("{}.{src}", g.root) && e.dst == format!("{}.{dst}", g.root))
+    };
     for g in [c, s] {
         assert!(uses(g, "rates.http.HttpRates.latest", "rates.http.getJson"), "{}", g.root);
-        assert!(edge(g, EdgeKind::Calls, "ledger.Ledger.record", "store.ExpenseStore.add") && !uses(g, "ledger.Ledger.record", "store.ExpenseStore.add"), "{}: a call standing as a statement", g.root);
+        assert!(
+            edge(g, EdgeKind::Calls, "ledger.Ledger.record", "store.ExpenseStore.add")
+                && !uses(g, "ledger.Ledger.record", "store.ExpenseStore.add"),
+            "{}: a call standing as a statement",
+            g.root
+        );
     }
     let unsaid = |g: &Graph| -> Vec<String> {
-        g.edges.iter().filter(|e| e.kind == EdgeKind::Calls && e.uses && g.node(&e.dst).map_or(false, |f| f.returns.is_none() && !f.ctor)).map(|e| format!("{} -> {}", e.src, e.dst)).collect()
+        g.edges
+            .iter()
+            .filter(|e| e.kind == EdgeKind::Calls && e.uses && g.node(&e.dst).map_or(false, |f| f.returns.is_none() && !f.ctor))
+            .map(|e| format!("{} -> {}", e.src, e.dst))
+            .collect()
     };
     assert!(unsaid(c).is_empty(), "{:?}", unsaid(c));
     assert!(unsaid(s).contains(&"shortcut.rates.http.HttpRates.latest -> shortcut.rates.http.getJson".to_string()), "{:?}", unsaid(s));
@@ -199,7 +212,10 @@ fn morphisms_an_asserted_type_shows() {
 fn composition_a_route_reaches_its_place() {
     let (c, s) = (clean(), shortcut());
     assert!(edge(c, EdgeKind::Calls, "ledger.Ledger.exportReport", "exporters.exporter.ReportExporter.write"));
-    for (class, writer) in [("exporters.csv.CsvExporter", "exporters.csv.CsvExporter.write"), ("exporters.json.JsonExporter", "exporters.json.JsonExporter.write")] {
+    for (class, writer) in [
+        ("exporters.csv.CsvExporter", "exporters.csv.CsvExporter.write"),
+        ("exporters.json.JsonExporter", "exporters.json.JsonExporter.write"),
+    ] {
         assert!(edge(c, EdgeKind::Inherits, class, "exporters.exporter.ReportExporter"), "{class} is a ReportExporter");
         assert_eq!(touches(c, writer, "disk_write").len(), 1, "{writer} writes the report");
     }
@@ -233,11 +249,19 @@ fn composition_a_call_not_followed_shows() {
 #[test]
 fn places_are_decided_where_the_program_starts() {
     let (c, s) = (clean(), shortcut());
-    assert_eq!(places(c, "rates.file.FileRates.latest", "disk_read"), [("data/rates.json".to_string(), vec!["clean.cli.main".to_string()])]);
-    assert_eq!(places(c, "config.loadConfig", "disk_read").iter().find(|(a, _)| !a.is_empty()).map(|(_, by)| by.clone()), Some(vec!["clean.server".to_string(), "clean.cli.main".to_string()]));
+    assert_eq!(
+        places(c, "rates.file.FileRates.latest", "disk_read"),
+        [("data/rates.json".to_string(), vec!["clean.cli.main".to_string()])]
+    );
+    assert_eq!(
+        places(c, "config.loadConfig", "disk_read").iter().find(|(a, _)| !a.is_empty()).map(|(_, by)| by.clone()),
+        Some(vec!["clean.server".to_string(), "clean.cli.main".to_string()])
+    );
     assert!(asked_anywhere(c, "places").is_empty(), "{:?}", asked_anywhere(c, "places"));
     // the shortcut's reads and writes are still there, decided in the library itself
-    for (f, kind) in [("rates.file.FileRates.latest", "disk_read"), ("exporters.csv.writeCsv", "disk_write"), ("exporters.json.writeJson", "disk_write")] {
+    for (f, kind) in
+        [("rates.file.FileRates.latest", "disk_read"), ("exporters.csv.writeCsv", "disk_write"), ("exporters.json.writeJson", "disk_write")]
+    {
         let found = places(s, f, kind);
         assert!(!found.is_empty() && found.iter().all(|(_, by)| by.is_empty()), "{f} makes its own path whole: {found:?}");
     }
@@ -249,7 +273,9 @@ fn places_are_decided_where_the_program_starts() {
 #[test]
 fn places_decided_in_library_code_show() {
     let s = shortcut();
-    for (f, kind) in [("rates.file.FileRates.latest", "disk_read"), ("exporters.csv.writeCsv", "disk_write"), ("exporters.json.writeJson", "disk_write")] {
+    for (f, kind) in
+        [("rates.file.FileRates.latest", "disk_read"), ("exporters.csv.writeCsv", "disk_write"), ("exporters.json.writeJson", "disk_write")]
+    {
         let unnamed = touches(s, f, kind).iter().any(|t| t.artifact.is_empty() && !t.fixed);
         assert!(unnamed || asked(s, "places", f), "{f}: {:?}", places(s, f, kind));
     }
@@ -261,8 +287,14 @@ fn places_decided_in_library_code_show() {
 #[test]
 fn places_handed_through_a_base_type_are_named() {
     let c = clean();
-    assert_eq!(places(c, "exporters.csv.CsvExporter.write", "disk_write").iter().map(|(a, _)| a.as_str()).collect::<Vec<_>>(), ["out/report.csv"]);
-    assert_eq!(places(c, "exporters.json.JsonExporter.write", "disk_write").iter().map(|(a, _)| a.as_str()).collect::<Vec<_>>(), ["out/report.json"]);
+    assert_eq!(
+        places(c, "exporters.csv.CsvExporter.write", "disk_write").iter().map(|(a, _)| a.as_str()).collect::<Vec<_>>(),
+        ["out/report.csv"]
+    );
+    assert_eq!(
+        places(c, "exporters.json.JsonExporter.write", "disk_write").iter().map(|(a, _)| a.as_str()).collect::<Vec<_>>(),
+        ["out/report.json"]
+    );
 }
 
 // ---------- a place carries a what ----------
@@ -303,10 +335,20 @@ fn changes_show_in_the_signature() {
 #[test]
 fn changes_are_what_the_method_reached_changes() {
     let (c, s) = (clean(), shortcut());
-    let changes = |g: &Graph, f: &str| g.edges.iter().filter(|e| e.kind == EdgeKind::Mutates && e.src == format!("{}.{f}", g.root)).map(|e| e.dst.clone()).collect::<Vec<_>>();
+    let changes = |g: &Graph, f: &str| {
+        g.edges
+            .iter()
+            .filter(|e| e.kind == EdgeKind::Mutates && e.src == format!("{}.{f}", g.root))
+            .map(|e| e.dst.clone())
+            .collect::<Vec<_>>()
+    };
     for g in [c, s] {
         assert!(edge(g, EdgeKind::Calls, "ledger.Ledger.record", "store.ExpenseStore.add"), "{}", g.root);
-        assert!(changes(g, "store.ExpenseStore.add").is_empty() && changes(g, "ledger.Ledger.record").is_empty(), "{}: `add` keeps a row and changes no value", g.root);
+        assert!(
+            changes(g, "store.ExpenseStore.add").is_empty() && changes(g, "ledger.Ledger.record").is_empty(),
+            "{}: `add` keeps a row and changes no value",
+            g.root
+        );
     }
     for f in ["store.ExpenseStore.all", "ledger.Ledger.report", "ledger.Ledger.expenses"] {
         assert!(changes(c, f).is_empty(), "{f}");
@@ -329,10 +371,18 @@ fn nothing_a_call_leaves_something_behind() {
     let (c, s) = (clean(), shortcut());
     assert!(c.edges.iter().any(|e| e.kind == EdgeKind::Has && e.src == "clean.ledger.Ledger" && e.dst == "clean.config.Config"));
     assert!(!findings(c).iter().any(|f| f.principle == "nothing" && f.node.starts_with("clean.config")));
-    let global = |f: &str, dir: &str| touches(s, f, "global").iter().any(|t| t.artifact == "shortcut.config.current" && t.dir_name() == dir);
+    let global =
+        |f: &str, dir: &str| touches(s, f, "global").iter().any(|t| t.artifact == "shortcut.config.current" && t.dir_name() == dir);
     assert!(global("config.configure", "write") && global("config.settings", "read"));
-    assert!(asked_anywhere(s, "nothing").is_empty(), "a call that keeps its value in a global leaves it behind: {:?}", asked_anywhere(s, "nothing"));
-    assert!(edge(s, EdgeKind::Calls, "cli.run", "config.configure") && edge(s, EdgeKind::Calls, "server", "config.configure"), "still called where the program starts");
+    assert!(
+        asked_anywhere(s, "nothing").is_empty(),
+        "a call that keeps its value in a global leaves it behind: {:?}",
+        asked_anywhere(s, "nothing")
+    );
+    assert!(
+        edge(s, EdgeKind::Calls, "cli.run", "config.configure") && edge(s, EdgeKind::Calls, "server", "config.configure"),
+        "still called where the program starts"
+    );
     assert!(edge(s, EdgeKind::Calls, "ledger.Ledger.record", "config.settings"));
     assert!(c.nodes.iter().all(|n| n.touches.iter().all(|t| t.kind_name() != "global")), "the clean side keeps nothing in a global");
 }
@@ -363,13 +413,17 @@ fn choices_are_made_once() {
 fn layers_run_one_way() {
     let (c, s) = (clean(), shortcut());
     assert!(asked_anywhere(c, "layers").is_empty(), "{:?}", asked_anywhere(c, "layers"));
-    let arms = |to: &str| node(c, "cli.main").sites.iter().find(|x| x.to == format!("clean.{to}")).map(|x| x.arms.clone()).unwrap_or_default();
+    let arms =
+        |to: &str| node(c, "cli.main").sites.iter().find(|x| x.to == format!("clean.{to}")).map(|x| x.arms.clone()).unwrap_or_default();
     let (file, http) = (arms("rates.file.FileRates"), arms("rates.http.HttpRates"));
     assert!(!file.is_empty() && !http.is_empty() && file != http, "the command picks one: {file:?} | {http:?}");
     let layers: Vec<Finding> = findings(s).into_iter().filter(|f| f.principle == "layers").collect();
     assert_eq!(layers.len(), 1, "{layers:?}");
     assert!(layers[0].what.contains("file, http and source"), "{}", layers[0].what);
-    assert!(edge(s, EdgeKind::Instantiates, "rates.source.rateSource", "rates.file.FileRates") && edge(s, EdgeKind::Instantiates, "rates.source.rateSource", "rates.http.HttpRates"));
+    assert!(
+        edge(s, EdgeKind::Instantiates, "rates.source.rateSource", "rates.file.FileRates")
+            && edge(s, EdgeKind::Instantiates, "rates.source.rateSource", "rates.http.HttpRates")
+    );
 }
 
 // ---------- lens ----------

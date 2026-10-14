@@ -160,7 +160,8 @@ fn call(name: &str, args: &Value, opts: &Options) -> Option<Result<String, Strin
             if let Some(p) = text("principle").filter(|p| !principles::PRINCIPLES.iter().any(|x| x.id == *p)) {
                 return Err(unknown_principle(p));
             }
-            let asked: Vec<&principles::Principle> = principles::PRINCIPLES.iter().filter(|p| text("principle").map_or(true, |id| p.id == id)).collect();
+            let asked: Vec<&principles::Principle> =
+                principles::PRINCIPLES.iter().filter(|p| text("principle").map_or(true, |id| p.id == id)).collect();
             let parts: Vec<(String, Vec<principles::Finding>)> = gs
                 .iter()
                 .map(|g| (g.root.clone(), principles::check(g).into_iter().filter(|f| asked.iter().any(|p| p.id == f.principle)).collect()))
@@ -171,13 +172,20 @@ fn call(name: &str, args: &Value, opts: &Options) -> Option<Result<String, Strin
             Ok(reports.join("\n") + &principles::summary(&counted, &asked, &look))
         }),
         "routes" => graph(text("path"), opts).map(|g| {
-            let rows: Vec<String> = story::entries(&g).into_iter().map(|(k, label, id)| format!("{:<8} {label}  ({id})", story::kind_label(k))).collect();
-            if rows.is_empty() { "No entry points found: no CLI command, script, export, MCP tool or test.".into() } else { rows.join("\n") }
+            let rows: Vec<String> =
+                story::entries(&g).into_iter().map(|(k, label, id)| format!("{:<8} {label}  ({id})", story::kind_label(k))).collect();
+            if rows.is_empty() {
+                "No entry points found: no CLI command, script, export, MCP tool or test.".into()
+            } else {
+                rows.join("\n")
+            }
         }),
         "changes" => {
             let repo = PathBuf::from(text("path").unwrap_or("."));
             let rev = text("rev").unwrap_or("HEAD");
-            atlas_engine::changes::compare(&repo, rev, text("until"), opts).map(|c| atlas_engine::changes::report(&c)).map_err(|e| format!("Could not compare {} with {rev}: {e}", repo.display()))
+            atlas_engine::changes::compare(&repo, rev, text("until"), opts)
+                .map(|c| atlas_engine::changes::report(&c))
+                .map_err(|e| format!("Could not compare {} with {rev}: {e}", repo.display()))
         }
         "view" => {
             let (repo, _clone) = match located(text("path")) {
@@ -185,11 +193,13 @@ fn call(name: &str, args: &Value, opts: &Options) -> Option<Result<String, Strin
                 Err(e) => return Some(Err(e)),
             };
             let shown = args.get("view").cloned().filter(Value::is_object);
-            crate::page(&[repo.clone()], opts, None, None, shown).map_err(|e| format!("Could not read {}: {e}", repo.display())).and_then(|(name, html)| {
-                let out = text("out").map(PathBuf::from).unwrap_or_else(|| crate::page_file(&format!("{name}.view")));
-                std::fs::write(&out, html).map_err(|e| format!("Could not write {}: {e}", out.display()))?;
-                Ok(format!("Wrote {}. Open it in a browser; its address then holds the view, to share as a link.", out.display()))
-            })
+            crate::page(&[repo.clone()], opts, None, None, shown).map_err(|e| format!("Could not read {}: {e}", repo.display())).and_then(
+                |(name, html)| {
+                    let out = text("out").map(PathBuf::from).unwrap_or_else(|| crate::page_file(&format!("{name}.view")));
+                    std::fs::write(&out, html).map_err(|e| format!("Could not write {}: {e}", out.display()))?;
+                    Ok(format!("Wrote {}. Open it in a browser; its address then holds the view, to share as a link.", out.display()))
+                },
+            )
         }
         "route" => graph(text("path"), opts).and_then(|g| {
             let entry = text("entry").unwrap_or("");
