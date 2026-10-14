@@ -118,7 +118,9 @@ The rigorous half and the visual half are the same structure. Read `docs/referen
   file's text once, when a reader first asks. `language::read` is the step that reads: the
   repository, or for a package named on its own the project it is in (`Repo::asked`). Readers,
   parts and the Makefile take the `Repo`, never the disk; a part is a view of the same reading.
-  Library code is the environment's, read by ty.
+  Library code is the environment's: Python's through ty, TypeScript's in `node_modules`, Rust's
+  where Cargo keeps it (`--libraries N` rounds). The graph keeps of a library the fiber over what
+  the project reaches; what lies beyond it is glued into the library function at its border.
 - What Atlas knows of libraries and frameworks is a table in `engine/src/knowledge.rs`, one per
   kind of fact; a reader looks it up and never tests a library's name in its control flow
   (`engine/tests/readers.rs` checks both this and that no project's name stands in the engine).
