@@ -247,3 +247,26 @@ fn a_decided_vision_is_written_as_prophecy() {
     let revelation = tool(&repo, "revelation", json!({}));
     assert!(revelation.contains("twice  supersedes `spots.count`"), "{revelation}");
 }
+
+/// A seal is broken by name: `sealed=..` leaves the marker and nothing else changes. Which seals
+/// can be broken is the issues' to say (`closed`, asked of GitHub with `gh`), so with none to ask
+/// nothing is broken, and the seals are still listed.
+#[test]
+fn a_seal_is_broken_by_naming_it() {
+    let repo = repository("unseal");
+    let init = repo.join("src/spots/__init__.py");
+    std::fs::write(
+        &init,
+        "def prophecy(**_: str):\n    return lambda item: item\n\n\n@prophecy(sealed=\"#7\", supersedes=\"spots.prophecy\")\ndef twice(n: int) -> int: ...\n",
+    )
+    .unwrap();
+    let listed = tool(&repo, "seals", json!({}));
+    assert!(listed.contains("1 sealed, 0 to break") && listed.contains("twice  sealed on #7"), "{listed}");
+    assert_eq!(tool(&repo, "unseal", json!({"closed": true})), "No seal to break.");
+    assert!(tool(&repo, "unseal", json!({})).contains("takes the `ids`"));
+    let told = tool(&repo, "unseal", json!({"ids": ["spots.twice"]}));
+    assert!(told.contains("Seals broken: spots.twice"), "{told}");
+    let written = std::fs::read_to_string(&init).unwrap();
+    assert!(written.contains("@prophecy(supersedes=\"spots.prophecy\")\ndef twice"), "{written}");
+    assert!(tool(&repo, "seals", json!({})).contains("0 sealed"));
+}

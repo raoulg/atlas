@@ -125,6 +125,24 @@ fn tools() -> Value {
             "annotations": read_only,
         },
         {
+            "name": "seals",
+            "description": "The sealed prophecies: sketch code whose shape waits on an open question (`sealed=\"#144\"`), each with its issue and whether GitHub says it is open or closed (asked with `gh`; unknown where that cannot be asked). A seal whose issue is closed can be broken with `unseal`.",
+            "inputSchema": { "type": "object", "properties": {
+                "path": path,
+            } },
+            "annotations": read_only,
+        },
+        {
+            "name": "unseal",
+            "description": "Break seals: take `sealed=..` out of the marker of each named prophecy, or of every sealed prophecy whose issue is closed, and nothing else. Do it when the question is answered, then sketch the shape. The files are left for the person to commit.",
+            "inputSchema": { "type": "object", "properties": {
+                "path": local,
+                "ids": { "type": "array", "items": { "type": "string" }, "description": "The prophecies whose seals to break, by the ids `seals` lists." },
+                "closed": { "type": "boolean", "description": "Break every seal whose issue is closed." },
+            } },
+            "annotations": { "readOnlyHint": false, "destructiveHint": false, "openWorldHint": false },
+        },
+        {
             "name": "explain",
             "description": "Why a principle matters: what it asks, its PEP or Rust idiom, how Atlas sees it, and an example.",
             "inputSchema": { "type": "object", "properties": {
@@ -268,11 +286,72 @@ fn call(name: &str, args: &Value, opts: &Options) -> Option<Result<String, Strin
             Ok(reports.join("\n") + &principles::summary(&counted, &asked, &look))
         }),
         "revelation" => parts_of(text("path"), opts).map(|gs| {
+            let repo = here(text("path"));
             gs.iter()
-                .map(|g| atlas_engine::revelation::report(&g.root, &atlas_engine::revelation::revelation(g)))
+                .map(|g| {
+                    let stands = atlas_engine::revelation::revelation(g);
+                    let sealed = atlas_engine::revelation::seals(&stands, &|i| crate::shared::issue_state(&repo, i));
+                    atlas_engine::revelation::report(&g.root, &stands, &sealed)
+                })
                 .collect::<Vec<_>>()
                 .join("\n")
         }),
+        "seals" => parts_of(text("path"), opts).map(|gs| {
+            let repo = here(text("path"));
+            gs.iter()
+                .map(|g| {
+                    let stands = atlas_engine::revelation::revelation(g);
+                    atlas_engine::revelation::seals_report(
+                        &g.root,
+                        &atlas_engine::revelation::seals(&stands, &|i| crate::shared::issue_state(&repo, i)),
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        }),
+        "unseal" => {
+            let repo = here(text("path"));
+            let named: Vec<String> = args
+                .get("ids")
+                .and_then(Value::as_array)
+                .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
+                .unwrap_or_default();
+            let closed = args.get("closed").and_then(Value::as_bool) == Some(true);
+            if named.is_empty() && !closed {
+                return Some(Err(
+                    "`unseal` takes the `ids` of the prophecies to break, or `closed` for every seal whose issue is closed.".into()
+                ));
+            }
+            let gs = match parts_of(text("path"), opts) {
+                Ok(gs) => gs,
+                Err(e) => return Some(Err(e)),
+            };
+            let mut broken = vec![];
+            for g in &gs {
+                let stands = atlas_engine::revelation::revelation(g);
+                let mut ids: Vec<String> = named.iter().filter(|n| g.node(n).is_some()).cloned().collect();
+                if closed {
+                    let sealed = atlas_engine::revelation::seals(&stands, &|i| crate::shared::issue_state(&repo, i));
+                    ids.extend(sealed.iter().filter(|s| s.can_be_broken()).map(|s| s.id.clone()));
+                }
+                if ids.is_empty() {
+                    continue;
+                }
+                let files = match atlas_engine::decide::unseal(g, &ids) {
+                    Ok(f) => f,
+                    Err(e) => return Some(Err(format!("{e}"))),
+                };
+                if let Err(e) = crate::shared::write_files(std::path::Path::new(&g.project_root), &files) {
+                    return Some(Err(format!("Could not write the files: {e}")));
+                }
+                broken.extend(ids);
+            }
+            if broken.is_empty() {
+                Ok("No seal to break.".into())
+            } else {
+                Ok(format!("Seals broken: {}. The files are left for you to commit; sketch the shape now.", broken.join(", ")))
+            }
+        }
         "routes" => graph(text("path"), opts).map(|g| {
             let rows: Vec<String> =
                 story::entries(&g).into_iter().map(|(k, label, id)| format!("{:<8} {label}  ({id})", story::kind_label(k))).collect();

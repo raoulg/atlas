@@ -206,6 +206,9 @@ enum Cmd {
         /// Print the standings as JSON.
         #[arg(long)]
         json: bool,
+        /// Only the sealed prophecies, with the state of the issue each waits on (asked of GitHub with `gh`).
+        #[arg(long)]
+        seals: bool,
     },
     /// What the working tree changes against a git revision, or one revision against another:
     /// routes, their steps and places, findings.
@@ -570,7 +573,7 @@ fn main() -> Result<()> {
                 print!("{}", atlas_engine::changes::report(&c));
             }
         }
-        Cmd::Revelation { repo, json } => {
+        Cmd::Revelation { repo, json, seals } => {
             let (repo, _clone) = local(
                 match repo {
                     Some(r) => r,
@@ -578,12 +581,20 @@ fn main() -> Result<()> {
                 },
                 &mut opts,
             )?;
-            for (i, g) in parts::analyze_parts(&[repo], &opts)?.iter().enumerate() {
+            for (i, g) in parts::analyze_parts(&[repo.clone()], &opts)?.iter().enumerate() {
                 let stands = atlas_engine::revelation::revelation(g);
-                if json {
-                    println!("{}", serde_json::to_string_pretty(&serde_json::json!({ "root": g.root, "prophecies": stands }))?);
-                } else {
-                    print!("{}{}", if i > 0 { "\n" } else { "" }, atlas_engine::revelation::report(&g.root, &stands));
+                let sealed = atlas_engine::revelation::seals(&stands, &|issue| shared::issue_state(&repo, issue));
+                let sep = if i > 0 { "\n" } else { "" };
+                match (json, seals) {
+                    (true, true) => println!("{}", serde_json::to_string_pretty(&serde_json::json!({ "root": g.root, "seals": sealed }))?),
+                    (true, false) => {
+                        println!(
+                            "{}",
+                            serde_json::to_string_pretty(&serde_json::json!({ "root": g.root, "prophecies": stands, "seals": sealed }))?
+                        )
+                    }
+                    (false, true) => print!("{sep}{}", atlas_engine::revelation::seals_report(&g.root, &sealed)),
+                    (false, false) => print!("{sep}{}", atlas_engine::revelation::report(&g.root, &stands, &sealed)),
                 }
             }
         }

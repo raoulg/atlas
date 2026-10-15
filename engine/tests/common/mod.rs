@@ -38,3 +38,16 @@ pub fn decided(language: &str, file: &str, addition: &str, supersedes: &[(&str, 
     let _ = std::fs::remove_dir_all(copy.parent().expect("has a parent"));
     (decided, stands)
 }
+
+/// The `clean` side of a prophecy pair with `addition` appended to its file `file`, written to a
+/// copy of its own that the caller removes: the copy, and what Atlas reads of it.
+pub fn written(language: &str, file: &str, addition: &str) -> (PathBuf, atlas_engine::Graph) {
+    let pair = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/prophecy").join(language).join("clean");
+    let copy = std::env::temp_dir().join(format!("atlas-sealed-{language}-{}", std::process::id())).join("clean");
+    let _ = std::fs::remove_dir_all(copy.parent().expect("has a parent"));
+    copy_tree(&pair, &copy);
+    let now = std::fs::read_to_string(copy.join(file)).expect("reads the file");
+    std::fs::write(copy.join(file), format!("{now}{addition}")).expect("writes the file");
+    let g = analyze(&copy, &Options::default()).expect("reads");
+    (copy, g)
+}

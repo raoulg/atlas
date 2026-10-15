@@ -57,6 +57,8 @@ fn a_client_initializes_lists_and_calls() {
             "principles",
             "check",
             "revelation",
+            "seals",
+            "unseal",
             "explain",
             "routes",
             "route",

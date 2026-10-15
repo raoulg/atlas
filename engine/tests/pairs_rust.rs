@@ -569,3 +569,34 @@ fn prophecy_a_decided_vision_is_marked_where_it_is_written() {
     assert!(vault.holds, "{vault:?}");
     assert_eq!(stands.len(), 3, "the two prophecies of the clean side, and the new one: {stands:?}");
 }
+
+/// A prophecy whose shape waits on an open question is sealed on its issue. The seals come back
+/// as a list with what the host says of each issue (here: one closed, one open), and the one whose
+/// issue is closed can be broken: `sealed=..` leaves its marker and nothing else changes. The
+/// lookup is handed in, so the test asks no host.
+#[test]
+fn prophecy_a_seal_is_listed_and_broken_when_its_issue_is_closed() {
+    use atlas_engine::revelation::{revelation, seals, IssueState};
+    let (copy, g) = common::written("rust", "src/lib.rs", "\n#[doc = \"prophecy: supersedes=archive.Sink sealed=#7\"]\npub struct Vault;\n\n#[doc = \"prophecy: sealed=#8\"]\npub struct Crate;\n");
+    let lookup = |issue: &str| Some((if issue == "#7" { IssueState::Closed } else { IssueState::Open }, format!("question {issue}")));
+    let listed = seals(&revelation(&g), &lookup);
+    assert_eq!(
+        listed.iter().map(|s| (s.id.as_str(), s.can_be_broken())).collect::<Vec<_>>(),
+        [("archive.Vault", true), ("archive.Crate", false)].map(|(i, b)| (i, b))
+    );
+    let broken = atlas_engine::decide::unseal(&g, &["archive.Vault".to_string()]).expect("a closed seal is broken");
+    let text = broken.values().next().expect("one file");
+    assert!(!text.contains("#7") && text.contains("#8"), "only the broken seal leaves: {text}");
+    for (rel, t) in &broken {
+        std::fs::write(copy.join(rel), t).expect("writes the file");
+    }
+    let after = revelation(&atlas_engine::analyze(&copy, &atlas_engine::Options::default()).expect("reads"));
+    let vault = after.iter().find(|s| s.id == "archive.Vault").expect("still a prophecy");
+    assert!(vault.sealed.is_none() && vault.supersedes.as_deref().is_some_and(|r| r.ends_with("Sink")), "{vault:?}");
+    assert_eq!(after.iter().find(|s| s.id == "archive.Crate").and_then(|s| s.sealed.as_deref()), Some("#8"));
+    assert!(
+        atlas_engine::decide::unseal(&g, &["archive.Store".to_string()]).is_err(),
+        "a prophecy that is not sealed has no seal to break"
+    );
+    let _ = std::fs::remove_dir_all(copy.parent().expect("has a parent"));
+}

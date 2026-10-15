@@ -180,6 +180,30 @@ pub fn envision(repo: &Path, p: &Vision) -> Result<()> {
     write(&vision_file(repo), p)
 }
 
+/// What `gh` says of an issue of the repository: its state and title. None where it cannot say (no
+/// `gh`, no network, no remote, no such issue): the caller says it does not know.
+pub fn issue_state(repo: &Path, issue: &str) -> Option<(atlas_engine::revelation::IssueState, String)> {
+    use atlas_engine::revelation::IssueState;
+    let (on, number) = match issue.rsplit_once('#') {
+        Some((repo_name, n)) if !repo_name.is_empty() => (Some(repo_name), n),
+        Some((_, n)) => (None, n),
+        None => (None, issue),
+    };
+    let mut gh = std::process::Command::new("gh");
+    gh.current_dir(repo).args(["issue", "view", number, "--json", "state,title"]);
+    if let Some(r) = on {
+        gh.args(["--repo", r]);
+    }
+    let out = gh.stdin(std::process::Stdio::null()).stderr(std::process::Stdio::null()).output().ok().filter(|o| o.status.success())?;
+    let v: Value = serde_json::from_slice(&out.stdout).ok()?;
+    let state = match v["state"].as_str()? {
+        "CLOSED" => IssueState::Closed,
+        "OPEN" => IssueState::Open,
+        _ => IssueState::Unknown,
+    };
+    Some((state, v["title"].as_str().unwrap_or("").to_string()))
+}
+
 /// Files written into the tree, each by its path from the repository's root.
 pub fn write_files(repo: &Path, files: &std::collections::BTreeMap<PathBuf, String>) -> Result<()> {
     for (rel, text) in files {

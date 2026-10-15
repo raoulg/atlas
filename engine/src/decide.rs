@@ -175,3 +175,46 @@ fn with_import(text: &str, import: &str) -> String {
     }
     out
 }
+
+/// The files with the seals of `ids` broken: `sealed=..` taken out of each prophecy's marker, in
+/// whichever form its language writes it, and nothing else. Each file by its path from the
+/// project's root. A seal is broken when its question is answered; Atlas does it when asked.
+pub fn unseal(g: &Graph, ids: &[String]) -> anyhow::Result<std::collections::BTreeMap<std::path::PathBuf, String>> {
+    let seal = regex::Regex::new(r#"\s*,?\s*\bsealed\s*=\s*(?:"[^"]*"|'[^']*'|[^\s,)"'\]]+)"#)?;
+    let mut files: std::collections::BTreeMap<std::path::PathBuf, Vec<String>> = Default::default();
+    for id in ids {
+        let Some(n) = g.node(id).filter(|n| n.prophecy.as_ref().is_some_and(|p| p.sealed.is_some())) else {
+            anyhow::bail!("`{id}` is no sealed prophecy");
+        };
+        let rel = std::path::Path::new(&n.file)
+            .strip_prefix(&g.project_root)
+            .map(std::path::Path::to_path_buf)
+            .unwrap_or_else(|_| n.file.clone().into());
+        let lines = match files.entry(rel) {
+            std::collections::btree_map::Entry::Occupied(e) => e.into_mut(),
+            std::collections::btree_map::Entry::Vacant(e) => {
+                let text = std::fs::read_to_string(&n.file)?;
+                e.insert(text.lines().map(str::to_string).collect())
+            }
+        };
+        let from = n.span.map_or(1, |s| s.0 as usize).saturating_sub(1);
+        let marked = (from.saturating_sub(10)..=from.min(lines.len().saturating_sub(1)))
+            .rev()
+            .find(|i| lines[*i].contains("prophecy") && lines[*i].contains("sealed"));
+        let Some(i) = marked else { anyhow::bail!("the marker of `{id}` is not near its line") };
+        let broken =
+            seal.replace(&lines[i], "").replace("(, ", "(").replace("prophecy: ", "prophecy:").replace("prophecy:\"", "prophecy:\"");
+        lines[i] = broken.replace("prophecy:  ", "prophecy: ").trim_end().to_string();
+    }
+    let keep_newline = |p: &std::path::Path| std::fs::read_to_string(p).map_or(true, |t| t.ends_with('\n'));
+    Ok(files
+        .into_iter()
+        .map(|(rel, lines)| {
+            let mut text = lines.join("\n");
+            if keep_newline(&std::path::Path::new(&g.project_root).join(&rel)) {
+                text.push('\n');
+            }
+            (rel, text)
+        })
+        .collect())
+}

@@ -232,6 +232,13 @@ colour with a dotted border (finer when it is veiled), as a route of its own for
 inspector says what it supersedes and what supersedes a box. Agents ask the same with the MCP
 tool `revelation`.
 
+A prophecy whose shape waits on an open question is *sealed* on its issue (`sealed="#144"`, or
+`owner/repo#144`). `atlas revelation --seals` (the MCP tool `seals`) lists the seals, each with
+what `gh` says of its issue: open, closed (then the seal can be broken) or unknown, where there is
+no `gh`, no network or no such issue. The MCP tool `unseal` breaks them: it takes `sealed=..` out of
+the marker of the prophecies named, or of every one whose issue is closed, and changes nothing
+else. The files are left for you to commit; sketch the shape next.
+
 A vision that is decided becomes a prophecy with the MCP tool `prophesy`: the vision's files are
 written into the tree, every item the vision adds marked in the language of its file (and, for
 Python, the project's `prophecy` imported), and the vision is retracted. `supersedes` says which
