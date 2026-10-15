@@ -773,6 +773,21 @@ pub const DB_OPS: &[&str] = &[
     "commit",
 ];
 
+/// What a file database's driver calls to open the database: it is handed the file first.
+pub const DB_OPENS: &[&str] = &["connect", "open"];
+
+/// Whether `op` opens `db` on the file it is handed. A server, a graph or a store is reached at an
+/// address, not as a file.
+pub fn opens_a_file(db: Db, op: &str) -> bool {
+    matches!(db, Db::Sqlite | Db::Duckdb) && DB_OPENS.contains(&op)
+}
+
+/// Whether what a file database is opened on names a file: not the database in memory.
+pub fn names_a_file(path: &str) -> bool {
+    let memory = path.trim_start_matches("file:").starts_with(":memory:") || path.contains("mode=memory");
+    !path.is_empty() && !memory && !path.contains("://")
+}
+
 /// A driver's own operations that reach the database beside DB_OPS, by package: asyncpg's
 /// queries that hand back their rows and its pool of connections.
 pub const DRIVER_OPS: &[(&str, &[&str])] = &[("asyncpg", &["fetch", "fetchrow", "fetchval", "create_pool"])];

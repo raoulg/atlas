@@ -2548,6 +2548,18 @@ impl<'a, 't> Body<'a, 't> {
                 .map(|t| (Touch { artifact: String::new(), dir: None, ..t }, built.clone()))
                 .collect();
         }
+        // a file database is opened on the file it is handed
+        if let (World::Db(db), Some(a)) = (tag.world, args.first()) {
+            if knowledge::opens_a_file(db, op) {
+                let built = self.eval.of(self.at(), *a, 0);
+                return self
+                    .touch(c, tag, op, &[])
+                    .into_iter()
+                    .take(1)
+                    .map(|t| (Touch { artifact: String::new(), dir: None, ..t }, built.clone()))
+                    .collect();
+            }
+        }
         let files: Vec<(Crossing, TsNode<'t>)> = match crate::body::sides(op, args.len()) {
             Some(sides) if tag.world == World::Disk => sides.into_iter().zip(args).collect(),
             _ if tag.world == World::Disk && !args.is_empty() => vec![(tag, args[0])],

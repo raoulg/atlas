@@ -41,7 +41,8 @@ it reads there is its input, and the place stands between the step that fills it
 that reads it. A read is preceded by a write only when the write happens whenever the read does,
 not in one branch of a choice the read is outside. Making a place's shape (a directory, a table's
 schema) or testing it (whether a file is there, whether a value holds a key) puts and takes no
-content. Where the code does not say which way a call goes, the place is in neither.
+content. A connection that opens a database on a file names that file, so a directory made for the
+file is made for the database. Where the code does not say which way a call goes, the place is in neither.
 **Where.** A function's `reads_back` and `updates` (`flow.rs`); the viewer's `roleOf`.
 
 ### The effect functor
