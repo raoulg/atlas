@@ -165,6 +165,12 @@ makes it. Alt-click a box or a line to leave it a note; the agent resolves it an
 tells you how, and puts what must last in an issue that links back to the box. The history of commits is a click away, and **export** keeps the picture as a file.
 `atlas view` writes that file straight from the command line, for a script or an agent.
 
+<p align="center">
+  <a href="https://raoulg.github.io/atlas/interaction.html"><img src="docs/img/interaction/prophecy.png" width="100%" alt="Atlas's page after the agent decided a vision: the new route run-archived drawn with the boxes of the sketch dotted, in their own colour, beside the code that is built"></a>
+</p>
+
+[Working with your agent](https://raoulg.github.io/atlas/interaction.html) shows it from the history to a decided design, one real run: pointing both ways, a note and its answer, the agent's own words on a box, a change shown beside the code as it is, and the prophecy it becomes.
+
 **Your agent** gets Atlas through `atlas mcp`. Register it once, for every project:
 
 ```bash

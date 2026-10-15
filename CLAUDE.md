@@ -112,6 +112,11 @@ The rigorous half and the visual half are the same structure. Read `docs/referen
   (lefthook `pre-commit`, `tools/docs-pictures.sh`) and stages the pictures. When one draws
   otherwise, the commit stops and names it with the text that shows it: reread that text, change
   what no longer holds, and commit again.
+- The page of the interaction (`docs/interaction.html`, history, look, notes, annotations, vision, prophecy) is drawn by
+  `tools/interaction_pictures.py` from a real run of `atlas serve` and `atlas mcp`: `uv run tools/interaction_pictures.py
+  target/release/atlas`. It needs `gh` and a network (the seals ask GitHub), so no hook runs it; run it with a version
+  raise that changes what those flows draw, and reread the text beside a picture it names. `docs/img/interaction/drawn.json`
+  keeps what each picture draws.
 - A viewer change is walked on the subjects before it is committed: `uv run tools/pictures.py
   walk <atlas> <repo> <dir>` opens every package, every route and every family in a route, and
   must report no view that throws, draws nothing, or opens a family into other moments.

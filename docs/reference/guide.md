@@ -295,6 +295,8 @@ request, so an edit shows when you pick it again.
 
 ## Serve: one view, shared with your agent
 
+[Working with your agent](https://raoulg.github.io/atlas/interaction.html) shows what follows, drawn from one real run.
+
 `atlas serve [repo]` serves the picture of the working tree on this machine (`127.0.0.1`,
 `--port N`, `--no-open`), and shares it with the agent you work with through `atlas mcp`. Its
 terminal says that it runs and where, then a line for each thing worth knowing: the files that
