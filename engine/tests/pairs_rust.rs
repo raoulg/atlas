@@ -484,3 +484,32 @@ fn lens_what_is_put_comes_back_inside_and_a_key_is_no_put() {
     assert_eq!(lens.len(), 1, "{lens:?}");
     assert!(lens[0].contains("Outage") && lens[0].contains("Day") && !lens[0].contains("Reading "), "{}", lens[0]);
 }
+
+// ---------- prophecy ----------
+
+/// One side of the prophecy pair (`tests/pairs/prophecy`): a report `Sink` that only writes, and
+/// the `Store` that will replace it, sketched without bodies.
+fn archive_rust(side: &str) -> Graph {
+    analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/prophecy/rust").join(side), &Options::default()).expect("reads")
+}
+
+/// Sketch code kept in the tree says it is not built: Atlas reads a struct marked with the `#[doc = "prophecy: .."]` attribute
+/// as a prophecy that supersedes the sink, and the sink as built. The shortcut writes the same
+/// sketch without the mark: Atlas cannot tell it from code that is finished, and does not pretend to.
+#[test]
+fn prophecy_a_sketch_in_the_tree_says_it_is_not_built() {
+    let (c, s) = (archive_rust("clean"), archive_rust("shortcut"));
+    let store = |g: &Graph| {
+        g.nodes
+            .iter()
+            .find(|n| n.id.ends_with(".Store") || n.id == "Store")
+            .unwrap_or_else(|| panic!("a Store in {:?}", g.nodes.iter().map(|n| &n.id).collect::<Vec<_>>()))
+            .clone()
+    };
+    let sketch = store(&c).prophecy.expect("the marked sketch is a prophecy");
+    assert_eq!(sketch.supersedes.as_deref(), Some("archive::Sink"));
+    assert!(!sketch.veiled && sketch.sealed.is_none());
+    assert!(store(&s).prophecy.is_none(), "an unmarked sketch is read as built");
+    assert!(c.nodes.iter().filter(|n| n.prophecy.is_some()).count() == 1, "only the marked item is a prophecy");
+    assert!(s.nodes.iter().any(|n| n.name == "Store"), "the shortcut's sketch is still in the graph");
+}

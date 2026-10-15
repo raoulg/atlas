@@ -99,6 +99,9 @@ pub struct Node {
     pub methods: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub decorators: Vec<String>,
+    /// Sketch code kept in the tree, not built yet: what its marker says. Read by the language's reader.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prophecy: Option<crate::prophecy::Prophecy>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub params: Vec<Param>,
     /// What the signature says it gives back; none when it does not say.

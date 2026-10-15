@@ -535,3 +535,32 @@ fn a_table_made_on_connecting_holds_what_was_there() {
         assert!(summary.iter().any(|p| p == "w:SQLite:summaries"), "{name}: {summary:?}");
     }
 }
+
+// ---------- prophecy ----------
+
+/// One side of the prophecy pair (`tests/pairs/prophecy`): a report `Sink` that only writes, and
+/// the `Store` that will replace it, sketched without bodies.
+fn archive_python(side: &str) -> Graph {
+    analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/prophecy/python").join(side), &Options::default()).expect("reads")
+}
+
+/// Sketch code kept in the tree says it is not built: Atlas reads a class marked with the `@prophecy` decorator
+/// as a prophecy that supersedes the sink, and the sink as built. The shortcut writes the same
+/// sketch without the mark: Atlas cannot tell it from code that is finished, and does not pretend to.
+#[test]
+fn prophecy_a_sketch_in_the_tree_says_it_is_not_built() {
+    let (c, s) = (archive_python("clean"), archive_python("shortcut"));
+    let store = |g: &Graph| {
+        g.nodes
+            .iter()
+            .find(|n| n.id.ends_with(".sink.Store") || n.id == "sink.Store")
+            .unwrap_or_else(|| panic!("a Store in {:?}", g.nodes.iter().map(|n| &n.id).collect::<Vec<_>>()))
+            .clone()
+    };
+    let sketch = store(&c).prophecy.expect("the marked sketch is a prophecy");
+    assert_eq!(sketch.supersedes.as_deref(), Some("archive.sink.Sink"));
+    assert!(!sketch.veiled && sketch.sealed.is_none());
+    assert!(store(&s).prophecy.is_none(), "an unmarked sketch is read as built");
+    assert!(c.nodes.iter().filter(|n| n.prophecy.is_some()).count() == 1, "only the marked item is a prophecy");
+    assert!(s.nodes.iter().any(|n| n.name == "Store"), "the shortcut's sketch is still in the graph");
+}
