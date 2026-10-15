@@ -346,7 +346,7 @@ pub(crate) fn page(
 /// The page of the working tree of `repo`, served: it tells its server what it shows, asks it where
 /// an agent points, keeps notes through it, and knows its drawing as `drawn`, to follow the next.
 pub(crate) fn served_page(repo: &Path, opts: &Options, drawn: &str) -> Result<(String, String)> {
-    let d = reading(&[repo.to_path_buf()], opts, None, None)?;
+    let d = served(repo, opts)?;
     let g = &d.graph;
     let parts: Vec<&str> = g.parts.iter().map(|p| p.id.as_str()).collect();
     let summary = format!("{} · {} · {} modules", g.root, parts.join(" + "), g.stats.modules);
@@ -354,6 +354,15 @@ pub(crate) fn served_page(repo: &Path, opts: &Options, drawn: &str) -> Result<(S
     extra.insert("served".into(), serde_json::Value::Bool(true));
     extra.insert("drawn".into(), serde_json::Value::String(drawn.into()));
     Ok((viewer(&d, extra)?, summary))
+}
+
+/// The working tree as `atlas serve` draws it: beside what an agent proposes, as two readings are
+/// drawn (A the working tree, B the proposal), and alone when nothing is proposed.
+fn served(repo: &Path, opts: &Options) -> Result<Drawing> {
+    let Some(p) = shared::proposal(repo) else { return reading(&[repo.to_path_buf()], opts, None, None) };
+    let proposed = Named { rev: "proposal".into(), short: "proposal".into(), subject: p.title.clone() };
+    let now = parts::analyze_parts(&[repo.to_path_buf()], opts)?;
+    union(repo, (changes::worktree(), now), (proposed, changes::proposed(repo, &p.files, opts)?))
 }
 
 /// Open a page or an address in the browser the system names.

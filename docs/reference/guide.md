@@ -269,6 +269,14 @@ changed, the picture drawn, an export, a note, and what the agent did with it.
   boxes and lines it draws. The agent reads them with `shown` when you say "this box".
 - **Look here.** The agent points the page at a view, a box or a line with `look`. The page goes
   there, opens the way to the box, selects it and makes it light up.
+- **A proposal.** To ask "shall I do this?", the agent shows the change rather than describing it.
+  With `propose` it gives the files the change would write, as sketch code: the signatures with
+  their types and the calls in their order, bodies left empty. A sketch has to parse, not to
+  build: Atlas reads it as it reads the code. The page draws the working tree (A) and the
+  proposal (B) as one picture, as the history draws two commits: what the proposal adds, removes
+  and changes is marked, and **A**, **A ∪ B** and **B** switch between them. Point at what you
+  think of it with a note. The working tree stays as it is; once the proposal is decided, the
+  agent withdraws it.
 - **Notes.** Alt-click a box or a line to write a note on it ("I do not understand this line").
   The ring on it is open until the agent reads it, dimmed once it has, and a ✓ once it resolves
   it. The agent resolves a note where it works with you, by a fix or by explaining; Atlas is no
@@ -286,7 +294,8 @@ changed, the picture drawn, an export, a note, and what the agent did with it.
   file `atlas view` writes.
 
 What the page and the agent share is kept in `.atlas/` (`shown.json`, `look.json`,
-`notes.json`, `serving.json`), so the two need not run together, and git never sees it.
+`notes.json`, `serving.json`, `proposal.json`), so the two need not run together, and git never
+sees it.
 
 ## What Atlas keeps
 

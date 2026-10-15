@@ -114,7 +114,10 @@ the match is unique. In a picture, Yoneda is applied to the quotient it draws: a
 part, a package, a family, a place that stands for others) is one object, and its own arrows are
 those that cross its border. It is changed when they differ; what changes inside it without
 reaching the border is counted beside it, not marked on it.
-**Where.** `atlas history`, `atlas changes A..B`; the diff; `design.md` §4, L5.
+A step of a body is the same in both when it makes the same call on what the same calls gave
+it; a change before it leaves it the same step.
+**Where.** `atlas history`, `atlas changes A..B`, a proposal beside the working tree (`atlas
+mcp`'s `propose`); the diff; `design.md` §4, L5.
 
 ## Topology
 

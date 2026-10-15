@@ -141,6 +141,30 @@ fn steps_come_and_go_and_a_place_changes_its_writer() {
     done(&repo);
 }
 
+/// A step whose input comes from a call that changed is still the same step: in B the raw file is
+/// fetched only when it is missing, and `load` is handed the path rather than what `fetch` gives
+/// back, so `load` changes; `smooth` takes what `load` gives in both readings, and so does what
+/// follows it. A proposal that adds a condition marks the calls it changes, not the whole route.
+#[test]
+fn a_step_after_a_changed_call_stays_the_same() {
+    let fetch = "\n\ndef fetch(path: Path) -> Path:\n    path.write_text(\"1 2 3\")\n    return path\n";
+    let a = format!("{FRAME}{fetch}{PLOT}")
+        .replace("frame = smooth(load(Path(\"data/raw.csv\")))", "frame = smooth(load(fetch(Path(\"data/raw.csv\"))))");
+    let b = format!("{FRAME}{fetch}{PLOT}").replace(
+        "    frame = smooth(load(Path(\"data/raw.csv\")))",
+        "    raw = Path(\"data/raw.csv\")\n    if not raw.exists():\n        fetch(raw)\n    frame = smooth(load(raw))",
+    );
+    assert!(a.contains("load(fetch(") && b.contains("if not raw.exists()"));
+    let repo = repository("chain", &a);
+    commit(&repo, &b, "fetch once");
+    let (g, d) = union(&repo);
+    let main = steps(&g, &d, "spots.cli.main");
+    let same = |to: &str| main.iter().any(|(t, s)| t == to && s.is_none());
+    assert!(main.iter().any(|(t, s)| t == "spots.cli.load" && *s == Some(Status::Added)), "{main:?}");
+    assert!(same("spots.cli.smooth") && same("spots.cli.plot"), "{main:?}");
+    done(&repo);
+}
+
 /// `smooth` changes the frame it is handed in A and gives a new one back in B: its own arrow
 /// differs, and what it was is said in words.
 #[test]

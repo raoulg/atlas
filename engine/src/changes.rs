@@ -599,6 +599,69 @@ fn reading_dir() -> String {
     format!("atlas-changes-{}-{n}", std::process::id())
 }
 
+/// A proposal: the working tree of `repo` with `files` written otherwise, each path from the
+/// repository's root given whole or, where it is none, removed. It is read as a revision is, from a
+/// directory of its own under the same name, so the graph's names agree with the working tree's; a
+/// proposal is sketch code, which has to parse, not to build.
+pub fn proposed(repo: &Path, files: &BTreeMap<PathBuf, Option<String>>, opts: &crate::Options) -> Result<Vec<Graph>> {
+    for rel in files.keys() {
+        if rel.is_absolute() || rel.components().any(|c| !matches!(c, std::path::Component::Normal(_))) {
+            bail!("a proposal names files from the repository's root, inside it: {}", rel.display());
+        }
+    }
+    let repo = std::fs::canonicalize(repo).unwrap_or_else(|_| repo.to_path_buf());
+    // what is read: the repository, or for a package named on its own the project it is in
+    let listing = crate::language::read(&repo, opts)?;
+    let top = std::fs::canonicalize(listing.root()).unwrap_or_else(|_| listing.root().to_path_buf());
+    let inner = repo.strip_prefix(&top).unwrap_or(Path::new("")).to_path_buf();
+    let name = top.file_name().map(|n| n.to_os_string()).unwrap_or_else(|| "repo".into());
+    let base = std::env::temp_dir().join(reading_dir());
+    let _ = std::fs::remove_dir_all(&base);
+    let root = base.join(name);
+    let write = |rel: &Path, text: Option<&[u8]>, from: Option<&Path>| -> Result<()> {
+        let dest = root.join(rel);
+        if let Some(d) = dest.parent() {
+            std::fs::create_dir_all(d)?;
+        }
+        match (text, from) {
+            (Some(t), _) => std::fs::write(&dest, t)?,
+            (None, Some(f)) => {
+                std::fs::copy(f, &dest)?;
+            }
+            (None, None) => {}
+        }
+        Ok(())
+    };
+    for f in listing.files_under("") {
+        let rel = f.strip_prefix(listing.root()).unwrap_or(&f).to_path_buf();
+        if !rel.strip_prefix(&inner).map_or(false, |r| files.contains_key(r)) {
+            write(&rel, None, Some(&f))?;
+        }
+    }
+    for (rel, text) in files {
+        if let Some(text) = text {
+            write(&inner.join(rel), Some(text.as_bytes()), None)?;
+        }
+    }
+    std::fs::create_dir_all(&root)?;
+    // the environment beside the repository stands beside the proposal too: its `.venv`, and what a
+    // path out of it reaches (`extra-paths = ["../typings"]`)
+    #[cfg(unix)]
+    {
+        if top.join(".venv").is_dir() {
+            let _ = std::os::unix::fs::symlink(top.join(".venv"), root.join(".venv"));
+        }
+        if let Some(Ok(siblings)) = top.parent().map(std::fs::read_dir) {
+            for s in siblings.flatten().filter(|s| s.path() != top) {
+                let _ = std::os::unix::fs::symlink(s.path(), base.join(s.file_name()));
+            }
+        }
+    }
+    let parts = crate::parts::analyze_parts(&[root.join(&inner)], opts);
+    let _ = std::fs::remove_dir_all(&base);
+    parts
+}
+
 /// The repository as it was at `rev`, written to a directory of its own under the same name,
 /// so the graph's names agree: (the directory to remove afterwards, the repository in it). A
 /// Python environment beside the repository is linked in, so its types are read the same way.

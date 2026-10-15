@@ -1,7 +1,8 @@
 //! `atlas serve` and `atlas mcp` sharing one page: the page says what it shows and an agent reads
 //! it, an agent points at a box and the page goes there once, and a note the reader writes is
 //! resolved by an agent, never by its reading alone, and opened again by the reader. The page follows the code: a changed file is drawn
-//! anew, and the page knows which drawing it is.
+//! anew, and the page knows which drawing it is. What an agent proposes is drawn beside the
+//! working tree.
 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpStream;
@@ -155,6 +156,49 @@ fn the_page_follows_the_code() {
         .expect("the server draws the changed code by itself");
     let (_, page) = send(&at, "GET", "/", None, false);
     assert!(page.contains(&format!("\"drawn\":\"{next}\"")) && page.contains("spots.twice"), "the page asked for next is the new drawing");
+
+    server.kill().ok();
+    let _ = std::fs::remove_dir_all(repo.parent().unwrap());
+}
+
+/// An agent proposes a change as the files it would write, and the page draws the working tree
+/// and the proposal as one picture, the proposal's step marked; the working tree stays as it was,
+/// and once the proposal is withdrawn the page draws the working tree alone.
+#[test]
+fn a_proposal_is_drawn_beside_the_working_tree() {
+    let repo = repository("proposal");
+    let (mut server, at) = serve(&repo);
+    let _ = send(&at, "GET", "/", None, false);
+    let first = drawn(&at).expect("a drawing, once the page is asked for");
+
+    let sketch = "def count(n: int) -> int:\n    return n + 1\n\n\ndef twice(n: int) -> int:\n    return count(count(n))\n";
+    let told = tool(&repo, "propose", json!({"title": "count twice", "files": {"src/spots/__init__.py": sketch}}));
+    assert!(told.starts_with("Proposed: count twice."), "{told}");
+    assert!(told.contains("+ Library · twice"), "what the proposal does to the routes: {told}");
+    assert!(!std::fs::read_to_string(repo.join("src/spots/__init__.py")).unwrap().contains("twice"), "the working tree stays");
+
+    let next = (0..60)
+        .find_map(|_| {
+            std::thread::sleep(std::time::Duration::from_millis(500));
+            drawn(&at).filter(|d| *d != first)
+        })
+        .expect("the server draws the proposal by itself");
+    let (_, page) = send(&at, "GET", "/", None, false);
+    assert!(page.contains(&format!("\"drawn\":\"{next}\"")), "the page asked for next is the proposal");
+    assert!(
+        page.contains("\"diff\":") && page.contains("\"subject\":\"count twice\"") && page.contains("spots.twice"),
+        "A and B as one picture"
+    );
+
+    assert!(tool(&repo, "propose", json!({"withdraw": true})).contains("withdrawn"));
+    let alone = (0..60)
+        .find_map(|_| {
+            std::thread::sleep(std::time::Duration::from_millis(500));
+            drawn(&at).filter(|d| *d != next)
+        })
+        .expect("the server draws the working tree again");
+    let (_, page) = send(&at, "GET", "/", None, false);
+    assert!(page.contains(&format!("\"drawn\":\"{alone}\"")) && !page.contains("\"diff\":"), "the working tree alone");
 
     server.kill().ok();
     let _ = std::fs::remove_dir_all(repo.parent().unwrap());

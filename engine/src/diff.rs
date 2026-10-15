@@ -483,8 +483,9 @@ fn short(id: &str) -> String {
 
 /// The steps of a body in both readings, in call order, and which of them only one reading has:
 /// the steps both have once, as B has them; where the two part, A's before B's, as a diff
-/// interleaves lines. A shared occurrence has the same call shape and consumes outputs of
-/// shared producers. Each shared output aliases A's anonymous name to B's name.
+/// interleaves lines. A shared occurrence has the same call shape and consumes the outputs of the
+/// same producers: shared ones, or calls to the same function. Each shared output aliases A's
+/// anonymous name to B's name.
 fn merged_sites(a: &[Site], b: &[Site]) -> (Vec<Site>, BTreeMap<usize, Status>) {
     let ((ka, da), (kb, db)) = (site_shapes(a), site_shapes(b));
     // the longest run of steps both share, from the end
@@ -502,7 +503,9 @@ fn merged_sites(a: &[Site], b: &[Site]) -> (Vec<Site>, BTreeMap<usize, Status>) 
             && j < kb.len()
             && ka[i] == kb[j]
             && da[i].iter().zip(&db[j]).all(|(x, y)| match (x, y) {
-                (Some(x), Some(y)) => shared.get(x) == Some(y),
+                // an input comes from the same producer: one both share, or a call to the same
+                // function, which a change before it need not make another
+                (Some(x), Some(y)) => shared.get(x) == Some(y) || (ka[*x].to == kb[*y].to && ka[*x].op == kb[*y].op),
                 (None, None) => true,
                 _ => false,
             });

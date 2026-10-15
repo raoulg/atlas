@@ -5,7 +5,9 @@
 //! - `look.json`: a view an agent asks the page to go to, and a box or line it points at there,
 //!   taken by the page once;
 //! - `notes.json`: what the reader wrote on a box or a line, and whether an agent resolved it;
-//! - `serving.json`: where `atlas serve` serves the page, for a link to the place of a note.
+//! - `serving.json`: where `atlas serve` serves the page, for a link to the place of a note;
+//! - `proposal.json`: what an agent proposes, the working tree with some files written otherwise,
+//!   drawn beside the working tree until the agent withdraws it.
 //!
 //! A note is resolved by an agent, never by reading alone: open until an agent reads it, seen until
 //! it resolves it, by a fix or by what it explains where it works, resolved after. The reader
@@ -13,6 +15,7 @@
 //! agent puts in an issue that links to the note's place. A resolved note is shown while the
 //! `atlas serve` it was resolved under runs; the next one starts without it.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
@@ -149,6 +152,40 @@ pub fn forget_resolved(repo: &Path) -> Result<()> {
         set_notes(repo, &all.into_iter().filter(|n| n.state != State::Resolved).collect::<Vec<_>>())?;
     }
     Ok(())
+}
+
+/// What an agent proposes: the working tree with some files written otherwise, under a title. A
+/// proposal is sketch code (signatures, types, the calls in their order), which has to parse, not
+/// to build.
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct Proposal {
+    pub title: String,
+    /// Each file by its path from the repository's root: its text, or none where it goes.
+    pub files: BTreeMap<PathBuf, Option<String>>,
+}
+
+/// Where the proposal is kept: its file changes when the proposal does.
+pub fn proposal_file(repo: &Path) -> PathBuf {
+    file(repo, "proposal.json")
+}
+
+/// What an agent proposes, if anything.
+pub fn proposal(repo: &Path) -> Option<Proposal> {
+    read(&proposal_file(repo)).and_then(|v| serde_json::from_value(v).ok())
+}
+
+pub fn propose(repo: &Path, p: &Proposal) -> Result<()> {
+    write(&proposal_file(repo), p)
+}
+
+/// The proposal withdrawn: whether there was one.
+pub fn withdraw(repo: &Path) -> Result<bool> {
+    let path = proposal_file(repo);
+    if !path.exists() {
+        return Ok(false);
+    }
+    std::fs::remove_file(&path).with_context(|| format!("removing {}", path.display()))?;
+    Ok(true)
 }
 
 /// Where `atlas serve` serves the page: `http://127.0.0.1:8778/`.

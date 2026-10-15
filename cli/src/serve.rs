@@ -235,9 +235,15 @@ fn own_port(repo: &Path) -> u16 {
     8700 + (hash % 200) as u16
 }
 
-/// The working tree as far as Atlas reads it: equal stamps are one page.
+/// The working tree as far as Atlas reads it, and what an agent proposes beside it: equal stamps
+/// are one page.
 fn stamps(repo: &Path, opts: &Options) -> Result<Stamps> {
-    Ok(atlas_engine::language::read(repo, opts)?.stamps())
+    let mut now = atlas_engine::language::read(repo, opts)?.stamps();
+    let proposal = shared::proposal_file(repo);
+    if let Ok(m) = std::fs::metadata(&proposal) {
+        now.insert(proposal, Some((m.len(), m.modified().ok())));
+    }
+    Ok(now)
 }
 
 /// The name a page knows its drawing by: the stamps it was drawn from, hashed.

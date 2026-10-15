@@ -51,7 +51,10 @@ fn a_client_initializes_lists_and_calls() {
     assert_eq!(replies[0]["result"]["protocolVersion"], "2025-06-18", "the client's version, when spoken");
     assert!(replies[0]["result"]["instructions"].as_str().unwrap().contains("coaches"));
     let tools: Vec<&str> = replies[1]["result"]["tools"].as_array().unwrap().iter().map(|t| t["name"].as_str().unwrap()).collect();
-    assert_eq!(tools, ["principles", "check", "explain", "routes", "route", "view", "changes", "shown", "look", "notes", "resolve"]);
+    assert_eq!(
+        tools,
+        ["principles", "check", "explain", "routes", "route", "view", "changes", "shown", "look", "propose", "notes", "resolve"]
+    );
     assert!(text(&replies[2]).contains("prepare tests `mode`"), "{}", text(&replies[2]));
     assert!(!text(&replies[2]).contains("\ndoors ·"), "only the principle asked for");
     assert!(text(&replies[3]).starts_with("A sum type is unwrapped where it arises."));
