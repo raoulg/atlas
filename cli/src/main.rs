@@ -579,11 +579,11 @@ fn main() -> Result<()> {
                 &mut opts,
             )?;
             for (i, g) in parts::analyze_parts(&[repo], &opts)?.iter().enumerate() {
-                let stands = atlas_engine::prophecy::revelation(g);
+                let stands = atlas_engine::revelation::revelation(g);
                 if json {
                     println!("{}", serde_json::to_string_pretty(&serde_json::json!({ "root": g.root, "prophecies": stands }))?);
                 } else {
-                    print!("{}{}", if i > 0 { "\n" } else { "" }, atlas_engine::prophecy::report(&g.root, &stands));
+                    print!("{}{}", if i > 0 { "\n" } else { "" }, atlas_engine::revelation::report(&g.root, &stands));
                 }
             }
         }

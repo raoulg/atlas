@@ -10,6 +10,8 @@
 //! followed, a missing type), and the shortcut is still in the graph. A statement Atlas does not
 //! hold yet is a test of its own, ignored with what Atlas gets wrong.
 
+mod common;
+
 use std::path::PathBuf;
 use std::sync::OnceLock;
 
@@ -603,7 +605,7 @@ fn prophecy_built_code_does_not_lean_on_a_stub() {
 /// side with no mark has no revelation.
 #[test]
 fn prophecy_the_revelation_says_what_is_left() {
-    use atlas_engine::prophecy::revelation;
+    use atlas_engine::revelation::revelation;
     let (c, s, u) = (archive_typescript("clean"), archive_typescript("shortcut"), archive_typescript("unmarked"));
     let stands = revelation(&c);
     assert_eq!(stands.len(), 2, "{stands:?}");
@@ -616,4 +618,24 @@ fn prophecy_the_revelation_says_what_is_left() {
     assert_eq!(leaning.len(), 1);
     assert!(leaning[0].leaned_on_by.iter().any(|l| l.ends_with("run")), "{leaning:?}");
     assert!(revelation(&u).is_empty());
+}
+
+/// A vision that is decided is written into the tree as prophecy: what it adds is marked in the
+/// language of its file, with the item it replaces, and the revelation then lists it. What exists
+/// is not touched, and a vision that changes what exists is refused.
+#[test]
+fn prophecy_a_decided_vision_is_marked_where_it_is_written() {
+    let (decided, stands) = common::decided(
+        "typescript",
+        "src/index.ts",
+        "\n/** Where reports wait. */\nexport declare class Vault {\n  keep(report: string): void;\n}\n",
+        &[("clean.Vault", "clean.Sink")],
+    );
+    let text = decided.files.values().next().expect("one file is written");
+    assert!(text.contains("@prophecy supersedes=clean.Sink"), "{text}");
+    assert_eq!(decided.marked, ["clean.Vault"]);
+    let vault = stands.iter().find(|s| s.id == "clean.Vault").expect("the revelation lists what was decided");
+    assert_eq!(vault.supersedes.as_deref(), Some("clean.Sink"));
+    assert!(vault.holds, "{vault:?}");
+    assert_eq!(stands.len(), 3, "the two prophecies of the clean side, and the new one: {stands:?}");
 }

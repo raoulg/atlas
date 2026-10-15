@@ -9,6 +9,8 @@
 //! in the graph. A statement Atlas does not meet yet is a test of its own, ignored with what
 //! Atlas gets wrong.
 
+mod common;
+
 use std::path::PathBuf;
 use std::sync::OnceLock;
 
@@ -589,7 +591,7 @@ fn prophecy_built_code_does_not_lean_on_a_stub() {
 /// side with no mark has no revelation.
 #[test]
 fn prophecy_the_revelation_says_what_is_left() {
-    use atlas_engine::prophecy::revelation;
+    use atlas_engine::revelation::revelation;
     let (c, s, u) = (archive_python("clean"), archive_python("shortcut"), archive_python("unmarked"));
     let stands = revelation(&c);
     assert_eq!(stands.len(), 2, "{stands:?}");
@@ -602,4 +604,39 @@ fn prophecy_the_revelation_says_what_is_left() {
     assert_eq!(leaning.len(), 1);
     assert!(leaning[0].leaned_on_by.iter().any(|l| l.ends_with("run")), "{leaning:?}");
     assert!(revelation(&u).is_empty());
+}
+
+/// A vision that is decided is written into the tree as prophecy: what it adds is marked in the
+/// language of its file, with the item it replaces, and the revelation then lists it. What exists
+/// is not touched, and a vision that changes what exists is refused.
+#[test]
+fn prophecy_a_decided_vision_is_marked_where_it_is_written() {
+    let (decided, stands) = common::decided(
+        "python",
+        "src/archive/sink.py",
+        "\n\nclass Vault:\n    \"\"\"Where reports wait.\"\"\"\n\n    def keep(self, report: str, /) -> None: ...\n",
+        &[("archive.sink.Vault", "archive.sink.Sink")],
+    );
+    let text = decided.files.values().next().expect("one file is written");
+    assert!(text.contains("@prophecy(supersedes=\"archive.sink.Sink\")"), "{text}");
+    assert_eq!(decided.marked, ["archive.sink.Vault"]);
+    let vault = stands.iter().find(|s| s.id == "archive.sink.Vault").expect("the revelation lists what was decided");
+    assert_eq!(vault.supersedes.as_deref(), Some("archive.sink.Sink"));
+    assert!(vault.holds, "{vault:?}");
+    assert_eq!(stands.len(), 3, "the two prophecies of the clean side, and the new one: {stands:?}");
+}
+
+/// A vision that changes what is built is no prophecy: writing it would replace the code with a
+/// sketch. The sloppy vision rewrites `Sink.write` in place; the clean one gives the new thing a
+/// name of its own, and is decided.
+#[test]
+fn prophecy_a_vision_that_changes_what_exists_is_refused() {
+    use std::collections::BTreeMap;
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/prophecy/python/clean");
+    let file = PathBuf::from("src/archive/sink.py");
+    let now = std::fs::read_to_string(dir.join(&file)).expect("reads");
+    let vision = BTreeMap::from([(file, Some(now.replace("print(report)", "...")))]);
+    let refused =
+        atlas_engine::decide::prophesy(&dir, &vision, &BTreeMap::new(), &Options::default()).expect_err("a changed body is refused");
+    assert!(refused.to_string().contains("changes `archive.sink.Sink.write`") && refused.to_string().contains("supersedes"), "{refused}");
 }

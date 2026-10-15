@@ -66,6 +66,7 @@ fn a_client_initializes_lists_and_calls() {
             "shown",
             "look",
             "vision",
+            "prophesy",
             "annotate",
             "notes",
             "resolve"

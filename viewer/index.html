@@ -10,7 +10,7 @@
   --syn-kw:#7E3FA8; --syn-str:#1F7A5C; --syn-com:#8A94A3; --syn-num:#B4551C; --syn-fn:#2B4FBF; --syn-dec:#A0641E; --syn-bi:#1F6E8C;
   --hue-1:#1F8A7E; --hue-2:#3F5FCF; --hue-3:#C7862B; --hue-4:#7E56B8; --hue-5:#C44F70; --hue-6:#4E9A4E; --hue-7:#5C6B80; --hue-8:#7D7A72;
   --k-cmd:#2F7D4F; --k-file:#B26A00; --k-db:#7E56B8; --k-web:#1F7A8C; --k-screen:#3F5FCF; --k-proc:#5C6B80; --k-model:#C44F70; --k-global:#8A7A2A;
-  --add:#2E8B57; --del:#C43A14; --chg:#B07A00;
+  --add:#2E8B57; --del:#C43A14; --chg:#B07A00; --proph:#4B3FA8;
   --sans:"Outfit","Helvetica Neue",Helvetica,system-ui,sans-serif;
   --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
 }
@@ -21,11 +21,11 @@
   --syn-kw:#C792EA; --syn-str:#7FCFA8; --syn-com:#6F7987; --syn-num:#F0A070; --syn-fn:#8FB0FF; --syn-dec:#E0B070; --syn-bi:#7FC4E0;
   --hue-1:#3DB8A9; --hue-2:#7B93E8; --hue-3:#E0A24A; --hue-4:#A98AD9; --hue-5:#E27A96; --hue-6:#77BF77; --hue-7:#8C9BB0; --hue-8:#A39F95;
   --k-cmd:#6CC08C; --k-file:#E0A24A; --k-db:#B596E6; --k-web:#5CC0D4; --k-screen:#8FA6F0; --k-proc:#9AA8BC; --k-model:#E88AA4; --k-global:#CDBB6A;
-  --add:#6CC08C; --del:#F2643C; --chg:#E0B24A;
+  --add:#6CC08C; --del:#F2643C; --chg:#E0B24A; --proph:#A99BF0;
 }}
 :root[data-theme="dark"]{
   --k-cmd:#6CC08C; --k-file:#E0A24A; --k-db:#B596E6; --k-web:#5CC0D4; --k-screen:#8FA6F0; --k-proc:#9AA8BC; --k-model:#E88AA4; --k-global:#CDBB6A;
-  --add:#6CC08C; --del:#F2643C; --chg:#E0B24A;
+  --add:#6CC08C; --del:#F2643C; --chg:#E0B24A; --proph:#A99BF0;
   --bg:#141210; --panel:#1B1815; --panel-2:#221E1A; --ink:#F4F1EC; --ink-2:#B8B0A5; --ink-3:#857C71;
   --line:#2B2621; --line-2:#221E1A; --alert:#F2643C; --focus:#86B9C9; --accent:#F2643C;
   --external:#7F8792;
@@ -169,7 +169,7 @@ header:has(#diffbar:not([hidden])) #project{max-width:160px}
 #legend .sw i.dsw.changed{border-color:var(--chg)}
 .dwas{font-family:var(--mono);font-size:11.5px;margin:-6px 0 12px;padding-left:8px;border-left:2px solid;word-break:break-word}
 .dwas.added{border-color:var(--add);color:var(--add)}
-.dwas.prophecy{border-left-style:dotted;border-color:var(--ink-3);color:var(--ink-2)}
+.dwas.prophecy{border-left-style:dotted;border-color:var(--proph);color:var(--ink)}
 .dwas.removed{border-color:var(--del);color:var(--del)}
 .dwas.changed{border-color:var(--chg);color:var(--ink-2)}
 /* a finding marks the box it is about with a dot inside its corner; the pointer on the dot shows
@@ -269,12 +269,11 @@ pre.code .l::before{counter-increment:ln;content:counter(ln);display:inline-bloc
 .tnode{cursor:pointer}
 .tnode rect.bg{fill:var(--panel);stroke:var(--line)}
 .tnode.ghost rect.bg{stroke-dasharray:4 3;fill:transparent}
-/* a prophecy: sketch code not built yet, drawn as a ghost with a dotted border; veiled, the shape is not known either */
-.tstep.prophecy rect.bg,.tnode.prophecy rect.bg{stroke:var(--ink-3);stroke-dasharray:1.5 3.5;stroke-linecap:round;stroke-width:1.6;fill:transparent}
-.tstep.prophecy.veiled rect.bg,.tnode.prophecy.veiled rect.bg{stroke-dasharray:.5 5}
-.tstep.prophecy text.title,.tnode.prophecy text.title{font-style:italic;fill:var(--ink-2)}
-.tnode.prophecy .veil{font-family:var(--sans);font-size:9.5px;font-style:italic;fill:var(--ink-3)}
-#legend .sw i.dsw.prophecy{border-color:var(--ink-3);border-style:dotted}
+/* a prophecy: sketch code not built yet, in its own colour with a dotted border and full-strength text; veiled, the dots are finer, as the shape is not known either */
+.tstep.prophecy rect.bg,.tnode.prophecy rect.bg{stroke:var(--proph);stroke-dasharray:2 3.5;stroke-linecap:round;stroke-width:2;fill:color-mix(in oklab, var(--proph) 9%, var(--panel))}
+.tstep.prophecy.veiled rect.bg,.tnode.prophecy.veiled rect.bg{stroke-dasharray:.1 5}
+.tstep.prophecy text.title,.tnode.prophecy text.title{fill:var(--ink);font-weight:600}
+#legend .sw i.dsw.prophecy{border-color:var(--proph);border-style:dotted}
 .tnode .title{font-family:var(--mono);font-size:12px;font-weight:500;fill:var(--ink)}
 .tnode .sub{font-family:var(--sans);font-size:10px;fill:var(--ink-3)}
 .tnode .badge{font-family:var(--mono);font-size:10px;fill:var(--ink-3)}

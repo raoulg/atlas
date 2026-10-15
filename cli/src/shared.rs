@@ -180,6 +180,18 @@ pub fn envision(repo: &Path, p: &Vision) -> Result<()> {
     write(&vision_file(repo), p)
 }
 
+/// Files written into the tree, each by its path from the repository's root.
+pub fn write_files(repo: &Path, files: &std::collections::BTreeMap<PathBuf, String>) -> Result<()> {
+    for (rel, text) in files {
+        let dest = repo.join(rel);
+        if let Some(dir) = dest.parent() {
+            std::fs::create_dir_all(dir)?;
+        }
+        std::fs::write(&dest, text).with_context(|| format!("writing {}", rel.display()))?;
+    }
+    Ok(())
+}
+
 /// The vision retracted: whether there was one.
 pub fn retract(repo: &Path) -> Result<bool> {
     let path = vision_file(repo);

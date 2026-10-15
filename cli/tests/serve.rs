@@ -222,3 +222,28 @@ fn an_agent_annotates_a_box() {
     server.kill().ok();
     let _ = std::fs::remove_dir_all(repo.parent().unwrap());
 }
+
+/// An agent decides its vision: the files are written into the tree with what the vision adds
+/// marked as prophecy, the vision is retracted, and the revelation lists what was decided. A
+/// vision that replaces what exists is refused, and is left as it was.
+#[test]
+fn a_decided_vision_is_written_as_prophecy() {
+    let repo = repository("prophesy");
+    let init = repo.join("src/spots/__init__.py");
+    let sketch = |body: &str| format!("def count(n: int) -> int:\n    {body}\n\n\ndef twice(n: int) -> int: ...\n");
+
+    tool(&repo, "vision", json!({"title": "count twice", "files": {"src/spots/__init__.py": sketch("return n")}}));
+    let refused = tool(&repo, "prophesy", json!({}));
+    assert!(refused.contains("changes `spots.count`") && refused.contains("supersedes"), "{refused}");
+    assert!(!std::fs::read_to_string(&init).unwrap().contains("twice"), "a refused vision writes nothing");
+    assert!(repo.join(".atlas/vision.json").exists(), "and stays as it was");
+
+    tool(&repo, "vision", json!({"title": "count twice", "files": {"src/spots/__init__.py": sketch("return n + 1")}}));
+    let told = tool(&repo, "prophesy", json!({"supersedes": {"spots.twice": "spots.count"}}));
+    assert!(told.contains("Marked as prophecies: spots.twice") && told.contains("no `prophecy` function"), "{told}");
+    let written = std::fs::read_to_string(&init).unwrap();
+    assert!(written.contains("@prophecy(supersedes=\"spots.count\")\ndef twice"), "{written}");
+    assert!(!repo.join(".atlas/vision.json").exists(), "the vision is retracted");
+    let revelation = tool(&repo, "revelation", json!({}));
+    assert!(revelation.contains("twice  supersedes `spots.count`"), "{revelation}");
+}

@@ -227,10 +227,17 @@ supersedes is still asked about, with the prophecy as the answer.
 
 `atlas revelation` lists every prophecy: what it supersedes, the bodies still to write, whether it
 is veiled or sealed, and the built code that leans on it. The sketch is done when the list is
-empty; a prophecy is fulfilled when its marker is gone. The page draws a prophecy with a dotted
-border (finer when it is veiled), as a route of its own for each operation of it, and its
+empty; a prophecy is fulfilled when its marker is gone. The page draws a prophecy in its own
+colour with a dotted border (finer when it is veiled), as a route of its own for each operation of it, and its
 inspector says what it supersedes and what supersedes a box. Agents ask the same with the MCP
 tool `revelation`.
+
+A vision that is decided becomes a prophecy with the MCP tool `prophesy`: the vision's files are
+written into the tree, every item the vision adds marked in the language of its file (and, for
+Python, the project's `prophecy` imported), and the vision is retracted. `supersedes` says which
+existing item an added one replaces. The files are left for you to commit; Atlas opens no branch.
+A vision that changes or removes what exists is refused, since writing it would replace built code
+with a sketch: the new item takes a new name and supersedes the old one.
 
 ## Changes: what an edit did
 
