@@ -2913,7 +2913,12 @@ fn crossed<'t>(
                 World::Db(db) => positional(c).map(|a| eval.of(at, a, 0)).filter(|b| crate::paths::is_statement(db, b)),
                 _ => None,
             };
-            if let Some(built) = statement {
+            // a file database is opened on the file it is handed
+            let opened = match cr.facts.kind {
+                World::Db(db) if knowledge::opens_a_file(db, op) => positional(c).map(|a| eval.of(at, a, 0)),
+                _ => None,
+            };
+            if let Some(built) = statement.or(opened) {
                 let t = Touch {
                     what: cr.what.clone(),
                     payload: cr.payload.clone(),

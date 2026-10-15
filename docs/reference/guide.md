@@ -29,7 +29,8 @@ Read it from left to right:
   the right; ⇄ goes from the one to the other. A line marked `?` goes to a place the code does
   not say which way it uses (a query on a bare database session), which stands between the
   steps. Making a place's shape, a folder for a file or a table's schema, is part of what is
-  written or read there.
+  written or read there. A database opened on a file (`duckdb.connect(path)`, `Connection::open(path)`)
+  is that file's: the folder made for it is the database's, and no place of its own.
 - **A dashed frame is a choice.** Its title says what decides each branch, as the code writes it,
   each in the branch's colour: `one of ● mode == "train" ● otherwise`. A step that runs only when
   a condition holds stands in a frame of its own, `only when not raw.exists()`: the route follows

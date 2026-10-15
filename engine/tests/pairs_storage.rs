@@ -64,3 +64,30 @@ fn a_graph_call_goes_the_way_the_code_says() {
         }
     }
 }
+
+/// A connection opens the file a database is, and the directory made for that file is the
+/// database's: made where the connection opens it, it is no place of its own. Made by a function
+/// of its own, apart from the connection, it stands as a directory nothing in the picture uses.
+/// Python's `duckdb.connect(path)` and Rust's `Connection::open(path)` are the same open.
+#[test]
+fn a_directory_made_for_a_database_file_belongs_to_the_database() {
+    for (language, connect, file) in
+        [("python", "_root.warehouse.connect", "warehouse/rows.duckdb"), ("rust", "warehouse.connect", "warehouse/rows.db")]
+    {
+        for (side, folded) in [("clean", true), ("shortcut", false)] {
+            let base = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/storage");
+            let repo = if language == "rust" { base.join("rust").join(side) } else { base.join(side) };
+            let graph = analyze(&repo, &Options::default()).unwrap();
+            let opening = graph.node(connect).unwrap();
+            let named: Vec<_> = opening.touches.iter().map(|t| t.file.as_str()).filter(|f| !f.is_empty()).collect();
+            assert_eq!(named, [file], "{language} {side}: the connection names its file");
+            let made: Vec<_> = graph
+                .nodes
+                .iter()
+                .flat_map(|n| &n.touches)
+                .filter(|t| t.kind_name().starts_with("disk") && t.artifact == "warehouse/")
+                .collect();
+            assert_eq!(made.is_empty(), folded, "{language} {side}: {made:?}");
+        }
+    }
+}

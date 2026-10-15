@@ -390,8 +390,9 @@ pub fn foreign_type(id: &str, own: &crate::knowledge::OwnTypes) -> bool {
 /// checked, for a file the same function reads or writes is that file's (`to.parent.mkdir()`
 /// before `to.write_bytes()`); a connection or a session opened on a database the same function
 /// reads or writes is part of those statements, and so is a table's shape given where the same
-/// function reads or writes the table. A table some statement makes temporary is the connection's
-/// working memory, no place: its touches go.
+/// function reads or writes the table. A directory made for the file a connection opens is that
+/// database's. A table some statement makes temporary is the connection's working memory, no
+/// place: its touches go.
 fn serve_data(nodes: &mut IndexMap<String, Node>) {
     use crate::effects::{SCHEMA, SCRATCH, SHAPED};
     for t in nodes.values_mut().flat_map(|n| n.touches.iter_mut().chain(n.instead.iter_mut())) {
@@ -420,13 +421,13 @@ fn prepares(t: &Touch, all: &[Touch]) -> bool {
     let data = |d: &&Touch| d.kind == t.kind && !d.shape() && along(d);
     match t.kind {
         World::Disk => {
+            let within = |file: &str| file == t.artifact || (t.artifact.ends_with('/') && file.starts_with(&t.artifact));
+            // a database's file is made for as a file is
+            let opens = |d: &&Touch| matches!(d.kind, World::Db(_)) && !d.file.is_empty() && along(d);
             t.shape()
                 && !t.artifact.is_empty()
-                && all
-                    .iter()
-                    .filter(data)
-                    .filter(|d| !d.artifact.is_empty())
-                    .any(|d| d.artifact == t.artifact || (t.artifact.ends_with('/') && d.artifact.starts_with(&t.artifact)))
+                && (all.iter().filter(data).filter(|d| !d.artifact.is_empty()).any(|d| within(&d.artifact))
+                    || all.iter().filter(opens).any(|d| within(&d.file)))
         }
         World::Db(_) | World::Global if t.shape() => {
             all.iter().filter(data).filter(|d| d.dir.is_some() && !d.artifact.is_empty()).any(|d| d.artifact == t.artifact)

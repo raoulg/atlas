@@ -637,6 +637,8 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
             };
             let mut placed: Vec<(String, Option<crate::model::Dir>, bool)> = vec![];
             let (mut requested, mut unnamed, mut decides) = (false, false, false);
+            // the file a connection opens
+            let mut opened = String::new();
             for (b, fixed) in found.iter().filter(|(w, _, _)| w == whole).map(|(_, b, fixed)| (b, *fixed)) {
                 let rendered = render(b);
                 let before = placed.len();
@@ -670,6 +672,10 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
                         store.ask(asker, request(&method, &path));
                     }
                 } else if let World::Db(db) = t.kind {
+                    if crate::knowledge::opens_a_file(db, &t.op) {
+                        opened = place(b, "").filter(|f| crate::knowledge::names_a_file(f)).unwrap_or_default();
+                        continue;
+                    }
                     placed.extend(
                         crate::effects::sql(db, std::slice::from_ref(&rendered))
                             .unwrap_or_default()
@@ -705,7 +711,7 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
                     // a URL without a host is the page's own origin, decided by whoever serves it
                     let fixed = decides && (t.kind != World::Net || !t.artifact.is_empty());
                     let touch = at(t.artifact.clone(), t.dir, fixed);
-                    store.touch(&f, Touch { what: value.unwrap_or_else(|| touch.what.clone()), ..touch });
+                    store.touch(&f, Touch { what: value.unwrap_or_else(|| touch.what.clone()), file: opened, ..touch });
                 }
                 continue;
             }

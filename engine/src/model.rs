@@ -538,6 +538,9 @@ pub struct Touch {
     /// `{name}.png`), `*.csv` when only the format is known, a table after a SQL verb. Empty
     /// when only a variable says which.
     pub artifact: String,
+    /// The file a database connection opens, where the code says so: `duckdb.connect(path)`. A
+    /// database that is no file (in memory, at an address) names none.
+    pub file: String,
     /// The code alone decides where: the path or URL starts at a literal (`"out.csv"`,
     /// `Path("data") / name`), not at a value a caller hands in (`root / "out.csv"`).
     pub fixed: bool,
@@ -561,6 +564,7 @@ impl Touch {
             payload: String::new(),
             op: String::new(),
             artifact: String::new(),
+            file: String::new(),
             fixed: false,
             line: 0,
             by: vec![],
@@ -605,6 +609,8 @@ pub struct TouchJson {
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub artifact: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub file: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub dir: String,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub fixed: bool,
@@ -626,6 +632,7 @@ impl From<Touch> for TouchJson {
             payload: t.payload,
             op: t.op,
             artifact: t.artifact,
+            file: t.file,
             dir,
             fixed: t.fixed,
             line: t.line,
@@ -647,6 +654,7 @@ impl TryFrom<TouchJson> for Touch {
             payload: j.payload,
             op: j.op,
             artifact: j.artifact,
+            file: j.file,
             fixed: j.fixed,
             line: j.line,
             by: j.by,
