@@ -459,3 +459,28 @@ fn lens_what_is_put_comes_back_as_a_variant_of_a_named_sum() {
     assert!(edge(&c, EdgeKind::Variant, "kennis.Node", "kennis.Bron"));
     assert_eq!(found(&s, "lens"), ["kennis.Kennisbank"]);
 }
+
+/// One side of the lens pair (`tests/pairs/lens`): the Python pair's store of readings, outages
+/// and summaries, as Rust and TypeScript write it.
+fn harvest(side: &str) -> Graph {
+    analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/lens/rust").join(side), &Options::default()).expect("reads")
+}
+
+/// What a lens puts, it gets back, also inside what a get gives; and what it puts is what reaches
+/// the place, not the key it looks a value up by. Both stores keep the outages of a harvest and a
+/// summary per day. The clean store gives the outages back inside a station's `Harvest`, and its
+/// `summary(day)` hands the Day to `kept_summary`, which reads, and to `day_summary`, whose Summary
+/// it hands to `keep_summary` to put: the Day is the key the summary is kept under. It is asked
+/// nothing. The shortcut's `outages` gives lines, and its `summary` writes the file itself: it is
+/// asked about the Outage and the Day.
+#[test]
+fn lens_what_is_put_comes_back_inside_and_a_key_is_no_put() {
+    let (c, s) = (harvest("clean"), harvest("shortcut"));
+    let fs = check(&c);
+    assert!(fs.is_empty(), "{:#?}", fs.iter().map(|f| format!("{} {} {}", f.principle, f.node, f.what)).collect::<Vec<_>>());
+    assert!(edge(&c, EdgeKind::Has, "harvest.Harvest", "harvest.Outage"));
+    assert!(edge(&c, EdgeKind::Calls, "harvest.ReadingStore.summary", "harvest.ReadingStore.keep_summary"));
+    let lens: Vec<String> = check(&s).into_iter().filter(|f| f.principle == "lens").map(|f| f.what).collect();
+    assert_eq!(lens.len(), 1, "{lens:?}");
+    assert!(lens[0].contains("Outage") && lens[0].contains("Day") && !lens[0].contains("Reading "), "{}", lens[0]);
+}

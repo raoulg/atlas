@@ -521,3 +521,30 @@ fn lens_what_is_put_comes_back_as_a_variant_of_a_named_sum() {
     assert!(has("bank.Node", "bank.Bron", EdgeKind::Variant));
     assert!(asked(&s, "lens", "bank.Kennisbank"), "{:?}", asked_anywhere(&s, "lens"));
 }
+
+/// One side of the lens pair (`tests/pairs/lens`): the Python pair's store of readings, outages
+/// and summaries, as Rust and TypeScript write it.
+fn harvest(side: &str) -> Graph {
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/lens/typescript").join(side);
+    analyze(&dir, &Options::default()).expect("reads")
+}
+
+/// What a lens puts, it gets back, also inside what a get gives; and what it puts is what reaches
+/// the place, not the key it looks a value up by. The clean store gives the outages back inside a
+/// station's `Harvest`, and its `summary(day)` hands the Day to `keptSummary`, which reads, and to
+/// `daySummary`, whose Summary it hands to `keepSummary` to put. It is asked nothing. The
+/// shortcut's `outages` gives lines, and its `summary` writes the file itself: it is asked about
+/// the Outage and the Day.
+#[test]
+fn lens_what_is_put_comes_back_inside_and_a_key_is_no_put() {
+    let (c, s) = (harvest("clean"), harvest("shortcut"));
+    assert!(findings(&c).is_empty(), "{:?}", findings(&c).iter().map(|f| format!("{} {}", f.node, f.what)).collect::<Vec<_>>());
+    let edge = |src: &str, dst: &str, kind: EdgeKind| {
+        c.edges.iter().any(|e| e.kind == kind && e.src == format!("{}.{src}", c.root) && e.dst == format!("{}.{dst}", c.root))
+    };
+    assert!(edge("store.Harvest", "store.Outage", EdgeKind::Has));
+    assert!(edge("store.ReadingStore.summary", "store.ReadingStore.keepSummary", EdgeKind::Calls));
+    let lens = asked_anywhere(&s, "lens");
+    assert_eq!(lens.len(), 1, "{lens:?}");
+    assert!(lens[0].contains("Outage") && lens[0].contains("Day") && !lens[0].contains("Reading "), "{}", lens[0]);
+}
