@@ -240,7 +240,8 @@ fn the_terminal_is_a_place_both_ways() {
 }
 
 /// SQL is read by its grammar: a statement writes the table it changes and reads the ones it
-/// takes from; a setting names no table, and a table named at run time is not named.
+/// takes from, and a table named at run time is not named. A setting names no table, and like the
+/// table's shape it is part of the statements beside it.
 #[test]
 fn sql_names_the_tables_it_reads_and_writes() {
     let g = fixture();
@@ -252,8 +253,7 @@ fn sql_names_the_tables_it_reads_and_writes() {
         .filter(|t| t.kind_name() == "db_sqlite")
         .map(|t| (t.op.as_str(), t.artifact.as_str(), t.dir_name()))
         .collect::<HashSet<_>>();
-    let expected: HashSet<_> =
-        [("execute", "", ""), ("execute", "log", "write"), ("execute", "nodes", "read"), ("execute", "", "write")].into_iter().collect();
+    let expected: HashSet<_> = [("execute", "log", "write"), ("execute", "nodes", "read"), ("execute", "", "write")].into_iter().collect();
     assert_eq!(sides, expected, "PRAGMA; CREATE TABLE IF NOT EXISTS log; INSERT INTO log SELECT .. FROM nodes; DELETE FROM {{table}}");
 }
 
@@ -271,14 +271,14 @@ fn a_statement_is_read_where_it_is_whole() {
             .map(|t| (t.op.as_str(), t.artifact.as_str(), t.dir_name()))
             .collect::<Vec<_>>()
     };
-    assert_eq!(sides("fixture.store.seen"), [("executescript", "seen", "write")], "`con.executescript(SCHEMA)`");
+    assert_eq!(sides("fixture.store.seen"), [("schema", "seen", "write")], "`con.executescript(SCHEMA)` gives `seen` its shape");
     assert_eq!(sides("fixture.store.count"), [("execute", "seen", "read")], "`count(con, \"SELECT count(*) FROM seen\")`");
 }
 
 /// What a library's call reaches is a fact of its table: psycopg and asyncpg run statements on a
-/// SQL server, read by their grammar; redis reads and writes the key it is handed, and building
-/// its client moves nothing; pandas reads a frame from a database by a statement or a table's
-/// name and writes one to a table; `os.system` and asyncio's subprocesses run a program, nbclient
+/// SQL server, read by their grammar, the connection opened for one part of it; redis reads and
+/// writes the key it is handed, and building its client moves nothing; pandas reads a frame from a
+/// database by a statement or a table's name and writes one to a table; `os.system` and asyncio's subprocesses run a program, nbclient
 /// runs a notebook in a kernel, and transformers' `generate` runs a model.
 #[test]
 fn a_library_table_says_where_its_calls_go() {
@@ -291,7 +291,7 @@ fn a_library_table_says_where_its_calls_go() {
             .map(|t| (t.kind_name(), t.op.as_str(), t.artifact.as_str(), t.dir_name()))
             .collect::<Vec<_>>()
     };
-    assert_eq!(t("latest"), [("db_sql", "connect", "", ""), ("db_sql", "execute", "readings", "read")], "psycopg");
+    assert_eq!(t("latest"), [("db_sql", "execute", "readings", "read")], "psycopg");
     assert_eq!(t("total"), [("db_sql", "fetchval", "readings", "read")], "asyncpg's query that hands back a value");
     assert_eq!(t("record"), [("db_sql", "execute", "readings", "write")], "`INSERT INTO readings .. ($1)`");
     assert!(t("cache").is_empty(), "`redis.Redis(..)` builds a client");
@@ -596,11 +596,13 @@ fn rust_workspace_parses() {
     let places = |id: &str| {
         g.node(id).unwrap().touches.iter().map(|t| (t.kind_name().to_string(), t.op.clone(), t.artifact.clone())).collect::<Vec<_>>()
     };
-    // a name bound by `if let`: `if let Some(d) = dest.parent()` under the revision's `env::temp_dir()`
+    // a name bound by `if let`: `if let Some(d) = dest.parent()` is the directory, under the
+    // revision's `env::temp_dir()`, of the file written there, so making it is part of writing it
+    let revision = places("atlas-engine.changes.revision");
     assert!(
-        places("atlas-engine.changes.revision").contains(&("disk_write".into(), "create_dir_all".into(), "$TMPDIR/".into())),
-        "{:?}",
-        places("atlas-engine.changes.revision")
+        revision.contains(&("disk_write".into(), "write".into(), "$TMPDIR/".into()))
+            && !revision.iter().any(|(_, op, _)| op == "create_dir_all"),
+        "{revision:?}"
     );
     // `atlas analyze` writes its graph where `-o` says, else where `made` puts it: in `.atlas/` at
     // the top of the git repository, a folder found on disk that the code cannot name, or for a

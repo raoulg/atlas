@@ -189,6 +189,7 @@ impl GraphBuilder {
     pub fn finish(self, root: String, project_root: Option<&std::path::Path>, language: &str) -> Graph {
         let mut top: Vec<(String, u32)> = self.unresolved.iter().map(|(k, v)| (k.clone(), *v)).collect();
         let mut nodes = self.nodes;
+        serve_data(&mut nodes);
         crate::flow::wire(&mut nodes, &self.edges);
         mark_doors(&mut nodes, &self.edges);
         mark_options(&mut nodes);
@@ -379,4 +380,54 @@ pub fn foreign_type(id: &str, own: &crate::knowledge::OwnTypes) -> bool {
     let name = full.rsplit('.').next().unwrap_or("");
     let parameter = head.len() == 1 && head.chars().all(|c| c.is_ascii_uppercase());
     full.contains('.') && !own.packages.contains(&head) && !own.names.contains(&name) && !parameter
+}
+
+/// A touch that only prepares a place is part of what is done there. A directory made, or a path
+/// checked, for a file the same function reads or writes is that file's (`to.parent.mkdir()`
+/// before `to.write_bytes()`); a connection or a session opened on a database the same function
+/// reads or writes is part of those statements, and so is a table's shape given where the same
+/// function reads or writes the table. A table some statement makes temporary is the connection's
+/// working memory, no place: its touches go.
+fn serve_data(nodes: &mut IndexMap<String, Node>) {
+    use crate::effects::{SCHEMA, SCRATCH, SHAPED};
+    for t in nodes.values_mut().flat_map(|n| n.touches.iter_mut().chain(n.instead.iter_mut())) {
+        if let Some(table) = t.artifact.strip_prefix(SHAPED) {
+            (t.artifact, t.op) = (table.to_string(), SCHEMA.to_string());
+        }
+    }
+    let table = |t: &Touch| (t.kind.name().to_string(), t.artifact.strip_prefix(SCRATCH).unwrap_or(&t.artifact).to_string());
+    let scratch: HashSet<(String, String)> =
+        nodes.values().flat_map(|n| &n.touches).filter(|t| t.artifact.starts_with(SCRATCH)).map(table).collect();
+    for n in nodes.values_mut() {
+        n.touches.retain(|t| !(matches!(t.kind, World::Db(_)) && scratch.contains(&table(t))));
+        let all = n.touches.clone();
+        let call = |t: &Touch| (t.line, t.op.clone(), t.kind);
+        let folded: Vec<_> = all.iter().filter(|t| prepares(t, &all)).map(call).collect();
+        n.touches.retain(|t| !prepares(t, &all));
+        // the same call as it was read prepares the same place
+        n.instead.retain(|t| !folded.contains(&call(t)));
+    }
+}
+
+/// Whether touch `t` only prepares a place that another of `all` reads or writes, in every route
+/// `t` is in: the other is in every route, or in the same ones.
+fn prepares(t: &Touch, all: &[Touch]) -> bool {
+    let along = |d: &Touch| (d.by.is_empty() && d.users_of.is_empty()) || (d.by == t.by && d.users_of == t.users_of);
+    let data = |d: &&Touch| d.kind == t.kind && !d.shape() && along(d);
+    match t.kind {
+        World::Disk => {
+            t.shape()
+                && !t.artifact.is_empty()
+                && all
+                    .iter()
+                    .filter(data)
+                    .filter(|d| !d.artifact.is_empty())
+                    .any(|d| d.artifact == t.artifact || (t.artifact.ends_with('/') && d.artifact.starts_with(&t.artifact)))
+        }
+        World::Db(_) if t.shape() => {
+            all.iter().filter(data).filter(|d| d.dir.is_some() && !d.artifact.is_empty()).any(|d| d.artifact == t.artifact)
+        }
+        World::Db(_) => t.dir.is_none() && all.iter().filter(data).any(|d| d.dir.is_some()),
+        _ => false,
+    }
 }

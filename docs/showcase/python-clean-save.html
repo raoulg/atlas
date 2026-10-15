@@ -72,6 +72,9 @@ header .brand img{width:22px;height:22px;align-self:center}
 .stats{font-family:var(--mono);font-size:11px;color:var(--ink-3);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 #search{font:inherit;font-family:var(--mono);font-size:12px;padding:5px 9px;border:1px solid var(--line);border-radius:0;background:var(--panel-2);color:var(--ink);width:240px}
 #search:focus{outline:2px solid var(--focus);outline-offset:1px}
+#histlink,.histlink{font-family:var(--mono);font-size:12px;padding:5px 9px;border:1px solid var(--line);background:var(--panel-2);color:var(--ink);text-decoration:none;white-space:nowrap;cursor:pointer}
+#histlink:hover,.histlink:hover{border-color:var(--ink-3)}
+#fresh{color:var(--focus);border-color:var(--focus)}
 main{position:relative;overflow:hidden}
 svg#canvas{width:100%;height:100%;display:block;cursor:grab}
 svg#canvas:active{cursor:grabbing}
@@ -182,16 +185,21 @@ header:has(#diffbar:not([hidden])) #project{max-width:160px}
 .note circle{fill:var(--panel);stroke:var(--focus);stroke-width:1.4}
 .note text{fill:var(--focus);font-family:var(--mono);font-size:8.5px;font-weight:700;text-anchor:middle;pointer-events:none}
 .note.seen{opacity:.55}
-.note.answered circle{fill:var(--focus)}
-.note.answered text{fill:var(--panel)}
+.note.resolved circle{fill:var(--focus)}
+.note.resolved text{fill:var(--panel)}
+@keyframes pointed{0%,100%{filter:none}35%,65%{filter:drop-shadow(0 0 7px var(--focus))}}
+.pointed{animation:pointed 1.1s ease-in-out 2}
+path.pointed{stroke:var(--focus)!important;stroke-width:3px!important}
 .note{cursor:help}
 #notefield{position:fixed;z-index:31;width:300px;background:var(--panel);border:1px solid var(--line);border-left:2px solid var(--focus);box-shadow:0 10px 28px rgba(0,0,0,.2);padding:8px 10px 9px;font-size:12px}
 #notefield[hidden]{display:none}
 #notefield .on{font-family:var(--mono);font-size:10.5px;color:var(--ink-3);margin-bottom:5px;word-break:break-all}
 #notefield textarea{width:100%;box-sizing:border-box;min-height:54px;font:inherit;color:var(--ink);background:var(--panel-2);border:1px solid var(--line);padding:5px 7px;resize:vertical}
 #notefield .keys{color:var(--ink-3);font-size:10.5px;margin-top:4px}
+#notefield .x{float:right;border:0;background:none;color:var(--ink-3);cursor:pointer;font-size:12px;padding:0 0 0 8px}
+#notefield .x:hover{color:var(--ink)}
 #ask .note-q{color:var(--ink)}
-#ask .note-a{margin-top:6px;padding-top:6px;border-top:1px solid var(--line);color:var(--focus)}
+#ask .again{margin-top:6px;color:var(--ink-3);font-size:10.5px}
 /* what a closed box holds inside: a tag across its lower edge, dashed as what happens inside is */
 .inside rect{fill:var(--panel);stroke:var(--ink-3);stroke-width:1;stroke-dasharray:2 2}
 .inside text{font:600 9.5px var(--mono);fill:var(--ink-2)}
@@ -219,6 +227,7 @@ svg.glyph{vertical-align:-2px}
 .frame.fam rect.bg{fill:color-mix(in oklab, var(--panel-2) 70%, transparent)}
 .frame .ftitle{font-family:var(--mono);font-size:11.5px;font-weight:500;fill:var(--ink-2);cursor:pointer}
 .frame .ftitle:hover{fill:var(--ink)}
+.twin{fill:var(--focus);cursor:pointer;font-weight:600}
 .sedge-head{fill:var(--ink-3)}
 .scene.focus .sedge:not(.on),.scene.focus .sedge-head:not(.on){opacity:.07}
 .scene.focus .tstep:not(.on),.scene.focus .tnode:not(.on){opacity:.28}
@@ -319,7 +328,7 @@ pre.code .l::before{counter-increment:ln;content:counter(ln);display:inline-bloc
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/elkjs@0.9.3/lib/elk.bundled.js"></script>
 <script>
-window.DATA = {"atlas":"0.51.0 (e78f739+)","projects":{"sunspots":{"edges":[{"dst":"sunspots.cli.run","kind":"contains","src":"sunspots.cli"},{"dst":"sunspots.download.download","kind":"contains","src":"sunspots.download"},{"dst":"sunspots.plot.Plot.__init__","kind":"contains","src":"sunspots.plot.Plot"},{"dst":"sunspots.plot.Plot.draw","kind":"contains","src":"sunspots.plot.Plot"},{"dst":"sunspots.plot.Plot.save","kind":"contains","src":"sunspots.plot.Plot"},{"dst":"sunspots.plot.Plot","kind":"contains","src":"sunspots.plot"},{"dst":"sunspots.plot.Trend.draw","kind":"contains","src":"sunspots.plot.Trend"},{"dst":"sunspots.plot.Trend","kind":"contains","src":"sunspots.plot"},{"dst":"sunspots.series.load","kind":"contains","src":"sunspots.series"},{"dst":"sunspots.series.smooth","kind":"contains","src":"sunspots.series"},{"dst":"sunspots.settings.Settings","kind":"contains","src":"sunspots.settings"},{"dst":"sunspots.download.download","kind":"imports","src":"sunspots"},{"dst":"sunspots.plot.Plot","kind":"imports","src":"sunspots"},{"dst":"sunspots.plot.Trend","kind":"imports","src":"sunspots"},{"dst":"sunspots.series.load","kind":"imports","src":"sunspots"},{"dst":"sunspots.series.smooth","kind":"imports","src":"sunspots"},{"dst":"sunspots.settings.Settings","kind":"imports","src":"sunspots"},{"dst":"sunspots.download.download","kind":"imports","src":"sunspots.cli"},{"dst":"sunspots.plot.Trend","kind":"imports","src":"sunspots.cli"},{"dst":"sunspots.series.load","kind":"imports","src":"sunspots.cli"},{"dst":"sunspots.series.smooth","kind":"imports","src":"sunspots.cli"},{"dst":"sunspots.settings.Settings","kind":"imports","src":"sunspots.cli"},{"dst":"sunspots.settings.Settings","kind":"imports","src":"sunspots.plot"},{"dst":"ext:abc.ABC","kind":"inherits","src":"sunspots.plot.Plot"},{"dst":"sunspots.plot.Plot","kind":"inherits","src":"sunspots.plot.Trend"},{"dst":"sunspots.settings.Settings","kind":"takes","src":"sunspots.plot.Plot.__init__"},{"dst":"ext:pandas.DataFrame","kind":"takes","src":"sunspots.plot.Plot.draw"},{"dst":"ext:matplotlib.figure.Figure","kind":"returns","src":"sunspots.plot.Plot.draw"},{"dst":"ext:pandas.DataFrame","kind":"takes","src":"sunspots.plot.Plot.save"},{"dst":"ext:pandas.DataFrame","kind":"takes","src":"sunspots.plot.Trend.draw"},{"dst":"ext:matplotlib.figure.Figure","kind":"returns","src":"sunspots.plot.Trend.draw"},{"dst":"ext:pandas.DataFrame","kind":"returns","src":"sunspots.series.load"},{"dst":"ext:pandas.DataFrame","kind":"takes","src":"sunspots.series.smooth"},{"dst":"ext:pandas.DataFrame","kind":"returns","src":"sunspots.series.smooth"},{"dst":"sunspots.settings.Settings","kind":"has","src":"sunspots.plot.Plot","via":"settings"},{"dst":"sunspots.settings.Settings","kind":"instantiates","src":"sunspots.cli.run"},{"dst":"sunspots.download.download","kind":"calls","src":"sunspots.cli.run","uses":true},{"dst":"sunspots.series.load","kind":"calls","src":"sunspots.cli.run","uses":true},{"dst":"sunspots.series.smooth","kind":"calls","src":"sunspots.cli.run","uses":true},{"dst":"sunspots.plot.Trend","kind":"instantiates","src":"sunspots.cli.run"},{"dst":"sunspots.plot.Plot.save","kind":"calls","src":"sunspots.cli.run"},{"dst":"sunspots.plot.Plot.draw","kind":"calls","src":"sunspots.plot.Plot.save","uses":true}],"files":{"/Users/rgrouls/.codex/worktrees/demo-effects-review/atlas/engine/tests/pairs/pipeline/python-clean/src/sunspots/__init__.py":"\"\"\"Sunspots: SILSO's monthly mean sunspot number, downloaded, smoothed and drawn.\"\"\"\n\nfrom sunspots.download import download\nfrom sunspots.plot import Plot, Trend\nfrom sunspots.series import load, smooth\nfrom sunspots.settings import Settings\n\n__all__ = [\"Plot\", \"Settings\", \"Trend\", \"download\", \"load\", \"smooth\"]\n","/Users/rgrouls/.codex/worktrees/demo-effects-review/atlas/engine/tests/pairs/pipeline/python-clean/src/sunspots/cli.py":"\"\"\"The command line: a run names the source and the files, and hands them down.\"\"\"\n\nfrom pathlib import Path\n\nimport typer\n\nfrom sunspots.download import download\nfrom sunspots.plot import Trend\nfrom sunspots.series import load, smooth\nfrom sunspots.settings import Settings\n\nSILSO = \"https://www.sidc.be/SILSO/DATA/SN_m_tot_V2.0.csv\"\nRAW = Path(\"data/raw/sunspots.csv\")\nFIGURE = Path(\"figures/sunspots.png\")\n\napp = typer.Typer()\n\n\n@app.command()\ndef run(raw: Path = RAW, figure: Path = FIGURE, months: int = 13) -> None:\n    \"\"\"Download SILSO's monthly sunspot numbers, smooth them and save their trend.\"\"\"\n    settings = Settings(months=months)\n    frame = smooth(load(download(SILSO, raw)), settings.months)\n    Trend(settings).save(frame, figure)\n","/Users/rgrouls/.codex/worktrees/demo-effects-review/atlas/engine/tests/pairs/pipeline/python-clean/src/sunspots/download.py":"\"\"\"A file from the web, kept as it came.\"\"\"\n\nfrom pathlib import Path\n\nimport requests\n\n\ndef download(url: str, to: Path) -> Path:\n    \"\"\"Fetch `url` and write its body to `to`; returns `to`.\"\"\"\n    response = requests.get(url, timeout=30)\n    response.raise_for_status()\n    to.parent.mkdir(parents=True, exist_ok=True)\n    to.write_bytes(response.content)\n    return to\n","/Users/rgrouls/.codex/worktrees/demo-effects-review/atlas/engine/tests/pairs/pipeline/python-clean/src/sunspots/plot.py":"\"\"\"Figures of a sunspot series: each kind of plot draws a figure, and every plot saves one.\"\"\"\n\nfrom abc import ABC, abstractmethod\nfrom pathlib import Path\n\nimport pandas as pd\nfrom matplotlib.figure import Figure\n\nfrom sunspots.settings import Settings\n\n\nclass Plot(ABC):\n    \"\"\"A figure drawn from a frame and saved as an image.\"\"\"\n\n    def __init__(self, settings: Settings) -> None:\n        self.settings = settings\n\n    @abstractmethod\n    def draw(self, frame: pd.DataFrame) -> Figure: ...\n\n    def save(self, frame: pd.DataFrame, to: Path) -> None:\n        \"\"\"Draw `frame` and write the figure to `to`.\"\"\"\n        figure = self.draw(frame)\n        to.parent.mkdir(parents=True, exist_ok=True)\n        figure.savefig(to, dpi=self.settings.dpi)\n\n\nclass Trend(Plot):\n    \"\"\"The monthly means as a thin line, with their smoothed mean over them.\"\"\"\n\n    def draw(self, frame: pd.DataFrame) -> Figure:\n        figure = Figure(figsize=self.settings.size, layout=\"constrained\")\n        ax = figure.add_subplot()\n        ax.plot(frame.index, frame[\"mean\"], color=\"0.7\", linewidth=0.6, label=\"monthly mean\")\n        ax.plot(frame.index, frame[\"smoothed\"], color=\"C0\", label=f\"{self.settings.months}-month mean\")\n        ax.set_title(self.settings.title)\n        ax.set_ylabel(\"sunspot number\")\n        ax.legend()\n        return figure\n","/Users/rgrouls/.codex/worktrees/demo-effects-review/atlas/engine/tests/pairs/pipeline/python-clean/src/sunspots/series.py":"\"\"\"The monthly mean sunspot number as a frame indexed by month.\n\nSILSO's file has no header; its columns are separated by semicolons, and a month without an\nobservation has `-1` for its mean.\n\"\"\"\n\nfrom pathlib import Path\n\nimport pandas as pd\n\nCOLUMNS = [\"year\", \"month\", \"decimal_date\", \"mean\", \"std\", \"observations\", \"definitive\"]\nMISSING = -1\n\n\ndef load(path: Path) -> pd.DataFrame:\n    \"\"\"The months in SILSO's file at `path` that have a mean, indexed by their first day.\"\"\"\n    table = pd.read_csv(path, sep=\";\", header=None, names=COLUMNS, skipinitialspace=True, na_values=[MISSING])\n    first_days = pd.to_datetime(table[[\"year\", \"month\"]].assign(day=1))\n    return table.set_index(first_days)[[\"mean\", \"std\", \"observations\"]].dropna(subset=[\"mean\"])\n\n\ndef smooth(frame: pd.DataFrame, months: int) -> pd.DataFrame:\n    \"\"\"`frame` with a `smoothed` column: the mean over `months` months, centred on each.\"\"\"\n    return frame.assign(smoothed=frame[\"mean\"].rolling(months, center=True).mean())\n","/Users/rgrouls/.codex/worktrees/demo-effects-review/atlas/engine/tests/pairs/pipeline/python-clean/src/sunspots/settings.py":"\"\"\"The choices of a run that are not places: how far to smooth and how the figure looks.\"\"\"\n\nfrom dataclasses import dataclass\n\n\n@dataclass(frozen=True)\nclass Settings:\n    months: int = 13\n    title: str = \"Monthly mean total sunspot number\"\n    size: tuple[float, float] = (10.0, 4.0)\n    dpi: int = 150\n"},"findings":[],"flow":{"arrows":{"sunspots.download.download":{"gives_back":true,"returns_value":true},"sunspots.plot.Plot":{"gives":["sunspots.plot.Plot"],"takes":["sunspots.settings.Settings"]},"sunspots.plot.Plot.__init__":{"builds":"sunspots.plot.Plot","takes":["sunspots.settings.Settings"]},"sunspots.plot.Plot.draw":{"gives":["ext:matplotlib.figure.Figure"],"gives_back":true,"receiver":"sunspots.plot.Plot","returns_value":true,"takes":["ext:pandas.DataFrame"]},"sunspots.plot.Plot.save":{"receiver":"sunspots.plot.Plot","takes":["ext:pandas.DataFrame"]},"sunspots.plot.Trend":{"gives":["sunspots.plot.Trend"],"takes":["sunspots.settings.Settings"]},"sunspots.plot.Trend.draw":{"gives":["ext:matplotlib.figure.Figure"],"gives_back":true,"receiver":"sunspots.plot.Trend","returns_value":true,"takes":["ext:pandas.DataFrame"]},"sunspots.series.load":{"gives":["ext:pandas.DataFrame"],"gives_back":true,"returns_value":true},"sunspots.series.smooth":{"gives":["ext:pandas.DataFrame"],"gives_back":true,"returns_value":true,"takes":["ext:pandas.DataFrame"]},"sunspots.settings.Settings":{"gives":["sunspots.settings.Settings"]}},"bodies":{"sunspots.cli":{"items":[{"site":0,"to":"op:Typer"}]},"sunspots.cli.run":{"items":[{"site":0,"to":"sunspots.settings.Settings"},{"site":1,"to":"sunspots.download.download"},{"site":2,"to":"sunspots.series.load"},{"site":3,"to":"sunspots.series.smooth"},{"site":4,"to":"sunspots.plot.Trend"},{"on":"sunspots.plot.Trend","site":5,"to":"sunspots.plot.Plot.save"}],"made_from":["sunspots.settings.Settings","ext:pandas.DataFrame","ext:pandas.DataFrame","sunspots.plot.Trend"]},"sunspots.download.download":{"items":[{"site":0,"to":"op:get"}]},"sunspots.plot.Plot":{"items":[{"to":"sunspots.plot.Plot.__init__"},{"to":"sunspots.plot.Plot.draw"},{"to":"sunspots.plot.Plot.save"}],"made_from":["ext:matplotlib.figure.Figure"]},"sunspots.plot.Plot.draw":{"alts":["sunspots.plot.Trend.draw"],"items":[],"made_from":["ext:matplotlib.figure.Figure"]},"sunspots.plot.Plot.save":{"items":[{"site":0,"to":"sunspots.plot.Plot.draw"}],"made_from":["ext:matplotlib.figure.Figure"]},"sunspots.plot.Plot.save@sunspots.plot.Trend":{"items":[{"on":"sunspots.plot.Trend","site":0,"to":"sunspots.plot.Trend.draw"}],"made_from":["ext:matplotlib.figure.Figure"]},"sunspots.plot.Trend":{"items":[{"to":"sunspots.plot.Trend.draw"}],"made_from":["ext:matplotlib.figure.Figure"]},"sunspots.plot.Trend.draw":{"items":[{"site":0,"to":"op:Figure"},{"site":1,"to":"op:add_subplot"}]},"sunspots.plot.Trend.draw@sunspots.plot.Trend":{"items":[{"site":0,"to":"op:Figure"},{"site":1,"to":"op:add_subplot"}]},"sunspots.series.load":{"items":[{"site":0,"to":"op:read_csv"},{"site":1,"to":"op:table[[\"year\", \"month\"]].assign"},{"site":2,"to":"op:to_datetime"},{"site":3,"to":"op:table.set_index(first_days)[[\"mean\", \"std\", \"observations\"]].dropna"}]},"sunspots.series.smooth":{"items":[{"site":0,"to":"op:frame[\"mean\"].rolling"},{"site":1,"to":"op:frame[\"mean\"].rolling(months, center=True).mean"}]}},"drawn":{"sunspots.download.download":[{"place":{"glyph":"web","id":"w:Web:www.sidc.be","label":"Web(www.sidc.be)","short":"www.sidc.be"},"side":"in","verb":"GETs"},{"place":{"file":"data/raw/","glyph":"file","id":"w:File:data/raw/","label":"File(data/raw/)","short":"data/raw/"},"side":"out","verb":"creates"},{"place":{"file":"data/raw/sunspots.csv","glyph":"file","id":"w:File:data/raw/sunspots.csv","label":"File(data/raw/sunspots.csv)","short":"data/raw/sunspots.csv"},"side":"out","verb":"writes"},{"place":{"glyph":"web","id":"w:Web","label":"Web","short":"Web"},"side":"in","verb":"GETs"},{"place":{"coarse":{"glyph":"file","id":"w:Disk:out","label":"Disk out","short":"Disk out"},"glyph":"file","group":"w:Disk","id":"w:Disk:to.parent","label":"Disk(to.parent)","short":"to.parent"},"side":"out","verb":"creates"},{"place":{"coarse":{"glyph":"file","id":"w:Disk:out","label":"Disk out","short":"Disk out"},"glyph":"file","group":"w:Disk","id":"w:Disk:to","label":"Disk(to)","short":"to"},"side":"out","verb":"writes"}],"sunspots.plot.Plot.save":[{"place":{"file":"figures/","glyph":"file","id":"w:File:figures/","label":"File(figures/)","short":"figures/"},"side":"out","verb":"creates"},{"place":{"file":"figures/sunspots.png","glyph":"file","id":"w:File:figures/sunspots.png","label":"File(figures/sunspots.png)","short":"figures/sunspots.png"},"side":"out","verb":"writes"},{"place":{"coarse":{"glyph":"file","id":"w:Disk:out","label":"Disk out","short":"Disk out"},"glyph":"file","group":"w:Disk","id":"w:Disk:to.parent","label":"Disk(to.parent)","short":"to.parent"},"side":"out","verb":"creates"},{"place":{"file":"*.png","glyph":"file","id":"w:File:*.png","label":"File(*.png)","short":"*.png"},"side":"out","verb":"writes"}],"sunspots.series.load":[{"place":{"file":"data/raw/sunspots.csv","glyph":"file","id":"w:File:data/raw/sunspots.csv","label":"File(data/raw/sunspots.csv)","short":"data/raw/sunspots.csv"},"side":"in","verb":"reads"},{"place":{"file":"*.csv","glyph":"file","id":"w:File:*.csv","label":"File(*.csv)","short":"*.csv"},"side":"in","verb":"reads"}]},"types":{"doors":["ext:requests.Response"],"family":{"sunspots.settings.Settings":"sunspots.plot.Plot"},"kind":{},"makes":[["ext:matplotlib.figure.Figure",["sunspots.plot.Plot.draw","sunspots.plot.Trend.draw"]],["ext:pandas.DataFrame",["sunspots.series.load","sunspots.series.smooth"]],["sunspots.settings.Settings",["sunspots.cli.run"]],["sunspots.plot.Trend",["sunspots.cli.run"]]],"members":{"sunspots.plot.Plot":["sunspots.settings.Settings"]},"shared":{},"takes":[["sunspots.settings.Settings",["sunspots.plot.Plot.__init__"]],["ext:pandas.DataFrame",["sunspots.plot.Plot.draw","sunspots.plot.Plot.save","sunspots.plot.Trend.draw","sunspots.series.smooth"]]]},"units":{"kids":{},"tops":[["sunspots",["sunspots.cli","sunspots.download","sunspots.plot","sunspots.series","sunspots.settings"]]]}},"language":"python","make":[],"nodes":[{"doc":"Sunspots: SILSO's monthly mean sunspot number, downloaded, smoothed and drawn.","file":"/Users/rgrouls/.codex/worktrees/demo-effects-review/atlas/engine/tests/pairs/pipeline/python-clean/src/sunspots/__init__.py","id":"sunspots","is_pkg":true,"kind":"module","module":"sunspots","name":"sunspots","part":"sunspots","span":[1,9]},{"doc":"The command line: a run names the source and the files, and hands them down.","file":"/Users/rgrouls/.codex/worktrees/demo-effects-review/atlas/engine/tests/pairs/pipeline/python-clean/src/sunspots/cli.py","id":"sunspots.cli","kind":"module","module":"sunspots.cli","name":"cli","part":"sunspots","sites":[{"gives":[{"name":"app","type":"ext:typer.Typer"}],"line":16,"op":"Typer"}],"span":[1,25]},{"doc":"A file from the web, kept as it came.","file":"/Users/rgrouls/.codex/worktrees/demo-effects-review/atlas/engine/tests/pairs/pipeline/python-clean/src/sunspots/download.py","id":"sunspots.download","kind":"module","module":"sunspots.download","name":"download","part":"sunspots","span":[1,15]},{"doc":"Figures of a sunspot series: each kind of plot draws a figure, and every plot saves one.","file":"/Users/rgrouls/.codex/worktrees/demo-effects-review/atlas/engine/tests/pairs/pipeline/python-clean/src/sunspots/plot.py","id":"sunspots.plot","kind":"module","module":"sunspots.plot","name":"plot","part":"sunspots","span":[1,40]},{"doc":"The monthly mean sunspot number as a frame indexed by month.","file":"/Users/rgrouls/.codex/worktrees/demo-effects-review/atlas/engine/tests/pairs/pipeline/python-clean/src/sunspots/series.py","id":"sunspots.series","kind":"module","module":"sunspots.series","name":"series","part":"sunspots","span":[1,25]},{"doc":"The choices of a run that are not places: how far to smooth and how the figure looks.","file":"/Users/rgrouls/.codex/worktrees/demo-effects-review/atlas/engine/tests/pairs/pipeline/python-clean/src/sunspots/settings.py","id":"sunspots.settings","kind":"module","module":"sunspots.settings","name":"settings","part":"sunspots","span":[1,12]},{"decorators":["app.command()"],"doc":"Download SILSO's monthly sunspot numbers, smooth them and save their trend.","entry":{"kind":"cli","label":"run","options":["--raw","--figure","--months"]},"file":"/Users/rgrouls/.codex/worktrees/demo-effects-review/atlas/engine/tests/pairs/pipeline/python-clean/src/sunspots/cli.py","id":"sunspots.cli.run","kind":"function","module":"sunspots.cli","name":"run","params":[{"name":"raw","type":"Path"},{"name":"figure","type":"Path"},{"name":"months","type":"int"}],"part":"sunspots","returns":{"written":"None"},"sites":[{"gives":[{"name":"settings","type":"sunspots.settings.Settings"}],"line":22,"to":"sunspots.settings.Settings"},{"gives":[{"name":"#0","type":""}],"line":23,"to":"sunspots.download.download"},{"gives":[{"name":"#1","type":"ext:pandas.DataFrame"}],"hands":[{"name":"#0","type":""}],"line":23,"to":"sunspots.series.load"},{"gives":[{"name":"frame","type":"ext:pandas.DataFrame"}],"hands":[{"name":"settings","type":"sunspots.settings.Settings"},{"name":"#1","type":"ext:pandas.DataFrame"}],"line":23,"to":"sunspots.series.smooth"},{"gives":[{"name":"#2","type":"sunspots.plot.Trend"}],"hands":[{"name":"settings","type":"sunspots.settings.Settings"}],"line":24,"to":"sunspots.plot.Trend"},{"hands":[{"name":"frame","type":"ext:pandas.DataFrame"},{"name":"#2","type":"sunspots.plot.Trend"}],"line":24,"on":"sunspots.plot.Trend","to":"sunspots.plot.Plot.save"}],"span":[20,24]},{"doc":"Fetch `url` and write its body to `to`; returns `to`.","entry":{"kind":"export","label":"download"},"file":"/Users/rgrouls/.codex/worktrees/demo-effects-review/atlas/engine/tests/pairs/pipeline/python-clean/src/sunspots/download.py","id":"sunspots.download.download","instead":[{"kind":"net","line":10,"n":1,"op":"get","what":"url"},{"kind":"disk_write","line":12,"n":1,"op":"mkdir","what":"to.parent"},{"kind":"disk_write","line":13,"n":1,"op":"write_bytes","what":"to"}],"kind":"function","module":"sunspots.download","name":"download","params":[{"name":"url","type":"str"},{"name":"to","type":"Path"}],"part":"sunspots","returns":{"value":"Path","written":"Path"},"sites":[{"gives":[{"name":"response","type":"ext:requests.Response"}],"line":10,"op":"get"}],"span":[8,14],"touches":[{"artifact":"www.sidc.be","by":["sunspots.cli.run"],"kind":"net","line":10,"n":1,"op":"get","what":"url"},{"artifact":"data/raw/","by":["sunspots.cli.run"],"kind":"disk_write","line":12,"n":1,"op":"mkdir","what":"to.parent"},{"artifact":"data/raw/sunspots.csv","by":["sunspots.cli.run"],"kind":"disk_write","line":13,"n":1,"op":"write_bytes","what":"to"}]},{"cls":"sunspots.plot.Plot","ctor":true,"file":"/Users/rgrouls/.codex/worktrees/demo-effects-review/atlas/engine/tests/pairs/pipeline/python-clean/src/sunspots/plot.py","id":"sunspots.plot.Plot.__init__","kind":"method","module":"sunspots.plot","name":"__init__","params":[{"name":"self","receiver":true},{"name":"settings","type":"Settings"}],"part":"sunspots","private":true,"returns":{"written":"None"},"span":[15,16]},{"cls":"sunspots.plot.Plot","decorators":["abstractmethod"],"file":"/Users/rgrouls/.codex/worktrees/demo-effects-review/atlas/engine/tests/pairs/pipeline/python-clean/src/sunspots/plot.py","id":"sunspots.plot.Plot.draw","kind":"method","module":"sunspots.plot","name":"draw","params":[{"name":"self","receiver":true},{"name":"frame","type":"pd.DataFrame"}],"part":"sunspots","returns":{"value":"Figure","written":"Figure"},"span":[19,19]},{"cls":"sunspots.plot.Plot","doc":"Draw `frame` and write the figure to `to`.","file":"/Users/rgrouls/.codex/worktrees/demo-effects-review/atlas/engine/tests/pairs/pipeline/python-clean/src/sunspots/plot.py","id":"sunspots.plot.Plot.save","instead":[{"kind":"disk_write","line":24,"n":1,"op":"mkdir","what":"to.parent"},{"artifact":"*.png","kind":"disk_write","line":25,"n":1,"op":"savefig","what":"to"}],"kind":"method","module":"sunspots.plot","name":"save","params":[{"name":"self","receiver":true},{"name":"frame","type":"pd.DataFrame"},{"name":"to","type":"Path"}],"part":"sunspots","returns":{"written":"None"},"sites":[{"gives":[{"name":"figure","type":"ext:matplotlib.figure.Figure"}],"hands":[{"name":"frame","type":"ext:pandas.DataFrame"}],"line":23,"on_receiver":true,"to":"sunspots.plot.Plot.draw"}],"span":[21,25],"touches":[{"artifact":"figures/","by":["sunspots.cli.run"],"kind":"disk_write","line":24,"n":1,"op":"mkdir","what":"to.parent"},{"artifact":"figures/sunspots.png","by":["sunspots.cli.run"],"kind":"disk_write","line":25,"n":1,"op":"savefig","what":"to"}]},{"bases":["ABC"],"doc":"A figure drawn from a frame and saved as an image.","entry":{"kind":"export","label":"Plot"},"file":"/Users/rgrouls/.codex/worktrees/demo-effects-review/atlas/engine/tests/pairs/pipeline/python-clean/src/sunspots/plot.py","id":"sunspots.plot.Plot","kind":"class","methods":["__init__","draw","save"],"module":"sunspots.plot","name":"Plot","part":"sunspots","span":[12,25]},{"cls":"sunspots.plot.Trend","file":"/Users/rgrouls/.codex/worktrees/demo-effects-review/atlas/engine/tests/pairs/pipeline/python-clean/src/sunspots/plot.py","id":"sunspots.plot.Trend.draw","keeps":true,"kind":"method","module":"sunspots.plot","name":"draw","params":[{"name":"self","receiver":true},{"name":"frame","type":"pd.DataFrame"}],"part":"sunspots","returns":{"value":"Figure","written":"Figure"},"sites":[{"gives":[{"name":"figure","type":"ext:matplotlib.figure.Figure"}],"line":32,"op":"Figure"},{"gives":[{"name":"ax","type":"ext:matplotlib.Axes"}],"hands":[{"name":"figure","type":"ext:matplotlib.figure.Figure"}],"line":33,"op":"add_subplot"}],"span":[31,39]},{"bases":["Plot"],"doc":"The monthly means as a thin line, with their smoothed mean over them.","entry":{"kind":"export","label":"Trend"},"file":"/Users/rgrouls/.codex/worktrees/demo-effects-review/atlas/engine/tests/pairs/pipeline/python-clean/src/sunspots/plot.py","id":"sunspots.plot.Trend","kind":"class","methods":["draw"],"module":"sunspots.plot","name":"Trend","part":"sunspots","span":[28,39]},{"doc":"The months in SILSO's file at `path` that have a mean, indexed by their first day.","entry":{"kind":"export","label":"load"},"file":"/Users/rgrouls/.codex/worktrees/demo-effects-review/atlas/engine/tests/pairs/pipeline/python-clean/src/sunspots/series.py","id":"sunspots.series.load","instead":[{"artifact":"*.csv","kind":"disk_read","line":17,"n":1,"op":"read_csv","payload":"MISSING","what":"path"}],"kind":"function","module":"sunspots.series","name":"load","params":[{"name":"path","type":"Path"}],"part":"sunspots","returns":{"value":"pd.DataFrame","written":"pd.DataFrame"},"sites":[{"gives":[{"name":"table","type":"ext:pandas.DataFrame"}],"line":17,"op":"read_csv"},{"gives":[{"name":"#3","type":""}],"hands":[{"name":"table","type":"ext:pandas.DataFrame"}],"line":18,"op":"table[[\"year\", \"month\"]].assign"},{"gives":[{"name":"first_days","type":"ext:pandas.Series"}],"hands":[{"name":"#3","type":""}],"line":18,"op":"to_datetime"},{"hands":[{"name":"table","type":"ext:pandas.DataFrame"},{"name":"first_days","type":"ext:pandas.Series"}],"line":19,"op":"table.set_index(first_days)[[\"mean\", \"std\", \"observations\"]].dropna"}],"span":[15,19],"touches":[{"artifact":"data/raw/sunspots.csv","by":["sunspots.cli.run"],"kind":"disk_read","line":17,"n":1,"op":"read_csv","payload":"MISSING","what":"path"}]},{"doc":"`frame` with a `smoothed` column: the mean over `months` months, centred on each.","entry":{"kind":"export","label":"smooth"},"file":"/Users/rgrouls/.codex/worktrees/demo-effects-review/atlas/engine/tests/pairs/pipeline/python-clean/src/sunspots/series.py","id":"sunspots.series.smooth","kind":"function","module":"sunspots.series","name":"smooth","params":[{"name":"frame","type":"pd.DataFrame"},{"name":"months","type":"int"}],"part":"sunspots","returns":{"value":"pd.DataFrame","written":"pd.DataFrame"},"sites":[{"gives":[{"name":"#4","type":""}],"hands":[{"name":"frame","type":"ext:pandas.DataFrame"}],"line":24,"op":"frame[\"mean\"].rolling"},{"hands":[{"name":"#4","type":""}],"line":24,"op":"frame[\"mean\"].rolling(months, center=True).mean"}],"span":[22,24]},{"decorators":["dataclass(frozen=True)"],"entry":{"kind":"export","label":"Settings"},"file":"/Users/rgrouls/.codex/worktrees/demo-effects-review/atlas/engine/tests/pairs/pipeline/python-clean/src/sunspots/settings.py","id":"sunspots.settings.Settings","kind":"class","module":"sunspots.settings","name":"Settings","part":"sunspots","span":[7,11]},{"file":"","id":"ext:abc.ABC","kind":"external","module":"abc","name":"ABC","part":"sunspots"},{"file":"","id":"ext:pandas.DataFrame","kind":"external","module":"pandas","name":"DataFrame","part":"sunspots"},{"file":"","id":"ext:matplotlib.figure.Figure","kind":"external","module":"matplotlib.figure","name":"Figure","part":"sunspots"},{"file":"","id":"ext:typer.Typer","kind":"external","module":"typer","name":"Typer","part":"sunspots"},{"door":"net","file":"","id":"ext:requests.Response","kind":"external","module":"requests","name":"Response","part":"sunspots"},{"file":"","id":"ext:matplotlib.Axes","kind":"external","module":"matplotlib","name":"Axes","part":"sunspots"},{"file":"","id":"ext:pandas.Series","kind":"external","module":"pandas","name":"Series","part":"sunspots"}],"parts":[{"dir":"/Users/rgrouls/.codex/worktrees/demo-effects-review/atlas/engine/tests/pairs/pipeline/python-clean","id":"sunspots","language":"python","leaves":{"exports":true,"returns":true,"types":true}}],"project_root":"/Users/rgrouls/.codex/worktrees/demo-effects-review/atlas/engine/tests/pairs/pipeline/python-clean","root":"sunspots","stats":{"edges":{"calls":5,"contains":11,"has":1,"imports":12,"inherits":2,"instantiates":2,"returns":4,"takes":5},"modules":6,"nodes":{"class":3,"external":7,"function":4,"method":4,"module":6},"unresolved_calls":{"builtin":0,"library":0,"local":4,"unknown":0},"unresolved_calls_top":[["frame.rolling",2],["dropna",1],["table.assign",1]],"unresolved_calls_total":4},"view":{"open":{"functions":["sunspots.plot.Plot.save"]},"route":"sunspots.cli.run"}}}};
+window.DATA = {"atlas":"0.61.0 (32c71c2+)","projects":{"sunspots":{"edges":[{"dst":"sunspots.cli.run","kind":"contains","src":"sunspots.cli"},{"dst":"sunspots.download.download","kind":"contains","src":"sunspots.download"},{"dst":"sunspots.plot.Plot.__init__","kind":"contains","src":"sunspots.plot.Plot"},{"dst":"sunspots.plot.Plot.draw","kind":"contains","src":"sunspots.plot.Plot"},{"dst":"sunspots.plot.Plot.save","kind":"contains","src":"sunspots.plot.Plot"},{"dst":"sunspots.plot.Plot","kind":"contains","src":"sunspots.plot"},{"dst":"sunspots.plot.Trend.draw","kind":"contains","src":"sunspots.plot.Trend"},{"dst":"sunspots.plot.Trend","kind":"contains","src":"sunspots.plot"},{"dst":"sunspots.series.load","kind":"contains","src":"sunspots.series"},{"dst":"sunspots.series.smooth","kind":"contains","src":"sunspots.series"},{"dst":"sunspots.settings.Settings","kind":"contains","src":"sunspots.settings"},{"dst":"sunspots.download.download","kind":"imports","src":"sunspots"},{"dst":"sunspots.plot.Plot","kind":"imports","src":"sunspots"},{"dst":"sunspots.plot.Trend","kind":"imports","src":"sunspots"},{"dst":"sunspots.series.load","kind":"imports","src":"sunspots"},{"dst":"sunspots.series.smooth","kind":"imports","src":"sunspots"},{"dst":"sunspots.settings.Settings","kind":"imports","src":"sunspots"},{"dst":"sunspots.download.download","kind":"imports","src":"sunspots.cli"},{"dst":"sunspots.plot.Trend","kind":"imports","src":"sunspots.cli"},{"dst":"sunspots.series.load","kind":"imports","src":"sunspots.cli"},{"dst":"sunspots.series.smooth","kind":"imports","src":"sunspots.cli"},{"dst":"sunspots.settings.Settings","kind":"imports","src":"sunspots.cli"},{"dst":"sunspots.settings.Settings","kind":"imports","src":"sunspots.plot"},{"dst":"ext:abc.ABC","kind":"inherits","src":"sunspots.plot.Plot"},{"dst":"sunspots.plot.Plot","kind":"inherits","src":"sunspots.plot.Trend"},{"dst":"sunspots.settings.Settings","kind":"takes","src":"sunspots.plot.Plot.__init__"},{"dst":"ext:pandas.DataFrame","kind":"takes","src":"sunspots.plot.Plot.draw"},{"dst":"ext:matplotlib.figure.Figure","kind":"returns","src":"sunspots.plot.Plot.draw"},{"dst":"ext:pandas.DataFrame","kind":"takes","src":"sunspots.plot.Plot.save"},{"dst":"ext:pandas.DataFrame","kind":"takes","src":"sunspots.plot.Trend.draw"},{"dst":"ext:matplotlib.figure.Figure","kind":"returns","src":"sunspots.plot.Trend.draw"},{"dst":"ext:pandas.DataFrame","kind":"returns","src":"sunspots.series.load"},{"dst":"ext:pandas.DataFrame","kind":"takes","src":"sunspots.series.smooth"},{"dst":"ext:pandas.DataFrame","kind":"returns","src":"sunspots.series.smooth"},{"dst":"sunspots.settings.Settings","kind":"has","src":"sunspots.plot.Plot","via":"settings"},{"dst":"sunspots.settings.Settings","kind":"instantiates","src":"sunspots.cli.run"},{"dst":"sunspots.download.download","kind":"calls","src":"sunspots.cli.run","uses":true},{"dst":"sunspots.series.load","kind":"calls","src":"sunspots.cli.run","uses":true},{"dst":"sunspots.series.smooth","kind":"calls","src":"sunspots.cli.run","uses":true},{"dst":"sunspots.plot.Trend","kind":"instantiates","src":"sunspots.cli.run"},{"dst":"sunspots.plot.Plot.save","kind":"calls","src":"sunspots.cli.run"},{"dst":"sunspots.plot.Plot.draw","kind":"calls","src":"sunspots.plot.Plot.save","uses":true}],"files":{"/Users/rgrouls/code/packages/atlas/engine/tests/pairs/pipeline/python-clean/src/sunspots/__init__.py":"\"\"\"Sunspots: SILSO's monthly mean sunspot number, downloaded, smoothed and drawn.\"\"\"\n\nfrom sunspots.download import download\nfrom sunspots.plot import Plot, Trend\nfrom sunspots.series import load, smooth\nfrom sunspots.settings import Settings\n\n__all__ = [\"Plot\", \"Settings\", \"Trend\", \"download\", \"load\", \"smooth\"]\n","/Users/rgrouls/code/packages/atlas/engine/tests/pairs/pipeline/python-clean/src/sunspots/cli.py":"\"\"\"The command line: a run names the source and the files, and hands them down.\"\"\"\n\nfrom pathlib import Path\n\nimport typer\n\nfrom sunspots.download import download\nfrom sunspots.plot import Trend\nfrom sunspots.series import load, smooth\nfrom sunspots.settings import Settings\n\nSILSO = \"https://www.sidc.be/SILSO/DATA/SN_m_tot_V2.0.csv\"\nRAW = Path(\"data/raw/sunspots.csv\")\nFIGURE = Path(\"figures/sunspots.png\")\n\napp = typer.Typer()\n\n\n@app.command()\ndef run(raw: Path = RAW, figure: Path = FIGURE, months: int = 13) -> None:\n    \"\"\"Download SILSO's monthly sunspot numbers, smooth them and save their trend.\"\"\"\n    settings = Settings(months=months)\n    frame = smooth(load(download(SILSO, raw)), settings.months)\n    Trend(settings).save(frame, figure)\n","/Users/rgrouls/code/packages/atlas/engine/tests/pairs/pipeline/python-clean/src/sunspots/download.py":"\"\"\"A file from the web, kept as it came.\"\"\"\n\nfrom pathlib import Path\n\nimport requests\n\n\ndef download(url: str, to: Path) -> Path:\n    \"\"\"Fetch `url` and write its body to `to`; returns `to`.\"\"\"\n    response = requests.get(url, timeout=30)\n    response.raise_for_status()\n    to.parent.mkdir(parents=True, exist_ok=True)\n    to.write_bytes(response.content)\n    return to\n","/Users/rgrouls/code/packages/atlas/engine/tests/pairs/pipeline/python-clean/src/sunspots/plot.py":"\"\"\"Figures of a sunspot series: each kind of plot draws a figure, and every plot saves one.\"\"\"\n\nfrom abc import ABC, abstractmethod\nfrom pathlib import Path\n\nimport pandas as pd\nfrom matplotlib.figure import Figure\n\nfrom sunspots.settings import Settings\n\n\nclass Plot(ABC):\n    \"\"\"A figure drawn from a frame and saved as an image.\"\"\"\n\n    def __init__(self, settings: Settings) -> None:\n        self.settings = settings\n\n    @abstractmethod\n    def draw(self, frame: pd.DataFrame) -> Figure: ...\n\n    def save(self, frame: pd.DataFrame, to: Path) -> None:\n        \"\"\"Draw `frame` and write the figure to `to`.\"\"\"\n        figure = self.draw(frame)\n        to.parent.mkdir(parents=True, exist_ok=True)\n        figure.savefig(to, dpi=self.settings.dpi)\n\n\nclass Trend(Plot):\n    \"\"\"The monthly means as a thin line, with their smoothed mean over them.\"\"\"\n\n    def draw(self, frame: pd.DataFrame) -> Figure:\n        figure = Figure(figsize=self.settings.size, layout=\"constrained\")\n        ax = figure.add_subplot()\n        ax.plot(frame.index, frame[\"mean\"], color=\"0.7\", linewidth=0.6, label=\"monthly mean\")\n        ax.plot(frame.index, frame[\"smoothed\"], color=\"C0\", label=f\"{self.settings.months}-month mean\")\n        ax.set_title(self.settings.title)\n        ax.set_ylabel(\"sunspot number\")\n        ax.legend()\n        return figure\n","/Users/rgrouls/code/packages/atlas/engine/tests/pairs/pipeline/python-clean/src/sunspots/series.py":"\"\"\"The monthly mean sunspot number as a frame indexed by month.\n\nSILSO's file has no header; its columns are separated by semicolons, and a month without an\nobservation has `-1` for its mean.\n\"\"\"\n\nfrom pathlib import Path\n\nimport pandas as pd\n\nCOLUMNS = [\"year\", \"month\", \"decimal_date\", \"mean\", \"std\", \"observations\", \"definitive\"]\nMISSING = -1\n\n\ndef load(path: Path) -> pd.DataFrame:\n    \"\"\"The months in SILSO's file at `path` that have a mean, indexed by their first day.\"\"\"\n    table = pd.read_csv(path, sep=\";\", header=None, names=COLUMNS, skipinitialspace=True, na_values=[MISSING])\n    first_days = pd.to_datetime(table[[\"year\", \"month\"]].assign(day=1))\n    return table.set_index(first_days)[[\"mean\", \"std\", \"observations\"]].dropna(subset=[\"mean\"])\n\n\ndef smooth(frame: pd.DataFrame, months: int) -> pd.DataFrame:\n    \"\"\"`frame` with a `smoothed` column: the mean over `months` months, centred on each.\"\"\"\n    return frame.assign(smoothed=frame[\"mean\"].rolling(months, center=True).mean())\n","/Users/rgrouls/code/packages/atlas/engine/tests/pairs/pipeline/python-clean/src/sunspots/settings.py":"\"\"\"The choices of a run that are not places: how far to smooth and how the figure looks.\"\"\"\n\nfrom dataclasses import dataclass\n\n\n@dataclass(frozen=True)\nclass Settings:\n    months: int = 13\n    title: str = \"Monthly mean total sunspot number\"\n    size: tuple[float, float] = (10.0, 4.0)\n    dpi: int = 150\n"},"findings":[],"flow":{"arrows":{"sunspots.cli.run":{"reads_back":["w:File:data/raw/sunspots.csv"]},"sunspots.download.download":{"gives_back":true,"returns_value":true},"sunspots.plot.Plot":{"gives":["sunspots.plot.Plot"],"takes":["sunspots.settings.Settings"]},"sunspots.plot.Plot.__init__":{"builds":"sunspots.plot.Plot","takes":["sunspots.settings.Settings"]},"sunspots.plot.Plot.draw":{"gives":["ext:matplotlib.figure.Figure"],"gives_back":true,"receiver":"sunspots.plot.Plot","returns_value":true,"takes":["ext:pandas.DataFrame"]},"sunspots.plot.Plot.save":{"receiver":"sunspots.plot.Plot","takes":["ext:pandas.DataFrame"]},"sunspots.plot.Trend":{"gives":["sunspots.plot.Trend"],"takes":["sunspots.settings.Settings"]},"sunspots.plot.Trend.draw":{"gives":["ext:matplotlib.figure.Figure"],"gives_back":true,"receiver":"sunspots.plot.Trend","returns_value":true,"takes":["ext:pandas.DataFrame"]},"sunspots.series.load":{"gives":["ext:pandas.DataFrame"],"gives_back":true,"returns_value":true},"sunspots.series.smooth":{"gives":["ext:pandas.DataFrame"],"gives_back":true,"returns_value":true,"takes":["ext:pandas.DataFrame"]},"sunspots.settings.Settings":{"gives":["sunspots.settings.Settings"]}},"bodies":{"sunspots.cli":{"items":[{"site":0,"to":"op:Typer"}]},"sunspots.cli.run":{"items":[{"site":0,"to":"sunspots.settings.Settings"},{"site":1,"to":"sunspots.download.download"},{"site":2,"to":"sunspots.series.load"},{"site":3,"to":"sunspots.series.smooth"},{"site":4,"to":"sunspots.plot.Trend"},{"on":"sunspots.plot.Trend","site":5,"to":"sunspots.plot.Plot.save"}],"made_from":["sunspots.settings.Settings","ext:pandas.DataFrame","ext:pandas.DataFrame","sunspots.plot.Trend"]},"sunspots.download.download":{"items":[{"site":0,"to":"op:get"}]},"sunspots.plot.Plot":{"items":[{"to":"sunspots.plot.Plot.__init__"},{"to":"sunspots.plot.Plot.draw"},{"to":"sunspots.plot.Plot.save"}],"made_from":["ext:matplotlib.figure.Figure"]},"sunspots.plot.Plot.draw":{"alts":["sunspots.plot.Trend.draw"],"items":[],"made_from":["ext:matplotlib.figure.Figure"]},"sunspots.plot.Plot.save":{"items":[{"site":0,"to":"sunspots.plot.Plot.draw"}],"made_from":["ext:matplotlib.figure.Figure"]},"sunspots.plot.Plot.save@sunspots.plot.Trend":{"items":[{"on":"sunspots.plot.Trend","site":0,"to":"sunspots.plot.Trend.draw"}],"made_from":["ext:matplotlib.figure.Figure"]},"sunspots.plot.Trend":{"items":[{"to":"sunspots.plot.Trend.draw"}],"made_from":["ext:matplotlib.figure.Figure"]},"sunspots.plot.Trend.draw":{"items":[{"site":0,"to":"op:Figure"},{"site":1,"to":"op:add_subplot"}]},"sunspots.plot.Trend.draw@sunspots.plot.Trend":{"items":[{"site":0,"to":"op:Figure"},{"site":1,"to":"op:add_subplot"}]},"sunspots.series.load":{"items":[{"site":0,"to":"op:read_csv"},{"site":1,"to":"op:table[[\"year\", \"month\"]].assign"},{"site":2,"to":"op:to_datetime"},{"site":3,"to":"op:table.set_index(first_days)[[\"mean\", \"std\", \"observations\"]].dropna"}]},"sunspots.series.smooth":{"items":[{"site":0,"to":"op:frame[\"mean\"].rolling"},{"site":1,"to":"op:frame[\"mean\"].rolling(months, center=True).mean"}]}},"drawn":{"sunspots.download.download":[{"place":{"glyph":"web","id":"w:Web:www.sidc.be","label":"Web(www.sidc.be)","short":"www.sidc.be"},"side":"in","verb":"GETs"},{"place":{"file":"data/raw/sunspots.csv","glyph":"file","id":"w:File:data/raw/sunspots.csv","label":"File(data/raw/sunspots.csv)","short":"data/raw/sunspots.csv"},"side":"out","verb":"writes"},{"place":{"glyph":"web","id":"w:Web","label":"Web","short":"Web"},"side":"in","verb":"GETs"},{"place":{"coarse":{"glyph":"file","id":"w:Disk:out","label":"into disk","short":"into disk"},"glyph":"file","group":"w:Disk","id":"w:Disk:to","label":"Disk(to)","short":"to"},"side":"out","verb":"writes"}],"sunspots.plot.Plot.save":[{"place":{"file":"figures/sunspots.png","glyph":"file","id":"w:File:figures/sunspots.png","label":"File(figures/sunspots.png)","short":"figures/sunspots.png"},"side":"out","verb":"writes"},{"place":{"file":"*.png","glyph":"file","id":"w:File:*.png","label":"File(*.png)","short":"*.png"},"side":"out","verb":"writes"}],"sunspots.series.load":[{"place":{"file":"data/raw/sunspots.csv","glyph":"file","id":"w:File:data/raw/sunspots.csv","label":"File(data/raw/sunspots.csv)","short":"data/raw/sunspots.csv"},"side":"in","verb":"reads"},{"place":{"file":"*.csv","glyph":"file","id":"w:File:*.csv","label":"File(*.csv)","short":"*.csv"},"side":"in","verb":"reads"}]},"types":{"doors":["ext:requests.Response"],"family":{"sunspots.settings.Settings":"sunspots.plot.Plot"},"kind":{},"makes":[["ext:matplotlib.figure.Figure",["sunspots.plot.Plot.draw","sunspots.plot.Trend.draw"]],["ext:pandas.DataFrame",["sunspots.series.load","sunspots.series.smooth"]],["sunspots.settings.Settings",["sunspots.cli.run"]],["sunspots.plot.Trend",["sunspots.cli.run"]]],"members":{"sunspots.plot.Plot":["sunspots.settings.Settings"]},"shared":{},"takes":[["sunspots.settings.Settings",["sunspots.plot.Plot.__init__"]],["ext:pandas.DataFrame",["sunspots.plot.Plot.draw","sunspots.plot.Plot.save","sunspots.plot.Trend.draw","sunspots.series.smooth"]]]},"units":{"kids":{},"tops":[["sunspots",["sunspots.cli","sunspots.download","sunspots.plot","sunspots.series","sunspots.settings"]]]}},"language":"python","make":[],"nodes":[{"doc":"Sunspots: SILSO's monthly mean sunspot number, downloaded, smoothed and drawn.","file":"/Users/rgrouls/code/packages/atlas/engine/tests/pairs/pipeline/python-clean/src/sunspots/__init__.py","id":"sunspots","is_pkg":true,"kind":"module","module":"sunspots","name":"sunspots","part":"sunspots","span":[1,9]},{"doc":"The command line: a run names the source and the files, and hands them down.","file":"/Users/rgrouls/code/packages/atlas/engine/tests/pairs/pipeline/python-clean/src/sunspots/cli.py","id":"sunspots.cli","kind":"module","module":"sunspots.cli","name":"cli","part":"sunspots","sites":[{"gives":[{"name":"app","type":"ext:typer.Typer"}],"line":16,"op":"Typer"}],"span":[1,25]},{"doc":"A file from the web, kept as it came.","file":"/Users/rgrouls/code/packages/atlas/engine/tests/pairs/pipeline/python-clean/src/sunspots/download.py","id":"sunspots.download","kind":"module","module":"sunspots.download","name":"download","part":"sunspots","span":[1,15]},{"doc":"Figures of a sunspot series: each kind of plot draws a figure, and every plot saves one.","file":"/Users/rgrouls/code/packages/atlas/engine/tests/pairs/pipeline/python-clean/src/sunspots/plot.py","id":"sunspots.plot","kind":"module","module":"sunspots.plot","name":"plot","part":"sunspots","span":[1,40]},{"doc":"The monthly mean sunspot number as a frame indexed by month.","file":"/Users/rgrouls/code/packages/atlas/engine/tests/pairs/pipeline/python-clean/src/sunspots/series.py","id":"sunspots.series","kind":"module","module":"sunspots.series","name":"series","part":"sunspots","span":[1,25]},{"doc":"The choices of a run that are not places: how far to smooth and how the figure looks.","file":"/Users/rgrouls/code/packages/atlas/engine/tests/pairs/pipeline/python-clean/src/sunspots/settings.py","id":"sunspots.settings","kind":"module","module":"sunspots.settings","name":"settings","part":"sunspots","span":[1,12]},{"decorators":["app.command()"],"doc":"Download SILSO's monthly sunspot numbers, smooth them and save their trend.","entry":{"kind":"cli","label":"run","options":["--raw","--figure","--months"]},"file":"/Users/rgrouls/code/packages/atlas/engine/tests/pairs/pipeline/python-clean/src/sunspots/cli.py","id":"sunspots.cli.run","kind":"function","module":"sunspots.cli","name":"run","params":[{"name":"raw","type":"Path"},{"name":"figure","type":"Path"},{"name":"months","type":"int"}],"part":"sunspots","returns":{"written":"None"},"sites":[{"gives":[{"name":"settings","type":"sunspots.settings.Settings"}],"line":22,"to":"sunspots.settings.Settings"},{"gives":[{"name":"#0","type":""}],"line":23,"to":"sunspots.download.download"},{"gives":[{"name":"#1","type":"ext:pandas.DataFrame"}],"hands":[{"name":"#0","type":""}],"line":23,"to":"sunspots.series.load"},{"gives":[{"name":"frame","type":"ext:pandas.DataFrame"}],"hands":[{"name":"settings","type":"sunspots.settings.Settings"},{"name":"#1","type":"ext:pandas.DataFrame"}],"line":23,"to":"sunspots.series.smooth"},{"gives":[{"name":"#2","type":"sunspots.plot.Trend"}],"hands":[{"name":"settings","type":"sunspots.settings.Settings"}],"line":24,"to":"sunspots.plot.Trend"},{"hands":[{"name":"frame","type":"ext:pandas.DataFrame"},{"name":"#2","type":"sunspots.plot.Trend"}],"line":24,"on":"sunspots.plot.Trend","to":"sunspots.plot.Plot.save"}],"span":[20,24]},{"doc":"Fetch `url` and write its body to `to`; returns `to`.","entry":{"kind":"export","label":"download"},"file":"/Users/rgrouls/code/packages/atlas/engine/tests/pairs/pipeline/python-clean/src/sunspots/download.py","id":"sunspots.download.download","instead":[{"kind":"net","line":10,"n":1,"op":"get","what":"url"},{"kind":"disk_write","line":13,"n":1,"op":"write_bytes","what":"to"}],"kind":"function","module":"sunspots.download","name":"download","params":[{"name":"url","type":"str"},{"name":"to","type":"Path"}],"part":"sunspots","returns":{"value":"Path","written":"Path"},"sites":[{"gives":[{"name":"response","type":"ext:requests.Response"}],"line":10,"op":"get"}],"span":[8,14],"touches":[{"artifact":"www.sidc.be","by":["sunspots.cli.run"],"kind":"net","line":10,"n":1,"op":"get","what":"url"},{"artifact":"data/raw/sunspots.csv","by":["sunspots.cli.run"],"kind":"disk_write","line":13,"n":1,"op":"write_bytes","what":"to"}]},{"cls":"sunspots.plot.Plot","ctor":true,"file":"/Users/rgrouls/code/packages/atlas/engine/tests/pairs/pipeline/python-clean/src/sunspots/plot.py","id":"sunspots.plot.Plot.__init__","kind":"method","module":"sunspots.plot","name":"__init__","params":[{"name":"self","receiver":true},{"name":"settings","type":"Settings"}],"part":"sunspots","private":true,"returns":{"written":"None"},"span":[15,16]},{"cls":"sunspots.plot.Plot","decorators":["abstractmethod"],"file":"/Users/rgrouls/code/packages/atlas/engine/tests/pairs/pipeline/python-clean/src/sunspots/plot.py","id":"sunspots.plot.Plot.draw","kind":"method","module":"sunspots.plot","name":"draw","params":[{"name":"self","receiver":true},{"name":"frame","type":"pd.DataFrame"}],"part":"sunspots","returns":{"value":"Figure","written":"Figure"},"span":[19,19]},{"cls":"sunspots.plot.Plot","doc":"Draw `frame` and write the figure to `to`.","file":"/Users/rgrouls/code/packages/atlas/engine/tests/pairs/pipeline/python-clean/src/sunspots/plot.py","id":"sunspots.plot.Plot.save","instead":[{"artifact":"*.png","kind":"disk_write","line":25,"n":1,"op":"savefig","what":"to"}],"kind":"method","module":"sunspots.plot","name":"save","params":[{"name":"self","receiver":true},{"name":"frame","type":"pd.DataFrame"},{"name":"to","type":"Path"}],"part":"sunspots","returns":{"written":"None"},"sites":[{"gives":[{"name":"figure","type":"ext:matplotlib.figure.Figure"}],"hands":[{"name":"frame","type":"ext:pandas.DataFrame"}],"line":23,"on_receiver":true,"to":"sunspots.plot.Plot.draw"}],"span":[21,25],"touches":[{"artifact":"figures/sunspots.png","by":["sunspots.cli.run"],"kind":"disk_write","line":25,"n":1,"op":"savefig","what":"to"}]},{"bases":["ABC"],"doc":"A figure drawn from a frame and saved as an image.","entry":{"kind":"export","label":"Plot"},"file":"/Users/rgrouls/code/packages/atlas/engine/tests/pairs/pipeline/python-clean/src/sunspots/plot.py","id":"sunspots.plot.Plot","kind":"class","methods":["__init__","draw","save"],"module":"sunspots.plot","name":"Plot","part":"sunspots","span":[12,25]},{"cls":"sunspots.plot.Trend","file":"/Users/rgrouls/code/packages/atlas/engine/tests/pairs/pipeline/python-clean/src/sunspots/plot.py","id":"sunspots.plot.Trend.draw","keeps":true,"kind":"method","module":"sunspots.plot","name":"draw","params":[{"name":"self","receiver":true},{"name":"frame","type":"pd.DataFrame"}],"part":"sunspots","returns":{"value":"Figure","written":"Figure"},"sites":[{"gives":[{"name":"figure","type":"ext:matplotlib.figure.Figure"}],"line":32,"op":"Figure"},{"gives":[{"name":"ax","type":"ext:matplotlib.Axes"}],"hands":[{"name":"figure","type":"ext:matplotlib.figure.Figure"}],"line":33,"op":"add_subplot"}],"span":[31,39]},{"bases":["Plot"],"doc":"The monthly means as a thin line, with their smoothed mean over them.","entry":{"kind":"export","label":"Trend"},"file":"/Users/rgrouls/code/packages/atlas/engine/tests/pairs/pipeline/python-clean/src/sunspots/plot.py","id":"sunspots.plot.Trend","kind":"class","methods":["draw"],"module":"sunspots.plot","name":"Trend","part":"sunspots","span":[28,39]},{"doc":"The months in SILSO's file at `path` that have a mean, indexed by their first day.","entry":{"kind":"export","label":"load"},"file":"/Users/rgrouls/code/packages/atlas/engine/tests/pairs/pipeline/python-clean/src/sunspots/series.py","id":"sunspots.series.load","instead":[{"artifact":"*.csv","kind":"disk_read","line":17,"n":1,"op":"read_csv","payload":"MISSING","what":"path"}],"kind":"function","module":"sunspots.series","name":"load","params":[{"name":"path","type":"Path"}],"part":"sunspots","returns":{"value":"pd.DataFrame","written":"pd.DataFrame"},"sites":[{"gives":[{"name":"table","type":"ext:pandas.DataFrame"}],"line":17,"op":"read_csv"},{"gives":[{"name":"#3","type":""}],"hands":[{"name":"table","type":"ext:pandas.DataFrame"}],"line":18,"not_followed":true,"op":"table[[\"year\", \"month\"]].assign"},{"gives":[{"name":"first_days","type":"ext:pandas.Series"}],"hands":[{"name":"#3","type":""}],"line":18,"op":"to_datetime"},{"hands":[{"name":"table","type":"ext:pandas.DataFrame"},{"name":"first_days","type":"ext:pandas.Series"}],"line":19,"not_followed":true,"op":"table.set_index(first_days)[[\"mean\", \"std\", \"observations\"]].dropna"}],"span":[15,19],"touches":[{"artifact":"data/raw/sunspots.csv","by":["sunspots.cli.run"],"kind":"disk_read","line":17,"n":1,"op":"read_csv","payload":"MISSING","what":"path"}]},{"doc":"`frame` with a `smoothed` column: the mean over `months` months, centred on each.","entry":{"kind":"export","label":"smooth"},"file":"/Users/rgrouls/code/packages/atlas/engine/tests/pairs/pipeline/python-clean/src/sunspots/series.py","id":"sunspots.series.smooth","kind":"function","module":"sunspots.series","name":"smooth","params":[{"name":"frame","type":"pd.DataFrame"},{"name":"months","type":"int"}],"part":"sunspots","returns":{"value":"pd.DataFrame","written":"pd.DataFrame"},"sites":[{"gives":[{"name":"#4","type":""}],"hands":[{"name":"frame","type":"ext:pandas.DataFrame"}],"line":24,"not_followed":true,"op":"frame[\"mean\"].rolling"},{"hands":[{"name":"#4","type":""}],"line":24,"not_followed":true,"op":"frame[\"mean\"].rolling(months, center=True).mean"}],"span":[22,24]},{"decorators":["dataclass(frozen=True)"],"entry":{"kind":"export","label":"Settings"},"file":"/Users/rgrouls/code/packages/atlas/engine/tests/pairs/pipeline/python-clean/src/sunspots/settings.py","id":"sunspots.settings.Settings","kind":"class","module":"sunspots.settings","name":"Settings","part":"sunspots","span":[7,11]},{"file":"","id":"ext:abc.ABC","kind":"external","module":"abc","name":"ABC","part":"sunspots"},{"file":"","id":"ext:pandas.DataFrame","kind":"external","module":"pandas","name":"DataFrame","part":"sunspots"},{"file":"","id":"ext:matplotlib.figure.Figure","kind":"external","module":"matplotlib.figure","name":"Figure","part":"sunspots"},{"file":"","id":"ext:typer.Typer","kind":"external","module":"typer","name":"Typer","part":"sunspots"},{"door":"net","file":"","id":"ext:requests.Response","kind":"external","module":"requests","name":"Response","part":"sunspots"},{"file":"","id":"ext:matplotlib.Axes","kind":"external","module":"matplotlib","name":"Axes","part":"sunspots"},{"file":"","id":"ext:pandas.Series","kind":"external","module":"pandas","name":"Series","part":"sunspots"}],"parts":[{"dir":"/Users/rgrouls/code/packages/atlas/engine/tests/pairs/pipeline/python-clean","id":"sunspots","language":"python","leaves":{"exports":true,"returns":true,"types":true}}],"project_root":"/Users/rgrouls/code/packages/atlas/engine/tests/pairs/pipeline/python-clean","root":"sunspots","stats":{"edges":{"calls":5,"contains":11,"has":1,"imports":12,"inherits":2,"instantiates":2,"returns":4,"takes":5},"modules":6,"nodes":{"class":3,"external":7,"function":4,"method":4,"module":6},"unresolved_calls":{"builtin":0,"library":0,"local":4,"unknown":0},"unresolved_calls_top":[["frame.rolling",2],["dropna",1],["table.assign",1]],"unresolved_calls_total":4},"view":{"open":{"functions":["sunspots.plot.Plot.save"]},"route":"sunspots.cli.run"}}}};
 </script>
 <script>
 (function(){
@@ -484,11 +493,12 @@ window.addEventListener("resize", () => { if (!userZoomed) fit(); });
   window.addEventListener("mousemove", e => { if (!drag) return; const w = Math.max(360, Math.min(window.innerWidth - 420, window.innerWidth - e.clientX)); document.documentElement.style.setProperty("--aside-w", w + "px"); });
   window.addEventListener("mouseup", () => { if (drag) { drag = false; document.body.style.cursor = ""; if (!userZoomed) fit(); } }); }
 let defs = el("defs", {}, svg.node());
-// the code panel can be closed; the canvas takes the width, and the choice is remembered in this browser
+// the code panel opens on demand (space shows the code over the picture); opened, the canvas gives it
+// room, and the choice is remembered in this browser
 { const app = document.getElementById("app"), btn = document.getElementById("codetoggle");
   const set = open => { app.classList.toggle("noaside", !open); btn.textContent = open ? "hide code" : "show code"; try { localStorage.setItem("atlas.code", open ? "1" : "0"); } catch {} };
   let saved = null; try { saved = localStorage.getItem("atlas.code"); } catch {}
-  set(saved !== "0");
+  set(saved === "1");
   btn.onclick = () => { set(app.classList.contains("noaside")); if (!userZoomed) setTimeout(() => fit(true), 30); }; }
 
 // every key and click on one card: `?` opens and closes it, Esc or a click beside it closes it
@@ -659,6 +669,12 @@ async function renderSig() {
 // ---------- routes: entry points, their steps, and the world they touch ----------
 // where a touch rests, which side of its step it stands on and what it does there: the engine says
 const isIn = t => t.side === "in";
+// the code does not say which way the data goes
+const isOpen = t => t.side === "open";
+// which way a step goes at each place it touches, by the place the engine names: what makes a
+// place's shape goes no way
+const go = (goes, t) => { if (t.shape) return; const k = t.place.id; if (!goes.has(k)) goes.set(k, new Set()); goes.get(k).add(isOpen(t) ? "open" : isIn(t) ? "read" : "write"); };
+const joinGoes = (into, from) => from?.forEach((s, k) => { if (!into.has(k)) into.set(k, new Set()); s.forEach(x => into.get(k).add(x)); });
 const verbOf = t => t.verb;
 const KIND_LABEL = {make: "Make", cli: "CLI", script: "Script", route: "API", mcp: "MCP", notebook: "Notebook", export: "Library", test: "Test"}, KIND_ORDER = ["make", "cli", "export", "script", "notebook", "route", "mcp", "test"];
 const entries = [...byId.values()].filter(n => n.entry).sort((a, b) => (partRank(a) - partRank(b)) || (KIND_ORDER.indexOf(a.entry.kind) - KIND_ORDER.indexOf(b.entry.kind)) || a.entry.label.localeCompare(b.entry.label));
@@ -1106,6 +1122,24 @@ async function renderPlaat() {
   const restLinks = new Map();  // in a focus: unit -> the types it takes from the rest and hands to it
   const addPlace = p => { if (!places.has(p.id)) places.set(p.id, p); return p.id; };
   const worldPlace = t => worldPlaceOf(t, true);
+  // the routes drawn, and what each finds where it reads: what was there before it ran, not what it
+  // wrote itself
+  const anchors = V.route ? [V.route] : overviewEntries().map(e => e.id);
+  const found = new Set(), content = {places: new Set(), files: new Set(), dbs: new Set()};
+  for (const a of anchors) {
+    const back = new Set(arrowOf(a)?.reads_back || []);
+    for (const t of reach(a, null, a).touches) {
+      if (t.shape || isOpen(t)) continue;
+      content.places.add(t.place.id);
+      if (t.place.file) content.files.add(t.place.file);
+      if (t.kind.startsWith("db_")) content.dbs.add(t.kind);
+      if (isIn(t) && !back.has(t.place.id)) found.add(t.place.id);
+    }
+  }
+  // a place's shape (a directory made, a table created) and a connection opened without a way serve
+  // the data the route reads or writes there: of a file, in a directory; of a database, any table
+  const inDir = dir => [...content.files].some(f => f.startsWith(dir));
+  const served = t => (t.shape || isOpen(t)) && (t.kind.startsWith("db_") ? content.dbs.has(t.kind) : !!t.place.file && (content.places.has(t.place.id) || (t.place.file.endsWith("/") && inDir(t.place.file))));
   // a type is a place of its own while its moments are counted; then a closed one stands in its kind.
   // The kind is the type's (its base class), not the view's: the route's subject is its own
   const kindKey = k => k.startsWith("t:") && places.get(k)?.type ? "t:" + (places.get(k).type === V.route ? V.route : kindOf(places.get(k).type)) : k;
@@ -1118,10 +1152,10 @@ async function renderPlaat() {
   const morphism = (id, own, isAnchor, noReceiver, opts = {}) => {
     if (id.startsWith("part:")) return partMorphism(id.slice(5), own);
     if (id.startsWith("unit:")) return unitMorphism(id.slice(5), own);
-    const f = byId.get(id), dom = [], cod = [];  // [placeId, reach]
-    if (!f) return {dom: new Map(), cod: new Map()};
+    const f = byId.get(id), dom = [], cod = [], goes = new Map();  // [placeId, reach]
+    if (!f) return {dom: new Map(), cod: new Map(), goes};
     if (isAnchor && f.entry) dom.push([addPlace(entryPlace(id)), false]);
-    const merge = r => { r.dom.forEach((v, k) => dom.push([k, v])); r.cod.forEach((v, k) => cod.push([k, v])); };
+    const merge = r => { r.dom.forEach((v, k) => dom.push([k, v])); r.cod.forEach((v, k) => cod.push([k, v])); joinGoes(goes, r.goes); };
     if (f.kind === "class" && f.entry && !V.route) {
       // a library class among all routes: what it is built from and what its public methods take and hand on,
       // together; inside a route, building one is a step like any constructor, handing on what it builds
@@ -1147,21 +1181,24 @@ async function renderPlaat() {
     }
     const root = V.route || (f.entry ? f.id : null);
     const ownKeys = new Set(touchesIn(f, root).map(touchKey));
+    // what the step reads back of what it wrote is no input: the place is in its codomain only
+    const back = new Set((own ? arrowOf(f.id)?.own_reads_back : arrowOf(f.id)?.reads_back) || []);
     for (const raw of (own ? touchesIn(f, root) : reach(f.id, opts.on, root).touches)) {
       const tc = shownAs(raw);
-      if (!drawn(tc)) continue;
+      if (!drawn(tc) || served(raw) || (isIn(raw) && !raw.shape && back.has(raw.place.id))) continue;
+      go(goes, tc);
       // each call that makes a figure makes one: a figure of its own on the screen
       const p = raw.kind === "figure" && tc.kind === "screen" && opts.figure ? figurePlace(opts.figure, opts.label) : worldPlace(tc);
       (isIn(tc) ? dom : cod).push([addPlace(p), !ownKeys.has(touchKey(raw))]);
     }
     const sig = arr => { const m = new Map(); for (const [p, r] of arr) m.set(p, (m.has(p) ? m.get(p) : true) && r); return m; };
-    return {dom: sig(dom), cod: sig(cod)};
+    return {dom: sig(dom), cod: sig(cod), goes};
   };
   // a part: the routes it serves over HTTP come in through its own place, the routes of other
   // parts it requests go out to theirs; closed, it also reaches whatever its routes reach
   const httpPlace = p => ({id: "w:Web:http:" + p, label: `HTTP(${p})`, short: `HTTP(${p})`, kind: "world"});
   const partMorphism = (p, own) => {
-    const dom = new Map(), cod = new Map();
+    const dom = new Map(), cod = new Map(), goes = new Map();
     if (entries.some(e => has(e) && partOf(e) === p && e.entry.kind === "route" && /^[A-Z|]+ \//.test(e.entry.label))) dom.set(addPlace(httpPlace(p)), false);
     for (const e of D.edges) if (e.kind === "requests" && has(e)) {
       const a = partOf(byId.get(e.src) || {}), b = partOf(byId.get(e.dst) || {});
@@ -1171,18 +1208,26 @@ async function renderPlaat() {
       const r = morphism(e.id, false, false);
       r.dom.forEach((v, k) => { if (!k.startsWith("t:") && !dom.has(k)) dom.set(k, true); });
       r.cod.forEach((v, k) => { if (!k.startsWith("t:") && !cod.has(k)) cod.set(k, true); });
+      joinGoes(goes, r.goes);
     }
-    return {dom, cod};
+    return {dom, cod, goes};
   };
   // a unit, closed: the places its own code touches (not what it reaches through other units), and
   // the types that cross its edge: in where it takes what another unit makes, out where it makes what
   // another unit takes
   const unitMorphism = (u, own) => {
-    const dom = new Map(), cod = new Map();
-    if (own) return {dom, cod};
+    const dom = new Map(), cod = new Map(), goes = new Map();
+    if (own) return {dom, cod, goes};
     // the rest of the code, seen from a focus, is joined to it by counted arrows, not by boxes
-    if (isRest(u)) return {dom, cod};
-    for (const n of byId.values()) if (inUnit(n.id, u) && has(n)) for (const tc of (n.touches || []).filter(has)) if (drawn(tc)) (isIn(tc) ? dom : cod).set(addPlace(worldPlace(tc)), false);
+    if (isRest(u)) return {dom, cod, goes};
+    for (const n of byId.values()) if (inUnit(n.id, u) && has(n)) {
+      const back = new Set(arrowOf(n.id)?.own_reads_back || []);
+      for (const tc of (n.touches || []).filter(has)) {
+        if (!drawn(tc) || served(tc) || (isIn(tc) && !tc.shape && back.has(tc.place.id))) continue;
+        go(goes, tc);
+        (isIn(tc) ? dom : cod).set(addPlace(worldPlace(tc)), false);
+      }
+    }
     // a type crossing the unit's edge is a joint drawn as a box; in a focus, only when another unit in
     // the focus is on its other side, and an arrow from or to the rest otherwise
     const inside = id => inUnit(id, u), theirs = xs => [...(xs || [])].filter(x => !inside(x) && byId.has(x));
@@ -1195,7 +1240,7 @@ async function renderPlaat() {
     };
     for (const [t, takers] of usesOf().takes) if (isData(t) && [...takers].some(inside)) side(usesOf().makes.get(t), dom, "in", t);
     for (const [t, makers] of usesOf().makes) if (isData(t) && [...makers].some(inside)) side(usesOf().takes.get(t), cod, "out", t);
-    return {dom, cod};
+    return {dom, cod, goes};
   };
   // a result with no place of its own (a str, a dict) goes back to the step that called it
   const handsBack = (id, cod) => !/^(part|unit|op):/.test(id) && !!arrowOf(id)?.returns_value && ![...cod.keys()].some(p => p.startsWith("t:"));
@@ -1213,7 +1258,7 @@ async function renderPlaat() {
     const info = treeInfo.get(key);
     if (!info) return morphism(key, own, isAnchor);
     const {step, on, site, fed} = info, dn = new Map(), cn = new Map();
-    const m = step.startsWith("op:") ? {dom: new Map(), cod: new Map()} : morphism(step, own, isAnchor, false, {on, figure: key, label: stepLabel(key)});
+    const m = step.startsWith("op:") ? {dom: new Map(), cod: new Map(), goes: new Map()} : morphism(step, own, isAnchor, false, {on, figure: key, label: stepLabel(key)});
     if (site && !own) {
       // a value whose type ty does not know is still the value its name holds; a value no name holds
       // (`#3`, one call's result handed straight to the next) is drawn without one
@@ -1234,7 +1279,7 @@ async function renderPlaat() {
         for (const k of m.cod.keys()) if (held && kindKey(k) === kind && !cn.has(k)) cn.set(k, dn.get(held));
       }
     }
-    return {dom: m.dom, cod: m.cod, dn, cn};
+    return {dom: m.dom, cod: m.cod, dn, cn, goes: m.goes};
   };
   // build the nested picture: frames for open steps, pills for closed ones (siblings with the same places are one pill)
   const pills = new Map(), frames = new Map();  // id -> {...}
@@ -1248,11 +1293,11 @@ async function renderPlaat() {
       const fid = "n:" + node.id, kids = [];
       frames.set(fid, {id: fid, step: node.id, parent, hue: node.hue, choice: node.choice, anchor: node.id === V.route, title: (node.id === V.route ? entryTitle(node.id) : stepLabel(node.id)) + (node.choice ? " · one of" : "")});
       const lib = libraryClass(stepOf(node.id));
-      const own = lib || node.id.startsWith("unit:") ? {dom: new Map(), cod: new Map()} : stepMorphism(node.id, true, node.id === V.route);
+      const own = lib || node.id.startsWith("unit:") ? {dom: new Map(), cod: new Map(), goes: new Map()} : stepMorphism(node.id, true, node.id === V.route);
       const back = node.kids.flatMap(k => build(k, fid, lib && node.id === V.route ? node.id : null));
       if (own.dom.size || own.cod.size || (back.length && !lib && !node.id.startsWith("unit:"))) {
         const oid = "o:" + node.id;
-        pills.set(oid, {id: oid, steps: [node.id], D: own.dom, C: own.cod, dn: own.dn, cn: own.cn, parent: fid, hue: node.hue, own: true});
+        pills.set(oid, {id: oid, steps: [node.id], D: own.dom, C: own.cod, dn: own.dn, cn: own.cn, goes: own.goes, parent: fid, hue: node.hue, own: true});
         for (const b of back) b.backTo = oid;
       }
       return [];
@@ -1261,7 +1306,7 @@ async function renderPlaat() {
     if (caller) m.dom.set(addPlace(entryPlace(caller)), false);
     // a unit stands even when nothing crosses its edge, so that it can be opened
     if (!m.dom.size && !m.cod.size && !hb && !node.id.startsWith("unit:")) return [];
-    const pill = {id: "n:" + node.id, steps: [node.id], D: m.dom, C: m.cod, dn: m.dn, cn: m.cn, parent, hue: node.hue};
+    const pill = {id: "n:" + node.id, steps: [node.id], D: m.dom, C: m.cod, dn: m.dn, cn: m.cn, goes: m.goes || new Map(), parent, hue: node.hue};
     pills.set(pill.id, pill);
     return hb ? [pill] : [];
   };
@@ -1335,7 +1380,16 @@ async function renderPlaat() {
   };
   const toShown = m => { const out = new Map(); m.forEach((r, k) => { const k2 = standsAt(k); out.set(k2, out.has(k2) ? out.get(k2) && r : r); }); return out; };
   for (const P of pills.values()) { P.D = toShown(P.D); P.C = toShown(P.C); }
-  return {places, pills, frames, restArrows};
+  // what the steps do at each place of the world: read it, write it, go there without saying which
+  // way; whether a route finds what it reads there; whether a step that reads it hands something on
+  const roles = new Map();
+  const role = k => { if (!roles.has(k)) roles.set(k, {reads: false, writes: false, open: false, used: false, found: found.has(k)}); return roles.get(k); };
+  for (const P of pills.values()) for (const [k, s] of P.goes || []) {
+    const r = role(k);
+    r.reads ||= s.has("read"); r.writes ||= s.has("write"); r.open ||= s.has("open");
+    if (s.has("read")) r.used ||= !!P.backTo || [...P.C.keys()].some(c => c !== k);
+  }
+  return {places, pills, frames, restArrows, roles};
   };
   // two readings as one picture: each planned by itself, then the union of the two, every place,
   // pill, frame and line knowing the readings that hold it. A thing named otherwise in A reads
@@ -1356,11 +1410,12 @@ async function renderPlaat() {
       places.set(id, p);
     }
     for (const id of interleave([...A.pills.keys()], [...B.pills.keys()])) {
-      const a = A.pills.get(id), b = B.pills.get(id), P = {...(b || a), sides: sidesOf(a, b), D: new Map(), C: new Map(), Ds: new Map(), Cs: new Map()};
+      const a = A.pills.get(id), b = B.pills.get(id), P = {...(b || a), sides: sidesOf(a, b), D: new Map(), C: new Map(), Ds: new Map(), Cs: new Map(), goes: new Map()};
       for (const [s, q] of [["a", a], ["b", b]]) {
         if (!q) continue;
         for (const [m, ms, from] of [[P.D, P.Ds, q.D], [P.C, P.Cs, q.C]]) from.forEach((r, k) => { m.set(k, m.has(k) ? m.get(k) && r : r); if (!ms.has(k)) ms.set(k, new Set()); ms.get(k).add(s); });
         if (q.backTo) P.backTo = q.backTo;
+        joinGoes(P.goes, q.goes);
       }
       pills.set(id, P);
     }
@@ -1375,9 +1430,11 @@ async function renderPlaat() {
       if (!rest.has(k)) rest.set(k, [r, at, way, new Set(), new Set()]);
       ts.forEach(t => rest.get(k)[3].add(t)); rest.get(k)[4].add(s);
     }
-    return {places, pills, frames, restArrows: [...rest.values()]};
+    const roles = new Map(A.roles);
+    for (const [k, r] of B.roles) { const q = roles.get(k); roles.set(k, q ? Object.fromEntries(Object.keys(r).map(f => [f, q[f] || r[f]])) : r); }
+    return {places, pills, frames, restArrows: [...rest.values()], roles};
   };
-  const {places, pills, frames, restArrows} = DIFF ? unite() : plan();
+  const {places, pills, frames, restArrows, roles} = DIFF ? unite() : plan();
   // Storage quotients are computed on the visible fiber. A singleton keeps its concrete
   // expression; an opened quotient retains a frame around the same members.
   const storage = new Map(), worldFrames = new Map(), worldParent = new Map();
@@ -1392,7 +1449,7 @@ async function renderPlaat() {
     // A symbolic place used both ways is one place, rather than a member of two
     // directional quotients. Its identity stays visible at this zoom.
     if (disk && ways.size > 1) continue;
-    const way = [...ways][0], c = disk ? {...p.coarse, id: "w:Disk:" + way, label: "Disk " + way} : p.coarse;
+    const way = [...ways][0], c = disk ? {...p.coarse, id: "w:Disk:" + way, label: way === "in" ? "from disk" : "into disk"} : p.coarse;
     if (!storage.has(c.id)) storage.set(c.id, {id: c.id, label: c.label, group: p.group, kids: new Set()});
     storage.get(c.id).kids.add(p.id);
   }
@@ -1439,7 +1496,7 @@ async function renderPlaat() {
     const key = (P.parent || "") + "|" + [...P.D.keys()].sort() + ">" + [...P.C.keys()].sort() + "|" + (P.backTo || "") + "|" + [...(P.sides || [])].sort() + "|" + stepChanged(P.steps);
     const Q = merged.get(key);
     if (!Q) { merged.set(key, P); continue; }
-    Q.steps.push(...P.steps); P.D.forEach((r, k) => Q.D.set(k, Q.D.get(k) && r)); P.C.forEach((r, k) => Q.C.set(k, Q.C.get(k) && r));
+    Q.steps.push(...P.steps); P.D.forEach((r, k) => Q.D.set(k, Q.D.get(k) && r)); P.C.forEach((r, k) => Q.C.set(k, Q.C.get(k) && r)); joinGoes(Q.goes, P.goes);
     for (const [qs, ps] of [[Q.Ds, P.Ds], [Q.Cs, P.Cs]]) ps?.forEach((s, k) => qs.set(k, new Set([...(qs.get(k) || []), ...s])));
     pills.delete(P.id);
   }
@@ -1576,18 +1633,58 @@ async function renderPlaat() {
   const leaf = (id, w, h, opts) => { const n = {id, width: w, height: h, layoutOptions: opts || {}}; nodeOf.set(id, n); return n; };
   const frameNode = (id, padTop) => { const n = {id, children: [], layoutOptions: {"elk.padding": `[top=${padTop},left=14,bottom=14,right=14]`}}; nodeOf.set(id, n); return n; };
   const root = {id: "root", children: [], edges: []};
+  // a place that stands twice is `from X` on the left and `into X` on the right
+  const TWIN = " ⇄", sideLabel = p => p.way ? `${p.way} ${p.label}` : p.label;
   const sideOf = id => { const us = worldFrames.has(id) ? [...worldFrames.get(id).kids].map(k => used.get(k) || {}) : [used.get(id) || {}]; const i = us.some(u => u.in), o = us.some(u => u.out); return i && !o ? "in" : o && !i ? "out" : "both"; };
   const worldIds = [...places.values()].filter(p => p.kind === "world" && keep.has(p.id) && !worldParent.has(p.id)).map(p => p.id).concat([...worldFrames.keys()]);
   const sortWorld = ids => ids.sort((a, b) => (a.startsWith("e:") ? -1 : 0) - (b.startsWith("e:") ? -1 : 0) || (placeKind(a) || "").localeCompare(placeKind(b) || "") || a.localeCompare(b));
   const worldNode = (id, constraint) => {
     const F = worldFrames.get(id), opts = constraint ? {"elk.layered.layering.layerConstraint": constraint} : {};
-    if (!F) return leaf(id, placeW(places.get(id), 40), 36, opts);
+    if (!F) return leaf(id, placeW({...places.get(id), label: sideLabel(places.get(id)) + (places.get(id).twin ? TWIN : "")}, 40), 36, opts);
     const n = frameNode(id, 36); Object.assign(n.layoutOptions, opts);
-    n.layoutOptions["elk.nodeSize.minimum"] = `(${textW(F.label) + 50},70)`;
+    n.layoutOptions["elk.nodeSize.minimum"] = `(${textW(sideLabel(F) + (F.twin ? TWIN : "")) + 50},70)`;
     for (const k of F.kids) n.children.push(leaf(k, placeW(places.get(k), 40), 36));
     return n;
   };
-  for (const id of sortWorld(worldIds.filter(id => sideOf(id) === "in" || id.startsWith("e:")))) root.children.push(worldNode(id, "FIRST_SEPARATE"));
+  // where each place of the world stands, by what the route does with its content: left what it
+  // finds and uses, right what it leaves there, between the steps what one leaves for a later one to
+  // use. A place it uses and changes stands twice, `from X ⇄` on the left and `into X ⇄` on the
+  // right; one the code goes to without saying which way stands between
+  const finesOf = id => {
+    const p = places.get(id);
+    if (p?.members) return p.members;
+    if (p?.folded) return [...dirFold.to].filter(([, d]) => d === p.folded).map(([f]) => "w:File:" + f);
+    return [id];
+  };
+  const roleOf = id => {
+    const rs = (worldFrames.has(id) ? [...worldFrames.get(id).kids] : [id]).flatMap(finesOf).map(k => roles.get(k)).filter(Boolean), any = f => rs.some(r => r[f]);
+    if (any("reads") && any("writes")) return any("found") ? "both" : any("used") ? "mid" : "out";
+    if (any("reads")) return "in";
+    if (any("writes")) return "out";
+    if (any("open")) return "mid";
+    return {in: "in", out: "out"}[sideOf(id)] || "mid";
+  };
+  const roleAt = new Map(worldIds.map(id => [id, id.startsWith("e:") ? "in" : roleOf(id)])), twinOf = new Map();
+  for (const [id, r] of roleAt) {
+    if (r !== "both") continue;
+    const tw = id + TWIN, F = worldFrames.get(id);
+    if (F) {
+      // an opened database: what is read of it stands in the one, what is written in the other
+      const T = {...F, id: tw, kids: new Set(), way: "into", twin: id};
+      for (const k of [...F.kids]) {
+        if ([...pills.values()].some(P => P.C.has(k))) { places.set(k + TWIN, {...places.get(k), id: k + TWIN}); placeGlyph.set(k + TWIN, placeKind(k)); T.kids.add(k + TWIN); worldParent.set(k + TWIN, tw); twinOf.set(k, k + TWIN); }
+        if (![...pills.values()].some(P => P.D.has(k))) F.kids.delete(k);
+      }
+      Object.assign(F, {way: "from", twin: tw});
+      worldFrames.set(tw, T);
+    } else {
+      places.set(tw, {...places.get(id), id: tw, way: "into", twin: id}); placeGlyph.set(tw, placeKind(id));
+      Object.assign(places.get(id), {way: "from", twin: tw});
+      twinOf.set(id, tw);
+    }
+    roleAt.set(tw, "out");
+  }
+  for (const id of sortWorld([...roleAt.keys()].filter(id => ["in", "both"].includes(roleAt.get(id))))) root.children.push(worldNode(id, "FIRST_SEPARATE"));
   // steps: frames hold their own steps, in call order
   const holder = pid => pid ? nodeOf.get(pid) : root;
   for (const F of frames.values()) { const n = frameNode(F.id, 34); (F.parent ? null : root.children.push(n)); }
@@ -1626,8 +1723,11 @@ async function renderPlaat() {
   };
   for (const p of [...places.values()].filter(p => (p.kind === "type" || p.kind === "ext") && keep.has(p.id) && !p.inFrame).sort((a, b) => a.label.localeCompare(b.label))) homeOf(p.id).children.push(leaf(p.id, placeW(p, 30), 36));
   for (const F of famFrames.values()) { const n = frameNode(F.id, 30); homeOf(F.id).children.push(n); for (const k of F.kids) n.children.push(leaf(k.id, 26 + textW(k.label, 6.9), 28)); }
-  for (const id of sortWorld(worldIds.filter(id => sideOf(id) === "both"))) root.children.push(worldNode(id));
-  for (const id of sortWorld(worldIds.filter(id => sideOf(id) === "out" && !id.startsWith("e:")))) root.children.push(worldNode(id, "LAST_SEPARATE"));
+  // a place one step leaves for a later one, or one the code does not say which way it goes, lives
+  // like memory in the smallest open step that holds every step using it
+  for (const [id, F] of worldFrames) usersOf.set(id, [...F.kids].flatMap(k => usersOf.get(k) || []));
+  for (const id of sortWorld([...roleAt.keys()].filter(id => roleAt.get(id) === "mid"))) homeOf(id).children.push(worldNode(id));
+  for (const id of sortWorld([...roleAt.keys()].filter(id => roleAt.get(id) === "out"))) root.children.push(worldNode(id, "LAST_SEPARATE"));
   // edges: data into a step and out of it, and results handed back to the caller
   const edgeInfo = new Map(), addEdge = (a, b, info) => {
     if (!nodeOf.has(a) || !nodeOf.has(b) || a === b) return;
@@ -1640,7 +1740,10 @@ async function renderPlaat() {
   for (const [a, b, hue, sides] of wires) addEdge(a, b, {hue, sides});
   for (const P of pills.values()) {
     P.D.forEach((r, k) => addEdge(k, P.id, {reach: r, hue: P.hue, sides: P.Ds?.get(k)}));
-    P.C.forEach((r, k) => addEdge(P.id, k, {reach: r, hue: P.hue, sides: P.Cs?.get(k)}));
+    P.C.forEach((r, k) => {
+      const gs = finesOf(k).map(f => P.goes?.get(f)).filter(Boolean), open = gs.some(g => g.has("open")) && !gs.some(g => g.has("read") || g.has("write"));
+      addEdge(P.id, twinOf.get(k) || k, {reach: r, hue: P.hue, sides: P.Cs?.get(k), ...(open ? {label: "?", title: "the code does not say which way the data goes"} : {})});
+    });
     if (P.backTo) addEdge(P.id, P.backTo, {back: true, hue: P.hue, sides: P.sides});
   }
   // a focus and the rest of the code: one arrow each way per unit, counting the types that cross
@@ -1716,16 +1819,26 @@ async function renderPlaat() {
   const parentOf = new Map(); const walkPar = n => { for (const c of n.children || []) { parentOf.set(c.id, n.id); walkPar(c); } }; walkPar(layout);
   const focused = V.focus.size && !V.route && !V.kind;
   el("text", {class: "route-title", x: 20, y: 24}, g).textContent = V.route ? `Route · ${entryTitle(V.route)}` : V.kind ? `All ${KIND_LABEL[V.kind]} routes` : focused ? `Focus · ${[...V.focus].sort().map(unitLabel).join(", ")}` : V.part ? `${V.part} by package` : multi ? `${PARTS.length} parts` : `${D.root} by package`;
-  el("text", {class: "route-sub", x: 20, y: 41}, g).textContent = V.route ? `${short(V.route)} · what it reads on the left, what it writes on the right · click a pill to open it, a frame's title to close it, double-click a box to pin its lines`
+  el("text", {class: "route-sub", x: 20, y: 41}, g).textContent = V.route ? `${short(V.route)} · what it finds on the left, what it leaves on the right · click a pill to open it, a frame's title to close it, double-click a box to pin its lines`
     : focused ? "the packages in focus, the types that cross between them and the places they touch; the rest of the code on either side · shift-click a package to add or drop it"
-    : multi && !V.part && !V.kind ? "each part from what it reads to what it writes; one part's requests are another's HTTP · click a part to open it"
-    : !V.kind ? "each package from what its own code reads to what it writes, joined by the types that cross between packages; a dotted line where one only calls another · click a package to open it, shift-click to focus on it, double-click a box to pin its lines"
-    : "each route from what it reads to what it writes · click a route to open it";
+    : multi && !V.part && !V.kind ? "each part from what it finds to what it leaves; one part's requests are another's HTTP · click a part to open it"
+    : !V.kind ? "each package from what its own code finds to what it leaves, joined by the types that cross between packages; a dotted line where one only calls another · click a package to open it, shift-click to focus on it, double-click a box to pin its lines"
+    : "each route from what it finds to what it leaves · click a route to open it";
   if (!pos.size) el("text", {class: "route-sub", x: 20, y: 70}, g).textContent = "No step on this route takes or hands on a place: it calls nothing that does. Pick another route.";
   const fg = el("g", {}, g), eg = el("g", {}, g), ng = el("g", {}, g), ig = el("g", {class: "interior-ports"}, g);
   // pointing at a box or a pill lights up its lines and what is at their other ends; the versions of
   // one type light up together, so a type can be followed through the route
-  const nodeEls = new Map(), edgeEls = [], base = id => id.split("@")[0];
+  const nodeEls = new Map(), edgeEls = [], base = id => id.split("@")[0].replace(/ ⇄$/, "");
+  const goTo = id => {
+    const q = pos.get(id); if (!q) return;
+    const t0 = d3.zoomTransform(svg.node()), t1 = d3.zoomIdentity.translate(svg.node().clientWidth / 2 - t0.k * (q.x + q.w / 2), svg.node().clientHeight / 2 - t0.k * (q.y + q.h / 2)).scale(t0.k);
+    if (DUR) svg.transition().duration(DUR).call(zoom.transform, t1); else svg.call(zoom.transform, t1);
+  };
+  const twinLink = (text, other) => {
+    const t = el("tspan", {class: "twin"}, text); t.textContent = TWIN;
+    el("title", {}, t).textContent = "the same place, on the other side";
+    t.addEventListener("click", ev => { ev.stopPropagation(); goTo(other); });
+  };
   const light = id => {
     const ids = new Set([...nodeEls.keys()].filter(k => base(k) === base(id))), lit = new Set(ids);
     for (const k of worldFrames.get(id)?.kids || []) { ids.add(k); lit.add(k); }
@@ -1765,7 +1878,8 @@ async function renderPlaat() {
     const P = pos.get(F.id), kind = placeKind([...F.kids][0]);
     const grp = el("g", {class: "frame storage", "data-id": F.id, "data-group": F.group}, fg);
     el("rect", {class: "bg", width: P.w, height: P.h, style: `stroke:var(--k-${kind});fill:var(--panel)`}, grp);
-    const title = el("text", {class: "ftitle", x: 14, y: 22}, grp); title.textContent = "▾ " + F.label;
+    const title = el("text", {class: "ftitle", x: 14, y: 22}, grp); title.textContent = "▾ " + sideLabel(F);
+    if (F.twin) twinLink(title, F.twin);
     title.addEventListener("click", ev => { ev.stopPropagation(); V.open.places.delete(F.group); plaatAnchor = F.id.slice(6); render(); });
     pointable(grp, F.id);
     place(grp, F.id);
@@ -1885,7 +1999,8 @@ async function renderPlaat() {
     if (kind) glyphAt(grp, kind, 11, Q.h / 2 - 7);
     else if (p.kind !== "ref") el("rect", {x: 0, y: 0, width: 5, height: Q.h, fill: p.hue || hueOf(null)}, grp);
     const label = el("text", {class: "title", x: kind ? 32 : 15, y: Q.h / 2 + 4}, grp);
-    label.textContent = p.label;
+    label.textContent = sideLabel(p);
+    if (p.twin) twinLink(label, p.twin);
     if (DIFF) {
       const st = placeStanding(p), entry = p.id.startsWith("e:") && byId.get(p.id.slice(2));
       marked(grp, st, Q.w + 3, wasOf(st, p.id, entry ? (() => { SIDE = "a"; try { return entryLabel(entry); } finally { SIDE = null; } })() : p.standsFor ? null : DIFF.was[p.id]));
@@ -2171,7 +2286,7 @@ function legend() {
   if (!legendHelp) return;
   const help = html("div", "help");
   help.innerHTML = view === "plaat"
-    ? `<span class="k">left: what the route only reads · right: what it only writes · boxes with a coloured strip are types in memory; (n): click to open it into the n types it stands for and holds</span><span class="k">pill = a step, from what it takes to what it hands on · ▸ opens it into a frame · a frame's title closes it · one of: alternatives, each branch in its own colour (the overrides a call may run, or the arms of an if, a match or an or-else) · dashed: happens inside a closed step · dotted: a result handed back</span>`
+    ? `<span class="k">left: what the route finds and uses · right: what it leaves · between steps: what one leaves for a later one · from X ⇄ and into X ⇄: one place it uses and changes · ?: the code does not say which way · boxes with a coloured strip are types in memory; (n): click to open it into the n types it stands for and holds</span><span class="k">pill = a step, from what it takes to what it hands on · ▸ opens it into a frame · a frame's title closes it · one of: alternatives, each branch in its own colour (the overrides a call may run, or the arms of an if, a match or an or-else) · dashed: happens inside a closed step · dotted: a result handed back</span>`
     : view === "types"
     ? `<span class="k"><i style="display:inline-block;width:18px;height:10px;border:1px dashed currentColor;border-radius:0"></i>external base</span><span class="k"><b style="font-family:var(--mono)">nƒ</b> methods</span>`
     : `<span class="k">node = type · arrow = functions A → B · width = how many</span><span class="k"><svg width="26" height="8"><path d="M0,4 H26" stroke="currentColor" stroke-dasharray="2 3"/></svg>has-a (fields)</span>`;
@@ -2364,21 +2479,25 @@ function report() {
   clearTimeout(reportTimer);
   reportTimer = setTimeout(() => {
     const boxes = [...PICTURE.boxes.keys()].map(boxOf);
-    const lines = PICTURE.lines.map(e => ({from: boxOf(e.a).label, to: boxOf(e.b).label, kind: e.kind}));
+    const lines = PICTURE.lines.map(e => ({from: boxOf(e.a).label, to: boxOf(e.b).label, kind: e.kind, on: `${e.a}>${e.b}`}));
     post("/api/shown", {view: viewData(), selected: selected || "", boxes, lines}).catch(() => {});
   }, 250);
 }
-// what the reader wrote, and what an agent answered; a closed note is history and not drawn
+// what the reader wrote, and whether an agent resolved it; a resolved note is shown while this
+// server runs, and the next one starts without it
 let NOTES = [];
 async function loadNotes() {
   try { NOTES = await (await fetch("/api/notes")).json(); markNotes(); } catch {}
 }
-// a note's mark: a numbered ring on the box or the line it is on, open, seen by an agent, or
-// answered; marks sit on what is drawn and move nothing
+// the notes on one box or line share one ring, numbered by how many wait: open while one waits for
+// an agent, dimmed when it has read them all, a ✓ once it resolved them all; marks sit on what is
+// drawn and move nothing
 function markNotes() {
   scene.node().querySelectorAll("g.note").forEach(x => x.remove());
-  for (const n of NOTES.filter(n => n.state !== "closed")) {
-    const [a, b] = n.on.includes(">") ? n.on.split(">") : [null, null];
+  const on = new Map();
+  for (const n of NOTES) { if (!on.has(n.on)) on.set(n.on, []); on.get(n.on).push(n); }
+  for (const [at, ns] of on) {
+    const [a, b] = at.includes(">") ? at.split(">") : [null, null];
     let parent, x, y;
     if (a) {
       const line = scene.node().querySelector(`path[data-a="${CSS.escape(a)}"][data-b="${CSS.escape(b)}"]`);
@@ -2386,44 +2505,89 @@ function markNotes() {
       const mid = line.getPointAtLength(line.getTotalLength() / 2);
       [parent, x, y] = [line.parentNode, mid.x, mid.y];
     } else {
-      const box = scene.node().querySelector(`[data-id="${CSS.escape(n.on)}"]`);
+      const box = scene.node().querySelector(`[data-id="${CSS.escape(at)}"]`);
       if (!box) continue;
       [parent, x, y] = [box, 0, 0];
     }
-    const m = el("g", {class: `note ${n.state}`, transform: `translate(${x},${y})`}, parent);
+    const waiting = ns.filter(n => n.state !== "resolved");
+    const state = !waiting.length ? "resolved" : waiting.every(n => n.state === "seen") ? "seen" : "open";
+    const m = el("g", {class: `note ${state}`, transform: `translate(${x},${y})`}, parent);
     el("circle", {r: 7}, m);
-    el("text", {y: 3}, m).textContent = n.id;
+    el("text", {y: 3}, m).textContent = waiting.length || "✓";
     m.addEventListener("mouseenter", () => {
-      const q = html("div", "f");
-      q.append(html("div", "at", `note ${n.id} · ${n.label} · ${n.state}`), html("div", "note-q", n.text));
-      if (n.answer) q.append(html("div", "note-a", n.answer));
-      askEl.replaceChildren(q);
+      askEl.replaceChildren(...ns.map(n => {
+        const q = html("div", "f");
+        const by = [n.commit && `in ${n.commit.slice(0, 7)}`, n.issue].filter(Boolean).join(" · ");
+        q.append(html("div", "at", `note ${n.id} · ${n.label} · ${n.state}${by ? " " + by : ""}`));
+        for (const line of n.text.split("\n")) q.append(html("div", "note-q", line));
+        return q;
+      }));
+      if (ns.some(n => n.state === "resolved")) askEl.append(html("div", "again", "alt-click it to open it again, with what is still unclear"));
       askEl.hidden = false;
       const r = m.getBoundingClientRect();
       askEl.style.left = Math.min(r.right + 10, innerWidth - askEl.offsetWidth - 8) + "px";
       askEl.style.top = Math.max(8, Math.min(r.top - 6, innerHeight - askEl.offsetHeight - 8)) + "px";
     });
-    // an answer is shown once: read, the note is closed
-    m.addEventListener("mouseleave", () => { hideAsks(); if (n.state === "answered") post("/api/notes/read", {id: n.id}).then(loadNotes).catch(() => {}); });
+    m.addEventListener("mouseleave", hideAsks);
   }
+}
+// what an agent points at, or a link names (`#…&at=`): a box by its id, a line as `from>to`. A box
+// not drawn is opened the way to, as jumping to a symbol does; what is drawn is selected, lit for a
+// moment and brought into sight
+async function point(at) {
+  const [a, b] = at.includes(">") ? at.split(">") : [null, null];
+  const find = () => (a
+    ? scene.node().querySelector(`path[data-a="${CSS.escape(a)}"][data-b="${CSS.escape(b)}"]`)
+    : scene.node().querySelector(`[data-id="${CSS.escape(at)}"]`));
+  if (!a && !find() && byId.has(at)) await jumpTo(byId.get(at));
+  const target = find();
+  if (!target) return;
+  if (!a && byId.has(at)) select(at);
+  target.classList.remove("pointed"); void target.getBBox(); target.classList.add("pointed");
+  setTimeout(() => target.classList.remove("pointed"), 2400);
+  if (!a) setTimeout(() => centre(at), SETTLED);
+}
+// the code changed: the server has drawn the page anew, and the page reloads to it, in the view it
+// was in. The route and what is opened are in the address; the tab, the selected box, the pinned
+// ones and where the picture stands are kept for the reload here
+let back = null;
+function redraw() {
+  const t = d3.zoomTransform(svg.node());
+  try { sessionStorage.setItem("atlas.redraw", JSON.stringify({view, selected, pinned: [...pinned], t: [t.x, t.y, t.k]})); } catch {}
+  location.reload();
+}
+function comeBack() {
+  if (!back) return;
+  if (back.selected && byId.has(back.selected)) select(back.selected);
+  for (const id of back.pinned || []) pinned.add(id);
+  if (pinned.size) { repaintPins(); crumbs(); }
+  svg.call(zoom.transform, d3.zoomIdentity.translate(back.t[0], back.t[1]).scale(back.t[2]));
 }
 // alt-click on a box or a line: a note on it, for the agent
 const noteEl = html("div"); noteEl.id = "notefield"; noteEl.hidden = true; document.body.appendChild(noteEl);
+// the field goes with Esc, wherever the focus is, with its ✕, and with a click beside it
+const dropNote = () => { noteEl.hidden = true; };
+document.addEventListener("keydown", ev => { if (ev.key === "Escape" && !noteEl.hidden) { dropNote(); ev.stopImmediatePropagation(); } }, true);
+document.addEventListener("mousedown", ev => { if (!noteEl.hidden && !noteEl.contains(ev.target)) dropNote(); }, true);
+// on a box or line with a resolved note, it opens that note again, with a new line
 function noteField(x, y, on, label) {
-  const ta = html("textarea");
-  ta.placeholder = "what do you see, or not understand, here?";
-  noteEl.replaceChildren(html("div", "on", `note on ${label}`), ta, html("div", "keys", "enter: keep · shift-enter: new line · esc: drop"));
+  const again = NOTES.filter(n => n.on === on && n.state === "resolved").at(-1)?.id;
+  const ta = html("textarea"), close = html("button", "x", "✕");
+  ta.placeholder = again ? "what is still unclear?" : "what do you see, or not understand, here?";
+  close.type = "button"; close.title = "drop the note (Esc)"; close.onclick = dropNote;
+  const head = html("div", "on", again ? `note ${again} on ${label}, again` : `note on ${label}`);
+  head.prepend(close);
+  noteEl.replaceChildren(head, ta, html("div", "keys", "enter: keep · shift-enter: new line · esc or a click beside it: drop"));
   noteEl.hidden = false;
   noteEl.style.left = Math.min(x + 8, innerWidth - 316) + "px";
   noteEl.style.top = Math.min(y + 8, innerHeight - 130) + "px";
   ta.focus();
   ta.onkeydown = ev => {
-    if (ev.key === "Escape") { noteEl.hidden = true; return; }
     if (ev.key !== "Enter" || ev.shiftKey) return;
     ev.preventDefault();
     const text = ta.value.trim();
     noteEl.hidden = true;
-    if (text) post("/api/notes", {on, label, view: viewData(), text}).then(loadNotes).catch(() => {});
+    if (text) (again ? post("/api/notes/reopen", {id: again, text}) : post("/api/notes", {on, label, view: viewData(), text})).then(loadNotes).catch(() => {});
   };
 }
 if (D.served) {
@@ -2438,22 +2602,54 @@ if (D.served) {
       noteField(ev.clientX, ev.clientY, box.dataset.id, id ? boxOf(id).label : box.dataset.id);
     }
   }, true);
-  // an agent's "look here": the view it asks for, taken once
+  // an agent's "look here": the view it asks for and what it points at there, taken once
   setInterval(async () => {
     try {
       const r = await fetch("/api/look");
       if (r.status !== 200) return;
-      setView(await r.json());
-      plaatFit = true;
-      if (view !== "plaat") document.querySelector('.tabs button[data-view="plaat"]')?.click(); else render();
+      const look = await r.json();
+      const {view: to, at} = "view" in look || "at" in look ? look : {view: look, at: null};
+      if (to) { setView(to); plaatFit = true; }
+      if (to || view !== "plaat") {
+        view = "plaat";
+        document.querySelectorAll(".tabs button").forEach(x => x.setAttribute("aria-selected", x.dataset.view === view));
+        await render();
+      }
+      if (at) point(at);
     } catch {}
   }, 1000);
   setInterval(loadNotes, 3000);
   loadNotes();
+  try { back = JSON.parse(sessionStorage.getItem("atlas.redraw")); sessionStorage.removeItem("atlas.redraw"); } catch {}
+  if (back) { view = back.view; document.querySelectorAll(".tabs button").forEach(x => x.setAttribute("aria-selected", x.dataset.view === view)); }
+  // the page follows the code, a moment after the server has drawn it; not while the reader writes a
+  // note or a symbol to jump to, when the header says that the code changed instead
+  const fresh = html("a", "histlink"); fresh.id = "fresh"; fresh.hidden = true;
+  fresh.onclick = redraw;
+  setInterval(async () => {
+    try {
+      const s = await (await fetch("/api/drawn")).json();
+      const ready = s.drawn && s.drawn !== D.drawn, busy = !noteEl.hidden || document.activeElement?.id === "search";
+      if (ready && !busy) return redraw();
+      fresh.hidden = !ready && !s.drawing;
+      fresh.textContent = ready ? "the code changed ↻" : "the code changed · drawing…";
+      fresh.title = ready ? "draw the page as the code is now, in this view" : "atlas serve is drawing the changed code; the page follows when it is done";
+    } catch {}
+  }, 1000);
+  // the history beside the page, from the same server
+  const hl = html("a", null, "history");
+  hl.id = "histlink"; hl.href = "/history"; hl.title = "the commits: pick one, or two to see as one picture";
+  // the page as `atlas view` writes it, opened where the reader is: a file to keep or send
+  const ex = html("a", null, "export");
+  ex.className = "histlink"; ex.title = "keep this picture as one HTML file, opened in this view";
+  ex.onclick = () => { ex.href = "/export?v=" + encodeURIComponent(JSON.stringify(viewData())); };
+  document.getElementById("search").before(fresh, hl, ex);
   document.getElementById("hint").prepend(html("span", null, "alt-click: a note for the agent · "));
   const dl = document.querySelector("#keys dl");
   dl.append(html("dt", null, "alt-click a box or a line"), html("dd", null, "write a note on it for the agent (atlas serve); its answer shows once on the ring"));
 }
-render();
+// a link to a place (`#v=…&at=…`, the place of a note) points at it once the picture is drawn
+const linkedAt = (location.hash.match(/[#&]at=([^&]*)/) || [])[1];
+render().then(comeBack).then(() => { if (linkedAt) point(decodeURIComponent(linkedAt)); });
 })();
 </script>

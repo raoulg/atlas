@@ -64,7 +64,12 @@ Disk ──read──▶ Repo ──parse──▶ Graph ──F──▶ Flow �
 **Flow** is the image of the effect functor `F` (below): what every step of every body runs, in
 call order and with dispatch (`bodies`), what every function takes and gives as types
 (`arrows`), how the types group into families and which are doors (`types`); each touch says
-where it rests, which side of its step it stands on and what it does there. The agent's route
+where it rests, which side of its step it stands on (in, out, or open where the code does not
+say) and what it does there. An arrow also names the places it reads only back, what it wrote
+there before (`reads_back`, and `own_reads_back` for its body alone): the picture stands a
+place on the left where the route finds its content, on the right where the route leaves it,
+between two steps where one leaves it for the next, and on both sides where the route uses and
+changes it (`mathematics.md`, a route's domain and codomain). The agent's route
 text and the page are read from the same Flow, so the two see the same route.
 
 **Repo** is a directory as read: the files its author wrote (no hidden directory, nothing git

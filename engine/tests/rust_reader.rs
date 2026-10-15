@@ -103,10 +103,8 @@ fn a_pattern_binds_what_a_variant_holds() {
         )],
     );
     let run = ["patterns.run"];
-    assert_eq!(
-        places(&g, "patterns.kept"),
-        [place("disk_write", "create_dir_all", "out/", &run), place("disk_write", "write", "out/seen", &run)]
-    );
+    // `create_dir_all(dir)` makes `out/`, the directory of the file written: part of writing it
+    assert_eq!(places(&g, "patterns.kept"), [place("disk_write", "write", "out/seen", &run)]);
     assert_eq!(
         places(&g, "patterns.read"),
         [place("disk_read", "read_to_string", "out/data.csv", &run)],

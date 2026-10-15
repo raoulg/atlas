@@ -16,11 +16,19 @@ reads a repository.
 
 Read it from left to right:
 
-- **On the left** are the places the route reads: `Disk in`, the repository's files. The
-  green `>_` box is where the route starts.
+- **On the left** are the places whose content the route finds and uses: `from disk`, the
+  repository's files. The green `>_` box is where the route starts.
 - **In the middle** are the steps. A rounded pill is a function. A box with a coloured
   bar is a value of a type in memory: `Options`, `Repo`, `Graph`. Arrows run in
   call order.
+- **On the right** is what the route leaves: the places it writes, and those it reads only to
+  check or count what it wrote there. A place one step writes and a later step reads stands
+  between the two, inside the step that runs both, as the value between two arrows does. A
+  place the route uses and also changes stands twice, `from X ⇄` on the left and `into X ⇄` on
+  the right; ⇄ goes from the one to the other. A line marked `?` goes to a place the code does
+  not say which way it uses (a query on a bare database session), which stands between the
+  steps. Making a place's shape, a folder for a file or a table's schema, is part of what is
+  written or read there.
 - **Read it as a sentence:** *read* the repository into a `Repo`, and make its `graph_of`
   with the `Options` of the reading. That is Atlas's whole job, and the code says it in two
   calls.

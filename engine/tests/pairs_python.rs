@@ -512,3 +512,23 @@ fn lens_what_is_put_comes_back_as_a_variant_of_a_named_sum() {
     assert!(edge(&c, "kennis.bank.Node", "kennis.bank.Bron", EdgeKind::Variant));
     assert_eq!(found(&s, "lens"), ["kennis.bank.Kennisbank"]);
 }
+
+/// Not a shortcut: both sides make their tables' shape each time they connect
+/// (`CREATE TABLE IF NOT EXISTS`), which puts no content there, so what a store reads after it is
+/// what it finds. Both keep a day's summary as a cache: the summary kept is read, and one made is
+/// written where none was, so the route finds `summaries` and changes it.
+#[test]
+fn a_table_made_on_connecting_holds_what_was_there() {
+    for (name, g) in [("clean", clean()), ("shortcut", shortcut())] {
+        let tables: Vec<(&str, &str)> = touches(g, "harvest.store.ReadingStore.connect", "db_sqlite")
+            .iter()
+            .filter(|t| !t.artifact.is_empty())
+            .map(|t| (t.op.as_str(), t.artifact.as_str()))
+            .collect();
+        assert_eq!(tables, [("schema", "readings"), ("schema", "outages"), ("schema", "summaries")], "{name}");
+        let arrows = atlas_engine::flow::arrows(g);
+        for f in ["harvest.store.ReadingStore.history", "harvest.store.ReadingStore.summary"] {
+            assert!(arrows.get(f).map_or(true, |a| a.reads_back.is_empty()), "{name} {f}: {:?}", arrows.get(f));
+        }
+    }
+}

@@ -222,6 +222,7 @@ svg.glyph{vertical-align:-2px}
 .frame.fam rect.bg{fill:color-mix(in oklab, var(--panel-2) 70%, transparent)}
 .frame .ftitle{font-family:var(--mono);font-size:11.5px;font-weight:500;fill:var(--ink-2);cursor:pointer}
 .frame .ftitle:hover{fill:var(--ink)}
+.twin{fill:var(--focus);cursor:pointer;font-weight:600}
 .sedge-head{fill:var(--ink-3)}
 .scene.focus .sedge:not(.on),.scene.focus .sedge-head:not(.on){opacity:.07}
 .scene.focus .tstep:not(.on),.scene.focus .tnode:not(.on){opacity:.28}
@@ -663,6 +664,12 @@ async function renderSig() {
 // ---------- routes: entry points, their steps, and the world they touch ----------
 // where a touch rests, which side of its step it stands on and what it does there: the engine says
 const isIn = t => t.side === "in";
+// the code does not say which way the data goes
+const isOpen = t => t.side === "open";
+// which way a step goes at each place it touches, by the place the engine names: what makes a
+// place's shape goes no way
+const go = (goes, t) => { if (t.shape) return; const k = t.place.id; if (!goes.has(k)) goes.set(k, new Set()); goes.get(k).add(isOpen(t) ? "open" : isIn(t) ? "read" : "write"); };
+const joinGoes = (into, from) => from?.forEach((s, k) => { if (!into.has(k)) into.set(k, new Set()); s.forEach(x => into.get(k).add(x)); });
 const verbOf = t => t.verb;
 const KIND_LABEL = {make: "Make", cli: "CLI", script: "Script", route: "API", mcp: "MCP", notebook: "Notebook", export: "Library", test: "Test"}, KIND_ORDER = ["make", "cli", "export", "script", "notebook", "route", "mcp", "test"];
 const entries = [...byId.values()].filter(n => n.entry).sort((a, b) => (partRank(a) - partRank(b)) || (KIND_ORDER.indexOf(a.entry.kind) - KIND_ORDER.indexOf(b.entry.kind)) || a.entry.label.localeCompare(b.entry.label));
@@ -1110,6 +1117,24 @@ async function renderPlaat() {
   const restLinks = new Map();  // in a focus: unit -> the types it takes from the rest and hands to it
   const addPlace = p => { if (!places.has(p.id)) places.set(p.id, p); return p.id; };
   const worldPlace = t => worldPlaceOf(t, true);
+  // the routes drawn, and what each finds where it reads: what was there before it ran, not what it
+  // wrote itself
+  const anchors = V.route ? [V.route] : overviewEntries().map(e => e.id);
+  const found = new Set(), content = {places: new Set(), files: new Set(), dbs: new Set()};
+  for (const a of anchors) {
+    const back = new Set(arrowOf(a)?.reads_back || []);
+    for (const t of reach(a, null, a).touches) {
+      if (t.shape || isOpen(t)) continue;
+      content.places.add(t.place.id);
+      if (t.place.file) content.files.add(t.place.file);
+      if (t.kind.startsWith("db_")) content.dbs.add(t.kind);
+      if (isIn(t) && !back.has(t.place.id)) found.add(t.place.id);
+    }
+  }
+  // a place's shape (a directory made, a table created) and a connection opened without a way serve
+  // the data the route reads or writes there: of a file, in a directory; of a database, any table
+  const inDir = dir => [...content.files].some(f => f.startsWith(dir));
+  const served = t => (t.shape || isOpen(t)) && (t.kind.startsWith("db_") ? content.dbs.has(t.kind) : !!t.place.file && (content.places.has(t.place.id) || (t.place.file.endsWith("/") && inDir(t.place.file))));
   // a type is a place of its own while its moments are counted; then a closed one stands in its kind.
   // The kind is the type's (its base class), not the view's: the route's subject is its own
   const kindKey = k => k.startsWith("t:") && places.get(k)?.type ? "t:" + (places.get(k).type === V.route ? V.route : kindOf(places.get(k).type)) : k;
@@ -1122,10 +1147,10 @@ async function renderPlaat() {
   const morphism = (id, own, isAnchor, noReceiver, opts = {}) => {
     if (id.startsWith("part:")) return partMorphism(id.slice(5), own);
     if (id.startsWith("unit:")) return unitMorphism(id.slice(5), own);
-    const f = byId.get(id), dom = [], cod = [];  // [placeId, reach]
-    if (!f) return {dom: new Map(), cod: new Map()};
+    const f = byId.get(id), dom = [], cod = [], goes = new Map();  // [placeId, reach]
+    if (!f) return {dom: new Map(), cod: new Map(), goes};
     if (isAnchor && f.entry) dom.push([addPlace(entryPlace(id)), false]);
-    const merge = r => { r.dom.forEach((v, k) => dom.push([k, v])); r.cod.forEach((v, k) => cod.push([k, v])); };
+    const merge = r => { r.dom.forEach((v, k) => dom.push([k, v])); r.cod.forEach((v, k) => cod.push([k, v])); joinGoes(goes, r.goes); };
     if (f.kind === "class" && f.entry && !V.route) {
       // a library class among all routes: what it is built from and what its public methods take and hand on,
       // together; inside a route, building one is a step like any constructor, handing on what it builds
@@ -1151,21 +1176,24 @@ async function renderPlaat() {
     }
     const root = V.route || (f.entry ? f.id : null);
     const ownKeys = new Set(touchesIn(f, root).map(touchKey));
+    // what the step reads back of what it wrote is no input: the place is in its codomain only
+    const back = new Set((own ? arrowOf(f.id)?.own_reads_back : arrowOf(f.id)?.reads_back) || []);
     for (const raw of (own ? touchesIn(f, root) : reach(f.id, opts.on, root).touches)) {
       const tc = shownAs(raw);
-      if (!drawn(tc)) continue;
+      if (!drawn(tc) || served(raw) || (isIn(raw) && !raw.shape && back.has(raw.place.id))) continue;
+      go(goes, tc);
       // each call that makes a figure makes one: a figure of its own on the screen
       const p = raw.kind === "figure" && tc.kind === "screen" && opts.figure ? figurePlace(opts.figure, opts.label) : worldPlace(tc);
       (isIn(tc) ? dom : cod).push([addPlace(p), !ownKeys.has(touchKey(raw))]);
     }
     const sig = arr => { const m = new Map(); for (const [p, r] of arr) m.set(p, (m.has(p) ? m.get(p) : true) && r); return m; };
-    return {dom: sig(dom), cod: sig(cod)};
+    return {dom: sig(dom), cod: sig(cod), goes};
   };
   // a part: the routes it serves over HTTP come in through its own place, the routes of other
   // parts it requests go out to theirs; closed, it also reaches whatever its routes reach
   const httpPlace = p => ({id: "w:Web:http:" + p, label: `HTTP(${p})`, short: `HTTP(${p})`, kind: "world"});
   const partMorphism = (p, own) => {
-    const dom = new Map(), cod = new Map();
+    const dom = new Map(), cod = new Map(), goes = new Map();
     if (entries.some(e => has(e) && partOf(e) === p && e.entry.kind === "route" && /^[A-Z|]+ \//.test(e.entry.label))) dom.set(addPlace(httpPlace(p)), false);
     for (const e of D.edges) if (e.kind === "requests" && has(e)) {
       const a = partOf(byId.get(e.src) || {}), b = partOf(byId.get(e.dst) || {});
@@ -1175,18 +1203,26 @@ async function renderPlaat() {
       const r = morphism(e.id, false, false);
       r.dom.forEach((v, k) => { if (!k.startsWith("t:") && !dom.has(k)) dom.set(k, true); });
       r.cod.forEach((v, k) => { if (!k.startsWith("t:") && !cod.has(k)) cod.set(k, true); });
+      joinGoes(goes, r.goes);
     }
-    return {dom, cod};
+    return {dom, cod, goes};
   };
   // a unit, closed: the places its own code touches (not what it reaches through other units), and
   // the types that cross its edge: in where it takes what another unit makes, out where it makes what
   // another unit takes
   const unitMorphism = (u, own) => {
-    const dom = new Map(), cod = new Map();
-    if (own) return {dom, cod};
+    const dom = new Map(), cod = new Map(), goes = new Map();
+    if (own) return {dom, cod, goes};
     // the rest of the code, seen from a focus, is joined to it by counted arrows, not by boxes
-    if (isRest(u)) return {dom, cod};
-    for (const n of byId.values()) if (inUnit(n.id, u) && has(n)) for (const tc of (n.touches || []).filter(has)) if (drawn(tc)) (isIn(tc) ? dom : cod).set(addPlace(worldPlace(tc)), false);
+    if (isRest(u)) return {dom, cod, goes};
+    for (const n of byId.values()) if (inUnit(n.id, u) && has(n)) {
+      const back = new Set(arrowOf(n.id)?.own_reads_back || []);
+      for (const tc of (n.touches || []).filter(has)) {
+        if (!drawn(tc) || served(tc) || (isIn(tc) && !tc.shape && back.has(tc.place.id))) continue;
+        go(goes, tc);
+        (isIn(tc) ? dom : cod).set(addPlace(worldPlace(tc)), false);
+      }
+    }
     // a type crossing the unit's edge is a joint drawn as a box; in a focus, only when another unit in
     // the focus is on its other side, and an arrow from or to the rest otherwise
     const inside = id => inUnit(id, u), theirs = xs => [...(xs || [])].filter(x => !inside(x) && byId.has(x));
@@ -1199,7 +1235,7 @@ async function renderPlaat() {
     };
     for (const [t, takers] of usesOf().takes) if (isData(t) && [...takers].some(inside)) side(usesOf().makes.get(t), dom, "in", t);
     for (const [t, makers] of usesOf().makes) if (isData(t) && [...makers].some(inside)) side(usesOf().takes.get(t), cod, "out", t);
-    return {dom, cod};
+    return {dom, cod, goes};
   };
   // a result with no place of its own (a str, a dict) goes back to the step that called it
   const handsBack = (id, cod) => !/^(part|unit|op):/.test(id) && !!arrowOf(id)?.returns_value && ![...cod.keys()].some(p => p.startsWith("t:"));
@@ -1217,7 +1253,7 @@ async function renderPlaat() {
     const info = treeInfo.get(key);
     if (!info) return morphism(key, own, isAnchor);
     const {step, on, site, fed} = info, dn = new Map(), cn = new Map();
-    const m = step.startsWith("op:") ? {dom: new Map(), cod: new Map()} : morphism(step, own, isAnchor, false, {on, figure: key, label: stepLabel(key)});
+    const m = step.startsWith("op:") ? {dom: new Map(), cod: new Map(), goes: new Map()} : morphism(step, own, isAnchor, false, {on, figure: key, label: stepLabel(key)});
     if (site && !own) {
       // a value whose type ty does not know is still the value its name holds; a value no name holds
       // (`#3`, one call's result handed straight to the next) is drawn without one
@@ -1238,7 +1274,7 @@ async function renderPlaat() {
         for (const k of m.cod.keys()) if (held && kindKey(k) === kind && !cn.has(k)) cn.set(k, dn.get(held));
       }
     }
-    return {dom: m.dom, cod: m.cod, dn, cn};
+    return {dom: m.dom, cod: m.cod, dn, cn, goes: m.goes};
   };
   // build the nested picture: frames for open steps, pills for closed ones (siblings with the same places are one pill)
   const pills = new Map(), frames = new Map();  // id -> {...}
@@ -1252,11 +1288,11 @@ async function renderPlaat() {
       const fid = "n:" + node.id, kids = [];
       frames.set(fid, {id: fid, step: node.id, parent, hue: node.hue, choice: node.choice, anchor: node.id === V.route, title: (node.id === V.route ? entryTitle(node.id) : stepLabel(node.id)) + (node.choice ? " · one of" : "")});
       const lib = libraryClass(stepOf(node.id));
-      const own = lib || node.id.startsWith("unit:") ? {dom: new Map(), cod: new Map()} : stepMorphism(node.id, true, node.id === V.route);
+      const own = lib || node.id.startsWith("unit:") ? {dom: new Map(), cod: new Map(), goes: new Map()} : stepMorphism(node.id, true, node.id === V.route);
       const back = node.kids.flatMap(k => build(k, fid, lib && node.id === V.route ? node.id : null));
       if (own.dom.size || own.cod.size || (back.length && !lib && !node.id.startsWith("unit:"))) {
         const oid = "o:" + node.id;
-        pills.set(oid, {id: oid, steps: [node.id], D: own.dom, C: own.cod, dn: own.dn, cn: own.cn, parent: fid, hue: node.hue, own: true});
+        pills.set(oid, {id: oid, steps: [node.id], D: own.dom, C: own.cod, dn: own.dn, cn: own.cn, goes: own.goes, parent: fid, hue: node.hue, own: true});
         for (const b of back) b.backTo = oid;
       }
       return [];
@@ -1265,7 +1301,7 @@ async function renderPlaat() {
     if (caller) m.dom.set(addPlace(entryPlace(caller)), false);
     // a unit stands even when nothing crosses its edge, so that it can be opened
     if (!m.dom.size && !m.cod.size && !hb && !node.id.startsWith("unit:")) return [];
-    const pill = {id: "n:" + node.id, steps: [node.id], D: m.dom, C: m.cod, dn: m.dn, cn: m.cn, parent, hue: node.hue};
+    const pill = {id: "n:" + node.id, steps: [node.id], D: m.dom, C: m.cod, dn: m.dn, cn: m.cn, goes: m.goes || new Map(), parent, hue: node.hue};
     pills.set(pill.id, pill);
     return hb ? [pill] : [];
   };
@@ -1339,7 +1375,16 @@ async function renderPlaat() {
   };
   const toShown = m => { const out = new Map(); m.forEach((r, k) => { const k2 = standsAt(k); out.set(k2, out.has(k2) ? out.get(k2) && r : r); }); return out; };
   for (const P of pills.values()) { P.D = toShown(P.D); P.C = toShown(P.C); }
-  return {places, pills, frames, restArrows};
+  // what the steps do at each place of the world: read it, write it, go there without saying which
+  // way; whether a route finds what it reads there; whether a step that reads it hands something on
+  const roles = new Map();
+  const role = k => { if (!roles.has(k)) roles.set(k, {reads: false, writes: false, open: false, used: false, found: found.has(k)}); return roles.get(k); };
+  for (const P of pills.values()) for (const [k, s] of P.goes || []) {
+    const r = role(k);
+    r.reads ||= s.has("read"); r.writes ||= s.has("write"); r.open ||= s.has("open");
+    if (s.has("read")) r.used ||= !!P.backTo || [...P.C.keys()].some(c => c !== k);
+  }
+  return {places, pills, frames, restArrows, roles};
   };
   // two readings as one picture: each planned by itself, then the union of the two, every place,
   // pill, frame and line knowing the readings that hold it. A thing named otherwise in A reads
@@ -1360,11 +1405,12 @@ async function renderPlaat() {
       places.set(id, p);
     }
     for (const id of interleave([...A.pills.keys()], [...B.pills.keys()])) {
-      const a = A.pills.get(id), b = B.pills.get(id), P = {...(b || a), sides: sidesOf(a, b), D: new Map(), C: new Map(), Ds: new Map(), Cs: new Map()};
+      const a = A.pills.get(id), b = B.pills.get(id), P = {...(b || a), sides: sidesOf(a, b), D: new Map(), C: new Map(), Ds: new Map(), Cs: new Map(), goes: new Map()};
       for (const [s, q] of [["a", a], ["b", b]]) {
         if (!q) continue;
         for (const [m, ms, from] of [[P.D, P.Ds, q.D], [P.C, P.Cs, q.C]]) from.forEach((r, k) => { m.set(k, m.has(k) ? m.get(k) && r : r); if (!ms.has(k)) ms.set(k, new Set()); ms.get(k).add(s); });
         if (q.backTo) P.backTo = q.backTo;
+        joinGoes(P.goes, q.goes);
       }
       pills.set(id, P);
     }
@@ -1379,9 +1425,11 @@ async function renderPlaat() {
       if (!rest.has(k)) rest.set(k, [r, at, way, new Set(), new Set()]);
       ts.forEach(t => rest.get(k)[3].add(t)); rest.get(k)[4].add(s);
     }
-    return {places, pills, frames, restArrows: [...rest.values()]};
+    const roles = new Map(A.roles);
+    for (const [k, r] of B.roles) { const q = roles.get(k); roles.set(k, q ? Object.fromEntries(Object.keys(r).map(f => [f, q[f] || r[f]])) : r); }
+    return {places, pills, frames, restArrows: [...rest.values()], roles};
   };
-  const {places, pills, frames, restArrows} = DIFF ? unite() : plan();
+  const {places, pills, frames, restArrows, roles} = DIFF ? unite() : plan();
   // Storage quotients are computed on the visible fiber. A singleton keeps its concrete
   // expression; an opened quotient retains a frame around the same members.
   const storage = new Map(), worldFrames = new Map(), worldParent = new Map();
@@ -1396,7 +1444,7 @@ async function renderPlaat() {
     // A symbolic place used both ways is one place, rather than a member of two
     // directional quotients. Its identity stays visible at this zoom.
     if (disk && ways.size > 1) continue;
-    const way = [...ways][0], c = disk ? {...p.coarse, id: "w:Disk:" + way, label: "Disk " + way} : p.coarse;
+    const way = [...ways][0], c = disk ? {...p.coarse, id: "w:Disk:" + way, label: way === "in" ? "from disk" : "into disk"} : p.coarse;
     if (!storage.has(c.id)) storage.set(c.id, {id: c.id, label: c.label, group: p.group, kids: new Set()});
     storage.get(c.id).kids.add(p.id);
   }
@@ -1443,7 +1491,7 @@ async function renderPlaat() {
     const key = (P.parent || "") + "|" + [...P.D.keys()].sort() + ">" + [...P.C.keys()].sort() + "|" + (P.backTo || "") + "|" + [...(P.sides || [])].sort() + "|" + stepChanged(P.steps);
     const Q = merged.get(key);
     if (!Q) { merged.set(key, P); continue; }
-    Q.steps.push(...P.steps); P.D.forEach((r, k) => Q.D.set(k, Q.D.get(k) && r)); P.C.forEach((r, k) => Q.C.set(k, Q.C.get(k) && r));
+    Q.steps.push(...P.steps); P.D.forEach((r, k) => Q.D.set(k, Q.D.get(k) && r)); P.C.forEach((r, k) => Q.C.set(k, Q.C.get(k) && r)); joinGoes(Q.goes, P.goes);
     for (const [qs, ps] of [[Q.Ds, P.Ds], [Q.Cs, P.Cs]]) ps?.forEach((s, k) => qs.set(k, new Set([...(qs.get(k) || []), ...s])));
     pills.delete(P.id);
   }
@@ -1580,18 +1628,58 @@ async function renderPlaat() {
   const leaf = (id, w, h, opts) => { const n = {id, width: w, height: h, layoutOptions: opts || {}}; nodeOf.set(id, n); return n; };
   const frameNode = (id, padTop) => { const n = {id, children: [], layoutOptions: {"elk.padding": `[top=${padTop},left=14,bottom=14,right=14]`}}; nodeOf.set(id, n); return n; };
   const root = {id: "root", children: [], edges: []};
+  // a place that stands twice is `from X` on the left and `into X` on the right
+  const TWIN = " ⇄", sideLabel = p => p.way ? `${p.way} ${p.label}` : p.label;
   const sideOf = id => { const us = worldFrames.has(id) ? [...worldFrames.get(id).kids].map(k => used.get(k) || {}) : [used.get(id) || {}]; const i = us.some(u => u.in), o = us.some(u => u.out); return i && !o ? "in" : o && !i ? "out" : "both"; };
   const worldIds = [...places.values()].filter(p => p.kind === "world" && keep.has(p.id) && !worldParent.has(p.id)).map(p => p.id).concat([...worldFrames.keys()]);
   const sortWorld = ids => ids.sort((a, b) => (a.startsWith("e:") ? -1 : 0) - (b.startsWith("e:") ? -1 : 0) || (placeKind(a) || "").localeCompare(placeKind(b) || "") || a.localeCompare(b));
   const worldNode = (id, constraint) => {
     const F = worldFrames.get(id), opts = constraint ? {"elk.layered.layering.layerConstraint": constraint} : {};
-    if (!F) return leaf(id, placeW(places.get(id), 40), 36, opts);
+    if (!F) return leaf(id, placeW({...places.get(id), label: sideLabel(places.get(id)) + (places.get(id).twin ? TWIN : "")}, 40), 36, opts);
     const n = frameNode(id, 36); Object.assign(n.layoutOptions, opts);
-    n.layoutOptions["elk.nodeSize.minimum"] = `(${textW(F.label) + 50},70)`;
+    n.layoutOptions["elk.nodeSize.minimum"] = `(${textW(sideLabel(F) + (F.twin ? TWIN : "")) + 50},70)`;
     for (const k of F.kids) n.children.push(leaf(k, placeW(places.get(k), 40), 36));
     return n;
   };
-  for (const id of sortWorld(worldIds.filter(id => sideOf(id) === "in" || id.startsWith("e:")))) root.children.push(worldNode(id, "FIRST_SEPARATE"));
+  // where each place of the world stands, by what the route does with its content: left what it
+  // finds and uses, right what it leaves there, between the steps what one leaves for a later one to
+  // use. A place it uses and changes stands twice, `from X ⇄` on the left and `into X ⇄` on the
+  // right; one the code goes to without saying which way stands between
+  const finesOf = id => {
+    const p = places.get(id);
+    if (p?.members) return p.members;
+    if (p?.folded) return [...dirFold.to].filter(([, d]) => d === p.folded).map(([f]) => "w:File:" + f);
+    return [id];
+  };
+  const roleOf = id => {
+    const rs = (worldFrames.has(id) ? [...worldFrames.get(id).kids] : [id]).flatMap(finesOf).map(k => roles.get(k)).filter(Boolean), any = f => rs.some(r => r[f]);
+    if (any("reads") && any("writes")) return any("found") ? "both" : any("used") ? "mid" : "out";
+    if (any("reads")) return "in";
+    if (any("writes")) return "out";
+    if (any("open")) return "mid";
+    return {in: "in", out: "out"}[sideOf(id)] || "mid";
+  };
+  const roleAt = new Map(worldIds.map(id => [id, id.startsWith("e:") ? "in" : roleOf(id)])), twinOf = new Map();
+  for (const [id, r] of roleAt) {
+    if (r !== "both") continue;
+    const tw = id + TWIN, F = worldFrames.get(id);
+    if (F) {
+      // an opened database: what is read of it stands in the one, what is written in the other
+      const T = {...F, id: tw, kids: new Set(), way: "into", twin: id};
+      for (const k of [...F.kids]) {
+        if ([...pills.values()].some(P => P.C.has(k))) { places.set(k + TWIN, {...places.get(k), id: k + TWIN}); placeGlyph.set(k + TWIN, placeKind(k)); T.kids.add(k + TWIN); worldParent.set(k + TWIN, tw); twinOf.set(k, k + TWIN); }
+        if (![...pills.values()].some(P => P.D.has(k))) F.kids.delete(k);
+      }
+      Object.assign(F, {way: "from", twin: tw});
+      worldFrames.set(tw, T);
+    } else {
+      places.set(tw, {...places.get(id), id: tw, way: "into", twin: id}); placeGlyph.set(tw, placeKind(id));
+      Object.assign(places.get(id), {way: "from", twin: tw});
+      twinOf.set(id, tw);
+    }
+    roleAt.set(tw, "out");
+  }
+  for (const id of sortWorld([...roleAt.keys()].filter(id => ["in", "both"].includes(roleAt.get(id))))) root.children.push(worldNode(id, "FIRST_SEPARATE"));
   // steps: frames hold their own steps, in call order
   const holder = pid => pid ? nodeOf.get(pid) : root;
   for (const F of frames.values()) { const n = frameNode(F.id, 34); (F.parent ? null : root.children.push(n)); }
@@ -1630,8 +1718,11 @@ async function renderPlaat() {
   };
   for (const p of [...places.values()].filter(p => (p.kind === "type" || p.kind === "ext") && keep.has(p.id) && !p.inFrame).sort((a, b) => a.label.localeCompare(b.label))) homeOf(p.id).children.push(leaf(p.id, placeW(p, 30), 36));
   for (const F of famFrames.values()) { const n = frameNode(F.id, 30); homeOf(F.id).children.push(n); for (const k of F.kids) n.children.push(leaf(k.id, 26 + textW(k.label, 6.9), 28)); }
-  for (const id of sortWorld(worldIds.filter(id => sideOf(id) === "both"))) root.children.push(worldNode(id));
-  for (const id of sortWorld(worldIds.filter(id => sideOf(id) === "out" && !id.startsWith("e:")))) root.children.push(worldNode(id, "LAST_SEPARATE"));
+  // a place one step leaves for a later one, or one the code does not say which way it goes, lives
+  // like memory in the smallest open step that holds every step using it
+  for (const [id, F] of worldFrames) usersOf.set(id, [...F.kids].flatMap(k => usersOf.get(k) || []));
+  for (const id of sortWorld([...roleAt.keys()].filter(id => roleAt.get(id) === "mid"))) homeOf(id).children.push(worldNode(id));
+  for (const id of sortWorld([...roleAt.keys()].filter(id => roleAt.get(id) === "out"))) root.children.push(worldNode(id, "LAST_SEPARATE"));
   // edges: data into a step and out of it, and results handed back to the caller
   const edgeInfo = new Map(), addEdge = (a, b, info) => {
     if (!nodeOf.has(a) || !nodeOf.has(b) || a === b) return;
@@ -1644,7 +1735,10 @@ async function renderPlaat() {
   for (const [a, b, hue, sides] of wires) addEdge(a, b, {hue, sides});
   for (const P of pills.values()) {
     P.D.forEach((r, k) => addEdge(k, P.id, {reach: r, hue: P.hue, sides: P.Ds?.get(k)}));
-    P.C.forEach((r, k) => addEdge(P.id, k, {reach: r, hue: P.hue, sides: P.Cs?.get(k)}));
+    P.C.forEach((r, k) => {
+      const gs = finesOf(k).map(f => P.goes?.get(f)).filter(Boolean), open = gs.some(g => g.has("open")) && !gs.some(g => g.has("read") || g.has("write"));
+      addEdge(P.id, twinOf.get(k) || k, {reach: r, hue: P.hue, sides: P.Cs?.get(k), ...(open ? {label: "?", title: "the code does not say which way the data goes"} : {})});
+    });
     if (P.backTo) addEdge(P.id, P.backTo, {back: true, hue: P.hue, sides: P.sides});
   }
   // a focus and the rest of the code: one arrow each way per unit, counting the types that cross
@@ -1720,16 +1814,26 @@ async function renderPlaat() {
   const parentOf = new Map(); const walkPar = n => { for (const c of n.children || []) { parentOf.set(c.id, n.id); walkPar(c); } }; walkPar(layout);
   const focused = V.focus.size && !V.route && !V.kind;
   el("text", {class: "route-title", x: 20, y: 24}, g).textContent = V.route ? `Route · ${entryTitle(V.route)}` : V.kind ? `All ${KIND_LABEL[V.kind]} routes` : focused ? `Focus · ${[...V.focus].sort().map(unitLabel).join(", ")}` : V.part ? `${V.part} by package` : multi ? `${PARTS.length} parts` : `${D.root} by package`;
-  el("text", {class: "route-sub", x: 20, y: 41}, g).textContent = V.route ? `${short(V.route)} · what it reads on the left, what it writes on the right · click a pill to open it, a frame's title to close it, double-click a box to pin its lines`
+  el("text", {class: "route-sub", x: 20, y: 41}, g).textContent = V.route ? `${short(V.route)} · what it finds on the left, what it leaves on the right · click a pill to open it, a frame's title to close it, double-click a box to pin its lines`
     : focused ? "the packages in focus, the types that cross between them and the places they touch; the rest of the code on either side · shift-click a package to add or drop it"
-    : multi && !V.part && !V.kind ? "each part from what it reads to what it writes; one part's requests are another's HTTP · click a part to open it"
-    : !V.kind ? "each package from what its own code reads to what it writes, joined by the types that cross between packages; a dotted line where one only calls another · click a package to open it, shift-click to focus on it, double-click a box to pin its lines"
-    : "each route from what it reads to what it writes · click a route to open it";
+    : multi && !V.part && !V.kind ? "each part from what it finds to what it leaves; one part's requests are another's HTTP · click a part to open it"
+    : !V.kind ? "each package from what its own code finds to what it leaves, joined by the types that cross between packages; a dotted line where one only calls another · click a package to open it, shift-click to focus on it, double-click a box to pin its lines"
+    : "each route from what it finds to what it leaves · click a route to open it";
   if (!pos.size) el("text", {class: "route-sub", x: 20, y: 70}, g).textContent = "No step on this route takes or hands on a place: it calls nothing that does. Pick another route.";
   const fg = el("g", {}, g), eg = el("g", {}, g), ng = el("g", {}, g), ig = el("g", {class: "interior-ports"}, g);
   // pointing at a box or a pill lights up its lines and what is at their other ends; the versions of
   // one type light up together, so a type can be followed through the route
-  const nodeEls = new Map(), edgeEls = [], base = id => id.split("@")[0];
+  const nodeEls = new Map(), edgeEls = [], base = id => id.split("@")[0].replace(/ ⇄$/, "");
+  const goTo = id => {
+    const q = pos.get(id); if (!q) return;
+    const t0 = d3.zoomTransform(svg.node()), t1 = d3.zoomIdentity.translate(svg.node().clientWidth / 2 - t0.k * (q.x + q.w / 2), svg.node().clientHeight / 2 - t0.k * (q.y + q.h / 2)).scale(t0.k);
+    if (DUR) svg.transition().duration(DUR).call(zoom.transform, t1); else svg.call(zoom.transform, t1);
+  };
+  const twinLink = (text, other) => {
+    const t = el("tspan", {class: "twin"}, text); t.textContent = TWIN;
+    el("title", {}, t).textContent = "the same place, on the other side";
+    t.addEventListener("click", ev => { ev.stopPropagation(); goTo(other); });
+  };
   const light = id => {
     const ids = new Set([...nodeEls.keys()].filter(k => base(k) === base(id))), lit = new Set(ids);
     for (const k of worldFrames.get(id)?.kids || []) { ids.add(k); lit.add(k); }
@@ -1769,7 +1873,8 @@ async function renderPlaat() {
     const P = pos.get(F.id), kind = placeKind([...F.kids][0]);
     const grp = el("g", {class: "frame storage", "data-id": F.id, "data-group": F.group}, fg);
     el("rect", {class: "bg", width: P.w, height: P.h, style: `stroke:var(--k-${kind});fill:var(--panel)`}, grp);
-    const title = el("text", {class: "ftitle", x: 14, y: 22}, grp); title.textContent = "▾ " + F.label;
+    const title = el("text", {class: "ftitle", x: 14, y: 22}, grp); title.textContent = "▾ " + sideLabel(F);
+    if (F.twin) twinLink(title, F.twin);
     title.addEventListener("click", ev => { ev.stopPropagation(); V.open.places.delete(F.group); plaatAnchor = F.id.slice(6); render(); });
     pointable(grp, F.id);
     place(grp, F.id);
@@ -1889,7 +1994,8 @@ async function renderPlaat() {
     if (kind) glyphAt(grp, kind, 11, Q.h / 2 - 7);
     else if (p.kind !== "ref") el("rect", {x: 0, y: 0, width: 5, height: Q.h, fill: p.hue || hueOf(null)}, grp);
     const label = el("text", {class: "title", x: kind ? 32 : 15, y: Q.h / 2 + 4}, grp);
-    label.textContent = p.label;
+    label.textContent = sideLabel(p);
+    if (p.twin) twinLink(label, p.twin);
     if (DIFF) {
       const st = placeStanding(p), entry = p.id.startsWith("e:") && byId.get(p.id.slice(2));
       marked(grp, st, Q.w + 3, wasOf(st, p.id, entry ? (() => { SIDE = "a"; try { return entryLabel(entry); } finally { SIDE = null; } })() : p.standsFor ? null : DIFF.was[p.id]));
@@ -2175,7 +2281,7 @@ function legend() {
   if (!legendHelp) return;
   const help = html("div", "help");
   help.innerHTML = view === "plaat"
-    ? `<span class="k">left: what the route only reads · right: what it only writes · boxes with a coloured strip are types in memory; (n): click to open it into the n types it stands for and holds</span><span class="k">pill = a step, from what it takes to what it hands on · ▸ opens it into a frame · a frame's title closes it · one of: alternatives, each branch in its own colour (the overrides a call may run, or the arms of an if, a match or an or-else) · dashed: happens inside a closed step · dotted: a result handed back</span>`
+    ? `<span class="k">left: what the route finds and uses · right: what it leaves · between steps: what one leaves for a later one · from X ⇄ and into X ⇄: one place it uses and changes · ?: the code does not say which way · boxes with a coloured strip are types in memory; (n): click to open it into the n types it stands for and holds</span><span class="k">pill = a step, from what it takes to what it hands on · ▸ opens it into a frame · a frame's title closes it · one of: alternatives, each branch in its own colour (the overrides a call may run, or the arms of an if, a match or an or-else) · dashed: happens inside a closed step · dotted: a result handed back</span>`
     : view === "types"
     ? `<span class="k"><i style="display:inline-block;width:18px;height:10px;border:1px dashed currentColor;border-radius:0"></i>external base</span><span class="k"><b style="font-family:var(--mono)">nƒ</b> methods</span>`
     : `<span class="k">node = type · arrow = functions A → B · width = how many</span><span class="k"><svg width="26" height="8"><path d="M0,4 H26" stroke="currentColor" stroke-dasharray="2 3"/></svg>has-a (fields)</span>`;

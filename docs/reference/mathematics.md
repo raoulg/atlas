@@ -25,6 +25,22 @@ what it returns plus what it writes, sends or runs. A file written is as much a 
 arrow as a value returned.
 **Where.** `design.md` §0; `effects.rs`, a node's touches.
 
+### A route's domain and codomain
+**What.** An arrow `f: A → B` has a domain and a codomain; in a composite `g ∘ f: A → C` the
+object `B` between them is neither. A place whose state an arrow uses and changes is in both:
+`S → S′`.
+**In Atlas.** A route's places are drawn by what the route does with their content. A place stands
+left, in the domain, when the route uses what was there for what it makes. It stands right, in the
+codomain, when the route leaves something in it. What the route reads back of what it wrote, or
+reads only to check or count, it does not use: that place stays in the codomain. A place one step
+writes and a later step reads and uses is the object between them, and stands between them. A
+place the route uses and also changes is in both: two projections of one place, `from X` on the
+left and `into X` on the right. A read is preceded by a write only when the write happens
+whenever the read does, not in one branch of a choice the read is outside. Making a place's
+shape (a directory, a table's schema) puts no content there. Where the code does not say which
+way a call goes, the place is in neither.
+**Where.** A function's `reads_back` (`flow.rs`); the viewer's `roleOf`.
+
 ### The effect functor
 **What.** A functor maps objects to objects and arrows to arrows, keeping composition.
 **In Atlas.** `F: Graph → W` sends each function to the arrow from what it takes in to what it

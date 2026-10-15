@@ -256,6 +256,9 @@ pub struct Where {
     pub place: Place,
     pub side: Side,
     pub verb: String,
+    /// It makes or checks the place's shape, not its content.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub shape: bool,
 }
 
 /// A touch and where it is drawn, for whoever reads it apart from its graph.
@@ -267,20 +270,23 @@ pub struct Drawn {
     pub at: Where,
 }
 
-/// Which side of its step a touch stands on.
+/// Which side of its step a touch stands on: in, out, or open where the code does not say which way
+/// it goes.
 #[derive(Serialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum Side {
     In,
     Out,
+    Open,
 }
 
 impl Side {
-    /// The disk a step reads from (in) or writes to (out), where no file is named.
+    /// The disk a step reads from or writes to, where no file is named. A file whose way is not
+    /// said is read, so no disk is open.
     pub fn disk(self) -> Place {
         match self {
-            Side::In => place("w:Disk:in".into(), "Disk in".into(), "Disk in".into(), "file"),
-            Side::Out => place("w:Disk:out".into(), "Disk out".into(), "Disk out".into(), "file"),
+            Side::In | Side::Open => place("w:Disk:in".into(), "from disk".into(), "from disk".into(), "file"),
+            Side::Out => place("w:Disk:out".into(), "into disk".into(), "into disk".into(), "file"),
         }
     }
 }
@@ -334,17 +340,30 @@ pub fn shown(text: &str) -> String {
 impl Touch {
     /// Where the picture draws it.
     pub fn drawn(&self) -> Where {
-        Where { place: self.place(), side: self.side(), verb: self.verb() }
+        Where { place: self.place(), side: self.side(), verb: self.verb(), shape: self.shape() }
+    }
+
+    /// Whether it makes or checks its place's shape rather than its content: a directory made, a
+    /// path tested, a table created.
+    pub fn shape(&self) -> bool {
+        use crate::effects::{fs_op, FsOp};
+        match self.kind {
+            World::Disk => matches!(fs_op(&self.op), FsOp::Creates | FsOp::Checks),
+            World::Db(_) => self.op == crate::effects::SCHEMA,
+            _ => false,
+        }
     }
 
     /// Which side of its step the touch stands on: what the call says (a file's mode, a
     /// statement's verb, a download), else what its kind of place does by default. The web and a
-    /// file whose way is not said are read; everything else is written to.
+    /// file whose way is not said are read; a database whose way is not said is open; everything
+    /// else is written to.
     pub fn side(&self) -> Side {
         match (self.dir, self.kind) {
             (Some(Dir::Read), _) => Side::In,
             (Some(Dir::Write), _) => Side::Out,
             (None, World::Net | World::Disk) => Side::In,
+            (None, World::Db(_)) => Side::Open,
             (None, _) => Side::Out,
         }
     }
@@ -402,6 +421,9 @@ impl Touch {
     pub fn verb(&self) -> String {
         use crate::effects::{fs_op, FsOp};
         let op = self.op.as_str();
+        if matches!(self.kind, World::Db(_)) && op == crate::effects::SCHEMA {
+            return "creates".into();
+        }
         let by_op = match (self.kind, fs_op(op)) {
             (World::Disk, FsOp::Checks) => Some("checks"),
             (World::Disk, FsOp::Lists) => Some("lists"),
@@ -468,6 +490,106 @@ pub struct Arrow {
     /// `str`) goes back to the step that called it.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub returns_value: bool,
+    /// The places where it reads only what it wrote, its body and what it calls in the order they
+    /// run (a store that inserts rows and then counts them): what it reads there is no input, so
+    /// the place is in its codomain only.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub reads_back: Vec<String>,
+    /// The places where its own body reads only what its own body wrote, apart from what it calls.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub own_reads_back: Vec<String>,
+}
+
+/// What a function does at one place, in the order it runs: whether it reads what was there before
+/// it ran, whether it reads what it wrote, whether it writes, and whether it writes whenever it runs.
+#[derive(Clone, Copy, Default)]
+struct Order {
+    finds: bool,
+    reads_back: bool,
+    writes: bool,
+    always_writes: bool,
+}
+
+/// What `id` does at each place, its own touches and its calls in line order, each function
+/// worked out once; a call back into a function being worked out adds nothing. A read reads back
+/// what was written when the write ran whenever it did: unconditionally, or in an arm of a choice
+/// the read is in too; a write in one arm says nothing of a read outside it. Without `done`, its
+/// own body alone, its calls left out.
+fn orders(ix: &Ix, id: &str, mut done: Option<&mut HashMap<String, BTreeMap<String, Order>>>) -> BTreeMap<String, Order> {
+    if let Some(done) = done.as_deref_mut() {
+        if let Some(o) = done.get(id) {
+            return o.clone();
+        }
+        done.insert(id.to_string(), BTreeMap::new());
+    }
+    let Some(&n) = ix.nodes.get(id) else { return BTreeMap::new() };
+    // the innermost arm a line is in
+    let arm = |line: u32| n.arm_lines.iter().copied().filter(|&(a, b)| a <= line && line <= b).min_by_key(|&(a, b)| b - a);
+    let within = |inner: Option<(u32, u32)>, outer: (u32, u32)| inner.map_or(false, |(a, b)| outer.0 <= a && b <= outer.1);
+    enum Event<'n> {
+        Touch(&'n Touch),
+        Call(&'n str, bool),
+    }
+    // a place's shape is no content: what is read after it was made is what was there
+    let mut events: Vec<(u32, Event)> =
+        n.touches.iter().filter(|t| t.dir.is_some() && !t.shape()).map(|t| (t.line, Event::Touch(t))).collect();
+    if done.is_some() {
+        events.extend(n.sites.iter().filter(|s| !s.to.is_empty()).map(|s| (s.line, Event::Call(s.to.as_str(), !s.arms.is_empty()))));
+    }
+    // on one line what is read comes first, then the calls, then what is written: `x ??= v` reads
+    // `x` before it may write it, `y = f(x)` calls `f` before `y` is written
+    let rank = |e: &Event| match e {
+        Event::Touch(t) if t.dir == Some(Dir::Read) => 0,
+        Event::Call(..) => 1,
+        Event::Touch(_) => 2,
+    };
+    events.sort_by_key(|(line, e)| (*line, rank(e)));
+    // per place: what is done there, and the arms its conditional writes ran in
+    let mut out: BTreeMap<String, Order> = BTreeMap::new();
+    let mut written_in: HashMap<String, Vec<(u32, u32)>> = HashMap::new();
+    for (line, e) in events {
+        let at = arm(line);
+        let happened: Vec<(String, Order)> = match e {
+            Event::Touch(t) => {
+                let writes = t.dir == Some(Dir::Write);
+                vec![(t.place().id, Order { finds: !writes, writes, always_writes: writes, ..Order::default() })]
+            }
+            Event::Call(to, _) => orders(ix, to, done.as_deref_mut()).into_iter().collect(),
+        };
+        let conditional = match e {
+            Event::Touch(_) => at.is_some(),
+            Event::Call(_, in_arm) => in_arm || at.is_some(),
+        };
+        for (place, b) in happened {
+            let arms = written_in.entry(place.clone()).or_default();
+            let o = out.entry(place).or_default();
+            if b.finds {
+                // what it finds was written before it, when that write runs whenever the read does
+                if o.always_writes || arms.iter().any(|w| within(at, *w)) {
+                    o.reads_back = true;
+                } else {
+                    o.finds = true;
+                }
+            }
+            o.reads_back |= b.reads_back;
+            o.writes |= b.writes;
+            if b.always_writes {
+                match at.filter(|_| conditional) {
+                    None => o.always_writes = true,
+                    Some(w) => arms.push(w),
+                }
+            }
+        }
+    }
+    if let Some(done) = done {
+        done.insert(id.to_string(), out.clone());
+    }
+    out
+}
+
+/// The places where what is read is only what was written.
+fn reads_back(orders: BTreeMap<String, Order>) -> Vec<String> {
+    orders.into_iter().filter(|(_, o)| o.reads_back && !o.finds).map(|(p, _)| p).collect()
 }
 
 impl<'g> Ix<'g> {
@@ -501,9 +623,18 @@ impl<'g> Ix<'g> {
     }
 }
 
-fn arrow_of(ix: &Ix, n: &Node) -> Arrow {
+fn arrow_of(ix: &Ix, n: &Node, done: &mut HashMap<String, BTreeMap<String, Order>>) -> Arrow {
     if n.kind == NodeKind::Class {
         return Arrow { takes: ix.built_from(&n.id, 0), gives: vec![n.id.clone()], ..Default::default() };
+    }
+    // a module's own code runs where it is a program (`if __name__ == "__main__":`): what it
+    // reads back of what it wrote
+    if n.kind == NodeKind::Module {
+        return Arrow {
+            reads_back: reads_back(orders(ix, &n.id, Some(done))),
+            own_reads_back: reads_back(orders(ix, &n.id, None)),
+            ..Default::default()
+        };
     }
     let ctor = n.ctor;
     let gives = ix.targets(&n.id, EdgeKind::Returns);
@@ -516,16 +647,19 @@ fn arrow_of(ix: &Ix, n: &Node) -> Arrow {
         builds: if ctor { n.cls.clone().unwrap_or_default() } else { String::new() },
         changes: ix.targets(&n.id, EdgeKind::Mutates),
         returns_value,
+        reads_back: reads_back(orders(ix, &n.id, Some(done))),
+        own_reads_back: reads_back(orders(ix, &n.id, None)),
     }
 }
 
-/// The arrow of every function, method and class.
+/// The arrow of every function, method and class, and of a module, where its own code runs.
 pub fn arrows(g: &Graph) -> BTreeMap<String, Arrow> {
     let ix = Ix::new(g);
+    let mut done = HashMap::new();
     g.nodes
         .iter()
-        .filter(|n| matches!(n.kind, NodeKind::Class | NodeKind::Function | NodeKind::Method))
-        .map(|n| (n.id.clone(), arrow_of(&ix, n)))
+        .filter(|n| matches!(n.kind, NodeKind::Module | NodeKind::Class | NodeKind::Function | NodeKind::Method))
+        .map(|n| (n.id.clone(), arrow_of(&ix, n, &mut done)))
         .filter(|(_, a)| *a != Arrow::default())
         .collect()
 }

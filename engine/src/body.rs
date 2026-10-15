@@ -9,7 +9,7 @@ use tree_sitter::Node as TsNode;
 use crate::builder::GraphBuilder;
 use crate::effects::{self, Facts};
 use crate::model::{Crossing, Dir, EdgeKind, Held, Site, Touch, World};
-use crate::tree::{arms_of, number_choices, payload_of, starts_at_literal, what_of, ChoiceSyntax};
+use crate::tree::{arms_of, named_children, number_choices, payload_of, starts_at_literal, walk_all, what_of, ChoiceSyntax, Part};
 
 /// A call that crosses into the world, as the code writes it.
 pub struct Crosses {
@@ -226,12 +226,27 @@ impl<'t, 's> Steps<'t, 's> {
 
     /// Write the body's edges and its steps to the graph.
     pub fn finish(self, store: &mut GraphBuilder, id: &str) {
+        let arm_lines = self.arm_lines();
         for (t, kind, via, arms) in self.edges {
             store.add_call(id, &t, kind, via, arms);
         }
         if let Some(n) = store.nodes.get_mut(id) {
             n.sites = self.sites;
+            n.arm_lines = arm_lines;
         }
+    }
+
+    /// The lines each arm of the body's choices spans.
+    fn arm_lines(&self) -> Vec<(u32, u32)> {
+        let mut out = vec![];
+        for p in walk_all(self.body).into_iter().filter(|p| self.choices.contains_key(&p.id())) {
+            for c in named_children(p) {
+                if let Part::Arm(_) = (self.syntax.part)(p, c, self.src) {
+                    out.push((line(c), c.end_position().row as u32 + 1));
+                }
+            }
+        }
+        out
     }
 }
 

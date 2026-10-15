@@ -156,8 +156,8 @@ fn a_client_moves_data_where_it_is_used() {
     assert!(post.contains(&("db_sql".into(), "query".into(), "regels".into(), "write".into())), "{post:?}");
     // a statement is read where it is whole: from a constant, and from what a caller hands `tel`
     assert!(
-        t("server.regels.regels.GET /:id").contains(&("db_sql".into(), "query".into(), "bezoek".into(), "write".into())),
-        "`pool.query(BEZOEK)`"
+        t("server.regels.regels.GET /:id").contains(&("db_sql".into(), "schema".into(), "bezoek".into(), "write".into())),
+        "`pool.query(BEZOEK)` gives `bezoek` its shape"
     );
     assert_eq!(
         t("server.regels.tel"),

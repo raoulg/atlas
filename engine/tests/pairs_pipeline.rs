@@ -143,15 +143,13 @@ fn outside(g: &Graph, start: &str) -> BTreeSet<(String, String)> {
         .collect()
 }
 
-/// The places every version reaches: the request to SILSO, the raw file written and read again, the
-/// directories the files are kept in, and the figure written.
+/// The places every version reaches: the request to SILSO, the raw file written and read again, and
+/// the figure written. The directory a file is kept in is made as part of writing it.
 fn the_outside() -> BTreeSet<(String, String)> {
     [
         ("net", "www.sidc.be"),
-        ("disk_write", "data/raw/"),
         ("disk_write", "data/raw/sunspots.csv"),
         ("disk_read", "data/raw/sunspots.csv"),
-        ("disk_write", "figures/"),
         ("disk_write", "figures/sunspots.png"),
     ]
     .into_iter()
@@ -227,7 +225,7 @@ fn the_same_from_outside_rust() {
 }
 
 /// The places the TypeScript command names are the program's outside: the request to SILSO, the
-/// raw file written and read again, the directories, and the figure, written as an SVG document
+/// raw file written and read again, and the figure, written as an SVG document
 /// where the others write a PNG. The command is the module `package.json` names in `bin`, whose
 /// own code runs `main`. What `--raw` and `--figure` say is the command's input, which holds its
 /// default (`values.raw ?? RAW`), so the route reaches no place the code does not name.
@@ -258,13 +256,15 @@ fn the_same_from_outside_python_clean_reads_the_path_download_gives_back() {
     assert!(read.iter().any(|t| t.artifact == "data/raw/sunspots.csv" && !t.fixed && t.by == ["sunspots.cli.run"]), "{read:#?}");
 }
 
-/// The clean functions create the directory their file goes in: `to.parent.mkdir(..)` creates
-/// the directory of the path the command hands in.
+/// The directory the clean functions make for their file is the directory of the path the
+/// command hands in: `to.parent.mkdir(..)` is part of writing the file, no place of its own.
 #[test]
-fn the_same_from_outside_python_clean_creates_the_parent_of_the_path_handed_in() {
+fn the_same_from_outside_python_clean_makes_the_parent_of_the_path_handed_in_as_part_of_writing_it() {
     for (f, dir) in [("sunspots.download.download", "data/raw/"), ("sunspots.plot.Plot.save", "figures/")] {
-        let made: Vec<&Touch> = touches(clean(), f, "disk_write").into_iter().filter(|t| t.op == "mkdir").collect();
-        assert!(made.iter().all(|t| t.artifact == dir && t.by == ["sunspots.cli.run"]) && !made.is_empty(), "{f}: {made:#?}");
+        let ts = touches(clean(), f, "disk_write");
+        let route: Vec<_> = ts.iter().filter(|t| t.by == ["sunspots.cli.run"]).collect();
+        assert!(route.iter().all(|t| t.op != "mkdir"), "{f}: {ts:#?}");
+        assert!(route.iter().any(|t| t.artifact.starts_with(dir)), "{f}: {ts:#?}");
     }
 }
 
@@ -276,14 +276,15 @@ fn the_same_from_outside_typescript_reads_the_path_download_gives_back() {
     assert!(read.iter().any(|t| t.artifact == "data/raw/sunspots.csv" && !t.fixed && t.by == ["typescript.cli.main"]), "{read:#?}");
 }
 
-/// The TypeScript functions create the directory their file goes in: `mkdir(dirname(to), ..)`
-/// creates the directory of the path the command hands in.
+/// The directory the TypeScript functions make for their file is the directory of the path the
+/// command hands in: `mkdir(dirname(to), ..)` is part of writing the file, no place of its own.
 #[test]
-fn the_same_from_outside_typescript_creates_the_parent_of_the_path_handed_in() {
+fn the_same_from_outside_typescript_makes_the_parent_of_the_path_handed_in_as_part_of_writing_it() {
     for (f, dir) in [("typescript.download.download", "data/raw/"), ("typescript.plot.saveSvg", "figures/")] {
-        let made: Vec<&Touch> =
-            touches(typescript(), f, "disk_write").into_iter().filter(|t| t.op == "mkdir" && !t.artifact.is_empty()).collect();
-        assert!(made.iter().all(|t| t.artifact == dir && t.by == ["typescript.cli.main"]) && !made.is_empty(), "{f}: {made:#?}");
+        let ts = touches(typescript(), f, "disk_write");
+        let route: Vec<_> = ts.iter().filter(|t| t.by == ["typescript.cli.main"]).collect();
+        assert!(route.iter().all(|t| t.op != "mkdir"), "{f}: {ts:#?}");
+        assert!(route.iter().any(|t| t.artifact.starts_with(dir)), "{f}: {ts:#?}");
     }
 }
 
@@ -304,15 +305,16 @@ fn the_same_from_outside_rust_clean_reads_the_path_download_gives_back() {
     assert!(read.iter().any(|t| t.artifact == "data/raw/sunspots.csv" && !t.fixed && t.by == ["sunspots.main.main"]), "{read:#?}");
 }
 
-/// The clean Rust functions create the directory their file goes in:
-/// `if let Some(dir) = to.parent() { fs::create_dir_all(dir)? }` creates the directory of the path
-/// `main` hands in.
+/// The directory the clean Rust functions make for their file is the directory of the path
+/// `main` hands in: `if let Some(dir) = to.parent() { fs::create_dir_all(dir)? }` is part of
+/// writing the file, no place of its own.
 #[test]
-fn the_same_from_outside_rust_clean_creates_the_parent_of_the_path_handed_in() {
+fn the_same_from_outside_rust_clean_makes_the_parent_of_the_path_handed_in_as_part_of_writing_it() {
     for (f, dir) in [("sunspots.download.download", "data/raw/"), ("sunspots.plot.Plot.save", "figures/")] {
-        let made: Vec<&Touch> =
-            touches(rust_clean(), f, "disk_write").into_iter().filter(|t| t.op == "create_dir_all" && !t.artifact.is_empty()).collect();
-        assert!(made.iter().all(|t| t.artifact == dir && t.by == ["sunspots.main.main"]) && !made.is_empty(), "{f}: {made:#?}");
+        let ts = touches(rust_clean(), f, "disk_write");
+        let route: Vec<_> = ts.iter().filter(|t| t.by == ["sunspots.main.main"]).collect();
+        assert!(route.iter().all(|t| t.op != "create_dir_all"), "{f}: {ts:#?}");
+        assert!(route.iter().any(|t| t.artifact.starts_with(dir)), "{f}: {ts:#?}");
     }
 }
 
@@ -518,7 +520,7 @@ fn rust_the_compiler_does_not_ask_where_data_lives() {
     for (f, kind, artifact) in [
         ("sunspots.download", "net", "www.sidc.be"),
         ("sunspots.download", "disk_write", "data/raw/sunspots.csv"),
-        ("sunspots.plot", "disk_write", "figures/"),
+        ("sunspots.plot", "disk_write", "figures/sunspots.png"),
     ] {
         let ts = touches(r, f, kind);
         assert!(ts.iter().any(|t| t.artifact == artifact && t.fixed && t.by.is_empty()), "{f} {kind} {artifact}: {ts:#?}");
@@ -910,13 +912,28 @@ fn the_port_the_same_steps_in_the_same_order() {
 }
 
 /// The three reach the same places, the figure in the format each writes: the request to SILSO,
-/// the raw file written and read again, the directories, and the figure.
+/// the raw file written and read again, and the figure.
 #[test]
 fn the_port_the_same_places() {
     for p in ports() {
         let named: BTreeSet<_> = outside(p.g, program(p.g)).into_iter().filter(|(_, artifact)| !artifact.is_empty()).collect();
         assert_eq!(in_any_format(named), in_any_format(the_outside()), "{}", p.language);
     }
+}
+
+/// A file one step writes and a later step reads is the object between them: the route reads only
+/// what it wrote there, and neither step reads back a write of its own. The student's `get_data`
+/// writes the raw file and reads it again itself: the file is no joint between steps but what one
+/// step leaves behind, and the frame it read goes on through a global.
+#[test]
+fn the_port_the_raw_file_stands_between_download_and_load() {
+    const RAW: &str = "w:File:data/raw/sunspots.csv";
+    for p in ports() {
+        let arrows = atlas_engine::flow::arrows(p.g);
+        let back = |f: &str| arrows.get(f).map_or(false, |a| a.reads_back.iter().any(|x| x == RAW));
+        assert!(back(p.run) && !back(p.download) && !back(p.load), "{}: {:?}", p.language, arrows.get(p.run));
+    }
+    assert!(atlas_engine::flow::arrows(sloppy())["sunspots.get_data"].own_reads_back.iter().any(|x| x == RAW));
 }
 
 /// The raw file and the figure are options of the run, each with its default: typer's

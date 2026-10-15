@@ -167,6 +167,11 @@ pub struct Node {
     /// The calls of its body, in the order they run: the steps of a route through it.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sites: Vec<Site>,
+    /// The lines each arm of its body's choices spans, first and last: what is written there runs
+    /// only in that arm.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(type = "Array<[number, number]>")]
+    pub arm_lines: Vec<(u32, u32)>,
 }
 
 impl Node {

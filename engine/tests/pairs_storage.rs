@@ -1,5 +1,6 @@
 //! A file join with caller-named paths and the same operation with hidden environment paths.
-//! The viewer can refine symbolic places without inventing concrete file names.
+//! The viewer can refine symbolic places without inventing concrete file names. Beside it, a graph
+//! read and changed through transactions that say which way, and through bare queries that do not.
 
 use atlas_engine::{analyze, flow, Options};
 use std::collections::BTreeSet;
@@ -46,5 +47,20 @@ fn reading_and_writing_a_symbolic_path_touch_the_same_place() {
         assert_eq!(writes.len(), 1);
         assert_eq!(reads[0].place.id, writes[0].place.id);
         assert_ne!(reads[0].place.coarse.as_ref().unwrap().id, writes[0].place.coarse.as_ref().unwrap().id);
+    }
+}
+
+/// A graph database goes the way the code says: a managed transaction reads (`execute_read`) or
+/// writes (`execute_write`). A query run on a bare session says neither, and Atlas does not guess
+/// it from the query's text: the way is open, and the picture draws the place on neither side.
+#[test]
+fn a_graph_call_goes_the_way_the_code_says() {
+    for (side, reading, renaming) in [("clean", flow::Side::In, flow::Side::Out), ("shortcut", flow::Side::Open, flow::Side::Open)] {
+        let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/storage").join(side);
+        let drawn = flow::of(&analyze(&repo, &Options::default()).unwrap());
+        for (f, way) in [("storage.names", reading), ("storage.rename", renaming)] {
+            let ways: Vec<flow::Side> = drawn.drawn[f].iter().filter(|w| w.place.id == "w:GraphDB").map(|w| w.side).collect();
+            assert!(!ways.is_empty() && ways.iter().all(|w| *w == way), "{side} {f}: {ways:?}");
+        }
     }
 }

@@ -41,13 +41,14 @@ Python: once as a sloppy script, once typed and elegant. Atlas draws what each o
 
 <h3 align="center">Typed and elegant</h3>
 <p align="center">
-  <a href="https://raoulg.github.io/atlas/showcase/python-clean.html"><img src="docs/img/showcase/python-clean.png" width="100%" alt="Atlas's picture of the typed pipeline: a DataFrame passes from load to smooth to Trend.save, and the command names every file"></a>
+  <a href="https://raoulg.github.io/atlas/showcase/python-clean.html"><img src="docs/img/showcase/python-clean.png" width="100%" alt="Atlas's picture of the typed pipeline: the raw CSV stands between download and load, a DataFrame passes from load to smooth to Trend.save, and the command names every file"></a>
 </p>
 
 Both reach the same places: the web, the raw CSV, the figure. Inside they part. In the sloppy script
-every step reads and changes one global, `Global(sunspots.df)`; nothing is handed from step to step.
-In the typed one a `DataFrame` goes from `load` to `smooth` to `Trend.save`, and the command names
-every file. A red dot is a question Atlas asks the author: why do `get_data` and `plot` pick their
+every step reads and changes one global, `Global(sunspots.df)`; nothing is handed from step to step,
+and `get_data` reads back the CSV it has just written, so the file is only what it leaves behind. In
+the typed one `download` keeps the CSV and `load` reads it, so the file stands between the two; a
+`DataFrame` goes from `load` to `smooth` to `Trend.save`, and the command names every file. A red dot is a question Atlas asks the author: why do `get_data` and `plot` pick their
 own files, and what do the four functions give back? Click a picture to open it in Atlas.
 
 ## Ported to Rust. A picture alike.

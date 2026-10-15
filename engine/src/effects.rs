@@ -580,10 +580,34 @@ fn tables(st: &Statement) -> Vec<String> {
     }
 }
 
+/// How a table a statement makes temporary is named among its sides (`temp:staging`): the
+/// connection's working memory, no place. The builder drops every touch of such a table.
+pub const SCRATCH: &str = "temp:";
+
+/// How a table a statement gives its shape is named among its sides (`schema:readings`): a table
+/// created, altered or indexed holds no new content for it. The builder names the table and makes
+/// [`SCHEMA`] the touch's operation.
+pub const SHAPED: &str = "schema:";
+
+/// The operation of a touch that gives a table its shape.
+pub const SCHEMA: &str = "schema";
+
 /// The tables one statement writes and reads: a statement that changes data writes the first
 /// table it names (`INSERT INTO a SELECT .. FROM b`) and reads the others; a query reads all of
-/// them; a setting names none.
+/// them; a setting names none. A temporary table (`CREATE TEMP TABLE staging ..`) is named as
+/// scratch; a table a statement only gives its shape (`CREATE TABLE IF NOT EXISTS`, `ALTER TABLE`,
+/// `CREATE INDEX`, a view) as shaped.
 fn sides(st: &Statement) -> Vec<(String, Dir)> {
+    // the table it makes or shapes: the first it names, unnamed when its name is filled in at run time
+    let first = || tables(st).into_iter().next().filter(|n| !n.contains(HOLE)).unwrap_or_default();
+    let made = |prefix: &str| vec![(format!("{prefix}{}", first()), Dir::Write)];
+    match st {
+        // a temporary table named at run time is no place either
+        Statement::CreateTable(c) if c.temporary => return if first().is_empty() { vec![] } else { made(SCRATCH) },
+        Statement::CreateTable(c) if c.query.is_none() => return made(SHAPED),
+        Statement::CreateIndex(_) | Statement::AlterTable(_) | Statement::CreateView(_) => return made(SHAPED),
+        _ => {}
+    }
     // `WITH t AS (..) INSERT INTO b ..`: the change is the body; what `WITH` names it reads
     if let Statement::Query(q) = st {
         if let SetExpr::Insert(inner) | SetExpr::Update(inner) | SetExpr::Delete(inner) | SetExpr::Merge(inner) = q.body.as_ref() {
@@ -808,7 +832,8 @@ mod tests {
     }
 
     /// SQL is read by its grammar: a statement writes the table it changes and reads the ones it
-    /// takes from; a setting names no table; a name filled in at run time is no table.
+    /// takes from; one that only gives a table its shape names it as shaped; a setting names no
+    /// table; a name filled in at run time is no table.
     #[test]
     fn statements_read_or_write_tables() {
         let s = |kind: &str, text: &str| statement(db(kind), text).unwrap();
@@ -821,11 +846,18 @@ mod tests {
             t(&[("b", "write"), ("a", "read")]),
             "`t` names a subquery, not a table"
         );
-        assert_eq!(s("db_sqlite", "CREATE TABLE IF NOT EXISTS oordeel (uuid TEXT PRIMARY KEY)"), t(&[("oordeel", "write")]));
+        assert_eq!(s("db_sqlite", "CREATE TABLE IF NOT EXISTS oordeel (uuid TEXT PRIMARY KEY)"), t(&[("schema:oordeel", "write")]));
+        assert_eq!(s("db_sqlite", "CREATE INDEX op_station ON readings (station)"), t(&[("schema:readings", "write")]));
+        assert_eq!(
+            s("db_duckdb", "CREATE TABLE totals AS SELECT * FROM readings"),
+            t(&[("totals", "write"), ("readings", "read")]),
+            "a table made from a query holds what it read"
+        );
+        assert_eq!(s("db_duckdb", "CREATE TEMP TABLE staging (id INT)"), t(&[("temp:staging", "write")]));
         assert_eq!(s("db_duckdb", "DROP TABLE IF EXISTS locaties"), t(&[("locaties", "write")]));
         assert_eq!(s("db_sqlite", "PRAGMA user_version = 3"), t(&[]), "a setting names no table");
         assert_eq!(s("db_sqlite", "PRAGMA journal_mode=WAL"), t(&[]), "nor when the grammar does not read it");
-        assert_eq!(s("db_sqlite", "ALTER TABLE {tabel} ADD COLUMN x TEXT"), t(&[("", "write")]), "a table named at run time");
+        assert_eq!(s("db_sqlite", "ALTER TABLE {tabel} ADD COLUMN x TEXT"), t(&[("schema:", "write")]), "a table named at run time");
         assert_eq!(s("db_sqlite", "SELECT count(*) FROM {tabel}"), t(&[("", "read")]));
         assert_eq!(statement(db("db_sqlite"), "hello world"), None);
         assert_eq!(sql(db("db_sqlite"), &lits(&["SELECT a ", "FROM t"])), Some(t(&[("t", "read")])), "a statement split over literals");

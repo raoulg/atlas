@@ -137,7 +137,7 @@ def main(atlas, destination, diff_page=None):
                 click_render(page, page.locator('[data-id="w:Disk:in"]'))
                 opened = snapshot(page)
                 frame = page.locator('.frame.storage[data-id="group:w:Disk:in"]')
-                assert frame.count() == 1 and 'Disk in' in frame.text_content()
+                assert frame.count() == 1 and 'from disk' in frame.text_content()
                 kids = page.evaluate("""() => {
                   const find = g => g.id === 'group:w:Disk:in' ? g : (g.children || []).map(find).find(Boolean);
                   const f = find(window.planned); return f?.children.map(n => n.id);
