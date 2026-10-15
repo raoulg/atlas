@@ -598,8 +598,8 @@ than two clicks from the code.
 - **M0 (done):** a Python spike on rkg, vectormesh, goad_toolkit and notebooktester.
   One question per round; ten was too early.
 - **M1:** the Rust skeleton, with Atlas itself as the first subject, rkg and
-  vectormesh second and third. Friction goes straight to Linear.
-- **Design rounds** are explicit issues with the label *Design*: three screenshots,
+  vectormesh second and third. Friction goes straight to an issue.
+- **Design rounds** are explicit issues with the label `design`: three screenshots,
   one question, one decision.
 - **Decisions** are recorded on the issue that made them, with the reason.
 

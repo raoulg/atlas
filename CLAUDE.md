@@ -72,15 +72,17 @@ The rigorous half and the visual half are the same structure. Read `docs/referen
   it lives. A notion Atlas starts to use is written there first.
 - **Keep it simple.** The basic elements first, rigorous and consistent across all
   future codebases, before any richness. One question per feedback round.
-- **Plan in Linear first**, project *Atlas — code at the level of types and flows*.
-  Record decisions and their reasons on the issue that made them (label *Decision*).
+- **Plan in GitHub issues first**, in `raoulg/atlas`: Atlas is developed in the open. Record
+  decisions and their reasons on the issue that made them (label `decision`). Older commits name
+  issues by an id of the form `PTT-…`; an open issue that has one names it on its first line.
 - **Two agents work in this repository: Claude Code and Codex.** Before starting, claim the
-  issue in Linear: set it In Progress and open its description with a *Coordination* section that
-  names the active owner, the branch, the worktree, the base commit and the files in scope. Work
-  in your own worktree and branch; never edit another agent's worktree, branch or files in scope.
-  Claude's checkout is `/Users/rgrouls/code/packages/atlas` on `atlas-obeys-its-algebra`, its
-  subagents' are `.claude/worktrees/agent-*`; Codex's are under `~/.codex/worktrees/`. `main` moves
-  only when Raoul asks. When work lands, the issue goes to Done with a comment saying where.
+  issue on GitHub: label it `in progress` and comment a *Coordination* note that names the active
+  owner, the branch, the worktree, the base commit and the files in scope. Work in your own
+  worktree and branch; never edit another agent's worktree, branch or files in scope. Claude's
+  checkout is `/Users/rgrouls/code/packages/atlas` on `atlas-obeys-its-algebra`, its subagents'
+  are `.claude/worktrees/agent-*`; Codex's are under `~/.codex/worktrees/`. `main` moves only when
+  Raoul asks. When work lands, the issue is closed with a comment saying where: the commit and the
+  version. A commit names the issue it serves (`#19`).
 
 ## Practical
 
