@@ -120,3 +120,37 @@ if __name__ == "__main__":
     assert_eq!(parse.gives.iter().map(|h| (h.name.as_str(), h.ty.as_str())).collect::<Vec<_>>(), [("args", "ext:argparse.Namespace")]);
     assert!(g.node("usage.cli.run").unwrap().sites.iter().all(|s| s.command_line.is_none()), "typer parses before the command runs");
 }
+
+/// A value a module keeps is filled where a key is missing and then used: `key not in _cache` looks
+/// at what the value holds, as `path.exists()` looks at the disk, and `_cache[key] = value` writes
+/// into it without reading it. So the function finds what is kept and writes only before it reads,
+/// in an arm: it makes sure of its input and changes nothing it found. A function that reads what
+/// is kept and then writes on it changes it.
+#[test]
+fn a_cache_filled_on_first_use_is_made_sure_of() {
+    let g = written(
+        "memo",
+        &[(
+            "src/memo/__init__.py",
+            "_cache: dict[str, int] = {}\n\n\ndef build(key: str) -> int:\n    return len(key)\n\n\ndef cached(key: str) -> int:\n    if key not in _cache:\n        value = build(key)\n        _cache[key] = value\n    return _cache[key]\n\n\ndef bump(key: str) -> None:\n    _cache[key] = _cache.get(key, 0) + 1\n",
+        )],
+    );
+    let globals = |id: &str| {
+        g.node(id)
+            .unwrap()
+            .touches
+            .iter()
+            .filter(|t| t.kind_name() == "global")
+            .map(|t| (t.op.clone(), t.dir_name(), t.line))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        globals("memo.cached"),
+        [("_cache".to_string(), "write", 11), ("_cache".to_string(), "read", 12)],
+        "the test of a key goes with the reading"
+    );
+    let arrows = atlas_engine::flow::arrows(&g);
+    let cache = "w:Global:memo._cache";
+    assert!(arrows.get("memo.cached").map_or(true, |a| !a.updates.iter().any(|p| p == cache) && !a.reads_back.iter().any(|p| p == cache)));
+    assert!(arrows["memo.bump"].updates.iter().any(|p| p == cache), "{:?}", arrows.get("memo.bump"));
+}

@@ -34,12 +34,15 @@ left, in the domain, when the route uses what was there for what it makes. It st
 codomain, when the route leaves something in it. What the route reads back of what it wrote, or
 reads only to check or count, it does not use: that place stays in the codomain. A place one step
 writes and a later step reads and uses is the object between them, and stands between them. A
-place the route uses and also changes is in both: two projections of one place, `from X` on the
-left and `into X` on the right. A read is preceded by a write only when the write happens
-whenever the read does, not in one branch of a choice the read is outside. Making a place's
-shape (a directory, a table's schema) puts no content there. Where the code does not say which
-way a call goes, the place is in neither.
-**Where.** A function's `reads_back` (`flow.rs`); the viewer's `roleOf`.
+place the route reads and then writes on is in both: two projections of one place, `from X` on
+the left and `into X` on the right. A place it writes only before it reads there, and only in an
+arm (a file downloaded where it is missing, a cache filled on first use), it makes sure of: what
+it reads there is its input, and the place stands between the step that fills it and the step
+that reads it. A read is preceded by a write only when the write happens whenever the read does,
+not in one branch of a choice the read is outside. Making a place's shape (a directory, a table's
+schema) or testing it (whether a file is there, whether a value holds a key) puts and takes no
+content. Where the code does not say which way a call goes, the place is in neither.
+**Where.** A function's `reads_back` and `updates` (`flow.rs`); the viewer's `roleOf`.
 
 ### The effect functor
 **What.** A functor maps objects to objects and arrows to arrows, keeping composition.
@@ -65,8 +68,13 @@ it tells its caller nothing. Either it is dead, or it changes something the code
 **What.** A coproduct A + B: a value is one of the alternatives, and a function out of it is a
 case for each.
 **In Atlas.** A sum type (`Result`, `Option`, a union) is taken apart where it arises, and a
-choice between alternatives is made once, in a place with a name.
-**Where.** Principles `sums` and `choices`.
+choice between alternatives is made once, in a place with a name. A choice in a body is a
+coproduct of its arms, each injected by what decides it as the code writes it (`when not
+raw.exists()`, a `match` pattern, `otherwise`). A choice of one arm is a coproduct with the
+identity, `f + 1`: its steps run when the condition holds and nothing runs otherwise, so it is
+drawn as a choice too.
+**Where.** Principles `sums` and `choices`; `Node::whens` (`body.rs`), `Item::Choice` (`flow.rs`),
+the MCP tool `choices`.
 
 ### Lenses
 **What.** A lens on S has `get: S → A` and `put: A × S → S`, and a lawful one gets back what

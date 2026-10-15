@@ -1,6 +1,7 @@
 //! A route as text: an entry and its steps in call order, each with its own signature and its
-//! own effects. Alternatives share a number and are lettered by branch:
-//! the arms of a choice in the body, or the overrides a call may run.
+//! own effects. Alternatives share a number and are lettered by branch: the arms of a choice in
+//! the body, each with what decides it (`when not raw.exists()`), or the overrides a call may run.
+//! A choice with one arm is lettered too: its steps run when it holds.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -34,6 +35,73 @@ pub fn route(g: &Graph, entry: &str, depth: usize) -> Option<String> {
     out.push('\n');
     let mut shown: HashMap<String, String> = HashMap::from([(start.to_string(), "the entry".to_string())]);
     s.walk(start, "", depth.max(1), &mut shown, &mut out);
+    Some(out)
+}
+
+/// The choices a route makes, each where it is made, in call order: what decides each branch as
+/// the code writes it, and the steps the branch runs with what they touch. A choice of one branch
+/// runs nothing otherwise. What a condition means, Atlas does not say: this is for an agent to
+/// read the conditions and say it.
+pub fn choices(g: &Graph, entry: &str) -> Option<String> {
+    let mut s = Story::new(g);
+    let start = s.find(entry)?;
+    s.reached = g.reach(start);
+    s.entry = start.to_string();
+    let n = s.nodes[start];
+    let kind = n.entry.as_ref().map(|e| format!("{} · {}", kind_label(e.kind), usage(e))).unwrap_or_else(|| s.name(start, ""));
+    let mut out = format!("{kind}\n");
+    let (mut seen, mut queue) = (HashSet::new(), std::collections::VecDeque::from([(start.to_string(), String::new())]));
+    let mut found = 0;
+    while let Some((id, on)) = queue.pop_front() {
+        let k = flow::key(&id, &on);
+        let Some(b) = s.bodies.get(&k).filter(|_| seen.insert(k.clone())) else { continue };
+        let sites = s.nodes.get(id.as_str()).map(|n| n.sites.as_slice()).unwrap_or(&[]);
+        let named = |st: &Step| {
+            if s.nodes.contains_key(st.to.as_str()) {
+                s.name(&st.to, &st.on)
+            } else {
+                st.to.trim_start_matches("op:").to_string()
+            }
+        };
+        let touched = |st: &Step| s.nodes.get(st.to.as_str()).map(|n| s.effects(n)).unwrap_or_default();
+        for item in &b.items {
+            let steps: Vec<&Step> = match item {
+                Item::Step(st) => vec![st],
+                Item::Choice { members, when, .. } => {
+                    found += 1;
+                    let line = members.iter().filter_map(|m| m.step.site.and_then(|i| sites.get(i))).map(|s| s.line).min().unwrap_or(0);
+                    out.push_str(&format!("\n{} · line {line}\n", s.name(&id, &on)));
+                    let mut branches: Vec<usize> = members.iter().map(|m| m.branch).collect();
+                    branches.sort_unstable();
+                    branches.dedup();
+                    for br in &branches {
+                        let runs: Vec<&Step> = members.iter().filter(|m| m.branch == *br).map(|m| &m.step).collect();
+                        let words = match when.get(*br).map(String::as_str) {
+                            None | Some("") => String::new(),
+                            Some("otherwise") => "  otherwise:".to_string(),
+                            Some(w) => format!("  when {w}:"),
+                        };
+                        let effects: Vec<String> = runs.iter().map(|st| touched(st)).filter(|e| !e.is_empty()).collect();
+                        out.push_str(&format!(
+                            "  {}{words}  {}{}\n",
+                            letter(*br),
+                            runs.iter().map(|st| named(st)).collect::<Vec<_>>().join(", "),
+                            if effects.is_empty() { String::new() } else { format!("   ·   {}", effects.join(" · ")) }
+                        ));
+                    }
+                    if branches.len() == 1 {
+                        out.push_str("  -  otherwise: nothing\n");
+                    }
+                    members.iter().map(|m| &m.step).collect()
+                }
+            };
+            queue.extend(steps.into_iter().filter(|st| s.nodes.contains_key(st.to.as_str())).map(|st| (st.to.clone(), st.on.clone())));
+        }
+        queue.extend(b.alts.iter().map(|o| (o.clone(), String::new())));
+    }
+    if found == 0 {
+        out.push_str("\nNo choice on this route: every step runs whenever the route does.\n");
+    }
     Some(out)
 }
 
@@ -151,8 +219,8 @@ impl<'g> Story<'g> {
         for item in &b.items {
             match item {
                 Item::Step(st) if !shown_step(st) => {}
-                Item::Step(st) => self.step(st, st.site.and_then(|i| sites.get(i)), &next(), level, depth, shown, out),
-                Item::Choice { members, .. } => {
+                Item::Step(st) => self.step(st, st.site.and_then(|i| sites.get(i)), &next(), "", level, depth, shown, out),
+                Item::Choice { members, when, .. } => {
                     let members: Vec<_> = members.iter().filter(|m| shown_step(&m.step)).collect();
                     if members.is_empty() {
                         continue;
@@ -163,6 +231,7 @@ impl<'g> Story<'g> {
                             &m.step,
                             m.step.site.and_then(|i| sites.get(i)),
                             &format!("{k}{}", letter(m.branch)),
+                            when.get(m.branch).map_or("", String::as_str),
                             level,
                             depth,
                             shown,
@@ -174,7 +243,7 @@ impl<'g> Story<'g> {
         }
         for (i, o) in b.alts.iter().enumerate() {
             let st = Step { to: o.clone(), on: String::new(), site: None };
-            self.step(&st, None, &format!("{prefix}{}", letter(i)), level, depth, shown, out);
+            self.step(&st, None, &format!("{prefix}{}", letter(i)), "", level, depth, shown, out);
         }
     }
 
@@ -183,6 +252,7 @@ impl<'g> Story<'g> {
         st: &Step,
         site: Option<&Site>,
         num: &str,
+        when: &str,
         level: usize,
         depth: usize,
         shown: &mut HashMap<String, String>,
@@ -197,15 +267,25 @@ impl<'g> Story<'g> {
             let (hands, gives) = site.map(|s| (names(&s.hands), names(&s.gives))).unwrap_or_default();
             let op = st.to.strip_prefix("op:").unwrap_or(&st.to);
             out.push_str(&format!(
-                "{indent}{num}  {op}({hands}){}\n",
-                if gives.is_empty() { String::new() } else { format!(" → {gives}") }
+                "{indent}{num}  {op}({hands}){}{}\n",
+                if gives.is_empty() { String::new() } else { format!(" → {gives}") },
+                match when {
+                    "" => String::new(),
+                    "otherwise" => "   ·   otherwise".to_string(),
+                    w => format!("   ·   when {w}"),
+                }
             ));
             return;
         };
         let k = flow::key(&st.to, &st.on);
         let body = self.bodies.get(&k);
+        let when = match when {
+            "" => String::new(),
+            "otherwise" => "   ·   otherwise".to_string(),
+            w => format!("   ·   when {w}"),
+        };
         if let Some(at) = shown.get(&k).filter(|_| body.is_some()) {
-            out.push_str(&format!("{indent}{num}  {}  → see {at}\n", self.name(&st.to, &st.on)));
+            out.push_str(&format!("{indent}{num}  {}  → see {at}{when}\n", self.name(&st.to, &st.on)));
             return;
         }
         shown.insert(k.clone(), num.to_string());
@@ -218,6 +298,7 @@ impl<'g> Story<'g> {
         if alts > 0 {
             line.push_str(&format!("   ·   one of {alts}"));
         }
+        line.push_str(&when);
         out.push_str(&line);
         out.push('\n');
         if level + 1 < depth {

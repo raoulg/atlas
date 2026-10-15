@@ -18,7 +18,9 @@ app = typer.Typer()
 
 @app.command()
 def run(raw: Path = RAW, figure: Path = FIGURE, months: int = 13) -> None:
-    """Download SILSO's monthly sunspot numbers, smooth them and save their trend."""
+    """Download SILSO's monthly sunspot numbers where none are kept, smooth them and save their trend."""
     settings = Settings(months=months)
-    frame = smooth(load(download(SILSO, raw)), settings.months)
+    if not raw.exists():
+        download(SILSO, raw)
+    frame = smooth(load(raw), settings.months)
     Trend(settings).save(frame, figure)

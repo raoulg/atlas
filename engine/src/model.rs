@@ -172,6 +172,11 @@ pub struct Node {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[ts(type = "Array<[number, number]>")]
     pub arm_lines: Vec<(u32, u32)>,
+    /// What decides each arm of its body's choices, as the code writes it: `(choice, arm, when)`,
+    /// with the choices and arms numbered as `Site::arms` numbers them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(type = "Array<[number, number, string]>")]
+    pub whens: Vec<(u32, u32, String)>,
 }
 
 impl Node {

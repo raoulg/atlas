@@ -36,7 +36,8 @@ and give the issue to `resolve`. To ask whether to make a change, show it rather
 `propose` the files the change would write, as sketch code (signatures, types, calls in order; \
 bodies may stay empty), and the page draws the working tree and the proposal as one picture, \
 what you add, remove and change marked; `look` at the part you mean, and `withdraw` it once it \
-is decided.";
+is decided. To say what the code does not (what a condition of `choices` means, what a step is \
+for), `annotate` a box or a line; it shows on the page in your words.";
 
 /// Answer every message on stdin until it closes, reading repositories with `opts`.
 pub fn serve(opts: &Options) -> Result<()> {
@@ -137,6 +138,15 @@ fn tools() -> Value {
             "annotations": read_only,
         },
         {
+            "name": "choices",
+            "description": "The choices a route makes, each where it is made, in call order: what decides each branch as the code writes it (`when not raw.exists()`, a `match` pattern, `otherwise`), and the steps each branch runs with the places they touch; a choice of one branch runs nothing otherwise. Atlas does not say what a condition means: read the conditions and say it, e.g. \"only on the first run\", or \"never true here\". The page draws each choice as a frame titled with its conditions.",
+            "inputSchema": { "type": "object", "properties": {
+                "path": path,
+                "entry": { "type": "string", "description": "The route, by an entry's id or label as `routes` lists them." },
+            }, "required": ["entry"] },
+            "annotations": read_only,
+        },
+        {
             "name": "view",
             "description": "Draw a repository's Flowchart in a view of your choosing and write it as a page the human can open: the same picture `atlas view` draws, opened where you point. A view is JSON: `route` (an entry id from `routes`), and `open.functions` (the steps that run these functions are opened, as `route` lists them); also `kind` (all routes of one kind: cli, export, script, notebook, route, mcp, make), `part`, `focus` (package ids), and the opened `parts`, `units` (packages), `families` (type ids) and `places`. Gives the file the page is in.",
             "inputSchema": { "type": "object", "properties": {
@@ -181,6 +191,16 @@ fn tools() -> Value {
                 "files": { "type": "object", "description": "Each file the proposal writes, by its path from the repository's root, with its whole text; `null` for a file it removes. Files left out stay as they are.", "additionalProperties": { "type": ["string", "null"] } },
                 "withdraw": { "type": "boolean", "description": "Take the proposal away: the page draws the working tree alone again." },
             } },
+            "annotations": { "readOnlyHint": false, "destructiveHint": false, "openWorldHint": false },
+        },
+        {
+            "name": "annotate",
+            "description": "Say something on a box or a line of `atlas serve`'s page, in your own words: what a condition of `choices` means (\"only on the first run\"), what a step is for, why a place stands where it does. It shows as a mark on what it is on, with your words on hover, apart from what Atlas traces. Name what it is on as `shown` lists the boxes and lines (a choice's frame is a box). A new annotation on the same box replaces the last; an empty `text` takes it away.",
+            "inputSchema": { "type": "object", "properties": {
+                "path": local,
+                "on": { "type": "string", "description": "A box by its id, or a line as `from>to`, as `shown` lists them." },
+                "text": { "type": "string", "description": "What you say of it. Empty takes the annotation away." },
+            }, "required": ["on"] },
             "annotations": { "readOnlyHint": false, "destructiveHint": false, "openWorldHint": false },
         },
         {
@@ -302,6 +322,20 @@ fn call(name: &str, args: &Value, opts: &Options) -> Option<Result<String, Strin
                 (Err(e), _) | (_, Err(e)) => Err(format!("Could not read the proposal: {e}")),
             }
         }
+        "annotate" => match text("on").filter(|o| !o.is_empty()) {
+            Some(on) => crate::shared::annotate(&here(text("path")), on, text("text"))
+                .map(|all| {
+                    format!(
+                        "The page of `atlas serve` shows {} annotation{} within a few seconds.",
+                        all.len(),
+                        if all.len() == 1 { "" } else { "s" }
+                    )
+                })
+                .map_err(|e| format!("Could not keep the annotation: {e}")),
+            None => {
+                Err("`annotate` takes what it is `on` (a box's id or a line as `from>to`, as `shown` lists them) and the `text`.".into())
+            }
+        },
         "notes" => {
             let repo = here(text("path"));
             crate::shared::read_open(&repo).map(|ns| notes(&repo, &ns)).map_err(|e| format!("Could not read the notes: {e}"))
@@ -318,6 +352,10 @@ fn call(name: &str, args: &Value, opts: &Options) -> Option<Result<String, Strin
             }
             None => Err("`resolve` takes a note's `id`, and the `commit` and `issue`, if any.".into()),
         },
+        "choices" => graph(text("path"), opts).and_then(|g| {
+            let entry = text("entry").unwrap_or("");
+            story::choices(&g, entry).ok_or_else(|| format!("No route `{entry}` in {}; `routes` lists them.", g.root))
+        }),
         "route" => graph(text("path"), opts).and_then(|g| {
             let entry = text("entry").unwrap_or("");
             let depth = args.get("depth").and_then(Value::as_u64).unwrap_or(2) as usize;

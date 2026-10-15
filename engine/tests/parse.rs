@@ -452,6 +452,26 @@ fn alternatives_carry_their_arms() {
     assert_eq!(arms("handed.choose.infer"), [(0, 1), (1, 1)], "`None`, then its argument");
 }
 
+/// Each arm of a choice says what decides it, as the code writes it: the first arm of an `if` or a
+/// conditional expression its condition, the other `otherwise`; a `match` arm its pattern; of an
+/// or-else the second arm runs otherwise. A choice of one arm is a choice: its step runs when the
+/// condition holds, in the route as in its text.
+#[test]
+fn an_arm_says_what_decides_it() {
+    let g = fixture();
+    let whens = |g: &Graph, id: &str| g.node(id).unwrap().whens.clone();
+    let w = |c: u32, a: u32, t: &str| (c, a, t.to_string());
+    assert_eq!(
+        whens(&g, "fixture.build.prepare"),
+        [w(0, 0, "mode == \"fresh\""), w(0, 1, "otherwise"), w(1, 0, "mode == \"fresh\"")],
+        "`a if mode == \"fresh\" else b`, then `if mode == \"fresh\": print(..)`"
+    );
+    let rs = analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixture-rs"), &Options::default()).unwrap();
+    assert_eq!(whens(&rs, "handed.choose.resolve"), [w(0, 0, "Some(p)"), w(0, 1, "None"), w(1, 1, "otherwise")]);
+    let text = atlas_engine::story::choices(&g, "fixture.build.prepare").unwrap();
+    assert!(text.contains("  a  when mode == \"fresh\":  build_graph") && text.contains("  b  otherwise:  empty"), "{text}");
+}
+
 /// Where data rests is named as precisely as the code allows: a literal file, else its format;
 /// a database statement reads or writes a table.
 #[test]

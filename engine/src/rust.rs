@@ -2417,6 +2417,11 @@ impl<'a, 't> Body<'a, 't> {
                 let built = crate::paths::request_of(&op, first(call).map(|a| self.eval.of(self.at(), a, 0)).unwrap_or_default());
                 self.touch(c, kind, &op, &subtree()).into_iter().map(|t| (t, built.clone())).collect()
             }
+            // a method of a path, at the path it is called on: `cli.raw.exists()`
+            Some((kind, op, _, false, _)) if kind.world == World::Disk && knowledge::RUST_PATH_READS.contains(&op.as_str()) => {
+                let built = self.eval.of(self.at(), value, 0);
+                self.touch(c, kind, &op, &subtree()).into_iter().map(|t| (t, built.clone())).collect()
+            }
             Some((kind, op, _, false, _)) => now(self.touch(c, kind, &op, &subtree())),
             // a method of a path reads the file the path is
             None if knowledge::RUST_PATH_READS.contains(&method) => {

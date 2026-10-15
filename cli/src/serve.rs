@@ -112,6 +112,7 @@ impl Server {
                 Answer::json(v.to_string())
             }),
             ("GET", "/api/notes") => json(Ok(serde_json::to_value(shared::notes(&self.repo)).unwrap_or_default())),
+            ("GET", "/api/annotations") => json(Ok(serde_json::to_value(shared::annotations(&self.repo)).unwrap_or_default())),
             ("POST", "/api/notes") => json(self.note(req)),
             ("POST", "/api/notes/reopen") => json(self.reopen(req)),
             _ => Answer::text("404 Not Found", format!("nothing at {} {}", req.method, req.path)),

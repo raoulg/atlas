@@ -53,7 +53,22 @@ fn a_client_initializes_lists_and_calls() {
     let tools: Vec<&str> = replies[1]["result"]["tools"].as_array().unwrap().iter().map(|t| t["name"].as_str().unwrap()).collect();
     assert_eq!(
         tools,
-        ["principles", "check", "explain", "routes", "route", "view", "changes", "shown", "look", "propose", "notes", "resolve"]
+        [
+            "principles",
+            "check",
+            "explain",
+            "routes",
+            "route",
+            "choices",
+            "view",
+            "changes",
+            "shown",
+            "look",
+            "propose",
+            "annotate",
+            "notes",
+            "resolve"
+        ]
     );
     assert!(text(&replies[2]).contains("prepare tests `mode`"), "{}", text(&replies[2]));
     assert!(!text(&replies[2]).contains("\ndoors ·"), "only the principle asked for");
@@ -65,8 +80,13 @@ fn a_client_initializes_lists_and_calls() {
         text(&replies[4])
     );
     // a package named on its own is read as the project it is in, asked for that package:
-    // `Repo::read(&root, ..)?.asked_for(package)`, a method on what the call before it gives
-    assert!(text(&replies[4]).contains("\n  1.4  Repo.asked_for(asked) → Repo\n"), "{}", text(&replies[4]));
+    // `Repo::read(&root, ..)?.asked_for(package)`, a method on what the call before it gives, run
+    // only when a package is named
+    assert!(
+        text(&replies[4]).contains("\n  1.3a  Repo.asked_for(asked) → Repo   ·   when Some((root, package))\n"),
+        "{}",
+        text(&replies[4])
+    );
     // the places other routes hand `analyze` (a revision `changes` reads into a temporary folder) are theirs
     assert!(!text(&replies[4]).contains("$TMPDIR"), "{}", text(&replies[4]));
     assert!(text(&replies[4]).contains("2.2  Language.parse(repo, opts) → Graph   ·   one of 3"), "{}", text(&replies[4]));

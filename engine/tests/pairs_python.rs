@@ -530,5 +530,8 @@ fn a_table_made_on_connecting_holds_what_was_there() {
         for f in ["harvest.store.ReadingStore.history", "harvest.store.ReadingStore.summary"] {
             assert!(arrows.get(f).map_or(true, |a| a.reads_back.is_empty()), "{name} {f}: {:?}", arrows.get(f));
         }
+        // the summary kept is read before one is made and kept: the cache is used and changed
+        let summary = arrows.get("harvest.store.ReadingStore.summary").map(|a| a.updates.clone()).unwrap_or_default();
+        assert!(summary.iter().any(|p| p == "w:SQLite:summaries"), "{name}: {summary:?}");
     }
 }

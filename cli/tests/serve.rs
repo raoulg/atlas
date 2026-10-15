@@ -2,7 +2,7 @@
 //! it, an agent points at a box and the page goes there once, and a note the reader writes is
 //! resolved by an agent, never by its reading alone, and opened again by the reader. The page follows the code: a changed file is drawn
 //! anew, and the page knows which drawing it is. What an agent proposes is drawn beside the
-//! working tree.
+//! working tree, and what it says of a box is shown on it.
 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpStream;
@@ -199,6 +199,25 @@ fn a_proposal_is_drawn_beside_the_working_tree() {
         .expect("the server draws the working tree again");
     let (_, page) = send(&at, "GET", "/", None, false);
     assert!(page.contains(&format!("\"drawn\":\"{alone}\"")) && !page.contains("\"diff\":"), "the working tree alone");
+
+    server.kill().ok();
+    let _ = std::fs::remove_dir_all(repo.parent().unwrap());
+}
+
+/// An agent says what the code does not, on a box or a line, and the page shows it in the agent's
+/// words; a new annotation on the same box replaces the last, and an empty one takes it away.
+#[test]
+fn an_agent_annotates_a_box() {
+    let repo = repository("annotate");
+    let (mut server, at) = serve(&repo);
+    let annotations = || serde_json::from_str::<Value>(&send(&at, "GET", "/api/annotations", None, false).1).unwrap();
+
+    assert!(tool(&repo, "annotate", json!({"on": "spots.count", "text": "counts one up"})).contains("1 annotation"));
+    assert_eq!(annotations(), json!([{"on": "spots.count", "text": "counts one up"}]));
+    tool(&repo, "annotate", json!({"on": "spots.count", "text": "adds one"}));
+    assert_eq!(annotations(), json!([{"on": "spots.count", "text": "adds one"}]), "the last word replaces the one before");
+    tool(&repo, "annotate", json!({"on": "spots.count", "text": ""}));
+    assert_eq!(annotations(), json!([]));
 
     server.kill().ok();
     let _ = std::fs::remove_dir_all(repo.parent().unwrap());

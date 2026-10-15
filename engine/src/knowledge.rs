@@ -950,8 +950,13 @@ pub const FILE_PACKAGES: &[&str] = &[
     "ruamel",
 ];
 
-/// What such a library's operation does with a file, by its name.
+/// What such a library's operation does with a file, by its name: a path's tests of what is
+/// there (`exists`) among the reads, as in every language.
 pub const FILE_READS: &[&str] = &[
+    "exists",
+    "is_file",
+    "is_dir",
+    "stat",
     "read_text",
     "read_bytes",
     "read_csv",

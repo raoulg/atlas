@@ -344,12 +344,13 @@ impl Touch {
     }
 
     /// Whether it makes or checks its place's shape rather than its content: a directory made, a
-    /// path tested, a table created.
+    /// path tested, a table created, a key looked for.
     pub fn shape(&self) -> bool {
         use crate::effects::{fs_op, FsOp};
         match self.kind {
             World::Disk => matches!(fs_op(&self.op), FsOp::Creates | FsOp::Checks),
             World::Db(_) => self.op == crate::effects::SCHEMA,
+            World::Global => self.op == crate::effects::MEMBERSHIP,
             _ => false,
         }
     }
@@ -368,10 +369,11 @@ impl Touch {
         }
     }
 
-    /// Where the touch rests. A file the code names is that file, unless the operation looks at
-    /// the shape of the file system rather than at a file's data (whether a path exists, what a
-    /// directory lists), which is the disk, except on a directory, a place of its own
-    /// (`assets/regelingen/`). A file only a variable names is the disk read or written, split
+    /// Where the touch rests. A file the code names is that file, and so is a test whether it is
+    /// there or the making of it, which serve its data; an operation on the shape of the file
+    /// system around it (what a directory lists, a file moved or removed) is the disk, except on a
+    /// directory, a place of its own (`assets/regelingen/`). A file only a variable names is the
+    /// disk read or written, split
     /// by that name. A database is one place, split by its tables; a host on the web and a
     /// model's checkpoint are named where the code names them; a program by its command.
     pub fn place(&self) -> Place {
@@ -385,7 +387,7 @@ impl Touch {
             }
             World::Disk => {
                 let shape = crate::effects::fs_op(&self.op) != crate::effects::FsOp::Data;
-                if !self.artifact.is_empty() && (!shape || self.artifact.ends_with('/')) {
+                if !self.artifact.is_empty() && (!shape || self.shape() || self.artifact.ends_with('/')) {
                     let a = &self.artifact;
                     return Place { file: a.clone(), ..place(format!("w:File:{a}"), format!("File({a})"), a.clone(), "file") };
                 }
@@ -498,16 +500,24 @@ pub struct Arrow {
     /// The places where its own body reads only what its own body wrote, apart from what it calls.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub own_reads_back: Vec<String>,
+    /// The places where it writes after it read what was there: it changes what it found (a
+    /// register's next version, a cache of results). A place it writes only before it reads there,
+    /// and only in an arm (a file downloaded where it is missing), it does not change: what it
+    /// reads there is its input, made sure of.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub updates: Vec<String>,
 }
 
 /// What a function does at one place, in the order it runs: whether it reads what was there before
-/// it ran, whether it reads what it wrote, whether it writes, and whether it writes whenever it runs.
+/// it ran, whether it reads what it wrote, whether it writes, whether it writes whenever it runs,
+/// and whether it writes after it read what was there.
 #[derive(Clone, Copy, Default)]
 struct Order {
     finds: bool,
     reads_back: bool,
     writes: bool,
     always_writes: bool,
+    updates: bool,
 }
 
 /// What `id` does at each place, its own touches and its calls in line order, each function
@@ -563,6 +573,8 @@ fn orders(ix: &Ix, id: &str, mut done: Option<&mut HashMap<String, BTreeMap<Stri
         for (place, b) in happened {
             let arms = written_in.entry(place.clone()).or_default();
             let o = out.entry(place).or_default();
+            // a write after what was found changes it
+            o.updates |= b.updates || (b.writes && o.finds);
             if b.finds {
                 // what it finds was written before it, when that write runs whenever the read does
                 if o.always_writes || arms.iter().any(|w| within(at, *w)) {
@@ -590,6 +602,11 @@ fn orders(ix: &Ix, id: &str, mut done: Option<&mut HashMap<String, BTreeMap<Stri
 /// The places where what is read is only what was written.
 fn reads_back(orders: BTreeMap<String, Order>) -> Vec<String> {
     orders.into_iter().filter(|(_, o)| o.reads_back && !o.finds).map(|(p, _)| p).collect()
+}
+
+/// The places where what was found is written on.
+fn updates(orders: BTreeMap<String, Order>) -> Vec<String> {
+    orders.into_iter().filter(|(_, o)| o.updates).map(|(p, _)| p).collect()
 }
 
 impl<'g> Ix<'g> {
@@ -633,6 +650,7 @@ fn arrow_of(ix: &Ix, n: &Node, done: &mut HashMap<String, BTreeMap<String, Order
         return Arrow {
             reads_back: reads_back(orders(ix, &n.id, Some(done))),
             own_reads_back: reads_back(orders(ix, &n.id, None)),
+            updates: updates(orders(ix, &n.id, Some(done))),
             ..Default::default()
         };
     }
@@ -649,6 +667,7 @@ fn arrow_of(ix: &Ix, n: &Node, done: &mut HashMap<String, BTreeMap<String, Order
         returns_value,
         reads_back: reads_back(orders(ix, &n.id, Some(done))),
         own_reads_back: reads_back(orders(ix, &n.id, None)),
+        updates: updates(orders(ix, &n.id, Some(done))),
     }
 }
 
@@ -708,7 +727,15 @@ pub struct Member {
 #[serde(untagged)]
 pub enum Item {
     Step(Step),
-    Choice { choice: u32, members: Vec<Member> },
+    /// The arms of one choice that hold steps, each a branch, and what decides each branch, by
+    /// branch, as the code writes it. A choice with one such arm is still a choice: its steps run
+    /// when it holds, and nothing runs otherwise.
+    Choice {
+        choice: u32,
+        members: Vec<Member>,
+        #[serde(skip_serializing_if = "Vec::is_empty")]
+        when: Vec<String>,
+    },
 }
 
 /// What running a function means, on a value of a known class or not: the overrides a call may
@@ -805,8 +832,9 @@ impl<'g> Ix<'g> {
     }
 }
 
-/// The steps in call order, the alternatives of each choice with two or more branches together.
-fn grouped(steps: Vec<(Step, Vec<(u32, u32)>)>) -> Vec<Item> {
+/// The steps in call order, the steps of each choice together, by branch, with what decides each
+/// branch (`whens`, as `Node::whens` holds them).
+fn grouped(steps: Vec<(Step, Vec<(u32, u32)>)>, whens: &[(u32, u32, String)]) -> Vec<Item> {
     let choice_of = |arms: &Vec<(u32, u32)>| arms.first().map(|a| a.0);
     let mut items = vec![];
     let mut placed = HashSet::new();
@@ -822,12 +850,21 @@ fn grouped(steps: Vec<(Step, Vec<(u32, u32)>)>) -> Vec<Item> {
                 paths.push(a);
             }
         }
-        if paths.len() < 2 {
-            items.push(Item::Step(step.clone()));
-        } else if placed.insert(k) {
+        if placed.insert(k) {
             let members =
                 group.iter().map(|(s, a)| Member { step: s.clone(), branch: paths.iter().position(|p| *p == a).unwrap_or(0) }).collect();
-            items.push(Item::Choice { choice: k, members });
+            // a branch runs when every arm on its path does: an `except` inside an `if`
+            let when: Vec<String> = paths
+                .iter()
+                .map(|p| {
+                    p.iter()
+                        .filter_map(|(c, a)| whens.iter().find(|w| w.0 == *c && w.1 == *a).map(|w| w.2.as_str()))
+                        .collect::<Vec<_>>()
+                        .join(" · ")
+                })
+                .collect();
+            let when = if when.iter().all(String::is_empty) { vec![] } else { when };
+            items.push(Item::Choice { choice: k, members, when });
         }
     }
     items
@@ -865,7 +902,7 @@ fn body_of(ix: &Ix, n: &Node, on: &str) -> Body {
                 Some((Step { to, on: runs_on.to_string(), site: Some(i) }, s.arms.clone()))
             })
             .collect();
-        return Body { alts, items: grouped(steps), made_from: vec![] };
+        return Body { alts, items: grouped(steps, &n.whens), made_from: vec![] };
     }
     let callees: Vec<String> = if n.kind == NodeKind::Class && n.entry.is_some() {
         let mut out: Vec<String> = ix.ctor(&n.id).into_iter().collect();
@@ -900,7 +937,7 @@ fn body_of(ix: &Ix, n: &Node, on: &str) -> Body {
         .iter()
         .map(|c| (Step { to: c.clone(), on: String::new(), site: None }, arms.get(c.as_str()).cloned().unwrap_or_default()))
         .collect();
-    Body { alts, items: grouped(steps), made_from: vec![] }
+    Body { alts, items: grouped(steps, &n.whens), made_from: vec![] }
 }
 
 /// The body of every function, and of every function on each class a step runs it on, by `key`:

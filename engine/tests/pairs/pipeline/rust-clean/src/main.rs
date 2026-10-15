@@ -11,7 +11,7 @@ const SILSO: &str = "https://www.sidc.be/SILSO/DATA/SN_m_tot_V2.0.csv";
 const RAW: &str = "data/raw/sunspots.csv";
 const FIGURE: &str = "figures/sunspots.png";
 
-/// Downloads SILSO's monthly sunspot numbers, smooths them and saves their trend.
+/// Downloads SILSO's monthly sunspot numbers where none are kept, smooths them and saves their trend.
 #[derive(Parser)]
 struct Cli {
     /// Where SILSO's file is kept.
@@ -28,7 +28,10 @@ struct Cli {
 fn main() -> Result<(), Error> {
     let cli = Cli::parse();
     let settings = Settings { months: cli.months, ..Settings::default() };
-    let series = load(&download(SILSO, &cli.raw)?)?;
+    if !cli.raw.exists() {
+        download(SILSO, &cli.raw)?;
+    }
+    let series = load(&cli.raw)?;
     let smoothed = smooth(&series, settings.months);
     Trend::new(settings).save(&series, &smoothed, &cli.figure)?;
     Ok(())

@@ -226,14 +226,59 @@ impl<'t, 's> Steps<'t, 's> {
 
     /// Write the body's edges and its steps to the graph.
     pub fn finish(self, store: &mut GraphBuilder, id: &str) {
-        let arm_lines = self.arm_lines();
+        let (arm_lines, whens) = (self.arm_lines(), self.whens());
         for (t, kind, via, arms) in self.edges {
             store.add_call(id, &t, kind, via, arms);
         }
         if let Some(n) = store.nodes.get_mut(id) {
             n.sites = self.sites;
             n.arm_lines = arm_lines;
+            n.whens = whens;
         }
+    }
+
+    /// What decides each arm of the body's choices, as the code writes it: `(choice, arm, when)`.
+    /// An arm that decides itself (a `case`, a `match` arm) runs when its pattern matches; the
+    /// first arm of a choice decided in one place (an `if`, an `elif`, a conditional expression)
+    /// when that holds, and a later one otherwise. Of two arms nothing decides (an or-else, a
+    /// `try` and its handler) the first is tried and the second runs otherwise; the first, and
+    /// the arms of a longer choice nothing decides, have no words.
+    fn whens(&self) -> Vec<(u32, u32, String)> {
+        let decided = |n: TsNode| -> String {
+            let parts: Vec<&str> = named_children(n)
+                .into_iter()
+                .filter(|c| (self.syntax.part)(n, *c, self.src) == Part::Decides)
+                .map(|c| crate::tree::text(c, self.src))
+                .collect();
+            worded(&parts.join(" if "))
+        };
+        let mut out = vec![];
+        for p in walk_all(self.body).into_iter().filter(|p| self.choices.contains_key(&p.id())) {
+            let k = self.choices[&p.id()];
+            let arms: Vec<(TsNode, u32)> = named_children(p)
+                .into_iter()
+                .filter_map(|c| match (self.syntax.part)(p, c, self.src) {
+                    Part::Arm(a) => Some((c, a)),
+                    _ => None,
+                })
+                .collect();
+            let first = arms.iter().map(|(_, a)| *a).min();
+            let n_arms = arms.len();
+            let own = decided(p);
+            for (c, a) in arms {
+                let itself = if self.choices.contains_key(&c.id()) { decided(c) } else { String::new() };
+                let when = match () {
+                    _ if !itself.is_empty() => itself,
+                    _ if Some(a) == first => own.clone(),
+                    _ if !own.is_empty() || n_arms == 2 => "otherwise".to_string(),
+                    _ => String::new(),
+                };
+                if !when.is_empty() {
+                    out.push((k, a, when));
+                }
+            }
+        }
+        out
     }
 
     /// The lines each arm of the body's choices spans.
@@ -254,8 +299,38 @@ fn line(c: TsNode) -> u32 {
     c.start_position().row as u32 + 1
 }
 
+/// Code as words on a picture: one line, at most 60 characters, without the parentheses a
+/// language puts around a condition (`if (!existsSync(raw))`).
+fn worded(code: &str) -> String {
+    let mut one: String = code.split_whitespace().collect::<Vec<_>>().join(" ");
+    while one.starts_with('(') && one.ends_with(')') && closes_at_end(&one) {
+        one = one[1..one.len() - 1].trim().to_string();
+    }
+    if one.chars().count() <= 60 {
+        one
+    } else {
+        one.chars().take(59).collect::<String>() + "…"
+    }
+}
+
 fn span(c: TsNode) -> (u32, u32) {
     (c.start_byte() as u32, c.end_byte() as u32)
+}
+
+/// Whether the parenthesis that opens `s` is the one that closes it.
+fn closes_at_end(s: &str) -> bool {
+    let mut depth = 0;
+    for (i, c) in s.char_indices() {
+        match c {
+            '(' => depth += 1,
+            ')' => depth -= 1,
+            _ => {}
+        }
+        if depth == 0 {
+            return i == s.len() - 1;
+        }
+    }
+    false
 }
 
 #[cfg(test)]

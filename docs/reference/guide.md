@@ -30,6 +30,10 @@ Read it from left to right:
   not say which way it uses (a query on a bare database session), which stands between the
   steps. Making a place's shape, a folder for a file or a table's schema, is part of what is
   written or read there.
+- **A dashed frame is a choice.** Its title says what decides each branch, as the code writes it,
+  each in the branch's colour: `one of ● mode == "train" ● otherwise`. A step that runs only when
+  a condition holds stands in a frame of its own, `only when not raw.exists()`: the route follows
+  it in principle and skips it when the condition does not hold.
 - **Read it as a sentence:** *read* the repository into a `Repo`, and make its `graph_of`
   with the `Options` of the reading. That is Atlas's whole job, and the code says it in two
   calls.
@@ -269,6 +273,9 @@ changed, the picture drawn, an export, a note, and what the agent did with it.
   boxes and lines it draws. The agent reads them with `shown` when you say "this box".
 - **Look here.** The agent points the page at a view, a box or a line with `look`. The page goes
   there, opens the way to the box, selects it and makes it light up.
+- **What the agent says.** With `annotate` the agent puts its own words on a box or a line: what a
+  condition means ("only on the first run"), what a step is for. A ✦ marks it; hover it for the
+  words. They are the agent's statements, apart from what Atlas traces.
 - **A proposal.** To ask "shall I do this?", the agent shows the change rather than describing it.
   With `propose` it gives the files the change would write, as sketch code: the signatures with
   their types and the calls in their order, bodies left empty. A sketch has to parse, not to
@@ -294,8 +301,8 @@ changed, the picture drawn, an export, a note, and what the agent did with it.
   file `atlas view` writes.
 
 What the page and the agent share is kept in `.atlas/` (`shown.json`, `look.json`,
-`notes.json`, `serving.json`, `proposal.json`), so the two need not run together, and git never
-sees it.
+`notes.json`, `serving.json`, `proposal.json`, `annotations.json`), so the two need not run
+together, and git never sees it.
 
 ## What Atlas keeps
 
@@ -317,8 +324,9 @@ same either way. `--no-cache` reads everything anew and keeps nothing.
 ## Give your coding agent the same picture
 
 `atlas mcp` serves Atlas over the [Model Context Protocol](https://modelcontextprotocol.io).
-The tools are `principles`, `check`, `explain`, `routes`, `route` and `changes`; `route`
-returns what one entry point does, step by step, and `changes` what the working tree did
+The tools are `principles`, `check`, `explain`, `routes`, `route`, `choices` and `changes`;
+`route` returns what one entry point does, step by step, `choices` the choices it makes with what
+decides each branch, and `changes` what the working tree did
 since a commit (or, with `until`, what one commit did against another), so an agent can check its
 edit against what it was meant to do. Register it once, for every project, in
 [Claude Code](https://claude.com/claude-code) and in [Codex](https://openai.com/codex):

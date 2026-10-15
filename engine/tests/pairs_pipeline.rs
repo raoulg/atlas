@@ -467,9 +467,9 @@ fn python_sloppy_the_frame_travels_beside_the_route() {
 }
 
 /// A value a module keeps between calls, which its functions change, is a place: the student's
-/// frame is `Global(sunspots.df)`. `get_data` writes it, `clean` and `smooth` read and change it
-/// (`df.drop(.., inplace=True)`, `df["smooth"] = ..`), `plot` reads it. Drawn, not judged: a global
-/// is sometimes the right choice.
+/// frame is `Global(sunspots.df)`. `get_data` writes it and sets its columns, which reads nothing of
+/// it; `clean` and `smooth` read and change it (`df.drop(.., inplace=True)`, `df["smooth"] = ..`),
+/// `plot` reads it. Drawn, not judged: a global is sometimes the right choice.
 #[test]
 fn python_sloppy_the_frame_is_a_global_place() {
     let s = sloppy();
@@ -481,7 +481,7 @@ fn python_sloppy_the_frame_is_a_global_place() {
             .map(|t| t.dir_name())
             .collect::<BTreeSet<_>>()
     };
-    assert_eq!(global("sunspots.get_data"), BTreeSet::from(["read", "write"]));
+    assert_eq!(global("sunspots.get_data"), BTreeSet::from(["write"]));
     assert_eq!(global("sunspots.clean"), BTreeSet::from(["read", "write"]));
     assert_eq!(global("sunspots.smooth"), BTreeSet::from(["read", "write"]));
     assert_eq!(global("sunspots.plot"), BTreeSet::from(["read"]));
@@ -708,16 +708,18 @@ fn rust_clean_trend_is_a_plot() {
     }
 }
 
-/// Composition is call order: `main` downloads SILSO's file, and `load` is handed the path
-/// `download` gives back. The crate's root re-exports `download` from the module of that name, as
-/// Python's `__init__` and TypeScript's `index.ts` do, so it is a door.
+/// Composition is call order: `main` downloads SILSO's file where none is kept, and `load` is
+/// handed the path the command names, the one `download` is handed. The crate's root re-exports
+/// `download` from the module of that name, as Python's `__init__` and TypeScript's `index.ts` do,
+/// so it is a door.
 #[test]
 fn rust_clean_main_downloads_the_file() {
     let r = rust_clean();
     let main = "sunspots.main.main";
     let pairs = |hs: &[Held]| hs.iter().map(|h| (h.name.clone(), h.ty.clone())).collect::<Vec<_>>();
     let downloading = step(r, main, "sunspots.download.download");
-    assert_eq!(pairs(&step(r, main, "sunspots.series.load").hands), pairs(&downloading.gives));
+    let loading = pairs(&step(r, main, "sunspots.series.load").hands);
+    assert!(!loading.is_empty() && loading.iter().all(|h| pairs(&downloading.hands).contains(h)), "{loading:?}");
     assert_eq!(node(r, "sunspots.download.download").entry.as_ref().map(|e| e.kind), Some(EntryKind::Export));
 }
 
@@ -921,27 +923,42 @@ fn the_port_the_same_places() {
     }
 }
 
-/// A file one step writes and a later step reads is the object between them: the route reads only
-/// what it wrote there, and neither step reads back a write of its own. The student's `get_data`
-/// writes the raw file and reads it again itself: the file is no joint between steps but what one
-/// step leaves behind, and the frame it read goes on through a global.
+/// The raw file is fetched only where it is missing: the run's download stands in a choice of one
+/// branch, decided by whether the file is there (`not raw.exists()`, `!cli.raw.exists()`,
+/// `!existsSync(values.raw)`), and nothing runs otherwise. What `load` reads is what is there, an
+/// earlier run's or this one's, so the run reads back no write of its own, and it writes the file
+/// only before it reads it: it makes sure of its input and changes nothing it found, so the file
+/// stands between the download and the reading, as when the run downloads every time. The student's
+/// `get_data` downloads on every run and reads the file again itself: the file is no joint between
+/// steps but what one step leaves behind, and the frame it read goes on through a global.
 #[test]
-fn the_port_the_raw_file_stands_between_download_and_load() {
+fn the_port_fetches_the_raw_file_only_where_it_is_missing() {
     const RAW: &str = "w:File:data/raw/sunspots.csv";
     for p in ports() {
+        let bodies = atlas_engine::flow::bodies(p.g);
+        let guarded = bodies[p.run].items.iter().any(|it| {
+            matches!(it, atlas_engine::flow::Item::Choice { members, when, .. }
+                if members.iter().all(|m| m.step.to == p.download) && when.len() == 1 && when[0].contains("exists"))
+        });
+        assert!(guarded, "{}: {:?}", p.language, bodies[p.run].items);
+        let choices = atlas_engine::story::choices(p.g, p.run).unwrap();
+        assert!(choices.contains("exists") && choices.contains("otherwise: nothing"), "{}: {choices}", p.language);
+        // what is filled before it is read is no update: the run makes sure of its input
         let arrows = atlas_engine::flow::arrows(p.g);
-        let back = |f: &str| arrows.get(f).map_or(false, |a| a.reads_back.iter().any(|x| x == RAW));
-        assert!(back(p.run) && !back(p.download) && !back(p.load), "{}: {:?}", p.language, arrows.get(p.run));
+        let names = |l: Option<&Vec<String>>| l.map_or(false, |l| l.iter().any(|x| x == RAW));
+        assert!(!names(arrows.get(p.run).map(|a| &a.reads_back)) && !names(arrows.get(p.run).map(|a| &a.updates)), "{}", p.language);
     }
     assert!(atlas_engine::flow::arrows(sloppy())["sunspots.get_data"].own_reads_back.iter().any(|x| x == RAW));
+    assert!(atlas_engine::story::choices(sloppy(), STUDENT).unwrap().contains("No choice on this route"));
 }
 
 /// The raw file and the figure are options of the run, each with its default: typer's
-/// `raw: Path = RAW`, parseArgs' `values.raw ?? RAW`, clap's `#[arg(long, default_value = RAW)]`.
+/// `raw: Path = RAW`, parseArgs' `default: RAW`, clap's `#[arg(long, default_value = RAW)]`.
 /// An option is the run's input whatever parser reads it, as a parameter of a command is, so the
 /// three reach the two files the same way: the step that writes or reads a file is handed it, the
 /// place is made whole at the run, and the code does not alone decide it, since the command line
-/// may name another. The run itself opens neither.
+/// may name another. The run itself opens neither: it only tests whether the raw file is there, a
+/// test of its shape that serves the reading.
 #[test]
 fn the_port_reaches_the_raw_file_and_the_figure_through_its_options() {
     let raw = "data/raw/sunspots.csv";
@@ -961,7 +978,7 @@ fn the_port_reaches_the_raw_file_and_the_figure_through_its_options() {
             })
             .collect();
         assert_eq!(reached, want, "{}", p.language);
-        assert!(!node(p.g, p.run).touches.iter().any(|t| named(&t)), "{}", p.language);
+        assert!(node(p.g, p.run).touches.iter().filter(named).all(Touch::shape), "{}", p.language);
     }
 }
 

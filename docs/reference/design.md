@@ -66,10 +66,12 @@ call order and with dispatch (`bodies`), what every function takes and gives as 
 (`arrows`), how the types group into families and which are doors (`types`); each touch says
 where it rests, which side of its step it stands on (in, out, or open where the code does not
 say) and what it does there. An arrow also names the places it reads only back, what it wrote
-there before (`reads_back`, and `own_reads_back` for its body alone): the picture stands a
-place on the left where the route finds its content, on the right where the route leaves it,
-between two steps where one leaves it for the next, and on both sides where the route uses and
-changes it (`mathematics.md`, a route's domain and codomain). The agent's route
+there before (`reads_back`, and `own_reads_back` for its body alone), and those it writes after
+it read what was there (`updates`): the picture stands a place on the left where the route finds
+its content, on the right where the route leaves it, between two steps where one leaves it for
+the next or fills it before it is read, and on both sides where the route reads it and writes on
+it (`mathematics.md`, a route's domain and codomain). A body's choices carry what decides each
+branch, as the code writes it, and a choice of one branch is a choice. The agent's route
 text and the page are read from the same Flow, so the two see the same route.
 
 **Repo** is a directory as read: the files its author wrote (no hidden directory, nothing git

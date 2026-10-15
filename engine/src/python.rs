@@ -349,17 +349,24 @@ fn notebook_source(text: &str) -> Result<String> {
 /// Whether a module runs as a program when it is run itself: `if __name__ == "__main__":` at its
 /// top level.
 fn runs_as_main(root: TsNode, src: &[u8]) -> bool {
-    named_children(root).into_iter().filter(|s| s.kind() == "if_statement").any(|s| {
-        let condition: String = s
-            .child_by_field_name("condition")
-            .map(|c| text(c, src))
-            .unwrap_or("")
-            .chars()
-            .filter(|c| !c.is_whitespace())
-            .collect::<String>()
-            .replace('\'', "\"");
-        condition == "__name__==\"__main__\"" || condition == "\"__main__\"==__name__"
-    })
+    named_children(root).into_iter().any(|s| is_main_guard(s, src))
+}
+
+/// `if __name__ == "__main__":` at a module's top level: where the module runs as a program, its
+/// entry, not a choice its program makes.
+fn is_main_guard(s: TsNode, src: &[u8]) -> bool {
+    if s.kind() != "if_statement" || s.parent().map_or(true, |p| p.kind() != "module") {
+        return false;
+    }
+    let condition: String = s
+        .child_by_field_name("condition")
+        .map(|c| text(c, src))
+        .unwrap_or("")
+        .chars()
+        .filter(|c| !c.is_whitespace())
+        .collect::<String>()
+        .replace('\'', "\"");
+    condition == "__name__==\"__main__\"" || condition == "\"__main__\"==__name__"
 }
 
 /// The scripts and notebooks of a project: every `.py` and `.ipynb` outside its packages, at any
@@ -1310,7 +1317,9 @@ fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, own: &Own,
 /// function that changes one writes it and every one that uses it reads it: a place,
 /// `Global(module.name)`. A name no function changes is a constant of the code, and no place.
 fn globals(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, types: &Types) {
-    type Uses = (String, Vec<(String, String, u32)>, Vec<(String, String, u32)>);
+    // per function: what it writes, reads, and tests for a key, each kept value by name and line
+    type Named = Vec<(String, String, u32)>;
+    type Uses = (String, Named, Named, Named);
     let mut uses: Vec<Uses> = vec![];
     for m in modules.values() {
         let src = &m.src;
@@ -1401,7 +1410,7 @@ fn globals(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, types: 
                     writes.push((k, n, line(x)));
                 }
             }
-            let mut reads: Vec<(String, String, u32)> = vec![];
+            let (mut reads, mut tests): (Vec<(String, String, u32)>, Vec<(String, String, u32)>) = (vec![], vec![]);
             for x in walk(body, &["identifier"]) {
                 let named_here = x.parent().map_or(false, |p| {
                     // a name the code binds or labels, not the value it holds
@@ -1416,6 +1425,10 @@ fn globals(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, types: 
                             | "typed_default_parameter"
                     ) || (p.kind() == "attribute" && p.child_by_field_name("attribute").map(|a| a.id()) == Some(x.id()))
                         || (p.kind() == "assignment" && p.child_by_field_name("left").map(|l| l.id()) == Some(x.id()))
+                        // the value an item or an attribute is written into: `d[k] = v` writes `d`, it reads nothing of it
+                        || (matches!(p.kind(), "subscript" | "attribute")
+                            && p.child_by_field_name(if p.kind() == "subscript" { "value" } else { "object" }).map(|v| v.id()) == Some(x.id())
+                            && p.parent().map_or(false, |a| a.kind() == "assignment" && a.child_by_field_name("left").map(|l| l.id()) == Some(p.id())))
                 });
                 if named_here {
                     continue;
@@ -1424,22 +1437,33 @@ fn globals(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, types: 
                     .parent()
                     .filter(|p| p.kind() == "attribute" && p.child_by_field_name("object").map(|o| o.id()) == Some(x.id()))
                     .unwrap_or(x);
-                if let Some((k, n)) = held(chain).filter(|(k, _)| !reads.iter().any(|(r, _, _)| r == k)) {
-                    reads.push((k, n, line(x)));
+                // `k in d` tests what the value holds, as `path.exists()` tests the disk
+                let into = if tests_membership(chain, src) { &mut tests } else { &mut reads };
+                if let Some((k, n)) = held(chain).filter(|(k, _)| !into.iter().any(|(r, _, _)| r == k)) {
+                    into.push((k, n, line(x)));
                 }
             }
-            uses.push((id.clone(), writes, reads));
+            uses.push((id.clone(), writes, reads, tests));
         }
     }
-    let state: HashSet<String> = uses.iter().flat_map(|(_, w, _)| w.iter().map(|(k, _, _)| k.clone())).collect();
-    for (id, writes, reads) in uses {
-        for (dir, names) in [(Dir::Write, writes), (Dir::Read, reads)] {
+    let state: HashSet<String> = uses.iter().flat_map(|(_, w, _, _)| w.iter().map(|(k, _, _)| k.clone())).collect();
+    for (id, writes, reads, tests) in uses {
+        for (dir, names, test) in [(Dir::Write, writes, false), (Dir::Read, reads, false), (Dir::Read, tests, true)] {
             for (kept, name, at) in names.into_iter().filter(|(k, _, _)| state.contains(k)) {
-                let t = Touch { what: name.clone(), artifact: kept, op: name, line: at, ..Touch::new(World::Global, Some(dir)) };
+                let op = if test { crate::effects::MEMBERSHIP.to_string() } else { name.clone() };
+                let t = Touch { what: name.clone(), artifact: kept, op, line: at, ..Touch::new(World::Global, Some(dir)) };
                 store.touch(&id, t);
             }
         }
     }
+}
+
+/// Whether `x` is what a membership test looks in: the right of `k in d`, `k not in d`.
+fn tests_membership(x: TsNode, src: &[u8]) -> bool {
+    let Some(p) = x.parent().filter(|p| p.kind() == "comparison_operator") else { return false };
+    let right = named_children(p).last().map(|r| r.id()) == Some(x.id());
+    let ops: Vec<&str> = (0..p.child_count()).filter_map(|i| p.child(i)).filter(|c| !c.is_named()).map(|c| text(c, src)).collect();
+    right && ops.iter().any(|o| matches!(*o, "in" | "not in" | "not"))
 }
 
 /// Typed parameters that are classes of the package, by name: `graph: Graph` -> Graph.
@@ -3144,7 +3168,8 @@ fn keyword(call: TsNode, src: &[u8], names: &[&str]) -> Option<String> {
 /// Python's choices: `if`/`elif`/`else`, `match`, `try`/`except`, `a if c else b`, `x or y`.
 const CHOICES: ChoiceSyntax = ChoiceSyntax {
     chooses: |n, src| match n.kind() {
-        "if_statement" | "elif_clause" | "conditional_expression" | "try_statement" | "case_clause" => true,
+        "if_statement" => !is_main_guard(n, src),
+        "elif_clause" | "conditional_expression" | "try_statement" | "case_clause" => true,
         "boolean_operator" => n.child_by_field_name("operator").map(|o| text(o, src)) == Some("or"),
         // the cases of a `match` sit in its body block
         "block" => n.parent().map_or(false, |p| p.kind() == "match_statement"),

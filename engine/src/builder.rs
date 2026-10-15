@@ -424,7 +424,7 @@ fn prepares(t: &Touch, all: &[Touch]) -> bool {
                     .filter(|d| !d.artifact.is_empty())
                     .any(|d| d.artifact == t.artifact || (t.artifact.ends_with('/') && d.artifact.starts_with(&t.artifact)))
         }
-        World::Db(_) if t.shape() => {
+        World::Db(_) | World::Global if t.shape() => {
             all.iter().filter(data).filter(|d| d.dir.is_some() && !d.artifact.is_empty()).any(|d| d.artifact == t.artifact)
         }
         World::Db(_) => t.dir.is_none() && all.iter().filter(data).any(|d| d.dir.is_some()),

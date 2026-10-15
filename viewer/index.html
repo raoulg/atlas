@@ -186,6 +186,9 @@ header:has(#diffbar:not([hidden])) #project{max-width:160px}
 .pointed{animation:pointed 1.1s ease-in-out 2}
 path.pointed{stroke:var(--focus)!important;stroke-width:3px!important}
 .note{cursor:help}
+.annot{cursor:help}
+.annot circle{fill:var(--focus);stroke:var(--panel);stroke-width:1.4}
+.annot text{fill:var(--panel);font-size:9px;text-anchor:middle;pointer-events:none}
 #notefield{position:fixed;z-index:31;width:300px;background:var(--panel);border:1px solid var(--line);border-left:2px solid var(--focus);box-shadow:0 10px 28px rgba(0,0,0,.2);padding:8px 10px 9px;font-size:12px}
 #notefield[hidden]{display:none}
 #notefield .on{font-family:var(--mono);font-size:10.5px;color:var(--ink-3);margin-bottom:5px;word-break:break-all}
@@ -1031,7 +1034,10 @@ function routeTree() {
     for (const it of body.items) {
       if (!it.members) { const k = call(it, hue); if (k) node.kids.push(k); continue; }
       const kids = it.members.map(m => call(m, m.branch % 8 + 1)).filter(Boolean);
-      if (kids.length) node.kids.push({id: `${key}~c${it.choice}`, open: true, synthetic: true, choice: true, kids, hue});
+      // what decides each branch, in the branch's colour; a choice of one branch runs it only when that holds
+      const branches = [...new Set(it.members.map(m => m.branch))].sort((a, b) => a - b);
+      const when = branches.map(b => [b % 8 + 1, (it.when || [])[b] || ""]);
+      if (kids.length) node.kids.push({id: `${key}~c${it.choice}`, open: true, synthetic: true, choice: true, kids, hue, when});
     }
     return node;
   };
@@ -1120,9 +1126,10 @@ async function renderPlaat() {
   // the routes drawn, and what each finds where it reads: what was there before it ran, not what it
   // wrote itself
   const anchors = V.route ? [V.route] : overviewEntries().map(e => e.id);
-  const found = new Set(), content = {places: new Set(), files: new Set(), dbs: new Set()};
+  const found = new Set(), updated = new Set(), content = {places: new Set(), files: new Set(), dbs: new Set()};
   for (const a of anchors) {
     const back = new Set(arrowOf(a)?.reads_back || []);
+    for (const p of arrowOf(a)?.updates || []) updated.add(p);
     for (const t of reach(a, null, a).touches) {
       if (t.shape || isOpen(t)) continue;
       content.places.add(t.place.id);
@@ -1280,8 +1287,9 @@ async function renderPlaat() {
   const pills = new Map(), frames = new Map();  // id -> {...}
   const build = (node, parent, caller) => {
     if (node.synthetic) {
-      const fid = "n:" + node.id;
-      frames.set(fid, {id: fid, step: null, parent, hue: node.hue, choice: true, synthetic: true, title: "one of"});
+      const fid = "n:" + node.id, one = node.when.length === 1;
+      const w = one ? node.when[0][1] : "", title = !one ? "one of" : !w ? "only sometimes" : w === "otherwise" ? "only otherwise" : `only when ${w}`;
+      frames.set(fid, {id: fid, step: null, parent, hue: node.hue, choice: true, synthetic: true, title, whens: one ? [] : node.when.filter(w => w[1])});
       return node.kids.flatMap(k => build(k, fid, caller));
     }
     if (node.open) {
@@ -1378,7 +1386,7 @@ async function renderPlaat() {
   // what the steps do at each place of the world: read it, write it, go there without saying which
   // way; whether a route finds what it reads there; whether a step that reads it hands something on
   const roles = new Map();
-  const role = k => { if (!roles.has(k)) roles.set(k, {reads: false, writes: false, open: false, used: false, found: found.has(k)}); return roles.get(k); };
+  const role = k => { if (!roles.has(k)) roles.set(k, {reads: false, writes: false, open: false, used: false, found: found.has(k), updated: updated.has(k)}); return roles.get(k); };
   for (const P of pills.values()) for (const [k, s] of P.goes || []) {
     const r = role(k);
     r.reads ||= s.has("read"); r.writes ||= s.has("write"); r.open ||= s.has("open");
@@ -1653,7 +1661,9 @@ async function renderPlaat() {
   };
   const roleOf = id => {
     const rs = (worldFrames.has(id) ? [...worldFrames.get(id).kids] : [id]).flatMap(finesOf).map(k => roles.get(k)).filter(Boolean), any = f => rs.some(r => r[f]);
-    if (any("reads") && any("writes")) return any("found") ? "both" : any("used") ? "mid" : "out";
+    // what the route finds and writes on stands twice; what it only makes sure of before it reads
+    // it (a file downloaded where it is missing) is its input, between the steps that fill and use it
+    if (any("reads") && any("writes")) return any("found") ? (any("updated") ? "both" : "mid") : any("used") ? "mid" : "out";
     if (any("reads")) return "in";
     if (any("writes")) return "out";
     if (any("open")) return "mid";
@@ -1682,7 +1692,12 @@ async function renderPlaat() {
   for (const id of sortWorld([...roleAt.keys()].filter(id => ["in", "both"].includes(roleAt.get(id))))) root.children.push(worldNode(id, "FIRST_SEPARATE"));
   // steps: frames hold their own steps, in call order
   const holder = pid => pid ? nodeOf.get(pid) : root;
-  for (const F of frames.values()) { const n = frameNode(F.id, 34); (F.parent ? null : root.children.push(n)); }
+  for (const F of frames.values()) {
+    const n = frameNode(F.id, 34);
+    // a choice's frame is as wide as what decides its branches
+    if (F.synthetic) Object.assign(n.layoutOptions, {"elk.nodeSize.constraints": "MINIMUM_SIZE", "elk.nodeSize.minimum": `(${textW(F.title + (F.whens || []).map(([, w]) => `  ● ${w}`).join(""), 7.2) + 34},60)`});
+    if (!F.parent) root.children.push(n);
+  }
   for (const F of frames.values()) if (F.parent) holder(F.parent).children.push(nodeOf.get(F.id));
   // an open part's own step: the code in it that names another part's routes
   const requesters = p => [...new Set(D.edges.filter(e => e.kind === "requests" && partOf(byId.get(e.src) || {}) === p).map(e => byId.get(e.src)?.name || short(e.src)))];
@@ -1886,6 +1901,7 @@ async function renderPlaat() {
     if (F.hue) r.setAttribute("style", `stroke:${hueVar(F.hue)}`);
     if (isFam) el("rect", {x: 0, y: 0, width: 5, height: P.h, fill: F.hue || hueOf(null)}, grp);
     const title = el("text", {class: "ftitle", x: 14, y: 20}, grp); title.textContent = (F.synthetic ? "" : "▾ ") + F.title;
+    for (const [h, w] of F.whens || []) { const t = el("tspan", {}, title); t.textContent = `  ● ${w}`; t.style.fill = hueVar(h); }
     if (DIFF && !isFam) {
       const st = standing(F.sides, !!F.step && (/^(part|unit):/.test(F.step) ? borderOf(id) : stepChanged([F.step])));
       marked(grp, st, P.w + 3, wasOf(st, id, F.step && DIFF.was[stepOf(F.step)]));
@@ -2483,6 +2499,41 @@ function report() {
 let NOTES = [];
 async function loadNotes() {
   try { NOTES = await (await fetch("/api/notes")).json(); markNotes(); } catch {}
+  try { ANNOTATIONS = await (await fetch("/api/annotations")).json(); markAnnotations(); } catch {}
+}
+// what an agent says of a box or a line, in its own words: a mark at the top right of what it is on,
+// the words on hover
+let ANNOTATIONS = [];
+function markAnnotations() {
+  scene.node().querySelectorAll("g.annot").forEach(x => x.remove());
+  for (const a of ANNOTATIONS) {
+    const [from, to] = a.on.includes(">") ? a.on.split(">") : [null, null];
+    let parent, x, y;
+    if (from) {
+      const line = scene.node().querySelector(`path[data-a="${CSS.escape(from)}"][data-b="${CSS.escape(to)}"]`);
+      if (!line) continue;
+      const mid = line.getPointAtLength(line.getTotalLength() / 2);
+      [parent, x, y] = [line.parentNode, mid.x + 14, mid.y];
+    } else {
+      const box = scene.node().querySelector(`[data-id="${CSS.escape(a.on)}"]`);
+      if (!box) continue;
+      [parent, x, y] = [box, +(box.querySelector("rect.bg")?.getAttribute("width") || 0), 0];
+    }
+    const m = el("g", {class: "annot", transform: `translate(${x},${y})`}, parent);
+    el("circle", {r: 7}, m);
+    el("text", {y: 3}, m).textContent = "✦";
+    m.addEventListener("mouseenter", () => {
+      const q = html("div", "f");
+      q.append(html("div", "at", "the agent says"));
+      for (const line of a.text.split("\n")) q.append(html("div", "note-q", line));
+      askEl.replaceChildren(q);
+      askEl.hidden = false;
+      const r = m.getBoundingClientRect();
+      askEl.style.left = Math.min(r.right + 10, innerWidth - askEl.offsetWidth - 8) + "px";
+      askEl.style.top = Math.max(8, Math.min(r.top - 6, innerHeight - askEl.offsetHeight - 8)) + "px";
+    });
+    m.addEventListener("mouseleave", hideAsks);
+  }
 }
 // the notes on one box or line share one ring, numbered by how many wait: open while one waits for
 // an agent, dimmed when it has read them all, a ✓ once it resolved them all; marks sit on what is

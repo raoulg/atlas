@@ -592,6 +592,10 @@ pub const SHAPED: &str = "schema:";
 /// The operation of a touch that gives a table its shape.
 pub const SCHEMA: &str = "schema";
 
+/// The operation of a touch that tests whether a value holds a key (`k in d`): it looks at what the
+/// value holds, as `path.exists()` looks at the disk, not at its content.
+pub const MEMBERSHIP: &str = "in";
+
 /// The tables one statement writes and reads: a statement that changes data writes the first
 /// table it names (`INSERT INTO a SELECT .. FROM b`) and reads the others; a query reads all of
 /// them; a setting names none. A temporary table (`CREATE TEMP TABLE staging ..`) is named as

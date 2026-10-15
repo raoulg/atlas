@@ -10,6 +10,10 @@
     "\u25be CLI run"
    ],
    [
+    "n:sunspots.cli.run~c0",
+    "only when not raw.exists()"
+   ],
+   [
     "sunspots.cli.run",
     "run"
    ],
@@ -74,10 +78,6 @@
    [
     "n:sunspots.cli.run/0",
     "t:sunspots.settings.Settings@n:sunspots.cli.run/0"
-   ],
-   [
-    "n:sunspots.cli.run/1",
-    "n:sunspots.cli.run/2"
    ],
    [
     "n:sunspots.cli.run/1",
@@ -146,6 +146,10 @@
    [
     "n:sunspots.cli.run/5",
     "\u25be Trend.save"
+   ],
+   [
+    "n:sunspots.cli.run~c0",
+    "only when not raw.exists()"
    ],
    [
     "sunspots.cli.run",
@@ -220,10 +224,6 @@
    [
     "n:sunspots.cli.run/0",
     "t:sunspots.settings.Settings@n:sunspots.cli.run/0"
-   ],
-   [
-    "n:sunspots.cli.run/1",
-    "n:sunspots.cli.run/2"
    ],
    [
     "n:sunspots.cli.run/1",
@@ -384,6 +384,10 @@
     "\u25be Trend.save"
    ],
    [
+    "n:sunspots.main.main~c0",
+    "only when !cli.raw.exists()"
+   ],
+   [
     "op:into_drawing_area",
     "into_drawing_area"
    ],
@@ -479,6 +483,10 @@
    ],
    [
     "e:sunspots.main.main",
+    "n:sunspots.main.main/4"
+   ],
+   [
+    "e:sunspots.main.main",
     "o:sunspots.main.main"
    ],
    [
@@ -488,10 +496,6 @@
    [
     "n:sunspots.main.main/2",
     "t:sunspots.settings.Settings@n:sunspots.main.main/2"
-   ],
-   [
-    "n:sunspots.main.main/3",
-    "n:sunspots.main.main/4"
    ],
    [
     "n:sunspots.main.main/3",

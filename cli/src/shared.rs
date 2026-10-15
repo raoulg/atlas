@@ -7,7 +7,9 @@
 //! - `notes.json`: what the reader wrote on a box or a line, and whether an agent resolved it;
 //! - `serving.json`: where `atlas serve` serves the page, for a link to the place of a note;
 //! - `proposal.json`: what an agent proposes, the working tree with some files written otherwise,
-//!   drawn beside the working tree until the agent withdraws it.
+//!   drawn beside the working tree until the agent withdraws it;
+//! - `annotations.json`: what an agent says of a box or a line (what a condition means, what a step
+//!   is for), shown on the page until the agent takes it away.
 //!
 //! A note is resolved by an agent, never by reading alone: open until an agent reads it, seen until
 //! it resolves it, by a fix or by what it explains where it works, resolved after. The reader
@@ -186,6 +188,30 @@ pub fn withdraw(repo: &Path) -> Result<bool> {
     }
     std::fs::remove_file(&path).with_context(|| format!("removing {}", path.display()))?;
     Ok(true)
+}
+
+/// What an agent says of a box or a line of the picture: its own words, apart from what Atlas
+/// traces.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct Annotation {
+    /// What it is on, as `Note::on` names it.
+    pub on: String,
+    pub text: String,
+}
+
+pub fn annotations(repo: &Path) -> Vec<Annotation> {
+    read(&file(repo, "annotations.json")).and_then(|v| serde_json::from_value(v).ok()).unwrap_or_default()
+}
+
+/// Say `text` of what `on` names, in place of what was said of it; nothing takes it away. Gives
+/// what is said now.
+pub fn annotate(repo: &Path, on: &str, text: Option<&str>) -> Result<Vec<Annotation>> {
+    let mut all: Vec<Annotation> = annotations(repo).into_iter().filter(|a| a.on != on).collect();
+    if let Some(text) = text.map(str::trim).filter(|t| !t.is_empty()) {
+        all.push(Annotation { on: on.to_string(), text: text.to_string() });
+    }
+    write(&file(repo, "annotations.json"), &all)?;
+    Ok(all)
 }
 
 /// Where `atlas serve` serves the page: `http://127.0.0.1:8778/`.
