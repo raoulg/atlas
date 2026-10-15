@@ -17,7 +17,8 @@ reads a repository.
 Read it from left to right:
 
 - **On the left** are the places whose content the route finds and uses: `from disk`, the
-  repository's files. The green `>_` box is where the route starts.
+  repository's files, and the manifests `Cargo.toml` and `package.json`, by which it finds the
+  repository's parts. The green `>_` box is where the route starts.
 - **In the middle** are the steps. A rounded pill is a function. A box with a coloured
   bar is a value of a type in memory: `Options`, `Repo`, `Graph`. Arrows run in
   call order.
@@ -36,7 +37,7 @@ Read it from left to right:
   inside.** `read` lists the files through `Repo.read`, and finds the project of a package
   named on its own; `graph_of` takes no file, but the readers inside it ask the `Repo` for a
   file's text, which is read from disk the first time it is asked for.
-- **`Repo (2)` and `Graph (7)` are families**: a type and the types that belong to it or
+- **`Options (2)`, `Repo (2)` and `Graph (7)` are families**: a type and the types that belong to it or
   that it holds, folded into one box. Click one to open it. A config opens the same way
   into what it holds (`folders: Folders`). Inside `graph_of`, `parse · one of 3` is a
   choice: the same call goes to the Python, the Rust or the TypeScript reader.

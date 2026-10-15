@@ -105,6 +105,11 @@ The rigorous half and the visual half are the same structure. Read `docs/referen
 - A change that should leave the pictures as they were is shown to with `tools/pictures.py`:
   `uv run tools/pictures.py draw <atlas> <repo> <dir>` with the build before and after, then
   `uv run tools/pictures.py compare <before> <after>` (Playwright on the installed Chrome).
+- The pictures the README, the Pages and the guide show are drawn by `tools/docs_pictures.py`,
+  which keeps what each one draws in `docs/img/drawn.json`. A commit that raises the version runs it
+  (lefthook `pre-commit`, `tools/docs-pictures.sh`) and stages the pictures. When one draws
+  otherwise, the commit stops and names it with the text that shows it: reread that text, change
+  what no longer holds, and commit again.
 - A viewer change is walked on the subjects before it is committed: `uv run tools/pictures.py
   walk <atlas> <repo> <dir>` opens every package, every route and every family in a route, and
   must report no view that throws, draws nothing, or opens a family into other moments.

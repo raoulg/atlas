@@ -1,4 +1,10 @@
 # Git hooks for this repository; `lefthook install` puts them in place, for every worktree.
+pre-commit:
+  commands:
+    # a raised version redraws the documentation's pictures and stops where the text may no longer
+    # match them (tools/docs-pictures.sh)
+    docs-pictures:
+      run: sh tools/docs-pictures.sh
 post-commit:
   commands:
     # a raised version leaves the builds of the old one behind (tools/clean-old-builds.sh)
