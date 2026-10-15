@@ -156,6 +156,17 @@ Zooms in two hierarchies meet in their common refinement, so any combination of 
 picture.
 **Where.** `design.md` §0, and §1, "A view is data".
 
+### Refinement keeps what it does not refine
+**What.** A finer topology refines the blocks of a coarser one; a point that lies in no refined block
+is where it was. The coarse picture is the image of the fine one under the quotient map, so opening a
+block changes only what is in it.
+**In Atlas.** Opening a package or a part refines the code, and a place of the world is no part of
+the code's hierarchy: it stays where the closed picture had it, and the arrows that crossed the
+box's border now cross the border of its frame. Only a step of a route holds a place of its own,
+when a later step uses what an earlier one leaves. The camera keeps the box opened where it stood on
+the screen, at the zoom the reader chose.
+**Where.** `homeOf` and the camera in `viewer/index.html`.
+
 ### Saturation: when the order of a view does not matter
 **What.** A set is saturated by an equivalence when it never cuts a class in two.
 **In Atlas.** A filter and a quotient commute exactly when the filter's predicate is saturated by
