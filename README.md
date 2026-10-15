@@ -161,6 +161,19 @@ also point you to a box. Alt-click a box or a line to leave it a note; the agent
 tells you how, and puts what must last in an issue that links back to the box. The history of commits is a click away, and **export** keeps the picture as a file.
 `atlas view` writes that file straight from the command line, for a script or an agent.
 
+**Your agent** gets Atlas through `atlas mcp`. Register it once, for every project:
+
+```bash
+claude mcp add --scope user atlas -- atlas mcp
+codex mcp add atlas -- "$(command -v atlas)" mcp
+```
+
+Claude Code's `--scope user` makes it available in every project. Codex keeps its servers in one
+configuration for all projects and starts them without your shell's `PATH`, so it is given the
+binary's full path, which `command -v atlas` prints. From then on `atlas serve` in any repository
+is all it takes: the agent's `atlas mcp` works on the repository the agent runs in, and shares the
+page with you.
+
 ## More
 
 - [**See it**](https://raoulg.github.io/atlas/): the same pictures on one page, to click through.

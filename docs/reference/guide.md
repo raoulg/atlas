@@ -310,11 +310,18 @@ same either way. `--no-cache` reads everything anew and keeps nothing.
 The tools are `principles`, `check`, `explain`, `routes`, `route` and `changes`; `route`
 returns what one entry point does, step by step, and `changes` what the working tree did
 since a commit (or, with `until`, what one commit did against another), so an agent can check its
-edit against what it was meant to do. In [Claude Code](https://claude.com/claude-code):
+edit against what it was meant to do. Register it once, for every project, in
+[Claude Code](https://claude.com/claude-code) and in [Codex](https://openai.com/codex):
 
 ```bash
-claude mcp add atlas -- atlas mcp
+claude mcp add --scope user atlas -- atlas mcp
+codex mcp add atlas -- "$(command -v atlas)" mcp
 ```
 
-Any other MCP client takes the same command: `{"command": "atlas", "args": ["mcp"]}`.
+Claude Code's `--scope user` makes it available in every project. Codex keeps its servers in one
+configuration for all projects and starts them without your shell's `PATH`, so it is given the
+binary's full path, which `command -v atlas` prints. The server works on the repository the agent
+runs in, so `atlas serve` in any repository is all it takes. Any other MCP client takes the same
+command: `{"command": "atlas", "args": ["mcp"]}`, with the full path where the client does not
+pass on your `PATH`.
 

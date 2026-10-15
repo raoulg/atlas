@@ -181,6 +181,10 @@ footer{border-top:1px solid var(--line);padding-top:20px;color:var(--ink-3);font
     <div><code>atlas changes</code><span>what your edit did to the routes</span></div>
     <div><code>atlas mcp</code><span>the picture for your coding agent</span></div>
   </div>
+  <p class="os" style="margin-top:20px">Your coding agent, once for every project</p>
+  <pre>claude mcp add --scope user atlas -- atlas mcp
+codex mcp add atlas -- &quot;$(command -v atlas)&quot; mcp</pre>
+  <p class="explain">Claude Code's <code>--scope user</code> makes Atlas available in every project. Codex keeps its servers in one configuration for all projects and starts them without your shell's <code>PATH</code>, so it is given the binary's full path, which <code>command -v atlas</code> prints. Then <code>atlas serve</code> in any repository is all it takes: the agent's <code>atlas mcp</code> works on the repository the agent runs in, and shares the page with you.</p>
 </section>
 
 <footer>
