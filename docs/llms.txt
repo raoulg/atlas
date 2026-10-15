@@ -28,7 +28,7 @@ The mathematics is there so that a human needs none of it. Every construct has o
 
 ## Using Atlas as an agent
 
-- `atlas check [repo] --json` lists where the code and the ten principles disagree.
+- `atlas check [repo] --json` lists where the code and the eleven principles disagree.
 - `atlas changes [rev]` says what an edit did to the routes, their places and the findings. Run it after an edit to see whether the edit did what it was meant to, and nothing else.
 - `atlas mcp` serves the same over stdio: the tools `principles`, `check`, `explain`, `routes`, `route`, `choices`, `view` and `changes`. `choices` lists the choices a route makes, each with what decides each branch as the code writes it and what each branch runs: read the conditions and say what they mean, Atlas does not. It is registered once for every project: `claude mcp add --scope user atlas -- atlas mcp` in Claude Code, `codex mcp add atlas -- "$(command -v atlas)" mcp` in Codex (which starts servers without the shell's `PATH`). It works on the repository the agent runs in.
 - **`atlas serve` is where the person you work with looks at the code.** Their page and you share one view through `atlas mcp`: `shown` says what they have open (read it when they say "this box" or "here"), `look` takes their page to a view or points at a box or a line ("look here, this one"), `vision` draws a change you plan beside the code as it is (give the files it would write as sketch code: signatures, types and calls in order, bodies left empty; it has to parse, not to build), so you ask "shall I do this?" with a picture rather than in words, then `retract` it once decided, `annotate` puts your own words on a box or a line (what a condition of `choices` means, what a step is for), and `notes` lists what they wrote on boxes and lines, each with a link to its place. Handle a note in your own reply, by a fix or by explaining (Atlas is no chat), then `resolve` it, with the commit if one fixed it; reading a note does not resolve it. A note worth keeping (a real bug) goes into an issue with its link; give the issue to `resolve`. The page follows the code: what you edit is drawn anew in the view they have, a moment after you save. If they are not running it, suggest `atlas serve` in the repository.
@@ -39,7 +39,7 @@ The mathematics is there so that a human needs none of it. Every construct has o
 
 - [Design](https://raw.githubusercontent.com/raoulg/atlas/main/docs/reference/design.md): the shared language, the algebra, how each language is read, and the views. Start with §0.
 - [Mathematics](https://raw.githubusercontent.com/raoulg/atlas/main/docs/reference/mathematics.md): every mathematical notion Atlas uses, once, with what it is in Atlas and where it lives.
-- [Principles](https://raw.githubusercontent.com/raoulg/atlas/main/docs/reference/principles.md): the ten principles `atlas check` asks, each with its reasoning and idioms, and a table of what each language lets Atlas trace.
+- [Principles](https://raw.githubusercontent.com/raoulg/atlas/main/docs/reference/principles.md): the eleven principles `atlas check` asks, each with its reasoning and idioms, and a table of what each language lets Atlas trace.
 - [Guide](https://raw.githubusercontent.com/raoulg/atlas/main/docs/reference/guide.md): how to read the picture, what Atlas reads in each language, entry points, `check`, `changes` and the MCP tools.
 
 ## Optional

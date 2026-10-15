@@ -125,7 +125,7 @@ use: every program is drawn by the same mathematical rules.
 
 Every notion, with where it lives in Atlas, is in [the mathematics](docs/reference/mathematics.md).
 The structure is laid out in [the design](docs/reference/design.md); what Atlas checks against it
-is in [the ten principles](docs/reference/principles.md).
+is in [the eleven principles](docs/reference/principles.md).
 
 ## Install
 
@@ -152,7 +152,7 @@ cargo install --locked --git https://github.com/raoulg/atlas atlas
 ```bash
 atlas serve     # the picture of the repository you are in, to work in with your agent
 atlas view      # the same picture as one HTML file, to keep or send
-atlas check     # where the code and ten design principles disagree
+atlas check     # where the code and eleven design principles disagree
 atlas changes   # what your edit did to the routes
 atlas mcp       # the picture for your coding agent
 ```

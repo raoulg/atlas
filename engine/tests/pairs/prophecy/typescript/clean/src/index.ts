@@ -7,9 +7,17 @@ export class Sink {
 
 /**
  * What goes in comes out.
- * @prophecy supersedes=archive.Sink
+ * @prophecy supersedes=Sink
  */
 export declare class Store {
+  constructor();
   write(report: string): void;
   read(): string;
 }
+
+export function run(report: string): void {
+  new Sink().write(report);
+}
+
+/** @prophecy supersedes=run */
+export declare function runStored(report: string): void;

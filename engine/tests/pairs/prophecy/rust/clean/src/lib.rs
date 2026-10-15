@@ -4,6 +4,10 @@
 pub struct Sink;
 
 impl Sink {
+    pub fn new() -> Sink {
+        Sink
+    }
+
     pub fn write(&self, report: &str) {
         println!("{report}");
     }
@@ -14,6 +18,10 @@ impl Sink {
 pub struct Store;
 
 impl Store {
+    pub fn new() -> Store {
+        todo!()
+    }
+
     pub fn write(&self, _report: &str) {
         todo!()
     }
@@ -21,4 +29,13 @@ impl Store {
     pub fn read(&self) -> String {
         todo!()
     }
+}
+
+pub fn run(report: &str) {
+    Sink::new().write(report);
+}
+
+#[doc = "prophecy: supersedes=archive::run"]
+pub fn run_stored(report: &str) {
+    Store::new().write(report);
 }

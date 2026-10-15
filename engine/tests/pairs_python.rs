@@ -549,7 +549,7 @@ fn archive_python(side: &str) -> Graph {
 /// sketch without the mark: Atlas cannot tell it from code that is finished, and does not pretend to.
 #[test]
 fn prophecy_a_sketch_in_the_tree_says_it_is_not_built() {
-    let (c, s) = (archive_python("clean"), archive_python("shortcut"));
+    let (c, s) = (archive_python("clean"), archive_python("unmarked"));
     let store = |g: &Graph| {
         g.nodes
             .iter()
@@ -561,6 +561,23 @@ fn prophecy_a_sketch_in_the_tree_says_it_is_not_built() {
     assert_eq!(sketch.supersedes.as_deref(), Some("archive.sink.Sink"));
     assert!(!sketch.veiled && sketch.sealed.is_none());
     assert!(store(&s).prophecy.is_none(), "an unmarked sketch is read as built");
-    assert!(c.nodes.iter().filter(|n| n.prophecy.is_some()).count() == 1, "only the marked item is a prophecy");
+    assert!(c.nodes.iter().filter(|n| n.prophecy.is_some()).count() == 2, "only the marked items are prophecies");
     assert!(s.nodes.iter().any(|n| n.name == "Store"), "the shortcut's sketch is still in the graph");
+}
+
+/// Built code does not lean on a prophecy. The clean side keeps the sketch apart: the built `run`
+/// still writes to the `Sink`, and `run_stored` is a prophecy that supersedes it and is the only
+/// one to call the `Store`; the sketch's empty bodies are no finding, and the prophecies answer
+/// the code they supersede. The shortcut lets `run` call the `Store` itself: production would run
+/// on a stub, and Atlas asks about `run`. The side with no mark has nothing to lean on.
+#[test]
+fn prophecy_built_code_does_not_lean_on_a_stub() {
+    let (c, s, u) = (archive_python("clean"), archive_python("shortcut"), archive_python("unmarked"));
+    let leaning = |g: &Graph| -> Vec<String> { check(g).into_iter().filter(|f| f.principle == "prophecy").map(|f| f.node).collect() };
+    assert!(check(&c).is_empty(), "{:?}", check(&c).iter().map(|f| format!("{} {}", f.principle, f.what)).collect::<Vec<_>>());
+    assert!(leaning(&u).is_empty());
+    let run = leaning(&s);
+    assert_eq!(run.len(), 1, "{run:?}");
+    assert!(run[0].ends_with(".run") || run[0] == "run", "{run:?}");
+    assert!(s.nodes.iter().any(|n| n.name == "Store" && n.prophecy.is_some()), "the shortcut's sketch is marked, and still leaned on");
 }
