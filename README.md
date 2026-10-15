@@ -159,7 +159,7 @@ atlas mcp       # the picture for your coding agent
 
 `atlas serve` is the page to work in. It follows the code: when a file changes, the picture is
 drawn anew in the view you have. It shares what you have open with your agent, which can
-also point you to a box, and show you a change it proposes beside the code as it is, before it
+also point you to a box, and show you a change it envisions beside the code as it is, before it
 makes it. Alt-click a box or a line to leave it a note; the agent resolves it and
 tells you how, and puts what must last in an issue that links back to the box. The history of commits is a click away, and **export** keeps the picture as a file.
 `atlas view` writes that file straight from the command line, for a script or an agent.

@@ -6,8 +6,8 @@
 //!   taken by the page once;
 //! - `notes.json`: what the reader wrote on a box or a line, and whether an agent resolved it;
 //! - `serving.json`: where `atlas serve` serves the page, for a link to the place of a note;
-//! - `proposal.json`: what an agent proposes, the working tree with some files written otherwise,
-//!   drawn beside the working tree until the agent withdraws it;
+//! - `vision.json`: what an agent has in view, the working tree with some files written otherwise,
+//!   drawn beside the working tree until the agent retracts it;
 //! - `annotations.json`: what an agent says of a box or a line (what a condition means, what a step
 //!   is for), shown on the page until the agent takes it away.
 //!
@@ -156,33 +156,33 @@ pub fn forget_resolved(repo: &Path) -> Result<()> {
     Ok(())
 }
 
-/// What an agent proposes: the working tree with some files written otherwise, under a title. A
-/// proposal is sketch code (signatures, types, the calls in their order), which has to parse, not
+/// what an agent has in view: the working tree with some files written otherwise, under a title. A
+/// vision is sketch code (signatures, types, the calls in their order), which has to parse, not
 /// to build.
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
-pub struct Proposal {
+pub struct Vision {
     pub title: String,
     /// Each file by its path from the repository's root: its text, or none where it goes.
     pub files: BTreeMap<PathBuf, Option<String>>,
 }
 
-/// Where the proposal is kept: its file changes when the proposal does.
-pub fn proposal_file(repo: &Path) -> PathBuf {
-    file(repo, "proposal.json")
+/// Where the vision is kept: its file changes when the vision does.
+pub fn vision_file(repo: &Path) -> PathBuf {
+    file(repo, "vision.json")
 }
 
-/// What an agent proposes, if anything.
-pub fn proposal(repo: &Path) -> Option<Proposal> {
-    read(&proposal_file(repo)).and_then(|v| serde_json::from_value(v).ok())
+/// what an agent has in view, if anything.
+pub fn vision(repo: &Path) -> Option<Vision> {
+    read(&vision_file(repo)).and_then(|v| serde_json::from_value(v).ok())
 }
 
-pub fn propose(repo: &Path, p: &Proposal) -> Result<()> {
-    write(&proposal_file(repo), p)
+pub fn envision(repo: &Path, p: &Vision) -> Result<()> {
+    write(&vision_file(repo), p)
 }
 
-/// The proposal withdrawn: whether there was one.
-pub fn withdraw(repo: &Path) -> Result<bool> {
-    let path = proposal_file(repo);
+/// The vision retracted: whether there was one.
+pub fn retract(repo: &Path) -> Result<bool> {
+    let path = vision_file(repo);
     if !path.exists() {
         return Ok(false);
     }

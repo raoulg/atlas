@@ -64,7 +64,7 @@ fn a_client_initializes_lists_and_calls() {
             "changes",
             "shown",
             "look",
-            "propose",
+            "vision",
             "annotate",
             "notes",
             "resolve"

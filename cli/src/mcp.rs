@@ -33,9 +33,9 @@ and lines, each with a link to its place. Handle a note where you work, by a fix
 it to them there (Atlas is no chat), then `resolve` it, with the commit if one fixed it; reading \
 a note does not resolve it. Put a note worth keeping (a real bug) into an issue with its link, \
 and give the issue to `resolve`. To ask whether to make a change, show it rather than describe it: \
-`propose` the files the change would write, as sketch code (signatures, types, calls in order; \
-bodies may stay empty), and the page draws the working tree and the proposal as one picture, \
-what you add, remove and change marked; `look` at the part you mean, and `withdraw` it once it \
+`vision` the files the change would write, as sketch code (signatures, types, calls in order; \
+bodies may stay empty), and the page draws the working tree and the vision as one picture, \
+what you add, remove and change marked; `look` at the part you mean, and `retract` it once it \
 is decided. To say what the code does not (what a condition of `choices` means, what a step is \
 for), `annotate` a box or a line; it shows on the page in your words.";
 
@@ -183,13 +183,13 @@ fn tools() -> Value {
             "annotations": { "readOnlyHint": false, "destructiveHint": false, "openWorldHint": false },
         },
         {
-            "name": "propose",
-            "description": "Show the person you work with what you plan, drawn beside what is: give the files your change would write, as sketch code (the signatures with their types and the calls in their order; bodies may be `...`, `todo!()` or `throw` — a sketch has to parse, not to build), and `atlas serve` draws the working tree and your proposal as one picture, with what you add, remove and change marked, and a switch between the two. Use it to ask \"shall I do this?\" with a picture rather than in words, then `look` to point at the part you mean. It answers with what the proposal does to the routes. A new proposal replaces the last; `withdraw` takes it away once it is decided.",
+            "name": "vision",
+            "description": "Show the person you work with what you plan, drawn beside what is: give the files your change would write, as sketch code (the signatures with their types and the calls in their order; bodies may be `...`, `todo!()` or `throw` — a sketch has to parse, not to build), and `atlas serve` draws the working tree and your vision as one picture, with what you add, remove and change marked, and a switch between the two. Use it to ask \"shall I do this?\" with a picture rather than in words, then `look` to point at the part you mean. It answers with what the vision does to the routes. A new vision replaces the last; `retract` takes it away once it is decided.",
             "inputSchema": { "type": "object", "properties": {
                 "path": local,
-                "title": { "type": "string", "description": "What the proposal is, in a line: shown beside it on the page." },
-                "files": { "type": "object", "description": "Each file the proposal writes, by its path from the repository's root, with its whole text; `null` for a file it removes. Files left out stay as they are.", "additionalProperties": { "type": ["string", "null"] } },
-                "withdraw": { "type": "boolean", "description": "Take the proposal away: the page draws the working tree alone again." },
+                "title": { "type": "string", "description": "What the vision is, in a line: shown beside it on the page." },
+                "files": { "type": "object", "description": "Each file the vision writes, by its path from the repository's root, with its whole text; `null` for a file it removes. Files left out stay as they are.", "additionalProperties": { "type": ["string", "null"] } },
+                "retract": { "type": "boolean", "description": "Take the vision away: the page draws the working tree alone again." },
             } },
             "annotations": { "readOnlyHint": false, "destructiveHint": false, "openWorldHint": false },
         },
@@ -291,35 +291,35 @@ fn call(name: &str, args: &Value, opts: &Options) -> Option<Result<String, Strin
                 .map(|_| "The page of `atlas serve` goes there when it next asks, within a second while it is open.".to_string())
                 .map_err(|e| format!("Could not keep where to look: {e}"))
         }
-        "propose" => {
+        "vision" => {
             let repo = here(text("path"));
-            if args.get("withdraw").and_then(Value::as_bool) == Some(true) {
+            if args.get("retract").and_then(Value::as_bool) == Some(true) {
                 return Some(
-                    crate::shared::withdraw(&repo)
+                    crate::shared::retract(&repo)
                         .map(|was| {
-                            if was { "The proposal is withdrawn; the page draws the working tree alone." } else { "There was no proposal." }
+                            if was { "The vision is retracted; the page draws the working tree alone." } else { "There was no vision." }
                                 .to_string()
                         })
-                        .map_err(|e| format!("Could not withdraw the proposal: {e}")),
+                        .map_err(|e| format!("Could not retract the vision: {e}")),
                 );
             }
             let files: std::collections::BTreeMap<PathBuf, Option<String>> = match args.get("files").and_then(Value::as_object) {
                 Some(fs) if !fs.is_empty() => fs.iter().map(|(k, v)| (PathBuf::from(k), v.as_str().map(str::to_string))).collect(),
-                _ => return Some(Err("`propose` takes the `files` the proposal writes (a path from the repository's root to its text, or null to remove it), or `withdraw`.".into())),
+                _ => return Some(Err("`vision` takes the `files` the vision writes (a path from the repository's root to its text, or null to remove it), or `retract`.".into())),
             };
-            let proposal = crate::shared::Proposal { title: text("title").unwrap_or("a proposal").to_string(), files };
+            let vision = crate::shared::Vision { title: text("title").unwrap_or("a vision").to_string(), files };
             let before = atlas_engine::parts::analyze_parts(&[repo.clone()], opts);
-            let after = atlas_engine::changes::proposed(&repo, &proposal.files, opts);
+            let after = atlas_engine::changes::envisioned(&repo, &vision.files, opts);
             match (before, after) {
-                (Ok(before), Ok(after)) => crate::shared::propose(&repo, &proposal).map_err(|e| format!("Could not keep the proposal: {e}")).map(|_| {
-                    let c = atlas_engine::changes::between("working tree", Some("proposal"), &before, &after);
+                (Ok(before), Ok(after)) => crate::shared::envision(&repo, &vision).map_err(|e| format!("Could not keep the vision: {e}")).map(|_| {
+                    let c = atlas_engine::changes::between("working tree", Some("vision"), &before, &after);
                     format!(
-                        "Proposed: {}. The page of `atlas serve` draws it beside the working tree within a second; `look` points at what you mean.\n\n{}",
-                        proposal.title,
+                        "Envisioned: {}. The page of `atlas serve` draws it beside the working tree within a second; `look` points at what you mean.\n\n{}",
+                        vision.title,
                         atlas_engine::changes::report(&c)
                     )
                 }),
-                (Err(e), _) | (_, Err(e)) => Err(format!("Could not read the proposal: {e}")),
+                (Err(e), _) | (_, Err(e)) => Err(format!("Could not read the vision: {e}")),
             }
         }
         "annotate" => match text("on").filter(|o| !o.is_empty()) {

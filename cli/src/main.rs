@@ -356,13 +356,13 @@ pub(crate) fn served_page(repo: &Path, opts: &Options, drawn: &str) -> Result<(S
     Ok((viewer(&d, extra)?, summary))
 }
 
-/// The working tree as `atlas serve` draws it: beside what an agent proposes, as two readings are
-/// drawn (A the working tree, B the proposal), and alone when nothing is proposed.
+/// The working tree as `atlas serve` draws it: beside what an agent has in view, as two readings are
+/// drawn (A the working tree, B the vision), and alone when no vision is kept.
 fn served(repo: &Path, opts: &Options) -> Result<Drawing> {
-    let Some(p) = shared::proposal(repo) else { return reading(&[repo.to_path_buf()], opts, None, None) };
-    let proposed = Named { rev: "proposal".into(), short: "proposal".into(), subject: p.title.clone() };
+    let Some(p) = shared::vision(repo) else { return reading(&[repo.to_path_buf()], opts, None, None) };
+    let envisioned = Named { rev: "vision".into(), short: "vision".into(), subject: p.title.clone() };
     let now = parts::analyze_parts(&[repo.to_path_buf()], opts)?;
-    union(repo, (changes::worktree(), now), (proposed, changes::proposed(repo, &p.files, opts)?))
+    union(repo, (changes::worktree(), now), (envisioned, changes::envisioned(repo, &p.files, opts)?))
 }
 
 /// Open a page or an address in the browser the system names.
