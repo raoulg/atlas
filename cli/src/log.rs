@@ -41,7 +41,7 @@ impl Log {
             (Style::new().effects(Effects::BOLD), Style::new().effects(Effects::DIMMED), AnsiColor::Cyan.on_default());
         self.write(&format!("{} {}", self.paint(bold, "atlas serve"), self.paint(dim, &format!("· {project}"))));
         self.write(&format!("  {}  {}", self.paint(dim, "page "), self.paint(petrol.effects(Effects::UNDERLINE), url)));
-        self.write(&format!("  {}  atlas mcp: shown · look · notes · answer", self.paint(dim, "agent")));
+        self.write(&format!("  {}  atlas mcp: shown · look · notes · resolve", self.paint(dim, "agent")));
         self.write(&format!("  {}  ctrl-c", self.paint(dim, "stop ")));
     }
 

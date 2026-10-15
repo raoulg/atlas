@@ -43,10 +43,15 @@ struct Server {
     drawing: Mutex<()>,
 }
 
-/// Serve the page of `repo` at `addr` until the process stops, opening it in the browser when
-/// `shown`.
-pub fn serve(repo: &Path, addr: SocketAddr, opts: &Options, shown: bool) -> Result<()> {
-    let listener = TcpListener::bind(addr).with_context(|| format!("serving at {addr}"))?;
+/// Serve the page of `repo` on this machine until the process stops, at `port`, else at the
+/// repository's own port or a free one; opening it in the browser when `shown`.
+pub fn serve(repo: &Path, port: Option<u16>, opts: &Options, shown: bool) -> Result<()> {
+    // this machine only: the page shows the repository's code
+    let at = |p: u16| SocketAddr::from(([127, 0, 0, 1], p));
+    let listener = match port {
+        Some(p) => TcpListener::bind(at(p)).with_context(|| format!("serving at {}", at(p)))?,
+        None => TcpListener::bind(at(own_port(repo))).or_else(|_| TcpListener::bind(at(0))).context("serving on 127.0.0.1")?,
+    };
     let at = listener.local_addr()?;
     let log = Arc::new(Log::new());
     let server = Arc::new(Server {
@@ -58,6 +63,9 @@ pub fn serve(repo: &Path, addr: SocketAddr, opts: &Options, shown: bool) -> Resu
         drawing: Mutex::new(()),
     });
     let url = format!("http://{at}/");
+    // a note is for the work at hand: this page starts without the ones resolved before it
+    shared::forget_resolved(repo)?;
+    shared::set_serving(repo, &url)?;
     log.start(&repo.display().to_string(), &url);
     let (watched, told) = (repo.to_path_buf(), Arc::clone(&log));
     std::thread::spawn(move || watch_notes(&watched, &told));
@@ -105,7 +113,7 @@ impl Server {
             }),
             ("GET", "/api/notes") => json(Ok(serde_json::to_value(shared::notes(&self.repo)).unwrap_or_default())),
             ("POST", "/api/notes") => json(self.note(req)),
-            ("POST", "/api/notes/read") => json(self.read_answer(req)),
+            ("POST", "/api/notes/reopen") => json(self.reopen(req)),
             _ => Answer::text("404 Not Found", format!("nothing at {} {}", req.method, req.path)),
         }
     }
@@ -179,37 +187,52 @@ impl Server {
         Ok(serde_json::to_value(shared::add(&self.repo, note)?)?)
     }
 
-    /// The reader has read the answer to a note: it is closed.
-    fn read_answer(&self, req: &Request) -> Result<Value> {
-        let id = self.body(req)?.get("id").and_then(Value::as_u64).context("which note")? as u32;
-        let closed = shared::change(&self.repo, id, |n| {
-            if n.state == State::Answered {
-                n.state = State::Closed;
-            }
-        })?;
-        Ok(serde_json::to_value(closed)?)
+    /// The reader opens a resolved note again, with a new line for the agent.
+    fn reopen(&self, req: &Request) -> Result<Value> {
+        let body = self.body(req)?;
+        let id = body.get("id").and_then(Value::as_u64).context("which note")? as u32;
+        let line = body.get("text").and_then(Value::as_str).filter(|t| !t.trim().is_empty()).context("a reopened note has a new line")?;
+        Ok(serde_json::to_value(shared::reopen(&self.repo, id, line)?)?)
     }
 }
 
-/// What happened to the notes, said in the log as it happens: a note written, read by an agent,
-/// answered, its answer read. The agent writes through `atlas mcp`, another process, so the notes
-/// are looked at every second.
+/// What happened to the notes, said in the log as it happens: a note written or reopened, read by
+/// an agent, resolved. The agent writes through `atlas mcp`, another process, so the notes are
+/// looked at every second.
 fn watch_notes(repo: &Path, log: &Log) {
     let mut known: HashMap<u32, State> = shared::notes(repo).into_iter().map(|n| (n.id, n.state)).collect();
     loop {
         std::thread::sleep(Duration::from_secs(1));
         for n in shared::notes(repo) {
-            if known.insert(n.id, n.state) == Some(n.state) {
+            let before = known.insert(n.id, n.state);
+            if before == Some(n.state) {
                 continue;
             }
-            match n.state {
-                State::Open => log.say(Who::You, &format!("note {} on {}: {}", n.id, n.label, n.text)),
-                State::Seen => log.say(Who::Agent, &format!("read note {} on {}", n.id, n.label)),
-                State::Answered => log.say(Who::Agent, &format!("answered note {}: {}", n.id, n.answer.as_deref().unwrap_or(""))),
-                State::Closed => log.say(Who::You, &format!("read the answer to note {}", n.id)),
+            let last = n.text.lines().last().unwrap_or("");
+            match (before, n.state) {
+                (Some(State::Resolved), State::Open) => log.say(Who::You, &format!("reopened note {} on {}: {last}", n.id, n.label)),
+                (_, State::Open) => log.say(Who::You, &format!("note {} on {}: {last}", n.id, n.label)),
+                (_, State::Seen) => log.say(Who::Agent, &format!("read note {} on {}", n.id, n.label)),
+                (_, State::Resolved) => {
+                    let by: Vec<String> = [n.commit.as_ref().map(|c| format!("in {}", &c[..c.len().min(7)])), n.issue.clone()]
+                        .into_iter()
+                        .flatten()
+                        .collect();
+                    let by = if by.is_empty() { String::new() } else { format!(" ({})", by.join(", ")) };
+                    log.say(Who::Agent, &format!("resolved note {} on {}{by}", n.id, n.label))
+                }
             }
         }
     }
+}
+
+/// The port a repository is served at when none is asked for: the same each time, so that a link
+/// to a place in it (one an agent put in an issue) keeps working, and another repository's
+/// apart. From its path, by FNV-1a, into 8700–8899.
+fn own_port(repo: &Path) -> u16 {
+    let path = std::fs::canonicalize(repo).unwrap_or_else(|_| repo.to_path_buf());
+    let hash = path.to_string_lossy().bytes().fold(0xcbf29ce484222325u64, |h, b| (h ^ b as u64).wrapping_mul(0x100000001b3));
+    8700 + (hash % 200) as u16
 }
 
 /// The working tree as far as Atlas reads it: equal stamps are one page.

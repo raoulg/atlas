@@ -153,13 +153,14 @@ struct Cli {
 enum Cmd {
     /// Serve a repository's page on this machine, drawn anew when its code changes and shared with
     /// an agent: what the page shows, where the agent points it, and the notes written on its boxes
-    /// and lines (`atlas mcp`: `shown`, `look`, `notes`, `answer`)
+    /// and lines (`atlas mcp`: `shown`, `look`, `notes`, `resolve`)
     Serve {
         /// Repository root; default: the current directory.
         repo: Option<PathBuf>,
-        /// The port to serve at, on 127.0.0.1; default: a free one.
-        #[arg(long, default_value_t = 0)]
-        port: u16,
+        /// The port to serve at, on 127.0.0.1; default: the repository's own, the same each time so
+        /// that a link to a place in it keeps working, else a free one; 0: a free one.
+        #[arg(long)]
+        port: Option<u16>,
         /// Serve without opening a browser.
         #[arg(long)]
         no_open: bool,
@@ -536,8 +537,7 @@ fn main() -> Result<()> {
                 Some(r) => r,
                 None => std::env::current_dir()?,
             };
-            // this machine only: the page shows the repository's code
-            serve::serve(&repo, std::net::SocketAddr::from(([127, 0, 0, 1], port)), &opts, !no_open)?
+            serve::serve(&repo, port, &opts, !no_open)?
         }
         Cmd::Changes { rev, repo, json } => {
             let repo = match repo {

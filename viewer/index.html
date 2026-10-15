@@ -180,8 +180,11 @@ header:has(#diffbar:not([hidden])) #project{max-width:160px}
 .note circle{fill:var(--panel);stroke:var(--focus);stroke-width:1.4}
 .note text{fill:var(--focus);font-family:var(--mono);font-size:8.5px;font-weight:700;text-anchor:middle;pointer-events:none}
 .note.seen{opacity:.55}
-.note.answered circle{fill:var(--focus)}
-.note.answered text{fill:var(--panel)}
+.note.resolved circle{fill:var(--focus)}
+.note.resolved text{fill:var(--panel)}
+@keyframes pointed{0%,100%{filter:none}35%,65%{filter:drop-shadow(0 0 7px var(--focus))}}
+.pointed{animation:pointed 1.1s ease-in-out 2}
+path.pointed{stroke:var(--focus)!important;stroke-width:3px!important}
 .note{cursor:help}
 #notefield{position:fixed;z-index:31;width:300px;background:var(--panel);border:1px solid var(--line);border-left:2px solid var(--focus);box-shadow:0 10px 28px rgba(0,0,0,.2);padding:8px 10px 9px;font-size:12px}
 #notefield[hidden]{display:none}
@@ -191,7 +194,7 @@ header:has(#diffbar:not([hidden])) #project{max-width:160px}
 #notefield .x{float:right;border:0;background:none;color:var(--ink-3);cursor:pointer;font-size:12px;padding:0 0 0 8px}
 #notefield .x:hover{color:var(--ink)}
 #ask .note-q{color:var(--ink)}
-#ask .note-a{margin-top:6px;padding-top:6px;border-top:1px solid var(--line);color:var(--focus)}
+#ask .again{margin-top:6px;color:var(--ink-3);font-size:10.5px}
 /* what a closed box holds inside: a tag across its lower edge, dashed as what happens inside is */
 .inside rect{fill:var(--panel);stroke:var(--ink-3);stroke-width:1;stroke-dasharray:2 2}
 .inside text{font:600 9.5px var(--mono);fill:var(--ink-2)}
@@ -2365,22 +2368,23 @@ function report() {
   clearTimeout(reportTimer);
   reportTimer = setTimeout(() => {
     const boxes = [...PICTURE.boxes.keys()].map(boxOf);
-    const lines = PICTURE.lines.map(e => ({from: boxOf(e.a).label, to: boxOf(e.b).label, kind: e.kind}));
+    const lines = PICTURE.lines.map(e => ({from: boxOf(e.a).label, to: boxOf(e.b).label, kind: e.kind, on: `${e.a}>${e.b}`}));
     post("/api/shown", {view: viewData(), selected: selected || "", boxes, lines}).catch(() => {});
   }, 250);
 }
-// what the reader wrote, and what an agent answered; a closed note is history and not drawn
+// what the reader wrote, and whether an agent resolved it; a resolved note is shown while this
+// server runs, and the next one starts without it
 let NOTES = [];
 async function loadNotes() {
   try { NOTES = await (await fetch("/api/notes")).json(); markNotes(); } catch {}
 }
-// the notes on one box or line share one ring, numbered by how many there are: filled when an agent
-// has answered one, dimmed when it has read them all, open while one waits; marks sit on what is
+// the notes on one box or line share one ring, numbered by how many wait: open while one waits for
+// an agent, dimmed when it has read them all, a ✓ once it resolved them all; marks sit on what is
 // drawn and move nothing
 function markNotes() {
   scene.node().querySelectorAll("g.note").forEach(x => x.remove());
   const on = new Map();
-  for (const n of NOTES.filter(n => n.state !== "closed")) { if (!on.has(n.on)) on.set(n.on, []); on.get(n.on).push(n); }
+  for (const n of NOTES) { if (!on.has(n.on)) on.set(n.on, []); on.get(n.on).push(n); }
   for (const [at, ns] of on) {
     const [a, b] = at.includes(">") ? at.split(">") : [null, null];
     let parent, x, y;
@@ -2394,29 +2398,43 @@ function markNotes() {
       if (!box) continue;
       [parent, x, y] = [box, 0, 0];
     }
-    const state = ns.some(n => n.state === "answered") ? "answered" : ns.every(n => n.state === "seen") ? "seen" : "open";
+    const waiting = ns.filter(n => n.state !== "resolved");
+    const state = !waiting.length ? "resolved" : waiting.every(n => n.state === "seen") ? "seen" : "open";
     const m = el("g", {class: `note ${state}`, transform: `translate(${x},${y})`}, parent);
     el("circle", {r: 7}, m);
-    el("text", {y: 3}, m).textContent = ns.length;
+    el("text", {y: 3}, m).textContent = waiting.length || "✓";
     m.addEventListener("mouseenter", () => {
       askEl.replaceChildren(...ns.map(n => {
         const q = html("div", "f");
-        q.append(html("div", "at", `note ${n.id} · ${n.label} · ${n.state}`), html("div", "note-q", n.text));
-        if (n.answer) q.append(html("div", "note-a", n.answer));
+        const by = [n.commit && `in ${n.commit.slice(0, 7)}`, n.issue].filter(Boolean).join(" · ");
+        q.append(html("div", "at", `note ${n.id} · ${n.label} · ${n.state}${by ? " " + by : ""}`));
+        for (const line of n.text.split("\n")) q.append(html("div", "note-q", line));
         return q;
       }));
+      if (ns.some(n => n.state === "resolved")) askEl.append(html("div", "again", "alt-click it to open it again, with what is still unclear"));
       askEl.hidden = false;
       const r = m.getBoundingClientRect();
       askEl.style.left = Math.min(r.right + 10, innerWidth - askEl.offsetWidth - 8) + "px";
       askEl.style.top = Math.max(8, Math.min(r.top - 6, innerHeight - askEl.offsetHeight - 8)) + "px";
     });
-    // an answer is shown once: read, its note is closed
-    m.addEventListener("mouseleave", () => {
-      hideAsks();
-      const read = ns.filter(n => n.state === "answered");
-      if (read.length) Promise.all(read.map(n => post("/api/notes/read", {id: n.id}))).then(loadNotes).catch(() => {});
-    });
+    m.addEventListener("mouseleave", hideAsks);
   }
+}
+// what an agent points at, or a link names (`#…&at=`): a box by its id, a line as `from>to`. A box
+// not drawn is opened the way to, as jumping to a symbol does; what is drawn is selected, lit for a
+// moment and brought into sight
+async function point(at) {
+  const [a, b] = at.includes(">") ? at.split(">") : [null, null];
+  const find = () => (a
+    ? scene.node().querySelector(`path[data-a="${CSS.escape(a)}"][data-b="${CSS.escape(b)}"]`)
+    : scene.node().querySelector(`[data-id="${CSS.escape(at)}"]`));
+  if (!a && !find() && byId.has(at)) await jumpTo(byId.get(at));
+  const target = find();
+  if (!target) return;
+  if (!a && byId.has(at)) select(at);
+  target.classList.remove("pointed"); void target.getBBox(); target.classList.add("pointed");
+  setTimeout(() => target.classList.remove("pointed"), 2400);
+  if (!a) setTimeout(() => centre(at), SETTLED);
 }
 // the code changed: the server has drawn the page anew, and the page reloads to it, in the view it
 // was in. The route and what is opened are in the address; the tab, the selected box, the pinned
@@ -2440,11 +2458,13 @@ const noteEl = html("div"); noteEl.id = "notefield"; noteEl.hidden = true; docum
 const dropNote = () => { noteEl.hidden = true; };
 document.addEventListener("keydown", ev => { if (ev.key === "Escape" && !noteEl.hidden) { dropNote(); ev.stopImmediatePropagation(); } }, true);
 document.addEventListener("mousedown", ev => { if (!noteEl.hidden && !noteEl.contains(ev.target)) dropNote(); }, true);
+// on a box or line with a resolved note, it opens that note again, with a new line
 function noteField(x, y, on, label) {
+  const again = NOTES.filter(n => n.on === on && n.state === "resolved").at(-1)?.id;
   const ta = html("textarea"), close = html("button", "x", "✕");
-  ta.placeholder = "what do you see, or not understand, here?";
+  ta.placeholder = again ? "what is still unclear?" : "what do you see, or not understand, here?";
   close.type = "button"; close.title = "drop the note (Esc)"; close.onclick = dropNote;
-  const head = html("div", "on", `note on ${label}`);
+  const head = html("div", "on", again ? `note ${again} on ${label}, again` : `note on ${label}`);
   head.prepend(close);
   noteEl.replaceChildren(head, ta, html("div", "keys", "enter: keep · shift-enter: new line · esc or a click beside it: drop"));
   noteEl.hidden = false;
@@ -2456,7 +2476,7 @@ function noteField(x, y, on, label) {
     ev.preventDefault();
     const text = ta.value.trim();
     noteEl.hidden = true;
-    if (text) post("/api/notes", {on, label, view: viewData(), text}).then(loadNotes).catch(() => {});
+    if (text) (again ? post("/api/notes/reopen", {id: again, text}) : post("/api/notes", {on, label, view: viewData(), text})).then(loadNotes).catch(() => {});
   };
 }
 if (D.served) {
@@ -2471,14 +2491,20 @@ if (D.served) {
       noteField(ev.clientX, ev.clientY, box.dataset.id, id ? boxOf(id).label : box.dataset.id);
     }
   }, true);
-  // an agent's "look here": the view it asks for, taken once
+  // an agent's "look here": the view it asks for and what it points at there, taken once
   setInterval(async () => {
     try {
       const r = await fetch("/api/look");
       if (r.status !== 200) return;
-      setView(await r.json());
-      plaatFit = true;
-      if (view !== "plaat") document.querySelector('.tabs button[data-view="plaat"]')?.click(); else render();
+      const look = await r.json();
+      const {view: to, at} = "view" in look || "at" in look ? look : {view: look, at: null};
+      if (to) { setView(to); plaatFit = true; }
+      if (to || view !== "plaat") {
+        view = "plaat";
+        document.querySelectorAll(".tabs button").forEach(x => x.setAttribute("aria-selected", x.dataset.view === view));
+        await render();
+      }
+      if (at) point(at);
     } catch {}
   }, 1000);
   setInterval(loadNotes, 3000);
@@ -2511,6 +2537,8 @@ if (D.served) {
   const dl = document.querySelector("#keys dl");
   dl.append(html("dt", null, "alt-click a box or a line"), html("dd", null, "write a note on it for the agent (atlas serve); its answer shows once on the ring"));
 }
-render().then(comeBack);
+// a link to a place (`#v=…&at=…`, the place of a note) points at it once the picture is drawn
+const linkedAt = (location.hash.match(/[#&]at=([^&]*)/) || [])[1];
+render().then(comeBack).then(() => { if (linkedAt) point(decodeURIComponent(linkedAt)); });
 })();
 </script>

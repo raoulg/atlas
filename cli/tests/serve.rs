@@ -1,6 +1,6 @@
 //! `atlas serve` and `atlas mcp` sharing one page: the page says what it shows and an agent reads
-//! it, an agent points and the page goes there once, and a note the reader writes is resolved by an
-//! agent's answer, never by its reading alone. The page follows the code: a changed file is drawn
+//! it, an agent points at a box and the page goes there once, and a note the reader writes is
+//! resolved by an agent, never by its reading alone, and opened again by the reader. The page follows the code: a changed file is drawn
 //! anew, and the page knows which drawing it is.
 
 use std::io::{BufRead, BufReader, Read, Write};
@@ -93,9 +93,9 @@ fn the_page_and_the_agent_share_one_view() {
         "{read}"
     );
 
-    tool(&repo, "look", json!({"view": {"route": "spots.count"}}));
+    tool(&repo, "look", json!({"view": {"route": "spots.count"}, "at": "spots.count"}));
     let (_, look) = send(&at, "GET", "/api/look", None, false);
-    assert_eq!(serde_json::from_str::<Value>(&look).unwrap(), json!({"route": "spots.count"}));
+    assert_eq!(serde_json::from_str::<Value>(&look).unwrap(), json!({"view": {"route": "spots.count"}, "at": "spots.count"}));
     assert!(send(&at, "GET", "/api/look", None, false).0.contains("204"), "the page goes there once");
 
     let note = json!({"on": "spots.count", "label": "count", "view": {"route": "spots.count"}, "text": "why one more?"});
@@ -103,17 +103,26 @@ fn the_page_and_the_agent_share_one_view() {
     let id = serde_json::from_str::<Value>(&kept).unwrap()["id"].as_u64().unwrap();
     let state = || serde_json::from_str::<Value>(&send(&at, "GET", "/api/notes", None, false).1).unwrap()[0]["state"].clone();
     assert_eq!(state(), "open");
-    assert!(tool(&repo, "notes", json!({})).contains("why one more?"));
+    let listed = tool(&repo, "notes", json!({}));
+    assert!(listed.contains("why one more?"), "{listed}");
+    assert!(listed.contains(&format!("Its place: http://{at}/#v=")) && listed.contains("at=spots.count"), "a link to its place: {listed}");
     assert_eq!(state(), "seen", "reading a note marks it seen, and leaves it unresolved");
     assert!(tool(&repo, "notes", json!({})).contains("why one more?"), "a seen note is still open");
-    tool(&repo, "answer", json!({"id": id, "text": "a count starts at one"}));
-    assert_eq!(state(), "answered");
-    assert!(tool(&repo, "notes", json!({})).contains("No open notes"));
-    send(&at, "POST", "/api/notes/read", Some(&json!({"id": id})), true);
-    assert_eq!(state(), "closed", "the reader has read the answer");
+    tool(&repo, "resolve", json!({"id": id, "commit": "3a2b1c9"}));
+    assert_eq!(state(), "resolved");
+    let after = tool(&repo, "notes", json!({}));
+    assert!(after.contains("No open notes") && after.contains("Resolved while the page is served"), "{after}");
+    let (_, again) = send(&at, "POST", "/api/notes/reopen", Some(&json!({"id": id, "text": "how does that make it one more?"})), true);
+    assert_eq!(serde_json::from_str::<Value>(&again).unwrap()["text"], "why one more?\nhow does that make it one more?");
+    assert_eq!(state(), "open", "the reader opened it again, for the agent to read anew");
+    tool(&repo, "resolve", json!({"id": id}));
 
     let ignored = std::fs::read_to_string(repo.join(".atlas/.gitignore")).unwrap_or_default();
     server.kill().ok();
+    // the next page starts without the notes resolved before it
+    let (mut next, at) = serve(&repo);
+    assert_eq!(send(&at, "GET", "/api/notes", None, false).1, "[]", "no graveyard");
+    next.kill().ok();
     let _ = std::fs::remove_dir_all(repo.parent().unwrap());
     assert!(ignored.lines().any(|l| l == "*"), "what the page and the agent share stays out of git");
 }

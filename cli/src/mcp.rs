@@ -28,8 +28,11 @@ without an installed environment) is not followed, and `check` asks for the anno
 sees Python best with the environment synced (`uv sync`) and Ruff's `ANN` rules on. When the \
 person you work with runs `atlas serve`, their page and you share one view: `shown` says what \
 they have open (read it when they say \"this box\" or \"here\"), `look` takes their page to a \
-view, and `notes` lists what they wrote on boxes and lines. Answer every note with `answer`: \
-reading a note does not resolve it.";
+view or points at a box or a line (\"here, this one\"), and `notes` lists what they wrote on boxes \
+and lines, each with a link to its place. Handle a note where you work, by a fix or by explaining \
+it to them there (Atlas is no chat), then `resolve` it, with the commit if one fixed it; reading \
+a note does not resolve it. Put a note worth keeping (a real bug) into an issue with its link, \
+and give the issue to `resolve`.";
 
 /// Answer every message on stdin until it closes, reading repositories with `opts`.
 pub fn serve(opts: &Options) -> Result<()> {
@@ -157,27 +160,29 @@ fn tools() -> Value {
         },
         {
             "name": "look",
-            "description": "Take the page of `atlas serve` to a view: \"look here\". The view is JSON as `view` takes it (`route`, `open.functions`, `kind`, `part`, `focus`, the opened `parts`, `units`, `families`, `places`). The open page goes there within a second.",
+            "description": "Point the page of `atlas serve` at something: \"look here, this box\". Give a view to go to (JSON as `view` takes it: `route`, `open.functions`, `kind`, `part`, `focus`, the opened `parts`, `units`, `families`, `places`), a box or a line to point at, or both. The open page goes there within a second, selects what it points at and makes it light up.",
             "inputSchema": { "type": "object", "properties": {
                 "path": local,
-                "view": { "type": "object", "description": "The view, e.g. `{\"route\": \"pkg.cli.build\", \"open\": {\"functions\": [\"pkg.build.Pipeline.run\"]}}`." },
-            }, "required": ["view"] },
+                "view": { "type": "object", "description": "The view, e.g. `{\"route\": \"pkg.cli.build\", \"open\": {\"functions\": [\"pkg.build.Pipeline.run\"]}}`. Without it the page keeps its view." },
+                "at": { "type": "string", "description": "A box by its id, or a line as `from>to`, as `shown` lists them." },
+            } },
             "annotations": { "readOnlyHint": false, "destructiveHint": false, "openWorldHint": false },
         },
         {
             "name": "notes",
-            "description": "The notes the person you work with wrote on boxes and lines of `atlas serve`'s page that no agent has answered yet: what each is on, the view it was written in, the commit, and the text. Reading marks them seen, not resolved: answer each with `answer`.",
+            "description": "The notes the person you work with wrote on boxes and lines of `atlas serve`'s page that no agent has resolved: what each is on, the view and commit it was written at, its text (a line for each time it was opened), and a link to its place. Reading marks them seen, not resolved. Handle each where you work, by a fix or by explaining, then `resolve` it; a note worth keeping (a real bug) goes into an issue with its link first. Also lists the notes resolved while this page is served.",
             "inputSchema": { "type": "object", "properties": { "path": local } },
             "annotations": { "readOnlyHint": false, "destructiveHint": false, "openWorldHint": false },
         },
         {
-            "name": "answer",
-            "description": "Answer a note from `notes`, which resolves it: the page shows the answer on the box or line the note is on, once.",
+            "name": "resolve",
+            "description": "Resolve a note from `notes`, once you have handled it: fixed it, or explained it to the person you work with where you work (Atlas is no chat). The page marks it resolved while it is served; they can reopen it with a new line. Give the commit that fixed it, if one did, and the issue you kept it in, if you made one.",
             "inputSchema": { "type": "object", "properties": {
                 "path": local,
                 "id": { "type": "integer", "description": "The note's number, from `notes`." },
-                "text": { "type": "string", "description": "The answer." },
-            }, "required": ["id", "text"] },
+                "commit": { "type": "string", "description": "The commit that fixed it, if one did." },
+                "issue": { "type": "string", "description": "The link of the issue that keeps it, if you made one." },
+            }, "required": ["id"] },
             "annotations": { "readOnlyHint": false, "destructiveHint": false, "openWorldHint": false },
         },
     ])
@@ -242,28 +247,31 @@ fn call(name: &str, args: &Value, opts: &Options) -> Option<Result<String, Strin
             )
         }
         "shown" => Ok(shown(&here(text("path")))),
-        "look" => match args.get("view").filter(|v| v.is_object()) {
-            Some(view) => crate::shared::look(&here(text("path")), view)
-                .map(|_| "The page of `atlas serve` goes to this view when it next asks, within a second while it is open.".to_string())
-                .map_err(|e| format!("Could not keep the view: {e}")),
-            None => Err("`view` is a JSON object: `{\"route\": …, \"open\": {…}}`.".into()),
-        },
-        "notes" => crate::shared::read_open(&here(text("path"))).map(|ns| notes(&ns)).map_err(|e| format!("Could not read the notes: {e}")),
-        "answer" => {
-            let (id, said) = (args.get("id").and_then(Value::as_u64), text("text").filter(|t| !t.trim().is_empty()));
-            match (id, said) {
-                (Some(id), Some(said)) => crate::shared::change(&here(text("path")), id as u32, |n| {
-                    n.state = crate::shared::State::Answered;
-                    n.answer = Some(said.to_string());
-                })
-                .map_err(|e| format!("Could not keep the answer: {e}"))
-                .and_then(|n| {
-                    n.map(|n| format!("Note {} on {} is answered; the page shows the answer once.", n.id, n.label))
-                        .ok_or_else(|| format!("No note {id}; `notes` lists them."))
-                }),
-                _ => Err("`answer` takes a note's `id` and the `text` of the answer.".into()),
+        "look" => {
+            let (view, at) = (args.get("view").filter(|v| v.is_object()), text("at").filter(|a| !a.is_empty()));
+            if view.is_none() && at.is_none() {
+                return Some(Err("`look` takes a `view` (`{\"route\": …, \"open\": {…}}`), a box or line to point `at`, or both.".into()));
             }
+            crate::shared::look(&here(text("path")), &json!({ "view": view, "at": at }))
+                .map(|_| "The page of `atlas serve` goes there when it next asks, within a second while it is open.".to_string())
+                .map_err(|e| format!("Could not keep where to look: {e}"))
         }
+        "notes" => {
+            let repo = here(text("path"));
+            crate::shared::read_open(&repo).map(|ns| notes(&repo, &ns)).map_err(|e| format!("Could not read the notes: {e}"))
+        }
+        "resolve" => match args.get("id").and_then(Value::as_u64) {
+            Some(id) => {
+                let given = |k: &str| text(k).map(str::trim).filter(|v| !v.is_empty()).map(str::to_string);
+                crate::shared::resolve(&here(text("path")), id as u32, given("commit"), given("issue"))
+                    .map_err(|e| format!("Could not resolve note {id}: {e}"))
+                    .and_then(|n| {
+                        n.map(|n| format!("Note {} on {} is resolved; the page marks it so while it is served. Tell the person you work with what you did.", n.id, n.label))
+                            .ok_or_else(|| format!("No note {id}; `notes` lists them."))
+                    })
+            }
+            None => Err("`resolve` takes a note's `id`, and the `commit` and `issue`, if any.".into()),
+        },
         "route" => graph(text("path"), opts).and_then(|g| {
             let entry = text("entry").unwrap_or("");
             let depth = args.get("depth").and_then(Value::as_u64).unwrap_or(2) as usize;
@@ -290,10 +298,11 @@ fn shown(repo: &std::path::Path) -> String {
     let boxes = list("boxes", &|b| format!("  {} ({})", str_of(b, "label"), str_of(b, "id")));
     let lines = list("lines", &|l| {
         format!(
-            "  {} → {}{}",
+            "  {} → {}{} [{}]",
             str_of(l, "from"),
             str_of(l, "to"),
-            Some(str_of(l, "kind")).filter(|k| !k.is_empty()).map_or(String::new(), |k| format!(" ({k})"))
+            Some(str_of(l, "kind")).filter(|k| !k.is_empty()).map_or(String::new(), |k| format!(" ({k})")),
+            str_of(l, "on")
         )
     });
     let mut out = format!("View: {}\n", s.get("view").map_or("{}".into(), Value::to_string));
@@ -305,25 +314,40 @@ fn shown(repo: &std::path::Path) -> String {
     out
 }
 
-/// The notes an agent has not answered, as text.
-fn notes(ns: &[crate::shared::Note]) -> String {
-    if ns.is_empty() {
-        return "No open notes.".into();
+/// The notes an agent has not resolved, each with the link to its place, then those resolved while
+/// the page is served, as text.
+fn notes(repo: &std::path::Path, open: &[crate::shared::Note]) -> String {
+    let url = crate::shared::serving(repo);
+    let place = |n: &crate::shared::Note| url.as_deref().map_or(String::new(), |u| format!("\n  Its place: {}", crate::shared::link(u, n)));
+    let mut out = if open.is_empty() {
+        "No open notes.".to_string()
+    } else {
+        open.iter()
+            .map(|n| {
+                let lines: Vec<String> = n.text.lines().map(|l| format!("  {l}")).collect();
+                format!(
+                    "Note {} on {} ({}), written at {} in the view {}:\n{}{}",
+                    n.id,
+                    n.label,
+                    n.on,
+                    &n.rev[..n.rev.len().min(7)],
+                    n.view,
+                    lines.join("\n"),
+                    place(n)
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n\n")
+    };
+    let resolved: Vec<String> = crate::shared::notes(repo)
+        .into_iter()
+        .filter(|n| n.state == crate::shared::State::Resolved)
+        .map(|n| format!("  {} on {}: {}", n.id, n.label, n.text.lines().last().unwrap_or("")))
+        .collect();
+    if !resolved.is_empty() {
+        out += &format!("\n\nResolved while the page is served:\n{}", resolved.join("\n"));
     }
-    ns.iter()
-        .map(|n| {
-            format!(
-                "Note {} on {} ({}), written at {} in the view {}:\n  {}",
-                n.id,
-                n.label,
-                n.on,
-                &n.rev[..n.rev.len().min(7)],
-                n.view,
-                n.text
-            )
-        })
-        .collect::<Vec<_>>()
-        .join("\n\n")
+    out
 }
 
 /// The repository a tool is handed: a path, or a URL cloned for as long as the tool runs.

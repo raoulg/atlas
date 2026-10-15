@@ -258,12 +258,17 @@ changed, the picture drawn, an export, a note, and what the agent did with it.
 
 - **What you have open.** The page tells the server its view, the box you selected, and the
   boxes and lines it draws. The agent reads them with `shown` when you say "this box".
-- **Look here.** The agent hands the page a view with `look`, and the page goes there.
+- **Look here.** The agent points the page at a view, a box or a line with `look`. The page goes
+  there, opens the way to the box, selects it and makes it light up.
 - **Notes.** Alt-click a box or a line to write a note on it ("I do not understand this line").
-  The ring on it is open until the agent reads it, dimmed once it has, and filled once it
-  answers. The notes on one box share its ring, numbered by how many there are. Hover the ring
-  for the notes and the answers; once you have read an answer, its note is closed. The agent
-  resolves notes with `answer`; reading one does not. Esc, the field's ✕ or a click beside it
+  The ring on it is open until the agent reads it, dimmed once it has, and a ✓ once it resolves
+  it. The agent resolves a note where it works with you, by a fix or by explaining; Atlas is no
+  chat, and reading a note does not resolve it. Hover the ring for the notes, and for the commit
+  that fixed one, if one did. Alt-click a box with a resolved note to open it again with what is
+  still unclear. A note is for the work at hand: a resolved note stays on the picture while this
+  `atlas serve` runs, and the next one starts without it. What must last, the agent puts in an
+  issue, with a link to the note's place that opens it in `atlas serve` (each repository is
+  served at a port of its own, the same each time). Esc, the field's ✕ or a click beside it
   drops a note before it is kept.
 - **History.** **history** opens the commits beside the page, as `atlas history` does, from the
   same process. Pick a commit to see it beside the working tree, or two to see as one; **✕ close
@@ -272,7 +277,7 @@ changed, the picture drawn, an export, a note, and what the agent did with it.
   file `atlas view` writes.
 
 What the page and the agent share is kept in `.atlas/` (`shown.json`, `look.json`,
-`notes.json`), so the two need not run together, and git never sees it.
+`notes.json`, `serving.json`), so the two need not run together, and git never sees it.
 
 ## What Atlas keeps
 
