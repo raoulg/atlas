@@ -239,7 +239,7 @@ no `gh`, no network or no such issue. The MCP tool `unseal` breaks them: it take
 the marker of the prophecies named, or of every one whose issue is closed, and changes nothing
 else. The files are left for you to commit; sketch the shape next.
 
-A vision that is decided becomes a prophecy with the MCP tool `prophesy`: the vision's files are
+A vision that is decided becomes a prophecy with the MCP tool `prophetize`: the vision's files are
 written into the tree, every item the vision adds marked in the language of its file (and, for
 Python, the project's `prophecy` imported), and the vision is retracted. `supersedes` says which
 existing item an added one replaces. The files are left for you to commit; Atlas opens no branch.

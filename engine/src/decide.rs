@@ -5,7 +5,7 @@ use crate::model::{Graph, Node, NodeKind};
 /// A vision decided: its files as they are written into the tree, every item the vision adds marked
 /// as a prophecy in the language of its file.
 #[derive(Debug, Default)]
-pub struct Prophesied {
+pub struct Prophetized {
     /// Each file by its path from the repository's root, whole.
     pub files: std::collections::BTreeMap<std::path::PathBuf, String>,
     /// What was marked: the ids of the items.
@@ -18,12 +18,12 @@ pub struct Prophesied {
 /// that exists is no prophecy: one id cannot be in a module twice, and what replaces something
 /// is a new name that `supersedes` it. `supersedes` says, for an added item by its id, the
 /// existing item it replaces. Nothing is written here.
-pub fn prophesy(
+pub fn prophetize(
     repo: &std::path::Path,
     vision: &std::collections::BTreeMap<std::path::PathBuf, Option<String>>,
     supersedes: &std::collections::BTreeMap<String, String>,
     opts: &crate::Options,
-) -> anyhow::Result<Prophesied> {
+) -> anyhow::Result<Prophetized> {
     use anyhow::bail;
     let before = crate::parts::analyze_parts(&[repo.to_path_buf()], opts)?;
     let after = crate::changes::envisioned(repo, vision, opts)?;
@@ -40,7 +40,7 @@ pub fn prophesy(
             .unwrap_or_else(|_| n.file.clone().into())
     };
     let in_file = |rel: &std::path::Path, r: &std::path::Path| r.ends_with(rel);
-    let mut out = Prophesied::default();
+    let mut out = Prophetized::default();
     for (rel, text) in vision {
         let Some(text) = text else { bail!("a vision that removes `{}` is no prophecy: nothing is written for a removal", rel.display()) };
         let lines: Vec<&str> = text.lines().collect();

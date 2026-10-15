@@ -133,8 +133,8 @@ marked "not built" is a graph together with a subgraph of what exists.
 **In Atlas.** A prophecy is sketch code kept in the tree under the real ids, marked in each
 language's form (Python's `@prophecy(..)`, Rust's `#[doc = "prophecy: .."]`, TypeScript's
 `@prophecy` JSDoc tag): one construct, a flag on the node with its `supersedes`, `veiled` and
-`sealed`. The graph holds the built part and the prophesied part in one picture; the arrows
-from the built into the prophesied are the work still to do, and `supersedes` is an arrow from
+`sealed`. The graph holds the built part and the prophetized part in one picture; the arrows
+from the built into the prophetized are the work still to do, and `supersedes` is an arrow from
 the new object to the one it replaces. A prophecy is fulfilled when the marker is gone.
 **Where.** `engine/src/prophecy.rs`, `Node::prophecy`; issue #26.
 

@@ -35,7 +35,7 @@ a note does not resolve it. Put a note worth keeping (a real bug) into an issue 
 and give the issue to `resolve`. To ask whether to make a change, show it rather than describe it: \
 `vision` the files the change would write, as sketch code (signatures, types, calls in order; \
 bodies may stay empty), and the page draws the working tree and the vision as one picture, \
-what you add, remove and change marked; `look` at the part you mean; once it is decided, `prophesy` \
+what you add, remove and change marked; `look` at the part you mean; once it is decided, `prophetize` \
 writes it into the tree as prophecy, or `retract` takes it away. To say what the code does not (what a condition of `choices` means, what a step is \
 for), `annotate` a box or a line; it shows on the page in your words. Sketch code kept in the tree, marked \
 as not built yet, is a prophecy (`@prophecy(supersedes=..)` in Python, `#[doc = \"prophecy: ..\"]` in Rust, \
@@ -213,7 +213,7 @@ fn tools() -> Value {
         },
         {
             "name": "vision",
-            "description": "Show the person you work with what you plan, drawn beside what is: give the files your change would write, as sketch code (the signatures with their types and the calls in their order; bodies may be `...`, `todo!()` or `throw` — a sketch has to parse, not to build), and `atlas serve` draws the working tree and your vision as one picture, with what you add, remove and change marked, and a switch between the two. Use it to ask \"shall I do this?\" with a picture rather than in words, then `look` to point at the part you mean. It answers with what the vision does to the routes. A new vision replaces the last; `prophesy` writes it into the tree as prophecy once it is decided, `retract` takes it away.",
+            "description": "Show the person you work with what you plan, drawn beside what is: give the files your change would write, as sketch code (the signatures with their types and the calls in their order; bodies may be `...`, `todo!()` or `throw` — a sketch has to parse, not to build), and `atlas serve` draws the working tree and your vision as one picture, with what you add, remove and change marked, and a switch between the two. Use it to ask \"shall I do this?\" with a picture rather than in words, then `look` to point at the part you mean. It answers with what the vision does to the routes. A new vision replaces the last; `prophetize` writes it into the tree as prophecy once it is decided, `retract` takes it away.",
             "inputSchema": { "type": "object", "properties": {
                 "path": local,
                 "title": { "type": "string", "description": "What the vision is, in a line: shown beside it on the page." },
@@ -223,7 +223,7 @@ fn tools() -> Value {
             "annotations": { "readOnlyHint": false, "destructiveHint": false, "openWorldHint": false },
         },
         {
-            "name": "prophesy",
+            "name": "prophetize",
             "description": "Decide the vision: write its files into the tree, every item the vision adds marked as a prophecy (sketch code kept in the tree, not built yet), and take the vision away. The files are left for the person to commit; no branch is opened. A vision that changes or removes something that exists is refused: the new item takes a new name and `supersedes` the old one. Answers with what was marked and what the person still has to do.",
             "inputSchema": { "type": "object", "properties": {
                 "path": local,
@@ -427,7 +427,7 @@ fn call(name: &str, args: &Value, opts: &Options) -> Option<Result<String, Strin
                 (Err(e), _) | (_, Err(e)) => Err(format!("Could not read the vision: {e}")),
             }
         }
-        "prophesy" => {
+        "prophetize" => {
             let repo = here(text("path"));
             let Some(vision) = crate::shared::vision(&repo) else {
                 return Some(Err("There is no vision to decide: show one with `vision` first.".into()));
@@ -437,22 +437,22 @@ fn call(name: &str, args: &Value, opts: &Options) -> Option<Result<String, Strin
                 .and_then(Value::as_object)
                 .map(|m| m.iter().filter_map(|(k, v)| Some((k.clone(), v.as_str()?.to_string()))).collect())
                 .unwrap_or_default();
-            let prophesied = match atlas_engine::decide::prophesy(&repo, &vision.files, &supersedes, opts) {
+            let prophetized = match atlas_engine::decide::prophetize(&repo, &vision.files, &supersedes, opts) {
                 Ok(p) => p,
                 Err(e) => return Some(Err(format!("{e}"))),
             };
-            if let Err(e) = crate::shared::write_files(&repo, &prophesied.files) {
+            if let Err(e) = crate::shared::write_files(&repo, &prophetized.files) {
                 return Some(Err(format!("Could not write the files: {e}")));
             }
             let _ = crate::shared::retract(&repo);
-            let files: Vec<String> = prophesied.files.keys().map(|f| f.display().to_string()).collect();
+            let files: Vec<String> = prophetized.files.keys().map(|f| f.display().to_string()).collect();
             let mut said = format!(
                 "Decided: {}. Written: {}. Marked as prophecies: {}. The files are left for you to commit; the vision is retracted.",
                 vision.title,
                 files.join(", "),
-                if prophesied.marked.is_empty() { "nothing".to_string() } else { prophesied.marked.join(", ") }
+                if prophetized.marked.is_empty() { "nothing".to_string() } else { prophetized.marked.join(", ") }
             );
-            for note in &prophesied.notes {
+            for note in &prophetized.notes {
                 said += &format!("\nNote: {note}");
             }
             Ok(said)

@@ -637,7 +637,7 @@ fn prophecy_a_vision_that_changes_what_exists_is_refused() {
     let now = std::fs::read_to_string(dir.join(&file)).expect("reads");
     let vision = BTreeMap::from([(file, Some(now.replace("print(report)", "...")))]);
     let refused =
-        atlas_engine::decide::prophesy(&dir, &vision, &BTreeMap::new(), &Options::default()).expect_err("a changed body is refused");
+        atlas_engine::decide::prophetize(&dir, &vision, &BTreeMap::new(), &Options::default()).expect_err("a changed body is refused");
     assert!(refused.to_string().contains("changes `archive.sink.Sink.write`") && refused.to_string().contains("supersedes"), "{refused}");
 }
 
