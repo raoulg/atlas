@@ -595,3 +595,25 @@ fn prophecy_built_code_does_not_lean_on_a_stub() {
     assert!(run[0].ends_with(".run") || run[0] == "run", "{run:?}");
     assert!(s.nodes.iter().any(|n| n.name == "Store" && n.prophecy.is_some()), "the shortcut's sketch is marked, and still leaned on");
 }
+
+/// The revelation is what the sketch leaves to do: each prophecy, what it supersedes (found in the
+/// code), the bodies still to write, and the built code that leans on it. The clean side lists
+/// the `Store` and `run_stored`, each superseding what it replaces, leaned on by nothing; its
+/// operations are routes into what is planned. The shortcut's `Store` is leaned on by `run`. The
+/// side with no mark has no revelation.
+#[test]
+fn prophecy_the_revelation_says_what_is_left() {
+    use atlas_engine::prophecy::revelation;
+    let (c, s, u) = (archive_typescript("clean"), archive_typescript("shortcut"), archive_typescript("unmarked"));
+    let stands = revelation(&c);
+    assert_eq!(stands.len(), 2, "{stands:?}");
+    assert!(stands.iter().all(|p| p.holds && p.supersedes.is_some() && p.leaned_on_by.is_empty() && p.bodies > 0), "{stands:?}");
+    let store = stands.iter().find(|p| p.id.ends_with("Store")).expect("the Store is a prophecy");
+    assert!(store.supersedes.as_deref().is_some_and(|r| r.ends_with("Sink")), "{store:?}");
+    let routes: Vec<_> = c.nodes.iter().filter(|n| n.entry.as_ref().is_some_and(|e| e.kind == atlas_engine::EntryKind::Prophecy)).collect();
+    assert!(!routes.is_empty() && routes.iter().all(|n| n.prophecy.is_some() || n.cls.is_some()), "a prophecy's operations are routes");
+    let leaning = revelation(&s);
+    assert_eq!(leaning.len(), 1);
+    assert!(leaning[0].leaned_on_by.iter().any(|l| l.ends_with("run")), "{leaning:?}");
+    assert!(revelation(&u).is_empty());
+}

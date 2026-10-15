@@ -309,16 +309,9 @@ impl<'g> Index<'g> {
         n.prophecy.is_some() || n.cls.as_deref().and_then(|c| self.node(c)).is_some_and(|c| c.prophecy.is_some())
     }
 
-    /// What the prophecy `p` supersedes: the node its `supersedes` names, by its id (`::` and `.`
-    /// part a path alike) or by the end of it when one node only ends so.
+    /// What the prophecy `p` supersedes, when the code holds it.
     fn superseded(&self, p: &Node) -> Option<&'g Node> {
-        let name = p.prophecy.as_ref()?.supersedes.as_deref()?.replace("::", ".");
-        if let Some(n) = self.node(&name).filter(|n| n.id != p.id) {
-            return Some(n);
-        }
-        let tail = format!(".{name}");
-        let mut ends = self.g.nodes.iter().filter(|n| n.id != p.id && n.prophecy.is_none() && n.id.ends_with(&tail));
-        ends.next().filter(|_| ends.next().is_none())
+        self.node(p.prophecy.as_ref()?.replaces.as_deref()?)
     }
 
     /// The prophecy that supersedes each node it names.

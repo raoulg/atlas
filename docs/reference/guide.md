@@ -86,6 +86,7 @@ atlas view ../api ../web        # two repositories as parts of one picture
 atlas view notebooks/explore.ipynb   # one file, with its project, opened on its route
 atlas view https://github.com/o/r/tree/main/src/pkg   # one folder of a repository, from its URL
 atlas check                     # where the code and the design principles disagree
+atlas revelation                # the sketch code kept in the tree, and what is left to build
 atlas changes                   # what your edits did to the routes, their places and the findings
 atlas changes v1..main          # what one revision did against another
 atlas history                   # the history in your browser: pick two commits, see them as one picture
@@ -205,10 +206,31 @@ findings as data.
 | `nothing` | A call leaves something behind. |
 | `layers` | The packages of a part depend on one another in one direction. |
 | `lens` | What a lens puts, it gets back. |
+| `prophecy` | Code that is built does not lean on code that is not. |
 
 Each principle, with its reasoning, the idioms behind it and what each language lets Atlas
 trace, is in [principles.md](principles.md). Atlas holds itself to them: `atlas check` on
 this repository finds nothing, and the tests keep it that way.
+
+## Revelation: what a design leaves to build
+
+A design can live in the tree as sketch code, marked as not built yet: a *prophecy*. Python marks
+it with a decorator, `@prophecy(supersedes="pkg.Old")` (a no-op function in the project; Atlas
+matches it by name), Rust with `#[doc = "prophecy: supersedes=pkg::Old"]`, TypeScript with a
+`@prophecy supersedes=pkg.Old` tag in the JSDoc before a `declare` function, class, interface or
+type. `veiled` says the place is known and the shape is not, `sealed="#144"` that the shape waits
+on an open question.
+
+A prophecy is a todo, not a finding: `atlas check` leaves its empty bodies alone, and asks about
+the built code that leans on it, because production would run on a stub. What a prophecy
+supersedes is still asked about, with the prophecy as the answer.
+
+`atlas revelation` lists every prophecy: what it supersedes, the bodies still to write, whether it
+is veiled or sealed, and the built code that leans on it. The sketch is done when the list is
+empty; a prophecy is fulfilled when its marker is gone. The page draws a prophecy with a dotted
+border (finer when it is veiled), as a route of its own for each operation of it, and its
+inspector says what it supersedes and what supersedes a box. Agents ask the same with the MCP
+tool `revelation`.
 
 ## Changes: what an edit did
 

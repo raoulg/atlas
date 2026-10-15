@@ -169,6 +169,7 @@ header:has(#diffbar:not([hidden])) #project{max-width:160px}
 #legend .sw i.dsw.changed{border-color:var(--chg)}
 .dwas{font-family:var(--mono);font-size:11.5px;margin:-6px 0 12px;padding-left:8px;border-left:2px solid;word-break:break-word}
 .dwas.added{border-color:var(--add);color:var(--add)}
+.dwas.prophecy{border-left-style:dotted;border-color:var(--ink-3);color:var(--ink-2)}
 .dwas.removed{border-color:var(--del);color:var(--del)}
 .dwas.changed{border-color:var(--chg);color:var(--ink-2)}
 /* a finding marks the box it is about with a dot inside its corner; the pointer on the dot shows
@@ -268,6 +269,12 @@ pre.code .l::before{counter-increment:ln;content:counter(ln);display:inline-bloc
 .tnode{cursor:pointer}
 .tnode rect.bg{fill:var(--panel);stroke:var(--line)}
 .tnode.ghost rect.bg{stroke-dasharray:4 3;fill:transparent}
+/* a prophecy: sketch code not built yet, drawn as a ghost with a dotted border; veiled, the shape is not known either */
+.tstep.prophecy rect.bg,.tnode.prophecy rect.bg{stroke:var(--ink-3);stroke-dasharray:1.5 3.5;stroke-linecap:round;stroke-width:1.6;fill:transparent}
+.tstep.prophecy.veiled rect.bg,.tnode.prophecy.veiled rect.bg{stroke-dasharray:.5 5}
+.tstep.prophecy text.title,.tnode.prophecy text.title{font-style:italic;fill:var(--ink-2)}
+.tnode.prophecy .veil{font-family:var(--sans);font-size:9.5px;font-style:italic;fill:var(--ink-3)}
+#legend .sw i.dsw.prophecy{border-color:var(--ink-3);border-style:dotted}
 .tnode .title{font-family:var(--mono);font-size:12px;font-weight:500;fill:var(--ink)}
 .tnode .sub{font-family:var(--sans);font-size:10px;fill:var(--ink-3)}
 .tnode .badge{font-family:var(--mono);font-size:10px;fill:var(--ink-3)}
@@ -360,6 +367,10 @@ const nameOf = n => SIDE === "a" && DIFF?.renamed[n.id] ? DIFF.renamed[n.id].spl
 { const ps = document.getElementById("project"); for (const n of names) { const o = document.createElement("option"); o.value = n; o.textContent = n; o.selected = n === current; ps.appendChild(o); }
   ps.addEventListener("change", () => { location.hash = "#p=" + ps.value; location.reload(); }); }
 const byId = new Map(D.nodes.map(n => [n.id, n]));
+// a prophecy is sketch code not built yet, and the members of one stand with it
+const prophecyOf = n => n?.prophecy || (n?.cls && byId.get(n.cls)?.prophecy) || null;
+// what a prophecy replaces, and the prophecy that replaces a node
+const replacedBy = new Map(D.nodes.filter(n => n.prophecy?.replaces).map(n => [n.prophecy.replaces, n.id]));
 for (const t of (D.make || [])) byId.set(t.id, {id: t.id, kind: "make", name: t.label, module: "Makefile", doc: t.doc, recipe: t.recipe, entry: {kind: "make", label: t.label}, make: t});
 const ROOT = D.root + ".";
 // a repository of several parts (a crate, a package, an app), each read in its own language
@@ -586,9 +597,11 @@ function renderTypes() {
     drawTypeNode(ng, byId.get(id), x, y, W, H, 0); x += W + HG;
   }
 }
+// the classes a prophecy's box carries: dotted, and dotted finer when it is veiled
+const prophecyClass = n => { const p = prophecyOf(n); return p ? " prophecy" + (p.veiled ? " veiled" : "") : ""; };
 function drawTypeNode(g, n, x, y, W, H, nkids) {
   const ghost = n.kind === "external";
-  const grp = el("g", {class: "tnode" + (ghost ? " ghost" : ""), transform: `translate(${x},${y})`, "data-id": n.id}, g);
+  const grp = el("g", {class: "tnode" + (ghost ? " ghost" : "") + prophecyClass(n), transform: `translate(${x},${y})`, "data-id": n.id}, g);
   el("rect", {class: "bg", width: W, height: H}, grp);
   if (!ghost) el("rect", {x: 0, y: 0, width: 4, height: H, fill: hueOf(n)}, grp);
   el("text", {class: "title", x: 12, y: 17}, grp).textContent = n.name;
@@ -674,7 +687,7 @@ const isOpen = t => t.side === "open";
 const go = (goes, t) => { if (t.shape) return; const k = t.place.id; if (!goes.has(k)) goes.set(k, new Set()); goes.get(k).add(isOpen(t) ? "open" : isIn(t) ? "read" : "write"); };
 const joinGoes = (into, from) => from?.forEach((s, k) => { if (!into.has(k)) into.set(k, new Set()); s.forEach(x => into.get(k).add(x)); });
 const verbOf = t => t.verb;
-const KIND_LABEL = {make: "Make", cli: "CLI", script: "Script", route: "API", mcp: "MCP", notebook: "Notebook", export: "Library", test: "Test"}, KIND_ORDER = ["make", "cli", "export", "script", "notebook", "route", "mcp", "test"];
+const KIND_LABEL = {make: "Make", cli: "CLI", script: "Script", route: "API", mcp: "MCP", notebook: "Notebook", export: "Library", prophecy: "Prophecy", test: "Test"}, KIND_ORDER = ["make", "cli", "export", "script", "notebook", "route", "mcp", "prophecy", "test"];
 const entries = [...byId.values()].filter(n => n.entry).sort((a, b) => (partRank(a) - partRank(b)) || (KIND_ORDER.indexOf(a.entry.kind) - KIND_ORDER.indexOf(b.entry.kind)) || a.entry.label.localeCompare(b.entry.label));
 // what running a function means, from the engine's reading: its body on a value of class `on` (the
 // calls in the order they run, a method called on a known class that class's), or on any value
@@ -914,7 +927,7 @@ const usesOf = () => {
   return usesIn.get(SIDE);
 };
 // where a route comes from: the command typed, the request made, the tool called
-const ENTRY_PLACE = {cli: l => `$ ${l}`, make: l => `$ make ${l}`, script: l => `$ python ${l}`, notebook: l => `notebook ${l}`, route: l => l, mcp: l => `MCP ${l}`, export: (l, n) => `${n ? partOf(n) : D.root}.${l}`, test: l => `test ${l}`};
+const ENTRY_PLACE = {cli: l => `$ ${l}`, make: l => `$ make ${l}`, script: l => `$ python ${l}`, notebook: l => `notebook ${l}`, route: l => l, mcp: l => `MCP ${l}`, export: (l, n) => `${n ? partOf(n) : D.root}.${l}`, prophecy: l => `prophecy ${l}`, test: l => `test ${l}`};
 // an entry's domain is what the human hands it on the command line: it reads as its usage line,
 // `$ sunspots --raw --figure --months`
 // in A, an entry whose usage line B changed reads as A had it
@@ -1956,7 +1969,7 @@ async function renderPlaat() {
   // pills
   for (const P of pills.values()) {
     if (!pos.has(P.id)) continue;
-    const Q = pos.get(P.id), grp = el("g", {class: "tstep" + (P.own ? " own" : "") + (stepOf(P.steps[0]).startsWith("op:") ? " op" : ""), "data-id": stepOf(P.steps[0]), "data-layout-id": P.id}, ng);
+    const Q = pos.get(P.id), grp = el("g", {class: "tstep" + (P.own ? " own" : "") + (stepOf(P.steps[0]).startsWith("op:") ? " op" : "") + (P.steps.length === 1 ? prophecyClass(byId.get(stepOf(P.steps[0]))) : ""), "data-id": stepOf(P.steps[0]), "data-layout-id": P.id}, ng);
     pointable(grp, P.id);
     // what a peek shows of a pill: its step (or steps), a package's module, the focus around the rest
     const shows = () => {
@@ -2001,7 +2014,7 @@ async function renderPlaat() {
   for (const p of places.values()) {
     if (!pos.has(p.id)) continue;
     const Q = pos.get(p.id), kind = placeKind(p.id);
-    const grp = el("g", {class: "tnode" + (p.kind === "ext" ? " ghost" : "") + (p.kind === "ref" ? " ref" : "") + (kind ? " world" : ""), "data-id": p.id}, ng);
+    const grp = el("g", {class: "tnode" + (p.kind === "ext" ? " ghost" : "") + (p.kind === "ref" ? " ref" : "") + (kind ? " world" : "") + (kind ? "" : prophecyClass(byId.get(p.type))), "data-id": p.id}, ng);
     pointable(grp, p.id);
     grp.addEventListener("mouseenter", () => { hoverTarget = () => { if (p.id.startsWith("e:")) select(p.id.slice(2)); else if (kind) selectPlace(p.id, p.label); else if (byId.has(p.type)) select(p.type); }; });
     grp.addEventListener("mouseleave", () => { hoverTarget = null; });
@@ -2207,6 +2220,15 @@ function select(id, extra) {
     insp.appendChild(html("div", "sig", `class ${n.name}(${(n.bases || []).join(", ")})`));
   }
   if (n.doc) insp.appendChild(html("p", "doc", n.doc));
+  const pro = prophecyOf(n);
+  if (pro) {
+    const said = [n.prophecy ? "a prophecy: sketch code, not built yet" : `a member of the prophecy ${short(n.cls)}`];
+    if (pro.veiled) said.push("veiled: the place is known, the shape is not");
+    if (pro.sealed) said.push(`sealed on ${pro.sealed}`);
+    insp.appendChild(html("div", "dwas prophecy", said.join(" · ")));
+    if (n.prophecy?.supersedes) insp.appendChild(section("supersedes", null, byId.has(pro.replaces) ? linkList([pro.replaces]) : html("p", "doc", `${n.prophecy.supersedes}, which the code does not hold`)));
+  }
+  if (replacedBy.has(id)) insp.appendChild(section("superseded by", null, linkList([replacedBy.get(id)])));
   if (n.kind === "make") {
     insp.appendChild(section("recipe", null, html("pre", "recipe", n.recipe.join("\n"))));
     if (n.make.calls.length) insp.appendChild(section("runs", n.make.calls.length, linkList(n.make.calls)));
@@ -2282,6 +2304,7 @@ function legend() {
     row.appendChild(html("span", "sep"));
     for (const [st, text] of [["added", "added in B"], ["removed", "removed in B"], ["changed", "changed: its own arrows differ"]]) { const sw = html("span", "sw"); sw.innerHTML = `<i class="dsw ${st}"></i>${text}`; row.appendChild(sw); }
   }
+  if (scene.node().querySelector(".prophecy")) { const sw = html("span", "sw"); sw.innerHTML = `<i class="dsw prophecy"></i>prophecy: sketch, not built yet`; row.appendChild(sw); }
   if (scene.node().querySelector(".ask")) { const sw = html("span", "sw asks"); sw.innerHTML = `<svg width="8" height="8"><circle cx="4" cy="4" r="3.5" fill="var(--accent)"/></svg> finding: hover it`; row.appendChild(sw); }
   // a closed box's own mark is its border; what it holds inside is counted on a dashed tag
   if (scene.node().querySelector(".inside")) {

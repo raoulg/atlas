@@ -150,11 +150,12 @@ cargo install --locked --git https://github.com/raoulg/atlas atlas
 ## Use
 
 ```bash
-atlas serve     # the picture of the repository you are in, to work in with your agent
-atlas view      # the same picture as one HTML file, to keep or send
-atlas check     # where the code and eleven design principles disagree
-atlas changes   # what your edit did to the routes
-atlas mcp       # the picture for your coding agent
+atlas serve      # the picture of the repository you are in, to work in with your agent
+atlas view       # the same picture as one HTML file, to keep or send
+atlas check      # where the code and eleven design principles disagree
+atlas revelation # the sketch code kept in the tree, and what is left to build
+atlas changes    # what your edit did to the routes
+atlas mcp        # the picture for your coding agent
 ```
 
 `atlas serve` is the page to work in. It follows the code: when a file changes, the picture is

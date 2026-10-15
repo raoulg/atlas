@@ -198,6 +198,15 @@ enum Cmd {
         #[arg(long)]
         json: bool,
     },
+    /// Every prophecy in the tree, what it replaces and what is left of it: sketch code marked as
+    /// not built yet.
+    Revelation {
+        /// Repository root or git URL; default: the current directory.
+        repo: Option<PathBuf>,
+        /// Print the standings as JSON.
+        #[arg(long)]
+        json: bool,
+    },
     /// What the working tree changes against a git revision, or one revision against another:
     /// routes, their steps and places, findings.
     Changes {
@@ -559,6 +568,23 @@ fn main() -> Result<()> {
                 println!("{}", serde_json::to_string_pretty(&c)?);
             } else {
                 print!("{}", atlas_engine::changes::report(&c));
+            }
+        }
+        Cmd::Revelation { repo, json } => {
+            let (repo, _clone) = local(
+                match repo {
+                    Some(r) => r,
+                    None => std::env::current_dir()?,
+                },
+                &mut opts,
+            )?;
+            for (i, g) in parts::analyze_parts(&[repo], &opts)?.iter().enumerate() {
+                let stands = atlas_engine::prophecy::revelation(g);
+                if json {
+                    println!("{}", serde_json::to_string_pretty(&serde_json::json!({ "root": g.root, "prophecies": stands }))?);
+                } else {
+                    print!("{}{}", if i > 0 { "\n" } else { "" }, atlas_engine::prophecy::report(&g.root, &stands));
+                }
             }
         }
         Cmd::Check { repo, json } => {

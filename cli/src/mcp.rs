@@ -37,7 +37,10 @@ and give the issue to `resolve`. To ask whether to make a change, show it rather
 bodies may stay empty), and the page draws the working tree and the vision as one picture, \
 what you add, remove and change marked; `look` at the part you mean, and `retract` it once it \
 is decided. To say what the code does not (what a condition of `choices` means, what a step is \
-for), `annotate` a box or a line; it shows on the page in your words.";
+for), `annotate` a box or a line; it shows on the page in your words. Sketch code kept in the tree, marked \
+as not built yet, is a prophecy (`@prophecy(supersedes=..)` in Python, `#[doc = \"prophecy: ..\"]` in Rust, \
+`@prophecy` in a TypeScript JSDoc): `revelation` lists them with what is left to build, and `check` asks \
+about built code that leans on one.";
 
 /// Answer every message on stdin until it closes, reading repositories with `opts`.
 pub fn serve(opts: &Options) -> Result<()> {
@@ -110,6 +113,14 @@ fn tools() -> Value {
             "inputSchema": { "type": "object", "properties": {
                 "path": path,
                 "principle": { "type": "string", "description": "Only this principle's findings: an id from `principles`." },
+            } },
+            "annotations": read_only,
+        },
+        {
+            "name": "revelation",
+            "description": "Every prophecy in the tree: sketch code marked as not built yet. For each, what it supersedes, how many bodies are left to write, whether it is veiled or sealed, and the built code that leans on it. The epic is done when nothing is left.",
+            "inputSchema": { "type": "object", "properties": {
+                "path": path,
             } },
             "annotations": read_only,
         },
@@ -246,6 +257,12 @@ fn call(name: &str, args: &Value, opts: &Options) -> Option<Result<String, Strin
             let reports: Vec<String> = parts.iter().map(|(root, findings)| principles::report(root, findings, &look)).collect();
             let counted: Vec<(&str, &[principles::Finding])> = parts.iter().map(|(r, f)| (r.as_str(), f.as_slice())).collect();
             Ok(reports.join("\n") + &principles::summary(&counted, &asked, &look))
+        }),
+        "revelation" => parts_of(text("path"), opts).map(|gs| {
+            gs.iter()
+                .map(|g| atlas_engine::prophecy::report(&g.root, &atlas_engine::prophecy::revelation(g)))
+                .collect::<Vec<_>>()
+                .join("\n")
         }),
         "routes" => graph(text("path"), opts).map(|g| {
             let rows: Vec<String> =

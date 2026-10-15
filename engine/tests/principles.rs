@@ -72,7 +72,7 @@ fn each_principle_finds_its_case() {
     assert_eq!(got["choices"], ["fixture.build.prepare", "fixture.build.prepare", "fixture.build.seeded"]);
     // `Mixin.close` does nothing; `remember` writes a global, a place (`Global(fixture.build.SEEN)`),
     // `check_name` raises, `each` calls the function it is handed, and `register_names` runs both
-    assert_eq!(got["nothing"], ["fixture.sinks.base.Mixin.close", "fixture.plans.keep"]);
+    assert_eq!(got["nothing"], ["fixture.plans.keep", "fixture.sinks.base.Mixin.close"]);
     // `_rank.low.peek` calls back up into `_rank.high`, which builds on `low`
     assert_eq!(got["layers"], ["fixture._rank"]);
     // `Notes` puts a Note into its file and gets a dict back, `Shelf` gets the Note, and `Diary`

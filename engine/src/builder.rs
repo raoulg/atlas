@@ -196,6 +196,7 @@ impl GraphBuilder {
         crate::flow::wire(&mut nodes, &self.edges);
         mark_doors(&mut nodes, &self.edges);
         mark_options(&mut nodes);
+        crate::prophecy::settle(&mut nodes, &self.edges);
         let mut edges = self.edges;
         for e in edges.iter_mut().filter(|e| e.kind == EdgeKind::Calls) {
             e.uses = self.used.contains(&(e.src.clone(), e.dst.clone()));

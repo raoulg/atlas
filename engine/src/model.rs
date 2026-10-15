@@ -56,6 +56,8 @@ pub enum EntryKind {
     Notebook,
     /// A name a package or crate exports at its root: a route into it as a library.
     Export,
+    /// An operation of sketch code that is not built yet: a route into what is planned.
+    Prophecy,
     Test,
 }
 
