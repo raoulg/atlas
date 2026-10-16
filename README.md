@@ -73,11 +73,46 @@ curl -fsSL https://raw.githubusercontent.com/raoulg/atlas/main/install.sh | sh
 irm https://raw.githubusercontent.com/raoulg/atlas/main/install.ps1 | iex
 ```
 
+**Homebrew** (the formula is `atlas-code`: homebrew-core has an `atlas` of its own):
+
+```bash
+brew install raoulg/tap/atlas-code
+```
+
 **From source**, with a [Rust toolchain](https://rustup.rs):
 
 ```bash
 cargo install --locked --git https://github.com/raoulg/atlas atlas
 ```
+
+### Stable and nightly
+
+`main` is the stable line: only fixes, each a tagged release. `next` is where new work lands; a
+nightly build is made of it when its tests are green. The scripts take the channel from
+`ATLAS_CHANNEL`:
+
+```bash
+ATLAS_CHANNEL=nightly sh -c "$(curl -fsSL https://raw.githubusercontent.com/raoulg/atlas/next/install.sh)"
+```
+
+```powershell
+$env:ATLAS_CHANNEL = 'nightly'; irm https://raw.githubusercontent.com/raoulg/atlas/next/install.ps1 | iex
+```
+
+Homebrew has no channel variable; its nightly is the formula's `HEAD`, built from `next` (it needs
+Rust). On the command line, and in a `Brewfile`:
+
+```bash
+brew install --HEAD raoulg/tap/atlas-code
+brew upgrade --fetch-HEAD atlas-code      # a HEAD formula is upgraded only when asked
+```
+
+```ruby
+tap "raoulg/tap"
+brew "atlas-code", args: ["HEAD"]         # the nightly; leave out `args` for the stable release
+```
+
+`atlas --version` says which one you have: `0.66.2`, or `0.67.0-nightly (b0ead14)`.
 
 ## Use
 
