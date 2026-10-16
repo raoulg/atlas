@@ -492,7 +492,9 @@ takes a prophecy would run on a stub: it raises, or does nothing, in production.
 on one another freely, and a test may lean on the code it is written for before it is built.
 
 - **Python.** `@prophecy(supersedes="pkg.module.Old")`, a no-op decorator in the project; Atlas
-  matches it by name. The body is `...`, and ty checks the signatures.
+  matches it by name. The body is `raise NotImplementedError` where the function gives a value (ty
+  refuses an empty `...` body there, outside stubs and abstract methods) and `...` where it gives nothing; ty
+  checks the signatures, and `prophetize` writes the bodies so.
 - **Rust.** `#[doc = "prophecy: supersedes=pkg::Old"]` on the item, with `todo!()` for a body: it
   compiles, and the types are checked in full.
 - **TypeScript.** `/** @prophecy supersedes=pkg.Old */` before a `declare function`, a `declare

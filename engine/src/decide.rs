@@ -78,17 +78,49 @@ pub fn prophetize(
             added.iter().copied().filter(|n| !n.cls.as_deref().is_some_and(|c| added.iter().any(|a| a.id == c))).collect();
         let ext = rel.extension().and_then(|e| e.to_str()).unwrap_or("");
         let mut new_lines: Vec<String> = lines.iter().map(|l| l.to_string()).collect();
-        let mut at: Vec<(&Node, usize)> = top.iter().filter_map(|n| Some((*n, n.span?.0 as usize))).collect();
-        at.sort_by_key(|(_, l)| std::cmp::Reverse(*l));
-        for (n, line) in at {
-            let indent: String = lines.get(line - 1).map(|l| l.chars().take_while(|c| c.is_whitespace()).collect()).unwrap_or_default();
-            let by = supersedes.get(&n.id).map(String::as_str);
-            let Some(marker) = marker(ext, &indent, by) else {
-                out.notes.push(format!("`{}` is in a language Atlas does not mark yet: write its prophecy marker by hand", rel.display()));
-                continue;
-            };
-            insert_marker(ext, &mut new_lines, line - 1, marker);
-            out.marked.push(n.id.clone());
+        // what is written at a line: the body of a Python sketch that ty would refuse, and the marker
+        // of an item; from the bottom up, so that a line added does not move one still to come
+        enum Edit<'n> {
+            Body,
+            Marker(&'n Node),
+        }
+        let mut edits: Vec<(usize, u8, Edit)> = vec![];
+        for n in top.iter().copied() {
+            if let Some((start, _)) = n.span {
+                edits.push((start as usize, 0, Edit::Marker(n)));
+            }
+        }
+        if ext == "py" {
+            for n in added.iter().copied().filter(|n| matches!(n.kind, NodeKind::Function | NodeKind::Method)) {
+                let gives = n.returns.as_ref().is_some_and(|r| !r.written.is_empty() && r.written != "None");
+                if let (true, Some((_, end))) = (gives, n.span) {
+                    edits.push((end as usize, 1, Edit::Body));
+                }
+            }
+        }
+        edits.sort_by_key(|(line, order, _)| std::cmp::Reverse((*line, *order)));
+        for (line, _, edit) in edits {
+            match edit {
+                Edit::Body => {
+                    if let Some(rewritten) = sketch_body(&new_lines[line - 1]) {
+                        new_lines.splice(line - 1..line, rewritten);
+                    }
+                }
+                Edit::Marker(n) => {
+                    let indent: String =
+                        lines.get(line - 1).map(|l| l.chars().take_while(|c| c.is_whitespace()).collect()).unwrap_or_default();
+                    let by = supersedes.get(&n.id).map(String::as_str);
+                    let Some(marker) = marker(ext, &indent, by) else {
+                        out.notes.push(format!(
+                            "`{}` is in a language Atlas does not mark yet: write its prophecy marker by hand",
+                            rel.display()
+                        ));
+                        continue;
+                    };
+                    insert_marker(ext, &mut new_lines, line - 1, marker);
+                    out.marked.push(n.id.clone());
+                }
+            }
         }
         let mut body = new_lines.join("\n");
         if text.ends_with('\n') {
@@ -115,6 +147,19 @@ pub fn prophetize(
     }
     out.marked.sort();
     Ok(out)
+}
+
+/// The last line of a Python sketch whose body is `...`, as ty accepts it where the function gives a
+/// value: ty refuses an empty body outside stubs, protocols and abstract methods, so the body raises
+/// `NotImplementedError`.
+fn sketch_body(line: &str) -> Option<Vec<String>> {
+    let indent: String = line.chars().take_while(|c| c.is_whitespace()).collect();
+    let trimmed = line.trim_end();
+    if trimmed.trim() == "..." {
+        return Some(vec![format!("{indent}raise NotImplementedError")]);
+    }
+    let signature = trimmed.strip_suffix(": ...")?;
+    Some(vec![format!("{signature}:"), format!("{indent}    raise NotImplementedError")])
 }
 
 /// The lines that mark the item that starts at a line, at the item's indentation.

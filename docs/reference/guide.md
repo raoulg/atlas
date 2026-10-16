@@ -242,7 +242,7 @@ else. The files are left for you to commit; sketch the shape next.
 
 A vision that is decided becomes a prophecy with the MCP tool `prophetize`: the vision's files are
 written into the tree, every item the vision adds marked in the language of its file (and, for
-Python, the project's `prophecy` imported), and the vision is retracted. `supersedes` says which
+Python, the project's `prophecy` imported, and the bodies that ty would refuse made `raise NotImplementedError`), and the vision is retracted. `supersedes` says which
 existing item an added one replaces. The files are left for you to commit; Atlas opens no branch.
 A vision that changes or removes what exists is refused, since writing it would replace built code
 with a sketch: the new item takes a new name and supersedes the old one.

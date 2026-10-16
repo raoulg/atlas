@@ -614,11 +614,14 @@ fn prophecy_a_decided_vision_is_marked_where_it_is_written() {
     let (decided, stands) = common::decided(
         "python",
         "src/archive/sink.py",
-        "\n\nclass Vault:\n    \"\"\"Where reports wait.\"\"\"\n\n    def keep(self, report: str, /) -> None: ...\n",
+        "\n\nclass Vault:\n    \"\"\"Where reports wait.\"\"\"\n\n    def keep(self, report: str, /) -> None: ...\n\n    def size(self) -> int: ...\n",
         &[("archive.sink.Vault", "archive.sink.Sink")],
     );
     let text = decided.files.values().next().expect("one file is written");
     assert!(text.contains("@prophecy(supersedes=\"archive.sink.Sink\")"), "{text}");
+    // ty refuses an empty body where a value is given: the sketch raises, and a body that gives nothing stays empty
+    assert!(text.contains("def size(self) -> int:\n        raise NotImplementedError\n"), "{text}");
+    assert!(text.contains("def keep(self, report: str, /) -> None: ..."), "{text}");
     assert_eq!(decided.marked, ["archive.sink.Vault"]);
     let vault = stands.iter().find(|s| s.id == "archive.sink.Vault").expect("the revelation lists what was decided");
     assert_eq!(vault.supersedes.as_deref(), Some("archive.sink.Sink"));

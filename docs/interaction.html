@@ -150,7 +150,7 @@ Selected: sunspots.series.trusted
     <figcaption><b>notes</b><span class="tag">what the tool answered</span></figcaption>
     <pre>Note 1 on trusted (sunspots.series.trusted), written at 59b48f1 in the view {&quot;route&quot;:&quot;sunspots.cli.run&quot;}:
   Why a minimum of 1? What happens to the months with no observations?
-  Its place: http://127.0.0.1:65078/#v=%7B%22route%22%3A%22sunspots.cli.run%22%7D&amp;at=sunspots.series.trusted</pre>
+  Its place: http://127.0.0.1:54431/#v=%7B%22route%22%3A%22sunspots.cli.run%22%7D&amp;at=sunspots.series.trusted</pre>
   </figure>
   <figure>
     <figcaption><b>The agent resolved it</b><span class="tag">✓</span></figcaption>
@@ -243,7 +243,7 @@ index f83251b..a67a80f 100644
 +    Archive(archive).write(frame)
 +    Trend(settings).save(frame, figure)
 diff --git a/src/sunspots/series.py b/src/sunspots/series.py
-index d6b3068..8697040 100644
+index d6b3068..f6eb129 100644
 --- a/src/sunspots/series.py
 +++ b/src/sunspots/series.py
 @@ -4,6 +4,7 @@ SILSO&#x27;s file has no header; its columns are separated by semicolons, and a month
@@ -254,7 +254,7 @@ index d6b3068..8697040 100644
  from pathlib import Path
  
  import pandas as pd
-@@ -27,3 +28,14 @@ def trusted(frame: pd.DataFrame, minimum: int) -&gt; pd.DataFrame:
+@@ -27,3 +28,15 @@ def trusted(frame: pd.DataFrame, minimum: int) -&gt; pd.DataFrame:
  def smooth(frame: pd.DataFrame, months: int) -&gt; pd.DataFrame:
      &quot;&quot;&quot;`frame` with a `smoothed` column: the mean over `months` months, centred on each.&quot;&quot;&quot;
      return frame.assign(smoothed=frame[&quot;mean&quot;].rolling(months, center=True).mean())
@@ -268,7 +268,8 @@ index d6b3068..8697040 100644
 +
 +    def write(self, frame: pd.DataFrame) -&gt; None: ...
 +
-+    def read(self) -&gt; pd.DataFrame: ...</pre>
++    def read(self) -&gt; pd.DataFrame:
+…</pre>
   </figure>
   <figure>
     <figcaption><b>The prophecy as a route of its own</b><span class="tag">prophecy</span></figcaption>
@@ -292,26 +293,26 @@ index d6b3068..8697040 100644
   src/sunspots/series.py:34  Archive
       3 bodies to write
 
-  src/sunspots/series.py:45  Format
+  src/sunspots/series.py:46  Format
       0 bodies to write · sealed on raoulg/atlas#19 (closed: the seal can be broken)
 
-  src/sunspots/series.py:50  Compression
+  src/sunspots/series.py:51  Compression
       0 bodies to write · sealed on raoulg/atlas#33 (open)</pre>
   </figure>
   <figure class="output">
     <figcaption><b>seals: what waits on an open question (asked of GitHub with gh; here two issues of Atlas stand in for the questions)</b><span class="tag">what the tool answered</span></figcaption>
     <pre>sunspots · 2 sealed, 1 to break
 
-  src/sunspots/series.py:45  Format  sealed on raoulg/atlas#19 (closed: the seal can be broken)  A database is a file: the directory made for it serves its data
+  src/sunspots/series.py:46  Format  sealed on raoulg/atlas#19 (closed: the seal can be broken)  A database is a file: the directory made for it serves its data
 
-  src/sunspots/series.py:50  Compression  sealed on raoulg/atlas#33 (open)  Showcase of the interaction: history, look, notes, annotations, vision and prophecy, drawn from a real subject</pre>
+  src/sunspots/series.py:51  Compression  sealed on raoulg/atlas#33 (open)  Showcase of the interaction: history, look, notes, annotations, vision and prophecy, drawn from a real subject</pre>
   </figure>
   <figure class="output">
     <figcaption><b>unseal: the closed one is broken</b><span class="tag">what the tool answered</span></figcaption>
     <pre>Seals broken: sunspots.series.Format. The files are left for you to commit; sketch the shape now.
 
 diff --git a/src/sunspots/series.py b/src/sunspots/series.py
-index d6b3068..b7cc983 100644
+index d6b3068..f81717f 100644
 --- a/src/sunspots/series.py
 +++ b/src/sunspots/series.py
 @@ -4,6 +4,7 @@ SILSO&#x27;s file has no header; its columns are separated by semicolons, and a month
@@ -322,7 +323,7 @@ index d6b3068..b7cc983 100644
  from pathlib import Path
  
  import pandas as pd
-@@ -27,3 +28,24 @@ def trusted(frame: pd.DataFrame, minimum: int) -&gt; pd.DataFrame:
+@@ -27,3 +28,25 @@ def trusted(frame: pd.DataFrame, minimum: int) -&gt; pd.DataFrame:
  def smooth(frame: pd.DataFrame, months: int) -&gt; pd.DataFrame:
      &quot;&quot;&quot;`frame` with a `smoothed` column: the mean over `months` months, centred on each.&quot;&quot;&quot;
      return frame.assign(smoothed=frame[&quot;mean&quot;].rolling(months, center=True).mean())
@@ -336,7 +337,8 @@ index d6b3068..b7cc983 100644
 +
 +    def write(self, frame: pd.DataFrame) -&gt; None: ...
 +
-+    def read(self) -&gt; pd.DataFrame: ...
++    def read(self) -&gt; pd.DataFrame:
++        raise NotImplementedError
 +
 +
 +@prophecy()
