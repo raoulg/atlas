@@ -80,12 +80,16 @@ The rigorous half and the visual half are the same structure. Read `docs/referen
   owner, the branch, the worktree, the base commit and the files in scope. Work in your own
   worktree and branch; never edit another agent's worktree, branch or files in scope. Claude's
   checkout is `/Users/rgrouls/code/packages/atlas` on `atlas-obeys-its-algebra`, its subagents'
-  are `.claude/worktrees/agent-*`; Codex's are under `~/.codex/worktrees/`. Two branches carry
-  the work. Finished work lands on `next` (merge your branch into it, push it; CI runs there and a
-  nightly build is made of it). `main` is the stable line, 0.66.x since 16 October: only bug fixes
-  go to it (a branch from `main`, the patch number raised, a `v*` tag; then `main` is merged into
-  `next`), and it moves only when Raoul asks. New work, and the documentation, goes to `next`; Raoul
-  promotes `next` to `main` as the next minor when he says so. When work lands, the issue is closed with a
+  are `.claude/worktrees/agent-*`; Codex's are under `~/.codex/worktrees/`. Two branches carry the work and
+  nothing else carries a version: `next` is the nightly line, `main` the stable line. Start every piece of
+  work from `next`, in your own worktree and branch. That branch never raises the version, never makes
+  a tag and never merges into `main`. When the work is good, merge it into `next` and push it (CI runs
+  there); that merge raises the version when Atlas itself changed (see Version), and the nightly build
+  is made of it. Raoul promotes `next` to `main`, as the next minor, and tags it `v*`, when he says
+  so. The one exception is a bug fix for the stable line (0.66.x since 16 October): a branch from
+  `main`, merged into `main` when Raoul asks, the patch number raised, a `v*` tag; then `main` is merged
+  into `next`. New work and the documentation go to `next`; `main` moves only when Raoul asks.
+  When work lands, the issue is closed with a
   comment saying where: the commit and the version it is released as (on `next`, the nightly that has
   it). A commit names the issue it serves (`#19`).
 
@@ -93,9 +97,9 @@ The rigorous half and the visual half are the same structure. Read `docs/referen
 
 - Build and run: `cargo build`, `atlas view .` (install with `cargo install --path cli`;
   the viewer is baked into the binary, so rebuild after editing `viewer/index.html`).
-- Version: `version` in the root `Cargo.toml`. Raise the minor number when what Atlas reads
-  or draws changes, the patch number for a fix, on `main` for a fix (patch number, with
-  the tag). `next` keeps the version of `main` until Atlas itself changes (what it reads, draws or checks);
+- Version: `version` in the root `Cargo.toml`, raised only by the merge into `next` (a minor when what
+  Atlas reads or draws changes) and by a stable fix on `main` (the patch number, with the tag): never on a
+  feature branch. `next` keeps the version of `main` until Atlas itself changes (what it reads, draws or checks);
   the first change that warrants a new minor raises it, once, and later commits do not raise it
   again. Documentation, the release workflows and the tap change no version, and need no tag. The build adds the commit it is made from (`0.2.0 (b0ead14)`), and
   the nightly build says so too (`0.2.0-nightly (b0ead14)`: `ATLAS_CHANNEL=nightly` at build time).
