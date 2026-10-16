@@ -5,11 +5,11 @@ from pathlib import Path
 import typer
 
 from harvest.harvester import build_harvester
-from harvest.locations import API_URL, CONFIG_FILE, DATABASE, REPORT_DIR, STATIONS_FILE
+from harvest.locations import API_URL, ARCHIVE_DIR, CONFIG_FILE, DATABASE, REPORT_DIR, STATIONS_FILE
 from harvest.model import Harvest
 from harvest.report import summarise
 from harvest.settings import load_settings
-from harvest.stations import read_stations
+from harvest.stations import archived_stations, read_stations
 
 app = typer.Typer()
 
@@ -26,6 +26,7 @@ def collect(config: Path = CONFIG_FILE) -> None:
     """Fetch the latest reading of every station and keep it."""
     harvester = build_harvester(load_settings(config), DATABASE, API_URL)
     show(harvester.collect(read_stations(STATIONS_FILE)))
+    typer.echo(f"{len(archived_stations([ARCHIVE_DIR]))} stations archived")
 
 
 @app.command()

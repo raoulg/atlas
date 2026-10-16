@@ -323,8 +323,14 @@ pub fn place(b: &Built, op: &str) -> Option<String> {
     let unknown = |s: &str| s.contains(['{', '*', '?', '[']);
     let p = p.trim_end_matches('/').to_string();
     let parts: Vec<&str> = p.split('/').collect();
+    // a pattern below a directory is the part of the directory it holds: the place keeps it
+    let pattern = crate::knowledge::PATH_PATTERNS.iter().any(|(name, _)| *name == op);
     let p = match parts.iter().position(|x| unknown(x)) {
         None if dir => format!("{p}/"),
+        Some(i) if pattern && i > 0 => {
+            // the pattern's own wildcards stay; a part the code leaves unknown is one more
+            parts.iter().map(|x| placeholder_re().replace_all(x, "*").into_owned()).collect::<Vec<_>>().join("/")
+        }
         None => p.clone(),
         Some(i) if !dir && i + 1 < parts.len() && !unknown(parts[parts.len() - 1]) && i > 0 => {
             parts.iter().map(|x| if unknown(x) { "*" } else { x }).collect::<Vec<_>>().join("/")
@@ -706,6 +712,18 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
             } else {
                 None
             };
+            // a path no place is named by is the term it evaluates to, its unknown parts left as
+            // the names the code gives them
+            let value = value.or_else(|| {
+                let mut terms: Vec<String> = vec![];
+                for (_, b, _) in found.iter().filter(|(w, _, _)| w == whole) {
+                    let term = render(b).replace('\\', "/");
+                    if t.kind == World::Disk && b.iter().any(|s| !matches!(s, Seg::Hole(_))) && !terms.contains(&term) {
+                        terms.push(term);
+                    }
+                }
+                (!terms.is_empty()).then(|| terms.join("|"))
+            });
             if placed.is_empty() {
                 if !requested {
                     // a URL without a host is the page's own origin, decided by whoever serves it
@@ -721,7 +739,8 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
             // an alternative that names no place stays one the code does not name: what the
             // environment says beside the default the code holds
             if unnamed {
-                store.touch(&f, at(String::new(), t.dir, false));
+                let touch = at(String::new(), t.dir, false);
+                store.touch(&f, Touch { what: value.unwrap_or_else(|| touch.what.clone()), ..touch });
             }
         }
     }

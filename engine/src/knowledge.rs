@@ -1345,6 +1345,15 @@ pub const PATH_LIBRARIES: &[&str] = &["pathlib"];
 /// A path's methods that give back the path they are called on, written another way.
 pub const SAME_PATH: &[&str] = &["resolve", "absolute", "expanduser", "as_posix", "__fspath__"];
 
+/// A path's methods that give the paths below the one they are called on that match a pattern,
+/// with what the pattern starts with: `glob("*/IO-*")` is `*/IO-*` below it, `rglob("*.gml")` is
+/// `**/*.gml`.
+pub const PATH_PATTERNS: &[(&str, &str)] = &[("glob", ""), ("rglob", "**/")];
+
+/// Functions that give back the elements of the collection they are handed, in another order or
+/// kind: `sorted(paths)` holds the paths `paths` holds.
+pub const SAME_ELEMENTS: &[&str] = &["sorted", "list", "set", "tuple", "frozenset", "reversed", "iter", "fromkeys"];
+
 /// What a path library's function makes of what it is handed.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum PathFn {

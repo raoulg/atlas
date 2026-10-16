@@ -113,6 +113,22 @@ caller can override. The pushout is drawn, as the entry's usage line; the langua
 beneath it.
 **Where.** `CLAUDE.md`, "Isomorphic is the same"; `Entry::options`.
 
+### Paths as terms, directories as fibers
+**What.** A path is a term in a small algebra over a root: a root (a literal, a parameter, an
+option's default) closed under `/`-join, `parent`, `with_suffix` and a pattern below a
+directory. A collection of paths is the set of terms its elements can be; iterating it yields
+one of them. Substituting a parameter by the term a caller hands it is the term's evaluation, and
+a part no code determines is a named hole. A pattern below a directory (`D.glob("*/IO-*")`) is
+the fiber of `D` over the predicate "matches the pattern": the part of the directory the pattern
+holds.
+**In Atlas.** A place on the disk the code names only through a variable is drawn as the term it
+evaluates to (`assets/regelingen/*/IO-*`), not as the variable (`m`). The root is traced to a
+default or to a parameter wherever the code says it; what it cannot trace stays a hole in the
+term, so the gap is visible. A file the term decides to the last part is a `File`; a pattern is
+the fiber below its directory.
+**Where.** `paths.rs` (`Seg`, `join`, `place`), `python/paths.rs` (`Eval::of`); the pairs
+`python/paths`.
+
 ### Yoneda: what changed
 **What.** An object is determined up to isomorphism by the arrows into it, `Hom(−, A)`, and
 dually by the arrows out of it.

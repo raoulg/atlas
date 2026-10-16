@@ -10,7 +10,7 @@ from harvest.harvester import build_harvester
 from harvest.model import Fetched, Outage
 from harvest.report import summarise
 from harvest.settings import load_settings
-from harvest.stations import read_stations
+from harvest.stations import archived_stations, read_stations
 
 app = typer.Typer()
 
@@ -29,6 +29,7 @@ def collect() -> None:
     config = load_settings()
     harvester = build_harvester(config)
     show(harvester.collect(read_stations(config["stations_file"])))
+    typer.echo(f"{len(archived_stations([Path(d) for d in config['archive_dirs']]))} stations archived")
 
 
 @app.command()

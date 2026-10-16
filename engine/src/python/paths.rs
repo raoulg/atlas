@@ -16,7 +16,7 @@ use crate::knowledge;
 use crate::paths::{cross, hole, lit, parent, substitute, union};
 pub(super) use crate::paths::{Built, Seg};
 
-const DEPTH: u32 = 12;
+const DEPTH: u32 = 40;
 
 /// Evaluates paths in the modules of one project.
 pub(super) struct Eval<'a> {
@@ -172,13 +172,83 @@ impl<'a> Eval<'a> {
                     (Some(obj), Some(n)) => {
                         self.of(at, obj, depth + 1).iter().map(|b| (0..=n).fold(b.clone(), |b, _| parent(&b))).collect()
                     }
-                    _ => vec![named()],
+                    // `d[k]` for each `k` of `d` is one of the values `d` holds; a key looked up at
+                    // run time is not decided by the code
+                    _ => match e.child_by_field_name("value").filter(|v| self.ranges_over(e, *v, src)) {
+                        Some(v) => {
+                            let held = self.of(at, v, depth + 1);
+                            if held.iter().all(|b| matches!(b.as_slice(), [Seg::Hole(_)])) {
+                                vec![hole(dotted(Some(v), src).last().map(String::as_str).unwrap_or("value"))]
+                            } else {
+                                held
+                            }
+                        }
+                        None => vec![named()],
+                    },
                 }
             }
             "call" => self.call(at, e, depth),
+            // a collection of paths is the paths it can hold; iterating it yields one of them
+            "list" | "tuple" | "set" => named_children(e).into_iter().fold(vec![], |acc, x| union(acc, self.of(at, x, depth + 1))),
+            // a mapping holds its values: `{p.name: p for p in dirs}` holds `dirs`
+            "dictionary" => named_children(e).into_iter().fold(vec![], |acc, x| union(acc, self.of(at, x, depth + 1))),
+            "dictionary_comprehension" => e.child_by_field_name("body").map(|b| self.of(at, b, depth + 1)).unwrap_or_default(),
+            "pair" => e.child_by_field_name("value").map(|v| self.of(at, v, depth + 1)).unwrap_or_default(),
+            "list_splat" => named_children(e).first().map(|x| self.of(at, *x, depth + 1)).unwrap_or_default(),
+            "list_comprehension" | "set_comprehension" | "generator_expression" => {
+                e.child_by_field_name("body").map(|b| self.of(at, b, depth + 1)).unwrap_or_default()
+            }
             "none" => vec![],
             _ => vec![hole("value")],
         }
+    }
+
+    /// Whether the key of the subscript `e` of `value` is bound by a loop over `value`'s keys:
+    /// `for k in d`, `for k in sorted(d)`, `for k in d.keys()`.
+    fn ranges_over(&self, e: TsNode, value: TsNode, src: &[u8]) -> bool {
+        let Some(key) = e.child_by_field_name("subscript").filter(|k| k.kind() == "identifier").map(|k| text(k, src)) else {
+            return false;
+        };
+        let mut over = |mut it: TsNode| loop {
+            match it.kind() {
+                "call" => {
+                    let f = it.child_by_field_name("function");
+                    let named = f.map(|f| text(f, src).rsplit('.').next().unwrap_or("").to_string()).unwrap_or_default();
+                    let inner = if f.map_or(false, |f| f.kind() == "attribute") && named == "keys" {
+                        f.and_then(|f| f.child_by_field_name("object"))
+                    } else if knowledge::SAME_ELEMENTS.contains(&named.as_str()) {
+                        it.child_by_field_name("arguments").and_then(|a| named_children(a).first().copied())
+                    } else {
+                        None
+                    };
+                    match inner {
+                        Some(i) => it = i,
+                        None => return text(it, src) == text(value, src),
+                    }
+                }
+                _ => return text(it, src) == text(value, src),
+            }
+        };
+        let mut n = e.parent();
+        while let Some(a) = n {
+            if matches!(a.kind(), "for_in_clause" | "for_statement")
+                && a.child_by_field_name("left").map_or(false, |l| text(l, src) == key)
+                && a.child_by_field_name("right").map_or(false, &mut over)
+            {
+                return true;
+            }
+            if matches!(a.kind(), "list_comprehension" | "set_comprehension" | "dictionary_comprehension" | "generator_expression") {
+                if named_children(a).into_iter().any(|c| {
+                    c.kind() == "for_in_clause"
+                        && c.child_by_field_name("left").map_or(false, |l| text(l, src) == key)
+                        && c.child_by_field_name("right").map_or(false, &mut over)
+                }) {
+                    return true;
+                }
+            }
+            n = a.parent();
+        }
+        false
     }
 
     /// A string literal, an f-string's holes evaluated: one value for each the holes can hold.
@@ -281,6 +351,21 @@ impl<'a> Eval<'a> {
             return Some(self.of(at.of_definition(m, offset), value, depth + 1));
         }
         match p.kind() {
+            // `x |= ..` defines `x` as the assignment before it does, with what it adds
+            "augmented_assignment" => {
+                let first = enclosing_def(p).or_else(|| Some(m.tree.root_node())).and_then(|d| {
+                    walk(d, &["assignment"])
+                        .into_iter()
+                        .find(|a| a.child_by_field_name("left").map_or(false, |l| l.kind() == "identifier" && text(l, &m.src) == name))
+                })?;
+                self.follow(at, file, first.child_by_field_name("left")?.start_byte(), depth + 1)
+            }
+            // `for m in mappen`: one of the paths `mappen` holds
+            "for_in_clause" | "for_statement" if p.child_by_field_name("left").map(|l| l.id()) == Some(n.id()) => {
+                let values = self.of(at.of_definition(m, offset), p.child_by_field_name("right")?, depth + 1);
+                // an iterable of nothing known leaves the name the code gives the element
+                (!values.iter().all(|b| matches!(b.as_slice(), [Seg::Hole(_)]))).then_some(values)
+            }
             // a field a value is built from (a dataclass's, a model's): what its builders hand it
             "assignment" if p.child_by_field_name("type").is_some() && field_of(p, &m.src).is_some() => {
                 let class = field_of(p, &m.src)?;
@@ -302,7 +387,19 @@ impl<'a> Eval<'a> {
                                 .collect(),
                         )
                     }
-                    None => Some(self.of(here, right, depth + 1)),
+                    None => {
+                        let mut values = self.of(here, right, depth + 1);
+                        // what the same function adds to it afterwards (`x |= {..}`, `x += [..]`)
+                        if let Some(d) = enclosing_def(p) {
+                            for aug in walk(d, &["augmented_assignment"]) {
+                                let same = aug.child_by_field_name("left").map(|l| l.kind() == "identifier" && text(l, &m.src) == name);
+                                if let (Some(true), Some(r)) = (same, aug.child_by_field_name("right")) {
+                                    values = union(values, self.of(here, r, depth + 1));
+                                }
+                            }
+                        }
+                        Some(values)
+                    }
                 }
             }
             "function_definition" => {
@@ -332,13 +429,11 @@ impl<'a> Eval<'a> {
     fn call(&self, at: At, c: TsNode, depth: u32) -> Vec<Built> {
         let src = &at.m.src;
         let Some(f) = c.child_by_field_name("function") else { return vec![hole("call")] };
-        let args: Vec<TsNode> = c
-            .child_by_field_name("arguments")
-            .map(named_children)
-            .unwrap_or_default()
-            .into_iter()
-            .filter(|a| a.kind() != "comment")
-            .collect();
+        // `sorted(p for p in ps)`: the generator is the argument list
+        let args: Vec<TsNode> = match c.child_by_field_name("arguments") {
+            Some(a) if a.kind() == "generator_expression" => vec![a],
+            a => a.map(named_children).unwrap_or_default().into_iter().filter(|a| a.kind() != "comment").collect(),
+        };
         let positional: Vec<TsNode> =
             args.iter().copied().filter(|a| !matches!(a.kind(), "keyword_argument" | "list_splat" | "dictionary_splat")).collect();
         let parts = call_path(f, src);
@@ -383,6 +478,14 @@ impl<'a> Eval<'a> {
             }
             "with_name" => return cross(&receiver().iter().map(parent).collect::<Vec<_>>(), &joined(&positional), "/"),
             m if knowledge::SAME_PATH.contains(&m) => return receiver(),
+            // the paths below a directory that match a pattern
+            m if f.kind() == "attribute" && positional.len() == 1 && self.of_pathlib(at.m, f) => {
+                if let Some((_, start)) = knowledge::PATH_PATTERNS.iter().find(|(name, _)| *name == m) {
+                    return cross(&receiver(), &cross(&[lit(start)], &joined(&positional), ""), "/");
+                }
+            }
+            // the elements of what it is handed: `sorted(paths)`, `dict.fromkeys(paths)`
+            m if knowledge::SAME_ELEMENTS.contains(&m) && positional.len() == 1 => return self.of(at, positional[0], depth + 1),
             _ => {}
         }
         // a method of a path gives back something at that path: `p.open("w")`
