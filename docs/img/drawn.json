@@ -591,6 +591,180 @@
    ]
   ]
  },
+ "typescript-clean": {
+  "nodes": [
+   [
+    "n:typescript.cli.main",
+    "\u25be cli.main"
+   ],
+   [
+    "n:typescript.cli.main~c0",
+    "only when !existsSync(values.raw)"
+   ],
+   [
+    "op:parseArgs",
+    "parseArgs"
+   ],
+   [
+    "t:typescript.series.Month@n:typescript.cli.main/4",
+    "Month \u00b7 series"
+   ],
+   [
+    "t:typescript.series.Smoothed@n:typescript.cli.main/5",
+    "Smoothed \u00b7 smoothed"
+   ],
+   [
+    "t:typescript.settings.Settings",
+    "Settings"
+   ],
+   [
+    "t:typescript.settings.Settings@n:typescript.cli.main/2",
+    "Settings \u00b7 settings"
+   ],
+   [
+    "typescript.cli.main",
+    "main"
+   ],
+   [
+    "typescript.cli.monthsOf",
+    "\u25b8 monthsOf"
+   ],
+   [
+    "typescript.download.download",
+    "\u25b8 download"
+   ],
+   [
+    "typescript.plot.saveSvg",
+    "saveSvg"
+   ],
+   [
+    "typescript.plot.trend",
+    "\u25b8 trend"
+   ],
+   [
+    "typescript.series.load",
+    "\u25b8 load"
+   ],
+   [
+    "typescript.series.smooth",
+    "\u25b8 smooth"
+   ],
+   [
+    "typescript.settings.Settings",
+    "Settings()"
+   ],
+   [
+    "v:values@n:typescript.cli.main/0",
+    "values"
+   ],
+   [
+    "w:File:data/raw/sunspots.csv",
+    "File(data/raw/sunspots.csv)"
+   ],
+   [
+    "w:File:figures/sunspots.svg",
+    "File(figures/sunspots.svg)"
+   ],
+   [
+    "w:Web:www.sidc.be",
+    "Web(www.sidc.be)"
+   ]
+  ],
+  "edges": [
+   [
+    "n:typescript.cli.main/0",
+    "v:values@n:typescript.cli.main/0"
+   ],
+   [
+    "n:typescript.cli.main/1",
+    "n:typescript.cli.main/2"
+   ],
+   [
+    "n:typescript.cli.main/1",
+    "o:typescript.cli.main"
+   ],
+   [
+    "n:typescript.cli.main/2",
+    "t:typescript.settings.Settings@n:typescript.cli.main/2"
+   ],
+   [
+    "n:typescript.cli.main/3",
+    "o:typescript.cli.main"
+   ],
+   [
+    "n:typescript.cli.main/3",
+    "w:File:data/raw/sunspots.csv"
+   ],
+   [
+    "n:typescript.cli.main/4",
+    "t:typescript.series.Month@n:typescript.cli.main/4"
+   ],
+   [
+    "n:typescript.cli.main/5",
+    "t:typescript.series.Smoothed@n:typescript.cli.main/5"
+   ],
+   [
+    "n:typescript.cli.main/6",
+    "n:typescript.cli.main/7"
+   ],
+   [
+    "n:typescript.cli.main/6",
+    "o:typescript.cli.main"
+   ],
+   [
+    "n:typescript.cli.main/7",
+    "w:File:figures/sunspots.svg"
+   ],
+   [
+    "t:typescript.series.Month@n:typescript.cli.main/4",
+    "n:typescript.cli.main/5"
+   ],
+   [
+    "t:typescript.series.Month@n:typescript.cli.main/4",
+    "n:typescript.cli.main/6"
+   ],
+   [
+    "t:typescript.series.Smoothed@n:typescript.cli.main/5",
+    "n:typescript.cli.main/6"
+   ],
+   [
+    "t:typescript.settings.Settings",
+    "n:typescript.cli.main/2"
+   ],
+   [
+    "t:typescript.settings.Settings@n:typescript.cli.main/2",
+    "n:typescript.cli.main/5"
+   ],
+   [
+    "t:typescript.settings.Settings@n:typescript.cli.main/2",
+    "n:typescript.cli.main/6"
+   ],
+   [
+    "v:values@n:typescript.cli.main/0",
+    "n:typescript.cli.main/1"
+   ],
+   [
+    "v:values@n:typescript.cli.main/0",
+    "n:typescript.cli.main/3"
+   ],
+   [
+    "v:values@n:typescript.cli.main/0",
+    "n:typescript.cli.main/4"
+   ],
+   [
+    "v:values@n:typescript.cli.main/0",
+    "n:typescript.cli.main/7"
+   ],
+   [
+    "w:File:data/raw/sunspots.csv",
+    "n:typescript.cli.main/4"
+   ],
+   [
+    "w:Web:www.sidc.be",
+    "n:typescript.cli.main/3"
+   ]
+  ]
+ },
  "flowchart": {
   "nodes": [
    [

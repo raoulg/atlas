@@ -179,6 +179,50 @@ class Compression:
 """
 
 
+def revelation_json(atlas, repo):
+    """What `atlas revelation --json` says: the prophecies left, and the seals with their issues' state."""
+    out = subprocess.run([atlas, 'revelation', str(repo), '--json'], capture_output=True, text=True, check=True).stdout
+    return json.loads(out)
+
+
+def archive_snippet(repo):
+    """The lines of the sketch as the tree holds it after it is decided: the marker and the class."""
+    lines = (repo / 'src/sunspots/series.py').read_text().split('\n')
+    start = next(i for i, l in enumerate(lines) if l.startswith('class Archive'))
+    first = start - 1 if lines[start - 1].startswith('@prophecy') else start
+    end = next((i for i in range(start + 1, len(lines)) if lines[i].startswith('@prophecy') or lines[i].startswith('class ')), len(lines))
+    return [l for l in lines[first:end]]
+
+
+BUILT_ARCHIVE = """class Archive:
+    \"\"\"The smoothed months kept as a file: what goes in comes out.\"\"\"
+
+    def __init__(self, path: Path) -> None:
+        self.path = path
+
+    def write(self, frame: pd.DataFrame) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        frame.to_csv(self.path)
+
+    def read(self) -> pd.DataFrame:
+        return pd.read_csv(self.path, index_col=0, parse_dates=True)
+
+"""
+
+
+def build(repo):
+    """The sketch built: Archive gets its bodies, run_archived loses its marker."""
+    series = repo / 'src/sunspots/series.py'
+    text = series.read_text()
+    text, n = re.subn(r'@prophecy\nclass Archive:.*?(?=\n\n@prophecy|\Z)', BUILT_ARCHIVE.rstrip('\n') + '\n', text, flags=re.S)
+    assert n == 1, 'the Archive sketch is not where it was'
+    series.write_text(text)
+    cli = repo / 'src/sunspots/cli.py'
+    text, n = re.subn(r'@prophecy\(supersedes="sunspots.cli.run"\)\n', '', cli.read_text())
+    assert n == 1, 'the run_archived marker is not where it was'
+    cli.write_text(text)
+
+
 def settle(page, ms=1500):
     page.wait_for_timeout(ms)
     assert page.locator('#fault').is_hidden(), page.locator('#fault').inner_text()
@@ -192,7 +236,7 @@ def fit(page):
 def main(atlas, out=None):
     """With an OUTDIR the pictures and texts are written there; without, the page and pictures of `docs/`."""
     atlas = str(pathlib.Path(atlas).resolve())
-    texts, shown = {}, {}
+    texts, shown, tour = {}, {}, {}
     to_docs = out is None
     with tempfile.TemporaryDirectory() as tmp, sync_playwright() as p:
         tmp = pathlib.Path(tmp)
@@ -202,7 +246,7 @@ def main(atlas, out=None):
         agent = Agent(atlas, repo)
         server = Served(atlas, repo)
         browser = p.chromium.launch(channel='chrome')
-        ctx = browser.new_context(viewport={'width': 1400, 'height': 560}, device_scale_factor=2, color_scheme='light',
+        ctx = browser.new_context(viewport={'width': 1400, 'height': 470}, device_scale_factor=2, color_scheme='light',
                                   reduced_motion='reduce')
         ctx.add_init_script('(' + CAPTURE + ')()')
         page = ctx.new_page()
@@ -231,8 +275,16 @@ def main(atlas, out=None):
         settle(page, 4000)
         page.screenshot(path=str(out / 'history.png'))
 
+        # today: the route as it stands, before anyone points at anything
+        page.set_viewport_size({'width': 1400, 'height': 470})
+        page.goto(server.url(), wait_until='networkidle')
+        settle(page)
+        agent.tool('look', view={'route': 'sunspots.cli.run'})
+        settle(page, 3500)
+        shot('today')
+
         # look: the agent takes the page to a view and points at a box
-        page.set_viewport_size({'width': 1400, 'height': 560})
+        page.set_viewport_size({'width': 1400, 'height': 470})
         page.goto(server.url(), wait_until='networkidle')
         settle(page)
         texts['look'] = agent.tool('look', view={'route': 'sunspots.cli.run'}, at='sunspots.series.trusted')
@@ -288,14 +340,28 @@ def main(atlas, out=None):
         agent.tool('look', view={'route': 'sunspots.cli.run_archived'})
         settle(page, 4500)
         shot('prophecy')
+        tour['decided'] = revelation_json(atlas, repo)
+        tour['snippet'] = '\n'.join(archive_snippet(repo))
         texts['unseal'] = agent.tool('unseal', closed=True)
         texts['unseal-diff'] = git(repo, 'diff', 'src/sunspots/series.py')
+
+        # built: the bodies are written and the markers go; what was a ghost is drawn as code
+        build(repo)
+        git(repo, 'commit', '-q', '-am', 'Keep the smoothed months in a file')
+        page.wait_for_timeout(7000)
+        page.goto(server.url(), wait_until='networkidle')
+        settle(page)
+        agent.tool('look', view={'route': 'sunspots.cli.run_archived'})
+        settle(page, 4500)
+        shot('built')
+        tour['built'] = revelation_json(atlas, repo)
         assert not errors, errors
         server.stop()
         browser.close()
     for name, text in texts.items():
         (out / f'{name}.txt').write_text(text)
-    status = publish(out, texts, shown, to_docs)
+    tour['texts'] = {k: texts[k] for k in ('look', 'shown', 'notes', 'resolve', 'annotate', 'vision', 'prophetize')}
+    status = publish(out, texts, shown, to_docs, tour)
     if to_docs:
         shutil.rmtree(out, ignore_errors=True)
     return status
@@ -418,9 +484,10 @@ def page(out, texts):
 """
 
 
-def publish(out, texts, shown, to_docs):
+def publish(out, texts, shown, to_docs, tour):
     """The page and its pictures into `docs/`, and what each picture draws kept: a picture that draws
     otherwise than it did is named, and the text beside it is to be reread."""
+    (out / 'data.js').write_text('window.TOUR = ' + json.dumps(tour, indent=1) + ';\n')
     if not to_docs:
         (out / 'drawn.json').write_text(json.dumps(shown, indent=1) + '\n')
         print(out)
@@ -428,7 +495,7 @@ def publish(out, texts, shown, to_docs):
     target = DOCS / 'img/interaction'
     target.mkdir(parents=True, exist_ok=True)
     kept = json.loads(DRAWN.read_text()) if DRAWN.exists() else {}
-    for png in out.glob('*.png'):
+    for png in [*out.glob('*.png'), out / 'data.js']:
         shutil.copy(png, target / png.name)
     (DOCS / 'interaction.html').write_text(page(out, texts))
     DRAWN.write_text(json.dumps(shown, indent=1) + '\n')
