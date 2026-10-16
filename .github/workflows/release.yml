@@ -79,7 +79,7 @@ jobs:
           python3 - "$version" "$GITHUB_REF_NAME" <<'PY'
           import hashlib, pathlib, re, sys
           version, tag = sys.argv[1:]
-          path = pathlib.Path("tap/Formula/atlas.rb")
+          path = pathlib.Path("tap/Formula/atlas-code.rb")
           text = re.sub(r'version "[^"]*"', f'version "{version}"', path.read_text(), count=1)
           for target in ["aarch64-apple-darwin", "x86_64-apple-darwin", "aarch64-unknown-linux-gnu", "x86_64-unknown-linux-gnu"]:
               sha = hashlib.sha256(pathlib.Path(f"assets/atlas-{target}.tar.gz").read_bytes()).hexdigest()
