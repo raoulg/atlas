@@ -119,7 +119,8 @@ TOPOLOGY = """async (spec) => {
           return u;
         }
       }
-      if (/^[no]:/.test(id)) { const u = under(keyOf(id)); if (u) return u; }
+      // siblings with the same lines are one box, `n:a+b`: it lies where its first step lies
+      if (/^[no]:/.test(id)) { const u = under(keyOf(id).split("+")[0]); if (u) return u; }
       return id;
     };
   };
@@ -132,7 +133,9 @@ TOPOLOGY = """async (spec) => {
   for (const l of fine.lines) { const [a, b] = l.split(">"); const A = phi(a), B = phi(b); if (A !== B) image.add(A + ">" + B); }
   const base = new Set(coarse.lines), lost = [...base].filter(l => !image.has(l));
   // a line from a place into the box that wrote it is the box reading back what it wrote: the composite takes nothing from there
-  const wrote = l => { const [a, b] = l.split(">"); return base.has(b + ">" + a) || image.has(b + ">" + a); };
+  // (a place used both ways stands twice, `from X ⇄` and `into X ⇄`: the line goes to the twin)
+  const twin = x => x.replace(/ ⇄$/, "");
+  const wrote = l => { const [a, b] = l.split(">"); return [...base, ...image].some(m => { const [c, d] = m.split(">"); return twin(c) === twin(b) && d === a; }); };
   const gained = [...image].filter(l => !base.has(l) && !wrote(l));
   const moved = [...fine.boxes].filter(([b, par]) => coarse.boxes.has(b) && coarse.boxes.get(b) !== par).map(([b, par]) => `${b}: ${coarse.boxes.get(b)} -> ${par}`);
   // close it again by its frame
