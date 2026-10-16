@@ -1520,7 +1520,8 @@ async function renderPlaat(mine) {
     for (const P of pills.values()) { P.D = remap(P.D); P.C = remap(P.C); if (P.Ds) { P.Ds = remapSides(P.Ds); P.Cs = remapSides(P.Cs); } }
     const folded = new Map();
     for (const [p, d] of dirFold.to) { if (!folded.has(d)) folded.set(d, new Set()); for (const s of places.get("w:File:" + p)?.sides || []) folded.get(d).add(s); places.delete("w:File:" + p); }
-    for (const d of dirFold.n.keys()) places.set("w:File:" + d, {...filePlace(d), ...(DIFF ? {sides: folded.get(d)} : {})});
+    // a directory that stands for files is that directory, whatever it is itself folded into: the lines planned to it end at it
+    for (const [d, k] of dirFold.n) places.set("w:File:" + d, {id: "w:File:" + d, label: `File(${d}) · ${k}`, short: `${d} · ${k}`, kind: "world", folded: d, ...(DIFF ? {sides: folded.get(d)} : {})});
   }
   // siblings that take and hand on the same places (the same versions) are one pill; in a union, only
   // siblings that both readings, or the same one, hold, and that changed alike
@@ -1780,8 +1781,9 @@ async function renderPlaat(mine) {
   for (const id of sortWorld([...roleAt.keys()].filter(id => roleAt.get(id) === "mid"))) homeOf(id, true).children.push(worldNode(id));
   for (const id of sortWorld([...roleAt.keys()].filter(id => roleAt.get(id) === "out"))) root.children.push(worldNode(id, "LAST_SEPARATE"));
   // edges: data into a step and out of it, and results handed back to the caller
-  const edgeInfo = new Map(), addEdge = (a, b, info) => {
-    if (!nodeOf.has(a) || !nodeOf.has(b) || a === b) return;
+  const edgeInfo = new Map(), dropped = [], addEdge = (a, b, info) => {
+    if (a === b) return;
+    if (!nodeOf.has(a) || !nodeOf.has(b)) { dropped.push(`${a}>${b}`); return; }
     const id = `${a}>${b}`;
     // in a union, a line is in the readings that draw it
     if (edgeInfo.has(id)) { const e = edgeInfo.get(id); e.reach &&= info.reach; if (e.sides && info.sides) info.sides.forEach(s => e.sides.add(s)); return; }
@@ -2113,7 +2115,7 @@ async function renderPlaat(mine) {
   prevPos = pos; plaatAnchor = null; plaatFit = false;
   PICTURE = {boxes: nodeEls, lines: edgeEls};
   // the picture as data, for the checks that walk it (tools/pictures.py): each box with the box that holds it, each line by its ends
-  window.atlasPicture = {n: (window.atlasPicture?.n || 0) + 1, boxes: [...nodeEls.keys()].map(id => [id, parentOf.get(id) || "root"]), lines: edgeEls.map(e => [e.a, e.b])};
+  window.atlasPicture = {n: (window.atlasPicture?.n || 0) + 1, dropped, boxes: [...nodeEls.keys()].map(id => [id, parentOf.get(id) || "root"]), lines: edgeEls.map(e => [e.a, e.b])};
 }
 // what the picture is a function of, each part undoable: the route, the opened steps, the open families, the split world boxes
 function crumbs() {

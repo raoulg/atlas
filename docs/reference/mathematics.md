@@ -163,7 +163,7 @@ the image of the fine one under `q`: its points are the blocks, its lines the im
 lines that join two different blocks. A line inside one block is gone from the coarse graph; no
 other line is.
 **In Atlas.** Opening a box takes the picture from `G/π` to `G/π′` with `π′` finer, and only the
-box opened is split. Six laws follow, each a statement about two pictures, the one before and the
+box opened is split. Seven laws follow, the first six statements about two pictures, the one before and the
 one after:
 
 1. **Incidence.** Every line of the closed picture is the image under `q` of a line of the open
@@ -184,6 +184,9 @@ one after:
    opened in: closing the box draws the picture it was, and two openings commute.
 6. **Reading.** A box's own arrow is the lines that cross its border. An opened step keeps them at
    its frame: what its call was handed and gave, and the result that goes on to its caller.
+7. **Endpoints.** Every line the picture plans ends at a box it draws. A folded directory is that
+   directory, whatever it is itself folded into, and a line planned to a box that is not drawn is a
+   fault, not a smaller picture.
 
 What the picture does not claim is where a box lies on the page: the layering (`elkjs`), the camera,
 and which lines are pinned are presentation. The camera keeps the box opened where it stood on the
@@ -197,6 +200,7 @@ screen, at the zoom the reader chose.
 | Moment | a value made by the arrow of an opened step has the moment of the closed step (its choice frame, else the step) | `madeAt` |
 | Closing | the picture is built from the sets in `V.open` and nothing else | `plan` |
 | Reading | `stepMorphism` applies a call's hands and gives to the opened step's own arrow as to the closed one | `stepMorphism` |
+| Endpoints | `addEdge` records each line it cannot end (`atlasPicture.dropped`); the walk reports it | `addEdge`, `pictures.py walk` |
 
 | Decision of the picture | The principle behind it |
 | --- | --- |
@@ -213,7 +217,7 @@ screen, at the zoom the reader chose.
 
 The closed arrow of a function lists the types of its signature, and the open picture shows in
 addition the values its body takes from beyond them (a field of the receiver, a value of the
-module): a line then crosses the frame that the closed box does not draw. `tools/pictures.py
+module): a line then crosses the frame that the closed box does not draw. A type that stands for two values at one moment (`consume(a: Record, b: Record)`) draws them as one box (#44). `tools/pictures.py
 topology` reports these as lines the open box draws more than the closed one did (#38).
 **Where.** `homeOf`, `countRole`, `madeAt` and the camera in `viewer/index.html`;
 `tools/pictures.py topology`.

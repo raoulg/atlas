@@ -15,7 +15,7 @@ PNG, in the light theme, with the code panel closed, once the page has laid itse
 the Chrome installed on the machine. `compare` reports the drawings that differ below the
 header, which names the build. `walk` opens, one view at a time, every package of every part
 and every route, and each family in the first two routes that hold it. It reports each view that throws (the page
-says it could not draw it) or draws nothing, and each family that opens into another number of moments than it stood in
+says it could not draw it), draws nothing or plans a line to a box it does not draw, and each family that opens into another number of moments than it stood in
 closed; it fails when there is one.
 
 `topology` opens one box at a time in each route (up to ROUTES routes, default all; up to OPENS boxes in each,
@@ -181,6 +181,10 @@ def walk(atlas: str, repo: str, out: pathlib.Path) -> int:
                 errors.append(str(e).splitlines()[0])
             if not errors:
                 errors.extend(fault(tab))
+            if not errors:
+                lost = tab.evaluate("window.atlasPicture?.dropped || []")
+                if lost:
+                    errors.append(f"{len(lost)} lines are planned to a box that is not drawn, as {lost[0]}")
             if not errors and "route" in v:
                 for f, closed, opened in tab.evaluate(FAMILIES, [f for f, n in checked.items() if n >= 2]):
                     checked[f] = checked.get(f, 0) + 1
@@ -242,6 +246,23 @@ def topology(atlas: str, repo: str, out: pathlib.Path, routes: int, opens: int) 
                     for f in faults + more:
                         print("   ", f)
                     drawn_more += bool(more)
+        # a focus keeps the rest of the code on either side of it when its package is opened
+        tops = [u for _, us in graph.get("flow", {}).get("units", {}).get("tops", []) for u in us][:opens]
+        for u in tops:
+            ends = []
+            for view in ({"focus": [u]}, {"focus": [u], "open": {"units": [u]}}):
+                tab.goto("about:blank")
+                tab.goto(f"{page_file.as_uri()}#p={project.group(1)}&v={quote(json.dumps(view))}", wait_until="domcontentloaded")
+                try:
+                    tab.wait_for_function("window.atlasPicture && document.querySelectorAll('#scene g[data-id]').length > 0", timeout=30000)
+                except Exception:
+                    break
+                lines = tab.evaluate("window.atlasPicture.lines.map(l => l.join('>'))")
+                ends.append(({l for l in lines if l.startswith("n:unit:~in>")}, {l for l in lines if l.endswith(">n:unit:~out")}))
+            checked += 1
+            if len(ends) == 2 and ((ends[0][0] and not ends[1][0]) or (ends[0][1] and not ends[1][1])):
+                bad += 1
+                print("focus on", u, "· opens it and loses the rest of the code on", "the way in" if ends[0][0] and not ends[1][0] else "the way out")
         browser.close()
     print(f"{checked} boxes opened in {len(entries)} routes, {bad} that do not refine the picture they open from, {drawn_more} that draw a line more than the closed box did")
     return bad
