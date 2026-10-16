@@ -95,8 +95,9 @@ The rigorous half and the visual half are the same structure. Read `docs/referen
   the viewer is baked into the binary, so rebuild after editing `viewer/index.html`).
 - Version: `version` in the root `Cargo.toml`. Raise the minor number when what Atlas reads
   or draws changes, the patch number for a fix, on `main` for a fix (patch number, with
-  the tag). `next` carries the version it will be released as, the next minor (0.67.0 while `main` is
-  0.66.x), raised once when `next` begins; its commits do not raise it again, and promotion adds a tag. The build adds the commit it is made from (`0.2.0 (b0ead14)`), and
+  the tag). `next` keeps the version of `main` until Atlas itself changes (what it reads, draws or checks);
+  the first change that warrants a new minor raises it, once, and later commits do not raise it
+  again. Documentation, the release workflows and the tap change no version, and need no tag. The build adds the commit it is made from (`0.2.0 (b0ead14)`), and
   the nightly build says so too (`0.2.0-nightly (b0ead14)`: `ATLAS_CHANNEL=nightly` at build time).
 - Tests: `cargo test`. The Rust workspace itself is a test subject. CI runs them on Linux, macOS
   and Windows: a test that writes files builds them as the platform lays them out (a virtual
