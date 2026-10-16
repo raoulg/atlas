@@ -320,7 +320,9 @@ changed, the picture drawn, an export, a note, and what the agent did with it.
   their types and the calls in their order, bodies left empty. A sketch has to parse, not to
   build: Atlas reads it as it reads the code. The page draws the working tree (A) and the
   vision (B) as one picture, as the history draws two commits: what the vision adds, removes
-  and changes is marked, and **A**, **A ∪ B** and **B** switch between them. Point at what you
+  and changes is marked, and **A**, **A ∪ B** and **B** switch between them. A route that only
+  one side has is drawn whole, and only what the code adds or removes in it is marked: the steps
+  and types it reuses stay as they are. Point at what you
   think of it with a note. The working tree stays as it is; once the vision is decided, the
   agent retracts it.
 - **Notes.** Alt-click a box or a line to write a note on it ("I do not understand this line").
