@@ -10,7 +10,7 @@ of them now show something else.
 The pictures are views of two subjects, drawn in the installed Chrome:
 
 - the sunspots pipeline, written in Python, Rust and TypeScript (the pages and pictures of
-  `docs/showcase`; the TypeScript port is checked but not shown);
+  `docs/showcase`);
 - Atlas itself, its `analyze` route, in the light and the dark theme (the guide's flowchart).
 
 Every page and picture is written into `docs/`, and the widths the Pages give the pictures follow
@@ -164,9 +164,8 @@ def pipeline(ctx, atlas, out, drawn):
         shoot(page, out / (name + '.png'))
         print(name, ':', len(s['nodes']), 'drawn nodes;', len(families), 'family round trips; checks passed')
         page.close()
-        if subject != 'typescript':
-            drawn[name] = (canonical(s), {out / (name + '.html'): DOCS / 'showcase' / (name + '.html'),
-                                          out / (name + '.png'): DOCS / 'img/showcase' / (name + '.png')})
+        drawn[name] = (canonical(s), {out / (name + '.html'): DOCS / 'showcase' / (name + '.html'),
+                                      out / (name + '.png'): DOCS / 'img/showcase' / (name + '.png')})
     assert world(results['python-clean']) == world(results['python-clean-save'])
 
 

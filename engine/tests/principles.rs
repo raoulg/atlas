@@ -72,7 +72,7 @@ fn each_principle_finds_its_case() {
     assert_eq!(got["choices"], ["fixture.build.prepare", "fixture.build.prepare", "fixture.build.seeded"]);
     // `Mixin.close` does nothing; `remember` writes a global, a place (`Global(fixture.build.SEEN)`),
     // `check_name` raises, `each` calls the function it is handed, and `register_names` runs both
-    assert_eq!(got["nothing"], ["fixture.sinks.base.Mixin.close"]);
+    assert_eq!(got["nothing"], ["fixture.plans.keep", "fixture.sinks.base.Mixin.close"]);
     // `_rank.low.peek` calls back up into `_rank.high`, which builds on `low`
     assert_eq!(got["layers"], ["fixture._rank"]);
     // `Notes` puts a Note into its file and gets a dict back, `Shelf` gets the Note, and `Diary`
@@ -80,7 +80,26 @@ fn each_principle_finds_its_case() {
     // database and gets only a list of nodes. `Register` gets its Stamp back inside an Entry, and
     // `Tiles` looks its tiles up by a Point it puts nowhere
     assert_eq!(got["lens"], ["fixture.notes.Notes", "fixture.store.Copier"]);
+    // `forgotten` supersedes a function the code does not hold; `report` is built and calls
+    // `tidy`, a prophecy. `tidy` itself, bodiless, is a todo and no finding
+    assert_eq!(got["prophecy"], ["fixture.plans.forgotten", "fixture.plans.report"]);
     assert!(fs.iter().all(|f| f.question.ends_with('?')), "a finding ends in a question");
+}
+
+/// A prophecy is a todo, not a finding: the rules that ask about built code leave its bodiless
+/// functions alone, and what it supersedes is still asked about, with the prophecy as the answer.
+#[test]
+fn a_prophecy_is_no_finding_and_answers_the_one_it_supersedes() {
+    let fs = findings("tests/fixture");
+    assert!(
+        fs.iter().all(|f| f.node != "fixture.plans.tidy"),
+        "{:?}",
+        fs.iter().filter(|f| f.node == "fixture.plans.tidy").collect::<Vec<_>>()
+    );
+    let keep = fs.iter().find(|f| f.node == "fixture.plans.keep").expect("the function a prophecy supersedes is still asked about");
+    assert!(keep.evidence.iter().any(|e| e.contains("answered by the prophecy `stash`")), "{:?}", keep.evidence);
+    let unmarked = fs.iter().filter(|f| f.principle == "prophecy").map(|f| f.what.as_str()).collect::<Vec<_>>();
+    assert!(unmarked[0].contains("`fixture.plans.gone`") && unmarked[1].contains("leans on `tidy`"), "{unmarked:?}");
 }
 
 /// An override of a generic base keeps the promise its subclass fills in: `NodeLedger(Ledger[Node])`

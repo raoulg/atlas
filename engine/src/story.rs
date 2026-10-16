@@ -134,6 +134,7 @@ pub fn kind_label(k: EntryKind) -> &'static str {
         EntryKind::Mcp => "MCP",
         EntryKind::Notebook => "Notebook",
         EntryKind::Export => "Library",
+        EntryKind::Prophecy => "Prophecy",
         EntryKind::Test => "Test",
     }
 }
@@ -147,6 +148,7 @@ fn kind_order(k: EntryKind) -> usize {
         EntryKind::Notebook,
         EntryKind::Route,
         EntryKind::Mcp,
+        EntryKind::Prophecy,
         EntryKind::Test,
     ]
     .iter()

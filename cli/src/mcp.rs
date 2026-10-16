@@ -33,11 +33,14 @@ and lines, each with a link to its place. Handle a note where you work, by a fix
 it to them there (Atlas is no chat), then `resolve` it, with the commit if one fixed it; reading \
 a note does not resolve it. Put a note worth keeping (a real bug) into an issue with its link, \
 and give the issue to `resolve`. To ask whether to make a change, show it rather than describe it: \
-`propose` the files the change would write, as sketch code (signatures, types, calls in order; \
-bodies may stay empty), and the page draws the working tree and the proposal as one picture, \
-what you add, remove and change marked; `look` at the part you mean, and `withdraw` it once it \
-is decided. To say what the code does not (what a condition of `choices` means, what a step is \
-for), `annotate` a box or a line; it shows on the page in your words.";
+`vision` the files the change would write, as sketch code (signatures, types, calls in order; \
+bodies may stay empty), and the page draws the working tree and the vision as one picture, \
+what you add, remove and change marked; `look` at the part you mean; once it is decided, `prophetize` \
+writes it into the tree as prophecy, or `retract` takes it away. To say what the code does not (what a condition of `choices` means, what a step is \
+for), `annotate` a box or a line; it shows on the page in your words. Sketch code kept in the tree, marked \
+as not built yet, is a prophecy (`@prophecy(supersedes=..)` in Python, `#[doc = \"prophecy: ..\"]` in Rust, \
+`@prophecy` in a TypeScript JSDoc): `revelation` lists them with what is left to build, and `check` asks \
+about built code that leans on one.";
 
 /// Answer every message on stdin until it closes, reading repositories with `opts`.
 pub fn serve(opts: &Options) -> Result<()> {
@@ -114,6 +117,32 @@ fn tools() -> Value {
             "annotations": read_only,
         },
         {
+            "name": "revelation",
+            "description": "Every prophecy in the tree: sketch code marked as not built yet. For each, what it supersedes, how many bodies are left to write, whether it is veiled or sealed, and the built code that leans on it. The epic is done when nothing is left.",
+            "inputSchema": { "type": "object", "properties": {
+                "path": path,
+            } },
+            "annotations": read_only,
+        },
+        {
+            "name": "seals",
+            "description": "The sealed prophecies: sketch code whose shape waits on an open question (`sealed=\"#144\"`), each with its issue and whether GitHub says it is open or closed (asked with `gh`; unknown where that cannot be asked). A seal whose issue is closed can be broken with `unseal`.",
+            "inputSchema": { "type": "object", "properties": {
+                "path": path,
+            } },
+            "annotations": read_only,
+        },
+        {
+            "name": "unseal",
+            "description": "Break seals: take `sealed=..` out of the marker of each named prophecy, or of every sealed prophecy whose issue is closed, and nothing else. Do it when the question is answered, then sketch the shape. The files are left for the person to commit.",
+            "inputSchema": { "type": "object", "properties": {
+                "path": local,
+                "ids": { "type": "array", "items": { "type": "string" }, "description": "The prophecies whose seals to break, by the ids `seals` lists." },
+                "closed": { "type": "boolean", "description": "Break every seal whose issue is closed." },
+            } },
+            "annotations": { "readOnlyHint": false, "destructiveHint": false, "openWorldHint": false },
+        },
+        {
             "name": "explain",
             "description": "Why a principle matters: what it asks, its PEP or Rust idiom, how Atlas sees it, and an example.",
             "inputSchema": { "type": "object", "properties": {
@@ -183,13 +212,22 @@ fn tools() -> Value {
             "annotations": { "readOnlyHint": false, "destructiveHint": false, "openWorldHint": false },
         },
         {
-            "name": "propose",
-            "description": "Show the person you work with what you plan, drawn beside what is: give the files your change would write, as sketch code (the signatures with their types and the calls in their order; bodies may be `...`, `todo!()` or `throw` — a sketch has to parse, not to build), and `atlas serve` draws the working tree and your proposal as one picture, with what you add, remove and change marked, and a switch between the two. Use it to ask \"shall I do this?\" with a picture rather than in words, then `look` to point at the part you mean. It answers with what the proposal does to the routes. A new proposal replaces the last; `withdraw` takes it away once it is decided.",
+            "name": "vision",
+            "description": "Show the person you work with what you plan, drawn beside what is: give the files your change would write, as sketch code (the signatures with their types and the calls in their order; bodies may be `...`, `todo!()` or `throw` — a sketch has to parse, not to build), and `atlas serve` draws the working tree and your vision as one picture, with what you add, remove and change marked, and a switch between the two. Use it to ask \"shall I do this?\" with a picture rather than in words, then `look` to point at the part you mean. It answers with what the vision does to the routes. A new vision replaces the last; `prophetize` writes it into the tree as prophecy once it is decided, `retract` takes it away.",
             "inputSchema": { "type": "object", "properties": {
                 "path": local,
-                "title": { "type": "string", "description": "What the proposal is, in a line: shown beside it on the page." },
-                "files": { "type": "object", "description": "Each file the proposal writes, by its path from the repository's root, with its whole text; `null` for a file it removes. Files left out stay as they are.", "additionalProperties": { "type": ["string", "null"] } },
-                "withdraw": { "type": "boolean", "description": "Take the proposal away: the page draws the working tree alone again." },
+                "title": { "type": "string", "description": "What the vision is, in a line: shown beside it on the page." },
+                "files": { "type": "object", "description": "Each file the vision writes, by its path from the repository's root, with its whole text; `null` for a file it removes. Files left out stay as they are.", "additionalProperties": { "type": ["string", "null"] } },
+                "retract": { "type": "boolean", "description": "Take the vision away: the page draws the working tree alone again." },
+            } },
+            "annotations": { "readOnlyHint": false, "destructiveHint": false, "openWorldHint": false },
+        },
+        {
+            "name": "prophetize",
+            "description": "Decide the vision: write its files into the tree, every item the vision adds marked as a prophecy (sketch code kept in the tree, not built yet), and take the vision away. The files are left for the person to commit; no branch is opened. A vision that changes or removes something that exists is refused: the new item takes a new name and `supersedes` the old one. Answers with what was marked and what the person still has to do.",
+            "inputSchema": { "type": "object", "properties": {
+                "path": local,
+                "supersedes": { "type": "object", "description": "For an added item by its id, the existing item it replaces: `{\"pkg.store.RasterStore\": \"pkg.store.RasterSink\"}`.", "additionalProperties": { "type": "string" } },
             } },
             "annotations": { "readOnlyHint": false, "destructiveHint": false, "openWorldHint": false },
         },
@@ -247,6 +285,73 @@ fn call(name: &str, args: &Value, opts: &Options) -> Option<Result<String, Strin
             let counted: Vec<(&str, &[principles::Finding])> = parts.iter().map(|(r, f)| (r.as_str(), f.as_slice())).collect();
             Ok(reports.join("\n") + &principles::summary(&counted, &asked, &look))
         }),
+        "revelation" => parts_of(text("path"), opts).map(|gs| {
+            let repo = here(text("path"));
+            gs.iter()
+                .map(|g| {
+                    let stands = atlas_engine::revelation::revelation(g);
+                    let sealed = atlas_engine::revelation::seals(&stands, &|i| crate::shared::issue_state(&repo, i));
+                    atlas_engine::revelation::report(&g.root, &stands, &sealed)
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        }),
+        "seals" => parts_of(text("path"), opts).map(|gs| {
+            let repo = here(text("path"));
+            gs.iter()
+                .map(|g| {
+                    let stands = atlas_engine::revelation::revelation(g);
+                    atlas_engine::revelation::seals_report(
+                        &g.root,
+                        &atlas_engine::revelation::seals(&stands, &|i| crate::shared::issue_state(&repo, i)),
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        }),
+        "unseal" => {
+            let repo = here(text("path"));
+            let named: Vec<String> = args
+                .get("ids")
+                .and_then(Value::as_array)
+                .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
+                .unwrap_or_default();
+            let closed = args.get("closed").and_then(Value::as_bool) == Some(true);
+            if named.is_empty() && !closed {
+                return Some(Err(
+                    "`unseal` takes the `ids` of the prophecies to break, or `closed` for every seal whose issue is closed.".into()
+                ));
+            }
+            let gs = match parts_of(text("path"), opts) {
+                Ok(gs) => gs,
+                Err(e) => return Some(Err(e)),
+            };
+            let mut broken = vec![];
+            for g in &gs {
+                let stands = atlas_engine::revelation::revelation(g);
+                let mut ids: Vec<String> = named.iter().filter(|n| g.node(n).is_some()).cloned().collect();
+                if closed {
+                    let sealed = atlas_engine::revelation::seals(&stands, &|i| crate::shared::issue_state(&repo, i));
+                    ids.extend(sealed.iter().filter(|s| s.can_be_broken()).map(|s| s.id.clone()));
+                }
+                if ids.is_empty() {
+                    continue;
+                }
+                let files = match atlas_engine::decide::unseal(g, &ids) {
+                    Ok(f) => f,
+                    Err(e) => return Some(Err(format!("{e}"))),
+                };
+                if let Err(e) = crate::shared::write_files(std::path::Path::new(&g.project_root), &files) {
+                    return Some(Err(format!("Could not write the files: {e}")));
+                }
+                broken.extend(ids);
+            }
+            if broken.is_empty() {
+                Ok("No seal to break.".into())
+            } else {
+                Ok(format!("Seals broken: {}. The files are left for you to commit; sketch the shape now.", broken.join(", ")))
+            }
+        }
         "routes" => graph(text("path"), opts).map(|g| {
             let rows: Vec<String> =
                 story::entries(&g).into_iter().map(|(k, label, id)| format!("{:<8} {label}  ({id})", story::kind_label(k))).collect();
@@ -291,36 +396,66 @@ fn call(name: &str, args: &Value, opts: &Options) -> Option<Result<String, Strin
                 .map(|_| "The page of `atlas serve` goes there when it next asks, within a second while it is open.".to_string())
                 .map_err(|e| format!("Could not keep where to look: {e}"))
         }
-        "propose" => {
+        "vision" => {
             let repo = here(text("path"));
-            if args.get("withdraw").and_then(Value::as_bool) == Some(true) {
+            if args.get("retract").and_then(Value::as_bool) == Some(true) {
                 return Some(
-                    crate::shared::withdraw(&repo)
+                    crate::shared::retract(&repo)
                         .map(|was| {
-                            if was { "The proposal is withdrawn; the page draws the working tree alone." } else { "There was no proposal." }
+                            if was { "The vision is retracted; the page draws the working tree alone." } else { "There was no vision." }
                                 .to_string()
                         })
-                        .map_err(|e| format!("Could not withdraw the proposal: {e}")),
+                        .map_err(|e| format!("Could not retract the vision: {e}")),
                 );
             }
             let files: std::collections::BTreeMap<PathBuf, Option<String>> = match args.get("files").and_then(Value::as_object) {
                 Some(fs) if !fs.is_empty() => fs.iter().map(|(k, v)| (PathBuf::from(k), v.as_str().map(str::to_string))).collect(),
-                _ => return Some(Err("`propose` takes the `files` the proposal writes (a path from the repository's root to its text, or null to remove it), or `withdraw`.".into())),
+                _ => return Some(Err("`vision` takes the `files` the vision writes (a path from the repository's root to its text, or null to remove it), or `retract`.".into())),
             };
-            let proposal = crate::shared::Proposal { title: text("title").unwrap_or("a proposal").to_string(), files };
+            let vision = crate::shared::Vision { title: text("title").unwrap_or("a vision").to_string(), files };
             let before = atlas_engine::parts::analyze_parts(&[repo.clone()], opts);
-            let after = atlas_engine::changes::proposed(&repo, &proposal.files, opts);
+            let after = atlas_engine::changes::envisioned(&repo, &vision.files, opts);
             match (before, after) {
-                (Ok(before), Ok(after)) => crate::shared::propose(&repo, &proposal).map_err(|e| format!("Could not keep the proposal: {e}")).map(|_| {
-                    let c = atlas_engine::changes::between("working tree", Some("proposal"), &before, &after);
+                (Ok(before), Ok(after)) => crate::shared::envision(&repo, &vision).map_err(|e| format!("Could not keep the vision: {e}")).map(|_| {
+                    let c = atlas_engine::changes::between("working tree", Some("vision"), &before, &after);
                     format!(
-                        "Proposed: {}. The page of `atlas serve` draws it beside the working tree within a second; `look` points at what you mean.\n\n{}",
-                        proposal.title,
+                        "Envisioned: {}. The page of `atlas serve` draws it beside the working tree within a second; `look` points at what you mean.\n\n{}",
+                        vision.title,
                         atlas_engine::changes::report(&c)
                     )
                 }),
-                (Err(e), _) | (_, Err(e)) => Err(format!("Could not read the proposal: {e}")),
+                (Err(e), _) | (_, Err(e)) => Err(format!("Could not read the vision: {e}")),
             }
+        }
+        "prophetize" => {
+            let repo = here(text("path"));
+            let Some(vision) = crate::shared::vision(&repo) else {
+                return Some(Err("There is no vision to decide: show one with `vision` first.".into()));
+            };
+            let supersedes: std::collections::BTreeMap<String, String> = args
+                .get("supersedes")
+                .and_then(Value::as_object)
+                .map(|m| m.iter().filter_map(|(k, v)| Some((k.clone(), v.as_str()?.to_string()))).collect())
+                .unwrap_or_default();
+            let prophetized = match atlas_engine::decide::prophetize(&repo, &vision.files, &supersedes, opts) {
+                Ok(p) => p,
+                Err(e) => return Some(Err(format!("{e}"))),
+            };
+            if let Err(e) = crate::shared::write_files(&repo, &prophetized.files) {
+                return Some(Err(format!("Could not write the files: {e}")));
+            }
+            let _ = crate::shared::retract(&repo);
+            let files: Vec<String> = prophetized.files.keys().map(|f| f.display().to_string()).collect();
+            let mut said = format!(
+                "Decided: {}. Written: {}. Marked as prophecies: {}. The files are left for you to commit; the vision is retracted.",
+                vision.title,
+                files.join(", "),
+                if prophetized.marked.is_empty() { "nothing".to_string() } else { prophetized.marked.join(", ") }
+            );
+            for note in &prophetized.notes {
+                said += &format!("\nNote: {note}");
+            }
+            Ok(said)
         }
         "annotate" => match text("on").filter(|o| !o.is_empty()) {
             Some(on) => crate::shared::annotate(&here(text("path")), on, text("text"))

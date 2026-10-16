@@ -476,3 +476,34 @@ neither does an observation whose result is dropped (`path.exists()`).
 rkg: `RegisterSink` puts `Graph`, `Oordeel` and `Verbruik` into SQLite. `Graph` and `Oordeel`
 come back through `RegisterRepository`, a second class on the same place; `Verbruik` comes
 back from `lees_verbruik` as `list[dict]`.
+
+## Code that is built does not lean on code that is not.
+
+Id: `prophecy`.
+
+A design can live in the tree as sketch code, marked as not built yet: a *prophecy*. It commits
+to a type, an argument and a caller, as a note cannot, and the distance between it and the code
+that exists is the list of what is left to build. A prophecy is a todo, not a finding: its empty
+bodies are what it is, and the other principles leave it alone. What it `supersedes` stays, and
+is still asked about, with the prophecy as the answer.
+
+What a prophecy must not be is a dependency. Code that is built and calls, builds, extends or
+takes a prophecy would run on a stub: it raises, or does nothing, in production. Prophecies lean
+on one another freely, and a test may lean on the code it is written for before it is built.
+
+- **Python.** `@prophecy(supersedes="pkg.module.Old")`, a no-op decorator in the project; Atlas
+  matches it by name. The body is `raise NotImplementedError` where the function gives a value (ty
+  refuses an empty `...` body there, outside stubs and abstract methods) and `...` where it gives nothing; ty
+  checks the signatures, and `prophetize` writes the bodies so.
+- **Rust.** `#[doc = "prophecy: supersedes=pkg::Old"]` on the item, with `todo!()` for a body: it
+  compiles, and the types are checked in full.
+- **TypeScript.** `/** @prophecy supersedes=pkg.Old */` before a `declare function`, a `declare
+  class`, an interface or a type. A decorator would reach classes and their members only.
+
+`supersedes` names what the prophecy replaces by its id, or by the end of it when one node only
+ends so. `veiled` says the place is known and the shape is not, `sealed="#144"` that the shape
+waits on an issue.
+
+Atlas checks: a built node with a call, an instantiation, an inheritance, a parameter, a return
+or a field of a prophecy (a member of a prophecy counts as the prophecy), and a prophecy whose
+`supersedes` names nothing the code holds (a false prophecy).

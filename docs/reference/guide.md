@@ -87,6 +87,7 @@ atlas view ../api ../web        # two repositories as parts of one picture
 atlas view notebooks/explore.ipynb   # one file, with its project, opened on its route
 atlas view https://github.com/o/r/tree/main/src/pkg   # one folder of a repository, from its URL
 atlas check                     # where the code and the design principles disagree
+atlas revelation                # the sketch code kept in the tree, and what is left to build
 atlas changes                   # what your edits did to the routes, their places and the findings
 atlas changes v1..main          # what one revision did against another
 atlas history                   # the history in your browser: pick two commits, see them as one picture
@@ -188,7 +189,7 @@ steps take what it gives straight from the entry, and clicking the entry shows t
 
 ## Check: the picture as a list of questions
 
-`atlas check` reads the same graph and lists where the code and ten design principles
+`atlas check` reads the same graph and lists where the code and eleven design principles
 disagree. Each finding ends in a question for the author. Atlas coaches; it does not fix.
 The questions are grouped by principle, and the reason they share is said once, above them.
 Below them a table counts the questions of each principle in each part. `--json` gives the
@@ -206,10 +207,45 @@ findings as data.
 | `nothing` | A call leaves something behind. |
 | `layers` | The packages of a part depend on one another in one direction. |
 | `lens` | What a lens puts, it gets back. |
+| `prophecy` | Code that is built does not lean on code that is not. |
 
 Each principle, with its reasoning, the idioms behind it and what each language lets Atlas
 trace, is in [principles.md](principles.md). Atlas holds itself to them: `atlas check` on
 this repository finds nothing, and the tests keep it that way.
+
+## Revelation: what a design leaves to build
+
+A design can live in the tree as sketch code, marked as not built yet: a *prophecy*. Python marks
+it with a decorator, `@prophecy(supersedes="pkg.Old")` (a no-op function in the project; Atlas
+matches it by name), Rust with `#[doc = "prophecy: supersedes=pkg::Old"]`, TypeScript with a
+`@prophecy supersedes=pkg.Old` tag in the JSDoc before a `declare` function, class, interface or
+type. `veiled` says the place is known and the shape is not, `sealed="#144"` that the shape waits
+on an open question.
+
+A prophecy is a todo, not a finding: `atlas check` leaves its empty bodies alone, and asks about
+the built code that leans on it, because production would run on a stub. What a prophecy
+supersedes is still asked about, with the prophecy as the answer.
+
+`atlas revelation` lists every prophecy: what it supersedes, the bodies still to write, whether it
+is veiled or sealed, and the built code that leans on it. The sketch is done when the list is
+empty; a prophecy is fulfilled when its marker is gone. The page draws a prophecy in its own
+colour with a dotted border (finer when it is veiled), as a route of its own for each operation of it, and its
+inspector says what it supersedes and what supersedes a box. Agents ask the same with the MCP
+tool `revelation`.
+
+A prophecy whose shape waits on an open question is *sealed* on its issue (`sealed="#144"`, or
+`owner/repo#144`). `atlas revelation --seals` (the MCP tool `seals`) lists the seals, each with
+what `gh` says of its issue: open, closed (then the seal can be broken) or unknown, where there is
+no `gh`, no network or no such issue. The MCP tool `unseal` breaks them: it takes `sealed=..` out of
+the marker of the prophecies named, or of every one whose issue is closed, and changes nothing
+else. The files are left for you to commit; sketch the shape next.
+
+A vision that is decided becomes a prophecy with the MCP tool `prophetize`: the vision's files are
+written into the tree, every item the vision adds marked in the language of its file (and, for
+Python, the project's `prophecy` imported, and the bodies that ty would refuse made `raise NotImplementedError`), and the vision is retracted. `supersedes` says which
+existing item an added one replaces. The files are left for you to commit; Atlas opens no branch.
+A vision that changes or removes what exists is refused, since writing it would replace built code
+with a sketch: the new item takes a new name and supersedes the old one.
 
 ## Changes: what an edit did
 
@@ -259,6 +295,8 @@ request, so an edit shows when you pick it again.
 
 ## Serve: one view, shared with your agent
 
+[Working with your agent](https://raoulg.github.io/atlas/interaction.html) shows what follows, drawn from one real run.
+
 `atlas serve [repo]` serves the picture of the working tree on this machine (`127.0.0.1`,
 `--port N`, `--no-open`), and shares it with the agent you work with through `atlas mcp`. Its
 terminal says that it runs and where, then a line for each thing worth knowing: the files that
@@ -277,14 +315,14 @@ changed, the picture drawn, an export, a note, and what the agent did with it.
 - **What the agent says.** With `annotate` the agent puts its own words on a box or a line: what a
   condition means ("only on the first run"), what a step is for. A ✦ marks it; hover it for the
   words. They are the agent's statements, apart from what Atlas traces.
-- **A proposal.** To ask "shall I do this?", the agent shows the change rather than describing it.
-  With `propose` it gives the files the change would write, as sketch code: the signatures with
+- **A vision.** To ask "shall I do this?", the agent shows the change rather than describing it.
+  With `vision` it gives the files the change would write, as sketch code: the signatures with
   their types and the calls in their order, bodies left empty. A sketch has to parse, not to
   build: Atlas reads it as it reads the code. The page draws the working tree (A) and the
-  proposal (B) as one picture, as the history draws two commits: what the proposal adds, removes
+  vision (B) as one picture, as the history draws two commits: what the vision adds, removes
   and changes is marked, and **A**, **A ∪ B** and **B** switch between them. Point at what you
-  think of it with a note. The working tree stays as it is; once the proposal is decided, the
-  agent withdraws it.
+  think of it with a note. The working tree stays as it is; once the vision is decided, the
+  agent retracts it.
 - **Notes.** Alt-click a box or a line to write a note on it ("I do not understand this line").
   The ring on it is open until the agent reads it, dimmed once it has, and a ✓ once it resolves
   it. The agent resolves a note where it works with you, by a fix or by explaining; Atlas is no
@@ -302,7 +340,7 @@ changed, the picture drawn, an export, a note, and what the agent did with it.
   file `atlas view` writes.
 
 What the page and the agent share is kept in `.atlas/` (`shown.json`, `look.json`,
-`notes.json`, `serving.json`, `proposal.json`, `annotations.json`), so the two need not run
+`notes.json`, `serving.json`, `vision.json`, `annotations.json`), so the two need not run
 together, and git never sees it.
 
 ## What Atlas keeps

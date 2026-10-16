@@ -279,21 +279,32 @@ fn ext_id(spec: &str, name: Option<&str>) -> String {
     }
 }
 
+/// The comment right before a declaration (before its `export` when it has one).
+fn leading_comment<'t>(n: TsNode<'t>, src: &'t [u8]) -> Option<&'t str> {
+    let mut target = n;
+    while let Some(p) = target.parent().filter(|p| matches!(p.kind(), "export_statement" | "ambient_declaration")) {
+        target = p;
+    }
+    let prev = target.prev_named_sibling().filter(|p| p.kind() == "comment")?;
+    (prev.end_position().row + 1 >= target.start_position().row).then(|| text(prev, src))
+}
+
 /// A leading JSDoc or line comment, first line.
 fn doc_of(n: TsNode, src: &[u8]) -> String {
-    let target = if n.parent().map_or(false, |p| p.kind() == "export_statement") { n.parent().unwrap() } else { n };
-    let Some(prev) = target.prev_named_sibling().filter(|p| p.kind() == "comment") else { return String::new() };
-    if prev.end_position().row + 1 < target.start_position().row {
-        return String::new();
-    }
-    text(prev, src)
+    let Some(comment) = leading_comment(n, src) else { return String::new() };
+    comment
         .lines()
         .map(|l| l.trim().trim_start_matches("/**").trim_start_matches("/*").trim_start_matches("//").trim_start_matches('*').trim())
-        .find(|l| !l.is_empty())
+        .find(|l| !l.is_empty() && !l.starts_with("@prophecy"))
         .unwrap_or("")
         .trim_end_matches("*/")
         .trim()
         .to_string()
+}
+
+/// What the leading comment's `@prophecy` tag says, if it has one.
+fn prophecy_of(n: TsNode, src: &[u8]) -> Option<crate::prophecy::Prophecy> {
+    leading_comment(n, src).and_then(crate::prophecy::Prophecy::of_jsdoc)
 }
 
 // ---------- types ----------
@@ -490,13 +501,23 @@ fn declarations<'t>(root: TsNode<'t>) -> Vec<(TsNode<'t>, bool, bool)> {
         if st.kind() == "export_statement" {
             let default = (0..st.child_count()).filter_map(|i| st.child(i)).any(|c| c.kind() == "default");
             if let Some(d) = st.child_by_field_name("declaration").or_else(|| st.child_by_field_name("value")) {
-                out.push((d, true, default));
+                out.push((unambient(d), true, default));
             }
         } else {
-            out.push((st, false, false));
+            out.push((unambient(st), false, false));
         }
     }
     out
+}
+
+/// What `declare` declares: a sketch or a typing without a body (`declare function f(x: A): B;`)
+/// is the declaration itself.
+fn unambient(d: TsNode) -> TsNode {
+    if d.kind() == "ambient_declaration" {
+        named_children(d).into_iter().find(|c| c.kind() != "comment").unwrap_or(d)
+    } else {
+        d
+    }
 }
 
 /// The variables a module declares at its top level, unwrapping `export`: `const x = ..`, `let y`.
@@ -580,6 +601,7 @@ fn add_function(m: &mut Module, store: &mut GraphBuilder, name: &str, def: TsNod
         span: span(def),
         module: m.id.clone(),
         doc: doc_of(def, src),
+        prophecy: prophecy_of(def, src),
         cls: cls.map(str::to_string),
         params,
         returns,
@@ -599,7 +621,9 @@ fn collect_symbols(m: &mut Module, store: &mut GraphBuilder) {
             m.exported.push(name.clone());
         }
         match d.kind() {
-            "function_declaration" | "generator_function_declaration" | "function_expression" | "function" if !name.is_empty() => {
+            "function_declaration" | "function_signature" | "generator_function_declaration" | "function_expression" | "function"
+                if !name.is_empty() =>
+            {
                 let body = d.child_by_field_name("body").unwrap_or(d);
                 let id = add_function(m, store, &name, d, d, body, None);
                 store.add_edge(&m.id.clone(), &id, EdgeKind::Contains, None);
@@ -845,6 +869,7 @@ fn add_type(
         span: span(d),
         module: m.id.clone(),
         doc: doc_of(d, &m.src),
+        prophecy: prophecy_of(d, &m.src),
         bases: bases.iter().map(|b| b.join(".")).collect(),
         methods,
         ..Default::default()

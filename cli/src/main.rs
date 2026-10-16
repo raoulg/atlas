@@ -15,9 +15,15 @@ use clap::{Parser, Subcommand};
 
 /// The version and the commit this build is from: `0.1.0 (a5e777d)`, with `+` after a commit
 /// whose tree had edits.
-static VERSION: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| match env!("ATLAS_COMMIT") {
-    "" => env!("CARGO_PKG_VERSION").to_string(),
-    c => format!("{} ({c})", env!("CARGO_PKG_VERSION")),
+static VERSION: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
+    let version = match env!("ATLAS_CHANNEL") {
+        "" => env!("CARGO_PKG_VERSION").to_string(),
+        channel => format!("{}-{channel}", env!("CARGO_PKG_VERSION")),
+    };
+    match env!("ATLAS_COMMIT") {
+        "" => version,
+        c => format!("{version} ({c})"),
+    }
 });
 
 /// The logo's colours in the terminal's own palette: structure in petrol (cyan), commands in ink.
@@ -198,6 +204,18 @@ enum Cmd {
         #[arg(long)]
         json: bool,
     },
+    /// Every prophecy in the tree, what it replaces and what is left of it: sketch code marked as
+    /// not built yet.
+    Revelation {
+        /// Repository root or git URL; default: the current directory.
+        repo: Option<PathBuf>,
+        /// Print the standings as JSON.
+        #[arg(long)]
+        json: bool,
+        /// Only the sealed prophecies, with the state of the issue each waits on (asked of GitHub with `gh`).
+        #[arg(long)]
+        seals: bool,
+    },
     /// What the working tree changes against a git revision, or one revision against another:
     /// routes, their steps and places, findings.
     Changes {
@@ -356,13 +374,13 @@ pub(crate) fn served_page(repo: &Path, opts: &Options, drawn: &str) -> Result<(S
     Ok((viewer(&d, extra)?, summary))
 }
 
-/// The working tree as `atlas serve` draws it: beside what an agent proposes, as two readings are
-/// drawn (A the working tree, B the proposal), and alone when nothing is proposed.
+/// The working tree as `atlas serve` draws it: beside what an agent has in view, as two readings are
+/// drawn (A the working tree, B the vision), and alone when no vision is kept.
 fn served(repo: &Path, opts: &Options) -> Result<Drawing> {
-    let Some(p) = shared::proposal(repo) else { return reading(&[repo.to_path_buf()], opts, None, None) };
-    let proposed = Named { rev: "proposal".into(), short: "proposal".into(), subject: p.title.clone() };
+    let Some(p) = shared::vision(repo) else { return reading(&[repo.to_path_buf()], opts, None, None) };
+    let envisioned = Named { rev: "vision".into(), short: "vision".into(), subject: p.title.clone() };
     let now = parts::analyze_parts(&[repo.to_path_buf()], opts)?;
-    union(repo, (changes::worktree(), now), (proposed, changes::proposed(repo, &p.files, opts)?))
+    union(repo, (changes::worktree(), now), (envisioned, changes::envisioned(repo, &p.files, opts)?))
 }
 
 /// Open a page or an address in the browser the system names.
@@ -559,6 +577,31 @@ fn main() -> Result<()> {
                 println!("{}", serde_json::to_string_pretty(&c)?);
             } else {
                 print!("{}", atlas_engine::changes::report(&c));
+            }
+        }
+        Cmd::Revelation { repo, json, seals } => {
+            let (repo, _clone) = local(
+                match repo {
+                    Some(r) => r,
+                    None => std::env::current_dir()?,
+                },
+                &mut opts,
+            )?;
+            for (i, g) in parts::analyze_parts(&[repo.clone()], &opts)?.iter().enumerate() {
+                let stands = atlas_engine::revelation::revelation(g);
+                let sealed = atlas_engine::revelation::seals(&stands, &|issue| shared::issue_state(&repo, issue));
+                let sep = if i > 0 { "\n" } else { "" };
+                match (json, seals) {
+                    (true, true) => println!("{}", serde_json::to_string_pretty(&serde_json::json!({ "root": g.root, "seals": sealed }))?),
+                    (true, false) => {
+                        println!(
+                            "{}",
+                            serde_json::to_string_pretty(&serde_json::json!({ "root": g.root, "prophecies": stands, "seals": sealed }))?
+                        )
+                    }
+                    (false, true) => print!("{sep}{}", atlas_engine::revelation::seals_report(&g.root, &sealed)),
+                    (false, false) => print!("{sep}{}", atlas_engine::revelation::report(&g.root, &stands, &sealed)),
+                }
             }
         }
         Cmd::Check { repo, json } => {
