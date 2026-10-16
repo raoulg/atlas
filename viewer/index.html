@@ -147,17 +147,19 @@ header:has(#diffbar:not([hidden])) #project{max-width:160px}
 #diffbar .seg{display:flex;flex:none;border:1px solid var(--line)}
 #diffbar .seg button{white-space:nowrap;font:500 11.5px var(--sans);background:var(--panel);color:var(--ink-2);border:0;padding:3px 10px;cursor:pointer}
 #diffbar .seg button[aria-pressed="true"]{background:var(--ink);color:var(--bg)}
-.dmark{font:600 12px var(--sans);pointer-events:none}
+.dmark{font:700 15px var(--sans);pointer-events:none}
 .d-added>.dmark{fill:var(--add)}
 .d-removed>.dmark{fill:var(--del)}
 .d-changed>.dmark{fill:var(--chg)}
-.tstep.d-added>rect.bg,.tnode.d-added>rect.bg,.frame.d-added>rect.bg{stroke:var(--add)!important;stroke-width:2.2px!important;stroke-dasharray:none!important}
-.tstep.d-added>rect.bg,.tnode.d-added>rect.bg{fill:color-mix(in oklab, var(--add) 9%, var(--panel))!important}
+.tstep.d-added>rect.bg,.tnode.d-added>rect.bg,.frame.d-added>rect.bg{stroke:var(--add)!important;stroke-width:3px!important;stroke-dasharray:none!important}
+.tstep.d-added>rect.bg,.tnode.d-added>rect.bg{fill:color-mix(in oklab, var(--add) 26%, var(--panel))!important}
 .tstep.d-removed>rect.bg,.tnode.d-removed>rect.bg,.frame.d-removed>rect.bg{stroke:var(--del)!important;stroke-width:1.6px!important;stroke-dasharray:5 3!important}
-.tstep.d-removed>rect.bg,.tnode.d-removed>rect.bg{fill:color-mix(in oklab, var(--del) 7%, var(--panel))!important}
-.tstep.d-changed>rect.bg,.tnode.d-changed>rect.bg,.frame.d-changed>rect.bg{stroke:var(--chg)!important;stroke-width:2.2px!important}
+.tstep.d-removed>rect.bg,.tnode.d-removed>rect.bg{fill:color-mix(in oklab, var(--del) 20%, var(--panel))!important}
+.tstep.d-changed>rect.bg,.tnode.d-changed>rect.bg{stroke:var(--chg)!important;stroke-width:3px!important}
+.frame.d-changed>rect.bg{stroke:var(--chg)!important;stroke-width:1.6px!important}
+.tstep.d-changed>rect.bg,.tnode.d-changed>rect.bg{fill:color-mix(in oklab, var(--chg) 18%, var(--panel))!important}
 .d-removed>text.title,.d-removed>.ftitle{fill:var(--del)!important;text-decoration:line-through}
-.sedge.d-added{stroke:var(--add)!important;stroke-width:2px!important;opacity:1}
+.sedge.d-added{stroke:var(--add)!important;stroke-width:3px!important;opacity:1}
 .sedge.d-removed{stroke:var(--del)!important;stroke-dasharray:5 4!important;opacity:1}
 .sedge-head.d-added{fill:var(--add)!important}
 .sedge-head.d-removed{fill:var(--del)!important}
@@ -2076,7 +2078,16 @@ async function renderPlaat(mine) {
   // a place that stands for others is changed at its border, as a closed box is; what it stands for is
   // counted inside it
   const worldChanged = p => p.standsFor ? differs.has(p.id) : DIFF.places[p.id] === "changed";
-  const placeStanding = p => !DIFF ? null : standing(p.sides || sidesAt.get(p.id), p.id.startsWith("e:") ? !!DIFF.entries[p.id.slice(2)] : p.kind === "world" ? worldChanged(p) : differs.has(p.id));
+  // a route that only one reading has is drawn whole, and what it reuses is not its change: a step or
+  // a type that both readings hold unchanged, and a line between two such, are unmarked; only what the
+  // code adds (or removes) in it is
+  const wholeRoute = !!DIFF && ["added", "removed"].includes(entries.find(e => e.id === V.route)?.ds);
+  // a type's own arrows change when the new route reaches it; the type itself is not new
+  const reusedNode = n => !!n && (!n.ds || (n.ds === "changed" && n.kind === "class"));
+  const reusedStep = s => reusedNode(byId.get(stepOf(s))) && !/^(part|unit):/.test(s);
+  const reusedPlace = p => wholeRoute && !p.id.startsWith("e:") && !p.folded && (p.kind === "world" ? !DIFF.places[p.id] && !p.standsFor : p.kind === "ext" || reusedNode(byId.get(p.type)));
+  const reusedBox = id => wholeRoute && (pills.has(id) ? pills.get(id).steps.every(reusedStep) : places.has(id) && reusedPlace(places.get(id)));
+  const placeStanding = p => !DIFF || reusedPlace(p) ? null : standing(p.sides || sidesAt.get(p.id), p.id.startsWith("e:") ? !!DIFF.entries[p.id.slice(2)] : p.kind === "world" ? worldChanged(p) : differs.has(p.id));
   const labelOfBox = new Map([...[...pills.values()].map(P => [P.id, P.label]), ...[...places.values()].map(p => [p.id, p.label])]);
   // what a box was, for its tooltip: a function's own arrow and a place's calls in A as the engine
   // says them; a value by the lines that differ, from or into which boxes
@@ -2180,7 +2191,7 @@ async function renderPlaat(mine) {
     const title = el("text", {class: "ftitle", x: 14, y: 20}, grp); title.textContent = (F.synthetic ? "" : "▾ ") + F.title;
     for (const [h, w] of F.whens || []) { const t = el("tspan", {}, title); t.textContent = `  ● ${w}`; t.style.fill = hueVar(h); }
     if (DIFF && !isFam) {
-      const st = standing(F.sides, !!F.step && (/^(part|unit):/.test(F.step) ? borderOf(id) : stepChanged([F.step])));
+      const st = wholeRoute ? null : standing(F.sides, !!F.step && (/^(part|unit):/.test(F.step) ? borderOf(id) : stepChanged([F.step])));
       marked(grp, st, P.w + 3, wasOf(st, id, F.step && DIFF.was[stepOf(F.step)]));
       sided(title, F.labels && {a: "▾ " + F.labels.a, b: "▾ " + F.labels.b});
     }
@@ -2224,7 +2235,7 @@ async function renderPlaat(mine) {
       }
       if (info.title) el("title", {}, p).textContent = info.title;
       for (const l of e.labels || []) { const tx = el("text", {class: "sedge-label", x: l.x + c.x + l.width / 2, y: l.y + c.y + 10, "text-anchor": "middle"}, eg); tx.textContent = l.text; els.push(tx); }
-      const st = standing(info.sides, false);
+      const st = reusedBox(e.sources[0]) && reusedBox(e.targets[0]) ? null : standing(info.sides, false);
       if (st) for (const x of els) x.classList.add("d-" + st);
       edgeEls.push({a: e.sources[0], b: e.targets[0], els, kind: info.uses ? "calls, no data" : info.back ? "hands back" : info.reach ? "reaches" : "data"});
       if (DUR) for (const x of [p, head]) d3.select(x).attr("opacity", 0).transition().delay(DUR * .7).duration(DUR * .6).attr("opacity", 1);
@@ -2249,7 +2260,7 @@ async function renderPlaat(mine) {
     const label = el("text", {class: "title", x: P.interior ? 24 : 11, y: Q.h / 2 + 4}, grp);
     label.textContent = P.label;
     if (DIFF) {
-      const st = standing(P.sides, quotient(P) ? differs.has(P.id) : stepChanged(P.steps));
+      const st = wholeRoute && reusedBox(P.id) ? null : standing(P.sides, quotient(P) ? differs.has(P.id) : stepChanged(P.steps));
       marked(grp, st, Q.w + 3, wasOf(st, P.id, P.steps.map(s => DIFF.was[stepOf(s)]).find(Boolean)));
       sided(label, P.labels);
     }
