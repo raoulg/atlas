@@ -3,7 +3,7 @@
   "nodes": [
    [
     "e:sunspots.cli.run",
-    "$ run --raw --figure --months --minimum"
+    "$ run --raw --figure --cycles --months --minimum"
    ],
    [
     "n:sunspots.cli.run",
@@ -22,6 +22,14 @@
     "\u25b8 download"
    ],
    [
+    "sunspots.plot.Cycles",
+    "\u25b8 Cycles()"
+   ],
+   [
+    "sunspots.plot.Plot.save",
+    "\u25b8 Cycles.save"
+   ],
+   [
     "sunspots.plot.Plot.save",
     "\u25b8 Trend.save"
    ],
@@ -32,6 +40,10 @@
    [
     "sunspots.series.load",
     "\u25b8 load"
+   ],
+   [
+    "sunspots.series.peaks",
+    "\u25b8 peaks"
    ],
    [
     "sunspots.series.smooth",
@@ -58,6 +70,14 @@
     "DataFrame \u00b7 frame"
    ],
    [
+    "t:ext:pandas.DataFrame@n:sunspots.cli.run/8",
+    "DataFrame"
+   ],
+   [
+    "t:sunspots.plot.Cycles@n:sunspots.cli.run/7",
+    "Cycles"
+   ],
+   [
     "t:sunspots.plot.Trend@n:sunspots.cli.run/5",
     "Trend"
    ],
@@ -68,6 +88,10 @@
    [
     "w:File:data/raw/sunspots.csv",
     "File(data/raw/sunspots.csv)"
+   ],
+   [
+    "w:File:figures/cycles.png",
+    "File(figures/cycles.png)"
    ],
    [
     "w:File:figures/sunspots.png",
@@ -113,6 +137,26 @@
    ],
    [
     "n:sunspots.cli.run/6",
+    "w:File:figures/cycles.png"
+   ],
+   [
+    "n:sunspots.cli.run/6",
+    "w:File:figures/sunspots.png"
+   ],
+   [
+    "n:sunspots.cli.run/7",
+    "t:sunspots.plot.Cycles@n:sunspots.cli.run/7"
+   ],
+   [
+    "n:sunspots.cli.run/8",
+    "t:ext:pandas.DataFrame@n:sunspots.cli.run/8"
+   ],
+   [
+    "n:sunspots.cli.run/9",
+    "w:File:figures/cycles.png"
+   ],
+   [
+    "n:sunspots.cli.run/9",
     "w:File:figures/sunspots.png"
    ],
    [
@@ -128,6 +172,18 @@
     "n:sunspots.cli.run/6"
    ],
    [
+    "t:ext:pandas.DataFrame@n:sunspots.cli.run/4",
+    "n:sunspots.cli.run/8"
+   ],
+   [
+    "t:ext:pandas.DataFrame@n:sunspots.cli.run/8",
+    "n:sunspots.cli.run/9"
+   ],
+   [
+    "t:sunspots.plot.Cycles@n:sunspots.cli.run/7",
+    "n:sunspots.cli.run/9"
+   ],
+   [
     "t:sunspots.plot.Trend@n:sunspots.cli.run/5",
     "n:sunspots.cli.run/6"
    ],
@@ -138,6 +194,14 @@
    [
     "t:sunspots.settings.Settings@n:sunspots.cli.run/0",
     "n:sunspots.cli.run/5"
+   ],
+   [
+    "t:sunspots.settings.Settings@n:sunspots.cli.run/0",
+    "n:sunspots.cli.run/7"
+   ],
+   [
+    "t:sunspots.settings.Settings@n:sunspots.cli.run/0",
+    "n:sunspots.cli.run/8"
    ],
    [
     "w:File:data/raw/sunspots.csv",
@@ -153,7 +217,7 @@
   "nodes": [
    [
     "e:sunspots.cli.run",
-    "$ run --raw --figure --months --minimum"
+    "$ run --raw --figure --cycles --months --minimum"
    ],
    [
     "n:sunspots.cli.run",
@@ -172,6 +236,14 @@
     "\u25b8 download"
    ],
    [
+    "sunspots.plot.Cycles",
+    "\u25b8 Cycles()"
+   ],
+   [
+    "sunspots.plot.Plot.save",
+    "\u25b8 Cycles.save"
+   ],
+   [
     "sunspots.plot.Plot.save",
     "\u25b8 Trend.save"
    ],
@@ -184,12 +256,16 @@
     "\u25b8 load"
    ],
    [
+    "sunspots.series.peaks",
+    "\u25b8 peaks"
+   ],
+   [
     "sunspots.series.smooth",
     "\u25b8 smooth"
    ],
    [
     "sunspots.series.trusted",
-    "trusted"
+    "trustedthe agent points here"
    ],
    [
     "sunspots.settings.Settings",
@@ -208,6 +284,14 @@
     "DataFrame \u00b7 frame"
    ],
    [
+    "t:ext:pandas.DataFrame@n:sunspots.cli.run/8",
+    "DataFrame"
+   ],
+   [
+    "t:sunspots.plot.Cycles@n:sunspots.cli.run/7",
+    "Cycles"
+   ],
+   [
     "t:sunspots.plot.Trend@n:sunspots.cli.run/5",
     "Trend"
    ],
@@ -218,6 +302,10 @@
    [
     "w:File:data/raw/sunspots.csv",
     "File(data/raw/sunspots.csv)"
+   ],
+   [
+    "w:File:figures/cycles.png",
+    "File(figures/cycles.png)"
    ],
    [
     "w:File:figures/sunspots.png",
@@ -263,6 +351,26 @@
    ],
    [
     "n:sunspots.cli.run/6",
+    "w:File:figures/cycles.png"
+   ],
+   [
+    "n:sunspots.cli.run/6",
+    "w:File:figures/sunspots.png"
+   ],
+   [
+    "n:sunspots.cli.run/7",
+    "t:sunspots.plot.Cycles@n:sunspots.cli.run/7"
+   ],
+   [
+    "n:sunspots.cli.run/8",
+    "t:ext:pandas.DataFrame@n:sunspots.cli.run/8"
+   ],
+   [
+    "n:sunspots.cli.run/9",
+    "w:File:figures/cycles.png"
+   ],
+   [
+    "n:sunspots.cli.run/9",
     "w:File:figures/sunspots.png"
    ],
    [
@@ -278,6 +386,18 @@
     "n:sunspots.cli.run/6"
    ],
    [
+    "t:ext:pandas.DataFrame@n:sunspots.cli.run/4",
+    "n:sunspots.cli.run/8"
+   ],
+   [
+    "t:ext:pandas.DataFrame@n:sunspots.cli.run/8",
+    "n:sunspots.cli.run/9"
+   ],
+   [
+    "t:sunspots.plot.Cycles@n:sunspots.cli.run/7",
+    "n:sunspots.cli.run/9"
+   ],
+   [
     "t:sunspots.plot.Trend@n:sunspots.cli.run/5",
     "n:sunspots.cli.run/6"
    ],
@@ -288,6 +408,14 @@
    [
     "t:sunspots.settings.Settings@n:sunspots.cli.run/0",
     "n:sunspots.cli.run/5"
+   ],
+   [
+    "t:sunspots.settings.Settings@n:sunspots.cli.run/0",
+    "n:sunspots.cli.run/7"
+   ],
+   [
+    "t:sunspots.settings.Settings@n:sunspots.cli.run/0",
+    "n:sunspots.cli.run/8"
    ],
    [
     "w:File:data/raw/sunspots.csv",
@@ -303,11 +431,11 @@
   "nodes": [
    [
     "e:sunspots.cli.run_archived",
-    "$ run-archived --raw --figure --archive --months+added in B"
+    "$ run-archived --raw --figure --archive --months --minimum+added in B"
    ],
    [
     "n:sunspots.cli.run_archived",
-    "\u25be CLI run-archived+added in B"
+    "\u25be CLI run-archived"
    ],
    [
     "sunspots.cli.run_archived",
@@ -315,11 +443,11 @@
    ],
    [
     "sunspots.plot.Plot.save",
-    "\u25b8 Trend.save+added in B"
+    "\u25b8 Trend.save"
    ],
    [
     "sunspots.plot.Trend",
-    "\u25b8 Trend()+added in B"
+    "\u25b8 Trend()"
    ],
    [
     "sunspots.series.Archive",
@@ -331,35 +459,35 @@
    ],
    [
     "sunspots.series.load",
-    "\u25b8 load+added in B"
+    "\u25b8 load"
    ],
    [
     "sunspots.series.smooth",
-    "\u25b8 smooth+added in B"
+    "\u25b8 smooth"
    ],
    [
     "sunspots.series.trusted",
-    "trusted+added in B\u2713\u2726"
+    "trusted\u2713\u2726"
    ],
    [
     "sunspots.settings.Settings",
-    "Settings()+added in B"
+    "Settings()"
    ],
    [
     "t:ext:pandas.DataFrame@n:sunspots.cli.run_archived/1",
-    "DataFrame+added in B"
+    "DataFrame"
    ],
    [
     "t:ext:pandas.DataFrame@n:sunspots.cli.run_archived/2",
-    "DataFrame+added in B"
+    "DataFrame"
    ],
    [
     "t:ext:pandas.DataFrame@n:sunspots.cli.run_archived/3",
-    "DataFrame \u00b7 frame+added in B"
+    "DataFrame \u00b7 frame"
    ],
    [
     "t:sunspots.plot.Trend@n:sunspots.cli.run_archived/6",
-    "Trend+added in B"
+    "Trend"
    ],
    [
     "t:sunspots.series.Archive@n:sunspots.cli.run_archived/4",
@@ -367,15 +495,15 @@
    ],
    [
     "t:sunspots.settings.Settings@n:sunspots.cli.run_archived/0",
-    "Settings \u00b7 settings+added in B"
+    "Settings \u00b7 settings"
    ],
    [
     "w:File:data/raw/sunspots.csv",
-    "File(data/raw/sunspots.csv)+added in B"
+    "File(data/raw/sunspots.csv)"
    ],
    [
     "w:File:figures/sunspots.png",
-    "File(figures/sunspots.png)+added in B"
+    "File(figures/sunspots.png)"
    ]
   ],
   "edges": [
@@ -453,7 +581,7 @@
   "nodes": [
    [
     "e:sunspots.cli.run_archived",
-    "$ run-archived --raw --figure --archive --months"
+    "$ run-archived --raw --figure --archive --months --minimum"
    ],
    [
     "n:sunspots.cli.run_archived",
@@ -603,7 +731,7 @@
   "nodes": [
    [
     "e:sunspots.cli.run_archived",
-    "$ run-archived --raw --figure --archive --months"
+    "$ run-archived --raw --figure --archive --months --minimum"
    ],
    [
     "n:sunspots.cli.run_archived",

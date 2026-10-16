@@ -107,7 +107,7 @@ main{padding-top:0}
 .chap .lede{font-size:18px;margin-bottom:30px}
 .wide{display:flex;flex-direction:column;align-items:center;gap:22px;width:min(calc(100vw - 32px),1440px);position:relative;left:50%;transform:translateX(-50%)}
 .wide figure{max-width:100%}
-.wide figure img{width:min(calc(var(--w) * 1px),100%);height:auto;display:block;padding:12px 16px}
+.wide figure img{width:calc(var(--w) * 1px);max-width:100%;height:auto;display:block;padding:12px 16px}
 .wide[data-tabs]{align-items:stretch}
 .wide .row{display:flex;flex-wrap:wrap;gap:22px;justify-content:center;width:100%}
 .wide .row figure{flex:0 1 auto}
@@ -144,6 +144,22 @@ main{padding-top:0}
 .fulllink{margin-top:22px;font-size:16px}
 .fulllink a{text-decoration-color:var(--accent);text-underline-offset:3px}
 .lang-note{max-width:78ch;margin:14px 0 0;color:var(--ink);font-size:16px}
+.g{color:var(--add)}.b{color:var(--focus)}.p{color:var(--proph)}
+b.g,b.b,b.p{font-weight:600}
+.key{margin:0;font-size:15px;color:var(--ink-2);display:flex;flex-wrap:wrap;gap:6px 18px;align-items:center}
+.key .sw{display:inline-block;width:22px;height:12px;border:3px solid;margin-right:6px;vertical-align:-1px}
+.key .sw.add{border-color:var(--add);background:color-mix(in oklab,var(--add) 26%,#fff)}
+.key .sw.del{border-color:#C0361C;background:color-mix(in oklab,#C0361C 20%,#fff)}
+.key .sw.chg{border-color:#B8860B;background:color-mix(in oklab,#B8860B 18%,#fff)}
+figure.code{flex:1 1 420px;max-width:100%}
+figure.code figcaption{font-size:14px;color:var(--ink-2)}
+figure.code pre{border:0;font-size:12.5px;line-height:1.6;white-space:pre;overflow-x:auto}
+figure.code pre .m{color:var(--proph);font-weight:600}
+figure.code a{display:inline;padding:0;color:inherit;text-decoration-color:var(--accent);text-underline-offset:3px}
+figure.term{background:#1d1b19;border-color:#1d1b19}
+figure.term figcaption{color:#cfc8bd;border-bottom-color:#3a3631}
+figure.term pre{background:transparent;color:#ece6dc}
+figure.term pre .m{color:#b9b0ff}
 section{margin-bottom:104px}
 @media (max-width:760px){.top nav{display:none}.hero{padding-top:36px}.chap{margin-bottom:72px}}
 
@@ -167,24 +183,28 @@ nav.story a{color:var(--ink-2);text-decoration-color:var(--accent);text-underlin
     <a href="llms.txt">for agents</a>
   </nav>
 </header>
-<nav class="story"><a href="#history">history</a> <a href="#look">look and shown</a> <a href="#notes">notes</a> <a href="#annotations">annotations</a> <a href="#vision">vision</a> <a href="#prophecy">prophecy</a></nav>
+<nav class="story"><a href="#history">history</a> <a href="#look">look and shown</a> <a href="#notes">notes</a> <a href="#vision">vision</a> <a href="#prophecy">prophecy</a></nav>
 <section id="history">
   <h2>Two commits, one picture</h2>
   <p class="lede">Beside the picture <code>atlas serve</code> has a history: the commit graph, and any two commits drawn as one picture, with what the second added, removed and changed marked. Here the two commits of the pipeline: the second leaves out the months with too few observations. <code>series</code> gains one step, <code>cli</code> changes.</p>
   <div class="pair">
   <figure>
-    <figcaption><b>The history page</b><span class="tag">A ∪ B</span></figcaption>
-    <a href="img/interaction/history.png"><img src="img/interaction/history.png" style="--w:1400" alt="The history of the sunspots repository with its two commits drawn as one picture: what the second added and changed is marked"></a>
+    <figcaption><b>Six commits</b><span class="tag">history</span></figcaption>
+    <a href="img/interaction/history-list.png"><img src="img/interaction/history-list.png" style="--w:420" alt="The six commits of the sunspots repository, the fifth and the sixth picked"></a>
+  </figure>
+  <figure>
+    <figcaption><b>The fifth against the sixth</b><span class="tag">A ∪ B</span></figcaption>
+    <a href="img/interaction/history.png"><img src="img/interaction/history.png" style="--w:1580" alt="The history of the sunspots repository with its two commits drawn as one picture: what the second added and changed is marked"></a>
   </figure>
   </div>
 </section>
 <section id="look">
   <h2>Pointing, both ways</h2>
-  <p class="lede">The person and the agent share one view. <code>look</code> takes the person's page to a view and points at a box: &ldquo;here, this one&rdquo;. <code>shown</code> goes the other way: what the person has open and the box they clicked, in the names the agent can use.</p>
+  <p class="lede">The person and the agent share one view. <code>look</code> takes the person's page to a view and points at a box: &ldquo;here, this one&rdquo;. The box is lit and tagged until the agent points elsewhere. <code>shown</code> goes the other way: what the person has open and the box they clicked, in the names the agent can use.</p>
   <div class="pair">
   <figure>
     <figcaption><b>The agent took the page to the route and pointed at trusted</b><span class="tag">look</span></figcaption>
-    <a href="img/interaction/look.png"><img src="img/interaction/look.png" style="--w:1400" alt="The route run of the sunspots pipeline with the step trusted pointed at"></a>
+    <a href="img/interaction/look.png"><img src="img/interaction/look.png" style="--w:800" alt="The route run of the sunspots pipeline with the step trusted lit and tagged: the agent points here"></a>
   </figure>
   <figure class="output">
     <figcaption><b>look</b><span class="tag">what the tool answered</span></figcaption>
@@ -194,7 +214,7 @@ nav.story a{color:var(--ink-2);text-decoration-color:var(--accent);text-underlin
     <figcaption><b>shown, after the person clicked trusted</b><span class="tag">what the tool answered</span></figcaption>
     <pre>View: {&quot;route&quot;:&quot;sunspots.cli.run&quot;}
 Selected: sunspots.series.trusted
-17 boxes:
+23 boxes:
   Settings() (sunspots.settings.Settings)
   download (sunspots.download.download)
   load (sunspots.series.load)
@@ -206,44 +226,30 @@ Selected: sunspots.series.trusted
   </div>
 </section>
 <section id="notes">
-  <h2>A note on a box</h2>
-  <p class="lede">Alt-click a box or a line and write what you see or do not understand. The agent reads the note where it works, answers it by a fix or by explaining, and resolves it with the commit that fixed it. Atlas is no chat: the note stays on the box, a ring while it is open, a &#10003; once it is resolved.</p>
+  <h2>A note on a box, and the answer on it</h2>
+  <p class="lede">Alt-click a box or a line and write what you see or do not understand. The agent reads the note where it works and answers on the box itself, in its own words (<code>annotate</code>), then resolves the note with the commit that fixed it, if one did. Atlas is no chat: the note stays on the box, a ring while it is open, a &#10003; once it is resolved; the answer is the &#10022; beside it.</p>
   <div class="pair">
   <figure>
     <figcaption><b>The person writes a note on trusted</b><span class="tag">alt-click</span></figcaption>
-    <a href="img/interaction/note-field.png"><img src="img/interaction/note-field.png" style="--w:1020" alt="A note field open on the step trusted, with a question typed in"></a>
-  </figure>
-  <figure>
-    <figcaption><b>The note is kept</b><span class="tag">ring</span></figcaption>
-    <a href="img/interaction/note-kept.png"><img src="img/interaction/note-kept.png" style="--w:660" alt="The step trusted with a ring that says one note is on it"></a>
+    <a href="img/interaction/note-field.png"><img src="img/interaction/note-field.png" style="--w:660" alt="A note field open on the step trusted, with a question typed in"></a>
   </figure>
   <figure class="output">
     <figcaption><b>notes</b><span class="tag">what the tool answered</span></figcaption>
-    <pre>Note 1 on trusted (sunspots.series.trusted), written at 59b48f1 in the view {&quot;route&quot;:&quot;sunspots.cli.run&quot;}:
+    <pre>Note 1 on trusted (sunspots.series.trusted), written at ff35a25 in the view {&quot;route&quot;:&quot;sunspots.cli.run&quot;}:
   Why a minimum of 1? What happens to the months with no observations?
-  Its place: http://127.0.0.1:51567/#v=%7B%22route%22%3A%22sunspots.cli.run%22%7D&amp;at=sunspots.series.trusted</pre>
+  Its place: http://127.0.0.1:54923/#v=%7B%22route%22%3A%22sunspots.cli.run%22%7D&amp;at=sunspots.series.trusted</pre>
   </figure>
   <figure>
-    <figcaption><b>The agent resolved it</b><span class="tag">✓</span></figcaption>
-    <a href="img/interaction/note-resolved.png"><img src="img/interaction/note-resolved.png" style="--w:660" alt="The step trusted with a check mark: its note is resolved"></a>
-  </figure>
-  <figure class="output">
-    <figcaption><b>resolve</b><span class="tag">what the tool answered</span></figcaption>
-    <pre>Note 1 on trusted is resolved; the page marks it so while it is served. Tell the person you work with what you did.</pre>
-  </figure>
-  </div>
-</section>
-<section id="annotations">
-  <h2>What the agent says that the code does not</h2>
-  <p class="lede">A condition, a step's reason, why a place stands where it does: <code>annotate</code> puts the agent's own words on a box or a line. A &#10022; marks it; hover it for the words. They are the agent's statements, apart from what Atlas traces.</p>
-  <div class="pair">
-  <figure>
-    <figcaption><b>trusted, with a note resolved and an annotation</b><span class="tag">✦</span></figcaption>
-    <a href="img/interaction/annotated.png"><img src="img/interaction/annotated.png" style="--w:660" alt="The step trusted with a check mark and a star: a resolved note and an annotation"></a>
+    <figcaption><b>The agent answered on the box, and the note is resolved</b><span class="tag">✓ ✦</span></figcaption>
+    <a href="img/interaction/answered.png"><img src="img/interaction/answered.png" style="--w:860" alt="The step trusted with a check mark and a star; the agent&#x27;s answer is open beside it"></a>
   </figure>
   <figure class="output">
     <figcaption><b>annotate</b><span class="tag">what the tool answered</span></figcaption>
     <pre>The page of `atlas serve` shows 1 annotation within a few seconds.</pre>
+  </figure>
+  <figure class="output">
+    <figcaption><b>resolve</b><span class="tag">what the tool answered</span></figcaption>
+    <pre>Note 1 on trusted is resolved; the page marks it so while it is served. Tell the person you work with what you did.</pre>
   </figure>
   </div>
 </section>
@@ -266,7 +272,7 @@ working tree..vision
     + place writes figures/sunspots.png
 
 findings raised
-  nothing · src/sunspots/series.py:37  Archive.write gives nothing back, and Atlas sees no change and no place it reaches</pre>
+  nothing · src/sunspots/series.py:43  Archive.write gives nothing back, and Atlas sees no change and no place it reaches</pre>
   </figure>
   </div>
 </section>
@@ -281,7 +287,7 @@ findings raised
   <figure class="output">
     <figcaption><b>git diff</b><span class="tag">what the tool answered</span></figcaption>
     <pre>diff --git a/src/sunspots/cli.py b/src/sunspots/cli.py
-index f83251b..a67a80f 100644
+index 144b553..384f943 100644
 --- a/src/sunspots/cli.py
 +++ b/src/sunspots/cli.py
 @@ -1,12 +1,13 @@
@@ -293,28 +299,28 @@ index f83251b..a67a80f 100644
  import typer
  
  from sunspots.download import download
- from sunspots.plot import Trend
--from sunspots.series import load, smooth, trusted
-+from sunspots.series import Archive, load, smooth, trusted
+ from sunspots.plot import Cycles, Trend
+-from sunspots.series import load, peaks, smooth, trusted
++from sunspots.series import Archive, load, peaks, smooth, trusted
  from sunspots.settings import Settings
  
  SILSO = &quot;https://www.sidc.be/SILSO/DATA/SN_m_tot_V2.0.csv&quot;
-@@ -24,3 +25,13 @@ def run(raw: Path = RAW, figure: Path = FIGURE, months: int = 13, minimum: int =
-         download(SILSO, raw)
+@@ -26,3 +27,13 @@ def run(raw: Path = RAW, figure: Path = FIGURE, cycles: Path = CYCLES, months: i
      frame = smooth(trusted(load(raw), settings.minimum), settings.months)
      Trend(settings).save(frame, figure)
+     Cycles(settings).save(peaks(frame, settings.cycle), cycles)
 +
 +
 +@app.command()
 +@prophecy(supersedes=&quot;sunspots.cli.run&quot;)
-+def run_archived(raw: Path = RAW, figure: Path = FIGURE, archive: Path = Path(&quot;data/smoothed.csv&quot;), months: int = 13) -&gt; None:
++def run_archived(raw: Path = RAW, figure: Path = FIGURE, archive: Path = Path(&quot;data/smoothed.csv&quot;), months: int = 13, minimum: int = 1) -&gt; None:
 +    &quot;&quot;&quot;Like `run`, and keep the smoothed months in a file.&quot;&quot;&quot;
-+    settings = Settings(months=months)
++    settings = Settings(months=months, minimum=minimum)
 +    frame = smooth(trusted(load(raw), settings.minimum), settings.months)
 +    Archive(archive).write(frame)
 +    Trend(settings).save(frame, figure)
 diff --git a/src/sunspots/series.py b/src/sunspots/series.py
-index d6b3068..f6eb129 100644
+index d81327f..f983cef 100644
 --- a/src/sunspots/series.py
 +++ b/src/sunspots/series.py
 @@ -4,6 +4,7 @@ SILSO&#x27;s file has no header; its columns are separated by semicolons, and a month
@@ -325,10 +331,10 @@ index d6b3068..f6eb129 100644
  from pathlib import Path
  
  import pandas as pd
-@@ -27,3 +28,15 @@ def trusted(frame: pd.DataFrame, minimum: int) -&gt; pd.DataFrame:
- def smooth(frame: pd.DataFrame, months: int) -&gt; pd.DataFrame:
-     &quot;&quot;&quot;`frame` with a `smoothed` column: the mean over `months` months, centred on each.&quot;&quot;&quot;
-     return frame.assign(smoothed=frame[&quot;mean&quot;].rolling(months, center=True).mean())
+@@ -33,3 +34,15 @@ def peaks(frame: pd.DataFrame, years: int) -&gt; pd.DataFrame:
+     &quot;&quot;&quot;`frame` with a `peak` column: whether a month holds the highest smoothed mean of the `years` years round it.&quot;&quot;&quot;
+     highest = frame[&quot;smoothed&quot;].rolling(years * 12 + 1, center=True).max()
+     return frame.assign(peak=frame[&quot;smoothed&quot;] == highest)
 +
 +
 +@prophecy
@@ -358,32 +364,32 @@ index d6b3068..f6eb129 100644
     <figcaption><b>revelation: what is left to build</b><span class="tag">what the tool answered</span></figcaption>
     <pre>sunspots · 4 prophecies
 
-  src/sunspots/cli.py:32  run_archived  supersedes `sunspots.cli.run`
+  src/sunspots/cli.py:34  run_archived  supersedes `sunspots.cli.run`
       1 body to write
 
-  src/sunspots/series.py:34  Archive
+  src/sunspots/series.py:40  Archive
       3 bodies to write
 
-  src/sunspots/series.py:46  Format
+  src/sunspots/series.py:52  Format
       0 bodies to write · sealed on raoulg/atlas#19 (closed: the seal can be broken)
 
-  src/sunspots/series.py:51  Compression
+  src/sunspots/series.py:57  Compression
       0 bodies to write · sealed on raoulg/atlas#33 (open)</pre>
   </figure>
   <figure class="output">
     <figcaption><b>seals: what waits on an open question (asked of GitHub with gh; here two issues of Atlas stand in for the questions)</b><span class="tag">what the tool answered</span></figcaption>
     <pre>sunspots · 2 sealed, 1 to break
 
-  src/sunspots/series.py:46  Format  sealed on raoulg/atlas#19 (closed: the seal can be broken)  A database is a file: the directory made for it serves its data
+  src/sunspots/series.py:52  Format  sealed on raoulg/atlas#19 (closed: the seal can be broken)  A database is a file: the directory made for it serves its data
 
-  src/sunspots/series.py:51  Compression  sealed on raoulg/atlas#33 (open)  Showcase of the interaction: history, look, notes, annotations, vision and prophecy, drawn from a real subject</pre>
+  src/sunspots/series.py:57  Compression  sealed on raoulg/atlas#33 (open)  Showcase of the interaction: history, look, notes, annotations, vision and prophecy, drawn from a real subject</pre>
   </figure>
   <figure class="output">
     <figcaption><b>unseal: the closed one is broken</b><span class="tag">what the tool answered</span></figcaption>
     <pre>Seals broken: sunspots.series.Format. The files are left for you to commit; sketch the shape now.
 
 diff --git a/src/sunspots/series.py b/src/sunspots/series.py
-index d6b3068..f81717f 100644
+index d81327f..886a1ce 100644
 --- a/src/sunspots/series.py
 +++ b/src/sunspots/series.py
 @@ -4,6 +4,7 @@ SILSO&#x27;s file has no header; its columns are separated by semicolons, and a month
@@ -394,10 +400,10 @@ index d6b3068..f81717f 100644
  from pathlib import Path
  
  import pandas as pd
-@@ -27,3 +28,25 @@ def trusted(frame: pd.DataFrame, minimum: int) -&gt; pd.DataFrame:
- def smooth(frame: pd.DataFrame, months: int) -&gt; pd.DataFrame:
-     &quot;&quot;&quot;`frame` with a `smoothed` column: the mean over `months` months, centred on each.&quot;&quot;&quot;
-     return frame.assign(smoothed=frame[&quot;mean&quot;].rolling(months, center=True).mean())
+@@ -33,3 +34,25 @@ def peaks(frame: pd.DataFrame, years: int) -&gt; pd.DataFrame:
+     &quot;&quot;&quot;`frame` with a `peak` column: whether a month holds the highest smoothed mean of the `years` years round it.&quot;&quot;&quot;
+     highest = frame[&quot;smoothed&quot;].rolling(years * 12 + 1, center=True).max()
+     return frame.assign(peak=frame[&quot;smoothed&quot;] == highest)
 +
 +
 +@prophecy

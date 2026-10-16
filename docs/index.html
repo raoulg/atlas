@@ -107,7 +107,7 @@ main{padding-top:0}
 .chap .lede{font-size:18px;margin-bottom:30px}
 .wide{display:flex;flex-direction:column;align-items:center;gap:22px;width:min(calc(100vw - 32px),1440px);position:relative;left:50%;transform:translateX(-50%)}
 .wide figure{max-width:100%}
-.wide figure img{width:min(calc(var(--w) * 1px),100%);height:auto;display:block;padding:12px 16px}
+.wide figure img{width:calc(var(--w) * 1px);max-width:100%;height:auto;display:block;padding:12px 16px}
 .wide[data-tabs]{align-items:stretch}
 .wide .row{display:flex;flex-wrap:wrap;gap:22px;justify-content:center;width:100%}
 .wide .row figure{flex:0 1 auto}
@@ -144,6 +144,22 @@ main{padding-top:0}
 .fulllink{margin-top:22px;font-size:16px}
 .fulllink a{text-decoration-color:var(--accent);text-underline-offset:3px}
 .lang-note{max-width:78ch;margin:14px 0 0;color:var(--ink);font-size:16px}
+.g{color:var(--add)}.b{color:var(--focus)}.p{color:var(--proph)}
+b.g,b.b,b.p{font-weight:600}
+.key{margin:0;font-size:15px;color:var(--ink-2);display:flex;flex-wrap:wrap;gap:6px 18px;align-items:center}
+.key .sw{display:inline-block;width:22px;height:12px;border:3px solid;margin-right:6px;vertical-align:-1px}
+.key .sw.add{border-color:var(--add);background:color-mix(in oklab,var(--add) 26%,#fff)}
+.key .sw.del{border-color:#C0361C;background:color-mix(in oklab,#C0361C 20%,#fff)}
+.key .sw.chg{border-color:#B8860B;background:color-mix(in oklab,#B8860B 18%,#fff)}
+figure.code{flex:1 1 420px;max-width:100%}
+figure.code figcaption{font-size:14px;color:var(--ink-2)}
+figure.code pre{border:0;font-size:12.5px;line-height:1.6;white-space:pre;overflow-x:auto}
+figure.code pre .m{color:var(--proph);font-weight:600}
+figure.code a{display:inline;padding:0;color:inherit;text-decoration-color:var(--accent);text-underline-offset:3px}
+figure.term{background:#1d1b19;border-color:#1d1b19}
+figure.term figcaption{color:#cfc8bd;border-bottom-color:#3a3631}
+figure.term pre{background:transparent;color:#ece6dc}
+figure.term pre .m{color:#b9b0ff}
 section{margin-bottom:104px}
 @media (max-width:760px){.top nav{display:none}.hero{padding-top:36px}.chap{margin-bottom:72px}}
 </style>
@@ -224,49 +240,42 @@ section{margin-bottom:104px}
 
 <section class="chap" id="changed">
   <h2>See what a change did, without reading the diff.</h2>
-  <p class="lede">Pick two commits and Atlas draws them as one picture. What the second added is outlined in green, what changed in amber, what went in red. Here the second commit of a small pipeline leaves out the months with too few observations: one new step, and the command takes one more option.</p>
+  <p class="lede">A pipeline grows one commit at a time: the download, the load, the first figure, the smoothing, a filter, and last the maxima of the solar cycles. Pick any two commits and Atlas draws them as one picture. Here the fifth against the sixth: the new path from the smoothed months to a second figure is <b class="g">filled green</b>, and nothing else moved.</p>
   <div class="wide">
     <figure>
-      <figcaption><b>Two commits, one picture</b><span class="tag">history</span></figcaption>
-      <img src="img/interaction/history.png" style="--w:1400" alt="Atlas's history page: the two commits of the sunspots repository drawn as one picture, with what the second added and changed marked on the packages series and cli">
+      <figcaption><b>The history: pick any two commits</b><span class="tag">history</span></figcaption>
+      <img src="img/interaction/history-list.png" style="--w:420" alt="The six commits of the sunspots repository, from the download to the maxima of the cycles; the fifth is marked A and the sixth B">
     </figure>
+    <figure>
+      <figcaption><b>A against B, as one picture</b><span class="tag">A &cup; B</span></figcaption>
+      <img src="img/interaction/history.png" style="--w:1580" alt="Atlas's history page: six commits listed, the fifth and the sixth drawn as one picture. The new steps peaks and Cycles.save, the types Cycles and DataFrame and the new file figures/cycles.png are filled green; everything else is plain.">
+    </figure>
+    <p class="key"><span class="sw add"></span>added <span class="sw del"></span>removed <span class="sw chg"></span>changed: its own arrows differ</p>
   </div>
 </section>
 
 <section class="chap" id="point">
   <h2>Say exactly what you mean: point at it.</h2>
-  <p class="lede">You and your agent share one page. The agent can take it to a view and point at a box. You alt-click a box to leave a note on it; the agent reads the note where it works, answers on that box and marks it resolved. When the code does not say why, the agent writes its own words on the box.</p>
+  <p class="lede">You and your agent share one page. The agent takes it to a view and points: the step is <b class="b">lit and tagged</b> until the agent points elsewhere. You alt-click a box to leave a note on it. The agent answers on that same box, in its own words, and marks your note resolved.</p>
   <div class="wide">
     <figure>
       <figcaption><b>The agent took your page to the route and pointed at one step</b><span class="tag">look</span></figcaption>
-      <img src="img/interaction/look.png" style="--w:1400" alt="The route of the sunspots pipeline with the step trusted pointed at: the rest of the picture is dimmed">
+      <img src="img/interaction/look.png" style="--w:1040" alt="The route of the sunspots pipeline; the step trusted is outlined and glows, with a tag above it that says: the agent points here">
     </figure>
     <figure>
-      <figcaption><b>You write a note on a box</b><span class="tag">alt-click</span></figcaption>
-      <img src="img/interaction/note-field.png" style="--w:1020" alt="A note field open on the step trusted, with a question typed in">
+      <figcaption><b>1 &middot; You write a note on the box</b><span class="tag">alt-click</span></figcaption>
+      <img src="img/interaction/note-field.png" style="--w:940" alt="A note field open on the step trusted, with a question typed in">
     </figure>
-    <div class="say you"><b>You</b><p>Why a minimum of 1? What happens to the months with no observations?</p></div>
-    <div class="row">
-      <div>
-        <figure>
-          <figcaption><b>The agent resolved it</b><span class="tag">✓</span></figcaption>
-          <img src="img/interaction/note-resolved.png" style="--w:660" alt="The step trusted with a check mark: its note is resolved">
-        </figure>
-      </div>
-      <div>
-        <figure>
-          <figcaption><b>And said what the code does not</b><span class="tag">✦</span></figcaption>
-          <img src="img/interaction/annotated.png" style="--w:660" alt="The step trusted with a check mark and a star: a resolved note and an annotation">
-        </figure>
-      </div>
-    </div>
-    <div class="say"><b>The agent, on that box</b><p>The minimum is 1 by default: a month with no observation has no mean in SILSO's file, and load has dropped it already.</p></div>
+    <figure>
+      <figcaption><b>2 &middot; The agent answers on the box, and your note is resolved</b><span class="tag">&#10003; &#10022;</span></figcaption>
+      <img src="img/interaction/answered.png" style="--w:1060" alt="The step trusted with a check mark (the note is resolved) and a star; the agent's answer is open beside the star">
+    </figure>
   </div>
 </section>
 
 <section class="chap" id="design">
   <h2>Design the next feature before you write it.</h2>
-  <p class="lede">Ask your agent for a change and it shows you the change, not a description of it: a vision, drawn beside the code as it is. When you say yes, the design goes into the code as a prophecy: sketch code, marked as not built yet. Atlas draws it dotted next to what exists and lists what is left. Write the bodies, remove the marker, and the dots become solid.</p>
+  <p class="lede">Ask your agent for a change and it shows you the change, not a description of it: a <em>vision</em>, a sketch drawn beside the code as it is, where only what the code would add is <b class="g">green</b>. When you say yes, the sketch goes into your code as a <em>prophecy</em>, <b class="p">dotted purple</b>: the same shape, now real code that Atlas reads with real types, and a list of what is left to build. Write the bodies, remove the marker, and the dots become solid.</p>
   <div class="wide" data-tabs id="lifecycle">
     <div class="tabs" role="tablist" aria-label="The life of a design">
       <button role="tab" aria-selected="true" aria-controls="st-today" id="tb-today">Today</button>
@@ -279,25 +288,25 @@ section{margin-bottom:104px}
       <p class="cap">The route as it stands. You ask your agent: keep the smoothed months in a file.</p>
     </div>
     <div class="stage" role="tabpanel" id="st-vision" aria-labelledby="tb-vision">
-      <img src="img/interaction/vision.png" style="--w:1400" alt="The vision: a new route, run-archived, drawn beside the code as it is, with what it adds outlined">
-      <p class="cap">The vision, beside the code as it is. Nothing is written yet. A new route, <code>run-archived</code>, hands the smoothed months to an <code>Archive</code>.</p>
+      <img src="img/interaction/vision.png" style="--w:1400" alt="The vision: a new route, run-archived, drawn beside the code as it is; only the new Archive, its write step and the new route are filled green">
+      <p class="cap"><b>A sketch, nothing written.</b> Only what the code would add is green: the <code>Archive</code>, its <code>write</code> step and the new route. What it reuses stays plain.</p>
       <div class="cols">
-        <div class="say"><b>The agent</b><p id="say-vision"></p></div>
+        <figure class="code"><figcaption>What the agent sketched: signatures and calls in order, bodies empty</figcaption><pre id="sketch"></pre></figure>
       </div>
     </div>
     <div class="stage" role="tabpanel" id="st-prophecy" aria-labelledby="tb-prophecy">
-      <img src="img/interaction/prophecy.png" style="--w:1400" alt="The decided design drawn as a prophecy: the new route and the Archive in a dotted outline beside the built code">
-      <p class="cap">Decided. The sketch is in your code, marked, and Atlas draws it dotted. The finding about the empty <code>Archive.write</code> is gone: a prophecy is a todo, not a finding.</p>
+      <img src="img/interaction/prophecy.png" style="--w:1400" alt="The decided design drawn as a prophecy: the new route and the Archive in a dotted purple outline beside the built code">
+      <p class="cap"><b>Decided: the sketch is in your code, marked.</b> Atlas reads it as code, with real types, and draws it <span class="p">dotted purple</span>. <code>supersedes</code> says what the new route replaces; <code>sealed</code> ties a piece to a GitHub issue it waits on.</p>
       <div class="cols">
-        <pre class="snippet" id="snippet"></pre>
-        <div class="left" id="left-decided"></div>
+        <figure class="code"><figcaption>In your code: the marker is the purple line</figcaption><pre id="snippet"></pre></figure>
+        <figure class="code term"><figcaption>What is left to build, as Atlas lists it</figcaption><pre id="rev-decided"></pre></figure>
       </div>
     </div>
     <div class="stage" role="tabpanel" id="st-built" aria-labelledby="tb-built">
       <img src="img/interaction/built.png" style="--w:1400" alt="The same route, built: the boxes are solid">
-      <p class="cap">The bodies are written and the markers are gone: the same route, solid. What a prophecy waited on can be decided now.</p>
+      <p class="cap"><b>Built.</b> The bodies are written and the markers are gone: the same route, solid. The list shrinks to what still waits.</p>
       <div class="cols">
-        <div class="left" id="left-built"></div>
+        <figure class="code term"><figcaption>What is left to build, now</figcaption><pre id="rev-built"></pre></figure>
       </div>
     </div>
   </div>
@@ -387,48 +396,30 @@ function tabs(root) {
 }
 document.querySelectorAll('[data-tabs]').forEach(tabs);
 
-// what the cards say is what the tools answered in the run that drew the pictures (img/interaction/data.js)
+// the code and the lists are what the tools answered in the run that drew the pictures (img/interaction/data.js)
 const T = window.TOUR;
 if (T) {
-  const last = id => (id || '').split('.').pop();
   const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
-  const left = (box, data) => {
-    box.append(el('h3', null, data.prophecies.length ? 'What is left to build' : 'Nothing is left to build'));
-    if (!data.prophecies.length) return;
-    const ul = el('ul');
-    for (const p of data.prophecies) {
-      const li = el('li');
-      li.append(el('span', 'name', last(p.id)));
-      if (p.supersedes) li.append(el('span', 'what', 'replaces ' + last(p.supersedes)));
-      if (p.bodies) li.append(el('span', 'what', p.bodies + (p.bodies === 1 ? ' body to write' : ' bodies to write')));
-      const seal = data.seals.find(s => s.id === p.id);
-      if (seal) {
-        const number = seal.issue.split('#').pop();
-        li.append(el('span', 'pill ' + seal.state, seal.state === 'closed' ? 'sealed on #' + number + ': closed, the seal can be broken' : 'sealed on #' + number + ': still open'));
-      }
-      ul.append(li);
-    }
-    box.append(ul);
+  const issue = /raoulg\/atlas#(\d+)/;
+  // a line of code, or of a terminal: the marker lines in purple, a GitHub issue as a link
+  const fill = (id, text, marked) => {
+    const pre = document.getElementById(id);
+    text.split('\n').forEach((line, i, all) => {
+      const row = el('span', marked(line) ? 'm' : null);
+      const m = line.match(issue);
+      if (m) {
+        const at = line.indexOf(m[0]);
+        const a = el('a', null, m[0]);
+        a.href = 'https://github.com/raoulg/atlas/issues/' + m[1];
+        row.append(line.slice(0, at), a, line.slice(at + m[0].length));
+      } else row.textContent = line;
+      pre.append(row, i < all.length - 1 ? '\n' : '');
+    });
   };
-  left(document.getElementById('left-decided'), T.decided);
-  left(document.getElementById('left-built'), T.built);
-
-  const snippet = document.getElementById('snippet');
-  T.snippet.split('\n').forEach((line, i, all) => {
-    const row = el('span', line.startsWith('@prophecy') ? 'm' : null, line);
-    snippet.append(row, i < all.length - 1 ? '\n' : '');
-  });
-
-  const say = document.getElementById('say-vision');
-  const lines = T.texts.vision.split('\n');
-  const added = lines.filter(l => l.trim().startsWith('+ ')).map(l => l.trim().slice(2));
-  const found = lines.findIndex(l => l.startsWith('findings raised'));
-  say.append(el('span', 'ok', '+ '), added.join(', '));
-  if (found >= 0 && lines[found + 1]) {
-    const f = lines[found + 1].split('  ').slice(1).join('  ').trim();
-    const p = el('p', null, 'A question it raised: ' + f.charAt(0).toLowerCase() + f.slice(1));
-    say.parentElement.append(p);
-  }
+  fill('sketch', T.sketch, () => false);
+  fill('snippet', T.prophecy, l => l.startsWith('@prophecy'));
+  fill('rev-decided', T['revelation-decided'], l => /^\s+src\//.test(l));
+  fill('rev-built', T['revelation-built'], l => /^\s+src\//.test(l));
 }
 </script>
 </body>
