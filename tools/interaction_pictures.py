@@ -505,7 +505,7 @@ def main(atlas, out=None):
         # history: six commits; the fifth against the sixth, as one picture
         page.goto(server.url('/history'), wait_until='networkidle')
         settle(page, 2000)
-        page.set_viewport_size({'width': 2000, 'height': 450})
+        page.set_viewport_size({'width': 2000, 'height': 520})
         page.get_by_text('Leave out the months with too few').first.click()
         page.get_by_text('Mark the maxima of the cycles').first.click(modifiers=['Shift'])
         settle(page, 4000)
@@ -520,8 +520,17 @@ def main(atlas, out=None):
         page.screenshot(path=str(out / 'history-list.png'), clip={'x': 0, 'y': 50, 'width': 420, 'height': 330})
         view.get_by_role('button', name='fit', exact=True).click()
         page.wait_for_timeout(900)
+        # in on the new path, so that its text reads
+        for _ in range(2):
+            view.get_by_role('button', name='+', exact=True).click()
+            page.wait_for_timeout(400)
+        page.mouse.move(1500, 230)
+        page.mouse.down()
+        page.mouse.move(1235, 150, steps=12)
+        page.mouse.up()
+        page.wait_for_timeout(900)
         print('shot history', file=sys.stderr, flush=True)
-        page.screenshot(path=str(out / 'history.png'), clip={'x': 420, 'y': 0, 'width': 1580, 'height': 450})
+        page.screenshot(path=str(out / 'history.png'), clip={'x': 420, 'y': 0, 'width': 1580, 'height': 520})
         tour['commits'] = list(shas)
 
         # today: the route as it stands, before anyone points at anything

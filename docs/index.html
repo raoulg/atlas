@@ -151,14 +151,18 @@ b.g,b.b,b.p{font-weight:600}
 .key .sw.add{border-color:var(--add);background:color-mix(in oklab,var(--add) 26%,#fff)}
 .key .sw.del{border-color:#C0361C;background:color-mix(in oklab,#C0361C 20%,#fff)}
 .key .sw.chg{border-color:#B8860B;background:color-mix(in oklab,#B8860B 18%,#fff)}
-figure.code{flex:1 1 420px;max-width:100%}
+figure a.still{pointer-events:none}
+figcaption .demo{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;justify-content:flex-end}
+figure a.try{display:inline;padding:0;font-size:14px;font-weight:500;text-decoration-color:var(--good);text-underline-offset:3px}
+figure a.try:hover{color:var(--good)}
+figure.code{flex:1 1 440px;min-width:0;max-width:100%}
 figure.code figcaption{font-size:14px;color:var(--ink-2)}
 figure.code pre{border:0;font-size:12.5px;line-height:1.6;white-space:pre;overflow-x:auto}
 figure.code pre .m{color:var(--proph);font-weight:600}
 figure.code a{display:inline;padding:0;color:inherit;text-decoration-color:var(--accent);text-underline-offset:3px}
 figure.term{background:#1d1b19;border-color:#1d1b19}
 figure.term figcaption{color:#cfc8bd;border-bottom-color:#3a3631}
-figure.term pre{background:transparent;color:#ece6dc}
+figure.term pre{background:transparent;color:#ece6dc;white-space:pre-wrap;overflow-wrap:anywhere}
 figure.term pre .m{color:#b9b0ff}
 section{margin-bottom:104px}
 @media (max-width:760px){.top nav{display:none}.hero{padding-top:36px}.chap{margin-bottom:72px}}
@@ -204,14 +208,14 @@ section{margin-bottom:104px}
   <div class="pair">
     <figure class="sloppy">
       <figcaption><b>A sloppy script</b><span class="tag">sloppy</span></figcaption>
-      <a href="showcase/python-sloppy.html"><img src="img/showcase/python-sloppy.png" style="--w:1321" alt="Atlas's picture of the sloppy script: every step reads and changes one global, Global(sunspots.df), and two of them pick their own files"></a>
+      <a class="still"><img src="img/showcase/python-sloppy.png" style="--w:1321" alt="Atlas's picture of the sloppy script: every step reads and changes one global, Global(sunspots.df), and two of them pick their own files"></a>
     </figure>
     <figure class="elegant">
-      <figcaption><b>Typed and elegant</b><span class="tag">elegant</span></figcaption>
+      <figcaption><b>Typed and elegant</b><span class="demo"><a class="try" href="showcase/python-clean.html">Open the live picture and click around &rarr;</a><span class="tag">elegant</span></span></figcaption>
       <a href="showcase/python-clean.html"><img src="img/showcase/python-clean.png" style="--w:1841" alt="Atlas's picture of the typed pipeline: download runs only when no raw CSV is kept, the CSV stands between download and load, a DataFrame passes from load to smooth to Trend.save, and the command names every file"></a>
     </figure>
   </div>
-  <p class="explain">Both reach the same places: the web, the raw CSV, the figure. Inside they part. In the sloppy script every step reads and changes one global, <code>Global(sunspots.df)</code>, and nothing is handed from step to step. In the typed one the CSV stands between <code>download</code> and <code>load</code>, a <code>DataFrame</code> goes from step to step, and the command names every file. <span class="dot"></span>A red dot is a question Atlas asks the author. Click a picture to open it in Atlas.</p>
+  <p class="explain">Both reach the same places: the web, the raw CSV, the figure. Inside they part. In the sloppy script every step reads and changes one global, <code>Global(sunspots.df)</code>, and nothing is handed from step to step. In the typed one the CSV stands between <code>download</code> and <code>load</code>, a <code>DataFrame</code> goes from step to step, and the command names every file. <span class="dot"></span>A red dot is a question Atlas asks the author. Open the typed one in Atlas and click around: it is a live picture.</p>
 </section>
 
 <section class="chap" id="languages">
@@ -289,24 +293,24 @@ section{margin-bottom:104px}
     </div>
     <div class="stage" role="tabpanel" id="st-vision" aria-labelledby="tb-vision">
       <img src="img/interaction/vision.png" style="--w:1400" alt="The vision: a new route, run-archived, drawn beside the code as it is; only the new Archive, its write step and the new route are filled green">
-      <p class="cap"><b>A sketch, nothing written.</b> Only what the code would add is green: the <code>Archive</code>, its <code>write</code> step and the new route. What it reuses stays plain.</p>
+      <p class="cap"><b>A sketch, nothing written in your files.</b> Atlas reads the sketch as it reads code, so the picture is drawn with real types; it lives in the agent's request and is gone when it is decided or retracted. Only what the code would add is green: the <code>Archive</code>, its <code>write</code> step and the new route. What it reuses stays plain.</p>
       <div class="cols">
-        <figure class="code"><figcaption>What the agent sketched: signatures and calls in order, bodies empty</figcaption><pre id="sketch"></pre></figure>
+        <figure class="code"><figcaption>What the agent handed Atlas: signatures and calls in order, bodies empty. It has to parse, not to build.</figcaption><pre id="sketch"></pre></figure>
       </div>
     </div>
     <div class="stage" role="tabpanel" id="st-prophecy" aria-labelledby="tb-prophecy">
       <img src="img/interaction/prophecy.png" style="--w:1400" alt="The decided design drawn as a prophecy: the new route and the Archive in a dotted purple outline beside the built code">
-      <p class="cap"><b>Decided: the sketch is in your code, marked.</b> Atlas reads it as code, with real types, and draws it <span class="p">dotted purple</span>. <code>supersedes</code> says what the new route replaces; <code>sealed</code> ties a piece to a GitHub issue it waits on.</p>
+      <p class="cap"><b>Decided: the same sketch, now written in your files.</b> The one thing that is new is the marker, the <span class="p">purple line</span>: it says the code is not built yet, so Atlas draws it dotted and does not ask about its empty bodies. <code>supersedes</code> says what the new route replaces; <code>sealed</code> ties a piece to a GitHub issue it waits on.</p>
       <div class="cols">
-        <figure class="code"><figcaption>In your code: the marker is the purple line</figcaption><pre id="snippet"></pre></figure>
-        <figure class="code term"><figcaption>What is left to build, as Atlas lists it</figcaption><pre id="rev-decided"></pre></figure>
+        <figure class="code"><figcaption>In your code</figcaption><pre id="snippet"></pre></figure>
       </div>
     </div>
     <div class="stage" role="tabpanel" id="st-built" aria-labelledby="tb-built">
       <img src="img/interaction/built.png" style="--w:1400" alt="The same route, built: the boxes are solid">
-      <p class="cap"><b>Built.</b> The bodies are written and the markers are gone: the same route, solid. The list shrinks to what still waits.</p>
+      <p class="cap"><b>Built.</b> The bodies are written and the markers are gone: the same route, solid. Ask Atlas what is left, before and after:</p>
       <div class="cols">
-        <figure class="code term"><figcaption>What is left to build, now</figcaption><pre id="rev-built"></pre></figure>
+        <figure class="code term"><figcaption>When it was decided</figcaption><pre id="rev-decided"></pre></figure>
+        <figure class="code term"><figcaption>Now it is built</figcaption><pre id="rev-built"></pre></figure>
       </div>
     </div>
   </div>
