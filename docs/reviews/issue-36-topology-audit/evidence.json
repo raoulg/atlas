@@ -1,0 +1,401 @@
+{
+  "version": "atlas 0.66.1 (a4ad421)",
+  "date": "2026-10-16",
+  "method": "Captured immediately before ELK layout; no source changes in subject",
+  "exploredStates": 58,
+  "A": {
+    "closed": {
+      "view": {
+        "route": "rkg.cli.cmd_build"
+      },
+      "edgeCount": 69,
+      "edges": [
+        {
+          "hue": null,
+          "sides": null,
+          "a": "n:rkg.cli.cmd_build/4",
+          "b": "n:rkg.cli.cmd_build/5"
+        },
+        {
+          "reach": false,
+          "hue": null,
+          "sides": null,
+          "a": "w:Disk:in",
+          "b": "n:rkg.cli.cmd_build/4"
+        },
+        {
+          "reach": true,
+          "hue": null,
+          "sides": null,
+          "a": "w:File:assets/",
+          "b": "n:rkg.cli.cmd_build/4"
+        },
+        {
+          "back": true,
+          "hue": null,
+          "sides": null,
+          "a": "n:rkg.cli.cmd_build/4",
+          "b": "o:rkg.cli.cmd_build"
+        }
+      ]
+    },
+    "open": {
+      "view": {
+        "route": "rkg.cli.cmd_build",
+        "open": {
+          "steps": [
+            "rkg.cli.cmd_build/4"
+          ]
+        }
+      },
+      "edgeCount": 72,
+      "edges": [
+        {
+          "hue": null,
+          "sides": null,
+          "a": "n:rkg.cli.cmd_build/4/0",
+          "b": "n:rkg.cli.cmd_build/4/1"
+        },
+        {
+          "reach": false,
+          "hue": null,
+          "sides": null,
+          "a": "t:rkg.typen.moederschip.Variant",
+          "b": "n:rkg.cli.cmd_build/4/0"
+        },
+        {
+          "back": true,
+          "hue": null,
+          "sides": null,
+          "a": "n:rkg.cli.cmd_build/4/0",
+          "b": "o:rkg.cli.cmd_build/4"
+        },
+        {
+          "reach": false,
+          "hue": null,
+          "sides": null,
+          "a": "w:Disk:in",
+          "b": "n:rkg.cli.cmd_build/4/1"
+        },
+        {
+          "reach": false,
+          "hue": null,
+          "sides": null,
+          "a": "w:File:assets/",
+          "b": "n:rkg.cli.cmd_build/4/1"
+        },
+        {
+          "back": true,
+          "hue": null,
+          "sides": null,
+          "a": "n:rkg.cli.cmd_build/4/1",
+          "b": "o:rkg.cli.cmd_build/4"
+        },
+        {
+          "reach": false,
+          "hue": null,
+          "sides": null,
+          "a": "w:Disk:in",
+          "b": "o:rkg.cli.cmd_build/4"
+        }
+      ]
+    }
+  },
+  "B": [
+    {
+      "unit": "rkg.cli",
+      "states": [
+        {
+          "view": {
+            "focus": [
+              "rkg.cli"
+            ]
+          },
+          "contextEdges": [
+            {
+              "a": "n:unit:rkg.cli",
+              "b": "n:unit:~out",
+              "label": "3 types"
+            }
+          ]
+        },
+        {
+          "view": {
+            "focus": [
+              "rkg.cli"
+            ],
+            "open": {
+              "units": [
+                "rkg.cli"
+              ]
+            }
+          },
+          "contextEdges": []
+        }
+      ]
+    },
+    {
+      "unit": "rkg.graph",
+      "states": [
+        {
+          "view": {
+            "focus": [
+              "rkg.graph"
+            ]
+          },
+          "contextEdges": [
+            {
+              "a": "n:unit:~in",
+              "b": "n:unit:rkg.graph",
+              "label": "9 types"
+            },
+            {
+              "a": "n:unit:rkg.graph",
+              "b": "n:unit:~out",
+              "label": "7 types"
+            }
+          ]
+        },
+        {
+          "view": {
+            "focus": [
+              "rkg.graph"
+            ],
+            "open": {
+              "units": [
+                "rkg.graph"
+              ]
+            }
+          },
+          "contextEdges": [
+            {
+              "a": "n:unit:~in",
+              "b": "n:unit:rkg.graph.build",
+              "label": "4 types"
+            },
+            {
+              "a": "n:unit:rkg.graph.build",
+              "b": "n:unit:~out",
+              "label": "1 type"
+            },
+            {
+              "a": "n:unit:~in",
+              "b": "n:unit:rkg.graph.classify",
+              "label": "1 type"
+            },
+            {
+              "a": "n:unit:rkg.graph.classify",
+              "b": "n:unit:~out",
+              "label": "1 type"
+            },
+            {
+              "a": "n:unit:rkg.graph.kaarten",
+              "b": "n:unit:~out",
+              "label": "2 types"
+            },
+            {
+              "a": "n:unit:~in",
+              "b": "n:unit:rkg.graph.kaartvlakken",
+              "label": "1 type"
+            },
+            {
+              "a": "n:unit:rkg.graph.kaartvlakken",
+              "b": "n:unit:~out",
+              "label": "1 type"
+            },
+            {
+              "a": "n:unit:~in",
+              "b": "n:unit:rkg.graph.markdown",
+              "label": "1 type"
+            },
+            {
+              "a": "n:unit:rkg.graph.merge",
+              "b": "n:unit:~out",
+              "label": "3 types"
+            },
+            {
+              "a": "n:unit:~in",
+              "b": "n:unit:rkg.graph.ow",
+              "label": "3 types"
+            },
+            {
+              "a": "n:unit:rkg.graph.ow",
+              "b": "n:unit:~out",
+              "label": "1 type"
+            },
+            {
+              "a": "n:unit:~in",
+              "b": "n:unit:rkg.graph.parse",
+              "label": "3 types"
+            },
+            {
+              "a": "n:unit:rkg.graph.parse",
+              "b": "n:unit:~out",
+              "label": "1 type"
+            },
+            {
+              "a": "n:unit:~in",
+              "b": "n:unit:rkg.graph.raster",
+              "label": "1 type"
+            },
+            {
+              "a": "n:unit:rkg.graph.raster",
+              "b": "n:unit:~out",
+              "label": "1 type"
+            },
+            {
+              "a": "n:unit:rkg.graph.uitvoering",
+              "b": "n:unit:~out",
+              "label": "2 types"
+            },
+            {
+              "a": "n:unit:~in",
+              "b": "n:unit:rkg.graph.visie",
+              "label": "1 type"
+            },
+            {
+              "a": "n:unit:rkg.graph.visie",
+              "b": "n:unit:~out",
+              "label": "1 type"
+            },
+            {
+              "a": "n:unit:~in",
+              "b": "n:unit:rkg.graph.xml_helpers",
+              "label": "1 type"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "unit": "rkg.variant",
+      "states": [
+        {
+          "view": {
+            "focus": [
+              "rkg.variant"
+            ]
+          },
+          "contextEdges": [
+            {
+              "a": "n:unit:~in",
+              "b": "n:unit:rkg.variant",
+              "label": "1 type"
+            },
+            {
+              "a": "n:unit:rkg.variant",
+              "b": "n:unit:~out",
+              "label": "1 type"
+            }
+          ]
+        },
+        {
+          "view": {
+            "focus": [
+              "rkg.variant"
+            ],
+            "open": {
+              "units": [
+                "rkg.variant"
+              ]
+            }
+          },
+          "contextEdges": []
+        }
+      ]
+    }
+  ],
+  "C": {
+    "view": {
+      "part": "rkg"
+    },
+    "dropped": [
+      {
+        "a": "w:File:scripts/regelschouw/",
+        "b": "n:unit:scripts",
+        "info": {
+          "reach": false,
+          "hue": null,
+          "sides": null
+        },
+        "missingA": true,
+        "missingB": false
+      },
+      {
+        "a": "n:unit:scripts",
+        "b": "w:File:scripts/regelschouw/",
+        "info": {
+          "reach": false,
+          "hue": null,
+          "sides": null
+        },
+        "missingA": false,
+        "missingB": true
+      }
+    ],
+    "places": [
+      {
+        "id": "w:File:scripts/",
+        "label": "File(scripts/) · 10",
+        "short": "scripts/ · 10",
+        "kind": "world",
+        "folded": "scripts/",
+        "inside": {
+          "marks": {},
+          "asks": []
+        },
+        "standsFor": true
+      },
+      {
+        "id": "w:File:scripts/",
+        "label": "File(scripts/) · 10",
+        "short": "scripts/ · 10",
+        "kind": "world",
+        "folded": "scripts/",
+        "inside": {
+          "marks": {},
+          "asks": []
+        },
+        "standsFor": true
+      }
+    ],
+    "keyMismatches": [
+      {
+        "key": "w:File:scripts/regelschouw/",
+        "id": "w:File:scripts/"
+      }
+    ]
+  },
+  "D": {
+    "view": {
+      "route": "audit.main"
+    },
+    "site": {
+      "to": "audit.consume",
+      "line": 1,
+      "hands": [
+        {
+          "name": "a",
+          "type": "audit.Record"
+        },
+        {
+          "name": "b",
+          "type": "audit.Record"
+        }
+      ]
+    },
+    "consumer": [
+      {
+        "id": "n:audit.main/0",
+        "D": [
+          [
+            "t:audit.Record",
+            false
+          ]
+        ],
+        "C": []
+      }
+    ]
+  },
+  "validation": "Portable probe rerun: 11 real-subject states and 1 synthetic state; same four mechanisms reproduced"
+}
