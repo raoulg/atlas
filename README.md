@@ -114,6 +114,12 @@ brew "atlas-code", args: ["HEAD"]         # the nightly; leave out `args` for th
 
 `atlas --version` says which one you have: `0.66.2`, or `0.67.0-nightly (b0ead14)`.
 
+Once a day, `atlas serve`, `view`, `check`, `changes`, `history` and `revelation` tell you on stderr when a
+newer build of your channel is out, with the command that upgrades the way you installed it
+(`brew upgrade atlas-code`, the install script, or `cargo install`). It asks GitHub once a day through
+`curl`, in the background, and stays silent when stderr is not a terminal, in CI, or with
+`ATLAS_NO_UPDATE_CHECK=1`.
+
 ## Use
 
 ```bash

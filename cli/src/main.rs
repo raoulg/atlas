@@ -4,6 +4,7 @@ mod log;
 mod mcp;
 mod serve;
 mod shared;
+mod update;
 
 use std::path::{Path, PathBuf};
 
@@ -536,6 +537,8 @@ fn columns() -> Option<usize> {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
+    // a person's commands say when a newer build is out; the agent's and the graph's do not
+    let update = if matches!(cli.cmd, Cmd::Mcp | Cmd::Analyze { .. }) { None } else { Some(update::begin()) };
     let cache = if cli.no_cache { None } else { atlas_engine::cache::Cache::new(VERSION.as_str()) };
     let mut opts = Options { libraries: cli.libraries, cache, ..Options::default() };
     match cli.cmd {
@@ -643,6 +646,9 @@ fn main() -> Result<()> {
             eprintln!("entries {} · make targets {}", g.nodes.iter().filter(|n| n.entry.is_some()).count(), g.make.len());
             eprintln!("wrote {}", out.display());
         }
+    }
+    if let Some(update) = update {
+        update.finish();
     }
     Ok(())
 }
