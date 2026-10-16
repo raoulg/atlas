@@ -132,6 +132,11 @@ The rigorous half and the visual half are the same structure. Read `docs/referen
 - A viewer change is walked on the subjects before it is committed: `uv run tools/pictures.py
   walk <atlas> <repo> <dir>` opens every package, every route and every family in a route, and
   must report no view that throws, draws nothing, or opens a family into other moments.
+- A viewer change also keeps the topology of zoom: `uv run tools/pictures.py topology <atlas> <repo> <dir>` opens one
+  box at a time in each route and must report no box that takes a line away, moves a box into or out of a frame
+  that is not the one opened, or does not close to the picture it was (`docs/reference/mathematics.md`,
+  "Refinement keeps what it does not refine"), beyond the ones tracked in #39, #40, #41 and #43. Lines the open box draws
+  beyond the closed one are listed as `more` and are tracked in #38.
 - `atlas check .` must find nothing on Atlas itself (`engine/tests/principles.rs` pins it).
   A new principle is a rule in `engine/src/principles.rs`, a case in the fixture, a clean and a
   sloppy case in the pairs, and a section in `docs/reference/principles.md`; it checks what the graph

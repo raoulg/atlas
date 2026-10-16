@@ -1,0 +1,489 @@
+<!doctype html><html lang="nl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Atlas · onafhankelijke topologie-audit #36</title><style>
+:root{color-scheme:light dark;--bg:#f7f6f2;--paper:#fff;--ink:#202b33;--muted:#596875;--line:#d9dfdf;--accent:#136b68;--tint:#edf5f2;--code:#f1f3f3;--risk:#895019}
+@media(prefers-color-scheme:dark){:root{--bg:#151b20;--paper:#1c242b;--ink:#ecf0ee;--muted:#aebdc5;--line:#35434d;--accent:#8bd2c5;--tint:#243a3a;--code:#26323a;--risk:#e4b480}}
+*{box-sizing:border-box}html{scroll-behavior:smooth;scroll-padding-top:22px}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}a{color:var(--accent);text-underline-offset:3px}a:hover{text-decoration-thickness:2px}.layout{max-width:1500px;margin:auto;display:grid;grid-template-columns:265px minmax(0,1fr);gap:38px;padding:30px 34px}.rail{align-self:start;position:sticky;top:28px;max-height:92vh;overflow:auto;font-size:13px}.rail-title{font-size:18px;font-weight:650;margin:0 0 6px}.rail-sub{color:var(--muted);margin:0 0 22px}.rail ul{list-style:none;padding-left:12px}.rail>.toc>ul{padding:0}.rail li{margin:9px 0}.rail li li{margin:7px 0}.rail a{text-decoration:none;color:var(--muted)}.rail a:hover{color:var(--accent)}main{min-width:0;background:var(--paper);border:1px solid var(--line);padding:46px 56px 60px;border-radius:4px}h1{font-size:38px;line-height:1.15;letter-spacing:-1px;margin:0 0 22px;max-width:750px}h1+p{font-size:13px;color:var(--muted);border-bottom:1px solid var(--line);padding-bottom:22px}h1+p+p{font-size:19px;line-height:1.6;border-left:4px solid var(--accent);padding:8px 0 8px 20px}h2{font-size:27px;line-height:1.25;margin:52px 0 20px;padding-top:26px;border-top:1px solid var(--line);letter-spacing:-.3px}h3{font-size:20px;line-height:1.35;margin:32px 0 14px}p{margin:13px 0}strong{font-weight:650}code{font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--code);padding:2px 4px;border-radius:3px;overflow-wrap:anywhere}pre{padding:20px 22px;background:var(--code);overflow:auto;border-radius:4px;line-height:1.5}pre code{padding:0;background:none;overflow-wrap:normal;font-size:12px}table{width:100%;border-collapse:collapse;margin:24px 0;font-size:13px;line-height:1.55;table-layout:fixed}thead{background:var(--tint)}th{text-align:left;font-weight:650}th,td{padding:12px 11px;vertical-align:top;border-bottom:1px solid var(--line);overflow-wrap:anywhere}td:first-child{font-weight:550}table code{font-size:11.5px}li{margin:9px 0}figure{margin:36px 0;padding:18px 0;border-block:1px solid var(--line)}figure svg{width:100%;height:auto;color:var(--accent)}figure text{fill:var(--ink);font:14px ui-monospace,SFMono-Regular,monospace}.diagram-kicker{font:11px sans-serif;font-weight:650;letter-spacing:1px}.diagram-note{font:11px sans-serif;fill:var(--muted)}.box{fill:var(--tint);stroke:var(--line)}.frame{fill:none;stroke:var(--accent)}.port{fill:var(--paper);stroke:var(--accent);stroke-width:2}.relation{fill:none;stroke:currentColor;stroke-width:1.7;marker-end:url(#arrow)}.projection{fill:none;stroke:var(--muted);stroke-dasharray:4 4;marker-end:url(#arrow)}figcaption{font-size:12px;color:var(--muted);line-height:1.5}.footer{margin-top:38px;border-top:1px solid var(--line);padding-top:18px;font-size:13px;color:var(--muted)}
+@media(max-width:1100px){.layout{grid-template-columns:200px minmax(0,1fr);padding:20px;gap:20px}main{padding:32px}h1{font-size:32px}}
+@media(max-width:760px){.layout{display:block;padding:12px}.rail{position:static;max-height:none}.rail .toc{display:none}.rail-sub{margin-bottom:16px}main{padding:24px 18px}h1{font-size:28px}h2{font-size:24px}table{table-layout:auto;font-size:12px}th,td{padding:9px 7px}.table-wrap{overflow:auto}table{min-width:660px}figure{overflow:auto}figure svg{min-width:720px}}
+@media print{.rail{display:none}.layout{display:block;padding:0}main{border:0;padding:0}body{font-size:10pt;background:#fff;color:#111}h1{font-size:24pt}h2{font-size:17pt;break-after:avoid}h3{break-after:avoid}table{font-size:8pt}pre{white-space:pre-wrap}a{color:inherit}figure{break-inside:avoid}}
+</style></head><body><div class="layout"><nav class="rail" aria-label="Inhoud"><p class="rail-title">Atlas / audit #36</p><p class="rail-sub">Wetten → UI-keuzes → bewijs<br>0.66.1 · 16 oktober 2026</p><div class="toc">
+<ul>
+<li><a href="#atlas-dezelfde-graph-op-ieder-zoomniveau">Atlas: dezelfde graph, op ieder zoomniveau</a><ul>
+<li><a href="#1-leeswijzer-en-bewijsgrens">1. Leeswijzer en bewijsgrens</a></li>
+<li><a href="#2-wat-de-wiskunde-precies-moet-beloven">2. Wat de wiskunde precies moet beloven</a><ul>
+<li><a href="#topologie-alleen-beschrijft-de-pijlen-niet">Topologie alleen beschrijft de pijlen niet</a></li>
+<li><a href="#een-vaste-semantische-drager">Eén vaste semantische drager</a></li>
+<li><a href="#de-wetten-vertaald-naar-ui-keuzes">De wetten vertaald naar UI-keuzes</a></li>
+</ul>
+</li>
+<li><a href="#3-vier-aangetoonde-schendingen">3. Vier aangetoonde schendingen</a><ul>
+<li><a href="#a-stap-openen-verliest-zijn-resultaatverbinding">A · Stap openen verliest zijn resultaatverbinding</a></li>
+<li><a href="#b-package-in-focus-openen-verliest-the-rest">B · Package in focus openen verliest “the rest”</a></li>
+<li><a href="#c-directoryquotient-maakt-een-ongeldig-endpoint">C · Directoryquotient maakt een ongeldig endpoint</a></li>
+<li><a href="#d-typeprojectie-identificeert-twee-benoemde-waarden">D · Typeprojectie identificeert twee benoemde waarden</a></li>
+</ul>
+</li>
+<li><a href="#4-van-graph-naar-scherm-inventaris-van-keuzes">4. Van graph naar scherm: inventaris van keuzes</a></li>
+<li><a href="#5-wiskundige-aanscherpingen-voor-de-specificatie">5. Wiskundige aanscherpingen voor de specificatie</a><ul>
+<li><a href="#gluing-vereist-een-gekozen-categorie">Gluing vereist een gekozen categorie</a></li>
+<li><a href="#een-fiber-openen-vereist-zijn-grens">Een fiber openen vereist zijn grens</a></li>
+<li><a href="#saturatie-geldt-voor-de-relevante-structuur">Saturatie geldt voor de relevante structuur</a></li>
+<li><a href="#forestwetten-gelden-alleen-voor-de-gekozen-forest">Forestwetten gelden alleen voor de gekozen forest</a></li>
+<li><a href="#coarse-reach-kan-fictieve-routes-suggereren">Coarse reach kan fictieve routes suggereren</a></li>
+</ul>
+</li>
+<li><a href="#6-een-uitvoerbare-controle-voor-claude">6. Een uitvoerbare controle voor Claude</a><ul>
+<li><a href="#eerst-een-canonieke-semantische-planning">Eerst één canonieke semantische planning</a></li>
+<li><a href="#de-oracle">De oracle</a></li>
+</ul>
+</li>
+<li><a href="#7-wat-geen-schending-hoeft-te-zijn">7. Wat geen schending hoeft te zijn</a></li>
+<li><a href="#8-overdracht-en-reproduceren">8. Overdracht en reproduceren</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</nav><main><h1 id="atlas-dezelfde-graph-op-ieder-zoomniveau">Atlas: dezelfde graph, op ieder zoomniveau</h1>
+<p>Onafhankelijke wiskundige en UI-audit voor <a href="https://github.com/raoulg/atlas/issues/36">issue #36</a> · 16 oktober 2026 · Codex</p>
+<p><strong>Hoofdbevinding.</strong> De zorg is terecht: vier reproduceerbare gevallen schenden het behoud van incidentie, grensverbindingen of waarde-identiteit. De structurele oorzaak is dat de viewer op verschillende zoomniveaus verschillende reconstructies maakt, zonder een expliciete projectie die aantoont dat de grove voorstelling het beeld van de fijne is. Een controle op het aantal lijnen is onvoldoende.</p>
+<p>Dit document bevat onderzoeksbevindingen en een voorstel voor toetsbare wetten. Het is geen wijziging van de normatieve wiskundereferentie van Atlas.</p>
+<h2 id="1-leeswijzer-en-bewijsgrens">1. Leeswijzer en bewijsgrens</h2>
+<p>De analyse begint bij <code>Graph</code>, volgt <code>Flow</code> en de semantische planning in <code>renderPlaat</code>, en eindigt bij containment, ELK, SVG en interactie. Het uitgangspunt is <code>docs/reference/design.md</code> §0–1 en <code>docs/reference/mathematics.md</code>.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Basis</th>
+<th>Vastlegging</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Onderzoeksbranch</td>
+<td><code>codex/topology-audit-36</code>, eigen worktree</td>
+</tr>
+<tr>
+<td>Issuebasis</td>
+<td><code>9ee8ff16a6760bf693a1a78d518b5c5f2407c0d8</code></td>
+</tr>
+<tr>
+<td>Geteste installatie</td>
+<td><code>atlas 0.66.1 (a4ad421)</code></td>
+</tr>
+<tr>
+<td>Bronverwijzingen hieronder</td>
+<td>Vastgezet op commit <code>a4ad4212d6e208bca91f21f26ec65104b2e227b9</code></td>
+</tr>
+<tr>
+<td>Onderwerp</td>
+<td><code>/Users/rgrouls/code/PU/ruimtelijke-knowledge-graph</code></td>
+</tr>
+<tr>
+<td>Methode</td>
+<td>Geëxporteerde HTML van de geïnstalleerde binary, geïsoleerde headless Chrome, meting vóór ELK</td>
+</tr>
+</tbody>
+</table></div>
+<p>De enginebestanden <code>flow.rs</code>, <code>families.rs</code> en <code>view.rs</code> zijn op beide bases gelijk. De viewer verschilt in prophecy-presentatie; de onderzochte plaatsings- en projectiecode is gelijk. De analyse beoordeelt deze vaste code, niet Claudes lopende wijzigingen. De broncode en live serve-sessie van het onderwerp zijn niet gewijzigd.</p>
+<p><strong>Bewijslabels:</strong> <strong>aangetoond</strong> betekent uitgevoerd op de echte viewer; <strong>codefeit</strong> betekent rechtstreeks uit de bron afleidbaar; <strong>te toetsen</strong> betekent een concrete bewijslast, geen bevestigde bug. Een uitgevoerde toestand zonder fout is geen bewijs voor alle mogelijke toestanden.</p>
+<h2 id="2-wat-de-wiskunde-precies-moet-beloven">2. Wat de wiskunde precies moet beloven</h2>
+<h3 id="topologie-alleen-beschrijft-de-pijlen-niet">Topologie alleen beschrijft de pijlen niet</h3>
+<p>Een partitie van een vaste verzameling bepaalt een topologie: alle verenigingen van blokken zijn open. Een fijnere partitie geeft op diezelfde verzameling een fijnere topologie. Daarin staan echter nog geen richting, edge-soort, call occurrence, waardeversie of betekenis van een kader. Twee graphs met dezelfde vertices en verschillende pijlen kunnen precies dezelfde partitietopologie hebben.</p>
+<p>Daarom is “een edge verdwijnt, dus een topologisch axioma faalt” te onbepaald. Het precieze verwijt is sterker en beter testbaar: <strong>Atlas verbreekt zijn beloofde structuurbehoud bij refinement.</strong> Voor richting en incidentie is een gerichte graph met afzonderlijke edge-identiteiten nodig; voor frames ook een grens- en eigendomsstructuur. De definitie van quivers als twee verzamelingen met source- en target-afbeeldingen staat bij <a href="https://emilyriehl.github.io/files/context.pdf">Riehl, <em>Category Theory in Context</em>, oefeningen 3.6.iv en 6.2.ii</a>. Dit auditcontract is onze toepassing daarop.</p>
+<h3 id="een-vaste-semantische-drager">Eén vaste semantische drager</h3>
+<p>Noem <code>S</code> de semantische structuur van één reading: call occurrences, benoemde waarden en hun momenten, plaatsen, eigen effects, bereikte effects, gerichte incidenties en grenzen. Fixeer vervolgens een filter <code>F</code>. Een zuivere zoom verandert de partitie van <code>S_F</code>, niet <code>S_F</code> zelf.</p>
+<pre><code class="language-text">                    π_fijn
+       S_F ──────────────────────► P_fijn
+        │                            │
+        │ π_grof                     │ ρ: terugprojectie
+        ▼                            ▼
+       P_grof ◄──────────────────────┘
+
+                   π_grof = ρ ∘ π_fijn
+</code></pre>
+<p><code>P</code> is hier de semantische voorstelling vóór de geometrie. Het diagram moet gelden voor de identiteiten en incidenties die een voorstelling beweert te tonen. Functionele stapframes vereisen grenspoorten: een functionele pijl openvouwen is niet simpelweg een vertex in een kale quiver splitsen. Onzichtbare interne relaties blijven als bewijs in <code>S</code> aanwezig.</p>
+<h3 id="de-wetten-vertaald-naar-ui-keuzes">De wetten vertaald naar UI-keuzes</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Wet</th>
+<th>Wiskundige eis</th>
+<th>Betekenis in de UI</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>W1 · vaste fiber</td>
+<td><code>S_F</code> verandert niet bij één zoomactie</td>
+<td>Openen kiest geen andere routes, effecten of calls.</td>
+</tr>
+<tr>
+<td>W2 · refinement</td>
+<td><code>π_grof = ρ ∘ π_fijn</code></td>
+<td>Iedere verfijnde box heeft een unieke grove vertegenwoordiger. Buiten het geopende blok is die afbeelding de identiteit.</td>
+</tr>
+<tr>
+<td>W3 · incidentie</td>
+<td>Source en target zijn compatibel met projectie</td>
+<td>Elke getoonde grensverbinding heeft fijne getuigen met dezelfde richting en semantiek. Geen nieuwe verbinding zonder getuige.</td>
+</tr>
+<tr>
+<td>W4 · grensbehoud</td>
+<td>De interface van een blok is de projectie van zijn verfijnde grens</td>
+<td>Wat een gesloten functie teruggeeft, gaat ook vanuit haar geopende kader naar dezelfde consument.</td>
+</tr>
+<tr>
+<td>W5 · identiteit</td>
+<td>Een typequotient werkt op de typecomponent</td>
+<td><code>(waarde-id, moment, type)</code> wordt <code>(waarde-id, moment, typeklasse)</code>. <code>a</code> en <code>b</code> blijven verschillende waarden.</td>
+</tr>
+<tr>
+<td>W6 · eigendom</td>
+<td>Eigendom volgt uit <code>S_F</code>, niet uit welke gebruikers zichtbaar zijn</td>
+<td>Een wereldplaats wordt bij het openen van een package geen bezit van dat package. Een werkelijk intern tussentoestandobject mag binnen een stap staan.</td>
+</tr>
+<tr>
+<td>W7 · orthogonale zooms</td>
+<td>Op dezelfde drager geeft common refinement niet-lege doorsneden van blokken</td>
+<td>Package- en familiezoom mogen elkaars drager of waarde-identiteit niet wijzigen.</td>
+</tr>
+<tr>
+<td>W8 · saturatie</td>
+<td><code>A = q⁻¹(q(A))</code></td>
+<td>Filteren vóór groeperen. Een filter op de grove graph is alleen zonder extra informatie hetzelfde als zijn predicate op iedere volledige klasse constant is.</td>
+</tr>
+<tr>
+<td>W9 · provenance</td>
+<td>Geaggregeerde relaties bewaren hun fijne getuigen en kanalen</td>
+<td>Eigen effects, reach, dataflow en louter calls blijven te onderscheiden, ook bij één endpointpaar.</td>
+</tr>
+<tr>
+<td>W10 · layout</td>
+<td>Geometrie realiseert de geplande incidenties</td>
+<td>ELK, pinnen en camera kunnen geen semantische plaats of verbinding verwijderen.</td>
+</tr>
+</tbody>
+</table></div>
+<p>W2–W4 eisen gelijkheid van de geprojecteerde <strong>betekenis</strong>, niet gelijkheid van SVG-id’s, lijnaantallen of pixelposities. Twee lijnen mogen één bundel worden met behoud van beide getuigen. Bij een vertexquotient kunnen interne lijnen zelflussen worden; een expliciet looploos presentatiemodel kan deze verbergen. Een ontbrekend extern endpoint is geen intern geworden lijn.</p>
+<p>Het universele principe achter een quotient is factorisatie door de identificatie; zie <a href="https://math.stanford.edu/~conrad/diffgeomPage/handouts/qtmanifold.pdf">Conrad, <em>Quotients by group actions</em>, lemma 2.10</a>. De typed, gerichte en grensbewarende voorwaarden hierboven zijn aanvullende eisen van Atlas.</p>
+<figure aria-labelledby="diagram-caption"><svg viewBox="0 0 880 226" role="img" aria-label="Een gesloten functie en dezelfde functie geopend. De uitgaande verbinding naar de consument blijft behouden.">
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10Z" fill="currentColor"/></marker></defs>
+<text x="22" y="26" class="diagram-kicker">GESLOTEN</text><text x="442" y="26" class="diagram-kicker">GEOPEND · DEZELFDE INTERFACE</text>
+<rect x="22" y="86" width="194" height="48" rx="12" class="box"/><text x="119" y="115" text-anchor="middle">naslag_mappen</text>
+<path d="M216 110 H278" class="relation"/><rect x="280" y="86" width="132" height="48" rx="12" class="box"/><text x="346" y="115" text-anchor="middle">consument</text>
+<rect x="442" y="49" width="250" height="132" rx="3" class="frame"/><text x="456" y="72">naslag_mappen</text>
+<rect x="456" y="90" width="112" height="38" rx="10" class="box"/><text x="512" y="114" text-anchor="middle">interne call</text>
+<path d="M569 110 H590" class="relation"/><rect x="592" y="90" width="76" height="38" rx="10" class="box"/><text x="630" y="114" text-anchor="middle">eigen pijl</text>
+<circle cx="692" cy="110" r="5" class="port"/><path d="M669 110 H726" class="relation"/>
+<rect x="728" y="86" width="132" height="48" rx="12" class="box"/><text x="794" y="115" text-anchor="middle">consument</text>
+<text x="456" y="158" class="diagram-note">grenspoort bewaart de resultaatrelatie</text>
+<path d="M566 188 V207 H120 V145" class="projection"/><text x="278" y="201" class="diagram-note">ρ: terugprojectie</text>
+</svg><figcaption id="diagram-caption">Schema van de vereiste wet; geen screenshot van de huidige viewer. De precieze poortvorm is een implementatiekeuze.</figcaption></figure><h2 id="3-vier-aangetoonde-schendingen">3. Vier aangetoonde schendingen</h2>
+<h3 id="a-stap-openen-verliest-zijn-resultaatverbinding">A · Stap openen verliest zijn resultaatverbinding</h3>
+<p><strong>Aangetoond · W3, W4 · gebruikersmelding bevestigd.</strong></p>
+<p>Toestand: <code>{"route":"rkg.cli.cmd_build"}</code>. De gesloten call occurrence <code>rkg.cli.cmd_build/4</code> (<code>naslag_mappen</code>) heeft een draad naar <code>/5</code> (<code>OwBronnen.lees</code>). Met <code>open.steps = ["rkg.cli.cmd_build/4"]</code> ontbreekt iedere uitgaande grensverbinding van dat geopende kader naar <code>/5</code>. Hetzelfde mechanisme treedt op bij de tweede <code>naslag_mappen</code>-call, <code>/7</code>.</p>
+<p>De viewer telt in de eerste overgang 69 en 72 edges: <strong>meer edges, en toch verlies van de interface</strong>. Een test op monotone aantallen accepteert dus deze fout.</p>
+<p>Mechanisme: <a href="https://github.com/raoulg/atlas/blob/a4ad4212d6e208bca91f21f26ec65104b2e227b9/viewer/index.html#L1272"><code>stepMorphism</code></a> neemt <code>site.hands</code> en <code>site.gives</code> alleen mee onder <code>site &amp;&amp; !own</code>. <a href="https://github.com/raoulg/atlas/blob/a4ad4212d6e208bca91f21f26ec65104b2e227b9/viewer/index.html#L1308"><code>build</code></a> bouwt bij openen de eigen pill met <code>own=true</code>. Binnenkomende calls krijgen een <code>backTo</code>, maar de resultaatinterface naar de externe consument heeft geen behouden vertegenwoordiger. De <a href="https://github.com/raoulg/atlas/blob/a4ad4212d6e208bca91f21f26ec65104b2e227b9/viewer/index.html#L1522">anonymous-wire omzetting</a> kan dan de externe draad niet vormen.</p>
+<p><strong>Acceptatie:</strong> projecteer alle interne stappen en de eigen pill terug naar de gesloten occurrence; de resultaatdraad naar <code>/5</code> moet terugkomen, met zijn oorspronkelijke producer/consumer-getuige. Een lijn naar de eigen caller is geen vervanging voor een lijn naar die consument.</p>
+<h3 id="b-package-in-focus-openen-verliest-the-rest">B · Package in focus openen verliest “the rest”</h3>
+<p><strong>Aangetoond · W1, W3, W4 · onafhankelijk van A.</strong></p>
+<p>Toestand: <code>{"focus":["rkg.variant"]}</code>. Gesloten zijn er twee contextverbindingen: <code>~in → rkg.variant</code> en <code>rkg.variant → ~out</code>, ieder met één type. Bij toevoegen van <code>open.units = ["rkg.variant"]</code> verdwijnen beide. De focus is ongewijzigd. Bij <code>rkg.cli</code> verdwijnt analoog de uitgaande contextverbinding van drie typen. Bij <code>rkg.graph</code> worden de verbindingen wél verdeeld over de subpackages.</p>
+<p>Mechanisme: <a href="https://github.com/raoulg/atlas/blob/a4ad4212d6e208bca91f21f26ec65104b2e227b9/viewer/index.html#L1233"><code>unitMorphism</code></a> registreert <code>restLinks</code>. Bij de overgang naar losse routes gebruikt de viewer <code>morphism</code>, dat deze contextinterface niet registreert. De <a href="https://github.com/raoulg/atlas/blob/a4ad4212d6e208bca91f21f26ec65104b2e227b9/viewer/index.html#L1330">constructie van <code>restArrows</code></a> hangt daardoor af van het soort zichtbare kind, niet alleen van de gekozen focus.</p>
+<p><strong>Acceptatie:</strong> behoud de typenverzameling van iedere gerichte contextverbinding onder terugprojectie. Sommeer aantallen niet blind: één type dat bij twee kinderen kruist moet op het grove niveau nog steeds als één distinct type tellen.</p>
+<h3 id="c-directoryquotient-maakt-een-ongeldig-endpoint">C · Directoryquotient maakt een ongeldig endpoint</h3>
+<p><strong>Aangetoond · W2, W3, W10 · onafhankelijk van A en B.</strong></p>
+<p>In de overview en de rkg-packageweergave plannen pills beide richtingen met <code>w:File:scripts/regelschouw/</code>. De nodeplanner bevat dat endpoint niet. Hij bevat <code>w:File:scripts/</code>. <code>addEdge</code> slaat beide geplande relaties stil over. De geëxporteerde semantische planning bevat bovendien twee place-records met dezelfde <code>id: w:File:scripts/</code> onder verschillende Map-keys.</p>
+<p>Mechanisme: in de <a href="https://github.com/raoulg/atlas/blob/a4ad4212d6e208bca91f21f26ec65104b2e227b9/viewer/index.html#L1496">directoryomzetting</a> wordt bij het invoegen van directorynodes <code>places.set("w:File:" + d, filePlace(d))</code> gebruikt. <code>filePlace(d)</code> kan zelf een grovere id opleveren. De Map-key en record-id zijn dan verschillend. <a href="https://github.com/raoulg/atlas/blob/a4ad4212d6e208bca91f21f26ec65104b2e227b9/viewer/index.html#L1760"><code>addEdge</code></a> behandelt het ontbrekende endpoint als een reden om niets te tekenen.</p>
+<p><strong>Acceptatie:</strong> één totale, canonieke directoryprojectie voor zowel node- als edgeplanning; iedere Map-key is zijn record-id; ieder extern edge-endpoint bestaat. Een ontbrekend endpoint moet de controle laten falen, niet tot een minder verbonden plaat leiden.</p>
+<h3 id="d-typeprojectie-identificeert-twee-benoemde-waarden">D · Typeprojectie identificeert twee benoemde waarden</h3>
+<p><strong>Aangetoond met minimale graph · W5 · ook zonder familiezoom.</strong></p>
+<p>De synthetische graph bevat <code>consume(a: Record, b: Record)</code>. De callsite heeft twee afzonderlijke <code>hands</code> met namen <code>a</code> en <code>b</code>. De viewer plant precies één inputplaats, <code>t:audit.Record</code>, en één incidentie naar <code>consume</code>. Er zijn geen typenhiërarchie, eerdere producers of branches nodig voor deze fout.</p>
+<p>Mechanisme: de <a href="https://github.com/raoulg/atlas/blob/a4ad4212d6e208bca91f21f26ec65104b2e227b9/viewer/index.html#L1281">constructie van <code>held</code></a> bewaart aanvankelijk <code>~a</code> en <code>~b</code>; <a href="https://github.com/raoulg/atlas/blob/a4ad4212d6e208bca91f21f26ec65104b2e227b9/viewer/index.html#L1389"><code>standsAt</code></a> reconstrueert de id als <code>"t:" + typeprojectie + momentOf(k)</code>. Het naamdeel valt weg. Ook als de typeprojectie de identiteit is, worden de waarden gelijkgesteld.</p>
+<p><strong>Acceptatie:</strong> twee waarden behouden twee identiteiten op ieder typezoomniveau. Voeg daarnaast een geval toe met twee waarden van hetzelfde type uit dezelfde producer, en met een subtype en een basetype. Een gedeeld label of type is geen bewijs van aliasing.</p>
+<h2 id="4-van-graph-naar-scherm-inventaris-van-keuzes">4. Van graph naar scherm: inventaris van keuzes</h2>
+<p>De matrix benoemt de plekken waar een controle hoort. “Te toetsen” is geen geconstateerde schending.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Laag / keuze</th>
+<th>Wat mag veranderen?</th>
+<th>Wat moet gelijk blijven?</th>
+<th>Stand</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Graph → Flow</code>: calls naar occurrences</td>
+<td>Representatie van calls en wires</td>
+<td>Callsite, volgorde, dispatch, handed/given value</td>
+<td>Enginefeiten onderzocht; geen parserfout nodig voor A–D.</td>
+</tr>
+<tr>
+<td>Librarygrens, <code>view::reached</code></td>
+<td>Interne librarycode aggregeren</td>
+<td>Effecten en interface op de grens</td>
+<td>Te toetsen: grens verschuiven bij ander <code>--libraries</code> is modelverandering, geen zuivere UI-zoom.</td>
+</tr>
+<tr>
+<td>Route/kind/part kiezen</td>
+<td>De fiber zelf</td>
+<td>Herkomst van wat overblijft</td>
+<td>Edgeverlies door een ander filter kan geldig zijn.</td>
+</tr>
+<tr>
+<td>Focus plus <code>~in</code>, <code>~out</code></td>
+<td>Context groeperen</td>
+<td>Grensrelaties naar dezelfde focus</td>
+<td>B aangetoond. Dit is een focus mét contextquotient, geen zuivere induced-subgraph fiber.</td>
+</tr>
+<tr>
+<td>Part openen</td>
+<td>Part naar packages</td>
+<td>HTTP- en wereldinterface</td>
+<td>Te toetsen: <code>partMorphism</code> en unitmorphisms bepalen de interface verschillend.</td>
+</tr>
+<tr>
+<td>Package naar subpackages</td>
+<td>Eén codeblok splitsen</td>
+<td>Geprojecteerde grens en externe plaatsen</td>
+<td>Werkt voor de contextverbindingen van <code>rkg.graph</code>; geen algemene garantie.</td>
+</tr>
+<tr>
+<td>Package naar routes/doors</td>
+<td>Interne code tonen</td>
+<td>Dezelfde semantische drager</td>
+<td>B; daarnaast codefeit: gesloten ziet eigen touches van alle nodes, geopend transitive reach van gekozen routes. Dit vraagt één expliciete grensconventie.</td>
+</tr>
+<tr>
+<td>Stap naar body</td>
+<td>Interne calls zichtbaar maken</td>
+<td>Callsite-input, resultaat en externe effects</td>
+<td>A aangetoond.</td>
+</tr>
+<tr>
+<td>Recursie afkappen, <code>deeper.has</code></td>
+<td>Oneindig ontvouwen begrenzen</td>
+<td>Grensinterface van de recursieve call</td>
+<td>Te toetsen: <code>routeTree</code> laat zo’n child geheel weg; een grensgetuige is nodig.</td>
+</tr>
+<tr>
+<td>Choice/dispatch</td>
+<td>Branches als alternatieven tonen</td>
+<td>Branchidentiteit en voorwaarden</td>
+<td>Te toetsen: geen cross-branch waarde-aliasing.</td>
+</tr>
+<tr>
+<td>Commandlineparse vouwen</td>
+<td>Parse intern maken aan entry</td>
+<td>Typed input- en outputverbindingen</td>
+<td>Te toetsen op dezelfde grenswet als A.</td>
+</tr>
+<tr>
+<td>Type naar base/family</td>
+<td>Typecomponent groeperen</td>
+<td>Waarde-id, moment, rol</td>
+<td>D aangetoond; er zijn ook uitgevoerde familie-openingen zonder ontbrekende endpoints.</td>
+</tr>
+<tr>
+<td>Compositie en gedeelde velden</td>
+<td>Parts tonen, gedeelde waarden als references</td>
+<td>Elke waarde één identiteit</td>
+<td>Te toetsen: een reference is geen tweede eigendom. Overlappende relaties vormen niet automatisch een forest.</td>
+</tr>
+<tr>
+<td><code>latest</code>, <code>choiceOf</code>, versioning</td>
+<td>Momenten van dezelfde waarde tonen</td>
+<td>Aliasing en produceridentiteit</td>
+<td>Te toetsen: momenten worden uit zichtbare pills afgeleid, terwijl stapzoom die pills verandert.</td>
+</tr>
+<tr>
+<td>Opslagquotient, <code>storage</code></td>
+<td>Concrete/symbolische plaatsen groeperen</td>
+<td>Leden en gerichte getuigen</td>
+<td>Te toetsen: groepsleden komen uit <code>usedWorld</code>, dus hangen af van zichtbare pills.</td>
+</tr>
+<tr>
+<td>Files naar directories</td>
+<td>Paden onder een directory samennemen</td>
+<td>Totale, unieke endpointprojectie</td>
+<td>C aangetoond.</td>
+</tr>
+<tr>
+<td>Grens van zes files</td>
+<td>Standaard-detailniveau kiezen</td>
+<td>Bij één zoomactie geen ongevraagde coarsening elders</td>
+<td>Te toetsen: toevoegen van een zichtbaar pad kan andere directories dichtvouwen.</td>
+</tr>
+<tr>
+<td>Sibling-pills met gelijke D/C</td>
+<td>Parallelle representanten bundelen</td>
+<td>Occurrences, volgorde, eigen/reach-kanalen</td>
+<td>Codefeit: de sleutel hangt van zichtbare D/C af; te toetsen onder andere quotients.</td>
+</tr>
+<tr>
+<td>Anonieme <code>v:#</code> als wire</td>
+<td>Waardevertex door een verbinding vervangen</td>
+<td>Producer-consumerincidences en reading</td>
+<td>A raakt deze stap. Definieer deze contractie expliciet.</td>
+</tr>
+<tr>
+<td><code>roleOf</code>: in/out/mid/both</td>
+<td>Plaatsingsprojectie volgens routebetekenis</td>
+<td>Semantische rol bij vaste fiber</td>
+<td>Te toetsen: <code>roles.used</code> hangt van zichtbare C en <code>backTo</code> af.</td>
+</tr>
+<tr>
+<td>Twins “from/into”</td>
+<td>Twee projecties van één wereldplaats tonen</td>
+<td>Gemeenschappelijke semantische identiteit</td>
+<td>Geldige presentatie als beide dezelfde plaats blijven vertegenwoordigen; twee id’s zijn geen twee plaatsen.</td>
+</tr>
+<tr>
+<td><code>homeOf</code>: gemeenschappelijke ancestor</td>
+<td>Frame voor werkelijk interne waarden kiezen</td>
+<td>Eigenaar van externe plaatsen</td>
+<td>Codefeit: codeframes worden voor wereldplaatsen uitgesloten. Dat is een goede lokale safeguard, geen bewijs voor alle refinements.</td>
+</tr>
+<tr>
+<td><code>addEdge</code>, aggregatie</td>
+<td>Lijnen bundelen</td>
+<td>Eindpunten, betekenis en provenance</td>
+<td>C; sleutel is alleen <code>a&gt;b</code>, reach wordt met AND samengevoegd. Bewaar kanaalgetuigen apart.</td>
+</tr>
+<tr>
+<td>Dotted package calls, <code>joinedIn</code></td>
+<td>Pure call-relatie anders tekenen dan dataflow</td>
+<td>Relatie blijft aantoonbaar</td>
+<td>Te toetsen: een dataverbinding die bij een ander quotient ontstaat mag een call-getuige niet wissen.</td>
+</tr>
+<tr>
+<td>Diff A/B/union</td>
+<td>Reading kiezen en overlay tekenen</td>
+<td>Elke reading behoudt eigen getuigen</td>
+<td>Te toetsen: gemengde edge-kanalen en roles mogen geen betekenis van één reading uit de andere afleiden.</td>
+</tr>
+<tr>
+<td>ELK → SVG</td>
+<td>Coördinaten, routes, afmetingen</td>
+<td>Alle geplande endpoints en incidenties</td>
+<td>A–D bestaan al vóór ELK; browsercontrole blijft nodig voor de realisatie.</td>
+</tr>
+<tr>
+<td>Hover, pin, camera</td>
+<td>Belichting en positie</td>
+<td>Semantische graph</td>
+<td>Pinnen beïnvloedt zichtbaarheid/contrast; toets apart van werkelijk edgeverlies.</td>
+</tr>
+<tr>
+<td>Serve refresh</td>
+<td>Nieuwe reading laden bij bronwijziging</td>
+<td>Iedere snapshot intern consistent</td>
+<td>Een andere reading mag andere edges hebben; vergelijk voor refinement altijd dezelfde snapshot.</td>
+</tr>
+</tbody>
+</table></div>
+<h2 id="5-wiskundige-aanscherpingen-voor-de-specificatie">5. Wiskundige aanscherpingen voor de specificatie</h2>
+<h3 id="gluing-vereist-een-gekozen-categorie">Gluing vereist een gekozen categorie</h3>
+<p>Een pushout in verzamelingen bewaart niet vanzelf gerichte incidentie. Een pushout in quivers houdt edges en hun endpoints bij. Een looploos geaggregeerde weergave, zoals <a href="https://github.com/raoulg/atlas/blob/a4ad4212d6e208bca91f21f26ec65104b2e227b9/engine/src/view.rs#L51"><code>Quotient::apply</code></a>, verbergt interne edges en behoudt gewichten per edge-soort. Dat is een bruikbare presentatie, maar niet zonder nadere conventie de volledige quiver-coequalizer. Ook <code>None</code> in de quotientfunctie is filtering, niet identificatie. Benoem beide operaties afzonderlijk in het contract.</p>
+<h3 id="een-fiber-openen-vereist-zijn-grens">Een fiber openen vereist zijn grens</h3>
+<p>De induced subgraph op één quotientklasse bevat alleen interne edges. De pijlen die de klasse verbinden met de omgeving zitten daar juist niet in. “Opening puts its fiber in its place” is daarom onvoldoende als implementatierecept: neem de interne structuur <strong>met haar interface naar het complement</strong> en lijm die terug aan dezelfde externe endpoints. A en B tonen precies het verlies van die interface.</p>
+<h3 id="saturatie-geldt-voor-de-relevante-structuur">Saturatie geldt voor de relevante structuur</h3>
+<p>Voor vertices betekent saturatie <code>A = q⁻¹(q(A))</code>; een predicate daalt precies dan af naar quotientklassen. Voor edge-filters moet ook het edge-predicate constant zijn op de gekozen edge-aggregatie. Een nodefilter dat verzadigd is, garandeert niet dat een onafhankelijk call-/effectfilter door een endpoint-only edgebundel heen kan worden toegepast. Atlas moet de “filter eerst”-regel op de canonieke feiten uitvoeren, niet telkens opnieuw op zichtbare samenvattingen.</p>
+<h3 id="forestwetten-gelden-alleen-voor-de-gekozen-forest">Forestwetten gelden alleen voor de gekozen forest</h3>
+<p>De ancestor-gesloten openingen van één forest vormen een distributief rooster. Het rooster van alle partities is in het algemeen niet distributief. Meervoudige overerving, gedeelde compositie en verschillende hiërarchieën vragen dus een expliciete keuze: een canoniek forest voor die zoomas, references voor gedeeld eigendom en een common-refinementconstructie tussen assen. “De code heeft een hiërarchie” is nog geen bewijs dat iedere huidige groepering zo’n forest volgt.</p>
+<h3 id="coarse-reach-kan-fictieve-routes-suggereren">Coarse reach kan fictieve routes suggereren</h3>
+<p>Neem <code>a → b</code> en <code>c → d</code>, zonder verbinding van <code>b</code> naar <code>c</code>. Identificeer <code>b</code> en <code>c</code>. De quotientgraph heeft een pad van <code>[a]</code> naar <code>[d]</code> dat geen pad in de fijne graph vertegenwoordigt. W3 bewaart individuele incidenties, maar geeft geen lifting van ieder coarse pad. Bereken semantische reach daarom op de fijne graph; laat een quotientoefening geen nieuw bewijs van uitvoerbare call order worden. Provenance maakt het verschil toetsbaar.</p>
+<h2 id="6-een-uitvoerbare-controle-voor-claude">6. Een uitvoerbare controle voor Claude</h2>
+<h3 id="eerst-een-canonieke-semantische-planning">Eerst één canonieke semantische planning</h3>
+<p>Laat de reading de occurrences, waarden, effects, rollen en eigendom vastleggen. Laat de view daarna uitsluitend filters en expliciete representantafbeeldingen bepalen. Dit hoeft geen grote herschrijving te zijn: de eerste bruikbare stap is een inspecteerbaar plan vóór ELK met voor iedere box en verbinding de fijne feiten die hij vertegenwoordigt, plus framegrens en semantische id.</p>
+<p>Een onbekend endpoint is dan een mislukte invariant. Het kan niet stil als een gewone tekensituatie worden afgehandeld. Een pin of een SVG-label is geen semantische identiteit.</p>
+<h3 id="de-oracle">De oracle</h3>
+<p>Voor iedere legale opening, met dezelfde reading en filters:</p>
+<pre><code class="language-text">coarse = plan(reading, fiber, ideal)
+fine   = plan(reading, fiber, ideal + opening)
+rho    = refinement_map(fine, coarse)
+
+assert same_semantic_support(coarse, fine)
+assert total_and_unique(rho)
+assert unique_record_ids(fine)
+assert all_endpoints_exist(fine)
+assert project_boundary(fine, rho) == boundary(coarse)
+assert same_value_ids_and_moments(coarse, fine, rho)
+assert unchanged_external_owners(coarse, fine, rho)
+assert same_channel_witnesses(coarse, fine, rho)
+</code></pre>
+<p>Normaliseer hierbij alleen expliciet toegestane interne verberging, bundeling en wirecontractie. Vergelijk provenanceverzamelingen per richting/kanaal; geen kale edge-aantallen. Test ook sluiten, twee onafhankelijke openingen in beide volgorden, en openen–sluiten–openen. Als synthetische functies worden samengevouwen, moeten hun getuigen nog te vergelijken zijn.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Testfamilie</th>
+<th>Clean kant</th>
+<th>Shortcut / stresskant</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Resultaatinterface</td>
+<td>Benoemde typed return</td>
+<td>Ongenoemde <code>list[Path]</code> rechtstreeks in volgende call</td>
+</tr>
+<tr>
+<td>Waarde-identiteit</td>
+<td><code>a</code>, <code>b</code> expliciet van hetzelfde type</td>
+<td>Twee naamloze resultaten en aliasing; alleen echte aliases mogen samenvallen</td>
+</tr>
+<tr>
+<td>Focusgrens</td>
+<td>Package met subpackages</td>
+<td>Leafpackage dat direct routes opent</td>
+</tr>
+<tr>
+<td>Directoryquotient</td>
+<td>Enkele expliciete bestanden</td>
+<td>Parentdirectory, childdirectory én bestanden, boven de vouwgrens</td>
+</tr>
+<tr>
+<td>Wereld-eigendom</td>
+<td>Externe input en output</td>
+<td>Intern cache-object, read-back, update en een andere externe gebruiker</td>
+</tr>
+<tr>
+<td>Sums en recursie</td>
+<td>Twee benoemde takresultaten</td>
+<td>Hetzelfde type in beide takken, recursieve call op de grens</td>
+</tr>
+<tr>
+<td>Zoomassen</td>
+<td>Package × typefamilie</td>
+<td>Shared member, subtype en twee momenten tegelijk</td>
+</tr>
+<tr>
+<td>Edgekanalen</td>
+<td>Eén direct effect</td>
+<td>Zelfde endpointpaar met direct én reach, en afzonderlijke diff-readings</td>
+</tr>
+</tbody>
+</table></div>
+<p>Deze gevallen horen in de pairs van de ondersteunde talen, met readerfeiten in Rust-tests en de gezamenlijke semantische vieweroracle erboven. Atlas’ principes controleren het onderwerp; deze oracle controleert de eerlijkheid van Atlas’ voorstelling. Dat zijn twee verschillende verantwoordelijkheden.</p>
+<p>De huidige <a href="https://github.com/raoulg/atlas/blob/a4ad4212d6e208bca91f21f26ec65104b2e227b9/tools/pictures.py#L115"><code>pictures.py walk</code></a> test crashes, lege tekeningen en aantallen familiemomenten. Die controles vangen A–D niet algemeen af. Voeg de oracle toe aan de gelopen transities, en houd de bestaande schermcontrole voor ontbrekende SVG-realisaties. Een full <code>cargo test</code> op ongewijzigde productiecode bewijst deze UI-wetten niet; er is voor deze audit geen volledige Rust-suite gedraaid.</p>
+<h2 id="7-wat-geen-schending-hoeft-te-zijn">7. Wat geen schending hoeft te zijn</h2>
+<ul>
+<li>Een ander route-, kind-, part- of readingfilter kan relaties verwijderen. Leg dan de filterwijziging vast; noem de actie geen zuivere zoom.</li>
+<li>Interne lijnen kunnen bij coarsening verborgen raken. Hun getuigen blijven beschikbaar; externe relaties mogen niet zonder beeld raken.</li>
+<li>Coördinaten en bochten mogen veranderen. Binnen/buiten een frame is pas een semantische schending als het frame eigendom of groepering belooft die met die verandering onjuist wordt. Een topologie op alleen vertices bepaalt geen schermrechthoek.</li>
+<li>Twee projections “from X” en “into X” kunnen één wereldplaats tonen. Dat is geldig met één onderliggende identiteit en correcte gerichte incidenties.</li>
+<li>Een frame mag een eigen grenspoort gebruiken. Het hoeft geen extra functie of effect te betekenen als de poort een expliciete vertegenwoordiger is.</li>
+<li>Een extra fijne lijn kan een reeds geaggregeerde relatie zichtbaar maken. Nieuw zichtbaar is niet hetzelfde als een nieuw semantisch feit.</li>
+</ul>
+<h2 id="8-overdracht-en-reproduceren">8. Overdracht en reproduceren</h2>
+<p>Het pakket bevat <code>probe.py</code>, <code>states.json</code>, <code>synthetic.json</code> en <code>evidence.json</code>. De probe leest een export, instrumenteert alleen zijn tijdelijke kopie, neemt het plan vlak vóór ELK op, en logt ontbrekende endpoints vóór de stille return. De eerste tekening gebruikt de volledige viewer; de volgende planningen slaan ELK over. Dit is een semantische probe, geen volledige visuele regressiesuite. Hij is gekoppeld aan de herkenbare functies van 0.66.1 en stopt wanneer de injectiepunten niet meer uniek zijn.</p>
+<pre><code class="language-sh">atlas view /Users/rgrouls/code/PU/ruimtelijke-knowledge-graph \
+  --no-open --no-cache --out /private/tmp/atlas-audit-rkg.html
+
+uv run --offline --with playwright probe.py \
+  /private/tmp/atlas-audit-rkg.html states.json /private/tmp/atlas-audit-rkg
+
+uv run --offline --with playwright probe.py \
+  /private/tmp/atlas-audit-rkg.html states-synthetic.json \
+  /private/tmp/atlas-audit-synthetic --graph synthetic.json
+</code></pre>
+<p>Voer <code>uv</code> uit vanuit deze eigen worktree of een scratchmap, niet vanuit het onderwerp. De uitgebreide verkenning bevat 58 semantische toestanden; de meegeleverde kernset is kleiner en gericht op A–D. De ruwe subjectgraph blijft buiten dit pakket. <code>evidence.json</code> bevat alleen de relevante diagnostiek.</p>
+<p>De eerste onderzoeksvraag voor de implementatie is: <strong>welke fijne feiten en grenspoorten vertegenwoordigt iedere grove verbinding?</strong> Als dat voor elke view expliciet is, zijn behoud van edges, correcte containment en identiteit gevolgen van dezelfde controleerbare constructie.</p><div class="footer">Onafhankelijke analyse · Codex · <a href="https://github.com/raoulg/atlas/issues/36">Issue #36</a></div></main></div></body></html>
