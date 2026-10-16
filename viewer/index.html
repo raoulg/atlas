@@ -188,10 +188,6 @@ header:has(#diffbar:not([hidden])) #project{max-width:160px}
 @keyframes pointed{0%,100%{filter:none}35%,65%{filter:drop-shadow(0 0 7px var(--focus))}}
 .pointed{animation:pointed 1.1s ease-in-out 2}
 path.pointed{stroke:var(--focus)!important;stroke-width:3px!important}
-.here>rect.bg{stroke:var(--focus)!important;stroke-width:3.5px!important;stroke-dasharray:none!important}
-.here{filter:drop-shadow(0 0 6px var(--focus))}
-.here-tag rect{fill:var(--focus)}
-.here-tag text{fill:var(--panel);font:600 10px var(--mono);text-anchor:middle;pointer-events:none}
 .note{cursor:help}
 .annot{cursor:help}
 .annot circle{fill:var(--focus);stroke:var(--panel);stroke-width:1.4}
@@ -2631,9 +2627,6 @@ function markNotes() {
     m.addEventListener("mouseleave", hideAsks);
   }
 }
-const hereOff = () => scene.node().querySelectorAll(".here").forEach(x => { x.classList.remove("here"); x.querySelector(":scope > g.here-tag")?.remove(); });
-document.addEventListener("keydown", ev => { if (ev.key === "Escape") hereOff(); });
-scene.node().addEventListener("click", hereOff, true);
 // what an agent points at, or a link names (`#…&at=`): a box by its id, a line as `from>to`. A box
 // not drawn is opened the way to, as jumping to a symbol does; what is drawn is selected, lit for a
 // moment and brought into sight
@@ -2648,16 +2641,6 @@ async function point(at) {
   if (!a && byId.has(at)) select(at);
   target.classList.remove("pointed"); void target.getBBox(); target.classList.add("pointed");
   setTimeout(() => target.classList.remove("pointed"), 2400);
-  // the agent's finger stays where it points, until it points elsewhere or the person does something else
-  hereOff();
-  if (!a) {
-    target.classList.add("here");
-    const w = +(target.querySelector("rect.bg")?.getAttribute("width") || 0);
-    const tag = el("g", {class: "here-tag", transform: `translate(${w / 2},-9)`}, target);
-    const words = "the agent points here";
-    el("rect", {x: -66, y: -17, width: 132, height: 17, rx: 8.5}, tag);
-    el("text", {y: -5}, tag).textContent = words;
-  }
   if (!a) setTimeout(() => centre(at), SETTLED);
 }
 // the code changed: the server has drawn the page anew, and the page reloads to it, in the view it

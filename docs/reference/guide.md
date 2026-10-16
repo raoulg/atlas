@@ -311,8 +311,7 @@ changed, the picture drawn, an export, a note, and what the agent did with it.
 - **What you have open.** The page tells the server its view, the box you selected, and the
   boxes and lines it draws. The agent reads them with `shown` when you say "this box".
 - **Look here.** The agent points the page at a view, a box or a line with `look`. The page goes
-  there, opens the way to the box, selects it and lights it, with a tag that says the agent points
-  there; the light stays until the agent points elsewhere, you click, or you press Esc.
+  there, opens the way to the box, selects it and makes it light up.
 - **What the agent says.** With `annotate` the agent puts its own words on a box or a line: what a
   condition means ("only on the first run"), what a step is for. A ✦ marks it; hover it for the
   words. They are the agent's statements, apart from what Atlas traces.

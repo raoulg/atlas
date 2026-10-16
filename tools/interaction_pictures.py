@@ -529,15 +529,16 @@ def main(atlas, out=None):
         route('sunspots.cli.run')
         shot('today')
 
-        # look: the agent takes the page to a view and points at a box
-        page.goto(server.url(), wait_until='networkidle')
-        settle(page)
-        texts['look'] = agent.tool('look', view={'route': 'sunspots.cli.run'}, at='sunspots.series.trusted')
-        settle(page, 3500)
+        # look: the agent takes the page to a view and points at a box; the page lights the box in a pulse,
+        # and the picture is taken at its second peak
+        route('sunspots.cli.run')
         for _ in range(3):
             page.get_by_role('button', name='+', exact=True).click()
             page.wait_for_timeout(350)
         page.wait_for_timeout(800)
+        texts['look'] = agent.tool('look', view={'route': 'sunspots.cli.run'}, at='sunspots.series.trusted')
+        page.wait_for_selector('#scene .pointed', timeout=5000)
+        page.wait_for_timeout(1500)
         shot('look', around='sunspots.series.trusted', pad=(400, 400, 120, 110))
 
         # shown: the person clicks a box; the agent reads which
@@ -649,9 +650,9 @@ def page(out, texts):
                 figure(png('history-list'), 'Six commits', 'history', 'The six commits of the sunspots repository, the fifth and the sixth picked'), figure(png('history'), 'The fifth against the sixth', 'A ∪ B', 'The history of the sunspots repository with its two commits drawn as one picture: what the second added and changed is marked')),
         section('look', 'Pointing, both ways',
                 'The person and the agent share one view. <code>look</code> takes the person\'s page to a view and points at a box: '
-                '&ldquo;here, this one&rdquo;. The box is lit and tagged until the agent points elsewhere. <code>shown</code> goes the other '
+                '&ldquo;here, this one&rdquo;. The box lights up in a pulse. <code>shown</code> goes the other '
                 'way: what the person has open and the box they clicked, in the names the agent can use.',
-                figure(png('look'), 'The agent took the page to the route and pointed at trusted', 'look', 'The route run of the sunspots pipeline with the step trusted lit and tagged: the agent points here'),
+                figure(png('look'), 'The agent took the page to the route and pointed at trusted', 'look', 'The route run of the sunspots pipeline with the step trusted lit: the agent points at it'),
                 block('look', texts['look']), block('shown, after the person clicked trusted', head(texts['shown'], 9))),
         section('notes', 'A note on a box, and the answer on it',
                 'Alt-click a box or a line and write what you see or do not understand. The agent reads the note where it works and answers on '
