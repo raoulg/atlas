@@ -490,6 +490,10 @@
     "o:sunspots.main.main"
    ],
    [
+    "e:sunspots.main.main",
+    "o:sunspots.main.main/7"
+   ],
+   [
     "n:sunspots.main.main/1",
     "t:sunspots.settings.Settings@n:sunspots.main.main/1"
    ],
@@ -618,11 +622,11 @@
     "Options (2)"
    ],
    [
-    "t:atlas-engine.model.Graph@n:atlas-engine.analyze/1",
+    "t:atlas-engine.model.Graph@n:atlas-engine.analyze",
     "Graph (7)"
    ],
    [
-    "t:atlas-engine.model.Graph@o:atlas-engine.analyze",
+    "t:atlas-engine.model.Graph@n:atlas-engine.analyze/1",
     "Graph (7)"
    ],
    [
@@ -657,7 +661,7 @@
    ],
    [
     "o:atlas-engine.analyze",
-    "t:atlas-engine.model.Graph@o:atlas-engine.analyze"
+    "t:atlas-engine.model.Graph@n:atlas-engine.analyze"
    ],
    [
     "t:atlas-engine.Options",

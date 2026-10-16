@@ -1262,7 +1262,7 @@ async function renderPlaat(mine) {
     if (!info) return morphism(key, own, isAnchor);
     const {step, on, site, fed} = info, dn = new Map(), cn = new Map();
     const m = step.startsWith("op:") ? {dom: new Map(), cod: new Map(), goes: new Map()} : morphism(step, own, isAnchor, false, {on, figure: key, label: stepLabel(key)});
-    if (site && !own) {
+    if (site) {
       // a value whose type ty does not know is still the value its name holds; a value no name holds
       // (`#3`, one call's result handed straight to the next) is drawn without one
       // two values of one type a call hands on are two values, each by the name that holds it
@@ -1295,14 +1295,27 @@ async function renderPlaat(mine) {
     }
     if (node.open) {
       const fid = "n:" + node.id, kids = [];
-      frames.set(fid, {id: fid, step: node.id, parent, hue: node.hue, choice: node.choice, anchor: node.id === V.route, title: (node.id === V.route ? entryTitle(node.id) : stepLabel(node.id)) + (node.choice ? " · one of" : "")});
+      // what the step shows closed, kept for the places it shows: opening it refines the code and leaves them where they stood
+      const shut = node.id === V.route || libraryClass(stepOf(node.id)) ? null : stepMorphism(node.id, false, false);
+      frames.set(fid, {id: fid, step: node.id, parent, hue: node.hue, choice: node.choice, anchor: node.id === V.route, closed: shut && {goes: shut.goes, cod: shut.cod, hb: !!parent && !caller && !/^(part|unit|op):/.test(node.id) && handsBack(stepOf(node.id), shut.cod)}, title: (node.id === V.route ? entryTitle(node.id) : stepLabel(node.id)) + (node.choice ? " · one of" : "")});
       const lib = libraryClass(stepOf(node.id));
       const own = lib || node.id.startsWith("unit:") ? {dom: new Map(), cod: new Map(), goes: new Map()} : stepMorphism(node.id, true, node.id === V.route);
-      const back = node.kids.flatMap(k => build(k, fid, lib && node.id === V.route ? node.id : null));
-      if (own.dom.size || own.cod.size || (back.length && !lib && !node.id.startsWith("unit:"))) {
-        const oid = "o:" + node.id;
-        pills.set(oid, {id: oid, steps: [node.id], D: own.dom, C: own.cod, dn: own.dn, cn: own.cn, goes: own.goes, parent: fid, hue: node.hue, own: true});
+      const before = pills.size, back = node.kids.flatMap(k => build(k, fid, lib && node.id === V.route ? node.id : null));
+      // opened, a step keeps the lines it had closed: its own arrow stands at its frame with what the closed box took and gave, so
+      // the lines that crossed the box cross the frame; a value it hands on is at the moment the closed box had it, and a result
+      // with no place of its own goes on to the step that called it from there
+      if (caller) own.dom.set(addPlace(entryPlace(caller)), false);
+      if (shut) {
+        const inside = [...pills.values()].slice(before), inD = new Set(inside.flatMap(P => [...P.D.keys()])), inC = new Set(inside.flatMap(P => [...P.C.keys()]));
+        for (const k of shut.dom.keys()) if (!own.dom.has(k) && !inC.has(k) && (/^[tv]:/.test(k) || !inD.has(k))) own.dom.set(k, true);
+        for (const k of shut.cod.keys()) if (!own.cod.has(k) && (/^[tv]:/.test(k) || !inC.has(k))) own.cod.set(k, true);
+      }
+      const hb = !!frames.get(fid).closed?.hb;
+      if (own.dom.size || own.cod.size || hb || (back.length && !lib && !node.id.startsWith("unit:"))) {
+        const oid = "o:" + node.id, own_ = {id: oid, steps: [node.id], D: own.dom, C: own.cod, dn: own.dn, cn: own.cn, goes: own.goes, parent: fid, hue: node.hue, own: true};
+        pills.set(oid, own_);
         for (const b of back) b.backTo = oid;
+        if (hb) return [own_];
       }
       return [];
     }
@@ -1338,7 +1351,15 @@ async function renderPlaat(mine) {
   const isMem = k => k.startsWith("v:") || k.startsWith("t:");
   const version = (k, v) => { if (!places.has(v)) places.set(v, {...places.get(k), id: v}); return v; };
   const choiceOf = P => frames.get(P.parent)?.choice ? P.parent : P.id;
+  // the arrow of an opened step hands on at the moment the closed step did: opening it moves no value to another moment
+  const madeAt = P => { if (!P.own) return choiceOf(P); const F = frames.get(P.parent); return frames.get(F?.parent)?.choice ? F.parent : P.parent; };
+  // the values made so far, each in the scope of the step whose body made it: a name holds a value in that step and the steps
+  // inside it, and a step's own arrow hands on in the scope of its caller. A choice is no scope; its branches' values go on
+  const planChain = fid => { const c = []; for (let f = fid; f; f = frames.get(f)?.parent) c.unshift(f); return c; };
   const latest = new Map();
+  const scopeOf = P => { let f = P.own ? frames.get(P.parent)?.parent : P.parent; while (f && frames.get(f)?.synthetic) f = frames.get(f).parent; return f || null; };
+  const latestSet = (key, v, P) => { if (!latest.has(key)) latest.set(key, []); latest.get(key).push({v, scope: scopeOf(P)}); };
+  const latestGet = (key, P) => { const es = latest.get(key); if (!es) return null; const here = new Set(planChain(P.parent)); for (let i = es.length - 1; i >= 0; i--) if (!es[i].scope || here.has(es[i].scope)) return es[i].v; return null; };
   // what the call hands a step and what the function says it takes are one value when they are of one
   // kind and at most one of them has a name: the value by the name and the type the call gives it.
   // Two values of a kind with names of their own are two values
@@ -1362,12 +1383,12 @@ async function renderPlaat(mine) {
     // a value is taken by the name that holds it, else as the latest of its kind: an override runs on
     // the value its call runs on, and a subclass's value is its base's
     const Dv = new Map(), Cv = new Map(), name = (m, k) => (m && m.get(k)) || "";
-    P.D.forEach((r, k) => { const v = isMem(k) ? latest.get(kindKey(k) + "|" + name(P.dn, k)) || latest.get(kindKey(k) + "|") : null; Dv.set(v || k, r); });
+    P.D.forEach((r, k) => { const v = isMem(k) ? latestGet(kindKey(k) + "|" + name(P.dn, k), P) || latestGet(kindKey(k) + "|", P) : null; Dv.set(v || k, r); });
     P.C.forEach((r, k) => {
       if (!isMem(k)) { Cv.set(k, r); return; }
-      const nm = name(P.cn, k), v = version(k, `${k}@${V.route ? choiceOf(P) : "out"}`);
+      const nm = name(P.cn, k), v = version(k, `${k}@${V.route ? madeAt(P) : "out"}`);
       if (nm && !nm.startsWith("#") && !k.startsWith("v:")) Object.assign(places.get(v), {label: `${places.get(k).label} · ${nm}`, held: nm});
-      if (V.route) { latest.set(kindKey(k) + "|" + nm, v); latest.set(kindKey(k) + "|", v); }
+      if (V.route) { latestSet(kindKey(k) + "|" + nm, v, P); latestSet(kindKey(k) + "|", v, P); }
       Cv.set(v, r);
     });
     P.D = Dv; P.C = Cv;
@@ -1388,10 +1409,19 @@ async function renderPlaat(mine) {
   // way; whether a route finds what it reads there; whether a step that reads it hands something on
   const roles = new Map();
   const role = k => { if (!roles.has(k)) roles.set(k, {reads: false, writes: false, open: false, used: false, found: found.has(k), updated: updated.has(k)}); return roles.get(k); };
-  for (const P of pills.values()) for (const [k, s] of P.goes || []) {
+  // a place the outermost opened step shows closed has the role it had there: what is done to it inside is that step's
+  // doing, and opening the step does not make the place another's
+  const countRole = (k, s, handsOn) => {
     const r = role(k);
     r.reads ||= s.has("read"); r.writes ||= s.has("write"); r.open ||= s.has("open");
-    if (s.has("read")) r.used ||= !!P.backTo || [...P.C.keys()].some(c => c !== k);
+    if (s.has("read")) r.used ||= handsOn;
+  };
+  const shutOver = P => { let top = null; for (let f = P.parent; f; f = frames.get(f)?.parent) if (frames.get(f)?.closed) top = frames.get(f).closed; return top; };
+  const counted = new Set();
+  for (const P of pills.values()) {
+    const top = shutOver(P);
+    if (top && !counted.has(top)) { counted.add(top); for (const [k, s] of top.goes) countRole(k, s, top.hb || [...top.cod.keys()].some(c => c !== k)); }
+    for (const [k, s] of P.goes || []) if (!top?.goes.has(k)) countRole(k, s, !!P.backTo || [...P.C.keys()].some(c => c !== k));
   }
   return {places, pills, frames, restArrows, roles};
   };
@@ -1724,17 +1754,22 @@ async function renderPlaat(mine) {
   // memory lives in the smallest open step that holds every step using it
   const chain = fid => { const c = []; for (let f = fid; f; f = frames.get(f)?.parent) c.unshift(f); return c; };
   const usersOf = new Map();
-  for (const P of pills.values()) for (const k of [...P.D.keys(), ...P.C.keys()]) { const key = famOf(k); if (!usersOf.has(key)) usersOf.set(key, []); usersOf.get(key).push(P.parent); }
+  for (const P of pills.values()) for (const k of [...P.D.keys(), ...P.C.keys()]) { const key = famOf(k); if (!usersOf.has(key)) usersOf.set(key, []); usersOf.get(key).push(P.own && !frames.get(P.parent)?.anchor ? frames.get(P.parent)?.parent : P.parent); }
   // A place of the world is no part of the code's hierarchy: a package or a part, opened, refines
   // the code and leaves the places where they stood, its lines crossing the frame's border. Only a
   // step of the route, whose later steps use what an earlier one leaves, holds a place of its own.
   const codeFrame = f => /^(unit|part):/.test(frames.get(f)?.step || "");
+  // a value no step inside an opened step makes is what that step takes from beyond it: it stands where the closed step had it
+  const makersOf = new Map();
+  for (const P of pills.values()) for (const k of P.C.keys()) { const key = famOf(k); if (!makersOf.has(key)) makersOf.set(key, []); makersOf.get(key).push(P.own && !frames.get(P.parent)?.anchor ? frames.get(P.parent)?.parent : P.parent); }
   const homeOf = (id, world = false) => {
     const cs = (usersOf.get(id) || []).map(chain);
     if (!cs.length || cs.some(c => !c.length)) return root;
     let common = cs[0];
     for (const c of cs.slice(1)) { let i = 0; while (i < common.length && i < c.length && common[i] === c[i]) i++; common = common.slice(0, i); }
-    if (world) { const i = common.findIndex(codeFrame); if (i >= 0) common = common.slice(0, i); }
+    const taken = f => !codeFrame(f) && frames.get(f)?.closed && !(makersOf.get(id) || []).some(m => chain(m).includes(f));
+    const i = common.findIndex(f => taken(f) || (world && (codeFrame(f) || finesOf(id).some(k => frames.get(f)?.closed?.goes.has(k)))));
+    if (i >= 0) common = common.slice(0, i);
     return common.length ? nodeOf.get(common[common.length - 1]) : root;
   };
   for (const p of [...places.values()].filter(p => (p.kind === "type" || p.kind === "ext") && keep.has(p.id) && !p.inFrame).sort((a, b) => a.label.localeCompare(b.label))) homeOf(p.id).children.push(leaf(p.id, placeW(p, 30), 36));
@@ -2077,6 +2112,8 @@ async function renderPlaat(mine) {
   if (t1) { if (plaatFit || !DUR) svg.call(zoom.transform, t1); else svg.transition().duration(DUR).call(zoom.transform, t1); }
   prevPos = pos; plaatAnchor = null; plaatFit = false;
   PICTURE = {boxes: nodeEls, lines: edgeEls};
+  // the picture as data, for the checks that walk it (tools/pictures.py): each box with the box that holds it, each line by its ends
+  window.atlasPicture = {n: (window.atlasPicture?.n || 0) + 1, boxes: [...nodeEls.keys()].map(id => [id, parentOf.get(id) || "root"]), lines: edgeEls.map(e => [e.a, e.b])};
 }
 // what the picture is a function of, each part undoable: the route, the opened steps, the open families, the split world boxes
 function crumbs() {
