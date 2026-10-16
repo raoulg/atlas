@@ -15,7 +15,7 @@
   --syn-kw:#7E3FA8; --syn-str:#1F7A5C; --syn-com:#8A94A3; --syn-num:#B4551C; --syn-fn:#2B4FBF; --syn-dec:#A0641E; --syn-bi:#1F6E8C;
   --hue-1:#1F8A7E; --hue-2:#3F5FCF; --hue-3:#C7862B; --hue-4:#7E56B8; --hue-5:#C44F70; --hue-6:#4E9A4E; --hue-7:#5C6B80; --hue-8:#7D7A72;
   --k-cmd:#2F7D4F; --k-file:#B26A00; --k-db:#7E56B8; --k-web:#1F7A8C; --k-screen:#3F5FCF; --k-proc:#5C6B80; --k-model:#C44F70; --k-global:#8A7A2A;
-  --add:#2E8B57; --del:#C43A14; --chg:#B07A00;
+  --add:#2E8B57; --del:#C43A14; --chg:#B07A00; --proph:#4B3FA8;
   --sans:"Outfit","Helvetica Neue",Helvetica,system-ui,sans-serif;
   --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
 }
@@ -26,11 +26,11 @@
   --syn-kw:#C792EA; --syn-str:#7FCFA8; --syn-com:#6F7987; --syn-num:#F0A070; --syn-fn:#8FB0FF; --syn-dec:#E0B070; --syn-bi:#7FC4E0;
   --hue-1:#3DB8A9; --hue-2:#7B93E8; --hue-3:#E0A24A; --hue-4:#A98AD9; --hue-5:#E27A96; --hue-6:#77BF77; --hue-7:#8C9BB0; --hue-8:#A39F95;
   --k-cmd:#6CC08C; --k-file:#E0A24A; --k-db:#B596E6; --k-web:#5CC0D4; --k-screen:#8FA6F0; --k-proc:#9AA8BC; --k-model:#E88AA4; --k-global:#CDBB6A;
-  --add:#6CC08C; --del:#F2643C; --chg:#E0B24A;
+  --add:#6CC08C; --del:#F2643C; --chg:#E0B24A; --proph:#A99BF0;
 }}
 :root[data-theme="dark"]{
   --k-cmd:#6CC08C; --k-file:#E0A24A; --k-db:#B596E6; --k-web:#5CC0D4; --k-screen:#8FA6F0; --k-proc:#9AA8BC; --k-model:#E88AA4; --k-global:#CDBB6A;
-  --add:#6CC08C; --del:#F2643C; --chg:#E0B24A;
+  --add:#6CC08C; --del:#F2643C; --chg:#E0B24A; --proph:#A99BF0;
   --bg:#141210; --panel:#1B1815; --panel-2:#221E1A; --ink:#F4F1EC; --ink-2:#B8B0A5; --ink-3:#857C71;
   --line:#2B2621; --line-2:#221E1A; --frame:#6B6156; --frame-fill:#26211D; --alert:#F2643C; --focus:#86B9C9; --accent:#F2643C;
   --external:#7F8792;
@@ -174,6 +174,7 @@ header:has(#diffbar:not([hidden])) #project{max-width:160px}
 #legend .sw i.dsw.changed{border-color:var(--chg)}
 .dwas{font-family:var(--mono);font-size:11.5px;margin:-6px 0 12px;padding-left:8px;border-left:2px solid;word-break:break-word}
 .dwas.added{border-color:var(--add);color:var(--add)}
+.dwas.prophecy{border-left-style:dotted;border-color:var(--proph);color:var(--ink)}
 .dwas.removed{border-color:var(--del);color:var(--del)}
 .dwas.changed{border-color:var(--chg);color:var(--ink-2)}
 /* a finding marks the box it is about with a dot inside its corner; the pointer on the dot shows
@@ -274,6 +275,11 @@ pre.code .l::before{counter-increment:ln;content:counter(ln);display:inline-bloc
 .tnode{cursor:pointer}
 .tnode rect.bg{fill:var(--panel);stroke:var(--line)}
 .tnode.ghost rect.bg{stroke-dasharray:4 3;fill:transparent}
+/* a prophecy: sketch code not built yet, in its own colour with a dotted border and full-strength text; veiled, the dots are finer, as the shape is not known either */
+.tstep.prophecy rect.bg,.tnode.prophecy rect.bg{stroke:var(--proph);stroke-dasharray:2 3.5;stroke-linecap:round;stroke-width:2;fill:color-mix(in oklab, var(--proph) 9%, var(--panel))}
+.tstep.prophecy.veiled rect.bg,.tnode.prophecy.veiled rect.bg{stroke-dasharray:.1 5}
+.tstep.prophecy text.title,.tnode.prophecy text.title{fill:var(--ink);font-weight:600}
+#legend .sw i.dsw.prophecy{border-color:var(--proph);border-style:dotted}
 .tnode .title{font-family:var(--mono);font-size:12px;font-weight:500;fill:var(--ink)}
 .tnode .sub{font-family:var(--sans);font-size:10px;fill:var(--ink-3)}
 .tnode .badge{font-family:var(--mono);font-size:10px;fill:var(--ink-3)}
@@ -332,7 +338,7 @@ pre.code .l::before{counter-increment:ln;content:counter(ln);display:inline-bloc
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/elkjs@0.9.3/lib/elk.bundled.js"></script>
 <script>
-window.DATA = {"atlas":"0.66.0 (9ee8ff1+)","projects":{"sunspots":{"edges":[{"dst":"sunspots.get_data","kind":"contains","src":"sunspots"},{"dst":"sunspots.clean","kind":"contains","src":"sunspots"},{"dst":"sunspots.smooth","kind":"contains","src":"sunspots"},{"dst":"sunspots.plot","kind":"contains","src":"sunspots"},{"dst":"sunspots.get_data","kind":"calls","src":"sunspots"},{"dst":"sunspots.clean","kind":"calls","src":"sunspots"},{"dst":"sunspots.smooth","kind":"calls","src":"sunspots"},{"dst":"sunspots.plot","kind":"calls","src":"sunspots"}],"files":{"/Users/rgrouls/code/packages/atlas/.claude/worktrees/topologie-audit/engine/tests/pairs/pipeline/python-sloppy/sunspots.py":"import os\n\nimport matplotlib.pyplot as plt\nimport pandas as pd\nimport requests\n\ndf = None\n\n\ndef get_data():\n    global df\n    url = \"https://www.sidc.be/SILSO/DATA/SN_m_tot_V2.0.csv\"\n    r = requests.get(url)\n    os.makedirs(\"data/raw\", exist_ok=True)\n    with open(\"data/raw/sunspots.csv\", \"w\") as f:\n        f.write(r.text)\n    df = pd.read_csv(\"data/raw/sunspots.csv\", sep=\";\", header=None)\n    df.columns = [\"year\", \"month\", \"decimal_date\", \"mean\", \"std\", \"obs\", \"definitive\"]\n\n\ndef clean():\n    df[\"date\"] = pd.to_datetime(df[\"year\"].astype(str) + \"-\" + df[\"month\"].astype(str))\n    df.drop(df[df[\"mean\"] == -1].index, inplace=True)\n    df.reset_index(drop=True, inplace=True)\n\n\ndef smooth():\n    df[\"smooth\"] = df[\"mean\"].rolling(13, center=True).mean()\n\n\ndef plot(**kwargs):\n    plt.figure(figsize=(12, 5))\n    plt.plot(df[\"date\"], df[\"mean\"], label=\"monthly mean\", **kwargs)\n    plt.plot(df[\"date\"], df[\"smooth\"], label=\"13 month mean\", color=\"red\")\n    plt.title(\"Sunspots\")\n    plt.legend()\n    os.makedirs(\"figures\", exist_ok=True)\n    plt.savefig(\"figures/sunspots.png\")\n\n\nif __name__ == \"__main__\":\n    get_data()\n    clean()\n    smooth()\n    plot(color=\"grey\", linewidth=0.5)\n"},"findings":[{"evidence":["get_data()"],"file":"sunspots.py","line":10,"node":"sunspots.get_data","principle":"doors","question":"Until its signature says so, a reader and Atlas both lose the route at this door. What does get_data take and give?","what":"get_data does not say what it gives"},{"evidence":["clean()"],"file":"sunspots.py","line":21,"node":"sunspots.clean","principle":"doors","question":"Until its signature says so, a reader and Atlas both lose the route at this door. What does clean take and give?","what":"clean does not say what it gives"},{"evidence":["smooth()"],"file":"sunspots.py","line":27,"node":"sunspots.smooth","principle":"doors","question":"Until its signature says so, a reader and Atlas both lose the route at this door. What does smooth take and give?","what":"smooth does not say what it gives"},{"evidence":["plot(…kwargs)"],"file":"sunspots.py","line":31,"node":"sunspots.plot","principle":"doors","question":"Until its signature says so, a reader and Atlas both lose the route at this door. What does plot take and give?","what":"plot does not say what it gives"},{"evidence":["get(www.sidc.be)","open(data/raw/sunspots.csv)","read_csv(data/raw/sunspots.csv)"],"file":"sunspots.py","line":10,"node":"sunspots.get_data","principle":"places","question":"Taken as a parameter, a script, a test and a notebook can each choose. Who should decide where this lives: get_data, or whoever calls it?","what":"get_data decides itself where data lives: www.sidc.be and data/raw/sunspots.csv"},{"evidence":["savefig(figures/sunspots.png)"],"file":"sunspots.py","line":31,"node":"sunspots.plot","principle":"places","question":"Taken as a parameter, a script, a test and a notebook can each choose. Who should decide where this lives: plot, or whoever calls it?","what":"plot decides itself where data lives: figures/sunspots.png"}],"flow":{"arrows":{"sunspots":{"reads_back":["w:File:data/raw/sunspots.csv","w:Global:sunspots.df"],"updates":["w:Global:sunspots.df"]},"sunspots.clean":{"updates":["w:Global:sunspots.df"]},"sunspots.get_data":{"own_reads_back":["w:File:data/raw/sunspots.csv"],"reads_back":["w:File:data/raw/sunspots.csv"]},"sunspots.smooth":{"updates":["w:Global:sunspots.df"]}},"bodies":{"sunspots":{"items":[{"site":0,"to":"sunspots.get_data"},{"site":1,"to":"sunspots.clean"},{"site":2,"to":"sunspots.smooth"},{"site":3,"to":"sunspots.plot"}]},"sunspots.clean":{"items":[{"site":0,"to":"op:df[\"year\"].astype"},{"site":1,"to":"op:df[\"month\"].astype"},{"site":2,"to":"op:drop"},{"site":3,"to":"op:reset_index"}]},"sunspots.get_data":{"items":[{"site":0,"to":"op:get"},{"site":1,"to":"op:read_csv"}]},"sunspots.smooth":{"items":[{"site":0,"to":"op:df[\"mean\"].rolling"},{"site":1,"to":"op:df[\"mean\"].rolling(13, center=True).mean"}]}},"drawn":{"sunspots.clean":[{"place":{"glyph":"global","id":"w:Global:sunspots.df","label":"Global(sunspots.df)","short":"sunspots.df"},"side":"out","verb":"changes"},{"place":{"glyph":"global","id":"w:Global:sunspots.df","label":"Global(sunspots.df)","short":"sunspots.df"},"side":"in","verb":"reads"}],"sunspots.get_data":[{"place":{"glyph":"web","id":"w:Web:www.sidc.be","label":"Web(www.sidc.be)","short":"www.sidc.be"},"side":"in","verb":"GETs"},{"place":{"file":"data/raw/sunspots.csv","glyph":"file","id":"w:File:data/raw/sunspots.csv","label":"File(data/raw/sunspots.csv)","short":"data/raw/sunspots.csv"},"side":"out","verb":"writes"},{"place":{"file":"data/raw/sunspots.csv","glyph":"file","id":"w:File:data/raw/sunspots.csv","label":"File(data/raw/sunspots.csv)","short":"data/raw/sunspots.csv"},"side":"in","verb":"reads"},{"place":{"glyph":"global","id":"w:Global:sunspots.df","label":"Global(sunspots.df)","short":"sunspots.df"},"side":"out","verb":"changes"}],"sunspots.plot":[{"place":{"glyph":"screen","id":"w:Figure","label":"Figure","short":"Figure"},"side":"out","verb":"draws"},{"place":{"file":"figures/sunspots.png","glyph":"file","id":"w:File:figures/sunspots.png","label":"File(figures/sunspots.png)","short":"figures/sunspots.png"},"side":"out","verb":"writes"},{"place":{"glyph":"global","id":"w:Global:sunspots.df","label":"Global(sunspots.df)","short":"sunspots.df"},"side":"in","verb":"reads"}],"sunspots.smooth":[{"place":{"glyph":"global","id":"w:Global:sunspots.df","label":"Global(sunspots.df)","short":"sunspots.df"},"side":"out","verb":"changes"},{"place":{"glyph":"global","id":"w:Global:sunspots.df","label":"Global(sunspots.df)","short":"sunspots.df"},"side":"in","verb":"reads"}]},"types":{"doors":["ext:requests.Response"],"family":{},"kind":{},"makes":[],"members":{},"shared":{},"takes":[]},"units":{"kids":{},"tops":[["sunspots",["sunspots"]]]}},"language":"python","make":[],"nodes":[{"entry":{"kind":"cli","label":"python -m sunspots"},"file":"/Users/rgrouls/code/packages/atlas/.claude/worktrees/topologie-audit/engine/tests/pairs/pipeline/python-sloppy/sunspots.py","id":"sunspots","is_pkg":true,"kind":"module","module":"sunspots","name":"sunspots","part":"sunspots","sites":[{"line":42,"to":"sunspots.get_data"},{"line":43,"to":"sunspots.clean"},{"line":44,"to":"sunspots.smooth"},{"line":45,"to":"sunspots.plot"}],"span":[1,46]},{"entry":{"kind":"export","label":"get_data"},"file":"/Users/rgrouls/code/packages/atlas/.claude/worktrees/topologie-audit/engine/tests/pairs/pipeline/python-sloppy/sunspots.py","id":"sunspots.get_data","kind":"function","module":"sunspots","name":"get_data","part":"sunspots","sites":[{"gives":[{"name":"r","type":"ext:requests.Response"}],"line":13,"op":"get"},{"gives":[{"name":"df","type":"ext:pandas.DataFrame"}],"line":17,"op":"read_csv"}],"span":[10,18],"touches":[{"artifact":"www.sidc.be","fixed":true,"kind":"net","line":13,"n":1,"op":"get","what":"url"},{"artifact":"data/raw/sunspots.csv","fixed":true,"kind":"disk_write","line":15,"n":1,"op":"open","what":"data/raw/sunspots.csv"},{"artifact":"data/raw/sunspots.csv","fixed":true,"kind":"disk_read","line":17,"n":1,"op":"read_csv","what":"data/raw/sunspots.csv"},{"artifact":"sunspots.df","dir":"write","kind":"global","line":17,"n":1,"op":"df","what":"df"}]},{"entry":{"kind":"export","label":"clean"},"file":"/Users/rgrouls/code/packages/atlas/.claude/worktrees/topologie-audit/engine/tests/pairs/pipeline/python-sloppy/sunspots.py","id":"sunspots.clean","kind":"function","module":"sunspots","name":"clean","part":"sunspots","sites":[{"hands":[{"name":"df","type":"ext:pandas.DataFrame"}],"line":22,"not_followed":true,"op":"df[\"year\"].astype"},{"hands":[{"name":"df","type":"ext:pandas.DataFrame"}],"line":22,"not_followed":true,"op":"df[\"month\"].astype"},{"changes":true,"gives":[{"type":"ext:pandas.DataFrame"},{"name":"df","type":"ext:pandas.DataFrame"}],"hands":[{"name":"df","type":"ext:pandas.DataFrame"}],"line":23,"op":"drop"},{"changes":true,"gives":[{"type":"ext:pandas.DataFrame"},{"name":"df","type":"ext:pandas.DataFrame"}],"hands":[{"name":"df","type":"ext:pandas.DataFrame"}],"line":24,"op":"reset_index"}],"span":[21,24],"touches":[{"artifact":"sunspots.df","dir":"write","kind":"global","line":22,"n":1,"op":"df","what":"df"},{"artifact":"sunspots.df","dir":"read","kind":"global","line":22,"n":1,"op":"df","what":"df"}]},{"entry":{"kind":"export","label":"smooth"},"file":"/Users/rgrouls/code/packages/atlas/.claude/worktrees/topologie-audit/engine/tests/pairs/pipeline/python-sloppy/sunspots.py","id":"sunspots.smooth","kind":"function","module":"sunspots","name":"smooth","part":"sunspots","sites":[{"gives":[{"name":"#0","type":""}],"hands":[{"name":"df","type":"ext:pandas.DataFrame"}],"line":28,"not_followed":true,"op":"df[\"mean\"].rolling"},{"hands":[{"name":"#0","type":""}],"line":28,"not_followed":true,"op":"df[\"mean\"].rolling(13, center=True).mean"}],"span":[27,28],"touches":[{"artifact":"sunspots.df","dir":"write","kind":"global","line":28,"n":1,"op":"df","what":"df"},{"artifact":"sunspots.df","dir":"read","kind":"global","line":28,"n":1,"op":"df","what":"df"}]},{"entry":{"kind":"export","label":"plot"},"file":"/Users/rgrouls/code/packages/atlas/.claude/worktrees/topologie-audit/engine/tests/pairs/pipeline/python-sloppy/sunspots.py","id":"sunspots.plot","kind":"function","module":"sunspots","name":"plot","params":[{"name":"kwargs","rest":true}],"part":"sunspots","span":[31,38],"touches":[{"kind":"figure","line":32,"n":1,"op":"figure","what":""},{"artifact":"figures/sunspots.png","fixed":true,"kind":"disk_write","line":38,"n":1,"op":"savefig","what":"figures/sunspots.png"},{"artifact":"sunspots.df","dir":"read","kind":"global","line":33,"n":1,"op":"df","what":"df"}]},{"door":"net","file":"","id":"ext:requests.Response","kind":"external","module":"requests","name":"Response","part":"sunspots"},{"file":"","id":"ext:io.TextIOWrapper","kind":"external","module":"io","name":"TextIOWrapper","part":"sunspots"},{"file":"","id":"ext:pandas.DataFrame","kind":"external","module":"pandas","name":"DataFrame","part":"sunspots"},{"file":"","id":"ext:pandas.Series","kind":"external","module":"pandas","name":"Series","part":"sunspots"},{"file":"","id":"ext:matplotlib.Figure","kind":"external","module":"matplotlib","name":"Figure","part":"sunspots"}],"parts":[{"dir":"/Users/rgrouls/code/packages/atlas/.claude/worktrees/topologie-audit/engine/tests/pairs/pipeline/python-sloppy","id":"sunspots","language":"python","leaves":{"exports":true,"returns":true,"types":true}}],"project_root":"/Users/rgrouls/code/packages/atlas/.claude/worktrees/topologie-audit/engine/tests/pairs/pipeline/python-sloppy","root":"sunspots","stats":{"edges":{"calls":4,"contains":4},"modules":1,"nodes":{"external":5,"function":4,"module":1},"unresolved_calls":{"builtin":0,"library":0,"local":0,"unknown":4},"unresolved_calls_top":[["df.astype",2],["df.rolling",2]],"unresolved_calls_total":4},"view":{"route":"sunspots"}}}};
+window.DATA = {"atlas":"0.66.2 (4008a95+)","projects":{"sunspots":{"edges":[{"dst":"sunspots.get_data","kind":"contains","src":"sunspots"},{"dst":"sunspots.clean","kind":"contains","src":"sunspots"},{"dst":"sunspots.smooth","kind":"contains","src":"sunspots"},{"dst":"sunspots.plot","kind":"contains","src":"sunspots"},{"dst":"sunspots.get_data","kind":"calls","src":"sunspots"},{"dst":"sunspots.clean","kind":"calls","src":"sunspots"},{"dst":"sunspots.smooth","kind":"calls","src":"sunspots"},{"dst":"sunspots.plot","kind":"calls","src":"sunspots"}],"files":{"/Users/rgrouls/code/packages/atlas/.claude/worktrees/pad-herkomst/engine/tests/pairs/pipeline/python-sloppy/sunspots.py":"import os\n\nimport matplotlib.pyplot as plt\nimport pandas as pd\nimport requests\n\ndf = None\n\n\ndef get_data():\n    global df\n    url = \"https://www.sidc.be/SILSO/DATA/SN_m_tot_V2.0.csv\"\n    r = requests.get(url)\n    os.makedirs(\"data/raw\", exist_ok=True)\n    with open(\"data/raw/sunspots.csv\", \"w\") as f:\n        f.write(r.text)\n    df = pd.read_csv(\"data/raw/sunspots.csv\", sep=\";\", header=None)\n    df.columns = [\"year\", \"month\", \"decimal_date\", \"mean\", \"std\", \"obs\", \"definitive\"]\n\n\ndef clean():\n    df[\"date\"] = pd.to_datetime(df[\"year\"].astype(str) + \"-\" + df[\"month\"].astype(str))\n    df.drop(df[df[\"mean\"] == -1].index, inplace=True)\n    df.reset_index(drop=True, inplace=True)\n\n\ndef smooth():\n    df[\"smooth\"] = df[\"mean\"].rolling(13, center=True).mean()\n\n\ndef plot(**kwargs):\n    plt.figure(figsize=(12, 5))\n    plt.plot(df[\"date\"], df[\"mean\"], label=\"monthly mean\", **kwargs)\n    plt.plot(df[\"date\"], df[\"smooth\"], label=\"13 month mean\", color=\"red\")\n    plt.title(\"Sunspots\")\n    plt.legend()\n    os.makedirs(\"figures\", exist_ok=True)\n    plt.savefig(\"figures/sunspots.png\")\n\n\nif __name__ == \"__main__\":\n    get_data()\n    clean()\n    smooth()\n    plot(color=\"grey\", linewidth=0.5)\n"},"findings":[{"evidence":["get_data()"],"file":"sunspots.py","line":10,"node":"sunspots.get_data","principle":"doors","question":"Until its signature says so, a reader and Atlas both lose the route at this door. What does get_data take and give?","what":"get_data does not say what it gives"},{"evidence":["clean()"],"file":"sunspots.py","line":21,"node":"sunspots.clean","principle":"doors","question":"Until its signature says so, a reader and Atlas both lose the route at this door. What does clean take and give?","what":"clean does not say what it gives"},{"evidence":["smooth()"],"file":"sunspots.py","line":27,"node":"sunspots.smooth","principle":"doors","question":"Until its signature says so, a reader and Atlas both lose the route at this door. What does smooth take and give?","what":"smooth does not say what it gives"},{"evidence":["plot(…kwargs)"],"file":"sunspots.py","line":31,"node":"sunspots.plot","principle":"doors","question":"Until its signature says so, a reader and Atlas both lose the route at this door. What does plot take and give?","what":"plot does not say what it gives"},{"evidence":["get(www.sidc.be)","open(data/raw/sunspots.csv)","read_csv(data/raw/sunspots.csv)"],"file":"sunspots.py","line":10,"node":"sunspots.get_data","principle":"places","question":"Taken as a parameter, a script, a test and a notebook can each choose. Who should decide where this lives: get_data, or whoever calls it?","what":"get_data decides itself where data lives: www.sidc.be and data/raw/sunspots.csv"},{"evidence":["savefig(figures/sunspots.png)"],"file":"sunspots.py","line":31,"node":"sunspots.plot","principle":"places","question":"Taken as a parameter, a script, a test and a notebook can each choose. Who should decide where this lives: plot, or whoever calls it?","what":"plot decides itself where data lives: figures/sunspots.png"}],"flow":{"arrows":{"sunspots":{"reads_back":["w:File:data/raw/sunspots.csv","w:Global:sunspots.df"],"updates":["w:Global:sunspots.df"]},"sunspots.clean":{"updates":["w:Global:sunspots.df"]},"sunspots.get_data":{"own_reads_back":["w:File:data/raw/sunspots.csv"],"reads_back":["w:File:data/raw/sunspots.csv"]},"sunspots.smooth":{"updates":["w:Global:sunspots.df"]}},"bodies":{"sunspots":{"items":[{"site":0,"to":"sunspots.get_data"},{"site":1,"to":"sunspots.clean"},{"site":2,"to":"sunspots.smooth"},{"site":3,"to":"sunspots.plot"}]},"sunspots.clean":{"items":[{"site":0,"to":"op:df[\"year\"].astype"},{"site":1,"to":"op:df[\"month\"].astype"},{"site":2,"to":"op:drop"},{"site":3,"to":"op:reset_index"}]},"sunspots.get_data":{"items":[{"site":0,"to":"op:get"},{"site":1,"to":"op:read_csv"}]},"sunspots.smooth":{"items":[{"site":0,"to":"op:df[\"mean\"].rolling"},{"site":1,"to":"op:df[\"mean\"].rolling(13, center=True).mean"}]}},"drawn":{"sunspots.clean":[{"place":{"glyph":"global","id":"w:Global:sunspots.df","label":"Global(sunspots.df)","short":"sunspots.df"},"side":"out","verb":"changes"},{"place":{"glyph":"global","id":"w:Global:sunspots.df","label":"Global(sunspots.df)","short":"sunspots.df"},"side":"in","verb":"reads"}],"sunspots.get_data":[{"place":{"glyph":"web","id":"w:Web:www.sidc.be","label":"Web(www.sidc.be)","short":"www.sidc.be"},"side":"in","verb":"GETs"},{"place":{"file":"data/raw/sunspots.csv","glyph":"file","id":"w:File:data/raw/sunspots.csv","label":"File(data/raw/sunspots.csv)","short":"data/raw/sunspots.csv"},"side":"out","verb":"writes"},{"place":{"file":"data/raw/sunspots.csv","glyph":"file","id":"w:File:data/raw/sunspots.csv","label":"File(data/raw/sunspots.csv)","short":"data/raw/sunspots.csv"},"side":"in","verb":"reads"},{"place":{"glyph":"global","id":"w:Global:sunspots.df","label":"Global(sunspots.df)","short":"sunspots.df"},"side":"out","verb":"changes"}],"sunspots.plot":[{"place":{"glyph":"screen","id":"w:Figure","label":"Figure","short":"Figure"},"side":"out","verb":"draws"},{"place":{"file":"figures/sunspots.png","glyph":"file","id":"w:File:figures/sunspots.png","label":"File(figures/sunspots.png)","short":"figures/sunspots.png"},"side":"out","verb":"writes"},{"place":{"glyph":"global","id":"w:Global:sunspots.df","label":"Global(sunspots.df)","short":"sunspots.df"},"side":"in","verb":"reads"}],"sunspots.smooth":[{"place":{"glyph":"global","id":"w:Global:sunspots.df","label":"Global(sunspots.df)","short":"sunspots.df"},"side":"out","verb":"changes"},{"place":{"glyph":"global","id":"w:Global:sunspots.df","label":"Global(sunspots.df)","short":"sunspots.df"},"side":"in","verb":"reads"}]},"types":{"doors":["ext:requests.Response"],"family":{},"kind":{},"makes":[],"members":{},"shared":{},"takes":[]},"units":{"kids":{},"tops":[["sunspots",["sunspots"]]]}},"language":"python","make":[],"nodes":[{"entry":{"kind":"cli","label":"python -m sunspots"},"file":"/Users/rgrouls/code/packages/atlas/.claude/worktrees/pad-herkomst/engine/tests/pairs/pipeline/python-sloppy/sunspots.py","id":"sunspots","is_pkg":true,"kind":"module","module":"sunspots","name":"sunspots","part":"sunspots","sites":[{"line":42,"to":"sunspots.get_data"},{"line":43,"to":"sunspots.clean"},{"line":44,"to":"sunspots.smooth"},{"line":45,"to":"sunspots.plot"}],"span":[1,46]},{"entry":{"kind":"export","label":"get_data"},"file":"/Users/rgrouls/code/packages/atlas/.claude/worktrees/pad-herkomst/engine/tests/pairs/pipeline/python-sloppy/sunspots.py","id":"sunspots.get_data","kind":"function","module":"sunspots","name":"get_data","part":"sunspots","sites":[{"gives":[{"name":"r","type":"ext:requests.Response"}],"line":13,"op":"get"},{"gives":[{"name":"df","type":"ext:pandas.DataFrame"}],"line":17,"op":"read_csv"}],"span":[10,18],"touches":[{"artifact":"www.sidc.be","fixed":true,"kind":"net","line":13,"n":1,"op":"get","what":"url"},{"artifact":"data/raw/sunspots.csv","fixed":true,"kind":"disk_write","line":15,"n":1,"op":"open","what":"data/raw/sunspots.csv"},{"artifact":"data/raw/sunspots.csv","fixed":true,"kind":"disk_read","line":17,"n":1,"op":"read_csv","what":"data/raw/sunspots.csv"},{"artifact":"sunspots.df","dir":"write","kind":"global","line":17,"n":1,"op":"df","what":"df"}]},{"entry":{"kind":"export","label":"clean"},"file":"/Users/rgrouls/code/packages/atlas/.claude/worktrees/pad-herkomst/engine/tests/pairs/pipeline/python-sloppy/sunspots.py","id":"sunspots.clean","kind":"function","module":"sunspots","name":"clean","part":"sunspots","sites":[{"hands":[{"name":"df","type":"ext:pandas.DataFrame"}],"line":22,"not_followed":true,"op":"df[\"year\"].astype"},{"hands":[{"name":"df","type":"ext:pandas.DataFrame"}],"line":22,"not_followed":true,"op":"df[\"month\"].astype"},{"changes":true,"gives":[{"type":"ext:pandas.DataFrame"},{"name":"df","type":"ext:pandas.DataFrame"}],"hands":[{"name":"df","type":"ext:pandas.DataFrame"}],"line":23,"op":"drop"},{"changes":true,"gives":[{"type":"ext:pandas.DataFrame"},{"name":"df","type":"ext:pandas.DataFrame"}],"hands":[{"name":"df","type":"ext:pandas.DataFrame"}],"line":24,"op":"reset_index"}],"span":[21,24],"touches":[{"artifact":"sunspots.df","dir":"write","kind":"global","line":22,"n":1,"op":"df","what":"df"},{"artifact":"sunspots.df","dir":"read","kind":"global","line":22,"n":1,"op":"df","what":"df"}]},{"entry":{"kind":"export","label":"smooth"},"file":"/Users/rgrouls/code/packages/atlas/.claude/worktrees/pad-herkomst/engine/tests/pairs/pipeline/python-sloppy/sunspots.py","id":"sunspots.smooth","kind":"function","module":"sunspots","name":"smooth","part":"sunspots","sites":[{"gives":[{"name":"#0","type":""}],"hands":[{"name":"df","type":"ext:pandas.DataFrame"}],"line":28,"not_followed":true,"op":"df[\"mean\"].rolling"},{"hands":[{"name":"#0","type":""}],"line":28,"not_followed":true,"op":"df[\"mean\"].rolling(13, center=True).mean"}],"span":[27,28],"touches":[{"artifact":"sunspots.df","dir":"write","kind":"global","line":28,"n":1,"op":"df","what":"df"},{"artifact":"sunspots.df","dir":"read","kind":"global","line":28,"n":1,"op":"df","what":"df"}]},{"entry":{"kind":"export","label":"plot"},"file":"/Users/rgrouls/code/packages/atlas/.claude/worktrees/pad-herkomst/engine/tests/pairs/pipeline/python-sloppy/sunspots.py","id":"sunspots.plot","kind":"function","module":"sunspots","name":"plot","params":[{"name":"kwargs","rest":true}],"part":"sunspots","span":[31,38],"touches":[{"kind":"figure","line":32,"n":1,"op":"figure","what":""},{"artifact":"figures/sunspots.png","fixed":true,"kind":"disk_write","line":38,"n":1,"op":"savefig","what":"figures/sunspots.png"},{"artifact":"sunspots.df","dir":"read","kind":"global","line":33,"n":1,"op":"df","what":"df"}]},{"door":"net","file":"","id":"ext:requests.Response","kind":"external","module":"requests","name":"Response","part":"sunspots"},{"file":"","id":"ext:io.TextIOWrapper","kind":"external","module":"io","name":"TextIOWrapper","part":"sunspots"},{"file":"","id":"ext:pandas.DataFrame","kind":"external","module":"pandas","name":"DataFrame","part":"sunspots"},{"file":"","id":"ext:pandas.Series","kind":"external","module":"pandas","name":"Series","part":"sunspots"},{"file":"","id":"ext:matplotlib.Figure","kind":"external","module":"matplotlib","name":"Figure","part":"sunspots"}],"parts":[{"dir":"/Users/rgrouls/code/packages/atlas/.claude/worktrees/pad-herkomst/engine/tests/pairs/pipeline/python-sloppy","id":"sunspots","language":"python","leaves":{"exports":true,"returns":true,"types":true}}],"project_root":"/Users/rgrouls/code/packages/atlas/.claude/worktrees/pad-herkomst/engine/tests/pairs/pipeline/python-sloppy","root":"sunspots","stats":{"edges":{"calls":4,"contains":4},"modules":1,"nodes":{"external":5,"function":4,"module":1},"unresolved_calls":{"builtin":0,"library":0,"local":0,"unknown":4},"unresolved_calls_top":[["df.astype",2],["df.rolling",2]],"unresolved_calls_total":4},"view":{"route":"sunspots"}}}};
 </script>
 <script>
 (function(){
@@ -366,6 +372,10 @@ const nameOf = n => SIDE === "a" && DIFF?.renamed[n.id] ? DIFF.renamed[n.id].spl
 { const ps = document.getElementById("project"); for (const n of names) { const o = document.createElement("option"); o.value = n; o.textContent = n; o.selected = n === current; ps.appendChild(o); }
   ps.addEventListener("change", () => { location.hash = "#p=" + ps.value; location.reload(); }); }
 const byId = new Map(D.nodes.map(n => [n.id, n]));
+// a prophecy is sketch code not built yet, and the members of one stand with it
+const prophecyOf = n => n?.prophecy || (n?.cls && byId.get(n.cls)?.prophecy) || null;
+// what a prophecy replaces, and the prophecy that replaces a node
+const replacedBy = new Map(D.nodes.filter(n => n.prophecy?.replaces).map(n => [n.prophecy.replaces, n.id]));
 for (const t of (D.make || [])) byId.set(t.id, {id: t.id, kind: "make", name: t.label, module: "Makefile", doc: t.doc, recipe: t.recipe, entry: {kind: "make", label: t.label}, make: t});
 const ROOT = D.root + ".";
 // a repository of several parts (a crate, a package, an app), each read in its own language
@@ -592,9 +602,11 @@ function renderTypes() {
     drawTypeNode(ng, byId.get(id), x, y, W, H, 0); x += W + HG;
   }
 }
+// the classes a prophecy's box carries: dotted, and dotted finer when it is veiled
+const prophecyClass = n => { const p = prophecyOf(n); return p ? " prophecy" + (p.veiled ? " veiled" : "") : ""; };
 function drawTypeNode(g, n, x, y, W, H, nkids) {
   const ghost = n.kind === "external";
-  const grp = el("g", {class: "tnode" + (ghost ? " ghost" : ""), transform: `translate(${x},${y})`, "data-id": n.id}, g);
+  const grp = el("g", {class: "tnode" + (ghost ? " ghost" : "") + prophecyClass(n), transform: `translate(${x},${y})`, "data-id": n.id}, g);
   el("rect", {class: "bg", width: W, height: H}, grp);
   if (!ghost) el("rect", {x: 0, y: 0, width: 4, height: H, fill: hueOf(n)}, grp);
   el("text", {class: "title", x: 12, y: 17}, grp).textContent = n.name;
@@ -680,7 +692,7 @@ const isOpen = t => t.side === "open";
 const go = (goes, t) => { if (t.shape) return; const k = t.place.id; if (!goes.has(k)) goes.set(k, new Set()); goes.get(k).add(isOpen(t) ? "open" : isIn(t) ? "read" : "write"); };
 const joinGoes = (into, from) => from?.forEach((s, k) => { if (!into.has(k)) into.set(k, new Set()); s.forEach(x => into.get(k).add(x)); });
 const verbOf = t => t.verb;
-const KIND_LABEL = {make: "Make", cli: "CLI", script: "Script", route: "API", mcp: "MCP", notebook: "Notebook", export: "Library", test: "Test"}, KIND_ORDER = ["make", "cli", "export", "script", "notebook", "route", "mcp", "test"];
+const KIND_LABEL = {make: "Make", cli: "CLI", script: "Script", route: "API", mcp: "MCP", notebook: "Notebook", export: "Library", prophecy: "Prophecy", test: "Test"}, KIND_ORDER = ["make", "cli", "export", "script", "notebook", "route", "mcp", "prophecy", "test"];
 const entries = [...byId.values()].filter(n => n.entry).sort((a, b) => (partRank(a) - partRank(b)) || (KIND_ORDER.indexOf(a.entry.kind) - KIND_ORDER.indexOf(b.entry.kind)) || a.entry.label.localeCompare(b.entry.label));
 // what running a function means, from the engine's reading: its body on a value of class `on` (the
 // calls in the order they run, a method called on a known class that class's), or on any value
@@ -920,7 +932,7 @@ const usesOf = () => {
   return usesIn.get(SIDE);
 };
 // where a route comes from: the command typed, the request made, the tool called
-const ENTRY_PLACE = {cli: l => `$ ${l}`, make: l => `$ make ${l}`, script: l => `$ python ${l}`, notebook: l => `notebook ${l}`, route: l => l, mcp: l => `MCP ${l}`, export: (l, n) => `${n ? partOf(n) : D.root}.${l}`, test: l => `test ${l}`};
+const ENTRY_PLACE = {cli: l => `$ ${l}`, make: l => `$ make ${l}`, script: l => `$ python ${l}`, notebook: l => `notebook ${l}`, route: l => l, mcp: l => `MCP ${l}`, export: (l, n) => `${n ? partOf(n) : D.root}.${l}`, prophecy: l => `prophecy ${l}`, test: l => `test ${l}`};
 // an entry's domain is what the human hands it on the command line: it reads as its usage line,
 // `$ sunspots --raw --figure --months`
 // in A, an entry whose usage line B changed reads as A had it
@@ -1267,7 +1279,7 @@ async function renderPlaat(mine) {
     if (!info) return morphism(key, own, isAnchor);
     const {step, on, site, fed} = info, dn = new Map(), cn = new Map();
     const m = step.startsWith("op:") ? {dom: new Map(), cod: new Map(), goes: new Map()} : morphism(step, own, isAnchor, false, {on, figure: key, label: stepLabel(key)});
-    if (site) {
+    if (site && !own) {
       // a value whose type ty does not know is still the value its name holds; a value no name holds
       // (`#3`, one call's result handed straight to the next) is drawn without one
       // two values of one type a call hands on are two values, each by the name that holds it
@@ -1300,27 +1312,14 @@ async function renderPlaat(mine) {
     }
     if (node.open) {
       const fid = "n:" + node.id, kids = [];
-      // what the step shows closed, kept for the places it shows: opening it refines the code and leaves them where they stood
-      const shut = node.id === V.route || libraryClass(stepOf(node.id)) ? null : stepMorphism(node.id, false, false);
-      frames.set(fid, {id: fid, step: node.id, parent, hue: node.hue, choice: node.choice, anchor: node.id === V.route, closed: shut && {goes: shut.goes, cod: shut.cod, hb: !!parent && !caller && !/^(part|unit|op):/.test(node.id) && handsBack(stepOf(node.id), shut.cod)}, title: (node.id === V.route ? entryTitle(node.id) : stepLabel(node.id)) + (node.choice ? " · one of" : "")});
+      frames.set(fid, {id: fid, step: node.id, parent, hue: node.hue, choice: node.choice, anchor: node.id === V.route, title: (node.id === V.route ? entryTitle(node.id) : stepLabel(node.id)) + (node.choice ? " · one of" : "")});
       const lib = libraryClass(stepOf(node.id));
       const own = lib || node.id.startsWith("unit:") ? {dom: new Map(), cod: new Map(), goes: new Map()} : stepMorphism(node.id, true, node.id === V.route);
-      const before = pills.size, back = node.kids.flatMap(k => build(k, fid, lib && node.id === V.route ? node.id : null));
-      // opened, a step keeps the lines it had closed: its own arrow stands at its frame with what the closed box took and gave, so
-      // the lines that crossed the box cross the frame; a value it hands on is at the moment the closed box had it, and a result
-      // with no place of its own goes on to the step that called it from there
-      if (caller) own.dom.set(addPlace(entryPlace(caller)), false);
-      if (shut) {
-        const inside = [...pills.values()].slice(before), inD = new Set(inside.flatMap(P => [...P.D.keys()])), inC = new Set(inside.flatMap(P => [...P.C.keys()]));
-        for (const k of shut.dom.keys()) if (!own.dom.has(k) && !inC.has(k) && (/^[tv]:/.test(k) || !inD.has(k))) own.dom.set(k, true);
-        for (const k of shut.cod.keys()) if (!own.cod.has(k) && (/^[tv]:/.test(k) || !inC.has(k))) own.cod.set(k, true);
-      }
-      const hb = !!frames.get(fid).closed?.hb;
-      if (own.dom.size || own.cod.size || hb || (back.length && !lib && !node.id.startsWith("unit:"))) {
-        const oid = "o:" + node.id, own_ = {id: oid, steps: [node.id], D: own.dom, C: own.cod, dn: own.dn, cn: own.cn, goes: own.goes, parent: fid, hue: node.hue, own: true};
-        pills.set(oid, own_);
+      const back = node.kids.flatMap(k => build(k, fid, lib && node.id === V.route ? node.id : null));
+      if (own.dom.size || own.cod.size || (back.length && !lib && !node.id.startsWith("unit:"))) {
+        const oid = "o:" + node.id;
+        pills.set(oid, {id: oid, steps: [node.id], D: own.dom, C: own.cod, dn: own.dn, cn: own.cn, goes: own.goes, parent: fid, hue: node.hue, own: true});
         for (const b of back) b.backTo = oid;
-        if (hb) return [own_];
       }
       return [];
     }
@@ -1356,15 +1355,7 @@ async function renderPlaat(mine) {
   const isMem = k => k.startsWith("v:") || k.startsWith("t:");
   const version = (k, v) => { if (!places.has(v)) places.set(v, {...places.get(k), id: v}); return v; };
   const choiceOf = P => frames.get(P.parent)?.choice ? P.parent : P.id;
-  // the arrow of an opened step hands on at the moment the closed step did: opening it moves no value to another moment
-  const madeAt = P => { if (!P.own) return choiceOf(P); const F = frames.get(P.parent); return frames.get(F?.parent)?.choice ? F.parent : P.parent; };
-  // the values made so far, each in the scope of the step whose body made it: a name holds a value in that step and the steps
-  // inside it, and a step's own arrow hands on in the scope of its caller. A choice is no scope; its branches' values go on
-  const planChain = fid => { const c = []; for (let f = fid; f; f = frames.get(f)?.parent) c.unshift(f); return c; };
   const latest = new Map();
-  const scopeOf = P => { let f = P.own ? frames.get(P.parent)?.parent : P.parent; while (f && frames.get(f)?.synthetic) f = frames.get(f).parent; return f || null; };
-  const latestSet = (key, v, P) => { if (!latest.has(key)) latest.set(key, []); latest.get(key).push({v, scope: scopeOf(P)}); };
-  const latestGet = (key, P) => { const es = latest.get(key); if (!es) return null; const here = new Set(planChain(P.parent)); for (let i = es.length - 1; i >= 0; i--) if (!es[i].scope || here.has(es[i].scope)) return es[i].v; return null; };
   // what the call hands a step and what the function says it takes are one value when they are of one
   // kind and at most one of them has a name: the value by the name and the type the call gives it.
   // Two values of a kind with names of their own are two values
@@ -1388,12 +1379,12 @@ async function renderPlaat(mine) {
     // a value is taken by the name that holds it, else as the latest of its kind: an override runs on
     // the value its call runs on, and a subclass's value is its base's
     const Dv = new Map(), Cv = new Map(), name = (m, k) => (m && m.get(k)) || "";
-    P.D.forEach((r, k) => { const v = isMem(k) ? latestGet(kindKey(k) + "|" + name(P.dn, k), P) || latestGet(kindKey(k) + "|", P) : null; Dv.set(v || k, r); });
+    P.D.forEach((r, k) => { const v = isMem(k) ? latest.get(kindKey(k) + "|" + name(P.dn, k)) || latest.get(kindKey(k) + "|") : null; Dv.set(v || k, r); });
     P.C.forEach((r, k) => {
       if (!isMem(k)) { Cv.set(k, r); return; }
-      const nm = name(P.cn, k), v = version(k, `${k}@${V.route ? madeAt(P) : "out"}`);
+      const nm = name(P.cn, k), v = version(k, `${k}@${V.route ? choiceOf(P) : "out"}`);
       if (nm && !nm.startsWith("#") && !k.startsWith("v:")) Object.assign(places.get(v), {label: `${places.get(k).label} · ${nm}`, held: nm});
-      if (V.route) { latestSet(kindKey(k) + "|" + nm, v, P); latestSet(kindKey(k) + "|", v, P); }
+      if (V.route) { latest.set(kindKey(k) + "|" + nm, v); latest.set(kindKey(k) + "|", v); }
       Cv.set(v, r);
     });
     P.D = Dv; P.C = Cv;
@@ -1414,19 +1405,10 @@ async function renderPlaat(mine) {
   // way; whether a route finds what it reads there; whether a step that reads it hands something on
   const roles = new Map();
   const role = k => { if (!roles.has(k)) roles.set(k, {reads: false, writes: false, open: false, used: false, found: found.has(k), updated: updated.has(k)}); return roles.get(k); };
-  // a place the outermost opened step shows closed has the role it had there: what is done to it inside is that step's
-  // doing, and opening the step does not make the place another's
-  const countRole = (k, s, handsOn) => {
+  for (const P of pills.values()) for (const [k, s] of P.goes || []) {
     const r = role(k);
     r.reads ||= s.has("read"); r.writes ||= s.has("write"); r.open ||= s.has("open");
-    if (s.has("read")) r.used ||= handsOn;
-  };
-  const shutOver = P => { let top = null; for (let f = P.parent; f; f = frames.get(f)?.parent) if (frames.get(f)?.closed) top = frames.get(f).closed; return top; };
-  const counted = new Set();
-  for (const P of pills.values()) {
-    const top = shutOver(P);
-    if (top && !counted.has(top)) { counted.add(top); for (const [k, s] of top.goes) countRole(k, s, top.hb || [...top.cod.keys()].some(c => c !== k)); }
-    for (const [k, s] of P.goes || []) if (!top?.goes.has(k)) countRole(k, s, !!P.backTo || [...P.C.keys()].some(c => c !== k));
+    if (s.has("read")) r.used ||= !!P.backTo || [...P.C.keys()].some(c => c !== k);
   }
   return {places, pills, frames, restArrows, roles};
   };
@@ -1759,22 +1741,17 @@ async function renderPlaat(mine) {
   // memory lives in the smallest open step that holds every step using it
   const chain = fid => { const c = []; for (let f = fid; f; f = frames.get(f)?.parent) c.unshift(f); return c; };
   const usersOf = new Map();
-  for (const P of pills.values()) for (const k of [...P.D.keys(), ...P.C.keys()]) { const key = famOf(k); if (!usersOf.has(key)) usersOf.set(key, []); usersOf.get(key).push(P.own && !frames.get(P.parent)?.anchor ? frames.get(P.parent)?.parent : P.parent); }
+  for (const P of pills.values()) for (const k of [...P.D.keys(), ...P.C.keys()]) { const key = famOf(k); if (!usersOf.has(key)) usersOf.set(key, []); usersOf.get(key).push(P.parent); }
   // A place of the world is no part of the code's hierarchy: a package or a part, opened, refines
   // the code and leaves the places where they stood, its lines crossing the frame's border. Only a
   // step of the route, whose later steps use what an earlier one leaves, holds a place of its own.
   const codeFrame = f => /^(unit|part):/.test(frames.get(f)?.step || "");
-  // a value no step inside an opened step makes is what that step takes from beyond it: it stands where the closed step had it
-  const makersOf = new Map();
-  for (const P of pills.values()) for (const k of P.C.keys()) { const key = famOf(k); if (!makersOf.has(key)) makersOf.set(key, []); makersOf.get(key).push(P.own && !frames.get(P.parent)?.anchor ? frames.get(P.parent)?.parent : P.parent); }
   const homeOf = (id, world = false) => {
     const cs = (usersOf.get(id) || []).map(chain);
     if (!cs.length || cs.some(c => !c.length)) return root;
     let common = cs[0];
     for (const c of cs.slice(1)) { let i = 0; while (i < common.length && i < c.length && common[i] === c[i]) i++; common = common.slice(0, i); }
-    const taken = f => !codeFrame(f) && frames.get(f)?.closed && !(makersOf.get(id) || []).some(m => chain(m).includes(f));
-    const i = common.findIndex(f => taken(f) || (world && (codeFrame(f) || finesOf(id).some(k => frames.get(f)?.closed?.goes.has(k)))));
-    if (i >= 0) common = common.slice(0, i);
+    if (world) { const i = common.findIndex(codeFrame); if (i >= 0) common = common.slice(0, i); }
     return common.length ? nodeOf.get(common[common.length - 1]) : root;
   };
   for (const p of [...places.values()].filter(p => (p.kind === "type" || p.kind === "ext") && keep.has(p.id) && !p.inFrame).sort((a, b) => a.label.localeCompare(b.label))) homeOf(p.id).children.push(leaf(p.id, placeW(p, 30), 36));
@@ -2005,7 +1982,7 @@ async function renderPlaat(mine) {
   // pills
   for (const P of pills.values()) {
     if (!pos.has(P.id)) continue;
-    const Q = pos.get(P.id), grp = el("g", {class: "tstep" + (P.own ? " own" : "") + (stepOf(P.steps[0]).startsWith("op:") ? " op" : ""), "data-id": stepOf(P.steps[0]), "data-layout-id": P.id}, ng);
+    const Q = pos.get(P.id), grp = el("g", {class: "tstep" + (P.own ? " own" : "") + (stepOf(P.steps[0]).startsWith("op:") ? " op" : "") + (P.steps.length === 1 ? prophecyClass(byId.get(stepOf(P.steps[0]))) : ""), "data-id": stepOf(P.steps[0]), "data-layout-id": P.id}, ng);
     pointable(grp, P.id);
     // what a peek shows of a pill: its step (or steps), a package's module, the focus around the rest
     const shows = () => {
@@ -2050,7 +2027,7 @@ async function renderPlaat(mine) {
   for (const p of places.values()) {
     if (!pos.has(p.id)) continue;
     const Q = pos.get(p.id), kind = placeKind(p.id);
-    const grp = el("g", {class: "tnode" + (p.kind === "ext" ? " ghost" : "") + (p.kind === "ref" ? " ref" : "") + (kind ? " world" : ""), "data-id": p.id}, ng);
+    const grp = el("g", {class: "tnode" + (p.kind === "ext" ? " ghost" : "") + (p.kind === "ref" ? " ref" : "") + (kind ? " world" : "") + (kind ? "" : prophecyClass(byId.get(p.type))), "data-id": p.id}, ng);
     pointable(grp, p.id);
     grp.addEventListener("mouseenter", () => { hoverTarget = () => { if (p.id.startsWith("e:")) select(p.id.slice(2)); else if (kind) selectPlace(p.id, p.label); else if (byId.has(p.type)) select(p.type); }; });
     grp.addEventListener("mouseleave", () => { hoverTarget = null; });
@@ -2117,8 +2094,6 @@ async function renderPlaat(mine) {
   if (t1) { if (plaatFit || !DUR) svg.call(zoom.transform, t1); else svg.transition().duration(DUR).call(zoom.transform, t1); }
   prevPos = pos; plaatAnchor = null; plaatFit = false;
   PICTURE = {boxes: nodeEls, lines: edgeEls};
-  // the picture as data, for the checks that walk it (tools/pictures.py): each box with the box that holds it, each line by its ends
-  window.atlasPicture = {n: (window.atlasPicture?.n || 0) + 1, boxes: [...nodeEls.keys()].map(id => [id, parentOf.get(id) || "root"]), lines: edgeEls.map(e => [e.a, e.b])};
 }
 // what the picture is a function of, each part undoable: the route, the opened steps, the open families, the split world boxes
 function crumbs() {
@@ -2262,6 +2237,15 @@ function select(id, extra) {
     insp.appendChild(html("div", "sig", `class ${n.name}(${(n.bases || []).join(", ")})`));
   }
   if (n.doc) insp.appendChild(html("p", "doc", n.doc));
+  const pro = prophecyOf(n);
+  if (pro) {
+    const said = [n.prophecy ? "a prophecy: sketch code, not built yet" : `a member of the prophecy ${short(n.cls)}`];
+    if (pro.veiled) said.push("veiled: the place is known, the shape is not");
+    if (pro.sealed) said.push(`sealed on ${pro.sealed}`);
+    insp.appendChild(html("div", "dwas prophecy", said.join(" · ")));
+    if (n.prophecy?.supersedes) insp.appendChild(section("supersedes", null, byId.has(pro.replaces) ? linkList([pro.replaces]) : html("p", "doc", `${n.prophecy.supersedes}, which the code does not hold`)));
+  }
+  if (replacedBy.has(id)) insp.appendChild(section("superseded by", null, linkList([replacedBy.get(id)])));
   if (n.kind === "make") {
     insp.appendChild(section("recipe", null, html("pre", "recipe", n.recipe.join("\n"))));
     if (n.make.calls.length) insp.appendChild(section("runs", n.make.calls.length, linkList(n.make.calls)));
@@ -2337,6 +2321,7 @@ function legend() {
     row.appendChild(html("span", "sep"));
     for (const [st, text] of [["added", "added in B"], ["removed", "removed in B"], ["changed", "changed: its own arrows differ"]]) { const sw = html("span", "sw"); sw.innerHTML = `<i class="dsw ${st}"></i>${text}`; row.appendChild(sw); }
   }
+  if (scene.node().querySelector(".prophecy")) { const sw = html("span", "sw"); sw.innerHTML = `<i class="dsw prophecy"></i>prophecy: sketch, not built yet`; row.appendChild(sw); }
   if (scene.node().querySelector(".ask")) { const sw = html("span", "sw asks"); sw.innerHTML = `<svg width="8" height="8"><circle cx="4" cy="4" r="3.5" fill="var(--accent)"/></svg> finding: hover it`; row.appendChild(sw); }
   // a closed box's own mark is its border; what it holds inside is counted on a dashed tag
   if (scene.node().querySelector(".inside")) {

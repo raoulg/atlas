@@ -387,7 +387,9 @@ impl Touch {
             }
             World::Disk => {
                 let shape = crate::effects::fs_op(&self.op) != crate::effects::FsOp::Data;
-                if !self.artifact.is_empty() && (!shape || self.shape() || self.artifact.ends_with('/')) {
+                // a pattern below a directory lists a part of it, a place of its own
+                let listed = crate::effects::fs_op(&self.op) == crate::effects::FsOp::Lists && self.artifact.contains('*');
+                if !self.artifact.is_empty() && (!shape || self.shape() || self.artifact.ends_with('/') || listed) {
                     let a = &self.artifact;
                     return Place { file: a.clone(), ..place(format!("w:File:{a}"), format!("File({a})"), a.clone(), "file") };
                 }

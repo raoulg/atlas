@@ -1,7 +1,7 @@
 //! `atlas serve` and `atlas mcp` sharing one page: the page says what it shows and an agent reads
 //! it, an agent points at a box and the page goes there once, and a note the reader writes is
 //! resolved by an agent, never by its reading alone, and opened again by the reader. The page follows the code: a changed file is drawn
-//! anew, and the page knows which drawing it is. What an agent proposes is drawn beside the
+//! anew, and the page knows which drawing it is. what an agent has in view is drawn beside the
 //! working tree, and what it says of a box is shown on it.
 
 use std::io::{BufRead, BufReader, Read, Write};
@@ -161,20 +161,20 @@ fn the_page_follows_the_code() {
     let _ = std::fs::remove_dir_all(repo.parent().unwrap());
 }
 
-/// An agent proposes a change as the files it would write, and the page draws the working tree
-/// and the proposal as one picture, the proposal's step marked; the working tree stays as it was,
-/// and once the proposal is withdrawn the page draws the working tree alone.
+/// An agent shows a change as the files it would write, and the page draws the working tree
+/// and the vision as one picture, the vision's step marked; the working tree stays as it was,
+/// and once the vision is retracted the page draws the working tree alone.
 #[test]
-fn a_proposal_is_drawn_beside_the_working_tree() {
-    let repo = repository("proposal");
+fn a_vision_is_drawn_beside_the_working_tree() {
+    let repo = repository("vision");
     let (mut server, at) = serve(&repo);
     let _ = send(&at, "GET", "/", None, false);
     let first = drawn(&at).expect("a drawing, once the page is asked for");
 
     let sketch = "def count(n: int) -> int:\n    return n + 1\n\n\ndef twice(n: int) -> int:\n    return count(count(n))\n";
-    let told = tool(&repo, "propose", json!({"title": "count twice", "files": {"src/spots/__init__.py": sketch}}));
-    assert!(told.starts_with("Proposed: count twice."), "{told}");
-    assert!(told.contains("+ Library · twice"), "what the proposal does to the routes: {told}");
+    let told = tool(&repo, "vision", json!({"title": "count twice", "files": {"src/spots/__init__.py": sketch}}));
+    assert!(told.starts_with("Envisioned: count twice."), "{told}");
+    assert!(told.contains("+ Library · twice"), "what the vision does to the routes: {told}");
     assert!(!std::fs::read_to_string(repo.join("src/spots/__init__.py")).unwrap().contains("twice"), "the working tree stays");
 
     let next = (0..60)
@@ -182,15 +182,15 @@ fn a_proposal_is_drawn_beside_the_working_tree() {
             std::thread::sleep(std::time::Duration::from_millis(500));
             drawn(&at).filter(|d| *d != first)
         })
-        .expect("the server draws the proposal by itself");
+        .expect("the server draws the vision by itself");
     let (_, page) = send(&at, "GET", "/", None, false);
-    assert!(page.contains(&format!("\"drawn\":\"{next}\"")), "the page asked for next is the proposal");
+    assert!(page.contains(&format!("\"drawn\":\"{next}\"")), "the page asked for next is the vision");
     assert!(
         page.contains("\"diff\":") && page.contains("\"subject\":\"count twice\"") && page.contains("spots.twice"),
         "A and B as one picture"
     );
 
-    assert!(tool(&repo, "propose", json!({"withdraw": true})).contains("withdrawn"));
+    assert!(tool(&repo, "vision", json!({"retract": true})).contains("retracted"));
     let alone = (0..60)
         .find_map(|_| {
             std::thread::sleep(std::time::Duration::from_millis(500));
@@ -221,4 +221,52 @@ fn an_agent_annotates_a_box() {
 
     server.kill().ok();
     let _ = std::fs::remove_dir_all(repo.parent().unwrap());
+}
+
+/// An agent decides its vision: the files are written into the tree with what the vision adds
+/// marked as prophecy, the vision is retracted, and the revelation lists what was decided. A
+/// vision that replaces what exists is refused, and is left as it was.
+#[test]
+fn a_decided_vision_is_written_as_prophecy() {
+    let repo = repository("prophetize");
+    let init = repo.join("src/spots/__init__.py");
+    let sketch = |body: &str| format!("def count(n: int) -> int:\n    {body}\n\n\ndef twice(n: int) -> int: ...\n");
+
+    tool(&repo, "vision", json!({"title": "count twice", "files": {"src/spots/__init__.py": sketch("return n")}}));
+    let refused = tool(&repo, "prophetize", json!({}));
+    assert!(refused.contains("changes `spots.count`") && refused.contains("supersedes"), "{refused}");
+    assert!(!std::fs::read_to_string(&init).unwrap().contains("twice"), "a refused vision writes nothing");
+    assert!(repo.join(".atlas/vision.json").exists(), "and stays as it was");
+
+    tool(&repo, "vision", json!({"title": "count twice", "files": {"src/spots/__init__.py": sketch("return n + 1")}}));
+    let told = tool(&repo, "prophetize", json!({"supersedes": {"spots.twice": "spots.count"}}));
+    assert!(told.contains("Marked as prophecies: spots.twice") && told.contains("no `prophecy` function"), "{told}");
+    let written = std::fs::read_to_string(&init).unwrap();
+    assert!(written.contains("@prophecy(supersedes=\"spots.count\")\ndef twice"), "{written}");
+    assert!(!repo.join(".atlas/vision.json").exists(), "the vision is retracted");
+    let revelation = tool(&repo, "revelation", json!({}));
+    assert!(revelation.contains("twice  supersedes `spots.count`"), "{revelation}");
+}
+
+/// A seal is broken by name: `sealed=..` leaves the marker and nothing else changes. Which seals
+/// can be broken is the issues' to say (`closed`, asked of GitHub with `gh`), so with none to ask
+/// nothing is broken, and the seals are still listed.
+#[test]
+fn a_seal_is_broken_by_naming_it() {
+    let repo = repository("unseal");
+    let init = repo.join("src/spots/__init__.py");
+    std::fs::write(
+        &init,
+        "def prophecy(**_: str):\n    return lambda item: item\n\n\n@prophecy(sealed=\"#7\", supersedes=\"spots.prophecy\")\ndef twice(n: int) -> int: ...\n",
+    )
+    .unwrap();
+    let listed = tool(&repo, "seals", json!({}));
+    assert!(listed.contains("1 sealed, 0 to break") && listed.contains("twice  sealed on #7"), "{listed}");
+    assert_eq!(tool(&repo, "unseal", json!({"closed": true})), "No seal to break.");
+    assert!(tool(&repo, "unseal", json!({})).contains("takes the `ids`"));
+    let told = tool(&repo, "unseal", json!({"ids": ["spots.twice"]}));
+    assert!(told.contains("Seals broken: spots.twice"), "{told}");
+    let written = std::fs::read_to_string(&init).unwrap();
+    assert!(written.contains("@prophecy(supersedes=\"spots.prophecy\")\ndef twice"), "{written}");
+    assert!(tool(&repo, "seals", json!({})).contains("0 sealed"));
 }

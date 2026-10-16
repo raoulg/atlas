@@ -1,0 +1,102 @@
+name: nightly
+
+# The nightly build of `next`: a pre-release named `nightly`, replaced when `next` has moved and
+# `ci` is green for its commit. A pre-release is never `releases/latest`, so the stable install is
+# not touched. `release.yml` makes the stable release from a `v*` tag on `main`.
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Build even when next has not moved or ci is not green"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  decide:
+    runs-on: ubuntu-latest
+    outputs:
+      build: ${{ steps.pick.outputs.build }}
+      sha: ${{ steps.pick.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: next
+      - id: pick
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FORCE: ${{ inputs.force }}
+        run: |
+          sha=$(git rev-parse HEAD)
+          last=$(gh release view nightly --json targetCommitish -q .targetCommitish 2>/dev/null || echo none)
+          ci=$(gh run list --workflow ci.yml --branch next --commit "$sha" --json conclusion -q '.[0].conclusion' 2>/dev/null || echo none)
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          if [ "$FORCE" = true ]; then
+            echo "build=true" >> "$GITHUB_OUTPUT"
+          elif [ "$last" = "$sha" ]; then
+            echo "next has not moved since the last nightly ($sha)"
+            echo "build=false" >> "$GITHUB_OUTPUT"
+          elif [ "$ci" != success ]; then
+            echo "ci is not green for $sha ($ci): no nightly"
+            echo "build=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "build=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    needs: decide
+    if: needs.decide.outputs.build == 'true'
+    strategy:
+      matrix:
+        include:
+          - { os: macos-latest, target: aarch64-apple-darwin }
+          - { os: macos-latest, target: x86_64-apple-darwin }
+          - { os: ubuntu-22.04, target: x86_64-unknown-linux-gnu }
+          - { os: ubuntu-22.04-arm, target: aarch64-unknown-linux-gnu }
+          - { os: windows-latest, target: x86_64-pc-windows-msvc }
+    runs-on: ${{ matrix.os }}
+    env:
+      ATLAS_CHANNEL: nightly
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.decide.outputs.sha }}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - run: cargo build --release --locked --target ${{ matrix.target }} -p atlas
+      - name: package
+        shell: bash
+        run: |
+          cd target/${{ matrix.target }}/release
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            7z a "$GITHUB_WORKSPACE/atlas-${{ matrix.target }}.zip" atlas.exe
+          else
+            tar -czf "$GITHUB_WORKSPACE/atlas-${{ matrix.target }}.tar.gz" atlas
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: atlas-${{ matrix.target }}
+          path: atlas-${{ matrix.target }}.*
+
+  publish:
+    needs: [decide, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ needs.decide.outputs.sha }}
+        run: |
+          gh release delete nightly --cleanup-tag --yes --repo "$GITHUB_REPOSITORY" || true
+          gh release create nightly dist/* --repo "$GITHUB_REPOSITORY" --prerelease --target "$SHA" \
+            --title "nightly" --notes "The nightly build of next at ${SHA:0:7}, $(date -u +%Y-%m-%d). Not a release: install it with ATLAS_CHANNEL=nightly."

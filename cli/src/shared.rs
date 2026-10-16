@@ -6,8 +6,8 @@
 //!   taken by the page once;
 //! - `notes.json`: what the reader wrote on a box or a line, and whether an agent resolved it;
 //! - `serving.json`: where `atlas serve` serves the page, for a link to the place of a note;
-//! - `proposal.json`: what an agent proposes, the working tree with some files written otherwise,
-//!   drawn beside the working tree until the agent withdraws it;
+//! - `vision.json`: what an agent has in view, the working tree with some files written otherwise,
+//!   drawn beside the working tree until the agent retracts it;
 //! - `annotations.json`: what an agent says of a box or a line (what a condition means, what a step
 //!   is for), shown on the page until the agent takes it away.
 //!
@@ -156,33 +156,69 @@ pub fn forget_resolved(repo: &Path) -> Result<()> {
     Ok(())
 }
 
-/// What an agent proposes: the working tree with some files written otherwise, under a title. A
-/// proposal is sketch code (signatures, types, the calls in their order), which has to parse, not
+/// what an agent has in view: the working tree with some files written otherwise, under a title. A
+/// vision is sketch code (signatures, types, the calls in their order), which has to parse, not
 /// to build.
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
-pub struct Proposal {
+pub struct Vision {
     pub title: String,
     /// Each file by its path from the repository's root: its text, or none where it goes.
     pub files: BTreeMap<PathBuf, Option<String>>,
 }
 
-/// Where the proposal is kept: its file changes when the proposal does.
-pub fn proposal_file(repo: &Path) -> PathBuf {
-    file(repo, "proposal.json")
+/// Where the vision is kept: its file changes when the vision does.
+pub fn vision_file(repo: &Path) -> PathBuf {
+    file(repo, "vision.json")
 }
 
-/// What an agent proposes, if anything.
-pub fn proposal(repo: &Path) -> Option<Proposal> {
-    read(&proposal_file(repo)).and_then(|v| serde_json::from_value(v).ok())
+/// what an agent has in view, if anything.
+pub fn vision(repo: &Path) -> Option<Vision> {
+    read(&vision_file(repo)).and_then(|v| serde_json::from_value(v).ok())
 }
 
-pub fn propose(repo: &Path, p: &Proposal) -> Result<()> {
-    write(&proposal_file(repo), p)
+pub fn envision(repo: &Path, p: &Vision) -> Result<()> {
+    write(&vision_file(repo), p)
 }
 
-/// The proposal withdrawn: whether there was one.
-pub fn withdraw(repo: &Path) -> Result<bool> {
-    let path = proposal_file(repo);
+/// What `gh` says of an issue of the repository: its state and title. None where it cannot say (no
+/// `gh`, no network, no remote, no such issue): the caller says it does not know.
+pub fn issue_state(repo: &Path, issue: &str) -> Option<(atlas_engine::revelation::IssueState, String)> {
+    use atlas_engine::revelation::IssueState;
+    let (on, number) = match issue.rsplit_once('#') {
+        Some((repo_name, n)) if !repo_name.is_empty() => (Some(repo_name), n),
+        Some((_, n)) => (None, n),
+        None => (None, issue),
+    };
+    let mut gh = std::process::Command::new("gh");
+    gh.current_dir(repo).args(["issue", "view", number, "--json", "state,title"]);
+    if let Some(r) = on {
+        gh.args(["--repo", r]);
+    }
+    let out = gh.stdin(std::process::Stdio::null()).stderr(std::process::Stdio::null()).output().ok().filter(|o| o.status.success())?;
+    let v: Value = serde_json::from_slice(&out.stdout).ok()?;
+    let state = match v["state"].as_str()? {
+        "CLOSED" => IssueState::Closed,
+        "OPEN" => IssueState::Open,
+        _ => IssueState::Unknown,
+    };
+    Some((state, v["title"].as_str().unwrap_or("").to_string()))
+}
+
+/// Files written into the tree, each by its path from the repository's root.
+pub fn write_files(repo: &Path, files: &std::collections::BTreeMap<PathBuf, String>) -> Result<()> {
+    for (rel, text) in files {
+        let dest = repo.join(rel);
+        if let Some(dir) = dest.parent() {
+            std::fs::create_dir_all(dir)?;
+        }
+        std::fs::write(&dest, text).with_context(|| format!("writing {}", rel.display()))?;
+    }
+    Ok(())
+}
+
+/// The vision retracted: whether there was one.
+pub fn retract(repo: &Path) -> Result<bool> {
+    let path = vision_file(repo);
     if !path.exists() {
         return Ok(false);
     }

@@ -30,6 +30,7 @@ pub const PRINCIPLES: &[Principle] = &[
     Principle { id: "nothing", asks: "A call leaves something behind." },
     Principle { id: "layers", asks: "The packages of a part depend on one another in one direction." },
     Principle { id: "lens", asks: "What a lens puts, it gets back." },
+    Principle { id: "prophecy", asks: "Code that is built does not lean on code that is not." },
 ];
 
 /// One place where the code and a principle disagree.
@@ -238,10 +239,26 @@ pub fn summary(parts: &[(&str, &[Finding])], asked: &[&Principle], look: &Look) 
 /// Every finding, by principle in the order of `PRINCIPLES`, then by place in the code.
 pub fn check(g: &Graph) -> Vec<Finding> {
     let ix = Index::new(g);
+    let answers = ix.answers();
     let mut out = vec![];
-    for rule in [doors, sums, overrides, places, changes, gives, choices, nothing, layers, lens] {
+    type Rule = fn(&Index) -> Vec<Finding>;
+    let rules: [Rule; 11] = [doors, sums, overrides, places, changes, gives, choices, nothing, layers, lens, prophecy];
+    for (i, rule) in rules.into_iter().enumerate() {
         // a library read as code is not the project's to change
         let mut found: Vec<Finding> = rule(&ix).into_iter().filter(|f| ix.node(&f.node).map_or(true, |n| !n.library)).collect();
+        // a prophecy is a todo, not a finding: its empty bodies are what it is, and the rule that
+        // asks about prophecies is the only one that speaks of them
+        if i + 1 != rules.len() {
+            found.retain(|f| ix.node(&f.node).map_or(true, |n| !ix.prophetic(n)));
+        }
+        // what a prophecy supersedes is still asked about; the prophecy is the answer
+        for f in &mut found {
+            if let Some(p) =
+                ix.node(&f.node).and_then(|n| answers.get(n.id.as_str()).or_else(|| n.cls.as_deref().and_then(|c| answers.get(c))))
+            {
+                f.evidence.push(format!("answered by the prophecy `{}`, which supersedes it", ix.label(p)));
+            }
+        }
         found.sort_by(|a, b| (&a.file, a.line).cmp(&(&b.file, b.line)));
         out.extend(found);
     }
@@ -285,6 +302,21 @@ impl<'g> Index<'g> {
             Some(c) => format!("{}.{}", c.name, n.name),
             None => n.name.clone(),
         }
+    }
+
+    /// Whether a node is sketch code that is not built: a prophecy, or a member of one.
+    fn prophetic(&self, n: &Node) -> bool {
+        n.prophecy.is_some() || n.cls.as_deref().and_then(|c| self.node(c)).is_some_and(|c| c.prophecy.is_some())
+    }
+
+    /// What the prophecy `p` supersedes, when the code holds it.
+    fn superseded(&self, p: &Node) -> Option<&'g Node> {
+        self.node(p.prophecy.as_ref()?.replaces.as_deref()?)
+    }
+
+    /// The prophecy that supersedes each node it names.
+    fn answers(&self) -> HashMap<&'g str, &'g str> {
+        self.g.nodes.iter().filter_map(|p| Some((self.superseded(p)?.id.as_str(), p.id.as_str()))).collect()
     }
 
     fn finding(&self, principle: &'static str, n: &Node, what: String, evidence: Vec<String>, question: String) -> Finding {
@@ -958,6 +990,59 @@ fn nothing(ix: &Index) -> Vec<Finding> {
             evidence,
             format!(
                 "As far as Atlas can see, a call to {name} leaves nothing behind. Is it dead, or does it change what Atlas cannot see: a value it is handed (through an item or a loop), a global, a library's own state? Could it hand back what it makes, or let that value change itself through a method of its own?"
+            ),
+        ));
+    }
+    out
+}
+
+// ---------- prophecy ----------
+
+/// Built code that leans on a prophecy: production would run on a stub. A prophecy that
+/// supersedes something the code does not hold is a false prophecy. Prophecies lean on one another
+/// freely, and a test may lean on the code it is written for before it is built.
+fn prophecy(ix: &Index) -> Vec<Finding> {
+    let mut out = vec![];
+    for p in ix.g.nodes.iter().filter(|n| n.prophecy.as_ref().is_some_and(|p| p.supersedes.is_some())) {
+        if ix.superseded(p).is_none() {
+            let named = p.prophecy.as_ref().and_then(|p| p.supersedes.as_deref()).unwrap_or("");
+            out.push(ix.finding(
+                "prophecy",
+                p,
+                format!("{} supersedes `{named}`, which the code does not hold", ix.label(&p.id)),
+                vec![format!("supersedes `{named}`")],
+                format!("A prophecy that replaces nothing is built or false. Is `{named}` gone already, or is its name written otherwise?"),
+            ));
+        }
+    }
+    let leans = [EdgeKind::Calls, EdgeKind::Instantiates, EdgeKind::Inherits, EdgeKind::Takes, EdgeKind::Returns, EdgeKind::Has];
+    let mut by: BTreeMap<&str, Vec<(&Node, EdgeKind)>> = BTreeMap::new();
+    for e in ix.g.edges.iter().filter(|e| leans.contains(&e.kind)) {
+        let (Some(from), Some(to)) = (ix.node(&e.src), ix.node(&e.dst)) else { continue };
+        let test = from.entry.as_ref().is_some_and(|en| en.kind == EntryKind::Test);
+        if ix.prophetic(to) && !ix.prophetic(from) && !from.library && !test {
+            // a member of a prophecy is leaned on as the prophecy it belongs to
+            let root = to.cls.as_deref().and_then(|c| ix.node(c)).filter(|c| c.prophecy.is_some()).unwrap_or(to);
+            by.entry(from.id.as_str()).or_default().push((root, e.kind));
+        }
+    }
+    for (id, leaned) in by {
+        let Some(from) = ix.node(id) else { continue };
+        let mut names: Vec<String> = leaned.iter().map(|(to, _)| format!("`{}`", ix.label(&to.id))).collect();
+        names.sort();
+        names.dedup();
+        let mut evidence: Vec<String> = leaned.iter().map(|(to, k)| format!("{k:?} `{}`, which is not built", ix.label(&to.id))).collect();
+        evidence.sort();
+        evidence.dedup();
+        out.push(ix.finding(
+            "prophecy",
+            from,
+            format!("{} leans on {}, which is not built", ix.label(id), list(&names)),
+            evidence,
+            format!(
+                "Production would run on a stub here. Build {} first, or is {} meant to change with it, as a prophecy that supersedes it?",
+                list(&names),
+                ix.label(id)
             ),
         ));
     }

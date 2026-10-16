@@ -3008,7 +3008,9 @@ fn file_calls<'t>(
                 Some(l) => l.trim().to_string(),
                 None => text(a, src).to_string(),
             };
-            (touch(kind, what, artifact, crate::tree::head_literal(a, src, &["string"])), eval.of(at, a, 0))
+            // a pattern below a directory is the path the call gives, not the directory alone
+            let patterned = name == "self" && knowledge::PATH_PATTERNS.iter().any(|(p, _)| *p == op);
+            (touch(kind, what, artifact, crate::tree::head_literal(a, src, &["string"])), eval.of(at, if patterned { c } else { a }, 0))
         })
         .collect()
 }

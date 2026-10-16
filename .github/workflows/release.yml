@@ -60,3 +60,38 @@ jobs:
       - if: runner.os == 'Windows'
         shell: pwsh
         run: ./install.ps1; & "$env:LOCALAPPDATA\Programs\atlas\atlas.exe" --version
+
+  # The Homebrew tap (raoulg/homebrew-tap) takes the new version and the checksums of the release.
+  # It needs the secret TAP_TOKEN (a token with Contents: write on that repository only); without
+  # it the job says so and does nothing.
+  tap:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          TAP_TOKEN: ${{ secrets.TAP_TOKEN }}
+        run: |
+          if [ -z "$TAP_TOKEN" ]; then echo "no TAP_TOKEN: the tap is not updated"; exit 0; fi
+          version="${GITHUB_REF_NAME#v}"
+          gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --pattern '*.tar.gz' --dir assets
+          git clone "https://x-access-token:${TAP_TOKEN}@github.com/raoulg/homebrew-tap.git" tap
+          python3 - "$version" "$GITHUB_REF_NAME" <<'PY'
+          import hashlib, pathlib, re, sys
+          version, tag = sys.argv[1:]
+          path = pathlib.Path("tap/Formula/atlas-code.rb")
+          text = re.sub(r'version "[^"]*"', f'version "{version}"', path.read_text(), count=1)
+          for target in ["aarch64-apple-darwin", "x86_64-apple-darwin", "aarch64-unknown-linux-gnu", "x86_64-unknown-linux-gnu"]:
+              sha = hashlib.sha256(pathlib.Path(f"assets/atlas-{target}.tar.gz").read_bytes()).hexdigest()
+              text = re.sub(
+                  rf'url "[^"]*/atlas-{target}\.tar\.gz"\n(\s*)sha256 "[^"]*"',
+                  lambda m: f'url "https://github.com/raoulg/atlas/releases/download/{tag}/atlas-{target}.tar.gz"\n{m.group(1)}sha256 "{sha}"',
+                  text,
+              )
+          path.write_text(text)
+          PY
+          cd tap
+          git config user.name "atlas release"
+          git config user.email "atlas@users.noreply.github.com"
+          git commit -am "Atlas ${version}"
+          git push

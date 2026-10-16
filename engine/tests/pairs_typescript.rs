@@ -10,6 +10,8 @@
 //! followed, a missing type), and the shortcut is still in the graph. A statement Atlas does not
 //! hold yet is a test of its own, ignored with what Atlas gets wrong.
 
+mod common;
+
 use std::path::PathBuf;
 use std::sync::OnceLock;
 
@@ -547,4 +549,121 @@ fn lens_what_is_put_comes_back_inside_and_a_key_is_no_put() {
     let lens = asked_anywhere(&s, "lens");
     assert_eq!(lens.len(), 1, "{lens:?}");
     assert!(lens[0].contains("Outage") && lens[0].contains("Day") && !lens[0].contains("Reading "), "{}", lens[0]);
+}
+
+// ---------- prophecy ----------
+
+/// One side of the prophecy pair (`tests/pairs/prophecy`): a report `Sink` that only writes, and
+/// the `Store` that will replace it, sketched without bodies.
+fn archive_typescript(side: &str) -> Graph {
+    analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/prophecy/typescript").join(side), &Options::default())
+        .expect("reads")
+}
+
+/// Sketch code kept in the tree says it is not built: Atlas reads a class marked with the `@prophecy` JSDoc tag
+/// as a prophecy that supersedes the sink, and the sink as built. The shortcut writes the same
+/// sketch without the mark: Atlas cannot tell it from code that is finished, and does not pretend to.
+#[test]
+fn prophecy_a_sketch_in_the_tree_says_it_is_not_built() {
+    let (c, s) = (archive_typescript("clean"), archive_typescript("unmarked"));
+    let store = |g: &Graph| {
+        g.nodes
+            .iter()
+            .find(|n| n.id.ends_with(".Store") || n.id == "Store")
+            .unwrap_or_else(|| panic!("a Store in {:?}", g.nodes.iter().map(|n| &n.id).collect::<Vec<_>>()))
+            .clone()
+    };
+    let sketch = store(&c).prophecy.expect("the marked sketch is a prophecy");
+    assert_eq!(sketch.supersedes.as_deref(), Some("Sink"));
+    assert!(!sketch.veiled && sketch.sealed.is_none());
+    assert!(store(&s).prophecy.is_none(), "an unmarked sketch is read as built");
+    assert!(c.nodes.iter().filter(|n| n.prophecy.is_some()).count() == 2, "only the marked items are prophecies");
+    assert!(s.nodes.iter().any(|n| n.name == "Store"), "the shortcut's sketch is still in the graph");
+}
+
+/// Built code does not lean on a prophecy. The clean side keeps the sketch apart: the built `run`
+/// still writes to the `Sink`, and `run_stored` is a prophecy that supersedes it and is the only
+/// one to call the `Store`; the sketch's empty bodies are no finding, and the prophecies answer
+/// the code they supersede. The shortcut lets `run` call the `Store` itself: production would run
+/// on a stub, and Atlas asks about `run`. The side with no mark has nothing to lean on.
+#[test]
+fn prophecy_built_code_does_not_lean_on_a_stub() {
+    let (c, s, u) = (archive_typescript("clean"), archive_typescript("shortcut"), archive_typescript("unmarked"));
+    let leaning = |g: &Graph| -> Vec<String> { check(g).into_iter().filter(|f| f.principle == "prophecy").map(|f| f.node).collect() };
+    assert!(check(&c).is_empty(), "{:?}", check(&c).iter().map(|f| format!("{} {}", f.principle, f.what)).collect::<Vec<_>>());
+    assert!(leaning(&u).is_empty());
+    let run = leaning(&s);
+    assert_eq!(run.len(), 1, "{run:?}");
+    assert!(run[0].ends_with(".run") || run[0] == "run", "{run:?}");
+    assert!(s.nodes.iter().any(|n| n.name == "Store" && n.prophecy.is_some()), "the shortcut's sketch is marked, and still leaned on");
+}
+
+/// The revelation is what the sketch leaves to do: each prophecy, what it supersedes (found in the
+/// code), the bodies still to write, and the built code that leans on it. The clean side lists
+/// the `Store` and `run_stored`, each superseding what it replaces, leaned on by nothing; its
+/// operations are routes into what is planned. The shortcut's `Store` is leaned on by `run`. The
+/// side with no mark has no revelation.
+#[test]
+fn prophecy_the_revelation_says_what_is_left() {
+    use atlas_engine::revelation::revelation;
+    let (c, s, u) = (archive_typescript("clean"), archive_typescript("shortcut"), archive_typescript("unmarked"));
+    let stands = revelation(&c);
+    assert_eq!(stands.len(), 2, "{stands:?}");
+    assert!(stands.iter().all(|p| p.holds && p.supersedes.is_some() && p.leaned_on_by.is_empty() && p.bodies > 0), "{stands:?}");
+    let store = stands.iter().find(|p| p.id.ends_with("Store")).expect("the Store is a prophecy");
+    assert!(store.supersedes.as_deref().is_some_and(|r| r.ends_with("Sink")), "{store:?}");
+    let routes: Vec<_> = c.nodes.iter().filter(|n| n.entry.as_ref().is_some_and(|e| e.kind == atlas_engine::EntryKind::Prophecy)).collect();
+    assert!(!routes.is_empty() && routes.iter().all(|n| n.prophecy.is_some() || n.cls.is_some()), "a prophecy's operations are routes");
+    let leaning = revelation(&s);
+    assert_eq!(leaning.len(), 1);
+    assert!(leaning[0].leaned_on_by.iter().any(|l| l.ends_with("run")), "{leaning:?}");
+    assert!(revelation(&u).is_empty());
+}
+
+/// A vision that is decided is written into the tree as prophecy: what it adds is marked in the
+/// language of its file, with the item it replaces, and the revelation then lists it. What exists
+/// is not touched, and a vision that changes what exists is refused.
+#[test]
+fn prophecy_a_decided_vision_is_marked_where_it_is_written() {
+    let (decided, stands) = common::decided(
+        "typescript",
+        "src/index.ts",
+        "\n/** Where reports wait. */\nexport declare class Vault {\n  keep(report: string): void;\n}\n",
+        &[("clean.Vault", "clean.Sink")],
+    );
+    let text = decided.files.values().next().expect("one file is written");
+    assert!(text.contains("@prophecy supersedes=clean.Sink"), "{text}");
+    assert_eq!(decided.marked, ["clean.Vault"]);
+    let vault = stands.iter().find(|s| s.id == "clean.Vault").expect("the revelation lists what was decided");
+    assert_eq!(vault.supersedes.as_deref(), Some("clean.Sink"));
+    assert!(vault.holds, "{vault:?}");
+    assert_eq!(stands.len(), 3, "the two prophecies of the clean side, and the new one: {stands:?}");
+}
+
+/// A prophecy whose shape waits on an open question is sealed on its issue. The seals come back
+/// as a list with what the host says of each issue (here: one closed, one open), and the one whose
+/// issue is closed can be broken: `sealed=..` leaves its marker and nothing else changes. The
+/// lookup is handed in, so the test asks no host.
+#[test]
+fn prophecy_a_seal_is_listed_and_broken_when_its_issue_is_closed() {
+    use atlas_engine::revelation::{revelation, seals, IssueState};
+    let (copy, g) = common::written("typescript", "src/index.ts", "\n/** @prophecy supersedes=clean.Sink sealed=#7 */\nexport declare class Vault {\n  keep(report: string): void;\n}\n\n/** @prophecy sealed=#8 */\nexport declare class Crate {\n  pack(report: string): void;\n}\n");
+    let lookup = |issue: &str| Some((if issue == "#7" { IssueState::Closed } else { IssueState::Open }, format!("question {issue}")));
+    let listed = seals(&revelation(&g), &lookup);
+    assert_eq!(
+        listed.iter().map(|s| (s.id.as_str(), s.can_be_broken())).collect::<Vec<_>>(),
+        [("clean.Vault", true), ("clean.Crate", false)].map(|(i, b)| (i, b))
+    );
+    let broken = atlas_engine::decide::unseal(&g, &["clean.Vault".to_string()]).expect("a closed seal is broken");
+    let text = broken.values().next().expect("one file");
+    assert!(!text.contains("#7") && text.contains("#8"), "only the broken seal leaves: {text}");
+    for (rel, t) in &broken {
+        std::fs::write(copy.join(rel), t).expect("writes the file");
+    }
+    let after = revelation(&atlas_engine::analyze(&copy, &atlas_engine::Options::default()).expect("reads"));
+    let vault = after.iter().find(|s| s.id == "clean.Vault").expect("still a prophecy");
+    assert!(vault.sealed.is_none() && vault.supersedes.as_deref().is_some_and(|r| r.ends_with("Sink")), "{vault:?}");
+    assert_eq!(after.iter().find(|s| s.id == "clean.Crate").and_then(|s| s.sealed.as_deref()), Some("#8"));
+    assert!(atlas_engine::decide::unseal(&g, &["clean.Store".to_string()]).is_err(), "a prophecy that is not sealed has no seal to break");
+    let _ = std::fs::remove_dir_all(copy.parent().expect("has a parent"));
 }

@@ -72,7 +72,10 @@ pub struct GraphBuilder {
 }
 
 impl GraphBuilder {
-    pub fn add_node(&mut self, n: Node) {
+    pub fn add_node(&mut self, mut n: Node) {
+        if n.prophecy.is_none() {
+            n.prophecy = crate::prophecy::Prophecy::among(&n.decorators);
+        }
         self.nodes.insert(n.id.clone(), n);
     }
 
@@ -193,6 +196,7 @@ impl GraphBuilder {
         crate::flow::wire(&mut nodes, &self.edges);
         mark_doors(&mut nodes, &self.edges);
         mark_options(&mut nodes);
+        crate::prophecy::settle(&mut nodes, &self.edges);
         let mut edges = self.edges;
         for e in edges.iter_mut().filter(|e| e.kind == EdgeKind::Calls) {
             e.uses = self.used.contains(&(e.src.clone(), e.dst.clone()));

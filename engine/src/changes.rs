@@ -599,14 +599,14 @@ fn reading_dir() -> String {
     format!("atlas-changes-{}-{n}", std::process::id())
 }
 
-/// A proposal: the working tree of `repo` with `files` written otherwise, each path from the
+/// A vision: the working tree of `repo` with `files` written otherwise, each path from the
 /// repository's root given whole or, where it is none, removed. It is read as a revision is, from a
 /// directory of its own under the same name, so the graph's names agree with the working tree's; a
-/// proposal is sketch code, which has to parse, not to build.
-pub fn proposed(repo: &Path, files: &BTreeMap<PathBuf, Option<String>>, opts: &crate::Options) -> Result<Vec<Graph>> {
+/// vision is sketch code, which has to parse, not to build.
+pub fn envisioned(repo: &Path, files: &BTreeMap<PathBuf, Option<String>>, opts: &crate::Options) -> Result<Vec<Graph>> {
     for rel in files.keys() {
         if rel.is_absolute() || rel.components().any(|c| !matches!(c, std::path::Component::Normal(_))) {
-            bail!("a proposal names files from the repository's root, inside it: {}", rel.display());
+            bail!("a vision names files from the repository's root, inside it: {}", rel.display());
         }
     }
     let repo = std::fs::canonicalize(repo).unwrap_or_else(|_| repo.to_path_buf());
@@ -644,7 +644,7 @@ pub fn proposed(repo: &Path, files: &BTreeMap<PathBuf, Option<String>>, opts: &c
         }
     }
     std::fs::create_dir_all(&root)?;
-    // the environment beside the repository stands beside the proposal too: its `.venv`, and what a
+    // the environment beside the repository stands beside the vision too: its `.venv`, and what a
     // path out of it reaches (`extra-paths = ["../typings"]`)
     #[cfg(unix)]
     {
