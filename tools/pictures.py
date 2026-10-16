@@ -18,7 +18,10 @@ and every route, and each family in the first two routes that hold it. It report
 says it could not draw it), draws nothing or plans a line to a box it does not draw, and each family that opens into another number of moments than it stood in
 closed; it fails when there is one.
 
-`topology` opens one box at a time in each route (up to ROUTES routes, default all; up to OPENS boxes in each,
+`topology` also asks the page for its oracle, which holds the plan of every route to the same laws before anything is laid
+out (`window.ATLAS_ORACLE`, `atlasPicture.oracle`): for each box that can be opened, the picture with that box open is
+taken from the route's finest plan and compared with the one drawn, and every difference is reported.
+It opens one box at a time in each route (up to ROUTES routes, default all; up to OPENS boxes in each,
 default 8: its steps, then its closed families) and holds the picture that opens to the one it was: opening a
 box refines the quotient, so it takes no line away (every line of the closed picture is a line of the open one,
 seen through the quotient map), draws no line the closed picture did not (but one a step reads back of what it
@@ -215,6 +218,7 @@ def topology(atlas: str, repo: str, out: pathlib.Path, routes: int, opens: int) 
     with sync_playwright() as p:
         browser = p.chromium.launch(channel="chrome")
         ctx = browser.new_context(viewport={"width": 1400, "height": 900}, reduced_motion="reduce")
+        ctx.add_init_script("window.ATLAS_ORACLE = true")
         tab = ctx.new_page()
         tab.on("pageerror", lambda e: print("page error:", str(e).splitlines()[0]))
 
@@ -231,6 +235,12 @@ def topology(atlas: str, repo: str, out: pathlib.Path, routes: int, opens: int) 
         for route in entries:
             if not load(route):
                 continue
+            plan_faults = tab.evaluate("window.atlasPicture.oracle || []")
+            if plan_faults:
+                bad += 1
+                print(route, "· the plan opens to a picture that does not refine it")
+                for f in plan_faults[:5]:
+                    print("   ", f)
             for spec in tab.evaluate(TOPOLOGY, None)[:opens]:
                 if not load(route):
                     break
