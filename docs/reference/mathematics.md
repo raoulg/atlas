@@ -183,6 +183,45 @@ Zooms in two hierarchies meet in their common refinement, so any combination of 
 picture.
 **Where.** `design.md` §0, and §1, "A view is data".
 
+### The closed picture is the pushforward of the fine one
+**What.** A graph with directed lines, a quiver `G`, and a partition `π` of its vertices with
+quotient map `q`. The quotient quiver `G/π` has the blocks as vertices and, for each line of `G`,
+a line from the block of its source to the block of its target; a line with both ends in one block
+becomes a loop on that point. It is the coequalizer in reflexive graphs, so `q` is a morphism and
+every morphism that is constant on the blocks factors through it once. Two lines of `G` with the same
+ends in `G/π` are one line with multiplicity two, a bundle. The fiber of `q` over a block is the
+part of `G` that collapsed into it, and opening the block puts back the fiber with its boundary:
+each line between the fiber and the rest is joined again to the block of its end in the fiber.
+**In Atlas.** The vertices of the finest picture are not places but values at a moment: a place
+as one step leaves it, a value as the step that makes it hands it on, a call occurrence. The lines
+run from the step that makes a value to the value and from the value to the steps that take it.
+Every picture is `G/π` for the open boxes of its zoom. Five rules follow, and they decide what a
+line that appears or disappears means:
+
+1. **A line without an image is a fault of the picture that lacks it.** The closed picture shows at
+   least the image of every fine line that crosses its border. A line that the open box draws across its
+   frame and the closed box did not is the closed box showing less than the pushforward, and the
+   fault is in the closed picture. Which fine lines exist is the code's: the domain of a step is its
+   parameters and what its body consumes (CLAUDE.md, sentence 2).
+2. **A line inside a block is no line.** A line with both ends in one block is a loop, and the closed
+   picture does not draw it. What the hidden elements of one box do to each other is not noise to be
+   filtered but a fact of the fiber, shown when the box opens.
+3. **Lines between two blocks are a bundle.** Fine lines with the same two blocks and the same
+   channel (an effect of the step's own, a reached one, a value handed on, a call and nothing else)
+   are one line that says how many it stands for, and opening splits it into the fine lines, each to
+   the block of its end. Different channels between the same two boxes stay different lines.
+4. **Reading back is no exception.** What a step makes and reads in the same box is a value inside
+   the fiber, a vertex of its own; the place keeps the value as the box leaves it, in the codomain.
+   The line from the place into the box that wrote it does not exist at a vertex that is a value at a
+   moment.
+5. **Reach is computed on the fine graph.** Quotienting identifies vertices and can make a path that
+   no fine path has (`a → b`, `c → d`, `b ≡ c` gives `[a] → [d]`). What a step reaches is the closure
+   of its calls in the fine graph, drawn apart from its own arrow (sentence 6), and never read off a
+   quotient.
+
+**Where.** `homeOf`, `madeAt` and `addEdge` in `viewer/index.html`; `tools/pictures.py topology`
+holds the open picture to the closed one.
+
 ### Refinement keeps what it does not refine
 **What.** A finer partition refines a coarser one: each block of the finer lies in one block of the
 coarser. The map `q` that sends a point to its block is the quotient map, and the coarse graph is
@@ -194,11 +233,9 @@ box opened is split. Seven laws follow, the first six statements about two pictu
 one after:
 
 1. **Incidence.** Every line of the closed picture is the image under `q` of a line of the open
-   one, and every line of the open one that leaves the box is the image of a line of the closed
-   one. Opening takes no line away and draws none the closed box did not have. One exception is the
-   composition law: a step that writes a place and reads it back has the place in its codomain and
-   not in its domain, so the line from the place into the step that wrote it belongs to the open
-   picture only (the arrow's `reads_back`, `flow.rs`).
+   one, and every line of the open one that leaves the box has an image that the closed picture draws
+   (the pushforward above): opening takes no line away, and a line it adds across the frame is one the
+   closed picture should have drawn.
 2. **Containment.** A box that does not lie in the opened box stays in the box that held it. What
    lies inside the opened box is what `q` sends to it: the frame is the fiber of the closed box.
 3. **Side.** A place of the world stands left, right or between by the coarsest picture that shows
