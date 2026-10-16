@@ -29,4 +29,7 @@ fn main() {
         })
         .unwrap_or_default();
     println!("cargo:rustc-env=ATLAS_COMMIT={commit}");
+    // the channel a build is made for (`nightly`), so that the version says so; none for a release
+    println!("cargo:rerun-if-env-changed=ATLAS_CHANNEL");
+    println!("cargo:rustc-env=ATLAS_CHANNEL={}", std::env::var("ATLAS_CHANNEL").unwrap_or_default());
 }

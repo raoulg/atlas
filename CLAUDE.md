@@ -80,17 +80,22 @@ The rigorous half and the visual half are the same structure. Read `docs/referen
   owner, the branch, the worktree, the base commit and the files in scope. Work in your own
   worktree and branch; never edit another agent's worktree, branch or files in scope. Claude's
   checkout is `/Users/rgrouls/code/packages/atlas` on `atlas-obeys-its-algebra`, its subagents'
-  are `.claude/worktrees/agent-*`; Codex's are under `~/.codex/worktrees/`. `main` moves only when
-  Raoul asks. When work lands, the issue is closed with a comment saying where: the commit and the
-  version. A commit names the issue it serves (`#19`).
+  are `.claude/worktrees/agent-*`; Codex's are under `~/.codex/worktrees/`. Two branches carry
+  the work. Finished work lands on `next` (merge your branch into it, push it; CI runs there and a
+  nightly build is made of it). `main` is the stable line and moves only when Raoul asks: he promotes
+  `next` to it, with the version raised and a `v*` tag. When work lands, the issue is closed with a
+  comment saying where: the commit and the version it is released as (on `next`, the nightly that has
+  it). A commit names the issue it serves (`#19`).
 
 ## Practical
 
 - Build and run: `cargo build`, `atlas view .` (install with `cargo install --path cli`;
   the viewer is baked into the binary, so rebuild after editing `viewer/index.html`).
 - Version: `version` in the root `Cargo.toml`. Raise the minor number when what Atlas reads
-  or draws changes, the patch number for a fix, in the commit that makes the change. The
-  build adds the commit it is made from (`0.2.0 (b0ead14)`).
+  or draws changes, the patch number for a fix, in the commit that promotes `next` to `main`
+  (a commit on a branch from `next` that raises it, then `main` is fast-forwarded to it and tagged),
+  not in the commits on `next`. The build adds the commit it is made from (`0.2.0 (b0ead14)`), and
+  the nightly build says so too (`0.2.0-nightly (b0ead14)`: `ATLAS_CHANNEL=nightly` at build time).
 - Tests: `cargo test`. The Rust workspace itself is a test subject. CI runs them on Linux, macOS
   and Windows: a test that writes files builds them as the platform lays them out (a virtual
   environment keeps its packages in `Lib\site-packages` on Windows) and compares paths as `Path`s,

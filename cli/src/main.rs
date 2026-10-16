@@ -15,9 +15,15 @@ use clap::{Parser, Subcommand};
 
 /// The version and the commit this build is from: `0.1.0 (a5e777d)`, with `+` after a commit
 /// whose tree had edits.
-static VERSION: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| match env!("ATLAS_COMMIT") {
-    "" => env!("CARGO_PKG_VERSION").to_string(),
-    c => format!("{} ({c})", env!("CARGO_PKG_VERSION")),
+static VERSION: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
+    let version = match env!("ATLAS_CHANNEL") {
+        "" => env!("CARGO_PKG_VERSION").to_string(),
+        channel => format!("{}-{channel}", env!("CARGO_PKG_VERSION")),
+    };
+    match env!("ATLAS_COMMIT") {
+        "" => version,
+        c => format!("{version} ({c})"),
+    }
 });
 
 /// The logo's colours in the terminal's own palette: structure in petrol (cyan), commands in ink.
