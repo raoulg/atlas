@@ -212,7 +212,7 @@ section{margin-bottom:104px}
     </figure>
     <figure class="elegant">
       <figcaption><b>Typed and elegant</b><span class="demo"><a class="try" href="showcase/python-clean.html">Open the live picture and click around &rarr;</a><span class="tag">elegant</span></span></figcaption>
-      <a href="showcase/python-clean.html"><img src="img/showcase/python-clean.png" style="--w:1841" alt="Atlas's picture of the typed pipeline: download runs only when no raw CSV is kept, the CSV stands between download and load, a DataFrame passes from load to smooth to Trend.save, and the command names every file"></a>
+      <a href="showcase/python-clean.html"><img src="img/showcase/python-clean.png" style="--w:1834" alt="Atlas's picture of the typed pipeline: download runs only when no raw CSV is kept, the CSV stands between download and load, a DataFrame passes from load to smooth to Trend.save, and the command names every file"></a>
     </figure>
   </div>
   <p class="explain">Both reach the same places: the web, the raw CSV, the figure. Inside they part. In the sloppy script every step reads and changes one global, <code>Global(sunspots.df)</code>, and nothing is handed from step to step. In the typed one the CSV stands between <code>download</code> and <code>load</code>, a <code>DataFrame</code> goes from step to step, and the command names every file. <span class="dot"></span>A red dot is a question Atlas asks the author. Open the typed one in Atlas and click around: it is a live picture.</p>
@@ -228,15 +228,15 @@ section{margin-bottom:104px}
       <button role="tab" aria-selected="false" aria-controls="lang-ts" id="tab-ts">TypeScript</button>
     </div>
     <div class="stage" role="tabpanel" id="lang-py" aria-labelledby="tab-py">
-      <a href="showcase/python-clean-save.html"><img src="img/showcase/python-clean-save.png" style="--w:2079" alt="Atlas's picture of the typed Python pipeline with Trend.save open: draw gives a Figure, which save writes"></a>
+      <a href="showcase/python-clean-save.html"><img src="img/showcase/python-clean-save.png" style="--w:2072" alt="Atlas's picture of the typed Python pipeline with Trend.save open: draw gives a Figure, which save writes"></a>
       <p class="cap"><b>Python, typed.</b> One pandas <code>DataFrame</code> goes in and out of <code>smooth</code>. <code>Trend.draw</code> gives a <code>Figure</code>, and <code>save</code> writes it.</p>
     </div>
     <div class="stage" role="tabpanel" id="lang-rs" aria-labelledby="tab-rs">
-      <a href="showcase/rust-clean.html"><img src="img/showcase/rust-clean.png" style="--w:2657" alt="Atlas's picture of the Rust port with Trend.save open: a drawing area on the file, which draw draws into"></a>
+      <a href="showcase/rust-clean.html"><img src="img/showcase/rust-clean.png" style="--w:2653" alt="Atlas's picture of the Rust port with Trend.save open: a drawing area on the file, which draw draws into"></a>
       <p class="cap"><b>Rust, ported.</b> The same web, the same CSV, the same figure, and between them <code>download</code>, <code>load</code>, <code>smooth</code> and <code>Trend.save</code>. The program's own records stand where the <code>DataFrame</code> stood (<code>Month · series</code> in, <code>Smoothed · smoothed</code> out), and <code>save</code> opens a <code>DrawingArea</code> on the file first, which <code>draw</code> draws into. Rust has no default arguments, so <code>Settings.default</code> is a function.</p>
     </div>
     <div class="stage" role="tabpanel" id="lang-ts" aria-labelledby="tab-ts">
-      <a href="showcase/typescript-clean.html"><img src="img/showcase/typescript-clean.png" style="--w:2112" alt="Atlas's picture of the TypeScript port: parseArgs reads the command line, download runs only when the CSV is missing, and the figure is written as an SVG"></a>
+      <a href="showcase/typescript-clean.html"><img src="img/showcase/typescript-clean.png" style="--w:2082" alt="Atlas's picture of the TypeScript port: parseArgs reads the command line, download runs only when the CSV is missing, and the figure is written as an SVG"></a>
       <p class="cap"><b>TypeScript, ported.</b> The same shape again. <code>parseArgs</code> reads the command line, <code>download</code> runs only when the CSV is missing, and the figure is written as an SVG, so the file at the end is <code>figures/sunspots.svg</code>.</p>
     </div>
   </div>

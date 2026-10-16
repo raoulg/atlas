@@ -1013,6 +1013,11 @@ const heldCache = new Map();
 const held = (key, test) => { const k = `${SIDE}|${key}`; if (!heldCache.has(k)) heldCache.set(k, [...byId.values()].some(n => n.kind === "module" && test(n) && has(n))); return heldCache.get(k); };
 // the finest plan of a route opens every call: what the reader has open is a quotient of it, taken afterwards (`coarsen`)
 let FINE = false;
+// a route can unfold into more occurrences than a plan can hold (calls shared by many callers): the finest plan opens every call
+// down to the depth that keeps it within a budget, and what the reader has open at any depth; a call it does not open is a
+// block of its own, with what it reaches
+const FINE_BUDGET = 5000;
+let FINE_DEPTH = Infinity, fineCount = 0, fineCut = false;
 function routeTree() {
   const closedRoutes = ids => ids.map(id => ({id, open: false, kids: [], hue: null}));
   if (V.route && !has(byId.get(V.route))) return [];
@@ -1038,8 +1043,15 @@ function routeTree() {
   // then its own steps, each choice's branches in a frame, each branch in its own colour
   const visit = (key, step, on, site, hue, path, fed) => {
     treeInfo.set(key, {step, on, site, fed});
-    const n = byId.get(step), open = key === V.route || FINE || V.open.steps.has(key) || V.open.functions.has(step), node = {id: key, open, kids: [], hue, choice: false};
-    if (!open || !n) return node;
+    const n = byId.get(step), forced = V.open.steps.has(key) || V.open.functions.has(step);
+    fineCount++;
+    // a class met in a route is built, not run: its methods are what a route of its own would start at, so it has no calls to open
+    const open = key === V.route || (n?.kind !== "class" && forced) || (FINE && path.size < FINE_DEPTH && fineCount <= 4 * FINE_BUDGET && byId.get(step)?.kind !== "class"), node = {id: key, open, kids: [], hue, choice: false};
+    if (!open || !n) {
+      // a class met in a route is built, not run: its methods are what its route would start at, and no calls of this one
+      if (FINE && n && (callees(step, on).length || stepsIn(bodyOf(step, on)).length)) { node.cut = true; if (n.kind !== "class") fineCut = true; }
+      return node;
+    }
     const deeper = new Set([...path, step]), body = bodyOf(step, on);
     node.choice = (body.alts || []).length > 0;
     let b = 0;
@@ -1064,7 +1076,12 @@ function routeTree() {
     }
     return node;
   };
-  return [visit(V.route, V.route, null, null, null, new Set())];
+  if (!FINE) return [visit(V.route, V.route, null, null, null, new Set())];
+  let tree;
+  const unfold = depth => { FINE_DEPTH = depth; fineCount = 0; fineCut = false; treeInfo.clear(); routeParses = false; tree = [visit(V.route, V.route, null, null, null, new Set())]; };
+  let depth = 1;
+  for (unfold(depth); fineCut; unfold(++depth)) if (fineCount > FINE_BUDGET) { unfold(Math.max(1, depth - 1)); break; }
+  return tree;
 }
 const altCount = id => (bodyOf(id, null).alts || []).length;
 // two orders of ids as one: what both hold keeps its order, and between two such, what only the
@@ -1125,11 +1142,13 @@ async function renderPlaat(mine) {
   const g = scene.node(), DUR = matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 380;
   dirFold = {to: new Map(), n: new Map()};
   // the subject of a route stands as itself; other types stand in their family until it is opened
-  // a closed family holds its kinds and its parts: a type stands in the family it belongs to until that family is opened
-  const placeOfType = t => t === V.route || V.open.families.has(familyOf(t)) || V.open.families.has(kindOf(t)) ? t : opens(familyOf(t)) ? familyOf(t) : kindOf(t);
-  const frameOf = t => [familyOf(t), kindOf(t), t].find(f => V.open.families.has(f) && opens(f));
+  // a closed family holds its kinds: a type stands in its kind until that family is opened; a part of a type is structure of
+  // its owner, drawn in its frame when opened, and the values of its type stand on their own
+  const placeOfType = t => t === V.route || V.open.families.has(familyOf(t)) || V.open.families.has(kindOf(t)) ? t : kindOf(t);
+  // the route's subject stands as itself, in no family
+  const frameOf = t => t === V.route ? undefined : [kindOf(t), t].find(f => V.open.families.has(f) && opens(f));
   const typePlace = t => {
-    const n = byId.get(t), closedFam = opens(t) && !V.open.families.has(t);
+    const n = byId.get(t), closedFam = t !== V.route && opens(t) && !V.open.families.has(t);
     return {id: "t:" + t, label: typeLabel(t) + (closedFam ? ` (${opensInto(t)})` : ""), kind: n && n.kind === "external" ? "ext" : "type", hue: hueOf(n), type: t};
   };
   const stepName = id => { if (id.startsWith("part:")) { const p = PARTS.find(x => x.id === id.slice(5)) || {}; return `${p.id} · ${p.language}`; } if (id.startsWith("unit:")) return unitLabel(id.slice(5)); const n = byId.get(id); if (!V.route && n.entry) return entryLabel(n); if (n.kind === "class") return nameOf(n) + "()"; if (n.make) return n.name; if (isCtor(n) && !n.on_class) return typeLabel(n.cls) + "()"; return n.cls ? `${typeLabel(n.cls)}.${nameOf(n)}` : nameOf(n); };
@@ -1141,7 +1160,7 @@ async function renderPlaat(mine) {
     const n = byId.get(info.step);
     return info.on && n && n.cls && !isCtor(n) ? `${typeLabel(info.on)}.${nameOf(n)}` : stepName(info.step);
   };
-  const openable = key => { const s = stepOf(key); return key !== V.route && !V.open.steps.has(key) && !V.open.functions.has(s) && !s.startsWith("op:") && callees(s, treeInfo.get(key)?.on).length + stepsIn(bodyOf(s, treeInfo.get(key)?.on)).length > 0; };
+  const openable = key => { const s = stepOf(key); return key !== V.route && !V.open.steps.has(key) && !V.open.functions.has(s) && !s.startsWith("op:") && byId.get(s)?.kind !== "class" && callees(s, treeInfo.get(key)?.on).length + stepsIn(bodyOf(s, treeInfo.get(key)?.on)).length > 0; };
   // an exported class has no body of its own: its route starts at each public method the caller can call
   const libraryClass = id => byId.get(id)?.kind === "class" && !!byId.get(id).entry;
   const momentOf = id => id.includes("@") ? id.slice(id.indexOf("@")) : "";
@@ -1324,7 +1343,8 @@ async function renderPlaat(mine) {
       const shut = fine || node.id === V.route || libraryClass(stepOf(node.id)) ? null : stepMorphism(node.id, false, false);
       frames.set(fid, {id: fid, step: node.id, parent, hue: node.hue, choice: node.choice, anchor: node.id === V.route, ...(node.parse ? {parse: true} : {}), closed: shut && {goes: shut.goes, cod: shut.cod, hb: !!parent && !caller && !/^(part|unit|op):/.test(node.id) && handsBack(stepOf(node.id), shut.cod)}, title: (node.id === V.route ? entryTitle(node.id) : stepLabel(node.id)) + (node.choice ? " · one of" : "")});
       const lib = libraryClass(stepOf(node.id));
-      const own = lib || node.id.startsWith("unit:") ? {dom: new Map(), cod: new Map(), goes: new Map()} : stepMorphism(node.id, true, node.id === V.route);
+      // a library class that is the route starts at its public methods; met inside a route it is a call like another, with its own arrow
+      const own = (lib && node.id === V.route) || node.id.startsWith("unit:") ? {dom: new Map(), cod: new Map(), goes: new Map()} : stepMorphism(node.id, true, node.id === V.route);
       const before = pills.size, back = node.kids.flatMap(k => build(k, fid, lib && node.id === V.route ? node.id : null));
       // opened, a step keeps the lines it had closed: its own arrow stands at its frame with what the closed box took and gave, so
       // the lines that crossed the box cross the frame; a value it hands on is at the moment the closed box had it, and a result
@@ -1344,7 +1364,7 @@ async function renderPlaat(mine) {
       }
       return [];
     }
-    const m = stepMorphism(node.id, fine, false, fine), hb = parent && !caller && handsBack(stepOf(node.id), m.cod);
+    const m = stepMorphism(node.id, fine && !node.cut, false, fine && !node.cut), hb = parent && !caller && handsBack(stepOf(node.id), m.cod);
     if (caller) m.dom.set(addPlace(entryPlace(caller)), false);
     // a unit stands even when nothing crosses its edge, so that it can be opened
     if (!m.dom.size && !m.cod.size && !hb && !node.id.startsWith("unit:")) return [];
@@ -1482,7 +1502,7 @@ async function renderPlaat(mine) {
       return r;
     };
     // the steps that only parse the command line are the entry's, while it is closed: the values they make are the entry's
-    const entry = entryPlace(V.route);
+    const entryId = "e:" + V.route;
     const hidden = new Set();
     if (folded) {
       const mark = fid => { for (const f of fFrames.values()) if (f.parent === fid && !hidden.has(f.id)) { hidden.add(f.id); mark(f.id); } };
@@ -1491,12 +1511,12 @@ async function renderPlaat(mine) {
     }
     const qId = new Map();
     // a value keeps its name where a step made it, and where two of its type are taken at once
-    const named = pl => !!pl.name && (!!pl.at || F.split.has(pl.type)), nameOf_ = pl => named(pl) ? "~" + pl.name : "";
+    const named = pl => !!pl.name && !pl.name.startsWith("#") && (!!pl.at || F.split.has(pl.type)), nameOf_ = pl => named(pl) ? "~" + pl.name : "";
     const q = k => {
       if (qId.has(k)) return qId.get(k);
       const pl = fp.get(k);
       let id = k;
-      if (pl && /^[tv]:/.test(k)) id = pl.at && hidden.has(pl.at) ? entry.id : pl.type && k.startsWith("t:") ? "t:" + placeOfType(pl.type) + nameOf_(pl) + (pl.at ? "@" + pl.at : "") : k;
+      if (pl && /^[tv]:/.test(k)) id = pl.at && hidden.has(pl.at) ? entryId : pl.type && k.startsWith("t:") ? "t:" + placeOfType(pl.type) + nameOf_(pl) + (pl.at ? "@" + pl.at : "") : k;
       qId.set(k, id);
       return id;
     };
@@ -1504,7 +1524,7 @@ async function renderPlaat(mine) {
     const placeOf = (k, id) => {
       if (places.has(id)) return id;
       const pl = fp.get(k);
-      if (id === entry.id) places.set(id, entry);
+      if (id === entryId) places.set(id, entryPlace(V.route));
       else if (pl?.type && k.startsWith("t:")) {
         const pid = placeOfType(pl.type), b = typePlace(pid);
         places.set(id, {...b, id, label: b.label + (pl.held ? ` · ${pl.held}` : named(pl) ? ` · ${pl.name}` : ""), at: pl.at, name: named(pl) ? pl.name : undefined, held: pl.held});
@@ -1796,7 +1816,7 @@ async function renderPlaat(mine) {
     const inFam = new Set([f, ...(members.get(f) || [])]);
     const viaOf = m => (inn.get(m) || []).find(e => e.kind === "has" && inFam.has(e.src) && e.via)?.via;
     const isSub = m => { let cur = m; for (let i = 0; i < 10; i++) { const b = (out.get(cur) || []).find(e => e.kind === "inherits" && inFam.has(e.dst)); if (!b) return false; if (b.dst === f) return true; cur = b.dst; } return false; };
-    F.kids = (members.get(f) || []).map(m => ({id: "t:" + m + at, label: isSub(m) ? typeLabel(m) : `${viaOf(m) || "·"}: ${typeLabel(m)}`, kind: "type", hue: hueOf(byId.get(m)), type: m, name: F.name, at: F.when}));
+    F.kids = (members.get(f) || []).filter(m => m !== V.route).map(m => ({id: isSub(m) ? "t:" + m + at : `t:${f}${at}/${m}`, label: isSub(m) ? typeLabel(m) : `${viaOf(m) || "·"}: ${typeLabel(m)}`, kind: "type", hue: hueOf(byId.get(m)), type: m, name: F.name, at: F.when}));
     F.kids.push(...sharedOf(f).map(e => ({id: `r:${f}:${e.via}${at}`, label: `${e.via}: ${typeLabel(e.dst)}`, kind: "ref", type: e.dst})));
     F.title = (F.label || typeLabel(f)) + (F.kids.some(k => k.kind === "type" && !k.label.includes(": ")) ? " ⊇" : "");
     F.hue = hueOf(byId.get(f));
@@ -1813,7 +1833,7 @@ async function renderPlaat(mine) {
   // code, a step of a body, a place. A type the picture draws as a box of its own, or inside a closed
   // family, is not inside a package, and a finding the picture marks with a dot is not inside one
   // either. Edges are not counted: they show at the border, or once the box is opened.
-  const closedFamily = p => (p.kind === "type" || p.kind === "ext") && !p.inFrame && !!p.type && opens(p.type) && !V.open.families.has(p.type);
+  const closedFamily = p => (p.kind === "type" || p.kind === "ext") && !p.inFrame && !!p.type && p.type !== V.route && opens(p.type) && !V.open.families.has(p.type);
   const alone = new Set(), inFamily = new Set();
   for (const p of places.values()) if (p.type && keep.has(p.id)) { alone.add(p.type); if (closedFamily(p)) for (const m of members.get(p.type) || []) inFamily.add(m); }
   const notAlone = id => !alone.has(id) && !inFamily.has(id);

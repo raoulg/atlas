@@ -285,8 +285,9 @@ value) as well as the types of its signature: the domain of a composite is the d
 first arrows, so opening the step draws no line across its frame that the closed box did not. A
 value no step makes is its type from beyond; two of one type that one step takes (`consume(a, b)`)
 are two values, each by the name that holds it, and a value a step made keeps its name in its
-moment and in its family's frame. A closed composite holds its parts: a type stands in the
-family it belongs to (its kind, or its one owner's) until that family is opened.
+moment and in its family's frame. A closed family holds its kinds (a subclass stands in its base
+until the family is opened); a part of a type is structure of its owner, a box of its own in the
+owner's frame, and the values of the part's type stand on their own (#39).
 **Where.** `plan`, `imageOf`, `refines` and the camera in `viewer/index.html`;
 `tools/pictures.py topology`.
 

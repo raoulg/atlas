@@ -107,7 +107,7 @@ TOPOLOGY = """async (spec) => {
   const phiFor = (coarse, fine) => {
     const keys = new Map();
     for (const id of coarse.boxes.keys()) if (/^n:/.test(id)) for (const k of keyOf(id).split("+")) keys.set(k, id);
-    const under = k => { let best = null; for (const [kc, id] of keys) if ((k === kc || k.startsWith(kc + "/") || k.startsWith(kc + "~")) && (!best || kc.length > best[0].length)) best = [kc, id]; return best && best[1]; };
+    const under = k => { let best = null; for (const [kc, id] of keys) if ((k === kc || k.startsWith(kc + "/") || k.startsWith(kc + "~") || k.startsWith(kc + "|")) && (!best || kc.length > best[0].length)) best = [kc, id]; return best && best[1]; };
     return id => {
       if (coarse.boxes.has(id)) return id;
       for (let p = fine.boxes.get(id); p && p !== "root"; p = fine.boxes.get(p)) if (coarse.boxes.has(p)) return p;
@@ -135,7 +135,7 @@ TOPOLOGY = """async (spec) => {
   // a line from a place into the box that wrote it is the box reading back what it wrote: the composite takes nothing from there
   // (a place used both ways stands twice, `from X ⇄` and `into X ⇄`: the line goes to the twin)
   const twin = x => x.replace(/ ⇄$/, "");
-  const wrote = l => { const [a, b] = l.split(">"); return [...base, ...image].some(m => { const [c, d] = m.split(">"); return twin(c) === twin(b) && d === a; }); };
+  const wrote = l => { const [a, b] = l.split(">"); return [...base, ...image].some(m => { const [c, d] = m.split(">"); return c === b && twin(d) === twin(a); }); };
   const gained = [...image].filter(l => !base.has(l) && !wrote(l));
   const moved = [...fine.boxes].filter(([b, par]) => coarse.boxes.has(b) && coarse.boxes.get(b) !== par).map(([b, par]) => `${b}: ${coarse.boxes.get(b)} -> ${par}`);
   // close it again by its frame
