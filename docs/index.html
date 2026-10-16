@@ -153,9 +153,29 @@ b.g,b.b,b.p{font-weight:600}
 .key .sw.chg{border-color:#B8860B;background:color-mix(in oklab,#B8860B 18%,#fff)}
 figure a.still{pointer-events:none}
 figcaption .demo{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;justify-content:flex-end}
-figure a.try{display:inline;padding:0;font-size:14px;font-weight:500;text-decoration-color:var(--good);text-underline-offset:3px}
-figure a.try:hover{color:var(--good)}
-figure.code{flex:1 1 440px;min-width:0;max-width:100%}
+figure a.try,a.try{display:inline;padding:0;font-size:14px;font-weight:500;text-decoration:underline;text-decoration-color:var(--accent);text-underline-offset:3px}
+a.try:hover{color:var(--accent)}
+.pair figure.sloppy,.pair figure.elegant{background:transparent;border:0;width:fit-content;max-width:100%}
+.pair figure.sloppy figcaption,.pair figure.elegant figcaption{border:0;padding:0 0 10px}
+.pair figure.sloppy a,.pair figure.elegant a{padding:0}
+.pair figure.sloppy img,.pair figure.elegant img{width:calc(var(--w) * 1px);max-width:100%}
+.step{display:grid;grid-template-columns:minmax(0,920px) minmax(0,1fr);gap:22px;align-items:start;width:100%}
+.step figure{min-width:0}
+@media (max-width:1100px){.step{grid-template-columns:minmax(0,1fr)}}
+.mcp{background:var(--panel);border:1px solid var(--line);padding:16px 20px;width:100%}
+.mcp h3{font:600 17px var(--sans);margin:0 0 6px}
+.mcp p{margin:6px 0 0;color:var(--ink-2);font-size:15px;max-width:78ch}
+.mcp pre{border:0;background:var(--bg);margin-top:10px}
+figure.agent figcaption{font-size:14px;color:var(--ink-2)}
+figure.agent pre{border:0;font-size:12.5px;line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere}
+pre .call{display:block;color:var(--focus);font-weight:500}
+figure.code pre .call{display:inline}
+#chat-prophecy{white-space:pre-wrap;overflow-wrap:anywhere}
+.stage .cols{align-items:stretch}
+.stage .cols>figure.code{flex:1 1 0}
+pre .ans{display:block;color:var(--ink);margin-bottom:12px}
+.cols{align-items:stretch}
+figure.code{flex:1 1 300px;min-width:0;max-width:100%}
 figure.code figcaption{font-size:14px;color:var(--ink-2)}
 figure.code pre{border:0;font-size:12.5px;line-height:1.6;white-space:pre;overflow-x:auto}
 figure.code pre .m{color:var(--proph);font-weight:600}
@@ -229,15 +249,15 @@ section{margin-bottom:104px}
     </div>
     <div class="stage" role="tabpanel" id="lang-py" aria-labelledby="tab-py">
       <a href="showcase/python-clean-save.html"><img src="img/showcase/python-clean-save.png" style="--w:2079" alt="Atlas's picture of the typed Python pipeline with Trend.save open: draw gives a Figure, which save writes"></a>
-      <p class="cap"><b>Python, typed.</b> One pandas <code>DataFrame</code> goes in and out of <code>smooth</code>. <code>Trend.draw</code> gives a <code>Figure</code>, and <code>save</code> writes it.</p>
+      <p class="cap"><b>Python, typed.</b> A pandas <code>DataFrame</code> is handed from step to step, and matplotlib draws the figure. <a class="try" href="showcase/python-clean-save.html">Open the live picture and click around &rarr;</a></p>
     </div>
     <div class="stage" role="tabpanel" id="lang-rs" aria-labelledby="tab-rs">
       <a href="showcase/rust-clean.html"><img src="img/showcase/rust-clean.png" style="--w:2657" alt="Atlas's picture of the Rust port with Trend.save open: a drawing area on the file, which draw draws into"></a>
-      <p class="cap"><b>Rust, ported.</b> The same web, the same CSV, the same figure, and between them <code>download</code>, <code>load</code>, <code>smooth</code> and <code>Trend.save</code>. The program's own records stand where the <code>DataFrame</code> stood (<code>Month · series</code> in, <code>Smoothed · smoothed</code> out), and <code>save</code> opens a <code>DrawingArea</code> on the file first, which <code>draw</code> draws into. Rust has no default arguments, so <code>Settings.default</code> is a function.</p>
+      <p class="cap"><b>Rust, ported.</b> The same web, the same CSV, the same figure, and the same steps between them. What differs are the libraries: where Python hands a <code>DataFrame</code> along, Rust hands a list of <code>Month</code> records, and where matplotlib draws the figure, Rust draws into a <code>DrawingArea</code> on the file. <a class="try" href="showcase/rust-clean.html">Open the live picture and click around &rarr;</a></p>
     </div>
     <div class="stage" role="tabpanel" id="lang-ts" aria-labelledby="tab-ts">
       <a href="showcase/typescript-clean.html"><img src="img/showcase/typescript-clean.png" style="--w:2112" alt="Atlas's picture of the TypeScript port: parseArgs reads the command line, download runs only when the CSV is missing, and the figure is written as an SVG"></a>
-      <p class="cap"><b>TypeScript, ported.</b> The same shape again. <code>parseArgs</code> reads the command line, <code>download</code> runs only when the CSV is missing, and the figure is written as an SVG, so the file at the end is <code>figures/sunspots.svg</code>.</p>
+      <p class="cap"><b>TypeScript, ported.</b> The same shape again: <code>parseArgs</code> reads the command line, <code>download</code> runs only when the CSV is missing, and the figure is written as an SVG. <a class="try" href="showcase/typescript-clean.html">Open the live picture and click around &rarr;</a></p>
     </div>
   </div>
 </section>
@@ -260,20 +280,34 @@ section{margin-bottom:104px}
 
 <section class="chap" id="point">
   <h2>Say exactly what you mean: point at it.</h2>
-  <p class="lede">You and your agent share one page. The agent takes it to a view and points: the box lights up in a pulse, so you see where. You alt-click a box to leave a note on it. The agent answers on that same box, in its own words, and marks your note resolved.</p>
+  <p class="lede">You chat with your agent where you always do. Atlas gives it tools, and the picture is where you both look. The agent takes your page to a view and points; you alt-click a box to leave a note on it; the agent answers on that same box. The chat is yours; the answer shows up in Atlas.</p>
   <div class="wide">
-    <figure>
-      <figcaption><b>The agent took your page to the route and pointed at one step</b><span class="tag">look</span></figcaption>
-      <img src="img/interaction/look.png" style="--w:1040" alt="The route of the sunspots pipeline; the step trusted is outlined and glows: the agent points at it">
-    </figure>
-    <figure>
-      <figcaption><b>1 &middot; You write a note on the box</b><span class="tag">alt-click</span></figcaption>
-      <img src="img/interaction/note-field.png" style="--w:940" alt="A note field open on the step trusted, with a question typed in">
-    </figure>
-    <figure>
-      <figcaption><b>2 &middot; The agent answers on the box, and your note is resolved</b><span class="tag">&#10003; &#10022;</span></figcaption>
-      <img src="img/interaction/answered.png" style="--w:1060" alt="The step trusted with a check mark (the note is resolved) and a star; the agent's answer is open beside the star">
-    </figure>
+    <div class="mcp">
+      <h3>Connect Atlas to your agent once</h3>
+      <pre>claude mcp add --scope user atlas -- atlas mcp</pre>
+      <p>Then run <code>atlas serve</code> in a repository and open the page it prints. On the left of each step is what you see in Atlas; on the right is what your agent calls and what Atlas answers.</p>
+    </div>
+    <div class="step">
+      <figure>
+        <figcaption><b>1 &middot; The agent points at one step</b><span class="tag">look</span></figcaption>
+        <img src="img/interaction/look.png" style="--w:920" alt="The route of the sunspots pipeline, close up; the step trusted is outlined and glows: the agent points at it">
+      </figure>
+      <figure class="agent"><figcaption>Your agent calls Atlas</figcaption><pre data-calls="look"></pre></figure>
+    </div>
+    <div class="step">
+      <figure>
+        <figcaption><b>2 &middot; You write a note on the box</b><span class="tag">alt-click</span></figcaption>
+        <img src="img/interaction/note-field.png" style="--w:920" alt="A note field open on the step trusted, with a question typed in">
+      </figure>
+      <figure class="agent"><figcaption>Your agent reads it</figcaption><pre data-calls="notes"></pre></figure>
+    </div>
+    <div class="step">
+      <figure>
+        <figcaption><b>3 &middot; The agent answers on the box, and your note is resolved</b><span class="tag">&#10003; &#10022;</span></figcaption>
+        <img src="img/interaction/answered.png" style="--w:920" alt="The step trusted with a check mark (the note is resolved) and a star; the agent's answer is open beside the star">
+      </figure>
+      <figure class="agent"><figcaption>Your agent answers</figcaption><pre data-calls="annotate resolve"></pre></figure>
+    </div>
   </div>
 </section>
 
@@ -295,26 +329,28 @@ section{margin-bottom:104px}
       <img src="img/interaction/vision.png" style="--w:1400" alt="The vision: a new route, run-archived, drawn beside the code as it is; only the new Archive, its write step and the new route are filled green">
       <p class="cap"><b>A sketch, nothing written in your files.</b> Atlas reads the sketch as it reads code, so the picture is drawn with real types; it lives in the agent's request and is gone when it is decided or retracted. Only what the code would add is green: the <code>Archive</code>, its <code>write</code> step and the new route. What it reuses stays plain.</p>
       <div class="cols">
-        <figure class="code"><figcaption>What the agent handed Atlas: signatures and calls in order, bodies empty. It has to parse, not to build.</figcaption><pre id="sketch"></pre></figure>
+        <figure class="code agent"><figcaption>In the chat: the agent hands Atlas a sketch, signatures and calls in order, bodies empty</figcaption><pre id="chat-vision"></pre></figure>
+        <figure class="code"><figcaption>In your files</figcaption><pre id="files-vision"></pre></figure>
       </div>
     </div>
     <div class="stage" role="tabpanel" id="st-prophecy" aria-labelledby="tb-prophecy">
       <img src="img/interaction/prophecy.png" style="--w:1400" alt="The decided design drawn as a prophecy: the new route and the Archive in a dotted purple outline beside the built code">
       <p class="cap"><b>Decided: the same sketch, now written in your files.</b> The one thing that is new is the marker, the <span class="p">purple line</span>: it says the code is not built yet, so Atlas draws it dotted and does not ask about its empty bodies. <code>supersedes</code> says what the new route replaces; <code>sealed</code> ties a piece to a GitHub issue it waits on.</p>
       <div class="cols">
-        <figure class="code"><figcaption>In your code</figcaption><pre id="snippet"></pre></figure>
+        <figure class="code agent"><figcaption>In the chat: the agent calls Atlas</figcaption><pre id="chat-prophecy"></pre></figure>
+        <figure class="code"><figcaption>In your files: the same sketch, with the marker in purple</figcaption><pre id="files-prophecy"></pre></figure>
       </div>
     </div>
     <div class="stage" role="tabpanel" id="st-built" aria-labelledby="tb-built">
       <img src="img/interaction/built.png" style="--w:1400" alt="The same route, built: the boxes are solid">
       <p class="cap"><b>Built.</b> The bodies are written and the markers are gone: the same route, solid. Ask Atlas what is left, before and after:</p>
       <div class="cols">
-        <figure class="code term"><figcaption>When it was decided</figcaption><pre id="rev-decided"></pre></figure>
-        <figure class="code term"><figcaption>Now it is built</figcaption><pre id="rev-built"></pre></figure>
+        <figure class="code"><figcaption>In your files</figcaption><pre id="files-built"></pre></figure>
+        <figure class="code term"><figcaption>What is left, when it was decided</figcaption><pre id="rev-decided"></pre></figure>
+        <figure class="code term"><figcaption>What is left, now it is built</figcaption><pre id="rev-built"></pre></figure>
       </div>
     </div>
   </div>
-  <p class="fulllink">Every answer of this run, from the first note to the last seal: <a href="interaction.html">the full run</a>.</p>
 </section>
 
 <section id="math">
@@ -374,7 +410,6 @@ codex mcp add atlas -- &quot;$(command -v atlas)&quot; mcp</pre>
   <span>Alpha</span>
   <a href="https://github.com/raoulg/atlas">github.com/raoulg/atlas</a>
   <a href="reference/guide.md">the guide</a>
-  <a href="interaction.html">the full run</a>
   <a href="llms.txt">llms.txt — the full design, for agents</a>
   <span>CC BY-NC-SA 4.0</span>
 </footer>
@@ -400,16 +435,16 @@ function tabs(root) {
 }
 document.querySelectorAll('[data-tabs]').forEach(tabs);
 
-// the code and the lists are what the tools answered in the run that drew the pictures (img/interaction/data.js)
+// the calls, the answers, the code and the lists are what the tools did in the run that drew the pictures (img/interaction/data.js)
 const T = window.TOUR;
 if (T) {
   const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
   const issue = /raoulg\/atlas#(\d+)/;
-  // a line of code, or of a terminal: the marker lines in purple, a GitHub issue as a link
-  const fill = (id, text, marked) => {
+  // lines of code or of a terminal, a class for some of them, a GitHub issue as a link
+  const fill = (id, text, cls) => {
     const pre = document.getElementById(id);
     text.split('\n').forEach((line, i, all) => {
-      const row = el('span', marked(line) ? 'm' : null);
+      const row = el('span', cls ? cls(line, i) : null);
       const m = line.match(issue);
       if (m) {
         const at = line.indexOf(m[0]);
@@ -420,10 +455,23 @@ if (T) {
       pre.append(row, i < all.length - 1 ? '\n' : '');
     });
   };
-  fill('sketch', T.sketch, () => false);
-  fill('snippet', T.prophecy, l => l.startsWith('@prophecy'));
-  fill('rev-decided', T['revelation-decided'], l => /^\s+src\//.test(l));
-  fill('rev-built', T['revelation-built'], l => /^\s+src\//.test(l));
+  const marker = l => (l.startsWith('@prophecy') ? 'm' : null);
+  const head = (text, n) => { const ls = text.trim().split('\n'); return ls.slice(0, n).join('\n') + (ls.length > n ? '\n…' : ''); };
+  // what an agent calls and what Atlas answers
+  document.querySelectorAll('pre[data-calls]').forEach(pre => {
+    for (const key of pre.dataset.calls.split(' ')) {
+      pre.append(el('span', 'call', T.calls[key]), el('span', 'ans', '→ ' + head(T.texts[key], 9)));
+    }
+  });
+  const calls = T.calls.vision.split('\n').length;
+  fill('chat-vision', T.calls.vision + '\n\n' + T.sketch, (l, i) => (i < calls ? 'call' : null));
+  fill('files-vision', T['files-vision']);
+  const asked = T.calls.prophetize.split('\n').length;
+  fill('chat-prophecy', T.calls.prophetize + '\n→ ' + T.texts.prophetize, (l, i) => (i < asked ? 'call' : null));
+  fill('files-prophecy', T['files-prophecy'] + '\n\n' + T.prophecy, marker);
+  fill('files-built', T['files-built']);
+  fill('rev-decided', T['revelation-decided'], l => (/^\s+src\//.test(l) ? 'm' : null));
+  fill('rev-built', T['revelation-built'], l => (/^\s+src\//.test(l) ? 'm' : null));
 }
 </script>
 </body>

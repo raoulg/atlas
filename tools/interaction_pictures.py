@@ -3,7 +3,7 @@
 # dependencies = ["playwright"]
 # ///
 """Draw the interaction between a person and an agent with an Atlas build: the pictures and texts of
-`docs/interaction.html`, from real views.
+the tour on `docs/index.html`, from real views.
 
     uv run tools/interaction_pictures.py ATLAS [OUTDIR]
 
@@ -14,12 +14,10 @@ drives it: clicks, a note written on a box. Nothing is drawn by hand: each pictu
 of the page after what the person or the agent did, and each text is what a tool answered.
 """
 
-import html
 import json
 import pathlib
 import re
 import shutil
-import struct
 import subprocess
 import sys
 import tempfile
@@ -541,14 +539,27 @@ def main(atlas, out=None):
         # look: the agent takes the page to a view and points at a box; the page lights the box in a pulse,
         # and the picture is taken at its second peak
         route('sunspots.cli.run')
-        for _ in range(3):
+        texts['look'] = agent.tool('look', view={'route': 'sunspots.cli.run'}, at='sunspots.series.trusted')
+        settle(page, 3500)
+        # in on the box, and the agent points again: the page keeps its view and the box pulses once more
+        for _ in range(5):
             page.get_by_role('button', name='+', exact=True).click()
             page.wait_for_timeout(350)
         page.wait_for_timeout(800)
-        texts['look'] = agent.tool('look', view={'route': 'sunspots.cli.run'}, at='sunspots.series.trusted')
+        agent.tool('look', at='sunspots.series.trusted')
         page.wait_for_selector('#scene .pointed', timeout=5000)
         page.wait_for_timeout(1500)
-        shot('look', around='sunspots.series.trusted', pad=(400, 400, 120, 110))
+        shot('look', around='sunspots.series.trusted', pad=(460, 460, 190, 140))
+
+        tour['calls'] = {
+            'look': 'atlas · look\n  view: route sunspots.cli.run\n  at: sunspots.series.trusted',
+            'shown': 'atlas · shown',
+            'notes': 'atlas · notes',
+            'annotate': 'atlas · annotate\n  on: sunspots.series.trusted\n  text: "A minimum of 1 keeps every month with at least one observation. …"',
+            'resolve': 'atlas · resolve\n  id: 1',
+            'vision': 'atlas · vision\n  title: Keep the smoothed months in a file\n  files: src/sunspots/series.py, src/sunspots/cli.py',
+            'prophetize': 'atlas · prophetize\n  supersedes: run_archived → run',
+        }
 
         # shown: the person clicks a box; the agent reads which
         page.locator('#scene g[data-id="sunspots.series.trusted"]').first.click()
@@ -559,7 +570,7 @@ def main(atlas, out=None):
         page.locator('#scene g[data-id="sunspots.series.trusted"]').first.click(modifiers=['Alt'])
         page.wait_for_timeout(400)
         page.keyboard.type('Why a minimum of 1? What happens to the months with no observations?')
-        shot('note-field', around='sunspots.series.trusted', pad=(330, 330, 110, 230), record=False)
+        shot('note-field', around='sunspots.series.trusted', pad=(300, 620, 100, 230), record=False)
         page.keyboard.press('Enter')
         page.wait_for_timeout(3500)
         texts['notes'] = agent.tool('notes')
@@ -569,7 +580,7 @@ def main(atlas, out=None):
         page.wait_for_timeout(3500)
         page.locator('#scene g[data-id="sunspots.series.trusted"] g.annot').first.hover()
         page.wait_for_timeout(600)
-        shot('answered', around='sunspots.series.trusted', pad=(300, 560, 110, 190), record=False)
+        shot('answered', around='sunspots.series.trusted', pad=(300, 620, 100, 230), record=False)
 
         # a vision: a change shown beside the code as it is, the new route pointed at
         texts['vision'] = agent.tool('vision', title='Keep the smoothed months in a file', files=vision_files(repo))
@@ -578,9 +589,11 @@ def main(atlas, out=None):
         settle(page, 4500)
         shot('vision')
         tour['sketch'] = SKETCH
+        tour['files-vision'] = '$ git status --short\n' + (git(repo, 'status', '--short').strip() or '(nothing: your files are as they were)')
 
         # a prophecy: the decided vision written into the tree, marked, with what the person adds by hand
         texts['prophetize'] = agent.tool('prophetize', supersedes={'sunspots.cli.run_archived': 'sunspots.cli.run'})
+        tour['files-prophecy'] = '$ git status --short\n' + git(repo, 'status', '--short').rstrip()
         texts['diff'] = git(repo, 'diff')
         with (repo / 'src/sunspots/series.py').open('a') as f:
             f.write(SEALED)
@@ -603,6 +616,7 @@ def main(atlas, out=None):
         page.wait_for_timeout(7000)
         route('sunspots.cli.run_archived')
         shot('built')
+        tour['files-built'] = '$ git log --oneline -1\n' + git(repo, 'log', '--oneline', '-1').strip()
         tour['revelation-built'] = revelation_cli(atlas, repo)
         assert not errors, errors
         server.stop()
@@ -614,116 +628,6 @@ def main(atlas, out=None):
     if to_docs:
         shutil.rmtree(out, ignore_errors=True)
     return status
-
-
-def head(text, lines):
-    """The first lines of a long answer, and that there are more."""
-    ls = text.rstrip('\n').split('\n')
-    return '\n'.join(ls[:lines] + (['…'] if len(ls) > lines else []))
-
-
-def width(png):
-    return struct.unpack('>I', png.read_bytes()[16:20])[0]
-
-
-def figure(png, title, tag, alt):
-    return (f'  <figure>\n    <figcaption><b>{html.escape(title)}</b><span class="tag">{html.escape(tag)}</span></figcaption>\n'
-            f'    <a href="img/interaction/{png.name}"><img src="img/interaction/{png.name}" style="--w:{width(png) // 2}" alt="{html.escape(alt)}"></a>\n  </figure>\n')
-
-
-def block(title, text):
-    return (f'  <figure class="output">\n    <figcaption><b>{html.escape(title)}</b><span class="tag">what the tool answered</span></figcaption>\n'
-            f'    <pre>{html.escape(text.rstrip())}</pre>\n  </figure>\n')
-
-
-def section(ident, title, lede, *parts):
-    return f'<section id="{ident}">\n  <h2>{html.escape(title)}</h2>\n  <p class="lede">{lede}</p>\n  <div class="pair">\n{"".join(parts)}  </div>\n</section>\n'
-
-
-EXTRA = """
-.pair figure.output pre{border:0;max-width:100%;white-space:pre-wrap;overflow-wrap:anywhere}
-.pair figure.output{width:min(960px,100%)}
-nav.story{display:flex;flex-wrap:wrap;gap:8px 20px;font-family:var(--mono);font-size:13px;margin:0 0 56px}
-nav.story a{color:var(--ink-2);text-decoration-color:var(--accent);text-underline-offset:3px}
-"""
-
-
-def page(out, texts):
-    png = lambda n: out / f'{n}.png'
-    style = re.search(r'<style>(.*?)</style>', (DOCS / 'index.html').read_text(), re.S).group(1)
-    body = [
-        section('history', 'Two commits, one picture',
-                'Beside the picture <code>atlas serve</code> has a history: the commit graph, and any two commits drawn as one picture, '
-                'with what the second added, removed and changed marked. Here the two commits of the pipeline: the second leaves out the '
-                'months with too few observations. <code>series</code> gains one step, <code>cli</code> changes.',
-                figure(png('history-list'), 'Six commits', 'history', 'The six commits of the sunspots repository, the fifth and the sixth picked'), figure(png('history'), 'The fifth against the sixth', 'A ∪ B', 'The history of the sunspots repository with its two commits drawn as one picture: what the second added and changed is marked')),
-        section('look', 'Pointing, both ways',
-                'The person and the agent share one view. <code>look</code> takes the person\'s page to a view and points at a box: '
-                '&ldquo;here, this one&rdquo;. The box lights up in a pulse. <code>shown</code> goes the other '
-                'way: what the person has open and the box they clicked, in the names the agent can use.',
-                figure(png('look'), 'The agent took the page to the route and pointed at trusted', 'look', 'The route run of the sunspots pipeline with the step trusted lit: the agent points at it'),
-                block('look', texts['look']), block('shown, after the person clicked trusted', head(texts['shown'], 9))),
-        section('notes', 'A note on a box, and the answer on it',
-                'Alt-click a box or a line and write what you see or do not understand. The agent reads the note where it works and answers on '
-                'the box itself, in its own words (<code>annotate</code>), then resolves the note with the commit that fixed it, if one did. '
-                'Atlas is no chat: the note stays on the box, a ring while it is open, a &#10003; once it is resolved; the answer is the &#10022; beside it.',
-                figure(png('note-field'), 'The person writes a note on trusted', 'alt-click', 'A note field open on the step trusted, with a question typed in'),
-                block('notes', texts['notes']),
-                figure(png('answered'), 'The agent answered on the box, and the note is resolved', '✓ ✦', 'The step trusted with a check mark and a star; the agent\'s answer is open beside it'),
-                block('annotate', texts['annotate']), block('resolve', texts['resolve'])),
-        section('vision', 'Show the change, do not describe it',
-                'To ask &ldquo;shall I do this?&rdquo; the agent shows the files the change would write, as sketch code. The page draws the '
-                'working tree and the vision as one picture: what the vision adds is marked, and <strong>A</strong>, <strong>A ∪ B</strong> and '
-                '<strong>B</strong> switch between them. The vision tells what it does to the routes and to the findings.',
-                figure(png('vision'), 'A vision: keep the smoothed months in a file', 'vision', 'The vision draws the new route run-archived beside the working tree'),
-                block('vision', texts['vision'])),
-        section('prophecy', 'Decide it: the vision becomes a prophecy',
-                'When the person says yes, <code>prophetize</code> writes the vision into the tree as <em>prophecy</em>: sketch code, marked as '
-                'not built yet, with what it <code>supersedes</code>. It leaves the files for the person to commit. Atlas draws the prophecy '
-                'beside what exists, in its own colour with a dotted border, and the distance between the two is the list of what is left.',
-                block('prophetize', texts['prophetize']), block('git diff', head(texts['diff'], 60)),
-                figure(png('prophecy'), 'The prophecy as a route of its own', 'prophecy', 'The route run-archived drawn with its prophesied boxes dotted'),
-                block('check: the finding on the empty body is gone, a prophecy is a todo', texts['check']),
-                block('revelation: what is left to build', texts['revelation']),
-                block('seals: what waits on an open question (asked of GitHub with gh; here two issues of Atlas stand in for the questions)', texts['seals']),
-                block('unseal: the closed one is broken', texts['unseal'] + '\n\n' + texts['unseal-diff'])),
-    ]
-    nav = ' '.join(f'<a href="#{i}">{t}</a>' for i, t in [('history', 'history'), ('look', 'look and shown'), ('notes', 'notes'), ('vision', 'vision'), ('prophecy', 'prophecy')])
-    return f"""<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Atlas: working with your agent</title>
-<meta name="description" content="How a person and an agent use Atlas together: history, pointing, notes, annotations, a vision and a prophecy, drawn from a real run.">
-<link rel="icon" href="logo.svg">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<style>{style}{EXTRA}</style>
-</head>
-<body>
-<main>
-<header>
-  <img src="logo.svg" alt="Atlas logo">
-  <div>
-    <h1>Working with your agent</h1>
-    <p>Every picture is a screenshot of <code>atlas serve</code> after what the person or the agent did; every text is what a tool answered.</p>
-  </div>
-  <nav>
-    <a href="index.html">atlas</a>
-    <a href="https://github.com/raoulg/atlas">github</a>
-    <a href="llms.txt">for agents</a>
-  </nav>
-</header>
-<nav class="story">{nav}</nav>
-{''.join(body)}<footer>
-  <span>Drawn by <code>tools/interaction_pictures.py</code> from the sunspots pipeline, with the build that made the release.</span>
-  <a href="reference/guide.md">the guide</a>
-</footer>
-</main>
-</body>
-</html>
-"""
 
 
 def publish(out, texts, shown, to_docs, tour):
@@ -739,13 +643,12 @@ def publish(out, texts, shown, to_docs, tour):
     kept = json.loads(DRAWN.read_text()) if DRAWN.exists() else {}
     for png in [*out.glob('*.png'), out / 'data.js']:
         shutil.copy(png, target / png.name)
-    (DOCS / 'interaction.html').write_text(page(out, texts))
     DRAWN.write_text(json.dumps(shown, indent=1) + '\n')
     changed = [n for n, v in shown.items() if kept.get(n) != v]
     if not changed:
         print('every picture draws what it drew')
         return 0
-    print('\nThese pictures draw otherwise; reread the text beside them in docs/interaction.html:')
+    print('\nThese pictures draw otherwise; reread the text beside them in docs/index.html:')
     for n in changed:
         print(f'  {n}')
     return 0 if not kept else 1
