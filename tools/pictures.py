@@ -97,7 +97,7 @@ FAMILIES = """async (done) => {
 TOPOLOGY = """async (spec) => {
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const settle = async n0 => { for (let i = 0; i < 100 && window.atlasPicture.n === n0; i++) await sleep(50); await sleep(30); };
-  const snap = () => { const P = window.atlasPicture; return {n: P.n, boxes: new Map(P.boxes), lines: P.lines.map(([a, b]) => a + ">" + b)}; };
+  const snap = () => { const P = window.atlasPicture; return {n: P.n, boxes: new Map(P.boxes), sides: new Map(P.sides || []), lines: P.lines.map(([a, b]) => a + ">" + b)}; };
   const keyOf = id => id.replace(/^[no]:/, "");
   const closedFamily = g => g.matches('g.tnode[data-id^="t:"]') && /\\(\\d+\\)/.test(g.querySelector(".title")?.textContent || "");
   const targets = () => [...window.atlasBoxes].flatMap(([id, g]) => g.classList.contains("tstep") && /^▸/.test(g.querySelector(".title")?.textContent || "") ? [{id, kind: "step"}] : closedFamily(g) ? [{id, kind: "family"}] : []);
@@ -136,6 +136,8 @@ TOPOLOGY = """async (spec) => {
   const wrote = l => { const [a, b] = l.split(">"); return [...base, ...image].some(m => { const [c, d] = m.split(">"); return c === b && twin(d) === twin(a); }); };
   const gained = [...image].filter(l => !base.has(l) && !wrote(l));
   const moved = [...fine.boxes].filter(([b, par]) => coarse.boxes.has(b) && coarse.boxes.get(b) !== par).map(([b, par]) => `${b}: ${coarse.boxes.get(b)} -> ${par}`);
+  // a place of the world stands on the side it stood: opening a box does not make what it does there another's
+  const resided = [...fine.sides].filter(([id, side]) => coarse.sides.has(id) && coarse.sides.get(id) !== side).map(([id, side]) => `${id}: ${coarse.sides.get(id)} -> ${side}`);
   // close it again by its frame
   const frame = [...fine.boxes].find(([b, par]) => !coarse.boxes.has(b) && coarse.boxes.has(par) && /^(n|t):/.test(par))?.[1];
   let back = null;
@@ -147,7 +149,7 @@ TOPOLOGY = """async (spec) => {
     const again = snap(), same = (a, b) => a.length === b.length && a.every(x => b.includes(x));
     back = same([...again.boxes.keys()], [...coarse.boxes.keys()]) && same(again.lines, coarse.lines);
   }
-  return {opened: spec.id, lost, gained, moved, reversible: back};
+  return {opened: spec.id, lost, gained, moved, resided, reversible: back};
 }"""
 
 # Opens the boxes named, one after the other, and gives the picture: its boxes with the box that holds each, and its lines.
@@ -265,7 +267,7 @@ def topology(atlas: str, repo: str, out: pathlib.Path, routes: int, opens: int) 
                 checked += 1
                 if r.get("gone"):
                     continue
-                faults = [f"{what} {x}" for what in ("lost", "moved") for x in r[what][:3]] + (["does not close to the picture it was"] if r["reversible"] is False else [])
+                faults = [f"{what} {x}" for what in ("lost", "moved", "resided") for x in r[what][:3]] + (["does not close to the picture it was"] if r["reversible"] is False else [])
                 more = [f"more {x}" for x in r["gained"][:3]]
                 if faults or more:
                     bad += bool(faults)
