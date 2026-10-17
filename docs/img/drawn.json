@@ -793,7 +793,7 @@
    ],
    [
     "atlas-engine.graph_of",
-    "\u25b8 graph_of"
+    "\u25b8 graph_of \u00b7 +24 types"
    ],
    [
     "atlas-engine.language.read",
@@ -812,42 +812,6 @@
     "Options (2)"
    ],
    [
-    "t:atlas-engine.cache.Cache",
-    "Cache"
-   ],
-   [
-    "t:atlas-engine.cache.Check",
-    "cache.Check"
-   ],
-   [
-    "t:atlas-engine.knowledge.OwnTypes",
-    "OwnTypes"
-   ],
-   [
-    "t:atlas-engine.knowledge.Registry",
-    "Registry"
-   ],
-   [
-    "t:atlas-engine.model.Bucket",
-    "Bucket"
-   ],
-   [
-    "t:atlas-engine.model.Db",
-    "model.Db"
-   ],
-   [
-    "t:atlas-engine.model.Dir",
-    "Dir"
-   ],
-   [
-    "t:atlas-engine.model.EdgeKind",
-    "EdgeKind"
-   ],
-   [
-    "t:atlas-engine.model.EntryKind",
-    "EntryKind"
-   ],
-   [
     "t:atlas-engine.model.Graph@n:atlas-engine.analyze",
     "Graph (7)"
    ],
@@ -856,80 +820,16 @@
     "Graph (7)"
    ],
    [
-    "t:atlas-engine.model.NodeKind",
-    "NodeKind"
-   ],
-   [
     "t:atlas-engine.model.Touch",
     "Touch (3)"
-   ],
-   [
-    "t:atlas-engine.model.World",
-    "World"
-   ],
-   [
-    "t:atlas-engine.paths.Whole",
-    "Whole"
-   ],
-   [
-    "t:atlas-engine.python.Arg",
-    "python.Arg"
-   ],
-   [
-    "t:atlas-engine.pytypes.Target",
-    "Target"
    ],
    [
     "t:atlas-engine.repo.Repo~repo@n:atlas-engine.analyze/0",
     "Repo (2) \u00b7 repo"
    ],
    [
-    "t:atlas-engine.tree.ChoiceSyntax",
-    "ChoiceSyntax"
-   ],
-   [
-    "t:atlas-engine.tree.CompareSyntax",
-    "CompareSyntax"
-   ],
-   [
     "t:atlas-engine.typescript.Body",
     "typescript.Body (5)"
-   ],
-   [
-    "t:atlas-engine.typescript.Bound",
-    "typescript.Bound"
-   ],
-   [
-    "t:ext:indexmap.IndexMap",
-    "IndexMap"
-   ],
-   [
-    "t:ext:toml.Table",
-    "Table"
-   ],
-   [
-    "t:ext:tree_sitter.Node",
-    "tree_sitter.Node"
-   ],
-   [
-    "t:ruff_db.system.path.SystemPath",
-    "SystemPath"
-   ],
-   [
-    "t:ruff_db.system.path.SystemPathBuf",
-    "SystemPathBuf"
-   ],
-   [
-    "v:base",
-    "base"
-   ],
-   [
-    "v:bound",
-    "bound"
-   ],
-   [
-    "v:wholes",
-    "wholes"
    ],
    [
     "w:Disk:in",
@@ -978,70 +878,14 @@
     "o:atlas-engine.analyze"
    ],
    [
-    "t:atlas-engine.cache.Cache",
-    "n:atlas-engine.analyze/1"
-   ],
-   [
-    "t:atlas-engine.cache.Check",
-    "n:atlas-engine.analyze/1"
-   ],
-   [
-    "t:atlas-engine.knowledge.OwnTypes",
-    "n:atlas-engine.analyze/1"
-   ],
-   [
-    "t:atlas-engine.knowledge.Registry",
-    "n:atlas-engine.analyze/1"
-   ],
-   [
-    "t:atlas-engine.model.Bucket",
-    "n:atlas-engine.analyze/1"
-   ],
-   [
-    "t:atlas-engine.model.Db",
-    "n:atlas-engine.analyze/1"
-   ],
-   [
-    "t:atlas-engine.model.Dir",
-    "n:atlas-engine.analyze/1"
-   ],
-   [
-    "t:atlas-engine.model.EdgeKind",
-    "n:atlas-engine.analyze/1"
-   ],
-   [
-    "t:atlas-engine.model.EntryKind",
-    "n:atlas-engine.analyze/1"
-   ],
-   [
     "t:atlas-engine.model.Graph@n:atlas-engine.analyze/1",
     "o:atlas-engine.analyze"
-   ],
-   [
-    "t:atlas-engine.model.NodeKind",
-    "n:atlas-engine.analyze/1"
    ],
    [
     "t:atlas-engine.model.Touch",
     "n:atlas-engine.analyze/1"
    ],
    [
-    "t:atlas-engine.model.World",
-    "n:atlas-engine.analyze/1"
-   ],
-   [
-    "t:atlas-engine.paths.Whole",
-    "n:atlas-engine.analyze/1"
-   ],
-   [
-    "t:atlas-engine.python.Arg",
-    "n:atlas-engine.analyze/1"
-   ],
-   [
-    "t:atlas-engine.pytypes.Target",
-    "n:atlas-engine.analyze/1"
-   ],
-   [
     "t:atlas-engine.repo.Repo~repo@n:atlas-engine.analyze/0",
     "n:atlas-engine.analyze/1"
    ],
@@ -1050,51 +894,7 @@
     "o:atlas-engine.analyze"
    ],
    [
-    "t:atlas-engine.tree.ChoiceSyntax",
-    "n:atlas-engine.analyze/1"
-   ],
-   [
-    "t:atlas-engine.tree.CompareSyntax",
-    "n:atlas-engine.analyze/1"
-   ],
-   [
     "t:atlas-engine.typescript.Body",
-    "n:atlas-engine.analyze/1"
-   ],
-   [
-    "t:atlas-engine.typescript.Bound",
-    "n:atlas-engine.analyze/1"
-   ],
-   [
-    "t:ext:indexmap.IndexMap",
-    "n:atlas-engine.analyze/1"
-   ],
-   [
-    "t:ext:toml.Table",
-    "n:atlas-engine.analyze/1"
-   ],
-   [
-    "t:ext:tree_sitter.Node",
-    "n:atlas-engine.analyze/1"
-   ],
-   [
-    "t:ruff_db.system.path.SystemPath",
-    "n:atlas-engine.analyze/1"
-   ],
-   [
-    "t:ruff_db.system.path.SystemPathBuf",
-    "n:atlas-engine.analyze/1"
-   ],
-   [
-    "v:base",
-    "n:atlas-engine.analyze/1"
-   ],
-   [
-    "v:bound",
-    "n:atlas-engine.analyze/1"
-   ],
-   [
-    "v:wholes",
     "n:atlas-engine.analyze/1"
    ],
    [

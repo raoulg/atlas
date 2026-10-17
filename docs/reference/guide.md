@@ -46,6 +46,9 @@ Read it from left to right:
   that it holds, folded into one box. Click one to open it. A config opens the same way
   into what it holds (`folders: Folders`). Inside `graph_of`, `parse · one of 3` is a
   choice: the same call goes to the Python, the Rust or the TypeScript reader.
+- **A number `×n` on a line** is n lines of one channel between the same two boxes, drawn as one;
+  opening a box splits it into the lines. **`+24 types` on a pill** counts the values that only that
+  step takes and nothing else touches; opening the pill draws them, each on the step that takes it.
 - **Click any pill** to open it into its own steps, and **show code** to see its source.
 - **A step is a call.** A function the route calls twice is two steps, and a method called
   on a subclass's value is that subclass's (`ComparePlot.plot`). Values are drawn by the
