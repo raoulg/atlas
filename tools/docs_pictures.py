@@ -91,7 +91,7 @@ def canonical(s):
 def verify_clean(s):
     prefix = 'n:sunspots.cli.run/'
     first = 't:ext:pandas.DataFrame@' + prefix + '2'
-    second = 't:ext:pandas.DataFrame@' + prefix + '3'
+    second = 't:ext:pandas.DataFrame~frame@' + prefix + '3'
     chain = [prefix+'2', first, prefix+'3', second, prefix+'5', 'w:File:figures/sunspots.png']
     for a, b in zip(chain, chain[1:]):
         assert [a, b] in s['edges'], f'Missing rendered value flow: {a} -> {b}'

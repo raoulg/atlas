@@ -18,7 +18,10 @@ and every route, and each family in the first two routes that hold it. It report
 says it could not draw it), draws nothing or plans a line to a box it does not draw, and each family that opens into another number of moments than it stood in
 closed; it fails when there is one.
 
-`topology` opens one box at a time in each route (up to ROUTES routes, default all; up to OPENS boxes in each,
+`topology` also asks the page for its oracle, which holds the plan of every route to the same laws before anything is laid
+out (`window.ATLAS_ORACLE`, `atlasPicture.oracle`): for each box that can be opened, the picture with that box open is
+taken from the route's finest plan and compared with the one drawn, and every difference is reported.
+It opens one box at a time in each route (up to ROUTES routes, default all; up to OPENS boxes in each,
 default 8: its steps, then its closed families) and holds the picture that opens to the one it was: opening a
 box refines the quotient, so it takes no line away (every line of the closed picture is a line of the open one,
 seen through the quotient map), draws no line the closed picture did not (but one a step reads back of what it
@@ -104,7 +107,7 @@ TOPOLOGY = """async (spec) => {
   const phiFor = (coarse, fine) => {
     const keys = new Map();
     for (const id of coarse.boxes.keys()) if (/^n:/.test(id)) for (const k of keyOf(id).split("+")) keys.set(k, id);
-    const under = k => { let best = null; for (const [kc, id] of keys) if ((k === kc || k.startsWith(kc + "/") || k.startsWith(kc + "~")) && (!best || kc.length > best[0].length)) best = [kc, id]; return best && best[1]; };
+    const under = k => { let best = null; for (const [kc, id] of keys) if ((k === kc || k.startsWith(kc + "/") || k.startsWith(kc + "~") || k.startsWith(kc + "|")) && (!best || kc.length > best[0].length)) best = [kc, id]; return best && best[1]; };
     return id => {
       if (coarse.boxes.has(id)) return id;
       for (let p = fine.boxes.get(id); p && p !== "root"; p = fine.boxes.get(p)) if (coarse.boxes.has(p)) return p;
@@ -116,7 +119,8 @@ TOPOLOGY = """async (spec) => {
           return u;
         }
       }
-      if (/^[no]:/.test(id)) { const u = under(keyOf(id)); if (u) return u; }
+      // siblings with the same lines are one box, `n:a+b`: it lies where its first step lies
+      if (/^[no]:/.test(id)) { const u = under(keyOf(id).split("+")[0]); if (u) return u; }
       return id;
     };
   };
@@ -129,7 +133,9 @@ TOPOLOGY = """async (spec) => {
   for (const l of fine.lines) { const [a, b] = l.split(">"); const A = phi(a), B = phi(b); if (A !== B) image.add(A + ">" + B); }
   const base = new Set(coarse.lines), lost = [...base].filter(l => !image.has(l));
   // a line from a place into the box that wrote it is the box reading back what it wrote: the composite takes nothing from there
-  const wrote = l => { const [a, b] = l.split(">"); return base.has(b + ">" + a) || image.has(b + ">" + a); };
+  // (a place used both ways stands twice, `from X ⇄` and `into X ⇄`: the line goes to the twin)
+  const twin = x => x.replace(/ ⇄$/, "");
+  const wrote = l => { const [a, b] = l.split(">"); return [...base, ...image].some(m => { const [c, d] = m.split(">"); return c === b && twin(d) === twin(a); }); };
   const gained = [...image].filter(l => !base.has(l) && !wrote(l));
   const moved = [...fine.boxes].filter(([b, par]) => coarse.boxes.has(b) && coarse.boxes.get(b) !== par).map(([b, par]) => `${b}: ${coarse.boxes.get(b)} -> ${par}`);
   // close it again by its frame
@@ -215,6 +221,7 @@ def topology(atlas: str, repo: str, out: pathlib.Path, routes: int, opens: int) 
     with sync_playwright() as p:
         browser = p.chromium.launch(channel="chrome")
         ctx = browser.new_context(viewport={"width": 1400, "height": 900}, reduced_motion="reduce")
+        ctx.add_init_script("window.ATLAS_ORACLE = true")
         tab = ctx.new_page()
         tab.on("pageerror", lambda e: print("page error:", str(e).splitlines()[0]))
 
@@ -231,6 +238,12 @@ def topology(atlas: str, repo: str, out: pathlib.Path, routes: int, opens: int) 
         for route in entries:
             if not load(route):
                 continue
+            plan_faults = tab.evaluate("window.atlasPicture.oracle || []")
+            if plan_faults:
+                bad += 1
+                print(route, "· the plan opens to a picture that does not refine it")
+                for f in plan_faults[:5]:
+                    print("   ", f)
             for spec in tab.evaluate(TOPOLOGY, None)[:opens]:
                 if not load(route):
                     break

@@ -258,13 +258,14 @@ screen, at the zoom the reader chose.
 
 | Law | What it asks of the viewer | Where |
 | --- | --- | --- |
-| Incidence | the frame of an opened step has the id of the closed box; its own pill (`o:`) takes and gives what the closed box took and gave, and hands the result back to the step's caller (`handsBack`) | `build`, `stepMorphism` |
-| Containment | a place of the world stays outside every step frame whose closed box shows it (`frames.closed`); a value no step inside the frame makes stays outside it; only what is made and used between the steps inside lives inside | `homeOf` |
-| Side | the roles of a place are counted from the outermost opened step that shows it closed | `countRole`, `shutOver` |
-| Moment | a value made by the arrow of an opened step has the moment of the closed step (its choice frame, else the step) | `madeAt` |
-| Closing | the picture is built from the sets in `V.open` and nothing else | `plan` |
-| Reading | `stepMorphism` applies a call's hands and gives to the opened step's own arrow as to the closed one | `stepMorphism` |
+| Incidence | a closed step is the block of the occurrences below it: its lines are the images of the fine lines that cross its border; the frame of an opened step has the id of the block, its own pill (`o:`) is the step's own arrow | `imageOf` |
+| Containment | a box stands where the finest plan puts it: a value in the smallest frame that holds its users and its maker, a place of the world outside every step | `imageOf` (`homeOf`) |
+| Side | the roles of a place are counted on the coarsest picture, where only the route is open | `coarsen` |
+| Moment | a value has the moment of the occurrence that made it; a closed block hands on at its own | `madeAt`, `imageOf` |
+| Closing | the picture is the image of the finest plan under the map the sets in `V.open` define, and nothing else | `plan`, `coarsen` |
+| Reading | a call's hands and gives are applied to the step's own arrow as to its closed box | `stepMorphism` |
 | Endpoints | `addEdge` records each line it cannot end (`atlasPicture.dropped`); the walk reports it | `addEdge`, `pictures.py walk` |
+| Refinement | for every box that can be opened, the picture with it open is held to the one drawn (`atlasPicture.oracle`) | `refines`, `checkOpenings` |
 
 | Decision of the picture | The principle behind it |
 | --- | --- |
@@ -279,12 +280,62 @@ screen, at the zoom the reader chose.
 | a type with parts is a family frame; its parts stand inside it opened | zoom by composition is a quotient by the relation "is a part of" |
 | the layers of a route run left to right, entry to places reached | a graph without cycles can be drawn in layers (presentation, no claim) |
 
-The closed arrow of a function lists the types of its signature, and the open picture shows in
-addition the values its body takes from beyond them (a field of the receiver, a value of the
-module): a line then crosses the frame that the closed box does not draw. A type that stands for two values at one moment (`consume(a: Record, b: Record)`) draws them as one box (#44). `tools/pictures.py
-topology` reports these as lines the open box draws more than the closed one did (#38).
-**Where.** `homeOf`, `countRole`, `madeAt` and the camera in `viewer/index.html`;
+A closed step takes what its body takes from beyond it (a field of the receiver, a library's
+value) as well as the types of its signature: the domain of a composite is the domain of its
+first arrows, so opening the step draws no line across its frame that the closed box did not. A
+value no step makes is its type from beyond; two of one type that one step takes (`consume(a, b)`)
+are two values, each by the name that holds it, and a value a step made keeps its name in its
+moment and in its family's frame. A closed family holds its kinds (a subclass stands in its base
+until the family is opened); a part of a type is structure of its owner, a box of its own in the
+owner's frame, and the values of the part's type stand on their own (#39).
+**Where.** `plan`, `imageOf`, `refines` and the camera in `viewer/index.html`;
 `tools/pictures.py topology`.
+
+### One fine plan, every picture its image
+**What.** A quotient is not computed from what is drawn of it. A map `q: G → G/π` is defined on the
+fine graph `G`, and the coarse graph is its image: its objects are the blocks, its arrows the images
+of the arrows of `G`, and an arrow whose two ends lie in one block is gone. Every notion the coarse
+graph needs (where an object stands, which side it is on, when it was made) is a function of `G` and
+`q`, so two coarse graphs of one `G` are images of one thing, and refining `q` can only split.
+**In Atlas.** A route has one finest plan `F`, built once from the code and independent of what is
+open:
+
+- every call of the route is an *occurrence* (a step key, its path through the route), opened to
+  all its calls; an occurrence with calls has a frame and its own arrow, one without is a pill;
+- every value is an identity `(type, name, moment)`: the type it has, the name that holds it, and
+  the occurrence (or choice) that made it; two values of one type at one moment are two;
+- every place of the world is at its concrete place (a path, a table, a command);
+- a step's own arrow is its witness at its border: its signature and its own touches, the lines that
+  cross its frame.
+
+What the reader has open is the map `q`, nothing else: an occurrence goes to its outermost closed
+ancestor (or to itself), a type to the box its family stands in (`placeOfType`), a world place to its
+group, its fold, or itself, a value's moment to the occurrence it goes to, and the steps that only
+parse the command line to the entry. The closed picture is `F/q`:
+
+- a closed step's domain is the places that the occurrences below it take and no occurrence below it
+  makes; its codomain is what its own arrow hands on and what the occurrences below it write. This is
+  the domain of the composite, "the parameters plus what the body consumes" (the second sentence),
+  not the signature alone. A line comes from the step itself when its own arrow supplies it and
+  reaches through it otherwise (the sixth sentence);
+- a place made and taken inside one block is internal to it and is not drawn;
+- where a box stands is decided on `F`: a value stands in the smallest frame that holds all its users
+  and its maker (a choice or the route frame when no step makes it), a place of the world stands
+  outside the steps that show it. The block is its image, so no box moves into or out of a frame by
+  being opened;
+- which side a place of the world stands on is decided on the coarsest picture, `F/q₀` with only the
+  route open, and carried by `q` to every finer one;
+- the quotient of the storage (the disk by its files, a database by its tables) is taken on the
+  places of `F`, so it is the same at every zoom of the steps.
+
+The seven laws above are then theorems of the construction, not properties found afterwards:
+incidence because `F/q′` maps onto `F/q` along the blocks, containment and moment because they are
+functions of `F`, closing because `q` is a function of the set of open boxes, endpoints because every
+image of a place or an occurrence is a box of the image. Atlas still runs them as an oracle, on the
+plan and before anything is laid out (`atlasOracle`), and on the page (`tools/pictures.py topology`
+and `walk`): a construction that is wrong shows there as a violated law, never as a picture that
+looks odd.
+**Where.** `plan`, `coarsen` and `atlasOracle` in `viewer/index.html`; `tools/pictures.py`.
 
 ### Saturation: when the order of a view does not matter
 **What.** A set is saturated by an equivalence when it never cuts a class in two.
