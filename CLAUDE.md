@@ -96,7 +96,10 @@ Two long-lived branches, one release train. Everything else is a short-lived top
 | `<topic>` | one piece of work | none | nothing | its owner |
 
 1. **Start from `next`**, in your own worktree and branch. A topic branch never raises the version,
-   never makes a tag, never merges into `main` and is deleted once merged.
+   never makes a tag, never merges into `main`, and is removed once merged: its worktree
+   (`git worktree remove <path>`, which also frees its `target`, several GB), its local branch and
+   its remote branch. Check first that the worktree has no changes and that
+   `git rev-list --count origin/next..HEAD` is 0. The agent that merges does this in the same turn.
 2. **Land on `next`** when `cargo fmt`, `cargo test` and `atlas check .` pass: merge the topic branch
    (a merge commit, no squash), push, close the issue. New work, documentation, the release
    workflows and the tap all go to `next`, also while it is only documentation.
@@ -143,7 +146,9 @@ Two long-lived branches, one release train. Everything else is a short-lived top
   worktree it is made in: `lefthook.yml` runs `tools/clean-old-builds.sh` after each commit (`lefthook
   install` once per clone; worktrees share it). Dependencies stay, so the next build stays quick.
   When `df -h ~` still runs low, `cargo clean -p atlas -p atlas-engine` (and with `--release`) in
-  your own worktree; never another session's target.
+  your own worktree; never another session's target. The larger cost is the number of worktrees,
+  each with its own `target` of 3 to 18 GB: remove a worktree when its branch is merged (see
+  Branches).
 - Format: `cargo fmt` before every commit (`rustfmt.toml`: 140 columns); CI checks it. It
   formats the workspace only: the fixtures and pairs under `engine/tests` are subjects, written
   as their authors would, and their line numbers are pinned.
