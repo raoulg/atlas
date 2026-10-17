@@ -80,29 +80,54 @@ The rigorous half and the visual half are the same structure. Read `docs/referen
   owner, the branch, the worktree, the base commit and the files in scope. Work in your own
   worktree and branch; never edit another agent's worktree, branch or files in scope. Claude's
   checkout is `/Users/rgrouls/code/packages/atlas` on `atlas-obeys-its-algebra`, its subagents'
-  are `.claude/worktrees/agent-*`; Codex's are under `~/.codex/worktrees/`. Two branches carry the work and
-  nothing else carries a version: `next` is the nightly line, `main` the stable line. Start every piece of
-  work from `next`, in your own worktree and branch. That branch never raises the version, never makes
-  a tag and never merges into `main`. When the work is good, merge it into `next` and push it (CI runs
-  there); that merge raises the version when Atlas itself changed (see Version), and the nightly build
-  is made of it. Raoul promotes `next` to `main`, as the next minor, and tags it `v*`, when he says
-  so. The one exception is a bug fix for the stable line (0.66.x since 16 October): a branch from
-  `main`, merged into `main` when Raoul asks, the patch number raised, a `v*` tag; then `main` is merged
-  into `next`. New work and the documentation go to `next`; `main` moves only when Raoul asks.
-  When work lands, the issue is closed with a
-  comment saying where: the commit and the version it is released as (on `next`, the nightly that has
-  it). A commit names the issue it serves (`#19`).
+  are `.claude/worktrees/agent-*`; Codex's are under `~/.codex/worktrees/`. Branches, versions and
+  releases follow the next section. When work lands, the issue is closed with a comment saying where:
+  the commit and the version it is released as (on `next`, the nightly that has it). A commit names
+  the issue it serves (`#19`).
+
+## Branches, versions and releases
+
+Two long-lived branches, one release train. Everything else is a short-lived topic branch.
+
+| Branch | Holds | Version | Built as | Who moves it |
+| --- | --- | --- | --- | --- |
+| `next` | integration: everything finished | the next minor, `X.Y.0` | nightly, `X.Y.0-nightly.<timestamp>` | any agent, by merging a topic branch whose tests pass |
+| `main` | what is released | the released `X.Y.Z` | stable, tag `vX.Y.Z` | Raoul only |
+| `<topic>` | one piece of work | none | nothing | its owner |
+
+1. **Start from `next`**, in your own worktree and branch. A topic branch never raises the version,
+   never makes a tag, never merges into `main` and is deleted once merged.
+2. **Land on `next`** when `cargo fmt`, `cargo test` and `atlas check .` pass: merge the topic branch
+   (a merge commit, no squash), push, close the issue. New work, documentation, the release
+   workflows and the tap all go to `next`, also while it is only documentation.
+3. **Promote**: when Raoul says so, `next` is merged into `main` (a merge commit), `main` is tagged
+   `vX.Y.0` and pushed; the tag builds the stable release and updates the tap. `main` then holds
+   nothing `next` lacks. An agent prepares the promotion (conflicts resolved, docs pictures drawn,
+   checks green) and stops before the push.
+4. **Stable fix**: a bug in released behaviour is fixed on a branch from `main`, merged into `main`
+   when Raoul says so, patch number raised, tagged `vX.Y.Z`; then `main` is merged into `next` at once.
+   A fix to code that is not released yet is ordinary work on `next`.
+5. **Versions are SemVer and are raised in one place each**: the first change on `next` that alters
+   what Atlas reads, draws or checks raises the minor, once; later commits leave it alone. A stable fix
+   raises the patch. Documentation, CI and the tap raise nothing.
+6. **History is never rewritten.** No force-push to `main` or `next`, no deleted or moved `v*` tag. A
+   mistake is a revert commit.
+7. **Before any push or tag, read the branch** (`git branch --show-current`). A push to `main`, a `v*`
+   tag, a force-push or a change of the repository's settings needs Raoul's yes in this session,
+   for that action; an earlier yes does not carry over.
+
+| Channel | Source | Install |
+| --- | --- | --- |
+| stable | tags `v*` on `main` | `brew install raoulg/tap/atlas-code`, `install.sh` |
+| nightly | `next`, built daily when it changed | `brew install raoulg/tap/atlas-code-nightly`, `ATLAS_CHANNEL=nightly install.sh` |
 
 ## Practical
 
 - Build and run: `cargo build`, `atlas view .` (install with `cargo install --path cli`;
   the viewer is baked into the binary, so rebuild after editing `viewer/index.html`).
-- Version: `version` in the root `Cargo.toml`, raised only by the merge into `next` (a minor when what
-  Atlas reads or draws changes) and by a stable fix on `main` (the patch number, with the tag): never on a
-  feature branch. `next` keeps the version of `main` until Atlas itself changes (what it reads, draws or checks);
-  the first change that warrants a new minor raises it, once, and later commits do not raise it
-  again. Documentation, the release workflows and the tap change no version, and need no tag. The build adds the commit it is made from (`0.2.0 (b0ead14)`), and
-  the nightly build says so too (`0.2.0-nightly (b0ead14)`: `ATLAS_CHANNEL=nightly` at build time).
+- Version: `version` in the root `Cargo.toml`, raised as the section above says. The build adds the
+  commit it is made from (`0.2.0 (b0ead14)`), and the nightly build says so too
+  (`0.2.0-nightly (b0ead14)`: `ATLAS_CHANNEL=nightly` at build time).
 - Tests: `cargo test`. The Rust workspace itself is a test subject. CI runs them on Linux, macOS
   and Windows: a test that writes files builds them as the platform lays them out (a virtual
   environment keeps its packages in `Lib\site-packages` on Windows) and compares paths as `Path`s,
