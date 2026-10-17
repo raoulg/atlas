@@ -319,6 +319,8 @@ parse the command line to the entry. The closed picture is `F/q`:
   not the signature alone. A line comes from the step itself when its own arrow supplies it and
   reaches through it otherwise (the sixth sentence);
 - a place made and taken inside one block is internal to it and is not drawn;
+- fine lines of one channel between the same two boxes are one line that says how many it stands for
+  (`×n` on the line, its stroke thicker); opening the box splits it into the fine lines;
 - where a box stands is decided on `F`: a value stands in the smallest frame that holds all its users
   and its maker (a choice or the route frame when no step makes it), a place of the world stands
   outside the steps that show it. The block is its image, so no box moves into or out of a frame by

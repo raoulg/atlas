@@ -1548,7 +1548,7 @@ async function renderPlaat(mine) {
       pillBlock.set(P.id, id);
     }
     for (const B of blocks.values()) {
-      const D = new Map(), C = new Map(), goes = new Map(), S = B.frame, back = S ? new Set(arrowOf(stepOf(S.step))?.reads_back || []) : null;
+      const D = new Map(), C = new Map(), Dn = new Map(), Cn = new Map(), goes = new Map(), S = B.frame, back = S ? new Set(arrowOf(stepOf(S.step))?.reads_back || []) : null;
       const incidence = [];
       for (const P of B.members) {
         const mine = !S || P.id === "o:" + S.step;
@@ -1563,6 +1563,9 @@ async function renderPlaat(mine) {
       }
       for (const [way, P, k, r] of incidence) {
         const id = add(way === "D" ? D : C, k, r);
+        // the fine lines that one line of the picture stands for
+        const n = way === "D" ? Dn : Cn;
+        n.set(id, (n.get(id) || 0) + 1);
         inc.set(`${P.id}|${way}|${k}`, {way, P: P.id, k, p: B.id, c: id});
         note(id, P, way === "C");
         const f = famId(fp.get(k));
@@ -1573,11 +1576,11 @@ async function renderPlaat(mine) {
       if (!S) {
         const P = B.members[0];
         if (!D.size && !C.size && !back_ && !P.own) continue;
-        pills.set(P.id, {...P, D, C, goes, ...(back_ ? {backTo: back_, backFrom: out.id} : {backTo: undefined})});
+        pills.set(P.id, {...P, D, C, Dn, Cn, goes, ...(back_ ? {backTo: back_, backFrom: out.id} : {backTo: undefined})});
         continue;
       }
       if (!D.size && !C.size && !back_) continue;
-      pills.set(S.id, {id: S.id, steps: [S.step], D, C, dn: new Map(), cn: new Map(), goes, parent: S.parent, hue: S.hue, ...(back_ ? {backTo: back_, backFrom: out.id} : {})});
+      pills.set(S.id, {id: S.id, steps: [S.step], D, C, Dn, Cn, dn: new Map(), cn: new Map(), goes, parent: S.parent, hue: S.hue, ...(back_ ? {backTo: back_, backFrom: out.id} : {})});
     }
     for (const P of [...pills.values()]) if (P.backTo && !pills.has(P.backTo)) delete P.backTo;
     for (const P of pills.values()) if (P.backTo) inc.set(`${P.backFrom}|back`, {way: "B", P: P.backFrom, k: P.backTo, p: P.id, c: P.backTo});
@@ -1757,6 +1760,8 @@ async function renderPlaat(mine) {
     m.forEach((v, k) => { const id = shownWorld(k); r.set(id, sides ? new Set([...(r.get(id) || []), ...v]) : r.has(id) ? r.get(id) && v : v); });
     return r;
   };
+  const countsTo = (m, f) => { if (!m) return m; const out = new Map(); m.forEach((n, k) => out.set(f(k), (out.get(f(k)) || 0) + n)); return out; };
+  for (const P of pills.values()) { P.Dn = countsTo(P.Dn, shownWorld); P.Cn = countsTo(P.Cn, shownWorld); }
   for (const P of pills.values()) { P.D = remapWorld(P.D); P.C = remapWorld(P.C); if (P.Ds) { P.Ds = remapWorld(P.Ds, true); P.Cs = remapWorld(P.Cs, true); } }
   // the disk is a tree: past a column's worth, files fold into their directories, and a click opens one
   const visibleFiles = new Set([...places.keys()].map(filePath).filter(Boolean));
@@ -1765,7 +1770,7 @@ async function renderPlaat(mine) {
     const to = k => { const p = filePath(k); return p ? filePlace(p).id : k; };
     const remap = m => { const out = new Map(); m.forEach((r, k) => { const k2 = to(k); out.set(k2, out.has(k2) ? out.get(k2) && r : r); }); return out; };
     const remapSides = m => { const out = new Map(); m.forEach((s, k) => { const k2 = to(k); out.set(k2, new Set([...(out.get(k2) || []), ...s])); }); return out; };
-    for (const P of pills.values()) { P.D = remap(P.D); P.C = remap(P.C); if (P.Ds) { P.Ds = remapSides(P.Ds); P.Cs = remapSides(P.Cs); } }
+    for (const P of pills.values()) { P.Dn = countsTo(P.Dn, to); P.Cn = countsTo(P.Cn, to); P.D = remap(P.D); P.C = remap(P.C); if (P.Ds) { P.Ds = remapSides(P.Ds); P.Cs = remapSides(P.Cs); } }
     const folded = new Map();
     const standing = new Set();
     for (const [p, d] of dirFold.to) { if (!folded.has(d)) folded.set(d, new Set()); for (const s of places.get("w:File:" + p)?.sides || []) folded.get(d).add(s); if (visibleFiles.has(p)) standing.add(d); places.delete("w:File:" + p); }
@@ -2039,16 +2044,16 @@ async function renderPlaat(mine) {
     if (!nodeOf.has(a) || !nodeOf.has(b)) { dropped.push(`${a}>${b}`); return; }
     const id = `${a}>${b}`;
     // in a union, a line is in the readings that draw it
-    if (edgeInfo.has(id)) { const e = edgeInfo.get(id); e.reach &&= info.reach; if (e.sides && info.sides) info.sides.forEach(s => e.sides.add(s)); return; }
+    if (edgeInfo.has(id)) { const e = edgeInfo.get(id); e.reach &&= info.reach; e.n = (e.n || 1) + (info.n || 1); if (e.sides && info.sides) info.sides.forEach(s => e.sides.add(s)); return; }
     edgeInfo.set(id, {...info, a, b, sides: info.sides && new Set(info.sides)});
     root.edges.push({id, sources: [a], targets: [b], ...(info.label ? {labels: [{text: info.label, width: textW(info.label, 6.2), height: 12}]} : {})});
   };
   for (const [a, b, hue, sides] of wires) addEdge(a, b, {hue, sides});
   for (const P of pills.values()) {
-    P.D.forEach((r, k) => addEdge(k, P.id, {reach: r, hue: P.hue, sides: P.Ds?.get(k)}));
+    P.D.forEach((r, k) => addEdge(k, P.id, {reach: r, hue: P.hue, sides: P.Ds?.get(k), n: P.Dn?.get(k)}));
     P.C.forEach((r, k) => {
       const gs = finesOf(k).map(f => P.goes?.get(f)).filter(Boolean), open = gs.some(g => g.has("open")) && !gs.some(g => g.has("read") || g.has("write"));
-      addEdge(P.id, twinOf.get(k) || k, {reach: r, hue: P.hue, sides: P.Cs?.get(k), ...(open ? {label: "?", title: "the code does not say which way the data goes"} : {})});
+      addEdge(P.id, twinOf.get(k) || k, {reach: r, hue: P.hue, sides: P.Cs?.get(k), n: P.Cn?.get(k), ...(open ? {label: "?", title: "the code does not say which way the data goes"} : {})});
     });
     if (P.backTo) addEdge(P.id, P.backTo, {back: true, hue: P.hue, sides: P.sides});
   }
@@ -2243,7 +2248,7 @@ async function renderPlaat(mine) {
       }
       const d = pts.map((q, i) => (i ? "L" : "M") + q.x + "," + q.y).join(" ");
       const layer = ports.length ? ig : eg;
-      const p = el("path", {class: "sedge fn" + (info.reach ? " reach" : "") + (info.back ? " back" : "") + (info.uses ? " uses" : ""), d, "stroke-width": info.uses ? 1 : 1.3, "data-a": e.sources[0], "data-b": e.targets[0]}, layer);
+      const p = el("path", {class: "sedge fn" + (info.reach ? " reach" : "") + (info.back ? " back" : "") + (info.uses ? " uses" : ""), d, "stroke-width": (info.uses ? 1 : 1.3) + (info.n > 1 ? Math.min(3, Math.log2(info.n)) : 0), "data-a": e.sources[0], "data-b": e.targets[0]}, layer);
       const last = pts[pts.length - 1], prev = pts[pts.length - 2], ang = Math.atan2(last.y - prev.y, last.x - prev.x), L = 8, Wd = 4;
       const head = el("polygon", {points: [[last.x, last.y], [last.x - L * Math.cos(ang) + Wd * Math.sin(ang), last.y - L * Math.sin(ang) - Wd * Math.cos(ang)], [last.x - L * Math.cos(ang) - Wd * Math.sin(ang), last.y - L * Math.sin(ang) + Wd * Math.cos(ang)]].map(q => q.join(",")).join(" "), class: "sedge-head"}, layer);
       if (info.hue) { p.style.stroke = hueVar(info.hue); head.style.fill = hueVar(info.hue); }
@@ -2252,6 +2257,14 @@ async function renderPlaat(mine) {
         const bar = el("path", {class: "sedge interior-port", "data-step": port.id, "pointer-events": "none", d: `M${port.x - 6 * port.dy},${port.y + 6 * port.dx}L${port.x + 6 * port.dy},${port.y - 6 * port.dx}`, "stroke-width": 2}, ig);
         if (info.hue) bar.style.stroke = hueVar(info.hue);
         els.push(bar);
+      }
+      // a bundle: the fine lines of one channel between the same two boxes are one line that says how many it stands for
+      if (info.n > 1) {
+        const mid = pts[Math.floor(pts.length / 2)], mid2 = pts[Math.floor((pts.length - 1) / 2)];
+        const tx = el("text", {class: "sedge-label bundle", x: (mid.x + mid2.x) / 2, y: (mid.y + mid2.y) / 2 - 4, "text-anchor": "middle"}, eg);
+        tx.textContent = "×" + info.n;
+        el("title", {}, p).textContent = `${info.n} lines of the finer picture`;
+        els.push(tx);
       }
       if (info.title) el("title", {}, p).textContent = info.title;
       for (const l of e.labels || []) { const tx = el("text", {class: "sedge-label", x: l.x + c.x + l.width / 2, y: l.y + c.y + 10, "text-anchor": "middle"}, eg); tx.textContent = l.text; els.push(tx); }
