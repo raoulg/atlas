@@ -30,6 +30,7 @@ when a box does otherwise.
 """
 
 import json
+import os
 import pathlib
 import re
 import subprocess
@@ -40,7 +41,7 @@ def page_of(atlas: str, repo: str, out: pathlib.Path) -> tuple[pathlib.Path, str
     """The page an Atlas build draws of a repository: its file, its text, where its project is named, its graph."""
     out.mkdir(parents=True, exist_ok=True)
     page_file = out / "page.html"
-    subprocess.run([atlas, "view", repo, "--no-open", "--out", str(page_file)], check=True, capture_output=True)
+    subprocess.run([atlas, "view", repo, "--no-open", "--out", str(page_file), *os.environ.get("ATLAS_VIEW_ARGS", "").split()], check=True, capture_output=True)
     html = page_file.read_text()
     project = re.search(r'"projects":\{"([^"]+)":\{', html)
     start = html.index("window.DATA = ") + len("window.DATA = ")
@@ -99,11 +100,8 @@ TOPOLOGY = """async (spec) => {
   const snap = () => { const P = window.atlasPicture; return {n: P.n, boxes: new Map(P.boxes), lines: P.lines.map(([a, b]) => a + ">" + b)}; };
   const keyOf = id => id.replace(/^[no]:/, "");
   const closedFamily = g => g.matches('g.tnode[data-id^="t:"]') && /\\(\\d+\\)/.test(g.querySelector(".title")?.textContent || "");
-  const targets = () => [
-    ...[...document.querySelectorAll("#scene g.tstep")].filter(g => /^▸/.test(g.querySelector(".title")?.textContent || "")).map(g => ({id: g.dataset.id, kind: "step"})),
-    ...[...document.querySelectorAll('#scene g.tnode[data-id^="t:"]')].filter(closedFamily).map(g => ({id: g.dataset.id, kind: "family"})),
-  ];
-  if (spec === null) return [...new Map(targets().map(t => [t.kind + t.id, t])).values()];
+  const targets = () => [...window.atlasBoxes].flatMap(([id, g]) => g.classList.contains("tstep") && /^▸/.test(g.querySelector(".title")?.textContent || "") ? [{id, kind: "step"}] : closedFamily(g) ? [{id, kind: "family"}] : []);
+  if (spec === null) return targets();
   const phiFor = (coarse, fine) => {
     const keys = new Map();
     for (const id of coarse.boxes.keys()) if (/^n:/.test(id)) for (const k of keyOf(id).split("+")) keys.set(k, id);
@@ -124,7 +122,7 @@ TOPOLOGY = """async (spec) => {
       return id;
     };
   };
-  const coarse = snap(), g = [...document.querySelectorAll("#scene g[data-id]")].find(g => g.dataset.id === spec.id && (spec.kind === "family" ? closedFamily(g) : g.classList.contains("tstep")));
+  const coarse = snap(), g = window.atlasBoxes.get(spec.id);
   if (!g) return {gone: true};
   let n0 = window.atlasPicture.n;
   g.dispatchEvent(new MouseEvent("click", {bubbles: true}));
@@ -150,6 +148,22 @@ TOPOLOGY = """async (spec) => {
     back = same([...again.boxes.keys()], [...coarse.boxes.keys()]) && same(again.lines, coarse.lines);
   }
   return {opened: spec.id, lost, gained, moved, reversible: back};
+}"""
+
+# Opens the boxes named, one after the other, and gives the picture: its boxes with the box that holds each, and its lines.
+ORDER = """async (specs) => {
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const settle = async n0 => { for (let i = 0; i < 100 && window.atlasPicture.n === n0; i++) await sleep(50); await sleep(30); };
+  const closedFamily = g => g.matches('g.tnode[data-id^="t:"]') && /\\(\\d+\\)/.test(g.querySelector(".title")?.textContent || "");
+  for (const spec of specs) {
+    const g = window.atlasBoxes.get(spec.id);
+    if (!g) return {gone: true};
+    const n0 = window.atlasPicture.n;
+    g.dispatchEvent(new MouseEvent("click", {bubbles: true}));
+    await settle(n0);
+  }
+  const P = window.atlasPicture;
+  return {boxes: P.boxes.map(b => b[0] + " in " + b[1]).sort(), lines: P.lines.map(l => l.join(">")).sort()};
 }"""
 
 
@@ -259,6 +273,22 @@ def topology(atlas: str, repo: str, out: pathlib.Path, routes: int, opens: int) 
                     for f in faults + more:
                         print("   ", f)
                     drawn_more += bool(more)
+            # two boxes opened in either order draw the same picture
+            specs = tab.evaluate(TOPOLOGY, None)[:3]
+            for i, A in enumerate(specs):
+                for B in specs[i + 1:]:
+                    shots = []
+                    for order in ([A, B], [B, A]):
+                        if not load(route):
+                            break
+                        shots.append(tab.evaluate(ORDER, order))
+                    checked += 1
+                    if len(shots) == 2 and not any(x.get("gone") for x in shots) and shots[0] != shots[1]:
+                        bad += 1
+                        print(route, "· opens", A["id"], "and", B["id"], "and the order changes the picture")
+                        for key in ("boxes", "lines"):
+                            for x in sorted(set(shots[0][key]) ^ set(shots[1][key]))[:3]:
+                                print("   ", key, x)
         # a focus keeps the rest of the code on either side of it when its package is opened
         tops = [u for _, us in graph.get("flow", {}).get("units", {}).get("tops", []) for u in us][:opens]
         for u in tops:
