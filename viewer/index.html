@@ -1698,6 +1698,8 @@ async function renderPlaat(mine) {
       if (a && b) { const u = unionLabel(a.title, b.title, !!F.step && renamed(stepOf(F.step))); Object.assign(F, {labels: u.labels, title: u.label}); }
       frames.set(id, F);
     }
+    // a step open in one reading and closed in the other is one box, the open one: its lines end at its frame, as the closed box's did
+    for (const id of frames.keys()) pills.delete(id);
     const rest = new Map();
     for (const [s, p] of [["a", A], ["b", B]]) for (const [r, at, way, ts] of p.restArrows) {
       const k = `${r}>${at}`;
