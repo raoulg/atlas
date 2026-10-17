@@ -97,7 +97,7 @@ FAMILIES = """async (done) => {
 TOPOLOGY = """async (spec) => {
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const settle = async n0 => { for (let i = 0; i < 100 && window.atlasPicture.n === n0; i++) await sleep(50); await sleep(30); };
-  const snap = () => { const P = window.atlasPicture; return {n: P.n, boxes: new Map(P.boxes), sides: new Map(P.sides || []), lines: P.lines.map(([a, b]) => a + ">" + b)}; };
+  const snap = () => { const P = window.atlasPicture; return {n: P.n, folded: new Map(window.atlasPlan?.coarse?.folded || []), boxes: new Map(P.boxes), sides: new Map(P.sides || []), lines: P.lines.map(([a, b]) => a + ">" + b)}; };
   const keyOf = id => id.replace(/^[no]:/, "");
   const closedFamily = g => g.matches('g.tnode[data-id^="t:"]') && /\\(\\d+\\)/.test(g.querySelector(".title")?.textContent || "");
   const targets = () => [...window.atlasBoxes].flatMap(([id, g]) => g.classList.contains("tstep") && /^▸/.test(g.querySelector(".title")?.textContent || "") ? [{id, kind: "step"}] : closedFamily(g) ? [{id, kind: "family"}] : []);
@@ -108,6 +108,7 @@ TOPOLOGY = """async (spec) => {
     const under = k => { let best = null; for (const [kc, id] of keys) if ((k === kc || k.startsWith(kc + "/") || k.startsWith(kc + "~") || k.startsWith(kc + "|")) && (!best || kc.length > best[0].length)) best = [kc, id]; return best && best[1]; };
     return id => {
       if (coarse.boxes.has(id)) return id;
+      if (coarse.folded.has(id)) return coarse.folded.get(id);
       for (let p = fine.boxes.get(id); p && p !== "root"; p = fine.boxes.get(p)) if (coarse.boxes.has(p)) return p;
       const m = id.match(/^(.*?)@(.*)$/);
       if (m) {

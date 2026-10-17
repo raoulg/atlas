@@ -195,8 +195,8 @@ each line between the fiber and the rest is joined again to the block of its end
 **In Atlas.** The vertices of the finest picture are not places but values at a moment: a place
 as one step leaves it, a value as the step that makes it hands it on, a call occurrence. The lines
 run from the step that makes a value to the value and from the value to the steps that take it.
-Every picture is `G/π` for the open boxes of its zoom. Five rules follow, and they decide what a
-line that appears or disappears means:
+Every picture is `G/π` for the open boxes of its zoom. Six rules follow, and they decide what a
+line or a box that appears or disappears means:
 
 1. **A line without an image is a fault of the picture that lacks it.** The closed picture shows at
    least the image of every fine line that crosses its border. A line that the open box draws across its
@@ -218,6 +218,13 @@ line that appears or disappears means:
    no fine path has (`a → b`, `c → d`, `b ≡ c` gives `[a] → [d]`). What a step reaches is the closure
    of its calls in the fine graph, drawn apart from its own arrow (sentence 6), and never read off a
    quotient.
+6. **Places with the same incidence are one block.** The rule for lines holds for the vertices too: values
+   that one closed step takes, that no step makes and that join nothing else, have the same neighbours
+   (that step) and the same way (in), so they are one block of the quotient with a multiplicity `n`, drawn
+   as a count on the step (`graph_of · +24 types`). Contracting a vertex of degree one into its neighbour
+   leaves the picture the same up to homotopy, and the border of the step stays whole: each line is still
+   counted, and opening the step splits the block into the values, each with its line. A value that
+   another step takes or makes, a family that can be opened and the route's own values are not of the block.
 
 **Where.** `homeOf`, `madeAt` and `addEdge` in `viewer/index.html`; `tools/pictures.py topology`
 holds the open picture to the closed one.

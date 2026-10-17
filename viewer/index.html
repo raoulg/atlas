@@ -1591,6 +1591,29 @@ async function renderPlaat(mine) {
     }
     for (const P of [...pills.values()]) if (P.backTo && !pills.has(P.backTo)) delete P.backTo;
     for (const P of pills.values()) if (P.backTo) inc.set(`${P.backFrom}|back`, {way: "B", P: P.backFrom, k: P.backTo, p: P.id, c: P.backTo});
+    // places with the same incidence are one block of the quotient with a multiplicity: the values that only one closed step takes
+    // and no step makes are the same block (one neighbour, no maker), drawn as a count on the step and drawn apart when it opens
+    const joined = new Map(), at = new Map();
+    for (const i of inc.values()) {
+      if (i.way === "B") continue;
+      const e = at.get(i.c) || {ways: new Set(), blocks: new Set()};
+      e.ways.add(i.way); e.blocks.add(i.p); at.set(i.c, e);
+    }
+    const free = new Map();
+    for (const [id, e] of at) {
+      const pl = places.get(id);
+      if (e.ways.size !== 1 || !e.ways.has("D") || e.blocks.size !== 1 || !pl || !/^[tv]:/.test(id) || (pl.type && (opens(pl.type) || pl.type === V.route)) || famId(pl)) continue;
+      const b = [...e.blocks][0], P = pills.get(b);
+      if (!P || P.own || /^(unit|part):/.test(P.steps[0])) continue;
+      if (!free.has(b)) free.set(b, []);
+      free.get(b).push(id);
+    }
+    for (const [b, ids] of free) {
+      if (ids.length < 2) continue;
+      const P = pills.get(b);
+      for (const id of ids) { P.D.delete(id); P.Dn?.delete(id); places.delete(id); joined.set(id, b); }
+      P.folded = ids.length;
+    }
     // where a box stands: in the smallest frame that holds all the steps that use it and the one that made it; a value no step
     // inside a step makes stands outside it, and a place of the world outside every step
     const chainOf = fid => { const c = []; for (let f = fid; f; f = fFrames.get(f)?.parent) c.unshift(f); return c; };
@@ -1605,7 +1628,7 @@ async function renderPlaat(mine) {
       while (common.length && !frames.has(common[common.length - 1])) common.pop();
       return common.length ? common[common.length - 1] : null;
     };
-    return {places, pills, frames, homeOf, hidden, blocks, pillBlock, inc, drop, q};
+    return {places, pills, frames, homeOf, hidden, blocks, pillBlock, inc, drop, q, folded: joined};
   };
   // Opening one more box must refine the picture and nothing else. For each box that can be opened (a closed step, a closed
   // family), the picture with that box open is taken from the same finest plan and held to the one that is drawn: each of its
@@ -1613,8 +1636,8 @@ async function renderPlaat(mine) {
   // the open one that crosses a block's border is missing from the drawn one (but the reading back of what a step wrote)
   const refines = (A, B) => {
     const out = [], phi = [new Map(), new Map()];
-    const lines = M => new Set([...M.inc.values()].map(i => (i.way === "D" ? `${i.c}>${i.p}` : `${i.p}>${i.c}`)));
-    const mapTo = (i, way) => { const a = A.pillBlock.get(i.P), c = i.way === "B" ? A.pillBlock.get(i.k) : A.q(i.k); return a && c ? (way === "D" ? `${c}>${a}` : `${a}>${c}`) : null; };
+    const lines = M => new Set([...M.inc.values()].filter(i => !M.folded.has(i.c)).map(i => (i.way === "D" ? `${i.c}>${i.p}` : `${i.p}>${i.c}`)));
+    const mapTo = (i, way) => { const a = A.pillBlock.get(i.P), c = i.way === "B" ? A.pillBlock.get(i.k) : (A.folded.get(A.q(i.k)) || A.q(i.k)); return a && c ? (way === "D" ? `${c}>${a}` : `${a}>${c}`) : null; };
     for (const i of B.inc.values()) {
       const a = A.pillBlock.get(i.P), c = i.way === "B" ? A.pillBlock.get(i.k) : A.q(i.k);
       for (const [n, from, to] of [[0, i.p, a], [1, i.c, c]]) if (to) { if (phi[n].has(from) && phi[n].get(from) !== to) out.push(`box ${from} lies in ${phi[n].get(from)} and in ${to}`); phi[n].set(from, to); }
@@ -1658,7 +1681,7 @@ async function renderPlaat(mine) {
     // the storage quotient and the fold of the disk are taken on the places of the finest plan, whatever is open
     const ways = new Map();
     for (const P of F.pills.values()) for (const [way, m] of [["in", P.D], ["out", P.C]]) for (const k of m.keys()) { if (!ways.has(k)) ways.set(k, new Set()); ways.get(k).add(way); }
-    return {places: view.places, pills: view.pills, frames: view.frames, restArrows: [], roles, home: view.homeOf, fine: {places: F.places, ways}, oracle: window.ATLAS_ORACLE ? checkOpenings(F, view, folded) : null};
+    return {places: view.places, pills: view.pills, frames: view.frames, restArrows: [], folded: view.folded, roles, home: view.homeOf, fine: {places: F.places, ways}, oracle: window.ATLAS_ORACLE ? checkOpenings(F, view, folded) : null};
   };
   const plan = () => {
     if (!V.route) return planBase(false);
@@ -2003,7 +2026,7 @@ async function renderPlaat(mine) {
     if (P.own) return stepLabel(P.steps[0]);
     const ns = [...new Set(P.steps.map(stepLabel))], text = ns.length <= 2 ? ns.join(", ") : `${ns.slice(0, 2).join(", ")} +${ns.length - 2}`;
     const alts = P.steps.length === 1 && !treeInfo.get(P.steps[0])?.on && !stepOf(P.steps[0]).startsWith("op:") ? altCount(stepOf(P.steps[0])) : 0;
-    return (P.steps.some(st => treeInfo.get(st)?.recursive) ? "↻ " : P.steps.some(openable) || !V.route ? "▸ " : "") + text + (alts ? ` · one of ${alts}` : "");
+    return (P.steps.some(st => treeInfo.get(st)?.recursive) ? "↻ " : P.steps.some(openable) || !V.route ? "▸ " : "") + text + (alts ? ` · one of ${alts}` : "") + (P.folded ? ` · +${P.folded} types` : "");
   };
   // in a union, a step named otherwise in A reads `old → new`
   const labelIn = (s, P) => { SIDE = s; try { return pillLabel(P); } finally { SIDE = null; } };
