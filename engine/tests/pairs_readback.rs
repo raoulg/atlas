@@ -14,7 +14,11 @@ fn graph(side: &str) -> atlas_engine::Graph {
 fn notes_places(side: &str) -> Vec<String> {
     let g = graph(side);
     let drawn = flow::of(&g);
-    drawn.drawn["ledger.Ledger.keep"].iter().filter(|p| p.place.id.contains("notes")).map(|p| format!("{} {:?}", p.place.id, p.side)).collect()
+    drawn.drawn["ledger.Ledger.keep"]
+        .iter()
+        .filter(|p| p.place.id.contains("notes"))
+        .map(|p| format!("{} {:?}", p.place.id, p.side))
+        .collect()
 }
 
 /// Both sides write the table and read it back: the graph holds the same two touches and places on each
