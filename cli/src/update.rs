@@ -67,6 +67,9 @@ pub fn newer(this: &Build, latest: &Latest) -> Option<String> {
 /// The command that upgrades an install, from where the executable lives and what this build is.
 pub fn upgrade(exe: &Path, nightly: bool, windows: bool) -> String {
     let path = exe.to_string_lossy().replace('\\', "/");
+    if path.contains("/Cellar/atlas-code-nightly/") {
+        return "brew upgrade atlas-code-nightly".into();
+    }
     if path.contains("/Cellar/") || path.contains("/homebrew/") || path.contains("/linuxbrew/") {
         return if nightly { "brew upgrade --fetch-HEAD atlas-code".into() } else { "brew upgrade atlas-code".into() };
     }
@@ -213,6 +216,10 @@ mod tests {
         let up = |p: &str, nightly, windows| upgrade(Path::new(p), nightly, windows);
         assert_eq!(up("/opt/homebrew/Cellar/atlas-code/0.66.2/bin/atlas", false, false), "brew upgrade atlas-code");
         assert_eq!(up("/opt/homebrew/Cellar/atlas-code/HEAD-ab/bin/atlas", true, false), "brew upgrade --fetch-HEAD atlas-code");
+        assert_eq!(
+            up("/opt/homebrew/Cellar/atlas-code-nightly/0.66.2-nightly.202610171105/bin/atlas", true, false),
+            "brew upgrade atlas-code-nightly"
+        );
         assert!(up("/home/x/.cargo/bin/atlas", true, false).contains("--branch next"));
         assert!(up("/home/x/.local/bin/atlas", false, false).ends_with("install.sh | sh"));
         assert!(up("/home/x/.local/bin/atlas", true, false).contains("| ATLAS_CHANNEL=nightly sh"));

@@ -99,18 +99,21 @@ ATLAS_CHANNEL=nightly sh -c "$(curl -fsSL https://raw.githubusercontent.com/raou
 $env:ATLAS_CHANNEL = 'nightly'; irm https://raw.githubusercontent.com/raoulg/atlas/next/install.ps1 | iex
 ```
 
-Homebrew has no channel variable; its nightly is the formula's `HEAD`, built from `next` (it needs
-Rust). On the command line, and in a `Brewfile`:
+Homebrew has no channel variable; the nightly is a formula of its own, built from the binaries of the
+nightly release, and it replaces the stable one (both install `atlas`). On the command line, and in a
+`Brewfile`:
 
 ```bash
-brew install --HEAD raoulg/tap/atlas-code
-brew upgrade --fetch-HEAD atlas-code      # a HEAD formula is upgraded only when asked
+brew install raoulg/tap/atlas-code-nightly
+brew upgrade atlas-code-nightly
 ```
 
 ```ruby
 tap "raoulg/tap"
-brew "atlas-code", args: ["HEAD"]         # the nightly; leave out `args` for the stable release
+brew "atlas-code-nightly"                 # the nightly; `brew "atlas-code"` is the stable release
 ```
+
+`brew install --HEAD raoulg/tap/atlas-code` builds `next` from source instead (it needs Rust).
 
 `atlas --version` says which one you have: `0.66.2`, or `0.67.0-nightly (b0ead14)`.
 
