@@ -137,6 +137,13 @@ Two long-lived branches, one release train. Everything else is a short-lived top
 - Version: `version` in the root `Cargo.toml`, raised as the section above says. The build adds the
   commit it is made from (`0.2.0 (b0ead14)`), and the nightly build says so too
   (`0.2.0-nightly (b0ead14)`: `ATLAS_CHANNEL=nightly` at build time).
+- Verification that takes long: a check that runs longer than a few minutes (a walk or topology run over
+  a whole subject, a sweep of hundreds of openings) is discussed with Raoul first, saying what it checks
+  and what it cannot prove. A sample of a subject's views finds faults; it proves nothing. Where a
+  property should hold for every picture, build the code so that it holds by construction (one
+  function that all views use) and test that function, on small graphs, before the plan is laid out;
+  keep the sweep for a gate before a promotion, and then agree on it. Show Raoul the result before
+  verifying it further.
 - Tests: `cargo test`. The Rust workspace itself is a test subject. CI runs them on Linux, macOS
   and Windows: a test that writes files builds them as the platform lays them out (a virtual
   environment keeps its packages in `Lib\site-packages` on Windows) and compares paths as `Path`s,
