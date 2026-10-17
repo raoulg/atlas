@@ -1060,7 +1060,14 @@ function routeTree() {
     if (parse.hidden.size) routeParses = true;
     const entry = folds ? parse : {hidden: new Set(), fed: new Set()};
     const call = (s, h) => {
-      if (deeper.has(s.to) || entry.hidden.has(s.site)) return null;
+      if (entry.hidden.has(s.site)) return null;
+      // a call to a function the route is already inside is a step of the route that stays closed: the frame it would open is the one it
+      // stands in, and the border it crosses is drawn
+      if (deeper.has(s.to)) {
+        const rk = `${key}/${s.site ?? s.to}`;
+        treeInfo.set(rk, {step: s.to, on: s.on || null, site: s.site != null ? n.sites[s.site] : null, fed: entry.fed, recursive: true});
+        return {id: rk, open: false, kids: [], hue: h, choice: false, recursive: true};
+      }
       const k = visit(`${key}/${s.site ?? s.to}`, s.to, s.on || null, s.site != null ? n.sites[s.site] : null, h, deeper, entry.fed);
       // in the finest plan the steps that only parse the command line are there, marked: a closed entry is their quotient
       if (FINE && foldable && parse.hidden.has(s.site)) k.parse = true;
@@ -1160,7 +1167,7 @@ async function renderPlaat(mine) {
     const n = byId.get(info.step);
     return info.on && n && n.cls && !isCtor(n) ? `${typeLabel(info.on)}.${nameOf(n)}` : stepName(info.step);
   };
-  const openable = key => { const s = stepOf(key); return key !== V.route && !V.open.steps.has(key) && !V.open.functions.has(s) && !s.startsWith("op:") && byId.get(s)?.kind !== "class" && callees(s, treeInfo.get(key)?.on).length + stepsIn(bodyOf(s, treeInfo.get(key)?.on)).length > 0; };
+  const openable = key => { const s = stepOf(key); return key !== V.route && !treeInfo.get(key)?.recursive && !V.open.steps.has(key) && !V.open.functions.has(s) && !s.startsWith("op:") && byId.get(s)?.kind !== "class" && callees(s, treeInfo.get(key)?.on).length + stepsIn(bodyOf(s, treeInfo.get(key)?.on)).length > 0; };
   // an exported class has no body of its own: its route starts at each public method the caller can call
   const libraryClass = id => byId.get(id)?.kind === "class" && !!byId.get(id).entry;
   const momentOf = id => id.includes("@") ? id.slice(id.indexOf("@")) : "";
@@ -1994,16 +2001,16 @@ async function renderPlaat(mine) {
     if (P.own) return stepLabel(P.steps[0]);
     const ns = [...new Set(P.steps.map(stepLabel))], text = ns.length <= 2 ? ns.join(", ") : `${ns.slice(0, 2).join(", ")} +${ns.length - 2}`;
     const alts = P.steps.length === 1 && !treeInfo.get(P.steps[0])?.on && !stepOf(P.steps[0]).startsWith("op:") ? altCount(stepOf(P.steps[0])) : 0;
-    return (P.steps.some(openable) || !V.route ? "▸ " : "") + text + (alts ? ` · one of ${alts}` : "");
+    return (P.steps.some(st => treeInfo.get(st)?.recursive) ? "↻ " : P.steps.some(openable) || !V.route ? "▸ " : "") + text + (alts ? ` · one of ${alts}` : "");
   };
   // in a union, a step named otherwise in A reads `old → new`
   const labelIn = (s, P) => { SIDE = s; try { return pillLabel(P); } finally { SIDE = null; } };
   for (const P of pills.values()) {
     P.label = pillLabel(P);
-    const [la, lb] = DIFF ? [labelIn("a", P), labelIn("b", P)] : [P.label, P.label], plain = t => t.replace(/^▸ /, "");
+    const [la, lb] = DIFF ? [labelIn("a", P), labelIn("b", P)] : [P.label, P.label], plain = t => t.replace(/^[▸↻] /, "");
     if (plain(la) !== plain(lb)) {
       const u = unionLabel(plain(la), plain(lb), P.steps.some(s => renamed(stepOf(s))));
-      Object.assign(P, {labels: {a: la, b: lb}, label: (P.label.startsWith("▸ ") ? "▸ " : "") + u.label});
+      Object.assign(P, {labels: {a: la, b: lb}, label: (/^[▸↻] /.test(P.label) ? P.label.slice(0, 2) : "") + u.label});
     }
     P.interior = !P.own && ([...P.D.values(), ...P.C.values()].some(Boolean));
     holder(P.parent).children.push(leaf(P.id, Math.max((P.interior ? 48 : 24) + textW(P.label, 6.9), tagsWidth(P.inside) + 2 * 13), P.interior ? 34 : 26));
@@ -2390,7 +2397,8 @@ async function renderPlaat(mine) {
   prevPos = pos; plaatAnchor = null; plaatFit = false;
   PICTURE = {boxes: nodeEls, lines: edgeEls};
   // the picture as data, for the checks that walk it (tools/pictures.py): each box with the box that holds it, each line by its ends
-  window.atlasPicture = {n: (window.atlasPicture?.n || 0) + 1, dropped, oracle: oracle || [], boxes: [...nodeEls.keys()].map(id => [id, parentOf.get(id) || "root"]), lines: edgeEls.map(e => [e.a, e.b])};
+  window.atlasBoxes = nodeEls;
+  window.atlasPicture = {n: (window.atlasPicture?.n || 0) + 1, dropped, oracle: oracle || [], sides: [...roleAt], boxes: [...nodeEls.keys()].map(id => [id, parentOf.get(id) || "root"]), lines: edgeEls.map(e => [e.a, e.b])};
 }
 // what the picture is a function of, each part undoable: the route, the opened steps, the open families, the split world boxes
 function crumbs() {
