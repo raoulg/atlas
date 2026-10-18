@@ -155,7 +155,9 @@ Two long-lived branches, one release train. Everything else is a short-lived top
   When `df -h ~` still runs low, `cargo clean -p atlas -p atlas-engine` (and with `--release`) in
   your own worktree; never another session's target. The larger cost is the number of worktrees,
   each with its own `target` of 3 to 18 GB: remove a worktree when its branch is merged (see
-  Branches).
+  Branches). In an agent's shell `rm` is `rip`: `rm -rf target` moves the files to
+  `/tmp/graveyard-$USER` and frees nothing (it reached 201 GB). Take build output away with `cargo clean`,
+  `git worktree remove` or `command rm -rf`; emptying the graveyard (`rip --decompose`) is Raoul's.
 - Format: `cargo fmt` before every commit (`rustfmt.toml`: 140 columns); CI checks it. It
   formats the workspace only: the fixtures and pairs under `engine/tests` are subjects, written
   as their authors would, and their line numbers are pinned.
