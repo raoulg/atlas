@@ -58,6 +58,7 @@ author. Click a picture to open it in Atlas.
 - [**See what a change did, without reading the diff.**](https://raoulg.github.io/atlas/#changed) Two commits as one picture.
 - [**Say exactly what you mean: point at it.**](https://raoulg.github.io/atlas/#point) Notes on a box, and the agent's answer on it.
 - [**Design the next feature before you write it.**](https://raoulg.github.io/atlas/#design) A vision, then a prophecy, then the code.
+- [**Let your README draw itself.**](https://raoulg.github.io/atlas/#readme) Every push redraws the picture of your code, on GitHub ([how](docs/reference/ci.md)).
 
 ## Install
 
