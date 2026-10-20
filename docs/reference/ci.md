@@ -65,8 +65,6 @@ name it with `--view`:
 atlas view --no-open --out site/index.html --view '{"route": "mypackage.cli.main"}'
 ```
 
-The folder `--out` names must exist: the workflow below makes it first.
-
 The id is the one the page's address writes once the route is open (`…&v={"route": …}`); the page
 the workflow publishes has it too, so it can be found without Atlas on your machine. `--view` also
 takes the functions to open in it, as `atlas view --help` says.
@@ -110,9 +108,7 @@ jobs:
           curl -fsSL https://raw.githubusercontent.com/raoulg/atlas/main/install.sh | sh
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Draw the page
-        run: |
-          mkdir -p site
-          atlas view --no-open --out site/index.html
+        run: atlas view --no-open --out site/index.html
       - name: Take its picture
         run: uv run tools/atlas_picture.py site/index.html site/atlas.png
       - uses: actions/upload-pages-artifact@v3
@@ -197,9 +193,7 @@ jobs:
       - run: atlas check
       - name: Draw what the pull request changed
         if: always()
-        run: |
-          mkdir -p changes
-          atlas view --no-open --out changes/index.html --since origin/${{ github.base_ref }}
+        run: atlas view --no-open --out changes/index.html --since origin/${{ github.base_ref }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:
