@@ -47,7 +47,7 @@ Read it from left to right:
   into what it holds (`folders: Folders`). Inside `graph_of`, `parse · one of 3` is a
   choice: the same call goes to the Python, the Rust or the TypeScript reader.
 - **A number `×n` on a line** is n lines of one channel between the same two boxes, drawn as one;
-  opening a box splits it into the lines. **`+24 types` on a pill** counts the values that only that
+  opening a box splits it into the lines. **`+25 types` on a pill** counts the values that only that
   step takes and nothing else touches; opening the pill draws them, each on the step that takes it.
 - **Click any pill** to open it into its own steps, and **show code** to see its source.
 - **A step is a call.** A function the route calls twice is two steps, and a method called

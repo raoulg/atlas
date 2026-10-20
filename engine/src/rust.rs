@@ -12,7 +12,7 @@ use anyhow::{Context, Result};
 use indexmap::IndexMap;
 use tree_sitter::{Node as TsNode, Parser, Tree};
 
-use crate::body::{Crosses, Step, Steps};
+use crate::body::{Crosses, Step, Steps, UseSyntax};
 use crate::builder::{foreign_type, ClassInfo, GraphBuilder, SigInfo};
 use crate::effects::{self, Crossing};
 use crate::knowledge;
@@ -1545,11 +1545,13 @@ fn link_calls<'t>(
     let m = &modules[&n.module];
     let Some(d) = def_node(m, &n) else { return Linked::default() };
     let Some(body) = d.child_by_field_name("body") else { return Linked::default() };
-    let mut steps = Steps::new(body, &m.src, &CHOICES);
+    let mut steps = Steps::new(body, &m.src, &CHOICES, &USES);
     let read = {
         let mut b = Body::new(modules, store, crate_ids, eval, returned, m, &n, d, body);
         for c in evaluation_order(walk(body, &["call_expression", "struct_expression", "identifier", "scoped_identifier", "token_tree"])) {
+            let (t, w) = (b.read.touches.len(), b.read.waiting.len());
             b.call(&mut steps, c);
+            steps.mark(c, b.read.touches[t..].iter_mut().chain(b.read.waiting[w..].iter_mut().map(|(t, _)| t)));
         }
         b.read
     };
@@ -2649,6 +2651,32 @@ const CHOICES: ChoiceSyntax = ChoiceSyntax {
             _ => Part::Through,
         }
     },
+};
+
+/// Where Rust's values go: `let x = v`, `if let x = v`, `x = v`, `x += v`, `for x in v`; `return` and the last
+/// expression of the function's block leave; a panic fails.
+const USES: UseSyntax = UseSyntax {
+    binds: |n| match n.kind() {
+        "let_declaration" | "let_condition" => n.child_by_field_name("pattern").zip(n.child_by_field_name("value")),
+        "assignment_expression" | "compound_assignment_expr" => n.child_by_field_name("left").zip(n.child_by_field_name("right")),
+        "for_expression" => n.child_by_field_name("pattern").zip(n.child_by_field_name("value")),
+        _ => None,
+    },
+    leaves: |n, body| {
+        n.kind() == "return_expression"
+            || (n.parent().map(|p| p.id()) == Some(body.id())
+                && !matches!(n.kind(), "expression_statement" | "let_declaration" | "empty_statement")
+                && body.named_child(body.named_child_count().saturating_sub(1)).map(|l| l.id()) == Some(n.id()))
+    },
+    fails: panics,
+    hands: |n, child| match n.kind() {
+        "call_expression" => n.child_by_field_name("arguments").map(|a| a.id()) == Some(child.id()),
+        "macro_invocation" => child.kind() == "token_tree",
+        _ => false,
+    },
+    splits: |n, child| n.kind() == "match_expression" && n.child_by_field_name("value").map(|v| v.id()) == Some(child.id()),
+    names: &["identifier"],
+    keeps: &["field_expression", "index_expression"],
 };
 
 /// Rust's comparisons: `==` and `!=` against a string, a `match` on `&str`, and `matches!`.

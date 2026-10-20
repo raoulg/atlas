@@ -32,7 +32,10 @@ object `B` between them is neither. A place whose state an arrow uses and change
 **In Atlas.** A route's places are drawn by what the route does with their content. A place stands
 left, in the domain, when the route uses what was there for what it makes. It stands right, in the
 codomain, when the route leaves something in it. What the route reads back of what it wrote, or
-reads only to check or count, it does not use: that place stays in the codomain. A place one step
+reads only to check or count, it does not use: that place stays in the codomain. Whether a read is
+used is a fact of the step's body: what the call gives reaches the step's codomain (it is returned,
+handed to a call, kept in a field) through the names it is bound to, or it only decides a choice,
+goes to an error or is dropped, and is a check. A place one step
 writes and a later step reads and uses is the object between them, and stands between them. A
 place the route reads and then writes on is in both: two projections of one place, `from X` on
 the left and `into X` on the right. A place it writes only before it reads there, and only in an
@@ -43,7 +46,8 @@ not in one branch of a choice the read is outside. Making a place's shape (a dir
 schema) or testing it (whether a file is there, whether a value holds a key) puts and takes no
 content. A connection that opens a database on a file names that file, so a directory made for the
 file is made for the database. Where the code does not say which way a call goes, the place is in neither.
-**Where.** A function's `reads_back` and `updates` (`flow.rs`); the viewer's `roleOf`.
+**Where.** A function's `reads_back` and `updates` (`flow.rs`); a read's `checks` (`Steps::mark`,
+`body.rs`, with each language's `UseSyntax`); the viewer's `roleOf`.
 
 ### The effect functor
 **What.** A functor maps objects to objects and arrows to arrows, keeping composition.
@@ -221,7 +225,7 @@ line or a box that appears or disappears means:
 6. **Places with the same incidence are one block.** The rule for lines holds for the vertices too: values
    that one closed step takes, that no step makes and that join nothing else, have the same neighbours
    (that step) and the same way (in), so they are one block of the quotient with a multiplicity `n`, drawn
-   as a count on the step (`graph_of · +24 types`). Contracting a vertex of degree one into its neighbour
+   as a count on the step (`graph_of · +25 types`). Contracting a vertex of degree one into its neighbour
    leaves the picture the same up to homotopy, and the border of the step stays whole: each line is still
    counted, and opening the step splits the block into the values, each with its line. A value that
    another step takes or makes, a family that can be opened and the route's own values are not of the block.

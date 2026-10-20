@@ -9,7 +9,9 @@ use tree_sitter::Node as TsNode;
 use crate::builder::GraphBuilder;
 use crate::effects::{self, Facts};
 use crate::model::{Crossing, Dir, EdgeKind, Held, Site, Touch, World};
-use crate::tree::{arms_of, named_children, number_choices, payload_of, starts_at_literal, walk_all, what_of, ChoiceSyntax, Part};
+use crate::tree::{
+    arms_of, named_children, number_choices, payload_of, starts_at_literal, text, walk, walk_all, what_of, ChoiceSyntax, Part,
+};
 
 /// A call that crosses into the world, as the code writes it.
 pub struct Crosses {
@@ -77,6 +79,28 @@ pub fn sides(op: &str, paths: usize) -> Option<[Crossing; 2]> {
         .then_some([Crossing::read(World::Disk), Crossing::write(World::Disk)])
 }
 
+/// How a language writes where a value goes once an expression gives it: the names it binds, the
+/// ways out of a function, the ways to an error, and what a call is handed.
+pub struct UseSyntax {
+    /// The names a node binds and the value it binds them to: `x = v`, `let x = v`, `for x in v`.
+    pub binds: fn(TsNode) -> Option<(TsNode, TsNode)>,
+    /// Does what this node holds leave the function `body`: a `return`, a `yield`, the last
+    /// expression of a block that gives its value.
+    pub leaves: fn(TsNode, TsNode) -> bool,
+    /// Does what this node holds go to an error: `raise`, `throw`, `assert`, `bail!`.
+    pub fails: fn(TsNode, &[u8]) -> bool,
+    /// Is `child` what the call `node` is handed: its arguments.
+    pub hands: fn(TsNode, TsNode) -> bool,
+    /// Is `child` what `node` takes apart into the names its arms bind: a `match`'s subject.
+    /// Where those names go is not followed, so the value is taken as going on.
+    pub splits: fn(TsNode, TsNode) -> bool,
+    /// The kinds of node a name is.
+    pub names: &'static [&'static str],
+    /// The kinds of target that keep a value beyond a name: a field, an element (`self.n = v`,
+    /// `rows[i] = v`).
+    pub keeps: &'static [&'static str],
+}
+
 /// One call as a step of the route through its body: what it runs, on which class, what it is
 /// handed and what it gives back, and the options of the command line it parses when it parses
 /// the one the program is run with.
@@ -107,6 +131,7 @@ pub struct Steps<'t, 's> {
     body: TsNode<'t>,
     src: &'s [u8],
     syntax: &'s ChoiceSyntax,
+    uses: &'s UseSyntax,
     choices: HashMap<usize, u32>,
     sites: Vec<Site>,
     edges: Vec<(String, EdgeKind, Option<String>, Vec<(u32, u32)>)>,
@@ -115,9 +140,68 @@ pub struct Steps<'t, 's> {
 }
 
 impl<'t, 's> Steps<'t, 's> {
-    pub fn new(body: TsNode<'t>, src: &'s [u8], syntax: &'s ChoiceSyntax) -> Self {
+    pub fn new(body: TsNode<'t>, src: &'s [u8], syntax: &'s ChoiceSyntax, uses: &'s UseSyntax) -> Self {
         let choices = number_choices(body, src, syntax);
-        Steps { body, src, syntax, choices, sites: vec![], edges: vec![], kept: HashSet::new() }
+        Steps { body, src, syntax, uses, choices, sites: vec![], edges: vec![], kept: HashSet::new() }
+    }
+
+    /// Mark the touches call `c` made as checks when what it gives goes to nothing the function
+    /// hands on.
+    pub fn mark<'a>(&self, c: TsNode, touches: impl IntoIterator<Item = &'a mut Touch>) {
+        let checks = !self.goes_on(c, &mut HashSet::new());
+        for t in touches {
+            t.checks = checks;
+        }
+    }
+
+    /// Whether what `v` gives reaches what the function hands on: it is returned, handed to a
+    /// call, kept in a field or an element, or taken apart by a `match`, or a name it is bound to is. What only decides a
+    /// choice, goes to an error or is dropped goes no further. `bound` are the names followed.
+    fn goes_on(&self, v: TsNode, bound: &mut HashSet<String>) -> bool {
+        let (u, mut child, mut handed) = (self.uses, v, false);
+        while let Some(p) = child.parent() {
+            if (u.leaves)(child, self.body) {
+                return true;
+            }
+            if (self.syntax.part)(p, child, self.src) == Part::Decides || (u.fails)(p, self.src) {
+                return false;
+            }
+            if (u.splits)(p, child) {
+                return true;
+            }
+            handed |= (u.hands)(p, child);
+            if let Some((targets, value)) = (u.binds)(p).filter(|(_, value)| value.id() == child.id()) {
+                if walk(targets, u.keeps).first().is_some() {
+                    return true;
+                }
+                let after = value.end_byte();
+                let names: Vec<String> =
+                    walk(targets, u.names).into_iter().map(|n| text(n, self.src).to_string()).filter(|n| bound.insert(n.clone())).collect();
+                return names.into_iter().any(|name| {
+                    walk(self.body, u.names)
+                        .into_iter()
+                        .filter(|n| n.start_byte() >= after && text(*n, self.src) == name && !self.rebinds(*n))
+                        .any(|n| self.goes_on(n, bound))
+                });
+            }
+            if p.id() == self.body.id() {
+                break;
+            }
+            child = p;
+        }
+        handed
+    }
+
+    /// Whether the name `n` is what a binding binds, not a value it reads.
+    fn rebinds(&self, n: TsNode) -> bool {
+        let mut child = n;
+        while let Some(p) = child.parent().filter(|p| p.id() != self.body.id()) {
+            if let Some((targets, _)) = (self.uses.binds)(p) {
+                return targets.id() == child.id();
+            }
+            child = p;
+        }
+        false
     }
 
     /// The choices of the body, numbered.

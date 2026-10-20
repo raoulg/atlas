@@ -551,6 +551,9 @@ pub struct Touch {
     pub by: Vec<String>,
     /// The entries whose users hand what makes it whole: their own routes show it.
     pub users_of: Vec<String>,
+    /// What the call gives goes to nothing its function hands on: it only decides a choice, goes
+    /// to an error, or is dropped. A read that checks what is there, not one that uses it.
+    pub checks: bool,
 }
 
 impl Touch {
@@ -569,6 +572,7 @@ impl Touch {
             line: 0,
             by: vec![],
             users_of: vec![],
+            checks: false,
         }
     }
 
@@ -620,6 +624,8 @@ pub struct TouchJson {
     pub by: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub users_of: Vec<String>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub checks: bool,
 }
 
 impl From<Touch> for TouchJson {
@@ -638,6 +644,7 @@ impl From<Touch> for TouchJson {
             line: t.line,
             by: t.by,
             users_of: t.users_of,
+            checks: t.checks,
         }
     }
 }
@@ -659,6 +666,7 @@ impl TryFrom<TouchJson> for Touch {
             line: j.line,
             by: j.by,
             users_of: j.users_of,
+            checks: j.checks,
         })
     }
 }

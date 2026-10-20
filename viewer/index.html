@@ -684,9 +684,16 @@ async function renderSig() {
 const isIn = t => t.side === "in";
 // the code does not say which way the data goes
 const isOpen = t => t.side === "open";
-// which way a step goes at each place it touches, by the place the engine names: what makes a
-// place's shape goes no way
-const go = (goes, t) => { if (t.shape) return; const k = t.place.id; if (!goes.has(k)) goes.set(k, new Set()); goes.get(k).add(isOpen(t) ? "open" : isIn(t) ? "read" : "write"); };
+// which way a step goes at each place it touches, by the place the engine names, and whether what it
+// reads there goes on to what it hands on (a read that only checks does not): what makes a place's
+// shape goes no way
+const go = (goes, t) => {
+  if (t.shape) return;
+  const k = t.place.id;
+  if (!goes.has(k)) goes.set(k, new Set());
+  goes.get(k).add(isOpen(t) ? "open" : isIn(t) ? "read" : "write");
+  if (isIn(t) && !t.checks) goes.get(k).add("use");
+};
 const joinGoes = (into, from) => from?.forEach((s, k) => { if (!into.has(k)) into.set(k, new Set()); s.forEach(x => into.get(k).add(x)); });
 const verbOf = t => t.verb;
 const KIND_LABEL = {make: "Make", cli: "CLI", script: "Script", route: "API", mcp: "MCP", notebook: "Notebook", export: "Library", prophecy: "Prophecy", test: "Test"}, KIND_ORDER = ["make", "cli", "export", "script", "notebook", "route", "mcp", "prophecy", "test"];
@@ -1471,7 +1478,7 @@ async function renderPlaat(mine) {
     return {places, pills, frames, found, updated, split};
   }
   // what the steps do at each place of the world: read it, write it, go there without saying which
-  // way; whether a route finds what it reads there; whether a step that reads it hands something on
+  // way; whether a route finds what it reads there; whether a step that reads it hands on what it read
   const roles = new Map();
   const role = k => { if (!roles.has(k)) roles.set(k, {reads: false, writes: false, open: false, used: false, found: found.has(k), updated: updated.has(k)}); return roles.get(k); };
   // a place the outermost opened step shows closed has the role it had there: what is done to it inside is that step's
@@ -1479,7 +1486,7 @@ async function renderPlaat(mine) {
   const countRole = (k, s, handsOn) => {
     const r = role(k);
     r.reads ||= s.has("read"); r.writes ||= s.has("write"); r.open ||= s.has("open");
-    if (s.has("read")) r.used ||= handsOn;
+    if (s.has("use")) r.used ||= handsOn;
   };
   const shutOver = P => { let top = null; for (let f = P.parent; f; f = frames.get(f)?.parent) if (frames.get(f)?.closed) top = frames.get(f).closed; return top; };
   const counted = new Set();
@@ -1676,7 +1683,7 @@ async function renderPlaat(mine) {
     for (const P of top.pills.values()) for (const [k, s] of P.goes || []) {
       const r = role(k), handsOn = !!P.backTo || [...P.C.keys()].some(c => c !== k);
       r.reads ||= s.has("read"); r.writes ||= s.has("write"); r.open ||= s.has("open");
-      if (s.has("read")) r.used ||= handsOn;
+      if (s.has("use")) r.used ||= handsOn;
     }
     // the storage quotient and the fold of the disk are taken on the places of the finest plan, whatever is open
     const ways = new Map();
