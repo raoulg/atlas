@@ -340,7 +340,7 @@ pre.code .l::before{counter-increment:ln;content:counter(ln);display:inline-bloc
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/elkjs@0.9.3/lib/elk.bundled.js"></script>
 <script>
-window.DATA = {"atlas":"0.66.3 (104eae4+)","projects":{"typescript":{"edges":[{"dst":"typescript.cli.main","kind":"contains","src":"typescript.cli"},{"dst":"typescript.cli.monthsOf","kind":"contains","src":"typescript.cli"},{"dst":"typescript.download.download","kind":"contains","src":"typescript.download"},{"dst":"typescript.plot.trend","kind":"contains","src":"typescript.plot"},{"dst":"typescript.plot.saveSvg","kind":"contains","src":"typescript.plot"},{"dst":"typescript.plot.escape","kind":"contains","src":"typescript.plot"},{"dst":"typescript.series.Month","kind":"contains","src":"typescript.series"},{"dst":"typescript.series.Smoothed","kind":"contains","src":"typescript.series"},{"dst":"typescript.series.load","kind":"contains","src":"typescript.series"},{"dst":"typescript.series.parse","kind":"contains","src":"typescript.series"},{"dst":"typescript.series.parseLine","kind":"contains","src":"typescript.series"},{"dst":"typescript.series.smooth","kind":"contains","src":"typescript.series"},{"dst":"typescript.series.average","kind":"contains","src":"typescript.series"},{"dst":"typescript.settings.Settings","kind":"contains","src":"typescript.settings"},{"dst":"typescript.series.Month","kind":"takes","src":"typescript.plot.trend"},{"dst":"typescript.series.Smoothed","kind":"takes","src":"typescript.plot.trend"},{"dst":"typescript.settings.Settings","kind":"takes","src":"typescript.plot.trend"},{"dst":"typescript.series.Month","kind":"returns","src":"typescript.series.load"},{"dst":"typescript.series.Month","kind":"returns","src":"typescript.series.parse"},{"dst":"typescript.series.Month","kind":"returns","src":"typescript.series.parseLine"},{"dst":"typescript.series.Month","kind":"takes","src":"typescript.series.smooth"},{"dst":"typescript.series.Smoothed","kind":"returns","src":"typescript.series.smooth"},{"dst":"typescript.series.Month","kind":"takes","src":"typescript.series.average"},{"dst":"typescript.cli.main","kind":"calls","src":"typescript.cli"},{"dst":"typescript.settings.Settings","kind":"instantiates","src":"typescript.settings"},{"dst":"typescript.cli.monthsOf","kind":"calls","src":"typescript.cli.main","uses":true},{"dst":"typescript.settings.Settings","kind":"instantiates","src":"typescript.cli.main"},{"arms":[[0,0]],"dst":"typescript.download.download","kind":"calls","src":"typescript.cli.main"},{"dst":"typescript.series.load","kind":"calls","src":"typescript.cli.main","uses":true},{"dst":"typescript.series.smooth","kind":"calls","src":"typescript.cli.main","uses":true},{"dst":"typescript.plot.trend","kind":"calls","src":"typescript.cli.main","uses":true},{"dst":"typescript.plot.saveSvg","kind":"calls","src":"typescript.cli.main"},{"dst":"typescript.plot.escape","kind":"calls","src":"typescript.plot.trend","uses":true},{"dst":"typescript.series.parse","kind":"calls","src":"typescript.series.load","uses":true},{"dst":"typescript.series.parseLine","kind":"calls","src":"typescript.series.parse"},{"dst":"typescript.series.average","kind":"calls","src":"typescript.series.smooth","uses":true}],"files":{"/Users/rgrouls/code/packages/atlas/.claude/worktrees/interactie-plaatjes/engine/tests/pairs/pipeline/typescript/src/cli.ts":"#!/usr/bin/env -S npx tsx\n// The command line: a run names the source and the files, and hands them down.\n\nimport { existsSync } from \"node:fs\";\nimport { parseArgs } from \"node:util\";\n\nimport { download } from \"./download.js\";\nimport { saveSvg, trend } from \"./plot.js\";\nimport { load, smooth } from \"./series.js\";\nimport { DEFAULT_SETTINGS, type Settings } from \"./settings.js\";\n\nconst SILSO = \"https://www.sidc.be/SILSO/DATA/SN_m_tot_V2.0.csv\";\nconst RAW = \"data/raw/sunspots.csv\";\nconst FIGURE = \"figures/sunspots.svg\";\n\n/** Downloads SILSO's monthly sunspot numbers where none are kept, smooths them and saves their trend. */\nasync function main(argv: string[]): Promise<void> {\n  const { values } = parseArgs({\n    args: argv,\n    options: {\n      raw: { type: \"string\", default: RAW },\n      figure: { type: \"string\", default: FIGURE },\n      months: { type: \"string\" },\n    },\n  });\n  const settings: Settings = { ...DEFAULT_SETTINGS, months: monthsOf(values.months) };\n  if (!existsSync(values.raw)) await download(SILSO, values.raw);\n  const series = await load(values.raw);\n  const smoothed = smooth(series, settings.months);\n  await saveSvg(trend(series, smoothed, settings), values.figure);\n}\n\n/** The number of months `--months` asks to smooth over. */\nfunction monthsOf(option: string | undefined): number {\n  if (option === undefined) return DEFAULT_SETTINGS.months;\n  const months = Number(option);\n  if (!Number.isInteger(months) || months < 1) throw new Error(`--months: expected a whole number of months, got ${option}`);\n  return months;\n}\n\nawait main(process.argv.slice(2));\n","/Users/rgrouls/code/packages/atlas/.claude/worktrees/interactie-plaatjes/engine/tests/pairs/pipeline/typescript/src/download.ts":"import { mkdir, writeFile } from \"node:fs/promises\";\nimport { dirname } from \"node:path\";\n\n/** Fetches `url` and writes its body to `to` as it came, creating the directory it goes in; gives `to`. */\nexport async function download(url: string, to: string): Promise<string> {\n  const response = await fetch(url, { signal: AbortSignal.timeout(30_000) });\n  if (!response.ok) throw new Error(`${url}: ${response.status} ${response.statusText}`);\n  await mkdir(dirname(to), { recursive: true });\n  await writeFile(to, new Uint8Array(await response.arrayBuffer()));\n  return to;\n}\n","/Users/rgrouls/code/packages/atlas/.claude/worktrees/interactie-plaatjes/engine/tests/pairs/pipeline/typescript/src/index.ts":"export { download } from \"./download.js\";\nexport { saveSvg, trend } from \"./plot.js\";\nexport { load, parse, smooth, type Month, type Smoothed } from \"./series.js\";\nexport { DEFAULT_SETTINGS, type Settings } from \"./settings.js\";\n","/Users/rgrouls/code/packages/atlas/.claude/worktrees/interactie-plaatjes/engine/tests/pairs/pipeline/typescript/src/plot.ts":"// Figures of a sunspot series, as SVG documents: d3 computes the scales and the lines, and the\n// document around them is text.\n\nimport { mkdir, writeFile } from \"node:fs/promises\";\nimport { dirname } from \"node:path\";\n\nimport { scaleLinear, scaleUtc } from \"d3-scale\";\nimport { line } from \"d3-shape\";\n\nimport type { Month, Smoothed } from \"./series.js\";\nimport type { Settings } from \"./settings.js\";\n\nconst MARGIN = { top: 40, right: 20, bottom: 30, left: 50 } as const;\nconst MONTHLY = \"#b3b3b3\";\nconst SMOOTHED = \"#1f77b4\";\n\n/** The monthly means as a thin grey line, with their smoothed mean over them. */\nexport function trend(series: readonly Month[], smoothed: readonly Smoothed[], settings: Settings): string {\n  const first = series[0];\n  const last = series.at(-1);\n  if (first === undefined || last === undefined) throw new Error(\"trend: no months to draw\");\n  const { width, height } = settings;\n  const bottom = height - MARGIN.bottom;\n  const x = scaleUtc().domain([first.date, last.date]).range([MARGIN.left, width - MARGIN.right]);\n  const y = scaleLinear()\n    .domain([0, Math.max(...series.map((month) => month.mean))])\n    .nice()\n    .range([bottom, MARGIN.top]);\n  const path = line<Smoothed>(\n    (month) => x(month.date),\n    (month) => y(month.mean),\n  );\n  const years = x.ticks(10).map((t) => `<text x=\"${x(t)}\" y=\"${bottom + 18}\" text-anchor=\"middle\">${t.getUTCFullYear()}<\/text>`);\n  const counts = y.ticks(5).map((n) => `<text x=\"${MARGIN.left - 6}\" y=\"${y(n)}\" text-anchor=\"end\" dominant-baseline=\"middle\">${n}<\/text>`);\n  return [\n    `<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"${width}\" height=\"${height}\" viewBox=\"0 0 ${width} ${height}\" font-family=\"sans-serif\" font-size=\"12\">`,\n    `<rect width=\"${width}\" height=\"${height}\" fill=\"white\"/>`,\n    `<text x=\"${width / 2}\" y=\"${MARGIN.top / 2}\" text-anchor=\"middle\" font-size=\"16\">${escape(settings.title)}<\/text>`,\n    `<line x1=\"${MARGIN.left}\" x2=\"${width - MARGIN.right}\" y1=\"${bottom}\" y2=\"${bottom}\" stroke=\"black\"/>`,\n    ...years,\n    ...counts,\n    `<text transform=\"translate(14,${(bottom + MARGIN.top) / 2}) rotate(-90)\" text-anchor=\"middle\">sunspot number<\/text>`,\n    `<path d=\"${path(series) ?? \"\"}\" fill=\"none\" stroke=\"${MONTHLY}\" stroke-width=\"0.6\"/>`,\n    `<path d=\"${path(smoothed) ?? \"\"}\" fill=\"none\" stroke=\"${SMOOTHED}\" stroke-width=\"1.5\"/>`,\n    `<text x=\"${width - MARGIN.right}\" y=\"${MARGIN.top}\" text-anchor=\"end\" fill=\"${MONTHLY}\">monthly mean<\/text>`,\n    `<text x=\"${width - MARGIN.right}\" y=\"${MARGIN.top + 16}\" text-anchor=\"end\" fill=\"${SMOOTHED}\">${settings.months}-month mean<\/text>`,\n    `<\/svg>`,\n    \"\",\n  ].join(\"\\n\");\n}\n\n/** Writes `svg` to `to`, creating the directory it goes in. */\nexport async function saveSvg(svg: string, to: string): Promise<void> {\n  await mkdir(dirname(to), { recursive: true });\n  await writeFile(to, svg);\n}\n\nfunction escape(text: string): string {\n  return text.replaceAll(\"&\", \"&amp;\").replaceAll(\"<\", \"&lt;\").replaceAll(\">\", \"&gt;\");\n}\n","/Users/rgrouls/code/packages/atlas/.claude/worktrees/interactie-plaatjes/engine/tests/pairs/pipeline/typescript/src/series.ts":"// The monthly mean sunspot number, a month at a time.\n//\n// SILSO's file has no header; each line holds seven numbers separated by semicolons and padded\n// with spaces (year, month, decimal date, mean, standard deviation, observations, definitive),\n// and a month without an observation has `-1` for its mean.\n\nimport { readFile } from \"node:fs/promises\";\n\nconst FIELDS = 7;\nconst MISSING = -1;\n\n/** A month of SILSO's series that has a mean. */\nexport interface Month {\n  /** The first day of the month, in UTC. */\n  date: Date;\n  mean: number;\n  /** The standard deviation of the stations' daily numbers. */\n  std: number;\n  observations: number;\n}\n\n/** The mean sunspot number over the months centred on `date`. */\nexport interface Smoothed {\n  date: Date;\n  mean: number;\n}\n\n/** The months in SILSO's file at `path` that have a mean, in order. */\nexport async function load(path: string): Promise<Month[]> {\n  return parse(await readFile(path, \"utf8\"));\n}\n\n/** The months in the text of SILSO's file that have a mean, in order. */\nexport function parse(text: string): Month[] {\n  return text\n    .split(\"\\n\")\n    .filter((line) => line.trim() !== \"\")\n    .map(parseLine)\n    .filter((month) => month.mean !== MISSING);\n}\n\nfunction parseLine(line: string): Month {\n  const fields = line.split(\";\").map(Number);\n  if (fields.length !== FIELDS || fields.some(Number.isNaN)) throw new Error(`SILSO: expected ${FIELDS} numbers in \"${line}\"`);\n  const [year = 0, month = 0, , mean = 0, std = 0, observations = 0] = fields;\n  return { date: new Date(Date.UTC(year, month - 1, 1)), mean, std, observations };\n}\n\n/** The mean over each run of `months` consecutive months, dated by the month at its centre. */\nexport function smooth(series: readonly Month[], months: number): Smoothed[] {\n  const before = Math.floor(months / 2);\n  const after = months - 1 - before;\n  return series.slice(before, series.length - after).map((month, i) => ({ date: month.date, mean: average(series.slice(i, i + months)) }));\n}\n\nfunction average(series: readonly Month[]): number {\n  return series.reduce((sum, month) => sum + month.mean, 0) / series.length;\n}\n","/Users/rgrouls/code/packages/atlas/.claude/worktrees/interactie-plaatjes/engine/tests/pairs/pipeline/typescript/src/settings.ts":"/** The choices of a run that are not places: how far to smooth and how the figure looks. */\nexport interface Settings {\n  /** How many months the smoothed mean is taken over, centred on each. */\n  readonly months: number;\n  readonly title: string;\n  /** The figure's size, in pixels. */\n  readonly width: number;\n  readonly height: number;\n}\n\nexport const DEFAULT_SETTINGS: Settings = { months: 13, title: \"Monthly mean total sunspot number\", width: 1000, height: 400 };\n"},"findings":[],"flow":{"arrows":{"typescript.cli.monthsOf":{"gives_back":true,"returns_value":true},"typescript.download.download":{"gives_back":true,"returns_value":true},"typescript.plot.escape":{"gives_back":true,"returns_value":true},"typescript.plot.trend":{"gives_back":true,"returns_value":true,"takes":["typescript.series.Month","typescript.series.Smoothed","typescript.settings.Settings"]},"typescript.series.Month":{"gives":["typescript.series.Month"]},"typescript.series.Smoothed":{"gives":["typescript.series.Smoothed"]},"typescript.series.average":{"gives_back":true,"returns_value":true,"takes":["typescript.series.Month"]},"typescript.series.load":{"gives":["typescript.series.Month"],"gives_back":true,"returns_value":true},"typescript.series.parse":{"gives":["typescript.series.Month"],"gives_back":true,"returns_value":true},"typescript.series.parseLine":{"gives":["typescript.series.Month"],"gives_back":true,"returns_value":true},"typescript.series.smooth":{"gives":["typescript.series.Smoothed"],"gives_back":true,"returns_value":true,"takes":["typescript.series.Month"]},"typescript.settings.Settings":{"gives":["typescript.settings.Settings"]}},"bodies":{"typescript.cli":{"items":[{"site":0,"to":"typescript.cli.main"}]},"typescript.cli.main":{"items":[{"site":0,"to":"op:parseArgs"},{"site":1,"to":"typescript.cli.monthsOf"},{"site":2,"to":"typescript.settings.Settings"},{"choice":0,"members":[{"branch":0,"site":3,"to":"typescript.download.download"}],"when":["!existsSync(values.raw)"]},{"site":4,"to":"typescript.series.load"},{"site":5,"to":"typescript.series.smooth"},{"site":6,"to":"typescript.plot.trend"},{"site":7,"to":"typescript.plot.saveSvg"}],"made_from":["typescript.settings.Settings","typescript.series.Month","typescript.series.Smoothed"]},"typescript.cli.monthsOf":{"items":[{"site":0,"to":"op:Number"}]},"typescript.download.download":{"items":[{"site":0,"to":"op:fetch"},{"site":1,"to":"op:response.arrayBuffer"}]},"typescript.plot.escape":{"items":[{"site":0,"to":"op:text.replaceAll"},{"site":1,"to":"op:replaceAll"},{"site":2,"to":"op:replaceAll"}]},"typescript.plot.trend":{"items":[{"site":0,"to":"op:series.at"},{"site":1,"to":"op:range"},{"site":2,"to":"op:series.map"},{"site":3,"to":"op:range"},{"site":4,"to":"op:x"},{"site":5,"to":"op:y"},{"site":6,"to":"op:line"},{"site":7,"to":"op:x.ticks"},{"site":8,"to":"op:x"},{"site":9,"to":"op:t.getUTCFullYear"},{"site":10,"to":"op:map"},{"site":11,"to":"op:y.ticks"},{"site":12,"to":"op:y"},{"site":13,"to":"op:map"},{"site":14,"to":"typescript.plot.escape"},{"choice":2,"members":[{"branch":0,"site":15,"to":"op:path"}]},{"choice":3,"members":[{"branch":0,"site":16,"to":"op:path"}]}]},"typescript.series.average":{"items":[{"site":0,"to":"op:series.reduce"}]},"typescript.series.load":{"items":[{"site":0,"to":"typescript.series.parse"}],"made_from":["typescript.series.Month"]},"typescript.series.parse":{"items":[{"site":0,"to":"op:text\n    .split"},{"site":1,"to":"op:line.trim"},{"site":2,"to":"op:filter"},{"site":3,"to":"typescript.series.parseLine"},{"site":4,"to":"op:map"},{"site":5,"to":"op:filter"}],"made_from":["typescript.series.Month"]},"typescript.series.parseLine":{"items":[{"site":0,"to":"op:line.split"},{"site":1,"to":"op:map"},{"choice":1,"members":[{"branch":0,"site":2,"to":"op:fields.some"}],"when":["otherwise"]}]},"typescript.series.smooth":{"items":[{"site":0,"to":"op:floor"},{"site":1,"to":"op:series.slice"},{"site":2,"to":"op:series.slice"},{"site":3,"to":"typescript.series.average"},{"site":4,"to":"op:map"}]},"typescript.settings":{"items":[{"site":0,"to":"typescript.settings.Settings"}],"made_from":["typescript.settings.Settings"]}},"drawn":{"typescript.cli.main":[{"place":{"file":"data/raw/sunspots.csv","glyph":"file","id":"w:File:data/raw/sunspots.csv","label":"File(data/raw/sunspots.csv)","short":"data/raw/sunspots.csv"},"shape":true,"side":"in","verb":"checks"}],"typescript.download.download":[{"place":{"glyph":"web","id":"w:Web","label":"Web","short":"Web"},"side":"in","verb":"calls"},{"place":{"glyph":"web","id":"w:Web:www.sidc.be","label":"Web(www.sidc.be)","short":"www.sidc.be"},"side":"in","verb":"calls"},{"place":{"coarse":{"glyph":"file","id":"w:Disk:out","label":"into disk","short":"into disk"},"glyph":"file","group":"w:Disk","id":"w:Disk:{to}/..","label":"Disk({to}/..)","short":"{to}/.."},"shape":true,"side":"out","verb":"creates"},{"place":{"coarse":{"glyph":"file","id":"w:Disk:out","label":"into disk","short":"into disk"},"glyph":"file","group":"w:Disk","id":"w:Disk:download.to","label":"Disk(download.to)","short":"download.to"},"side":"out","verb":"writes"},{"place":{"file":"data/raw/sunspots.csv","glyph":"file","id":"w:File:data/raw/sunspots.csv","label":"File(data/raw/sunspots.csv)","short":"data/raw/sunspots.csv"},"side":"out","verb":"writes"},{"place":{"glyph":"web","id":"w:Web","label":"Web","short":"Web"},"side":"in","verb":"calls"},{"place":{"coarse":{"glyph":"file","id":"w:Disk:out","label":"into disk","short":"into disk"},"glyph":"file","group":"w:Disk","id":"w:Disk:to","label":"Disk(to)","short":"to"},"side":"out","verb":"writes"}],"typescript.plot.saveSvg":[{"place":{"coarse":{"glyph":"file","id":"w:Disk:out","label":"into disk","short":"into disk"},"glyph":"file","group":"w:Disk","id":"w:Disk:{to}/..","label":"Disk({to}/..)","short":"{to}/.."},"shape":true,"side":"out","verb":"creates"},{"place":{"coarse":{"glyph":"file","id":"w:Disk:out","label":"into disk","short":"into disk"},"glyph":"file","group":"w:Disk","id":"w:Disk:saveSvg.to","label":"Disk(saveSvg.to)","short":"saveSvg.to"},"side":"out","verb":"writes"},{"place":{"file":"figures/sunspots.svg","glyph":"file","id":"w:File:figures/sunspots.svg","label":"File(figures/sunspots.svg)","short":"figures/sunspots.svg"},"side":"out","verb":"writes"},{"place":{"coarse":{"glyph":"file","id":"w:Disk:out","label":"into disk","short":"into disk"},"glyph":"file","group":"w:Disk","id":"w:Disk:to","label":"Disk(to)","short":"to"},"side":"out","verb":"writes"}],"typescript.series.load":[{"place":{"coarse":{"glyph":"file","id":"w:Disk:in","label":"from disk","short":"from disk"},"glyph":"file","group":"w:Disk","id":"w:Disk:load.path","label":"Disk(load.path)","short":"load.path"},"side":"in","verb":"reads"},{"place":{"file":"data/raw/sunspots.csv","glyph":"file","id":"w:File:data/raw/sunspots.csv","label":"File(data/raw/sunspots.csv)","short":"data/raw/sunspots.csv"},"side":"in","verb":"reads"},{"place":{"coarse":{"glyph":"file","id":"w:Disk:in","label":"from disk","short":"from disk"},"glyph":"file","group":"w:Disk","id":"w:Disk:path","label":"Disk(path)","short":"path"},"side":"in","verb":"reads"}]},"types":{"doors":[],"family":{},"kind":{},"makes":[["typescript.series.Month",["typescript.series.load","typescript.series.parse","typescript.series.parseLine"]],["typescript.series.Smoothed",["typescript.series.smooth"]],["typescript.settings.Settings",["typescript.settings","typescript.cli.main"]]],"members":{},"shared":{},"takes":[["typescript.series.Month",["typescript.plot.trend","typescript.series.smooth","typescript.series.average"]],["typescript.series.Smoothed",["typescript.plot.trend"]],["typescript.settings.Settings",["typescript.plot.trend"]]]},"units":{"kids":{},"tops":[["typescript",["typescript.cli","typescript.download","typescript.plot","typescript.series","typescript.settings"]]]}},"language":"typescript","make":[],"nodes":[{"file":"/Users/rgrouls/code/packages/atlas/.claude/worktrees/interactie-plaatjes/engine/tests/pairs/pipeline/typescript/src/index.ts","id":"typescript","is_pkg":true,"kind":"module","module":"typescript","name":"index.ts","part":"typescript","span":[1,5]},{"arm_lines":[[27,27],[35,35],[37,37],[37,37],[37,37]],"entry":{"kind":"cli","label":"sunspots","options":["--raw","--figure","--months"]},"file":"/Users/rgrouls/code/packages/atlas/.claude/worktrees/interactie-plaatjes/engine/tests/pairs/pipeline/typescript/src/cli.ts","id":"typescript.cli","kind":"module","module":"typescript.cli","name":"cli.ts","part":"typescript","sites":[{"line":41,"to":"typescript.cli.main"}],"span":[1,42],"whens":[[0,0,"!existsSync(values.raw)"],[1,0,"option === undefined"],[2,0,"!Number.isInteger(months) || months < 1"],[3,1,"otherwise"]]},{"arm_lines":[[7,7]],"file":"/Users/rgrouls/code/packages/atlas/.claude/worktrees/interactie-plaatjes/engine/tests/pairs/pipeline/typescript/src/download.ts","id":"typescript.download","kind":"module","module":"typescript.download","name":"download.ts","part":"typescript","span":[1,12],"whens":[[0,0,"!response.ok"]]},{"arm_lines":[[21,21],[21,21],[21,21],[43,43],[43,43],[44,44],[44,44]],"file":"/Users/rgrouls/code/packages/atlas/.claude/worktrees/interactie-plaatjes/engine/tests/pairs/pipeline/typescript/src/plot.ts","id":"typescript.plot","kind":"module","module":"typescript.plot","name":"plot.ts","part":"typescript","span":[1,61],"whens":[[0,0,"first === undefined || last === undefined"],[1,1,"otherwise"],[2,1,"otherwise"],[3,1,"otherwise"]]},{"arm_lines":[[44,44],[44,44],[44,44]],"file":"/Users/rgrouls/code/packages/atlas/.claude/worktrees/interactie-plaatjes/engine/tests/pairs/pipeline/typescript/src/series.ts","id":"typescript.series","kind":"module","module":"typescript.series","name":"series.ts","part":"typescript","span":[1,59],"whens":[[0,0,"fields.length !== FIELDS || fields.some(Number.isNaN)"],[1,1,"otherwise"]]},{"file":"/Users/rgrouls/code/packages/atlas/.claude/worktrees/interactie-plaatjes/engine/tests/pairs/pipeline/typescript/src/settings.ts","id":"typescript.settings","kind":"module","module":"typescript.settings","name":"settings.ts","part":"typescript","sites":[{"gives":[{"name":"DEFAULT_SETTINGS","type":"typescript.settings.Settings"}],"line":11,"to":"typescript.settings.Settings"}],"span":[1,12]},{"arm_lines":[[27,27]],"doc":"Downloads SILSO's monthly sunspot numbers where none are kept, smooths them and saves their trend.","file":"/Users/rgrouls/code/packages/atlas/.claude/worktrees/interactie-plaatjes/engine/tests/pairs/pipeline/typescript/src/cli.ts","id":"typescript.cli.main","kind":"function","module":"typescript.cli","name":"main","params":[{"name":"argv","type":"string[]"}],"part":"typescript","private":true,"returns":{"fails":true,"written":"Promise<void>"},"sites":[{"command_line":["--raw","--figure","--months"],"gives":[{"name":"values","type":""}],"line":18,"op":"parseArgs"},{"gives":[{"name":"#0","type":""}],"hands":[{"name":"values","type":""}],"line":26,"to":"typescript.cli.monthsOf"},{"gives":[{"name":"settings","type":"typescript.settings.Settings"}],"hands":[{"name":"DEFAULT_SETTINGS","type":"typescript.settings.Settings"},{"name":"#0","type":""}],"line":26,"to":"typescript.settings.Settings"},{"arms":[[0,0]],"hands":[{"name":"values","type":""}],"line":27,"to":"typescript.download.download"},{"gives":[{"name":"series","type":"typescript.series.Month"}],"hands":[{"name":"values","type":""}],"line":28,"to":"typescript.series.load"},{"gives":[{"name":"smoothed","type":"typescript.series.Smoothed"}],"hands":[{"name":"series","type":"typescript.series.Month"},{"name":"settings","type":"typescript.settings.Settings"}],"line":29,"to":"typescript.series.smooth"},{"gives":[{"name":"#1","type":""}],"hands":[{"name":"series","type":"typescript.series.Month"},{"name":"smoothed","type":"typescript.series.Smoothed"},{"name":"settings","type":"typescript.settings.Settings"}],"line":30,"to":"typescript.plot.trend"},{"hands":[{"name":"values","type":""},{"name":"#1","type":""}],"line":30,"to":"typescript.plot.saveSvg"}],"span":[17,31],"touches":[{"artifact":"data/raw/sunspots.csv","kind":"disk_read","line":27,"n":1,"op":"existsSync","payload":"values","what":"values.raw"}],"whens":[[0,0,"!existsSync(values.raw)"]]},{"arm_lines":[[35,35],[37,37],[37,37],[37,37]],"doc":"The number of months `--months` asks to smooth over.","file":"/Users/rgrouls/code/packages/atlas/.claude/worktrees/interactie-plaatjes/engine/tests/pairs/pipeline/typescript/src/cli.ts","id":"typescript.cli.monthsOf","kind":"function","module":"typescript.cli","name":"monthsOf","params":[{"name":"option","type":"string | undefined"}],"part":"typescript","private":true,"raises":true,"returns":{"value":"number","written":"number"},"sites":[{"gives":[{"name":"months","type":""}],"line":36,"op":"Number"}],"span":[34,39],"whens":[[0,0,"option === undefined"],[1,0,"!Number.isInteger(months) || months < 1"],[2,1,"otherwise"]]},{"arm_lines":[[7,7]],"doc":"Fetches `url` and writes its body to `to` as it came, creating the directory it goes in; gives `to`.","entry":{"kind":"export","label":"download"},"file":"/Users/rgrouls/code/packages/atlas/.claude/worktrees/interactie-plaatjes/engine/tests/pairs/pipeline/typescript/src/download.ts","id":"typescript.download.download","instead":[{"kind":"net","line":6,"n":1,"op":"fetch","payload":"AbortSignal","what":"url"},{"kind":"disk_write","line":9,"n":1,"op":"writeFile","payload":"Uint8Array","what":"to"}],"kind":"function","module":"typescript.download","name":"download","params":[{"name":"url","type":"string"},{"name":"to","type":"string"}],"part":"typescript","raises":true,"returns":{"fails":true,"value":"string","written":"Promise<string>"},"sites":[{"gives":[{"name":"response","type":""}],"line":6,"op":"fetch"},{"hands":[{"name":"response","type":""}],"line":9,"not_followed":true,"op":"response.arrayBuffer"}],"span":[5,11],"touches":[{"kind":"net","line":6,"n":1,"op":"fetch","payload":"AbortSignal","users_of":["typescript.download.download"],"what":"url"},{"artifact":"www.sidc.be","by":["typescript.cli.main"],"kind":"net","line":6,"n":1,"op":"fetch","payload":"AbortSignal","what":"url"},{"kind":"disk_write","line":8,"n":1,"op":"mkdir","payload":"to","users_of":["typescript.download.download"],"what":"{to}/.."},{"kind":"disk_write","line":9,"n":1,"op":"writeFile","payload":"Uint8Array","users_of":["typescript.download.download"],"what":"download.to"},{"artifact":"data/raw/sunspots.csv","by":["typescript.cli.main"],"kind":"disk_write","line":9,"n":1,"op":"writeFile","payload":"Uint8Array","what":"to"}],"whens":[[0,0,"!response.ok"]]},{"arm_lines":[[21,21],[21,21],[21,21],[43,43],[43,43],[44,44],[44,44]],"doc":"The monthly means as a thin grey line, with their smoothed mean over them.","entry":{"kind":"export","label":"trend"},"file":"/Users/rgrouls/code/packages/atlas/.claude/worktrees/interactie-plaatjes/engine/tests/pairs/pipeline/typescript/src/plot.ts","id":"typescript.plot.trend","kind":"function","module":"typescript.plot","name":"trend","params":[{"name":"series","type":"readonly Month[]"},{"name":"smoothed","type":"readonly Smoothed[]"},{"name":"settings","type":"Settings"}],"part":"typescript","raises":true,"returns":{"value":"string","written":"string"},"sites":[{"gives":[{"name":"last","type":""}],"line":20,"not_followed":true,"op":"series.at"},{"gives":[{"name":"x","type":""}],"hands":[{"name":"last","type":""}],"line":24,"op":"range"},{"gives":[{"name":"#2","type":""}],"line":26,"not_followed":true,"op":"series.map"},{"gives":[{"name":"y","type":""}],"hands":[{"name":"#2","type":""}],"line":25,"op":"range"},{"gives":[{"name":"#3","type":""}],"line":30,"not_followed":true,"op":"x"},{"gives":[{"name":"#4","type":""}],"line":31,"not_followed":true,"op":"y"},{"gives":[{"name":"path","type":""}],"hands":[{"name":"#3","type":""},{"name":"#4","type":""}],"line":29,"op":"line"},{"gives":[{"name":"#5","type":""}],"hands":[{"name":"x","type":""}],"line":33,"not_followed":true,"op":"x.ticks"},{"gives":[{"name":"#6","type":""}],"line":33,"not_followed":true,"op":"x"},{"gives":[{"name":"#7","type":""}],"line":33,"not_followed":true,"op":"t.getUTCFullYear"},{"gives":[{"name":"years","type":""}],"hands":[{"name":"#5","type":""},{"name":"#6","type":""},{"name":"#7","type":""}],"line":33,"not_followed":true,"op":"map"},{"gives":[{"name":"#8","type":""}],"hands":[{"name":"y","type":""}],"line":34,"not_followed":true,"op":"y.ticks"},{"gives":[{"name":"#9","type":""}],"line":34,"not_followed":true,"op":"y"},{"gives":[{"name":"counts","type":""}],"hands":[{"name":"#8","type":""},{"name":"#9","type":""}],"line":34,"not_followed":true,"op":"map"},{"hands":[{"name":"settings","type":"typescript.settings.Settings"}],"line":38,"to":"typescript.plot.escape"},{"arms":[[2,0]],"line":43,"not_followed":true,"op":"path"},{"arms":[[3,0]],"line":44,"not_followed":true,"op":"path"}],"span":[18,50],"whens":[[0,0,"first === undefined || last === undefined"],[1,1,"otherwise"],[2,1,"otherwise"],[3,1,"otherwise"]]},{"doc":"Writes `svg` to `to`, creating the directory it goes in.","entry":{"kind":"export","label":"saveSvg"},"file":"/Users/rgrouls/code/packages/atlas/.claude/worktrees/interactie-plaatjes/engine/tests/pairs/pipeline/typescript/src/plot.ts","id":"typescript.plot.saveSvg","instead":[{"kind":"disk_write","line":55,"n":1,"op":"writeFile","payload":"svg","what":"to"}],"kind":"function","module":"typescript.plot","name":"saveSvg","params":[{"name":"svg","type":"string"},{"name":"to","type":"string"}],"part":"typescript","returns":{"fails":true,"written":"Promise<void>"},"span":[53,56],"touches":[{"kind":"disk_write","line":54,"n":1,"op":"mkdir","payload":"to","users_of":["typescript.plot.saveSvg"],"what":"{to}/.."},{"kind":"disk_write","line":55,"n":1,"op":"writeFile","payload":"svg","users_of":["typescript.plot.saveSvg"],"what":"saveSvg.to"},{"artifact":"figures/sunspots.svg","by":["typescript.cli.main"],"kind":"disk_write","line":55,"n":1,"op":"writeFile","payload":"svg","what":"to"}]},{"file":"/Users/rgrouls/code/packages/atlas/.claude/worktrees/interactie-plaatjes/engine/tests/pairs/pipeline/typescript/src/plot.ts","id":"typescript.plot.escape","kind":"function","module":"typescript.plot","name":"escape","params":[{"name":"text","type":"string"}],"part":"typescript","private":true,"returns":{"value":"string","written":"string"},"sites":[{"gives":[{"name":"#10","type":""}],"line":59,"not_followed":true,"op":"text.replaceAll"},{"gives":[{"name":"#11","type":""}],"hands":[{"name":"#10","type":""}],"line":59,"not_followed":true,"op":"replaceAll"},{"hands":[{"name":"#11","type":""}],"line":59,"not_followed":true,"op":"replaceAll"}],"span":[58,60]},{"doc":"A month of SILSO's series that has a mean.","entry":{"kind":"export","label":"Month"},"file":"/Users/rgrouls/code/packages/atlas/.claude/worktrees/interactie-plaatjes/engine/tests/pairs/pipeline/typescript/src/series.ts","id":"typescript.series.Month","kind":"class","module":"typescript.series","name":"Month","part":"typescript","span":[13,20]},{"doc":"The mean sunspot number over the months centred on `date`.","entry":{"kind":"export","label":"Smoothed"},"file":"/Users/rgrouls/code/packages/atlas/.claude/worktrees/interactie-plaatjes/engine/tests/pairs/pipeline/typescript/src/series.ts","id":"typescript.series.Smoothed","kind":"class","module":"typescript.series","name":"Smoothed","part":"typescript","span":[23,26]},{"doc":"The months in SILSO's file at `path` that have a mean, in order.","entry":{"kind":"export","label":"load"},"file":"/Users/rgrouls/code/packages/atlas/.claude/worktrees/interactie-plaatjes/engine/tests/pairs/pipeline/typescript/src/series.ts","id":"typescript.series.load","instead":[{"kind":"disk_read","line":30,"n":1,"op":"readFile","payload":"path","what":"path"}],"kind":"function","module":"typescript.series","name":"load","params":[{"name":"path","type":"string"}],"part":"typescript","returns":{"fails":true,"value":"Month[]","written":"Promise<Month[]>"},"sites":[{"line":30,"to":"typescript.series.parse"}],"span":[29,31],"touches":[{"kind":"disk_read","line":30,"n":1,"op":"readFile","payload":"path","users_of":["typescript.series.load"],"what":"load.path"},{"artifact":"data/raw/sunspots.csv","by":["typescript.cli.main"],"kind":"disk_read","line":30,"n":1,"op":"readFile","payload":"path","what":"path"}]},{"doc":"The months in the text of SILSO's file that have a mean, in order.","entry":{"kind":"export","label":"parse"},"file":"/Users/rgrouls/code/packages/atlas/.claude/worktrees/interactie-plaatjes/engine/tests/pairs/pipeline/typescript/src/series.ts","id":"typescript.series.parse","kind":"function","module":"typescript.series","name":"parse","params":[{"name":"text","type":"string"}],"part":"typescript","returns":{"value":"Month[]","written":"Month[]"},"sites":[{"gives":[{"name":"#12","type":""}],"line":35,"not_followed":true,"op":"text\n    .split"},{"gives":[{"name":"#13","type":""}],"line":37,"not_followed":true,"op":"line.trim"},{"gives":[{"name":"#14","type":""}],"hands":[{"name":"#12","type":""},{"name":"#13","type":""}],"line":35,"not_followed":true,"op":"filter"},{"line":38,"to":"typescript.series.parseLine"},{"gives":[{"name":"#15","type":""}],"hands":[{"name":"#14","type":""}],"line":35,"not_followed":true,"op":"map"},{"hands":[{"name":"#15","type":""}],"line":35,"not_followed":true,"op":"filter"}],"span":[34,40]},{"arm_lines":[[44,44],[44,44],[44,44]],"file":"/Users/rgrouls/code/packages/atlas/.claude/worktrees/interactie-plaatjes/engine/tests/pairs/pipeline/typescript/src/series.ts","id":"typescript.series.parseLine","kind":"function","module":"typescript.series","name":"parseLine","params":[{"name":"line","type":"string"}],"part":"typescript","private":true,"raises":true,"returns":{"value":"Month","written":"Month"},"sites":[{"gives":[{"name":"#16","type":""}],"line":43,"not_followed":true,"op":"line.split"},{"gives":[{"name":"fields","type":""}],"hands":[{"name":"#16","type":""}],"line":43,"not_followed":true,"op":"map"},{"arms":[[1,1]],"hands":[{"name":"fields","type":""}],"line":44,"not_followed":true,"op":"fields.some"}],"span":[42,47],"whens":[[0,0,"fields.length !== FIELDS || fields.some(Number.isNaN)"],[1,1,"otherwise"]]},{"doc":"The mean over each run of `months` consecutive months, dated by the month at its centre.","entry":{"kind":"export","label":"smooth"},"file":"/Users/rgrouls/code/packages/atlas/.claude/worktrees/interactie-plaatjes/engine/tests/pairs/pipeline/typescript/src/series.ts","id":"typescript.series.smooth","kind":"function","module":"typescript.series","name":"smooth","params":[{"name":"series","type":"readonly Month[]"},{"name":"months","type":"number"}],"part":"typescript","returns":{"value":"Smoothed[]","written":"Smoothed[]"},"sites":[{"gives":[{"name":"before","type":""}],"line":51,"op":"floor"},{"gives":[{"name":"#17","type":""}],"hands":[{"name":"before","type":""}],"line":53,"not_followed":true,"op":"series.slice"},{"gives":[{"name":"#18","type":""}],"line":53,"not_followed":true,"op":"series.slice"},{"gives":[{"name":"#19","type":""}],"hands":[{"name":"#18","type":""}],"line":53,"to":"typescript.series.average"},{"hands":[{"name":"#17","type":""},{"name":"#19","type":""}],"line":53,"not_followed":true,"op":"map"}],"span":[50,54]},{"file":"/Users/rgrouls/code/packages/atlas/.claude/worktrees/interactie-plaatjes/engine/tests/pairs/pipeline/typescript/src/series.ts","id":"typescript.series.average","kind":"function","module":"typescript.series","name":"average","params":[{"name":"series","type":"readonly Month[]"}],"part":"typescript","private":true,"returns":{"value":"number","written":"number"},"sites":[{"line":57,"not_followed":true,"op":"series.reduce"}],"span":[56,58]},{"doc":"The choices of a run that are not places: how far to smooth and how the figure looks.","entry":{"kind":"export","label":"Settings"},"file":"/Users/rgrouls/code/packages/atlas/.claude/worktrees/interactie-plaatjes/engine/tests/pairs/pipeline/typescript/src/settings.ts","id":"typescript.settings.Settings","kind":"class","module":"typescript.settings","name":"Settings","part":"typescript","span":[2,9]}],"parts":[{"dir":"/Users/rgrouls/code/packages/atlas/.claude/worktrees/interactie-plaatjes/engine/tests/pairs/pipeline/typescript","id":"typescript","language":"typescript","leaves":{"exports":false,"returns":true,"types":false}}],"project_root":"/Users/rgrouls/code/packages/atlas/.claude/worktrees/interactie-plaatjes/engine/tests/pairs/pipeline/typescript","root":"typescript","stats":{"edges":{"calls":11,"contains":14,"instantiates":2,"returns":4,"takes":5},"modules":6,"nodes":{"class":3,"function":11,"module":6},"unresolved_calls":{"builtin":9,"library":17,"local":29,"unknown":0},"unresolved_calls_top":[["map",5],["dirname",2],["domain",2],["filter",2],["mkdir",2],["path",2],["range",2],["replaceAll",2],["series.slice",2],["writeFile",2],["x",2],["y",2],["AbortSignal.timeout",1],["Date.UTC",1],["Math.floor",1],["Math.max",1],["Number",1],["Number.isInteger",1],["existsSync",1],["fetch",1],["fields.some",1],["join",1],["line",1],["line.split",1],["line.trim",1]],"unresolved_calls_total":55},"view":{"route":"typescript.cli.main"}}}};
+window.DATA = {"atlas":"0.67.0 (ca7b8e8)","projects":{"typescript":{"edges":[{"dst":"typescript.cli.main","kind":"contains","src":"typescript.cli"},{"dst":"typescript.cli.monthsOf","kind":"contains","src":"typescript.cli"},{"dst":"typescript.download.download","kind":"contains","src":"typescript.download"},{"dst":"typescript.plot.trend","kind":"contains","src":"typescript.plot"},{"dst":"typescript.plot.saveSvg","kind":"contains","src":"typescript.plot"},{"dst":"typescript.plot.escape","kind":"contains","src":"typescript.plot"},{"dst":"typescript.series.Month","kind":"contains","src":"typescript.series"},{"dst":"typescript.series.Smoothed","kind":"contains","src":"typescript.series"},{"dst":"typescript.series.load","kind":"contains","src":"typescript.series"},{"dst":"typescript.series.parse","kind":"contains","src":"typescript.series"},{"dst":"typescript.series.parseLine","kind":"contains","src":"typescript.series"},{"dst":"typescript.series.smooth","kind":"contains","src":"typescript.series"},{"dst":"typescript.series.average","kind":"contains","src":"typescript.series"},{"dst":"typescript.settings.Settings","kind":"contains","src":"typescript.settings"},{"dst":"typescript.series.Month","kind":"takes","src":"typescript.plot.trend"},{"dst":"typescript.series.Smoothed","kind":"takes","src":"typescript.plot.trend"},{"dst":"typescript.settings.Settings","kind":"takes","src":"typescript.plot.trend"},{"dst":"typescript.series.Month","kind":"returns","src":"typescript.series.load"},{"dst":"typescript.series.Month","kind":"returns","src":"typescript.series.parse"},{"dst":"typescript.series.Month","kind":"returns","src":"typescript.series.parseLine"},{"dst":"typescript.series.Month","kind":"takes","src":"typescript.series.smooth"},{"dst":"typescript.series.Smoothed","kind":"returns","src":"typescript.series.smooth"},{"dst":"typescript.series.Month","kind":"takes","src":"typescript.series.average"},{"dst":"typescript.cli.main","kind":"calls","src":"typescript.cli"},{"dst":"typescript.settings.Settings","kind":"instantiates","src":"typescript.settings"},{"dst":"typescript.cli.monthsOf","kind":"calls","src":"typescript.cli.main","uses":true},{"dst":"typescript.settings.Settings","kind":"instantiates","src":"typescript.cli.main"},{"arms":[[0,0]],"dst":"typescript.download.download","kind":"calls","src":"typescript.cli.main"},{"dst":"typescript.series.load","kind":"calls","src":"typescript.cli.main","uses":true},{"dst":"typescript.series.smooth","kind":"calls","src":"typescript.cli.main","uses":true},{"dst":"typescript.plot.trend","kind":"calls","src":"typescript.cli.main","uses":true},{"dst":"typescript.plot.saveSvg","kind":"calls","src":"typescript.cli.main"},{"dst":"typescript.plot.escape","kind":"calls","src":"typescript.plot.trend","uses":true},{"dst":"typescript.series.parse","kind":"calls","src":"typescript.series.load","uses":true},{"dst":"typescript.series.parseLine","kind":"calls","src":"typescript.series.parse"},{"dst":"typescript.series.average","kind":"calls","src":"typescript.series.smooth","uses":true}],"files":{"/Users/rgrouls/code/packages/atlas/.claude/worktrees/next-merge/engine/tests/pairs/pipeline/typescript/src/cli.ts":"#!/usr/bin/env -S npx tsx\n// The command line: a run names the source and the files, and hands them down.\n\nimport { existsSync } from \"node:fs\";\nimport { parseArgs } from \"node:util\";\n\nimport { download } from \"./download.js\";\nimport { saveSvg, trend } from \"./plot.js\";\nimport { load, smooth } from \"./series.js\";\nimport { DEFAULT_SETTINGS, type Settings } from \"./settings.js\";\n\nconst SILSO = \"https://www.sidc.be/SILSO/DATA/SN_m_tot_V2.0.csv\";\nconst RAW = \"data/raw/sunspots.csv\";\nconst FIGURE = \"figures/sunspots.svg\";\n\n/** Downloads SILSO's monthly sunspot numbers where none are kept, smooths them and saves their trend. */\nasync function main(argv: string[]): Promise<void> {\n  const { values } = parseArgs({\n    args: argv,\n    options: {\n      raw: { type: \"string\", default: RAW },\n      figure: { type: \"string\", default: FIGURE },\n      months: { type: \"string\" },\n    },\n  });\n  const settings: Settings = { ...DEFAULT_SETTINGS, months: monthsOf(values.months) };\n  if (!existsSync(values.raw)) await download(SILSO, values.raw);\n  const series = await load(values.raw);\n  const smoothed = smooth(series, settings.months);\n  await saveSvg(trend(series, smoothed, settings), values.figure);\n}\n\n/** The number of months `--months` asks to smooth over. */\nfunction monthsOf(option: string | undefined): number {\n  if (option === undefined) return DEFAULT_SETTINGS.months;\n  const months = Number(option);\n  if (!Number.isInteger(months) || months < 1) throw new Error(`--months: expected a whole number of months, got ${option}`);\n  return months;\n}\n\nawait main(process.argv.slice(2));\n","/Users/rgrouls/code/packages/atlas/.claude/worktrees/next-merge/engine/tests/pairs/pipeline/typescript/src/download.ts":"import { mkdir, writeFile } from \"node:fs/promises\";\nimport { dirname } from \"node:path\";\n\n/** Fetches `url` and writes its body to `to` as it came, creating the directory it goes in; gives `to`. */\nexport async function download(url: string, to: string): Promise<string> {\n  const response = await fetch(url, { signal: AbortSignal.timeout(30_000) });\n  if (!response.ok) throw new Error(`${url}: ${response.status} ${response.statusText}`);\n  await mkdir(dirname(to), { recursive: true });\n  await writeFile(to, new Uint8Array(await response.arrayBuffer()));\n  return to;\n}\n","/Users/rgrouls/code/packages/atlas/.claude/worktrees/next-merge/engine/tests/pairs/pipeline/typescript/src/index.ts":"export { download } from \"./download.js\";\nexport { saveSvg, trend } from \"./plot.js\";\nexport { load, parse, smooth, type Month, type Smoothed } from \"./series.js\";\nexport { DEFAULT_SETTINGS, type Settings } from \"./settings.js\";\n","/Users/rgrouls/code/packages/atlas/.claude/worktrees/next-merge/engine/tests/pairs/pipeline/typescript/src/plot.ts":"// Figures of a sunspot series, as SVG documents: d3 computes the scales and the lines, and the\n// document around them is text.\n\nimport { mkdir, writeFile } from \"node:fs/promises\";\nimport { dirname } from \"node:path\";\n\nimport { scaleLinear, scaleUtc } from \"d3-scale\";\nimport { line } from \"d3-shape\";\n\nimport type { Month, Smoothed } from \"./series.js\";\nimport type { Settings } from \"./settings.js\";\n\nconst MARGIN = { top: 40, right: 20, bottom: 30, left: 50 } as const;\nconst MONTHLY = \"#b3b3b3\";\nconst SMOOTHED = \"#1f77b4\";\n\n/** The monthly means as a thin grey line, with their smoothed mean over them. */\nexport function trend(series: readonly Month[], smoothed: readonly Smoothed[], settings: Settings): string {\n  const first = series[0];\n  const last = series.at(-1);\n  if (first === undefined || last === undefined) throw new Error(\"trend: no months to draw\");\n  const { width, height } = settings;\n  const bottom = height - MARGIN.bottom;\n  const x = scaleUtc().domain([first.date, last.date]).range([MARGIN.left, width - MARGIN.right]);\n  const y = scaleLinear()\n    .domain([0, Math.max(...series.map((month) => month.mean))])\n    .nice()\n    .range([bottom, MARGIN.top]);\n  const path = line<Smoothed>(\n    (month) => x(month.date),\n    (month) => y(month.mean),\n  );\n  const years = x.ticks(10).map((t) => `<text x=\"${x(t)}\" y=\"${bottom + 18}\" text-anchor=\"middle\">${t.getUTCFullYear()}<\/text>`);\n  const counts = y.ticks(5).map((n) => `<text x=\"${MARGIN.left - 6}\" y=\"${y(n)}\" text-anchor=\"end\" dominant-baseline=\"middle\">${n}<\/text>`);\n  return [\n    `<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"${width}\" height=\"${height}\" viewBox=\"0 0 ${width} ${height}\" font-family=\"sans-serif\" font-size=\"12\">`,\n    `<rect width=\"${width}\" height=\"${height}\" fill=\"white\"/>`,\n    `<text x=\"${width / 2}\" y=\"${MARGIN.top / 2}\" text-anchor=\"middle\" font-size=\"16\">${escape(settings.title)}<\/text>`,\n    `<line x1=\"${MARGIN.left}\" x2=\"${width - MARGIN.right}\" y1=\"${bottom}\" y2=\"${bottom}\" stroke=\"black\"/>`,\n    ...years,\n    ...counts,\n    `<text transform=\"translate(14,${(bottom + MARGIN.top) / 2}) rotate(-90)\" text-anchor=\"middle\">sunspot number<\/text>`,\n    `<path d=\"${path(series) ?? \"\"}\" fill=\"none\" stroke=\"${MONTHLY}\" stroke-width=\"0.6\"/>`,\n    `<path d=\"${path(smoothed) ?? \"\"}\" fill=\"none\" stroke=\"${SMOOTHED}\" stroke-width=\"1.5\"/>`,\n    `<text x=\"${width - MARGIN.right}\" y=\"${MARGIN.top}\" text-anchor=\"end\" fill=\"${MONTHLY}\">monthly mean<\/text>`,\n    `<text x=\"${width - MARGIN.right}\" y=\"${MARGIN.top + 16}\" text-anchor=\"end\" fill=\"${SMOOTHED}\">${settings.months}-month mean<\/text>`,\n    `<\/svg>`,\n    \"\",\n  ].join(\"\\n\");\n}\n\n/** Writes `svg` to `to`, creating the directory it goes in. */\nexport async function saveSvg(svg: string, to: string): Promise<void> {\n  await mkdir(dirname(to), { recursive: true });\n  await writeFile(to, svg);\n}\n\nfunction escape(text: string): string {\n  return text.replaceAll(\"&\", \"&amp;\").replaceAll(\"<\", \"&lt;\").replaceAll(\">\", \"&gt;\");\n}\n","/Users/rgrouls/code/packages/atlas/.claude/worktrees/next-merge/engine/tests/pairs/pipeline/typescript/src/series.ts":"// The monthly mean sunspot number, a month at a time.\n//\n// SILSO's file has no header; each line holds seven numbers separated by semicolons and padded\n// with spaces (year, month, decimal date, mean, standard deviation, observations, definitive),\n// and a month without an observation has `-1` for its mean.\n\nimport { readFile } from \"node:fs/promises\";\n\nconst FIELDS = 7;\nconst MISSING = -1;\n\n/** A month of SILSO's series that has a mean. */\nexport interface Month {\n  /** The first day of the month, in UTC. */\n  date: Date;\n  mean: number;\n  /** The standard deviation of the stations' daily numbers. */\n  std: number;\n  observations: number;\n}\n\n/** The mean sunspot number over the months centred on `date`. */\nexport interface Smoothed {\n  date: Date;\n  mean: number;\n}\n\n/** The months in SILSO's file at `path` that have a mean, in order. */\nexport async function load(path: string): Promise<Month[]> {\n  return parse(await readFile(path, \"utf8\"));\n}\n\n/** The months in the text of SILSO's file that have a mean, in order. */\nexport function parse(text: string): Month[] {\n  return text\n    .split(\"\\n\")\n    .filter((line) => line.trim() !== \"\")\n    .map(parseLine)\n    .filter((month) => month.mean !== MISSING);\n}\n\nfunction parseLine(line: string): Month {\n  const fields = line.split(\";\").map(Number);\n  if (fields.length !== FIELDS || fields.some(Number.isNaN)) throw new Error(`SILSO: expected ${FIELDS} numbers in \"${line}\"`);\n  const [year = 0, month = 0, , mean = 0, std = 0, observations = 0] = fields;\n  return { date: new Date(Date.UTC(year, month - 1, 1)), mean, std, observations };\n}\n\n/** The mean over each run of `months` consecutive months, dated by the month at its centre. */\nexport function smooth(series: readonly Month[], months: number): Smoothed[] {\n  const before = Math.floor(months / 2);\n  const after = months - 1 - before;\n  return series.slice(before, series.length - after).map((month, i) => ({ date: month.date, mean: average(series.slice(i, i + months)) }));\n}\n\nfunction average(series: readonly Month[]): number {\n  return series.reduce((sum, month) => sum + month.mean, 0) / series.length;\n}\n","/Users/rgrouls/code/packages/atlas/.claude/worktrees/next-merge/engine/tests/pairs/pipeline/typescript/src/settings.ts":"/** The choices of a run that are not places: how far to smooth and how the figure looks. */\nexport interface Settings {\n  /** How many months the smoothed mean is taken over, centred on each. */\n  readonly months: number;\n  readonly title: string;\n  /** The figure's size, in pixels. */\n  readonly width: number;\n  readonly height: number;\n}\n\nexport const DEFAULT_SETTINGS: Settings = { months: 13, title: \"Monthly mean total sunspot number\", width: 1000, height: 400 };\n"},"findings":[],"flow":{"arrows":{"typescript.cli.monthsOf":{"gives_back":true,"returns_value":true},"typescript.download.download":{"gives_back":true,"returns_value":true},"typescript.plot.escape":{"gives_back":true,"returns_value":true},"typescript.plot.trend":{"gives_back":true,"returns_value":true,"takes":["typescript.series.Month","typescript.series.Smoothed","typescript.settings.Settings"]},"typescript.series.Month":{"gives":["typescript.series.Month"]},"typescript.series.Smoothed":{"gives":["typescript.series.Smoothed"]},"typescript.series.average":{"gives_back":true,"returns_value":true,"takes":["typescript.series.Month"]},"typescript.series.load":{"gives":["typescript.series.Month"],"gives_back":true,"returns_value":true},"typescript.series.parse":{"gives":["typescript.series.Month"],"gives_back":true,"returns_value":true},"typescript.series.parseLine":{"gives":["typescript.series.Month"],"gives_back":true,"returns_value":true},"typescript.series.smooth":{"gives":["typescript.series.Smoothed"],"gives_back":true,"returns_value":true,"takes":["typescript.series.Month"]},"typescript.settings.Settings":{"gives":["typescript.settings.Settings"]}},"bodies":{"typescript.cli":{"items":[{"site":0,"to":"typescript.cli.main"}]},"typescript.cli.main":{"items":[{"site":0,"to":"op:parseArgs"},{"site":1,"to":"typescript.cli.monthsOf"},{"site":2,"to":"typescript.settings.Settings"},{"choice":0,"members":[{"branch":0,"site":3,"to":"typescript.download.download"}],"when":["!existsSync(values.raw)"]},{"site":4,"to":"typescript.series.load"},{"site":5,"to":"typescript.series.smooth"},{"site":6,"to":"typescript.plot.trend"},{"site":7,"to":"typescript.plot.saveSvg"}],"made_from":["typescript.settings.Settings","typescript.series.Month","typescript.series.Smoothed"]},"typescript.cli.monthsOf":{"items":[{"site":0,"to":"op:Number"}]},"typescript.download.download":{"items":[{"site":0,"to":"op:fetch"},{"site":1,"to":"op:response.arrayBuffer"}]},"typescript.plot.escape":{"items":[{"site":0,"to":"op:text.replaceAll"},{"site":1,"to":"op:replaceAll"},{"site":2,"to":"op:replaceAll"}]},"typescript.plot.trend":{"items":[{"site":0,"to":"op:series.at"},{"site":1,"to":"op:range"},{"site":2,"to":"op:series.map"},{"site":3,"to":"op:range"},{"site":4,"to":"op:x"},{"site":5,"to":"op:y"},{"site":6,"to":"op:line"},{"site":7,"to":"op:x.ticks"},{"site":8,"to":"op:x"},{"site":9,"to":"op:t.getUTCFullYear"},{"site":10,"to":"op:map"},{"site":11,"to":"op:y.ticks"},{"site":12,"to":"op:y"},{"site":13,"to":"op:map"},{"site":14,"to":"typescript.plot.escape"},{"choice":2,"members":[{"branch":0,"site":15,"to":"op:path"}]},{"choice":3,"members":[{"branch":0,"site":16,"to":"op:path"}]}]},"typescript.series.average":{"items":[{"site":0,"to":"op:series.reduce"}]},"typescript.series.load":{"items":[{"site":0,"to":"typescript.series.parse"}],"made_from":["typescript.series.Month"]},"typescript.series.parse":{"items":[{"site":0,"to":"op:text\n    .split"},{"site":1,"to":"op:line.trim"},{"site":2,"to":"op:filter"},{"site":3,"to":"typescript.series.parseLine"},{"site":4,"to":"op:map"},{"site":5,"to":"op:filter"}],"made_from":["typescript.series.Month"]},"typescript.series.parseLine":{"items":[{"site":0,"to":"op:line.split"},{"site":1,"to":"op:map"},{"choice":1,"members":[{"branch":0,"site":2,"to":"op:fields.some"}],"when":["otherwise"]}]},"typescript.series.smooth":{"items":[{"site":0,"to":"op:floor"},{"site":1,"to":"op:series.slice"},{"site":2,"to":"op:series.slice"},{"site":3,"to":"typescript.series.average"},{"site":4,"to":"op:map"}]},"typescript.settings":{"items":[{"site":0,"to":"typescript.settings.Settings"}],"made_from":["typescript.settings.Settings"]}},"drawn":{"typescript.cli.main":[{"place":{"file":"data/raw/sunspots.csv","glyph":"file","id":"w:File:data/raw/sunspots.csv","label":"File(data/raw/sunspots.csv)","short":"data/raw/sunspots.csv"},"shape":true,"side":"in","verb":"checks"}],"typescript.download.download":[{"place":{"glyph":"web","id":"w:Web","label":"Web","short":"Web"},"side":"in","verb":"calls"},{"place":{"glyph":"web","id":"w:Web:www.sidc.be","label":"Web(www.sidc.be)","short":"www.sidc.be"},"side":"in","verb":"calls"},{"place":{"coarse":{"glyph":"file","id":"w:Disk:out","label":"into disk","short":"into disk"},"glyph":"file","group":"w:Disk","id":"w:Disk:{to}/..","label":"Disk({to}/..)","short":"{to}/.."},"shape":true,"side":"out","verb":"creates"},{"place":{"coarse":{"glyph":"file","id":"w:Disk:out","label":"into disk","short":"into disk"},"glyph":"file","group":"w:Disk","id":"w:Disk:download.to","label":"Disk(download.to)","short":"download.to"},"side":"out","verb":"writes"},{"place":{"file":"data/raw/sunspots.csv","glyph":"file","id":"w:File:data/raw/sunspots.csv","label":"File(data/raw/sunspots.csv)","short":"data/raw/sunspots.csv"},"side":"out","verb":"writes"},{"place":{"glyph":"web","id":"w:Web","label":"Web","short":"Web"},"side":"in","verb":"calls"},{"place":{"coarse":{"glyph":"file","id":"w:Disk:out","label":"into disk","short":"into disk"},"glyph":"file","group":"w:Disk","id":"w:Disk:to","label":"Disk(to)","short":"to"},"side":"out","verb":"writes"}],"typescript.plot.saveSvg":[{"place":{"coarse":{"glyph":"file","id":"w:Disk:out","label":"into disk","short":"into disk"},"glyph":"file","group":"w:Disk","id":"w:Disk:{to}/..","label":"Disk({to}/..)","short":"{to}/.."},"shape":true,"side":"out","verb":"creates"},{"place":{"coarse":{"glyph":"file","id":"w:Disk:out","label":"into disk","short":"into disk"},"glyph":"file","group":"w:Disk","id":"w:Disk:saveSvg.to","label":"Disk(saveSvg.to)","short":"saveSvg.to"},"side":"out","verb":"writes"},{"place":{"file":"figures/sunspots.svg","glyph":"file","id":"w:File:figures/sunspots.svg","label":"File(figures/sunspots.svg)","short":"figures/sunspots.svg"},"side":"out","verb":"writes"},{"place":{"coarse":{"glyph":"file","id":"w:Disk:out","label":"into disk","short":"into disk"},"glyph":"file","group":"w:Disk","id":"w:Disk:to","label":"Disk(to)","short":"to"},"side":"out","verb":"writes"}],"typescript.series.load":[{"place":{"coarse":{"glyph":"file","id":"w:Disk:in","label":"from disk","short":"from disk"},"glyph":"file","group":"w:Disk","id":"w:Disk:load.path","label":"Disk(load.path)","short":"load.path"},"side":"in","verb":"reads"},{"place":{"file":"data/raw/sunspots.csv","glyph":"file","id":"w:File:data/raw/sunspots.csv","label":"File(data/raw/sunspots.csv)","short":"data/raw/sunspots.csv"},"side":"in","verb":"reads"},{"place":{"coarse":{"glyph":"file","id":"w:Disk:in","label":"from disk","short":"from disk"},"glyph":"file","group":"w:Disk","id":"w:Disk:path","label":"Disk(path)","short":"path"},"side":"in","verb":"reads"}]},"types":{"doors":[],"family":{},"kind":{},"makes":[["typescript.series.Month",["typescript.series.load","typescript.series.parse","typescript.series.parseLine"]],["typescript.series.Smoothed",["typescript.series.smooth"]],["typescript.settings.Settings",["typescript.settings","typescript.cli.main"]]],"members":{},"shared":{},"takes":[["typescript.series.Month",["typescript.plot.trend","typescript.series.smooth","typescript.series.average"]],["typescript.series.Smoothed",["typescript.plot.trend"]],["typescript.settings.Settings",["typescript.plot.trend"]]]},"units":{"kids":{},"tops":[["typescript",["typescript.cli","typescript.download","typescript.plot","typescript.series","typescript.settings"]]]}},"language":"typescript","make":[],"nodes":[{"file":"/Users/rgrouls/code/packages/atlas/.claude/worktrees/next-merge/engine/tests/pairs/pipeline/typescript/src/index.ts","id":"typescript","is_pkg":true,"kind":"module","module":"typescript","name":"index.ts","part":"typescript","span":[1,5]},{"arm_lines":[[27,27],[35,35],[37,37],[37,37],[37,37]],"entry":{"kind":"cli","label":"sunspots","options":["--raw","--figure","--months"]},"file":"/Users/rgrouls/code/packages/atlas/.claude/worktrees/next-merge/engine/tests/pairs/pipeline/typescript/src/cli.ts","id":"typescript.cli","kind":"module","module":"typescript.cli","name":"cli.ts","part":"typescript","sites":[{"line":41,"to":"typescript.cli.main"}],"span":[1,42],"whens":[[0,0,"!existsSync(values.raw)"],[1,0,"option === undefined"],[2,0,"!Number.isInteger(months) || months < 1"],[3,1,"otherwise"]]},{"arm_lines":[[7,7]],"file":"/Users/rgrouls/code/packages/atlas/.claude/worktrees/next-merge/engine/tests/pairs/pipeline/typescript/src/download.ts","id":"typescript.download","kind":"module","module":"typescript.download","name":"download.ts","part":"typescript","span":[1,12],"whens":[[0,0,"!response.ok"]]},{"arm_lines":[[21,21],[21,21],[21,21],[43,43],[43,43],[44,44],[44,44]],"file":"/Users/rgrouls/code/packages/atlas/.claude/worktrees/next-merge/engine/tests/pairs/pipeline/typescript/src/plot.ts","id":"typescript.plot","kind":"module","module":"typescript.plot","name":"plot.ts","part":"typescript","span":[1,61],"whens":[[0,0,"first === undefined || last === undefined"],[1,1,"otherwise"],[2,1,"otherwise"],[3,1,"otherwise"]]},{"arm_lines":[[44,44],[44,44],[44,44]],"file":"/Users/rgrouls/code/packages/atlas/.claude/worktrees/next-merge/engine/tests/pairs/pipeline/typescript/src/series.ts","id":"typescript.series","kind":"module","module":"typescript.series","name":"series.ts","part":"typescript","span":[1,59],"whens":[[0,0,"fields.length !== FIELDS || fields.some(Number.isNaN)"],[1,1,"otherwise"]]},{"file":"/Users/rgrouls/code/packages/atlas/.claude/worktrees/next-merge/engine/tests/pairs/pipeline/typescript/src/settings.ts","id":"typescript.settings","kind":"module","module":"typescript.settings","name":"settings.ts","part":"typescript","sites":[{"gives":[{"name":"DEFAULT_SETTINGS","type":"typescript.settings.Settings"}],"line":11,"to":"typescript.settings.Settings"}],"span":[1,12]},{"arm_lines":[[27,27]],"doc":"Downloads SILSO's monthly sunspot numbers where none are kept, smooths them and saves their trend.","file":"/Users/rgrouls/code/packages/atlas/.claude/worktrees/next-merge/engine/tests/pairs/pipeline/typescript/src/cli.ts","id":"typescript.cli.main","kind":"function","module":"typescript.cli","name":"main","params":[{"name":"argv","type":"string[]"}],"part":"typescript","private":true,"returns":{"fails":true,"written":"Promise<void>"},"sites":[{"command_line":["--raw","--figure","--months"],"gives":[{"name":"values","type":""}],"line":18,"op":"parseArgs"},{"gives":[{"name":"#0","type":""}],"hands":[{"name":"values","type":""}],"line":26,"to":"typescript.cli.monthsOf"},{"gives":[{"name":"settings","type":"typescript.settings.Settings"}],"hands":[{"name":"DEFAULT_SETTINGS","type":"typescript.settings.Settings"},{"name":"#0","type":""}],"line":26,"to":"typescript.settings.Settings"},{"arms":[[0,0]],"hands":[{"name":"values","type":""}],"line":27,"to":"typescript.download.download"},{"gives":[{"name":"series","type":"typescript.series.Month"}],"hands":[{"name":"values","type":""}],"line":28,"to":"typescript.series.load"},{"gives":[{"name":"smoothed","type":"typescript.series.Smoothed"}],"hands":[{"name":"series","type":"typescript.series.Month"},{"name":"settings","type":"typescript.settings.Settings"}],"line":29,"to":"typescript.series.smooth"},{"gives":[{"name":"#1","type":""}],"hands":[{"name":"series","type":"typescript.series.Month"},{"name":"smoothed","type":"typescript.series.Smoothed"},{"name":"settings","type":"typescript.settings.Settings"}],"line":30,"to":"typescript.plot.trend"},{"hands":[{"name":"values","type":""},{"name":"#1","type":""}],"line":30,"to":"typescript.plot.saveSvg"}],"span":[17,31],"touches":[{"artifact":"data/raw/sunspots.csv","kind":"disk_read","line":27,"n":1,"op":"existsSync","payload":"values","what":"values.raw"}],"whens":[[0,0,"!existsSync(values.raw)"]]},{"arm_lines":[[35,35],[37,37],[37,37],[37,37]],"doc":"The number of months `--months` asks to smooth over.","file":"/Users/rgrouls/code/packages/atlas/.claude/worktrees/next-merge/engine/tests/pairs/pipeline/typescript/src/cli.ts","id":"typescript.cli.monthsOf","kind":"function","module":"typescript.cli","name":"monthsOf","params":[{"name":"option","type":"string | undefined"}],"part":"typescript","private":true,"raises":true,"returns":{"value":"number","written":"number"},"sites":[{"gives":[{"name":"months","type":""}],"line":36,"op":"Number"}],"span":[34,39],"whens":[[0,0,"option === undefined"],[1,0,"!Number.isInteger(months) || months < 1"],[2,1,"otherwise"]]},{"arm_lines":[[7,7]],"doc":"Fetches `url` and writes its body to `to` as it came, creating the directory it goes in; gives `to`.","entry":{"kind":"export","label":"download"},"file":"/Users/rgrouls/code/packages/atlas/.claude/worktrees/next-merge/engine/tests/pairs/pipeline/typescript/src/download.ts","id":"typescript.download.download","instead":[{"kind":"net","line":6,"n":1,"op":"fetch","payload":"AbortSignal","what":"url"},{"kind":"disk_write","line":9,"n":1,"op":"writeFile","payload":"Uint8Array","what":"to"}],"kind":"function","module":"typescript.download","name":"download","params":[{"name":"url","type":"string"},{"name":"to","type":"string"}],"part":"typescript","raises":true,"returns":{"fails":true,"value":"string","written":"Promise<string>"},"sites":[{"gives":[{"name":"response","type":""}],"line":6,"op":"fetch"},{"hands":[{"name":"response","type":""}],"line":9,"not_followed":true,"op":"response.arrayBuffer"}],"span":[5,11],"touches":[{"kind":"net","line":6,"n":1,"op":"fetch","payload":"AbortSignal","users_of":["typescript.download.download"],"what":"url"},{"artifact":"www.sidc.be","by":["typescript.cli.main"],"kind":"net","line":6,"n":1,"op":"fetch","payload":"AbortSignal","what":"url"},{"kind":"disk_write","line":8,"n":1,"op":"mkdir","payload":"to","users_of":["typescript.download.download"],"what":"{to}/.."},{"kind":"disk_write","line":9,"n":1,"op":"writeFile","payload":"Uint8Array","users_of":["typescript.download.download"],"what":"download.to"},{"artifact":"data/raw/sunspots.csv","by":["typescript.cli.main"],"kind":"disk_write","line":9,"n":1,"op":"writeFile","payload":"Uint8Array","what":"to"}],"whens":[[0,0,"!response.ok"]]},{"arm_lines":[[21,21],[21,21],[21,21],[43,43],[43,43],[44,44],[44,44]],"doc":"The monthly means as a thin grey line, with their smoothed mean over them.","entry":{"kind":"export","label":"trend"},"file":"/Users/rgrouls/code/packages/atlas/.claude/worktrees/next-merge/engine/tests/pairs/pipeline/typescript/src/plot.ts","id":"typescript.plot.trend","kind":"function","module":"typescript.plot","name":"trend","params":[{"name":"series","type":"readonly Month[]"},{"name":"smoothed","type":"readonly Smoothed[]"},{"name":"settings","type":"Settings"}],"part":"typescript","raises":true,"returns":{"value":"string","written":"string"},"sites":[{"gives":[{"name":"last","type":""}],"line":20,"not_followed":true,"op":"series.at"},{"gives":[{"name":"x","type":""}],"hands":[{"name":"last","type":""}],"line":24,"op":"range"},{"gives":[{"name":"#2","type":""}],"line":26,"not_followed":true,"op":"series.map"},{"gives":[{"name":"y","type":""}],"hands":[{"name":"#2","type":""}],"line":25,"op":"range"},{"gives":[{"name":"#3","type":""}],"line":30,"not_followed":true,"op":"x"},{"gives":[{"name":"#4","type":""}],"line":31,"not_followed":true,"op":"y"},{"gives":[{"name":"path","type":""}],"hands":[{"name":"#3","type":""},{"name":"#4","type":""}],"line":29,"op":"line"},{"gives":[{"name":"#5","type":""}],"hands":[{"name":"x","type":""}],"line":33,"not_followed":true,"op":"x.ticks"},{"gives":[{"name":"#6","type":""}],"line":33,"not_followed":true,"op":"x"},{"gives":[{"name":"#7","type":""}],"line":33,"not_followed":true,"op":"t.getUTCFullYear"},{"gives":[{"name":"years","type":""}],"hands":[{"name":"#5","type":""},{"name":"#6","type":""},{"name":"#7","type":""}],"line":33,"not_followed":true,"op":"map"},{"gives":[{"name":"#8","type":""}],"hands":[{"name":"y","type":""}],"line":34,"not_followed":true,"op":"y.ticks"},{"gives":[{"name":"#9","type":""}],"line":34,"not_followed":true,"op":"y"},{"gives":[{"name":"counts","type":""}],"hands":[{"name":"#8","type":""},{"name":"#9","type":""}],"line":34,"not_followed":true,"op":"map"},{"hands":[{"name":"settings","type":"typescript.settings.Settings"}],"line":38,"to":"typescript.plot.escape"},{"arms":[[2,0]],"line":43,"not_followed":true,"op":"path"},{"arms":[[3,0]],"line":44,"not_followed":true,"op":"path"}],"span":[18,50],"whens":[[0,0,"first === undefined || last === undefined"],[1,1,"otherwise"],[2,1,"otherwise"],[3,1,"otherwise"]]},{"doc":"Writes `svg` to `to`, creating the directory it goes in.","entry":{"kind":"export","label":"saveSvg"},"file":"/Users/rgrouls/code/packages/atlas/.claude/worktrees/next-merge/engine/tests/pairs/pipeline/typescript/src/plot.ts","id":"typescript.plot.saveSvg","instead":[{"kind":"disk_write","line":55,"n":1,"op":"writeFile","payload":"svg","what":"to"}],"kind":"function","module":"typescript.plot","name":"saveSvg","params":[{"name":"svg","type":"string"},{"name":"to","type":"string"}],"part":"typescript","returns":{"fails":true,"written":"Promise<void>"},"span":[53,56],"touches":[{"kind":"disk_write","line":54,"n":1,"op":"mkdir","payload":"to","users_of":["typescript.plot.saveSvg"],"what":"{to}/.."},{"kind":"disk_write","line":55,"n":1,"op":"writeFile","payload":"svg","users_of":["typescript.plot.saveSvg"],"what":"saveSvg.to"},{"artifact":"figures/sunspots.svg","by":["typescript.cli.main"],"kind":"disk_write","line":55,"n":1,"op":"writeFile","payload":"svg","what":"to"}]},{"file":"/Users/rgrouls/code/packages/atlas/.claude/worktrees/next-merge/engine/tests/pairs/pipeline/typescript/src/plot.ts","id":"typescript.plot.escape","kind":"function","module":"typescript.plot","name":"escape","params":[{"name":"text","type":"string"}],"part":"typescript","private":true,"returns":{"value":"string","written":"string"},"sites":[{"gives":[{"name":"#10","type":""}],"line":59,"not_followed":true,"op":"text.replaceAll"},{"gives":[{"name":"#11","type":""}],"hands":[{"name":"#10","type":""}],"line":59,"not_followed":true,"op":"replaceAll"},{"hands":[{"name":"#11","type":""}],"line":59,"not_followed":true,"op":"replaceAll"}],"span":[58,60]},{"doc":"A month of SILSO's series that has a mean.","entry":{"kind":"export","label":"Month"},"file":"/Users/rgrouls/code/packages/atlas/.claude/worktrees/next-merge/engine/tests/pairs/pipeline/typescript/src/series.ts","id":"typescript.series.Month","kind":"class","module":"typescript.series","name":"Month","part":"typescript","span":[13,20]},{"doc":"The mean sunspot number over the months centred on `date`.","entry":{"kind":"export","label":"Smoothed"},"file":"/Users/rgrouls/code/packages/atlas/.claude/worktrees/next-merge/engine/tests/pairs/pipeline/typescript/src/series.ts","id":"typescript.series.Smoothed","kind":"class","module":"typescript.series","name":"Smoothed","part":"typescript","span":[23,26]},{"doc":"The months in SILSO's file at `path` that have a mean, in order.","entry":{"kind":"export","label":"load"},"file":"/Users/rgrouls/code/packages/atlas/.claude/worktrees/next-merge/engine/tests/pairs/pipeline/typescript/src/series.ts","id":"typescript.series.load","instead":[{"kind":"disk_read","line":30,"n":1,"op":"readFile","payload":"path","what":"path"}],"kind":"function","module":"typescript.series","name":"load","params":[{"name":"path","type":"string"}],"part":"typescript","returns":{"fails":true,"value":"Month[]","written":"Promise<Month[]>"},"sites":[{"line":30,"to":"typescript.series.parse"}],"span":[29,31],"touches":[{"kind":"disk_read","line":30,"n":1,"op":"readFile","payload":"path","users_of":["typescript.series.load"],"what":"load.path"},{"artifact":"data/raw/sunspots.csv","by":["typescript.cli.main"],"kind":"disk_read","line":30,"n":1,"op":"readFile","payload":"path","what":"path"}]},{"doc":"The months in the text of SILSO's file that have a mean, in order.","entry":{"kind":"export","label":"parse"},"file":"/Users/rgrouls/code/packages/atlas/.claude/worktrees/next-merge/engine/tests/pairs/pipeline/typescript/src/series.ts","id":"typescript.series.parse","kind":"function","module":"typescript.series","name":"parse","params":[{"name":"text","type":"string"}],"part":"typescript","returns":{"value":"Month[]","written":"Month[]"},"sites":[{"gives":[{"name":"#12","type":""}],"line":35,"not_followed":true,"op":"text\n    .split"},{"gives":[{"name":"#13","type":""}],"line":37,"not_followed":true,"op":"line.trim"},{"gives":[{"name":"#14","type":""}],"hands":[{"name":"#12","type":""},{"name":"#13","type":""}],"line":35,"not_followed":true,"op":"filter"},{"line":38,"to":"typescript.series.parseLine"},{"gives":[{"name":"#15","type":""}],"hands":[{"name":"#14","type":""}],"line":35,"not_followed":true,"op":"map"},{"hands":[{"name":"#15","type":""}],"line":35,"not_followed":true,"op":"filter"}],"span":[34,40]},{"arm_lines":[[44,44],[44,44],[44,44]],"file":"/Users/rgrouls/code/packages/atlas/.claude/worktrees/next-merge/engine/tests/pairs/pipeline/typescript/src/series.ts","id":"typescript.series.parseLine","kind":"function","module":"typescript.series","name":"parseLine","params":[{"name":"line","type":"string"}],"part":"typescript","private":true,"raises":true,"returns":{"value":"Month","written":"Month"},"sites":[{"gives":[{"name":"#16","type":""}],"line":43,"not_followed":true,"op":"line.split"},{"gives":[{"name":"fields","type":""}],"hands":[{"name":"#16","type":""}],"line":43,"not_followed":true,"op":"map"},{"arms":[[1,1]],"hands":[{"name":"fields","type":""}],"line":44,"not_followed":true,"op":"fields.some"}],"span":[42,47],"whens":[[0,0,"fields.length !== FIELDS || fields.some(Number.isNaN)"],[1,1,"otherwise"]]},{"doc":"The mean over each run of `months` consecutive months, dated by the month at its centre.","entry":{"kind":"export","label":"smooth"},"file":"/Users/rgrouls/code/packages/atlas/.claude/worktrees/next-merge/engine/tests/pairs/pipeline/typescript/src/series.ts","id":"typescript.series.smooth","kind":"function","module":"typescript.series","name":"smooth","params":[{"name":"series","type":"readonly Month[]"},{"name":"months","type":"number"}],"part":"typescript","returns":{"value":"Smoothed[]","written":"Smoothed[]"},"sites":[{"gives":[{"name":"before","type":""}],"line":51,"op":"floor"},{"gives":[{"name":"#17","type":""}],"hands":[{"name":"before","type":""}],"line":53,"not_followed":true,"op":"series.slice"},{"gives":[{"name":"#18","type":""}],"line":53,"not_followed":true,"op":"series.slice"},{"gives":[{"name":"#19","type":""}],"hands":[{"name":"#18","type":""}],"line":53,"to":"typescript.series.average"},{"hands":[{"name":"#17","type":""},{"name":"#19","type":""}],"line":53,"not_followed":true,"op":"map"}],"span":[50,54]},{"file":"/Users/rgrouls/code/packages/atlas/.claude/worktrees/next-merge/engine/tests/pairs/pipeline/typescript/src/series.ts","id":"typescript.series.average","kind":"function","module":"typescript.series","name":"average","params":[{"name":"series","type":"readonly Month[]"}],"part":"typescript","private":true,"returns":{"value":"number","written":"number"},"sites":[{"line":57,"not_followed":true,"op":"series.reduce"}],"span":[56,58]},{"doc":"The choices of a run that are not places: how far to smooth and how the figure looks.","entry":{"kind":"export","label":"Settings"},"file":"/Users/rgrouls/code/packages/atlas/.claude/worktrees/next-merge/engine/tests/pairs/pipeline/typescript/src/settings.ts","id":"typescript.settings.Settings","kind":"class","module":"typescript.settings","name":"Settings","part":"typescript","span":[2,9]}],"parts":[{"dir":"/Users/rgrouls/code/packages/atlas/.claude/worktrees/next-merge/engine/tests/pairs/pipeline/typescript","id":"typescript","language":"typescript","leaves":{"exports":false,"returns":true,"types":false}}],"project_root":"/Users/rgrouls/code/packages/atlas/.claude/worktrees/next-merge/engine/tests/pairs/pipeline/typescript","root":"typescript","stats":{"edges":{"calls":11,"contains":14,"instantiates":2,"returns":4,"takes":5},"modules":6,"nodes":{"class":3,"function":11,"module":6},"unresolved_calls":{"builtin":9,"library":17,"local":29,"unknown":0},"unresolved_calls_top":[["map",5],["dirname",2],["domain",2],["filter",2],["mkdir",2],["path",2],["range",2],["replaceAll",2],["series.slice",2],["writeFile",2],["x",2],["y",2],["AbortSignal.timeout",1],["Date.UTC",1],["Math.floor",1],["Math.max",1],["Number",1],["Number.isInteger",1],["existsSync",1],["fetch",1],["fields.some",1],["join",1],["line",1],["line.split",1],["line.trim",1]],"unresolved_calls_total":55},"view":{"route":"typescript.cli.main"}}}};
 </script>
 <script>
 (function(){
@@ -1016,6 +1016,13 @@ function worldPlaceOf(t, fine = false) {
 // in one reading of a union, a package or a part is there while code of it is
 const heldCache = new Map();
 const held = (key, test) => { const k = `${SIDE}|${key}`; if (!heldCache.has(k)) heldCache.set(k, [...byId.values()].some(n => n.kind === "module" && test(n) && has(n))); return heldCache.get(k); };
+// the finest plan of a route opens every call: what the reader has open is a quotient of it, taken afterwards (`coarsen`)
+let FINE = false;
+// a route can unfold into more occurrences than a plan can hold (calls shared by many callers): the finest plan opens every call
+// down to the depth that keeps it within a budget, and what the reader has open at any depth; a call it does not open is a
+// block of its own, with what it reaches
+const FINE_BUDGET = 5000;
+let FINE_DEPTH = Infinity, fineCount = 0, fineCut = false;
 function routeTree() {
   const closedRoutes = ids => ids.map(id => ({id, open: false, kids: [], hue: null}));
   if (V.route && !has(byId.get(V.route))) return [];
@@ -1035,14 +1042,21 @@ function routeTree() {
   treeInfo.clear();
   // a route run from the command line starts at what the human typed: the parse of the command
   // line belongs to the entry, and what it gives comes from the entry, until the entry is opened
-  const folds = ["cli", "script"].includes(byId.get(V.route)?.entry?.kind) && !V.open.places.has("e:" + V.route);
+  const foldable = ["cli", "script"].includes(byId.get(V.route)?.entry?.kind), folds = !FINE && foldable && !V.open.places.has("e:" + V.route);
   routeParses = false;
   // what a step runs is its body, as the engine reads it: the overrides the call may run instead,
   // then its own steps, each choice's branches in a frame, each branch in its own colour
   const visit = (key, step, on, site, hue, path, fed) => {
     treeInfo.set(key, {step, on, site, fed});
-    const n = byId.get(step), open = key === V.route || V.open.steps.has(key) || V.open.functions.has(step), node = {id: key, open, kids: [], hue, choice: false};
-    if (!open || !n) return node;
+    const n = byId.get(step), forced = V.open.steps.has(key) || V.open.functions.has(step);
+    fineCount++;
+    // a class met in a route is built, not run: its methods are what a route of its own would start at, so it has no calls to open
+    const open = key === V.route || (n?.kind !== "class" && forced) || (FINE && path.size < FINE_DEPTH && fineCount <= 4 * FINE_BUDGET && byId.get(step)?.kind !== "class"), node = {id: key, open, kids: [], hue, choice: false};
+    if (!open || !n) {
+      // a class met in a route is built, not run: its methods are what its route would start at, and no calls of this one
+      if (FINE && n && (callees(step, on).length || stepsIn(bodyOf(step, on)).length)) { node.cut = true; if (n.kind !== "class") fineCut = true; }
+      return node;
+    }
     const deeper = new Set([...path, step]), body = bodyOf(step, on);
     node.choice = (body.alts || []).length > 0;
     let b = 0;
@@ -1050,7 +1064,20 @@ function routeTree() {
     const parse = commandLine(n);
     if (parse.hidden.size) routeParses = true;
     const entry = folds ? parse : {hidden: new Set(), fed: new Set()};
-    const call = (s, h) => deeper.has(s.to) || entry.hidden.has(s.site) ? null : visit(`${key}/${s.site ?? s.to}`, s.to, s.on || null, s.site != null ? n.sites[s.site] : null, h, deeper, entry.fed);
+    const call = (s, h) => {
+      if (entry.hidden.has(s.site)) return null;
+      // a call to a function the route is already inside is a step of the route that stays closed: the frame it would open is the one it
+      // stands in, and the border it crosses is drawn
+      if (deeper.has(s.to)) {
+        const rk = `${key}/${s.site ?? s.to}`;
+        treeInfo.set(rk, {step: s.to, on: s.on || null, site: s.site != null ? n.sites[s.site] : null, fed: entry.fed, recursive: true});
+        return {id: rk, open: false, kids: [], hue: h, choice: false, recursive: true};
+      }
+      const k = visit(`${key}/${s.site ?? s.to}`, s.to, s.on || null, s.site != null ? n.sites[s.site] : null, h, deeper, entry.fed);
+      // in the finest plan the steps that only parse the command line are there, marked: a closed entry is their quotient
+      if (FINE && foldable && parse.hidden.has(s.site)) k.parse = true;
+      return k;
+    };
     for (const it of body.items) {
       if (!it.members) { const k = call(it, hue); if (k) node.kids.push(k); continue; }
       const kids = it.members.map(m => call(m, m.branch % 8 + 1)).filter(Boolean);
@@ -1061,7 +1088,12 @@ function routeTree() {
     }
     return node;
   };
-  return [visit(V.route, V.route, null, null, null, new Set())];
+  if (!FINE) return [visit(V.route, V.route, null, null, null, new Set())];
+  let tree;
+  const unfold = depth => { FINE_DEPTH = depth; fineCount = 0; fineCut = false; treeInfo.clear(); routeParses = false; tree = [visit(V.route, V.route, null, null, null, new Set())]; };
+  let depth = 1;
+  for (unfold(depth); fineCut; unfold(++depth)) if (fineCount > FINE_BUDGET) { unfold(Math.max(1, depth - 1)); break; }
+  return tree;
 }
 const altCount = id => (bodyOf(id, null).alts || []).length;
 // two orders of ids as one: what both hold keeps its order, and between two such, what only the
@@ -1122,7 +1154,15 @@ async function renderPlaat(mine) {
   const g = scene.node(), DUR = matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 380;
   dirFold = {to: new Map(), n: new Map()};
   // the subject of a route stands as itself; other types stand in their family until it is opened
+  // a closed family holds its kinds: a type stands in its kind until that family is opened; a part of a type is structure of
+  // its owner, drawn in its frame when opened, and the values of its type stand on their own
   const placeOfType = t => t === V.route || V.open.families.has(familyOf(t)) || V.open.families.has(kindOf(t)) ? t : kindOf(t);
+  // the route's subject stands as itself, in no family
+  const frameOf = t => t === V.route ? undefined : [kindOf(t), t].find(f => V.open.families.has(f) && opens(f));
+  const typePlace = t => {
+    const n = byId.get(t), closedFam = t !== V.route && opens(t) && !V.open.families.has(t);
+    return {id: "t:" + t, label: typeLabel(t) + (closedFam ? ` (${opensInto(t)})` : ""), kind: n && n.kind === "external" ? "ext" : "type", hue: hueOf(n), type: t};
+  };
   const stepName = id => { if (id.startsWith("part:")) { const p = PARTS.find(x => x.id === id.slice(5)) || {}; return `${p.id} · ${p.language}`; } if (id.startsWith("unit:")) return unitLabel(id.slice(5)); const n = byId.get(id); if (!V.route && n.entry) return entryLabel(n); if (n.kind === "class") return nameOf(n) + "()"; if (n.make) return n.name; if (isCtor(n) && !n.on_class) return typeLabel(n.cls) + "()"; return n.cls ? `${typeLabel(n.cls)}.${nameOf(n)}` : nameOf(n); };
   // a step's name: a method run on a subclass is that class's, a library's operation is its own name
   const stepLabel = key => {
@@ -1132,13 +1172,13 @@ async function renderPlaat(mine) {
     const n = byId.get(info.step);
     return info.on && n && n.cls && !isCtor(n) ? `${typeLabel(info.on)}.${nameOf(n)}` : stepName(info.step);
   };
-  const openable = key => { const s = stepOf(key); return key !== V.route && !V.open.steps.has(key) && !V.open.functions.has(s) && !s.startsWith("op:") && callees(s, treeInfo.get(key)?.on).length + stepsIn(bodyOf(s, treeInfo.get(key)?.on)).length > 0; };
+  const openable = key => { const s = stepOf(key); return key !== V.route && !treeInfo.get(key)?.recursive && !V.open.steps.has(key) && !V.open.functions.has(s) && !s.startsWith("op:") && byId.get(s)?.kind !== "class" && callees(s, treeInfo.get(key)?.on).length + stepsIn(bodyOf(s, treeInfo.get(key)?.on)).length > 0; };
   // an exported class has no body of its own: its route starts at each public method the caller can call
   const libraryClass = id => byId.get(id)?.kind === "class" && !!byId.get(id).entry;
   const momentOf = id => id.includes("@") ? id.slice(id.indexOf("@")) : "";
   // one reading's picture before it is laid out: its places, its pills and frames, each value at its
   // moments, and in a focus the arrows from and to the rest of the code
-  const plan = () => {
+  const planBase = fine => {
   const places = new Map();   // id -> {id, label, kind: world | type | ext, hue, fam}
   const restLinks = new Map();  // in a focus: unit -> the types it takes from the rest and hands to it
   const addPlace = p => { if (!places.has(p.id)) places.set(p.id, p); return p.id; };
@@ -1165,10 +1205,6 @@ async function renderPlaat(mine) {
   // a type is a place of its own while its moments are counted; then a closed one stands in its kind.
   // The kind is the type's (its base class), not the view's: the route's subject is its own
   const kindKey = k => k.startsWith("t:") && places.get(k)?.type ? "t:" + (places.get(k).type === V.route ? V.route : kindOf(places.get(k).type)) : k;
-  const typePlace = t => {
-    const n = byId.get(t), closedFam = opens(t) && !V.open.families.has(t);
-    return {id: "t:" + t, label: typeLabel(t) + (closedFam ? ` (${opensInto(t)})` : ""), kind: n && n.kind === "external" ? "ext" : "type", hue: hueOf(n), type: t};
-  };
   // a step's morphism: its own body, or (closed) its interface and everything it touches below
   // noReceiver: the step is seen from its own class (a library class's route), so the receiver is not an input
   const morphism = (id, own, isAnchor, noReceiver, opts = {}) => {
@@ -1196,7 +1232,7 @@ async function renderPlaat(mine) {
       // a method that changes its own class changes the value it runs on
       for (const x of a.changes || []) if (!((noReceiver || a.builds) && x === f.cls)) cod.push([addPlace(typePlace(x === f.cls && recv ? recv : x)), false]);
       // an open step's body makes what it gives back from what its steps make
-      if (own && a.gives_back) for (const x of bodyOf(f.id, opts.on).made_from || []) dom.push([addPlace(typePlace(x)), false]);
+      if (own && a.gives_back && !opts.leaf) for (const x of bodyOf(f.id, opts.on).made_from || []) dom.push([addPlace(typePlace(x)), false]);
       // a closed call into a family takes and hands on what any of its branches does, unless the call
       // says which class it runs on
       if (!own && !opts.on) for (const o of bodyOf(f.id, null).alts || []) merge(morphism(o, false, false, noReceiver));
@@ -1276,16 +1312,16 @@ async function renderPlaat(mine) {
   };
   // a step of an opened route is a call: what its function takes and gives, with what the call
   // hands it and gets back, each value by the name that holds it; a library's operation has only those
-  const stepMorphism = (key, own, isAnchor) => {
+  const stepMorphism = (key, own, isAnchor, leaf) => {
     const info = treeInfo.get(key);
     if (!info) return morphism(key, own, isAnchor);
     const {step, on, site, fed} = info, dn = new Map(), cn = new Map();
-    const m = step.startsWith("op:") ? {dom: new Map(), cod: new Map(), goes: new Map()} : morphism(step, own, isAnchor, false, {on, figure: key, label: stepLabel(key)});
-    if (site && !own) {
+    const m = step.startsWith("op:") ? {dom: new Map(), cod: new Map(), goes: new Map()} : morphism(step, own, isAnchor, false, {on, figure: key, label: stepLabel(key), leaf});
+    if (site) {
       // a value whose type ty does not know is still the value its name holds; a value no name holds
       // (`#3`, one call's result handed straight to the next) is drawn without one
       // two values of one type a call hands on are two values, each by the name that holds it
-      const held = h => addPlace(h.type ? (h.name ? {...typePlace(h.type), id: `t:${h.type}~${h.name}`} : typePlace(h.type)) : {id: "v:" + h.name, label: h.name.startsWith("#") ? "·" : h.name, kind: "type", hue: hueOf(null), type: null});
+      const held = h => addPlace(h.type ? (h.name ? {...typePlace(h.type), id: `t:${h.type}~${h.name}`, name: h.name} : typePlace(h.type)) : {id: "v:" + h.name, label: h.name.startsWith("#") ? "·" : h.name, kind: "type", hue: hueOf(null), type: null, name: h.name});
       for (const h of site.hands || []) {
         // what the command line gives comes from the entry, in place of the value it is parsed into
         if (fed?.has(h.name)) { if (h.type) m.dom.delete("t:" + h.type); m.dom.set(addPlace(entryPlace(V.route)), false); continue; }
@@ -1312,24 +1348,39 @@ async function renderPlaat(mine) {
       frames.set(fid, {id: fid, step: null, parent, hue: node.hue, choice: true, synthetic: true, title, whens: one ? [] : node.when.filter(w => w[1])});
       return node.kids.flatMap(k => build(k, fid, caller));
     }
-    if (node.open) {
+    // in the finest plan a call without calls of its own is a pill; an open step has a frame and its own arrow
+    if (node.open && !(fine && node.id !== V.route && !node.kids.length)) {
       const fid = "n:" + node.id, kids = [];
-      frames.set(fid, {id: fid, step: node.id, parent, hue: node.hue, choice: node.choice, anchor: node.id === V.route, title: (node.id === V.route ? entryTitle(node.id) : stepLabel(node.id)) + (node.choice ? " · one of" : "")});
+      // what the step shows closed, kept for the places it shows: opening it refines the code and leaves them where they stood
+      const shut = fine || node.id === V.route || libraryClass(stepOf(node.id)) ? null : stepMorphism(node.id, false, false);
+      frames.set(fid, {id: fid, step: node.id, parent, hue: node.hue, choice: node.choice, anchor: node.id === V.route, ...(node.parse ? {parse: true} : {}), closed: shut && {goes: shut.goes, cod: shut.cod, hb: !!parent && !caller && !/^(part|unit|op):/.test(node.id) && handsBack(stepOf(node.id), shut.cod)}, title: (node.id === V.route ? entryTitle(node.id) : stepLabel(node.id)) + (node.choice ? " · one of" : "")});
       const lib = libraryClass(stepOf(node.id));
-      const own = lib || node.id.startsWith("unit:") ? {dom: new Map(), cod: new Map(), goes: new Map()} : stepMorphism(node.id, true, node.id === V.route);
-      const back = node.kids.flatMap(k => build(k, fid, lib && node.id === V.route ? node.id : null));
-      if (own.dom.size || own.cod.size || (back.length && !lib && !node.id.startsWith("unit:"))) {
-        const oid = "o:" + node.id;
-        pills.set(oid, {id: oid, steps: [node.id], D: own.dom, C: own.cod, dn: own.dn, cn: own.cn, goes: own.goes, parent: fid, hue: node.hue, own: true});
+      // a library class that is the route starts at its public methods; met inside a route it is a call like another, with its own arrow
+      const own = (lib && node.id === V.route) || node.id.startsWith("unit:") ? {dom: new Map(), cod: new Map(), goes: new Map()} : stepMorphism(node.id, true, node.id === V.route);
+      const before = pills.size, back = node.kids.flatMap(k => build(k, fid, lib && node.id === V.route ? node.id : null));
+      // opened, a step keeps the lines it had closed: its own arrow stands at its frame with what the closed box took and gave, so
+      // the lines that crossed the box cross the frame; a value it hands on is at the moment the closed box had it, and a result
+      // with no place of its own goes on to the step that called it from there
+      if (caller) own.dom.set(addPlace(entryPlace(caller)), false);
+      if (shut) {
+        const inside = [...pills.values()].slice(before), inD = new Set(inside.flatMap(P => [...P.D.keys()])), inC = new Set(inside.flatMap(P => [...P.C.keys()]));
+        for (const k of shut.dom.keys()) if (!own.dom.has(k) && !inC.has(k) && (/^[tv]:/.test(k) || !inD.has(k))) own.dom.set(k, true);
+        for (const k of shut.cod.keys()) if (!own.cod.has(k) && (/^[tv]:/.test(k) || !inC.has(k))) own.cod.set(k, true);
+      }
+      const hb = fine ? !!parent && !caller && node.id !== V.route && !lib && !/^(part|unit|op):/.test(node.id) && handsBack(stepOf(node.id), own.cod) : !!frames.get(fid).closed?.hb;
+      if (own.dom.size || own.cod.size || hb || (back.length && !lib && !node.id.startsWith("unit:"))) {
+        const oid = "o:" + node.id, own_ = {id: oid, steps: [node.id], D: own.dom, C: own.cod, dn: own.dn, cn: own.cn, goes: own.goes, parent: fid, hue: node.hue, own: true};
+        pills.set(oid, own_);
         for (const b of back) b.backTo = oid;
+        if (hb) return [own_];
       }
       return [];
     }
-    const m = stepMorphism(node.id, !!node.ownBody, false), hb = parent && !caller && handsBack(stepOf(node.id), m.cod);
+    const m = stepMorphism(node.id, fine && !node.cut, false, fine && !node.cut), hb = parent && !caller && handsBack(stepOf(node.id), m.cod);
     if (caller) m.dom.set(addPlace(entryPlace(caller)), false);
     // a unit stands even when nothing crosses its edge, so that it can be opened
     if (!m.dom.size && !m.cod.size && !hb && !node.id.startsWith("unit:")) return [];
-    const pill = {id: "n:" + node.id, steps: [node.id], D: m.dom, C: m.cod, dn: m.dn, cn: m.cn, goes: m.goes || new Map(), parent, hue: node.hue};
+    const pill = {id: "n:" + node.id, steps: [node.id], D: m.dom, C: m.cod, dn: m.dn, cn: m.cn, goes: m.goes || new Map(), parent, hue: node.hue, ...(node.parse ? {parse: true} : {})};
     pills.set(pill.id, pill);
     return hb ? [pill] : [];
   };
@@ -1357,7 +1408,15 @@ async function renderPlaat(mine) {
   const isMem = k => k.startsWith("v:") || k.startsWith("t:");
   const version = (k, v) => { if (!places.has(v)) places.set(v, {...places.get(k), id: v}); return v; };
   const choiceOf = P => frames.get(P.parent)?.choice ? P.parent : P.id;
+  // the arrow of an opened step hands on at the moment the closed step did: opening it moves no value to another moment
+  const madeAt = P => { if (!P.own) return choiceOf(P); const F = frames.get(P.parent); return frames.get(F?.parent)?.choice ? F.parent : P.parent; };
+  // the values made so far, each in the scope of the step whose body made it: a name holds a value in that step and the steps
+  // inside it, and a step's own arrow hands on in the scope of its caller. A choice is no scope; its branches' values go on
+  const planChain = fid => { const c = []; for (let f = fid; f; f = frames.get(f)?.parent) c.unshift(f); return c; };
   const latest = new Map();
+  const scopeOf = P => { let f = P.own ? frames.get(P.parent)?.parent : P.parent; while (f && frames.get(f)?.synthetic) f = frames.get(f).parent; return f || null; };
+  const latestSet = (key, v, P) => { if (!latest.has(key)) latest.set(key, []); latest.get(key).push({v, scope: scopeOf(P)}); };
+  const latestGet = (key, P) => { const es = latest.get(key); if (!es) return null; const here = new Set(planChain(P.parent)); for (let i = es.length - 1; i >= 0; i--) if (!es[i].scope || here.has(es[i].scope)) return es[i].v; return null; };
   // what the call hands a step and what the function says it takes are one value when they are of one
   // kind and at most one of them has a name: the value by the name and the type the call gives it.
   // Two values of a kind with names of their own are two values
@@ -1381,12 +1440,13 @@ async function renderPlaat(mine) {
     // a value is taken by the name that holds it, else as the latest of its kind: an override runs on
     // the value its call runs on, and a subclass's value is its base's
     const Dv = new Map(), Cv = new Map(), name = (m, k) => (m && m.get(k)) || "";
-    P.D.forEach((r, k) => { const v = isMem(k) ? latest.get(kindKey(k) + "|" + name(P.dn, k)) || latest.get(kindKey(k) + "|") : null; Dv.set(v || k, r); });
+    P.D.forEach((r, k) => { const v = isMem(k) ? latestGet(kindKey(k) + "|" + name(P.dn, k), P) || latestGet(kindKey(k) + "|", P) : null; Dv.set(v || k, r); });
     P.C.forEach((r, k) => {
       if (!isMem(k)) { Cv.set(k, r); return; }
-      const nm = name(P.cn, k), v = version(k, `${k}@${V.route ? choiceOf(P) : "out"}`);
+      const nm = name(P.cn, k), at = V.route ? madeAt(P) : "out", v = version(k, `${k}@${at}`);
+      Object.assign(places.get(v), {at});
       if (nm && !nm.startsWith("#") && !k.startsWith("v:")) Object.assign(places.get(v), {label: `${places.get(k).label} · ${nm}`, held: nm});
-      if (V.route) { latest.set(kindKey(k) + "|" + nm, v); latest.set(kindKey(k) + "|", v); }
+      if (V.route) { latestSet(kindKey(k) + "|" + nm, v, P); latestSet(kindKey(k) + "|", v, P); }
       Cv.set(v, r);
     });
     P.D = Dv; P.C = Cv;
@@ -1402,17 +1462,236 @@ async function renderPlaat(mine) {
     return id;
   };
   const toShown = m => { const out = new Map(); m.forEach((r, k) => { const k2 = standsAt(k); out.set(k2, out.has(k2) ? out.get(k2) && r : r); }); return out; };
-  for (const P of pills.values()) { P.D = toShown(P.D); P.C = toShown(P.C); }
+  if (!fine) for (const P of pills.values()) { P.D = toShown(P.D); P.C = toShown(P.C); }
+  // a value no step makes is its type, from beyond; it keeps the name that holds it only where a step takes two of one type
+  // (`consume(a, b)` takes two records, not one)
+  const split = new Set();
+  if (fine) {
+    const unmade = k => k.startsWith("t:") && places.get(k)?.name && !places.get(k).at;
+    for (const P of pills.values()) for (const m of [P.D, P.C]) {
+      const seen = new Map();
+      for (const k of m.keys()) if (unmade(k)) { const t = places.get(k).type; if (!seen.has(t)) seen.set(t, new Set()); seen.get(t).add(places.get(k).name); }
+      for (const [t, ns] of seen) if (ns.size > 1) split.add(t);
+    }
+    return {places, pills, frames, found, updated, split};
+  }
   // what the steps do at each place of the world: read it, write it, go there without saying which
   // way; whether a route finds what it reads there; whether a step that reads it hands something on
   const roles = new Map();
   const role = k => { if (!roles.has(k)) roles.set(k, {reads: false, writes: false, open: false, used: false, found: found.has(k), updated: updated.has(k)}); return roles.get(k); };
-  for (const P of pills.values()) for (const [k, s] of P.goes || []) {
+  // a place the outermost opened step shows closed has the role it had there: what is done to it inside is that step's
+  // doing, and opening the step does not make the place another's
+  const countRole = (k, s, handsOn) => {
     const r = role(k);
     r.reads ||= s.has("read"); r.writes ||= s.has("write"); r.open ||= s.has("open");
-    if (s.has("read")) r.used ||= !!P.backTo || [...P.C.keys()].some(c => c !== k);
+    if (s.has("read")) r.used ||= handsOn;
+  };
+  const shutOver = P => { let top = null; for (let f = P.parent; f; f = frames.get(f)?.parent) if (frames.get(f)?.closed) top = frames.get(f).closed; return top; };
+  const counted = new Set();
+  for (const P of pills.values()) {
+    const top = shutOver(P);
+    if (top && !counted.has(top)) { counted.add(top); for (const [k, s] of top.goes) countRole(k, s, top.hb || [...top.cod.keys()].some(c => c !== k)); }
+    for (const [k, s] of P.goes || []) if (!top?.goes.has(k)) countRole(k, s, !!P.backTo || [...P.C.keys()].some(c => c !== k));
   }
   return {places, pills, frames, restArrows, roles};
+  };
+  // ---- a route is one finest plan, and every picture of it is its image under the quotient the reader has chosen ----
+  // Occurrences (the steps of the route, each a call), values (a type, the name that holds it, the moment it was made) and the
+  // places of the world are those of the finest plan `F`; what is open decides `q`, and a closed step is the block of the
+  // occurrences below it. Its domain is what the occurrences below it take and none of them makes, its codomain what its own
+  // arrow hands on and what they write: the lines that cross the block's border. A value made and taken inside a block is
+  // internal to it. Where a box stands, which side a place of the world is on and when a value was made are read off `F`.
+  const isOpenKey = key => key === V.route || V.open.steps.has(key) || V.open.functions.has(stepOf(key));
+  const imageOf = (F, opened, folded) => {
+    const {places: fp, pills: fPills, frames: fFrames} = F;
+    const closedAt = new Map();
+    // the outermost closed step above a frame, or the frame itself when it is closed and nothing above it is
+    const closedOf = fid => {
+      if (!fid) return null;
+      if (closedAt.has(fid)) return closedAt.get(fid);
+      const f = fFrames.get(fid), up = closedOf(f.parent), r = up || (f.synthetic || opened(f.step) ? null : fid);
+      closedAt.set(fid, r);
+      return r;
+    };
+    // the steps that only parse the command line are the entry's, while it is closed: the values they make are the entry's
+    const entryId = "e:" + V.route;
+    const hidden = new Set();
+    if (folded) {
+      const mark = fid => { for (const f of fFrames.values()) if (f.parent === fid && !hidden.has(f.id)) { hidden.add(f.id); mark(f.id); } };
+      for (const f of fFrames.values()) if (f.parse) { hidden.add(f.id); mark(f.id); }
+      for (const P of fPills.values()) if (P.parse || hidden.has(P.parent)) hidden.add(P.id);
+    }
+    const qId = new Map();
+    // a value keeps its name where a step made it, and where two of its type are taken at once
+    const named = pl => !!pl.name && !pl.name.startsWith("#") && (!!pl.at || F.split.has(pl.type)), nameOf_ = pl => named(pl) ? "~" + pl.name : "";
+    const q = k => {
+      if (qId.has(k)) return qId.get(k);
+      const pl = fp.get(k);
+      let id = k;
+      if (pl && /^[tv]:/.test(k)) id = pl.at && hidden.has(pl.at) ? entryId : pl.type && k.startsWith("t:") ? "t:" + placeOfType(pl.type) + nameOf_(pl) + (pl.at ? "@" + pl.at : "") : k;
+      qId.set(k, id);
+      return id;
+    };
+    const places = new Map();
+    const placeOf = (k, id) => {
+      if (places.has(id)) return id;
+      const pl = fp.get(k);
+      if (id === entryId) places.set(id, entryPlace(V.route));
+      else if (pl?.type && k.startsWith("t:")) {
+        const pid = placeOfType(pl.type), b = typePlace(pid);
+        places.set(id, {...b, id, label: b.label + (pl.held ? ` · ${pl.held}` : named(pl) ? ` · ${pl.name}` : ""), at: pl.at, name: named(pl) ? pl.name : undefined, held: pl.held});
+      } else places.set(id, fp.get(k));
+      return id;
+    };
+    const userFrame = P => { const F0 = fFrames.get(P.parent); return P.own && !F0?.anchor ? F0?.parent : P.parent; };
+    const users = new Map(), makers = new Map();
+    const note = (id, P, maker) => { const m = maker ? makers : users; if (!m.has(id)) m.set(id, []); m.get(id).push(userFrame(P)); if (maker) note(id, P, false); };
+    const famId = pl => { const f = pl?.type && frameOf(pl.type); return f ? "t:" + f + nameOf_(pl) + (pl.at ? "@" + pl.at : "") : null; };
+    const within = (at, S) => !!at && (at.startsWith(S + "/") || at.startsWith(S + "|") || at.startsWith(S + "~c"));
+    const pills = new Map(), frames = new Map();
+    for (const [fid, f] of fFrames) if (!closedOf(fid) && !hidden.has(fid)) frames.set(fid, {...f, closed: undefined});
+    const add = (m, k, r) => { const id = q(k); placeOf(k, id); m.set(id, m.has(id) ? m.get(id) && r : r); return id; };
+    const blocks = new Map(), pillBlock = new Map(), inc = new Map(), drop = new Map();
+    for (const P of fPills.values()) {
+      if (hidden.has(P.id)) continue;
+      const c = closedOf(P.parent), id = c || P.id;
+      if (!blocks.has(id)) blocks.set(id, {id, frame: c ? fFrames.get(c) : null, members: []});
+      blocks.get(id).members.push(P);
+      pillBlock.set(P.id, id);
+    }
+    for (const B of blocks.values()) {
+      const D = new Map(), C = new Map(), Dn = new Map(), Cn = new Map(), goes = new Map(), S = B.frame, back = S ? new Set(arrowOf(stepOf(S.step))?.reads_back || []) : null;
+      const incidence = [];
+      for (const P of B.members) {
+        const mine = !S || P.id === "o:" + S.step;
+        for (const [way, m] of [["D", P.D], ["C", P.C]]) for (const [k, r] of m) {
+          const pl = fp.get(k), isValue = /^[tv]:/.test(k);
+          // a value made and taken inside the block is the block's own; a place it wrote and reads back is no input of it
+          if (S && isValue && within(pl?.at, S.id) && !hidden.has(pl.at)) { drop.set(`${P.id}|${way}|${k}`, "internal"); continue; }
+          if (S && way === "D" && !isValue && back.has(k)) { drop.set(`${P.id}|${way}|${k}`, "back"); continue; }
+          incidence.push([way, P, k, mine ? r : true]);
+        }
+        joinGoes(goes, P.goes);
+      }
+      for (const [way, P, k, r] of incidence) {
+        const id = add(way === "D" ? D : C, k, r);
+        // the fine lines that one line of the picture stands for
+        const n = way === "D" ? Dn : Cn;
+        n.set(id, (n.get(id) || 0) + 1);
+        inc.set(`${P.id}|${way}|${k}`, {way, P: P.id, k, p: B.id, c: id});
+        note(id, P, way === "C");
+        const f = famId(fp.get(k));
+        if (f) note(f, P, way === "C");
+      }
+      const out = B.members.find(P => P.backTo && !B.members.some(Q => Q.id === P.backTo));
+      const back_ = out?.backTo;
+      if (!S) {
+        const P = B.members[0];
+        if (!D.size && !C.size && !back_ && !P.own) continue;
+        pills.set(P.id, {...P, D, C, Dn, Cn, goes, ...(back_ ? {backTo: back_, backFrom: out.id} : {backTo: undefined})});
+        continue;
+      }
+      if (!D.size && !C.size && !back_) continue;
+      pills.set(S.id, {id: S.id, steps: [S.step], D, C, Dn, Cn, dn: new Map(), cn: new Map(), goes, parent: S.parent, hue: S.hue, ...(back_ ? {backTo: back_, backFrom: out.id} : {})});
+    }
+    for (const P of [...pills.values()]) if (P.backTo && !pills.has(P.backTo)) delete P.backTo;
+    for (const P of pills.values()) if (P.backTo) inc.set(`${P.backFrom}|back`, {way: "B", P: P.backFrom, k: P.backTo, p: P.id, c: P.backTo});
+    // places with the same incidence are one block of the quotient with a multiplicity: the values that only one closed step takes
+    // and no step makes are the same block (one neighbour, no maker), drawn as a count on the step and drawn apart when it opens
+    const joined = new Map(), at = new Map();
+    for (const i of inc.values()) {
+      if (i.way === "B") continue;
+      const e = at.get(i.c) || {ways: new Set(), blocks: new Set()};
+      e.ways.add(i.way); e.blocks.add(i.p); at.set(i.c, e);
+    }
+    const free = new Map();
+    for (const [id, e] of at) {
+      const pl = places.get(id);
+      if (e.ways.size !== 1 || !e.ways.has("D") || e.blocks.size !== 1 || !pl || !/^[tv]:/.test(id) || (pl.type && (opens(pl.type) || pl.type === V.route)) || famId(pl)) continue;
+      const b = [...e.blocks][0], P = pills.get(b);
+      if (!P || P.own || /^(unit|part):/.test(P.steps[0])) continue;
+      if (!free.has(b)) free.set(b, []);
+      free.get(b).push(id);
+    }
+    for (const [b, ids] of free) {
+      if (ids.length < 2) continue;
+      const P = pills.get(b);
+      for (const id of ids) { P.D.delete(id); P.Dn?.delete(id); places.delete(id); joined.set(id, b); }
+      P.folded = ids.length;
+    }
+    // where a box stands: in the smallest frame that holds all the steps that use it and the one that made it; a value no step
+    // inside a step makes stands outside it, and a place of the world outside every step
+    const chainOf = fid => { const c = []; for (let f = fid; f; f = fFrames.get(f)?.parent) c.unshift(f); return c; };
+    const stepFrame = f => !fFrames.get(f).synthetic && !fFrames.get(f).anchor;
+    const homeOf = (ids, world) => {
+      const cs = ids.flatMap(i => users.get(i) || []).map(chainOf), mk = ids.flatMap(i => makers.get(i) || []).map(chainOf);
+      if (!cs.length || cs.some(c => !c.length)) return null;
+      let common = cs[0];
+      for (const c of cs.slice(1)) { let i = 0; while (i < common.length && i < c.length && common[i] === c[i]) i++; common = common.slice(0, i); }
+      const i = common.findIndex(f => stepFrame(f) && (world || !mk.some(c => c.includes(f))));
+      if (i >= 0) common = common.slice(0, i);
+      while (common.length && !frames.has(common[common.length - 1])) common.pop();
+      return common.length ? common[common.length - 1] : null;
+    };
+    return {places, pills, frames, homeOf, hidden, blocks, pillBlock, inc, drop, q, folded: joined};
+  };
+  // Opening one more box must refine the picture and nothing else. For each box that can be opened (a closed step, a closed
+  // family), the picture with that box open is taken from the same finest plan and held to the one that is drawn: each of its
+  // boxes lies in one box of the drawn one, every line of the drawn one is the image of a line of the open one, and no line of
+  // the open one that crosses a block's border is missing from the drawn one (but the reading back of what a step wrote)
+  const refines = (A, B) => {
+    const out = [], phi = [new Map(), new Map()];
+    const lines = M => new Set([...M.inc.values()].filter(i => !M.folded.has(i.c)).map(i => (i.way === "D" ? `${i.c}>${i.p}` : `${i.p}>${i.c}`)));
+    const mapTo = (i, way) => { const a = A.pillBlock.get(i.P), c = i.way === "B" ? A.pillBlock.get(i.k) : (A.folded.get(A.q(i.k)) || A.q(i.k)); return a && c ? (way === "D" ? `${c}>${a}` : `${a}>${c}`) : null; };
+    for (const i of B.inc.values()) {
+      const a = A.pillBlock.get(i.P), c = i.way === "B" ? A.pillBlock.get(i.k) : A.q(i.k);
+      for (const [n, from, to] of [[0, i.p, a], [1, i.c, c]]) if (to) { if (phi[n].has(from) && phi[n].get(from) !== to) out.push(`box ${from} lies in ${phi[n].get(from)} and in ${to}`); phi[n].set(from, to); }
+    }
+    const la = lines(A), img = new Set();
+    for (const [key, i] of B.inc) {
+      // what a block made and takes inside is no line of its border; nor is the reading back of what a step wrote
+      const gone = A.drop.get(key);
+      if (gone === "back" || (gone === "internal" && !A.places.has(A.q(i.k)))) continue;
+      const l = mapTo(i, i.way === "D" ? "D" : "C");
+      if (l) img.add(l);
+    }
+    for (const l of la) if (!img.has(l)) out.push(`lost ${l}`);
+    for (const l of img) if (!la.has(l)) { const [x, y] = l.split(">"); if (x !== y) out.push(`more ${l}`); }
+    return out;
+  };
+  const checkOpenings = (F, view, folded) => {
+    const faults = [], open = V.open, steps = new Set(open.steps), fams = new Set(open.families);
+    const tries = [
+      ...[...view.blocks.values()].filter(B => B.frame && !B.frame.synthetic).map(B => ["step", B.frame.step, () => open.steps.add(B.frame.step)]),
+      ...[...new Set([...view.places.values()].filter(p => p.type && opens(p.type) && !open.families.has(p.type)).map(p => familyOf(p.type)))].map(f => ["family", f, () => open.families.add(f)]),
+    ];
+    for (const [kind, what, apply] of tries) {
+      try { apply(); const B = imageOf(F, isOpenKey, folded); for (const f of refines(view, B)) faults.push(`opening ${kind} ${what}: ${f}`); }
+      finally { open.steps = new Set(steps); open.families = new Set(fams); }
+    }
+    return faults;
+  };
+  const coarsen = F => {
+    const foldable = ["cli", "script"].includes(byId.get(V.route)?.entry?.kind), folded = foldable && !V.open.places.has("e:" + V.route);
+    const view = imageOf(F, isOpenKey, folded);
+    // which side a place of the world stands on is decided by the coarsest picture, where only the route is open
+    const top = imageOf(F, key => key === V.route, foldable);
+    const roles = new Map();
+    const role = k => { if (!roles.has(k)) roles.set(k, {reads: false, writes: false, open: false, used: false, found: F.found.has(k), updated: F.updated.has(k)}); return roles.get(k); };
+    for (const P of top.pills.values()) for (const [k, s] of P.goes || []) {
+      const r = role(k), handsOn = !!P.backTo || [...P.C.keys()].some(c => c !== k);
+      r.reads ||= s.has("read"); r.writes ||= s.has("write"); r.open ||= s.has("open");
+      if (s.has("read")) r.used ||= handsOn;
+    }
+    // the storage quotient and the fold of the disk are taken on the places of the finest plan, whatever is open
+    const ways = new Map();
+    for (const P of F.pills.values()) for (const [way, m] of [["in", P.D], ["out", P.C]]) for (const k of m.keys()) { if (!ways.has(k)) ways.set(k, new Set()); ways.get(k).add(way); }
+    return {places: view.places, pills: view.pills, frames: view.frames, restArrows: [], folded: view.folded, roles, home: view.homeOf, fine: {places: F.places, ways}, oracle: window.ATLAS_ORACLE ? checkOpenings(F, view, folded) : null};
+  };
+  const plan = () => {
+    if (!V.route) return planBase(false);
+    FINE = true;
+    try { const F = planBase(true), C = coarsen(F); window.atlasPlan = {fine: F, coarse: C}; return C; } finally { FINE = false; }
   };
   // two readings as one picture: each planned by itself, then the union of the two, every place,
   // pill, frame and line knowing the readings that hold it. A thing named otherwise in A reads
@@ -1447,6 +1726,8 @@ async function renderPlaat(mine) {
       if (a && b) { const u = unionLabel(a.title, b.title, !!F.step && renamed(stepOf(F.step))); Object.assign(F, {labels: u.labels, title: u.label}); }
       frames.set(id, F);
     }
+    // a step open in one reading and closed in the other is one box, the open one: its lines end at its frame, as the closed box's did
+    for (const id of frames.keys()) pills.delete(id);
     const rest = new Map();
     for (const [s, p] of [["a", A], ["b", B]]) for (const [r, at, way, ts] of p.restArrows) {
       const k = `${r}>${at}`;
@@ -1455,9 +1736,18 @@ async function renderPlaat(mine) {
     }
     const roles = new Map(A.roles);
     for (const [k, r] of B.roles) { const q = roles.get(k); roles.set(k, q ? Object.fromEntries(Object.keys(r).map(f => [f, q[f] || r[f]])) : r); }
-    return {places, pills, frames, restArrows: [...rest.values()], roles};
+    // where a box stands and what the storage quotient holds, from the readings that have them
+    const oracle = A.oracle || B.oracle ? [...(A.oracle || []), ...(B.oracle || [])] : null;
+    const home = A.home && B.home ? (ids, world) => B.home(ids, world) || A.home(ids, world) : null;
+    let fine = null;
+    if (A.fine && B.fine) {
+      const ways = new Map(), fp = new Map([...A.fine.places, ...B.fine.places]);
+      for (const f of [A.fine, B.fine]) for (const [k, w] of f.ways) ways.set(k, new Set([...(ways.get(k) || []), ...w]));
+      fine = {places: fp, ways};
+    }
+    return {places, pills, frames, restArrows: [...rest.values()], roles, home, fine, oracle};
   };
-  const {places, pills, frames, restArrows, roles} = DIFF ? unite() : plan();
+  const {places, pills, frames, restArrows, roles, home, fine, oracle} = DIFF ? unite() : plan();
   // Storage quotients are computed on the visible fiber. A singleton keeps its concrete
   // expression; an opened quotient retains a frame around the same members.
   const storage = new Map(), worldFrames = new Map(), worldParent = new Map();
@@ -1467,8 +1757,11 @@ async function renderPlaat(mine) {
     if (!worldUses.has(k)) worldUses.set(k, new Set());
     worldUses.get(k).add(way);
   }
-  for (const p of places.values()) if (p.coarse && usedWorld.has(p.id)) {
-    const disk = p.group === "w:Disk", ways = worldUses.get(p.id);
+  // in a route the groups are those of the finest plan, whatever is open: which places a group holds, and which way each is used,
+  // do not depend on which of them a zoom draws
+  const finePlaces = fine ? [...fine.places.values()] : [...places.values()], fineUsed = id => fine ? fine.ways.has(id) : usedWorld.has(id);
+  for (const p of finePlaces) if (p.coarse && fineUsed(p.id)) {
+    const disk = p.group === "w:Disk", ways = fine ? fine.ways.get(p.id) : worldUses.get(p.id);
     // A symbolic place used both ways is one place, rather than a member of two
     // directional quotients. Its identity stays visible at this zoom.
     if (disk && ways.size > 1) continue;
@@ -1478,15 +1771,20 @@ async function renderPlaat(mine) {
   }
   worldShown = new Map();
   for (const F of storage.values()) {
-    if (usedWorld.has(F.id)) F.kids.add(F.id);
+    if (fineUsed(F.id)) F.kids.add(F.id);
     if (F.kids.size < 2) continue;
+    // a group stands where a place it holds is drawn
+    const shown = [...F.kids].filter(k => usedWorld.has(k));
+    if (!shown.length) continue;
     if (V.open.places.has(F.group)) {
+      F.members = [...F.kids];
+      F.kids = new Set(shown);
       F.id = "group:" + F.id;
       worldFrames.set(F.id, F);
       for (const k of F.kids) worldParent.set(k, F.id);
     } else {
       const sides = new Set([...F.kids].flatMap(k => [...(places.get(k)?.sides || [])]));
-      const glyph = placeGlyph.get([...F.kids][0]);
+      const glyph = placeGlyph.get(shown[0]);
       const p = {id: F.id, label: F.label, short: F.label, glyph, kind: "world", toggleGroup: F.group, members: [...F.kids], ...(DIFF ? {sides} : {})};
       placeGlyph.set(p.id, glyph);
       for (const k of F.kids) { worldShown.set(k, p); places.delete(k); }
@@ -1499,17 +1797,22 @@ async function renderPlaat(mine) {
     m.forEach((v, k) => { const id = shownWorld(k); r.set(id, sides ? new Set([...(r.get(id) || []), ...v]) : r.has(id) ? r.get(id) && v : v); });
     return r;
   };
+  const countsTo = (m, f) => { if (!m) return m; const out = new Map(); m.forEach((n, k) => out.set(f(k), (out.get(f(k)) || 0) + n)); return out; };
+  for (const P of pills.values()) { P.Dn = countsTo(P.Dn, shownWorld); P.Cn = countsTo(P.Cn, shownWorld); }
   for (const P of pills.values()) { P.D = remapWorld(P.D); P.C = remapWorld(P.C); if (P.Ds) { P.Ds = remapWorld(P.Ds, true); P.Cs = remapWorld(P.Cs, true); } }
   // the disk is a tree: past a column's worth, files fold into their directories, and a click opens one
-  dirFold = foldDirs([...places.keys()].map(filePath).filter(Boolean));
+  const visibleFiles = new Set([...places.keys()].map(filePath).filter(Boolean));
+  dirFold = foldDirs((fine ? [...fine.ways.keys()].filter(k => !worldShown.has(k)) : [...places.keys()]).map(filePath).filter(Boolean));
   if (dirFold.to.size) {
     const to = k => { const p = filePath(k); return p ? filePlace(p).id : k; };
     const remap = m => { const out = new Map(); m.forEach((r, k) => { const k2 = to(k); out.set(k2, out.has(k2) ? out.get(k2) && r : r); }); return out; };
     const remapSides = m => { const out = new Map(); m.forEach((s, k) => { const k2 = to(k); out.set(k2, new Set([...(out.get(k2) || []), ...s])); }); return out; };
-    for (const P of pills.values()) { P.D = remap(P.D); P.C = remap(P.C); if (P.Ds) { P.Ds = remapSides(P.Ds); P.Cs = remapSides(P.Cs); } }
+    for (const P of pills.values()) { P.Dn = countsTo(P.Dn, to); P.Cn = countsTo(P.Cn, to); P.D = remap(P.D); P.C = remap(P.C); if (P.Ds) { P.Ds = remapSides(P.Ds); P.Cs = remapSides(P.Cs); } }
     const folded = new Map();
-    for (const [p, d] of dirFold.to) { if (!folded.has(d)) folded.set(d, new Set()); for (const s of places.get("w:File:" + p)?.sides || []) folded.get(d).add(s); places.delete("w:File:" + p); }
-    for (const d of dirFold.n.keys()) places.set("w:File:" + d, {...filePlace(d), ...(DIFF ? {sides: folded.get(d)} : {})});
+    const standing = new Set();
+    for (const [p, d] of dirFold.to) { if (!folded.has(d)) folded.set(d, new Set()); for (const s of places.get("w:File:" + p)?.sides || []) folded.get(d).add(s); if (visibleFiles.has(p)) standing.add(d); places.delete("w:File:" + p); }
+    // a directory that stands for files is that directory, whatever it is itself folded into: the lines planned to it end at it
+    for (const [d, k] of dirFold.n) if (standing.has(d) || [...pills.values()].some(P => P.D.has("w:File:" + d) || P.C.has("w:File:" + d))) places.set("w:File:" + d, {id: "w:File:" + d, label: `File(${d}) · ${k}`, short: `${d} · ${k}`, kind: "world", folded: d, ...(DIFF ? {sides: folded.get(d)} : {})});
   }
   // siblings that take and hand on the same places (the same versions) are one pill; in a union, only
   // siblings that both readings, or the same one, hold, and that changed alike
@@ -1541,12 +1844,13 @@ async function renderPlaat(mine) {
   // inside the frame of its moment, the family itself is the frame. A type opens where it stood closed:
   // in the kind it is a kind of, or as itself; a part stands on its own, as it did closed
   const famFrames = new Map();
-  const frameOf = t => [kindOf(t), t].find(f => V.open.families.has(f) && opens(f));
+  // a value keeps its name in its box and its frame: two values of one family at one moment are two frames
+  const nameAt = p => (p.name ? "~" + p.name : "") + (p.at ? "@" + p.at : "");
   for (const p of places.values()) {
     if (!p.type) continue;
-    const f = frameOf(p.type), at = momentOf(p.id), id = "t:" + f + at;
+    const f = frameOf(p.type), at = nameAt(p), id = "t:" + f + at;
     if (!f) continue;
-    if (!famFrames.has(id)) famFrames.set(id, {id, fam: f, at, label: places.get(id)?.label});
+    if (!famFrames.has(id)) famFrames.set(id, {id, fam: f, at, name: p.name, when: p.at, label: places.get(id)?.label});
   }
   for (const F of famFrames.values()) {
     const f = F.fam, at = F.at;
@@ -1554,7 +1858,7 @@ async function renderPlaat(mine) {
     const inFam = new Set([f, ...(members.get(f) || [])]);
     const viaOf = m => (inn.get(m) || []).find(e => e.kind === "has" && inFam.has(e.src) && e.via)?.via;
     const isSub = m => { let cur = m; for (let i = 0; i < 10; i++) { const b = (out.get(cur) || []).find(e => e.kind === "inherits" && inFam.has(e.dst)); if (!b) return false; if (b.dst === f) return true; cur = b.dst; } return false; };
-    F.kids = (members.get(f) || []).map(m => ({id: "t:" + m + at, label: isSub(m) ? typeLabel(m) : `${viaOf(m) || "·"}: ${typeLabel(m)}`, kind: "type", hue: hueOf(byId.get(m)), type: m}));
+    F.kids = (members.get(f) || []).filter(m => m !== V.route).map(m => ({id: isSub(m) ? "t:" + m + at : `t:${f}${at}/${m}`, label: isSub(m) ? typeLabel(m) : `${viaOf(m) || "·"}: ${typeLabel(m)}`, kind: "type", hue: hueOf(byId.get(m)), type: m, name: F.name, at: F.when}));
     F.kids.push(...sharedOf(f).map(e => ({id: `r:${f}:${e.via}${at}`, label: `${e.via}: ${typeLabel(e.dst)}`, kind: "ref", type: e.dst})));
     F.title = (F.label || typeLabel(f)) + (F.kids.some(k => k.kind === "type" && !k.label.includes(": ")) ? " ⊇" : "");
     F.hue = hueOf(byId.get(f));
@@ -1571,7 +1875,7 @@ async function renderPlaat(mine) {
   // code, a step of a body, a place. A type the picture draws as a box of its own, or inside a closed
   // family, is not inside a package, and a finding the picture marks with a dot is not inside one
   // either. Edges are not counted: they show at the border, or once the box is opened.
-  const closedFamily = p => (p.kind === "type" || p.kind === "ext") && !p.inFrame && !!p.type && opens(p.type) && !V.open.families.has(p.type);
+  const closedFamily = p => (p.kind === "type" || p.kind === "ext") && !p.inFrame && !!p.type && p.type !== V.route && opens(p.type) && !V.open.families.has(p.type);
   const alone = new Set(), inFamily = new Set();
   for (const p of places.values()) if (p.type && keep.has(p.id)) { alone.add(p.type); if (closedFamily(p)) for (const m of members.get(p.type) || []) inFamily.add(m); }
   const notAlone = id => !alone.has(id) && !inFamily.has(id);
@@ -1676,6 +1980,7 @@ async function renderPlaat(mine) {
   const finesOf = id => {
     const p = places.get(id);
     if (p?.members) return p.members;
+    if (worldFrames.get(id)?.members) return worldFrames.get(id).members;
     if (p?.folded) return [...dirFold.to].filter(([, d]) => d === p.folded).map(([f]) => "w:File:" + f);
     return [id];
   };
@@ -1726,16 +2031,16 @@ async function renderPlaat(mine) {
     if (P.own) return stepLabel(P.steps[0]);
     const ns = [...new Set(P.steps.map(stepLabel))], text = ns.length <= 2 ? ns.join(", ") : `${ns.slice(0, 2).join(", ")} +${ns.length - 2}`;
     const alts = P.steps.length === 1 && !treeInfo.get(P.steps[0])?.on && !stepOf(P.steps[0]).startsWith("op:") ? altCount(stepOf(P.steps[0])) : 0;
-    return (P.steps.some(openable) || !V.route ? "▸ " : "") + text + (alts ? ` · one of ${alts}` : "");
+    return (P.steps.some(st => treeInfo.get(st)?.recursive) ? "↻ " : P.steps.some(openable) || !V.route ? "▸ " : "") + text + (alts ? ` · one of ${alts}` : "") + (P.folded ? ` · +${P.folded} types` : "");
   };
   // in a union, a step named otherwise in A reads `old → new`
   const labelIn = (s, P) => { SIDE = s; try { return pillLabel(P); } finally { SIDE = null; } };
   for (const P of pills.values()) {
     P.label = pillLabel(P);
-    const [la, lb] = DIFF ? [labelIn("a", P), labelIn("b", P)] : [P.label, P.label], plain = t => t.replace(/^▸ /, "");
+    const [la, lb] = DIFF ? [labelIn("a", P), labelIn("b", P)] : [P.label, P.label], plain = t => t.replace(/^[▸↻] /, "");
     if (plain(la) !== plain(lb)) {
       const u = unionLabel(plain(la), plain(lb), P.steps.some(s => renamed(stepOf(s))));
-      Object.assign(P, {labels: {a: la, b: lb}, label: (P.label.startsWith("▸ ") ? "▸ " : "") + u.label});
+      Object.assign(P, {labels: {a: la, b: lb}, label: (/^[▸↻] /.test(P.label) ? P.label.slice(0, 2) : "") + u.label});
     }
     P.interior = !P.own && ([...P.D.values(), ...P.C.values()].some(Boolean));
     holder(P.parent).children.push(leaf(P.id, Math.max((P.interior ? 48 : 24) + textW(P.label, 6.9), tagsWidth(P.inside) + 2 * 13), P.interior ? 34 : 26));
@@ -1743,41 +2048,49 @@ async function renderPlaat(mine) {
   // memory lives in the smallest open step that holds every step using it
   const chain = fid => { const c = []; for (let f = fid; f; f = frames.get(f)?.parent) c.unshift(f); return c; };
   const usersOf = new Map();
-  for (const P of pills.values()) for (const k of [...P.D.keys(), ...P.C.keys()]) { const key = famOf(k); if (!usersOf.has(key)) usersOf.set(key, []); usersOf.get(key).push(P.parent); }
+  for (const P of pills.values()) for (const k of [...P.D.keys(), ...P.C.keys()]) { const key = famOf(k); if (!usersOf.has(key)) usersOf.set(key, []); usersOf.get(key).push(P.own && !frames.get(P.parent)?.anchor ? frames.get(P.parent)?.parent : P.parent); }
   // A place of the world is no part of the code's hierarchy: a package or a part, opened, refines
   // the code and leaves the places where they stood, its lines crossing the frame's border. Only a
   // step of the route, whose later steps use what an earlier one leaves, holds a place of its own.
   const codeFrame = f => /^(unit|part):/.test(frames.get(f)?.step || "");
+  // a value no step inside an opened step makes is what that step takes from beyond it: it stands where the closed step had it
+  const makersOf = new Map();
+  for (const P of pills.values()) for (const k of P.C.keys()) { const key = famOf(k); if (!makersOf.has(key)) makersOf.set(key, []); makersOf.get(key).push(P.own && !frames.get(P.parent)?.anchor ? frames.get(P.parent)?.parent : P.parent); }
   const homeOf = (id, world = false) => {
+    // in a route a box stands where the finest plan puts it
+    if (home) { const f = home(world ? finesOf(id) : [id], world); return (f && nodeOf.get(f)) || root; }
     const cs = (usersOf.get(id) || []).map(chain);
     if (!cs.length || cs.some(c => !c.length)) return root;
     let common = cs[0];
     for (const c of cs.slice(1)) { let i = 0; while (i < common.length && i < c.length && common[i] === c[i]) i++; common = common.slice(0, i); }
-    if (world) { const i = common.findIndex(codeFrame); if (i >= 0) common = common.slice(0, i); }
+    const taken = f => !codeFrame(f) && frames.get(f)?.closed && !(makersOf.get(id) || []).some(m => chain(m).includes(f));
+    const i = common.findIndex(f => taken(f) || (world && (codeFrame(f) || finesOf(id).some(k => frames.get(f)?.closed?.goes.has(k)))));
+    if (i >= 0) common = common.slice(0, i);
     return common.length ? nodeOf.get(common[common.length - 1]) : root;
   };
   for (const p of [...places.values()].filter(p => (p.kind === "type" || p.kind === "ext") && keep.has(p.id) && !p.inFrame).sort((a, b) => a.label.localeCompare(b.label))) homeOf(p.id).children.push(leaf(p.id, placeW(p, 30), 36));
   for (const F of famFrames.values()) { const n = frameNode(F.id, 30); homeOf(F.id).children.push(n); for (const k of F.kids) n.children.push(leaf(k.id, 26 + textW(k.label, 6.9), 28)); }
   // a place one step leaves for a later one, or one the code does not say which way it goes, lives
   // like memory in the smallest open step that holds every step using it
-  for (const [id, F] of worldFrames) usersOf.set(id, [...F.kids].flatMap(k => usersOf.get(k) || []));
+  if (!home) for (const [id, F] of worldFrames) usersOf.set(id, [...F.kids].flatMap(k => usersOf.get(k) || []));
   for (const id of sortWorld([...roleAt.keys()].filter(id => roleAt.get(id) === "mid"))) homeOf(id, true).children.push(worldNode(id));
   for (const id of sortWorld([...roleAt.keys()].filter(id => roleAt.get(id) === "out"))) root.children.push(worldNode(id, "LAST_SEPARATE"));
   // edges: data into a step and out of it, and results handed back to the caller
-  const edgeInfo = new Map(), addEdge = (a, b, info) => {
-    if (!nodeOf.has(a) || !nodeOf.has(b) || a === b) return;
+  const edgeInfo = new Map(), dropped = [], addEdge = (a, b, info) => {
+    if (a === b) return;
+    if (!nodeOf.has(a) || !nodeOf.has(b)) { dropped.push(`${a}>${b}`); return; }
     const id = `${a}>${b}`;
     // in a union, a line is in the readings that draw it
-    if (edgeInfo.has(id)) { const e = edgeInfo.get(id); e.reach &&= info.reach; if (e.sides && info.sides) info.sides.forEach(s => e.sides.add(s)); return; }
+    if (edgeInfo.has(id)) { const e = edgeInfo.get(id); e.reach &&= info.reach; e.n = (e.n || 1) + (info.n || 1); if (e.sides && info.sides) info.sides.forEach(s => e.sides.add(s)); return; }
     edgeInfo.set(id, {...info, a, b, sides: info.sides && new Set(info.sides)});
     root.edges.push({id, sources: [a], targets: [b], ...(info.label ? {labels: [{text: info.label, width: textW(info.label, 6.2), height: 12}]} : {})});
   };
   for (const [a, b, hue, sides] of wires) addEdge(a, b, {hue, sides});
   for (const P of pills.values()) {
-    P.D.forEach((r, k) => addEdge(k, P.id, {reach: r, hue: P.hue, sides: P.Ds?.get(k)}));
+    P.D.forEach((r, k) => addEdge(k, P.id, {reach: r, hue: P.hue, sides: P.Ds?.get(k), n: P.Dn?.get(k)}));
     P.C.forEach((r, k) => {
       const gs = finesOf(k).map(f => P.goes?.get(f)).filter(Boolean), open = gs.some(g => g.has("open")) && !gs.some(g => g.has("read") || g.has("write"));
-      addEdge(P.id, twinOf.get(k) || k, {reach: r, hue: P.hue, sides: P.Cs?.get(k), ...(open ? {label: "?", title: "the code does not say which way the data goes"} : {})});
+      addEdge(P.id, twinOf.get(k) || k, {reach: r, hue: P.hue, sides: P.Cs?.get(k), n: P.Cn?.get(k), ...(open ? {label: "?", title: "the code does not say which way the data goes"} : {})});
     });
     if (P.backTo) addEdge(P.id, P.backTo, {back: true, hue: P.hue, sides: P.sides});
   }
@@ -1972,7 +2285,7 @@ async function renderPlaat(mine) {
       }
       const d = pts.map((q, i) => (i ? "L" : "M") + q.x + "," + q.y).join(" ");
       const layer = ports.length ? ig : eg;
-      const p = el("path", {class: "sedge fn" + (info.reach ? " reach" : "") + (info.back ? " back" : "") + (info.uses ? " uses" : ""), d, "stroke-width": info.uses ? 1 : 1.3, "data-a": e.sources[0], "data-b": e.targets[0]}, layer);
+      const p = el("path", {class: "sedge fn" + (info.reach ? " reach" : "") + (info.back ? " back" : "") + (info.uses ? " uses" : ""), d, "stroke-width": (info.uses ? 1 : 1.3) + (info.n > 1 ? Math.min(3, Math.log2(info.n)) : 0), "data-a": e.sources[0], "data-b": e.targets[0]}, layer);
       const last = pts[pts.length - 1], prev = pts[pts.length - 2], ang = Math.atan2(last.y - prev.y, last.x - prev.x), L = 8, Wd = 4;
       const head = el("polygon", {points: [[last.x, last.y], [last.x - L * Math.cos(ang) + Wd * Math.sin(ang), last.y - L * Math.sin(ang) - Wd * Math.cos(ang)], [last.x - L * Math.cos(ang) - Wd * Math.sin(ang), last.y - L * Math.sin(ang) + Wd * Math.cos(ang)]].map(q => q.join(",")).join(" "), class: "sedge-head"}, layer);
       if (info.hue) { p.style.stroke = hueVar(info.hue); head.style.fill = hueVar(info.hue); }
@@ -1981,6 +2294,14 @@ async function renderPlaat(mine) {
         const bar = el("path", {class: "sedge interior-port", "data-step": port.id, "pointer-events": "none", d: `M${port.x - 6 * port.dy},${port.y + 6 * port.dx}L${port.x + 6 * port.dy},${port.y - 6 * port.dx}`, "stroke-width": 2}, ig);
         if (info.hue) bar.style.stroke = hueVar(info.hue);
         els.push(bar);
+      }
+      // a bundle: the fine lines of one channel between the same two boxes are one line that says how many it stands for
+      if (info.n > 1) {
+        const mid = pts[Math.floor(pts.length / 2)], mid2 = pts[Math.floor((pts.length - 1) / 2)];
+        const tx = el("text", {class: "sedge-label bundle", x: (mid.x + mid2.x) / 2, y: (mid.y + mid2.y) / 2 - 4, "text-anchor": "middle"}, eg);
+        tx.textContent = "×" + info.n;
+        el("title", {}, p).textContent = `${info.n} lines of the finer picture`;
+        els.push(tx);
       }
       if (info.title) el("title", {}, p).textContent = info.title;
       for (const l of e.labels || []) { const tx = el("text", {class: "sedge-label", x: l.x + c.x + l.width / 2, y: l.y + c.y + 10, "text-anchor": "middle"}, eg); tx.textContent = l.text; els.push(tx); }
@@ -2105,6 +2426,9 @@ async function renderPlaat(mine) {
   if (t1) { if (plaatFit || !DUR) svg.call(zoom.transform, t1); else svg.transition().duration(DUR).call(zoom.transform, t1); }
   prevPos = pos; plaatAnchor = null; plaatFit = false;
   PICTURE = {boxes: nodeEls, lines: edgeEls};
+  // the picture as data, for the checks that walk it (tools/pictures.py): each box with the box that holds it, each line by its ends
+  window.atlasBoxes = nodeEls;
+  window.atlasPicture = {n: (window.atlasPicture?.n || 0) + 1, dropped, oracle: oracle || [], sides: [...roleAt], boxes: [...nodeEls.keys()].map(id => [id, parentOf.get(id) || "root"]), lines: edgeEls.map(e => [e.a, e.b])};
 }
 // what the picture is a function of, each part undoable: the route, the opened steps, the open families, the split world boxes
 function crumbs() {

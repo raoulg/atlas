@@ -80,25 +80,70 @@ The rigorous half and the visual half are the same structure. Read `docs/referen
   owner, the branch, the worktree, the base commit and the files in scope. Work in your own
   worktree and branch; never edit another agent's worktree, branch or files in scope. Claude's
   checkout is `/Users/rgrouls/code/packages/atlas` on `atlas-obeys-its-algebra`, its subagents'
-  are `.claude/worktrees/agent-*`; Codex's are under `~/.codex/worktrees/`. Two branches carry
-  the work. Finished work lands on `next` (merge your branch into it, push it; CI runs there and a
-  nightly build is made of it). `main` is the stable line, 0.66.x since 16 October: only bug fixes
-  go to it (a branch from `main`, the patch number raised, a `v*` tag; then `main` is merged into
-  `next`), and it moves only when Raoul asks. New work, and the documentation, goes to `next`; Raoul
-  promotes `next` to `main` as the next minor when he says so. When work lands, the issue is closed with a
-  comment saying where: the commit and the version it is released as (on `next`, the nightly that has
-  it). A commit names the issue it serves (`#19`).
+  are `.claude/worktrees/agent-*`; Codex's are under `~/.codex/worktrees/`. Branches, versions and
+  releases follow the next section. When work lands, the issue is closed with a comment saying where:
+  the commit and the version it is released as (on `next`, the nightly that has it). A commit names
+  the issue it serves (`#19`).
+
+## Branches, versions and releases
+
+Two long-lived branches, one release train. Everything else is a short-lived topic branch.
+
+| Branch | Holds | Version | Built as | Who moves it |
+| --- | --- | --- | --- | --- |
+| `next` | integration: everything finished | the next minor, `X.Y.0` | nightly, `X.Y.0-nightly.<timestamp>` | any agent, by merging a topic branch whose tests pass |
+| `main` | what is released | the released `X.Y.Z` | stable, tag `vX.Y.Z` | Raoul only |
+| `<topic>` | one piece of work | none | nothing | its owner |
+
+1. **Start from `next`**, in your own worktree and branch. A topic branch never raises the version,
+   never makes a tag, never merges into `main`, and is removed once merged: its worktree
+   (`git worktree remove <path>`, which also frees its `target`, several GB), its local branch and
+   its remote branch. Check first that the worktree has no changes and that
+   `git rev-list --count origin/next..HEAD` is 0. The agent that merges does this in the same turn.
+2. **Land on `next`** when `cargo fmt`, `cargo test` and `atlas check .` pass: merge the topic branch
+   (a merge commit, no squash), push, close the issue. New work, documentation, the release
+   workflows and the tap all go to `next`, also while it is only documentation.
+3. **Promote**: when Raoul says so, `next` is merged into `main` (a merge commit), `main` is tagged
+   `vX.Y.0` and pushed; the tag builds the stable release and, with the secret `TAP_TOKEN`, updates
+   the tap. `main` then holds nothing `next` lacks. An agent prepares the promotion (conflicts
+   resolved, docs pictures drawn, checks green) and stops before the push.
+   The release machinery (`release.yml`, `install.sh`, `install.ps1`, the tap job, `tools/tap_formula.py`)
+   runs only on a `v*` tag, so a change to it on `next` is not exercised until the first tag after a
+   promotion, and a fault in it breaks the formula for every stable user. A promotion that carries
+   such a change is reviewed by Raoul before the tag, and after the tag the agent checks that the
+   release has its five binaries, that the tap's `atlas-code` names the new version and its checksums,
+   and that `brew install raoulg/tap/atlas-code` and `install.sh` install it.
+4. **Stable fix**: a bug in released behaviour is fixed on a branch from `main`, merged into `main`
+   when Raoul says so, patch number raised, tagged `vX.Y.Z`; then `main` is merged into `next` at once.
+   A fix to code that is not released yet is ordinary work on `next`.
+5. **Versions are SemVer and are raised in one place each**: the first change on `next` that alters
+   what Atlas reads, draws or checks raises the minor, once; later commits leave it alone. A stable fix
+   raises the patch. Documentation, CI and the tap raise nothing.
+6. **History is never rewritten.** No force-push to `main` or `next`, no deleted or moved `v*` tag. A
+   mistake is a revert commit.
+7. **Before any push or tag, read the branch** (`git branch --show-current`). A push to `main`, a `v*`
+   tag, a force-push or a change of the repository's settings needs Raoul's yes in this session,
+   for that action; an earlier yes does not carry over.
+
+| Channel | Source | Install |
+| --- | --- | --- |
+| stable | tags `v*` on `main` | `brew install raoulg/tap/atlas-code`, `install.sh` |
+| nightly | `next`, built daily when it changed | `brew install raoulg/tap/atlas-code-nightly`, `ATLAS_CHANNEL=nightly install.sh` |
 
 ## Practical
 
 - Build and run: `cargo build`, `atlas view .` (install with `cargo install --path cli`;
   the viewer is baked into the binary, so rebuild after editing `viewer/index.html`).
-- Version: `version` in the root `Cargo.toml`. Raise the minor number when what Atlas reads
-  or draws changes, the patch number for a fix, on `main` for a fix (patch number, with
-  the tag). `next` keeps the version of `main` until Atlas itself changes (what it reads, draws or checks);
-  the first change that warrants a new minor raises it, once, and later commits do not raise it
-  again. Documentation, the release workflows and the tap change no version, and need no tag. The build adds the commit it is made from (`0.2.0 (b0ead14)`), and
-  the nightly build says so too (`0.2.0-nightly (b0ead14)`: `ATLAS_CHANNEL=nightly` at build time).
+- Version: `version` in the root `Cargo.toml`, raised as the section above says. The build adds the
+  commit it is made from (`0.2.0 (b0ead14)`), and the nightly build says so too
+  (`0.2.0-nightly (b0ead14)`: `ATLAS_CHANNEL=nightly` at build time).
+- Verification that takes long: a check that runs longer than a few minutes (a walk or topology run over
+  a whole subject, a sweep of hundreds of openings) is discussed with Raoul first, saying what it checks
+  and what it cannot prove. A sample of a subject's views finds faults; it proves nothing. Where a
+  property should hold for every picture, build the code so that it holds by construction (one
+  function that all views use) and test that function, on small graphs, before the plan is laid out;
+  keep the sweep for a gate before a promotion, and then agree on it. Show Raoul the result before
+  verifying it further.
 - Tests: `cargo test`. The Rust workspace itself is a test subject. CI runs them on Linux, macOS
   and Windows: a test that writes files builds them as the platform lays them out (a virtual
   environment keeps its packages in `Lib\site-packages` on Windows) and compares paths as `Path`s,
@@ -108,7 +153,11 @@ The rigorous half and the visual half are the same structure. Read `docs/referen
   worktree it is made in: `lefthook.yml` runs `tools/clean-old-builds.sh` after each commit (`lefthook
   install` once per clone; worktrees share it). Dependencies stay, so the next build stays quick.
   When `df -h ~` still runs low, `cargo clean -p atlas -p atlas-engine` (and with `--release`) in
-  your own worktree; never another session's target.
+  your own worktree; never another session's target. The larger cost is the number of worktrees,
+  each with its own `target` of 3 to 18 GB: remove a worktree when its branch is merged (see
+  Branches). In an agent's shell `rm` is `rip`: `rm -rf target` moves the files to
+  `/tmp/graveyard-$USER` and frees nothing (it reached 201 GB). Take build output away with `cargo clean`,
+  `git worktree remove` or `command rm -rf`; emptying the graveyard (`rip --decompose`) is Raoul's.
 - Format: `cargo fmt` before every commit (`rustfmt.toml`: 140 columns); CI checks it. It
   formats the workspace only: the fixtures and pairs under `engine/tests` are subjects, written
   as their authors would, and their line numbers are pinned.
@@ -128,6 +177,11 @@ The rigorous half and the visual half are the same structure. Read `docs/referen
 - A viewer change is walked on the subjects before it is committed: `uv run tools/pictures.py
   walk <atlas> <repo> <dir>` opens every package, every route and every family in a route, and
   must report no view that throws, draws nothing, or opens a family into other moments.
+- A viewer change also keeps the topology of zoom: `uv run tools/pictures.py topology <atlas> <repo> <dir>` opens one
+  box at a time in each route and must report no box that takes a line away, moves a box into or out of a frame
+  that is not the one opened, or does not close to the picture it was (`docs/reference/mathematics.md`,
+  "Refinement keeps what it does not refine"), beyond the ones tracked in #39, #40, #41 and #43. Lines the open box draws
+  beyond the closed one are listed as `more` and are tracked in #38.
 - `atlas check .` must find nothing on Atlas itself (`engine/tests/principles.rs` pins it).
   A new principle is a rule in `engine/src/principles.rs`, a case in the fixture, a clean and a
   sloppy case in the pairs, and a section in `docs/reference/principles.md`; it checks what the graph

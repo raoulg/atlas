@@ -99,4 +99,35 @@ jobs:
         run: |
           gh release delete nightly --cleanup-tag --yes --repo "$GITHUB_REPOSITORY" || true
           gh release create nightly dist/* --repo "$GITHUB_REPOSITORY" --prerelease --target "$SHA" \
-            --title "nightly" --notes "The nightly build of next at ${SHA:0:7}, $(date -u +%Y-%m-%d). Not a release: install it with ATLAS_CHANNEL=nightly."
+            --title "nightly" --notes "The nightly build of next at ${SHA:0:7}, $(date -u +%Y-%m-%d). Not a release: install it with ATLAS_CHANNEL=nightly, or with brew install raoulg/tap/atlas-code-nightly."
+
+  # `brew install raoulg/tap/atlas-code-nightly`: the tap's formula of the nightly, written from the
+  # binaries just published (`TAP_TOKEN` is a token that may write to the tap).
+  tap:
+    needs: [decide, publish]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.decide.outputs.sha }}
+          path: atlas
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: actions/checkout@v4
+        with:
+          repository: raoulg/homebrew-tap
+          token: ${{ secrets.TAP_TOKEN }}
+          path: tap
+      - env:
+          SHA: ${{ needs.decide.outputs.sha }}
+        run: |
+          base=$(grep -m1 '^version' atlas/Cargo.toml | cut -d'"' -f2)
+          python3 atlas/tools/tap_formula.py dist "$base" "$(date -u +%Y%m%d%H%M)" > tap/Formula/atlas-code-nightly.rb
+          cd tap
+          git config user.name "atlas nightly"
+          git config user.email "noreply@github.com"
+          git add Formula/atlas-code-nightly.rb
+          git commit -m "The tap: the nightly of ${SHA:0:7}"
+          git push

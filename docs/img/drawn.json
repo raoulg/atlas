@@ -27,7 +27,7 @@
    ],
    [
     "sunspots.plot.Trend",
-    "\u25b8 Trend()"
+    "Trend()"
    ],
    [
     "sunspots.series.load",
@@ -46,7 +46,7 @@
     "DataFrame"
    ],
    [
-    "t:ext:pandas.DataFrame@n:sunspots.cli.run/3",
+    "t:ext:pandas.DataFrame~frame@n:sunspots.cli.run/3",
     "DataFrame \u00b7 frame"
    ],
    [
@@ -54,7 +54,7 @@
     "Trend"
    ],
    [
-    "t:sunspots.settings.Settings@n:sunspots.cli.run/0",
+    "t:sunspots.settings.Settings~settings@n:sunspots.cli.run/0",
     "Settings \u00b7 settings"
    ],
    [
@@ -77,7 +77,7 @@
    ],
    [
     "n:sunspots.cli.run/0",
-    "t:sunspots.settings.Settings@n:sunspots.cli.run/0"
+    "t:sunspots.settings.Settings~settings@n:sunspots.cli.run/0"
    ],
    [
     "n:sunspots.cli.run/1",
@@ -93,7 +93,7 @@
    ],
    [
     "n:sunspots.cli.run/3",
-    "t:ext:pandas.DataFrame@n:sunspots.cli.run/3"
+    "t:ext:pandas.DataFrame~frame@n:sunspots.cli.run/3"
    ],
    [
     "n:sunspots.cli.run/4",
@@ -108,7 +108,7 @@
     "n:sunspots.cli.run/3"
    ],
    [
-    "t:ext:pandas.DataFrame@n:sunspots.cli.run/3",
+    "t:ext:pandas.DataFrame~frame@n:sunspots.cli.run/3",
     "n:sunspots.cli.run/5"
    ],
    [
@@ -116,11 +116,11 @@
     "n:sunspots.cli.run/5"
    ],
    [
-    "t:sunspots.settings.Settings@n:sunspots.cli.run/0",
+    "t:sunspots.settings.Settings~settings@n:sunspots.cli.run/0",
     "n:sunspots.cli.run/3"
    ],
    [
-    "t:sunspots.settings.Settings@n:sunspots.cli.run/0",
+    "t:sunspots.settings.Settings~settings@n:sunspots.cli.run/0",
     "n:sunspots.cli.run/4"
    ],
    [
@@ -165,7 +165,7 @@
    ],
    [
     "sunspots.plot.Trend",
-    "\u25b8 Trend()"
+    "Trend()"
    ],
    [
     "sunspots.plot.Trend.draw",
@@ -184,7 +184,7 @@
     "Settings()"
    ],
    [
-    "t:ext:matplotlib.figure.Figure@n:sunspots.cli.run/5/0",
+    "t:ext:matplotlib.figure.Figure~figure@n:sunspots.cli.run/5/0",
     "Figure \u00b7 figure"
    ],
    [
@@ -192,7 +192,7 @@
     "DataFrame"
    ],
    [
-    "t:ext:pandas.DataFrame@n:sunspots.cli.run/3",
+    "t:ext:pandas.DataFrame~frame@n:sunspots.cli.run/3",
     "DataFrame \u00b7 frame"
    ],
    [
@@ -200,7 +200,7 @@
     "Trend"
    ],
    [
-    "t:sunspots.settings.Settings@n:sunspots.cli.run/0",
+    "t:sunspots.settings.Settings~settings@n:sunspots.cli.run/0",
     "Settings \u00b7 settings"
    ],
    [
@@ -223,7 +223,7 @@
    ],
    [
     "n:sunspots.cli.run/0",
-    "t:sunspots.settings.Settings@n:sunspots.cli.run/0"
+    "t:sunspots.settings.Settings~settings@n:sunspots.cli.run/0"
    ],
    [
     "n:sunspots.cli.run/1",
@@ -239,7 +239,7 @@
    ],
    [
     "n:sunspots.cli.run/3",
-    "t:ext:pandas.DataFrame@n:sunspots.cli.run/3"
+    "t:ext:pandas.DataFrame~frame@n:sunspots.cli.run/3"
    ],
    [
     "n:sunspots.cli.run/4",
@@ -247,7 +247,7 @@
    ],
    [
     "n:sunspots.cli.run/5/0",
-    "t:ext:matplotlib.figure.Figure@n:sunspots.cli.run/5/0"
+    "t:ext:matplotlib.figure.Figure~figure@n:sunspots.cli.run/5/0"
    ],
    [
     "o:sunspots.cli.run/5",
@@ -258,11 +258,11 @@
     "n:sunspots.cli.run/3"
    ],
    [
-    "t:ext:pandas.DataFrame@n:sunspots.cli.run/3",
+    "t:ext:pandas.DataFrame~frame@n:sunspots.cli.run/3",
     "n:sunspots.cli.run/5/0"
    ],
    [
-    "t:ext:pandas.DataFrame@n:sunspots.cli.run/3",
+    "t:ext:pandas.DataFrame~frame@n:sunspots.cli.run/3",
     "o:sunspots.cli.run/5"
    ],
    [
@@ -274,11 +274,11 @@
     "o:sunspots.cli.run/5"
    ],
    [
-    "t:sunspots.settings.Settings@n:sunspots.cli.run/0",
+    "t:sunspots.settings.Settings~settings@n:sunspots.cli.run/0",
     "n:sunspots.cli.run/3"
    ],
    [
-    "t:sunspots.settings.Settings@n:sunspots.cli.run/0",
+    "t:sunspots.settings.Settings~settings@n:sunspots.cli.run/0",
     "n:sunspots.cli.run/4"
    ],
    [
@@ -318,6 +318,10 @@
     "plot"
    ],
    [
+    "t:ext:pandas.DataFrame",
+    "DataFrame"
+   ],
+   [
     "w:File:data/raw/sunspots.csv",
     "File(data/raw/sunspots.csv)"
    ],
@@ -354,6 +358,10 @@
    [
     "n:sunspots/3",
     "w:File:figures/sunspots.png"
+   ],
+   [
+    "t:ext:pandas.DataFrame",
+    "n:sunspots/1+sunspots/2"
    ],
    [
     "w:Global:sunspots.df",
@@ -425,14 +433,14 @@
    ],
    [
     "sunspots.settings.Settings",
-    "\u25b8 Settings()"
+    "Settings()"
    ],
    [
     "sunspots.settings.Settings.default",
     "\u25b8 Settings.default"
    ],
    [
-    "t:ext:plotters.prelude.DrawingArea@n:sunspots.main.main/7/1",
+    "t:ext:plotters.prelude.DrawingArea~area@n:sunspots.main.main/7/1",
     "DrawingArea \u00b7 area"
    ],
    [
@@ -440,11 +448,15 @@
     "Trend (2)"
    ],
    [
-    "t:sunspots.series.Month@n:sunspots.main.main/4",
+    "t:sunspots.series.Month~series@n:sunspots.main.main/4",
     "Month \u00b7 series"
    ],
    [
-    "t:sunspots.series.Smoothed@n:sunspots.main.main/5",
+    "t:sunspots.series.Record",
+    "Record"
+   ],
+   [
+    "t:sunspots.series.Smoothed~smoothed@n:sunspots.main.main/5",
     "Smoothed \u00b7 smoothed"
    ],
    [
@@ -452,12 +464,12 @@
     "Settings"
    ],
    [
-    "t:sunspots.settings.Settings@n:sunspots.main.main/2",
-    "Settings \u00b7 settings"
-   ],
-   [
     "t:sunspots.settings.Settings@n:sunspots.main.main/7/0",
     "Settings"
+   ],
+   [
+    "t:sunspots.settings.Settings~settings@n:sunspots.main.main/2",
+    "Settings \u00b7 settings"
    ],
    [
     "w:File:data/raw/sunspots.csv",
@@ -490,12 +502,16 @@
     "o:sunspots.main.main"
    ],
    [
+    "e:sunspots.main.main",
+    "o:sunspots.main.main/7"
+   ],
+   [
     "n:sunspots.main.main/1",
     "t:sunspots.settings.Settings@n:sunspots.main.main/1"
    ],
    [
     "n:sunspots.main.main/2",
-    "t:sunspots.settings.Settings@n:sunspots.main.main/2"
+    "t:sunspots.settings.Settings~settings@n:sunspots.main.main/2"
    ],
    [
     "n:sunspots.main.main/3",
@@ -507,11 +523,11 @@
    ],
    [
     "n:sunspots.main.main/4",
-    "t:sunspots.series.Month@n:sunspots.main.main/4"
+    "t:sunspots.series.Month~series@n:sunspots.main.main/4"
    ],
    [
     "n:sunspots.main.main/5",
-    "t:sunspots.series.Smoothed@n:sunspots.main.main/5"
+    "t:sunspots.series.Smoothed~smoothed@n:sunspots.main.main/5"
    ],
    [
     "n:sunspots.main.main/6",
@@ -523,14 +539,14 @@
    ],
    [
     "n:sunspots.main.main/7/1",
-    "t:ext:plotters.prelude.DrawingArea@n:sunspots.main.main/7/1"
+    "t:ext:plotters.prelude.DrawingArea~area@n:sunspots.main.main/7/1"
    ],
    [
     "o:sunspots.main.main/7",
     "w:File:figures/sunspots.png"
    ],
    [
-    "t:ext:plotters.prelude.DrawingArea@n:sunspots.main.main/7/1",
+    "t:ext:plotters.prelude.DrawingArea~area@n:sunspots.main.main/7/1",
     "n:sunspots.main.main/7/2"
    ],
    [
@@ -546,23 +562,27 @@
     "o:sunspots.main.main/7"
    ],
    [
-    "t:sunspots.series.Month@n:sunspots.main.main/4",
+    "t:sunspots.series.Month~series@n:sunspots.main.main/4",
     "n:sunspots.main.main/5"
    ],
    [
-    "t:sunspots.series.Month@n:sunspots.main.main/4",
+    "t:sunspots.series.Month~series@n:sunspots.main.main/4",
     "n:sunspots.main.main/7/2"
    ],
    [
-    "t:sunspots.series.Month@n:sunspots.main.main/4",
+    "t:sunspots.series.Month~series@n:sunspots.main.main/4",
     "o:sunspots.main.main/7"
    ],
    [
-    "t:sunspots.series.Smoothed@n:sunspots.main.main/5",
+    "t:sunspots.series.Record",
+    "n:sunspots.main.main/4"
+   ],
+   [
+    "t:sunspots.series.Smoothed~smoothed@n:sunspots.main.main/5",
     "n:sunspots.main.main/7/2"
    ],
    [
-    "t:sunspots.series.Smoothed@n:sunspots.main.main/5",
+    "t:sunspots.series.Smoothed~smoothed@n:sunspots.main.main/5",
     "o:sunspots.main.main/7"
    ],
    [
@@ -570,16 +590,16 @@
     "n:sunspots.main.main/2"
    ],
    [
-    "t:sunspots.settings.Settings@n:sunspots.main.main/2",
+    "t:sunspots.settings.Settings@n:sunspots.main.main/7/0",
+    "n:sunspots.main.main/7/1"
+   ],
+   [
+    "t:sunspots.settings.Settings~settings@n:sunspots.main.main/2",
     "n:sunspots.main.main/5"
    ],
    [
-    "t:sunspots.settings.Settings@n:sunspots.main.main/2",
+    "t:sunspots.settings.Settings~settings@n:sunspots.main.main/2",
     "n:sunspots.main.main/6"
-   ],
-   [
-    "t:sunspots.settings.Settings@n:sunspots.main.main/7/0",
-    "n:sunspots.main.main/7/1"
    ],
    [
     "w:File:data/raw/sunspots.csv",
@@ -606,11 +626,11 @@
     "parseArgs"
    ],
    [
-    "t:typescript.series.Month@n:typescript.cli.main/4",
+    "t:typescript.series.Month~series@n:typescript.cli.main/4",
     "Month \u00b7 series"
    ],
    [
-    "t:typescript.series.Smoothed@n:typescript.cli.main/5",
+    "t:typescript.series.Smoothed~smoothed@n:typescript.cli.main/5",
     "Smoothed \u00b7 smoothed"
    ],
    [
@@ -618,7 +638,7 @@
     "Settings"
    ],
    [
-    "t:typescript.settings.Settings@n:typescript.cli.main/2",
+    "t:typescript.settings.Settings~settings@n:typescript.cli.main/2",
     "Settings \u00b7 settings"
    ],
    [
@@ -685,7 +705,7 @@
    ],
    [
     "n:typescript.cli.main/2",
-    "t:typescript.settings.Settings@n:typescript.cli.main/2"
+    "t:typescript.settings.Settings~settings@n:typescript.cli.main/2"
    ],
    [
     "n:typescript.cli.main/3",
@@ -697,11 +717,11 @@
    ],
    [
     "n:typescript.cli.main/4",
-    "t:typescript.series.Month@n:typescript.cli.main/4"
+    "t:typescript.series.Month~series@n:typescript.cli.main/4"
    ],
    [
     "n:typescript.cli.main/5",
-    "t:typescript.series.Smoothed@n:typescript.cli.main/5"
+    "t:typescript.series.Smoothed~smoothed@n:typescript.cli.main/5"
    ],
    [
     "n:typescript.cli.main/6",
@@ -716,15 +736,15 @@
     "w:File:figures/sunspots.svg"
    ],
    [
-    "t:typescript.series.Month@n:typescript.cli.main/4",
+    "t:typescript.series.Month~series@n:typescript.cli.main/4",
     "n:typescript.cli.main/5"
    ],
    [
-    "t:typescript.series.Month@n:typescript.cli.main/4",
+    "t:typescript.series.Month~series@n:typescript.cli.main/4",
     "n:typescript.cli.main/6"
    ],
    [
-    "t:typescript.series.Smoothed@n:typescript.cli.main/5",
+    "t:typescript.series.Smoothed~smoothed@n:typescript.cli.main/5",
     "n:typescript.cli.main/6"
    ],
    [
@@ -732,11 +752,11 @@
     "n:typescript.cli.main/2"
    ],
    [
-    "t:typescript.settings.Settings@n:typescript.cli.main/2",
+    "t:typescript.settings.Settings~settings@n:typescript.cli.main/2",
     "n:typescript.cli.main/5"
    ],
    [
-    "t:typescript.settings.Settings@n:typescript.cli.main/2",
+    "t:typescript.settings.Settings~settings@n:typescript.cli.main/2",
     "n:typescript.cli.main/6"
    ],
    [
@@ -773,7 +793,7 @@
    ],
    [
     "atlas-engine.graph_of",
-    "\u25b8 graph_of"
+    "\u25b8 graph_of \u00b7 +24 types"
    ],
    [
     "atlas-engine.language.read",
@@ -792,16 +812,24 @@
     "Options (2)"
    ],
    [
+    "t:atlas-engine.model.Graph@n:atlas-engine.analyze",
+    "Graph (7)"
+   ],
+   [
     "t:atlas-engine.model.Graph@n:atlas-engine.analyze/1",
     "Graph (7)"
    ],
    [
-    "t:atlas-engine.model.Graph@o:atlas-engine.analyze",
-    "Graph (7)"
+    "t:atlas-engine.model.Touch",
+    "Touch (3)"
    ],
    [
-    "t:atlas-engine.repo.Repo@n:atlas-engine.analyze/0",
+    "t:atlas-engine.repo.Repo~repo@n:atlas-engine.analyze/0",
     "Repo (2) \u00b7 repo"
+   ],
+   [
+    "t:atlas-engine.typescript.Body",
+    "typescript.Body (5)"
    ],
    [
     "w:Disk:in",
@@ -814,6 +842,10 @@
    [
     "w:File:package.json",
     "File(package.json)"
+   ],
+   [
+    "w:File:pyproject.toml",
+    "File(pyproject.toml)"
    ]
   ],
   "edges": [
@@ -823,7 +855,7 @@
    ],
    [
     "n:atlas-engine.analyze/0",
-    "t:atlas-engine.repo.Repo@n:atlas-engine.analyze/0"
+    "t:atlas-engine.repo.Repo~repo@n:atlas-engine.analyze/0"
    ],
    [
     "n:atlas-engine.analyze/1",
@@ -831,7 +863,7 @@
    ],
    [
     "o:atlas-engine.analyze",
-    "t:atlas-engine.model.Graph@o:atlas-engine.analyze"
+    "t:atlas-engine.model.Graph@n:atlas-engine.analyze"
    ],
    [
     "t:atlas-engine.Options",
@@ -850,12 +882,20 @@
     "o:atlas-engine.analyze"
    ],
    [
-    "t:atlas-engine.repo.Repo@n:atlas-engine.analyze/0",
+    "t:atlas-engine.model.Touch",
     "n:atlas-engine.analyze/1"
    ],
    [
-    "t:atlas-engine.repo.Repo@n:atlas-engine.analyze/0",
+    "t:atlas-engine.repo.Repo~repo@n:atlas-engine.analyze/0",
+    "n:atlas-engine.analyze/1"
+   ],
+   [
+    "t:atlas-engine.repo.Repo~repo@n:atlas-engine.analyze/0",
     "o:atlas-engine.analyze"
+   ],
+   [
+    "t:atlas-engine.typescript.Body",
+    "n:atlas-engine.analyze/1"
    ],
    [
     "w:Disk:in",
@@ -871,6 +911,10 @@
    ],
    [
     "w:File:package.json",
+    "n:atlas-engine.analyze/1"
+   ],
+   [
+    "w:File:pyproject.toml",
     "n:atlas-engine.analyze/1"
    ]
   ]

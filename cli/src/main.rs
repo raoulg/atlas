@@ -4,6 +4,7 @@ mod log;
 mod mcp;
 mod serve;
 mod shared;
+mod update;
 
 use std::path::{Path, PathBuf};
 
@@ -427,6 +428,9 @@ fn view(
 ) -> Result<()> {
     let (name, html, summary) = page(repos, opts, range.0, range.1, shown)?;
     let out = out.unwrap_or_else(|| made(home, &format!("{name}.html")));
+    if let Some(dir) = out.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
     std::fs::write(&out, html)?;
     eprintln!("{summary} · wrote {}", out.display());
     if shown_in_browser {
@@ -536,6 +540,8 @@ fn columns() -> Option<usize> {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
+    // a person's commands say when a newer build is out; the agent's and the graph's do not
+    let update = if matches!(cli.cmd, Cmd::Mcp | Cmd::Analyze { .. }) { None } else { Some(update::begin()) };
     let cache = if cli.no_cache { None } else { atlas_engine::cache::Cache::new(VERSION.as_str()) };
     let mut opts = Options { libraries: cli.libraries, cache, ..Options::default() };
     match cli.cmd {
@@ -623,6 +629,9 @@ fn main() -> Result<()> {
                 Some(p) => atlas_engine::analyze(&repo, &Options { package: Some(p), ..opts })?,
                 None => parts::analyze_repo(&[repo.clone()], &opts)?,
             };
+            if let Some(dir) = out.parent() {
+                std::fs::create_dir_all(dir)?;
+            }
             std::fs::write(&out, serde_json::to_string(&g)?)?;
             let s = &g.stats;
             eprintln!("{} · {} modules · nodes {:?} · edges {:?}", g.root, s.modules, s.nodes, s.edges);
@@ -643,6 +652,9 @@ fn main() -> Result<()> {
             eprintln!("entries {} · make targets {}", g.nodes.iter().filter(|n| n.entry.is_some()).count(), g.make.len());
             eprintln!("wrote {}", out.display());
         }
+    }
+    if let Some(update) = update {
+        update.finish();
     }
     Ok(())
 }

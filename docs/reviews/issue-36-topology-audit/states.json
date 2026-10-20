@@ -1,0 +1,103 @@
+[
+  {
+    "name": "route",
+    "view": {
+      "route": "rkg.cli.cmd_build"
+    }
+  },
+  {
+    "name": "naslag-open-0",
+    "view": {
+      "route": "rkg.cli.cmd_build",
+      "open": {
+        "steps": [
+          "rkg.cli.cmd_build/4"
+        ]
+      }
+    }
+  },
+  {
+    "name": "naslag-open-1",
+    "view": {
+      "route": "rkg.cli.cmd_build",
+      "open": {
+        "steps": [
+          "rkg.cli.cmd_build/7"
+        ]
+      }
+    }
+  },
+  {
+    "name": "overview",
+    "view": {}
+  },
+  {
+    "name": "part-rkg",
+    "view": {
+      "part": "rkg"
+    }
+  },
+  {
+    "name": "focus-rkg_cli",
+    "view": {
+      "focus": [
+        "rkg.cli"
+      ]
+    }
+  },
+  {
+    "name": "focus-open-rkg_cli",
+    "view": {
+      "focus": [
+        "rkg.cli"
+      ],
+      "open": {
+        "units": [
+          "rkg.cli"
+        ]
+      }
+    }
+  },
+  {
+    "name": "focus-rkg_graph",
+    "view": {
+      "focus": [
+        "rkg.graph"
+      ]
+    }
+  },
+  {
+    "name": "focus-open-rkg_graph",
+    "view": {
+      "focus": [
+        "rkg.graph"
+      ],
+      "open": {
+        "units": [
+          "rkg.graph"
+        ]
+      }
+    }
+  },
+  {
+    "name": "focus-rkg_variant",
+    "view": {
+      "focus": [
+        "rkg.variant"
+      ]
+    }
+  },
+  {
+    "name": "focus-open-rkg_variant",
+    "view": {
+      "focus": [
+        "rkg.variant"
+      ],
+      "open": {
+        "units": [
+          "rkg.variant"
+        ]
+      }
+    }
+  }
+]

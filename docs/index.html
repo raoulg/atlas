@@ -185,6 +185,20 @@ figure.term figcaption{color:#cfc8bd;border-bottom-color:#3a3631}
 figure.term pre{background:transparent;color:#ece6dc;white-space:pre-wrap;overflow-wrap:anywhere}
 figure.term pre .m{color:#b9b0ff}
 section{margin-bottom:104px}
+.flow{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;margin:0 0 22px;font-family:var(--mono);font-size:14px}
+.flow span{background:var(--panel);border:1px solid var(--line);padding:6px 12px}
+.flow i{font-style:normal;color:var(--accent);font-size:18px}
+.readme{background:var(--panel);border:1px solid #D0D7DE;border-radius:6px;max-width:1012px;overflow:hidden}
+.readme .rbar{display:flex;align-items:center;gap:8px;padding:10px 16px;border-bottom:1px solid #D0D7DE;font-size:14px;font-weight:600;color:#1F2328;background:#F6F8FA}
+.readme .rbar svg{width:16px;height:16px;fill:#59636E}
+.readme .rbody{padding:24px 32px 28px;color:#1F2328;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans",Helvetica,Arial,sans-serif}
+.readme h3{font-size:30px;font-weight:600;margin:0 0 4px;padding-bottom:8px;border-bottom:1px solid #D1D9E0}
+.readme .rbody>p{margin:12px 0 18px;font-size:16px}
+.readme .rbody a{display:block}
+.readme .rbody img{width:100%;height:auto;display:block}
+@media (max-width:760px){.readme .rbody{padding:16px 16px 20px}.readme h3{font-size:24px}}
+.readme .rbody>p.drawn{margin:10px 0 0;font-family:var(--mono);font-size:12px;color:#59636E}
+.readme p.drawn b{color:var(--good);font-weight:500}
 @media (max-width:760px){.top nav{display:none}.hero{padding-top:36px}.chap{margin-bottom:72px}}
 </style>
 <script>document.documentElement.classList.add('js')</script>
@@ -200,6 +214,7 @@ section{margin-bottom:104px}
       <a href="#changed">What changed</a>
       <a href="#point">Pointing</a>
       <a href="#design">Designing ahead</a>
+      <a href="#readme">Your README</a>
       <a href="#install">Try it</a>
     </nav>
     <a class="gh" href="https://github.com/raoulg/atlas">github</a>
@@ -228,11 +243,11 @@ section{margin-bottom:104px}
   <div class="pair">
     <figure class="sloppy">
       <figcaption><b>A sloppy script</b><span class="tag">sloppy</span></figcaption>
-      <a class="still"><img src="img/showcase/python-sloppy.png" style="--w:1035" alt="Atlas's picture of the sloppy script: every step reads and changes one global, Global(sunspots.df), and two of them pick their own files"></a>
+      <a class="still"><img src="img/showcase/python-sloppy.png" style="--w:1321" alt="Atlas's picture of the sloppy script: every step reads and changes one global, Global(sunspots.df), and two of them pick their own files"></a>
     </figure>
     <figure class="elegant">
       <figcaption><b>Typed and elegant</b><span class="demo"><a class="try" href="showcase/python-clean.html">Open the live picture and click around &rarr;</a><span class="tag">elegant</span></span></figcaption>
-      <a href="showcase/python-clean.html"><img src="img/showcase/python-clean.png" style="--w:1841" alt="Atlas's picture of the typed pipeline: download runs only when no raw CSV is kept, the CSV stands between download and load, a DataFrame passes from load to smooth to Trend.save, and the command names every file"></a>
+      <a href="showcase/python-clean.html"><img src="img/showcase/python-clean.png" style="--w:1834" alt="Atlas's picture of the typed pipeline: download runs only when no raw CSV is kept, the CSV stands between download and load, a DataFrame passes from load to smooth to Trend.save, and the command names every file"></a>
     </figure>
   </div>
   <p class="explain">Both reach the same places: the web, the raw CSV, the figure. Inside they part. In the sloppy script every step reads and changes one global, <code>Global(sunspots.df)</code>, and nothing is handed from step to step. In the typed one the CSV stands between <code>download</code> and <code>load</code>, a <code>DataFrame</code> goes from step to step, and the command names every file. <span class="dot"></span>A red dot is a question Atlas asks the author. Open the typed one in Atlas and click around: it is a live picture.</p>
@@ -248,15 +263,15 @@ section{margin-bottom:104px}
       <button role="tab" aria-selected="false" aria-controls="lang-ts" id="tab-ts">TypeScript</button>
     </div>
     <div class="stage" role="tabpanel" id="lang-py" aria-labelledby="tab-py">
-      <a href="showcase/python-clean-save.html"><img src="img/showcase/python-clean-save.png" style="--w:2079" alt="Atlas's picture of the typed Python pipeline with Trend.save open: draw gives a Figure, which save writes"></a>
+      <a href="showcase/python-clean-save.html"><img src="img/showcase/python-clean-save.png" style="--w:2072" alt="Atlas's picture of the typed Python pipeline with Trend.save open: draw gives a Figure, which save writes"></a>
       <p class="cap"><b>Python, typed.</b> A pandas <code>DataFrame</code> is handed from step to step, and matplotlib draws the figure. <a class="try" href="showcase/python-clean-save.html">Open the live picture and click around &rarr;</a></p>
     </div>
     <div class="stage" role="tabpanel" id="lang-rs" aria-labelledby="tab-rs">
-      <a href="showcase/rust-clean.html"><img src="img/showcase/rust-clean.png" style="--w:2657" alt="Atlas's picture of the Rust port with Trend.save open: a drawing area on the file, which draw draws into"></a>
+      <a href="showcase/rust-clean.html"><img src="img/showcase/rust-clean.png" style="--w:2653" alt="Atlas's picture of the Rust port with Trend.save open: a drawing area on the file, which draw draws into"></a>
       <p class="cap"><b>Rust, ported.</b> The same web, the same CSV, the same figure, and the same steps between them. What differs are the libraries: where Python hands a <code>DataFrame</code> along, Rust hands a list of <code>Month</code> records, and where matplotlib draws the figure, Rust draws into a <code>DrawingArea</code> on the file. <a class="try" href="showcase/rust-clean.html">Open the live picture and click around &rarr;</a></p>
     </div>
     <div class="stage" role="tabpanel" id="lang-ts" aria-labelledby="tab-ts">
-      <a href="showcase/typescript-clean.html"><img src="img/showcase/typescript-clean.png" style="--w:2112" alt="Atlas's picture of the TypeScript port: parseArgs reads the command line, download runs only when the CSV is missing, and the figure is written as an SVG"></a>
+      <a href="showcase/typescript-clean.html"><img src="img/showcase/typescript-clean.png" style="--w:2082" alt="Atlas's picture of the TypeScript port: parseArgs reads the command line, download runs only when the CSV is missing, and the figure is written as an SVG"></a>
       <p class="cap"><b>TypeScript, ported.</b> The same shape again: <code>parseArgs</code> reads the command line, <code>download</code> runs only when the CSV is missing, and the figure is written as an SVG. <a class="try" href="showcase/typescript-clean.html">Open the live picture and click around &rarr;</a></p>
     </div>
   </div>
@@ -349,6 +364,21 @@ section{margin-bottom:104px}
         <figure class="code term"><figcaption>What is left, when it was decided</figcaption><pre id="rev-decided"></pre></figure>
         <figure class="code term"><figcaption>What is left, now it is built</figcaption><pre id="rev-built"></pre></figure>
       </div>
+    </div>
+  </div>
+</section>
+
+<section class="chap" id="readme">
+  <h2>Your README draws itself.</h2>
+  <p class="lede">Every push redraws the picture of your code in your README. It runs on GitHub, so there is nothing to install on your laptop. <a href="reference/ci.md">How to set it up &rarr;</a></p>
+  <p class="flow" aria-label="git push, then Atlas draws, then the README shows the picture"><span>git push</span><i>&rarr;</i><span>atlas view</span><i>&rarr;</i><span>README.md</span></p>
+  <div class="readme" role="img" aria-label="The README of an imagined project, SOL, whose picture Atlas draws on every push">
+    <div class="rbar"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M0 1.75A.75.75 0 0 1 .75 1h4.253c1.227 0 2.317.59 3 1.501A3.743 3.743 0 0 1 11.006 1h4.245a.75.75 0 0 1 .75.75v10.5a.75.75 0 0 1-.75.75h-4.507a2.25 2.25 0 0 0-1.591.659l-.622.621a.75.75 0 0 1-1.06 0l-.622-.621A2.25 2.25 0 0 0 5.258 13H.75a.75.75 0 0 1-.75-.75Zm7.251 10.324.004-5.073-.002-2.253A2.25 2.25 0 0 0 5.003 2.5H1.5v9h3.757a3.75 3.75 0 0 1 1.994.574ZM8.755 4.75l-.004 7.322a3.752 3.752 0 0 1 1.992-.572H14.5v-9h-3.495a2.25 2.25 0 0 0-2.25 2.25Z"/></svg>README</div>
+    <div class="rbody">
+      <h3>SOL</h3>
+      <p>Sunspot counts since 1749: fetched, smoothed and drawn.</p>
+      <a href="showcase/python-clean.html"><img src="img/showcase/python-clean.png" alt="Atlas's picture of SOL: from the web to the raw CSV, a DataFrame from load to smooth to Trend.save, and the figure"></a>
+      <p class="drawn">drawn by Atlas from <b>3f9c2e1</b>, the last push</p>
     </div>
   </div>
 </section>

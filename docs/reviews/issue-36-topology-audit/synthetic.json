@@ -1,0 +1,92 @@
+{
+  "root": "audit",
+  "language": "python",
+  "nodes": [
+    {
+      "id": "audit",
+      "kind": "module",
+      "name": "audit",
+      "module": "audit"
+    },
+    {
+      "id": "audit.Record",
+      "kind": "class",
+      "name": "Record",
+      "module": "audit",
+      "methods": []
+    },
+    {
+      "id": "audit.main",
+      "kind": "function",
+      "name": "main",
+      "module": "audit",
+      "entry": {
+        "kind": "script",
+        "label": "main"
+      },
+      "sites": [
+        {
+          "to": "audit.consume",
+          "line": 1,
+          "hands": [
+            {
+              "name": "a",
+              "type": "audit.Record"
+            },
+            {
+              "name": "b",
+              "type": "audit.Record"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "audit.consume",
+      "kind": "function",
+      "name": "consume",
+      "module": "audit"
+    }
+  ],
+  "edges": [
+    {
+      "src": "audit.consume",
+      "dst": "audit.Record",
+      "kind": "takes"
+    }
+  ],
+  "flow": {
+    "bodies": {
+      "audit.main": {
+        "items": [
+          {
+            "to": "audit.consume",
+            "site": 0
+          }
+        ]
+      },
+      "audit.consume": {
+        "items": []
+      }
+    },
+    "arrows": {
+      "audit.consume": {
+        "takes": [
+          "audit.Record"
+        ]
+      }
+    },
+    "types": {},
+    "units": {
+      "tops": [
+        [
+          "audit",
+          [
+            "audit"
+          ]
+        ]
+      ],
+      "kids": {}
+    }
+  }
+}

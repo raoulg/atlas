@@ -12,7 +12,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes
+      - run: |
+          case "$GITHUB_REF_NAME" in *-*) pre=--prerelease ;; *) pre= ;; esac
+          gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes $pre
         env:
           GH_TOKEN: ${{ github.token }}
 
@@ -65,14 +67,15 @@ jobs:
   # It needs the secret TAP_TOKEN (a token with Contents: write on that repository only); without
   # it the job says so and does nothing.
   tap:
-    needs: build
+    needs: [build, install]
+    if: ${{ !contains(github.ref_name, '-') }}
     runs-on: ubuntu-latest
     steps:
       - env:
           GH_TOKEN: ${{ github.token }}
           TAP_TOKEN: ${{ secrets.TAP_TOKEN }}
         run: |
-          if [ -z "$TAP_TOKEN" ]; then echo "no TAP_TOKEN: the tap is not updated"; exit 0; fi
+          if [ -z "$TAP_TOKEN" ]; then echo "::warning::no TAP_TOKEN: the tap is not updated"; exit 0; fi
           version="${GITHUB_REF_NAME#v}"
           gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --pattern '*.tar.gz' --dir assets
           git clone "https://x-access-token:${TAP_TOKEN}@github.com/raoulg/homebrew-tap.git" tap
@@ -93,5 +96,7 @@ jobs:
           cd tap
           git config user.name "atlas release"
           git config user.email "atlas@users.noreply.github.com"
+          git diff --quiet && { echo "the tap already names ${version}"; exit 0; }
           git commit -am "Atlas ${version}"
+          git pull --rebase
           git push

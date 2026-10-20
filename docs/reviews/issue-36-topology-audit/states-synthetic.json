@@ -1,0 +1,8 @@
+[
+  {
+    "name": "two-values",
+    "view": {
+      "route": "audit.main"
+    }
+  }
+]
