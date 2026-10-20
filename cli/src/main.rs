@@ -114,15 +114,16 @@ fn banner() -> String {
 fn examples() -> String {
     let (head, cmd, dim) = (STYLES.get_header(), STYLES.get_literal(), Style::new().effects(Effects::DIMMED));
     let rows = [
-        ("atlas serve", "the repository you are in, as a page to work in with your agent"),
-        ("atlas view", "the same picture as one HTML file, opened in the browser"),
+        ("atlas serve", "a page to work in with your agent"),
+        ("atlas view", "the same picture as one HTML file"),
         ("atlas view ../api ../web", "two repositories as parts of one picture"),
-        ("atlas view notebooks/explore.ipynb", "one file, read with its project, opened on its route"),
+        ("atlas view notebooks/explore.ipynb", "one file, opened on its route"),
         ("atlas view https://github.com/o/r/tree/main/src/pkg", "one folder of a repository on GitHub"),
-        ("atlas check", "where the code and the design principles disagree"),
-        ("atlas changes", "what your edits did to the routes, their places and the findings"),
+        ("atlas check", "where code and principles disagree"),
+        ("atlas revelation", "what is left to build"),
+        ("atlas changes", "what your edits did to the routes"),
         ("atlas changes v1..main", "what changed between two revisions"),
-        ("atlas history", "the history in the browser: pick two commits, see one picture of both"),
+        ("atlas history", "pick two commits, see them as one picture"),
         ("claude mcp add atlas -- atlas mcp", "give Claude Code the same picture"),
     ];
     let mut s = format!("{head}Examples:{head:#}\n");
@@ -148,56 +149,69 @@ fn examples() -> String {
 struct Cli {
     #[command(subcommand)]
     cmd: Cmd,
-    /// How far to read into the libraries the code calls: 0 not at all, 1 the modules its calls go into, 2 also the modules of those libraries they call, and so on
-    #[arg(long, global = true, default_value_t = 1, value_name = "ROUNDS")]
+    /// How far to read into the libraries the code calls
+    ///
+    /// 0 not at all, 1 the modules its calls go into, 2 also the modules of those libraries they
+    /// call, and so on.
+    #[arg(long, global = true, default_value_t = 1, value_name = "ROUNDS", help_heading = "Global options")]
     libraries: usize,
     /// Read everything anew: use nothing earlier readings kept, and keep nothing
-    #[arg(long, global = true)]
+    #[arg(long, global = true, help_heading = "Global options")]
     no_cache: bool,
 }
 
 #[derive(Subcommand)]
 enum Cmd {
-    /// Serve a repository's page on this machine, drawn anew when its code changes and shared with
+    /// The picture of a repository as a page to work in with your agent
+    ///
+    /// Serves a repository's page on this machine, drawn anew when its code changes and shared with
     /// an agent: what the page shows, where the agent points it, and the notes written on its boxes
-    /// and lines (`atlas mcp`: `shown`, `look`, `notes`, `resolve`)
+    /// and lines (`atlas mcp`: `shown`, `look`, `notes`, `resolve`).
     Serve {
         /// Repository root; default: the current directory.
         repo: Option<PathBuf>,
-        /// The port to serve at, on 127.0.0.1; default: the repository's own, the same each time so
-        /// that a link to a place in it keeps working, else a free one; 0: a free one.
+        /// The port to serve at, on 127.0.0.1
+        ///
+        /// Default: the repository's own, the same each time so that a link to a place in it keeps
+        /// working, else a free one; 0: a free one.
         #[arg(long)]
         port: Option<u16>,
         /// Serve without opening a browser.
         #[arg(long)]
         no_open: bool,
     },
-    /// Write the picture of one or more repositories as one HTML file and open it: what `atlas serve`
-    /// exports.
+    /// The same picture as one HTML file, to keep or send
+    ///
+    /// Writes the picture of one or more repositories as one HTML file and opens it: what `atlas
+    /// serve` exports.
     View {
-        /// Repository roots, files or git URLs (a `…/tree/<ref>/<folder>` URL names one folder; a file is read with its project, even where git ignores it, and the page opens on its route); default:
-        /// the current directory. Several become parts of one page.
+        /// Repository roots, files or git URLs; default: the current directory
+        ///
+        /// Several become parts of one page. A `…/tree/<ref>/<folder>` URL names one folder; a file
+        /// is read with its project, even where git ignores it, and the page opens on its route.
         repos: Vec<PathBuf>,
-        /// Where to write the page; default: `.atlas/<project>.html` at the top of the git
-        /// repository it is in.
+        /// Where to write the page; default: `.atlas/<project>.html` at the top of the repository
         #[arg(long)]
         out: Option<PathBuf>,
         /// Write the page without opening a browser.
         #[arg(long)]
         no_open: bool,
-        /// Draw this git revision and the working tree as one picture, marking what was added,
-        /// removed and changed since it (one repository).
+        /// Draw this revision and the working tree as one picture
+        ///
+        /// What was added, removed and changed since it is marked (one repository).
         #[arg(long)]
         since: Option<String>,
         /// With `--since`: compare with this revision instead of the working tree.
         #[arg(long, requires = "since")]
         until: Option<String>,
-        /// Open the page in this view, as JSON: `{"route": <entry id>, "open": {"functions": [<id>, ..]}}`, and
-        /// `kind`, `part`, `focus`, and the opened `parts`, `units`, `steps`, `families`, `places`, `dirs`, as the page's address writes them.
+        /// Open the page in this view, as JSON: `{"route": <entry id>}`
+        ///
+        /// Also `"open": {"functions": [<id>, ..]}`, and `kind`, `part`, `focus`, and the opened
+        /// `parts`, `units`, `steps`, `families`, `places`, `dirs`, as the page's address writes them.
         #[arg(long, value_name = "JSON")]
         view: Option<String>,
     },
-    /// List where the code and the design principles disagree, each with a question.
+    /// Where the code and the design principles disagree, each with a question
     Check {
         /// Repository root or git URL; default: the current directory.
         repo: Option<PathBuf>,
@@ -205,18 +219,24 @@ enum Cmd {
         #[arg(long)]
         json: bool,
     },
-    /// Every prophecy in the tree, what it replaces and what is left of it: sketch code marked as
-    /// not built yet.
+    /// The sketch code kept in the tree, and what is left to build
+    ///
+    /// Every prophecy in the tree (sketch code marked as not built yet), what it replaces and what
+    /// is left of it.
     Revelation {
         /// Repository root or git URL; default: the current directory.
         repo: Option<PathBuf>,
         /// Print the standings as JSON.
         #[arg(long)]
         json: bool,
-        /// Only the sealed prophecies, with the state of the issue each waits on (asked of GitHub with `gh`).
+        /// Only the sealed prophecies, with the state of the issue each waits on
+        ///
+        /// The state is asked of GitHub with `gh`.
         #[arg(long)]
         seals: bool,
     },
+    /// What your edits did to the routes, their places and the findings
+    ///
     /// What the working tree changes against a git revision, or one revision against another:
     /// routes, their steps and places, findings.
     Changes {
@@ -229,9 +249,14 @@ enum Cmd {
         #[arg(long)]
         json: bool,
     },
-    /// Serve Atlas to a coding agent over MCP (stdio): principles, check, explain, routes, route, view, changes, and with `atlas serve`, shown, look, notes, answer.
+    /// The picture for your coding agent, over MCP
+    ///
+    /// Serves Atlas to a coding agent over MCP (stdio): principles, check, explain, routes, route,
+    /// view, changes, and with `atlas serve`, shown, look, notes, answer.
     Mcp,
-    /// Serve a repository's history on this machine and open it in the browser: its commits, and
+    /// The history in your browser: pick two commits, see them as one picture
+    ///
+    /// Serves a repository's history on this machine and opens it in the browser: its commits, and
     /// the picture of one of them or of two as one.
     History {
         /// Repository root; default: the current directory.
@@ -243,15 +268,14 @@ enum Cmd {
         #[arg(long)]
         no_open: bool,
     },
-    /// Write a repository's graph as JSON.
+    /// A repository's graph as JSON
     Analyze {
         /// Repository root, a package directory, or a git URL.
         repo: PathBuf,
         /// Package directory, when discovery picks the wrong one.
         #[arg(long)]
         package: Option<PathBuf>,
-        /// Where to write the graph; default: `.atlas/graph.json` at the top of the git repository
-        /// it is in.
+        /// Where to write the graph; default: `.atlas/graph.json` at the top of the repository
         #[arg(short, long)]
         out: Option<PathBuf>,
     },
