@@ -1,8 +1,11 @@
 name: nightly
 
-# The nightly build of `next`: a pre-release named `nightly`, replaced when `next` has moved and
-# `ci` is green for its commit. A pre-release is never `releases/latest`, so the stable install is
-# not touched. `release.yml` makes the stable release from a `v*` tag on `main`.
+# The nightly build of `next`, made when `next` has moved and `ci` is green for its commit. Every
+# build is its own immutable pre-release, `nightly-<yyyymmddHHMM>`, which the tap's formula names
+# with its checksums; the newest seven are kept. The pre-release `nightly` is the moving pointer
+# `install.sh` reads: its assets are replaced in place and its tag moved to the build. A
+# pre-release is never `releases/latest`, so the stable install is not touched. `release.yml`
+# makes the stable release from a `v*` tag on `main`.
 
 on:
   schedule:
@@ -24,6 +27,7 @@ jobs:
     outputs:
       build: ${{ steps.pick.outputs.build }}
       sha: ${{ steps.pick.outputs.sha }}
+      stamp: ${{ steps.pick.outputs.stamp }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -34,9 +38,10 @@ jobs:
           FORCE: ${{ inputs.force }}
         run: |
           sha=$(git rev-parse HEAD)
-          last=$(gh release view nightly --json targetCommitish -q .targetCommitish 2>/dev/null || echo none)
+          last=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/nightly" -q .object.sha 2>/dev/null || echo none)
           ci=$(gh run list --workflow ci.yml --branch next --commit "$sha" --json conclusion -q '.[0].conclusion' 2>/dev/null || echo none)
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "stamp=$(date -u +%Y%m%d%H%M)" >> "$GITHUB_OUTPUT"
           if [ "$FORCE" = true ]; then
             echo "build=true" >> "$GITHUB_OUTPUT"
           elif [ "$last" = "$sha" ]; then
@@ -96,13 +101,22 @@ jobs:
       - env:
           GH_TOKEN: ${{ github.token }}
           SHA: ${{ needs.decide.outputs.sha }}
+          STAMP: ${{ needs.decide.outputs.stamp }}
         run: |
-          gh release delete nightly --cleanup-tag --yes --repo "$GITHUB_REPOSITORY" || true
-          gh release create nightly dist/* --repo "$GITHUB_REPOSITORY" --prerelease --target "$SHA" \
-            --title "nightly" --notes "The nightly build of next at ${SHA:0:7}, $(date -u +%Y-%m-%d). Not a release: install it with ATLAS_CHANNEL=nightly, or with brew install raoulg/tap/atlas-code-nightly."
+          notes="The nightly build of next at ${SHA:0:7}, ${STAMP}. Not a release: install it with ATLAS_CHANNEL=nightly, or with brew install raoulg/tap/atlas-code-nightly."
+          gh release create "nightly-$STAMP" dist/* --repo "$GITHUB_REPOSITORY" --prerelease --target "$SHA" \
+            --title "nightly $STAMP" --notes "$notes"
+          if gh release view nightly --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/nightly" -f sha="$SHA" -F force=true >/dev/null
+            gh release upload nightly dist/* --repo "$GITHUB_REPOSITORY" --clobber
+            gh release edit nightly --repo "$GITHUB_REPOSITORY" --notes "$notes"
+          else
+            gh release create nightly dist/* --repo "$GITHUB_REPOSITORY" --prerelease --target "$SHA" \
+              --title "nightly" --notes "$notes"
+          fi
 
-  # `brew install raoulg/tap/atlas-code-nightly`: the tap's formula of the nightly, written from the
-  # binaries just published (`TAP_TOKEN` is a token that may write to the tap).
+  # `brew install raoulg/tap/atlas-code-nightly`: the tap's formula of the nightly, naming the
+  # immutable pre-release just published (`TAP_TOKEN` is a token that may write to the tap).
   tap:
     needs: [decide, publish]
     runs-on: ubuntu-latest
@@ -122,12 +136,29 @@ jobs:
           path: tap
       - env:
           SHA: ${{ needs.decide.outputs.sha }}
+          STAMP: ${{ needs.decide.outputs.stamp }}
         run: |
           base=$(grep -m1 '^version' atlas/Cargo.toml | cut -d'"' -f2)
-          python3 atlas/tools/tap_formula.py dist "$base" "$(date -u +%Y%m%d%H%M)" > tap/Formula/atlas-code-nightly.rb
+          python3 atlas/tools/tap_formula.py dist "$base" "$STAMP" > tap/Formula/atlas-code-nightly.rb
           cd tap
           git config user.name "atlas nightly"
           git config user.email "noreply@github.com"
           git add Formula/atlas-code-nightly.rb
+          git diff --cached --quiet && { echo "the tap already names nightly-$STAMP"; exit 0; }
           git commit -m "The tap: the nightly of ${SHA:0:7}"
+          git pull --rebase
           git push
+
+  # The newest seven nightly builds stay; a formula a user has not updated yet names one of them.
+  prune:
+    needs: tap
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release list --repo "$GITHUB_REPOSITORY" --limit 200 --json tagName,createdAt \
+            -q '[.[] | select(.tagName | startswith("nightly-"))] | sort_by(.createdAt) | reverse | .[7:] | .[].tagName' |
+            while read -r tag; do
+              gh release delete "$tag" --cleanup-tag --yes --repo "$GITHUB_REPOSITORY"
+            done
