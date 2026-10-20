@@ -14,7 +14,7 @@ use walkdir::WalkDir;
 
 mod paths;
 
-use crate::body::{Crosses, Step, Steps};
+use crate::body::{Crosses, Step, Steps, UseSyntax};
 pub use crate::builder::{foreign_type, ClassInfo, GraphBuilder, SigInfo};
 use crate::effects::{self, Crossing};
 use crate::knowledge;
@@ -2459,11 +2459,13 @@ fn link_calls<'t>(
     let Some(d) = def_node(m, &n) else { return Linked::default() };
     let in_module = n.kind == NodeKind::Module;
     let Some(body) = (if in_module { Some(d) } else { d.child_by_field_name("body") }) else { return Linked::default() };
-    let mut steps = Steps::new(body, &m.src, &CHOICES);
+    let mut steps = Steps::new(body, &m.src, &CHOICES, &USES);
     let read = {
         let mut b = Body::new(Seen::new(m, types, sites, modules, store, own), modules, ext, eval, &n, d, body);
         for c in b.calls() {
+            let (t, w) = (b.read.touches.len(), b.read.waiting.len());
             b.call(&mut steps, c);
+            steps.mark(c, b.read.touches[t..].iter_mut().chain(b.read.waiting[w..].iter_mut().map(|(t, _)| t)));
         }
         b.ends();
         b.read
@@ -3209,6 +3211,22 @@ const CHOICES: ChoiceSyntax = ChoiceSyntax {
             _ => Part::Through,
         }
     },
+};
+
+/// Where Python's values go: `x = v`, `x += v`, `for x in v`, `(x := v)`; `return` and `yield`
+/// leave; `raise` and `assert` fail.
+const USES: UseSyntax = UseSyntax {
+    binds: |n| match n.kind() {
+        "assignment" | "augmented_assignment" | "for_statement" => n.child_by_field_name("left").zip(n.child_by_field_name("right")),
+        "named_expression" => n.child_by_field_name("name").zip(n.child_by_field_name("value")),
+        _ => None,
+    },
+    leaves: |n, _| matches!(n.kind(), "return_statement" | "yield"),
+    fails: |n, _| matches!(n.kind(), "raise_statement" | "assert_statement"),
+    hands: |n, child| n.kind() == "call" && n.child_by_field_name("arguments").map(|a| a.id()) == Some(child.id()),
+    splits: |n, child| n.kind() == "match_statement" && n.child_by_field_name("subject").map(|v| v.id()) == Some(child.id()),
+    names: &["identifier"],
+    keeps: &["attribute", "subscript"],
 };
 
 /// The string literals an operand names: `"a"`, or every element of `{"a", "b"}`.

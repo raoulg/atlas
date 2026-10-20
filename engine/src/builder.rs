@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use indexmap::IndexMap;
 
-use crate::model::{Bucket, Edge, EdgeKind, Entry, EntryKind, Graph, Node, NodeKind, Stats, Touch, Unresolved, World};
+use crate::model::{Bucket, Dir, Edge, EdgeKind, Entry, EntryKind, Graph, Node, NodeKind, Stats, Touch, Unresolved, World};
 
 /// Per-class facts that only matter during resolution.
 #[derive(Default, Clone, Debug)]
@@ -154,6 +154,8 @@ impl GraphBuilder {
 
     pub fn touch(&mut self, id: &str, t: Touch) {
         let Some(n) = self.nodes.get_mut(id) else { return };
+        // only what is read can be a check
+        let t = Touch { checks: t.checks && t.dir == Some(Dir::Read), ..t };
         match n
             .touches
             .iter_mut()
@@ -161,6 +163,8 @@ impl GraphBuilder {
         {
             Some(x) => {
                 x.n += 1;
+                // one call that uses what it reads makes the touch a use
+                x.checks &= t.checks;
                 // whole in its own function is whole in every route; else in the routes of each
                 let whole_here = |y: &Touch| y.by.is_empty() && y.users_of.is_empty();
                 let here = whole_here(x) || whole_here(&t);

@@ -18,7 +18,7 @@ mod paths;
 
 use paths::{Arg, At, Eval};
 
-use crate::body::{Crosses, Step, Steps};
+use crate::body::{Crosses, Step, Steps, UseSyntax};
 use crate::builder::{foreign_type, ClassInfo, GraphBuilder, SigInfo};
 use crate::effects::{self, Crossing};
 use crate::knowledge;
@@ -1821,11 +1821,13 @@ fn link_calls<'t>(
             None => return,
         },
     };
-    let mut steps = Steps::new(body, &m.src, &CHOICES);
+    let mut steps = Steps::new(body, &m.src, &CHOICES, &USES);
     let read = {
         let mut b = Body::new(m, modules, store, &n, body, returned, eval);
         for c in b.sites.clone() {
+            let (t, w) = (b.read.touches.len(), b.read.calls.len());
             b.call(&mut steps, c);
+            steps.mark(c, b.read.touches[t..].iter_mut().chain(b.read.calls[w..].iter_mut().map(|(t, _)| t)));
         }
         b.ends();
         b.read
@@ -2754,6 +2756,26 @@ fn package_from_ext(id: &str, pkgs: &HashSet<String>) -> String {
 
 /// TypeScript's choices: `if`/`else if`/`else`, `a ? b : c`, `switch`, `try`/`catch`,
 /// `x ?? y` and `x || y`.
+/// Where TypeScript's values go: `const x = v`, `x = v`, `x += v`, `for (const x of v)`; `return`
+/// and `yield` leave; `throw` fails.
+const USES: UseSyntax = UseSyntax {
+    binds: |n| match n.kind() {
+        "variable_declarator" => n.child_by_field_name("name").zip(n.child_by_field_name("value")),
+        "assignment_expression" | "augmented_assignment_expression" | "for_in_statement" => {
+            n.child_by_field_name("left").zip(n.child_by_field_name("right"))
+        }
+        _ => None,
+    },
+    leaves: |n, _| matches!(n.kind(), "return_statement" | "yield_expression"),
+    fails: |n, _| n.kind() == "throw_statement",
+    hands: |n, child| {
+        matches!(n.kind(), "call_expression" | "new_expression") && n.child_by_field_name("arguments").map(|a| a.id()) == Some(child.id())
+    },
+    splits: |n, child| n.kind() == "switch_statement" && n.child_by_field_name("value").map(|v| v.id()) == Some(child.id()),
+    names: &["identifier", "shorthand_property_identifier"],
+    keeps: &["member_expression", "subscript_expression"],
+};
+
 const CHOICES: ChoiceSyntax = ChoiceSyntax {
     chooses: |n, src| match n.kind() {
         "if_statement" | "ternary_expression" | "switch_body" | "try_statement" => true,
