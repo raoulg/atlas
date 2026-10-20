@@ -115,6 +115,10 @@ brew "atlas-code-nightly"                 # the nightly; `brew "atlas-code"` is 
 
 `brew install --HEAD raoulg/tap/atlas-code` builds `next` from source instead (it needs Rust).
 
+**Nothing to install on your machine**, a managed laptop for instance: a GitHub workflow draws the
+page on GitHub's runners and publishes it, to open in the browser. See
+[the picture in your README, always current](docs/reference/ci.md).
+
 `atlas --version` says which one you have: `0.66.2`, or `0.67.0-nightly (b0ead14)`.
 
 Once a day, `atlas serve`, `view`, `check`, `changes`, `history` and `revelation` tell you on stderr when a
@@ -147,9 +151,14 @@ binary's full path, which `command -v atlas` prints. From then on `atlas serve` 
 is all it takes: the agent's `atlas mcp` works on the repository the agent runs in, and shares the
 page with you.
 
+**Your README** can show the picture of the code as it is: a GitHub workflow draws it anew on every
+push, or a commit hook before every commit. The workflow can also check every pull request and draw
+what it changed. [How to set it up](docs/reference/ci.md).
+
 ## More
 
 - [**The tour**](https://raoulg.github.io/atlas/): the same pictures on one page, to click through.
+- [**The picture in your README, always current**](docs/reference/ci.md): a GitHub workflow or a commit hook.
 - [**The guide**](docs/reference/guide.md), [**the principles**](docs/reference/principles.md), [**the mathematics**](docs/reference/mathematics.md) and [**the design**](docs/reference/design.md).
 - [**For agents**](docs/llms.txt): what Atlas is for and how an agent should use it, then the design,
   the principles and the guide, written to be read in one go.

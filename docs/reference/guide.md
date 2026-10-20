@@ -387,3 +387,9 @@ runs in, so `atlas serve` in any repository is all it takes. Any other MCP clien
 command: `{"command": "atlas", "args": ["mcp"]}`, with the full path where the client does not
 pass on your `PATH`.
 
+## Keep the picture in your README current
+
+A GitHub workflow can draw the page and its picture on every push and publish them on GitHub Pages,
+so the README always shows the code as it is; a commit hook does the same before every commit. The
+workflow needs nothing installed on your own machine. [The how-to](ci.md) has the workflow, the hook
+and the script that takes the picture.
