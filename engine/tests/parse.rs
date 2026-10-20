@@ -1,8 +1,17 @@
 use std::collections::HashSet;
 use std::path::PathBuf;
+use std::sync::OnceLock;
 
 use atlas_engine::view::{by_module, hide_private, reach_from, Compose, View};
 use atlas_engine::{analyze, EdgeKind, EntryKind, Graph, NodeKind, Options};
+
+/// The Atlas workspace, read once for the tests that read it.
+fn atlas() -> &'static Graph {
+    static G: OnceLock<Graph> = OnceLock::new();
+    G.get_or_init(|| {
+        analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(".."), &Options::default()).expect("the Atlas workspace parses")
+    })
+}
 
 fn fixture() -> Graph {
     let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixture");
@@ -519,8 +528,7 @@ fn files_and_tables_are_places() {
 /// A Rust workspace parses; the sample is this workspace.
 #[test]
 fn rust_workspace_parses() {
-    let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
-    let g = analyze(&repo, &Options::default()).expect("the Atlas workspace parses");
+    let g = atlas();
     let ids: HashSet<&str> = g.nodes.iter().map(|n| n.id.as_str()).collect();
     for id in ["atlas-engine", "atlas-engine.model", "atlas-engine.view", "atlas-engine.python", "atlas-engine.rust", "atlas"] {
         assert!(ids.contains(id), "module {id}");
@@ -670,8 +678,7 @@ fn rust_workspace_parses() {
 /// not the picture.
 #[test]
 fn atlas_reads_as_its_algebra() {
-    let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
-    let g = analyze(&repo, &Options::default()).expect("the Atlas workspace parses");
+    let g = atlas();
     let classes: HashSet<&str> = g.nodes.iter().filter(|n| n.kind == NodeKind::Class).map(|n| n.id.as_str()).collect();
     let name = |id: &str| id.rsplit('.').next().unwrap().to_string();
     let steps_of = |f: &str| g.edges.iter().filter(|e| e.src == f && e.kind == EdgeKind::Calls).map(|e| e.dst.as_str()).collect::<Vec<_>>();
@@ -955,8 +962,7 @@ fn a_door_reaches_a_service() {
 /// defined.
 #[test]
 fn a_rust_body_lists_its_calls() {
-    let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
-    let g = analyze(&repo, &Options::default()).expect("the Atlas workspace parses");
+    let g = atlas();
     let analyze_fn = g.nodes.iter().find(|n| n.id == "atlas-engine.graph_of").unwrap();
     let step = |to: &str| analyze_fn.sites.iter().find(|s| s.to == to).unwrap_or_else(|| panic!("{to} in {:#?}", analyze_fn.sites));
     let held = |ty: &str, name: &str| atlas_engine::Held::new(ty, name);
@@ -988,7 +994,7 @@ fn parse_is_a_function() {
         serde_json::to_string(&analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(repo), &Options::default()).unwrap()).unwrap()
     };
     for repo in ["tests/fixture", "tests/fixture-rs", "tests/fixture-ts", ".."] {
-        let first = json(repo);
+        let first = if repo == ".." { serde_json::to_string(atlas()).unwrap() } else { json(repo) };
         for _ in 0..3 {
             assert!(json(repo) == first, "{repo} reads differently the second time");
         }
@@ -1010,7 +1016,7 @@ fn a_call_inside_a_call_is_composition() {
     assert!(steps[2].hands.contains(&steps[1].gives[0]), "run is called on what Pipeline gives");
 
     // `let lang = language::of(repo, opts)?`: the unwrapping is an identity
-    let atlas = analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(".."), &Options::default()).unwrap();
+    let atlas = atlas();
     let analyze_steps: Vec<&str> = atlas
         .node("atlas-engine.graph_of")
         .unwrap()
@@ -1044,7 +1050,7 @@ fn a_body_is_what_a_route_runs() {
         "`self.sink.write(..)` on the sink the pipeline holds: {run:?}"
     );
 
-    let atlas = analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(".."), &Options::default()).unwrap();
+    let atlas = atlas();
     let bodies = atlas_engine::flow::bodies(&atlas);
     let mut alts = bodies["atlas-engine.language.Language.parse"].alts.clone();
     alts.sort();
