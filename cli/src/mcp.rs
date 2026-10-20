@@ -378,6 +378,9 @@ fn call(name: &str, args: &Value, opts: &Options) -> Option<Result<String, Strin
                 |(name, html, _)| {
                     let home = clone.is_none().then_some(repo.as_path());
                     let out = text("out").map(PathBuf::from).unwrap_or_else(|| crate::made(home, &format!("{name}.view.html")));
+                    if let Some(dir) = out.parent() {
+                        std::fs::create_dir_all(dir).map_err(|e| format!("Could not make {}: {e}", dir.display()))?;
+                    }
                     std::fs::write(&out, html).map_err(|e| format!("Could not write {}: {e}", out.display()))?;
                     Ok(format!(
                         "Wrote {}. Open it in a browser, or hand the file to the person you work with; once open, its address holds the view, to share as a link.",

@@ -97,3 +97,20 @@ fn what_atlas_makes_goes_to_atlas_at_the_top_of_the_repository() {
     assert_eq!(names, [".gitignore", "graph.json", "made.html"]);
     assert!(ignore.lines().any(|l| l == "*"), "the folder ignores itself: {ignore:?}");
 }
+
+/// An `--out` in a folder that does not exist yet makes that folder, for the page and the graph.
+#[test]
+fn out_makes_the_folders_it_names() {
+    let repo = scratch("out");
+    std::fs::create_dir_all(&repo).unwrap();
+    std::fs::write(repo.join("pyproject.toml"), "[project]\nname = \"out\"\nversion = \"0\"\n").unwrap();
+    std::fs::write(repo.join("out.py"), "def go() -> int:\n    return 1\n").unwrap();
+    let page = repo.join("site").join("deep").join("index.html");
+    let graph = repo.join("graphs").join("graph.json");
+    atlas(&["view", repo.to_str().unwrap(), "--no-open", "--out", page.to_str().unwrap()]);
+    atlas(&["analyze", repo.to_str().unwrap(), "-o", graph.to_str().unwrap()]);
+    let (page_made, graph_made) = (page.is_file(), graph.is_file());
+    let _ = std::fs::remove_dir_all(&repo);
+    assert!(page_made, "the page is written to {}", page.display());
+    assert!(graph_made, "the graph is written to {}", graph.display());
+}
