@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use indexmap::IndexMap;
 use tree_sitter::Node as TsNode;
 
-use super::module::{def_node, expand, path_parts, resolve, resolve_value, Module};
+use super::module::{def_node, expand, path_parts, resolve, resolve_value, shadowed, Module};
 use crate::knowledge::{self, PathFn, PathMethod};
 use crate::model::{Node, NodeKind};
 use crate::paths::{cross, environment_named, hole, lit, or_else, parent, substitute, union, Built, Seg};
@@ -447,15 +447,17 @@ impl<'a> Eval<'a> {
             Some(PathFn::Environment) => {
                 vec![environment_named(&arg(0)).unwrap_or_else(|| hole(parts.last().map(String::as_str).unwrap_or("call")))]
             }
-            None => self
-                .given(at, &path_parts(Some(f), src), &args, depth)
-                .unwrap_or_else(|| vec![hole(parts.last().map(String::as_str).unwrap_or("call"))]),
+            None => self.given(at, f, &args, depth).unwrap_or_else(|| vec![hole(parts.last().map(String::as_str).unwrap_or("call"))]),
         }
     }
 
     /// What one of the program's functions gives back, its parameters bound to what the call
-    /// hands them.
-    fn given(&self, at: At<'a, '_>, parts: &[String], args: &[TsNode<'a>], depth: u32) -> Option<Vec<Built>> {
+    /// hands them; none where the path `f` names a local of the body.
+    fn given(&self, at: At<'a, '_>, f: TsNode<'a>, args: &[TsNode<'a>], depth: u32) -> Option<Vec<Built>> {
+        let parts = &path_parts(Some(f), &at.m.src);
+        if shadowed(at.scope, f, parts, &at.m.src) {
+            return None;
+        }
         let id = resolve_value(at.m, parts, self.modules, &self.nodes, self.crate_ids).filter(|id| !id.starts_with("ext:"))?;
         let n = self.nodes.get(&id).filter(|n| matches!(n.kind, NodeKind::Function | NodeKind::Method))?;
         let home = self.modules.get(&n.module)?;
