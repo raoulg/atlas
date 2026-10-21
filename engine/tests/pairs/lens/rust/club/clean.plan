@@ -1,6 +1,7 @@
 # A lens on a table: `join` puts a Member into `members` and `member` gets one back from it; `latest` only gets a
 # Report, which holds a Member, from `reports`. The place is the table the statement names. The route of the exported
-# struct is its public functions, each called by its caller, run on the Register `new` built.
+# struct is its public functions, each called by its caller and run on the caller's Register; what `new` builds goes
+# back to that caller.
 
 route club.desk.Register
 step Register()/Register.new
@@ -21,9 +22,9 @@ known #74 line Connection·conn > Register()/Register.new/Register() value   # t
 line Register()/Register.new/Register() > Register@Register()/Register.new/Register() value
 line Register@Register()/Register.new/Register() > Register()/Register.new value
 line Register()/Register.new > Register@Register()/Register.new value
-line Register@Register()/Register.new > Register()/Register.join value
-line Register@Register()/Register.new > Register()/Register.member value
-line Register@Register()/Register.new > Register()/Register.latest value
+known #74 line Register > Register()/Register.join value   # the caller's instance: every method runs on it
+known #74 line Register > Register()/Register.member value
+known #74 line Register > Register()/Register.latest value
 
 known #new line Member·who > Register()/Register.join value     # new-A
 line Register()/Register.join > SQLite(members) own
@@ -43,6 +44,7 @@ line Register()/Register.latest > Report@Register()/Register.latest value
 known #new home Connection·conn Register()
 home Register@Register()/Register.new/Register() Register()/Register.new
 home Register@Register()/Register.new Register()
+known #74 home Register Register()
 known #new home Member·who Register()
 home Member@Register()/Register.member/Member() Register()/Register.member
 home Member@Register()/Register.member Register()
@@ -64,3 +66,8 @@ known #new extra home Connection Register()
 known #74 extra line Connection > Register()/Register.new value
 # new-B: an opened step's own arrow takes every class its steps build: latest gives back the Report, not its author
 known #new extra line Member@Register()/Register.latest/Member() > Register()/Register.latest value
+
+# what the constructor builds goes back to its caller: Atlas runs the methods on it instead of the caller's instance
+known #74 extra line Register@Register()/Register.new > Register()/Register.join value
+known #74 extra line Register@Register()/Register.new > Register()/Register.member value
+known #74 extra line Register@Register()/Register.new > Register()/Register.latest value

@@ -1,8 +1,8 @@
 # A job run in one of two modes. Each choice is made once, in a place with a name: what a mode means is `Mode::plan`,
 # one match building a Plan in either arm, called wherever a mode's plan is wanted; where the job comes from is the
 # body of `source`; `report` builds its Message by one struct expression in either arm, the level's own method marking
-# it. The settings are the route's own value; the mode and the level `run` reads from them, each held by its field,
-# are the values it hands on.
+# it. The settings are the route's own value: a call handed `settings.mode` or `settings.level` is handed the
+# settings, the projection glued into the call; inside, the parameter that holds the field is the value its steps take.
 
 route runs.run
 step run/source
@@ -48,7 +48,8 @@ line run/source/?1/infer > Job@run/source/?1 value
 line Job@run/source/?1 > run/source value
 line run/source > Job·job@run/source value
 line Job·job@run/source > run/finished value
-line Job·job@run/source > run/report value
+line Settings·settings > run/finished value                       # its mode, held by finished's `mode`
+line Settings·settings > run/report value                         # its level, held by report's `level`
 
 # whether it finished: a Runner built on the mode's plan, and the timeout of that plan
 line Mode·mode > run/finished/Runner.new/Mode.plan value            # new hands the mode to Mode::plan
@@ -78,6 +79,8 @@ line run/report/?1/Level.prefix > _@run/report/?1 value
 line _@run/report/?1 > run/report/?1/Message() value
 line run/report/?1/Level.suffix > _@run/report/?1#2 value
 line _@run/report/?1#2 > run/report/?1/Message()#2 value
+line Job·job@run/source > run/report/?1/Message() value             # each Message writes its name
+line Job·job@run/source > run/report/?1/Message()#2 value
 line run/report/?1/Message() > Message·message@run/report/?1 value
 line run/report/?1/Message()#2 > Message·message@run/report/?1 value
 line Message·message@run/report/?1 > run/report/send value
@@ -85,8 +88,8 @@ line run/report/send > Screen own
 line run/report/send > run/report back
 line run/report > run back
 
-# the retries of the mode's plan: the same mode, read from the settings
-known #new line Mode·mode > run/Mode.plan value
+# the retries of the mode's plan: Mode::plan is handed the settings, `.mode` glued into the call
+line Settings·settings > run/Mode.plan value
 line run/Mode.plan/?1/Plan() > Plan@run/Mode.plan/?1 value
 line run/Mode.plan/?1/Plan()#2 > Plan@run/Mode.plan/?1 value
 line Plan@run/Mode.plan/?1 > run/Mode.plan value
@@ -116,20 +119,17 @@ home Plan@run/Mode.plan run
 side entry left
 side Screen right
 
-# the one mode is two values: held by no name where run calls its plan, by its field where run hands it to finished
+# the field a call's argument reads is drawn as a nameless value of its own, beside the settings the call is handed
 known #new extra line Mode > run/Mode.plan value
 known #new extra home Mode run
 
-# a value whose field is read into a call's argument counts as handed to that call
-known #new extra line Settings·settings > run/finished value
-known #new extra line Settings·settings > run/report value
-known #new extra line Settings·settings > run/Mode.plan value
-known #new extra line Job·job@run/source > run/report/?1/Message() value
-known #new extra line Job·job@run/source > run/report/?1/Message()#2 value
+# a name handed to a call nested in an argument counts as handed to the call around it too: `level` goes to
+# `level.prefix()`, whose result the Message is built from, not to the Message
 known #new extra line Level·level > run/report/?1/Message() value
 known #new extra line Level·level > run/report/?1/Message()#2 value
 
-# an opened step's own arrow takes what its steps make, though only a step inside takes it
+# an opened step's own arrow takes what its steps make, or what its call is handed, though only a step inside takes it
+known #new extra line Job·job@run/source > run/report value
 known #new extra line Job·job@run/source > run value
 known #new extra line Plan@run/finished/Runner.new/Mode.plan > run/finished/Runner.new value
 known #new extra line Runner@run/finished/Runner.new > run/finished value

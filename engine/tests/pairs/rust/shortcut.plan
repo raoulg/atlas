@@ -112,6 +112,7 @@ known #new line main/?1/run/?1/fetch > Value@main/?1/run/?1/fetch value
 known #new line Value@main/?1/run/?1/fetch > main/?1/run/?1/Store.save_rates value                 # the body of a Result, matched
 known #103 line Value@main/?1/run/?1/fetch > main/?1/run/?1/Store.save_rates/?1/unwrap_or_default value   # Ok(body) => body["date"]..
 line Store·store@main/?1/run/Store.open > main/?1/run/?1/Store.save_rates value
+known #103 line _·config@main/?1/run/load > main/?1/run/?1/Store.save_rates value   # base = &config["base"], into params![base, ..]
 known #new line main/?1/run/?1/Store.save_rates/?1/unwrap_or_default > _·date@main/?1/run/?1/Store.save_rates/?1/unwrap_or_default value
 known #new line _·date@main/?1/run/?1/Store.save_rates/?1/unwrap_or_default > main/?1/run/?1/Store.save_rates value   # (#101 too)
 line main/?1/run/?1/Store.save_rates > SQLite(rates) own

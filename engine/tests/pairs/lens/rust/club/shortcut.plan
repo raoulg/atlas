@@ -20,9 +20,9 @@ known #74 line Connection·conn > Register()/Register.new/Register() value   # t
 line Register()/Register.new/Register() > Register@Register()/Register.new/Register() value
 line Register@Register()/Register.new/Register() > Register()/Register.new value
 line Register()/Register.new > Register@Register()/Register.new value
-line Register@Register()/Register.new > Register()/Register.join value
-line Register@Register()/Register.new > Register()/Register.names value
-line Register@Register()/Register.new > Register()/Register.latest value
+known #74 line Register > Register()/Register.join value   # the caller's instance: every method runs on it
+known #74 line Register > Register()/Register.names/prepare value   # the method hands `self.conn` to it
+known #74 line Register > Register()/Register.latest value
 
 known #new line Member·who > Register()/Register.join value     # new-A
 line Register()/Register.join > SQLite(members) own
@@ -39,6 +39,7 @@ line Register()/Register.latest > Report@Register()/Register.latest value
 known #new home Connection·conn Register()
 home Register@Register()/Register.new/Register() Register()/Register.new
 home Register@Register()/Register.new Register()
+known #74 home Register Register()
 known #new home Member·who Register()
 home Member@Register()/Register.latest/Member() Register()/Register.latest
 home Report@Register()/Register.latest/Report() Register()/Register.latest
@@ -68,3 +69,8 @@ line Register()/Register.names/query_map > _·rows@Register()/Register.names/que
 known #101 line _·rows@Register()/Register.names/query_map > Register()/Register.names value   # names returns what `collect` makes of them
 home _·select@Register()/Register.names/prepare Register()/Register.names
 home _·rows@Register()/Register.names/query_map Register()/Register.names
+
+# what the constructor builds goes back to its caller: Atlas runs the methods on it instead of the caller's instance
+known #74 extra line Register@Register()/Register.new > Register()/Register.join value
+known #74 extra line Register@Register()/Register.new > Register()/Register.names value
+known #74 extra line Register@Register()/Register.new > Register()/Register.latest value

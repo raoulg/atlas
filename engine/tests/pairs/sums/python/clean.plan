@@ -1,7 +1,7 @@
 # A knowledge base kept in a file: `voeg_toe` puts a Bron, `graaf` gets the Graaf of its nodes back, each node one of
 # the sum `Node = Begrip | Bron`, made in one of two arms of a choice in `_node`. The class is the library's door: its
-# route starts at each public method a caller can call, its constructor among them. The constructor builds the store
-# the other doors run on: a value, taken by each step whose body reads the store's fields or calls on it.
+# route starts at each public method a caller can call, its constructor among them. The methods run on the caller's
+# instance, one value from beyond; what the constructor builds goes back to the caller.
 
 route kennis.bank.Kennisbank
 step Kennisbank()/Kennisbank()
@@ -18,14 +18,15 @@ line entry > Kennisbank()/Kennisbank() call
 line entry > Kennisbank()/Kennisbank.voeg_toe call
 line entry > Kennisbank()/Kennisbank.graaf call
 
-# the store the constructor builds, which the doors run on
+# what the constructor builds goes back to the caller; the doors run on the caller's instance, one value from
+# beyond, taken where a body reads its fields or calls on it
 line Kennisbank()/Kennisbank() > Kennisbank@Kennisbank()/Kennisbank() value
-line Kennisbank@Kennisbank()/Kennisbank() > Kennisbank()/Kennisbank.voeg_toe/Kennisbank._write value
-known #new line Kennisbank@Kennisbank()/Kennisbank() > Kennisbank()/Kennisbank.graaf value     # graaf reads self.path
-line Kennisbank@Kennisbank()/Kennisbank() > Kennisbank()/Kennisbank.graaf/Kennisbank._node value
+known #74 line Kennisbank > Kennisbank()/Kennisbank.voeg_toe/Kennisbank._write value
+known #74 line Kennisbank > Kennisbank()/Kennisbank.graaf value
+known #74 line Kennisbank > Kennisbank()/Kennisbank.graaf/Kennisbank._node value
 
 # the put: the Bron a caller hands is written into the line `_write` appends to what the file held
-known #new line Bron·bron > Kennisbank()/Kennisbank.voeg_toe value
+line Bron·bron > Kennisbank()/Kennisbank.voeg_toe/Kennisbank._write value                    # what it is handed: `bron.uuid`, `bron.url` glue `bron` in
 line Disk(self.path) > Kennisbank()/Kennisbank.voeg_toe/Kennisbank._write own
 line Kennisbank()/Kennisbank.voeg_toe/Kennisbank._write > Disk(self.path) own
 
@@ -42,6 +43,7 @@ line Graaf@Kennisbank()/Kennisbank.graaf/Graaf() > Kennisbank()/Kennisbank.graaf
 line Kennisbank()/Kennisbank.graaf > Graaf@Kennisbank()/Kennisbank.graaf value
 
 home Kennisbank@Kennisbank()/Kennisbank() Kennisbank()
+known #74 home Kennisbank Kennisbank()
 home Bron·bron Kennisbank()
 home Bron@Kennisbank()/Kennisbank.graaf/Kennisbank._node/?1 Kennisbank()/Kennisbank.graaf/Kennisbank._node
 home Begrip@Kennisbank()/Kennisbank.graaf/Kennisbank._node/?1 Kennisbank()/Kennisbank.graaf/Kennisbank._node
@@ -66,11 +68,14 @@ known #new home _·tekst@Kennisbank()/Kennisbank.graaf/Kennisbank._node/split Ke
 side entry left
 known #new side Disk(self.path) both          # voeg_toe reads what the file held and changes it: Atlas says between
 
-# a door's parameter is a value from beyond without its name; the Bron's fields, written into the str `_write` is
-# handed, count as the Bron handed to it
+# the door's own arrow takes, as a nameless value from beyond, the Bron its call is handed, though only `_write`
+# inside takes it
 known #new extra line Bron > Kennisbank()/Kennisbank.voeg_toe value
 known #new extra home Bron Kennisbank()
-known #new extra line Bron·bron > Kennisbank()/Kennisbank.voeg_toe/Kennisbank._write value
+
+# the methods run on what the constructor built, not on the caller's instance
+known #74 extra line Kennisbank@Kennisbank()/Kennisbank() > Kennisbank()/Kennisbank.voeg_toe/Kennisbank._write value
+known #74 extra line Kennisbank@Kennisbank()/Kennisbank() > Kennisbank()/Kennisbank.graaf/Kennisbank._node value
 
 # `_node` gives the sum, but hands on, beside it, each of its variants, and Graaf() is handed the variants
 known #new extra line Kennisbank()/Kennisbank.graaf/Kennisbank._node > Bron@Kennisbank()/Kennisbank.graaf/Kennisbank._node value

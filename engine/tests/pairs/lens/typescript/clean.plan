@@ -3,14 +3,14 @@
 # is the lens at work: the kept summary, else (`??`) one made from the day's readings and put. `keptSummary` runs
 # whenever `summary` does, and `??` chooses only whether the right side runs, as the `None` arm of Rust's `match` does;
 # `keptSummary` builds its Summary only when a line is found (`line && ..`, a choice as `||` is). The route of the
-# exported class is its constructor and its public methods, each called by its caller, run on the ReadingStore the
-# constructor built. A library's operation whose result the body names (`find`, `map`) is a step; what it touches stays
+# exported class is its constructor and its public methods, each called by its caller and run on the caller's
+# ReadingStore; what the constructor builds goes back to that caller. A library's operation whose result the body names (`find`, `map`) is a step; what it touches stays
 # its caller's. Each file is read, used and written by the route: it stands on both sides.
 #
 # #new: new-A a parameter at the own arrow by its type, new-B an own arrow taking every class its steps build, new-C an
 # unnamed call in a chain a step, new-E a value in one arm made by the choice, new-F a class's read-and-written place
 # between, new-G an own arrow dropping a value it uses and hands on, new-I `??`'s left side an arm, new-J `&&` no choice
-#.
+# (see the report of #52's pair plans).
 
 route clean.store.ReadingStore
 step ReadingStore()/ReadingStore()
@@ -52,26 +52,26 @@ line entry > ReadingStore()/ReadingStore.keptSummary call
 line entry > ReadingStore()/ReadingStore.keepSummary call
 
 line ReadingStore()/ReadingStore() > ReadingStore@ReadingStore()/ReadingStore() value
-line ReadingStore@ReadingStore()/ReadingStore() > ReadingStore()/ReadingStore.save value
+known #74 line ReadingStore > ReadingStore()/ReadingStore.save value   # the caller's instance
 known #new line Reading·reading > ReadingStore()/ReadingStore.save value   # new-A
 line Disk(this.readings) > ReadingStore()/ReadingStore.save own
 line ReadingStore()/ReadingStore.save > Disk(this.readings) own
-line ReadingStore@ReadingStore()/ReadingStore() > ReadingStore()/ReadingStore.history value
+known #74 line ReadingStore > ReadingStore()/ReadingStore.history value   # the caller's instance
 line Disk(this.readings) > ReadingStore()/ReadingStore.history own
 line ReadingStore()/ReadingStore.history/Reading() > Reading@ReadingStore()/ReadingStore.history/Reading() value
 line Reading@ReadingStore()/ReadingStore.history/Reading() > ReadingStore()/ReadingStore.history value
 line ReadingStore()/ReadingStore.history > Reading@ReadingStore()/ReadingStore.history value
-line ReadingStore@ReadingStore()/ReadingStore() > ReadingStore()/ReadingStore.saveOutage value
+known #74 line ReadingStore > ReadingStore()/ReadingStore.saveOutage value   # the caller's instance
 known #new line Outage·outage > ReadingStore()/ReadingStore.saveOutage value   # new-A
 line Disk(this.outages) > ReadingStore()/ReadingStore.saveOutage own
 line ReadingStore()/ReadingStore.saveOutage > Disk(this.outages) own
-known #new line ReadingStore@ReadingStore()/ReadingStore() > ReadingStore()/ReadingStore.kept value   # new-G: kept reads `this.outages` itself
+known #74 line ReadingStore > ReadingStore()/ReadingStore.kept value   # the caller's instance (new-G too: Atlas hands it to history, not to kept itself)
 line Disk(this.outages) > ReadingStore()/ReadingStore.kept own
 line ReadingStore()/ReadingStore.kept/Outage() > Outage@ReadingStore()/ReadingStore.kept/Outage() value
 line Outage@ReadingStore()/ReadingStore.kept/Outage() > ReadingStore()/ReadingStore.kept/map value
 line ReadingStore()/ReadingStore.kept/map > _·outages@ReadingStore()/ReadingStore.kept/map value
 line _·outages@ReadingStore()/ReadingStore.kept/map > ReadingStore()/ReadingStore.kept/Harvest() value
-line ReadingStore@ReadingStore()/ReadingStore() > ReadingStore()/ReadingStore.kept/ReadingStore.history value
+known #74 line ReadingStore > ReadingStore()/ReadingStore.kept/ReadingStore.history value   # the caller's instance
 line Disk(this.readings) > ReadingStore()/ReadingStore.kept/ReadingStore.history own
 line ReadingStore()/ReadingStore.kept/ReadingStore.history/Reading() > Reading@ReadingStore()/ReadingStore.kept/ReadingStore.history/Reading() value
 line Reading@ReadingStore()/ReadingStore.kept/ReadingStore.history/Reading() > ReadingStore()/ReadingStore.kept/ReadingStore.history value
@@ -80,7 +80,7 @@ line Reading@ReadingStore()/ReadingStore.kept/ReadingStore.history > ReadingStor
 line ReadingStore()/ReadingStore.kept/Harvest() > Harvest@ReadingStore()/ReadingStore.kept/Harvest() value
 line Harvest@ReadingStore()/ReadingStore.kept/Harvest() > ReadingStore()/ReadingStore.kept value
 line ReadingStore()/ReadingStore.kept > Harvest@ReadingStore()/ReadingStore.kept value
-known #new line ReadingStore@ReadingStore()/ReadingStore() > ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary value   # new-I: `??`'s left side runs whenever summary does
+known #74 line ReadingStore > ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary value   # the caller's instance (and new-I)
 known #new line Disk(this.summaries) > ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary own   # new-I: `??`'s left side runs whenever summary does
 known #new line Day·day > ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/find value   # new-I: `??`'s left side runs whenever summary does
 known #new line ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/find > _·line@ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/find value   # new-I: `??`'s left side runs whenever summary does
@@ -91,7 +91,7 @@ known #new line ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/?1/
 known #new line Summary@ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/?1/Summary() > ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary value   # new-J
 known #new line ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary > Summary@ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary value   # new-I
 known #new line Summary@ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary > ReadingStore()/ReadingStore.summary value   # new-I
-line ReadingStore@ReadingStore()/ReadingStore() > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history value
+known #74 line ReadingStore > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history value   # the caller's instance
 line Disk(this.readings) > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history own
 line ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/Reading() > Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/Reading() value
 line Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/Reading() > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history value
@@ -106,13 +106,13 @@ line ReadingStore()/ReadingStore.summary/?1/daySummary/Summary() > Summary@Readi
 line Summary@ReadingStore()/ReadingStore.summary/?1/daySummary/Summary() > ReadingStore()/ReadingStore.summary/?1/daySummary value
 known #new line ReadingStore()/ReadingStore.summary/?1/daySummary > Summary@ReadingStore()/ReadingStore.summary/?1/daySummary value   # new-E
 known #new line Summary@ReadingStore()/ReadingStore.summary/?1/daySummary > ReadingStore()/ReadingStore.summary/?1/ReadingStore.keepSummary value   # new-E
-line ReadingStore@ReadingStore()/ReadingStore() > ReadingStore()/ReadingStore.summary/?1/ReadingStore.keepSummary value
+known #74 line ReadingStore > ReadingStore()/ReadingStore.summary/?1/ReadingStore.keepSummary value   # the caller's instance
 line Disk(this.summaries) > ReadingStore()/ReadingStore.summary/?1/ReadingStore.keepSummary own
 line ReadingStore()/ReadingStore.summary/?1/ReadingStore.keepSummary > Disk(this.summaries) own
 known #new line ReadingStore()/ReadingStore.summary/?1/ReadingStore.keepSummary > Summary@ReadingStore()/ReadingStore.summary/?1/ReadingStore.keepSummary value   # new-E
 known #new line Summary@ReadingStore()/ReadingStore.summary/?1/ReadingStore.keepSummary > ReadingStore()/ReadingStore.summary value   # new-E
 line ReadingStore()/ReadingStore.summary > Summary@ReadingStore()/ReadingStore.summary value
-line ReadingStore@ReadingStore()/ReadingStore() > ReadingStore()/ReadingStore.keptSummary value
+known #74 line ReadingStore > ReadingStore()/ReadingStore.keptSummary value   # the caller's instance
 line Disk(this.summaries) > ReadingStore()/ReadingStore.keptSummary own
 known #new line Day·day#2 > ReadingStore()/ReadingStore.keptSummary/find value   # new-A
 line ReadingStore()/ReadingStore.keptSummary/find > _·line@ReadingStore()/ReadingStore.keptSummary/find value
@@ -122,13 +122,14 @@ known #new line _·line@ReadingStore()/ReadingStore.keptSummary/find > ReadingSt
 known #new line ReadingStore()/ReadingStore.keptSummary/?1/Summary() > Summary@ReadingStore()/ReadingStore.keptSummary/?1/Summary() value   # new-J
 known #new line Summary@ReadingStore()/ReadingStore.keptSummary/?1/Summary() > ReadingStore()/ReadingStore.keptSummary value   # new-J
 line ReadingStore()/ReadingStore.keptSummary > Summary@ReadingStore()/ReadingStore.keptSummary value
-line ReadingStore@ReadingStore()/ReadingStore() > ReadingStore()/ReadingStore.keepSummary value
+known #74 line ReadingStore > ReadingStore()/ReadingStore.keepSummary value   # the caller's instance
 known #new line Summary·summary > ReadingStore()/ReadingStore.keepSummary value   # new-A: it writes and gives back the Summary it is handed
 line Disk(this.summaries) > ReadingStore()/ReadingStore.keepSummary own
 line ReadingStore()/ReadingStore.keepSummary > Disk(this.summaries) own
 line ReadingStore()/ReadingStore.keepSummary > Summary@ReadingStore()/ReadingStore.keepSummary value
 
 home ReadingStore@ReadingStore()/ReadingStore() ReadingStore()
+known #74 home ReadingStore ReadingStore()
 known #new home Reading·reading ReadingStore()
 home Reading@ReadingStore()/ReadingStore.history/Reading() ReadingStore()/ReadingStore.history
 home Reading@ReadingStore()/ReadingStore.history ReadingStore()
@@ -163,6 +164,14 @@ known #new side Disk(this.outages) both   # new-F: Atlas draws it between
 known #new side Disk(this.summaries) both   # new-F: Atlas draws it between
 
 # what Atlas has and the code does not say
+known #74 extra line ReadingStore@ReadingStore()/ReadingStore() > ReadingStore()/ReadingStore.save value   # Atlas runs it on what the constructor built
+known #74 extra line ReadingStore@ReadingStore()/ReadingStore() > ReadingStore()/ReadingStore.history value   # Atlas runs it on what the constructor built
+known #74 extra line ReadingStore@ReadingStore()/ReadingStore() > ReadingStore()/ReadingStore.saveOutage value   # Atlas runs it on what the constructor built
+known #74 extra line ReadingStore@ReadingStore()/ReadingStore() > ReadingStore()/ReadingStore.kept/ReadingStore.history value   # Atlas runs it on what the constructor built
+known #74 extra line ReadingStore@ReadingStore()/ReadingStore() > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history value   # Atlas runs it on what the constructor built
+known #74 extra line ReadingStore@ReadingStore()/ReadingStore() > ReadingStore()/ReadingStore.summary/?1/ReadingStore.keepSummary value   # Atlas runs it on what the constructor built
+known #74 extra line ReadingStore@ReadingStore()/ReadingStore() > ReadingStore()/ReadingStore.keptSummary value   # Atlas runs it on what the constructor built
+known #74 extra line ReadingStore@ReadingStore()/ReadingStore() > ReadingStore()/ReadingStore.keepSummary value   # Atlas runs it on what the constructor built
 known #new extra home Day ReadingStore()   # new-A: a parameter by its type, not as the value handed
 known #new extra home Outage ReadingStore()   # new-A: a parameter by its type, not as the value handed
 known #new extra home Reading ReadingStore()   # new-A: a parameter by its type, not as the value handed
@@ -204,7 +213,7 @@ known #new extra line ReadingStore()/ReadingStore.summary/?1/ReadingStore.keptSu
 known #new extra line ReadingStore()/ReadingStore.summary/?1/ReadingStore.keptSummary/l.split > _@ReadingStore()/ReadingStore.summary/?1/ReadingStore.keptSummary/l.split value   # new-I: `??`'s left side drawn as an arm
 known #new extra line ReadingStore()/ReadingStore.summary/?1/daySummary > Summary@ReadingStore()/ReadingStore.summary/?1#2 value   # new-E: a value in the arm made by the choice
 known #new extra line ReadingStore()/ReadingStore.summary/?1/daySummary/readings.filter > _@ReadingStore()/ReadingStore.summary/?1/daySummary/readings.filter value   # new-C: an unnamed call in a chain is a step
-known #new extra line ReadingStore@ReadingStore()/ReadingStore() > ReadingStore()/ReadingStore.summary/?1/ReadingStore.keptSummary value   # new-I: `??`'s left side drawn as an arm
+known #74 extra line ReadingStore@ReadingStore()/ReadingStore() > ReadingStore()/ReadingStore.summary/?1/ReadingStore.keptSummary value   # Atlas runs it on what the constructor built
 known #new extra line Summary@ReadingStore()/ReadingStore.keptSummary > ReadingStore()/ReadingStore.keepSummary value   # new-A: a parameter by its type, not as the value handed
 known #new extra line Summary@ReadingStore()/ReadingStore.keptSummary/Summary() > ReadingStore()/ReadingStore.keptSummary value   # new-J: the Summary is built only when a line is found
 known #new extra line Summary@ReadingStore()/ReadingStore.summary/?1 > ReadingStore()/ReadingStore.summary value   # new-I: one value of both sides of `??`

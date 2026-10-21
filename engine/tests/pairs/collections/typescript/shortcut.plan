@@ -1,7 +1,8 @@
-# An exported class is the route of its doors: building it and each public method, each called by the entry, the
-# methods on the Store the building makes. The puts are the clean side's: `rows.push(new Row(reading))` makes `rows`
-# anew, so the Reading reaches what is written at `Disk(Store.path)`. `get` reads the lines itself and gives them back
-# as they are, of no type of the code's: no Reading comes back out of the place it went into.
+# An exported class is the route of its doors: building it and each public method, each called by the entry: the
+# methods run on the caller's instance, `Store` from beyond, and what the building makes goes back to the caller. The
+# puts are the clean side's: `rows.push(new Row(reading))` makes `rows` anew, so the Reading reaches what is written
+# at `Disk(Store.path)`. `get` reads the lines itself and gives them back as they are, of no type of the code's: no
+# Reading comes back out of the place it went into.
 
 route shortcut.gathering.Store
 step Store()/Store()
@@ -9,11 +10,10 @@ line entry > Store()/Store() call
 line Store()/Store() > Store@Store()/Store() value
 step Store()/Store.put
 line entry > Store()/Store.put call
-known #new line Store@Store()/Store() > Store()/Store.put value  # F
 step Store()/Store.put/Store.rows
 step Store()/Store.put/Store.rows/Reading()
 step Store()/Store.put/Store.rows/Row()
-line Store@Store()/Store() > Store()/Store.put/Store.rows value
+known #74 line Store > Store()/Store.put/Store.rows value
 known #new line Disk(Store.path) > Store()/Store.put/Store.rows own  # D
 line Store()/Store.put/Store.rows/Reading() > Reading@Store()/Store.put/Store.rows/Reading() value
 line Reading@Store()/Store.put/Store.rows/Reading() > Store()/Store.put/Store.rows/Row() value
@@ -29,15 +29,15 @@ known #new line Row·rows@Store()/Store.put/Store.rows > Store()/Store.put/push 
 line Row@Store()/Store.put/Row() > Store()/Store.put/push value
 known #new line Store()/Store.put/push > Row·rows@Store()/Store.put/push value  # G
 known #new line Row·rows@Store()/Store.put/push > Store()/Store.put/writeRows value  # G
+known #new line Store > Store()/Store.put/writeRows value  # K: `writeRows(this.path, rows)` hands `this`
 known #new line Store()/Store.put/writeRows > Disk(Store.path) own  # D
 step Store()/Store.putAll
 line entry > Store()/Store.putAll call
-known #new line Store@Store()/Store() > Store()/Store.putAll value  # F
 known #new line Reading·readings > Store()/Store.putAll value  # F
 step Store()/Store.putAll/Store.rows
 step Store()/Store.putAll/Store.rows/Reading()
 step Store()/Store.putAll/Store.rows/Row()
-line Store@Store()/Store() > Store()/Store.putAll/Store.rows value
+known #74 line Store > Store()/Store.putAll/Store.rows value
 known #new line Disk(Store.path) > Store()/Store.putAll/Store.rows own  # D
 line Store()/Store.putAll/Store.rows/Reading() > Reading@Store()/Store.putAll/Store.rows/Reading() value
 line Reading@Store()/Store.putAll/Store.rows/Reading() > Store()/Store.putAll/Store.rows/Row() value
@@ -53,10 +53,11 @@ known #new line Row·rows@Store()/Store.putAll/Store.rows > Store()/Store.putAll
 line Row@Store()/Store.putAll/Row() > Store()/Store.putAll/push value
 known #new line Store()/Store.putAll/push > Row·rows@Store()/Store.putAll/push value  # G
 known #new line Row·rows@Store()/Store.putAll/push > Store()/Store.putAll/writeRows value  # G
+known #new line Store > Store()/Store.putAll/writeRows value  # K: `writeRows(this.path, rows)` hands `this`
 known #new line Store()/Store.putAll/writeRows > Disk(Store.path) own  # D
 step Store()/Store.get
 line entry > Store()/Store.get call
-line Store@Store()/Store() > Store()/Store.get value  # get reads the store's path itself
+known #74 line Store > Store()/Store.get value  # get reads the store's path itself
 known #new line Disk(Store.path) > Store()/Store.get own  # D
 
 home Store@Store()/Store() Store()
@@ -71,6 +72,7 @@ home Row·rows@Store()/Store.putAll/Store.rows Store()/Store.putAll
 home Row@Store()/Store.putAll/Row() Store()/Store.putAll
 known #new home Row·rows@Store()/Store.putAll/push Store()/Store.putAll  # G
 home Reading·reading Store()
+known #74 home Store Store()
 known #new home Reading·readings Store()  # F
 
 side entry left
@@ -82,10 +84,13 @@ known #new side Disk(Store.path) both  # D
 # D: the store's path is two places, `Disk(this.path)` where it is read and `Disk(writeRows.path)` where the helper
 #    writes what the method hands it, not one `Disk(Store.path)` read and written
 # E: a Reading built inside the step for the Row it returns is drawn as handed back at the step's own arrow too
-# F: the own arrow of an opened step drops what its body itself uses: a field of its receiver it hands on, the list it
-#    goes over
+# F: the own arrow of an opened step drops what its body itself uses: the list `put_all` goes over
 # G: `push` on a local declared `Row[]` takes and makes an untyped `_·rows`, so the rows read and the Row go to
 #    `writeRows` past it
+# K: a value handed through a field reaches no step inside: `writeRows(this.path, rows)` hands `this` (#121, decision
+#    1), and the helper takes no Store
+# #74: the doors run on what the constructor door built, not on the caller's instance `Store` from beyond (#121,
+#    decision 2): the constructor's Store goes back to the caller and is joined to no door
 
 # B
 known #new extra home _@Store()/Store.put/writeRows/rows.map Store()/Store.put/writeRows
@@ -126,3 +131,8 @@ known #new extra line _·rows > Store()/Store.put/push value
 known #new extra line _·rows > Store()/Store.putAll/push value
 known #new extra line _·rows@Store()/Store.put/push > Store()/Store.put/writeRows value
 known #new extra line _·rows@Store()/Store.putAll/push > Store()/Store.putAll/writeRows value
+
+# #74
+known #74 extra line Store@Store()/Store() > Store()/Store.put/Store.rows value
+known #74 extra line Store@Store()/Store() > Store()/Store.putAll/Store.rows value
+known #74 extra line Store@Store()/Store() > Store()/Store.get value

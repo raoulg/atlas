@@ -12,14 +12,15 @@ line entry > Kennisbank()/Kennisbank.new call
 line entry > Kennisbank()/Kennisbank.voeg_toe call
 line entry > Kennisbank()/Kennisbank.graaf call
 
-# the store `new` builds, which the doors run on
+# what the constructor builds goes back to the caller; the doors run on the caller's instance, one value from
+# beyond, taken where a body reads its fields or calls on it
 line Kennisbank()/Kennisbank.new/Kennisbank() > Kennisbank@Kennisbank()/Kennisbank.new/Kennisbank() value
 line Kennisbank@Kennisbank()/Kennisbank.new/Kennisbank() > Kennisbank()/Kennisbank.new value     # new hands back what it built
 line Kennisbank()/Kennisbank.new > Kennisbank@Kennisbank()/Kennisbank.new value
-line Kennisbank@Kennisbank()/Kennisbank.new > Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write value
-line Kennisbank@Kennisbank()/Kennisbank.new > Kennisbank()/Kennisbank.graaf value
+known #74 line Kennisbank > Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write value
+known #74 line Kennisbank > Kennisbank()/Kennisbank.graaf value
 
-known #new line Bron·bron > Kennisbank()/Kennisbank.voeg_toe value
+line Bron·bron > Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write value                    # what it is handed: `bron.uuid`, `bron.url` glue `bron` in
 line Disk(self.path) > Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write own
 line Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write > Disk(self.path) own
 
@@ -27,6 +28,7 @@ line Disk(self.path) > Kennisbank()/Kennisbank.graaf own
 
 home Kennisbank@Kennisbank()/Kennisbank.new/Kennisbank() Kennisbank()/Kennisbank.new
 home Kennisbank@Kennisbank()/Kennisbank.new Kennisbank()
+known #74 home Kennisbank Kennisbank()
 home Bron·bron Kennisbank()
 
 # write reads the file into `text`, appends the line and a newline to it, and writes it back
@@ -49,8 +51,11 @@ known #new side Disk(self.path) both          # voeg_toe reads what the file hel
 # building the struct the route is about is read as a call of the route inside itself
 known #new extra step Kennisbank()/Kennisbank.new/Kennisbank() recursive
 
-# a door's parameter is a value from beyond without its name; the Bron's fields, formatted into the str `write` is
-# handed, count as the Bron handed to it
+# the door's own arrow takes, as a nameless value from beyond, the Bron its call is handed, though only `write`
+# inside takes it
 known #new extra line Bron > Kennisbank()/Kennisbank.voeg_toe value
 known #new extra home Bron Kennisbank()
-known #new extra line Bron·bron > Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write value
+
+# the methods run on what the constructor built, not on the caller's instance
+known #74 extra line Kennisbank@Kennisbank()/Kennisbank.new > Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write value
+known #74 extra line Kennisbank@Kennisbank()/Kennisbank.new > Kennisbank()/Kennisbank.graaf value

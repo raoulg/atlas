@@ -2,9 +2,9 @@
 # each step that changes a value takes it as it was and makes it at its own moment, held by the name the caller holds
 # it by. Inside a step, an operation that changes the value it runs on is a step of its own (`this.rows.push(..)`,
 # `lines.push(s)`, `m.set(..)`). `takeFrom` and `takeVictim` change the ledger they are called on and the one they are
-# handed (`other.rows.length = 0`, in their own body): two values each. `fileAll` is handed the ledger's rows, expenses
-# no step of the route made, and files each. `rename` is handed an object literal. What `rename` gives goes back to
-# `main`, what `takeFrom` and `takeVictim` give is dropped.
+# handed (`other.rows.length = 0`, in their own body): two values each. `fileAll(ledger.rows)` is handed the ledger (a
+# projection is glued into the call around it) and files the expenses in its rows, so the ledger changes. `rename` is
+# handed an object literal. What `rename` gives goes back to `main`, what `takeFrom` and `takeVictim` give is dropped.
 route shortcut.ledger.main
 step main/Ledger()
 step main/Ledger()#2
@@ -28,9 +28,7 @@ line Ledger·ledger@main/Ledger.takeFrom > main/Ledger.takeVictim/this.rows.push
 line main/Ledger.takeVictim > Ledger·ledger@main/Ledger.takeVictim value
 line main/addLine/push > _·lines@main/addLine/push value
 line main/count/set > _·m@main/count/set value
-line Ledger·ledger@main/Ledger.takeVictim > main/fileAll value             # handed the ledger's rows
-line Expense > main/fileAll value                                          # the expenses in them, which no step made
-line main/fileAll > Expense@main/fileAll value
+line Ledger·ledger@main/Ledger.takeVictim > main/fileAll value             # handed the ledger, through its rows
 line main/rename > Expense@main/rename value
 
 home Ledger·ledger@main/Ledger() main
@@ -40,10 +38,17 @@ home Ledger·ledger@main/Ledger.takeVictim main
 home _·lines@main/addLine/push main/addLine
 home _·m@main/count/set main/count
 home Expense main
-home Expense@main/fileAll main
 home Expense@main/rename main
 
 side entry left
+
+# A step handed a value through a projection takes, beside it, its parameter's type from beyond, and what it changes is
+# that type at its moment, not the value it was handed: `fileAll(ledger.rows)` changes the ledger
+known #new line main/fileAll > Ledger·ledger@main/fileAll value
+known #new home Ledger·ledger@main/fileAll main
+known #new extra line Expense > main/fileAll value
+known #new extra line main/fileAll > Expense@main/fileAll value
+known #new extra home Expense@main/fileAll main
 
 # An operation that changes a part of the receiver (`this.rows.push(..)`) neither runs on nor makes anew the receiver,
 # which ends at the method's own arrow

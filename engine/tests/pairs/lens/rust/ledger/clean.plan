@@ -1,5 +1,5 @@
 # A lens whose focus is a library's type: `put` writes a Decimal into the file and `get` gives it back inside an Entry.
-# The route of the exported struct is its public functions, each called by its caller, run on the Ledger `new` built.
+# The route of the exported struct is its public functions, each called by its caller and run on the caller's Ledger.
 # What `get` reads and parses are steps of their own, a library's operations whose results the body names; the amount
 # is of no type the code writes, so it is `_`.
 
@@ -19,8 +19,8 @@ line entry > Ledger()/Ledger.get call
 line Ledger()/Ledger.new/Ledger() > Ledger@Ledger()/Ledger.new/Ledger() value
 line Ledger@Ledger()/Ledger.new/Ledger() > Ledger()/Ledger.new value
 line Ledger()/Ledger.new > Ledger@Ledger()/Ledger.new value
-line Ledger@Ledger()/Ledger.new > Ledger()/Ledger.put value
-line Ledger@Ledger()/Ledger.new > Ledger()/Ledger.get value
+known #74 line Ledger > Ledger()/Ledger.put value   # the caller's instance: every method runs on it
+known #74 line Ledger > Ledger()/Ledger.get/read_to_string value   # the method hands `self.path` to it
 
 known #new line Decimal·amount > Ledger()/Ledger.put value       # new-A: put's parameter, a library's type
 line Ledger()/Ledger.put > Disk(self.path) own
@@ -36,6 +36,7 @@ line Ledger()/Ledger.get > Entry@Ledger()/Ledger.get value
 
 home Ledger@Ledger()/Ledger.new/Ledger() Ledger()/Ledger.new
 home Ledger@Ledger()/Ledger.new Ledger()
+known #74 home Ledger Ledger()
 known #new home Decimal·amount Ledger()
 home _·text@Ledger()/Ledger.get/read_to_string Ledger()/Ledger.get
 home _·amount@Ledger()/Ledger.get/map_err Ledger()/Ledger.get
@@ -56,3 +57,7 @@ known #new extra line _·text@Ledger()/Ledger.get/read_to_string > Ledger()/Ledg
 known #new extra line Ledger()/Ledger.get/from_str > _·amount@Ledger()/Ledger.get/from_str value
 known #new extra line _·amount@Ledger()/Ledger.get/from_str > Ledger()/Ledger.get/map_err value
 known #new extra home _·amount@Ledger()/Ledger.get/from_str Ledger()/Ledger.get
+
+# what the constructor builds goes back to its caller: Atlas runs the methods on it instead of the caller's instance
+known #74 extra line Ledger@Ledger()/Ledger.new > Ledger()/Ledger.put value
+known #74 extra line Ledger@Ledger()/Ledger.new > Ledger()/Ledger.get value

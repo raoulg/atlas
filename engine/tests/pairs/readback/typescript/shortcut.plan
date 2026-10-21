@@ -15,6 +15,7 @@ line cli.ts/Ledger() > Ledger@cli.ts/Ledger() value
 line Ledger@cli.ts/Ledger() > cli.ts/Ledger.keep value
 line cli.ts/Ledger.keep > Ledger@cli.ts/Ledger.keep value       # keep changes the ledger it runs on (`this.kept +=`)
 known #new line cli.ts/Ledger.keep/Database() > _·db@cli.ts/Ledger.keep/Database() value      # I
+known #new line Ledger@cli.ts/Ledger() > cli.ts/Ledger.keep/Database() value  # I, K
 known #new line _·db@cli.ts/Ledger.keep/Database() > cli.ts/Ledger.keep/all value              # I
 known #new line _·db@cli.ts/Ledger.keep/Database() > cli.ts/Ledger.keep value                 # I, then #101
 line cli.ts/Ledger.keep/all > _·stored@cli.ts/Ledger.keep/all value
@@ -40,3 +41,5 @@ known #new extra line _·stored@cli.ts/Ledger.keep/all > cli.ts/Ledger.keep/stor
 # I: a library's constructor whose result the body names (`const db = new Database(..)`) is no step, so `db` is no
 #    value; `duckdb.connect(..)` and `Connection::open(..)`, which say the same, are steps.
 # #101: a value made in the body and used by the body's own calls has no taker
+# K: a value handed through a field reaches no step inside: `new Database(this.path)` hands `this` (#121, decision 1,
+#    cause 3: the reader's `held_in` skips `this` even inside an argument)

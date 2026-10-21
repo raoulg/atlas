@@ -21,7 +21,8 @@ line readings/ReadingStore.history/ReadingStore.connect/connect > Connection·co
 known #101 line Connection·con@readings/ReadingStore.history/ReadingStore.connect/connect > readings/ReadingStore.history/ReadingStore.connect value
 # `with self.connect() as con`: the name holds the connection connect gives
 known #new line readings/ReadingStore.history/ReadingStore.connect > Connection·con@readings/ReadingStore.history/ReadingStore.connect value
-known #new line Connection·con@readings/ReadingStore.history/ReadingStore.connect > readings/ReadingStore.history value
+known #new line Connection·con@readings/ReadingStore.history/ReadingStore.connect > readings/ReadingStore.history value   # the `with` enters and closes it
+known #new line Connection·con@readings/ReadingStore.history/ReadingStore.connect > readings/ReadingStore.history/fetchall value   # con.execute(..) is glued into fetchall()
 line SQLite(readings) > readings/ReadingStore.history own                              # the SELECT, its touch history's own
 known #new line readings/ReadingStore.history/fetchall > _·rows@readings/ReadingStore.history/fetchall value
 known #103 line _·rows@readings/ReadingStore.history/fetchall > readings/ReadingStore.history/Unit() value

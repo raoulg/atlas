@@ -1,7 +1,8 @@
 # A job run in one of two modes. Each choice is made once, in a place with a name: where the job comes from is the
 # body of `source`, a choice between `load` and `infer` whose Job either arm makes; `report` builds its Message by one
-# constructor in either arm, the level's own method marking it. The settings are the route's own value; the mode and
-# the level `run` reads from them, each held by its field, are the values it hands its steps.
+# constructor in either arm, the level's own method marking it. The settings are the route's own value: a call
+# handed `settings.mode` or `settings.level` is handed the settings, the projection glued into the call; inside, the
+# parameter that holds the field is the value its steps take.
 
 route runs.core.run
 step run/source
@@ -34,16 +35,18 @@ line run/source/?1/infer > Job@run/source/?1 value
 line Job@run/source/?1 > run/source value                          # source hands back the Job either arm made
 line run/source > Job·job@run/source value
 line Job·job@run/source > run/finished value                       # finished counts its steps
-line Job·job@run/source > run/report value                         # report writes its name
+line Job·job@run/source > run/report/?1/Message() value             # each Message writes its name
+line Job·job@run/source > run/report/?1/Message()#2 value
 
 # whether it finished: a Runner for the mode, and the mode's timeout
-known #new line Mode·mode > run/finished value                     # finished looks up the mode's plan itself
+line Settings·settings > run/finished value                       # finished looks up the mode's plan itself
 line Mode·mode > run/finished/Runner() value
 line run/finished/Runner() > Runner@run/finished/Runner() value
 line Runner@run/finished/Runner() > run/finished/Runner.batch value
 line run/finished/Runner.batch > run/finished back
 line run/finished > _@run/finished value                           # the bool, handed straight to report
 line _@run/finished > run/report value
+line Settings·settings > run/report value                         # its level, held by report's `level`
 
 # the line that says how it went: what the level's method gives goes into the Message built around it
 line Level·level > run/report/?1/Level.prefix value
@@ -75,13 +78,8 @@ home Message·message@run/report/?1 run/report
 side entry left
 side Screen right
 
-# a value whose field is read into a call's argument counts as handed to that call
-known #new extra line Settings·settings > run/finished value
-known #new extra line Settings·settings > run/report value
-known #new extra line Job·job@run/source > run/report/?1/Message() value
-known #new extra line Job·job@run/source > run/report/?1/Message()#2 value
-
-# an opened step's own arrow takes what its steps make, though only a step inside takes it
+# an opened step's own arrow takes what its steps make, or what its call is handed, though only a step inside takes it
+known #new extra line Job·job@run/source > run/report value
 known #new extra line Job·job@run/source > run value
 known #new extra line Runner@run/finished/Runner() > run/finished value
 known #new extra line Message·message@run/report/?1 > run/report value

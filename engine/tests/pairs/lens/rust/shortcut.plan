@@ -8,7 +8,8 @@
 #
 # #new: new-A a parameter at the own arrow by its type, new-B an own arrow taking every class its steps build, new-F a
 # class's read-and-written place between, new-G an own arrow dropping a value it uses and hands on, new-L the code after
-# an early return no arm, new-N `push_str` on a read String no step, new-O results a pattern binds no steps.
+# an early return no arm, new-N `push_str` on a read String no step, new-O results a pattern binds no steps (see the
+# report of #52's pair plans).
 
 route harvest.ReadingStore
 step ReadingStore()/ReadingStore.new
@@ -53,7 +54,8 @@ line entry > ReadingStore()/ReadingStore.summary call
 line ReadingStore()/ReadingStore.new/ReadingStore() > ReadingStore@ReadingStore()/ReadingStore.new/ReadingStore() value
 line ReadingStore@ReadingStore()/ReadingStore.new/ReadingStore() > ReadingStore()/ReadingStore.new value
 line ReadingStore()/ReadingStore.new > ReadingStore@ReadingStore()/ReadingStore.new value
-line ReadingStore@ReadingStore()/ReadingStore.new > ReadingStore()/ReadingStore.save value
+known #74 line ReadingStore > ReadingStore()/ReadingStore.save/read_to_string value   # the caller's instance: read_to_string is handed the path
+known #74 line ReadingStore > ReadingStore()/ReadingStore.save value   # and the write it makes itself
 line Disk(self.readings) > ReadingStore()/ReadingStore.save own
 line ReadingStore()/ReadingStore.save > Disk(self.readings) own
 line ReadingStore()/ReadingStore.save/read_to_string > _·text@ReadingStore()/ReadingStore.save/read_to_string value
@@ -61,7 +63,7 @@ known #new line _·text@ReadingStore()/ReadingStore.save/read_to_string > Readin
 known #new line Reading·reading > ReadingStore()/ReadingStore.save/push_str value   # new-N
 known #new line ReadingStore()/ReadingStore.save/push_str > _·text@ReadingStore()/ReadingStore.save/push_str value   # new-N
 known #new line _·text@ReadingStore()/ReadingStore.save/push_str > ReadingStore()/ReadingStore.save value   # new-N: what it writes
-line ReadingStore@ReadingStore()/ReadingStore.new > ReadingStore()/ReadingStore.history value
+known #74 line ReadingStore > ReadingStore()/ReadingStore.history/read_to_string value   # the caller's instance: read_to_string is handed `self.readings`
 line Disk(self.readings) > ReadingStore()/ReadingStore.history own
 line ReadingStore()/ReadingStore.history/read_to_string > _·text@ReadingStore()/ReadingStore.history/read_to_string value
 known #103 line _·text@ReadingStore()/ReadingStore.history/read_to_string > ReadingStore()/ReadingStore.history/split value   # split runs on a line of the text
@@ -79,7 +81,8 @@ known #new line _·t@ReadingStore()/ReadingStore.history/next#3 > ReadingStore()
 line ReadingStore()/ReadingStore.history/Reading() > Reading@ReadingStore()/ReadingStore.history/Reading() value
 line Reading@ReadingStore()/ReadingStore.history/Reading() > ReadingStore()/ReadingStore.history value
 line ReadingStore()/ReadingStore.history > Reading@ReadingStore()/ReadingStore.history value
-line ReadingStore@ReadingStore()/ReadingStore.new > ReadingStore()/ReadingStore.save_outage value
+known #74 line ReadingStore > ReadingStore()/ReadingStore.save_outage/read_to_string value   # the caller's instance: read_to_string is handed the path
+known #74 line ReadingStore > ReadingStore()/ReadingStore.save_outage value   # and the write it makes itself
 line Disk(self.outages) > ReadingStore()/ReadingStore.save_outage own
 line ReadingStore()/ReadingStore.save_outage > Disk(self.outages) own
 line ReadingStore()/ReadingStore.save_outage/read_to_string > _·text@ReadingStore()/ReadingStore.save_outage/read_to_string value
@@ -87,11 +90,12 @@ known #new line _·text@ReadingStore()/ReadingStore.save_outage/read_to_string >
 known #new line Outage·outage > ReadingStore()/ReadingStore.save_outage/push_str value   # new-N
 known #new line ReadingStore()/ReadingStore.save_outage/push_str > _·text@ReadingStore()/ReadingStore.save_outage/push_str value   # new-N
 known #new line _·text@ReadingStore()/ReadingStore.save_outage/push_str > ReadingStore()/ReadingStore.save_outage value   # new-N: what it writes
-line ReadingStore@ReadingStore()/ReadingStore.new > ReadingStore()/ReadingStore.outages value
+known #74 line ReadingStore > ReadingStore()/ReadingStore.outages/read_to_string value   # the caller's instance: read_to_string is handed `self.outages`
 line Disk(self.outages) > ReadingStore()/ReadingStore.outages own
 line ReadingStore()/ReadingStore.outages/read_to_string > _·text@ReadingStore()/ReadingStore.outages/read_to_string value
 known #101 line _·text@ReadingStore()/ReadingStore.outages/read_to_string > ReadingStore()/ReadingStore.outages value   # its lines go on through unnamed calls to what outages returns
-known #new line ReadingStore@ReadingStore()/ReadingStore.new > ReadingStore()/ReadingStore.summary value   # new-G: summary reads and writes `self.summaries` itself
+known #74 line ReadingStore > ReadingStore()/ReadingStore.summary/read_to_string value   # the caller's instance: read_to_string is handed `self.summaries`
+known #74 line ReadingStore > ReadingStore()/ReadingStore.summary value   # and the write it makes itself (new-G too: Atlas drops it here, not in history)
 known #new line Day·day > ReadingStore()/ReadingStore.summary value   # new-A: the key it looks for is made of the day
 line Disk(self.summaries) > ReadingStore()/ReadingStore.summary own
 line ReadingStore()/ReadingStore.summary > Disk(self.summaries) own
@@ -100,7 +104,7 @@ known #new line _·text@ReadingStore()/ReadingStore.summary/read_to_string > Rea
 known #101 line _·text@ReadingStore()/ReadingStore.summary/read_to_string > ReadingStore()/ReadingStore.summary value   # written back with the new line
 known #new line ReadingStore()/ReadingStore.summary/find > _·line@ReadingStore()/ReadingStore.summary/find value   # new-O
 known #new line _·line@ReadingStore()/ReadingStore.summary/find > ReadingStore()/ReadingStore.summary value   # new-O: the kept line is returned
-known #new line ReadingStore@ReadingStore()/ReadingStore.new > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history value   # new-L
+known #74 line ReadingStore > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/read_to_string value   # the caller's instance (and new-L)
 known #new line Day·day > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history value   # new-L
 known #new line Disk(self.readings) > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history own   # new-L
 known #new line ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/read_to_string > _·text@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/read_to_string value   # new-L
@@ -131,6 +135,7 @@ known #new line _·high@ReadingStore()/ReadingStore.summary/?1/fold#2 > ReadingS
 
 home ReadingStore@ReadingStore()/ReadingStore.new/ReadingStore() ReadingStore()/ReadingStore.new
 home ReadingStore@ReadingStore()/ReadingStore.new ReadingStore()
+known #74 home ReadingStore ReadingStore()
 home _·text@ReadingStore()/ReadingStore.save/read_to_string ReadingStore()/ReadingStore.save
 known #new home _·text@ReadingStore()/ReadingStore.save/push_str ReadingStore()/ReadingStore.save
 known #new home Reading·reading ReadingStore()
@@ -166,8 +171,12 @@ known #76 side Disk(self.summaries) both   # Atlas: right, as if what summary re
 
 # what Atlas has and the code does not say
 known #74 extra step ReadingStore()/ReadingStore.new/ReadingStore() recursive   # building the exported struct runs its public functions, `new` among them
+known #74 extra line ReadingStore@ReadingStore()/ReadingStore.new > ReadingStore()/ReadingStore.save value   # Atlas runs it on what `new` built
 known #new extra line Reading > ReadingStore()/ReadingStore.save value   # new-A: the parameter, nameless, at save's own arrow
+known #74 extra line ReadingStore@ReadingStore()/ReadingStore.new > ReadingStore()/ReadingStore.history value   # Atlas runs it on what `new` built
+known #74 extra line ReadingStore@ReadingStore()/ReadingStore.new > ReadingStore()/ReadingStore.save_outage value   # Atlas runs it on what `new` built
 known #new extra line Outage > ReadingStore()/ReadingStore.save_outage value   # new-A
+known #74 extra line ReadingStore@ReadingStore()/ReadingStore.new > ReadingStore()/ReadingStore.outages value   # Atlas runs it on what `new` built
 known #new extra step ReadingStore()/ReadingStore.summary/ReadingStore.history   # new-L: drawn outside the arm the early return makes
 known #new extra step ReadingStore()/ReadingStore.summary/ReadingStore.history/Reading()   # new-L: drawn outside the arm the early return makes
 known #new extra step ReadingStore()/ReadingStore.summary/ReadingStore.history/read_to_string   # new-L: drawn outside the arm the early return makes
@@ -175,7 +184,6 @@ known #new extra step ReadingStore()/ReadingStore.summary/ReadingStore.history/s
 known #new extra step ReadingStore()/ReadingStore.summary/collect   # new-L: drawn outside the arm the early return makes
 known #new extra step ReadingStore()/ReadingStore.summary/fold   # new-L: drawn outside the arm the early return makes
 known #new extra step ReadingStore()/ReadingStore.summary/fold#2   # new-L: drawn outside the arm the early return makes
-known #new extra line ReadingStore@ReadingStore()/ReadingStore.new > ReadingStore()/ReadingStore.summary/ReadingStore.history value   # new-L: drawn outside the arm the early return makes
 known #new extra line Day·day > ReadingStore()/ReadingStore.summary/ReadingStore.history value   # new-L: drawn outside the arm the early return makes
 known #new extra line Disk(self.readings) > ReadingStore()/ReadingStore.summary/ReadingStore.history own   # new-L: drawn outside the arm the early return makes
 known #new extra line ReadingStore()/ReadingStore.summary/ReadingStore.history/read_to_string > _·text@ReadingStore()/ReadingStore.summary/ReadingStore.history/read_to_string value   # new-L: drawn outside the arm the early return makes
@@ -196,6 +204,7 @@ known #new extra home _·parts@ReadingStore()/ReadingStore.summary/ReadingStore.
 known #new extra home _·temperatures@ReadingStore()/ReadingStore.summary/collect ReadingStore()/ReadingStore.summary   # new-L: drawn outside the arm the early return makes
 known #new extra home _·low@ReadingStore()/ReadingStore.summary/fold ReadingStore()/ReadingStore.summary   # new-L: drawn outside the arm the early return makes
 known #new extra home _·high@ReadingStore()/ReadingStore.summary/fold#2 ReadingStore()/ReadingStore.summary   # new-L: drawn outside the arm the early return makes
+known #74 extra line ReadingStore@ReadingStore()/ReadingStore.new > ReadingStore()/ReadingStore.summary/ReadingStore.history value   # Atlas runs it on what `new` built (and outside the arm, new-L)
 known #new extra line Reading@ReadingStore()/ReadingStore.summary/ReadingStore.history > ReadingStore()/ReadingStore.summary value   # new-B: summary gives back a line, not the Readings
 known #new extra line Day > ReadingStore()/ReadingStore.summary value   # new-A
 known #new extra home Day ReadingStore()   # new-A
