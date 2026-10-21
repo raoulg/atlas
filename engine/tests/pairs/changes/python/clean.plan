@@ -86,12 +86,8 @@ known #127 line Board·board@main/Board.reset > main/Board.merged/Board() value
 
 # A method that changes its receiver hands it on twice: unnamed from its arrow's change, and named; the next step takes
 # the second
-known #129 extra line main/Board.mark_all > Board·board@main/Board.mark_all#2 value
-known #129 extra line Board·board@main/Board.mark_all#2 > main/Board.reset value
-known #129 extra home Board·board@main/Board.mark_all#2 main
-known #129 extra line main/Board.reset > Board·board@main/Board.reset#2 value
-known #129 extra line Board·board@main/Board.reset#2 > main/renamed value
-known #129 extra home Board·board@main/Board.reset#2 main
+known #125 extra line Board·board@main/Board.mark_all > main/Board.reset value   # `self.cells.clear()` inside takes it
+known #125 extra line Board·board@main/Board.reset > main/renamed value   # `copy.copy(board)` inside takes it
 
 # The own arrow takes a value its body only hands to a step inside it: the Cell built into `[Cell()]` for `Board()`, the
 # receiver of `merged` whose fields go into `Board(..)`

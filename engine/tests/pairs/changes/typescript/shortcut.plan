@@ -91,7 +91,7 @@ known #127 line Expense > main/rename value
 known #127 extra line Expense@main/fileAll > main/rename value
 
 # A step that changes an input loses the result of no type it gives back
-known #129 line main/rename > main back
+line main/rename > main back
 
 # A library operation whose result the body does not name is a step (`m.get(k)` in `?? 0`, which then stands as a
 # choice)
@@ -116,3 +116,7 @@ known #127 home Expense main
 known #127 extra line Expense·expenses > main/fileAll/for e of expenses value
 known #127 extra home Expense·expenses main
 known #126 extra line Ledger·ledger@main/Ledger.takeVictim > main/fileAll value
+
+# a result the caller drops goes back to it: the reader does not say the call is a statement of its own
+known #134 extra line main/Ledger.takeFrom > main back
+known #134 extra line main/Ledger.takeVictim > main back

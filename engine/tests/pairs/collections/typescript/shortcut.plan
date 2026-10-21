@@ -27,8 +27,8 @@ line Reading·reading > Store()/Store.put/Row() value
 line Store()/Store.put/Row() > Row@Store()/Store.put/Row() value
 line Row·rows@Store()/Store.put/Store.rows > Store()/Store.put/push value
 line Row@Store()/Store.put/Row() > Store()/Store.put/push value
-known #129 line Store()/Store.put/push > Row·rows@Store()/Store.put/push value  # G
-known #129 line Row·rows@Store()/Store.put/push > Store()/Store.put/writeRows value  # G
+line Store()/Store.put/push > Row·rows@Store()/Store.put/push value
+known #125 line Row·rows@Store()/Store.put/push > Store()/Store.put/writeRows value  # `rows.map(..)`, no step, is the body's own use
 known #128 line Store > Store()/Store.put/writeRows value  # K: `writeRows(this.path, rows)` hands `this`
 known #137 line Store()/Store.put/writeRows > Disk(Store.path) own  # D
 step Store()/Store.putAll
@@ -49,8 +49,8 @@ step Store()/Store.putAll/writeRows
 line Store()/Store.putAll/Row() > Row@Store()/Store.putAll/Row() value
 line Row·rows@Store()/Store.putAll/Store.rows > Store()/Store.putAll/push value
 line Row@Store()/Store.putAll/Row() > Store()/Store.putAll/push value
-known #129 line Store()/Store.putAll/push > Row·rows@Store()/Store.putAll/push value  # G
-known #129 line Row·rows@Store()/Store.putAll/push > Store()/Store.putAll/writeRows value  # G
+line Store()/Store.putAll/push > Row·rows@Store()/Store.putAll/push value
+known #125 line Row·rows@Store()/Store.putAll/push > Store()/Store.putAll/writeRows value  # `rows.map(..)`, no step, is the body's own use
 known #128 line Store > Store()/Store.putAll/writeRows value  # K: `writeRows(this.path, rows)` hands `this`
 known #137 line Store()/Store.putAll/writeRows > Disk(Store.path) own  # D
 step Store()/Store.get
@@ -63,12 +63,12 @@ home Reading@Store()/Store.put/Store.rows/Reading() Store()/Store.put/Store.rows
 home Row@Store()/Store.put/Store.rows/Row() Store()/Store.put/Store.rows
 home Row·rows@Store()/Store.put/Store.rows Store()/Store.put
 home Row@Store()/Store.put/Row() Store()/Store.put
-known #129 home Row·rows@Store()/Store.put/push Store()/Store.put  # G
+home Row·rows@Store()/Store.put/push Store()/Store.put
 home Reading@Store()/Store.putAll/Store.rows/Reading() Store()/Store.putAll/Store.rows
 home Row@Store()/Store.putAll/Store.rows/Row() Store()/Store.putAll/Store.rows
 home Row·rows@Store()/Store.putAll/Store.rows Store()/Store.putAll
 home Row@Store()/Store.putAll/Row() Store()/Store.putAll
-known #129 home Row·rows@Store()/Store.putAll/push Store()/Store.putAll  # G
+home Row·rows@Store()/Store.putAll/push Store()/Store.putAll
 home Reading·reading Store()
 known #74 home Store Store()
 home Reading·readings Store()
@@ -86,8 +86,6 @@ known #137 side Disk(Store.path) both  # D
 #    (`rows.map(..).join(..)`, `this.rows().map(..)`): what it gives goes into the call around it
 # D: the store's path is two places, `Disk(this.path)` where it is read and `Disk(writeRows.path)` where the helper
 #    writes what the method hands it, not one `Disk(Store.path)` read and written
-# G: `push` on a local declared `Row[]` takes and makes an untyped `_·rows`, so the rows read and the Row go to
-#    `writeRows` past it
 # K: a value handed through a field reaches no step inside: `writeRows(this.path, rows)` hands `this` (#121, decision
 #    1), and the helper takes no Store
 # #74: the doors run on what the constructor door built, not on the caller's instance `Store` from beyond (#121,
@@ -96,8 +94,8 @@ known #137 side Disk(Store.path) both  # D
 # B
 known #125 extra home _@Store()/Store.put/writeRows/rows.map Store()/Store.put/writeRows
 known #125 extra home _@Store()/Store.putAll/writeRows/rows.map Store()/Store.putAll/writeRows
-known #125 extra line Row·rows@Store()/Store.put/Store.rows > Store()/Store.put/writeRows/rows.map value
-known #125 extra line Row·rows@Store()/Store.putAll/Store.rows > Store()/Store.putAll/writeRows/rows.map value
+known #125 extra line Row·rows@Store()/Store.put/push > Store()/Store.put/writeRows/rows.map value
+known #125 extra line Row·rows@Store()/Store.putAll/push > Store()/Store.putAll/writeRows/rows.map value
 known #125 extra line Store()/Store.put/writeRows/rows.map > _@Store()/Store.put/writeRows/rows.map value
 known #125 extra line Store()/Store.putAll/writeRows/rows.map > _@Store()/Store.putAll/writeRows/rows.map value
 known #125 extra line _@Store()/Store.put/writeRows/rows.map > Store()/Store.put/writeRows/join value
@@ -115,14 +113,6 @@ known #137 extra line Store()/Store.put/writeRows > Disk(writeRows.path) own
 known #137 extra line Store()/Store.putAll/writeRows > Disk(writeRows.path) own
 known #137 extra side Disk(writeRows.path) right
 known #137 extra side Disk(this.path) left
-
-# G
-known #129 extra home _·rows@Store()/Store.put/push Store()/Store.put
-known #129 extra home _·rows@Store()/Store.putAll/push Store()/Store.putAll
-known #129 extra line Row@Store()/Store.put/Row() > Store()/Store.put/writeRows value
-known #129 extra line Row@Store()/Store.putAll/Row() > Store()/Store.putAll/writeRows value
-known #129 extra line Store()/Store.put/push > _·rows@Store()/Store.put/push value
-known #129 extra line Store()/Store.putAll/push > _·rows@Store()/Store.putAll/push value
 
 # #74
 known #74 extra line Store@Store()/Store() > Store()/Store.put/Store.rows value

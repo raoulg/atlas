@@ -21,7 +21,7 @@ known #101 line _·con@main/Ledger.keep/open > main/Ledger.keep value           
 known #125 line main/Ledger.keep/collect > _·stored@main/Ledger.keep/collect value    # H
 known #125 line _·stored@main/Ledger.keep/collect > main/Ledger.keep value            # H: keep hands it back
 line main/Ledger.keep > SQLite(notes) own
-known #129 line main/Ledger.keep > main back                     # the notes read back, a Vec<String> (A)
+line main/Ledger.keep > main back  # the notes read back, a Vec<String>
 line main > Screen own
 
 home Ledger·ledger@main/Ledger() main
@@ -33,7 +33,6 @@ side entry left
 side SQLite(notes) right
 side Screen right
 
-# A: a step that also changes what it runs on hands its result of no type of the code's back to nothing.
 # H: a method call with a turbofish (`.collect::<T>()`) whose result the body names is no step (without the turbofish
 #    it is one, handed `con`).
 # #101: a value made in the body and used by the body's own calls has no taker

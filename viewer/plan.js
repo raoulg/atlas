@@ -38,7 +38,8 @@ const SUMS = new Map();
 const SUM_OF = new Map();
 for (const e of D.edges) if (e.kind === "variant") SUM_OF.set(e.dst, SUM_OF.has(e.dst) && SUM_OF.get(e.dst) !== e.src ? null : e.src);
 // the values a call is handed and gives, one value per name: the variants of a sum a name holds are the sum, a value
-// of no type a constructor gives is of the class it builds, and one handed by a name of no type is the value
+// of no type a constructor gives is of the class it builds, one a change gives is the value it was handed, and one
+// handed by a name of no type is the value
 // an earlier call of the body gave that name
 const sitesCache = new Map();
 const sitesOf = n => {
@@ -61,7 +62,9 @@ const sitesOf = n => {
     if (!s) return s;
     const one = byId.get(s.to)?.kind === "class" ? s.to : (s.to && arrowOf(s.to)?.builds) || "";
     const hands = sum(s.hands).map(h => (!h.type && h.name && named.has(h.name) ? {...h, type: named.get(h.name)} : h));
-    const gives = sum(s.gives).map(h => (!h.type && h.name && one ? {...h, type: one} : h));
+    // a call that changes a value it is handed gives it anew under its name: of the type it was handed as
+    const was = new Map(hands.filter(h => h.name && h.type).map(h => [h.name, h.type]));
+    const gives = sum(s.gives).map(h => (!h.type && h.name && (was.get(h.name) || one) ? {...h, type: was.get(h.name) || one} : h));
     for (const g of gives) if (g.name && g.type) named.set(g.name, g.type);
     return s.hands || s.gives ? {...s, hands, gives} : s;
   });
@@ -667,7 +670,13 @@ const unitMorphism = (u, own) => {
   return {dom, cod, goes};
 };
 // a result with no place of its own (a str, a dict) goes back to the step that called it
-const handsBack = (id, cod) => !/^(part|unit|op):/.test(id) && !!arrowOf(id)?.returns_value && ![...cod.keys()].some(p => p.startsWith("t:"));
+// a value it changes in place is no result: the step's result of no type goes back beside it (`rename(board, ..)`
+// returns a count)
+const handsBack = (id, cod) => {
+  if (/^(part|unit|op):/.test(id) || !arrowOf(id)?.returns_value) return false;
+  const a = arrowOf(id), gives = new Set([...(a.gives || []), ...(a.builds ? [a.builds] : [])]), changed = t => (a.changes || []).includes(t) && !gives.has(t);
+  return ![...cod.keys()].some(p => p.startsWith("t:") && !changed(places.get(p)?.type));
+};
 // a result another step of its caller's body takes goes on to that step as a value, not back to the caller
 const takenBeside = key => {
   const i = treeInfo.get(key), c = i?.from != null && treeInfo.get(i.from), n = c && byId.get(c.step);
@@ -910,7 +919,8 @@ const oneOfKind = (m, names, keep) => {
   const has = k => !!names?.get(k);
   m.forEach((r, k) => {
     const kind = kindKey(k);
-    if (has(k)) { if (!named.has(kind)) named.set(kind, k); out.set(k, r); return; }
+    // one name holds one value: what the arrow changes and what the call gives back under the name it was handed are one
+    if (has(k)) { if ([...out.keys()].some(o => kindKey(o) === kind && names.get(o) === names.get(k))) return; if (!named.has(kind)) named.set(kind, k); out.set(k, r); return; }
     const prev = unnamed.get(kind);
     if (!prev) { unnamed.set(kind, k); out.set(k, r); return; }
     if (places.get(prev)?.type === kindOf(places.get(prev)?.type) && places.get(k)?.type !== places.get(prev)?.type) { out.delete(prev); unnamed.set(kind, k); out.set(k, r); }
