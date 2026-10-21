@@ -220,8 +220,12 @@ pub fn languages() -> Vec<Box<dyn Language>> {
     vec![Box::new(Rust), Box::new(Python), Box::new(TypeScript)]
 }
 
-/// The language a repo is written in; a package directory, given or asked for, means Python.
+/// The language a repo is written in: a part's, the language of its manifest; a package directory,
+/// given or asked for, means Python.
 pub fn detect(repo: &Repo, opts: &Options) -> Option<Box<dyn Language>> {
+    if let Some(name) = repo.language() {
+        return languages().into_iter().find(|l| l.name() == name);
+    }
     if opts.package.is_some() || repo.asked().is_some() {
         return Some(Box::new(Python));
     }

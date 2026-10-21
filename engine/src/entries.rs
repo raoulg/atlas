@@ -161,6 +161,8 @@ pub fn read_makefile(repo: &Repo, g: &mut Graph) {
                 deps: deps.split_whitespace().map(str::to_string).collect(),
                 recipe: vec![],
                 calls: vec![],
+                module: "Makefile".into(),
+                part: String::new(),
             });
             open = true;
         } else if let Some(rest) = line.strip_prefix('\t') {

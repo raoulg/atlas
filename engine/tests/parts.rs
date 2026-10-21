@@ -163,6 +163,46 @@ fn twins() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixture-twins")
 }
 
+fn makefiles() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixture-makefiles")
+}
+
+/// A part's Makefile is its own, a unit of its part with its targets. Two Makefiles are each held
+/// under where their part lies (`orders/Makefile`), and so is a target both name (`run`); a target
+/// one names keeps its id, and a target runs its own Makefile's. A directory with two manifests
+/// (`shop/`: `pyproject.toml`, `package.json`) is two parts, each read in its manifest's language,
+/// and its Makefile is one, the directory's.
+#[test]
+fn each_part_has_its_own_makefile() {
+    let g = analyze_repo(&[makefiles()], &Options::default()).unwrap();
+    let parts: Vec<String> = g.parts.iter().map(|p| format!("{} {}", p.id, p.language)).collect();
+    assert_eq!(parts, ["billing python", "orders python", "shop/python/shop python", "shop/typescript/shop typescript"]);
+    let mut make: Vec<(&str, &str, &str)> = g.make.iter().map(|t| (t.id.as_str(), t.module.as_str(), t.part.as_str())).collect();
+    make.sort();
+    assert_eq!(
+        make,
+        [
+            ("billing/make:run", "billing/Makefile", "billing"),
+            ("make:audit", "billing/Makefile", "billing"),
+            ("make:test", "orders/Makefile", "orders"),
+            ("orders/make:run", "orders/Makefile", "orders"),
+            ("shop/make:run", "shop/Makefile", "shop/python/shop"),
+        ]
+    );
+    assert_eq!(g.make.iter().find(|t| t.id == "make:audit").unwrap().calls, ["billing/make:run", "billing.main.main"]);
+    let tops = atlas_engine::flow::units(&g).tops;
+    let makefile_of = |part: &str| -> Vec<String> {
+        tops.iter().find(|(p, _)| p == part).unwrap().1.iter().filter(|u| u.ends_with("Makefile")).cloned().collect()
+    };
+    assert_eq!(makefile_of("orders"), ["orders/Makefile"]);
+    assert_eq!(makefile_of("billing"), ["billing/Makefile"]);
+    assert_eq!(makefile_of("shop/python/shop"), ["shop/Makefile"]);
+    assert!(makefile_of("shop/typescript/shop").is_empty());
+    let alone = analyze_repo(&[makefiles().join("orders")], &Options::default()).unwrap();
+    let make: Vec<(&str, &str)> = alone.make.iter().map(|t| (t.id.as_str(), t.module.as_str())).collect();
+    assert_eq!(make, [("make:run", "Makefile"), ("make:test", "Makefile")], "one Makefile keeps its names");
+}
+
 /// Two parts whose package has one name (`orders/src/app`, `billing/src/app`) each hold it under
 /// the directory the part lies in, with every name under it and the scripts beside it: both are
 /// drawn, each with its own code, files and places, and no two nodes share an id. The project at

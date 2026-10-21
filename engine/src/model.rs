@@ -825,6 +825,12 @@ pub struct MakeTarget {
     /// Entry ids this target runs, in recipe order.
     #[serde(default)]
     pub calls: Vec<String>,
+    /// The unit it stands in: its Makefile.
+    #[serde(default)]
+    pub module: String,
+    /// The part of the repository its Makefile belongs to.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub part: String,
 }
 
 #[derive(Serialize, Deserialize, TS, Clone, Debug, Default)]
@@ -1008,8 +1014,8 @@ impl Graph {
     /// Every id the graph holds, mapped by `to`: each node's own, and each that names a node (its
     /// module, class and part, the method whose promise it breaks, what its prophecy replaces or may
     /// replace, what its calls reach and the types they hand and give, whose calls make its touches
-    /// whole and whose code decides where they go), an edge's ends, what a make target runs, the
-    /// parts and the root.
+    /// whole and whose code decides where they go), an edge's ends, a make target's own with its
+    /// Makefile, its part and what it runs, the parts and the root.
     pub fn rename(&mut self, to: &dyn Fn(&str) -> String) {
         let m = |s: &mut String| {
             if !s.is_empty() {
@@ -1044,6 +1050,8 @@ impl Graph {
         }
         for t in &mut self.make {
             m(&mut t.id);
+            m(&mut t.module);
+            m(&mut t.part);
             t.calls.iter_mut().for_each(&m);
         }
     }

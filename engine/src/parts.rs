@@ -86,46 +86,60 @@ pub fn analyze_parts(repos: &[PathBuf], opts: &Options) -> Result<Vec<Graph>> {
     Ok(apart(graphs))
 }
 
-/// The parts of the repository as read: each root's, and for a package named on its own the
-/// project it is in, asked for that package, as one part.
+/// The parts of the repository as read: each root's, read in the language of its manifest, and for
+/// a package named on its own the project it is in, asked for that package, as one part.
 fn found(r: &Repo, opts: &Options) -> Vec<Repo> {
     match r.asked() {
         Some(_) => vec![r.clone()],
-        None => roots(r, opts).into_iter().map(|(d, _)| r.under(d.strip_prefix(r.root()).unwrap_or(&d))).collect(),
+        None => roots(r, opts).into_iter().map(|(d, l)| r.under(d.strip_prefix(r.root()).unwrap_or(&d)).read_as(l)).collect(),
     }
 }
 
 /// Parts that hold a top-level name alike (two projects whose package is `app`, the scripts beside
-/// each) hold it under where each part lies, `orders/app` and `billing/app`, so that no two parts
-/// share an id: the part's directory, behind the repository's name when several are read, and before
-/// the part's language when another part lies in the same directory. A name one part holds keeps it,
-/// and so does the part at the root of the repository, which lies nowhere below it.
+/// each, two Makefiles) hold it under where each part lies, `orders/app` and `billing/app`, so that
+/// no two parts share an id: the part's directory, behind the repository's name when several are
+/// read, and before the part's language when another part lies in the same directory. A name one
+/// part holds keeps it, and so does the part at the root of the repository, which lies nowhere below
+/// it. A Makefile two parts in one directory read is one Makefile, held once.
 fn apart(parts: Vec<(Graph, PathBuf)>) -> Vec<Graph> {
     let head = |id: &str| id.split('.').next().unwrap_or("").to_string();
-    // the top-level names of a part's own code: no library's, which the parts share
-    let held: Vec<BTreeSet<String>> = parts
+    // the top-level names of a part's own code, no library's (which the parts share), and of its
+    // Makefile: the file and its targets
+    let held: Vec<(BTreeSet<String>, BTreeSet<String>)> = parts
         .iter()
-        .map(|(g, _)| g.nodes.iter().filter(|n| !n.library && n.kind != NodeKind::External).map(|n| head(&n.id)).collect())
+        .map(|(g, _)| {
+            let code = g.nodes.iter().filter(|n| !n.library && n.kind != NodeKind::External).map(|n| head(&n.id)).collect();
+            (code, g.make.iter().flat_map(|t| [t.module.clone(), t.id.clone()]).collect())
+        })
         .collect();
-    let mut holders: HashMap<&str, usize> = HashMap::new();
-    for h in held.iter().flatten() {
-        *holders.entry(h).or_default() += 1;
+    // who holds each name: a part its code's, the directory its Makefile lies in the Makefile's
+    let mut holders: HashMap<&str, HashSet<String>> = HashMap::new();
+    for (i, ((g, _), (code, make))) in parts.iter().zip(&held).enumerate() {
+        for h in code {
+            holders.entry(h).or_default().insert(format!("part {i}"));
+        }
+        for h in make {
+            holders.entry(h).or_default().insert(format!("Makefile in {}", g.project_root));
+        }
     }
     let dirs: Vec<PathBuf> = parts.iter().map(|(_, at)| at.clone()).collect();
     parts
         .into_iter()
         .zip(&held)
-        .map(|((mut g, at), own)| {
-            let shared: HashSet<&str> = own.iter().map(String::as_str).filter(|h| holders[h] > 1).collect();
+        .map(|((mut g, at), (code, make))| {
+            let shared: HashSet<&str> = code.iter().chain(make).map(String::as_str).filter(|h| holders[h].len() > 1).collect();
             // a dot in a directory's name is no package boundary
-            let mut place: Vec<String> = at.components().map(|c| c.as_os_str().to_string_lossy().replace('.', "_")).collect();
-            if dirs.iter().filter(|d| **d == at).count() > 1 {
-                place.push(g.language.clone());
-            }
-            if !shared.is_empty() && !place.is_empty() {
-                let place = place.join("/");
-                g.rename(&|id| if shared.contains(head(id).as_str()) { format!("{place}/{id}") } else { id.to_string() });
-            }
+            let dir: Vec<String> = at.components().map(|c| c.as_os_str().to_string_lossy().replace('.', "_")).collect();
+            // the code of two parts in one directory is told apart by its language; their Makefile is the directory's
+            let place =
+                if dirs.iter().filter(|d| **d == at).count() > 1 { [dir.clone(), vec![g.language.clone()]].concat() } else { dir.clone() };
+            let (dir, place) = (dir.join("/"), place.join("/"));
+            let under = |p: &str, id: &str| if p.is_empty() { id.to_string() } else { format!("{p}/{id}") };
+            g.rename(&|id| match head(id) {
+                h if !shared.contains(h.as_str()) => id.to_string(),
+                h if make.contains(&h) => under(&dir, id),
+                _ => under(&place, id),
+            });
             g
         })
         .collect()
@@ -195,6 +209,10 @@ pub fn assign(g: &mut Graph) {
     for n in &mut g.nodes {
         let head = n.id.split('.').next().unwrap_or("").to_string();
         n.part = if known.contains(&head) { head } else { ids[0].clone() };
+    }
+    // a Makefile beside the packages is a route into the first, as a script is
+    for t in &mut g.make {
+        t.part = ids[0].clone();
     }
 }
 
