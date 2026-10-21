@@ -216,7 +216,7 @@ fn insert_marker(ext: &str, lines: &mut Vec<String>, line: usize, marker: String
 
 /// A Python file with `from {module} import prophecy` added where isort puts it: in the block of
 /// imports from the same top-level package, before the first one whose module sorts after it; with
-/// no such block, after the last import; with no import, after the docstring.
+/// no such block, as a block of its own after the last import; with no import, after the docstring.
 fn with_import(text: &str, module: &str) -> String {
     let import = format!("from {module} import prophecy");
     let mut lines: Vec<&str> = text.lines().collect();
@@ -241,6 +241,7 @@ fn with_import(text: &str, module: &str) -> String {
         }
     }
     let same = |named: &str| named.split('.').next() == Some(package);
+    let block_of_its_own = !statements.is_empty() && !statements.iter().any(|(_, _, named)| same(named));
     let at = match statements.iter().find(|(_, _, named)| same(named) && *named > module) {
         Some((start, _, _)) => *start,
         None => match statements.iter().rev().find(|(_, _, named)| same(named)).or(statements.last()) {
@@ -260,6 +261,9 @@ fn with_import(text: &str, module: &str) -> String {
         },
     };
     lines.insert(at, &import);
+    if block_of_its_own {
+        lines.insert(at, "");
+    }
     let mut out = lines.join("\n");
     if text.ends_with('\n') {
         out.push('\n');
@@ -351,7 +355,7 @@ mod tests {
         assert!(after.contains("    Settings,\n)\nfrom sunspots.zz import prophecy\n"), "{after}");
         assert_eq!(
             with_import("from pathlib import Path\n\nX = 1\n", "pkg"),
-            "from pathlib import Path\nfrom pkg import prophecy\n\nX = 1\n"
+            "from pathlib import Path\n\nfrom pkg import prophecy\n\nX = 1\n"
         );
         assert_eq!(with_import("\"\"\"Doc.\"\"\"\nX = 1\n", "pkg"), "\"\"\"Doc.\"\"\"\nfrom pkg import prophecy\nX = 1\n");
     }
