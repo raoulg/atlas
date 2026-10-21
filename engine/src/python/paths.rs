@@ -8,9 +8,9 @@ use std::path::Path;
 use indexmap::IndexMap;
 use tree_sitter::Node as TsNode;
 
-use super::{call_path, dotted, Module};
+use super::{call_path, dotted, Module, WRAPPERS};
 use crate::pytypes::{FileArg, Param, Target, Types};
-use crate::tree::{named_children, path_str, text, unquote, walk};
+use crate::tree::{beneath, named_children, path_str, text, unquote, walk};
 
 use crate::knowledge;
 use crate::paths::{cross, environment, hole, lit, or_else, parent, substitute, union};
@@ -155,12 +155,12 @@ impl<'a> Eval<'a> {
         if depth > DEPTH {
             return vec![hole("…")];
         }
+        let e = beneath(e, WRAPPERS);
         let src = &at.m.src;
         let named = || hole(dotted(Some(e), src).last().map(String::as_str).unwrap_or("value"));
         match e.kind() {
             "string" => self.string(at, e, depth),
             "concatenated_string" => named_children(e).into_iter().fold(vec![vec![]], |acc, s| cross(&acc, &self.string(at, s, depth), "")),
-            "parenthesized_expression" => named_children(e).first().map(|x| self.of(at, *x, depth + 1)).unwrap_or_default(),
             "conditional_expression" => {
                 let k = named_children(e);
                 union(

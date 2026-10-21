@@ -189,3 +189,49 @@ def run() -> None:
     assert!(under("1.1").contains("data/alpha.txt") && !under("1.1").contains("beta"), "under alpha:\n{route}");
     assert!(under("2.1").contains("data/beta.txt") && !under("2.1").contains("alpha"), "under beta:\n{route}");
 }
+
+/// What hands on the value inside it, parentheses and `await`, is read as that value, wherever a
+/// value is read: the file `open` is handed is named by the call that gives it, whether the call
+/// is written plainly, in parentheses or awaited.
+#[test]
+fn a_value_through_its_wrappers_is_the_value_inside() {
+    let g = written(
+        "wrappers",
+        &[(
+            "wrappers.py",
+            r#"def where() -> str:
+    return "data/notes.txt"
+
+
+async def place() -> str:
+    return "data/notes.txt"
+
+
+def plain() -> str:
+    with open(where()) as f:
+        return f.read()
+
+
+def parenthesized() -> str:
+    with open((where())) as f:
+        return f.read()
+
+
+async def awaited() -> str:
+    with open(await place()) as f:
+        return f.read()
+"#,
+        )],
+    );
+    for (f, file) in [("plain", "where()"), ("parenthesized", "where()"), ("awaited", "place()")] {
+        let read: Vec<&str> = g
+            .node(&format!("wrappers.{f}"))
+            .unwrap()
+            .touches
+            .iter()
+            .filter(|t| t.kind_name() == "disk_read")
+            .map(|t| t.what.as_str())
+            .collect();
+        assert_eq!(read, [file], "{f}");
+    }
+}
