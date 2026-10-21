@@ -74,7 +74,7 @@ footer{border-top:1px solid var(--line);padding-top:20px;color:var(--ink-3);font
   header nav{margin-left:0;width:100%}
   h2{font-size:27px}
 }
-/* the Rule 30 band across the top, after pttrn.io: drawn by the script at the end of the page */
+/* the Rule 30 band across the top, after pttrn.io's, with Atlas's logo in it: drawn by the script at the end of the page */
 .band{position:relative;height:130px;overflow:hidden;background:var(--bg)}
 .band-cells{position:absolute;inset:0;width:100%;height:100%}
 .band-cells .cell{fill:#E2DCD3}
@@ -672,12 +672,14 @@ function tabs(root) {
   pick(0);
 }
 document.querySelectorAll('[data-tabs]').forEach(tabs);
-// The Rule 30 band, as pttrn.io draws it (pttrn-huisstijl, DocumentHeader): a single seed,
-// generations 62-74 over columns -62..61, generation 68 in accent, the pitch the width / 124 and at
-// least 8px. Atlas's logo is itself a window of 13 by 13 cells onto Rule 30, so it is taken up in
-// the band on the band's own grid, at the left edge of the text, with one empty column either side.
+// The Rule 30 band, after pttrn.io's: a single seed, the cells squares of 0.78125 of the pitch, one
+// generation in accent. Atlas's logo is a window onto the same automaton, generations 37-49 over
+// columns 4..16, so the band shows those generations, 37-49, over every column that lives in them
+// (-49..49), and the logo stands in it at its own columns: the band's cells run on into it. The
+// pitch fills the width, at least 8px; a narrower screen shows the middle of the band.
 (() => {
-  const SKIP = 62, ROWS = 13, COL_MIN = -62, COL_MAX = 61, ACCENT_ROW = 6, MIN_PITCH = 8, SQUARE = 0.78125;
+  const SKIP = 37, ROWS = 13, COL_MIN = -49, COL_MAX = 49, ACCENT_ROW = 6, MIN_PITCH = 8, SQUARE = 0.78125;
+  const LOGO_COL = 4;
   const width = COL_MAX - COL_MIN + 1, reach = SKIP + ROWS;
   let row = new Uint8Array(width + 2 * reach);
   row[-COL_MIN + reach] = 1;
@@ -691,21 +693,19 @@ document.querySelectorAll('[data-tabs]').forEach(tabs);
   const band = document.querySelector('.band');
   const cells = band.querySelector('.band-cells');
   const logo = band.querySelector('.band-logo');
-  // the left edge of the text: main is 1240px wide at most, with a gutter of 16px
-  const textEdge = w => Math.max(0, (w - 1240) / 2) + 16;
   const draw = () => {
     const w = band.clientWidth;
     const pitch = Math.max(MIN_PITCH, w / width);
+    // the seed's column centred, so that the band is the automaton's own shape
+    const x0 = w / 2 - (0.5 - COL_MIN) * pitch;
     band.style.height = `${ROWS * pitch}px`;
-    // the logo's left edge on a column of the band, at or after the text's edge
-    const left = w / 2 + Math.ceil((textEdge(w) - w / 2) / pitch) * pitch;
+    const left = x0 + (LOGO_COL - COL_MIN) * pitch;
     Object.assign(logo.style, {left: `${left}px`, top: '0px', width: `${ROWS * pitch}px`, height: `${ROWS * pitch}px`});
-    const clear = {x0: left - pitch, x1: left + (ROWS + 1) * pitch};
     const inset = (1 - SQUARE) / 2 * pitch, size = SQUARE * pitch;
     let plain = '', accent = '';
     grid.forEach((cols, r) => cols.forEach((alive, i) => {
-      const x = w / 2 + (COL_MIN + i) * pitch;
-      if (!alive || x + pitch < 0 || x > w || (x + pitch > clear.x0 + 0.5 && x < clear.x1 - 0.5)) return;
+      const x = x0 + i * pitch;
+      if (!alive || x + pitch < 0 || x > w) return;
       const d = `M${(x + inset).toFixed(2)} ${(r * pitch + inset).toFixed(2)}h${size.toFixed(2)}v${size.toFixed(2)}h-${size.toFixed(2)}z`;
       if (r === ACCENT_ROW) accent += d; else plain += d;
     }));
