@@ -23,10 +23,13 @@ use crate::model::{Bucket, Dir, EdgeKind, Entry, EntryKind, Held, Node, NodeKind
 use crate::pytypes::{By, Facts, FileArg, Target, Ty, Types, Value};
 use crate::repo::Repo;
 use crate::tree::{
-    evaluation_order, field_children, literals, named_children, nth_of_kind, payload_of, span, text, unquote, walk, what_of, ChoiceSyntax,
-    CompareSyntax, Part,
+    beneath, evaluation_order, field_children, literals, named_children, nth_of_kind, outermost, payload_of, span, text, unquote, walk,
+    what_of, ChoiceSyntax, CompareSyntax, Part, Wrappers,
 };
 use paths::{At, Built, Eval};
+
+/// What hands on the value inside it: parentheses and `await`.
+const WRAPPERS: Wrappers = &["parenthesized_expression", "await"];
 
 const BUILTIN_TYPES: &[&str] = &[
     "str",
@@ -1742,6 +1745,7 @@ const BINDS: BindSyntax = BindSyntax {
 /// The names whose value a Python value may be or be a part of: `graph`, `self.items[0]`, either
 /// side of `a or b` and of `a if c else b`. A call and a slice (`xs[:]`) make a value anew.
 fn held_by<'a>(v: TsNode, src: &'a [u8]) -> Vec<&'a str> {
+    let v = beneath(v, WRAPPERS);
     match v.kind() {
         "boolean_operator" => {
             [v.child_by_field_name("left"), v.child_by_field_name("right")].into_iter().flatten().flat_map(|x| held_by(x, src)).collect()
@@ -1751,7 +1755,6 @@ fn held_by<'a>(v: TsNode, src: &'a [u8]) -> Vec<&'a str> {
             let parts = named_children(v);
             [parts.first(), parts.get(2)].into_iter().flatten().flat_map(|x| held_by(*x, src)).collect()
         }
-        "parenthesized_expression" => named_children(v).into_iter().flat_map(|x| held_by(x, src)).collect(),
         "subscript" if field_children(v, "subscript").iter().any(|s| s.kind() == "slice") => vec![],
         _ => root_name(v, src).into_iter().collect(),
     }
@@ -3451,7 +3454,7 @@ fn file_calls<'t>(
             let artifact = f.places().into_iter().next().map(|(a, _)| a).unwrap_or_default();
             let what = match literals(a, src, &["string"]).into_iter().next() {
                 Some(l) => l.trim().to_string(),
-                None => text(a, src).to_string(),
+                None => text(beneath(a, WRAPPERS), src).to_string(),
             };
             // a pattern below a directory is the path the call gives, not the directory alone
             let patterned = name == "self" && knowledge::PATH_PATTERNS.iter().any(|(p, _)| *p == op);
@@ -3461,7 +3464,7 @@ fn file_calls<'t>(
 }
 
 /// The name the body keeps a call's value by: the target of the assignment (or `:=`) it is the
-/// value of, through parentheses, `await` and the arms of a choice (`a if c else b`, `x or y`).
+/// value of, through its wrappers and the arms of a choice (`a if c else b`, `x or y`).
 /// A value assigned to `_` is not kept.
 fn kept_as(c: TsNode, src: &[u8]) -> Option<String> {
     let mut n = c;
@@ -3469,7 +3472,7 @@ fn kept_as(c: TsNode, src: &[u8]) -> Option<String> {
         let p = n.parent()?;
         let value = |field: &str| p.child_by_field_name(field).map(|v| v.id()) == Some(n.id());
         match p.kind() {
-            "parenthesized_expression" | "await" => n = p,
+            k if WRAPPERS.contains(&k) => n = p,
             _ if (CHOICES.chooses)(p, src) && matches!((CHOICES.part)(p, n, src), Part::Arm(_)) => n = p,
             "assignment" if value("right") => {
                 return p
@@ -3598,11 +3601,7 @@ fn handed_for_its_value(a: TsNode, src: &[u8]) -> bool {
 
 /// Whether what a call gives back is used: anything but a call standing as a statement.
 fn value_used(call: TsNode) -> bool {
-    let mut n = call;
-    while let Some(p) = n.parent().filter(|p| matches!(p.kind(), "await" | "parenthesized_expression")) {
-        n = p;
-    }
-    n.parent().map_or(false, |p| p.kind() != "expression_statement")
+    outermost(call, WRAPPERS).parent().map_or(false, |p| p.kind() != "expression_statement")
 }
 
 /// A call's first positional argument.

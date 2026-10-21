@@ -490,7 +490,7 @@ each one type, in every language.
 nothing.
 **In Atlas.** An expression that hands on the value inside it is an identity on what Atlas reads of
 the value: parentheses, a cast or an assertion (`as`, `satisfies`, `!`), a reference (`&x`), and an
-unwrapping (`await`, `x?`, `x.await`), since a promise, an `Option` and a `Result` are read as what
+unwrapping (`await`, `x?`, `x.await`), since a promise, a coroutine, an `Option` and a `Result` are read as what
 they hold. A value read through any of them is the value inside, so a change, a place or a call
 written through a wrapper is the one written without it. A cast also names a type, and where the
 question is the class a method runs on (`(x as Store).f()`), that type answers it.
