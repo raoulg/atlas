@@ -509,24 +509,77 @@ pub(super) fn expand(m: &Module, parts: &[String]) -> Vec<String> {
     }
 }
 
+/// The names a pattern binds: `x` of `Some(x)`, `a` and `b` of `(a, mut b)`; the type a pattern
+/// takes apart (`Some`) and a guard bind nothing.
+fn pattern(p: TsNode, src: &[u8], out: &mut HashSet<String>) {
+    match p.kind() {
+        "identifier" | "shorthand_field_identifier" => {
+            out.insert(text(p, src).to_string());
+        }
+        _ => {
+            let skipped = [p.child_by_field_name("type"), p.child_by_field_name("condition")];
+            for c in named_children(p).into_iter().filter(|c| !skipped.contains(&Some(*c))) {
+                pattern(c, src, out);
+            }
+        }
+    }
+}
+
+/// The names in scope where `at` stands in the body of `def`, as Rust scopes a binding: the
+/// function's parameters; each `let` written before it in a block around it, and each function
+/// declared in one; and the patterns of the closures, loops, `match` arms, `if let`s and
+/// `while let`s whose bodies hold it. A name bound there shadows the item of that name: `wrapped`
+/// after `let wrapped = vec![]` is the local, not the function `wrapped` of the module.
+pub(super) fn bound_at<'t>(def: TsNode<'t>, at: TsNode<'t>, src: &[u8]) -> HashSet<String> {
+    fn lets(c: Option<TsNode>) -> Vec<TsNode> {
+        c.map(|c| walk(c, &["let_condition"])).unwrap_or_default().into_iter().filter_map(|l| l.child_by_field_name("pattern")).collect()
+    }
+    let mut patterns: Vec<TsNode<'t>> = vec![];
+    let mut child = at;
+    while let Some(p) = child.parent() {
+        let is = |f: &str| p.child_by_field_name(f).map(|x| x.id()) == Some(child.id());
+        match p.kind() {
+            "block" => patterns.extend(named_children(p).into_iter().filter_map(|s| match s.kind() {
+                "let_declaration" if s.end_byte() <= child.start_byte() => s.child_by_field_name("pattern"),
+                "function_item" => s.child_by_field_name("name"),
+                _ => None,
+            })),
+            "closure_expression" if is("body") => {
+                patterns.extend(p.child_by_field_name("parameters").map(named_children).unwrap_or_default())
+            }
+            "for_expression" if is("body") => patterns.extend(p.child_by_field_name("pattern")),
+            "match_arm" if !is("pattern") => patterns.extend(p.child_by_field_name("pattern")),
+            "if_expression" if is("consequence") => patterns.extend(lets(p.child_by_field_name("condition"))),
+            "while_expression" if is("body") => patterns.extend(lets(p.child_by_field_name("condition"))),
+            _ => {}
+        }
+        if p.id() == def.id() {
+            let params = p.child_by_field_name("parameters").map(named_children).unwrap_or_default();
+            patterns.extend(params.into_iter().filter_map(|x| x.child_by_field_name("pattern")));
+            break;
+        }
+        child = p;
+    }
+    let mut out = HashSet::new();
+    for p in patterns {
+        pattern(p, src, &mut out);
+    }
+    out
+}
+
+/// Whether a path written at `at` in the body of `def` names a local bound there (`bound_at`)
+/// rather than an item: a path of one segment can.
+pub(super) fn shadowed(def: Option<TsNode>, at: TsNode, parts: &[String], src: &[u8]) -> bool {
+    match (def, parts) {
+        (Some(d), [name]) => bound_at(d, at, src).contains(name),
+        _ => false,
+    }
+}
+
 /// The names a function binds: its parameters, its type parameters and those of the impl or
 /// trait it is in, and in its body each `let`, closure parameter, loop or match binding, and
 /// function declared there.
 pub(super) fn bound_in(def: TsNode, src: &[u8]) -> HashSet<String> {
-    fn pattern(p: TsNode, src: &[u8], out: &mut HashSet<String>) {
-        match p.kind() {
-            "identifier" | "shorthand_field_identifier" => {
-                out.insert(text(p, src).to_string());
-            }
-            // the type a pattern takes apart (`Some(x)`) and a guard bind nothing
-            _ => {
-                let skipped = [p.child_by_field_name("type"), p.child_by_field_name("condition")];
-                for c in named_children(p).into_iter().filter(|c| !skipped.contains(&Some(*c))) {
-                    pattern(c, src, out);
-                }
-            }
-        }
-    }
     let mut out = HashSet::new();
     let mut scope = Some(def);
     while let Some(s) = scope {
@@ -547,6 +600,7 @@ pub(super) fn bound_in(def: TsNode, src: &[u8]) -> HashSet<String> {
     {
         match n.kind() {
             "closure_parameters" => named_children(n).into_iter().for_each(|p| pattern(p, src, &mut out)),
+
             "function_item" if n.id() != def.id() => out.extend(n.child_by_field_name("name").map(|x| text(x, src).to_string())),
             "function_item" => {}
             _ => n.child_by_field_name("pattern").into_iter().for_each(|p| pattern(p, src, &mut out)),

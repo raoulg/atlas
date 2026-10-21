@@ -7,7 +7,7 @@ use indexmap::IndexMap;
 use tree_sitter::Node as TsNode;
 
 use super::module::{
-    bound_in, changes_inside, def_node, expand, path_parts, resolve, resolve_value, type_names, Module, OR_ELSE, WRAPPERS,
+    bound_in, changes_inside, def_node, expand, path_parts, resolve, resolve_value, shadowed, type_names, Module, OR_ELSE, WRAPPERS,
 };
 use super::paths::{self, Arg, At, Eval};
 use crate::body::{Crosses, Step, Steps, UseSyntax};
@@ -525,7 +525,12 @@ impl<'a, 't> Body<'a, 't> {
         resolve(self.m, parts, self.modules, &self.store.nodes, self.crate_ids)
     }
 
-    fn resolve_value(&self, parts: &[String]) -> Option<String> {
+    /// What a path written at `at` names where a value is wanted: none where it names a local the
+    /// body binds there, which shadows the item of that name.
+    fn resolve_value(&self, at: TsNode, parts: &[String]) -> Option<String> {
+        if shadowed(Some(self.def), at, parts, self.src) {
+            return None;
+        }
         resolve_value(self.m, parts, self.modules, &self.store.nodes, self.crate_ids)
     }
 
@@ -816,7 +821,7 @@ impl<'a, 't> Body<'a, 't> {
         let parts = path_parts(Some(f), src);
         let t = match (parts.first().map(String::as_str), &self.cls) {
             (Some("Self"), Some(cls)) => self.store.method_of(cls, parts.get(1)?)?,
-            _ => self.resolve_value(&parts)?,
+            _ => self.resolve_value(f, &parts)?,
         };
         own(t).map(|t| (t, false))
     }
@@ -842,7 +847,7 @@ impl<'a, 't> Body<'a, 't> {
                 if parts.is_empty() {
                     return None;
                 }
-                self.resolve_value(&parts)
+                self.resolve_value(v, &parts)
                     .as_deref()
                     .and_then(|f| self.returned_class(f))
                     .or_else(|| self.resolve(&parts[..parts.len() - 1]).and_then(|r| self.class_of(&r)))
@@ -997,13 +1002,13 @@ impl<'a, 't> Body<'a, 't> {
     /// called by whoever receives it.
     fn handed_on(&self, steps: &mut Steps, c: TsNode<'t>) {
         for a in positional(c).into_iter().flatten() {
-            if !matches!(a.kind(), "identifier" | "scoped_identifier") || self.locals.contains_key(text(a, self.src)) {
+            if !matches!(a.kind(), "identifier" | "scoped_identifier") {
                 continue;
             }
             let ps = path_parts(Some(a), self.src);
             let handed = match (ps.first().map(String::as_str), &self.cls) {
                 (Some("Self"), Some(c)) => ps.get(1).and_then(|m| self.store.method_of(c, m)),
-                _ => self.resolve_value(&ps),
+                _ => self.resolve_value(a, &ps),
             };
             if let Some(t) =
                 handed.filter(|t| self.store.nodes.get(t).map_or(false, |n| matches!(n.kind, NodeKind::Function | NodeKind::Method)))
@@ -1027,7 +1032,7 @@ impl<'a, 't> Body<'a, 't> {
             return Some(made.ty.into_iter().chain([method]).collect());
         }
         let parts = path_parts(Some(f), self.src);
-        let t = self.resolve_value(&parts)?;
+        let t = self.resolve_value(f, &parts)?;
         Some(t.strip_prefix("ext:")?.split('.').map(String::from).collect())
     }
 
@@ -1355,7 +1360,7 @@ impl<'a, 't> Body<'a, 't> {
             }
             ("Self", None) => None,
             // `Type::new(..)`: a function on a type
-            _ => self.resolve_value(&parts).or_else(|| {
+            _ => self.resolve_value(c, &parts).or_else(|| {
                 let r = self
                     .resolve(&parts[..parts.len().saturating_sub(1)])
                     .filter(|r| !r.starts_with("ext:") && parts.len() > 1)
