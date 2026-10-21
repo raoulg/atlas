@@ -54,8 +54,8 @@ home Kennisbank@Kennisbank()/Kennisbank.new/Kennisbank() Kennisbank()/Kennisbank
 home Kennisbank@Kennisbank()/Kennisbank.new Kennisbank()
 known #74 home Kennisbank Kennisbank()
 home Bron·bron Kennisbank()
-known #132 home Bron@Kennisbank()/Kennisbank.graaf/node/?1 Kennisbank()/Kennisbank.graaf/node/?1
-known #132 home Begrip@Kennisbank()/Kennisbank.graaf/node/?1 Kennisbank()/Kennisbank.graaf/node/?1
+home Bron@Kennisbank()/Kennisbank.graaf/node/?1 Kennisbank()/Kennisbank.graaf/node/?1
+home Begrip@Kennisbank()/Kennisbank.graaf/node/?1 Kennisbank()/Kennisbank.graaf/node/?1
 home Node@Kennisbank()/Kennisbank.graaf/node/?1 Kennisbank()/Kennisbank.graaf/node
 home Node@Kennisbank()/Kennisbank.graaf/node Kennisbank()/Kennisbank.graaf
 home Graaf@Kennisbank()/Kennisbank.graaf/Graaf() Kennisbank()/Kennisbank.graaf
@@ -127,8 +127,6 @@ known #74 extra line Kennisbank@Kennisbank()/Kennisbank.new > Kennisbank()/Kenni
 
 
 # `node` gives the sum, but its variants, which the injections take, go back to it as well
-known #132 extra line Bron@Kennisbank()/Kennisbank.graaf/node/?1 > Kennisbank()/Kennisbank.graaf/node value
-known #132 extra line Begrip@Kennisbank()/Kennisbank.graaf/node/?1 > Kennisbank()/Kennisbank.graaf/node value
 
 # graaf's own arrow takes what its steps make, the Nodes too, though only Graaf() takes them and graaf gives back the Graaf
 known #126 extra line Node@Kennisbank()/Kennisbank.graaf/node > Kennisbank()/Kennisbank.graaf value

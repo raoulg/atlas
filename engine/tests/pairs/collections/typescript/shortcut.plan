@@ -86,7 +86,6 @@ known #137 side Disk(Store.path) both  # D
 #    (`rows.map(..).join(..)`, `this.rows().map(..)`): what it gives goes into the call around it
 # D: the store's path is two places, `Disk(this.path)` where it is read and `Disk(writeRows.path)` where the helper
 #    writes what the method hands it, not one `Disk(Store.path)` read and written
-# E: a Reading built inside the step for the Row it returns is drawn as handed back at the step's own arrow too
 # G: `push` on a local declared `Row[]` takes and makes an untyped `_·rows`, so the rows read and the Row go to
 #    `writeRows` past it
 # K: a value handed through a field reaches no step inside: `writeRows(this.path, rows)` hands `this` (#121, decision
@@ -116,10 +115,6 @@ known #137 extra line Store()/Store.put/writeRows > Disk(writeRows.path) own
 known #137 extra line Store()/Store.putAll/writeRows > Disk(writeRows.path) own
 known #137 extra side Disk(writeRows.path) right
 known #137 extra side Disk(this.path) left
-
-# E
-known #134 extra line Reading@Store()/Store.put/Store.rows/Reading() > Store()/Store.put/Store.rows value
-known #134 extra line Reading@Store()/Store.putAll/Store.rows/Reading() > Store()/Store.putAll/Store.rows value
 
 # G
 known #129 extra home _·rows Store()

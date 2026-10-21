@@ -81,10 +81,5 @@ side Screen right
 # an opened step's own arrow takes what its steps make, or what its call is handed, though only a step inside takes it
 known #126 extra line Job·job@run/source > run/report value
 known #126 extra line Job·job@run/source > run value
-known #126 extra line Runner@run/finished/Runner() > run/finished value
-known #126 extra line Message·message@run/report/?1 > run/report value
 
 # a result of no type of the code's handed straight to another step goes back to the caller as well
-known #134 extra line run/finished > run back
-known #134 extra line run/report/?1/Level.prefix > run/report back
-known #134 extra line run/report/?1/Level.suffix > run/report back

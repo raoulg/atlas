@@ -78,4 +78,3 @@ known #74 extra line Kennisbank@Kennisbank()/Kennisbank() > Kennisbank()/Kennisb
 known #74 extra line Kennisbank@Kennisbank()/Kennisbank() > Kennisbank()/Kennisbank.graaf/Kennisbank.node value
 
 # graaf's own arrow takes what its steps make, the Nodes too, though only Graaf() takes them and graaf gives back the Graaf
-known #126 extra line Node@Kennisbank()/Kennisbank.graaf/Kennisbank.node > Kennisbank()/Kennisbank.graaf value

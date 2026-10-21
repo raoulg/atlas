@@ -181,7 +181,7 @@ known #128 line main/?1/lines/Rates.to_base > _@main/?1/lines/Rates.to_base valu
 known #128 line _@main/?1/lines/Rates.to_base > main/?1/lines/ok_or_else value
 line main/?1/lines/Error() > Error@main/?1/lines/Error() value
 line Error@main/?1/lines/Error() > main/?1/lines/ok_or_else value
-line Error@main/?1/lines/Error() > main/?1/lines value
+known #138 line Error@main/?1/lines/Error() > main/?1/lines value   # `?` hands the error on to the border
 line main/?1/lines/ok_or_else > _·rate@main/?1/lines/ok_or_else value
 line _·rate@main/?1/lines/ok_or_else > main/?1/lines/Money() value
 line main/?1/lines/Money() > Money·base@main/?1/lines/Money() value
@@ -324,14 +324,9 @@ known #126 extra line Config·config@main/Config.load > main/?1/Store.rates valu
 known #126 extra line Config·config@main/Config.load > main/?1/write value
 known #126 extra line Store·store@main/Store.open > main/?1/Store.rates value
 known #126 extra line Store·store@main/Store.open > main/?1/Store.expenses value
-known #126 extra line Money·amount@main/?1/read_csv/Expense.parse/Money.parse > main/?1/read_csv/Expense.parse value
-known #126 extra line Money·amount@main/?1/Store.expenses/Money() > main/?1/Store.expenses value
 known #126 extra line Money·amount@main/?1/Store.expenses/Money() > main/?1/Store.expenses/query_map value
-known #126 extra line Money·base@main/?1/lines/Money() > main/?1/lines value
 known #126 extra line Line@main/?1/lines/Line() > main/?1/lines value
 # a result that only a step takes is no result handed back
-known #134 extra line main/?1/lines/Rates.to_base > main/?1/lines back
-known #134 extra line main/?1/write/Render.extension > main/?1/write back
 # the name a chain's last operation gives is given to every call in the chain
 known #125 extra line main/?1/lines/Rates.to_base > _·rate@main/?1/lines/Rates.to_base value
 known #125 extra line _·rate@main/?1/lines/Rates.to_base > main/?1/lines/ok_or_else value

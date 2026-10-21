@@ -409,7 +409,7 @@ function routeTree() {
   // the overrides of a call by name), then its own steps, each choice's branches in a frame, each branch in its own colour
   const visit = (key, step, on, site, hue, path, fed, by = {}) => {
     const alts = by.alts ?? bodyOf(step, on).alts ?? [];
-    treeInfo.set(key, {step, on, site, fed, path, named: !!by.named, alts});
+    treeInfo.set(key, {step, on, site, fed, path, named: !!by.named, alts, from: by.from, siteNo: by.siteNo});
     const n = byId.get(step), forced = V.open.steps.has(key) || V.open.functions.has(step);
     fineCount++;
     // a class met in a route is built, not run: its methods are what a route of its own would start at, so it has no calls to open
@@ -432,10 +432,10 @@ function routeTree() {
       // stands in, and the border it crosses is drawn
       if (deeper.has(s.to)) {
         const rk = `${key}/${s.site ?? s.to}`;
-        treeInfo.set(rk, {step: s.to, on: s.on || null, site: s.site != null ? siteIn(n, s.site) : null, fed: entry.fed, path: deeper, recursive: true, named: !!s.named, alts: insteadOf(s)});
+        treeInfo.set(rk, {step: s.to, on: s.on || null, site: s.site != null ? siteIn(n, s.site) : null, fed: entry.fed, path: deeper, recursive: true, named: !!s.named, alts: insteadOf(s), from: key, siteNo: s.site});
         return {id: rk, open: false, kids: [], hue: h, choice: false, recursive: true};
       }
-      const k = visit(`${key}/${s.site ?? s.to}`, s.to, s.on || null, s.site != null ? siteIn(n, s.site) : null, h, deeper, entry.fed, {named: s.named, alts: insteadOf(s)});
+      const k = visit(`${key}/${s.site ?? s.to}`, s.to, s.on || null, s.site != null ? siteIn(n, s.site) : null, h, deeper, entry.fed, {named: s.named, alts: insteadOf(s), from: key, siteNo: s.site});
       // in the finest plan the steps that only parse the command line are there, marked: a closed entry is their quotient
       if (FINE && foldable && parse.hidden.has(s.site)) k.parse = true;
       return k;
@@ -624,6 +624,14 @@ const unitMorphism = (u, own) => {
 };
 // a result with no place of its own (a str, a dict) goes back to the step that called it
 const handsBack = (id, cod) => !/^(part|unit|op):/.test(id) && !!arrowOf(id)?.returns_value && ![...cod.keys()].some(p => p.startsWith("t:"));
+// a result another step of its caller's body takes goes on to that step as a value, not back to the caller
+const takenBeside = key => {
+  const i = treeInfo.get(key), c = i?.from != null && treeInfo.get(i.from), n = c && byId.get(c.step);
+  if (!i?.site || !n) return false;
+  const names = new Set((i.site.gives || []).filter(g => g.name && !g.type).map(g => g.name));
+  return names.size > 0 && (n.sites || []).some((_, j) => j !== i.siteNo && (siteIn(n, j)?.hands || []).some(h => !h.type && names.has(h.name)));
+};
+const goesBack = (key, cod) => handsBack(stepOf(key), cod) && !takenBeside(key);
 
 // a figure a call makes, numbered in the order the route makes them
 const figureNo = new Map();
@@ -691,7 +699,7 @@ const build = (node, parent, caller) => {
     const fid = "n:" + node.id, kids = [];
     // what the step shows closed, kept for the places it shows: opening it refines the code and leaves them where they stood
     const shut = fine || node.id === V.route || libraryClass(stepOf(node.id)) ? null : stepMorphism(node.id, false, false);
-    frames.set(fid, {id: fid, step: node.id, parent, hue: node.hue, choice: node.choice, anchor: node.id === V.route, ...(node.parse ? {parse: true} : {}), closed: shut && {goes: shut.goes, cod: shut.cod, hb: !!parent && !caller && !/^(part|unit|op):/.test(node.id) && handsBack(stepOf(node.id), shut.cod)}, title: (node.id === V.route ? entryTitle(node.id) : stepLabel(node.id)) + (node.choice ? " · one of" : "")});
+    frames.set(fid, {id: fid, step: node.id, parent, hue: node.hue, choice: node.choice, anchor: node.id === V.route, ...(node.parse ? {parse: true} : {}), closed: shut && {goes: shut.goes, cod: shut.cod, hb: !!parent && !caller && !/^(part|unit|op):/.test(node.id) && goesBack(node.id, shut.cod)}, title: (node.id === V.route ? entryTitle(node.id) : stepLabel(node.id)) + (node.choice ? " · one of" : "")});
     const lib = libraryClass(stepOf(node.id));
     // a library class that is the route starts at its public methods; met inside a route it is a call like another, with its own arrow
     const own = (lib && node.id === V.route) || node.id.startsWith("unit:") ? {dom: new Map(), cod: new Map(), goes: new Map()} : stepMorphism(node.id, true, node.id === V.route);
@@ -705,7 +713,18 @@ const build = (node, parent, caller) => {
     // the body gives back, handed on at the step's moment
     if (fine && node.id !== V.route && !lib) {
       const inD = new Set([...pills.values()].slice(before).flatMap(P => [...P.D.keys()]));
-      for (const k of [...own.dom.keys()]) if (/^[tv]:/.test(k) && inD.has(k) && !own.keep?.has(k)) own.dom.delete(k);
+      // of what the body's own steps make, what goes back is what no step of the code among them takes: a value built
+      // only to be handed into another step stays inside it. One handed into a library's operation goes on in what the
+      // operation gives, a value of no type of the code's, and stays inside where that does
+      // (`query_map(.., |row| Ok(Expense { .. }))` gives the rows the body returns)
+      const mine = [...pills.values()].slice(before).filter(P => { let f = P.own ? frames.get(P.parent)?.parent : P.parent; while (f && frames.get(f)?.synthetic) f = frames.get(f).parent; return f === fid; });
+      const typeOf = k => places.get(k)?.type, isOp = P => stepOf(P.steps[0]).startsWith("op:");
+      const takers = k => mine.filter(P => P.D.has(k) && !P.keep?.has(k));
+      const stays = (k, seen = new Set()) => !seen.has(k) && (seen.add(k), takers(k).some(P => !isOp(P) || (P.C.size > 0 && [...P.C.keys()].every(c => stays(c, seen)))));
+      // a step that gives a value its call names gives that one (`oneOfKind`)
+      const madeBy = (P, x) => { const ks = [...P.C.keys()].filter(k => typeOf(k) === x), nm = ks.filter(k => P.cn?.get(k)); return nm.length ? nm : ks; };
+      const handedOn = x => { const made = mine.flatMap(P => madeBy(P, x)); return made.length > 0 && made.every(k => stays(k)); };
+      for (const k of [...own.dom.keys()]) if (/^[tv]:/.test(k) && (own.keep?.has(k) ? handedOn(typeOf(k)) : inD.has(k))) own.dom.delete(k);
     }
     // what the closed box took and handed on that no box inside it does crosses at its own pill; what one inside takes or
     // makes crosses the frame to it
@@ -714,7 +733,7 @@ const build = (node, parent, caller) => {
       for (const k of shut.dom.keys()) if (!own.dom.has(k) && !inC.has(k) && !inD.has(k)) own.dom.set(k, true);
       for (const k of shut.cod.keys()) if (!own.cod.has(k) && !inC.has(k)) own.cod.set(k, true);
     }
-    const hb = fine ? !!parent && !caller && node.id !== V.route && !lib && !/^(part|unit|op):/.test(node.id) && handsBack(stepOf(node.id), own.cod) : !!frames.get(fid).closed?.hb;
+    const hb = fine ? !!parent && !caller && node.id !== V.route && !lib && !/^(part|unit|op):/.test(node.id) && goesBack(node.id, own.cod) : !!frames.get(fid).closed?.hb;
     if (own.dom.size || own.cod.size || hb || (back.length && !lib && !node.id.startsWith("unit:"))) {
       const oid = "o:" + node.id, own_ = {id: oid, steps: [node.id], D: own.dom, C: own.cod, dn: own.dn, cn: own.cn, goes: own.goes, parent: fid, hue: node.hue, own: true, beyond: own.beyond, keep: own.keep, ...(fine && node.id !== V.route && !lib ? {border: true} : {})};
       pills.set(oid, own_);
@@ -725,7 +744,7 @@ const build = (node, parent, caller) => {
   }
   // a step beyond the cut stands for the image of its whole body, made as a closed step's is (`cutArrow`); a class is built, never opened
   const cut = fine && node.cut && byId.get(stepOf(node.id))?.kind !== "class";
-  const m = cut ? cutArrow(node.id) : stepMorphism(node.id, fine && !node.cut, false, fine && !node.cut), hb = parent && !caller && handsBack(stepOf(node.id), m.cod);
+  const m = cut ? cutArrow(node.id) : stepMorphism(node.id, fine && !node.cut, false, fine && !node.cut), hb = parent && !caller && goesBack(node.id, m.cod);
   if (cut) for (const pl of m.places.values()) addPlace(pl);
   if (caller) m.dom.set(addPlace(entryPlace(caller)), false);
   // a unit stands even when nothing crosses its edge, so that it can be opened

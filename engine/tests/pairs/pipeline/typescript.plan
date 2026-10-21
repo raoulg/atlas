@@ -69,7 +69,7 @@ known #128 line Settings·settings@cli.ts/main/Settings() > cli.ts/main/smooth/f
 line cli.ts/main/smooth/floor > _·before@cli.ts/main/smooth/floor value
 known #101 line _·before@cli.ts/main/smooth/floor > cli.ts/main/smooth value    # `series.slice(before, ..)`
 line Month·series@cli.ts/main/load > cli.ts/main/smooth/average value
-line cli.ts/main/smooth/average > cli.ts/main/smooth back                 # the mean goes into the Smoothed `smooth` makes
+known #125 line cli.ts/main/smooth/average > cli.ts/main/smooth back   # the mean goes into the Smoothed `smooth` makes; `map`, no step, takes it
 line cli.ts/main/smooth > Smoothed·smoothed@cli.ts/main/smooth value
 
 line Month·series@cli.ts/main/load > cli.ts/main/trend value
@@ -129,8 +129,6 @@ side File(data/raw/sunspots.csv) between
 side File(figures/sunspots.svg) right
 
 # a result of no type of the code's that a step of the caller takes also goes back to the caller: counted twice
-known #134 extra line cli.ts/main/monthsOf > cli.ts/main back
-known #134 extra line cli.ts/main/trend > cli.ts/main back
 
 # choices whose arms hold no step are drawn
 known #130 extra choice cli.ts/main/load/parse/parseLine/?1
