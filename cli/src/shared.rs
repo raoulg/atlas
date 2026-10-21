@@ -65,7 +65,7 @@ pub struct Note {
 
 /// A file of `.atlas/` at the top of the repository `repo` is in.
 fn file(repo: &Path, name: &str) -> PathBuf {
-    crate::made(Some(repo), name)
+    crate::home::made(Some(repo), name)
 }
 
 fn read(path: &Path) -> Option<Value> {

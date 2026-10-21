@@ -91,7 +91,7 @@ fn initialize(params: &Value) -> Value {
     json!({
         "protocolVersion": version,
         "capabilities": { "tools": {} },
-        "serverInfo": { "name": "atlas", "version": crate::VERSION.as_str() },
+        "serverInfo": { "name": "atlas", "version": crate::version::VERSION.as_str() },
         "instructions": INSTRUCTIONS,
     })
 }
@@ -374,10 +374,10 @@ fn call(name: &str, args: &Value, opts: &Options) -> Option<Result<String, Strin
                 Err(e) => return Some(Err(e)),
             };
             let shown = args.get("view").cloned().filter(Value::is_object);
-            crate::page(&[repo.clone()], opts, None, None, shown).map_err(|e| format!("Could not read {}: {e}", repo.display())).and_then(
+            crate::page::page(&[repo.clone()], opts, None, None, shown).map_err(|e| format!("Could not read {}: {e}", repo.display())).and_then(
                 |(name, html, _)| {
                     let home = clone.is_none().then_some(repo.as_path());
-                    let out = text("out").map(PathBuf::from).unwrap_or_else(|| crate::made(home, &format!("{name}.view.html")));
+                    let out = text("out").map(PathBuf::from).unwrap_or_else(|| crate::home::made(home, &format!("{name}.view.html")));
                     if let Some(dir) = out.parent() {
                         std::fs::create_dir_all(dir).map_err(|e| format!("Could not make {}: {e}", dir.display()))?;
                     }

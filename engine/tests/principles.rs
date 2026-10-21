@@ -291,11 +291,6 @@ const REVIEWED: &[(&str, &str, &str)] = &[
     ),
     (
         "layers",
-        "atlas",
-        "a fault of Atlas: the CLI's `main.rs` dispatches to its commands (`serve`, `mcp`, `history`) and holds the helpers they call back into (`open`, `page`, `made`); those helpers belong in a module below the commands",
-    ),
-    (
-        "layers",
         "atlas-engine.python",
         "a fault of Atlas: `python/paths.rs` calls back into `python.rs` (`call_path`, `dotted`) while `python.rs` calls into it; what both use belongs in a module below both",
     ),

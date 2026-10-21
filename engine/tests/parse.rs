@@ -556,20 +556,21 @@ fn rust_workspace_parses() {
     assert!(inh.contains(&("atlas-engine.view.Fiber".into(), "atlas-engine.view.View".into())), "impl View for Fiber");
     let calls = edges(&g, EdgeKind::Calls);
     assert!(calls.contains(&("atlas.main".into(), "atlas.view".into())));
-    assert!(calls.contains(&("atlas.view".into(), "atlas.page".into())), "the command writes the page");
+    assert!(calls.contains(&("atlas.view".into(), "atlas.page.page".into())), "the command writes the page");
     // the page reads the repository (one reading, or two as one) and draws what it read
     assert!(
-        calls.contains(&("atlas.page".into(), "atlas.reading".into())) && calls.contains(&("atlas.page".into(), "atlas.viewer".into())),
+        calls.contains(&("atlas.page.page".into(), "atlas.page.reading".into()))
+            && calls.contains(&("atlas.page.page".into(), "atlas.page.viewer".into())),
         "the command reads, then draws"
     );
     assert!(
-        calls.contains(&("atlas.reading".into(), "atlas-engine.parts.analyze_parts".into()))
-            && calls.contains(&("atlas.single".into(), "atlas-engine.parts.merged".into())),
+        calls.contains(&("atlas.page.reading".into(), "atlas-engine.parts.analyze_parts".into()))
+            && calls.contains(&("atlas.page.single".into(), "atlas-engine.parts.merged".into())),
         "cli calls into the engine"
     );
-    assert!(calls.contains(&("atlas.union".into(), "atlas-engine.diff.union".into())), "two readings are one graph, their union");
+    assert!(calls.contains(&("atlas.page.union".into(), "atlas-engine.diff.union".into())), "two readings are one graph, their union");
     assert!(
-        calls.contains(&("atlas.viewer".into(), "atlas-engine.flow.of".into())),
+        calls.contains(&("atlas.page.viewer".into(), "atlas-engine.flow.of".into())),
         "the page is drawn from the Flow: Graph -> Flow -> File(html)"
     );
     assert!(
