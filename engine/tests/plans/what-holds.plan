@@ -1,0 +1,73 @@
+# What holds: a place read and changed stands twice, a choice is a coproduct of its arms, a call into a family is a
+# choice between its members.
+
+# `bump` reads the count at the path it is handed and writes the next one there: one place, read and changed, so it
+# stands on both sides. The path is a parameter of the route, which no code decides.
+route counter.bump
+step bump/read_count
+step bump/write_count
+
+line entry > bump call
+line Disk(bump.path) > bump/read_count own
+line bump/read_count > bump back                         # the count, of no type of the code's, goes on to bump (#101)
+line bump/write_count > Disk(bump.path) own
+
+side entry left
+side Disk(bump.path) both
+
+# `pick` makes its Table in one of two arms: the value is made by the choice, and `show` takes it after.
+route counter.pick
+choice pick/?1
+step pick/?1/load_csv
+step pick/?1/load_csv/Table()
+step pick/?1/load_json
+step pick/?1/load_json/Table()
+step pick/show
+
+line entry > pick call
+line Disk(pick.path) > pick/?1/load_csv own
+line Disk(pick.path) > pick/?1/load_json own
+line pick/?1/load_csv/Table() > Table@pick/?1/load_csv/Table() value
+line Table@pick/?1/load_csv/Table() > pick/?1/load_csv value
+line pick/?1/load_csv > Table·t@pick/?1 value
+line pick/?1/load_json/Table() > Table@pick/?1/load_json/Table() value
+line Table@pick/?1/load_json/Table() > pick/?1/load_json value
+line pick/?1/load_json > Table·t@pick/?1 value
+line Table·t@pick/?1 > pick/show value
+line pick/show > Screen own
+
+home Table@pick/?1/load_csv/Table() pick/?1/load_csv
+home Table@pick/?1/load_json/Table() pick/?1/load_json
+home Table·t@pick/?1 pick
+
+side entry left
+side Disk(pick.path) left
+side Screen right
+
+# `draw_all` calls `draw` on each Shape it is handed: the call runs one of the overrides, a choice between them.
+route counter.draw_all
+step draw_all/Shape.draw
+step draw_all/Shape.draw/Circle.draw
+step draw_all/Shape.draw/Square.draw
+
+line entry > draw_all call
+line Shape·shapes > draw_all value
+known #100 line Shape·s > draw_all/Shape.draw/Circle.draw value
+known #100 line Shape·s > draw_all/Shape.draw/Square.draw value
+line draw_all/Shape.draw/Circle.draw > draw_all/Shape.draw back
+line draw_all/Shape.draw/Square.draw > draw_all/Shape.draw back
+line draw_all/Shape.draw > draw_all back
+line draw_all > Screen own
+
+home Shape·shapes draw_all
+home Shape·s draw_all
+
+side entry left
+side Screen right
+
+# each override takes a value of its own class from beyond, and `s` ends at the border of the dispatch
+known #100 extra line Shape·s > draw_all/Shape.draw value
+known #100 extra line Circle > draw_all/Shape.draw/Circle.draw value
+known #100 extra line Square > draw_all/Shape.draw/Square.draw value
+known #100 extra home Circle draw_all
+known #100 extra home Square draw_all

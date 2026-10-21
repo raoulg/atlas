@@ -100,7 +100,7 @@ Two long-lived branches, one release train. Everything else is a short-lived top
    (`git worktree remove <path>`, which also frees its `target`, several GB), its local branch and
    its remote branch. Check first that the worktree has no changes and that
    `git rev-list --count origin/next..HEAD` is 0. The agent that merges does this in the same turn.
-2. **Land on `next`** when `cargo fmt`, `cargo test` and `atlas check .` pass: merge the topic branch
+2. **Land on `next`** when `cargo fmt` and `cargo test` pass: merge the topic branch
    (a merge commit, no squash), push, close the issue. New work, documentation, the release
    workflows and the tap all go to `next`, also while it is only documentation.
 3. **Promote**: when Raoul says so, `next` is merged into `main` (a merge commit), `main` is tagged
@@ -133,7 +133,8 @@ Two long-lived branches, one release train. Everything else is a short-lived top
 ## Practical
 
 - Build and run: `cargo build`, `atlas view .` (install with `cargo install --path cli`;
-  the viewer is baked into the binary, so rebuild after editing `viewer/index.html`).
+  the viewer, `viewer/index.html` with its model `viewer/plan.js`, is baked into the binary, so rebuild
+  after editing either).
 - Version: `version` in the root `Cargo.toml`, raised as the section above says. The build adds the
   commit it is made from (`0.2.0 (b0ead14)`), and the nightly build says so too
   (`0.2.0-nightly (b0ead14)`: `ATLAS_CHANNEL=nightly` at build time).
@@ -148,6 +149,13 @@ Two long-lived branches, one release train. Everything else is a short-lived top
   and Windows: a test that writes files builds them as the platform lays them out (a virtual
   environment keeps its packages in `Lib\site-packages` on Windows) and compares paths as `Path`s,
   never as strings with `/`.
+- The viewer's model, `viewer/plan.js` (the routes, the finest plan of a route, its quotient and the oracle), is a
+  function of the page's data that touches no document: the page inlines it, and `engine/tests/plans.rs` runs it in
+  node (node on the `PATH`; CI installs it). There every route of every program under `engine/tests/pairs` and
+  `engine/tests/plans` is held, for every set of open steps, to the oracle and to the quotient, and a `.plan` file
+  beside a program writes down the plan its code implies (`engine/tests/plans/README.md`). A plan is written from the
+  code and `docs/reference/mathematics.md`, never from what Atlas draws; a change to what the plan says lands with the
+  plans it moves, and a defect a plan shows is marked `known #N` with its issue, the mark going with the fix.
 - Disk: cargo names Atlas's builds by its version, so every raise leaves a full set of test
   binaries behind (they reached 260 GB). A commit that raises the version removes them, in the
   worktree it is made in: `lefthook.yml` runs `tools/clean-old-builds.sh` after each commit (`lefthook
@@ -180,11 +188,16 @@ Two long-lived branches, one release train. Everything else is a short-lived top
   walk <atlas> <repo> <dir>` opens every package, every route and every family in a route, and
   must report no view that throws, draws nothing, or opens a family into other moments.
 - A viewer change also keeps the topology of zoom: `uv run tools/pictures.py topology <atlas> <repo> <dir>` opens one
-  box at a time in each route and must report no box that takes a line away, moves a box into or out of a frame
-  that is not the one opened, or does not close to the picture it was (`docs/reference/mathematics.md`,
-  "Refinement keeps what it does not refine"), beyond the ones tracked in #39, #40, #41 and #43. Lines the open box draws
-  beyond the closed one are listed as `more` and are tracked in #38.
-- `atlas check .` must find nothing on Atlas itself (`engine/tests/principles.rs` pins it).
+  box at a time in each route and must report no box that takes a line away, draws a line the closed box did not
+  (`more`: by rule 1 a fault of the closed picture), moves a box into or out of a frame that is not the one opened, or
+  does not close to the picture it was (`docs/reference/mathematics.md`, "Refinement keeps what it does not refine").
+- `atlas check` is a signal to look critically at the code and at what the check claims, never an
+  oracle and never a target. Zero findings on Atlas is no goal: never change Atlas's code, or bend a
+  rule, to keep `atlas check .` quiet. Where a finding is wrong, repair the rule and let Atlas carry
+  what the rule then finds. `engine/tests/principles.rs` keeps Atlas's findings as a reviewed list,
+  `REVIEWED`, each with why it stands; it fails when the findings change, so that each change is
+  read, not so that the list shrinks. A finding a change brings is answered there: the code changes
+  for a reason of its own, the rule is repaired, or the list says why the finding stands.
   A new principle is a rule in `engine/src/principles.rs`, a case in the fixture, a clean and a
   sloppy case in the pairs, and a section in `docs/reference/principles.md`; it checks what the graph
   holds, never a project.

@@ -1,0 +1,18 @@
+# Without the mark the sketch is read as built; `run` writes the report to the built `Sink`, which logs it.
+
+route unmarked.run
+step run/Sink()
+step run/Sink.write
+
+line entry > run call
+line run/Sink() > Sink@run/Sink() value
+line Sink@run/Sink() > run/Sink.write value
+line run/Sink.write > Screen own
+
+home Sink@run/Sink() run
+
+side entry left
+side Screen right
+
+# building the exported Sink runs its public methods, so `new Sink()` reaches what write logs
+known #74 extra line run/Sink() > Screen reached

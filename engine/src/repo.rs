@@ -35,6 +35,8 @@ pub struct Repo {
     listing: Arc<Listing>,
     /// The directory the reading was asked for, when what was read is the project around it.
     asked: Option<PathBuf>,
+    /// The language a part is read in, when its manifest names it.
+    language: Option<&'static str>,
 }
 
 impl Repo {
@@ -73,7 +75,7 @@ impl Repo {
         dirs.insert(PathBuf::new());
         let listing = Listing { files, dirs, named: listed, texts: Mutex::new(HashMap::new()) };
         let root = normal(&std::path::absolute(dir)?);
-        Ok(Repo { root, at: PathBuf::new(), listing: Arc::new(listing), asked: None })
+        Ok(Repo { root, at: PathBuf::new(), listing: Arc::new(listing), asked: None, language: None })
     }
 
     /// The project read for a directory inside it, `asked`.
@@ -84,6 +86,16 @@ impl Repo {
     /// The directory the reading was asked for, when what was read is the project around it.
     pub fn asked(&self) -> Option<&Path> {
         self.asked.as_deref()
+    }
+
+    /// The part read in `language`, the language of the manifest that roots it.
+    pub fn read_as(self, language: &'static str) -> Repo {
+        Repo { language: Some(language), ..self }
+    }
+
+    /// The language a part is read in, when its manifest names it.
+    pub fn language(&self) -> Option<&'static str> {
+        self.language
     }
 
     /// The directory, from the root of the file system: `api`, `./api` and `../atlas/api`, named
@@ -108,7 +120,7 @@ impl Repo {
         if rel.as_os_str().is_empty() {
             return self.clone();
         }
-        Repo { root: self.root.join(rel), at: self.at.join(rel), listing: self.listing.clone(), asked: None }
+        Repo { root: self.root.join(rel), at: self.at.join(rel), listing: self.listing.clone(), asked: None, language: None }
     }
 
     /// Where a path the caller writes from the root stands in the listing: `root/x` and `x` alike.

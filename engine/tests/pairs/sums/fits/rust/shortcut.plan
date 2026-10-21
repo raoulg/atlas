@@ -1,0 +1,10 @@
+# One of the two takers of the unopened sum: `line` takes the Outcome and chooses again which variant it holds; its
+# arms call only the library (`format!`), so the choice holds no occurrence and the route is its own arrow.
+
+route fits.report.line
+line entry > line call
+line Outcome·o > line value
+
+home Outcome·o line
+
+side entry left

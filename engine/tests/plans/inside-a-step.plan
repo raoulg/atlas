@@ -1,0 +1,34 @@
+# What a step makes inside and hands back stands inside its frame: `tidy` hands back what `strip` made in it.
+# The memory made and used inside a step lives inside its frame; the own arrow of an opened step is a point on its
+# border that keeps what the body gives back, at the step's moment, and a value its call is handed crosses the frame to
+# the step inside that takes it (mathematics.md, "One fine plan, every picture its image").
+
+route clean.run
+step run/load
+step run/load/Table()
+step run/tidy
+step run/tidy/strip
+step run/tidy/strip/Table()
+step run/show
+
+line entry > run call
+line run/load/Table() > Table@run/load/Table() value
+line Table@run/load/Table() > run/load value                        # load hands back what its body made
+line run/load > Table·t@run/load value
+line Table·t@run/load > run/tidy/strip/Table() value                # tidy's t, and strip's, is read by Table() in strip
+line run/tidy/strip/Table() > Table@run/tidy/strip/Table() value
+line Table@run/tidy/strip/Table() > run/tidy/strip value            # strip hands back what its body made
+line run/tidy/strip > Table·t@run/tidy/strip value
+line Table·t@run/tidy/strip > run/tidy value                        # tidy hands back what strip made in it
+line run/tidy > Table·t@run/tidy value
+line Table·t@run/tidy > run/show value
+line run/show > Screen own
+
+home Table@run/load/Table() run/load
+home Table·t@run/load run
+home Table@run/tidy/strip/Table() run/tidy/strip
+home Table·t@run/tidy/strip run/tidy
+home Table·t@run/tidy run
+
+side entry left
+side Screen right

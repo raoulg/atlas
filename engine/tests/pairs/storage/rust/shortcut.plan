@@ -1,0 +1,9 @@
+# The directory is made by a function of its own, apart from the connection that opens the file in it: it stands as a
+# directory of its own, which nothing in the picture uses.
+
+route warehouse.prepare
+line entry > prepare call
+line prepare > File(warehouse/) own
+
+side entry left
+side File(warehouse/) right
