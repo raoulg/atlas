@@ -1140,7 +1140,7 @@ fn news(side: &str) -> Graph {
 fn diamond_a_feed_hands_its_arguments_to_the_constructor_it_runs() {
     for side in ["clean", "shortcut"] {
         let g = &news(side);
-        let headlines = format!("{side}.read.headlines");
+        let headlines = format!("{}.read.headlines", g.root);
         let made = |f: &str, kind: &str| -> Vec<(String, Vec<String>)> {
             touches(g, f, kind).iter().map(|t| (t.what.clone(), t.by.clone())).collect()
         };
@@ -1162,7 +1162,8 @@ fn diamond_a_feed_hands_its_arguments_to_the_constructor_it_runs() {
 #[ignore = "#123: the reader records `this.read()` in `Buffered` as run on a Buffered, so the route runs `Source.read` on a feed: `calls this.url`"]
 fn diamond_a_feed_runs_the_read_its_bases_name() {
     for side in ["clean", "shortcut"] {
-        let r = atlas_engine::story::route(&news(side), &format!("{side}.read.headlines"), 4).expect("headlines is a route");
+        let g = news(side);
+        let r = atlas_engine::story::route(&g, &format!("{}.read.headlines", g.root), 4).expect("headlines is a route");
         assert!(r.contains("reads {cache}/") && !r.contains("calls this.url"), "{side}: {r}");
     }
 }
@@ -1174,8 +1175,8 @@ fn diamond_a_feed_runs_the_read_its_bases_name() {
 #[ignore = "#122: `this.url` in `Cached.read` is looked for in `Cached` alone, so the file is whole only where `Cached.read` and `headlines` both are"]
 fn diamond_the_name_of_a_feed_s_file_is_its_url() {
     for side in ["clean", "shortcut"] {
-        let headlines = format!("{side}.read.headlines");
         let g = news(side);
+        let headlines = format!("{}.read.headlines", g.root);
         let read = touches(&g, "store.Store.get", "disk_read");
         assert!(read.iter().any(|t| t.what == "{cache}/{url}" && t.by.contains(&headlines)), "{side}: {read:?}");
     }
