@@ -220,8 +220,8 @@ what `atlas check` asks of itself as a reviewed list, each finding with why it s
 ## Revelation: what a design leaves to build
 
 A design can live in the tree as sketch code, marked as not built yet: a *prophecy*. Python marks
-it with a decorator, `@prophecy(supersedes="pkg.Old")` (a no-op function in the project; Atlas
-matches it by name), Rust with `#[doc = "prophecy: supersedes=pkg::Old"]`, TypeScript with a
+it with a decorator, `@prophecy(supersedes="pkg.Old")` or `@prophecy()` (a no-op function in the
+project, in a module that imports nothing of the project; Atlas matches it by name), Rust with `#[doc = "prophecy: supersedes=pkg::Old"]`, TypeScript with a
 `@prophecy supersedes=pkg.Old` tag in the JSDoc before a `declare` function, class, interface or
 type. `veiled` says the place is known and the shape is not, `sealed="#144"` that the shape waits
 on an open question.
@@ -246,7 +246,7 @@ else. The files are left for you to commit; sketch the shape next.
 
 A vision that is decided becomes a prophecy with the MCP tool `prophetize`: the vision's files are
 written into the tree, every item the vision adds marked in the language of its file (and, for
-Python, the project's `prophecy` imported, and the bodies that ty would refuse made `raise NotImplementedError`), and the vision is retracted. `supersedes` says which
+Python, the project's `prophecy` imported among the file's imports, and the bodies that ty would refuse made `raise NotImplementedError`; Atlas says so when the module that defines `prophecy` imports the file, since the import would go in a circle), and the vision is retracted. `supersedes` says which
 existing item an added one replaces. The files are left for you to commit; Atlas opens no branch.
 A vision that changes or removes what exists is refused, since writing it would replace built code
 with a sketch: the new item takes a new name and supersedes the old one.

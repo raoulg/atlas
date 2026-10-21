@@ -765,7 +765,10 @@ Prophecies lean on one another freely, and test code may lean on the code it is 
 before it is built.
 
 - **Python.** `@prophecy(supersedes="pkg.module.Old")`, a no-op decorator in the project; Atlas
-  matches it by name. The body is `raise NotImplementedError` where the function gives a value (ty
+  matches it by name. The marker is always a call, `@prophecy()` where nothing is superseded: the
+  decorator is what `prophecy(..)` gives, and ty types a class under a bare `@prophecy` as that, so
+  the prophecy would not draw the shape of its vision. The decorator lives in a module that imports
+  nothing of the project, or the files it marks cannot import it. The body is `raise NotImplementedError` where the function gives a value (ty
   refuses an empty `...` body there, outside stubs and abstract methods) and `...` where it gives nothing; ty
   checks the signatures, and `prophetize` writes the bodies so.
 - **Rust.** `#[doc = "prophecy: supersedes=pkg::Old"]` on the item, with `todo!()` for a body: it

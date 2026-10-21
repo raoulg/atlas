@@ -651,6 +651,71 @@ fn prophecy_a_decided_vision_is_marked_where_it_is_written() {
     assert_eq!(stands.len(), 3, "the two prophecies of the clean side, and the new one: {stands:?}");
 }
 
+/// A prophecy is the vision written into the tree, and draws the shape the vision drew. Python's
+/// marker is a call, `@prophecy()` where nothing is superseded: the project's `prophecy` gives the
+/// decorator, so a bare `@prophecy` would make the class what the call gives, and `Crate(Sink())`
+/// would be typed as the `Sink` it is handed. The vision adds a `Crate` and a `run_crated` that
+/// writes into it; written as prophecy, `run_crated` still calls `Crate.write`, as it did in the
+/// vision, and not `Sink.write`.
+#[test]
+fn prophecy_draws_the_shape_of_its_vision() {
+    use std::collections::{BTreeMap, BTreeSet};
+    let copy = common::clean_copy("python", "shape");
+    let file = PathBuf::from("src/archive/app.py");
+    let now = std::fs::read_to_string(copy.join(&file)).expect("reads");
+    let addition = "\n\nclass Crate:\n    \"\"\"Reports kept in a crate before they reach the sink.\"\"\"\n\n    def __init__(self, sink: Sink, /) -> None: ...\n\n    def write(self, report: str, /) -> None: ...\n\n\ndef run_crated(report: str) -> None:\n    Crate(Sink()).write(report)\n";
+    let vision = BTreeMap::from([(file.clone(), Some(format!("{now}{addition}")))]);
+    let supersedes = BTreeMap::from([("archive.app.run_crated".to_string(), "archive.app.run".to_string())]);
+    let calls = |gs: &[Graph]| -> BTreeSet<String> {
+        gs.iter()
+            .flat_map(|g| g.edges.iter())
+            .filter(|e| e.kind == EdgeKind::Calls && e.src == "archive.app.run_crated")
+            .map(|e| e.dst.clone())
+            .collect()
+    };
+    let envisioned = calls(&atlas_engine::changes::envisioned(&copy, &vision, &Options::default()).expect("reads the vision"));
+    let decided = atlas_engine::decide::prophetize(&copy, &vision, &supersedes, &Options::default()).expect("decided");
+    for (rel, t) in &decided.files {
+        std::fs::write(copy.join(rel), t).expect("writes the file");
+    }
+    let written = calls(&[analyze(&copy, &Options::default()).expect("reads")]);
+    let _ = std::fs::remove_dir_all(copy.parent().expect("has a parent"));
+    assert!(envisioned.contains("archive.app.Crate.write"), "{envisioned:?}");
+    assert_eq!(written, envisioned, "the prophecy calls what the vision called");
+    let text = &decided.files[&file];
+    assert!(text.contains("\n@prophecy()\nclass Crate:"), "{text}");
+}
+
+/// The import of `prophecy` that a decided vision adds can go in a circle: where `prophecy` is
+/// defined in a module that imports the file it marks, neither module imports. Atlas cannot know
+/// every safe place, and says so. The clean side keeps `prophecy` in an `__init__` that imports
+/// nothing of the project: the import goes into the file's import block, and nothing is said. The
+/// shortcut's `__init__` also imports `archive.sink`, the file the vision writes into.
+#[test]
+fn prophecy_says_when_its_import_goes_in_a_circle() {
+    use std::collections::BTreeMap;
+    let decide = |init_imports_sink: bool| {
+        let copy = common::clean_copy("python", if init_imports_sink { "circle" } else { "line" });
+        if init_imports_sink {
+            let init = copy.join("src/archive/__init__.py");
+            let text = std::fs::read_to_string(&init).expect("reads");
+            std::fs::write(&init, format!("from archive.sink import Sink\n{text}")).expect("writes");
+        }
+        let file = PathBuf::from("src/archive/sink.py");
+        let now = std::fs::read_to_string(copy.join(&file)).expect("reads").replace("from archive import prophecy\n", "import json\n");
+        let vision =
+            BTreeMap::from([(file.clone(), Some(format!("{now}\n\nclass Crate:\n    def pack(self, report: str, /) -> None: ...\n")))]);
+        let decided = atlas_engine::decide::prophetize(&copy, &vision, &BTreeMap::new(), &Options::default()).expect("decided");
+        let _ = std::fs::remove_dir_all(copy.parent().expect("has a parent"));
+        (decided.files[&file].clone(), decided.notes)
+    };
+    let (text, notes) = decide(false);
+    assert!(text.contains("import json\nfrom archive import prophecy\n"), "{text}");
+    assert!(notes.is_empty(), "{notes:?}");
+    let (_, notes) = decide(true);
+    assert!(notes.iter().any(|n| n.contains("goes in a circle") && n.contains("archive.sink")), "{notes:?}");
+}
+
 /// A vision that changes what is built is no prophecy: writing it would replace the code with a
 /// sketch. The sloppy vision rewrites `Sink.write` in place; the clean one gives the new thing a
 /// name of its own, and is decided.
