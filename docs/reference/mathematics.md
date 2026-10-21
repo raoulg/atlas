@@ -377,9 +377,10 @@ parse the command line to the entry. The closed picture is `F/q`:
   the domain of the composite, "the parameters plus what the body consumes" (the second sentence),
   not the signature alone. A line comes from the step itself when its own arrow supplies it and
   reaches through it otherwise (the sixth sentence);
-- a place made and taken inside one block is internal to it and is not drawn. What a step makes is never
-  its input: the value the arms of a step that is itself a choice make, at the step's own moment, is
-  what the step hands on, not what it takes;
+- a place made and taken inside one block is internal to it and is not drawn. The arms of a choice make
+  one value at the choice's moment; a step that is itself a choice (a call into a family, which runs
+  one of the overrides) makes it at a moment inside the step, and hands on a value of its own at its
+  own moment, so what its overrides make is internal to it and what it hands on is not;
 - the families are taken on the route's fiber, the types its plan holds (saturation: the fiber first,
   then the quotient): a type stands in its kind where the plan holds another type of that kind, so a
   route draws the same whatever other routes do, and an opened family holds, for a value, the kinds
