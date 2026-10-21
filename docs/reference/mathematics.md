@@ -67,13 +67,24 @@ compares generators.
 **What.** A terminal object 1 has exactly one arrow into it from every object.
 **In Atlas.** A function that gives nothing back and has no effect is that unique arrow `A → 1`:
 it tells its caller nothing. Either it is dead, or it changes something the code does not show.
-**Where.** Principle `nothing`.
+The graph cannot tell that arrow from one whose effect Atlas does not model: where a body runs a
+call no table describes (a library's call, a callback in a field, a method nothing implements),
+the finding names that call as what Atlas cannot see, and asks whether it is dead only where it
+sees everything the function runs.
+**Where.** Principle `nothing`; `Node::unseen`, `Node::declared` (`body.rs`, `Steps::dropped`).
 
 ### Coproducts
 **What.** A coproduct A + B: a value is one of the alternatives, and a function out of it is a
 case for each.
-**In Atlas.** A sum type (`Result`, `Option`, a union) is taken apart where it arises, and a
-choice between alternatives is made once, in a place with a name. A choice in a body is a
+**In Atlas.** A sum type (`Result`, an enum, a union) is taken apart where it arises, and a
+choice between alternatives is made once, in a place with a name. A union written in place in a
+signature is the coproduct a named one is, one object however and wherever it is written. The
+copairing has to stand somewhere: one function that takes the sum apart is where it stands, and
+`sums` asks only when two or more take it. `1 + T`, a value that may be absent (`T | None`,
+`Option<T>`), is not asked by `sums`: its consumers ask whether it is there, not which outcome it
+is. By naturality, `h ∘ [f, g] = [h ∘ f, h ∘ g]`: arms that each make their value by the same step
+are that step with a choice of what it is handed, no choice of where the value comes from, and
+`choices` asks only of arms whose steps differ. A choice in a body is a
 coproduct of its arms, each injected by what decides it as the code writes it (`when not
 raw.exists()`, a `match` pattern, `otherwise`). A choice of one arm is a coproduct with the
 identity, `f + 1`: its steps run when the condition holds and nothing runs otherwise, so it is
@@ -90,11 +101,15 @@ composite gives `A` back when the value is that variant; a sum given a name is t
 the prism goes through the name. A family of lenses `S ⇄ A_k` indexed by
 a key `k` (a row by its id, a tile by a point it holds) takes the key to choose the lens, not as
 the value it puts.
-**In Atlas.** A class that writes a place and reads it back is a lens on that place. Atlas asks
-the law at the level of types: what goes in as a `Graph` comes back as a `Graph`, as it is or
-inside what a get gives (`has` and `variant` edges). What a put takes is what reaches the place
-through its body's steps, by what each is handed and gives; a parameter handed only to reads is
-a key. A view is the `get` of a lens with no `put`: it only reads.
+**In Atlas.** A class that writes a place and gives back a value from it is a lens on that
+place, the place being what the code names: a table, a file by its path or by the value that holds
+it, never a database as a whole or a file known only by its format. Atlas asks the law at the
+level of types, a necessary condition of PutGet where the focus is right: what goes in as a
+`Graph` comes back as a `Graph`, as it is or inside what a get gives (`has` and `variant` edges,
+and a subclass, a variant of a sum left open). A constructor that reads the place is a get of its
+class. What a put takes is what reaches the place through its body's steps, by what each is
+handed and gives; a parameter handed only to reads, or only to a statement's key (`WHERE`), is a
+key. A view is the `get` of a lens with no `put`: it only reads.
 **Where.** Principle `lens`; `design.md` §1.
 
 ### Pullback: a filter
@@ -119,7 +134,7 @@ beneath it.
 
 ### Paths as terms, directories as fibers
 **What.** A path is a term in a small algebra over a root: a root (a literal, a parameter, an
-option's default) closed under `/`-join, `parent`, `with_suffix` and a pattern below a
+input with a default, where the package's code lies) closed under `/`-join, `parent`, `with_suffix` and a pattern below a
 directory. A collection of paths is the set of terms its elements can be; iterating it yields
 one of them. Substituting a parameter by the term a caller hands it is the term's evaluation, and
 a part no code determines is a named hole. A pattern below a directory (`D.glob("*/IO-*")`) is
@@ -128,10 +143,14 @@ holds.
 **In Atlas.** A place on the disk the code names only through a variable is drawn as the term it
 evaluates to (`assets/regelingen/*/IO-*`), not as the variable (`m`). The root is traced to a
 default or to a parameter wherever the code says it; what it cannot trace stays a hole in the
-term, so the gap is visible. A file the term decides to the last part is a `File`; a pattern is
+term, so the gap is visible. An input with a default (a parameter default, an environment
+variable with a fallback, a command-line option) is the caller's to choose; a file found from
+where the package's code lies ships with it. The code decides a place in the frame of the
+function where the root becomes something it holds, a literal or a constant, which is where
+`places` asks. A file the term decides to the last part is a `File`; a pattern is
 the fiber below its directory.
-**Where.** `paths.rs` (`Seg`, `join`, `place`), `python/paths.rs` (`Eval::of`); the pairs
-`python/paths`.
+**Where.** `paths.rs` (`Seg`, `join`, `place`, `Callers`), `python/paths.rs` (`Eval::of`); the
+pairs `python/paths` and `places`.
 
 ### Yoneda: what changed
 **What.** An object is determined up to isomorphism by the arrows into it, `Hom(−, A)`, and
@@ -435,16 +454,21 @@ each one type, in every language.
 
 ### Behavioural subtyping
 **What.** A subtype can stand wherever its base stands (Liskov).
-**In Atlas.** An override keeps the promise of its base: it takes what the base takes and gives
-what the base gives. A subclass of a generic base stands where the base stands as the subclass
-fills it in: `Boekwinkel(Winkel[Boek])` keeps the promise of `Winkel[Boek]`, the base's `R`
-replaced by `Boek` wherever the promise names it.
-**Where.** Principle `overrides`; for Python ty decides it (`pytypes.rs`).
+**In Atlas.** An override keeps the promise of its base: it takes at least what the base takes
+(parameters contravariant) and gives what the base gives (results covariant), and it is held to
+each base along the class's method resolution order, the C3 linearization of its bases in their
+declared order. A subclass of a generic base stands where the base stands as the subclass fills
+it in: `Boekwinkel(Winkel[Boek])` keeps the promise of `Winkel[Boek]`, the base's `R` replaced by
+`Boek` wherever the promise names it. Where a language types structurally (TypeScript), a type
+stands where another does when it has every member the other declares.
+**Where.** Principle `overrides`; `model::linearization`; for Python ty decides it (`pytypes.rs`).
 
 ### Signatures say the arrow
 **What.** A function's type is its domain and its codomain.
-**In Atlas.** A package names its doors, and each door says what goes in and what comes out. A
-change to an input is part of the codomain (`T → T`) and shows in the signature. A function
+**In Atlas.** A package names its doors, and each door says what goes in and what comes out. The
+unchecked type (`Any`, `any`) says no more than no type; a door's overloads are the signatures its
+callers are checked against. A change to an input, of whatever type, is part of the codomain
+(`T → T`) and shows in the signature. A function
 whose value is used says what it gives back. A call that changes the value it is called on is
 such an arrow inside a body, `T × A → T`: a step that makes its receiver anew from what it is
 handed (`rows.append(row)`), so a value gathered into a container is followed to where the
@@ -463,8 +487,11 @@ own arrow.
 ### One direction
 **What.** A directed graph without cycles.
 **In Atlas.** The packages of a part depend on one another in one direction: no package reaches
-back to one that depends on it.
-**Where.** Principle `layers`.
+back to one that depends on it. The blocks are the quotient the picture draws (`flow::units`): the
+packages below one package and that package's own module beside them, and the top-level packages
+of a part. A dependence is what the code calls, builds, imports and extends and the types it takes,
+gives and holds. A test is a way in from outside, not a layer.
+**Where.** Principle `layers`; `Index::test` (`principles.rs`).
 
 ### Layered drawing
 **What.** A graph without cycles can be drawn in layers, every edge pointing one way.
