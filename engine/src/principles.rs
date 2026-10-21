@@ -410,7 +410,7 @@ fn list(xs: &[String]) -> String {
 fn door_fns<'g>(ix: &Index<'g>) -> Vec<&'g Node> {
     let mut asked = HashSet::new();
     let mut out = vec![];
-    for e in ix.g.nodes.iter().filter(|n| n.entry.as_ref().map_or(false, |e| e.kind == EntryKind::Export)) {
+    for e in ix.g.nodes.iter().filter(|n| exported(n)) {
         let fns: Vec<&Node> = match e.kind {
             NodeKind::Function => vec![e],
             NodeKind::Class => ix.interface(&e.id),
@@ -421,9 +421,15 @@ fn door_fns<'g>(ix: &Index<'g>) -> Vec<&'g Node> {
     out
 }
 
+/// Whether its package exports it: its route is the export, or a route of another kind that its
+/// package exports as well (a declared program).
+fn exported(n: &Node) -> bool {
+    n.exported || n.entry.as_ref().map_or(false, |e| e.kind == EntryKind::Export)
+}
+
 fn doors(ix: &Index) -> Vec<Finding> {
     let g = ix.g;
-    let exports: Vec<&Node> = g.nodes.iter().filter(|n| n.entry.as_ref().map_or(false, |e| e.kind == EntryKind::Export)).collect();
+    let exports: Vec<&Node> = g.nodes.iter().filter(|n| exported(n)).collect();
     let mut out = vec![];
     let declared = ix.leaves(&g.root).exports;
     // `src/` is where packages live, not a name: installed, it collides with every other project laid out the same way

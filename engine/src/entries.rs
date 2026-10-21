@@ -90,7 +90,9 @@ fn declared(repo: &Repo, root: &Path) -> Vec<Declared> {
 }
 
 /// The entry points a Python project's `pyproject.toml` declares are routes into it: a program
-/// is a command run by its name, a plugin a door its host loads, by `group:name`.
+/// is a command run by its name, a plugin a door its host loads, by `group:name`. The declaration
+/// says what the function is to its user, so a program is the command also where its package
+/// exports the function (a flat module's public `main`), and stays a door as well.
 pub fn mark_scripts(repo: &Repo, store: &mut GraphBuilder, project_root: Option<&Path>) {
     let Some(root) = project_root else { return };
     for d in declared(repo, root) {
@@ -109,8 +111,14 @@ pub fn mark_scripts(repo: &Repo, store: &mut GraphBuilder, project_root: Option<
                 &[NodeKind::Function, NodeKind::Method, NodeKind::Class, NodeKind::Module][..],
             ),
         };
-        if let Some(n) = store.nodes.get_mut(&nid).filter(|n| loads.contains(&n.kind) && n.entry.is_none()) {
-            n.entry = Some(entry);
+        let Some(n) = store.nodes.get_mut(&nid).filter(|n| loads.contains(&n.kind)) else { continue };
+        match n.entry.as_ref().map(|e| e.kind) {
+            None => n.entry = Some(entry),
+            Some(EntryKind::Export) if d.group.is_none() => {
+                n.exported = true;
+                n.entry = Some(entry);
+            }
+            Some(_) => {}
         }
     }
 }

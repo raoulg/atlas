@@ -116,6 +116,10 @@ pub struct Node {
     pub keeps: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub entry: Option<Entry>,
+    /// Its package exports it, where its entry is a route of another kind: a program a manifest
+    /// declares, whose function the package also exports, is a command and a door.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub exported: bool,
     /// The calls that leave the package, with what they touch: a path literal, a table, a
     /// command, or the argument's name when nothing better is known.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

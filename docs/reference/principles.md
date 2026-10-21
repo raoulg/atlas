@@ -102,6 +102,9 @@ Atlas checks: a Python package called `src`, a Python package that exports nothi
 its root, and an exported function or a public method of an exported class whose
 parameters or return are not annotated.
 
+A program `pyproject.toml` declares is a command, also where its package exports the function
+(a flat module's public `main`); exported, it is a door as well, and asked as one.
+
 A package needs a name before it can have doors. `src/` is the folder packages live in
 ([the src layout](https://packaging.python.org/en/latest/discussions/src-layout-vs-flat-layout/)):
 code in `src/__init__.py` installs as a package called `src`, the same name as every other

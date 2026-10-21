@@ -351,7 +351,10 @@ crate's root and of the modules it makes public with `pub mod`, as `view::hide_p
 the names a public module re-exports with `pub use`; the names exported by the module a
 `package.json` points to with `exports`, `module` or `main`). A re-exported name is followed to
 where it is defined. Each is the
-start of a route; an exported class is a route whose steps are its public methods. An entry is an
+start of a route; an exported class is a route whose steps are its public methods. A program a
+manifest declares is a command also where its package exports the function (a flat module's
+public `main`): the declaration says what the function is to its user, and the function is a door
+as well (`Node::exported`). An entry is an
 arrow whose domain is what the human hands it on the command line: a command or script carries
 its options (`Entry::options`, `--raw` named, `<name>` positional) and reads as its usage line,
 and the call that parses the command line (`Site::command_line`) is the entry's, not a step of

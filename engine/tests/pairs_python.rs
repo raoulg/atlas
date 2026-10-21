@@ -688,3 +688,30 @@ fn prophecy_a_seal_is_listed_and_broken_when_its_issue_is_closed() {
     );
     let _ = std::fs::remove_dir_all(copy.parent().expect("has a parent"));
 }
+
+/// Where the program starts may name places, and a program `pyproject.toml` declares is where it
+/// starts, whatever layout holds it. `places/python/flat` is one module, `tally.py`, declared as
+/// `tally = "tally:main"`, so its package exports `main` with every other public name;
+/// `places/python/package` is the same code in `src/tally/cli.py`, declared as
+/// `tally = "tally.cli:main"`, its package exporting `count` and `keep`. Both draw one route: the
+/// command `tally --source --out`, whose parse of the command line is the entry's, with the same
+/// steps and places, and `places` asks neither. The flat `main` is a door as well.
+#[test]
+fn places_a_declared_program_is_a_command_flat_or_in_a_package() {
+    let read = |side: &str| {
+        analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/places/python").join(side), &Options::default()).unwrap()
+    };
+    let (flat, package) = (read("flat"), read("package"));
+    let entries = |g: &Graph| -> Vec<(EntryKind, String, Vec<String>)> {
+        g.nodes.iter().filter_map(|n| n.entry.as_ref()).map(|e| (e.kind, e.label.clone(), e.options.clone())).collect()
+    };
+    assert_eq!(entries(&flat), entries(&package));
+    assert!(entries(&flat).contains(&(EntryKind::Cli, "tally".into(), vec!["--source".into(), "--out".into()])), "{:?}", entries(&flat));
+    // the same route, its steps named alike once the module the code is in is left out
+    let steps = |g: &Graph, main: &str, module: &str| route(g, main).replace(module, "");
+    assert_eq!(steps(&flat, "tally.main", "tally."), steps(&package, "tally.cli.main", "tally.cli."));
+    assert!(!route(&flat, "tally.main").contains("parse_args"), "{}", route(&flat, "tally.main"));
+    assert!(found(&flat, "places").is_empty() && found(&package, "places").is_empty(), "{:?}", found(&flat, "places"));
+    assert!(flat.node("tally.main").is_some_and(|n| n.exported), "the flat package exports its command");
+    assert!(package.node("tally.cli.main").is_some_and(|n| !n.exported), "{:?}", package.node("tally.cli.main").map(|n| &n.entry));
+}

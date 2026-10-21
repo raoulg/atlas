@@ -172,6 +172,32 @@ fn rust_is_read_by_meaning() {
     assert_eq!(got["places"], ["handed.ledger.ledger", "handed.world.notes", "handed.world.stamp"]);
 }
 
+/// A command its package also exports is a door as well: `doors` asks of it as of any door, and
+/// asks nothing of a command its package does not export. A graph of one function, a command
+/// that does not say what its `n` is.
+#[test]
+fn a_command_its_package_exports_is_a_door() {
+    use atlas_engine::{Entry, EntryKind, Graph, Node, NodeKind, Param};
+    let graph = |exported: bool| Graph {
+        root: "tool".into(),
+        nodes: vec![Node {
+            id: "tool.main".into(),
+            kind: NodeKind::Function,
+            name: "main".into(),
+            module: "tool".into(),
+            file: "tool.py".into(),
+            entry: Some(Entry::new(EntryKind::Cli, "tool")),
+            exported,
+            params: vec![Param { name: "n".into(), ..Default::default() }],
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    let doors = |g: &Graph| check(g).into_iter().filter(|f| f.principle == "doors").map(|f| f.what).collect::<Vec<_>>();
+    assert_eq!(doors(&graph(true)), ["main does not say what `n` is"]);
+    assert_eq!(doors(&graph(false)), Vec::<String>::new());
+}
+
 /// `src/` holds packages; a package called `src` has no name of its own yet, and that comes first.
 #[test]
 fn a_package_called_src_is_asked_its_name() {
