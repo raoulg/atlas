@@ -656,3 +656,60 @@ fn layers_a_test_module_is_no_layer() {
         assert!(layers.iter().all(|f| f.evidence.iter().all(|e| !e.contains("posted"))), "{side}: {layers:#?}");
     }
 }
+
+// ---------- prophecy: what leans, and what a name names ----------
+
+fn prophecy_rust(topic: &str, side: &str) -> Graph {
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/prophecy").join(topic).join("rust").join(side);
+    analyze(&dir, &Options::default()).expect("reads")
+}
+
+/// Test code may lean on the code it is written for before it is built. On the clean side a helper
+/// in an inline `#[cfg(test)] mod tests`, a file module declared under `#[cfg(test)]` and an
+/// integration test in `tests/` call the prophecy `seal`: Atlas asks nothing. The shortcut writes
+/// the inline module's helper beside the code it checks, outside the test module: built code that
+/// would run on a stub, and asked.
+#[test]
+fn prophecy_a_test_leans_on_a_prophecy_freely() {
+    let (c, s) = (prophecy_rust("tested", "clean"), prophecy_rust("tested", "shortcut"));
+    assert!(check(&c).is_empty(), "{:?}", check(&c).iter().map(|f| format!("{} {}", f.principle, f.what)).collect::<Vec<_>>());
+    for helper in ["archive.sealed_twice", "archive.checks.sealed", "archive.tests.seal.sealed"] {
+        assert!(edge(&c, EdgeKind::Calls, helper, "archive.seal"), "{helper} calls the prophecy");
+        assert!(tested(&c, helper), "{helper} is test code");
+    }
+    assert_eq!(found(&s, "prophecy"), ["archive.sealed_twice"]);
+    assert!(!tested(&s, "archive.sealed_twice"));
+}
+
+/// A name the prophecy's `supersedes` writes is read as Rust reads a path: `crate::` and the crate's
+/// own name start at the crate, `self::` at the prophecy's module and `super::` at the one above it;
+/// a name that ends one node's id names it. On the clean side every form holds. The shortcut writes
+/// `save`, which ends the ids of the ledger's `save` and the shelf's: Atlas says it names both, not
+/// that the code does not hold it. And `crate::ledger::store` names nothing: a false prophecy.
+#[test]
+fn prophecy_a_name_is_read_as_the_language_reads_a_path() {
+    let (c, s) = (prophecy_rust("names", "clean"), prophecy_rust("names", "shortcut"));
+    assert!(found(&c, "prophecy").is_empty(), "{:?}", check(&c).iter().map(|f| &f.what).collect::<Vec<_>>());
+    let replaces = |g: &Graph, id: &str| node(g, id).prophecy.as_ref().and_then(|p| p.replaces.clone());
+    for (prophecy, replaced) in [
+        ("archive.post_v2", "archive.ledger.post"),
+        ("archive.post_v3", "archive.ledger.post"),
+        ("archive.save_v2", "archive.shelf.save"),
+        ("archive.ledger.save_v3", "archive.ledger.save"),
+        ("archive.ledger.keep_v2", "archive.shelf.keep"),
+    ] {
+        assert_eq!(replaces(&c, prophecy).as_deref(), Some(replaced), "{prophecy}");
+    }
+    let asked: Vec<_> = check(&s).into_iter().filter(|f| f.principle == "prophecy").collect();
+    let said: Vec<(&str, &str)> = asked.iter().map(|f| (f.node.as_str(), f.what.as_str())).collect();
+    assert_eq!(
+        said,
+        [
+            ("archive.save_v2", "save_v2 supersedes `save`, which names 2 nodes: `archive.ledger.save` and `archive.shelf.save`"),
+            ("archive.store_v2", "store_v2 supersedes `crate::ledger::store`, which the code does not hold"),
+        ]
+    );
+    let text = atlas_engine::revelation::report("archive", &atlas_engine::revelation::revelation(&s), &[]);
+    assert!(text.contains("supersedes `save`, which names 2 nodes"), "{text}");
+    assert!(text.contains("supersedes `crate::ledger::store`, which the code does not hold"), "{text}");
+}

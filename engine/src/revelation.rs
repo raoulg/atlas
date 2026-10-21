@@ -15,6 +15,9 @@ pub struct Stand {
     pub supersedes: Option<String>,
     /// The name resolves to a node.
     pub holds: bool,
+    /// The nodes the name names, when it names more than one.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub candidates: Vec<String>,
     pub veiled: bool,
     pub sealed: Option<String>,
     /// The built code that leans on it.
@@ -122,6 +125,7 @@ pub fn revelation(g: &Graph) -> Vec<Stand> {
                 line: n.span.map_or(1, |s| s.0),
                 supersedes: p.replaces.clone().or(p.supersedes.clone()),
                 holds: p.supersedes.is_none() || p.replaces.is_some(),
+                candidates: p.candidates.clone(),
                 veiled: p.veiled,
                 sealed: p.sealed,
                 leaned_on_by: leaned,
@@ -140,6 +144,11 @@ pub fn report(root: &str, stands: &[Stand], seals: &[Seal]) -> String {
     for s in stands {
         let replaces = match (&s.supersedes, s.holds) {
             (Some(r), true) => format!("  supersedes `{r}`"),
+            (Some(r), false) if !s.candidates.is_empty() => format!(
+                "  supersedes `{r}`, which names {} nodes: {}",
+                s.candidates.len(),
+                s.candidates.iter().map(|c| format!("`{c}`")).collect::<Vec<_>>().join(", ")
+            ),
             (Some(r), false) => format!("  supersedes `{r}`, which the code does not hold (a false prophecy)"),
             (None, _) => String::new(),
         };

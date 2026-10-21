@@ -1017,29 +1017,45 @@ fn nothing(ix: &Index) -> Vec<Finding> {
 
 // ---------- prophecy ----------
 
-/// Built code that leans on a prophecy: production would run on a stub. A prophecy that
-/// supersedes something the code does not hold is a false prophecy. Prophecies lean on one another
-/// freely, and a test may lean on the code it is written for before it is built.
+/// Built code that leans on a prophecy: production would run on a stub. Code leans on what it calls,
+/// builds, extends and requests, and on the types it takes, returns and holds; a member of a prophecy
+/// is leaned on as the prophecy. A prophecy that supersedes something the code does not hold is a
+/// false prophecy, and one whose name names several nodes does not say which it replaces. Prophecies
+/// lean on one another freely, and test code may lean on the code it is written for before it is built.
 fn prophecy(ix: &Index) -> Vec<Finding> {
     let mut out = vec![];
-    for p in ix.g.nodes.iter().filter(|n| n.prophecy.as_ref().is_some_and(|p| p.supersedes.is_some())) {
-        if ix.superseded(p).is_none() {
-            let named = p.prophecy.as_ref().and_then(|p| p.supersedes.as_deref()).unwrap_or("");
-            out.push(ix.finding(
+    for p in ix.g.nodes.iter().filter(|n| ix.superseded(n).is_none()) {
+        let Some(said) = p.prophecy.as_ref().filter(|s| s.supersedes.is_some()) else { continue };
+        let named = said.supersedes.as_deref().unwrap_or("");
+        let finding = match said.candidates.as_slice() {
+            [] => ix.finding(
                 "prophecy",
                 p,
                 format!("{} supersedes `{named}`, which the code does not hold", ix.label(&p.id)),
                 vec![format!("supersedes `{named}`")],
                 format!("A prophecy that replaces nothing is built or false. Is `{named}` gone already, or is its name written otherwise?"),
-            ));
-        }
+            ),
+            candidates => ix.finding(
+                "prophecy",
+                p,
+                format!(
+                    "{} supersedes `{named}`, which names {} nodes: {}",
+                    ix.label(&p.id),
+                    candidates.len(),
+                    list(&candidates.iter().map(|c| format!("`{c}`")).collect::<Vec<_>>())
+                ),
+                candidates.iter().map(|c| format!("`{c}` ({})", ix.node(c).map_or_else(String::new, |n| ix.at(n)))).collect(),
+                format!(
+                    "A prophecy replaces one thing, and `{named}` names more than one. Which of them does it replace, named by its whole path?"
+                ),
+            ),
+        };
+        out.push(finding);
     }
-    let leans = [EdgeKind::Calls, EdgeKind::Instantiates, EdgeKind::Inherits, EdgeKind::Takes, EdgeKind::Returns, EdgeKind::Has];
     let mut by: BTreeMap<&str, Vec<(&Node, EdgeKind)>> = BTreeMap::new();
-    for e in ix.g.edges.iter().filter(|e| leans.contains(&e.kind)) {
+    for e in ix.g.edges.iter().filter(|e| DEPENDS.contains(&e.kind)) {
         let (Some(from), Some(to)) = (ix.node(&e.src), ix.node(&e.dst)) else { continue };
-        let test = from.entry.as_ref().is_some_and(|en| en.kind == EntryKind::Test);
-        if ix.prophetic(to) && !ix.prophetic(from) && !from.library && !test {
+        if ix.prophetic(to) && !ix.prophetic(from) && !from.library && !ix.test(from) {
             // a member of a prophecy is leaned on as the prophecy it belongs to
             let root = to.cls.as_deref().and_then(|c| ix.node(c)).filter(|c| c.prophecy.is_some()).unwrap_or(to);
             by.entry(from.id.as_str()).or_default().push((root, e.kind));

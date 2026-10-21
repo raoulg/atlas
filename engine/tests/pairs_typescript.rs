@@ -706,3 +706,40 @@ fn layers_a_test_file_is_no_layer() {
         assert!(!asked(&g, "layers", "money") && asked_anywhere(&g, "layers").iter().all(|f| !f.contains("money")), "{side}");
     }
 }
+
+// ---------- prophecy: what leans, and what a name names ----------
+
+fn prophecy_typescript(topic: &str, side: &str) -> Graph {
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/prophecy").join(topic).join("typescript").join(side);
+    analyze(&dir, &Options::default()).unwrap_or_else(|e| panic!("the {side} side parses: {e}"))
+}
+
+/// Test code may lean on the code it is written for before it is built. On the clean side a helper
+/// in `index.test.ts` and one under `__tests__` call the prophecy `seal`: Atlas asks nothing. The
+/// shortcut writes the same helper in `check.ts`, beside the code it checks: built code that would
+/// run on a stub, and asked.
+#[test]
+fn prophecy_a_test_leans_on_a_prophecy_freely() {
+    let (c, s) = (prophecy_typescript("tested", "clean"), prophecy_typescript("tested", "shortcut"));
+    assert!(findings(&c).is_empty(), "{:?}", findings(&c).iter().map(|f| format!("{} {}", f.principle, f.what)).collect::<Vec<_>>());
+    assert!(edge(&c, EdgeKind::Calls, "index_test.sealedTwice", "seal"));
+    assert!(edge(&c, EdgeKind::Calls, "__tests__.sealed.sealed", "seal"));
+    assert_eq!(asked_anywhere(&s, "prophecy"), ["shortcut.check.sealedTwice sealedTwice leans on `seal`, which is not built"]);
+}
+
+/// A name the prophecy's `supersedes` writes names one node, by its whole id or by the one id that
+/// ends so. The clean side names the ledger's `save` as `ledger.save` and the shelf's as `shelf.save`;
+/// both hold. The shortcut writes `save`, which ends the ids of both: Atlas names both rather than
+/// call the name one the code does not hold.
+#[test]
+fn prophecy_a_name_that_names_several_nodes_is_ambiguous() {
+    let (c, s) = (prophecy_typescript("names", "clean"), prophecy_typescript("names", "shortcut"));
+    assert!(asked_anywhere(&c, "prophecy").is_empty(), "{:?}", asked_anywhere(&c, "prophecy"));
+    let replaces = |g: &Graph, id: &str| node(g, id).prophecy.as_ref().and_then(|p| p.replaces.clone());
+    assert_eq!(replaces(&c, "savePosted").as_deref(), Some("clean.ledger.save"));
+    assert_eq!(replaces(&c, "saveKept").as_deref(), Some("clean.shelf.save"));
+    assert_eq!(
+        asked_anywhere(&s, "prophecy"),
+        ["shortcut.savePosted savePosted supersedes `save`, which names 2 nodes: `shortcut.ledger.save` and `shortcut.shelf.save`"]
+    );
+}

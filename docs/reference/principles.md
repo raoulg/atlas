@@ -509,9 +509,10 @@ that exists is the list of what is left to build. A prophecy is a todo, not a fi
 bodies are what it is, and the other principles leave it alone. What it `supersedes` stays, and
 is still asked about, with the prophecy as the answer.
 
-What a prophecy must not be is a dependency. Code that is built and calls, builds, extends or
-takes a prophecy would run on a stub: it raises, or does nothing, in production. Prophecies lean
-on one another freely, and a test may lean on the code it is written for before it is built.
+What a prophecy must not be is a dependency. Code that is built and calls, builds, extends,
+requests or takes a prophecy would run on a stub: it raises, or does nothing, in production.
+Prophecies lean on one another freely, and test code may lean on the code it is written for
+before it is built.
 
 - **Python.** `@prophecy(supersedes="pkg.module.Old")`, a no-op decorator in the project; Atlas
   matches it by name. The body is `raise NotImplementedError` where the function gives a value (ty
@@ -523,9 +524,22 @@ on one another freely, and a test may lean on the code it is written for before 
   class`, an interface or a type. A decorator would reach classes and their members only.
 
 `supersedes` names what the prophecy replaces by its id, or by the end of it when one node only
-ends so. `veiled` says the place is known and the shape is not, `sealed="#144"` that the shape
-waits on an issue.
+ends so; `::` and `.` part a path alike. A path in Rust's form starts where Rust starts it, from
+the prophecy's module: `crate::` (or the crate's own name) at the crate, `self::` at the module,
+`super::` at the module above it. `veiled` says the place is known and the shape is not,
+`sealed="#144"` that the shape waits on an issue.
 
-Atlas checks: a built node with a call, an instantiation, an inheritance, a parameter, a return
-or a field of a prophecy (a member of a prophecy counts as the prophecy), and a prophecy whose
-`supersedes` names nothing the code holds (a false prophecy).
+Atlas checks: a built node with a call, an instantiation, an inheritance, a request, a parameter,
+a return, a field or a variant of a prophecy (a member of a prophecy counts as the prophecy), unless
+it is test code: a test, or code in a test module (a pytest file, a TypeScript test file, a Rust
+`#[cfg(test)]` item or module and a crate's `tests/`), as `layers` reads it. And a prophecy whose
+`supersedes` names nothing the code holds (a false prophecy), or ends the ids of several of the
+program's nodes (a library's do not count): then it does not say which it replaces, and Atlas
+names them.
+
+What it cannot see: a test helper in a module of the program is built code. A Rust path through a
+`use` (`supersedes=store::save` where `store` is a name the module imports) is read as written, not
+through the import, and `self::` and `super::` start from the file's module, also inside an inline
+`mod`. A request to a prophesied route of another part is in the graph of the repository as a
+whole; `atlas check` reads each part alone, and asks about a request only where a part serves it
+itself (a TypeScript page that fetches its own routes).
