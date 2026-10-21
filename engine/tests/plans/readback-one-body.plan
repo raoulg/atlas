@@ -1,0 +1,14 @@
+# A step that writes a file and reads it back in one body hands on what it read: the read is of the file as the step
+# left it, inside the step, and the place keeps what the step leaves there, in the codomain (rule 4, #64).
+
+route onebody.run
+step run/note
+
+line entry > run call
+line run/note > File(data/log.txt) own
+line run/note > run back                                 # note returns what it read; run prints it
+line run > Screen own
+
+side entry left
+side File(data/log.txt) right
+side Screen right

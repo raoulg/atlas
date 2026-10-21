@@ -281,8 +281,9 @@ enum Cmd {
     },
 }
 
-/// The viewer, baked into the binary, with its fonts: the layout of the graph it is handed.
+/// The viewer, baked into the binary, with its model and its fonts: the layout of the graph it is handed.
 const VIEWER: &str = include_str!("../../viewer/index.html");
+const PLAN: &str = include_str!("../../viewer/plan.js");
 const FONTS: &str = include_str!("../../viewer/fonts.css");
 
 /// What a page draws: one graph, what the principles ask of it, and, where two readings are drawn
@@ -354,7 +355,7 @@ pub(crate) fn viewer(d: &Drawing, extra: serde_json::Map<String, serde_json::Val
     let mut projects = serde_json::Map::new();
     projects.insert(d.graph.root.clone(), page);
     let payload = serde_json::to_string(&serde_json::json!({ "projects": projects, "atlas": VERSION.as_str() }))?.replace("</", "<\\/");
-    Ok(VIEWER.replacen("/*__FONTS__*/", FONTS, 1).replacen("/*__DATA__*/null", &payload, 1))
+    Ok(VIEWER.replacen("/*__PLAN__*/", PLAN, 1).replacen("/*__FONTS__*/", FONTS, 1).replacen("/*__DATA__*/null", &payload, 1))
 }
 
 /// The page of one or more repositories, or of one repository since a revision (`since`, until

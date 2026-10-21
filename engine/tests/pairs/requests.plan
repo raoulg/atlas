@@ -1,0 +1,15 @@
+# A client that names the address it asks shows where its request goes: the clean Rust `item` asks
+# `GET /api/items/{id}` of the machine the parts run on, `localhost:8000`, where `shop.api.item`, another part of the
+# program, serves it. What that answers is what `item` gives back, so the place stands in the route's domain. The
+# client it asks through is the caller's, a value from the route's start. (The shortcut's `item` asks an address the
+# code does not say: its place is `Web`, with none.)
+
+route rsclean.item
+line entry > item call
+line blocking.Client·client > item value                          # `client.get(..).send()?.text()`
+line Web(localhost:8000) > item own
+
+home blocking.Client·client item
+
+side entry left
+side Web(localhost:8000) left

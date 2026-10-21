@@ -1,0 +1,25 @@
+# Morphisms are functions: a type no arrow gives is no type of the route. The shortcut asserts the type
+# (`JSON.parse(..) as Config`): no step makes a Config, and the route reads its file and hands on what it parsed.
+# the override's result has the dispatch's own moment: closed, its line into the dispatch is dropped, open it is drawn
+known #102 fault more t:shortcut.model.RateTable@n:shortcut.cli/3/6/1>n:shortcut.cli/3/6/1
+known #102 fault more t:shortcut.model.RateTable@n:shortcut.ledger.Ledger/shortcut.ledger.Ledger.report/1>n:shortcut.ledger.Ledger/shortcut.ledger.Ledger.report/1
+known #102 fault more t:shortcut.model.RateTable@n:shortcut.server.app.GET /api/report/0/1>n:shortcut.server.app.GET /api/report/0/1
+known #102 fault no line RateTable@GET /api/report/Ledger.report/RateSource.latest > GET /api/report/Ledger.report/RateSource.latest
+known #102 fault no line RateTable@Ledger()/Ledger.report/RateSource.latest > Ledger()/Ledger.report/RateSource.latest
+known #102 fault no line RateTable@cli.ts/run/?1/Ledger.report/RateSource.latest > cli.ts/run/?1/Ledger.report/RateSource.latest
+
+
+route shortcut.config.loadConfig
+step loadConfig/parse                                                    # const config = JSON.parse(..) as Config
+
+line entry > loadConfig call
+line Disk(loadConfig.file) > loadConfig own
+line loadConfig/parse > _·config@loadConfig/parse value                  # what JSON.parse gives has no type
+known #101 line _·config@loadConfig/parse > loadConfig value             # loadConfig checks config.currency and returns it
+line loadConfig > Config@loadConfig value                                # the Config the signature promises, made by no step
+
+home _·config@loadConfig/parse loadConfig
+home Config@loadConfig loadConfig
+
+side entry left
+side Disk(loadConfig.file) left

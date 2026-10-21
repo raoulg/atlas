@@ -1,0 +1,26 @@
+# Two values of one type are two: `combine(left, right)` takes two Tables by their names, from its start, and hands
+# both to `join`; `join` makes a third, which no name holds, and hands it straight to `show`.
+
+route merge.combine
+step combine/join
+step combine/join/Table()
+step combine/show
+
+line entry > combine call
+line Table·left > combine value
+line Table·right > combine value
+line Table·left > combine/join/Table() value              # join's call is handed both; Table() in it reads them
+line Table·right > combine/join/Table() value
+line combine/join/Table() > Table@combine/join/Table() value
+line Table@combine/join/Table() > combine/join value
+line combine/join > Table@combine/join value
+line Table@combine/join > combine/show value
+line combine/show > Screen own
+
+home Table·left combine
+home Table·right combine
+home Table@combine/join/Table() combine/join
+home Table@combine/join combine
+
+side entry left
+side Screen right

@@ -1,0 +1,18 @@
+# The operation takes its paths from the environment: no code decides them, so the files are known only by the
+# variable that holds each (a hole the term names, never a guess). Three places all the same, by their variables;
+# `read_pair` reads two and gives a str back to `join`, which writes the third.
+
+route storage.run
+step run/join
+step run/join/read_pair
+
+line entry > run call
+line Disk(first) > run/join/read_pair own
+line Disk(second) > run/join/read_pair own
+line run/join/read_pair > run/join back
+line run/join > Disk(destination) own
+
+side entry left
+side Disk(first) left
+side Disk(second) left
+side Disk(destination) right
