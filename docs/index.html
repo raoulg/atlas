@@ -50,25 +50,25 @@ figure.output{max-width:960px}
 figure.output img{width:100%;height:auto;display:block;padding:14px 18px}
 .output .tag{color:var(--ink-2)}
 .lede a{color:var(--ink);text-decoration-color:var(--accent);text-underline-offset:3px}
-.inside{background:var(--panel);border:1px solid var(--line);max-width:80ch}
-.inside h3{font-size:17px;font-weight:500;margin:0;padding:14px 18px 4px}
-.inside h4{font-family:var(--mono);font-size:12px;font-weight:500;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-3);margin:0;padding:12px 18px 6px}
-.inside h4 a{color:inherit;text-decoration-color:var(--accent);text-underline-offset:3px}
-.inside dl{margin:0;padding:0 18px 10px;display:grid;grid-template-columns:minmax(0,15em) 1fr;gap:10px 20px;font-size:15px}
-.inside dt{font-weight:500}
-.inside dd{margin:0;color:var(--ink-2)}
-.inside code{font-family:var(--mono);font-size:13px}
-.inside .more{margin:0;padding:4px 18px 16px;font-size:14px;color:var(--ink-2)}
-.inside .more a{color:var(--ink);text-decoration-color:var(--accent);text-underline-offset:3px}
-@media (max-width:760px){.inside dl{grid-template-columns:1fr;gap:2px}.inside dd{margin-bottom:10px}}
-/* what holds Atlas to a notion */
-.inside dd .by{display:block;margin-top:6px;font-size:13.5px;color:var(--ink-3)}
-.inside .st{display:inline-block;font:500 12px/1.6 var(--mono);padding:0 7px;margin-right:6px;border:1px solid currentColor;border-radius:3px;white-space:nowrap}
-.inside .st.ci{color:var(--add)}
-.inside .st.hand{color:var(--chg)}
-.inside .st.open{color:var(--accent)}
-.inside .st a{color:inherit}
-.inside h4 a{text-transform:none}
+/* the principles: a row per principle, grouped by the branch of mathematics it comes from */
+.maths{width:100%;max-width:1040px;border-collapse:collapse;background:var(--panel);border:1px solid var(--line);font-size:15.5px}
+.maths thead th{font:500 12px var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--ink-3);text-align:left;padding:12px 18px;border-bottom:1px solid var(--line)}
+.maths .branch th{font:600 16px var(--sans);text-align:left;padding:18px 18px 8px;color:var(--ink);border-top:1px solid var(--line)}
+.maths tbody tr:first-child.branch th{border-top:0}
+.maths tbody th[scope=row]{font-weight:500;text-align:left;vertical-align:top;padding:10px 18px;width:28%}
+.maths tbody th small{display:block;font:400 12.5px var(--mono);color:var(--ink-3);margin-top:3px}
+.maths td{vertical-align:top;padding:10px 18px;color:var(--ink-2);line-height:1.55}
+.maths td.ok,.okmark{color:var(--add);font-weight:500;white-space:nowrap}
+.maths td.ok{width:1%}
+.maths .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+.more{font-size:15px;color:var(--ink-2);max-width:80ch}
+.more a{color:var(--ink);text-decoration-color:var(--accent);text-underline-offset:3px}
+@media (max-width:700px){
+  .maths thead{display:none}
+  .maths tr{display:block;padding:4px 0}
+  .maths tbody th[scope=row],.maths td{display:block;width:auto;padding:6px 16px}
+  .maths td.ok{padding-bottom:12px}
+}
 .os{font-size:14px;color:var(--ink-2);margin:16px 0 6px}
 .os:first-of-type{margin-top:0}
 pre{font-family:var(--mono);font-size:13px;background:var(--panel);border:1px solid var(--line);padding:14px 16px;overflow-x:auto;margin:0}
@@ -625,24 +625,29 @@ def run_cycles(raw: Path = RAW, figure: Path = FIGURE, months: int = 13, years: 
 <section id="math">
   <h2>Why it holds together: the mathematics of your code.</h2>
   <p class="lede">Mathematics is a language that allows you to make things consistent. Best practices in coding are consistent, so it makes sense to view your computer code through a mathematical perspective. Because we can turn the mathematics of the code into a visual, you can literally see the consistency of your code, if you followed best practices. This is independent of the language you use: every program is drawn by the same mathematical rules.</p>
-  <p class="lede">Every chapter of this tour stands on a piece of it. Here is which, and what holds Atlas to it: a test that runs on every push, or a tool run by hand. Where Atlas does not do yet what the mathematics says, the test marks that fact with the open issue that tracks it, and the mark goes when the fix lands. Those issues are listed beside each notion.</p>
-  <div class="inside">
-    <h4><a href="#example">The same figure from two programs</a></h4>
-    <dl><dt>A category of places</dt><dd>Places where data rests are the objects, functions are the arrows, call order is composition. A route is a composite from an entry point to the places it reaches, and what a function does to the world is part of its arrow: a file it writes belongs to it as much as a value it returns.<span class="by"><span class="st ci">tested on every push</span> <span class="st open">open: <a href="https://github.com/raoulg/atlas/issues/74">#74</a> <a href="https://github.com/raoulg/atlas/issues/125">#125</a> <a href="https://github.com/raoulg/atlas/issues/137">#137</a> <a href="https://github.com/raoulg/atlas/issues/138">#138</a></span> the clean and the sloppy sunspots program, in <code>pairs_pipeline.rs</code></span></dd><dt>Domain and codomain</dt><dd>A place the route uses stands on the left, a place it leaves something in on the right, and a place it reads and changes on both. That is why the sloppy script draws <code>Global(sunspots.df)</code> in the middle of every step: each one reads it and changes it.<span class="by"><span class="st ci">tested on every push</span> <span class="st open">open: <a href="https://github.com/raoulg/atlas/issues/76">#76</a> <a href="https://github.com/raoulg/atlas/issues/133">#133</a></span> <code>pairs_readback.rs</code>, <code>pairs_pipeline.rs</code></span></dd></dl>
-    <h4><a href="#languages">Port it, and see whether the design survived</a></h4>
-    <dl><dt>Pushout: forms that say the same thing</dt><dd>typer's parameter default, clap's <code>default_value</code> and parseArgs' <code>default:</code> are one construct, an option the caller can override. Atlas draws the construct; the language's form lies beneath it.<span class="by"><span class="st ci">tested on every push</span> <span class="st open">open: <a href="https://github.com/raoulg/atlas/issues/135">#135</a> <a href="https://github.com/raoulg/atlas/issues/136">#136</a></span> the pipeline in Python, Rust and TypeScript, held to one shape</span></dd><dt>Containers and identities</dt><dd><code>list[T]</code>, <code>Vec&lt;Month&gt;</code> and <code>Month[]</code> hold values of their type; <code>await</code>, <code>?</code> and a cast hand on what is inside unchanged. So a <code>DataFrame</code> and a list of <code>Month</code> records are drawn alike.<span class="by"><span class="st ci">tested on every push</span> <span class="st open">open: <a href="https://github.com/raoulg/atlas/issues/103">#103</a> <a href="https://github.com/raoulg/atlas/issues/124">#124</a></span> the pairs of each language</span></dd></dl>
-    <h4><a href="#point">Point at it</a></h4>
-    <dl><dt>One plan, every picture its image</dt><dd>A route has one finest plan, built once from the code. What is open on the page is a map onto that plan, and every picture is its image. So the view your agent sends and the page you look at are one thing: a set of open boxes, and a box to point at.<span class="by"><span class="st ci">tested on every push</span> <span class="st open">open: <a href="https://github.com/raoulg/atlas/issues/101">#101</a> <a href="https://github.com/raoulg/atlas/issues/127">#127</a> <a href="https://github.com/raoulg/atlas/issues/128">#128</a> <a href="https://github.com/raoulg/atlas/issues/129">#129</a> <a href="https://github.com/raoulg/atlas/issues/131">#131</a> <a href="https://github.com/raoulg/atlas/issues/134">#134</a></span> <code>plans.rs</code> holds the plan to what the code implies, on every route of the test programs</span></dd></dl>
-    <h4><a href="#design">Design the next feature before you write it</a></h4>
-    <dl><dt>Partial morphisms: a prophecy</dt><dd>The graph holds what is built and what is not yet, in one picture. The arrows from built code into the sketch are the work still to do, and <code>supersedes</code> points from the new thing to what it replaces. A prophecy draws the shape of its vision.<span class="by"><span class="st ci">tested on every push</span> the prophecy pairs in three languages, <code>prophetize.rs</code></span></dd></dl>
-    <h4><a href="#changed">See what a change did</a></h4>
-    <dl><dt>Yoneda: a thing is its arrows</dt><dd>Between two commits, a place or a type is changed when its arrows differ, even under the same name, and something that disappears while something with the same arrows appears is one thing renamed. The picture and <code>atlas changes</code> mark the same.<span class="by"><span class="st ci">tested on every push</span> <code>diff.rs</code>, <code>changes.rs</code></span></dd></dl>
-    <h4>Zooming in and out, in every chapter</h4>
-    <dl><dt>Quotients and fibers</dt><dd>Zooming out glues a family of types into one box, a quotient. Keeping one route is the fiber over it. The two do not commute, so Atlas takes the filter first: what exists is decided before how it groups.<span class="by"><span class="st ci">tested on every push</span> <code>plans.rs</code></span></dd><dt>Opening refines, and only what it opens</dt><dd>Each zoom level is a partition of the boxes, a topology. Opening a box refines that box alone: it takes no line away, nothing moves into or out of a frame, and a line between two boxes says how many it stands for.<span class="by"><span class="st ci">tested on every push</span> <span class="st open">open: <a href="https://github.com/raoulg/atlas/issues/126">#126</a></span> lines, frames and moments, in <code>plans.rs</code>; <span class="st hand">checked by hand</span> a place keeps its side, closing draws the picture it was (<code>tools/pictures.py topology</code>)</span></dd><dt>The overview of packages</dt><dd>The overview is not yet drawn from the finest plan: it has a construction of its own, one box per type.<span class="by"><span class="st open">not built: <a href="https://github.com/raoulg/atlas/issues/69">#69</a></span> <span class="st hand">checked by hand</span> by <code>tools/pictures.py walk</code> only</span></dd><dt>A step and its reach</dt><dd>A step's own arrow and everything it reaches are different quantities, never merged. What it reaches is computed on the calls as they occur, not on the picture: a helper that writes the file its caller names writes, under each caller, that caller's file.<span class="by"><span class="st ci">tested on every push</span> <code>plans.rs</code></span></dd></dl>
-    <h4>What <code>atlas check</code> asks of your code</h4>
-    <dl><dt>The laws behind its questions</dt><dd>A function that gives nothing and does nothing visible is the arrow to the terminal object (nothing). A sum is taken apart in one place (sums, choices). A class that writes a place gives back what it put (lens). An override keeps its base's promise, Liskov's (overrides). A door says what goes in and out (doors, changes, gives). Packages depend in one direction (layers). Built code does not lean on a sketch (prophecy).<span class="by"><span class="st ci">tested on every push</span> <span class="st open">open: <a href="https://github.com/raoulg/atlas/issues/130">#130</a> <a href="https://github.com/raoulg/atlas/issues/132">#132</a></span> each rule against a clean program and a shortcut it must tell apart; a finding is a question to the author, not a verdict</span></dd></dl>
-    <p class="more">Every notion, what it is in Atlas and where it lives: <a href="https://github.com/raoulg/atlas/blob/next/docs/reference/mathematics.md">the mathematics</a> (as on <code>next</code>, which the next release brings). An introduction to category theory: <a href="https://pttrn.io/#content/category-theory">pttrn.io</a>.</p>
-  </div>
+  <p class="lede">These are the principles Atlas is built on. Atlas is in beta, and not every principle holds everywhere yet. A <span class="okmark">✓ verified</span> principle is checked by a test on every change to Atlas.</p>
+  <table class="maths">
+    <thead><tr><th scope="col">Principle</th><th scope="col">What it means for your code</th><th scope="col"><span class="sr">Status</span></th></tr></thead>
+    <tbody>
+      <tr class="branch"><th colspan="3" scope="colgroup">Category theory</th></tr>
+      <tr><th scope="row">Functions are arrows<small>a category</small></th><td>Every function is an arrow from where its data comes from to where it goes, and calling functions one after another is following the arrows. That is why every route in a picture starts where the program is started and ends at a place: a file, a table, the web, your screen.</td><td class="ok"><span aria-hidden="true">✓</span> verified</td></tr>
+      <tr><th scope="row">What a function does to the world is part of it<small>effects in the arrow</small></th><td>Writing a file belongs to a function as much as the value it returns. So the files a step writes and the web it fetches hang on that step, where you can see them, not somewhere out of sight.</td><td class="ok"><span aria-hidden="true">✓</span> verified</td></tr>
+      <tr><th scope="row">The same meaning gives the same picture<small>a pushout</small></th><td>Python, Rust and TypeScript say the same thing in different words: a default for a command-line option, a list of records. Atlas draws the thing, not the spelling, which is why the three ports in this tour draw one shape.</td><td class="ok"><span aria-hidden="true">✓</span> verified</td></tr>
+      <tr><th scope="row">A thing is what it connects to<small>Yoneda</small></th><td>Two versions of your code are compared by what each part connects to, not by its name. A function you renamed but that does the same is the same function; one that kept its name but now writes another file has changed. That is why a diff lights up only what really changed.</td><td class="ok"><span aria-hidden="true">✓</span> verified</td></tr>
+      <tr><th scope="row">Not built yet is part of the picture<small>a partial map</small></th><td>A design can live in the code before it is built. The picture shows what is built and what is not yet as one whole, and the lines from built code into the sketch are exactly the work still to do.</td><td class="ok"><span aria-hidden="true">✓</span> verified</td></tr>
+      <tr class="branch"><th colspan="3" scope="colgroup">Topology</th></tr>
+      <tr><th scope="row">Zooming out is gluing<small>a quotient</small></th><td>Zooming out glues boxes together into one; zooming in pulls them apart again. Nothing gets lost on the way: no line disappears, nothing jumps to another place, and closing a box gives you back exactly the picture you had.</td><td class="ok"><span aria-hidden="true">✓</span> verified</td></tr>
+      <tr><th scope="row">Choose first, then group<small>a fiber</small></th><td>Showing one route, or one class, keeps just that part of the program. Atlas always takes that choice first and groups after, so what you see does not depend on what lies outside it.</td><td class="ok"><span aria-hidden="true">✓</span> verified</td></tr>
+      <tr><th scope="row">Every view is a view of one plan<small>one fine plan</small></th><td>Each route has one detailed plan, made once from the code. Every picture of it, at whatever zoom, is that plan seen from further away. That is why your agent can point at a box on your page: you both look at the same plan.</td><td class="ok"><span aria-hidden="true">✓</span> verified</td></tr>
+      <tr class="branch"><th colspan="3" scope="colgroup">Type theory</th></tr>
+      <tr><th scope="row">A signature says what goes in and out<small>types of arrows</small></th><td>What a function takes and gives back, and what it changes, can be read from its signature. Where the code leaves that open, Atlas asks.</td><td class="ok"><span aria-hidden="true">✓</span> verified</td></tr>
+      <tr><th scope="row">A subclass keeps its promise<small>Liskov substitution</small></th><td>Wherever the code expects a class, any of its subclasses has to fit: take at least what the base takes, give what the base gives. Atlas asks where an override breaks that promise.</td><td class="ok"><span aria-hidden="true">✓</span> verified</td></tr>
+      <tr class="branch"><th colspan="3" scope="colgroup">Graph theory</th></tr>
+      <tr><th scope="row">What a step does, and what it sets in motion<small>reach</small></th><td>What a step does itself and what it causes through the steps it calls are two different things, drawn apart: a solid line for its own, a dashed one for what it reaches.</td><td class="ok"><span aria-hidden="true">✓</span> verified</td></tr>
+      <tr><th scope="row">Dependencies go one way<small>a directed graph without cycles</small></th><td>Packages depend on one another in one direction. Atlas asks where a package reaches back to one that depends on it.</td><td class="ok"><span aria-hidden="true">✓</span> verified</td></tr>
+    </tbody>
+  </table>
+  <p class="more">Every principle, in the language of mathematics and where it lives in Atlas: <a href="https://github.com/raoulg/atlas/blob/next/docs/reference/mathematics.md">the mathematics</a>. An introduction to category theory: <a href="https://pttrn.io/#content/category-theory">pttrn.io</a>.</p>
 </section>
 
 <section id="install">
