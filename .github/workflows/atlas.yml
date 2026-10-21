@@ -23,10 +23,10 @@ jobs:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@v10.3.0
       - run: cargo build --locked --release -p atlas
       - name: Start from the documentation
         run: cp -R docs site
@@ -40,8 +40,9 @@ jobs:
           python3 tools/atlas_badge.py site/badge.svg
           target/release/atlas check --json > findings.json || true
           python3 tools/atlas_badge.py site/questions.svg findings.json
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: site
+          include-hidden-files: true   # docs/.nojekyll is part of the site
       - id: deploy
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
