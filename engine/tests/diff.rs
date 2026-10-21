@@ -355,6 +355,13 @@ fn a_swapped_producer_marks_the_swap_alone() {
         );
         assert_eq!(d.places.keys().collect::<Vec<_>>(), ["w:File:data/raw.csv"], "{name}");
         assert_eq!(d.was.get("w:File:data/raw.csv").map(String::as_str), Some("load reads"));
+        // the frame smooth is handed is one value in both readings, made by load in A and by fetch in B
+        assert!(d.hands.is_empty(), "{name}: A hands smooth what B hands it: {:?}", d.hands);
+        assert_eq!(
+            d.remade.get("spots.cli.main").map(|m| m.iter().map(|(a, b)| (*a, *b)).collect::<Vec<_>>()),
+            Some(vec![(0, 1)]),
+            "{name}"
+        );
         for (reading, producer) in [(Reading::A, "spots.cli.load"), (Reading::B, "spots.cli.fetch")] {
             let side = diff::reading(&g, &d, reading);
             let sites = &side.node("spots.cli.main").unwrap().sites;
@@ -367,6 +374,57 @@ fn a_swapped_producer_marks_the_swap_alone() {
             (["spots.cli.fetch".to_string()].as_slice(), ["spots.cli.load".to_string()].as_slice())
         );
         assert!(route.steps_changed.is_empty(), "{}", changes::report(&c));
+        done(&repo);
+    }
+}
+
+/// `clean` is put in between `load` and `smooth` (and, the other way, taken out): that step alone
+/// is marked. `smooth` makes the same call on a frame in both readings, so it is one step, handed
+/// in A what `load` gives and in B what `clean` gives; the frame `load` gives is one value too, and
+/// only what takes it differs. No value is made by another step.
+#[test]
+fn a_step_put_in_a_chain_marks_it_alone() {
+    let clean = "\n\ndef clean(frame: Frame) -> Frame:\n    return Frame([v for v in frame.values if v >= 0])\n";
+    let short = format!("{FRAME}{clean}{PLOT}");
+    let long = short.replace("smooth(load(Path(\"data/raw.csv\")))", "smooth(clean(load(Path(\"data/raw.csv\"))))");
+    assert_ne!(short, long);
+    for (name, a, b, status) in [("insert", &short, &long, Status::Added), ("delete", &long, &short, Status::Removed)] {
+        let repo = repository(&format!("chain-{name}"), a);
+        commit(&repo, b, name);
+        let (g, d, c) = both(&repo);
+        assert!(d.nodes.is_empty(), "{name}: no node's own arrow changed: {:?} {:?}", d.nodes, d.was);
+        assert!(d.places.is_empty(), "{name}: {:?}", d.places);
+        assert_eq!(
+            steps(&g, &d, "spots.cli.main"),
+            [
+                ("spots.cli.load".to_string(), None),
+                ("spots.cli.clean".to_string(), Some(status)),
+                ("spots.cli.smooth".to_string(), None),
+                ("spots.cli.plot".to_string(), None)
+            ],
+            "{name}"
+        );
+        assert_eq!(d.hands["spots.cli.main"].keys().collect::<Vec<_>>(), [&2], "{name}: A hands smooth another value than B");
+        assert!(d.remade.is_empty(), "{name}: {:?}", d.remade);
+        for reading in [Reading::A, Reading::B] {
+            let side = diff::reading(&g, &d, reading);
+            let sites = &side.node("spots.cli.main").unwrap().sites;
+            let calls: Vec<&str> = sites.iter().map(|s| s.to.as_str()).collect();
+            let cleans = (reading == Reading::B) == (status == Status::Added);
+            let before = if cleans { "spots.cli.clean" } else { "spots.cli.load" };
+            assert_eq!(calls.contains(&"spots.cli.clean"), cleans, "{name} {reading:?}: {calls:?}");
+            let (at, smooth) =
+                (calls.iter().position(|c| *c == before).unwrap(), calls.iter().position(|c| *c == "spots.cli.smooth").unwrap());
+            assert_eq!(sites[at].gives[0].name, sites[smooth].hands[0].name, "{name} {reading:?}: smooth takes what {before} gives");
+            if cleans {
+                assert_eq!(sites[0].gives[0].name, sites[1].hands[0].name, "{name} {reading:?}: clean takes what load gives");
+            }
+        }
+        let route = &c.routes[0];
+        let (added, removed) = (route.steps_added.as_slice(), route.steps_removed.as_slice());
+        let listed = if status == Status::Added { (added, removed) } else { (removed, added) };
+        assert_eq!(listed, (["spots.cli.clean".to_string()].as_slice(), [].as_slice()), "{name}: {}", changes::report(&c));
+        assert!(route.steps_changed.is_empty(), "{name}: {}", changes::report(&c));
         done(&repo);
     }
 }

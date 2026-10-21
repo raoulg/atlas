@@ -148,11 +148,13 @@ the boxes at its ends.
 A step of a body is the same in both when it makes the same call on values of the same types,
 in the same order. Which step made a value is the arrow of that step, not of the one it goes to,
 so a change before a step leaves it the same step: `raw = load(p)` becoming `raw = fetch(p)`
-marks that step, never `smooth(raw)` after it. A place a caller makes whole is the caller's
-arrow; a file named by a function's own parameter (`load.path`) is named so whoever calls the
-function. A rename is an isomorphism of the typed arrows in and out: `list[float] → float` is
-no `str → str`. `atlas changes` reads the same union along each route, so the picture and the
-list hold the same marks.
+marks that step, never `smooth(raw)` after it, and `raw` is one value whose arrows in differ. A
+step put in before another (`double(add_one(x))` where A had `double(x)`) is the only step
+marked: the step after it is handed in each reading what that reading gives it. A place a caller
+makes whole is the caller's arrow; a file named by a function's own parameter (`load.path`) is
+named so whoever calls the function. A rename is an isomorphism of the typed arrows in and out:
+`list[float] → float` is no `str → str`. `atlas changes` reads the same union along each route,
+so the picture and the list hold the same marks.
 **Where.** `atlas history`, `atlas changes A..B`, a vision beside the working tree (`atlas
 mcp`'s `vision`); `diff::union`, `diff::reading`, `changes::between`; `design.md` §4, L5.
 
