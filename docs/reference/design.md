@@ -236,7 +236,11 @@ Three things make `F` honest, and each is an engine task:
    that only share a name are two. Each place keeps the
    function whose call made it whole, and a route shows it only when it reaches that
    function: `analyze` reads the folder its user names, and `changes` also reads the
-   revision it writes under `$TMPDIR`. An entry the program also calls is run by its users
+   revision it writes under `$TMPDIR`. Where the code decides a place, the place also keeps the
+   function whose own code writes what its path starts at (`Touch::fixed_by`), however many calls
+   lie between: `default_rows` for the file `read_rows(path)` reads when it hands it
+   `Path("data/rows.csv")`. A default a call leaves out is an input with a default, which decides
+   nothing. An entry the program also calls is run by its users
    as well, with what they hand it, in its own route. What an object holds is whole where
    the object was built, and a path that takes both that and what the method's own callers
    hand is whole where both are. A route that reaches none of the callers that make a call

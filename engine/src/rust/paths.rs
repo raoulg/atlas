@@ -11,7 +11,7 @@ use tree_sitter::Node as TsNode;
 use super::{def_node, expand, path_parts, resolve, resolve_value, Module};
 use crate::knowledge::{self, PathFn, PathMethod};
 use crate::model::{Node, NodeKind};
-use crate::paths::{cross, hole, lit, parent, substitute, union, Built, Seg};
+use crate::paths::{cross, environment_named, hole, lit, or_else, parent, substitute, union, Built, Seg};
 use crate::tree::{named_children, text, unquote, walk};
 
 const DEPTH: u32 = 12;
@@ -418,8 +418,8 @@ impl<'a> Eval<'a> {
                     on().into_iter().flat_map(|b| arg(0).into_iter().map(move |x| with_extension(&b, &x))).collect()
                 }
                 Some(PathMethod::Sibling) => cross(&on().iter().map(parent).collect::<Vec<_>>(), &arg(0), "/"),
-                // what an `Option` or a `Result` holds, or what it falls back to
-                None if super::OR_ELSE.contains(&method) && !method.starts_with("map") => union(on(), arg(0)),
+                // what an `Option` or a `Result` holds, or what it falls back to where it holds nothing
+                None if super::OR_ELSE.contains(&method) && !method.starts_with("map") => or_else(on(), arg(0)),
                 None if knowledge::hands_on(method) && !matches!(method, "map" | "and_then") => on(),
                 None => vec![hole(method)],
             };
@@ -447,6 +447,9 @@ impl<'a> Eval<'a> {
             Some(PathFn::Home) => vec![lit("~")],
             Some(PathFn::Here) => vec![lit(".")],
             Some(PathFn::Temp) => vec![lit(knowledge::TEMP_DIR)],
+            Some(PathFn::Environment) => {
+                vec![environment_named(&arg(0)).unwrap_or_else(|| hole(parts.last().map(String::as_str).unwrap_or("call")))]
+            }
             None => self
                 .given(at, &path_parts(Some(f), src), &args, depth)
                 .unwrap_or_else(|| vec![hole(parts.last().map(String::as_str).unwrap_or("call"))]),
@@ -478,9 +481,12 @@ impl<'a> Eval<'a> {
         let name = mac.child_by_field_name("macro").map(|x| path_parts(Some(x), src)).and_then(|p| p.last().cloned()).unwrap_or_default();
         let Some(tt) = named_children(mac).into_iter().find(|x| x.kind() == "token_tree") else { return vec![hole(&name)] };
         let groups = token_groups(tt);
+        // the directory the crate's manifest is in, fixed where the program is built
+        let built_in = |var: &str| matches!(groups.first().map(Vec::as_slice), Some([x]) if unquote(text(*x, src)) == var);
         match name.as_str() {
             "format" | "format_args" => self.format(at, mac.start_byte(), &groups, depth),
             "concat" => groups.iter().fold(vec![vec![]], |acc, g| cross(&acc, &self.tokens(at, g, depth), "")),
+            m if knowledge::RUST_BUILD_DIRS.iter().any(|(mac, var)| *mac == m && built_in(var)) => vec![lit(&at.m.manifest_dir)],
             _ => vec![hole(&name)],
         }
     }

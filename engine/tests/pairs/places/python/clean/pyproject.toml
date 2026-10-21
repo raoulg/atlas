@@ -1,0 +1,11 @@
+[project]
+name = "stock"
+version = "0.1.0"
+requires-python = ">=3.12"
+
+[project.scripts]
+stock = "stock.cli:main"
+
+[build-system]
+requires = ["uv_build"]
+build-backend = "uv_build"

@@ -545,9 +545,12 @@ pub struct Touch {
     /// The file a database connection opens, where the code says so: `duckdb.connect(path)`. A
     /// database that is no file (in memory, at an address) names none.
     pub file: String,
-    /// The code alone decides where: the path or URL starts at a literal (`"out.csv"`,
-    /// `Path("data") / name`), not at a value a caller hands in (`root / "out.csv"`).
+    /// The code alone decides where, in its own function: the path or URL starts at a literal
+    /// (`"out.csv"`, `Path("data") / name`), not at a value a caller hands in (`root / "out.csv"`).
     pub fixed: bool,
+    /// The functions whose own code decides where, where that is not its own function: each hands
+    /// it a path or URL that starts at a literal (`read_rows(Path("data/rows.csv"))`).
+    pub fixed_by: Vec<String>,
     /// The line of the first such call, 1-based.
     pub line: u32,
     /// The functions whose calls hand what makes its path or statement whole, where that is not
@@ -573,6 +576,7 @@ impl Touch {
             artifact: String::new(),
             file: String::new(),
             fixed: false,
+            fixed_by: vec![],
             line: 0,
             by: vec![],
             users_of: vec![],
@@ -622,6 +626,8 @@ pub struct TouchJson {
     pub dir: String,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub fixed: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub fixed_by: Vec<String>,
     #[serde(default, skip_serializing_if = "is_zero")]
     pub line: u32,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -645,6 +651,7 @@ impl From<Touch> for TouchJson {
             file: t.file,
             dir,
             fixed: t.fixed,
+            fixed_by: t.fixed_by,
             line: t.line,
             by: t.by,
             users_of: t.users_of,
@@ -667,6 +674,7 @@ impl TryFrom<TouchJson> for Touch {
             artifact: j.artifact,
             file: j.file,
             fixed: j.fixed,
+            fixed_by: j.fixed_by,
             line: j.line,
             by: j.by,
             users_of: j.users_of,

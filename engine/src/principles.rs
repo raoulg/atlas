@@ -667,33 +667,44 @@ fn array_fits(given: &Array, promised: &Array) -> bool {
 /// program starts: a script, a CLI, a test, a notebook. Code those call takes the place as an
 /// argument, so each of them can choose. Where the program starts is the entry itself (a
 /// command, a route, a test), or a file that is one as a whole (a script, a notebook, a test
-/// file) with the code it defines; a library function beside an entry is library code.
+/// file) with the code it defines; a library function beside an entry is library code. A place
+/// is decided by the function whose own code writes what its path or URL starts at, wherever the
+/// call that touches the place is: `default_rows` decides the file `read_rows(path)` reads when it
+/// hands it `Path("data/rows.csv")`.
 fn places(ix: &Index) -> Vec<Finding> {
     let entry = |id: &str| ix.node(id).and_then(|n| n.entry.as_ref()).map_or(false, |e| e.kind != EntryKind::Export);
     let mut out = vec![];
     // a file that runs as a whole names its places with the code it defines; a module that runs as
-    // a command is imported all the same, and its functions are library code
-    let whole =
-        |id: &str| ix.node(id).and_then(|n| n.entry.as_ref()).map_or(false, |e| !matches!(e.kind, EntryKind::Export | EntryKind::Cli));
+    // a command is imported all the same, and its functions are library code, but for those it
+    // keeps to itself: only the command can call them (the `main` a TypeScript `bin` runs)
+    let kind = |id: &str| ix.node(id).and_then(|n| n.entry.as_ref()).map(|e| e.kind);
+    let whole = |id: &str| kind(id).map_or(false, |k| !matches!(k, EntryKind::Export | EntryKind::Cli));
+    let own = |n: &Node| n.private && kind(&n.module) == Some(EntryKind::Cli);
+    // what each function's own code decides: the touches of its own calls, and those of the calls
+    // it hands a place to
+    let mut decides: HashMap<&str, Vec<(&Node, &Touch)>> = HashMap::new();
     for n in &ix.g.nodes {
-        if entry(&n.id) || whole(&n.module) {
+        for t in &n.touches {
+            let by = t.fixed.then_some(n.id.as_str()).into_iter().chain(t.fixed_by.iter().map(String::as_str));
+            for d in by {
+                decides.entry(d).or_default().push((n, t));
+            }
+        }
+    }
+    for n in &ix.g.nodes {
+        let Some(touches) = decides.get(n.id.as_str()) else { continue };
+        if entry(&n.id) || whole(&n.module) || own(n) {
             continue;
         }
-        let fixed: Vec<String> = n
-            .touches
+        let place = |t: &Touch| if t.artifact.is_empty() { crate::flow::shown(&t.what) } else { t.artifact.clone() };
+        let fixed: Vec<String> = touches
             .iter()
-            .filter(|t| t.fixed)
-            .map(|t| format!("{}({})", t.op, if t.artifact.is_empty() { crate::flow::shown(&t.what) } else { t.artifact.clone() }))
+            .map(|(owner, t)| match owner.id == n.id {
+                true => format!("{}({})", t.op, place(t)),
+                false => format!("{}({}) in {}", t.op, place(t), ix.label(&owner.id)),
+            })
             .collect();
-        if fixed.is_empty() {
-            continue;
-        }
-        let what = n
-            .touches
-            .iter()
-            .filter(|t| t.fixed)
-            .map(|t| if t.artifact.is_empty() { crate::flow::shown(&t.what) } else { t.artifact.clone() })
-            .collect::<Vec<_>>();
+        let what: Vec<String> = touches.iter().map(|(_, t)| place(t)).collect();
         out.push(ix.finding(
             "places",
             n,

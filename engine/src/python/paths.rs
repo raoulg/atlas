@@ -13,7 +13,7 @@ use crate::pytypes::{FileArg, Param, Target, Types};
 use crate::tree::{named_children, path_str, text, unquote, walk};
 
 use crate::knowledge;
-use crate::paths::{cross, hole, lit, parent, substitute, union};
+use crate::paths::{cross, environment, hole, lit, or_else, parent, substitute, union};
 pub(super) use crate::paths::{Built, Seg};
 
 const DEPTH: u32 = 40;
@@ -52,6 +52,11 @@ impl<'a> Eval<'a> {
         Eval { by_file: modules.values().map(|m| (path_str(&m.path), m)).collect(), types, root }
     }
 
+    /// The module's file, by its path in the project.
+    fn file(&self, m: &Module) -> String {
+        m.path.strip_prefix(self.root).map(path_str).unwrap_or_else(|_| path_str(&m.path))
+    }
+
     fn def(&self, m: &Module, e: TsNode) -> Option<Target> {
         self.types.of(&path_str(&m.path))?.def((e.start_byte(), e.end_byte())).cloned()
     }
@@ -67,6 +72,27 @@ impl<'a> Eval<'a> {
                 .iter()
                 .any(|c| matches!(&c.target, Target::Lib(m) if knowledge::PATH_LIBRARIES.contains(&m.as_str())))
         })
+    }
+
+    /// Whether calling `f`, named `name`, reaches a library's function that gives the directory a
+    /// package ships its files in (knowledge::PACKAGE_FILES): in the library's module or below it.
+    fn gives_package_files(&self, m: &Module, f: TsNode, name: &str) -> bool {
+        self.types.of(&path_str(&m.path)).map_or(false, |x| {
+            x.callees((f.start_byte(), f.end_byte())).iter().any(|c| match &c.target {
+                Target::Lib(module) => knowledge::PACKAGE_FILES
+                    .iter()
+                    .any(|(lib, fun)| *fun == name && (module == lib || module.starts_with(&format!("{lib}.")))),
+                Target::Here { .. } => false,
+            })
+        })
+    }
+
+    /// The directory the package named `name` lies in, by its path in the project: the package's
+    /// own directory, or the one a single module is in.
+    fn package_dir(&self, name: &str) -> Option<String> {
+        let m = self.by_file.values().find(|m| m.id == name)?;
+        let file = self.file(m);
+        Some(file.rsplit_once('/').map_or(".".to_string(), |(dir, _)| dir.to_string()))
     }
 
     fn callee_def(&self, m: &Module, f: TsNode) -> Option<(String, usize)> {
@@ -141,6 +167,11 @@ impl<'a> Eval<'a> {
                     k.first().map(|x| self.of(at, *x, depth + 1)).unwrap_or_default(),
                     k.get(2).map(|x| self.of(at, *x, depth + 1)).unwrap_or_default(),
                 )
+            }
+            // `x or d`: `x`, or `d` where `x` says nothing
+            "boolean_operator" if e.child_by_field_name("operator").map(|o| text(o, src)) == Some("or") => {
+                let side = |f: &str| e.child_by_field_name(f).map(|x| self.of(at, x, depth + 1)).unwrap_or_default();
+                or_else(side("left"), side("right"))
             }
             "boolean_operator" => named_children(e).into_iter().fold(vec![], |acc, x| union(acc, self.of(at, x, depth + 1))),
             "binary_operator" => {
@@ -272,8 +303,7 @@ impl<'a> Eval<'a> {
     fn name(&self, at: At, e: TsNode, depth: u32) -> Vec<Built> {
         let name = text(e, &at.m.src);
         if name == "__file__" {
-            let rel = at.m.path.strip_prefix(self.root).map(path_str).unwrap_or_else(|_| path_str(&at.m.path));
-            return vec![lit(&rel)];
+            return vec![vec![Seg::Package(self.file(at.m))]];
         }
         self.defined(at, e, depth).unwrap_or_else(|| vec![hole(name)])
     }
@@ -451,16 +481,30 @@ impl<'a> Eval<'a> {
         if knowledge::PATH_MAKERS.contains(&last) {
             return if positional.is_empty() { vec![lit(".")] } else { joined(&positional) };
         }
+        // the directory a package ships its files in, by the package's name: the module's own for
+        // `__name__` and its package's for `__package__`
+        if self.gives_package_files(at.m, f, last) {
+            let named = positional.first().map(|a| match text(*a, src) {
+                "__name__" => at.m.id.clone(),
+                "__package__" => at.m.package.clone(),
+                _ => unquote(text(*a, src)),
+            });
+            return match named.and_then(|p| self.package_dir(&p)) {
+                Some(dir) => vec![vec![Seg::Package(dir)]],
+                None => vec![hole(last)],
+            };
+        }
         match last {
             "join" if parts.iter().any(|p| p == "path") => return joined(&positional),
             "joinpath" => return cross(&receiver(), &joined(&positional), "/"),
             "cwd" => return vec![lit(".")],
             "home" => return vec![lit("~")],
             "str" | "fspath" if positional.len() == 1 => return self.of(at, positional[0], depth + 1),
+            // what the environment says, or the default the code takes where it says nothing
             "getenv" | "get" if parts.iter().any(|p| p == "getenv" || p == "environ") => {
                 let var = positional.first().map(|a| unquote(text(*a, src))).unwrap_or_default();
                 let default = positional.get(1).map(|a| self.of(at, *a, depth + 1)).unwrap_or_default();
-                return union(vec![hole(&format!("${var}"))], default);
+                return or_else(vec![environment(&var)], default);
             }
             "with_suffix" => {
                 let suffix = positional.first().map(|a| unquote(text(*a, src))).unwrap_or_default();

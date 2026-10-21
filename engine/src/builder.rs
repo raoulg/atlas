@@ -168,6 +168,13 @@ impl GraphBuilder {
                 // whole in its own function is whole in every route; else in the routes of each
                 let whole_here = |y: &Touch| y.by.is_empty() && y.users_of.is_empty();
                 let here = whole_here(x) || whole_here(&t);
+                // a place is decided where any of the calls that touch it decides it
+                x.fixed |= t.fixed;
+                for f in t.fixed_by {
+                    if !x.fixed_by.contains(&f) {
+                        x.fixed_by.push(f);
+                    }
+                }
                 if x.payload.is_empty() {
                     x.payload = t.payload;
                 }

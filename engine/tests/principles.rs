@@ -46,7 +46,9 @@ fn each_principle_finds_its_case() {
     );
     // `Path("out.json")` in a sink, `summary` beside the command `export`, which names its own
     // file as an entry may, and the functions of `files` that keep their data under the module's
-    // constant `DATA`; `save` writes where its caller says
+    // constant `DATA`; `save` writes where its caller says. `warm` and `tidy` hand the folder
+    // (`Cache(Path("warm"))`, `Bin(root=Path("tidy"))`) that the object's method writes under: the
+    // place is theirs, as it would be had they written the file themselves
     assert_eq!(
         got["places"],
         [
@@ -56,7 +58,9 @@ fn each_principle_finds_its_case() {
             "fixture.files.read_report",
             "fixture.files.install",
             "fixture.files.export",
-            "fixture.sinks.duck.DuckSink.write"
+            "fixture.sinks.duck.DuckSink.write",
+            "fixture.store.warm",
+            "fixture.store.tidy"
         ]
     );
     // `enrich` changes the Graph it is handed, so do `rename` (`setattr`) and `forget` (`del`);
@@ -163,13 +167,18 @@ fn a_lens_puts_what_reaches_the_place_not_the_key_it_looks_up_by() {
 
 /// The principles read Rust by what its types and entries mean: `Disk.page` gives the
 /// `anyhow::Result<Page>` that `Source.page` promises as `Result<Page>`, and the test beside
-/// `ledger` names its own file without making `ledger` one that may.
+/// `ledger` names its own file without making `ledger` one that may. `publish` hands
+/// `report(dir, ..)` the directory `site`, and `stock` builds its `Store` on `stock`: each decides
+/// the place the function it calls writes.
 #[test]
 fn rust_is_read_by_meaning() {
     let fs = findings("tests/fixture-rs");
     let got = by_principle(&fs);
     assert!(!got.contains_key("overrides"), "{:?}", got.get("overrides"));
-    assert_eq!(got["places"], ["handed.ledger.ledger", "handed.world.notes", "handed.world.stamp"]);
+    assert_eq!(
+        got["places"],
+        ["handed.ledger.ledger", "handed.world.notes", "handed.world.publish", "handed.world.stamp", "handed.world.stock"]
+    );
 }
 
 /// A command its package also exports is a door as well: `doors` asks of it as of any door, and
@@ -206,9 +215,36 @@ fn a_package_called_src_is_asked_its_name() {
     assert!(fs[0].what.contains("called src"), "{}", fs[0].what);
 }
 
+/// Why a helper beside Atlas's tests is asked where its fixture lives: it finds the fixture through
+/// `CARGO_MANIFEST_DIR`, the source directory of the machine the tests are built on, a fixed place.
+/// A fault of the rule: a function in a Rust file of tests is library code to it, while the file
+/// runs as a whole, as a Python test file does, whose helpers may name the places they read.
+const TEST_HELPER: &str = "a test helper names its fixture through CARGO_MANIFEST_DIR; a Rust test file is not read as one that runs as a whole (the rule's fault)";
+
 /// What `atlas check` asks of Atlas, each finding read: its principle, the node it is about, and
-/// why it stands (a fault of Atlas's code, tracked in an issue, or a fault of the rule).
-const REVIEWED: &[(&str, &str, &str)] = &[];
+/// why it stands (a fault of Atlas's code, tracked in an issue, or a fault of the rule). A path is
+/// followed out to a bounded number of the calls that complete it, and `Repo::read` is handed its
+/// directory by more of the tests than that: the helpers past the bound (the TypeScript pair's
+/// `side`, `gathering` and `stock`) are not asked, though they decide alike.
+const REVIEWED: &[(&str, &str, &str)] = &[
+    ("places", "atlas-engine.tests.changes.repository", TEST_HELPER),
+    ("places", "atlas-engine.tests.common.mod.decided", TEST_HELPER),
+    ("places", "atlas-engine.tests.common.mod.written", TEST_HELPER),
+    ("places", "atlas-engine.tests.libraries.rounds", TEST_HELPER),
+    ("places", "atlas-engine.tests.pairs_pipeline.read", TEST_HELPER),
+    ("places", "atlas-engine.tests.pairs_python.side", TEST_HELPER),
+    ("places", "atlas-engine.tests.pairs_python.gathering", TEST_HELPER),
+    ("places", "atlas-engine.tests.pairs_python.kennis", TEST_HELPER),
+    ("places", "atlas-engine.tests.pairs_python.archive_python", TEST_HELPER),
+    ("places", "atlas-engine.tests.pairs_python.stock", TEST_HELPER),
+    ("places", "atlas-engine.tests.pairs_readback.graph", TEST_HELPER),
+    ("places", "atlas-engine.tests.pairs_rust.read", TEST_HELPER),
+    ("places", "atlas-engine.tests.pairs_rust.gathering", TEST_HELPER),
+    ("places", "atlas-engine.tests.pairs_rust.kennis", TEST_HELPER),
+    ("places", "atlas-engine.tests.pairs_rust.harvest", TEST_HELPER),
+    ("places", "atlas-engine.tests.pairs_rust.archive_rust", TEST_HELPER),
+    ("places", "atlas-engine.tests.pairs_rust.stock", TEST_HELPER),
+];
 
 /// Atlas is its own first subject, and `atlas check` is a signal on it as on any code: never an
 /// oracle, never a target. What it asks of Atlas is the reviewed list above; the test fails when

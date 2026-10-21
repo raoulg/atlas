@@ -10,7 +10,7 @@ use tree_sitter::Node as TsNode;
 
 use super::{declarations, function_in, is_property, member_parts, top_variables, Bound, Module};
 use crate::knowledge::{self, PathFn};
-use crate::paths::{cross, hole, lit, parent, substitute, union, Built, Seg};
+use crate::paths::{cross, environment, environment_named, hole, lit, or_else, parent, substitute, union, Built, Seg};
 use crate::tree::{named_children, path_str, text, unquote, walk};
 
 const DEPTH: u32 = 12;
@@ -77,6 +77,11 @@ impl<'a> Eval<'a> {
         path_str(m.path.strip_prefix(self.root).unwrap_or(&m.path))
     }
 
+    /// Where the module's own code lies: its file, as the package ships it.
+    fn here(&self, m: &Module) -> Built {
+        vec![Seg::Package(self.file(m))]
+    }
+
     fn package(&self, m: &Module, name: &str) -> Option<String> {
         match m.bindings.get(name)? {
             Bound::Ext(e) => Some(super::package_from_ext(e, &m.ext_pkgs)),
@@ -112,7 +117,8 @@ impl<'a> Eval<'a> {
                 };
                 match e.child_by_field_name("operator").map(|o| text(o, src)) {
                     Some("+") => cross(&self.of(at, l, depth + 1), &self.of(at, r, depth + 1), ""),
-                    Some("??" | "||") => union(self.of(at, l, depth + 1), self.of(at, r, depth + 1)),
+                    // `x ?? d`: `x`, or `d` where `x` says nothing
+                    Some("??" | "||") => or_else(self.of(at, l, depth + 1), self.of(at, r, depth + 1)),
                     _ => vec![hole("value")],
                 }
             }
@@ -145,13 +151,13 @@ impl<'a> Eval<'a> {
         let parts = member_parts(e, src);
         let last = parts.last().cloned().unwrap_or_else(|| "value".into());
         match text(e, src) {
-            "import.meta.url" | "import.meta.filename" => return vec![lit(&self.file(at.m))],
-            "import.meta.dirname" => return vec![parent(&lit(&self.file(at.m)))],
+            "import.meta.url" | "import.meta.filename" => return vec![self.here(at.m)],
+            "import.meta.dirname" => return vec![parent(&self.here(at.m))],
             _ => {}
         }
         // an environment variable is set where the program runs
         if matches!(parts.as_slice(), [p, env, _] if p == "process" && env == "env") {
-            return vec![hole(&format!("${last}"))];
+            return vec![environment(&last)];
         }
         // what an object holds: a field its constructor sets from what it is handed
         if let [this, name] = parts.as_slice() {
@@ -332,8 +338,8 @@ impl<'a> Eval<'a> {
         let src = &at.m.src;
         let name = text(e, src).to_string();
         match name.as_str() {
-            "__filename" => return vec![lit(&self.file(at.m))],
-            "__dirname" => return vec![parent(&lit(&self.file(at.m)))],
+            "__filename" => return vec![self.here(at.m)],
+            "__dirname" => return vec![parent(&self.here(at.m))],
             _ => {}
         }
         // a local of the function, then its parameters
@@ -389,6 +395,7 @@ impl<'a> Eval<'a> {
             Some(PathFn::Home) => vec![lit("~")],
             Some(PathFn::Here) => vec![lit(".")],
             Some(PathFn::Temp) => vec![lit(knowledge::TEMP_DIR)],
+            Some(PathFn::Environment) => vec![environment_named(&arg(0)).unwrap_or_else(|| hole(last))],
             // the language's own conversions to a string
             None if parts.as_slice() == ["String"] => arg(0),
             None if last == "toString" => {

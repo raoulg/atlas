@@ -34,6 +34,9 @@ pub(crate) struct Crate {
 struct Module {
     id: String,
     krate: String,
+    /// The directory its crate's manifest is in, by its path in the repository (`.` at its top):
+    /// what `CARGO_MANIFEST_DIR` holds where the crate is built.
+    manifest_dir: String,
     parent: String,
     path: PathBuf,
     src: Vec<u8>,
@@ -439,6 +442,13 @@ pub fn parse(repo: &Repo, opts: &crate::Options) -> Result<(GraphBuilder, String
                 Module {
                     id: mid,
                     krate: c.name.clone(),
+                    manifest_dir: c
+                        .dir
+                        .strip_prefix(repo.root())
+                        .map(crate::tree::path_str)
+                        .ok()
+                        .filter(|d| !d.is_empty())
+                        .unwrap_or(".".into()),
                     parent,
                     path: p,
                     src,

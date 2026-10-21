@@ -198,6 +198,7 @@ impl Libraries {
         Some(Module {
             id: id.to_string(),
             krate,
+            manifest_dir: file.ancestors().find(|a| a.join("Cargo.toml").is_file()).map(crate::tree::path_str).unwrap_or_default(),
             parent,
             path: file.to_path_buf(),
             src,

@@ -321,9 +321,11 @@ fn lens_what_a_lens_puts_is_what_reaches_the_place() {
 
 /// Every place carries a what: a request names the service it goes to. In Python the clean
 /// client takes `base_url` and the entry hands it `API_URL`; the shortcut's client module reads
-/// `os.environ.get("WEATHER_API_URL", ...)` at import, so where it asks is decided at run time,
-/// in library code: what the environment says, a place the code does not name, or the default the
-/// library holds, which `places` asks about.
+/// `os.environ.get("WEATHER_API_URL", ...)` at import, so where it asks is said at run time, in
+/// library code: what the environment says, a place the code does not name, or the default the
+/// library holds. Whoever starts the program may set the variable, so the default is an option,
+/// as a parameter's default is, and `places` does not ask; the shortcut shows in where the address
+/// is whole: in the library, not where the program starts.
 #[test]
 fn a_place_carries_a_what_the_service_url() {
     let s = shortcut();
@@ -331,10 +333,10 @@ fn a_place_carries_a_what_the_service_url() {
     assert!(!net.is_empty(), "the request is in the graph");
     assert!(net.iter().any(|t| t.artifact.is_empty() && !t.fixed), "what the environment says is no address the code says: {net:?}");
     assert!(
-        found(s, "places").contains(&"harvest.client.WeatherClient.latest".to_string()),
-        "the default is the library's own choice: {:?}",
-        found(s, "places")
+        net.iter().any(|t| t.artifact == "api.weather.example" && !t.fixed && t.fixed_by.is_empty() && t.by.is_empty()),
+        "the default, whole in the library: {net:?}"
     );
+    assert!(!found(s, "places").contains(&"harvest.client.WeatherClient.latest".to_string()), "{:?}", found(s, "places"));
 }
 
 /// The clean client's request goes to the host the entry hands it, through the object it built.
@@ -714,4 +716,67 @@ fn places_a_declared_program_is_a_command_flat_or_in_a_package() {
     assert!(found(&flat, "places").is_empty() && found(&package, "places").is_empty(), "{:?}", found(&flat, "places"));
     assert!(flat.node("tally.main").is_some_and(|n| n.exported), "the flat package exports its command");
     assert!(package.node("tally.cli.main").is_some_and(|n| !n.exported), "{:?}", package.node("tally.cli.main").map(|n| &n.entry));
+}
+
+/// The places pair, `places/python`: rows read and kept, and pages made from a template the
+/// package ships, the same on both sides but for where the rows come from.
+fn stock(side: &str) -> Graph {
+    analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/places/python").join(side), &Options::default()).unwrap()
+}
+
+/// Library code does not decide where data lives, and a function that hands a path decides it as
+/// much as one that opens it. Both sides read rows with `read_rows(path)`. The clean command hands
+/// it `Path("data/rows.csv")`, as where the program starts may; on the shortcut the library's
+/// `default_rows()` hands it, one call away from the file. `places` asks `default_rows`, whose own
+/// code writes the path, and not `read_rows`, which takes it.
+#[test]
+fn places_the_function_that_writes_the_path_decides_it() {
+    let (c, s) = (stock("clean"), stock("shortcut"));
+    assert!(found(&c, "places").is_empty(), "{:?}", found(&c, "places"));
+    assert_eq!(found(&s, "places"), ["stock.rows.default_rows"]);
+    let read = |g: &Graph, by: &str| {
+        touches(g, "stock.rows.read_rows", "disk_read").iter().any(|t| t.artifact == "data/rows.csv" && !t.fixed && t.fixed_by == [by])
+    };
+    assert!(read(&c, "stock.cli.main") && read(&s, "stock.rows.default_rows"));
+    let asked = check(&s).into_iter().find(|f| f.principle == "places").expect("default_rows is asked");
+    assert_eq!(asked.evidence, ["read_text(data/rows.csv) in read_rows"]);
+}
+
+/// A default whoever calls the function or starts the program can override is an option, not a
+/// decision: a parameter's (`path: Path = Path("out/rows.csv")`, `path or Path("out/rows.csv")`)
+/// and an environment variable's (`os.environ.get("STOCK_PATH", "out/rows.csv")`,
+/// `os.getenv("STOCK_PATH") or "out/rows.csv"`). The forms say the same thing and draw alike: the
+/// file the code takes where nobody says otherwise, and the variable, a place the code does not
+/// name. `places` asks none of them.
+#[test]
+fn places_a_default_the_caller_can_override_is_an_option() {
+    let c = stock("clean");
+    assert!(found(&c, "places").is_empty(), "{:?}", found(&c, "places"));
+    let drawn = |f: &str| -> Vec<(String, String, bool)> {
+        let mut out: Vec<_> =
+            touches(&c, f, "disk_write").iter().map(|t| (t.artifact.clone(), t.what.clone(), t.fixed || !t.fixed_by.is_empty())).collect();
+        out.sort();
+        out
+    };
+    assert_eq!(drawn("stock.rows.save_where_told"), drawn("stock.rows.save_or_default"));
+    let told = drawn("stock.rows.save_where_told");
+    assert!(told.iter().any(|(file, _, decided)| file == "out/rows.csv" && !decided), "{told:?}");
+    assert!(told.iter().any(|(file, what, _)| file.is_empty() && what == "{$STOCK_PATH}"), "{told:?}");
+    for f in ["stock.rows.save", "stock.rows.save_or_given"] {
+        assert!(drawn(f).iter().any(|(file, _, decided)| file == "out/rows.csv" && !decided), "{f}: {:?}", drawn(f));
+    }
+}
+
+/// A file that ships with the package, found from where its code lies, is part of the package and
+/// no place its user chooses: `Path(__file__).parent / "template.html"` and
+/// `importlib.resources.files("stock").joinpath("template.html")` read the same file, and `places`
+/// asks neither.
+#[test]
+fn places_a_file_shipped_with_the_package_is_part_of_it() {
+    let c = stock("clean");
+    for f in ["stock.pages.page", "stock.pages.resource_page"] {
+        let read = touches(&c, f, "disk_read");
+        assert!(read.iter().any(|t| t.artifact == "src/stock/template.html" && !t.fixed && t.fixed_by.is_empty()), "{f}: {read:?}");
+    }
+    assert!(found(&c, "places").is_empty(), "{:?}", found(&c, "places"));
 }

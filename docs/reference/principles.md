@@ -55,7 +55,7 @@ lets it be traced and Atlas does not yet; each gap is an ignored test in `pairs_
 | doors | finding; `__all__` exports | finding on an untyped export or one typed `any` | forbidden: every signature is typed |
 | sums | finding; variant edges | traceable (a union alias) | finding; a library's sum handed on (`Result`) is asked |
 | overrides | `keeps` from ty; finding | forbidden: the compiler holds an override to its base | forbidden |
-| places | finding; where the path is made whole | finding; where the path is made whole | finding; where the path is made whole |
+| places | finding; at the function whose code writes the path's start; `__file__` and `importlib.resources` read what the package ships | finding; at the function whose code writes the path's start; `import.meta.url` reads what the package ships | finding; at the function whose code writes the path's start; `include_str!` is no place, `env!("CARGO_MANIFEST_DIR")` a fixed one |
 | changes | mutates edge; finding | mutates edge; finding | forbidden: a change is `&mut` in the signature |
 | gives | finding; the call not followed | no returns edge; `uses` on the call | returns edge; `Result<T, E>` gives `T` |
 | choices | finding | finding | finding |
@@ -215,19 +215,65 @@ elsewhere.
   (`Path("data") / "raw.csv"`) and hand it in.
 - **Rust.** Take `impl AsRef<Path>`; let `main` decide.
 
-Atlas checks: a read or a write in library code whose path or URL starts at something the code
-holds, a literal or a constant (`open("out.csv")`, `Path("data") / name`, `f"out/{x}.png"`,
-`DATA / "raw"` with `DATA = Path("data")`). A path that starts at a value from elsewhere
-(`root / "out.csv"`, `root.join("Cargo.toml")`) is decided by the caller, and one that starts at
-what the environment says (a variable, the user's home, the system's temporary directory) by the
-environment. A variable with a default (`os.environ.get("URL", "https://..")`) is both: the
-environment's place, which the code does not name, and the default, which the library decides. Where the program starts may name places: an entry itself (a CLI command, a route, an
-MCP tool, a test, a binary's `main`), and a file that runs as a whole (a script, a notebook, a
-test file) with the code it defines. A function beside an entry is library code all the same:
-a helper in the module of a CLI command, or a function in a Rust file whose `#[test]`s sit
+Atlas checks: a read or a write whose file or URL, once its path is whole, starts at something
+the code holds: a literal or a constant (`open("out.csv")`, `Path("data") / name`,
+`f"out/{x}.png"`, `DATA / "raw"` with `DATA = Path("data")`), or the directory a Rust crate was
+built in (`env!("CARGO_MANIFEST_DIR")`, read at run time: the source directory of the machine the
+program was built on). The finding stands at the function whose own code writes what the path
+starts at, wherever the call that opens the file is: `default_rows()` that calls
+`read_rows(Path("data/rows.csv"))` decides the file as much as one that calls
+`Path("data/rows.csv").read_text()`, and `read_rows`, which takes the path, is not asked. The path
+is followed out through the callers one call at a time, and through the object a caller builds
+with it (`Cache(Path("warm")).keep(..)` decides where `keep` writes). The evidence names the call
+that opens the file and, where that is another function's, the function (`read_text(data/rows.csv)
+in read_rows`).
+
+The code does not decide:
+
+- a path that starts at a value from elsewhere (`root / "out.csv"`, `root.join("Cargo.toml")`):
+  the caller decides;
+- one that starts at what the environment says (a variable, the user's home, the system's
+  temporary directory);
+- a default whoever calls the function or starts the program can override. A parameter's default
+  (`path: Path = Path("out.csv")`), an option of the command line, and what the code falls back to
+  where a caller or the environment says nothing (`os.environ.get("STORE", "out.csv")`,
+  `os.getenv("STORE") or "out.csv"`, `process.env.STORE ?? "out.csv"`,
+  `env::var("STORE").unwrap_or_else(|_| "out.csv".into())`, `path or Path("out.csv")`) say the same
+  thing: whoever starts the program can choose, and the code names what it uses when nobody does.
+  They answer alike, and the picture draws the variable, a place the code does not name, beside
+  the file the code takes by default;
+- a file that ships with the package, read from where its code lies (`Path(__file__).parent /
+  "template.html"`, `importlib.resources.files("pages")`, `new URL("./template.html",
+  import.meta.url)`): it is part of the package, not a place its user chooses. Written there, a
+  file lands in the directory the package is installed in, a place the code decides, and is asked.
+  Rust compiles such a file in (`include_str!("template.html")`), and it is no place at all.
+
+Where the program starts may name places: an entry itself (a CLI command, a route, an MCP tool, a
+test, a binary's `main`), a file that runs as a whole (a script, a notebook, a test file) with the
+code it defines, and what a module that runs as a command keeps to itself (the `main` a TypeScript
+`bin` runs, which the module does not export). A program `pyproject.toml` declares is a command,
+also where its package exports the function. A function beside an entry is library code all the
+same: a helper in the module of a CLI command, or a function in a Rust file whose `#[test]`s sit
 below it, takes its place from whoever calls it. So is a function of a module that runs as a
-command when it is run itself (`if __name__ == "__main__":`): the module can be imported, and a
-notebook that calls the function gets the place it picked.
+command when it is run itself (`if __name__ == "__main__":`), where the module offers it: the
+module can be imported, and a notebook that calls the function gets the place it picked.
+
+What the rule cannot see:
+
+- A path a function the code calls makes for it (`path_for("x").write_text()`, where `path_for`
+  gives `Path("data") / name`) is read where it is used: the finding stands at the caller, not at
+  `path_for`, whose code writes the literal.
+- A value Atlas does not follow (a call it does not resolve, a key looked up at run time, a field of
+  an untyped value) is unknown: it decides nothing, and what the code falls back to beside it is
+  taken for its default.
+- A path is followed out twelve calls at most, and to a bounded number of the calls that complete
+  it (64): a function further out, or past the bound, that hands it a place is not asked.
+- A database is not asked: the file a connection opens (`sqlite3.connect("app.db")`) and the tables
+  a statement names are drawn, but the rule asks of files and URLs.
+- A helper in a Rust file of tests (`tests/*.rs`) that finds its fixtures through
+  `CARGO_MANIFEST_DIR` is asked, though the file runs as a whole, as a Python test file does.
+- TypeScript's parameter defaults are not evaluated: the picture draws the parameter, where
+  Python's draws the file the default names.
 
 goad: `BasePlot.save(path)` takes the place, and the demo script, where the program
 starts, names it:
