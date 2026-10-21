@@ -517,7 +517,7 @@ pub struct Arrow {
 /// What a function does at one place, in the order it runs: whether it reads what was there before
 /// it ran, whether it reads what it wrote, whether it writes, whether it writes whenever it runs,
 /// and whether it writes after it read what was there.
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Default, PartialEq)]
 struct Order {
     finds: bool,
     reads_back: bool,
@@ -526,17 +526,33 @@ struct Order {
     updates: bool,
 }
 
-/// What `id` does at each place, its own touches and its calls in line order, each function
-/// worked out once; a call back into a function being worked out adds nothing. A read reads back
+/// What every function does at each place, worked out once each round. A call back into a
+/// function being worked out gives what that function did the round before, and the rounds go on
+/// until nothing changes: a recursive cycle is the same whichever of its functions is worked out
+/// first.
+#[derive(Default)]
+struct Memo {
+    done: HashMap<String, BTreeMap<String, Order>>,
+    before: HashMap<String, BTreeMap<String, Order>>,
+    open: HashSet<String>,
+}
+
+/// The most rounds a recursive cycle is worked out in.
+const ROUNDS: usize = 8;
+
+/// What `id` does at each place, its own touches and its calls in line order (`Memo`). Its
+/// calls in a loop run again after what follows them there. A read reads back
 /// what was written when the write ran whenever it did: unconditionally, or in an arm of a choice
 /// the read is in too; a write in one arm says nothing of a read outside it. Without `done`, its
 /// own body alone, its calls left out.
-fn orders(ix: &Ix, id: &str, mut done: Option<&mut HashMap<String, BTreeMap<String, Order>>>) -> BTreeMap<String, Order> {
-    if let Some(done) = done.as_deref_mut() {
-        if let Some(o) = done.get(id) {
+fn orders(ix: &Ix, id: &str, mut done: Option<&mut Memo>) -> BTreeMap<String, Order> {
+    if let Some(m) = done.as_deref_mut() {
+        if let Some(o) = m.done.get(id) {
             return o.clone();
         }
-        done.insert(id.to_string(), BTreeMap::new());
+        if !m.open.insert(id.to_string()) {
+            return m.before.get(id).cloned().unwrap_or_default();
+        }
     }
     let Some(&n) = ix.nodes.get(id) else { return BTreeMap::new() };
     // the innermost arm a line is in
@@ -545,6 +561,8 @@ fn orders(ix: &Ix, id: &str, mut done: Option<&mut HashMap<String, BTreeMap<Stri
     // two lines in different arms of one choice never run in one run of the body
     let around = |line: u32| n.arm_lines.iter().zip(&n.arm_choices).filter(move |((a, b), _)| *a <= line && line <= *b);
     let apart = |x: u32, y: u32| around(x).any(|(r, k)| around(y).any(|(s, j)| k == j && r != s));
+    // two lines in one loop: what the first does runs again after the second
+    let looped = |x: u32, y: u32| n.loop_lines.iter().any(|&(a, b)| a <= x.min(y) && x.max(y) <= b);
     enum Event<'n> {
         Touch(&'n Touch),
         Call(&'n str, bool),
@@ -585,17 +603,19 @@ fn orders(ix: &Ix, id: &str, mut done: Option<&mut HashMap<String, BTreeMap<Stri
             let lines = written_at.entry(place.clone()).or_default();
             let arms = written_in.entry(place.clone()).or_default();
             let o = out.entry(place).or_default();
-            // a write after what was found changes it
-            o.updates |= b.updates || (b.writes && o.finds);
+            // what it finds was written before it, when that write runs whenever the read does
+            let back = o.always_writes || arms.iter().any(|w| within(at, *w));
+            // a write after what was found changes it; a call that changes what it finds changes what this body wrote
+            // there, when that is what it finds
+            o.updates |= (b.updates && !back) || (b.writes && o.finds);
             if b.finds {
-                // what it finds was written before it, when that write runs whenever the read does
-                if o.always_writes || arms.iter().any(|w| within(at, *w)) {
+                if back {
                     o.reads_back = true;
                 } else {
                     o.finds = true;
-                    // a write in another arm of a choice the read is in never runs before it: the body changes
-                    // what it found, in the run that writes
-                    o.updates |= lines.iter().any(|&w| apart(w, line));
+                    // a write in another arm of a choice the read is in never runs before it, and one in a loop
+                    // the read is in runs again after it: the body changes what it found
+                    o.updates |= lines.iter().any(|&w| apart(w, line) || looped(w, line));
                 }
             }
             if b.writes {
@@ -611,8 +631,9 @@ fn orders(ix: &Ix, id: &str, mut done: Option<&mut HashMap<String, BTreeMap<Stri
             }
         }
     }
-    if let Some(done) = done {
-        done.insert(id.to_string(), out.clone());
+    if let Some(m) = done {
+        m.open.remove(id);
+        m.done.insert(id.to_string(), out.clone());
     }
     out
 }
@@ -651,7 +672,7 @@ impl<'g> Ix<'g> {
     }
 }
 
-fn arrow_of(ix: &Ix, n: &Node, done: &mut HashMap<String, BTreeMap<String, Order>>) -> Arrow {
+fn arrow_of(ix: &Ix, n: &Node, done: &mut Memo) -> Arrow {
     if n.kind == NodeKind::Class {
         return Arrow { takes: ix.built_from(&n.id), gives: vec![n.id.clone()], ..Default::default() };
     }
@@ -685,13 +706,18 @@ fn arrow_of(ix: &Ix, n: &Node, done: &mut HashMap<String, BTreeMap<String, Order
 /// The arrow of every function, method and class, and of a module, where its own code runs.
 pub fn arrows(g: &Graph) -> BTreeMap<String, Arrow> {
     let ix = Ix::new(g);
-    let mut done = HashMap::new();
-    g.nodes
-        .iter()
-        .filter(|n| matches!(n.kind, NodeKind::Module | NodeKind::Class | NodeKind::Function | NodeKind::Method))
-        .map(|n| (n.id.clone(), arrow_of(&ix, n, &mut done)))
-        .filter(|(_, a)| *a != Arrow::default())
-        .collect()
+    let kinds = |n: &&Node| matches!(n.kind, NodeKind::Module | NodeKind::Class | NodeKind::Function | NodeKind::Method);
+    let mut done = Memo::default();
+    for round in 1..=ROUNDS {
+        for n in g.nodes.iter().filter(kinds) {
+            orders(&ix, &n.id, Some(&mut done));
+        }
+        if done.done == done.before || round == ROUNDS {
+            break;
+        }
+        done.before = std::mem::take(&mut done.done);
+    }
+    g.nodes.iter().filter(kinds).map(|n| (n.id.clone(), arrow_of(&ix, n, &mut done))).filter(|(_, a)| *a != Arrow::default()).collect()
 }
 
 /// What a body's steps make: the class a step builds, else what the function it runs gives back.
@@ -1132,6 +1158,50 @@ mod tests {
         assert_eq!(updated(vec![((3, 3), 1), ((4, 4), 1)], 4), ["w:File:a.csv"], "two arms of one choice");
         assert!(updated(vec![((3, 3), 1)], 5).is_empty(), "made sure of before it is read");
         assert!(updated(vec![((3, 3), 1), ((5, 5), 2)], 5).is_empty(), "two choices, one after the other");
+    }
+
+    /// A function of `touches` (way, line) at `data/log.txt` and `calls` (callee, line), with the lines of its loops.
+    fn worker(id: &str, touches: &[(Dir, u32)], calls: &[(&str, u32)], loops: Vec<(u32, u32)>) -> crate::model::Node {
+        crate::model::Node {
+            id: id.into(),
+            kind: NodeKind::Function,
+            touches: touches
+                .iter()
+                .map(|&(d, line)| Touch { artifact: "data/log.txt".into(), line, ..Touch::new(World::Disk, Some(d)) })
+                .collect(),
+            sites: calls.iter().map(|&(to, line)| Site { to: to.into(), line, ..Default::default() }).collect(),
+            loop_lines: loops,
+            ..Default::default()
+        }
+    }
+
+    /// What a route does at a place composes from what its calls do there: a callee that reads back what its caller
+    /// wrote changes nothing the route found; a read in a loop finds what a later round writes over; and a recursive
+    /// cycle is the same whichever of its functions is defined first.
+    #[test]
+    fn what_a_route_does_at_a_place_composes() {
+        use Dir::{Read, Write};
+        let arrow = |nodes: Vec<crate::model::Node>, id: &str| {
+            let g = Graph { nodes, ..Default::default() };
+            arrows(&g).get(id).map(|a| (a.reads_back.clone(), a.updates.clone())).unwrap_or_default()
+        };
+        let log = || vec!["w:File:data/log.txt".to_string()];
+        let bumped = vec![worker("run", &[(Write, 2)], &[("bump", 3)], vec![]), worker("bump", &[(Read, 6), (Write, 7)], &[], vec![])];
+        assert_eq!(arrow(bumped, "run"), (log(), vec![]), "bump reads back what run wrote");
+        let looped = || crate::model::Node {
+            arm_lines: vec![(3, 3)],
+            arm_choices: vec![1],
+            ..worker("run", &[(Write, 3), (Read, 4)], &[], vec![(2, 4)])
+        };
+        assert_eq!(arrow(vec![looped()], "run").1, log(), "a later round writes over what this one read");
+        let once = crate::model::Node { loop_lines: vec![], ..looped() };
+        assert!(arrow(vec![once], "run").1.is_empty(), "without the loop the write in the arm only makes sure of it");
+        let save = || worker("save", &[(Write, 2)], &[("show", 3)], vec![]);
+        let show = || worker("show", &[(Read, 6)], &[("save", 7)], vec![]);
+        let run = || worker("run", &[], &[("show", 10)], vec![]);
+        let (a, b) = (arrow(vec![save(), show(), run()], "run"), arrow(vec![show(), save(), run()], "run"));
+        assert_eq!(a, b, "the order of definitions");
+        assert_eq!(a.1, log(), "show reads the log as it was, then save writes on it");
     }
 
     /// `lang = detect(opts).unwrap()` read by a language that names the unwrapped value already:

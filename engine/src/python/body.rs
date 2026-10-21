@@ -1555,6 +1555,8 @@ const USES: UseSyntax = UseSyntax {
     binds: |n| match n.kind() {
         "assignment" | "augmented_assignment" | "for_statement" => n.child_by_field_name("left").zip(n.child_by_field_name("right")),
         "named_expression" => n.child_by_field_name("name").zip(n.child_by_field_name("value")),
+        // `with open(p) as f:` binds `f` to what `open(p)` gives
+        "as_pattern" => n.child_by_field_name("alias").zip(n.named_child(0)),
         _ => None,
     },
     leaves: |n, _| matches!(n.kind(), "return_statement" | "yield"),

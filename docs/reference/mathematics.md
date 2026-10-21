@@ -43,14 +43,17 @@ arm (a file downloaded where it is missing, a cache filled on first use), it mak
 it reads there is its input, and the place stands between the step that fills it and the step
 that reads it. A read is preceded by a write only when the write happens whenever the read does,
 not in one branch of a choice the read is outside. Two arms of one choice never run one after the
-other: a place one arm writes and another reads finds what was there and is changed, in both. The
+other: a place one arm writes and another reads finds what was there and is changed, in both. A
+loop runs its body again: a read in a loop finds what a later round writes over, whichever stands
+first in the loop. What a step a body calls finds there is what the body left, where the body wrote
+it before the call: the step changes nothing the body found. The
 route of a class is its doors, each called by the entry with no order between them: a place one door
 finds and changes, the route finds and changes. Making a place's shape (a directory, a table's
 schema) or testing it (whether a file is there, whether a value holds a key) puts and takes no
 content. A connection that opens a database on a file names that file, so a directory made for the
 file is made for the database. Where the code does not say which way a call goes, the place is in neither.
 **Where.** A function's `reads_back` and `updates` (`flow.rs`); a read's `checks` (`Steps::mark`,
-`body.rs`, with each language's `UseSyntax`); the viewer's `roleOf`.
+`body.rs`, with each language's `UseSyntax`); `sideOfRoles` in `viewer/plan.js`.
 
 ### The effect functor
 **What.** A functor maps objects to objects and arrows to arrows, keeping composition.

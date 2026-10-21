@@ -1,0 +1,10 @@
+# A cache filled where it is missing and then read only to check it is not empty: the read decides a choice and goes no
+# further, so the route does not use what is there, and the cache stays where the route leaves it.
+
+route fillcheck.run
+line entry > run call
+line run > File(cache/data.txt) own
+line File(cache/data.txt) > run own
+
+side entry left
+side File(cache/data.txt) right

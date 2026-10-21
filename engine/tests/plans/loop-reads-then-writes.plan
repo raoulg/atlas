@@ -1,0 +1,12 @@
+# For each word the note is shown, and a word with `+` writes over it: the first round reads the note as it was, and a
+# later round writes on it, though the write stands above the read in the loop. Read, then written: both.
+
+route loopnote.run
+line entry > run call
+line File(data/note.txt) > run own
+line run > File(data/note.txt) own
+line run > Screen own
+
+side entry left
+side File(data/note.txt) both
+side Screen right

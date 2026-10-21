@@ -1,0 +1,12 @@
+# One step writes a note, a later step hands what it reads to `logging.info`, a call: the read is used, so the note
+# stands between the two steps.
+
+route logged.run
+step run/save
+step run/show
+line entry > run call
+line run/save > File(data/note.txt) own
+line File(data/note.txt) > run/show own
+
+side entry left
+side File(data/note.txt) between

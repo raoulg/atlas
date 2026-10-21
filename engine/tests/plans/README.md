@@ -91,5 +91,10 @@ smallest that showed one law:
 | `builds-a-class` | building an object runs its constructor, not its methods (R2) |
 | `path-hole` | a directory no code decides is a hole in the path (R3) |
 | `path-pattern` | a pattern below a directory is one place, for the listing and for what is read of what it yields (R3) |
+| `check-after-fill` | a place read only to check it stays in the codomain, also where an arm filled it first (R4) |
+| `read-logged`, `with-open` | a read handed to a call, or through `with .. as`, is used: the place stands between (R4) |
+| `loop-reads-then-writes` | a read in a loop finds what a later round writes over: both (R4) |
+| `callee-reads-back` | a callee that reads back what its caller wrote changes nothing the route found (R5) |
+| `recursion-order-a`, `-b` | a recursive program draws the same whichever function is defined first (R5) |
 | `readback-one-body`, `two-steps` | a place a step writes and reads back stays in its codomain; one a later step reads is between (R4) |
 | `what-holds` | a place read and changed stands twice, a choice is a coproduct, a call into a family a choice (Z13) |

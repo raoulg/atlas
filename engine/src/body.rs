@@ -326,13 +326,14 @@ impl<'t, 's> Steps<'t, 's> {
 
     /// Write the body's edges and its steps to the graph.
     pub fn finish(self, store: &mut GraphBuilder, id: &str) {
-        let (arm_lines, whens) = (self.arm_lines(), self.whens());
+        let (arm_lines, loop_lines, whens) = (self.arm_lines(), self.loop_lines(), self.whens());
         for (t, kind, via, arms) in self.edges {
             store.add_call(id, &t, kind, via, arms);
         }
         if let Some(n) = store.nodes.get_mut(id) {
             n.sites = self.sites;
             (n.arm_lines, n.arm_choices) = arm_lines.into_iter().unzip();
+            n.loop_lines = loop_lines;
             n.whens = whens;
             n.unseen = self.unseen;
         }
@@ -380,6 +381,16 @@ impl<'t, 's> Steps<'t, 's> {
             }
         }
         out
+    }
+
+    /// The lines each loop of the body spans: a statement that binds a name to each element of a
+    /// value and runs a body for it (`for x in v`).
+    fn loop_lines(&self) -> Vec<(u32, u32)> {
+        walk_all(self.body)
+            .into_iter()
+            .filter(|n| (self.uses.binds)(*n).is_some() && n.child_by_field_name("body").is_some())
+            .map(|n| (line(n), n.end_position().row as u32 + 1))
+            .collect()
     }
 
     /// The lines each arm of the body's choices spans, with the choice it is an arm of.

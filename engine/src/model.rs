@@ -215,6 +215,11 @@ pub struct Node {
     /// of one choice never run in one run of the body.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub arm_choices: Vec<u32>,
+    /// The lines each loop of its body spans, first and last: what runs there may run again after
+    /// what follows it in the loop.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(type = "Array<[number, number]>")]
+    pub loop_lines: Vec<(u32, u32)>,
     /// What decides each arm of its body's choices, as the code writes it: `(choice, arm, when)`,
     /// with the choices and arms numbered as `Site::arms` numbers them.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
