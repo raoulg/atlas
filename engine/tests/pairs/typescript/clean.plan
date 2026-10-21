@@ -41,4 +41,3 @@ side entry left
 side Disk(loadConfig.file) left
 
 # the map fieldsOf gives is a value the two lookups take, not a result handed back to parseConfig
-known #134 extra line loadConfig/parseConfig/fieldsOf > loadConfig/parseConfig back

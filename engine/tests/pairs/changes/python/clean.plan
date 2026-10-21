@@ -99,8 +99,6 @@ known #126 extra line Cell@main/Cell() > main value
 known #126 extra line Board@main/renamed > main/Board.merged value
 
 # A result of no type of the code's that goes into the call around it also goes back to the step that called it
-known #134 extra line main/with_tag > main back
-known #134 extra line main/tally > main back
 
 # The loop over `self.cells` goes over the board the method runs on, and `cell.marked = True` is the body's own use of
 # each cell: the board reaches the loop through `self` (#128); the own arrow takes it instead (#126)

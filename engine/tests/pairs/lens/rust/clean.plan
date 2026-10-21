@@ -343,8 +343,6 @@ known #74 extra line ReadingStore@ReadingStore()/ReadingStore.new > ReadingStore
 known #74 extra line ReadingStore@ReadingStore()/ReadingStore.new > ReadingStore()/ReadingStore.save_outage value   # Atlas runs it on what `new` built
 known #127 extra line Outage > ReadingStore()/ReadingStore.save_outage value   # #127
 known #74 extra line ReadingStore@ReadingStore()/ReadingStore.new > ReadingStore()/ReadingStore.kept/ReadingStore.history value   # Atlas runs it on what `new` built
-known #126 extra line Outage@ReadingStore()/ReadingStore.kept/Outage() > ReadingStore()/ReadingStore.kept value   # #126: kept gives back the Harvest, not the Outages in it
-known #126 extra line Reading@ReadingStore()/ReadingStore.kept/ReadingStore.history > ReadingStore()/ReadingStore.kept value   # #126
 known #74 extra line ReadingStore@ReadingStore()/ReadingStore.new > ReadingStore()/ReadingStore.summary/ReadingStore.kept_summary value   # Atlas runs it on what `new` built
 known #130 extra step ReadingStore()/ReadingStore.summary/ReadingStore.kept_summary/Summary()   # #130: the literal is no arm of the `.then` choice
 known #130 extra line ReadingStore()/ReadingStore.summary/ReadingStore.kept_summary/Summary() > Summary@ReadingStore()/ReadingStore.summary/ReadingStore.kept_summary/Summary() value
@@ -360,10 +358,9 @@ known #131 extra line Reading@ReadingStore()/ReadingStore.summary/?1 > ReadingSt
 known #131 extra line ReadingStore()/ReadingStore.summary/?1/day_summary > Summary@ReadingStore()/ReadingStore.summary/?1 value   # #131: values in the arm have the choice as their moment
 known #131 extra line Summary@ReadingStore()/ReadingStore.summary/?1 > ReadingStore()/ReadingStore.summary/?1/ReadingStore.keep_summary value   # #131: values in the arm have the choice as their moment
 known #131 extra line ReadingStore()/ReadingStore.summary/?1/ReadingStore.keep_summary > Summary@ReadingStore()/ReadingStore.summary/?1#2 value   # #131: values in the arm have the choice as their moment
-known #131 extra line Summary@ReadingStore()/ReadingStore.summary/?1#2 > ReadingStore()/ReadingStore.summary value   # #131: values in the arm have the choice as their moment
-known #131 extra home Reading@ReadingStore()/ReadingStore.summary/?1 ReadingStore()/ReadingStore.summary   # #131: values in the arm have the choice as their moment
-known #131 extra home Summary@ReadingStore()/ReadingStore.summary/?1 ReadingStore()/ReadingStore.summary   # #131: values in the arm have the choice as their moment
-known #131 extra home Summary@ReadingStore()/ReadingStore.summary/?1#2 ReadingStore()/ReadingStore.summary   # #131: values in the arm have the choice as their moment
+known #131 extra home Reading@ReadingStore()/ReadingStore.summary/?1 ReadingStore()/ReadingStore.summary/?1   # #131: values in the arm have the choice as their moment
+known #131 extra home Summary@ReadingStore()/ReadingStore.summary/?1 ReadingStore()/ReadingStore.summary/?1   # #131: values in the arm have the choice as their moment
+known #131 extra home Summary@ReadingStore()/ReadingStore.summary/?1#2 ReadingStore()/ReadingStore.summary/?1   # #131: values in the arm have the choice as their moment
 known #127 extra line Reading@ReadingStore()/ReadingStore.summary/?1 > ReadingStore()/ReadingStore.summary/?1/day_summary value   # #127: day_summary's own arrow takes what it only hands on
 known #74 extra line ReadingStore@ReadingStore()/ReadingStore.new > ReadingStore()/ReadingStore.kept_summary value   # Atlas runs it on what `new` built
 known #130 extra step ReadingStore()/ReadingStore.kept_summary/Summary()   # #130: the literal is no arm of the `.then` choice
@@ -374,6 +371,5 @@ known #127 extra line Day > ReadingStore()/ReadingStore.kept_summary value   # #
 known #127 extra home Day ReadingStore()   # #127
 known #127 extra home Reading ReadingStore()   # #127
 known #127 extra home Outage ReadingStore()   # #127
-known #126 extra line Reading@ReadingStore()/ReadingStore.summary/?1 > ReadingStore()/ReadingStore.summary value   # #126: summary gives back a Summary, not the Readings its arm reads
 known #74 extra line ReadingStore@ReadingStore()/ReadingStore.new > ReadingStore()/ReadingStore.keep_summary value   # Atlas runs it on what `new` built
 known #127 extra line Summary@ReadingStore()/ReadingStore.kept_summary > ReadingStore()/ReadingStore.keep_summary value   # #127: keep_summary takes the Summary kept_summary made, not its own parameter

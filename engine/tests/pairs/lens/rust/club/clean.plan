@@ -65,7 +65,6 @@ known #127 extra home Connection Register()
 # the recursive literal is cut, so new's connection ends at new's border
 known #74 extra line Connection > Register()/Register.new value
 # #126: an opened step's own arrow takes every class its steps build: latest gives back the Report, not its author
-known #126 extra line Member@Register()/Register.latest/Member() > Register()/Register.latest value
 
 # what the constructor builds goes back to its caller: Atlas runs the methods on it instead of the caller's instance
 known #74 extra line Register@Register()/Register.new > Register()/Register.join value

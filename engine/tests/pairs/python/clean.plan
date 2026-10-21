@@ -56,7 +56,6 @@ known #125 extra home Connection@readings/ReadingStore.history/ReadingStore.conn
 known #126 extra line ReadingStore@readings/get_store > readings value
 known #126 extra line ReadingStore@readings/get_store > readings/ReadingStore.history value
 known #126 extra line ReadingStore@readings/get_store > readings/ReadingStore.history/ReadingStore.connect value
-known #126 extra line Unit@readings/ReadingStore.history/Unit() > readings/ReadingStore.history value
 # building the store runs its public methods, which touch its tables
 known #74 extra line SQLite(outages) > readings/get_store/ReadingStore() reached
 known #74 extra line SQLite(readings) > readings/get_store/ReadingStore() reached
