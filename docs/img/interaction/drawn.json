@@ -1,13 +1,13 @@
 {
- "today": {
+ "history": {
   "nodes": [
    [
     "e:sunspots.cli.run",
-    "$ run --raw --figure --cycles --months --minimum"
+    "$ run --raw --figure --cycles --months --minimum~changed \u00b7 was $ run --raw --figure --months --minimum"
    ],
    [
     "n:sunspots.cli.run",
-    "\u25be CLI run"
+    "\u25be CLI run~changed \u00b7 was run(raw: Path, figure: Path, months: int, minimum: int) \u2192 None \u00b7 checks File(data/raw/sunspots.csv) \u00b7 $ run --raw --figure --months --minimum"
    ],
    [
     "n:sunspots.cli.run~c0",
@@ -15,7 +15,7 @@
    ],
    [
     "sunspots.cli.run",
-    "run"
+    "run~changed \u00b7 was run(raw: Path, figure: Path, months: int, minimum: int) \u2192 None \u00b7 checks File(data/raw/sunspots.csv) \u00b7 $ run --raw --figure --months --minimum"
    ],
    [
     "sunspots.download.download",
@@ -23,11 +23,11 @@
    ],
    [
     "sunspots.plot.Cycles",
-    "\u25b8 Cycles()"
+    "Cycles()+added in B+1inside; open it to see where\n+1 added: Cycles.draw"
    ],
    [
     "sunspots.plot.Plot.save",
-    "\u25b8 Cycles.save"
+    "\u25b8 Cycles.save+added in B+1inside; open it to see where\n+1 added: Cycles.draw"
    ],
    [
     "sunspots.plot.Plot.save",
@@ -35,7 +35,7 @@
    ],
    [
     "sunspots.plot.Trend",
-    "\u25b8 Trend()"
+    "Trend()"
    ],
    [
     "sunspots.series.load",
@@ -43,7 +43,7 @@
    ],
    [
     "sunspots.series.peaks",
-    "\u25b8 peaks"
+    "\u25b8 peaks+added in B"
    ],
    [
     "sunspots.series.smooth",
@@ -66,24 +66,24 @@
     "DataFrame"
    ],
    [
-    "t:ext:pandas.DataFrame@n:sunspots.cli.run/4",
-    "DataFrame \u00b7 frame"
+    "t:ext:pandas.DataFrame@n:sunspots.cli.run/8",
+    "DataFrame+added in B"
    ],
    [
-    "t:ext:pandas.DataFrame@n:sunspots.cli.run/8",
-    "DataFrame"
+    "t:ext:pandas.DataFrame~frame@n:sunspots.cli.run/4",
+    "DataFrame \u00b7 frame~changed \u00b7 was without these lines \u00b7 now into peaks \u00d72, into Cycles.save"
    ],
    [
     "t:sunspots.plot.Cycles@n:sunspots.cli.run/7",
-    "Cycles"
+    "Cycles+added in B"
    ],
    [
     "t:sunspots.plot.Trend@n:sunspots.cli.run/5",
     "Trend"
    ],
    [
-    "t:sunspots.settings.Settings@n:sunspots.cli.run/0",
-    "Settings \u00b7 settings"
+    "t:sunspots.settings.Settings~settings@n:sunspots.cli.run/0",
+    "Settings \u00b7 settings~changed \u00b7 was without these lines \u00b7 now into Cycles(), into peaks"
    ],
    [
     "w:File:data/raw/sunspots.csv",
@@ -91,7 +91,7 @@
    ],
    [
     "w:File:figures/cycles.png",
-    "File(figures/cycles.png)"
+    "File(figures/cycles.png)+added in B"
    ],
    [
     "w:File:figures/sunspots.png",
@@ -109,7 +109,7 @@
    ],
    [
     "n:sunspots.cli.run/0",
-    "t:sunspots.settings.Settings@n:sunspots.cli.run/0"
+    "t:sunspots.settings.Settings~settings@n:sunspots.cli.run/0"
    ],
    [
     "n:sunspots.cli.run/1",
@@ -129,7 +129,7 @@
    ],
    [
     "n:sunspots.cli.run/4",
-    "t:ext:pandas.DataFrame@n:sunspots.cli.run/4"
+    "t:ext:pandas.DataFrame~frame@n:sunspots.cli.run/4"
    ],
    [
     "n:sunspots.cli.run/5",
@@ -168,15 +168,19 @@
     "n:sunspots.cli.run/4"
    ],
    [
-    "t:ext:pandas.DataFrame@n:sunspots.cli.run/4",
+    "t:ext:pandas.DataFrame@n:sunspots.cli.run/8",
+    "n:sunspots.cli.run/9"
+   ],
+   [
+    "t:ext:pandas.DataFrame~frame@n:sunspots.cli.run/4",
     "n:sunspots.cli.run/6"
    ],
    [
-    "t:ext:pandas.DataFrame@n:sunspots.cli.run/4",
+    "t:ext:pandas.DataFrame~frame@n:sunspots.cli.run/4",
     "n:sunspots.cli.run/8"
    ],
    [
-    "t:ext:pandas.DataFrame@n:sunspots.cli.run/8",
+    "t:ext:pandas.DataFrame~frame@n:sunspots.cli.run/4",
     "n:sunspots.cli.run/9"
    ],
    [
@@ -188,19 +192,19 @@
     "n:sunspots.cli.run/6"
    ],
    [
-    "t:sunspots.settings.Settings@n:sunspots.cli.run/0",
+    "t:sunspots.settings.Settings~settings@n:sunspots.cli.run/0",
     "n:sunspots.cli.run/3"
    ],
    [
-    "t:sunspots.settings.Settings@n:sunspots.cli.run/0",
+    "t:sunspots.settings.Settings~settings@n:sunspots.cli.run/0",
     "n:sunspots.cli.run/5"
    ],
    [
-    "t:sunspots.settings.Settings@n:sunspots.cli.run/0",
+    "t:sunspots.settings.Settings~settings@n:sunspots.cli.run/0",
     "n:sunspots.cli.run/7"
    ],
    [
-    "t:sunspots.settings.Settings@n:sunspots.cli.run/0",
+    "t:sunspots.settings.Settings~settings@n:sunspots.cli.run/0",
     "n:sunspots.cli.run/8"
    ],
    [
@@ -210,670 +214,6 @@
    [
     "w:Web:www.sidc.be",
     "n:sunspots.cli.run/1"
-   ]
-  ]
- },
- "look": {
-  "nodes": [
-   [
-    "e:sunspots.cli.run",
-    "$ run --raw --figure --cycles --months --minimum"
-   ],
-   [
-    "n:sunspots.cli.run",
-    "\u25be CLI run"
-   ],
-   [
-    "n:sunspots.cli.run~c0",
-    "only when not raw.exists()"
-   ],
-   [
-    "sunspots.cli.run",
-    "run"
-   ],
-   [
-    "sunspots.download.download",
-    "\u25b8 download"
-   ],
-   [
-    "sunspots.plot.Cycles",
-    "\u25b8 Cycles()"
-   ],
-   [
-    "sunspots.plot.Plot.save",
-    "\u25b8 Cycles.save"
-   ],
-   [
-    "sunspots.plot.Plot.save",
-    "\u25b8 Trend.save"
-   ],
-   [
-    "sunspots.plot.Trend",
-    "\u25b8 Trend()"
-   ],
-   [
-    "sunspots.series.load",
-    "\u25b8 load"
-   ],
-   [
-    "sunspots.series.peaks",
-    "\u25b8 peaks"
-   ],
-   [
-    "sunspots.series.smooth",
-    "\u25b8 smooth"
-   ],
-   [
-    "sunspots.series.trusted",
-    "trusted"
-   ],
-   [
-    "sunspots.settings.Settings",
-    "Settings()"
-   ],
-   [
-    "t:ext:pandas.DataFrame@n:sunspots.cli.run/2",
-    "DataFrame"
-   ],
-   [
-    "t:ext:pandas.DataFrame@n:sunspots.cli.run/3",
-    "DataFrame"
-   ],
-   [
-    "t:ext:pandas.DataFrame@n:sunspots.cli.run/4",
-    "DataFrame \u00b7 frame"
-   ],
-   [
-    "t:ext:pandas.DataFrame@n:sunspots.cli.run/8",
-    "DataFrame"
-   ],
-   [
-    "t:sunspots.plot.Cycles@n:sunspots.cli.run/7",
-    "Cycles"
-   ],
-   [
-    "t:sunspots.plot.Trend@n:sunspots.cli.run/5",
-    "Trend"
-   ],
-   [
-    "t:sunspots.settings.Settings@n:sunspots.cli.run/0",
-    "Settings \u00b7 settings"
-   ],
-   [
-    "w:File:data/raw/sunspots.csv",
-    "File(data/raw/sunspots.csv)"
-   ],
-   [
-    "w:File:figures/cycles.png",
-    "File(figures/cycles.png)"
-   ],
-   [
-    "w:File:figures/sunspots.png",
-    "File(figures/sunspots.png)"
-   ],
-   [
-    "w:Web:www.sidc.be",
-    "Web(www.sidc.be)"
-   ]
-  ],
-  "edges": [
-   [
-    "e:sunspots.cli.run",
-    "o:sunspots.cli.run"
-   ],
-   [
-    "n:sunspots.cli.run/0",
-    "t:sunspots.settings.Settings@n:sunspots.cli.run/0"
-   ],
-   [
-    "n:sunspots.cli.run/1",
-    "o:sunspots.cli.run"
-   ],
-   [
-    "n:sunspots.cli.run/1",
-    "w:File:data/raw/sunspots.csv"
-   ],
-   [
-    "n:sunspots.cli.run/2",
-    "t:ext:pandas.DataFrame@n:sunspots.cli.run/2"
-   ],
-   [
-    "n:sunspots.cli.run/3",
-    "t:ext:pandas.DataFrame@n:sunspots.cli.run/3"
-   ],
-   [
-    "n:sunspots.cli.run/4",
-    "t:ext:pandas.DataFrame@n:sunspots.cli.run/4"
-   ],
-   [
-    "n:sunspots.cli.run/5",
-    "t:sunspots.plot.Trend@n:sunspots.cli.run/5"
-   ],
-   [
-    "n:sunspots.cli.run/6",
-    "w:File:figures/cycles.png"
-   ],
-   [
-    "n:sunspots.cli.run/6",
-    "w:File:figures/sunspots.png"
-   ],
-   [
-    "n:sunspots.cli.run/7",
-    "t:sunspots.plot.Cycles@n:sunspots.cli.run/7"
-   ],
-   [
-    "n:sunspots.cli.run/8",
-    "t:ext:pandas.DataFrame@n:sunspots.cli.run/8"
-   ],
-   [
-    "n:sunspots.cli.run/9",
-    "w:File:figures/cycles.png"
-   ],
-   [
-    "n:sunspots.cli.run/9",
-    "w:File:figures/sunspots.png"
-   ],
-   [
-    "t:ext:pandas.DataFrame@n:sunspots.cli.run/2",
-    "n:sunspots.cli.run/3"
-   ],
-   [
-    "t:ext:pandas.DataFrame@n:sunspots.cli.run/3",
-    "n:sunspots.cli.run/4"
-   ],
-   [
-    "t:ext:pandas.DataFrame@n:sunspots.cli.run/4",
-    "n:sunspots.cli.run/6"
-   ],
-   [
-    "t:ext:pandas.DataFrame@n:sunspots.cli.run/4",
-    "n:sunspots.cli.run/8"
-   ],
-   [
-    "t:ext:pandas.DataFrame@n:sunspots.cli.run/8",
-    "n:sunspots.cli.run/9"
-   ],
-   [
-    "t:sunspots.plot.Cycles@n:sunspots.cli.run/7",
-    "n:sunspots.cli.run/9"
-   ],
-   [
-    "t:sunspots.plot.Trend@n:sunspots.cli.run/5",
-    "n:sunspots.cli.run/6"
-   ],
-   [
-    "t:sunspots.settings.Settings@n:sunspots.cli.run/0",
-    "n:sunspots.cli.run/3"
-   ],
-   [
-    "t:sunspots.settings.Settings@n:sunspots.cli.run/0",
-    "n:sunspots.cli.run/5"
-   ],
-   [
-    "t:sunspots.settings.Settings@n:sunspots.cli.run/0",
-    "n:sunspots.cli.run/7"
-   ],
-   [
-    "t:sunspots.settings.Settings@n:sunspots.cli.run/0",
-    "n:sunspots.cli.run/8"
-   ],
-   [
-    "w:File:data/raw/sunspots.csv",
-    "n:sunspots.cli.run/2"
-   ],
-   [
-    "w:Web:www.sidc.be",
-    "n:sunspots.cli.run/1"
-   ]
-  ]
- },
- "vision": {
-  "nodes": [
-   [
-    "e:sunspots.cli.run_archived",
-    "$ run-archived --raw --figure --archive --months --minimum+added in B"
-   ],
-   [
-    "n:sunspots.cli.run_archived",
-    "\u25be CLI run-archived"
-   ],
-   [
-    "sunspots.cli.run_archived",
-    "run_archived+added in B"
-   ],
-   [
-    "sunspots.plot.Plot.save",
-    "\u25b8 Trend.save"
-   ],
-   [
-    "sunspots.plot.Trend",
-    "\u25b8 Trend()"
-   ],
-   [
-    "sunspots.series.Archive",
-    "Archive()+added in B"
-   ],
-   [
-    "sunspots.series.Archive.write",
-    "Archive.write+added in B"
-   ],
-   [
-    "sunspots.series.load",
-    "\u25b8 load"
-   ],
-   [
-    "sunspots.series.smooth",
-    "\u25b8 smooth"
-   ],
-   [
-    "sunspots.series.trusted",
-    "trusted\u2713\u2726"
-   ],
-   [
-    "sunspots.settings.Settings",
-    "Settings()"
-   ],
-   [
-    "t:ext:pandas.DataFrame@n:sunspots.cli.run_archived/1",
-    "DataFrame"
-   ],
-   [
-    "t:ext:pandas.DataFrame@n:sunspots.cli.run_archived/2",
-    "DataFrame"
-   ],
-   [
-    "t:ext:pandas.DataFrame@n:sunspots.cli.run_archived/3",
-    "DataFrame \u00b7 frame"
-   ],
-   [
-    "t:sunspots.plot.Trend@n:sunspots.cli.run_archived/6",
-    "Trend"
-   ],
-   [
-    "t:sunspots.series.Archive@n:sunspots.cli.run_archived/4",
-    "Archive+added in B"
-   ],
-   [
-    "t:sunspots.settings.Settings@n:sunspots.cli.run_archived/0",
-    "Settings \u00b7 settings"
-   ],
-   [
-    "w:File:data/raw/sunspots.csv",
-    "File(data/raw/sunspots.csv)"
-   ],
-   [
-    "w:File:figures/sunspots.png",
-    "File(figures/sunspots.png)"
-   ]
-  ],
-  "edges": [
-   [
-    "e:sunspots.cli.run_archived",
-    "o:sunspots.cli.run_archived"
-   ],
-   [
-    "n:sunspots.cli.run_archived/0",
-    "t:sunspots.settings.Settings@n:sunspots.cli.run_archived/0"
-   ],
-   [
-    "n:sunspots.cli.run_archived/1",
-    "t:ext:pandas.DataFrame@n:sunspots.cli.run_archived/1"
-   ],
-   [
-    "n:sunspots.cli.run_archived/2",
-    "t:ext:pandas.DataFrame@n:sunspots.cli.run_archived/2"
-   ],
-   [
-    "n:sunspots.cli.run_archived/3",
-    "t:ext:pandas.DataFrame@n:sunspots.cli.run_archived/3"
-   ],
-   [
-    "n:sunspots.cli.run_archived/4",
-    "t:sunspots.series.Archive@n:sunspots.cli.run_archived/4"
-   ],
-   [
-    "n:sunspots.cli.run_archived/6",
-    "t:sunspots.plot.Trend@n:sunspots.cli.run_archived/6"
-   ],
-   [
-    "n:sunspots.cli.run_archived/7",
-    "w:File:figures/sunspots.png"
-   ],
-   [
-    "t:ext:pandas.DataFrame@n:sunspots.cli.run_archived/1",
-    "n:sunspots.cli.run_archived/2"
-   ],
-   [
-    "t:ext:pandas.DataFrame@n:sunspots.cli.run_archived/2",
-    "n:sunspots.cli.run_archived/3"
-   ],
-   [
-    "t:ext:pandas.DataFrame@n:sunspots.cli.run_archived/3",
-    "n:sunspots.cli.run_archived/5"
-   ],
-   [
-    "t:ext:pandas.DataFrame@n:sunspots.cli.run_archived/3",
-    "n:sunspots.cli.run_archived/7"
-   ],
-   [
-    "t:sunspots.plot.Trend@n:sunspots.cli.run_archived/6",
-    "n:sunspots.cli.run_archived/7"
-   ],
-   [
-    "t:sunspots.series.Archive@n:sunspots.cli.run_archived/4",
-    "n:sunspots.cli.run_archived/5"
-   ],
-   [
-    "t:sunspots.settings.Settings@n:sunspots.cli.run_archived/0",
-    "n:sunspots.cli.run_archived/2"
-   ],
-   [
-    "t:sunspots.settings.Settings@n:sunspots.cli.run_archived/0",
-    "n:sunspots.cli.run_archived/6"
-   ],
-   [
-    "w:File:data/raw/sunspots.csv",
-    "n:sunspots.cli.run_archived/1"
-   ]
-  ]
- },
- "prophecy": {
-  "nodes": [
-   [
-    "e:sunspots.cli.run_archived",
-    "$ run-archived --raw --figure --archive --months --minimum"
-   ],
-   [
-    "n:sunspots.cli.run_archived",
-    "\u25be CLI run-archived"
-   ],
-   [
-    "sunspots.cli.run_archived",
-    "run_archived"
-   ],
-   [
-    "sunspots.plot.Plot.save",
-    "\u25b8 Trend.save"
-   ],
-   [
-    "sunspots.plot.Trend",
-    "\u25b8 Trend()"
-   ],
-   [
-    "sunspots.series.Archive",
-    "Archive()"
-   ],
-   [
-    "sunspots.series.Archive.write",
-    "Archive.write"
-   ],
-   [
-    "sunspots.series.load",
-    "\u25b8 load"
-   ],
-   [
-    "sunspots.series.smooth",
-    "\u25b8 smooth"
-   ],
-   [
-    "sunspots.series.trusted",
-    "trusted\u2713\u2726"
-   ],
-   [
-    "sunspots.settings.Settings",
-    "Settings()"
-   ],
-   [
-    "t:ext:pandas.DataFrame@n:sunspots.cli.run_archived/1",
-    "DataFrame"
-   ],
-   [
-    "t:ext:pandas.DataFrame@n:sunspots.cli.run_archived/2",
-    "DataFrame"
-   ],
-   [
-    "t:ext:pandas.DataFrame@n:sunspots.cli.run_archived/3",
-    "DataFrame \u00b7 frame"
-   ],
-   [
-    "t:sunspots.plot.Trend@n:sunspots.cli.run_archived/6",
-    "Trend"
-   ],
-   [
-    "t:sunspots.series.Archive@n:sunspots.cli.run_archived/4",
-    "Archive"
-   ],
-   [
-    "t:sunspots.settings.Settings@n:sunspots.cli.run_archived/0",
-    "Settings \u00b7 settings"
-   ],
-   [
-    "w:File:data/raw/sunspots.csv",
-    "File(data/raw/sunspots.csv)"
-   ],
-   [
-    "w:File:figures/sunspots.png",
-    "File(figures/sunspots.png)"
-   ]
-  ],
-  "edges": [
-   [
-    "e:sunspots.cli.run_archived",
-    "o:sunspots.cli.run_archived"
-   ],
-   [
-    "n:sunspots.cli.run_archived/0",
-    "t:sunspots.settings.Settings@n:sunspots.cli.run_archived/0"
-   ],
-   [
-    "n:sunspots.cli.run_archived/1",
-    "t:ext:pandas.DataFrame@n:sunspots.cli.run_archived/1"
-   ],
-   [
-    "n:sunspots.cli.run_archived/2",
-    "t:ext:pandas.DataFrame@n:sunspots.cli.run_archived/2"
-   ],
-   [
-    "n:sunspots.cli.run_archived/3",
-    "t:ext:pandas.DataFrame@n:sunspots.cli.run_archived/3"
-   ],
-   [
-    "n:sunspots.cli.run_archived/4",
-    "t:sunspots.series.Archive@n:sunspots.cli.run_archived/4"
-   ],
-   [
-    "n:sunspots.cli.run_archived/6",
-    "t:sunspots.plot.Trend@n:sunspots.cli.run_archived/6"
-   ],
-   [
-    "n:sunspots.cli.run_archived/7",
-    "w:File:figures/sunspots.png"
-   ],
-   [
-    "t:ext:pandas.DataFrame@n:sunspots.cli.run_archived/1",
-    "n:sunspots.cli.run_archived/2"
-   ],
-   [
-    "t:ext:pandas.DataFrame@n:sunspots.cli.run_archived/2",
-    "n:sunspots.cli.run_archived/3"
-   ],
-   [
-    "t:ext:pandas.DataFrame@n:sunspots.cli.run_archived/3",
-    "n:sunspots.cli.run_archived/5"
-   ],
-   [
-    "t:ext:pandas.DataFrame@n:sunspots.cli.run_archived/3",
-    "n:sunspots.cli.run_archived/7"
-   ],
-   [
-    "t:sunspots.plot.Trend@n:sunspots.cli.run_archived/6",
-    "n:sunspots.cli.run_archived/7"
-   ],
-   [
-    "t:sunspots.series.Archive@n:sunspots.cli.run_archived/4",
-    "n:sunspots.cli.run_archived/5"
-   ],
-   [
-    "t:sunspots.settings.Settings@n:sunspots.cli.run_archived/0",
-    "n:sunspots.cli.run_archived/2"
-   ],
-   [
-    "t:sunspots.settings.Settings@n:sunspots.cli.run_archived/0",
-    "n:sunspots.cli.run_archived/6"
-   ],
-   [
-    "w:File:data/raw/sunspots.csv",
-    "n:sunspots.cli.run_archived/1"
-   ]
-  ]
- },
- "built": {
-  "nodes": [
-   [
-    "e:sunspots.cli.run_archived",
-    "$ run-archived --raw --figure --archive --months --minimum"
-   ],
-   [
-    "n:sunspots.cli.run_archived",
-    "\u25be CLI run-archived"
-   ],
-   [
-    "sunspots.cli.run_archived",
-    "run_archived"
-   ],
-   [
-    "sunspots.plot.Plot.save",
-    "\u25b8 Trend.save"
-   ],
-   [
-    "sunspots.plot.Trend",
-    "\u25b8 Trend()"
-   ],
-   [
-    "sunspots.series.Archive",
-    "Archive()"
-   ],
-   [
-    "sunspots.series.Archive.write",
-    "\u25b8 Archive.write"
-   ],
-   [
-    "sunspots.series.load",
-    "\u25b8 load"
-   ],
-   [
-    "sunspots.series.smooth",
-    "\u25b8 smooth"
-   ],
-   [
-    "sunspots.series.trusted",
-    "trusted\u2713\u2726"
-   ],
-   [
-    "sunspots.settings.Settings",
-    "Settings()"
-   ],
-   [
-    "t:ext:pandas.DataFrame@n:sunspots.cli.run_archived/1",
-    "DataFrame"
-   ],
-   [
-    "t:ext:pandas.DataFrame@n:sunspots.cli.run_archived/2",
-    "DataFrame"
-   ],
-   [
-    "t:ext:pandas.DataFrame@n:sunspots.cli.run_archived/3",
-    "DataFrame \u00b7 frame"
-   ],
-   [
-    "t:sunspots.plot.Trend@n:sunspots.cli.run_archived/6",
-    "Trend"
-   ],
-   [
-    "t:sunspots.series.Archive@n:sunspots.cli.run_archived/4",
-    "Archive"
-   ],
-   [
-    "t:sunspots.settings.Settings@n:sunspots.cli.run_archived/0",
-    "Settings \u00b7 settings"
-   ],
-   [
-    "w:File:data/raw/sunspots.csv",
-    "File(data/raw/sunspots.csv)"
-   ],
-   [
-    "w:File:figures/sunspots.png",
-    "File(figures/sunspots.png)"
-   ]
-  ],
-  "edges": [
-   [
-    "e:sunspots.cli.run_archived",
-    "o:sunspots.cli.run_archived"
-   ],
-   [
-    "n:sunspots.cli.run_archived/0",
-    "t:sunspots.settings.Settings@n:sunspots.cli.run_archived/0"
-   ],
-   [
-    "n:sunspots.cli.run_archived/1",
-    "t:ext:pandas.DataFrame@n:sunspots.cli.run_archived/1"
-   ],
-   [
-    "n:sunspots.cli.run_archived/2",
-    "t:ext:pandas.DataFrame@n:sunspots.cli.run_archived/2"
-   ],
-   [
-    "n:sunspots.cli.run_archived/3",
-    "t:ext:pandas.DataFrame@n:sunspots.cli.run_archived/3"
-   ],
-   [
-    "n:sunspots.cli.run_archived/4",
-    "t:sunspots.series.Archive@n:sunspots.cli.run_archived/4"
-   ],
-   [
-    "n:sunspots.cli.run_archived/6",
-    "t:sunspots.plot.Trend@n:sunspots.cli.run_archived/6"
-   ],
-   [
-    "n:sunspots.cli.run_archived/7",
-    "w:File:figures/sunspots.png"
-   ],
-   [
-    "t:ext:pandas.DataFrame@n:sunspots.cli.run_archived/1",
-    "n:sunspots.cli.run_archived/2"
-   ],
-   [
-    "t:ext:pandas.DataFrame@n:sunspots.cli.run_archived/2",
-    "n:sunspots.cli.run_archived/3"
-   ],
-   [
-    "t:ext:pandas.DataFrame@n:sunspots.cli.run_archived/3",
-    "n:sunspots.cli.run_archived/5"
-   ],
-   [
-    "t:ext:pandas.DataFrame@n:sunspots.cli.run_archived/3",
-    "n:sunspots.cli.run_archived/7"
-   ],
-   [
-    "t:sunspots.plot.Trend@n:sunspots.cli.run_archived/6",
-    "n:sunspots.cli.run_archived/7"
-   ],
-   [
-    "t:sunspots.series.Archive@n:sunspots.cli.run_archived/4",
-    "n:sunspots.cli.run_archived/5"
-   ],
-   [
-    "t:sunspots.settings.Settings@n:sunspots.cli.run_archived/0",
-    "n:sunspots.cli.run_archived/2"
-   ],
-   [
-    "t:sunspots.settings.Settings@n:sunspots.cli.run_archived/0",
-    "n:sunspots.cli.run_archived/6"
-   ],
-   [
-    "w:File:data/raw/sunspots.csv",
-    "n:sunspots.cli.run_archived/1"
    ]
   ]
  }
