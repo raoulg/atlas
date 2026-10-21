@@ -15,7 +15,7 @@ use walkdir::WalkDir;
 mod paths;
 
 use crate::body::{changed_through, BindSyntax, Crosses, Step, Steps, UseSyntax};
-pub use crate::builder::{foreign_type, ClassInfo, GraphBuilder, SigInfo};
+pub use crate::builder::{foreign_type, ClassInfo, Declared, GraphBuilder, SigInfo};
 use crate::effects::{self, Crossing};
 use crate::knowledge;
 use crate::knowledge::OwnTypes;
@@ -69,6 +69,8 @@ struct Module {
     package: String,
     bindings: HashMap<String, String>,
     symbols: HashMap<String, String>,
+    /// The modules it imports every public name of: `from .core import *`.
+    stars: Vec<String>,
     /// Where each definition is, by its first line and its name: its byte range.
     defs: std::cell::OnceCell<HashMap<(u32, String), (usize, usize)>>,
 }
@@ -313,6 +315,35 @@ fn iter_defs<'t>(block: TsNode<'t>, src: &[u8]) -> Vec<(Vec<String>, TsNode<'t>)
     out
 }
 
+/// What a definition is among the definitions of its name in one block: an `@overload`, a
+/// property's `@name.setter` or `@name.deleter`, or what runs.
+fn declared(name: &str, decorators: &[String]) -> Declared {
+    let writes = |d: &String| d.strip_prefix(name).and_then(|r| r.strip_prefix('.')).map_or(false, |a| matches!(a, "setter" | "deleter"));
+    if decorators.iter().any(|d| d.rsplit('.').next() == Some("overload")) {
+        Declared::Overload
+    } else if decorators.iter().any(writes) {
+        Declared::Writer
+    } else {
+        Declared::Body
+    }
+}
+
+/// Whether only the code beside a name may use it: it starts with an underscore. A name the
+/// language calls on every user's behalf (`__eq__`, `__len__`, `__getattr__`) is the protocol
+/// of the value or module that defines it, which an operator, a builtin or an import runs.
+fn private(name: &str) -> bool {
+    let dunder = name.len() > 4 && name.starts_with("__") && name.ends_with("__");
+    name.starts_with('_') && !dunder
+}
+
+/// The type that lets every value through unchecked, as typing names it.
+const UNCHECKED: &str = "Any";
+
+/// Whether an annotation is the unchecked type: `Any`, `typing.Any`, `"Any"`.
+fn unchecked(t: TsNode, src: &[u8]) -> bool {
+    text(t, src).trim_matches(['"', '\'']).rsplit('.').next() == Some(UNCHECKED)
+}
+
 /// A signature as data: each parameter by name, type and kind, and what it gives back. A method's
 /// first parameter is the value or the class it is called on, unless it is a `staticmethod`.
 fn signature(f: TsNode, src: &[u8], receiver: bool) -> (Vec<Param>, Option<Returns>, SigInfo) {
@@ -335,6 +366,7 @@ fn signature(f: TsNode, src: &[u8], receiver: bool) -> (Vec<Param>, Option<Retur
                 receiver: receiver && params.is_empty(),
                 rest: pname.starts_with('*'),
                 changes: false,
+                unchecked: t.map_or(false, |t| unchecked(t, src)),
             });
             let (names, unions) = split_unions(t, src);
             info.ptypes.extend(names);
@@ -346,7 +378,8 @@ fn signature(f: TsNode, src: &[u8], receiver: bool) -> (Vec<Param>, Option<Retur
     (params, rt.map(|r| returns(r, src)), info)
 }
 
-/// What a return annotation gives: `None` no value, `Self` a value of the class it runs on.
+/// What a return annotation gives: `None` no value, `Self` a value of the class it runs on, `Any`
+/// a value it does not say.
 fn returns(rt: TsNode, src: &[u8]) -> Returns {
     let written = text(rt, src).to_string();
     let inner = if rt.kind() == "type" { named_children(rt).into_iter().next().unwrap_or(rt) } else { rt };
@@ -355,7 +388,7 @@ fn returns(rt: TsNode, src: &[u8]) -> Returns {
         _ if written.rsplit('.').next() == Some("Self") => (String::new(), true),
         _ => (written.clone(), false),
     };
-    Returns { written, value, own, fails: false }
+    Returns { written, value, own, fails: false, unchecked: unchecked(rt, src) }
 }
 
 // ---------- loading ----------
@@ -384,6 +417,7 @@ fn load_module(parser: &mut Parser, id: &str, path: &Path, is_pkg: bool, text: &
         package,
         bindings: HashMap::new(),
         symbols: HashMap::new(),
+        stars: vec![],
         defs: std::cell::OnceCell::new(),
     })
 }
@@ -728,6 +762,9 @@ pub fn parse(repo: &Repo, packages: &[PathBuf], project_root: Option<&Path>, opt
     let module_ids: HashSet<String> = modules.keys().cloned().collect();
     for m in modules.values_mut() {
         collect_imports(m, &module_ids, &mut store, &own);
+    }
+    star_imports(&mut modules);
+    for m in modules.values() {
         store.bindings.insert(m.id.clone(), m.bindings.clone());
     }
     link(&modules, &mut store, &own, &types, &types_root);
@@ -985,25 +1022,31 @@ fn collect_symbols(m: &mut Module, store: &mut GraphBuilder) {
                     let on_class = mdecs.iter().any(|d| matches!(d.as_str(), "classmethod" | "staticmethod"));
                     let (params, returns, sig) = signature(md, src, !mdecs.iter().any(|d| d == "staticmethod"));
                     let gives_class = returns.as_ref().map_or(false, |r| r.own || r.value.trim_matches(['"', '\'']) == name);
-                    store.sigs.insert(mnid.clone(), sig);
-                    store.add_node(Node {
-                        id: mnid.clone(),
-                        kind: NodeKind::Method,
-                        name: mname.clone(),
-                        file: file.clone(),
-                        span: Some((md.start_position().row as u32 + 1, md.end_position().row as u32 + 1)),
-                        module: m.id.clone(),
-                        doc: first_docline(md.child_by_field_name("body"), src),
-                        cls: Some(nid.clone()),
-                        on_class,
-                        ctor: mname == "__init__" || on_class && gives_class,
-                        private: mname.starts_with('_'),
-                        decorators: mdecs.clone(),
-                        params,
-                        returns,
-                        ..Default::default()
-                    });
-                    methods.push(mname);
+                    let declared_as = declared(&mname, &mdecs);
+                    store.declare(
+                        Node {
+                            id: mnid.clone(),
+                            kind: NodeKind::Method,
+                            name: mname.clone(),
+                            file: file.clone(),
+                            span: Some((md.start_position().row as u32 + 1, md.end_position().row as u32 + 1)),
+                            module: m.id.clone(),
+                            doc: first_docline(md.child_by_field_name("body"), src),
+                            cls: Some(nid.clone()),
+                            on_class,
+                            ctor: mname == "__init__" || on_class && gives_class,
+                            private: private(&mname),
+                            decorators: mdecs.clone(),
+                            params,
+                            returns,
+                            ..Default::default()
+                        },
+                        sig,
+                        declared_as,
+                    );
+                    if !methods.contains(&mname) {
+                        methods.push(mname);
+                    }
                     store.add_edge(&nid, &mnid, EdgeKind::Contains, None);
                 }
                 for st in named_children(body) {
@@ -1022,7 +1065,7 @@ fn collect_symbols(m: &mut Module, store: &mut GraphBuilder) {
                 }
             }
             store.classes.insert(nid.clone(), ClassInfo { bases: bases.clone(), fields, ..Default::default() });
-            let private = name.starts_with('_');
+            let private = private(&name);
             store.add_node(Node {
                 id: nid.clone(),
                 kind: NodeKind::Class,
@@ -1040,21 +1083,25 @@ fn collect_symbols(m: &mut Module, store: &mut GraphBuilder) {
             store.add_edge(&m.id, &nid, EdgeKind::Contains, None);
         } else {
             let (params, returns, sig) = signature(d, src, false);
-            store.sigs.insert(nid.clone(), sig);
-            store.add_node(Node {
-                id: nid.clone(),
-                kind: NodeKind::Function,
-                name: name.clone(),
-                file: file.clone(),
-                span,
-                module: m.id.clone(),
-                doc: first_docline(body, src),
-                decorators: decs.clone(),
-                private: name.starts_with('_'),
-                params,
-                returns,
-                ..Default::default()
-            });
+            let declared_as = declared(&name, &decs);
+            store.declare(
+                Node {
+                    id: nid.clone(),
+                    kind: NodeKind::Function,
+                    name: name.clone(),
+                    file: file.clone(),
+                    span,
+                    module: m.id.clone(),
+                    doc: first_docline(body, src),
+                    decorators: decs.clone(),
+                    private: private(&name),
+                    params,
+                    returns,
+                    ..Default::default()
+                },
+                sig,
+                declared_as,
+            );
             store.add_edge(&m.id, &nid, EdgeKind::Contains, None);
         }
     }
@@ -1118,6 +1165,9 @@ fn collect_imports(m: &mut Module, module_ids: &HashSet<String>, store: &mut Gra
             };
             let names = field_children(st, "name");
             if names.is_empty() {
+                if named_children(st).iter().any(|n| n.kind() == "wildcard_import") {
+                    m.stars.push(modname.clone());
+                }
                 edges.push(modname.clone());
                 continue;
             }
@@ -1160,6 +1210,45 @@ fn collect_imports(m: &mut Module, module_ids: &HashSet<String>, store: &mut Gra
     for target in edges {
         import_edge(m, &target, module_ids, store, own);
     }
+}
+
+/// What `from module import *` binds where it is written: each name the module declares in
+/// `__all__`, else each public name it defines or binds. A star of a module that stars another
+/// binds what that one brings as well. A module the reading does not hold (a library's) binds
+/// nothing Atlas can name.
+fn star_imports(modules: &mut IndexMap<String, Module>) {
+    // a chain of stars longer than this goes round in a cycle
+    const STARS: usize = 8;
+    for _ in 0..STARS {
+        let mut bound: Vec<(String, String, String)> = vec![];
+        for m in modules.values() {
+            for from in m.stars.iter().filter_map(|s| modules.get(s)) {
+                let names = declared_all(from).unwrap_or_else(|| {
+                    from.symbols.keys().chain(from.bindings.keys()).filter(|n| !n.starts_with('_') && !n.contains('.')).cloned().collect()
+                });
+                for name in names.into_iter().filter(|n| !m.symbols.contains_key(n) && !m.bindings.contains_key(n)) {
+                    let target = format!("{}.{name}", from.id);
+                    bound.push((m.id.clone(), name, target));
+                }
+            }
+        }
+        if bound.is_empty() {
+            break;
+        }
+        for (id, name, target) in bound {
+            if let Some(m) = modules.get_mut(&id) {
+                m.bindings.insert(name, target);
+            }
+        }
+    }
+}
+
+/// The names a module declares public in `__all__`, when it does.
+fn declared_all(m: &Module) -> Option<Vec<String>> {
+    top_assignments(m).into_iter().find_map(|a| {
+        let left = a.child_by_field_name("left").filter(|l| text(*l, &m.src) == "__all__")?;
+        Some(literals(a.child_by_field_name("right").unwrap_or(left), &m.src, &["string"]))
+    })
 }
 
 // ---------- pass 2: resolution ----------
@@ -2328,11 +2417,7 @@ fn mark_exports(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, ow
         .collect();
     packages.sort_by_key(|(m, rank, root)| (m.id != *root, *rank, m.id.clone()));
     for (m, _, root) in packages {
-        let declared = top_assignments(m).into_iter().find_map(|a| {
-            let left = a.child_by_field_name("left").filter(|l| text(*l, &m.src) == "__all__")?;
-            Some(literals(a.child_by_field_name("right").unwrap_or(left), &m.src, &["string"]))
-        });
-        let names: Vec<String> = match declared {
+        let names: Vec<String> = match declared_all(m) {
             Some(d) => d,
             None if m.id == root => m.symbols.keys().chain(m.bindings.keys()).filter(|n| !n.starts_with('_')).cloned().collect(),
             None => continue,

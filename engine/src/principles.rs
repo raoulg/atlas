@@ -11,7 +11,9 @@ use std::path::Path;
 
 use serde::Serialize;
 
-use crate::model::{Compare, Dir, Edge, EdgeKind, EntryKind, Graph, Held, Leaves, Node, NodeKind, Param, Part, Site, Touch, World};
+use crate::model::{
+    Compare, Dir, Edge, EdgeKind, EntryKind, Graph, Held, Leaves, Node, NodeKind, Param, Part, Returns, Signature, Site, Touch, World,
+};
 
 /// A principle by its id and what it asks of code.
 pub struct Principle {
@@ -402,8 +404,13 @@ fn is_function(n: &Node) -> bool {
 }
 
 fn signature(n: &Node) -> String {
-    let ret = n.returns.as_ref().map_or(String::new(), |r| format!(" -> {}", r.written));
-    format!("{}({}){ret}", n.name, n.params.iter().map(|p| p.to_string()).collect::<Vec<_>>().join(", "))
+    written_signature(&n.name, &n.params, n.returns.as_ref())
+}
+
+/// `name(a: A, b) -> C`, as a signature writes it.
+fn written_signature(name: &str, params: &[Param], returns: Option<&Returns>) -> String {
+    let ret = returns.map_or(String::new(), |r| format!(" -> {}", r.written));
+    format!("{name}({}){ret}", params.iter().map(|p| p.to_string()).collect::<Vec<_>>().join(", "))
 }
 
 /// What a function says it gives, as written.
@@ -488,35 +495,45 @@ fn doors(ix: &Index) -> Vec<Finding> {
         }
     }
     for f in door_fns(ix) {
-        // a function handed to a call where it is declared takes its parameters' types from the call
-        let untyped: Vec<String> = f
-            .params
-            .iter()
-            .filter(|p| f.typed_by.is_empty() && p.ty.is_empty() && !p.receiver && !p.rest)
-            .map(|p| format!("`{}`", p.name))
-            .collect();
-        // a constructor gives its class
-        let gives_unknown = ix.leaves(&f.id).returns && f.returns.is_none() && !f.ctor;
-        if untyped.is_empty() && !gives_unknown {
-            continue;
-        }
-        let what = match (untyped.is_empty(), gives_unknown) {
-            (false, true) => format!("{} does not say what {} are, nor what it gives", ix.label(&f.id), list(&untyped)),
-            (false, false) => {
-                format!("{} does not say what {} {}", ix.label(&f.id), list(&untyped), if untyped.len() == 1 { "is" } else { "are" })
+        // what its callers are checked against: its overloads, else its own signature
+        let own = [Signature { line: f.span.map_or(1, |s| s.0), params: f.params.clone(), returns: f.returns.clone() }];
+        let checked = if f.overloads.is_empty() { &own[..] } else { &f.overloads[..] };
+        let (mut untyped, mut gives_unknown, mut asked): (Vec<String>, bool, Vec<&Signature>) = (vec![], false, vec![]);
+        for s in checked {
+            // a function handed to a call where it is declared takes its parameters' types from the call
+            let takes: Vec<String> =
+                s.params.iter().filter(|p| f.typed_by.is_empty() && !p.receiver && !p.says()).map(|p| format!("`{}`", p.name)).collect();
+            // a constructor gives its class
+            let gives = ix.leaves(&f.id).returns && !f.ctor && !s.returns.as_ref().map_or(false, Returns::says);
+            if !takes.is_empty() || gives {
+                asked.push(s);
             }
+            for p in takes {
+                if !untyped.contains(&p) {
+                    untyped.push(p);
+                }
+            }
+            gives_unknown |= gives;
+        }
+        let Some(first) = asked.first() else { continue };
+        let are = if untyped.len() == 1 { "is" } else { "are" };
+        let what = match (untyped.is_empty(), gives_unknown) {
+            (false, true) => format!("{} does not say what {} {are}, nor what it gives", ix.label(&f.id), list(&untyped)),
+            (false, false) => format!("{} does not say what {} {are}", ix.label(&f.id), list(&untyped)),
             _ => format!("{} does not say what it gives", ix.label(&f.id)),
         };
-        out.push(ix.finding(
+        let mut finding = ix.finding(
             "doors",
             f,
             what,
-            vec![signature(f)],
+            asked.iter().map(|s| written_signature(&f.name, &s.params, s.returns.as_ref())).collect(),
             format!(
                 "Until its signature says so, a reader and Atlas both lose the route at this door. What does {} take and give?",
                 ix.label(&f.id)
             ),
-        ));
+        );
+        finding.line = first.line;
+        out.push(finding);
     }
     out
 }

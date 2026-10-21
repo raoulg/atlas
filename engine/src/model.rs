@@ -112,6 +112,11 @@ pub struct Node {
     /// What the signature says it gives back; none when it does not say.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub returns: Option<Returns>,
+    /// The signatures its callers are checked against, where the code declares them apart from
+    /// the body that runs: its overloads, in the order they are written. `params` and `returns`
+    /// are then the implementation's, which no caller is checked against.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub overloads: Vec<Signature>,
     /// For a method that overrides another: whether it can stand where each method it overrides
     /// stood, what it takes and what it gives, as the language's type checker decides; none where no
     /// checker decided.
@@ -222,6 +227,17 @@ pub struct Param {
     /// The signature says the body may change it in place.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub changes: bool,
+    /// Its type is the unchecked one, which every value passes as and which passes as every type:
+    /// written out, it says no more than a parameter without a type.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub unchecked: bool,
+}
+
+impl Param {
+    /// Whether the signature says what it is: a type is written, and it is not the unchecked one.
+    pub fn says(&self) -> bool {
+        !self.ty.is_empty() && !self.unchecked
+    }
 }
 
 /// `name: type`, and `…name` for one that takes whatever arguments are left.
@@ -253,6 +269,29 @@ pub struct Returns {
     /// `Promise` that rejects.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub fails: bool,
+    /// The type of the value it gives is the unchecked one (`Param::unchecked`): it says no more
+    /// than leaving the type out.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub unchecked: bool,
+}
+
+impl Returns {
+    /// Whether it says what the function gives: its type is not the unchecked one.
+    pub fn says(&self) -> bool {
+        !self.unchecked
+    }
+}
+
+/// A signature declared apart from the body that runs: an overload.
+#[derive(Serialize, Deserialize, TS, Clone, Debug, Default, PartialEq, Eq)]
+#[ts(export)]
+pub struct Signature {
+    /// The line it is written on.
+    pub line: u32,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub params: Vec<Param>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub returns: Option<Returns>,
 }
 
 /// A call in a body, as a step of the route through it: what it reaches, what it is handed and

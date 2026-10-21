@@ -19,7 +19,7 @@ mod paths;
 use paths::{Arg, At, Eval};
 
 use crate::body::{changed_through, BindSyntax, Crosses, Step, Steps, UseSyntax};
-use crate::builder::{foreign_type, ClassInfo, GraphBuilder, SigInfo};
+use crate::builder::{foreign_type, ClassInfo, Declared, GraphBuilder, SigInfo};
 use crate::effects::{self, Crossing};
 use crate::knowledge;
 use crate::knowledge::OwnTypes;
@@ -368,15 +368,15 @@ fn collect_types(n: TsNode, src: &[u8], skip: &[TsNode], out: &mut Vec<Vec<Strin
     }
 }
 
-/// Whether a type says what a value is: `any` says no more than leaving the type out. `unknown`
-/// does say: it is the type of what is still to be checked.
-fn says(t: TsNode, src: &[u8]) -> bool {
-    !(t.kind() == "predefined_type" && text(t, src) == "any")
+/// Whether a type is the unchecked one: `any`, which says no more than leaving the type out.
+/// `unknown` is checked: it is the type of what is still to be checked.
+fn unchecked(t: TsNode, src: &[u8]) -> bool {
+    t.kind() == "predefined_type" && text(t, src) == "any"
 }
 
 /// A signature as data: each parameter by name and type (`(id: string, opt?: Opties)`), the types
 /// they name, and what it gives back. `...rest` takes whatever arguments are left; a `this`
-/// parameter is the value the function is called on; a parameter typed `any` has no type.
+/// parameter is the value the function is called on; a parameter typed `any` is unchecked.
 fn signature(params: Option<TsNode>, ret: Option<TsNode>, src: &[u8]) -> (Vec<Param>, Option<Returns>, SigInfo) {
     let mut out = vec![];
     let mut info = SigInfo::default();
@@ -390,16 +390,14 @@ fn signature(params: Option<TsNode>, ret: Option<TsNode>, src: &[u8]) -> (Vec<Pa
                 let written = pattern.map(|x| text(x, src)).unwrap_or_else(|| text(p, src));
                 let name = written.split_whitespace().collect::<Vec<_>>().join(" ");
                 let ty = p.child_by_field_name("type");
+                let written = ty.and_then(|t| named_children(t).into_iter().next());
                 out.push(Param {
                     name: name.trim_start_matches("...").to_string(),
-                    ty: ty
-                        .and_then(|t| named_children(t).into_iter().next())
-                        .filter(|t| says(*t, src))
-                        .map(|t| text(t, src).to_string())
-                        .unwrap_or_default(),
+                    ty: written.map(|t| text(t, src).to_string()).unwrap_or_default(),
                     receiver: pattern.map_or(false, |x| x.kind() == "this"),
                     rest: pattern.map_or(false, |x| x.kind() == "rest_pattern"),
                     changes: false,
+                    unchecked: written.map_or(false, |t| unchecked(t, src)),
                 });
                 let (names, unions) = split_unions(ty, src);
                 info.ptypes.extend(names);
@@ -407,14 +405,14 @@ fn signature(params: Option<TsNode>, ret: Option<TsNode>, src: &[u8]) -> (Vec<Pa
             }
         }
     }
-    let returns = ret.and_then(|r| named_children(r).into_iter().next()).and_then(|r| returns(r, src));
+    let returns = ret.and_then(|r| named_children(r).into_iter().next()).map(|r| returns(r, src));
     (info.rtypes, info.runions) = split_unions(ret, src);
     (out, returns, info)
 }
 
 /// What a return type gives: a `Promise<T>` gives `T` once it arrives, `void` and `undefined` no
-/// value, `this` a value of the class it runs on; `any`, also once it arrives, says nothing.
-fn returns(rt: TsNode, src: &[u8]) -> Option<Returns> {
+/// value, `this` a value of the class it runs on; `any`, also once it arrives, is unchecked.
+fn returns(rt: TsNode, src: &[u8]) -> Returns {
     let mut t = rt;
     let fails = t.kind() == "generic_type" && t.child_by_field_name("name").map_or(false, |n| text(n, src) == "Promise");
     while t.kind() == "generic_type" && t.child_by_field_name("name").map_or(false, |n| text(n, src) == "Promise") {
@@ -423,15 +421,12 @@ fn returns(rt: TsNode, src: &[u8]) -> Option<Returns> {
             None => break,
         }
     }
-    if !says(t, src) {
-        return None;
-    }
     let (value, own) = match (t.kind(), text(t, src)) {
         ("predefined_type", "void" | "undefined") => (String::new(), false),
         ("this_type", _) => (String::new(), true),
         (_, v) => (v.to_string(), false),
     };
-    Some(Returns { written: text(rt, src).to_string(), value, own, fails })
+    Returns { written: text(rt, src).to_string(), value, own, fails, unchecked: unchecked(t, src) }
 }
 
 // ---------- pass 1: files, symbols, imports ----------
@@ -608,6 +603,22 @@ fn route_path(value: TsNode, src: &[u8]) -> Option<String> {
 }
 
 fn add_function(m: &mut Module, store: &mut GraphBuilder, name: &str, def: TsNode, f: TsNode, body: TsNode, cls: Option<&str>) -> String {
+    add_declared(m, store, name, def, f, body, cls, Declared::Body)
+}
+
+/// A function, from one declaration of its name: what `GraphBuilder::declare` keeps of it, and,
+/// when it is the declaration kept, the body it runs.
+#[allow(clippy::too_many_arguments)]
+fn add_declared(
+    m: &mut Module,
+    store: &mut GraphBuilder,
+    name: &str,
+    def: TsNode,
+    f: TsNode,
+    body: TsNode,
+    cls: Option<&str>,
+    declared: Declared,
+) -> String {
     let src = &m.src;
     let id = match cls {
         Some(c) => format!("{c}.{name}"),
@@ -615,39 +626,68 @@ fn add_function(m: &mut Module, store: &mut GraphBuilder, name: &str, def: TsNod
     };
     let params = f.child_by_field_name("parameters").or_else(|| f.child_by_field_name("parameter"));
     let (params, returns, sig) = signature(params, f.child_by_field_name("return_type"), src);
-    store.sigs.insert(id.clone(), sig);
     let on_class = cls.is_some() && (0..def.child_count()).filter_map(|i| def.child(i)).any(|c| c.kind() == "static");
     // the constructor initializes what `new` makes; a static method that gives its class constructs
     let class_name = cls.map(|c| c.rsplit('.').next().unwrap_or(c));
     let gives_class = returns.as_ref().map_or(false, |r| r.own || Some(r.value.as_str()) == class_name);
-    store.add_node(Node {
-        id: id.clone(),
-        kind: if cls.is_some() { NodeKind::Method } else { NodeKind::Function },
-        on_class,
-        ctor: cls.is_some() && (name == "constructor" || on_class && gives_class),
-        // a member is private when it says so; a module's own name is, unless the module exports it
-        private: cls.is_some()
-            && (name.starts_with('#')
-                || named_children(def).iter().any(|c| c.kind() == "accessibility_modifier" && text(*c, src) != "public")),
-        name: name.to_string(),
-        file: crate::tree::path_str(&m.path),
-        span: span(def),
-        module: m.id.clone(),
-        doc: doc_of(def, src),
-        prophecy: prophecy_of(def, src),
-        cls: cls.map(str::to_string),
-        params,
-        returns,
-        ..Default::default()
-    });
-    m.bodies.insert(id.clone(), (body.start_byte(), body.end_byte()));
+    let kept = declared == Declared::Body || !store.nodes.contains_key(&id);
+    store.declare(
+        Node {
+            id: id.clone(),
+            kind: if cls.is_some() { NodeKind::Method } else { NodeKind::Function },
+            on_class,
+            ctor: cls.is_some() && (name == "constructor" || on_class && gives_class),
+            // a member is private when it says so; a module's own name is, unless the module exports it
+            private: cls.is_some()
+                && (name.starts_with('#')
+                    || named_children(def).iter().any(|c| c.kind() == "accessibility_modifier" && text(*c, src) != "public")),
+            name: name.to_string(),
+            file: crate::tree::path_str(&m.path),
+            span: span(def),
+            module: m.id.clone(),
+            doc: doc_of(def, src),
+            prophecy: prophecy_of(def, src),
+            cls: cls.map(str::to_string),
+            params,
+            returns,
+            ..Default::default()
+        },
+        sig,
+        declared,
+    );
+    if kept {
+        m.bodies.insert(id.clone(), (body.start_byte(), body.end_byte()));
+    }
     id
+}
+
+/// What a declaration of a function is among the declarations of its name in one scope: a
+/// signature without a body, where the name is declared again, is an overload; a `set` accessor
+/// writes the property its `get` reads.
+fn declared_as(d: TsNode, overloaded: &HashSet<String>, src: &[u8]) -> Declared {
+    let name = d.child_by_field_name("name").map_or("", |n| text(n, src));
+    let signature = matches!(d.kind(), "function_signature" | "method_signature");
+    if signature && overloaded.contains(name) {
+        Declared::Overload
+    } else if (0..d.child_count()).filter_map(|i| d.child(i)).any(|c| c.kind() == "set") {
+        Declared::Writer
+    } else {
+        Declared::Body
+    }
+}
+
+/// The names declared more than once among `decls`.
+fn declared_again<'t>(decls: impl Iterator<Item = TsNode<'t>>, src: &[u8]) -> HashSet<String> {
+    let mut seen = HashSet::new();
+    decls.filter_map(|d| d.child_by_field_name("name")).map(|n| text(n, src).to_string()).filter(|n| !seen.insert(n.clone())).collect()
 }
 
 fn collect_symbols(m: &mut Module, store: &mut GraphBuilder) {
     let tree = m.tree.clone();
     let src = m.src.clone();
     let mut route: Option<String> = None;
+    let functions = |d: &TsNode| matches!(d.kind(), "function_declaration" | "function_signature");
+    let overloaded = declared_again(declarations(tree.root_node()).into_iter().map(|(d, _, _)| d).filter(functions), &src);
     for (d, exported, default) in declarations(tree.root_node()) {
         let name = d.child_by_field_name("name").map(|n| text(n, &src).to_string()).unwrap_or_default();
         if exported && !name.is_empty() {
@@ -658,7 +698,7 @@ fn collect_symbols(m: &mut Module, store: &mut GraphBuilder) {
                 if !name.is_empty() =>
             {
                 let body = d.child_by_field_name("body").unwrap_or(d);
-                let id = add_function(m, store, &name, d, d, body, None);
+                let id = add_declared(m, store, &name, d, d, body, None, declared_as(d, &overloaded, &src));
                 store.add_edge(&m.id.clone(), &id, EdgeKind::Contains, None);
                 m.symbols.insert(name.clone(), id.clone());
                 if default {
@@ -680,16 +720,22 @@ fn collect_symbols(m: &mut Module, store: &mut GraphBuilder) {
                         }
                     }
                 }
-                let mut methods = vec![];
+                let mut methods: Vec<String> = vec![];
                 if let Some(body) = d.child_by_field_name("body") {
+                    let members = |x: &TsNode| matches!(x.kind(), "method_definition" | "abstract_method_signature" | "method_signature");
+                    let overloaded = declared_again(named_children(body).into_iter().filter(members), &src);
                     for member in named_children(body) {
                         match member.kind() {
                             "method_definition" | "abstract_method_signature" | "method_signature" => {
                                 let mname = member.child_by_field_name("name").map(|n| text(n, &src).to_string()).unwrap_or_default();
                                 let mbody = member.child_by_field_name("body").unwrap_or(member);
-                                let mid = add_function(m, store, &mname, member, member, mbody, Some(&id));
+                                let declared = declared_as(member, &overloaded, &src);
+                                let mid = add_declared(m, store, &mname, member, member, mbody, Some(&id), declared);
                                 store.add_edge(&id, &mid, EdgeKind::Contains, None);
-                                methods.push(mid.rsplit('.').next().unwrap_or("").to_string());
+                                let own = mid.rsplit('.').next().unwrap_or("").to_string();
+                                if !methods.contains(&own) {
+                                    methods.push(own);
+                                }
                                 // `constructor(private bron: Bron)` declares a field
                                 if mname == "constructor" {
                                     for p in member.child_by_field_name("parameters").map(named_children).unwrap_or_default() {
@@ -849,12 +895,17 @@ fn namespace(m: &mut Module, store: &mut GraphBuilder, name: &str, object: TsNod
 /// signature is a method of the type, with no body of its own.
 fn method_signatures(m: &mut Module, store: &mut GraphBuilder, type_name: &str, body: TsNode) -> Vec<String> {
     let id = format!("{}.{type_name}", m.id);
-    let mut out = vec![];
-    for sig in named_children(body).into_iter().filter(|x| x.kind() == "method_signature") {
+    let mut out: Vec<String> = vec![];
+    let sigs: Vec<TsNode> = named_children(body).into_iter().filter(|x| x.kind() == "method_signature").collect();
+    let overloaded = declared_again(sigs.iter().copied(), &m.src);
+    for sig in sigs {
         let name = sig.child_by_field_name("name").map(|n| text(n, &m.src).to_string()).unwrap_or_default();
-        let mid = add_function(m, store, &name, sig, sig, sig, Some(&id));
+        let declared = declared_as(sig, &overloaded, &m.src);
+        let mid = add_declared(m, store, &name, sig, sig, sig, Some(&id), declared);
         store.add_edge(&id, &mid, EdgeKind::Contains, None);
-        out.push(name);
+        if !out.contains(&name) {
+            out.push(name);
+        }
     }
     out
 }

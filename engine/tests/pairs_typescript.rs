@@ -85,8 +85,9 @@ fn doors_say_what_goes_in() {
     assert!(edge(c, EdgeKind::Takes, "ledger.Ledger.record", "model.Expense"), "the door takes an Expense");
     assert!(edge(c, EdgeKind::Calls, "server.app.POST /api/expenses", "expense.parseExpense"), "the route checks the body into one");
     assert!(!asked(c, "doors", "ledger.Ledger.record"));
-    // the shortcut: the door takes no type
-    assert_eq!(node(s, "ledger.Ledger.record").params.iter().map(|p| p.ty.as_str()).collect::<Vec<_>>(), [""], "`any` says nothing");
+    // the shortcut: the door takes the unchecked type, which the picture shows as written
+    let params = &node(s, "ledger.Ledger.record").params;
+    assert_eq!(params.iter().map(|p| (p.ty.as_str(), p.unchecked)).collect::<Vec<_>>(), [("any", true)], "`any` says nothing");
     assert!(!s.edges.iter().any(|e| e.kind == EdgeKind::Takes && e.src == "shortcut.ledger.Ledger.record"), "`any` names no type");
     assert!(asked(s, "doors", "ledger.Ledger.record"), "{:?}", asked_anywhere(s, "doors"));
     // and it is still the door the route goes through
@@ -954,4 +955,45 @@ fn prophecy_a_name_that_names_several_nodes_is_ambiguous() {
         asked_anywhere(&s, "prophecy"),
         ["shortcut.savePosted savePosted supersedes `save`, which names 2 nodes: `shortcut.ledger.save` and `shortcut.shelf.save`"]
     );
+}
+
+// ---------- doors: every declaration a door is made of ----------
+
+/// One side of the doors pair (`tests/pairs/doors`): the lengths of the Python pair in TypeScript.
+fn units(side: &str) -> Graph {
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/doors/typescript").join(side);
+    analyze(&dir, &Options::default()).unwrap_or_else(|e| panic!("the {side} side parses: {e}"))
+}
+
+/// A door says what goes in and what comes out in each declaration its callers meet. The clean
+/// `scale` says it through two typed overload signatures, before an implementation typed `any`
+/// that no caller is checked against; `Length.meters` is its getter, typed, and its setter takes
+/// the getter's type, as TypeScript gives it; `log(...parts: string[])` types what is left over;
+/// `parse` takes `unknown`. It is asked nothing, and the route of `Length` runs its constructor
+/// once, then each method a user may run on it. The shortcut leaves one overload without types,
+/// the getter without a return type and `...parts` without a type, and gives `any`, which says no
+/// more than no type: each is asked where it is left open.
+#[test]
+fn doors_every_declaration_of_a_door_says_what_goes_in_and_out() {
+    let (c, s) = (units("clean"), units("shortcut"));
+    let fs = findings(&c);
+    assert!(fs.is_empty(), "{:#?}", fs.iter().map(|f| format!("{} {}: {}", f.principle, f.node, f.what)).collect::<Vec<_>>());
+    // one node per name: the implementation with the overloads its callers see, the property's getter
+    let scale = node(&c, "core.scale");
+    assert_eq!(scale.overloads.iter().map(|o| o.line).collect::<Vec<_>>(), [22, 23]);
+    assert_eq!(scale.params.iter().map(|p| (p.ty.as_str(), p.unchecked)).collect::<Vec<_>>(), [("any", true), ("any", true)]);
+    assert_eq!(node(&c, "core.Length.meters").returns.as_ref().map(|r| r.written.as_str()), Some("number"));
+    assert_eq!(node(&c, "core.Length").methods, ["constructor", "meters", "plus"]);
+    // the class's route runs its constructor once, then what a user may run on it
+    let steps: Vec<String> = atlas_engine::flow::bodies(&c)["clean.core.Length"].steps().iter().map(|s| s.to.clone()).collect();
+    assert_eq!(steps, ["constructor", "meters", "plus"].map(|m| format!("clean.core.Length.{m}")));
+    // the shortcut: each door left open is asked, at the declaration that leaves it open
+    let asked: Vec<(String, u32)> = findings(&s)
+        .into_iter()
+        .filter(|f| f.principle == "doors")
+        .map(|f| (f.node.trim_start_matches("shortcut.").to_string(), f.line))
+        .collect();
+    let want = [("core.Length.meters", 9), ("core.scale", 23), ("core.log", 28), ("core.parse", 32)];
+    assert_eq!(asked, want.map(|(n, l)| (n.to_string(), l)));
+    assert!(node(&s, "core.parse").returns.as_ref().is_some_and(|r| r.written == "any" && r.unchecked), "`any` is drawn as written");
 }

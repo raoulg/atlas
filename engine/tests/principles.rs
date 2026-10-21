@@ -187,6 +187,11 @@ fn a_package_called_src_is_asked_its_name() {
 const REVIEWED: &[(&str, &str, &str)] = &[
     (
         "choices",
+        "atlas-engine.builder.GraphBuilder.declare",
+        "`declare` tests `Declared::Overload` once for a name's first declaration and again for a later one: a match on the declaration first would make that choice once",
+    ),
+    (
+        "choices",
         "atlas-engine.tests.pairs_python.club",
         "the pair helpers `club` and `reading` each keep a graph per side and pick it by `side == \"clean\"`: one cache keyed by side would make that choice once",
     ),
