@@ -126,9 +126,71 @@ fn shaped<'t>(n: TsNode<'t>, src: &[u8]) -> Option<String> {
     Some(format!("{}[{array}, {dims}]", head.join(".")))
 }
 
+/// The unions an annotation writes in place, outermost first: `A | B`, `Union[A, B]`,
+/// `Optional[A | B]`; a union inside one is part of it.
+fn unions<'t>(t: Option<TsNode<'t>>, src: &[u8]) -> Vec<TsNode<'t>> {
+    let Some(t) = t else { return vec![] };
+    let union = |n: TsNode| match n.kind() {
+        "binary_operator" => n.child_by_field_name("operator").map_or(false, |o| text(o, src) == "|"),
+        "union_type" => true,
+        "subscript" => dotted(n.child_by_field_name("value"), src).last().map_or(false, |h| matches!(h.as_str(), "Union" | "Optional")),
+        "generic_type" => {
+            dotted(named_children(n).first().copied(), src).last().map_or(false, |h| matches!(h.as_str(), "Union" | "Optional"))
+        }
+        _ => false,
+    };
+    let all: Vec<TsNode> =
+        walk(t, &["binary_operator", "union_type", "subscript", "generic_type"]).into_iter().filter(|n| union(*n)).collect();
+    all.iter()
+        .copied()
+        .filter(|u| !all.iter().any(|o| o.id() != u.id() && o.start_byte() <= u.start_byte() && u.end_byte() <= o.end_byte()))
+        .collect()
+}
+
+/// The types a union may be, one per member (`list[A] | B`: A, B), a nested union's among them;
+/// none when a member names more than one type (`Callable[[A], B] | None`), which is no value
+/// of either.
+fn members(u: TsNode, src: &[u8]) -> Vec<Vec<String>> {
+    let parts: Vec<TsNode> = match u.kind() {
+        "binary_operator" => [u.child_by_field_name("left"), u.child_by_field_name("right")].into_iter().flatten().collect(),
+        "union_type" => named_children(u),
+        "subscript" => field_children(u, "subscript"),
+        _ => named_children(u).into_iter().filter(|k| k.kind() == "type_parameter").flat_map(named_children).collect(),
+    };
+    let mut out = vec![];
+    for p in parts {
+        let p = if p.kind() == "type" { named_children(p).into_iter().next().unwrap_or(p) } else { p };
+        let nested = unions(Some(p), src).first().map_or(false, |n| n.id() == p.id());
+        let names = if nested { members(p, src) } else { type_names(Some(p), src) };
+        match names.as_slice() {
+            [] => {}
+            [one] => out.push(one.clone()),
+            _ if nested => out.extend(names),
+            _ => return vec![],
+        }
+    }
+    out
+}
+
+/// An annotation's names apart from the unions it writes, and those unions: `def f(r: Fit |
+/// Failed, n: int)` takes one union, which may be a sum, not a `Fit` and a `Failed`. A union whose
+/// members are not each one type is read as its names.
+fn split_unions(t: Option<TsNode>, src: &[u8]) -> (Vec<Vec<String>>, Vec<crate::builder::Union>) {
+    let written: Vec<TsNode> =
+        unions(t, src).into_iter().filter(|u| !members(*u, src).is_empty() || type_names(Some(*u), src).is_empty()).collect();
+    let names = type_names_outside(t, src, &written);
+    let unions = written.iter().map(|u| crate::builder::Union { names: members(*u, src), written: text(*u, src).to_string() }).collect();
+    (names, unions)
+}
+
 /// All dotted names mentioned in an annotation, e.g. `list[Graph]` -> `[[Graph]]`. A shaped
 /// array is one name, `[["Float[Tensor, batch dim]"]]`.
 fn type_names(t: Option<TsNode>, src: &[u8]) -> Vec<Vec<String>> {
+    type_names_outside(t, src, &[])
+}
+
+/// The names of an annotation that stand outside the nodes `skip`.
+fn type_names_outside(t: Option<TsNode>, src: &[u8], skip: &[TsNode]) -> Vec<Vec<String>> {
     let Some(t) = t else { return vec![] };
     let mut out = vec![];
     let mut keep = |parts: Vec<String>| {
@@ -151,11 +213,9 @@ fn type_names(t: Option<TsNode>, src: &[u8]) -> Vec<Vec<String>> {
             params.extend(args);
         }
     }
-    let inside = |n: TsNode| arrays.iter().chain(params.iter()).any(|a| a.start_byte() <= n.start_byte() && n.end_byte() <= a.end_byte());
-    for a in arrays
-        .iter()
-        .filter(|a| !arrays.iter().any(|b| b.id() != a.id() && b.start_byte() <= a.start_byte() && a.end_byte() <= b.end_byte()))
-    {
+    let within = |n: TsNode, outer: &TsNode| outer.start_byte() <= n.start_byte() && n.end_byte() <= outer.end_byte();
+    let inside = |n: TsNode| arrays.iter().chain(params.iter()).chain(skip.iter()).any(|a| within(n, a));
+    for a in arrays.iter().filter(|a| !arrays.iter().any(|b| b.id() != a.id() && within(**a, b)) && !skip.iter().any(|s| within(**a, s))) {
         keep(vec![shaped(*a, src).unwrap_or_default()]);
     }
     for n in walk(t, &["identifier", "attribute", "string"]) {
@@ -276,11 +336,13 @@ fn signature(f: TsNode, src: &[u8], receiver: bool) -> (Vec<Param>, Option<Retur
                 rest: pname.starts_with('*'),
                 changes: false,
             });
-            info.ptypes.extend(type_names(t, src));
+            let (names, unions) = split_unions(t, src);
+            info.ptypes.extend(names);
+            info.punions.extend(unions);
         }
     }
     let rt = f.child_by_field_name("return_type");
-    info.rtypes = type_names(rt, src);
+    (info.rtypes, info.runions) = split_unions(rt, src);
     (params, rt.map(|r| returns(r, src)), info)
 }
 
@@ -1193,8 +1255,23 @@ fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, own: &Own,
         }
         let m = &modules[&module];
         let sig = store.sigs.get(id).cloned().unwrap_or_default();
-        for (types, kind) in [(&sig.ptypes, EdgeKind::Takes), (&sig.rtypes, EdgeKind::Returns)] {
-            let targets: Vec<String> = types.iter().flat_map(|t| type_targets(m, t, modules, &aliases, &store.nodes, own)).collect();
+        for (types, unions, kind) in [(&sig.ptypes, &sig.punions, EdgeKind::Takes), (&sig.rtypes, &sig.runions, EdgeKind::Returns)] {
+            let mut targets: Vec<String> = types.iter().flat_map(|t| type_targets(m, t, modules, &aliases, &store.nodes, own)).collect();
+            // a union of two or more known types is a sum, written in place as by a name
+            for u in unions {
+                let mut variants: Vec<String> = vec![];
+                for r in u.names.iter().flat_map(|t| type_targets(m, t, modules, &aliases, &store.nodes, own)) {
+                    if (!r.starts_with("ext:") || foreign_type(&r, &OWN)) && !variants.contains(&r) {
+                        variants.push(r);
+                    }
+                }
+                if variants.len() > 1 {
+                    let at = store.nodes[id].clone();
+                    targets.push(store.written_sum(&variants, &u.written, &at));
+                } else {
+                    targets.extend(variants);
+                }
+            }
             for r in targets {
                 if r.starts_with("ext:") {
                     if !foreign_type(&r, &OWN) {
@@ -2200,7 +2277,8 @@ fn defined(target: &str, modules: &IndexMap<String, Module>, nodes: &IndexMap<St
 struct Alias {
     module: String,
     names: Vec<Vec<String>>,
-    /// A union: the value is one of its names. A `TypeVar` or an `Optional` stands for them.
+    /// A union, `Optional` among them: the value is one of its names, a sum when they are two
+    /// or more. A `TypeVar` stands for them.
     sum: bool,
     span: Option<(u32, u32)>,
     text: String,
@@ -2216,8 +2294,8 @@ fn type_aliases(modules: &IndexMap<String, Module>) -> HashMap<String, Alias> {
             let name = text(left, &m.src).split('[').next().unwrap_or("").trim().to_string();
             let value = named_children(right).into_iter().next().unwrap_or(right);
             let head = dotted(value.child_by_field_name("value"), &m.src).last().cloned().unwrap_or_default();
-            let sum = text(value, &m.src).contains('|') || matches!(head.as_str(), "Union");
-            if name.is_empty() || !(sum || head == "Optional") {
+            let sum = text(value, &m.src).contains('|') || matches!(head.as_str(), "Union" | "Optional");
+            if name.is_empty() || !sum {
                 continue;
             }
             let alias = Alias {
@@ -2239,7 +2317,7 @@ fn type_aliases(modules: &IndexMap<String, Module>) -> HashMap<String, Alias> {
                 .cloned()
                 .unwrap_or_default();
             let (names, sum) = match right.kind() {
-                "subscript" if matches!(head.as_str(), "Union" | "Optional") => (type_names(Some(right), &m.src), head == "Union"),
+                "subscript" if matches!(head.as_str(), "Union" | "Optional") => (type_names(Some(right), &m.src), true),
                 "binary_operator" if text(right, &m.src).contains('|') => (type_names(Some(right), &m.src), true),
                 // `T = TypeVar("T", bound="TransformBase")` stands for its bound, `TypeVar("T", A, B)` for its constraints
                 "call" if head == "TypeVar" => (typevar_names(right, &m.src), false),

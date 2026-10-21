@@ -393,11 +393,15 @@ fn sums_a_choice_is_made_where_it_arises() {
     assert!(handed.iter().any(|h| fetched.contains(&h.ty.as_str())), "the store is handed what the request gives: {handed:?}");
 }
 
-/// A sum type is unwrapped where it arises: a function that takes a `Result` has received a
-/// choice its caller should have made (docs/reference/principles.md, Rust).
+/// A sum taken apart once is no repeated choice: the shortcut's `Store.save_rates` takes the
+/// `Result` the request gives and opens it, the one copairing of that sum, so `sums` does not ask.
+/// Two takers that each choose again are asked (`sums_a_variant_with_fields_is_a_variant`).
 #[test]
-fn sums_a_result_handed_on_is_asked() {
-    assert!(!found(shortcut(), "sums").is_empty());
+fn sums_a_result_taken_apart_once_is_not_asked() {
+    let takers: Vec<&str> =
+        shortcut().edges.iter().filter(|e| e.kind == EdgeKind::Takes && e.dst.starts_with("ext:Result<")).map(|e| e.src.as_str()).collect();
+    assert_eq!(takers, ["spend.store.Store.save_rates"]);
+    assert!(found(shortcut(), "sums").is_empty());
 }
 
 /// One side of the collection pair (`tests/pairs/collections`): a store that reads its rows,
@@ -599,4 +603,27 @@ fn prophecy_a_seal_is_listed_and_broken_when_its_issue_is_closed() {
         "a prophecy that is not sealed has no seal to break"
     );
     let _ = std::fs::remove_dir_all(copy.parent().expect("has a parent"));
+}
+
+fn fits(side: &str) -> Graph {
+    analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/sums/fits/rust").join(side), &Options::default()).expect("reads")
+}
+
+/// A sum is unwrapped where it arises, whatever its variants carry: `enum Outcome { Fit { score:
+/// f64 }, Failed { reason: String } }` is a sum of two variants, each a type of its own, though
+/// neither holds a type of the program. On the clean side one function takes it apart,
+/// `describe`, and gives a line and the points to plot; the shortcut hands it to `line` and to
+/// `points`, which each choose again.
+#[test]
+fn sums_a_variant_with_fields_is_a_variant() {
+    let (c, s) = (fits("clean"), fits("shortcut"));
+    for g in [&c, &s] {
+        assert_eq!(targets(g, EdgeKind::Variant, "fits.model.Outcome"), ["fits.model.Outcome::Fit", "fits.model.Outcome::Failed"]);
+        assert_eq!(node(g, "fits.model.Outcome::Fit").name, "Outcome::Fit");
+        assert!(edge(g, EdgeKind::Returns, "fits.fitter.fit", "fits.model.Outcome"));
+    }
+    assert!(found(&c, "sums").is_empty(), "one copairing is where the sum is taken apart");
+    assert!(edge(&s, EdgeKind::Takes, "fits.report.line", "fits.model.Outcome"));
+    assert!(edge(&s, EdgeKind::Takes, "fits.plot.points", "fits.model.Outcome"));
+    assert_eq!(found(&s, "sums"), ["fits.model.Outcome"]);
 }

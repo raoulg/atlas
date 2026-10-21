@@ -18,6 +18,9 @@ pub struct ClassInfo {
     pub fields: Vec<(String, Vec<Vec<String>>)>,
     /// For a sum (a Rust `enum`): the types its variants carry.
     pub variants: Vec<Vec<String>>,
+    /// For a Rust `enum`, each variant that carries data: its name, the types it names, and where
+    /// it is written.
+    pub arms: Vec<(String, Vec<Vec<String>>, Option<(u32, u32)>)>,
 }
 
 /// What the program's classes say of one another: the methods each method overrides, each with
@@ -45,10 +48,22 @@ impl Family {
     }
 }
 
+/// A union a signature writes in place (`Fit | Failed`, `Union[Fit, Failed]`): the names of what
+/// it may be, and how it is written.
+#[derive(Default, Clone, Debug)]
+pub struct Union {
+    pub names: Vec<Vec<String>>,
+    pub written: String,
+}
+
 #[derive(Default, Clone, Debug)]
 pub struct SigInfo {
     pub ptypes: Vec<Vec<String>>,
     pub rtypes: Vec<Vec<String>>,
+    /// The unions its parameters and its result write in place, read apart from `ptypes` and
+    /// `rtypes`: each is a sum when it may be two or more known types.
+    pub punions: Vec<Union>,
+    pub runions: Vec<Union>,
 }
 
 /// The nodes and edges found so far, and the tables that resolve names into them.
@@ -81,6 +96,49 @@ impl GraphBuilder {
 
     pub fn add_edge(&mut self, src: &str, dst: &str, kind: EdgeKind, via: Option<String>) {
         self.add_call(src, dst, kind, via, vec![]);
+    }
+
+    /// The sum a union written in place is, of two or more resolved `variants`: a union of the
+    /// same types is the same type however and wherever it is written, so it is the sum the
+    /// program names for them when it names one (`Result = Fit | Failed`), else one node of its
+    /// own, standing where `at` first writes it.
+    pub fn written_sum(&mut self, variants: &[String], written: &str, at: &Node) -> String {
+        let mut key = variants.to_vec();
+        key.sort();
+        key.dedup();
+        let mut sums: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+        for e in self.edges.iter().filter(|e| e.kind == EdgeKind::Variant) {
+            sums.entry(e.src.as_str()).or_default().push(e.dst.as_str());
+        }
+        for vs in sums.values_mut() {
+            vs.sort();
+        }
+        let known = sums.iter().find(|(s, vs)| {
+            self.nodes.get(**s).map_or(false, |n| n.kind == NodeKind::Class)
+                && vs.len() == key.len()
+                && vs.iter().zip(&key).all(|(v, k)| v == k)
+        });
+        if let Some((id, _)) = known {
+            return id.to_string();
+        }
+        let id = format!("({})", key.join(" | "));
+        self.add_node(Node {
+            id: id.clone(),
+            kind: NodeKind::Class,
+            name: written.split_whitespace().collect::<Vec<_>>().join(" "),
+            file: at.file.clone(),
+            span: at.span,
+            module: at.module.clone(),
+            ..Default::default()
+        });
+        self.add_edge(&at.module, &id, EdgeKind::Contains, None);
+        for v in &key {
+            if v.starts_with("ext:") {
+                self.ext_node(v);
+            }
+            self.add_edge(&id, v, EdgeKind::Variant, None);
+        }
+        id
     }
 
     /// An edge from a body, with the arms of the choices it sits in; the first call of a

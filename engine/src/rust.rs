@@ -585,6 +585,7 @@ fn collect_symbols(m: &mut Module, store: &mut GraphBuilder) {
                 m.symbols.insert(name.clone(), nid.clone());
                 let mut fields: Vec<(String, Vec<Vec<String>>)> = vec![];
                 let mut variants: Vec<Vec<String>> = vec![];
+                let mut arms = vec![];
                 let mut methods = vec![];
                 if let Some(body) = item.child_by_field_name("body") {
                     if item.kind() == "trait_item" {
@@ -621,11 +622,14 @@ fn collect_symbols(m: &mut Module, store: &mut GraphBuilder) {
                         }
                         // an enum is one of its variants, a sum of the types they carry
                         for v in walk(body, &["enum_variant"]) {
-                            variants.extend(type_names(v.child_by_field_name("body"), src));
+                            let Some(carried) = v.child_by_field_name("body") else { continue };
+                            let vname = v.child_by_field_name("name").map(|n| text(n, src)).unwrap_or("").to_string();
+                            variants.extend(type_names(Some(carried), src));
+                            arms.push((vname, type_names(Some(carried), src), span(v)));
                         }
                     }
                 }
-                store.classes.insert(nid.clone(), ClassInfo { fields, variants, ..Default::default() });
+                store.classes.insert(nid.clone(), ClassInfo { fields, variants, arms, ..Default::default() });
                 let entry = exported(m, item, src).then(|| Entry::new(EntryKind::Export, name.clone()));
                 store.add_node(Node {
                     id: nid.clone(),
@@ -1027,7 +1031,7 @@ fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crate_ids:
             continue;
         }
         let m = &modules[&module];
-        let (fields, variants) = store.classes.get(id).map(|c| (c.fields.clone(), c.variants.clone())).unwrap_or_default();
+        let (fields, arms) = store.classes.get(id).map(|c| (c.fields.clone(), c.arms.clone())).unwrap_or_default();
         for (fname, types) in fields {
             for t in types {
                 let Some(r) = resolve(m, &t, modules, &store.nodes, crate_ids) else { continue };
@@ -1039,15 +1043,41 @@ fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crate_ids:
                 }
             }
         }
+        // a variant is the types it carries that the graph holds; one that carries none of them
+        // (`Fit { score: f64 }`, `Fit(f64)`) is a type of its own, named after its enum, which a
+        // path does not name: `Outcome::Fit { .. }` makes an `Outcome`
         let mut seen: Vec<String> = vec![];
-        for t in variants {
-            let Some(r) = resolve(m, &t, modules, &store.nodes, crate_ids) else { continue };
-            let known = if r.starts_with("ext:") {
-                foreign_type(&r, &OWN)
-            } else {
-                store.nodes.get(&r).map_or(false, |x| x.kind == NodeKind::Class)
-            };
-            if known && r != *id && !seen.contains(&r) {
+        for (vname, carried, at) in arms {
+            let mut known: Vec<String> = vec![];
+            for r in carried.iter().filter_map(|t| resolve(m, t, modules, &store.nodes, crate_ids)) {
+                let holds = if r.starts_with("ext:") {
+                    foreign_type(&r, &OWN)
+                } else {
+                    store.nodes.get(&r).map_or(false, |x| x.kind == NodeKind::Class)
+                };
+                if holds && r != *id && !known.contains(&r) {
+                    known.push(r);
+                }
+            }
+            if known.is_empty() {
+                let enum_node = &store.nodes[id];
+                let own = Node {
+                    id: format!("{id}::{vname}"),
+                    kind: NodeKind::Class,
+                    name: format!("{}::{vname}", enum_node.name),
+                    file: enum_node.file.clone(),
+                    span: at,
+                    module: module.clone(),
+                    ..Default::default()
+                };
+                known.push(own.id.clone());
+                store.add_node(own);
+                store.add_edge(&module, &known[0], EdgeKind::Contains, None);
+            }
+            for r in known {
+                if seen.contains(&r) {
+                    continue;
+                }
                 if r.starts_with("ext:") {
                     store.ext_node(&r);
                 }

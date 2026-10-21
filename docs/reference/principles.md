@@ -53,7 +53,7 @@ lets it be traced and Atlas does not yet; each gap is an ignored test in `pairs_
 | Principle | Python | TypeScript | Rust |
 |---|---|---|---|
 | doors | finding; `__all__` exports | finding on an untyped export or one typed `any` | forbidden: every signature is typed |
-| sums | finding; variant edges | traceable (a union alias) | finding; a library's sum handed on (`Result`) is asked |
+| sums | finding; variant edges, named or written in place | finding; variant edges, named or written in place | finding; an enum's variants, a library's sum (`Result`) handed on |
 | overrides | `keeps` from ty; finding | forbidden: the compiler holds an override to its base | forbidden |
 | places | finding; where the path is made whole | finding; where the path is made whole | finding; where the path is made whole |
 | changes | mutates edge; finding | mutates edge; finding | forbidden: a change is `&mut` in the signature |
@@ -136,12 +136,33 @@ the variant each consumer actually uses.
   type checker confirm every variant is handled. Errors that stop the program stay
   exceptions; a sum is for an outcome you want to keep or report.
 - **Rust.** `enum` and `Result<T, E>`, opened with `match` or `?` at the call site. A
-  function that takes a `Result` as an argument has received a choice its caller
-  should have made.
+  `Result` handed to two functions is a choice each of them makes again, where the caller
+  that got it could have made it once.
 
-Atlas sees a named union of two or more types as a type of its own, with an edge to
-each variant. It checks: a sum that one module returns and that public functions in
-other modules take.
+A sum is a type with an edge to each variant it may be. A union of two or more known types
+is one, named (`Result = Fit | Failed`, `type Result = Fit | Failed`) or written in place in a
+signature (`def report(r: Fit | Failed)`): a union of the same types is the same sum however
+and wherever it is written, so `Fit | Failed`, `Optional[Fit | Failed]`, `Fit | Failed | None`
+and TypeScript's `Fit | Failed | undefined` are one sum, and the name a program gives it is its
+name. A Rust `enum` is the sum of its variants that carry data: a variant that carries a type of
+the program is that type, one that carries none (`Fit { score: f64 }`, `Fit(f64)`) a type of its
+own, `Outcome::Fit`. `Result` and `Either` are the library's sums, which arise in a library's call.
+
+The rule asks about a sum that a function of the program gives back, or a library's sum, when
+two or more public functions in other modules take it: each of them chooses again. One function
+that takes it is not asked. A coproduct is taken apart by a copairing, and that has to stand
+somewhere, once: `evaluate(e: Expr)` over `Num | Add`, or a `describe` that gives each caller
+what it needs. The finding stands at the sum (where its name is, or where it is first written),
+and for a library's sum at the first function that takes it.
+
+What it cannot see. A single type that may be absent (`T | None`, `Optional[T]`, `Option<T>`,
+`T | undefined`) is not asked: its consumers ask whether it is there, not which outcome it is,
+and an argument that may be left out is a door like any other. A sum inside what is taken
+(`Run.outcome: Result`, a field) is not asked through the field, since Atlas does not see
+whether a function that takes the `Run` opens its `outcome`. Each function that takes a sum
+counts as one that opens it, also when it only hands it on. A union written as a string
+(`"Fit | Failed"`), a union of object shapes (`{kind: "fit"} | {kind: "failed"}`) and an enum's
+variants without data hold no type the graph knows, and make no sum.
 
 goad: `DistributionFitter.fit` returns `list[Result]`, and both `PlotFits.plot` and
 the CLI's `format_results` take it and filter out the failures themselves. A plot has
