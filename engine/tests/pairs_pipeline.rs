@@ -232,8 +232,8 @@ fn the_same_from_outside_rust() {
 #[test]
 fn the_same_from_outside_typescript_names_the_same_places() {
     let t = typescript();
-    assert_eq!(program(t), "typescript.cli");
-    let out = outside(t, "typescript.cli");
+    assert_eq!(program(t), "sunspots.cli");
+    let out = outside(t, "sunspots.cli");
     assert!(out.contains(&("disk_write".to_string(), "figures/sunspots.svg".to_string())), "{out:#?}");
     let (named, unnamed): (BTreeSet<_>, BTreeSet<_>) = out.into_iter().partition(|(_, artifact)| !artifact.is_empty());
     assert_eq!(in_any_format(named), in_any_format(the_outside()));
@@ -245,7 +245,7 @@ fn the_same_from_outside_typescript_names_the_same_places() {
 /// (`raw: Path = RAW` in typer's signature, `values.raw ?? RAW` after `parseArgs`).
 #[test]
 fn the_same_from_outside_typescript() {
-    assert_eq!(in_any_format(outside(typescript(), "typescript.cli")), in_any_format(the_outside()));
+    assert_eq!(in_any_format(outside(typescript(), "sunspots.cli")), in_any_format(the_outside()));
 }
 
 /// The clean `load` reads the file the command names: `load(download(SILSO, raw))` hands it what
@@ -272,17 +272,17 @@ fn the_same_from_outside_python_clean_makes_the_parent_of_the_path_handed_in_as_
 /// it what `download` gives back, which is `to`, the path the command handed `download`.
 #[test]
 fn the_same_from_outside_typescript_reads_the_path_download_gives_back() {
-    let read = touches(typescript(), "typescript.series.load", "disk_read");
-    assert!(read.iter().any(|t| t.artifact == "data/raw/sunspots.csv" && !t.fixed && t.by == ["typescript.cli.main"]), "{read:#?}");
+    let read = touches(typescript(), "sunspots.series.load", "disk_read");
+    assert!(read.iter().any(|t| t.artifact == "data/raw/sunspots.csv" && !t.fixed && t.by == ["sunspots.cli.main"]), "{read:#?}");
 }
 
 /// The directory the TypeScript functions make for their file is the directory of the path the
 /// command hands in: `mkdir(dirname(to), ..)` is part of writing the file, no place of its own.
 #[test]
 fn the_same_from_outside_typescript_makes_the_parent_of_the_path_handed_in_as_part_of_writing_it() {
-    for (f, dir) in [("typescript.download.download", "data/raw/"), ("typescript.plot.saveSvg", "figures/")] {
+    for (f, dir) in [("sunspots.download.download", "data/raw/"), ("sunspots.plot.saveSvg", "figures/")] {
         let ts = touches(typescript(), f, "disk_write");
-        let route: Vec<_> = ts.iter().filter(|t| t.by == ["typescript.cli.main"]).collect();
+        let route: Vec<_> = ts.iter().filter(|t| t.by == ["sunspots.cli.main"]).collect();
         assert!(route.iter().all(|t| t.op != "mkdir"), "{f}: {ts:#?}");
         assert!(route.iter().any(|t| t.artifact.starts_with(dir)), "{f}: {ts:#?}");
     }
@@ -570,15 +570,15 @@ fn typescript_follows_every_principle() {
     let doors: BTreeSet<&str> =
         t.nodes.iter().filter(|n| n.entry.as_ref().map_or(false, |e| e.kind == EntryKind::Export)).map(|n| n.id.as_str()).collect();
     let want = [
-        "typescript.download.download",
-        "typescript.series.load",
-        "typescript.series.parse",
-        "typescript.series.smooth",
-        "typescript.plot.trend",
-        "typescript.plot.saveSvg",
-        "typescript.series.Month",
-        "typescript.series.Smoothed",
-        "typescript.settings.Settings",
+        "sunspots.download.download",
+        "sunspots.series.load",
+        "sunspots.series.parse",
+        "sunspots.series.smooth",
+        "sunspots.plot.trend",
+        "sunspots.plot.saveSvg",
+        "sunspots.series.Month",
+        "sunspots.series.Smoothed",
+        "sunspots.settings.Settings",
     ];
     assert_eq!(doors, want.into_iter().collect());
 }
@@ -590,20 +590,20 @@ fn typescript_follows_every_principle() {
 #[test]
 fn typescript_the_records_go_from_step_to_step() {
     let t = typescript();
-    let (month, smoothed, settings) = ("typescript.series.Month", "typescript.series.Smoothed", "typescript.settings.Settings");
-    assert!(edge(t, EdgeKind::Returns, "typescript.series.load", month));
-    assert!(edge(t, EdgeKind::Takes, "typescript.series.smooth", month));
-    assert!(edge(t, EdgeKind::Returns, "typescript.series.smooth", smoothed));
+    let (month, smoothed, settings) = ("sunspots.series.Month", "sunspots.series.Smoothed", "sunspots.settings.Settings");
+    assert!(edge(t, EdgeKind::Returns, "sunspots.series.load", month));
+    assert!(edge(t, EdgeKind::Takes, "sunspots.series.smooth", month));
+    assert!(edge(t, EdgeKind::Returns, "sunspots.series.smooth", smoothed));
     for ty in [month, smoothed, settings] {
-        assert!(edge(t, EdgeKind::Takes, "typescript.plot.trend", ty), "trend takes {ty}");
+        assert!(edge(t, EdgeKind::Takes, "sunspots.plot.trend", ty), "trend takes {ty}");
     }
-    let main = "typescript.cli.main";
-    let loading = step(t, main, "typescript.series.load");
+    let main = "sunspots.cli.main";
+    let loading = step(t, main, "sunspots.series.load");
     assert_eq!((names(&loading.gives), types(&loading.gives)), (vec!["series"], vec![month]));
-    let smoothing = step(t, main, "typescript.series.smooth");
+    let smoothing = step(t, main, "sunspots.series.smooth");
     assert!(smoothing.hands.iter().any(|h| h.name == "series" && h.ty == month), "{:?}", smoothing.hands);
     assert_eq!((names(&smoothing.gives), types(&smoothing.gives)), (vec!["smoothed"], vec![smoothed]));
-    let drawing = step(t, main, "typescript.plot.trend");
+    let drawing = step(t, main, "sunspots.plot.trend");
     assert_eq!((names(&drawing.hands), types(&drawing.hands)), (vec!["series", "smoothed", "settings"], vec![month, smoothed, settings]));
     assert!(t.edges.iter().all(|e| e.kind != EdgeKind::Mutates));
 }
@@ -615,11 +615,11 @@ fn typescript_the_records_go_from_step_to_step() {
 #[test]
 fn typescript_the_figure_is_a_document() {
     let t = typescript();
-    assert_eq!(node(t, "typescript.plot.trend").returns.as_ref().map(|r| r.written.as_str()), Some("string"));
-    let main = "typescript.cli.main";
-    let drawing = step(t, main, "typescript.plot.trend");
+    assert_eq!(node(t, "sunspots.plot.trend").returns.as_ref().map(|r| r.written.as_str()), Some("string"));
+    let main = "sunspots.cli.main";
+    let drawing = step(t, main, "sunspots.plot.trend");
     assert_eq!(types(&drawing.gives), [""]);
-    let saving = step(t, main, "typescript.plot.saveSvg");
+    let saving = step(t, main, "sunspots.plot.saveSvg");
     let document: Vec<&Held> = saving.hands.iter().filter(|h| h.name != "values").collect();
     assert_eq!(document, drawing.gives.iter().collect::<Vec<_>>());
     assert_eq!(names(&saving.hands), ["values", drawing.gives[0].name.as_str()]);
@@ -632,13 +632,13 @@ fn typescript_the_places_are_made_whole_at_the_entry() {
     let t = typescript();
     assert_eq!(found(t, "places"), Vec::<String>::new());
     for (f, kind, artifact) in [
-        ("typescript.download.download", "net", "www.sidc.be"),
-        ("typescript.download.download", "disk_write", "data/raw/sunspots.csv"),
-        ("typescript.series.load", "disk_read", "data/raw/sunspots.csv"),
-        ("typescript.plot.saveSvg", "disk_write", "figures/sunspots.svg"),
+        ("sunspots.download.download", "net", "www.sidc.be"),
+        ("sunspots.download.download", "disk_write", "data/raw/sunspots.csv"),
+        ("sunspots.series.load", "disk_read", "data/raw/sunspots.csv"),
+        ("sunspots.plot.saveSvg", "disk_write", "figures/sunspots.svg"),
     ] {
         let ts = touches(t, f, kind);
-        assert!(ts.iter().any(|x| x.artifact == artifact && !x.fixed && x.by == ["typescript.cli.main"]), "{f} {kind} {artifact}: {ts:#?}");
+        assert!(ts.iter().any(|x| x.artifact == artifact && !x.fixed && x.by == ["sunspots.cli.main"]), "{f} {kind} {artifact}: {ts:#?}");
     }
 }
 
@@ -647,8 +647,8 @@ fn typescript_the_places_are_made_whole_at_the_entry() {
 /// `main` gives `settings`, as Python's `Settings(months=months)` does.
 #[test]
 fn typescript_main_makes_its_settings() {
-    let main = node(typescript(), "typescript.cli.main");
-    let made = main.sites.iter().any(|s| s.gives.iter().any(|g| g.name == "settings" && g.ty == "typescript.settings.Settings"));
+    let main = node(typescript(), "sunspots.cli.main");
+    let made = main.sites.iter().any(|s| s.gives.iter().any(|g| g.name == "settings" && g.ty == "sunspots.settings.Settings"));
     assert!(made, "{:#?}", main.sites);
 }
 
@@ -794,11 +794,11 @@ fn ports() -> [Port; 3] {
         Port {
             language: "TypeScript",
             g: typescript(),
-            run: "typescript.cli.main",
-            download: "typescript.download.download",
-            load: "typescript.series.load",
-            smooth: "typescript.series.smooth",
-            save: "typescript.plot.saveSvg",
+            run: "sunspots.cli.main",
+            download: "sunspots.download.download",
+            load: "sunspots.series.load",
+            smooth: "sunspots.series.smooth",
+            save: "sunspots.plot.saveSvg",
         },
         Port {
             language: "Rust",
@@ -1010,14 +1010,14 @@ fn the_port_parses_its_command_line_in_the_entry() {
     let parse = step(rust_clean(), "sunspots.main.main", "sunspots.main.Cli");
     assert_eq!((parse.command_line.as_ref(), names(&parse.gives)), (Some(&options), vec!["cli"]));
     assert_eq!(names(&step(rust_clean(), "sunspots.main.main", "sunspots.download.download").hands), ["cli"]);
-    let main = node(typescript(), "typescript.cli.main");
+    let main = node(typescript(), "sunspots.cli.main");
     let parse = main.sites.iter().find(|s| s.op == "parseArgs").expect("main parses its command line");
     assert_eq!((parse.command_line.as_ref(), names(&parse.gives)), (Some(&options), vec!["values"]));
-    assert_eq!(names(&step(typescript(), "typescript.cli.main", "typescript.download.download").hands), ["values"]);
+    assert_eq!(names(&step(typescript(), "sunspots.cli.main", "sunspots.download.download").hands), ["values"]);
     assert!(node(clean(), "sunspots.cli.run").sites.iter().all(|s| s.command_line.is_none()));
     let rs = atlas_engine::story::route(rust_clean(), "sunspots.main.main", 1).unwrap();
     assert!(rs.starts_with("CLI · sunspots --raw --figure --months\n") && !rs.contains("Cli()"), "{rs}");
-    let ts = atlas_engine::story::route(typescript(), "typescript.cli", 2).unwrap();
+    let ts = atlas_engine::story::route(typescript(), "sunspots.cli", 2).unwrap();
     assert!(ts.starts_with("CLI · sunspots --raw --figure --months\n") && ts.contains("download") && !ts.contains("parseArgs"), "{ts}");
 }
 
@@ -1048,8 +1048,8 @@ fn the_port_differs_by_language() {
         assert_eq!(gives(&py, to), ["ext:pandas.DataFrame"], "{to}");
     }
     assert!(!own(py.g, "ext:pandas.DataFrame"));
-    for (p, scope) in [(&ts, "typescript"), (&rs, "sunspots")] {
-        let (month, smoothed) = (format!("{scope}.series.Month"), format!("{scope}.series.Smoothed"));
+    for p in [&ts, &rs] {
+        let (month, smoothed) = (String::from("sunspots.series.Month"), String::from("sunspots.series.Smoothed"));
         assert_eq!(gives(p, p.load), [month.clone()], "{}", p.language);
         assert_eq!(gives(p, p.smooth), [smoothed.clone()], "{}", p.language);
         assert!(own(p.g, &month) && own(p.g, &smoothed), "{}", p.language);
@@ -1059,7 +1059,7 @@ fn the_port_differs_by_language() {
     let wrote = |p: &Port, op: &str| touches(p.g, p.save, "disk_write").iter().any(|t| t.op == op);
     assert!(edge(py.g, EdgeKind::Returns, "sunspots.plot.Trend.draw", "ext:matplotlib.figure.Figure"));
     assert!(wrote(&py, "savefig"));
-    let trend = node(ts.g, "typescript.plot.trend").returns.as_ref().unwrap();
+    let trend = node(ts.g, "sunspots.plot.trend").returns.as_ref().unwrap();
     assert_eq!((trend.written.as_str(), trend.value.as_str()), ("string", "string"));
     assert!(wrote(&ts, "writeFile"));
     let draw = node(rs.g, "sunspots.plot.Trend.draw").returns.as_ref().unwrap();
@@ -1089,7 +1089,7 @@ fn the_port_differs_by_language() {
     // a `Promise` says that a step waits, not that it fails: it rejects where what it runs throws
     let effects = |f: &str| (fails(&ts, f), raises(&ts, f));
     assert_eq!(
-        [ts.download, ts.load, ts.smooth, "typescript.plot.trend", ts.save].map(effects),
+        [ts.download, ts.load, ts.smooth, "sunspots.plot.trend", ts.save].map(effects),
         [(false, true), (false, false), (false, false), (false, true), (false, false)]
     );
     for f in [py.download, py.load, py.smooth, py.save, "sunspots.plot.Trend.draw"] {

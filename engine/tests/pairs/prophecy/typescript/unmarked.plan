@@ -1,6 +1,6 @@
 # Without the mark the sketch is read as built; `run` writes the report to the built `Sink`, which logs it.
 
-route unmarked.run
+route archive.run
 step run/Sink()
 step run/Sink.write
 

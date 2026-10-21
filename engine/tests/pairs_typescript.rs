@@ -2,8 +2,8 @@
 //! the design principles; `shortcut` is the same program with the shortcuts people take under
 //! time pressure. Both read config, input and output files, keep expenses in SQLite, ask a
 //! rates service over HTTP, serve routes through Hono, run as a command and print to the
-//! terminal. Each side is read as a repository of its own, so a node is named the same on both
-//! sides after its root (`clean.ledger.Ledger`, `shortcut.ledger.Ledger`).
+//! terminal. Each side is read as a repository of its own, and both are the package `expenses`, so a
+//! node has the same id on both sides (`expenses.ledger.Ledger`), as in every pair.
 //!
 //! Each test is one principle, in three statements: the clean side reads as the algebra says,
 //! the shortcut shows as a shortcut (a finding, a place the code does not name, a call not
@@ -88,7 +88,7 @@ fn doors_say_what_goes_in() {
     // the shortcut: the door takes the unchecked type, which the picture shows as written
     let params = &node(s, "ledger.Ledger.record").params;
     assert_eq!(params.iter().map(|p| (p.ty.as_str(), p.unchecked)).collect::<Vec<_>>(), [("any", true)], "`any` says nothing");
-    assert!(!s.edges.iter().any(|e| e.kind == EdgeKind::Takes && e.src == "shortcut.ledger.Ledger.record"), "`any` names no type");
+    assert!(!s.edges.iter().any(|e| e.kind == EdgeKind::Takes && e.src == "expenses.ledger.Ledger.record"), "`any` names no type");
     assert!(asked(s, "doors", "ledger.Ledger.record"), "{:?}", asked_anywhere(s, "doors"));
     // and it is still the door the route goes through
     assert!(edge(s, EdgeKind::Calls, "server.app.POST /api/expenses", "ledger.Ledger.record"));
@@ -106,7 +106,7 @@ fn doors_any_says_nothing() {
         assert_eq!(node(c, f).params.iter().map(|p| p.ty.as_str()).collect::<Vec<_>>(), ["unknown"], "{f}");
         assert!(node(c, f).entry.is_some() && !asked(c, "doors", f), "{f} is a door that says what it takes");
     }
-    let record = asked_anywhere(s, "doors").into_iter().find(|f| f.starts_with("shortcut.ledger.Ledger.record ")).unwrap_or_default();
+    let record = asked_anywhere(s, "doors").into_iter().find(|f| f.starts_with("expenses.ledger.Ledger.record ")).unwrap_or_default();
     assert!(record.contains("`input`"), "{record}");
 }
 
@@ -140,9 +140,9 @@ fn gives_a_used_value_has_a_type() {
     assert!(node(s, "rates.http.getJson").returns.is_none());
     assert_eq!(
         asked_anywhere(s, "gives"),
-        ["shortcut.rates.http.getJson getJson gives back a value its callers use, and does not say what it is"]
+        ["expenses.rates.http.getJson getJson gives back a value its callers use, and does not say what it is"]
     );
-    assert!(!s.edges.iter().any(|e| e.kind == EdgeKind::Returns && e.src == "shortcut.rates.http.getJson"));
+    assert!(!s.edges.iter().any(|e| e.kind == EdgeKind::Returns && e.src == "expenses.rates.http.getJson"));
     // still the step that asks the service
     assert!(edge(s, EdgeKind::Calls, "rates.http.HttpRates.latest", "rates.http.getJson"));
     assert_eq!(touches(s, "rates.http.getJson", "net").len(), 1);
@@ -177,7 +177,7 @@ fn gives_a_call_says_whether_its_value_is_used() {
             .collect()
     };
     assert!(unsaid(c).is_empty(), "{:?}", unsaid(c));
-    assert!(unsaid(s).contains(&"shortcut.rates.http.HttpRates.latest -> shortcut.rates.http.getJson".to_string()), "{:?}", unsaid(s));
+    assert!(unsaid(s).contains(&"expenses.rates.http.HttpRates.latest -> expenses.rates.http.getJson".to_string()), "{:?}", unsaid(s));
 }
 
 // ---------- morphisms: a type is made by an arrow ----------
@@ -259,11 +259,11 @@ fn places_are_decided_where_the_program_starts() {
     let (c, s) = (clean(), shortcut());
     assert_eq!(
         places(c, "rates.file.FileRates.latest", "disk_read"),
-        [("data/rates.json".to_string(), vec!["clean.cli.main".to_string()])]
+        [("data/rates.json".to_string(), vec!["expenses.cli.main".to_string()])]
     );
     assert_eq!(
         places(c, "config.loadConfig", "disk_read").iter().find(|(a, _)| !a.is_empty()).map(|(_, by)| by.clone()),
-        Some(vec!["clean.server".to_string(), "clean.cli.main".to_string()])
+        Some(vec!["expenses.server".to_string(), "expenses.cli.main".to_string()])
     );
     assert!(asked_anywhere(c, "places").is_empty(), "{:?}", asked_anywhere(c, "places"));
     // the shortcut's reads and writes are still there, made whole in the library itself
@@ -330,7 +330,7 @@ fn a_place_carries_a_what() {
 fn changes_show_in_the_signature() {
     let (c, s) = (clean(), shortcut());
     assert!(edge(c, EdgeKind::Returns, "expense.normalize", "model.Expense"));
-    assert!(!c.edges.iter().any(|e| e.kind == EdgeKind::Mutates && e.src == "clean.expense.normalize"));
+    assert!(!c.edges.iter().any(|e| e.kind == EdgeKind::Mutates && e.src == "expenses.expense.normalize"));
     assert!(asked_anywhere(c, "changes").is_empty(), "{:?}", asked_anywhere(c, "changes"));
     assert!(asked(s, "changes", "expense.normalize"), "{:?}", asked_anywhere(s, "changes"));
     assert!(edge(s, EdgeKind::Calls, "ledger.Ledger.record", "expense.normalize"), "still a step of record");
@@ -363,9 +363,9 @@ fn changes_are_what_the_method_reached_changes() {
         assert!(changes(c, f).is_empty(), "{f}");
     }
     // the shortcut: a read that changes what it reads through
-    assert_eq!(changes(s, "store.ExpenseStore.all"), ["shortcut.store.ExpenseStore"]);
-    assert_eq!(changes(s, "ledger.Ledger.report"), ["shortcut.ledger.Ledger"], "through `this.store.all()`");
-    assert_eq!(changes(s, "ledger.Ledger.expenses"), ["shortcut.ledger.Ledger"]);
+    assert_eq!(changes(s, "store.ExpenseStore.all"), ["expenses.store.ExpenseStore"]);
+    assert_eq!(changes(s, "ledger.Ledger.report"), ["expenses.ledger.Ledger"], "through `this.store.all()`");
+    assert_eq!(changes(s, "ledger.Ledger.expenses"), ["expenses.ledger.Ledger"]);
 }
 
 // ---------- nothing ----------
@@ -381,14 +381,14 @@ fn changes_are_what_the_method_reached_changes() {
 #[test]
 fn nothing_a_call_leaves_something_behind() {
     let (c, s) = (clean(), shortcut());
-    assert!(c.edges.iter().any(|e| e.kind == EdgeKind::Has && e.src == "clean.ledger.Ledger" && e.dst == "clean.config.Config"));
+    assert!(c.edges.iter().any(|e| e.kind == EdgeKind::Has && e.src == "expenses.ledger.Ledger" && e.dst == "expenses.config.Config"));
     assert!(asked_anywhere(c, "nothing").is_empty(), "{:?}", asked_anywhere(c, "nothing"));
     let global =
-        |f: &str, dir: &str| touches(s, f, "global").iter().any(|t| t.artifact == "shortcut.config.current" && t.dir_name() == dir);
+        |f: &str, dir: &str| touches(s, f, "global").iter().any(|t| t.artifact == "expenses.config.current" && t.dir_name() == dir);
     assert!(global("config.configure", "write") && global("config.settings", "read"));
     assert_eq!(
         asked_anywhere(s, "nothing"),
-        ["shortcut.ledger.Ledger.exportReport Ledger.exportReport gives nothing back, and Atlas cannot see what `EXPORTERS[format](..)` does"],
+        ["expenses.ledger.Ledger.exportReport Ledger.exportReport gives nothing back, and Atlas cannot see what `EXPORTERS[format](..)` does"],
         "a call that keeps its value in a global leaves it behind"
     );
     assert!(
@@ -426,7 +426,7 @@ fn layers_run_one_way() {
     let (c, s) = (clean(), shortcut());
     assert!(asked_anywhere(c, "layers").is_empty(), "{:?}", asked_anywhere(c, "layers"));
     let arms =
-        |to: &str| node(c, "cli.main").sites.iter().find(|x| x.to == format!("clean.{to}")).map(|x| x.arms.clone()).unwrap_or_default();
+        |to: &str| node(c, "cli.main").sites.iter().find(|x| x.to == format!("expenses.{to}")).map(|x| x.arms.clone()).unwrap_or_default();
     let (file, http) = (arms("rates.file.FileRates"), arms("rates.http.HttpRates"));
     assert!(!file.is_empty() && !http.is_empty() && file != http, "the command picks one: {file:?} | {http:?}");
     let layers: Vec<Finding> = findings(s).into_iter().filter(|f| f.principle == "layers").collect();
@@ -450,7 +450,7 @@ fn lens_gives_back_what_it_puts() {
     assert!(edge(c, EdgeKind::Returns, "store.ExpenseStore.all", "model.Expense"));
     // the shortcut: what comes back has no type
     assert!(edge(s, EdgeKind::Takes, "store.ExpenseStore.add", "model.Expense"));
-    assert!(!s.edges.iter().any(|e| e.kind == EdgeKind::Returns && e.src == "shortcut.store.ExpenseStore.all"));
+    assert!(!s.edges.iter().any(|e| e.kind == EdgeKind::Returns && e.src == "expenses.store.ExpenseStore.all"));
     assert!(edge(s, EdgeKind::Calls, "ledger.Ledger.report", "store.ExpenseStore.all"), "still read by the report");
 }
 
@@ -639,13 +639,13 @@ fn prophecy_a_decided_vision_is_marked_where_it_is_written() {
         "typescript",
         "src/index.ts",
         "\n/** Where reports wait. */\nexport declare class Vault {\n  keep(report: string): void;\n}\n",
-        &[("clean.Vault", "clean.Sink")],
+        &[("archive.Vault", "archive.Sink")],
     );
     let text = decided.files.values().next().expect("one file is written");
-    assert!(text.contains("@prophecy supersedes=clean.Sink"), "{text}");
-    assert_eq!(decided.marked, ["clean.Vault"]);
-    let vault = stands.iter().find(|s| s.id == "clean.Vault").expect("the revelation lists what was decided");
-    assert_eq!(vault.supersedes.as_deref(), Some("clean.Sink"));
+    assert!(text.contains("@prophecy supersedes=archive.Sink"), "{text}");
+    assert_eq!(decided.marked, ["archive.Vault"]);
+    let vault = stands.iter().find(|s| s.id == "archive.Vault").expect("the revelation lists what was decided");
+    assert_eq!(vault.supersedes.as_deref(), Some("archive.Sink"));
     assert!(vault.holds, "{vault:?}");
     assert_eq!(stands.len(), 3, "the two prophecies of the clean side, and the new one: {stands:?}");
 }
@@ -657,24 +657,27 @@ fn prophecy_a_decided_vision_is_marked_where_it_is_written() {
 #[test]
 fn prophecy_a_seal_is_listed_and_broken_when_its_issue_is_closed() {
     use atlas_engine::revelation::{revelation, seals, IssueState};
-    let (copy, g) = common::written("typescript", "src/index.ts", "\n/** @prophecy supersedes=clean.Sink sealed=#7 */\nexport declare class Vault {\n  keep(report: string): void;\n}\n\n/** @prophecy sealed=#8 */\nexport declare class Crate {\n  pack(report: string): void;\n}\n");
+    let (copy, g) = common::written("typescript", "src/index.ts", "\n/** @prophecy supersedes=archive.Sink sealed=#7 */\nexport declare class Vault {\n  keep(report: string): void;\n}\n\n/** @prophecy sealed=#8 */\nexport declare class Crate {\n  pack(report: string): void;\n}\n");
     let lookup = |issue: &str| Some((if issue == "#7" { IssueState::Closed } else { IssueState::Open }, format!("question {issue}")));
     let listed = seals(&revelation(&g), &lookup);
     assert_eq!(
         listed.iter().map(|s| (s.id.as_str(), s.can_be_broken())).collect::<Vec<_>>(),
-        [("clean.Vault", true), ("clean.Crate", false)].map(|(i, b)| (i, b))
+        [("archive.Vault", true), ("archive.Crate", false)].map(|(i, b)| (i, b))
     );
-    let broken = atlas_engine::decide::unseal(&g, &["clean.Vault".to_string()]).expect("a closed seal is broken");
+    let broken = atlas_engine::decide::unseal(&g, &["archive.Vault".to_string()]).expect("a closed seal is broken");
     let text = broken.values().next().expect("one file");
     assert!(!text.contains("#7") && text.contains("#8"), "only the broken seal leaves: {text}");
     for (rel, t) in &broken {
         std::fs::write(copy.join(rel), t).expect("writes the file");
     }
     let after = revelation(&atlas_engine::analyze(&copy, &atlas_engine::Options::default()).expect("reads"));
-    let vault = after.iter().find(|s| s.id == "clean.Vault").expect("still a prophecy");
+    let vault = after.iter().find(|s| s.id == "archive.Vault").expect("still a prophecy");
     assert!(vault.sealed.is_none() && vault.supersedes.as_deref().is_some_and(|r| r.ends_with("Sink")), "{vault:?}");
-    assert_eq!(after.iter().find(|s| s.id == "clean.Crate").and_then(|s| s.sealed.as_deref()), Some("#8"));
-    assert!(atlas_engine::decide::unseal(&g, &["clean.Store".to_string()]).is_err(), "a prophecy that is not sealed has no seal to break");
+    assert_eq!(after.iter().find(|s| s.id == "archive.Crate").and_then(|s| s.sealed.as_deref()), Some("#8"));
+    assert!(
+        atlas_engine::decide::unseal(&g, &["archive.Store".to_string()]).is_err(),
+        "a prophecy that is not sealed has no seal to break"
+    );
     let _ = std::fs::remove_dir_all(copy.parent().expect("has a parent"));
 }
 
@@ -838,7 +841,7 @@ fn overrides_an_override_takes_what_its_base_takes_and_a_type_is_its_members() {
     assert!(edge(&c, EdgeKind::Takes, "handlers.ClickHandler.log", "handlers.Named"));
     assert_eq!(
         asked_anywhere(&s, "overrides"),
-        ["shortcut.handlers.Handler.handle Handler.handle promises (e: Event) -> string; 1 override breaks it"]
+        ["events.handlers.Handler.handle Handler.handle promises (e: Event) -> string; 1 override breaks it"]
     );
     assert!(edge(&s, EdgeKind::Takes, "handlers.ClickHandler.handle", "handlers.Click"));
     assert!(edge(&s, EdgeKind::Inherits, "handlers.Click", "handlers.Event"));
@@ -870,13 +873,13 @@ fn changes_a_change_to_an_input_of_any_type_shows_in_the_signature() {
     let mut changes: Vec<String> = findings(&s).into_iter().filter(|f| f.principle == "changes").map(|f| f.node).collect();
     changes.sort();
     let want = ["Ledger.takeFrom", "Ledger.takeVictim", "addLine", "count", "fileAll", "rename"];
-    assert_eq!(changes, want.map(|f| format!("shortcut.ledger.{f}")));
+    assert_eq!(changes, want.map(|f| format!("ledger.ledger.{f}")));
     assert!(asked_anywhere(&s, "nothing").is_empty(), "{:?}", asked_anywhere(&s, "nothing"));
     let inputs = |f: &str| {
         let mut via: Vec<&str> = s
             .edges
             .iter()
-            .filter(|e| e.kind == EdgeKind::Mutates && e.src == format!("shortcut.ledger.{f}"))
+            .filter(|e| e.kind == EdgeKind::Mutates && e.src == format!("ledger.ledger.{f}"))
             .filter_map(|e| e.via.as_deref())
             .collect();
         via.sort();
@@ -885,7 +888,7 @@ fn changes_a_change_to_an_input_of_any_type_shows_in_the_signature() {
     assert_eq!(inputs("Ledger.takeFrom"), ["other", "this"]);
     assert_eq!(inputs("Ledger.takeVictim"), ["this", "victim"]);
     assert!(
-        s.edges.iter().any(|e| e.kind == EdgeKind::Mutates && e.src == "shortcut.ledger.addLine" && e.dst == "ext:javascript.Array"),
+        s.edges.iter().any(|e| e.kind == EdgeKind::Mutates && e.src == "ledger.ledger.addLine" && e.dst == "ext:javascript.Array"),
         "an array is what changes"
     );
 }
@@ -907,7 +910,7 @@ fn cyc_typescript(side: &str) -> Graph {
 fn layers_a_directorys_own_index_depends_in_one_direction() {
     let (c, s) = (cyc_typescript("clean"), cyc_typescript("shortcut"));
     assert!(asked_anywhere(&c, "layers").is_empty(), "{:?}", asked_anywhere(&c, "layers"));
-    assert_eq!(asked_anywhere(&s, "layers"), ["shortcut.orders orders itself and lines depend on one another"]);
+    assert_eq!(asked_anywhere(&s, "layers"), ["cyc.orders orders itself and lines depend on one another"]);
     assert!(edge(&s, EdgeKind::Calls, "orders.total", "orders.lines.price"));
     assert!(edge(&s, EdgeKind::Calls, "orders.lines.price", "orders.tax"));
 }
@@ -946,7 +949,7 @@ fn prophecy_a_test_leans_on_a_prophecy_freely() {
     assert!(findings(&c).is_empty(), "{:?}", findings(&c).iter().map(|f| format!("{} {}", f.principle, f.what)).collect::<Vec<_>>());
     assert!(edge(&c, EdgeKind::Calls, "index_test.sealedTwice", "seal"));
     assert!(edge(&c, EdgeKind::Calls, "__tests__.sealed.sealed", "seal"));
-    assert_eq!(asked_anywhere(&s, "prophecy"), ["shortcut.check.sealedTwice sealedTwice leans on `seal`, which is not built"]);
+    assert_eq!(asked_anywhere(&s, "prophecy"), ["archive.check.sealedTwice sealedTwice leans on `seal`, which is not built"]);
 }
 
 /// A name the prophecy's `supersedes` writes names one node, by its whole id or by the one id that
@@ -958,11 +961,11 @@ fn prophecy_a_name_that_names_several_nodes_is_ambiguous() {
     let (c, s) = (prophecy_typescript("names", "clean"), prophecy_typescript("names", "shortcut"));
     assert!(asked_anywhere(&c, "prophecy").is_empty(), "{:?}", asked_anywhere(&c, "prophecy"));
     let replaces = |g: &Graph, id: &str| node(g, id).prophecy.as_ref().and_then(|p| p.replaces.clone());
-    assert_eq!(replaces(&c, "savePosted").as_deref(), Some("clean.ledger.save"));
-    assert_eq!(replaces(&c, "saveKept").as_deref(), Some("clean.shelf.save"));
+    assert_eq!(replaces(&c, "savePosted").as_deref(), Some("archive.ledger.save"));
+    assert_eq!(replaces(&c, "saveKept").as_deref(), Some("archive.shelf.save"));
     assert_eq!(
         asked_anywhere(&s, "prophecy"),
-        ["shortcut.savePosted savePosted supersedes `save`, which names 2 nodes: `shortcut.ledger.save` and `shortcut.shelf.save`"]
+        ["archive.savePosted savePosted supersedes `save`, which names 2 nodes: `archive.ledger.save` and `archive.shelf.save`"]
     );
 }
 
@@ -994,13 +997,13 @@ fn doors_every_declaration_of_a_door_says_what_goes_in_and_out() {
     assert_eq!(node(&c, "core.Length.meters").returns.as_ref().map(|r| r.written.as_str()), Some("number"));
     assert_eq!(node(&c, "core.Length").methods, ["constructor", "meters", "plus"]);
     // the class's route runs its constructor once, then what a user may run on it
-    let steps: Vec<String> = atlas_engine::flow::bodies(&c)["clean.core.Length"].steps().iter().map(|s| s.to.clone()).collect();
-    assert_eq!(steps, ["constructor", "meters", "plus"].map(|m| format!("clean.core.Length.{m}")));
+    let steps: Vec<String> = atlas_engine::flow::bodies(&c)["units.core.Length"].steps().iter().map(|s| s.to.clone()).collect();
+    assert_eq!(steps, ["constructor", "meters", "plus"].map(|m| format!("units.core.Length.{m}")));
     // the shortcut: each door left open is asked, at the declaration that leaves it open
     let asked: Vec<(String, u32)> = findings(&s)
         .into_iter()
         .filter(|f| f.principle == "doors")
-        .map(|f| (f.node.trim_start_matches("shortcut.").to_string(), f.line))
+        .map(|f| (f.node.trim_start_matches("units.").to_string(), f.line))
         .collect();
     let want = [("core.Length.meters", 9), ("core.scale", 23), ("core.log", 28), ("core.parse", 32)];
     assert_eq!(asked, want.map(|(n, l)| (n.to_string(), l)));
