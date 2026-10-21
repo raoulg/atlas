@@ -32,11 +32,11 @@ known #74 line Kennisbank > Kennisbank()/Kennisbank.graaf value
 
 # the put: the Bron a caller hands is written into the line `write` appends to what the file held
 line Bron·bron > Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write value                    # what it is handed: `bron.uuid`, `bron.url` glue `bron` in
-line Disk(self.path) > Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write own
-line Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write > Disk(self.path) own
+line Disk(Kennisbank.path) > Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write own
+line Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write > Disk(Kennisbank.path) own
 
 # the get: the lines read, each a Bron or a Begrip injected into Node, the Nodes in the Graaf given back
-line Disk(self.path) > Kennisbank()/Kennisbank.graaf own
+line Disk(Kennisbank.path) > Kennisbank()/Kennisbank.graaf own
 line Kennisbank()/Kennisbank.graaf/node/?1/Bron() > Bron@Kennisbank()/Kennisbank.graaf/node/?1/Bron() value
 line Bron@Kennisbank()/Kennisbank.graaf/node/?1/Bron() > Kennisbank()/Kennisbank.graaf/node/?1/Node() value
 line Kennisbank()/Kennisbank.graaf/node/?1/Node() > Node@Kennisbank()/Kennisbank.graaf/node/?1 value
@@ -111,7 +111,7 @@ known #138 home _@Kennisbank()/Kennisbank.voeg_toe Kennisbank()
 known #138 home _@Kennisbank()/Kennisbank.graaf Kennisbank()
 
 side entry left
-known #133 side Disk(self.path) both          # voeg_toe reads what the file held and changes it: Atlas says between
+known #133 side Disk(Kennisbank.path) both          # voeg_toe reads what the file held and changes it: Atlas says between
 
 # building the struct the route is about is read as a call of the route inside itself
 known #151 extra step Kennisbank()/Kennisbank.new/Kennisbank() recursive

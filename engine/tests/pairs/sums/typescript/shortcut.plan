@@ -18,10 +18,10 @@ known #74 line Kennisbank > Kennisbank()/Kennisbank.voegToe/Kennisbank.write val
 known #74 line Kennisbank > Kennisbank()/Kennisbank.graaf value
 
 line Bron·bron > Kennisbank()/Kennisbank.voegToe/Kennisbank.write value                    # what it is handed: `bron.uuid`, `bron.url` glue `bron` in
-line Disk(this.path) > Kennisbank()/Kennisbank.voegToe/Kennisbank.write own
-line Kennisbank()/Kennisbank.voegToe/Kennisbank.write > Disk(this.path) own
+line Disk(Kennisbank.path) > Kennisbank()/Kennisbank.voegToe/Kennisbank.write own
+line Kennisbank()/Kennisbank.voegToe/Kennisbank.write > Disk(Kennisbank.path) own
 
-line Disk(this.path) > Kennisbank()/Kennisbank.graaf own
+line Disk(Kennisbank.path) > Kennisbank()/Kennisbank.graaf own
 
 home Kennisbank@Kennisbank()/Kennisbank() Kennisbank()
 known #74 home Kennisbank Kennisbank()
@@ -40,7 +40,7 @@ known #125 home _·soort@Kennisbank()/Kennisbank.graaf/split Kennisbank()/Kennis
 known #125 home _·tekst@Kennisbank()/Kennisbank.graaf/split Kennisbank()/Kennisbank.graaf
 
 side entry left
-known #133 side Disk(this.path) both          # voegToe reads what the file held and changes it: Atlas says right
+known #133 side Disk(Kennisbank.path) both          # voegToe reads what the file held and changes it: Atlas says right
 
 # the door's own arrow takes, as a nameless value from beyond, the Bron its call is handed, though only `write`
 # inside takes it

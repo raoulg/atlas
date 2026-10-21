@@ -34,24 +34,24 @@ line entry > ReadingStore()/ReadingStore.summary call
 line ReadingStore()/ReadingStore() > ReadingStore@ReadingStore()/ReadingStore() value
 known #74 line ReadingStore > ReadingStore()/ReadingStore.save value   # the caller's instance
 known #127 line Reading·reading > ReadingStore()/ReadingStore.save value   # #127
-line Disk(this.readings) > ReadingStore()/ReadingStore.save own
-line ReadingStore()/ReadingStore.save > Disk(this.readings) own
+line Disk(ReadingStore.readings) > ReadingStore()/ReadingStore.save own
+line ReadingStore()/ReadingStore.save > Disk(ReadingStore.readings) own
 known #74 line ReadingStore > ReadingStore()/ReadingStore.history value   # the caller's instance
-line Disk(this.readings) > ReadingStore()/ReadingStore.history own
+line Disk(ReadingStore.readings) > ReadingStore()/ReadingStore.history own
 line ReadingStore()/ReadingStore.history/Reading() > Reading@ReadingStore()/ReadingStore.history/Reading() value
 line Reading@ReadingStore()/ReadingStore.history/Reading() > ReadingStore()/ReadingStore.history value
 line ReadingStore()/ReadingStore.history > Reading@ReadingStore()/ReadingStore.history value
 known #74 line ReadingStore > ReadingStore()/ReadingStore.saveOutage value   # the caller's instance
 known #127 line Outage·outage > ReadingStore()/ReadingStore.saveOutage value   # #127
-line Disk(this.outages) > ReadingStore()/ReadingStore.saveOutage own
-line ReadingStore()/ReadingStore.saveOutage > Disk(this.outages) own
+line Disk(ReadingStore.outages) > ReadingStore()/ReadingStore.saveOutage own
+line ReadingStore()/ReadingStore.saveOutage > Disk(ReadingStore.outages) own
 known #74 line ReadingStore > ReadingStore()/ReadingStore.outages value   # the caller's instance
-line Disk(this.outages) > ReadingStore()/ReadingStore.outages own
+line Disk(ReadingStore.outages) > ReadingStore()/ReadingStore.outages own
 known #74 line ReadingStore > ReadingStore()/ReadingStore.summary value   # the caller's instance, for the write it makes itself (#126 too: Atlas hands it to history only)
 known #74 line ReadingStore > ReadingStore()/ReadingStore.summary/readFileSync value   # the caller's instance: readFileSync is handed `this.summaries`
 known #127 line Day·day > ReadingStore()/ReadingStore.summary value   # #127: the key it looks for is made of the day
-line Disk(this.summaries) > ReadingStore()/ReadingStore.summary own
-line ReadingStore()/ReadingStore.summary > Disk(this.summaries) own
+line Disk(ReadingStore.summaries) > ReadingStore()/ReadingStore.summary own
+line ReadingStore()/ReadingStore.summary > Disk(ReadingStore.summaries) own
 line ReadingStore()/ReadingStore.summary/readFileSync > _·text@ReadingStore()/ReadingStore.summary/readFileSync value
 known #125 line _·text@ReadingStore()/ReadingStore.summary/readFileSync > ReadingStore()/ReadingStore.summary/find value   # #125: its lines go into find
 known #101 line _·text@ReadingStore()/ReadingStore.summary/readFileSync > ReadingStore()/ReadingStore.summary value   # written back with the new line
@@ -59,7 +59,7 @@ line ReadingStore()/ReadingStore.summary/find > _·kept@ReadingStore()/ReadingSt
 known #101 line _·kept@ReadingStore()/ReadingStore.summary/find > ReadingStore()/ReadingStore.summary value   # it decides the choice and is returned
 known #74 line ReadingStore > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history value   # the caller's instance (and #130)
 known #130 line Day·day > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history value   # #130: the code after `return` is the other arm
-known #130 line Disk(this.readings) > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history own   # #130: the code after `return` is the other arm
+known #130 line Disk(ReadingStore.readings) > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history own   # #130: the code after `return` is the other arm
 known #130 line ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/Reading() > Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/Reading() value   # #130: the code after `return` is the other arm
 known #130 line Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/Reading() > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history value   # #130: the code after `return` is the other arm
 known #130 line ReadingStore()/ReadingStore.summary/?1/ReadingStore.history > Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history value   # #130: the code after `return` is the other arm
@@ -82,9 +82,9 @@ known #130 home _·temperatures@ReadingStore()/ReadingStore.summary/?1/map Readi
 home Day·day ReadingStore()
 
 side entry left
-known #133 side Disk(this.readings) both   # #133: Atlas draws it between
-known #76 side Disk(this.outages) both   # Atlas: right, as if what `outages` returns were unused
-known #76 side Disk(this.summaries) both   # Atlas: right, as if what summary reads were unused
+known #133 side Disk(ReadingStore.readings) both   # #133: Atlas draws it between
+known #76 side Disk(ReadingStore.outages) both   # Atlas: right, as if what `outages` returns were unused
+known #76 side Disk(ReadingStore.summaries) both   # Atlas: right, as if what summary reads were unused
 
 # what Atlas has and the code does not say
 known #74 extra line ReadingStore@ReadingStore()/ReadingStore() > ReadingStore()/ReadingStore.save value   # Atlas runs it on what the constructor built
@@ -102,7 +102,7 @@ known #125 extra home _@ReadingStore()/ReadingStore.summary/text.split ReadingSt
 known #130 extra home _·temperatures@ReadingStore()/ReadingStore.summary/map ReadingStore()/ReadingStore.summary   # #130: drawn outside the arm the early return makes
 known #127 extra line Day > ReadingStore()/ReadingStore.summary value   # #127: a parameter by its type, not as the value handed
 known #130 extra line Day·day > ReadingStore()/ReadingStore.summary/ReadingStore.history value   # #130: drawn outside the arm the early return makes
-known #130 extra line Disk(this.readings) > ReadingStore()/ReadingStore.summary/ReadingStore.history own   # #130: drawn outside the arm the early return makes
+known #130 extra line Disk(ReadingStore.readings) > ReadingStore()/ReadingStore.summary/ReadingStore.history own   # #130: drawn outside the arm the early return makes
 known #127 extra line Outage > ReadingStore()/ReadingStore.saveOutage value   # #127: a parameter by its type, not as the value handed
 known #127 extra line Reading > ReadingStore()/ReadingStore.save value   # #127: a parameter by its type, not as the value handed
 known #126 extra line Reading@ReadingStore()/ReadingStore.summary/ReadingStore.history > ReadingStore()/ReadingStore.summary value   # #126: summary gives back a line, not the Readings

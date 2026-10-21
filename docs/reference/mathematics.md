@@ -371,7 +371,12 @@ open:
   holds a sum holds the sum, whichever variants the reader lists of it (Coproducts), one a
   constructor fills holds what it builds, and a name handed on holds what the body last gave it;
 - every place of the world is at its concrete place (a path, a table, a command); what a step reads
-  back of what it wrote there is a value at a moment inside the step (rule 4);
+  back of what it wrote there is a value at a moment inside the step (rule 4). A place named by a
+  value an object holds is one place wherever it is reached: a method runs on an instance its class's
+  constructor built, so `self.path` in a method and `path` in a helper it hands it to are both
+  `Disk(Store.path)`. A module's global holds what rests in its place, `Global(m.df)`; a step its body
+  hands it to takes it there, no value from beyond, until a step of the body makes it anew. A figure a
+  library draws on rests in that figure (`Figure`) until something saves or shows it;
 - a step's own arrow is its witness at its border: its signature and its own touches, the lines that
   cross its frame. An opened step draws it as a point on the frame's right edge, not as a step beside
   its steps: a value its call is handed crosses the frame to the step inside that takes it, and the

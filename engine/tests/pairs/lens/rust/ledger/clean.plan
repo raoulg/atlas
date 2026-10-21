@@ -23,9 +23,9 @@ known #74 line Ledger > Ledger()/Ledger.put value   # the caller's instance: eve
 known #74 line Ledger > Ledger()/Ledger.get/read_to_string value   # the method hands `self.path` to it
 
 known #127 line Decimal·amount > Ledger()/Ledger.put value       # #127: put's parameter, a library's type
-line Ledger()/Ledger.put > Disk(self.path) own
+line Ledger()/Ledger.put > Disk(Ledger.path) own
 
-line Disk(self.path) > Ledger()/Ledger.get own
+line Disk(Ledger.path) > Ledger()/Ledger.get own
 line Ledger()/Ledger.get/read_to_string > _·text@Ledger()/Ledger.get/read_to_string value
 known #125 line _·text@Ledger()/Ledger.get/read_to_string > Ledger()/Ledger.get/map_err value   # #125: from_str's result goes into map_err
 line Ledger()/Ledger.get/map_err > _·amount@Ledger()/Ledger.get/map_err value
@@ -52,7 +52,7 @@ known #138 home Error@Ledger()/Ledger.get/map_err Ledger()/Ledger.get
 known #138 home Error@Ledger()/Ledger.get Ledger()
 
 side entry left
-side Disk(self.path) between
+side Disk(Ledger.path) between
 
 # building the exported struct runs its public functions, `new` among them, so the literal is read as recursive
 known #74 extra step Ledger()/Ledger.new/Ledger() recursive

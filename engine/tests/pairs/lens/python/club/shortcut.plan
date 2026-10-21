@@ -14,15 +14,15 @@ line Board()/Board() > Board@Board()/Board() value
 known #74 line Board > Board()/Board.pin value   # the caller's instance: every method runs on it
 known #74 line Board > Board()/Board.posts value
 known #127 line Notice·notice > Board()/Board.pin value          # #127
-line Board()/Board.pin > Disk(self.path) own
-line Disk(self.path) > Board()/Board.posts own
+line Board()/Board.pin > Disk(Board.path) own
+line Disk(Board.path) > Board()/Board.posts own
 
 home Board@Board()/Board() Board()
 known #74 home Board Board()
 known #127 home Notice·notice Board()
 
 side entry left
-known #76 side Disk(self.path) between                         # Atlas: right, as if what posts returns were unused
+side Disk(Board.path) between                                   # posts reads and hands on what pin left
 
 # #127: the parameter of a method the entry calls has lost its name
 known #127 extra line Notice > Board()/Board.pin value

@@ -18,8 +18,8 @@ line Board()/Board() > Board@Board()/Board() value
 known #74 line Board > Board()/Board.pin value   # the caller's instance: every method runs on it
 known #74 line Board > Board()/Board.posts value
 known #127 line Notice·notice > Board()/Board.pin value          # #127
-line Board()/Board.pin > Disk(this.path) own
-line Disk(this.path) > Board()/Board.posts own
+line Board()/Board.pin > Disk(Board.path) own
+line Disk(Board.path) > Board()/Board.posts own
 line Board()/Board.posts/Notice() > Notice@Board()/Board.posts/Notice() value
 line Notice@Board()/Board.posts/Notice() > Board()/Board.posts value
 line Board()/Board.posts > Post@Board()/Board.posts value
@@ -31,7 +31,7 @@ home Notice@Board()/Board.posts/Notice() Board()/Board.posts
 home Post@Board()/Board.posts Board()
 
 side entry left
-side Disk(this.path) between
+side Disk(Board.path) between
 
 # #127: the parameter of a method the entry calls has lost its name
 known #127 extra line Notice > Board()/Board.pin value
