@@ -1064,3 +1064,38 @@ fn composition_a_method_called_by_its_path_runs_on_its_first_argument() {
     assert_eq!(to("sources.trimmed"), [("sources.Trimmed.read".to_string(), String::new())]);
     assert_eq!(to("sources.any"), [("sources.Source.read".to_string(), String::new())]);
 }
+
+/// A version of the sunspots pipeline (`tests/pairs/pipeline`).
+fn sunspots(version: &str) -> Graph {
+    analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/pipeline").join(version), &Options::default()).expect("reads")
+}
+
+/// A place carries a what, and a collection of pairs carries none the code names: the quick
+/// pipeline's `load` gives a `Vec<(NaiveDate, f64)>` and `smooth` takes a `&[(NaiveDate, f64)]`,
+/// pairs of a date and a number, so neither gives nor takes a `NaiveDate`. The clean pipeline
+/// names its record: `load` gives `Vec<Month>`, Months, and `smooth` takes them.
+#[test]
+fn a_place_carries_a_what_a_collection_of_pairs_names_none() {
+    let (c, s) = (sunspots("rust-clean"), sunspots("rust"));
+    for (f, kind) in [("sunspots.load", EdgeKind::Returns), ("sunspots.smooth", EdgeKind::Takes), ("sunspots.smooth", EdgeKind::Returns)] {
+        assert!(targets(&s, kind, f).is_empty(), "{f} {kind:?}: {:?}", targets(&s, kind, f));
+    }
+    assert_eq!(targets(&c, EdgeKind::Returns, "sunspots.series.load"), ["sunspots.series.Month"]);
+    assert!(targets(&c, EdgeKind::Takes, "sunspots.series.smooth").contains(&"sunspots.series.Month"));
+}
+
+/// An entry run from the command line is handed the words the human types. The clean side parses
+/// them into `Cli` (clap's derive, its subcommands the arms of `main`); the shortcut reads them raw,
+/// `env::args().skip(1).collect()`, a step that takes the entry's words under the name `args`
+/// and declares no option: the code names none, so the usage says none.
+#[test]
+fn places_the_command_line_is_the_entrys() {
+    let parses = |g: &Graph| -> Vec<(String, String, Vec<String>)> {
+        node(g, "spend.main").sites.iter().filter_map(|s| Some((s.to.clone(), s.op.clone(), s.command_line.clone()?))).collect()
+    };
+    let clean = parses(clean());
+    assert!(clean.len() == 1 && clean[0].0 == "spend.Cli", "{clean:?}");
+    assert_eq!(parses(shortcut()), [(String::new(), "collect".to_string(), vec![])]);
+    let args = node(shortcut(), "spend.main").sites.iter().find(|s| s.command_line.is_some()).map(|s| s.gives.clone());
+    assert!(args.is_some_and(|g| g.iter().any(|h| h.name == "args")));
+}

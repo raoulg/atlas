@@ -6,7 +6,7 @@
 
 route gathering.Store
 step Store()/Store.new
-known #135 step Store()/Store.new/Store()  # C
+known #151 step Store()/Store.new/Store()  # C
 line entry > Store()/Store.new call
 line Store()/Store.new/Store() > Store@Store()/Store.new/Store() value
 line Store@Store()/Store.new/Store() > Store()/Store.new value
@@ -111,7 +111,7 @@ known #126 extra line Row·rows@Store()/Store.put/push > Store()/Store.put/write
 known #126 extra line Row·rows@Store()/Store.put_all/push > Store()/Store.put_all/write_rows value
 
 # C
-known #135 extra step Store()/Store.new/Store() recursive
+known #151 extra step Store()/Store.new/Store() recursive
 
 # D
 known #137 extra line Disk(self.path) > Store()/Store.get own

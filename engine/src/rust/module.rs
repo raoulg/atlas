@@ -93,11 +93,14 @@ pub(super) fn qualified(f: TsNode, src: &[u8]) -> Option<(Vec<String>, Vec<Strin
 /// [Node]]`, `impl Iterator<Item = Node>` -> `[[Iterator], [Node]]`), never a generic class's
 /// own parameters (`DrawingArea<DB, Shift>` -> `[[DrawingArea]]`). References, slices, arrays,
 /// tuples, `impl` and `dyn` go through to what they hold; a `fn(..)` or `Fn(..)` type is a
-/// callback and names none.
+/// callback and names none. A tuple is the values it pairs where it stands for one value
+/// (`-> (Config, Store)`, `Option<(Config, Store)>`); held by a collection (`Vec<(NaiveDate,
+/// f64)>`, `&[(NaiveDate, f64)]`) each element is a pair, a type the code does not name, and
+/// names none.
 pub(super) fn type_names(t: Option<TsNode>, src: &[u8]) -> Vec<Vec<String>> {
     let Some(t) = t else { return vec![] };
     let mut out = vec![];
-    collect_types(t, src, &mut out);
+    collect_types(t, src, false, &mut out);
     out
 }
 
@@ -119,7 +122,8 @@ pub(super) fn changes_inside(t: TsNode, src: &[u8]) -> bool {
     }
 }
 
-fn collect_types(n: TsNode, src: &[u8], out: &mut Vec<Vec<String>>) {
+/// The type names `n` mentions as values, `many` where a collection around it holds many of it.
+fn collect_types(n: TsNode, src: &[u8], many: bool, out: &mut Vec<Vec<String>>) {
     match n.kind() {
         "type_identifier" | "scoped_type_identifier" => {
             let parts = path_parts(Some(n), src);
@@ -130,23 +134,32 @@ fn collect_types(n: TsNode, src: &[u8], out: &mut Vec<Vec<String>>) {
         "generic_type" => {
             let parts = path_parts(n.child_by_field_name("type"), src);
             let holds = parts.last().map_or(false, |g| knowledge::rust_container(g));
+            let collects = parts.last().map_or(false, |g| knowledge::RUST_COLLECTIONS.contains(&g.as_str()));
             if !parts.is_empty() {
                 out.push(parts);
             }
             if let Some(args) = n.child_by_field_name("type_arguments").filter(|_| holds) {
-                collect_types(args, src, out);
+                collect_types(args, src, many || collects, out);
             }
         }
         // `Item = Node` names the value an iterator gives, not a type called `Item`
         "type_binding" => {
             if let Some(t) = n.child_by_field_name("type") {
-                collect_types(t, src, out);
+                collect_types(t, src, many, out);
             }
         }
+        // a slice or an array holds many of what it holds
+        "array_type" => {
+            for c in named_children(n) {
+                collect_types(c, src, true, out);
+            }
+        }
+        // a pair a collection holds is an element of a type the code does not name
+        "tuple_type" if many => {}
         "function_type" => {}
         _ => {
             for c in named_children(n) {
-                collect_types(c, src, out);
+                collect_types(c, src, many, out);
             }
         }
     }
