@@ -9,6 +9,34 @@ C (check rules), T (two versions), R (the arrows of a route) and M (the checks t
 
 Every observation was made with a release build of Atlas 0.68.0 (`8c5cc49`).
 
+## The issues
+
+One issue per root cause, each with its smallest program here:
+
+| Cards | Issue |
+| --- | --- |
+| Z7, Z8, Z9: the own pill of an open step plays two roles | #67 |
+| Z6: two parameters of one family merged in the plan | #68 |
+| Z3, Z4: package views outside the plan | #69 |
+| Z5: merging siblings after the quotient | #70 |
+| Z11: a fold's side is the OR of its members | #71 |
+| Z10: the plan budget | #72 |
+| Z2: own and reached lines share one key | #49 |
+| Z12: `[project.scripts]` in a flat module | #77 |
+| R1: reach per function, not per occurrence | #73 |
+| R2: constructing a class runs its methods | #74 |
+| R3: a path's hole dropped | #75 |
+| R4, R5: read-back use and the side of a read place | #76, #55 |
+| C1 `sums` · C2 `overrides` · C3 `doors` · C4 `places` | #78 · #79 · #80 · #81 |
+| C5 `changes` · C6 `gives` · C7 `choices` · C8 `nothing` | #82 · #83 · #84 · #85 |
+| C9 `layers` · C10 `lens` · C11 `prophecy` | #86 · #87 · #88 |
+| T1, T2, T3, T6: what changed | #89 |
+| T4: families before the route's fiber | #90 |
+| T5: two parts with one package name | #91 |
+| M1, M2, M4: the oracle and the viewer's checks | #52 |
+| M6: `atlas check --json` over several parts | #92 |
+| M3, M5, Z1: the laws in `mathematics.md`, built, exempted or not built | #93 |
+
 The programs sit under `testdata/` because every manifest below a repository roots a part of it unless a
 directory on its path is one Atlas reads as test data (`knowledge::TEST_DIRS`). Under `testdata/`,
 `atlas view .` and `atlas check .` on Atlas do not read them as parts of Atlas.
