@@ -29,7 +29,7 @@ use crate::tree::{
     evaluation_order, literals, named_children, nth_of_kind, span, text, unquote, walk, what_of, ChoiceSyntax, CompareSyntax, Part,
 };
 
-const EXTENSIONS: &[&str] = &["ts", "tsx", "mts", "cts", "js", "jsx", "mjs", "cjs"];
+pub(crate) const EXTENSIONS: &[&str] = &["ts", "tsx", "mts", "cts", "js", "jsx", "mjs", "cjs"];
 const OWN: OwnTypes = knowledge::TYPESCRIPT_OWN_TYPES;
 
 #[derive(Clone, Debug)]
@@ -307,8 +307,8 @@ fn doc_of(n: TsNode, src: &[u8]) -> String {
 }
 
 /// What the leading comment's `@prophecy` tag says, if it has one.
-fn prophecy_of(n: TsNode, src: &[u8]) -> Option<crate::prophecy::Prophecy> {
-    leading_comment(n, src).and_then(crate::prophecy::Prophecy::of_jsdoc)
+fn prophecy_of(n: TsNode, src: &[u8]) -> Option<crate::model::Prophecy> {
+    leading_comment(n, src).and_then(crate::model::Prophecy::of_jsdoc)
 }
 
 // ---------- types ----------

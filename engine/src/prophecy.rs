@@ -4,34 +4,11 @@
 //! `@prophecy(supersedes="pkg.Old")` in Python, the attribute `#[doc = "prophecy: supersedes=pkg::Old"]`
 //! (or `#[prophecy(supersedes = "pkg::Old")]` where a macro writes it) in Rust, the JSDoc tag
 //! `/** @prophecy supersedes=pkg.Old */` in TypeScript. The readers find the marker; what it says is
-//! read here, once.
+//! read here, once, and a marker is written here in each form.
 
 use indexmap::IndexMap;
-use serde::{Deserialize, Serialize};
-use ts_rs::TS;
 
-use crate::model::{Edge, EdgeKind, Entry, EntryKind, Node, NodeKind};
-
-/// What a prophecy says of itself.
-#[derive(Serialize, Deserialize, TS, Clone, Debug, Default, PartialEq, Eq)]
-#[ts(export)]
-pub struct Prophecy {
-    /// The existing thing the prophecy replaces: it stays until the prophecy is built.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub supersedes: Option<String>,
-    /// The place is known and the shape is not.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub veiled: bool,
-    /// The shape waits on an open question, as an issue (`#144`).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub sealed: Option<String>,
-    /// The node `supersedes` names, once the graph is whole: its id.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub replaces: Option<String>,
-    /// The nodes `supersedes` names when it names more than one: which it replaces, it does not say.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub candidates: Vec<String>,
-}
+use crate::model::{Edge, EdgeKind, Entry, EntryKind, Node, NodeKind, Prophecy};
 
 impl Prophecy {
     /// The arguments of a marker: `supersedes=pkg.Old veiled sealed="#144"`, or the same as a call
@@ -76,6 +53,56 @@ impl Prophecy {
     /// The first prophecy among a node's decorators or attributes.
     pub fn among(decorators: &[String]) -> Option<Prophecy> {
         decorators.iter().find_map(|d| Prophecy::of_decorator(d))
+    }
+}
+
+/// The form a language marks a prophecy in: one construct, written three ways.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Form {
+    /// Python's decorator, `@prophecy(supersedes="pkg.Old")`: a call of the project's own
+    /// `prophecy`, which Python reads by its name.
+    Decorator,
+    /// Rust's attribute, `#[doc = "prophecy: supersedes=pkg::Old"]`.
+    Attribute,
+    /// TypeScript's JSDoc tag, `/** @prophecy supersedes=pkg.Old */`.
+    JsDoc,
+}
+
+impl Form {
+    /// The line that marks the item that starts at a line, at the item's indentation. A decorator is
+    /// always a call: the project's `prophecy` takes keywords and gives the decorator, so a bare
+    /// `@prophecy` would make the item what the call gives, and ty would type it so.
+    pub fn marker(self, indent: &str, supersedes: Option<&str>) -> String {
+        let by = supersedes.map(|s| format!(" supersedes={s}")).unwrap_or_default();
+        match self {
+            Form::Decorator => format!("{indent}@prophecy({})", supersedes.map(|s| format!("supersedes=\"{s}\"")).unwrap_or_default()),
+            Form::Attribute => format!("{indent}#[doc = \"prophecy:{by}\"]"),
+            Form::JsDoc => format!("{indent}/** @prophecy{by} */"),
+        }
+    }
+
+    /// Put the marker above the item at `line` (0-based). An item that has a JSDoc right above it
+    /// takes the tag into that comment, which a second comment would hide.
+    pub fn insert(self, lines: &mut Vec<String>, line: usize, marker: String) {
+        match self {
+            Form::JsDoc if line > 0 && lines[line - 1].trim_end().ends_with("*/") => {
+                let tag = marker.trim().trim_start_matches("/**").trim_end_matches("*/").trim().to_string();
+                let indent: String = marker.chars().take_while(|c| c.is_whitespace()).collect();
+                let above = lines[line - 1].trim().to_string();
+                if above.starts_with("/**") && above.ends_with("*/") && above.len() > 5 {
+                    let said = above.trim_start_matches("/**").trim_end_matches("*/").trim().to_string();
+                    lines.splice(
+                        line - 1..line,
+                        [format!("{indent}/**"), format!("{indent} * {said}"), format!("{indent} * {tag}"), format!("{indent} */")],
+                    );
+                } else if above.starts_with("*/") || above.starts_with('*') {
+                    lines.insert(line - 1, format!("{indent} * {tag}"));
+                } else {
+                    lines.insert(line, marker);
+                }
+            }
+            _ => lines.insert(line, marker),
+        }
     }
 }
 
@@ -202,6 +229,30 @@ mod tests {
         assert_eq!(Prophecy::of_decorator("prophecy"), Some(Prophecy::default()));
         assert_eq!(Prophecy::of_decorator("kit.prophecy(veiled=True)").map(|p| p.veiled), Some(true));
         assert_eq!(Prophecy::of_jsdoc("/** @prophecy veiled */").map(|p| p.veiled), Some(true));
+    }
+
+    #[test]
+    fn each_form_writes_what_it_reads() {
+        for form in [Form::Decorator, Form::Attribute, Form::JsDoc] {
+            let marker = form.marker("    ", Some("pkg.Old"));
+            assert!(marker.starts_with("    "), "{marker}");
+            let read = match form {
+                Form::JsDoc => Prophecy::of_jsdoc(&marker),
+                _ => Prophecy::of_decorator(marker.trim().trim_start_matches('@').trim_start_matches("#[").trim_end_matches(']')),
+            };
+            assert_eq!(read.and_then(|p| p.supersedes).as_deref(), Some("pkg.Old"), "{form:?}: {marker}");
+        }
+        assert_eq!(Form::Decorator.marker("", None), "@prophecy()");
+    }
+
+    #[test]
+    fn a_jsdoc_tag_goes_into_the_comment_above() {
+        let mut lines: Vec<String> = ["/** Where reports wait. */", "export class Vault {}"].map(String::from).to_vec();
+        Form::JsDoc.insert(&mut lines, 1, Form::JsDoc.marker("", None));
+        assert_eq!(lines, ["/**", " * Where reports wait.", " * @prophecy", " */", "export class Vault {}"]);
+        let mut lines: Vec<String> = ["# Where reports wait.", "class Vault:"].map(String::from).to_vec();
+        Form::Decorator.insert(&mut lines, 1, Form::Decorator.marker("", None));
+        assert_eq!(lines, ["# Where reports wait.", "@prophecy()", "class Vault:"]);
     }
 
     #[test]
