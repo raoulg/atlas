@@ -188,17 +188,86 @@ section{margin-bottom:104px}
 .flow{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;margin:0 0 22px;font-family:var(--mono);font-size:14px}
 .flow span{background:var(--panel);border:1px solid var(--line);padding:6px 12px}
 .flow i{font-style:normal;color:var(--accent);font-size:18px}
-.readme{background:var(--panel);border:1px solid #D0D7DE;border-radius:6px;max-width:1012px;overflow:hidden}
-.readme .rbar{display:flex;align-items:center;gap:8px;padding:10px 16px;border-bottom:1px solid #D0D7DE;font-size:14px;font-weight:600;color:#1F2328;background:#F6F8FA}
-.readme .rbar svg{width:16px;height:16px;fill:#59636E}
-.readme .rbody{padding:24px 32px 28px;color:#1F2328;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans",Helvetica,Arial,sans-serif}
-.readme h3{font-size:30px;font-weight:600;margin:0 0 4px;padding-bottom:8px;border-bottom:1px solid #D1D9E0}
-.readme .rbody>p{margin:12px 0 18px;font-size:16px}
-.readme .rbody a{display:block}
-.readme .rbody img{width:100%;height:auto;display:block}
-@media (max-width:760px){.readme .rbody{padding:16px 16px 20px}.readme h3{font-size:24px}}
-.readme .rbody>p.drawn{margin:10px 0 0;font-family:var(--mono);font-size:12px;color:#59636E}
-.readme p.drawn b{color:var(--good);font-weight:500}
+/* the README chapter: an imagined package's page on GitHub */
+.gh{--g-fg:#1F2328;--g-mute:#59636E;--g-line:#D1D9E0;--g-soft:#F6F8FA;--g-link:#0969DA;--g-ok:#1A7F37;
+  background:#fff;border:1px solid var(--line);color:var(--g-fg);font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans",Helvetica,Arial,sans-serif;max-width:1240px}
+.gh svg{width:16px;height:16px;fill:currentColor;flex:none;vertical-align:text-bottom}
+.gh a{color:var(--g-link);text-decoration:none}
+.gh .head{background:var(--g-soft);border-bottom:1px solid var(--g-line);padding:16px 24px 0}
+.gh .title{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;font-size:20px;color:var(--g-mute)}
+.gh .title b{color:var(--g-fg);font-weight:600}
+.gh .title .own{color:var(--g-link)}
+.gh .pub{font-size:12px;font-weight:500;border:1px solid var(--g-line);border-radius:2em;padding:0 7px;line-height:20px}
+.gh .acts{margin-left:auto;display:flex;gap:8px}
+.gh .acts span{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:500;color:var(--g-fg);background:var(--g-soft);border:1px solid var(--g-line);border-radius:6px;padding:3px 10px}
+.gh .acts i{font-style:normal;background:#E1E5EA;border-radius:2em;padding:0 6px}
+.gh .tabsg{display:flex;gap:4px;margin-top:14px;overflow-x:auto}
+.gh .tabsg span{display:inline-flex;align-items:center;gap:7px;padding:8px 10px 10px;color:var(--g-fg);white-space:nowrap;border-bottom:2px solid transparent}
+.gh .tabsg span.on{border-bottom-color:#FD8C73;font-weight:600}
+.gh .tabsg i{font-style:normal;font-size:12px;background:#E1E5EA;border-radius:2em;padding:0 6px}
+.gh .body{display:grid;grid-template-columns:minmax(0,1fr) 296px;gap:24px;padding:24px}
+.gh .bar2{display:flex;align-items:center;gap:8px;margin-bottom:16px}
+.gh .bar2 span{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--g-line);background:var(--g-soft);border-radius:6px;padding:4px 12px;font-weight:500}
+.gh .bar2 .muted{color:var(--g-mute);font-weight:400;border:0;background:none;padding:0 4px}
+.gh .bar2 .code{margin-left:auto;background:#1F883D;border-color:#1F883D;color:#fff}
+.gh .files{border:1px solid var(--g-line);border-radius:6px;overflow:hidden;margin-bottom:16px}
+.gh .files .last{display:flex;align-items:center;gap:8px;background:var(--g-soft);padding:12px 16px;border-bottom:1px solid var(--g-line);min-width:0}
+.gh .av{width:20px;height:20px;border-radius:50%;background:linear-gradient(135deg,#F6B73C,#D9480F);flex:none}
+.gh .last b{font-weight:600}
+.gh .last .msg{color:var(--g-mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.gh .last .ok{color:var(--g-ok)}
+.gh .last .sha{margin-left:auto;color:var(--g-mute);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;white-space:nowrap}
+.gh .files .row{display:grid;grid-template-columns:minmax(0,14em) minmax(0,1fr) auto;gap:16px;padding:8px 16px;border-top:1px solid var(--g-line);align-items:center}
+.gh .files .row:first-of-type{border-top:0}
+.gh .files .row span:first-child{display:flex;align-items:center;gap:10px;color:var(--g-fg)}
+.gh .files .row span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gh .files .row span+span{color:var(--g-mute)}
+.gh .dir svg{color:#54AEFF}
+.gh .fl svg{color:var(--g-mute)}
+.gh .rd{border:1px solid var(--g-line);border-radius:6px}
+.gh .rd .rtabs{display:flex;gap:16px;padding:0 16px;border-bottom:1px solid var(--g-line)}
+.gh .rd .rtabs span{display:inline-flex;align-items:center;gap:8px;padding:12px 0 10px;color:var(--g-mute)}
+.gh .rd .rtabs span.on{color:var(--g-fg);font-weight:600;box-shadow:inset 0 -2px #FD8C73}
+.gh .md{padding:32px;font-size:16px;line-height:1.5}
+.gh .md h3{font-size:2em;font-weight:600;margin:0 0 16px;padding-bottom:.3em;border-bottom:1px solid var(--g-line);line-height:1.25}
+.gh .md h4{font-size:1.5em;font-weight:600;margin:24px 0 16px;padding-bottom:.3em;border-bottom:1px solid var(--g-line);line-height:1.25}
+.gh .md p{margin:0 0 16px}
+.gh .md code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:85%;background:#EFF1F3;border-radius:6px;padding:.2em .4em}
+.gh .md pre{background:var(--g-soft);border:0;border-radius:6px;padding:16px;font:13.6px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace;margin:0 0 16px;overflow-x:auto}
+.gh .md pre .c{color:var(--g-mute)}
+.gh .badges{display:flex;flex-wrap:wrap;gap:4px;margin:0 0 16px}
+.gh .badges span{display:inline-flex;font:11px/20px Verdana,Geneva,sans-serif;color:#fff;border-radius:3px;overflow:hidden}
+.gh .badges span i,.gh .badges span b{font-style:normal;font-weight:400;padding:0 6px}
+.gh .badges span i{background:#555}
+.gh .badges span b{background:#007EC6}
+.gh .badges span.go b{background:#4C1}
+.gh .md img{max-width:100%;height:auto;display:block}
+.gh .md a.pic{display:block;border:1px solid var(--g-line);border-radius:6px;overflow:hidden}
+.gh .drawn{margin:8px 0 0!important;font-size:12px;color:var(--g-mute)}
+.gh .drawn code{font-size:12px}
+/* the one part of the page Atlas writes */
+.gh .atlas{position:relative;margin:30px -14px 8px;padding:2px 14px 14px;outline:2px solid var(--accent);outline-offset:0;border-radius:6px}
+.gh .atlas>.mark{position:absolute;top:-13px;right:14px;background:var(--accent);color:#fff;font:500 12px/1 var(--mono);padding:6px 10px;border-radius:3px;white-space:nowrap}
+.gh .atlas h4{margin-top:18px}
+.gh .side h5{font-size:16px;font-weight:600;margin:0 0 12px}
+.gh .side p{margin:0 0 12px}
+.gh .side .sec{border-bottom:1px solid var(--g-line);padding-bottom:20px;margin-bottom:20px}
+.gh .side .sec:last-child{border:0;margin:0;padding:0}
+.gh .topics{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
+.gh .topics span{font-size:12px;font-weight:500;color:var(--g-link);background:#DDF4FF;border-radius:2em;padding:0 10px;line-height:22px}
+.gh .side ul{list-style:none;margin:0;padding:0;color:var(--g-mute)}
+.gh .side li{display:flex;align-items:center;gap:8px;margin:6px 0}
+.gh .side .dep{color:var(--g-fg);font-weight:600}
+.gh .side .ok{color:var(--g-ok)}
+.gh .side .lang{height:8px;border-radius:6px;background:#3572A5;margin-bottom:8px}
+.gh .side .dotp{width:8px;height:8px;border-radius:50%;background:#3572A5;display:inline-block}
+@media (max-width:1000px){.gh .body{grid-template-columns:minmax(0,1fr)}.gh .side{display:none}}
+@media (max-width:640px){
+  .gh .head{padding:12px 16px 0}.gh .acts{display:none}.gh .body{padding:16px}
+  .gh .files .row{grid-template-columns:minmax(0,1fr) auto}.gh .files .row span:nth-child(2){display:none}
+  .gh .last .msg{display:none}.gh .md{padding:20px 16px}.gh .md h3{font-size:1.6em}
+  .gh .bar2 .muted{display:none}.gh .atlas>.mark{right:auto;left:14px}
+}
 @media (max-width:760px){.top nav{display:none}.hero{padding-top:36px}.chap{margin-bottom:72px}}
 </style>
 <script>document.documentElement.classList.add('js')</script>
@@ -372,13 +441,75 @@ section{margin-bottom:104px}
   <h2>Your README draws itself.</h2>
   <p class="lede">Every push redraws the picture of your code in your README. It runs on GitHub, so there is nothing to install on your laptop. <a href="reference/ci.md">How to set it up &rarr;</a></p>
   <p class="flow" aria-label="git push, then Atlas draws, then the README shows the picture"><span>git push</span><i>&rarr;</i><span>atlas view</span><i>&rarr;</i><span>README.md</span></p>
-  <div class="readme" role="img" aria-label="The README of an imagined project, SOL, whose picture Atlas draws on every push">
-    <div class="rbar"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M0 1.75A.75.75 0 0 1 .75 1h4.253c1.227 0 2.317.59 3 1.501A3.743 3.743 0 0 1 11.006 1h4.245a.75.75 0 0 1 .75.75v10.5a.75.75 0 0 1-.75.75h-4.507a2.25 2.25 0 0 0-1.591.659l-.622.621a.75.75 0 0 1-1.06 0l-.622-.621A2.25 2.25 0 0 0 5.258 13H.75a.75.75 0 0 1-.75-.75Zm7.251 10.324.004-5.073-.002-2.253A2.25 2.25 0 0 0 5.003 2.5H1.5v9h3.757a3.75 3.75 0 0 1 1.994.574ZM8.755 4.75l-.004 7.322a3.752 3.752 0 0 1 1.992-.572H14.5v-9h-3.495a2.25 2.25 0 0 0-2.25 2.25Z"/></svg>README</div>
-    <div class="rbody">
-      <h3>SOL</h3>
-      <p>Sunspot counts since 1749: fetched, smoothed and drawn.</p>
-      <a href="showcase/python-clean.html"><img src="img/showcase/python-clean.png" alt="Atlas's picture of SOL: from the web to the raw CSV, a DataFrame from load to smooth to Trend.save, and the figure"></a>
-      <p class="drawn">drawn by Atlas from <b>3f9c2e1</b>, the last push</p>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="o-repo" viewBox="0 0 16 16"><path d="M2 2.5A2.5 2.5 0 0 1 4.5 0h8.75a.75.75 0 0 1 .75.75v12.5a.75.75 0 0 1-.75.75h-2.5a.75.75 0 0 1 0-1.5h1.75v-2h-8a1 1 0 0 0-.714 1.7.75.75 0 1 1-1.072 1.05A2.495 2.495 0 0 1 2 11.5Zm10.5-1h-8a1 1 0 0 0-1 1v6.708A2.486 2.486 0 0 1 4.5 9h8ZM5 12.25a.25.25 0 0 1 .25-.25h3.5a.25.25 0 0 1 .25.25v3.25a.25.25 0 0 1-.4.2l-1.45-1.087a.249.249 0 0 0-.3 0L5.4 15.7a.25.25 0 0 1-.4-.2Z"/></symbol>
+    <symbol id="o-dir" viewBox="0 0 16 16"><path d="M1.75 1A1.75 1.75 0 0 0 0 2.75v10.5C0 14.216.784 15 1.75 15h12.5A1.75 1.75 0 0 0 16 13.25v-8.5A1.75 1.75 0 0 0 14.25 3H7.5a.25.25 0 0 1-.2-.1l-.9-1.2C6.07 1.26 5.55 1 5 1H1.75Z"/></symbol>
+    <symbol id="o-file" viewBox="0 0 16 16"><path d="M2 1.75C2 .784 2.784 0 3.75 0h6.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v9.586A1.75 1.75 0 0 1 13.25 16h-9.5A1.75 1.75 0 0 1 2 14.25Zm1.75-.25a.25.25 0 0 0-.25.25v12.5c0 .138.112.25.25.25h9.5a.25.25 0 0 0 .25-.25V6h-2.75A1.75 1.75 0 0 1 9 4.25V1.5Zm6.75.062V4.25c0 .138.112.25.25.25h2.688l-.011-.013-2.914-2.914-.013-.011Z"/></symbol>
+    <symbol id="o-check" viewBox="0 0 16 16"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0Z"/></symbol>
+    <symbol id="o-star" viewBox="0 0 16 16"><path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.751.751 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z"/></symbol>
+    <symbol id="o-book" viewBox="0 0 16 16"><path d="M0 1.75A.75.75 0 0 1 .75 1h4.253c1.227 0 2.317.59 3 1.501A3.743 3.743 0 0 1 11.006 1h4.245a.75.75 0 0 1 .75.75v10.5a.75.75 0 0 1-.75.75h-4.507a2.25 2.25 0 0 0-1.591.659l-.622.621a.75.75 0 0 1-1.06 0l-.622-.621A2.25 2.25 0 0 0 5.258 13H.75a.75.75 0 0 1-.75-.75Zm7.251 10.324.004-5.073-.002-2.253A2.25 2.25 0 0 0 5.003 2.5H1.5v9h3.757a3.75 3.75 0 0 1 1.994.574ZM8.755 4.75l-.004 7.322a3.752 3.752 0 0 1 1.992-.572H14.5v-9h-3.495a2.25 2.25 0 0 0-2.25 2.25Z"/></symbol>
+  </svg>
+  <div class="gh" role="img" aria-label="The GitHub page of an imagined package, sunspots: its files, and a README whose section How it works holds the picture Atlas draws on every push">
+    <div class="head">
+      <div class="title"><svg><use href="#o-repo"/></svg><span class="own">sunwatch</span>/<b>sunspots</b><span class="pub">Public</span>
+        <span class="acts"><span>Watch <i>3</i></span><span>Fork <i>4</i></span><span><svg><use href="#o-star"/></svg>Star <i>58</i></span></span></div>
+      <div class="tabsg"><span class="on">Code</span><span>Issues <i>2</i></span><span>Pull requests <i>1</i></span><span>Actions</span><span>Insights</span></div>
+    </div>
+    <div class="body">
+      <div>
+        <div class="bar2"><span>main</span><span class="muted">2 branches · 6 tags</span><span class="code">Code</span></div>
+        <div class="files">
+          <div class="last"><span class="av"></span><b>mfaber</b><span class="msg">smooth: centre the window on the month</span><svg class="ok"><use href="#o-check"/></svg><span class="sha">3f9c2e1 · 2 hours ago</span></div>
+          <div class="row dir"><span><svg><use href="#o-dir"/></svg>.github/workflows</span><span>atlas: draw the picture on every push</span><span>last month</span></div>
+          <div class="row dir"><span><svg><use href="#o-dir"/></svg>src/sunspots</span><span>smooth: centre the window on the month</span><span>2 hours ago</span></div>
+          <div class="row dir"><span><svg><use href="#o-dir"/></svg>tools</span><span>atlas: draw the picture on every push</span><span>last month</span></div>
+          <div class="row fl"><span><svg><use href="#o-file"/></svg>.gitignore</span><span>Keep data/ and figures/ out of git</span><span>3 months ago</span></div>
+          <div class="row fl"><span><svg><use href="#o-file"/></svg>LICENSE</span><span>First release</span><span>3 months ago</span></div>
+          <div class="row fl"><span><svg><use href="#o-file"/></svg>README.md</span><span>README: how it works, drawn by Atlas</span><span>last month</span></div>
+          <div class="row fl"><span><svg><use href="#o-file"/></svg>pyproject.toml</span><span>Release 0.4.0</span><span>2 weeks ago</span></div>
+          <div class="row fl"><span><svg><use href="#o-file"/></svg>uv.lock</span><span>Release 0.4.0</span><span>2 weeks ago</span></div>
+        </div>
+        <div class="rd">
+          <div class="rtabs"><span class="on"><svg><use href="#o-book"/></svg>README</span><span>MIT license</span></div>
+          <div class="md">
+            <h3>sunspots</h3>
+            <div class="badges"><span><i>pypi</i><b>v0.4.0</b></span><span><i>python</i><b>3.12+</b></span><span><i>license</i><b>MIT</b></span><span class="go"><i>atlas</i><b>drawn on push</b></span></div>
+            <p>The monthly mean sunspot number since 1749, downloaded once, smoothed and drawn.</p>
+            <div class="atlas">
+              <span class="mark">drawn by Atlas on every push</span>
+              <h4>How it works</h4>
+              <p>From the web to the figure, as the code says it. Click the picture to explore it.</p>
+              <a class="pic" href="showcase/python-clean.html"><img src="img/showcase/python-clean.png" alt="Atlas's picture of sunspots: from the web to the raw CSV, a DataFrame from load to smooth to Trend.save, and the figure"></a>
+              <p class="drawn">Drawn from <code>3f9c2e1</code>, the last push to <code>main</code>.</p>
+            </div>
+            <h4>Install</h4>
+<pre>uv tool install sunspots</pre>
+            <h4>Usage</h4>
+<pre>sunspots --months 13   <span class="c"># data/raw/sunspots.csv → figures/sunspots.png</span></pre>
+            <img src="img/showcase/sunspots.png" alt="The figure sunspots draws: the monthly mean sunspot number and its 13-month mean, 1749 to today" style="width:min(460px,100%)">
+            <h4>License</h4>
+            <p>MIT</p>
+          </div>
+        </div>
+      </div>
+      <div class="side">
+        <div class="sec">
+          <h5>About</h5>
+          <p>The monthly mean sunspot number, smoothed and drawn.</p>
+          <p><a>sunwatch.github.io/sunspots</a></p>
+          <div class="topics"><span>sunspots</span><span>solar-cycle</span><span>pandas</span><span>matplotlib</span></div>
+          <ul><li><svg><use href="#o-book"/></svg>Readme</li><li><svg><use href="#o-star"/></svg>58 stars</li></ul>
+        </div>
+        <div class="sec">
+          <h5>Deployments</h5>
+          <ul><li><svg class="ok"><use href="#o-check"/></svg><span class="dep">github-pages</span> 2 hours ago</li></ul>
+        </div>
+        <div class="sec">
+          <h5>Languages</h5>
+          <div class="lang"></div>
+          <ul><li><span class="dotp"></span><b style="color:var(--g-fg)">Python</b> 100.0%</li></ul>
+        </div>
+      </div>
     </div>
   </div>
 </section>
