@@ -1334,6 +1334,17 @@ fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, own: &Own,
             }
         }
     }
+    // a method only declared: abstract, or of a protocol, which what has its methods implements
+    let protocols: HashSet<String> = knowledge::PYTHON_PROTOCOLS.iter().map(|(p, n)| format!("ext:{p}.{n}")).collect();
+    for id in &ids {
+        let n = &store.nodes[id];
+        let Some(cls) = n.cls.as_deref().filter(|_| n.kind == NodeKind::Method) else { continue };
+        let of_protocol = store.classes.get(cls).map_or(false, |c| c.resolved.iter().any(|b| protocols.contains(b)));
+        let abstract_ = n.decorators.iter().any(|d| knowledge::PYTHON_ABSTRACT.contains(&d.rsplit('.').next().unwrap_or(d)));
+        if of_protocol || abstract_ {
+            store.nodes.get_mut(id).expect("a node of the graph").declared = true;
+        }
+    }
     // signatures -> takes / returns, every one before any body is read
     for id in &ids {
         let (kind, module) = (store.nodes[id].kind, store.nodes[id].module.clone());
@@ -2720,6 +2731,7 @@ fn link_calls<'t>(
             b.call(&mut steps, c);
             steps.mark(c, b.read.touches[t..].iter_mut().chain(b.read.waiting[w..].iter_mut().map(|(t, _)| t)));
         }
+        b.class_state(&mut steps);
         b.ends();
         b.read
     };
@@ -2750,12 +2762,13 @@ fn link_calls<'t>(
     }
     if let (Some(compares), Some(node)) = (compares, store.nodes.get_mut(id)) {
         node.compares = compares;
-        node.raises = crate::tree::holds(
-            body,
-            &m.src,
-            |n, _| matches!(n.kind(), "raise_statement" | "assert_statement"),
-            &["function_definition", "class_definition"],
-        );
+        node.raises = read.exits
+            || crate::tree::holds(
+                body,
+                &m.src,
+                |n, _| matches!(n.kind(), "raise_statement" | "assert_statement"),
+                &["function_definition", "class_definition"],
+            );
     }
     for (t, input) in read.changes {
         store.add_edge(id, &t, EdgeKind::Mutates, Some(input));
@@ -2770,7 +2783,7 @@ fn link_calls<'t>(
 /// whose paths and statements wait for what callers hand, the calls of the package's functions with their arguments, the work a
 /// managed transaction is handed, the directions the body says to a database's driver, the
 /// calls Atlas could not follow, the functions whose value it uses, the inputs it changes in
-/// place, and the library types its values have.
+/// place, the library types its values have, and whether it calls what ends the program.
 #[derive(Default)]
 struct Read<'t> {
     touches: Vec<Touch>,
@@ -2782,6 +2795,7 @@ struct Read<'t> {
     used: Vec<String>,
     changes: Vec<(String, String)>,
     new_ext: Vec<String>,
+    exits: bool,
 }
 
 /// A function's body, or a module's own code, as Python reads it: the types ty gives its
@@ -2896,6 +2910,29 @@ impl<'a, 't> Body<'a, 't> {
         gives
     }
 
+    /// The values a class keeps that the body changes by assignment: `Counter.total += 1`,
+    /// `cls.handlers[name] = fn`. An attribute of a class is no place Atlas draws, so what the
+    /// change leaves behind it does not see.
+    fn class_state(&self, steps: &mut Steps) {
+        if self.in_module {
+            return;
+        }
+        for a in walk(self.body, &["assignment", "augmented_assignment"]) {
+            let Some(mut root) = a.child_by_field_name("left") else { continue };
+            let mut through = false;
+            while let Some(inner) = match root.kind() {
+                "attribute" => root.child_by_field_name("object"),
+                "subscript" => root.child_by_field_name("value"),
+                _ => None,
+            } {
+                (root, through) = (inner, true);
+            }
+            if through && root.kind() == "identifier" && self.seen.value(root).map_or(false, |v| v.is_class) {
+                steps.unseen(a, text(a, self.src));
+            }
+        }
+    }
+
     /// One call of the body, as the step it is: the program's own function or class, or a
     /// library's, which may make a value the body keeps and may cross into the world.
     fn call(&mut self, steps: &mut Steps, c: TsNode<'t>) {
@@ -2912,6 +2949,10 @@ impl<'a, 't> Body<'a, 't> {
         // reads (`pipeline.add(DiffValues, ..)`) is built there
         for a in handed_on(c) {
             if let Some(t) = self.seen.handed_function(a) {
+                // a key the call orders or picks by is a value the call uses
+                if handed_for_its_value(a, self.src) {
+                    self.read.used.push(t.clone());
+                }
                 steps.handed(c, a, &t, EdgeKind::Calls);
             } else if let (Some(Callee::Def(_)), Some(t)) = (&callee, self.seen.handed_class(a)) {
                 steps.handed(c, a, &t, EdgeKind::Instantiates);
@@ -2924,20 +2965,35 @@ impl<'a, 't> Body<'a, 't> {
                 // values it was handed, is a step of its own; what a call gives without a name
                 // goes into the call around it. A parse of the command line is a step whatever
                 // it gives.
-                if let Some((op, options)) = self.command_line(&lib, fnode) {
+                // what the tables say a call does: parse the command line, change a value, or, for
+                // Python's own, compute what it gives
+                let known = if let Some((op, options)) = self.command_line(&lib, fnode) {
                     steps.parses(c, &op, hands, gives, options);
+                    true
                 } else if let Some(changed) = library_change(self.seen.facts, c, self.src) {
                     let changed = self.seen.held_in(changed, self.ext, &steps.kept);
                     let op = text(fnode, self.src).rsplit('.').next().unwrap_or("");
                     steps.changes(c, op, hands, gives, changed);
-                } else if !assigned.is_empty() {
-                    let op = match fnode.kind() {
-                        "attribute" => fnode.child_by_field_name("attribute").map(|a| text(a, self.src).to_string()),
-                        _ => Some(text(fnode, self.src).rsplit('.').next().unwrap_or("").to_string()),
-                    };
-                    steps.op(c, &op.unwrap_or_default(), hands, gives);
-                }
+                    true
+                } else {
+                    if !assigned.is_empty() {
+                        let op = match fnode.kind() {
+                            "attribute" => fnode.child_by_field_name("attribute").map(|a| text(a, self.src).to_string()),
+                            _ => Some(text(fnode, self.src).rsplit('.').next().unwrap_or("").to_string()),
+                        };
+                        steps.op(c, &op.unwrap_or_default(), hands, gives);
+                    }
+                    knowledge::PYTHON_OWN.contains(&lib.as_str())
+                };
+                let op = named_path(fnode, self.src).last().cloned().unwrap_or_default();
+                let exits = knowledge::ends_the_run(&lib, &op);
+                self.read.exits |= exits;
+                let crossed = (self.read.touches.len(), self.read.waiting.len(), self.read.handed.len());
                 self.library(steps, c, fnode, Some(lib));
+                // what the tables say nothing of beside what it gives, Atlas does not see
+                if !known && !exits && crossed == (self.read.touches.len(), self.read.waiting.len(), self.read.handed.len()) {
+                    steps.dropped(c, &written(fnode, self.src));
+                }
             }
             None => {
                 // a call Atlas cannot follow runs all the same: a step named as the code writes
@@ -2949,6 +3005,7 @@ impl<'a, 't> Body<'a, 't> {
                 }
                 let written = written(fnode, self.src);
                 steps.not_followed(c, &written, hands, gives);
+                steps.dropped(c, &written);
                 let name = match named_path(fnode, self.src) {
                     p if p.is_empty() => written,
                     p => p.iter().take(2).cloned().collect::<Vec<_>>().join("."),
@@ -3404,6 +3461,15 @@ fn handed_on(call: TsNode) -> Vec<TsNode> {
         })
         .filter(|a| matches!(a.kind(), "identifier" | "attribute"))
         .collect()
+}
+
+/// Whether a function handed to a call is handed by a keyword whose function's value the call
+/// uses (`key=score`).
+fn handed_for_its_value(a: TsNode, src: &[u8]) -> bool {
+    a.parent()
+        .filter(|k| k.kind() == "keyword_argument")
+        .and_then(|k| k.child_by_field_name("name"))
+        .map_or(false, |n| knowledge::PYTHON_USES_HANDED.contains(&text(n, src)))
 }
 
 /// Whether what a call gives back is used: anything but a call standing as a statement.

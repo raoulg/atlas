@@ -57,9 +57,9 @@ lets it be traced and Atlas does not yet; each gap is an ignored test in `pairs_
 | overrides | finding; `keeps` from ty, against each base along the method resolution order | finding; what an override takes, which the compiler checks both ways; a type is its members | forbidden: a trait's implementation has the trait's signature |
 | places | finding; where the path is made whole | finding; where the path is made whole | finding; where the path is made whole |
 | changes | finding; a mutates edge per input, to its type: a class, a library's, `list`; a method changes what it is called on as ty finds it defined | finding; a mutates edge per input, to its type: a class, a library's, an array; a method changes what it is called on by that value's type | forbidden: a change is `&mut` or a cell (`&RefCell<T>`) in the signature |
-| gives | finding; the call not followed | no returns edge; `uses` on the call | returns edge; `Result<T, E>` gives `T` |
+| gives | finding; the call not followed; a key handed on is used; gap (b): a property read | finding; no returns edge; `uses` on the call | forbidden: every function names what it returns; `Result<T, E>` gives `T` |
 | choices | finding; a field read through `self` in a class's methods, a parameter by name and type in a module's functions, an `Enum` member | finding; `this` is the value a method runs on, an `enum` member | finding; a field read through `self` in an `impl`'s methods, a variant without fields |
-| nothing | finding | finding | finding |
+| nothing | finding; what Atlas does not see is named: a `Protocol`'s method, a callback in a field, a class's attribute, a library's call no table describes | finding; the same, with an interface and a `static`; a `Promise` waits and does not fail | finding; a callback in a field is named, and a method called on a type parameter |
 | layers | finding; a package's `__init__.py` is a block of its own; a pytest file (`test_*.py`, `*_test.py`, `conftest.py`) is test code | finding; a directory's `index.ts` is a block of its own; a `.test.`, `.spec.` or `__tests__` file is test code | finding; a call among a macro's tokens is a step; `lib.rs` and `mod.rs` are blocks of their own; a `#[cfg(test)]` item or module and a crate's `tests/` are test code |
 | lens | finding; takes, returns, has and inherits; the table a statement names, a file by its path or the value that holds it; the steps a value is handed to, a container's `append` among them; gap (a): a field of a library's type | finding; takes, returns, has and inherits; the tables a store's client runs statements on; a `push` onto an array the body declares | finding; takes, returns and has; the tables a store's connection runs statements on; a `push` onto a `Vec`; gap (a): a field of a library's type |
 | a place carries a what | a file's path, a request's host | a file's path, a request's host | the type a step gives, a request's host, a program by its constant's value |
@@ -421,11 +421,26 @@ there.
   ty, Astral's type checker, and ty gives a function without a return annotation the type
   `Unknown`. Atlas does not guess behind it: a database call on that value is not drawn,
   because nothing says which database it is.
+- **TypeScript.** The compiler works out what a function without a return type gives, where a
+  reader of its declaration does not see it (`isolatedDeclarations` asks for the type). Atlas
+  reads the declaration, so a call on what such a function gives is not followed, as in Python.
 
-Atlas checks: a Python function or method without a return annotation, whose value at
-least one caller uses. A call that stands as a statement does not use it. A door is asked
-about by `doors`. The finding names three of the callers that use the value and counts the
-rest.
+Atlas checks: a function or method whose language leaves its return type to the author
+(Python, TypeScript), written without one, whose value at least one caller uses. It is the
+condition `doors` asks a door on, and a door is asked about by `doors`. A caller uses the value
+wherever the call does not stand as a statement: it keeps it, hands it on, returns it, calls a
+method on it or tests it. A function handed to a call by a keyword whose function's value
+the call uses (`sorted(xs, key=score)`; `PYTHON_USES_HANDED` in `knowledge.rs`) is used there.
+The finding names three of the callers that use the value and counts the rest.
+
+What the rule cannot see:
+
+- A property read (`store.size` of an untyped `@property`) is no call in the graph, so an
+  untyped property is not asked (an ignored test in `pairs_python.rs`).
+- A function handed on in any other way (`map(score, xs)`, TypeScript's `xs.map(label)`, a
+  callback a framework calls) is not read as used: what its receiver does with the value, Atlas
+  does not see.
+- A constructor gives its class and is never asked.
 
 rkg: `RegisterSink.transaction(self)` returns a connection to the register's SQLite
 database. Every `with sink.transaction() as con: con.execute(..)` then runs on a value
@@ -558,14 +573,17 @@ A function is an arrow from what it takes to what it gives, writes or changes. O
 nothing back, cannot fail, changes nothing it is handed and reaches no place is an arrow into
 nothing: whoever calls it learns nothing and nothing is different afterwards. Either it is
 dead, or it changes something the code does not show: a value it was handed, reached through
-an item or a loop; a library's own state. Then the change belongs where a reader sees it. A
-global the function changes is shown: a value a module keeps between calls is a place,
+a field, an item or a loop. Then the change belongs where a reader sees it. A global the
+function changes is shown: a value a module keeps between calls is a place,
 `Global(module.name)`, written by whoever changes it and read by whoever uses it. Atlas draws it
 and does not judge it, since a global is sometimes the right choice. A library's module is code,
 so what it holds is the place: a function that sets `os.environ["DB"]` for another to read
 writes `Global(os.environ)`, and a call of `os.path.join` reads nothing. In Rust the place is a
 `static mut`, or a `static` of a type that changes in place (a lock, a cell, an atomic); one a
-function's body declares is named after the function.
+function's body declares is named after the function. Ending the program leaves something
+behind as an error no one catches does: `sys.exit(..)` and `os._exit(..)`, Node's
+`process.exit(..)` and Rust's `std::process::exit(..)` count as `raise`, `throw` and `panic!`
+count (`ENDS_THE_RUN` in `knowledge.rs`).
 
 - **Rust.** `&mut T` and `-> Result<()>` say what a function changes and that it may fail.
   What stays hidden is a value behind a `RefCell`.
@@ -575,10 +593,45 @@ function's body declares is named after the function.
   array it is handed can hand back the array.
 
 Atlas checks: a function another function of the project calls, that gives nothing back
-(Python `-> None`, TypeScript `void`, Rust no return type), whose body does not raise, throw
-or panic and whose return type does not say it may fail (`Result`, `Promise`), and where
+(Python `-> None`, TypeScript `void`, Rust no return type), whose body does not raise, throw,
+panic or end the program and whose return type does not say it may fail (`Result`), and where
 nothing it runs (what it calls, what it builds, the overrides a call may reach, down to the
 end) touches a place, changes a value or a parameter, fails, or calls a function it was handed.
+`async` changes none of this: an `async def` and a `Promise<void>` say that nothing arrives
+later, and a `Promise` rejects where what it runs throws, as any call may. A door or an entry
+is asked as any other function: its callers in the program get the same arrow. A method that is
+only declared (abstract, of a `Protocol`, an interface's, a trait's without a body) has no body
+to ask about; what calls it is asked.
+
+The question depends on what Atlas sees of what the function runs:
+
+- **All of it.** Everything it runs is code Atlas reads, or calls whose effect the tables in
+  `knowledge.rs` state: what crosses into a place, what changes a value, what ends the program,
+  and the language's own (Python's builtins and `sys`, TypeScript's globals), which compute a
+  value and nothing more. The question is whether the function is dead, or changes a value it
+  is handed in a way no call shows.
+- **Not all of it.** It runs something whose effect Atlas does not model, and the finding names
+  it with its line: a library's call whose value goes nowhere and that no table describes
+  (`logger.info(..)`, `time.sleep(..)`, `random.seed(..)`, torch's `x.mul_(..)`); a call Atlas
+  cannot follow (a callback kept in a field, `self.on_done()`; a call on a value without a type);
+  a method only declared that nothing in the graph implements (a `Protocol` or an interface that
+  a class fills in without naming it); a value a class keeps, which the function changes
+  (`Counter.total += 1`). The question is what that leaves behind (a log, a change in a
+  library's or a class's value, a wait), not whether the function is dead.
+
+What the rule cannot see:
+
+- A change of a value handed in through a field, an item or a loop (`node.status = ..`,
+  `d[k] = v`) is no call: the function reads as all seen, and the question names such a change.
+- A library's call whose value the body keeps is read as computing that value and nothing more
+  (`n = buf.write(s)`): the function reads as all seen.
+- The language's own is read as the tables describe it, which is not all it does:
+  TypeScript's `Object.assign(target, ..)` changes its target, Python's `sys.setrecursionlimit`
+  changes the interpreter.
+- A decorator that wraps a function (click's `@group`) makes a call to it run the framework's
+  code; Atlas reads the body.
+- A Rust method called on a value of a type parameter (`fn run<T: Task>(t: &T) { t.run() }`) is
+  not followed: it is named as a call Atlas cannot see.
 
 rkg: `stempel_herkomst(graph, herkomst) -> None` sets the author, status and date on every
 node of the graph it is handed, through a loop. Atlas sees a function into nothing; what it

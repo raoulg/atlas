@@ -170,7 +170,8 @@ fn changes_a_change_to_an_input_shows_in_the_signature() {
 
 /// A function whose value is used says what it gives back. In Python that is the return
 /// annotation: `get_store() -> ReadingStore`. The shortcut's `get_store()` says nothing, so the
-/// `history` its route calls on the store is a call on a value without a type.
+/// `history` its route calls on the store is a call on a value without a type; its
+/// `Harvester.run(..) -> Any`, which the API uses, says no more: `Any` is the unchecked type.
 #[test]
 fn gives_a_function_whose_value_is_used_says_what_it_gives() {
     let (c, s) = (clean(), shortcut());
@@ -178,7 +179,7 @@ fn gives_a_function_whose_value_is_used_says_what_it_gives() {
     assert!(edge(c, "harvest.api.get_store", "harvest.store.ReadingStore", EdgeKind::Returns));
     assert!(edge(c, "harvest.api.readings", "harvest.store.ReadingStore.history", EdgeKind::Calls));
     assert!(route(c, "harvest.api.readings").contains("reads readings"), "{}", route(c, "harvest.api.readings"));
-    assert_eq!(found(s, "gives"), ["harvest.api.get_store"]);
+    assert_eq!(found(s, "gives"), ["harvest.api.get_store", "harvest.harvester.Harvester.run"]);
     assert!(
         !edge(s, "harvest.api.readings", "harvest.store.ReadingStore.history", EdgeKind::Calls),
         "the call on the store is not followed"
@@ -1252,4 +1253,81 @@ fn doors_every_declaration_of_a_door_says_what_goes_in_and_out() {
     let parse = s.node("units.convert.parse").unwrap();
     assert_eq!(parse.params.iter().map(|p| (p.ty.as_str(), p.unchecked)).collect::<Vec<_>>(), [("Any", true)]);
     assert!(parse.returns.as_ref().is_some_and(|r| r.written == "Any" && r.unchecked));
+}
+
+/// One side of the nothing pair (`tests/pairs/nothing`): a job runner that runs a task, says when a
+/// job is done, reports, counts its runs, settles its log and stops the run, in Python, Rust and
+/// TypeScript alike.
+fn jobs(side: &str) -> Graph {
+    analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/nothing/python").join(side), &Options::default()).unwrap()
+}
+
+/// A call leaves something behind, and where Atlas cannot see what a call leaves, the question says
+/// so. The clean runner leaves each step where a reader sees it: `Echo` subclasses the `Task` it
+/// implements, `finish` is handed its callback, `report` writes to the screen, `count` changes a
+/// module's global, `settle` writes its log and `stop` ends the run with `sys.exit`, as `raise
+/// SystemExit` does: nothing is asked. The shortcut leaves them out of sight: `Echo` fills in a
+/// `Protocol` without naming it, so `Task.run` is only declared; `Job` keeps its callback in a
+/// field; `report` logs through `logging`, which no table describes; `count` changes a value its
+/// class keeps. Atlas asks what each of those leaves behind and names what it cannot see. `settle`,
+/// a door that waits and does nothing, is asked whether it is dead, as any function is.
+#[test]
+fn nothing_says_what_atlas_cannot_see() {
+    let (c, s) = (jobs("clean"), jobs("shortcut"));
+    let asked = |g: &Graph| -> Vec<(String, String)> {
+        check(g).into_iter().filter(|f| f.principle == "nothing").map(|f| (f.node, f.what)).collect()
+    };
+    assert!(asked(&c).is_empty(), "{:#?}", asked(&c));
+    for g in [&c, &s] {
+        assert!(g.node("jobs.runner.stop").unwrap().raises, "ending the run is what `stop` leaves behind");
+    }
+    let want = [
+        ("run_task", "run_task gives nothing back, and Atlas cannot see what `Task.run` does"),
+        ("Job.finish", "Job.finish gives nothing back, and Atlas cannot see what `self.on_done(..)` does"),
+        ("report", "report gives nothing back, and Atlas cannot see what `logger.info(..)` does"),
+        ("count", "count gives nothing back, and Atlas cannot see what `Counter.runs += 1` does"),
+        ("settle", "settle gives nothing back, and Atlas sees no change and no place it reaches"),
+    ]
+    .map(|(f, what)| (format!("jobs.runner.{f}"), what.to_string()));
+    assert_eq!(asked(&s), want);
+    // what is only declared has no body to ask about, and what implements it is still drawn
+    assert!(s.node("jobs.runner.Task.run").unwrap().declared && c.node("jobs.runner.Task.run").unwrap().declared);
+    assert_eq!(touches(&s, "jobs.runner.Echo.run", "screen").len(), 1);
+    assert_eq!(s.node("jobs.runner.settle").unwrap().entry.as_ref().map(|e| e.kind), Some(EntryKind::Export), "settle is a door");
+}
+
+/// One side of the gives pair (`tests/pairs/gives`): readings kept in a file, how many there are,
+/// and the readings ranked, in Python and TypeScript alike.
+fn readings(side: &str) -> Graph {
+    analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/gives/python").join(side), &Options::default()).unwrap()
+}
+
+/// A function whose value is used says what it gives back, also where it is handed on to be used:
+/// `sorted(readings, key=score)` orders the readings by what `score` gives. The clean store says
+/// what each of its functions gives; the shortcut leaves `get_store` and `score` unsaid, and
+/// `gives` asks about both. The route loses `Store.history` at the store `get_store` makes, and
+/// the key `ranked` sorts by has no type.
+#[test]
+fn gives_a_key_handed_on_is_a_value_used() {
+    let (c, s) = (readings("clean"), readings("shortcut"));
+    assert!(found(&c, "gives").is_empty(), "{:?}", found(&c, "gives"));
+    assert_eq!(found(&s, "gives"), ["readings.store.get_store", "readings.store.score"]);
+    for g in [&c, &s] {
+        assert!(
+            g.edges
+                .iter()
+                .any(|e| e.kind == EdgeKind::Calls && e.uses && e.src == "readings.store.ranked" && e.dst == "readings.store.score"),
+            "a key handed on is used"
+        );
+    }
+    assert!(edge(&c, "readings.store.main", "readings.store.Store.history", EdgeKind::Calls));
+    assert!(!edge(&s, "readings.store.main", "readings.store.Store.history", EdgeKind::Calls), "the route loses the store's history");
+}
+
+/// A property is a function its readers run: an untyped one gives what they use without saying
+/// (`store.size`). A property read is no call in the graph, so `gives` does not ask.
+#[test]
+#[ignore = "gap (b): a property read is no call in the graph, so an untyped property is not asked"]
+fn gives_a_property_read_is_a_value_used() {
+    assert!(found(&readings("shortcut"), "gives").contains(&"readings.store.Store.size".to_string()));
 }

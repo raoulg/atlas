@@ -155,12 +155,25 @@ pub struct Node {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub private: bool,
     /// Its body may end it without giving back: it raises, throws or panics, outside the
-    /// functions it defines.
+    /// functions it defines, or it calls what ends the program (`sys.exit`, `process.exit`).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub raises: bool,
     /// It calls a function it is handed: what that function does is its caller's to say.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub calls_handed: bool,
+    /// For a method: it has no body of its own. An interface, a protocol, a trait or an abstract
+    /// class declares it, and a call to it runs what implements it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub declared: bool,
+    /// What its body does that the graph holds nothing else of, by line and as the code writes it:
+    /// a call whose value goes nowhere, made for an effect Atlas does not know, a library's of
+    /// which no table says it crosses into the world, changes a value or ends the program
+    /// (`logger.info(..)`, `tensor.mul_(..)`), or one Atlas cannot follow (`self.on_done(..)`);
+    /// and a value a class keeps, which the body changes (`Counter.total += 1`). What these leave
+    /// behind, Atlas does not see.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(type = "Array<[number, string]>")]
+    pub unseen: Vec<(u32, String)>,
     /// For a function handed to a call where it is declared (`memo((props) => ..)`,
     /// `createServerFn(..).handler(..)`): the call, which gives its parameters their types.
     #[serde(default, skip_serializing_if = "String::is_empty")]
@@ -265,8 +278,8 @@ pub struct Returns {
     /// It gives a value of the class it runs on, whichever subclass that is.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub own: bool,
-    /// The effect it is wrapped in says it may end without its value: a `Result` that fails, a
-    /// `Promise` that rejects.
+    /// The effect it is wrapped in says it may end without its value: a `Result` that fails. A
+    /// `Promise` says the value arrives later; it rejects where its body throws, as any call may.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub fails: bool,
     /// The type of the value it gives is the unchecked one (`Param::unchecked`): it says no more

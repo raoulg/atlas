@@ -349,6 +349,13 @@ impl<'g> Index<'g> {
         self.part(id).map_or_else(Leaves::default, |p| p.leaves)
     }
 
+    /// Whether a reader of a declaration of `f` that gives `returns` does not see what it gives:
+    /// its language leaves the return type to the author, and the author left it out or wrote the
+    /// unchecked type. A constructor gives its class.
+    fn gives_unknown(&self, f: &Node, returns: Option<&Returns>) -> bool {
+        self.leaves(&f.id).returns && !f.ctor && !returns.map_or(false, Returns::says)
+    }
+
     fn at(&self, n: &Node) -> String {
         format!("{}:{}", self.file(n), n.span.map_or(1, |s| s.0))
     }
@@ -504,7 +511,7 @@ fn doors(ix: &Index) -> Vec<Finding> {
             let takes: Vec<String> =
                 s.params.iter().filter(|p| f.typed_by.is_empty() && !p.receiver && !p.says()).map(|p| format!("`{}`", p.name)).collect();
             // a constructor gives its class
-            let gives = ix.leaves(&f.id).returns && !f.ctor && !s.returns.as_ref().map_or(false, Returns::says);
+            let gives = ix.gives_unknown(f, s.returns.as_ref());
             if !takes.is_empty() || gives {
                 asked.push(s);
             }
@@ -887,17 +894,14 @@ fn changes(ix: &Index) -> Vec<Finding> {
 
 // ---------- gives ----------
 
-/// A function whose callers use what it gives back, with no return annotation: what they get
-/// has no type, so neither a reader nor Atlas can follow it further, where the language leaves
-/// types to the author; a door is asked about by `doors`.
+/// A function whose callers use what it gives back, with no return annotation, where the language
+/// leaves the return type to the author: what they get has no type a reader of the declaration
+/// sees, so neither a reader nor Atlas can follow it further. A door is asked about by `doors`,
+/// on the same condition.
 fn gives(ix: &Index) -> Vec<Finding> {
     let doors: HashSet<&str> = door_fns(ix).into_iter().map(|f| f.id.as_str()).collect();
     let mut out = vec![];
-    for f in
-        ix.g.nodes
-            .iter()
-            .filter(|f| is_function(f) && f.returns.is_none() && !f.ctor && !doors.contains(f.id.as_str()) && ix.leaves(&f.id).types)
-    {
+    for f in ix.g.nodes.iter().filter(|f| is_function(f) && ix.gives_unknown(f, f.returns.as_ref()) && !doors.contains(f.id.as_str())) {
         let mut users: Vec<String> = ix
             .into
             .get(f.id.as_str())
@@ -1131,8 +1135,12 @@ fn unnamed<'g>(ix: &Index<'g>, f: &'g Node) -> Vec<Finding> {
 
 /// A function that is called and leaves nothing behind: it gives nothing back and cannot fail,
 /// changes nothing it is handed, and nothing it runs (what it calls, what it builds, the overrides
-/// a call may reach) touches a place, changes a value or fails. An arrow into the terminal object
-/// carries no information: the function is dead, or it writes a place the graph does not hold.
+/// a call may reach) touches a place, changes a value, fails or ends the program. An arrow into the
+/// terminal object carries no information. Where Atlas sees all it runs, the function is dead, or
+/// changes a value through a field, an item or a loop, which no call shows. Where it runs what
+/// Atlas does not see (a call it cannot follow, a library's call no table describes, a method only
+/// declared, a value a class keeps), the question is what that leaves behind. A method only
+/// declared has no body to ask about; its callers are asked.
 fn nothing(ix: &Index) -> Vec<Finding> {
     // a method -> the methods that override it
     let mut overridden: HashMap<String, Vec<&str>> = HashMap::new();
@@ -1153,7 +1161,7 @@ fn nothing(ix: &Index) -> Vec<Finding> {
             || !ix.targets(&n.id, EdgeKind::Mutates).is_empty()
     };
     let mut out = vec![];
-    for f in ix.g.nodes.iter().filter(|f| is_function(f) && !f.library && !f.ctor && f.entry.is_none()) {
+    for f in ix.g.nodes.iter().filter(|f| is_function(f) && !f.library && !f.ctor && !f.declared) {
         let gives_nothing = match &f.returns {
             Some(r) => r.value.is_empty() && !r.own,
             None => !ix.leaves(&f.id).returns,
@@ -1163,8 +1171,9 @@ fn nothing(ix: &Index) -> Vec<Finding> {
         if !gives_nothing || callers.is_empty() {
             continue;
         }
-        // what it runs, down to the end
+        // what it runs, down to the end, and what of that Atlas does not see
         let mut runs: Vec<&str> = vec![];
+        let mut blind: Vec<Blind> = vec![];
         let mut seen: HashSet<&str> = HashSet::from([f.id.as_str()]);
         let mut todo = vec![f.id.as_str()];
         let mut something = false;
@@ -1174,6 +1183,7 @@ fn nothing(ix: &Index) -> Vec<Finding> {
                 something = true;
                 break;
             }
+            blind.extend(unseen(ix, n, overridden.contains_key(id)));
             let built = ix.targets(id, EdgeKind::Instantiates).into_iter().filter_map(|c| ix.node(c)?.initializer(|i| ix.node(i)));
             let next: Vec<String> = ix
                 .targets(id, EdgeKind::Calls)
@@ -1203,15 +1213,58 @@ fn nothing(ix: &Index) -> Vec<Finding> {
                 list(&runs.iter().map(|r| format!("`{}`", ix.label(r))).collect::<Vec<_>>())
             ));
         }
+        if blind.is_empty() {
+            out.push(ix.finding(
+                "nothing",
+                f,
+                format!("{name} gives nothing back, and Atlas sees no change and no place it reaches"),
+                evidence,
+                format!(
+                    "Atlas sees all that {name} runs, and none of it leaves anything behind. Is it dead, or does it change a value it is handed through a field, an item or a loop, which no call shows? Could it hand back what it makes, or let that value change itself through a method of its own?"
+                ),
+            ));
+            continue;
+        }
+        let what: Vec<String> = blind.iter().map(|b| format!("`{}`", b.what)).collect();
+        let shown = match what.len() {
+            n if n > 3 => format!("{} and {} more", what[..3].join(", "), n - 3),
+            _ => list(&what),
+        };
+        let does = if what.len() == 1 { "does" } else { "do" };
+        evidence.extend(blind.iter().map(|b| format!("`{}` ({}): {}", b.what, b.at, b.why)));
         out.push(ix.finding(
             "nothing",
             f,
-            format!("{name} gives nothing back, and Atlas sees no change and no place it reaches"),
+            format!("{name} gives nothing back, and Atlas cannot see what {shown} {does}"),
             evidence,
             format!(
-                "As far as Atlas can see, a call to {name} leaves nothing behind. Is it dead, or does it change what Atlas cannot see: a value it is handed (through an item or a loop), a global, a library's own state? Could it hand back what it makes, or let that value change itself through a method of its own?"
+                "Atlas sees no change and no place in what {name} runs, but it cannot see what {shown} {does}. Does that leave something behind which the picture lacks (a log, a change in a library's or a class's value, a wait), or is {name} dead?"
             ),
         ));
+    }
+    out
+}
+
+/// Something a function runs that Atlas does not see into: as the code writes it, where, and why
+/// the graph holds nothing of what it does.
+struct Blind {
+    what: String,
+    at: String,
+    why: &'static str,
+}
+
+/// What Atlas does not see in `n`: what its body does that the graph holds nothing else of (a call
+/// made for an effect no table states, a value a class keeps), and `n` itself where it is a method
+/// only declared that nothing in the graph implements.
+fn unseen(ix: &Index, n: &Node, implemented: bool) -> Vec<Blind> {
+    let at = |line: u32| format!("{}:{line}", ix.file(n));
+    let mut out: Vec<Blind> = n
+        .unseen
+        .iter()
+        .map(|(line, what)| Blind { what: what.clone(), at: at(*line), why: "the graph holds nothing of what it does" })
+        .collect();
+    if n.declared && !implemented {
+        out.push(Blind { what: ix.label(&n.id), at: ix.at(n), why: "only declared, and nothing in the graph implements it" });
     }
     out
 }

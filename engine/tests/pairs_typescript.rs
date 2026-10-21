@@ -128,15 +128,20 @@ fn doors_say_what_comes_out() {
 /// A function whose value is used says what it gives back. TypeScript writes it as a return type,
 /// also where the compiler could work it out: `getJson(url): Promise<unknown>`, which the caller
 /// turns into a RateTable through `parseRates`. The shortcut leaves `getJson` unannotated, so what
-/// `res.json()` gives (`any`) travels on as the RateTable `latest` promises.
+/// `res.json()` gives (`any`) travels on as the RateTable `latest` promises, and `gives` asks.
 #[test]
 fn gives_a_used_value_has_a_type() {
     let (c, s) = (clean(), shortcut());
     assert_eq!(node(c, "rates.http.getJson").returns.as_ref().map(|r| r.written.as_str()), Some("Promise<unknown>"));
     assert!(edge(c, EdgeKind::Calls, "rates.http.HttpRates.latest", "rates.source.parseRates"), "what the service says is checked");
     assert!(edge(c, EdgeKind::Returns, "rates.source.parseRates", "model.RateTable"));
+    assert!(asked_anywhere(c, "gives").is_empty(), "{:?}", asked_anywhere(c, "gives"));
     // the shortcut: a missing type
     assert!(node(s, "rates.http.getJson").returns.is_none());
+    assert_eq!(
+        asked_anywhere(s, "gives"),
+        ["shortcut.rates.http.getJson getJson gives back a value its callers use, and does not say what it is"]
+    );
     assert!(!s.edges.iter().any(|e| e.kind == EdgeKind::Returns && e.src == "shortcut.rates.http.getJson"));
     // still the step that asks the service
     assert!(edge(s, EdgeKind::Calls, "rates.http.HttpRates.latest", "rates.http.getJson"));
@@ -368,19 +373,22 @@ fn changes_are_what_the_method_reached_changes() {
 /// object that uses it (`new Ledger(config, ..)`, a `Config` the Ledger has). The shortcut keeps it
 /// in a module-level `let`, set by `configure(config): void` and read back through `settings()`:
 /// a global, the place `Global(config.current)`, which `configure` writes and its users read.
-/// Drawn, not asked: a global is sometimes the right choice.
+/// Drawn, not asked: a global is sometimes the right choice. The shortcut's `exportReport` hands
+/// its report to an exporter it looks up by the format's name, `EXPORTERS[format](report)`, a call
+/// Atlas cannot follow, and gives nothing back (its `Promise<void>` says that it waits, not that it
+/// fails): Atlas asks what that call leaves behind.
 #[test]
 fn nothing_a_call_leaves_something_behind() {
     let (c, s) = (clean(), shortcut());
     assert!(c.edges.iter().any(|e| e.kind == EdgeKind::Has && e.src == "clean.ledger.Ledger" && e.dst == "clean.config.Config"));
-    assert!(!findings(c).iter().any(|f| f.principle == "nothing" && f.node.starts_with("clean.config")));
+    assert!(asked_anywhere(c, "nothing").is_empty(), "{:?}", asked_anywhere(c, "nothing"));
     let global =
         |f: &str, dir: &str| touches(s, f, "global").iter().any(|t| t.artifact == "shortcut.config.current" && t.dir_name() == dir);
     assert!(global("config.configure", "write") && global("config.settings", "read"));
-    assert!(
-        asked_anywhere(s, "nothing").is_empty(),
-        "a call that keeps its value in a global leaves it behind: {:?}",
-        asked_anywhere(s, "nothing")
+    assert_eq!(
+        asked_anywhere(s, "nothing"),
+        ["shortcut.ledger.Ledger.exportReport Ledger.exportReport gives nothing back, and Atlas cannot see what `EXPORTERS[format](..)` does"],
+        "a call that keeps its value in a global leaves it behind"
     );
     assert!(
         edge(s, EdgeKind::Calls, "cli.run", "config.configure") && edge(s, EdgeKind::Calls, "server", "config.configure"),
@@ -996,4 +1004,69 @@ fn doors_every_declaration_of_a_door_says_what_goes_in_and_out() {
     let want = [("core.Length.meters", 9), ("core.scale", 23), ("core.log", 28), ("core.parse", 32)];
     assert_eq!(asked, want.map(|(n, l)| (n.to_string(), l)));
     assert!(node(&s, "core.parse").returns.as_ref().is_some_and(|r| r.written == "any" && r.unchecked), "`any` is drawn as written");
+}
+
+/// One side of the nothing pair (`tests/pairs/nothing`): a job runner that runs a task, says when a
+/// job is done, counts its runs, settles its log and stops the run, in Python, Rust and TypeScript
+/// alike.
+fn jobs(side: &str) -> Graph {
+    analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/nothing/typescript").join(side), &Options::default()).unwrap()
+}
+
+/// A call leaves something behind, and where Atlas cannot see what a call leaves, the question says
+/// so. The clean runner leaves each step where a reader sees it: `Echo` implements the `Task` it
+/// names, `finish` is handed its callback, `count` changes a module's `let`, `settle` writes its log
+/// and `stop` ends the run with `process.exit`: nothing is asked. The shortcut leaves them out of
+/// sight: `Echo` has `Task`'s method without naming it, so `Task.run` is only declared; `Job` keeps
+/// its callback in a field; `count` changes a static its class keeps. Atlas asks what each of those
+/// leaves behind and names what it cannot see. `settle`, a door that waits and does nothing, is
+/// asked whether it is dead as Python's `async def` is: a `Promise<void>` says it waits, not that
+/// it fails.
+#[test]
+fn nothing_says_what_atlas_cannot_see() {
+    let (c, s) = (jobs("clean"), jobs("shortcut"));
+    let asked = |g: &Graph| -> Vec<(String, String)> {
+        check(g)
+            .into_iter()
+            .filter(|f| f.principle == "nothing")
+            .map(|f| (f.node.replacen(&format!("{}.", g.root), "", 1), f.what))
+            .collect()
+    };
+    assert!(asked(&c).is_empty(), "{:#?}", asked(&c));
+    assert!(node(&c, "runner.stop").raises, "ending the run is what `stop` leaves behind");
+    let want = [
+        ("runner.runTask", "runTask gives nothing back, and Atlas cannot see what `Task.run` does"),
+        ("runner.Job.finish", "Job.finish gives nothing back, and Atlas cannot see what `this.onDone(..)` does"),
+        ("runner.count", "count gives nothing back, and Atlas cannot see what `Counter.runs += 1` does"),
+        ("runner.settle", "settle gives nothing back, and Atlas sees no change and no place it reaches"),
+    ]
+    .map(|(f, what)| (f.to_string(), what.to_string()));
+    assert_eq!(asked(&s), want);
+    // what is only declared has no body to ask about, and what implements it is still drawn
+    assert!(node(&s, "runner.Task.run").declared && node(&c, "runner.Task.run").declared);
+    assert_eq!(touches(&s, "runner.Echo.run", "screen").len(), 1);
+    assert!(node(&s, "runner.settle").returns.as_ref().is_some_and(|r| !r.fails), "a Promise says it waits");
+}
+
+/// One side of the gives pair (`tests/pairs/gives`): readings kept in a file and a label, in
+/// Python and TypeScript alike.
+fn readings(side: &str) -> Graph {
+    analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/gives/typescript").join(side), &Options::default()).unwrap()
+}
+
+/// A function whose value is used says what it gives back. TypeScript leaves the return type to the
+/// author as Python does: the compiler works it out where a reader of the declaration does not see
+/// it, and Atlas reads the declaration. The clean store says what `getStore` and `label` give; the
+/// shortcut leaves both to the compiler, and `gives` asks about both, on the condition `doors` asks
+/// a door on. The route loses `Store.history` at the store `getStore` makes.
+#[test]
+fn gives_is_asked_where_the_return_type_is_left_out() {
+    let (c, s) = (readings("clean"), readings("shortcut"));
+    let asked = |g: &Graph| -> Vec<String> {
+        check(g).into_iter().filter(|f| f.principle == "gives").map(|f| f.node.replacen(&format!("{}.", g.root), "", 1)).collect()
+    };
+    assert!(asked(&c).is_empty(), "{:?}", asked(&c));
+    assert_eq!(asked(&s), ["store.getStore", "store.label"]);
+    assert!(edge(&c, EdgeKind::Calls, "store.main", "store.Store.history"));
+    assert!(!edge(&s, EdgeKind::Calls, "store.main", "store.Store.history"), "the route loses the store's history");
 }
