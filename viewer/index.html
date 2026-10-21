@@ -2241,10 +2241,11 @@ async function renderPlaat(mine) {
   for (const id of sortWorld([...roleAt.keys()].filter(id => ["in", "both"].includes(roleAt.get(id))))) root.children.push(worldNode(id, "FIRST_SEPARATE"));
   // steps: frames hold their own steps, in call order
   const holder = pid => pid ? nodeOf.get(pid) : root;
+  // a frame is at least as wide as its title, a choice's with what decides its branches
+  const titled = (n, F) => Object.assign(n.layoutOptions, {"elk.nodeSize.constraints": "MINIMUM_SIZE", "elk.nodeSize.minimum": `(${textW((F.synthetic ? "" : "▾ ") + F.title + (F.whens || []).map(([, w]) => `  ● ${w}`).join(""), 7.2) + 34},60)`});
   for (const F of frames.values()) {
     const n = frameNode(F.id, 34);
-    // a choice's frame is as wide as what decides its branches
-    if (F.synthetic) Object.assign(n.layoutOptions, {"elk.nodeSize.constraints": "MINIMUM_SIZE", "elk.nodeSize.minimum": `(${textW(F.title + (F.whens || []).map(([, w]) => `  ● ${w}`).join(""), 7.2) + 34},60)`});
+    titled(n, F);
     if (!F.parent) root.children.push(n);
   }
   for (const F of frames.values()) if (F.parent) holder(F.parent).children.push(nodeOf.get(F.id));
@@ -2295,7 +2296,7 @@ async function renderPlaat(mine) {
     return common.length ? nodeOf.get(common[common.length - 1]) : root;
   };
   for (const p of [...places.values()].filter(p => (p.kind === "type" || p.kind === "ext") && keep.has(p.id) && !p.inFrame).sort((a, b) => a.label.localeCompare(b.label))) homeOf(p.id).children.push(leaf(p.id, placeW(p, 30), 36));
-  for (const F of famFrames.values()) { const n = frameNode(F.id, 30); homeOf(F.id).children.push(n); for (const k of F.kids) n.children.push(leaf(k.id, 26 + textW(k.label, 6.9), 28)); }
+  for (const F of famFrames.values()) { const n = frameNode(F.id, 30); titled(n, F); homeOf(F.id).children.push(n); for (const k of F.kids) n.children.push(leaf(k.id, 26 + textW(k.label, 6.9), 28)); }
   // a place one step leaves for a later one, or one the code does not say which way it goes, lives
   // like memory in the smallest open step that holds every step using it
   if (!home) for (const [id, F] of worldFrames) usersOf.set(id, [...F.kids].flatMap(k => usersOf.get(k) || []));
