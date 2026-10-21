@@ -72,7 +72,7 @@ pub fn serve(repo: &Path, port: Option<u16>, opts: &Options, shown: bool) -> Res
     let code = Arc::clone(&server);
     std::thread::spawn(move || code.watch());
     if shown {
-        crate::open(url.as_ref());
+        crate::page::open(url.as_ref());
     }
     for conn in listener.incoming().flatten() {
         let server = Arc::clone(&server);
@@ -123,7 +123,7 @@ impl Server {
     /// or send, that needs no server.
     fn export(&self, req: &Request) -> Result<(String, String)> {
         let view = req.query.get("v").map(|v| serde_json::from_str::<Value>(v)).transpose().context("the view is not JSON")?;
-        let (name, html, _) = crate::page(&[self.repo.clone()], &self.opts, None, None, view.clone())?;
+        let (name, html, _) = crate::page::page(&[self.repo.clone()], &self.opts, None, None, view.clone())?;
         self.log.say(Who::You, &format!("exported {name}.html, in the view {}", view.unwrap_or_default()));
         Ok((name, html))
     }
@@ -140,7 +140,7 @@ impl Server {
             None => {}
         }
         let id = name(&now);
-        let (html, summary) = crate::served_page(&self.repo, &self.opts, &id)?;
+        let (html, summary) = crate::page::served_page(&self.repo, &self.opts, &id)?;
         self.log.say(Who::Atlas, &format!("drew {summary}"));
         let drawn = Arc::new(Drawn { stamps: now, id, html });
         *self.kept.lock().unwrap_or_else(|e| e.into_inner()) = Some(Arc::clone(&drawn));

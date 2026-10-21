@@ -10,13 +10,19 @@ use anyhow::Result;
 
 use crate::cache::Check;
 use crate::model::{Graph, Leaves};
+use crate::options::Options;
+use crate::prophecy::Form;
 use crate::repo::Repo;
-use crate::{entries, python, pytypes, rust, typescript, Options};
+use crate::{entries, python, pytypes, rust, typescript};
 
 pub trait Language {
     fn name(&self) -> &'static str;
     /// The file that roots a part in the language.
     fn manifest(&self) -> &'static str;
+    /// The extensions of the files that hold its code as text.
+    fn sources(&self) -> &'static [&'static str];
+    /// The form it marks a prophecy in.
+    fn marks(&self) -> Form;
     /// Does this repo look like one of mine?
     fn detect(&self, repo: &Repo, opts: &Options) -> bool;
     /// `Disk(repo) -> Graph`: every file, its symbols, the calls and types between them, the
@@ -63,6 +69,13 @@ impl Language for Python {
     }
     fn manifest(&self) -> &'static str {
         "pyproject.toml"
+    }
+    /// A notebook holds its code in the cells of a JSON document.
+    fn sources(&self) -> &'static [&'static str] {
+        &["py"]
+    }
+    fn marks(&self) -> Form {
+        Form::Decorator
     }
     fn detect(&self, repo: &Repo, _opts: &Options) -> bool {
         repo.is_file("pyproject.toml") || !python::packages(repo).is_empty() || !repo.named().is_empty()
@@ -135,6 +148,12 @@ impl Language for Rust {
     fn manifest(&self) -> &'static str {
         "Cargo.toml"
     }
+    fn sources(&self) -> &'static [&'static str] {
+        &["rs"]
+    }
+    fn marks(&self) -> Form {
+        Form::Attribute
+    }
     fn detect(&self, repo: &Repo, _opts: &Options) -> bool {
         repo.is_file("Cargo.toml")
     }
@@ -168,6 +187,12 @@ impl Language for TypeScript {
     }
     fn manifest(&self) -> &'static str {
         "package.json"
+    }
+    fn sources(&self) -> &'static [&'static str] {
+        typescript::EXTENSIONS
+    }
+    fn marks(&self) -> Form {
+        Form::JsDoc
     }
     fn detect(&self, repo: &Repo, _opts: &Options) -> bool {
         typescript::detect(repo)
@@ -213,6 +238,12 @@ pub fn leaves(name: &str) -> Leaves {
 /// Whether the language of that name compares types by their members.
 pub fn structural(name: &str) -> bool {
     languages().into_iter().find(|l| l.name() == name).is_some_and(|l| l.structural())
+}
+
+/// The language whose code a file holds, by its extension.
+pub fn of_file(path: &Path) -> Option<Box<dyn Language>> {
+    let ext = path.extension().and_then(|e| e.to_str())?;
+    languages().into_iter().find(|l| l.sources().contains(&ext))
 }
 
 /// All known languages, in detection order.
