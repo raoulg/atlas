@@ -14,12 +14,12 @@ line Store()/Store.get/Shelf.get/Book() > Book@Store()/Store.get/Shelf.get/Book(
 line Book@Store()/Store.get/Shelf.get/Book() > Store()/Store.get/Shelf.get value
 line Store()/Store.get/Shelf.get > Book@Store()/Store.get/? value              # the override makes it at the dispatch's choice
 line Book@Store()/Store.get/? > Store()/Store.get value
-known #124 line Store()/Store.get > Book@Store()/Store.get value
+line Store()/Store.get > Book@Store()/Store.get value
 
 home Store Store()
 home Book@Store()/Store.get/Shelf.get/Book() Store()/Store.get/Shelf.get
 home Book@Store()/Store.get/? Store()/Store.get
-known #124 home Book@Store()/Store.get Store()                    # the dispatch hands on no Book: its signature names Self::Item
+home Book@Store()/Store.get Store()
 
 side entry left
 

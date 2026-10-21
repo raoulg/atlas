@@ -482,8 +482,10 @@ library's module holds as data is the place (`Global(os.environ)`, not `Global(o
 parameters is one type, whatever its parameters.
 **In Atlas.** A generic's arguments are values only where the generic holds or stands for them
 (`Vec<Month>`, `Option<T>`, `Promise<Regel[]>`). `DrawingArea<DB, Shift>` and `ndarray[..]` are
-each one type, in every language.
-**Where.** `knowledge.rs`: `python_container`, `TYPESCRIPT_CONTAINERS`, `RUST_CONTAINERS`.
+each one type, in every language. A type a trait leaves to its implementations (`Self::Item`) is the one each
+implementation fixes (`type Item = Book`): in the implementation that type, in the trait any of them.
+**Where.** `knowledge.rs`: `python_container`, `TYPESCRIPT_CONTAINERS`, `RUST_CONTAINERS`; the Rust reader's
+signatures (`rust/passes.rs`, `fixed_by_implementations`).
 
 ### Narrowing
 **What.** A test of a value's type refines its type in the code that runs only where the test
