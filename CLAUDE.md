@@ -100,7 +100,7 @@ Two long-lived branches, one release train. Everything else is a short-lived top
    (`git worktree remove <path>`, which also frees its `target`, several GB), its local branch and
    its remote branch. Check first that the worktree has no changes and that
    `git rev-list --count origin/next..HEAD` is 0. The agent that merges does this in the same turn.
-2. **Land on `next`** when `cargo fmt`, `cargo test` and `atlas check .` pass: merge the topic branch
+2. **Land on `next`** when `cargo fmt` and `cargo test` pass: merge the topic branch
    (a merge commit, no squash), push, close the issue. New work, documentation, the release
    workflows and the tap all go to `next`, also while it is only documentation.
 3. **Promote**: when Raoul says so, `next` is merged into `main` (a merge commit), `main` is tagged
@@ -184,7 +184,13 @@ Two long-lived branches, one release train. Everything else is a short-lived top
   that is not the one opened, or does not close to the picture it was (`docs/reference/mathematics.md`,
   "Refinement keeps what it does not refine"), beyond the ones tracked in #39, #40, #41 and #43. Lines the open box draws
   beyond the closed one are listed as `more` and are tracked in #38.
-- `atlas check .` must find nothing on Atlas itself (`engine/tests/principles.rs` pins it).
+- `atlas check` is a signal to look critically at the code and at what the check claims, never an
+  oracle and never a target. Zero findings on Atlas is no goal: never change Atlas's code, or bend a
+  rule, to keep `atlas check .` quiet. Where a finding is wrong, repair the rule and let Atlas carry
+  what the rule then finds. `engine/tests/principles.rs` keeps Atlas's findings as a reviewed list,
+  `REVIEWED`, each with why it stands; it fails when the findings change, so that each change is
+  read, not so that the list shrinks. A finding a change brings is answered there: the code changes
+  for a reason of its own, the rule is repaired, or the list says why the finding stands.
   A new principle is a rule in `engine/src/principles.rs`, a case in the fixture, a clean and a
   sloppy case in the pairs, and a section in `docs/reference/principles.md`; it checks what the graph
   holds, never a project.
