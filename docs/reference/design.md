@@ -395,8 +395,8 @@ the joint. What crosses is data: a class one of whose operations reaches a datab
 the web, a model or a program (a sink, a repository, a client), and a library's type
 whose calls reach one (`sqlite3.Connection`), is a door to that place, and the place is
 drawn instead. A file or the screen makes no door: a value may save or show itself.
-Packages that call one another while no data joins them get a dotted line, from the
-caller: the quotient of the call graph, beside the quotient of the places. The package
+Packages whose code calls one another get a dotted line, from the caller: the quotient
+of the call graph, beside the quotient of the places, drawn whatever data also joins them. The package
 level stands whether or not entry points are found.
 
 **No declared architecture.** A repository declares nothing to Atlas: no roles, no

@@ -28,13 +28,14 @@ pub fn route(g: &Graph, entry: &str, depth: usize) -> Option<String> {
     s.parses = n.entry.as_ref().map_or(false, |e| matches!(e.kind, EntryKind::Cli | EntryKind::Script));
     let kind = n.entry.as_ref().map(|e| format!("{} · {}", kind_label(e.kind), usage(e))).unwrap_or_else(|| s.name(start, ""));
     let mut out = format!("{kind}\n{}{}", n.id, s.signature(n));
-    let effects = s.effects(n);
+    let path = [start.to_string()];
+    let effects = s.effects(n, Some(&path));
     if !effects.is_empty() {
         out.push_str(&format!("   ·   {effects}"));
     }
     out.push('\n');
-    let mut shown: HashMap<String, String> = HashMap::from([(start.to_string(), "the entry".to_string())]);
-    s.walk(start, "", depth.max(1), &mut shown, &mut out);
+    let mut shown: HashMap<String, String> = HashMap::from([(s.seen(start, start, &path), "the entry".to_string())]);
+    s.walk(start, "", depth.max(1), &mut shown, &mut out, &path);
     Some(out)
 }
 
@@ -63,7 +64,7 @@ pub fn choices(g: &Graph, entry: &str) -> Option<String> {
                 st.to.trim_start_matches("op:").to_string()
             }
         };
-        let touched = |st: &Step| s.nodes.get(st.to.as_str()).map(|n| s.effects(n)).unwrap_or_default();
+        let touched = |st: &Step| s.nodes.get(st.to.as_str()).map(|n| s.effects(n, None)).unwrap_or_default();
         for item in &b.items {
             let steps: Vec<&Step> = match item {
                 Item::Step(st) => vec![st],
@@ -166,6 +167,8 @@ struct Story<'g> {
     reached: HashSet<String>,
     /// The route is run from the command line: its parses of the command line are the entry's.
     parses: bool,
+    /// For each function, the callers that make a path whole for a touch it reaches.
+    makers: std::cell::RefCell<HashMap<String, HashSet<String>>>,
 }
 
 impl<'g> Story<'g> {
@@ -182,6 +185,7 @@ impl<'g> Story<'g> {
             entry: String::new(),
             reached: Default::default(),
             parses: false,
+            makers: Default::default(),
         }
     }
 
@@ -200,8 +204,9 @@ impl<'g> Story<'g> {
     }
 
     /// The steps of the body at `body` (a function, or a function on a class), each choice's
-    /// branches lettered, then the overrides the call may run instead.
-    fn walk(&self, body: &str, prefix: &str, depth: usize, shown: &mut HashMap<String, String>, out: &mut String) {
+    /// branches lettered, then the overrides the call may run instead. `path` is the functions on the
+    /// calls that lead into the body.
+    fn walk(&self, body: &str, prefix: &str, depth: usize, shown: &mut HashMap<String, String>, out: &mut String, path: &[String]) {
         let Some(b) = self.bodies.get(body) else { return };
         let holder = body.split('@').next().unwrap_or(body);
         let sites = self.nodes.get(holder).map(|n| n.sites.as_slice()).unwrap_or(&[]);
@@ -221,7 +226,7 @@ impl<'g> Story<'g> {
         for item in &b.items {
             match item {
                 Item::Step(st) if !shown_step(st) => {}
-                Item::Step(st) => self.step(st, st.site.and_then(|i| sites.get(i)), &next(), "", level, depth, shown, out),
+                Item::Step(st) => self.step(st, st.site.and_then(|i| sites.get(i)), &next(), "", level, depth, shown, out, path),
                 Item::Choice { members, when, .. } => {
                     let members: Vec<_> = members.iter().filter(|m| shown_step(&m.step)).collect();
                     if members.is_empty() {
@@ -238,6 +243,7 @@ impl<'g> Story<'g> {
                             depth,
                             shown,
                             out,
+                            path,
                         );
                     }
                 }
@@ -245,7 +251,7 @@ impl<'g> Story<'g> {
         }
         for (i, o) in b.alts.iter().enumerate() {
             let st = Step { to: o.clone(), on: String::new(), site: None };
-            self.step(&st, None, &format!("{prefix}{}", letter(i)), "", level, depth, shown, out);
+            self.step(&st, None, &format!("{prefix}{}", letter(i)), "", level, depth, shown, out, path);
         }
     }
 
@@ -259,6 +265,7 @@ impl<'g> Story<'g> {
         depth: usize,
         shown: &mut HashMap<String, String>,
         out: &mut String,
+        path: &[String],
     ) {
         let indent = "  ".repeat(level);
         let Some(n) = self.nodes.get(st.to.as_str()) else {
@@ -286,13 +293,15 @@ impl<'g> Story<'g> {
             "otherwise" => "   ·   otherwise".to_string(),
             w => format!("   ·   when {w}"),
         };
-        if let Some(at) = shown.get(&k).filter(|_| body.is_some()) {
+        let inner: Vec<String> = path.iter().cloned().chain([st.to.clone()]).collect();
+        let seen = self.seen(&k, &st.to, &inner);
+        if let Some(at) = shown.get(&seen).filter(|_| body.is_some()) {
             out.push_str(&format!("{indent}{num}  {}  → see {at}{when}\n", self.name(&st.to, &st.on)));
             return;
         }
-        shown.insert(k.clone(), num.to_string());
+        shown.insert(seen, num.to_string());
         let mut line = format!("{indent}{num}  {}{}", self.name(&st.to, &st.on), self.signature(n));
-        let effects = self.effects(n);
+        let effects = self.effects(n, Some(&inner));
         if !effects.is_empty() {
             line.push_str(&format!("   ·   {effects}"));
         }
@@ -304,8 +313,37 @@ impl<'g> Story<'g> {
         out.push_str(&line);
         out.push('\n');
         if level + 1 < depth {
-            self.walk(&k, num, depth, shown, out);
+            self.walk(&k, num, depth, shown, out, &inner);
         }
+    }
+
+    /// A body is shown once for each set of callers on the way to it that make a path it touches
+    /// whole: under another caller it touches other places, and is another step.
+    fn seen(&self, k: &str, id: &str, path: &[String]) -> String {
+        let mut makers = self.makers.borrow_mut();
+        let made = makers.entry(id.to_string()).or_insert_with(|| {
+            // what the function can run, as `Graph::reach` follows it, from the edges this story keeps
+            let runs = |e: &Edge| {
+                matches!(e.kind, EdgeKind::Calls | EdgeKind::Instantiates | EdgeKind::Requests)
+                    || (e.kind == EdgeKind::Contains && self.nodes.get(e.src.as_str()).map_or(false, |n| n.kind == NodeKind::Class))
+            };
+            let (mut seen, mut stack) = (HashSet::from([id]), vec![id]);
+            while let Some(at) = stack.pop() {
+                for e in self.out.get(at).into_iter().flatten().copied().filter(|e| runs(e)) {
+                    if seen.insert(e.dst.as_str()) {
+                        stack.push(e.dst.as_str());
+                    }
+                }
+            }
+            seen.iter()
+                .filter_map(|f| self.nodes.get(f))
+                .flat_map(|n| n.touches.iter().flat_map(|t| t.by.iter().flat_map(|f| f.split('&').map(str::to_string))))
+                .collect()
+        });
+        let mut on: Vec<&str> = path.iter().map(String::as_str).filter(|f| made.contains(*f)).collect();
+        on.sort_unstable();
+        on.dedup();
+        format!("{k}|{}", on.join(","))
     }
 
     /// `Graph()` for a type built in place, `BasePlot` for its constructor (the signature
@@ -348,10 +386,13 @@ impl<'g> Story<'g> {
         out
     }
 
-    /// What a step's own body does at the edges: `reads Makefile · writes *.png · prints`.
-    fn effects(&self, n: &Node) -> String {
+    /// What a step's own body does at the edges: `reads Makefile · writes *.png · prints`. A place a
+    /// caller makes whole is touched where the route reaches that caller, and under a step (`path`,
+    /// the functions on the calls that lead to it) where that caller is on the way.
+    fn effects(&self, n: &Node, path: Option<&[String]>) -> String {
         let mut groups: Vec<(String, Vec<String>)> = vec![];
-        for t in n.touches_in(&self.entry, &|f| self.reached.contains(f)) {
+        let on_way = |f: &str| path.map_or_else(|| self.reached.contains(f), |p| p.iter().any(|x| x == f));
+        for t in n.touches_in(&self.entry, &on_way) {
             let (v, what) = (t.verb(), place(t));
             match groups.iter_mut().find(|(g, _)| *g == v) {
                 Some((_, items)) => {

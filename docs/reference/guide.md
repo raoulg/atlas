@@ -139,7 +139,7 @@ one.
 A part opens into its packages, each as one step from what its own code reads to what it
 writes. Between packages stand the types that cross them: data one package makes and
 another takes. A sink or a repository is not drawn as a type there: it is a door to its
-database, and the database is drawn. A dotted line joins a package to one it only calls.
+database, and the database is drawn. A dotted line joins a package to one it calls.
 A package opens into its subpackages, and a module into its routes and the functions other
 packages call in it. This overview stands even when Atlas finds no entry points.
 
