@@ -2,10 +2,10 @@
 # dispatch is handed that Event, whatever its signature says it takes (`e: Click`). That it then reads `e.x` of a value
 # that may be no Click is `check`'s to ask; the plan draws what is handed.
 # the override's result has the dispatch's own moment: closed, its line into the dispatch is dropped, open it is drawn
-known #102 fault more t:shortcut.shapes.Circle@n:shortcut.shapes.Factory/shortcut.shapes.Factory.make>n:shortcut.shapes.Factory/shortcut.shapes.Factory.make
+known #102 fault more t:events.shapes.Circle@n:events.shapes.Factory/events.shapes.Factory.make>n:events.shapes.Factory/events.shapes.Factory.make
 known #102 fault no line Circle@Factory()/Factory.make > Factory()/Factory.make
 
-route shortcut.handlers.Handler
+route events.handlers.Handler
 step Handler()/Handler.handle
 step Handler()/Handler.handle/ClickHandler.handle
 step Handler()/Handler.log

@@ -143,9 +143,15 @@ fn ts_parser(tsx: bool) -> Result<Parser> {
     Ok(p)
 }
 
-/// The package's name for the graph: its directory, as Python's is its package directory.
+/// The package's name for the graph: the `name` its `package.json` gives it, which code imports it
+/// by, as a Python part is the package its manifest names and a Rust part its crate; its directory
+/// where the `package.json` names none. A scoped name (`@acme/client`) stands as it is written.
 fn root_name(repo: &Repo) -> String {
-    segment(&repo.name().unwrap_or_else(|| "app".into()))
+    let named = repo
+        .text("package.json")
+        .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+        .and_then(|j| j["name"].as_str().filter(|n| !n.is_empty()).map(str::to_string));
+    segment(&named.or_else(|| repo.name()).unwrap_or_else(|| "app".into()))
 }
 
 /// A path segment as part of a dotted id: dots inside a file name (`punt.functions`) are not
