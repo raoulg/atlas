@@ -707,7 +707,11 @@ fn prophecy_says_when_its_import_goes_in_a_circle() {
             std::fs::write(&init, format!("from archive.sink import Sink\n{text}")).expect("writes");
         }
         let file = PathBuf::from("src/archive/sink.py");
-        let now = std::fs::read_to_string(copy.join(&file)).expect("reads").replace("from archive import prophecy\n", "import json\n");
+        // the vision is text with `\n` line ends, whatever line ends the checkout gives the file
+        let now = std::fs::read_to_string(copy.join(&file))
+            .expect("reads")
+            .replace("\r\n", "\n")
+            .replace("from archive import prophecy\n", "import json\n");
         let vision =
             BTreeMap::from([(file.clone(), Some(format!("{now}\n\nclass Crate:\n    def pack(self, report: str, /) -> None: ...\n")))]);
         let decided = atlas_engine::decide::prophetize(&copy, &vision, &BTreeMap::new(), &Options::default()).expect("decided");
