@@ -1423,3 +1423,72 @@ fn places_a_file_shipped_with_the_package_is_part_of_it() {
     }
     assert!(found(&c, "places").is_empty(), "{:?}", found(&c, "places"));
 }
+
+/// One side of the diamond pair (`tests/pairs/diamond`): a feed that is a buffered and a cached
+/// source at once, `Feed(Buffered, Cached)` over `Source`, once as its author says which `read`
+/// and which initializer a feed runs and once as the order of its bases decides it.
+fn news(side: &str) -> &'static Graph {
+    static CLEAN: OnceLock<Graph> = OnceLock::new();
+    static SHORTCUT: OnceLock<Graph> = OnceLock::new();
+    let read =
+        || analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/diamond/python").join(side), &Options::default()).unwrap();
+    if side == "clean" {
+        CLEAN.get_or_init(read)
+    } else {
+        SHORTCUT.get_or_init(read)
+    }
+}
+
+/// A value runs, for a name its class does not define, the first definition along its class's
+/// method resolution order, the order the rules walk a class's ancestors in (`linearization`).
+/// `Feed(Buffered, Cached)` over `Source` runs Feed, Buffered, Cached, Source: a feed's `read` is
+/// `Cached.read`, though `Buffered`, its first base, inherits `Source.read`, and building a feed
+/// takes what `Cached.__init__` takes. The clean `Feed` says which it runs, its own `read` and
+/// initializer calling `Cached`'s. The shortcut leaves it to the order of its bases: its route runs
+/// `Cached.read` from the code of `Buffered`, whose call names `Source.read`, and reads the file
+/// the cache keeps, not the network.
+#[test]
+fn diamond_a_value_runs_the_method_its_method_resolution_order_names() {
+    let class = |c: &str| format!("news.sources.{c}");
+    for (side, read, init) in [("clean", "Feed", "Feed"), ("shortcut", "Cached", "Cached")] {
+        let g = news(side);
+        let bases = |cls: &'static str| -> Vec<&'static str> {
+            g.edges.iter().filter(|e| e.kind == EdgeKind::Inherits && e.src == cls).map(|e| e.dst.as_str()).collect()
+        };
+        let order = atlas_engine::linearization("news.sources.Feed", &bases, &mut Default::default());
+        assert_eq!(order, ["Feed", "Buffered", "Cached", "Source"].map(class), "{side}");
+        let first = |name: &str| order.iter().map(|c| format!("{c}.{name}")).find(|m| g.node(m).is_some()).unwrap();
+        assert_eq!(first("read"), format!("{}.read", class(read)), "{side}");
+        assert_eq!(first("__init__"), format!("{}.__init__", class(init)), "{side}");
+        let bodies = atlas_engine::flow::bodies(g);
+        let lines = &bodies[&atlas_engine::flow::key("news.sources.Buffered.lines", &class("Feed"))];
+        let ran: Vec<&str> = lines.steps().iter().map(|s| s.to.as_str()).collect();
+        assert_eq!(ran, [first("read")], "{side}");
+        assert_eq!(atlas_engine::flow::arrows(g)[&class("Feed")].takes, ["news.store.Store"], "{side}");
+        assert!(edge(g, "news.sources.Buffered.lines", "news.sources.Source.read", EdgeKind::Calls), "{side}");
+        let r = route(g, "news.read.headlines");
+        assert!(r.contains("Store.get(key)") && !r.contains("response.read()"), "{side}: {r}");
+    }
+    let asked: Vec<String> = check(news("clean")).into_iter().map(|f| format!("{} {}", f.principle, f.node)).collect();
+    assert!(asked.is_empty(), "{asked:?}");
+}
+
+/// A call through a class (`Cached.read(self)`) runs that class's method and no override of it:
+/// the clean `Feed.read` runs `Cached.read`, which runs nothing in its place.
+#[test]
+#[ignore = "#110: a call through a class is drawn as a call whose class is not known, which may run each override below it: `Cached.read` is drawn as one of itself and `Feed.read`"]
+fn diamond_a_call_through_a_class_runs_its_method() {
+    let r = route(news("clean"), "news.read.headlines");
+    assert!(!r.contains("one of"), "{r}");
+}
+
+/// The file a feed reads is named in the terms of the route that builds it, on either side: the
+/// cache directory `headlines` is handed, then the name of the feed in it.
+#[test]
+#[ignore = "#111: a path is carried to the callers of the method that touches it along the calls the code names: `Buffered.lines` names `Source.read`, so the file `Cached.read` reads on a shortcut feed stays `(self.root / key)`"]
+fn diamond_the_file_a_feed_reads_is_named_where_it_is_built() {
+    for side in ["clean", "shortcut"] {
+        let r = route(news(side), "news.read.headlines");
+        assert!(r.contains("reads {cache}/"), "{side}: {r}");
+    }
+}

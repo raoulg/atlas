@@ -6,6 +6,7 @@
 //! The readers record each call with where it is written and each value it is handed with where
 //! that is written; what follows is the same in every language.
 
+use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use indexmap::IndexMap;
@@ -630,24 +631,20 @@ impl<'g> Ix<'g> {
         self.nodes.get(class)?.initializer(|id| self.nodes.get(id).copied())
     }
 
-    /// What building a class takes: its constructor's parameters, or its nearest base's when it
-    /// has none of its own.
-    fn built_from(&self, class: &str, depth: usize) -> Vec<String> {
-        if let Some(c) = self.ctor(class) {
-            return self.targets(&c, EdgeKind::Takes);
-        }
-        let base =
-            self.out(class, EdgeKind::Inherits).find(|e| self.nodes.get(e.dst.as_str()).map_or(false, |n| n.kind == NodeKind::Class));
-        match base {
-            Some(b) if depth < 10 => self.built_from(&b.dst, depth + 1),
-            _ => vec![],
-        }
+    /// What building a class takes: the parameters of the first constructor along its method
+    /// resolution order, its own or, when it has none, a base's.
+    fn built_from(&self, class: &str) -> Vec<String> {
+        self.mro(class)
+            .into_iter()
+            .filter(|c| self.nodes.get(c).map_or(false, |n| n.kind == NodeKind::Class))
+            .find_map(|c| self.ctor(c))
+            .map_or(vec![], |c| self.targets(&c, EdgeKind::Takes))
     }
 }
 
 fn arrow_of(ix: &Ix, n: &Node, done: &mut HashMap<String, BTreeMap<String, Order>>) -> Arrow {
     if n.kind == NodeKind::Class {
-        return Arrow { takes: ix.built_from(&n.id, 0), gives: vec![n.id.clone()], ..Default::default() };
+        return Arrow { takes: ix.built_from(&n.id), gives: vec![n.id.clone()], ..Default::default() };
     }
     // a module's own code runs where it is a program (`if __name__ == "__main__":`): what it
     // reads back of what it wrote
@@ -788,6 +785,8 @@ struct Ix<'g> {
     nodes: HashMap<&'g str, &'g Node>,
     out: HashMap<&'g str, Vec<&'g Edge>>,
     into: HashMap<&'g str, Vec<&'g Edge>>,
+    /// Each class's method resolution order, worked out once.
+    mro: RefCell<HashMap<&'g str, Vec<&'g str>>>,
 }
 
 impl<'g> Ix<'g> {
@@ -798,7 +797,7 @@ impl<'g> Ix<'g> {
             out.entry(e.src.as_str()).or_default().push(e);
             into.entry(e.dst.as_str()).or_default().push(e);
         }
-        Ix { nodes: g.nodes.iter().map(|n| (n.id.as_str(), n)).collect(), out, into }
+        Ix { nodes: g.nodes.iter().map(|n| (n.id.as_str(), n)).collect(), out, into, mro: RefCell::default() }
     }
 
     fn out(&self, id: &str, kind: EdgeKind) -> impl Iterator<Item = &'g Edge> + '_ {
@@ -824,16 +823,20 @@ impl<'g> Ix<'g> {
         out
     }
 
-    /// The method a value of class `on` runs for `name`: its class's own, or the nearest base's.
-    fn method_on(&self, on: &str, name: &str, depth: usize) -> Option<String> {
-        let own = format!("{on}.{name}");
-        if self.nodes.contains_key(own.as_str()) {
-            return Some(own);
-        }
-        if depth > 10 {
-            return None;
-        }
-        self.out(on, EdgeKind::Inherits).find_map(|e| self.method_on(&e.dst, name, depth + 1))
+    /// The method a value of class `on` runs for `name`: the first along its method resolution
+    /// order that defines it, its class's own before a base's.
+    fn method_on(&self, on: &str, name: &str) -> Option<String> {
+        self.mro(on).into_iter().map(|c| format!("{c}.{name}")).find(|m| self.nodes.contains_key(m.as_str()))
+    }
+
+    /// The method resolution order along `inherits` (`model::linearization`): the class, then
+    /// its ancestors nearest first.
+    fn mro(&self, cls: &str) -> Vec<&'g str> {
+        let Some(cls) = self.nodes.get_key_value(cls).map(|(k, _)| *k).or_else(|| self.out.get_key_value(cls).map(|(k, _)| *k)) else {
+            return vec![];
+        };
+        let bases = |c: &'g str| self.out(c, EdgeKind::Inherits).map(|e| e.dst.as_str()).collect();
+        crate::model::linearization(cls, &bases, &mut self.mro.borrow_mut())
     }
 }
 
@@ -902,7 +905,7 @@ fn body_of(ix: &Ix, n: &Node, on: &str) -> Body {
                     None => return None,
                 };
                 if let Some(m) = ix.nodes.get(s.to.as_str()).filter(|m| m.cls.is_some() && !runs_on.is_empty()) {
-                    to = ix.method_on(runs_on, &m.name, 0).unwrap_or(to);
+                    to = ix.method_on(runs_on, &m.name).unwrap_or(to);
                 }
                 Some((Step { to, on: runs_on.to_string(), site: Some(i) }, s.arms.clone()))
             })
