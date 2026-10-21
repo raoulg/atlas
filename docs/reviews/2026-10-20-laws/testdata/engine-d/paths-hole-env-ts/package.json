@@ -1,0 +1,7 @@
+{
+  "name": "holeenv",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": { "holeenv": "./src/cli.ts" }
+}
