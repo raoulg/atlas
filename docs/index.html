@@ -88,7 +88,9 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--focus);outline-offs
 .top nav{display:flex;gap:4px 18px;overflow-x:auto;white-space:nowrap;font-size:15px;flex:1;margin-left:0}
 .top nav a{color:var(--ink-2);text-decoration:none;padding:6px 2px;border-bottom:2px solid transparent}
 .top nav a:hover{color:var(--ink);border-bottom-color:var(--accent)}
-.top .gh{margin-left:auto;font-family:var(--mono);font-size:13px;text-decoration:none;color:var(--ink-2)}
+.top .repo{margin-left:auto;display:inline-flex;align-items:center;gap:7px;font-size:15px;font-weight:500;text-decoration:none;color:var(--ink);white-space:nowrap}
+.top .repo svg{width:20px;height:20px;fill:currentColor}
+.top .repo:hover{color:var(--accent)}
 main{padding-top:0}
 .hero{padding:56px 0 24px}
 .hero-grid{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:48px;align-items:center;margin-bottom:44px}
@@ -172,6 +174,10 @@ a.try:hover{color:var(--accent)}
 .session figure+figure+.aside{grid-column:1/-1;max-width:78ch}
 .session .aside code{font-family:var(--mono);font-size:14px}
 @media (max-width:900px){.session{grid-template-columns:minmax(0,1fr)}}
+/* a long answer in the chat, cut: it fades out where the picture beside it says enough */
+.session figure.cut img{-webkit-mask-image:linear-gradient(#000 55%,transparent);mask-image:linear-gradient(#000 55%,transparent)}
+.stage .session figure.code pre{font-size:11.5px;line-height:1.5;max-height:430px;overflow:auto}
+.stage .session{margin-bottom:4px}
 .mcp{background:var(--panel);border:1px solid var(--line);padding:16px 20px;width:100%}
 .mcp h3{font:600 17px var(--sans);margin:0 0 6px}
 .mcp p{margin:6px 0 0;color:var(--ink-2);font-size:15px;max-width:78ch}
@@ -290,13 +296,13 @@ section{margin-bottom:104px}
     <nav aria-label="Chapters">
       <a href="#example">The same figure</a>
       <a href="#languages">Languages</a>
-      <a href="#changed">What changed</a>
       <a href="#point">Pointing</a>
       <a href="#design">Designing ahead</a>
+      <a href="#changed">What changed</a>
       <a href="#readme">Your README</a>
       <a href="#install">Try it</a>
     </nav>
-    <a class="gh" href="https://github.com/raoulg/atlas">github</a>
+    <a class="repo" href="https://github.com/raoulg/atlas"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>GitHub</a>
   </div>
 </header>
 <main id="main">
@@ -356,40 +362,27 @@ section{margin-bottom:104px}
   </div>
 </section>
 
-<section class="chap" id="changed">
-  <h2>See what a change did, without reading the diff.</h2>
-  <p class="lede">A pipeline grows one commit at a time: the download, the load, the first figure, the smoothing, a filter, and last the maxima of the solar cycles. Pick any two commits and Atlas draws them as one picture. Here the fifth against the sixth: the new path from the smoothed months to a second figure is <b class="g">filled green</b>, and nothing else moved.</p>
-  <div class="wide">
-    <figure>
-      <figcaption><b>The history: pick any two commits</b><span class="tag">history</span></figcaption>
-      <img src="img/interaction/history-list.png" style="--w:420" alt="The six commits of the sunspots repository, from the download to the maxima of the cycles; the fifth is marked A and the sixth B">
-    </figure>
-    <figure>
-      <figcaption><b>A against B, as one picture</b><span class="tag">A &cup; B</span></figcaption>
-      <img src="img/interaction/history.png" style="--w:1580" alt="Atlas's history page: six commits listed, the fifth and the sixth drawn as one picture. The new steps peaks and Cycles.save, the types Cycles and DataFrame and the new file figures/cycles.png are filled green; everything else is plain.">
-    </figure>
-    <p class="key"><span class="sw add"></span>added <span class="sw del"></span>removed <span class="sw chg"></span>changed: its own arrows differ</p>
-  </div>
-</section>
-
 <section class="chap" id="point">
   <h2>Say exactly what you mean: point at it.</h2>
   <p class="lede">You chat with your agent where you always do. Atlas gives it tools, and the picture is where you both look. You ask where something happens, and the agent shows you on the page. You alt-click a box to leave a note on it, and the agent answers on that same box.</p>
   <div class="wide">
     <div class="mcp">
       <h3>Connect Atlas to your agent once</h3>
+      <p class="os">Claude Code</p>
       <pre>claude mcp add --scope user atlas -- atlas mcp</pre>
+      <p class="os">Codex</p>
+      <pre>codex mcp add atlas -- atlas mcp</pre>
       <p>Then run <code>atlas serve</code> in a repository and open the page it prints. What follows is one real session with Claude Code on the sunspots program: what was said in the chat, and what the page showed.</p>
     </div>
     <div class="session">
       <h3>1 &middot; You ask where something happens; the agent points at it</h3>
-      <figure class="chat"><figcaption>In the chat</figcaption><img src="img/session/ask.png" style="--w:821" alt="The chat: you ask where the smoothing happens; the agent answers that it is the step smooth, that it took the page to the route run and pointed at smooth, what goes in and what comes out, and the one line of code"></figure>
-      <figure><figcaption>On the page <span class="tag">look</span></figcaption><img src="img/session/look.png" style="--w:760" alt="The route of the sunspots program between load and Trend.save; the step smooth is outlined and glows: the agent points at it"></figure>
+      <figure class="chat"><figcaption>In the chat</figcaption><img src="img/session/ask.png" style="--w:821" alt="The chat: you ask where the smoothing happens; the agent answers that it is the step smooth, that it took the page to the route run and pointed at smooth, and that it sits between load and Trend.save"></figure>
+      <figure><figcaption>On the page <span class="tag">look</span></figcaption><img src="img/session/look.webp" style="--w:760" alt="The route of the sunspots program around smooth, close up; the step smooth is outlined and pulses with a blue glow: the agent points at it"></figure>
     </div>
     <div class="session">
       <h3>2 &middot; You write a note on a box</h3>
-      <figure><figcaption>On the page <span class="tag">alt-click</span></figcaption><img src="img/session/note.png" style="--w:742" alt="A note field open on the step smooth, with the question why smooth uses center typed in"></figure>
       <p class="aside">Alt-click a box, type, press enter. The note stays on the box, with the view and the commit it was written at. One more note went on <code>load</code>: what happens if the data on the web changes?</p>
+      <figure><figcaption>On the page <span class="tag">alt-click</span></figcaption><img src="img/session/note.png" style="--w:742" alt="A note field open on the step smooth, with the question why smooth uses center typed in"></figure>
     </div>
     <div class="session">
       <h3>3 &middot; The agent reads your notes and answers on the box</h3>
@@ -402,29 +395,106 @@ section{margin-bottom:104px}
 <section class="chap" id="design">
   <h2>Design the next feature before you write it.</h2>
   <p class="lede">Ask your agent for a change and it shows you the change, not a description of it: a <em>vision</em>, a sketch drawn beside the code as it is, where only what the code would add is <b class="g">green</b>. When you say yes, the sketch goes into your code as a <em>prophecy</em>, <b class="p">dotted purple</b>: the same shape, now real code that Atlas reads with real types, and a list of what is left to build. Write the bodies, remove the marker, and the dots become solid.</p>
+  <div class="wide" data-tabs id="lifecycle">
+    <div class="tabs" role="tablist" aria-label="The life of a design">
+      <button role="tab" aria-selected="true" aria-controls="st-vision" id="tb-vision">1 &middot; The vision</button>
+      <button role="tab" aria-selected="false" aria-controls="st-prophecy" id="tb-prophecy">2 &middot; The prophecy</button>
+      <button role="tab" aria-selected="false" aria-controls="st-left" id="tb-left">3 &middot; What is left</button>
+      <button role="tab" aria-selected="false" aria-controls="st-built" id="tb-built">4 &middot; Built</button>
+    </div>
+    <div class="stage" role="tabpanel" id="st-vision" aria-labelledby="tb-vision">
+      <div class="session">
+        <figure class="chat cut"><figcaption>In the chat</figcaption><img src="img/session/ask-change.png" style="--w:602" alt="The chat: you ask for a function that tracks and marks the maxima of the solar cycles; the agent answers that its proposal is drawn on your page as a vision, and begins a long explanation"></figure>
+        <figure><figcaption>On the page <span class="tag">vision</span></figcaption><img src="img/session/vision.png" style="--w:677" alt="The route run_cycles beside the code as it is: the new steps Cycles() and peaks and the new type Cycles are filled green, with a plus; smooth, the DataFrames and Trend are as they were"></figure>
+      </div>
+      <p class="cap"><b>You ask for a change; the agent shows it.</b> A sketch drawn beside the code as it is, with what it adds in green. Nothing is written in your files: the chat can say a lot, the picture shows it at a glance.</p>
+    </div>
+    <div class="stage" role="tabpanel" id="st-prophecy" aria-labelledby="tb-prophecy">
+      <div class="session">
+        <figure class="chat cut"><figcaption>In the chat</figcaption><img src="img/session/prophetize.png" style="--w:637" alt="The chat: you say yes and ask to set up a prophecy in the code; the agent says the design is now in your code as a prophecy, drawn dotted purple, and begins to list the files"></figure>
+        <figure><figcaption>On the page <span class="tag">prophecy</span></figcaption><img src="img/session/prophecy.png" style="--w:605" alt="The same route with the design written into the code: Cycles(), Cycles and peaks have a dotted purple outline, not built yet"></figure>
+      </div>
+      <p class="cap"><b>You say yes; it goes into your code.</b> The same sketch, now real code that Atlas reads with real types, marked as not built yet and drawn <span class="p">dotted purple</span>. Written into real code, it may draw a little differently from the sketch: that difference is worth a look before anything is built.</p>
+    </div>
+    <div class="stage" role="tabpanel" id="st-left" aria-labelledby="tb-left">
+      <div class="session">
+        <figure class="chat"><figcaption>In the chat</figcaption><img src="img/session/revelation.png" style="--w:618" alt="The chat: you ask how far along the implementation is; the agent uses atlas revelation and lists three prophecies, run_cycles, Cycles and peaks, each with one body to write"></figure>
+        <figure class="code"><figcaption>In your files: the design, with its markers in purple</figcaption><pre># series.py
+<span class="m">@prophecy</span>
+def peaks(frame: pd.DataFrame, years: int) -&gt; pd.DataFrame:
+    """`frame` with a `peak` column: true where the smoothed mean is the highest
+    within `years` years around it, the maximum of a solar cycle."""
+    raise NotImplementedError
+
+# plot.py
+<span class="m">@prophecy</span>
+class Cycles(Trend):
+    """The trend, with the maximum of each solar cycle marked."""
+
+    def draw(self, frame: pd.DataFrame) -&gt; Figure:
+        figure = super().draw(frame)
+        ...
+        return figure
+
+# cli.py
+@app.command()
+<span class="m">@prophecy(supersedes="sunspots.cli.run")</span>
+def run_cycles(raw: Path = RAW, figure: Path = FIGURE, months: int = 13, years: int = 11) -&gt; None:
+    """Like `run`, and mark the maximum of each solar cycle on the trend."""
+    settings = Settings(months=months)
+    if not raw.exists():
+        download(SILSO, raw)
+    frame = peaks(smooth(load(raw), settings.months), years)
+    Cycles(settings).save(frame, figure)</pre></figure>
+      </div>
+      <p class="cap"><b>You ask how far along it is.</b> Each new part carries a marker, <code>@prophecy</code>, and <code>atlas revelation</code> lists them: what each replaces, and how many bodies are left to write. The design is done when the list is empty.</p>
+    </div>
+    <div class="stage" role="tabpanel" id="st-built" aria-labelledby="tb-built">
+      <div class="session">
+        <figure><figcaption>On the page <span class="tag">built</span></figcaption><img src="img/session/built.png" style="--w:886" alt="The route run_cycles built: Cycles(), Cycles and peaks are solid boxes, between smooth and saving"></figure>
+        <figure class="code"><figcaption>In your files: built, the markers gone</figcaption><pre># series.py
+def peaks(frame: pd.DataFrame, years: int) -&gt; pd.DataFrame:
+    """`frame` with a `peak` column: true where the smoothed mean is the highest
+    within `years` years around it, the maximum of a solar cycle."""
+    highest = frame["smoothed"].rolling(12 * years, center=True, min_periods=1).max()
+    return frame.assign(peak=frame["smoothed"] == highest)
+
+# plot.py
+class Cycles(Trend):
+    """The trend, with the maximum of each solar cycle marked."""
+
+    def draw(self, frame: pd.DataFrame) -&gt; Figure:
+        figure = super().draw(frame)
+        ax = figure.axes[0]
+        maxima = frame[frame["peak"]]
+        ax.scatter(maxima.index, maxima["smoothed"], color="C3", zorder=3, label="cycle maximum")
+        ax.legend()
+        return figure
+
+# cli.py
+@app.command()
+def run_cycles(raw: Path = RAW, figure: Path = FIGURE, months: int = 13, years: int = 11) -&gt; None:
+    """Like `run`, and mark the maximum of each solar cycle on the trend."""
+    settings = Settings(months=months)
+    if not raw.exists():
+        download(SILSO, raw)
+    frame = peaks(smooth(load(raw), settings.months), years)
+    Cycles(settings).save(frame, figure)</pre></figure>
+      </div>
+      <p class="cap"><b>Built.</b> The agent writes the bodies and takes the markers away. <code>atlas revelation</code> finds no prophecies any more, and the dotted boxes are solid: the same route, built.</p>
+    </div>
+  </div>
+</section>
+
+<section class="chap" id="changed">
+  <h2>See what a change did, without reading the diff.</h2>
+  <p class="lede">A pipeline grows one commit at a time: the download, the load, the first figure, the smoothing, a filter, and last the maxima of the solar cycles. Pick any two commits and Atlas draws them as one picture. Here the fifth against the sixth: the new path from the smoothed months to a second figure is <b class="g">filled green</b>, and nothing else moved.</p>
   <div class="wide">
-    <p class="lang-note">One real session with Claude Code, on the sunspots program: what was said in the chat, and what the page showed.</p>
-    <div class="session">
-      <h3>1 &middot; You ask for a change; the agent shows it as a vision</h3>
-      <figure class="chat"><figcaption>In the chat</figcaption><img src="img/session/ask-change.png" style="--w:603" alt="The chat: you ask for a function that tracks and marks the maxima of the solar cycles; the agent proposes peaks in series.py, Cycles in plot.py and a new command run_cycles, drawn on the page as a vision, with your files unchanged"></figure>
-      <figure><figcaption>On the page <span class="tag">vision</span></figcaption><img src="img/session/vision.png" style="--w:677" alt="The route run_cycles beside the code as it is: the new steps Cycles() and peaks and the new type Cycles are filled green, with a plus; smooth, the DataFrames and Trend are as they were"></figure>
-    </div>
-    <div class="session">
-      <h3>2 &middot; You say yes; it goes into your code as a prophecy</h3>
-      <figure class="chat"><figcaption>In the chat</figcaption><img src="img/session/prophetize.png" style="--w:637" alt="The chat: you ask to set up a prophecy; the agent says the design is in your code, uncommitted, with peaks, Cycles and run_cycles marked @prophecy, and what Atlas says is left to build: three prophecies, one body each"></figure>
-      <figure><figcaption>On the page <span class="tag">prophecy</span></figcaption><img src="img/session/prophecy.png" style="--w:605" alt="The same route with the design written into the code: Cycles(), Cycles and peaks have a dotted purple outline, not built yet"></figure>
-      <p class="aside">The prophecy is the vision written into real code, and Atlas reads it as such: it may draw a little differently from the sketch. That difference is worth a look before anything is built.</p>
-    </div>
-    <div class="session">
-      <h3>3 &middot; You ask how far along it is</h3>
-      <figure class="chat"><figcaption>In the chat</figcaption><img src="img/session/revelation.png" style="--w:618" alt="The chat: you ask how far along the implementation is; the agent uses atlas revelation and lists three prophecies, run_cycles, Cycles and peaks, each with one body to write"></figure>
-      <p class="aside"><code>atlas revelation</code> lists every prophecy in the tree: what it replaces, how many bodies are left to write, and the built code that leans on it. The design is done when the list is empty.</p>
-    </div>
-    <div class="session">
-      <h3>4 &middot; Built</h3>
-      <figure><figcaption>On the page <span class="tag">built</span></figcaption><img src="img/session/built.png" style="--w:886" alt="The route run_cycles built: Cycles(), Cycles and peaks are solid boxes, between smooth and saving"></figure>
-      <p class="aside">The agent writes the bodies and takes the markers away. <code>atlas revelation</code> now finds no prophecies, and the dotted boxes are solid: the same route, built.</p>
-    </div>
+    <figure>
+      <figcaption><b>The history: pick two commits, and Atlas draws them as one picture</b><span class="tag">A &cup; B</span></figcaption>
+      <img src="img/interaction/history.png" style="--w:1874" alt="Atlas's history page: on the left the six commits of the sunspots repository, the fifth marked A and the sixth B; on the right the two drawn as one picture, close up. The new steps Cycles(), peaks and Cycles.save, the types Cycles and DataFrame and the new file figures/cycles.png are filled green; everything else is plain.">
+    </figure>
+    <p class="key"><span class="sw add"></span>added <span class="sw del"></span>removed <span class="sw chg"></span>changed: its own arrows differ</p>
   </div>
 </section>
 
