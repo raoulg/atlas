@@ -485,6 +485,16 @@ parameters is one type, whatever its parameters.
 each one type, in every language.
 **Where.** `knowledge.rs`: `python_container`, `TYPESCRIPT_CONTAINERS`, `RUST_CONTAINERS`.
 
+### Narrowing
+**What.** A test of a value's type refines its type in the code that runs only where the test
+holds: there the value lies in the fiber of the test over `true` (flow-sensitive typing).
+**In Atlas.** A guard of the language's own (`Array.isArray(x)`) narrows `x` to the language's
+container where it holds: on the right of `guard && ..` and of `!guard || ..`, in the arm of an
+`if` or a `?:` the guard decides so, and after an `if (!guard)` whose arm leaves. A method on the
+narrowed value is the language's own operation. A function written inside is a scope the guard does
+not reach. Python's narrowing is ty's.
+**Where.** `knowledge::TYPESCRIPT_GUARDS`; `Body::narrowed` (`typescript/body.rs`).
+
 ### Wrappers are identities
 **What.** An identity arrow `1_A: A → A` hands on its value unchanged; composing with it changes
 nothing.

@@ -6,7 +6,9 @@ use std::collections::{HashMap, HashSet};
 use indexmap::IndexMap;
 use tree_sitter::Node as TsNode;
 
-use super::module::{function_of, is_property, member_parts, package_from_ext, resolve, type_head, type_names, Bound, Module, WRAPPERS};
+use super::module::{
+    function_of, is_property, member_parts, package_from_ext, promised, resolve, type_head, type_names, Bound, Module, WRAPPERS,
+};
 use super::paths::{self, Arg, At, Eval};
 use crate::body::{changed_through, BindSyntax, Crosses, Step, Steps, UseSyntax};
 use crate::builder::{foreign_type, GraphBuilder};
@@ -560,15 +562,19 @@ impl<'a, 't> Body<'a, 't> {
                 self.made.insert(text(name, src).to_string(), pkg);
             }
         }
-        // so does a field of the body's class: declared with a library's type, set from what a
-        // package made, or a constructor's parameter property (`this.db`)
-        let mut class = self.body.parent();
-        while let Some(c) = class.filter(|c| !matches!(c.kind(), "class_declaration" | "class" | "abstract_class_declaration")) {
-            class = c.parent();
+        // so does a field of a value of the program's class, declared with a library's type, set
+        // from what a package made, or a constructor's parameter property, in the class or one it
+        // inherits from: of the body's own receiver (`this.db`), and of a name the body types (`api.http`)
+        if let Some(k) = self.cls.clone().filter(|_| !self.is_module) {
+            for (field, p) in self.fields_made(&k) {
+                self.made.entry(format!("this.{field}")).or_insert(p);
+            }
         }
-        if let Some(class) = class.filter(|_| !self.is_module) {
-            let fields = m.made.borrow_mut().entry(Some(class.start_byte())).or_insert_with(|| class_made(class, m)).clone();
-            self.made.extend(fields);
+        let typed: Vec<(String, String)> = self.locals.iter().map(|(n, k)| (n.clone(), k.clone())).collect();
+        for (name, k) in typed {
+            for (field, p) in self.fields_made(&k) {
+                self.made.entry(format!("{name}.{field}")).or_insert(p);
+            }
         }
         if !self.is_module {
             let tops = m
@@ -590,6 +596,31 @@ impl<'a, 't> Body<'a, 't> {
                 self.made.entry(k).or_insert(p);
             }
         }
+    }
+
+    /// The fields of a value of the program's class `class` that hold what a package made, by name:
+    /// the first class along its method resolution order that holds the field says which package.
+    /// A class extends one class, so the order is the chain of its bases.
+    fn fields_made(&self, class: &str) -> HashMap<String, String> {
+        let mut out = HashMap::new();
+        let (mut todo, mut seen) = (vec![class.to_string()], HashSet::new());
+        while let Some(k) = todo.pop() {
+            if !seen.insert(k.clone()) {
+                continue;
+            }
+            todo.extend(self.store.classes.get(&k).into_iter().flat_map(|i| i.resolved.iter().rev()).filter(|b| self.own(b)).cloned());
+            let Some(home) = self.store.nodes.get(&k).and_then(|n| self.modules.get(&n.module)) else { continue };
+            let local = k.rsplit('.').next().unwrap_or(&k);
+            let classes = walk(home.tree.root_node(), &["class_declaration", "class", "abstract_class_declaration"]);
+            let Some(node) = classes.into_iter().find(|c| c.child_by_field_name("name").map(|n| text(n, &home.src)) == Some(local)) else {
+                continue;
+            };
+            let fields = home.made.borrow_mut().entry(Some(node.start_byte())).or_insert_with(|| class_made(node, home)).clone();
+            for (field, p) in fields {
+                out.entry(field.trim_start_matches("this.").to_string()).or_insert(p);
+            }
+        }
+        out
     }
 
     /// A loop as the step it is: it takes what it goes over, and gives each element under the
@@ -683,17 +714,25 @@ impl<'a, 't> Body<'a, 't> {
         }
     }
 
-    /// `const settings: Settings = { .. }`: an object literal declared as a type of the program's,
-    /// which the compiler checks it against, makes a value of that type, as `new` does: a step to
-    /// the type, handed what the literal is built from.
+    /// An object literal a type of the program's is written for, which the compiler checks it
+    /// against, makes a value of that type, as `new` does: one declared as the type (`const
+    /// settings: Settings = { .. }`), and one a function gives back where its return type names the
+    /// type (`return { .. }` in `parseLine(): Month`, `(): Month => ({ .. })`). A step to the type,
+    /// handed what the literal is built from.
     fn literal(&self, steps: &mut Steps, c: TsNode<'t>) {
         let v = outermost(c, WRAPPERS);
-        let Some(d) =
-            v.parent().filter(|d| d.kind() == "variable_declarator" && d.child_by_field_name("value").map(|x| x.id()) == Some(v.id()))
-        else {
-            return;
+        let is = |p: TsNode, field: &str| p.child_by_field_name(field).map(|x| x.id()) == Some(v.id());
+        let Some(p) = v.parent() else { return };
+        let written = match p.kind() {
+            "variable_declarator" if is(p, "value") => p.child_by_field_name("type"),
+            // the function the value leaves: the nearest around the `return`, or an arrow's body
+            "return_statement" => std::iter::successors(p.parent(), |n| n.parent())
+                .find(|n| paths::function_node(*n).map_or(false, |f| f.id() == n.id()))
+                .and_then(|f| f.child_by_field_name("return_type")),
+            "arrow_function" if is(p, "body") => p.child_by_field_name("return_type"),
+            _ => None,
         };
-        let Some(ty) = d.child_by_field_name("type").and_then(|t| named_children(t).into_iter().next()) else { return };
+        let Some(ty) = written.and_then(|t| named_children(t).into_iter().next()).map(|t| promised(t, self.src)) else { return };
         if let Some(r) = self.class(self.resolve(&type_head(ty, self.src))).filter(|r| self.own(r)) {
             let step = Step { hands: self.hands(&[Some(c)], &steps.kept), gives: self.gives(c, Some(&r)), ..Default::default() };
             steps.call(c, &r, EdgeKind::Instantiates, None, step);
@@ -868,7 +907,9 @@ impl<'a, 't> Body<'a, 't> {
             }
             _ => {
                 let changed = self.changes(c);
-                let bucket = if changed.is_empty() { self.bucket_path(&parts) } else { Bucket::Builtin };
+                // a method on what a guard narrowed to the language's own container is the language's
+                let narrowed = object.map_or(false, |o| self.narrowed(o));
+                let bucket = if changed.is_empty() && !narrowed { self.bucket_path(&parts) } else { Bucket::Builtin };
                 // a library's operation by its name, a call Atlas cannot follow as written
                 let name = if matches!(bucket, Bucket::Library | Bucket::Builtin) {
                     parts.last().cloned().unwrap_or_default()
@@ -949,7 +990,7 @@ impl<'a, 't> Body<'a, 't> {
         let (Some(o), Some(p)) = (f.child_by_field_name("object"), f.child_by_field_name("property")) else { return vec![] };
         let name = text(o, self.src);
         if o.kind() != "identifier"
-            || !self.containers.contains(name)
+            || !(self.containers.contains(name) || self.narrowed(o))
             || !knowledge::mutates(knowledge::Registry::Npm, "javascript", text(p, self.src))
         {
             return vec![];
@@ -958,14 +999,82 @@ impl<'a, 't> Body<'a, 't> {
         vec![Held { ty, name: name.to_string(), at: o.start_byte() as u32 }]
     }
 
+    /// Whether the name `o` is narrowed where it stands to one of the language's own containers
+    /// by a guard of the language's (`Array.isArray(x)`, `knowledge::TYPESCRIPT_GUARDS`): it stands
+    /// where the guard holds, on the right of `guard && ..` or of `!guard || ..`, in the arm of an
+    /// `if` or a `?:` the guard decides so, or after an `if (!guard)` whose arm leaves. A function
+    /// written in the body is a scope of its own, which the guard does not reach.
+    fn narrowed(&self, o: TsNode) -> bool {
+        let src = self.src;
+        // a guard is handed a name, so only a name it is handed is narrowed
+        let name = text(o, src);
+        let guard = |e: TsNode| -> bool {
+            let Some(f) = (e.kind() == "call_expression").then(|| function_of(e)).flatten() else { return false };
+            let first = e.child_by_field_name("arguments").and_then(|a| named_children(a).into_iter().next());
+            match member_parts(f, src).as_slice() {
+                [global, guard] => {
+                    knowledge::TYPESCRIPT_GUARDS.contains(&(global.as_str(), guard.as_str()))
+                        && self.bucket(global) == Bucket::Builtin
+                        && first.map_or(false, |a| a.kind() == "identifier" && text(a, src) == name)
+                }
+                _ => false,
+            }
+        };
+        // whether `e` evaluating to `truth` says the guard holds
+        fn holds(e: TsNode, truth: bool, src: &[u8], guard: &dyn Fn(TsNode) -> bool) -> bool {
+            let e = beneath(e, WRAPPERS);
+            let operator = e.child_by_field_name("operator").map(|o| text(o, src));
+            let sides = || [e.child_by_field_name("left"), e.child_by_field_name("right")].into_iter().flatten();
+            match (e.kind(), operator) {
+                ("unary_expression", Some("!")) => e.child_by_field_name("argument").map_or(false, |a| holds(a, !truth, src, guard)),
+                ("binary_expression", Some("&&")) => truth && sides().any(|s| holds(s, true, src, guard)),
+                ("binary_expression", Some("||")) => !truth && sides().any(|s| holds(s, false, src, guard)),
+                _ => truth && guard(e),
+            }
+        }
+        let holds = |e: Option<TsNode>, truth: bool| e.map_or(false, |e| holds(e, truth, src, &guard));
+        let leaves = |s: TsNode| {
+            let last = if s.kind() == "statement_block" { named_children(s).into_iter().last() } else { Some(s) };
+            last.map_or(false, |l| matches!(l.kind(), "return_statement" | "throw_statement"))
+        };
+        let mut n = o;
+        while let Some(p) = n.parent() {
+            let is = |field: &str| p.child_by_field_name(field).map(|x| x.id()) == Some(n.id());
+            let operator = p.child_by_field_name("operator").map(|o| text(o, src));
+            let narrows = match (p.kind(), operator) {
+                ("binary_expression", Some("&&")) => is("right") && holds(p.child_by_field_name("left"), true),
+                ("binary_expression", Some("||")) => is("right") && holds(p.child_by_field_name("left"), false),
+                ("ternary_expression" | "if_statement", _) if is("consequence") => holds(p.child_by_field_name("condition"), true),
+                ("ternary_expression", _) if is("alternative") => holds(p.child_by_field_name("condition"), false),
+                ("else_clause", _) => p.parent().map_or(false, |i| holds(i.child_by_field_name("condition"), false)),
+                ("statement_block" | "program", _) => named_children(p).into_iter().take_while(|s| s.id() != n.id()).any(|s| {
+                    s.kind() == "if_statement"
+                        && s.child_by_field_name("alternative").is_none()
+                        && s.child_by_field_name("consequence").map_or(false, leaves)
+                        && holds(s.child_by_field_name("condition"), false)
+                }),
+                _ => false,
+            };
+            if narrows {
+                return true;
+            }
+            if paths::function_node(p).map_or(false, |f| f.id() == p.id()) || p.id() == self.body.id() {
+                return false;
+            }
+            n = p;
+        }
+        false
+    }
+
     fn bucket_path(&self, parts: &[String]) -> Bucket {
         self.bucket(self.held_field(parts).as_deref().unwrap_or(&parts[0]))
     }
 
-    /// The field of the class a call goes through, when it holds what a package made: `this.db` of
-    /// `this.db.prepare(..)`. A call on it is a call on the value the field holds.
+    /// The field of a value of the program's class a call goes through, when it holds what a package
+    /// made: `this.db` of `this.db.prepare(..)`, `api.http` of `api.http.delete(..)`. A call on it is
+    /// a call on the value the field holds.
     fn held_field(&self, parts: &[String]) -> Option<String> {
-        (parts.len() > 2 && parts[0] == "this").then(|| format!("this.{}", parts[1])).filter(|f| self.made.contains_key(f))
+        (parts.len() > 2).then(|| format!("{}.{}", parts[0], parts[1])).filter(|f| self.made.contains_key(f))
     }
 
     /// What the name a call not followed starts from is bound to: in the body (a parameter, a
