@@ -227,7 +227,7 @@ const REVIEWED: &[(&str, &str, &str)] = &[
     (
         "choices",
         "atlas-engine.tests.pairs_python.club",
-        "a fault of Atlas, #116: a pair read once per side is written four times (here twice, once in `pairs_rust` and in `pairs_typescript`), each picking its graph by `side == \"clean\"`",
+        "a fault of Atlas, #116: a pair read once per side is written five times (here three times, once in `pairs_rust` and in `pairs_typescript`), each picking its graph by `side == \"clean\"`",
     ),
     (
         "choices",
@@ -252,7 +252,7 @@ const REVIEWED: &[(&str, &str, &str)] = &[
     (
         "choices",
         "atlas-engine.rust.Body.value_class",
-        "`value_class` and `declared` read a name two ways, the class of a value and the type a declaration gives it; the wrappers `value_class` sees through are #119",
+        "`value_class` and `declared` read a name two ways, the class of a value and the type a declaration gives it",
     ),
     (
         "choices",
@@ -262,22 +262,17 @@ const REVIEWED: &[(&str, &str, &str)] = &[
     (
         "choices",
         "atlas-engine.rust.paths.Eval.of",
-        "`of` and `parsed` are two evaluations over different domains (the values an expression can have, the type a command line is parsed into) on the same kinds of expression; the wrappers both see through, each its own list, are #119",
+        "`of` and `parsed` are two evaluations over different domains (the values an expression can have, the type a command line is parsed into) on the same kinds of expression",
     ),
     (
         "choices",
         "atlas-engine.typescript.collect_types",
-        "the TypeScript reader's functions each read a construct by tree-sitter's kind; the wrappers `bucket_of` and `chain_root` see through, each its own list, are #119",
+        "the TypeScript reader's functions each read a construct by tree-sitter's kind: a name, a member chain and a type name stand for other things in each",
     ),
     (
         "choices",
         "atlas-engine.typescript.router_made",
-        "`router_made` and `builds_container` each read a `new` of a constructor of their own kind (a router's, a container's); the parentheses all four see through are #119",
-    ),
-    (
-        "choices",
-        "atlas-engine.typescript.Body.bucket_path",
-        "a fault of Atlas, #115: `bucket_path` and `crossed` copy one expression, the field of the class a call goes through",
+        "`router_made` and `builds_container` each read a `new` of a constructor of their own kind (a router's, a container's)",
     ),
     (
         "choices",

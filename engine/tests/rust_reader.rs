@@ -513,3 +513,19 @@ fn what_lies_beyond_the_rounds_is_the_border_functions() {
     assert!(places(&three, "deepkit.write").iter().any(|(kind, ..)| kind == "disk_write"));
     assert!(places(&three, "deepkit.save").iter().all(|(kind, ..)| kind != "disk_write"), "a function's own arrow is not what it reaches");
 }
+
+/// A value read through `&`, `&mut`, parentheses, `?` or `.await` is the value inside it: a `let`
+/// that holds `&mut Square::new()` holds a Square, as one that holds `&Square::new()` does.
+#[test]
+fn a_value_through_its_wrappers_is_the_value_inside() {
+    let g = written(
+        "wrappers",
+        &[(
+            "src/lib.rs",
+            "pub struct Square;\n\nimpl Square {\n    pub fn new() -> Square { Square }\n    pub fn area(&self) -> f64 { 1.0 }\n}\n\npub fn both() -> f64 {\n    let s = &mut Square::new();\n    let t = &Square::new();\n    let u = (Square::new());\n    s.area() + t.area() + u.area()\n}\n",
+        )],
+    );
+    let both = &g.node("wrappers.both").unwrap().sites;
+    let areas = both.iter().filter(|s| s.to == "wrappers.Square.area").count();
+    assert_eq!(areas, 3, "{both:#?}");
+}
