@@ -92,6 +92,12 @@ impl Repo {
         &self.root
     }
 
+    /// Where it stands in the repository it was read with: `orders` for the part under `orders/`,
+    /// empty for the repository itself.
+    pub fn at(&self) -> &Path {
+        &self.at
+    }
+
     /// The directory's own name: `atlas` for `.` read in `~/code/atlas`.
     pub fn name(&self) -> Option<String> {
         std::fs::canonicalize(&self.root).ok().and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_string()))

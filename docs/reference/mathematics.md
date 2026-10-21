@@ -88,9 +88,11 @@ are that step with a choice of what it is handed, no choice of where the value c
 coproduct of its arms, each injected by what decides it as the code writes it (`when not
 raw.exists()`, a `match` pattern, `otherwise`). A choice of one arm is a coproduct with the
 identity, `f + 1`: its steps run when the condition holds and nothing runs otherwise, so it is
-drawn as a choice too.
+drawn as a choice too. A repository's graph is the coproduct of its parts' graphs, glued only
+along the libraries and places of the world they share (a pushout over those): two parts whose code
+holds one name stay two, each name injected under where its part lies (`orders/app`, `billing/app`).
 **Where.** Principles `sums` and `choices`; `Node::whens` (`body.rs`), `Item::Choice` (`flow.rs`),
-the MCP tool `choices`.
+the MCP tool `choices`; `parts::apart`, `Graph::rename`.
 
 ### Lenses
 **What.** A lens on S has `get: S → A` and `put: A × S → S`, and a lawful one gets back what
