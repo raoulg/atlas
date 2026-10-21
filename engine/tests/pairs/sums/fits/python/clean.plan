@@ -40,11 +40,3 @@ known #130 extra step main/fit/Fit()
 known #130 extra line main/fit/Fit() > Fit@main/fit/Fit() value
 known #130 extra line Fit@main/fit/Fit() > main/fit value
 known #130 extra home Fit@main/fit/Fit() main/fit
-
-# fit hands on, beside the sum it gives, each of its variants as a value of its own
-known #132 extra line main/fit > Failed@main/fit value
-known #132 extra line main/fit > Fit@main/fit value
-known #132 extra line Failed@main/fit > main/describe value
-known #132 extra line Fit@main/fit > main/describe value
-known #132 extra home Failed@main/fit main
-known #132 extra home Fit@main/fit main

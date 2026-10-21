@@ -55,9 +55,9 @@ line run/report/?1/Report() > Report@run/report/?1 value
 line Report@run/report/?1 > run/report/?1/Report.line value
 line run/report/?1/Report.line > _@run/report/?1 value
 line _@run/report/?1 > run/report/?1/Message() value
-known #132 line run/report/?1/Message() > Message·message@run/report/?1 value
-known #132 line run/report/?1/Message()#2 > Message·message@run/report/?1 value
-known #132 line Message·message@run/report/?1 > run/report/send value
+line run/report/?1/Message() > Message·message@run/report/?1 value
+line run/report/?1/Message()#2 > Message·message@run/report/?1 value
+line Message·message@run/report/?1 > run/report/send value
 line run/report/send > Screen own
 line run/report/send > run/report back
 line run/report > run back
@@ -73,23 +73,11 @@ home Runner@run/finished/Runner() run/finished
 home _@run/finished run
 home Report@run/report/?1 run/report/?1
 home _@run/report/?1 run/report/?1
-known #132 home Message·message@run/report/?1 run/report
+home Message·message@run/report/?1 run/report
 
 side entry left
 side Screen right
 
-# the Message either arm builds is two values: of its type without its name, and of its name without a type
-known #132 extra line run/report/?1/Message() > Message@run/report/?1 value
-known #132 extra line run/report/?1/Message()#2 > Message@run/report/?1 value
-known #132 extra line Message@run/report/?1 > run/report/send value
-known #132 extra home Message@run/report/?1 run/report
-known #132 extra line run/report/?1/Message() > _·message@run/report/?1 value
-known #132 extra line run/report/?1/Message()#2 > _·message@run/report/?1 value
-known #132 extra line _·message@run/report/?1 > run/report/send value
-known #132 extra home _·message@run/report/?1 run/report
-
 # an opened step's own arrow takes what its steps make, or what its call is handed, though only a step inside takes it
 known #126 extra line Job·job@run/source > run/report value
 known #126 extra line Job·job@run/source > run value
-
-# a result of no type of the code's handed straight to another step goes back to the caller as well

@@ -365,7 +365,9 @@ open:
   all its calls; an occurrence with calls has a frame and its own arrow, one without is a pill;
 - every value is an identity `(type, name, moment)`: the type it has, the name that holds it, and
   the occurrence (or choice) that made it; two values of one type at one moment are two; a route's
-  parameters are values with their names at the route's start;
+  parameters are values with their names at the route's start. A name holds one value: one that
+  holds a sum holds the sum, whichever variants the reader lists of it (Coproducts), one a
+  constructor fills holds what it builds, and a name handed on holds what the body last gave it;
 - every place of the world is at its concrete place (a path, a table, a command); what a step reads
   back of what it wrote there is a value at a moment inside the step (rule 4);
 - a step's own arrow is its witness at its border: its signature and its own touches, the lines that
@@ -463,7 +465,7 @@ fact of it must hold of the plan Atlas builds, and no other. What Atlas gets wro
 with the issue that tracks it, and the mark goes with the fix (`engine/tests/plans/README.md`). The
 test runs the viewer's own model in node, the function every picture is drawn from, on every route of
 the pairs and of its programs.
-**Where.** `plan`, `coarsen`, `cutArrow` and `checkOpenings` in `viewer/plan.js`; `tools/pictures.py`;
+**Where.** `plan`, `sitesOf`, `coarsen`, `cutArrow` and `checkOpenings` in `viewer/plan.js`; `tools/pictures.py`;
 `engine/tests/plans.rs`.
 
 ### Saturation: when the order of a view does not matter

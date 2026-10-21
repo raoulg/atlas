@@ -37,7 +37,7 @@ line Kennisbank()/Kennisbank.graaf/Kennisbank._node/?1/Begrip() > Begrip@Kennisb
 line Bron@Kennisbank()/Kennisbank.graaf/Kennisbank._node/?1 > Kennisbank()/Kennisbank.graaf/Kennisbank._node value
 line Begrip@Kennisbank()/Kennisbank.graaf/Kennisbank._node/?1 > Kennisbank()/Kennisbank.graaf/Kennisbank._node value
 line Kennisbank()/Kennisbank.graaf/Kennisbank._node > Node@Kennisbank()/Kennisbank.graaf/Kennisbank._node value
-known #132 line Node@Kennisbank()/Kennisbank.graaf/Kennisbank._node > Kennisbank()/Kennisbank.graaf/Graaf() value
+line Node@Kennisbank()/Kennisbank.graaf/Kennisbank._node > Kennisbank()/Kennisbank.graaf/Graaf() value
 line Kennisbank()/Kennisbank.graaf/Graaf() > Graaf@Kennisbank()/Kennisbank.graaf/Graaf() value
 line Graaf@Kennisbank()/Kennisbank.graaf/Graaf() > Kennisbank()/Kennisbank.graaf value
 line Kennisbank()/Kennisbank.graaf > Graaf@Kennisbank()/Kennisbank.graaf value
@@ -76,14 +76,3 @@ known #126 extra home Bron Kennisbank()
 # the methods run on what the constructor built, not on the caller's instance
 known #74 extra line Kennisbank@Kennisbank()/Kennisbank() > Kennisbank()/Kennisbank.voeg_toe/Kennisbank._write value
 known #74 extra line Kennisbank@Kennisbank()/Kennisbank() > Kennisbank()/Kennisbank.graaf/Kennisbank._node value
-
-# `_node` gives the sum, but hands on, beside it, each of its variants, and Graaf() is handed the variants
-known #132 extra line Kennisbank()/Kennisbank.graaf/Kennisbank._node > Bron@Kennisbank()/Kennisbank.graaf/Kennisbank._node value
-known #132 extra line Kennisbank()/Kennisbank.graaf/Kennisbank._node > Begrip@Kennisbank()/Kennisbank.graaf/Kennisbank._node value
-known #132 extra line Bron@Kennisbank()/Kennisbank.graaf/Kennisbank._node > Kennisbank()/Kennisbank.graaf/Graaf() value
-known #132 extra line Begrip@Kennisbank()/Kennisbank.graaf/Kennisbank._node > Kennisbank()/Kennisbank.graaf/Graaf() value
-known #132 extra home Bron@Kennisbank()/Kennisbank.graaf/Kennisbank._node Kennisbank()/Kennisbank.graaf
-known #132 extra home Begrip@Kennisbank()/Kennisbank.graaf/Kennisbank._node Kennisbank()/Kennisbank.graaf
-
-# graaf's own arrow takes what its steps make, the Nodes too, though only Graaf() takes them and graaf gives back the Graaf
-known #126 extra line Node@Kennisbank()/Kennisbank.graaf/Kennisbank._node > Kennisbank()/Kennisbank.graaf value
