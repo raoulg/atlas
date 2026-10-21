@@ -472,6 +472,17 @@ it in: `Boekwinkel(Winkel[Boek])` keeps the promise of `Winkel[Boek]`, the base'
 stands where another does when it has every member the other declares.
 **Where.** Principle `overrides`; `model::linearization`; for Python ty decides it (`pytypes.rs`).
 
+### Method resolution order
+**What.** A linear extension of the order of inheritance: one sequence of a class and its
+ancestors in which every class comes before its bases and each class's bases keep the order it
+declares them in (the C3 linearization).
+**In Atlas.** The method a value of a class runs for a name is the first definition along its
+class's order, and what building it takes is the first constructor along it. The picture's step
+and the rules' comparison read the same order: in a diamond `D(B, C)` over `A`, a `D` runs the `f`
+of `C` before the `f` of `A` that `B` inherits.
+**Where.** `model::linearization`; `principles.rs` (`Index::mro`), `builder.rs` (`family`,
+`method_of`), `flow.rs` (`method_on`, `built_from`).
+
 ### Signatures say the arrow
 **What.** A function's type is its domain and its codomain.
 **In Atlas.** A package names its doors, and each door says what goes in and what comes out. The
