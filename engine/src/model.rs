@@ -700,20 +700,39 @@ pub struct Edge {
     pub uses: bool,
 }
 
-/// Where a body compares one value with literals: `args.mode == "train"`,
-/// `mode in {"a", "b"}`, `case "a":`, `"a" =>`.
+/// Where a body compares one value with its cases: `args.mode == "train"`,
+/// `mode in {"a", "b"}`, `mode is Mode.FAST`, `case "a":`, `"a" =>`.
 #[derive(Serialize, Deserialize, TS, Clone, Debug, Default, PartialEq, Eq)]
 #[ts(export)]
 pub struct Compare {
-    /// The value as written: `args.experiment`.
+    /// The value tested, as the body was handed it: `args.experiment`. A name the body binds once
+    /// to a value it reads in place is that value: after `m = args.mode`, `m` is `args.mode`.
     pub subject: String,
+    /// The subject as the comparison writes it, where a name stands for it: `m`.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub written: String,
     /// The literals it is compared with.
     pub cases: Vec<String>,
+    /// The members of a type it is compared with, as written: `Mode.FAST`, `Mode::Fast`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub members: Vec<String>,
     pub line: u32,
     /// The choice it decides, numbered like `Edge::arms`; a comparison that only computes a
     /// value (`weighted = mode in {..}`) decides none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub choice: Option<u32>,
+    /// The subject is the value the method runs on, or is read through it: `self.mode`,
+    /// `this.mode`.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub receiver: bool,
+}
+
+impl Compare {
+    /// Each case as the code writes it: a literal quoted (`"fast"`), a member as it stands
+    /// (`Mode.FAST`).
+    pub fn named(&self) -> Vec<String> {
+        self.cases.iter().map(|c| format!("\"{c}\"")).chain(self.members.iter().cloned()).collect()
+    }
 }
 
 #[derive(Serialize, Deserialize, TS, Clone, Debug, Default)]

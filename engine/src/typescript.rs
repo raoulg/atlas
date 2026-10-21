@@ -1868,7 +1868,17 @@ fn link_calls<'t>(
         b.ends();
         b.read
     };
-    let compares = (n.kind != NodeKind::Module).then(|| crate::tree::compares(body, &m.src, steps.choices(), &COMPARES, &CHOICES));
+    let compares = (n.kind != NodeKind::Module).then(|| {
+        // a qualifier is a type when it names an `enum` or a class of the program
+        let is_type = |(a, b): (usize, usize)| {
+            let parts: Vec<String> = String::from_utf8_lossy(&m.src[a..b]).split('.').map(str::to_string).collect();
+            resolve(m, &parts, modules, &store.nodes).and_then(|t| store.nodes.get(&t)).is_some_and(|t| t.kind == NodeKind::Class)
+        };
+        // the value a method runs on is `this`, unless it is called on its class
+        let receiver =
+            n.params.iter().find(|p| p.receiver).map(|p| p.name.as_str()).or((n.kind == NodeKind::Method && !n.on_class).then_some("this"));
+        crate::tree::compares(body, &m.src, steps.choices(), &COMPARES, &CHOICES, &crate::tree::Scope { receiver, is_type: &is_type })
+    });
     steps.finish(store, id);
     if let Some(node) = store.nodes.get_mut(id) {
         node.calls_handed = read.unresolved.iter().any(|(u, _)| n.params.iter().any(|p| &p.name == u));
@@ -2862,13 +2872,29 @@ const CHOICES: ChoiceSyntax = ChoiceSyntax {
     },
 };
 
-/// TypeScript's comparisons: `===`, `==`, `!==` and `!=` against a string, and a `switch` over strings.
+/// TypeScript's comparisons: `===`, `==`, `!==` and `!=` against a string or a member of an
+/// enumeration (`Mode.Fast`), and a `switch` over them.
 const COMPARES: CompareSyntax = CompareSyntax {
     kinds: &["binary_expression", "switch_statement"],
     operands: tested,
-    cases: |n, src| (n.kind() == "string").then(|| vec![unquote(text(n, src))]),
+    each: |n| vec![n],
+    literal: |n, src| (n.kind() == "string").then(|| unquote(text(n, src))),
+    member: |n| {
+        (n.kind() == "member_expression")
+            .then(|| n.child_by_field_name("object"))
+            .flatten()
+            .filter(|o| matches!(o.kind(), "identifier" | "member_expression"))
+            .map(|o| (o.start_byte(), o.end_byte()))
+    },
     subject: |n| matches!(n.kind(), "identifier" | "member_expression"),
     over: switched,
+    copies: |n| match n.kind() {
+        "variable_declarator" => n.child_by_field_name("name").zip(n.child_by_field_name("value")),
+        "assignment_expression" => n.child_by_field_name("left").zip(n.child_by_field_name("right")),
+        _ => None,
+    },
+    place: |n| matches!(n.kind(), "identifier" | "this" | "member_expression" | "subscript_expression").then_some(n),
+    binds: USES.binds,
 };
 
 /// The two operands of a test of equality.
@@ -2877,14 +2903,9 @@ fn tested<'t>(n: TsNode<'t>, src: &[u8]) -> Option<(TsNode<'t>, TsNode<'t>)> {
     matches!(op, "===" | "==" | "!==" | "!=").then_some((n.child_by_field_name("left")?, n.child_by_field_name("right")?))
 }
 
-/// A `switch`: its value, the strings of its cases, and the body that holds them.
-fn switched<'t>(n: TsNode<'t>, src: &[u8]) -> Option<(String, Vec<String>, Option<TsNode<'t>>)> {
+/// A `switch`: its value, the values of its cases, and the body that holds them.
+fn switched<'t>(n: TsNode<'t>, src: &[u8]) -> Option<(String, Vec<TsNode<'t>>, Option<TsNode<'t>>)> {
     let (Some(value), Some(body)) = (n.child_by_field_name("value"), n.child_by_field_name("body")) else { return None };
-    let cases = named_children(body)
-        .into_iter()
-        .filter_map(|c| c.child_by_field_name("value"))
-        .filter(|v| v.kind() == "string")
-        .map(|v| unquote(text(v, src)))
-        .collect();
+    let cases = named_children(body).into_iter().filter_map(|c| c.child_by_field_name("value")).collect();
     Some((text(value, src).trim_start_matches('(').trim_end_matches(')').to_string(), cases, Some(body)))
 }

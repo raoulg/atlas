@@ -11,7 +11,7 @@ use std::path::Path;
 
 use serde::Serialize;
 
-use crate::model::{Dir, Edge, EdgeKind, EntryKind, Graph, Held, Leaves, Node, NodeKind, Site, Touch, World};
+use crate::model::{Compare, Dir, Edge, EdgeKind, EntryKind, Graph, Held, Leaves, Node, NodeKind, Site, Touch, World};
 
 /// A principle by its id and what it asks of code.
 pub struct Principle {
@@ -773,61 +773,124 @@ fn gives(ix: &Index) -> Vec<Finding> {
 
 // ---------- choices ----------
 
-/// Two ways a choice goes unnamed. The same literal tested against the same value in several
+/// Two ways a choice goes unnamed. The same case tested against the same value in several
 /// places: what that case means is spelled out again in each of them, and a new case is a
-/// change in all of them. And alternatives that each produce the same type, sitting in a body
-/// between other steps: how to get that value is a step of its own, without a name.
+/// change in all of them. And alternatives that each produce the same type by steps of their
+/// own, sitting in a body between other steps: how to get that value is a step of its own,
+/// without a name.
 fn choices(ix: &Index) -> Vec<Finding> {
-    let mut out = vec![];
+    let mut out = repeated(ix);
     for f in ix.g.nodes.iter().filter(|n| is_function(n)) {
-        out.extend(repeated(ix, f));
         out.extend(unnamed(ix, f));
     }
     out
 }
 
-/// The literals a body tests a value it was handed against in more than one place: a
-/// parameter, or `self`, that picks behaviour by name.
-fn repeated(ix: &Index, f: &Node) -> Vec<Finding> {
-    let handed: HashSet<&str> = f.params.iter().map(|p| p.name.as_str()).collect();
-    let root = |s: &str| s.split(|c: char| !(c.is_alphanumeric() || c == '_')).next().unwrap_or("").to_string();
-    // a place is a choice, or a comparison that decides none on its own line
-    let mut places: BTreeMap<&str, BTreeMap<&str, BTreeSet<(Option<u32>, u32)>>> = BTreeMap::new();
-    for c in f.compares.iter().filter(|c| handed.contains(root(&c.subject).as_str())) {
-        let place = match c.choice {
-            Some(ch) => (Some(ch), 0),
-            None => (None, c.line),
-        };
-        for lit in &c.cases {
-            places.entry(c.subject.as_str()).or_default().entry(lit.as_str()).or_default().insert(place);
+/// The value a comparison tests, as the functions that test it share it.
+#[derive(PartialEq, Eq, PartialOrd, Ord)]
+enum Tested<'g> {
+    /// A field of a class, read through the value its methods run on (`self.mode`, `this.mode`):
+    /// the class, and the path below the receiver.
+    Field(&'g str, &'g str),
+    /// A parameter of one name and written type in the functions of one module (`mode: str`), or
+    /// what is read through it (`args.mode`): the module, the name, the type, the path below it.
+    Param(&'g str, &'g str, &'g str, &'g str),
+    /// Anything else a body is handed, the value its method runs on itself among them: the body,
+    /// and the value as written.
+    Own(&'g str, &'g str),
+}
+
+/// What a comparison of `f` tests, when it tests a value `f` was handed.
+fn tested<'g>(f: &'g Node, c: &'g Compare) -> Option<Tested<'g>> {
+    let root = crate::tree::root_of(&c.subject);
+    let below = &c.subject[root.len()..];
+    let own = Tested::Own(&f.id, &c.subject);
+    if c.receiver {
+        return Some(match f.cls.as_deref() {
+            Some(cls) if !below.is_empty() && of_itself(below) => Tested::Field(cls, below),
+            _ => own,
+        });
+    }
+    let p = f.params.iter().find(|p| p.name == root)?;
+    Some(if p.receiver || !of_itself(below) { own } else { Tested::Param(&f.module, &p.name, &p.ty, below) })
+}
+
+/// Whether a path below a value names nothing but that value: its fields, items at a literal,
+/// calls handed nothing (`.mode`, `[0]`, `.kind()`). A path through another name (`[t]`,
+/// `.get(k)`) reads a value of its own body.
+fn of_itself(below: &str) -> bool {
+    let mut rest = below;
+    while let Some(i) = rest.find(['[', '(']) {
+        let close = if rest.as_bytes()[i] == b'[' { ']' } else { ')' };
+        let Some(j) = rest[i..].find(close) else { return false };
+        let inside = rest[i + 1..i + j].trim();
+        let literal = inside.is_empty() || inside.chars().all(|c| c.is_ascii_digit()) || inside.starts_with(['"', '\'']);
+        if !literal {
+            return false;
+        }
+        rest = &rest[i + j + 1..];
+    }
+    true
+}
+
+/// The cases tested against one value in more than one place: a parameter, or the value a
+/// method runs on, that picks behaviour by name. A value is the same across bodies where the
+/// graph says so: a field of a class in the methods that read it through their receiver, a
+/// parameter of one name and written type in the functions of one module. The finding stands
+/// where the value is defined: the class, or the first function that tests it.
+fn repeated(ix: &Index) -> Vec<Finding> {
+    let mut by_value: BTreeMap<Tested, Vec<(&Node, &Compare)>> = BTreeMap::new();
+    for f in ix.g.nodes.iter().filter(|n| is_function(n)) {
+        for c in &f.compares {
+            if let Some(t) = tested(f, c) {
+                by_value.entry(t).or_default().push((f, c));
+            }
         }
     }
     let mut out = vec![];
-    for (subject, lits) in places {
-        let spread: Vec<(&str, usize)> = lits.iter().filter(|(_, ps)| ps.len() > 1).map(|(l, ps)| (*l, ps.len())).collect();
+    for (value, mut tests) in by_value {
+        tests.sort_by(|(f, c), (g, d)| (&f.file, f.span.map_or(0, |s| s.0), c.line).cmp(&(&g.file, g.span.map_or(0, |s| s.0), d.line)));
+        // a place is a choice, or a comparison that decides none on its own line, in one body
+        let place = |(f, c): &(&Node, &Compare)| (f.id.clone(), c.choice.map_or((None, c.line), |ch| (Some(ch), 0)));
+        let mut places: BTreeMap<String, BTreeSet<_>> = BTreeMap::new();
+        for t in &tests {
+            for case in t.1.named() {
+                places.entry(case).or_default().insert(place(t));
+            }
+        }
+        let spread: Vec<String> = places.iter().filter(|(_, ps)| ps.len() > 1).map(|(c, ps)| format!("{c} ({}×)", ps.len())).collect();
         if spread.is_empty() {
             continue;
         }
-        let n_places = f
-            .compares
+        let n_places = tests.iter().map(place).collect::<BTreeSet<_>>().len();
+        let mut fns: Vec<&Node> = vec![];
+        for (f, _) in &tests {
+            if !fns.iter().any(|g| g.id == f.id) {
+                fns.push(f);
+            }
+        }
+        let across = fns.len() > 1;
+        let evidence = tests
             .iter()
-            .filter(|c| c.subject == subject)
-            .map(|c| c.choice.map_or((None, c.line), |ch| (Some(ch), 0)))
-            .collect::<BTreeSet<_>>()
-            .len();
-        let named: Vec<String> = spread.iter().map(|(l, n)| format!("\"{l}\" ({n}×)")).collect();
-        let evidence = f
-            .compares
-            .iter()
-            .filter(|c| c.subject == subject)
-            .map(|c| {
-                format!("line {}: {subject} against {}", c.line, c.cases.iter().map(|x| format!("\"{x}\"")).collect::<Vec<_>>().join(", "))
+            .map(|(f, c)| {
+                let at = if across { format!("line {} in {}", c.line, ix.label(&f.id)) } else { format!("line {}", c.line) };
+                let tested = if c.written.is_empty() { c.subject.clone() } else { format!("{} ({})", c.written, c.subject) };
+                format!("{at}: {tested} against {}", c.named().join(", "))
             })
             .collect();
+        let subject = &tests[0].1.subject;
+        let who = match across {
+            true => format!("{} test", list(&fns.iter().map(|f| ix.label(&f.id)).collect::<Vec<_>>())),
+            false => format!("{} tests", ix.label(&fns[0].id)),
+        };
+        let stands = match value {
+            Tested::Field(cls, _) if across => ix.node(cls).unwrap_or(fns[0]),
+            _ => fns[0],
+        };
         out.push(ix.finding(
             "choices",
-            f,
-            format!("{} tests `{subject}` in {n_places} places; {} come back", ix.label(&f.id), list(&named)),
+            stands,
+            format!("{who} `{subject}` in {n_places} places; {} come back", list(&spread)),
             evidence,
             format!(
                 "What each case means is spelled out again in each place, so a new case is a change in all of them. Could the choice be made once, in a table or a type that says what each `{subject}` stands for?"
@@ -840,7 +903,9 @@ fn repeated(ix: &Index, f: &Node) -> Vec<Finding> {
 /// Alternatives that each produce the same type for one later step: ways to get one value in
 /// the middle of a body. Read from the body's steps, one per call with its own arms, as the route
 /// draws them, and from what each step is handed; a choice nested in an arm is read among the
-/// steps of that arm.
+/// steps of that arm. Arms that each make the value by the same step are that one step with a
+/// choice of what it is handed (`h ∘ [f, g] = [h ∘ f, h ∘ g]`): they choose an argument, not where
+/// the value comes from.
 fn unnamed<'g>(ix: &Index<'g>, f: &'g Node) -> Vec<Finding> {
     // the program's own steps: a call into a library is the library's operation, however far
     // Atlas reads its code
@@ -875,7 +940,8 @@ fn unnamed<'g>(ix: &Index<'g>, f: &'g Node) -> Vec<Finding> {
                     arms.entry(t).or_default().entry(s.arms[d].1).or_default().insert(s.to.as_str());
                 }
             }
-            for (t, arms) in arms.into_iter().filter(|(_, arms)| arms.len() > 1) {
+            let one_step = |arms: &BTreeMap<u32, BTreeSet<&str>>| arms.values().all(|s| arms.values().next() == Some(s));
+            for (t, arms) in arms.into_iter().filter(|(_, arms)| arms.len() > 1 && !one_step(arms)) {
                 let (all, nexts) = by_type.entry(t).or_default();
                 for (arm, steps) in arms {
                     all.entry(arm).or_default().extend(steps);
@@ -1471,5 +1537,22 @@ impl<'g> Places<'_, 'g> {
             }
         }
         out
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::of_itself;
+
+    /// A value read through its own fields, items at a literal and calls handed nothing is the
+    /// same value in every body; one read through another name is its body's own.
+    #[test]
+    fn a_path_of_the_value_itself_names_nothing_else() {
+        for own in ["", ".mode", ".args.mode", "[0]", "['mode']", ".kind()", "[\"a\"].kind()"] {
+            assert!(of_itself(own), "{own}");
+        }
+        for other in [".nodes[t].kind", ".get(k)", "[i + 1]", ".kind(x)", ".a[0"] {
+            assert!(!of_itself(other), "{other}");
+        }
     }
 }

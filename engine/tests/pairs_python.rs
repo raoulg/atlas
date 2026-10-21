@@ -200,15 +200,20 @@ fn gives_a_call_on_an_untyped_value_stays_a_step() {
 }
 
 /// A choice is made once, in a place with a name. Python's clean form is an `Enum` whose methods
-/// say what each unit means (`Unit.from_celsius`, `Unit.symbol`, each one `match`); the shortcut
-/// passes the unit as a string and `convert` tests `unit == "fahrenheit"` once to convert and
-/// again to label.
+/// say what each unit means (`Unit.from_celsius`, `Unit.symbol`, each one `match` over the value
+/// it runs on, each member once: the enumeration's own table); the shortcut passes the unit as a
+/// string and `convert` tests `unit == "fahrenheit"` once to convert and again to label.
 #[test]
 fn choices_a_choice_is_made_once() {
     let (c, s) = (clean(), shortcut());
     assert!(found(c, "choices").is_empty());
-    for f in ["harvest.model.in_unit", "harvest.model.Unit.from_celsius", "harvest.model.Unit.symbol"] {
-        assert!(c.node(f).unwrap().compares.is_empty(), "{f} compares no string");
+    assert!(c.node("harvest.model.in_unit").unwrap().compares.is_empty(), "in_unit compares nothing");
+    for f in ["harvest.model.Unit.from_celsius", "harvest.model.Unit.symbol"] {
+        let compares = &c.node(f).unwrap().compares;
+        assert!(
+            compares.iter().all(|c| c.cases.is_empty() && c.receiver && c.members == ["Unit.CELSIUS", "Unit.FAHRENHEIT"]),
+            "{f} matches the value it runs on, each member once: {compares:?}"
+        );
     }
     assert_eq!(found(s, "choices"), ["harvest.model.convert"]);
     let compares = &s.node("harvest.model.convert").unwrap().compares;
@@ -718,4 +723,53 @@ fn sums_a_union_written_in_place_is_a_sum() {
     assert_eq!(found(&s, "sums"), [sum]);
     let asked = check(&s).into_iter().find(|f| f.principle == "sums").unwrap();
     assert_eq!(asked.what, "Fit | Failed is handed on unopened: points and line take it");
+}
+
+/// One side of the choices pair (`tests/pairs/choices/python`): a job run in one of two modes, and
+/// a line that says how it went.
+fn choices_side(side: &str) -> Graph {
+    analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/choices/python").join(side), &Options::default()).unwrap()
+}
+
+/// A choice is made once, in a place with a name, and Fowler's repeated switch is between
+/// functions as well as inside one. The clean side makes the mode an `Enum` with one table of what
+/// each mode means (`PLANS`), gives the level methods that each `match` the value they run on once,
+/// and names where the job comes from (`source`); `report` builds its Message by one constructor
+/// in either arm, which is one step with a choice of what it is handed (`h ∘ [f, g] = [h ∘ f,
+/// h ∘ g]`), so nothing is asked. The shortcut tests `self.mode` in two methods of `Runner`, `mode`
+/// in two functions, `settings.mode` twice through a local `m`, `level` against the member
+/// `Level.LOUD` in two functions (`is` and `case`), and picks where its Job comes from (`load |
+/// infer`) between the steps of `run`: each is asked once, where the value is defined.
+#[test]
+fn choices_a_choice_is_made_once_across_bodies() {
+    let (c, s) = (choices_side("clean"), choices_side("shortcut"));
+    assert!(found(&c, "choices").is_empty(), "{:?}", found(&c, "choices"));
+    let message: Vec<&[(u32, u32)]> =
+        c.node("runs.core.report").unwrap().sites.iter().filter(|s| s.to == "runs.core.Message").map(|s| s.arms.as_slice()).collect();
+    assert_eq!(message, [&[(0, 0)][..], &[(0, 1)][..]], "one constructor in each arm of one choice");
+    let level = &c.node("runs.core.Level.prefix").unwrap().compares;
+    assert!(level.len() == 1 && level[0].receiver && level[0].members == ["Level.QUIET", "Level.LOUD"], "{level:?}");
+
+    let asked: Vec<Finding> = check(&s).into_iter().filter(|f| f.principle == "choices").collect();
+    let at = |id: &str| asked.iter().find(|f| f.node == id).unwrap_or_else(|| panic!("{id} is asked: {asked:#?}"));
+    assert_eq!(
+        asked.iter().map(|f| f.node.as_str()).collect::<Vec<_>>(),
+        ["runs.core.Runner", "runs.core.retries", "runs.core.verbosity", "runs.core.prefix", "runs.core.run"]
+    );
+    let runner = at("runs.core.Runner");
+    assert_eq!(runner.what, "Runner.batch and Runner.workers test `self.mode` in 2 places; \"parallel\" (2×) come back");
+    assert_eq!(
+        runner.evidence,
+        ["line 34 in Runner.batch: self.mode against \"parallel\"", "line 37 in Runner.workers: self.mode against \"parallel\""]
+    );
+    assert_eq!(at("runs.core.retries").what, "retries and timeout test `mode` in 2 places; \"parallel\" (2×) come back");
+    assert_eq!(
+        at("runs.core.verbosity").evidence,
+        ["line 50: m (settings.mode) against \"parallel\"", "line 51: m (settings.mode) against \"parallel\""],
+        "the local `m` is the value it is bound to"
+    );
+    assert_eq!(at("runs.core.prefix").what, "prefix and suffix test `level` in 2 places; Level.LOUD (2×) come back");
+    assert!(at("runs.core.run").what.contains("(load | infer)"), "{}", at("runs.core.run").what);
+    // the shortcut still runs the job and sends its line
+    assert!(edge(&s, "runs.core.run", "runs.core.send", EdgeKind::Calls) && edge(&s, "runs.core.run", "runs.core.load", EdgeKind::Calls));
 }

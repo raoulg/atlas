@@ -65,11 +65,11 @@ fn each_principle_finds_its_case() {
     // `Journal.connection` gives back a connection `entries` uses, without saying so; the
     // door `Graph.first` is asked about by `doors`
     assert_eq!(got["gives"], ["fixture.store.Journal.connection"]);
-    // `prepare` tests `mode` twice and picks where its Graph comes from between other steps;
-    // `fresh_or_empty` is nothing but that choice, so it has a name. `seeded` builds its Graph
-    // with one constructor in both arms, between other steps; `seeded_by_name` leaves that
-    // choice to `seed_graph`
-    assert_eq!(got["choices"], ["fixture.build.prepare", "fixture.build.prepare", "fixture.build.seeded"]);
+    // `prepare` tests `mode` twice and picks where its Graph comes from (`build_graph | empty`)
+    // between other steps; `fresh_or_empty` is nothing but that choice, so it has a name. `seeded`
+    // builds its Graph by one constructor in both arms: one step with a choice of what it is
+    // handed (`h ∘ [f, g] = [h ∘ f, h ∘ g]`), no choice of where the Graph comes from
+    assert_eq!(got["choices"], ["fixture.build.prepare", "fixture.build.prepare"]);
     // `Mixin.close` does nothing; `remember` writes a global, a place (`Global(fixture.build.SEEN)`),
     // `check_name` raises, `each` calls the function it is handed, and `register_names` runs both
     assert_eq!(got["nothing"], ["fixture.plans.keep", "fixture.sinks.base.Mixin.close"]);
@@ -182,7 +182,68 @@ fn a_package_called_src_is_asked_its_name() {
 
 /// What `atlas check` asks of Atlas, each finding read: its principle, the node it is about, and
 /// why it stands (a fault of Atlas's code, tracked in an issue, or a fault of the rule).
-const REVIEWED: &[(&str, &str, &str)] = &[];
+const REVIEWED: &[(&str, &str, &str)] = &[
+    (
+        "choices",
+        "atlas.history.Server.respond",
+        "the server refuses a request that is not a GET, and `respond`, which it calls, asks the same again",
+    ),
+    (
+        "choices",
+        "atlas-engine.decide.marker",
+        "`marker` and `insert_marker` each pick the language by the file's extension (`\"ts\" | \"tsx\"`); no one place says which language an extension is",
+    ),
+    (
+        "choices",
+        "atlas-engine.flow.arrow_of",
+        "`arrow_of` and `body_of` each test whether the node is a class: `NodeKind` has no method that says what a class's arrow and body are",
+    ),
+    (
+        "choices",
+        "atlas-engine.python.def_node",
+        "`def_node` and `Body::new` each test whether the node is a module, whose body is its whole file",
+    ),
+    (
+        "choices",
+        "atlas-engine.rust.collect_types",
+        "the Rust reader's functions switch on a node's kind, tree-sitter's string type code; the kinds the readers share are tables (`UseSyntax`, `CompareSyntax`), the rest is spelled out where each construct is read",
+    ),
+    (
+        "choices",
+        "atlas-engine.rust.Body.value_class",
+        "`value_class` and `declared` each read a value by its expression's kind (a name is a local's or a parameter's), two readings of the grammar's type code",
+    ),
+    (
+        "choices",
+        "atlas-engine.rust.Body.call",
+        "`call` and `call_hands` each test for a call written among a macro's tokens (`token_tree`)",
+    ),
+    (
+        "choices",
+        "atlas-engine.rust.paths.Eval.of",
+        "`of` and `parsed` each see through the same wrappers (`&`, parentheses, `?`, `.await`) and read the same kinds of expression: one evaluation spelled out twice",
+    ),
+    (
+        "choices",
+        "atlas-engine.typescript.collect_types",
+        "the TypeScript reader's functions switch on a node's kind, tree-sitter's string type code, and `bucket_of` and `chain_root` see through the same wrappers",
+    ),
+    (
+        "choices",
+        "atlas-engine.typescript.router_made",
+        "`router_made` and `builds_container` each read a value by its expression's kind (`new_expression`)",
+    ),
+    (
+        "choices",
+        "atlas-engine.typescript.Body.bucket_path",
+        "`bucket_path` and `crossed` each test `parts[0] == \"this\"` in one copied expression, to find the field of the class a call goes through",
+    ),
+    (
+        "choices",
+        "atlas-engine.typescript.libraries.Libraries.follow_in",
+        "`name`, which is `names[0]`, is tested against `\"default\"` twice in four lines: to pass over the symbols and to take the default export",
+    ),
+];
 
 /// Atlas is its own first subject, and `atlas check` is a signal on it as on any code: never an
 /// oracle, never a target. What it asks of Atlas is the reviewed list above; the test fails when

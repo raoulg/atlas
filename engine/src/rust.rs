@@ -1585,7 +1585,10 @@ fn link_calls<'t>(
         }
         b.read
     };
-    let compares = crate::tree::compares(body, &m.src, steps.choices(), &COMPARES, &CHOICES);
+    let receiver = n.params.iter().find(|p| p.receiver).map(|p| p.name.as_str());
+    let is_type = |(a, b): (usize, usize)| names_type(&String::from_utf8_lossy(&m.src[a..b]));
+    let compares =
+        crate::tree::compares(body, &m.src, steps.choices(), &COMPARES, &CHOICES, &crate::tree::Scope { receiver, is_type: &is_type });
     steps.finish(store, id);
     if let Some(node) = store.nodes.get_mut(id) {
         node.compares = compares;
@@ -2709,14 +2712,36 @@ const USES: UseSyntax = UseSyntax {
     keeps: &["field_expression", "index_expression"],
 };
 
-/// Rust's comparisons: `==` and `!=` against a string, a `match` on `&str`, and `matches!`.
+/// Rust's comparisons: `==` and `!=` against a string or a member of a type (`Mode::Fast`), a
+/// `match` on either, and `matches!` on strings.
 const COMPARES: CompareSyntax = CompareSyntax {
     kinds: &["binary_expression", "match_expression", "macro_invocation"],
     operands: tested,
-    cases: |n, src| matches!(n.kind(), "string_literal" | "raw_string_literal").then(|| vec![unquote(text(n, src))]),
+    each: |n| vec![n],
+    literal: |n, src| matches!(n.kind(), "string_literal" | "raw_string_literal").then(|| unquote(text(n, src))),
+    member: |n| (n.kind() == "scoped_identifier").then(|| n.child_by_field_name("path")).flatten().map(|p| (p.start_byte(), p.end_byte())),
     subject: |_| true,
     over: matched,
+    copies: |n| (n.kind() == "let_declaration").then(|| n.child_by_field_name("pattern").zip(n.child_by_field_name("value"))).flatten(),
+    place,
+    binds: USES.binds,
 };
+
+/// The value an expression reads in place: a name, a field or an item, through `&`.
+fn place(n: TsNode) -> Option<TsNode> {
+    match n.kind() {
+        "identifier" | "self" | "field_expression" | "index_expression" => Some(n),
+        "reference_expression" => n.child_by_field_name("value").and_then(place),
+        _ => None,
+    }
+}
+
+/// Whether the bytes of a qualifier write a type: its last segment is written as Rust writes a
+/// type's name, in upper camel case (`Mode`, `Self`, `crate::Mode`), which the compiler's naming
+/// lints hold every type to.
+fn names_type(q: &str) -> bool {
+    q.rsplit("::").next().and_then(|s| s.chars().next()).is_some_and(|c| c.is_uppercase())
+}
 
 /// The two operands of a test of equality.
 fn tested<'t>(n: TsNode<'t>, src: &[u8]) -> Option<(TsNode<'t>, TsNode<'t>)> {
@@ -2725,18 +2750,34 @@ fn tested<'t>(n: TsNode<'t>, src: &[u8]) -> Option<(TsNode<'t>, TsNode<'t>)> {
 }
 
 /// A `match`, with the block that holds its arms, or a `matches!(kind, "a" | "b")`, decided where
-/// it stands: the value and the strings of the patterns.
-fn matched<'t>(n: TsNode<'t>, src: &[u8]) -> Option<(String, Vec<String>, Option<TsNode<'t>>)> {
+/// it stands: the value and the cases of the patterns (each string, and each path pattern alone or
+/// among alternatives: `Mode::Fast | Mode::Slow =>`; a variant taken apart, `Shape::Circle(r)`, is
+/// a sum unwrapped, no case).
+fn matched<'t>(n: TsNode<'t>, src: &[u8]) -> Option<(String, Vec<TsNode<'t>>, Option<TsNode<'t>>)> {
     fn strings(p: TsNode) -> Vec<TsNode> {
         walk(p, &["string_literal", "raw_string_literal"])
     }
+    fn paths(p: TsNode) -> Vec<TsNode> {
+        named_children(p)
+            .into_iter()
+            .flat_map(|c| match c.kind() {
+                "scoped_identifier" => vec![c],
+                "or_pattern" => paths(c),
+                _ => vec![],
+            })
+            .collect()
+    }
     if n.kind() == "match_expression" {
         let (Some(value), Some(block)) = (n.child_by_field_name("value"), n.child_by_field_name("body")) else { return None };
+        // a pattern's guard (`x if x.kind() == "a"`) tests another value
+        let unguarded = |p: TsNode<'t>| {
+            let guard = p.child_by_field_name("condition").map(|g| g.id());
+            named_children(p).into_iter().filter(move |c| Some(c.id()) != guard)
+        };
         let cases = named_children(block)
             .into_iter()
             .filter_map(|a| a.child_by_field_name("pattern"))
-            .flat_map(strings)
-            .map(|s| unquote(text(s, src)))
+            .flat_map(|p| unguarded(p).flat_map(strings).chain(paths(p)))
             .collect();
         return Some((text(value, src).to_string(), cases, Some(block)));
     }
@@ -2749,7 +2790,7 @@ fn matched<'t>(n: TsNode<'t>, src: &[u8]) -> Option<(String, Vec<String>, Option
     let comma = kids.iter().position(|k| k.kind() == ",").filter(|c| *c > 1)?;
     let guard = kids.iter().skip(comma).position(|k| text(*k, src) == "if").map_or(kids.len() - 1, |i| comma + i);
     let (from, to) = (kids[comma].end_byte(), kids[guard].start_byte());
-    let cases = strings(tt).into_iter().filter(|s| s.start_byte() >= from && s.end_byte() <= to).map(|s| unquote(text(s, src))).collect();
+    let cases = strings(tt).into_iter().filter(|s| s.start_byte() >= from && s.end_byte() <= to).collect();
     let subject = String::from_utf8_lossy(&src[kids[1].start_byte()..kids[comma - 1].end_byte()]).to_string();
     Some((subject, cases, None))
 }

@@ -176,56 +176,177 @@ pub fn decides(n: TsNode, body: TsNode, src: &[u8], ids: &std::collections::Hash
     None
 }
 
-/// How a language writes a comparison of one value with literals: `mode == "train"`,
-/// `mode in {"a", "b"}`, a `match` or a `switch` over strings.
+/// How a language writes a comparison of one value with its cases: `mode == "train"`,
+/// `mode in {"a", "b"}`, `mode is Mode.FAST`, a `match` or a `switch` over them.
 pub struct CompareSyntax {
     /// The kinds of node that may compare.
     pub kinds: &'static [&'static str],
-    /// A test of equality or membership: its two operands.
+    /// A test of equality, identity or membership: its two operands.
     pub operands: for<'t> fn(TsNode<'t>, &[u8]) -> Option<(TsNode<'t>, TsNode<'t>)>,
-    /// The literals an operand names, when it names nothing else.
-    pub cases: fn(TsNode, &[u8]) -> Option<Vec<String>>,
+    /// The cases an operand writes: itself, or the elements of a set of them (`{"a", "b"}`).
+    pub each: for<'t> fn(TsNode<'t>) -> Vec<TsNode<'t>>,
+    /// The literal a case is: a string with nothing spliced into it.
+    pub literal: fn(TsNode, &[u8]) -> Option<String>,
+    /// Where a case is written as a member of something (`Mode.FAST`, `Mode::Fast`): the bytes of
+    /// what it is a member of.
+    pub member: fn(TsNode) -> Option<(usize, usize)>,
     /// Whether an operand is a value a body can test: a name, a member, an item.
     pub subject: fn(TsNode) -> bool,
-    /// A choice over cases (`match`, `switch`): the value as written, its literal cases, and the
-    /// node that holds the cases when the choice is numbered there rather than where it is decided.
-    pub over: for<'t> fn(TsNode<'t>, &[u8]) -> Option<(String, Vec<String>, Option<TsNode<'t>>)>,
+    /// A choice over cases (`match`, `switch`): the value as written, the nodes of its cases, and
+    /// the node that holds the cases when the choice is numbered there rather than where it is
+    /// decided.
+    pub over: for<'t> fn(TsNode<'t>, &[u8]) -> Option<(String, Vec<TsNode<'t>>, Option<TsNode<'t>>)>,
+    /// A binding that makes a name stand for a value (`m = args.mode`, `let m = &self.mode`): the
+    /// name and the value.
+    pub copies: for<'t> fn(TsNode<'t>) -> Option<(TsNode<'t>, TsNode<'t>)>,
+    /// The value an expression reads in place, with no call between: a name, or a field or an item
+    /// of one, also through a reference.
+    pub place: for<'t> fn(TsNode<'t>) -> Option<TsNode<'t>>,
+    /// What binds names in a body: the language's `UseSyntax::binds`.
+    pub binds: fn(TsNode) -> Option<(TsNode, TsNode)>,
 }
 
-/// Where a body compares one value with literals, and the choice each comparison decides.
+/// What a reader knows of a body beyond its syntax: the name the body holds the value its method
+/// runs on by, and whether the bytes of a qualifier write a type (a class, an enumeration).
+pub struct Scope<'a> {
+    pub receiver: Option<&'a str>,
+    pub is_type: &'a dyn Fn((usize, usize)) -> bool,
+}
+
+/// One case a comparison names.
+enum Case {
+    /// `"fast"`, unquoted.
+    Literal(String),
+    /// `Mode.FAST`, as written.
+    Member(String),
+}
+
+/// The case a node writes: a literal, or a member of a type.
+fn case(n: TsNode, src: &[u8], cmp: &CompareSyntax, scope: &Scope) -> Option<Case> {
+    if let Some(l) = (cmp.literal)(n, src) {
+        return Some(Case::Literal(l));
+    }
+    (cmp.member)(n).filter(|q| (scope.is_type)(*q)).map(|_| Case::Member(text(n, src).to_string()))
+}
+
+/// The literals and members an operand names, when it names nothing else.
+fn cases_of(n: TsNode, src: &[u8], cmp: &CompareSyntax, scope: &Scope) -> Option<(Vec<String>, Vec<String>)> {
+    let each = (cmp.each)(n);
+    if each.is_empty() {
+        return None;
+    }
+    let (mut literals, mut members) = (vec![], vec![]);
+    for c in each {
+        match case(c, src, cmp, scope)? {
+            Case::Literal(l) => literals.push(l),
+            Case::Member(m) => members.push(m),
+        }
+    }
+    Some((literals, members))
+}
+
+/// The name a value is written from: `args` in `args.mode`, `this` in `this.mode`.
+pub fn root_of(subject: &str) -> &str {
+    subject.split(|c: char| !(c.is_alphanumeric() || c == '_')).next().unwrap_or("")
+}
+
+/// The names a body binds once, to a value it reads in place: each stands for that value
+/// (`m = args.mode` makes `m` stand for `args.mode`). A name bound again stands for none.
+fn stand_ins(body: TsNode, src: &[u8], cmp: &CompareSyntax) -> std::collections::HashMap<String, String> {
+    let mut bound: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
+    let mut copies = std::collections::HashMap::new();
+    for n in walk_all(body) {
+        if let Some((target, _)) = (cmp.binds)(n) {
+            // the names a target binds, not those of a field it keeps the value in (`self.m = v`)
+            for i in walk(target, &["identifier"]) {
+                let (mut p, mut kept) = (i, false);
+                while p.id() != target.id() {
+                    let Some(up) = p.parent() else { break };
+                    kept = (cmp.place)(up).is_some();
+                    if kept {
+                        break;
+                    }
+                    p = up;
+                }
+                if !kept {
+                    *bound.entry(text(i, src)).or_default() += 1;
+                }
+            }
+        }
+        if let Some((name, value)) = (cmp.copies)(n).filter(|(name, _)| name.kind() == "identifier") {
+            if let Some(v) = (cmp.place)(value) {
+                copies.insert(text(name, src).to_string(), text(v, src).to_string());
+            }
+        }
+    }
+    copies.retain(|name, _| bound.get(name.as_str()) == Some(&1));
+    copies
+}
+
+/// A subject as the body was handed it: each name that stands for a value read as that value.
+fn handed(subject: &str, stand_ins: &std::collections::HashMap<String, String>) -> String {
+    let mut s = subject.to_string();
+    for _ in 0..8 {
+        let root = root_of(&s);
+        match stand_ins.get(root).filter(|v| root_of(v) != root) {
+            Some(v) => s = format!("{v}{}", &s[root.len()..]),
+            None => break,
+        }
+    }
+    s
+}
+
+/// Where a body compares one value with its cases (literals, members of a type), and the choice
+/// each comparison decides.
 pub fn compares(
     body: TsNode,
     src: &[u8],
     choices: &std::collections::HashMap<usize, u32>,
     cmp: &CompareSyntax,
     syn: &ChoiceSyntax,
+    scope: &Scope,
 ) -> Vec<crate::model::Compare> {
+    let stand_ins = stand_ins(body, src, cmp);
+    let compare = |written: &str, (cases, members): (Vec<String>, Vec<String>), line: u32, choice: Option<u32>| {
+        let subject = handed(written, &stand_ins);
+        crate::model::Compare {
+            receiver: scope.receiver.is_some_and(|r| root_of(&subject) == r),
+            written: if subject == written { String::new() } else { written.to_string() },
+            subject,
+            cases,
+            members,
+            line,
+            choice,
+        }
+    };
     let mut out = vec![];
     for n in walk(body, cmp.kinds) {
         let line = n.start_position().row as u32 + 1;
-        if let Some((subject, cases, held)) = (cmp.over)(n, src) {
-            if !cases.is_empty() {
+        if let Some((subject, nodes, held)) = (cmp.over)(n, src) {
+            let (mut cases, mut members) = (vec![], vec![]);
+            for c in nodes.into_iter().filter_map(|c| case(c, src, cmp, scope)) {
+                match c {
+                    Case::Literal(l) => cases.push(l),
+                    Case::Member(m) => members.push(m),
+                }
+            }
+            if !cases.is_empty() || !members.is_empty() {
                 let choice = match held {
                     Some(b) => choices.get(&b.id()).copied(),
                     None => decides(n, body, src, choices, syn),
                 };
-                out.push(crate::model::Compare { subject, cases, line, choice });
+                out.push(compare(&subject, (cases, members), line, choice));
             }
             continue;
         }
         let Some((l, r)) = (cmp.operands)(n, src) else { continue };
-        let (subject, cases) = match ((cmp.cases)(l, src), (cmp.cases)(r, src)) {
+        let (subject, cases) = match (cases_of(l, src, cmp, scope), cases_of(r, src, cmp, scope)) {
             (None, Some(c)) => (l, c),
             (Some(c), None) => (r, c),
             _ => continue,
         };
         if (cmp.subject)(subject) {
-            out.push(crate::model::Compare {
-                subject: text(subject, src).to_string(),
-                cases,
-                line,
-                choice: decides(n, body, src, choices, syn),
-            });
+            out.push(compare(text(subject, src), cases, line, decides(n, body, src, choices, syn)));
         }
     }
     out

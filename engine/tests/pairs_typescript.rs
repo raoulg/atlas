@@ -692,3 +692,41 @@ fn sums_a_union_written_in_place_is_a_sum() {
         [format!("({r}.model.Failed | {r}.model.Fit) Fit | Failed is handed on unopened: points and line take it", r = s.root)]
     );
 }
+
+/// One side of the choices pair (`tests/pairs/choices/typescript`): a job run in one of two modes,
+/// and a line that says how it went.
+fn choices_side(side: &str) -> Graph {
+    analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/choices/typescript").join(side), &Options::default()).unwrap()
+}
+
+/// A choice is made once, in a place with a name, and Fowler's repeated switch is between
+/// functions as well as inside one. TypeScript's clean form is an `enum` with one table of what
+/// each case means (`PLANS`, `MARKS`), and a function whose body is where the job comes from
+/// (`source`); `report` builds its Message by one constructor in either arm, one step with a
+/// choice of what it is handed, and nothing is asked. The shortcut tests `this.mode` in two methods
+/// of `Runner`, `this.level` twice in `Report.line` through `const l = this.level` (`this` is the
+/// value a method runs on, handed as Python's `self` is), `mode` in two functions, `level` against
+/// the member `Level.Loud` in two functions (`===` and `case`), and picks where its Job comes from
+/// (`load | infer`) between the steps of `run`: each is asked once, where the value is defined.
+#[test]
+fn choices_a_choice_is_made_once_across_bodies() {
+    let (c, s) = (choices_side("clean"), choices_side("shortcut"));
+    assert!(asked_anywhere(&c, "choices").is_empty(), "{:?}", asked_anywhere(&c, "choices"));
+    let made = format!("{}.runs.Message", c.root);
+    let message: Vec<&[(u32, u32)]> = node(&c, "runs.report").sites.iter().filter(|s| s.to == made).map(|s| s.arms.as_slice()).collect();
+    assert_eq!(message, [&[(0, 0)][..], &[(0, 1)][..]], "one constructor in each arm of one choice");
+
+    let asked: Vec<Finding> = findings(&s).into_iter().filter(|f| f.principle == "choices").collect();
+    let at = |id: &str| {
+        let id = format!("{}.{id}", s.root);
+        asked.iter().find(|f| f.node == id).unwrap_or_else(|| panic!("{id} is asked: {asked:#?}"))
+    };
+    assert_eq!(asked.len(), 5, "{asked:#?}");
+    assert_eq!(at("runs.Runner").what, "Runner.batch and Runner.workers test `this.mode` in 2 places; \"parallel\" (2×) come back");
+    assert_eq!(at("runs.Report.line").evidence, ["line 41: l (this.level) against \"loud\"", "line 41: l (this.level) against \"loud\""]);
+    assert_eq!(at("runs.retries").what, "retries and timeout test `mode` in 2 places; \"parallel\" (2×) come back");
+    assert_eq!(at("runs.prefix").what, "prefix and suffix test `level` in 2 places; Level.Loud (2×) come back");
+    assert!(at("runs.run").what.contains("(load | infer)"), "{}", at("runs.run").what);
+    // the shortcut still runs the job and sends its line
+    assert!(edge(&s, EdgeKind::Calls, "runs.run", "runs.send") && edge(&s, EdgeKind::Calls, "runs.run", "runs.load"));
+}
