@@ -24,9 +24,9 @@ taken from the route's finest plan and compared with the one drawn, and every di
 It opens one box at a time in each route (up to ROUTES routes, default all; up to OPENS boxes in each,
 default 8: its steps, then its closed families) and holds the picture that opens to the one it was: opening a
 box refines the quotient, so it takes no line away (every line of the closed picture is a line of the open one,
-seen through the quotient map), draws no line the closed picture did not (but one a step reads back of what it
-wrote), moves no box from outside a frame into it, and closing the box draws the closed picture again. It fails
-when a box does otherwise.
+seen through the quotient map), draws no line the closed picture did not (a line the open box draws across its
+frame is one the closed box should have drawn: rule 1), moves no box from outside a frame into it, and closing the
+box draws the closed picture again. It fails when a box does otherwise.
 """
 
 import json
@@ -131,11 +131,8 @@ TOPOLOGY = """async (spec) => {
   const fine = snap(), phi = phiFor(coarse, fine), image = new Set();
   for (const l of fine.lines) { const [a, b] = l.split(">"); const A = phi(a), B = phi(b); if (A !== B) image.add(A + ">" + B); }
   const base = new Set(coarse.lines), lost = [...base].filter(l => !image.has(l));
-  // a line from a place into the box that wrote it is the box reading back what it wrote: the composite takes nothing from there
-  // (a place used both ways stands twice, `from X ⇄` and `into X ⇄`: the line goes to the twin)
-  const twin = x => x.replace(/ ⇄$/, "");
-  const wrote = l => { const [a, b] = l.split(">"); return [...base, ...image].some(m => { const [c, d] = m.split(">"); return c === b && twin(d) === twin(a); }); };
-  const gained = [...image].filter(l => !base.has(l) && !wrote(l));
+  // what a step reads back of what it wrote is a value inside it (rule 4), so no line from a place may appear on opening
+  const gained = [...image].filter(l => !base.has(l));
   const moved = [...fine.boxes].filter(([b, par]) => coarse.boxes.has(b) && coarse.boxes.get(b) !== par).map(([b, par]) => `${b}: ${coarse.boxes.get(b)} -> ${par}`);
   // a place of the world stands on the side it stood: opening a box does not make what it does there another's
   const resided = [...fine.sides].filter(([id, side]) => coarse.sides.has(id) && coarse.sides.get(id) !== side).map(([id, side]) => `${id}: ${coarse.sides.get(id)} -> ${side}`);
@@ -271,7 +268,7 @@ def topology(atlas: str, repo: str, out: pathlib.Path, routes: int, opens: int) 
                 faults = [f"{what} {x}" for what in ("lost", "moved", "resided") for x in r[what][:3]] + (["does not close to the picture it was"] if r["reversible"] is False else [])
                 more = [f"more {x}" for x in r["gained"][:3]]
                 if faults or more:
-                    bad += bool(faults)
+                    bad += bool(faults or more)
                     print(route, "· opens", spec["kind"], spec["id"])
                     for f in faults + more:
                         print("   ", f)

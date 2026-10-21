@@ -1317,8 +1317,24 @@ async function renderPlaat(mine) {
   const stepMorphism = (key, own, isAnchor, leaf) => {
     const info = treeInfo.get(key);
     if (!info) return morphism(key, own, isAnchor);
-    const {step, on, site, fed} = info, dn = new Map(), cn = new Map();
+    const {step, on, site, fed} = info, dn = new Map(), cn = new Map(), beyond = new Set(), keep = new Set();
     const m = step.startsWith("op:") ? {dom: new Map(), cod: new Map(), goes: new Map()} : morphism(step, own, isAnchor, false, {on, figure: key, label: stepLabel(key), leaf});
+    if (!site && own && key === V.route) {
+      // a route's parameters are values with their names, there from its start: `report(c: Circle, q: Square)`
+      // takes `Circle · c` and `Square · q`, two values, whatever family they stand in. What its body gives
+      // back (made from what its steps make) is a value of its own, not one of them
+      const f = byId.get(step), a = arrowOf(step) || {};
+      const made = new Set(own && a.gives_back ? bodyOf(step, on).made_from || [] : []);
+      for (const x of made) keep.add(addPlace(typePlace(x)));
+      const words = p => new Set((p.type || "").split(/[^A-Za-z0-9_]+/));
+      for (const p of (f?.params || []).filter(p => !p.receiver)) {
+        for (const x of (a.takes || []).filter(x => words(p).has(bare(x)))) {
+          const k = addPlace({...typePlace(x), id: `t:${x}~${p.name}`, name: p.name});
+          if (!made.has(x)) m.dom.delete("t:" + x);
+          m.dom.set(k, false); dn.set(k, p.name); beyond.add(k);
+        }
+      }
+    }
     if (site) {
       // a value whose type ty does not know is still the value its name holds; a value no name holds
       // (`#3`, one call's result handed straight to the next) is drawn without one
@@ -1339,7 +1355,7 @@ async function renderPlaat(mine) {
         for (const k of m.cod.keys()) if (held && kindKey(k) === kind && !cn.has(k)) cn.set(k, dn.get(held));
       }
     }
-    return {dom: m.dom, cod: m.cod, dn, cn, goes: m.goes};
+    return {dom: m.dom, cod: m.cod, dn, cn, goes: m.goes, beyond, keep};
   };
   // build the nested picture: frames for open steps, pills for closed ones (siblings with the same places are one pill)
   const pills = new Map(), frames = new Map();  // id -> {...}
@@ -1371,7 +1387,7 @@ async function renderPlaat(mine) {
       }
       const hb = fine ? !!parent && !caller && node.id !== V.route && !lib && !/^(part|unit|op):/.test(node.id) && handsBack(stepOf(node.id), own.cod) : !!frames.get(fid).closed?.hb;
       if (own.dom.size || own.cod.size || hb || (back.length && !lib && !node.id.startsWith("unit:"))) {
-        const oid = "o:" + node.id, own_ = {id: oid, steps: [node.id], D: own.dom, C: own.cod, dn: own.dn, cn: own.cn, goes: own.goes, parent: fid, hue: node.hue, own: true};
+        const oid = "o:" + node.id, own_ = {id: oid, steps: [node.id], D: own.dom, C: own.cod, dn: own.dn, cn: own.cn, goes: own.goes, parent: fid, hue: node.hue, own: true, beyond: own.beyond, keep: own.keep};
         pills.set(oid, own_);
         for (const b of back) b.backTo = oid;
         if (hb) return [own_];
@@ -1387,6 +1403,31 @@ async function renderPlaat(mine) {
     return hb ? [pill] : [];
   };
   for (const t of routeTree()) build(t, null);
+  // Reading back is no exception (mathematics.md, rule 4): inside a step that reads back what it wrote, the read is of
+  // the place as the step's own writers left it, a value at a moment, made and taken inside the step. The place keeps
+  // what the step leaves there, in the codomain; closed, the value is internal to the step and draws no line
+  if (fine) {
+    const backOf = new Map();
+    for (const [fid, f] of frames) if (f.step && !f.synthetic && !f.anchor) { const rb = arrowOf(stepOf(f.step))?.reads_back; if (rb?.length) backOf.set(fid, new Set(rb)); }
+    if (backOf.size) {
+      const chainUp = fid => { const c = []; for (let f = fid; f; f = frames.get(f)?.parent) c.push(f); return c; };
+      const writers = new Map();
+      for (const P of pills.values()) for (const X of P.C.keys()) if (X.startsWith("w:")) { if (!writers.has(X)) writers.set(X, []); writers.get(X).push(P); }
+      const versionOf = (X, fid) => {
+        const id = `v:back:${X}~in~${fid}`;
+        if (!places.has(id)) places.set(id, {id, label: `${places.get(X)?.label || X} · in ${frames.get(fid).title}`, kind: "type", hue: hueOf(null), type: null, at: fid + "/~back", stands: X});
+        return id;
+      };
+      for (const P of pills.values()) for (const X of [...P.D.keys()].filter(k => k.startsWith("w:"))) {
+        const ws = (writers.get(X) || []).filter(Q => Q !== P);
+        const S = chainUp(P.parent).find(fid => backOf.get(fid)?.has(X) && ws.some(Q => chainUp(Q.parent).includes(fid)));
+        if (!S) continue;
+        const v = versionOf(X, S), r = P.D.get(X);
+        P.D.delete(X); P.D.set(v, r);
+        for (const Q of ws) if (chainUp(Q.parent).includes(S) && !Q.C.has(v)) Q.C.set(v, Q.C.get(X));
+      }
+    }
+  }
   // a focus and the rest of the code: one arrow each way per unit in focus, counting the types that
   // cross; an opened rest has one arrow per package in it, from the package that makes the types or
   // to the one that takes them, and holds only the packages with an arrow
@@ -1408,6 +1449,8 @@ async function renderPlaat(mine) {
   // where routes have no order between them, every route takes the same inputs and hands on the same outputs.
   // Zoom does not touch the moments: an opened family opens at each of them
   const isMem = k => k.startsWith("v:") || k.startsWith("t:");
+  // a place as a step's own writers left it, read back inside that step: its moment is inside the step, fixed where it was made
+  const inside = k => k.startsWith("v:back:");
   const version = (k, v) => { if (!places.has(v)) places.set(v, {...places.get(k), id: v}); return v; };
   const choiceOf = P => frames.get(P.parent)?.choice ? P.parent : P.id;
   // the arrow of an opened step hands on at the moment the closed step did: opening it moves no value to another moment
@@ -1422,7 +1465,7 @@ async function renderPlaat(mine) {
   // what the call hands a step and what the function says it takes are one value when they are of one
   // kind and at most one of them has a name: the value by the name and the type the call gives it.
   // Two values of a kind with names of their own are two values
-  const oneOfKind = (m, names) => {
+  const oneOfKind = (m, names, keep) => {
     const out = new Map(), unnamed = new Map(), named = new Map();
     const has = k => !!names?.get(k);
     m.forEach((r, k) => {
@@ -1432,19 +1475,22 @@ async function renderPlaat(mine) {
       if (!prev) { unnamed.set(kind, k); out.set(k, r); return; }
       if (places.get(prev)?.type === kindOf(places.get(prev)?.type) && places.get(k)?.type !== places.get(prev)?.type) { out.delete(prev); unnamed.set(kind, k); out.set(k, r); }
     });
-    for (const [kind, k] of unnamed) if (named.has(kind)) out.delete(k);
+    for (const [kind, k] of unnamed) if (named.has(kind) && !keep?.has(k)) out.delete(k);
     return out;
   };
-  for (const P of pills.values()) if (!P.steps[0].startsWith("unit:")) { P.D = oneOfKind(P.D, P.dn); P.C = oneOfKind(P.C, P.cn); }
+  for (const P of pills.values()) if (!P.steps[0].startsWith("unit:")) { P.D = oneOfKind(P.D, P.dn, P.keep); P.C = oneOfKind(P.C, P.cn); }
+  // a route's parameters are there from its start: a step handed one by its name takes it, unless the body named
+  // another value so first
+  for (const P of pills.values()) for (const k of P.beyond || []) latestSet(kindKey(k) + "|" + P.dn.get(k), k, P);
   for (const P of pills.values()) {
     // between units a type is the joint itself: one unit makes it, the next takes it
     if (P.steps[0].startsWith("unit:")) continue;
     // a value is taken by the name that holds it, else as the latest of its kind: an override runs on
     // the value its call runs on, and a subclass's value is its base's
     const Dv = new Map(), Cv = new Map(), name = (m, k) => (m && m.get(k)) || "";
-    P.D.forEach((r, k) => { const v = isMem(k) ? latestGet(kindKey(k) + "|" + name(P.dn, k), P) || latestGet(kindKey(k) + "|", P) : null; Dv.set(v || k, r); });
+    P.D.forEach((r, k) => { const v = isMem(k) && !P.beyond?.has(k) && !inside(k) ? latestGet(kindKey(k) + "|" + name(P.dn, k), P) || latestGet(kindKey(k) + "|", P) : null; Dv.set(v || k, r); });
     P.C.forEach((r, k) => {
-      if (!isMem(k)) { Cv.set(k, r); return; }
+      if (!isMem(k) || inside(k)) { Cv.set(k, r); return; }
       const nm = name(P.cn, k), at = V.route ? madeAt(P) : "out", v = version(k, `${k}@${at}`);
       Object.assign(places.get(v), {at});
       if (nm && !nm.startsWith("#") && !k.startsWith("v:")) Object.assign(places.get(v), {label: `${places.get(k).label} · ${nm}`, held: nm});
@@ -1465,14 +1511,15 @@ async function renderPlaat(mine) {
   };
   const toShown = m => { const out = new Map(); m.forEach((r, k) => { const k2 = standsAt(k); out.set(k2, out.has(k2) ? out.get(k2) && r : r); }); return out; };
   if (!fine) for (const P of pills.values()) { P.D = toShown(P.D); P.C = toShown(P.C); }
-  // a value no step makes is its type, from beyond; it keeps the name that holds it only where a step takes two of one type
-  // (`consume(a, b)` takes two records, not one)
+  // a value no step makes is its type, from beyond; it keeps the name that holds it where a step takes two of one kind: they
+  // are two values (`consume(a, b)` takes two records, `report(c, q)` a Circle and a Square), also once their family closes
+  // them into one box
   const split = new Set();
   if (fine) {
     const unmade = k => k.startsWith("t:") && places.get(k)?.name && !places.get(k).at;
     for (const P of pills.values()) for (const m of [P.D, P.C]) {
       const seen = new Map();
-      for (const k of m.keys()) if (unmade(k)) { const t = places.get(k).type; if (!seen.has(t)) seen.set(t, new Set()); seen.get(t).add(places.get(k).name); }
+      for (const k of m.keys()) if (unmade(k)) { const t = kindOf(places.get(k).type); if (!seen.has(t)) seen.set(t, new Set()); seen.get(t).add(places.get(k).name); }
       for (const [t, ns] of seen) if (ns.size > 1) split.add(t);
     }
     return {places, pills, frames, found, updated, split};
@@ -1525,7 +1572,7 @@ async function renderPlaat(mine) {
     }
     const qId = new Map();
     // a value keeps its name where a step made it, and where two of its type are taken at once
-    const named = pl => !!pl.name && !pl.name.startsWith("#") && (!!pl.at || F.split.has(pl.type)), nameOf_ = pl => named(pl) ? "~" + pl.name : "";
+    const named = pl => !!pl.name && !pl.name.startsWith("#") && (!!pl.at || F.split.has(kindOf(pl.type))), nameOf_ = pl => named(pl) ? "~" + pl.name : "";
     const q = k => {
       if (qId.has(k)) return qId.get(k);
       const pl = fp.get(k);
@@ -1573,7 +1620,9 @@ async function renderPlaat(mine) {
           if (S && way === "D" && !isValue && back.has(k)) { drop.set(`${P.id}|${way}|${k}`, "back"); continue; }
           incidence.push([way, P, k, mine ? r : true]);
         }
-        joinGoes(goes, P.goes);
+        // what the block reads back of what it wrote is no read of the place: the place stays in the block's codomain
+        if (back) P.goes?.forEach((s, k) => { if (!goes.has(k)) goes.set(k, new Set()); for (const x of s) if (!back.has(k) || (x !== "read" && x !== "use")) goes.get(k).add(x); });
+        else joinGoes(goes, P.goes);
       }
       for (const [way, P, k, r] of incidence) {
         const id = add(way === "D" ? D : C, k, r);
@@ -1653,7 +1702,7 @@ async function renderPlaat(mine) {
     for (const [key, i] of B.inc) {
       // what a block made and takes inside is no line of its border; nor is the reading back of what a step wrote
       const gone = A.drop.get(key);
-      if (gone === "back" || (gone === "internal" && !A.places.has(A.q(i.k)))) continue;
+      if (gone === "internal" && !A.places.has(A.q(i.k))) continue;
       const l = mapTo(i, i.way === "D" ? "D" : "C");
       if (l) img.add(l);
     }
@@ -2101,17 +2150,17 @@ async function renderPlaat(mine) {
     const info = {label: `${ts.size} ${ts.size === 1 ? "type" : "types"}`, title: [...ts].map(typeLabel).sort().join(", "), sides};
     if (r === "~in") addEdge(rest, at, info); else addEdge(at, rest, info);
   }
-  // units that call one another while no data joins them: a dotted line, from the caller, between the
-  // smallest boxes drawn for the packages the two lie in, a closed package or an opened one's frame.
-  // Opening a package refines the line, to what inside it is called, and never takes it away; a box
-  // draws none to what it holds. In a union, a line is in each reading that holds both, makes the
-  // call and joins them by no data
+  // units whose code calls one another: a dotted line, from the caller, between the smallest boxes
+  // drawn for the packages the two lie in, a closed package or an opened one's frame. The calls are a
+  // channel of their own, drawn whatever data also joins the two: a quotient keeps the image of a
+  // relation, and "calls while no data joins them" is no relation, so opening a package would bring
+  // back a line its closed box did not draw. Opening a package refines the line, to what inside it is
+  // called; a box draws none to what it holds. In a union, a line is in each reading that holds both
+  // and makes the call
   const unitOf = B => (B.steps ? B.steps[0] : B.step || "").slice(5);
   const unitBoxes = [...pills.values(), ...frames.values()].filter(B => (B.steps ? B.steps[0] : B.step || "").startsWith("unit:") && !isRest(unitOf(B)));
   const unitAt = id => unitBoxes.filter(B => inUnit(id, unitOf(B))).reduce((a, B) => (!a || unitOf(B).length > unitOf(a).length ? B : a), null);
   const holds = (B, X) => { for (let p = X.parent; p; p = frames.get(p)?.parent) if (p === B.id) return true; return false; };
-  // the data a box takes and hands on: a pill's own, a frame's the pills it holds
-  const dataOf = B => (pills.has(B.id) ? [B] : [...pills.values()].filter(P => holds(B, P)));
   const calling = new Map();  // `A>B` -> the readings in which code of A calls code of B
   for (const e of D.edges) if (e.kind === "calls" || e.kind === "instantiates") {
     const A = unitAt(e.src), B = A && unitAt(e.dst);
@@ -2120,11 +2169,9 @@ async function renderPlaat(mine) {
     if (!calling.has(k)) calling.set(k, {A, B, sides: new Set()});
     for (const s of DIFF ? ["a", "b"] : ["u"]) if (!DIFF || inReading(e, s)) calling.get(k).sides.add(s);
   }
-  const joinedIn = (A, B, s) =>
-    [[A, B], [B, A]].some(([X0, Y0]) => dataOf(X0).some(X => dataOf(Y0).some(Y => [...X.C.keys()].some(k => Y.D.has(k) && (!DIFF || (X.Cs.get(k)?.has(s) && Y.Ds.get(k)?.has(s)))))));
   const sidesOf = B => B.sides || new Set(["a", "b"]);
   for (const {A, B, sides: made} of calling.values()) {
-    const sides = [...made].filter(s => !joinedIn(A, B, s) && (!DIFF || (sidesOf(A).has(s) && sidesOf(B).has(s))));
+    const sides = [...made].filter(s => !DIFF || (sidesOf(A).has(s) && sidesOf(B).has(s)));
     if (sides.length) addEdge(A.id, B.id, {uses: true, sides: DIFF ? new Set(sides) : undefined});
   }
   // how each box of a union stands to the two readings. A step and a world place drawn from both are
@@ -2184,7 +2231,7 @@ async function renderPlaat(mine) {
   el("text", {class: "route-sub", x: 20, y: 41}, g).textContent = V.route ? `${short(V.route)} · what it finds on the left, what it leaves on the right · click a pill to open it, a frame's title to close it, double-click a box to pin its lines`
     : focused ? "the packages in focus, the types that cross between them and the places they touch; the rest of the code on either side · shift-click a package to add or drop it"
     : multi && !V.part && !V.kind ? "each part from what it finds to what it leaves; one part's requests are another's HTTP · click a part to open it"
-    : !V.kind ? "each package from what its own code finds to what it leaves, joined by the types that cross between packages; a dotted line where one only calls another · click a package to open it, shift-click to focus on it, double-click a box to pin its lines"
+    : !V.kind ? "each package from what its own code finds to what it leaves, joined by the types that cross between packages; a dotted line where one calls another · click a package to open it, shift-click to focus on it, double-click a box to pin its lines"
     : "each route from what it finds to what it leaves · click a route to open it";
   if (!pos.size) el("text", {class: "route-sub", x: 20, y: 70}, g).textContent = "No step on this route takes or hands on a place: it calls nothing that does. Pick another route.";
   const fg = el("g", {}, g), eg = el("g", {}, g), ng = el("g", {}, g), ig = el("g", {class: "interior-ports"}, g);
@@ -2309,7 +2356,7 @@ async function renderPlaat(mine) {
       for (const l of e.labels || []) { const tx = el("text", {class: "sedge-label", x: l.x + c.x + l.width / 2, y: l.y + c.y + 10, "text-anchor": "middle"}, eg); tx.textContent = l.text; els.push(tx); }
       const st = reusedBox(e.sources[0]) && reusedBox(e.targets[0]) ? null : standing(info.sides, false);
       if (st) for (const x of els) x.classList.add("d-" + st);
-      edgeEls.push({a: e.sources[0], b: e.targets[0], els, kind: info.uses ? "calls, no data" : info.back ? "hands back" : info.reach ? "reaches" : "data"});
+      edgeEls.push({a: e.sources[0], b: e.targets[0], els, kind: info.uses ? "calls" : info.back ? "hands back" : info.reach ? "reaches" : "data"});
       if (DUR) for (const x of [p, head]) d3.select(x).attr("opacity", 0).transition().delay(DUR * .7).duration(DUR * .6).attr("opacity", 1);
     }
   }

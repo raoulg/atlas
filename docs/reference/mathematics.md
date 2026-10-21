@@ -213,11 +213,18 @@ line or a box that appears or disappears means:
 3. **Lines between two blocks are a bundle.** Fine lines with the same two blocks and the same
    channel (an effect of the step's own, a reached one, a value handed on, a call and nothing else)
    are one line that says how many it stands for, and opening splits it into the fine lines, each to
-   the block of its end. Different channels between the same two boxes stay different lines.
+   the block of its end. Different channels between the same two boxes stay different lines. No line
+   is left out because another joins the same boxes: a picture shows fewer lines only inside a block
+   (rule 2) or through a filter the reader chooses and the picture names (by channel, or by box, the
+   filter first).
 4. **Reading back is no exception.** What a step makes and reads in the same box is a value inside
    the fiber, a vertex of its own; the place keeps the value as the box leaves it, in the codomain.
    The line from the place into the box that wrote it does not exist at a vertex that is a value at a
-   moment.
+   moment. In the plan, a read inside a step of what that step's own writers wrote there is the value
+   `X · in S`, made by those writers and taken by the reader, standing in the step's frame; closed, it
+   is internal to the step. A closed step's reads of what it wrote itself are no read of the place, so
+   the place keeps the side of what the step leaves there: a store that writes a table and counts its
+   rows stands where its other end products stand.
 5. **Reach is computed on the fine graph.** Quotienting identifies vertices and can make a path that
    no fine path has (`a → b`, `c → d`, `b ≡ c` gives `[a] → [d]`). What a step reaches is the closure
    of its calls in the fine graph, drawn apart from its own arrow (sentence 6), and never read off a
@@ -287,16 +294,18 @@ screen, at the zoom the reader chose.
 | what a step takes from beyond it stands outside its frame | the domain of a composite is the domain of its first arrow |
 | a choice is a frame of its own, its branches inside | a coproduct is one object whose arms are its injections |
 | files fold into the directories that hold them; opening a directory refines the fold | the disk is a tree, and a fold is its quotient by directory |
-| a dotted line joins the packages that call each other and no data joins; opened, it refines to what inside is called | the calls are a relation, and a quotient of a relation keeps its image |
+| a dotted line joins the packages whose code calls each other, whatever data also joins them; opened, it refines to what inside is called | the calls are a relation, and a quotient of a relation keeps its image; a line drawn only where another is absent is no relation and would come back on opening |
 | a type with parts is a family frame; its parts stand inside it opened | zoom by composition is a quotient by the relation "is a part of" |
 | the layers of a route run left to right, entry to places reached | a graph without cycles can be drawn in layers (presentation, no claim) |
 
 A closed step takes what its body takes from beyond it (a field of the receiver, a library's
 value) as well as the types of its signature: the domain of a composite is the domain of its
 first arrows, so opening the step draws no line across its frame that the closed box did not. A
-value no step makes is its type from beyond; two of one type that one step takes (`consume(a, b)`)
-are two values, each by the name that holds it, and a value a step made keeps its name in its
-moment and in its family's frame. A closed family holds its kinds (a subclass stands in its base
+value no step makes is its type from beyond; two of one kind that one step takes (`consume(a, b)`,
+`report(c: Circle, q: Square)`) are two values, each by the name that holds it, also once their
+family closes them into one box, and a value a step made keeps its name in its moment and in its
+family's frame. A route's parameters are such values, there at the route's start: its own arrow
+takes them by their names, and a step handed one by its name takes the same value. A closed family holds its kinds (a subclass stands in its base
 until the family is opened); a part of a type is structure of its owner, a box of its own in the
 owner's frame, and the values of the part's type stand on their own (#39).
 **Where.** `plan`, `imageOf`, `refines` and the camera in `viewer/index.html`;
@@ -314,8 +323,10 @@ open:
 - every call of the route is an *occurrence* (a step key, its path through the route), opened to
   all its calls; an occurrence with calls has a frame and its own arrow, one without is a pill;
 - every value is an identity `(type, name, moment)`: the type it has, the name that holds it, and
-  the occurrence (or choice) that made it; two values of one type at one moment are two;
-- every place of the world is at its concrete place (a path, a table, a command);
+  the occurrence (or choice) that made it; two values of one type at one moment are two; a route's
+  parameters are values with their names at the route's start;
+- every place of the world is at its concrete place (a path, a table, a command); what a step reads
+  back of what it wrote there is a value at a moment inside the step (rule 4);
 - a step's own arrow is its witness at its border: its signature and its own touches, the lines that
   cross its frame.
 
