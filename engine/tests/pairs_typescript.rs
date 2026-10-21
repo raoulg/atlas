@@ -266,7 +266,7 @@ fn places_are_decided_where_the_program_starts() {
         Some(vec!["clean.server".to_string(), "clean.cli.main".to_string()])
     );
     assert!(asked_anywhere(c, "places").is_empty(), "{:?}", asked_anywhere(c, "places"));
-    // the shortcut's reads and writes are still there, decided in the library itself
+    // the shortcut's reads and writes are still there, made whole in the library itself
     for (f, kind) in
         [("rates.file.FileRates.latest", "disk_read"), ("exporters.csv.writeCsv", "disk_write"), ("exporters.json.writeJson", "disk_write")]
     {
@@ -276,8 +276,9 @@ fn places_are_decided_where_the_program_starts() {
 }
 
 /// Library code does not decide where data lives. A path the library takes from the environment
-/// shows as what it is: a place the code does not name, or one the library decides itself, which
-/// `places` asks about.
+/// shows as what it is: a place the code does not name, beside the default the library takes where
+/// nobody sets the variable. Whoever starts the program may set it, so the default is an option,
+/// as a parameter's default is, and `places` does not ask.
 #[test]
 fn places_decided_in_library_code_show() {
     let s = shortcut();
@@ -285,7 +286,7 @@ fn places_decided_in_library_code_show() {
         [("rates.file.FileRates.latest", "disk_read"), ("exporters.csv.writeCsv", "disk_write"), ("exporters.json.writeJson", "disk_write")]
     {
         let unnamed = touches(s, f, kind).iter().any(|t| t.artifact.is_empty() && !t.fixed);
-        assert!(unnamed || asked(s, "places", f), "{f}: {:?}", places(s, f, kind));
+        assert!(unnamed && !asked(s, "places", f), "{f}: {:?}", places(s, f, kind));
     }
 }
 
@@ -1069,4 +1070,50 @@ fn gives_is_asked_where_the_return_type_is_left_out() {
     assert_eq!(asked(&s), ["store.getStore", "store.label"]);
     assert!(edge(&c, EdgeKind::Calls, "store.main", "store.Store.history"));
     assert!(!edge(&s, EdgeKind::Calls, "store.main", "store.Store.history"), "the route loses the store's history");
+}
+
+/// The places pair, `places/typescript`: rows read and kept, and pages made from a template the
+/// package ships, the same on both sides but for where the rows come from.
+fn stock(side: &str) -> Graph {
+    analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/places/typescript").join(side), &Options::default()).unwrap()
+}
+
+/// Library code does not decide where data lives, and a function that hands a path decides it as
+/// much as one that opens it. Both sides read rows with `readRows(path)`. The clean command's
+/// `main`, which the `bin` runs, hands it `"data/rows.csv"`, as where the program starts may; on
+/// the shortcut the library's `defaultRows()` hands it. `places` asks `defaultRows`, whose own code
+/// writes the path, and not `readRows`, which takes it.
+#[test]
+fn places_the_function_that_writes_the_path_decides_it() {
+    let (c, s) = (stock("clean"), stock("shortcut"));
+    assert!(asked_anywhere(&c, "places").is_empty(), "{:?}", asked_anywhere(&c, "places"));
+    assert!(asked(&s, "places", "rows.defaultRows") && !asked(&s, "places", "rows.readRows"), "{:?}", asked_anywhere(&s, "places"));
+    let read = |g: &Graph, by: &str| {
+        touches(g, "rows.readRows", "disk_read").iter().any(|t| t.artifact == "data/rows.csv" && t.fixed_by == [format!("{}.{by}", g.root)])
+    };
+    assert!(read(&c, "cli.main") && read(&s, "rows.defaultRows"));
+}
+
+/// A default whoever calls the function or starts the program can override is an option, not a
+/// decision: a parameter's (`path: string = "out/rows.csv"`) and an environment variable's
+/// (`process.env.STOCK_PATH ?? "out/rows.csv"`). The variable draws as a place the code does not
+/// name, beside the file the code takes where nobody sets it; `places` asks neither form.
+#[test]
+fn places_a_default_the_caller_can_override_is_an_option() {
+    let c = stock("clean");
+    assert!(!asked(&c, "places", "rows.save") && !asked(&c, "places", "rows.saveWhereTold"), "{:?}", asked_anywhere(&c, "places"));
+    let told = touches(&c, "rows.saveWhereTold", "disk_write");
+    assert!(told.iter().any(|t| t.artifact == "out/rows.csv" && !t.fixed && t.fixed_by.is_empty()), "{told:?}");
+    assert!(told.iter().any(|t| t.artifact.is_empty() && t.what == "{$STOCK_PATH}"), "{told:?}");
+}
+
+/// A file that ships with the package, found from where its code lies
+/// (`new URL("./template.html", import.meta.url)`), is part of the package and no place its user
+/// chooses: `page` reads `src/template.html`, and `places` does not ask.
+#[test]
+fn places_a_file_shipped_with_the_package_is_part_of_it() {
+    let c = stock("clean");
+    let read = touches(&c, "pages.page", "disk_read");
+    assert!(read.iter().any(|t| t.artifact == "src/template.html" && !t.fixed && t.fixed_by.is_empty()), "{read:?}");
+    assert!(!asked(&c, "places", "pages.page"), "{:?}", asked_anywhere(&c, "places"));
 }

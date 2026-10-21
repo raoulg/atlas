@@ -46,7 +46,9 @@ fn each_principle_finds_its_case() {
     );
     // `Path("out.json")` in a sink, `summary` beside the command `export`, which names its own
     // file as an entry may, and the functions of `files` that keep their data under the module's
-    // constant `DATA`; `save` writes where its caller says
+    // constant `DATA`; `save` writes where its caller says. `warm` and `tidy` hand the folder
+    // (`Cache(Path("warm"))`, `Bin(root=Path("tidy"))`) that the object's method writes under: the
+    // place is theirs, as it would be had they written the file themselves
     assert_eq!(
         got["places"],
         [
@@ -56,7 +58,9 @@ fn each_principle_finds_its_case() {
             "fixture.files.read_report",
             "fixture.files.install",
             "fixture.files.export",
-            "fixture.sinks.duck.DuckSink.write"
+            "fixture.sinks.duck.DuckSink.write",
+            "fixture.store.warm",
+            "fixture.store.tidy"
         ]
     );
     // `enrich` changes the Graph it is handed, so do `rename` (`setattr`) and `forget` (`del`);
@@ -165,13 +169,43 @@ fn a_lens_puts_what_reaches_the_place_not_the_key_it_looks_up_by() {
 /// The principles read Rust by what its types and entries mean: a trait's implementation has the
 /// trait's signature, so `Disk.page`, which gives the `anyhow::Result<Page>` that `Source.page`
 /// promises as `Result<Page>`, is asked nothing, and the test beside `ledger` names its own file
-/// without making `ledger` one that may.
+/// without making `ledger` one that may. `publish` hands `report(dir, ..)` the directory `site`,
+/// and `stock` builds its `Store` on `stock`: each decides the place the function it calls writes.
 #[test]
 fn rust_is_read_by_meaning() {
     let fs = findings("tests/fixture-rs");
     let got = by_principle(&fs);
     assert!(!got.contains_key("overrides"), "{:?}", got.get("overrides"));
-    assert_eq!(got["places"], ["handed.ledger.ledger", "handed.world.notes", "handed.world.stamp"]);
+    assert_eq!(
+        got["places"],
+        ["handed.ledger.ledger", "handed.world.notes", "handed.world.publish", "handed.world.stamp", "handed.world.stock"]
+    );
+}
+
+/// A command its package also exports is a door as well: `doors` asks of it as of any door, and
+/// asks nothing of a command its package does not export. A graph of one function, a command
+/// that does not say what its `n` is.
+#[test]
+fn a_command_its_package_exports_is_a_door() {
+    use atlas_engine::{Entry, EntryKind, Graph, Node, NodeKind, Param};
+    let graph = |exported: bool| Graph {
+        root: "tool".into(),
+        nodes: vec![Node {
+            id: "tool.main".into(),
+            kind: NodeKind::Function,
+            name: "main".into(),
+            module: "tool".into(),
+            file: "tool.py".into(),
+            entry: Some(Entry::new(EntryKind::Cli, "tool")),
+            exported,
+            params: vec![Param { name: "n".into(), ..Default::default() }],
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    let doors = |g: &Graph| check(g).into_iter().filter(|f| f.principle == "doors").map(|f| f.what).collect::<Vec<_>>();
+    assert_eq!(doors(&graph(true)), ["main does not say what `n` is"]);
+    assert_eq!(doors(&graph(false)), Vec::<String>::new());
 }
 
 /// `src/` holds packages; a package called `src` has no name of its own yet, and that comes first.

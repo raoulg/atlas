@@ -1065,6 +1065,7 @@ pub const FILE_PACKAGES: &[&str] = &[
     "shutil",
     "os",
     "pathlib",
+    "importlib",
     "pandas",
     "geopandas",
     "numpy",
@@ -1450,7 +1451,13 @@ pub const PATH_MAKERS: &[&str] =
     &["Path", "PurePath", "PosixPath", "WindowsPath", "PurePosixPath", "PureWindowsPath", "Path::new", "PathBuf::from", "URL", "new URL"];
 
 /// Libraries whose values are paths: a method of one names its file by the path it is called on.
-pub const PATH_LIBRARIES: &[&str] = &["pathlib"];
+/// importlib's are what a package ships (`files("pages").joinpath("template.html").read_text()`).
+pub const PATH_LIBRARIES: &[&str] = &["pathlib", "importlib"];
+
+/// The functions that give the directory a package ships its files in, handed the package by its
+/// name, by the library's module and the function's name: `importlib.resources.files("pages")`.
+/// What is read from there is part of the package.
+pub const PACKAGE_FILES: &[(&str, &str)] = &[("importlib.resources", "files"), ("importlib_resources", "files")];
 
 /// A path's methods that give back the path they are called on, written another way.
 pub const SAME_PATH: &[&str] = &["resolve", "absolute", "expanduser", "as_posix", "__fspath__"];
@@ -1479,6 +1486,8 @@ pub enum PathFn {
     Here,
     /// The system's directory for temporary files.
     Temp,
+    /// What the environment holds for the variable its first argument names.
+    Environment,
 }
 
 /// A command-line parser whose parsed values are attributes of one object (`args.out`): its
@@ -1576,7 +1585,14 @@ pub const RUST_PATH_FUNCTIONS: &[(&str, &str, PathFn)] = &[
     ("env", "home_dir", PathFn::Home),
     ("dirs", "home_dir", PathFn::Home),
     ("env", "temp_dir", PathFn::Temp),
+    ("env", "var", PathFn::Environment),
+    ("env", "var_os", PathFn::Environment),
 ];
+
+/// The macros that give, where the program is built, the directory its crate's manifest is in,
+/// by the macro and the variable Cargo sets: `env!("CARGO_MANIFEST_DIR")`. Read at run time, it
+/// names the source directory of the machine the program was built on.
+pub const RUST_BUILD_DIRS: &[(&str, &str)] = &[("env", "CARGO_MANIFEST_DIR")];
 
 /// What a method of a path makes of the path it is called on.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

@@ -143,7 +143,10 @@ fn what_lies_beyond_the_rounds_is_the_border_functions() {
     assert_eq!(wrote.line, call.line, "drawn at the border's call that leads there");
     let route = atlas_engine::story::route(&one, "deep.main.main", 2).unwrap();
     assert!(route.contains("out.txt"), "the project's route reaches the place:\n{route}");
-    assert!(principles::check(&one).iter().all(|f| f.node != "deep.main.main"), "main leaves a file behind");
+    // `main` hands the library its own `out.txt`: where that lives is `main`'s decision
+    let found = principles::check(&one);
+    assert!(found.iter().any(|f| f.node == "deep.main.main" && f.principle == "places"), "{found:#?}");
+    assert!(found.iter().all(|f| f.node != "deep.main.main" || f.principle == "places"), "main leaves a file behind");
     // the rounds reach the function that writes: the touch is its own
     assert!(three.node("deepkit.store.write").unwrap().touches.iter().any(|t| t.kind_name() == "disk_write"));
     assert!(

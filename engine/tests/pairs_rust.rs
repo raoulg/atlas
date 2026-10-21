@@ -247,13 +247,22 @@ fn places_where_data_lives_is_decided_where_the_program_starts() {
 }
 
 /// Library code does not decide where data lives. A library function that falls back to a path of
-/// its own when an environment variable is not set decides where its data lives: the default is
-/// its choice, and the variable a place the code does not name.
+/// its own when an environment variable is not set leaves the place to whoever starts the program:
+/// the variable is a place the code does not name, and the default an option, as a parameter's
+/// default is. `places` does not ask; the shortcut shows in where the place is whole: in the
+/// library itself, while the clean side's is whole in `main`.
 #[test]
-fn places_a_library_that_picks_its_own_place_is_asked() {
-    let asked = found(shortcut(), "places");
-    for f in ["spend.config.load", "spend.report.write"] {
-        assert!(asked.contains(&f.to_string()), "{f} picks its own place: {asked:?}");
+fn places_an_environment_variable_with_a_default_is_an_option() {
+    let s = shortcut();
+    let asked = found(s, "places");
+    for (f, kind, default, variable) in [
+        ("spend.config.load", "disk_read", "spend.toml", "{$SPEND_CONFIG}"),
+        ("spend.report.write", "disk_write", "reports/", "{$SPEND_REPORTS}"),
+    ] {
+        assert!(!asked.contains(&f.to_string()), "{f} takes what the environment says: {asked:?}");
+        let ts = touches(s, f, kind);
+        assert!(ts.iter().any(|t| t.artifact == default && !t.fixed && t.fixed_by.is_empty()), "{f}: {ts:#?}");
+        assert!(ts.iter().any(|t| t.artifact.is_empty() && t.what.starts_with(variable)), "{f} shows the variable: {ts:#?}");
     }
 }
 
@@ -948,4 +957,44 @@ fn nothing_says_what_atlas_cannot_see() {
         assert!(node(g, "jobs.Task.run").declared, "a trait's method without a body is what its implementations fill in");
         assert!(edge(g, EdgeKind::Calls, "jobs.run_task", "jobs.Task.run"));
     }
+}
+
+/// The places pair, `places/rust`: rows read and kept, and a page made from a template, the same
+/// on both sides but for where the rows come from and where the template is found.
+fn stock(side: &str) -> Graph {
+    analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/places/rust").join(side), &Options::default()).unwrap()
+}
+
+/// Library code does not decide where data lives, and a function that hands a path decides it as
+/// much as one that opens it. Both sides read rows with `read_rows(path: &Path)`. The clean `main`
+/// hands it `Path::new("data/rows.csv")`, as where the program starts may; on the shortcut the
+/// library's `default_rows()` hands it. `places` asks `default_rows`, whose own code writes the
+/// path, and not `read_rows`, which takes it. Both sides fall back to `out/rows.csv` where
+/// `STOCK_PATH` is not set, an option of whoever starts the program, which neither side is asked.
+#[test]
+fn places_the_function_that_writes_the_path_decides_it() {
+    let (c, s) = (stock("clean"), stock("shortcut"));
+    assert!(found(&c, "places").is_empty(), "{:?}", found(&c, "places"));
+    assert!(found(&s, "places").contains(&"stock.default_rows".to_string()), "{:?}", found(&s, "places"));
+    assert!(
+        !found(&s, "places").contains(&"stock.read_rows".to_string())
+            && !found(&s, "places").contains(&"stock.save_where_told".to_string())
+    );
+    let read = |g: &Graph, by: &str| {
+        touches(g, "stock.read_rows", "disk_read").iter().any(|t| t.artifact == "data/rows.csv" && t.fixed_by == [by])
+    };
+    assert!(read(&c, "stock.main.main") && read(&s, "stock.default_rows"));
+}
+
+/// A file that ships with the program is part of it. Rust's clean form compiles the template in
+/// (`include_str!("template.html")`): no place at run time. The shortcut reads it at run time from
+/// `env!("CARGO_MANIFEST_DIR")`, the source directory of the machine the program was built on, a
+/// place the code fixes, and `places` asks.
+#[test]
+fn places_a_file_compiled_in_is_no_place_and_one_found_where_the_crate_was_built_is_fixed() {
+    let (c, s) = (stock("clean"), stock("shortcut"));
+    assert!(node(&c, "stock.page").touches.is_empty(), "{:?}", node(&c, "stock.page").touches);
+    let read = touches(&s, "stock.page", "disk_read");
+    assert!(read.iter().any(|t| t.artifact == "template.html" && t.fixed), "{read:?}");
+    assert!(found(&s, "places").contains(&"stock.page".to_string()), "{:?}", found(&s, "places"));
 }

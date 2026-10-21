@@ -236,7 +236,11 @@ Three things make `F` honest, and each is an engine task:
    that only share a name are two. Each place keeps the
    function whose call made it whole, and a route shows it only when it reaches that
    function: `analyze` reads the folder its user names, and `changes` also reads the
-   revision it writes under `$TMPDIR`. An entry the program also calls is run by its users
+   revision it writes under `$TMPDIR`. Where the code decides a place, the place also keeps the
+   function whose own code writes what its path starts at (`Touch::fixed_by`), however many calls
+   lie between: `default_rows` for the file `read_rows(path)` reads when it hands it
+   `Path("data/rows.csv")`. A default a call leaves out is an input with a default, which decides
+   nothing. An entry the program also calls is run by its users
    as well, with what they hand it, in its own route. What an object holds is whole where
    the object was built, and a path that takes both that and what the method's own callers
    hand is whole where both are. A route that reaches none of the callers that make a call
@@ -351,7 +355,10 @@ crate's root and of the modules it makes public with `pub mod`, as `view::hide_p
 the names a public module re-exports with `pub use`; the names exported by the module a
 `package.json` points to with `exports`, `module` or `main`). A re-exported name is followed to
 where it is defined. Each is the
-start of a route; an exported class is a route whose steps are its public methods. An entry is an
+start of a route; an exported class is a route whose steps are its public methods. A program a
+manifest declares is a command also where its package exports the function (a flat module's
+public `main`): the declaration says what the function is to its user, and the function is a door
+as well (`Node::exported`). An entry is an
 arrow whose domain is what the human hands it on the command line: a command or script carries
 its options (`Entry::options`, `--raw` named, `<name>` positional) and reads as its usage line,
 and the call that parses the command line (`Site::command_line`) is the entry's, not a step of

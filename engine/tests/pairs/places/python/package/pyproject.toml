@@ -1,0 +1,11 @@
+[project]
+name = "tally"
+version = "0.1.0"
+requires-python = ">=3.12"
+
+[project.scripts]
+tally = "tally.cli:main"
+
+[build-system]
+requires = ["uv_build"]
+build-backend = "uv_build"
