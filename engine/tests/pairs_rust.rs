@@ -12,6 +12,8 @@
 
 mod common;
 
+use common::Pair;
+
 use std::path::PathBuf;
 use std::sync::OnceLock;
 
@@ -689,18 +691,9 @@ fn choices_a_choice_is_made_once_across_bodies() {
 /// One side of the lens pair's club (`tests/pairs/lens/rust/club`): the Python club's desk, which
 /// keeps visits, members and reports in SQLite, a table each, and its log and roster in files, as
 /// Rust writes them.
-fn club(side: &str) -> &'static Graph {
-    static CLEAN: OnceLock<Graph> = OnceLock::new();
-    static SHORTCUT: OnceLock<Graph> = OnceLock::new();
-    let read = || {
-        analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/lens/rust/club").join(side), &Options::default())
-            .expect("reads")
-    };
-    if side == "clean" {
-        CLEAN.get_or_init(read)
-    } else {
-        SHORTCUT.get_or_init(read)
-    }
+fn club() -> &'static Pair {
+    static PAIR: OnceLock<Pair> = OnceLock::new();
+    PAIR.get_or_init(|| common::pair("lens/rust/club"))
 }
 
 /// What `lens` says of class `id` of the club: empty when it asks nothing.
@@ -716,7 +709,7 @@ fn lens_of(g: &Graph, id: &str) -> String {
 /// `Visits.come` inserts a Member's name as a value: each is asked.
 #[test]
 fn lens_the_place_is_the_table_and_a_key_is_no_put() {
-    let (c, s) = (club("clean"), club("shortcut"));
+    let (c, s) = (&club().clean, &club().shortcut);
     let fs = check(c);
     assert!(fs.is_empty(), "{:#?}", fs.iter().map(|f| format!("{} {} {}", f.principle, f.node, f.what)).collect::<Vec<_>>());
     let at = |f: &str| touches(c, f, "db_sqlite").iter().map(|t| (t.artifact.clone(), t.dir_name())).collect::<Vec<_>>();
@@ -734,7 +727,7 @@ fn lens_the_place_is_the_table_and_a_key_is_no_put() {
 /// is asked where the Visit went.
 #[test]
 fn lens_a_get_gives_a_value_back() {
-    let (c, s) = (club("clean"), club("shortcut"));
+    let (c, s) = (&club().clean, &club().shortcut);
     let kinds: Vec<&str> = node(c, "club.files.Log.add").touches.iter().map(|t| t.kind_name()).collect();
     assert!(kinds.contains(&"disk_read") && kinds.contains(&"disk_write"), "{kinds:?}");
     assert_eq!(lens_of(c, "files.Log"), "");
@@ -746,7 +739,7 @@ fn lens_a_get_gives_a_value_back() {
 /// shortcut's `Roster::load` gives a Roster that holds the lines, and `Roster` is asked.
 #[test]
 fn lens_a_get_gives_its_own_class_back() {
-    let (c, s) = (club("clean"), club("shortcut"));
+    let (c, s) = (&club().clean, &club().shortcut);
     assert!(node(c, "club.files.Roster.load").ctor);
     assert!(edge(c, EdgeKind::Has, "club.files.Roster", "club.Member"));
     assert_eq!(lens_of(c, "files.Roster"), "");

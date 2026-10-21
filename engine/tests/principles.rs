@@ -226,11 +226,6 @@ const REVIEWED: &[(&str, &str, &str)] = &[
     ),
     (
         "choices",
-        "atlas-engine.tests.pairs_python.club",
-        "a fault of Atlas, #116: a pair read once per side is written five times (here three times, once in `pairs_rust` and in `pairs_typescript`), each picking its graph by `side == \"clean\"`",
-    ),
-    (
-        "choices",
         "atlas.history.Server.respond",
         "`respond` is shared with `atlas serve`, which lets a POST through to its own routes, while history's own server answers it 405: the two tests mean two things",
     ),
