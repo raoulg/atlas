@@ -296,11 +296,6 @@ const REVIEWED: &[(&str, &str, &str)] = &[
     ),
     (
         "layers",
-        "atlas-engine",
-        "a fault of Atlas: a `Node` holds a `prophecy::Prophecy`, a cycle through types, while `prophecy.rs` builds on `model`'s `Node`, `Edge` and `Entry`; the type `Prophecy` belongs beside `Node` in `model`",
-    ),
-    (
-        "layers",
         "atlas-engine.python",
         "a fault of Atlas: `python/paths.rs` calls back into `python.rs` (`call_path`, `dotted`) while `python.rs` calls into it; what both use belongs in a module below both",
     ),

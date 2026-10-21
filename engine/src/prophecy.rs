@@ -7,31 +7,8 @@
 //! read here, once.
 
 use indexmap::IndexMap;
-use serde::{Deserialize, Serialize};
-use ts_rs::TS;
 
-use crate::model::{Edge, EdgeKind, Entry, EntryKind, Node, NodeKind};
-
-/// What a prophecy says of itself.
-#[derive(Serialize, Deserialize, TS, Clone, Debug, Default, PartialEq, Eq)]
-#[ts(export)]
-pub struct Prophecy {
-    /// The existing thing the prophecy replaces: it stays until the prophecy is built.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub supersedes: Option<String>,
-    /// The place is known and the shape is not.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub veiled: bool,
-    /// The shape waits on an open question, as an issue (`#144`).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub sealed: Option<String>,
-    /// The node `supersedes` names, once the graph is whole: its id.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub replaces: Option<String>,
-    /// The nodes `supersedes` names when it names more than one: which it replaces, it does not say.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub candidates: Vec<String>,
-}
+use crate::model::{Edge, EdgeKind, Entry, EntryKind, Node, NodeKind, Prophecy};
 
 impl Prophecy {
     /// The arguments of a marker: `supersedes=pkg.Old veiled sealed="#144"`, or the same as a call

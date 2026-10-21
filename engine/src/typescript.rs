@@ -307,8 +307,8 @@ fn doc_of(n: TsNode, src: &[u8]) -> String {
 }
 
 /// What the leading comment's `@prophecy` tag says, if it has one.
-fn prophecy_of(n: TsNode, src: &[u8]) -> Option<crate::prophecy::Prophecy> {
-    leading_comment(n, src).and_then(crate::prophecy::Prophecy::of_jsdoc)
+fn prophecy_of(n: TsNode, src: &[u8]) -> Option<crate::model::Prophecy> {
+    leading_comment(n, src).and_then(crate::model::Prophecy::of_jsdoc)
 }
 
 // ---------- types ----------
