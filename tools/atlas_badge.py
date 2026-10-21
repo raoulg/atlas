@@ -1,10 +1,10 @@
 """Write the Atlas pill for a README, as one SVG file.
 
-    python3 tools/atlas_badge.py OUT.svg                 the static pill: atlas | drawn on push
-    python3 tools/atlas_badge.py OUT.svg FINDINGS.json   adds what `atlas check --json` found
+    python3 tools/atlas_badge.py OUT.svg                 the pill: atlas | drawn on push
+    python3 tools/atlas_badge.py OUT.svg FINDINGS.json   a pill of its own: atlas | N questions
 
-The second form is the live pill: its last segment counts the questions Atlas asks of the code,
-teal at none and amber otherwise, so a workflow that writes it on every push keeps it true.
+The second form counts what `atlas check --json` found, teal at none and amber otherwise. It is
+experimental: the questions Atlas asks are not yet reliable enough to wear as a badge.
 """
 
 import json
@@ -56,7 +56,7 @@ def main(out, findings=None):
     segments = [('atlas', INK), ('drawn on push', VERMILION)]
     if findings:
         n = len(json.loads(pathlib.Path(findings).read_text())['findings'])
-        segments.append((f'{n} question' + ('' if n == 1 else 's'), AMBER if n else TEAL))
+        segments[1] = (f'{n} question' + ('' if n == 1 else 's'), AMBER if n else TEAL)
     pathlib.Path(out).write_text(render(segments))
 
 
