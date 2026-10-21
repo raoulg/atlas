@@ -1016,3 +1016,37 @@ fn composition_a_local_shadows_the_function_it_is_named_like() {
         assert_eq!(targets(&g, EdgeKind::Calls, "inbox.addressed"), ["inbox.tidy"], "{side}");
     }
 }
+
+/// One side of the dispatch pair (`tests/pairs/dispatch/rust`): text read from a source, by the
+/// trait's own `read` or the one a kind overrides it with, each method called on the value it
+/// runs on on the clean side and by its path on the shortcut.
+fn sources(side: &str) -> Graph {
+    analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/dispatch/rust").join(side), &Options::default()).expect("reads")
+}
+
+/// A method called by its path runs on the value it is handed first, as the same call in method
+/// syntax does: `Source::read(p)`, `<Plain as Source>::read(p)` and `Self::raw(self)` dispatch on
+/// what the body knows of their first argument, as `p.read()` and `self.raw()` do. Rust has no form
+/// that runs a method in place of the one dispatch finds, so the two sides draw each step alike:
+/// `plain` runs the trait's `read` on a `Plain`, `trimmed` the override `Trimmed.read`, and `any`,
+/// on a `dyn Source`, a call into the family.
+#[test]
+fn composition_a_method_called_by_its_path_runs_on_its_first_argument() {
+    let (c, s) = (sources("clean"), sources("shortcut"));
+    let steps = |g: &Graph, f: &str| -> Vec<(String, String, bool, Vec<String>)> {
+        node(g, f)
+            .sites
+            .iter()
+            .filter(|s| !s.to.is_empty())
+            .map(|s| (s.to.clone(), s.on.clone(), s.on_receiver, s.hands.iter().map(|h| format!("{}·{}", h.ty, h.name)).collect()))
+            .collect()
+    };
+    for f in ["sources.plain", "sources.trimmed", "sources.any", "sources.both", "sources.Source.read", "sources.Trimmed.read"] {
+        assert_eq!(steps(&s, f), steps(&c, f), "{f}");
+        assert_eq!(targets(&s, EdgeKind::Calls, f), targets(&c, EdgeKind::Calls, f), "{f}");
+    }
+    let to = |f: &str| steps(&c, f).into_iter().map(|(t, on, ..)| (t, on)).collect::<Vec<_>>();
+    assert_eq!(to("sources.plain"), [("sources.Source.read".to_string(), "sources.Plain".to_string())]);
+    assert_eq!(to("sources.trimmed"), [("sources.Trimmed.read".to_string(), String::new())]);
+    assert_eq!(to("sources.any"), [("sources.Source.read".to_string(), String::new())]);
+}
