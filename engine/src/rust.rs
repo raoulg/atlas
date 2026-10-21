@@ -1675,7 +1675,20 @@ fn link_calls<'t>(
     let mut steps = Steps::new(body, &m.src, &CHOICES, &USES);
     let read = {
         let mut b = Body::new(modules, store, crate_ids, eval, returned, m, &n, d, body);
-        for c in evaluation_order(walk(body, &["call_expression", "struct_expression", "identifier", "scoped_identifier", "token_tree"])) {
+        // a loop binds its element once what it goes over is made, and before its body runs
+        let calls =
+            evaluation_order(walk(body, &["call_expression", "struct_expression", "identifier", "scoped_identifier", "token_tree"]));
+        let mut ran: Vec<((usize, u8), TsNode)> = calls.into_iter().map(|c| ((c.end_byte(), 0), c)).collect();
+        let iterations = b.iterations(body);
+        let at: HashMap<usize, (TsNode, TsNode)> = iterations.iter().map(|(p, v)| (p.id(), (*p, *v))).collect();
+        ran.extend(iterations.iter().map(|(p, v)| ((v.end_byte(), 1), *p)));
+        ran.sort_by_key(|(k, _)| *k);
+        for ((_, rank), c) in ran {
+            if rank == 1 {
+                let (pat, value) = at[&c.id()];
+                b.each(&mut steps, pat, value);
+                continue;
+            }
             let (t, w) = (b.read.touches.len(), b.read.waiting.len());
             b.call(&mut steps, c);
             steps.mark(c, b.read.touches[t..].iter_mut().chain(b.read.waiting[w..].iter_mut().map(|(t, _)| t)));
@@ -1841,8 +1854,16 @@ impl<'a, 't> Body<'a, 't> {
             read: Read::default(),
         };
         b.parameters(d);
-        let untyped = b.lets(body);
+        let mut untyped = b.lets(body);
         b.loops(d, body);
+        // a loop variable over a sequence whose type the body does not write is typed by how it is used, as a `let` is
+        untyped.extend(
+            b.iterations(body)
+                .into_iter()
+                .map(|(p, _)| p)
+                .filter(|p| matches!(p.kind(), "identifier" | "mut_pattern" | "reference_pattern"))
+                .map(|p| text(p, b.src).trim_start_matches('&').trim_start_matches("mut ").trim().to_string()),
+        );
         b.patterns(body);
         b.handed_to(body, untyped);
         // a macro that prints shows the human something
@@ -2030,28 +2051,61 @@ impl<'a, 't> Body<'a, 't> {
             head.starts_with('[')
                 || knowledge::RUST_SEQUENCES.contains(&head.split('<').next().unwrap_or("").rsplit("::").next().unwrap_or(""))
         };
-        for l in walk(body, &["for_expression"]) {
-            let Some(pat) = l.child_by_field_name("pattern").filter(|p| matches!(p.kind(), "identifier" | "mut_pattern")) else { continue };
-            let mut over = l.child_by_field_name("value");
-            while let Some(v) = over {
-                over = match v.kind() {
-                    "reference_expression" | "parenthesized_expression" => named_children(v).into_iter().last(),
-                    "call_expression" => v.child_by_field_name("function").filter(|f| {
-                        f.kind() == "field_expression"
-                            && f.child_by_field_name("field").map_or(false, |x| knowledge::RUST_ELEMENTS.contains(&text(x, src)))
-                    }),
-                    "field_expression" if v.parent().map_or(false, |p| p.kind() == "call_expression") => v.child_by_field_name("value"),
-                    _ => break,
-                };
-            }
-            let Some(name) = over.filter(|v| v.kind() == "identifier").map(|v| text(v, src)) else { continue };
-            if !written.get(name).map_or(false, |t| sequence(t)) {
+        for (pat, value) in self.iterations(body) {
+            if !matches!(pat.kind(), "identifier" | "mut_pattern" | "reference_pattern") {
                 continue;
             }
-            if let Some(class) = self.locals.get(name).cloned() {
-                self.locals.insert(text(pat, src).trim_start_matches("mut ").to_string(), class);
+            let name = text(pat, src).trim_start_matches('&').trim_start_matches("mut ").trim().to_string();
+            let element = match self.sequence(value) {
+                // a sequence the body names, as its type is written (`readings: &[Reading]`)
+                Some(s) if s.kind() == "identifier" => {
+                    written.get(text(s, src)).filter(|t| sequence(t)).and_then(|_| self.locals.get(text(s, src)).cloned())
+                }
+                // a field of a value of the program's struct (`g.nodes`): the class its type names
+                Some(s) if s.kind() == "field_expression" => {
+                    let owner = s.child_by_field_name("value").and_then(|o| self.locals.get(text(o, src)).cloned());
+                    let field = s.child_by_field_name("field").map(|f| text(f, src)).unwrap_or("");
+                    let named = owner
+                        .and_then(|c| self.store.classes.get(&c))
+                        .and_then(|k| k.fields.iter().find(|(f, _)| f == field))
+                        .map(|(_, t)| t.clone());
+                    named.unwrap_or_default().iter().find_map(|t| self.resolve(t).and_then(|r| self.class_of(&r)))
+                }
+                _ => None,
+            };
+            if let Some(class) = element {
+                self.locals.insert(name, class);
             }
         }
+    }
+
+    /// What the body goes over element by element: each `for` loop's pattern and value.
+    fn iterations(&self, body: TsNode<'t>) -> Vec<(TsNode<'t>, TsNode<'t>)> {
+        walk(body, &["for_expression"])
+            .into_iter()
+            .filter_map(|l| Some((l.child_by_field_name("pattern")?, l.child_by_field_name("value")?)))
+            .collect()
+    }
+
+    /// What a loop goes over, through `&xs`, `(xs)`, the methods that go over a sequence's
+    /// elements and the adaptors that keep them (`xs.iter().filter(..)`): the sequence itself.
+    fn sequence(&self, value: TsNode<'t>) -> Option<TsNode<'t>> {
+        let src = self.src;
+        let mut over = Some(value);
+        while let Some(v) = over {
+            over = match v.kind() {
+                "reference_expression" | "parenthesized_expression" => named_children(v).into_iter().last(),
+                "call_expression" => v.child_by_field_name("function").filter(|f| {
+                    f.kind() == "field_expression"
+                        && f.child_by_field_name("field").map_or(false, |x| {
+                            knowledge::RUST_ELEMENTS.contains(&text(x, src)) || knowledge::RUST_KEEPS_ELEMENTS.contains(&text(x, src))
+                        })
+                }),
+                "field_expression" if v.parent().map_or(false, |p| p.kind() == "call_expression") => v.child_by_field_name("value"),
+                _ => return Some(v),
+            };
+        }
+        None
     }
 
     /// Rust fixes the type of a `let` that writes none by how the value is used: a `let` whose
@@ -2180,6 +2234,22 @@ impl<'a, 't> Body<'a, 't> {
             }
         }
         out
+    }
+
+    /// A loop as the step it is: it takes what it goes over, and gives each element under the
+    /// name it binds (`for n in &g.nodes` takes `g` and gives `n`), of the class `loops` found.
+    fn each(&mut self, steps: &mut Steps, pat: TsNode<'t>, value: TsNode<'t>) {
+        let names: Vec<String> = walk(pat, &["identifier"]).into_iter().map(|i| text(i, self.src).to_string()).collect();
+        let hands = self.hands(&[Some(value)], &steps.kept);
+        let gives: Vec<Held> = names
+            .iter()
+            .filter_map(|n| match self.held_type(n) {
+                Some(t) => Some(Held::new(t, n.clone())),
+                None => (!hands.is_empty()).then(|| Held::new(String::new(), n.clone())),
+            })
+            .collect();
+        // the step stands where what it goes over is written: a call there hands it what it gives, the loop's body does not
+        steps.op(value, &format!("for {} in {}", text(pat, self.src), text(value, self.src)), hands, gives);
     }
 
     /// What a call gives back, by the name the body keeps it by: the type the local is declared

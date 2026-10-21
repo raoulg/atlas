@@ -2726,7 +2726,14 @@ fn link_calls<'t>(
     let mut steps = Steps::new(body, &m.src, &CHOICES, &USES);
     let read = {
         let mut b = Body::new(Seen::new(m, types, sites, modules, store, own), modules, ext, eval, &n, d, body);
-        for c in b.calls() {
+        for r in b.steps() {
+            let c = match r {
+                Ran::Loop(l) => {
+                    b.each(&mut steps, l);
+                    continue;
+                }
+                Ran::Call(c) => c,
+            };
             let (t, w) = (b.read.touches.len(), b.read.waiting.len());
             b.call(&mut steps, c);
             steps.mark(c, b.read.touches[t..].iter_mut().chain(b.read.waiting[w..].iter_mut().map(|(t, _)| t)));
@@ -2800,6 +2807,12 @@ struct Read<'t> {
 
 /// A function's body, or a module's own code, as Python reads it: the types ty gives its
 /// expressions, and where its parameters come from.
+/// What a body runs, in order: a call, or a loop that binds a name to each element of a value.
+enum Ran<'t> {
+    Call(TsNode<'t>),
+    Loop(TsNode<'t>),
+}
+
 struct Body<'a, 't> {
     seen: Seen<'a>,
     modules: &'t IndexMap<String, Module>,
@@ -2866,20 +2879,69 @@ impl<'a, 't> Body<'a, 't> {
         At { m: self.m, scope: self.scope, params: &self.own_params }
     }
 
-    /// The body's calls in the order they run; in a module's own code, not those inside a
-    /// definition, which belong to that definition.
-    fn calls(&self) -> Vec<TsNode<'t>> {
-        let inner = |c: TsNode| {
-            let mut p = c.parent();
-            while let Some(pp) = p.filter(|pp| pp.id() != self.body.id()) {
-                if matches!(pp.kind(), "function_definition" | "class_definition") {
-                    return true;
-                }
-                p = pp.parent();
+    /// Whether `n` is the body's own: in a module's own code, not inside a definition, which
+    /// belongs to that definition.
+    fn holds(&self, n: TsNode) -> bool {
+        let mut p = n.parent();
+        while let Some(pp) = p.filter(|pp| pp.id() != self.body.id()) {
+            if self.in_module && matches!(pp.kind(), "function_definition" | "class_definition") {
+                return false;
             }
-            false
-        };
-        evaluation_order(walk(self.body, &["call"])).into_iter().filter(|c| !self.in_module || !inner(*c)).collect()
+            p = pp.parent();
+        }
+        true
+    }
+
+    /// The body's calls and the loops that bind a name to each element of a value, in the order
+    /// they run: a loop binds its element once what it goes over is made and before its body runs,
+    /// and the element of a comprehension (`[show(n) for n in nodes]`) runs after its loops.
+    fn steps(&self) -> Vec<Ran<'t>> {
+        let comprehensions = ["list_comprehension", "set_comprehension", "dictionary_comprehension", "generator_expression"];
+        let loops = walk(self.body, &["for_statement", "for_in_clause"]).into_iter().filter(|l| self.holds(*l));
+        let mut out: Vec<((usize, u8, usize), Ran<'t>)> =
+            loops.filter_map(|l| l.child_by_field_name("right").map(|r| ((r.end_byte(), 1, 0), Ran::Loop(l)))).collect();
+        for c in evaluation_order(walk(self.body, &["call"])).into_iter().filter(|c| self.holds(*c)) {
+            // a call in a comprehension's element runs after the comprehension's loops
+            let mut key = (c.end_byte(), 0, 0);
+            let mut x = c;
+            while let Some(q) = x.parent().filter(|_| x.id() != self.body.id()) {
+                if comprehensions.contains(&q.kind()) && q.child_by_field_name("body").map(|b| b.id()) == Some(x.id()) {
+                    let after =
+                        named_children(q).into_iter().filter(|k| k.kind() == "for_in_clause").map(|k| k.end_byte()).max().unwrap_or(0);
+                    key = (key.0.max(after), 2, c.end_byte());
+                }
+                x = q;
+            }
+            out.push((key, Ran::Call(c)));
+        }
+        out.sort_by_key(|(k, _)| *k);
+        out.into_iter().map(|(_, r)| r).collect()
+    }
+
+    /// A loop as the step it is: it takes what it goes over, and gives each element under the
+    /// name it binds (`for n in g.nodes` takes `g` and gives `n`).
+    fn each(&mut self, steps: &mut Steps, l: TsNode<'t>) {
+        let (Some(left), Some(right)) = (l.child_by_field_name("left"), l.child_by_field_name("right")) else { return };
+        let names: Vec<TsNode> = if left.kind() == "identifier" { vec![left] } else { walk(left, &["identifier"]) };
+        let hands = self.seen.held_in(right, self.ext, &steps.kept);
+        // one name holds an element of what the loop goes over: of a `list[Node]` a `Node`, where ty does not say it of the name
+        let element: Vec<String> =
+            self.seen.value(right).filter(|v| !v.is_class && !v.is_code).map(|v| self.seen.drawn(v, self.ext)).unwrap_or_default();
+        let one = names.len() == 1;
+        let gives: Vec<Held> = names
+            .into_iter()
+            .flat_map(|n| {
+                let named = self.gives(n, text(n, self.src), &hands);
+                if one && named.iter().all(|h| h.ty.is_empty()) && !element.is_empty() {
+                    element.iter().map(|t| Held::new(t.clone(), text(n, self.src))).collect()
+                } else {
+                    named
+                }
+            })
+            .collect();
+        self.read.new_ext.extend(hands.iter().chain(&gives).map(|h| h.ty.clone()).filter(|t| t.starts_with("ext:")));
+        // the step stands where what it goes over is written: a call there hands it what it gives, the loop's body does not
+        steps.op(right, &format!("for {} in {}", text(left, self.src), text(right, self.src)), hands, gives);
     }
 
     /// What a call is handed: the value it is called on, and its arguments.
