@@ -75,10 +75,10 @@ line _@run/finished > run/report value
 # the line that says how it went: what the level's method gives goes into the Message built around it
 line Level·level > run/report/?1/Level.prefix value
 line Level·level > run/report/?1/Level.suffix value
-line run/report/?1/Level.prefix > _@run/report/?1 value
-line _@run/report/?1 > run/report/?1/Message() value
-line run/report/?1/Level.suffix > _@run/report/?1#2 value
-line _@run/report/?1#2 > run/report/?1/Message()#2 value
+line run/report/?1/Level.prefix > _@run/report/?1/Level.prefix value
+line _@run/report/?1/Level.prefix > run/report/?1/Message() value
+line run/report/?1/Level.suffix > _@run/report/?1/Level.suffix value
+line _@run/report/?1/Level.suffix > run/report/?1/Message()#2 value
 line Job·job@run/source > run/report/?1/Message() value             # each Message writes its name
 line Job·job@run/source > run/report/?1/Message()#2 value
 line run/report/?1/Message() > Message·message@run/report/?1 value
@@ -110,8 +110,8 @@ home Runner@run/finished/Runner.new run/finished
 home Plan@run/finished/Mode.plan/?1 run/finished/Mode.plan
 home Plan@run/finished/Mode.plan run/finished
 home _@run/finished run
-home _@run/report/?1 run/report/?1
-home _@run/report/?1#2 run/report/?1
+home _@run/report/?1/Level.prefix run/report/?1
+home _@run/report/?1/Level.suffix run/report/?1
 home Message·message@run/report/?1 run/report
 home Plan@run/Mode.plan/?1 run/Mode.plan
 home Plan@run/Mode.plan run

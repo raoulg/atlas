@@ -11,7 +11,7 @@ line entry > describe call
 known #127 line Fit | Failed·r > describe value                    # the route's parameter, by its name
 known #127 line Fit | Failed·r > describe/?1/Report() value        # `r.score`
 known #127 line Fit | Failed·r > describe/?1/Report()#2 value      # `r.reason`
-line describe/?1/Report() > Report@describe/?1 value
+known #130 line describe/?1/Report() > Report@describe/?1 value   # with the other arm's Report, the value either arm makes
 known #130 line describe/?1/Report()#2 > Report@describe/?1 value
 known #130 line Report@describe/?1 > describe value
 line describe > Report@describe value                             # the result goes on to the caller
@@ -38,6 +38,8 @@ known #130 extra home Report@describe/Report() describe
 # an occurrence, and what it gives as a value
 known #125 extra step describe/?1/r.score.toFixed
 known #125 extra line Fit·r > describe/?1/r.score.toFixed value
-known #125 extra line describe/?1/r.score.toFixed > _@describe/?1 value
-known #125 extra line _@describe/?1 > describe/?1/Report() value
-known #125 extra home _@describe/?1 describe/?1
+known #125 extra line describe/?1/r.score.toFixed > _@describe/?1/r.score.toFixed value
+known #125 extra line _@describe/?1/r.score.toFixed > describe/?1/Report() value
+known #125 extra home _@describe/?1/r.score.toFixed describe/?1
+known #130 extra line describe/?1/Report() > Report@describe/?1/Report() value
+known #130 extra home Report@describe/?1/Report() describe/?1

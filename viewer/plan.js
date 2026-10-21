@@ -34,6 +34,9 @@ const SUMS = new Map();
   for (const e of D.edges) if (e.kind === "variant") { if (!vs.has(e.src)) vs.set(e.src, new Set()); vs.get(e.src).add(e.dst); }
   for (const [sum, v] of vs) SUMS.set([...v].sort().join("|"), sum);
 }
+// the sum a variant is injected into, where it is the variant of one
+const SUM_OF = new Map();
+for (const e of D.edges) if (e.kind === "variant") SUM_OF.set(e.dst, SUM_OF.has(e.dst) && SUM_OF.get(e.dst) !== e.src ? null : e.src);
 // the values a call is handed and gives, one value per name: the variants of a sum a name holds are the sum, a value
 // of no type a constructor gives is of the class it builds, and one handed by a name of no type is the value
 // an earlier call of the body gave that name
@@ -481,7 +484,9 @@ function routeTree() {
     };
     for (const it of body.items) {
       if (!it.members) { const k = call(it, hue); if (k) node.kids.push(k); continue; }
-      const kids = it.members.map(m => call(m, m.branch % 8 + 1)).filter(Boolean);
+      // the arm of the choice a member stands in, as its call says (`arms`): a choice nested in an arm is drawn in it
+      const armIn = m => (m.site != null && (siteIn(n, m.site)?.arms || []).find(([c]) => c === it.choice)?.[1]) ?? m.branch;
+      const kids = it.members.map(m => { const k = call(m, m.branch % 8 + 1); if (k) k.branch = armIn(m); return k; }).filter(Boolean);
       // what decides each branch, in the branch's colour; a choice of one branch runs it only when that holds
       const branches = [...new Set(it.members.map(m => m.branch))].sort((a, b) => a - b);
       const when = branches.map(b => [b % 8 + 1, (it.when || [])[b] || ""]);
@@ -738,7 +743,7 @@ const build = (node, parent, caller) => {
     const fid = "n:" + node.id, kids = [];
     // what the step shows closed, kept for the places it shows: opening it refines the code and leaves them where they stood
     const shut = fine || node.id === V.route || libraryClass(stepOf(node.id)) ? null : stepMorphism(node.id, false, false);
-    frames.set(fid, {id: fid, step: node.id, parent, hue: node.hue, choice: node.choice, anchor: node.id === V.route, ...(node.parse ? {parse: true} : {}), closed: shut && {goes: shut.goes, cod: shut.cod, hb: !!parent && !caller && !/^(part|unit|op):/.test(node.id) && goesBack(node.id, shut.cod)}, title: (node.id === V.route ? entryTitle(node.id) : stepLabel(node.id)) + (node.choice ? " · one of" : "")});
+    frames.set(fid, {id: fid, step: node.id, parent, hue: node.hue, branch: node.branch, choice: node.choice, anchor: node.id === V.route, ...(node.parse ? {parse: true} : {}), closed: shut && {goes: shut.goes, cod: shut.cod, hb: !!parent && !caller && !/^(part|unit|op):/.test(node.id) && goesBack(node.id, shut.cod)}, title: (node.id === V.route ? entryTitle(node.id) : stepLabel(node.id)) + (node.choice ? " · one of" : "")});
     const lib = libraryClass(stepOf(node.id));
     // a library class that is the route starts at its public methods; met inside a route it is a call like another, with its own arrow
     const own = (lib && node.id === V.route) || node.id.startsWith("unit:") ? {dom: new Map(), cod: new Map(), goes: new Map()} : stepMorphism(node.id, true, node.id === V.route);
@@ -752,18 +757,7 @@ const build = (node, parent, caller) => {
     // the body gives back, handed on at the step's moment
     if (fine && node.id !== V.route && !lib) {
       const inD = new Set([...pills.values()].slice(before).flatMap(P => [...P.D.keys()]));
-      // of what the body's own steps make, what goes back is what no step of the code among them takes: a value built
-      // only to be handed into another step stays inside it. One handed into a library's operation goes on in what the
-      // operation gives, a value of no type of the code's, and stays inside where that does
-      // (`query_map(.., |row| Ok(Expense { .. }))` gives the rows the body returns)
-      const mine = [...pills.values()].slice(before).filter(P => { let f = P.own ? frames.get(P.parent)?.parent : P.parent; while (f && frames.get(f)?.synthetic) f = frames.get(f).parent; return f === fid; });
-      const typeOf = k => places.get(k)?.type, isOp = P => stepOf(P.steps[0]).startsWith("op:");
-      const takers = k => mine.filter(P => P.D.has(k) && !P.keep?.has(k));
-      const stays = (k, seen = new Set()) => !seen.has(k) && (seen.add(k), takers(k).some(P => !isOp(P) || (P.C.size > 0 && [...P.C.keys()].every(c => stays(c, seen)))));
-      // a step that gives a value its call names gives that one (`oneOfKind`)
-      const madeBy = (P, x) => { const ks = [...P.C.keys()].filter(k => typeOf(k) === x), nm = ks.filter(k => P.cn?.get(k)); return nm.length ? nm : ks; };
-      const handedOn = x => { const made = mine.flatMap(P => madeBy(P, x)); return made.length > 0 && made.every(k => stays(k)); };
-      for (const k of [...own.dom.keys()]) if (/^[tv]:/.test(k) && (own.keep?.has(k) ? handedOn(typeOf(k)) : inD.has(k))) own.dom.delete(k);
+      for (const k of [...own.dom.keys()]) if (/^[tv]:/.test(k) && inD.has(k) && !own.keep?.has(k)) own.dom.delete(k);
     }
     // what the closed box took and handed on that no box inside it does crosses at its own pill; what one inside takes or
     // makes crosses the frame to it
@@ -788,7 +782,7 @@ const build = (node, parent, caller) => {
   if (caller) m.dom.set(addPlace(entryPlace(caller)), false);
   // a unit stands even when nothing crosses its edge, so that it can be opened
   if (!m.dom.size && !m.cod.size && !hb && !node.id.startsWith("unit:")) return [];
-  const pill = {id: "n:" + node.id, steps: [node.id], D: m.dom, C: m.cod, dn: m.dn, cn: m.cn, goes: m.goes || new Map(), parent, hue: node.hue, ...(node.parse ? {parse: true} : {}), ...(cut ? {cut: true, mult: m.mult, split: m.split} : {})};
+  const pill = {id: "n:" + node.id, steps: [node.id], D: m.dom, C: m.cod, dn: m.dn, cn: m.cn, goes: m.goes || new Map(), parent, hue: node.hue, branch: node.branch, ...(node.parse ? {parse: true} : {}), ...(cut ? {cut: true, mult: m.mult, split: m.split} : {})};
   pills.set(pill.id, pill);
   return hb ? [pill] : [];
 };
@@ -844,13 +838,50 @@ const isMem = k => k.startsWith("v:") || k.startsWith("t:");
 // a place as a step's own writers left it, read back inside that step: its moment is inside the step, fixed where it was made
 const inside = k => k.startsWith("v:back:");
 const version = (k, v) => { if (!places.has(v)) places.set(v, {...places.get(k), id: v}); return v; };
-// the arms of a choice make one value, at the choice's moment: a choice in a body is a frame of its own; a step that is itself
-// a choice (a call into a family, which runs one of the overrides) makes it at a moment inside the step, and hands on a value
+// the arms of a choice make one value, at the choice's moment, the value it hands on past it: a choice in a body is a frame
+// of its own; a step that is itself a choice (a call into a family, which runs one of the overrides) makes it at a moment inside the step, and hands on a value
 // of its own at the step's moment
 const choiceMoment = fid => (frames.get(fid).synthetic ? fid : fid + "|");
-const choiceOf = P => frames.get(P.parent)?.choice ? choiceMoment(P.parent) : P.id;
-// the arrow of an opened step hands on at the moment the closed step did: opening it moves no value to another moment
-const madeAt = P => { if (!P.own) return choiceOf(P); const F = frames.get(P.parent); return frames.get(F?.parent)?.choice ? choiceMoment(F.parent) : P.parent; };
+// the arm of a choice in a body a step stands in, and the step's own moment: an opened step's arrow hands on at the moment
+// the closed step did, so opening it moves no value to another moment
+const armOf = P => { const F = P.own ? frames.get(P.parent) : P, c = frames.get(F?.parent); return c?.choice ? {choice: F.parent, branch: F.branch} : null; };
+const ownMoment = P => (P.own ? P.parent : P.id);
+// a value of a choice in a body is the choice's where it goes on past the choice and two of its arms make it, or where one
+// arm makes anew a value the body named before, which the other arms keep (`if ..: series.push(..)`); a value one arm makes,
+// or one each arm makes and uses itself, is its maker's
+let armsMaking = null;
+// the arms of a coproduct make one value however its variants differ: `Node::Bron(..)` in one arm, `Node::Begrip(..)` in the other
+const valueOfArm = (c, k, names) => { const t = places.get(k)?.type, sum = t && SUM_OF.get(t); const nm = (names && names.get(k)) || ""; return `${c}|${sum ? "t:" + sum : kindKey(k)}|${nm.startsWith("#") ? "" : nm}`; };
+const chainOf = P => planChain(P.parent);
+const armsOf = () => {
+  if (armsMaking) return armsMaking;
+  armsMaking = new Map();
+  const order = [...pills.values()], last = new Map();
+  order.forEach((Q, i) => { const b = armOf(Q); if (b && frames.get(b.choice).synthetic) last.set(b.choice, i); });
+  order.forEach(Q => {
+    const b = armOf(Q);
+    if (b && frames.get(b.choice).synthetic) for (const x of Q.C.keys()) if (isMem(x)) {
+      const v = valueOfArm(b.choice, x, Q.cn);
+      if (!armsMaking.has(v)) armsMaking.set(v, {arms: new Set(), on: false, last: new Map()});
+      armsMaking.get(v).arms.add(b.branch);
+      armsMaking.get(v).last.set(b.branch, Q);
+    }
+  });
+  // what a step after the choice, in the body that holds it, takes of it
+  order.forEach((Q, i) => {
+    const ch = chainOf(Q);
+    for (const [c, j] of last) if (i > j && !ch.includes(c) && ch.includes(frames.get(c).parent)) for (const x of Q.D.keys()) armsMaking.get(valueOfArm(c, x, Q.dn)) && (armsMaking.get(valueOfArm(c, x, Q.dn)).on = true);
+  });
+  return armsMaking;
+};
+const madeAt = (P, k, kept) => {
+  const a = armOf(P);
+  if (!a) return ownMoment(P);
+  if (!frames.get(a.choice).synthetic) return choiceMoment(a.choice);
+  // of what one arm makes of a value, the last is what it hands on past the choice; what it makes first is made inside it
+  const m = armsOf().get(valueOfArm(a.choice, k, P.cn));
+  return kept || (m && m.on && m.arms.size > 1 && m.last.get(a.branch) === P) ? choiceMoment(a.choice) : ownMoment(P);
+};
 // in A, a value B makes by another step (`remade`) is one value: it stands at the moment of the step that makes it in B
 const remadeAt = at => {
   const m = SIDE === "a" ? at.match(/^n:(.*)\/(\d+)$/) : null, to = m ? DIFF.remade[stepOf(m[1])]?.[m[2]] : null;
@@ -859,10 +890,18 @@ const remadeAt = at => {
 // the values made so far, each in the scope of the step whose body made it: a name holds a value in that step and the steps
 // inside it, and a step's own arrow hands on in the scope of its caller. A choice is no scope; its branches' values go on
 const planChain = fid => { const c = []; for (let f = fid; f; f = frames.get(f)?.parent) c.unshift(f); return c; };
-const latest = new Map();
+const latest = new Map(), madeIn = new Map(), armKey = new Map(), armValues = new Map();
 const scopeOf = P => { let f = P.own ? frames.get(P.parent)?.parent : P.parent; while (f && frames.get(f)?.synthetic) f = frames.get(f).parent; return f || null; };
-const latestSet = (key, v, P) => { if (!latest.has(key)) latest.set(key, []); latest.get(key).push({v, scope: scopeOf(P)}); };
-const latestGet = (key, P) => { const es = latest.get(key); if (!es) return null; const here = new Set(planChain(P.parent)); for (let i = es.length - 1; i >= 0; i--) if (!es[i].scope || here.has(es[i].scope)) return es[i].v; return null; };
+// the arms of the choices in a body a step stands in: what one arm makes, no step of another arm of that choice takes
+const armsAbove = P => { const out = new Map(); for (let F = P.own ? frames.get(P.parent) : P; F; F = frames.get(F.parent)) if (frames.get(F.parent)?.synthetic) out.set(F.parent, F.branch); return out; };
+const latestSet = (key, v, P) => { if (!latest.has(key)) latest.set(key, []); latest.get(key).push({v, scope: scopeOf(P), arms: armsAbove(P)}); };
+const latestGet = (key, P) => {
+  const es = latest.get(key); if (!es) return null;
+  const here = new Set(planChain(P.parent)), mine = armsAbove(P);
+  const apart = e => [...e.arms].some(([c, b]) => mine.has(c) && mine.get(c) !== b);
+  for (let i = es.length - 1; i >= 0; i--) if ((!es[i].scope || here.has(es[i].scope)) && !apart(es[i])) return es[i].v;
+  return null;
+};
 // what the call hands a step and what the function says it takes are one value when they are of one
 // kind and at most one of them has a name: the value by the name and the type the call gives it.
 // Two values of a kind with names of their own are two values
@@ -904,10 +943,19 @@ for (const P of pills.values()) {
     }
     Dv.set(v || k, r);
     if (mult && P.mult.D.has(k)) mult.D.set(v || k, P.mult.D.get(k));
+    // a value of a choice is what each arm made of it: a step after the choice takes them all
+    if (armKey.has(v) && !armsAbove(P).has(places.get(v).at)) for (const w of armValues.get(armKey.get(v))) if (w !== v) Dv.set(w, r);
+    if (v && P.keep?.has(k)) (P.kept ||= new Set()).add(v);
   });
   P.C.forEach((r, k) => {
     if (!isMem(k) || inside(k) || !V.route) { Cv.set(k, r); if (mult && P.mult.C.has(k)) mult.C.set(k, P.mult.C.get(k)); return; }
-    const nm = name(P.cn, k), at = remadeAt(madeAt(P)), v = version(k, `${k}@${at}`);
+    const nm = name(P.cn, k), a = armOf(P);
+    // a value of that name from before the choice, kept by the arms that do not make it anew; an opened step's arrow hands
+    // on in its caller's scope
+    const kept = !!a && !!nm && !nm.startsWith("#") && (() => { const was = latestGet(kindKey(k) + "|" + nm, P.own ? frames.get(P.parent) : P); return !!was && !madeIn.get(a.choice)?.has(was); })();
+    const at = remadeAt(madeAt(P, k, kept)), v = version(k, `${k}@${at}`);
+    if (a) { if (!madeIn.has(a.choice)) madeIn.set(a.choice, new Set()); madeIn.get(a.choice).add(v); }
+    if (a && at === choiceMoment(a.choice)) { const ak = valueOfArm(a.choice, k, P.cn); armKey.set(v, ak); if (!armValues.has(ak)) armValues.set(ak, []); if (!armValues.get(ak).includes(v)) armValues.get(ak).push(v); }
     if (mult && P.mult.C.has(k)) mult.C.set(v, P.mult.C.get(k));
     Object.assign(places.get(v), {at});
     if (nm && !nm.startsWith("#") && !k.startsWith("v:")) Object.assign(places.get(v), {label: `${places.get(k).label} · ${nm}`, held: nm});
@@ -916,6 +964,20 @@ for (const P of pills.values()) {
   });
   P.D = Dv; P.C = Cv;
   if (mult) P.mult = mult;
+}
+// Of what an opened body's steps make, its own arrow gives back what no step of the code inside takes: a value built only
+// to be handed into another step (`Row(Reading(line))`) is that step's. One handed into a library's operation goes on in
+// what the operation gives, and stays inside where that does (`query_map(.., |row| Ok(Expense { .. }))` gives the rows
+// the body returns). Decided on the values at their moments, so a value made anew (`rates.insert(..)`) is not the one
+// it was made from
+if (fine) {
+  const isOp = Q => stepOf(Q.steps[0]).startsWith("op:");
+  for (const P of pills.values()) if (P.own && P.border && P.kept?.size) {
+    const fid = P.parent, within = [...pills.values()].filter(Q => Q !== P && planChain(Q.parent).includes(fid));
+    const stays = (v, seen = new Set()) => !seen.has(v) && (seen.add(v), within.some(Q => Q.D.has(v) && (!isOp(Q) || (Q.C.size > 0 && [...Q.C.keys()].every(c => stays(c, seen))))));
+    const madeHere = v => { const at = places.get(v)?.at; return !!at && (at.startsWith(fid + "/") || at.startsWith(fid + "|") || at.startsWith(fid + "~c")); };
+    for (const v of P.kept) if (madeHere(v) && stays(v)) P.D.delete(v);
+  }
 }
 // zoom does not touch the moments: they are counted on the values themselves, and then a value
 // stands where the view puts its type, a closed kind at each of its moments
