@@ -380,7 +380,9 @@ beside them; the graph is named after the first, each package is a part, and eve
 the project's own (its imports, its exports). A crate is read
 by Cargo's targets: one library (`src/lib.rs`) and a binary per `main` (`src/main.rs`,
 `src/bin/*.rs`), each a root of its own; a directory with its own `Cargo.toml` is another
-package. The graph holds them side by side and every node knows its part. Two parts that hold a
+package, named by its `[package] name`. A TypeScript package is named by its `package.json`'s
+`name`, which code imports it by (`@acme/client` as it is written), and by its directory only where
+that names none. The graph holds them side by side and every node knows its part. Two parts that hold a
 top-level name alike (two projects whose package is `app`, the scripts beside each) hold it under
 the directory each part lies in, `orders/app` and `billing/app`: the code does not tell them apart,
 so the picture names them by where they lie. A name one part holds keeps it, and so does the

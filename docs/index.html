@@ -128,6 +128,11 @@ main{padding-top:0}
 .tabs button{font:500 16px var(--sans);padding:11px 22px;border:1px solid var(--line);border-bottom:0;background:transparent;color:var(--ink-2);cursor:pointer;margin-right:-1px}
 .tabs button[aria-selected=true]{background:var(--panel);color:var(--ink);box-shadow:inset 0 3px 0 var(--accent)}
 .tabs button:hover{color:var(--ink)}
+/* the life of a design: its tabs are a bar that stays under the page's own while the chapter is in view */
+#lifecycle .tabs{position:sticky;top:var(--below-top,53px);z-index:4;background:color-mix(in oklab,var(--bg) 92%,transparent);backdrop-filter:blur(6px);border:1px solid var(--line);border-bottom:0;flex-wrap:nowrap}
+#lifecycle .tabs button{flex:1 1 0;border:0;border-right:1px solid var(--line);margin:0;white-space:nowrap}
+#lifecycle .tabs button:last-child{border-right:0}
+@media (max-width:640px){#lifecycle .tabs button{padding:8px 4px;font-size:13px;line-height:1.25;white-space:normal;min-width:0}}
 .js [role=tabpanel][hidden]{display:none}
 .stage{background:var(--panel);border:1px solid var(--line);padding:18px 18px 22px;max-width:100%}
 .stage img{width:min(calc(var(--w) * 1px),100%);height:auto;display:block;margin:0 auto}
@@ -368,7 +373,7 @@ section{margin-bottom:104px}
 
 <section class="chap" id="point">
   <h2>Say exactly what you mean: point at it.</h2>
-  <p class="lede">You chat with your agent where you always do. Atlas gives it tools, and the picture is where you both look. You ask where something happens, and the agent shows you on the page. You alt-click a box to leave a note on it, and the agent answers on that same box.</p>
+  <p class="lede">Your agent lives in text. Humans process images much faster. Connecting your agent with Atlas gives it a way to highlight elements in the schema and to read and write notes directly in the schema.</p>
   <div class="wide">
     <div class="mcp">
       <h3>Connect Atlas to your agent once</h3>
@@ -643,7 +648,14 @@ function tabs(root) {
     panels.forEach((p, j) => { p.hidden = j !== i; });
   };
   btns.forEach((b, i) => {
-    b.onclick = () => pick(i);
+    b.onclick = () => {
+      pick(i);
+      // a tab picked below the top of its panel brings the panel's top back under the bar
+      const bar = root.querySelector('.tabs');
+      if (getComputedStyle(bar).position === 'sticky' && panels[i].getBoundingClientRect().top < bar.getBoundingClientRect().bottom - 1) {
+        window.scrollBy({top: panels[i].getBoundingClientRect().top - bar.getBoundingClientRect().bottom, behavior: 'smooth'});
+      }
+    };
     b.onkeydown = e => {
       if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
       const n = (i + (e.key === 'ArrowRight' ? 1 : -1) + btns.length) % btns.length;
@@ -653,6 +665,10 @@ function tabs(root) {
   pick(0);
 }
 document.querySelectorAll('[data-tabs]').forEach(tabs);
+// the height of the page's bar, under which a sticky bar of tabs stays
+const below = () => document.documentElement.style.setProperty('--below-top', document.querySelector('.top').offsetHeight + 'px');
+below();
+addEventListener('resize', below);
 
 </script>
 </body>

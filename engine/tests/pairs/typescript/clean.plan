@@ -1,8 +1,8 @@
 # the override's result has the dispatch's own moment: closed, its line into the dispatch is dropped, open it is drawn
-known #102 fault more t:clean.model.RateTable@n:clean.cli/0/9/0>n:clean.cli/0/9/0
-known #102 fault more t:clean.model.RateTable@n:clean.ledger.Ledger/clean.ledger.Ledger.exportReport/0/0>n:clean.ledger.Ledger/clean.ledger.Ledger.exportReport/0/0
-known #102 fault more t:clean.model.RateTable@n:clean.ledger.Ledger/clean.ledger.Ledger.report/0>n:clean.ledger.Ledger/clean.ledger.Ledger.report/0
-known #102 fault more t:clean.model.RateTable@n:clean.server.app.GET /api/report/0/0>n:clean.server.app.GET /api/report/0/0
+known #102 fault more t:expenses.model.RateTable@n:expenses.cli/0/9/0>n:expenses.cli/0/9/0
+known #102 fault more t:expenses.model.RateTable@n:expenses.ledger.Ledger/expenses.ledger.Ledger.exportReport/0/0>n:expenses.ledger.Ledger/expenses.ledger.Ledger.exportReport/0/0
+known #102 fault more t:expenses.model.RateTable@n:expenses.ledger.Ledger/expenses.ledger.Ledger.report/0>n:expenses.ledger.Ledger/expenses.ledger.Ledger.report/0
+known #102 fault more t:expenses.model.RateTable@n:expenses.server.app.GET /api/report/0/0>n:expenses.server.app.GET /api/report/0/0
 known #102 fault no line RateTable@GET /api/report/Ledger.report/RateSource.latest > GET /api/report/Ledger.report/RateSource.latest
 known #102 fault no line RateTable@Ledger()/Ledger.exportReport/Ledger.report/RateSource.latest > Ledger()/Ledger.exportReport/Ledger.report/RateSource.latest
 known #102 fault no line RateTable@Ledger()/Ledger.report/RateSource.latest > Ledger()/Ledger.report/RateSource.latest

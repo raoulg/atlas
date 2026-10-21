@@ -222,102 +222,82 @@ const REVIEWED: &[(&str, &str, &str)] = &[
     (
         "choices",
         "atlas-engine.builder.GraphBuilder.declare",
-        "`declare` tests `Declared::Overload` once for a name's first declaration and again for a later one: a match on the declaration first would make that choice once",
+        "`Declared` is a type already: the first test asks whether a name's first declaration, which has no node yet, starts its overloads, the `match` what a later one does, in one function",
     ),
     (
         "choices",
         "atlas-engine.tests.pairs_python.club",
-        "the pair helpers `club` and `reading` each keep a graph per side and pick it by `side == \"clean\"`: one cache keyed by side would make that choice once",
+        "a fault of Atlas, #116: a pair read once per side is written four times (here twice, once in `pairs_rust` and in `pairs_typescript`), each picking its graph by `side == \"clean\"`",
     ),
     (
         "choices",
         "atlas.history.Server.respond",
-        "the server refuses a request that is not a GET, and `respond`, which it calls, asks the same again",
-    ),
-    (
-        "choices",
-        "atlas-engine.decide.marker",
-        "`marker` and `insert_marker` each pick the language by the file's extension (`\"ts\" | \"tsx\"`); no one place says which language an extension is",
+        "`respond` is shared with `atlas serve`, which lets a POST through to its own routes, while history's own server answers it 405: the two tests mean two things",
     ),
     (
         "choices",
         "atlas-engine.flow.arrow_of",
-        "`arrow_of` and `body_of` each test whether the node is a class: `NodeKind` has no method that says what a class's arrow and body are",
+        "`arrow_of` and `body_of` each read `NodeKind`, the type that says what a node is, for a question of their own (a class's arrow, an entry class's body); that a `Node` is one struct for every kind is #13",
     ),
     (
         "choices",
         "atlas-engine.python.def_node",
-        "`def_node` and `Body::new` each test whether the node is a module, whose body is its whole file",
+        "`def_node` and `Body::new` each read `NodeKind` where they need it (a module's definition is its whole tree, and it has no parameters); that a `Node` is one struct for every kind is #13",
     ),
     (
         "choices",
         "atlas-engine.rust.collect_types",
-        "the Rust reader's functions switch on a node's kind, tree-sitter's string type code; the kinds the readers share are tables (`UseSyntax`, `CompareSyntax`), the rest is spelled out where each construct is read",
+        "tree-sitter's kind strings are the grammar's type of a node: each function reads a construct of its own, and `identifier` and `self` stand for other things in a use path than in a place",
     ),
     (
         "choices",
         "atlas-engine.rust.Body.value_class",
-        "`value_class` and `declared` each read a value by its expression's kind (a name is a local's or a parameter's), two readings of the grammar's type code",
+        "`value_class` and `declared` read a name two ways, the class of a value and the type a declaration gives it; the wrappers `value_class` sees through are #119",
     ),
     (
         "choices",
         "atlas-engine.rust.Body.call",
-        "`call` and `call_hands` each test for a call written among a macro's tokens (`token_tree`)",
+        "a call among a macro's tokens (`token_tree`) has a shape of its own: `call` dispatches on it, `call_hands` reads its arguments; one shape, two questions",
     ),
     (
         "choices",
         "atlas-engine.rust.paths.Eval.of",
-        "`of` and `parsed` each see through the same wrappers (`&`, parentheses, `?`, `.await`) and read the same kinds of expression: one evaluation spelled out twice",
+        "`of` and `parsed` are two evaluations over different domains (the values an expression can have, the type a command line is parsed into) on the same kinds of expression; the wrappers both see through, each its own list, are #119",
     ),
     (
         "choices",
         "atlas-engine.typescript.collect_types",
-        "the TypeScript reader's functions switch on a node's kind, tree-sitter's string type code, and `bucket_of` and `chain_root` see through the same wrappers",
+        "the TypeScript reader's functions each read a construct by tree-sitter's kind; the wrappers `bucket_of` and `chain_root` see through, each its own list, are #119",
     ),
     (
         "choices",
         "atlas-engine.typescript.router_made",
-        "`router_made` and `builds_container` each read a value by its expression's kind (`new_expression`)",
+        "`router_made` and `builds_container` each read a `new` of a constructor of their own kind (a router's, a container's); the parentheses all four see through are #119",
     ),
     (
         "choices",
         "atlas-engine.typescript.Body.bucket_path",
-        "`bucket_path` and `crossed` each test `parts[0] == \"this\"` in one copied expression, to find the field of the class a call goes through",
+        "a fault of Atlas, #115: `bucket_path` and `crossed` copy one expression, the field of the class a call goes through",
     ),
     (
         "choices",
         "atlas-engine.typescript.libraries.Libraries.follow_in",
-        "`name`, which is `names[0]`, is tested against `\"default\"` twice in four lines: to pass over the symbols and to take the default export",
-    ),
-    (
-        "layers",
-        "atlas",
-        "a fault of Atlas: the CLI's `main.rs` dispatches to its commands (`serve`, `mcp`, `history`) and holds the helpers they call back into (`open`, `page`, `made`); those helpers belong in a module below the commands",
-    ),
-    (
-        "layers",
-        "atlas-engine",
-        "a fault of Atlas: `lib.rs` defines `Options`, which every reader, `language` and `parts` take, beside `analyze` and `graph_of`, which call them; `Options` belongs in a module below the readers",
-    ),
-    (
-        "layers",
-        "atlas-engine",
-        "a fault of Atlas: a `Node` holds a `prophecy::Prophecy`, a cycle through types, while `prophecy.rs` builds on `model`'s `Node`, `Edge` and `Entry`; the type `Prophecy` belongs beside `Node` in `model`",
+        "`\"default\"` is the language's name for the default export, read in two lines of one function",
     ),
     (
         "layers",
         "atlas-engine.python",
-        "a fault of Atlas: `python/paths.rs` calls back into `python.rs` (`call_path`, `dotted`) while `python.rs` calls into it; what both use belongs in a module below both",
+        "a fault of Atlas, #117: `python.rs` is both the reader's entry and the vocabulary `python/paths.rs` builds on (`call_path`, `dotted`, `Module`)",
     ),
     (
         "layers",
         "atlas-engine.rust",
-        "a fault of Atlas: `rust/globals.rs`, `rust/libraries.rs` and `rust/paths.rs` call back into `rust.rs` (`resolve`, `attrs_of`, `expand`) while `rust.rs` calls into them; what they share belongs in a module below them",
+        "a fault of Atlas, #117: `rust.rs` is both the reader's entry and the vocabulary `globals`, `libraries` and `paths` build on (`resolve`, `attrs_of`, `expand`, the passes that read a module)",
     ),
     (
         "layers",
         "atlas-engine.typescript",
-        "a fault of Atlas: `typescript/libraries.rs` and `typescript/paths.rs` call back into `typescript.rs` (`function_of`, `function_in`) while it calls into them; what they share belongs in a module below them",
+        "a fault of Atlas, #117: `typescript.rs` is both the reader's entry and the vocabulary `libraries` and `paths` build on (`function_of`, `function_in`, the passes that read a module)",
     ),
 ];
 

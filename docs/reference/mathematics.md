@@ -505,9 +505,11 @@ callers are checked against. A change to an input, of whatever type, is part of 
 whose value is used says what it gives back. A call that changes the value it is called on is
 such an arrow inside a body, `T × A → T`: a step that makes its receiver anew from what it is
 handed (`rows.append(row)`), so a value gathered into a container is followed to where the
-container goes.
+container goes. Taking one out is a step too: a loop takes what it goes over and gives each
+element under the name it binds (`for n in g.nodes` is `Graph → Node`), so the element is a value
+the body makes, not one from beyond.
 **Where.** Principles `doors`, `changes` and `gives`; the steps of a body (`body.rs`), with the
-calls that change their receiver in `knowledge::MUTATORS`.
+calls that change their receiver in `knowledge::MUTATORS`; a loop's step in each reader (`each`).
 
 ## Graph theory
 

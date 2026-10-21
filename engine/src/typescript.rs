@@ -29,7 +29,7 @@ use crate::tree::{
     evaluation_order, literals, named_children, nth_of_kind, span, text, unquote, walk, what_of, ChoiceSyntax, CompareSyntax, Part,
 };
 
-const EXTENSIONS: &[&str] = &["ts", "tsx", "mts", "cts", "js", "jsx", "mjs", "cjs"];
+pub(crate) const EXTENSIONS: &[&str] = &["ts", "tsx", "mts", "cts", "js", "jsx", "mjs", "cjs"];
 const OWN: OwnTypes = knowledge::TYPESCRIPT_OWN_TYPES;
 
 #[derive(Clone, Debug)]
@@ -138,9 +138,15 @@ fn ts_parser(tsx: bool) -> Result<Parser> {
     Ok(p)
 }
 
-/// The package's name for the graph: its directory, as Python's is its package directory.
+/// The package's name for the graph: the `name` its `package.json` gives it, which code imports it
+/// by, as a Python part is the package its manifest names and a Rust part its crate; its directory
+/// where the `package.json` names none. A scoped name (`@acme/client`) stands as it is written.
 fn root_name(repo: &Repo) -> String {
-    segment(&repo.name().unwrap_or_else(|| "app".into()))
+    let named = repo
+        .text("package.json")
+        .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+        .and_then(|j| j["name"].as_str().filter(|n| !n.is_empty()).map(str::to_string));
+    segment(&named.or_else(|| repo.name()).unwrap_or_else(|| "app".into()))
 }
 
 /// A path segment as part of a dotted id: dots inside a file name (`punt.functions`) are not
@@ -307,8 +313,8 @@ fn doc_of(n: TsNode, src: &[u8]) -> String {
 }
 
 /// What the leading comment's `@prophecy` tag says, if it has one.
-fn prophecy_of(n: TsNode, src: &[u8]) -> Option<crate::prophecy::Prophecy> {
-    leading_comment(n, src).and_then(crate::prophecy::Prophecy::of_jsdoc)
+fn prophecy_of(n: TsNode, src: &[u8]) -> Option<crate::model::Prophecy> {
+    leading_comment(n, src).and_then(crate::model::Prophecy::of_jsdoc)
 }
 
 // ---------- types ----------
@@ -1976,7 +1982,20 @@ fn link_calls<'t>(
     let mut steps = Steps::new(body, &m.src, &CHOICES, &USES);
     let read = {
         let mut b = Body::new(m, modules, store, &n, body, returned, eval);
-        for c in b.sites.clone() {
+        // a loop binds its element once what it goes over is made, and before its body runs
+        let mut ran: Vec<((usize, u8), TsNode)> = b.sites.iter().map(|c| ((c.end_byte(), 0), *c)).collect();
+        ran.extend(
+            walk(body, &["for_in_statement"])
+                .into_iter()
+                .filter(|l| b.mine(*l) && l.child_by_field_name("operator").map_or(false, |o| text(o, &m.src) == "of"))
+                .filter_map(|l| l.child_by_field_name("right").map(|r| ((r.end_byte(), 1), l))),
+        );
+        ran.sort_by_key(|(k, _)| *k);
+        for (_, c) in ran {
+            if c.kind() == "for_in_statement" {
+                b.each(&mut steps, c);
+                continue;
+            }
             let (t, w) = (b.read.touches.len(), b.read.calls.len());
             b.call(&mut steps, c);
             steps.mark(c, b.read.touches[t..].iter_mut().chain(b.read.calls[w..].iter_mut().map(|(t, _)| t)));
@@ -2291,7 +2310,35 @@ impl<'a, 't> Body<'a, 't> {
         for l in loops {
             let (Some(left), Some(right)) = (l.child_by_field_name("left"), l.child_by_field_name("right")) else { continue };
             let of = l.child_by_field_name("operator").map_or(false, |o| text(o, src) == "of");
-            let Some(ty) = written.get(text(right, src)).filter(|t| of && left.kind() == "identifier" && container_type(t, self.m)) else {
+            if !of || left.kind() != "identifier" {
+                continue;
+            }
+            // over a field of a value of the program's class (`g.nodes`): the class the field's type holds
+            if right.kind() == "member_expression" {
+                let (Some(obj), Some(prop)) = (right.child_by_field_name("object"), right.child_by_field_name("property")) else {
+                    continue;
+                };
+                let Some(owner) = self.locals.get(text(obj, src)).cloned() else { continue };
+                let types = self
+                    .store
+                    .classes
+                    .get(&owner)
+                    .and_then(|k| k.fields.iter().find(|(f, _)| f == text(prop, src)).map(|(_, t)| t.clone()));
+                if let Some(r) = types.unwrap_or_default().into_iter().find_map(|t| self.class(self.resolve(&t))) {
+                    self.locals.insert(text(left, src).to_string(), r);
+                }
+                continue;
+            }
+            // over a name of the body, or one its module declares (`const STATIONS: Station[]`), as its type is written
+            let declared = || {
+                walk(self.root, &["variable_declarator"])
+                    .into_iter()
+                    .filter(|v| module_level(*v, self.root, &self.m.bodies))
+                    .find(|v| v.child_by_field_name("name").map(|n| text(n, src)) == Some(text(right, src)))
+                    .and_then(|v| v.child_by_field_name("type"))
+                    .map(|t| text(t, src).trim_start_matches(':').trim().to_string())
+            };
+            let Some(ty) = written.get(text(right, src)).cloned().or_else(declared).filter(|t| container_type(t, self.m)) else {
                 continue;
             };
             let element = ty
@@ -2356,6 +2403,23 @@ impl<'a, 't> Body<'a, 't> {
                 self.made.entry(k).or_insert(p);
             }
         }
+    }
+
+    /// A loop as the step it is: it takes what it goes over, and gives each element under the
+    /// name it binds (`for (const n of g.nodes)` takes `g` and gives `n`).
+    fn each(&mut self, steps: &mut Steps, l: TsNode<'t>) {
+        let (Some(left), Some(right)) = (l.child_by_field_name("left"), l.child_by_field_name("right")) else { return };
+        let names: Vec<String> = walk(left, &["identifier"]).into_iter().map(|i| text(i, self.src).to_string()).collect();
+        let hands = self.hands(&[Some(right)], &steps.kept);
+        let gives: Vec<Held> = names
+            .iter()
+            .filter_map(|n| match self.locals.get(n) {
+                Some(t) => Some(Held::new(t.clone(), n.clone())),
+                None => (!hands.is_empty()).then(|| Held::new(String::new(), n.clone())),
+            })
+            .collect();
+        // the step stands where what it goes over is written: a call there hands it what it gives, the loop's body does not
+        steps.op(right, &format!("for {} of {}", text(left, self.src), text(right, self.src)), hands, gives);
     }
 
     /// What a call is handed: the value it is called on, its arguments, an element's attributes.

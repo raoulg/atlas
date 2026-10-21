@@ -44,30 +44,28 @@ side entry left
 side Disk(pick.path) left
 side Screen right
 
-# `draw_all` calls `draw` on each Shape it is handed: the call runs one of the overrides, a choice between them.
+# `draw_all` calls `draw` on each Shape it is handed: the loop is a step of its own, which takes the shapes and gives
+# each `s` (#103), and the call runs one of the overrides on it, a choice between them.
 route counter.draw_all
+step draw_all/for s in shapes
 step draw_all/Shape.draw
 step draw_all/Shape.draw/Circle.draw
 step draw_all/Shape.draw/Square.draw
 
 line entry > draw_all call
 line Shape·shapes > draw_all value
-known #100 line Shape·s > draw_all/Shape.draw/Circle.draw value
-known #100 line Shape·s > draw_all/Shape.draw/Square.draw value
+line Shape·shapes > draw_all/for s in shapes value
+line draw_all/for s in shapes > Shape·s@draw_all/for s in shapes value
+line Shape·s@draw_all/for s in shapes > draw_all/Shape.draw value
+line Shape·s@draw_all/for s in shapes > draw_all/Shape.draw/Circle.draw value
+line Shape·s@draw_all/for s in shapes > draw_all/Shape.draw/Square.draw value
 line draw_all/Shape.draw/Circle.draw > draw_all/Shape.draw back
 line draw_all/Shape.draw/Square.draw > draw_all/Shape.draw back
 line draw_all/Shape.draw > draw_all back
 line draw_all > Screen own
 
 home Shape·shapes draw_all
-home Shape·s draw_all
+home Shape·s@draw_all/for s in shapes draw_all
 
 side entry left
 side Screen right
-
-# each override takes a value of its own class from beyond, and `s` ends at the border of the dispatch
-known #100 extra line Shape·s > draw_all/Shape.draw value
-known #100 extra line Circle > draw_all/Shape.draw/Circle.draw value
-known #100 extra line Square > draw_all/Shape.draw/Square.draw value
-known #100 extra home Circle draw_all
-known #100 extra home Square draw_all

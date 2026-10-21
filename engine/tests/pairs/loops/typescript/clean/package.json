@@ -1,0 +1,10 @@
+{
+  "name": "stations",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": { "stations": "./src/cli.ts" },
+  "devDependencies": {
+    "typescript": "^5.7.2"
+  }
+}
