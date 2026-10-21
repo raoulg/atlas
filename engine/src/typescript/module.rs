@@ -327,6 +327,14 @@ pub(super) fn declarations<'t>(root: TsNode<'t>) -> Vec<(TsNode<'t>, bool, bool)
     out
 }
 
+/// The class a module declares at its top level by `name`, as its id names it (`<module>.<name>`).
+pub(super) fn class_named<'t>(m: &'t Module, name: &str) -> Option<TsNode<'t>> {
+    declarations(m.tree.root_node()).into_iter().map(|(d, _, _)| d).find(|d| {
+        matches!(d.kind(), "class_declaration" | "abstract_class_declaration" | "class")
+            && d.child_by_field_name("name").map(|n| text(n, &m.src)) == Some(name)
+    })
+}
+
 /// What `declare` declares: a sketch or a typing without a body (`declare function f(x: A): B;`)
 /// is the declaration itself.
 fn unambient(d: TsNode) -> TsNode {

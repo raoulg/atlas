@@ -8,7 +8,9 @@ use std::path::Path;
 use indexmap::IndexMap;
 use tree_sitter::Node as TsNode;
 
-use super::module::{declarations, function_in, is_property, member_parts, package_from_ext, top_variables, Bound, Module, WRAPPERS};
+use super::module::{
+    class_named, declarations, function_in, is_property, member_parts, package_from_ext, top_variables, Bound, Module, WRAPPERS,
+};
 use crate::knowledge::{self, PathFn};
 use crate::paths::{cross, environment, environment_named, hole, lit, or_else, parent, substitute, union, Built, Seg};
 use crate::tree::{beneath, named_children, path_str, text, unquote, walk};
@@ -19,6 +21,8 @@ const DEPTH: u32 = 12;
 pub(super) struct Eval<'a> {
     modules: &'a IndexMap<String, Module>,
     root: &'a Path,
+    /// The program's classes each class extends, by id, in the order it declares them.
+    bases: HashMap<String, Vec<String>>,
 }
 
 /// Where an expression is evaluated: its module, and the function it is in with that function's
@@ -68,8 +72,8 @@ pub(super) fn param_names(f: TsNode, src: &[u8]) -> Vec<String> {
 }
 
 impl<'a> Eval<'a> {
-    pub fn new(modules: &'a IndexMap<String, Module>, root: &'a Path) -> Self {
-        Eval { modules, root }
+    pub fn new(modules: &'a IndexMap<String, Module>, root: &'a Path, bases: HashMap<String, Vec<String>>) -> Self {
+        Eval { modules, root, bases }
     }
 
     /// The module's file, relative to the package root.
@@ -282,9 +286,8 @@ impl<'a> Eval<'a> {
         }
     }
 
-    /// The field `name` of the class `e` is written in, as its constructor sets it: a parameter
-    /// property (`constructor(private dir: string)`) or `this.dir = ..` in the constructor's body,
-    /// from what the constructor's callers hand it; else the field's own initializer.
+    /// The field `name` of the value `e` is read on, the body's own receiver: the field the first
+    /// class that sets it sets, along the order of the class `e` is written in and its bases.
     fn held<'t>(&self, at: At<'_, 't>, e: TsNode<'t>, name: &str, depth: u32) -> Option<Vec<Built>> {
         let src = &at.m.src;
         let mut class = e.parent();
@@ -292,23 +295,53 @@ impl<'a> Eval<'a> {
             class = c.parent();
         }
         let class = class?;
-        let id = format!("{}.{}", at.m.id, text(class.child_by_field_name("name")?, src));
+        let first = format!("{}.{}", at.m.id, text(class.child_by_field_name("name")?, src));
+        if let Some(held) = self.set_by(at.m, class, &first, name, depth) {
+            return Some(held);
+        }
+        let mut todo: Vec<String> = self.bases.get(&first).into_iter().flatten().rev().cloned().collect();
+        let mut seen = std::collections::HashSet::from([first]);
+        while let Some(id) = todo.pop() {
+            if !seen.insert(id.clone()) {
+                continue;
+            }
+            let Some((m, class)) = id.rsplit_once('.').and_then(|(mid, local)| {
+                let m = self.modules.get(mid)?;
+                Some((m, class_named(m, local)?))
+            }) else {
+                continue;
+            };
+            if let Some(held) = self.set_by(m, class, &id, name, depth) {
+                return Some(held);
+            }
+            todo.extend(self.bases.get(&id).into_iter().flatten().rev().cloned());
+        }
+        None
+    }
+
+    /// The field `name` as class `class` (`id`, in module `m`) sets it: a parameter property of its
+    /// constructor (`constructor(private dir: string)`) or `this.dir = ..` in the constructor's body,
+    /// from what the constructor's callers hand it; else the field's own initializer.
+    fn set_by<'t>(&self, m: &'t Module, class: TsNode<'t>, id: &str, name: &str, depth: u32) -> Option<Vec<Built>> {
+        let src = &m.src;
         let members = named_children(class.child_by_field_name("body")?);
         let ctor = members
             .iter()
-            .find(|m| m.kind() == "method_definition" && m.child_by_field_name("name").map(|n| text(n, src)) == Some("constructor"));
+            .find(|x| x.kind() == "method_definition" && x.child_by_field_name("name").map(|n| text(n, src)) == Some("constructor"));
         let held = |p: String| vec![vec![Seg::Held(format!("{id}.constructor"), p)]];
         if let Some(ctor) = ctor {
             let params = ctor.child_by_field_name("parameters").map(named_children).unwrap_or_default();
             if params.iter().any(|p| is_property(*p) && p.child_by_field_name("pattern").map(|x| text(x, src)) == Some(name)) {
                 return Some(held(name.to_string()));
             }
-            let set = walk(ctor.child_by_field_name("body")?, &["assignment_expression"])
-                .into_iter()
-                .find(|a| a.child_by_field_name("left").map(|l| member_parts(l, src)) == Some(vec!["this".to_string(), name.to_string()]));
+            let set = ctor.child_by_field_name("body").and_then(|b| {
+                walk(b, &["assignment_expression"]).into_iter().find(|a| {
+                    a.child_by_field_name("left").map(|l| member_parts(l, src)) == Some(vec!["this".to_string(), name.to_string()])
+                })
+            });
             if let Some(right) = set.and_then(|a| a.child_by_field_name("right")) {
                 let names = param_names(*ctor, src);
-                let vals = self.of(At { m: at.m, scope: Some(*ctor), params: &names }, right, depth + 1);
+                let vals = self.of(At { m, scope: Some(*ctor), params: &names }, right, depth + 1);
                 return Some(
                     vals.into_iter()
                         .map(|b| {
@@ -322,8 +355,8 @@ impl<'a> Eval<'a> {
         }
         let field = members
             .iter()
-            .find(|m| m.kind() == "public_field_definition" && m.child_by_field_name("name").map(|n| text(n, src)) == Some(name))?;
-        field.child_by_field_name("value").map(|v| self.of(At { m: at.m, scope: None, params: &[] }, v, depth + 1))
+            .find(|x| x.kind() == "public_field_definition" && x.child_by_field_name("name").map(|n| text(n, src)) == Some(name))?;
+        field.child_by_field_name("value").map(|v| self.of(At { m, scope: None, params: &[] }, v, depth + 1))
     }
 
     fn name<'t>(&self, at: At<'_, 't>, e: TsNode<'t>, depth: u32) -> Vec<Built> {

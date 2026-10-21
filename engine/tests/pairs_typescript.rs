@@ -1214,7 +1214,6 @@ fn diamond_a_feed_runs_the_read_its_bases_name() {
 /// constructor keeps: `this.url` in `Cached.read` is that field, named where `headlines` builds the
 /// feed.
 #[test]
-#[ignore = "#122: `this.url` in `Cached.read` is looked for in `Cached` alone, so the file is whole only where `Cached.read` and `headlines` both are"]
 fn diamond_the_name_of_a_feed_s_file_is_its_url() {
     for side in ["clean", "shortcut"] {
         let g = news(side);
