@@ -374,8 +374,12 @@ impl<'g> Story<'g> {
             Some(r) => r.value.clone(),
             None => String::new(),
         };
-        let changes: Vec<String> =
-            self.edges(&n.id, EdgeKind::Mutates).filter_map(|e| self.nodes.get(e.dst.as_str()).map(|t| t.name.clone())).collect();
+        let mut changes: Vec<String> = vec![];
+        for t in self.edges(&n.id, EdgeKind::Mutates).filter_map(|e| self.nodes.get(e.dst.as_str()).map(|t| t.name.clone())) {
+            if !changes.contains(&t) {
+                changes.push(t);
+            }
+        }
         let mut out = format!("({})", names.join(", "));
         if !ret.is_empty() {
             out.push_str(&format!(" → {ret}"));

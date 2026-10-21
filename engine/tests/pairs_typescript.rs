@@ -833,3 +833,49 @@ fn overrides_an_override_takes_what_its_base_takes_and_a_type_is_its_members() {
     assert!(edge(&s, EdgeKind::Takes, "handlers.ClickHandler.handle", "handlers.Click"));
     assert!(edge(&s, EdgeKind::Inherits, "handlers.Click", "handlers.Event"));
 }
+
+/// One side of the change pair (`tests/pairs/changes`): a ledger of expenses whose functions
+/// change what they are handed, in Python, Rust and TypeScript alike.
+fn ledger(side: &str) -> Graph {
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/changes/typescript").join(side);
+    analyze(&dir, &Options::default()).expect("reads")
+}
+
+/// A change to an input shows in the signature, whatever the input's type. The clean ledger
+/// changes a value through a method of its own (`Ledger.add` pushes onto its rows) or hands back a
+/// new one: `withLine` and `merged` build it, `counted` sets a key of a `Map` it makes, `refiled`
+/// rebinds `e` to a copy before it files it. `remove` calls `delete` on a library's client, which
+/// is no array, `Map` or `Set`: a method's name changes nothing. Nothing is asked. The shortcut
+/// changes what it is handed and says nothing: a `string[]` it pushes onto, a `Map` it sets a key
+/// of, each expense through the loop variable that goes over the array, and an expense through a
+/// second name for it. `Ledger.takeFrom` and `Ledger.takeVictim` have one body: each empties the
+/// ledger it is handed as well as its own, two changes, whatever the parameter is called. Each is
+/// asked, and none of them is a call that leaves nothing behind.
+#[test]
+fn changes_a_change_to_an_input_of_any_type_shows_in_the_signature() {
+    let (c, s) = (ledger("clean"), ledger("shortcut"));
+    let fs = findings(&c);
+    assert!(fs.is_empty(), "{:#?}", fs.iter().map(|f| format!("{} {} {}", f.principle, f.node, f.what)).collect::<Vec<_>>());
+    assert!(c.edges.iter().filter(|e| e.kind == EdgeKind::Mutates).all(|e| e.via.as_deref() == Some("this")), "only methods change");
+    let mut changes: Vec<String> = findings(&s).into_iter().filter(|f| f.principle == "changes").map(|f| f.node).collect();
+    changes.sort();
+    let want = ["Ledger.takeFrom", "Ledger.takeVictim", "addLine", "count", "fileAll", "rename"];
+    assert_eq!(changes, want.map(|f| format!("shortcut.ledger.{f}")));
+    assert!(asked_anywhere(&s, "nothing").is_empty(), "{:?}", asked_anywhere(&s, "nothing"));
+    let inputs = |f: &str| {
+        let mut via: Vec<&str> = s
+            .edges
+            .iter()
+            .filter(|e| e.kind == EdgeKind::Mutates && e.src == format!("shortcut.ledger.{f}"))
+            .filter_map(|e| e.via.as_deref())
+            .collect();
+        via.sort();
+        via
+    };
+    assert_eq!(inputs("Ledger.takeFrom"), ["other", "this"]);
+    assert_eq!(inputs("Ledger.takeVictim"), ["this", "victim"]);
+    assert!(
+        s.edges.iter().any(|e| e.kind == EdgeKind::Mutates && e.src == "shortcut.ledger.addLine" && e.dst == "ext:javascript.Array"),
+        "an array is what changes"
+    );
+}

@@ -819,26 +819,29 @@ fn places(ix: &Index) -> Vec<Finding> {
 
 // ---------- changes ----------
 
-/// A function that changes an argument in place while its signature does not say so. Rust's
-/// `&mut T` says so; Python cannot, so there the change is better made by the object itself
-/// (a method), or replaced by a new value handed back.
+/// A function that changes an argument in place while its signature does not say so, whatever
+/// the argument's type: a class of the program, a library's, a list. Each input it changes is
+/// one change. Rust's `&mut T` says so; Python cannot, so there the change is better made by the
+/// object itself (a method), or replaced by a new value handed back.
 fn changes(ix: &Index) -> Vec<Finding> {
     let mut out = vec![];
     for e in ix.g.edges.iter().filter(|e| e.kind == EdgeKind::Mutates) {
         let Some(input) = e.via.as_deref() else { continue };
         let Some(f) = ix.node(&e.src).filter(|f| is_function(f)) else { continue };
         // an input handed in, not the value the function is called on, that the signature does not say changes
-        if !f.params.iter().any(|p| p.name == input && !p.receiver && !p.changes) {
-            continue;
-        }
-        let ty = ix.label(&e.dst);
+        let Some(p) = f.params.iter().find(|p| p.name == input && !p.receiver && !p.changes) else { continue };
+        // the type as the signature writes it, a forward reference without its quotes: `list[Row]`, `Graph`
+        let ty = match p.ty.trim_matches(['"', '\'']) {
+            "" => ix.label(&e.dst),
+            written => written.to_string(),
+        };
         out.push(ix.finding(
             "changes",
             f,
             format!("{} changes the {ty} it is handed as `{input}`", ix.label(&f.id)),
             vec![signature(f)],
             format!(
-                "Nothing in the signature shows that `{input}` changes. Should {ty} change itself through a method of its own, or should {} hand back a new {ty}?",
+                "Nothing in the signature shows that `{input}` changes. Should the {ty} change itself through a method of its own, or should {} hand back a new {ty}?",
                 ix.label(&f.id)
             ),
         ));

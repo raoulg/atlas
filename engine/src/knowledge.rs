@@ -529,16 +529,63 @@ pub fn rust_container(name: &str) -> bool {
 
 /// Methods that change the value they are called on: a language's own containers', and a
 /// library's (networkx's graphs). By registry and source.
-/// The builtins' row is the methods of Python's `MutableSequence`, `MutableMapping` and
-/// `MutableSet`, with `list.sort`; a call changes its receiver when ty says it goes to the
-/// package of its row. The `std` row is the methods of Rust's collections (`Vec`, `String`,
-/// `VecDeque`, the maps and sets) that take `&mut self` and change what they hold.
+/// A Python call changes its receiver when ty says it goes to the package of a row that has the
+/// method, and ty says where the method is defined: `list.append` in `builtins`, the methods
+/// `list`, `dict` and `set` inherit (`clear`, `update`, `setdefault`, `reverse`, `popitem`) on
+/// `typing`'s `MutableSequence`, `MutableMapping` and `MutableSet`, `deque`'s, `Counter`'s and
+/// `OrderedDict`'s in `collections`, and `os.environ`'s own `setdefault` and `pop` in `os`. The
+/// `std` row is the methods of Rust's collections (`Vec`, `String`, `VecDeque`, the maps and sets)
+/// that take `&mut self` and change what they hold.
 pub const MUTATORS: &[(Registry, &str, &[&str])] = &[
     (
         Registry::PyPi,
         "builtins",
-        &["append", "extend", "insert", "remove", "pop", "clear", "update", "add", "discard", "setdefault", "sort", "reverse", "popitem"],
+        &[
+            "append",
+            "extend",
+            "insert",
+            "remove",
+            "pop",
+            "clear",
+            "update",
+            "add",
+            "discard",
+            "setdefault",
+            "sort",
+            "reverse",
+            "popitem",
+            "difference_update",
+            "intersection_update",
+            "symmetric_difference_update",
+        ],
     ),
+    (
+        Registry::PyPi,
+        "typing",
+        &["append", "extend", "insert", "remove", "pop", "clear", "reverse", "add", "discard", "update", "setdefault", "popitem"],
+    ),
+    (
+        Registry::PyPi,
+        "collections",
+        &[
+            "append",
+            "appendleft",
+            "extend",
+            "extendleft",
+            "insert",
+            "remove",
+            "pop",
+            "popleft",
+            "rotate",
+            "sort",
+            "update",
+            "subtract",
+            "setdefault",
+            "popitem",
+            "move_to_end",
+        ],
+    ),
+    (Registry::PyPi, "os", &["setdefault", "pop"]),
     (Registry::PyPi, "networkx", &["add_node", "add_edge", "add_nodes_from", "add_edges_from", "remove_node", "remove_edge"]),
     (
         Registry::Npm,
@@ -597,8 +644,44 @@ pub fn mutates(from: Registry, package: &str, method: &str) -> bool {
 }
 
 /// Functions that change an argument they are handed, by package, name and the argument's
-/// position: `setattr(obj, ..)`, `random.shuffle(xs)`.
-pub const CHANGES_ARGUMENT: &[(&str, &str, usize)] = &[("builtins", "setattr", 0), ("builtins", "delattr", 0), ("random", "shuffle", 0)];
+/// position: `setattr(obj, ..)`, `random.shuffle(xs)`, the heap and the sorted list that `heapq`
+/// and `bisect` keep in a list they are handed.
+pub const CHANGES_ARGUMENT: &[(&str, &str, usize)] = &[
+    ("builtins", "setattr", 0),
+    ("builtins", "delattr", 0),
+    ("random", "shuffle", 0),
+    ("heapq", "heappush", 0),
+    ("heapq", "heappop", 0),
+    ("heapq", "heapify", 0),
+    ("heapq", "heapreplace", 0),
+    ("heapq", "heappushpop", 0),
+    ("bisect", "insort", 0),
+    ("bisect", "insort_left", 0),
+    ("bisect", "insort_right", 0),
+];
+
+/// Python's own containers that change in place, by module and class as ty finds them: an
+/// augmented assignment (`xs += ys`) changes one, where it makes any other value anew.
+pub const PYTHON_CHANGEABLE: &[(&str, &str)] = &[
+    ("builtins", "list"),
+    ("builtins", "dict"),
+    ("builtins", "set"),
+    ("builtins", "bytearray"),
+    ("collections", "deque"),
+    ("collections", "Counter"),
+    ("collections", "OrderedDict"),
+    ("collections", "defaultdict"),
+    ("typing", "MutableSequence"),
+    ("typing", "MutableMapping"),
+    ("typing", "MutableSet"),
+    ("typing", "List"),
+    ("typing", "Dict"),
+    ("typing", "Set"),
+    ("typing", "Deque"),
+    ("typing", "DefaultDict"),
+    ("typing", "OrderedDict"),
+    ("typing", "Counter"),
+];
 
 /// Libraries whose array types carry their shape in the annotation (`Float[Tensor, "batch dim"]`):
 /// such a type keeps its shape in its name.
