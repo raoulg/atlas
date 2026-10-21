@@ -16,7 +16,7 @@ step cli.ts/main/load
 step cli.ts/main/load/parse
 step cli.ts/main/load/parse/parseLine                             # `.map(parseLine)` runs it on each line
 step cli.ts/main/load/parse/parseLine/map                         # `const fields = line.split(";").map(Number)`
-known #136 step cli.ts/main/load/parse/parseLine/Month()          # `return { date, mean, std, observations }`, a Month
+step cli.ts/main/load/parse/parseLine/Month()          # `return { date, mean, std, observations }`, a Month
 step cli.ts/main/smooth
 step cli.ts/main/smooth/floor                                     # `const before = Math.floor(months / 2)`
 step cli.ts/main/smooth/average
@@ -54,9 +54,9 @@ line cli.ts/main/?1/download > cli.ts/main back                          # `retu
 line _·values@cli.ts/main/parseArgs > cli.ts/main/load value             # `values.raw`
 line File(data/raw/sunspots.csv) > cli.ts/main/load own
 line cli.ts/main/load/parse/parseLine/map > _·fields@cli.ts/main/load/parse/parseLine/map value
-known #136 line _·fields@cli.ts/main/load/parse/parseLine/map > cli.ts/main/load/parse/parseLine/Month() value
-known #136 line cli.ts/main/load/parse/parseLine/Month() > Month@cli.ts/main/load/parse/parseLine/Month() value
-known #136 line Month@cli.ts/main/load/parse/parseLine/Month() > cli.ts/main/load/parse/parseLine value
+known #128 line _·fields@cli.ts/main/load/parse/parseLine/map > cli.ts/main/load/parse/parseLine/Month() value   # `const [year, ..] = fields`
+line cli.ts/main/load/parse/parseLine/Month() > Month@cli.ts/main/load/parse/parseLine/Month() value
+line Month@cli.ts/main/load/parse/parseLine/Month() > cli.ts/main/load/parse/parseLine value
 line cli.ts/main/load/parse/parseLine > Month@cli.ts/main/load/parse/parseLine value
 line Month@cli.ts/main/load/parse/parseLine > cli.ts/main/load/parse value
 line cli.ts/main/load/parse > Month@cli.ts/main/load/parse value
@@ -109,7 +109,7 @@ home _@cli.ts/main/monthsOf cli.ts/main
 home Settings·settings@cli.ts/main/Settings() cli.ts/main
 home _·response@cli.ts/main/?1/download/fetch cli.ts/main/?1/download
 home _·fields@cli.ts/main/load/parse/parseLine/map cli.ts/main/load/parse/parseLine
-known #136 home Month@cli.ts/main/load/parse/parseLine/Month() cli.ts/main/load/parse/parseLine
+home Month@cli.ts/main/load/parse/parseLine/Month() cli.ts/main/load/parse/parseLine
 home Month@cli.ts/main/load/parse/parseLine cli.ts/main/load/parse
 home Month@cli.ts/main/load/parse cli.ts/main/load
 home Month·series@cli.ts/main/load cli.ts/main

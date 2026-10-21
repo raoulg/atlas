@@ -646,6 +646,10 @@ pub const MUTATORS: &[(Registry, &str, &[&str])] = &[
 /// `javascript` row of `MUTATORS`.
 pub const TYPESCRIPT_CHANGEABLE: &[&str] = &["Array", "Map", "Set", "WeakMap", "WeakSet"];
 
+/// The language's own type guards that narrow the value they are handed to one of its containers,
+/// where they hold: `Array.isArray(x)` says `x` is an `Array`. By the global and the guard's name.
+pub const TYPESCRIPT_GUARDS: &[(&str, &str)] = &[("Array", "isArray")];
+
 /// A package whose methods change the value they are called on when handed this keyword as
 /// `True`: pandas' `inplace=True`.
 pub const IN_PLACE: &[(&str, &str)] = &[("pandas", "inplace")];

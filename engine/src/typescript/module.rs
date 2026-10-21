@@ -290,6 +290,17 @@ pub(super) fn signature(params: Option<TsNode>, ret: Option<TsNode>, src: &[u8])
 /// `Promise` says that the value arrives later, not that it may fail: it rejects where what it
 /// runs throws, as any call may.
 pub(super) fn returns(rt: TsNode, src: &[u8]) -> Returns {
+    let t = promised(rt, src);
+    let (value, own) = match (t.kind(), text(t, src)) {
+        ("predefined_type", "void" | "undefined") => (String::new(), false),
+        ("this_type", _) => (String::new(), true),
+        (_, v) => (v.to_string(), false),
+    };
+    Returns { written: text(rt, src).to_string(), value, own, fails: false, unchecked: unchecked(t, src) }
+}
+
+/// The type a return type gives once it arrives: `T` of `Promise<T>`.
+pub(super) fn promised<'t>(rt: TsNode<'t>, src: &[u8]) -> TsNode<'t> {
     let mut t = rt;
     while t.kind() == "generic_type" && t.child_by_field_name("name").map_or(false, |n| text(n, src) == "Promise") {
         match t.child_by_field_name("type_arguments").and_then(|a| named_children(a).into_iter().next()) {
@@ -297,12 +308,7 @@ pub(super) fn returns(rt: TsNode, src: &[u8]) -> Returns {
             None => break,
         }
     }
-    let (value, own) = match (t.kind(), text(t, src)) {
-        ("predefined_type", "void" | "undefined") => (String::new(), false),
-        ("this_type", _) => (String::new(), true),
-        (_, v) => (v.to_string(), false),
-    };
-    Returns { written: text(rt, src).to_string(), value, own, fails: false, unchecked: unchecked(t, src) }
+    t
 }
 
 /// The top-level statements of a module with the declaration each holds, unwrapping `export`.

@@ -55,20 +55,17 @@ known #129 line Ledger·this@main/Ledger.add/this.rows.push > main/Ledger.add va
 known #129 home Ledger·this@main/Ledger.add/this.rows.push main/Ledger.add
 known #129 extra line Ledger·ledger@main/Ledger() > main/Ledger.add value
 
-# A call on a field of a network client's type (`api.http.delete(..)`, `http: AxiosInstance`) reaches no place
-known #136 line main/remove > Network(/items/a) own
-known #136 side Network(/items/a) right
+# A call on a field of a network client's type (`api.http.delete(..)`, `http: AxiosInstance`) is a request through
+# the client the route is handed; the code names no host, so its place is `Web`. A DELETE leaves something there, and
+# main drops what it answers
+known #147 line main/remove > Web own
+known #147 side Web right
+known #147 extra line Web > main/remove own
+known #147 extra side Web left
+line Api·api > main/remove value
 
-# A callee's parameter is not bound to what the call is handed: `remove`'s own arrow takes an Api from beyond, and the
-# operation inside it main's `api` by its name
-known #127 line Api·api > main/remove value
-known #127 extra line Api > main/remove value
-known #127 extra home Api main
-
-# A library operation whose result the body does not name is a step (`api.http.delete(..)` returned, `out.get(k)` in
-# `?? 0`, which then stands as a choice); one whose result it names is none (`const out = new Map(m)`)
-known #125 extra step main/remove/api.http.delete
-known #125 extra line Api·api > main/remove/api.http.delete value
+# A library operation whose result the body does not name is a step (`out.get(k)` in `?? 0`, which then stands as a
+# choice); one whose result it names is none (`const out = new Map(m)`)
 known #130 extra choice main/counted/?1
 known #125 extra step main/counted/?1/out.get
 known #125 extra line main/counted/?1/out.get > _@main/counted/?1 value

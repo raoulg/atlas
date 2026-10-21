@@ -9,7 +9,7 @@ step Board()/Board()
 step Board()/Board.pin
 step Board()/Board.posts
 step Board()/Board.posts/Notice()
-known #136 step Board()/Board.posts/Notice()/Post()           # #136: super(text) runs Post's constructor
+known #146 step Board()/Board.posts/Notice()/Post()           # super(text) runs Post's constructor
 
 line entry > Board()/Board() call
 line entry > Board()/Board.pin call

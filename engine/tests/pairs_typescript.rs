@@ -200,6 +200,21 @@ fn morphisms_a_type_comes_from_a_step() {
     assert!(!touches(s, "rates.file.FileRates.latest", "disk_read").is_empty());
 }
 
+/// An object literal the compiler checks against a type of the program's makes a value of it, as
+/// `new` does: the clean `parseConfig(raw: unknown): Config` gives back `{ currency, categories }`,
+/// a step to `Config` handed what it checked, as `const s: Settings = { .. }` is. The shortcut's
+/// `loadConfig` asserts what `JSON.parse` gives to be a Config and makes none.
+#[test]
+fn morphisms_a_returned_literal_is_a_value_of_its_type() {
+    let (c, s) = (clean(), shortcut());
+    let config = format!("{}.config.Config", c.root);
+    let made = node(c, "config.parseConfig").sites.iter().find(|site| site.to == config).expect("parseConfig makes a Config");
+    let hands: Vec<&str> = made.hands.iter().map(|h| h.name.as_str()).collect();
+    assert_eq!(hands, ["currency", "categories"]);
+    assert!(edge(c, EdgeKind::Instantiates, "config.parseConfig", "config.Config"));
+    assert!(!node(s, "config.loadConfig").sites.iter().any(|site| site.to == config), "{:#?}", node(s, "config.loadConfig").sites);
+}
+
 /// Morphisms are functions: a type no arrow gives is no type of the route. The shortcut's asserted
 /// types show as what they are: the value `JSON.parse` gives is a step that gives no type.
 #[test]
@@ -247,6 +262,17 @@ fn composition_a_call_not_followed_shows() {
     let step = exported.sites.iter().any(|site| site.to.is_empty());
     let counted = s.stats.unresolved_calls_top.iter().any(|(name, _)| name.starts_with("EXPORTERS"));
     assert!(step || counted, "sites {:#?}, not followed {:?}", exported.sites, s.stats.unresolved_calls_top);
+}
+
+/// A guard of the language's narrows what it tests where it holds: after `!Array.isArray(categories)
+/// ||`, `categories` is an array, and `categories.every(..)` is the language's own operation, which
+/// Atlas reads, not a call it cannot follow. The lookup that gives `categories` (`fields.get(..)`, on
+/// a value of no type the program names) is one it cannot follow.
+#[test]
+fn composition_a_method_on_what_a_guard_narrowed_is_the_language_s() {
+    let parse = node(clean(), "config.parseConfig");
+    let not_followed: Vec<&str> = parse.sites.iter().filter(|s| s.not_followed).map(|s| s.op.as_str()).collect();
+    assert_eq!(not_followed, ["fields.get", "fields.get"], "{:#?}", parse.sites);
 }
 
 // ---------- places ----------
@@ -808,6 +834,18 @@ fn lens_a_get_gives_its_own_class_and_a_subclass_back() {
     assert_eq!(lens_of(s, "files.Board"), "Board puts Notice into Disk(Board.path) and gets no Notice back");
 }
 
+/// Building a value runs the constructor of its class, and `super(..)` in it runs the one its base
+/// runs, as Python's `super().__init__(..)` does: an occurrence of its own, which names the
+/// constructor it runs. A Notice is built by its own constructor, which runs Post's.
+#[test]
+fn lens_super_in_a_constructor_runs_the_base_s() {
+    let g = &club().clean;
+    let bodies = atlas_engine::flow::bodies(g);
+    let built = &bodies[&format!("{}.model.Notice.constructor", g.root)];
+    let ran: Vec<(&str, bool)> = built.steps().iter().map(|s| (s.to.as_str(), s.named)).collect();
+    assert_eq!(ran, [(format!("{}.model.Post.constructor", g.root).as_str(), true)]);
+}
+
 /// One side of the overrides pair (`tests/pairs/overrides`): event handlers and the factories of
 /// shapes.
 fn events(side: &str) -> Graph {
@@ -884,6 +922,18 @@ fn changes_a_change_to_an_input_of_any_type_shows_in_the_signature() {
         s.edges.iter().any(|e| e.kind == EdgeKind::Mutates && e.src == "ledger.ledger.addLine" && e.dst == "ext:javascript.Array"),
         "an array is what changes"
     );
+}
+
+/// A field that holds what a package made is that package's, on any value of the class that
+/// declares it, as on the body's own receiver: `api.http.delete(..)`, with `http: AxiosInstance` a
+/// field of `Api`, is a request through axios, as `this.http.delete(..)` in `Api` would be. Its
+/// URL waits for what the caller hands `remove`.
+#[test]
+fn changes_a_request_through_a_client_a_field_holds_reaches_the_web() {
+    let c = ledger("clean");
+    let sent: Vec<(&str, &str, &[String])> =
+        node(&c, "ledger.remove").touches.iter().map(|t| (t.kind_name(), t.op.as_str(), t.by.as_slice())).collect();
+    assert_eq!(sent, [("net", "delete", ["ledger.ledger.main".to_string()].as_slice())]);
 }
 
 // ---------- layers: the package quotient the picture draws ----------
