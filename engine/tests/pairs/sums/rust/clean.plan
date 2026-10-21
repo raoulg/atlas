@@ -45,7 +45,7 @@ line Begrip@Kennisbank()/Kennisbank.graaf/node/?1 > Kennisbank()/Kennisbank.graa
 line Kennisbank()/Kennisbank.graaf/node/?1/Node()#2 > Node@Kennisbank()/Kennisbank.graaf/node/?1 value
 line Node@Kennisbank()/Kennisbank.graaf/node/?1 > Kennisbank()/Kennisbank.graaf/node value
 line Kennisbank()/Kennisbank.graaf/node > Node@Kennisbank()/Kennisbank.graaf/node value
-known #132 line Node@Kennisbank()/Kennisbank.graaf/node > Kennisbank()/Kennisbank.graaf/Graaf() value   # what `map(node)` gives, collected into its nodes
+known #135 line Node@Kennisbank()/Kennisbank.graaf/node > Kennisbank()/Kennisbank.graaf/Graaf() value   # what `map(node)` gives, collected into its nodes: the reader hands `Graaf { nodes }` nothing
 line Kennisbank()/Kennisbank.graaf/Graaf() > Graaf@Kennisbank()/Kennisbank.graaf/Graaf() value
 line Graaf@Kennisbank()/Kennisbank.graaf/Graaf() > Kennisbank()/Kennisbank.graaf value
 line Kennisbank()/Kennisbank.graaf > Graaf@Kennisbank()/Kennisbank.graaf value
@@ -124,9 +124,6 @@ known #126 extra home Bron Kennisbank()
 # the methods run on what the constructor built, not on the caller's instance
 known #74 extra line Kennisbank@Kennisbank()/Kennisbank.new > Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write value
 known #74 extra line Kennisbank@Kennisbank()/Kennisbank.new > Kennisbank()/Kennisbank.graaf value
-
-
-# `node` gives the sum, but its variants, which the injections take, go back to it as well
 
 # graaf's own arrow takes what its steps make, the Nodes too, though only Graaf() takes them and graaf gives back the Graaf
 known #126 extra line Node@Kennisbank()/Kennisbank.graaf/node > Kennisbank()/Kennisbank.graaf value

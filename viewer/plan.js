@@ -26,7 +26,46 @@ const edgeOn = (src, dst, kind) => { const es = edgesBy.get(`${src}>${dst}>${kin
 // a node by the name it has in the reading drawn: one B renamed has its old name in A
 const nameOf = n => SIDE === "a" && DIFF?.renamed[n.id] ? DIFF.renamed[n.id].split(".").pop() : n.name;
 // a step of a body as the reading drawn has it: in A, a step both readings hold is handed what A hands it
-const siteIn = (n, i) => { const s = n?.sites?.[i], h = SIDE === "a" && DIFF?.hands[n.id]?.[i]; return h ? {...s, hands: h} : s; };
+const siteRead = (n, i) => { const s = n?.sites?.[i], h = SIDE === "a" && DIFF?.hands[n.id]?.[i]; return h ? {...s, hands: h} : s; };
+// the sums of the code by their variants: a value of `A | B` is one value, whatever the reader lists of it
+const SUMS = new Map();
+{
+  const vs = new Map();
+  for (const e of D.edges) if (e.kind === "variant") { if (!vs.has(e.src)) vs.set(e.src, new Set()); vs.get(e.src).add(e.dst); }
+  for (const [sum, v] of vs) SUMS.set([...v].sort().join("|"), sum);
+}
+// the values a call is handed and gives, one value per name: the variants of a sum a name holds are the sum, a value
+// of no type a constructor gives is of the class it builds, and one handed by a name of no type is the value
+// an earlier call of the body gave that name
+const sitesCache = new Map();
+const sitesOf = n => {
+  const k = `${SIDE}|${n.id}`;
+  if (sitesCache.has(k)) return sitesCache.get(k);
+  const sum = hs => {
+    const by = new Map();
+    for (const h of hs || []) if (h.name && h.type) { if (!by.has(h.name)) by.set(h.name, new Set()); by.get(h.name).add(h.type); }
+    const out = [], done = new Set();
+    for (const h of hs || []) {
+      const ts = h.name && by.get(h.name), s = ts && ts.size > 1 && SUMS.get([...ts].sort().join("|"));
+      if (!s) out.push(h);
+      else if (!done.has(h.name)) { done.add(h.name); out.push({...h, type: s}); }
+    }
+    return out;
+  };
+  const named = new Map();
+  const sites = (n.sites || []).map((_, i) => {
+    const s = siteRead(n, i);
+    if (!s) return s;
+    const one = byId.get(s.to)?.kind === "class" ? s.to : (s.to && arrowOf(s.to)?.builds) || "";
+    const hands = sum(s.hands).map(h => (!h.type && h.name && named.has(h.name) ? {...h, type: named.get(h.name)} : h));
+    const gives = sum(s.gives).map(h => (!h.type && h.name && one ? {...h, type: one} : h));
+    for (const g of gives) if (g.name && g.type) named.set(g.name, g.type);
+    return s.hands || s.gives ? {...s, hands, gives} : s;
+  });
+  sitesCache.set(k, sites);
+  return sites;
+};
+const siteIn = (n, i) => (n?.sites?.[i] ? sitesOf(n)[i] : undefined);
 
 const byId = new Map(D.nodes.map(n => [n.id, n]));
 // a prophecy is sketch code not built yet, and the members of one stand with it
