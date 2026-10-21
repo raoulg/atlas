@@ -180,11 +180,31 @@ fn a_package_called_src_is_asked_its_name() {
     assert!(fs[0].what.contains("called src"), "{}", fs[0].what);
 }
 
-/// Atlas is its own first subject: it follows the principles it checks.
+/// What `atlas check` asks of Atlas, each finding read: its principle, the node it is about, and
+/// why it stands (a fault of Atlas's code, tracked in an issue, or a fault of the rule).
+const REVIEWED: &[(&str, &str, &str)] = &[];
+
+/// Atlas is its own first subject, and `atlas check` is a signal on it as on any code: never an
+/// oracle, never a target. What it asks of Atlas is the reviewed list above; the test fails when
+/// the findings change, so that each new one is read and each one gone is seen to go, not so that
+/// the list stays short.
 #[test]
-fn atlas_obeys_its_principles() {
+fn atlas_findings_are_the_reviewed_ones() {
     let fs = findings("..");
-    assert!(fs.is_empty(), "{:#?}", fs.iter().map(|f| format!("{} {}:{} {}", f.principle, f.file, f.line, f.what)).collect::<Vec<_>>());
+    let mut got: Vec<(&str, &str)> = fs.iter().map(|f| (f.principle, f.node.as_str())).collect();
+    let mut want: Vec<(&str, &str)> = REVIEWED.iter().map(|(p, n, _)| (*p, *n)).collect();
+    got.sort();
+    want.sort();
+    let new: Vec<String> = fs
+        .iter()
+        .filter(|f| !want.contains(&(f.principle, f.node.as_str())))
+        .map(|f| format!("{} {} ({}:{}) {}", f.principle, f.node, f.file, f.line, f.what))
+        .collect();
+    let gone: Vec<&(&str, &str)> = want.iter().filter(|w| !got.contains(w)).collect();
+    assert!(
+        got == want,
+        "Atlas's findings are not the reviewed ones; read each and say in REVIEWED why it stands\nnew: {new:#?}\ngone: {gone:#?}"
+    );
 }
 
 /// The docs explain every principle the engine checks.
