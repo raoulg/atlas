@@ -192,11 +192,11 @@ fn paths_and_requests_are_evaluated() {
             .collect::<Vec<_>>()
     };
     // the file `klanten` hands `lees`, in the routes that reach `klanten`: under `DATA`'s default,
-    // or wherever `DATA_DIR` says, a place the code does not name
+    // or under wherever `DATA_DIR` says, a directory the code does not name: that file under any
     let lees: Vec<(&str, &[String])> =
         g.node("fixture-ts.server.opslag.lees").unwrap().touches.iter().map(|t| (t.artifact.as_str(), t.by.as_slice())).collect();
     let klanten = &["fixture-ts.server.opslag.klanten".to_string()][..];
-    assert_eq!(lees, [("data/klanten.csv", klanten), ("", klanten)], "`lees(\"klanten.csv\")` under `DATA`");
+    assert_eq!(lees, [("*/klanten.csv", klanten), ("data/klanten.csv", klanten)], "`lees(\"klanten.csv\")` under `DATA`");
     // an object holds what its constructor was handed: a parameter property, and `this.map = map`;
     // `new Archief("archief").bewaar("a.txt", ..)` hands the method the rest of the path
     assert_eq!(t("server.opslag.Archief.bewaar"), [("disk_write".into(), "archief/a.txt".into())], "`constructor(private map: string)`");

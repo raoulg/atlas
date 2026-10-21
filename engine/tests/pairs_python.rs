@@ -552,14 +552,15 @@ fn a_table_made_on_connecting_holds_what_was_there() {
 /// A place is the path it was built from. The clean archive reader is handed `data/archive` by
 /// the entry and lists `*/station-*` below it: the place is that pattern below that directory.
 /// The shortcut's directories come out of a config dict: the pattern is still written out, and
-/// the root stays a hole the term names (`{d}`), not a guess; no directory decides the place.
+/// the root stays a hole in the term (`{d}`, any directory: `*/*/station-*`), not a guess; no
+/// directory decides the place.
 #[test]
 fn a_place_carries_a_what_a_pattern_below_a_directory_the_entry_hands_down() {
     let clean = touches(clean(), "harvest.stations.archived_stations", "disk_read");
     assert!(clean.iter().any(|t| t.artifact == "data/archive/*/station-*"), "{clean:?}");
     let shortcut = touches(shortcut(), "harvest.stations.archived_stations", "disk_read");
     assert!(!shortcut.is_empty(), "the listing is in the graph");
-    assert!(shortcut.iter().all(|t| t.artifact == "*/station-*" && !t.fixed), "{shortcut:?}");
+    assert!(shortcut.iter().all(|t| t.artifact == "*/*/station-*" && !t.fixed), "{shortcut:?}");
     assert!(shortcut.iter().all(|t| t.what == "{d}/*/station-*"), "{shortcut:?}");
 }
 

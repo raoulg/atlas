@@ -195,6 +195,11 @@ impl<'a> Eval<'a> {
                 }
             }
             "subscript" => {
+                // `os.environ["DATA_DIR"]`: what the environment holds for the variable
+                let environ = e.child_by_field_name("value").map_or(false, |v| dotted(Some(v), src).last().is_some_and(|x| x == "environ"));
+                if let Some(var) = e.child_by_field_name("subscript").filter(|s| environ && s.kind() == "string") {
+                    return vec![environment(&unquote(text(var, src)))];
+                }
                 // `x.parents[n]`: the directory n + 1 levels up
                 let v = e.child_by_field_name("value").filter(|v| v.kind() == "attribute");
                 let parents = v.filter(|v| v.child_by_field_name("attribute").map(|a| text(a, src)) == Some("parents"));

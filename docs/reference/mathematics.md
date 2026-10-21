@@ -149,8 +149,10 @@ term, so the gap is visible. An input with a default (a parameter default, an en
 variable with a fallback, a command-line option) is the caller's to choose; a file found from
 where the package's code lies ships with it. The code decides a place in the frame of the
 function where the root becomes something it holds, a literal or a constant, which is where
-`places` asks. A file the term decides to the last part is a `File`; a pattern is
-the fiber below its directory.
+`places` asks. A file the term decides to the last part is a `File`; one whose name it decides
+below a directory it does not (`{$DATA_DIR}/report.txt`) is that name under any directory,
+`File(*/report.txt)`, the hole kept in the term, wherever in the term it stands. A pattern is the
+fiber below its directory, and what is read of what it yields is the same place.
 **Where.** `paths.rs` (`Seg`, `join`, `place`, `Callers`), `python/paths.rs` (`Eval::of`); the
 pairs `python/paths` and `places`.
 

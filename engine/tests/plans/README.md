@@ -89,5 +89,6 @@ smallest that showed one law:
 | `two-callers` | what a step reaches is the closure of its calls in the occurrences, not the functions (R1) |
 | `builds-a-class` | building an object runs its constructor, not its methods (R2) |
 | `path-hole` | a directory no code decides is a hole in the path (R3) |
+| `path-pattern` | a pattern below a directory is one place, for the listing and for what is read of what it yields (R3) |
 | `readback-one-body`, `two-steps` | a place a step writes and reads back stays in its codomain; one a later step reads is between (R4) |
 | `what-holds` | a place read and changed stands twice, a choice is a coproduct, a call into a family a choice (Z13) |
