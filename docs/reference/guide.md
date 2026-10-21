@@ -213,8 +213,9 @@ findings as data.
 | `prophecy` | Code that is built does not lean on code that is not. |
 
 Each principle, with its reasoning, the idioms behind it and what each language lets Atlas
-trace, is in [principles.md](principles.md). Atlas holds itself to them: `atlas check` on
-this repository finds nothing, and the tests keep it that way.
+trace, is in [principles.md](principles.md), with what each rule cannot see. A finding is a signal
+to look at the code and at what the rule claims, never a verdict and never a target: Atlas keeps
+what `atlas check` asks of itself as a reviewed list, each finding with why it stands.
 
 ## Revelation: what a design leaves to build
 
