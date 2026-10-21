@@ -159,9 +159,10 @@ It comes in two kinds:
 Both come from `tools/atlas_badge.py` in the Atlas repository, a script of the standard library
 alone: copy it next to `tools/atlas_picture.py`.
 
-Experimental: `python3 tools/atlas_badge.py badge.svg findings.json`, with the output of
+Experimental: `python3 tools/atlas_badge.py questions.svg findings.json`, with the output of
 `atlas check --json`, writes a pill of its own that counts the questions Atlas asks of the code.
-They are not yet reliable enough to wear as a badge.
+They are not yet reliable enough to wear as a badge; Atlas's own workflow writes it as
+`questions.svg`.
 
 ### A private repository
 

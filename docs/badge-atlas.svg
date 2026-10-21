@@ -3,7 +3,7 @@
   <clipPath id="r"><rect width="137" height="20" rx="3"/></clipPath>
   <g clip-path="url(#r)">
     <rect x="0" width="54" height="20" fill="#141210"/>
-    <rect x="54" width="83" height="20" fill="#C43A14"/>
+    <rect x="54" width="83" height="20" fill="#2f7d4f"/>
   </g>
   <!-- The logo's route, simplified to read at 14px: A with its crossbar, ending in vermilion. -->
   <svg x="6" y="3" width="14" height="14" viewBox="0 0 128 128">
