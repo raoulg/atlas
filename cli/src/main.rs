@@ -497,7 +497,8 @@ fn local(arg: PathBuf, opts: &mut Options) -> Result<(PathBuf, Option<remote::Cl
 }
 
 /// The findings, grouped by principle, each ending in its question, and below them how many
-/// each part has; exit status 1 when there is anything to ask.
+/// each part has; as JSON, one document that holds every part (`{"parts": [{"root", "findings"}]}`).
+/// Exit status 1 when there is anything to ask.
 fn check(repo: &std::path::Path, opts: &Options, json: bool) -> Result<bool> {
     // each part in its own language: what a Python package declares, a crate's compiler checks
     let parts: Vec<(String, Vec<principles::Finding>)> = parts::analyze_parts(&[repo.to_path_buf()], opts)?
@@ -508,9 +509,9 @@ fn check(repo: &std::path::Path, opts: &Options, json: bool) -> Result<bool> {
         })
         .collect();
     if json {
-        for (root, findings) in &parts {
-            println!("{}", serde_json::to_string_pretty(&serde_json::json!({ "root": root, "findings": findings }))?);
-        }
+        let reports: Vec<serde_json::Value> =
+            parts.iter().map(|(root, findings)| serde_json::json!({ "root": root, "findings": findings })).collect();
+        println!("{}", serde_json::to_string_pretty(&serde_json::json!({ "parts": reports }))?);
     } else {
         let look = look();
         for (i, (root, findings)) in parts.iter().enumerate() {

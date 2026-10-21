@@ -33,13 +33,11 @@ fn page_of(repo: &str) -> Value {
     data["projects"].as_object().unwrap().values().next().unwrap().clone()
 }
 
-/// What `atlas check --json` prints: one report per part, each part's findings in turn.
+/// What `atlas check --json` prints: one document, a report per part, each part's findings in turn.
 fn checked(repo: &str) -> Vec<Value> {
     let text = atlas(&["check", repo, "--json"]);
-    serde_json::Deserializer::from_str(&text)
-        .into_iter::<Value>()
-        .flat_map(|r| r.unwrap()["findings"].as_array().unwrap().clone())
-        .collect()
+    let report: Value = serde_json::from_str(&text).expect("one JSON document");
+    report["parts"].as_array().unwrap().iter().flat_map(|r| r["findings"].as_array().unwrap().clone()).collect()
 }
 
 fn analyzed(repo: &str) -> Value {
@@ -71,10 +69,10 @@ fn a_page_holds_what_check_finds() {
     }
 }
 
-/// Atlas asks nothing of itself, so its own picture carries no mark.
+/// Atlas's own picture marks what `atlas check` asks of it, whatever that is.
 #[test]
-fn atlas_marks_nothing_in_its_own_picture() {
-    assert_eq!(page_of(".")["findings"], serde_json::json!([]));
+fn atlas_marks_in_its_own_picture_what_check_asks_of_it() {
+    assert_eq!(page_of(".")["findings"], Value::Array(checked(".")));
 }
 
 /// Without `--out`, what Atlas makes goes to `.atlas/` at the top of the git repository the
