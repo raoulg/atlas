@@ -638,7 +638,10 @@ fn rust_workspace_parses() {
     // clone in the system's temporary folder; the command line decides, not the code alone
     let written = places("atlas.main");
     assert!(written.contains(&("disk_write".into(), "write".into(), "$TMPDIR/atlas/graph.json".into())), "{written:?}");
-    assert!(written.contains(&("disk_write".into(), "write".into(), "".into())), "the folder found on disk has no name: {written:?}");
+    assert!(
+        written.contains(&("disk_write".into(), "write".into(), "*/.atlas/graph.json".into())),
+        "the folder found on disk has no name, the file below it has: {written:?}"
+    );
     let graph = g.node("atlas.main").unwrap().touches.iter().find(|t| t.artifact == "$TMPDIR/atlas/graph.json").unwrap();
     assert!(!graph.fixed && graph.by.is_empty(), "{graph:?}");
     // a `let` holds the type of the parameter it is handed to: `joined`'s graph, the one graph
@@ -873,9 +876,11 @@ fn rust_reads_paths_as_built() {
     let here = |kind: &str, artifact: &str| (kind.to_string(), artifact.to_string(), vec![], vec![]);
     let by = |kind: &str, artifact: &str, f: &str| (kind.to_string(), artifact.to_string(), vec![format!("handed.world.{f}")], vec![]);
     let users = |kind: &str, f: &str| (kind.to_string(), String::new(), vec![], vec![format!("handed.world.{f}")]);
+    // a file whose name is known under a directory its users hand is that name under any directory
+    let under = |kind: &str, file: &str, f: &str| (kind.to_string(), format!("*/{file}"), vec![], vec![format!("handed.world.{f}")]);
     assert_eq!(
         t("report"),
-        [users("disk_write", "report"), by("disk_write", "site/report.html", "publish")],
+        [under("disk_write", "report.html", "report"), by("disk_write", "site/report.html", "publish")],
         "`dir.join(REPORT)`: `publish` hands `Path::new(\"site\")`, and `report` is exported"
     );
     assert_eq!(t("stamp"), [here("disk_write", "out/")], "`format!(\"out/{{name}}.txt\")`: the directory before what is not known");

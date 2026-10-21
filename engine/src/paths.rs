@@ -335,11 +335,14 @@ pub fn is_statement(db: crate::model::Db, built: &[Built]) -> bool {
 }
 
 /// The place a path names: the file, or for an operation on a directory that directory. A file
-/// whose name is known under a directory that is not (`artefacts/{variant}/report.json`) is
-/// that name under any such directory (`artefacts/*/report.json`); a path whose last part is
-/// not known rests in the directory before its first unknown part, so what is unpacked into
-/// `D/{kind}/{id}` and what lists `D` meet at `D/`. A path that names nothing in the repository
-/// (only `.`, or nothing before an unknown) is no place.
+/// whose name is known under a directory that is not (`artefacts/{variant}/report.json`,
+/// `{$DATA_DIR}/report.txt`) is that name under any such directory (`artefacts/*/report.json`,
+/// `*/report.txt`), so the hole stays in the term; a path whose last part is not known rests in
+/// the directory before its first unknown part, so what is unpacked into `D/{kind}/{id}` and what
+/// lists `D` meet at `D/`. A pattern the code writes (`D.glob("*/IO-*")`) is the fiber below its
+/// directory, whatever operation it is handed to: the listing and the reads of what it yields are
+/// one place. A path that names nothing (only `.`, only wildcards, or nothing before an unknown
+/// last part) is no place.
 pub fn place(b: &Built, op: &str) -> Option<String> {
     let mut p = render(b).replace('\\', "/");
     while p.contains("//") {
@@ -361,25 +364,27 @@ pub fn place(b: &Built, op: &str) -> Option<String> {
     }
     let p = if kept.is_empty() { ".".to_string() } else { kept.join("/") };
     let dir = DIR_OPS.contains(&op);
-    let unknown = |s: &str| s.contains(['{', '*', '?', '[']);
+    // a part the code leaves unknown; a wildcard the code writes is part of the term a file
+    // operation names, and an operation on a directory rests above it
+    let wild = |s: &str| s.contains(['*', '?', '[']);
+    let unknown = |s: &str| s.contains('{') || (dir && wild(s));
     let p = p.trim_end_matches('/').to_string();
     let parts: Vec<&str> = p.split('/').collect();
+    let any = || parts.iter().map(|x| placeholder_re().replace_all(x, "*").into_owned()).collect::<Vec<_>>().join("/");
     // a pattern below a directory is the part of the directory it holds: the place keeps it
     let pattern = crate::knowledge::PATH_PATTERNS.iter().any(|(name, _)| *name == op);
     let p = match parts.iter().position(|x| unknown(x)) {
+        // the pattern's own wildcards stay; a part the code leaves unknown is one more
+        _ if pattern && parts.iter().any(|x| unknown(x) || wild(x)) => any(),
         None if dir => format!("{p}/"),
-        Some(i) if pattern && i > 0 => {
-            // the pattern's own wildcards stay; a part the code leaves unknown is one more
-            parts.iter().map(|x| placeholder_re().replace_all(x, "*").into_owned()).collect::<Vec<_>>().join("/")
-        }
         None => p.clone(),
-        Some(i) if !dir && i + 1 < parts.len() && !unknown(parts[parts.len() - 1]) && i > 0 => {
-            parts.iter().map(|x| if unknown(x) { "*" } else { x }).collect::<Vec<_>>().join("/")
-        }
+        // a file whose name is known is that name under any directory the code leaves unknown
+        Some(i) if !dir && i + 1 < parts.len() && !unknown(parts[parts.len() - 1]) => any(),
         Some(0) => return None,
         Some(i) => format!("{}/", parts[..i].join("/")),
     };
-    (!matches!(p.as_str(), "" | "." | "./" | "/" | "*")).then_some(p)
+    let names = p.split('/').any(|x| !matches!(x, "" | "." | "*" | "**"));
+    names.then_some(p)
 }
 
 /// The name of the one value `built` holds, where it is whole in `holder`, when it is one of
@@ -704,6 +709,8 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
             let mut unnamed: Vec<&Built> = vec![];
             // the file a connection opens
             let mut opened = String::new();
+            // a file the term names with a part no code decides, by the term the code writes
+            let mut terms: Vec<(String, String)> = vec![];
             for (b, decider) in found.iter().filter(|(w, _, _)| w == whole).map(|(_, b, d)| (b, d)) {
                 let rendered = render(b);
                 let before = placed.len();
@@ -751,6 +758,9 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
                             .map(|(table, dir)| (table, dir.or(t.dir), vec![])),
                     );
                 } else if let Some(p) = place(b, &t.op) {
+                    if !known(b) && !terms.iter().any(|(q, _)| *q == p) {
+                        terms.push((p.clone(), render(b).replace('\\', "/")));
+                    }
                     placed.push((p, t.dir, fixed));
                 } else {
                     unnamed.push(b);
@@ -805,7 +815,8 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
                 continue;
             }
             for (artifact, dir, fixed) in placed {
-                store.touch(&f, at(artifact, dir, fixed));
+                let what = terms.iter().find(|(p, _)| *p == artifact).map_or_else(|| t.what.clone(), |(_, term)| term.clone());
+                store.touch(&f, Touch { what, ..at(artifact, dir, fixed) });
             }
             // an alternative that names no place stays one the code does not name, by what names
             // it: what the environment says beside the default the code holds
@@ -904,5 +915,27 @@ mod tests {
         let shipped = vec![Seg::Package("src/pages".into()), Seg::Lit("/template.html".into())];
         assert!(!decided(&shipped, &read) && decided(&shipped, &write));
         assert_eq!(place(&shipped, "read_text").as_deref(), Some("src/pages/template.html"));
+    }
+
+    /// A part no code decides stays a hole in the term: a file whose name is known is that name
+    /// under any directory, wherever the unknown part stands; a pattern is one place, the fiber
+    /// below its directory, for the listing and for what is read of what it yields.
+    #[test]
+    fn a_hole_stays_in_the_term() {
+        let env = |rest: &str| [environment("DATA_DIR"), lit(rest)].concat();
+        assert_eq!(place(&env("/report.txt"), "read_text").as_deref(), Some("*/report.txt"));
+        assert_eq!(place(&env("/sub/report.txt"), "open").as_deref(), Some("*/sub/report.txt"));
+        assert_eq!(
+            place(&[lit("artefacts/"), hole("variant"), lit("/report.json")].concat(), "open").as_deref(),
+            Some("artefacts/*/report.json")
+        );
+        assert_eq!(place(&environment("DATA_DIR"), "read_text"), None, "nothing known is no place");
+        assert_eq!(place(&[environment("DATA_DIR"), lit("/"), hole("name")].concat(), "read_text"), None);
+        assert_eq!(place(&[lit("data/"), hole("name")].concat(), "read_text").as_deref(), Some("data/"));
+        let pattern = lit("assets/regelingen/*/IO-*");
+        assert_eq!(place(&pattern, "glob").as_deref(), Some("assets/regelingen/*/IO-*"));
+        assert_eq!(place(&pattern, "read_text").as_deref(), Some("assets/regelingen/*/IO-*"), "what the glob yields");
+        assert_eq!(place(&lit("build/*"), "rmtree").as_deref(), Some("build/"));
+        assert_eq!(place(&lit("*"), "read_text"), None);
     }
 }

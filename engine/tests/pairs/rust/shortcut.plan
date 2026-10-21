@@ -148,7 +148,8 @@ known #101 line _·dir@main/?1/run/?1/write/from > main/?1/run/?1/write value   
 line main/?1/run/?1/write/join > _·path@main/?1/run/?1/write/join value
 known #101 line _·path@main/?1/run/?1/write/join > main/?1/run/?1/write value       # fs::write(&path, out), path
 line main/?1/run/?1/write > Disk({$SPEND_REPORTS}) own
-line main/?1/run/?1/write > Disk({$SPEND_REPORTS}/report.{map}|{$SPEND_REPORTS}/r) own
+line main/?1/run/?1/write > Disk({$SPEND_REPORTS}/report.{map}) own
+line main/?1/run/?1/write > File(*/report.md) own                       # report.md under wherever SPEND_REPORTS says
 line main/?1/run/?1/write > File(reports/) own
 line main/?1/run/?1/write > File(reports/report.md) own
 line main/?1/run/?1/write > main/?1/run back                             # the path, which run prints and opens
@@ -206,7 +207,8 @@ known #133 side SQLite(expenses) both          # import writes it, report reads 
 known #133 side SQLite(rates) both             # rates writes it, report reads and uses it
 side Global(spend.rates.LATEST) right          # run reads back what it left there: closed, the place keeps what run leaves
 side Disk({$SPEND_REPORTS}) right
-side Disk({$SPEND_REPORTS}/report.{map}|{$SPEND_REPORTS}/r) right
+side Disk({$SPEND_REPORTS}/report.{map}) right
+side File(*/report.md) right
 side File(reports/) right
 side File(reports/report.md) right
 side open right

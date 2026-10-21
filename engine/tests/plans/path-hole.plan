@@ -3,13 +3,9 @@
 
 route holeenv.run
 line entry > run call
-known #75 line File(*/report.txt) > run own
+line File(*/report.txt) > run own
 line run > Screen own
 
 side entry left
-known #75 side File(*/report.txt) left
+side File(*/report.txt) left
 side Screen right
-
-# the hole is lost and the file falls back to its last literal, a file at the root the code never names
-known #75 extra line File(report.txt) > run own
-known #75 extra side File(report.txt) left

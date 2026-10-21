@@ -304,16 +304,17 @@ fn places_are_decided_where_the_program_starts() {
 }
 
 /// Library code does not decide where data lives. A path the library takes from the environment
-/// shows as what it is: a place the code does not name, beside the default the library takes where
-/// nobody sets the variable. Whoever starts the program may set it, so the default is an option,
-/// as a parameter's default is, and `places` does not ask.
+/// shows as what it is: a place the code does not name, or a file under a directory it does not
+/// name (`*/report.csv`), beside the default the library takes where nobody sets the variable.
+/// Whoever starts the program may set it, so the default is an option, as a parameter's default
+/// is, and `places` does not ask.
 #[test]
 fn places_decided_in_library_code_show() {
     let s = shortcut();
     for (f, kind) in
         [("rates.file.FileRates.latest", "disk_read"), ("exporters.csv.writeCsv", "disk_write"), ("exporters.json.writeJson", "disk_write")]
     {
-        let unnamed = touches(s, f, kind).iter().any(|t| t.artifact.is_empty() && !t.fixed);
+        let unnamed = touches(s, f, kind).iter().any(|t| (t.artifact.is_empty() || t.artifact.starts_with("*/")) && !t.fixed);
         assert!(unnamed && !asked(s, "places", f), "{f}: {:?}", places(s, f, kind));
     }
 }
