@@ -539,6 +539,31 @@ pub const RUST_CONTAINERS: &[&str] = &[
     "Lazy",
 ];
 
+/// The Rust containers among `RUST_CONTAINERS` that hold many values, not one: std's
+/// collections, what an iterator or a stream gives, and the collections of common crates. A pair
+/// one holds is an element of a type the code does not name (`Vec<(NaiveDate, f64)>`).
+pub const RUST_COLLECTIONS: &[&str] = &[
+    "Vec",
+    "VecDeque",
+    "HashMap",
+    "HashSet",
+    "BTreeMap",
+    "BTreeSet",
+    "BinaryHeap",
+    "LinkedList",
+    "Iterator",
+    "IntoIterator",
+    "DoubleEndedIterator",
+    "ExactSizeIterator",
+    "Stream",
+    "IndexMap",
+    "IndexSet",
+    "SmallVec",
+    "ArrayVec",
+    "DashMap",
+    "DashSet",
+];
+
 /// Whether a Rust generic type's arguments are the values it holds or stands for.
 pub fn rust_container(name: &str) -> bool {
     RUST_CONTAINERS.contains(&name) || RUST_SUMS.contains(&name)
@@ -1548,6 +1573,10 @@ pub struct DerivedParser {
     pub not_options: &'static [&'static str],
     pub flatten: &'static str,
 }
+
+/// The functions that give the command line the program is run with, word by word, unparsed: what
+/// they give is the entry's, whatever the program makes of it.
+pub const RUST_COMMAND_LINE: &[&[&str]] = &[&["std", "env", "args"], &["std", "env", "args_os"]];
 
 /// clap's derive: `#[derive(Parser)] struct Cli { #[arg(long, default_value = RAW)] raw: PathBuf }`,
 /// with the options a struct of `Args` or a variant of `Subcommand` adds to it.

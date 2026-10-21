@@ -451,6 +451,9 @@ pub(super) struct Body<'a, 't> {
     returned: &'a HashMap<String, String>,
     /// The names the function binds, found when a call not followed first asks.
     bound: std::cell::OnceCell<HashSet<String>>,
+    /// The library calls that keep the command line the program is run with under a name: the
+    /// end of a chain that starts at reading it (`collect` of `env::args().skip(1).collect()`).
+    keeps_command_line: HashSet<usize>,
     /// It gives no value: what the last expression of its block gives goes nowhere.
     unit: bool,
     read: Read<'t>,
@@ -492,6 +495,7 @@ impl<'a, 't> Body<'a, 't> {
             taken: HashMap::new(),
             returned,
             bound: Default::default(),
+            keeps_command_line: HashSet::new(),
             unit: n.returns.as_ref().map_or(true, |r| r.value.is_empty() && !r.own),
             read: Read::default(),
         };
@@ -1054,7 +1058,30 @@ impl<'a, 't> Body<'a, 't> {
     /// A library's operation not read: a step where the body keeps what it gives.
     fn library_step(&self, steps: &mut Steps, c: TsNode<'t>, op: &str, recv: Option<TsNode<'t>>) {
         let hands = self.call_hands(c, recv, &steps.kept);
+        if self.keeps_command_line.contains(&c.id()) {
+            return steps.parses(c, op, hands, self.gives(c, None), vec![]);
+        }
         steps.op(c, op, hands, self.gives(c, None));
+    }
+
+    /// Where the command line a call reads is kept (`env::args()`): the end of the chain of
+    /// methods called on what it gives, where a name keeps that (`let args: Vec<String> =
+    /// env::args().skip(1).collect()`), else the call itself. The step there takes the entry's
+    /// words, and declares no options: the code names none.
+    fn reads_command_line(&mut self, c: TsNode<'t>) {
+        let mut end = c;
+        loop {
+            let value = crate::tree::outermost(end, WRAPPERS);
+            let on = value
+                .parent()
+                .filter(|f| f.kind() == "field_expression" && f.child_by_field_name("value").map(|v| v.id()) == Some(value.id()));
+            match on.and_then(|f| f.parent()).filter(|p| p.kind() == "call_expression") {
+                Some(call) => end = call,
+                None => break,
+            }
+        }
+        let at = if kept_as(end, self.src).is_some() { end } else { c };
+        self.keeps_command_line.insert(at.id());
     }
 
     /// What a call is handed: the value it is called on, and the names that stand for values in
@@ -1404,8 +1431,11 @@ impl<'a, 't> Body<'a, 't> {
             }
             _ => {
                 let op = parts.last().cloned().unwrap_or_default();
-                self.library_step(steps, c, &op, None);
                 let full = expand(self.m, &parts);
+                if knowledge::RUST_COMMAND_LINE.contains(&full.iter().map(String::as_str).collect::<Vec<_>>().as_slice()) {
+                    self.reads_command_line(c);
+                }
+                self.library_step(steps, c, &op, None);
                 self.read.unresolved.push((full.iter().take(2).cloned().collect::<Vec<_>>().join("."), self.bucket(&parts)));
                 let exits = matches!(full.as_slice(), [.., module, f] if knowledge::ends_the_run(module, f));
                 self.read.exits |= exits;

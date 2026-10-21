@@ -77,11 +77,3 @@ known #125 extra step main/load/from_ymd_opt
 known #125 extra line main/load/from_ymd_opt > _·date@main/load/from_ymd_opt value
 known #125 extra line _·date@main/load/from_ymd_opt > main/load/ok_or value
 known #125 extra home _·date@main/load/from_ymd_opt main/load
-
-# the pairs `load` and `smooth` give are drawn twice: by their name, of no type, and as the dates they hold, unnamed
-known #135 extra line main/load > NaiveDate@main/load value
-known #135 extra line NaiveDate@main/load > main/smooth value
-known #135 extra line main/smooth > NaiveDate@main/smooth value
-known #135 extra line NaiveDate@main/smooth > main/plot value
-known #135 extra home NaiveDate@main/load main
-known #135 extra home NaiveDate@main/smooth main
