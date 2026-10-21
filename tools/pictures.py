@@ -27,6 +27,10 @@ box refines the quotient, so it takes no line away (every line of the closed pic
 seen through the quotient map), draws no line the closed picture did not (a line the open box draws across its
 frame is one the closed box should have drawn: rule 1), moves no box from outside a frame into it, and closing the
 box draws the closed picture again. It fails when a box does otherwise.
+
+With `ATLAS_FINE_BUDGET=n` in the environment the page cuts each route's finest plan at about n steps instead of its own
+budget, so that a small program is cut as a large one is: a step beyond the cut stands for its arrow, and opening it
+must refine the picture as any other box does.
 """
 
 import json
@@ -236,6 +240,8 @@ def topology(atlas: str, repo: str, out: pathlib.Path, routes: int, opens: int) 
         browser = p.chromium.launch(channel="chrome")
         ctx = browser.new_context(viewport={"width": 1400, "height": 900}, reduced_motion="reduce")
         ctx.add_init_script("window.ATLAS_ORACLE = true")
+        if os.environ.get("ATLAS_FINE_BUDGET"):
+            ctx.add_init_script(f"window.ATLAS_FINE_BUDGET = {int(os.environ['ATLAS_FINE_BUDGET'])}")
         tab = ctx.new_page()
         tab.on("pageerror", lambda e: print("page error:", str(e).splitlines()[0]))
 

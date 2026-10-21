@@ -154,3 +154,38 @@ fn a_cache_filled_on_first_use_is_made_sure_of() {
     assert!(arrows.get("memo.cached").map_or(true, |a| !a.updates.iter().any(|p| p == cache) && !a.reads_back.iter().any(|p| p == cache)));
     assert!(arrows["memo.bump"].updates.iter().any(|p| p == cache), "{:?}", arrows.get("memo.bump"));
 }
+
+/// Reach is kept per step, not per function: a helper that writes the path its caller hands writes,
+/// under each caller, that caller's file, and the route says so at each step.
+#[test]
+fn a_helper_writes_under_each_caller_that_callers_file() {
+    let g = written(
+        "twocallers",
+        &[(
+            "twocallers.py",
+            r#"from pathlib import Path
+
+
+def write_to(name: str) -> None:
+    Path(name).write_text("x")
+
+
+def alpha() -> None:
+    write_to("data/alpha.txt")
+
+
+def beta() -> None:
+    write_to("data/beta.txt")
+
+
+def run() -> None:
+    alpha()
+    beta()
+"#,
+        )],
+    );
+    let route = atlas_engine::story::route(&g, "twocallers.run", 3).unwrap();
+    let under = |step: &str| route.lines().find(|l| l.trim_start().starts_with(step)).unwrap_or_default().to_string();
+    assert!(under("1.1").contains("data/alpha.txt") && !under("1.1").contains("beta"), "under alpha:\n{route}");
+    assert!(under("2.1").contains("data/beta.txt") && !under("2.1").contains("alpha"), "under beta:\n{route}");
+}
