@@ -1,3 +1,0 @@
-# the override's result has the dispatch's own moment: closed, its line into the dispatch is dropped, open it is drawn
-known #102 fault more t:events.shapes.Circle@n:events.shapes.Factory/events.shapes.Factory.make>n:events.shapes.Factory/events.shapes.Factory.make
-known #102 fault no line Circle@Factory()/Factory.make > Factory()/Factory.make

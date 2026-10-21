@@ -1,7 +1,3 @@
-# A value an override in a dispatch builds moves into the dispatch's frame when it opens
-known #102 fault Page@Doc()/Doc() stands in
-known #102 fault Page@Doc()/Doc.parse stands in
-
 # The same family as on the clean side: `Source.read` runs one of the overrides of `Feed` and `Tape`, on the Source the
 # caller calls it on. That `Feed.read` follows `Archive.read` and gives a str where `Source.read` promises bytes is
 # `check`'s to ask; neither is a type of the code's, so the picture is the clean side's: what an override gives goes

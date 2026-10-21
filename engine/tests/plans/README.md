@@ -41,7 +41,8 @@ it, and what it touches at a place is its caller's touch (`design.md`, "An opene
 
 **Values.** A value is `TYPE·NAME@MOMENT`. The type is the code's name for it (`Table`, `Circle`); a value of no type of
 the code's is `_`. The name is the one that holds it; a value no name holds has none. The moment is the occurrence that
-made it (or the choice, for a value either arm makes); a value no step makes, from beyond, has none. A route's
+made it (or the choice, for a value either arm makes: `pick/?1` in a body, `Store()/Store.get/?` for the overrides a
+call into a family may run, below the call); a value no step makes, from beyond, has none. A route's
 parameters are values from its start, by their names: `Circle·c`. What a step reads back inside itself of what its own
 writers wrote is `PLACE in STEP` (`File(cache.json) in main/refresh`), made by the writers and taken by the reader.
 Two values the names do not tell apart are told apart by a count, `#2`.
@@ -58,9 +59,9 @@ goes on to the step that called it).
 A fact Atlas gets wrong is written down as it should be and marked with the issue that tracks it:
 
 ```
-known #100 line Shape·s > draw_all/Shape.draw/Circle.draw value    # a fact that does not hold
+known #100 line Store > Store()/Store.get/Shelf.get value          # a fact that does not hold
 known #74 extra line run/Store() > File(data/store.txt) reached    # a fact Atlas has and should not
-known #102 fault Page@Doc()/Doc() stands in                         # a fault of the pictures, matched as part of its text
+known #N fault Page@Doc()/Doc() stands in                           # a fault of the pictures, matched as part of its text
 ```
 
 The test reports each mark and passes. It fails once the fact holds, or the extra fact or the fault is gone, so the mark

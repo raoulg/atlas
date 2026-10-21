@@ -12,7 +12,7 @@ use super::{def_node, expand, path_parts, resolve, resolve_value, Module};
 use crate::knowledge::{self, PathFn, PathMethod};
 use crate::model::{Node, NodeKind};
 use crate::paths::{cross, environment_named, hole, lit, or_else, parent, substitute, union, Built, Seg};
-use crate::tree::{named_children, text, unquote, walk};
+use crate::tree::{beneath, named_children, text, unquote, walk};
 
 const DEPTH: u32 = 12;
 
@@ -64,14 +64,14 @@ impl<'a> Eval<'a> {
         if depth > DEPTH {
             return vec![hole("…")];
         }
+        let e = beneath(e, super::WRAPPERS);
         let src = &at.m.src;
         let first =
             |e: TsNode<'a>| named_children(e).into_iter().next().map(|x| self.of(at, x, depth + 1)).unwrap_or_else(|| vec![hole("value")]);
         let field = |f: &str| e.child_by_field_name(f).map(|x| self.of(at, x, depth + 1)).unwrap_or_else(|| vec![hole("value")]);
         match e.kind() {
             "string_literal" | "raw_string_literal" => vec![lit(&unquote(text(e, src)))],
-            "reference_expression" => field("value"),
-            "parenthesized_expression" | "try_expression" | "await_expression" | "else_clause" => first(e),
+            "else_clause" => first(e),
             "identifier" => self.name(at, text(e, src), e.start_byte(), depth),
             "scoped_identifier" => {
                 let parts = path_parts(Some(e), src);
@@ -207,12 +207,9 @@ impl<'a> Eval<'a> {
         if depth > DEPTH {
             return None;
         }
+        let e = beneath(e, super::WRAPPERS);
         let src = &at.m.src;
         match e.kind() {
-            "reference_expression" => self.parsed(at, e.child_by_field_name("value")?, depth + 1),
-            "parenthesized_expression" | "try_expression" | "await_expression" => {
-                self.parsed(at, named_children(e).into_iter().next()?, depth + 1)
-            }
             "identifier" => {
                 let name = text(e, src);
                 let named = |p: Option<TsNode>| {

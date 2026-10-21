@@ -1,9 +1,6 @@
 # The clean side's calls: a caller written against a Handler hands `handle` an Event, and the override inside the
 # dispatch is handed that Event, whatever its signature says it takes (`e: Click`). That it then reads `e.x` of a value
 # that may be no Click is `check`'s to ask; the plan draws what is handed.
-# the override's result has the dispatch's own moment: closed, its line into the dispatch is dropped, open it is drawn
-known #102 fault more t:events.shapes.Circle@n:events.shapes.Factory/events.shapes.Factory.make>n:events.shapes.Factory/events.shapes.Factory.make
-known #102 fault no line Circle@Factory()/Factory.make > Factory()/Factory.make
 
 route events.handlers.Handler
 step Handler()/Handler.handle

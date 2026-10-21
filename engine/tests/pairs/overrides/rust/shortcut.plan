@@ -1,3 +1,0 @@
-# the override's result has the dispatch's own moment: closed, its line into the dispatch is dropped, open it is drawn
-known #102 fault more t:books.Key@n:books.Named/books.Named.id>n:books.Named/books.Named.id
-known #102 fault no line Key@Named()/Named.id > Named()/Named.id

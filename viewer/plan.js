@@ -786,9 +786,13 @@ const isMem = k => k.startsWith("v:") || k.startsWith("t:");
 // a place as a step's own writers left it, read back inside that step: its moment is inside the step, fixed where it was made
 const inside = k => k.startsWith("v:back:");
 const version = (k, v) => { if (!places.has(v)) places.set(v, {...places.get(k), id: v}); return v; };
-const choiceOf = P => frames.get(P.parent)?.choice ? P.parent : P.id;
+// the arms of a choice make one value, at the choice's moment: a choice in a body is a frame of its own; a step that is itself
+// a choice (a call into a family, which runs one of the overrides) makes it at a moment inside the step, and hands on a value
+// of its own at the step's moment
+const choiceMoment = fid => (frames.get(fid).synthetic ? fid : fid + "|");
+const choiceOf = P => frames.get(P.parent)?.choice ? choiceMoment(P.parent) : P.id;
 // the arrow of an opened step hands on at the moment the closed step did: opening it moves no value to another moment
-const madeAt = P => { if (!P.own) return choiceOf(P); const F = frames.get(P.parent); return frames.get(F?.parent)?.choice ? F.parent : P.parent; };
+const madeAt = P => { if (!P.own) return choiceOf(P); const F = frames.get(P.parent); return frames.get(F?.parent)?.choice ? choiceMoment(F.parent) : P.parent; };
 // in A, a value B makes by another step (`remade`) is one value: it stands at the moment of the step that makes it in B
 const remadeAt = at => {
   const m = SIDE === "a" ? at.match(/^n:(.*)\/(\d+)$/) : null, to = m ? DIFF.remade[stepOf(m[1])]?.[m[2]] : null;
@@ -852,8 +856,6 @@ for (const P of pills.values()) {
     latestSet(kindKey(k) + "|" + nm, v, P); latestSet(kindKey(k) + "|", v, P);
     Cv.set(v, r);
   });
-  // a step never takes what it hands on itself: the value a step that is a choice makes in its arms is its output, not its input
-  for (const k of Cv.keys()) if (isMem(k) && Dv.has(k)) { Dv.delete(k); mult?.D.delete(k); }
   P.D = Dv; P.C = Cv;
   if (mult) P.mult = mult;
 }
@@ -989,10 +991,8 @@ const imageOf = (F, opened, folded, {fineKeys = false} = {}) => {
       const mine = !S || P.id === "o:" + S.step;
       for (const [way, m] of [["D", P.D], ["C", P.C]]) for (const [k, r] of m) {
         const pl = fp.get(k), isValue = /^[tv]:/.test(k);
-        // a value made and taken inside the block is the block's own, and so is one made at the step's own moment (what the arms
-        // of a step that is itself a choice make): what a step makes is never its input. A place it wrote and reads back is no
-        // input of it
-        if (S && isValue && (within(pl?.at, S.id) || (way === "D" && pl?.at === S.id)) && !hidden.has(pl.at)) { drop.set(`${P.id}|${way}|${k}`, "internal"); continue; }
+        // a value made and taken inside the block is the block's own; a place it wrote and reads back is no input of it
+        if (S && isValue && within(pl?.at, S.id) && !hidden.has(pl.at)) { drop.set(`${P.id}|${way}|${k}`, "internal"); continue; }
         if (S && way === "D" && !isValue && back.has(k)) { drop.set(`${P.id}|${way}|${k}`, "back"); continue; }
         // a value the step's own call is handed is its own arrow's input, whichever of its steps takes it inside
         incidence.push([way, P, k, mine ? r : !(way === "D" && isValue && handed(pl)), mine]);

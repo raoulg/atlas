@@ -74,6 +74,12 @@ footer{border-top:1px solid var(--line);padding-top:20px;color:var(--ink-3);font
   header nav{margin-left:0;width:100%}
   h2{font-size:27px}
 }
+/* the Rule 30 band across the top, after pttrn.io's, with Atlas's logo in it: drawn by the script at the end of the page */
+.band{position:relative;height:130px;overflow:hidden;background:var(--bg)}
+.band-cells{position:absolute;inset:0;width:100%;height:100%}
+.band-cells .cell{fill:#E2DCD3}
+.band-cells .accent{fill:var(--accent)}
+.band-logo{position:absolute;display:block}
 /* the tour */
 :root{--ink-2:#4A443D;--proph:#4B3FA8;--add:#2E8B57;--focus:#1D5A73}
 html{scroll-behavior:smooth;scroll-padding-top:72px}
@@ -299,6 +305,7 @@ section{margin-bottom:104px}
 </head>
 <body>
 <a class="skip" href="#main">Skip to the content</a>
+<div class="band" aria-hidden="true"><svg class="band-cells"></svg><img class="band-logo" src="logo.svg" alt=""></div>
 <header class="top">
   <div class="bar">
     <a class="brand" href="#top"><img src="logo.svg" alt="">Atlas</a>
@@ -665,6 +672,50 @@ function tabs(root) {
   pick(0);
 }
 document.querySelectorAll('[data-tabs]').forEach(tabs);
+// The Rule 30 band, after pttrn.io's: a single seed, the cells squares of 0.78125 of the pitch, one
+// generation in accent. Atlas's logo is a window onto the same automaton, generations 37-49 over
+// columns 4..16, so the band shows those generations, 37-49, over every column that lives in them
+// (-49..49), and the logo stands in it at its own columns: the band's cells run on into it. The
+// pitch fills the width, at least 8px; a narrower screen shows the middle of the band.
+(() => {
+  const SKIP = 37, ROWS = 13, COL_MIN = -49, COL_MAX = 49, ACCENT_ROW = 6, MIN_PITCH = 8, SQUARE = 0.78125;
+  const LOGO_COL = 4;
+  const width = COL_MAX - COL_MIN + 1, reach = SKIP + ROWS;
+  let row = new Uint8Array(width + 2 * reach);
+  row[-COL_MIN + reach] = 1;
+  const grid = [];
+  for (let g = 0; g < SKIP + ROWS; g++) {
+    if (g >= SKIP) grid.push(row.slice(reach, reach + width));
+    const next = new Uint8Array(row.length);
+    for (let i = 1; i < row.length - 1; i++) next[i] = row[i - 1] ^ (row[i] | row[i + 1]);
+    row = next;
+  }
+  const band = document.querySelector('.band');
+  const cells = band.querySelector('.band-cells');
+  const logo = band.querySelector('.band-logo');
+  const draw = () => {
+    const w = band.clientWidth;
+    const pitch = Math.max(MIN_PITCH, w / width);
+    // the seed's column centred, so that the band is the automaton's own shape
+    const x0 = w / 2 - (0.5 - COL_MIN) * pitch;
+    band.style.height = `${ROWS * pitch}px`;
+    const left = x0 + (LOGO_COL - COL_MIN) * pitch;
+    Object.assign(logo.style, {left: `${left}px`, top: '0px', width: `${ROWS * pitch}px`, height: `${ROWS * pitch}px`});
+    const inset = (1 - SQUARE) / 2 * pitch, size = SQUARE * pitch;
+    let plain = '', accent = '';
+    grid.forEach((cols, r) => cols.forEach((alive, i) => {
+      const x = x0 + i * pitch;
+      if (!alive || x + pitch < 0 || x > w) return;
+      const d = `M${(x + inset).toFixed(2)} ${(r * pitch + inset).toFixed(2)}h${size.toFixed(2)}v${size.toFixed(2)}h-${size.toFixed(2)}z`;
+      if (r === ACCENT_ROW) accent += d; else plain += d;
+    }));
+    cells.setAttribute('viewBox', `0 0 ${w} ${ROWS * pitch}`);
+    cells.innerHTML = `<path class="cell" d="${plain}"/><path class="accent" d="${accent}"/>`;
+  };
+  let drawn = 0;
+  new ResizeObserver(() => { if (band.clientWidth !== drawn) { drawn = band.clientWidth; draw(); } }).observe(band);
+})();
+
 // the height of the page's bar, under which a sticky bar of tabs stays
 const below = () => document.documentElement.style.setProperty('--below-top', document.querySelector('.top').offsetHeight + 'px');
 below();

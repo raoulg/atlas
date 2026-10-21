@@ -11,7 +11,7 @@ use tree_sitter::Node as TsNode;
 use super::{declarations, function_in, is_property, member_parts, top_variables, Bound, Module};
 use crate::knowledge::{self, PathFn};
 use crate::paths::{cross, environment, environment_named, hole, lit, or_else, parent, substitute, union, Built, Seg};
-use crate::tree::{named_children, path_str, text, unquote, walk};
+use crate::tree::{beneath, named_children, path_str, text, unquote, walk};
 
 const DEPTH: u32 = 12;
 
@@ -94,6 +94,7 @@ impl<'a> Eval<'a> {
         if depth > DEPTH {
             return vec![hole("…")];
         }
+        let e = beneath(e, super::WRAPPERS);
         let src = &at.m.src;
         let inner =
             |e: TsNode<'t>| named_children(e).into_iter().next().map(|x| self.of(at, x, depth + 1)).unwrap_or_else(|| vec![hole("value")]);
@@ -110,7 +111,6 @@ impl<'a> Eval<'a> {
                 }
                 out
             }
-            "parenthesized_expression" | "as_expression" | "satisfies_expression" | "non_null_expression" | "await_expression" => inner(e),
             "binary_expression" => {
                 let (Some(l), Some(r)) = (e.child_by_field_name("left"), e.child_by_field_name("right")) else {
                     return vec![hole("value")];
@@ -253,13 +253,7 @@ impl<'a> Eval<'a> {
     /// The call of a command-line parser a value is, with the parser: `parseArgs({..})` as the
     /// package that exports it names it, however the module imports it.
     fn parser_call<'t>(&self, m: &Module, value: TsNode<'t>) -> Option<(TsNode<'t>, &'static knowledge::OptionParser)> {
-        let mut v = value;
-        while matches!(
-            v.kind(),
-            "await_expression" | "parenthesized_expression" | "as_expression" | "satisfies_expression" | "non_null_expression"
-        ) {
-            v = named_children(v).into_iter().next()?;
-        }
+        let v = beneath(value, super::WRAPPERS);
         let parts = member_parts(v.child_by_field_name("function").filter(|_| v.kind() == "call_expression")?, &m.src);
         let Bound::Ext(ext) = m.bindings.get(parts.first()?)? else { return None };
         let package = super::package_from_ext(ext, &m.ext_pkgs);
@@ -274,11 +268,9 @@ impl<'a> Eval<'a> {
             return None;
         }
         let src = &at.m.src;
+        let e = beneath(e, super::WRAPPERS);
         match e.kind() {
             "object" => Some(e),
-            "parenthesized_expression" | "as_expression" | "satisfies_expression" => {
-                self.object(at, named_children(e).into_iter().next()?, depth + 1)
-            }
             "identifier" | "shorthand_property_identifier" => {
                 let (v, scope) = self
                     .declared(at, text(e, src), e.start_byte())

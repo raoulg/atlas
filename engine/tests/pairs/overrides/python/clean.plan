@@ -1,7 +1,3 @@
-# A value an override in a dispatch builds moves into the dispatch's frame when it opens
-known #102 fault Page@Doc()/Doc() stands in
-known #102 fault Page@Doc()/Doc.parse stands in
-
 # An exported class is a route whose steps are its public methods, each called by the entry. `Source.read` is a call
 # into the family of `Source`, whose members along the method resolution order are `Buffered`, `Feed` and `Tape`: it
 # runs one of the overrides that family holds, a choice between them (`Buffered` has no `read` of its own and runs the

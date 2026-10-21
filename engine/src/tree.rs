@@ -29,6 +29,38 @@ pub fn field_children<'t>(n: TsNode<'t>, field: &str) -> Vec<TsNode<'t>> {
     n.children_by_field_name(field, &mut c).collect()
 }
 
+/// The expressions of a language that hand on the value inside them: parentheses, and the
+/// language's casts, assertions and unwrappings (`(x as T)!`, `&x`, `x?`, `await x`). Atlas reads a
+/// value through them as through an identity, as it reads an `Option`, a `Result` or a promise as
+/// what it holds. Each reader names its language's.
+pub type Wrappers = &'static [&'static str];
+
+/// The value a wrapper hands on: its `value` (`&mut x`), else its first named child.
+pub fn wrapped<'t>(n: TsNode<'t>) -> Option<TsNode<'t>> {
+    n.child_by_field_name("value").or_else(|| named_children(n).into_iter().next())
+}
+
+/// The expression a value is, beneath its wrappers: `x` of `(x as T)!`.
+pub fn beneath<'t>(n: TsNode<'t>, wrappers: Wrappers) -> TsNode<'t> {
+    let mut n = n;
+    while wrappers.contains(&n.kind()) {
+        match wrapped(n) {
+            Some(x) => n = x,
+            None => break,
+        }
+    }
+    n
+}
+
+/// The outermost wrapper an expression stands in, or the expression itself: `(x as T)!` of `x`.
+pub fn outermost<'t>(n: TsNode<'t>, wrappers: Wrappers) -> TsNode<'t> {
+    let mut n = n;
+    while let Some(p) = n.parent().filter(|p| wrappers.contains(&p.kind()) && wrapped(*p).map(|x| x.id()) == Some(n.id())) {
+        n = p;
+    }
+    n
+}
+
 /// Pre-order, source order.
 /// What an expression hands a call, by the names in it: each name with the type the reader
 /// knows for it, or by its name alone where an earlier step of the body made it. A name the

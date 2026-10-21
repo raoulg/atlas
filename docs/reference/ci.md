@@ -111,6 +111,8 @@ jobs:
         run: atlas view --no-open --out site/index.html
       - name: Take its picture
         run: uv run tools/atlas_picture.py site/index.html site/atlas.png
+      - name: Write the pill                       # optional, see "The pill"
+        run: python3 tools/atlas_badge.py site/badge.svg
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site
@@ -137,6 +139,29 @@ after a push.
 
 `ATLAS_CHANNEL=nightly` before `sh` installs the nightly build instead of the latest release. The
 runner reads the update check as CI and stays silent.
+
+### The pill
+
+A repository that draws its picture can say so, with a pill in the README:
+[![atlas: drawn on push](../badge-atlas.svg)](https://raoulg.github.io/atlas/)
+It comes in two kinds:
+
+- **Static**: save [`badge-atlas.svg`](../badge-atlas.svg) in your repository and name it from the
+  README. It never changes.
+- **Written by the workflow**: the step "Write the pill" above puts `badge.svg` next to the
+  picture on every push, so the README names it by the same address as the picture and nothing in
+  the repository changes:
+
+```html
+<a href="https://<owner>.github.io/<repository>/"><img src="https://<owner>.github.io/<repository>/badge.svg" alt="atlas: drawn on push"></a>
+```
+
+Both come from `tools/atlas_badge.py` in the Atlas repository, a script of the standard library
+alone: copy it next to `tools/atlas_picture.py`.
+
+Experimental: `python3 tools/atlas_badge.py badge.svg findings.json`, with the output of
+`atlas check --json`, writes a pill of its own that counts the questions Atlas asks of the code.
+They are not yet reliable enough to wear as a badge.
 
 ### A private repository
 
