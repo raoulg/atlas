@@ -1,0 +1,14 @@
+# The sketch kept apart: `run_stored` is a prophecy that supersedes `run`, and it builds the prophetized `Store` and
+# writes the report to it. No built code calls it; what it runs is sketch, with no effect yet.
+
+route archive.app.run_stored
+step run_stored/Store()
+step run_stored/Store.write
+
+line entry > run_stored call
+line run_stored/Store() > Store@run_stored/Store() value
+line Store@run_stored/Store() > run_stored/Store.write value    # the Store it built is what write runs on
+
+home Store@run_stored/Store() run_stored
+
+side entry left

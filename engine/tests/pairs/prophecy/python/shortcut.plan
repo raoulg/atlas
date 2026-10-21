@@ -1,0 +1,10 @@
+# Built code leans on the sketch: `run` (no export, so no route) writes to the prophetized `Store`, and the stub it
+# leans on is a route of its own, a prophecy: `Store.write` runs on a Store and takes the report, and does nothing yet.
+
+route archive.sink.Store.write
+line entry > Store.write call
+line Store > Store.write value                                 # the Store it runs on: the receiver, no name of the author's
+
+home Store Store.write
+
+side entry left

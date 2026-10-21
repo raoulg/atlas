@@ -27,7 +27,7 @@ One fact per line; `#` starts a comment, at the start of a line or after a space
 | `choice PATH` | a choice in a body, a frame of its own with its arms inside |
 | `line A > B CHANNEL` | a line of the plan, from what makes to what takes |
 | `home VALUE FRAME` | the frame a value stands in with every step open (`outside` when no frame holds it) |
-| `side PLACE SIDE` | where a place of the world stands, decided on the closed picture: `left`, `right`, `between`, `both` |
+| `side PLACE SIDE` | where a place of the world stands, decided on the closed picture: `left`, `right`, `between` (also a place the code goes to without saying which way, in neither domain nor codomain), `both` |
 
 **Occurrences.** A path is the route's name and the step labels below it: `run/tidy/strip`. A constructor is `Table()`,
 a method `Class.method`, an override in a call into a family `Circle.draw` below the call. A choice is `?1`, `?2` in

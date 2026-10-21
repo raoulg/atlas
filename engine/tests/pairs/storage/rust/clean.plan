@@ -1,0 +1,15 @@
+# A connection opens the file a database is, and the directory made for that file is the database's: made where the
+# connection opens it, it is no place of its own (mathematics.md, "A route's domain and codomain": a connection that
+# opens a database on a file names that file, so a directory made for the file is made for the database). `connect`
+# makes the database's shape and opens it: it puts and takes no content, so the database is in neither its domain nor
+# its codomain. It gives the connection back, a value of the library's.
+
+route warehouse.connect
+line entry > connect call
+line connect > SQLite own
+line connect > Connection@connect value
+
+home Connection@connect connect
+
+side entry left
+side SQLite between
