@@ -116,7 +116,7 @@ def pipeline(ctx, atlas, out, drawn):
         ('python-clean-save', 'python-clean', 'sunspots.cli.run', 'sunspots.plot.Plot.save', False),
         ('python-sloppy', 'python-sloppy', 'sunspots', None, True),
         ('rust-clean', 'rust-clean', 'sunspots.main.main', 'sunspots.plot.Plot.save', False),
-        ('typescript-clean', 'typescript', 'typescript.cli.main', None, True),
+        ('typescript-clean', 'typescript', 'sunspots.cli.main', None, True),
     ]
     results = {}
     for name, subject, route, opened, still in cases:
@@ -178,7 +178,7 @@ def smoothing(ctx, atlas, out, drawn):
     cases = [
         ('python-smooth', 'python-clean', 'sunspots.cli.run', 'Trend.save'),
         ('rust-smooth', 'rust-clean', 'sunspots.main.main', 'Trend.save'),
-        ('typescript-smooth', 'typescript', 'typescript.cli.main', 'trend'),
+        ('typescript-smooth', 'typescript', 'sunspots.cli.main', 'trend'),
     ]
     for name, subject, route, last in cases:
         html = out / (name + '.html')

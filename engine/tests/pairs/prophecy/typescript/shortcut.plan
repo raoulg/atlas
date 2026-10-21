@@ -1,7 +1,7 @@
 # Built code leans on the sketch: `run` builds the declared, prophetized `Store` and writes the report to it; neither
 # has a body, so the built route has no effect.
 
-route shortcut.run
+route archive.run
 step run/Store()
 step run/Store.write
 
