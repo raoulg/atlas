@@ -1,3 +1,0 @@
-# the override's result has the dispatch's own moment: closed, its line into the dispatch is dropped, open it is drawn
-known #102 fault more t:sunspots.settings.Settings@n:sunspots.plot.Plot/sunspots.plot.Plot.save/0>n:sunspots.plot.Plot/sunspots.plot.Plot.save/0
-known #102 fault no line Settings@Plot()/Plot.save/Plot.settings > Plot()/Plot.save/Plot.settings

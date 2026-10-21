@@ -106,7 +106,7 @@ pub struct Node {
     pub decorators: Vec<String>,
     /// Sketch code kept in the tree, not built yet: what its marker says. Read by the language's reader.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub prophecy: Option<crate::prophecy::Prophecy>,
+    pub prophecy: Option<Prophecy>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub params: Vec<Param>,
     /// What the signature says it gives back; none when it does not say.
@@ -223,6 +223,28 @@ impl Node {
     pub fn initializer<'a>(&self, node: impl Fn(&str) -> Option<&'a Node>) -> Option<String> {
         self.methods.iter().map(|m| format!("{}.{m}", self.id)).find(|id| node(id).map_or(false, |m| m.ctor && !m.on_class))
     }
+}
+
+/// What a prophecy says of itself: sketch code kept in the tree, marked as not built yet. `prophecy.rs`
+/// reads it from the marker and settles it in the whole graph.
+#[derive(Serialize, Deserialize, TS, Clone, Debug, Default, PartialEq, Eq)]
+#[ts(export)]
+pub struct Prophecy {
+    /// The existing thing the prophecy replaces: it stays until the prophecy is built.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub supersedes: Option<String>,
+    /// The place is known and the shape is not.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub veiled: bool,
+    /// The shape waits on an open question, as an issue (`#144`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sealed: Option<String>,
+    /// The node `supersedes` names, once the graph is whole: its id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub replaces: Option<String>,
+    /// The nodes `supersedes` names when it names more than one: which it replaces, it does not say.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub candidates: Vec<String>,
 }
 
 /// A parameter, as the signature declares it.

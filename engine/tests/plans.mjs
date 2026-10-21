@@ -50,7 +50,8 @@ function read(route) {
     }
   };
   visit(null, null);
-  const occ = id => name.get(id.startsWith("o:") ? "n:" + id.slice(2) : id) ?? id;
+  // the choice of a step that is itself a choice (a call into a family) is below it: `Store()/Store.get/?`
+  const occ = id => (id.endsWith("|") ? occ(id.slice(0, -1)) + "/?" : name.get(id.startsWith("o:") ? "n:" + id.slice(2) : id) ?? id);
   const placeName = k => (F.places.get(k)?.label ?? k.replace(/^w:/, "")).replace(/\s+/g, " ");
   const values = new Map(), taken = new Map();
   const valueName = k => {

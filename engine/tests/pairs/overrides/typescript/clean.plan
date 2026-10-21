@@ -1,4 +1,0 @@
-# the override's result has the dispatch's own moment: closed, its line into the dispatch is dropped, open it is drawn
-known #102 fault more t:clean.shapes.Circle@n:clean.shapes.Factory/clean.shapes.Factory.make>n:clean.shapes.Factory/clean.shapes.Factory.make
-known #102 fault no line Circle@Factory()/Factory.make > Factory()/Factory.make
-known #102 fault Click@Click()/Click()/Event() stands in

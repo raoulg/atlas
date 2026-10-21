@@ -377,9 +377,10 @@ parse the command line to the entry. The closed picture is `F/q`:
   the domain of the composite, "the parameters plus what the body consumes" (the second sentence),
   not the signature alone. A line comes from the step itself when its own arrow supplies it and
   reaches through it otherwise (the sixth sentence);
-- a place made and taken inside one block is internal to it and is not drawn. What a step makes is never
-  its input: the value the arms of a step that is itself a choice make, at the step's own moment, is
-  what the step hands on, not what it takes;
+- a place made and taken inside one block is internal to it and is not drawn. The arms of a choice make
+  one value at the choice's moment; a step that is itself a choice (a call into a family, which runs
+  one of the overrides) makes it at a moment inside the step, and hands on a value of its own at its
+  own moment, so what its overrides make is internal to it and what it hands on is not;
 - the families are taken on the route's fiber, the types its plan holds (saturation: the fiber first,
   then the quotient): a type stands in its kind where the plan holds another type of that kind, so a
   route draws the same whatever other routes do, and an opened family holds, for a value, the kinds
@@ -468,6 +469,17 @@ parameters is one type, whatever its parameters.
 each one type, in every language.
 **Where.** `knowledge.rs`: `python_container`, `TYPESCRIPT_CONTAINERS`, `RUST_CONTAINERS`.
 
+### Wrappers are identities
+**What.** An identity arrow `1_A: A → A` hands on its value unchanged; composing with it changes
+nothing.
+**In Atlas.** An expression that hands on the value inside it is an identity on what Atlas reads of
+the value: parentheses, a cast or an assertion (`as`, `satisfies`, `!`), a reference (`&x`), and an
+unwrapping (`await`, `x?`, `x.await`), since a promise, an `Option` and a `Result` are read as what
+they hold. A value read through any of them is the value inside, so a change, a place or a call
+written through a wrapper is the one written without it. A cast also names a type, and where the
+question is the class a method runs on (`(x as Store).f()`), that type answers it.
+**Where.** `tree.rs`: `Wrappers`, `beneath`, `outermost`; each reader's `WRAPPERS`.
+
 ### Behavioural subtyping
 **What.** A subtype can stand wherever its base stands (Liskov).
 **In Atlas.** An override keeps the promise of its base: it takes at least what the base takes
@@ -501,9 +513,11 @@ callers are checked against. A change to an input, of whatever type, is part of 
 whose value is used says what it gives back. A call that changes the value it is called on is
 such an arrow inside a body, `T × A → T`: a step that makes its receiver anew from what it is
 handed (`rows.append(row)`), so a value gathered into a container is followed to where the
-container goes.
+container goes. Taking one out is a step too: a loop takes what it goes over and gives each
+element under the name it binds (`for n in g.nodes` is `Graph → Node`), so the element is a value
+the body makes, not one from beyond.
 **Where.** Principles `doors`, `changes` and `gives`; the steps of a body (`body.rs`), with the
-calls that change their receiver in `knowledge::MUTATORS`.
+calls that change their receiver in `knowledge::MUTATORS`; a loop's step in each reader (`each`).
 
 ## Graph theory
 

@@ -16,10 +16,11 @@ fn pair(name: &str) -> Graph {
 /// names, and every id is the code's own. Services that each call their package `app` are named by
 /// what the code does not say, the directory each lies in (`orders/app`, `billing/app`), and both
 /// stay in the picture: the shortcut is the clean program with a directory where the code gives no
-/// name, its code, calls and places alike. So in Python and Rust.
+/// name, its code, calls and places alike. So in Python, Rust and TypeScript, whose package is named
+/// by its `package.json`, as a Python package by its manifest and a Rust crate by its `Cargo.toml`.
 #[test]
 fn two_parts_are_named_apart() {
-    for language in ["python", "rust"] {
+    for language in ["python", "rust", "typescript"] {
         let (clean, shortcut) = (pair(&format!("parts/{language}/clean")), pair(&format!("parts/{language}/shortcut")));
         let parts = |g: &Graph| g.parts.iter().map(|p| p.id.clone()).collect::<Vec<_>>();
         assert_eq!(parts(&clean), ["billing", "orders"], "{language}");

@@ -26,10 +26,15 @@ use crate::knowledge::OwnTypes;
 use crate::model::{Bucket, Dir, EdgeKind, Entry, EntryKind, Held, Node, NodeKind, Param, Returns, Touch, World};
 use crate::repo::{normal, Repo};
 use crate::tree::{
-    evaluation_order, literals, named_children, nth_of_kind, span, text, unquote, walk, what_of, ChoiceSyntax, CompareSyntax, Part,
+    beneath, evaluation_order, literals, named_children, nth_of_kind, outermost, span, text, unquote, walk, what_of, wrapped, ChoiceSyntax,
+    CompareSyntax, Part, Wrappers,
 };
 
-const EXTENSIONS: &[&str] = &["ts", "tsx", "mts", "cts", "js", "jsx", "mjs", "cjs"];
+pub(crate) const EXTENSIONS: &[&str] = &["ts", "tsx", "mts", "cts", "js", "jsx", "mjs", "cjs"];
+/// What hands on the value inside it: parentheses, `await`, the non-null assertion `!`, and the
+/// casts `as` and `satisfies`.
+const WRAPPERS: Wrappers =
+    &["parenthesized_expression", "await_expression", "non_null_expression", "as_expression", "satisfies_expression"];
 const OWN: OwnTypes = knowledge::TYPESCRIPT_OWN_TYPES;
 
 #[derive(Clone, Debug)]
@@ -138,9 +143,15 @@ fn ts_parser(tsx: bool) -> Result<Parser> {
     Ok(p)
 }
 
-/// The package's name for the graph: its directory, as Python's is its package directory.
+/// The package's name for the graph: the `name` its `package.json` gives it, which code imports it
+/// by, as a Python part is the package its manifest names and a Rust part its crate; its directory
+/// where the `package.json` names none. A scoped name (`@acme/client`) stands as it is written.
 fn root_name(repo: &Repo) -> String {
-    segment(&repo.name().unwrap_or_else(|| "app".into()))
+    let named = repo
+        .text("package.json")
+        .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+        .and_then(|j| j["name"].as_str().filter(|n| !n.is_empty()).map(str::to_string));
+    segment(&named.or_else(|| repo.name()).unwrap_or_else(|| "app".into()))
 }
 
 /// A path segment as part of a dotted id: dots inside a file name (`punt.functions`) are not
@@ -307,8 +318,8 @@ fn doc_of(n: TsNode, src: &[u8]) -> String {
 }
 
 /// What the leading comment's `@prophecy` tag says, if it has one.
-fn prophecy_of(n: TsNode, src: &[u8]) -> Option<crate::prophecy::Prophecy> {
-    leading_comment(n, src).and_then(crate::prophecy::Prophecy::of_jsdoc)
+fn prophecy_of(n: TsNode, src: &[u8]) -> Option<crate::model::Prophecy> {
+    leading_comment(n, src).and_then(crate::model::Prophecy::of_jsdoc)
 }
 
 // ---------- types ----------
@@ -565,12 +576,7 @@ fn top_variables<'t>(root: TsNode<'t>) -> Vec<TsNode<'t>> {
 fn function_in<'t>(value: TsNode<'t>) -> Option<TsNode<'t>> {
     match value.kind() {
         "arrow_function" | "function_expression" | "function" => Some(value),
-        "call_expression"
-        | "await_expression"
-        | "parenthesized_expression"
-        | "as_expression"
-        | "satisfies_expression"
-        | "member_expression" => {
+        k if matches!(k, "call_expression" | "member_expression") || WRAPPERS.contains(&k) => {
             let mut found = None;
             for c in named_children(value) {
                 if c.kind() == "arguments" {
@@ -1159,6 +1165,7 @@ fn mark_exports(repo: &Repo, files: &HashMap<PathBuf, String>, modules: &IndexMa
 /// `express.Router()`, and the chain of registrations on it (`new Hono().get(..).post(..)`).
 fn router_made(mut v: TsNode, m: &Module, src: &[u8]) -> bool {
     loop {
+        v = beneath(v, WRAPPERS);
         match v.kind() {
             "call_expression" => match v.child_by_field_name("function") {
                 Some(f)
@@ -1171,10 +1178,6 @@ fn router_made(mut v: TsNode, m: &Module, src: &[u8]) -> bool {
                 None => return false,
             },
             "new_expression" => return v.child_by_field_name("constructor").map_or(false, |c| router_pkg(&member_parts(c, src), m)),
-            "parenthesized_expression" | "await_expression" => match named_children(v).into_iter().next() {
-                Some(x) => v = x,
-                None => return false,
-            },
             _ => return false,
         }
     }
@@ -1211,10 +1214,7 @@ fn promisified(value: TsNode, m: &Module, src: &[u8]) -> Option<Bound> {
 /// The package a client was made by: `new Anthropic()`, `new Pool()`, `axios.create()`,
 /// `createClient()`. What a package's other calls give back is a result, not a client.
 fn made_by_package(value: TsNode, m: &Module, src: &[u8]) -> Option<String> {
-    let mut v = value;
-    while matches!(v.kind(), "await_expression" | "parenthesized_expression" | "as_expression" | "non_null_expression") {
-        v = named_children(v).into_iter().next()?;
-    }
+    let v = beneath(value, WRAPPERS);
     let maker = match v.kind() {
         "new_expression" => v.child_by_field_name("constructor")?,
         "call_expression" => v.child_by_field_name("function").filter(|f| {
@@ -1335,7 +1335,8 @@ fn collect_routes(m: &mut Module, store: &mut GraphBuilder) {
             "identifier" if m.routers.contains(text(obj, &src)) => text(obj, &src).to_string(),
             _ => {
                 let mut up = c.parent();
-                while let Some(p) = up.filter(|p| matches!(p.kind(), "member_expression" | "call_expression" | "parenthesized_expression"))
+                while let Some(p) =
+                    up.filter(|p| matches!(p.kind(), "member_expression" | "call_expression") || WRAPPERS.contains(&p.kind()))
                 {
                     up = p.parent();
                 }
@@ -1873,11 +1874,8 @@ fn package_value(modules: &IndexMap<String, Module>, kept: &str) -> bool {
     }
     let package = |n: TsNode| matches!(member_parts(n, src).first().and_then(|h| home.bindings.get(h)), Some(Bound::Ext(_)));
     let mut value = v.child_by_field_name("value");
-    while let Some(x) = value {
+    while let Some(x) = value.map(|v| beneath(v, WRAPPERS)) {
         match x.kind() {
-            "await_expression" | "parenthesized_expression" | "as_expression" | "satisfies_expression" | "non_null_expression" => {
-                value = named_children(x).into_iter().next()
-            }
             "new_expression" => return x.child_by_field_name("constructor").map_or(false, package),
             // a chain of calls on what a package made: `new Hono().basePath("/api")`
             "call_expression" => match function_of(x) {
@@ -1904,7 +1902,7 @@ fn kept_as(c: TsNode, src: &[u8]) -> Option<String> {
     loop {
         let p = n.parent()?;
         match p.kind() {
-            "await_expression" | "parenthesized_expression" | "as_expression" | "non_null_expression" | "satisfies_expression" => n = p,
+            k if WRAPPERS.contains(&k) => n = p,
             _ if (CHOICES.chooses)(p, src) && matches!((CHOICES.part)(p, n, src), Part::Arm(_)) => n = p,
             "variable_declarator" if p.child_by_field_name("value").map(|v| v.id()) == Some(n.id()) => {
                 return p.child_by_field_name("name").filter(|x| x.kind() == "identifier").map(|x| text(x, src).to_string());
@@ -1976,7 +1974,20 @@ fn link_calls<'t>(
     let mut steps = Steps::new(body, &m.src, &CHOICES, &USES);
     let read = {
         let mut b = Body::new(m, modules, store, &n, body, returned, eval);
-        for c in b.sites.clone() {
+        // a loop binds its element once what it goes over is made, and before its body runs
+        let mut ran: Vec<((usize, u8), TsNode)> = b.sites.iter().map(|c| ((c.end_byte(), 0), *c)).collect();
+        ran.extend(
+            walk(body, &["for_in_statement"])
+                .into_iter()
+                .filter(|l| b.mine(*l) && l.child_by_field_name("operator").map_or(false, |o| text(o, &m.src) == "of"))
+                .filter_map(|l| l.child_by_field_name("right").map(|r| ((r.end_byte(), 1), l))),
+        );
+        ran.sort_by_key(|(k, _)| *k);
+        for (_, c) in ran {
+            if c.kind() == "for_in_statement" {
+                b.each(&mut steps, c);
+                continue;
+            }
             let (t, w) = (b.read.touches.len(), b.read.calls.len());
             b.call(&mut steps, c);
             steps.mark(c, b.read.touches[t..].iter_mut().chain(b.read.calls[w..].iter_mut().map(|(t, _)| t)));
@@ -2209,11 +2220,9 @@ impl<'a, 't> Body<'a, 't> {
     /// (`this.rows`, `bag.items`), or of a class it inherits from.
     fn holds_container(&self, v: TsNode) -> bool {
         let src = self.src;
+        let v = beneath(v, WRAPPERS);
         match v.kind() {
             "identifier" => self.containers.contains(text(v, src)),
-            "non_null_expression" | "parenthesized_expression" => {
-                named_children(v).into_iter().next().map_or(false, |x| self.holds_container(x))
-            }
             "member_expression" => {
                 let (Some(o), Some(field)) = (v.child_by_field_name("object"), v.child_by_field_name("property")) else { return false };
                 // the class of the value the field is read from: the body's own, a name's, a field's of the body's own
@@ -2291,7 +2300,35 @@ impl<'a, 't> Body<'a, 't> {
         for l in loops {
             let (Some(left), Some(right)) = (l.child_by_field_name("left"), l.child_by_field_name("right")) else { continue };
             let of = l.child_by_field_name("operator").map_or(false, |o| text(o, src) == "of");
-            let Some(ty) = written.get(text(right, src)).filter(|t| of && left.kind() == "identifier" && container_type(t, self.m)) else {
+            if !of || left.kind() != "identifier" {
+                continue;
+            }
+            // over a field of a value of the program's class (`g.nodes`): the class the field's type holds
+            if right.kind() == "member_expression" {
+                let (Some(obj), Some(prop)) = (right.child_by_field_name("object"), right.child_by_field_name("property")) else {
+                    continue;
+                };
+                let Some(owner) = self.locals.get(text(obj, src)).cloned() else { continue };
+                let types = self
+                    .store
+                    .classes
+                    .get(&owner)
+                    .and_then(|k| k.fields.iter().find(|(f, _)| f == text(prop, src)).map(|(_, t)| t.clone()));
+                if let Some(r) = types.unwrap_or_default().into_iter().find_map(|t| self.class(self.resolve(&t))) {
+                    self.locals.insert(text(left, src).to_string(), r);
+                }
+                continue;
+            }
+            // over a name of the body, or one its module declares (`const STATIONS: Station[]`), as its type is written
+            let declared = || {
+                walk(self.root, &["variable_declarator"])
+                    .into_iter()
+                    .filter(|v| module_level(*v, self.root, &self.m.bodies))
+                    .find(|v| v.child_by_field_name("name").map(|n| text(n, src)) == Some(text(right, src)))
+                    .and_then(|v| v.child_by_field_name("type"))
+                    .map(|t| text(t, src).trim_start_matches(':').trim().to_string())
+            };
+            let Some(ty) = written.get(text(right, src)).cloned().or_else(declared).filter(|t| container_type(t, self.m)) else {
                 continue;
             };
             let element = ty
@@ -2358,6 +2395,23 @@ impl<'a, 't> Body<'a, 't> {
         }
     }
 
+    /// A loop as the step it is: it takes what it goes over, and gives each element under the
+    /// name it binds (`for (const n of g.nodes)` takes `g` and gives `n`).
+    fn each(&mut self, steps: &mut Steps, l: TsNode<'t>) {
+        let (Some(left), Some(right)) = (l.child_by_field_name("left"), l.child_by_field_name("right")) else { return };
+        let names: Vec<String> = walk(left, &["identifier"]).into_iter().map(|i| text(i, self.src).to_string()).collect();
+        let hands = self.hands(&[Some(right)], &steps.kept);
+        let gives: Vec<Held> = names
+            .iter()
+            .filter_map(|n| match self.locals.get(n) {
+                Some(t) => Some(Held::new(t.clone(), n.clone())),
+                None => (!hands.is_empty()).then(|| Held::new(String::new(), n.clone())),
+            })
+            .collect();
+        // the step stands where what it goes over is written: a call there hands it what it gives, the loop's body does not
+        steps.op(right, &format!("for {} of {}", text(left, self.src), text(right, self.src)), hands, gives);
+    }
+
     /// What a call is handed: the value it is called on, its arguments, an element's attributes.
     fn hands(&self, parts: &[Option<TsNode>], kept: &HashSet<String>) -> Vec<Held> {
         let ty_of = |name: &str| self.locals.get(name).cloned().or_else(|| value_type(self.m, name, self.modules, &self.store.nodes));
@@ -2385,15 +2439,7 @@ impl<'a, 't> Body<'a, 't> {
     /// The values the body keeps of what a parse of the command line gives: the name it is kept
     /// by, or the names a pattern takes out of it (`const { values } = parseArgs(..)`).
     fn parsed_into(&self, c: TsNode) -> Vec<Held> {
-        let mut v = c;
-        while let Some(p) = v.parent().filter(|p| {
-            matches!(
-                p.kind(),
-                "await_expression" | "parenthesized_expression" | "as_expression" | "non_null_expression" | "satisfies_expression"
-            )
-        }) {
-            v = p;
-        }
+        let v = outermost(c, WRAPPERS);
         let pattern = v
             .parent()
             .filter(|d| d.kind() == "variable_declarator" && d.child_by_field_name("value").map(|x| x.id()) == Some(v.id()))
@@ -2444,10 +2490,7 @@ impl<'a, 't> Body<'a, 't> {
     /// which the compiler checks it against, makes a value of that type, as `new` does: a step to
     /// the type, handed what the literal is built from.
     fn literal(&self, steps: &mut Steps, c: TsNode<'t>) {
-        let mut v = c;
-        while let Some(p) = v.parent().filter(|p| p.kind() == "parenthesized_expression") {
-            v = p;
-        }
+        let v = outermost(c, WRAPPERS);
         let Some(d) =
             v.parent().filter(|d| d.kind() == "variable_declarator" && d.child_by_field_name("value").map(|x| x.id()) == Some(v.id()))
         else {
@@ -2488,14 +2531,13 @@ impl<'a, 't> Body<'a, 't> {
     }
 
     /// The class of the value a method is called on, typed however the body knows it: built with
-    /// `new`, or `super`, the class the body's own class extends.
+    /// `new`, or `super`, the class the body's own class extends. A cast names the class itself:
+    /// `(x as Store).f()` runs on a Store.
     fn receiver(&self, o: TsNode) -> Option<String> {
         let src = self.src;
-        let mut o = o;
-        while matches!(o.kind(), "parenthesized_expression" | "await_expression" | "non_null_expression") {
-            o = named_children(o).into_iter().next()?;
-        }
         match o.kind() {
+            "as_expression" => self.class(self.resolve(&type_head(named_children(o).into_iter().last()?, src))).filter(|r| self.own(r)),
+            k if WRAPPERS.contains(&k) => self.receiver(wrapped(o)?),
             "this" => self.cls.clone(),
             "super" => self.class(self.resolve(self.extends()?)).filter(|r| self.own(r)),
             "identifier" => {
@@ -2631,9 +2673,7 @@ impl<'a, 't> Body<'a, 't> {
             "member_expression" | "subscript_expression" => n.child_by_field_name("object"),
             "call_expression" => function_of(n),
             "new_expression" => n.child_by_field_name("constructor"),
-            "parenthesized_expression" | "await_expression" | "non_null_expression" | "as_expression" | "satisfies_expression" => {
-                named_children(n).into_iter().next()
-            }
+            k if WRAPPERS.contains(&k) => wrapped(n),
             // `a ?? b` is one of its operands, any other operator's value the language's own
             "binary_expression" if logical() => n.child_by_field_name("left"),
             "ternary_expression" => n.child_by_field_name("consequence"),
@@ -2677,8 +2717,13 @@ impl<'a, 't> Body<'a, 't> {
     }
 
     fn bucket_path(&self, parts: &[String]) -> Bucket {
-        let field = (parts.len() > 2 && parts[0] == "this").then(|| format!("this.{}", parts[1])).filter(|f| self.made.contains_key(f));
-        self.bucket(field.as_deref().unwrap_or(&parts[0]))
+        self.bucket(self.held_field(parts).as_deref().unwrap_or(&parts[0]))
+    }
+
+    /// The field of the class a call goes through, when it holds what a package made: `this.db` of
+    /// `this.db.prepare(..)`. A call on it is a call on the value the field holds.
+    fn held_field(&self, parts: &[String]) -> Option<String> {
+        (parts.len() > 2 && parts[0] == "this").then(|| format!("this.{}", parts[1])).filter(|f| self.made.contains_key(f))
     }
 
     /// What the name a call not followed starts from is bound to: in the body (a parameter, a
@@ -2741,9 +2786,7 @@ impl<'a, 't> Body<'a, 't> {
     /// touches what its facts name.
     fn crossed(&mut self, c: TsNode<'t>, parts: &[String]) {
         let (m, src) = (self.m, self.src);
-        // a call on a field of the class is a call on the value the field holds: `this.db.prepare`
-        let held = (parts.len() > 2 && parts[0] == "this").then(|| format!("this.{}", parts[1])).filter(|f| self.made.contains_key(f));
-        let (head, parts) = match held {
+        let (head, parts) = match self.held_field(parts) {
             Some(f) => (f, &parts[1..]),
             None => (parts[0].clone(), parts),
         };
@@ -2882,14 +2925,7 @@ fn function_of(c: TsNode) -> Option<TsNode> {
 /// Whether a callee is read where it stands rather than called: a function written where it is
 /// called (`(() => ..)()`), whose steps are the body's own, and `import(..)`, which binds a module.
 fn read_in_place(f: TsNode) -> bool {
-    let mut f = f;
-    while f.kind() == "parenthesized_expression" {
-        match named_children(f).into_iter().next() {
-            Some(x) => f = x,
-            None => return false,
-        }
-    }
-    matches!(f.kind(), "arrow_function" | "function_expression" | "function" | "import")
+    matches!(beneath(f, WRAPPERS).kind(), "arrow_function" | "function_expression" | "function" | "import")
 }
 
 /// The name of a call no name path reaches, as the code writes it: a method on a value written out
@@ -2903,11 +2939,7 @@ fn written_callee(f: TsNode, src: &[u8]) -> String {
 
 /// Whether what a call gives back is used: anything but a call standing as a statement.
 fn value_used(call: TsNode) -> bool {
-    let mut n = call;
-    while let Some(p) = n.parent().filter(|p| matches!(p.kind(), "await_expression" | "parenthesized_expression")) {
-        n = p;
-    }
-    n.parent().map_or(false, |p| p.kind() != "expression_statement")
+    outermost(call, WRAPPERS).parent().map_or(false, |p| p.kind() != "expression_statement")
 }
 
 /// The HTTP method of a request: `fetch`'s `init.method` (GET when it has none), or the verb
@@ -2934,7 +2966,7 @@ fn chain_root<'a>(n: TsNode, src: &'a [u8]) -> Option<&'a str> {
     match n.kind() {
         "identifier" | "this" => Some(text(n, src)),
         "member_expression" | "subscript_expression" => chain_root(n.child_by_field_name("object")?, src),
-        "non_null_expression" | "parenthesized_expression" => chain_root(named_children(n).into_iter().next()?, src),
+        k if WRAPPERS.contains(&k) => chain_root(wrapped(n)?, src),
         _ => None,
     }
 }
@@ -2970,9 +3002,7 @@ fn held_by<'a>(v: TsNode, src: &'a [u8]) -> Vec<&'a str> {
             .flatten()
             .flat_map(|x| held_by(x, src))
             .collect(),
-        "parenthesized_expression" | "as_expression" | "satisfies_expression" => {
-            named_children(v).into_iter().take(1).flat_map(|x| held_by(x, src)).collect()
-        }
+        k if WRAPPERS.contains(&k) => wrapped(v).into_iter().flat_map(|x| held_by(x, src)).collect(),
         _ => chain_root(v, src).into_iter().collect(),
     }
 }

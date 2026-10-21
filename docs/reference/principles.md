@@ -726,10 +726,9 @@ keeps none of them for the module around it. A request from one part to another 
 of the repository as a whole; `atlas check` reads each part alone.
 
 In Atlas, each reader and the modules below it depend on one another (`python.rs` calls into
-`python/paths.rs`, which calls back for `call_path`), as do `lib.rs`, whose `Options` every reader
-takes while its `analyze` calls them, `model` and `prophecy`, through the `Prophecy` a `Node`
-holds, and the CLI's `main.rs`, whose helpers its commands call back into. The reviewed list in
-`engine/tests/principles.rs` says why each stands.
+`python/paths.rs`, which calls back for `call_path`): a reader's own file is both its entry and the
+vocabulary its modules build on (#117). The reviewed list in `engine/tests/principles.rs` says why
+each stands.
 
 ## What a lens puts, it gets back.
 

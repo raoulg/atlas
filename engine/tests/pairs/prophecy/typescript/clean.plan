@@ -1,7 +1,7 @@
 # The sketch kept apart: `runStored` is a prophecy that supersedes `run`, declared and not built, so its route runs
 # nothing; its report is a string, no value of the code's.
 
-route clean.runStored
+route archive.runStored
 line entry > runStored call
 
 side entry left

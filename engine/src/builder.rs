@@ -113,7 +113,7 @@ pub struct GraphBuilder {
 impl GraphBuilder {
     pub fn add_node(&mut self, mut n: Node) {
         if n.prophecy.is_none() {
-            n.prophecy = crate::prophecy::Prophecy::among(&n.decorators);
+            n.prophecy = crate::model::Prophecy::among(&n.decorators);
         }
         self.nodes.insert(n.id.clone(), n);
     }
