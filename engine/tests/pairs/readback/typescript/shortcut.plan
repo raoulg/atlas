@@ -21,7 +21,7 @@ known #125 line _·db@cli.ts/Ledger.keep/Database() > cli.ts/Ledger.keep value  
 line cli.ts/Ledger.keep/all > _·stored@cli.ts/Ledger.keep/all value
 known #101 line _·stored@cli.ts/Ledger.keep/all > cli.ts/Ledger.keep value     # keep maps it and hands it back
 line cli.ts/Ledger.keep > SQLite(notes) own
-known #129 line cli.ts/Ledger.keep > cli.ts back                # the notes read back, a string[], go back (A)
+line cli.ts/Ledger.keep > cli.ts back  # the notes read back, a string[], go back
 line cli.ts > Screen own
 
 home Ledger@cli.ts/Ledger() cli.ts
@@ -33,7 +33,6 @@ side entry left
 side SQLite(notes) right
 side Screen right
 
-# A: a step that also changes what it runs on hands its result of no type of the code's back to nothing.
 # B: a call into a library whose result the body does not name, and which changes nothing, is drawn as a step:
 #    `stored.map(..)` is returned unnamed, so what it gives goes into keep's own result
 known #125 extra step cli.ts/Ledger.keep/stored.map

@@ -101,7 +101,7 @@ known #127 line Board·other@main/Board.take_victim > main/merge_scores/update v
 known #127 line Board·board@main/merge_scores/update > main/merge_scores value
 known #127 extra line Board·other@main/Board()#2 > main/Board.take_from/clear value
 known #127 extra line Board·board@main/reset > main/Board.take_from value
-known #127 extra line Board·other@main/Board.take_from#2 > main/Board.take_victim/clear value
+known #127 extra line Board·other@main/Board.take_from > main/Board.take_victim/clear value
 known #127 extra line Board·board@main/reset > main/merge_scores/update value
 
 # A changed argument is not the caller's value at a new moment: it is named by the callee's parameter (`take_from`
@@ -137,16 +137,12 @@ known #129 extra home list@main/extend main
 
 # A method that changes its receiver hands it on twice: unnamed from its arrow's change, and named; the next step takes
 # the second
-known #129 extra line main/Board.take_from > Board·other@main/Board.take_from#2 value
-known #129 extra home Board·other@main/Board.take_from#2 main
-known #129 extra line main/Board.take_victim > Board·other@main/Board.take_victim#2 value
-known #129 extra line Board·other@main/Board.take_victim#2 > main/merge_scores value
-known #129 extra home Board·other@main/Board.take_victim#2 main
+known #129 extra line Board·other@main/Board.take_victim > main/merge_scores value
 
 # A step that changes an input loses the result of no type it gives back: no `back`, and the caller takes the changed
 # input instead
-known #129 line main/rename > main back
-known #129 line main/extend > main back
+line main/rename > main back
+line main/extend > main back
 known #129 extra line Board·other@main/rename > main value
 
 # The own arrow takes a value its body only hands to a step inside it: the Cell built into `[Cell()]` for `Board()`
@@ -160,3 +156,7 @@ known #101 line list·jobs@main/queue > main value
 # `cell.marked = True` is the body's own use of each cell the loop gives; the own arrow takes the board the loop goes
 # over instead
 known #101 line Cell·cell@main/mark_all/for cell in board.cells > main/mark_all value
+
+# a result the caller drops goes back to it: the reader does not say the call is a statement of its own
+known #134 extra line main/Board.take_from > main back
+known #134 extra line main/Board.take_victim > main back
