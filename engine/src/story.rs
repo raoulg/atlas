@@ -35,7 +35,8 @@ pub fn route(g: &Graph, entry: &str, depth: usize) -> Option<String> {
     }
     out.push('\n');
     let mut shown: HashMap<String, String> = HashMap::from([(s.seen(start, start, &path), "the entry".to_string())]);
-    s.walk(start, "", depth.max(1), &mut shown, &mut out, &path);
+    let alts = s.bodies.get(start).map(|b| b.alts.clone()).unwrap_or_default();
+    s.walk(start, "", depth.max(1), &mut shown, &mut out, &path, &alts);
     Some(out)
 }
 
@@ -51,27 +52,29 @@ pub fn choices(g: &Graph, entry: &str) -> Option<String> {
     let n = s.nodes[start];
     let kind = n.entry.as_ref().map(|e| format!("{} · {}", kind_label(e.kind), usage(e))).unwrap_or_else(|| s.name(start, ""));
     let mut out = format!("{kind}\n");
-    let (mut seen, mut queue) = (HashSet::new(), std::collections::VecDeque::from([(start.to_string(), String::new())]));
+    let (mut seen, mut calls, mut queue) = (HashSet::new(), HashSet::new(), std::collections::VecDeque::from([Step::of(start)]));
     let mut found = 0;
-    while let Some((id, on)) = queue.pop_front() {
-        let k = flow::key(&id, &on);
-        let Some(b) = s.bodies.get(&k).filter(|_| seen.insert(k.clone())) else { continue };
-        let sites = s.nodes.get(id.as_str()).map(|n| n.sites.as_slice()).unwrap_or(&[]);
+    while let Some(call) = queue.pop_front() {
+        let k = flow::key(&call.to, &call.on);
+        let Some(b) = s.bodies.get(&k).filter(|_| calls.insert((k.clone(), call.named))) else { continue };
+        // a body's choices once, however many calls run it; what each call may run instead
+        let items = if seen.insert(k) { b.items.as_slice() } else { &[] };
+        let sites = s.nodes.get(call.to.as_str()).map(|n| n.sites.as_slice()).unwrap_or(&[]);
         let named = |st: &Step| {
             if s.nodes.contains_key(st.to.as_str()) {
-                s.name(&st.to, &st.on)
+                s.step_name(st)
             } else {
                 st.to.trim_start_matches("op:").to_string()
             }
         };
         let touched = |st: &Step| s.nodes.get(st.to.as_str()).map(|n| s.effects(n, None)).unwrap_or_default();
-        for item in &b.items {
+        for item in items {
             let steps: Vec<&Step> = match item {
                 Item::Step(st) => vec![st],
                 Item::Choice { members, when, .. } => {
                     found += 1;
                     let line = members.iter().filter_map(|m| m.step.site.and_then(|i| sites.get(i))).map(|s| s.line).min().unwrap_or(0);
-                    out.push_str(&format!("\n{} · line {line}\n", s.name(&id, &on)));
+                    out.push_str(&format!("\n{} · line {line}\n", s.step_name(&call)));
                     let mut branches: Vec<usize> = members.iter().map(|m| m.branch).collect();
                     branches.sort_unstable();
                     branches.dedup();
@@ -96,9 +99,9 @@ pub fn choices(g: &Graph, entry: &str) -> Option<String> {
                     members.iter().map(|m| &m.step).collect()
                 }
             };
-            queue.extend(steps.into_iter().filter(|st| s.nodes.contains_key(st.to.as_str())).map(|st| (st.to.clone(), st.on.clone())));
+            queue.extend(steps.into_iter().filter(|st| s.nodes.contains_key(st.to.as_str())).cloned());
         }
-        queue.extend(b.alts.iter().map(|o| (o.clone(), String::new())));
+        queue.extend(call.alts(&s.bodies).iter().map(|o| Step::of(o)));
     }
     if found == 0 {
         out.push_str("\nNo choice on this route: every step runs whenever the route does.\n");
@@ -204,9 +207,19 @@ impl<'g> Story<'g> {
     }
 
     /// The steps of the body at `body` (a function, or a function on a class), each choice's
-    /// branches lettered, then the overrides the call may run instead. `path` is the functions on the
-    /// calls that lead into the body.
-    fn walk(&self, body: &str, prefix: &str, depth: usize, shown: &mut HashMap<String, String>, out: &mut String, path: &[String]) {
+    /// branches lettered, then `alts`, what the call into it may run instead. `path` is the
+    /// functions on the calls that lead into the body.
+    #[allow(clippy::too_many_arguments)]
+    fn walk(
+        &self,
+        body: &str,
+        prefix: &str,
+        depth: usize,
+        shown: &mut HashMap<String, String>,
+        out: &mut String,
+        path: &[String],
+        alts: &[String],
+    ) {
         let Some(b) = self.bodies.get(body) else { return };
         let holder = body.split('@').next().unwrap_or(body);
         let sites = self.nodes.get(holder).map(|n| n.sites.as_slice()).unwrap_or(&[]);
@@ -249,9 +262,8 @@ impl<'g> Story<'g> {
                 }
             }
         }
-        for (i, o) in b.alts.iter().enumerate() {
-            let st = Step { to: o.clone(), on: String::new(), site: None };
-            self.step(&st, None, &format!("{prefix}{}", letter(i)), "", level, depth, shown, out, path);
+        for (i, o) in alts.iter().enumerate() {
+            self.step(&Step::of(o), None, &format!("{prefix}{}", letter(i)), "", level, depth, shown, out, path);
         }
     }
 
@@ -296,24 +308,24 @@ impl<'g> Story<'g> {
         let inner: Vec<String> = path.iter().cloned().chain([st.to.clone()]).collect();
         let seen = self.seen(&k, &st.to, &inner);
         if let Some(at) = shown.get(&seen).filter(|_| body.is_some()) {
-            out.push_str(&format!("{indent}{num}  {}  → see {at}{when}\n", self.name(&st.to, &st.on)));
+            out.push_str(&format!("{indent}{num}  {}  → see {at}{when}\n", self.step_name(st)));
             return;
         }
         shown.insert(seen, num.to_string());
-        let mut line = format!("{indent}{num}  {}{}", self.name(&st.to, &st.on), self.signature(n));
+        let mut line = format!("{indent}{num}  {}{}", self.step_name(st), self.signature(n));
         let effects = self.effects(n, Some(&inner));
         if !effects.is_empty() {
             line.push_str(&format!("   ·   {effects}"));
         }
-        let alts = body.map_or(0, |b| b.alts.len());
-        if alts > 0 {
-            line.push_str(&format!("   ·   one of {alts}"));
+        let alts = st.alts(&self.bodies);
+        if !alts.is_empty() {
+            line.push_str(&format!("   ·   one of {}", alts.len()));
         }
         line.push_str(&when);
         out.push_str(&line);
         out.push('\n');
         if level + 1 < depth {
-            self.walk(&k, num, depth, shown, out, &inner);
+            self.walk(&k, num, depth, shown, out, &inner, alts);
         }
     }
 
@@ -344,6 +356,12 @@ impl<'g> Story<'g> {
         on.sort_unstable();
         on.dedup();
         format!("{k}|{}", on.join(","))
+    }
+
+    /// A step by `name`: a method its call names (`Cached.read(self)`) by its own class, whatever
+    /// the class of the value it runs on.
+    fn step_name(&self, st: &Step) -> String {
+        self.name(&st.to, if st.named { "" } else { &st.on })
     }
 
     /// `Graph()` for a type built in place, `BasePlot` for its constructor (the signature

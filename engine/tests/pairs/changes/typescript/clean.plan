@@ -1,0 +1,90 @@
+# A ledger changes through a method of its own: `ledger.add(..)` takes the ledger as it was and makes it at its own
+# moment, and inside it `this.rows.push(e)` runs on the ledger's rows and makes the ledger anew. `refiled` copies the
+# expense it is handed and hands back the copy; `merged` builds a new Ledger from the rows of both; `remove` sends a
+# delete through the client the route is handed, and `main` drops what it gives. `counted` copies the Map (a library
+# operation whose result it names) and sets a key of the copy. The route's parameter `api` is a value from its start;
+# an object literal no step makes is a value from beyond.
+route ledger.ledger.main
+step main/Ledger()
+step main/refiled
+step main/Ledger.add
+step main/Ledger.add/this.rows.push
+step main/remove
+step main/Ledger()#2
+step main/Ledger.merged
+step main/Ledger.merged/Ledger()
+step main/withLine
+step main/counted
+step main/counted/set
+
+line entry > main call
+line Api·api > main value
+line main/Ledger() > Ledger·ledger@main/Ledger() value
+line Expense > main/refiled value
+line main/refiled > Expense@main/refiled value
+line Expense@main/refiled > main/Ledger.add/this.rows.push value
+line main/Ledger.add > Ledger·ledger@main/Ledger.add value
+line main/Ledger()#2 > Ledger@main/Ledger()#2 value
+line Ledger·ledger@main/Ledger.add > main/Ledger.merged value              # merged reads this.rows itself
+line Ledger@main/Ledger()#2 > main/Ledger.merged value                     # and other.rows
+line main/Ledger.merged/Ledger() > Ledger·out@main/Ledger.merged/Ledger() value
+line Ledger·out@main/Ledger.merged/Ledger() > main/Ledger.merged value
+line main/Ledger.merged > Ledger@main/Ledger.merged value
+line Ledger@main/Ledger.merged > main value                                # main counts its rows
+line main/withLine > main back
+line main/counted/set > _·out@main/counted/set value
+line main/counted > main back
+
+home Api·api main
+home Ledger·ledger@main/Ledger() main
+home Expense main
+home Expense@main/refiled main
+home Ledger·ledger@main/Ledger.add main
+home Ledger@main/Ledger()#2 main
+home Ledger·out@main/Ledger.merged/Ledger() main/Ledger.merged
+home Ledger@main/Ledger.merged main
+home _·out@main/counted/set main/counted
+
+side entry left
+
+# An operation that changes a part of the receiver (`this.rows.push(e)`) takes what it is handed but neither runs on
+# nor makes anew the receiver, which ends at the method's own arrow
+known #129 line Ledger·ledger@main/Ledger() > main/Ledger.add/this.rows.push value
+known #129 line main/Ledger.add/this.rows.push > Ledger·this@main/Ledger.add/this.rows.push value
+known #129 line Ledger·this@main/Ledger.add/this.rows.push > main/Ledger.add value
+known #129 home Ledger·this@main/Ledger.add/this.rows.push main/Ledger.add
+known #129 extra line Ledger·ledger@main/Ledger() > main/Ledger.add value
+
+# A call on a field of a network client's type (`api.http.delete(..)`, `http: AxiosInstance`) reaches no place
+known #136 line main/remove > Network(/items/a) own
+known #136 side Network(/items/a) right
+
+# A callee's parameter is not bound to what the call is handed: `remove`'s own arrow takes an Api from beyond, and the
+# operation inside it main's `api` by its name
+known #127 line Api·api > main/remove value
+known #127 extra line Api > main/remove value
+known #127 extra home Api main
+
+# A library operation whose result the body does not name is a step (`api.http.delete(..)` returned, `out.get(k)` in
+# `?? 0`, which then stands as a choice); one whose result it names is none (`const out = new Map(m)`)
+known #125 extra step main/remove/api.http.delete
+known #125 extra line Api·api > main/remove/api.http.delete value
+known #130 extra choice main/counted/?1
+known #125 extra step main/counted/?1/out.get
+known #125 extra line main/counted/?1/out.get > _@main/counted/?1 value
+known #125 extra line _@main/counted/?1 > main/counted/set value
+known #125 extra home _@main/counted/?1 main/counted
+known #125 step main/counted/Map()
+known #125 line main/counted/Map() > _·out@main/counted/Map() value
+known #125 line _·out@main/counted/Map() > main/counted/set value
+known #125 home _·out@main/counted/Map() main/counted
+
+# A result the caller drops (`void remove(..)`) goes back to it
+known #134 extra line main/remove > main back
+
+# The own arrow takes a value its body only hands to a step inside it: the expense `refiled` gives, handed to `add`
+known #126 extra line Expense@main/refiled > main/Ledger.add value
+known #126 extra line Expense@main/refiled > main value
+
+# `counted` hands back the Map its `set` made anew
+known #101 line _·out@main/counted/set > main/counted value

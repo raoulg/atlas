@@ -1181,3 +1181,30 @@ fn diamond_the_name_of_a_feed_s_file_is_its_url() {
         assert!(read.iter().any(|t| t.what == "{cache}/{url}" && t.by.contains(&headlines)), "{side}: {read:?}");
     }
 }
+
+/// One side of the cooperative pair (`tests/pairs/cooperative/typescript`): a feed that extends a
+/// cached source, whose every `read` hands on to the one above it with `super.read()`; the
+/// shortcut's feed hands on with `Source.prototype.read.call(this)`.
+fn cooperative(side: &str) -> Graph {
+    analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/cooperative/typescript").join(side), &Options::default())
+        .expect("reads")
+}
+
+/// `super.read()` runs, on the body's own receiver, the next `read` above the class it is written
+/// in, and a call through a class's prototype (`Source.prototype.read.call(this)`) runs that class's
+/// method: neither may run an override in its place, as Python's `super().read()` and
+/// `Source.read(self)` may not. The clean feed's `read` runs `Cached.read`, which reads the store
+/// before it asks the network; the shortcut's runs `Source.read` and asks the network alone.
+#[test]
+fn cooperative_super_and_a_call_through_a_prototype_run_one_method() {
+    for (side, next) in [("clean", "Cached"), ("shortcut", "Source")] {
+        let g = cooperative(side);
+        let bodies = atlas_engine::flow::bodies(&g);
+        let read = &bodies[&format!("{}.sources.Feed.read", g.root)];
+        let ran: Vec<(&str, bool)> = read.steps().iter().filter(|s| !s.to.starts_with("op:")).map(|s| (s.to.as_str(), s.named)).collect();
+        assert_eq!(ran, [(format!("{}.sources.{next}.read", g.root).as_str(), true)], "{side}");
+        let r = atlas_engine::story::route(&g, "headlines", 4).expect("a route");
+        assert!(!r.contains("one of") && !r.contains("prototype"), "{side}: {r}");
+        assert_eq!(r.contains("Store.get(key)"), side == "clean", "{side}: {r}");
+    }
+}

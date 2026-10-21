@@ -1,0 +1,49 @@
+# The command line with the shortcut: the sum `fit` makes is handed on unopened to `line` and to `points`, two takers
+# of one value, each of which chooses again which variant it holds.
+
+route fits.cli.main
+step main/fit
+choice main/fit/?1
+step main/fit/?1/Failed()
+known #130 step main/fit/?1/Fit()                                  # what follows the early return is the other arm
+step main/line
+step main/points
+
+line entry > main call
+line main/fit/?1/Failed() > Failed@main/fit/?1 value
+known #130 line main/fit/?1/Fit() > Fit@main/fit/?1 value
+line Failed@main/fit/?1 > main/fit value
+known #130 line Fit@main/fit/?1 > main/fit value
+known #132 line main/fit > Fit | Failed·result@main/fit value        # fit gives one value, the sum, held by `result`
+known #132 line Fit | Failed·result@main/fit > main/line value       # the same sum, however `points` spells it
+known #132 line Fit | Failed·result@main/fit > main/points value
+line main/line > main back                                        # the line, a str, printed by main
+line main/points > main back                                      # the points, a list of floats, printed by main
+line main > Screen own
+
+home Failed@main/fit/?1 main/fit
+known #130 home Fit@main/fit/?1 main/fit
+known #132 home Fit | Failed·result@main/fit main
+
+side entry left
+side Screen right
+
+# the early return is read as a choice of one arm, and what follows it as a step after the choice
+known #130 extra step main/fit/Fit()
+known #130 extra line main/fit/Fit() > Fit@main/fit/Fit() value
+known #130 extra line Fit@main/fit/Fit() > main/fit value
+known #130 extra home Fit@main/fit/Fit() main/fit
+
+# fit hands on the sum without the name that holds it, and beside it each variant under that name
+known #132 extra line main/fit > Fit | Failed@main/fit value
+known #132 extra line Fit | Failed@main/fit > main/line value
+known #132 extra line Fit | Failed@main/fit > main/points value
+known #132 extra home Fit | Failed@main/fit main
+known #132 extra line main/fit > Failed·result@main/fit value
+known #132 extra line main/fit > Fit·result@main/fit value
+known #132 extra line Failed·result@main/fit > main/line value
+known #132 extra line Failed·result@main/fit > main/points value
+known #132 extra line Fit·result@main/fit > main/line value
+known #132 extra line Fit·result@main/fit > main/points value
+known #132 extra home Failed·result@main/fit main
+known #132 extra home Fit·result@main/fit main

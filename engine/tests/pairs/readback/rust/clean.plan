@@ -14,10 +14,11 @@ line main/Ledger() > Ledger·ledger@main/Ledger() value
 line Ledger·ledger@main/Ledger() > main/Ledger.keep value
 line main/Ledger.keep > Ledger·ledger@main/Ledger.keep value     # `&mut self`: keep changes the ledger
 line main/Ledger.keep/open > _·con@main/Ledger.keep/open value
+known #128 line Ledger·ledger@main/Ledger() > main/Ledger.keep/open value  # K
 line _·con@main/Ledger.keep/open > main/Ledger.keep/query_row value
-known #101 line _·con@main/Ledger.keep/open > main/Ledger.keep value          # keep's own `con.execute` calls
+known #101 line _·con@main/Ledger.keep/open > main/Ledger.keep value  # its own execute
 line main/Ledger.keep/query_row > _·stored@main/Ledger.keep/query_row value
-known #101 line _·stored@main/Ledger.keep/query_row > main/Ledger.keep value  # keep checks the count itself
+known #101 line _·stored@main/Ledger.keep/query_row > main/Ledger.keep value  # the check
 line main/Ledger.keep > SQLite(notes) own
 
 home Ledger·ledger@main/Ledger() main
@@ -29,3 +30,5 @@ side entry left
 side SQLite(notes) right
 
 # #101: a value made in the body and used by the body's own calls has no taker
+# K: a value handed through a field reaches no step inside: `Connection::open(&self.path)` hands `self` (#121,
+#    decision 1, cause 3: the reader's `held_in` skips `self` even inside an argument)

@@ -340,7 +340,10 @@ value no step makes is its type from beyond; two of one kind that one step takes
 `report(c: Circle, q: Square)`) are two values, each by the name that holds it, also once their
 family closes them into one box, and a value a step made keeps its name in its moment and in its
 family's frame. A route's parameters are such values, there at the route's start: its own arrow
-takes them by their names, and a step handed one by its name takes the same value. A closed family holds its kinds (a subclass stands in its base
+takes them by their names, and a step handed one by its name takes the same value. The route of an
+exported class is its doors, its public methods, with no order between them: each runs on the
+caller's instance, one value of the class from beyond (no name, no moment), and what the constructor
+door builds goes back to the caller. A closed family holds its kinds (a subclass stands in its base
 until the family is opened); a part of a type is structure of its owner, a box of its own in the
 owner's frame, and the values of the part's type stand on their own (#39).
 **Where.** `plan`, `imageOf` and `refines` in `viewer/plan.js`, the camera in `viewer/index.html`;
@@ -365,7 +368,17 @@ open:
 - a step's own arrow is its witness at its border: its signature and its own touches, the lines that
   cross its frame. An opened step draws it as a point on the frame's right edge, not as a step beside
   its steps: a value its call is handed crosses the frame to the step inside that takes it, and the
-  point keeps what the body itself takes and what it gives back, at the step's moment.
+  point keeps what the body itself takes and what it gives back, at the step's moment. A call is
+  handed the values the names in its arguments hold: `f(x.name)` is handed `x`, since the projection
+  `.name` is no occurrence but glued into the call, whose arrow is `f ∘ π_name` with domain `X`; a
+  nested call that is a step of its own takes its names itself. A library's operation that is a step
+  carries the value it gives; what it touches at a place stays its caller's own touch, so naming its
+  result changes no line to the place. A projection bound to a name first is still the projection
+  (`width = settings.width; f(width)` hands `settings`), and a change made through one changes its
+  owner, a lens's put;
+- a step that can fail has the codomain `T + E`: the error is a value its constructor makes in the arm
+  that raises it, the step's border hands it on with its result, and a call that does not catch it
+  hands it on to its own caller. Python's propagation and Rust's `?` are one form, no choice.
 
 What the reader has open is the map `q`, nothing else: an occurrence goes to its outermost closed
 ancestor (or to itself), a type to the box its family stands in (`placeOfType`), a world place to its
@@ -500,9 +513,16 @@ class's order, and building it runs the first initializer along it: what buildin
 what a call of the class hands its arguments to (`super(..)` in a constructor hands them to the
 one its base runs). The picture's step, the paths a call completes and the rules' comparison read
 the same order: in a diamond `D(B, C)` over `A`, a `D` runs the `f` of `C` before the `f` of `A`
-that `B` inherits, and `D(..)` runs the initializer of `C` where `D` and `B` have none.
+that `B` inherits, and `D(..)` runs the initializer of `C` where `D` and `B` have none. A call
+through a class (`C.f(x)`, `C.prototype.f.call(x)`) runs the `f` along `C`'s order, on the value it
+is handed first, and no override of it. A `super()` call written in `K` runs the next `f` after `K`
+along the order of the value's class, not of `K`: in `D(B, C)`, a `super().f()` in `B` runs `C.f` on
+a `D`. Where the value's class is not known, it may be `K` or any class below, and the call runs
+the next `f` after `K` along each of their orders: one of them. A call by name may run any override
+below the method it reaches; these two run the one their call names.
 **Where.** `model::linearization`, `model::initializer_along`; `principles.rs` (`Index::mro`),
-`builder.rs` (`family`, `method_of`, `initializer_of`), `flow.rs` (`method_on`, `built_from`).
+`builder.rs` (`family`, `method_of`, `initializer_of`), `flow.rs` (`method_on`, `method_after`,
+`built_from`, `Step::named`).
 
 ### Signatures say the arrow
 **What.** A function's type is its domain and its codomain.

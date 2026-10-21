@@ -1,0 +1,109 @@
+# A change to a value is a step that makes it anew: `board.mark_all()` and `board.reset()` change the board they are
+# called on, so each takes the board as it was and makes it at its own moment (`T × A → T`, mathematics.md, "Signatures
+# say the arrow"); inside `reset`, `self.cells.clear()` and `self.scores.clear()` are such steps on the board's parts.
+# `renamed` changes no input: it copies the board (`copy.copy`, a library operation whose result it names) and renames
+# the copy. `merged` is called on that copy with the board, and `Board()` in it reads the fields of both. The lists and
+# dicts are of no type of the code's: what `with_tag` gives goes into `tally`, what `tally` gives into `counted`, and
+# what `counted`, `extended` and `queued` give goes back to `main`.
+route board.core.main
+step main/Cell()
+step main/Board()
+step main/Board.mark_all
+step main/Board.mark_all/for cell in self.cells
+step main/Board.reset
+step main/renamed
+step main/Board.merged
+step main/Board.merged/Board()
+step main/with_tag
+step main/tally
+step main/counted
+step main/extended
+step main/queued
+
+line entry > main call
+line main/Cell() > Cell@main/Cell() value
+line Cell@main/Cell() > main/Board() value
+line main/Board() > Board·board@main/Board() value
+line main/Board.mark_all/for cell in self.cells > Cell·cell@main/Board.mark_all/for cell in self.cells value
+line main/Board.mark_all > Board·board@main/Board.mark_all value
+line main/Board.reset > Board·board@main/Board.reset value
+line main/renamed > Board@main/renamed value
+line Board@main/renamed > main/Board.merged/Board() value                  # self, read by Board() in merged
+line main/Board.merged/Board() > Board@main/Board.merged/Board() value
+line Board@main/Board.merged/Board() > main/Board.merged value             # merged hands back what its body made
+line main/Board.merged > Board·other@main/Board.merged value
+line Board·other@main/Board.merged > main value                            # main counts the cells of other
+line main/with_tag > _@main/with_tag value
+line _@main/with_tag > main/tally value
+line main/tally > _@main/tally value
+line _@main/tally > main/counted value
+line main/counted > main back
+line main/extended > main back
+line main/queued > main back
+
+home Cell@main/Cell() main
+home Board·board@main/Board() main
+home Board·board@main/Board.mark_all main
+home Cell·cell@main/Board.mark_all/for cell in self.cells main/Board.mark_all
+home Board·board@main/Board.reset main
+home Board@main/renamed main
+home Board@main/Board.merged/Board() main/Board.merged
+home Board·other@main/Board.merged main
+home _@main/with_tag main
+home _@main/tally main
+
+side entry left
+
+# A library operation that changes the value it runs on, or whose result the body names, is a step; in Python it is
+# none on a part of `self`, on a local list itself, or where the result is named (it is one on a parameter's part,
+# `board.cells.clear()`, on the shortcut side)
+known #125 step main/Board.reset/clear
+known #125 step main/Board.reset/clear#2
+known #125 step main/renamed/copy
+known #125 step main/extended/append
+known #125 step main/queued/list
+known #125 line Board·board@main/Board.mark_all > main/Board.reset/clear value
+known #125 line main/Board.reset/clear > Board·self@main/Board.reset/clear value
+known #125 line Board·self@main/Board.reset/clear > main/Board.reset/clear#2 value
+known #125 line main/Board.reset/clear#2 > Board·self@main/Board.reset/clear#2 value
+known #125 line Board·self@main/Board.reset/clear#2 > main/Board.reset value
+known #125 line Board·board@main/Board.reset > main/renamed/copy value
+known #125 line main/renamed/copy > Board·board@main/renamed/copy value
+known #125 line Board·board@main/renamed/copy > main/renamed value
+known #125 line main/extended/append > list·xs@main/extended/append value
+known #125 line list·xs@main/extended/append > main/extended value
+known #125 line main/queued/list > list·jobs@main/queued/list value
+known #125 line list·jobs@main/queued/list > main/queued value
+known #125 home Board·self@main/Board.reset/clear main/Board.reset
+known #125 home Board·self@main/Board.reset/clear#2 main/Board.reset
+known #125 home Board·board@main/renamed/copy main/renamed
+known #125 home list·xs@main/extended/append main/extended
+known #125 home list·jobs@main/queued/list main/queued
+
+# A callee's parameter is bound to the caller's value of that name, not to what the call is handed: `merged`'s `other`
+# (main's board) resolves to main's `other`, the board `merged` itself makes, and the board handed is taken by nothing
+known #127 line Board·board@main/Board.reset > main/Board.merged/Board() value
+
+# A method that changes its receiver hands it on twice: unnamed from its arrow's change, and named; the next step takes
+# the second
+known #129 extra line main/Board.mark_all > Board·board@main/Board.mark_all#2 value
+known #129 extra line Board·board@main/Board.mark_all#2 > main/Board.reset value
+known #129 extra home Board·board@main/Board.mark_all#2 main
+known #129 extra line main/Board.reset > Board·board@main/Board.reset#2 value
+known #129 extra line Board·board@main/Board.reset#2 > main/renamed value
+known #129 extra home Board·board@main/Board.reset#2 main
+
+# The own arrow takes a value its body only hands to a step inside it: the Cell built into `[Cell()]` for `Board()`, the
+# receiver of `merged` whose fields go into `Board(..)`
+known #126 extra line Cell@main/Cell() > main value
+known #126 extra line Board@main/renamed > main/Board.merged value
+
+# A result of no type of the code's that goes into the call around it also goes back to the step that called it
+known #134 extra line main/with_tag > main back
+known #134 extra line main/tally > main back
+
+# The loop over `self.cells` goes over the board the method runs on, and `cell.marked = True` is the body's own use of
+# each cell: the board reaches the loop through `self` (#128); the own arrow takes it instead (#126)
+known #128 line Board·board@main/Board() > main/Board.mark_all/for cell in self.cells value
+known #101 line Cell·cell@main/Board.mark_all/for cell in self.cells > main/Board.mark_all value
+known #126 extra line Board·board@main/Board() > main/Board.mark_all value

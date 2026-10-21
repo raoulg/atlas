@@ -703,13 +703,40 @@ fn made_from(ix: &Ix, body: &Body) -> Vec<String> {
 /// One step of a body as a route runs it: the function it reaches, or a library's operation
 /// (`op:to_numpy`); the class of the value it runs on, when the call says; and the call in the
 /// body's `sites` it is, when the body lists its calls.
-#[derive(Serialize, Clone, Debug, PartialEq)]
+#[derive(Serialize, Clone, Debug, PartialEq, Default)]
 pub struct Step {
     pub to: String,
     #[serde(skip_serializing_if = "String::is_empty")]
     pub on: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub site: Option<usize>,
+    /// The call says which method it runs: through a class (`Cached.read(self)`), or through
+    /// `super()` on a value whose class is known. No override of it runs in its place, and it is
+    /// named by its own class, not by the class of the value.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub named: bool,
+    /// What a `super()` call may run in place of `to` where the class of the value is not known:
+    /// the next method after the class it is written in, along the order of each class the value
+    /// may be.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub instead: Vec<String>,
+}
+
+impl Step {
+    /// A step that runs `to` as a call of it by name does.
+    pub fn of(to: &str) -> Self {
+        Step { to: to.to_string(), ..Default::default() }
+    }
+
+    /// What the call may run in place of `to`: what its call says, or, for a method called by
+    /// name on a value whose class is not known, the overrides `bodies` gives its body.
+    pub fn alts<'b>(&'b self, bodies: &'b BTreeMap<String, Body>) -> &'b [String] {
+        match bodies.get(&self.to) {
+            _ if self.named => &self.instead,
+            Some(b) if self.on.is_empty() => &b.alts,
+            _ => &[],
+        }
+    }
 }
 
 /// A step that is one branch of a choice.
@@ -737,9 +764,9 @@ pub enum Item {
     },
 }
 
-/// What running a function means, on a value of a known class or not: the overrides a call may
-/// run instead (a call to `Language.parse` runs `Python.parse` or `Rust.parse`, unless the class
-/// is known), and its own steps.
+/// What running a function means, on a value of a known class or not: the overrides a call of it
+/// by name may run instead (a call to `Language.parse` runs `Python.parse` or `Rust.parse`, unless
+/// the class is known; `Step::alts`), and its own steps.
 #[derive(Serialize, Clone, Debug, Default, PartialEq)]
 pub struct Body {
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -805,15 +832,17 @@ impl<'g> Ix<'g> {
     /// the method's own.
     fn overrides(&self, n: &Node) -> Vec<String> {
         let Some(cls) = n.cls.as_deref() else { return vec![] };
+        self.below(cls).into_iter().map(|c| format!("{c}.{}", n.name)).filter(|m| self.nodes.contains_key(m.as_str())).collect()
+    }
+
+    /// The classes below `cls`, each once, nearest first along each line of descent.
+    fn below(&self, cls: &str) -> Vec<String> {
         let (mut out, mut stack, mut seen) = (vec![], vec![cls.to_string()], HashSet::from([cls.to_string()]));
         while let Some(c) = stack.pop() {
             for e in self.into.get(c.as_str()).into_iter().flatten().filter(|e| e.kind == EdgeKind::Inherits) {
                 if seen.insert(e.src.clone()) {
                     stack.push(e.src.clone());
-                    let m = format!("{}.{}", e.src, n.name);
-                    if self.nodes.contains_key(m.as_str()) {
-                        out.push(m);
-                    }
+                    out.push(e.src.clone());
                 }
             }
         }
@@ -824,6 +853,17 @@ impl<'g> Ix<'g> {
     /// order that defines it, its class's own before a base's.
     fn method_on(&self, on: &str, name: &str) -> Option<String> {
         self.mro(on).into_iter().map(|c| format!("{c}.{name}")).find(|m| self.nodes.contains_key(m.as_str()))
+    }
+
+    /// The method a `super()` call written in class `after` runs for `name` on a value of class
+    /// `on`: the first along `on`'s method resolution order after `after` that defines it.
+    fn method_after(&self, on: &str, after: &str, name: &str) -> Option<String> {
+        self.mro(on)
+            .into_iter()
+            .skip_while(|c| *c != after)
+            .skip(1)
+            .map(|c| format!("{c}.{name}"))
+            .find(|m| self.nodes.contains_key(m.as_str()))
     }
 
     /// The method resolution order along `inherits` (`model::linearization`): the class, then
@@ -876,8 +916,10 @@ fn grouped(steps: Vec<(Step, Vec<(u32, u32)>)>, whens: &[(u32, u32, String)]) ->
 }
 
 /// What a function runs on a value of class `on`: its calls as the body lists them, each method
-/// call on a known class that class's method; or, where the body lists no calls, what the call
-/// graph says. A library class (an export) runs its constructor and its public methods.
+/// call on a known class that class's method, a call through a class the method it names, and a
+/// `super()` call the next method after its class along the value's order; or, where the body
+/// lists no calls, what the call graph says. A library class (an export) runs its constructor and
+/// its public methods.
 fn body_of(ix: &Ix, n: &Node, on: &str) -> Body {
     let alts = if on.is_empty() { ix.overrides(n) } else { vec![] };
     if !n.sites.is_empty() {
@@ -901,10 +943,26 @@ fn body_of(ix: &Ix, n: &Node, on: &str) -> Body {
                     None if !s.gives.is_empty() => format!("op:{}", s.to.rsplit('.').next().unwrap_or(&s.to)),
                     None => return None,
                 };
-                if let Some(m) = ix.nodes.get(s.to.as_str()).filter(|m| m.cls.is_some() && !runs_on.is_empty()) {
-                    to = ix.method_on(runs_on, &m.name).unwrap_or(to);
+                let method = ix.nodes.get(s.to.as_str()).filter(|m| m.cls.is_some());
+                let mut instead = vec![];
+                match method {
+                    // a `super()` call runs the next method after its class along the order of
+                    // the value's; where that class is not known, along the order of each class it
+                    // may be, the class the call is written in or one below it
+                    Some(m) if !s.after.is_empty() && !runs_on.is_empty() => to = ix.method_after(runs_on, &s.after, &m.name).unwrap_or(to),
+                    Some(m) if !s.after.is_empty() => {
+                        to = ix.method_after(&s.after, &s.after, &m.name).unwrap_or(to);
+                        for d in ix.below(&s.after) {
+                            if let Some(r) = ix.method_after(&d, &s.after, &m.name).filter(|r| *r != to && !instead.contains(r)) {
+                                instead.push(r);
+                            }
+                        }
+                    }
+                    Some(m) if !s.named && !runs_on.is_empty() => to = ix.method_on(runs_on, &m.name).unwrap_or(to),
+                    _ => {}
                 }
-                Some((Step { to, on: runs_on.to_string(), site: Some(i) }, s.arms.clone()))
+                let named = method.is_some() && (s.named || !s.after.is_empty());
+                Some((Step { to, on: runs_on.to_string(), site: Some(i), named, instead }, s.arms.clone()))
             })
             .collect();
         return Body { alts, items: grouped(steps, &n.whens), made_from: vec![] };
@@ -941,10 +999,7 @@ fn body_of(ix: &Ix, n: &Node, on: &str) -> Body {
     {
         arms.entry(e.dst.as_str()).or_insert_with(|| e.arms.clone());
     }
-    let steps = callees
-        .iter()
-        .map(|c| (Step { to: c.clone(), on: String::new(), site: None }, arms.get(c.as_str()).cloned().unwrap_or_default()))
-        .collect();
+    let steps = callees.iter().map(|c| (Step::of(c), arms.get(c.as_str()).cloned().unwrap_or_default())).collect();
     Body { alts, items: grouped(steps, &n.whens), made_from: vec![] }
 }
 
@@ -959,7 +1014,7 @@ pub fn bodies(g: &Graph) -> BTreeMap<String, Body> {
             .calls
             .iter()
             .filter(|c| ix.nodes.contains_key(c.as_str()) || g.make.iter().any(|m| &m.id == *c))
-            .map(|c| Item::Step(Step { to: c.clone(), on: String::new(), site: None }))
+            .map(|c| Item::Step(Step::of(c)))
             .collect();
         if !items.is_empty() {
             out.insert(t.id.clone(), Body { alts: vec![], items, made_from: vec![] });

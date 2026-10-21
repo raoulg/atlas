@@ -1,0 +1,71 @@
+# A lens whose focus is a library's type: `put` writes a Decimal into the file and `get` gives it back inside an Entry.
+# The route of the exported struct is its public functions, each called by its caller and run on the caller's Ledger.
+# What `get` reads and parses are steps of their own, a library's operations whose results the body names; the amount
+# is of no type the code writes, so it is `_`.
+
+route books.Ledger
+step Ledger()/Ledger.new
+known #74 step Ledger()/Ledger.new/Ledger()                      # the struct built by its literal
+step Ledger()/Ledger.put
+step Ledger()/Ledger.get
+step Ledger()/Ledger.get/read_to_string
+step Ledger()/Ledger.get/map_err                                 # `Decimal::from_str(text.trim()).map_err(..)`, named `amount`
+step Ledger()/Ledger.get/Entry()
+
+line entry > Ledger()/Ledger.new call
+line entry > Ledger()/Ledger.put call
+line entry > Ledger()/Ledger.get call
+
+line Ledger()/Ledger.new/Ledger() > Ledger@Ledger()/Ledger.new/Ledger() value
+line Ledger@Ledger()/Ledger.new/Ledger() > Ledger()/Ledger.new value
+line Ledger()/Ledger.new > Ledger@Ledger()/Ledger.new value
+known #74 line Ledger > Ledger()/Ledger.put value   # the caller's instance: every method runs on it
+known #74 line Ledger > Ledger()/Ledger.get/read_to_string value   # the method hands `self.path` to it
+
+known #127 line Decimal·amount > Ledger()/Ledger.put value       # #127: put's parameter, a library's type
+line Ledger()/Ledger.put > Disk(self.path) own
+
+line Disk(self.path) > Ledger()/Ledger.get own
+line Ledger()/Ledger.get/read_to_string > _·text@Ledger()/Ledger.get/read_to_string value
+known #125 line _·text@Ledger()/Ledger.get/read_to_string > Ledger()/Ledger.get/map_err value   # #125: from_str's result goes into map_err
+line Ledger()/Ledger.get/map_err > _·amount@Ledger()/Ledger.get/map_err value
+line _·amount@Ledger()/Ledger.get/map_err > Ledger()/Ledger.get/Entry() value
+line Ledger()/Ledger.get/Entry() > Entry@Ledger()/Ledger.get/Entry() value
+line Entry@Ledger()/Ledger.get/Entry() > Ledger()/Ledger.get value
+line Ledger()/Ledger.get > Entry@Ledger()/Ledger.get value
+
+home Ledger@Ledger()/Ledger.new/Ledger() Ledger()/Ledger.new
+home Ledger@Ledger()/Ledger.new Ledger()
+known #74 home Ledger Ledger()
+known #127 home Decimal·amount Ledger()
+home _·text@Ledger()/Ledger.get/read_to_string Ledger()/Ledger.get
+home _·amount@Ledger()/Ledger.get/map_err Ledger()/Ledger.get
+home Entry@Ledger()/Ledger.get/Entry() Ledger()/Ledger.get
+home Entry@Ledger()/Ledger.get Ledger()
+
+# the error `get` raises when the text is no Decimal: `io::Error::new` is no step, so it goes into map_err, whose border
+# hands it on with its result, and `?` hands it on across get's border to its caller
+known #138 line Ledger()/Ledger.get/map_err > Error@Ledger()/Ledger.get/map_err value
+known #138 line Error@Ledger()/Ledger.get/map_err > Ledger()/Ledger.get value
+known #138 line Ledger()/Ledger.get > Error@Ledger()/Ledger.get value
+known #138 home Error@Ledger()/Ledger.get/map_err Ledger()/Ledger.get
+known #138 home Error@Ledger()/Ledger.get Ledger()
+
+side entry left
+side Disk(self.path) between
+
+# building the exported struct runs its public functions, `new` among them, so the literal is read as recursive
+known #74 extra step Ledger()/Ledger.new/Ledger() recursive
+# #127: the parameter of a function the entry calls has lost its name
+known #127 extra line Decimal > Ledger()/Ledger.put value
+known #127 extra home Decimal Ledger()
+# #125: a call whose result goes into the named call around it is a step of its own
+known #125 extra step Ledger()/Ledger.get/from_str
+known #125 extra line _·text@Ledger()/Ledger.get/read_to_string > Ledger()/Ledger.get/from_str value
+known #125 extra line Ledger()/Ledger.get/from_str > _·amount@Ledger()/Ledger.get/from_str value
+known #125 extra line _·amount@Ledger()/Ledger.get/from_str > Ledger()/Ledger.get/map_err value
+known #125 extra home _·amount@Ledger()/Ledger.get/from_str Ledger()/Ledger.get
+
+# what the constructor builds goes back to its caller: Atlas runs the methods on it instead of the caller's instance
+known #74 extra line Ledger@Ledger()/Ledger.new > Ledger()/Ledger.put value
+known #74 extra line Ledger@Ledger()/Ledger.new > Ledger()/Ledger.get value
