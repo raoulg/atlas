@@ -2729,8 +2729,13 @@ impl<'a, 't> Body<'a, 't> {
     }
 
     fn bucket_path(&self, parts: &[String]) -> Bucket {
-        let field = (parts.len() > 2 && parts[0] == "this").then(|| format!("this.{}", parts[1])).filter(|f| self.made.contains_key(f));
-        self.bucket(field.as_deref().unwrap_or(&parts[0]))
+        self.bucket(self.held_field(parts).as_deref().unwrap_or(&parts[0]))
+    }
+
+    /// The field of the class a call goes through, when it holds what a package made: `this.db` of
+    /// `this.db.prepare(..)`. A call on it is a call on the value the field holds.
+    fn held_field(&self, parts: &[String]) -> Option<String> {
+        (parts.len() > 2 && parts[0] == "this").then(|| format!("this.{}", parts[1])).filter(|f| self.made.contains_key(f))
     }
 
     /// What the name a call not followed starts from is bound to: in the body (a parameter, a
@@ -2793,9 +2798,7 @@ impl<'a, 't> Body<'a, 't> {
     /// touches what its facts name.
     fn crossed(&mut self, c: TsNode<'t>, parts: &[String]) {
         let (m, src) = (self.m, self.src);
-        // a call on a field of the class is a call on the value the field holds: `this.db.prepare`
-        let held = (parts.len() > 2 && parts[0] == "this").then(|| format!("this.{}", parts[1])).filter(|f| self.made.contains_key(f));
-        let (head, parts) = match held {
+        let (head, parts) = match self.held_field(parts) {
             Some(f) => (f, &parts[1..]),
             None => (parts[0].clone(), parts),
         };

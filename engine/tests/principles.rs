@@ -276,11 +276,6 @@ const REVIEWED: &[(&str, &str, &str)] = &[
     ),
     (
         "choices",
-        "atlas-engine.typescript.Body.bucket_path",
-        "a fault of Atlas, #115: `bucket_path` and `crossed` copy one expression, the field of the class a call goes through",
-    ),
-    (
-        "choices",
         "atlas-engine.typescript.libraries.Libraries.follow_in",
         "`\"default\"` is the language's name for the default export, read in two lines of one function",
     ),
