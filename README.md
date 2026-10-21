@@ -1,5 +1,8 @@
 <p align="center">
-  <img src="docs/logo.svg" width="112" alt="Atlas logo: an A found in the cellular automaton Rule 30, five of its cells joined as a route">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/img/band-dark.svg">
+    <img src="docs/img/band-light.svg" width="100%" alt="Atlas: the cellular automaton Rule 30 as a band, its logo standing in it, an A that Rule 30 holds, five of its cells joined as a route">
+  </picture>
 </p>
 
 <h1 align="center">Atlas</h1>
