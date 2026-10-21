@@ -9,7 +9,7 @@
 #
 # Issues marked: #74 an exported class's construction; #101 a body's own use of a value it made; #125 which library
 # operations are steps; #126 what the own arrow keeps; #127 a parameter bound by kind, not to what is handed; #130
-# which forms are choices; #133 read and written: between, not both.
+# which forms are choices.
 
 route harvest.store.ReadingStore
 step ReadingStore()/ReadingStore()
@@ -158,9 +158,9 @@ home Summary@ReadingStore()/ReadingStore.keepSummary ReadingStore()
 known #127 home Summary·summary ReadingStore()
 
 side entry left
-known #133 side Disk(ReadingStore.readings) both   # #133: Atlas draws it between
-known #133 side Disk(ReadingStore.outages) both   # #133: Atlas draws it between
-known #133 side Disk(ReadingStore.summaries) both   # #133: Atlas draws it between
+side Disk(ReadingStore.readings) both
+side Disk(ReadingStore.outages) both
+side Disk(ReadingStore.summaries) both
 
 # what Atlas has and the code does not say
 known #74 extra line ReadingStore@ReadingStore()/ReadingStore() > ReadingStore()/ReadingStore.save value   # Atlas runs it on what the constructor built

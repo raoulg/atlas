@@ -562,7 +562,10 @@ if (!routeContent.has(seen)) {
   const found = new Set(), updated = new Set(), content = {places: new Set(), files: new Set(), dbs: new Set()};
   for (const a of anchors) {
     const back = new Set(arrowOf(a)?.reads_back || []);
-    for (const p of arrowOf(a)?.updates || []) updated.add(p);
+    // the route of a class is its doors, each called by the entry with no order between them: a place one of them finds
+    // and changes, the route finds and changes
+    const doors = byId.get(a)?.kind === "class" ? stepsIn(bodyOf(a, null)).map(s => s.to).filter(Boolean) : [];
+    for (const f of [a, ...doors]) for (const p of arrowOf(f)?.updates || []) updated.add(p);
     for (const t of reach(a, null, a).touches) {
       if (t.shape || isOpen(t)) continue;
       content.places.add(t.place.id);

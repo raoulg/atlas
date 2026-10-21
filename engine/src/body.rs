@@ -332,7 +332,7 @@ impl<'t, 's> Steps<'t, 's> {
         }
         if let Some(n) = store.nodes.get_mut(id) {
             n.sites = self.sites;
-            n.arm_lines = arm_lines;
+            (n.arm_lines, n.arm_choices) = arm_lines.into_iter().unzip();
             n.whens = whens;
             n.unseen = self.unseen;
         }
@@ -382,13 +382,13 @@ impl<'t, 's> Steps<'t, 's> {
         out
     }
 
-    /// The lines each arm of the body's choices spans.
-    fn arm_lines(&self) -> Vec<(u32, u32)> {
+    /// The lines each arm of the body's choices spans, with the choice it is an arm of.
+    fn arm_lines(&self) -> Vec<((u32, u32), u32)> {
         let mut out = vec![];
         for p in walk_all(self.body).into_iter().filter(|p| self.choices.contains_key(&p.id())) {
             for c in named_children(p) {
                 if let Part::Arm(_) = (self.syntax.part)(p, c, self.src) {
-                    out.push((line(c), c.end_position().row as u32 + 1));
+                    out.push(((line(c), c.end_position().row as u32 + 1), self.choices[&p.id()]));
                 }
             }
         }

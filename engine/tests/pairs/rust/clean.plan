@@ -278,8 +278,8 @@ side entry left
 side File(spend.toml) left
 side Disk(path) left
 side Web(api.frankfurter.app) left
-known #133 side SQLite(expenses) both          # import writes it, report reads and uses it: arms of one choice, neither after the other
-known #133 side SQLite(rates) both             # rates writes it, report reads and uses it
+side SQLite(expenses) both        # import writes it, report reads and uses it: arms of one choice, neither after the other
+side SQLite(rates) both           # rates writes it, report reads and uses it
 side File(reports/) right
 side open right
 side Screen right

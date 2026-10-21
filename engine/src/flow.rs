@@ -542,6 +542,9 @@ fn orders(ix: &Ix, id: &str, mut done: Option<&mut HashMap<String, BTreeMap<Stri
     // the innermost arm a line is in
     let arm = |line: u32| n.arm_lines.iter().copied().filter(|&(a, b)| a <= line && line <= b).min_by_key(|&(a, b)| b - a);
     let within = |inner: Option<(u32, u32)>, outer: (u32, u32)| inner.map_or(false, |(a, b)| outer.0 <= a && b <= outer.1);
+    // two lines in different arms of one choice never run in one run of the body
+    let around = |line: u32| n.arm_lines.iter().zip(&n.arm_choices).filter(move |((a, b), _)| *a <= line && line <= *b);
+    let apart = |x: u32, y: u32| around(x).any(|(r, k)| around(y).any(|(s, j)| k == j && r != s));
     enum Event<'n> {
         Touch(&'n Touch),
         Call(&'n str, bool),
@@ -563,6 +566,8 @@ fn orders(ix: &Ix, id: &str, mut done: Option<&mut HashMap<String, BTreeMap<Stri
     // per place: what is done there, and the arms its conditional writes ran in
     let mut out: BTreeMap<String, Order> = BTreeMap::new();
     let mut written_in: HashMap<String, Vec<(u32, u32)>> = HashMap::new();
+    // per place: the lines it is written on
+    let mut written_at: HashMap<String, Vec<u32>> = HashMap::new();
     for (line, e) in events {
         let at = arm(line);
         let happened: Vec<(String, Order)> = match e {
@@ -577,6 +582,7 @@ fn orders(ix: &Ix, id: &str, mut done: Option<&mut HashMap<String, BTreeMap<Stri
             Event::Call(_, in_arm) => in_arm || at.is_some(),
         };
         for (place, b) in happened {
+            let lines = written_at.entry(place.clone()).or_default();
             let arms = written_in.entry(place.clone()).or_default();
             let o = out.entry(place).or_default();
             // a write after what was found changes it
@@ -587,7 +593,13 @@ fn orders(ix: &Ix, id: &str, mut done: Option<&mut HashMap<String, BTreeMap<Stri
                     o.reads_back = true;
                 } else {
                     o.finds = true;
+                    // a write in another arm of a choice the read is in never runs before it: the body changes
+                    // what it found, in the run that writes
+                    o.updates |= lines.iter().any(|&w| apart(w, line));
                 }
+            }
+            if b.writes {
+                lines.push(line);
             }
             o.reads_back |= b.reads_back;
             o.writes |= b.writes;
@@ -1096,6 +1108,30 @@ mod tests {
         b.touch("f", since);
         b.touch("f", until);
         assert_eq!(b.nodes["f"].touches.len(), 2);
+    }
+
+    /// A place one arm of a choice writes and another reads is found and changed: the write never runs before
+    /// the read. Written in an arm and read after the choice, it is made sure of; written in one choice and read
+    /// in a later one, the write may run first. Neither of those changes what was found.
+    #[test]
+    fn arms_of_one_choice_never_run_one_after_the_other() {
+        let updated = |arms: Vec<((u32, u32), u32)>, read: u32| {
+            let touch = |dir, line| Touch { artifact: "a.csv".into(), line, ..Touch::new(World::Disk, Some(dir)) };
+            let (arm_lines, arm_choices) = arms.into_iter().unzip();
+            let f = crate::model::Node {
+                id: "f".into(),
+                kind: NodeKind::Function,
+                touches: vec![touch(Dir::Write, 3), touch(Dir::Read, read)],
+                arm_lines,
+                arm_choices,
+                ..Default::default()
+            };
+            let g = Graph { nodes: vec![f], ..Default::default() };
+            arrows(&g).get("f").map_or(vec![], |a| a.updates.clone())
+        };
+        assert_eq!(updated(vec![((3, 3), 1), ((4, 4), 1)], 4), ["w:File:a.csv"], "two arms of one choice");
+        assert!(updated(vec![((3, 3), 1)], 5).is_empty(), "made sure of before it is read");
+        assert!(updated(vec![((3, 3), 1), ((5, 5), 2)], 5).is_empty(), "two choices, one after the other");
     }
 
     /// `lang = detect(opts).unwrap()` read by a language that names the unwrapped value already:
