@@ -39,7 +39,7 @@ pub fn serve(repo: &Path, addr: SocketAddr, opts: &Options, shown: bool) -> Resu
     let url = format!("http://{at}/");
     eprintln!("atlas history of {} at {url}", repo.display());
     if shown {
-        crate::open(url.as_ref());
+        crate::page::open(url.as_ref());
     }
     for conn in listener.incoming().flatten() {
         let server = Arc::clone(&server);
@@ -75,7 +75,7 @@ pub fn respond(repo: &Path, opts: &Options, req: &Request, at: &str) -> Option<A
         return None;
     }
     Some(match req.path.as_str() {
-        p if p == at => Answer::page(PAGE.replacen("/*__FONTS__*/", crate::FONTS, 1)),
+        p if p == at => Answer::page(PAGE.replacen("/*__FONTS__*/", crate::page::FONTS, 1)),
         "/api/log" => log(repo, req).map_or_else(Answer::failed, Answer::json),
         "/view" => view(repo, opts, req).map_or_else(Answer::failed, Answer::page),
         _ => return None,
@@ -94,14 +94,14 @@ fn log(repo: &Path, req: &Request) -> Result<String> {
 fn view(repo: &Path, opts: &Options, req: &Request) -> Result<String> {
     let b = reading(repo, opts, req.query.get("b").map_or("worktree", String::as_str))?;
     let d = drawing(repo, opts, req.query.get("a").map(String::as_str), b)?;
-    crate::viewer(&d, serde_json::Map::new())
+    crate::page::viewer(&d, serde_json::Map::new())
 }
 
 /// One reading drawn, or the union of revision `a` and that reading.
-fn drawing(repo: &Path, opts: &Options, a: Option<&str>, b: (Named, Vec<Graph>)) -> Result<crate::Drawing> {
+fn drawing(repo: &Path, opts: &Options, a: Option<&str>, b: (Named, Vec<Graph>)) -> Result<crate::page::Drawing> {
     match a {
-        None => Ok(crate::single(&[repo.to_path_buf()], b.1)),
-        Some(a) => crate::union(repo, reading(repo, opts, a)?, b),
+        None => Ok(crate::page::single(&[repo.to_path_buf()], b.1)),
+        Some(a) => crate::page::union(repo, reading(repo, opts, a)?, b),
     }
 }
 
