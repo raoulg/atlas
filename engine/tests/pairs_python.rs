@@ -729,3 +729,39 @@ fn nothing_says_what_atlas_cannot_see() {
     assert_eq!(touches(&s, "jobs.runner.Echo.run", "screen").len(), 1);
     assert_eq!(s.node("jobs.runner.settle").unwrap().entry.as_ref().map(|e| e.kind), Some(EntryKind::Export), "settle is a door");
 }
+
+/// One side of the gives pair (`tests/pairs/gives`): readings kept in a file, how many there are,
+/// and the readings ranked, in Python and TypeScript alike.
+fn readings(side: &str) -> Graph {
+    analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/gives/python").join(side), &Options::default()).unwrap()
+}
+
+/// A function whose value is used says what it gives back, also where it is handed on to be used:
+/// `sorted(readings, key=score)` orders the readings by what `score` gives. The clean store says
+/// what each of its functions gives; the shortcut leaves `get_store` and `score` unsaid, and
+/// `gives` asks about both. The route loses `Store.history` at the store `get_store` makes, and
+/// the key `ranked` sorts by has no type.
+#[test]
+fn gives_a_key_handed_on_is_a_value_used() {
+    let (c, s) = (readings("clean"), readings("shortcut"));
+    assert!(found(&c, "gives").is_empty(), "{:?}", found(&c, "gives"));
+    assert_eq!(found(&s, "gives"), ["readings.store.get_store", "readings.store.score"]);
+    for g in [&c, &s] {
+        assert!(
+            g.edges
+                .iter()
+                .any(|e| e.kind == EdgeKind::Calls && e.uses && e.src == "readings.store.ranked" && e.dst == "readings.store.score"),
+            "a key handed on is used"
+        );
+    }
+    assert!(edge(&c, "readings.store.main", "readings.store.Store.history", EdgeKind::Calls));
+    assert!(!edge(&s, "readings.store.main", "readings.store.Store.history", EdgeKind::Calls), "the route loses the store's history");
+}
+
+/// A property is a function its readers run: an untyped one gives what they use without saying
+/// (`store.size`). A property read is no call in the graph, so `gives` does not ask.
+#[test]
+#[ignore = "gap (b): a property read is no call in the graph, so an untyped property is not asked"]
+fn gives_a_property_read_is_a_value_used() {
+    assert!(found(&readings("shortcut"), "gives").contains(&"readings.store.Store.size".to_string()));
+}

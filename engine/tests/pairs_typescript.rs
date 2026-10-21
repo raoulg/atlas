@@ -127,15 +127,20 @@ fn doors_say_what_comes_out() {
 /// A function whose value is used says what it gives back. TypeScript writes it as a return type,
 /// also where the compiler could work it out: `getJson(url): Promise<unknown>`, which the caller
 /// turns into a RateTable through `parseRates`. The shortcut leaves `getJson` unannotated, so what
-/// `res.json()` gives (`any`) travels on as the RateTable `latest` promises.
+/// `res.json()` gives (`any`) travels on as the RateTable `latest` promises, and `gives` asks.
 #[test]
 fn gives_a_used_value_has_a_type() {
     let (c, s) = (clean(), shortcut());
     assert_eq!(node(c, "rates.http.getJson").returns.as_ref().map(|r| r.written.as_str()), Some("Promise<unknown>"));
     assert!(edge(c, EdgeKind::Calls, "rates.http.HttpRates.latest", "rates.source.parseRates"), "what the service says is checked");
     assert!(edge(c, EdgeKind::Returns, "rates.source.parseRates", "model.RateTable"));
+    assert!(asked_anywhere(c, "gives").is_empty(), "{:?}", asked_anywhere(c, "gives"));
     // the shortcut: a missing type
     assert!(node(s, "rates.http.getJson").returns.is_none());
+    assert_eq!(
+        asked_anywhere(s, "gives"),
+        ["shortcut.rates.http.getJson getJson gives back a value its callers use, and does not say what it is"]
+    );
     assert!(!s.edges.iter().any(|e| e.kind == EdgeKind::Returns && e.src == "shortcut.rates.http.getJson"));
     // still the step that asks the service
     assert!(edge(s, EdgeKind::Calls, "rates.http.HttpRates.latest", "rates.http.getJson"));
@@ -711,4 +716,27 @@ fn nothing_says_what_atlas_cannot_see() {
     assert!(node(&s, "runner.Task.run").declared && node(&c, "runner.Task.run").declared);
     assert_eq!(touches(&s, "runner.Echo.run", "screen").len(), 1);
     assert!(node(&s, "runner.settle").returns.as_ref().is_some_and(|r| !r.fails), "a Promise says it waits");
+}
+
+/// One side of the gives pair (`tests/pairs/gives`): readings kept in a file and a label, in
+/// Python and TypeScript alike.
+fn readings(side: &str) -> Graph {
+    analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/gives/typescript").join(side), &Options::default()).unwrap()
+}
+
+/// A function whose value is used says what it gives back. TypeScript leaves the return type to the
+/// author as Python does: the compiler works it out where a reader of the declaration does not see
+/// it, and Atlas reads the declaration. The clean store says what `getStore` and `label` give; the
+/// shortcut leaves both to the compiler, and `gives` asks about both, on the condition `doors` asks
+/// a door on. The route loses `Store.history` at the store `getStore` makes.
+#[test]
+fn gives_is_asked_where_the_return_type_is_left_out() {
+    let (c, s) = (readings("clean"), readings("shortcut"));
+    let asked = |g: &Graph| -> Vec<String> {
+        check(g).into_iter().filter(|f| f.principle == "gives").map(|f| f.node.replacen(&format!("{}.", g.root), "", 1)).collect()
+    };
+    assert!(asked(&c).is_empty(), "{:?}", asked(&c));
+    assert_eq!(asked(&s), ["store.getStore", "store.label"]);
+    assert!(edge(&c, EdgeKind::Calls, "store.main", "store.Store.history"));
+    assert!(!edge(&s, EdgeKind::Calls, "store.main", "store.Store.history"), "the route loses the store's history");
 }

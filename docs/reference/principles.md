@@ -57,7 +57,7 @@ lets it be traced and Atlas does not yet; each gap is an ignored test in `pairs_
 | overrides | `keeps` from ty; finding | forbidden: the compiler holds an override to its base | forbidden |
 | places | finding; where the path is made whole | finding; where the path is made whole | finding; where the path is made whole |
 | changes | mutates edge; finding | mutates edge; finding | forbidden: a change is `&mut` in the signature |
-| gives | finding; the call not followed | no returns edge; `uses` on the call | returns edge; `Result<T, E>` gives `T` |
+| gives | finding; the call not followed; a key handed on is used; gap (b): a property read | finding; no returns edge; `uses` on the call | forbidden: every function names what it returns; `Result<T, E>` gives `T` |
 | choices | finding | finding | finding |
 | nothing | finding; what Atlas does not see is named: a `Protocol`'s method, a callback in a field, a class's attribute, a library's call no table describes | finding; the same, with an interface and a `static`; a `Promise` waits and does not fail | finding; a callback in a field is named, and a method called on a type parameter |
 | layers | finding | finding | finding; a call among a macro's tokens is a step |
@@ -273,11 +273,26 @@ there.
   ty, Astral's type checker, and ty gives a function without a return annotation the type
   `Unknown`. Atlas does not guess behind it: a database call on that value is not drawn,
   because nothing says which database it is.
+- **TypeScript.** The compiler works out what a function without a return type gives, where a
+  reader of its declaration does not see it (`isolatedDeclarations` asks for the type). Atlas
+  reads the declaration, so a call on what such a function gives is not followed, as in Python.
 
-Atlas checks: a Python function or method without a return annotation, whose value at
-least one caller uses. A call that stands as a statement does not use it. A door is asked
-about by `doors`. The finding names three of the callers that use the value and counts the
-rest.
+Atlas checks: a function or method whose language leaves its return type to the author
+(Python, TypeScript), written without one, whose value at least one caller uses. It is the
+condition `doors` asks a door on, and a door is asked about by `doors`. A caller uses the value
+wherever the call does not stand as a statement: it keeps it, hands it on, returns it, calls a
+method on it or tests it. A function handed to a call by a keyword whose function's value
+the call uses (`sorted(xs, key=score)`; `PYTHON_USES_HANDED` in `knowledge.rs`) is used there.
+The finding names three of the callers that use the value and counts the rest.
+
+What the rule cannot see:
+
+- A property read (`store.size` of an untyped `@property`) is no call in the graph, so an
+  untyped property is not asked (an ignored test in `pairs_python.rs`).
+- A function handed on in any other way (`map(score, xs)`, TypeScript's `xs.map(label)`, a
+  callback a framework calls) is not read as used: what its receiver does with the value, Atlas
+  does not see.
+- A constructor gives its class and is never asked.
 
 rkg: `RegisterSink.transaction(self)` returns a connection to the register's SQLite
 database. Every `with sink.transaction() as con: con.execute(..)` then runs on a value

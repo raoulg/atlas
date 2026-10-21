@@ -334,6 +334,12 @@ impl<'g> Index<'g> {
         self.g.parts.iter().find(|p| p.id == part).or(self.g.parts.first()).map_or_else(Leaves::default, |p| p.leaves)
     }
 
+    /// Whether a reader of `f`'s declaration does not see what it gives: its language leaves the
+    /// return type to the author, and the author left it out. A constructor gives its class.
+    fn gives_unknown(&self, f: &Node) -> bool {
+        self.leaves(&f.id).returns && f.returns.is_none() && !f.ctor
+    }
+
     fn at(&self, n: &Node) -> String {
         format!("{}:{}", self.file(n), n.span.map_or(1, |s| s.0))
     }
@@ -459,8 +465,7 @@ fn doors(ix: &Index) -> Vec<Finding> {
             .filter(|p| f.typed_by.is_empty() && p.ty.is_empty() && !p.receiver && !p.rest)
             .map(|p| format!("`{}`", p.name))
             .collect();
-        // a constructor gives its class
-        let gives_unknown = ix.leaves(&f.id).returns && f.returns.is_none() && !f.ctor;
+        let gives_unknown = ix.gives_unknown(f);
         if untyped.is_empty() && !gives_unknown {
             continue;
         }
@@ -733,17 +738,14 @@ fn changes(ix: &Index) -> Vec<Finding> {
 
 // ---------- gives ----------
 
-/// A function whose callers use what it gives back, with no return annotation: what they get
-/// has no type, so neither a reader nor Atlas can follow it further, where the language leaves
-/// types to the author; a door is asked about by `doors`.
+/// A function whose callers use what it gives back, with no return annotation, where the language
+/// leaves the return type to the author: what they get has no type a reader of the declaration
+/// sees, so neither a reader nor Atlas can follow it further. A door is asked about by `doors`,
+/// on the same condition.
 fn gives(ix: &Index) -> Vec<Finding> {
     let doors: HashSet<&str> = door_fns(ix).into_iter().map(|f| f.id.as_str()).collect();
     let mut out = vec![];
-    for f in
-        ix.g.nodes
-            .iter()
-            .filter(|f| is_function(f) && f.returns.is_none() && !f.ctor && !doors.contains(f.id.as_str()) && ix.leaves(&f.id).types)
-    {
+    for f in ix.g.nodes.iter().filter(|f| is_function(f) && ix.gives_unknown(f) && !doors.contains(f.id.as_str())) {
         let mut users: Vec<String> = ix
             .into
             .get(f.id.as_str())

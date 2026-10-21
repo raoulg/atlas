@@ -2681,6 +2681,10 @@ impl<'a, 't> Body<'a, 't> {
         // reads (`pipeline.add(DiffValues, ..)`) is built there
         for a in handed_on(c) {
             if let Some(t) = self.seen.handed_function(a) {
+                // a key the call orders or picks by is a value the call uses
+                if handed_for_its_value(a, self.src) {
+                    self.read.used.push(t.clone());
+                }
                 steps.handed(c, a, &t, EdgeKind::Calls);
             } else if let (Some(Callee::Def(_)), Some(t)) = (&callee, self.seen.handed_class(a)) {
                 steps.handed(c, a, &t, EdgeKind::Instantiates);
@@ -3178,6 +3182,15 @@ fn handed_on(call: TsNode) -> Vec<TsNode> {
         })
         .filter(|a| matches!(a.kind(), "identifier" | "attribute"))
         .collect()
+}
+
+/// Whether a function handed to a call is handed by a keyword whose function's value the call
+/// uses (`key=score`).
+fn handed_for_its_value(a: TsNode, src: &[u8]) -> bool {
+    a.parent()
+        .filter(|k| k.kind() == "keyword_argument")
+        .and_then(|k| k.child_by_field_name("name"))
+        .map_or(false, |n| knowledge::PYTHON_USES_HANDED.contains(&text(n, src)))
 }
 
 /// Whether what a call gives back is used: anything but a call standing as a statement.

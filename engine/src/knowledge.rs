@@ -412,6 +412,11 @@ pub const PYTHON_HOLDERS: &[&str] = &[
     "Reversible",
 ];
 
+/// The keywords a Python call is handed a function by whose value the call uses: the key it
+/// orders, picks or groups by (`sorted(xs, key=score)`, `max(xs, key=..)`, `list.sort(key=..)`,
+/// `itertools.groupby(xs, key=..)`).
+pub const PYTHON_USES_HANDED: &[&str] = &["key"];
+
 /// What makes a Python method a declaration that what implements it fills in: a decorator
 /// (`@abstractmethod`), or a base, by package and name, that makes its class a protocol, which any
 /// class with its methods implements without naming it (`typing.Protocol`).
