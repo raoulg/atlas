@@ -688,3 +688,55 @@ fn prophecy_a_seal_is_listed_and_broken_when_its_issue_is_closed() {
     );
     let _ = std::fs::remove_dir_all(copy.parent().expect("has a parent"));
 }
+
+// ---------- layers: the package quotient the picture draws ----------
+
+/// One side of the layers pair (`tests/pairs/layers/python`): a shop whose orders price their
+/// lines, a kitchen beside it that cooks from the shop's orders, and tests inside the shop that
+/// cook too.
+fn shop_python(side: &str) -> Graph {
+    analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/layers/python").join(side), &Options::default()).expect("reads")
+}
+
+/// The packages of a part depend on one another in one direction, at every level the picture
+/// draws: a package's own module (`orders/__init__.py`) is a block beside the packages below it,
+/// and the top-level packages of a part are blocks beside one another. The clean side keeps what
+/// both need below both: `lines` takes `tax` from a module of its own, and the shop asks nothing of
+/// the kitchen. The shortcut writes `tax` in `orders/__init__.py` and imports it from there inside
+/// `price`, past the import cycle, and lets the shop's `menu` cook from the kitchen that cooks from
+/// the shop.
+#[test]
+fn layers_a_package_and_its_own_module_and_the_top_packages_depend_in_one_direction() {
+    let (c, s) = (shop_python("clean"), shop_python("shortcut"));
+    assert!(found(&c, "layers").is_empty(), "{:?}", check(&c).iter().map(|f| &f.what).collect::<Vec<_>>());
+    assert!(edge(&c, "shop.orders.total", "shop.orders.lines.price", EdgeKind::Calls));
+    assert!(edge(&c, "kitchen.cook.boil", "shop.orders.total", EdgeKind::Calls));
+    let layers: Vec<Finding> = check(&s).into_iter().filter(|f| f.principle == "layers").collect();
+    let said: Vec<(&str, &str)> = layers.iter().map(|f| (f.node.as_str(), f.what.as_str())).collect();
+    assert_eq!(
+        said,
+        [("kitchen", "kitchen and shop depend on one another"), ("shop.orders", "orders itself and lines depend on one another")]
+    );
+    assert!(layers[1].evidence.iter().any(|e| e.starts_with("orders itself: the code of `shop.orders`")), "{:?}", layers[1].evidence);
+    assert!(edge(&s, "shop.orders.lines.price", "shop.orders.tax", EdgeKind::Calls), "the shortcut's call back is in the graph");
+    assert!(edge(&s, "shop.menu.dish", "kitchen.cook.boil", EdgeKind::Calls));
+}
+
+/// A test is a way in from outside, not a layer: a pytest file (`test_*.py`, `*_test.py`,
+/// `conftest.py`) is test code wherever it stands. On both sides a test inside `shop.orders` and the
+/// shop's `conftest.py` cook from the kitchen, which cooks from the shop; counted as the shop's
+/// code, they would close a cycle. They are in the graph, and no cycle comes of them.
+#[test]
+fn layers_a_test_inside_a_package_is_no_layer() {
+    for side in ["clean", "shortcut"] {
+        let g = shop_python(side);
+        for test in ["shop.orders.test_lines", "shop.conftest"] {
+            assert!(g.node(test).is_some_and(|m| m.test), "{side}: {test} is test code");
+        }
+        assert!(edge(&g, "shop.orders.test_lines.boiled", "kitchen.cook.boil", EdgeKind::Calls), "{side}");
+        assert!(edge(&g, "shop.conftest.cooked", "kitchen.cook.boil", EdgeKind::Calls), "{side}");
+        assert!(g.node("shop.orders.lines").is_some_and(|m| !m.test), "{side}: a module beside a test is not one");
+        let cycles: Vec<Finding> = check(&g).into_iter().filter(|f| f.principle == "layers").collect();
+        assert!(cycles.iter().all(|f| f.evidence.iter().all(|e| !e.contains("boiled") && !e.contains("cooked"))), "{side}: {cycles:#?}");
+    }
+}

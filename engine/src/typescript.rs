@@ -459,7 +459,9 @@ pub fn parse(repo: &Repo, opts: &crate::Options) -> Result<(GraphBuilder, String
         store.files.insert(crate::tree::path_str(p), String::from_utf8_lossy(&src).to_string());
         let is_index = p.file_stem().and_then(|s| s.to_str()) == Some("index");
         let rel = crate::tree::path_str(p.strip_prefix(repo.root()).unwrap_or(p));
-        let entry = test_file(p).then(|| Entry::new(EntryKind::Test, rel.clone()));
+        // a test file is test code, and a route of its own: its body runs the tests
+        let test = test_file(p);
+        let entry = test.then(|| Entry::new(EntryKind::Test, rel.clone()));
         let node = Node {
             id: id.clone(),
             kind: NodeKind::Module,
@@ -468,6 +470,7 @@ pub fn parse(repo: &Repo, opts: &crate::Options) -> Result<(GraphBuilder, String
             span: span(tree.root_node()),
             module: id.clone(),
             is_pkg: is_index,
+            test,
             entry,
             ..Default::default()
         };

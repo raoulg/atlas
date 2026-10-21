@@ -269,6 +269,12 @@ pub fn made_dir(name: &str) -> bool {
 /// Directories that hold tests and the data they read.
 pub const TEST_DIRS: &[&str] = &["tests", "test", "__tests__", "fixtures", "testdata"];
 
+/// A Python test file by pytest's convention, wherever it stands: `test_*.py`, `*_test.py`, and
+/// `conftest.py`, which holds what its tests share.
+pub fn python_test_file(name: &str) -> bool {
+    name.starts_with("test_") || name.ends_with("_test.py") || name == "conftest.py"
+}
+
 // ---------- a library's code ----------
 
 /// The directory a JavaScript package is installed in, below the project or a directory above it.

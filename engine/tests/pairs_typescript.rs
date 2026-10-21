@@ -667,3 +667,42 @@ fn prophecy_a_seal_is_listed_and_broken_when_its_issue_is_closed() {
     assert!(atlas_engine::decide::unseal(&g, &["clean.Store".to_string()]).is_err(), "a prophecy that is not sealed has no seal to break");
     let _ = std::fs::remove_dir_all(copy.parent().expect("has a parent"));
 }
+
+// ---------- layers: the package quotient the picture draws ----------
+
+/// One side of the layers pair (`tests/pairs/layers/typescript`): orders priced by their lines, and
+/// a ledger that posts in money's rounding, with tests inside money that post.
+fn cyc_typescript(side: &str) -> Graph {
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/layers/typescript").join(side);
+    analyze(&dir, &Options::default()).unwrap_or_else(|e| panic!("the {side} side parses: {e}"))
+}
+
+/// The directories of a package depend on one another in one direction, a directory's own
+/// `index.ts` a block beside the files below it. The clean side keeps `tax` in a module of its own
+/// below the lines and the orders. The shortcut writes it in `orders/index.ts` and lets `lines.ts`
+/// import it from there, while the index prices the order by its lines.
+#[test]
+fn layers_a_directorys_own_index_depends_in_one_direction() {
+    let (c, s) = (cyc_typescript("clean"), cyc_typescript("shortcut"));
+    assert!(asked_anywhere(&c, "layers").is_empty(), "{:?}", asked_anywhere(&c, "layers"));
+    assert_eq!(asked_anywhere(&s, "layers"), ["shortcut.orders orders itself and lines depend on one another"]);
+    assert!(edge(&s, EdgeKind::Calls, "orders.total", "orders.lines.price"));
+    assert!(edge(&s, EdgeKind::Calls, "orders.lines.price", "orders.tax"));
+}
+
+/// Test code is a way in from outside, not a layer: a `.test.ts` file and a file under `__tests__`
+/// are test code. On both sides a helper in `money/round.test.ts` and one in `money/__tests__` post
+/// through the ledger, which posts in money's rounding: counted as money's code they would close a
+/// cycle. They are in the graph, and no cycle comes of them.
+#[test]
+fn layers_a_test_file_is_no_layer() {
+    for side in ["clean", "shortcut"] {
+        let g = cyc_typescript(side);
+        assert!(node(&g, "money.round_test").test && node(&g, "money.__tests__.posting").test, "{side}: test files are test code");
+        assert!(!node(&g, "money.round").test, "{side}");
+        assert!(edge(&g, EdgeKind::Calls, "money.round_test.posted", "ledger.post.post"), "{side}");
+        assert!(edge(&g, EdgeKind::Calls, "money.__tests__.posting.postedTwice", "ledger.post.post"), "{side}");
+        assert!(edge(&g, EdgeKind::Calls, "ledger.post.post", "money.round.round"), "{side}");
+        assert!(!asked(&g, "layers", "money") && asked_anywhere(&g, "layers").iter().all(|f| !f.contains("money")), "{side}");
+    }
+}

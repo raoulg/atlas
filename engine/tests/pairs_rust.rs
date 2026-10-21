@@ -600,3 +600,59 @@ fn prophecy_a_seal_is_listed_and_broken_when_its_issue_is_closed() {
     );
     let _ = std::fs::remove_dir_all(copy.parent().expect("has a parent"));
 }
+
+// ---------- layers: the package quotient the picture draws ----------
+
+/// One side of the layers pair (`tests/pairs/layers/rust`): a crate whose root audits through a
+/// stamp, and a ledger of books held in money's coins, with tests inside money that post.
+fn cyc_rust(side: &str) -> Graph {
+    analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/layers/rust").join(side), &Options::default()).expect("reads")
+}
+
+/// Whether a node is test code: marked so, or in a module that is.
+fn tested(g: &Graph, id: &str) -> bool {
+    let n = node(g, id);
+    n.test || g.node(&n.module).is_some_and(|m| m.test)
+}
+
+/// The modules of a crate depend on one another in one direction, its root's own code a block
+/// beside them, and a type is a dependence as a call is. The clean side keeps the stamp's rate in
+/// a module of its own below the root, and money knows nothing of the ledger that holds its coins.
+/// The shortcut writes `rate` in `lib.rs`, which the stamp calls back up into while `audit` calls the
+/// stamp, and lets money's `worth` take a `Book` of the ledger that holds a `Coin`: a cycle through
+/// types alone, with no call from money's built code to the ledger.
+#[test]
+fn layers_a_crates_root_and_its_types_depend_in_one_direction() {
+    let (c, s) = (cyc_rust("clean"), cyc_rust("shortcut"));
+    assert!(found(&c, "layers").is_empty(), "{:?}", check(&c).iter().map(|f| &f.what).collect::<Vec<_>>());
+    let layers: Vec<_> = check(&s).into_iter().filter(|f| f.principle == "layers").collect();
+    let mut said: Vec<&str> = layers.iter().map(|f| f.what.as_str()).collect();
+    said.sort();
+    assert_eq!(said, ["cyc itself and stamp depend on one another", "ledger and money depend on one another"]);
+    assert!(edge(&s, EdgeKind::Calls, "cyc.stamp.stamp", "cyc.rate"));
+    assert!(edge(&s, EdgeKind::Takes, "cyc.money.worth", "cyc.ledger.Book"));
+    assert!(edge(&s, EdgeKind::Has, "cyc.ledger.Book", "cyc.money.Coin"));
+    let money_calls_ledger =
+        s.edges.iter().filter(|e| e.kind == EdgeKind::Calls && e.src.starts_with("cyc.money.") && e.dst.starts_with("cyc.ledger."));
+    assert!(money_calls_ledger.into_iter().all(|e| tested(&s, &e.src)), "money calls the ledger only from its tests");
+}
+
+/// Test code is a way in from outside, not a layer. Inside `money` both sides keep an inline
+/// `#[cfg(test)] mod tests`, whose `posted` calls the ledger, and a file module declared under
+/// `#[cfg(test)]` (`money/checks.rs`) that builds a `Book`: counted as money's code they would close a
+/// cycle with the ledger that holds money's coins. The inline module's items stand in `money` in
+/// the graph, marked as test code; its `use super::*` is the tests' import, not `money`'s.
+#[test]
+fn layers_a_test_module_is_no_layer() {
+    for side in ["clean", "shortcut"] {
+        let g = cyc_rust(side);
+        assert!(node(&g, "cyc.money.posted").test, "{side}: an item of an inline test module is test code");
+        assert!(node(&g, "cyc.money.checks").test, "{side}: a file module declared under cfg(test) is test code");
+        assert!(!node(&g, "cyc.money.round").test, "{side}: what stands beside a test module is not");
+        assert!(edge(&g, EdgeKind::Calls, "cyc.money.posted", "cyc.ledger.post"), "{side}");
+        assert!(edge(&g, EdgeKind::Calls, "cyc.money.checks.posted_book", "cyc.ledger.post"), "{side}");
+        assert!(!edge(&g, EdgeKind::Imports, "cyc.money", "cyc"), "{side}: the tests' `use super::*` is no import of money's");
+        let layers: Vec<_> = check(&g).into_iter().filter(|f| f.principle == "layers").collect();
+        assert!(layers.iter().all(|f| f.evidence.iter().all(|e| !e.contains("posted"))), "{side}: {layers:#?}");
+    }
+}

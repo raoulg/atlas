@@ -182,7 +182,38 @@ fn a_package_called_src_is_asked_its_name() {
 
 /// What `atlas check` asks of Atlas, each finding read: its principle, the node it is about, and
 /// why it stands (a fault of Atlas's code, tracked in an issue, or a fault of the rule).
-const REVIEWED: &[(&str, &str, &str)] = &[];
+const REVIEWED: &[(&str, &str, &str)] = &[
+    (
+        "layers",
+        "atlas",
+        "a fault of Atlas: the CLI's `main.rs` dispatches to its commands (`serve`, `mcp`, `history`) and holds the helpers they call back into (`open`, `page`, `made`); those helpers belong in a module below the commands",
+    ),
+    (
+        "layers",
+        "atlas-engine",
+        "a fault of Atlas: `lib.rs` defines `Options`, which every reader, `language` and `parts` take, beside `analyze` and `graph_of`, which call them; `Options` belongs in a module below the readers",
+    ),
+    (
+        "layers",
+        "atlas-engine",
+        "a fault of Atlas: a `Node` holds a `prophecy::Prophecy`, a cycle through types, while `prophecy.rs` builds on `model`'s `Node`, `Edge` and `Entry`; the type `Prophecy` belongs beside `Node` in `model`",
+    ),
+    (
+        "layers",
+        "atlas-engine.python",
+        "a fault of Atlas: `python/paths.rs` calls back into `python.rs` (`call_path`, `dotted`) while `python.rs` calls into it; what both use belongs in a module below both",
+    ),
+    (
+        "layers",
+        "atlas-engine.rust",
+        "a fault of Atlas: `rust/globals.rs`, `rust/libraries.rs` and `rust/paths.rs` call back into `rust.rs` (`resolve`, `attrs_of`, `expand`) while `rust.rs` calls into them; what they share belongs in a module below them",
+    ),
+    (
+        "layers",
+        "atlas-engine.typescript",
+        "a fault of Atlas: `typescript/libraries.rs` and `typescript/paths.rs` call back into `typescript.rs` (`function_of`, `function_in`) while it calls into them; what they share belongs in a module below them",
+    ),
+];
 
 /// Atlas is its own first subject, and `atlas check` is a signal on it as on any code: never an
 /// oracle, never a target. What it asks of Atlas is the reviewed list above; the test fails when

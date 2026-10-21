@@ -169,6 +169,11 @@ pub struct Node {
     /// Code of a library the project uses, read as far as the project's calls reach into it.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub library: bool,
+    /// Test code, by where it stands: a module the language keeps for tests (a test file, a Rust
+    /// `#[cfg(test)]` module, a crate's `tests/`), or an item of one that the graph keeps in the
+    /// module around it (a Rust `mod tests { .. }`).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub test: bool,
     /// The calls of its body, in the order they run: the steps of a route through it.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sites: Vec<Site>,
