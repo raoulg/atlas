@@ -782,6 +782,20 @@ fn overrides_a_trait_implementation_has_its_traits_signature() {
     }
 }
 
+/// An associated type is the type each implementation fixes it to. `Shelf.get` gives a `Book`
+/// whether it writes `-> Book` (clean) or `-> Self::Item` with `type Item = Book` (shortcut), and
+/// the trait's `Store.get`, whose `Self::Item` each implementation names, gives what they fix: a
+/// call into the family hands on the `Book` its override gives.
+#[test]
+fn gives_an_associated_type_is_what_its_implementations_fix() {
+    for side in ["clean", "shortcut"] {
+        let g = books(side);
+        for f in ["books.Shelf.get", "books.Store.get"] {
+            assert_eq!(targets(&g, EdgeKind::Returns, f), ["books.Book"], "{side}: {f}");
+        }
+    }
+}
+
 /// One side of the change pair (`tests/pairs/changes`): a log a line is noted in.
 fn journal(side: &str) -> Graph {
     analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/changes/rust").join(side), &Options::default()).expect("reads")

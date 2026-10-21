@@ -503,6 +503,7 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
             }
         }
     }
+    let fixed = fixed_by_implementations(modules, store, crate_ids);
     for id in &ids {
         let (kind, module) = (store.nodes[id].kind, store.nodes[id].module.clone());
         if !matches!(kind, NodeKind::Function | NodeKind::Method) {
@@ -511,21 +512,24 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
         let m = &modules[&module];
         let sig = store.sigs.get(id).cloned().unwrap_or_default();
         let own = store.nodes[id].cls.clone();
+        let def = def_node(m, &store.nodes[id]);
         for (types, kind) in [(&sig.ptypes, EdgeKind::Takes), (&sig.rtypes, EdgeKind::Returns)] {
             for t in types {
-                // `Self` is the type the impl is for
-                let resolved = match (t.first().map(String::as_str), &own) {
-                    (Some("Self"), Some(c)) if t.len() == 1 => Some(c.clone()),
-                    _ => resolve(m, t, modules, &store.nodes, crate_ids),
+                let resolved: Vec<String> = match (t.as_slice(), &own) {
+                    // `Self` is the type the impl is for
+                    ([s], Some(c)) if s == "Self" => vec![c.clone()],
+                    // `Self::Item` is the type the impl fixes it to; in the trait, each its implementations fix
+                    ([s, name], Some(c)) if s == "Self" => match def.and_then(impl_around) {
+                        Some(item) => {
+                            fixed_in(item, name, &m.src).iter().filter_map(|t| resolve(m, t, modules, &store.nodes, crate_ids)).collect()
+                        }
+                        None => fixed.get(&(c.clone(), name.clone())).cloned().unwrap_or_default(),
+                    },
+                    _ => resolve(m, t, modules, &store.nodes, crate_ids).into_iter().collect(),
                 };
-                let Some(r) = resolved else { continue };
-                if r.starts_with("ext:") {
-                    if !foreign_type(&r, &OWN) {
-                        continue;
-                    }
-                    store.ext_node(&r);
+                for r in resolved {
+                    signed(store, id, &r, kind);
                 }
-                store.add_edge(id, &r, kind, None);
             }
         }
         take_sums(modules, store, crate_ids, id);
@@ -552,6 +556,65 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
     let completed = crate::paths::complete(waiting, &handing, &family, &|_, _| vec![], &entry);
     crate::paths::place_calls(store, completed, false);
     globals::read(modules, store, crate_ids);
+}
+
+/// The `impl` block a function is defined in.
+fn impl_around(def: TsNode) -> Option<TsNode> {
+    def.parent().filter(|b| b.kind() == "declaration_list").and_then(|b| b.parent()).filter(|i| i.kind() == "impl_item")
+}
+
+/// The type an `impl` fixes one of its trait's associated types to, as written: `Book` for `Item` in
+/// `impl Store for Shelf { type Item = Book; .. }`.
+fn fixed_in(item: TsNode, name: &str, src: &[u8]) -> Vec<Vec<String>> {
+    let body = item.child_by_field_name("body").map(named_children).unwrap_or_default();
+    body.into_iter()
+        .filter(|t| t.kind() == "type_item" && t.child_by_field_name("name").map(|n| text(n, src)) == Some(name))
+        .flat_map(|t| type_names(t.child_by_field_name("type"), src))
+        .collect()
+}
+
+/// What the implementations of each of the program's traits fix its associated types to, by the
+/// trait and the type's name: a trait's `Self::Item` is the one each implementation names, so what
+/// its method gives is any of them.
+fn fixed_by_implementations(
+    modules: &IndexMap<String, Module>,
+    store: &GraphBuilder,
+    crate_ids: &HashMap<String, String>,
+) -> HashMap<(String, String), Vec<String>> {
+    let mut out: HashMap<(String, String), Vec<String>> = HashMap::new();
+    for m in modules.values() {
+        for item in items(m.tree.root_node()).into_iter().filter(|i| i.kind() == "impl_item") {
+            let parts = path_parts(item.child_by_field_name("trait"), &m.src);
+            let Some(tr) = Some(parts).filter(|p| !p.is_empty()).and_then(|p| resolve(m, &p, modules, &store.nodes, crate_ids)) else {
+                continue;
+            };
+            let body = item.child_by_field_name("body").map(named_children).unwrap_or_default();
+            for t in body.into_iter().filter(|t| t.kind() == "type_item") {
+                let Some(name) = t.child_by_field_name("name").map(|n| text(n, &m.src).to_string()) else { continue };
+                let types = out.entry((tr.clone(), name)).or_default();
+                for r in
+                    type_names(t.child_by_field_name("type"), &m.src).iter().filter_map(|p| resolve(m, p, modules, &store.nodes, crate_ids))
+                {
+                    if !types.contains(&r) {
+                        types.push(r);
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
+/// A type a signature names, as the edge of its kind (`Takes`, `Returns`): one of the program's,
+/// or a library's that holds data.
+fn signed(store: &mut GraphBuilder, id: &str, r: &str, kind: EdgeKind) {
+    if r.starts_with("ext:") {
+        if !foreign_type(r, &OWN) {
+            return;
+        }
+        store.ext_node(r);
+    }
+    store.add_edge(id, r, kind, None);
 }
 
 /// The class each function gives back, by the first of its signature's types that is one.
