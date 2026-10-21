@@ -5,7 +5,25 @@ use std::path::{Path, PathBuf};
 
 use atlas_engine::decide::{prophetize, Prophetized};
 use atlas_engine::revelation::{revelation, Stand};
-use atlas_engine::{analyze, Options};
+use atlas_engine::{analyze, Graph, Options};
+
+/// A pair below `engine/tests/pairs`: the same program once as good practice writes it and once
+/// with the usual shortcut.
+#[allow(dead_code)]
+pub struct Pair {
+    pub clean: Graph,
+    pub shortcut: Graph,
+}
+
+/// The pair at `dir` below `engine/tests/pairs` (`lens/python/club`), both its sides read.
+#[allow(dead_code)]
+pub fn pair(dir: &str) -> Pair {
+    let side = |name: &str| {
+        let at = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs").join(dir).join(name);
+        analyze(&at, &Options::default()).unwrap_or_else(|e| panic!("reads {}: {e}", at.display()))
+    };
+    Pair { clean: side("clean"), shortcut: side("shortcut") }
+}
 
 fn copy_tree(from: &Path, to: &Path) {
     std::fs::create_dir_all(to).expect("makes the directory");

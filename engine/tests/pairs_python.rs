@@ -11,6 +11,8 @@
 
 mod common;
 
+use common::Pair;
+
 use std::path::PathBuf;
 use std::sync::OnceLock;
 
@@ -845,17 +847,9 @@ fn choices_a_choice_is_made_once_across_bodies() {
 /// One side of the lens pair's club (`tests/pairs/lens/python/club`): a desk that keeps visits,
 /// members and reports in SQLite, a table each, and the files a club keeps (a log, a roster, a
 /// board, a tape), each class a lens or no lens on its table or file.
-fn club(side: &str) -> &'static Graph {
-    static CLEAN: OnceLock<Graph> = OnceLock::new();
-    static SHORTCUT: OnceLock<Graph> = OnceLock::new();
-    let read = || {
-        analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/lens/python/club").join(side), &Options::default()).unwrap()
-    };
-    if side == "clean" {
-        CLEAN.get_or_init(read)
-    } else {
-        SHORTCUT.get_or_init(read)
-    }
+fn club() -> &'static Pair {
+    static PAIR: OnceLock<Pair> = OnceLock::new();
+    PAIR.get_or_init(|| common::pair("lens/python/club"))
 }
 
 /// What `lens` says of class `id` of the club: empty when it asks nothing.
@@ -871,7 +865,7 @@ fn lens_of(g: &Graph, id: &str) -> String {
 /// Member inside a Report comes from another table.
 #[test]
 fn lens_the_place_is_the_table() {
-    let (c, s) = (club("clean"), club("shortcut"));
+    let (c, s) = (&club().clean, &club().shortcut);
     let fs = check(c);
     assert!(fs.is_empty(), "{:#?}", fs.iter().map(|f| format!("{} {} {}", f.principle, f.node, f.what)).collect::<Vec<_>>());
     let at = |g: &Graph, f: &str| {
@@ -892,7 +886,7 @@ fn lens_the_place_is_the_table() {
 /// where the Visit went.
 #[test]
 fn lens_the_place_is_the_file_the_code_names() {
-    let (c, s) = (club("clean"), club("shortcut"));
+    let (c, s) = (&club().clean, &club().shortcut);
     let record = c.node("club.files.Tape.record").unwrap();
     assert!(record.touches.iter().any(|t| t.artifact == "*.json" && t.kind_name() == "disk_write"), "{:?}", record.touches);
     assert_eq!(lens_of(c, "files.Tape"), "");
@@ -905,7 +899,7 @@ fn lens_the_place_is_the_file_the_code_names() {
 /// kept, `list[dict]`, and is asked where the Visit went.
 #[test]
 fn lens_a_get_gives_a_value_back() {
-    let (c, s) = (club("clean"), club("shortcut"));
+    let (c, s) = (&club().clean, &club().shortcut);
     let add = c.node("club.files.Log.add").unwrap();
     let kinds: Vec<&str> = add.touches.iter().map(|t| t.kind_name()).collect();
     assert!(kinds.contains(&"disk_read") && kinds.contains(&"disk_write"), "{:?}", add.touches);
@@ -919,7 +913,7 @@ fn lens_a_get_gives_a_value_back() {
 /// Member's name as a value, and `Visits` is asked where the Member went.
 #[test]
 fn lens_a_key_is_no_value_put() {
-    let (c, s) = (club("clean"), club("shortcut"));
+    let (c, s) = (&club().clean, &club().shortcut);
     assert!(edge(c, "club.desk.Visits.forget", "club.model.Member", EdgeKind::Takes));
     assert!(touches(c, "club.desk.Visits.forget", "db_sqlite").iter().any(|t| t.artifact == "visits" && t.dir_name() == "write"));
     assert_eq!(lens_of(c, "desk.Visits"), "");
@@ -933,7 +927,7 @@ fn lens_a_key_is_no_value_put() {
 /// Roster that holds rows, and its `Board` gives the rows back: each is asked.
 #[test]
 fn lens_a_get_gives_its_own_class_and_a_subclass_back() {
-    let (c, s) = (club("clean"), club("shortcut"));
+    let (c, s) = (&club().clean, &club().shortcut);
     assert!(c.node("club.files.Roster.load").unwrap().ctor);
     assert!(edge(c, "club.files.Roster", "club.model.Member", EdgeKind::Has));
     assert!(edge(c, "club.model.Notice", "club.model.Post", EdgeKind::Inherits));
@@ -958,17 +952,9 @@ fn lens_a_library_type_comes_back_inside_what_a_get_gives() {
 /// One side of the overrides pair (`tests/pairs/overrides`): readers of bytes, documents that parse
 /// themselves and a count, each family once as its author keeps its bases' promises and once as a
 /// hurried author writes it.
-fn reading(side: &str) -> &'static Graph {
-    static CLEAN: OnceLock<Graph> = OnceLock::new();
-    static SHORTCUT: OnceLock<Graph> = OnceLock::new();
-    let read = || {
-        analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/overrides/python").join(side), &Options::default()).unwrap()
-    };
-    if side == "clean" {
-        CLEAN.get_or_init(read)
-    } else {
-        SHORTCUT.get_or_init(read)
-    }
+fn reading() -> &'static Pair {
+    static PAIR: OnceLock<Pair> = OnceLock::new();
+    PAIR.get_or_init(|| common::pair("overrides/python"))
 }
 
 /// An override keeps the promise of every method it overrides, since a caller written against any
@@ -980,7 +966,7 @@ fn reading(side: &str) -> &'static Graph {
 /// `Source.read` and breaks `Archive.read`.
 #[test]
 fn overrides_the_base_is_the_next_in_the_method_resolution_order() {
-    let (c, s) = (reading("clean"), reading("shortcut"));
+    let (c, s) = (&reading().clean, &reading().shortcut);
     assert!(found(c, "overrides").is_empty(), "{:?}", found(c, "overrides"));
     let bases = |g: &'static Graph| {
         move |cls: &'static str| -> Vec<&'static str> {
@@ -1006,7 +992,7 @@ fn overrides_the_base_is_the_next_in_the_method_resolution_order() {
 /// and neither side is asked about it.
 #[test]
 fn overrides_a_constructor_on_the_class_takes_what_its_base_takes() {
-    let (c, s) = (reading("clean"), reading("shortcut"));
+    let (c, s) = (&reading().clean, &reading().shortcut);
     let parse = c.node("reading.docs.Page.parse").unwrap();
     assert!(parse.ctor && parse.on_class && parse.keeps == Some(true), "{parse:?}");
     assert!(!found(c, "overrides").iter().any(|n| n.starts_with("reading.docs.")));
@@ -1023,7 +1009,7 @@ fn overrides_a_constructor_on_the_class_takes_what_its_base_takes() {
 /// promises an int, and says so; the shortcut does the same without a word, and is asked.
 #[test]
 fn overrides_a_type_ignore_with_codes_is_the_code_saying_it_knows() {
-    let (c, s) = (reading("clean"), reading("shortcut"));
+    let (c, s) = (&reading().clean, &reading().shortcut);
     assert_eq!(c.node("reading.counts.Kennel.count").unwrap().keeps, Some(true));
     assert!(!found(c, "overrides").contains(&"reading.counts.Shelter.count".to_string()));
     assert_eq!(s.node("reading.counts.Kennel.count").unwrap().keeps, Some(false));
@@ -1427,16 +1413,9 @@ fn places_a_file_shipped_with_the_package_is_part_of_it() {
 /// One side of the diamond pair (`tests/pairs/diamond`): a feed that is a buffered and a cached
 /// source at once, `Feed(Buffered, Cached)` over `Source`, once as its author says which `read`
 /// and which initializer a feed runs and once as the order of its bases decides it.
-fn news(side: &str) -> &'static Graph {
-    static CLEAN: OnceLock<Graph> = OnceLock::new();
-    static SHORTCUT: OnceLock<Graph> = OnceLock::new();
-    let read =
-        || analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/diamond/python").join(side), &Options::default()).unwrap();
-    if side == "clean" {
-        CLEAN.get_or_init(read)
-    } else {
-        SHORTCUT.get_or_init(read)
-    }
+fn news() -> &'static Pair {
+    static PAIR: OnceLock<Pair> = OnceLock::new();
+    PAIR.get_or_init(|| common::pair("diamond/python"))
 }
 
 /// A value runs, for a name its class does not define, the first definition along its class's
@@ -1450,8 +1429,7 @@ fn news(side: &str) -> &'static Graph {
 #[test]
 fn diamond_a_value_runs_the_method_its_method_resolution_order_names() {
     let class = |c: &str| format!("news.sources.{c}");
-    for (side, read, init) in [("clean", "Feed", "Feed"), ("shortcut", "Cached", "Cached")] {
-        let g = news(side);
+    for (side, g, read, init) in [("clean", &news().clean, "Feed", "Feed"), ("shortcut", &news().shortcut, "Cached", "Cached")] {
         let bases = |cls: &'static str| -> Vec<&'static str> {
             g.edges.iter().filter(|e| e.kind == EdgeKind::Inherits && e.src == cls).map(|e| e.dst.as_str()).collect()
         };
@@ -1469,7 +1447,7 @@ fn diamond_a_value_runs_the_method_its_method_resolution_order_names() {
         let r = route(g, "news.read.headlines");
         assert!(r.contains("Store.get(key)") && !r.contains("response.read()"), "{side}: {r}");
     }
-    let asked: Vec<String> = check(news("clean")).into_iter().map(|f| format!("{} {}", f.principle, f.node)).collect();
+    let asked: Vec<String> = check(&news().clean).into_iter().map(|f| format!("{} {}", f.principle, f.node)).collect();
     assert!(asked.is_empty(), "{asked:?}");
 }
 
@@ -1479,10 +1457,10 @@ fn diamond_a_value_runs_the_method_its_method_resolution_order_names() {
 /// store reads is named by the feed's `url`.
 #[test]
 fn diamond_a_call_through_a_class_runs_its_method() {
-    let r = route(news("clean"), "news.read.headlines");
+    let r = route(&news().clean, "news.read.headlines");
     assert!(!r.contains("one of") && r.contains("Cached.read()"), "{r}");
     assert!(r.contains("reads {cache}/{url}"), "{r}");
-    let bodies = atlas_engine::flow::bodies(news("clean"));
+    let bodies = atlas_engine::flow::bodies(&news().clean);
     let read = &bodies[&atlas_engine::flow::key("news.sources.Feed.read", "news.sources.Feed")];
     let ran: Vec<(&str, &str, bool)> = read.steps().iter().map(|s| (s.to.as_str(), s.on.as_str(), s.named)).collect();
     assert_eq!(ran, [("news.sources.Cached.read", "news.sources.Feed", true)]);
@@ -1491,17 +1469,9 @@ fn diamond_a_call_through_a_class_runs_its_method() {
 /// One side of the cooperative pair (`tests/pairs/cooperative`): a feed that is a trimmed and a
 /// cached source at once, `Feed(Trimmed, Cached)` over `Source`, whose every `read` hands on with
 /// `super().read()`; the shortcut's `Trimmed.read` names the `read` it hands on to.
-fn cooperative(side: &str) -> &'static Graph {
-    static CLEAN: OnceLock<Graph> = OnceLock::new();
-    static SHORTCUT: OnceLock<Graph> = OnceLock::new();
-    let read = || {
-        analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/cooperative/python").join(side), &Options::default()).unwrap()
-    };
-    if side == "clean" {
-        CLEAN.get_or_init(read)
-    } else {
-        SHORTCUT.get_or_init(read)
-    }
+fn cooperative() -> &'static Pair {
+    static PAIR: OnceLock<Pair> = OnceLock::new();
+    PAIR.get_or_init(|| common::pair("cooperative/python"))
 }
 
 /// `super().read()` written in a class runs the next `read` after that class along the order of
@@ -1516,8 +1486,7 @@ fn cooperative(side: &str) -> &'static Graph {
 fn cooperative_super_runs_the_next_method_along_the_value_s_order() {
     let class = |c: &str| format!("news.sources.{c}");
     let key = |f: &str, on: &str| atlas_engine::flow::key(&format!("{}.read", class(f)), &class(on));
-    for (side, next) in [("clean", "Cached"), ("shortcut", "Source")] {
-        let g = cooperative(side);
+    for (side, g, next) in [("clean", &cooperative().clean, "Cached"), ("shortcut", &cooperative().shortcut, "Source")] {
         let bodies = atlas_engine::flow::bodies(g);
         let trimmed: Vec<(&str, bool)> = bodies[&key("Trimmed", "Feed")].steps().iter().map(|s| (s.to.as_str(), s.named)).collect();
         assert_eq!(trimmed, [(format!("{}.read", class(next)).as_str(), true)], "{side}");
@@ -1526,7 +1495,7 @@ fn cooperative_super_runs_the_next_method_along_the_value_s_order() {
         assert!(!r.contains("one of"), "{side}: {r}");
         assert_eq!(r.contains("Store.get(key)"), side == "clean", "{side}: {r}");
     }
-    let bodies = atlas_engine::flow::bodies(cooperative("clean"));
+    let bodies = atlas_engine::flow::bodies(&cooperative().clean);
     let cached: Vec<&str> = bodies[&key("Cached", "Feed")].steps().iter().map(|s| s.to.as_str()).collect();
     assert_eq!(cached, ["news.store.Store.has", "news.store.Store.get", "news.sources.Source.read", "news.store.Store.put"]);
     let unknown = &bodies["news.sources.Trimmed.read"].steps()[0];
@@ -1534,9 +1503,9 @@ fn cooperative_super_runs_the_next_method_along_the_value_s_order() {
         (unknown.to.as_str(), unknown.instead.as_slice()),
         ("news.sources.Source.read", ["news.sources.Cached.read".to_string()].as_slice())
     );
-    let r = route(cooperative("clean"), "news.read.lines");
+    let r = route(&cooperative().clean, "news.read.lines");
     assert!(r.contains("Source.read() → bytes   ·   calls self.url   ·   one of 1") && r.contains("1.1a  Cached.read()"), "{r}");
-    let r = route(cooperative("shortcut"), "news.read.lines");
+    let r = route(&cooperative().shortcut, "news.read.lines");
     assert!(!r.contains("one of") && !r.contains("Cached.read"), "{r}");
 }
 
@@ -1547,8 +1516,8 @@ fn cooperative_super_runs_the_next_method_along_the_value_s_order() {
 /// it.
 #[test]
 fn diamond_the_file_a_feed_reads_is_named_where_it_is_built() {
-    for side in ["clean", "shortcut"] {
-        let r = route(news(side), "news.read.headlines");
+    for (side, g) in [("clean", &news().clean), ("shortcut", &news().shortcut)] {
+        let r = route(g, "news.read.headlines");
         assert!(r.contains("reads {cache}/"), "{side}: {r}");
     }
 }
