@@ -1,0 +1,15 @@
+# One step writes a note, a later one reads it in `with open(..) as f` and returns `f.read()`: `f` is bound to what
+# `open` gives, and what is read goes back to `run`, which prints it. The note stands between the two steps.
+
+route withopen.run
+step run/save
+step run/load
+line entry > run call
+line run/save > File(data/note.txt) own
+line File(data/note.txt) > run/load own
+line run/load > run back                       # the note, a str
+line run > Screen own
+
+side entry left
+side File(data/note.txt) between
+side Screen right

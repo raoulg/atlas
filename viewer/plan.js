@@ -1297,9 +1297,9 @@ const coarsen = F => {
   const roles = new Map();
   const role = k => { if (!roles.has(k)) roles.set(k, {reads: false, writes: false, open: false, used: false, found: F.found.has(k), updated: F.updated.has(k)}); return roles.get(k); };
   for (const P of top.pills.values()) for (const [k, s] of P.goes || []) {
-    const r = role(k), handsOn = !!P.backTo || [...P.C.keys()].some(c => c !== k);
-    r.reads ||= s.has("read"); r.writes ||= s.has("write"); r.open ||= s.has("open");
-    if (s.has("use")) r.used ||= handsOn;
+    // whether a read is used is a fact of the step's body: what it gives reaches the step's codomain, or it is a check
+    const r = role(k);
+    r.reads ||= s.has("read"); r.writes ||= s.has("write"); r.open ||= s.has("open"); r.used ||= s.has("use");
   }
   // the storage quotient and the fold of the disk are taken on the places of the finest plan, whatever is open
   const ways = new Map();
@@ -1327,7 +1327,8 @@ const sideOfRoles = (rs, otherwise) => {
   const any = f => rs.some(r => r[f]);
   // what it only makes sure of before it reads it (a file downloaded where it is missing) is its input, between the steps
   // that fill and use it
-  if (any("reads") && any("writes")) return any("found") ? (any("updated") ? "both" : "mid") : any("used") ? "mid" : "out";
+  // what it reads there only to check or count it does not use: the place keeps what the route leaves there
+  if (any("reads") && any("writes")) return !any("used") ? "out" : any("found") && any("updated") ? "both" : "mid";
   if (any("reads")) return "in";
   if (any("writes")) return "out";
   if (any("open")) return "mid";
