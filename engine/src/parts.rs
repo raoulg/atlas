@@ -141,8 +141,11 @@ pub fn assign(g: &mut Graph) {
     }
     // the package named after the graph comes first: scripts and notebooks are routes into it
     ids.sort_by_key(|id| id != &g.root);
-    let leaves = crate::language::leaves(&g.language);
-    g.parts = ids.iter().map(|id| Part { id: id.clone(), language: g.language.clone(), dir: g.project_root.clone(), leaves }).collect();
+    let (leaves, structural) = (crate::language::leaves(&g.language), crate::language::structural(&g.language));
+    g.parts = ids
+        .iter()
+        .map(|id| Part { id: id.clone(), language: g.language.clone(), dir: g.project_root.clone(), leaves, structural })
+        .collect();
     let known: HashSet<&String> = ids.iter().collect();
     for n in &mut g.nodes {
         let head = n.id.split('.').next().unwrap_or("").to_string();

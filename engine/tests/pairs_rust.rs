@@ -676,3 +676,276 @@ fn choices_a_choice_is_made_once_across_bodies() {
     // the shortcut still runs the job and sends its line
     assert!(edge(&s, EdgeKind::Calls, "runs.run", "runs.send") && edge(&s, EdgeKind::Calls, "runs.run", "runs.load"));
 }
+
+/// One side of the lens pair's club (`tests/pairs/lens/rust/club`): the Python club's desk, which
+/// keeps visits, members and reports in SQLite, a table each, and its log and roster in files, as
+/// Rust writes them.
+fn club(side: &str) -> &'static Graph {
+    static CLEAN: OnceLock<Graph> = OnceLock::new();
+    static SHORTCUT: OnceLock<Graph> = OnceLock::new();
+    let read = || {
+        analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/lens/rust/club").join(side), &Options::default())
+            .expect("reads")
+    };
+    if side == "clean" {
+        CLEAN.get_or_init(read)
+    } else {
+        SHORTCUT.get_or_init(read)
+    }
+}
+
+/// What `lens` says of class `id` of the club: empty when it asks nothing.
+fn lens_of(g: &Graph, id: &str) -> String {
+    check(g).into_iter().find(|f| f.principle == "lens" && f.node == format!("club.{id}")).map(|f| f.what).unwrap_or_default()
+}
+
+/// What a lens puts, it gets back, at the table it puts to; and a key its statement finds rows by
+/// is no value put. The clean `Desk` only writes `visits` and only reads `members`: no lens on
+/// either. Its `Register` gets the Member back from `members`, and its `Visits.forget` deletes a
+/// Member's visits by the Member, a key. The shortcut's `Desk` reads `visits` back as tuples, its
+/// `Register` reads back only names (the Member inside a Report comes from `reports`), and its
+/// `Visits.come` inserts a Member's name as a value: each is asked.
+#[test]
+fn lens_the_place_is_the_table_and_a_key_is_no_put() {
+    let (c, s) = (club("clean"), club("shortcut"));
+    let fs = check(c);
+    assert!(fs.is_empty(), "{:#?}", fs.iter().map(|f| format!("{} {} {}", f.principle, f.node, f.what)).collect::<Vec<_>>());
+    let at = |f: &str| touches(c, f, "db_sqlite").iter().map(|t| (t.artifact.clone(), t.dir_name())).collect::<Vec<_>>();
+    assert_eq!(at("club.desk.Desk.members"), [("members".to_string(), "read")]);
+    assert_eq!(at("club.desk.Visits.forget"), [("visits".to_string(), "write")]);
+    assert!(edge(c, EdgeKind::Takes, "club.desk.Visits.forget", "club.Member"));
+    assert_eq!(lens_of(s, "desk.Desk"), "Desk puts Visit into SQLite(visits) and gets no Visit back");
+    assert_eq!(lens_of(s, "desk.Register"), "Register puts Member into SQLite(members) and gets no Member back");
+    assert_eq!(lens_of(s, "desk.Visits"), "Visits puts Member into SQLite(visits) and gets no Member back");
+}
+
+/// A get gives a value back from the place; an operation that reads the place on its way to
+/// writing it is a put. The clean `Log::add` reads the file, pushes a line and writes it back,
+/// `io::Result<()>`: an end product, no lens. The shortcut's `Log` also gives the lines back, and
+/// is asked where the Visit went.
+#[test]
+fn lens_a_get_gives_a_value_back() {
+    let (c, s) = (club("clean"), club("shortcut"));
+    let kinds: Vec<&str> = node(c, "club.files.Log.add").touches.iter().map(|t| t.kind_name()).collect();
+    assert!(kinds.contains(&"disk_read") && kinds.contains(&"disk_write"), "{kinds:?}");
+    assert_eq!(lens_of(c, "files.Log"), "");
+    assert_eq!(lens_of(s, "files.Log"), "Log puts Visit into Disk(Log.path) and gets no Visit back");
+}
+
+/// What a get gives back may be the class's own type, which a constructor gives. The clean
+/// `Roster::load` and `Roster::reread` give a Roster, which holds the Members `add` puts. The
+/// shortcut's `Roster::load` gives a Roster that holds the lines, and `Roster` is asked.
+#[test]
+fn lens_a_get_gives_its_own_class_back() {
+    let (c, s) = (club("clean"), club("shortcut"));
+    assert!(node(c, "club.files.Roster.load").ctor);
+    assert!(edge(c, EdgeKind::Has, "club.files.Roster", "club.Member"));
+    assert_eq!(lens_of(c, "files.Roster"), "");
+    assert_eq!(lens_of(s, "files.Roster"), "Roster puts Member into Disk(Roster.path) and gets no Member back");
+}
+
+/// What a get gives back holds its fields, a library's type among them. `Ledger` puts a `Decimal`
+/// and gets it back as an `Entry`'s `amount: Decimal` (`tests/pairs/lens/rust/ledger`); the Rust
+/// reader keeps a field of a library's type beside the struct, not as a `has` edge, so `lens` does
+/// not see the Decimal come back.
+#[test]
+#[ignore = "gap (a): the Rust reader draws no `has` edge to a library's type"]
+fn lens_a_library_type_comes_back_inside_what_a_get_gives() {
+    let g =
+        analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/lens/rust/ledger/clean"), &Options::default()).expect("reads");
+    assert!(edge(&g, EdgeKind::Has, "books.Entry", "ext:rust_decimal.Decimal"));
+    assert!(found(&g, "lens").is_empty(), "{:?}", found(&g, "lens"));
+}
+
+/// One side of the overrides pair (`tests/pairs/overrides`): books on a shelf, named and keyed.
+fn books(side: &str) -> Graph {
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/overrides/rust").join(side);
+    analyze(&dir, &Options::default()).expect("reads")
+}
+
+/// An override keeps the promise of its base, and Rust cannot write the careless form: the compiler
+/// holds a trait's implementation to the trait's signature, and the language says so
+/// (`Leaves::overrides`). Neither side is asked: not the `Shelf.get` that gives the `Book` its
+/// `Store::Item` names, written out on the clean side and by name on the other, nor the one `Book.id`
+/// the graph keeps of the two that `Named` and `Keyed` declare, whichever trait is implemented
+/// first.
+#[test]
+fn overrides_a_trait_implementation_has_its_traits_signature() {
+    for side in ["clean", "shortcut"] {
+        let g = books(side);
+        assert!(found(&g, "overrides").is_empty(), "{side}: {:?}", found(&g, "overrides"));
+        assert!(g.parts.iter().all(|p| !p.leaves.overrides && !p.structural), "{:?}", g.parts);
+        assert!(edge(&g, EdgeKind::Inherits, "books.Shelf", "books.Store"));
+        assert!(edge(&g, EdgeKind::Inherits, "books.Book", "books.Named") && edge(&g, EdgeKind::Inherits, "books.Book", "books.Keyed"));
+    }
+}
+
+/// One side of the change pair (`tests/pairs/changes`): a log a line is noted in.
+fn journal(side: &str) -> Graph {
+    analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/changes/rust").join(side), &Options::default()).expect("reads")
+}
+
+/// A change to an input shows in the signature. Rust says it with `&mut Log`, and with a type that
+/// changes through a shared reference, `&RefCell<Log>`: on the clean side both put the Log in the
+/// function's codomain, `changes` has nothing to ask, and neither is a call that leaves nothing
+/// behind. The shortcut borrows the log to read and pushes the line onto a copy of its lines: the
+/// line is lost, the signature says the log stays as it was, and `nothing` asks.
+#[test]
+fn changes_a_cell_in_the_signature_says_the_value_changes() {
+    let (c, s) = (journal("clean"), journal("shortcut"));
+    let fs = check(&c);
+    assert!(fs.is_empty(), "{:#?}", fs.iter().map(|f| format!("{} {} {}", f.principle, f.node, f.what)).collect::<Vec<_>>());
+    for f in ["journal.note", "journal.note_shared"] {
+        assert!(node(&c, f).params.iter().any(|p| p.name == "log" && p.changes), "{f}: {:?}", node(&c, f).params);
+        assert_eq!(targets(&c, EdgeKind::Mutates, f), ["journal.Log"], "{f}");
+    }
+    assert_eq!(found(&s, "nothing"), ["journal.note"]);
+    assert!(node(&s, "journal.note").params.iter().all(|p| !p.changes));
+    assert!(targets(&s, EdgeKind::Mutates, "journal.note").is_empty());
+}
+
+// ---------- layers: the package quotient the picture draws ----------
+
+/// One side of the layers pair (`tests/pairs/layers/rust`): a crate whose root audits through a
+/// stamp, and a ledger of books held in money's coins, with tests inside money that post.
+fn cyc_rust(side: &str) -> Graph {
+    analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/layers/rust").join(side), &Options::default()).expect("reads")
+}
+
+/// Whether a node is test code: marked so, or in a module that is.
+fn tested(g: &Graph, id: &str) -> bool {
+    let n = node(g, id);
+    n.test || g.node(&n.module).is_some_and(|m| m.test)
+}
+
+/// The modules of a crate depend on one another in one direction, its root's own code a block
+/// beside them, and a type is a dependence as a call is. The clean side keeps the stamp's rate in
+/// a module of its own below the root, and money knows nothing of the ledger that holds its coins.
+/// The shortcut writes `rate` in `lib.rs`, which the stamp calls back up into while `audit` calls the
+/// stamp, and lets money's `worth` take a `Book` of the ledger that holds a `Coin`: a cycle through
+/// types alone, with no call from money's built code to the ledger.
+#[test]
+fn layers_a_crates_root_and_its_types_depend_in_one_direction() {
+    let (c, s) = (cyc_rust("clean"), cyc_rust("shortcut"));
+    assert!(found(&c, "layers").is_empty(), "{:?}", check(&c).iter().map(|f| &f.what).collect::<Vec<_>>());
+    let layers: Vec<_> = check(&s).into_iter().filter(|f| f.principle == "layers").collect();
+    let mut said: Vec<&str> = layers.iter().map(|f| f.what.as_str()).collect();
+    said.sort();
+    assert_eq!(said, ["cyc itself and stamp depend on one another", "ledger and money depend on one another"]);
+    assert!(edge(&s, EdgeKind::Calls, "cyc.stamp.stamp", "cyc.rate"));
+    assert!(edge(&s, EdgeKind::Takes, "cyc.money.worth", "cyc.ledger.Book"));
+    assert!(edge(&s, EdgeKind::Has, "cyc.ledger.Book", "cyc.money.Coin"));
+    let money_calls_ledger =
+        s.edges.iter().filter(|e| e.kind == EdgeKind::Calls && e.src.starts_with("cyc.money.") && e.dst.starts_with("cyc.ledger."));
+    assert!(money_calls_ledger.into_iter().all(|e| tested(&s, &e.src)), "money calls the ledger only from its tests");
+}
+
+/// Test code is a way in from outside, not a layer. Inside `money` both sides keep an inline
+/// `#[cfg(test)] mod tests`, whose `posted` calls the ledger, and a file module declared under
+/// `#[cfg(test)]` (`money/checks.rs`) that builds a `Book`: counted as money's code they would close a
+/// cycle with the ledger that holds money's coins. The inline module's items stand in `money` in
+/// the graph, marked as test code; its `use super::*` is the tests' import, not `money`'s.
+#[test]
+fn layers_a_test_module_is_no_layer() {
+    for side in ["clean", "shortcut"] {
+        let g = cyc_rust(side);
+        assert!(node(&g, "cyc.money.posted").test, "{side}: an item of an inline test module is test code");
+        assert!(node(&g, "cyc.money.checks").test, "{side}: a file module declared under cfg(test) is test code");
+        assert!(!node(&g, "cyc.money.round").test, "{side}: what stands beside a test module is not");
+        assert!(edge(&g, EdgeKind::Calls, "cyc.money.posted", "cyc.ledger.post"), "{side}");
+        assert!(edge(&g, EdgeKind::Calls, "cyc.money.checks.posted_book", "cyc.ledger.post"), "{side}");
+        assert!(!edge(&g, EdgeKind::Imports, "cyc.money", "cyc"), "{side}: the tests' `use super::*` is no import of money's");
+        let layers: Vec<_> = check(&g).into_iter().filter(|f| f.principle == "layers").collect();
+        assert!(layers.iter().all(|f| f.evidence.iter().all(|e| !e.contains("posted"))), "{side}: {layers:#?}");
+    }
+}
+
+// ---------- prophecy: what leans, and what a name names ----------
+
+fn prophecy_rust(topic: &str, side: &str) -> Graph {
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/prophecy").join(topic).join("rust").join(side);
+    analyze(&dir, &Options::default()).expect("reads")
+}
+
+/// Test code may lean on the code it is written for before it is built. On the clean side a helper
+/// in an inline `#[cfg(test)] mod tests`, a file module declared under `#[cfg(test)]` and an
+/// integration test in `tests/` call the prophecy `seal`: Atlas asks nothing. The shortcut writes
+/// the inline module's helper beside the code it checks, outside the test module: built code that
+/// would run on a stub, and asked.
+#[test]
+fn prophecy_a_test_leans_on_a_prophecy_freely() {
+    let (c, s) = (prophecy_rust("tested", "clean"), prophecy_rust("tested", "shortcut"));
+    assert!(check(&c).is_empty(), "{:?}", check(&c).iter().map(|f| format!("{} {}", f.principle, f.what)).collect::<Vec<_>>());
+    for helper in ["archive.sealed_twice", "archive.checks.sealed", "archive.tests.seal.sealed"] {
+        assert!(edge(&c, EdgeKind::Calls, helper, "archive.seal"), "{helper} calls the prophecy");
+        assert!(tested(&c, helper), "{helper} is test code");
+    }
+    assert_eq!(found(&s, "prophecy"), ["archive.sealed_twice"]);
+    assert!(!tested(&s, "archive.sealed_twice"));
+}
+
+/// A name the prophecy's `supersedes` writes is read as Rust reads a path: `crate::` and the crate's
+/// own name start at the crate, `self::` at the prophecy's module and `super::` at the one above it;
+/// a name that ends one node's id names it. On the clean side every form holds. The shortcut writes
+/// `save`, which ends the ids of the ledger's `save` and the shelf's: Atlas says it names both, not
+/// that the code does not hold it. And `crate::ledger::store` names nothing: a false prophecy.
+#[test]
+fn prophecy_a_name_is_read_as_the_language_reads_a_path() {
+    let (c, s) = (prophecy_rust("names", "clean"), prophecy_rust("names", "shortcut"));
+    assert!(found(&c, "prophecy").is_empty(), "{:?}", check(&c).iter().map(|f| &f.what).collect::<Vec<_>>());
+    let replaces = |g: &Graph, id: &str| node(g, id).prophecy.as_ref().and_then(|p| p.replaces.clone());
+    for (prophecy, replaced) in [
+        ("archive.post_v2", "archive.ledger.post"),
+        ("archive.post_v3", "archive.ledger.post"),
+        ("archive.save_v2", "archive.shelf.save"),
+        ("archive.ledger.save_v3", "archive.ledger.save"),
+        ("archive.ledger.keep_v2", "archive.shelf.keep"),
+    ] {
+        assert_eq!(replaces(&c, prophecy).as_deref(), Some(replaced), "{prophecy}");
+    }
+    let asked: Vec<_> = check(&s).into_iter().filter(|f| f.principle == "prophecy").collect();
+    let said: Vec<(&str, &str)> = asked.iter().map(|f| (f.node.as_str(), f.what.as_str())).collect();
+    assert_eq!(
+        said,
+        [
+            ("archive.save_v2", "save_v2 supersedes `save`, which names 2 nodes: `archive.ledger.save` and `archive.shelf.save`"),
+            ("archive.store_v2", "store_v2 supersedes `crate::ledger::store`, which the code does not hold"),
+        ]
+    );
+    let text = atlas_engine::revelation::report("archive", &atlas_engine::revelation::revelation(&s), &[]);
+    assert!(text.contains("supersedes `save`, which names 2 nodes"), "{text}");
+    assert!(text.contains("supersedes `crate::ledger::store`, which the code does not hold"), "{text}");
+}
+
+/// One side of the nothing pair (`tests/pairs/nothing`): a job runner that runs a task, says when a
+/// job is done, settles its log and stops the run, in Python, Rust and TypeScript alike.
+fn jobs(side: &str) -> Graph {
+    analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/nothing/rust").join(side), &Options::default()).unwrap()
+}
+
+/// A call leaves something behind, and where Atlas cannot see what a call leaves, the question says
+/// so. The clean runner leaves each step where a reader sees it: `finish` is handed its callback,
+/// `count` changes an atomic `static`, `settle` writes its log and `stop` ends the run with
+/// `std::process::exit`: nothing is asked. The shortcut's `Job` keeps its callback in a field and
+/// calls it there, `(self.on_done)()`, a call Atlas cannot follow: Atlas asks what it leaves behind.
+/// `settle`, a door that waits and does nothing, is asked whether it is dead, as any function is.
+/// An implementation names the trait it fills in, so `run_task` reads alike on both sides.
+#[test]
+fn nothing_says_what_atlas_cannot_see() {
+    let (c, s) = (jobs("clean"), jobs("shortcut"));
+    let asked = |g: &Graph| -> Vec<(String, String)> {
+        check(g).into_iter().filter(|f| f.principle == "nothing").map(|f| (f.node, f.what)).collect()
+    };
+    assert!(asked(&c).is_empty(), "{:#?}", asked(&c));
+    assert!(node(&c, "jobs.stop").raises, "ending the run is what `stop` leaves behind");
+    let want = [
+        ("jobs.Job.finish", "Job.finish gives nothing back, and Atlas cannot see what `(self.on_done)(..)` does"),
+        ("jobs.settle", "settle gives nothing back, and Atlas sees no change and no place it reaches"),
+    ]
+    .map(|(f, what)| (f.to_string(), what.to_string()));
+    assert_eq!(asked(&s), want);
+    for g in [&c, &s] {
+        assert!(node(g, "jobs.Task.run").declared, "a trait's method without a body is what its implementations fill in");
+        assert!(edge(g, EdgeKind::Calls, "jobs.run_task", "jobs.Task.run"));
+    }
+}

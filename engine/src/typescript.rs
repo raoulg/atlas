@@ -18,8 +18,8 @@ mod paths;
 
 use paths::{Arg, At, Eval};
 
-use crate::body::{Crosses, Step, Steps, UseSyntax};
-use crate::builder::{foreign_type, ClassInfo, GraphBuilder, SigInfo};
+use crate::body::{changed_through, BindSyntax, Crosses, Step, Steps, UseSyntax};
+use crate::builder::{foreign_type, ClassInfo, Declared, GraphBuilder, SigInfo};
 use crate::effects::{self, Crossing};
 use crate::knowledge;
 use crate::knowledge::OwnTypes;
@@ -81,6 +81,9 @@ struct Module {
     /// The values a package made that every body of the module sees, by name: the module's own,
     /// and each class's fields by where the class starts. Found once, when a body first asks.
     made: std::cell::RefCell<HashMap<Option<usize>, HashMap<String, String>>>,
+    /// The fields of each of the module's classes and shapes that hold one of the language's own
+    /// containers, by the class: `rows: Row[]`, `seen = new Set<string>()`.
+    containers: HashMap<String, HashSet<String>>,
 }
 
 /// A name imported from a file not the package's own, as written.
@@ -116,6 +119,7 @@ impl Module {
             links: HashMap::new(),
             read: HashMap::new(),
             made: Default::default(),
+            containers: HashMap::new(),
         }
     }
 }
@@ -364,15 +368,15 @@ fn collect_types(n: TsNode, src: &[u8], skip: &[TsNode], out: &mut Vec<Vec<Strin
     }
 }
 
-/// Whether a type says what a value is: `any` says no more than leaving the type out. `unknown`
-/// does say: it is the type of what is still to be checked.
-fn says(t: TsNode, src: &[u8]) -> bool {
-    !(t.kind() == "predefined_type" && text(t, src) == "any")
+/// Whether a type is the unchecked one: `any`, which says no more than leaving the type out.
+/// `unknown` is checked: it is the type of what is still to be checked.
+fn unchecked(t: TsNode, src: &[u8]) -> bool {
+    t.kind() == "predefined_type" && text(t, src) == "any"
 }
 
 /// A signature as data: each parameter by name and type (`(id: string, opt?: Opties)`), the types
 /// they name, and what it gives back. `...rest` takes whatever arguments are left; a `this`
-/// parameter is the value the function is called on; a parameter typed `any` has no type.
+/// parameter is the value the function is called on; a parameter typed `any` is unchecked.
 fn signature(params: Option<TsNode>, ret: Option<TsNode>, src: &[u8]) -> (Vec<Param>, Option<Returns>, SigInfo) {
     let mut out = vec![];
     let mut info = SigInfo::default();
@@ -386,16 +390,14 @@ fn signature(params: Option<TsNode>, ret: Option<TsNode>, src: &[u8]) -> (Vec<Pa
                 let written = pattern.map(|x| text(x, src)).unwrap_or_else(|| text(p, src));
                 let name = written.split_whitespace().collect::<Vec<_>>().join(" ");
                 let ty = p.child_by_field_name("type");
+                let written = ty.and_then(|t| named_children(t).into_iter().next());
                 out.push(Param {
                     name: name.trim_start_matches("...").to_string(),
-                    ty: ty
-                        .and_then(|t| named_children(t).into_iter().next())
-                        .filter(|t| says(*t, src))
-                        .map(|t| text(t, src).to_string())
-                        .unwrap_or_default(),
+                    ty: written.map(|t| text(t, src).to_string()).unwrap_or_default(),
                     receiver: pattern.map_or(false, |x| x.kind() == "this"),
                     rest: pattern.map_or(false, |x| x.kind() == "rest_pattern"),
                     changes: false,
+                    unchecked: written.map_or(false, |t| unchecked(t, src)),
                 });
                 let (names, unions) = split_unions(ty, src);
                 info.ptypes.extend(names);
@@ -403,31 +405,29 @@ fn signature(params: Option<TsNode>, ret: Option<TsNode>, src: &[u8]) -> (Vec<Pa
             }
         }
     }
-    let returns = ret.and_then(|r| named_children(r).into_iter().next()).and_then(|r| returns(r, src));
+    let returns = ret.and_then(|r| named_children(r).into_iter().next()).map(|r| returns(r, src));
     (info.rtypes, info.runions) = split_unions(ret, src);
     (out, returns, info)
 }
 
 /// What a return type gives: a `Promise<T>` gives `T` once it arrives, `void` and `undefined` no
-/// value, `this` a value of the class it runs on; `any`, also once it arrives, says nothing.
-fn returns(rt: TsNode, src: &[u8]) -> Option<Returns> {
+/// value, `this` a value of the class it runs on; `any`, also once it arrives, is unchecked. A
+/// `Promise` says that the value arrives later, not that it may fail: it rejects where what it
+/// runs throws, as any call may.
+fn returns(rt: TsNode, src: &[u8]) -> Returns {
     let mut t = rt;
-    let fails = t.kind() == "generic_type" && t.child_by_field_name("name").map_or(false, |n| text(n, src) == "Promise");
     while t.kind() == "generic_type" && t.child_by_field_name("name").map_or(false, |n| text(n, src) == "Promise") {
         match t.child_by_field_name("type_arguments").and_then(|a| named_children(a).into_iter().next()) {
             Some(i) => t = i,
             None => break,
         }
     }
-    if !says(t, src) {
-        return None;
-    }
     let (value, own) = match (t.kind(), text(t, src)) {
         ("predefined_type", "void" | "undefined") => (String::new(), false),
         ("this_type", _) => (String::new(), true),
         (_, v) => (v.to_string(), false),
     };
-    Some(Returns { written: text(rt, src).to_string(), value, own, fails })
+    Returns { written: text(rt, src).to_string(), value, own, fails: false, unchecked: unchecked(t, src) }
 }
 
 // ---------- pass 1: files, symbols, imports ----------
@@ -482,7 +482,9 @@ pub fn parse(repo: &Repo, opts: &crate::Options) -> Result<(GraphBuilder, String
         store.files.insert(crate::tree::path_str(p), String::from_utf8_lossy(&src).to_string());
         let is_index = p.file_stem().and_then(|s| s.to_str()) == Some("index");
         let rel = crate::tree::path_str(p.strip_prefix(repo.root()).unwrap_or(p));
-        let entry = test_file(p).then(|| Entry::new(EntryKind::Test, rel.clone()));
+        // a test file is test code, and a route of its own: its body runs the tests
+        let test = test_file(p);
+        let entry = test.then(|| Entry::new(EntryKind::Test, rel.clone()));
         let node = Node {
             id: id.clone(),
             kind: NodeKind::Module,
@@ -491,6 +493,7 @@ pub fn parse(repo: &Repo, opts: &crate::Options) -> Result<(GraphBuilder, String
             span: span(tree.root_node()),
             module: id.clone(),
             is_pkg: is_index,
+            test,
             entry,
             ..Default::default()
         };
@@ -504,6 +507,9 @@ pub fn parse(repo: &Repo, opts: &crate::Options) -> Result<(GraphBuilder, String
         collect_routes(m, &mut store);
     }
     libraries::read(repo, &mut modules, &mut store, opts.libraries);
+    for m in modules.values_mut() {
+        m.containers = container_fields(m);
+    }
     route_prefixes(&modules, &mut store);
     mark_bins(repo, &files, &mut store);
     mark_exports(repo, &files, &modules, &mut store);
@@ -598,6 +604,22 @@ fn route_path(value: TsNode, src: &[u8]) -> Option<String> {
 }
 
 fn add_function(m: &mut Module, store: &mut GraphBuilder, name: &str, def: TsNode, f: TsNode, body: TsNode, cls: Option<&str>) -> String {
+    add_declared(m, store, name, def, f, body, cls, Declared::Body)
+}
+
+/// A function, from one declaration of its name: what `GraphBuilder::declare` keeps of it, and,
+/// when it is the declaration kept, the body it runs.
+#[allow(clippy::too_many_arguments)]
+fn add_declared(
+    m: &mut Module,
+    store: &mut GraphBuilder,
+    name: &str,
+    def: TsNode,
+    f: TsNode,
+    body: TsNode,
+    cls: Option<&str>,
+    declared: Declared,
+) -> String {
     let src = &m.src;
     let id = match cls {
         Some(c) => format!("{c}.{name}"),
@@ -605,39 +627,70 @@ fn add_function(m: &mut Module, store: &mut GraphBuilder, name: &str, def: TsNod
     };
     let params = f.child_by_field_name("parameters").or_else(|| f.child_by_field_name("parameter"));
     let (params, returns, sig) = signature(params, f.child_by_field_name("return_type"), src);
-    store.sigs.insert(id.clone(), sig);
     let on_class = cls.is_some() && (0..def.child_count()).filter_map(|i| def.child(i)).any(|c| c.kind() == "static");
     // the constructor initializes what `new` makes; a static method that gives its class constructs
     let class_name = cls.map(|c| c.rsplit('.').next().unwrap_or(c));
     let gives_class = returns.as_ref().map_or(false, |r| r.own || Some(r.value.as_str()) == class_name);
-    store.add_node(Node {
-        id: id.clone(),
-        kind: if cls.is_some() { NodeKind::Method } else { NodeKind::Function },
-        on_class,
-        ctor: cls.is_some() && (name == "constructor" || on_class && gives_class),
-        // a member is private when it says so; a module's own name is, unless the module exports it
-        private: cls.is_some()
-            && (name.starts_with('#')
-                || named_children(def).iter().any(|c| c.kind() == "accessibility_modifier" && text(*c, src) != "public")),
-        name: name.to_string(),
-        file: crate::tree::path_str(&m.path),
-        span: span(def),
-        module: m.id.clone(),
-        doc: doc_of(def, src),
-        prophecy: prophecy_of(def, src),
-        cls: cls.map(str::to_string),
-        params,
-        returns,
-        ..Default::default()
-    });
-    m.bodies.insert(id.clone(), (body.start_byte(), body.end_byte()));
+    let kept = declared == Declared::Body || !store.nodes.contains_key(&id);
+    store.declare(
+        Node {
+            id: id.clone(),
+            kind: if cls.is_some() { NodeKind::Method } else { NodeKind::Function },
+            on_class,
+            ctor: cls.is_some() && (name == "constructor" || on_class && gives_class),
+            // a member is private when it says so; a module's own name is, unless the module exports it
+            private: cls.is_some()
+                && (name.starts_with('#')
+                    || named_children(def).iter().any(|c| c.kind() == "accessibility_modifier" && text(*c, src) != "public")),
+            name: name.to_string(),
+            file: crate::tree::path_str(&m.path),
+            span: span(def),
+            module: m.id.clone(),
+            doc: doc_of(def, src),
+            prophecy: prophecy_of(def, src),
+            cls: cls.map(str::to_string),
+            // a method an interface or an abstract class declares is its signature alone
+            declared: matches!(f.kind(), "method_signature" | "abstract_method_signature"),
+            params,
+            returns,
+            ..Default::default()
+        },
+        sig,
+        declared,
+    );
+    if kept {
+        m.bodies.insert(id.clone(), (body.start_byte(), body.end_byte()));
+    }
     id
+}
+
+/// What a declaration of a function is among the declarations of its name in one scope: a
+/// signature without a body, where the name is declared again, is an overload; a `set` accessor
+/// writes the property its `get` reads.
+fn declared_as(d: TsNode, overloaded: &HashSet<String>, src: &[u8]) -> Declared {
+    let name = d.child_by_field_name("name").map_or("", |n| text(n, src));
+    let signature = matches!(d.kind(), "function_signature" | "method_signature");
+    if signature && overloaded.contains(name) {
+        Declared::Overload
+    } else if (0..d.child_count()).filter_map(|i| d.child(i)).any(|c| c.kind() == "set") {
+        Declared::Writer
+    } else {
+        Declared::Body
+    }
+}
+
+/// The names declared more than once among `decls`.
+fn declared_again<'t>(decls: impl Iterator<Item = TsNode<'t>>, src: &[u8]) -> HashSet<String> {
+    let mut seen = HashSet::new();
+    decls.filter_map(|d| d.child_by_field_name("name")).map(|n| text(n, src).to_string()).filter(|n| !seen.insert(n.clone())).collect()
 }
 
 fn collect_symbols(m: &mut Module, store: &mut GraphBuilder) {
     let tree = m.tree.clone();
     let src = m.src.clone();
     let mut route: Option<String> = None;
+    let functions = |d: &TsNode| matches!(d.kind(), "function_declaration" | "function_signature");
+    let overloaded = declared_again(declarations(tree.root_node()).into_iter().map(|(d, _, _)| d).filter(functions), &src);
     for (d, exported, default) in declarations(tree.root_node()) {
         let name = d.child_by_field_name("name").map(|n| text(n, &src).to_string()).unwrap_or_default();
         if exported && !name.is_empty() {
@@ -648,7 +701,7 @@ fn collect_symbols(m: &mut Module, store: &mut GraphBuilder) {
                 if !name.is_empty() =>
             {
                 let body = d.child_by_field_name("body").unwrap_or(d);
-                let id = add_function(m, store, &name, d, d, body, None);
+                let id = add_declared(m, store, &name, d, d, body, None, declared_as(d, &overloaded, &src));
                 store.add_edge(&m.id.clone(), &id, EdgeKind::Contains, None);
                 m.symbols.insert(name.clone(), id.clone());
                 if default {
@@ -670,16 +723,22 @@ fn collect_symbols(m: &mut Module, store: &mut GraphBuilder) {
                         }
                     }
                 }
-                let mut methods = vec![];
+                let mut methods: Vec<String> = vec![];
                 if let Some(body) = d.child_by_field_name("body") {
+                    let members = |x: &TsNode| matches!(x.kind(), "method_definition" | "abstract_method_signature" | "method_signature");
+                    let overloaded = declared_again(named_children(body).into_iter().filter(members), &src);
                     for member in named_children(body) {
                         match member.kind() {
                             "method_definition" | "abstract_method_signature" | "method_signature" => {
                                 let mname = member.child_by_field_name("name").map(|n| text(n, &src).to_string()).unwrap_or_default();
                                 let mbody = member.child_by_field_name("body").unwrap_or(member);
-                                let mid = add_function(m, store, &mname, member, member, mbody, Some(&id));
+                                let declared = declared_as(member, &overloaded, &src);
+                                let mid = add_declared(m, store, &mname, member, member, mbody, Some(&id), declared);
                                 store.add_edge(&id, &mid, EdgeKind::Contains, None);
-                                methods.push(mid.rsplit('.').next().unwrap_or("").to_string());
+                                let own = mid.rsplit('.').next().unwrap_or("").to_string();
+                                if !methods.contains(&own) {
+                                    methods.push(own);
+                                }
                                 // `constructor(private bron: Bron)` declares a field
                                 if mname == "constructor" {
                                     for p in member.child_by_field_name("parameters").map(named_children).unwrap_or_default() {
@@ -839,12 +898,17 @@ fn namespace(m: &mut Module, store: &mut GraphBuilder, name: &str, object: TsNod
 /// signature is a method of the type, with no body of its own.
 fn method_signatures(m: &mut Module, store: &mut GraphBuilder, type_name: &str, body: TsNode) -> Vec<String> {
     let id = format!("{}.{type_name}", m.id);
-    let mut out = vec![];
-    for sig in named_children(body).into_iter().filter(|x| x.kind() == "method_signature") {
+    let mut out: Vec<String> = vec![];
+    let sigs: Vec<TsNode> = named_children(body).into_iter().filter(|x| x.kind() == "method_signature").collect();
+    let overloaded = declared_again(sigs.iter().copied(), &m.src);
+    for sig in sigs {
         let name = sig.child_by_field_name("name").map(|n| text(n, &m.src).to_string()).unwrap_or_default();
-        let mid = add_function(m, store, &name, sig, sig, sig, Some(&id));
+        let declared = declared_as(sig, &overloaded, &m.src);
+        let mid = add_declared(m, store, &name, sig, sig, sig, Some(&id), declared);
         store.add_edge(&id, &mid, EdgeKind::Contains, None);
-        out.push(name);
+        if !out.contains(&name) {
+            out.push(name);
+        }
     }
     out
 }
@@ -1186,6 +1250,58 @@ fn builds_container(v: TsNode, m: &Module, src: &[u8]) -> bool {
         "new_expression" => v.child_by_field_name("constructor").map_or(false, |c| container_type(text(c, src), m)),
         _ => false,
     }
+}
+
+/// The fields of a module's classes and shapes that hold one of the language's own containers, by
+/// the class: declared as one (`rows: Row[]`, a constructor's `readonly seen: Set<string>`) or set
+/// to a new one (`rows = []`).
+fn container_fields(m: &Module) -> HashMap<String, HashSet<String>> {
+    let src = &m.src[..];
+    let holds = |ty: Option<TsNode>, value: Option<TsNode>| match ty {
+        Some(t) => container_type(text(t, src), m),
+        None => value.map_or(false, |v| builds_container(v, m, src)),
+    };
+    let mut out: HashMap<String, HashSet<String>> = HashMap::new();
+    for (d, _, _) in declarations(m.tree.root_node()) {
+        let Some(name) = d.child_by_field_name("name").map(|n| text(n, src)) else { continue };
+        let body = match d.kind() {
+            "class_declaration" | "abstract_class_declaration" | "class" | "interface_declaration" => d.child_by_field_name("body"),
+            "type_alias_declaration" => d.child_by_field_name("value").filter(|v| v.kind() == "object_type"),
+            _ => None,
+        };
+        let Some(body) = body else { continue };
+        let mut fields = HashSet::new();
+        for member in named_children(body) {
+            match member.kind() {
+                "public_field_definition" | "property_signature" => {
+                    if holds(member.child_by_field_name("type"), member.child_by_field_name("value")) {
+                        fields.extend(member.child_by_field_name("name").map(|n| text(n, src).to_string()));
+                    }
+                }
+                // `constructor(readonly rows: Row[])` declares a field, and `this.rows = []` in it sets one
+                "method_definition" if member.child_by_field_name("name").map(|n| text(n, src)) == Some("constructor") => {
+                    for p in member.child_by_field_name("parameters").map(named_children).unwrap_or_default() {
+                        if is_property(p) && holds(p.child_by_field_name("type"), None) {
+                            fields.extend(p.child_by_field_name("pattern").map(|n| text(n, src).to_string()));
+                        }
+                    }
+                    for a in member.child_by_field_name("body").map(|b| walk(b, &["assignment_expression"])).unwrap_or_default() {
+                        let (Some(l), Some(r)) = (a.child_by_field_name("left"), a.child_by_field_name("right")) else { continue };
+                        if let ([this, field], true) = (member_parts(l, src).as_slice(), builds_container(r, m, src)) {
+                            if this == "this" {
+                                fields.insert(field.clone());
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        if !fields.is_empty() {
+            out.insert(format!("{}.{name}", m.id), fields);
+        }
+    }
+    out
 }
 
 fn typed_package(ty: TsNode, m: &Module, src: &[u8]) -> Option<String> {
@@ -1865,6 +1981,7 @@ fn link_calls<'t>(
             b.call(&mut steps, c);
             steps.mark(c, b.read.touches[t..].iter_mut().chain(b.read.calls[w..].iter_mut().map(|(t, _)| t)));
         }
+        b.class_state(&mut steps);
         b.ends();
         b.read
     };
@@ -1893,16 +2010,20 @@ fn link_calls<'t>(
         store.touch(id, t);
     }
     for (t, input) in read.mutates {
+        if t.starts_with("ext:") {
+            store.ext_node(&t);
+        }
         store.add_edge(id, &t, EdgeKind::Mutates, Some(input));
     }
     if let (Some(compares), Some(node)) = (compares, store.nodes.get_mut(id)) {
         node.compares = compares;
-        node.raises = crate::tree::holds(
-            body,
-            &m.src,
-            |n, _| n.kind() == "throw_statement",
-            &["function_declaration", "class_declaration", "method_definition"],
-        );
+        node.raises = read.exits
+            || crate::tree::holds(
+                body,
+                &m.src,
+                |n, _| n.kind() == "throw_statement",
+                &["function_declaration", "class_declaration", "method_definition"],
+            );
     }
     linked.args.extend(read.args);
     linked.calls.extend(read.calls.into_iter().map(|(t, built)| (id.to_string(), t, built)));
@@ -1910,8 +2031,8 @@ fn link_calls<'t>(
 
 /// What reading a body finds besides its steps: what it touches, the calls Atlas could not
 /// follow, the functions whose value it uses, the inputs it changes in place, the calls of the
-/// package's functions with the arguments they pass, and the file and network calls whose path
-/// or URL waits for them.
+/// package's functions with the arguments they pass, the file and network calls whose path
+/// or URL waits for them, and whether it calls what ends the program.
 #[derive(Default)]
 struct Read<'t> {
     touches: Vec<Touch>,
@@ -1920,6 +2041,7 @@ struct Read<'t> {
     mutates: Vec<(String, String)>,
     args: Vec<Arg<'t>>,
     calls: Vec<(Touch, Vec<crate::paths::Built>)>,
+    exits: bool,
 }
 
 /// A function's body, or a module's own code, as TypeScript reads it: the program around it,
@@ -1946,7 +2068,8 @@ struct Body<'a, 't> {
     /// The classes the body's names hold: its typed parameters, and locals declared with a type,
     /// built with `new`, or handed on by a function.
     locals: HashMap<String, String>,
-    param_types: HashMap<String, String>,
+    /// What a change to each typed parameter changes (`inputs_of`).
+    inputs: HashMap<String, String>,
     /// The values a package made, by the package: a call on one is the package's.
     made: HashMap<String, String>,
     /// The names that hold one of the language's own containers, as the body declares or builds
@@ -1990,7 +2113,7 @@ impl<'a, 't> Body<'a, 't> {
             returned,
             eval,
             locals: HashMap::new(),
-            param_types: HashMap::new(),
+            inputs: HashMap::new(),
             made: HashMap::new(),
             containers: HashSet::new(),
             sites: vec![],
@@ -2021,9 +2144,102 @@ impl<'a, 't> Body<'a, 't> {
         r.filter(|r| self.store.nodes.get(r).map_or(false, |x| x.kind == NodeKind::Class))
     }
 
+    /// The values a class keeps that the body changes by assignment: `Counter.total += 1`,
+    /// `Registry.handlers[name] = fn`. A static of a class is no place Atlas draws, so what the
+    /// change leaves behind it does not see.
+    fn class_state(&self, steps: &mut Steps) {
+        if self.is_module {
+            return;
+        }
+        let src = self.src;
+        for a in walk(self.body, &["assignment_expression", "augmented_assignment_expression", "update_expression"]) {
+            let Some(mut root) = a.child_by_field_name(if a.kind() == "update_expression" { "argument" } else { "left" }) else { continue };
+            let mut through = false;
+            while let Some(inner) = match root.kind() {
+                "member_expression" | "subscript_expression" => root.child_by_field_name("object"),
+                _ => None,
+            } {
+                (root, through) = (inner, true);
+            }
+            if through && root.kind() == "identifier" && self.class(self.resolve(&[text(root, src).to_string()])).is_some() {
+                steps.unseen(a, text(a, src));
+            }
+        }
+    }
+
     /// Whether `r` is one of the program's own functions or classes.
     fn own(&self, r: &str) -> bool {
         !r.starts_with("ext:") && self.store.nodes.contains_key(r)
+    }
+
+    /// What a change to each typed parameter changes, by name: the type the picture draws it as,
+    /// the program's class its type names, also inside a container (`e: Expense`, `rows: Row[]`,
+    /// `Map<string, Row>`), or a library's class (`http: AxiosInstance`); else the language's own
+    /// container it is (`lines: string[]` is an `Array`).
+    fn inputs_of(&self) -> HashMap<String, String> {
+        let src = self.src;
+        let mut out = HashMap::new();
+        for p in self.scope.and_then(|f| f.child_by_field_name("parameters")).map(named_children).unwrap_or_default() {
+            let (Some(name), Some(ty)) =
+                (p.child_by_field_name("pattern").filter(|x| x.kind() == "identifier"), p.child_by_field_name("type"))
+            else {
+                continue;
+            };
+            let drawn = type_names(Some(ty), src).into_iter().filter_map(|t| self.resolve(&t)).find(|r| {
+                if r.starts_with("ext:") {
+                    foreign_type(r, &OWN)
+                } else {
+                    self.class(Some(r.clone())).is_some()
+                }
+            });
+            let written = text(ty, src).trim_start_matches(':').trim();
+            let container = container_type(written, self.m).then(|| {
+                let head = written.split(|c: char| !(c.is_alphanumeric() || c == '_' || c == '$')).next().unwrap_or("");
+                format!("ext:javascript.{}", if knowledge::TYPESCRIPT_CHANGEABLE.contains(&head) { head } else { "Array" })
+            });
+            if let Some(t) = drawn.or(container) {
+                out.insert(text(name, src).to_string(), t);
+            }
+        }
+        out
+    }
+
+    /// Whether a value holds one of the language's own containers that change in place: a name the
+    /// body declares or builds as one, or a field declared as one of the class the value is
+    /// (`this.rows`, `bag.items`), or of a class it inherits from.
+    fn holds_container(&self, v: TsNode) -> bool {
+        let src = self.src;
+        match v.kind() {
+            "identifier" => self.containers.contains(text(v, src)),
+            "non_null_expression" | "parenthesized_expression" => {
+                named_children(v).into_iter().next().map_or(false, |x| self.holds_container(x))
+            }
+            "member_expression" => {
+                let (Some(o), Some(field)) = (v.child_by_field_name("object"), v.child_by_field_name("property")) else { return false };
+                // the class of the value the field is read from: the body's own, a name's, a field's of the body's own
+                let class = match o.kind() {
+                    "this" => self.cls.clone(),
+                    "identifier" => self.locals.get(text(o, src)).cloned(),
+                    "member_expression" if o.child_by_field_name("object").map_or(false, |t| t.kind() == "this") => {
+                        o.child_by_field_name("property").and_then(|p| self.attrs.get(text(p, src)).cloned())
+                    }
+                    _ => None,
+                };
+                let (mut todo, mut seen) = (class.into_iter().collect::<Vec<_>>(), HashSet::new());
+                while let Some(c) = todo.pop() {
+                    if !seen.insert(c.clone()) {
+                        continue;
+                    }
+                    let home = self.store.nodes.get(&c).and_then(|n| self.modules.get(&n.module));
+                    if home.and_then(|m| m.containers.get(&c)).map_or(false, |fs| fs.contains(text(field, src))) {
+                        return true;
+                    }
+                    todo.extend(self.store.classes.get(&c).map(|i| i.resolved.clone()).unwrap_or_default());
+                }
+                false
+            }
+            _ => false,
+        }
     }
 
     /// Parameters and locals with a class type give receivers a type.
@@ -2040,7 +2256,7 @@ impl<'a, 't> Body<'a, 't> {
                 self.locals.insert(p.name.clone(), r);
             }
         }
-        self.param_types = self.locals.clone();
+        self.inputs = self.inputs_of();
         let declarators: Vec<TsNode> = walk(self.body, &["variable_declarator"]).into_iter().filter(|v| self.mine(*v)).collect();
         for v in declarators {
             let (Some(name), Some(value)) = (v.child_by_field_name("name"), v.child_by_field_name("value")) else { continue };
@@ -2354,6 +2570,10 @@ impl<'a, 't> Body<'a, 't> {
             _ if parts.is_empty() => {
                 let (name, bucket) = (written_callee(f, src), self.bucket_of(f));
                 self.unread(steps, c, &name, bucket, hands, vec![]);
+                // what the language's own computes Atlas reads; what anything else does, it does not see
+                if bucket != Bucket::Builtin {
+                    steps.dropped(c, &name);
+                }
                 self.read.unresolved.push((name, bucket));
             }
             _ => {
@@ -2365,12 +2585,23 @@ impl<'a, 't> Body<'a, 't> {
                 } else {
                     text(f, src).to_string()
                 };
-                match self.eval.command_line(At { m: self.m, scope: self.scope, params: &self.params }, c) {
+                let parsed = self.eval.command_line(At { m: self.m, scope: self.scope, params: &self.params }, c);
+                // the language's own, a change and a parse of the command line are what the tables say
+                let known = parsed.is_some() || bucket == Bucket::Builtin;
+                match parsed {
                     Some(options) => steps.parses(c, &name, hands, self.parsed_into(c), options),
                     None => self.unread(steps, c, &name, bucket, hands, changed),
                 }
                 self.read.unresolved.push((parts.iter().take(2).cloned().collect::<Vec<_>>().join("."), bucket));
+                let exits = matches!(parts.as_slice(), [.., module, f] if knowledge::ends_the_run(module, f));
+                self.read.exits |= exits;
+                let crossed = (self.read.touches.len(), self.read.calls.len());
                 self.crossed(c, &parts);
+                // a package's call the tables say nothing of beside what it gives, or one Atlas
+                // cannot follow: what it does, Atlas does not see
+                if !known && !exits && crossed == (self.read.touches.len(), self.read.calls.len()) {
+                    steps.dropped(c, &text(f, src));
+                }
             }
         }
     }
@@ -2571,21 +2802,29 @@ impl<'a, 't> Body<'a, 't> {
         }
     }
 
-    /// The names whose values the body changes in place. A method of the program's own changes
-    /// the value it is called on when its body changes its own receiver; the language's table of
-    /// methods that change their receiver speaks only for the calls Atlas does not follow.
+    /// The names whose values the body changes in place, followed through the names they are
+    /// changed by (`changed_through`). A call changes the value it is made on by what that value
+    /// is: a method of the program's own when its body changes its own receiver, a method of the
+    /// language's table on a value that holds an array, a `Map` or a `Set`. A method's name alone
+    /// changes nothing (`http.delete(..)` on a library's client).
     fn changed(&self) -> std::collections::BTreeSet<&'t str> {
         let changes = |c: TsNode<'t>| -> Option<TsNode<'t>> {
             let f = function_of(c).filter(|f| f.kind() == "member_expression")?;
+            let on = f.child_by_field_name("object")?;
             let changing = match self.callee(c).filter(|t| self.own(t)) {
                 Some(t) => self.store.mutating.contains(&t),
-                None => f
-                    .child_by_field_name("property")
-                    .map_or(false, |p| knowledge::mutators(knowledge::Registry::Npm).contains(&text(p, self.src))),
+                None => {
+                    f.child_by_field_name("property")
+                        .map_or(false, |p| knowledge::mutates(knowledge::Registry::Npm, "javascript", text(p, self.src)))
+                        && self.holds_container(on)
+                }
             };
-            changing.then(|| f.child_by_field_name("object")).flatten()
+            changing.then_some(on)
         };
-        changed_roots(self.body, self.src, &changes)
+        changes_in(self.body, self.src, &changes)
+            .into_iter()
+            .filter_map(|(x, root)| changed_through(self.body, self.src, &BINDS, root, x.start_byte()))
+            .collect()
     }
 
     /// What the body does besides its calls: the connections the platform's own constructors
@@ -2616,7 +2855,7 @@ impl<'a, 't> Body<'a, 't> {
             });
         }
         for r in self.changed() {
-            let ty = if r == "this" { self.cls.clone().filter(|_| !self.initializer) } else { self.param_types.get(r).cloned() };
+            let ty = if r == "this" { self.cls.clone().filter(|_| !self.initializer) } else { self.inputs.get(r).cloned() };
             if let Some(t) = ty {
                 self.read.mutates.push((t, r.to_string()));
             }
@@ -2694,20 +2933,48 @@ fn chain_root<'a>(n: TsNode, src: &'a [u8]) -> Option<&'a str> {
     }
 }
 
-/// The names whose objects a body changes in place: the root of every assignment to a member
-/// or an item (`this.x = ..`, `p.items[k] += ..`, `p.n++`, `delete p.k`), and of the value every
-/// call that changes something is made on, as `changes` says (`p.rows.push(..)`). Changing a part
-/// changes the whole.
-fn changed_roots<'a, 't>(
-    body: TsNode<'t>,
-    src: &'a [u8],
-    changes: &dyn Fn(TsNode<'t>) -> Option<TsNode<'t>>,
-) -> std::collections::BTreeSet<&'a str> {
-    changes_in(body, src, changes).into_iter().map(|(_, root)| root).collect()
+/// How TypeScript binds a name, as `changes` follows a change through it: `const x = v` and `x = v`
+/// bind `x` to `v`, `for (const x of v)` to each element of `v`.
+const BINDS: BindSyntax = BindSyntax {
+    binds: |n, src| {
+        let (l, v) = match n.kind() {
+            "variable_declarator" => (n.child_by_field_name("name")?, n.child_by_field_name("value")?),
+            "assignment_expression" => (n.child_by_field_name("left")?, n.child_by_field_name("right")?),
+            _ => return None,
+        };
+        (l.kind() == "identifier").then(|| (text(l, src), held_by(v, src)))
+    },
+    loops: |n, src| {
+        let of = n.child_by_field_name("operator").map_or(false, |o| o.kind() == "of");
+        let (l, v, b) = (n.child_by_field_name("left")?, n.child_by_field_name("right")?, n.child_by_field_name("body")?);
+        (n.kind() == "for_in_statement" && of && l.kind() == "identifier").then(|| (text(l, src), chain_root(v, src), b))
+    },
+};
+
+/// The names whose value a TypeScript value may be or be a part of: `graph`, `this.items[0]`,
+/// either side of `a ?? b`, `a || b` and `c ? a : b`. A call, a spread (`{ ...e }`) and a literal
+/// make a value anew.
+fn held_by<'a>(v: TsNode, src: &'a [u8]) -> Vec<&'a str> {
+    match v.kind() {
+        "binary_expression" if v.child_by_field_name("operator").map_or(false, |o| matches!(o.kind(), "??" | "||" | "&&")) => {
+            [v.child_by_field_name("left"), v.child_by_field_name("right")].into_iter().flatten().flat_map(|x| held_by(x, src)).collect()
+        }
+        "ternary_expression" => [v.child_by_field_name("consequence"), v.child_by_field_name("alternative")]
+            .into_iter()
+            .flatten()
+            .flat_map(|x| held_by(x, src))
+            .collect(),
+        "parenthesized_expression" | "as_expression" | "satisfies_expression" => {
+            named_children(v).into_iter().take(1).flat_map(|x| held_by(x, src)).collect()
+        }
+        _ => chain_root(v, src).into_iter().collect(),
+    }
 }
 
-/// Each change a body makes in place, as `changed_roots` reads them: the node that makes it, and
-/// the name whose object it changes.
+/// Each change a body makes in place: the node that makes it, and the name whose object it
+/// changes, the root of every assignment to a member or an item (`this.x = ..`, `p.items[k] +=
+/// ..`, `p.n++`, `delete p.k`), and of the value every call that changes something is made on, as
+/// `changes` says (`p.rows.push(..)`). Changing a part changes the whole.
 fn changes_in<'a, 't>(body: TsNode<'t>, src: &'a [u8], changes: &dyn Fn(TsNode<'t>) -> Option<TsNode<'t>>) -> Vec<(TsNode<'t>, &'a str)> {
     let member = |n: TsNode| matches!(n.kind(), "member_expression" | "subscript_expression");
     let mut out = vec![];

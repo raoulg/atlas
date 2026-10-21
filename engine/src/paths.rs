@@ -541,11 +541,11 @@ fn fill(b: &Built, g: &str, p: &str, v: &Built) -> Vec<Built> {
 /// hand: the function that makes it, its touch, and the path, URL or statement as built.
 pub type Waiting = (String, crate::model::Touch, Vec<Built>);
 
-/// A waiting call with its path, URL or statement at each call that completes it, with where it
-/// is whole.
+/// A waiting call with its path, URL or statement as built, and at each call that completes it,
+/// with where it is whole.
 /// Each completion says whether the code decided it: the value starts at something the function
 /// itself holds (a literal, a constant), not at what a caller or the environment hands it.
-pub type Completed = (String, crate::model::Touch, Vec<(Whole, Built, bool)>);
+pub type Completed = (String, crate::model::Touch, Vec<Built>, Vec<(Whole, Built, bool)>);
 
 /// Whether the function a path or URL is built in decides it: it starts at something the code
 /// holds, a literal or a constant, not at what a caller hands, the command line or the
@@ -596,7 +596,7 @@ pub fn complete<H: Handing>(
                     wholes.into_iter().map(|(w, x)| (w, x, decided(b, t.kind)))
                 })
                 .collect();
-            (f, t, found)
+            (f, t, built, found)
         })
         .collect()
 }
@@ -620,7 +620,7 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
             Some((n.id.clone(), method.to_string(), path.to_string()))
         })
         .collect();
-    for (f, t, found) in completed {
+    for (f, t, built, found) in completed {
         // what each place of completion makes of it: the alternatives one caller hands are one
         let mut wholes: Vec<&Whole> = vec![];
         for (w, _, _) in &found {
@@ -628,9 +628,11 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
                 wholes.push(w);
             }
         }
-        // a route that reaches none of the callers that make it whole sees the call as it was read
+        // a route that reaches none of the callers that make it whole sees the call as it was read,
+        // a file named by the value its function holds as it is where nothing calls the function
         if wholes.iter().any(|w| **w != Whole::In(f.clone())) {
-            store.instead(&f, t.clone());
+            let what = if t.kind == World::Disk { by_value(store, &f, built.iter()) } else { None };
+            store.instead(&f, Touch { what: what.unwrap_or_else(|| t.what.clone()), ..t.clone() });
         }
         for whole in wholes {
             let (by, users_of) = match whole {

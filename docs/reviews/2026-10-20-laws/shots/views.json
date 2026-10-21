@@ -1,0 +1,282 @@
+[
+ {
+  "shot": "t1-closed.png",
+  "card": "Z1",
+  "mock": "docs/reviews/2026-10-20-laws/testdata/topo/m1-readback-inside",
+  "view": {
+   "route": "cachecalc.main"
+  }
+ },
+ {
+  "shot": "t1-open.png",
+  "card": "Z1",
+  "mock": "docs/reviews/2026-10-20-laws/testdata/topo/m1-readback-inside",
+  "view": {
+   "route": "cachecalc.main",
+   "open": {
+    "steps": [
+     "cachecalc.main/0"
+    ]
+   }
+  }
+ },
+ {
+  "shot": "t2-closed.png",
+  "card": "Z2",
+  "mock": "docs/reviews/2026-10-20-laws/testdata/topo/m2-own-and-reached",
+  "view": {
+   "route": "exporter.main"
+  }
+ },
+ {
+  "shot": "t2-open.png",
+  "card": "Z2",
+  "mock": "docs/reviews/2026-10-20-laws/testdata/topo/m2-own-and-reached",
+  "view": {
+   "route": "exporter.main",
+   "open": {
+    "steps": [
+     "exporter.main/0"
+    ]
+   }
+  }
+ },
+ {
+  "shot": "t3-closed.png",
+  "card": "Z3",
+  "mock": "docs/reviews/2026-10-20-laws/testdata/topo/m3-dotted-packages",
+  "view": {}
+ },
+ {
+  "shot": "t3-app.png",
+  "card": "Z3",
+  "mock": "docs/reviews/2026-10-20-laws/testdata/topo/m3-dotted-packages",
+  "view": {
+   "open": {
+    "units": [
+     "proj.app"
+    ]
+   }
+  }
+ },
+ {
+  "shot": "t4-both.png",
+  "card": "Z4",
+  "mock": "docs/reviews/2026-10-20-laws/testdata/topo/m3-dotted-packages",
+  "view": {
+   "open": {
+    "units": [
+     "proj.app",
+     "proj.lib"
+    ]
+   }
+  }
+ },
+ {
+  "shot": "t5-closed.png",
+  "card": "Z5",
+  "mock": "docs/reviews/2026-10-20-laws/testdata/topo/m4-family-splits-siblings",
+  "view": {
+   "route": "shapes.report"
+  }
+ },
+ {
+  "shot": "t5-open.png",
+  "card": "Z5, Z6",
+  "mock": "docs/reviews/2026-10-20-laws/testdata/topo/m4-family-splits-siblings",
+  "view": {
+   "route": "shapes.report",
+   "open": {
+    "families": [
+     "shapes.Shape"
+    ]
+   }
+  }
+ },
+ {
+  "shot": "t7-combine.png",
+  "card": "Z7",
+  "mock": "docs/reviews/2026-10-20-laws/testdata/topo/m5-two-of-one-type",
+  "view": {
+   "route": "merge.combine"
+  }
+ },
+ {
+  "shot": "t8-closed.png",
+  "card": "Z9",
+  "mock": "docs/reviews/2026-10-20-laws/testdata/topo/m6-own-input-moment",
+  "view": {
+   "route": "clean.run"
+  }
+ },
+ {
+  "shot": "t8-open.png",
+  "card": "Z8",
+  "mock": "docs/reviews/2026-10-20-laws/testdata/topo/m6-own-input-moment",
+  "view": {
+   "route": "clean.run",
+   "open": {
+    "steps": [
+     "clean.run/1"
+    ]
+   }
+  }
+ },
+ {
+  "shot": "t11-closed.png",
+  "card": "Z1",
+  "mock": "docs/reviews/2026-10-20-laws/testdata/topo/m7-folds",
+  "view": {
+   "route": "harvest.main"
+  }
+ },
+ {
+  "shot": "t11-open.png",
+  "card": "Z1",
+  "mock": "docs/reviews/2026-10-20-laws/testdata/topo/m7-folds",
+  "view": {
+   "route": "harvest.main",
+   "open": {
+    "dirs": [
+     "data/",
+     "data/raw/",
+     "data/report/"
+    ]
+   }
+  }
+ },
+ {
+  "shot": "t12-flat.png",
+  "card": "Z1",
+  "mock": "docs/reviews/2026-10-20-laws/testdata/topo/m7-folds",
+  "view": {
+   "route": "harvest.main"
+  }
+ },
+ {
+  "shot": "t12-package.png",
+  "card": "Z1",
+  "mock": "docs/reviews/2026-10-20-laws/testdata/topo/m7p-folds-package",
+  "view": {
+   "route": "harvest.cli.main"
+  }
+ },
+ {
+  "shot": "h-twin.png",
+  "card": "Z13",
+  "mock": "docs/reviews/2026-10-20-laws/testdata/topo/m8-holds",
+  "view": {
+   "route": "counter.bump"
+  }
+ },
+ {
+  "shot": "h-coproduct.png",
+  "card": "Z13",
+  "mock": "docs/reviews/2026-10-20-laws/testdata/topo/m8-holds",
+  "view": {
+   "route": "counter.pick"
+  }
+ },
+ {
+  "shot": "h-dispatch.png",
+  "card": "Z13",
+  "mock": "docs/reviews/2026-10-20-laws/testdata/topo/m8-holds",
+  "view": {
+   "route": "counter.draw_all",
+   "open": {
+    "steps": [
+     "counter.draw_all/0"
+    ]
+   }
+  }
+ },
+ {
+  "shot": "d-reach-closed.png",
+  "card": "R1",
+  "mock": "docs/reviews/2026-10-20-laws/testdata/engine-d/reach-two-callers-one-helper-py",
+  "view": {
+   "route": "twocallers.run"
+  }
+ },
+ {
+  "shot": "d-reach-open.png",
+  "card": "R1",
+  "mock": "docs/reviews/2026-10-20-laws/testdata/engine-d/reach-two-callers-one-helper-py",
+  "view": {
+   "route": "twocallers.run",
+   "open": {
+    "steps": [
+     "twocallers.run/0"
+    ]
+   }
+  }
+ },
+ {
+  "shot": "d-hole.png",
+  "card": "R3",
+  "mock": "docs/reviews/2026-10-20-laws/testdata/engine-d/paths-hole-env-py",
+  "view": {
+   "route": "holeenv.run"
+  }
+ },
+ {
+  "shot": "d-ctor.png",
+  "card": "R2",
+  "mock": "docs/reviews/2026-10-20-laws/testdata/engine-d/reach-ctor-of-exported-class-py",
+  "view": {
+   "route": "storebuild.run"
+  }
+ },
+ {
+  "shot": "d-pair-clean.png",
+  "card": "R4",
+  "mock": "engine/tests/pairs/readback/rust/clean",
+  "view": {
+   "route": "ledger.main"
+  }
+ },
+ {
+  "shot": "d-pair-shortcut.png",
+  "card": "R4",
+  "mock": "engine/tests/pairs/readback/rust/shortcut",
+  "view": {
+   "route": "ledger.main"
+  }
+ },
+ {
+  "shot": "e-swap.png",
+  "card": "T1",
+  "mock": "docs/reviews/2026-10-20-laws/testdata/engine-e/y1f-upstream-producer-swap",
+  "view": {
+   "route": "calc.cli.main"
+  },
+  "revision": "A ∪ B: --since HEAD~1"
+ },
+ {
+  "shot": "e-classrename.png",
+  "card": "T1",
+  "mock": "docs/reviews/2026-10-20-laws/testdata/engine-e/y2e-class-rename",
+  "view": {
+   "route": "calc.cli.main"
+  },
+  "revision": "A ∪ B: --since HEAD~1"
+ },
+ {
+  "shot": "e-fiber-a.png",
+  "card": "T4",
+  "mock": "docs/reviews/2026-10-20-laws/testdata/engine-e/y4f-family-vs-route-fiber",
+  "view": {
+   "route": "geo.cli.circle"
+  },
+  "revision": "A: git checkout HEAD~1"
+ },
+ {
+  "shot": "e-fiber-b.png",
+  "card": "T4",
+  "mock": "docs/reviews/2026-10-20-laws/testdata/engine-e/y4f-family-vs-route-fiber",
+  "view": {
+   "route": "geo.cli.circle"
+  },
+  "revision": "B: HEAD"
+ }
+]

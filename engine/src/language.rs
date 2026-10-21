@@ -24,6 +24,11 @@ pub trait Language {
     fn parse(&self, repo: &Repo, opts: &Options) -> Result<Graph>;
     /// What the language leaves its author to write.
     fn leaves(&self) -> Leaves;
+    /// Whether the language compares types by their members rather than by what they are declared
+    /// as.
+    fn structural(&self) -> bool {
+        false
+    }
     /// Whether the part read at `part` reads the directory `dir` below it, which holds a manifest
     /// of the language, as its own; a manifest no part around it reads roots a part.
     fn reads(&self, part: &Repo, dir: &Path) -> bool;
@@ -81,10 +86,10 @@ impl Language for Python {
     fn reads(&self, part: &Repo, dir: &Path) -> bool {
         python::packages(part).iter().any(|p| dir.starts_with(p))
     }
-    /// A signature may say nothing, and a package offers whatever its root binds unless
-    /// `__all__` names it.
+    /// A signature may say nothing, a package offers whatever its root binds unless `__all__` names
+    /// it, and nothing holds an override to its base.
     fn leaves(&self) -> Leaves {
-        Leaves { exports: true, types: true, returns: true }
+        Leaves { exports: true, types: true, returns: true, overrides: true }
     }
     /// A package without a `pyproject.toml` of its own is in the nearest of the three directories
     /// above it that has one.
@@ -137,7 +142,8 @@ impl Language for Rust {
         let (b, root) = rust::parse(repo, opts)?;
         Ok(b.finish(root, Some(repo.root()), self.name()))
     }
-    /// The compiler asks for every type, and `pub` is the export.
+    /// The compiler asks for every type, `pub` is the export, and a trait's implementation has the
+    /// trait's signature.
     fn leaves(&self) -> Leaves {
         Leaves::default()
     }
@@ -171,9 +177,14 @@ impl Language for TypeScript {
         Ok(b.finish(root, Some(repo.root()), self.name()))
     }
     /// The compiler works out what a function gives, which a reader of its declaration does not
-    /// see (`isolatedDeclarations` asks for it).
+    /// see (`isolatedDeclarations` asks for it), and holds an override to what its base gives but
+    /// not to what it takes: it checks a method's parameters both ways.
     fn leaves(&self) -> Leaves {
-        Leaves { returns: true, ..Default::default() }
+        Leaves { returns: true, overrides: true, ..Default::default() }
+    }
+    /// A value stands where a type is asked for when it has the type's members.
+    fn structural(&self) -> bool {
+        true
     }
     /// A package reads every file under its code, the packages there with it.
     fn reads(&self, part: &Repo, dir: &Path) -> bool {
@@ -197,6 +208,11 @@ pub fn looked_for() -> String {
 /// What the language of that name leaves its author to write.
 pub fn leaves(name: &str) -> Leaves {
     languages().into_iter().find(|l| l.name() == name).map_or_else(Leaves::default, |l| l.leaves())
+}
+
+/// Whether the language of that name compares types by their members.
+pub fn structural(name: &str) -> bool {
+    languages().into_iter().find(|l| l.name() == name).is_some_and(|l| l.structural())
 }
 
 /// All known languages, in detection order.

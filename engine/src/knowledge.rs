@@ -269,6 +269,12 @@ pub fn made_dir(name: &str) -> bool {
 /// Directories that hold tests and the data they read.
 pub const TEST_DIRS: &[&str] = &["tests", "test", "__tests__", "fixtures", "testdata"];
 
+/// A Python test file by pytest's convention, wherever it stands: `test_*.py`, `*_test.py`, and
+/// `conftest.py`, which holds what its tests share.
+pub fn python_test_file(name: &str) -> bool {
+    name.starts_with("test_") || name.ends_with("_test.py") || name == "conftest.py"
+}
+
 // ---------- a library's code ----------
 
 /// The directory a JavaScript package is installed in, below the project or a directory above it.
@@ -412,6 +418,17 @@ pub const PYTHON_HOLDERS: &[&str] = &[
     "Reversible",
 ];
 
+/// The keywords a Python call is handed a function by whose value the call uses: the key it
+/// orders, picks or groups by (`sorted(xs, key=score)`, `max(xs, key=..)`, `list.sort(key=..)`,
+/// `itertools.groupby(xs, key=..)`).
+pub const PYTHON_USES_HANDED: &[&str] = &["key"];
+
+/// What makes a Python method a declaration that what implements it fills in: a decorator
+/// (`@abstractmethod`), or a base, by package and name, that makes its class a protocol, which any
+/// class with its methods implements without naming it (`typing.Protocol`).
+pub const PYTHON_ABSTRACT: &[&str] = &["abstractmethod"];
+pub const PYTHON_PROTOCOLS: &[(&str, &str)] = &[("typing", "Protocol"), ("typing_extensions", "Protocol")];
+
 /// Python's generic types whose value is one of their parameters: `Optional[Node]` is a Node or
 /// nothing.
 pub const PYTHON_ALTERNATIVES: &[&str] = &["Optional", "Union"];
@@ -529,16 +546,63 @@ pub fn rust_container(name: &str) -> bool {
 
 /// Methods that change the value they are called on: a language's own containers', and a
 /// library's (networkx's graphs). By registry and source.
-/// The builtins' row is the methods of Python's `MutableSequence`, `MutableMapping` and
-/// `MutableSet`, with `list.sort`; a call changes its receiver when ty says it goes to the
-/// package of its row. The `std` row is the methods of Rust's collections (`Vec`, `String`,
-/// `VecDeque`, the maps and sets) that take `&mut self` and change what they hold.
+/// A Python call changes its receiver when ty says it goes to the package of a row that has the
+/// method, and ty says where the method is defined: `list.append` in `builtins`, the methods
+/// `list`, `dict` and `set` inherit (`clear`, `update`, `setdefault`, `reverse`, `popitem`) on
+/// `typing`'s `MutableSequence`, `MutableMapping` and `MutableSet`, `deque`'s, `Counter`'s and
+/// `OrderedDict`'s in `collections`, and `os.environ`'s own `setdefault` and `pop` in `os`. The
+/// `std` row is the methods of Rust's collections (`Vec`, `String`, `VecDeque`, the maps and sets)
+/// that take `&mut self` and change what they hold.
 pub const MUTATORS: &[(Registry, &str, &[&str])] = &[
     (
         Registry::PyPi,
         "builtins",
-        &["append", "extend", "insert", "remove", "pop", "clear", "update", "add", "discard", "setdefault", "sort", "reverse", "popitem"],
+        &[
+            "append",
+            "extend",
+            "insert",
+            "remove",
+            "pop",
+            "clear",
+            "update",
+            "add",
+            "discard",
+            "setdefault",
+            "sort",
+            "reverse",
+            "popitem",
+            "difference_update",
+            "intersection_update",
+            "symmetric_difference_update",
+        ],
     ),
+    (
+        Registry::PyPi,
+        "typing",
+        &["append", "extend", "insert", "remove", "pop", "clear", "reverse", "add", "discard", "update", "setdefault", "popitem"],
+    ),
+    (
+        Registry::PyPi,
+        "collections",
+        &[
+            "append",
+            "appendleft",
+            "extend",
+            "extendleft",
+            "insert",
+            "remove",
+            "pop",
+            "popleft",
+            "rotate",
+            "sort",
+            "update",
+            "subtract",
+            "setdefault",
+            "popitem",
+            "move_to_end",
+        ],
+    ),
+    (Registry::PyPi, "os", &["setdefault", "pop"]),
     (Registry::PyPi, "networkx", &["add_node", "add_edge", "add_nodes_from", "add_edges_from", "remove_node", "remove_edge"]),
     (
         Registry::Npm,
@@ -597,8 +661,44 @@ pub fn mutates(from: Registry, package: &str, method: &str) -> bool {
 }
 
 /// Functions that change an argument they are handed, by package, name and the argument's
-/// position: `setattr(obj, ..)`, `random.shuffle(xs)`.
-pub const CHANGES_ARGUMENT: &[(&str, &str, usize)] = &[("builtins", "setattr", 0), ("builtins", "delattr", 0), ("random", "shuffle", 0)];
+/// position: `setattr(obj, ..)`, `random.shuffle(xs)`, the heap and the sorted list that `heapq`
+/// and `bisect` keep in a list they are handed.
+pub const CHANGES_ARGUMENT: &[(&str, &str, usize)] = &[
+    ("builtins", "setattr", 0),
+    ("builtins", "delattr", 0),
+    ("random", "shuffle", 0),
+    ("heapq", "heappush", 0),
+    ("heapq", "heappop", 0),
+    ("heapq", "heapify", 0),
+    ("heapq", "heapreplace", 0),
+    ("heapq", "heappushpop", 0),
+    ("bisect", "insort", 0),
+    ("bisect", "insort_left", 0),
+    ("bisect", "insort_right", 0),
+];
+
+/// Python's own containers that change in place, by module and class as ty finds them: an
+/// augmented assignment (`xs += ys`) changes one, where it makes any other value anew.
+pub const PYTHON_CHANGEABLE: &[(&str, &str)] = &[
+    ("builtins", "list"),
+    ("builtins", "dict"),
+    ("builtins", "set"),
+    ("builtins", "bytearray"),
+    ("collections", "deque"),
+    ("collections", "Counter"),
+    ("collections", "OrderedDict"),
+    ("collections", "defaultdict"),
+    ("typing", "MutableSequence"),
+    ("typing", "MutableMapping"),
+    ("typing", "MutableSet"),
+    ("typing", "List"),
+    ("typing", "Dict"),
+    ("typing", "Set"),
+    ("typing", "Deque"),
+    ("typing", "DefaultDict"),
+    ("typing", "OrderedDict"),
+    ("typing", "Counter"),
+];
 
 /// Libraries whose array types carry their shape in the annotation (`Float[Tensor, "batch dim"]`):
 /// such a type keeps its shape in its name.
@@ -921,6 +1021,16 @@ pub const OPERATIONS: &[(&str, &str, Crossing)] = &[
 /// What a package's operation crosses by itself.
 pub fn operation(pkg: &str, op: &str) -> Option<Crossing> {
     OPERATIONS.iter().find(|(p, o, _)| *p == pkg && *o == op).map(|(_, _, c)| *c)
+}
+
+/// The functions that end the program where they are called, as an error no one catches does:
+/// by the module that holds them and their name, Python's `sys.exit` and `os._exit`, Node's
+/// `process.exit`, Rust's `std::process::exit`.
+pub const ENDS_THE_RUN: &[(&str, &str)] = &[("sys", "exit"), ("os", "_exit"), ("os", "abort"), ("process", "exit"), ("process", "abort")];
+
+/// Whether the function `name` of the module `module` ends the program.
+pub fn ends_the_run(module: &str, name: &str) -> bool {
+    ENDS_THE_RUN.contains(&(module, name))
 }
 
 /// A program's streams that a write to shows the human: `sys.stdout`, `process.stderr`, Rust's

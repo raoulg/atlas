@@ -220,8 +220,8 @@ what `atlas check` asks of itself as a reviewed list, each finding with why it s
 ## Revelation: what a design leaves to build
 
 A design can live in the tree as sketch code, marked as not built yet: a *prophecy*. Python marks
-it with a decorator, `@prophecy(supersedes="pkg.Old")` (a no-op function in the project; Atlas
-matches it by name), Rust with `#[doc = "prophecy: supersedes=pkg::Old"]`, TypeScript with a
+it with a decorator, `@prophecy(supersedes="pkg.Old")` or `@prophecy()` (a no-op function in the
+project, in a module that imports nothing of the project; Atlas matches it by name), Rust with `#[doc = "prophecy: supersedes=pkg::Old"]`, TypeScript with a
 `@prophecy supersedes=pkg.Old` tag in the JSDoc before a `declare` function, class, interface or
 type. `veiled` says the place is known and the shape is not, `sealed="#144"` that the shape waits
 on an open question.
@@ -246,7 +246,7 @@ else. The files are left for you to commit; sketch the shape next.
 
 A vision that is decided becomes a prophecy with the MCP tool `prophetize`: the vision's files are
 written into the tree, every item the vision adds marked in the language of its file (and, for
-Python, the project's `prophecy` imported, and the bodies that ty would refuse made `raise NotImplementedError`), and the vision is retracted. `supersedes` says which
+Python, the project's `prophecy` imported among the file's imports, and the bodies that ty would refuse made `raise NotImplementedError`; Atlas says so when the module that defines `prophecy` imports the file, since the import would go in a circle), and the vision is retracted. `supersedes` says which
 existing item an added one replaces. The files are left for you to commit; Atlas opens no branch.
 A vision that changes or removes what exists is refused, since writing it would replace built code
 with a sketch: the new item takes a new name and supersedes the old one.
@@ -255,7 +255,9 @@ with a sketch: the new item takes a new name and supersedes the old one.
 
 `atlas changes [<rev>]` reads the working tree against a git revision (`HEAD` by default)
 and lists what the edit did: the routes added and removed, the steps and places each route
-gains and loses, the ordered compositions that differ, and the findings it raises and resolves.
+gains and loses, those it keeps whose own arrows differ (`~`, with what they were), the ordered
+compositions that differ, what changed on no route, and the findings it raises and resolves. It
+is read from the union `atlas view --since` draws, so the list holds what the picture marks.
 Changing call order or repeating a call changes a composition even when the route reaches the
 same functions. JSON records each such function with its `before` and `after` bodies under
 `compositions_changed`; each body retains its choices and dispatch. `atlas changes A..B` compares two
@@ -271,6 +273,9 @@ since HEAD
     - step server.regels.vat
     - place asks an LLM create
 ```
+
+A function renamed with the same typed arrows is one step, changed: `~ step cli.draw: renamed from
+cli.plot · was plot(frame: Frame, out: Path) → None`.
 
 `atlas view --since <rev>` draws the revision and the working tree as one picture
 (`--until <rev>` draws two revisions): what both hold, drawn once, with what changed marked as a

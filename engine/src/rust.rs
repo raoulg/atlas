@@ -177,6 +177,24 @@ fn type_names(t: Option<TsNode>, src: &[u8]) -> Vec<Vec<String>> {
     out
 }
 
+/// Whether a type changes through a shared reference, or holds one that does: `&RefCell<Log>`,
+/// `Rc<RefCell<Log>>`, `&[Cell<u8>]`, `&AtomicUsize`. Its value may change though no `&mut` is
+/// written; the type says so as `&mut` does.
+fn changes_inside(t: TsNode, src: &[u8]) -> bool {
+    match t.kind() {
+        "type_identifier" | "scoped_type_identifier" => path_parts(Some(t), src).last().map_or(false, |n| knowledge::rust_interior(n)),
+        "generic_type" => {
+            let head = path_parts(t.child_by_field_name("type"), src).last().cloned().unwrap_or_default();
+            knowledge::rust_interior(&head)
+                || (knowledge::rust_container(&head)
+                    && t.child_by_field_name("type_arguments")
+                        .map_or(false, |a| named_children(a).into_iter().any(|x| changes_inside(x, src))))
+        }
+        "reference_type" | "array_type" | "tuple_type" => named_children(t).into_iter().any(|x| changes_inside(x, src)),
+        _ => false,
+    }
+}
+
 fn collect_types(n: TsNode, src: &[u8], out: &mut Vec<Vec<String>>) {
     match n.kind() {
         "type_identifier" | "scoped_type_identifier" => {
@@ -282,7 +300,8 @@ fn items<'t>(root: TsNode<'t>) -> Vec<TsNode<'t>> {
 /// A signature as data: each parameter by name, type and kind, and what it gives back: the value,
 /// which for a `Result<T, E>` is `T`, whatever that is; `E` is what it fails with. `self`,
 /// `&self`, `&mut self` and `self: Box<Self>` are the value the method is called on; a `&mut`
-/// says the body may change what it is handed.
+/// says the body may change what it is handed, and so does a type that changes through a shared
+/// reference (`&RefCell<T>`).
 fn signature(f: TsNode, src: &[u8]) -> (Vec<Param>, Option<Returns>, SigInfo) {
     let mut params = vec![];
     let mut info = SigInfo::default();
@@ -300,8 +319,8 @@ fn signature(f: TsNode, src: &[u8]) -> (Vec<Param>, Option<Returns>, SigInfo) {
                         name: pattern.map(|x| text(x, src).trim_start_matches("mut ").to_string()).unwrap_or_default(),
                         ty: ty.map(|t| text(t, src).to_string()).unwrap_or_default(),
                         receiver: pattern.map_or(false, |x| x.kind() == "self"),
-                        changes: ty.map_or(false, mutable),
-                        rest: false,
+                        changes: ty.map_or(false, |t| mutable(t) || changes_inside(t, src)),
+                        ..Default::default()
                     });
                     info.ptypes.extend(type_names(ty, src));
                 }
@@ -352,7 +371,7 @@ fn returns(rt: TsNode, src: &[u8]) -> Returns {
         (_, "Self") => (String::new(), true),
         (_, v) => (v.to_string(), false),
     };
-    Returns { written: text(rt, src).to_string(), value, own, fails }
+    Returns { written: text(rt, src).to_string(), value, own, fails, ..Default::default() }
 }
 
 /// A method whose first parameter is the value it is called on.
@@ -430,6 +449,8 @@ pub fn parse(repo: &Repo, opts: &crate::Options) -> Result<(GraphBuilder, String
                 module: mid.clone(),
                 doc: module_doc(tree.root_node(), &src),
                 is_pkg: is_root,
+                // an integration test: Cargo builds what `tests/` holds only to test the crate
+                test: p.strip_prefix(&c.dir).is_ok_and(|rel| rel.starts_with("tests")),
                 ..Default::default()
             });
             let defs = definitions(&tree, &src);
@@ -469,8 +490,65 @@ pub fn parse(repo: &Repo, opts: &crate::Options) -> Result<(GraphBuilder, String
     collect_impls(&modules, &mut store, &crate_ids, &own);
     libraries::read(repo, &crate_list, &mut modules, &mut store, &crate_ids, opts.libraries);
     link(&modules, &mut store, &crate_ids);
+    mark_tests(&modules, &mut store);
     store.mark_library();
     Ok((store, root_name))
+}
+
+/// Whether an attribute compiles what it stands on only to test the crate: `cfg(test)`, or a `cfg`
+/// that asks for `test` among all its conditions and negates none (`cfg(all(test, unix))`).
+fn cfg_test(attr: &str) -> bool {
+    let Some(cond) = attr.strip_prefix("cfg(") else { return false };
+    !cond.contains("not(") && !cond.contains("any(") && cond.split(|c: char| !(c.is_alphanumeric() || c == '_')).any(|w| w == "test")
+}
+
+/// Whether a node stands under `#[cfg(test)]`: it, or an item around it, is compiled only to test the crate.
+fn under_cfg_test(n: TsNode, src: &[u8]) -> bool {
+    std::iter::successors(Some(n), |n| n.parent()).any(|a| attrs_of(a, src).iter().any(|x| cfg_test(x)))
+}
+
+/// Test code by where it stands: an item under `#[cfg(test)]`, which an inline `mod tests { .. }`
+/// gives all it holds (the graph keeps them in the module around it), and a file module declared
+/// under one (`#[cfg(test)] mod tests;`), with every module below it.
+fn mark_tests(modules: &IndexMap<String, Module>, store: &mut GraphBuilder) {
+    // module -> the lines of its items that are compiled only for tests
+    let mut lines: HashMap<&str, Vec<(u32, u32)>> = HashMap::new();
+    // the files and directories of the test modules declared in a file of their own
+    let mut declared: Vec<PathBuf> = vec![];
+    for m in modules.values().filter(|m| !m.library) {
+        let mut todo = named_children(m.tree.root_node());
+        while let Some(item) = todo.pop() {
+            let tested = attrs_of(item, &m.src).iter().any(|a| cfg_test(a));
+            match (item.kind(), item.child_by_field_name("body")) {
+                ("mod_item", Some(body)) if !tested => todo.extend(named_children(body)),
+                ("mod_item", None) if tested => {
+                    let Some(name) = item.child_by_field_name("name").map(|n| text(n, &m.src)) else { continue };
+                    // a crate's root and a `mod.rs` keep their modules beside them, any other file in a directory of its name
+                    let stem = m.path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+                    let base = if m.is_root || matches!(stem, "lib" | "main" | "mod") {
+                        m.path.parent().map(Path::to_path_buf).unwrap_or_default()
+                    } else {
+                        m.path.with_extension("")
+                    };
+                    declared.push(base.join(format!("{name}.rs")));
+                    declared.push(base.join(name));
+                }
+                _ if tested => lines.entry(m.id.as_str()).or_default().extend(span(item)),
+                _ => {}
+            }
+        }
+    }
+    for m in modules.values().filter(|m| declared.iter().any(|d| m.path == *d || m.path.starts_with(d))) {
+        if let Some(n) = store.nodes.get_mut(&m.id) {
+            n.test = true;
+        }
+    }
+    for n in store.nodes.values_mut().filter(|n| n.kind != NodeKind::Module) {
+        let within = |(first, last): &(u32, u32)| n.span.is_some_and(|(at, _)| *first <= at && at <= *last);
+        if lines.get(n.module.as_str()).is_some_and(|ls| ls.iter().any(within)) {
+            n.test = true;
+        }
+    }
 }
 
 // ---------- pass 1: symbols ----------
@@ -608,6 +686,8 @@ fn collect_symbols(m: &mut Module, store: &mut GraphBuilder) {
                                 decorators: attrs_of(f, src),
                                 on_class: !takes_self(&params),
                                 ctor: constructs(&params, &returns, &name),
+                                // a trait's method without a body of its own is what its implementations fill in
+                                declared: f.kind() == "function_signature_item",
                                 params,
                                 returns,
                                 ..Default::default()
@@ -746,20 +826,25 @@ fn path_to_id(m: &Module, parts: &[String], crate_ids: &HashMap<String, String>,
 fn collect_uses(m: &mut Module, crate_ids: &HashMap<String, String>, module_ids: &HashSet<String>, store: &mut GraphBuilder) {
     let mut out = vec![];
     let mut wild = vec![];
+    // for each name and glob: whether test code imports it, which the module around it does not
+    let (mut tested, mut wild_tested) = (vec![], vec![]);
     for u in walk(m.tree.root_node(), &["use_declaration"]) {
         collect_use(u, &[], &m.src, &mut out, &mut wild);
+        let test = under_cfg_test(u, &m.src);
+        tested.resize(out.len(), test);
+        wild_tested.resize(wild.len(), test);
     }
     let mut bindings = vec![];
     let mut edges = vec![];
     let is_module = |id: &str| module_ids.contains(id);
-    for (alias, parts) in out {
+    for ((alias, parts), test) in out.into_iter().zip(tested) {
         let id = path_to_id(m, &parts, crate_ids, &is_module);
-        if !id.starts_with("ext:") {
+        if !id.starts_with("ext:") && !test {
             edges.push(id.clone());
         }
         bindings.push((alias, id));
     }
-    for w in wild {
+    for (w, test) in wild.into_iter().zip(wild_tested) {
         let id = path_to_id(m, &w, crate_ids, &is_module);
         // a glob over a name the module binds (`use Kind::*` of its own enum) is no library's
         let bound = w.first().map_or(false, |h| m.symbols.contains_key(h) || bindings.iter().any(|(a, _)| a == h));
@@ -768,7 +853,9 @@ fn collect_uses(m: &mut Module, crate_ids: &HashMap<String, String>, module_ids:
                 m.globs.push(id);
             }
         } else {
-            edges.push(id.clone());
+            if !test {
+                edges.push(id.clone());
+            }
             m.wildcards.push(id);
         }
     }
@@ -1592,7 +1679,7 @@ fn link_calls<'t>(
     steps.finish(store, id);
     if let Some(node) = store.nodes.get_mut(id) {
         node.compares = compares;
-        node.raises = crate::tree::holds(body, &m.src, panics, &["function_item", "impl_item", "trait_item", "mod_item"]);
+        node.raises = read.exits || crate::tree::holds(body, &m.src, panics, &["function_item", "impl_item", "trait_item", "mod_item"]);
     }
     for (t, input) in read.mutates {
         store.add_edge(id, &t, EdgeKind::Mutates, Some(input));
@@ -1657,7 +1744,8 @@ fn bound_in(def: TsNode, src: &[u8]) -> HashSet<String> {
 
 /// What reading a body finds besides its steps: what it touches, the file and database calls
 /// whose paths and statements wait for what callers hand, the calls of the program's functions
-/// with their arguments, the calls Atlas could not follow, and the inputs it changes in place.
+/// with their arguments, the calls Atlas could not follow, the inputs it changes in place, and
+/// whether it calls what ends the program.
 #[derive(Default)]
 struct Read<'t> {
     touches: Vec<Touch>,
@@ -1665,6 +1753,7 @@ struct Read<'t> {
     args: Vec<Arg<'t>>,
     unresolved: Vec<(String, Bucket)>,
     mutates: Vec<(String, String)>,
+    exits: bool,
 }
 
 /// A function's body as Rust reads it: the program around it, and the classes its names hold.
@@ -1697,6 +1786,8 @@ struct Body<'a, 't> {
     returned: &'a HashMap<String, String>,
     /// The names the function binds, found when a call not followed first asks.
     bound: std::cell::OnceCell<HashSet<String>>,
+    /// It gives no value: what the last expression of its block gives goes nowhere.
+    unit: bool,
     read: Read<'t>,
 }
 
@@ -1736,6 +1827,7 @@ impl<'a, 't> Body<'a, 't> {
             taken: HashMap::new(),
             returned,
             bound: Default::default(),
+            unit: n.returns.as_ref().map_or(true, |r| r.value.is_empty() && !r.own),
             read: Read::default(),
         };
         b.parameters(d);
@@ -1775,7 +1867,8 @@ impl<'a, 't> Body<'a, 't> {
     }
 
     /// Typed parameters give receivers a type (`store.add_edge(..)` with `store: &mut
-    /// GraphBuilder`), and `&mut T` and `&mut self` hand the value back changed: `T -> T`.
+    /// GraphBuilder`), and `&mut T`, `&RefCell<T>` and `&mut self` hand the value back changed:
+    /// `T -> T`.
     fn parameters(&mut self, d: TsNode<'t>) {
         let src = self.src;
         let Some(pn) = d.child_by_field_name("parameters") else { return };
@@ -1789,7 +1882,7 @@ impl<'a, 't> Body<'a, 't> {
             }
             let Some(pat) = p.child_by_field_name("pattern") else { continue };
             let pname = text(pat, src).trim_start_matches("mut ").to_string();
-            let by_mut_ref = p.child_by_field_name("type").map_or(false, |t| text(t, src).starts_with("&mut"));
+            let by_mut_ref = p.child_by_field_name("type").map_or(false, |t| text(t, src).starts_with("&mut") || changes_inside(t, src));
             let types = type_names(p.child_by_field_name("type"), src);
             if let Some(lib) = types.iter().find_map(|t| self.resolve(t).filter(|r| r.starts_with("ext:"))) {
                 self.foreign.insert(pname.clone(), lib);
@@ -2223,6 +2316,19 @@ impl<'a, 't> Body<'a, 't> {
         Some(t.strip_prefix("ext:")?.split('.').map(String::from).collect())
     }
 
+    /// A call Atlas reads as computing what it gives, `written` as the code writes it: where what
+    /// it gives goes nowhere, or is the last value of a block that gives none, the call is made for
+    /// an effect Atlas does not see.
+    fn dropped(&self, steps: &mut Steps, c: TsNode<'t>, written: &str) {
+        let body = self.def.child_by_field_name("body");
+        let last = body.and_then(|b| b.named_child(b.named_child_count().saturating_sub(1)));
+        if self.unit && last.map(|l| l.id()) == Some(c.id()) {
+            steps.unseen(c, &format!("{written}(..)"));
+        } else {
+            steps.dropped(c, written);
+        }
+    }
+
     /// A library's operation not read: a step where the body keeps what it gives.
     fn library_step(&self, steps: &mut Steps, c: TsNode<'t>, op: &str, recv: Option<TsNode<'t>>) {
         let hands = self.call_hands(c, recv, &steps.kept);
@@ -2328,13 +2434,19 @@ impl<'a, 't> Body<'a, 't> {
         }
         match (own, receiver) {
             (Some(t), r) => self.own_step(steps, c, &t, Some(value), r.as_deref(), None),
-            // a method not found on a name's type (`to_string`, `clone`) is not known; it builds nothing
-            (None, Some(_)) if matches!(value.kind(), "self" | "identifier" | "field_expression") => {}
+            // a method not found on a name's type (`to_string`, `clone`) is not known; it builds
+            // nothing, and what it does where its value goes nowhere Atlas does not see
+            (None, Some(_)) if matches!(value.kind(), "self" | "identifier" | "field_expression") => {
+                self.dropped(steps, c, &format!("{}.{method}", text(value, src)));
+            }
             // a library's operation; on what a call gives, also one its class does not have, which
             // is the wrapper's the class is given in (`map_or` of the `Option<&Node>` of `ix.node(..)`)
             _ => {
                 self.library_step(steps, c, &method, Some(value));
                 let touches = self.chain_touches(c, value, &method);
+                if touches.is_empty() {
+                    self.dropped(steps, c, text(f, src));
+                }
                 self.keep(touches);
             }
         }
@@ -2507,6 +2619,10 @@ impl<'a, 't> Body<'a, 't> {
     /// library's, which may cross into the world.
     fn path_call(&mut self, steps: &mut Steps, c: TsNode<'t>, mut parts: Vec<String>) {
         if parts.is_empty() {
+            // a call through a value no path names (`(self.on_done)()`) is one Atlas cannot follow
+            if let Some(f) = c.child_by_field_name("function").filter(|_| c.kind() == "call_expression") {
+                self.dropped(steps, c, text(f, self.src));
+            }
             return;
         }
         let target = match (parts[0].as_str(), &self.cls) {
@@ -2536,9 +2652,16 @@ impl<'a, 't> Body<'a, 't> {
                 self.library_step(steps, c, &op, None);
                 let full = expand(self.m, &parts);
                 self.read.unresolved.push((full.iter().take(2).cloned().collect::<Vec<_>>().join("."), self.bucket(&parts)));
-                if let Some(tag) = effects::boundary_rust(&full) {
-                    let touches = self.crossed(c, tag, &op);
-                    self.keep(touches);
+                let exits = matches!(full.as_slice(), [.., module, f] if knowledge::ends_the_run(module, f));
+                self.read.exits |= exits;
+                match effects::boundary_rust(&full) {
+                    Some(tag) => {
+                        let touches = self.crossed(c, tag, &op);
+                        self.keep(touches);
+                    }
+                    // what the tables say nothing of beside what it gives, Atlas does not see
+                    None if !exits => self.dropped(steps, c, &parts.join("::")),
+                    None => {}
                 }
             }
         }

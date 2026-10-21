@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use indexmap::IndexMap;
 
-use crate::model::{Bucket, Dir, Edge, EdgeKind, Entry, EntryKind, Graph, Node, NodeKind, Stats, Touch, Unresolved, World};
+use crate::model::{Bucket, Dir, Edge, EdgeKind, Entry, EntryKind, Graph, Node, NodeKind, Signature, Stats, Touch, Unresolved, World};
 
 /// Per-class facts that only matter during resolution.
 #[derive(Default, Clone, Debug)]
@@ -66,12 +66,36 @@ pub struct SigInfo {
     pub runions: Vec<Union>,
 }
 
+impl SigInfo {
+    /// The types of another signature of the same function as well.
+    pub fn extend(&mut self, other: SigInfo) {
+        let SigInfo { ptypes, rtypes, punions, runions } = other;
+        self.ptypes.extend(ptypes);
+        self.rtypes.extend(rtypes);
+        self.punions.extend(punions);
+        self.runions.extend(runions);
+    }
+}
+
+/// What one declaration of a function's name is, among the declarations of that name in one
+/// scope.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Declared {
+    /// What runs: the body a call runs, or the getter a read of a property runs.
+    Body,
+    /// A signature its callers are checked against, apart from the body that runs: an overload.
+    Overload,
+    /// What runs when a property is assigned or deleted: a setter, a deleter.
+    Writer,
+}
+
 /// The nodes and edges found so far, and the tables that resolve names into them.
 #[derive(Default)]
 pub struct GraphBuilder {
     pub nodes: IndexMap<String, Node>,
     pub edges: Vec<Edge>,
-    pub edge_set: HashSet<(String, String, EdgeKind)>,
+    /// The edges by source, target and kind, and for a change by the input it changes.
+    pub edge_set: HashSet<(String, String, EdgeKind, Option<String>)>,
     pub classes: HashMap<String, ClassInfo>,
     pub sigs: HashMap<String, SigInfo>,
     /// The calls not followed: by the name each is written with, and by what that name is bound to.
@@ -92,6 +116,41 @@ impl GraphBuilder {
             n.prophecy = crate::prophecy::Prophecy::among(&n.decorators);
         }
         self.nodes.insert(n.id.clone(), n);
+    }
+
+    /// One declaration of the function `n` names, with the types its signature names. A name
+    /// declared more than once in one scope is one node, the declaration that runs: a call's body,
+    /// with the overloads declared with it as the signatures its callers see and the types they
+    /// name as its own; a property's getter, which is what a reader of the property gets. Until
+    /// that declaration comes, the first of the others stands for it. A body declared again
+    /// replaces the one before, as the name is bound to the last.
+    pub fn declare(&mut self, mut n: Node, sig: SigInfo, declared: Declared) {
+        let signature = |n: &Node| Signature { line: n.span.map_or(1, |s| s.0), params: n.params.clone(), returns: n.returns.clone() };
+        let Some(old) = self.nodes.get_mut(&n.id) else {
+            if declared == Declared::Overload {
+                n.overloads = vec![signature(&n)];
+            }
+            self.sigs.insert(n.id.clone(), sig);
+            self.add_node(n);
+            return;
+        };
+        match declared {
+            Declared::Writer => {}
+            Declared::Overload => {
+                old.overloads.push(signature(&n));
+                self.sigs.entry(n.id).or_default().extend(sig);
+            }
+            Declared::Body => {
+                n.overloads = std::mem::take(&mut old.overloads);
+                match self.sigs.get_mut(&n.id).filter(|_| !n.overloads.is_empty()) {
+                    Some(theirs) => theirs.extend(sig),
+                    None => {
+                        self.sigs.insert(n.id.clone(), sig);
+                    }
+                }
+                self.add_node(n);
+            }
+        }
     }
 
     pub fn add_edge(&mut self, src: &str, dst: &str, kind: EdgeKind, via: Option<String>) {
@@ -142,12 +201,14 @@ impl GraphBuilder {
     }
 
     /// An edge from a body, with the arms of the choices it sits in; the first call of a
-    /// target is the one kept.
+    /// target is the one kept. A change is one edge per input it changes: changing `self` and
+    /// changing `other`, both Graphs, are two.
     pub fn add_call(&mut self, src: &str, dst: &str, kind: EdgeKind, via: Option<String>, arms: Vec<(u32, u32)>) {
         if src == dst {
             return;
         }
-        let key = (src.to_string(), dst.to_string(), kind);
+        let input = via.clone().filter(|_| kind == EdgeKind::Mutates);
+        let key = (src.to_string(), dst.to_string(), kind, input);
         if self.edge_set.insert(key) {
             self.edges.push(Edge { src: src.into(), dst: dst.into(), kind, via, weight: None, arms, uses: false });
         }
@@ -178,28 +239,29 @@ impl GraphBuilder {
     }
 
     /// The classes the program's classes inherit from, and the methods each method overrides
-    /// through them, each with the method's parameters named as the base's at the same place.
+    /// through them, in the order of its class's method resolution order, each with the method's
+    /// parameters named as the base's at the same place.
     pub fn family(&self) -> Family {
-        let mut family = Family::default();
+        let mut bases: HashMap<String, Vec<String>> = HashMap::new();
         for e in self.edges.iter().filter(|e| e.kind == EdgeKind::Inherits) {
-            family.bases.entry(e.src.clone()).or_default().push(e.dst.clone());
+            bases.entry(e.src.clone()).or_default().push(e.dst.clone());
         }
-        for n in self.nodes.values().filter(|n| n.kind == NodeKind::Method) {
-            let Some(cls) = n.cls.as_deref() else { continue };
-            let (mut todo, mut seen) = (family.bases.get(cls).cloned().unwrap_or_default(), HashSet::new());
-            while let Some(b) = todo.pop() {
-                if !seen.insert(b.clone()) {
-                    continue;
+        let mut overrides: HashMap<String, Vec<(String, Vec<(String, String)>)>> = HashMap::new();
+        {
+            let declared = |c: &str| -> Vec<&str> { bases.get(c).into_iter().flatten().map(String::as_str).collect() };
+            let mut known = HashMap::new();
+            for n in self.nodes.values().filter(|n| n.kind == NodeKind::Method) {
+                let Some(cls) = n.cls.as_deref() else { continue };
+                for b in crate::model::linearization(cls, &declared, &mut known).into_iter().skip(1) {
+                    let base = format!("{b}.{}", n.name);
+                    if let Some(m) = self.nodes.get(&base).filter(|m| m.kind == NodeKind::Method) {
+                        let named = n.params.iter().zip(&m.params).map(|(own, theirs)| (own.name.clone(), theirs.name.clone())).collect();
+                        overrides.entry(n.id.clone()).or_default().push((base, named));
+                    }
                 }
-                let base = format!("{b}.{}", n.name);
-                if let Some(m) = self.nodes.get(&base).filter(|m| m.kind == NodeKind::Method) {
-                    let named = n.params.iter().zip(&m.params).map(|(own, theirs)| (own.name.clone(), theirs.name.clone())).collect();
-                    family.overrides.entry(n.id.clone()).or_default().push((base, named));
-                }
-                todo.extend(family.bases.get(&b).cloned().unwrap_or_default());
             }
         }
-        family
+        Family { overrides, bases }
     }
 
     /// A request `id` makes whole that no route of its part serves.
@@ -254,6 +316,15 @@ impl GraphBuilder {
     pub fn finish(self, root: String, project_root: Option<&std::path::Path>, language: &str) -> Graph {
         let mut top: Vec<(String, u32)> = self.unresolved.iter().map(|(k, v)| (k.clone(), *v)).collect();
         let mut nodes = self.nodes;
+        for (id, info) in &self.classes {
+            if let Some(n) = nodes.get_mut(id).filter(|n| n.kind == NodeKind::Class) {
+                for (f, _) in &info.fields {
+                    if !n.fields.contains(f) {
+                        n.fields.push(f.clone());
+                    }
+                }
+            }
+        }
         serve_data(&mut nodes);
         crate::flow::wire(&mut nodes, &self.edges);
         mark_doors(&mut nodes, &self.edges);
@@ -283,22 +354,17 @@ impl GraphBuilder {
         g
     }
 
-    /// The method `name` a value of class `cls` runs: the class's own, else the first its bases
-    /// give in the order they are written, each base before the next (a trait's provided
-    /// method, an inherited one).
+    /// The method `name` a value of class `cls` runs: the first along its method resolution order
+    /// that defines it, the class's own before a base's (a trait's provided method, an inherited
+    /// one).
     pub fn method_of(&self, cls: &str, name: &str) -> Option<String> {
-        self.method_in(cls, name, 0)
-    }
-
-    fn method_in(&self, cls: &str, name: &str, depth: u32) -> Option<String> {
-        let cand = format!("{cls}.{name}");
-        if self.nodes.contains_key(&cand) {
-            return Some(cand);
-        }
-        if depth > 8 {
-            return None;
-        }
-        self.classes.get(cls)?.resolved.iter().filter(|b| !b.starts_with("ext:")).find_map(|b| self.method_in(b, name, depth + 1))
+        let bases = |c: &str| -> Vec<&str> {
+            self.classes.get(c).into_iter().flat_map(|i| &i.resolved).map(String::as_str).filter(|b| !b.starts_with("ext:")).collect()
+        };
+        crate::model::linearization(cls, &bases, &mut HashMap::new())
+            .into_iter()
+            .map(|c| format!("{c}.{name}"))
+            .find(|m| self.nodes.contains_key(m))
     }
 
     /// Library code read as code: every node of a library module is the library's, and no route

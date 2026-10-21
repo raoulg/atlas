@@ -729,7 +729,9 @@ fn views_are_fibers_and_quotients() {
     assert!(!ids.contains("fixture.cli.cmd_report"));
 
     let priv_free = hide_private().apply(&g);
-    assert!(priv_free.node("fixture.sinks.duck.DuckSink.__init__").is_none());
+    assert!(priv_free.node("fixture.store._session").is_none());
+    // the initializer runs on every user's behalf, through a call to the class: no private name
+    assert!(priv_free.node("fixture.sinks.duck.DuckSink.__init__").is_some());
     assert!(priv_free.node("fixture.sinks").is_some(), "packages stay");
 
     let q = Compose(vec![Box::new(hide_private()), Box::new(by_module())]).apply(&g);

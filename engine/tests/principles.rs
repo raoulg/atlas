@@ -76,10 +76,11 @@ fn each_principle_finds_its_case() {
     // `_rank.low.peek` calls back up into `_rank.high`, which builds on `low`
     assert_eq!(got["layers"], ["fixture._rank"]);
     // `Notes` puts a Note into its file and gets a dict back, `Shelf` gets the Note, and `Diary`
-    // inherits the put of `Notes`, which is asked there; `Copier` puts a Graph into the graph
-    // database and gets only a list of nodes. `Register` gets its Stamp back inside an Entry, and
-    // `Tiles` looks its tiles up by a Point it puts nowhere
-    assert_eq!(got["lens"], ["fixture.notes.Notes", "fixture.store.Copier"]);
+    // inherits the put of `Notes`, which is asked there. `Register` gets its Stamp back inside an
+    // Entry, and `Tiles` looks its tiles up by a Point it puts nowhere. `Copier` puts a Graph into
+    // the graph database and gets a list of nodes, but Atlas does not read a graph database's
+    // queries: they name no table, and give no place a lens is on
+    assert_eq!(got["lens"], ["fixture.notes.Notes"]);
     // `forgotten` supersedes a function the code does not hold; `report` is built and calls
     // `tidy`, a prophecy. `tidy` itself, bodiless, is a todo and no finding
     assert_eq!(got["prophecy"], ["fixture.plans.forgotten", "fixture.plans.report"]);
@@ -161,9 +162,10 @@ fn a_lens_puts_what_reaches_the_place_not_the_key_it_looks_up_by() {
     assert_eq!(notes.evidence, ["put Notes.put: Note × Disk(Notes.path) → Disk(Notes.path)", "get Notes.get: Disk(Notes.path) → dict"]);
 }
 
-/// The principles read Rust by what its types and entries mean: `Disk.page` gives the
-/// `anyhow::Result<Page>` that `Source.page` promises as `Result<Page>`, and the test beside
-/// `ledger` names its own file without making `ledger` one that may.
+/// The principles read Rust by what its types and entries mean: a trait's implementation has the
+/// trait's signature, so `Disk.page`, which gives the `anyhow::Result<Page>` that `Source.page`
+/// promises as `Result<Page>`, is asked nothing, and the test beside `ledger` names its own file
+/// without making `ledger` one that may.
 #[test]
 fn rust_is_read_by_meaning() {
     let fs = findings("tests/fixture-rs");
@@ -183,6 +185,16 @@ fn a_package_called_src_is_asked_its_name() {
 /// What `atlas check` asks of Atlas, each finding read: its principle, the node it is about, and
 /// why it stands (a fault of Atlas's code, tracked in an issue, or a fault of the rule).
 const REVIEWED: &[(&str, &str, &str)] = &[
+    (
+        "choices",
+        "atlas-engine.builder.GraphBuilder.declare",
+        "`declare` tests `Declared::Overload` once for a name's first declaration and again for a later one: a match on the declaration first would make that choice once",
+    ),
+    (
+        "choices",
+        "atlas-engine.tests.pairs_python.club",
+        "the pair helpers `club` and `reading` each keep a graph per side and pick it by `side == \"clean\"`: one cache keyed by side would make that choice once",
+    ),
     (
         "choices",
         "atlas.history.Server.respond",
@@ -242,6 +254,36 @@ const REVIEWED: &[(&str, &str, &str)] = &[
         "choices",
         "atlas-engine.typescript.libraries.Libraries.follow_in",
         "`name`, which is `names[0]`, is tested against `\"default\"` twice in four lines: to pass over the symbols and to take the default export",
+    ),
+    (
+        "layers",
+        "atlas",
+        "a fault of Atlas: the CLI's `main.rs` dispatches to its commands (`serve`, `mcp`, `history`) and holds the helpers they call back into (`open`, `page`, `made`); those helpers belong in a module below the commands",
+    ),
+    (
+        "layers",
+        "atlas-engine",
+        "a fault of Atlas: `lib.rs` defines `Options`, which every reader, `language` and `parts` take, beside `analyze` and `graph_of`, which call them; `Options` belongs in a module below the readers",
+    ),
+    (
+        "layers",
+        "atlas-engine",
+        "a fault of Atlas: a `Node` holds a `prophecy::Prophecy`, a cycle through types, while `prophecy.rs` builds on `model`'s `Node`, `Edge` and `Entry`; the type `Prophecy` belongs beside `Node` in `model`",
+    ),
+    (
+        "layers",
+        "atlas-engine.python",
+        "a fault of Atlas: `python/paths.rs` calls back into `python.rs` (`call_path`, `dotted`) while `python.rs` calls into it; what both use belongs in a module below both",
+    ),
+    (
+        "layers",
+        "atlas-engine.rust",
+        "a fault of Atlas: `rust/globals.rs`, `rust/libraries.rs` and `rust/paths.rs` call back into `rust.rs` (`resolve`, `attrs_of`, `expand`) while `rust.rs` calls into them; what they share belongs in a module below them",
+    ),
+    (
+        "layers",
+        "atlas-engine.typescript",
+        "a fault of Atlas: `typescript/libraries.rs` and `typescript/paths.rs` call back into `typescript.rs` (`function_of`, `function_in`) while it calls into them; what they share belongs in a module below them",
     ),
 ];
 

@@ -170,7 +170,8 @@ fn changes_a_change_to_an_input_shows_in_the_signature() {
 
 /// A function whose value is used says what it gives back. In Python that is the return
 /// annotation: `get_store() -> ReadingStore`. The shortcut's `get_store()` says nothing, so the
-/// `history` its route calls on the store is a call on a value without a type.
+/// `history` its route calls on the store is a call on a value without a type; its
+/// `Harvester.run(..) -> Any`, which the API uses, says no more: `Any` is the unchecked type.
 #[test]
 fn gives_a_function_whose_value_is_used_says_what_it_gives() {
     let (c, s) = (clean(), shortcut());
@@ -178,7 +179,7 @@ fn gives_a_function_whose_value_is_used_says_what_it_gives() {
     assert!(edge(c, "harvest.api.get_store", "harvest.store.ReadingStore", EdgeKind::Returns));
     assert!(edge(c, "harvest.api.readings", "harvest.store.ReadingStore.history", EdgeKind::Calls));
     assert!(route(c, "harvest.api.readings").contains("reads readings"), "{}", route(c, "harvest.api.readings"));
-    assert_eq!(found(s, "gives"), ["harvest.api.get_store"]);
+    assert_eq!(found(s, "gives"), ["harvest.api.get_store", "harvest.harvester.Harvester.run"]);
     assert!(
         !edge(s, "harvest.api.readings", "harvest.store.ReadingStore.history", EdgeKind::Calls),
         "the call on the store is not followed"
@@ -651,6 +652,71 @@ fn prophecy_a_decided_vision_is_marked_where_it_is_written() {
     assert_eq!(stands.len(), 3, "the two prophecies of the clean side, and the new one: {stands:?}");
 }
 
+/// A prophecy is the vision written into the tree, and draws the shape the vision drew. Python's
+/// marker is a call, `@prophecy()` where nothing is superseded: the project's `prophecy` gives the
+/// decorator, so a bare `@prophecy` would make the class what the call gives, and `Crate(Sink())`
+/// would be typed as the `Sink` it is handed. The vision adds a `Crate` and a `run_crated` that
+/// writes into it; written as prophecy, `run_crated` still calls `Crate.write`, as it did in the
+/// vision, and not `Sink.write`.
+#[test]
+fn prophecy_draws_the_shape_of_its_vision() {
+    use std::collections::{BTreeMap, BTreeSet};
+    let copy = common::clean_copy("python", "shape");
+    let file = PathBuf::from("src/archive/app.py");
+    let now = std::fs::read_to_string(copy.join(&file)).expect("reads");
+    let addition = "\n\nclass Crate:\n    \"\"\"Reports kept in a crate before they reach the sink.\"\"\"\n\n    def __init__(self, sink: Sink, /) -> None: ...\n\n    def write(self, report: str, /) -> None: ...\n\n\ndef run_crated(report: str) -> None:\n    Crate(Sink()).write(report)\n";
+    let vision = BTreeMap::from([(file.clone(), Some(format!("{now}{addition}")))]);
+    let supersedes = BTreeMap::from([("archive.app.run_crated".to_string(), "archive.app.run".to_string())]);
+    let calls = |gs: &[Graph]| -> BTreeSet<String> {
+        gs.iter()
+            .flat_map(|g| g.edges.iter())
+            .filter(|e| e.kind == EdgeKind::Calls && e.src == "archive.app.run_crated")
+            .map(|e| e.dst.clone())
+            .collect()
+    };
+    let envisioned = calls(&atlas_engine::changes::envisioned(&copy, &vision, &Options::default()).expect("reads the vision"));
+    let decided = atlas_engine::decide::prophetize(&copy, &vision, &supersedes, &Options::default()).expect("decided");
+    for (rel, t) in &decided.files {
+        std::fs::write(copy.join(rel), t).expect("writes the file");
+    }
+    let written = calls(&[analyze(&copy, &Options::default()).expect("reads")]);
+    let _ = std::fs::remove_dir_all(copy.parent().expect("has a parent"));
+    assert!(envisioned.contains("archive.app.Crate.write"), "{envisioned:?}");
+    assert_eq!(written, envisioned, "the prophecy calls what the vision called");
+    let text = &decided.files[&file];
+    assert!(text.contains("\n@prophecy()\nclass Crate:"), "{text}");
+}
+
+/// The import of `prophecy` that a decided vision adds can go in a circle: where `prophecy` is
+/// defined in a module that imports the file it marks, neither module imports. Atlas cannot know
+/// every safe place, and says so. The clean side keeps `prophecy` in an `__init__` that imports
+/// nothing of the project: the import goes into the file's import block, and nothing is said. The
+/// shortcut's `__init__` also imports `archive.sink`, the file the vision writes into.
+#[test]
+fn prophecy_says_when_its_import_goes_in_a_circle() {
+    use std::collections::BTreeMap;
+    let decide = |init_imports_sink: bool| {
+        let copy = common::clean_copy("python", if init_imports_sink { "circle" } else { "line" });
+        if init_imports_sink {
+            let init = copy.join("src/archive/__init__.py");
+            let text = std::fs::read_to_string(&init).expect("reads");
+            std::fs::write(&init, format!("from archive.sink import Sink\n{text}")).expect("writes");
+        }
+        let file = PathBuf::from("src/archive/sink.py");
+        let now = std::fs::read_to_string(copy.join(&file)).expect("reads").replace("from archive import prophecy\n", "import json\n");
+        let vision =
+            BTreeMap::from([(file.clone(), Some(format!("{now}\n\nclass Crate:\n    def pack(self, report: str, /) -> None: ...\n")))]);
+        let decided = atlas_engine::decide::prophetize(&copy, &vision, &BTreeMap::new(), &Options::default()).expect("decided");
+        let _ = std::fs::remove_dir_all(copy.parent().expect("has a parent"));
+        (decided.files[&file].clone(), decided.notes)
+    };
+    let (text, notes) = decide(false);
+    assert!(text.contains("import json\n\nfrom archive import prophecy\n"), "{text}");
+    assert!(notes.is_empty(), "{notes:?}");
+    let (_, notes) = decide(true);
+    assert!(notes.iter().any(|n| n.contains("goes in a circle") && n.contains("archive.sink")), "{notes:?}");
+}
+
 /// A vision that changes what is built is no prophecy: writing it would replace the code with a
 /// sketch. The sloppy vision rewrites `Sink.write` in place; the clean one gives the new thing a
 /// name of its own, and is decided.
@@ -772,4 +838,496 @@ fn choices_a_choice_is_made_once_across_bodies() {
     assert!(at("runs.core.run").what.contains("(load | infer)"), "{}", at("runs.core.run").what);
     // the shortcut still runs the job and sends its line
     assert!(edge(&s, "runs.core.run", "runs.core.send", EdgeKind::Calls) && edge(&s, "runs.core.run", "runs.core.load", EdgeKind::Calls));
+}
+
+/// One side of the lens pair's club (`tests/pairs/lens/python/club`): a desk that keeps visits,
+/// members and reports in SQLite, a table each, and the files a club keeps (a log, a roster, a
+/// board, a tape), each class a lens or no lens on its table or file.
+fn club(side: &str) -> &'static Graph {
+    static CLEAN: OnceLock<Graph> = OnceLock::new();
+    static SHORTCUT: OnceLock<Graph> = OnceLock::new();
+    let read = || {
+        analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/lens/python/club").join(side), &Options::default()).unwrap()
+    };
+    if side == "clean" {
+        CLEAN.get_or_init(read)
+    } else {
+        SHORTCUT.get_or_init(read)
+    }
+}
+
+/// What `lens` says of class `id` of the club: empty when it asks nothing.
+fn lens_of(g: &Graph, id: &str) -> String {
+    check(g).into_iter().find(|f| f.principle == "lens" && f.node == format!("club.{id}")).map(|f| f.what).unwrap_or_default()
+}
+
+/// What a lens puts, it gets back, at the place it puts to: a table, not the database it is in.
+/// The clean `Desk` only writes `visits` and only reads `members`, and is no lens on either; its
+/// `Register` puts a Member into `members` and gets it back from there, beside the Reports it reads
+/// from `reports`. The shortcut's `Desk` reads `visits` back as rows, and is asked about the Visit;
+/// its `Register` reads back only the names from `members`, and is asked about the Member: the
+/// Member inside a Report comes from another table.
+#[test]
+fn lens_the_place_is_the_table() {
+    let (c, s) = (club("clean"), club("shortcut"));
+    let fs = check(c);
+    assert!(fs.is_empty(), "{:#?}", fs.iter().map(|f| format!("{} {} {}", f.principle, f.node, f.what)).collect::<Vec<_>>());
+    let at = |g: &Graph, f: &str| {
+        touches(g, &format!("club.desk.{f}"), "db_sqlite").iter().map(|t| (t.artifact.clone(), t.dir_name())).collect::<Vec<_>>()
+    };
+    assert_eq!(at(c, "Desk.log"), [("visits".to_string(), "write")]);
+    assert_eq!(at(c, "Desk.members"), [("members".to_string(), "read")]);
+    assert_eq!(at(s, "Register.latest"), [("reports".to_string(), "read")]);
+    assert!(edge(s, "club.model.Report", "club.model.Member", EdgeKind::Has));
+    assert_eq!(lens_of(s, "desk.Desk"), "Desk puts Visit into SQLite(visits) and gets no Visit back");
+    assert_eq!(lens_of(s, "desk.Register"), "Register puts Member into SQLite(members) and gets no Member back");
+}
+
+/// What a lens puts, it gets back, at the file the code names: by its path, or by the value that
+/// holds it. The clean `Tape` writes a Visit to the stream it is handed and reads names from
+/// another: each is known only as JSON, which names no file, and `lens` asks nothing. The
+/// shortcut's `Tape` writes and reads the file it is made with, `Disk(Tape.path)`, and is asked
+/// where the Visit went.
+#[test]
+fn lens_the_place_is_the_file_the_code_names() {
+    let (c, s) = (club("clean"), club("shortcut"));
+    let record = c.node("club.files.Tape.record").unwrap();
+    assert!(record.touches.iter().any(|t| t.artifact == "*.json" && t.kind_name() == "disk_write"), "{:?}", record.touches);
+    assert_eq!(lens_of(c, "files.Tape"), "");
+    assert_eq!(lens_of(s, "files.Tape"), "Tape puts Visit into Disk(Tape.path) and gets no Visit back");
+}
+
+/// A get gives a value back from the place; an operation that reads the place on its way to
+/// writing it is a put. The clean `Log.add` reads the list in its file, appends a Visit and writes
+/// the list back: an end product, no lens. The shortcut's `Log` also gives the list back as it is
+/// kept, `list[dict]`, and is asked where the Visit went.
+#[test]
+fn lens_a_get_gives_a_value_back() {
+    let (c, s) = (club("clean"), club("shortcut"));
+    let add = c.node("club.files.Log.add").unwrap();
+    let kinds: Vec<&str> = add.touches.iter().map(|t| t.kind_name()).collect();
+    assert!(kinds.contains(&"disk_read") && kinds.contains(&"disk_write"), "{:?}", add.touches);
+    assert_eq!(lens_of(c, "files.Log"), "");
+    assert_eq!(lens_of(s, "files.Log"), "Log puts Visit into Disk(Log.path) and gets no Visit back");
+}
+
+/// What a put puts is what its statement writes; a key its statement finds rows by is no value
+/// put. The clean `Visits.forget` deletes a Member's visits (`DELETE .. WHERE member = ?`): the
+/// Member is the key, and `Visits` gets back the Visits it puts. The shortcut's `come` inserts the
+/// Member's name as a value, and `Visits` is asked where the Member went.
+#[test]
+fn lens_a_key_is_no_value_put() {
+    let (c, s) = (club("clean"), club("shortcut"));
+    assert!(edge(c, "club.desk.Visits.forget", "club.model.Member", EdgeKind::Takes));
+    assert!(touches(c, "club.desk.Visits.forget", "db_sqlite").iter().any(|t| t.artifact == "visits" && t.dir_name() == "write"));
+    assert_eq!(lens_of(c, "desk.Visits"), "");
+    assert_eq!(lens_of(s, "desk.Visits"), "Visits puts Member into SQLite(visits) and gets no Member back");
+}
+
+/// What a get gives back holds what was put: the class's own type, which a constructor gives, and
+/// a subclass of what a get gives, a variant of a sum left open. The clean `Roster` gives a Roster
+/// back (`load`, a constructor, and `reread`), which holds the Members it puts; its `Board` pins a
+/// Notice and gives the Posts back, and a Notice is a Post. The shortcut's `Roster.load` gives a
+/// Roster that holds rows, and its `Board` gives the rows back: each is asked.
+#[test]
+fn lens_a_get_gives_its_own_class_and_a_subclass_back() {
+    let (c, s) = (club("clean"), club("shortcut"));
+    assert!(c.node("club.files.Roster.load").unwrap().ctor);
+    assert!(edge(c, "club.files.Roster", "club.model.Member", EdgeKind::Has));
+    assert!(edge(c, "club.model.Notice", "club.model.Post", EdgeKind::Inherits));
+    assert_eq!(lens_of(c, "files.Roster"), "");
+    assert_eq!(lens_of(c, "files.Board"), "");
+    assert_eq!(lens_of(s, "files.Roster"), "Roster puts Member into Disk(Roster.path) and gets no Member back");
+    assert_eq!(lens_of(s, "files.Board"), "Board puts Notice into Disk(Board.path) and gets no Notice back");
+}
+
+/// What a get gives back holds its fields, a library's type among them. `Ledger` puts a `Fraction`
+/// and gets it back as an `Entry`'s `amount: Fraction` (`tests/pairs/lens/python/ledger`); the
+/// Python reader draws no `has` edge to a library's type, so `lens` does not see the Fraction
+/// come back.
+#[test]
+#[ignore = "gap (a): the Python reader draws no `has` edge to a library's type"]
+fn lens_a_library_type_comes_back_inside_what_a_get_gives() {
+    let g = analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/lens/python/ledger/clean"), &Options::default()).unwrap();
+    assert!(edge(&g, "books.ledger.Entry", "ext:fractions.Fraction", EdgeKind::Has));
+    assert!(found(&g, "lens").is_empty(), "{:?}", found(&g, "lens"));
+}
+
+/// One side of the overrides pair (`tests/pairs/overrides`): readers of bytes, documents that parse
+/// themselves and a count, each family once as its author keeps its bases' promises and once as a
+/// hurried author writes it.
+fn reading(side: &str) -> &'static Graph {
+    static CLEAN: OnceLock<Graph> = OnceLock::new();
+    static SHORTCUT: OnceLock<Graph> = OnceLock::new();
+    let read = || {
+        analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/overrides/python").join(side), &Options::default()).unwrap()
+    };
+    if side == "clean" {
+        CLEAN.get_or_init(read)
+    } else {
+        SHORTCUT.get_or_init(read)
+    }
+}
+
+/// An override keeps the promise of every method it overrides, since a caller written against any
+/// of its class's ancestors may be handed it; the one it breaks is the first along the method
+/// resolution order. `Feed(Buffered, Archive)` runs Feed, Buffered, Source, Archive, Store, as C3
+/// orders them, so `Source.read` comes before `Archive.read`. On the clean side every `read` gives
+/// bytes. On the shortcut `Archive.read` gives a str: `Feed.read` follows it and breaks the
+/// `Source.read` its order reaches first, which the finding names, and `Tape.read` keeps
+/// `Source.read` and breaks `Archive.read`.
+#[test]
+fn overrides_the_base_is_the_next_in_the_method_resolution_order() {
+    let (c, s) = (reading("clean"), reading("shortcut"));
+    assert!(found(c, "overrides").is_empty(), "{:?}", found(c, "overrides"));
+    let bases = |g: &'static Graph| {
+        move |cls: &'static str| -> Vec<&'static str> {
+            g.edges.iter().filter(|e| e.kind == EdgeKind::Inherits && e.src == cls).map(|e| e.dst.as_str()).collect()
+        }
+    };
+    let order = atlas_engine::linearization("reading.feeds.Feed", &bases(s), &mut Default::default());
+    assert_eq!(order, ["Feed", "Buffered", "Source", "Archive", "Store"].map(|c| format!("reading.feeds.{c}")));
+    let feeds: Vec<String> = found(s, "overrides").into_iter().filter(|n| n.starts_with("reading.feeds.")).collect();
+    assert_eq!(feeds, ["reading.feeds.Source.read", "reading.feeds.Archive.read"]);
+    assert_eq!(s.node("reading.feeds.Feed.read").unwrap().breaks.as_deref(), Some("reading.feeds.Source.read"));
+    assert_eq!(s.node("reading.feeds.Tape.read").unwrap().breaks.as_deref(), Some("reading.feeds.Archive.read"));
+    let source = check(s).into_iter().find(|f| f.node == "reading.feeds.Source.read").unwrap();
+    assert_eq!(source.what, "Source.read promises () -> bytes; 1 override breaks it");
+    assert_eq!(source.evidence, ["Feed.read() -> str (src/reading/feeds.py:20)"]);
+}
+
+/// A constructor on the class is called through the class a caller names, and is handed what the
+/// caller hands its base's: the clean `Page.parse` takes the `text: str` of `Doc.parse`, and a new
+/// way in has a name of its own (`Page.decode(data: bytes)`). The shortcut's `Page.parse` takes
+/// bytes, so a caller of `Doc.parse` handed the class `Page` breaks; ty says so, and Atlas asks. An
+/// initializer answers to no base: each `Page.__init__` takes a page number `Doc.__init__` does not,
+/// and neither side is asked about it.
+#[test]
+fn overrides_a_constructor_on_the_class_takes_what_its_base_takes() {
+    let (c, s) = (reading("clean"), reading("shortcut"));
+    let parse = c.node("reading.docs.Page.parse").unwrap();
+    assert!(parse.ctor && parse.on_class && parse.keeps == Some(true), "{parse:?}");
+    assert!(!found(c, "overrides").iter().any(|n| n.starts_with("reading.docs.")));
+    let docs: Vec<String> = found(s, "overrides").into_iter().filter(|n| n.starts_with("reading.docs.")).collect();
+    assert_eq!(docs, ["reading.docs.Doc.parse"]);
+    assert_eq!(s.node("reading.docs.Page.parse").unwrap().keeps, Some(false));
+    let init = s.node("reading.docs.Page.__init__").unwrap();
+    assert!(init.ctor && !init.on_class);
+}
+
+/// `# type: ignore[override]` on an override is the code saying it knows, whatever its codes, as the
+/// bare comment is: ty honours only the bare form and codes of its own (`ty:`), and Atlas reads the
+/// comment on the override's line itself. The clean `Kennel.count` gives a str where `Shelter.count`
+/// promises an int, and says so; the shortcut does the same without a word, and is asked.
+#[test]
+fn overrides_a_type_ignore_with_codes_is_the_code_saying_it_knows() {
+    let (c, s) = (reading("clean"), reading("shortcut"));
+    assert_eq!(c.node("reading.counts.Kennel.count").unwrap().keeps, Some(true));
+    assert!(!found(c, "overrides").contains(&"reading.counts.Shelter.count".to_string()));
+    assert_eq!(s.node("reading.counts.Kennel.count").unwrap().keeps, Some(false));
+    assert!(found(s, "overrides").contains(&"reading.counts.Shelter.count".to_string()));
+    // the override that says it knows is still in the graph, with what it gives
+    assert_eq!(c.node("reading.counts.Kennel.count").unwrap().returns.as_ref().map(|r| r.written.as_str()), Some("str"));
+}
+
+/// One side of the change pair (`tests/pairs/changes`): a scoreboard of cells and scores, whose
+/// functions change what they are handed, in Python, Rust and TypeScript alike.
+fn board(side: &str) -> Graph {
+    analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/changes/python").join(side), &Options::default()).unwrap()
+}
+
+/// A change to an input shows in the signature, whatever the input's type. The clean board changes
+/// a value through a method of its own (`Board.reset` clears its cells, `Board.mark_all` marks each
+/// cell it holds) or hands back a new one: `with_tag` and `counted` build it, `renamed` rebinds
+/// `board` to a copy before it sets the name, `extended` and `queued` rebind their list to a new
+/// one before they change it. Nothing is asked. The shortcut changes what it is handed and says
+/// nothing: a `list[str]` it appends to, a `dict` it sets an item of, a list it extends with `+=`,
+/// a heap `heapq` keeps in a list, the cells `clear` empties and the scores `update` fills (methods
+/// ty finds on typing's `MutableSequence` and `MutableMapping`), each cell through the loop
+/// variable that goes over the board's cells, the board through a second name for it, and both
+/// boards a tuple assignment swaps. `Board.take_from` and `Board.take_victim` have one body: each
+/// empties the board it is handed as well as its own, two changes, whatever the parameter is
+/// called. Each is asked, and none of them is a call that leaves nothing behind.
+#[test]
+fn changes_a_change_to_an_input_of_any_type_shows_in_the_signature() {
+    let (c, s) = (board("clean"), board("shortcut"));
+    let fs = check(&c);
+    assert!(fs.is_empty(), "{:#?}", fs.iter().map(|f| format!("{} {} {}", f.principle, f.node, f.what)).collect::<Vec<_>>());
+    assert!(c.edges.iter().filter(|e| e.kind == EdgeKind::Mutates).all(|e| e.via.as_deref() == Some("self")), "only methods change");
+    let mut asked = found(&s, "changes");
+    asked.sort();
+    let want = [
+        "Board.take_from",
+        "Board.take_victim",
+        "add_tag",
+        "count",
+        "extend",
+        "mark_all",
+        "merge_scores",
+        "queue",
+        "rename",
+        "reset",
+        "swap",
+        "swap",
+    ];
+    assert_eq!(asked, want.map(|f| format!("board.core.{f}")));
+    assert!(found(&s, "nothing").is_empty(), "{:?}", found(&s, "nothing"));
+    let inputs = |f: &str| {
+        let mut via: Vec<&str> =
+            s.edges.iter().filter(|e| e.kind == EdgeKind::Mutates && e.src == f).filter_map(|e| e.via.as_deref()).collect();
+        via.sort();
+        via
+    };
+    assert_eq!(inputs("board.core.Board.take_from"), ["other", "self"]);
+    assert_eq!(inputs("board.core.Board.take_victim"), ["self", "victim"]);
+    assert!(edge(&s, "board.core.add_tag", "ext:builtins.list", EdgeKind::Mutates), "a list is what changes");
+    let add_tag = check(&s).into_iter().find(|f| f.node == "board.core.add_tag").expect("asked");
+    assert!(add_tag.what.contains("the list[str] it is handed as `tags`"), "{}", add_tag.what);
+}
+
+// ---------- layers: the package quotient the picture draws ----------
+
+/// One side of the layers pair (`tests/pairs/layers/python`): a shop whose orders price their
+/// lines, a kitchen beside it that cooks from the shop's orders, and tests inside the shop that
+/// cook too.
+fn shop_python(side: &str) -> Graph {
+    analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/layers/python").join(side), &Options::default()).expect("reads")
+}
+
+/// The packages of a part depend on one another in one direction, at every level the picture
+/// draws: a package's own module (`orders/__init__.py`) is a block beside the packages below it,
+/// and the top-level packages of a part are blocks beside one another. The clean side keeps what
+/// both need below both: `lines` takes `tax` from a module of its own, and the shop asks nothing of
+/// the kitchen. The shortcut writes `tax` in `orders/__init__.py` and imports it from there inside
+/// `price`, past the import cycle, and lets the shop's `menu` cook from the kitchen that cooks from
+/// the shop.
+#[test]
+fn layers_a_package_and_its_own_module_and_the_top_packages_depend_in_one_direction() {
+    let (c, s) = (shop_python("clean"), shop_python("shortcut"));
+    assert!(found(&c, "layers").is_empty(), "{:?}", check(&c).iter().map(|f| &f.what).collect::<Vec<_>>());
+    assert!(edge(&c, "shop.orders.total", "shop.orders.lines.price", EdgeKind::Calls));
+    assert!(edge(&c, "kitchen.cook.boil", "shop.orders.total", EdgeKind::Calls));
+    let layers: Vec<Finding> = check(&s).into_iter().filter(|f| f.principle == "layers").collect();
+    let said: Vec<(&str, &str)> = layers.iter().map(|f| (f.node.as_str(), f.what.as_str())).collect();
+    assert_eq!(
+        said,
+        [("kitchen", "kitchen and shop depend on one another"), ("shop.orders", "orders itself and lines depend on one another")]
+    );
+    assert!(layers[1].evidence.iter().any(|e| e.starts_with("orders itself: the code of `shop.orders`")), "{:?}", layers[1].evidence);
+    assert!(edge(&s, "shop.orders.lines.price", "shop.orders.tax", EdgeKind::Calls), "the shortcut's call back is in the graph");
+    assert!(edge(&s, "shop.menu.dish", "kitchen.cook.boil", EdgeKind::Calls));
+}
+
+/// A test is a way in from outside, not a layer: a pytest file (`test_*.py`, `*_test.py`,
+/// `conftest.py`) is test code wherever it stands. On both sides a test inside `shop.orders` and the
+/// shop's `conftest.py` cook from the kitchen, which cooks from the shop; counted as the shop's
+/// code, they would close a cycle. They are in the graph, and no cycle comes of them.
+#[test]
+fn layers_a_test_inside_a_package_is_no_layer() {
+    for side in ["clean", "shortcut"] {
+        let g = shop_python(side);
+        for test in ["shop.orders.test_lines", "shop.conftest"] {
+            assert!(g.node(test).is_some_and(|m| m.test), "{side}: {test} is test code");
+        }
+        assert!(edge(&g, "shop.orders.test_lines.boiled", "kitchen.cook.boil", EdgeKind::Calls), "{side}");
+        assert!(edge(&g, "shop.conftest.cooked", "kitchen.cook.boil", EdgeKind::Calls), "{side}");
+        assert!(g.node("shop.orders.lines").is_some_and(|m| !m.test), "{side}: a module beside a test is not one");
+        let cycles: Vec<Finding> = check(&g).into_iter().filter(|f| f.principle == "layers").collect();
+        assert!(cycles.iter().all(|f| f.evidence.iter().all(|e| !e.contains("boiled") && !e.contains("cooked"))), "{side}: {cycles:#?}");
+    }
+}
+
+// ---------- prophecy: what leans, and what a name names ----------
+
+fn prophecy_python(topic: &str, side: &str) -> Graph {
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/prophecy").join(topic).join("python").join(side);
+    analyze(&dir, &Options::default()).expect("reads")
+}
+
+/// Test code may lean on the code it is written for before it is built. On the clean side a pytest
+/// file inside the package (`test_seal.py`), and the `conftest.py` and `plan_test.py` of a `tests`
+/// package inside it, call the prophecy `seal`: Atlas asks nothing. The shortcut writes the same
+/// helper in the package's own `check.py`: built code that would run on a stub, and asked.
+#[test]
+fn prophecy_a_test_leans_on_a_prophecy_freely() {
+    let (c, s) = (prophecy_python("tested", "clean"), prophecy_python("tested", "shortcut"));
+    assert!(check(&c).is_empty(), "{:?}", check(&c).iter().map(|f| format!("{} {}", f.principle, f.what)).collect::<Vec<_>>());
+    for (helper, test) in [
+        ("archive.test_seal.sealed_twice", "archive.test_seal"),
+        ("archive.tests.conftest.sealed", "archive.tests.conftest"),
+        ("archive.tests.plan_test.test_a_sealed_report_keeps_its_text", "archive.tests.plan_test"),
+    ] {
+        assert!(edge(&c, helper, "archive.plan.seal", EdgeKind::Calls), "{helper} calls the prophecy");
+        assert!(c.node(test).is_some_and(|m| m.test), "{test} is test code");
+    }
+    assert_eq!(found(&s, "prophecy"), ["archive.check.sealed_twice"]);
+}
+
+/// A name the prophecy's `supersedes` writes names one node, by its whole id or by the one id that
+/// ends so. The clean side names the ledger's `save` by its id and the shelf's by `shelf.save`; both
+/// hold. The shortcut writes `save`, which ends the ids of both: the prophecy does not say which it
+/// replaces, and Atlas names both rather than call the name one the code does not hold.
+#[test]
+fn prophecy_a_name_that_names_several_nodes_is_ambiguous() {
+    let (c, s) = (prophecy_python("names", "clean"), prophecy_python("names", "shortcut"));
+    assert!(found(&c, "prophecy").is_empty(), "{:?}", check(&c).iter().map(|f| &f.what).collect::<Vec<_>>());
+    let replaces = |g: &Graph, id: &str| g.node(id).and_then(|n| n.prophecy.as_ref()).and_then(|p| p.replaces.clone());
+    assert_eq!(replaces(&c, "archive.plan.save_posted").as_deref(), Some("archive.ledger.save"));
+    assert_eq!(replaces(&c, "archive.plan.save_kept").as_deref(), Some("archive.shelf.save"));
+    let asked: Vec<Finding> = check(&s).into_iter().filter(|f| f.principle == "prophecy").collect();
+    assert_eq!(asked.len(), 1, "{asked:#?}");
+    assert_eq!(asked[0].what, "save_posted supersedes `save`, which names 2 nodes: `archive.ledger.save` and `archive.shelf.save`");
+    assert!(!asked[0].what.contains("does not hold"));
+}
+
+/// A request to a route leans on its handler as a call does. In each side a client part asks the
+/// shop part for an item; the shop serves it, and sketches a second version of the route as a
+/// prophecy that supersedes the first. The clean client asks the route that is built; the shortcut's
+/// asks the prophesied one, which would answer with a stub. Read as one graph the parts are joined
+/// by the request, and Atlas asks about the client's `item`. `atlas check` reads each part alone,
+/// where no request crosses to another part.
+#[test]
+fn prophecy_a_request_to_a_prophesied_route_leans_on_it() {
+    let read = |side: &str| {
+        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/prophecy/requests/python").join(side);
+        atlas_engine::parts::analyze_repo(&[dir], &Options::default()).expect("reads")
+    };
+    let (c, s) = (read("clean"), read("shortcut"));
+    assert!(edge(&c, "buyer.client.item", "shop.api.item", EdgeKind::Requests));
+    assert!(found(&c, "prophecy").is_empty(), "{:?}", check(&c).iter().map(|f| &f.what).collect::<Vec<_>>());
+    assert!(edge(&s, "buyer.client.item", "shop.api.item_v2", EdgeKind::Requests));
+    let asked: Vec<Finding> = check(&s).into_iter().filter(|f| f.principle == "prophecy").collect();
+    assert_eq!(asked.iter().map(|f| f.node.as_str()).collect::<Vec<_>>(), ["buyer.client.item"]);
+    assert_eq!(asked[0].evidence, ["Requests `item_v2`, which is not built"]);
+}
+
+// ---------- doors: every declaration a door is made of ----------
+
+/// One side of the doors pair (`tests/pairs/doors`): lengths in metres, read from text, scaled,
+/// added up and logged, the package's doors brought to its root with `from .. import *`.
+fn units(side: &str) -> Graph {
+    analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/doors/python").join(side), &Options::default()).unwrap()
+}
+
+/// A door says what goes in and what comes out in each form Python declares one. The clean root
+/// names its doors with `from units.core import *` (the module's `__all__`) and `from
+/// units.convert import *` (its public names). `scale` says what it takes and gives through typed
+/// `@overload`s, which its callers are checked against, before an implementation without types;
+/// `Length.meters` is its getter, typed, before its setter; the dunders a user runs through an
+/// operator (`__add__`, `__eq__`) are typed, and so are `log`'s `*parts` and `**fields`. It is
+/// asked nothing, and the route of `Length` runs its initializer once, then each name a user may
+/// run on it, the dunders among them. The shortcut is the same package with each door left open:
+/// an overload without types, an untyped getter behind a typed setter, an untyped `__add__`,
+/// untyped `*parts` and `**fields`, and `parse(text: Any) -> Any`, which says no more than no
+/// annotation. Each is asked where it is left open.
+#[test]
+fn doors_every_declaration_of_a_door_says_what_goes_in_and_out() {
+    let (c, s) = (units("clean"), units("shortcut"));
+    let fs = check(&c);
+    assert!(fs.is_empty(), "{:#?}", fs.iter().map(|f| format!("{} {} {}", f.principle, f.node, f.what)).collect::<Vec<_>>());
+    for door in ["units.core.Length", "units.core.scale", "units.core.log", "units.convert.parse"] {
+        assert_eq!(c.node(door).unwrap().entry.as_ref().map(|e| e.kind), Some(EntryKind::Export), "{door} is a door a star brings");
+    }
+    // one node per name: the implementation with the overloads its callers see, the property's getter
+    let scale = c.node("units.core.scale").unwrap();
+    assert_eq!(scale.overloads.iter().map(|o| o.line).collect::<Vec<_>>(), [26, 28]);
+    assert!(scale.params.iter().all(|p| p.ty.is_empty()) && scale.span.map(|s| s.0) == Some(29), "the implementation, as written");
+    let meters = c.node("units.core.Length.meters").unwrap();
+    assert_eq!(meters.decorators, ["property"]);
+    assert_eq!(meters.returns.as_ref().map(|r| r.written.as_str()), Some("float"));
+    assert_eq!(c.node("units.core.Length").unwrap().methods, ["__init__", "meters", "__add__", "__eq__"]);
+    // the class's route runs its initializer once, then what a user may run on it, the dunders among it
+    let steps: Vec<String> = atlas_engine::flow::bodies(&c)["units.core.Length"].steps().iter().map(|s| s.to.clone()).collect();
+    assert_eq!(steps, ["__init__", "meters", "__add__", "__eq__"].map(|m| format!("units.core.Length.{m}")));
+    // the shortcut: each door left open is asked, at the declaration that leaves it open
+    let asked: Vec<(String, u32)> = check(&s).into_iter().filter(|f| f.principle == "doors").map(|f| (f.node, f.line)).collect();
+    let want = [
+        ("units.convert.parse", 6),
+        ("units.core.Length.meters", 11),
+        ("units.core.Length.__add__", 18),
+        ("units.core.scale", 28),
+        ("units.core.log", 33),
+    ];
+    assert_eq!(asked, want.map(|(n, l)| (n.to_string(), l)));
+    // `Any` is drawn as written, and says nothing
+    let parse = s.node("units.convert.parse").unwrap();
+    assert_eq!(parse.params.iter().map(|p| (p.ty.as_str(), p.unchecked)).collect::<Vec<_>>(), [("Any", true)]);
+    assert!(parse.returns.as_ref().is_some_and(|r| r.written == "Any" && r.unchecked));
+}
+
+/// One side of the nothing pair (`tests/pairs/nothing`): a job runner that runs a task, says when a
+/// job is done, reports, counts its runs, settles its log and stops the run, in Python, Rust and
+/// TypeScript alike.
+fn jobs(side: &str) -> Graph {
+    analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/nothing/python").join(side), &Options::default()).unwrap()
+}
+
+/// A call leaves something behind, and where Atlas cannot see what a call leaves, the question says
+/// so. The clean runner leaves each step where a reader sees it: `Echo` subclasses the `Task` it
+/// implements, `finish` is handed its callback, `report` writes to the screen, `count` changes a
+/// module's global, `settle` writes its log and `stop` ends the run with `sys.exit`, as `raise
+/// SystemExit` does: nothing is asked. The shortcut leaves them out of sight: `Echo` fills in a
+/// `Protocol` without naming it, so `Task.run` is only declared; `Job` keeps its callback in a
+/// field; `report` logs through `logging`, which no table describes; `count` changes a value its
+/// class keeps. Atlas asks what each of those leaves behind and names what it cannot see. `settle`,
+/// a door that waits and does nothing, is asked whether it is dead, as any function is.
+#[test]
+fn nothing_says_what_atlas_cannot_see() {
+    let (c, s) = (jobs("clean"), jobs("shortcut"));
+    let asked = |g: &Graph| -> Vec<(String, String)> {
+        check(g).into_iter().filter(|f| f.principle == "nothing").map(|f| (f.node, f.what)).collect()
+    };
+    assert!(asked(&c).is_empty(), "{:#?}", asked(&c));
+    for g in [&c, &s] {
+        assert!(g.node("jobs.runner.stop").unwrap().raises, "ending the run is what `stop` leaves behind");
+    }
+    let want = [
+        ("run_task", "run_task gives nothing back, and Atlas cannot see what `Task.run` does"),
+        ("Job.finish", "Job.finish gives nothing back, and Atlas cannot see what `self.on_done(..)` does"),
+        ("report", "report gives nothing back, and Atlas cannot see what `logger.info(..)` does"),
+        ("count", "count gives nothing back, and Atlas cannot see what `Counter.runs += 1` does"),
+        ("settle", "settle gives nothing back, and Atlas sees no change and no place it reaches"),
+    ]
+    .map(|(f, what)| (format!("jobs.runner.{f}"), what.to_string()));
+    assert_eq!(asked(&s), want);
+    // what is only declared has no body to ask about, and what implements it is still drawn
+    assert!(s.node("jobs.runner.Task.run").unwrap().declared && c.node("jobs.runner.Task.run").unwrap().declared);
+    assert_eq!(touches(&s, "jobs.runner.Echo.run", "screen").len(), 1);
+    assert_eq!(s.node("jobs.runner.settle").unwrap().entry.as_ref().map(|e| e.kind), Some(EntryKind::Export), "settle is a door");
+}
+
+/// One side of the gives pair (`tests/pairs/gives`): readings kept in a file, how many there are,
+/// and the readings ranked, in Python and TypeScript alike.
+fn readings(side: &str) -> Graph {
+    analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/gives/python").join(side), &Options::default()).unwrap()
+}
+
+/// A function whose value is used says what it gives back, also where it is handed on to be used:
+/// `sorted(readings, key=score)` orders the readings by what `score` gives. The clean store says
+/// what each of its functions gives; the shortcut leaves `get_store` and `score` unsaid, and
+/// `gives` asks about both. The route loses `Store.history` at the store `get_store` makes, and
+/// the key `ranked` sorts by has no type.
+#[test]
+fn gives_a_key_handed_on_is_a_value_used() {
+    let (c, s) = (readings("clean"), readings("shortcut"));
+    assert!(found(&c, "gives").is_empty(), "{:?}", found(&c, "gives"));
+    assert_eq!(found(&s, "gives"), ["readings.store.get_store", "readings.store.score"]);
+    for g in [&c, &s] {
+        assert!(
+            g.edges
+                .iter()
+                .any(|e| e.kind == EdgeKind::Calls && e.uses && e.src == "readings.store.ranked" && e.dst == "readings.store.score"),
+            "a key handed on is used"
+        );
+    }
+    assert!(edge(&c, "readings.store.main", "readings.store.Store.history", EdgeKind::Calls));
+    assert!(!edge(&s, "readings.store.main", "readings.store.Store.history", EdgeKind::Calls), "the route loses the store's history");
+}
+
+/// A property is a function its readers run: an untyped one gives what they use without saying
+/// (`store.size`). A property read is no call in the graph, so `gives` does not ask.
+#[test]
+#[ignore = "gap (b): a property read is no call in the graph, so an untyped property is not asked"]
+fn gives_a_property_read_is_a_value_used() {
+    assert!(found(&readings("shortcut"), "gives").contains(&"readings.store.Store.size".to_string()));
 }

@@ -6,12 +6,14 @@
 //! to ruff, pyright and clippy. `docs/reference/principles.md` explains each one.
 
 use std::cell::RefCell;
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::Path;
 
 use serde::Serialize;
 
-use crate::model::{Compare, Dir, Edge, EdgeKind, EntryKind, Graph, Held, Leaves, Node, NodeKind, Site, Touch, World};
+use crate::model::{
+    Compare, Dir, Edge, EdgeKind, EntryKind, Graph, Held, Leaves, Node, NodeKind, Param, Part, Returns, Signature, Site, Touch, World,
+};
 
 /// A principle by its id and what it asks of code.
 pub struct Principle {
@@ -270,6 +272,8 @@ struct Index<'g> {
     nodes: HashMap<&'g str, &'g Node>,
     out: HashMap<&'g str, Vec<&'g Edge>>,
     into: HashMap<&'g str, Vec<&'g Edge>>,
+    /// Each class's method resolution order, worked out once.
+    mro: RefCell<HashMap<&'g str, Vec<&'g str>>>,
 }
 
 impl<'g> Index<'g> {
@@ -280,7 +284,7 @@ impl<'g> Index<'g> {
             out.entry(e.src.as_str()).or_default().push(e);
             into.entry(e.dst.as_str()).or_default().push(e);
         }
-        Index { g, nodes: g.nodes.iter().map(|n| (n.id.as_str(), n)).collect(), out, into }
+        Index { g, nodes: g.nodes.iter().map(|n| (n.id.as_str(), n)).collect(), out, into, mro: RefCell::default() }
     }
 
     fn node(&self, id: &str) -> Option<&'g Node> {
@@ -309,6 +313,12 @@ impl<'g> Index<'g> {
         n.prophecy.is_some() || n.cls.as_deref().and_then(|c| self.node(c)).is_some_and(|c| c.prophecy.is_some())
     }
 
+    /// Whether a node is test code, by where it stands: a test, code the reader marks as test code,
+    /// or code in a test module. A test is a way in from outside the program.
+    fn test(&self, n: &Node) -> bool {
+        n.test || n.entry.as_ref().is_some_and(|e| e.kind == EntryKind::Test) || self.node(&n.module).is_some_and(|m| m.test)
+    }
+
     /// What the prophecy `p` supersedes, when the code holds it.
     fn superseded(&self, p: &Node) -> Option<&'g Node> {
         self.node(p.prophecy.as_ref()?.replaces.as_deref()?)
@@ -328,10 +338,22 @@ impl<'g> Index<'g> {
         Path::new(&n.file).strip_prefix(root).map(crate::tree::path_str).unwrap_or_else(|_| n.file.clone())
     }
 
+    /// The part a node belongs to.
+    fn part(&self, id: &str) -> Option<&'g Part> {
+        let part = self.node(id).map_or("", |n| n.part.as_str());
+        self.g.parts.iter().find(|p| p.id == part).or(self.g.parts.first())
+    }
+
     /// What the language of a node's part leaves to its author.
     fn leaves(&self, id: &str) -> Leaves {
-        let part = self.node(id).map_or("", |n| n.part.as_str());
-        self.g.parts.iter().find(|p| p.id == part).or(self.g.parts.first()).map_or_else(Leaves::default, |p| p.leaves)
+        self.part(id).map_or_else(Leaves::default, |p| p.leaves)
+    }
+
+    /// Whether a reader of a declaration of `f` that gives `returns` does not see what it gives:
+    /// its language leaves the return type to the author, and the author left it out or wrote the
+    /// unchecked type. A constructor gives its class.
+    fn gives_unknown(&self, f: &Node, returns: Option<&Returns>) -> bool {
+        self.leaves(&f.id).returns && !f.ctor && !returns.map_or(false, Returns::says)
     }
 
     fn at(&self, n: &Node) -> String {
@@ -344,33 +366,43 @@ impl<'g> Index<'g> {
     }
 
     /// A class's public methods (and its constructor), its own and those it inherits from
-    /// the package's classes, each from the nearest class that defines it.
+    /// the package's classes, each from the first class along its method resolution order that
+    /// defines it.
     fn interface(&self, cls: &str) -> Vec<&'g Node> {
         let mut seen = HashSet::new();
         let mut out = vec![];
-        for c in std::iter::once(cls).chain(self.ancestors(cls)) {
-            let Some(n) = self.node(c) else { continue };
-            for m in n.methods.iter().filter_map(|m| self.node(&format!("{c}.{m}"))) {
-                if (!m.private || m.ctor) && seen.insert(m.name.as_str()) {
-                    out.push(m);
-                }
+        for m in self.members(cls) {
+            if (!m.private || m.ctor) && seen.insert(m.name.as_str()) {
+                out.push(m);
             }
         }
         out
     }
 
-    /// Ancestors along `inherits`, nearest first.
+    /// Every method a class has, its own and those of its ancestors, along its method resolution
+    /// order: a name its own class or a nearer ancestor defines comes before the same name further
+    /// on.
+    fn members(&self, cls: &str) -> Vec<&'g Node> {
+        self.mro(cls)
+            .into_iter()
+            .filter_map(|c| self.node(c))
+            .flat_map(|n| n.methods.iter().filter_map(move |m| self.node(&format!("{}.{m}", n.id))))
+            .collect()
+    }
+
+    /// The method resolution order along `inherits` (`model::linearization`): the class, then
+    /// its ancestors nearest first.
+    fn mro(&self, cls: &str) -> Vec<&'g str> {
+        let Some(cls) = self.nodes.get_key_value(cls).map(|(k, _)| *k).or_else(|| self.out.get_key_value(cls).map(|(k, _)| *k)) else {
+            return vec![];
+        };
+        let bases = |c: &'g str| self.targets(c, EdgeKind::Inherits);
+        crate::model::linearization(cls, &bases, &mut self.mro.borrow_mut())
+    }
+
+    /// Ancestors along `inherits`, nearest first, in the method resolution order.
     fn ancestors(&self, cls: &str) -> Vec<&'g str> {
-        let mut seen = HashSet::new();
-        let mut q: VecDeque<&str> = self.targets(cls, EdgeKind::Inherits).into();
-        let mut out = vec![];
-        while let Some(c) = q.pop_front() {
-            if seen.insert(c) {
-                out.push(c);
-                q.extend(self.targets(c, EdgeKind::Inherits));
-            }
-        }
-        out
+        self.mro(cls).into_iter().skip(1).collect()
     }
 }
 
@@ -379,14 +411,32 @@ fn is_function(n: &Node) -> bool {
 }
 
 fn signature(n: &Node) -> String {
-    let ret = n.returns.as_ref().map_or(String::new(), |r| format!(" -> {}", r.written));
-    format!("{}({}){ret}", n.name, n.params.iter().map(|p| p.to_string()).collect::<Vec<_>>().join(", "))
+    written_signature(&n.name, &n.params, n.returns.as_ref())
+}
+
+/// `name(a: A, b) -> C`, as a signature writes it.
+fn written_signature(name: &str, params: &[Param], returns: Option<&Returns>) -> String {
+    let ret = returns.map_or(String::new(), |r| format!(" -> {}", r.written));
+    format!("{name}({}){ret}", params.iter().map(|p| p.to_string()).collect::<Vec<_>>().join(", "))
 }
 
 /// What a function says it gives, as written.
 fn written(n: &Node) -> &str {
     n.returns.as_ref().map_or("", |r| r.written.as_str())
 }
+
+/// What a node's code depends on another for: what it calls, builds and extends, a request to a
+/// route the other serves, and the types it takes, returns and holds (a field, a variant of a sum).
+const DEPENDS: [EdgeKind; 8] = [
+    EdgeKind::Calls,
+    EdgeKind::Instantiates,
+    EdgeKind::Inherits,
+    EdgeKind::Requests,
+    EdgeKind::Takes,
+    EdgeKind::Returns,
+    EdgeKind::Has,
+    EdgeKind::Variant,
+];
 
 /// `a, b and c`, each named once.
 fn list(xs: &[String]) -> String {
@@ -452,35 +502,45 @@ fn doors(ix: &Index) -> Vec<Finding> {
         }
     }
     for f in door_fns(ix) {
-        // a function handed to a call where it is declared takes its parameters' types from the call
-        let untyped: Vec<String> = f
-            .params
-            .iter()
-            .filter(|p| f.typed_by.is_empty() && p.ty.is_empty() && !p.receiver && !p.rest)
-            .map(|p| format!("`{}`", p.name))
-            .collect();
-        // a constructor gives its class
-        let gives_unknown = ix.leaves(&f.id).returns && f.returns.is_none() && !f.ctor;
-        if untyped.is_empty() && !gives_unknown {
-            continue;
-        }
-        let what = match (untyped.is_empty(), gives_unknown) {
-            (false, true) => format!("{} does not say what {} are, nor what it gives", ix.label(&f.id), list(&untyped)),
-            (false, false) => {
-                format!("{} does not say what {} {}", ix.label(&f.id), list(&untyped), if untyped.len() == 1 { "is" } else { "are" })
+        // what its callers are checked against: its overloads, else its own signature
+        let own = [Signature { line: f.span.map_or(1, |s| s.0), params: f.params.clone(), returns: f.returns.clone() }];
+        let checked = if f.overloads.is_empty() { &own[..] } else { &f.overloads[..] };
+        let (mut untyped, mut gives_unknown, mut asked): (Vec<String>, bool, Vec<&Signature>) = (vec![], false, vec![]);
+        for s in checked {
+            // a function handed to a call where it is declared takes its parameters' types from the call
+            let takes: Vec<String> =
+                s.params.iter().filter(|p| f.typed_by.is_empty() && !p.receiver && !p.says()).map(|p| format!("`{}`", p.name)).collect();
+            // a constructor gives its class
+            let gives = ix.gives_unknown(f, s.returns.as_ref());
+            if !takes.is_empty() || gives {
+                asked.push(s);
             }
+            for p in takes {
+                if !untyped.contains(&p) {
+                    untyped.push(p);
+                }
+            }
+            gives_unknown |= gives;
+        }
+        let Some(first) = asked.first() else { continue };
+        let are = if untyped.len() == 1 { "is" } else { "are" };
+        let what = match (untyped.is_empty(), gives_unknown) {
+            (false, true) => format!("{} does not say what {} {are}, nor what it gives", ix.label(&f.id), list(&untyped)),
+            (false, false) => format!("{} does not say what {} {are}", ix.label(&f.id), list(&untyped)),
             _ => format!("{} does not say what it gives", ix.label(&f.id)),
         };
-        out.push(ix.finding(
+        let mut finding = ix.finding(
             "doors",
             f,
             what,
-            vec![signature(f)],
+            asked.iter().map(|s| written_signature(&f.name, &s.params, s.returns.as_ref())).collect(),
             format!(
                 "Until its signature says so, a reader and Atlas both lose the route at this door. What does {} take and give?",
                 ix.label(&f.id)
             ),
-        ));
+        );
+        finding.line = first.line;
+        out.push(finding);
     }
     out
 }
@@ -538,15 +598,16 @@ fn sums(ix: &Index) -> Vec<Finding> {
 // ---------- overrides ----------
 
 /// An override that does not keep the promise of its base: a caller written against the base
-/// cannot take it in its place (Liskov). A subclass of the promised type is fine.
+/// cannot take it in its place (Liskov). A subclass of the promised type is fine. An initializer
+/// fills in the value its class makes and answers to no base; a constructor called on the class
+/// (a classmethod that gives `Self`) is handed what its callers hand the base's, and is asked.
+/// Where the language holds every override to its base (Rust's trait implementations), there is
+/// nothing to ask.
 fn overrides(ix: &Index) -> Vec<Finding> {
     let mut broken: Vec<(&Node, Vec<&Node>)> = vec![];
-    for m in ix.g.nodes.iter().filter(|n| n.kind == NodeKind::Method && !n.ctor) {
-        let Some(cls) = m.cls.as_deref() else { continue };
-        let Some(base) = ix.ancestors(cls).into_iter().find_map(|a| ix.node(&format!("{a}.{}", m.name))) else { continue };
-        if keeps(ix, base, m) {
-            continue;
-        }
+    let initializer = |n: &Node| n.ctor && !n.on_class;
+    for m in ix.g.nodes.iter().filter(|n| n.kind == NodeKind::Method && !initializer(n) && ix.leaves(&n.id).overrides) {
+        let Some(base) = breaks(ix, m) else { continue };
         match broken.iter_mut().find(|(b, _)| b.id == base.id) {
             Some((_, ms)) => ms.push(m),
             None => broken.push((base, vec![m])),
@@ -589,27 +650,127 @@ fn promise(n: &Node) -> String {
     format!("({}){ret}", takes.join(", "))
 }
 
-/// Whether an override keeps the promise of its base. Where the language's type checker decided
-/// it (ty, for Python), by its answer: what the override takes and what it gives, against the
-/// base as the subclass sees it, its type parameters filled in. Elsewhere, where both signatures
-/// say what they give, by the types they resolve to: each type the override gives is one the
-/// base promises, a subclass of one, or a variant of a sum it promises; a promise that resolves
-/// to none of the program's types, or a value of the class it runs on, gives these nothing to
-/// compare. Either way an array's shape is a promise no checker reads: each array the override
-/// gives fits one the base promises (`Float[Tensor, "batch dim"]` where `Float[Tensor, "..."]`
-/// is promised).
+/// The method whose promise the override `m` breaks. A caller written against any of its class's
+/// ancestors may be handed it, so it keeps the promise of each method it overrides, and the one it
+/// breaks is the first along its class's method resolution order whose promise it does not keep.
+/// Where the language's type checker decided it (ty, for Python), by its answer: what the override
+/// takes and what it gives, against each base as the subclass sees it, its type parameters filled
+/// in; the checker names the base, and the nearest stands for one it names outside the graph.
+/// Elsewhere by `keeps`; a promise the nearest base already breaks is the nearest's question, and
+/// is not asked again of what overrides it (`C(B)` where `B.f` breaks `A.f`). Either way an array's
+/// shape is a promise no checker reads.
+fn breaks<'g>(ix: &Index<'g>, m: &Node) -> Option<&'g Node> {
+    let cls = m.cls.as_deref()?;
+    let bases: Vec<&'g Node> = ix.ancestors(cls).into_iter().filter_map(|a| ix.node(&format!("{a}.{}", m.name))).collect();
+    let nearest = *bases.first()?;
+    match m.keeps {
+        Some(false) => Some(m.breaks.as_deref().and_then(|b| bases.iter().copied().find(|x| x.id == b)).unwrap_or(nearest)),
+        Some(true) => bases.into_iter().find(|b| !shapes_fit(ix, b, m)),
+        None => {
+            let below = |b: &Node| nearest.cls.as_deref().is_some_and(|n| b.cls.as_deref().is_some_and(|c| ix.ancestors(n).contains(&c)));
+            let inherited = |b: &Node| b.id != nearest.id && below(b) && !keeps(ix, b, nearest);
+            bases.into_iter().find(|b| !keeps(ix, b, m) && !inherited(b))
+        }
+    }
+}
+
+/// Whether the override `m` keeps the promise of `base`, by the types the two signatures resolve
+/// to (`signature_keeps`) and the shapes of the arrays they give.
 fn keeps(ix: &Index, base: &Node, m: &Node) -> bool {
-    let (promised, given) = (ix.targets(&base.id, EdgeKind::Returns), ix.targets(&m.id, EdgeKind::Returns));
-    let allowed: Vec<&str> = promised.iter().flat_map(|p| std::iter::once(*p).chain(ix.targets(p, EdgeKind::Variant))).collect();
-    let typed = m.keeps.unwrap_or_else(|| match (&base.returns, &m.returns) {
+    let structural = ix.part(&m.id).is_some_and(|p| p.structural);
+    signature_keeps(ix, base, m, structural, &mut vec![]) && shapes_fit(ix, base, m)
+}
+
+/// Whether `m` can stand where `base` stood, by the program's types its signature resolves to:
+/// each type it gives fits one the base promises (what it gives may be narrower), and at each place
+/// both take a parameter, each type the base takes there fits one the override takes (what it
+/// takes may be wider, never narrower). A promise or a parameter whose type resolves to none of the
+/// program's types, or a value of the class it runs on, gives these nothing to compare. A parameter
+/// is matched by its place. `assumed` holds the pairs of types being compared further out, which
+/// fit unless shown not to.
+fn signature_keeps(ix: &Index, base: &Node, m: &Node, structural: bool, assumed: &mut Vec<(String, String)>) -> bool {
+    let gives = match (&base.returns, &m.returns) {
         (Some(p), Some(g)) if !p.own && !g.own => {
+            let promised = ix.targets(&base.id, EdgeKind::Returns);
             promised.is_empty()
-                || given.iter().all(|g| allowed.iter().any(|p| p == g || ix.ancestors(g).contains(p) || array_id_fits(g, p)))
+                || ix.targets(&m.id, EdgeKind::Returns).iter().all(|g| promised.iter().any(|p| fits(ix, g, p, structural, assumed)))
         }
         _ => true,
-    });
-    let shapes: Vec<Array> = promised.iter().filter_map(|p| array_of_id(p)).collect();
-    typed && (shapes.is_empty() || given.iter().filter_map(|g| array_of_id(g)).all(|g| shapes.iter().any(|p| array_fits(&g, p))))
+    };
+    let inputs = |f: &Node| f.params.iter().filter(|p| !p.receiver && !p.rest).cloned().collect::<Vec<_>>();
+    let takes = |f: &Node, p: &Param| -> Vec<&str> {
+        ix.targets(&f.id, EdgeKind::Takes).into_iter().filter(|t| ix.node(t).is_some_and(|n| names(&p.ty, &n.name))).collect()
+    };
+    gives
+        && inputs(base).iter().zip(&inputs(m)).all(|(theirs, own)| {
+            let own = takes(m, own);
+            own.is_empty() || takes(base, theirs).iter().all(|b| own.iter().any(|o| fits(ix, b, o, structural, assumed)))
+        })
+}
+
+/// Whether a value of type `x` stands where type `y` is asked for: it is `y`, a subclass of it, an
+/// array of a shape `y` allows, a variant of a sum `y` names, or, in a language that compares types
+/// by their members, a type that has every member `y` declares (`has_members`).
+fn fits(ix: &Index, x: &str, y: &str, structural: bool, assumed: &mut Vec<(String, String)>) -> bool {
+    if x == y || ix.ancestors(x).contains(&y) || array_id_fits(x, y) || assumed.iter().any(|(a, b)| a == x && b == y) {
+        return true;
+    }
+    assumed.push((x.to_string(), y.to_string()));
+    let fit = ix.targets(y, EdgeKind::Variant).iter().any(|v| fits(ix, x, v, structural, assumed))
+        || (structural && has_members(ix, x, y, structural, assumed));
+    assumed.pop();
+    fit
+}
+
+/// Whether type `x` has every member type `y` declares, its own and its ancestors': each method by
+/// its name, with a signature that keeps the promise of `y`'s, and each field by its name, holding
+/// a type that fits the one `y`'s holds where the graph has both. A type with a private method is
+/// had only by itself and its subclasses, and a library's type by what it is declared as.
+fn has_members(ix: &Index, x: &str, y: &str, structural: bool, assumed: &mut Vec<(String, String)>) -> bool {
+    let program = |t: &str| ix.node(t).filter(|n| n.kind == NodeKind::Class);
+    let (Some(_), Some(_)) = (program(x), program(y)) else { return false };
+    let methods = |t: &str| -> Vec<&Node> { ix.members(t).into_iter().filter(|m| !m.ctor && !m.on_class).collect() };
+    let fields = |t: &str| -> Vec<&str> {
+        ix.mro(t).into_iter().filter_map(|c| ix.node(c)).flat_map(|n| n.fields.iter().map(String::as_str)).collect()
+    };
+    let held = |t: &str, f: &str| -> Vec<&str> {
+        ix.mro(t)
+            .into_iter()
+            .flat_map(|c| ix.out.get(c).into_iter().flatten())
+            .filter(|e| e.kind == EdgeKind::Has && e.via.as_deref() == Some(f))
+            .map(|e| e.dst.as_str())
+            .collect()
+    };
+    let (theirs, own) = (methods(y), methods(x));
+    if theirs.iter().any(|m| m.private) {
+        return false;
+    }
+    let (their_fields, own_fields) = (fields(y), fields(x));
+    let named = |name: &str| own.iter().any(|m| m.name == name) || own_fields.contains(&name);
+    if !theirs.iter().all(|m| named(&m.name)) || !their_fields.iter().all(|f| named(f)) {
+        return false;
+    }
+    let mut seen = HashSet::new();
+    for m in theirs.iter().filter(|m| seen.insert(m.name.as_str())) {
+        if let Some(o) = own.iter().find(|o| o.name == m.name) {
+            if !signature_keeps(ix, m, o, structural, assumed) {
+                return false;
+            }
+        }
+    }
+    their_fields.iter().all(|f| {
+        let mine = held(x, f);
+        mine.is_empty() || held(y, f).iter().all(|t| mine.iter().any(|o| fits(ix, o, t, structural, assumed)))
+    })
+}
+
+/// Whether each array the override `m` gives fits one its base promises: an array's shape is a
+/// promise no type checker reads (`Float[Tensor, "batch dim"]` where `Float[Tensor, "..."]` is
+/// promised).
+fn shapes_fit(ix: &Index, base: &Node, m: &Node) -> bool {
+    let shapes: Vec<Array> = ix.targets(&base.id, EdgeKind::Returns).iter().filter_map(|p| array_of_id(p)).collect();
+    shapes.is_empty()
+        || ix.targets(&m.id, EdgeKind::Returns).iter().filter_map(|g| array_of_id(g)).all(|g| shapes.iter().any(|p| array_fits(&g, p)))
 }
 
 /// An array annotation, jaxtyping style: dtype, array type and dims (`Float`, `Tensor`, `batch dim`).
@@ -701,26 +862,29 @@ fn places(ix: &Index) -> Vec<Finding> {
 
 // ---------- changes ----------
 
-/// A function that changes an argument in place while its signature does not say so. Rust's
-/// `&mut T` says so; Python cannot, so there the change is better made by the object itself
-/// (a method), or replaced by a new value handed back.
+/// A function that changes an argument in place while its signature does not say so, whatever
+/// the argument's type: a class of the program, a library's, a list. Each input it changes is
+/// one change. Rust's `&mut T` says so; Python cannot, so there the change is better made by the
+/// object itself (a method), or replaced by a new value handed back.
 fn changes(ix: &Index) -> Vec<Finding> {
     let mut out = vec![];
     for e in ix.g.edges.iter().filter(|e| e.kind == EdgeKind::Mutates) {
         let Some(input) = e.via.as_deref() else { continue };
         let Some(f) = ix.node(&e.src).filter(|f| is_function(f)) else { continue };
         // an input handed in, not the value the function is called on, that the signature does not say changes
-        if !f.params.iter().any(|p| p.name == input && !p.receiver && !p.changes) {
-            continue;
-        }
-        let ty = ix.label(&e.dst);
+        let Some(p) = f.params.iter().find(|p| p.name == input && !p.receiver && !p.changes) else { continue };
+        // the type as the signature writes it, a forward reference without its quotes: `list[Row]`, `Graph`
+        let ty = match p.ty.trim_matches(['"', '\'']) {
+            "" => ix.label(&e.dst),
+            written => written.to_string(),
+        };
         out.push(ix.finding(
             "changes",
             f,
             format!("{} changes the {ty} it is handed as `{input}`", ix.label(&f.id)),
             vec![signature(f)],
             format!(
-                "Nothing in the signature shows that `{input}` changes. Should {ty} change itself through a method of its own, or should {} hand back a new {ty}?",
+                "Nothing in the signature shows that `{input}` changes. Should the {ty} change itself through a method of its own, or should {} hand back a new {ty}?",
                 ix.label(&f.id)
             ),
         ));
@@ -730,17 +894,14 @@ fn changes(ix: &Index) -> Vec<Finding> {
 
 // ---------- gives ----------
 
-/// A function whose callers use what it gives back, with no return annotation: what they get
-/// has no type, so neither a reader nor Atlas can follow it further, where the language leaves
-/// types to the author; a door is asked about by `doors`.
+/// A function whose callers use what it gives back, with no return annotation, where the language
+/// leaves the return type to the author: what they get has no type a reader of the declaration
+/// sees, so neither a reader nor Atlas can follow it further. A door is asked about by `doors`,
+/// on the same condition.
 fn gives(ix: &Index) -> Vec<Finding> {
     let doors: HashSet<&str> = door_fns(ix).into_iter().map(|f| f.id.as_str()).collect();
     let mut out = vec![];
-    for f in
-        ix.g.nodes
-            .iter()
-            .filter(|f| is_function(f) && f.returns.is_none() && !f.ctor && !doors.contains(f.id.as_str()) && ix.leaves(&f.id).types)
-    {
+    for f in ix.g.nodes.iter().filter(|f| is_function(f) && ix.gives_unknown(f, f.returns.as_ref()) && !doors.contains(f.id.as_str())) {
         let mut users: Vec<String> = ix
             .into
             .get(f.id.as_str())
@@ -974,8 +1135,12 @@ fn unnamed<'g>(ix: &Index<'g>, f: &'g Node) -> Vec<Finding> {
 
 /// A function that is called and leaves nothing behind: it gives nothing back and cannot fail,
 /// changes nothing it is handed, and nothing it runs (what it calls, what it builds, the overrides
-/// a call may reach) touches a place, changes a value or fails. An arrow into the terminal object
-/// carries no information: the function is dead, or it writes a place the graph does not hold.
+/// a call may reach) touches a place, changes a value, fails or ends the program. An arrow into the
+/// terminal object carries no information. Where Atlas sees all it runs, the function is dead, or
+/// changes a value through a field, an item or a loop, which no call shows. Where it runs what
+/// Atlas does not see (a call it cannot follow, a library's call no table describes, a method only
+/// declared, a value a class keeps), the question is what that leaves behind. A method only
+/// declared has no body to ask about; its callers are asked.
 fn nothing(ix: &Index) -> Vec<Finding> {
     // a method -> the methods that override it
     let mut overridden: HashMap<String, Vec<&str>> = HashMap::new();
@@ -996,7 +1161,7 @@ fn nothing(ix: &Index) -> Vec<Finding> {
             || !ix.targets(&n.id, EdgeKind::Mutates).is_empty()
     };
     let mut out = vec![];
-    for f in ix.g.nodes.iter().filter(|f| is_function(f) && !f.library && !f.ctor && f.entry.is_none()) {
+    for f in ix.g.nodes.iter().filter(|f| is_function(f) && !f.library && !f.ctor && !f.declared) {
         let gives_nothing = match &f.returns {
             Some(r) => r.value.is_empty() && !r.own,
             None => !ix.leaves(&f.id).returns,
@@ -1006,8 +1171,9 @@ fn nothing(ix: &Index) -> Vec<Finding> {
         if !gives_nothing || callers.is_empty() {
             continue;
         }
-        // what it runs, down to the end
+        // what it runs, down to the end, and what of that Atlas does not see
         let mut runs: Vec<&str> = vec![];
+        let mut blind: Vec<Blind> = vec![];
         let mut seen: HashSet<&str> = HashSet::from([f.id.as_str()]);
         let mut todo = vec![f.id.as_str()];
         let mut something = false;
@@ -1017,6 +1183,7 @@ fn nothing(ix: &Index) -> Vec<Finding> {
                 something = true;
                 break;
             }
+            blind.extend(unseen(ix, n, overridden.contains_key(id)));
             let built = ix.targets(id, EdgeKind::Instantiates).into_iter().filter_map(|c| ix.node(c)?.initializer(|i| ix.node(i)));
             let next: Vec<String> = ix
                 .targets(id, EdgeKind::Calls)
@@ -1046,44 +1213,103 @@ fn nothing(ix: &Index) -> Vec<Finding> {
                 list(&runs.iter().map(|r| format!("`{}`", ix.label(r))).collect::<Vec<_>>())
             ));
         }
+        if blind.is_empty() {
+            out.push(ix.finding(
+                "nothing",
+                f,
+                format!("{name} gives nothing back, and Atlas sees no change and no place it reaches"),
+                evidence,
+                format!(
+                    "Atlas sees all that {name} runs, and none of it leaves anything behind. Is it dead, or does it change a value it is handed through a field, an item or a loop, which no call shows? Could it hand back what it makes, or let that value change itself through a method of its own?"
+                ),
+            ));
+            continue;
+        }
+        let what: Vec<String> = blind.iter().map(|b| format!("`{}`", b.what)).collect();
+        let shown = match what.len() {
+            n if n > 3 => format!("{} and {} more", what[..3].join(", "), n - 3),
+            _ => list(&what),
+        };
+        let does = if what.len() == 1 { "does" } else { "do" };
+        evidence.extend(blind.iter().map(|b| format!("`{}` ({}): {}", b.what, b.at, b.why)));
         out.push(ix.finding(
             "nothing",
             f,
-            format!("{name} gives nothing back, and Atlas sees no change and no place it reaches"),
+            format!("{name} gives nothing back, and Atlas cannot see what {shown} {does}"),
             evidence,
             format!(
-                "As far as Atlas can see, a call to {name} leaves nothing behind. Is it dead, or does it change what Atlas cannot see: a value it is handed (through an item or a loop), a global, a library's own state? Could it hand back what it makes, or let that value change itself through a method of its own?"
+                "Atlas sees no change and no place in what {name} runs, but it cannot see what {shown} {does}. Does that leave something behind which the picture lacks (a log, a change in a library's or a class's value, a wait), or is {name} dead?"
             ),
         ));
     }
     out
 }
 
+/// Something a function runs that Atlas does not see into: as the code writes it, where, and why
+/// the graph holds nothing of what it does.
+struct Blind {
+    what: String,
+    at: String,
+    why: &'static str,
+}
+
+/// What Atlas does not see in `n`: what its body does that the graph holds nothing else of (a call
+/// made for an effect no table states, a value a class keeps), and `n` itself where it is a method
+/// only declared that nothing in the graph implements.
+fn unseen(ix: &Index, n: &Node, implemented: bool) -> Vec<Blind> {
+    let at = |line: u32| format!("{}:{line}", ix.file(n));
+    let mut out: Vec<Blind> = n
+        .unseen
+        .iter()
+        .map(|(line, what)| Blind { what: what.clone(), at: at(*line), why: "the graph holds nothing of what it does" })
+        .collect();
+    if n.declared && !implemented {
+        out.push(Blind { what: ix.label(&n.id), at: ix.at(n), why: "only declared, and nothing in the graph implements it" });
+    }
+    out
+}
+
 // ---------- prophecy ----------
 
-/// Built code that leans on a prophecy: production would run on a stub. A prophecy that
-/// supersedes something the code does not hold is a false prophecy. Prophecies lean on one another
-/// freely, and a test may lean on the code it is written for before it is built.
+/// Built code that leans on a prophecy: production would run on a stub. Code leans on what it calls,
+/// builds, extends and requests, and on the types it takes, returns and holds; a member of a prophecy
+/// is leaned on as the prophecy. A prophecy that supersedes something the code does not hold is a
+/// false prophecy, and one whose name names several nodes does not say which it replaces. Prophecies
+/// lean on one another freely, and test code may lean on the code it is written for before it is built.
 fn prophecy(ix: &Index) -> Vec<Finding> {
     let mut out = vec![];
-    for p in ix.g.nodes.iter().filter(|n| n.prophecy.as_ref().is_some_and(|p| p.supersedes.is_some())) {
-        if ix.superseded(p).is_none() {
-            let named = p.prophecy.as_ref().and_then(|p| p.supersedes.as_deref()).unwrap_or("");
-            out.push(ix.finding(
+    for p in ix.g.nodes.iter().filter(|n| ix.superseded(n).is_none()) {
+        let Some(said) = p.prophecy.as_ref().filter(|s| s.supersedes.is_some()) else { continue };
+        let named = said.supersedes.as_deref().unwrap_or("");
+        let finding = match said.candidates.as_slice() {
+            [] => ix.finding(
                 "prophecy",
                 p,
                 format!("{} supersedes `{named}`, which the code does not hold", ix.label(&p.id)),
                 vec![format!("supersedes `{named}`")],
                 format!("A prophecy that replaces nothing is built or false. Is `{named}` gone already, or is its name written otherwise?"),
-            ));
-        }
+            ),
+            candidates => ix.finding(
+                "prophecy",
+                p,
+                format!(
+                    "{} supersedes `{named}`, which names {} nodes: {}",
+                    ix.label(&p.id),
+                    candidates.len(),
+                    list(&candidates.iter().map(|c| format!("`{c}`")).collect::<Vec<_>>())
+                ),
+                candidates.iter().map(|c| format!("`{c}` ({})", ix.node(c).map_or_else(String::new, |n| ix.at(n)))).collect(),
+                format!(
+                    "A prophecy replaces one thing, and `{named}` names more than one. Which of them does it replace, named by its whole path?"
+                ),
+            ),
+        };
+        out.push(finding);
     }
-    let leans = [EdgeKind::Calls, EdgeKind::Instantiates, EdgeKind::Inherits, EdgeKind::Takes, EdgeKind::Returns, EdgeKind::Has];
     let mut by: BTreeMap<&str, Vec<(&Node, EdgeKind)>> = BTreeMap::new();
-    for e in ix.g.edges.iter().filter(|e| leans.contains(&e.kind)) {
+    for e in ix.g.edges.iter().filter(|e| DEPENDS.contains(&e.kind)) {
         let (Some(from), Some(to)) = (ix.node(&e.src), ix.node(&e.dst)) else { continue };
-        let test = from.entry.as_ref().is_some_and(|en| en.kind == EntryKind::Test);
-        if ix.prophetic(to) && !ix.prophetic(from) && !from.library && !test {
+        if ix.prophetic(to) && !ix.prophetic(from) && !from.library && !ix.test(from) {
             // a member of a prophecy is leaned on as the prophecy it belongs to
             let root = to.cls.as_deref().and_then(|c| ix.node(c)).filter(|c| c.prophecy.is_some()).unwrap_or(to);
             by.entry(from.id.as_str()).or_default().push((root, e.kind));
@@ -1116,38 +1342,63 @@ fn prophecy(ix: &Index) -> Vec<Finding> {
 
 /// Packages that depend on one another in a cycle. The code quotiented by package is a preorder,
 /// and only where it is a partial order do its packages have layers. Read at every level of the
-/// package forest, among the packages under one parent, from what their code calls, builds,
-/// imports and extends; a test is a way in from outside, not a layer.
+/// package quotient the picture draws (`flow::units`): the parts of a graph, the packages at the
+/// top of each part, and the packages under each package, with the package's own module (`pkg$`,
+/// its code in none of them) a block beside them. A block depends on another when its code calls,
+/// builds, imports, extends or requests what the other holds, or takes, returns or holds one of its
+/// types; test code is a way in from outside, not a layer.
 fn layers(ix: &Index) -> Vec<Finding> {
+    // the module a node's code stands in, for code that is a layer
     let module = |id: &str| -> Option<&str> {
-        let n = ix
-            .node(id)
-            .filter(|n| !n.library && n.kind != NodeKind::External && n.entry.as_ref().map_or(true, |e| e.kind != EntryKind::Test))?;
+        let n = ix.node(id).filter(|n| !n.library && n.kind != NodeKind::External && !ix.test(n))?;
         Some(if n.kind == NodeKind::Module { n.id.as_str() } else { n.module.as_str() })
     };
-    let modules: Vec<&str> = ix.g.nodes.iter().filter(|n| n.kind == NodeKind::Module && !n.library).map(|n| n.id.as_str()).collect();
-    let parents: BTreeSet<String> = modules.iter().flat_map(|m| m.match_indices('.').map(move |(i, _)| m[..i].to_string())).collect();
-    let mut out = vec![];
-    for parent in parents {
-        // the package under `parent` that holds a module
-        let under = |m: &str| -> Option<String> {
-            let rest = m.strip_prefix(parent.as_str())?.strip_prefix('.')?;
-            Some(format!("{parent}.{}", rest.split('.').next()?))
-        };
-        // package -> package it depends on -> the edges that make it so
-        let mut deps: BTreeMap<String, BTreeMap<String, Vec<&Edge>>> = BTreeMap::new();
-        for e in
-            ix.g.edges
-                .iter()
-                .filter(|e| matches!(e.kind, EdgeKind::Calls | EdgeKind::Instantiates | EdgeKind::Imports | EdgeKind::Inherits))
-        {
-            let (Some(a), Some(b)) = (module(&e.src).and_then(under), module(&e.dst).and_then(under)) else { continue };
+    // module -> module it depends on: the edges that make it so
+    let mut between: BTreeMap<(&str, &str), Vec<&Edge>> = BTreeMap::new();
+    for e in ix.g.edges.iter().filter(|e| e.kind == EdgeKind::Imports || DEPENDS.contains(&e.kind)) {
+        if let (Some(a), Some(b)) = (module(&e.src), module(&e.dst)) {
             if a != b {
-                deps.entry(a).or_default().entry(b).or_default().push(e);
+                between.entry((a, b)).or_default().push(e);
             }
         }
+    }
+    let first = ix.g.parts.first().map_or(ix.g.root.as_str(), |p| p.id.as_str());
+    let part = |m: &str| ix.node(m).map(|n| n.part.as_str()).filter(|p| !p.is_empty()).unwrap_or(first);
+    // each level: whether its blocks are the parts, what it is listed under, and its blocks
+    let units = crate::flow::units(ix.g);
+    let parts: Vec<String> = ix.g.parts.iter().map(|p| p.id.clone()).collect();
+    let mut levels: Vec<(bool, Option<&str>, &[String])> = vec![];
+    if parts.len() > 1 {
+        levels.push((true, None, &parts));
+    }
+    levels.extend(units.tops.iter().map(|(p, top)| (false, Some(p.as_str()), top.as_slice())));
+    levels.extend(units.kids.iter().map(|(u, kids)| (false, Some(u.as_str()), kids.as_slice())));
+    let mut out = vec![];
+    for (by_part, listed, blocks) in levels {
+        let block = |m: &str| -> Option<&String> {
+            match by_part {
+                true => blocks.iter().find(|b| *b == part(m)),
+                false => blocks.iter().find(|b| holds_module(b, m)),
+            }
+        };
+        // block -> block it depends on -> the edges that make it so
+        let mut deps: BTreeMap<String, BTreeMap<String, Vec<&Edge>>> = BTreeMap::new();
+        for ((a, b), es) in &between {
+            let (Some(x), Some(y)) = (block(a), block(b)) else { continue };
+            if x != y {
+                deps.entry(x.clone()).or_default().entry(y.clone()).or_default().extend(es.iter().copied());
+            }
+        }
+        // the package the blocks stand under: the one they all share, else the one they are listed under
+        let above = |b: &String| -> String {
+            match b.strip_suffix('$') {
+                Some(own) => own.to_string(),
+                None => b.rsplit_once('.').map_or(String::new(), |(p, _)| p.to_string()),
+            }
+        };
+        let shared = blocks.iter().map(above).reduce(|a, b| if a == b { a } else { String::new() }).filter(|p| !p.is_empty());
+        let anchor = |p: &str| ix.node(p).filter(|n| !n.file.is_empty());
         for cycle in strongly_connected(&deps) {
-            let name = |p: &str| p.rsplit('.').next().unwrap_or(p).to_string();
             // the links inside the cycle, the thinnest first: the likeliest to run against the flow
             let mut links: Vec<(&str, &str, &Vec<&Edge>)> = vec![];
             for a in &cycle {
@@ -1156,23 +1407,38 @@ fn layers(ix: &Index) -> Vec<Finding> {
                 }
             }
             links.sort_by_key(|(a, b, es)| (es.len(), *a, *b));
-            // a call says more than an import
+            // a call says more than a type, and a type more than an import
             let example = |es: &Vec<&Edge>| {
-                let e = es.iter().find(|e| e.kind != EdgeKind::Imports).unwrap_or(&es[0]);
+                let says = |e: &&&Edge| match e.kind {
+                    EdgeKind::Imports => 2,
+                    EdgeKind::Takes | EdgeKind::Returns | EdgeKind::Has | EdgeKind::Variant => 1,
+                    _ => 0,
+                };
+                let e = es.iter().min_by_key(says).unwrap_or(&es[0]);
                 format!("`{}` → `{}`", ix.label(&e.src), ix.label(&e.dst))
             };
-            let evidence: Vec<String> =
-                links.iter().map(|(a, b, es)| format!("{} → {}: {} ({} in all)", name(a), name(b), example(es), es.len())).collect();
-            let Some(at) = ix.node(&parent).filter(|n| !n.file.is_empty()).or_else(|| ix.node(&cycle[0])) else { continue };
-            let members: Vec<String> = cycle.iter().map(|c| name(c)).collect();
+            let mut evidence: Vec<String> = links
+                .iter()
+                .map(|(a, b, es)| format!("{} → {}: {} ({} in all)", block_name(a), block_name(b), example(es), es.len()))
+                .collect();
+            for own in cycle.iter().filter_map(|b| b.strip_suffix('$')) {
+                let file = ix.node(own).map_or_else(String::new, |n| format!(" ({})", ix.file(n)));
+                evidence.push(format!("{} itself: the code of `{own}` in none of the packages below it{file}", block_name(own)));
+            }
+            let Some(at) =
+                shared.as_deref().and_then(anchor).or_else(|| listed.and_then(anchor)).or_else(|| ix.node(cycle[0].trim_end_matches('$')))
+            else {
+                continue;
+            };
+            let members: Vec<String> = cycle.iter().map(|c| block_name(c)).collect();
             let ask = match links.as_slice() {
                 [(a, b, es), rest @ ..] if rest.iter().all(|(_, _, more)| more.len() > es.len()) => {
                     format!(
                         "The thinnest link is {} → {} ({}). Does what it uses belong in {}, or in a package below both?",
-                        name(a),
-                        name(b),
+                        block_name(a),
+                        block_name(b),
                         example(es),
-                        name(a)
+                        block_name(a)
                     )
                 }
                 _ => "Which of these links runs against the flow, and where does what it uses belong?".to_string(),
@@ -1187,6 +1453,24 @@ fn layers(ix: &Index) -> Vec<Finding> {
         }
     }
     out
+}
+
+/// Whether a block of the package quotient holds a module: a package everything under it, a
+/// package's own module (`pkg$`) itself alone.
+fn holds_module(block: &str, m: &str) -> bool {
+    match block.strip_suffix('$') {
+        Some(own) => m == own,
+        None => m.strip_prefix(block).is_some_and(|rest| rest.is_empty() || rest.starts_with('.')),
+    }
+}
+
+/// A block of the package quotient as the picture names it: a package by its last name, and a
+/// package's own module as `name itself`.
+fn block_name(block: &str) -> String {
+    match block.strip_suffix('$') {
+        Some(own) => format!("{} itself", own.rsplit('.').next().unwrap_or(own)),
+        None => block.rsplit('.').next().unwrap_or(block).to_string(),
+    }
 }
 
 /// The strongly connected components of more than one node (Tarjan).
@@ -1244,15 +1528,17 @@ fn strongly_connected<V>(deps: &BTreeMap<String, BTreeMap<String, V>>) -> Vec<Ve
 
 // ---------- lens ----------
 
-/// A class whose operations both write and read one place where data rests (a file, a database)
-/// is a lens on it: its puts take a value and change the place (`A × S → S`), its gets give a
-/// value from it (`S → A`). Put then get gives back what was put. Asked about each type of data a
-/// put takes that no get of the same class gives from that place, as it is or inside what it
-/// gives (`holds`): what the place holds is then another type than what goes in, or another class
-/// reads it. A class that only reads a place (input from the world) or only writes it (an end
-/// product) is no lens on it. A put is asked about in the class that defines it: a subclass's
-/// gets all count, but the puts it inherits are its base's question. What a put takes is what
-/// reaches the place (`Places::reached`).
+/// A class whose operations both write and read one place where data rests (a table, a file) is a
+/// lens on it: its puts take a value and change the place (`A × S → S`), its gets give a value
+/// from it (`S → A`). Put then get gives back what was put. Asked about each type of data a put
+/// takes that no get of the same class gives from that place, as it is or inside what it gives
+/// (`holds`): what the place holds is then another type than what goes in, or another class reads
+/// it. A class that only reads a place (input from the world) or only writes it (an end product)
+/// is no lens on it; an operation that reads the place and gives no value reads it on its way to
+/// writing it, and is a put. A constructor that reads the place gives its class from it, and is a
+/// get. A put is asked about in the class that defines it: a subclass's gets all count, but the
+/// puts it inherits are its base's question. What a put takes is what reaches the place
+/// (`Places::reached`).
 fn lens<'g>(ix: &Index<'g>) -> Vec<Finding> {
     let data = |t: &str, own: &str| {
         t != own && ix.node(t).map_or(false, |n| matches!(n.kind, NodeKind::Class | NodeKind::External) && n.door.is_none())
@@ -1261,12 +1547,27 @@ fn lens<'g>(ix: &Index<'g>) -> Vec<Finding> {
     // done to the same place
     let named = |place: &str| !place.starts_with("w:Disk:");
     let places = Places { ix, reached: RefCell::default(), into: RefCell::default() };
+    // whether an operation gives a value: a constructor gives its class
+    let gives = |m: &Node| m.ctor || m.returns.as_ref().map_or(false, |r| !r.value.is_empty() || r.own);
+    // the types of data operation `m` of class `c` gives: what it returns, the class's own type
+    // among them, which a constructor and a method that gives `Self` give too
+    let given = |c: &'g Node, m: &Node| -> Vec<&'g str> {
+        let mut types: Vec<&'g str> = ix.targets(&m.id, EdgeKind::Returns).into_iter().filter(|t| *t == c.id || data(t, &c.id)).collect();
+        if (m.ctor || m.returns.as_ref().map_or(false, |r| r.own)) && !types.contains(&c.id.as_str()) {
+            types.push(&c.id);
+        }
+        types
+    };
+    // what each operation puts to and gets from: a constructor puts nothing, and an operation that
+    // gives no value gets nothing
     let operations = |c: &Node| -> Vec<(&'g Node, BTreeMap<String, String>, BTreeMap<String, String>)> {
         ix.interface(&c.id)
             .into_iter()
-            .filter(|m| is_function(m) && !m.ctor && !m.private)
+            .filter(|m| is_function(m) && (m.ctor || !m.private))
             .map(|m| {
                 let (puts, gets) = places.reaches(&m.id);
+                let puts = if m.ctor { BTreeMap::new() } else { puts };
+                let gets = if gives(m) { gets } else { BTreeMap::new() };
                 (m, puts, gets)
             })
             .collect()
@@ -1294,9 +1595,8 @@ fn lens<'g>(ix: &Index<'g>) -> Vec<Finding> {
     for c in &classes {
         for (m, _, gets) in operations(c) {
             for place in gets.keys() {
-                let given: BTreeSet<&str> =
-                    ix.targets(&m.id, EdgeKind::Returns).into_iter().filter(|t| data(t, &c.id)).flat_map(|t| holds(ix, t)).collect();
-                for t in given {
+                let held: BTreeSet<&str> = given(c, m).into_iter().flat_map(|t| holds(ix, t)).collect();
+                for t in held {
                     got_from.entry((place.clone(), t)).or_default().push(ix.label(&m.id));
                 }
             }
@@ -1305,14 +1605,14 @@ fn lens<'g>(ix: &Index<'g>) -> Vec<Finding> {
     let mut out = vec![];
     for c in classes {
         let ops = operations(c);
-        let ids: HashSet<&str> = ops.iter().map(|(m, _, _)| m.id.as_str()).collect();
+        let ids: HashSet<&str> = ops.iter().filter(|(m, _, _)| !m.ctor).map(|(m, _, _)| m.id.as_str()).collect();
         let name = ix.label(&c.id);
         // the places this class both puts to and gets from
         let places: BTreeMap<&String, &String> =
             ops.iter().flat_map(|(_, puts, _)| puts.iter()).filter(|(p, _)| ops.iter().any(|(_, _, gets)| gets.contains_key(*p))).collect();
         let (mut lost_all, mut labels, mut evidence): (Vec<String>, Vec<String>, Vec<String>) = (vec![], vec![], vec![]);
         for (place, label) in places {
-            let (mut put, mut got, mut given): (BTreeMap<&str, Vec<String>>, Vec<String>, HashSet<&str>) =
+            let (mut put, mut got, mut back): (BTreeMap<&str, Vec<String>>, Vec<String>, HashSet<&str>) =
                 (BTreeMap::new(), vec![], HashSet::new());
             for (m, puts, gets) in &ops {
                 if puts.contains_key(place) && ix.declares(&c.id, m) {
@@ -1320,18 +1620,18 @@ fn lens<'g>(ix: &Index<'g>) -> Vec<Finding> {
                         put.entry(t).or_default().push(format!("{}: {} × {label} → {label}", ix.label(&m.id), ix.label(t)));
                     }
                 }
-                if gets.contains_key(place) && m.returns.as_ref().map_or(false, |r| !r.value.is_empty() || r.own) {
-                    let types: Vec<&str> = ix.targets(&m.id, EdgeKind::Returns).into_iter().filter(|t| data(t, &c.id)).collect();
-                    given.extend(types.iter().flat_map(|t| holds(ix, t)));
-                    let gives = if types.is_empty() {
+                if gets.contains_key(place) {
+                    let types = given(c, m);
+                    back.extend(types.iter().flat_map(|t| holds(ix, t)));
+                    let what = if types.is_empty() {
                         written(m).to_string()
                     } else {
                         types.iter().map(|t| ix.label(t)).collect::<Vec<_>>().join(", ")
                     };
-                    got.push(format!("{}: {label} → {gives}", ix.label(&m.id)));
+                    got.push(format!("{}: {label} → {what}", ix.label(&m.id)));
                 }
             }
-            let lost: Vec<&str> = put.keys().copied().filter(|t| !given.contains(t)).collect();
+            let lost: Vec<&str> = put.keys().copied().filter(|t| !back.contains(t)).collect();
             if lost.is_empty() {
                 continue;
             }
@@ -1378,13 +1678,15 @@ fn names(written: &str, name: &str) -> bool {
 }
 
 /// What a value of type `t` holds, `t` among it: its fields and theirs in turn, the elements of
-/// its lists, the variants of its sums. A get that gives `t` gives back each of these: a lens
-/// composed with the projection to a part of what it gives is a lens on that part.
+/// its lists, the variants of its sums, and its subclasses, the variants of a sum left open. A get
+/// that gives `t` gives back each of these: a lens composed with the projection to a part of what
+/// it gives is a lens on that part.
 fn holds<'g>(ix: &Index<'g>, t: &'g str) -> HashSet<&'g str> {
     let mut seen = HashSet::from([t]);
     let mut todo = vec![t];
     while let Some(x) = todo.pop() {
-        for y in ix.targets(x, EdgeKind::Has).into_iter().chain(ix.targets(x, EdgeKind::Variant)) {
+        let parts = ix.targets(x, EdgeKind::Has).into_iter().chain(ix.targets(x, EdgeKind::Variant));
+        for y in parts.chain(ix.sources(x, EdgeKind::Inherits)) {
             if seen.insert(y) {
                 todo.push(y);
             }
@@ -1393,15 +1695,38 @@ fn holds<'g>(ix: &Index<'g>, t: &'g str) -> HashSet<&'g str> {
     seen
 }
 
-/// The place a touch holds data at, as a lens sees it: a database as a whole, a file by itself.
+/// The place a touch holds data at, as a lens sees it: the table a statement names (a key-value
+/// store's key), a file where the code names it, by its path or by the value that holds it
+/// (`Disk(Log.path)`). A statement whose table the reader does not know, a database whose
+/// statements it does not read, and a file known only by its format (`*.json`) give no place: a
+/// lens is not guessed. A touch that makes or tests a place's shape holds no data there.
 fn held(t: &Touch) -> Option<(String, String)> {
+    let at = |t: &Touch| {
+        let p = t.place();
+        Some((p.id, p.label))
+    };
     match t.kind {
-        World::Db(_) => Some((t.kind.name().to_string(), t.kind.name().to_string())),
-        World::Disk if !t.what.is_empty() || !t.artifact.is_empty() => {
-            let p = t.place();
-            Some((p.id, p.label))
+        _ if t.shape() => None,
+        World::Db(_) if !t.artifact.is_empty() => at(t),
+        World::Disk if format_only(&t.artifact) => {
+            (!t.what.is_empty()).then(|| at(&Touch { artifact: String::new(), ..t.clone() })).flatten()
         }
+        World::Disk if !t.what.is_empty() || !t.artifact.is_empty() => at(t),
         _ => None,
+    }
+}
+
+/// A file named only by its format (`*.json`): the code says what kind of file, not which.
+fn format_only(artifact: &str) -> bool {
+    artifact.strip_prefix("*.").map_or(false, |ext| !ext.is_empty() && !ext.contains(['/', '*']))
+}
+
+/// Whether a touch may write what its call is handed into its place: a statement whose values
+/// hold a placeholder or a value spliced in, and any write that is no statement.
+fn writes_handed(t: &Touch) -> bool {
+    match t.kind {
+        World::Db(db) if crate::effects::reads_statements(db) => crate::effects::writes_handed(db, &t.what),
+        _ => true,
     }
 }
 
@@ -1464,16 +1789,17 @@ impl<'g> Places<'_, 'g> {
     ///
     /// Where the graph does not show where a value goes, it may go anywhere: a call of `f`'s own
     /// into the place may be handed any of its parameters, since the graph does not say what a
-    /// call into the world is handed; a call Atlas cannot follow may put what it is handed
-    /// wherever `f` puts; a value no step gives and no parameter is (`for r in readings`,
-    /// `x = p.field`) is taken from any parameter whose type holds its type, as the parameter is
-    /// declared or handed; and a parameter neither handed to a step by name nor holding such a
-    /// value reaches the place when any step puts there.
+    /// call into the world is handed, unless its statement writes none of what it is handed (a
+    /// `DELETE`, a `WHERE` key: `effects::writes_handed`); a call Atlas cannot follow may put what
+    /// it is handed wherever `f` puts; a value no step gives and no parameter is
+    /// (`for r in readings`, `x = p.field`) is taken from any parameter whose type holds its type,
+    /// as the parameter is declared or handed; and a parameter neither handed to a step by name
+    /// nor holding such a value reaches the place when any step puts there.
     fn reached(&self, f: &'g Node, place: &str, theirs: &HashSet<&str>) -> BTreeSet<&'g str> {
         let ix = self.ix;
         let params: Vec<&'g str> = f.params.iter().filter(|p| !p.receiver).map(|p| p.name.as_str()).collect();
         // a call of its own into the place may be handed any of them
-        if f.touches.iter().any(|t| t.dir == Some(Dir::Write) && held(t).map_or(false, |(p, _)| p == place)) {
+        if f.touches.iter().any(|t| t.dir == Some(Dir::Write) && writes_handed(t) && held(t).map_or(false, |(p, _)| p == place)) {
             return params.into_iter().collect();
         }
         let hands = || f.sites.iter().flat_map(|s| &s.hands);
