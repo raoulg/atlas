@@ -61,7 +61,7 @@ lets it be traced and Atlas does not yet; each gap is an ignored test in `pairs_
 | choices | finding | finding | finding |
 | nothing | finding | finding | finding |
 | layers | finding | finding | finding; a call among a macro's tokens is a step |
-| lens | finding; takes, returns and has; the steps a value is handed to, a container's `append` among them | finding; takes and returns; the tables a store's client runs statements on; a `push` onto an array the body declares | finding; takes and returns; the tables a store's connection runs statements on; a `push` onto a `Vec` |
+| lens | finding; takes, returns, has and inherits; the table a statement names, a file by its path or the value that holds it; the steps a value is handed to, a container's `append` among them; gap (a): a field of a library's type | finding; takes, returns, has and inherits; the tables a store's client runs statements on; a `push` onto an array the body declares | finding; takes, returns and has; the tables a store's connection runs statements on; a `push` onto a `Vec`; gap (a): a field of a library's type |
 | a place carries a what | a file's path, a request's host | a file's path, a request's host | the type a step gives, a request's host, a program by its constant's value |
 | a route ends at a visible place | the places a route reaches; a call not followed is a step | the places a route reaches; a call through a key is a step | the places a route reaches, through a client held in a field |
 | zoom by base type and composition | inherits and has edges; what a base's method is handed reaches its overrides | inherits and has edges; the member a parameter is runs | inherits and has edges; a unit struct named is built, a matched value has its variant's type |
@@ -424,27 +424,50 @@ payload); a lens is where the code turns that into its own types, once.
 - **Rust.** `serde` gives both directions from one type: `save(&T)` and `load() -> T`.
 - **TypeScript.** The same as Python: what a store puts as a `Regel` it gets back as a `Regel`.
 
+The place a lens is on is the place the code names: the table a statement names (a key-value
+store's key), a file by its path or by the value that holds it (`Disk(Log.path)`, the path a
+store is made with). Two tables of one database are two places, and two files are two places. A
+class that logs visits into `visits` and lists names from `members` writes one table and reads
+another, and is a lens on neither. Where the code names no such place there is no lens to ask
+about: a statement whose table is filled in at run time, a database whose statements Atlas does
+not read (a graph database's queries), and a file known only by its format: what
+`json.dump(visit, out)` writes to a stream handed in is a JSON file, not a file the code names.
+
+A get gives a value back from the place. An operation that reads the place and gives nothing
+(`add(visit) -> None` that reads the list in its file, appends the visit and writes the list
+back) reads on its way to writing, and is a put: a put `A × S → S` takes the place it changes.
+A log that only appends is an end product. A constructor that reads the place gives its class
+from it, and is a get: a `@classmethod` `Roster.load(path) -> Roster`, `Roster::load` in Rust,
+a TypeScript `static load`. A touch that tests or makes a place's shape (`path.exists()`, a
+directory made, a table created) neither puts there nor gets.
+
 What comes back may come back inside what a get gives: a lens composed with the projection to a
 field is a lens on that field. A register that puts a `Verificatie` and gives back the
 `Definitie` that holds it (`Definitie.verantwoording: ... | Geverifieerd`,
-`Geverifieerd.verificatie: Verificatie`) gives back what it put. A store that updates one field
-(`Boek.auteur`) or adds one node to a graph puts through such a composite: the key that picks
-the value, the field or the list that holds it, and the variant it is. A sum given a name is the
-sum it names: `nodes: list[Node]` with `Node = Begrip | Bron` (a Python alias, a TypeScript
-`type`) holds a `Bron` as `list[Begrip | Bron]` does, and so does a Rust `enum Node`. A
-TypeScript constructor's `readonly` parameter is a field of its class, as one with an access
-modifier is.
+`Geverifieerd.verificatie: Verificatie`) gives back what it put, and so does a get that gives the
+class's own type, which holds what the class keeps (`reread(self) -> Roster` with
+`Roster.members: list[Member]`). A store that updates one field (`Boek.auteur`) or adds one node
+to a graph puts through such a composite: the key that picks the value, the field or the list that
+holds it, and the variant it is. A sum given a name is the sum it names: `nodes: list[Node]` with
+`Node = Begrip | Bron` (a Python alias, a TypeScript `type`) holds a `Bron` as `list[Begrip | Bron]`
+does, and so does a Rust `enum Node`. A subclass is a variant of a sum left open: a get that gives
+`list[Post]` gives back the `Notice(Post)` a put took. A TypeScript constructor's `readonly`
+parameter is a field of its class, as one with an access modifier is.
 
 What a put takes is what reaches the place. A tile store that looks a tile up by a `Punt` and,
 when none holds it, fetches the area around it through its own `materialiseer(gebied: BBox)`,
 puts the `BBox`, not the `Punt`: the point is the key the tile is found by, as a `WHERE` is the
-key a row is found by.
+key a row is found by. A statement puts what it is handed only where it stands among the values
+the statement writes, an `INSERT`'s values and an `UPDATE`'s `SET`: a `DELETE` and an `UPDATE`
+whose `SET` holds only literals are handed only the key their rows are found by
+(`DELETE FROM visits WHERE member = ?`), and put none of it. An `INSERT .. SELECT` that copies
+another table is handed nothing, and puts none of it either.
 
-Atlas checks: a class whose public operations both write and read one place (a database as a
-whole, a file by itself; through what they call), for each type of data a put takes that no
-get of the class gives back from that place, as it is or inside what the get gives (a field, an
-element, a variant, followed through `has` and `variant` edges). A class that only reads a place
-(what comes in from the world) or only writes it (an end product) is no lens on it. Where
+Atlas checks: a class whose public operations both put to and get from one place (a table, a
+named file; through what they call), for each type of data a put takes that no get of the class
+gives back from that place, as it is or inside what the get gives (a field, an element, a variant,
+a subclass, followed through `has`, `variant` and `inherits` edges). A class that only reads a
+place (what comes in from the world) or only writes it (an end product) is no lens on it. Where
 another class gets that type from the same place, Atlas says which: the lens is then split over
 two classes. A put is asked about in the class that defines it; a subclass's gets count, but the
 puts it inherits are asked about once, in its base.
@@ -456,13 +479,14 @@ what it is handed is a key and goes no further. What an operation hands another 
 class that takes that type is put there, and asked about there. Where the graph does not show
 where a value goes, Atlas does not guess that it goes nowhere: a call of the operation's own into
 the place may be handed any of its parameters (the graph does not say what a call into the world
-is handed), a call Atlas cannot follow may put what it is handed wherever its function puts, a
-value no step makes (`for r in readings`, `x = p.field`) is part of any parameter whose type holds
-its type, as the parameter is declared or handed, and a parameter that is neither handed to a step
-by name nor holds such a value reaches the place when any step puts there. A loop variable is an
-element of what it goes over, in every language: ty types it in Python; in Rust and TypeScript it
-has the element type of the sequence the body declares (`readings: &[Reading]`,
-`readings: Reading[]`), so a parameter only iterated is followed through its elements.
+is handed), unless it is a statement that writes none of what it is handed; a call Atlas cannot
+follow may put what it is handed wherever its function puts; a value no step makes
+(`for r in readings`, `x = p.field`) is part of any parameter whose type holds its type, as the
+parameter is declared or handed; and a parameter that is neither handed to a step by name nor
+holds such a value reaches the place when any step puts there. A loop variable is an element of what it goes over, in every language: ty types it in
+Python; in Rust and TypeScript it has the element type of the sequence the body declares
+(`readings: &[Reading]`, `readings: Reading[]`), so a parameter only iterated is followed through
+its elements.
 
 A call that changes the value it is called on is a step that makes that value anew from what it
 is handed, `T × A → T`: `rows.append(row)`, `rows.push(row)`, `seen.add(key)`. What is made of a
@@ -475,6 +499,27 @@ method of a std collection on a value the body declares or makes as one (`Vec`, 
 builds as an array, a `Map` or a `Set`. A method of the program's own changes its receiver when
 its body does. One that returns a new value (`Frozen.append(row) -> Frozen`) changes nothing, and
 neither does an observation whose result is dropped (`path.exists()`).
+
+What the rule cannot see:
+
+- **Values.** The law is on values, the rule on types. It checks a necessary condition of
+  `get(put(a, s)) = a`, where the place is the right one: that what goes in can come back as the
+  type it went in as. A store whose get builds `Visit(member=day, day=member)` from the row its put
+  wrote gives back a `Visit`, and passes. A class that puts into `visits` and gets from `archive`
+  is a lens on neither table and is not asked, though nothing it puts comes back.
+- **Which placeholder a value fills.** The graph has the statement, not what the call hands each
+  placeholder: an `UPDATE .. SET name = ? WHERE id = ?` handed a value and a key, or an
+  `INSERT .. SELECT .. WHERE day = ?`, may put any of what it is handed, and a parameter it uses
+  only as the key is asked about as a put.
+- **Which database.** A statement names its table, not the file its connection opens: two
+  databases that each hold a table of one name are one place.
+- **A table a call names by argument.** A library call that names its table as an argument
+  (`frame.to_sql("readings", con)`) rather than in a statement gives no place.
+- **A put a subclass inherits.** It is asked about in its base, beside the base's gets: a base that
+  only puts, whose subclass gets the place back as another type, is asked nothing.
+- **A field of a library's type** (*gap* in Python and Rust): their readers draw no `has` edge to
+  a library's type, so a get that gives an `Entry` with `amount: Fraction` is not seen to give the
+  Fraction back, and a store that puts the Fraction is asked about it.
 
 rkg: `RegisterSink` puts `Graph`, `Oordeel` and `Verbruik` into SQLite. `Graph` and `Oordeel`
 come back through `RegisterRepository`, a second class on the same place; `Verbruik` comes
