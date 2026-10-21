@@ -487,12 +487,13 @@ fn doors(ix: &Index) -> Vec<Finding> {
 
 // ---------- sums ----------
 
-/// A sum type that a module returns and that functions in other modules take as input: each
-/// of them has to choose between the variants again. Unwrapped where it arises, the choice is
-/// made once, and what travels on is the variant each consumer needs. A library's sum arises
-/// where a call gives it, outside every module of the program, so a public function that takes
-/// one has been handed it unopened, whatever module it is in; the finding stands at the first
-/// that takes it, where the program has code to change.
+/// A sum type that a module returns and that two or more functions in other modules take as
+/// input: each of them has to choose between the variants again. Unwrapped where it arises, the
+/// choice is made once, and what travels on is the variant each consumer needs. One consumer is
+/// no repeated choice: a coproduct is taken apart by a copairing, and that has to stand
+/// somewhere. A library's sum arises where a call gives it, outside every module of the program,
+/// so a public function that takes one has been handed it unopened, whatever module it is in;
+/// the finding stands at the first that takes it, where the program has code to change.
 fn sums(ix: &Index) -> Vec<Finding> {
     let mut out = vec![];
     for s in ix.g.nodes.iter().filter(|n| !ix.targets(&n.id, EdgeKind::Variant).is_empty()) {
@@ -506,7 +507,7 @@ fn sums(ix: &Index) -> Vec<Finding> {
             .filter_map(|c| ix.node(c))
             .filter(|c| !c.private && !homes.contains(c.module.as_str()))
             .collect();
-        if (producers.is_empty() && !library) || consumers.is_empty() {
+        if (producers.is_empty() && !library) || consumers.len() < 2 {
             continue;
         }
         let mut evidence: Vec<String> =
@@ -521,16 +522,12 @@ fn sums(ix: &Index) -> Vec<Finding> {
                 s.name
             ),
         };
+        // a union written in place says its variants in its name
+        let sum = if s.name.contains('|') { s.name.clone() } else { format!("{} ({})", s.name, variants.join(" | ")) };
         out.push(ix.finding(
             "sums",
             if library { consumers[0] } else { s },
-            format!(
-                "{} ({}) is handed on unopened: {} {} it",
-                s.name,
-                variants.join(" | "),
-                list(&taken_by),
-                if taken_by.len() == 1 { "takes" } else { "take" }
-            ),
+            format!("{sum} is handed on unopened: {} take it", list(&taken_by)),
             evidence,
             choose,
         ));

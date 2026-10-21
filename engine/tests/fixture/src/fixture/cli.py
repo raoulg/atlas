@@ -83,3 +83,7 @@ def show(loaded: Loaded) -> None:
 
 def main():
     cli()
+
+
+def headline(loaded: Loaded) -> str:
+    return type(loaded).__name__

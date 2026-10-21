@@ -667,3 +667,28 @@ fn prophecy_a_seal_is_listed_and_broken_when_its_issue_is_closed() {
     assert!(atlas_engine::decide::unseal(&g, &["clean.Store".to_string()]).is_err(), "a prophecy that is not sealed has no seal to break");
     let _ = std::fs::remove_dir_all(copy.parent().expect("has a parent"));
 }
+
+fn fits(side: &str) -> Graph {
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/sums/fits/typescript").join(side);
+    analyze(&dir, &Options::default()).expect("reads")
+}
+
+/// A sum is unwrapped where it arises, written in place or by a name: `fit(): Fit | Failed`. On
+/// the clean side one function takes it, `describe`, the copairing that gives a line and the
+/// points to plot; the shortcut hands it to `line` and to `points`, which each choose again;
+/// `points` takes `Fit | Failed | undefined`, the same sum, which may also be left out.
+#[test]
+fn sums_a_union_written_in_place_is_a_sum() {
+    let (c, s) = (fits("clean"), fits("shortcut"));
+    for g in [&c, &s] {
+        let sum = format!("({root}.model.Failed | {root}.model.Fit)", root = g.root);
+        let variants: Vec<&str> = g.edges.iter().filter(|e| e.kind == EdgeKind::Variant && e.src == sum).map(|e| e.dst.as_str()).collect();
+        assert_eq!(variants.len(), 2, "{sum}: {variants:?}");
+        assert!(g.edges.iter().any(|e| e.kind == EdgeKind::Returns && e.src.ends_with(".fitter.fit") && e.dst == sum));
+    }
+    assert!(asked_anywhere(&c, "sums").is_empty(), "one copairing is where the sum is taken apart");
+    assert_eq!(
+        asked_anywhere(&s, "sums"),
+        [format!("({r}.model.Failed | {r}.model.Fit) Fit | Failed is handed on unopened: points and line take it", r = s.root)]
+    );
+}

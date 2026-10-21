@@ -314,11 +314,32 @@ fn prophecy_of(n: TsNode, src: &[u8]) -> Option<crate::prophecy::Prophecy> {
 fn type_names(t: Option<TsNode>, src: &[u8]) -> Vec<Vec<String>> {
     let Some(t) = t else { return vec![] };
     let mut out = vec![];
-    collect_types(t, src, &mut out);
+    collect_types(t, src, &[], &mut out);
     out
 }
 
-fn collect_types(n: TsNode, src: &[u8], out: &mut Vec<Vec<String>>) {
+/// An annotation's names apart from the unions it writes in place, and those unions, outermost
+/// first: `(r: Fit | Failed)` takes one union, which may be a sum, not a `Fit` and a `Failed`.
+fn split_unions(t: Option<TsNode>, src: &[u8]) -> (Vec<Vec<String>>, Vec<crate::builder::Union>) {
+    let Some(t) = t else { return (vec![], vec![]) };
+    let all = walk(t, &["union_type"]);
+    let written: Vec<TsNode> = all
+        .iter()
+        .copied()
+        .filter(|u| !all.iter().any(|o| o.id() != u.id() && o.start_byte() <= u.start_byte() && u.end_byte() <= o.end_byte()))
+        .collect();
+    let mut names = vec![];
+    collect_types(t, src, &written, &mut names);
+    let unions =
+        written.iter().map(|u| crate::builder::Union { names: type_names(Some(*u), src), written: text(*u, src).to_string() }).collect();
+    (names, unions)
+}
+
+/// The type names below `n`, apart from those inside the nodes `skip`.
+fn collect_types(n: TsNode, src: &[u8], skip: &[TsNode], out: &mut Vec<Vec<String>>) {
+    if skip.iter().any(|s| s.id() == n.id()) {
+        return;
+    }
     match n.kind() {
         "type_identifier" => out.push(vec![text(n, src).to_string()]),
         "nested_type_identifier" => out.push(text(n, src).split('.').map(str::to_string).collect()),
@@ -327,7 +348,7 @@ fn collect_types(n: TsNode, src: &[u8], out: &mut Vec<Vec<String>>) {
             let parts: Vec<String> = text(name, src).split('.').map(str::to_string).collect();
             if knowledge::TYPESCRIPT_CONTAINERS.contains(&parts.last().map(String::as_str).unwrap_or("")) {
                 if let Some(args) = n.child_by_field_name("type_arguments") {
-                    collect_types(args, src, out);
+                    collect_types(args, src, skip, out);
                 }
             } else {
                 out.push(parts);
@@ -337,7 +358,7 @@ fn collect_types(n: TsNode, src: &[u8], out: &mut Vec<Vec<String>>) {
         "function_type" | "object_type" | "predefined_type" | "literal_type" | "template_literal_type" | "type_query" => {}
         _ => {
             for c in named_children(n) {
-                collect_types(c, src, out);
+                collect_types(c, src, skip, out);
             }
         }
     }
@@ -376,12 +397,14 @@ fn signature(params: Option<TsNode>, ret: Option<TsNode>, src: &[u8]) -> (Vec<Pa
                     rest: pattern.map_or(false, |x| x.kind() == "rest_pattern"),
                     changes: false,
                 });
-                info.ptypes.extend(type_names(ty, src));
+                let (names, unions) = split_unions(ty, src);
+                info.ptypes.extend(names);
+                info.punions.extend(unions);
             }
         }
     }
     let returns = ret.and_then(|r| named_children(r).into_iter().next()).and_then(|r| returns(r, src));
-    info.rtypes = type_names(ret, src);
+    (info.rtypes, info.runions) = split_unions(ret, src);
     (out, returns, info)
 }
 
@@ -1460,17 +1483,30 @@ fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, repo: &Pat
         let Some(m) = modules.get(&n.module) else { continue };
         if matches!(n.kind, NodeKind::Function | NodeKind::Method) {
             let sig = store.sigs.get(id).cloned().unwrap_or_default();
-            for (types, kind) in [(&sig.ptypes, EdgeKind::Takes), (&sig.rtypes, EdgeKind::Returns)] {
-                for t in types {
-                    for r in type_of(m, t, &store.nodes) {
-                        if r.starts_with("ext:") {
-                            if !foreign_type(&r, &OWN) {
-                                continue;
-                            }
-                            store.ext_node(&r);
+            for (types, unions, kind) in [(&sig.ptypes, &sig.punions, EdgeKind::Takes), (&sig.rtypes, &sig.runions, EdgeKind::Returns)] {
+                let mut targets: Vec<String> = types.iter().flat_map(|t| type_of(m, t, &store.nodes)).collect();
+                // a union of two or more known types is a sum, written in place as by a name
+                for u in unions {
+                    let mut variants: Vec<String> = vec![];
+                    for r in u.names.iter().flat_map(|t| type_of(m, t, &store.nodes)) {
+                        if (!r.starts_with("ext:") || foreign_type(&r, &OWN)) && !variants.contains(&r) {
+                            variants.push(r);
                         }
-                        store.add_edge(id, &r, kind, None);
                     }
+                    if variants.len() > 1 {
+                        targets.push(store.written_sum(&variants, &u.written, &n));
+                    } else {
+                        targets.extend(variants);
+                    }
+                }
+                for r in targets {
+                    if r.starts_with("ext:") {
+                        if !foreign_type(&r, &OWN) {
+                            continue;
+                        }
+                        store.ext_node(&r);
+                    }
+                    store.add_edge(id, &r, kind, None);
                 }
             }
         }

@@ -81,7 +81,8 @@ fn doors_a_package_names_its_doors() {
 /// A sum is unwrapped where it arises. Python's clean form hands on both halves, each with its own
 /// type: `Harvest(readings: list[Reading], outages: list[Outage])`, and the client raises for a
 /// station it cannot reach. The shortcut names `Fetched = Reading | Outage`, returns it from the
-/// client, and the command line's `show` chooses again between the two.
+/// client, and two consumers choose again between the two: the command line's `show` and the
+/// report's `unreached`.
 #[test]
 fn sums_a_sum_is_unwrapped_where_it_arises() {
     let (c, s) = (clean(), shortcut());
@@ -89,12 +90,14 @@ fn sums_a_sum_is_unwrapped_where_it_arises() {
     assert!(c.edges.iter().all(|e| e.kind != EdgeKind::Variant), "the clean side has no sum");
     assert!(edge(c, "harvest.model.Harvest", "harvest.model.Reading", EdgeKind::Has));
     assert!(edge(c, "harvest.model.Harvest", "harvest.model.Outage", EdgeKind::Has));
-    assert!(edge(c, "harvest.cli.show", "harvest.model.Harvest", EdgeKind::Takes));
+    for consumer in ["harvest.cli.show", "harvest.report.unreached"] {
+        assert!(edge(c, consumer, "harvest.model.Harvest", EdgeKind::Takes), "{consumer}");
+        assert!(edge(s, consumer, "harvest.model.Fetched", EdgeKind::Takes), "{consumer}");
+    }
     assert_eq!(found(s, "sums"), ["harvest.model.Fetched"]);
     assert!(edge(s, "harvest.model.Fetched", "harvest.model.Reading", EdgeKind::Variant));
     assert!(edge(s, "harvest.model.Fetched", "harvest.model.Outage", EdgeKind::Variant));
     assert!(edge(s, "harvest.client.WeatherClient.latest", "harvest.model.Fetched", EdgeKind::Returns));
-    assert!(edge(s, "harvest.cli.show", "harvest.model.Fetched", EdgeKind::Takes));
 }
 
 /// An override keeps the promise of its base. Both sides have one family, `Exporter` with
@@ -687,4 +690,32 @@ fn prophecy_a_seal_is_listed_and_broken_when_its_issue_is_closed() {
         "a prophecy that is not sealed has no seal to break"
     );
     let _ = std::fs::remove_dir_all(copy.parent().expect("has a parent"));
+}
+
+fn fits(side: &str) -> Graph {
+    analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/sums/fits/python").join(side), &Options::default()).unwrap()
+}
+
+/// A sum is unwrapped where it arises, written in place or by a name: `fit` gives `Fit | Failed`
+/// without naming it. On the clean side one function takes it, `describe`, the copairing that
+/// gives the command line a line and the points to plot: a coproduct is taken apart somewhere,
+/// and once is no repeated choice. The shortcut hands the sum unopened to `line` and to `points`,
+/// which each choose again; `points` spells it `Optional[Fit | Failed]`, the same sum.
+#[test]
+fn sums_a_union_written_in_place_is_a_sum() {
+    let (c, s) = (fits("clean"), fits("shortcut"));
+    let sum = "(fits.model.Failed | fits.model.Fit)";
+    for g in [&c, &s] {
+        assert!(edge(g, sum, "fits.model.Fit", EdgeKind::Variant) && edge(g, sum, "fits.model.Failed", EdgeKind::Variant));
+        assert!(edge(g, "fits.fitter.fit", sum, EdgeKind::Returns), "`fit` gives the sum, not a Fit and a Failed");
+        assert!(!edge(g, "fits.fitter.fit", "fits.model.Fit", EdgeKind::Returns));
+    }
+    assert!(edge(&c, "fits.report.describe", sum, EdgeKind::Takes));
+    assert!(found(&c, "sums").is_empty(), "one copairing is where the sum is taken apart");
+    for consumer in ["fits.report.line", "fits.plot.points"] {
+        assert!(edge(&s, consumer, sum, EdgeKind::Takes), "{consumer} takes the sum, however it spells it");
+    }
+    assert_eq!(found(&s, "sums"), [sum]);
+    let asked = check(&s).into_iter().find(|f| f.principle == "sums").unwrap();
+    assert_eq!(asked.what, "Fit | Failed is handed on unopened: points and line take it");
 }
