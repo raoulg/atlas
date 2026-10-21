@@ -29,7 +29,7 @@ line sunspots/clean > Global(sunspots.df) own
 line Global(sunspots.df) > sunspots/smooth own
 line sunspots/smooth > Global(sunspots.df) own
 line Global(sunspots.df) > sunspots/plot own
-known #137 line sunspots/plot > Figure own                        # pyplot's current figure, `plt.figure(..)`
+line sunspots/plot > Figure own                                # pyplot's current figure, `plt.figure(..)`
 line sunspots/plot > File(figures/sunspots.png) own
 
 home Response·r@sunspots/get_data/get sunspots/get_data
@@ -41,15 +41,8 @@ side entry left
 side Web(www.sidc.be) left
 side File(data/raw/sunspots.csv) right
 side Global(sunspots.df) between
-known #137 side Figure right
+side Figure right
 side File(figures/sunspots.png) right
-
-# the module's `df`, which `get_data` makes in this route and keeps in a place, is drawn again as a value from beyond
-known #137 extra home DataFrame·df sunspots
-known #137 extra line DataFrame·df > sunspots/clean/drop value
-known #137 extra line DataFrame·df > sunspots/clean/df["year"].astype value
-known #137 extra line DataFrame·df > sunspots/clean/df["month"].astype value
-known #137 extra line DataFrame·df > sunspots/smooth/df["mean"].rolling value
 
 # a library call whose result no name holds is drawn as a step: what it gives should go into the call around it
 known #125 extra step sunspots/clean/df["year"].astype

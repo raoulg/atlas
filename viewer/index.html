@@ -1638,7 +1638,7 @@ function selectPlace(pid, label) {
     return;
   }
   const calls = [];
-  for (const n of D.nodes) for (const t of n.touches || []) { const s = shownAs(t); if (drawn(s) && worldPlaceOf(s).id === pid) calls.push({n, t: s}); }
+  for (const n of D.nodes) for (const t of n.touches || []) { const s = shownAs(t); if (worldPlaceOf(s).id === pid) calls.push({n, t: s}); }
   calls.sort((a, b) => a.n.file.localeCompare(b.n.file) || (a.t.line || 0) - (b.t.line || 0));
   insp.appendChild(html("div", "path", `${calls.length} ${calls.length === 1 ? "call" : "calls"} in the code`));
   const d = html("div", "links");
