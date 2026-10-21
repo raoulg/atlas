@@ -7,7 +7,8 @@ use indexmap::IndexMap;
 use tree_sitter::Node as TsNode;
 
 use super::module::{
-    function_of, is_property, member_parts, package_from_ext, promised, resolve, type_head, type_names, Bound, Module, WRAPPERS,
+    class_named, function_of, is_property, member_parts, package_from_ext, promised, resolve, type_head, type_names, Bound, Module,
+    WRAPPERS,
 };
 use super::paths::{self, Arg, At, Eval};
 use crate::body::{changed_through, BindSyntax, Crosses, Step, Steps, UseSyntax};
@@ -611,10 +612,7 @@ impl<'a, 't> Body<'a, 't> {
             todo.extend(self.store.classes.get(&k).into_iter().flat_map(|i| i.resolved.iter().rev()).filter(|b| self.own(b)).cloned());
             let Some(home) = self.store.nodes.get(&k).and_then(|n| self.modules.get(&n.module)) else { continue };
             let local = k.rsplit('.').next().unwrap_or(&k);
-            let classes = walk(home.tree.root_node(), &["class_declaration", "class", "abstract_class_declaration"]);
-            let Some(node) = classes.into_iter().find(|c| c.child_by_field_name("name").map(|n| text(n, &home.src)) == Some(local)) else {
-                continue;
-            };
+            let Some(node) = class_named(home, local) else { continue };
             let fields = home.made.borrow_mut().entry(Some(node.start_byte())).or_insert_with(|| class_made(node, home)).clone();
             for (field, p) in fields {
                 out.entry(field.trim_start_matches("this.").to_string()).or_insert(p);

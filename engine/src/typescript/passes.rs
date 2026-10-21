@@ -970,7 +970,12 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
             returned.entry(e.src.clone()).or_insert_with(|| e.dst.clone());
         }
     }
-    let eval = Eval::new(modules, repo);
+    let bases = store
+        .classes
+        .iter()
+        .map(|(id, k)| (id.clone(), k.resolved.iter().filter(|b| store.nodes.contains_key(*b)).cloned().collect()))
+        .collect();
+    let eval = Eval::new(modules, repo, bases);
     // of a library's code, the methods of the classes the program names, and of their bases
     let named = named_classes(modules, store);
     // methods that change their receiver, directly or through another such method of the
