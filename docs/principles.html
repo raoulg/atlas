@@ -1,0 +1,350 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Atlas principles</title>
+<meta name="description" content="The mathematics Atlas is built on, one picture per principle: how it looks in Atlas, and what the picture would be without it.">
+<link rel="icon" href="logo.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#F4F1EC;--panel:#FFFFFF;--ink:#111111;--ink-2:#4A443D;--ink-3:#857D73;--line:#E2DCD3;--accent:#C43A14;--good:#2E8B57;--bad:#C43A14;
+  --place:#F7EDE3;--place-ink:#B26A00;--val:#E8EEF1;--val-ink:#1D5A73;--proph:#4B3FA8;--add:#2E8B57;--del:#C43A14;--band:color-mix(in oklab,#C43A14 9%,#FFFFFF);
+  --sans:"Outfit","Helvetica Neue",Helvetica,system-ui,sans-serif;--mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;color-scheme:light}
+:root[data-theme="dark"]{--bg:#141210;--panel:#1B1815;--ink:#F4F1EC;--ink-2:#B8B0A5;--ink-3:#857C71;--line:#2B2621;--accent:#F2643C;--good:#6CC08C;--bad:#F2643C;
+  --place:#2A2119;--place-ink:#E0A24A;--val:#18252B;--val-ink:#86B9C9;--proph:#A99BF0;--add:#6CC08C;--del:#F2643C;--band:color-mix(in oklab,#F2643C 9%,#1B1815);color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:17px/1.5 var(--sans)}
+a{color:inherit}
+.top{position:sticky;top:0;z-index:5;background:color-mix(in oklab,var(--bg) 92%,transparent);backdrop-filter:blur(6px);border-bottom:1px solid var(--line)}
+.top .bar{max-width:1240px;margin:0 auto;padding:10px 16px;display:flex;align-items:center;gap:18px}
+.top .brand{display:flex;align-items:center;gap:10px;text-decoration:none;font-weight:600;font-size:19px}
+.top .brand img{width:30px;height:30px}
+.top .back{font-size:15px;color:var(--ink-2);text-decoration:none}
+.top .back:hover{color:var(--ink)}
+.theme{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;margin-left:auto;border:1px solid var(--line);border-radius:50%;background:transparent;color:var(--ink-2);cursor:pointer}
+.theme svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.theme .moon,:root[data-theme="dark"] .theme .sun{display:none}
+:root[data-theme="dark"] .theme .moon{display:block}
+main{max-width:1160px;margin:0 auto;padding:44px 16px 80px}
+h1{font-size:clamp(34px,4.6vw,50px);font-weight:600;letter-spacing:-.02em;line-height:1.08;margin:0 0 14px;max-width:20ch}
+.lede{font-size:19px;color:var(--ink-2);max-width:60ch;margin:0 0 10px}
+.key{display:flex;flex-wrap:wrap;gap:8px 22px;margin:18px 0 44px;font-size:15px;color:var(--ink-2)}
+.key span::before{content:"";display:inline-block;width:22px;height:4px;margin-right:8px;vertical-align:4px}
+.key .k-ok::before{background:var(--good)}
+.key .k-bad::before{background:var(--bad)}
+.branch{margin:48px 0 18px;padding:12px 18px;background:var(--band);border:1px solid var(--line);font-size:19px;font-weight:600}
+.branch span{font-weight:400;font-size:15px;color:var(--ink-2);margin-left:10px}
+.p{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;margin:0 0 34px;scroll-margin-top:72px}
+.p header{grid-column:1/-1}
+.p h2{font-size:24px;font-weight:600;letter-spacing:-.01em;margin:0;line-height:1.2}
+.p header p{margin:2px 0 0;color:var(--ink-2)}
+.panel{background:var(--panel);border:1px solid var(--line);padding:12px 14px 14px;display:grid;gap:8px;align-content:start;min-width:0}
+.panel.ok{border-top:3px solid var(--good)}
+.panel.bad{border-top:3px solid var(--bad)}
+.panel h3{margin:0;font:500 12px var(--mono);text-transform:uppercase;letter-spacing:.06em}
+.panel.ok h3{color:var(--good)}
+.panel.bad h3{color:var(--bad)}
+.panel p{margin:0;font-size:15px;color:var(--ink-2)}
+.panel svg{width:100%;height:auto;display:block}
+.more{color:var(--ink-2);font-size:15px;margin-top:40px}
+.more a{text-decoration-color:var(--accent);text-underline-offset:3px}
+@media (max-width:760px){.p{grid-template-columns:minmax(0,1fr)}}
+/* the drawings: the tour's boxes, in either theme */
+svg .pill{fill:var(--panel);stroke:var(--ink-2);stroke-width:1.2}
+svg .place{fill:var(--place);stroke:var(--place-ink);stroke-width:1.1}
+svg .val{fill:var(--val);stroke:var(--val-ink);stroke-width:1.1}
+svg .frame{fill:none;stroke:var(--ink-3);stroke-width:1.1}
+svg .ghost{fill:none;stroke:var(--ink-3);stroke-width:1.1;stroke-dasharray:4 3}
+svg .proph{fill:color-mix(in oklab,var(--proph) 10%,var(--panel));stroke:var(--proph);stroke-width:1.4;stroke-dasharray:4 3}
+svg .add{fill:color-mix(in oklab,var(--add) 22%,var(--panel));stroke:var(--add);stroke-width:2}
+svg .del{fill:color-mix(in oklab,var(--del) 16%,var(--panel));stroke:var(--del);stroke-width:1.4;stroke-dasharray:5 3}
+svg .globe{fill:color-mix(in oklab,#8A7A2A 14%,var(--panel));stroke:#8A7A2A;stroke-width:1.1}
+svg text{fill:var(--ink);font:400 11.5px var(--mono)}
+svg text.s{fill:var(--ink-3);font:400 11px var(--sans)}
+svg text.bad{fill:var(--bad);font:500 12px var(--sans)}
+svg text.ok{fill:var(--good);font:500 12px var(--sans)}
+svg .ln{stroke:var(--ink-2);stroke-width:1.4;fill:none;marker-end:url(#ah)}
+svg .ln.reach{stroke-dasharray:5 4}
+svg .ln.call{stroke-dasharray:1.5 3.5}
+svg .ln.badl{stroke:var(--bad);marker-end:url(#ahb)}
+svg .ln.gone{stroke:var(--bad);stroke-dasharray:3 3;marker-end:none}
+svg .ln.nohead{marker-end:none}
+svg .x{stroke:var(--bad);stroke-width:2.2;stroke-linecap:round}
+</style>
+<script>
+(() => { let chosen = null; try { chosen = localStorage.getItem('atlas.tour.theme'); } catch {}
+  document.documentElement.dataset.theme = chosen || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); })();
+</script>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" style="fill:var(--ink-2)"/></marker>
+    <marker id="ahb" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" style="fill:var(--bad)"/></marker>
+  </defs>
+</svg>
+<header class="top">
+  <div class="bar">
+    <a class="brand" href="index.html"><img src="logo.svg" alt="">Atlas</a>
+    <a class="back" href="index.html#math">&larr; Back to the tour</a>
+    <button class="theme" type="button" aria-label="Dark mode" aria-pressed="false" title="Light or dark"><svg class="sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.3M12 19.2v2.3M4.6 4.6l1.6 1.6M17.8 17.8l1.6 1.6M2.5 12h2.3M19.2 12h2.3M4.6 19.4l1.6-1.6M17.8 6.2l1.6-1.6"/></svg><svg class="moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 14.2A8.5 8.5 0 1 1 9.8 3.5a6.8 6.8 0 0 0 10.7 10.7Z"/></svg></button>
+  </div>
+</header>
+<main>
+  <h1>The mathematics, in pictures.</h1>
+  <p class="lede">One picture per principle: how it looks in Atlas, and what the picture would be without it.</p>
+  <div class="key"><span class="k-ok">in Atlas</span><span class="k-bad">without the principle</span></div>
+
+  <div class="branch">Category theory<span>how the parts of a program connect</span></div>
+
+  <section class="p" id="category">
+    <header><h2>A category</h2><p>Functions are arrows, and a route follows them from start to place.</p></header>
+    <div class="panel ok"><h3>In Atlas</h3>
+      <svg viewBox="0 0 330 96" role="img" aria-label="A route: Web, download, a CSV file, load, a DataFrame, draw, the screen, one arrow after another">
+        <rect class="place" x="4" y="34" width="46" height="26" rx="3"/><text x="13" y="51">Web</text>
+        <rect class="pill" x="66" y="35" width="70" height="24" rx="12"/><text x="76" y="51">download</text>
+        <rect class="place" x="152" y="34" width="44" height="26" rx="3"/><text x="160" y="51">CSV</text>
+        <rect class="pill" x="212" y="35" width="44" height="24" rx="12"/><text x="222" y="51">load</text>
+        <rect class="place" x="272" y="34" width="54" height="26" rx="3"/><text x="278" y="51">Screen</text>
+        <path class="ln" d="M50 47 H64"/><path class="ln" d="M136 47 H150"/><path class="ln" d="M196 47 H210"/><path class="ln" d="M256 47 H270"/>
+        <text class="s" x="4" y="86">start</text><text class="s" x="290" y="86">place</text>
+      </svg>
+      <p>Every step hands its result to the next. You can follow the arrows from where the program starts to where the data ends up.</p></div>
+    <div class="panel bad"><h3>Without it</h3>
+      <svg viewBox="0 0 330 96" role="img" aria-label="Steps that do not hand anything on, each reading and changing one shared global">
+        <rect class="pill" x="10" y="8" width="64" height="22" rx="11"/><text x="22" y="23">fetch</text>
+        <rect class="pill" x="10" y="38" width="64" height="22" rx="11"/><text x="22" y="53">clean</text>
+        <rect class="pill" x="10" y="68" width="64" height="22" rx="11"/><text x="22" y="83">plot</text>
+        <rect class="globe" x="150" y="34" width="104" height="28" rx="3"/><text x="160" y="52">global df</text>
+        <path class="ln badl" d="M74 19 C 110 19, 120 40, 148 44"/><path class="ln badl" d="M74 49 H148"/><path class="ln badl" d="M74 79 C 110 79, 120 58, 148 54"/>
+        <text class="bad" x="168" y="86">no order to follow</text>
+      </svg>
+      <p>Each step reaches into one shared value. Nothing is handed on, so there is no route: you cannot tell what comes first.</p></div>
+  </section>
+
+  <section class="p" id="effects">
+    <header><h2>Effects in the arrow</h2><p>What a function does to the world is part of it.</p></header>
+    <div class="panel ok"><h3>In Atlas</h3>
+      <svg viewBox="0 0 330 96" role="img" aria-label="The step save, with the file it writes hanging on its arrow">
+        <rect class="val" x="6" y="34" width="80" height="26" rx="3"/><text x="14" y="51">Figure</text>
+        <rect class="pill" x="112" y="35" width="56" height="24" rx="12"/><text x="124" y="51">save</text>
+        <rect class="place" x="196" y="34" width="128" height="26" rx="3"/><text x="204" y="51">File(plot.png)</text>
+        <path class="ln" d="M86 47 H110"/><path class="ln" d="M168 47 H194"/>
+      </svg>
+      <p>The file a step writes hangs on that step. You see who writes it.</p></div>
+    <div class="panel bad"><h3>Without it</h3>
+      <svg viewBox="0 0 330 96" role="img" aria-label="The step save with nothing coming out, and the file it writes floating unattached">
+        <rect class="val" x="6" y="34" width="80" height="26" rx="3"/><text x="14" y="51">Figure</text>
+        <rect class="pill" x="112" y="35" width="56" height="24" rx="12"/><text x="124" y="51">save</text>
+        <path class="ln" d="M86 47 H110"/>
+        <rect class="place" x="196" y="62" width="128" height="26" rx="3"/><text x="204" y="79">File(plot.png)</text>
+        <text class="bad" x="216" y="44">written by whom?</text>
+      </svg>
+      <p>The file is there, but no arrow leads to it. Something writes it, and the picture cannot say what.</p></div>
+  </section>
+
+  <section class="p" id="pushout">
+    <header><h2>A pushout</h2><p>The same meaning gives the same picture.</p></header>
+    <div class="panel ok"><h3>In Atlas</h3>
+      <svg viewBox="0 0 330 110" role="img" aria-label="Three spellings of a default option, in Python, Rust and TypeScript, all drawn as one option">
+        <text x="4" y="22">months: int = 13</text><text x="4" y="56">default_value_t = 13</text><text x="4" y="90">default: "13"</text>
+        <text class="s" x="4" y="8">Python · Rust · TypeScript</text>
+        <path class="ln" d="M130 18 C 170 18, 180 50, 206 53"/><path class="ln" d="M160 52 H206"/><path class="ln" d="M110 86 C 170 86, 180 58, 206 57"/>
+        <rect class="pill" x="208" y="42" width="116" height="26" rx="13"/><text x="220" y="59">--months 13</text>
+      </svg>
+      <p>Three languages, three spellings, one thing: an option the caller can change. Atlas draws the thing.</p></div>
+    <div class="panel bad"><h3>Without it</h3>
+      <svg viewBox="0 0 330 110" role="img" aria-label="The three spellings drawn as three different things">
+        <text x="4" y="22">months: int = 13</text><text x="4" y="56">default_value_t = 13</text><text x="4" y="90">default: "13"</text>
+        <path class="ln badl" d="M130 18 H196"/><path class="ln badl" d="M160 52 H196"/><path class="ln badl" d="M110 86 H196"/>
+        <rect class="pill" x="198" y="7" width="108" height="22" rx="11"/><text x="208" y="22">param default</text>
+        <rect class="pill" x="198" y="41" width="108" height="22" rx="11"/><text x="208" y="56">clap attribute</text>
+        <rect class="pill" x="198" y="75" width="108" height="22" rx="11"/><text x="208" y="90">parseArgs key</text>
+      </svg>
+      <p>Drawn by their spelling, a program and its port look like three different programs.</p></div>
+  </section>
+
+  <section class="p" id="yoneda">
+    <header><h2>Yoneda</h2><p>A thing is what it connects to, not what it is called.</p></header>
+    <div class="panel ok"><h3>In Atlas</h3>
+      <svg viewBox="0 0 330 96" role="img" aria-label="A function renamed from load to read, with the same arrows in and out: the diff marks nothing">
+        <rect class="place" x="4" y="34" width="44" height="26" rx="3"/><text x="12" y="51">CSV</text>
+        <rect class="pill" x="76" y="35" width="96" height="24" rx="12"/><text x="86" y="51">load → read</text>
+        <rect class="val" x="200" y="34" width="96" height="26" rx="3"/><text x="208" y="51">DataFrame</text>
+        <path class="ln" d="M48 47 H74"/><path class="ln" d="M172 47 H198"/>
+        <text class="ok" x="76" y="84">renamed: same arrows, same thing</text>
+      </svg>
+      <p>A function you renamed but that connects the same is the same function. The diff stays quiet.</p></div>
+    <div class="panel bad"><h3>Without it</h3>
+      <svg viewBox="0 0 330 96" role="img" aria-label="Compared by name, the rename shows as one function removed and another added">
+        <rect class="place" x="4" y="34" width="44" height="26" rx="3"/><text x="12" y="51">CSV</text>
+        <rect class="del" x="76" y="16" width="70" height="22" rx="11"/><text x="92" y="31">load</text>
+        <rect class="add" x="76" y="56" width="70" height="22" rx="11"/><text x="92" y="71">read</text>
+        <rect class="val" x="200" y="34" width="96" height="26" rx="3"/><text x="208" y="51">DataFrame</text>
+        <path class="ln" d="M48 44 L74 30"/><path class="ln" d="M48 50 L74 64"/><path class="ln" d="M146 28 L198 44"/><path class="ln" d="M146 66 L198 50"/>
+        <text class="bad" x="160" y="90">a rename looks like a rewrite</text>
+      </svg>
+      <p>Compared by name, a rename shows as one thing deleted and another added, and the real changes drown in it.</p></div>
+  </section>
+
+  <section class="p" id="partial">
+    <header><h2>A partial map</h2><p>What is not built yet is part of the picture.</p></header>
+    <div class="panel ok"><h3>In Atlas</h3>
+      <svg viewBox="0 0 330 96" role="img" aria-label="Built steps solid, the designed step dotted purple beside them, the arrow into it the work still to do">
+        <rect class="pill" x="4" y="35" width="56" height="24" rx="12"/><text x="14" y="51">load</text>
+        <rect class="pill" x="84" y="35" width="66" height="24" rx="12"/><text x="94" y="51">smooth</text>
+        <rect class="proph" x="176" y="35" width="60" height="24" rx="12"/><text x="188" y="51">peaks</text>
+        <rect class="place" x="262" y="34" width="62" height="26" rx="3"/><text x="270" y="51">Figure</text>
+        <path class="ln" d="M60 47 H82"/><path class="ln" d="M150 47 H174"/><path class="ln" d="M236 47 H260"/>
+        <text class="s" x="168" y="84">designed, not built yet</text>
+      </svg>
+      <p>A design can live in the code before it is built. The dotted part is the work still to do.</p></div>
+    <div class="panel bad"><h3>Without it</h3>
+      <svg viewBox="0 0 330 96" role="img" aria-label="Built code calling the design as if it were built: it runs on an empty stub">
+        <rect class="pill" x="4" y="35" width="56" height="24" rx="12"/><text x="14" y="51">run</text>
+        <rect class="proph" x="110" y="35" width="70" height="24" rx="12"/><text x="122" y="51">Store</text>
+        <path class="ln badl" d="M60 47 H108"/>
+        <path class="x" d="M196 38 L212 56 M212 38 L196 56"/>
+        <text class="bad" x="110" y="84">runs on an empty stub</text>
+      </svg>
+      <p>Finished code that already calls the sketch would run on nothing. Atlas asks about it.</p></div>
+  </section>
+
+  <div class="branch">Topology<span>what stays the same when you zoom in or out</span></div>
+
+  <section class="p" id="quotient">
+    <header><h2>A quotient</h2><p>Zooming out is gluing, and nothing gets lost.</p></header>
+    <div class="panel ok"><h3>In Atlas</h3>
+      <svg viewBox="0 0 330 110" role="img" aria-label="An open box with two steps inside; closed, the lines in and out are still there">
+        <rect class="place" x="4" y="42" width="40" height="26" rx="3"/><text x="11" y="59">CSV</text>
+        <rect class="frame" x="62" y="14" width="112" height="82" rx="6"/><text x="70" y="30">▾ prepare</text>
+        <rect class="pill" x="72" y="40" width="44" height="20" rx="10"/><text x="80" y="54">load</text>
+        <rect class="pill" x="72" y="68" width="56" height="20" rx="10"/><text x="80" y="82">clean</text>
+        <path class="ln" d="M44 55 H70"/><path class="ln" d="M94 60 V66"/><path class="ln" d="M128 78 C 160 78, 166 55, 182 55"/>
+        <text class="s" x="190" y="30">closed:</text>
+        <rect class="pill" x="230" y="44" width="92" height="24" rx="12"/><text x="242" y="60">▸ prepare</text>
+        <path class="ln" d="M190 56 H228"/>
+      </svg>
+      <p>Closing a box glues its insides into one. The lines in and out stay; open it again and you get the same picture back.</p></div>
+    <div class="panel bad"><h3>Without it</h3>
+      <svg viewBox="0 0 330 110" role="img" aria-label="Closing the box loses the line from the CSV: open and closed pictures disagree">
+        <rect class="place" x="4" y="42" width="40" height="26" rx="3"/><text x="11" y="59">CSV</text>
+        <rect class="pill" x="80" y="44" width="92" height="24" rx="12"/><text x="92" y="60">▸ prepare</text>
+        <path class="ln gone" d="M44 55 H78"/>
+        <path class="x" d="M54 47 L66 63 M66 47 L54 63"/>
+        <text class="bad" x="70" y="96">a line vanished on zooming out</text>
+      </svg>
+      <p>If zooming out could drop a line, a closed box would hide what it reads, and you could not trust any overview.</p></div>
+  </section>
+
+  <div class="branch">Type theory<span>what goes into a function and what comes out</span></div>
+
+  <section class="p" id="signature">
+    <header><h2>Types of arrows</h2><p>A signature says what goes in and what comes out.</p></header>
+    <div class="panel ok"><h3>In Atlas</h3>
+      <svg viewBox="0 0 330 96" role="img" aria-label="get_store says it gives a ReadingStore, and the route follows the value on">
+        <rect class="pill" x="4" y="35" width="84" height="24" rx="12"/><text x="14" y="51">get_store</text>
+        <rect class="val" x="112" y="34" width="104" height="26" rx="3"/><text x="120" y="51">ReadingStore</text>
+        <rect class="pill" x="240" y="35" width="80" height="24" rx="12"/><text x="252" y="51">history</text>
+        <path class="ln" d="M88 47 H110"/><path class="ln" d="M216 47 H238"/>
+        <text class="s" x="4" y="84">→ ReadingStore</text>
+      </svg>
+      <p>With a return type, the picture follows the value to where it goes next.</p></div>
+    <div class="panel bad"><h3>Without it</h3>
+      <svg viewBox="0 0 330 96" role="img" aria-label="get_store without a return type: the route stops at a question mark">
+        <rect class="pill" x="4" y="35" width="84" height="24" rx="12"/><text x="14" y="51">get_store</text>
+        <rect class="del" x="112" y="34" width="40" height="26" rx="3"/><text x="127" y="51">?</text>
+        <path class="ln badl" d="M88 47 H110"/>
+        <text class="bad" x="168" y="51">the route stops here</text>
+        <text class="s" x="4" y="84">no return type</text>
+      </svg>
+      <p>Without one, what the caller gets has no type, and nobody can follow it further.</p></div>
+  </section>
+
+  <section class="p" id="liskov">
+    <header><h2>Liskov substitution</h2><p>A subclass keeps its base's promise.</p></header>
+    <div class="panel ok"><h3>In Atlas</h3>
+      <svg viewBox="0 0 330 104" role="img" aria-label="Exporter.write takes records and a path; CsvExporter.write takes the same and fits in its place">
+        <text class="s" x="4" y="16">the promise</text>
+        <rect class="frame" x="4" y="22" width="190" height="26" rx="4"/><text x="12" y="39">write(records, path)</text>
+        <text class="s" x="4" y="72">the subclass</text>
+        <rect class="add" x="4" y="76" width="190" height="24" rx="12"/><text x="12" y="92">write(records, path)</text>
+        <path class="ln" d="M99 74 V52"/>
+        <text class="ok" x="210" y="66">fits</text>
+      </svg>
+      <p>Wherever the code expects an exporter, any kind of exporter fits: it takes what the base takes.</p></div>
+    <div class="panel bad"><h3>Without it</h3>
+      <svg viewBox="0 0 330 104" role="img" aria-label="CsvExporter.write asks for an extra argument and does not fit where an Exporter is expected">
+        <text class="s" x="4" y="16">the promise</text>
+        <rect class="frame" x="4" y="22" width="190" height="26" rx="4"/><text x="12" y="39">write(records, path)</text>
+        <text class="s" x="4" y="72">the subclass</text>
+        <rect class="del" x="4" y="76" width="250" height="24" rx="12"/><text x="12" y="92">write(rows, path, sep)</text>
+        <path class="ln badl" d="M99 74 V52"/>
+        <text class="bad" x="210" y="56">does not fit</text>
+      </svg>
+      <p>A subclass that asks for more breaks every caller that trusted the base.</p></div>
+  </section>
+
+  <div class="branch">Graph theory<span>what leads to what</span></div>
+
+  <section class="p" id="reach">
+    <header><h2>Reach</h2><p>What a step does, and what it sets in motion, are two things.</p></header>
+    <div class="panel ok"><h3>In Atlas</h3>
+      <svg viewBox="0 0 330 104" role="img" aria-label="run writes its own log with a solid line, and reaches the database through store with a dashed line">
+        <rect class="pill" x="4" y="40" width="50" height="24" rx="12"/><text x="16" y="56">run</text>
+        <rect class="place" x="200" y="10" width="120" height="26" rx="3"/><text x="208" y="27">File(run.log)</text>
+        <rect class="place" x="200" y="68" width="120" height="26" rx="3"/><text x="208" y="85">Database</text>
+        <path class="ln" d="M54 48 C 120 48, 140 23, 198 23"/><path class="ln reach" d="M54 56 C 120 56, 140 81, 198 81"/>
+        <text class="s" x="96" y="20">its own</text><text class="s" x="80" y="96">through store</text>
+      </svg>
+      <p>Solid: what the step does itself. Dashed: what it causes through the steps it calls.</p></div>
+    <div class="panel bad"><h3>Without it</h3>
+      <svg viewBox="0 0 330 104" role="img" aria-label="Both drawn the same: run seems to write the database itself">
+        <rect class="pill" x="4" y="40" width="50" height="24" rx="12"/><text x="16" y="56">run</text>
+        <rect class="place" x="200" y="10" width="120" height="26" rx="3"/><text x="208" y="27">File(run.log)</text>
+        <rect class="place" x="200" y="68" width="120" height="26" rx="3"/><text x="208" y="85">Database</text>
+        <path class="ln" d="M54 48 C 120 48, 140 23, 198 23"/><path class="ln badl" d="M54 56 C 120 56, 140 81, 198 81"/>
+        <text class="bad" x="70" y="102">who really writes the database?</text>
+      </svg>
+      <p>Merged, a step seems to do everything it causes, and you look for the write in the wrong place.</p></div>
+  </section>
+
+  <section class="p" id="dag">
+    <header><h2>A directed graph without cycles</h2><p>Dependencies go one way.</p></header>
+    <div class="panel ok"><h3>In Atlas</h3>
+      <svg viewBox="0 0 330 96" role="img" aria-label="api depends on harvester, harvester on store: one direction">
+        <rect class="frame" x="4" y="34" width="66" height="28" rx="6"/><text x="22" y="52">api</text>
+        <rect class="frame" x="120" y="34" width="96" height="28" rx="6"/><text x="134" y="52">harvester</text>
+        <rect class="frame" x="264" y="34" width="62" height="28" rx="6"/><text x="278" y="52">store</text>
+        <path class="ln" d="M70 48 H118"/><path class="ln" d="M216 48 H262"/>
+        <text class="ok" x="110" y="86">each can stand on its own</text>
+      </svg>
+      <p>Packages depend in one direction, so each can be read, tested or replaced on its own.</p></div>
+    <div class="panel bad"><h3>Without it</h3>
+      <svg viewBox="0 0 330 96" role="img" aria-label="harvester and store depend on each other: a cycle">
+        <rect class="frame" x="60" y="34" width="96" height="28" rx="6"/><text x="74" y="52">harvester</text>
+        <rect class="frame" x="220" y="34" width="62" height="28" rx="6"/><text x="234" y="52">store</text>
+        <path class="ln badl" d="M156 42 C 180 30, 196 30, 218 40"/><path class="ln badl" d="M220 56 C 196 68, 180 68, 158 56"/>
+        <text class="bad" x="96" y="90">neither can move without the other</text>
+      </svg>
+      <p>Two packages that reach for each other have no order: you cannot take either apart.</p></div>
+  </section>
+
+  <p class="more">Every principle in the language of mathematics, and where it lives in Atlas: <a href="https://github.com/raoulg/atlas/blob/next/docs/reference/mathematics.md">the mathematics</a>.</p>
+</main>
+<script>
+(() => {
+  const root = document.documentElement, button = document.querySelector('.theme');
+  const show = () => button.setAttribute('aria-pressed', root.dataset.theme === 'dark');
+  button.onclick = () => {
+    root.dataset.theme = root.dataset.theme === 'dark' ? 'light' : 'dark';
+    try { localStorage.setItem('atlas.tour.theme', root.dataset.theme); } catch {}
+    show();
+  };
+  show();
+})();
+</script>
+</body>
+</html>
