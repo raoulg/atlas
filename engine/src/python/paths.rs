@@ -8,7 +8,7 @@ use std::path::Path;
 use indexmap::IndexMap;
 use tree_sitter::Node as TsNode;
 
-use super::{call_path, dotted, Module, WRAPPERS};
+use super::module::{call_path, dotted, Module, WRAPPERS};
 use crate::pytypes::{FileArg, Param, Target, Types};
 use crate::tree::{beneath, named_children, path_str, text, unquote, walk};
 

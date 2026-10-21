@@ -583,7 +583,7 @@ fn rust_workspace_parses() {
     // `let lang = language::detect(..)?; lang.parse(..)`: a local typed by the callee's return
     assert!(calls.contains(&("atlas-engine.parts.graph_of".into(), "atlas-engine.language.Language.parse".into())));
     // typed parameters give receivers a type: `store.add_edge(..)` with `store: &mut GraphBuilder`
-    assert!(calls.contains(&("atlas-engine.python.collect_symbols".into(), "atlas-engine.builder.GraphBuilder.add_edge".into())));
+    assert!(calls.contains(&("atlas-engine.python.passes.collect_symbols".into(), "atlas-engine.builder.GraphBuilder.add_edge".into())));
     // the repository is read in one place, and a reader reads what was read
     assert!(boundaries(g.node("atlas-engine.repo.Repo.read").unwrap()).get("disk_read").is_some(), "the listing");
     assert!(boundaries(g.node("atlas-engine.repo.Repo.bytes").unwrap()).get("disk_read").is_some(), "a file's text, once");

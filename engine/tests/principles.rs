@@ -236,11 +236,6 @@ const REVIEWED: &[(&str, &str, &str)] = &[
     ),
     (
         "choices",
-        "atlas-engine.python.def_node",
-        "`def_node` and `Body::new` each read `NodeKind` where they need it (a module's definition is its whole tree, and it has no parameters); that a `Node` is one struct for every kind is #13",
-    ),
-    (
-        "choices",
         "atlas-engine.rust.body.Body.value_class",
         "`value_class` and `declared` read a name two ways, the class of a value and the type a declaration gives it",
     ),
@@ -268,11 +263,6 @@ const REVIEWED: &[(&str, &str, &str)] = &[
         "choices",
         "atlas-engine.typescript.libraries.Libraries.follow_in",
         "`\"default\"` is the language's name for the default export, read in two lines of one function",
-    ),
-    (
-        "layers",
-        "atlas-engine.python",
-        "a fault of Atlas, #117: `python.rs` is both the reader's entry and the vocabulary `python/paths.rs` builds on (`call_path`, `dotted`, `Module`)",
     ),
 ];
 
