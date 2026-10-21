@@ -1476,7 +1476,7 @@ fn diamond_a_value_runs_the_method_its_method_resolution_order_names() {
 /// A call through a class (`Cached.read(self)`) runs that class's method and no override of it:
 /// the clean `Feed.read` runs `Cached.read`, which runs nothing in its place.
 #[test]
-#[ignore = "a call through a class is drawn as a call whose class is not known, which may run each override below it: `Cached.read` is drawn as one of itself and `Feed.read`"]
+#[ignore = "#110: a call through a class is drawn as a call whose class is not known, which may run each override below it: `Cached.read` is drawn as one of itself and `Feed.read`"]
 fn diamond_a_call_through_a_class_runs_its_method() {
     let r = route(news("clean"), "news.read.headlines");
     assert!(!r.contains("one of"), "{r}");
@@ -1485,7 +1485,7 @@ fn diamond_a_call_through_a_class_runs_its_method() {
 /// The file a feed reads is named in the terms of the route that builds it, on either side: the
 /// cache directory `headlines` is handed, then the name of the feed in it.
 #[test]
-#[ignore = "a path is carried to the callers of the method that touches it along the calls the code names: `Buffered.lines` names `Source.read`, so the file `Cached.read` reads on a shortcut feed stays `(self.root / key)`"]
+#[ignore = "#111: a path is carried to the callers of the method that touches it along the calls the code names: `Buffered.lines` names `Source.read`, so the file `Cached.read` reads on a shortcut feed stays `(self.root / key)`"]
 fn diamond_the_file_a_feed_reads_is_named_where_it_is_built() {
     for side in ["clean", "shortcut"] {
         let r = route(news(side), "news.read.headlines");
