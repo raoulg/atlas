@@ -51,7 +51,8 @@ Read it from left to right:
   step takes and nothing else touches; opening the pill draws them, each on the step that takes it.
 - **Click any pill** to open it into its own steps, and **show code** to see its source.
 - **A step is a call.** A function the route calls twice is two steps, and a method called
-  on a subclass's value is that subclass's (`ComparePlot.plot`). Values are drawn by the
+  on a subclass's value is that subclass's (`ComparePlot.plot`); one the call names, through a
+  class or `super()`, keeps its own class's name (`Cached.read`). Values are drawn by the
   names the code holds them by (`Graph · g`, `DataFrame · data`), and a step that changes a
   value hands it on under the same name. A library operation Atlas does not read is a step in
   italics where the code names its result (`to_numpy`), or where it changes the container it is

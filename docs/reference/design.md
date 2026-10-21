@@ -171,7 +171,10 @@ the picture; that is the zoom.
 An opened route is the fiber of its calls, not of its functions. Each call is an arrow of
 its own, in the order the body runs them: a function called twice is two arrows, and a
 method called on a value of a subclass is that subclass's (the language's own dispatch, by the
-receiver's type: ty's in Python, the declared and constructed types in Rust and TypeScript). An arrow takes what its function declares and what its call
+receiver's type: ty's in Python, the declared and constructed types in Rust and TypeScript). A
+method called through a class (`Cached.read(self)`, `Source.prototype.read.call(this)`) is that
+class's, and a `super()` call the next one after the class it is written in, along the order of
+the value's class: neither runs an override in its place. An arrow takes what its function declares and what its call
 hands it, and hands on what it gives back; each value is the one the body holds by its
 name, so `data` from one call is the `data` the next takes. A library's operation Atlas does
 not read is an arrow where the body names its result (`tests = data["x"].to_numpy()`), or

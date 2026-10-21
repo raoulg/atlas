@@ -486,9 +486,15 @@ declares them in (the C3 linearization).
 **In Atlas.** The method a value of a class runs for a name is the first definition along its
 class's order, and what building it takes is the first constructor along it. The picture's step
 and the rules' comparison read the same order: in a diamond `D(B, C)` over `A`, a `D` runs the `f`
-of `C` before the `f` of `A` that `B` inherits.
+of `C` before the `f` of `A` that `B` inherits. A call through a class (`C.f(x)`,
+`C.prototype.f.call(x)`) runs the `f` along `C`'s order, on the value it is handed first, and no
+override of it. A `super()` call written in `K` runs the next `f` after `K` along the order of the
+value's class, not of `K`: in `D(B, C)`, a `super().f()` in `B` runs `C.f` on a `D`. Where the
+value's class is not known, it may be `K` or any class below, and the call runs the next `f`
+after `K` along each of their orders: one of them. A call by name may run any override below
+the method it reaches; these two run the one their call names.
 **Where.** `model::linearization`; `principles.rs` (`Index::mro`), `builder.rs` (`family`,
-`method_of`), `flow.rs` (`method_on`, `built_from`).
+`method_of`), `flow.rs` (`method_on`, `method_after`, `built_from`, `Step::named`).
 
 ### Signatures say the arrow
 **What.** A function's type is its domain and its codomain.

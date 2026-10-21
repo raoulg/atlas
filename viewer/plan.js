@@ -133,8 +133,11 @@ const arrowOf = id => {
   return arrowCache.get(ck);
 };
 const stepsIn = b => b.items.flatMap(it => it.members ? it.members : [it]);
-// the functions a step runs: its body's steps, and the overrides it may run instead
-const callees = (id, on) => { const b = bodyOf(id, on); return [...new Set([...stepsIn(b).map(s => s.to), ...(b.alts || [])])].filter(t => byId.has(t)); };
+// what a call may run in place of the function it reaches: a method called by name on a value whose class is not
+// known, any override its body lists; one whose call names the method (`Cached.read(self)`), what its call says
+const insteadOf = s => s.named ? (s.instead || []).filter(a => has(byId.get(a))) : s.on ? [] : bodyOf(s.to, null).alts || [];
+// the functions a step runs: its body's steps, and what the call may run instead (`alts`, else the overrides of a call by name)
+const callees = (id, on, alts = null) => { const b = bodyOf(id, on); return [...new Set([...stepsIn(b).map(s => s.to), ...(alts ?? b.alts ?? [])])].filter(t => byId.has(t)); };
 // what each step of an opened route stands for: the function it runs (or a library's operation,
 // `op:to_numpy`), the class of the value it runs on, and the call; a step is a call, keyed by its
 // path through the route, so two calls of one function are two steps; `fed` names the values of
@@ -148,23 +151,25 @@ const stepOf = key => treeInfo.get(key)?.step ?? key;
 const isCtor = n => !!(n && arrowOf(n.id)?.builds);
 const initializer = c => (byId.get(c)?.methods || []).map(m => `${c}.${m}`).find(id => byId.get(id)?.ctor && !byId.get(id).on_class);
 // everything a step touches, anywhere below it: the touches of every function its body runs, on the
-// class each runs on, and of every override it may run instead
+// class each runs on, and of everything each call may run instead; `alts` is what the call into `id` may
+// run instead, where it says (`insteadOf`), else the overrides of a call by name
 const reachCache = new Map();
-function reach(id, on, root = null, chain = null) {
-  const k0 = on ? `${id}@${on}` : id, kc = `${SIDE}|${k0}#${root || ""}${chain ? "|" + [...chain].sort() : ""}`;
+function reach(id, on, root = null, chain = null, alts = null) {
+  const k0 = on ? `${id}@${on}` : id, kc = `${SIDE}|${k0}#${root || ""}${chain ? "|" + [...chain].sort() : ""}${alts ? "!" + alts : ""}`;
   if (reachCache.has(kc)) return reachCache.get(kc);
-  const seen = [], vis = new Set([k0]), stack = [[id, on]];
+  // a call that names its method is kept apart from a call by name of the same function: they run different alternatives
+  const seen = [], vis = new Set([k0 + (alts ? "!" : "")]), stack = [[id, on, alts]];
   while (stack.length) {
-    const [cur, con] = stack.pop(), n = byId.get(cur); if (!n) continue;
+    const [cur, con, calts] = stack.pop(), n = byId.get(cur); if (!n) continue;
     seen.push(n);
     const b = bodyOf(cur, con);
-    for (let [t, o] of [...stepsIn(b).map(s => [s.to, s.on || null]), ...(b.alts || []).map(a => [a, null])]) {
-      if (byId.get(t)?.kind === "class") { t = initializer(t); o = null; }
-      const k = o ? `${t}@${o}` : t;
-      if (byId.has(t) && !vis.has(k)) { vis.add(k); stack.push([t, o]); }
+    for (let [t, o, a] of [...stepsIn(b).map(s => [s.to, s.on || null, s.named ? insteadOf(s) : null]), ...(calts ?? b.alts ?? []).map(x => [x, null, null])]) {
+      if (byId.get(t)?.kind === "class") { t = initializer(t); o = null; a = null; }
+      const k = (o ? `${t}@${o}` : t) + (a ? "!" : "");
+      if (byId.has(t) && !vis.has(k)) { vis.add(k); stack.push([t, o, a]); }
     }
   }
-  const nodes = new Set([...vis].map(k => k.split("@")[0]));
+  const nodes = new Set([...vis].map(k => k.replace(/!$/, "").split("@")[0]));
   // under a step of a route, a caller that makes a path whole is one on the calls that lead to the step, or one it reaches itself
   const path = chain && new Set([...chain, ...nodes]), touches = new Map();
   for (const n of seen) for (const t of touchesIn(n, root, path)) { const k = touchKey(t); if (!touches.has(k)) touches.set(k, t); }
@@ -400,23 +405,24 @@ function routeTree() {
   // line belongs to the entry, and what it gives comes from the entry, until the entry is opened
   const foldable = ["cli", "script"].includes(byId.get(V.route)?.entry?.kind), folds = !FINE && foldable && !V.open.places.has("e:" + V.route);
   routeParses = false;
-  // what a step runs is its body, as the engine reads it: the overrides the call may run instead,
-  // then its own steps, each choice's branches in a frame, each branch in its own colour
-  const visit = (key, step, on, site, hue, path, fed) => {
-    treeInfo.set(key, {step, on, site, fed, path});
+  // what a step runs is its body, as the engine reads it: what the call that runs it may run instead (`by.alts`, else
+  // the overrides of a call by name), then its own steps, each choice's branches in a frame, each branch in its own colour
+  const visit = (key, step, on, site, hue, path, fed, by = {}) => {
+    const alts = by.alts ?? bodyOf(step, on).alts ?? [];
+    treeInfo.set(key, {step, on, site, fed, path, named: !!by.named, alts});
     const n = byId.get(step), forced = V.open.steps.has(key) || V.open.functions.has(step);
     fineCount++;
     // a class met in a route is built, not run: its methods are what a route of its own would start at, so it has no calls to open
     const open = key === V.route || (n?.kind !== "class" && forced) || (FINE && path.size < FINE_DEPTH && fineCount <= 4 * FINE_BUDGET && byId.get(step)?.kind !== "class"), node = {id: key, open, kids: [], hue, choice: false};
     if (!open || !n) {
       // a class met in a route is built, not run: its methods are what its route would start at, and no calls of this one
-      if (FINE && n && (callees(step, on).length || stepsIn(bodyOf(step, on)).length)) { node.cut = true; if (n.kind !== "class") fineCut = true; }
+      if (FINE && n && (callees(step, on, alts).length || stepsIn(bodyOf(step, on)).length)) { node.cut = true; if (n.kind !== "class") fineCut = true; }
       return node;
     }
     const deeper = new Set([...path, step]), body = bodyOf(step, on);
-    node.choice = (body.alts || []).length > 0;
+    node.choice = alts.length > 0;
     let b = 0;
-    for (const o of body.alts || []) node.kids.push(visit(`${key}|${o}`, o, null, null, (b++ % 8) + 1, deeper));
+    for (const o of alts) node.kids.push(visit(`${key}|${o}`, o, null, null, (b++ % 8) + 1, deeper));
     const parse = commandLine(n);
     if (parse.hidden.size) routeParses = true;
     const entry = folds ? parse : {hidden: new Set(), fed: new Set()};
@@ -426,10 +432,10 @@ function routeTree() {
       // stands in, and the border it crosses is drawn
       if (deeper.has(s.to)) {
         const rk = `${key}/${s.site ?? s.to}`;
-        treeInfo.set(rk, {step: s.to, on: s.on || null, site: s.site != null ? siteIn(n, s.site) : null, fed: entry.fed, path: deeper, recursive: true});
+        treeInfo.set(rk, {step: s.to, on: s.on || null, site: s.site != null ? siteIn(n, s.site) : null, fed: entry.fed, path: deeper, recursive: true, named: !!s.named, alts: insteadOf(s)});
         return {id: rk, open: false, kids: [], hue: h, choice: false, recursive: true};
       }
-      const k = visit(`${key}/${s.site ?? s.to}`, s.to, s.on || null, s.site != null ? siteIn(n, s.site) : null, h, deeper, entry.fed);
+      const k = visit(`${key}/${s.site ?? s.to}`, s.to, s.on || null, s.site != null ? siteIn(n, s.site) : null, h, deeper, entry.fed, {named: s.named, alts: insteadOf(s)});
       // in the finest plan the steps that only parse the command line are there, marked: a closed entry is their quotient
       if (FINE && foldable && parse.hidden.has(s.site)) k.parse = true;
       return k;
@@ -448,7 +454,7 @@ function routeTree() {
   unfoldStep = key => {
     const i = treeInfo.get(key), kept = [FINE_DEPTH, fineCount, fineCut, routeParses];
     FINE_DEPTH = i.path.size + 1; fineCount = 0;
-    try { return visit(key, i.step, i.on, i.site, null, i.path, i.fed); } finally { [FINE_DEPTH, fineCount, fineCut, routeParses] = kept; }
+    try { return visit(key, i.step, i.on, i.site, null, i.path, i.fed, i); } finally { [FINE_DEPTH, fineCount, fineCut, routeParses] = kept; }
   };
   let tree;
   const unfold = depth => { FINE_DEPTH = depth; fineCount = 0; fineCut = false; treeInfo.clear(); routeParses = false; tree = [visit(V.route, V.route, null, null, null, new Set())]; };
@@ -468,15 +474,18 @@ const typePlace = t => {
   return {id: "t:" + t, label: typeLabel(t) + (closedFam ? ` (${opensInto(t)})` : ""), kind: n && n.kind === "external" ? "ext" : "type", hue: hueOf(n), type: t};
 };
 const stepName = id => { if (id.startsWith("part:")) { const p = PARTS.find(x => x.id === id.slice(5)) || {}; return `${p.id} · ${p.language}`; } if (id.startsWith("unit:")) return unitLabel(id.slice(5)); const n = byId.get(id); if (!V.route && n.entry) return entryLabel(n); if (n.kind === "class") return nameOf(n) + "()"; if (n.make) return n.name; if (isCtor(n) && !n.on_class) return typeLabel(n.cls) + "()"; return n.cls ? `${typeLabel(n.cls)}.${nameOf(n)}` : nameOf(n); };
-// a step's name: a method run on a subclass is that class's, a library's operation is its own name
+// a step's name: a method run on a subclass is that class's, one its call names is its own class's, a library's
+// operation is its own name
 const stepLabel = key => {
   const info = treeInfo.get(key);
   if (!info) return stepName(key);
   if (info.step.startsWith("op:")) return info.step.slice(3);
   const n = byId.get(info.step);
-  return info.on && n && n.cls && !isCtor(n) ? `${typeLabel(info.on)}.${nameOf(n)}` : stepName(info.step);
+  return info.on && !info.named && n && n.cls && !isCtor(n) ? `${typeLabel(info.on)}.${nameOf(n)}` : stepName(info.step);
 };
-const openable = key => { const s = stepOf(key); return key !== V.route && !treeInfo.get(key)?.recursive && !V.open.steps.has(key) && !V.open.functions.has(s) && !s.startsWith("op:") && byId.get(s)?.kind !== "class" && callees(s, treeInfo.get(key)?.on).length + stepsIn(bodyOf(s, treeInfo.get(key)?.on)).length > 0; };
+// what the call at a step of the route may run instead, where its call says so (a call that names its method)
+const callAlts = key => (treeInfo.get(key)?.named ? treeInfo.get(key).alts : null);
+const openable = key => { const s = stepOf(key), on = treeInfo.get(key)?.on; return key !== V.route && !treeInfo.get(key)?.recursive && !V.open.steps.has(key) && !V.open.functions.has(s) && !s.startsWith("op:") && byId.get(s)?.kind !== "class" && callees(s, on, callAlts(key)).length + stepsIn(bodyOf(s, on)).length > 0; };
 // an exported class has no body of its own: its route starts at each public method the caller can call
 const libraryClass = id => byId.get(id)?.kind === "class" && !!byId.get(id).entry;
 const momentOf = id => id.includes("@") ? id.slice(id.indexOf("@")) : "";
@@ -547,14 +556,14 @@ const morphism = (id, own, isAnchor, noReceiver, opts = {}) => {
     if (own && a.gives_back && !opts.leaf) for (const x of bodyOf(f.id, opts.on).made_from || []) dom.push([addPlace(typePlace(x)), false]);
     // a closed call into a family takes and hands on what any of its branches does, unless the call
     // says which class it runs on
-    if (!own && !opts.on) for (const o of bodyOf(f.id, null).alts || []) merge(morphism(o, false, false, noReceiver, {at: opts.at}));
+    if (!own) for (const o of opts.alts ?? (opts.on ? [] : bodyOf(f.id, null).alts || [])) merge(morphism(o, false, false, noReceiver, {at: opts.at}));
   }
   // a step of a route runs the touches its own calls lead to: the functions on the calls to it, and itself
   const root = V.route || (f.entry ? f.id : null), at = opts.at && treeInfo.get(opts.at), chain = V.route && at?.path ? new Set([...at.path, f.id]) : null;
   const ownKeys = new Set(touchesIn(f, root, chain).map(touchKey));
   // what the step reads back of what it wrote is no input: the place is in its codomain only
   const back = new Set((own ? arrowOf(f.id)?.own_reads_back : arrowOf(f.id)?.reads_back) || []);
-  for (const raw of (own ? touchesIn(f, root, chain) : reach(f.id, opts.on, root, chain).touches)) {
+  for (const raw of (own ? touchesIn(f, root, chain) : reach(f.id, opts.on, root, chain, opts.alts).touches)) {
     const tc = shownAs(raw);
     if (!drawn(tc) || served(raw) || (isIn(raw) && !raw.shape && back.has(raw.place.id))) continue;
     go(goes, tc);
@@ -629,7 +638,7 @@ const stepMorphism = (key, own, isAnchor, leaf) => {
   const info = treeInfo.get(key);
   if (!info) return morphism(key, own, isAnchor);
   const {step, on, site, fed} = info, dn = new Map(), cn = new Map(), beyond = new Set(), keep = new Set();
-  const m = step.startsWith("op:") ? {dom: new Map(), cod: new Map(), goes: new Map()} : morphism(step, own, isAnchor, false, {on, at: key, figure: key, label: stepLabel(key), leaf});
+  const m = step.startsWith("op:") ? {dom: new Map(), cod: new Map(), goes: new Map()} : morphism(step, own, isAnchor, false, {on, alts: callAlts(key), at: key, figure: key, label: stepLabel(key), leaf});
   // what an opened body gives back, made from what its steps make, is a value of its own, never one of its inputs
   const made = new Set(own && !leaf && !step.startsWith("op:") && arrowOf(step)?.gives_back ? bodyOf(step, on).made_from || [] : []);
   for (const x of made) keep.add(addPlace(typePlace(x)));
@@ -1063,15 +1072,15 @@ const imageOf = (F, opened, folded, {fineKeys = false} = {}) => {
 // each function, call and set of callers that make its paths whole, whichever occurrence asks
 const cutArrows = new Map(), makerSets = new Map(), siteIds = new WeakMap();
 // the callers whose calls make a path whole for a touch the step reaches: the only ones its arrow depends on
-const pathMakers = (step, on) => {
-  const k = `${SIDE}|${step}@${on || ""}`;
-  if (!makerSets.has(k)) makerSets.set(k, new Set([...reach(step, on).nodes].flatMap(id => (byId.get(id)?.touches || []).flatMap(t => (t.by || []).flatMap(f => f.split("&"))))));
+const pathMakers = (step, on, alts = null) => {
+  const k = `${SIDE}|${step}@${on || ""}${alts ? "!" + alts : ""}`;
+  if (!makerSets.has(k)) makerSets.set(k, new Set([...reach(step, on, null, null, alts).nodes].flatMap(id => (byId.get(id)?.touches || []).flatMap(t => (t.by || []).flatMap(f => f.split("&"))))));
   return makerSets.get(k);
 };
 let sites = 0;
 const siteId = site => { if (!site) return "-"; if (!siteIds.has(site)) siteIds.set(site, ++sites); return siteIds.get(site); };
 const cutArrow = key => {
-  const i = treeInfo.get(key), made = pathMakers(i.step, i.on);
+  const i = treeInfo.get(key), made = pathMakers(i.step, i.on, callAlts(key));
   const memo = [SIDE, i.step, i.on || "", siteId(i.site), [...(i.fed || [])].sort(), [...i.path, i.step].filter(f => made.has(f)).sort()].join("|");
   if (!cutArrows.has(memo)) {
     const F = planBase(true, [unfoldStep(key)]), P = imageOf(F, () => false, false, {fineKeys: true}).pills.get("n:" + key);

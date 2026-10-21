@@ -2364,7 +2364,14 @@ impl<'a, 't> Body<'a, 't> {
         // a type built by parsing the command line the program is run with (`Cli::parse()`)
         let command_line =
             (kind == EdgeKind::Instantiates && c.kind() == "call_expression").then(|| self.eval.command_line(self.m, c)).flatten();
-        let step = Step { on, on_receiver, hands: self.call_hands(c, recv, &steps.kept), gives: self.gives(c, Some(t)), command_line };
+        let step = Step {
+            on,
+            on_receiver,
+            hands: self.call_hands(c, recv, &steps.kept),
+            gives: self.gives(c, Some(t)),
+            command_line,
+            ..Default::default()
+        };
         steps.call(c, t, kind, via.filter(|_| kind == EdgeKind::Instantiates), step);
         if let Some(arg) = self.argument(c, t, recv.is_some()) {
             self.read.args.push(arg);
