@@ -1687,6 +1687,10 @@ pub const RUST_SEQUENCES: &[&str] = &["Vec", "VecDeque", "HashSet", "BTreeSet", 
 /// The methods that go over a sequence's elements, by reference or by value.
 pub const RUST_ELEMENTS: &[&str] = &["iter", "iter_mut", "into_iter", "drain"];
 
+/// The adaptors of an iterator that keep its elements as they are, fewer or in another order.
+pub const RUST_KEEPS_ELEMENTS: &[&str] =
+    &["filter", "skip", "take", "rev", "skip_while", "take_while", "peekable", "inspect", "step_by", "by_ref"];
+
 /// The crate the prelude's types are of: `Vec` and `String` are `std`'s.
 pub const RUST_PRELUDE_CRATE: &str = "std";
 
