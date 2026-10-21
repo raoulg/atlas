@@ -8,10 +8,11 @@ use std::path::{Path, PathBuf};
 use anyhow::Result;
 
 use crate::cache::Check;
+use crate::knowledge;
 use crate::model::{Edge, EdgeKind, EntryKind, Graph, NodeKind, Part};
+use crate::options::Options;
 use crate::paths::{method_and_path, serving};
 use crate::repo::Repo;
-use crate::{knowledge, Options};
 
 /// The directories whose manifests root a part: the repository itself, and every manifest
 /// below it, at any depth, that no part around it reads as its own (a workspace reads its
@@ -46,6 +47,16 @@ pub fn roots(repo: &Repo, opts: &Options) -> Vec<(PathBuf, &'static str)> {
     out
 }
 
+/// The graph of a repository as read: parsed in its language, with the routes its Makefile adds
+/// and its parts, kept to what the program reaches.
+pub fn graph_of(repo: &Repo, opts: &Options) -> Result<Graph> {
+    let lang = crate::language::of(repo, opts)?;
+    let mut g = lang.parse(repo, opts)?;
+    crate::entries::read_makefile(repo, &mut g);
+    assign(&mut g);
+    Ok(crate::view::View::apply(&crate::view::reached(&g, opts.libraries), &g))
+}
+
 /// Each part's own graph, read in its language: what `atlas check` asks, part by part. Each
 /// repository is read once; a part is a view of its reading.
 pub fn analyze_parts(repos: &[PathBuf], opts: &Options) -> Result<Vec<Graph>> {
@@ -72,7 +83,7 @@ pub fn analyze_parts(repos: &[PathBuf], opts: &Options) -> Result<Vec<Graph>> {
     let opts = Options { package: None, ..opts.clone() };
     let mut graphs = vec![];
     for (part, at) in &found {
-        match crate::graph_of(part, &opts) {
+        match graph_of(part, &opts) {
             // a manifest without code of its own (tooling, a docs site, a workspace's root) is not a part
             Ok(g) if g.nodes.is_empty() && found.len() > 1 => eprintln!("skipped {}: no code of its own", part.root().display()),
             Ok(g) => graphs.push((g, at.clone())),

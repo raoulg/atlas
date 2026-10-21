@@ -10,8 +10,9 @@ use anyhow::Result;
 
 use crate::cache::Check;
 use crate::model::{Graph, Leaves};
+use crate::options::Options;
 use crate::repo::Repo;
-use crate::{entries, python, pytypes, rust, typescript, Options};
+use crate::{entries, python, pytypes, rust, typescript};
 
 pub trait Language {
     fn name(&self) -> &'static str;

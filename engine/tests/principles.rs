@@ -297,11 +297,6 @@ const REVIEWED: &[(&str, &str, &str)] = &[
     (
         "layers",
         "atlas-engine",
-        "a fault of Atlas: `lib.rs` defines `Options`, which every reader, `language` and `parts` take, beside `analyze` and `graph_of`, which call them; `Options` belongs in a module below the readers",
-    ),
-    (
-        "layers",
-        "atlas-engine",
         "a fault of Atlas: a `Node` holds a `prophecy::Prophecy`, a cycle through types, while `prophecy.rs` builds on `model`'s `Node`, `Edge` and `Entry`; the type `Prophecy` belongs beside `Node` in `model`",
     ),
     (
