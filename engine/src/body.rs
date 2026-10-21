@@ -311,19 +311,12 @@ impl<'t, 's> Steps<'t, 's> {
     }
 
     /// A call the body reads no further, `name`d as the code writes it: a library's operation,
-    /// or one Atlas cannot follow.
+    /// or one Atlas cannot follow. A line break and the indentation after it are the layout of the
+    /// source, no part of the name: `text\n    .split` is `text.split`.
     fn unread(&mut self, c: TsNode, name: &str, hands: Vec<Held>, gives: Vec<Held>, not_followed: bool) {
         self.keep(&gives);
-        self.sites.push(Site {
-            line: line(c),
-            op: name.to_string(),
-            not_followed,
-            hands,
-            gives,
-            arms: self.arms(c),
-            span: span(c),
-            ..Default::default()
-        });
+        let op = name.lines().map(str::trim).collect::<String>();
+        self.sites.push(Site { line: line(c), op, not_followed, hands, gives, arms: self.arms(c), span: span(c), ..Default::default() });
     }
 
     /// An edge of `kind` to `to` at call `c`, with no step of its own.

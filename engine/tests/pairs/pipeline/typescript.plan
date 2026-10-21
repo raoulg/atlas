@@ -211,9 +211,8 @@ known #125 extra line _@cli.ts/main/trend/escape/text.replaceAll > cli.ts/main/t
 known #125 extra line _@cli.ts/main/trend/escape/replaceAll > cli.ts/main/trend/escape/replaceAll#2 value
 known #125 extra home _@cli.ts/main/trend/escape/text.replaceAll cli.ts/main/trend/escape
 known #125 extra home _@cli.ts/main/trend/escape/replaceAll cli.ts/main/trend/escape
-# `text.split("\n")` in `parse` too; its label keeps the space of the source's line break (`text\n    .split`), a defect
-# of its own: a label should be the operation's name
-known #137 extra step cli.ts/main/load/parse/text .split
-known #137 extra line cli.ts/main/load/parse/text .split > _@cli.ts/main/load/parse/text .split value
-known #137 extra line _@cli.ts/main/load/parse/text .split > cli.ts/main/load/parse/filter value
-known #137 extra home _@cli.ts/main/load/parse/text .split cli.ts/main/load/parse
+# `text.split("\n")` in `parse` too
+known #125 extra step cli.ts/main/load/parse/text.split
+known #125 extra line cli.ts/main/load/parse/text.split > _@cli.ts/main/load/parse/text.split value
+known #125 extra line _@cli.ts/main/load/parse/text.split > cli.ts/main/load/parse/filter value
+known #125 extra home _@cli.ts/main/load/parse/text.split cli.ts/main/load/parse

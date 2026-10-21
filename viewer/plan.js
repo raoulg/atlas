@@ -220,8 +220,18 @@ function reach(id, on, root = null, chain = null, alts = null) {
 // a route shows the places its own calls hand: a touch whose path or statement a caller makes
 // whole, when the route reaches that caller, and under a step of it, when the caller is on the
 // calls that lead there (`path`); one an entry's users hand, in that entry's route; and a call
-// none of whose touches it runs, as the call was read
-const inRoute = (t, root, path) => !root || (!(t.by || []).length && !(t.users_of || []).length) || (t.by || []).some(f => f.split("&").every(g => path ? path.has(g) : reach(root, null).nodes.has(g))) || (t.users_of || []).includes(root);
+// none of whose touches it runs, as the call was read. A method runs on an instance its class's
+// constructor built, before the route or in it, so a value the constructor holds (`self.path`) is
+// whole wherever a method of its class runs
+const builtFor = (g, seen) => {
+  const c = byId.get(g);
+  return !!(c?.ctor && c.cls) && [...seen].some(f => { const m = byId.get(f); return m && !m.ctor && m.cls === c.cls; });
+};
+const inRoute = (t, root, path) => {
+  if (!root || (!(t.by || []).length && !(t.users_of || []).length) || (t.users_of || []).includes(root)) return true;
+  const seen = path || reach(root, null).nodes;
+  return (t.by || []).some(f => f.split("&").every(g => seen.has(g) || builtFor(g, seen)));
+};
 function touchesIn(n, root, path) {
   const own = (n.touches || []).filter(has);
   if (!root) return own;
@@ -397,10 +407,8 @@ const filePlace = path => {
   return k ? {id: "w:File:" + d, label: `File(${d}) · ${k}`, short: `${d} · ${k}`, kind: "world", folded: d} : {id: "w:File:" + path, label: `File(${path})`, short: path, kind: "world"};
 };
 // a figure made is seen where a notebook runs the cell that made it: on a notebook's route it is
-// on the screen, elsewhere only `show` puts it there
+// on the screen; elsewhere it rests in the figure the library holds, which only `show` puts there
 const shownAs = t => t.kind === "figure" && byId.get(V.route)?.entry?.kind === "notebook" ? {...t, kind: "screen", side: "out", place: {id: "w:Screen", label: "Screen", short: "Screen", glyph: "screen"}} : t;
-// a touch is drawn where it rests; a figure that no notebook shows is not on the screen
-const drawn = t => t.kind !== "figure";
 // a part of the world as the picture draws it now: the place the engine names, its coarser place
 // until the reader splits that group, a file in the directory it is folded into
 const placeGlyph = new Map();
@@ -609,7 +617,7 @@ const morphism = (id, own, isAnchor, noReceiver, opts = {}) => {
   const back = new Set((own ? arrowOf(f.id)?.own_reads_back : arrowOf(f.id)?.reads_back) || []);
   for (const raw of (own ? touchesIn(f, root, chain) : reach(f.id, opts.on, root, chain, opts.alts).touches)) {
     const tc = shownAs(raw);
-    if (!drawn(tc) || served(raw) || (isIn(raw) && !raw.shape && back.has(raw.place.id))) continue;
+    if (served(raw) || (isIn(raw) && !raw.shape && back.has(raw.place.id))) continue;
     go(goes, tc);
     // each call that makes a figure makes one: a figure of its own on the screen
     const p = raw.kind === "figure" && tc.kind === "screen" && opts.figure ? figurePlace(opts.figure, opts.label) : worldPlace(tc);
@@ -647,7 +655,7 @@ const unitMorphism = (u, own) => {
   for (const n of byId.values()) if (inUnit(n.id, u) && has(n)) {
     const back = new Set(arrowOf(n.id)?.own_reads_back || []);
     for (const tc of (n.touches || []).filter(has)) {
-      if (!drawn(tc) || served(tc) || (isIn(tc) && !tc.shape && back.has(tc.place.id))) continue;
+      if (served(tc) || (isIn(tc) && !tc.shape && back.has(tc.place.id))) continue;
       go(goes, tc);
       (isIn(tc) ? dom : cod).set(addPlace(worldPlace(tc)), false);
     }
@@ -689,7 +697,7 @@ const figurePlace = (key, label) => {
 const stepMorphism = (key, own, isAnchor, leaf) => {
   const info = treeInfo.get(key);
   if (!info) return morphism(key, own, isAnchor);
-  const {step, on, site, fed} = info, dn = new Map(), cn = new Map(), beyond = new Set(), keep = new Set();
+  const {step, on, site, fed} = info, dn = new Map(), cn = new Map(), beyond = new Set(), keep = new Set(), kept = new Set();
   const m = step.startsWith("op:") ? {dom: new Map(), cod: new Map(), goes: new Map()} : morphism(step, own, isAnchor, false, {on, alts: callAlts(key), at: key, figure: key, label: stepLabel(key), leaf});
   // what an opened body gives back, made from what its steps make, is a value of its own, never one of its inputs
   const made = new Set(own && !leaf && !step.startsWith("op:") && arrowOf(step)?.gives_back ? bodyOf(step, on).made_from || [] : []);
@@ -712,10 +720,15 @@ const stepMorphism = (key, own, isAnchor, leaf) => {
     // (`#3`, one call's result handed straight to the next) is drawn without one
     // two values of one type a call hands on are two values, each by the name that holds it
     const held = h => addPlace(h.type ? (h.name ? {...typePlace(h.type), id: `t:${h.type}~${h.name}`, name: h.name} : typePlace(h.type)) : {id: "v:" + h.name, label: h.name.startsWith("#") ? "·" : h.name, kind: "type", hue: hueOf(null), type: null, name: h.name});
+    // a name the module keeps (`df` under `global df`): where no step of the body made its value, it holds what rests in
+    // that place, which the body reads itself (its own touch), no value from beyond
+    const body = info.from && treeInfo.get(info.from)?.step;
+    const globals = new Set((byId.get(body)?.touches || []).filter(t => t.kind === "global").map(t => t.what));
     for (const h of site.hands || []) {
       // what the command line gives comes from the entry, in place of the value it is parsed into
       if (fed?.has(h.name)) { if (h.type) m.dom.delete("t:" + h.type); m.dom.set(addPlace(entryPlace(V.route)), false); continue; }
       const k = held(h); if (!m.dom.has(k)) m.dom.set(k, false); if (h.name) dn.set(k, h.name);
+      if (h.name && globals.has(h.name)) kept.add(k);
     }
     // the parse of the command line, shown where the entry is opened, reads what the human typed
     if (site.command_line && ["cli", "script"].includes(byId.get(V.route)?.entry?.kind)) m.dom.set(addPlace(entryPlace(V.route)), false);
@@ -727,7 +740,7 @@ const stepMorphism = (key, own, isAnchor, leaf) => {
       for (const k of m.cod.keys()) if (held && kindKey(k) === kind && !cn.has(k)) cn.set(k, dn.get(held));
     }
   }
-  return {dom: m.dom, cod: m.cod, dn, cn, goes: m.goes, beyond, keep};
+  return {dom: m.dom, cod: m.cod, dn, cn, goes: m.goes, beyond, keep, kept};
 };
 // build the nested picture: frames for open steps, pills for closed ones (siblings with the same places are one pill)
 const pills = new Map(), frames = new Map();  // id -> {...}
@@ -782,7 +795,7 @@ const build = (node, parent, caller) => {
   if (caller) m.dom.set(addPlace(entryPlace(caller)), false);
   // a unit stands even when nothing crosses its edge, so that it can be opened
   if (!m.dom.size && !m.cod.size && !hb && !node.id.startsWith("unit:")) return [];
-  const pill = {id: "n:" + node.id, steps: [node.id], D: m.dom, C: m.cod, dn: m.dn, cn: m.cn, goes: m.goes || new Map(), parent, hue: node.hue, branch: node.branch, ...(node.parse ? {parse: true} : {}), ...(cut ? {cut: true, mult: m.mult, split: m.split} : {})};
+  const pill = {id: "n:" + node.id, steps: [node.id], D: m.dom, C: m.cod, dn: m.dn, cn: m.cn, goes: m.goes || new Map(), parent, hue: node.hue, branch: node.branch, ...(m.kept?.size ? {kept: m.kept} : {}), ...(node.parse ? {parse: true} : {}), ...(cut ? {cut: true, mult: m.mult, split: m.split} : {})};
   pills.set(pill.id, pill);
   return hb ? [pill] : [];
 };
@@ -938,6 +951,7 @@ for (const P of pills.values()) {
     if (pl?.cond) { v = latestGet(kindKey(k) + "|" + pl.name, P); if (!v && !alone) return; }
     else if (isMem(k) && !P.beyond?.has(k) && !inside(k)) {
       v = latestGet(kindKey(k) + "|" + nm, P);
+      if (!v && P.kept?.has(k)) return;
       const any = v ? null : latestGet(kindKey(k) + "|", P);
       if (!v) v = any && alone && nm && !nm.startsWith("#") ? condOf(k, nm) : any;
     }

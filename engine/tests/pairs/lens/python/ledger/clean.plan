@@ -15,8 +15,8 @@ line Ledger()/Ledger() > Ledger@Ledger()/Ledger() value
 known #74 line Ledger > Ledger()/Ledger.put value   # the caller's instance: every method runs on it
 known #74 line Ledger > Ledger()/Ledger.get value
 known #127 line Fraction·amount > Ledger()/Ledger.put value      # #127
-line Ledger()/Ledger.put > Disk(self.path) own
-line Disk(self.path) > Ledger()/Ledger.get own
+line Ledger()/Ledger.put > Disk(Ledger.path) own
+line Disk(Ledger.path) > Ledger()/Ledger.get own
 line Fraction > Ledger()/Ledger.get/Entry() value
 line Ledger()/Ledger.get/Entry() > Entry@Ledger()/Ledger.get/Entry() value
 line Entry@Ledger()/Ledger.get/Entry() > Ledger()/Ledger.get value
@@ -30,7 +30,7 @@ home Entry@Ledger()/Ledger.get/Entry() Ledger()/Ledger.get
 home Entry@Ledger()/Ledger.get Ledger()
 
 side entry left
-side Disk(self.path) between
+side Disk(Ledger.path) between
 
 # #127: put's parameter loses its name and becomes the Fraction get builds, one value taken by both
 known #127 extra line Fraction > Ledger()/Ledger.put value

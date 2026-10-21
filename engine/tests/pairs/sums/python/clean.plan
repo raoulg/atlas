@@ -27,11 +27,11 @@ known #74 line Kennisbank > Kennisbank()/Kennisbank.graaf/Kennisbank._node value
 
 # the put: the Bron a caller hands is written into the line `_write` appends to what the file held
 line Bron·bron > Kennisbank()/Kennisbank.voeg_toe/Kennisbank._write value                    # what it is handed: `bron.uuid`, `bron.url` glue `bron` in
-line Disk(self.path) > Kennisbank()/Kennisbank.voeg_toe/Kennisbank._write own
-line Kennisbank()/Kennisbank.voeg_toe/Kennisbank._write > Disk(self.path) own
+line Disk(Kennisbank.path) > Kennisbank()/Kennisbank.voeg_toe/Kennisbank._write own
+line Kennisbank()/Kennisbank.voeg_toe/Kennisbank._write > Disk(Kennisbank.path) own
 
 # the get: the lines read, each a Bron or a Begrip, a Node in the Graaf given back
-line Disk(self.path) > Kennisbank()/Kennisbank.graaf own
+line Disk(Kennisbank.path) > Kennisbank()/Kennisbank.graaf own
 line Kennisbank()/Kennisbank.graaf/Kennisbank._node/?1/Bron() > Bron@Kennisbank()/Kennisbank.graaf/Kennisbank._node/?1 value
 line Kennisbank()/Kennisbank.graaf/Kennisbank._node/?1/Begrip() > Begrip@Kennisbank()/Kennisbank.graaf/Kennisbank._node/?1 value
 line Bron@Kennisbank()/Kennisbank.graaf/Kennisbank._node/?1 > Kennisbank()/Kennisbank.graaf/Kennisbank._node value
@@ -66,7 +66,7 @@ known #125 home _·soort@Kennisbank()/Kennisbank.graaf/Kennisbank._node/split Ke
 known #125 home _·tekst@Kennisbank()/Kennisbank.graaf/Kennisbank._node/split Kennisbank()/Kennisbank.graaf/Kennisbank._node
 
 side entry left
-known #133 side Disk(self.path) both          # voeg_toe reads what the file held and changes it: Atlas says between
+known #133 side Disk(Kennisbank.path) both          # voeg_toe reads what the file held and changes it: Atlas says between
 
 # the door's own arrow takes, as a nameless value from beyond, the Bron its call is handed, though only `_write`
 # inside takes it
