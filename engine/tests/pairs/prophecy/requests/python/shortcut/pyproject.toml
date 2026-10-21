@@ -1,0 +1,8 @@
+[project]
+name = "shop"
+version = "0.1.0"
+dependencies = ["fastapi"]
+
+# The libraries the part imports, as their stubs: in place of an installed environment.
+[tool.ty.environment]
+extra-paths = ["../../../../python/typings"]

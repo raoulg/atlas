@@ -1018,3 +1018,119 @@ fn changes_a_change_to_an_input_of_any_type_shows_in_the_signature() {
     let add_tag = check(&s).into_iter().find(|f| f.node == "board.core.add_tag").expect("asked");
     assert!(add_tag.what.contains("the list[str] it is handed as `tags`"), "{}", add_tag.what);
 }
+
+// ---------- layers: the package quotient the picture draws ----------
+
+/// One side of the layers pair (`tests/pairs/layers/python`): a shop whose orders price their
+/// lines, a kitchen beside it that cooks from the shop's orders, and tests inside the shop that
+/// cook too.
+fn shop_python(side: &str) -> Graph {
+    analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/layers/python").join(side), &Options::default()).expect("reads")
+}
+
+/// The packages of a part depend on one another in one direction, at every level the picture
+/// draws: a package's own module (`orders/__init__.py`) is a block beside the packages below it,
+/// and the top-level packages of a part are blocks beside one another. The clean side keeps what
+/// both need below both: `lines` takes `tax` from a module of its own, and the shop asks nothing of
+/// the kitchen. The shortcut writes `tax` in `orders/__init__.py` and imports it from there inside
+/// `price`, past the import cycle, and lets the shop's `menu` cook from the kitchen that cooks from
+/// the shop.
+#[test]
+fn layers_a_package_and_its_own_module_and_the_top_packages_depend_in_one_direction() {
+    let (c, s) = (shop_python("clean"), shop_python("shortcut"));
+    assert!(found(&c, "layers").is_empty(), "{:?}", check(&c).iter().map(|f| &f.what).collect::<Vec<_>>());
+    assert!(edge(&c, "shop.orders.total", "shop.orders.lines.price", EdgeKind::Calls));
+    assert!(edge(&c, "kitchen.cook.boil", "shop.orders.total", EdgeKind::Calls));
+    let layers: Vec<Finding> = check(&s).into_iter().filter(|f| f.principle == "layers").collect();
+    let said: Vec<(&str, &str)> = layers.iter().map(|f| (f.node.as_str(), f.what.as_str())).collect();
+    assert_eq!(
+        said,
+        [("kitchen", "kitchen and shop depend on one another"), ("shop.orders", "orders itself and lines depend on one another")]
+    );
+    assert!(layers[1].evidence.iter().any(|e| e.starts_with("orders itself: the code of `shop.orders`")), "{:?}", layers[1].evidence);
+    assert!(edge(&s, "shop.orders.lines.price", "shop.orders.tax", EdgeKind::Calls), "the shortcut's call back is in the graph");
+    assert!(edge(&s, "shop.menu.dish", "kitchen.cook.boil", EdgeKind::Calls));
+}
+
+/// A test is a way in from outside, not a layer: a pytest file (`test_*.py`, `*_test.py`,
+/// `conftest.py`) is test code wherever it stands. On both sides a test inside `shop.orders` and the
+/// shop's `conftest.py` cook from the kitchen, which cooks from the shop; counted as the shop's
+/// code, they would close a cycle. They are in the graph, and no cycle comes of them.
+#[test]
+fn layers_a_test_inside_a_package_is_no_layer() {
+    for side in ["clean", "shortcut"] {
+        let g = shop_python(side);
+        for test in ["shop.orders.test_lines", "shop.conftest"] {
+            assert!(g.node(test).is_some_and(|m| m.test), "{side}: {test} is test code");
+        }
+        assert!(edge(&g, "shop.orders.test_lines.boiled", "kitchen.cook.boil", EdgeKind::Calls), "{side}");
+        assert!(edge(&g, "shop.conftest.cooked", "kitchen.cook.boil", EdgeKind::Calls), "{side}");
+        assert!(g.node("shop.orders.lines").is_some_and(|m| !m.test), "{side}: a module beside a test is not one");
+        let cycles: Vec<Finding> = check(&g).into_iter().filter(|f| f.principle == "layers").collect();
+        assert!(cycles.iter().all(|f| f.evidence.iter().all(|e| !e.contains("boiled") && !e.contains("cooked"))), "{side}: {cycles:#?}");
+    }
+}
+
+// ---------- prophecy: what leans, and what a name names ----------
+
+fn prophecy_python(topic: &str, side: &str) -> Graph {
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/prophecy").join(topic).join("python").join(side);
+    analyze(&dir, &Options::default()).expect("reads")
+}
+
+/// Test code may lean on the code it is written for before it is built. On the clean side a pytest
+/// file inside the package (`test_seal.py`), and the `conftest.py` and `plan_test.py` of a `tests`
+/// package inside it, call the prophecy `seal`: Atlas asks nothing. The shortcut writes the same
+/// helper in the package's own `check.py`: built code that would run on a stub, and asked.
+#[test]
+fn prophecy_a_test_leans_on_a_prophecy_freely() {
+    let (c, s) = (prophecy_python("tested", "clean"), prophecy_python("tested", "shortcut"));
+    assert!(check(&c).is_empty(), "{:?}", check(&c).iter().map(|f| format!("{} {}", f.principle, f.what)).collect::<Vec<_>>());
+    for (helper, test) in [
+        ("archive.test_seal.sealed_twice", "archive.test_seal"),
+        ("archive.tests.conftest.sealed", "archive.tests.conftest"),
+        ("archive.tests.plan_test.test_a_sealed_report_keeps_its_text", "archive.tests.plan_test"),
+    ] {
+        assert!(edge(&c, helper, "archive.plan.seal", EdgeKind::Calls), "{helper} calls the prophecy");
+        assert!(c.node(test).is_some_and(|m| m.test), "{test} is test code");
+    }
+    assert_eq!(found(&s, "prophecy"), ["archive.check.sealed_twice"]);
+}
+
+/// A name the prophecy's `supersedes` writes names one node, by its whole id or by the one id that
+/// ends so. The clean side names the ledger's `save` by its id and the shelf's by `shelf.save`; both
+/// hold. The shortcut writes `save`, which ends the ids of both: the prophecy does not say which it
+/// replaces, and Atlas names both rather than call the name one the code does not hold.
+#[test]
+fn prophecy_a_name_that_names_several_nodes_is_ambiguous() {
+    let (c, s) = (prophecy_python("names", "clean"), prophecy_python("names", "shortcut"));
+    assert!(found(&c, "prophecy").is_empty(), "{:?}", check(&c).iter().map(|f| &f.what).collect::<Vec<_>>());
+    let replaces = |g: &Graph, id: &str| g.node(id).and_then(|n| n.prophecy.as_ref()).and_then(|p| p.replaces.clone());
+    assert_eq!(replaces(&c, "archive.plan.save_posted").as_deref(), Some("archive.ledger.save"));
+    assert_eq!(replaces(&c, "archive.plan.save_kept").as_deref(), Some("archive.shelf.save"));
+    let asked: Vec<Finding> = check(&s).into_iter().filter(|f| f.principle == "prophecy").collect();
+    assert_eq!(asked.len(), 1, "{asked:#?}");
+    assert_eq!(asked[0].what, "save_posted supersedes `save`, which names 2 nodes: `archive.ledger.save` and `archive.shelf.save`");
+    assert!(!asked[0].what.contains("does not hold"));
+}
+
+/// A request to a route leans on its handler as a call does. In each side a client part asks the
+/// shop part for an item; the shop serves it, and sketches a second version of the route as a
+/// prophecy that supersedes the first. The clean client asks the route that is built; the shortcut's
+/// asks the prophesied one, which would answer with a stub. Read as one graph the parts are joined
+/// by the request, and Atlas asks about the client's `item`. `atlas check` reads each part alone,
+/// where no request crosses to another part.
+#[test]
+fn prophecy_a_request_to_a_prophesied_route_leans_on_it() {
+    let read = |side: &str| {
+        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/prophecy/requests/python").join(side);
+        atlas_engine::parts::analyze_repo(&[dir], &Options::default()).expect("reads")
+    };
+    let (c, s) = (read("clean"), read("shortcut"));
+    assert!(edge(&c, "buyer.client.item", "shop.api.item", EdgeKind::Requests));
+    assert!(found(&c, "prophecy").is_empty(), "{:?}", check(&c).iter().map(|f| &f.what).collect::<Vec<_>>());
+    assert!(edge(&s, "buyer.client.item", "shop.api.item_v2", EdgeKind::Requests));
+    let asked: Vec<Finding> = check(&s).into_iter().filter(|f| f.principle == "prophecy").collect();
+    assert_eq!(asked.iter().map(|f| f.node.as_str()).collect::<Vec<_>>(), ["buyer.client.item"]);
+    assert_eq!(asked[0].evidence, ["Requests `item_v2`, which is not built"]);
+}

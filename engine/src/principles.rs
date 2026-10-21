@@ -311,6 +311,12 @@ impl<'g> Index<'g> {
         n.prophecy.is_some() || n.cls.as_deref().and_then(|c| self.node(c)).is_some_and(|c| c.prophecy.is_some())
     }
 
+    /// Whether a node is test code, by where it stands: a test, code the reader marks as test code,
+    /// or code in a test module. A test is a way in from outside the program.
+    fn test(&self, n: &Node) -> bool {
+        n.test || n.entry.as_ref().is_some_and(|e| e.kind == EntryKind::Test) || self.node(&n.module).is_some_and(|m| m.test)
+    }
+
     /// What the prophecy `p` supersedes, when the code holds it.
     fn superseded(&self, p: &Node) -> Option<&'g Node> {
         self.node(p.prophecy.as_ref()?.replaces.as_deref()?)
@@ -404,6 +410,19 @@ fn signature(n: &Node) -> String {
 fn written(n: &Node) -> &str {
     n.returns.as_ref().map_or("", |r| r.written.as_str())
 }
+
+/// What a node's code depends on another for: what it calls, builds and extends, a request to a
+/// route the other serves, and the types it takes, returns and holds (a field, a variant of a sum).
+const DEPENDS: [EdgeKind; 8] = [
+    EdgeKind::Calls,
+    EdgeKind::Instantiates,
+    EdgeKind::Inherits,
+    EdgeKind::Requests,
+    EdgeKind::Takes,
+    EdgeKind::Returns,
+    EdgeKind::Has,
+    EdgeKind::Variant,
+];
 
 /// `a, b and c`, each named once.
 fn list(xs: &[String]) -> String {
@@ -1182,29 +1201,45 @@ fn nothing(ix: &Index) -> Vec<Finding> {
 
 // ---------- prophecy ----------
 
-/// Built code that leans on a prophecy: production would run on a stub. A prophecy that
-/// supersedes something the code does not hold is a false prophecy. Prophecies lean on one another
-/// freely, and a test may lean on the code it is written for before it is built.
+/// Built code that leans on a prophecy: production would run on a stub. Code leans on what it calls,
+/// builds, extends and requests, and on the types it takes, returns and holds; a member of a prophecy
+/// is leaned on as the prophecy. A prophecy that supersedes something the code does not hold is a
+/// false prophecy, and one whose name names several nodes does not say which it replaces. Prophecies
+/// lean on one another freely, and test code may lean on the code it is written for before it is built.
 fn prophecy(ix: &Index) -> Vec<Finding> {
     let mut out = vec![];
-    for p in ix.g.nodes.iter().filter(|n| n.prophecy.as_ref().is_some_and(|p| p.supersedes.is_some())) {
-        if ix.superseded(p).is_none() {
-            let named = p.prophecy.as_ref().and_then(|p| p.supersedes.as_deref()).unwrap_or("");
-            out.push(ix.finding(
+    for p in ix.g.nodes.iter().filter(|n| ix.superseded(n).is_none()) {
+        let Some(said) = p.prophecy.as_ref().filter(|s| s.supersedes.is_some()) else { continue };
+        let named = said.supersedes.as_deref().unwrap_or("");
+        let finding = match said.candidates.as_slice() {
+            [] => ix.finding(
                 "prophecy",
                 p,
                 format!("{} supersedes `{named}`, which the code does not hold", ix.label(&p.id)),
                 vec![format!("supersedes `{named}`")],
                 format!("A prophecy that replaces nothing is built or false. Is `{named}` gone already, or is its name written otherwise?"),
-            ));
-        }
+            ),
+            candidates => ix.finding(
+                "prophecy",
+                p,
+                format!(
+                    "{} supersedes `{named}`, which names {} nodes: {}",
+                    ix.label(&p.id),
+                    candidates.len(),
+                    list(&candidates.iter().map(|c| format!("`{c}`")).collect::<Vec<_>>())
+                ),
+                candidates.iter().map(|c| format!("`{c}` ({})", ix.node(c).map_or_else(String::new, |n| ix.at(n)))).collect(),
+                format!(
+                    "A prophecy replaces one thing, and `{named}` names more than one. Which of them does it replace, named by its whole path?"
+                ),
+            ),
+        };
+        out.push(finding);
     }
-    let leans = [EdgeKind::Calls, EdgeKind::Instantiates, EdgeKind::Inherits, EdgeKind::Takes, EdgeKind::Returns, EdgeKind::Has];
     let mut by: BTreeMap<&str, Vec<(&Node, EdgeKind)>> = BTreeMap::new();
-    for e in ix.g.edges.iter().filter(|e| leans.contains(&e.kind)) {
+    for e in ix.g.edges.iter().filter(|e| DEPENDS.contains(&e.kind)) {
         let (Some(from), Some(to)) = (ix.node(&e.src), ix.node(&e.dst)) else { continue };
-        let test = from.entry.as_ref().is_some_and(|en| en.kind == EntryKind::Test);
-        if ix.prophetic(to) && !ix.prophetic(from) && !from.library && !test {
+        if ix.prophetic(to) && !ix.prophetic(from) && !from.library && !ix.test(from) {
             // a member of a prophecy is leaned on as the prophecy it belongs to
             let root = to.cls.as_deref().and_then(|c| ix.node(c)).filter(|c| c.prophecy.is_some()).unwrap_or(to);
             by.entry(from.id.as_str()).or_default().push((root, e.kind));
@@ -1237,38 +1272,63 @@ fn prophecy(ix: &Index) -> Vec<Finding> {
 
 /// Packages that depend on one another in a cycle. The code quotiented by package is a preorder,
 /// and only where it is a partial order do its packages have layers. Read at every level of the
-/// package forest, among the packages under one parent, from what their code calls, builds,
-/// imports and extends; a test is a way in from outside, not a layer.
+/// package quotient the picture draws (`flow::units`): the parts of a graph, the packages at the
+/// top of each part, and the packages under each package, with the package's own module (`pkg$`,
+/// its code in none of them) a block beside them. A block depends on another when its code calls,
+/// builds, imports, extends or requests what the other holds, or takes, returns or holds one of its
+/// types; test code is a way in from outside, not a layer.
 fn layers(ix: &Index) -> Vec<Finding> {
+    // the module a node's code stands in, for code that is a layer
     let module = |id: &str| -> Option<&str> {
-        let n = ix
-            .node(id)
-            .filter(|n| !n.library && n.kind != NodeKind::External && n.entry.as_ref().map_or(true, |e| e.kind != EntryKind::Test))?;
+        let n = ix.node(id).filter(|n| !n.library && n.kind != NodeKind::External && !ix.test(n))?;
         Some(if n.kind == NodeKind::Module { n.id.as_str() } else { n.module.as_str() })
     };
-    let modules: Vec<&str> = ix.g.nodes.iter().filter(|n| n.kind == NodeKind::Module && !n.library).map(|n| n.id.as_str()).collect();
-    let parents: BTreeSet<String> = modules.iter().flat_map(|m| m.match_indices('.').map(move |(i, _)| m[..i].to_string())).collect();
-    let mut out = vec![];
-    for parent in parents {
-        // the package under `parent` that holds a module
-        let under = |m: &str| -> Option<String> {
-            let rest = m.strip_prefix(parent.as_str())?.strip_prefix('.')?;
-            Some(format!("{parent}.{}", rest.split('.').next()?))
-        };
-        // package -> package it depends on -> the edges that make it so
-        let mut deps: BTreeMap<String, BTreeMap<String, Vec<&Edge>>> = BTreeMap::new();
-        for e in
-            ix.g.edges
-                .iter()
-                .filter(|e| matches!(e.kind, EdgeKind::Calls | EdgeKind::Instantiates | EdgeKind::Imports | EdgeKind::Inherits))
-        {
-            let (Some(a), Some(b)) = (module(&e.src).and_then(under), module(&e.dst).and_then(under)) else { continue };
+    // module -> module it depends on: the edges that make it so
+    let mut between: BTreeMap<(&str, &str), Vec<&Edge>> = BTreeMap::new();
+    for e in ix.g.edges.iter().filter(|e| e.kind == EdgeKind::Imports || DEPENDS.contains(&e.kind)) {
+        if let (Some(a), Some(b)) = (module(&e.src), module(&e.dst)) {
             if a != b {
-                deps.entry(a).or_default().entry(b).or_default().push(e);
+                between.entry((a, b)).or_default().push(e);
             }
         }
+    }
+    let first = ix.g.parts.first().map_or(ix.g.root.as_str(), |p| p.id.as_str());
+    let part = |m: &str| ix.node(m).map(|n| n.part.as_str()).filter(|p| !p.is_empty()).unwrap_or(first);
+    // each level: whether its blocks are the parts, what it is listed under, and its blocks
+    let units = crate::flow::units(ix.g);
+    let parts: Vec<String> = ix.g.parts.iter().map(|p| p.id.clone()).collect();
+    let mut levels: Vec<(bool, Option<&str>, &[String])> = vec![];
+    if parts.len() > 1 {
+        levels.push((true, None, &parts));
+    }
+    levels.extend(units.tops.iter().map(|(p, top)| (false, Some(p.as_str()), top.as_slice())));
+    levels.extend(units.kids.iter().map(|(u, kids)| (false, Some(u.as_str()), kids.as_slice())));
+    let mut out = vec![];
+    for (by_part, listed, blocks) in levels {
+        let block = |m: &str| -> Option<&String> {
+            match by_part {
+                true => blocks.iter().find(|b| *b == part(m)),
+                false => blocks.iter().find(|b| holds_module(b, m)),
+            }
+        };
+        // block -> block it depends on -> the edges that make it so
+        let mut deps: BTreeMap<String, BTreeMap<String, Vec<&Edge>>> = BTreeMap::new();
+        for ((a, b), es) in &between {
+            let (Some(x), Some(y)) = (block(a), block(b)) else { continue };
+            if x != y {
+                deps.entry(x.clone()).or_default().entry(y.clone()).or_default().extend(es.iter().copied());
+            }
+        }
+        // the package the blocks stand under: the one they all share, else the one they are listed under
+        let above = |b: &String| -> String {
+            match b.strip_suffix('$') {
+                Some(own) => own.to_string(),
+                None => b.rsplit_once('.').map_or(String::new(), |(p, _)| p.to_string()),
+            }
+        };
+        let shared = blocks.iter().map(above).reduce(|a, b| if a == b { a } else { String::new() }).filter(|p| !p.is_empty());
+        let anchor = |p: &str| ix.node(p).filter(|n| !n.file.is_empty());
         for cycle in strongly_connected(&deps) {
-            let name = |p: &str| p.rsplit('.').next().unwrap_or(p).to_string();
             // the links inside the cycle, the thinnest first: the likeliest to run against the flow
             let mut links: Vec<(&str, &str, &Vec<&Edge>)> = vec![];
             for a in &cycle {
@@ -1277,23 +1337,38 @@ fn layers(ix: &Index) -> Vec<Finding> {
                 }
             }
             links.sort_by_key(|(a, b, es)| (es.len(), *a, *b));
-            // a call says more than an import
+            // a call says more than a type, and a type more than an import
             let example = |es: &Vec<&Edge>| {
-                let e = es.iter().find(|e| e.kind != EdgeKind::Imports).unwrap_or(&es[0]);
+                let says = |e: &&&Edge| match e.kind {
+                    EdgeKind::Imports => 2,
+                    EdgeKind::Takes | EdgeKind::Returns | EdgeKind::Has | EdgeKind::Variant => 1,
+                    _ => 0,
+                };
+                let e = es.iter().min_by_key(says).unwrap_or(&es[0]);
                 format!("`{}` → `{}`", ix.label(&e.src), ix.label(&e.dst))
             };
-            let evidence: Vec<String> =
-                links.iter().map(|(a, b, es)| format!("{} → {}: {} ({} in all)", name(a), name(b), example(es), es.len())).collect();
-            let Some(at) = ix.node(&parent).filter(|n| !n.file.is_empty()).or_else(|| ix.node(&cycle[0])) else { continue };
-            let members: Vec<String> = cycle.iter().map(|c| name(c)).collect();
+            let mut evidence: Vec<String> = links
+                .iter()
+                .map(|(a, b, es)| format!("{} → {}: {} ({} in all)", block_name(a), block_name(b), example(es), es.len()))
+                .collect();
+            for own in cycle.iter().filter_map(|b| b.strip_suffix('$')) {
+                let file = ix.node(own).map_or_else(String::new, |n| format!(" ({})", ix.file(n)));
+                evidence.push(format!("{} itself: the code of `{own}` in none of the packages below it{file}", block_name(own)));
+            }
+            let Some(at) =
+                shared.as_deref().and_then(anchor).or_else(|| listed.and_then(anchor)).or_else(|| ix.node(cycle[0].trim_end_matches('$')))
+            else {
+                continue;
+            };
+            let members: Vec<String> = cycle.iter().map(|c| block_name(c)).collect();
             let ask = match links.as_slice() {
                 [(a, b, es), rest @ ..] if rest.iter().all(|(_, _, more)| more.len() > es.len()) => {
                     format!(
                         "The thinnest link is {} → {} ({}). Does what it uses belong in {}, or in a package below both?",
-                        name(a),
-                        name(b),
+                        block_name(a),
+                        block_name(b),
                         example(es),
-                        name(a)
+                        block_name(a)
                     )
                 }
                 _ => "Which of these links runs against the flow, and where does what it uses belong?".to_string(),
@@ -1308,6 +1383,24 @@ fn layers(ix: &Index) -> Vec<Finding> {
         }
     }
     out
+}
+
+/// Whether a block of the package quotient holds a module: a package everything under it, a
+/// package's own module (`pkg$`) itself alone.
+fn holds_module(block: &str, m: &str) -> bool {
+    match block.strip_suffix('$') {
+        Some(own) => m == own,
+        None => m.strip_prefix(block).is_some_and(|rest| rest.is_empty() || rest.starts_with('.')),
+    }
+}
+
+/// A block of the package quotient as the picture names it: a package by its last name, and a
+/// package's own module as `name itself`.
+fn block_name(block: &str) -> String {
+    match block.strip_suffix('$') {
+        Some(own) => format!("{} itself", own.rsplit('.').next().unwrap_or(own)),
+        None => block.rsplit('.').next().unwrap_or(block).to_string(),
+    }
 }
 
 /// The strongly connected components of more than one node (Tarjan).

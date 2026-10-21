@@ -803,3 +803,116 @@ fn changes_a_cell_in_the_signature_says_the_value_changes() {
     assert!(node(&s, "journal.note").params.iter().all(|p| !p.changes));
     assert!(targets(&s, EdgeKind::Mutates, "journal.note").is_empty());
 }
+
+// ---------- layers: the package quotient the picture draws ----------
+
+/// One side of the layers pair (`tests/pairs/layers/rust`): a crate whose root audits through a
+/// stamp, and a ledger of books held in money's coins, with tests inside money that post.
+fn cyc_rust(side: &str) -> Graph {
+    analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/layers/rust").join(side), &Options::default()).expect("reads")
+}
+
+/// Whether a node is test code: marked so, or in a module that is.
+fn tested(g: &Graph, id: &str) -> bool {
+    let n = node(g, id);
+    n.test || g.node(&n.module).is_some_and(|m| m.test)
+}
+
+/// The modules of a crate depend on one another in one direction, its root's own code a block
+/// beside them, and a type is a dependence as a call is. The clean side keeps the stamp's rate in
+/// a module of its own below the root, and money knows nothing of the ledger that holds its coins.
+/// The shortcut writes `rate` in `lib.rs`, which the stamp calls back up into while `audit` calls the
+/// stamp, and lets money's `worth` take a `Book` of the ledger that holds a `Coin`: a cycle through
+/// types alone, with no call from money's built code to the ledger.
+#[test]
+fn layers_a_crates_root_and_its_types_depend_in_one_direction() {
+    let (c, s) = (cyc_rust("clean"), cyc_rust("shortcut"));
+    assert!(found(&c, "layers").is_empty(), "{:?}", check(&c).iter().map(|f| &f.what).collect::<Vec<_>>());
+    let layers: Vec<_> = check(&s).into_iter().filter(|f| f.principle == "layers").collect();
+    let mut said: Vec<&str> = layers.iter().map(|f| f.what.as_str()).collect();
+    said.sort();
+    assert_eq!(said, ["cyc itself and stamp depend on one another", "ledger and money depend on one another"]);
+    assert!(edge(&s, EdgeKind::Calls, "cyc.stamp.stamp", "cyc.rate"));
+    assert!(edge(&s, EdgeKind::Takes, "cyc.money.worth", "cyc.ledger.Book"));
+    assert!(edge(&s, EdgeKind::Has, "cyc.ledger.Book", "cyc.money.Coin"));
+    let money_calls_ledger =
+        s.edges.iter().filter(|e| e.kind == EdgeKind::Calls && e.src.starts_with("cyc.money.") && e.dst.starts_with("cyc.ledger."));
+    assert!(money_calls_ledger.into_iter().all(|e| tested(&s, &e.src)), "money calls the ledger only from its tests");
+}
+
+/// Test code is a way in from outside, not a layer. Inside `money` both sides keep an inline
+/// `#[cfg(test)] mod tests`, whose `posted` calls the ledger, and a file module declared under
+/// `#[cfg(test)]` (`money/checks.rs`) that builds a `Book`: counted as money's code they would close a
+/// cycle with the ledger that holds money's coins. The inline module's items stand in `money` in
+/// the graph, marked as test code; its `use super::*` is the tests' import, not `money`'s.
+#[test]
+fn layers_a_test_module_is_no_layer() {
+    for side in ["clean", "shortcut"] {
+        let g = cyc_rust(side);
+        assert!(node(&g, "cyc.money.posted").test, "{side}: an item of an inline test module is test code");
+        assert!(node(&g, "cyc.money.checks").test, "{side}: a file module declared under cfg(test) is test code");
+        assert!(!node(&g, "cyc.money.round").test, "{side}: what stands beside a test module is not");
+        assert!(edge(&g, EdgeKind::Calls, "cyc.money.posted", "cyc.ledger.post"), "{side}");
+        assert!(edge(&g, EdgeKind::Calls, "cyc.money.checks.posted_book", "cyc.ledger.post"), "{side}");
+        assert!(!edge(&g, EdgeKind::Imports, "cyc.money", "cyc"), "{side}: the tests' `use super::*` is no import of money's");
+        let layers: Vec<_> = check(&g).into_iter().filter(|f| f.principle == "layers").collect();
+        assert!(layers.iter().all(|f| f.evidence.iter().all(|e| !e.contains("posted"))), "{side}: {layers:#?}");
+    }
+}
+
+// ---------- prophecy: what leans, and what a name names ----------
+
+fn prophecy_rust(topic: &str, side: &str) -> Graph {
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/prophecy").join(topic).join("rust").join(side);
+    analyze(&dir, &Options::default()).expect("reads")
+}
+
+/// Test code may lean on the code it is written for before it is built. On the clean side a helper
+/// in an inline `#[cfg(test)] mod tests`, a file module declared under `#[cfg(test)]` and an
+/// integration test in `tests/` call the prophecy `seal`: Atlas asks nothing. The shortcut writes
+/// the inline module's helper beside the code it checks, outside the test module: built code that
+/// would run on a stub, and asked.
+#[test]
+fn prophecy_a_test_leans_on_a_prophecy_freely() {
+    let (c, s) = (prophecy_rust("tested", "clean"), prophecy_rust("tested", "shortcut"));
+    assert!(check(&c).is_empty(), "{:?}", check(&c).iter().map(|f| format!("{} {}", f.principle, f.what)).collect::<Vec<_>>());
+    for helper in ["archive.sealed_twice", "archive.checks.sealed", "archive.tests.seal.sealed"] {
+        assert!(edge(&c, EdgeKind::Calls, helper, "archive.seal"), "{helper} calls the prophecy");
+        assert!(tested(&c, helper), "{helper} is test code");
+    }
+    assert_eq!(found(&s, "prophecy"), ["archive.sealed_twice"]);
+    assert!(!tested(&s, "archive.sealed_twice"));
+}
+
+/// A name the prophecy's `supersedes` writes is read as Rust reads a path: `crate::` and the crate's
+/// own name start at the crate, `self::` at the prophecy's module and `super::` at the one above it;
+/// a name that ends one node's id names it. On the clean side every form holds. The shortcut writes
+/// `save`, which ends the ids of the ledger's `save` and the shelf's: Atlas says it names both, not
+/// that the code does not hold it. And `crate::ledger::store` names nothing: a false prophecy.
+#[test]
+fn prophecy_a_name_is_read_as_the_language_reads_a_path() {
+    let (c, s) = (prophecy_rust("names", "clean"), prophecy_rust("names", "shortcut"));
+    assert!(found(&c, "prophecy").is_empty(), "{:?}", check(&c).iter().map(|f| &f.what).collect::<Vec<_>>());
+    let replaces = |g: &Graph, id: &str| node(g, id).prophecy.as_ref().and_then(|p| p.replaces.clone());
+    for (prophecy, replaced) in [
+        ("archive.post_v2", "archive.ledger.post"),
+        ("archive.post_v3", "archive.ledger.post"),
+        ("archive.save_v2", "archive.shelf.save"),
+        ("archive.ledger.save_v3", "archive.ledger.save"),
+        ("archive.ledger.keep_v2", "archive.shelf.keep"),
+    ] {
+        assert_eq!(replaces(&c, prophecy).as_deref(), Some(replaced), "{prophecy}");
+    }
+    let asked: Vec<_> = check(&s).into_iter().filter(|f| f.principle == "prophecy").collect();
+    let said: Vec<(&str, &str)> = asked.iter().map(|f| (f.node.as_str(), f.what.as_str())).collect();
+    assert_eq!(
+        said,
+        [
+            ("archive.save_v2", "save_v2 supersedes `save`, which names 2 nodes: `archive.ledger.save` and `archive.shelf.save`"),
+            ("archive.store_v2", "store_v2 supersedes `crate::ledger::store`, which the code does not hold"),
+        ]
+    );
+    let text = atlas_engine::revelation::report("archive", &atlas_engine::revelation::revelation(&s), &[]);
+    assert!(text.contains("supersedes `save`, which names 2 nodes"), "{text}");
+    assert!(text.contains("supersedes `crate::ledger::store`, which the code does not hold"), "{text}");
+}

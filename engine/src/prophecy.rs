@@ -28,6 +28,9 @@ pub struct Prophecy {
     /// The node `supersedes` names, once the graph is whole: its id.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub replaces: Option<String>,
+    /// The nodes `supersedes` names when it names more than one: which it replaces, it does not say.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub candidates: Vec<String>,
 }
 
 impl Prophecy {
@@ -76,25 +79,23 @@ impl Prophecy {
     }
 }
 
-/// What the graph, once whole, says of its prophecies: the node each `supersedes` names (by its id,
-/// where `::` and `.` part a path alike, or by the one id that ends so), and a route for each
-/// operation of a prophecy that no other prophecy calls, so that a sketch is read as a route is.
+/// What the graph, once whole, says of its prophecies: the node each `supersedes` names (`named`),
+/// or the nodes when it names several, and a route for each operation of a prophecy that no other
+/// prophecy calls, so that a sketch is read as a route is.
 pub fn settle(nodes: &mut IndexMap<String, Node>, edges: &[Edge]) {
-    let ids: Vec<String> = nodes.keys().cloned().collect();
-    let replaces: Vec<(String, String)> = nodes
+    let named: Vec<(String, Vec<String>)> = nodes
         .values()
         .filter_map(|p| {
-            let name = p.prophecy.as_ref()?.supersedes.as_deref()?.replace("::", ".");
-            let tail = format!(".{name}");
-            let mut ends =
-                ids.iter().filter(|id| **id != p.id && nodes.get(*id).is_some_and(|n| n.prophecy.is_none()) && id.ends_with(&tail));
-            let found = ids.iter().find(|id| **id == name && **id != p.id).or_else(|| ends.next().filter(|_| ends.next().is_none()));
-            Some((p.id.clone(), found?.clone()))
+            let written = p.prophecy.as_ref()?.supersedes.as_deref()?;
+            Some((p.id.clone(), named(written, p, nodes)))
         })
         .collect();
-    for (id, target) in replaces {
+    for (id, mut found) in named {
         if let Some(p) = nodes.get_mut(&id).and_then(|n| n.prophecy.as_mut()) {
-            p.replaces = Some(target);
+            match found.len() {
+                1 => p.replaces = found.pop(),
+                _ => p.candidates = found,
+            }
         }
     }
     let prophetic = |nodes: &IndexMap<String, Node>, id: &str| {
@@ -115,6 +116,36 @@ pub fn settle(nodes: &mut IndexMap<String, Node>, edges: &[Edge]) {
             n.entry = Some(Entry::new(EntryKind::Prophecy, label));
         }
     }
+}
+
+/// The nodes a prophecy's `supersedes` names: the node whose id it is, else the code's nodes whose
+/// id ends so, prophecies and libraries aside. `::` and `.` part a path alike; a path written in
+/// Rust's form starts where the prophecy's module says: `crate::` at its crate (as does the crate's
+/// name, written with `_` for `-`), `self::` at the module, `super::` at the module above it.
+fn named(written: &str, p: &Node, nodes: &IndexMap<String, Node>) -> Vec<String> {
+    let mut path: Vec<&str> = written.split("::").flat_map(|s| s.split('.')).collect();
+    if written.contains("::") {
+        let mut at: Vec<&str> = p.module.split('.').collect();
+        let supers = path.iter().take_while(|s| **s == "super").count();
+        // how much of the module's path the written one starts from, and how many of its words say so
+        let from = match path[0] {
+            "crate" => Some((1, 1)),
+            head if head == at[0].replace('-', "_") => Some((1, 1)),
+            "self" => Some((at.len(), 1)),
+            "super" => Some((at.len().saturating_sub(supers).max(1), supers)),
+            _ => None,
+        };
+        if let Some((keep, said)) = from {
+            at.truncate(keep);
+            path = at.into_iter().chain(path.into_iter().skip(said)).collect();
+        }
+    }
+    let name = path.join(".");
+    if nodes.get(&name).is_some_and(|n| n.id != p.id) {
+        return vec![name];
+    }
+    let tail = format!(".{name}");
+    nodes.values().filter(|n| n.id != p.id && n.prophecy.is_none() && !n.library && n.id.ends_with(&tail)).map(|n| n.id.clone()).collect()
 }
 
 /// Split on commas and spaces that are not inside quotes.
@@ -159,7 +190,7 @@ mod tests {
 
     #[test]
     fn one_meaning_in_three_forms() {
-        let want = Prophecy { supersedes: Some("pkg.Old".into()), veiled: false, sealed: Some("#144".into()), replaces: None };
+        let want = Prophecy { supersedes: Some("pkg.Old".into()), sealed: Some("#144".into()), ..Default::default() };
         assert_eq!(Prophecy::of_decorator(r##"prophecy(supersedes="pkg.Old", sealed="#144")"##), Some(want.clone()));
         assert_eq!(Prophecy::of_decorator(r##"doc = "prophecy: supersedes=pkg.Old sealed=#144""##), Some(want.clone()));
         assert_eq!(Prophecy::of_decorator(r##"prophecy(supersedes = "pkg.Old", sealed = "#144")"##), Some(want.clone()));

@@ -60,7 +60,7 @@ lets it be traced and Atlas does not yet; each gap is an ignored test in `pairs_
 | gives | finding; the call not followed | no returns edge; `uses` on the call | returns edge; `Result<T, E>` gives `T` |
 | choices | finding; a field read through `self` in a class's methods, a parameter by name and type in a module's functions, an `Enum` member | finding; `this` is the value a method runs on, an `enum` member | finding; a field read through `self` in an `impl`'s methods, a variant without fields |
 | nothing | finding | finding | finding |
-| layers | finding | finding | finding; a call among a macro's tokens is a step |
+| layers | finding; a package's `__init__.py` is a block of its own; a pytest file (`test_*.py`, `*_test.py`, `conftest.py`) is test code | finding; a directory's `index.ts` is a block of its own; a `.test.`, `.spec.` or `__tests__` file is test code | finding; a call among a macro's tokens is a step; `lib.rs` and `mod.rs` are blocks of their own; a `#[cfg(test)]` item or module and a crate's `tests/` are test code |
 | lens | finding; takes, returns, has and inherits; the table a statement names, a file by its path or the value that holds it; the steps a value is handed to, a container's `append` among them; gap (a): a field of a library's type | finding; takes, returns, has and inherits; the tables a store's client runs statements on; a `push` onto an array the body declares | finding; takes, returns and has; the tables a store's connection runs statements on; a `push` onto a `Vec`; gap (a): a field of a library's type |
 | a place carries a what | a file's path, a request's host | a file's path, a request's host | the type a step gives, a request's host, a program by its constant's value |
 | a route ends at a visible place | the places a route reaches; a call not followed is a step | the places a route reaches; a call through a key is a step | the places a route reaches, through a client held in a field |
@@ -555,26 +555,45 @@ does is change the Graph. As a method of the graph, the change shows as what it 
 Id: `layers`.
 
 The code of a part, quotiented by package, is a preorder: a package depends on another when its
-code calls, builds, imports or extends what the other holds. Where that preorder is a partial
-order, the packages have layers: each can be read, tested and replaced with only what lies below
-it. A cycle has no below. The packages in it are one package in all but name, and the link that
-closes it is usually one call against the flow.
+code calls, builds, imports, extends or requests what the other holds, or takes, returns or holds
+one of its types. Where that preorder is a partial order, the packages have layers: each can be
+read, tested and replaced with only what lies below it. A cycle has no below. The packages in it
+are one package in all but name, and the link that closes it is usually one call against the flow.
 
 - **Python.** A package that imports from the package that imports it, often inside a function
-  to get past the import cycle, is the sign. What both need moves down into a module of its own.
-- **Rust.** A crate's modules may use one another freely; the compiler does not stop a cycle.
-  What belongs to the lower module moves there, and the higher one calls it.
+  to get past the import cycle, is the sign; so is a module that imports from its own package's
+  `__init__.py`, which imports the module. What both need moves down into a module of its own.
+- **Rust.** A crate's modules may use one another freely; the compiler stops no cycle, also not
+  the one between a module and the file that declares it (`super::`). What belongs to the lower
+  module moves there, and the higher one calls it.
 - **TypeScript.** An interface module that also picks the implementation (`kiesBron` beside
   `BronLike`) imports the implementations that import it. The choice moves up, to whoever uses
   the interface.
 
-Atlas checks: at every level of the package forest, the packages under one parent, from the
-calls, constructions, imports and base classes of their code (a test is a way in from outside,
-not a layer). It names each cycle with its links, the thinnest first.
+Atlas checks: the blocks are the package quotient the picture draws, at each of its levels: the
+parts of a graph beside one another, the top-level packages of a part, and under each package the
+packages below it, with the package's own module beside them as a block of its own (`orders
+itself`: the code of the package in none of them, its `__init__.py`, `lib.rs` or `mod.rs`,
+`index.ts`). A level with one package and no code of its own is passed through, as the picture
+passes it. A block depends on another by the calls, constructions, imports, base classes and
+requests of its code, and by the types its signatures and fields name (what a function takes and
+returns, what a type holds, a variant of a sum): a cycle through types alone is a cycle. Test code
+is a way in from outside, not a layer: a test, and the code of a test module (a pytest file, a
+TypeScript test file, a Rust `#[cfg(test)]` item or module and a crate's `tests/`). Atlas names each
+cycle with its links, the thinnest first.
 
-In Atlas, `model` serialized a touch with where the picture draws it, calling up into `flow`,
-and `paths` asked `parts` whether a route serves a path. The first now stands in the flow
-(`Flow::drawn`), the second in `paths`, and the engine's modules are layered.
+What it cannot see: a package's own module that holds no code the graph keeps (only imports, or
+values no function changes) is no block, so what is imported from it alone (`from pkg import
+__version__`) links nothing. Test code is known by where it stands; a test helper in a module of
+the program is the program's. The imports of a Rust test module are the tests', and the graph
+keeps none of them for the module around it. A request from one part to another is in the graph
+of the repository as a whole; `atlas check` reads each part alone.
+
+In Atlas, each reader and the modules below it depend on one another (`python.rs` calls into
+`python/paths.rs`, which calls back for `call_path`), as do `lib.rs`, whose `Options` every reader
+takes while its `analyze` calls them, `model` and `prophecy`, through the `Prophecy` a `Node`
+holds, and the CLI's `main.rs`, whose helpers its commands call back into. The reviewed list in
+`engine/tests/principles.rs` says why each stands.
 
 ## What a lens puts, it gets back.
 
@@ -706,9 +725,10 @@ that exists is the list of what is left to build. A prophecy is a todo, not a fi
 bodies are what it is, and the other principles leave it alone. What it `supersedes` stays, and
 is still asked about, with the prophecy as the answer.
 
-What a prophecy must not be is a dependency. Code that is built and calls, builds, extends or
-takes a prophecy would run on a stub: it raises, or does nothing, in production. Prophecies lean
-on one another freely, and a test may lean on the code it is written for before it is built.
+What a prophecy must not be is a dependency. Code that is built and calls, builds, extends,
+requests or takes a prophecy would run on a stub: it raises, or does nothing, in production.
+Prophecies lean on one another freely, and test code may lean on the code it is written for
+before it is built.
 
 - **Python.** `@prophecy(supersedes="pkg.module.Old")`, a no-op decorator in the project; Atlas
   matches it by name. The body is `raise NotImplementedError` where the function gives a value (ty
@@ -720,9 +740,22 @@ on one another freely, and a test may lean on the code it is written for before 
   class`, an interface or a type. A decorator would reach classes and their members only.
 
 `supersedes` names what the prophecy replaces by its id, or by the end of it when one node only
-ends so. `veiled` says the place is known and the shape is not, `sealed="#144"` that the shape
-waits on an issue.
+ends so; `::` and `.` part a path alike. A path in Rust's form starts where Rust starts it, from
+the prophecy's module: `crate::` (or the crate's own name) at the crate, `self::` at the module,
+`super::` at the module above it. `veiled` says the place is known and the shape is not,
+`sealed="#144"` that the shape waits on an issue.
 
-Atlas checks: a built node with a call, an instantiation, an inheritance, a parameter, a return
-or a field of a prophecy (a member of a prophecy counts as the prophecy), and a prophecy whose
-`supersedes` names nothing the code holds (a false prophecy).
+Atlas checks: a built node with a call, an instantiation, an inheritance, a request, a parameter,
+a return, a field or a variant of a prophecy (a member of a prophecy counts as the prophecy), unless
+it is test code: a test, or code in a test module (a pytest file, a TypeScript test file, a Rust
+`#[cfg(test)]` item or module and a crate's `tests/`), as `layers` reads it. And a prophecy whose
+`supersedes` names nothing the code holds (a false prophecy), or ends the ids of several of the
+program's nodes (a library's do not count): then it does not say which it replaces, and Atlas
+names them.
+
+What it cannot see: a test helper in a module of the program is built code. A Rust path through a
+`use` (`supersedes=store::save` where `store` is a name the module imports) is read as written, not
+through the import, and `self::` and `super::` start from the file's module, also inside an inline
+`mod`. A request to a prophesied route of another part is in the graph of the repository as a
+whole; `atlas check` reads each part alone, and asks about a request only where a part serves it
+itself (a TypeScript page that fetches its own routes).

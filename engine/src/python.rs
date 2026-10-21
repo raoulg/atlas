@@ -453,10 +453,7 @@ fn scripts(repo: &Repo, root_dir: &Path, packages: &[PathBuf]) -> Vec<PathBuf> {
         .filter(|p| matches!(p.extension().and_then(|x| x.to_str()), Some("py" | "ipynb")))
         .filter(|p| !packaged.contains(p))
         .filter(|p| !p.ancestors().skip(1).take_while(|a| *a != root_dir).any(elsewhere))
-        .filter(|p| {
-            let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            !(name.starts_with("test_") || name.ends_with("_test.py") || name == "conftest.py")
-        })
+        .filter(|p| !knowledge::python_test_file(p.file_name().and_then(|n| n.to_str()).unwrap_or("")))
         .collect();
     for f in named {
         if !out.contains(&f) {
@@ -685,6 +682,7 @@ pub fn parse(repo: &Repo, packages: &[PathBuf], project_root: Option<&Path>, opt
             is_pkg,
             // a module of a package that runs as a command, by `python -m`
             entry: runs_as_main(m.tree.root_node(), &m.src).then(|| Entry::new(EntryKind::Cli, format!("python -m {mid}"))),
+            test: knowledge::python_test_file(p.file_name().and_then(|n| n.to_str()).unwrap_or("")),
             ..Default::default()
         });
         modules.insert(mid, m);
