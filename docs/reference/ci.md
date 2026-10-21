@@ -99,8 +99,8 @@ jobs:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.0
       - name: Install the project's environment     # see "What Atlas reads on the runner"
         run: uv sync
       - name: Install Atlas
@@ -113,11 +113,11 @@ jobs:
         run: uv run tools/atlas_picture.py site/index.html site/atlas.png
       - name: Write the pill                       # optional, see "The pill"
         run: python3 tools/atlas_badge.py site/badge.svg
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: site
       - id: deploy
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
 ```
 
 After the first run the page is at `https://<owner>.github.io/<repository>/`, and the pictures
@@ -172,7 +172,7 @@ that is not public, keep the page as a download of the run instead of a site. Re
 steps with:
 
 ```yaml
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: atlas
           path: site
@@ -210,7 +210,7 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: Install Atlas
@@ -222,7 +222,7 @@ jobs:
       - name: Draw what the pull request changed
         if: always()
         run: atlas view --no-open --out changes/index.html --since origin/${{ github.base_ref }}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: atlas-changes

@@ -29,7 +29,7 @@ jobs:
       sha: ${{ steps.pick.outputs.sha }}
       stamp: ${{ steps.pick.outputs.stamp }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: next
       - id: pick
@@ -69,7 +69,7 @@ jobs:
     env:
       ATLAS_CHANNEL: nightly
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.decide.outputs.sha }}
       - uses: dtolnay/rust-toolchain@stable
@@ -85,7 +85,7 @@ jobs:
           else
             tar -czf "$GITHUB_WORKSPACE/atlas-${{ matrix.target }}.tar.gz" atlas
           fi
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: atlas-${{ matrix.target }}
           path: atlas-${{ matrix.target }}.*
@@ -94,7 +94,7 @@ jobs:
     needs: [decide, build]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
@@ -121,15 +121,15 @@ jobs:
     needs: [decide, publish]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.decide.outputs.sha }}
           path: atlas
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           repository: raoulg/homebrew-tap
           token: ${{ secrets.TAP_TOKEN }}
