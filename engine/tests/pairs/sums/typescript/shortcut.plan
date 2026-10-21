@@ -42,11 +42,6 @@ known #125 home _·tekst@Kennisbank()/Kennisbank.graaf/split Kennisbank()/Kennis
 side entry left
 known #133 side Disk(this.path) both          # voegToe reads what the file held and changes it: Atlas says right
 
-# the door's own arrow takes, as a nameless value from beyond, the Bron its call is handed, though only `write`
-# inside takes it
-known #126 extra line Bron > Kennisbank()/Kennisbank.voegToe value
-known #126 extra home Bron Kennisbank()
-
 # the methods run on what the constructor built, not on the caller's instance
 known #74 extra line Kennisbank@Kennisbank()/Kennisbank() > Kennisbank()/Kennisbank.voegToe/Kennisbank.write value
 known #74 extra line Kennisbank@Kennisbank()/Kennisbank() > Kennisbank()/Kennisbank.graaf value

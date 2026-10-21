@@ -140,7 +140,7 @@ line Web(api.frankfurter.app) > main/?1/RatesClient.latest own
 line main/?1/RatesClient.latest/error_for_status > _·response@main/?1/RatesClient.latest/error_for_status value
 known #101 line _·response@main/?1/RatesClient.latest/error_for_status > main/?1/RatesClient.latest value      # response.json()
 line main/?1/RatesClient.latest > Rates·rates@main/?1/RatesClient.latest value
-line Rates·rates@main/?1/RatesClient.latest > main/?1/Store.save_rates value
+known #126 line Rates·rates@main/?1/RatesClient.latest > main/?1/Store.save_rates value   # `params![rates.base, ..]`: the body uses it itself, and a step inside takes it too
 known #101 line Rates·rates@main/?1/RatesClient.latest > main value   # main prints their date and base
 line Store·store@main/Store.open > main/?1/Store.save_rates value
 line main/?1/Store.save_rates > SQLite(rates) own
@@ -286,8 +286,6 @@ side Screen right
 
 # ---- what Atlas has and should not ----
 # a value one arm of the choice makes, and only that arm takes, has the choice's moment; two (`Rates·rates`) become one
-known #126 extra line Expense@main/?1/Store.expenses > main/?1/lines value   # only the loop over `expenses` takes them
-known #126 extra line Render@main/?1/Format.renderer > main/?1/write value   # only the steps inside take it
 known #128 extra line Render@main/?1/Format.renderer > main/?1/write/join value   # `render.extension()` is a step that takes the render itself
 # a value handed to a call into a family ends at the dispatch's border
 known #100 extra line Render@main/?1/Format.renderer > main/?1/write/Render.extension value

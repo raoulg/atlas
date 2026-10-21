@@ -80,7 +80,6 @@ known #125 home _·out@main/counted/Map() main/counted
 known #134 extra line main/remove > main back
 
 # The own arrow takes a value its body only hands to a step inside it: the expense `refiled` gives, handed to `add`
-known #126 extra line Expense@main/refiled > main/Ledger.add value
 known #126 extra line Expense@main/refiled > main value
 
 # `counted` hands back the Map its `set` made anew

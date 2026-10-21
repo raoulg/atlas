@@ -96,7 +96,6 @@ known #129 extra home Board·board@main/Board.reset#2 main
 # The own arrow takes a value its body only hands to a step inside it: the Cell built into `[Cell()]` for `Board()`, the
 # receiver of `merged` whose fields go into `Board(..)`
 known #126 extra line Cell@main/Cell() > main value
-known #126 extra line Board@main/renamed > main/Board.merged value
 
 # The loop over `self.cells` goes over the board the method runs on, and `cell.marked = True` is the body's own use of
 # each cell: the board reaches the loop through `self` (#128); the own arrow takes it instead (#126)
