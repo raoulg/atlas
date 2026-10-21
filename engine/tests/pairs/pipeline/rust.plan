@@ -1,0 +1,87 @@
+# The quick Rust hands its values on as arguments, as the compiler asks, but they are pairs of no type of the
+# program's (`Vec<(NaiveDate, f64)>`), and each step names its own place: the route reaches the same places as the
+# clean one, and the raw file is downloaded on every run and read by the next step, so it stands between them.
+
+route sunspots.main
+step main/download
+step main/download/text                                           # `let body = reqwest::blocking::get(..)?.text()?`
+step main/load
+step main/load/from_path                                          # `let mut reader = ..from_path(..)?`
+step main/load/new                                                # `let mut rows = Vec::new()`
+step main/load/for result in reader.deserialize()                             # `for result in reader.deserialize()`
+step main/load/ok_or                                              # `let date = NaiveDate::from_ymd_opt(..).ok_or(..)?`
+step main/load/push                                               # `rows.push(..)` changes `rows`
+step main/smooth
+step main/plot
+step main/plot/into_drawing_area                                  # `let root = BitMapBackend::new(..).into_drawing_area()`
+step main/plot/fold                                               # `let top = rows.iter()..fold(..)`
+step main/plot/build_cartesian_2d                                 # `let mut chart = ChartBuilder::on(&root)..`
+
+line entry > main call
+line Web(www.sidc.be) > main/download own
+line main/download/text > _·body@main/download/text value
+known #101 line _·body@main/download/text > main/download value                  # `fs::write(.., body)`
+line main/download > File(data/raw/sunspots.csv) own
+line File(data/raw/sunspots.csv) > main/load own
+line main/load/from_path > _·reader@main/load/from_path value
+line main/load/new > _·rows@main/load/new value
+line _·reader@main/load/from_path > main/load/for result in reader.deserialize() value
+line main/load/for result in reader.deserialize() > _·result@main/load/for result in reader.deserialize() value
+known #128 line _·result@main/load/for result in reader.deserialize() > main/load/ok_or value         # `record.year`, `record.month`
+known #128 line _·result@main/load/for result in reader.deserialize() > main/load/push value          # `record.mean`
+line main/load/ok_or > _·date@main/load/ok_or value
+line _·date@main/load/ok_or > main/load/push value
+line _·rows@main/load/new > main/load/push value
+line main/load/push > _·rows@main/load/push value
+known #101 line _·rows@main/load/push > main/load value                            # `Ok(rows)`
+line main/load > _·rows@main/load value                           # a named value of no type of the program's
+line _·rows@main/load > main/smooth value
+line _·rows@main/load > main/plot value                           # `draw_series(LineSeries::new(rows..))`
+known #128 line _·rows@main/load > main/plot/fold value
+known #128 line _·rows@main/load > main/plot/build_cartesian_2d value                # `rows[0].0..rows[rows.len() - 1].0`
+line main/smooth > _·smoothed@main/smooth value
+line _·smoothed@main/smooth > main/plot value
+line main/plot/into_drawing_area > _·root@main/plot/into_drawing_area value
+known #101 line _·root@main/plot/into_drawing_area > main/plot value             # `root.fill(..)`, `root.present()`
+line main/plot/fold > _·top@main/plot/fold value
+line _·root@main/plot/into_drawing_area > main/plot/build_cartesian_2d value
+line _·top@main/plot/fold > main/plot/build_cartesian_2d value
+line main/plot/build_cartesian_2d > _·chart@main/plot/build_cartesian_2d value
+known #101 line _·chart@main/plot/build_cartesian_2d > main/plot value           # `chart.draw_series(..)`
+line main/plot > File(figures/sunspots.png) own
+
+home _·body@main/download/text main/download
+home _·reader@main/load/from_path main/load
+home _·rows@main/load/new main/load
+home _·result@main/load/for result in reader.deserialize() main/load
+home _·date@main/load/ok_or main/load
+home _·rows@main/load/push main/load
+home _·rows@main/load main
+home _·smoothed@main/smooth main
+home _·root@main/plot/into_drawing_area main/plot
+home _·top@main/plot/fold main/plot
+home _·chart@main/plot/build_cartesian_2d main/plot
+
+side entry left
+side Web(www.sidc.be) left
+side File(data/raw/sunspots.csv) between
+side File(figures/sunspots.png) right
+
+# a record the csv crate makes inside `load` is drawn from beyond, at the route's frame
+known #128 extra home Record·record main
+known #128 extra line Record·record > main/load/from_ymd_opt value
+known #128 extra line Record·record > main/load/push value
+
+# a library call whose result no name holds is drawn as a step, its result named by the call around it
+known #125 extra step main/load/from_ymd_opt
+known #125 extra line main/load/from_ymd_opt > _·date@main/load/from_ymd_opt value
+known #125 extra line _·date@main/load/from_ymd_opt > main/load/ok_or value
+known #125 extra home _·date@main/load/from_ymd_opt main/load
+
+# the pairs `load` and `smooth` give are drawn twice: by their name, of no type, and as the dates they hold, unnamed
+known #135 extra line main/load > NaiveDate@main/load value
+known #135 extra line NaiveDate@main/load > main/smooth value
+known #135 extra line main/smooth > NaiveDate@main/smooth value
+known #135 extra line NaiveDate@main/smooth > main/plot value
+known #135 extra home NaiveDate@main/load main
+known #135 extra home NaiveDate@main/smooth main

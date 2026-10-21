@@ -1,0 +1,55 @@
+# The knowledge base with the shortcut: `graaf` gives the lines back as rows, dicts of no type of the code's, so the
+# Bron put by `voeg_toe` never comes back as a Node: no value of the code's leaves the get.
+
+route kennis.bank.Kennisbank
+step Kennisbank()/Kennisbank()
+step Kennisbank()/Kennisbank.voeg_toe
+step Kennisbank()/Kennisbank.voeg_toe/Kennisbank._write
+step Kennisbank()/Kennisbank.graaf
+step Kennisbank()/Kennisbank.graaf/Kennisbank._row
+
+line entry > Kennisbank()/Kennisbank() call
+line entry > Kennisbank()/Kennisbank.voeg_toe call
+line entry > Kennisbank()/Kennisbank.graaf call
+
+# what the constructor builds goes back to the caller; the doors run on the caller's instance, one value from
+# beyond, taken where a body reads its fields or calls on it
+line Kennisbank()/Kennisbank() > Kennisbank@Kennisbank()/Kennisbank() value
+known #74 line Kennisbank > Kennisbank()/Kennisbank.voeg_toe/Kennisbank._write value
+known #74 line Kennisbank > Kennisbank()/Kennisbank.graaf value
+known #74 line Kennisbank > Kennisbank()/Kennisbank.graaf/Kennisbank._row value
+
+line Bron·bron > Kennisbank()/Kennisbank.voeg_toe/Kennisbank._write value                    # what it is handed: `bron.uuid`, `bron.url` glue `bron` in
+line Disk(self.path) > Kennisbank()/Kennisbank.voeg_toe/Kennisbank._write own
+line Kennisbank()/Kennisbank.voeg_toe/Kennisbank._write > Disk(self.path) own
+
+line Disk(self.path) > Kennisbank()/Kennisbank.graaf own
+line Kennisbank()/Kennisbank.graaf/Kennisbank._row > Kennisbank()/Kennisbank.graaf back   # each row, a dict, goes back to graaf
+
+home Kennisbank@Kennisbank()/Kennisbank() Kennisbank()
+known #74 home Kennisbank Kennisbank()
+home Bron·bron Kennisbank()
+
+# the line split in three parts, each held by its name, which `_row` puts into a row
+known #125 step Kennisbank()/Kennisbank.graaf/Kennisbank._row/split
+known #125 line Kennisbank()/Kennisbank.graaf/Kennisbank._row/split > _·uuid@Kennisbank()/Kennisbank.graaf/Kennisbank._row/split value
+known #125 line Kennisbank()/Kennisbank.graaf/Kennisbank._row/split > _·soort@Kennisbank()/Kennisbank.graaf/Kennisbank._row/split value
+known #125 line Kennisbank()/Kennisbank.graaf/Kennisbank._row/split > _·tekst@Kennisbank()/Kennisbank.graaf/Kennisbank._row/split value
+known #125 line _·uuid@Kennisbank()/Kennisbank.graaf/Kennisbank._row/split > Kennisbank()/Kennisbank.graaf/Kennisbank._row value
+known #125 line _·soort@Kennisbank()/Kennisbank.graaf/Kennisbank._row/split > Kennisbank()/Kennisbank.graaf/Kennisbank._row value
+known #125 line _·tekst@Kennisbank()/Kennisbank.graaf/Kennisbank._row/split > Kennisbank()/Kennisbank.graaf/Kennisbank._row value
+known #125 home _·uuid@Kennisbank()/Kennisbank.graaf/Kennisbank._row/split Kennisbank()/Kennisbank.graaf/Kennisbank._row
+known #125 home _·soort@Kennisbank()/Kennisbank.graaf/Kennisbank._row/split Kennisbank()/Kennisbank.graaf/Kennisbank._row
+known #125 home _·tekst@Kennisbank()/Kennisbank.graaf/Kennisbank._row/split Kennisbank()/Kennisbank.graaf/Kennisbank._row
+
+side entry left
+known #133 side Disk(self.path) both          # voeg_toe reads what the file held and changes it: Atlas says right
+
+# the door's own arrow takes, as a nameless value from beyond, the Bron its call is handed, though only `_write`
+# inside takes it
+known #126 extra line Bron > Kennisbank()/Kennisbank.voeg_toe value
+known #126 extra home Bron Kennisbank()
+
+# the methods run on what the constructor built, not on the caller's instance
+known #74 extra line Kennisbank@Kennisbank()/Kennisbank() > Kennisbank()/Kennisbank.voeg_toe/Kennisbank._write value
+known #74 extra line Kennisbank@Kennisbank()/Kennisbank() > Kennisbank()/Kennisbank.graaf/Kennisbank._row value

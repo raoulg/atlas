@@ -37,15 +37,22 @@ border that keeps what the body itself takes and what it gives back, at the step
 handed crosses the frame to the step inside that takes it. A call into a library the program does not read is an
 occurrence where the body names what it gives (`con = duckdb.connect(path)`) or where it changes the value it runs on
 (`rows.append(row)`), labelled by the operation (`connect`, `append`); otherwise what it gives goes into the call around
-it, and what it touches at a place is its caller's touch (`design.md`, "An opened route is the fiber of its calls").
+it. What a library operation touches at a place is its caller's own touch, whether or not it is a step: naming its
+result changes no line to the place (`design.md`, "An opened route is the fiber of its calls").
 
 **Values.** A value is `TYPE·NAME@MOMENT`. The type is the code's name for it (`Table`, `Circle`); a value of no type of
 the code's is `_`. The name is the one that holds it; a value no name holds has none. The moment is the occurrence that
 made it (or the choice, for a value either arm makes: `pick/?1` in a body, `Store()/Store.get/?` for the overrides a
 call into a family may run, below the call); a value no step makes, from beyond, has none. A route's
-parameters are values from its start, by their names: `Circle·c`. What a step reads back inside itself of what its own
+parameters are values from its start, by their names: `Circle·c`. In the route of an exported class each public method
+is called by the entry and runs on the caller's instance, one value from beyond (`Store`); what the constructor door
+builds goes back to the caller. What a step reads back inside itself of what its own
 writers wrote is `PLACE in STEP` (`File(cache.json) in main/refresh`), made by the writers and taken by the reader.
-Two values the names do not tell apart are told apart by a count, `#2`.
+Two values the names do not tell apart are told apart by a count, `#2`. A call is handed the values the names in its
+arguments hold: `f(x.name)` is handed `x` (a projection is no occurrence; it is glued into the call). A nested call that
+is a step of its own takes its names itself, and the call around it is handed what that step gives. A projection bound to
+a name first is still the projection (`width = settings.width; f(width)` hands `settings`). An error is a value: its
+constructor makes it in the arm that raises it, and each border it crosses uncaught hands it on, up to the route.
 
 **Places.** A place is drawn as Atlas names it: `File(data/out.csv)`, `Screen`, `Disk(bump.path)`, `entry` (where the
 route starts).

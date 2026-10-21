@@ -1,0 +1,223 @@
+# The TypeScript command names the records it keeps and hands them from step to step, and draws the figure as a
+# document: `trend` gives the SVG as a string, which `saveSvg` writes where the command line says. The command's own
+# code runs `main`, which parses its command line into `values`, whose fields name the places; the raw file is filled
+# only where it is missing, so it stands between the download and the reading.
+
+route sunspots.cli
+step cli.ts/main
+step cli.ts/main/parseArgs                                        # `const { values } = parseArgs(..)`, taken to the entry
+step cli.ts/main/monthsOf
+step cli.ts/main/monthsOf/Number                                  # `const months = Number(option)`
+step cli.ts/main/Settings()                                       # `const settings: Settings = { .. }`
+choice cli.ts/main/?1
+step cli.ts/main/?1/download
+step cli.ts/main/?1/download/fetch                                # `const response = await fetch(..)`
+step cli.ts/main/load
+step cli.ts/main/load/parse
+step cli.ts/main/load/parse/parseLine                             # `.map(parseLine)` runs it on each line
+step cli.ts/main/load/parse/parseLine/map                         # `const fields = line.split(";").map(Number)`
+known #136 step cli.ts/main/load/parse/parseLine/Month()          # `return { date, mean, std, observations }`, a Month
+step cli.ts/main/smooth
+step cli.ts/main/smooth/floor                                     # `const before = Math.floor(months / 2)`
+step cli.ts/main/smooth/average
+step cli.ts/main/trend
+step cli.ts/main/trend/series.at                                  # `const last = series.at(-1)`
+step cli.ts/main/trend/range                                      # `const x = scaleUtc()..range(..)`
+step cli.ts/main/trend/range#2                                    # `const y = scaleLinear()..range(..)`
+step cli.ts/main/trend/line                                       # `const path = line<Smoothed>(..)`
+step cli.ts/main/trend/map                                        # `const years = x.ticks(10).map(..)`
+step cli.ts/main/trend/map#2                                      # `const counts = y.ticks(5).map(..)`
+step cli.ts/main/trend/escape
+step cli.ts/main/saveSvg
+
+line entry > cli.ts call
+line entry > cli.ts/main/parseArgs call                           # the command line is what the parse reads
+line cli.ts/main/parseArgs > _·values@cli.ts/main/parseArgs value
+
+line _·values@cli.ts/main/parseArgs > cli.ts/main/monthsOf value         # `values.months`, checked
+known #128 line _·values@cli.ts/main/parseArgs > cli.ts/main/monthsOf/Number value
+known #128 line Settings·DEFAULT_SETTINGS > cli.ts/main/monthsOf value   # `return DEFAULT_SETTINGS.months`
+line cli.ts/main/monthsOf/Number > _·months@cli.ts/main/monthsOf/Number value
+known #101 line _·months@cli.ts/main/monthsOf/Number > cli.ts/main/monthsOf value  # `return months`
+line cli.ts/main/monthsOf > _@cli.ts/main/monthsOf value
+line _@cli.ts/main/monthsOf > cli.ts/main/Settings() value
+line Settings·DEFAULT_SETTINGS > cli.ts/main/Settings() value            # `...DEFAULT_SETTINGS`
+line cli.ts/main/Settings() > Settings·settings@cli.ts/main/Settings() value
+
+line _·values@cli.ts/main/parseArgs > cli.ts/main/?1/download value      # `values.raw`
+line Web(www.sidc.be) > cli.ts/main/?1/download own
+line cli.ts/main/?1/download/fetch > _·response@cli.ts/main/?1/download/fetch value
+known #101 line _·response@cli.ts/main/?1/download/fetch > cli.ts/main/?1/download value   # `response.arrayBuffer()`
+line cli.ts/main/?1/download > File(data/raw/sunspots.csv) own
+line cli.ts/main/?1/download > cli.ts/main back                          # `return to` goes on to `main`
+
+line _·values@cli.ts/main/parseArgs > cli.ts/main/load value             # `values.raw`
+line File(data/raw/sunspots.csv) > cli.ts/main/load own
+line cli.ts/main/load/parse/parseLine/map > _·fields@cli.ts/main/load/parse/parseLine/map value
+known #136 line _·fields@cli.ts/main/load/parse/parseLine/map > cli.ts/main/load/parse/parseLine/Month() value
+known #136 line cli.ts/main/load/parse/parseLine/Month() > Month@cli.ts/main/load/parse/parseLine/Month() value
+known #136 line Month@cli.ts/main/load/parse/parseLine/Month() > cli.ts/main/load/parse/parseLine value
+line cli.ts/main/load/parse/parseLine > Month@cli.ts/main/load/parse/parseLine value
+line Month@cli.ts/main/load/parse/parseLine > cli.ts/main/load/parse value
+line cli.ts/main/load/parse > Month@cli.ts/main/load/parse value
+line Month@cli.ts/main/load/parse > cli.ts/main/load value
+line cli.ts/main/load > Month·series@cli.ts/main/load value
+
+line Month·series@cli.ts/main/load > cli.ts/main/smooth value             # `series.slice(..)`
+line Settings·settings@cli.ts/main/Settings() > cli.ts/main/smooth value  # `settings.months`, handed as `months`
+known #128 line Settings·settings@cli.ts/main/Settings() > cli.ts/main/smooth/floor value
+line cli.ts/main/smooth/floor > _·before@cli.ts/main/smooth/floor value
+known #101 line _·before@cli.ts/main/smooth/floor > cli.ts/main/smooth value    # `series.slice(before, ..)`
+line Month·series@cli.ts/main/load > cli.ts/main/smooth/average value
+line cli.ts/main/smooth/average > cli.ts/main/smooth back                 # the mean goes into the Smoothed `smooth` makes
+line cli.ts/main/smooth > Smoothed·smoothed@cli.ts/main/smooth value
+
+line Month·series@cli.ts/main/load > cli.ts/main/trend value
+line Smoothed·smoothed@cli.ts/main/smooth > cli.ts/main/trend value
+line Settings·settings@cli.ts/main/Settings() > cli.ts/main/trend value
+line Settings·settings@cli.ts/main/Settings() > cli.ts/main/trend/escape value   # `escape(settings.title)`
+line cli.ts/main/trend/escape > cli.ts/main/trend back
+known #127 line Month·series@cli.ts/main/load > cli.ts/main/trend/series.at value
+line cli.ts/main/trend/series.at > _·last@cli.ts/main/trend/series.at value
+known #128 line Month·series@cli.ts/main/load > cli.ts/main/trend/range value      # `series[0].date`
+line _·last@cli.ts/main/trend/series.at > cli.ts/main/trend/range value
+known #128 line Settings·settings@cli.ts/main/Settings() > cli.ts/main/trend/range value   # `width`
+line cli.ts/main/trend/range > _·x@cli.ts/main/trend/range value
+known #125 line Month·series@cli.ts/main/load > cli.ts/main/trend/range#2 value    # `series.map(..)` in its domain
+known #128 line Settings·settings@cli.ts/main/Settings() > cli.ts/main/trend/range#2 value # `bottom`
+line cli.ts/main/trend/range#2 > _·y@cli.ts/main/trend/range#2 value
+known #125 line _·x@cli.ts/main/trend/range > cli.ts/main/trend/line value         # `(month) => x(month.date)`
+known #125 line _·y@cli.ts/main/trend/range#2 > cli.ts/main/trend/line value
+line cli.ts/main/trend/line > _·path@cli.ts/main/trend/line value
+known #101 line _·path@cli.ts/main/trend/line > cli.ts/main/trend value           # `path(series)`, `path(smoothed)`
+known #125 line _·x@cli.ts/main/trend/range > cli.ts/main/trend/map value          # `x.ticks(10)`, `x(t)`
+known #128 line Settings·settings@cli.ts/main/Settings() > cli.ts/main/trend/map value     # `bottom + 18`
+line cli.ts/main/trend/map > _·years@cli.ts/main/trend/map value
+known #101 line _·years@cli.ts/main/trend/map > cli.ts/main/trend value
+known #125 line _·y@cli.ts/main/trend/range#2 > cli.ts/main/trend/map#2 value      # `y.ticks(5)`, `y(n)`
+line cli.ts/main/trend/map#2 > _·counts@cli.ts/main/trend/map#2 value
+known #101 line _·counts@cli.ts/main/trend/map#2 > cli.ts/main/trend value
+line cli.ts/main/trend > _@cli.ts/main/trend value                        # the SVG document, which no name holds
+line _@cli.ts/main/trend > cli.ts/main/saveSvg value
+line _·values@cli.ts/main/parseArgs > cli.ts/main/saveSvg value          # `values.figure`
+line cli.ts/main/saveSvg > File(figures/sunspots.svg) own
+
+home _·values@cli.ts/main/parseArgs cli.ts/main
+home Settings·DEFAULT_SETTINGS cli.ts
+home _·months@cli.ts/main/monthsOf/Number cli.ts/main/monthsOf
+home _@cli.ts/main/monthsOf cli.ts/main
+home Settings·settings@cli.ts/main/Settings() cli.ts/main
+home _·response@cli.ts/main/?1/download/fetch cli.ts/main/?1/download
+home _·fields@cli.ts/main/load/parse/parseLine/map cli.ts/main/load/parse/parseLine
+known #136 home Month@cli.ts/main/load/parse/parseLine/Month() cli.ts/main/load/parse/parseLine
+home Month@cli.ts/main/load/parse/parseLine cli.ts/main/load/parse
+home Month@cli.ts/main/load/parse cli.ts/main/load
+home Month·series@cli.ts/main/load cli.ts/main
+home _·before@cli.ts/main/smooth/floor cli.ts/main/smooth
+home Smoothed·smoothed@cli.ts/main/smooth cli.ts/main
+home _·last@cli.ts/main/trend/series.at cli.ts/main/trend
+home _·x@cli.ts/main/trend/range cli.ts/main/trend
+home _·y@cli.ts/main/trend/range#2 cli.ts/main/trend
+home _·path@cli.ts/main/trend/line cli.ts/main/trend
+home _·years@cli.ts/main/trend/map cli.ts/main/trend
+home _·counts@cli.ts/main/trend/map#2 cli.ts/main/trend
+home _@cli.ts/main/trend cli.ts/main
+
+side entry left
+side Web(www.sidc.be) left
+side File(data/raw/sunspots.csv) between
+side File(figures/sunspots.svg) right
+
+# a result of no type of the code's that a step of the caller takes also goes back to the caller: counted twice
+known #134 extra line cli.ts/main/monthsOf > cli.ts/main back
+known #134 extra line cli.ts/main/trend > cli.ts/main back
+
+# choices whose arms hold no step are drawn
+known #130 extra choice cli.ts/main/load/parse/parseLine/?1
+known #130 extra choice cli.ts/main/trend/?1
+known #130 extra choice cli.ts/main/trend/?2
+
+# a library call whose result no name holds is drawn as a step: what it gives should go into the call around it
+known #125 extra step cli.ts/main/?1/download/response.arrayBuffer
+known #125 extra line _·response@cli.ts/main/?1/download/fetch > cli.ts/main/?1/download/response.arrayBuffer value
+known #125 extra step cli.ts/main/load/parse/filter
+known #125 extra step cli.ts/main/load/parse/filter#2
+known #125 extra step cli.ts/main/load/parse/line.trim
+known #125 extra step cli.ts/main/load/parse/map
+known #125 extra line cli.ts/main/load/parse/filter > _@cli.ts/main/load/parse/filter value
+known #125 extra line cli.ts/main/load/parse/line.trim > _@cli.ts/main/load/parse/line.trim value
+known #125 extra line cli.ts/main/load/parse/map > _@cli.ts/main/load/parse/map value
+known #125 extra line _@cli.ts/main/load/parse/filter > cli.ts/main/load/parse/map value
+known #125 extra line _@cli.ts/main/load/parse/line.trim > cli.ts/main/load/parse/filter value
+known #125 extra line _@cli.ts/main/load/parse/map > cli.ts/main/load/parse/filter#2 value
+known #125 extra home _@cli.ts/main/load/parse/filter cli.ts/main/load/parse
+known #125 extra home _@cli.ts/main/load/parse/line.trim cli.ts/main/load/parse
+known #125 extra home _@cli.ts/main/load/parse/map cli.ts/main/load/parse
+known #125 extra step cli.ts/main/load/parse/parseLine/line.split
+known #125 extra line cli.ts/main/load/parse/parseLine/line.split > _@cli.ts/main/load/parse/parseLine/line.split value
+known #125 extra line _@cli.ts/main/load/parse/parseLine/line.split > cli.ts/main/load/parse/parseLine/map value
+known #125 extra home _@cli.ts/main/load/parse/parseLine/line.split cli.ts/main/load/parse/parseLine
+known #125 extra step cli.ts/main/load/parse/parseLine/?1/fields.some
+known #125 extra line _·fields@cli.ts/main/load/parse/parseLine/map > cli.ts/main/load/parse/parseLine/?1/fields.some value
+known #125 extra step cli.ts/main/smooth/map
+known #125 extra step cli.ts/main/smooth/series.slice
+known #125 extra step cli.ts/main/smooth/series.slice#2
+known #125 extra line cli.ts/main/smooth/series.slice > _@cli.ts/main/smooth/series.slice value
+known #125 extra line cli.ts/main/smooth/series.slice#2 > _@cli.ts/main/smooth/series.slice#2 value
+known #125 extra line _@cli.ts/main/smooth/series.slice > cli.ts/main/smooth/map value
+known #125 extra line _@cli.ts/main/smooth/series.slice#2 > cli.ts/main/smooth/average value
+known #125 extra line _·before@cli.ts/main/smooth/floor > cli.ts/main/smooth/series.slice value
+known #125 extra line cli.ts/main/smooth/average > _@cli.ts/main/smooth/average value
+known #125 extra line _@cli.ts/main/smooth/average > cli.ts/main/smooth/map value
+known #125 extra home _@cli.ts/main/smooth/series.slice cli.ts/main/smooth
+known #125 extra home _@cli.ts/main/smooth/series.slice#2 cli.ts/main/smooth
+known #125 extra home _@cli.ts/main/smooth/average cli.ts/main/smooth
+known #125 extra step cli.ts/main/trend/series.map
+known #125 extra step cli.ts/main/trend/x
+known #125 extra step cli.ts/main/trend/x#2
+known #125 extra step cli.ts/main/trend/x.ticks
+known #125 extra step cli.ts/main/trend/y
+known #125 extra step cli.ts/main/trend/y#2
+known #125 extra step cli.ts/main/trend/y.ticks
+known #125 extra step cli.ts/main/trend/t.getUTCFullYear
+known #125 extra line cli.ts/main/trend/series.map > _@cli.ts/main/trend/series.map value
+known #125 extra line cli.ts/main/trend/x > _@cli.ts/main/trend/x value
+known #125 extra line cli.ts/main/trend/x#2 > _@cli.ts/main/trend/x#2 value
+known #125 extra line cli.ts/main/trend/x.ticks > _@cli.ts/main/trend/x.ticks value
+known #125 extra line cli.ts/main/trend/y > _@cli.ts/main/trend/y value
+known #125 extra line cli.ts/main/trend/y#2 > _@cli.ts/main/trend/y#2 value
+known #125 extra line cli.ts/main/trend/y.ticks > _@cli.ts/main/trend/y.ticks value
+known #125 extra line cli.ts/main/trend/t.getUTCFullYear > _@cli.ts/main/trend/t.getUTCFullYear value
+known #125 extra line _@cli.ts/main/trend/series.map > cli.ts/main/trend/range#2 value
+known #125 extra line _@cli.ts/main/trend/x > cli.ts/main/trend/line value
+known #125 extra line _@cli.ts/main/trend/y > cli.ts/main/trend/line value
+known #125 extra line _@cli.ts/main/trend/x#2 > cli.ts/main/trend/map value
+known #125 extra line _@cli.ts/main/trend/x.ticks > cli.ts/main/trend/map value
+known #125 extra line _@cli.ts/main/trend/t.getUTCFullYear > cli.ts/main/trend/map value
+known #125 extra line _@cli.ts/main/trend/y#2 > cli.ts/main/trend/map#2 value
+known #125 extra line _@cli.ts/main/trend/y.ticks > cli.ts/main/trend/map#2 value
+known #125 extra line _·x@cli.ts/main/trend/range > cli.ts/main/trend/x.ticks value
+known #125 extra line _·y@cli.ts/main/trend/range#2 > cli.ts/main/trend/y.ticks value
+known #125 extra home _@cli.ts/main/trend/series.map cli.ts/main/trend
+known #125 extra home _@cli.ts/main/trend/x cli.ts/main/trend
+known #125 extra home _@cli.ts/main/trend/x#2 cli.ts/main/trend
+known #125 extra home _@cli.ts/main/trend/x.ticks cli.ts/main/trend
+known #125 extra home _@cli.ts/main/trend/y cli.ts/main/trend
+known #125 extra home _@cli.ts/main/trend/y#2 cli.ts/main/trend
+known #125 extra home _@cli.ts/main/trend/y.ticks cli.ts/main/trend
+known #125 extra home _@cli.ts/main/trend/t.getUTCFullYear cli.ts/main/trend
+known #125 extra step cli.ts/main/trend/escape/text.replaceAll
+known #125 extra step cli.ts/main/trend/escape/replaceAll
+known #125 extra step cli.ts/main/trend/escape/replaceAll#2
+known #125 extra line cli.ts/main/trend/escape/text.replaceAll > _@cli.ts/main/trend/escape/text.replaceAll value
+known #125 extra line cli.ts/main/trend/escape/replaceAll > _@cli.ts/main/trend/escape/replaceAll value
+known #125 extra line _@cli.ts/main/trend/escape/text.replaceAll > cli.ts/main/trend/escape/replaceAll value
+known #125 extra line _@cli.ts/main/trend/escape/replaceAll > cli.ts/main/trend/escape/replaceAll#2 value
+known #125 extra home _@cli.ts/main/trend/escape/text.replaceAll cli.ts/main/trend/escape
+known #125 extra home _@cli.ts/main/trend/escape/replaceAll cli.ts/main/trend/escape
+# `text.split("\n")` in `parse` too; its label keeps the space of the source's line break (`text\n    .split`), a defect
+# of its own: a label should be the operation's name
+known #137 extra step cli.ts/main/load/parse/text .split
+known #137 extra line cli.ts/main/load/parse/text .split > _@cli.ts/main/load/parse/text .split value
+known #137 extra line _@cli.ts/main/load/parse/text .split > cli.ts/main/load/parse/filter value
+known #137 extra home _@cli.ts/main/load/parse/text .split cli.ts/main/load/parse
