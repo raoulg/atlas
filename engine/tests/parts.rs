@@ -1,11 +1,13 @@
 //! A repository of several parts: each manifest roots one, read in its own language, and a
 //! route one part serves joins it to the part that names the route.
 
-use std::path::PathBuf;
+use std::collections::HashSet;
+use std::path::{Path, PathBuf};
 
 use atlas_engine::parts::{analyze_parts, analyze_repo, roots};
+use atlas_engine::principles::check;
 use atlas_engine::repo::Repo;
-use atlas_engine::{EdgeKind, EntryKind, Graph, NodeKind, Options};
+use atlas_engine::{analyze, EdgeKind, EntryKind, Graph, NodeKind, Options};
 
 fn fixture() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixture-parts")
@@ -155,6 +157,87 @@ fn the_parts_are_one_graph() {
     assert_eq!(g.node("web.lib.client.item").unwrap().part, "web");
     let each: Vec<String> = analyze_parts(&[fixture()], &Options::default()).unwrap().into_iter().map(|g| g.language).collect();
     assert_eq!(each, ["python", "typescript"]);
+}
+
+fn twins() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixture-twins")
+}
+
+/// Two parts whose package has one name (`orders/src/app`, `billing/src/app`) each hold it under
+/// the directory the part lies in, with every name under it and the scripts beside it: both are
+/// drawn, each with its own code, files and places, and no two nodes share an id. The project at
+/// the root of the repository keeps its names. `atlas check` reads each part by the same names.
+#[test]
+fn two_parts_of_one_name_stay_two() {
+    let g = analyze_repo(&[twins()], &Options::default()).unwrap();
+    let parts: Vec<&str> = g.parts.iter().map(|p| p.id.as_str()).collect();
+    assert_eq!(parts, ["app", "billing/app", "orders/app"]);
+    let ids: HashSet<&str> = g.nodes.iter().map(|n| n.id.as_str()).collect();
+    assert_eq!(ids.len(), g.nodes.len(), "no two nodes share an id");
+    let edge = |kind: EdgeKind, src: &str, dst: &str| g.edges.iter().any(|e| e.kind == kind && e.src == src && e.dst == dst);
+    assert!(edge(EdgeKind::Calls, "billing/app.main.main", "billing/app.main.bill"));
+    assert!(edge(EdgeKind::Calls, "orders/app.main.main", "orders/app.main.take_orders"));
+    assert!(edge(EdgeKind::Calls, "billing/_root.run", "billing/app.main.main"), "a script calls its own part's `main`");
+    assert!(edge(EdgeKind::Calls, "orders/_root.run", "orders/app.main.main"));
+    let node = |id: &str| g.node(id).unwrap_or_else(|| panic!("{id}"));
+    assert_eq!(node("billing/app.main.main").part, "billing/app");
+    assert!(Path::new(&node("billing/app.main.main").file).ends_with("billing/src/app/main.py"));
+    let touched = |id: &str| node(id).touches.iter().map(|t| t.what.clone()).collect::<Vec<_>>();
+    assert_eq!(touched("billing/app.main.main"), ["data/ledger.csv", "out/invoice.txt"]);
+    assert_eq!(touched("orders/app.main.main"), ["out/orders.txt"]);
+    assert_eq!(node("app.ship").part, "app", "the project at the root keeps its names");
+    let checked: Vec<String> = analyze_parts(&[twins()], &Options::default()).unwrap().into_iter().map(|g| g.root).collect();
+    assert_eq!(checked, ["app", "billing/app", "orders/app"]);
+}
+
+/// A part read alone keeps the names it has; two repositories read together, each a project whose
+/// package is `app`, hold it under the repository's name.
+#[test]
+fn a_part_alone_keeps_its_names() {
+    let alone = analyze_repo(&[twins().join("orders")], &Options::default()).unwrap();
+    assert!(alone.node("app.main.main").is_some() && alone.node("_root.run").is_some());
+    let both = analyze_repo(&[twins().join("orders"), twins().join("billing")], &Options::default()).unwrap();
+    let parts: Vec<&str> = both.parts.iter().map(|p| p.id.as_str()).collect();
+    assert_eq!(parts, ["orders/app", "billing/app"]);
+    assert!(both.node("billing/app.main.bill").is_some());
+}
+
+/// A part named apart from another is checked as the code it is: a package called `src`, held
+/// under its directory (`billing/src`), is still asked its name.
+#[test]
+fn a_part_named_apart_is_checked_as_it_is() {
+    let mut g = analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/srclayout"), &Options::default()).unwrap();
+    g.rename(&|id| format!("billing/{id}"));
+    let doors: Vec<(String, String)> = check(&g).into_iter().filter(|f| f.principle == "doors").map(|f| (f.node, f.what)).collect();
+    assert!(matches!(doors.as_slice(), [(node, what)] if node == "billing/src" && what.contains("called src")), "{doors:?}");
+}
+
+/// A rename reaches every id a graph holds: afterwards no field that names a node names one by its
+/// old id, in any language's graph. A label (a node's name, an entry's, a make recipe's command)
+/// may read as an id, and is the author's.
+#[test]
+fn a_rename_reaches_every_id() {
+    fn stale(v: &serde_json::Value, key: &str, old: &HashSet<String>, out: &mut Vec<String>) {
+        match v {
+            serde_json::Value::Object(m) => m.iter().for_each(|(k, v)| stale(v, k, old, out)),
+            serde_json::Value::Array(a) => a.iter().for_each(|v| stale(v, key, old, out)),
+            serde_json::Value::String(s) if !["name", "label", "recipe"].contains(&key) && s.split('&').any(|p| old.contains(p)) => {
+                out.push(format!("{key}: {s}"))
+            }
+            _ => {}
+        }
+    }
+    let tests = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests");
+    for dir in ["fixture", "fixture-rs", "fixture-ts", "fixture-parts"] {
+        let mut g = analyze_repo(&[tests.join(dir)], &Options::default()).unwrap();
+        let old: HashSet<String> = g.nodes.iter().map(|n| n.id.clone()).chain(g.make.iter().map(|t| t.id.clone())).collect();
+        g.rename(&|id| format!("~{id}"));
+        let mut out = vec![];
+        stale(&serde_json::to_value(&g).unwrap(), "", &old, &mut out);
+        out.sort();
+        out.dedup();
+        assert!(out.is_empty(), "{dir}: ids the rename did not reach:\n{}", out.join("\n"));
+    }
 }
 
 /// A repository named by a relative path, through `.` or `..`, is the same repository.

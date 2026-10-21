@@ -921,6 +921,48 @@ impl Graph {
         self.nodes.iter().map(|n| (n.id.as_str(), n)).collect()
     }
 
+    /// Every id the graph holds, mapped by `to`: each node's own, and each that names a node (its
+    /// module, class and part, what its prophecy replaces, what its calls reach and the types they
+    /// hand and give, whose calls make its touches whole), an edge's ends, what a make target runs,
+    /// the parts and the root.
+    pub fn rename(&mut self, to: &dyn Fn(&str) -> String) {
+        let m = |s: &mut String| {
+            if !s.is_empty() {
+                *s = to(s)
+            }
+        };
+        m(&mut self.root);
+        self.parts.iter_mut().for_each(|p| m(&mut p.id));
+        for n in &mut self.nodes {
+            m(&mut n.id);
+            m(&mut n.module);
+            m(&mut n.part);
+            n.cls.iter_mut().for_each(&m);
+            if let Some(p) = n.prophecy.as_mut() {
+                p.supersedes.iter_mut().chain(p.replaces.iter_mut()).for_each(&m);
+            }
+            for s in &mut n.sites {
+                m(&mut s.to);
+                m(&mut s.on);
+                s.hands.iter_mut().chain(s.gives.iter_mut()).for_each(|h| m(&mut h.ty));
+            }
+            for t in n.touches.iter_mut().chain(n.instead.iter_mut()) {
+                for f in &mut t.by {
+                    *f = f.split('&').map(to).collect::<Vec<_>>().join("&");
+                }
+                t.users_of.iter_mut().for_each(&m);
+            }
+        }
+        for e in &mut self.edges {
+            m(&mut e.src);
+            m(&mut e.dst);
+        }
+        for t in &mut self.make {
+            m(&mut t.id);
+            t.calls.iter_mut().for_each(&m);
+        }
+    }
+
     pub fn recount(&mut self) {
         let mut nodes = BTreeMap::new();
         for n in &self.nodes {

@@ -427,7 +427,7 @@ fn doors(ix: &Index) -> Vec<Finding> {
     let mut out = vec![];
     let declared = ix.leaves(&g.root).exports;
     // `src/` is where packages live, not a name: installed, it collides with every other project laid out the same way
-    if declared && g.root == "src" {
+    if declared && ix.node(&g.root).map_or(false, |r| r.name == "src") {
         if let Some(root) = ix.node(&g.root) {
             out.push(ix.finding(
                 "doors",

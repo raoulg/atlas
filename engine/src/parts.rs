@@ -2,7 +2,7 @@
 //! app), read in its own language. Together they are one graph, in which every node knows its
 //! part, and a route one part serves joins it to the parts that name the route.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use anyhow::Result;
@@ -50,7 +50,18 @@ pub fn roots(repo: &Repo, opts: &Options) -> Vec<(PathBuf, &'static str)> {
 /// repository is read once; a part is a view of its reading.
 pub fn analyze_parts(repos: &[PathBuf], opts: &Options) -> Result<Vec<Graph>> {
     let read: Vec<Repo> = repos.iter().map(|r| crate::language::read(r, opts)).collect::<Result<_>>()?;
-    let found = found(&read, opts);
+    // each part with where it lies: its directory in its repository, behind the repository's name
+    // when several are read
+    let found: Vec<(Repo, PathBuf)> = read
+        .iter()
+        .flat_map(|r| {
+            let name = if read.len() > 1 { r.name().unwrap_or_default() } else { String::new() };
+            found(r, opts).into_iter().map(move |p| {
+                let at = Path::new(&name).join(p.at());
+                (p, at)
+            })
+        })
+        .collect();
     if found.is_empty() {
         anyhow::bail!(
             "no part found in {} ({})",
@@ -60,11 +71,11 @@ pub fn analyze_parts(repos: &[PathBuf], opts: &Options) -> Result<Vec<Graph>> {
     }
     let opts = Options { package: None, ..opts.clone() };
     let mut graphs = vec![];
-    for part in &found {
+    for (part, at) in &found {
         match crate::graph_of(part, &opts) {
             // a manifest without code of its own (tooling, a docs site, a workspace's root) is not a part
             Ok(g) if g.nodes.is_empty() && found.len() > 1 => eprintln!("skipped {}: no code of its own", part.root().display()),
-            Ok(g) => graphs.push(g),
+            Ok(g) => graphs.push((g, at.clone())),
             Err(e) if found.len() > 1 => eprintln!("skipped {}: {e}", part.root().display()),
             Err(e) => return Err(e),
         }
@@ -72,16 +83,50 @@ pub fn analyze_parts(repos: &[PathBuf], opts: &Options) -> Result<Vec<Graph>> {
     if graphs.is_empty() {
         anyhow::bail!("no code found in {}", repos.iter().map(|r| r.display().to_string()).collect::<Vec<_>>().join(", "));
     }
-    Ok(graphs)
+    Ok(apart(graphs))
 }
 
-/// The parts of the repositories as read: each root's, and for a package named on its own the
+/// The parts of the repository as read: each root's, and for a package named on its own the
 /// project it is in, asked for that package, as one part.
-fn found(read: &[Repo], opts: &Options) -> Vec<Repo> {
-    read.iter()
-        .flat_map(|r| match r.asked() {
-            Some(_) => vec![r.clone()],
-            None => roots(r, opts).into_iter().map(|(d, _)| r.under(d.strip_prefix(r.root()).unwrap_or(&d))).collect(),
+fn found(r: &Repo, opts: &Options) -> Vec<Repo> {
+    match r.asked() {
+        Some(_) => vec![r.clone()],
+        None => roots(r, opts).into_iter().map(|(d, _)| r.under(d.strip_prefix(r.root()).unwrap_or(&d))).collect(),
+    }
+}
+
+/// Parts that hold a top-level name alike (two projects whose package is `app`, the scripts beside
+/// each) hold it under where each part lies, `orders/app` and `billing/app`, so that no two parts
+/// share an id: the part's directory, behind the repository's name when several are read, and before
+/// the part's language when another part lies in the same directory. A name one part holds keeps it,
+/// and so does the part at the root of the repository, which lies nowhere below it.
+fn apart(parts: Vec<(Graph, PathBuf)>) -> Vec<Graph> {
+    let head = |id: &str| id.split('.').next().unwrap_or("").to_string();
+    // the top-level names of a part's own code: no library's, which the parts share
+    let held: Vec<BTreeSet<String>> = parts
+        .iter()
+        .map(|(g, _)| g.nodes.iter().filter(|n| !n.library && n.kind != NodeKind::External).map(|n| head(&n.id)).collect())
+        .collect();
+    let mut holders: HashMap<&str, usize> = HashMap::new();
+    for h in held.iter().flatten() {
+        *holders.entry(h).or_default() += 1;
+    }
+    let dirs: Vec<PathBuf> = parts.iter().map(|(_, at)| at.clone()).collect();
+    parts
+        .into_iter()
+        .zip(&held)
+        .map(|((mut g, at), own)| {
+            let shared: HashSet<&str> = own.iter().map(String::as_str).filter(|h| holders[h] > 1).collect();
+            // a dot in a directory's name is no package boundary
+            let mut place: Vec<String> = at.components().map(|c| c.as_os_str().to_string_lossy().replace('.', "_")).collect();
+            if dirs.iter().filter(|d| **d == at).count() > 1 {
+                place.push(g.language.clone());
+            }
+            if !shared.is_empty() && !place.is_empty() {
+                let place = place.join("/");
+                g.rename(&|id| if shared.contains(head(id).as_str()) { format!("{place}/{id}") } else { id.to_string() });
+            }
+            g
         })
         .collect()
 }
@@ -89,7 +134,7 @@ fn found(read: &[Repo], opts: &Options) -> Vec<Repo> {
 /// What reading the repository at `dir` takes from outside it, part by part: where the code of
 /// the libraries each part reads lies, as checks of how each place stands.
 pub fn environment(dir: &Path, opts: &Options) -> Result<Vec<Check>> {
-    let read = [crate::language::read(dir, opts)?];
+    let read = crate::language::read(dir, opts)?;
     let parts = found(&read, opts);
     let opts = Options { package: None, ..opts.clone() };
     Ok(parts.iter().filter_map(|part| Some(crate::language::detect(part, &opts)?.environment(part, &opts))).flatten().collect())
