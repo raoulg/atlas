@@ -203,8 +203,8 @@ side File(spend.toml) left
 side Disk({$SPEND_CONFIG}) left
 side Disk(path) left
 side Web left
-known #133 side SQLite(expenses) both          # import writes it, report reads and uses it: arms of one choice; the count after is no use
-known #133 side SQLite(rates) both             # rates writes it, report reads and uses it
+side SQLite(expenses) both        # import writes it, report reads and uses it: arms of one choice; the count after is no use
+side SQLite(rates) both           # rates writes it, report reads and uses it
 side Global(spend.rates.LATEST) right          # run reads back what it left there: closed, the place keeps what run leaves
 side Disk({$SPEND_REPORTS}) right
 side Disk({$SPEND_REPORTS}/report.{map}) right

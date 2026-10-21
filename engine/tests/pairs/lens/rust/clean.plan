@@ -9,7 +9,7 @@
 #
 # Issues marked: #74 an exported class's construction; #101 a body's own use of a value it made; #103 an element of
 # what a body iterates; #125 which library operations are steps; #126 what the own arrow keeps; #127 a parameter bound
-# by kind, not to what is handed; #130 which forms are choices; #133 read and written: between, not both.
+# by kind, not to what is handed; #130 which forms are choices.
 
 route harvest.ReadingStore
 step ReadingStore()/ReadingStore.new
@@ -330,9 +330,9 @@ home Summary@ReadingStore()/ReadingStore.keep_summary ReadingStore()
 known #125 home Summary·summary ReadingStore()
 
 side entry left
-known #133 side Disk(ReadingStore.readings) both   # #133: Atlas draws it between
-known #133 side Disk(ReadingStore.outages) both   # #133: Atlas draws it between
-known #133 side Disk(ReadingStore.summaries) both   # #133: Atlas draws it between
+side Disk(ReadingStore.readings) both
+side Disk(ReadingStore.outages) both
+side Disk(ReadingStore.summaries) both
 
 # what Atlas has and the code does not say
 known #74 extra step ReadingStore()/ReadingStore.new/ReadingStore() recursive   # building the exported struct runs its public functions, `new` among them

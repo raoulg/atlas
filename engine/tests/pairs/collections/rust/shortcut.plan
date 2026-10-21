@@ -91,7 +91,7 @@ line Reading·readings > Store()/Store.put_all/for reading in readings value
 line Store()/Store.put_all/for reading in readings > Reading·reading@Store()/Store.put_all/for reading in readings value
 step Store()/Store.put_all/for reading in readings
 side entry left
-known #133 side Disk(Store.path) both   # the doors read it and write it again: Atlas draws it between
+side Disk(Store.path) both
 
 # What Atlas gets wrong here, each by the issue of its cause:
 # C: the struct literal `Store { path }` in `new` is read as a call of `new` itself

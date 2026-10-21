@@ -66,7 +66,7 @@ known #125 home _·soort@Kennisbank()/Kennisbank.graaf/Kennisbank.node/split Ken
 known #125 home _·tekst@Kennisbank()/Kennisbank.graaf/Kennisbank.node/split Kennisbank()/Kennisbank.graaf/Kennisbank.node
 
 side entry left
-known #133 side Disk(Kennisbank.path) both          # voegToe reads what the file held and changes it: Atlas says between
+side Disk(Kennisbank.path) both
 
 # the methods run on what the constructor built, not on the caller's instance
 known #74 extra line Kennisbank@Kennisbank()/Kennisbank() > Kennisbank()/Kennisbank.voegToe/Kennisbank.write value

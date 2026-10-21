@@ -5,9 +5,9 @@
 # result the body names (`readFileSync`, `find`, `map`) is a step; what it touches stays its caller's. Each file is
 # read, used and written by the route: it stands on both sides.
 #
-# Issues marked: #74 an exported class's construction; #76 a used read taken as unused; #101 a body's own use of a
+# Issues marked: #74 an exported class's construction; #101 a body's own use of a
 # value it made; #125 which library operations are steps; #126 what the own arrow keeps; #127 a parameter bound by
-# kind, not to what is handed; #130 which forms are choices; #133 read and written: between, not both.
+# kind, not to what is handed; #130 which forms are choices.
 
 route harvest.store.ReadingStore
 step ReadingStore()/ReadingStore()
@@ -82,9 +82,9 @@ known #130 home _·temperatures@ReadingStore()/ReadingStore.summary/?1/map Readi
 home Day·day ReadingStore()
 
 side entry left
-known #133 side Disk(ReadingStore.readings) both   # #133: Atlas draws it between
-known #76 side Disk(ReadingStore.outages) both   # Atlas: right, as if what `outages` returns were unused
-known #76 side Disk(ReadingStore.summaries) both   # Atlas: right, as if what summary reads were unused
+side Disk(ReadingStore.readings) both
+side Disk(ReadingStore.outages) both
+side Disk(ReadingStore.summaries) both
 
 # what Atlas has and the code does not say
 known #74 extra line ReadingStore@ReadingStore()/ReadingStore() > ReadingStore()/ReadingStore.save value   # Atlas runs it on what the constructor built

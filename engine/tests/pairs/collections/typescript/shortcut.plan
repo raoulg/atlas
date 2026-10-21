@@ -79,7 +79,7 @@ line Reading·readings > Store()/Store.putAll/for reading of readings value
 line Store()/Store.putAll/for reading of readings > Reading·reading@Store()/Store.putAll/for reading of readings value
 step Store()/Store.putAll/for reading of readings
 side entry left
-known #133 side Disk(Store.path) both   # the doors read it and write it again: Atlas draws it between
+side Disk(Store.path) both
 
 # What Atlas gets wrong here, each by the issue of its cause:
 # B: a call into a library whose result the body does not name, and which changes nothing, is drawn as a step

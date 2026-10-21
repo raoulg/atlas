@@ -111,7 +111,7 @@ known #138 home _@Kennisbank()/Kennisbank.voeg_toe Kennisbank()
 known #138 home _@Kennisbank()/Kennisbank.graaf Kennisbank()
 
 side entry left
-known #133 side Disk(Kennisbank.path) both          # voeg_toe reads what the file held and changes it: Atlas says between
+side Disk(Kennisbank.path) both
 
 # building the struct the route is about is read as a call of the route inside itself
 known #151 extra step Kennisbank()/Kennisbank.new/Kennisbank() recursive

@@ -87,7 +87,7 @@ step Store()/Store.put/write_rows/for row in rows
 step Store()/Store.put_all/for reading in readings
 step Store()/Store.put_all/write_rows/for row in rows
 side entry left
-known #133 side Disk(Store.path) both   # the doors read it and write it again: Atlas draws it between
+side Disk(Store.path) both
 
 # What Atlas gets wrong here, each by the issue of its cause:
 # K: a value handed through a field reaches no step inside: `write_rows(self.path, rows)` hands `self` (#121, decision
