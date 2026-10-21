@@ -164,6 +164,13 @@ a.try:hover{color:var(--accent)}
 .step{display:grid;grid-template-columns:minmax(0,920px) minmax(0,1fr);gap:22px;align-items:start;width:100%}
 .step figure{min-width:0}
 @media (max-width:1100px){.step{grid-template-columns:minmax(0,1fr)}}
+/* a step of the session: each screenshot at its own size, side by side where they fit */
+.session{display:flex;flex-wrap:wrap;gap:22px;align-items:flex-start;width:100%}
+.session h3{flex-basis:100%;font:600 18px var(--sans);margin:14px 0 -8px}
+.session figure{flex:0 1 auto}
+.session figure img{width:min(calc(var(--w) * 1px),100%);height:auto;display:block;padding:12px 16px}
+.session .aside{flex:1 1 300px;margin:0;color:var(--ink-2);font-size:16px;max-width:52ch;align-self:center}
+.session .aside code{font-family:var(--mono);font-size:14px}
 .mcp{background:var(--panel);border:1px solid var(--line);padding:16px 20px;width:100%}
 .mcp h3{font:600 17px var(--sans);margin:0 0 6px}
 .mcp p{margin:6px 0 0;color:var(--ink-2);font-size:15px;max-width:78ch}
@@ -366,33 +373,27 @@ section{margin-bottom:104px}
 
 <section class="chap" id="point">
   <h2>Say exactly what you mean: point at it.</h2>
-  <p class="lede">You chat with your agent where you always do. Atlas gives it tools, and the picture is where you both look. The agent takes your page to a view and points; you alt-click a box to leave a note on it; the agent answers on that same box. The chat is yours; the answer shows up in Atlas.</p>
+  <p class="lede">You chat with your agent where you always do. Atlas gives it tools, and the picture is where you both look. You ask where something happens, and the agent shows you on the page. You alt-click a box to leave a note on it, and the agent answers on that same box.</p>
   <div class="wide">
     <div class="mcp">
       <h3>Connect Atlas to your agent once</h3>
       <pre>claude mcp add --scope user atlas -- atlas mcp</pre>
-      <p>Then run <code>atlas serve</code> in a repository and open the page it prints. On the left of each step is what you see in Atlas; on the right is what your agent calls and what Atlas answers.</p>
+      <p>Then run <code>atlas serve</code> in a repository and open the page it prints. What follows is one real session with Claude Code on the sunspots program: what was said in the chat, and what the page showed.</p>
     </div>
-    <div class="step">
-      <figure>
-        <figcaption><b>1 &middot; The agent points at one step</b><span class="tag">look</span></figcaption>
-        <img src="img/interaction/look.png" style="--w:920" alt="The route of the sunspots pipeline, close up; the step trusted is outlined and glows: the agent points at it">
-      </figure>
-      <figure class="agent"><figcaption>Your agent calls Atlas</figcaption><pre data-calls="look"></pre></figure>
+    <div class="session">
+      <h3>1 &middot; You ask where something happens; the agent points at it</h3>
+      <figure class="chat"><figcaption>In the chat</figcaption><img src="img/session/ask.png" style="--w:821" alt="The chat: you ask where the smoothing happens; the agent answers that it is the step smooth, that it took the page to the route run and pointed at smooth, what goes in and what comes out, and the one line of code"></figure>
+      <figure><figcaption>On the page <span class="tag">look</span></figcaption><img src="img/session/look.png" style="--w:760" alt="The route of the sunspots program between load and Trend.save; the step smooth is outlined and glows: the agent points at it"></figure>
     </div>
-    <div class="step">
-      <figure>
-        <figcaption><b>2 &middot; You write a note on the box</b><span class="tag">alt-click</span></figcaption>
-        <img src="img/interaction/note-field.png" style="--w:920" alt="A note field open on the step trusted, with a question typed in">
-      </figure>
-      <figure class="agent"><figcaption>Your agent reads it</figcaption><pre data-calls="notes"></pre></figure>
+    <div class="session">
+      <h3>2 &middot; You write a note on a box</h3>
+      <figure><figcaption>On the page <span class="tag">alt-click</span></figcaption><img src="img/session/note.png" style="--w:742" alt="A note field open on the step smooth, with the question why smooth uses center typed in"></figure>
+      <p class="aside">Alt-click a box, type, press enter. The note stays on the box, with the view and the commit it was written at. One more note went on <code>load</code>: what happens if the data on the web changes?</p>
     </div>
-    <div class="step">
-      <figure>
-        <figcaption><b>3 &middot; The agent answers on the box, and your note is resolved</b><span class="tag">&#10003; &#10022;</span></figcaption>
-        <img src="img/interaction/answered.png" style="--w:920" alt="The step trusted with a check mark (the note is resolved) and a star; the agent's answer is open beside the star">
-      </figure>
-      <figure class="agent"><figcaption>Your agent answers</figcaption><pre data-calls="annotate resolve"></pre></figure>
+    <div class="session">
+      <h3>3 &middot; The agent reads your notes and answers on the box</h3>
+      <figure class="chat"><figcaption>In the chat</figcaption><img src="img/session/read.png" style="--w:808" alt="The chat: you ask whether the agent can read your notes; it found two, answered each on its box and resolved both, and repeats the answers about center and about the data on the web"></figure>
+      <figure><figcaption>On the page <span class="tag">&#10003; &#10022;</span></figcaption><img src="img/session/answer.png" style="--w:702" alt="The step smooth with a check mark (the note is resolved) and a star; the agent's answer about center is open beside the star"></figure>
     </div>
   </div>
 </section>
