@@ -54,8 +54,9 @@ pub struct SigInfo {
 impl SigInfo {
     /// The types of another signature of the same function as well.
     pub fn extend(&mut self, other: SigInfo) {
-        self.ptypes.extend(other.ptypes);
-        self.rtypes.extend(other.rtypes);
+        let SigInfo { ptypes, rtypes } = other;
+        self.ptypes.extend(ptypes);
+        self.rtypes.extend(rtypes);
     }
 }
 
