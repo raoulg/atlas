@@ -111,6 +111,10 @@ jobs:
         run: atlas view --no-open --out site/index.html
       - name: Take its picture
         run: uv run tools/atlas_picture.py site/index.html site/atlas.png
+      - name: Write the pill                       # optional, see "The pill"
+        run: |
+          atlas check --json > findings.json || true
+          python3 tools/atlas_badge.py site/badge.svg findings.json
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site
@@ -137,6 +141,26 @@ after a push.
 
 `ATLAS_CHANNEL=nightly` before `sh` installs the nightly build instead of the latest release. The
 runner reads the update check as CI and stays silent.
+
+### The pill
+
+A repository that draws its picture can say so, with a pill in the README:
+[![atlas: drawn on push](../badge-atlas.svg)](https://raoulg.github.io/atlas/)
+Take the one that fits:
+
+- **Static**: the pill above says only that the picture is drawn. Save
+  [`badge-atlas.svg`](../badge-atlas.svg) in your repository (or `python3 tools/atlas_badge.py badge.svg`)
+  and name it from the README. It never changes.
+- **Live**: the same pill with a last segment counting the questions `atlas check` asks of the
+  code, teal at none and amber otherwise. The workflow above writes it on every push (the step
+  "Write the pill"), next to the picture, so it is always the count of the code as pushed:
+
+```html
+<a href="https://<owner>.github.io/<repository>/"><img src="https://<owner>.github.io/<repository>/badge.svg" alt="atlas: drawn on push"></a>
+```
+
+Both come from `tools/atlas_badge.py` in the Atlas repository, a script of the standard library
+alone: copy it next to `tools/atlas_picture.py`.
 
 ### A private repository
 

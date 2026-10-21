@@ -1,0 +1,45 @@
+name: atlas
+
+# The picture of Atlas's own analyze route, its page and its pill, drawn from the code on every push
+# to main and published with the documentation. This is the workflow docs/reference/ci.md describes.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  picture:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: astral-sh/setup-uv@v6
+      - run: cargo build --locked --release -p atlas
+      - name: Start from the documentation
+        run: cp -R docs site
+      - name: Draw the page
+        run: target/release/atlas view --no-open --out site/atlas.html --view '{"route": "atlas-engine.analyze"}'
+      - name: Take its picture
+        run: uv run tools/atlas_picture.py site/atlas.html site/atlas.png
+      - name: Write the pill
+        run: |
+          target/release/atlas check --json > findings.json || true
+          python3 tools/atlas_badge.py site/badge.svg findings.json
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deploy
+        uses: actions/deploy-pages@v4
