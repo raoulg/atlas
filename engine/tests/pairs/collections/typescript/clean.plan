@@ -26,7 +26,7 @@ step Store()/Store.put/push
 step Store()/Store.put/writeRows
 line Reading·reading > Store()/Store.put/Row() value
 line Store()/Store.put/Row() > Row@Store()/Store.put/Row() value
-known #129 line Row·rows@Store()/Store.put/Store.rows > Store()/Store.put/push value  # G
+line Row·rows@Store()/Store.put/Store.rows > Store()/Store.put/push value
 line Row@Store()/Store.put/Row() > Store()/Store.put/push value
 known #129 line Store()/Store.put/push > Row·rows@Store()/Store.put/push value  # G
 known #129 line Row·rows@Store()/Store.put/push > Store()/Store.put/writeRows value  # G
@@ -48,7 +48,7 @@ step Store()/Store.putAll/Row()
 step Store()/Store.putAll/push
 step Store()/Store.putAll/writeRows
 line Store()/Store.putAll/Row() > Row@Store()/Store.putAll/Row() value
-known #129 line Row·rows@Store()/Store.putAll/Store.rows > Store()/Store.putAll/push value  # G
+line Row·rows@Store()/Store.putAll/Store.rows > Store()/Store.putAll/push value
 line Row@Store()/Store.putAll/Row() > Store()/Store.putAll/push value
 known #129 line Store()/Store.putAll/push > Row·rows@Store()/Store.putAll/push value  # G
 known #129 line Row·rows@Store()/Store.putAll/push > Store()/Store.putAll/writeRows value  # G
@@ -134,17 +134,12 @@ known #137 extra side Disk(writeRows.path) right
 known #137 extra side Disk(this.path) left
 
 # G
-known #129 extra home _·rows Store()
 known #129 extra home _·rows@Store()/Store.put/push Store()/Store.put
 known #129 extra home _·rows@Store()/Store.putAll/push Store()/Store.putAll
 known #129 extra line Row@Store()/Store.put/Row() > Store()/Store.put/writeRows value
 known #129 extra line Row@Store()/Store.putAll/Row() > Store()/Store.putAll/writeRows value
 known #129 extra line Store()/Store.put/push > _·rows@Store()/Store.put/push value
 known #129 extra line Store()/Store.putAll/push > _·rows@Store()/Store.putAll/push value
-known #129 extra line _·rows > Store()/Store.put/push value
-known #129 extra line _·rows > Store()/Store.putAll/push value
-known #129 extra line _·rows@Store()/Store.put/push > Store()/Store.put/writeRows value
-known #129 extra line _·rows@Store()/Store.putAll/push > Store()/Store.putAll/writeRows value
 
 # #74
 known #74 extra line Store@Store()/Store() > Store()/Store.put/Store.rows value

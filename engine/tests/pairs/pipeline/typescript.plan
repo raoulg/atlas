@@ -128,8 +128,6 @@ side Web(www.sidc.be) left
 side File(data/raw/sunspots.csv) between
 side File(figures/sunspots.svg) right
 
-# a result of no type of the code's that a step of the caller takes also goes back to the caller: counted twice
-
 # choices whose arms hold no step are drawn
 known #130 extra choice cli.ts/main/load/parse/parseLine/?1
 known #130 extra choice cli.ts/main/trend/?1

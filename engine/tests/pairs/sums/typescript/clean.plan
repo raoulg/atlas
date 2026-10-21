@@ -76,5 +76,3 @@ known #126 extra home Bron Kennisbank()
 # the methods run on what the constructor built, not on the caller's instance
 known #74 extra line Kennisbank@Kennisbank()/Kennisbank() > Kennisbank()/Kennisbank.voegToe/Kennisbank.write value
 known #74 extra line Kennisbank@Kennisbank()/Kennisbank() > Kennisbank()/Kennisbank.graaf/Kennisbank.node value
-
-# graaf's own arrow takes what its steps make, the Nodes too, though only Graaf() takes them and graaf gives back the Graaf

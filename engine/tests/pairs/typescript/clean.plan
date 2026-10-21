@@ -1,7 +1,6 @@
 # Morphisms are functions: what a value is, is what the arrow that makes it gives. The file's JSON comes in as the
 # world has it, and `parseConfig(raw: unknown): Config` turns it into the program's own type, once.
 
-
 route expenses.config.loadConfig
 step loadConfig/parseConfig
 step loadConfig/parseConfig/fieldsOf
@@ -39,5 +38,3 @@ home Config@loadConfig loadConfig
 
 side entry left
 side Disk(loadConfig.file) left
-
-# the map fieldsOf gives is a value the two lookups take, not a result handed back to parseConfig
