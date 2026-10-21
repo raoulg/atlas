@@ -1,0 +1,21 @@
+# A step that writes a place and reads it back: what `load` reads inside `refresh` is the file as `save` left it there,
+# a value at a moment inside `refresh`, and the place keeps what `refresh` leaves, in the codomain (rule 4).
+
+route cachecalc.main
+step main/refresh
+step main/refresh/save
+step main/refresh/load
+
+line entry > main call
+line main/refresh/save > File(cache.json) own
+line main/refresh/save > File(cache.json) in main/refresh value
+line File(cache.json) in main/refresh > main/refresh/load value
+line main/refresh/load > main/refresh back                # load's dict goes back to refresh
+line main/refresh > main back                             # and refresh's to main, which prints it
+line main > Screen own
+
+home File(cache.json) in main/refresh main/refresh
+
+side entry left
+side File(cache.json) right
+side Screen right

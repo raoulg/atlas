@@ -1,0 +1,13 @@
+# A step that writes one file itself and through a step it calls: two channels to one place, never merged
+# (sentence 6, rule 3). Closed, `export` draws a solid line and a dashed one to `out.csv`, each counting one.
+
+route exporter.main
+step main/export
+step main/export/write_header
+
+line entry > main call
+line main/export/write_header > File(out.csv) own
+line main/export > File(out.csv) own                     # export appends to the file itself
+
+side entry left
+side File(out.csv) right

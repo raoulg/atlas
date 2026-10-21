@@ -1,0 +1,4 @@
+# A value an override in a dispatch builds moves into the dispatch's frame when it opens
+known #102 fault Page@Doc()/Doc() stands in
+known #102 fault Page@Doc()/Doc.parse stands in
+known #102 fault Page@Page()/Page()/Doc() stands in
