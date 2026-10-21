@@ -3389,8 +3389,8 @@ fn file_direction(file: Option<FileArg>, nth: usize, sides: Option<[Crossing; 2]
 }
 
 /// Which parameter of the function a call reaches each argument is handed to: positional
-/// arguments in order (after `self`), keyword arguments by name. A class's call reaches its
-/// `__init__`.
+/// arguments in order (after `self`), keyword arguments by name. A class's call reaches the
+/// `__init__` it runs: its own, else the fields it declares, else the first along its bases.
 fn arguments<'t>(
     modules: &'t IndexMap<String, Module>,
     store: &GraphBuilder,
@@ -3400,7 +3400,15 @@ fn arguments<'t>(
     at: At<'_, 't>,
 ) -> Option<Arg<'t>> {
     let callee = match store.nodes.get(target)?.kind {
-        NodeKind::Class => format!("{target}.__init__"),
+        NodeKind::Class => {
+            let own = format!("{target}.__init__");
+            let fields = store.classes.get(target).map_or(false, |c| !c.fields.is_empty());
+            if store.nodes.contains_key(&own) || fields {
+                own
+            } else {
+                store.initializer_of(target).unwrap_or(own)
+            }
+        }
         _ => target.to_string(),
     };
     // a class without an `__init__` of its own is built from the fields it declares, in order

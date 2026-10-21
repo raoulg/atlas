@@ -4,6 +4,7 @@
 # the override's result has the dispatch's own moment: closed, its line into the dispatch is dropped, open it is drawn
 known #102 fault more t:shortcut.shapes.Circle@n:shortcut.shapes.Factory/shortcut.shapes.Factory.make>n:shortcut.shapes.Factory/shortcut.shapes.Factory.make
 known #102 fault no line Circle@Factory()/Factory.make > Factory()/Factory.make
+known #102 fault Click@Click()/Click()/Event() stands in
 
 route shortcut.handlers.Handler
 step Handler()/Handler.handle

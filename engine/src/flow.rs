@@ -631,13 +631,10 @@ impl<'g> Ix<'g> {
         self.nodes.get(class)?.initializer(|id| self.nodes.get(id).copied())
     }
 
-    /// What building a class takes: the parameters of the first constructor along its method
-    /// resolution order, its own or, when it has none, a base's.
+    /// What building a class takes: the parameters of the initializer it runs
+    /// (`model::initializer_along`), its own or, when it has none, a base's.
     fn built_from(&self, class: &str) -> Vec<String> {
-        self.mro(class)
-            .into_iter()
-            .filter(|c| self.nodes.get(c).map_or(false, |n| n.kind == NodeKind::Class))
-            .find_map(|c| self.ctor(c))
+        crate::model::initializer_along(&self.mro(class), |id| self.nodes.get(id).copied())
             .map_or(vec![], |c| self.targets(&c, EdgeKind::Takes))
     }
 }

@@ -365,13 +365,21 @@ impl GraphBuilder {
     /// that defines it, the class's own before a base's (a trait's provided method, an inherited
     /// one).
     pub fn method_of(&self, cls: &str, name: &str) -> Option<String> {
-        let bases = |c: &str| -> Vec<&str> {
+        self.order(cls).into_iter().map(|c| format!("{c}.{name}")).find(|m| self.nodes.contains_key(m))
+    }
+
+    /// The initializer building a value of class `cls` runs (`model::initializer_along`): what a
+    /// call of the class hands its arguments to.
+    pub fn initializer_of(&self, cls: &str) -> Option<String> {
+        crate::model::initializer_along(&self.order(cls), |id| self.nodes.get(id))
+    }
+
+    /// The method resolution order of `cls` along the program's own classes.
+    fn order<'a>(&'a self, cls: &'a str) -> Vec<&'a str> {
+        let bases = |c: &'a str| -> Vec<&'a str> {
             self.classes.get(c).into_iter().flat_map(|i| &i.resolved).map(String::as_str).filter(|b| !b.starts_with("ext:")).collect()
         };
         crate::model::linearization(cls, &bases, &mut HashMap::new())
-            .into_iter()
-            .map(|c| format!("{c}.{name}"))
-            .find(|m| self.nodes.contains_key(m))
     }
 
     /// Library code read as code: every node of a library module is the library's, and no route
