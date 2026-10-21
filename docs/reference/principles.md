@@ -54,7 +54,7 @@ lets it be traced and Atlas does not yet; each gap is an ignored test in `pairs_
 |---|---|---|---|
 | doors | finding; `__all__` exports | finding on an untyped export or one typed `any` | forbidden: every signature is typed |
 | sums | finding; variant edges | traceable (a union alias) | finding; a library's sum handed on (`Result`) is asked |
-| overrides | `keeps` from ty; finding | forbidden: the compiler holds an override to its base | forbidden |
+| overrides | finding; `keeps` from ty, against each base along the method resolution order | finding; what an override takes, which the compiler checks both ways; a type is its members | forbidden: a trait's implementation has the trait's signature |
 | places | finding; where the path is made whole | finding; where the path is made whole | finding; where the path is made whole |
 | changes | mutates edge; finding | mutates edge; finding | forbidden: a change is `&mut` in the signature |
 | gives | finding; the call not followed | no returns edge; `uses` on the call | returns edge; `Result<T, E>` gives `T` |
@@ -162,37 +162,82 @@ class Fits:
 Id: `overrides`.
 
 A caller written against a base class must be able to use any subclass in its place
-(the Liskov substitution principle). An override that hands back something its base
-does not promise breaks that: the caller expected a `Tuple[Figure, Axes]` and got a
-`Figure`, or `None`. Handing back a subclass of the promised type is fine.
+(the Liskov substitution principle). An override gives at most what its base promises and takes
+at least what its base takes. One that hands back something its base does not promise breaks
+that: the caller expected a `Tuple[Figure, Axes]` and got a `Figure`, or `None`. So does one
+that takes less: the caller hands an `Event` to a handler that only takes a `Click`. Handing back
+a subclass of the promised type is fine, and so is taking a wider type than the base takes.
 
 - **Python.** Type checkers report it as an incompatible override; pyright's
   `reportIncompatibleMethodOverride`, ty's `invalid-method-override`. A
   `# type: ignore[override]` on the line is the code saying it knows.
-- **Rust.** A trait implementation must match the trait's signature; the compiler
-  checks it.
-- **TypeScript.** A method must be assignable to the one it overrides; the compiler checks
-  it.
+- **TypeScript.** The compiler holds what an override gives to what its base gives, but checks a
+  method's parameters both ways (bivariantly): `override handle(e: Click)` compiles where the
+  base takes any `Event`. Its types are structural: a `Circle` with the `area(): number` a `Shape`
+  declares is a `Shape`, whether or not it says `implements Shape`.
+- **Rust.** A trait's implementation has the trait's signature; the compiler checks it, so the
+  careless form cannot be written and Atlas asks nothing.
 
-Atlas checks: an override that cannot stand where the method of its nearest base stood,
-grouped per base method. The finding shows what the base promises, what it takes and what it
-gives, and what each override that breaks it says instead. It decides by what the types mean,
-not by how they are written. For Python, ty decides, by its own check of an override
-(`invalid-method-override`), what the override takes as well as what it gives: `List[Node]` is
-`list[Node]`, `Optional[Node]` is `Node | None`, `Annotated[str, "a note"]` is a `str`, and a
-`list[Node]` may stand where a `Sequence[Node]` is promised. A generic base promises what its
-subclass fills in: in `class Boekwinkel(Winkel[Boek])`, the `-> Versie[R]` of `Winkel[R]` promises
-a `Versie[Boek]`, whether the base writes its type parameter as `class Winkel[R]` or with
+Atlas checks: an override that cannot stand where a method it overrides stood, grouped per base
+method. A class's ancestors are read in its method resolution order, C3's, as Python orders them:
+`class D(B, C)` with `B(A)` and `C(X)` runs D, B, A, C, X, a class before its bases and the bases
+in the order they are written. Every rule reads which method a class has in this order. A caller
+written against any of the ancestors may be handed the override, so it keeps the promise of each
+method it overrides, and the finding names the first along the order whose promise it breaks: in
+that `D`, where `A.f` gives an `int` and `C.f` a `str`, a `D.f` that gives a `str` breaks `A.f`,
+and one that gives an `int` breaks `C.f`. A promise the nearest base already breaks is that
+base's question, and is not asked again of what overrides it. A classmethod that gives `Self` is
+called through the class a caller names and is handed what the caller hands the base's, so it is
+asked like any other method; an initializer (`__init__`, `constructor`) answers to no base. The
+finding shows what the base promises, what it takes and what it gives, and what each override
+that breaks it says instead. It decides by what the types mean, not by how they are written.
+
+For Python, ty decides, by its own check of an override (`invalid-method-override`) against each
+base along the order, what the override takes as well as what it gives, and names the base whose
+promise it breaks: `List[Node]` is `list[Node]`, `Optional[Node]` is `Node | None`,
+`Annotated[str, "a note"]` is a `str`, a `list[Node]` may stand where a `Sequence[Node]` is
+promised, and `handle(self, e: Click)` breaks a `handle(self, e: Event)`. A generic base promises
+what its subclass fills in: in `class Boekwinkel(Winkel[Boek])`, the `-> Versie[R]` of `Winkel[R]`
+promises a `Versie[Boek]`, whether the base writes its type parameter as `class Winkel[R]` or with
 `Generic[R]`, and through any generic base between the two. A parameter the override names
-otherwise than its base breaks the promise too, since a caller may pass it by name. Where ty does
-not know a type (a library the environment does not hold), it has nothing against it, and neither
-has Atlas. For Rust and TypeScript, whose compilers already hold an override to its base, Atlas
-compares the program's types the two signatures give: each type the override gives is one its
-base promises, a subclass of one, or a variant of a sum it promises. `anyhow::Result<Page>` keeps
-the `Result<Page>` a trait promises. An array's shape is a promise no type checker reads
-(jaxtyping's `Float[Tensor, "batch dim"]`): each array an override gives has a shape its
-base allows, where `...` stands for any run of dimensions, a name for any one, and a number
-for itself.
+otherwise than its base breaks the promise too, since a caller may pass it by name. A
+`# type: ignore[...]` with any code on the first or last line of the override's signature is read
+as the bare `# type: ignore` is: ty honours only the bare form and codes of its own (`ty:`), and
+Atlas reads the comment itself. Where ty does not know a type (a library the environment does not
+hold), it has nothing against it, and neither has Atlas.
+
+For TypeScript, and for a Python override ty has no answer for (of a method of a library's class
+read as code), Atlas compares the program's types the two signatures resolve to: each type the override
+gives fits one its base promises, and at each place both take a parameter, each type the base takes
+there fits one the override takes. A type fits another when it is that type, a subclass of it, or a
+variant of a sum the other names; in TypeScript also when it has every member the other declares,
+its own and its ancestors': each method by name, with a signature that keeps the other's, and each
+field by name, holding a type that fits the other's where the graph has the types of both. A type
+with a private method is had only by its subclasses. An array's shape is a promise no type checker
+reads (jaxtyping's `Float[Tensor, "batch dim"]`): each array an override gives has a shape its
+base allows, where `...` stands for any run of dimensions, a name for any one, and a number for
+itself.
+
+What the rule cannot see:
+
+- Where ty does not decide, a type that resolves to none of the program's types (`string`,
+  `number`, a library's type) is not compared: an override that gives a `string` where a `number`
+  is promised is the compiler's to find.
+- A TypeScript parameter is compared by its place, not its name, and its type by the names its
+  annotation writes: a `Click[]` is compared as a `Click`, a type parameter (`T extends Event`) and
+  an alias of a union as nothing. A generic base's type parameter is not filled in with what the
+  subclass hands it, as ty fills it in for Python.
+- A member's optionality (`label?: string`), a static member, an index signature and a field the
+  graph knows by name only are read as a plain member: a type that lacks an optional member reads
+  as lacking it, and two fields of one name and different primitive types read as alike.
+- A method that is not one of a class's own (a function assigned in a class body, a mixin applied
+  at run time) overrides nothing the graph holds, and a base the graph does not read (a library's
+  class not read as code) promises nothing the rule can compare. Where ty finds the promise of such
+  a base broken by an override that also overrides a base the graph holds, the finding names the
+  nearest base the graph holds.
+- Rust's two traits that declare a method of one name are one method of that name in the graph,
+  the first implemented; the compiler holds both, so the rule loses nothing, but the picture shows
+  one.
 
 goad: `BasePlot.plot` promises `Tuple[Figure, Axes]`; `DecomposePlot.plot` and
 `PlotFits.plot` give a `Figure`, and their `build` gives `None`. The question is

@@ -3,7 +3,7 @@
 //! Everything between `parse` and `layout` is `Graph -> Graph`. The JSON shape is the
 //! contract with the frontend; `ts-rs` generates the TypeScript side from these types.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap, VecDeque};
 
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
@@ -99,6 +99,9 @@ pub struct Node {
     pub bases: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub methods: Vec<String>,
+    /// For a class: the fields it declares, by name, beside its methods.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub fields: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub decorators: Vec<String>,
     /// Sketch code kept in the tree, not built yet: what its marker says. Read by the language's reader.
@@ -109,11 +112,15 @@ pub struct Node {
     /// What the signature says it gives back; none when it does not say.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub returns: Option<Returns>,
-    /// For a method that overrides another: whether what it gives back can stand where the
-    /// overridden method's promise stood, as the language's type checker decides; none where no
+    /// For a method that overrides another: whether it can stand where each method it overrides
+    /// stood, what it takes and what it gives, as the language's type checker decides; none where no
     /// checker decided.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub keeps: Option<bool>,
+    /// For an override that does not keep its promise: the method whose promise it breaks, as the
+    /// type checker names it, where the graph holds that method.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub breaks: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub entry: Option<Entry>,
     /// The calls that leave the package, with what they touch: a path literal, a table, a
@@ -815,6 +822,10 @@ pub struct Part {
     /// What its language leaves to the author.
     #[serde(default)]
     pub leaves: Leaves,
+    /// Its language compares types by their members: a value stands where a type is asked for when
+    /// it has every member that type declares, whatever it is declared as (TypeScript).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub structural: bool,
 }
 
 /// What a language leaves its author to write: what its compiler neither asks for nor works out,
@@ -829,6 +840,10 @@ pub struct Leaves {
     /// What a function gives back, as its declaration reads: left out, or worked out where a
     /// reader of the declaration does not see it.
     pub returns: bool,
+    /// That an override keeps the promise of the method it overrides: no compiler holds it to it,
+    /// or one holds it only to part of it.
+    #[serde(default)]
+    pub overrides: bool,
 }
 
 #[derive(Serialize, Deserialize, TS, Clone, Debug, Default)]
@@ -917,10 +932,108 @@ impl Graph {
     }
 }
 
+/// The method resolution order of `class`: the class, then its ancestors nearest first, linearized
+/// by C3 from the bases each class declares, in the order it declares them (Python's order). A class
+/// comes before its bases, and its bases keep the order they are declared in. Where declared orders
+/// contradict one another, as TypeScript's `implements A, B` with `B extends A` may, a class still
+/// comes before its ancestors, and failing that the base declared first comes first. A class
+/// reached again through a cycle of bases adds nothing. `known` keeps the order of every class
+/// worked out on the way.
+pub fn linearization<'a>(
+    class: &'a str,
+    bases: &dyn Fn(&'a str) -> Vec<&'a str>,
+    known: &mut HashMap<&'a str, Vec<&'a str>>,
+) -> Vec<&'a str> {
+    fn order<'a>(
+        class: &'a str,
+        bases: &dyn Fn(&'a str) -> Vec<&'a str>,
+        known: &mut HashMap<&'a str, Vec<&'a str>>,
+        open: &mut Vec<&'a str>,
+    ) -> Vec<&'a str> {
+        if let Some(l) = known.get(class) {
+            return l.clone();
+        }
+        if open.contains(&class) {
+            return vec![];
+        }
+        open.push(class);
+        let mut declared: Vec<&'a str> = vec![];
+        for b in bases(class) {
+            if b != class && !declared.contains(&b) {
+                declared.push(b);
+            }
+        }
+        // each base's own order, and the declared order last
+        let mut seqs: Vec<(bool, VecDeque<&'a str>)> = declared.iter().map(|b| (false, order(b, bases, known, open).into())).collect();
+        seqs.push((true, declared.into()));
+        let mut out = vec![class];
+        loop {
+            seqs.retain(|(_, s)| !s.is_empty());
+            let Some(first) = seqs.first().map(|(_, s)| s[0]) else { break };
+            let later = |h: &str, all: bool| seqs.iter().filter(|(d, _)| all || !d).any(|(_, s)| s.iter().skip(1).any(|x| *x == h));
+            let heads = || seqs.iter().map(|(_, s)| s[0]);
+            let next = heads().find(|h| !later(h, true)).or_else(|| heads().find(|h| !later(h, false))).unwrap_or(first);
+            for (_, s) in &mut seqs {
+                s.retain(|x| *x != next);
+            }
+            if !out.contains(&next) {
+                out.push(next);
+            }
+        }
+        open.pop();
+        known.insert(class, out.clone());
+        out
+    }
+    order(class, bases, known, &mut vec![])
+}
+
 pub fn kind_name(k: &NodeKind) -> String {
     serde_json::to_value(k).unwrap().as_str().unwrap().to_string()
 }
 
 pub fn edge_name(k: &EdgeKind) -> String {
     serde_json::to_value(k).unwrap().as_str().unwrap().to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The method resolution order of `class` in a hierarchy written as `(class, [bases])`.
+    fn mro<'a>(class: &'a str, hierarchy: &'a [(&'a str, &'a [&'a str])]) -> Vec<&'a str> {
+        let bases = |c: &'a str| hierarchy.iter().find(|(k, _)| *k == c).map_or(vec![], |(_, bs)| bs.to_vec());
+        linearization(class, &bases, &mut HashMap::new())
+    }
+
+    /// Single inheritance is the chain of bases.
+    #[test]
+    fn a_chain_is_its_own_order() {
+        assert_eq!(mro("C", &[("C", &["B"]), ("B", &["A"])]), ["C", "B", "A"]);
+    }
+
+    /// A class's bases keep the order it declares them in, each followed by its own bases unless a
+    /// later base shares them: `D(B, C)` with `B(A)` and `C(X)` runs `B`'s `A` before `C`, and in a
+    /// diamond `D(B, C)` over `A`, `A` comes last.
+    #[test]
+    fn bases_keep_their_declared_order_and_a_shared_base_comes_last() {
+        assert_eq!(mro("D", &[("D", &["B", "C"]), ("B", &["A"]), ("C", &["X"])]), ["D", "B", "A", "C", "X"]);
+        assert_eq!(mro("D", &[("D", &["B", "C"]), ("B", &["A"]), ("C", &["A"])]), ["D", "B", "C", "A"]);
+    }
+
+    /// The order of the example Python's description of its MRO gives: `A(B, C)`, `B(D, E)`,
+    /// `C(D, F)`, and each of `D`, `E`, `F` over `O`.
+    #[test]
+    fn the_order_is_pythons() {
+        let h: &[(&str, &[&str])] =
+            &[("A", &["B", "C"]), ("B", &["D", "E"]), ("C", &["D", "F"]), ("D", &["O"]), ("E", &["O"]), ("F", &["O"])];
+        assert_eq!(mro("A", h), ["A", "B", "C", "D", "E", "F", "O"]);
+    }
+
+    /// Declared orders that contradict one another still put each class before its ancestors:
+    /// `implements A, B` where `B extends A`. A cycle of bases ends.
+    #[test]
+    fn a_contradiction_keeps_a_class_before_its_ancestors_and_a_cycle_ends() {
+        assert_eq!(mro("K", &[("K", &["A", "B"]), ("B", &["A"])]), ["K", "B", "A"]);
+        assert_eq!(mro("A", &[("A", &["B"]), ("B", &["A"])]), ["A", "B"]);
+    }
 }

@@ -120,28 +120,29 @@ impl GraphBuilder {
     }
 
     /// The classes the program's classes inherit from, and the methods each method overrides
-    /// through them, each with the method's parameters named as the base's at the same place.
+    /// through them, in the order of its class's method resolution order, each with the method's
+    /// parameters named as the base's at the same place.
     pub fn family(&self) -> Family {
-        let mut family = Family::default();
+        let mut bases: HashMap<String, Vec<String>> = HashMap::new();
         for e in self.edges.iter().filter(|e| e.kind == EdgeKind::Inherits) {
-            family.bases.entry(e.src.clone()).or_default().push(e.dst.clone());
+            bases.entry(e.src.clone()).or_default().push(e.dst.clone());
         }
-        for n in self.nodes.values().filter(|n| n.kind == NodeKind::Method) {
-            let Some(cls) = n.cls.as_deref() else { continue };
-            let (mut todo, mut seen) = (family.bases.get(cls).cloned().unwrap_or_default(), HashSet::new());
-            while let Some(b) = todo.pop() {
-                if !seen.insert(b.clone()) {
-                    continue;
+        let mut overrides: HashMap<String, Vec<(String, Vec<(String, String)>)>> = HashMap::new();
+        {
+            let declared = |c: &str| -> Vec<&str> { bases.get(c).into_iter().flatten().map(String::as_str).collect() };
+            let mut known = HashMap::new();
+            for n in self.nodes.values().filter(|n| n.kind == NodeKind::Method) {
+                let Some(cls) = n.cls.as_deref() else { continue };
+                for b in crate::model::linearization(cls, &declared, &mut known).into_iter().skip(1) {
+                    let base = format!("{b}.{}", n.name);
+                    if let Some(m) = self.nodes.get(&base).filter(|m| m.kind == NodeKind::Method) {
+                        let named = n.params.iter().zip(&m.params).map(|(own, theirs)| (own.name.clone(), theirs.name.clone())).collect();
+                        overrides.entry(n.id.clone()).or_default().push((base, named));
+                    }
                 }
-                let base = format!("{b}.{}", n.name);
-                if let Some(m) = self.nodes.get(&base).filter(|m| m.kind == NodeKind::Method) {
-                    let named = n.params.iter().zip(&m.params).map(|(own, theirs)| (own.name.clone(), theirs.name.clone())).collect();
-                    family.overrides.entry(n.id.clone()).or_default().push((base, named));
-                }
-                todo.extend(family.bases.get(&b).cloned().unwrap_or_default());
             }
         }
-        family
+        Family { overrides, bases }
     }
 
     /// A request `id` makes whole that no route of its part serves.
@@ -196,6 +197,15 @@ impl GraphBuilder {
     pub fn finish(self, root: String, project_root: Option<&std::path::Path>, language: &str) -> Graph {
         let mut top: Vec<(String, u32)> = self.unresolved.iter().map(|(k, v)| (k.clone(), *v)).collect();
         let mut nodes = self.nodes;
+        for (id, info) in &self.classes {
+            if let Some(n) = nodes.get_mut(id).filter(|n| n.kind == NodeKind::Class) {
+                for (f, _) in &info.fields {
+                    if !n.fields.contains(f) {
+                        n.fields.push(f.clone());
+                    }
+                }
+            }
+        }
         serve_data(&mut nodes);
         crate::flow::wire(&mut nodes, &self.edges);
         mark_doors(&mut nodes, &self.edges);
@@ -225,22 +235,17 @@ impl GraphBuilder {
         g
     }
 
-    /// The method `name` a value of class `cls` runs: the class's own, else the first its bases
-    /// give in the order they are written, each base before the next (a trait's provided
-    /// method, an inherited one).
+    /// The method `name` a value of class `cls` runs: the first along its method resolution order
+    /// that defines it, the class's own before a base's (a trait's provided method, an inherited
+    /// one).
     pub fn method_of(&self, cls: &str, name: &str) -> Option<String> {
-        self.method_in(cls, name, 0)
-    }
-
-    fn method_in(&self, cls: &str, name: &str, depth: u32) -> Option<String> {
-        let cand = format!("{cls}.{name}");
-        if self.nodes.contains_key(&cand) {
-            return Some(cand);
-        }
-        if depth > 8 {
-            return None;
-        }
-        self.classes.get(cls)?.resolved.iter().filter(|b| !b.starts_with("ext:")).find_map(|b| self.method_in(b, name, depth + 1))
+        let bases = |c: &str| -> Vec<&str> {
+            self.classes.get(c).into_iter().flat_map(|i| &i.resolved).map(String::as_str).filter(|b| !b.starts_with("ext:")).collect()
+        };
+        crate::model::linearization(cls, &bases, &mut HashMap::new())
+            .into_iter()
+            .map(|c| format!("{c}.{name}"))
+            .find(|m| self.nodes.contains_key(m))
     }
 
     /// Library code read as code: every node of a library module is the library's, and no route

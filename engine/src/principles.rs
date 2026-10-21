@@ -6,12 +6,12 @@
 //! to ruff, pyright and clippy. `docs/reference/principles.md` explains each one.
 
 use std::cell::RefCell;
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::Path;
 
 use serde::Serialize;
 
-use crate::model::{Dir, Edge, EdgeKind, EntryKind, Graph, Held, Leaves, Node, NodeKind, Site, Touch, World};
+use crate::model::{Dir, Edge, EdgeKind, EntryKind, Graph, Held, Leaves, Node, NodeKind, Param, Part, Site, Touch, World};
 
 /// A principle by its id and what it asks of code.
 pub struct Principle {
@@ -270,6 +270,8 @@ struct Index<'g> {
     nodes: HashMap<&'g str, &'g Node>,
     out: HashMap<&'g str, Vec<&'g Edge>>,
     into: HashMap<&'g str, Vec<&'g Edge>>,
+    /// Each class's method resolution order, worked out once.
+    mro: RefCell<HashMap<&'g str, Vec<&'g str>>>,
 }
 
 impl<'g> Index<'g> {
@@ -280,7 +282,7 @@ impl<'g> Index<'g> {
             out.entry(e.src.as_str()).or_default().push(e);
             into.entry(e.dst.as_str()).or_default().push(e);
         }
-        Index { g, nodes: g.nodes.iter().map(|n| (n.id.as_str(), n)).collect(), out, into }
+        Index { g, nodes: g.nodes.iter().map(|n| (n.id.as_str(), n)).collect(), out, into, mro: RefCell::default() }
     }
 
     fn node(&self, id: &str) -> Option<&'g Node> {
@@ -328,10 +330,15 @@ impl<'g> Index<'g> {
         Path::new(&n.file).strip_prefix(root).map(crate::tree::path_str).unwrap_or_else(|_| n.file.clone())
     }
 
+    /// The part a node belongs to.
+    fn part(&self, id: &str) -> Option<&'g Part> {
+        let part = self.node(id).map_or("", |n| n.part.as_str());
+        self.g.parts.iter().find(|p| p.id == part).or(self.g.parts.first())
+    }
+
     /// What the language of a node's part leaves to its author.
     fn leaves(&self, id: &str) -> Leaves {
-        let part = self.node(id).map_or("", |n| n.part.as_str());
-        self.g.parts.iter().find(|p| p.id == part).or(self.g.parts.first()).map_or_else(Leaves::default, |p| p.leaves)
+        self.part(id).map_or_else(Leaves::default, |p| p.leaves)
     }
 
     fn at(&self, n: &Node) -> String {
@@ -344,33 +351,43 @@ impl<'g> Index<'g> {
     }
 
     /// A class's public methods (and its constructor), its own and those it inherits from
-    /// the package's classes, each from the nearest class that defines it.
+    /// the package's classes, each from the first class along its method resolution order that
+    /// defines it.
     fn interface(&self, cls: &str) -> Vec<&'g Node> {
         let mut seen = HashSet::new();
         let mut out = vec![];
-        for c in std::iter::once(cls).chain(self.ancestors(cls)) {
-            let Some(n) = self.node(c) else { continue };
-            for m in n.methods.iter().filter_map(|m| self.node(&format!("{c}.{m}"))) {
-                if (!m.private || m.ctor) && seen.insert(m.name.as_str()) {
-                    out.push(m);
-                }
+        for m in self.members(cls) {
+            if (!m.private || m.ctor) && seen.insert(m.name.as_str()) {
+                out.push(m);
             }
         }
         out
     }
 
-    /// Ancestors along `inherits`, nearest first.
+    /// Every method a class has, its own and those of its ancestors, along its method resolution
+    /// order: a name its own class or a nearer ancestor defines comes before the same name further
+    /// on.
+    fn members(&self, cls: &str) -> Vec<&'g Node> {
+        self.mro(cls)
+            .into_iter()
+            .filter_map(|c| self.node(c))
+            .flat_map(|n| n.methods.iter().filter_map(move |m| self.node(&format!("{}.{m}", n.id))))
+            .collect()
+    }
+
+    /// The method resolution order along `inherits` (`model::linearization`): the class, then
+    /// its ancestors nearest first.
+    fn mro(&self, cls: &str) -> Vec<&'g str> {
+        let Some(cls) = self.nodes.get_key_value(cls).map(|(k, _)| *k).or_else(|| self.out.get_key_value(cls).map(|(k, _)| *k)) else {
+            return vec![];
+        };
+        let bases = |c: &'g str| self.targets(c, EdgeKind::Inherits);
+        crate::model::linearization(cls, &bases, &mut self.mro.borrow_mut())
+    }
+
+    /// Ancestors along `inherits`, nearest first, in the method resolution order.
     fn ancestors(&self, cls: &str) -> Vec<&'g str> {
-        let mut seen = HashSet::new();
-        let mut q: VecDeque<&str> = self.targets(cls, EdgeKind::Inherits).into();
-        let mut out = vec![];
-        while let Some(c) = q.pop_front() {
-            if seen.insert(c) {
-                out.push(c);
-                q.extend(self.targets(c, EdgeKind::Inherits));
-            }
-        }
-        out
+        self.mro(cls).into_iter().skip(1).collect()
     }
 }
 
@@ -541,15 +558,16 @@ fn sums(ix: &Index) -> Vec<Finding> {
 // ---------- overrides ----------
 
 /// An override that does not keep the promise of its base: a caller written against the base
-/// cannot take it in its place (Liskov). A subclass of the promised type is fine.
+/// cannot take it in its place (Liskov). A subclass of the promised type is fine. An initializer
+/// fills in the value its class makes and answers to no base; a constructor called on the class
+/// (a classmethod that gives `Self`) is handed what its callers hand the base's, and is asked.
+/// Where the language holds every override to its base (Rust's trait implementations), there is
+/// nothing to ask.
 fn overrides(ix: &Index) -> Vec<Finding> {
     let mut broken: Vec<(&Node, Vec<&Node>)> = vec![];
-    for m in ix.g.nodes.iter().filter(|n| n.kind == NodeKind::Method && !n.ctor) {
-        let Some(cls) = m.cls.as_deref() else { continue };
-        let Some(base) = ix.ancestors(cls).into_iter().find_map(|a| ix.node(&format!("{a}.{}", m.name))) else { continue };
-        if keeps(ix, base, m) {
-            continue;
-        }
+    let initializer = |n: &Node| n.ctor && !n.on_class;
+    for m in ix.g.nodes.iter().filter(|n| n.kind == NodeKind::Method && !initializer(n) && ix.leaves(&n.id).overrides) {
+        let Some(base) = breaks(ix, m) else { continue };
         match broken.iter_mut().find(|(b, _)| b.id == base.id) {
             Some((_, ms)) => ms.push(m),
             None => broken.push((base, vec![m])),
@@ -592,27 +610,127 @@ fn promise(n: &Node) -> String {
     format!("({}){ret}", takes.join(", "))
 }
 
-/// Whether an override keeps the promise of its base. Where the language's type checker decided
-/// it (ty, for Python), by its answer: what the override takes and what it gives, against the
-/// base as the subclass sees it, its type parameters filled in. Elsewhere, where both signatures
-/// say what they give, by the types they resolve to: each type the override gives is one the
-/// base promises, a subclass of one, or a variant of a sum it promises; a promise that resolves
-/// to none of the program's types, or a value of the class it runs on, gives these nothing to
-/// compare. Either way an array's shape is a promise no checker reads: each array the override
-/// gives fits one the base promises (`Float[Tensor, "batch dim"]` where `Float[Tensor, "..."]`
-/// is promised).
+/// The method whose promise the override `m` breaks. A caller written against any of its class's
+/// ancestors may be handed it, so it keeps the promise of each method it overrides, and the one it
+/// breaks is the first along its class's method resolution order whose promise it does not keep.
+/// Where the language's type checker decided it (ty, for Python), by its answer: what the override
+/// takes and what it gives, against each base as the subclass sees it, its type parameters filled
+/// in; the checker names the base, and the nearest stands for one it names outside the graph.
+/// Elsewhere by `keeps`; a promise the nearest base already breaks is the nearest's question, and
+/// is not asked again of what overrides it (`C(B)` where `B.f` breaks `A.f`). Either way an array's
+/// shape is a promise no checker reads.
+fn breaks<'g>(ix: &Index<'g>, m: &Node) -> Option<&'g Node> {
+    let cls = m.cls.as_deref()?;
+    let bases: Vec<&'g Node> = ix.ancestors(cls).into_iter().filter_map(|a| ix.node(&format!("{a}.{}", m.name))).collect();
+    let nearest = *bases.first()?;
+    match m.keeps {
+        Some(false) => Some(m.breaks.as_deref().and_then(|b| bases.iter().copied().find(|x| x.id == b)).unwrap_or(nearest)),
+        Some(true) => bases.into_iter().find(|b| !shapes_fit(ix, b, m)),
+        None => {
+            let below = |b: &Node| nearest.cls.as_deref().is_some_and(|n| b.cls.as_deref().is_some_and(|c| ix.ancestors(n).contains(&c)));
+            let inherited = |b: &Node| b.id != nearest.id && below(b) && !keeps(ix, b, nearest);
+            bases.into_iter().find(|b| !keeps(ix, b, m) && !inherited(b))
+        }
+    }
+}
+
+/// Whether the override `m` keeps the promise of `base`, by the types the two signatures resolve
+/// to (`signature_keeps`) and the shapes of the arrays they give.
 fn keeps(ix: &Index, base: &Node, m: &Node) -> bool {
-    let (promised, given) = (ix.targets(&base.id, EdgeKind::Returns), ix.targets(&m.id, EdgeKind::Returns));
-    let allowed: Vec<&str> = promised.iter().flat_map(|p| std::iter::once(*p).chain(ix.targets(p, EdgeKind::Variant))).collect();
-    let typed = m.keeps.unwrap_or_else(|| match (&base.returns, &m.returns) {
+    let structural = ix.part(&m.id).is_some_and(|p| p.structural);
+    signature_keeps(ix, base, m, structural, &mut vec![]) && shapes_fit(ix, base, m)
+}
+
+/// Whether `m` can stand where `base` stood, by the program's types its signature resolves to:
+/// each type it gives fits one the base promises (what it gives may be narrower), and at each place
+/// both take a parameter, each type the base takes there fits one the override takes (what it
+/// takes may be wider, never narrower). A promise or a parameter whose type resolves to none of the
+/// program's types, or a value of the class it runs on, gives these nothing to compare. A parameter
+/// is matched by its place. `assumed` holds the pairs of types being compared further out, which
+/// fit unless shown not to.
+fn signature_keeps(ix: &Index, base: &Node, m: &Node, structural: bool, assumed: &mut Vec<(String, String)>) -> bool {
+    let gives = match (&base.returns, &m.returns) {
         (Some(p), Some(g)) if !p.own && !g.own => {
+            let promised = ix.targets(&base.id, EdgeKind::Returns);
             promised.is_empty()
-                || given.iter().all(|g| allowed.iter().any(|p| p == g || ix.ancestors(g).contains(p) || array_id_fits(g, p)))
+                || ix.targets(&m.id, EdgeKind::Returns).iter().all(|g| promised.iter().any(|p| fits(ix, g, p, structural, assumed)))
         }
         _ => true,
-    });
-    let shapes: Vec<Array> = promised.iter().filter_map(|p| array_of_id(p)).collect();
-    typed && (shapes.is_empty() || given.iter().filter_map(|g| array_of_id(g)).all(|g| shapes.iter().any(|p| array_fits(&g, p))))
+    };
+    let inputs = |f: &Node| f.params.iter().filter(|p| !p.receiver && !p.rest).cloned().collect::<Vec<_>>();
+    let takes = |f: &Node, p: &Param| -> Vec<&str> {
+        ix.targets(&f.id, EdgeKind::Takes).into_iter().filter(|t| ix.node(t).is_some_and(|n| names(&p.ty, &n.name))).collect()
+    };
+    gives
+        && inputs(base).iter().zip(&inputs(m)).all(|(theirs, own)| {
+            let own = takes(m, own);
+            own.is_empty() || takes(base, theirs).iter().all(|b| own.iter().any(|o| fits(ix, b, o, structural, assumed)))
+        })
+}
+
+/// Whether a value of type `x` stands where type `y` is asked for: it is `y`, a subclass of it, an
+/// array of a shape `y` allows, a variant of a sum `y` names, or, in a language that compares types
+/// by their members, a type that has every member `y` declares (`has_members`).
+fn fits(ix: &Index, x: &str, y: &str, structural: bool, assumed: &mut Vec<(String, String)>) -> bool {
+    if x == y || ix.ancestors(x).contains(&y) || array_id_fits(x, y) || assumed.iter().any(|(a, b)| a == x && b == y) {
+        return true;
+    }
+    assumed.push((x.to_string(), y.to_string()));
+    let fit = ix.targets(y, EdgeKind::Variant).iter().any(|v| fits(ix, x, v, structural, assumed))
+        || (structural && has_members(ix, x, y, structural, assumed));
+    assumed.pop();
+    fit
+}
+
+/// Whether type `x` has every member type `y` declares, its own and its ancestors': each method by
+/// its name, with a signature that keeps the promise of `y`'s, and each field by its name, holding
+/// a type that fits the one `y`'s holds where the graph has both. A type with a private method is
+/// had only by itself and its subclasses, and a library's type by what it is declared as.
+fn has_members(ix: &Index, x: &str, y: &str, structural: bool, assumed: &mut Vec<(String, String)>) -> bool {
+    let program = |t: &str| ix.node(t).filter(|n| n.kind == NodeKind::Class);
+    let (Some(_), Some(_)) = (program(x), program(y)) else { return false };
+    let methods = |t: &str| -> Vec<&Node> { ix.members(t).into_iter().filter(|m| !m.ctor && !m.on_class).collect() };
+    let fields = |t: &str| -> Vec<&str> {
+        ix.mro(t).into_iter().filter_map(|c| ix.node(c)).flat_map(|n| n.fields.iter().map(String::as_str)).collect()
+    };
+    let held = |t: &str, f: &str| -> Vec<&str> {
+        ix.mro(t)
+            .into_iter()
+            .flat_map(|c| ix.out.get(c).into_iter().flatten())
+            .filter(|e| e.kind == EdgeKind::Has && e.via.as_deref() == Some(f))
+            .map(|e| e.dst.as_str())
+            .collect()
+    };
+    let (theirs, own) = (methods(y), methods(x));
+    if theirs.iter().any(|m| m.private) {
+        return false;
+    }
+    let (their_fields, own_fields) = (fields(y), fields(x));
+    let named = |name: &str| own.iter().any(|m| m.name == name) || own_fields.contains(&name);
+    if !theirs.iter().all(|m| named(&m.name)) || !their_fields.iter().all(|f| named(f)) {
+        return false;
+    }
+    let mut seen = HashSet::new();
+    for m in theirs.iter().filter(|m| seen.insert(m.name.as_str())) {
+        if let Some(o) = own.iter().find(|o| o.name == m.name) {
+            if !signature_keeps(ix, m, o, structural, assumed) {
+                return false;
+            }
+        }
+    }
+    their_fields.iter().all(|f| {
+        let mine = held(x, f);
+        mine.is_empty() || held(y, f).iter().all(|t| mine.iter().any(|o| fits(ix, o, t, structural, assumed)))
+    })
+}
+
+/// Whether each array the override `m` gives fits one its base promises: an array's shape is a
+/// promise no type checker reads (`Float[Tensor, "batch dim"]` where `Float[Tensor, "..."]` is
+/// promised).
+fn shapes_fit(ix: &Index, base: &Node, m: &Node) -> bool {
+    let shapes: Vec<Array> = ix.targets(&base.id, EdgeKind::Returns).iter().filter_map(|p| array_of_id(p)).collect();
+    shapes.is_empty()
+        || ix.targets(&m.id, EdgeKind::Returns).iter().filter_map(|g| array_of_id(g)).all(|g| shapes.iter().any(|p| array_fits(&g, p)))
 }
 
 /// An array annotation, jaxtyping style: dtype, array type and dims (`Float`, `Tensor`, `batch dim`).

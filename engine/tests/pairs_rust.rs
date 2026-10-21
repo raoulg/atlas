@@ -600,3 +600,26 @@ fn prophecy_a_seal_is_listed_and_broken_when_its_issue_is_closed() {
     );
     let _ = std::fs::remove_dir_all(copy.parent().expect("has a parent"));
 }
+
+/// One side of the overrides pair (`tests/pairs/overrides`): books on a shelf, named and keyed.
+fn books(side: &str) -> Graph {
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/overrides/rust").join(side);
+    analyze(&dir, &Options::default()).expect("reads")
+}
+
+/// An override keeps the promise of its base, and Rust cannot write the careless form: the compiler
+/// holds a trait's implementation to the trait's signature, and the language says so
+/// (`Leaves::overrides`). Neither side is asked: not the `Shelf.get` that gives the `Book` its
+/// `Store::Item` names, written out on the clean side and by name on the other, nor the one `Book.id`
+/// the graph keeps of the two that `Named` and `Keyed` declare, whichever trait is implemented
+/// first.
+#[test]
+fn overrides_a_trait_implementation_has_its_traits_signature() {
+    for side in ["clean", "shortcut"] {
+        let g = books(side);
+        assert!(found(&g, "overrides").is_empty(), "{side}: {:?}", found(&g, "overrides"));
+        assert!(g.parts.iter().all(|p| !p.leaves.overrides && !p.structural), "{:?}", g.parts);
+        assert!(edge(&g, EdgeKind::Inherits, "books.Shelf", "books.Store"));
+        assert!(edge(&g, EdgeKind::Inherits, "books.Book", "books.Named") && edge(&g, EdgeKind::Inherits, "books.Book", "books.Keyed"));
+    }
+}
