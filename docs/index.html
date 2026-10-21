@@ -53,21 +53,27 @@ figure.output img{width:100%;height:auto;display:block;padding:14px 18px}
 /* the principles: a row per principle, grouped by the branch of mathematics it comes from */
 .maths{width:100%;max-width:1040px;border-collapse:collapse;background:var(--panel);border:1px solid var(--line);font-size:15.5px}
 .maths thead th{font:500 12px var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--ink-3);text-align:left;padding:12px 18px;border-bottom:1px solid var(--line)}
-.maths .branch th{font:600 16px var(--sans);text-align:left;padding:18px 18px 8px;color:var(--ink);border-top:1px solid var(--line)}
-.maths tbody tr:first-child.branch th{border-top:0}
-.maths tbody th[scope=row]{font-weight:500;text-align:left;vertical-align:top;padding:10px 18px;width:28%}
-.maths tbody th small{display:block;font:400 12.5px var(--mono);color:var(--ink-3);margin-top:3px}
-.maths td{vertical-align:top;padding:10px 18px;color:var(--ink-2);line-height:1.55}
-.maths td.ok,.okmark{color:var(--add);font-weight:500;white-space:nowrap}
-.maths td.ok{width:1%}
-.maths .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+.maths .branch th{font:600 17px var(--sans);text-align:left;padding:14px 18px;color:var(--ink);background:color-mix(in oklab,var(--accent) 9%,var(--panel));border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.maths .branch th span{font:400 14px var(--sans);color:var(--ink-2);margin-left:12px}
+.maths .branch th span::before{content:"· ";color:var(--accent)}
+.maths tbody.group tr:not(.branch) th[scope=row]{border-left:3px solid color-mix(in oklab,var(--accent) 45%,var(--panel))}
+.maths tbody.group tr:nth-child(2) th[scope=row],.maths tbody.group tr:nth-child(2) td{padding-top:18px}
+.maths tbody.group tr:last-child th[scope=row],.maths tbody.group tr:last-child td{padding-bottom:18px}
+.maths tbody th[scope=row]{text-align:left;vertical-align:top;padding:12px 18px;font-weight:400}
+.maths tbody th .name{font:500 19px/1.3 var(--sans);color:var(--ink)}
+.maths tbody th small{font:400 12.5px var(--mono);color:var(--ink-3);margin-left:10px;white-space:nowrap}
+.maths tbody th p{margin:6px 0 0;font-size:14.5px;line-height:1.55;color:var(--ink-3);max-width:78ch}
+.maths td{vertical-align:top;padding:14px 18px}
 .more{font-size:15px;color:var(--ink-2);max-width:80ch}
 .more a{color:var(--ink);text-decoration-color:var(--accent);text-underline-offset:3px}
 @media (max-width:700px){
   .maths thead{display:none}
   .maths tr{display:block;padding:4px 0}
-  .maths tbody th[scope=row],.maths td{display:block;width:auto;padding:6px 16px}
-  .maths td.ok{padding-bottom:12px}
+  .maths tbody th[scope=row],.maths td{display:block;width:auto;padding:8px 16px 4px}
+  .maths tbody th small{display:block;margin:2px 0 0}
+  .maths tbody.group tr:not(.branch){border-left:3px solid color-mix(in oklab,var(--accent) 45%,var(--panel))}
+  .maths tbody.group tr:not(.branch) th[scope=row]{border-left:0}
+  .maths .branch th span{display:block;margin:2px 0 0}
 }
 .os{font-size:14px;color:var(--ink-2);margin:16px 0 6px}
 .os:first-of-type{margin-top:0}
@@ -625,26 +631,32 @@ def run_cycles(raw: Path = RAW, figure: Path = FIGURE, months: int = 13, years: 
 <section id="math">
   <h2>Why it holds together: the mathematics of your code.</h2>
   <p class="lede">Mathematics is a language that allows you to make things consistent. Best practices in coding are consistent, so it makes sense to view your computer code through a mathematical perspective. Because we can turn the mathematics of the code into a visual, you can literally see the consistency of your code, if you followed best practices. This is independent of the language you use: every program is drawn by the same mathematical rules.</p>
-  <p class="lede">These are the principles Atlas is built on. Atlas is in beta, and not every principle holds everywhere yet. A <span class="okmark">✓ verified</span> principle is checked by a test on every change to Atlas.</p>
+  <p class="lede">These are the principles Atlas is built on. A test checks each of them on every change to Atlas. Atlas is in beta: where a principle does not hold yet in some case, that case is tracked in the open, and the test marks it until it does.</p>
   <table class="maths">
-    <thead><tr><th scope="col">Principle</th><th scope="col">What it means for your code</th><th scope="col"><span class="sr">Status</span></th></tr></thead>
-    <tbody>
-      <tr class="branch"><th colspan="3" scope="colgroup">Category theory</th></tr>
-      <tr><th scope="row">Functions are arrows<small>a category</small></th><td>Every function is an arrow from where its data comes from to where it goes, and calling functions one after another is following the arrows. That is why every route in a picture starts where the program is started and ends at a place: a file, a table, the web, your screen.</td><td class="ok"><span aria-hidden="true">✓</span> verified</td></tr>
-      <tr><th scope="row">What a function does to the world is part of it<small>effects in the arrow</small></th><td>Writing a file belongs to a function as much as the value it returns. So the files a step writes and the web it fetches hang on that step, where you can see them, not somewhere out of sight.</td><td class="ok"><span aria-hidden="true">✓</span> verified</td></tr>
-      <tr><th scope="row">The same meaning gives the same picture<small>a pushout</small></th><td>Python, Rust and TypeScript say the same thing in different words: a default for a command-line option, a list of records. Atlas draws the thing, not the spelling, which is why the three ports in this tour draw one shape.</td><td class="ok"><span aria-hidden="true">✓</span> verified</td></tr>
-      <tr><th scope="row">A thing is what it connects to<small>Yoneda</small></th><td>Two versions of your code are compared by what each part connects to, not by its name. A function you renamed but that does the same is the same function; one that kept its name but now writes another file has changed. That is why a diff lights up only what really changed.</td><td class="ok"><span aria-hidden="true">✓</span> verified</td></tr>
-      <tr><th scope="row">Not built yet is part of the picture<small>a partial map</small></th><td>A design can live in the code before it is built. The picture shows what is built and what is not yet as one whole, and the lines from built code into the sketch are exactly the work still to do.</td><td class="ok"><span aria-hidden="true">✓</span> verified</td></tr>
-      <tr class="branch"><th colspan="3" scope="colgroup">Topology</th></tr>
-      <tr><th scope="row">Zooming out is gluing<small>a quotient</small></th><td>Zooming out glues boxes together into one; zooming in pulls them apart again. Nothing gets lost on the way: no line disappears, nothing jumps to another place, and closing a box gives you back exactly the picture you had.</td><td class="ok"><span aria-hidden="true">✓</span> verified</td></tr>
-      <tr><th scope="row">Choose first, then group<small>a fiber</small></th><td>Showing one route, or one class, keeps just that part of the program. Atlas always takes that choice first and groups after, so what you see does not depend on what lies outside it.</td><td class="ok"><span aria-hidden="true">✓</span> verified</td></tr>
-      <tr><th scope="row">Every view is a view of one plan<small>one fine plan</small></th><td>Each route has one detailed plan, made once from the code. Every picture of it, at whatever zoom, is that plan seen from further away. That is why your agent can point at a box on your page: you both look at the same plan.</td><td class="ok"><span aria-hidden="true">✓</span> verified</td></tr>
-      <tr class="branch"><th colspan="3" scope="colgroup">Type theory</th></tr>
-      <tr><th scope="row">A signature says what goes in and out<small>types of arrows</small></th><td>What a function takes and gives back, and what it changes, can be read from its signature. Where the code leaves that open, Atlas asks.</td><td class="ok"><span aria-hidden="true">✓</span> verified</td></tr>
-      <tr><th scope="row">A subclass keeps its promise<small>Liskov substitution</small></th><td>Wherever the code expects a class, any of its subclasses has to fit: take at least what the base takes, give what the base gives. Atlas asks where an override breaks that promise.</td><td class="ok"><span aria-hidden="true">✓</span> verified</td></tr>
-      <tr class="branch"><th colspan="3" scope="colgroup">Graph theory</th></tr>
-      <tr><th scope="row">What a step does, and what it sets in motion<small>reach</small></th><td>What a step does itself and what it causes through the steps it calls are two different things, drawn apart: a solid line for its own, a dashed one for what it reaches.</td><td class="ok"><span aria-hidden="true">✓</span> verified</td></tr>
-      <tr><th scope="row">Dependencies go one way<small>a directed graph without cycles</small></th><td>Packages depend on one another in one direction. Atlas asks where a package reaches back to one that depends on it.</td><td class="ok"><span aria-hidden="true">✓</span> verified</td></tr>
+    <thead><tr><th scope="col">Principle, and what it means for your code</th></tr></thead>
+    <tbody class="group">
+      <tr class="branch"><th scope="colgroup">Category theory<span>how the parts of a program connect</span></th></tr>
+      <tr><th scope="row"><span class="name">Functions are arrows</span><small>a category</small><p>Every function is an arrow from where its data comes from to where it goes, and calling functions one after another is following the arrows. That is why every route in a picture starts where the program is started and ends at a place: a file, a table, the web, your screen.</p></th></tr>
+      <tr><th scope="row"><span class="name">What a function does to the world is part of it</span><small>effects in the arrow</small><p>Writing a file belongs to a function as much as the value it returns. So the files a step writes and the web it fetches hang on that step, where you can see them, not somewhere out of sight.</p></th></tr>
+      <tr><th scope="row"><span class="name">The same meaning gives the same picture</span><small>a pushout</small><p>Python, Rust and TypeScript say the same thing in different words: a default for a command-line option, a list of records. Atlas draws the thing, not the spelling, which is why the three ports in this tour draw one shape.</p></th></tr>
+      <tr><th scope="row"><span class="name">A thing is what it connects to</span><small>Yoneda</small><p>Two versions of your code are compared by what each part connects to, not by its name. A function you renamed but that does the same is the same function; one that kept its name but now writes another file has changed. That is why a diff lights up only what really changed.</p></th></tr>
+      <tr><th scope="row"><span class="name">Not built yet is part of the picture</span><small>a partial map</small><p>A design can live in the code before it is built. The picture shows what is built and what is not yet as one whole, and the lines from built code into the sketch are exactly the work still to do.</p></th></tr>
+    </tbody>
+    <tbody class="group">
+      <tr class="branch"><th scope="colgroup">Topology<span>what stays the same when you zoom in or out</span></th></tr>
+      <tr><th scope="row"><span class="name">Zooming out is gluing</span><small>a quotient</small><p>Zooming out glues boxes together into one; zooming in pulls them apart again. Nothing gets lost on the way: no line disappears, nothing jumps to another place, and closing a box gives you back exactly the picture you had.</p></th></tr>
+      <tr><th scope="row"><span class="name">Choose first, then group</span><small>a fiber</small><p>Showing one route, or one class, keeps just that part of the program. Atlas always takes that choice first and groups after, so what you see does not depend on what lies outside it.</p></th></tr>
+      <tr><th scope="row"><span class="name">Every view is a view of one plan</span><small>one fine plan</small><p>Each route has one detailed plan, made once from the code. Every picture of it, at whatever zoom, is that plan seen from further away. That is why your agent can point at a box on your page: you both look at the same plan.</p></th></tr>
+    </tbody>
+    <tbody class="group">
+      <tr class="branch"><th scope="colgroup">Type theory<span>what goes into a function and what comes out</span></th></tr>
+      <tr><th scope="row"><span class="name">A signature says what goes in and out</span><small>types of arrows</small><p>What a function takes and gives back, and what it changes, can be read from its signature. Where the code leaves that open, Atlas asks.</p></th></tr>
+      <tr><th scope="row"><span class="name">A subclass keeps its promise</span><small>Liskov substitution</small><p>Wherever the code expects a class, any of its subclasses has to fit: take at least what the base takes, give what the base gives. Atlas asks where an override breaks that promise.</p></th></tr>
+    </tbody>
+    <tbody class="group">
+      <tr class="branch"><th scope="colgroup">Graph theory<span>what leads to what</span></th></tr>
+      <tr><th scope="row"><span class="name">What a step does, and what it sets in motion</span><small>reach</small><p>What a step does itself and what it causes through the steps it calls are two different things, drawn apart: a solid line for its own, a dashed one for what it reaches.</p></th></tr>
+      <tr><th scope="row"><span class="name">Dependencies go one way</span><small>a directed graph without cycles</small><p>Packages depend on one another in one direction. Atlas asks where a package reaches back to one that depends on it.</p></th></tr>
     </tbody>
   </table>
   <p class="more">Every principle, in the language of mathematics and where it lives in Atlas: <a href="https://github.com/raoulg/atlas/blob/next/docs/reference/mathematics.md">the mathematics</a>. An introduction to category theory: <a href="https://pttrn.io/#content/category-theory">pttrn.io</a>.</p>
