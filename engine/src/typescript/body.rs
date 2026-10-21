@@ -875,10 +875,12 @@ impl<'a, 't> Body<'a, 't> {
                             .and_then(|o| self.resolve(&[text(o, src).to_string()]))
                             .map_or(false, |r| self.store.nodes.get(&r).map_or(false, |n| n.kind == NodeKind::Class));
                 let after = if sup { self.cls.clone().unwrap_or_default() } else { String::new() };
-                // a method found on a base runs on the subclass the value is
-                let on =
-                    class.filter(|k| !sup && self.store.nodes[&t].cls.as_deref().map_or(false, |b| b != k.as_str())).unwrap_or_default();
+                // a method found on a base runs on the subclass the value is; the body's own receiver
+                // is of the class the route runs the body on, the one it is written in or one below
                 let on_receiver = object.map_or(false, |o| o.kind() == "this") || !after.is_empty();
+                let on = class
+                    .filter(|k| !on_receiver && self.store.nodes[&t].cls.as_deref().map_or(false, |b| b != k.as_str()))
+                    .unwrap_or_default();
                 let kind = if self.store.nodes[&t].kind == NodeKind::Class { EdgeKind::Instantiates } else { EdgeKind::Calls };
                 if kind == EdgeKind::Calls && value_used(c) {
                     self.read.used.push(t.clone());

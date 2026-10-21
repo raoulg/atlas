@@ -1202,7 +1202,6 @@ fn diamond_a_feed_hands_its_arguments_to_the_constructor_it_runs() {
 /// names `Source.read`: the route reads the file the cache keeps, in the terms of the route that
 /// builds the feed, and fetches nothing.
 #[test]
-#[ignore = "#123: the reader records `this.read()` in `Buffered` as run on a Buffered, so the route runs `Source.read` on a feed: `calls this.url`"]
 fn diamond_a_feed_runs_the_read_its_bases_name() {
     for side in ["clean", "shortcut"] {
         let g = news(side);
