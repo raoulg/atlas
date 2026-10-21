@@ -169,6 +169,7 @@ a.try:hover{color:var(--accent)}
 .session h3{grid-column:1/-1;font:600 18px var(--sans);margin:14px 0 -8px}
 .session figure img{width:100%;height:auto;display:block;padding:8px}
 .session .aside{margin:0;color:var(--ink-2);font-size:16px;max-width:52ch;align-self:center}
+.session figure+figure+.aside{grid-column:1/-1;max-width:78ch}
 .session .aside code{font-family:var(--mono);font-size:14px}
 @media (max-width:900px){.session{grid-template-columns:minmax(0,1fr)}}
 .mcp{background:var(--panel);border:1px solid var(--line);padding:16px 20px;width:100%}
@@ -401,41 +402,28 @@ section{margin-bottom:104px}
 <section class="chap" id="design">
   <h2>Design the next feature before you write it.</h2>
   <p class="lede">Ask your agent for a change and it shows you the change, not a description of it: a <em>vision</em>, a sketch drawn beside the code as it is, where only what the code would add is <b class="g">green</b>. When you say yes, the sketch goes into your code as a <em>prophecy</em>, <b class="p">dotted purple</b>: the same shape, now real code that Atlas reads with real types, and a list of what is left to build. Write the bodies, remove the marker, and the dots become solid.</p>
-  <div class="wide" data-tabs id="lifecycle">
-    <div class="tabs" role="tablist" aria-label="The life of a design">
-      <button role="tab" aria-selected="true" aria-controls="st-today" id="tb-today">Today</button>
-      <button role="tab" aria-selected="false" aria-controls="st-vision" id="tb-vision">The vision</button>
-      <button role="tab" aria-selected="false" aria-controls="st-prophecy" id="tb-prophecy">The prophecy</button>
-      <button role="tab" aria-selected="false" aria-controls="st-built" id="tb-built">Built</button>
+  <div class="wide">
+    <p class="lang-note">One real session with Claude Code, on the sunspots program: what was said in the chat, and what the page showed.</p>
+    <div class="session">
+      <h3>1 &middot; You ask for a change; the agent shows it as a vision</h3>
+      <figure class="chat"><figcaption>In the chat</figcaption><img src="img/session/ask-change.png" style="--w:603" alt="The chat: you ask for a function that tracks and marks the maxima of the solar cycles; the agent proposes peaks in series.py, Cycles in plot.py and a new command run_cycles, drawn on the page as a vision, with your files unchanged"></figure>
+      <figure><figcaption>On the page <span class="tag">vision</span></figcaption><img src="img/session/vision.png" style="--w:677" alt="The route run_cycles beside the code as it is: the new steps Cycles() and peaks and the new type Cycles are filled green, with a plus; smooth, the DataFrames and Trend are as they were"></figure>
     </div>
-    <div class="stage" role="tabpanel" id="st-today" aria-labelledby="tb-today">
-      <img src="img/interaction/today.png" style="--w:1400" alt="The route run of the sunspots pipeline as it stands">
-      <p class="cap">The route as it stands. You ask your agent: keep the smoothed months in a file.</p>
+    <div class="session">
+      <h3>2 &middot; You say yes; it goes into your code as a prophecy</h3>
+      <figure class="chat"><figcaption>In the chat</figcaption><img src="img/session/prophetize.png" style="--w:637" alt="The chat: you ask to set up a prophecy; the agent says the design is in your code, uncommitted, with peaks, Cycles and run_cycles marked @prophecy, and what Atlas says is left to build: three prophecies, one body each"></figure>
+      <figure><figcaption>On the page <span class="tag">prophecy</span></figcaption><img src="img/session/prophecy.png" style="--w:605" alt="The same route with the design written into the code: Cycles(), Cycles and peaks have a dotted purple outline, not built yet"></figure>
+      <p class="aside">The prophecy is the vision written into real code, and Atlas reads it as such: it may draw a little differently from the sketch. That difference is worth a look before anything is built.</p>
     </div>
-    <div class="stage" role="tabpanel" id="st-vision" aria-labelledby="tb-vision">
-      <img src="img/interaction/vision.png" style="--w:1400" alt="The vision: a new route, run-archived, drawn beside the code as it is; only the new Archive, its write step and the new route are filled green">
-      <p class="cap"><b>A sketch, nothing written in your files.</b> Atlas reads the sketch as it reads code, so the picture is drawn with real types; it lives in the agent's request and is gone when it is decided or retracted. Only what the code would add is green: the <code>Archive</code>, its <code>write</code> step and the new route. What it reuses stays plain.</p>
-      <div class="cols">
-        <figure class="code agent"><figcaption>In the chat: the agent hands Atlas a sketch, signatures and calls in order, bodies empty</figcaption><pre id="chat-vision"></pre></figure>
-        <figure class="code"><figcaption>In your files</figcaption><pre id="files-vision"></pre></figure>
-      </div>
+    <div class="session">
+      <h3>3 &middot; You ask how far along it is</h3>
+      <figure class="chat"><figcaption>In the chat</figcaption><img src="img/session/revelation.png" style="--w:618" alt="The chat: you ask how far along the implementation is; the agent uses atlas revelation and lists three prophecies, run_cycles, Cycles and peaks, each with one body to write"></figure>
+      <p class="aside"><code>atlas revelation</code> lists every prophecy in the tree: what it replaces, how many bodies are left to write, and the built code that leans on it. The design is done when the list is empty.</p>
     </div>
-    <div class="stage" role="tabpanel" id="st-prophecy" aria-labelledby="tb-prophecy">
-      <img src="img/interaction/prophecy.png" style="--w:1400" alt="The decided design drawn as a prophecy: the new route and the Archive in a dotted purple outline beside the built code">
-      <p class="cap"><b>Decided: the same sketch, now written in your files.</b> The one thing that is new is the marker, the <span class="p">purple line</span>: it says the code is not built yet, so Atlas draws it dotted and does not ask about its empty bodies. <code>supersedes</code> says what the new route replaces; <code>sealed</code> ties a piece to a GitHub issue it waits on.</p>
-      <div class="cols">
-        <figure class="code agent"><figcaption>In the chat: the agent calls Atlas</figcaption><pre id="chat-prophecy"></pre></figure>
-        <figure class="code"><figcaption>In your files: the same sketch, with the marker in purple</figcaption><pre id="files-prophecy"></pre></figure>
-      </div>
-    </div>
-    <div class="stage" role="tabpanel" id="st-built" aria-labelledby="tb-built">
-      <img src="img/interaction/built.png" style="--w:1400" alt="The same route, built: the boxes are solid">
-      <p class="cap"><b>Built.</b> The bodies are written and the markers are gone: the same route, solid. Ask Atlas what is left, before and after:</p>
-      <div class="cols">
-        <figure class="code"><figcaption>In your files</figcaption><pre id="files-built"></pre></figure>
-        <figure class="code term"><figcaption>What is left, when it was decided</figcaption><pre id="rev-decided"></pre></figure>
-        <figure class="code term"><figcaption>What is left, now it is built</figcaption><pre id="rev-built"></pre></figure>
-      </div>
+    <div class="session">
+      <h3>4 &middot; Built</h3>
+      <figure><figcaption>On the page <span class="tag">built</span></figcaption><img src="img/session/built.png" style="--w:886" alt="The route run_cycles built: Cycles(), Cycles and peaks are solid boxes, between smooth and saving"></figure>
+      <p class="aside">The agent writes the bodies and takes the markers away. <code>atlas revelation</code> now finds no prophecies, and the dotted boxes are solid: the same route, built.</p>
     </div>
   </div>
 </section>
@@ -572,7 +560,6 @@ codex mcp add atlas -- &quot;$(command -v atlas)&quot; mcp</pre>
   <span>CC BY-NC-SA 4.0</span>
 </footer>
 </main>
-<script src="img/interaction/data.js"></script>
 <script>
 function tabs(root) {
   const btns = [...root.querySelectorAll('[role=tab]')];
@@ -593,44 +580,6 @@ function tabs(root) {
 }
 document.querySelectorAll('[data-tabs]').forEach(tabs);
 
-// the calls, the answers, the code and the lists are what the tools did in the run that drew the pictures (img/interaction/data.js)
-const T = window.TOUR;
-if (T) {
-  const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
-  const issue = /raoulg\/atlas#(\d+)/;
-  // lines of code or of a terminal, a class for some of them, a GitHub issue as a link
-  const fill = (id, text, cls) => {
-    const pre = document.getElementById(id);
-    text.split('\n').forEach((line, i, all) => {
-      const row = el('span', cls ? cls(line, i) : null);
-      const m = line.match(issue);
-      if (m) {
-        const at = line.indexOf(m[0]);
-        const a = el('a', null, m[0]);
-        a.href = 'https://github.com/raoulg/atlas/issues/' + m[1];
-        row.append(line.slice(0, at), a, line.slice(at + m[0].length));
-      } else row.textContent = line;
-      pre.append(row, i < all.length - 1 ? '\n' : '');
-    });
-  };
-  const marker = l => (l.startsWith('@prophecy') ? 'm' : null);
-  const head = (text, n) => { const ls = text.trim().split('\n'); return ls.slice(0, n).join('\n') + (ls.length > n ? '\n…' : ''); };
-  // what an agent calls and what Atlas answers
-  document.querySelectorAll('pre[data-calls]').forEach(pre => {
-    for (const key of pre.dataset.calls.split(' ')) {
-      pre.append(el('span', 'call', T.calls[key]), el('span', 'ans', '→ ' + head(T.texts[key], 9)));
-    }
-  });
-  const calls = T.calls.vision.split('\n').length;
-  fill('chat-vision', T.calls.vision + '\n\n' + T.sketch, (l, i) => (i < calls ? 'call' : null));
-  fill('files-vision', T['files-vision']);
-  const asked = T.calls.prophetize.split('\n').length;
-  fill('chat-prophecy', T.calls.prophetize + '\n→ ' + T.texts.prophetize, (l, i) => (i < asked ? 'call' : null));
-  fill('files-prophecy', T['files-prophecy'] + '\n\n' + T.prophecy, marker);
-  fill('files-built', T['files-built']);
-  fill('rev-decided', T['revelation-decided'], l => (/^\s+src\//.test(l) ? 'm' : null));
-  fill('rev-built', T['revelation-built'], l => (/^\s+src\//.test(l) ? 'm' : null));
-}
 </script>
 </body>
 </html>
