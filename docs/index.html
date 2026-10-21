@@ -190,10 +190,10 @@ section{margin-bottom:104px}
 .flow i{font-style:normal;color:var(--accent);font-size:18px}
 /* the README chapter: an imagined package's page on GitHub */
 .gh{--g-fg:#1F2328;--g-mute:#59636E;--g-line:#D1D9E0;--g-soft:#F6F8FA;--g-link:#0969DA;--g-ok:#1A7F37;
-  background:#fff;border:1px solid var(--line);color:var(--g-fg);font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans",Helvetica,Arial,sans-serif;max-width:1240px}
+  background:#fff;border:1px solid var(--line);border-width:1px 0 0 1px;overflow:hidden;color:var(--g-fg);font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans",Helvetica,Arial,sans-serif;max-width:1240px}
 .gh svg{width:16px;height:16px;fill:currentColor;flex:none;vertical-align:text-bottom}
 .gh a{color:var(--g-link);text-decoration:none}
-.gh .head{background:var(--g-soft);border-bottom:1px solid var(--g-line);padding:16px 24px 0}
+.gh .head{background:var(--g-soft);border-bottom:1px solid var(--g-line);padding:16px 24px}
 .gh .title{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;font-size:20px;color:var(--g-mute)}
 .gh .title b{color:var(--g-fg);font-weight:600}
 .gh .title .own{color:var(--g-link)}
@@ -201,11 +201,7 @@ section{margin-bottom:104px}
 .gh .acts{margin-left:auto;display:flex;gap:8px}
 .gh .acts span{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:500;color:var(--g-fg);background:var(--g-soft);border:1px solid var(--g-line);border-radius:6px;padding:3px 10px}
 .gh .acts i{font-style:normal;background:#E1E5EA;border-radius:2em;padding:0 6px}
-.gh .tabsg{display:flex;gap:4px;margin-top:14px;overflow-x:auto}
-.gh .tabsg span{display:inline-flex;align-items:center;gap:7px;padding:8px 10px 10px;color:var(--g-fg);white-space:nowrap;border-bottom:2px solid transparent}
-.gh .tabsg span.on{border-bottom-color:#FD8C73;font-weight:600}
-.gh .tabsg i{font-style:normal;font-size:12px;background:#E1E5EA;border-radius:2em;padding:0 6px}
-.gh .body{display:grid;grid-template-columns:minmax(0,1fr) 296px;gap:24px;padding:24px}
+.gh .body{display:grid;grid-template-columns:minmax(0,1fr) 150px;gap:24px;padding:24px 0 0 24px}
 .gh .bar2{display:flex;align-items:center;gap:8px;margin-bottom:16px}
 .gh .bar2 span{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--g-line);background:var(--g-soft);border-radius:6px;padding:4px 12px;font-weight:500}
 .gh .bar2 .muted{color:var(--g-mute);font-weight:400;border:0;background:none;padding:0 4px}
@@ -249,6 +245,13 @@ section{margin-bottom:104px}
 .gh .atlas{position:relative;margin:30px -14px 8px;padding:2px 14px 14px;outline:2px solid var(--accent);outline-offset:0;border-radius:6px}
 .gh .atlas>.mark{position:absolute;top:-13px;right:14px;background:var(--accent);color:#fff;font:500 12px/1 var(--mono);padding:6px 10px;border-radius:3px;white-space:nowrap}
 .gh .atlas h4{margin-top:18px}
+/* the page goes on beyond the frame: the sidebar is cut at the right, the README below How it works */
+.gh .side{overflow:hidden;-webkit-mask-image:linear-gradient(to right,#000 35%,transparent);mask-image:linear-gradient(to right,#000 35%,transparent)}
+.gh .side>*{width:296px}
+.gh .rd{border-bottom:0;border-radius:6px 6px 0 0}
+.gh .md{padding-bottom:0}
+.gh .cut{height:90px;overflow:hidden}
+.gh{-webkit-mask-image:linear-gradient(#000 calc(100% - 110px),transparent);mask-image:linear-gradient(#000 calc(100% - 110px),transparent)}
 .gh .side h5{font-size:16px;font-weight:600;margin:0 0 12px}
 .gh .side p{margin:0 0 12px}
 .gh .side .sec{border-bottom:1px solid var(--g-line);padding-bottom:20px;margin-bottom:20px}
@@ -261,11 +264,11 @@ section{margin-bottom:104px}
 .gh .side .ok{color:var(--g-ok)}
 .gh .side .lang{height:8px;border-radius:6px;background:#3572A5;margin-bottom:8px}
 .gh .side .dotp{width:8px;height:8px;border-radius:50%;background:#3572A5;display:inline-block}
-@media (max-width:1000px){.gh .body{grid-template-columns:minmax(0,1fr)}.gh .side{display:none}}
+@media (max-width:1000px){.gh{border-right-width:1px}.gh .body{grid-template-columns:minmax(0,1fr);padding-right:24px}.gh .side{display:none}}
 @media (max-width:640px){
-  .gh .head{padding:12px 16px 0}.gh .acts{display:none}.gh .body{padding:16px}
+  .gh .head{padding:12px 16px 0}.gh .acts{display:none}.gh .body{padding:16px 16px 0}
   .gh .files .row{grid-template-columns:minmax(0,1fr) auto}.gh .files .row span:nth-child(2){display:none}
-  .gh .last .msg{display:none}.gh .md{padding:20px 16px}.gh .md h3{font-size:1.6em}
+  .gh .last .msg{display:none}.gh .md{padding:20px 16px 0}.gh .md h3{font-size:1.6em}
   .gh .bar2 .muted{display:none}.gh .atlas>.mark{right:auto;left:14px}
 }
 @media (max-width:760px){.top nav{display:none}.hero{padding-top:36px}.chap{margin-bottom:72px}}
@@ -453,7 +456,6 @@ section{margin-bottom:104px}
     <div class="head">
       <div class="title"><svg><use href="#o-repo"/></svg><span class="own">sunwatch</span>/<b>sunspots</b><span class="pub">Public</span>
         <span class="acts"><span>Watch <i>3</i></span><span>Fork <i>4</i></span><span><svg><use href="#o-star"/></svg>Star <i>58</i></span></span></div>
-      <div class="tabsg"><span class="on">Code</span><span>Issues <i>2</i></span><span>Pull requests <i>1</i></span><span>Actions</span><span>Insights</span></div>
     </div>
     <div class="body">
       <div>
@@ -464,7 +466,6 @@ section{margin-bottom:104px}
           <div class="row dir"><span><svg><use href="#o-dir"/></svg>src/sunspots</span><span>smooth: centre the window on the month</span><span>2 hours ago</span></div>
           <div class="row dir"><span><svg><use href="#o-dir"/></svg>tools</span><span>atlas: draw the picture on every push</span><span>last month</span></div>
           <div class="row fl"><span><svg><use href="#o-file"/></svg>.gitignore</span><span>Keep data/ and figures/ out of git</span><span>3 months ago</span></div>
-          <div class="row fl"><span><svg><use href="#o-file"/></svg>LICENSE</span><span>First release</span><span>3 months ago</span></div>
           <div class="row fl"><span><svg><use href="#o-file"/></svg>README.md</span><span>README: how it works, drawn by Atlas</span><span>last month</span></div>
           <div class="row fl"><span><svg><use href="#o-file"/></svg>pyproject.toml</span><span>Release 0.4.0</span><span>2 weeks ago</span></div>
           <div class="row fl"><span><svg><use href="#o-file"/></svg>uv.lock</span><span>Release 0.4.0</span><span>2 weeks ago</span></div>
@@ -477,18 +478,15 @@ section{margin-bottom:104px}
             <p>The monthly mean sunspot number since 1749, downloaded once, smoothed and drawn.</p>
             <div class="atlas">
               <span class="mark">drawn by Atlas on every push</span>
-              <h4>How it works</h4>
-              <p>From the web to the figure, as the code says it. Click the picture to explore it.</p>
+              <h4>How the code works</h4>
+              <p>Click to explore.</p>
               <a class="pic" href="showcase/python-clean.html"><img src="img/showcase/python-clean.png" alt="Atlas's picture of sunspots: from the web to the raw CSV, a DataFrame from load to smooth to Trend.save, and the figure"></a>
               <p class="drawn">Drawn from <code>3f9c2e1</code>, the last push to <code>main</code>.</p>
             </div>
-            <h4>Install</h4>
+            <div class="cut" aria-hidden="true">
+              <h4>Install</h4>
 <pre>uv tool install sunspots</pre>
-            <h4>Usage</h4>
-<pre>sunspots --months 13   <span class="c"># data/raw/sunspots.csv → figures/sunspots.png</span></pre>
-            <img src="img/showcase/sunspots.png" alt="The figure sunspots draws: the monthly mean sunspot number and its 13-month mean, 1749 to today" style="width:min(460px,100%)">
-            <h4>License</h4>
-            <p>MIT</p>
+            </div>
           </div>
         </div>
       </div>
