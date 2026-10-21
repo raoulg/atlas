@@ -357,6 +357,22 @@ section{margin-bottom:104px}
   .gh .bar2 .muted{display:none}.gh .atlas>.mark{right:auto;left:14px}
 }
 @media (max-width:760px){.top nav{display:none}.hero{padding-top:36px}.chap{margin-bottom:72px}}
+/* on a phone the chapters are a rail of coloured squares at the right edge: under the thumb their names fan out */
+:root{--c1:#C43A14;--c2:#B26A00;--c3:#1D6F8C;--c4:#4B3FA8;--c5:#2E7D4F;--c6:#8A6D1F;--c7:#A0305E;--c8:#3A3530}
+:root[data-theme="dark"]{--c1:#F2643C;--c2:#E0A24A;--c3:#6CB6D0;--c4:#A99BF0;--c5:#6CC08C;--c6:#D6B957;--c7:#E07BA6;--c8:#D8D0C5}
+.rail,.rail-names,.rail-scrim{display:none}
+@media (max-width:760px){
+  .rail,.rail-names{display:block;position:fixed;top:calc(env(safe-area-inset-top,0px) + var(--below-top,53px) + 14px);bottom:calc(env(safe-area-inset-bottom,0px) + 18px)}
+  .rail{right:env(safe-area-inset-right,0px);width:30px;z-index:41;touch-action:none}
+  .rail-names{right:calc(env(safe-area-inset-right,0px) + 30px);width:min(300px,80vw);z-index:41;pointer-events:none}
+  .rail-scrim{display:block;position:fixed;inset:0;z-index:40;pointer-events:none;opacity:0;transition:opacity .15s;background:color-mix(in oklab,var(--bg) 90%,transparent)}
+  .rail-scrub .rail-scrim{opacity:1}
+}
+.rail i{position:absolute;right:5px;width:8px;height:8px;margin-top:-4px;border:1.6px solid var(--c);transition:height .18s,margin .18s,background .18s}
+.rail i.done{background:color-mix(in oklab,var(--c) 45%,transparent)}
+.rail i.on{background:var(--c);height:26px;margin-top:-13px}
+.rail-names span{position:absolute;right:0;transform-origin:right center;white-space:nowrap;font:500 15px var(--sans);padding:3px 10px;background:var(--panel);color:var(--c);border:1px solid color-mix(in oklab,var(--c) 40%,var(--line));opacity:0;transition:opacity .15s}
+.rail-names span.on{background:var(--c);color:var(--panel);border-color:var(--c)}
 </style>
 <script>
 document.documentElement.classList.add('js');
@@ -1072,6 +1088,43 @@ document.querySelectorAll('[data-tabs]').forEach(tabs);
 const below = () => document.documentElement.style.setProperty('--below-top', document.querySelector('.top').offsetHeight + 'px');
 below();
 addEventListener('resize', below);
+
+// the rail: one square per chapter of the bar, the one in view a bar; a thumb on it fans out the names and the page follows
+(() => {
+  const links = [...document.querySelectorAll('.top nav a')], chapters = links.map(a => document.querySelector(a.hash));
+  const rail = document.createElement('div'), names = document.createElement('div'), scrim = document.createElement('div');
+  rail.className = 'rail'; names.className = 'rail-names'; scrim.className = 'rail-scrim';
+  rail.setAttribute('aria-hidden', 'true'); names.setAttribute('aria-hidden', 'true');
+  const at = j => `${(j + .5) * 100 / links.length}%`;
+  const squares = links.map((a, j) => { const i = document.createElement('i'); i.style.setProperty('--c', `var(--c${j + 1})`); i.style.top = at(j); rail.append(i); return i; });
+  const labels = links.map((a, j) => { const n = document.createElement('span'); n.textContent = a.textContent; n.style.setProperty('--c', `var(--c${j + 1})`); n.style.top = at(j); names.append(n); return n; });
+  document.body.append(scrim, names, rail);
+  const top = () => document.querySelector('.top').offsetHeight;
+  const current = () => { let i = -1; chapters.forEach((c, k) => { if (c.getBoundingClientRect().top <= top() + innerHeight * .3) i = k; }); return i; };
+  const show = () => { const i = current(); squares.forEach((q, j) => { q.classList.toggle('on', j === i); q.classList.toggle('done', j < i); }); };
+  addEventListener('scroll', show, {passive: true}); show();
+  let last = -1;
+  const move = e => {
+    const r = rail.getBoundingClientRect(), step = r.height / links.length, y = e.clientY - r.top;
+    const k = Math.max(0, Math.min(links.length - 1, Math.floor(y / step)));
+    labels.forEach((n, j) => {
+      const f = Math.exp(-((((j + .5) * step - y) / (step * .9)) ** 2));
+      n.style.transform = `translate(${-f * 12}px,-50%) scale(${.8 + .55 * f})`;
+      n.style.opacity = (.25 + .75 * f).toFixed(2);
+      n.classList.toggle('on', j === k);
+    });
+    if (k !== last) {
+      last = k;
+      scrollTo({top: chapters[k].getBoundingClientRect().top + scrollY - top() + 1, behavior: 'instant'});
+      try { navigator.vibrate?.(4); } catch {}
+    }
+  };
+  const root = document.documentElement;
+  rail.addEventListener('pointerdown', e => { try { rail.setPointerCapture(e.pointerId); } catch {} root.classList.add('rail-scrub'); last = -1; move(e); });
+  rail.addEventListener('pointermove', e => { if (root.classList.contains('rail-scrub')) move(e); });
+  const end = () => { root.classList.remove('rail-scrub'); labels.forEach(n => n.style.opacity = 0); };
+  rail.addEventListener('pointerup', end); rail.addEventListener('pointercancel', end);
+})();
 
 </script>
 </body>
