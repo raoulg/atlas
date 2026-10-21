@@ -991,3 +991,28 @@ fn places_a_file_compiled_in_is_no_place_and_one_found_where_the_crate_was_built
     assert!(read.iter().any(|t| t.artifact == "template.html" && t.fixed), "{read:?}");
     assert!(found(&s, "places").contains(&"stock.page".to_string()), "{:?}", found(&s, "places"));
 }
+
+/// One side of the shadows pair (`tests/pairs/shadows/rust`): letters sorted onto a pile, by a
+/// body whose locals are named apart from the module's functions on the clean side and like them
+/// on the shortcut.
+fn inbox(side: &str) -> Graph {
+    analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/shadows/rust").join(side), &Options::default()).expect("reads")
+}
+
+/// A name a body binds shadows the item of that name where the binding is in scope: a local
+/// handed on (`pile.letters.extend(addressed)`, a tuple pattern's `returned`, `push(size)`) is no
+/// function handed on, and a closure called by its name (`tidy(&l.to)`) is no call of the module's
+/// `tidy`. Naming a local like a function changes nothing of what the code does, so `sort` draws
+/// alike on both sides: it calls none of the program's functions. Where no local binds the name,
+/// the function is still the item: `total` hands `size` on to `map`, and `addressed` calls `tidy`.
+#[test]
+fn composition_a_local_shadows_the_function_it_is_named_like() {
+    for side in ["clean", "shortcut"] {
+        let g = inbox(side);
+        assert_eq!(targets(&g, EdgeKind::Calls, "inbox.sort"), Vec::<&str>::new(), "{side}");
+        let sites = &node(&g, "inbox.sort").sites;
+        assert!(sites.iter().all(|s| !s.to.starts_with("inbox.")), "{side}: {sites:?}");
+        assert_eq!(targets(&g, EdgeKind::Calls, "inbox.total"), ["inbox.size"], "{side}");
+        assert_eq!(targets(&g, EdgeKind::Calls, "inbox.addressed"), ["inbox.tidy"], "{side}");
+    }
+}
