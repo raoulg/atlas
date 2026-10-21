@@ -801,3 +801,35 @@ fn lens_a_get_gives_its_own_class_and_a_subclass_back() {
     assert_eq!(lens_of(s, "files.Roster"), "Roster puts Member into Disk(Roster.path) and gets no Member back");
     assert_eq!(lens_of(s, "files.Board"), "Board puts Notice into Disk(Board.path) and gets no Notice back");
 }
+
+/// One side of the overrides pair (`tests/pairs/overrides`): event handlers and the factories of
+/// shapes.
+fn events(side: &str) -> Graph {
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/overrides/typescript").join(side);
+    analyze(&dir, &Options::default()).expect("reads")
+}
+
+/// An override keeps the promise of its base in what it gives and in what it takes, and TypeScript
+/// compares types by their members. `CircleFactory.make` gives a `Circle`, which has the `area` a
+/// `Shape` declares without saying it implements one, and keeps the promise of `Factory.make`. The
+/// clean `ClickHandler.log` takes any `Named`, wider than the `Click` its base takes, since a Click
+/// has the `name` a Named declares. The compiler checks a method's parameters both ways, so the
+/// shortcut's `ClickHandler.handle(e: Click)` compiles where its base takes any `Event`: a caller
+/// written against a Handler may hand it an Event that is no Click, and Atlas asks.
+#[test]
+fn overrides_an_override_takes_what_its_base_takes_and_a_type_is_its_members() {
+    let (c, s) = (events("clean"), events("shortcut"));
+    assert!(findings(&c).is_empty(), "{:?}", findings(&c).iter().map(|f| format!("{} {}", f.node, f.what)).collect::<Vec<_>>());
+    assert!(c.parts.iter().all(|p| p.structural && p.leaves.overrides), "{:?}", c.parts);
+    assert!(!edge(&c, EdgeKind::Inherits, "shapes.Circle", "shapes.Shape"), "a Circle is a Shape by its members alone");
+    assert!(edge(&c, EdgeKind::Returns, "shapes.CircleFactory.make", "shapes.Circle"));
+    assert_eq!(node(&c, "handlers.Click").fields, ["x"]);
+    assert_eq!(node(&c, "handlers.Event").fields, ["name"]);
+    assert!(edge(&c, EdgeKind::Takes, "handlers.ClickHandler.log", "handlers.Named"));
+    assert_eq!(
+        asked_anywhere(&s, "overrides"),
+        ["shortcut.handlers.Handler.handle Handler.handle promises (e: Event) -> string; 1 override breaks it"]
+    );
+    assert!(edge(&s, EdgeKind::Takes, "handlers.ClickHandler.handle", "handlers.Click"));
+    assert!(edge(&s, EdgeKind::Inherits, "handlers.Click", "handlers.Event"));
+}

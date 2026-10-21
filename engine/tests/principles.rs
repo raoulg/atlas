@@ -162,9 +162,10 @@ fn a_lens_puts_what_reaches_the_place_not_the_key_it_looks_up_by() {
     assert_eq!(notes.evidence, ["put Notes.put: Note × Disk(Notes.path) → Disk(Notes.path)", "get Notes.get: Disk(Notes.path) → dict"]);
 }
 
-/// The principles read Rust by what its types and entries mean: `Disk.page` gives the
-/// `anyhow::Result<Page>` that `Source.page` promises as `Result<Page>`, and the test beside
-/// `ledger` names its own file without making `ledger` one that may.
+/// The principles read Rust by what its types and entries mean: a trait's implementation has the
+/// trait's signature, so `Disk.page`, which gives the `anyhow::Result<Page>` that `Source.page`
+/// promises as `Result<Page>`, is asked nothing, and the test beside `ledger` names its own file
+/// without making `ledger` one that may.
 #[test]
 fn rust_is_read_by_meaning() {
     let fs = findings("tests/fixture-rs");
@@ -184,6 +185,11 @@ fn a_package_called_src_is_asked_its_name() {
 /// What `atlas check` asks of Atlas, each finding read: its principle, the node it is about, and
 /// why it stands (a fault of Atlas's code, tracked in an issue, or a fault of the rule).
 const REVIEWED: &[(&str, &str, &str)] = &[
+    (
+        "choices",
+        "atlas-engine.tests.pairs_python.club",
+        "the pair helpers `club` and `reading` each keep a graph per side and pick it by `side == \"clean\"`: one cache keyed by side would make that choice once",
+    ),
     (
         "choices",
         "atlas.history.Server.respond",

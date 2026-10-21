@@ -886,3 +886,80 @@ fn lens_a_library_type_comes_back_inside_what_a_get_gives() {
     assert!(edge(&g, "books.ledger.Entry", "ext:fractions.Fraction", EdgeKind::Has));
     assert!(found(&g, "lens").is_empty(), "{:?}", found(&g, "lens"));
 }
+
+/// One side of the overrides pair (`tests/pairs/overrides`): readers of bytes, documents that parse
+/// themselves and a count, each family once as its author keeps its bases' promises and once as a
+/// hurried author writes it.
+fn reading(side: &str) -> &'static Graph {
+    static CLEAN: OnceLock<Graph> = OnceLock::new();
+    static SHORTCUT: OnceLock<Graph> = OnceLock::new();
+    let read = || {
+        analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/overrides/python").join(side), &Options::default()).unwrap()
+    };
+    if side == "clean" {
+        CLEAN.get_or_init(read)
+    } else {
+        SHORTCUT.get_or_init(read)
+    }
+}
+
+/// An override keeps the promise of every method it overrides, since a caller written against any
+/// of its class's ancestors may be handed it; the one it breaks is the first along the method
+/// resolution order. `Feed(Buffered, Archive)` runs Feed, Buffered, Source, Archive, Store, as C3
+/// orders them, so `Source.read` comes before `Archive.read`. On the clean side every `read` gives
+/// bytes. On the shortcut `Archive.read` gives a str: `Feed.read` follows it and breaks the
+/// `Source.read` its order reaches first, which the finding names, and `Tape.read` keeps
+/// `Source.read` and breaks `Archive.read`.
+#[test]
+fn overrides_the_base_is_the_next_in_the_method_resolution_order() {
+    let (c, s) = (reading("clean"), reading("shortcut"));
+    assert!(found(c, "overrides").is_empty(), "{:?}", found(c, "overrides"));
+    let bases = |g: &'static Graph| {
+        move |cls: &'static str| -> Vec<&'static str> {
+            g.edges.iter().filter(|e| e.kind == EdgeKind::Inherits && e.src == cls).map(|e| e.dst.as_str()).collect()
+        }
+    };
+    let order = atlas_engine::linearization("reading.feeds.Feed", &bases(s), &mut Default::default());
+    assert_eq!(order, ["Feed", "Buffered", "Source", "Archive", "Store"].map(|c| format!("reading.feeds.{c}")));
+    let feeds: Vec<String> = found(s, "overrides").into_iter().filter(|n| n.starts_with("reading.feeds.")).collect();
+    assert_eq!(feeds, ["reading.feeds.Source.read", "reading.feeds.Archive.read"]);
+    assert_eq!(s.node("reading.feeds.Feed.read").unwrap().breaks.as_deref(), Some("reading.feeds.Source.read"));
+    assert_eq!(s.node("reading.feeds.Tape.read").unwrap().breaks.as_deref(), Some("reading.feeds.Archive.read"));
+    let source = check(s).into_iter().find(|f| f.node == "reading.feeds.Source.read").unwrap();
+    assert_eq!(source.what, "Source.read promises () -> bytes; 1 override breaks it");
+    assert_eq!(source.evidence, ["Feed.read() -> str (src/reading/feeds.py:20)"]);
+}
+
+/// A constructor on the class is called through the class a caller names, and is handed what the
+/// caller hands its base's: the clean `Page.parse` takes the `text: str` of `Doc.parse`, and a new
+/// way in has a name of its own (`Page.decode(data: bytes)`). The shortcut's `Page.parse` takes
+/// bytes, so a caller of `Doc.parse` handed the class `Page` breaks; ty says so, and Atlas asks. An
+/// initializer answers to no base: each `Page.__init__` takes a page number `Doc.__init__` does not,
+/// and neither side is asked about it.
+#[test]
+fn overrides_a_constructor_on_the_class_takes_what_its_base_takes() {
+    let (c, s) = (reading("clean"), reading("shortcut"));
+    let parse = c.node("reading.docs.Page.parse").unwrap();
+    assert!(parse.ctor && parse.on_class && parse.keeps == Some(true), "{parse:?}");
+    assert!(!found(c, "overrides").iter().any(|n| n.starts_with("reading.docs.")));
+    let docs: Vec<String> = found(s, "overrides").into_iter().filter(|n| n.starts_with("reading.docs.")).collect();
+    assert_eq!(docs, ["reading.docs.Doc.parse"]);
+    assert_eq!(s.node("reading.docs.Page.parse").unwrap().keeps, Some(false));
+    let init = s.node("reading.docs.Page.__init__").unwrap();
+    assert!(init.ctor && !init.on_class);
+}
+
+/// `# type: ignore[override]` on an override is the code saying it knows, whatever its codes, as the
+/// bare comment is: ty honours only the bare form and codes of its own (`ty:`), and Atlas reads the
+/// comment on the override's line itself. The clean `Kennel.count` gives a str where `Shelter.count`
+/// promises an int, and says so; the shortcut does the same without a word, and is asked.
+#[test]
+fn overrides_a_type_ignore_with_codes_is_the_code_saying_it_knows() {
+    let (c, s) = (reading("clean"), reading("shortcut"));
+    assert_eq!(c.node("reading.counts.Kennel.count").unwrap().keeps, Some(true));
+    assert!(!found(c, "overrides").contains(&"reading.counts.Shelter.count".to_string()));
+    assert_eq!(s.node("reading.counts.Kennel.count").unwrap().keeps, Some(false));
+    assert!(found(s, "overrides").contains(&"reading.counts.Shelter.count".to_string()));
+    // the override that says it knows is still in the graph, with what it gives
+    assert_eq!(c.node("reading.counts.Kennel.count").unwrap().returns.as_ref().map(|r| r.written.as_str()), Some("str"));
+}
