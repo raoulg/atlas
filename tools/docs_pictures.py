@@ -110,15 +110,16 @@ def draw(atlas, subject, view, html):
 
 def pipeline(ctx, atlas, out, drawn):
     """The sunspots pipeline in each language: its pages and pictures, checked."""
+    # the live pages with Trend.save open are linked, not shown: their pictures are not kept
     cases = [
-        ('python-clean', 'python-clean', 'sunspots.cli.run', None),
-        ('python-clean-save', 'python-clean', 'sunspots.cli.run', 'sunspots.plot.Plot.save'),
-        ('python-sloppy', 'python-sloppy', 'sunspots', None),
-        ('rust-clean', 'rust-clean', 'sunspots.main.main', 'sunspots.plot.Plot.save'),
-        ('typescript-clean', 'typescript', 'typescript.cli.main', None),
+        ('python-clean', 'python-clean', 'sunspots.cli.run', None, True),
+        ('python-clean-save', 'python-clean', 'sunspots.cli.run', 'sunspots.plot.Plot.save', False),
+        ('python-sloppy', 'python-sloppy', 'sunspots', None, True),
+        ('rust-clean', 'rust-clean', 'sunspots.main.main', 'sunspots.plot.Plot.save', False),
+        ('typescript-clean', 'typescript', 'typescript.cli.main', None, True),
     ]
     results = {}
-    for name, subject, route, opened in cases:
+    for name, subject, route, opened, still in cases:
         view = {'route': route}
         if opened:
             view['open'] = {'functions': [opened]}
@@ -164,9 +165,44 @@ def pipeline(ctx, atlas, out, drawn):
         shoot(page, out / (name + '.png'))
         print(name, ':', len(s['nodes']), 'drawn nodes;', len(families), 'family round trips; checks passed')
         page.close()
-        drawn[name] = (canonical(s), {out / (name + '.html'): DOCS / 'showcase' / (name + '.html'),
-                                      out / (name + '.png'): DOCS / 'img/showcase' / (name + '.png')})
+        files = {out / (name + '.html'): DOCS / 'showcase' / (name + '.html')}
+        if still:
+            files[out / (name + '.png')] = DOCS / 'img/showcase' / (name + '.png')
+        drawn[name] = (canonical(s), files)
     assert world(results['python-clean']) == world(results['python-clean-save'])
+
+
+def smoothing(ctx, atlas, out, drawn):
+    """Each language's route close up, from `load` to the step that draws: what `smooth` is handed
+    and what it gives, at a size that reads."""
+    cases = [
+        ('python-smooth', 'python-clean', 'sunspots.cli.run', 'Trend.save'),
+        ('rust-smooth', 'rust-clean', 'sunspots.main.main', 'Trend.save'),
+        ('typescript-smooth', 'typescript', 'typescript.cli.main', 'trend'),
+    ]
+    for name, subject, route, last in cases:
+        html = out / (name + '.html')
+        draw(atlas, ROOT / 'engine/tests/pairs/pipeline' / subject, {'route': route}, html)
+        page = ctx.new_page()
+        page.goto(html.as_uri(), wait_until='networkidle')
+        settled(page)
+        s = snapshot(page)
+        shoot(page, out / (name + '-whole.png'))
+        clip = page.evaluate(r"""(last) => {
+          const label = g => g.textContent.replace(/^[\u25b8\u25be]\s*/, '').trim();
+          const steps = [...document.querySelectorAll('#scene g.tstep')];
+          const box = n => n.querySelector('rect.bg').getBoundingClientRect();
+          const [first, end] = ['load', last].map(l => steps.find(g => label(g) === l));
+          const left = box(first).left, right = box(end).right;
+          const inside = [first, end, ...document.querySelectorAll('#scene g.tstep, #scene g.tnode')]
+            .map(box).filter(b => b.left >= left - 1 && b.right <= right + 1);
+          const top = Math.min(...inside.map(b => b.top)), bottom = Math.max(...inside.map(b => b.bottom));
+          return {x: left - 28, y: top - 28, width: right - left + 56, height: bottom - top + 56};
+        }""", last)
+        page.screenshot(path=str(out / (name + '.png')), clip=clip)
+        print(name, ':', round(clip['width']), 'x', round(clip['height']), 'from', len(s['nodes']), 'drawn nodes')
+        page.close()
+        drawn[name] = (canonical(s), {out / (name + '.png'): DOCS / 'img/showcase' / (name + '.png')})
 
 
 def flowchart(browser, atlas, out, drawn):
@@ -200,6 +236,7 @@ def main(atlas):
                                   color_scheme='light', reduced_motion='reduce')
         ctx.add_init_script('(' + CAPTURE + ')()')
         pipeline(ctx, atlas, out, drawn)
+        smoothing(ctx, atlas, out, drawn)
         flowchart(browser, atlas, out, drawn)
         browser.close()
         for _, files in drawn.values():
