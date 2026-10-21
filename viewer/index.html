@@ -374,7 +374,9 @@ const byId = new Map(D.nodes.map(n => [n.id, n]));
 const prophecyOf = n => n?.prophecy || (n?.cls && byId.get(n.cls)?.prophecy) || null;
 // what a prophecy replaces, and the prophecy that replaces a node
 const replacedBy = new Map(D.nodes.filter(n => n.prophecy?.replaces).map(n => [n.prophecy.replaces, n.id]));
-for (const t of (D.make || [])) byId.set(t.id, {id: t.id, kind: "make", name: t.label, module: "Makefile", doc: t.doc, recipe: t.recipe, entry: {kind: "make", label: t.label}, make: t});
+// the units that are Makefiles, each one of its part
+const MAKEFILES = new Set((D.make || []).map(t => t.module));
+for (const t of (D.make || [])) byId.set(t.id, {id: t.id, kind: "make", name: t.label, module: t.module, part: t.part, doc: t.doc, recipe: t.recipe, entry: {kind: "make", label: t.label}, make: t});
 const ROOT = D.root + ".";
 // a repository of several parts (a crate, a package, an app), each read in its own language
 const PARTS = D.parts || [], multi = PARTS.length > 1;
@@ -415,7 +417,7 @@ function unitOfNode(n) {
   return unitCache.get(n.id);
 }
 function hueOf(n) {
-  if (!HUES) { HUES = new Map(); for (const p of PARTS.length ? PARTS.map(p => p.id) : [partOf({})]) for (const u of topUnits(p)) if (u !== "Makefile" && !HUES.has(u)) HUES.set(u, `var(--hue-${(HUES.size % 8) + 1})`); }
+  if (!HUES) { HUES = new Map(); for (const p of PARTS.length ? PARTS.map(p => p.id) : [partOf({})]) for (const u of topUnits(p)) if (!MAKEFILES.has(u) && !HUES.has(u)) HUES.set(u, `var(--hue-${(HUES.size % 8) + 1})`); }
   const u = unitOfNode(n);
   if (u) shownUnits.add(u);
   return HUES.get(u) || "var(--external)";
@@ -908,7 +910,7 @@ function restExchange(side) {
 // the packages of the focus's parts that are not in it, nor around or inside one that is
 function aroundFocus() {
   const parts = new Set([...V.focus].map(partOfUnit));
-  return [...parts].flatMap(p => topUnits(p)).filter(u => u !== "Makefile" && ![...V.focus].some(f => { const a = f.replace(/\$$/, ""), b = u.replace(/\$$/, ""); return a === b || a.startsWith(b + ".") || b.startsWith(a + "."); }));
+  return [...parts].flatMap(p => topUnits(p)).filter(u => !MAKEFILES.has(u) && ![...V.focus].some(f => { const a = f.replace(/\$$/, ""), b = u.replace(/\$$/, ""); return a === b || a.startsWith(b + ".") || b.startsWith(a + "."); }));
 }
 // the packages around a focus: those that hand data to it or take data from it, the most first
 function neighbours() {
@@ -1047,8 +1049,8 @@ function routeTree() {
   const closedRoutes = ids => ids.map(id => ({id, open: false, kids: [], hue: null}));
   if (V.route && !has(byId.get(V.route))) return [];
   if (!V.route && !V.kind) {
-    const unitNodes = (us, part) => us.filter(u => !SIDE || u === "Makefile" || held("u:" + u, n => inUnit(n.id, u))).map(u => { const open = V.open.units.has(u); return {id: "unit:" + u, open, kids: open ? unitKids(u, part) : [], hue: null, choice: false}; });
-    const unitKids = (u, part) => { const below = u.endsWith("$") || u === "Makefile" ? [] : unitsBelow(u, part); return below.length > 1 ? unitNodes(below, part) : closedRoutes(unitRoutes(u)); };
+    const unitNodes = (us, part) => us.filter(u => !SIDE || MAKEFILES.has(u) || held("u:" + u, n => inUnit(n.id, u))).map(u => { const open = V.open.units.has(u); return {id: "unit:" + u, open, kids: open ? unitKids(u, part) : [], hue: null, choice: false}; });
+    const unitKids = (u, part) => { const below = u.endsWith("$") || MAKEFILES.has(u) ? [] : unitsBelow(u, part); return below.length > 1 ? unitNodes(below, part) : closedRoutes(unitRoutes(u)); };
     // a focus: the packages chosen, each opened as before, and the rest of the code on either side
     if (V.focus.size) {
       const rest = r => { const open = V.open.units.has(r); return {id: "unit:" + r, open, kids: open ? [...restExchange(r).keys()].sort().map(p => ({id: `unit:${r}:${p}`, open: false, kids: [], hue: null, choice: false})) : [], hue: null, choice: false}; };

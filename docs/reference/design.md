@@ -381,7 +381,10 @@ package. The graph holds them side by side and every node knows its part. Two pa
 top-level name alike (two projects whose package is `app`, the scripts beside each) hold it under
 the directory each part lies in, `orders/app` and `billing/app`: the code does not tell them apart,
 so the picture names them by where they lie. A name one part holds keeps it, and so does the
-project at the repository's root. Parts meet over HTTP: a web framework's
+project at the repository's root. A Makefile is its part's, a unit beside its packages: two
+Makefiles are `orders/Makefile` and `billing/Makefile`, with a target both name (`run`) held the same
+way, and the Makefile of a directory two parts are rooted in (a `pyproject.toml` beside a
+`package.json`, each part read in its manifest's language) is one. Parts meet over HTTP: a web framework's
 routes stand at their full path (through `app.mount(prefix, sub_app)`,
 `include_router(router, prefix=…)`, `APIRouter(prefix=…)`), and a request one part makes
 whole that none of its own routes serves is a `requests` edge from the function that makes it

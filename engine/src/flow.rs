@@ -151,7 +151,7 @@ pub fn of(g: &Graph) -> Flow {
 /// The code quotiented by module path, one level at a time. A part's top level is the children
 /// of its own package, and each tree beside it (scripts, notebooks) as one; a level with a single
 /// child is passed through; a package with code of its own has that code beside its children as a
-/// unit of its own (`app.serve$`); a Makefile is a unit of the first part.
+/// unit of its own (`app.serve$`); a Makefile is a unit of its part.
 #[derive(Serialize, Clone, Debug, Default, PartialEq)]
 pub struct Units {
     /// Each part's top level, in the order of the parts.
@@ -187,6 +187,7 @@ pub fn units(g: &Graph) -> Units {
         kids
     }
     let known = |id: &str| nodes.contains_key(id);
+    let makefiles: HashSet<&str> = g.make.iter().map(|t| t.module.as_str()).collect();
     let parts: Vec<String> = if g.parts.is_empty() { vec![first.clone()] } else { g.parts.iter().map(|p| p.id.clone()).collect() };
     let mut out = Units::default();
     for part in parts {
@@ -209,12 +210,14 @@ pub fn units(g: &Graph) -> Units {
                 }
             })
             .collect();
-        if !g.make.is_empty() && part == first {
-            top.push("Makefile".into());
+        for t in g.make.iter().filter(|t| if t.part.is_empty() { part == first } else { t.part == part }) {
+            if !top.contains(&t.module) {
+                top.push(t.module.clone());
+            }
         }
         let mut todo = top.clone();
         while let Some(u) = todo.pop() {
-            if u.ends_with('$') || u == "Makefile" || out.kids.contains_key(&u) {
+            if u.ends_with('$') || makefiles.contains(u.as_str()) || out.kids.contains_key(&u) {
                 continue;
             }
             let kids = below(&u, &mods, &has_code, &known);
