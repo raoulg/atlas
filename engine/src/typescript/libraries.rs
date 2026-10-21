@@ -18,10 +18,8 @@ use serde_json::Value;
 use tree_sitter::Parser;
 use walkdir::WalkDir;
 
-use super::{
-    collect_imports, collect_symbols, collect_wrapped, function_of, is_code, member_parts, module_id, package_of, segment, ts_parser,
-    Bound, Module, EXTENSIONS,
-};
+use super::module::{function_of, is_code, member_parts, module_id, package_of, segment, ts_parser, Bound, Module, EXTENSIONS};
+use super::passes::{collect_imports, collect_symbols, collect_wrapped};
 use crate::builder::GraphBuilder;
 use crate::effects;
 use crate::knowledge::{self, Registry};

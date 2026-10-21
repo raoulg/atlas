@@ -19,10 +19,10 @@ use indexmap::IndexMap;
 use tree_sitter::{Parser, Tree};
 use walkdir::WalkDir;
 
-use super::{
-    attrs_of, collect_impls, collect_symbols, collect_uses, def_node, definitions, module_doc, new_parser, returned_classes,
-    type_parameters, Body, Crate, Eval, Module,
-};
+use super::body::Body;
+use super::module::{attrs_of, def_node, definitions, module_doc, new_parser, type_parameters, Crate, Module};
+use super::passes::{collect_impls, collect_symbols, collect_uses, returned_classes};
+use super::paths::Eval;
 use crate::builder::GraphBuilder;
 use crate::cache::Check;
 use crate::effects;

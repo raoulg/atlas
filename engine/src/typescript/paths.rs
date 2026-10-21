@@ -8,7 +8,7 @@ use std::path::Path;
 use indexmap::IndexMap;
 use tree_sitter::Node as TsNode;
 
-use super::{declarations, function_in, is_property, member_parts, top_variables, Bound, Module};
+use super::module::{declarations, function_in, is_property, member_parts, package_from_ext, top_variables, Bound, Module, WRAPPERS};
 use crate::knowledge::{self, PathFn};
 use crate::paths::{cross, environment, environment_named, hole, lit, or_else, parent, substitute, union, Built, Seg};
 use crate::tree::{beneath, named_children, path_str, text, unquote, walk};
@@ -84,7 +84,7 @@ impl<'a> Eval<'a> {
 
     fn package(&self, m: &Module, name: &str) -> Option<String> {
         match m.bindings.get(name)? {
-            Bound::Ext(e) => Some(super::package_from_ext(e, &m.ext_pkgs)),
+            Bound::Ext(e) => Some(package_from_ext(e, &m.ext_pkgs)),
             Bound::Own(_) => None,
         }
     }
@@ -94,7 +94,7 @@ impl<'a> Eval<'a> {
         if depth > DEPTH {
             return vec![hole("…")];
         }
-        let e = beneath(e, super::WRAPPERS);
+        let e = beneath(e, WRAPPERS);
         let src = &at.m.src;
         let inner =
             |e: TsNode<'t>| named_children(e).into_iter().next().map(|x| self.of(at, x, depth + 1)).unwrap_or_else(|| vec![hole("value")]);
@@ -253,10 +253,10 @@ impl<'a> Eval<'a> {
     /// The call of a command-line parser a value is, with the parser: `parseArgs({..})` as the
     /// package that exports it names it, however the module imports it.
     fn parser_call<'t>(&self, m: &Module, value: TsNode<'t>) -> Option<(TsNode<'t>, &'static knowledge::OptionParser)> {
-        let v = beneath(value, super::WRAPPERS);
+        let v = beneath(value, WRAPPERS);
         let parts = member_parts(v.child_by_field_name("function").filter(|_| v.kind() == "call_expression")?, &m.src);
         let Bound::Ext(ext) = m.bindings.get(parts.first()?)? else { return None };
-        let package = super::package_from_ext(ext, &m.ext_pkgs);
+        let package = package_from_ext(ext, &m.ext_pkgs);
         let full = std::iter::once(ext.clone()).chain(parts[1..].iter().cloned()).collect::<Vec<_>>().join(".");
         let function = full.rsplit('.').next()?;
         knowledge::OPTION_PARSERS.iter().find(|p| p.package == package && p.function == function).map(|p| (v, p))
@@ -268,7 +268,7 @@ impl<'a> Eval<'a> {
             return None;
         }
         let src = &at.m.src;
-        let e = beneath(e, super::WRAPPERS);
+        let e = beneath(e, WRAPPERS);
         match e.kind() {
             "object" => Some(e),
             "identifier" | "shorthand_property_identifier" => {

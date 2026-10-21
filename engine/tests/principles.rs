@@ -246,17 +246,12 @@ const REVIEWED: &[(&str, &str, &str)] = &[
     ),
     (
         "choices",
-        "atlas-engine.rust.collect_types",
-        "tree-sitter's kind strings are the grammar's type of a node: each function reads a construct of its own, and `identifier` and `self` stand for other things in a use path than in a place",
-    ),
-    (
-        "choices",
-        "atlas-engine.rust.Body.value_class",
+        "atlas-engine.rust.body.Body.value_class",
         "`value_class` and `declared` read a name two ways, the class of a value and the type a declaration gives it",
     ),
     (
         "choices",
-        "atlas-engine.rust.Body.call",
+        "atlas-engine.rust.body.Body.call",
         "a call among a macro's tokens (`token_tree`) has a shape of its own: `call` dispatches on it, `call_hands` reads its arguments; one shape, two questions",
     ),
     (
@@ -266,13 +261,13 @@ const REVIEWED: &[(&str, &str, &str)] = &[
     ),
     (
         "choices",
-        "atlas-engine.typescript.collect_types",
-        "the TypeScript reader's functions each read a construct by tree-sitter's kind: a name, a member chain and a type name stand for other things in each",
+        "atlas-engine.typescript.module.collect_types",
+        "the TypeScript reader's functions each read a construct by tree-sitter's kind: a type name stands for one thing in a type, another in a member path",
     ),
     (
         "choices",
-        "atlas-engine.typescript.router_made",
-        "`router_made` and `builds_container` each read a `new` of a constructor of their own kind (a router's, a container's)",
+        "atlas-engine.typescript.body.Body.bucket_of",
+        "the TypeScript reader's functions each read a construct by tree-sitter's kind: `bucket_of` asks where a value comes from, `chain_root` what a member chain stands on",
     ),
     (
         "choices",
@@ -283,16 +278,6 @@ const REVIEWED: &[(&str, &str, &str)] = &[
         "layers",
         "atlas-engine.python",
         "a fault of Atlas, #117: `python.rs` is both the reader's entry and the vocabulary `python/paths.rs` builds on (`call_path`, `dotted`, `Module`)",
-    ),
-    (
-        "layers",
-        "atlas-engine.rust",
-        "a fault of Atlas, #117: `rust.rs` is both the reader's entry and the vocabulary `globals`, `libraries` and `paths` build on (`resolve`, `attrs_of`, `expand`, the passes that read a module)",
-    ),
-    (
-        "layers",
-        "atlas-engine.typescript",
-        "a fault of Atlas, #117: `typescript.rs` is both the reader's entry and the vocabulary `libraries` and `paths` build on (`function_of`, `function_in`, the passes that read a module)",
     ),
 ];
 

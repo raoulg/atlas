@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use indexmap::IndexMap;
 use tree_sitter::Node as TsNode;
 
-use super::{def_node, expand, path_parts, resolve, resolve_value, Module};
+use super::module::{def_node, expand, path_parts, resolve, resolve_value, Module};
 use crate::knowledge::{self, PathFn, PathMethod};
 use crate::model::{Node, NodeKind};
 use crate::paths::{cross, environment_named, hole, lit, or_else, parent, substitute, union, Built, Seg};
@@ -64,7 +64,7 @@ impl<'a> Eval<'a> {
         if depth > DEPTH {
             return vec![hole("…")];
         }
-        let e = beneath(e, super::WRAPPERS);
+        let e = beneath(e, super::module::WRAPPERS);
         let src = &at.m.src;
         let first =
             |e: TsNode<'a>| named_children(e).into_iter().next().map(|x| self.of(at, x, depth + 1)).unwrap_or_else(|| vec![hole("value")]);
@@ -207,7 +207,7 @@ impl<'a> Eval<'a> {
         if depth > DEPTH {
             return None;
         }
-        let e = beneath(e, super::WRAPPERS);
+        let e = beneath(e, super::module::WRAPPERS);
         let src = &at.m.src;
         match e.kind() {
             "identifier" => {
@@ -416,14 +416,14 @@ impl<'a> Eval<'a> {
                 }
                 Some(PathMethod::Sibling) => cross(&on().iter().map(parent).collect::<Vec<_>>(), &arg(0), "/"),
                 // what an `Option` or a `Result` holds, or what it falls back to where it holds nothing
-                None if super::OR_ELSE.contains(&method) && !method.starts_with("map") => or_else(on(), arg(0)),
+                None if super::module::OR_ELSE.contains(&method) && !method.starts_with("map") => or_else(on(), arg(0)),
                 None if knowledge::hands_on(method) && !matches!(method, "map" | "and_then") => on(),
                 None => vec![hole(method)],
             };
         }
         let parts = expand(at.m, &path_parts(Some(f), src));
         // `Some(x)` and `Ok(x)` hold `x`
-        if matches!(parts.as_slice(), [v] if super::HOLDING.contains(&v.as_str())) {
+        if matches!(parts.as_slice(), [v] if super::module::HOLDING.contains(&v.as_str())) {
             return arg(0);
         }
         let n = parts.len();
@@ -650,7 +650,7 @@ fn bound<'a>(scope: TsNode<'a>, name: &str, pos: usize, src: &[u8]) -> Option<Bo
         let inner: Vec<TsNode> = named_children(p).into_iter().filter(|c| Some(c.id()) != ty.map(|t| t.id())).collect();
         match p.kind() {
             "tuple_struct_pattern"
-                if ty.map_or(false, |t| super::HOLDING.contains(&text(t, src))) && matches!(inner.as_slice(), [x] if named(*x)) =>
+                if ty.map_or(false, |t| super::module::HOLDING.contains(&text(t, src))) && matches!(inner.as_slice(), [x] if named(*x)) =>
             {
                 Some(Bound::Value(v))
             }
