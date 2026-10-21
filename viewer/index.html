@@ -474,7 +474,7 @@ let hoverTarget = null;  // shows what is under the pointer in the inspector
 
 // ---------- state ----------
 let view = "plaat", selected = null;
-document.querySelectorAll(".tabs button").forEach(b => b.addEventListener("click", () => { view = b.dataset.view; plaatFit = true; prevPos = new Map(); document.querySelectorAll(".tabs button").forEach(x => x.setAttribute("aria-selected", x === b)); render(); }));
+document.querySelectorAll(".tabs button").forEach(b => b.addEventListener("click", () => { view = b.dataset.view; plaatFit = true; prevPos = new Map(); prevParent = new Map(); document.querySelectorAll(".tabs button").forEach(x => x.setAttribute("aria-selected", x === b)); render(); }));
 
 // ---------- type lattice ----------
 function renderTypes() {
@@ -730,7 +730,7 @@ function insideTags(grp, w, h, I, pad) {
     el("title", {}, g).textContent = ["inside; open it to see where", ...cs.map(([st, k]) => `${MARK[st]}${k} ${st}: ${names(st)}`)].join("\n");
   }
 }
-let prevPos = new Map(), plaatAnchor = null, plaatFit = true;
+let prevPos = new Map(), prevParent = new Map(), plaatAnchor = null, plaatFit = true;
 // what the last render drew: each box by its id in the layout, and each line by its two ends
 let PICTURE = {boxes: new Map(), lines: []};
 async function renderPlaat(mine) {
@@ -1284,16 +1284,20 @@ async function renderPlaat(mine) {
     el("title", {}, t).textContent = "the same place, on the other side";
     t.addEventListener("click", ev => { ev.stopPropagation(); goTo(other); });
   };
+  // an opened box is drawn as a frame with the box's id: the fiber of the box, what `q` sends to it
+  const isFrame = id => pos.has(id) && (frames.has(id) || famFrames.has(id) || worldFrames.has(id));
   const light = id => {
     const ids = new Set([...nodeEls.keys()].filter(k => base(k) === base(id))), lit = new Set(ids);
     for (const k of worldFrames.get(id)?.kids || []) { ids.add(k); lit.add(k); }
+    // a frame lights as the box it opened: the lines that end at it or at anything inside it
+    if (isFrame(id)) for (const k of [id, ...pos.keys()]) if (k === id || within(k, id)) { ids.add(k); lit.add(k); }
     for (const e of edgeEls) if (ids.has(e.a) || ids.has(e.b)) { e.els.forEach(x => x.classList.add("on")); lit.add(e.a); lit.add(e.b); }
     for (const [k, x] of nodeEls) if (lit.has(k)) x.classList.add("on");
     g.classList.add("focus");
   };
   const dark = () => { g.classList.remove("focus"); g.querySelectorAll(".on").forEach(x => x.classList.remove("on")); };
   // pinned boxes keep their lines lit, and pointing elsewhere adds nothing until they are let go
-  repaintPins = () => { dark(); for (const id of pinned) if (nodeEls.has(id)) light(id); };
+  repaintPins = () => { dark(); for (const id of pinned) if (nodeEls.has(id) || isFrame(id)) light(id); };
   const focusOn = id => { if (!pinned.size) light(id); };
   const unfocus = () => { if (!pinned.size) dark(); };
   const pin = id => { if (pinned.has(id)) pinned.delete(id); else pinned.add(id); repaintPins(); crumbs(); };
@@ -1488,11 +1492,20 @@ async function renderPlaat(mine) {
     }, () => pin(p.id));
     place(grp, p.id);
   }
-  // pins of boxes this picture no longer has are let go; the others stay lit
-  const before = pinned.size;
-  for (const id of [...pinned]) if (!nodeEls.has(id)) pinned.delete(id);
+  // a pin is a set of boxes and zoom carries it by `q`: a pinned box that opened is its frame, which keeps its id; a
+  // pinned box whose frame closed is the box it closed into, the nearest frame around it before that this picture
+  // draws. A pin with nothing left to stand for is let go
+  const before = [...pinned].join();
+  const drawn = id => nodeEls.has(id) || isFrame(id);
+  for (const id of [...pinned]) {
+    if (drawn(id)) continue;
+    pinned.delete(id);
+    let p = prevParent.get(id);
+    while (p && p !== "root" && !drawn(p)) p = prevParent.get(p);
+    if (p && p !== "root") pinned.add(p);
+  }
   repaintPins();
-  if (pinned.size !== before) crumbs();
+  if ([...pinned].join() !== before) crumbs();
   // keep the clicked thing where it was on the screen, at the zoom the reader chose; the zoom only
   // gives way when the box it opened into is bigger than the screen
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
@@ -1516,7 +1529,7 @@ async function renderPlaat(mine) {
     t1 = d3.zoomIdentity.translate(W / 2 - fitK * (x0 + x1) / 2, top + (H - top) / 2 - fitK * (y0 + y1) / 2).scale(fitK);
   }
   if (t1) { if (plaatFit || !DUR) svg.call(zoom.transform, t1); else svg.transition().duration(DUR).call(zoom.transform, t1); }
-  prevPos = pos; plaatAnchor = null; plaatFit = false;
+  prevPos = pos; prevParent = parentOf; plaatAnchor = null; plaatFit = false;
   PICTURE = {boxes: nodeEls, lines: edgeEls};
   // the picture as data, for the checks that walk it (tools/pictures.py): each box with the box that holds it, each line by its ends
   window.atlasBoxes = nodeEls;

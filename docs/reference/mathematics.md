@@ -306,7 +306,10 @@ one after:
 
 What the picture does not claim is where a box lies on the page: the layering (`elkjs`), the camera,
 and which lines are pinned are presentation. The camera keeps the box opened where it stood on the
-screen, at the zoom the reader chose.
+screen, at the zoom the reader chose. What is pinned is a set of boxes, and zoom carries it by `q`
+like everything else: opening a pinned box pins its frame, the fiber of the box, so the lines that
+crossed the box stay lit; closing the frame around a pinned box pins the box it closes into, its
+image.
 
 | Law | What it asks of the viewer | Where |
 | --- | --- | --- |
