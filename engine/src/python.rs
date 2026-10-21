@@ -2925,15 +2925,21 @@ impl<'a, 't> Body<'a, 't> {
         let names: Vec<TsNode> = if left.kind() == "identifier" { vec![left] } else { walk(left, &["identifier"]) };
         let hands = self.seen.held_in(right, self.ext, &steps.kept);
         // one name holds an element of what the loop goes over: of a `list[Node]` a `Node`, where ty does not say it of the name
-        let element: Vec<String> =
-            self.seen.value(right).filter(|v| !v.is_class && !v.is_code).map(|v| self.seen.drawn(v, self.ext)).unwrap_or_default();
+        let over = self.seen.value(right).filter(|v| !v.is_class && !v.is_code);
+        let element: Vec<String> = over.map(|v| self.seen.drawn(v, self.ext)).unwrap_or_default();
+        // what it goes over is of a known type that holds none Atlas draws (a `list[str]`): its elements are no values it draws
+        let undrawn = element.is_empty() && over.is_some_and(|v| v.shown != "Unknown");
         let one = names.len() == 1;
         let gives: Vec<Held> = names
             .into_iter()
             .flat_map(|n| {
                 let named = self.gives(n, text(n, self.src), &hands);
-                if one && named.iter().all(|h| h.ty.is_empty()) && !element.is_empty() {
+                if !named.iter().all(|h| h.ty.is_empty()) || !one {
+                    named
+                } else if !element.is_empty() {
                     element.iter().map(|t| Held::new(t.clone(), text(n, self.src))).collect()
+                } else if undrawn {
+                    vec![]
                 } else {
                     named
                 }
