@@ -11,7 +11,7 @@ use std::collections::{HashMap, HashSet};
 use indexmap::IndexMap;
 use tree_sitter::Node as TsNode;
 
-use super::{bound_in, def_node, items, path_parts, path_to_id, resolve, type_names, Module};
+use super::module::{bound_in, def_node, items, path_parts, path_to_id, resolve, type_names, Module};
 use crate::builder::GraphBuilder;
 use crate::knowledge;
 use crate::model::{Dir, NodeKind, Touch, World};
@@ -276,7 +276,7 @@ fn follow(mut n: TsNode, mut open: bool, mut refers: bool, src: &[u8], depth: u3
                 refers = true;
                 n = p;
             }
-            k if super::WRAPPERS.contains(&k) => n = p,
+            k if super::module::WRAPPERS.contains(&k) => n = p,
             "index_expression" if p.named_child(0).map(|v| v.id()) == Some(n.id()) => {
                 refers = false;
                 n = p;

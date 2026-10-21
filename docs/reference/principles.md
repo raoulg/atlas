@@ -725,9 +725,9 @@ the program is the program's. The imports of a Rust test module are the tests', 
 keeps none of them for the module around it. A request from one part to another is in the graph
 of the repository as a whole; `atlas check` reads each part alone.
 
-In Atlas, each reader and the modules below it depend on one another (`python.rs` calls into
-`python/paths.rs`, which calls back for `call_path`): a reader's own file is both its entry and the
-vocabulary its modules build on (#117). The reviewed list in `engine/tests/principles.rs` says why
+In Atlas, the Python reader and the module below it depend on one another (`python.rs` calls into
+`python/paths.rs`, which calls back for `call_path`): the reader's own file is both its entry and the
+vocabulary its module builds on (#117). The reviewed list in `engine/tests/principles.rs` says why
 each stands.
 
 ## What a lens puts, it gets back.
