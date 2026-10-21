@@ -31,7 +31,8 @@ jobs:
       - name: Start from the documentation
         run: cp -R docs site
       - name: Draw the page
-        run: target/release/atlas view --no-open --out site/atlas.html --view '{"route": "atlas-engine.analyze"}'
+        run: |
+          target/release/atlas view --no-open --out site/atlas.html --view '{"route": "atlas-engine.analyze"}'
       - name: Take its picture
         run: uv run tools/atlas_picture.py site/atlas.html site/atlas.png
       - name: Write the pill
