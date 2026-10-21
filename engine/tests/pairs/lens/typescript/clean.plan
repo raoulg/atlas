@@ -171,7 +171,6 @@ known #74 extra line ReadingStore@ReadingStore()/ReadingStore() > ReadingStore()
 known #74 extra line ReadingStore@ReadingStore()/ReadingStore() > ReadingStore()/ReadingStore.summary/?1/ReadingStore.keepSummary value   # Atlas runs it on what the constructor built
 known #74 extra line ReadingStore@ReadingStore()/ReadingStore() > ReadingStore()/ReadingStore.keptSummary value   # Atlas runs it on what the constructor built
 known #74 extra line ReadingStore@ReadingStore()/ReadingStore() > ReadingStore()/ReadingStore.keepSummary value   # Atlas runs it on what the constructor built
-known #127 extra home Day ReadingStore()   # #127: a parameter by its type, not as the value handed
 known #127 extra home Outage ReadingStore()   # #127: a parameter by its type, not as the value handed
 known #127 extra home Reading ReadingStore()   # #127: a parameter by its type, not as the value handed
 known #130 extra home Summary@ReadingStore()/ReadingStore.keptSummary/Summary() ReadingStore()/ReadingStore.keptSummary   # #130: the Summary is built only when a line is found
@@ -181,9 +180,6 @@ known #125 extra home _@ReadingStore()/ReadingStore.keptSummary/l.split ReadingS
 known #130 extra home _@ReadingStore()/ReadingStore.summary/?1/ReadingStore.keptSummary/l.split ReadingStore()/ReadingStore.summary/?1/ReadingStore.keptSummary   # #130: `??`'s left side drawn as an arm
 known #125 extra home _@ReadingStore()/ReadingStore.summary/?1/daySummary/readings.filter ReadingStore()/ReadingStore.summary/?1/daySummary   # #125: an unnamed call in a chain is a step
 known #130 extra home _·line@ReadingStore()/ReadingStore.summary/?1/ReadingStore.keptSummary/find ReadingStore()/ReadingStore.summary/?1/ReadingStore.keptSummary   # #130: `??`'s left side drawn as an arm
-known #127 extra line Day > ReadingStore()/ReadingStore.keptSummary value   # #127: a parameter by its type, not as the value handed
-known #130 extra line Day > ReadingStore()/ReadingStore.summary/?1/ReadingStore.keptSummary value   # #130: `??`'s left side drawn as an arm
-known #127 extra line Day > ReadingStore()/ReadingStore.summary/?1/daySummary value   # #127: a parameter by its type, not as the value handed
 known #130 extra line Day·day > ReadingStore()/ReadingStore.keptSummary/Summary() value   # #130: the Summary is built only when a line is found
 known #127 extra line Day·day > ReadingStore()/ReadingStore.keptSummary/find value   # #127: a parameter by its type, not as the value handed
 known #130 extra line Day·day > ReadingStore()/ReadingStore.summary/?1/ReadingStore.keptSummary/Summary() value   # #130: `??`'s left side drawn as an arm
@@ -193,7 +189,6 @@ known #130 extra line Disk(ReadingStore.summaries) > ReadingStore()/ReadingStore
 known #127 extra line Outage > ReadingStore()/ReadingStore.saveOutage value   # #127: a parameter by its type, not as the value handed
 known #127 extra line Outage@ReadingStore()/ReadingStore.kept/Outage() > ReadingStore()/ReadingStore.kept/Harvest() value   # #127: a parameter by its type, not as the value handed
 known #127 extra line Reading > ReadingStore()/ReadingStore.save value   # #127: a parameter by its type, not as the value handed
-known #127 extra line Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history > ReadingStore()/ReadingStore.summary/?1/daySummary value # #127: daySummary's own arrow takes what it only hands on
 known #125 extra line Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history > ReadingStore()/ReadingStore.summary/?1/daySummary/readings.filter value # #125: an unnamed call in a chain is a step
 known #125 extra line ReadingStore()/ReadingStore.kept/line.split > _@ReadingStore()/ReadingStore.kept/line.split value   # #125: an unnamed call in a chain is a step
 known #130 extra line ReadingStore()/ReadingStore.keptSummary/Summary() > Summary@ReadingStore()/ReadingStore.keptSummary/Summary() value   # #130: the Summary is built only when a line is found

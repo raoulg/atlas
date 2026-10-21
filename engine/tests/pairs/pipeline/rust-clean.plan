@@ -97,7 +97,7 @@ line DrawingArea·area@main/Trend.save/into_drawing_area > main/Trend.save/Trend
 known #128 line DrawingArea·area@main/Trend.save/into_drawing_area > main/Trend.save/Trend.draw/build_cartesian_2d value
 line Trend@main/Trend.new > main/Trend.save/Trend.draw value            # `self.settings.months`
 known #128 line Trend@main/Trend.new > main/Trend.save/Trend.draw/build_cartesian_2d value   # `self.settings.title`
-line Month·series@main/load > main/Trend.save/Trend.draw value          # `draw_series(..)`
+known #126 line Month·series@main/load > main/Trend.save/Trend.draw value   # `draw_series(..)`; the body uses it itself, and a step inside takes it too
 known #125 line Month·series@main/load > main/Trend.save/Trend.draw/first value
 known #125 line Month·series@main/load > main/Trend.save/Trend.draw/last value
 known #125 line main/Trend.save/Trend.draw/first > Month·first@main/Trend.save/Trend.draw/first value
@@ -152,9 +152,7 @@ known #125 extra line _·date@main/load/?1/Record.into_month/from_ymd_opt > main
 known #125 extra home _·date@main/load/?1/Record.into_month/from_ymd_opt main/load/?1/Record.into_month
 
 # a value handed to a step also goes to its own arrow, though only a step inside it takes it
-known #126 extra line Settings·settings@main/Settings() > main/Trend.new value
 known #126 extra line Settings·settings@main/Settings() > main/smooth value
-known #126 extra line Trend@main/Trend.new > main/Trend.save value
 
 # an error is a value of the codomain: made where it is raised, handed on across each border up to the route
 known #138 line main/load/?1/Record.into_month > Error@main/load/?1/Record.into_month value   # `Error::Date { .. }`

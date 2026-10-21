@@ -206,7 +206,5 @@ known #130 extra home _·low@ReadingStore()/ReadingStore.summary/fold ReadingSto
 known #130 extra home _·high@ReadingStore()/ReadingStore.summary/fold#2 ReadingStore()/ReadingStore.summary   # #130: drawn outside the arm the early return makes
 known #74 extra line ReadingStore@ReadingStore()/ReadingStore.new > ReadingStore()/ReadingStore.summary/ReadingStore.history value   # Atlas runs it on what `new` built (and outside the arm, #130)
 known #126 extra line Reading@ReadingStore()/ReadingStore.summary/ReadingStore.history > ReadingStore()/ReadingStore.summary value   # #126: summary gives back a line, not the Readings
-known #127 extra line Day > ReadingStore()/ReadingStore.summary value   # #127
-known #127 extra home Day ReadingStore()   # #127
 known #127 extra home Reading ReadingStore()   # #127
 known #127 extra home Outage ReadingStore()   # #127

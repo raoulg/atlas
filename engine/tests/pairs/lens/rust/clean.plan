@@ -350,9 +350,7 @@ known #130 extra home Summary@ReadingStore()/ReadingStore.summary/ReadingStore.k
 known #103 extra line ReadingStore()/ReadingStore.summary/ReadingStore.kept_summary > Summary@ReadingStore()/ReadingStore.summary/ReadingStore.kept_summary value   # the value `Some(summary)` binds has no name
 known #103 extra home Summary@ReadingStore()/ReadingStore.summary/ReadingStore.kept_summary ReadingStore()/ReadingStore.summary   # the value `Some(summary)` binds has no name
 known #74 extra line ReadingStore@ReadingStore()/ReadingStore.new > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history value   # Atlas runs it on what `new` built
-known #127 extra line Day > ReadingStore()/ReadingStore.summary/?1/day_summary value   # #127: day_summary's own arrow takes a Day from beyond
 known #74 extra line ReadingStore@ReadingStore()/ReadingStore.new > ReadingStore()/ReadingStore.summary/?1/ReadingStore.keep_summary value   # Atlas runs it on what `new` built
-known #127 extra line Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history > ReadingStore()/ReadingStore.summary/?1/day_summary value # #127: day_summary's own arrow takes what it only hands on
 known #74 extra line ReadingStore@ReadingStore()/ReadingStore.new > ReadingStore()/ReadingStore.kept_summary value   # Atlas runs it on what `new` built
 known #130 extra step ReadingStore()/ReadingStore.kept_summary/Summary()   # #130: the literal is no arm of the `.then` choice
 known #130 extra line ReadingStore()/ReadingStore.kept_summary/Summary() > Summary@ReadingStore()/ReadingStore.kept_summary/Summary() value

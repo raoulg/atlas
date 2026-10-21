@@ -138,7 +138,6 @@ known #129 extra home list@main/extend main
 # A method that changes its receiver hands it on twice: unnamed from its arrow's change, and named; the next step takes
 # the second
 known #129 extra line main/Board.take_from > Board·other@main/Board.take_from#2 value
-known #129 extra line Board·other@main/Board.take_from#2 > main/Board.take_victim value
 known #129 extra home Board·other@main/Board.take_from#2 main
 known #129 extra line main/Board.take_victim > Board·other@main/Board.take_victim#2 value
 known #129 extra line Board·other@main/Board.take_victim#2 > main/merge_scores value
@@ -161,4 +160,3 @@ known #101 line list·jobs@main/queue > main value
 # `cell.marked = True` is the body's own use of each cell the loop gives; the own arrow takes the board the loop goes
 # over instead
 known #101 line Cell·cell@main/mark_all/for cell in board.cells > main/mark_all value
-known #126 extra line Board·board@main/Board() > main/mark_all value

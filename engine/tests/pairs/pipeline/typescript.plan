@@ -63,7 +63,7 @@ line cli.ts/main/load/parse > Month@cli.ts/main/load/parse value
 line Month@cli.ts/main/load/parse > cli.ts/main/load value
 line cli.ts/main/load > Month·series@cli.ts/main/load value
 
-line Month·series@cli.ts/main/load > cli.ts/main/smooth value             # `series.slice(..)`
+known #126 line Month·series@cli.ts/main/load > cli.ts/main/smooth value   # `series.slice(..)`; the body uses it itself, and a step inside takes it too
 line Settings·settings@cli.ts/main/Settings() > cli.ts/main/smooth value  # `settings.months`, handed as `months`
 known #128 line Settings·settings@cli.ts/main/Settings() > cli.ts/main/smooth/floor value
 line cli.ts/main/smooth/floor > _·before@cli.ts/main/smooth/floor value
@@ -74,7 +74,7 @@ line cli.ts/main/smooth > Smoothed·smoothed@cli.ts/main/smooth value
 
 line Month·series@cli.ts/main/load > cli.ts/main/trend value
 line Smoothed·smoothed@cli.ts/main/smooth > cli.ts/main/trend value
-line Settings·settings@cli.ts/main/Settings() > cli.ts/main/trend value
+known #126 line Settings·settings@cli.ts/main/Settings() > cli.ts/main/trend value   # the body uses it itself, and a step inside takes it too
 line Settings·settings@cli.ts/main/Settings() > cli.ts/main/trend/escape value   # `escape(settings.title)`
 line cli.ts/main/trend/escape > cli.ts/main/trend back
 known #127 line Month·series@cli.ts/main/load > cli.ts/main/trend/series.at value
