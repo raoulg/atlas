@@ -3,7 +3,7 @@
 # dependencies = ["playwright"]
 # ///
 """Draw the history of the tour on `docs/index.html` with an Atlas build: the commits of a
-repository as `atlas serve` lists them, and two of them drawn as one picture.
+repository as `atlas serve` lists them, with two of them drawn as one picture beside the list.
 
     uv run tools/interaction_pictures.py ATLAS [OUTDIR]
 
@@ -31,6 +31,8 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 DOCS = ROOT / 'docs'
 DRAWN = DOCS / 'img/interaction/drawn.json'
 SUBJECT = ROOT / 'engine/tests/pairs/pipeline/python-clean'
+# the history picture: how far it is zoomed in, and where Settings and the top of the route land on the page
+ZOOM, LEFT, TOP = 2, 470, 150
 TYPINGS = ROOT / 'engine/tests/pairs/pipeline/typings'
 
 
@@ -366,21 +368,28 @@ def main(atlas, out=None):
         assert pick, routes
         view.locator('#entry').select_option(pick)
         page.wait_for_timeout(2500)
-        # the commits as the page lists them, then the picture alone, as wide as the page is
-        page.screenshot(path=str(out / 'history-list.png'), clip={'x': 0, 'y': 50, 'width': 420, 'height': 330})
         shown['history'] = canonical(snapshot(next(f for f in page.frames if f != page.main_frame)))
         view.get_by_role('button', name='fit', exact=True).click()
         page.wait_for_timeout(900)
-        # in on the new path, so that its text reads
-        for _ in range(2):
+        # in on what the sixth commit adds: from Settings to the figures, just under the bar with A ∪ B
+        for _ in range(ZOOM):
             view.get_by_role('button', name='+', exact=True).click()
             page.wait_for_timeout(400)
-        page.mouse.move(1500, 230)
+        boxes = view.locator('#scene g.tstep, #scene g.tnode, #scene g.wnode')
+        settings = view.locator('#scene g.tnode', has_text='Settings · settings').first.bounding_box()
+        top = min(b['y'] for b in boxes.evaluate_all('gs => gs.map(g => { const r = g.getBoundingClientRect(); return {y: r.y}; })'))
+        page.mouse.move(1200, 300)
         page.mouse.down()
-        page.mouse.move(1235, 150, steps=12)
+        page.mouse.move(1200 - (settings['x'] - LEFT), 300 - (top - TOP), steps=12)
         page.mouse.up()
         page.wait_for_timeout(900)
-        page.screenshot(path=str(out / 'history.png'), clip={'x': 420, 'y': 0, 'width': 1580, 'height': 520})
+        frame = next(f for f in page.frames if f != page.main_frame)
+        drawn = frame.evaluate("""() => [...document.querySelectorAll('#scene g.tstep, #scene g.tnode, #scene g.wnode')]
+          .map(g => { const r = g.getBoundingClientRect(); return {right: r.right, bottom: r.bottom}; })""")
+        origin = page.locator('iframe').bounding_box()
+        right, bottom = origin['x'] + max(r['right'] for r in drawn), origin['y'] + max(r['bottom'] for r in drawn)
+        # the page as it is: the commits on the left, the two drawn as one on the right, up to the figures
+        page.screenshot(path=str(out / 'history.png'), clip={'x': 0, 'y': 0, 'width': right + 30, 'height': bottom + 36})
         assert not errors, errors
         server.stop()
         browser.close()
