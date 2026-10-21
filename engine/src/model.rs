@@ -1006,9 +1006,10 @@ impl Graph {
     }
 
     /// Every id the graph holds, mapped by `to`: each node's own, and each that names a node (its
-    /// module, class and part, what its prophecy replaces, what its calls reach and the types they
-    /// hand and give, whose calls make its touches whole), an edge's ends, what a make target runs,
-    /// the parts and the root.
+    /// module, class and part, the method whose promise it breaks, what its prophecy replaces or may
+    /// replace, what its calls reach and the types they hand and give, whose calls make its touches
+    /// whole and whose code decides where they go), an edge's ends, what a make target runs, the
+    /// parts and the root.
     pub fn rename(&mut self, to: &dyn Fn(&str) -> String) {
         let m = |s: &mut String| {
             if !s.is_empty() {
@@ -1021,9 +1022,9 @@ impl Graph {
             m(&mut n.id);
             m(&mut n.module);
             m(&mut n.part);
-            n.cls.iter_mut().for_each(&m);
+            n.cls.iter_mut().chain(n.breaks.iter_mut()).for_each(&m);
             if let Some(p) = n.prophecy.as_mut() {
-                p.supersedes.iter_mut().chain(p.replaces.iter_mut()).for_each(&m);
+                p.supersedes.iter_mut().chain(p.replaces.iter_mut()).chain(p.candidates.iter_mut()).for_each(&m);
             }
             for s in &mut n.sites {
                 m(&mut s.to);
@@ -1034,7 +1035,7 @@ impl Graph {
                 for f in &mut t.by {
                     *f = f.split('&').map(to).collect::<Vec<_>>().join("&");
                 }
-                t.users_of.iter_mut().for_each(&m);
+                t.users_of.iter_mut().chain(t.fixed_by.iter_mut()).for_each(&m);
             }
         }
         for e in &mut self.edges {
