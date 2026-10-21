@@ -504,6 +504,50 @@ pub fn names_its_tables(db: Db, text: &str) -> bool {
     grammar(db, text).map_or(false, |stmts| stmts.iter().all(|st| tables(st).iter().all(|n| !n.contains(HOLE))))
 }
 
+/// Whether a statement may write what its call is handed: a placeholder or a value spliced in
+/// stands among the values it inserts or sets. A `DELETE` writes none of it, nor does an `UPDATE`
+/// whose `SET` holds only what the statement says itself: what such a statement is handed is the
+/// key it finds its rows by (`WHERE member = ?`). A text the grammar does not read may write
+/// anything it is handed.
+pub fn writes_handed(db: Db, text: &str) -> bool {
+    grammar(db, text).map_or(true, |stmts| stmts.iter().any(writes_handed_in))
+}
+
+/// Whether one statement may write what its call is handed (`writes_handed`).
+fn writes_handed_in(st: &Statement) -> bool {
+    match st {
+        Statement::Delete(_) | Statement::Truncate(_) | Statement::Drop { .. } => false,
+        Statement::Update(u) => holds_handed(&u.assignments),
+        Statement::Insert(i) => holds_handed(&i.source) || holds_handed(&i.assignments) || holds_handed(&i.on),
+        Statement::Query(q) => match q.body.as_ref() {
+            SetExpr::Insert(inner) | SetExpr::Update(inner) | SetExpr::Delete(inner) => writes_handed_in(inner),
+            _ => true,
+        },
+        _ => true,
+    }
+}
+
+/// Whether a part of a statement holds a value its call is handed: a placeholder (`?`, `$1`,
+/// `:name`), or a value spliced into the text (`'{station}'`, `{t}`).
+fn holds_handed(part: &impl Visit) -> bool {
+    use sqlparser::ast::{visit_expressions, Expr, Value};
+    let spliced = |s: &str| s.contains(HOLE);
+    visit_expressions(part, |e| {
+        let handed = match e {
+            Expr::Value(v) => matches!(v.value, Value::Placeholder(_)) || spliced(&v.value.to_string()),
+            Expr::Identifier(i) => spliced(&i.value),
+            Expr::CompoundIdentifier(is) => is.iter().any(|i| spliced(&i.value)),
+            _ => false,
+        };
+        if handed {
+            ControlFlow::Break(())
+        } else {
+            ControlFlow::Continue(())
+        }
+    })
+    .is_break()
+}
+
 /// The verbs a statement starts with: those that change data or its shape, those that ask, and
 /// the settings around them.
 const WRITE_VERBS: &[&str] = &["insert", "update", "delete", "create", "merge", "copy", "drop", "alter", "replace", "upsert", "truncate"];
@@ -884,6 +928,23 @@ mod tests {
         assert!(!names_its_tables(sqlite, "SELECT * FROM {schema}.readings"));
         assert!(!names_its_tables(sqlite, "DROP TABLE IF EXISTS {tabel}"));
         assert!(!names_its_tables(sqlite, "{verb} INTO readings VALUES (1)"), "a verb named at run time");
+    }
+
+    /// A statement writes what it is handed where a placeholder or a spliced value stands among
+    /// what it inserts or sets; what stands only in its `WHERE` is the key its rows are found by.
+    #[test]
+    fn a_statement_writes_what_it_is_handed_only_among_its_values() {
+        let sqlite = db("db_sqlite");
+        assert!(writes_handed(sqlite, "INSERT INTO visits (member, day) VALUES (?, ?)"));
+        assert!(writes_handed(sqlite, "INSERT INTO readings VALUES ('{station}', {t})"), "values spliced in");
+        assert!(writes_handed(sqlite, "UPDATE members SET name = :name WHERE id = :id"));
+        assert!(writes_handed(sqlite, "INSERT INTO t (a) VALUES (1) ON CONFLICT (a) DO UPDATE SET b = ?"));
+        assert!(writes_handed(sqlite, "WITH t AS (SELECT 1) INSERT INTO b VALUES ($1)"));
+        assert!(!writes_handed(sqlite, "DELETE FROM visits WHERE member = ?"), "a key");
+        assert!(!writes_handed(sqlite, "UPDATE visits SET seen = 1 WHERE member = '{member}'"), "a key spliced in");
+        assert!(!writes_handed(sqlite, "INSERT INTO log SELECT count(*) FROM nodes"), "a copy of another table");
+        assert!(writes_handed(sqlite, "INSERT INTO log SELECT * FROM visits WHERE day = ?"), "a key Atlas cannot tell from a value");
+        assert!(writes_handed(sqlite, "sql"), "a text the grammar does not read");
     }
 
     /// A graph database's direction is what the Python code says to the driver, never the query.

@@ -76,10 +76,11 @@ fn each_principle_finds_its_case() {
     // `_rank.low.peek` calls back up into `_rank.high`, which builds on `low`
     assert_eq!(got["layers"], ["fixture._rank"]);
     // `Notes` puts a Note into its file and gets a dict back, `Shelf` gets the Note, and `Diary`
-    // inherits the put of `Notes`, which is asked there; `Copier` puts a Graph into the graph
-    // database and gets only a list of nodes. `Register` gets its Stamp back inside an Entry, and
-    // `Tiles` looks its tiles up by a Point it puts nowhere
-    assert_eq!(got["lens"], ["fixture.notes.Notes", "fixture.store.Copier"]);
+    // inherits the put of `Notes`, which is asked there. `Register` gets its Stamp back inside an
+    // Entry, and `Tiles` looks its tiles up by a Point it puts nowhere. `Copier` puts a Graph into
+    // the graph database and gets a list of nodes, but Atlas does not read a graph database's
+    // queries: they name no table, and give no place a lens is on
+    assert_eq!(got["lens"], ["fixture.notes.Notes"]);
     // `forgotten` supersedes a function the code does not hold; `report` is built and calls
     // `tidy`, a prophecy. `tidy` itself, bodiless, is a todo and no finding
     assert_eq!(got["prophecy"], ["fixture.plans.forgotten", "fixture.plans.report"]);

@@ -730,3 +730,74 @@ fn choices_a_choice_is_made_once_across_bodies() {
     // the shortcut still runs the job and sends its line
     assert!(edge(&s, EdgeKind::Calls, "runs.run", "runs.send") && edge(&s, EdgeKind::Calls, "runs.run", "runs.load"));
 }
+
+/// One side of the lens pair's club (`tests/pairs/lens/typescript/club`): the Python club's desk,
+/// which keeps visits, members and reports in SQLite, a table each, and its log, roster and board
+/// in files, as TypeScript writes them.
+fn club(side: &str) -> &'static Graph {
+    static CLEAN: OnceLock<Graph> = OnceLock::new();
+    static SHORTCUT: OnceLock<Graph> = OnceLock::new();
+    let read = || {
+        analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/lens/typescript/club").join(side), &Options::default())
+            .expect("reads")
+    };
+    if side == "clean" {
+        CLEAN.get_or_init(read)
+    } else {
+        SHORTCUT.get_or_init(read)
+    }
+}
+
+/// What `lens` says of class `id` of the club: empty when it asks nothing.
+fn lens_of(g: &Graph, id: &str) -> String {
+    findings(g).into_iter().find(|f| f.principle == "lens" && f.node == format!("{}.{id}", g.root)).map(|f| f.what).unwrap_or_default()
+}
+
+/// What a lens puts, it gets back, at the table it puts to; and a key its statement finds rows by
+/// is no value put. The clean `Desk` only writes `visits` and only reads `members`: no lens on
+/// either. Its `Register` gets the Member back from `members`, and its `Visits.forget` deletes a
+/// Member's visits by the Member, a key. The shortcut's `Desk` reads `visits` back as records, its
+/// `Register` reads back only names (the Member inside a Report comes from `reports`), and its
+/// `Visits.come` inserts a Member's name as a value: each is asked.
+#[test]
+fn lens_the_place_is_the_table_and_a_key_is_no_put() {
+    let (c, s) = (club("clean"), club("shortcut"));
+    assert!(findings(c).is_empty(), "{:?}", findings(c).iter().map(|f| format!("{} {}", f.node, f.what)).collect::<Vec<_>>());
+    let at = |f: &str| touches(c, f, "db_sqlite").iter().map(|t| (t.artifact.clone(), t.dir_name())).collect::<Vec<_>>();
+    assert_eq!(at("desk.Desk.members"), [("members".to_string(), "read")]);
+    assert_eq!(at("desk.Visits.forget"), [("visits".to_string(), "write")]);
+    assert!(edge(c, EdgeKind::Takes, "desk.Visits.forget", "model.Member"));
+    assert_eq!(lens_of(s, "desk.Desk"), "Desk puts Visit into SQLite(visits) and gets no Visit back");
+    assert_eq!(lens_of(s, "desk.Register"), "Register puts Member into SQLite(members) and gets no Member back");
+    assert_eq!(lens_of(s, "desk.Visits"), "Visits puts Member into SQLite(visits) and gets no Member back");
+}
+
+/// A get gives a value back from the place; an operation that reads the place on its way to
+/// writing it is a put. The clean `Log.add` reads the file and writes it back with a line more,
+/// `void`: an end product, no lens. The shortcut's `Log` also gives the lines back, and is asked
+/// where the Visit went.
+#[test]
+fn lens_a_get_gives_a_value_back() {
+    let (c, s) = (club("clean"), club("shortcut"));
+    let kinds: Vec<&str> = node(c, "files.Log.add").touches.iter().map(|t| t.kind_name()).collect();
+    assert!(kinds.contains(&"disk_read") && kinds.contains(&"disk_write"), "{kinds:?}");
+    assert_eq!(lens_of(c, "files.Log"), "");
+    assert_eq!(lens_of(s, "files.Log"), "Log puts Visit into Disk(Log.path) and gets no Visit back");
+}
+
+/// What a get gives back holds what was put: the class's own type, which a constructor gives, and
+/// a subclass of what a get gives, a variant of a sum left open. The clean `Roster.load` (static,
+/// a constructor) and `reread` give a Roster, which holds the Members `add` puts; its `Board` pins
+/// a Notice and gives the Posts back, and a Notice `extends` Post. The shortcut's `Roster.load`
+/// gives a Roster that holds the lines, and its `Board` gives records back: each is asked.
+#[test]
+fn lens_a_get_gives_its_own_class_and_a_subclass_back() {
+    let (c, s) = (club("clean"), club("shortcut"));
+    assert!(node(c, "files.Roster.load").ctor);
+    assert!(edge(c, EdgeKind::Has, "files.Roster", "model.Member"));
+    assert!(edge(c, EdgeKind::Inherits, "model.Notice", "model.Post"));
+    assert_eq!(lens_of(c, "files.Roster"), "");
+    assert_eq!(lens_of(c, "files.Board"), "");
+    assert_eq!(lens_of(s, "files.Roster"), "Roster puts Member into Disk(Roster.path) and gets no Member back");
+    assert_eq!(lens_of(s, "files.Board"), "Board puts Notice into Disk(Board.path) and gets no Notice back");
+}

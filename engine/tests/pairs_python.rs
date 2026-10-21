@@ -773,3 +773,116 @@ fn choices_a_choice_is_made_once_across_bodies() {
     // the shortcut still runs the job and sends its line
     assert!(edge(&s, "runs.core.run", "runs.core.send", EdgeKind::Calls) && edge(&s, "runs.core.run", "runs.core.load", EdgeKind::Calls));
 }
+
+/// One side of the lens pair's club (`tests/pairs/lens/python/club`): a desk that keeps visits,
+/// members and reports in SQLite, a table each, and the files a club keeps (a log, a roster, a
+/// board, a tape), each class a lens or no lens on its table or file.
+fn club(side: &str) -> &'static Graph {
+    static CLEAN: OnceLock<Graph> = OnceLock::new();
+    static SHORTCUT: OnceLock<Graph> = OnceLock::new();
+    let read = || {
+        analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/lens/python/club").join(side), &Options::default()).unwrap()
+    };
+    if side == "clean" {
+        CLEAN.get_or_init(read)
+    } else {
+        SHORTCUT.get_or_init(read)
+    }
+}
+
+/// What `lens` says of class `id` of the club: empty when it asks nothing.
+fn lens_of(g: &Graph, id: &str) -> String {
+    check(g).into_iter().find(|f| f.principle == "lens" && f.node == format!("club.{id}")).map(|f| f.what).unwrap_or_default()
+}
+
+/// What a lens puts, it gets back, at the place it puts to: a table, not the database it is in.
+/// The clean `Desk` only writes `visits` and only reads `members`, and is no lens on either; its
+/// `Register` puts a Member into `members` and gets it back from there, beside the Reports it reads
+/// from `reports`. The shortcut's `Desk` reads `visits` back as rows, and is asked about the Visit;
+/// its `Register` reads back only the names from `members`, and is asked about the Member: the
+/// Member inside a Report comes from another table.
+#[test]
+fn lens_the_place_is_the_table() {
+    let (c, s) = (club("clean"), club("shortcut"));
+    let fs = check(c);
+    assert!(fs.is_empty(), "{:#?}", fs.iter().map(|f| format!("{} {} {}", f.principle, f.node, f.what)).collect::<Vec<_>>());
+    let at = |g: &Graph, f: &str| {
+        touches(g, &format!("club.desk.{f}"), "db_sqlite").iter().map(|t| (t.artifact.clone(), t.dir_name())).collect::<Vec<_>>()
+    };
+    assert_eq!(at(c, "Desk.log"), [("visits".to_string(), "write")]);
+    assert_eq!(at(c, "Desk.members"), [("members".to_string(), "read")]);
+    assert_eq!(at(s, "Register.latest"), [("reports".to_string(), "read")]);
+    assert!(edge(s, "club.model.Report", "club.model.Member", EdgeKind::Has));
+    assert_eq!(lens_of(s, "desk.Desk"), "Desk puts Visit into SQLite(visits) and gets no Visit back");
+    assert_eq!(lens_of(s, "desk.Register"), "Register puts Member into SQLite(members) and gets no Member back");
+}
+
+/// What a lens puts, it gets back, at the file the code names: by its path, or by the value that
+/// holds it. The clean `Tape` writes a Visit to the stream it is handed and reads names from
+/// another: each is known only as JSON, which names no file, and `lens` asks nothing. The
+/// shortcut's `Tape` writes and reads the file it is made with, `Disk(Tape.path)`, and is asked
+/// where the Visit went.
+#[test]
+fn lens_the_place_is_the_file_the_code_names() {
+    let (c, s) = (club("clean"), club("shortcut"));
+    let record = c.node("club.files.Tape.record").unwrap();
+    assert!(record.touches.iter().any(|t| t.artifact == "*.json" && t.kind_name() == "disk_write"), "{:?}", record.touches);
+    assert_eq!(lens_of(c, "files.Tape"), "");
+    assert_eq!(lens_of(s, "files.Tape"), "Tape puts Visit into Disk(Tape.path) and gets no Visit back");
+}
+
+/// A get gives a value back from the place; an operation that reads the place on its way to
+/// writing it is a put. The clean `Log.add` reads the list in its file, appends a Visit and writes
+/// the list back: an end product, no lens. The shortcut's `Log` also gives the list back as it is
+/// kept, `list[dict]`, and is asked where the Visit went.
+#[test]
+fn lens_a_get_gives_a_value_back() {
+    let (c, s) = (club("clean"), club("shortcut"));
+    let add = c.node("club.files.Log.add").unwrap();
+    let kinds: Vec<&str> = add.touches.iter().map(|t| t.kind_name()).collect();
+    assert!(kinds.contains(&"disk_read") && kinds.contains(&"disk_write"), "{:?}", add.touches);
+    assert_eq!(lens_of(c, "files.Log"), "");
+    assert_eq!(lens_of(s, "files.Log"), "Log puts Visit into Disk(Log.path) and gets no Visit back");
+}
+
+/// What a put puts is what its statement writes; a key its statement finds rows by is no value
+/// put. The clean `Visits.forget` deletes a Member's visits (`DELETE .. WHERE member = ?`): the
+/// Member is the key, and `Visits` gets back the Visits it puts. The shortcut's `come` inserts the
+/// Member's name as a value, and `Visits` is asked where the Member went.
+#[test]
+fn lens_a_key_is_no_value_put() {
+    let (c, s) = (club("clean"), club("shortcut"));
+    assert!(edge(c, "club.desk.Visits.forget", "club.model.Member", EdgeKind::Takes));
+    assert!(touches(c, "club.desk.Visits.forget", "db_sqlite").iter().any(|t| t.artifact == "visits" && t.dir_name() == "write"));
+    assert_eq!(lens_of(c, "desk.Visits"), "");
+    assert_eq!(lens_of(s, "desk.Visits"), "Visits puts Member into SQLite(visits) and gets no Member back");
+}
+
+/// What a get gives back holds what was put: the class's own type, which a constructor gives, and
+/// a subclass of what a get gives, a variant of a sum left open. The clean `Roster` gives a Roster
+/// back (`load`, a constructor, and `reread`), which holds the Members it puts; its `Board` pins a
+/// Notice and gives the Posts back, and a Notice is a Post. The shortcut's `Roster.load` gives a
+/// Roster that holds rows, and its `Board` gives the rows back: each is asked.
+#[test]
+fn lens_a_get_gives_its_own_class_and_a_subclass_back() {
+    let (c, s) = (club("clean"), club("shortcut"));
+    assert!(c.node("club.files.Roster.load").unwrap().ctor);
+    assert!(edge(c, "club.files.Roster", "club.model.Member", EdgeKind::Has));
+    assert!(edge(c, "club.model.Notice", "club.model.Post", EdgeKind::Inherits));
+    assert_eq!(lens_of(c, "files.Roster"), "");
+    assert_eq!(lens_of(c, "files.Board"), "");
+    assert_eq!(lens_of(s, "files.Roster"), "Roster puts Member into Disk(Roster.path) and gets no Member back");
+    assert_eq!(lens_of(s, "files.Board"), "Board puts Notice into Disk(Board.path) and gets no Notice back");
+}
+
+/// What a get gives back holds its fields, a library's type among them. `Ledger` puts a `Fraction`
+/// and gets it back as an `Entry`'s `amount: Fraction` (`tests/pairs/lens/python/ledger`); the
+/// Python reader draws no `has` edge to a library's type, so `lens` does not see the Fraction
+/// come back.
+#[test]
+#[ignore = "gap (a): the Python reader draws no `has` edge to a library's type"]
+fn lens_a_library_type_comes_back_inside_what_a_get_gives() {
+    let g = analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/lens/python/ledger/clean"), &Options::default()).unwrap();
+    assert!(edge(&g, "books.ledger.Entry", "ext:fractions.Fraction", EdgeKind::Has));
+    assert!(found(&g, "lens").is_empty(), "{:?}", found(&g, "lens"));
+}

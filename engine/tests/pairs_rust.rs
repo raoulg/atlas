@@ -676,3 +676,83 @@ fn choices_a_choice_is_made_once_across_bodies() {
     // the shortcut still runs the job and sends its line
     assert!(edge(&s, EdgeKind::Calls, "runs.run", "runs.send") && edge(&s, EdgeKind::Calls, "runs.run", "runs.load"));
 }
+
+/// One side of the lens pair's club (`tests/pairs/lens/rust/club`): the Python club's desk, which
+/// keeps visits, members and reports in SQLite, a table each, and its log and roster in files, as
+/// Rust writes them.
+fn club(side: &str) -> &'static Graph {
+    static CLEAN: OnceLock<Graph> = OnceLock::new();
+    static SHORTCUT: OnceLock<Graph> = OnceLock::new();
+    let read = || {
+        analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/lens/rust/club").join(side), &Options::default())
+            .expect("reads")
+    };
+    if side == "clean" {
+        CLEAN.get_or_init(read)
+    } else {
+        SHORTCUT.get_or_init(read)
+    }
+}
+
+/// What `lens` says of class `id` of the club: empty when it asks nothing.
+fn lens_of(g: &Graph, id: &str) -> String {
+    check(g).into_iter().find(|f| f.principle == "lens" && f.node == format!("club.{id}")).map(|f| f.what).unwrap_or_default()
+}
+
+/// What a lens puts, it gets back, at the table it puts to; and a key its statement finds rows by
+/// is no value put. The clean `Desk` only writes `visits` and only reads `members`: no lens on
+/// either. Its `Register` gets the Member back from `members`, and its `Visits.forget` deletes a
+/// Member's visits by the Member, a key. The shortcut's `Desk` reads `visits` back as tuples, its
+/// `Register` reads back only names (the Member inside a Report comes from `reports`), and its
+/// `Visits.come` inserts a Member's name as a value: each is asked.
+#[test]
+fn lens_the_place_is_the_table_and_a_key_is_no_put() {
+    let (c, s) = (club("clean"), club("shortcut"));
+    let fs = check(c);
+    assert!(fs.is_empty(), "{:#?}", fs.iter().map(|f| format!("{} {} {}", f.principle, f.node, f.what)).collect::<Vec<_>>());
+    let at = |f: &str| touches(c, f, "db_sqlite").iter().map(|t| (t.artifact.clone(), t.dir_name())).collect::<Vec<_>>();
+    assert_eq!(at("club.desk.Desk.members"), [("members".to_string(), "read")]);
+    assert_eq!(at("club.desk.Visits.forget"), [("visits".to_string(), "write")]);
+    assert!(edge(c, EdgeKind::Takes, "club.desk.Visits.forget", "club.Member"));
+    assert_eq!(lens_of(s, "desk.Desk"), "Desk puts Visit into SQLite(visits) and gets no Visit back");
+    assert_eq!(lens_of(s, "desk.Register"), "Register puts Member into SQLite(members) and gets no Member back");
+    assert_eq!(lens_of(s, "desk.Visits"), "Visits puts Member into SQLite(visits) and gets no Member back");
+}
+
+/// A get gives a value back from the place; an operation that reads the place on its way to
+/// writing it is a put. The clean `Log::add` reads the file, pushes a line and writes it back,
+/// `io::Result<()>`: an end product, no lens. The shortcut's `Log` also gives the lines back, and
+/// is asked where the Visit went.
+#[test]
+fn lens_a_get_gives_a_value_back() {
+    let (c, s) = (club("clean"), club("shortcut"));
+    let kinds: Vec<&str> = node(c, "club.files.Log.add").touches.iter().map(|t| t.kind_name()).collect();
+    assert!(kinds.contains(&"disk_read") && kinds.contains(&"disk_write"), "{kinds:?}");
+    assert_eq!(lens_of(c, "files.Log"), "");
+    assert_eq!(lens_of(s, "files.Log"), "Log puts Visit into Disk(Log.path) and gets no Visit back");
+}
+
+/// What a get gives back may be the class's own type, which a constructor gives. The clean
+/// `Roster::load` and `Roster::reread` give a Roster, which holds the Members `add` puts. The
+/// shortcut's `Roster::load` gives a Roster that holds the lines, and `Roster` is asked.
+#[test]
+fn lens_a_get_gives_its_own_class_back() {
+    let (c, s) = (club("clean"), club("shortcut"));
+    assert!(node(c, "club.files.Roster.load").ctor);
+    assert!(edge(c, EdgeKind::Has, "club.files.Roster", "club.Member"));
+    assert_eq!(lens_of(c, "files.Roster"), "");
+    assert_eq!(lens_of(s, "files.Roster"), "Roster puts Member into Disk(Roster.path) and gets no Member back");
+}
+
+/// What a get gives back holds its fields, a library's type among them. `Ledger` puts a `Decimal`
+/// and gets it back as an `Entry`'s `amount: Decimal` (`tests/pairs/lens/rust/ledger`); the Rust
+/// reader keeps a field of a library's type beside the struct, not as a `has` edge, so `lens` does
+/// not see the Decimal come back.
+#[test]
+#[ignore = "gap (a): the Rust reader draws no `has` edge to a library's type"]
+fn lens_a_library_type_comes_back_inside_what_a_get_gives() {
+    let g =
+        analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/lens/rust/ledger/clean"), &Options::default()).expect("reads");
+    assert!(edge(&g, EdgeKind::Has, "books.Entry", "ext:rust_decimal.Decimal"));
+    assert!(found(&g, "lens").is_empty(), "{:?}", found(&g, "lens"));
+}
