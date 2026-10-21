@@ -1121,6 +1121,67 @@ fn places_a_file_shipped_with_the_package_is_part_of_it() {
     assert!(!asked(&c, "places", "pages.page"), "{:?}", asked_anywhere(&c, "places"));
 }
 
+/// One side of the diamond pair (`tests/pairs/diamond`) in TypeScript, whose classes have one base
+/// each: a feed that is a cached and a buffered source is a chain, `Feed extends Cached extends
+/// Buffered extends Source`. The clean `Feed` says which constructor and which `read` it runs, its
+/// own calling `Cached`'s through `super`; the shortcut leaves both to its bases.
+fn news(side: &str) -> Graph {
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/diamond/typescript").join(side);
+    analyze(&dir, &Options::default()).expect("reads")
+}
+
+/// Building a value hands its arguments to the constructor it runs, its own or the first along its
+/// bases, and `super(..)` in a constructor hands them to the one its base runs. `new Feed(url,
+/// cache)` runs the clean feed's own constructor, which hands them on through `super(url, cache)`,
+/// and the shortcut's `Cached` constructor, which `Feed` leaves to it; `Cached`'s hands the url on
+/// to `Source`'s. So the address a feed fetches and the directory of the file it reads are named
+/// where `headlines` builds it, on either side, and Atlas asks nothing of either.
+#[test]
+fn diamond_a_feed_hands_its_arguments_to_the_constructor_it_runs() {
+    for side in ["clean", "shortcut"] {
+        let g = &news(side);
+        let headlines = format!("{}.read.headlines", g.root);
+        let made = |f: &str, kind: &str| -> Vec<(String, Vec<String>)> {
+            touches(g, f, kind).iter().map(|t| (t.what.clone(), t.by.clone())).collect()
+        };
+        let fetched = made("sources.Source.read", "net");
+        assert!(fetched.iter().any(|(_, by)| by.contains(&headlines)), "{side}: {fetched:?}");
+        let read = made("store.Store.get", "disk_read");
+        let in_headlines = |by: &[String]| by.iter().any(|b| b.split('&').any(|f| f == headlines));
+        assert!(read.iter().any(|(what, by)| what.starts_with("{cache}/") && in_headlines(by)), "{side}: {read:?}");
+        assert!(edge(g, EdgeKind::Calls, "sources.Cached.constructor", "sources.Source.constructor"), "{side}");
+        assert!(findings(g).is_empty(), "{side}: {:?}", findings(g).iter().map(|f| format!("{} {}", f.node, f.what)).collect::<Vec<_>>());
+    }
+    assert!(edge(&news("clean"), EdgeKind::Calls, "sources.Feed.constructor", "sources.Cached.constructor"));
+}
+
+/// A feed runs the `read` its bases name, `Cached`'s, from the code of `Buffered`, whose call
+/// names `Source.read`: the route reads the file the cache keeps, in the terms of the route that
+/// builds the feed, and fetches nothing.
+#[test]
+#[ignore = "#123: the reader records `this.read()` in `Buffered` as run on a Buffered, so the route runs `Source.read` on a feed: `calls this.url`"]
+fn diamond_a_feed_runs_the_read_its_bases_name() {
+    for side in ["clean", "shortcut"] {
+        let g = news(side);
+        let r = atlas_engine::story::route(&g, &format!("{}.read.headlines", g.root), 4).expect("headlines is a route");
+        assert!(r.contains("reads {cache}/") && !r.contains("calls this.url"), "{side}: {r}");
+    }
+}
+
+/// The name a feed's file has in the cache is the url the feed is built with, which `Source`'s
+/// constructor keeps: `this.url` in `Cached.read` is that field, named where `headlines` builds the
+/// feed.
+#[test]
+#[ignore = "#122: `this.url` in `Cached.read` is looked for in `Cached` alone, so the file is whole only where `Cached.read` and `headlines` both are"]
+fn diamond_the_name_of_a_feed_s_file_is_its_url() {
+    for side in ["clean", "shortcut"] {
+        let g = news(side);
+        let headlines = format!("{}.read.headlines", g.root);
+        let read = touches(&g, "store.Store.get", "disk_read");
+        assert!(read.iter().any(|t| t.what == "{cache}/{url}" && t.by.contains(&headlines)), "{side}: {read:?}");
+    }
+}
+
 /// One side of the cooperative pair (`tests/pairs/cooperative/typescript`): a feed that extends a
 /// cached source, whose every `read` hands on to the one above it with `super.read()`; the
 /// shortcut's feed hands on with `Source.prototype.read.call(this)`.

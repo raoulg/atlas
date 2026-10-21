@@ -1541,9 +1541,11 @@ fn cooperative_super_runs_the_next_method_along_the_value_s_order() {
 }
 
 /// The file a feed reads is named in the terms of the route that builds it, on either side: the
-/// cache directory `headlines` is handed, then the name of the feed in it.
+/// cache directory `headlines` is handed, then the name of the feed in it. A class's call hands its
+/// arguments to the initializer it runs, its own or the first along its bases: the shortcut's
+/// `Feed(url, Store(cache))` hands them to `Cached.__init__`, which `Feed` and `Buffered` leave to
+/// it.
 #[test]
-#[ignore = "#111: a path is carried to the callers of the method that touches it along the calls the code names: `Buffered.lines` names `Source.read`, so the file `Cached.read` reads on a shortcut feed stays `(self.root / key)`"]
 fn diamond_the_file_a_feed_reads_is_named_where_it_is_built() {
     for side in ["clean", "shortcut"] {
         let r = route(news(side), "news.read.headlines");

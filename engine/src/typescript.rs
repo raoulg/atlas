@@ -2479,8 +2479,8 @@ impl<'a, 't> Body<'a, 't> {
                 ..Default::default()
             };
             steps.call(c, &r, EdgeKind::Instantiates, None, step);
-            if let Some(a) = argument(self.modules, self.store, &self.id, &format!("{r}.constructor"), c, self.m, self.scope, &self.params)
-            {
+            let ctor = self.store.initializer_of(&r);
+            if let Some(a) = ctor.and_then(|t| argument(self.modules, self.store, &self.id, &t, c, self.m, self.scope, &self.params)) {
                 self.read.args.push(a);
             }
         }
@@ -2559,9 +2559,13 @@ impl<'a, 't> Body<'a, 't> {
 
     /// What call `c` reaches: the method of the class of the value it is called on, else what
     /// the name it is called by is bound to; nothing when it is called through a value the body
-    /// cannot name (`EXPORTERS[format](..)`, `make()(..)`).
+    /// cannot name (`EXPORTERS[format](..)`, `make()(..)`). `super(..)` reaches the initializer
+    /// the class the body's class extends runs.
     fn callee(&self, c: TsNode) -> Option<String> {
         let f = function_of(c)?;
+        if f.kind() == "super" {
+            return self.store.initializer_of(&self.receiver(f)?);
+        }
         let method = (f.kind() == "member_expression")
             .then(|| Some((f.child_by_field_name("object")?, text(f.child_by_field_name("property")?, self.src))))
             .flatten();
@@ -2625,14 +2629,15 @@ impl<'a, 't> Body<'a, 't> {
             Some(t) if self.own(&t) => {
                 // `super.f()` runs on the body's own receiver the next `f` after the class it is
                 // written in; a static method called through a class (`Base.make()`) is that
-                // class's, and no override of it
+                // class's, and no override of it, and so is the initializer `super(..)` runs
                 let sup = object.map_or(false, |o| o.kind() == "super");
-                let named = !sup
-                    && self.store.nodes[&t].kind == NodeKind::Method
-                    && object
-                        .filter(|o| o.kind() == "identifier")
-                        .and_then(|o| self.resolve(&[text(o, src).to_string()]))
-                        .map_or(false, |r| self.store.nodes.get(&r).map_or(false, |n| n.kind == NodeKind::Class));
+                let named = f.kind() == "super"
+                    || !sup
+                        && self.store.nodes[&t].kind == NodeKind::Method
+                        && object
+                            .filter(|o| o.kind() == "identifier")
+                            .and_then(|o| self.resolve(&[text(o, src).to_string()]))
+                            .map_or(false, |r| self.store.nodes.get(&r).map_or(false, |n| n.kind == NodeKind::Class));
                 let after = if sup { self.cls.clone().unwrap_or_default() } else { String::new() };
                 // a method found on a base runs on the subclass the value is
                 let on =
@@ -2644,8 +2649,10 @@ impl<'a, 't> Body<'a, 't> {
                 }
                 let step = Step { on, on_receiver, named, after, hands, gives: self.gives(c, Some(&t)), ..Default::default() };
                 steps.call(c, &t, kind, None, step);
-                let callee = if kind == EdgeKind::Instantiates { format!("{t}.constructor") } else { t.clone() };
-                if let Some(mut a) = argument(self.modules, self.store, &self.id, &callee, c, self.m, self.scope, &self.params) {
+                let callee = if kind == EdgeKind::Instantiates { self.store.initializer_of(&t) } else { Some(t.clone()) };
+                if let Some(mut a) =
+                    callee.and_then(|t| argument(self.modules, self.store, &self.id, &t, c, self.m, self.scope, &self.params))
+                {
                     a.on =
                         object.filter(|o| o.kind() == "identifier").map(|o| text(o, src).to_string()).filter(|o| self.params.contains(o));
                     self.read.args.push(a);

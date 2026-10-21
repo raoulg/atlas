@@ -1157,6 +1157,14 @@ pub fn linearization<'a>(
     order(class, bases, known, &mut vec![])
 }
 
+/// What building a value of a class runs: the initializer of the first class along its method
+/// resolution order (`order`, as `linearization` gives it) that defines one, its own before a
+/// base's. A call of the class hands it its arguments, and `super(..)` in a constructor hands its
+/// own to the one the base runs.
+pub fn initializer_along<'a>(order: &[&str], node: impl Fn(&str) -> Option<&'a Node> + Copy) -> Option<String> {
+    order.iter().filter_map(|c| node(c)).filter(|n| n.kind == NodeKind::Class).find_map(|n| n.initializer(node))
+}
+
 pub fn kind_name(k: &NodeKind) -> String {
     serde_json::to_value(k).unwrap().as_str().unwrap().to_string()
 }

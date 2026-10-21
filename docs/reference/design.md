@@ -323,8 +323,9 @@ language wraps a value in (`Result<T, E>` may fail, `Promise<T>` arrives later) 
 reference; no value for the unit type (`None`, `()`, `void`); a value of the class it runs on
 for `Self`. A constructor is a fact (`ctor`): calling it makes a value of its class. An
 initializer fills in the value a call to the class makes (Python's `__init__`, a TypeScript
-`constructor`); a function on the class that gives one constructs it too (Rust's `new`, a
-Python classmethod `-> Self`). Either way the arrow goes into `Memory(T)`. A private name
+`constructor`): the class's own, else the first along its method resolution order; a function
+on the class that gives one constructs it too (Rust's `new`, a Python classmethod `-> Self`).
+Either way the arrow goes into `Memory(T)`. A private name
 (`private`) is one only the code beside it may use: a Python name with a leading `_`, a Rust
 item without `pub`, a TypeScript member marked `private`, `protected` or `#`, or a name its
 module does not export. What a language leaves to its author is a fact on the part
