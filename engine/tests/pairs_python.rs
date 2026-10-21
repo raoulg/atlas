@@ -710,7 +710,7 @@ fn prophecy_says_when_its_import_goes_in_a_circle() {
         (decided.files[&file].clone(), decided.notes)
     };
     let (text, notes) = decide(false);
-    assert!(text.contains("import json\nfrom archive import prophecy\n"), "{text}");
+    assert!(text.contains("import json\n\nfrom archive import prophecy\n"), "{text}");
     assert!(notes.is_empty(), "{notes:?}");
     let (_, notes) = decide(true);
     assert!(notes.iter().any(|n| n.contains("goes in a circle") && n.contains("archive.sink")), "{notes:?}");
