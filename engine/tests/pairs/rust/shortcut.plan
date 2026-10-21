@@ -97,21 +97,21 @@ line main/?1/run/?1/read_csv/Expense.parse/Expense() > Expense@main/?1/run/?1/re
 line Expense@main/?1/run/?1/read_csv/Expense.parse/Expense() > main/?1/run/?1/read_csv/Expense.parse value
 line main/?1/run/?1/read_csv/Expense.parse > Expense@main/?1/run/?1/read_csv/Expense.parse value
 line Expense@main/?1/run/?1/read_csv/Expense.parse > main/?1/run/?1/read_csv value
-known #131 line main/?1/run/?1/read_csv > Expense·expenses@main/?1/run/?1/read_csv value
-known #131 line Expense·expenses@main/?1/run/?1/read_csv > main/?1/run value                        # run prints how many (#101 too)
+line main/?1/run/?1/read_csv > Expense·expenses@main/?1/run/?1/read_csv value
+known #101 line Expense·expenses@main/?1/run/?1/read_csv > main/?1/run value   # run prints how many
 line Store·store@main/?1/run/Store.open > main/?1/run/?1/Store.save value
 line main/?1/run/?1/Store.save/round2 > main/?1/run/?1/Store.save back
 line main/?1/run/?1/Store.save > SQLite(expenses) own
 
 # ---------- rates ----------
 line Web > main/?1/run/?1/fetch own                                    # a URL the settings hold, which the code does not say
-known #131 line main/?1/run/?1/fetch > Value@main/?1/run/?1/fetch value
-known #131 line Value@main/?1/run/?1/fetch > main/?1/run/?1/Store.save_rates value                 # the body of a Result, matched
+line main/?1/run/?1/fetch > Value@main/?1/run/?1/fetch value
+line Value@main/?1/run/?1/fetch > main/?1/run/?1/Store.save_rates value  # the body of a Result, matched
 known #103 line Value@main/?1/run/?1/fetch > main/?1/run/?1/Store.save_rates/?1/unwrap_or_default value   # Ok(body) => body["date"]..
 line Store·store@main/?1/run/Store.open > main/?1/run/?1/Store.save_rates value
 known #103 line _·config@main/?1/run/load > main/?1/run/?1/Store.save_rates value   # base = &config["base"], into params![base, ..]
-known #131 line main/?1/run/?1/Store.save_rates/?1/unwrap_or_default > _·date@main/?1/run/?1/Store.save_rates/?1/unwrap_or_default value
-known #131 line _·date@main/?1/run/?1/Store.save_rates/?1/unwrap_or_default > main/?1/run/?1/Store.save_rates value   # (#101 too)
+line main/?1/run/?1/Store.save_rates/?1/unwrap_or_default > _·date@main/?1/run/?1/Store.save_rates/?1/unwrap_or_default value
+known #101 line _·date@main/?1/run/?1/Store.save_rates/?1/unwrap_or_default > main/?1/run/?1/Store.save_rates value
 line main/?1/run/?1/Store.save_rates > SQLite(rates) own
 line main/?1/run/?1/Store.save_rates > Screen own                      # the error, when the request failed
 
@@ -120,16 +120,16 @@ known #128 line Store·store@main/?1/run/Store.open > main/?1/run/?1/Store.rates
 line main/?1/run/?1/Store.rates/unwrap > _·select@main/?1/run/?1/Store.rates/unwrap value
 known #101 line _·select@main/?1/run/?1/Store.rates/unwrap > main/?1/run/?1/Store.rates value
 line SQLite(rates) > main/?1/run/?1/Store.rates own
-known #131 line main/?1/run/?1/Store.rates > _@main/?1/run/?1/Store.rates value
-known #131 line _@main/?1/run/?1/Store.rates > main/?1/run/?1/remember value
+line main/?1/run/?1/Store.rates > _@main/?1/run/?1/Store.rates value
+line _@main/?1/run/?1/Store.rates > main/?1/run/?1/remember value
 line main/?1/run/?1/remember > Global(spend.rates.LATEST) own
 line main/?1/run/?1/remember > Global(spend.rates.LATEST) in main/?1/run value     # read back inside run, by to_base
 line Global(spend.rates.LATEST) in main/?1/run > main/?1/run/?1/write/to_base value
-known #131 line main/?1/run/?1/unwrap_or > _·format@main/?1/run/?1/unwrap_or value
-known #131 line _·format@main/?1/run/?1/unwrap_or > main/?1/run/?1/write value
+line main/?1/run/?1/unwrap_or > _·format@main/?1/run/?1/unwrap_or value
+line _·format@main/?1/run/?1/unwrap_or > main/?1/run/?1/write value
 known #128 line _·format@main/?1/run/?1/unwrap_or > main/?1/run/?1/write/join value   # format!("report.{format}")
 
-line main/?1/run/?1/write/?1/from > _·out@main/?1/run/?1/write/?1 value
+known #125 line main/?1/run/?1/write/?1/from > _·out@main/?1/run/?1/write/?1 value   # the other arm makes it by `format!`, no step: the value either arm makes
 known #101 line _·out@main/?1/run/?1/write/?1 > main/?1/run/?1/write value              # out += .., fs::write(&path, out)
 known #126 extra line Store·store@main/?1/run/Store.open > main/?1/run/?1/write/Store.rows value
 known #128 line Store·store@main/?1/run/Store.open > main/?1/run/?1/write/Store.rows/unwrap value
@@ -152,8 +152,8 @@ line main/?1/run/?1/write > Disk({$SPEND_REPORTS}/report.{map}|{$SPEND_REPORTS}/
 line main/?1/run/?1/write > File(reports/) own
 line main/?1/run/?1/write > File(reports/report.md) own
 line main/?1/run/?1/write > main/?1/run back                             # the path, which run prints and opens
-known #131 line main/?1/run/?1/write > _·path@main/?1/run/?1/write value
-known #131 line _·path@main/?1/run/?1/write > main/?1/run value           # (#101 too)
+line main/?1/run/?1/write > _·path@main/?1/run/?1/write value
+known #101 line _·path@main/?1/run/?1/write > main/?1/run value
 
 # ---------- what every command but the report counts after ----------
 known #126 extra line Store·store@main/?1/run/Store.open > main/?1/run/?2/Store.rows value
@@ -181,20 +181,20 @@ known #125 home _·amount@main/?1/run/?1/read_csv/Expense.parse/split_amount mai
 known #125 home _·currency@main/?1/run/?1/read_csv/Expense.parse/split_amount main/?1/run/?1/read_csv/Expense.parse
 home Expense@main/?1/run/?1/read_csv/Expense.parse/Expense() main/?1/run/?1/read_csv/Expense.parse
 home Expense@main/?1/run/?1/read_csv/Expense.parse main/?1/run/?1/read_csv
-known #131 home Expense·expenses@main/?1/run/?1/read_csv main/?1/run
-known #131 home Value@main/?1/run/?1/fetch main/?1/run/?1
-known #131 home _·date@main/?1/run/?1/Store.save_rates/?1/unwrap_or_default main/?1/run/?1/Store.save_rates
+known #101 home Expense·expenses@main/?1/run/?1/read_csv main/?1/run
+home Value@main/?1/run/?1/fetch main/?1/run/?1
+known #101 home _·date@main/?1/run/?1/Store.save_rates/?1/unwrap_or_default main/?1/run/?1/Store.save_rates
 home _·select@main/?1/run/?1/Store.rates/unwrap main/?1/run/?1/Store.rates
-known #131 home _@main/?1/run/?1/Store.rates main/?1/run/?1
+home _@main/?1/run/?1/Store.rates main/?1/run/?1
 home Global(spend.rates.LATEST) in main/?1/run main/?1/run/?1
-known #131 home _·format@main/?1/run/?1/unwrap_or main/?1/run/?1
+home _·format@main/?1/run/?1/unwrap_or main/?1/run/?1
 known #101 home _·out@main/?1/run/?1/write/?1 main/?1/run/?1/write
 home _·select@main/?1/run/?1/write/Store.rows/unwrap main/?1/run/?1/write/Store.rows
 home _@main/?1/run/?1/write/to_base main/?1/run/?1/write
 home _·base@main/?1/run/?1/write/round2 main/?1/run/?1/write
 home _·dir@main/?1/run/?1/write/from main/?1/run/?1/write
 home _·path@main/?1/run/?1/write/join main/?1/run/?1/write
-known #131 home _·path@main/?1/run/?1/write main/?1/run
+known #101 home _·path@main/?1/run/?1/write main/?1/run
 home _·select@main/?1/run/?2/Store.rows/unwrap main/?1/run/?2/Store.rows
 
 side entry left
@@ -214,21 +214,9 @@ side Screen right
 
 # ---- what Atlas has and should not ----
 # a value one arm of the choice makes, and only that arm takes, has the choice's moment
-known #131 extra line main/?1/run/?1/read_csv > Expense·expenses@main/?1/run/?1 value
-known #131 extra home Expense·expenses@main/?1/run/?1 main/?1/run/?1
-known #131 extra line main/?1/run/?1/fetch > Value@main/?1/run/?1 value
-known #131 extra line Value@main/?1/run/?1 > main/?1/run/?1/Store.save_rates value
-known #131 extra home Value@main/?1/run/?1 main/?1/run/?1
-known #131 extra line main/?1/run/?1/Store.rates > _@main/?1/run/?1 value
-known #131 extra line _@main/?1/run/?1 > main/?1/run/?1/remember value
-known #131 extra home _@main/?1/run/?1 main/?1/run/?1
-known #131 extra line main/?1/run/?1/unwrap_or > _·format@main/?1/run/?1 value
-known #131 extra line _·format@main/?1/run/?1 > main/?1/run/?1/write value
-known #131 extra home _·format@main/?1/run/?1 main/?1/run/?1
-known #131 extra line main/?1/run/?1/write > _·path@main/?1/run/?1 value
-known #131 extra home _·path@main/?1/run/?1 main/?1/run/?1
-known #131 extra line main/?1/run/?1/Store.save_rates/?1/unwrap_or_default > _·date@main/?1/run/?1/Store.save_rates/?1 value
-known #131 extra home _·date@main/?1/run/?1/Store.save_rates/?1 main/?1/run/?1/Store.save_rates/?1
+known #125 extra home _·format@main/?1/run/?1/first main/?1/run/?1
+known #125 extra home _·format@main/?1/run/?1/map main/?1/run/?1
+known #125 extra home _·date@main/?1/run/?1/Store.save_rates/?1/as_str main/?1/run/?1/Store.save_rates/?1
 # the parameter of a sum type is not the value its call is handed: it comes from beyond
 known #127 extra line Result<Value, reqwest::Error> > main/?1/run/?1/Store.save_rates value
 known #127 extra home Result<Value, reqwest::Error> main/?1
@@ -261,21 +249,21 @@ known #125 extra line _·select@main/?1/run/?2/Store.rows/prepare > main/?1/run/
 known #125 extra home _·select@main/?1/run/?2/Store.rows/prepare main/?1/run/?2/Store.rows
 known #125 extra step main/?1/run/?1/first
 known #125 extra step main/?1/run/?1/map
-known #125 extra line main/?1/run/?1/first > _·format@main/?1/run/?1 value
-known #125 extra line main/?1/run/?1/map > _·format@main/?1/run/?1 value
+known #125 extra line main/?1/run/?1/first > _·format@main/?1/run/?1/first value
+known #125 extra line main/?1/run/?1/map > _·format@main/?1/run/?1/map value
 known #125 extra step main/?1/run/?1/Store.save_rates/?1/as_str
-known #125 extra line main/?1/run/?1/Store.save_rates/?1/as_str > _·date@main/?1/run/?1/Store.save_rates/?1 value
+known #125 extra line main/?1/run/?1/Store.save_rates/?1/as_str > _·date@main/?1/run/?1/Store.save_rates/?1/as_str value
 # an environment variable with a fallback puts the read of the variable in a choice, though it always runs
 known #130 extra choice main/?1/run/load/?1
 known #130 extra step main/?1/run/load/?1/var
-known #130 extra line main/?1/run/load/?1/var > _·path@main/?1/run/load/?1 value
-known #130 extra line _·path@main/?1/run/load/?1 > main/?1/run/load/unwrap_or_else value
-known #130 extra home _·path@main/?1/run/load/?1 main/?1/run/load
+known #130 extra line main/?1/run/load/?1/var > _·path@main/?1/run/load/?1/var value
+known #130 extra line _·path@main/?1/run/load/?1/var > main/?1/run/load/unwrap_or_else value
+known #130 extra home _·path@main/?1/run/load/?1/var main/?1/run/load
 known #130 extra choice main/?1/run/Store.open/?1
 known #130 extra step main/?1/run/Store.open/?1/var
-known #130 extra line main/?1/run/Store.open/?1/var > _·path@main/?1/run/Store.open/?1 value
-known #130 extra line _·path@main/?1/run/Store.open/?1 > main/?1/run/Store.open/unwrap_or_else value
-known #130 extra home _·path@main/?1/run/Store.open/?1 main/?1/run/Store.open
+known #130 extra line main/?1/run/Store.open/?1/var > _·path@main/?1/run/Store.open/?1/var value
+known #130 extra line _·path@main/?1/run/Store.open/?1/var > main/?1/run/Store.open/unwrap_or_else value
+known #130 extra home _·path@main/?1/run/Store.open/?1/var main/?1/run/Store.open
 # an own arrow takes what only a step inside it takes; a result that only a step takes is no result handed back
 known #126 extra line Store·store@main/?1/run/Store.open > main/?1/run/?1/Store.rates value
 known #125 extra line main/?1/run/?1/read_csv/Expense.parse/split_amount > main/?1/run/?1/read_csv/Expense.parse back   # the tuple it gives goes to `amount` and `currency`
@@ -298,8 +286,7 @@ home _·amount@main/?1/run/?1/write/for (date, description, amount, currency) in
 home _·currency@main/?1/run/?1/write/for (date, description, amount, currency) in store.rows() main/?1/run/?1/write
 line _·amount@main/?1/run/?1/write/for (date, description, amount, currency) in store.rows() > main/?1/run/?1/write/round2 value
 line _·currency@main/?1/run/?1/write/for (date, description, amount, currency) in store.rows() > main/?1/run/?1/write/to_base value
-known #131 line Expense·expenses@main/?1/run/?1/read_csv > main/?1/run/?1/Store.save/for e in expenses value
-known #131 extra line Expense·expenses@main/?1/run/?1 > main/?1/run/?1/Store.save/for e in expenses value
+line Expense·expenses@main/?1/run/?1/read_csv > main/?1/run/?1/Store.save/for e in expenses value
 # the loop runs over what Store.rows gives, a step of its own, not over the store (convention 1)
 known #128 extra line Store·store@main/?1/run/Store.open > main/?1/run/?1/write/for (date, description, amount, currency) in store.rows() value
 known #128 line main/?1/run/?1/write/Store.rows > _@main/?1/run/?1/write/Store.rows value   # the rows go to the loop
@@ -307,6 +294,8 @@ known #128 line _@main/?1/run/?1/write/Store.rows > main/?1/run/?1/write/for (da
 known #128 home _@main/?1/run/?1/write/Store.rows main/?1/run/?1/write
 
 # a value read through its wrappers is handed into the chain's calls, which are no steps (#125)
-known #125 extra line _·date@main/?1/run/?1/Store.save_rates/?1 > main/?1/run/?1/Store.save_rates/?1/unwrap_or_default value
-known #125 extra line _·format@main/?1/run/?1 > main/?1/run/?1/map value
-known #125 extra line _·format@main/?1/run/?1 > main/?1/run/?1/unwrap_or value
+known #125 extra line _·date@main/?1/run/?1/Store.save_rates/?1/as_str > main/?1/run/?1/Store.save_rates/?1/unwrap_or_default value
+known #125 extra line _·format@main/?1/run/?1/first > main/?1/run/?1/map value
+known #125 extra line _·format@main/?1/run/?1/map > main/?1/run/?1/unwrap_or value
+known #125 extra line main/?1/run/?1/write/?1/from > _·out@main/?1/run/?1/write/?1/from value
+known #125 extra home _·out@main/?1/run/?1/write/?1/from main/?1/run/?1/write/?1

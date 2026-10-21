@@ -124,24 +124,24 @@ line main/?1/read_csv/Expense.parse/Expense() > Expense@main/?1/read_csv/Expense
 line Expense@main/?1/read_csv/Expense.parse/Expense() > main/?1/read_csv/Expense.parse value
 line main/?1/read_csv/Expense.parse > Expense@main/?1/read_csv/Expense.parse value
 line Expense@main/?1/read_csv/Expense.parse > main/?1/read_csv value
-known #131 line main/?1/read_csv > Expense·expenses@main/?1/read_csv value
-known #131 line Expense·expenses@main/?1/read_csv > main value                  # main prints how many (#101 too)
+line main/?1/read_csv > Expense·expenses@main/?1/read_csv value
+known #101 line Expense·expenses@main/?1/read_csv > main value   # main prints how many
 line Store·store@main/Store.open > main/?1/Store.save value
 line main/?1/Store.save > SQLite(expenses) own
 
 # ---------- rates ----------
 line main/?1/RatesClient.new/RatesClient() > RatesClient@main/?1/RatesClient.new/RatesClient() value
 line RatesClient@main/?1/RatesClient.new/RatesClient() > main/?1/RatesClient.new value
-known #131 line main/?1/RatesClient.new > RatesClient·client@main/?1/RatesClient.new value
-known #131 line RatesClient·client@main/?1/RatesClient.new > main/?1/RatesClient.latest value                  # format!("{}/latest", self.url)
-known #131 line RatesClient·client@main/?1/RatesClient.new > main/?1/RatesClient.latest/error_for_status value # self.http.get(url)..
+line main/?1/RatesClient.new > RatesClient·client@main/?1/RatesClient.new value
+line RatesClient·client@main/?1/RatesClient.new > main/?1/RatesClient.latest value  # format!("{}/latest", self.url)
+known #128 line RatesClient·client@main/?1/RatesClient.new > main/?1/RatesClient.latest/error_for_status value   # self.http.get(url)..
 known #128 line Config·config@main/Config.load > main/?1/RatesClient.latest/error_for_status value             # ..query(&[("base", base)])
 line Web(api.frankfurter.app) > main/?1/RatesClient.latest own
 line main/?1/RatesClient.latest/error_for_status > _·response@main/?1/RatesClient.latest/error_for_status value
 known #101 line _·response@main/?1/RatesClient.latest/error_for_status > main/?1/RatesClient.latest value      # response.json()
-known #131 line main/?1/RatesClient.latest > Rates·rates@main/?1/RatesClient.latest value
-known #131 line Rates·rates@main/?1/RatesClient.latest > main/?1/Store.save_rates value
-known #131 line Rates·rates@main/?1/RatesClient.latest > main value                 # main prints their date and base (#101 too)
+line main/?1/RatesClient.latest > Rates·rates@main/?1/RatesClient.latest value
+line Rates·rates@main/?1/RatesClient.latest > main/?1/Store.save_rates value
+known #101 line Rates·rates@main/?1/RatesClient.latest > main value   # main prints their date and base
 line Store·store@main/Store.open > main/?1/Store.save_rates value
 line main/?1/Store.save_rates > SQLite(rates) own
 
@@ -158,9 +158,9 @@ line main/?1/Store.rates/Rates() > Rates·rates@main/?1/Store.rates/Rates() valu
 line Rates·rates@main/?1/Store.rates/Rates() > main/?1/Store.rates/insert value
 line main/?1/Store.rates/insert > Rates·rates@main/?1/Store.rates/insert value
 line Rates·rates@main/?1/Store.rates/insert > main/?1/Store.rates value
-line main/?1/Store.rates/?1/Error() > Error@main/?1/Store.rates/?1 value
-line Error@main/?1/Store.rates/?1 > main/?1/Store.rates value
-known #131 line main/?1/Store.rates > Rates·rates@main/?1/Store.rates value
+line main/?1/Store.rates/?1/Error() > Error@main/?1/Store.rates/?1/Error() value
+line Error@main/?1/Store.rates/?1/Error() > main/?1/Store.rates value
+line main/?1/Store.rates > Rates·rates@main/?1/Store.rates value
 
 known #128 line Store·store@main/Store.open > main/?1/Store.expenses/prepare value
 line main/?1/Store.expenses/prepare > _·select@main/?1/Store.expenses/prepare value
@@ -173,10 +173,10 @@ line Money·amount@main/?1/Store.expenses/Money() > main/?1/Store.expenses/Expen
 line main/?1/Store.expenses/Expense() > Expense@main/?1/Store.expenses/Expense() value
 line Expense@main/?1/Store.expenses/Expense() > main/?1/Store.expenses/query_map value     # the closure's result
 line Expense@main/?1/Store.expenses/Expense() > main/?1/Store.expenses value
-known #131 line main/?1/Store.expenses > Expense@main/?1/Store.expenses value
+line main/?1/Store.expenses > Expense@main/?1/Store.expenses value
 
-known #131 line Rates·rates@main/?1/Store.rates > main/?1/lines/Rates.to_base value
-known #131 line Rates·rates@main/?1/Store.rates > main/?1/lines/Money() value
+line Rates·rates@main/?1/Store.rates > main/?1/lines/Rates.to_base value
+line Rates·rates@main/?1/Store.rates > main/?1/lines/Money() value
 known #128 line main/?1/lines/Rates.to_base > _@main/?1/lines/Rates.to_base value
 known #128 line _@main/?1/lines/Rates.to_base > main/?1/lines/ok_or_else value
 line main/?1/lines/Error() > Error@main/?1/lines/Error() value
@@ -190,18 +190,18 @@ line main/?1/lines/Line() > Line@main/?1/lines/Line() value
 known #125 line Line@main/?1/lines/Line() > main/?1/lines/push value
 known #125 line main/?1/lines/push > Line·out@main/?1/lines/push value
 known #125 line Line·out@main/?1/lines/push > main/?1/lines value
-known #131 line main/?1/lines > Line·lines@main/?1/lines value
+line main/?1/lines > Line·lines@main/?1/lines value
 
 line main/?1/Format.renderer/?1/Markdown() > Markdown@main/?1/Format.renderer/?1 value
 line main/?1/Format.renderer/?1/Csv() > Csv@main/?1/Format.renderer/?1 value
-known #131 line Markdown@main/?1/Format.renderer/?1 > main/?1/Format.renderer value
+line Markdown@main/?1/Format.renderer/?1 > main/?1/Format.renderer value
 line Csv@main/?1/Format.renderer/?1 > main/?1/Format.renderer value
-known #131 line main/?1/Format.renderer > Render@main/?1/Format.renderer value
+line main/?1/Format.renderer > Render@main/?1/Format.renderer value
 
-known #131 line Render@main/?1/Format.renderer > main/?1/write/Render.extension/Markdown.extension value
-known #131 line Render@main/?1/Format.renderer > main/?1/write/Render.extension/Csv.extension value
-known #131 line Render@main/?1/Format.renderer > main/?1/write/Render.render/Markdown.render value
-known #131 line Render@main/?1/Format.renderer > main/?1/write/Render.render/Csv.render value
+line Render@main/?1/Format.renderer > main/?1/write/Render.extension/Markdown.extension value
+line Render@main/?1/Format.renderer > main/?1/write/Render.extension/Csv.extension value
+line Render@main/?1/Format.renderer > main/?1/write/Render.render/Markdown.render value
+line Render@main/?1/Format.renderer > main/?1/write/Render.render/Csv.render value
 known #128 line Config·config@main/Config.load > main/?1/write/Render.render/Markdown.render value   # the title
 known #128 line Config·config@main/Config.load > main/?1/write/Render.render/Csv.render value
 line main/?1/write/Render.extension/Markdown.extension > main/?1/write/Render.extension back
@@ -217,8 +217,8 @@ line main/?1/write/Render.render/Csv.render > main/?1/write/Render.render back
 line main/?1/write/Render.render > main/?1/write back                            # into fs::write
 line main/?1/write > File(reports/) own
 line main/?1/write > main back                                                  # the path, which main prints and opens
-known #131 line main/?1/write > _·path@main/?1/write value
-known #131 line _·path@main/?1/write > main value                                # (#101 too)
+line main/?1/write > _·path@main/?1/write value
+known #101 line _·path@main/?1/write > main value
 
 line main > Screen own
 line main > open own                                                            # the viewer, when asked to open
@@ -243,36 +243,36 @@ known #125 home _·currency@main/?1/read_csv/Expense.parse/Money.parse/ok_or_els
 home _·value@main/?1/read_csv/Expense.parse/Money.parse/map_err main/?1/read_csv/Expense.parse/Money.parse
 home Error@main/?1/read_csv/Expense.parse/Money.parse/Error() main/?1/read_csv/Expense.parse/Money.parse
 home Money@main/?1/read_csv/Expense.parse/Money.parse/Money() main/?1/read_csv/Expense.parse/Money.parse
-known #131 home Expense·expenses@main/?1/read_csv main
+known #101 home Expense·expenses@main/?1/read_csv main
 home RatesClient@main/?1/RatesClient.new/RatesClient() main/?1/RatesClient.new
-known #131 home RatesClient·client@main/?1/RatesClient.new main/?1
+home RatesClient·client@main/?1/RatesClient.new main/?1
 home _·response@main/?1/RatesClient.latest/error_for_status main/?1/RatesClient.latest
-known #131 home Rates·rates@main/?1/RatesClient.latest main
+known #101 home Rates·rates@main/?1/RatesClient.latest main
 home _·select@main/?1/Store.rates/prepare main/?1/Store.rates
 home _·rows@main/?1/Store.rates/query_map main/?1/Store.rates
 home Rates·rates@main/?1/Store.rates/Rates() main/?1/Store.rates
 home Rates·rates@main/?1/Store.rates/insert main/?1/Store.rates
-home Error@main/?1/Store.rates/?1 main/?1/Store.rates
-known #131 home Rates·rates@main/?1/Store.rates main/?1
+home Error@main/?1/Store.rates/?1/Error() main/?1/Store.rates
+home Rates·rates@main/?1/Store.rates main/?1
 home _·select@main/?1/Store.expenses/prepare main/?1/Store.expenses
 home _·rows@main/?1/Store.expenses/query_map main/?1/Store.expenses
 home Money·amount@main/?1/Store.expenses/Money() main/?1/Store.expenses
 home Expense@main/?1/Store.expenses/Expense() main/?1/Store.expenses
-known #131 home Expense@main/?1/Store.expenses main/?1
+home Expense@main/?1/Store.expenses main/?1
 known #128 home _@main/?1/lines/Rates.to_base main/?1/lines
 home _·rate@main/?1/lines/ok_or_else main/?1/lines
 home Error@main/?1/lines/Error() main/?1/lines
 home Money·base@main/?1/lines/Money() main/?1/lines
 home Line@main/?1/lines/Line() main/?1/lines
 known #125 home Line·out@main/?1/lines/push main/?1/lines
-known #131 home Line·lines@main/?1/lines main/?1
-known #131 home Markdown@main/?1/Format.renderer/?1 main/?1/Format.renderer
+home Line·lines@main/?1/lines main/?1
+home Markdown@main/?1/Format.renderer/?1 main/?1/Format.renderer
 home Csv@main/?1/Format.renderer/?1 main/?1/Format.renderer
-known #131 home Render@main/?1/Format.renderer main/?1
+home Render@main/?1/Format.renderer main/?1
 home _@main/?1/write/Render.extension main/?1/write
 home _·path@main/?1/write/join main/?1/write
 home _·out@main/?1/write/Render.render/Csv.render/from main/?1/write/Render.render/Csv.render
-known #131 home _·path@main/?1/write main
+known #101 home _·path@main/?1/write main
 
 side entry left
 side File(spend.toml) left
@@ -286,35 +286,12 @@ side Screen right
 
 # ---- what Atlas has and should not ----
 # a value one arm of the choice makes, and only that arm takes, has the choice's moment; two (`Rates·rates`) become one
-known #131 extra line main/?1/read_csv > Expense·expenses@main/?1 value
-known #131 extra home Expense·expenses@main/?1 main/?1
-known #131 extra line main/?1/RatesClient.new > RatesClient·client@main/?1 value
-known #131 extra line RatesClient·client@main/?1 > main/?1/RatesClient.latest value
-known #131 extra home RatesClient·client@main/?1 main/?1
-known #131 extra line main/?1/RatesClient.latest > Rates·rates@main/?1 value
-known #131 extra line main/?1/Store.rates > Rates·rates@main/?1 value
-known #131 extra line Rates·rates@main/?1 > main/?1/Store.save_rates value
-known #131 extra line Rates·rates@main/?1 > main/?1/lines/Money() value
-known #131 extra line Rates·rates@main/?1 > main/?1/lines/Rates.to_base value
-known #131 extra home Rates·rates@main/?1 main/?1
-known #131 extra line main/?1/Store.expenses > Expense@main/?1 value
-known #131 extra line Expense@main/?1 > main/?1/lines value
-known #131 extra home Expense@main/?1 main/?1
-known #131 extra line main/?1/lines > Line·lines@main/?1 value
-known #131 extra home Line·lines@main/?1 main/?1
-known #131 extra line main/?1/Format.renderer > Render@main/?1 value
-known #131 extra line Render@main/?1 > main/?1/write/Render.extension/Csv.extension value
-known #131 extra line Render@main/?1 > main/?1/write/Render.extension/Markdown.extension value
-known #131 extra line Render@main/?1 > main/?1/write/Render.render/Csv.render value
-known #131 extra line Render@main/?1 > main/?1/write/Render.render/Markdown.render value
-known #131 extra line Render@main/?1 > main/?1/write value
-known #131 extra line Render@main/?1 > main/?1/write/join value
-known #131 extra home Render@main/?1 main/?1
-known #131 extra line main/?1/write > _·path@main/?1 value
-known #131 extra home _·path@main/?1 main/?1
+known #126 extra line Expense@main/?1/Store.expenses > main/?1/lines value   # only the loop over `expenses` takes them
+known #126 extra line Render@main/?1/Format.renderer > main/?1/write value   # only the steps inside take it
+known #128 extra line Render@main/?1/Format.renderer > main/?1/write/join value   # `render.extension()` is a step that takes the render itself
 # a value handed to a call into a family ends at the dispatch's border
-known #100 extra line Render@main/?1 > main/?1/write/Render.extension value
-known #100 extra line Render@main/?1 > main/?1/write/Render.render value
+known #100 extra line Render@main/?1/Format.renderer > main/?1/write/Render.extension value
+known #100 extra line Render@main/?1/Format.renderer > main/?1/write/Render.render value
 # the format the arm's pattern binds out of `cli` comes from beyond
 known #103 extra line Format·format > main/?1/Format.renderer value
 known #103 extra home Format·format main/?1
@@ -387,14 +364,9 @@ home Line·l@main/?1/write/Render.render/Csv.render/for l in lines main/?1/write
 line main/?1/write/Render.render/Markdown.render/for l in lines > Line·l@main/?1/write/Render.render/Markdown.render/for l in lines value
 line Line·l@main/?1/write/Render.render/Markdown.render/for l in lines > main/?1/write/Render.render/Markdown.render value
 home Line·l@main/?1/write/Render.render/Markdown.render/for l in lines main/?1/write/Render.render/Markdown.render
-# what a loop runs over, at the moment of the step that made it (#131)
-known #131 line Expense·expenses@main/?1/read_csv > main/?1/Store.save/for e in expenses value
-known #131 line Expense@main/?1/Store.expenses > main/?1/lines/for e in expenses value
-known #131 line Rates·rates@main/?1/RatesClient.latest > main/?1/Store.save_rates/for (currency, rate) in &rates.rates value
-known #131 line Line·lines@main/?1/lines > main/?1/write/Render.render/Csv.render/for l in lines value
-known #131 line Line·lines@main/?1/lines > main/?1/write/Render.render/Markdown.render/for l in lines value
-known #131 extra line Expense·expenses@main/?1 > main/?1/Store.save/for e in expenses value
-known #131 extra line Expense·expenses@main/?1 > main/?1/lines/for e in expenses value
-known #131 extra line Line·lines@main/?1 > main/?1/write/Render.render/Csv.render/for l in lines value
-known #131 extra line Line·lines@main/?1 > main/?1/write/Render.render/Markdown.render/for l in lines value
-known #131 extra line Rates·rates@main/?1 > main/?1/Store.save_rates/for (currency, rate) in &rates.rates value
+# what a loop runs over, at the moment of the step that made it
+line Expense·expenses@main/?1/read_csv > main/?1/Store.save/for e in expenses value
+line Expense@main/?1/Store.expenses > main/?1/lines/for e in expenses value
+line Rates·rates@main/?1/RatesClient.latest > main/?1/Store.save_rates/for (currency, rate) in &rates.rates value
+line Line·lines@main/?1/lines > main/?1/write/Render.render/Csv.render/for l in lines value
+line Line·lines@main/?1/lines > main/?1/write/Render.render/Markdown.render/for l in lines value
