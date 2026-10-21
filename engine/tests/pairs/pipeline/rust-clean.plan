@@ -18,7 +18,7 @@ step main/?1/download/bytes                                       # `let body = 
 step main/load
 step main/load/from_path                                          # `let mut reader = ReaderBuilder::new()..from_path(path)?`
 step main/load/new                                                # `let mut series = Vec::new()`
-known #new step main/load/deserialize                             # `for record in reader.deserialize()`
+known #125 step main/load/deserialize                             # `for record in reader.deserialize()`
 choice main/load/?1
 step main/load/?1/Record.into_month
 step main/load/?1/Record.into_month/ok_or                         # `let date = NaiveDate::from_ymd_opt(..).ok_or(..)?`
@@ -33,8 +33,8 @@ step main/Trend.save
 step main/Trend.save/Trend.settings
 step main/Trend.save/into_drawing_area                            # `let area = BitMapBackend::new(..).into_drawing_area()`
 step main/Trend.save/Trend.draw
-known #new step main/Trend.save/Trend.draw/first                  # `let (Some(first), Some(last)) = (series.first(), ..)`
-known #new step main/Trend.save/Trend.draw/last
+known #125 step main/Trend.save/Trend.draw/first                  # `let (Some(first), Some(last)) = (series.first(), ..)`
+known #125 step main/Trend.save/Trend.draw/last
 step main/Trend.save/Trend.draw/fold                              # `let top = series.iter()..fold(..)`
 step main/Trend.save/Trend.draw/build_cartesian_2d                # `let mut chart = ChartBuilder::on(area)..`
 
@@ -58,26 +58,26 @@ line main/?1/download > main back                                       # `Ok(to
 line Cli·cli@main/Cli() > main/load value                               # `&cli.raw`
 line File(data/raw/sunspots.csv) > main/load own
 line main/load/from_path > _·reader@main/load/from_path value
-known #new line _·reader@main/load/from_path > main/load/deserialize value
-known #new line main/load/deserialize > Record·record@main/load/deserialize value
+known #125 line _·reader@main/load/from_path > main/load/deserialize value
+known #125 line main/load/deserialize > Record·record@main/load/deserialize value
 line main/load/new > _·series@main/load/new value
-known #new line Record·record@main/load/deserialize > main/load/?1/Record.into_month/ok_or value   # `self.year`, `self.month`
+known #125 line Record·record@main/load/deserialize > main/load/?1/Record.into_month/ok_or value   # `self.year`, `self.month`
 line main/load/?1/Record.into_month/ok_or > _·date@main/load/?1/Record.into_month/ok_or value
 line _·date@main/load/?1/Record.into_month/ok_or > main/load/?1/Record.into_month/Month() value
-known #new line Record·record@main/load/deserialize > main/load/?1/Record.into_month/Month() value # `self.mean`, ..
+known #125 line Record·record@main/load/deserialize > main/load/?1/Record.into_month/Month() value # `self.mean`, ..
 line main/load/?1/Record.into_month/Month() > Month@main/load/?1/Record.into_month/Month() value
 line Month@main/load/?1/Record.into_month/Month() > main/load/?1/Record.into_month value
-known #new line main/load/?1/Record.into_month > Month@main/load/?1/Record.into_month value
-known #new line Month@main/load/?1/Record.into_month > main/load/?1/push value
-known #new line Month@main/load/?1/Record.into_month > main/load value          # gathered into `series`, given back
+known #131 line main/load/?1/Record.into_month > Month@main/load/?1/Record.into_month value
+known #131 line Month@main/load/?1/Record.into_month > main/load/?1/push value
+known #131 line Month@main/load/?1/Record.into_month > main/load value          # gathered into `series`, given back
 line _·series@main/load/new > main/load/?1/push value
 line main/load/?1/push > _·series@main/load/?1 value                    # pushed in one arm, kept in the other
 known #101 line _·series@main/load/?1 > main/load value                        # `Ok(series)`
 line main/load > Month·series@main/load value
 
 line Month·series@main/load > main/smooth value                         # `series.windows(..)`
-known #new line Month·series@main/load > main/smooth/Smoothed() value         # `run[months / 2].date`
-known #new line Settings·settings@main/Settings() > main/smooth/get value     # `settings.months`, handed as `months`
+known #128 line Month·series@main/load > main/smooth/Smoothed() value         # `run[months / 2].date`
+known #128 line Settings·settings@main/Settings() > main/smooth/get value     # `settings.months`, handed as `months`
 line main/smooth/get > _·months@main/smooth/get value
 known #101 line _·months@main/smooth/get > main/smooth value                   # `series.windows(months)`
 line _·months@main/smooth/get > main/smooth/Smoothed() value
@@ -97,16 +97,16 @@ line Settings@main/Trend.save/Trend.settings > main/Trend.save/into_drawing_area
 line main/Trend.save/into_drawing_area > DrawingArea·area@main/Trend.save/into_drawing_area value
 known #101 line DrawingArea·area@main/Trend.save/into_drawing_area > main/Trend.save value   # `area.present()`
 line DrawingArea·area@main/Trend.save/into_drawing_area > main/Trend.save/Trend.draw value  # `area.fill(&WHITE)`
-known #new line DrawingArea·area@main/Trend.save/into_drawing_area > main/Trend.save/Trend.draw/build_cartesian_2d value
+known #128 line DrawingArea·area@main/Trend.save/into_drawing_area > main/Trend.save/Trend.draw/build_cartesian_2d value
 line Trend@main/Trend.new > main/Trend.save/Trend.draw value            # `self.settings.months`
-known #new line Trend@main/Trend.new > main/Trend.save/Trend.draw/build_cartesian_2d value   # `self.settings.title`
+known #128 line Trend@main/Trend.new > main/Trend.save/Trend.draw/build_cartesian_2d value   # `self.settings.title`
 line Month·series@main/load > main/Trend.save/Trend.draw value          # `draw_series(..)`
-known #new line Month·series@main/load > main/Trend.save/Trend.draw/first value
-known #new line Month·series@main/load > main/Trend.save/Trend.draw/last value
-known #new line main/Trend.save/Trend.draw/first > Month·first@main/Trend.save/Trend.draw/first value
-known #new line main/Trend.save/Trend.draw/last > Month·last@main/Trend.save/Trend.draw/last value
-known #new line Month·first@main/Trend.save/Trend.draw/first > main/Trend.save/Trend.draw/build_cartesian_2d value
-known #new line Month·last@main/Trend.save/Trend.draw/last > main/Trend.save/Trend.draw/build_cartesian_2d value
+known #125 line Month·series@main/load > main/Trend.save/Trend.draw/first value
+known #125 line Month·series@main/load > main/Trend.save/Trend.draw/last value
+known #125 line main/Trend.save/Trend.draw/first > Month·first@main/Trend.save/Trend.draw/first value
+known #125 line main/Trend.save/Trend.draw/last > Month·last@main/Trend.save/Trend.draw/last value
+known #125 line Month·first@main/Trend.save/Trend.draw/first > main/Trend.save/Trend.draw/build_cartesian_2d value
+known #125 line Month·last@main/Trend.save/Trend.draw/last > main/Trend.save/Trend.draw/build_cartesian_2d value
 line Month·series@main/load > main/Trend.save/Trend.draw/fold value
 line main/Trend.save/Trend.draw/fold > _·top@main/Trend.save/Trend.draw/fold value
 line _·top@main/Trend.save/Trend.draw/fold > main/Trend.save/Trend.draw/build_cartesian_2d value
@@ -122,10 +122,10 @@ home Settings·settings@main/Settings() main
 home _·body@main/?1/download/bytes main/?1/download
 home _·reader@main/load/from_path main/load
 home _·series@main/load/new main/load
-known #new home Record·record@main/load/deserialize main/load
+known #125 home Record·record@main/load/deserialize main/load
 home _·date@main/load/?1/Record.into_month/ok_or main/load/?1/Record.into_month
 home Month@main/load/?1/Record.into_month/Month() main/load/?1/Record.into_month
-known #new home Month@main/load/?1/Record.into_month main/load
+known #131 home Month@main/load/?1/Record.into_month main/load
 known #101 home _·series@main/load/?1 main/load
 home Month·series@main/load main
 home _·months@main/smooth/get main/smooth
@@ -135,8 +135,8 @@ home Trend@main/Trend.new/Trend() main/Trend.new
 home Trend@main/Trend.new main
 home Settings@main/Trend.save/Trend.settings main/Trend.save
 home DrawingArea·area@main/Trend.save/into_drawing_area main/Trend.save
-known #new home Month·first@main/Trend.save/Trend.draw/first main/Trend.save/Trend.draw
-known #new home Month·last@main/Trend.save/Trend.draw/last main/Trend.save/Trend.draw
+known #125 home Month·first@main/Trend.save/Trend.draw/first main/Trend.save/Trend.draw
+known #125 home Month·last@main/Trend.save/Trend.draw/last main/Trend.save/Trend.draw
 home _·top@main/Trend.save/Trend.draw/fold main/Trend.save/Trend.draw
 home _·chart@main/Trend.save/Trend.draw/build_cartesian_2d main/Trend.save/Trend.draw
 
@@ -146,22 +146,32 @@ side File(data/raw/sunspots.csv) between
 side File(figures/sunspots.png) right
 
 # a record the csv crate makes inside `load` is drawn from beyond, at the route's frame
-known #new extra home Record·record main
-known #new extra line Record·record > main/load/?1/Record.into_month value
+known #125 extra home Record·record main
+known #125 extra line Record·record > main/load/?1/Record.into_month value
 
 # the Month one arm makes takes the choice as its moment, though the other arm makes none
-known #new extra line main/load/?1/Record.into_month > Month@main/load/?1 value
-known #new extra line Month@main/load/?1 > main/load/?1/push value
-known #new extra line Month@main/load/?1 > main/load value
-known #new extra home Month@main/load/?1 main/load
+known #131 extra line main/load/?1/Record.into_month > Month@main/load/?1 value
+known #131 extra line Month@main/load/?1 > main/load/?1/push value
+known #131 extra line Month@main/load/?1 > main/load value
+known #131 extra home Month@main/load/?1 main/load
 
 # a library call whose result no name holds is drawn as a step, its result named by the call around it
-known #new extra step main/load/?1/Record.into_month/from_ymd_opt
-known #new extra line main/load/?1/Record.into_month/from_ymd_opt > _·date@main/load/?1/Record.into_month/from_ymd_opt value
-known #new extra line _·date@main/load/?1/Record.into_month/from_ymd_opt > main/load/?1/Record.into_month/ok_or value
-known #new extra home _·date@main/load/?1/Record.into_month/from_ymd_opt main/load/?1/Record.into_month
+known #125 extra step main/load/?1/Record.into_month/from_ymd_opt
+known #125 extra line main/load/?1/Record.into_month/from_ymd_opt > _·date@main/load/?1/Record.into_month/from_ymd_opt value
+known #125 extra line _·date@main/load/?1/Record.into_month/from_ymd_opt > main/load/?1/Record.into_month/ok_or value
+known #125 extra home _·date@main/load/?1/Record.into_month/from_ymd_opt main/load/?1/Record.into_month
 
 # a value handed to a step also goes to its own arrow, though only a step inside it takes it
-known #new extra line Settings·settings@main/Settings() > main/Trend.new value
-known #new extra line Settings·settings@main/Settings() > main/smooth value
-known #new extra line Trend@main/Trend.new > main/Trend.save value
+known #126 extra line Settings·settings@main/Settings() > main/Trend.new value
+known #126 extra line Settings·settings@main/Settings() > main/smooth value
+known #126 extra line Trend@main/Trend.new > main/Trend.save value
+
+# an error is a value of the codomain: made where it is raised, handed on across each border up to the route
+known #138 line main/load/?1/Record.into_month > Error@main/load/?1/Record.into_month value   # `Error::Date { .. }`
+known #138 line Error@main/load/?1/Record.into_month > main/load value
+known #138 line main/load > Error@main/load value
+known #138 line Error@main/load > main value
+known #138 line main/Trend.save/Trend.draw > Error@main/Trend.save/Trend.draw value             # `Error::Empty`
+known #138 line Error@main/Trend.save/Trend.draw > main/Trend.save value
+known #138 line main/Trend.save > Error@main/Trend.save value
+known #138 line Error@main/Trend.save > main value

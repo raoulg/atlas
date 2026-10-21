@@ -18,13 +18,13 @@ step main/?1/read_csv
 step main/?1/read_csv/read_to_string
 step main/?1/read_csv/Expense.parse
 step main/?1/read_csv/Expense.parse/splitn
-known #new step main/?1/read_csv/Expense.parse/next                            # let (Some(date), Some(description), Some(amount)) =
-known #new step main/?1/read_csv/Expense.parse/next#2                          #     (fields.next(), fields.next(), fields.next())
-known #new step main/?1/read_csv/Expense.parse/next#3
-known #new choice main/?1/read_csv/Expense.parse/?1                            # .. else { return Err(Error::Line(..)) }
-known #new step main/?1/read_csv/Expense.parse/?1/Error()
+known #125 step main/?1/read_csv/Expense.parse/next                            # let (Some(date), Some(description), Some(amount)) =
+known #125 step main/?1/read_csv/Expense.parse/next#2                          #     (fields.next(), fields.next(), fields.next())
+known #125 step main/?1/read_csv/Expense.parse/next#3
+known #130 choice main/?1/read_csv/Expense.parse/?1                            # .. else { return Err(Error::Line(..)) }
+known #130 step main/?1/read_csv/Expense.parse/?1/Error()
 step main/?1/read_csv/Expense.parse/Money.parse
-known #new step main/?1/read_csv/Expense.parse/Money.parse/ok_or_else          # let (amount, currency) = ..ok_or_else(wrong)?
+known #125 step main/?1/read_csv/Expense.parse/Money.parse/ok_or_else          # let (amount, currency) = ..ok_or_else(wrong)?
 step main/?1/read_csv/Expense.parse/Money.parse/map_err                        # let value: f64 = amount.parse().map_err(..)?
 step main/?1/read_csv/Expense.parse/Money.parse/Error()                        # the closure `wrong`
 step main/?1/read_csv/Expense.parse/Money.parse/Money()
@@ -53,7 +53,7 @@ step main/?1/lines/ok_or_else
 step main/?1/lines/Error()
 step main/?1/lines/Money()
 step main/?1/lines/Line()
-known #new step main/?1/lines/push                                             # out.push(Line { .. }) on `let mut out = vec![]`
+known #125 step main/?1/lines/push                                             # out.push(Line { .. }) on `let mut out = vec![]`
 step main/?1/Format.renderer
 choice main/?1/Format.renderer/?1
 step main/?1/Format.renderer/?1/Markdown()
@@ -94,27 +94,27 @@ line main/?1/read_csv/read_to_string > _·text@main/?1/read_csv/read_to_string v
 known #103 line _·text@main/?1/read_csv/read_to_string > main/?1/read_csv/Expense.parse/splitn value    # each line, through map
 known #103 line _·text@main/?1/read_csv/read_to_string > main/?1/read_csv/Expense.parse/?1/Error() value
 line main/?1/read_csv/Expense.parse/splitn > _·fields@main/?1/read_csv/Expense.parse/splitn value
-known #new line _·fields@main/?1/read_csv/Expense.parse/splitn > main/?1/read_csv/Expense.parse/next value
-known #new line _·fields@main/?1/read_csv/Expense.parse/splitn > main/?1/read_csv/Expense.parse/next#2 value
-known #new line _·fields@main/?1/read_csv/Expense.parse/splitn > main/?1/read_csv/Expense.parse/next#3 value
-known #new line main/?1/read_csv/Expense.parse/next > _·date@main/?1/read_csv/Expense.parse/next value
-known #new line main/?1/read_csv/Expense.parse/next#2 > _·description@main/?1/read_csv/Expense.parse/next#2 value
-known #new line main/?1/read_csv/Expense.parse/next#3 > _·amount@main/?1/read_csv/Expense.parse/next#3 value
-known #new line _·date@main/?1/read_csv/Expense.parse/next > main/?1/read_csv/Expense.parse/Expense() value
-known #new line _·description@main/?1/read_csv/Expense.parse/next#2 > main/?1/read_csv/Expense.parse/Expense() value
-known #new line _·amount@main/?1/read_csv/Expense.parse/next#3 > main/?1/read_csv/Expense.parse/Money.parse/ok_or_else value
-known #new line _·amount@main/?1/read_csv/Expense.parse/next#3 > main/?1/read_csv/Expense.parse/Money.parse/Error() value
-known #new line main/?1/read_csv/Expense.parse/?1/Error() > Error@main/?1/read_csv/Expense.parse/?1/Error() value
-known #new line Error@main/?1/read_csv/Expense.parse/?1/Error() > main/?1/read_csv/Expense.parse value
-known #new line main/?1/read_csv/Expense.parse/Money.parse/ok_or_else > _·amount@main/?1/read_csv/Expense.parse/Money.parse/ok_or_else value
-known #new line main/?1/read_csv/Expense.parse/Money.parse/ok_or_else > _·currency@main/?1/read_csv/Expense.parse/Money.parse/ok_or_else value
-known #new line _·amount@main/?1/read_csv/Expense.parse/Money.parse/ok_or_else > main/?1/read_csv/Expense.parse/Money.parse/map_err value
-known #new line _·currency@main/?1/read_csv/Expense.parse/Money.parse/ok_or_else > main/?1/read_csv/Expense.parse/Money.parse/Money() value
+known #125 line _·fields@main/?1/read_csv/Expense.parse/splitn > main/?1/read_csv/Expense.parse/next value
+known #125 line _·fields@main/?1/read_csv/Expense.parse/splitn > main/?1/read_csv/Expense.parse/next#2 value
+known #125 line _·fields@main/?1/read_csv/Expense.parse/splitn > main/?1/read_csv/Expense.parse/next#3 value
+known #125 line main/?1/read_csv/Expense.parse/next > _·date@main/?1/read_csv/Expense.parse/next value
+known #125 line main/?1/read_csv/Expense.parse/next#2 > _·description@main/?1/read_csv/Expense.parse/next#2 value
+known #125 line main/?1/read_csv/Expense.parse/next#3 > _·amount@main/?1/read_csv/Expense.parse/next#3 value
+known #125 line _·date@main/?1/read_csv/Expense.parse/next > main/?1/read_csv/Expense.parse/Expense() value
+known #125 line _·description@main/?1/read_csv/Expense.parse/next#2 > main/?1/read_csv/Expense.parse/Expense() value
+known #125 line _·amount@main/?1/read_csv/Expense.parse/next#3 > main/?1/read_csv/Expense.parse/Money.parse/ok_or_else value
+known #125 line _·amount@main/?1/read_csv/Expense.parse/next#3 > main/?1/read_csv/Expense.parse/Money.parse/Error() value
+known #130 line main/?1/read_csv/Expense.parse/?1/Error() > Error@main/?1/read_csv/Expense.parse/?1/Error() value
+known #130 line Error@main/?1/read_csv/Expense.parse/?1/Error() > main/?1/read_csv/Expense.parse value
+known #125 line main/?1/read_csv/Expense.parse/Money.parse/ok_or_else > _·amount@main/?1/read_csv/Expense.parse/Money.parse/ok_or_else value
+known #125 line main/?1/read_csv/Expense.parse/Money.parse/ok_or_else > _·currency@main/?1/read_csv/Expense.parse/Money.parse/ok_or_else value
+known #125 line _·amount@main/?1/read_csv/Expense.parse/Money.parse/ok_or_else > main/?1/read_csv/Expense.parse/Money.parse/map_err value
+known #125 line _·currency@main/?1/read_csv/Expense.parse/Money.parse/ok_or_else > main/?1/read_csv/Expense.parse/Money.parse/Money() value
 line main/?1/read_csv/Expense.parse/Money.parse/map_err > _·value@main/?1/read_csv/Expense.parse/Money.parse/map_err value
 line _·value@main/?1/read_csv/Expense.parse/Money.parse/map_err > main/?1/read_csv/Expense.parse/Money.parse/Money() value
 line main/?1/read_csv/Expense.parse/Money.parse/Error() > Error@main/?1/read_csv/Expense.parse/Money.parse/Error() value
-known #new line Error@main/?1/read_csv/Expense.parse/Money.parse/Error() > main/?1/read_csv/Expense.parse/Money.parse/ok_or_else value
-known #new line Error@main/?1/read_csv/Expense.parse/Money.parse/Error() > main/?1/read_csv/Expense.parse/Money.parse/map_err value
+known #125 line Error@main/?1/read_csv/Expense.parse/Money.parse/Error() > main/?1/read_csv/Expense.parse/Money.parse/ok_or_else value
+known #128 line Error@main/?1/read_csv/Expense.parse/Money.parse/Error() > main/?1/read_csv/Expense.parse/Money.parse/map_err value
 line Error@main/?1/read_csv/Expense.parse/Money.parse/Error() > main/?1/read_csv/Expense.parse/Money.parse value   # and `?` hands it back
 line main/?1/read_csv/Expense.parse/Money.parse/Money() > Money@main/?1/read_csv/Expense.parse/Money.parse/Money() value
 line Money@main/?1/read_csv/Expense.parse/Money.parse/Money() > main/?1/read_csv/Expense.parse/Money.parse value
@@ -124,35 +124,35 @@ line main/?1/read_csv/Expense.parse/Expense() > Expense@main/?1/read_csv/Expense
 line Expense@main/?1/read_csv/Expense.parse/Expense() > main/?1/read_csv/Expense.parse value
 line main/?1/read_csv/Expense.parse > Expense@main/?1/read_csv/Expense.parse value
 line Expense@main/?1/read_csv/Expense.parse > main/?1/read_csv value
-known #new line main/?1/read_csv > Expense·expenses@main/?1/read_csv value
-known #new line Expense·expenses@main/?1/read_csv > main/?1/Store.save value
-known #new line Expense·expenses@main/?1/read_csv > main value                  # main prints how many (#101 too)
+known #131 line main/?1/read_csv > Expense·expenses@main/?1/read_csv value
+known #131 line Expense·expenses@main/?1/read_csv > main/?1/Store.save value
+known #131 line Expense·expenses@main/?1/read_csv > main value                  # main prints how many (#101 too)
 line Store·store@main/Store.open > main/?1/Store.save value
 line main/?1/Store.save > SQLite(expenses) own
 
 # ---------- rates ----------
 line main/?1/RatesClient.new/RatesClient() > RatesClient@main/?1/RatesClient.new/RatesClient() value
 line RatesClient@main/?1/RatesClient.new/RatesClient() > main/?1/RatesClient.new value
-known #new line main/?1/RatesClient.new > RatesClient·client@main/?1/RatesClient.new value
-known #new line RatesClient·client@main/?1/RatesClient.new > main/?1/RatesClient.latest value                  # format!("{}/latest", self.url)
-known #new line RatesClient·client@main/?1/RatesClient.new > main/?1/RatesClient.latest/error_for_status value # self.http.get(url)..
-known #new line Config·config@main/Config.load > main/?1/RatesClient.latest/error_for_status value             # ..query(&[("base", base)])
+known #131 line main/?1/RatesClient.new > RatesClient·client@main/?1/RatesClient.new value
+known #131 line RatesClient·client@main/?1/RatesClient.new > main/?1/RatesClient.latest value                  # format!("{}/latest", self.url)
+known #131 line RatesClient·client@main/?1/RatesClient.new > main/?1/RatesClient.latest/error_for_status value # self.http.get(url)..
+known #128 line Config·config@main/Config.load > main/?1/RatesClient.latest/error_for_status value             # ..query(&[("base", base)])
 line Web(api.frankfurter.app) > main/?1/RatesClient.latest own
 line main/?1/RatesClient.latest/error_for_status > _·response@main/?1/RatesClient.latest/error_for_status value
 known #101 line _·response@main/?1/RatesClient.latest/error_for_status > main/?1/RatesClient.latest value      # response.json()
-known #new line main/?1/RatesClient.latest > Rates·rates@main/?1/RatesClient.latest value
-known #new line Rates·rates@main/?1/RatesClient.latest > main/?1/Store.save_rates value
-known #new line Rates·rates@main/?1/RatesClient.latest > main value                 # main prints their date and base (#101 too)
+known #131 line main/?1/RatesClient.latest > Rates·rates@main/?1/RatesClient.latest value
+known #131 line Rates·rates@main/?1/RatesClient.latest > main/?1/Store.save_rates value
+known #131 line Rates·rates@main/?1/RatesClient.latest > main value                 # main prints their date and base (#101 too)
 line Store·store@main/Store.open > main/?1/Store.save_rates value
 line main/?1/Store.save_rates > SQLite(rates) own
 
 # ---------- report ----------
-known #new line Store·store@main/Store.open > main/?1/Store.rates/prepare value    # self.conn.prepare(..)
+known #128 line Store·store@main/Store.open > main/?1/Store.rates/prepare value    # self.conn.prepare(..)
 line main/?1/Store.rates/prepare > _·select@main/?1/Store.rates/prepare value
 line _·select@main/?1/Store.rates/prepare > main/?1/Store.rates/query_map value
-known #new line Config·config@main/Config.load > main/?1/Store.rates/query_map value   # query_map([base], ..)
-known #new line Config·config@main/Config.load > main/?1/Store.rates/Rates() value     # Rates { base: base.to_string(), .. }
-known #new line Config·config@main/Config.load > main/?1/Store.rates/?1/Error() value  # Error::NoRates(base.to_string())
+known #128 line Config·config@main/Config.load > main/?1/Store.rates/query_map value   # query_map([base], ..)
+known #128 line Config·config@main/Config.load > main/?1/Store.rates/Rates() value     # Rates { base: base.to_string(), .. }
+known #128 line Config·config@main/Config.load > main/?1/Store.rates/?1/Error() value  # Error::NoRates(base.to_string())
 line SQLite(rates) > main/?1/Store.rates own
 line main/?1/Store.rates/query_map > _·rows@main/?1/Store.rates/query_map value
 known #103 line _·rows@main/?1/Store.rates/query_map > main/?1/Store.rates/insert value   # for row in rows { .. insert(currency, rate) }
@@ -162,9 +162,9 @@ line main/?1/Store.rates/insert > Rates·rates@main/?1/Store.rates/insert value
 line Rates·rates@main/?1/Store.rates/insert > main/?1/Store.rates value
 line main/?1/Store.rates/?1/Error() > Error@main/?1/Store.rates/?1 value
 line Error@main/?1/Store.rates/?1 > main/?1/Store.rates value
-known #new line main/?1/Store.rates > Rates·rates@main/?1/Store.rates value
+known #131 line main/?1/Store.rates > Rates·rates@main/?1/Store.rates value
 
-known #new line Store·store@main/Store.open > main/?1/Store.expenses/prepare value
+known #128 line Store·store@main/Store.open > main/?1/Store.expenses/prepare value
 line main/?1/Store.expenses/prepare > _·select@main/?1/Store.expenses/prepare value
 line _·select@main/?1/Store.expenses/prepare > main/?1/Store.expenses/query_map value
 line SQLite(expenses) > main/?1/Store.expenses own
@@ -175,16 +175,16 @@ line Money·amount@main/?1/Store.expenses/Money() > main/?1/Store.expenses/Expen
 line main/?1/Store.expenses/Expense() > Expense@main/?1/Store.expenses/Expense() value
 line Expense@main/?1/Store.expenses/Expense() > main/?1/Store.expenses/query_map value     # the closure's result
 line Expense@main/?1/Store.expenses/Expense() > main/?1/Store.expenses value
-known #new line main/?1/Store.expenses > Expense@main/?1/Store.expenses value
+known #131 line main/?1/Store.expenses > Expense@main/?1/Store.expenses value
 
-known #new line Expense@main/?1/Store.expenses > main/?1/lines/Rates.to_base value
-known #new line Expense@main/?1/Store.expenses > main/?1/lines/Money() value
-known #new line Expense@main/?1/Store.expenses > main/?1/lines/Line() value
-known #new line Expense@main/?1/Store.expenses > main/?1/lines/Error() value
-known #new line Rates·rates@main/?1/Store.rates > main/?1/lines/Rates.to_base value
-known #new line Rates·rates@main/?1/Store.rates > main/?1/lines/Money() value
-known #new line main/?1/lines/Rates.to_base > _@main/?1/lines/Rates.to_base value
-known #new line _@main/?1/lines/Rates.to_base > main/?1/lines/ok_or_else value
+known #131 line Expense@main/?1/Store.expenses > main/?1/lines/Rates.to_base value
+known #131 line Expense@main/?1/Store.expenses > main/?1/lines/Money() value
+known #131 line Expense@main/?1/Store.expenses > main/?1/lines/Line() value
+known #131 line Expense@main/?1/Store.expenses > main/?1/lines/Error() value
+known #131 line Rates·rates@main/?1/Store.rates > main/?1/lines/Rates.to_base value
+known #131 line Rates·rates@main/?1/Store.rates > main/?1/lines/Money() value
+known #128 line main/?1/lines/Rates.to_base > _@main/?1/lines/Rates.to_base value
+known #128 line _@main/?1/lines/Rates.to_base > main/?1/lines/ok_or_else value
 line main/?1/lines/Error() > Error@main/?1/lines/Error() value
 line Error@main/?1/lines/Error() > main/?1/lines/ok_or_else value
 line Error@main/?1/lines/Error() > main/?1/lines value
@@ -193,25 +193,25 @@ line _·rate@main/?1/lines/ok_or_else > main/?1/lines/Money() value
 line main/?1/lines/Money() > Money·base@main/?1/lines/Money() value
 line Money·base@main/?1/lines/Money() > main/?1/lines/Line() value
 line main/?1/lines/Line() > Line@main/?1/lines/Line() value
-known #new line Line@main/?1/lines/Line() > main/?1/lines/push value
-known #new line main/?1/lines/push > Line·out@main/?1/lines/push value
-known #new line Line·out@main/?1/lines/push > main/?1/lines value
-known #new line main/?1/lines > Line·lines@main/?1/lines value
+known #125 line Line@main/?1/lines/Line() > main/?1/lines/push value
+known #125 line main/?1/lines/push > Line·out@main/?1/lines/push value
+known #125 line Line·out@main/?1/lines/push > main/?1/lines value
+known #131 line main/?1/lines > Line·lines@main/?1/lines value
 
 line main/?1/Format.renderer/?1/Markdown() > Markdown@main/?1/Format.renderer/?1 value
 line main/?1/Format.renderer/?1/Csv() > Csv@main/?1/Format.renderer/?1 value
-known #new line Markdown@main/?1/Format.renderer/?1 > main/?1/Format.renderer value
+known #131 line Markdown@main/?1/Format.renderer/?1 > main/?1/Format.renderer value
 line Csv@main/?1/Format.renderer/?1 > main/?1/Format.renderer value
-known #new line main/?1/Format.renderer > Render@main/?1/Format.renderer value
+known #131 line main/?1/Format.renderer > Render@main/?1/Format.renderer value
 
-known #new line Render@main/?1/Format.renderer > main/?1/write/Render.extension/Markdown.extension value
-known #new line Render@main/?1/Format.renderer > main/?1/write/Render.extension/Csv.extension value
-known #new line Render@main/?1/Format.renderer > main/?1/write/Render.render/Markdown.render value
-known #new line Render@main/?1/Format.renderer > main/?1/write/Render.render/Csv.render value
-known #new line Config·config@main/Config.load > main/?1/write/Render.render/Markdown.render value   # the title
-known #new line Config·config@main/Config.load > main/?1/write/Render.render/Csv.render value
-known #new line Line·lines@main/?1/lines > main/?1/write/Render.render/Markdown.render value
-known #new line Line·lines@main/?1/lines > main/?1/write/Render.render/Csv.render value
+known #131 line Render@main/?1/Format.renderer > main/?1/write/Render.extension/Markdown.extension value
+known #131 line Render@main/?1/Format.renderer > main/?1/write/Render.extension/Csv.extension value
+known #131 line Render@main/?1/Format.renderer > main/?1/write/Render.render/Markdown.render value
+known #131 line Render@main/?1/Format.renderer > main/?1/write/Render.render/Csv.render value
+known #128 line Config·config@main/Config.load > main/?1/write/Render.render/Markdown.render value   # the title
+known #128 line Config·config@main/Config.load > main/?1/write/Render.render/Csv.render value
+known #131 line Line·lines@main/?1/lines > main/?1/write/Render.render/Markdown.render value
+known #131 line Line·lines@main/?1/lines > main/?1/write/Render.render/Csv.render value
 line main/?1/write/Render.extension/Markdown.extension > main/?1/write/Render.extension back
 line main/?1/write/Render.extension/Csv.extension > main/?1/write/Render.extension back
 line main/?1/write/Render.extension > _@main/?1/write/Render.extension value
@@ -225,8 +225,8 @@ line main/?1/write/Render.render/Csv.render > main/?1/write/Render.render back
 line main/?1/write/Render.render > main/?1/write back                            # into fs::write
 line main/?1/write > File(reports/) own
 line main/?1/write > main back                                                  # the path, which main prints and opens
-known #new line main/?1/write > _·path@main/?1/write value
-known #new line _·path@main/?1/write > main value                                # (#101 too)
+known #131 line main/?1/write > _·path@main/?1/write value
+known #131 line _·path@main/?1/write > main value                                # (#101 too)
 
 line main > Screen own
 line main > open own                                                            # the viewer, when asked to open
@@ -240,93 +240,93 @@ home Store·store@main/Store.open main
 home _·text@main/?1/read_csv/read_to_string main/?1/read_csv
 home Expense@main/?1/read_csv/Expense.parse main/?1/read_csv
 home _·fields@main/?1/read_csv/Expense.parse/splitn main/?1/read_csv/Expense.parse
-known #new home _·date@main/?1/read_csv/Expense.parse/next main/?1/read_csv/Expense.parse
-known #new home _·description@main/?1/read_csv/Expense.parse/next#2 main/?1/read_csv/Expense.parse
-known #new home _·amount@main/?1/read_csv/Expense.parse/next#3 main/?1/read_csv/Expense.parse
-known #new home Error@main/?1/read_csv/Expense.parse/?1/Error() main/?1/read_csv/Expense.parse
+known #125 home _·date@main/?1/read_csv/Expense.parse/next main/?1/read_csv/Expense.parse
+known #125 home _·description@main/?1/read_csv/Expense.parse/next#2 main/?1/read_csv/Expense.parse
+known #125 home _·amount@main/?1/read_csv/Expense.parse/next#3 main/?1/read_csv/Expense.parse
+known #130 home Error@main/?1/read_csv/Expense.parse/?1/Error() main/?1/read_csv/Expense.parse
 home Money·amount@main/?1/read_csv/Expense.parse/Money.parse main/?1/read_csv/Expense.parse
 home Expense@main/?1/read_csv/Expense.parse/Expense() main/?1/read_csv/Expense.parse
-known #new home _·amount@main/?1/read_csv/Expense.parse/Money.parse/ok_or_else main/?1/read_csv/Expense.parse/Money.parse
-known #new home _·currency@main/?1/read_csv/Expense.parse/Money.parse/ok_or_else main/?1/read_csv/Expense.parse/Money.parse
+known #125 home _·amount@main/?1/read_csv/Expense.parse/Money.parse/ok_or_else main/?1/read_csv/Expense.parse/Money.parse
+known #125 home _·currency@main/?1/read_csv/Expense.parse/Money.parse/ok_or_else main/?1/read_csv/Expense.parse/Money.parse
 home _·value@main/?1/read_csv/Expense.parse/Money.parse/map_err main/?1/read_csv/Expense.parse/Money.parse
 home Error@main/?1/read_csv/Expense.parse/Money.parse/Error() main/?1/read_csv/Expense.parse/Money.parse
 home Money@main/?1/read_csv/Expense.parse/Money.parse/Money() main/?1/read_csv/Expense.parse/Money.parse
-known #new home Expense·expenses@main/?1/read_csv main
+known #131 home Expense·expenses@main/?1/read_csv main
 home RatesClient@main/?1/RatesClient.new/RatesClient() main/?1/RatesClient.new
-known #new home RatesClient·client@main/?1/RatesClient.new main/?1
+known #131 home RatesClient·client@main/?1/RatesClient.new main/?1
 home _·response@main/?1/RatesClient.latest/error_for_status main/?1/RatesClient.latest
-known #new home Rates·rates@main/?1/RatesClient.latest main
+known #131 home Rates·rates@main/?1/RatesClient.latest main
 home _·select@main/?1/Store.rates/prepare main/?1/Store.rates
 home _·rows@main/?1/Store.rates/query_map main/?1/Store.rates
 home Rates·rates@main/?1/Store.rates/Rates() main/?1/Store.rates
 home Rates·rates@main/?1/Store.rates/insert main/?1/Store.rates
 home Error@main/?1/Store.rates/?1 main/?1/Store.rates
-known #new home Rates·rates@main/?1/Store.rates main/?1
+known #131 home Rates·rates@main/?1/Store.rates main/?1
 home _·select@main/?1/Store.expenses/prepare main/?1/Store.expenses
 home _·rows@main/?1/Store.expenses/query_map main/?1/Store.expenses
 home Money·amount@main/?1/Store.expenses/Money() main/?1/Store.expenses
 home Expense@main/?1/Store.expenses/Expense() main/?1/Store.expenses
-known #new home Expense@main/?1/Store.expenses main/?1
-known #new home _@main/?1/lines/Rates.to_base main/?1/lines
+known #131 home Expense@main/?1/Store.expenses main/?1
+known #128 home _@main/?1/lines/Rates.to_base main/?1/lines
 home _·rate@main/?1/lines/ok_or_else main/?1/lines
 home Error@main/?1/lines/Error() main/?1/lines
 home Money·base@main/?1/lines/Money() main/?1/lines
 home Line@main/?1/lines/Line() main/?1/lines
-known #new home Line·out@main/?1/lines/push main/?1/lines
-known #new home Line·lines@main/?1/lines main/?1
-known #new home Markdown@main/?1/Format.renderer/?1 main/?1/Format.renderer
+known #125 home Line·out@main/?1/lines/push main/?1/lines
+known #131 home Line·lines@main/?1/lines main/?1
+known #131 home Markdown@main/?1/Format.renderer/?1 main/?1/Format.renderer
 home Csv@main/?1/Format.renderer/?1 main/?1/Format.renderer
-known #new home Render@main/?1/Format.renderer main/?1
+known #131 home Render@main/?1/Format.renderer main/?1
 home _@main/?1/write/Render.extension main/?1/write
 home _·path@main/?1/write/join main/?1/write
 home _·out@main/?1/write/Render.render/Csv.render/from main/?1/write/Render.render/Csv.render
-known #new home _·path@main/?1/write main
+known #131 home _·path@main/?1/write main
 
 side entry left
 side File(spend.toml) left
 side Disk(path) left
 side Web(api.frankfurter.app) left
-known #new side SQLite(expenses) both          # import writes it, report reads and uses it: arms of one choice, neither after the other
-known #new side SQLite(rates) both             # rates writes it, report reads and uses it
+known #133 side SQLite(expenses) both          # import writes it, report reads and uses it: arms of one choice, neither after the other
+known #133 side SQLite(rates) both             # rates writes it, report reads and uses it
 side File(reports/) right
 side open right
 side Screen right
 
 # ---- what Atlas has and should not ----
 # a value one arm of the choice makes, and only that arm takes, has the choice's moment; two (`Rates·rates`) become one
-known #new extra line main/?1/read_csv > Expense·expenses@main/?1 value
-known #new extra line Expense·expenses@main/?1 > main/?1/Store.save value
-known #new extra home Expense·expenses@main/?1 main/?1
-known #new extra line main/?1/RatesClient.new > RatesClient·client@main/?1 value
-known #new extra line RatesClient·client@main/?1 > main/?1/RatesClient.latest value
-known #new extra home RatesClient·client@main/?1 main/?1
-known #new extra line main/?1/RatesClient.latest > Rates·rates@main/?1 value
-known #new extra line main/?1/Store.rates > Rates·rates@main/?1 value
-known #new extra line Rates·rates@main/?1 > main/?1/Store.save_rates value
-known #new extra line Rates·rates@main/?1 > main/?1/lines/Money() value
-known #new extra line Rates·rates@main/?1 > main/?1/lines/Rates.to_base value
-known #new extra home Rates·rates@main/?1 main/?1
-known #new extra line main/?1/Store.expenses > Expense@main/?1 value
-known #new extra line Expense@main/?1 > main/?1/lines/Error() value
-known #new extra line Expense@main/?1 > main/?1/lines/Line() value
-known #new extra line Expense@main/?1 > main/?1/lines/Money() value
-known #new extra line Expense@main/?1 > main/?1/lines/Rates.to_base value
-known #new extra line Expense@main/?1 > main/?1/lines value
-known #new extra home Expense@main/?1 main/?1
-known #new extra line main/?1/lines > Line·lines@main/?1 value
-known #new extra line Line·lines@main/?1 > main/?1/write/Render.render/Csv.render value
-known #new extra line Line·lines@main/?1 > main/?1/write/Render.render/Markdown.render value
-known #new extra home Line·lines@main/?1 main/?1
-known #new extra line main/?1/Format.renderer > Render@main/?1 value
-known #new extra line Render@main/?1 > main/?1/write/Render.extension/Csv.extension value
-known #new extra line Render@main/?1 > main/?1/write/Render.extension/Markdown.extension value
-known #new extra line Render@main/?1 > main/?1/write/Render.render/Csv.render value
-known #new extra line Render@main/?1 > main/?1/write/Render.render/Markdown.render value
-known #new extra line Render@main/?1 > main/?1/write value
-known #new extra line Render@main/?1 > main/?1/write/join value
-known #new extra home Render@main/?1 main/?1
-known #new extra line main/?1/write > _·path@main/?1 value
-known #new extra home _·path@main/?1 main/?1
+known #131 extra line main/?1/read_csv > Expense·expenses@main/?1 value
+known #131 extra line Expense·expenses@main/?1 > main/?1/Store.save value
+known #131 extra home Expense·expenses@main/?1 main/?1
+known #131 extra line main/?1/RatesClient.new > RatesClient·client@main/?1 value
+known #131 extra line RatesClient·client@main/?1 > main/?1/RatesClient.latest value
+known #131 extra home RatesClient·client@main/?1 main/?1
+known #131 extra line main/?1/RatesClient.latest > Rates·rates@main/?1 value
+known #131 extra line main/?1/Store.rates > Rates·rates@main/?1 value
+known #131 extra line Rates·rates@main/?1 > main/?1/Store.save_rates value
+known #131 extra line Rates·rates@main/?1 > main/?1/lines/Money() value
+known #131 extra line Rates·rates@main/?1 > main/?1/lines/Rates.to_base value
+known #131 extra home Rates·rates@main/?1 main/?1
+known #131 extra line main/?1/Store.expenses > Expense@main/?1 value
+known #131 extra line Expense@main/?1 > main/?1/lines/Error() value
+known #131 extra line Expense@main/?1 > main/?1/lines/Line() value
+known #131 extra line Expense@main/?1 > main/?1/lines/Money() value
+known #131 extra line Expense@main/?1 > main/?1/lines/Rates.to_base value
+known #131 extra line Expense@main/?1 > main/?1/lines value
+known #131 extra home Expense@main/?1 main/?1
+known #131 extra line main/?1/lines > Line·lines@main/?1 value
+known #131 extra line Line·lines@main/?1 > main/?1/write/Render.render/Csv.render value
+known #131 extra line Line·lines@main/?1 > main/?1/write/Render.render/Markdown.render value
+known #131 extra home Line·lines@main/?1 main/?1
+known #131 extra line main/?1/Format.renderer > Render@main/?1 value
+known #131 extra line Render@main/?1 > main/?1/write/Render.extension/Csv.extension value
+known #131 extra line Render@main/?1 > main/?1/write/Render.extension/Markdown.extension value
+known #131 extra line Render@main/?1 > main/?1/write/Render.render/Csv.render value
+known #131 extra line Render@main/?1 > main/?1/write/Render.render/Markdown.render value
+known #131 extra line Render@main/?1 > main/?1/write value
+known #131 extra line Render@main/?1 > main/?1/write/join value
+known #131 extra home Render@main/?1 main/?1
+known #131 extra line main/?1/write > _·path@main/?1 value
+known #131 extra home _·path@main/?1 main/?1
 # a value handed to a call into a family ends at the dispatch's border
 known #100 extra line Render@main/?1 > main/?1/write/Render.extension value
 known #100 extra line Render@main/?1 > main/?1/write/Render.render value
@@ -335,29 +335,44 @@ known #100 extra line Line·lines@main/?1 > main/?1/write/Render.render value
 known #103 extra line Format·format > main/?1/Format.renderer value
 known #103 extra home Format·format main/?1
 # an own arrow takes what only a step inside it takes, and a value is not followed into the operation a body hands it to
-known #new extra line Config·config@main/Config.load > main/?1/RatesClient.latest value
-known #new extra line Config·config@main/Config.load > main/?1/Store.rates value
-known #new extra line Config·config@main/Config.load > main/?1/write value
-known #new extra line Store·store@main/Store.open > main/?1/Store.rates value
-known #new extra line Store·store@main/Store.open > main/?1/Store.expenses value
-known #new extra line Money·amount@main/?1/read_csv/Expense.parse/Money.parse > main/?1/read_csv/Expense.parse value
-known #new extra line Money·amount@main/?1/Store.expenses/Money() > main/?1/Store.expenses value
-known #new extra line Money·amount@main/?1/Store.expenses/Money() > main/?1/Store.expenses/query_map value
-known #new extra line Money·base@main/?1/lines/Money() > main/?1/lines value
-known #new extra line Line@main/?1/lines/Line() > main/?1/lines value
+known #126 extra line Config·config@main/Config.load > main/?1/RatesClient.latest value
+known #126 extra line Config·config@main/Config.load > main/?1/Store.rates value
+known #126 extra line Config·config@main/Config.load > main/?1/write value
+known #126 extra line Store·store@main/Store.open > main/?1/Store.rates value
+known #126 extra line Store·store@main/Store.open > main/?1/Store.expenses value
+known #126 extra line Money·amount@main/?1/read_csv/Expense.parse/Money.parse > main/?1/read_csv/Expense.parse value
+known #126 extra line Money·amount@main/?1/Store.expenses/Money() > main/?1/Store.expenses value
+known #126 extra line Money·amount@main/?1/Store.expenses/Money() > main/?1/Store.expenses/query_map value
+known #126 extra line Money·base@main/?1/lines/Money() > main/?1/lines value
+known #126 extra line Line@main/?1/lines/Line() > main/?1/lines value
 # a result that only a step takes is no result handed back
-known #101 extra line main/?1/lines/Rates.to_base > main/?1/lines back
-known #101 extra line main/?1/write/Render.extension > main/?1/write back
+known #134 extra line main/?1/lines/Rates.to_base > main/?1/lines back
+known #134 extra line main/?1/write/Render.extension > main/?1/write back
 # the name a chain's last operation gives is given to every call in the chain
-known #new extra line main/?1/lines/Rates.to_base > _·rate@main/?1/lines/Rates.to_base value
-known #new extra line _·rate@main/?1/lines/Rates.to_base > main/?1/lines/ok_or_else value
-known #new extra home _·rate@main/?1/lines/Rates.to_base main/?1/lines
-known #new extra step main/?1/read_csv/Expense.parse/Money.parse/parse
-known #new extra line main/?1/read_csv/Expense.parse/Money.parse/parse > _·value@main/?1/read_csv/Expense.parse/Money.parse/parse value
-known #new extra line _·value@main/?1/read_csv/Expense.parse/Money.parse/parse > main/?1/read_csv/Expense.parse/Money.parse/map_err value
-known #new extra home _·value@main/?1/read_csv/Expense.parse/Money.parse/parse main/?1/read_csv/Expense.parse/Money.parse
+known #125 extra line main/?1/lines/Rates.to_base > _·rate@main/?1/lines/Rates.to_base value
+known #125 extra line _·rate@main/?1/lines/Rates.to_base > main/?1/lines/ok_or_else value
+known #125 extra home _·rate@main/?1/lines/Rates.to_base main/?1/lines
+known #125 extra step main/?1/read_csv/Expense.parse/Money.parse/parse
+known #125 extra line main/?1/read_csv/Expense.parse/Money.parse/parse > _·value@main/?1/read_csv/Expense.parse/Money.parse/parse value
+known #125 extra line _·value@main/?1/read_csv/Expense.parse/Money.parse/parse > main/?1/read_csv/Expense.parse/Money.parse/map_err value
+known #125 extra home _·value@main/?1/read_csv/Expense.parse/Money.parse/parse main/?1/read_csv/Expense.parse/Money.parse
 # the else of a `let .. else` is no choice
-known #new extra step main/?1/read_csv/Expense.parse/Error()
-known #new extra line main/?1/read_csv/Expense.parse/Error() > Error@main/?1/read_csv/Expense.parse/Error() value
-known #new extra line Error@main/?1/read_csv/Expense.parse/Error() > main/?1/read_csv/Expense.parse value
-known #new extra home Error@main/?1/read_csv/Expense.parse/Error() main/?1/read_csv/Expense.parse
+known #130 extra step main/?1/read_csv/Expense.parse/Error()
+known #130 extra line main/?1/read_csv/Expense.parse/Error() > Error@main/?1/read_csv/Expense.parse/Error() value
+known #130 extra line Error@main/?1/read_csv/Expense.parse/Error() > main/?1/read_csv/Expense.parse value
+known #130 extra home Error@main/?1/read_csv/Expense.parse/Error() main/?1/read_csv/Expense.parse
+
+# ---- an error is a value in the codomain: made where it is raised, handed on at each border it crosses uncaught ----
+known #138 line main/?1/read_csv/Expense.parse/Money.parse > Error@main/?1/read_csv/Expense.parse/Money.parse value
+known #138 line Error@main/?1/read_csv/Expense.parse/Money.parse > main/?1/read_csv/Expense.parse value
+known #138 line main/?1/read_csv/Expense.parse > Error@main/?1/read_csv/Expense.parse value
+known #138 line Error@main/?1/read_csv/Expense.parse > main/?1/read_csv value
+known #138 line main/?1/read_csv > Error@main/?1 value
+known #138 line main/?1/Store.rates > Error@main/?1 value
+known #138 line main/?1/lines > Error@main/?1 value
+known #138 line Error@main/?1 > main value
+known #138 line main > Error@main value
+known #138 home Error@main/?1/read_csv/Expense.parse/Money.parse main/?1/read_csv/Expense.parse
+known #138 home Error@main/?1/read_csv/Expense.parse main/?1/read_csv
+known #138 home Error@main/?1 main
+known #138 home Error@main main

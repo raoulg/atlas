@@ -8,7 +8,7 @@ step main/download/text                                           # `let body = 
 step main/load
 step main/load/from_path                                          # `let mut reader = ..from_path(..)?`
 step main/load/new                                                # `let mut rows = Vec::new()`
-known #new step main/load/deserialize                             # `for result in reader.deserialize()`
+known #125 step main/load/deserialize                             # `for result in reader.deserialize()`
 step main/load/ok_or                                              # `let date = NaiveDate::from_ymd_opt(..).ok_or(..)?`
 step main/load/push                                               # `rows.push(..)` changes `rows`
 step main/smooth
@@ -26,10 +26,10 @@ line File(data/raw/sunspots.csv) > main/load own
 line main/load/from_path > _·reader@main/load/from_path value
 known #101 line _·reader@main/load/from_path > main/load value                    # `reader.deserialize()`
 line main/load/new > _·rows@main/load/new value
-known #new line _·reader@main/load/from_path > main/load/deserialize value
-known #new line main/load/deserialize > Record·record@main/load/deserialize value
-known #new line Record·record@main/load/deserialize > main/load/ok_or value         # `record.year`, `record.month`
-known #new line Record·record@main/load/deserialize > main/load/push value          # `record.mean`
+known #125 line _·reader@main/load/from_path > main/load/deserialize value
+known #125 line main/load/deserialize > Record·record@main/load/deserialize value
+known #125 line Record·record@main/load/deserialize > main/load/ok_or value         # `record.year`, `record.month`
+known #125 line Record·record@main/load/deserialize > main/load/push value          # `record.mean`
 line main/load/ok_or > _·date@main/load/ok_or value
 line _·date@main/load/ok_or > main/load/push value
 line _·rows@main/load/new > main/load/push value
@@ -38,8 +38,8 @@ known #101 line _·rows@main/load/push > main/load value                        
 line main/load > _·rows@main/load value                           # a named value of no type of the program's
 line _·rows@main/load > main/smooth value
 line _·rows@main/load > main/plot value                           # `draw_series(LineSeries::new(rows..))`
-known #new line _·rows@main/load > main/plot/fold value
-known #new line _·rows@main/load > main/plot/build_cartesian_2d value                # `rows[0].0..rows[rows.len() - 1].0`
+known #128 line _·rows@main/load > main/plot/fold value
+known #128 line _·rows@main/load > main/plot/build_cartesian_2d value                # `rows[0].0..rows[rows.len() - 1].0`
 line main/smooth > _·smoothed@main/smooth value
 line _·smoothed@main/smooth > main/plot value
 line main/plot/into_drawing_area > _·root@main/plot/into_drawing_area value
@@ -54,7 +54,7 @@ line main/plot > File(figures/sunspots.png) own
 home _·body@main/download/text main/download
 home _·reader@main/load/from_path main/load
 home _·rows@main/load/new main/load
-known #new home Record·record@main/load/deserialize main/load
+known #125 home Record·record@main/load/deserialize main/load
 home _·date@main/load/ok_or main/load
 home _·rows@main/load/push main/load
 home _·rows@main/load main
@@ -69,20 +69,20 @@ side File(data/raw/sunspots.csv) between
 side File(figures/sunspots.png) right
 
 # a record the csv crate makes inside `load` is drawn from beyond, at the route's frame
-known #new extra home Record·record main
-known #new extra line Record·record > main/load/from_ymd_opt value
-known #new extra line Record·record > main/load/push value
+known #125 extra home Record·record main
+known #125 extra line Record·record > main/load/from_ymd_opt value
+known #125 extra line Record·record > main/load/push value
 
 # a library call whose result no name holds is drawn as a step, its result named by the call around it
-known #new extra step main/load/from_ymd_opt
-known #new extra line main/load/from_ymd_opt > _·date@main/load/from_ymd_opt value
-known #new extra line _·date@main/load/from_ymd_opt > main/load/ok_or value
-known #new extra home _·date@main/load/from_ymd_opt main/load
+known #125 extra step main/load/from_ymd_opt
+known #125 extra line main/load/from_ymd_opt > _·date@main/load/from_ymd_opt value
+known #125 extra line _·date@main/load/from_ymd_opt > main/load/ok_or value
+known #125 extra home _·date@main/load/from_ymd_opt main/load
 
 # the pairs `load` and `smooth` give are drawn twice: by their name, of no type, and as the dates they hold, unnamed
-known #new extra line main/load > NaiveDate@main/load value
-known #new extra line NaiveDate@main/load > main/smooth value
-known #new extra line main/smooth > NaiveDate@main/smooth value
-known #new extra line NaiveDate@main/smooth > main/plot value
-known #new extra home NaiveDate@main/load main
-known #new extra home NaiveDate@main/smooth main
+known #135 extra line main/load > NaiveDate@main/load value
+known #135 extra line NaiveDate@main/load > main/smooth value
+known #135 extra line main/smooth > NaiveDate@main/smooth value
+known #135 extra line NaiveDate@main/smooth > main/plot value
+known #135 extra home NaiveDate@main/load main
+known #135 extra home NaiveDate@main/smooth main

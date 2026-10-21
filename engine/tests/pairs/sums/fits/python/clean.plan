@@ -6,7 +6,7 @@ route fits.cli.main
 step main/fit
 choice main/fit/?1
 step main/fit/?1/Failed()
-known #new step main/fit/?1/Fit()                                  # what follows the early return is the other arm
+known #130 step main/fit/?1/Fit()                                  # what follows the early return is the other arm
 step main/describe
 choice main/describe/?1
 step main/describe/?1/Report()
@@ -14,9 +14,9 @@ step main/describe/?1/Report()#2
 
 line entry > main call
 line main/fit/?1/Failed() > Failed@main/fit/?1 value
-known #new line main/fit/?1/Fit() > Fit@main/fit/?1 value
+known #130 line main/fit/?1/Fit() > Fit@main/fit/?1 value
 line Failed@main/fit/?1 > main/fit value                           # fit hands back what either arm made
-known #new line Fit@main/fit/?1 > main/fit value
+known #130 line Fit@main/fit/?1 > main/fit value
 line main/fit > Fit | Failed@main/fit value                        # fit gives one value, the sum
 line Fit | Failed@main/fit > main/describe value                   # the match in describe's own body opens it
 line main/describe/?1/Report() > Report@main/describe/?1 value
@@ -27,7 +27,7 @@ known #101 line Report·report@main/describe > main value            # main prin
 line main > Screen own
 
 home Failed@main/fit/?1 main/fit
-known #new home Fit@main/fit/?1 main/fit
+known #130 home Fit@main/fit/?1 main/fit
 home Fit | Failed@main/fit main
 home Report@main/describe/?1 main/describe
 home Report·report@main/describe main
@@ -36,15 +36,15 @@ side entry left
 side Screen right
 
 # the early return is read as a choice of one arm, and what follows it as a step after the choice
-known #new extra step main/fit/Fit()
-known #new extra line main/fit/Fit() > Fit@main/fit/Fit() value
-known #new extra line Fit@main/fit/Fit() > main/fit value
-known #new extra home Fit@main/fit/Fit() main/fit
+known #130 extra step main/fit/Fit()
+known #130 extra line main/fit/Fit() > Fit@main/fit/Fit() value
+known #130 extra line Fit@main/fit/Fit() > main/fit value
+known #130 extra home Fit@main/fit/Fit() main/fit
 
 # fit hands on, beside the sum it gives, each of its variants as a value of its own
-known #new extra line main/fit > Failed@main/fit value
-known #new extra line main/fit > Fit@main/fit value
-known #new extra line Failed@main/fit > main/describe value
-known #new extra line Fit@main/fit > main/describe value
-known #new extra home Failed@main/fit main
-known #new extra home Fit@main/fit main
+known #132 extra line main/fit > Failed@main/fit value
+known #132 extra line main/fit > Fit@main/fit value
+known #132 extra line Failed@main/fit > main/describe value
+known #132 extra line Fit@main/fit > main/describe value
+known #132 extra home Failed@main/fit main
+known #132 extra home Fit@main/fit main

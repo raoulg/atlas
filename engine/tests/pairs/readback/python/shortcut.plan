@@ -12,10 +12,10 @@ line run/Ledger() > Ledger@run/Ledger() value
 line Ledger@run/Ledger() > run/Ledger.keep value
 line run/Ledger.keep > Ledger@run/Ledger.keep value         # keep changes the ledger it runs on (`self.kept +=`)
 line run/Ledger.keep/connect > DuckDBPyConnection·con@run/Ledger.keep/connect value
-known #new line Ledger@run/Ledger() > run/Ledger.keep/connect value  # K
+known #128 line Ledger@run/Ledger() > run/Ledger.keep/connect value  # K
 known #101 line DuckDBPyConnection·con@run/Ledger.keep/connect > run/Ledger.keep value   # keep's own calls use con
 line run/Ledger.keep > DuckDB(notes) own
-known #new line run/Ledger.keep > run back                  # the notes read back, a list of str, go back to run (A)
+known #129 line run/Ledger.keep > run back                  # the notes read back, a list of str, go back to run (A)
 line run > Screen own
 
 home Ledger@run/Ledger() run

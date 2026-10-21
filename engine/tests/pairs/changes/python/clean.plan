@@ -55,47 +55,47 @@ side entry left
 # A library operation that changes the value it runs on, or whose result the body names, is a step; in Python it is
 # none on a part of `self`, on a local list itself, or where the result is named (it is one on a parameter's part,
 # `board.cells.clear()`, on the shortcut side)
-known #new step main/Board.reset/clear
-known #new step main/Board.reset/clear#2
-known #new step main/renamed/copy
-known #new step main/extended/append
-known #new step main/queued/list
-known #new line Board·board@main/Board.mark_all > main/Board.reset/clear value
-known #new line main/Board.reset/clear > Board·self@main/Board.reset/clear value
-known #new line Board·self@main/Board.reset/clear > main/Board.reset/clear#2 value
-known #new line main/Board.reset/clear#2 > Board·self@main/Board.reset/clear#2 value
-known #new line Board·self@main/Board.reset/clear#2 > main/Board.reset value
-known #new line Board·board@main/Board.reset > main/renamed/copy value
-known #new line main/renamed/copy > Board·board@main/renamed/copy value
-known #new line Board·board@main/renamed/copy > main/renamed value
-known #new line main/extended/append > list·xs@main/extended/append value
-known #new line list·xs@main/extended/append > main/extended value
-known #new line main/queued/list > list·jobs@main/queued/list value
-known #new line list·jobs@main/queued/list > main/queued value
-known #new home Board·self@main/Board.reset/clear main/Board.reset
-known #new home Board·self@main/Board.reset/clear#2 main/Board.reset
-known #new home Board·board@main/renamed/copy main/renamed
-known #new home list·xs@main/extended/append main/extended
-known #new home list·jobs@main/queued/list main/queued
+known #125 step main/Board.reset/clear
+known #125 step main/Board.reset/clear#2
+known #125 step main/renamed/copy
+known #125 step main/extended/append
+known #125 step main/queued/list
+known #125 line Board·board@main/Board.mark_all > main/Board.reset/clear value
+known #125 line main/Board.reset/clear > Board·self@main/Board.reset/clear value
+known #125 line Board·self@main/Board.reset/clear > main/Board.reset/clear#2 value
+known #125 line main/Board.reset/clear#2 > Board·self@main/Board.reset/clear#2 value
+known #125 line Board·self@main/Board.reset/clear#2 > main/Board.reset value
+known #125 line Board·board@main/Board.reset > main/renamed/copy value
+known #125 line main/renamed/copy > Board·board@main/renamed/copy value
+known #125 line Board·board@main/renamed/copy > main/renamed value
+known #125 line main/extended/append > list·xs@main/extended/append value
+known #125 line list·xs@main/extended/append > main/extended value
+known #125 line main/queued/list > list·jobs@main/queued/list value
+known #125 line list·jobs@main/queued/list > main/queued value
+known #125 home Board·self@main/Board.reset/clear main/Board.reset
+known #125 home Board·self@main/Board.reset/clear#2 main/Board.reset
+known #125 home Board·board@main/renamed/copy main/renamed
+known #125 home list·xs@main/extended/append main/extended
+known #125 home list·jobs@main/queued/list main/queued
 
 # A callee's parameter is bound to the caller's value of that name, not to what the call is handed: `merged`'s `other`
 # (main's board) resolves to main's `other`, the board `merged` itself makes, and the board handed is taken by nothing
-known #new line Board·board@main/Board.reset > main/Board.merged/Board() value
+known #127 line Board·board@main/Board.reset > main/Board.merged/Board() value
 
 # A method that changes its receiver hands it on twice: unnamed from its arrow's change, and named; the next step takes
 # the second
-known #new extra line main/Board.mark_all > Board·board@main/Board.mark_all#2 value
-known #new extra line Board·board@main/Board.mark_all#2 > main/Board.reset value
-known #new extra home Board·board@main/Board.mark_all#2 main
-known #new extra line main/Board.reset > Board·board@main/Board.reset#2 value
-known #new extra line Board·board@main/Board.reset#2 > main/renamed value
-known #new extra home Board·board@main/Board.reset#2 main
+known #129 extra line main/Board.mark_all > Board·board@main/Board.mark_all#2 value
+known #129 extra line Board·board@main/Board.mark_all#2 > main/Board.reset value
+known #129 extra home Board·board@main/Board.mark_all#2 main
+known #129 extra line main/Board.reset > Board·board@main/Board.reset#2 value
+known #129 extra line Board·board@main/Board.reset#2 > main/renamed value
+known #129 extra home Board·board@main/Board.reset#2 main
 
 # The own arrow takes a value its body only hands to a step inside it: the Cell built into `[Cell()]` for `Board()`, the
 # receiver of `merged` whose fields go into `Board(..)`
-known #new extra line Cell@main/Cell() > main value
-known #new extra line Board@main/renamed > main/Board.merged value
+known #126 extra line Cell@main/Cell() > main value
+known #126 extra line Board@main/renamed > main/Board.merged value
 
 # A result of no type of the code's that goes into the call around it also goes back to the step that called it
-known #101 extra line main/with_tag > main back
-known #101 extra line main/tally > main back
+known #134 extra line main/with_tag > main back
+known #134 extra line main/tally > main back

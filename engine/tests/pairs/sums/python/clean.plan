@@ -37,7 +37,7 @@ line Kennisbank()/Kennisbank.graaf/Kennisbank._node/?1/Begrip() > Begrip@Kennisb
 line Bron@Kennisbank()/Kennisbank.graaf/Kennisbank._node/?1 > Kennisbank()/Kennisbank.graaf/Kennisbank._node value
 line Begrip@Kennisbank()/Kennisbank.graaf/Kennisbank._node/?1 > Kennisbank()/Kennisbank.graaf/Kennisbank._node value
 line Kennisbank()/Kennisbank.graaf/Kennisbank._node > Node@Kennisbank()/Kennisbank.graaf/Kennisbank._node value
-known #new line Node@Kennisbank()/Kennisbank.graaf/Kennisbank._node > Kennisbank()/Kennisbank.graaf/Graaf() value
+known #132 line Node@Kennisbank()/Kennisbank.graaf/Kennisbank._node > Kennisbank()/Kennisbank.graaf/Graaf() value
 line Kennisbank()/Kennisbank.graaf/Graaf() > Graaf@Kennisbank()/Kennisbank.graaf/Graaf() value
 line Graaf@Kennisbank()/Kennisbank.graaf/Graaf() > Kennisbank()/Kennisbank.graaf value
 line Kennisbank()/Kennisbank.graaf > Graaf@Kennisbank()/Kennisbank.graaf value
@@ -52,38 +52,38 @@ home Graaf@Kennisbank()/Kennisbank.graaf/Graaf() Kennisbank()/Kennisbank.graaf
 home Graaf@Kennisbank()/Kennisbank.graaf Kennisbank()
 
 # the line split in three parts, each held by its name: the kind decides the choice, the uuid and the text build the node
-known #new step Kennisbank()/Kennisbank.graaf/Kennisbank._node/split
-known #new line Kennisbank()/Kennisbank.graaf/Kennisbank._node/split > _·uuid@Kennisbank()/Kennisbank.graaf/Kennisbank._node/split value
-known #new line Kennisbank()/Kennisbank.graaf/Kennisbank._node/split > _·soort@Kennisbank()/Kennisbank.graaf/Kennisbank._node/split value
-known #new line Kennisbank()/Kennisbank.graaf/Kennisbank._node/split > _·tekst@Kennisbank()/Kennisbank.graaf/Kennisbank._node/split value
-known #new line _·soort@Kennisbank()/Kennisbank.graaf/Kennisbank._node/split > Kennisbank()/Kennisbank.graaf/Kennisbank._node value
-known #new line _·uuid@Kennisbank()/Kennisbank.graaf/Kennisbank._node/split > Kennisbank()/Kennisbank.graaf/Kennisbank._node/?1/Bron() value
-known #new line _·tekst@Kennisbank()/Kennisbank.graaf/Kennisbank._node/split > Kennisbank()/Kennisbank.graaf/Kennisbank._node/?1/Bron() value
-known #new line _·uuid@Kennisbank()/Kennisbank.graaf/Kennisbank._node/split > Kennisbank()/Kennisbank.graaf/Kennisbank._node/?1/Begrip() value
-known #new line _·tekst@Kennisbank()/Kennisbank.graaf/Kennisbank._node/split > Kennisbank()/Kennisbank.graaf/Kennisbank._node/?1/Begrip() value
-known #new home _·uuid@Kennisbank()/Kennisbank.graaf/Kennisbank._node/split Kennisbank()/Kennisbank.graaf/Kennisbank._node
-known #new home _·soort@Kennisbank()/Kennisbank.graaf/Kennisbank._node/split Kennisbank()/Kennisbank.graaf/Kennisbank._node
-known #new home _·tekst@Kennisbank()/Kennisbank.graaf/Kennisbank._node/split Kennisbank()/Kennisbank.graaf/Kennisbank._node
+known #125 step Kennisbank()/Kennisbank.graaf/Kennisbank._node/split
+known #125 line Kennisbank()/Kennisbank.graaf/Kennisbank._node/split > _·uuid@Kennisbank()/Kennisbank.graaf/Kennisbank._node/split value
+known #125 line Kennisbank()/Kennisbank.graaf/Kennisbank._node/split > _·soort@Kennisbank()/Kennisbank.graaf/Kennisbank._node/split value
+known #125 line Kennisbank()/Kennisbank.graaf/Kennisbank._node/split > _·tekst@Kennisbank()/Kennisbank.graaf/Kennisbank._node/split value
+known #125 line _·soort@Kennisbank()/Kennisbank.graaf/Kennisbank._node/split > Kennisbank()/Kennisbank.graaf/Kennisbank._node value
+known #125 line _·uuid@Kennisbank()/Kennisbank.graaf/Kennisbank._node/split > Kennisbank()/Kennisbank.graaf/Kennisbank._node/?1/Bron() value
+known #125 line _·tekst@Kennisbank()/Kennisbank.graaf/Kennisbank._node/split > Kennisbank()/Kennisbank.graaf/Kennisbank._node/?1/Bron() value
+known #125 line _·uuid@Kennisbank()/Kennisbank.graaf/Kennisbank._node/split > Kennisbank()/Kennisbank.graaf/Kennisbank._node/?1/Begrip() value
+known #125 line _·tekst@Kennisbank()/Kennisbank.graaf/Kennisbank._node/split > Kennisbank()/Kennisbank.graaf/Kennisbank._node/?1/Begrip() value
+known #125 home _·uuid@Kennisbank()/Kennisbank.graaf/Kennisbank._node/split Kennisbank()/Kennisbank.graaf/Kennisbank._node
+known #125 home _·soort@Kennisbank()/Kennisbank.graaf/Kennisbank._node/split Kennisbank()/Kennisbank.graaf/Kennisbank._node
+known #125 home _·tekst@Kennisbank()/Kennisbank.graaf/Kennisbank._node/split Kennisbank()/Kennisbank.graaf/Kennisbank._node
 
 side entry left
-known #new side Disk(self.path) both          # voeg_toe reads what the file held and changes it: Atlas says between
+known #133 side Disk(self.path) both          # voeg_toe reads what the file held and changes it: Atlas says between
 
 # the door's own arrow takes, as a nameless value from beyond, the Bron its call is handed, though only `_write`
 # inside takes it
-known #new extra line Bron > Kennisbank()/Kennisbank.voeg_toe value
-known #new extra home Bron Kennisbank()
+known #126 extra line Bron > Kennisbank()/Kennisbank.voeg_toe value
+known #126 extra home Bron Kennisbank()
 
 # the methods run on what the constructor built, not on the caller's instance
 known #74 extra line Kennisbank@Kennisbank()/Kennisbank() > Kennisbank()/Kennisbank.voeg_toe/Kennisbank._write value
 known #74 extra line Kennisbank@Kennisbank()/Kennisbank() > Kennisbank()/Kennisbank.graaf/Kennisbank._node value
 
 # `_node` gives the sum, but hands on, beside it, each of its variants, and Graaf() is handed the variants
-known #new extra line Kennisbank()/Kennisbank.graaf/Kennisbank._node > Bron@Kennisbank()/Kennisbank.graaf/Kennisbank._node value
-known #new extra line Kennisbank()/Kennisbank.graaf/Kennisbank._node > Begrip@Kennisbank()/Kennisbank.graaf/Kennisbank._node value
-known #new extra line Bron@Kennisbank()/Kennisbank.graaf/Kennisbank._node > Kennisbank()/Kennisbank.graaf/Graaf() value
-known #new extra line Begrip@Kennisbank()/Kennisbank.graaf/Kennisbank._node > Kennisbank()/Kennisbank.graaf/Graaf() value
-known #new extra home Bron@Kennisbank()/Kennisbank.graaf/Kennisbank._node Kennisbank()/Kennisbank.graaf
-known #new extra home Begrip@Kennisbank()/Kennisbank.graaf/Kennisbank._node Kennisbank()/Kennisbank.graaf
+known #132 extra line Kennisbank()/Kennisbank.graaf/Kennisbank._node > Bron@Kennisbank()/Kennisbank.graaf/Kennisbank._node value
+known #132 extra line Kennisbank()/Kennisbank.graaf/Kennisbank._node > Begrip@Kennisbank()/Kennisbank.graaf/Kennisbank._node value
+known #132 extra line Bron@Kennisbank()/Kennisbank.graaf/Kennisbank._node > Kennisbank()/Kennisbank.graaf/Graaf() value
+known #132 extra line Begrip@Kennisbank()/Kennisbank.graaf/Kennisbank._node > Kennisbank()/Kennisbank.graaf/Graaf() value
+known #132 extra home Bron@Kennisbank()/Kennisbank.graaf/Kennisbank._node Kennisbank()/Kennisbank.graaf
+known #132 extra home Begrip@Kennisbank()/Kennisbank.graaf/Kennisbank._node Kennisbank()/Kennisbank.graaf
 
 # graaf's own arrow takes what its steps make, the Nodes too, though only Graaf() takes them and graaf gives back the Graaf
-known #new extra line Node@Kennisbank()/Kennisbank.graaf/Kennisbank._node > Kennisbank()/Kennisbank.graaf value
+known #126 extra line Node@Kennisbank()/Kennisbank.graaf/Kennisbank._node > Kennisbank()/Kennisbank.graaf value

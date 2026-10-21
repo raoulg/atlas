@@ -7,25 +7,36 @@
 route clean.cli
 step cli.ts/Ledger()
 step cli.ts/Ledger.keep
-known #new step cli.ts/Ledger.keep/Database()                   # I
+known #125 step cli.ts/Ledger.keep/Database()                   # I
 step cli.ts/Ledger.keep/get
 
 line entry > cli.ts call
 line cli.ts/Ledger() > Ledger@cli.ts/Ledger() value
 line Ledger@cli.ts/Ledger() > cli.ts/Ledger.keep value
 line cli.ts/Ledger.keep > Ledger@cli.ts/Ledger.keep value       # keep changes the ledger it runs on (`this.kept +=`)
-known #new line cli.ts/Ledger.keep/Database() > _·db@cli.ts/Ledger.keep/Database() value      # I
-known #new line Ledger@cli.ts/Ledger() > cli.ts/Ledger.keep/Database() value  # I, K
-known #new line _·db@cli.ts/Ledger.keep/Database() > cli.ts/Ledger.keep/get value              # I
-known #new line _·db@cli.ts/Ledger.keep/Database() > cli.ts/Ledger.keep value                 # I, then #101
+known #125 line cli.ts/Ledger.keep/Database() > _·db@cli.ts/Ledger.keep/Database() value      # I
+known #125 line Ledger@cli.ts/Ledger() > cli.ts/Ledger.keep/Database() value  # I, K
+known #125 line _·db@cli.ts/Ledger.keep/Database() > cli.ts/Ledger.keep/get value              # I
+known #125 line _·db@cli.ts/Ledger.keep/Database() > cli.ts/Ledger.keep value                 # I, then #101
 line cli.ts/Ledger.keep/get > _·stored@cli.ts/Ledger.keep/get value
 known #101 line _·stored@cli.ts/Ledger.keep/get > cli.ts/Ledger.keep value     # keep checks the count itself
 line cli.ts/Ledger.keep > SQLite(notes) own
 
 home Ledger@cli.ts/Ledger() cli.ts
 home Ledger@cli.ts/Ledger.keep cli.ts
-known #new home _·db@cli.ts/Ledger.keep/Database() cli.ts/Ledger.keep                          # I
+known #125 home _·db@cli.ts/Ledger.keep/Database() cli.ts/Ledger.keep                          # I
 home _·stored@cli.ts/Ledger.keep/get cli.ts/Ledger.keep
+
+# An error is a value (#121, decision 4): `Error(..)` makes it in the arm that raises it, and each border it crosses
+# uncaught hands it on, up to the route.
+known #138 choice cli.ts/Ledger.keep/?1
+known #138 step cli.ts/Ledger.keep/?1/Error()
+known #138 line cli.ts/Ledger.keep/?1/Error() > Error@cli.ts/Ledger.keep/?1 value
+known #138 line Error@cli.ts/Ledger.keep/?1 > cli.ts/Ledger.keep value
+known #138 line cli.ts/Ledger.keep > Error@cli.ts/Ledger.keep value
+known #138 line Error@cli.ts/Ledger.keep > cli.ts value
+known #138 home Error@cli.ts/Ledger.keep/?1 cli.ts/Ledger.keep
+known #138 home Error@cli.ts/Ledger.keep cli.ts
 
 side entry left
 side SQLite(notes) right

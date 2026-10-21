@@ -7,26 +7,26 @@
 route shortcut.cli
 step cli.ts/Ledger()
 step cli.ts/Ledger.keep
-known #new step cli.ts/Ledger.keep/Database()                   # I
+known #125 step cli.ts/Ledger.keep/Database()                   # I
 step cli.ts/Ledger.keep/all
 
 line entry > cli.ts call
 line cli.ts/Ledger() > Ledger@cli.ts/Ledger() value
 line Ledger@cli.ts/Ledger() > cli.ts/Ledger.keep value
 line cli.ts/Ledger.keep > Ledger@cli.ts/Ledger.keep value       # keep changes the ledger it runs on (`this.kept +=`)
-known #new line cli.ts/Ledger.keep/Database() > _·db@cli.ts/Ledger.keep/Database() value      # I
-known #new line Ledger@cli.ts/Ledger() > cli.ts/Ledger.keep/Database() value  # I, K
-known #new line _·db@cli.ts/Ledger.keep/Database() > cli.ts/Ledger.keep/all value              # I
-known #new line _·db@cli.ts/Ledger.keep/Database() > cli.ts/Ledger.keep value                 # I, then #101
+known #125 line cli.ts/Ledger.keep/Database() > _·db@cli.ts/Ledger.keep/Database() value      # I
+known #125 line Ledger@cli.ts/Ledger() > cli.ts/Ledger.keep/Database() value  # I, K
+known #125 line _·db@cli.ts/Ledger.keep/Database() > cli.ts/Ledger.keep/all value              # I
+known #125 line _·db@cli.ts/Ledger.keep/Database() > cli.ts/Ledger.keep value                 # I, then #101
 line cli.ts/Ledger.keep/all > _·stored@cli.ts/Ledger.keep/all value
 known #101 line _·stored@cli.ts/Ledger.keep/all > cli.ts/Ledger.keep value     # keep maps it and hands it back
 line cli.ts/Ledger.keep > SQLite(notes) own
-known #new line cli.ts/Ledger.keep > cli.ts back                # the notes read back, a string[], go back (A)
+known #129 line cli.ts/Ledger.keep > cli.ts back                # the notes read back, a string[], go back (A)
 line cli.ts > Screen own
 
 home Ledger@cli.ts/Ledger() cli.ts
 home Ledger@cli.ts/Ledger.keep cli.ts
-known #new home _·db@cli.ts/Ledger.keep/Database() cli.ts/Ledger.keep                          # I
+known #125 home _·db@cli.ts/Ledger.keep/Database() cli.ts/Ledger.keep                          # I
 home _·stored@cli.ts/Ledger.keep/all cli.ts/Ledger.keep
 
 side entry left
@@ -36,8 +36,8 @@ side Screen right
 # A: a step that also changes what it runs on hands its result of no type of the code's back to nothing.
 # B: a call into a library whose result the body does not name, and which changes nothing, is drawn as a step:
 #    `stored.map(..)` is returned unnamed, so what it gives goes into keep's own result
-known #new extra step cli.ts/Ledger.keep/stored.map
-known #new extra line _·stored@cli.ts/Ledger.keep/all > cli.ts/Ledger.keep/stored.map value
+known #125 extra step cli.ts/Ledger.keep/stored.map
+known #125 extra line _·stored@cli.ts/Ledger.keep/all > cli.ts/Ledger.keep/stored.map value
 # I: a library's constructor whose result the body names (`const db = new Database(..)`) is no step, so `db` is no
 #    value; `duckdb.connect(..)` and `Connection::open(..)`, which say the same, are steps.
 # #101: a value made in the body and used by the body's own calls has no taker

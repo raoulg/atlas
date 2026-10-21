@@ -8,26 +8,26 @@ route ledger.main
 step main/Ledger()
 step main/Ledger.keep
 step main/Ledger.keep/open
-known #new step main/Ledger.keep/collect                         # H
+known #125 step main/Ledger.keep/collect                         # H
 
 line entry > main call
 line main/Ledger() > Ledger·ledger@main/Ledger() value
 line Ledger·ledger@main/Ledger() > main/Ledger.keep value
 line main/Ledger.keep > Ledger·ledger@main/Ledger.keep value     # `&mut self`: keep changes the ledger
 line main/Ledger.keep/open > _·con@main/Ledger.keep/open value
-known #new line Ledger·ledger@main/Ledger() > main/Ledger.keep/open value  # K
-known #new line _·con@main/Ledger.keep/open > main/Ledger.keep/collect value  # H
+known #128 line Ledger·ledger@main/Ledger() > main/Ledger.keep/open value  # K
+known #125 line _·con@main/Ledger.keep/open > main/Ledger.keep/collect value  # H
 known #101 line _·con@main/Ledger.keep/open > main/Ledger.keep value                  # keep's own `con.execute`
-known #new line main/Ledger.keep/collect > _·stored@main/Ledger.keep/collect value    # H
-known #new line _·stored@main/Ledger.keep/collect > main/Ledger.keep value            # H: keep hands it back
+known #125 line main/Ledger.keep/collect > _·stored@main/Ledger.keep/collect value    # H
+known #125 line _·stored@main/Ledger.keep/collect > main/Ledger.keep value            # H: keep hands it back
 line main/Ledger.keep > SQLite(notes) own
-known #new line main/Ledger.keep > main back                     # the notes read back, a Vec<String> (A)
+known #129 line main/Ledger.keep > main back                     # the notes read back, a Vec<String> (A)
 line main > Screen own
 
 home Ledger·ledger@main/Ledger() main
 home Ledger·ledger@main/Ledger.keep main
 home _·con@main/Ledger.keep/open main/Ledger.keep
-known #new home _·stored@main/Ledger.keep/collect main/Ledger.keep                    # H
+known #125 home _·stored@main/Ledger.keep/collect main/Ledger.keep                    # H
 
 side entry left
 side SQLite(notes) right

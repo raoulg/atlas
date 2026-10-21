@@ -28,24 +28,24 @@ known #74 home Kennisbank Kennisbank()
 home Bron·bron Kennisbank()
 
 # the line split in three parts, each held by its name, which the arrow function `graaf` maps the lines by puts into a row
-known #new step Kennisbank()/Kennisbank.graaf/split
-known #new line Kennisbank()/Kennisbank.graaf/split > _·uuid@Kennisbank()/Kennisbank.graaf/split value
-known #new line Kennisbank()/Kennisbank.graaf/split > _·soort@Kennisbank()/Kennisbank.graaf/split value
-known #new line Kennisbank()/Kennisbank.graaf/split > _·tekst@Kennisbank()/Kennisbank.graaf/split value
-known #new line _·uuid@Kennisbank()/Kennisbank.graaf/split > Kennisbank()/Kennisbank.graaf value
-known #new line _·soort@Kennisbank()/Kennisbank.graaf/split > Kennisbank()/Kennisbank.graaf value
-known #new line _·tekst@Kennisbank()/Kennisbank.graaf/split > Kennisbank()/Kennisbank.graaf value
-known #new home _·uuid@Kennisbank()/Kennisbank.graaf/split Kennisbank()/Kennisbank.graaf
-known #new home _·soort@Kennisbank()/Kennisbank.graaf/split Kennisbank()/Kennisbank.graaf
-known #new home _·tekst@Kennisbank()/Kennisbank.graaf/split Kennisbank()/Kennisbank.graaf
+known #125 step Kennisbank()/Kennisbank.graaf/split
+known #125 line Kennisbank()/Kennisbank.graaf/split > _·uuid@Kennisbank()/Kennisbank.graaf/split value
+known #125 line Kennisbank()/Kennisbank.graaf/split > _·soort@Kennisbank()/Kennisbank.graaf/split value
+known #125 line Kennisbank()/Kennisbank.graaf/split > _·tekst@Kennisbank()/Kennisbank.graaf/split value
+known #125 line _·uuid@Kennisbank()/Kennisbank.graaf/split > Kennisbank()/Kennisbank.graaf value
+known #125 line _·soort@Kennisbank()/Kennisbank.graaf/split > Kennisbank()/Kennisbank.graaf value
+known #125 line _·tekst@Kennisbank()/Kennisbank.graaf/split > Kennisbank()/Kennisbank.graaf value
+known #125 home _·uuid@Kennisbank()/Kennisbank.graaf/split Kennisbank()/Kennisbank.graaf
+known #125 home _·soort@Kennisbank()/Kennisbank.graaf/split Kennisbank()/Kennisbank.graaf
+known #125 home _·tekst@Kennisbank()/Kennisbank.graaf/split Kennisbank()/Kennisbank.graaf
 
 side entry left
-known #new side Disk(this.path) both          # voegToe reads what the file held and changes it: Atlas says right
+known #133 side Disk(this.path) both          # voegToe reads what the file held and changes it: Atlas says right
 
 # the door's own arrow takes, as a nameless value from beyond, the Bron its call is handed, though only `write`
 # inside takes it
-known #new extra line Bron > Kennisbank()/Kennisbank.voegToe value
-known #new extra home Bron Kennisbank()
+known #126 extra line Bron > Kennisbank()/Kennisbank.voegToe value
+known #126 extra home Bron Kennisbank()
 
 # the methods run on what the constructor built, not on the caller's instance
 known #74 extra line Kennisbank@Kennisbank()/Kennisbank() > Kennisbank()/Kennisbank.voegToe/Kennisbank.write value

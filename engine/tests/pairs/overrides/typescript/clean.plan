@@ -16,7 +16,7 @@ line entry > Handler()/Handler.handle call
 line entry > Handler()/Handler.log call
 known #100 line Handler > Handler()/Handler.handle/ClickHandler.handle value
 known #100 line Handler > Handler()/Handler.log/ClickHandler.log value
-known #new line Event > Handler()/Handler.handle value                  # handle's own body reads e.name
+known #126 line Event > Handler()/Handler.handle value                  # handle's own body reads e.name
 line Event > Handler()/Handler.handle/ClickHandler.handle value
 line Click > Handler()/Handler.log value
 known #100 line Click > Handler()/Handler.log/ClickHandler.log value

@@ -4,21 +4,21 @@
 
 route clean.report.describe
 line entry > describe call
-known #new line Fit | Failed·r > describe value                    # the route's parameter, by its name
+known #127 line Fit | Failed·r > describe value                    # the route's parameter, by its name
 line describe > Report@describe value                             # the result goes on to the caller
 
-known #new home Fit | Failed·r describe
+known #127 home Fit | Failed·r describe
 home Report@describe describe
 
 side entry left
 
 # a parameter whose type is a sum written in place keeps no name
-known #new extra line Fit | Failed > describe value
-known #new extra home Fit | Failed describe
+known #127 extra line Fit | Failed > describe value
+known #127 extra home Fit | Failed describe
 
 # a library operation whose result no name holds and which changes nothing it runs on (`r.score.toFixed(2)`) stands as
 # an occurrence, in a choice frame of its own
-known #new extra choice describe/?1
-known #new extra step describe/?1/r.score.toFixed
-known #new extra line Fit·r > describe/?1/r.score.toFixed value
-known #new extra home Fit·r describe/?1
+known #125 extra choice describe/?1
+known #125 extra step describe/?1/r.score.toFixed
+known #125 extra line Fit·r > describe/?1/r.score.toFixed value
+known #125 extra home Fit·r describe/?1

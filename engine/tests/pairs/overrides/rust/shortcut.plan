@@ -13,14 +13,14 @@ line entry > Store()/Store.get call
 known #100 line Store > Store()/Store.get/Shelf.get value
 line Store()/Store.get/Shelf.get/Book() > Book@Store()/Store.get/Shelf.get/Book() value
 line Book@Store()/Store.get/Shelf.get/Book() > Store()/Store.get/Shelf.get value
-known #new line Store()/Store.get/Shelf.get > Book@Store()/Store.get/Shelf.get value
-known #new line Book@Store()/Store.get/Shelf.get > Store()/Store.get value
-known #new line Store()/Store.get > Book@Store()/Store.get value
+known #135 line Store()/Store.get/Shelf.get > Book@Store()/Store.get/Shelf.get value
+known #135 line Book@Store()/Store.get/Shelf.get > Store()/Store.get value
+known #135 line Store()/Store.get > Book@Store()/Store.get value
 
 home Store Store()
 home Book@Store()/Store.get/Shelf.get/Book() Store()/Store.get/Shelf.get
-known #new home Book@Store()/Store.get/Shelf.get Store()/Store.get
-known #new home Book@Store()/Store.get Store()
+known #135 home Book@Store()/Store.get/Shelf.get Store()/Store.get
+known #135 home Book@Store()/Store.get Store()
 
 side entry left
 
@@ -29,4 +29,4 @@ known #100 extra line Store > Store()/Store.get value
 known #100 extra line Shelf > Store()/Store.get/Shelf.get value
 known #100 extra home Shelf Store()
 # `Self::Item` is not read as the `Book` the impl names: what the override gives is no value of the code's
-known #new extra line Store()/Store.get/Shelf.get > Store()/Store.get back
+known #135 extra line Store()/Store.get/Shelf.get > Store()/Store.get back

@@ -27,20 +27,20 @@ side entry left
 
 # A library operation whose result the body names (`let shared = RefCell::new(..)`), or that changes what a call gives
 # (`log.borrow_mut().lines.push(..)`), is no step
-known #new step run/new
-known #new step run/note_shared/push
-known #new line run/Log()#2 > Log@run/Log()#2 value
-known #new line Log@run/Log()#2 > run/new value
-known #new line run/new > Log·shared@run/new value
-known #new line Log·shared@run/new > run/note_shared/push value
-known #new line run/note_shared/push > Log·log@run/note_shared/push value
-known #new line Log·log@run/note_shared/push > run/note_shared value
-known #new home Log@run/Log()#2 run
-known #new home Log·shared@run/new run
-known #new home Log·log@run/note_shared/push run/note_shared
-known #new extra line run/Log()#2 > Log·shared@run/Log()#2 value
-known #new extra line Log·shared@run/Log()#2 > run/note_shared value
-known #new extra home Log·shared@run/Log()#2 run
+known #125 step run/new
+known #125 step run/note_shared/push
+known #125 line run/Log()#2 > Log@run/Log()#2 value
+known #125 line Log@run/Log()#2 > run/new value
+known #125 line run/new > Log·shared@run/new value
+known #125 line Log·shared@run/new > run/note_shared/push value
+known #125 line run/note_shared/push > Log·log@run/note_shared/push value
+known #125 line Log·log@run/note_shared/push > run/note_shared value
+known #125 home Log@run/Log()#2 run
+known #125 home Log·shared@run/new run
+known #125 home Log·log@run/note_shared/push run/note_shared
+known #125 extra line run/Log()#2 > Log·shared@run/Log()#2 value
+known #125 extra line Log·shared@run/Log()#2 > run/note_shared value
+known #125 extra home Log·shared@run/Log()#2 run
 
 # `run` reads the lines of the log `note` changed
 known #101 line Log·log@run/note > run value

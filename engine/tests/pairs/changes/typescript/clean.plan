@@ -49,42 +49,42 @@ side entry left
 
 # An operation that changes a part of the receiver (`this.rows.push(e)`) takes what it is handed but neither runs on
 # nor makes anew the receiver, which ends at the method's own arrow
-known #new line Ledger·ledger@main/Ledger() > main/Ledger.add/this.rows.push value
-known #new line main/Ledger.add/this.rows.push > Ledger·this@main/Ledger.add/this.rows.push value
-known #new line Ledger·this@main/Ledger.add/this.rows.push > main/Ledger.add value
-known #new home Ledger·this@main/Ledger.add/this.rows.push main/Ledger.add
-known #new extra line Ledger·ledger@main/Ledger() > main/Ledger.add value
+known #129 line Ledger·ledger@main/Ledger() > main/Ledger.add/this.rows.push value
+known #129 line main/Ledger.add/this.rows.push > Ledger·this@main/Ledger.add/this.rows.push value
+known #129 line Ledger·this@main/Ledger.add/this.rows.push > main/Ledger.add value
+known #129 home Ledger·this@main/Ledger.add/this.rows.push main/Ledger.add
+known #129 extra line Ledger·ledger@main/Ledger() > main/Ledger.add value
 
 # A call on a field of a network client's type (`api.http.delete(..)`, `http: AxiosInstance`) reaches no place
-known #new line main/remove > Network(/items/a) own
-known #new side Network(/items/a) right
+known #136 line main/remove > Network(/items/a) own
+known #136 side Network(/items/a) right
 
 # A callee's parameter is not bound to what the call is handed: `remove`'s own arrow takes an Api from beyond, and the
 # operation inside it main's `api` by its name
-known #new line Api·api > main/remove value
-known #new extra line Api > main/remove value
-known #new extra home Api main
+known #127 line Api·api > main/remove value
+known #127 extra line Api > main/remove value
+known #127 extra home Api main
 
 # A library operation whose result the body does not name is a step (`api.http.delete(..)` returned, `out.get(k)` in
 # `?? 0`, which then stands as a choice); one whose result it names is none (`const out = new Map(m)`)
-known #new extra step main/remove/api.http.delete
-known #new extra line Api·api > main/remove/api.http.delete value
-known #new extra choice main/counted/?1
-known #new extra step main/counted/?1/out.get
-known #new extra line main/counted/?1/out.get > _@main/counted/?1 value
-known #new extra line _@main/counted/?1 > main/counted/set value
-known #new extra home _@main/counted/?1 main/counted
-known #new step main/counted/Map()
-known #new line main/counted/Map() > _·out@main/counted/Map() value
-known #new line _·out@main/counted/Map() > main/counted/set value
-known #new home _·out@main/counted/Map() main/counted
+known #125 extra step main/remove/api.http.delete
+known #125 extra line Api·api > main/remove/api.http.delete value
+known #130 extra choice main/counted/?1
+known #125 extra step main/counted/?1/out.get
+known #125 extra line main/counted/?1/out.get > _@main/counted/?1 value
+known #125 extra line _@main/counted/?1 > main/counted/set value
+known #125 extra home _@main/counted/?1 main/counted
+known #125 step main/counted/Map()
+known #125 line main/counted/Map() > _·out@main/counted/Map() value
+known #125 line _·out@main/counted/Map() > main/counted/set value
+known #125 home _·out@main/counted/Map() main/counted
 
 # A result the caller drops (`void remove(..)`) goes back to it
-known #new extra line main/remove > main back
+known #134 extra line main/remove > main back
 
 # The own arrow takes a value its body only hands to a step inside it: the expense `refiled` gives, handed to `add`
-known #new extra line Expense@main/refiled > main/Ledger.add value
-known #new extra line Expense@main/refiled > main value
+known #126 extra line Expense@main/refiled > main/Ledger.add value
+known #126 extra line Expense@main/refiled > main value
 
 # `counted` hands back the Map its `set` made anew
 known #101 line _·out@main/counted/set > main/counted value

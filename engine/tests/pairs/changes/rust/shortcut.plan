@@ -22,4 +22,4 @@ home _·lines@run/note/push run/note
 side entry left
 
 # The own arrow takes a value its body only hands to a step inside it: the log whose lines `clone` runs on
-known #new extra line Log·log@run/Log() > run/note value
+known #126 extra line Log·log@run/Log() > run/note value

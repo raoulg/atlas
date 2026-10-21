@@ -44,9 +44,9 @@ side entry left
 side Disk(loadConfig.file) left
 
 # the map fieldsOf gives is a value the two lookups take, not a result handed back to parseConfig
-known #101 extra line loadConfig/parseConfig/fieldsOf > loadConfig/parseConfig back
+known #134 extra line loadConfig/parseConfig/fieldsOf > loadConfig/parseConfig back
 # `categories.every(..)` runs on what `Array.isArray` narrowed to an array: a library operation whose result is named
 # by nothing and that changes nothing, so no occurrence, and the `||` around it no frame
-known #new extra choice loadConfig/parseConfig/?1
-known #new extra step loadConfig/parseConfig/?1/categories.every
-known #new extra line _·categories@loadConfig/parseConfig/fields.get#2 > loadConfig/parseConfig/?1/categories.every value
+known #136 extra choice loadConfig/parseConfig/?1
+known #136 extra step loadConfig/parseConfig/?1/categories.every
+known #136 extra line _·categories@loadConfig/parseConfig/fields.get#2 > loadConfig/parseConfig/?1/categories.every value

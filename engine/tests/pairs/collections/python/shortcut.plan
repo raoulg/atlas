@@ -14,7 +14,7 @@ step Store()/Store.put/Store._rows
 step Store()/Store.put/Store._rows/Reading()
 step Store()/Store.put/Store._rows/Row()
 known #74 line Store > Store()/Store.put/Store._rows value
-known #new line Disk(Store.path) > Store()/Store.put/Store._rows own  # D
+known #137 line Disk(Store.path) > Store()/Store.put/Store._rows own  # D
 line Store()/Store.put/Store._rows/Reading() > Reading@Store()/Store.put/Store._rows/Reading() value
 line Reading@Store()/Store.put/Store._rows/Reading() > Store()/Store.put/Store._rows/Row() value
 line Store()/Store.put/Store._rows/Row() > Row@Store()/Store.put/Store._rows/Row() value
@@ -29,16 +29,16 @@ line Row·rows@Store()/Store.put/Store._rows > Store()/Store.put/append value
 line Row@Store()/Store.put/Row() > Store()/Store.put/append value
 line Store()/Store.put/append > Row·rows@Store()/Store.put/append value  # the rows made anew
 line Row·rows@Store()/Store.put/append > Store()/Store.put/write_rows value
-known #new line Store > Store()/Store.put/write_rows value  # K: `write_rows(self.path, rows)` hands `self`
-known #new line Store()/Store.put/write_rows > Disk(Store.path) own  # D
+known #128 line Store > Store()/Store.put/write_rows value  # K: `write_rows(self.path, rows)` hands `self`
+known #137 line Store()/Store.put/write_rows > Disk(Store.path) own  # D
 step Store()/Store.put_all
 line entry > Store()/Store.put_all call
-known #new line Reading·readings > Store()/Store.put_all value  # F
+known #126 line Reading·readings > Store()/Store.put_all value  # F
 step Store()/Store.put_all/Store._rows
 step Store()/Store.put_all/Store._rows/Reading()
 step Store()/Store.put_all/Store._rows/Row()
 known #74 line Store > Store()/Store.put_all/Store._rows value
-known #new line Disk(Store.path) > Store()/Store.put_all/Store._rows own  # D
+known #137 line Disk(Store.path) > Store()/Store.put_all/Store._rows own  # D
 line Store()/Store.put_all/Store._rows/Reading() > Reading@Store()/Store.put_all/Store._rows/Reading() value
 line Reading@Store()/Store.put_all/Store._rows/Reading() > Store()/Store.put_all/Store._rows/Row() value
 line Store()/Store.put_all/Store._rows/Row() > Row@Store()/Store.put_all/Store._rows/Row() value
@@ -53,12 +53,12 @@ line Row·rows@Store()/Store.put_all/Store._rows > Store()/Store.put_all/append 
 line Row@Store()/Store.put_all/Row() > Store()/Store.put_all/append value
 line Store()/Store.put_all/append > Row·rows@Store()/Store.put_all/append value  # the rows made anew
 line Row·rows@Store()/Store.put_all/append > Store()/Store.put_all/write_rows value
-known #new line Store > Store()/Store.put_all/write_rows value  # K: `write_rows(self.path, rows)` hands `self`
-known #new line Store()/Store.put_all/write_rows > Disk(Store.path) own  # D
+known #128 line Store > Store()/Store.put_all/write_rows value  # K: `write_rows(self.path, rows)` hands `self`
+known #137 line Store()/Store.put_all/write_rows > Disk(Store.path) own  # D
 step Store()/Store.get
 line entry > Store()/Store.get call
 known #74 line Store > Store()/Store.get value  # get reads the store's path itself
-known #new line Disk(Store.path) > Store()/Store.get own  # D
+known #137 line Disk(Store.path) > Store()/Store.get own  # D
 
 home Store@Store()/Store() Store()
 home Reading@Store()/Store.put/Store._rows/Reading() Store()/Store.put/Store._rows
@@ -73,12 +73,12 @@ home Row@Store()/Store.put_all/Row() Store()/Store.put_all
 home Row·rows@Store()/Store.put_all/append Store()/Store.put_all
 home Reading·reading Store()
 known #74 home Store Store()
-known #new home Reading·readings Store()  # F
+known #126 home Reading·readings Store()  # F
 
 side entry left
-known #new side Disk(Store.path) both  # D
+known #137 side Disk(Store.path) both  # D
 
-# What Atlas gets wrong here, each a defect with no issue yet (#new):
+# What Atlas gets wrong here, each by the issue of its cause:
 # D: the store's path is two places, `Disk(self.path)` where it is read and `Disk(write_rows.path)` where the helper
 #    writes what the method hands it, not one `Disk(Store.path)` read and written
 # E: a Reading built inside the step for the Row it returns is drawn as handed back at the step's own arrow too
@@ -89,17 +89,17 @@ known #new side Disk(Store.path) both  # D
 #    decision 2): the constructor's Store goes back to the caller and is joined to no door
 
 # D
-known #new extra line Disk(self.path) > Store()/Store.get own
-known #new extra line Disk(self.path) > Store()/Store.put/Store._rows own
-known #new extra line Disk(self.path) > Store()/Store.put_all/Store._rows own
-known #new extra line Store()/Store.put/write_rows > Disk(write_rows.path) own
-known #new extra line Store()/Store.put_all/write_rows > Disk(write_rows.path) own
-known #new extra side Disk(write_rows.path) right
-known #new extra side Disk(self.path) left
+known #137 extra line Disk(self.path) > Store()/Store.get own
+known #137 extra line Disk(self.path) > Store()/Store.put/Store._rows own
+known #137 extra line Disk(self.path) > Store()/Store.put_all/Store._rows own
+known #137 extra line Store()/Store.put/write_rows > Disk(write_rows.path) own
+known #137 extra line Store()/Store.put_all/write_rows > Disk(write_rows.path) own
+known #137 extra side Disk(write_rows.path) right
+known #137 extra side Disk(self.path) left
 
 # E
-known #new extra line Reading@Store()/Store.put/Store._rows/Reading() > Store()/Store.put/Store._rows value
-known #new extra line Reading@Store()/Store.put_all/Store._rows/Reading() > Store()/Store.put_all/Store._rows value
+known #134 extra line Reading@Store()/Store.put/Store._rows/Reading() > Store()/Store.put/Store._rows value
+known #134 extra line Reading@Store()/Store.put_all/Store._rows/Reading() > Store()/Store.put_all/Store._rows value
 
 # #74
 known #74 extra line Store@Store()/Store() > Store()/Store.put/Store._rows value

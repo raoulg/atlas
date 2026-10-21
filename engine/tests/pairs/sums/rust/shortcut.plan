@@ -3,7 +3,7 @@
 
 route kennis.Kennisbank
 step Kennisbank()/Kennisbank.new
-known #new step Kennisbank()/Kennisbank.new/Kennisbank()            # the struct expression `new` builds the store by
+known #135 step Kennisbank()/Kennisbank.new/Kennisbank()            # the struct expression `new` builds the store by
 step Kennisbank()/Kennisbank.voeg_toe
 step Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write
 step Kennisbank()/Kennisbank.graaf
@@ -33,28 +33,41 @@ home Bron·bron Kennisbank()
 
 # write reads the file into `text`, appends the line and a newline to it, and writes it back
 step Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/read_to_string
-known #new step Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push_str
-known #new step Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push
+known #125 step Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push_str
+known #125 step Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push
 line Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/read_to_string > _·text@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/read_to_string value
-known #new line _·text@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/read_to_string > Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push_str value
-known #new line Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push_str > _·text@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push_str value
-known #new line _·text@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push_str > Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push value
-known #new line Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push > _·text@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push value
-known #new line _·text@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push > Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write value                    # fs::write in write's own body writes it
+known #125 line _·text@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/read_to_string > Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push_str value
+known #125 line Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push_str > _·text@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push_str value
+known #125 line _·text@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push_str > Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push value
+known #125 line Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push > _·text@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push value
+known #125 line _·text@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push > Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write value                    # fs::write in write's own body writes it
 home _·text@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/read_to_string Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write
-known #new home _·text@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push_str Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write
-known #new home _·text@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write
+known #125 home _·text@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push_str Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write
+known #125 home _·text@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write
+
+# the io::Error, a value of no type of the code's: `read_to_string` makes it in write, and fs::write in write's own body;
+# `?` is no choice, and each border it crosses uncaught hands it on, up to the caller of the door
+known #138 line Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/read_to_string > _@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/read_to_string value
+known #138 line _@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/read_to_string > Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write value
+known #138 line Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write > _@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write value
+known #138 line _@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write > Kennisbank()/Kennisbank.voeg_toe value
+known #138 line Kennisbank()/Kennisbank.voeg_toe > _@Kennisbank()/Kennisbank.voeg_toe value
+known #138 line Kennisbank()/Kennisbank.graaf > _@Kennisbank()/Kennisbank.graaf value                                  # its read, `?`-propagated
+known #138 home _@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/read_to_string Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write
+known #138 home _@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write Kennisbank()/Kennisbank.voeg_toe
+known #138 home _@Kennisbank()/Kennisbank.voeg_toe Kennisbank()
+known #138 home _@Kennisbank()/Kennisbank.graaf Kennisbank()
 
 side entry left
-known #new side Disk(self.path) both          # voeg_toe reads what the file held and changes it: Atlas says right
+known #133 side Disk(self.path) both          # voeg_toe reads what the file held and changes it: Atlas says right
 
 # building the struct the route is about is read as a call of the route inside itself
-known #new extra step Kennisbank()/Kennisbank.new/Kennisbank() recursive
+known #135 extra step Kennisbank()/Kennisbank.new/Kennisbank() recursive
 
 # the door's own arrow takes, as a nameless value from beyond, the Bron its call is handed, though only `write`
 # inside takes it
-known #new extra line Bron > Kennisbank()/Kennisbank.voeg_toe value
-known #new extra home Bron Kennisbank()
+known #126 extra line Bron > Kennisbank()/Kennisbank.voeg_toe value
+known #126 extra home Bron Kennisbank()
 
 # the methods run on what the constructor built, not on the caller's instance
 known #74 extra line Kennisbank@Kennisbank()/Kennisbank.new > Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write value
