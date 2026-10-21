@@ -688,3 +688,57 @@ fn prophecy_a_seal_is_listed_and_broken_when_its_issue_is_closed() {
     );
     let _ = std::fs::remove_dir_all(copy.parent().expect("has a parent"));
 }
+
+// ---------- doors: every declaration a door is made of ----------
+
+/// One side of the doors pair (`tests/pairs/doors`): lengths in metres, read from text, scaled,
+/// added up and logged, the package's doors brought to its root with `from .. import *`.
+fn units(side: &str) -> Graph {
+    analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/doors/python").join(side), &Options::default()).unwrap()
+}
+
+/// A door says what goes in and what comes out in each form Python declares one. The clean root
+/// names its doors with `from units.core import *` (the module's `__all__`) and `from
+/// units.convert import *` (its public names). `scale` says what it takes and gives through typed
+/// `@overload`s, which its callers are checked against, before an implementation without types;
+/// `Length.meters` is its getter, typed, before its setter; the dunders a user runs through an
+/// operator (`__add__`, `__eq__`) are typed, and so are `log`'s `*parts` and `**fields`. It is
+/// asked nothing, and the route of `Length` runs its initializer once, then each name a user may
+/// run on it, the dunders among them. The shortcut is the same package with each door left open:
+/// an overload without types, an untyped getter behind a typed setter, an untyped `__add__`,
+/// untyped `*parts` and `**fields`, and `parse(text: Any) -> Any`, which says no more than no
+/// annotation. Each is asked where it is left open.
+#[test]
+fn doors_every_declaration_of_a_door_says_what_goes_in_and_out() {
+    let (c, s) = (units("clean"), units("shortcut"));
+    let fs = check(&c);
+    assert!(fs.is_empty(), "{:#?}", fs.iter().map(|f| format!("{} {} {}", f.principle, f.node, f.what)).collect::<Vec<_>>());
+    for door in ["units.core.Length", "units.core.scale", "units.core.log", "units.convert.parse"] {
+        assert_eq!(c.node(door).unwrap().entry.as_ref().map(|e| e.kind), Some(EntryKind::Export), "{door} is a door a star brings");
+    }
+    // one node per name: the implementation with the overloads its callers see, the property's getter
+    let scale = c.node("units.core.scale").unwrap();
+    assert_eq!(scale.overloads.iter().map(|o| o.line).collect::<Vec<_>>(), [26, 28]);
+    assert!(scale.params.iter().all(|p| p.ty.is_empty()) && scale.span.map(|s| s.0) == Some(29), "the implementation, as written");
+    let meters = c.node("units.core.Length.meters").unwrap();
+    assert_eq!(meters.decorators, ["property"]);
+    assert_eq!(meters.returns.as_ref().map(|r| r.written.as_str()), Some("float"));
+    assert_eq!(c.node("units.core.Length").unwrap().methods, ["__init__", "meters", "__add__", "__eq__"]);
+    // the class's route runs its initializer once, then what a user may run on it, the dunders among it
+    let steps: Vec<String> = atlas_engine::flow::bodies(&c)["units.core.Length"].steps().iter().map(|s| s.to.clone()).collect();
+    assert_eq!(steps, ["__init__", "meters", "__add__", "__eq__"].map(|m| format!("units.core.Length.{m}")));
+    // the shortcut: each door left open is asked, at the declaration that leaves it open
+    let asked: Vec<(String, u32)> = check(&s).into_iter().filter(|f| f.principle == "doors").map(|f| (f.node, f.line)).collect();
+    let want = [
+        ("units.convert.parse", 6),
+        ("units.core.Length.meters", 11),
+        ("units.core.Length.__add__", 18),
+        ("units.core.scale", 28),
+        ("units.core.log", 33),
+    ];
+    assert_eq!(asked, want.map(|(n, l)| (n.to_string(), l)));
+    // `Any` is drawn as written, and says nothing
+    let parse = s.node("units.convert.parse").unwrap();
+    assert_eq!(parse.params.iter().map(|p| (p.ty.as_str(), p.unchecked)).collect::<Vec<_>>(), [("Any", true)]);
+    assert!(parse.returns.as_ref().is_some_and(|r| r.written == "Any" && r.unchecked));
+}

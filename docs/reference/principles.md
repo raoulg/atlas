@@ -52,7 +52,7 @@ lets it be traced and Atlas does not yet; each gap is an ignored test in `pairs_
 
 | Principle | Python | TypeScript | Rust |
 |---|---|---|---|
-| doors | finding; `__all__` exports | finding on an untyped export or one typed `any` | forbidden: every signature is typed |
+| doors | finding; `__all__` and a star's names export; overloads are a door's signatures, a property its getter; `Any` is unchecked | finding; overload signatures are a door's signatures, a property its getter; `any` is unchecked | forbidden: every signature is typed |
 | sums | finding; variant edges | traceable (a union alias) | finding; a library's sum handed on (`Result`) is asked |
 | overrides | `keeps` from ty; finding | forbidden: the compiler holds an override to its base | forbidden |
 | places | finding; where the path is made whole | finding; where the path is made whole | finding; where the path is made whole |
@@ -88,8 +88,8 @@ Atlas) guessing where a route goes.
 - **Python.** Declare the public names in the root `__init__.py` with `__all__`
   ([PEP 8](https://peps.python.org/pep-0008/#public-and-internal-interfaces)), and
   annotate every parameter and return of a public function
-  ([PEP 484](https://peps.python.org/pep-0484/)). To keep `import package` fast, the
-  exports can resolve lazily with a module `__getattr__`
+  ([PEP 484](https://peps.python.org/pep-0484/)), `*args` and `**kwargs` among them. To keep
+  `import package` fast, the exports can resolve lazily with a module `__getattr__`
   ([PEP 562](https://peps.python.org/pep-0562/)).
 - **TypeScript.** What the module `package.json` points to exports is the package's doors.
   Annotate what each one gives (`isolatedDeclarations` asks for it); a function handed to a
@@ -99,8 +99,42 @@ Atlas) guessing where a route goes.
   for every type. Atlas has nothing to ask here.
 
 Atlas checks: a Python package called `src`, a Python package that exports nothing at
-its root, and an exported function or a public method of an exported class whose
-parameters or return are not annotated.
+its root, and a door that does not say what it takes or what it gives.
+
+A Python package's doors are the names `__all__` lists at its root, else every public name the
+root binds. `from .core import *` binds what the star brings: the names `core` lists in its
+`__all__`, else each public name it defines or binds, and a star of a module that stars another
+brings that one's as well. The doors are each exported function, and each public method of an
+exported class, its own and those it inherits from the package's classes, with its constructor. A
+name with a leading underscore is private; a dunder (`__eq__`, `__add__`, `__getitem__`,
+`__call__`) is not: an operator, a builtin or a call runs it for every user of the value, as Rust
+runs a trait's `eq` for `==`.
+
+A door says what it takes and gives in the signatures its callers are checked against. Where the
+code declares those apart from the body that runs (Python's `@overload`, TypeScript's overload
+signatures), the overloads are the door's signatures, and the implementation behind them is not
+asked: no caller sees it. A property is its getter: what a reader of the attribute gets. A name
+declared again in the same scope is one node, the declaration that runs; its overloads are kept
+with it (`Node::overloads`).
+
+In each of those signatures, a parameter says what it takes when its type is written and is not
+the unchecked one: `Any` in Python, `any` in TypeScript, which every value passes as and which
+passes as every type. Each language's reader marks it (`Param::unchecked`), the picture shows it as
+written, and the rule asks one thing of every parameter, `*args`, `**kwargs` and `...rest`
+included. A return says what it gives when it is written and is not the unchecked one, where the
+language leaves returns to its author (Python, TypeScript); a constructor gives its class. The
+finding stands at the first signature that leaves something open, and names each such signature.
+
+What it cannot see. A property's setter and deleter are not asked, and what they do is not in the
+graph: an untyped setter behind a typed getter goes unasked in Python (TypeScript gives the setter
+the getter's type). `__all__` is read as the strings written in its first assignment at the module's
+top: one built from another (`core.__all__ + [..]`) declares only the strings it writes, and what
+is added later (`__all__ += ..`) is not read. A star of a module Atlas does not read as code (a library's)
+binds nothing it can name. The unchecked type is known by its name as written (`Any`,
+`typing.Any`): an alias of it (`JSON = Any`), or `Any` inside another type (`list[Any]`,
+`Any | None`), counts as a type that says something, and so does a checked type that says little
+(`object`, `unknown`, `dict`). The rule reads what a signature writes; whether it is right is the
+type checker's (ty, tsc).
 
 A package needs a name before it can have doors. `src/` is the folder packages live in
 ([the src layout](https://packaging.python.org/en/latest/discussions/src-layout-vs-flat-layout/)):

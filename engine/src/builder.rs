@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use indexmap::IndexMap;
 
-use crate::model::{Bucket, Dir, Edge, EdgeKind, Entry, EntryKind, Graph, Node, NodeKind, Stats, Touch, Unresolved, World};
+use crate::model::{Bucket, Dir, Edge, EdgeKind, Entry, EntryKind, Graph, Node, NodeKind, Signature, Stats, Touch, Unresolved, World};
 
 /// Per-class facts that only matter during resolution.
 #[derive(Default, Clone, Debug)]
@@ -51,6 +51,26 @@ pub struct SigInfo {
     pub rtypes: Vec<Vec<String>>,
 }
 
+impl SigInfo {
+    /// The types of another signature of the same function as well.
+    pub fn extend(&mut self, other: SigInfo) {
+        self.ptypes.extend(other.ptypes);
+        self.rtypes.extend(other.rtypes);
+    }
+}
+
+/// What one declaration of a function's name is, among the declarations of that name in one
+/// scope.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Declared {
+    /// What runs: the body a call runs, or the getter a read of a property runs.
+    Body,
+    /// A signature its callers are checked against, apart from the body that runs: an overload.
+    Overload,
+    /// What runs when a property is assigned or deleted: a setter, a deleter.
+    Writer,
+}
+
 /// The nodes and edges found so far, and the tables that resolve names into them.
 #[derive(Default)]
 pub struct GraphBuilder {
@@ -77,6 +97,41 @@ impl GraphBuilder {
             n.prophecy = crate::prophecy::Prophecy::among(&n.decorators);
         }
         self.nodes.insert(n.id.clone(), n);
+    }
+
+    /// One declaration of the function `n` names, with the types its signature names. A name
+    /// declared more than once in one scope is one node, the declaration that runs: a call's body,
+    /// with the overloads declared with it as the signatures its callers see and the types they
+    /// name as its own; a property's getter, which is what a reader of the property gets. Until
+    /// that declaration comes, the first of the others stands for it. A body declared again
+    /// replaces the one before, as the name is bound to the last.
+    pub fn declare(&mut self, mut n: Node, sig: SigInfo, declared: Declared) {
+        let signature = |n: &Node| Signature { line: n.span.map_or(1, |s| s.0), params: n.params.clone(), returns: n.returns.clone() };
+        let Some(old) = self.nodes.get_mut(&n.id) else {
+            if declared == Declared::Overload {
+                n.overloads = vec![signature(&n)];
+            }
+            self.sigs.insert(n.id.clone(), sig);
+            self.add_node(n);
+            return;
+        };
+        match declared {
+            Declared::Writer => {}
+            Declared::Overload => {
+                old.overloads.push(signature(&n));
+                self.sigs.entry(n.id).or_default().extend(sig);
+            }
+            Declared::Body => {
+                n.overloads = std::mem::take(&mut old.overloads);
+                match self.sigs.get_mut(&n.id).filter(|_| !n.overloads.is_empty()) {
+                    Some(theirs) => theirs.extend(sig),
+                    None => {
+                        self.sigs.insert(n.id.clone(), sig);
+                    }
+                }
+                self.add_node(n);
+            }
+        }
     }
 
     pub fn add_edge(&mut self, src: &str, dst: &str, kind: EdgeKind, via: Option<String>) {

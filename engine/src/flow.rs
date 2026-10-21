@@ -907,10 +907,13 @@ fn body_of(ix: &Ix, n: &Node, on: &str) -> Body {
         return Body { alts, items: grouped(steps, &n.whens), made_from: vec![] };
     }
     let callees: Vec<String> = if n.kind == NodeKind::Class && n.entry.is_some() {
-        let mut out: Vec<String> = ix.ctor(&n.id).into_iter().collect();
+        let ctor = ix.ctor(&n.id);
+        let mut out: Vec<String> = ctor.iter().cloned().collect();
+        // its public methods, the initializer once
         out.extend(
             ix.out(&n.id, EdgeKind::Contains)
                 .map(|e| e.dst.clone())
+                .filter(|m| Some(m) != ctor.as_ref())
                 .filter(|m| ix.nodes.get(m.as_str()).map_or(false, |m| m.kind == NodeKind::Method && !m.private)),
         );
         out

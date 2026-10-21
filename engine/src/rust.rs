@@ -301,7 +301,7 @@ fn signature(f: TsNode, src: &[u8]) -> (Vec<Param>, Option<Returns>, SigInfo) {
                         ty: ty.map(|t| text(t, src).to_string()).unwrap_or_default(),
                         receiver: pattern.map_or(false, |x| x.kind() == "self"),
                         changes: ty.map_or(false, mutable),
-                        rest: false,
+                        ..Default::default()
                     });
                     info.ptypes.extend(type_names(ty, src));
                 }
@@ -352,7 +352,7 @@ fn returns(rt: TsNode, src: &[u8]) -> Returns {
         (_, "Self") => (String::new(), true),
         (_, v) => (v.to_string(), false),
     };
-    Returns { written: text(rt, src).to_string(), value, own, fails }
+    Returns { written: text(rt, src).to_string(), value, own, fails, ..Default::default() }
 }
 
 /// A method whose first parameter is the value it is called on.
