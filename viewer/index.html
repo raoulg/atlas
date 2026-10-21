@@ -367,6 +367,8 @@ for (const e of D.edges) { const k = `${e.src}>${e.dst}>${e.kind}`; if (!edgesBy
 const edgeOn = (src, dst, kind) => { const es = edgesBy.get(`${src}>${dst}>${kind}`); return !es || es.some(has); };
 // a node by the name it has in the reading drawn: one B renamed has its old name in A
 const nameOf = n => SIDE === "a" && DIFF?.renamed[n.id] ? DIFF.renamed[n.id].split(".").pop() : n.name;
+// a step of a body as the reading drawn has it: in A, a step both readings hold is handed what A hands it
+const siteIn = (n, i) => { const s = n?.sites?.[i], h = SIDE === "a" && DIFF?.hands[n.id]?.[i]; return h ? {...s, hands: h} : s; };
 { const ps = document.getElementById("project"); for (const n of names) { const o = document.createElement("option"); o.value = n; o.textContent = n; o.selected = n === current; ps.appendChild(o); }
   ps.addEventListener("change", () => { location.hash = "#p=" + ps.value; location.reload(); }); }
 const byId = new Map(D.nodes.map(n => [n.id, n]));
@@ -961,7 +963,7 @@ const entryPlace = id => ({id: "e:" + id, label: entryLabel(byId.get(id)), kind:
 // `parseArgs(..)`) and the steps whose values only those parses take (the parser argparse is
 // handed); and the names of what the parses give, which come from the entry
 function commandLine(n) {
-  const sites = n?.sites || [], parses = sites.map((s, i) => s.command_line && has(s) ? i : -1).filter(i => i >= 0);
+  const sites = (n?.sites || []).map((_, i) => siteIn(n, i)), parses = sites.map((s, i) => s.command_line && has(s) ? i : -1).filter(i => i >= 0);
   const hidden = new Set(parses), fed = new Set(parses.flatMap(i => (sites[i].gives || []).map(g => g.name)));
   const takers = name => sites.flatMap((s, i) => has(s) && (s.hands || []).some(h => h.name === name) ? [i] : []);
   sites.forEach((s, i) => { if (has(s) && !hidden.has(i) && (s.gives || []).length && s.gives.every(g => g.name && takers(g.name).length && takers(g.name).every(t => parses.includes(t)))) hidden.add(i); });
@@ -1090,10 +1092,10 @@ function routeTree() {
       // stands in, and the border it crosses is drawn
       if (deeper.has(s.to)) {
         const rk = `${key}/${s.site ?? s.to}`;
-        treeInfo.set(rk, {step: s.to, on: s.on || null, site: s.site != null ? n.sites[s.site] : null, fed: entry.fed, path: deeper, recursive: true});
+        treeInfo.set(rk, {step: s.to, on: s.on || null, site: s.site != null ? siteIn(n, s.site) : null, fed: entry.fed, path: deeper, recursive: true});
         return {id: rk, open: false, kids: [], hue: h, choice: false, recursive: true};
       }
-      const k = visit(`${key}/${s.site ?? s.to}`, s.to, s.on || null, s.site != null ? n.sites[s.site] : null, h, deeper, entry.fed);
+      const k = visit(`${key}/${s.site ?? s.to}`, s.to, s.on || null, s.site != null ? siteIn(n, s.site) : null, h, deeper, entry.fed);
       // in the finest plan the steps that only parse the command line are there, marked: a closed entry is their quotient
       if (FINE && foldable && parse.hidden.has(s.site)) k.parse = true;
       return k;
@@ -1502,6 +1504,11 @@ async function renderPlaat(mine) {
   const choiceOf = P => frames.get(P.parent)?.choice ? P.parent : P.id;
   // the arrow of an opened step hands on at the moment the closed step did: opening it moves no value to another moment
   const madeAt = P => { if (!P.own) return choiceOf(P); const F = frames.get(P.parent); return frames.get(F?.parent)?.choice ? F.parent : P.parent; };
+  // in A, a value B makes by another step (`remade`) is one value: it stands at the moment of the step that makes it in B
+  const remadeAt = at => {
+    const m = SIDE === "a" ? at.match(/^n:(.*)\/(\d+)$/) : null, to = m ? DIFF.remade[stepOf(m[1])]?.[m[2]] : null;
+    return to == null ? at : `n:${m[1]}/${to}`;
+  };
   // the values made so far, each in the scope of the step whose body made it: a name holds a value in that step and the steps
   // inside it, and a step's own arrow hands on in the scope of its caller. A choice is no scope; its branches' values go on
   const planChain = fid => { const c = []; for (let f = fid; f; f = frames.get(f)?.parent) c.unshift(f); return c; };
@@ -1553,7 +1560,7 @@ async function renderPlaat(mine) {
     });
     P.C.forEach((r, k) => {
       if (!isMem(k) || inside(k) || !V.route) { Cv.set(k, r); if (mult && P.mult.C.has(k)) mult.C.set(k, P.mult.C.get(k)); return; }
-      const nm = name(P.cn, k), at = madeAt(P), v = version(k, `${k}@${at}`);
+      const nm = name(P.cn, k), at = remadeAt(madeAt(P)), v = version(k, `${k}@${at}`);
       if (mult && P.mult.C.has(k)) mult.C.set(v, P.mult.C.get(k));
       Object.assign(places.get(v), {at});
       if (nm && !nm.startsWith("#") && !k.startsWith("v:")) Object.assign(places.get(v), {label: `${places.get(k).label} · ${nm}`, held: nm});

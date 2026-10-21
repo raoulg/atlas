@@ -46,6 +46,14 @@ pub struct Diff {
     /// For a node in both readings, the steps of its body (`sites`) by index: B's steps and the
     /// steps of A that B no longer has, in call order.
     pub sites: BTreeMap<String, BTreeMap<usize, Status>>,
+    /// For a node in both readings, the steps both hold that A hands other values than B (a step
+    /// put in before one, or taken out), by index: what A hands each, under the union's names. The
+    /// step itself holds what B hands it.
+    pub hands: BTreeMap<String, BTreeMap<usize, Vec<Held>>>,
+    /// For a node in both readings, the steps only A has whose value B makes by a step only B has,
+    /// by index: that step's index. A step both hold is handed the value under one name in both,
+    /// so it is one value, made by another step.
+    pub remade: BTreeMap<String, BTreeMap<usize, usize>>,
     /// For a node in both readings, its touches by index, counted as `Flow::drawn` counts them:
     /// its touches, then its calls as read (`instead`). B's, then those of A that B no longer has.
     pub touches: BTreeMap<String, BTreeMap<usize, Status>>,
@@ -126,10 +134,16 @@ pub fn union(name: &str, before: Vec<Graph>, after: Vec<Graph>) -> (Graph, Diff)
             _ => {}
         }
         let mut n = nb.clone();
-        let (steps, marks) = merged_sites(&na.sites, &nb.sites);
-        n.sites = steps;
-        if !marks.is_empty() {
-            diff.sites.insert(n.id.clone(), marks);
+        let body = merged_sites(&na.sites, &nb.sites);
+        n.sites = body.sites;
+        if !body.marks.is_empty() {
+            diff.sites.insert(n.id.clone(), body.marks);
+        }
+        if !body.hands.is_empty() {
+            diff.hands.insert(n.id.clone(), body.hands);
+        }
+        if !body.remade.is_empty() {
+            diff.remade.insert(n.id.clone(), body.remade);
         }
         let (own, mut marks) = merged_touches(&na.touches, &nb.touches, 0);
         let (read, more) = merged_touches(&na.instead, &nb.instead, own.len());
@@ -223,8 +237,8 @@ impl Reading {
 }
 
 /// One reading of a union, under the union's names: the nodes, edges, steps and touches it holds,
-/// and its entries as it has them. The page draws a reading so, and `atlas changes` compares the
-/// two: one union, so both tell one story.
+/// what it hands each step, and its entries as it has them. The page draws a reading so, and
+/// `atlas changes` compares the two: one union, so both tell one story.
 pub fn reading(g: &Graph, d: &Diff, r: Reading) -> Graph {
     let mut out = Graph {
         root: g.root.clone(),
@@ -238,19 +252,25 @@ pub fn reading(g: &Graph, d: &Diff, r: Reading) -> Graph {
     let kept = |marks: Option<&BTreeMap<usize, Status>>, i: usize| r.holds(marks.and_then(|m| m.get(&i)));
     for n in g.nodes.iter().filter(|n| r.holds(d.nodes.get(&n.id))) {
         let mut n = n.clone();
-        let steps = d.sites.get(&n.id);
-        n.sites = std::mem::take(&mut n.sites).into_iter().enumerate().filter(|(i, _)| kept(steps, *i)).map(|(_, s)| s).collect();
-        let (touches, own) = (d.touches.get(&n.id), n.touches.len());
-        n.touches = std::mem::take(&mut n.touches).into_iter().enumerate().filter(|(i, _)| kept(touches, *i)).map(|(_, t)| t).collect();
-        n.instead =
-            std::mem::take(&mut n.instead).into_iter().enumerate().filter(|(i, _)| kept(touches, own + i)).map(|(_, t)| t).collect();
+        // what A has otherwise than the union holds it: what it hands the steps both hold, its entry
         if r == Reading::A {
+            for (i, hands) in d.hands.get(&n.id).into_iter().flatten() {
+                if let Some(s) = n.sites.get_mut(*i) {
+                    s.hands = hands.clone();
+                }
+            }
             if let Some(e) = d.entries.get(&n.id) {
                 n.entry = Some(e.clone());
             } else if d.entered.contains(&n.id) {
                 n.entry = None;
             }
         }
+        let steps = d.sites.get(&n.id);
+        n.sites = std::mem::take(&mut n.sites).into_iter().enumerate().filter(|(i, _)| kept(steps, *i)).map(|(_, s)| s).collect();
+        let (touches, own) = (d.touches.get(&n.id), n.touches.len());
+        n.touches = std::mem::take(&mut n.touches).into_iter().enumerate().filter(|(i, _)| kept(touches, *i)).map(|(_, t)| t).collect();
+        n.instead =
+            std::mem::take(&mut n.instead).into_iter().enumerate().filter(|(i, _)| kept(touches, own + i)).map(|(_, t)| t).collect();
         out.nodes.push(n);
     }
     out.edges = g.edges.iter().enumerate().filter(|(i, _)| r.holds(d.edges.get(i))).map(|(_, e)| e.clone()).collect();
@@ -611,15 +631,26 @@ fn short(id: &str) -> String {
     id.trim_start_matches("ext:").rsplit('.').next().unwrap_or(id).to_string()
 }
 
+/// A body's steps in both readings, as `merged_sites` unites them.
+struct Merged {
+    sites: Vec<Site>,
+    marks: BTreeMap<usize, Status>,
+    /// The shared steps A hands other values than B, by index: what A hands them (`Diff::hands`).
+    hands: BTreeMap<usize, Vec<Held>>,
+    /// The steps only A has whose value a step only B has makes, by index (`Diff::remade`).
+    remade: BTreeMap<usize, usize>,
+}
+
 /// The steps of a body in both readings, in call order, and which of them only one reading has:
 /// the steps both have once, as B has them; where the two part, A's before B's, as a diff
 /// interleaves lines. A step is the same in both when it makes the same call on values of the same
 /// types; where a value comes from is the arrow of the step that made it, so a change before a step
 /// leaves it the same step. A shared step aliases A's anonymous values to B's names, those it gives
-/// and those it is handed from a step only A has, so each reading keeps its own chain of values.
-/// Where one shared step cannot be handed its values in both readings under one name (a step put
-/// in before it, one taken out), it is one step removed and one added.
-fn merged_sites(a: &[Site], b: &[Site]) -> (Vec<Site>, BTreeMap<usize, Status>) {
+/// and those it is handed from a step only A has, so each reading keeps its own chain of values;
+/// what A hands a shared step otherwise than B (a step put in before it, one taken out) is kept
+/// beside it. Where two of A's values would take one name in the union, the shared step that names
+/// them so is one step removed and one added.
+fn merged_sites(a: &[Site], b: &[Site]) -> Merged {
     let (ka, kb) = (site_shapes(a), site_shapes(b));
     // the longest run of steps both share, from the end
     let mut lcs = vec![vec![0u32; kb.len() + 1]; ka.len() + 1];
@@ -672,16 +703,13 @@ fn aliased(a: &[Site], b: &[Site], pairs: &[(usize, usize)]) -> HashMap<String, 
 
 /// The first shared step (by its place in `pairs`) that makes reading A of the union another
 /// program: a step handed, under the union's names, a value another step made than the one A hands
-/// it. None when A reads as A.
+/// it, where two of A's values take one name. None when A reads as A.
 fn unreadable(a: &[Site], b: &[Site], pairs: &[(usize, usize)], aliases: &HashMap<String, (String, usize)>) -> Option<usize> {
     let shared: HashMap<usize, (usize, usize)> = pairs.iter().enumerate().map(|(k, &(i, j))| (i, (k, j))).collect();
     let name = |h: &Held| aliases.get(&h.name).map_or_else(|| h.name.clone(), |(n, _)| n.clone());
     let (mut in_a, mut in_union): (HashMap<&str, usize>, HashMap<String, usize>) = (HashMap::new(), HashMap::new());
     for (i, s) in a.iter().enumerate() {
-        let hands: Vec<String> = match shared.get(&i) {
-            Some(&(_, j)) => b[j].hands.iter().map(|h| h.name.clone()).collect(),
-            None => s.hands.iter().map(name).collect(),
-        };
+        let hands: Vec<String> = s.hands.iter().map(name).collect();
         for (h, n) in s.hands.iter().zip(&hands) {
             if in_a.get(h.name.as_str()) != in_union.get(n) {
                 // a shared step undone is A's again; a step only A has is misnamed by the alias it
@@ -709,23 +737,23 @@ fn unreadable(a: &[Site], b: &[Site], pairs: &[(usize, usize)], aliases: &HashMa
 }
 
 /// The steps of both readings in call order, the `pairs` once as B has them, A's other steps
-/// before B's between them, with A's anonymous values under their names in the union.
-fn interleaved(
-    a: &[Site],
-    b: &[Site],
-    pairs: &[(usize, usize)],
-    aliases: &HashMap<String, (String, usize)>,
-) -> (Vec<Site>, BTreeMap<usize, Status>) {
-    let (mut out, mut marks) = (vec![], BTreeMap::new());
+/// before B's between them, with A's anonymous values under their names in the union, and what A
+/// hands a shared step where that differs from what B hands it.
+fn interleaved(a: &[Site], b: &[Site], pairs: &[(usize, usize)], aliases: &HashMap<String, (String, usize)>) -> Merged {
+    let in_union = |hs: &mut Vec<Held>| {
+        for h in hs {
+            if let Some((n, _)) = aliases.get(&h.name) {
+                h.name = n.clone();
+            }
+        }
+    };
+    let (mut out, mut marks, mut hands) = (vec![], BTreeMap::new(), BTreeMap::new());
     let (mut i, mut j) = (0, 0);
     for &(pi, pj) in pairs.iter().chain(std::iter::once(&(a.len(), b.len()))) {
         while i < pi {
             let mut s = a[i].clone();
-            for h in s.hands.iter_mut().chain(s.gives.iter_mut()) {
-                if let Some((n, _)) = aliases.get(&h.name) {
-                    h.name = n.clone();
-                }
-            }
+            in_union(&mut s.hands);
+            in_union(&mut s.gives);
             marks.insert(out.len(), Status::Removed);
             out.push(s);
             i += 1;
@@ -736,11 +764,45 @@ fn interleaved(
             j += 1;
         }
         if pi < a.len() {
+            let mut handed = a[pi].hands.clone();
+            in_union(&mut handed);
+            if handed != b[pj].hands {
+                hands.insert(out.len(), handed);
+            }
             out.push(b[pj].clone());
             (i, j) = (pi + 1, pj + 1);
         }
     }
-    (out, marks)
+    let remade = remade(&out, &marks, &hands);
+    Merged { sites: out, marks, hands, remade }
+}
+
+/// The steps only A has whose value a step only B has makes: a shared step is handed it under one
+/// name in both readings, the one step making it in A and the other in B. By their index in the
+/// union.
+fn remade(sites: &[Site], marks: &BTreeMap<usize, Status>, hands: &BTreeMap<usize, Vec<Held>>) -> BTreeMap<usize, usize> {
+    let (mut in_a, mut in_b): (HashMap<&str, usize>, HashMap<&str, usize>) = (HashMap::new(), HashMap::new());
+    let mut out = BTreeMap::new();
+    for (u, s) in sites.iter().enumerate() {
+        let mark = marks.get(&u);
+        if mark.is_none() {
+            for (ha, hb) in hands.get(&u).unwrap_or(&s.hands).iter().zip(&s.hands) {
+                let (Some(&i), Some(&j)) = (in_a.get(ha.name.as_str()), in_b.get(hb.name.as_str())) else { continue };
+                if ha.name == hb.name && marks.get(&i) == Some(&Status::Removed) && marks.get(&j) == Some(&Status::Added) {
+                    out.entry(i).or_insert(j);
+                }
+            }
+        }
+        for g in s.gives.iter().filter(|g| !g.name.is_empty()) {
+            if mark != Some(&Status::Added) {
+                in_a.insert(g.name.as_str(), u);
+            }
+            if mark != Some(&Status::Removed) {
+                in_b.insert(g.name.as_str(), u);
+            }
+        }
+    }
+    out
 }
 
 #[derive(PartialEq, Eq)]

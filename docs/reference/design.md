@@ -546,8 +546,13 @@ call order. Which call made an input is no part of it: that is the arrow of the 
 it, so `raw = load(p)` becoming `raw = fetch(p)` marks that occurrence, and `smooth(raw)` after
 it stays the same. Anonymous output names belong to their reading; a shared occurrence aliases
 A's anonymous values, those it is handed and those it gives, to B's names, so each side retains
-its own value chain. Calls to one function with different inputs remain distinct occurrences
-without changing the function's own arrow.
+its own value chain. A call put in before a shared one (`double(x)` becoming `double(add_one(x))`),
+or taken out, is the only occurrence marked: the shared one is handed in each reading what that
+reading hands it, and the union keeps what A hands it beside it (`Diff::hands`). A value a shared
+occurrence is handed under one name in both readings is one value, also when another call makes
+it in B (`Diff::remade`): `Frame · raw` is drawn once, with a removed line in from `load` and an
+added one from `fetch`, and is changed, since the arrows into it differ. Calls to one function
+with different inputs remain distinct occurrences without changing the function's own arrow.
 
 *Decision (PTT-509): changed is Yoneda, applied to the generators.* An object is determined up to
 isomorphism by the arrows into and out of it. A place or a type is changed when the arrows directly
