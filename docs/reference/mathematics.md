@@ -350,8 +350,8 @@ fine graph `G`, and the coarse graph is its image: its objects are the blocks, i
 of the arrows of `G`, and an arrow whose two ends lie in one block is gone. Every notion the coarse
 graph needs (where an object stands, which side it is on, when it was made) is a function of `G` and
 `q`, so two coarse graphs of one `G` are images of one thing, and refining `q` can only split.
-**In Atlas.** A route has one finest plan `F`, built once from the code and, above the cut its budget
-makes, independent of what is open:
+**In Atlas.** A route has one finest plan `F`, built once from the code and independent of what is
+open:
 
 - every call of the route is an *occurrence* (a step key, its path through the route), opened to
   all its calls; an occurrence with calls has a frame and its own arrow, one without is a pill;
@@ -375,7 +375,9 @@ parse the command line to the entry. The closed picture is `F/q`:
   the domain of the composite, "the parameters plus what the body consumes" (the second sentence),
   not the signature alone. A line comes from the step itself when its own arrow supplies it and
   reaches through it otherwise (the sixth sentence);
-- a place made and taken inside one block is internal to it and is not drawn;
+- a place made and taken inside one block is internal to it and is not drawn. What a step makes is never
+  its input: the value the arms of a step that is itself a choice make, at the step's own moment, is
+  what the step hands on, not what it takes;
 - the families are taken on the route's fiber, the types its plan holds (saturation: the fiber first,
   then the quotient): a type stands in its kind where the plan holds another type of that kind, so a
   route draws the same whatever other routes do, and an opened family holds, for a value, the kinds
@@ -401,9 +403,14 @@ parse the command line to the entry. The closed picture is `F/q`:
   with the side, saturated by it, so a group never stands between steps that its places do not stand
   between, and opening it never moves a place to another side;
 - the plan is unfolded as deep as its budget allows (`FINE_BUDGET`, some thousands of occurrences). An
-  occurrence beyond the cut stands for its arrow, its signature and what it reaches, and opening it
-  unfolds it, so below the cut `F` depends on what is open. The laws hold across the cut where that
-  arrow is the image of the unfolded body.
+  occurrence beyond the cut stands for the image of its whole body: the body unfolded one level, each
+  of its calls cut in turn, planned and closed by the same construction as every closed step. Closing
+  is a composite of closings (closing a step's calls and then the step is closing the step), so this
+  is the image of the body unfolded to its leaves, made without unfolding it, once for each function,
+  call and set of callers that make its paths whole. Planned by itself, a body does not know its
+  caller's values: a value it takes by a name it did not make is the caller's value of that name where
+  the caller has one, else the latest of its kind the body made. The cut changes how much of `F` is
+  held, never its picture, and opening a cut step refines as opening any step does.
 
 On the image the page then does only what is a quotient of `F` or a way of drawing it: the merge of
 siblings, the storage quotient and the fold (above); a value with no name and no type of the code's
@@ -416,19 +423,19 @@ Each law is then a theorem of the construction, or it is not yet, and says which
 
 | Law | Why it holds | What checks it |
 | --- | --- | --- |
-| Incidence | `F/q′` maps onto `F/q` along the blocks | the oracle (`atlasOracle`), `pictures.py topology` |
+| Incidence | `F/q′` maps onto `F/q` along the blocks | the oracle (`checkOpenings`), `pictures.py topology` |
 | Containment, Moment | functions of `F` | the oracle, `topology` |
 | Side | decided on `F/q₀` and carried by `q` | `topology` (a place that changes side) |
 | Closing | `q` is a function of the set of open boxes | `topology` (closing draws the picture it was) |
 | Reading | the own arrow of an opened step is its border | `topology` |
 | Endpoints | every image of a place or an occurrence is a box | `pictures.py walk` |
-| Across the cut | only where a cut step's arrow is the image of its body, which is not built so: the arrow is the signature and what the step reaches, and misses what the body takes from beyond it (#72) | `topology` with a small budget (`ATLAS_FINE_BUDGET=1`), which finds it |
+| Across the cut | a cut step's arrow is the image of its body, made by the same construction (`cutArrow`) | `topology` with a small budget (`ATLAS_FINE_BUDGET=1`, `=3`), which cuts the small programs as a large one is cut |
 | The overview | not built on a finest plan: the packages' pictures are drawn by their own construction, one box per type (#69) | `walk` only |
 
 What none of these checks is whether `F` says what the code does: the oracle holds the pictures to
 one another, not to the program. That is a test of its own, a program with the plan its code
 implies, compared with the plan Atlas builds (#52).
-**Where.** `plan`, `coarsen` and `atlasOracle` in `viewer/index.html`; `tools/pictures.py`.
+**Where.** `plan`, `coarsen`, `cutArrow` and `checkOpenings` in `viewer/index.html`; `tools/pictures.py`.
 
 ### Saturation: when the order of a view does not matter
 **What.** A set is saturated by an equivalence when it never cuts a class in two.
