@@ -29,7 +29,7 @@ use crate::tree::{
     evaluation_order, literals, named_children, nth_of_kind, span, text, unquote, walk, what_of, ChoiceSyntax, CompareSyntax, Part,
 };
 
-const EXTENSIONS: &[&str] = &["ts", "tsx", "mts", "cts", "js", "jsx", "mjs", "cjs"];
+pub(crate) const EXTENSIONS: &[&str] = &["ts", "tsx", "mts", "cts", "js", "jsx", "mjs", "cjs"];
 const OWN: OwnTypes = knowledge::TYPESCRIPT_OWN_TYPES;
 
 #[derive(Clone, Debug)]

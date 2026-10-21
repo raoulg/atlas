@@ -76,7 +76,9 @@ pub fn prophetize(
         // an item inside an added class is marked with its class
         let top: Vec<&Node> =
             added.iter().copied().filter(|n| !n.cls.as_deref().is_some_and(|c| added.iter().any(|a| a.id == c))).collect();
-        let ext = rel.extension().and_then(|e| e.to_str()).unwrap_or("");
+        let lang = crate::language::of_file(rel);
+        // what only Python asks: a body ty accepts in a sketch, and the `prophecy` the decorator calls
+        let python = lang.as_ref().is_some_and(|l| l.name() == "python");
         let mut new_lines: Vec<String> = lines.iter().map(|l| l.to_string()).collect();
         // what is written at a line: the body of a Python sketch that ty would refuse, and the marker
         // of an item; from the bottom up, so that a line added does not move one still to come
@@ -90,7 +92,7 @@ pub fn prophetize(
                 edits.push((start as usize, 0, Edit::Marker(n)));
             }
         }
-        if ext == "py" {
+        if python {
             for n in added.iter().copied().filter(|n| matches!(n.kind, NodeKind::Function | NodeKind::Method)) {
                 let gives = n.returns.as_ref().is_some_and(|r| !r.written.is_empty() && r.written != "None");
                 if let (true, Some((_, end))) = (gives, n.span) {
@@ -110,14 +112,11 @@ pub fn prophetize(
                     let indent: String =
                         lines.get(line - 1).map(|l| l.chars().take_while(|c| c.is_whitespace()).collect()).unwrap_or_default();
                     let by = supersedes.get(&n.id).map(String::as_str);
-                    let Some(marker) = marker(ext, &indent, by) else {
-                        out.notes.push(format!(
-                            "`{}` is in a language Atlas does not mark yet: write its prophecy marker by hand",
-                            rel.display()
-                        ));
+                    let Some(form) = lang.as_ref().map(|l| l.marks()) else {
+                        out.notes.push(format!("`{}` is in no language Atlas reads: write its prophecy marker by hand", rel.display()));
                         continue;
                     };
-                    insert_marker(ext, &mut new_lines, line - 1, marker);
+                    form.insert(&mut new_lines, line - 1, form.marker(&indent, by));
                     out.marked.push(n.id.clone());
                 }
             }
@@ -126,7 +125,7 @@ pub fn prophetize(
         if text.ends_with('\n') {
             body.push('\n');
         }
-        if ext == "py" && !out.marked.is_empty() {
+        if python && !out.marked.is_empty() {
             let helper = after.iter().find_map(|g| {
                 let h = g.nodes.iter().find(|n| n.kind == NodeKind::Function && n.name == "prophecy" && !n.library)?;
                 Some((h, rel_of(g, h)))
@@ -176,42 +175,6 @@ fn sketch_body(line: &str) -> Option<Vec<String>> {
     }
     let signature = trimmed.strip_suffix(": ...")?;
     Some(vec![format!("{signature}:"), format!("{indent}    raise NotImplementedError")])
-}
-
-/// The lines that mark the item that starts at a line, at the item's indentation. Python's marker is
-/// always a call: the project's `prophecy` takes keywords and gives the decorator, so a bare
-/// `@prophecy` would make the item what the call gives, and ty would type it so.
-fn marker(ext: &str, indent: &str, supersedes: Option<&str>) -> Option<String> {
-    let by = supersedes.map(|s| format!("supersedes={s}"));
-    Some(match ext {
-        "py" => format!("{indent}@prophecy({})", supersedes.map(|s| format!("supersedes=\"{s}\"")).unwrap_or_default()),
-        "rs" => format!("{indent}#[doc = \"prophecy:{}\"]", by.map(|b| format!(" {b}")).unwrap_or_default()),
-        "ts" | "tsx" => format!("{indent}/** @prophecy{} */", by.map(|b| format!(" {b}")).unwrap_or_default()),
-        _ => return None,
-    })
-}
-
-/// Put the marker above the item at `line` (0-based). A TypeScript item that has a JSDoc right
-/// above it takes the tag into that comment, which a second comment would hide.
-fn insert_marker(ext: &str, lines: &mut Vec<String>, line: usize, marker: String) {
-    let tag = marker.trim().trim_start_matches("/**").trim_end_matches("*/").trim().to_string();
-    let indent: String = marker.chars().take_while(|c| c.is_whitespace()).collect();
-    if matches!(ext, "ts" | "tsx") && line > 0 && lines[line - 1].trim_end().ends_with("*/") {
-        let above = lines[line - 1].trim().to_string();
-        if above.starts_with("/**") && above.ends_with("*/") && above.len() > 5 {
-            let said = above.trim_start_matches("/**").trim_end_matches("*/").trim().to_string();
-            lines.splice(
-                line - 1..line,
-                [format!("{indent}/**"), format!("{indent} * {said}"), format!("{indent} * {tag}"), format!("{indent} */")],
-            );
-        } else if above.starts_with("*/") || above.starts_with('*') {
-            lines.insert(line - 1, format!("{indent} * {tag}"));
-        } else {
-            lines.insert(line, marker);
-        }
-        return;
-    }
-    lines.insert(line, marker);
 }
 
 /// A Python file with `from {module} import prophecy` added where isort puts it: in the block of
@@ -336,13 +299,7 @@ pub fn unseal(g: &Graph, ids: &[String]) -> anyhow::Result<std::collections::BTr
 
 #[cfg(test)]
 mod tests {
-    use super::{imports, marker, with_import};
-
-    #[test]
-    fn a_python_marker_is_a_call() {
-        assert_eq!(marker("py", "", None).as_deref(), Some("@prophecy()"));
-        assert_eq!(marker("py", "    ", Some("pkg.a.Old")).as_deref(), Some("    @prophecy(supersedes=\"pkg.a.Old\")"));
-    }
+    use super::{imports, with_import};
 
     #[test]
     fn the_import_goes_where_isort_puts_it() {

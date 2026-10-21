@@ -236,11 +236,6 @@ const REVIEWED: &[(&str, &str, &str)] = &[
     ),
     (
         "choices",
-        "atlas-engine.decide.marker",
-        "`marker` and `insert_marker` each pick the language by the file's extension (`\"ts\" | \"tsx\"`); no one place says which language an extension is",
-    ),
-    (
-        "choices",
         "atlas-engine.flow.arrow_of",
         "`arrow_of` and `body_of` each test whether the node is a class: `NodeKind` has no method that says what a class's arrow and body are",
     ),
