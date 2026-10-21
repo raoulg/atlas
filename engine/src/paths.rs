@@ -238,10 +238,14 @@ pub fn hole(s: &str) -> Built {
     vec![Seg::Hole(s.to_string())]
 }
 
-/// `a` then `b`, with `sep` between them; adjacent literal text merges.
+/// `a` then `b`, with `sep` between them; adjacent literal text merges. The empty path is the unit
+/// of a path's join, in every language (`Path("") / "x"`, `join("", "x")`, `PathBuf::from("").join("x")`
+/// are `x`), so nothing stands between it and what is joined to it.
 pub fn join(a: &Built, b: &Built, sep: &str) -> Built {
     let mut out = a.clone();
-    let rest: Vec<Seg> = if sep.is_empty() { b.clone() } else { std::iter::once(Seg::Lit(sep.into())).chain(b.iter().cloned()).collect() };
+    let empty = sep == "/" && known(a) && render(a).is_empty();
+    let rest: Vec<Seg> =
+        if sep.is_empty() || empty { b.clone() } else { std::iter::once(Seg::Lit(sep.into())).chain(b.iter().cloned()).collect() };
     for s in rest {
         match (out.last_mut(), &s) {
             (Some(Seg::Lit(x)), Seg::Lit(y)) => x.push_str(y),
@@ -937,5 +941,8 @@ mod tests {
         assert_eq!(place(&pattern, "read_text").as_deref(), Some("assets/regelingen/*/IO-*"), "what the glob yields");
         assert_eq!(place(&lit("build/*"), "rmtree").as_deref(), Some("build/"));
         assert_eq!(place(&lit("*"), "read_text"), None);
+        let unset = or_else(vec![environment("DATA_DIR")], vec![lit("")]);
+        let joined: Vec<Option<String>> = cross(&unset, &[lit("sub/report.txt")], "/").iter().map(|b| place(b, "read")).collect();
+        assert_eq!(joined, [Some("*/sub/report.txt".into()), Some("sub/report.txt".into())], "the empty path joins as nothing");
     }
 }
