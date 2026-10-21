@@ -416,22 +416,22 @@ section{margin-bottom:104px}
     <div class="stage" role="tabpanel" id="st-prophecy" aria-labelledby="tb-prophecy">
       <div class="session">
         <figure class="chat fill"><figcaption>In the chat</figcaption><div class="clip"><img src="img/session/prophetize.png" style="--w:637" alt="The chat: you say yes and ask to set up a prophecy in the code; the agent says the design is now in your code as a prophecy, drawn dotted purple, and begins to list the files"></div></figure>
-        <figure><figcaption>On the page <span class="tag">prophecy</span></figcaption><img src="img/session/prophecy.png" style="--w:605" alt="The same route with the design written into the code: Cycles(), Cycles and peaks have a dotted purple outline, not built yet"></figure>
+        <figure><figcaption>On the page <span class="tag">prophecy</span></figcaption><img src="img/session/prophecy.png" style="--w:595" alt="The same route with the design written into the code: Cycles(), Cycles and peaks have a dotted purple outline, not built yet; the shape is the vision's, from smooth through peaks to Cycles.save"></figure>
       </div>
-      <p class="cap"><b>You say yes; it goes into your code.</b> The same sketch, now real code that Atlas reads with real types, marked as not built yet and drawn <span class="p">dotted purple</span>. Written into real code, it may draw a little differently from the sketch: that difference is worth a look before anything is built.</p>
+      <p class="cap"><b>You say yes; it goes into your code.</b> The same sketch, now real code that Atlas reads with real types, marked as not built yet and drawn <span class="p">dotted purple</span>: the shape of the vision, kept in your files until it is built.</p>
     </div>
     <div class="stage" role="tabpanel" id="st-left" aria-labelledby="tb-left">
       <div class="session">
         <figure class="chat"><figcaption>In the chat</figcaption><img src="img/session/revelation.png" style="--w:618" alt="The chat: you ask how far along the implementation is; the agent uses atlas revelation and lists three prophecies, run_cycles, Cycles and peaks, each with one body to write"></figure>
         <figure class="code fill"><figcaption>In your files: the design, with its markers in purple</figcaption><div class="clip"><pre># series.py
-<span class="m">@prophecy</span>
+<span class="m">@prophecy()</span>
 def peaks(frame: pd.DataFrame, years: int) -&gt; pd.DataFrame:
     """`frame` with a `peak` column: true where the smoothed mean is the highest
     within `years` years around it, the maximum of a solar cycle."""
     raise NotImplementedError
 
 # plot.py
-<span class="m">@prophecy</span>
+<span class="m">@prophecy()</span>
 class Cycles(Trend):
     """The trend, with the maximum of each solar cycle marked."""
 
