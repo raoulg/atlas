@@ -1,0 +1,7 @@
+[project]
+name = "tupled"
+version = "0.1.0"
+requires-python = ">=3.12"
+
+[project.scripts]
+tupled = "tupledun"

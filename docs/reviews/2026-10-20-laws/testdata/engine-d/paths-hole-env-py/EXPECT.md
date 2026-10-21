@@ -1,0 +1,3 @@
+Route: `holeenv.run`
+- The file `$DATA_DIR/report.txt`: a term with a named hole, e.g. `{DATA_DIR}/report.txt` or `*/report.txt` — mathematics.md: "a part no code determines is a named hole ... what it cannot trace stays a hole in the term, so the gap is visible"; design.md: "A file named under a directory that is not known is that name under any (`artefacts/*/report.json`)". Side: left (in).
+Observed (0.68.0): File(report.txt), a file at the repository root that the code never names. DEFECT J: paths::place returns None for a term whose first part is unknown (paths.rs:338), and the call keeps its last path-like literal (effects.rs:363-369).

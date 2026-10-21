@@ -1,0 +1,4 @@
+Route: `bumped.run`
+- File(data/counter.txt): between (mid) — `run` writes it and the later step `bump` reads that back and uses it (it goes into the next write): "A place one step writes and a later step reads and uses ... stands between them." Nothing the route reads was there before it ran, so it is not "both".
+- Arrow facts: `run.reads_back` = [counter] holds; `run.updates` should be empty ("the places where it writes after it read what was there").
+Observed (0.68.0): `run` has reads_back AND updates for the same place (contradictory). DEFECT (functor): flow.rs:579 ORs the callee's `updates` into the caller without asking whether the callee's find was a read back of the caller's earlier write; the per-place summary (Order) does not compose. The side is out, not mid, because coarsen's `handsOn` (viewer/index.html:1684) finds nothing else `bump` hands on (DEFECT S).
