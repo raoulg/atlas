@@ -276,7 +276,7 @@ fn follow(mut n: TsNode, mut open: bool, mut refers: bool, src: &[u8], depth: u3
                 refers = true;
                 n = p;
             }
-            "try_expression" | "parenthesized_expression" => n = p,
+            k if super::WRAPPERS.contains(&k) => n = p,
             "index_expression" if p.named_child(0).map(|v| v.id()) == Some(n.id()) => {
                 refers = false;
                 n = p;
