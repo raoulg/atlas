@@ -135,6 +135,7 @@ pub struct Steps<'t, 's> {
     choices: HashMap<usize, u32>,
     sites: Vec<Site>,
     edges: Vec<(String, EdgeKind, Option<String>, Vec<(u32, u32)>)>,
+    unseen: Vec<(u32, String)>,
     /// The names the steps so far have kept.
     pub kept: HashSet<String>,
 }
@@ -142,7 +143,25 @@ pub struct Steps<'t, 's> {
 impl<'t, 's> Steps<'t, 's> {
     pub fn new(body: TsNode<'t>, src: &'s [u8], syntax: &'s ChoiceSyntax, uses: &'s UseSyntax) -> Self {
         let choices = number_choices(body, src, syntax);
-        Steps { body, src, syntax, uses, choices, sites: vec![], edges: vec![], kept: HashSet::new() }
+        Steps { body, src, syntax, uses, choices, sites: vec![], edges: vec![], unseen: vec![], kept: HashSet::new() }
+    }
+
+    /// A call `c`, `name`d as the code writes it, of which the graph holds no more than what it
+    /// gives: a library's that crosses into no place, changes no value and ends nothing as the
+    /// tables say, or one Atlas cannot follow. Where what it gives goes nowhere the function hands
+    /// on, the call is made for an effect Atlas does not see.
+    pub fn dropped(&mut self, c: TsNode, name: &str) {
+        if !self.goes_on(c, &mut HashSet::new()) {
+            self.unseen(c, &format!("{name}(..)"));
+        }
+    }
+
+    /// What the body does at `n` that the graph holds nothing else of, as the code writes it.
+    pub fn unseen(&mut self, n: TsNode, written: &str) {
+        let one = worded(written);
+        if !self.unseen.iter().any(|(l, w)| *l == line(n) && *w == one) {
+            self.unseen.push((line(n), one));
+        }
     }
 
     /// Mark the touches call `c` made as checks when what it gives goes to nothing the function
@@ -318,6 +337,7 @@ impl<'t, 's> Steps<'t, 's> {
             n.sites = self.sites;
             n.arm_lines = arm_lines;
             n.whens = whens;
+            n.unseen = self.unseen;
         }
     }
 

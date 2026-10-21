@@ -412,6 +412,12 @@ pub const PYTHON_HOLDERS: &[&str] = &[
     "Reversible",
 ];
 
+/// What makes a Python method a declaration that what implements it fills in: a decorator
+/// (`@abstractmethod`), or a base, by package and name, that makes its class a protocol, which any
+/// class with its methods implements without naming it (`typing.Protocol`).
+pub const PYTHON_ABSTRACT: &[&str] = &["abstractmethod"];
+pub const PYTHON_PROTOCOLS: &[(&str, &str)] = &[("typing", "Protocol"), ("typing_extensions", "Protocol")];
+
 /// Python's generic types whose value is one of their parameters: `Optional[Node]` is a Node or
 /// nothing.
 pub const PYTHON_ALTERNATIVES: &[&str] = &["Optional", "Union"];
@@ -921,6 +927,16 @@ pub const OPERATIONS: &[(&str, &str, Crossing)] = &[
 /// What a package's operation crosses by itself.
 pub fn operation(pkg: &str, op: &str) -> Option<Crossing> {
     OPERATIONS.iter().find(|(p, o, _)| *p == pkg && *o == op).map(|(_, _, c)| *c)
+}
+
+/// The functions that end the program where they are called, as an error no one catches does:
+/// by the module that holds them and their name, Python's `sys.exit` and `os._exit`, Node's
+/// `process.exit`, Rust's `std::process::exit`.
+pub const ENDS_THE_RUN: &[(&str, &str)] = &[("sys", "exit"), ("os", "_exit"), ("os", "abort"), ("process", "exit"), ("process", "abort")];
+
+/// Whether the function `name` of the module `module` ends the program.
+pub fn ends_the_run(module: &str, name: &str) -> bool {
+    ENDS_THE_RUN.contains(&(module, name))
 }
 
 /// A program's streams that a write to shows the human: `sys.stdout`, `process.stderr`, Rust's

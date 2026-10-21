@@ -600,3 +600,36 @@ fn prophecy_a_seal_is_listed_and_broken_when_its_issue_is_closed() {
     );
     let _ = std::fs::remove_dir_all(copy.parent().expect("has a parent"));
 }
+
+/// One side of the nothing pair (`tests/pairs/nothing`): a job runner that runs a task, says when a
+/// job is done, settles its log and stops the run, in Python, Rust and TypeScript alike.
+fn jobs(side: &str) -> Graph {
+    analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/nothing/rust").join(side), &Options::default()).unwrap()
+}
+
+/// A call leaves something behind, and where Atlas cannot see what a call leaves, the question says
+/// so. The clean runner leaves each step where a reader sees it: `finish` is handed its callback,
+/// `count` changes an atomic `static`, `settle` writes its log and `stop` ends the run with
+/// `std::process::exit`: nothing is asked. The shortcut's `Job` keeps its callback in a field and
+/// calls it there, `(self.on_done)()`, a call Atlas cannot follow: Atlas asks what it leaves behind.
+/// `settle`, a door that waits and does nothing, is asked whether it is dead, as any function is.
+/// An implementation names the trait it fills in, so `run_task` reads alike on both sides.
+#[test]
+fn nothing_says_what_atlas_cannot_see() {
+    let (c, s) = (jobs("clean"), jobs("shortcut"));
+    let asked = |g: &Graph| -> Vec<(String, String)> {
+        check(g).into_iter().filter(|f| f.principle == "nothing").map(|f| (f.node, f.what)).collect()
+    };
+    assert!(asked(&c).is_empty(), "{:#?}", asked(&c));
+    assert!(node(&c, "jobs.stop").raises, "ending the run is what `stop` leaves behind");
+    let want = [
+        ("jobs.Job.finish", "Job.finish gives nothing back, and Atlas cannot see what `(self.on_done)(..)` does"),
+        ("jobs.settle", "settle gives nothing back, and Atlas sees no change and no place it reaches"),
+    ]
+    .map(|(f, what)| (f.to_string(), what.to_string()));
+    assert_eq!(asked(&s), want);
+    for g in [&c, &s] {
+        assert!(node(g, "jobs.Task.run").declared, "a trait's method without a body is what its implementations fill in");
+        assert!(edge(g, EdgeKind::Calls, "jobs.run_task", "jobs.Task.run"));
+    }
+}

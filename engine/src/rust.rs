@@ -607,6 +607,8 @@ fn collect_symbols(m: &mut Module, store: &mut GraphBuilder) {
                                 decorators: attrs_of(f, src),
                                 on_class: !takes_self(&params),
                                 ctor: constructs(&params, &returns, &name),
+                                // a trait's method without a body of its own is what its implementations fill in
+                                declared: f.kind() == "function_signature_item",
                                 params,
                                 returns,
                                 ..Default::default()
@@ -1559,7 +1561,7 @@ fn link_calls<'t>(
     steps.finish(store, id);
     if let Some(node) = store.nodes.get_mut(id) {
         node.compares = compares;
-        node.raises = crate::tree::holds(body, &m.src, panics, &["function_item", "impl_item", "trait_item", "mod_item"]);
+        node.raises = read.exits || crate::tree::holds(body, &m.src, panics, &["function_item", "impl_item", "trait_item", "mod_item"]);
     }
     for (t, input) in read.mutates {
         store.add_edge(id, &t, EdgeKind::Mutates, Some(input));
@@ -1624,7 +1626,8 @@ fn bound_in(def: TsNode, src: &[u8]) -> HashSet<String> {
 
 /// What reading a body finds besides its steps: what it touches, the file and database calls
 /// whose paths and statements wait for what callers hand, the calls of the program's functions
-/// with their arguments, the calls Atlas could not follow, and the inputs it changes in place.
+/// with their arguments, the calls Atlas could not follow, the inputs it changes in place, and
+/// whether it calls what ends the program.
 #[derive(Default)]
 struct Read<'t> {
     touches: Vec<Touch>,
@@ -1632,6 +1635,7 @@ struct Read<'t> {
     args: Vec<Arg<'t>>,
     unresolved: Vec<(String, Bucket)>,
     mutates: Vec<(String, String)>,
+    exits: bool,
 }
 
 /// A function's body as Rust reads it: the program around it, and the classes its names hold.
@@ -1664,6 +1668,8 @@ struct Body<'a, 't> {
     returned: &'a HashMap<String, String>,
     /// The names the function binds, found when a call not followed first asks.
     bound: std::cell::OnceCell<HashSet<String>>,
+    /// It gives no value: what the last expression of its block gives goes nowhere.
+    unit: bool,
     read: Read<'t>,
 }
 
@@ -1703,6 +1709,7 @@ impl<'a, 't> Body<'a, 't> {
             taken: HashMap::new(),
             returned,
             bound: Default::default(),
+            unit: n.returns.as_ref().map_or(true, |r| r.value.is_empty() && !r.own),
             read: Read::default(),
         };
         b.parameters(d);
@@ -2190,6 +2197,19 @@ impl<'a, 't> Body<'a, 't> {
         Some(t.strip_prefix("ext:")?.split('.').map(String::from).collect())
     }
 
+    /// A call Atlas reads as computing what it gives, `written` as the code writes it: where what
+    /// it gives goes nowhere, or is the last value of a block that gives none, the call is made for
+    /// an effect Atlas does not see.
+    fn dropped(&self, steps: &mut Steps, c: TsNode<'t>, written: &str) {
+        let body = self.def.child_by_field_name("body");
+        let last = body.and_then(|b| b.named_child(b.named_child_count().saturating_sub(1)));
+        if self.unit && last.map(|l| l.id()) == Some(c.id()) {
+            steps.unseen(c, &format!("{written}(..)"));
+        } else {
+            steps.dropped(c, written);
+        }
+    }
+
     /// A library's operation not read: a step where the body keeps what it gives.
     fn library_step(&self, steps: &mut Steps, c: TsNode<'t>, op: &str, recv: Option<TsNode<'t>>) {
         let hands = self.call_hands(c, recv, &steps.kept);
@@ -2295,13 +2315,19 @@ impl<'a, 't> Body<'a, 't> {
         }
         match (own, receiver) {
             (Some(t), r) => self.own_step(steps, c, &t, Some(value), r.as_deref(), None),
-            // a method not found on a name's type (`to_string`, `clone`) is not known; it builds nothing
-            (None, Some(_)) if matches!(value.kind(), "self" | "identifier" | "field_expression") => {}
+            // a method not found on a name's type (`to_string`, `clone`) is not known; it builds
+            // nothing, and what it does where its value goes nowhere Atlas does not see
+            (None, Some(_)) if matches!(value.kind(), "self" | "identifier" | "field_expression") => {
+                self.dropped(steps, c, &format!("{}.{method}", text(value, src)));
+            }
             // a library's operation; on what a call gives, also one its class does not have, which
             // is the wrapper's the class is given in (`map_or` of the `Option<&Node>` of `ix.node(..)`)
             _ => {
                 self.library_step(steps, c, &method, Some(value));
                 let touches = self.chain_touches(c, value, &method);
+                if touches.is_empty() {
+                    self.dropped(steps, c, text(f, src));
+                }
                 self.keep(touches);
             }
         }
@@ -2474,6 +2500,10 @@ impl<'a, 't> Body<'a, 't> {
     /// library's, which may cross into the world.
     fn path_call(&mut self, steps: &mut Steps, c: TsNode<'t>, mut parts: Vec<String>) {
         if parts.is_empty() {
+            // a call through a value no path names (`(self.on_done)()`) is one Atlas cannot follow
+            if let Some(f) = c.child_by_field_name("function").filter(|_| c.kind() == "call_expression") {
+                self.dropped(steps, c, text(f, self.src));
+            }
             return;
         }
         let target = match (parts[0].as_str(), &self.cls) {
@@ -2503,9 +2533,16 @@ impl<'a, 't> Body<'a, 't> {
                 self.library_step(steps, c, &op, None);
                 let full = expand(self.m, &parts);
                 self.read.unresolved.push((full.iter().take(2).cloned().collect::<Vec<_>>().join("."), self.bucket(&parts)));
-                if let Some(tag) = effects::boundary_rust(&full) {
-                    let touches = self.crossed(c, tag, &op);
-                    self.keep(touches);
+                let exits = matches!(full.as_slice(), [.., module, f] if knowledge::ends_the_run(module, f));
+                self.read.exits |= exits;
+                match effects::boundary_rust(&full) {
+                    Some(tag) => {
+                        let touches = self.crossed(c, tag, &op);
+                        self.keep(touches);
+                    }
+                    // what the tables say nothing of beside what it gives, Atlas does not see
+                    None if !exits => self.dropped(steps, c, &parts.join("::")),
+                    None => {}
                 }
             }
         }

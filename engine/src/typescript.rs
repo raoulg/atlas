@@ -386,10 +386,11 @@ fn signature(params: Option<TsNode>, ret: Option<TsNode>, src: &[u8]) -> (Vec<Pa
 }
 
 /// What a return type gives: a `Promise<T>` gives `T` once it arrives, `void` and `undefined` no
-/// value, `this` a value of the class it runs on; `any`, also once it arrives, says nothing.
+/// value, `this` a value of the class it runs on; `any`, also once it arrives, says nothing. A
+/// `Promise` says that the value arrives later, not that it may fail: it rejects where what it
+/// runs throws, as any call may.
 fn returns(rt: TsNode, src: &[u8]) -> Option<Returns> {
     let mut t = rt;
-    let fails = t.kind() == "generic_type" && t.child_by_field_name("name").map_or(false, |n| text(n, src) == "Promise");
     while t.kind() == "generic_type" && t.child_by_field_name("name").map_or(false, |n| text(n, src) == "Promise") {
         match t.child_by_field_name("type_arguments").and_then(|a| named_children(a).into_iter().next()) {
             Some(i) => t = i,
@@ -404,7 +405,7 @@ fn returns(rt: TsNode, src: &[u8]) -> Option<Returns> {
         ("this_type", _) => (String::new(), true),
         (_, v) => (v.to_string(), false),
     };
-    Some(Returns { written: text(rt, src).to_string(), value, own, fails })
+    Some(Returns { written: text(rt, src).to_string(), value, own, fails: false })
 }
 
 // ---------- pass 1: files, symbols, imports ----------
@@ -603,6 +604,8 @@ fn add_function(m: &mut Module, store: &mut GraphBuilder, name: &str, def: TsNod
         doc: doc_of(def, src),
         prophecy: prophecy_of(def, src),
         cls: cls.map(str::to_string),
+        // a method an interface or an abstract class declares is its signature alone
+        declared: matches!(f.kind(), "method_signature" | "abstract_method_signature"),
         params,
         returns,
         ..Default::default()
@@ -1829,6 +1832,7 @@ fn link_calls<'t>(
             b.call(&mut steps, c);
             steps.mark(c, b.read.touches[t..].iter_mut().chain(b.read.calls[w..].iter_mut().map(|(t, _)| t)));
         }
+        b.class_state(&mut steps);
         b.ends();
         b.read
     };
@@ -1851,12 +1855,13 @@ fn link_calls<'t>(
     }
     if let (Some(compares), Some(node)) = (compares, store.nodes.get_mut(id)) {
         node.compares = compares;
-        node.raises = crate::tree::holds(
-            body,
-            &m.src,
-            |n, _| n.kind() == "throw_statement",
-            &["function_declaration", "class_declaration", "method_definition"],
-        );
+        node.raises = read.exits
+            || crate::tree::holds(
+                body,
+                &m.src,
+                |n, _| n.kind() == "throw_statement",
+                &["function_declaration", "class_declaration", "method_definition"],
+            );
     }
     linked.args.extend(read.args);
     linked.calls.extend(read.calls.into_iter().map(|(t, built)| (id.to_string(), t, built)));
@@ -1864,8 +1869,8 @@ fn link_calls<'t>(
 
 /// What reading a body finds besides its steps: what it touches, the calls Atlas could not
 /// follow, the functions whose value it uses, the inputs it changes in place, the calls of the
-/// package's functions with the arguments they pass, and the file and network calls whose path
-/// or URL waits for them.
+/// package's functions with the arguments they pass, the file and network calls whose path
+/// or URL waits for them, and whether it calls what ends the program.
 #[derive(Default)]
 struct Read<'t> {
     touches: Vec<Touch>,
@@ -1874,6 +1879,7 @@ struct Read<'t> {
     mutates: Vec<(String, String)>,
     args: Vec<Arg<'t>>,
     calls: Vec<(Touch, Vec<crate::paths::Built>)>,
+    exits: bool,
 }
 
 /// A function's body, or a module's own code, as TypeScript reads it: the program around it,
@@ -1973,6 +1979,29 @@ impl<'a, 't> Body<'a, 't> {
 
     fn class(&self, r: Option<String>) -> Option<String> {
         r.filter(|r| self.store.nodes.get(r).map_or(false, |x| x.kind == NodeKind::Class))
+    }
+
+    /// The values a class keeps that the body changes by assignment: `Counter.total += 1`,
+    /// `Registry.handlers[name] = fn`. A static of a class is no place Atlas draws, so what the
+    /// change leaves behind it does not see.
+    fn class_state(&self, steps: &mut Steps) {
+        if self.is_module {
+            return;
+        }
+        let src = self.src;
+        for a in walk(self.body, &["assignment_expression", "augmented_assignment_expression", "update_expression"]) {
+            let Some(mut root) = a.child_by_field_name(if a.kind() == "update_expression" { "argument" } else { "left" }) else { continue };
+            let mut through = false;
+            while let Some(inner) = match root.kind() {
+                "member_expression" | "subscript_expression" => root.child_by_field_name("object"),
+                _ => None,
+            } {
+                (root, through) = (inner, true);
+            }
+            if through && root.kind() == "identifier" && self.class(self.resolve(&[text(root, src).to_string()])).is_some() {
+                steps.unseen(a, text(a, src));
+            }
+        }
     }
 
     /// Whether `r` is one of the program's own functions or classes.
@@ -2308,6 +2337,10 @@ impl<'a, 't> Body<'a, 't> {
             _ if parts.is_empty() => {
                 let (name, bucket) = (written_callee(f, src), self.bucket_of(f));
                 self.unread(steps, c, &name, bucket, hands, vec![]);
+                // what the language's own computes Atlas reads; what anything else does, it does not see
+                if bucket != Bucket::Builtin {
+                    steps.dropped(c, &name);
+                }
                 self.read.unresolved.push((name, bucket));
             }
             _ => {
@@ -2319,12 +2352,23 @@ impl<'a, 't> Body<'a, 't> {
                 } else {
                     text(f, src).to_string()
                 };
-                match self.eval.command_line(At { m: self.m, scope: self.scope, params: &self.params }, c) {
+                let parsed = self.eval.command_line(At { m: self.m, scope: self.scope, params: &self.params }, c);
+                // the language's own, a change and a parse of the command line are what the tables say
+                let known = parsed.is_some() || bucket == Bucket::Builtin;
+                match parsed {
                     Some(options) => steps.parses(c, &name, hands, self.parsed_into(c), options),
                     None => self.unread(steps, c, &name, bucket, hands, changed),
                 }
                 self.read.unresolved.push((parts.iter().take(2).cloned().collect::<Vec<_>>().join("."), bucket));
+                let exits = matches!(parts.as_slice(), [.., module, f] if knowledge::ends_the_run(module, f));
+                self.read.exits |= exits;
+                let crossed = (self.read.touches.len(), self.read.calls.len());
                 self.crossed(c, &parts);
+                // a package's call the tables say nothing of beside what it gives, or one Atlas
+                // cannot follow: what it does, Atlas does not see
+                if !known && !exits && crossed == (self.read.touches.len(), self.read.calls.len()) {
+                    steps.dropped(c, &text(f, src));
+                }
             }
         }
     }

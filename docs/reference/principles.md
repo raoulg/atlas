@@ -59,7 +59,7 @@ lets it be traced and Atlas does not yet; each gap is an ignored test in `pairs_
 | changes | mutates edge; finding | mutates edge; finding | forbidden: a change is `&mut` in the signature |
 | gives | finding; the call not followed | no returns edge; `uses` on the call | returns edge; `Result<T, E>` gives `T` |
 | choices | finding | finding | finding |
-| nothing | finding | finding | finding |
+| nothing | finding; what Atlas does not see is named: a `Protocol`'s method, a callback in a field, a class's attribute, a library's call no table describes | finding; the same, with an interface and a `static`; a `Promise` waits and does not fail | finding; a callback in a field is named, and a method called on a type parameter |
 | layers | finding | finding | finding; a call among a macro's tokens is a step |
 | lens | finding; takes, returns and has; the steps a value is handed to, a container's `append` among them | finding; takes and returns; the tables a store's client runs statements on; a `push` onto an array the body declares | finding; takes and returns; the tables a store's connection runs statements on; a `push` onto a `Vec` |
 | a place carries a what | a file's path, a request's host | a file's path, a request's host | the type a step gives, a request's host, a program by its constant's value |
@@ -353,14 +353,17 @@ A function is an arrow from what it takes to what it gives, writes or changes. O
 nothing back, cannot fail, changes nothing it is handed and reaches no place is an arrow into
 nothing: whoever calls it learns nothing and nothing is different afterwards. Either it is
 dead, or it changes something the code does not show: a value it was handed, reached through
-an item or a loop; a library's own state. Then the change belongs where a reader sees it. A
-global the function changes is shown: a value a module keeps between calls is a place,
+a field, an item or a loop. Then the change belongs where a reader sees it. A global the
+function changes is shown: a value a module keeps between calls is a place,
 `Global(module.name)`, written by whoever changes it and read by whoever uses it. Atlas draws it
 and does not judge it, since a global is sometimes the right choice. A library's module is code,
 so what it holds is the place: a function that sets `os.environ["DB"]` for another to read
 writes `Global(os.environ)`, and a call of `os.path.join` reads nothing. In Rust the place is a
 `static mut`, or a `static` of a type that changes in place (a lock, a cell, an atomic); one a
-function's body declares is named after the function.
+function's body declares is named after the function. Ending the program leaves something
+behind as an error no one catches does: `sys.exit(..)` and `os._exit(..)`, Node's
+`process.exit(..)` and Rust's `std::process::exit(..)` count as `raise`, `throw` and `panic!`
+count (`ENDS_THE_RUN` in `knowledge.rs`).
 
 - **Rust.** `&mut T` and `-> Result<()>` say what a function changes and that it may fail.
   What stays hidden is a value behind a `RefCell`.
@@ -370,10 +373,45 @@ function's body declares is named after the function.
   array it is handed can hand back the array.
 
 Atlas checks: a function another function of the project calls, that gives nothing back
-(Python `-> None`, TypeScript `void`, Rust no return type), whose body does not raise, throw
-or panic and whose return type does not say it may fail (`Result`, `Promise`), and where
+(Python `-> None`, TypeScript `void`, Rust no return type), whose body does not raise, throw,
+panic or end the program and whose return type does not say it may fail (`Result`), and where
 nothing it runs (what it calls, what it builds, the overrides a call may reach, down to the
 end) touches a place, changes a value or a parameter, fails, or calls a function it was handed.
+`async` changes none of this: an `async def` and a `Promise<void>` say that nothing arrives
+later, and a `Promise` rejects where what it runs throws, as any call may. A door or an entry
+is asked as any other function: its callers in the program get the same arrow. A method that is
+only declared (abstract, of a `Protocol`, an interface's, a trait's without a body) has no body
+to ask about; what calls it is asked.
+
+The question depends on what Atlas sees of what the function runs:
+
+- **All of it.** Everything it runs is code Atlas reads, or calls whose effect the tables in
+  `knowledge.rs` state: what crosses into a place, what changes a value, what ends the program,
+  and the language's own (Python's builtins and `sys`, TypeScript's globals), which compute a
+  value and nothing more. The question is whether the function is dead, or changes a value it
+  is handed in a way no call shows.
+- **Not all of it.** It runs something whose effect Atlas does not model, and the finding names
+  it with its line: a library's call whose value goes nowhere and that no table describes
+  (`logger.info(..)`, `time.sleep(..)`, `random.seed(..)`, torch's `x.mul_(..)`); a call Atlas
+  cannot follow (a callback kept in a field, `self.on_done()`; a call on a value without a type);
+  a method only declared that nothing in the graph implements (a `Protocol` or an interface that
+  a class fills in without naming it); a value a class keeps, which the function changes
+  (`Counter.total += 1`). The question is what that leaves behind (a log, a change in a
+  library's or a class's value, a wait), not whether the function is dead.
+
+What the rule cannot see:
+
+- A change of a value handed in through a field, an item or a loop (`node.status = ..`,
+  `d[k] = v`) is no call: the function reads as all seen, and the question names such a change.
+- A library's call whose value the body keeps is read as computing that value and nothing more
+  (`n = buf.write(s)`): the function reads as all seen.
+- The language's own is read as the tables describe it, which is not all it does:
+  TypeScript's `Object.assign(target, ..)` changes its target, Python's `sys.setrecursionlimit`
+  changes the interpreter.
+- A decorator that wraps a function (click's `@group`) makes a call to it run the framework's
+  code; Atlas reads the body.
+- A Rust method called on a value of a type parameter (`fn run<T: Task>(t: &T) { t.run() }`) is
+  not followed: it is named as a call Atlas cannot see.
 
 rkg: `stempel_herkomst(graph, herkomst) -> None` sets the author, status and date on every
 node of the graph it is handed, through a loop. Atlas sees a function into nothing; what it

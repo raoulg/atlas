@@ -367,19 +367,22 @@ fn changes_are_what_the_method_reached_changes() {
 /// object that uses it (`new Ledger(config, ..)`, a `Config` the Ledger has). The shortcut keeps it
 /// in a module-level `let`, set by `configure(config): void` and read back through `settings()`:
 /// a global, the place `Global(config.current)`, which `configure` writes and its users read.
-/// Drawn, not asked: a global is sometimes the right choice.
+/// Drawn, not asked: a global is sometimes the right choice. The shortcut's `exportReport` hands
+/// its report to an exporter it looks up by the format's name, `EXPORTERS[format](report)`, a call
+/// Atlas cannot follow, and gives nothing back (its `Promise<void>` says that it waits, not that it
+/// fails): Atlas asks what that call leaves behind.
 #[test]
 fn nothing_a_call_leaves_something_behind() {
     let (c, s) = (clean(), shortcut());
     assert!(c.edges.iter().any(|e| e.kind == EdgeKind::Has && e.src == "clean.ledger.Ledger" && e.dst == "clean.config.Config"));
-    assert!(!findings(c).iter().any(|f| f.principle == "nothing" && f.node.starts_with("clean.config")));
+    assert!(asked_anywhere(c, "nothing").is_empty(), "{:?}", asked_anywhere(c, "nothing"));
     let global =
         |f: &str, dir: &str| touches(s, f, "global").iter().any(|t| t.artifact == "shortcut.config.current" && t.dir_name() == dir);
     assert!(global("config.configure", "write") && global("config.settings", "read"));
-    assert!(
-        asked_anywhere(s, "nothing").is_empty(),
-        "a call that keeps its value in a global leaves it behind: {:?}",
-        asked_anywhere(s, "nothing")
+    assert_eq!(
+        asked_anywhere(s, "nothing"),
+        ["shortcut.ledger.Ledger.exportReport Ledger.exportReport gives nothing back, and Atlas cannot see what `EXPORTERS[format](..)` does"],
+        "a call that keeps its value in a global leaves it behind"
     );
     assert!(
         edge(s, EdgeKind::Calls, "cli.run", "config.configure") && edge(s, EdgeKind::Calls, "server", "config.configure"),
@@ -666,4 +669,46 @@ fn prophecy_a_seal_is_listed_and_broken_when_its_issue_is_closed() {
     assert_eq!(after.iter().find(|s| s.id == "clean.Crate").and_then(|s| s.sealed.as_deref()), Some("#8"));
     assert!(atlas_engine::decide::unseal(&g, &["clean.Store".to_string()]).is_err(), "a prophecy that is not sealed has no seal to break");
     let _ = std::fs::remove_dir_all(copy.parent().expect("has a parent"));
+}
+
+/// One side of the nothing pair (`tests/pairs/nothing`): a job runner that runs a task, says when a
+/// job is done, counts its runs, settles its log and stops the run, in Python, Rust and TypeScript
+/// alike.
+fn jobs(side: &str) -> Graph {
+    analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/nothing/typescript").join(side), &Options::default()).unwrap()
+}
+
+/// A call leaves something behind, and where Atlas cannot see what a call leaves, the question says
+/// so. The clean runner leaves each step where a reader sees it: `Echo` implements the `Task` it
+/// names, `finish` is handed its callback, `count` changes a module's `let`, `settle` writes its log
+/// and `stop` ends the run with `process.exit`: nothing is asked. The shortcut leaves them out of
+/// sight: `Echo` has `Task`'s method without naming it, so `Task.run` is only declared; `Job` keeps
+/// its callback in a field; `count` changes a static its class keeps. Atlas asks what each of those
+/// leaves behind and names what it cannot see. `settle`, a door that waits and does nothing, is
+/// asked whether it is dead as Python's `async def` is: a `Promise<void>` says it waits, not that
+/// it fails.
+#[test]
+fn nothing_says_what_atlas_cannot_see() {
+    let (c, s) = (jobs("clean"), jobs("shortcut"));
+    let asked = |g: &Graph| -> Vec<(String, String)> {
+        check(g)
+            .into_iter()
+            .filter(|f| f.principle == "nothing")
+            .map(|f| (f.node.replacen(&format!("{}.", g.root), "", 1), f.what))
+            .collect()
+    };
+    assert!(asked(&c).is_empty(), "{:#?}", asked(&c));
+    assert!(node(&c, "runner.stop").raises, "ending the run is what `stop` leaves behind");
+    let want = [
+        ("runner.runTask", "runTask gives nothing back, and Atlas cannot see what `Task.run` does"),
+        ("runner.Job.finish", "Job.finish gives nothing back, and Atlas cannot see what `this.onDone(..)` does"),
+        ("runner.count", "count gives nothing back, and Atlas cannot see what `Counter.runs += 1` does"),
+        ("runner.settle", "settle gives nothing back, and Atlas sees no change and no place it reaches"),
+    ]
+    .map(|(f, what)| (f.to_string(), what.to_string()));
+    assert_eq!(asked(&s), want);
+    // what is only declared has no body to ask about, and what implements it is still drawn
+    assert!(node(&s, "runner.Task.run").declared && node(&c, "runner.Task.run").declared);
+    assert_eq!(touches(&s, "runner.Echo.run", "screen").len(), 1);
+    assert!(node(&s, "runner.settle").returns.as_ref().is_some_and(|r| !r.fails), "a Promise says it waits");
 }

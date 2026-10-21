@@ -1035,8 +1035,9 @@ fn the_port_parses_its_command_line_in_the_entry() {
 ///   fixes for the `let` that holds it by the parameter it is handed to.
 /// - Errors. A Rust step that may fail says so in what it gives (`Result<_, Error>`, with the
 ///   program's own error), every step but `smooth`, which cannot fail, and none of them throws.
-///   TypeScript says it only of the steps that wait (`Promise`); `download` and `trend` throw as
-///   well, which no signature says. Python's signatures say it of no step.
+///   Neither TypeScript's signatures nor Python's say it of any step: a `Promise` says that a step
+///   waits, and it rejects where what the step runs throws, as a coroutine raises. `download` and
+///   `trend` throw, which no signature says.
 #[test]
 fn the_port_differs_by_language() {
     let [py, ts, rs] = ports();
@@ -1085,10 +1086,11 @@ fn the_port_differs_by_language() {
     for f in [rs.download, rs.load, rs.smooth, rs.save, "sunspots.plot.Trend.draw"] {
         assert!(!raises(&rs, f), "{f}");
     }
+    // a `Promise` says that a step waits, not that it fails: it rejects where what it runs throws
     let effects = |f: &str| (fails(&ts, f), raises(&ts, f));
     assert_eq!(
         [ts.download, ts.load, ts.smooth, "typescript.plot.trend", ts.save].map(effects),
-        [(true, true), (true, false), (false, false), (false, true), (true, false)]
+        [(false, true), (false, false), (false, false), (false, true), (false, false)]
     );
     for f in [py.download, py.load, py.smooth, py.save, "sunspots.plot.Trend.draw"] {
         assert!(!fails(&py, f) && !raises(&py, f), "{f}");

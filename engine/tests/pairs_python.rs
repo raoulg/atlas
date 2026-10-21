@@ -688,3 +688,44 @@ fn prophecy_a_seal_is_listed_and_broken_when_its_issue_is_closed() {
     );
     let _ = std::fs::remove_dir_all(copy.parent().expect("has a parent"));
 }
+
+/// One side of the nothing pair (`tests/pairs/nothing`): a job runner that runs a task, says when a
+/// job is done, reports, counts its runs, settles its log and stops the run, in Python, Rust and
+/// TypeScript alike.
+fn jobs(side: &str) -> Graph {
+    analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/nothing/python").join(side), &Options::default()).unwrap()
+}
+
+/// A call leaves something behind, and where Atlas cannot see what a call leaves, the question says
+/// so. The clean runner leaves each step where a reader sees it: `Echo` subclasses the `Task` it
+/// implements, `finish` is handed its callback, `report` writes to the screen, `count` changes a
+/// module's global, `settle` writes its log and `stop` ends the run with `sys.exit`, as `raise
+/// SystemExit` does: nothing is asked. The shortcut leaves them out of sight: `Echo` fills in a
+/// `Protocol` without naming it, so `Task.run` is only declared; `Job` keeps its callback in a
+/// field; `report` logs through `logging`, which no table describes; `count` changes a value its
+/// class keeps. Atlas asks what each of those leaves behind and names what it cannot see. `settle`,
+/// a door that waits and does nothing, is asked whether it is dead, as any function is.
+#[test]
+fn nothing_says_what_atlas_cannot_see() {
+    let (c, s) = (jobs("clean"), jobs("shortcut"));
+    let asked = |g: &Graph| -> Vec<(String, String)> {
+        check(g).into_iter().filter(|f| f.principle == "nothing").map(|f| (f.node, f.what)).collect()
+    };
+    assert!(asked(&c).is_empty(), "{:#?}", asked(&c));
+    for g in [&c, &s] {
+        assert!(g.node("jobs.runner.stop").unwrap().raises, "ending the run is what `stop` leaves behind");
+    }
+    let want = [
+        ("run_task", "run_task gives nothing back, and Atlas cannot see what `Task.run` does"),
+        ("Job.finish", "Job.finish gives nothing back, and Atlas cannot see what `self.on_done(..)` does"),
+        ("report", "report gives nothing back, and Atlas cannot see what `logger.info(..)` does"),
+        ("count", "count gives nothing back, and Atlas cannot see what `Counter.runs += 1` does"),
+        ("settle", "settle gives nothing back, and Atlas sees no change and no place it reaches"),
+    ]
+    .map(|(f, what)| (format!("jobs.runner.{f}"), what.to_string()));
+    assert_eq!(asked(&s), want);
+    // what is only declared has no body to ask about, and what implements it is still drawn
+    assert!(s.node("jobs.runner.Task.run").unwrap().declared && c.node("jobs.runner.Task.run").unwrap().declared);
+    assert_eq!(touches(&s, "jobs.runner.Echo.run", "screen").len(), 1);
+    assert_eq!(s.node("jobs.runner.settle").unwrap().entry.as_ref().map(|e| e.kind), Some(EntryKind::Export), "settle is a door");
+}
