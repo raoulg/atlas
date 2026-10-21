@@ -56,7 +56,7 @@ lets it be traced and Atlas does not yet; each gap is an ignored test in `pairs_
 | sums | finding; variant edges | traceable (a union alias) | finding; a library's sum handed on (`Result`) is asked |
 | overrides | `keeps` from ty; finding | forbidden: the compiler holds an override to its base | forbidden |
 | places | finding; where the path is made whole | finding; where the path is made whole | finding; where the path is made whole |
-| changes | mutates edge; finding | mutates edge; finding | forbidden: a change is `&mut` in the signature |
+| changes | finding; a mutates edge per input, to its type: a class, a library's, `list`; a method changes what it is called on as ty finds it defined | finding; a mutates edge per input, to its type: a class, a library's, an array; a method changes what it is called on by that value's type | forbidden: a change is `&mut` or a cell (`&RefCell<T>`) in the signature |
 | gives | finding; the call not followed | no returns edge; `uses` on the call | returns edge; `Result<T, E>` gives `T` |
 | choices | finding | finding | finding |
 | nothing | finding | finding | finding |
@@ -241,8 +241,10 @@ A function that changes an object it was handed has an effect its caller cannot 
 The caller holds the same object afterwards, and it is different. That surprise belongs
 in the signature, or not in the function.
 
-- **Rust.** `&mut T` says it, and the compiler holds everyone to it. Atlas has nothing
-  to ask.
+- **Rust.** `&mut T` says it, and the compiler holds everyone to it. A type that changes
+  through a shared reference says it too: `&RefCell<T>`, `&Mutex<T>`, an atomic, or a
+  container of one. Atlas has nothing to ask; where `T` is a class of the program, such a
+  parameter puts it in the function's codomain, as `&mut T` does.
 - **Python.** No signature can say it. So either the object changes itself, through a
   method of its own (`graph.add(node)`), or the function leaves its input alone and
   hands back a new value (`sorted(xs)` next to `xs.sort()`). A method that changes
@@ -252,8 +254,54 @@ in the signature, or not in the function.
   that fills an array it is handed (`lines.push(..)`) can hand back the array instead.
 
 Atlas checks: a Python or TypeScript function that changes a parameter other than its
-receiver, found from assignments to its members and items and from calls that change it
-(`append`, `push`, `set`).
+receiver, whatever the parameter's type: a class of the program, a library's class, a
+`list`, a `dict`, an array, a `Map`. The input's type is in the function's codomain, and
+the finding names it as the signature writes it (`list[Row]`). Each input a function
+changes is one change: a method that empties the Graph it is handed and its own Graph
+changes two, whatever the parameter is called.
+
+A function changes an input when it assigns or deletes one of the input's members or items
+(`graph.name = ..`, `counts[k] = ..`, `del graph.nodes[0]`, each target of `a.x, b.y = ..`),
+when it hands the input to a function that changes its argument (`setattr`,
+`random.shuffle`, `heapq.heappush`, `bisect.insort`), when it calls a method that changes
+the value it is called on, and, in Python, when it applies an augmented assignment (`+=`,
+`|=`) to one of the language's containers that change in place (a `list`, a `dict`, a
+`set`, a `deque`). Whether a call changes what it is called on is decided by that value's
+type, never by the method's name: a method of the program changes its receiver when its own
+body does; a method of the language's containers changes it when the language's table has
+it. In Python that table goes by where ty finds the method:
+`list.append` in `builtins`; `clear`, `update`, `setdefault`, `reverse` and `popitem`, which
+`list`, `dict` and `set` take from typing's `MutableSequence`, `MutableMapping` and
+`MutableSet`; a `deque`'s in `collections`; `os.environ`'s own `setdefault` and `pop`. In
+TypeScript it is the methods of an array, a `Map` and a `Set`, on a value declared or built
+as one: a parameter, a local, or a field a class declares as one (`this.rows`,
+`bag.items`). `http.delete(..)` on a library's client changes nothing.
+
+A change through another name is followed in the order the body runs. A loop variable
+stands for an element of what the loop goes over (`for node in graph.nodes: node.status =
+..` changes `graph`). A name that a statement of the body binds to another name, or to a
+part of one, stands for that after the statement (`g = graph`). A statement of the body
+that binds a name to a new value makes every change after it a change to that value:
+`graph = copy.copy(graph)`, `rows = list(rows)` and `e = { ...e }` leave the input alone,
+and so does `xs = xs + more`. Only a statement of the body's own block decides: one in a
+branch or a loop may not run, so a change after it may still change the input and is
+asked, and a second name bound in a branch or a loop is not followed.
+
+What the rule cannot see:
+
+- an input without a type: a Python parameter without an annotation, or one ty cannot
+  resolve; Atlas cannot name what changes (`doors` asks a door for its annotation);
+- a call that hands back the value it is handed: `graph = normalize(graph)` binds a new
+  value as far as Atlas knows, so a change after it is not asked;
+- an element reached another way than a loop over a name or a part of one: a loop over a
+  call (`for n in sorted(graph.nodes)`), a loop that binds a tuple (`for i, n in
+  enumerate(..)`), a loop whose body binds its variable anew, a callback (`rows.forEach(r
+  => ..)`), a comprehension, or what a call gives (`graph.first().status = ..`);
+- the methods of a library's types that change them, beyond the language's containers
+  (`io.StringIO.write`, `queue.Queue.put`, a `Date`'s setters): to Atlas they change
+  nothing, and `nothing` may ask instead;
+- in TypeScript, a member of a value whose class Atlas does not know: `x.rows.push(..)` on
+  a value without a type changes nothing.
 
 goad: `BasePlot.plot_on(other_plot)` sets `other_plot.fig` and `other_plot.ax` from the
 outside, then asks it to plot. The question is whether `other_plot` could be told where

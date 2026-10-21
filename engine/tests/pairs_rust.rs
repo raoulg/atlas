@@ -600,3 +600,27 @@ fn prophecy_a_seal_is_listed_and_broken_when_its_issue_is_closed() {
     );
     let _ = std::fs::remove_dir_all(copy.parent().expect("has a parent"));
 }
+
+/// One side of the change pair (`tests/pairs/changes`): a log a line is noted in.
+fn journal(side: &str) -> Graph {
+    analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/changes/rust").join(side), &Options::default()).expect("reads")
+}
+
+/// A change to an input shows in the signature. Rust says it with `&mut Log`, and with a type that
+/// changes through a shared reference, `&RefCell<Log>`: on the clean side both put the Log in the
+/// function's codomain, `changes` has nothing to ask, and neither is a call that leaves nothing
+/// behind. The shortcut borrows the log to read and pushes the line onto a copy of its lines: the
+/// line is lost, the signature says the log stays as it was, and `nothing` asks.
+#[test]
+fn changes_a_cell_in_the_signature_says_the_value_changes() {
+    let (c, s) = (journal("clean"), journal("shortcut"));
+    let fs = check(&c);
+    assert!(fs.is_empty(), "{:#?}", fs.iter().map(|f| format!("{} {} {}", f.principle, f.node, f.what)).collect::<Vec<_>>());
+    for f in ["journal.note", "journal.note_shared"] {
+        assert!(node(&c, f).params.iter().any(|p| p.name == "log" && p.changes), "{f}: {:?}", node(&c, f).params);
+        assert_eq!(targets(&c, EdgeKind::Mutates, f), ["journal.Log"], "{f}");
+    }
+    assert_eq!(found(&s, "nothing"), ["journal.note"]);
+    assert!(node(&s, "journal.note").params.iter().all(|p| !p.changes));
+    assert!(targets(&s, EdgeKind::Mutates, "journal.note").is_empty());
+}

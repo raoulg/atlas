@@ -177,6 +177,24 @@ fn type_names(t: Option<TsNode>, src: &[u8]) -> Vec<Vec<String>> {
     out
 }
 
+/// Whether a type changes through a shared reference, or holds one that does: `&RefCell<Log>`,
+/// `Rc<RefCell<Log>>`, `&[Cell<u8>]`, `&AtomicUsize`. Its value may change though no `&mut` is
+/// written; the type says so as `&mut` does.
+fn changes_inside(t: TsNode, src: &[u8]) -> bool {
+    match t.kind() {
+        "type_identifier" | "scoped_type_identifier" => path_parts(Some(t), src).last().map_or(false, |n| knowledge::rust_interior(n)),
+        "generic_type" => {
+            let head = path_parts(t.child_by_field_name("type"), src).last().cloned().unwrap_or_default();
+            knowledge::rust_interior(&head)
+                || (knowledge::rust_container(&head)
+                    && t.child_by_field_name("type_arguments")
+                        .map_or(false, |a| named_children(a).into_iter().any(|x| changes_inside(x, src))))
+        }
+        "reference_type" | "array_type" | "tuple_type" => named_children(t).into_iter().any(|x| changes_inside(x, src)),
+        _ => false,
+    }
+}
+
 fn collect_types(n: TsNode, src: &[u8], out: &mut Vec<Vec<String>>) {
     match n.kind() {
         "type_identifier" | "scoped_type_identifier" => {
@@ -282,7 +300,8 @@ fn items<'t>(root: TsNode<'t>) -> Vec<TsNode<'t>> {
 /// A signature as data: each parameter by name, type and kind, and what it gives back: the value,
 /// which for a `Result<T, E>` is `T`, whatever that is; `E` is what it fails with. `self`,
 /// `&self`, `&mut self` and `self: Box<Self>` are the value the method is called on; a `&mut`
-/// says the body may change what it is handed.
+/// says the body may change what it is handed, and so does a type that changes through a shared
+/// reference (`&RefCell<T>`).
 fn signature(f: TsNode, src: &[u8]) -> (Vec<Param>, Option<Returns>, SigInfo) {
     let mut params = vec![];
     let mut info = SigInfo::default();
@@ -300,7 +319,7 @@ fn signature(f: TsNode, src: &[u8]) -> (Vec<Param>, Option<Returns>, SigInfo) {
                         name: pattern.map(|x| text(x, src).trim_start_matches("mut ").to_string()).unwrap_or_default(),
                         ty: ty.map(|t| text(t, src).to_string()).unwrap_or_default(),
                         receiver: pattern.map_or(false, |x| x.kind() == "self"),
-                        changes: ty.map_or(false, mutable),
+                        changes: ty.map_or(false, |t| mutable(t) || changes_inside(t, src)),
                         rest: false,
                     });
                     info.ptypes.extend(type_names(ty, src));
@@ -1742,7 +1761,8 @@ impl<'a, 't> Body<'a, 't> {
     }
 
     /// Typed parameters give receivers a type (`store.add_edge(..)` with `store: &mut
-    /// GraphBuilder`), and `&mut T` and `&mut self` hand the value back changed: `T -> T`.
+    /// GraphBuilder`), and `&mut T`, `&RefCell<T>` and `&mut self` hand the value back changed:
+    /// `T -> T`.
     fn parameters(&mut self, d: TsNode<'t>) {
         let src = self.src;
         let Some(pn) = d.child_by_field_name("parameters") else { return };
@@ -1756,7 +1776,7 @@ impl<'a, 't> Body<'a, 't> {
             }
             let Some(pat) = p.child_by_field_name("pattern") else { continue };
             let pname = text(pat, src).trim_start_matches("mut ").to_string();
-            let by_mut_ref = p.child_by_field_name("type").map_or(false, |t| text(t, src).starts_with("&mut"));
+            let by_mut_ref = p.child_by_field_name("type").map_or(false, |t| text(t, src).starts_with("&mut") || changes_inside(t, src));
             let types = type_names(p.child_by_field_name("type"), src);
             if let Some(lib) = types.iter().find_map(|t| self.resolve(t).filter(|r| r.starts_with("ext:"))) {
                 self.foreign.insert(pname.clone(), lib);

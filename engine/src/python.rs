@@ -14,7 +14,7 @@ use walkdir::WalkDir;
 
 mod paths;
 
-use crate::body::{Crosses, Step, Steps, UseSyntax};
+use crate::body::{changed_through, BindSyntax, Crosses, Step, Steps, UseSyntax};
 pub use crate::builder::{foreign_type, ClassInfo, GraphBuilder, SigInfo};
 use crate::effects::{self, Crossing};
 use crate::knowledge;
@@ -1466,30 +1466,114 @@ fn tests_membership(x: TsNode, src: &[u8]) -> bool {
     right && ops.iter().any(|o| matches!(*o, "in" | "not in" | "not"))
 }
 
-/// Typed parameters that are classes of the package, by name: `graph: Graph` -> Graph.
-fn param_types(
+/// What a change to each typed parameter changes, by name: the type the picture draws it as, the
+/// class of the package its annotation names, also inside a container (`graph: Graph`, `rows:
+/// list[Row]` -> Row), or a library's class (`buf: io.StringIO`); else the class its annotation
+/// names outermost, as ty finds it (`xs: list[int]` -> `ext:builtins.list`). With them, the
+/// parameters that hold one of the language's own containers that change in place.
+fn changed_types(
     m: &Module,
     d: TsNode,
     modules: &IndexMap<String, Module>,
     nodes: &IndexMap<String, Node>,
     own: &Own,
-) -> HashMap<String, String> {
-    let mut out = HashMap::new();
-    let Some(pn) = d.child_by_field_name("parameters") else { return out };
+    facts: Option<&Facts>,
+) -> (HashMap<String, String>, HashSet<String>) {
+    let (mut out, mut changeable) = (HashMap::new(), HashSet::new());
+    let Some(pn) = d.child_by_field_name("parameters") else { return (out, changeable) };
     for p in named_children(pn) {
         // `typed_parameter` carries its identifier as a plain child, `typed_default_parameter` as a field
         let name = p.child_by_field_name("name").or_else(|| named_children(p).into_iter().find(|c| c.kind() == "identifier"));
-        if let (Some(name), Some(t)) = (name, p.child_by_field_name("type")) {
-            for tn in type_names(Some(t), &m.src) {
-                if let Some(r) = resolve(m, &tn, modules, nodes, own).filter(|r| !r.starts_with("ext:")) {
-                    if nodes.get(&r).map_or(false, |x| x.kind == NodeKind::Class) {
-                        out.insert(text(name, &m.src).to_string(), r);
-                    }
-                }
+        let (Some(name), Some(t)) = (name, p.child_by_field_name("type")) else { continue };
+        let name = text(name, &m.src).to_string();
+        let mut drawn = None;
+        for tn in type_names(Some(t), &m.src) {
+            match resolve(m, &tn, modules, nodes, own) {
+                Some(r) if !r.starts_with("ext:") && nodes.get(&r).map_or(false, |x| x.kind == NodeKind::Class) => drawn = Some(r),
+                Some(r) if drawn.is_none() && foreign_type(&r, &OWN) => drawn = Some(r),
+                _ => {}
             }
         }
+        // the class the annotation names outermost, where ty says a library defines it
+        let outer = outer_type_names(t, &m.src).into_iter().find_map(|h| match facts?.def((h.start_byte(), h.end_byte()))? {
+            Target::Lib(module) => Some((package_of(module), text(h, &m.src).rsplit('.').next()?.to_string())),
+            Target::Here { .. } => None,
+        });
+        if let Some((package, class)) = &outer {
+            if knowledge::PYTHON_CHANGEABLE.contains(&(package.as_str(), class.as_str())) {
+                changeable.insert(name.clone());
+            }
+        }
+        if let Some(r) = drawn.or_else(|| outer.map(|(package, class)| format!("ext:{package}.{class}"))) {
+            out.insert(name, r);
+        }
     }
-    out
+    (out, changeable)
+}
+
+/// The names an annotation's outermost classes are written with, through the forms that say which
+/// values it may be or describe one (`Optional[X]`, `X | None`, `Annotated[X, ..]`): `list[int]`
+/// is a `list`.
+fn outer_type_names<'t>(t: TsNode<'t>, src: &[u8]) -> Vec<TsNode<'t>> {
+    let (head, args) = match t.kind() {
+        "identifier" | "attribute" | "member_type" => return vec![t],
+        "type" | "parenthesized_expression" | "union_type" => {
+            return named_children(t).into_iter().flat_map(|c| outer_type_names(c, src)).collect()
+        }
+        "binary_operator" => {
+            return [t.child_by_field_name("left"), t.child_by_field_name("right")]
+                .into_iter()
+                .flatten()
+                .flat_map(|c| outer_type_names(c, src))
+                .collect()
+        }
+        "subscript" => (t.child_by_field_name("value"), field_children(t, "subscript")),
+        "generic_type" => (
+            named_children(t).first().copied(),
+            named_children(t).into_iter().filter(|k| k.kind() == "type_parameter").flat_map(named_children).collect(),
+        ),
+        _ => return vec![],
+    };
+    let Some(head) = head else { return vec![] };
+    let last = dotted(Some(head), src).last().cloned().unwrap_or_default();
+    if knowledge::PYTHON_ALTERNATIVES.contains(&last.as_str()) {
+        args.into_iter().flat_map(|a| outer_type_names(a, src)).collect()
+    } else if knowledge::PYTHON_DESCRIBES.contains(&last.as_str()) {
+        args.into_iter().take(1).flat_map(|a| outer_type_names(a, src)).collect()
+    } else {
+        vec![head]
+    }
+}
+
+/// How Python binds a name, as `changes` follows a change through it: `x = v` binds `x` to `v`,
+/// `for x in v` to each element of `v`.
+const BINDS: BindSyntax = BindSyntax {
+    binds: |n, src| {
+        let (l, v) = (n.child_by_field_name("left")?, n.child_by_field_name("right")?);
+        (n.kind() == "assignment" && l.kind() == "identifier").then(|| (text(l, src), held_by(v, src)))
+    },
+    loops: |n, src| {
+        let (l, v, b) = (n.child_by_field_name("left")?, n.child_by_field_name("right")?, n.child_by_field_name("body")?);
+        (n.kind() == "for_statement" && l.kind() == "identifier").then(|| (text(l, src), root_name(v, src), b))
+    },
+};
+
+/// The names whose value a Python value may be or be a part of: `graph`, `self.items[0]`, either
+/// side of `a or b` and of `a if c else b`. A call and a slice (`xs[:]`) make a value anew.
+fn held_by<'a>(v: TsNode, src: &'a [u8]) -> Vec<&'a str> {
+    match v.kind() {
+        "boolean_operator" => {
+            [v.child_by_field_name("left"), v.child_by_field_name("right")].into_iter().flatten().flat_map(|x| held_by(x, src)).collect()
+        }
+        // `a if c else b`: the first part and the last
+        "conditional_expression" => {
+            let parts = named_children(v);
+            [parts.first(), parts.get(2)].into_iter().flatten().flat_map(|x| held_by(*x, src)).collect()
+        }
+        "parenthesized_expression" => named_children(v).into_iter().flat_map(|x| held_by(x, src)).collect(),
+        "subscript" if field_children(v, "subscript").iter().any(|s| s.kind() == "slice") => vec![],
+        _ => root_name(v, src).into_iter().collect(),
+    }
 }
 
 /// The name a chain like `self.items[0].x` starts from.
@@ -1502,23 +1586,25 @@ fn root_name<'a>(n: TsNode, src: &'a [u8]) -> Option<&'a str> {
     }
 }
 
-/// The names whose objects a body changes in place: the root of everything it changes. Changing
-/// a part changes the whole.
+/// The names whose objects a body changes in place: the root of everything it changes, followed
+/// through the names it is changed by (`changed_through`). Changing a part changes the whole.
 fn changed_roots<'a, 't>(
     body: TsNode<'t>,
     src: &'a [u8],
     changes: &dyn Fn(TsNode<'t>) -> Option<TsNode<'t>>,
 ) -> std::collections::BTreeSet<&'a str> {
-    changed(body, changes).into_iter().filter_map(|x| root_name(x, src)).collect()
+    changed(body, changes).into_iter().filter_map(|x| changed_through(body, src, &BINDS, root_name(x, src)?, x.start_byte())).collect()
 }
 
 /// What a body changes in place: every attribute or item it assigns (`self.x = ..`,
-/// `p.items[k] = ..`) or deletes, and what a call to a mutator (`self.nodes.append(..)`) or to a
-/// method known to change its receiver changes.
+/// `p.items[k] = ..`, each of `a.x, b.y = ..`) or deletes, and what a call to a mutator
+/// (`self.nodes.append(..)`) or to a method known to change its receiver changes.
 fn changed<'t>(body: TsNode<'t>, changes: &dyn Fn(TsNode<'t>) -> Option<TsNode<'t>>) -> Vec<TsNode<'t>> {
     let mut out = vec![];
     for a in walk(body, &["assignment", "augmented_assignment"]) {
-        out.extend(a.child_by_field_name("left").filter(|l| matches!(l.kind(), "attribute" | "subscript")));
+        let Some(l) = a.child_by_field_name("left") else { continue };
+        let targets = if matches!(l.kind(), "pattern_list" | "tuple_pattern" | "list_pattern") { named_children(l) } else { vec![l] };
+        out.extend(targets.into_iter().filter(|l| matches!(l.kind(), "attribute" | "subscript")));
     }
     // `del d[k]`, `del obj.x`
     for d in walk(body, &["delete_statement"]) {
@@ -2537,8 +2623,10 @@ struct Body<'a, 't> {
     /// The function the body belongs to, and its parameters by name.
     scope: Option<TsNode<'t>>,
     own_params: Vec<String>,
-    /// The classes the parameters hold.
+    /// What a change to each typed parameter changes (`changed_types`), and the parameters that
+    /// hold one of the language's own containers that change in place.
     params: HashMap<String, String>,
+    changeable: HashSet<String>,
     own: &'a Own,
     read: Read<'t>,
 }
@@ -2558,7 +2646,8 @@ impl<'a, 't> Body<'a, 't> {
         let in_module = n.kind == NodeKind::Module;
         let own = seen.own;
         let own_params = if in_module { vec![] } else { paths::parameters(d, &m.src, false).into_iter().map(|(p, _)| p).collect() };
-        let params = if in_module { HashMap::new() } else { param_types(m, d, modules, &seen.store.nodes, own) };
+        let (params, changeable) =
+            if in_module { Default::default() } else { changed_types(m, d, modules, &seen.store.nodes, own, seen.facts) };
         Body {
             seen,
             modules,
@@ -2574,6 +2663,7 @@ impl<'a, 't> Body<'a, 't> {
             scope: (!in_module).then_some(d),
             own_params,
             params,
+            changeable,
             own,
             read: Read::default(),
         }
@@ -2843,9 +2933,20 @@ impl<'a, 't> Body<'a, 't> {
                 _ => library_change(seen.facts, c, self.src),
             }
         };
-        for r in changed_roots(self.body, self.src, &changes) {
+        let mut roots = changed_roots(self.body, self.src, &changes);
+        // `xs += ys` on a parameter that holds a list, a dict or a set changes it in place
+        for a in walk(self.body, &["augmented_assignment"]) {
+            let Some(l) = a.child_by_field_name("left").filter(|l| l.kind() == "identifier") else { continue };
+            if self.changeable.contains(text(l, self.src)) {
+                roots.extend(changed_through(self.body, self.src, &BINDS, text(l, self.src), a.start_byte()));
+            }
+        }
+        for r in roots {
             let ty = if r == "self" { self.cls.clone().filter(|_| !self.initializer) } else { self.params.get(r).cloned() };
             if let Some(t) = ty {
+                if t.starts_with("ext:") {
+                    self.read.new_ext.push(t.clone());
+                }
                 self.read.changes.push((t, r.to_string()));
             }
         }

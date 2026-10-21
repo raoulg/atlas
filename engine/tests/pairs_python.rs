@@ -688,3 +688,58 @@ fn prophecy_a_seal_is_listed_and_broken_when_its_issue_is_closed() {
     );
     let _ = std::fs::remove_dir_all(copy.parent().expect("has a parent"));
 }
+
+/// One side of the change pair (`tests/pairs/changes`): a scoreboard of cells and scores, whose
+/// functions change what they are handed, in Python, Rust and TypeScript alike.
+fn board(side: &str) -> Graph {
+    analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/changes/python").join(side), &Options::default()).unwrap()
+}
+
+/// A change to an input shows in the signature, whatever the input's type. The clean board changes
+/// a value through a method of its own (`Board.reset` clears its cells, `Board.mark_all` marks each
+/// cell it holds) or hands back a new one: `with_tag` and `counted` build it, `renamed` rebinds
+/// `board` to a copy before it sets the name, `extended` and `queued` rebind their list to a new
+/// one before they change it. Nothing is asked. The shortcut changes what it is handed and says
+/// nothing: a `list[str]` it appends to, a `dict` it sets an item of, a list it extends with `+=`,
+/// a heap `heapq` keeps in a list, the cells `clear` empties and the scores `update` fills (methods
+/// ty finds on typing's `MutableSequence` and `MutableMapping`), each cell through the loop
+/// variable that goes over the board's cells, the board through a second name for it, and both
+/// boards a tuple assignment swaps. `Board.take_from` and `Board.take_victim` have one body: each
+/// empties the board it is handed as well as its own, two changes, whatever the parameter is
+/// called. Each is asked, and none of them is a call that leaves nothing behind.
+#[test]
+fn changes_a_change_to_an_input_of_any_type_shows_in_the_signature() {
+    let (c, s) = (board("clean"), board("shortcut"));
+    let fs = check(&c);
+    assert!(fs.is_empty(), "{:#?}", fs.iter().map(|f| format!("{} {} {}", f.principle, f.node, f.what)).collect::<Vec<_>>());
+    assert!(c.edges.iter().filter(|e| e.kind == EdgeKind::Mutates).all(|e| e.via.as_deref() == Some("self")), "only methods change");
+    let mut asked = found(&s, "changes");
+    asked.sort();
+    let want = [
+        "Board.take_from",
+        "Board.take_victim",
+        "add_tag",
+        "count",
+        "extend",
+        "mark_all",
+        "merge_scores",
+        "queue",
+        "rename",
+        "reset",
+        "swap",
+        "swap",
+    ];
+    assert_eq!(asked, want.map(|f| format!("board.core.{f}")));
+    assert!(found(&s, "nothing").is_empty(), "{:?}", found(&s, "nothing"));
+    let inputs = |f: &str| {
+        let mut via: Vec<&str> =
+            s.edges.iter().filter(|e| e.kind == EdgeKind::Mutates && e.src == f).filter_map(|e| e.via.as_deref()).collect();
+        via.sort();
+        via
+    };
+    assert_eq!(inputs("board.core.Board.take_from"), ["other", "self"]);
+    assert_eq!(inputs("board.core.Board.take_victim"), ["self", "victim"]);
+    assert!(edge(&s, "board.core.add_tag", "ext:builtins.list", EdgeKind::Mutates), "a list is what changes");
+    let add_tag = check(&s).into_iter().find(|f| f.node == "board.core.add_tag").expect("asked");
+    assert!(add_tag.what.contains("the list[str] it is handed as `tags`"), "{}", add_tag.what);
+}

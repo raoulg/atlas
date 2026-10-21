@@ -379,6 +379,65 @@ impl<'t, 's> Steps<'t, 's> {
     }
 }
 
+/// How a language binds names in a body, as far as a change made through a name is followed to
+/// the value it changes.
+pub struct BindSyntax {
+    /// A statement that binds one name to a whole value: the name, and the names whose value it may
+    /// be or be a part of (`x = graph`, `x = self.items[0]`, `x = a or b`); none for a value made
+    /// anew (`x = copy(v)`, `x = xs[:]`). An augmented assignment (`x += v`) binds nothing new.
+    pub binds: for<'a> fn(TsNode, &'a [u8]) -> Option<(&'a str, Vec<&'a str>)>,
+    /// A loop that binds one name to each element of a value: the name, the name that value is a
+    /// part of (`for x in graph.nodes`), and the loop's body.
+    pub loops: for<'t, 'a> fn(TsNode<'t>, &'a [u8]) -> Option<(&'a str, Option<&'a str>, TsNode<'t>)>,
+}
+
+/// What a change made through `name` at byte `at` of `body` changes: the name whose value that
+/// is when the change runs, or none when it is a value the body made. A loop binds the name to an
+/// element of what it goes over, so inside the loop a change through it changes that value (`for
+/// node in graph.nodes: node.status = ..` changes `graph`). A statement of the body's own, which
+/// runs whenever the body does, decides what the name holds after it: another name or a part of
+/// one makes it that value (`g = graph`), a value that may be what the name held keeps that, and
+/// a new value makes a change after it one to the new value, not to what the name held before
+/// (`graph = copy.copy(graph)`). A binding in a branch or a loop may not have run, so the name
+/// holds what it held before it: the change may be one to that.
+pub fn changed_through<'a>(body: TsNode, src: &'a [u8], syn: &BindSyntax, name: &'a str, at: usize) -> Option<&'a str> {
+    let nodes = walk_all(body);
+    let binds: Vec<(TsNode, &str, Vec<&str>)> = nodes.iter().filter_map(|n| (syn.binds)(*n, src).map(|(x, v)| (*n, x, v))).collect();
+    let loops: Vec<(TsNode, &str, Option<&str>, TsNode)> =
+        nodes.iter().filter_map(|n| (syn.loops)(*n, src).map(|(x, v, b)| (*n, x, v, b))).collect();
+    let own = |s: TsNode| s.parent().into_iter().chain(s.parent().and_then(|p| p.parent())).any(|p| p.id() == body.id());
+    let (mut name, mut at) = (name, at);
+    // each step goes back to where a loop or a statement before `at` binds the name, so it ends
+    'follow: loop {
+        // the innermost loop around the change that binds the name, where its body binds it nowhere anew
+        let around = loops
+            .iter()
+            .filter(|(_, x, _, b)| {
+                *x == name
+                    && b.byte_range().contains(&at)
+                    && !binds.iter().any(|(s, y, _)| *y == name && b.byte_range().contains(&s.start_byte()))
+            })
+            .max_by_key(|(l, ..)| l.start_byte());
+        if let Some((l, _, over, _)) = around {
+            name = (*over)?;
+            at = l.start_byte();
+            continue;
+        }
+        let mut before: Vec<&(TsNode, &str, Vec<&str>)> =
+            binds.iter().filter(|(s, x, _)| *x == name && own(*s) && s.end_byte() <= at).collect();
+        before.sort_by_key(|(s, ..)| s.start_byte());
+        for (s, _, held) in before.into_iter().rev() {
+            if held.contains(&name) {
+                continue;
+            }
+            name = *held.first()?;
+            at = s.start_byte();
+            continue 'follow;
+        }
+        return Some(name);
+    }
+}
+
 fn line(c: TsNode) -> u32 {
     c.start_position().row as u32 + 1
 }

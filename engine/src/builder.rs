@@ -56,7 +56,8 @@ pub struct SigInfo {
 pub struct GraphBuilder {
     pub nodes: IndexMap<String, Node>,
     pub edges: Vec<Edge>,
-    pub edge_set: HashSet<(String, String, EdgeKind)>,
+    /// The edges by source, target and kind, and for a change by the input it changes.
+    pub edge_set: HashSet<(String, String, EdgeKind, Option<String>)>,
     pub classes: HashMap<String, ClassInfo>,
     pub sigs: HashMap<String, SigInfo>,
     /// The calls not followed: by the name each is written with, and by what that name is bound to.
@@ -84,12 +85,14 @@ impl GraphBuilder {
     }
 
     /// An edge from a body, with the arms of the choices it sits in; the first call of a
-    /// target is the one kept.
+    /// target is the one kept. A change is one edge per input it changes: changing `self` and
+    /// changing `other`, both Graphs, are two.
     pub fn add_call(&mut self, src: &str, dst: &str, kind: EdgeKind, via: Option<String>, arms: Vec<(u32, u32)>) {
         if src == dst {
             return;
         }
-        let key = (src.to_string(), dst.to_string(), kind);
+        let input = via.clone().filter(|_| kind == EdgeKind::Mutates);
+        let key = (src.to_string(), dst.to_string(), kind, input);
         if self.edge_set.insert(key) {
             self.edges.push(Edge { src: src.into(), dst: dst.into(), kind, via, weight: None, arms, uses: false });
         }

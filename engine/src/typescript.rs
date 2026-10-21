@@ -18,7 +18,7 @@ mod paths;
 
 use paths::{Arg, At, Eval};
 
-use crate::body::{Crosses, Step, Steps, UseSyntax};
+use crate::body::{changed_through, BindSyntax, Crosses, Step, Steps, UseSyntax};
 use crate::builder::{foreign_type, ClassInfo, GraphBuilder, SigInfo};
 use crate::effects::{self, Crossing};
 use crate::knowledge;
@@ -81,6 +81,9 @@ struct Module {
     /// The values a package made that every body of the module sees, by name: the module's own,
     /// and each class's fields by where the class starts. Found once, when a body first asks.
     made: std::cell::RefCell<HashMap<Option<usize>, HashMap<String, String>>>,
+    /// The fields of each of the module's classes and shapes that hold one of the language's own
+    /// containers, by the class: `rows: Row[]`, `seen = new Set<string>()`.
+    containers: HashMap<String, HashSet<String>>,
 }
 
 /// A name imported from a file not the package's own, as written.
@@ -116,6 +119,7 @@ impl Module {
             links: HashMap::new(),
             read: HashMap::new(),
             made: Default::default(),
+            containers: HashMap::new(),
         }
     }
 }
@@ -481,6 +485,9 @@ pub fn parse(repo: &Repo, opts: &crate::Options) -> Result<(GraphBuilder, String
         collect_routes(m, &mut store);
     }
     libraries::read(repo, &mut modules, &mut store, opts.libraries);
+    for m in modules.values_mut() {
+        m.containers = container_fields(m);
+    }
     route_prefixes(&modules, &mut store);
     mark_bins(repo, &files, &mut store);
     mark_exports(repo, &files, &modules, &mut store);
@@ -1165,6 +1172,58 @@ fn builds_container(v: TsNode, m: &Module, src: &[u8]) -> bool {
     }
 }
 
+/// The fields of a module's classes and shapes that hold one of the language's own containers, by
+/// the class: declared as one (`rows: Row[]`, a constructor's `readonly seen: Set<string>`) or set
+/// to a new one (`rows = []`).
+fn container_fields(m: &Module) -> HashMap<String, HashSet<String>> {
+    let src = &m.src[..];
+    let holds = |ty: Option<TsNode>, value: Option<TsNode>| match ty {
+        Some(t) => container_type(text(t, src), m),
+        None => value.map_or(false, |v| builds_container(v, m, src)),
+    };
+    let mut out: HashMap<String, HashSet<String>> = HashMap::new();
+    for (d, _, _) in declarations(m.tree.root_node()) {
+        let Some(name) = d.child_by_field_name("name").map(|n| text(n, src)) else { continue };
+        let body = match d.kind() {
+            "class_declaration" | "abstract_class_declaration" | "class" | "interface_declaration" => d.child_by_field_name("body"),
+            "type_alias_declaration" => d.child_by_field_name("value").filter(|v| v.kind() == "object_type"),
+            _ => None,
+        };
+        let Some(body) = body else { continue };
+        let mut fields = HashSet::new();
+        for member in named_children(body) {
+            match member.kind() {
+                "public_field_definition" | "property_signature" => {
+                    if holds(member.child_by_field_name("type"), member.child_by_field_name("value")) {
+                        fields.extend(member.child_by_field_name("name").map(|n| text(n, src).to_string()));
+                    }
+                }
+                // `constructor(readonly rows: Row[])` declares a field, and `this.rows = []` in it sets one
+                "method_definition" if member.child_by_field_name("name").map(|n| text(n, src)) == Some("constructor") => {
+                    for p in member.child_by_field_name("parameters").map(named_children).unwrap_or_default() {
+                        if is_property(p) && holds(p.child_by_field_name("type"), None) {
+                            fields.extend(p.child_by_field_name("pattern").map(|n| text(n, src).to_string()));
+                        }
+                    }
+                    for a in member.child_by_field_name("body").map(|b| walk(b, &["assignment_expression"])).unwrap_or_default() {
+                        let (Some(l), Some(r)) = (a.child_by_field_name("left"), a.child_by_field_name("right")) else { continue };
+                        if let ([this, field], true) = (member_parts(l, src).as_slice(), builds_container(r, m, src)) {
+                            if this == "this" {
+                                fields.insert(field.clone());
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        if !fields.is_empty() {
+            out.insert(format!("{}.{name}", m.id), fields);
+        }
+    }
+    out
+}
+
 fn typed_package(ty: TsNode, m: &Module, src: &[u8]) -> Option<String> {
     let head = text(ty, src).trim_start_matches(':').trim().split(|c: char| !(c.is_alphanumeric() || c == '_' || c == '$')).next()?;
     match m.bindings.get(head)? {
@@ -1847,6 +1906,9 @@ fn link_calls<'t>(
         store.touch(id, t);
     }
     for (t, input) in read.mutates {
+        if t.starts_with("ext:") {
+            store.ext_node(&t);
+        }
         store.add_edge(id, &t, EdgeKind::Mutates, Some(input));
     }
     if let (Some(compares), Some(node)) = (compares, store.nodes.get_mut(id)) {
@@ -1900,7 +1962,8 @@ struct Body<'a, 't> {
     /// The classes the body's names hold: its typed parameters, and locals declared with a type,
     /// built with `new`, or handed on by a function.
     locals: HashMap<String, String>,
-    param_types: HashMap<String, String>,
+    /// What a change to each typed parameter changes (`inputs_of`).
+    inputs: HashMap<String, String>,
     /// The values a package made, by the package: a call on one is the package's.
     made: HashMap<String, String>,
     /// The names that hold one of the language's own containers, as the body declares or builds
@@ -1944,7 +2007,7 @@ impl<'a, 't> Body<'a, 't> {
             returned,
             eval,
             locals: HashMap::new(),
-            param_types: HashMap::new(),
+            inputs: HashMap::new(),
             made: HashMap::new(),
             containers: HashSet::new(),
             sites: vec![],
@@ -1980,6 +2043,76 @@ impl<'a, 't> Body<'a, 't> {
         !r.starts_with("ext:") && self.store.nodes.contains_key(r)
     }
 
+    /// What a change to each typed parameter changes, by name: the type the picture draws it as,
+    /// the program's class its type names, also inside a container (`e: Expense`, `rows: Row[]`,
+    /// `Map<string, Row>`), or a library's class (`http: AxiosInstance`); else the language's own
+    /// container it is (`lines: string[]` is an `Array`).
+    fn inputs_of(&self) -> HashMap<String, String> {
+        let src = self.src;
+        let mut out = HashMap::new();
+        for p in self.scope.and_then(|f| f.child_by_field_name("parameters")).map(named_children).unwrap_or_default() {
+            let (Some(name), Some(ty)) =
+                (p.child_by_field_name("pattern").filter(|x| x.kind() == "identifier"), p.child_by_field_name("type"))
+            else {
+                continue;
+            };
+            let drawn = type_names(Some(ty), src).into_iter().filter_map(|t| self.resolve(&t)).find(|r| {
+                if r.starts_with("ext:") {
+                    foreign_type(r, &OWN)
+                } else {
+                    self.class(Some(r.clone())).is_some()
+                }
+            });
+            let written = text(ty, src).trim_start_matches(':').trim();
+            let container = container_type(written, self.m).then(|| {
+                let head = written.split(|c: char| !(c.is_alphanumeric() || c == '_' || c == '$')).next().unwrap_or("");
+                format!("ext:javascript.{}", if knowledge::TYPESCRIPT_CHANGEABLE.contains(&head) { head } else { "Array" })
+            });
+            if let Some(t) = drawn.or(container) {
+                out.insert(text(name, src).to_string(), t);
+            }
+        }
+        out
+    }
+
+    /// Whether a value holds one of the language's own containers that change in place: a name the
+    /// body declares or builds as one, or a field declared as one of the class the value is
+    /// (`this.rows`, `bag.items`), or of a class it inherits from.
+    fn holds_container(&self, v: TsNode) -> bool {
+        let src = self.src;
+        match v.kind() {
+            "identifier" => self.containers.contains(text(v, src)),
+            "non_null_expression" | "parenthesized_expression" => {
+                named_children(v).into_iter().next().map_or(false, |x| self.holds_container(x))
+            }
+            "member_expression" => {
+                let (Some(o), Some(field)) = (v.child_by_field_name("object"), v.child_by_field_name("property")) else { return false };
+                // the class of the value the field is read from: the body's own, a name's, a field's of the body's own
+                let class = match o.kind() {
+                    "this" => self.cls.clone(),
+                    "identifier" => self.locals.get(text(o, src)).cloned(),
+                    "member_expression" if o.child_by_field_name("object").map_or(false, |t| t.kind() == "this") => {
+                        o.child_by_field_name("property").and_then(|p| self.attrs.get(text(p, src)).cloned())
+                    }
+                    _ => None,
+                };
+                let (mut todo, mut seen) = (class.into_iter().collect::<Vec<_>>(), HashSet::new());
+                while let Some(c) = todo.pop() {
+                    if !seen.insert(c.clone()) {
+                        continue;
+                    }
+                    let home = self.store.nodes.get(&c).and_then(|n| self.modules.get(&n.module));
+                    if home.and_then(|m| m.containers.get(&c)).map_or(false, |fs| fs.contains(text(field, src))) {
+                        return true;
+                    }
+                    todo.extend(self.store.classes.get(&c).map(|i| i.resolved.clone()).unwrap_or_default());
+                }
+                false
+            }
+            _ => false,
+        }
+    }
+
     /// Parameters and locals with a class type give receivers a type.
     fn typed(&mut self, n: &Node) {
         let src = self.src;
@@ -1994,7 +2127,7 @@ impl<'a, 't> Body<'a, 't> {
                 self.locals.insert(p.name.clone(), r);
             }
         }
-        self.param_types = self.locals.clone();
+        self.inputs = self.inputs_of();
         let declarators: Vec<TsNode> = walk(self.body, &["variable_declarator"]).into_iter().filter(|v| self.mine(*v)).collect();
         for v in declarators {
             let (Some(name), Some(value)) = (v.child_by_field_name("name"), v.child_by_field_name("value")) else { continue };
@@ -2525,21 +2658,29 @@ impl<'a, 't> Body<'a, 't> {
         }
     }
 
-    /// The names whose values the body changes in place. A method of the program's own changes
-    /// the value it is called on when its body changes its own receiver; the language's table of
-    /// methods that change their receiver speaks only for the calls Atlas does not follow.
+    /// The names whose values the body changes in place, followed through the names they are
+    /// changed by (`changed_through`). A call changes the value it is made on by what that value
+    /// is: a method of the program's own when its body changes its own receiver, a method of the
+    /// language's table on a value that holds an array, a `Map` or a `Set`. A method's name alone
+    /// changes nothing (`http.delete(..)` on a library's client).
     fn changed(&self) -> std::collections::BTreeSet<&'t str> {
         let changes = |c: TsNode<'t>| -> Option<TsNode<'t>> {
             let f = function_of(c).filter(|f| f.kind() == "member_expression")?;
+            let on = f.child_by_field_name("object")?;
             let changing = match self.callee(c).filter(|t| self.own(t)) {
                 Some(t) => self.store.mutating.contains(&t),
-                None => f
-                    .child_by_field_name("property")
-                    .map_or(false, |p| knowledge::mutators(knowledge::Registry::Npm).contains(&text(p, self.src))),
+                None => {
+                    f.child_by_field_name("property")
+                        .map_or(false, |p| knowledge::mutates(knowledge::Registry::Npm, "javascript", text(p, self.src)))
+                        && self.holds_container(on)
+                }
             };
-            changing.then(|| f.child_by_field_name("object")).flatten()
+            changing.then_some(on)
         };
-        changed_roots(self.body, self.src, &changes)
+        changes_in(self.body, self.src, &changes)
+            .into_iter()
+            .filter_map(|(x, root)| changed_through(self.body, self.src, &BINDS, root, x.start_byte()))
+            .collect()
     }
 
     /// What the body does besides its calls: the connections the platform's own constructors
@@ -2570,7 +2711,7 @@ impl<'a, 't> Body<'a, 't> {
             });
         }
         for r in self.changed() {
-            let ty = if r == "this" { self.cls.clone().filter(|_| !self.initializer) } else { self.param_types.get(r).cloned() };
+            let ty = if r == "this" { self.cls.clone().filter(|_| !self.initializer) } else { self.inputs.get(r).cloned() };
             if let Some(t) = ty {
                 self.read.mutates.push((t, r.to_string()));
             }
@@ -2648,20 +2789,48 @@ fn chain_root<'a>(n: TsNode, src: &'a [u8]) -> Option<&'a str> {
     }
 }
 
-/// The names whose objects a body changes in place: the root of every assignment to a member
-/// or an item (`this.x = ..`, `p.items[k] += ..`, `p.n++`, `delete p.k`), and of the value every
-/// call that changes something is made on, as `changes` says (`p.rows.push(..)`). Changing a part
-/// changes the whole.
-fn changed_roots<'a, 't>(
-    body: TsNode<'t>,
-    src: &'a [u8],
-    changes: &dyn Fn(TsNode<'t>) -> Option<TsNode<'t>>,
-) -> std::collections::BTreeSet<&'a str> {
-    changes_in(body, src, changes).into_iter().map(|(_, root)| root).collect()
+/// How TypeScript binds a name, as `changes` follows a change through it: `const x = v` and `x = v`
+/// bind `x` to `v`, `for (const x of v)` to each element of `v`.
+const BINDS: BindSyntax = BindSyntax {
+    binds: |n, src| {
+        let (l, v) = match n.kind() {
+            "variable_declarator" => (n.child_by_field_name("name")?, n.child_by_field_name("value")?),
+            "assignment_expression" => (n.child_by_field_name("left")?, n.child_by_field_name("right")?),
+            _ => return None,
+        };
+        (l.kind() == "identifier").then(|| (text(l, src), held_by(v, src)))
+    },
+    loops: |n, src| {
+        let of = n.child_by_field_name("operator").map_or(false, |o| o.kind() == "of");
+        let (l, v, b) = (n.child_by_field_name("left")?, n.child_by_field_name("right")?, n.child_by_field_name("body")?);
+        (n.kind() == "for_in_statement" && of && l.kind() == "identifier").then(|| (text(l, src), chain_root(v, src), b))
+    },
+};
+
+/// The names whose value a TypeScript value may be or be a part of: `graph`, `this.items[0]`,
+/// either side of `a ?? b`, `a || b` and `c ? a : b`. A call, a spread (`{ ...e }`) and a literal
+/// make a value anew.
+fn held_by<'a>(v: TsNode, src: &'a [u8]) -> Vec<&'a str> {
+    match v.kind() {
+        "binary_expression" if v.child_by_field_name("operator").map_or(false, |o| matches!(o.kind(), "??" | "||" | "&&")) => {
+            [v.child_by_field_name("left"), v.child_by_field_name("right")].into_iter().flatten().flat_map(|x| held_by(x, src)).collect()
+        }
+        "ternary_expression" => [v.child_by_field_name("consequence"), v.child_by_field_name("alternative")]
+            .into_iter()
+            .flatten()
+            .flat_map(|x| held_by(x, src))
+            .collect(),
+        "parenthesized_expression" | "as_expression" | "satisfies_expression" => {
+            named_children(v).into_iter().take(1).flat_map(|x| held_by(x, src)).collect()
+        }
+        _ => chain_root(v, src).into_iter().collect(),
+    }
 }
 
-/// Each change a body makes in place, as `changed_roots` reads them: the node that makes it, and
-/// the name whose object it changes.
+/// Each change a body makes in place: the node that makes it, and the name whose object it
+/// changes, the root of every assignment to a member or an item (`this.x = ..`, `p.items[k] +=
+/// ..`, `p.n++`, `delete p.k`), and of the value every call that changes something is made on, as
+/// `changes` says (`p.rows.push(..)`). Changing a part changes the whole.
 fn changes_in<'a, 't>(body: TsNode<'t>, src: &'a [u8], changes: &dyn Fn(TsNode<'t>) -> Option<TsNode<'t>>) -> Vec<(TsNode<'t>, &'a str)> {
     let member = |n: TsNode| matches!(n.kind(), "member_expression" | "subscript_expression");
     let mut out = vec![];
