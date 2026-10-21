@@ -363,6 +363,14 @@ pub struct Site {
     /// subclass, it reaches that subclass's method.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub on_receiver: bool,
+    /// The call is made through a class (`Cached.read(self)`): it runs the method that class's
+    /// order finds, and no override of it, whatever the class of the value it runs on.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub named: bool,
+    /// The class a `super()` call is written in (`super().read()` in `Buffered`): the call runs
+    /// the next method after it along the order of the value's class.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub after: String,
     /// The values the call is handed: its arguments and the value it is called on.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub hands: Vec<Held>,
@@ -1057,6 +1065,7 @@ impl Graph {
             for s in &mut n.sites {
                 m(&mut s.to);
                 m(&mut s.on);
+                m(&mut s.after);
                 s.hands.iter_mut().chain(s.gives.iter_mut()).for_each(|h| m(&mut h.ty));
             }
             for t in n.touches.iter_mut().chain(n.instead.iter_mut()) {

@@ -3085,10 +3085,22 @@ impl<'a, 't> Body<'a, 't> {
     }
 
     /// A call of the program's own function or class; a method called on a subclass's value is
-    /// that subclass's step.
+    /// that subclass's step. A method called through a class (`Cached.read(self)`) runs on the
+    /// value it is handed first, and one called through `super()` on the body's own receiver.
     fn own(&mut self, steps: &mut Steps, c: TsNode<'t>, t: &str, receiver: Option<TsNode<'t>>, hands: Vec<Held>, gives: Vec<Held>) {
         let seen = &self.seen;
-        let on = receiver.and_then(|o| {
+        let after = receiver.and_then(|o| self.written_in(o));
+        let method = seen.store.nodes.get(t).filter(|n| n.kind == NodeKind::Method);
+        let named = after.is_none() && method.is_some() && receiver.and_then(|o| seen.value(o)).map_or(false, |v| v.is_class);
+        let instance = method.map_or(false, |n| !n.on_class);
+        // the value the method runs on: what `super(..)` names, the first argument of a method
+        // called through a class, else what it is called on
+        let value = match &after {
+            Some((_, v)) => *v,
+            None if named && instance => first_argument(c),
+            None => receiver,
+        };
+        let on = value.and_then(|o| {
             let b = seen.store.nodes.get(t)?.cls.clone()?;
             seen.value(o)
                 .map(|v| seen.drawn(v, self.ext))
@@ -3097,23 +3109,50 @@ impl<'a, 't> Body<'a, 't> {
                 .find(|c| *c != b && seen.is_class(c) && seen.descends(c, &b))
         });
         let kind = if seen.is_class(t) { EdgeKind::Instantiates } else { EdgeKind::Calls };
-        let on_receiver = receiver.map_or(false, |o| o.kind() == "identifier" && text(o, self.src) == "self");
+        let on_receiver = match &after {
+            Some((_, None)) => true,
+            _ => value.map_or(false, |o| o.kind() == "identifier" && text(o, self.src) == "self"),
+        };
         // a method of the program's own that changes its receiver gives it, beside what it returns
         let mut gives = gives;
         if seen.store.mutating.contains(t) {
-            for r in receiver.map(|r| seen.held_in(r, self.ext, &steps.kept)).unwrap_or_default().into_iter().filter(|h| !h.name.is_empty())
-            {
+            for r in value.map(|r| seen.held_in(r, self.ext, &steps.kept)).unwrap_or_default().into_iter().filter(|h| !h.name.is_empty()) {
                 if !gives.contains(&r) {
                     gives.push(r);
                 }
             }
         }
-        steps.call(c, t, kind, None, Step { on: on.unwrap_or_default(), on_receiver, hands, gives, ..Default::default() });
+        let after_class = after.map(|(k, _)| k).unwrap_or_default();
+        steps.call(
+            c,
+            t,
+            kind,
+            None,
+            Step { on: on.unwrap_or_default(), on_receiver, named, after: after_class, hands, gives, ..Default::default() },
+        );
         if kind == EdgeKind::Calls && value_used(c) {
             self.read.used.push(t.to_string());
         }
-        let args = arguments(self.modules, seen.store, &self.id, t, c, self.at());
+        let args = arguments(self.modules, seen.store, &self.id, t, c, named && instance, self.at());
         self.read.args.extend(args);
+    }
+
+    /// For what a method is called on, when it is `super()` or `super(K, x)`: the class the call
+    /// looks after (the body's own class, or `K`), and the value it runs on when that is not the
+    /// body's own receiver.
+    fn written_in(&self, o: TsNode<'t>) -> Option<(String, Option<TsNode<'t>>)> {
+        if o.kind() != "call" || o.child_by_field_name("function").map(|f| text(f, self.src)) != Some("super") {
+            return None;
+        }
+        let args: Vec<TsNode> = o.child_by_field_name("arguments").map(named_children).unwrap_or_default();
+        match args.as_slice() {
+            [] => Some((self.cls.clone()?, None)),
+            [k, x] => {
+                let k = self.seen.value(*k).filter(|v| v.is_class).and_then(|v| self.seen.classes(v).into_iter().next())?;
+                Some((k, Some(*x)))
+            }
+            _ => None,
+        }
     }
 
     /// The method a call of library `lib` is, with the options of the command line it parses,
@@ -3458,13 +3497,15 @@ fn file_direction(file: Option<FileArg>, nth: usize, sides: Option<[Crossing; 2]
 
 /// Which parameter of the function a call reaches each argument is handed to: positional
 /// arguments in order (after `self`), keyword arguments by name. A class's call reaches its
-/// `__init__`.
+/// `__init__`. A method called through its class (`receiver_first`) is handed its receiver
+/// first, `self` itself.
 fn arguments<'t>(
     modules: &'t IndexMap<String, Module>,
     store: &GraphBuilder,
     caller: &str,
     target: &str,
     c: TsNode<'t>,
+    receiver_first: bool,
     at: At<'_, 't>,
 ) -> Option<Arg<'t>> {
     let callee = match store.nodes.get(target)?.kind {
@@ -3482,6 +3523,7 @@ fn arguments<'t>(
     };
     let mut passed = vec![];
     let mut i = 0;
+    let mut receiver = receiver_first;
     for a in named_children(c.child_by_field_name("arguments")?).into_iter().filter(|a| a.kind() != "comment") {
         match a.kind() {
             "keyword_argument" => {
@@ -3490,6 +3532,7 @@ fn arguments<'t>(
                 }
             }
             "list_splat" | "dictionary_splat" => break,
+            _ if receiver => receiver = false,
             _ => {
                 if let Some((p, _)) = params.get(i) {
                     passed.push((p.clone(), a));
@@ -3529,6 +3572,11 @@ fn handed_on(call: TsNode) -> Vec<TsNode> {
         })
         .filter(|a| matches!(a.kind(), "identifier" | "attribute"))
         .collect()
+}
+
+/// The first argument a call is handed by place.
+fn first_argument(call: TsNode) -> Option<TsNode> {
+    named_children(call.child_by_field_name("arguments")?).into_iter().find(|a| !matches!(a.kind(), "comment" | "keyword_argument"))
 }
 
 /// Whether a function handed to a call is handed by a keyword whose function's value the call

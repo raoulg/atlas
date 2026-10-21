@@ -989,7 +989,7 @@ async function renderPlaat(mine) {
       const s = stepOf(k);
       if (s.startsWith("op:") || !byId.has(s)) continue;
       bodies.add(s);
-      for (const r of libraryClass(s) && !V.route ? callees(s) : [s]) for (const x of reach(r, r === s ? treeInfo.get(k)?.on || null : null).nodes) nodes.add(x);
+      for (const r of libraryClass(s) && !V.route ? callees(s) : [s]) for (const x of (r === s ? reach(r, treeInfo.get(k)?.on || null, null, null, callAlts(k)) : reach(r, null)).nodes) nodes.add(x);
     }
     for (const x of own) nodes.delete(x);
     for (const x of nodes) { markNode(I, x); bodies.add(x); I.asks.push(...(ASKS.get(x) || [])); }
@@ -1095,7 +1095,7 @@ async function renderPlaat(mine) {
     if (P.own && P.steps[0].startsWith("part:")) { const rs = requesters(P.steps[0].slice(5)); return rs.length <= 2 ? rs.join(", ") : `${rs.slice(0, 2).join(", ")} +${rs.length - 2}`; }
     if (P.own) return stepLabel(P.steps[0]);
     const ns = [...new Set(P.steps.map(stepLabel))], text = ns.length <= 2 ? ns.join(", ") : `${ns.slice(0, 2).join(", ")} +${ns.length - 2}`;
-    const alts = P.steps.length === 1 && !treeInfo.get(P.steps[0])?.on && !stepOf(P.steps[0]).startsWith("op:") ? altCount(stepOf(P.steps[0])) : 0;
+    const at = treeInfo.get(P.steps[0]), alts = P.steps.length === 1 && !stepOf(P.steps[0]).startsWith("op:") ? (at ? at.alts.length : altCount(P.steps[0])) : 0;
     return (P.steps.some(st => treeInfo.get(st)?.recursive) ? "↻ " : P.steps.some(openable) || !V.route ? "▸ " : "") + text + (alts ? ` · one of ${alts}` : "") + (P.folded ? ` · +${P.folded} types` : "");
   };
   // in a union, a step named otherwise in A reads `old → new`
@@ -1805,7 +1805,7 @@ const callsOf = n => (n.kind === "class" ? [n.id, initializer(n.id)].filter(Bool
 function openTo(n) {
   const ids = callsOf(n);
   const holds = t => (t.id.startsWith("part:") ? partOf(n) === t.id.slice(5) : t.id.startsWith("unit:") && inModule(n, t.id.slice(5)));
-  const reaches = t => ids.some(id => reach(stepOf(t.id), treeInfo.get(t.id)?.on || null).nodes.has(id));
+  const reaches = t => ids.some(id => reach(stepOf(t.id), treeInfo.get(t.id)?.on || null, null, null, callAlts(t.id)).nodes.has(id));
   const is = t => (V.route ? ids.includes(stepOf(t.id)) : n.kind === "module" ? t.id === "unit:" + n.id || t.id === `unit:${n.id}$` : t.id === n.id);
   for (let level = 0; level < 64; level++) {
     const real = treeNodes().filter(w => !w.t.synthetic);

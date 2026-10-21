@@ -378,6 +378,7 @@ impl Renames {
             for s in &mut n.sites {
                 m(&mut s.to);
                 m(&mut s.on);
+                m(&mut s.after);
                 s.hands.iter_mut().chain(s.gives.iter_mut()).for_each(|h| m(&mut h.ty));
             }
             for t in n.touches.iter_mut().chain(n.instead.iter_mut()) {
@@ -816,6 +817,8 @@ struct SiteShape {
     to: String,
     op: String,
     on: String,
+    named: bool,
+    after: String,
     hands: Vec<(String, Input)>,
     gives: Vec<(String, Option<String>)>,
 }
@@ -850,7 +853,15 @@ fn site_shapes(sites: &[Site]) -> Vec<SiteShape> {
                 (h.ty.clone(), (!h.name.starts_with('#')).then(|| h.name.clone()))
             })
             .collect();
-        shapes.push(SiteShape { to: s.to.clone(), op: s.op.clone(), on: s.on.clone(), hands, gives });
+        shapes.push(SiteShape {
+            to: s.to.clone(),
+            op: s.op.clone(),
+            on: s.on.clone(),
+            named: s.named,
+            after: s.after.clone(),
+            hands,
+            gives,
+        });
     }
     shapes
 }

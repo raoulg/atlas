@@ -2576,6 +2576,34 @@ impl<'a, 't> Body<'a, 't> {
         }
     }
 
+    /// `Source.prototype.read.call(v, ..)` or `.apply(v, [..])`: the method the class's prototype
+    /// finds, called through its class on the value handed first, and no override of it. Whether
+    /// the call is one.
+    fn through_prototype(&mut self, steps: &mut Steps, c: TsNode<'t>, parts: &[String]) -> bool {
+        let [class @ .., proto, name, how] = parts else { return false };
+        if proto != "prototype" || !matches!(how.as_str(), "call" | "apply") {
+            return false;
+        }
+        let Some(t) = self.class(self.resolve(class)).filter(|k| self.own(k)).and_then(|k| self.store.method_of(&k, name)) else {
+            return false;
+        };
+        // the value it runs on: the body's own receiver, or a value of a class below the method's
+        let value = c.child_by_field_name("arguments").and_then(|a| named_children(a).into_iter().next());
+        let on_receiver = value.map_or(false, |v| v.kind() == "this");
+        let on = value
+            .filter(|_| !on_receiver)
+            .and_then(|v| self.receiver(v))
+            .filter(|k| self.store.nodes[&t].cls.as_deref().map_or(false, |b| b != k.as_str()))
+            .unwrap_or_default();
+        if value_used(c) {
+            self.read.used.push(t.clone());
+        }
+        let hands = self.hands(&[c.child_by_field_name("arguments")], &steps.kept);
+        let step = Step { on, on_receiver, named: true, hands, gives: self.gives(c, Some(&t)), ..Default::default() };
+        steps.call(c, &t, EdgeKind::Calls, None, step);
+        true
+    }
+
     /// `f(..)` or `x.m(..)`: the program's function or method, found on the class of the value it
     /// is called on, or a call Atlas does not follow: a library's operation, which may cross into
     /// the world, or a call through a value the body cannot name.
@@ -2586,20 +2614,36 @@ impl<'a, 't> Body<'a, 't> {
             return;
         }
         let parts = member_parts(f, src);
+        if self.through_prototype(steps, c, &parts) {
+            return;
+        }
         let object = (f.kind() == "member_expression").then(|| f.child_by_field_name("object")).flatten();
         let class = object.and_then(|o| self.receiver(o));
         let target = self.callee(c);
         let hands = self.hands(&[object, c.child_by_field_name("arguments")], &steps.kept);
         match target {
             Some(t) if self.own(&t) => {
+                // `super.f()` runs on the body's own receiver the next `f` after the class it is
+                // written in; a static method called through a class (`Base.make()`) is that
+                // class's, and no override of it
+                let sup = object.map_or(false, |o| o.kind() == "super");
+                let named = !sup
+                    && self.store.nodes[&t].kind == NodeKind::Method
+                    && object
+                        .filter(|o| o.kind() == "identifier")
+                        .and_then(|o| self.resolve(&[text(o, src).to_string()]))
+                        .map_or(false, |r| self.store.nodes.get(&r).map_or(false, |n| n.kind == NodeKind::Class));
+                let after = if sup { self.cls.clone().unwrap_or_default() } else { String::new() };
                 // a method found on a base runs on the subclass the value is
-                let on = class.filter(|k| self.store.nodes[&t].cls.as_deref().map_or(false, |b| b != k.as_str())).unwrap_or_default();
-                let on_receiver = object.map_or(false, |o| o.kind() == "this");
+                let on =
+                    class.filter(|k| !sup && self.store.nodes[&t].cls.as_deref().map_or(false, |b| b != k.as_str())).unwrap_or_default();
+                let on_receiver = object.map_or(false, |o| o.kind() == "this") || !after.is_empty();
                 let kind = if self.store.nodes[&t].kind == NodeKind::Class { EdgeKind::Instantiates } else { EdgeKind::Calls };
                 if kind == EdgeKind::Calls && value_used(c) {
                     self.read.used.push(t.clone());
                 }
-                steps.call(c, &t, kind, None, Step { on, on_receiver, hands, gives: self.gives(c, Some(&t)), ..Default::default() });
+                let step = Step { on, on_receiver, named, after, hands, gives: self.gives(c, Some(&t)), ..Default::default() };
+                steps.call(c, &t, kind, None, step);
                 let callee = if kind == EdgeKind::Instantiates { format!("{t}.constructor") } else { t.clone() };
                 if let Some(mut a) = argument(self.modules, self.store, &self.id, &callee, c, self.m, self.scope, &self.params) {
                     a.on =

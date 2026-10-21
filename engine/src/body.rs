@@ -101,13 +101,15 @@ pub struct UseSyntax {
     pub keeps: &'static [&'static str],
 }
 
-/// One call as a step of the route through its body: what it runs, on which class, what it is
-/// handed and what it gives back, and the options of the command line it parses when it parses
-/// the one the program is run with.
+/// One call as a step of the route through its body: what it runs, on which class and how the
+/// call finds it (`Site::named`, `Site::after`), what it is handed and what it gives back, and the
+/// options of the command line it parses when it parses the one the program is run with.
 #[derive(Default)]
 pub struct Step {
     pub on: String,
     pub on_receiver: bool,
+    pub named: bool,
+    pub after: String,
     pub hands: Vec<Held>,
     pub gives: Vec<Held>,
     pub command_line: Option<Vec<String>>,
@@ -248,6 +250,8 @@ impl<'t, 's> Steps<'t, 's> {
             to: to.to_string(),
             on: step.on,
             on_receiver: step.on_receiver,
+            named: step.named,
+            after: step.after,
             hands: step.hands,
             gives: step.gives,
             arms: arms.clone(),

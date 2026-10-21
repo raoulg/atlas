@@ -137,8 +137,9 @@ function quotient(F, view, set, homes, occ, valueName) {
     return top;
   };
   const below = (at, S) => !!at && (at.startsWith(S + "/") || at.startsWith(S + "|") || at.startsWith(S + "~c"));
+  // a line by its block, its way and what it crosses to; a block's name may hold `|` (a dispatch's alternative)
   const want = new Map(), add = (b, way, c, r) => {
-    const k = `${b}|${way}|${c}`, e = want.get(k) || {n: 0, r: 0};
+    const k = JSON.stringify([b, way, c]), e = want.get(k) || {n: 0, r: 0};
     e.n++; if (r) e.r++;
     want.set(k, e);
   };
@@ -158,15 +159,15 @@ function quotient(F, view, set, homes, occ, valueName) {
     }
   }
   const drawn = new Map();
-  for (const B of view.pills.values()) for (const [way, n, r] of [["D", B.Dn, B.Dr], ["C", B.Cn, B.Cr]]) for (const [c, k] of n || []) drawn.set(`${B.id}|${way}|${c}`, {n: k, r: r?.get(c) || 0});
+  for (const B of view.pills.values()) for (const [way, n, r] of [["D", B.Dn, B.Dr], ["C", B.Cn, B.Cr]]) for (const [c, k] of n || []) drawn.set(JSON.stringify([B.id, way, c]), {n: k, r: r?.get(c) || 0});
   for (const [k, e] of want) {
-    const [b, way, c] = k.split("|"), d = drawn.get(k);
+    const [b, way, c] = JSON.parse(k), d = drawn.get(k);
     if (view.folded.has(c)) continue;
     const line = way === "D" ? `${box(c)} > ${occ(b)}` : `${occ(b)} > ${box(c)}`;
     if (!d) out.push(`no line ${line}, where ${e.n} fine lines cross`);
     else if (d.n !== e.n || d.r !== e.r) out.push(`${line} counts ${d.n} (${d.r} reached), the fine lines ${e.n} (${e.r} reached)`);
   }
-  for (const [k] of drawn) if (!want.has(k)) { const [b, way, c] = k.split("|"); out.push(`the line ${way === "D" ? `${box(c)} > ${occ(b)}` : `${occ(b)} > ${box(c)}`} stands for no fine line`); }
+  for (const [k] of drawn) if (!want.has(k)) { const [b, way, c] = JSON.parse(k); out.push(`the line ${way === "D" ? `${box(c)} > ${occ(b)}` : `${occ(b)} > ${box(c)}`} stands for no fine line`); }
   // a value drawn stands where it stood with every step open
   const images = new Map();
   for (const [k, h] of homes) { const c = view.q(k); if (!images.has(c)) images.set(c, new Set()); images.get(c).add(h); }

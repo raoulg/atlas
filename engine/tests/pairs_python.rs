@@ -1474,12 +1474,70 @@ fn diamond_a_value_runs_the_method_its_method_resolution_order_names() {
 }
 
 /// A call through a class (`Cached.read(self)`) runs that class's method and no override of it:
-/// the clean `Feed.read` runs `Cached.read`, which runs nothing in its place.
+/// the clean `Feed.read` runs `Cached.read`, which runs nothing in its place, on the feed it is
+/// handed first. `Cached.__init__(self, url, store)` hands `self` as the receiver, so the file the
+/// store reads is named by the feed's `url`.
 #[test]
-#[ignore = "#110: a call through a class is drawn as a call whose class is not known, which may run each override below it: `Cached.read` is drawn as one of itself and `Feed.read`"]
 fn diamond_a_call_through_a_class_runs_its_method() {
     let r = route(news("clean"), "news.read.headlines");
-    assert!(!r.contains("one of"), "{r}");
+    assert!(!r.contains("one of") && r.contains("Cached.read()"), "{r}");
+    assert!(r.contains("reads {cache}/{url}"), "{r}");
+    let bodies = atlas_engine::flow::bodies(news("clean"));
+    let read = &bodies[&atlas_engine::flow::key("news.sources.Feed.read", "news.sources.Feed")];
+    let ran: Vec<(&str, &str, bool)> = read.steps().iter().map(|s| (s.to.as_str(), s.on.as_str(), s.named)).collect();
+    assert_eq!(ran, [("news.sources.Cached.read", "news.sources.Feed", true)]);
+}
+
+/// One side of the cooperative pair (`tests/pairs/cooperative`): a feed that is a trimmed and a
+/// cached source at once, `Feed(Trimmed, Cached)` over `Source`, whose every `read` hands on with
+/// `super().read()`; the shortcut's `Trimmed.read` names the `read` it hands on to.
+fn cooperative(side: &str) -> &'static Graph {
+    static CLEAN: OnceLock<Graph> = OnceLock::new();
+    static SHORTCUT: OnceLock<Graph> = OnceLock::new();
+    let read = || {
+        analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/cooperative/python").join(side), &Options::default()).unwrap()
+    };
+    if side == "clean" {
+        CLEAN.get_or_init(read)
+    } else {
+        SHORTCUT.get_or_init(read)
+    }
+}
+
+/// `super().read()` written in a class runs the next `read` after that class along the order of
+/// the value's class: on a feed (Feed, Trimmed, Cached, Source) the clean `Trimmed.read` runs
+/// `Cached.read`, which reads the store before it asks the network, though ty resolves the call
+/// along `Trimmed`'s own order, to `Source.read`. Where the value's class is not known, as in
+/// `lines(source: Trimmed)`, a trimmed source may be a feed, and the call runs `Source.read` or
+/// `Cached.read`. The shortcut's `Trimmed.read` calls `Source.read(self)`, a call through a class:
+/// it runs that method and nothing in its place, so a feed never reads its cache and the route asks
+/// the network alone. Neither side draws a call as one of the overrides below the method it runs.
+#[test]
+fn cooperative_super_runs_the_next_method_along_the_value_s_order() {
+    let class = |c: &str| format!("news.sources.{c}");
+    let key = |f: &str, on: &str| atlas_engine::flow::key(&format!("{}.read", class(f)), &class(on));
+    for (side, next) in [("clean", "Cached"), ("shortcut", "Source")] {
+        let g = cooperative(side);
+        let bodies = atlas_engine::flow::bodies(g);
+        let trimmed: Vec<(&str, bool)> = bodies[&key("Trimmed", "Feed")].steps().iter().map(|s| (s.to.as_str(), s.named)).collect();
+        assert_eq!(trimmed, [(format!("{}.read", class(next)).as_str(), true)], "{side}");
+        assert!(edge(g, &format!("{}.read", class("Trimmed")), &format!("{}.read", class("Source")), EdgeKind::Calls), "{side}");
+        let r = route(g, "news.read.headlines");
+        assert!(!r.contains("one of"), "{side}: {r}");
+        assert_eq!(r.contains("Store.get(key)"), side == "clean", "{side}: {r}");
+    }
+    let bodies = atlas_engine::flow::bodies(cooperative("clean"));
+    let cached: Vec<&str> = bodies[&key("Cached", "Feed")].steps().iter().map(|s| s.to.as_str()).collect();
+    assert_eq!(cached, ["news.store.Store.has", "news.store.Store.get", "news.sources.Source.read", "news.store.Store.put"]);
+    let unknown = &bodies["news.sources.Trimmed.read"].steps()[0];
+    assert_eq!(
+        (unknown.to.as_str(), unknown.instead.as_slice()),
+        ("news.sources.Source.read", ["news.sources.Cached.read".to_string()].as_slice())
+    );
+    let r = route(cooperative("clean"), "news.read.lines");
+    assert!(r.contains("Source.read() → bytes   ·   calls self.url   ·   one of 1") && r.contains("1.1a  Cached.read()"), "{r}");
+    let r = route(cooperative("shortcut"), "news.read.lines");
+    assert!(!r.contains("one of") && !r.contains("Cached.read"), "{r}");
 }
 
 /// The file a feed reads is named in the terms of the route that builds it, on either side: the
