@@ -1,9 +1,6 @@
 # The clean command hands the frame from step to step: what `load` gives `smooth` takes, what `smooth` gives the plot
 # draws, and the figure `draw` makes stays inside `save`, which writes it. The places are made whole at the command: the
 # raw file is filled only where it is missing, in an arm, so it stands between the download and the reading.
-# the override's result has the dispatch's own moment: closed, its line into the dispatch is dropped, open it is drawn
-known #102 fault more t:ext:matplotlib.figure.Figure@n:sunspots.plot.Plot/sunspots.plot.Plot.save/0>n:sunspots.plot.Plot/sunspots.plot.Plot.save/0
-known #102 fault no line Figure@Plot()/Plot.save/Plot.draw > Plot()/Plot.save/Plot.draw
 
 
 route sunspots.cli.run

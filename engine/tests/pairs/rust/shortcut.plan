@@ -308,3 +308,8 @@ known #128 extra line Store·store@main/?1/run/Store.open > main/?1/run/?1/write
 known #134 line main/?1/run/?1/write/Store.rows > _@main/?1/run/?1/write/Store.rows value   # the rows go to the loop
 known #134 line _@main/?1/run/?1/write/Store.rows > main/?1/run/?1/write/for (date, description, amount, currency) in store.rows() value
 known #134 home _@main/?1/run/?1/write/Store.rows main/?1/run/?1/write
+
+# a value read through its wrappers is handed into the chain's calls, which are no steps (#125)
+known #125 extra line _·date@main/?1/run/?1/Store.save_rates/?1 > main/?1/run/?1/Store.save_rates/?1/unwrap_or_default value
+known #125 extra line _·format@main/?1/run/?1 > main/?1/run/?1/map value
+known #125 extra line _·format@main/?1/run/?1 > main/?1/run/?1/unwrap_or value

@@ -2,9 +2,6 @@
 # `Smoothed` means, and the plot draws both on the area `save` makes. `main` parses its command line into `cli`, whose
 # fields name the places, makes its `Settings` from the defaults and `--months`, and fills the raw file only where it
 # is missing, so the file stands between the download and the reading.
-# the override's result has the dispatch's own moment: closed, its line into the dispatch is dropped, open it is drawn
-known #102 fault more t:sunspots.settings.Settings@n:sunspots.plot.Plot/sunspots.plot.Plot.save/0>n:sunspots.plot.Plot/sunspots.plot.Plot.save/0
-known #102 fault no line Settings@Plot()/Plot.save/Plot.settings > Plot()/Plot.save/Plot.settings
 
 
 route sunspots.main.main

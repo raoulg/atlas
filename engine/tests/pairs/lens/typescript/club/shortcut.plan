@@ -1,5 +1,3 @@
-# A value an override in a dispatch builds moves into the dispatch's frame when it opens
-known #102 fault Notice@Post()/Post() stands in
 
 # The shortcut's board: `pin` puts a Notice into the file, and `posts` gives back what the file holds as records, of no
 # type of the code's: the Notice goes in and no type comes out. `posts` returns what it read, so it uses it, and the

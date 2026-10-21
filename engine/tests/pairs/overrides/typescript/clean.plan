@@ -2,9 +2,6 @@
 # `ClickHandler`'s, on the Handler the caller calls them on. What the caller hands the base's method is what the override
 # is handed: `handle` an Event, `log` a Click, each a value from beyond. The base's own body (the dispatch's own arrow)
 # reads the value it is handed, not the Handler. Each result, a string, goes back to the dispatch that ran it.
-# the override's result has the dispatch's own moment: closed, its line into the dispatch is dropped, open it is drawn
-known #102 fault more t:events.shapes.Circle@n:events.shapes.Factory/events.shapes.Factory.make>n:events.shapes.Factory/events.shapes.Factory.make
-known #102 fault no line Circle@Factory()/Factory.make > Factory()/Factory.make
 
 route events.handlers.Handler
 step Handler()/Handler.handle
