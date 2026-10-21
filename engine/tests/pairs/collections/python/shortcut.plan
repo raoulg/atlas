@@ -90,16 +90,10 @@ side entry left
 known #133 side Disk(Store.path) both   # the doors read it and write it again: Atlas draws it between
 
 # What Atlas gets wrong here, each by the issue of its cause:
-# E: the own arrow of `put` and `put_all` takes the Reading the method only hands on to `Row()`
 # K: a value handed through a field reaches no step inside: `write_rows(self.path, rows)` hands `self` (#121, decision
 #    1), and the helper takes no Store
 # #74: the doors run on what the constructor door built, not on the caller's instance `Store` from beyond (#121,
 #    decision 2): the constructor's Store goes back to the caller and is joined to no door
-
-# E
-known #126 extra line Reading > Store()/Store.put value
-known #126 extra home Reading Store()
-known #126 extra line Reading·reading@Store()/Store.put_all/for reading in readings > Store()/Store.put_all value
 
 # #74
 known #74 extra line Store@Store()/Store() > Store()/Store.put/Store._rows value

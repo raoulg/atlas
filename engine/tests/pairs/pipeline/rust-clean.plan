@@ -64,9 +64,9 @@ line _·date@main/load/?1/Record.into_month/ok_or > main/load/?1/Record.into_mon
 known #128 line Record·record@main/load/for record in reader.deserialize() > main/load/?1/Record.into_month/Month() value # `self.mean`, ..
 line main/load/?1/Record.into_month/Month() > Month@main/load/?1/Record.into_month/Month() value
 line Month@main/load/?1/Record.into_month/Month() > main/load/?1/Record.into_month value
-known #131 line main/load/?1/Record.into_month > Month@main/load/?1/Record.into_month value
-known #131 line Month@main/load/?1/Record.into_month > main/load/?1/push value
-known #131 line Month@main/load/?1/Record.into_month > main/load value          # gathered into `series`, given back
+line main/load/?1/Record.into_month > Month@main/load/?1/Record.into_month value
+line Month@main/load/?1/Record.into_month > main/load/?1/push value
+line Month@main/load/?1/Record.into_month > main/load value  # gathered into `series`, given back
 line _·series@main/load/new > main/load/?1/push value
 line main/load/?1/push > _·series@main/load/?1 value                    # pushed in one arm, kept in the other
 known #101 line _·series@main/load/?1 > main/load value                        # `Ok(series)`
@@ -122,7 +122,7 @@ home _·series@main/load/new main/load
 home Record·record@main/load/for record in reader.deserialize() main/load
 home _·date@main/load/?1/Record.into_month/ok_or main/load/?1/Record.into_month
 home Month@main/load/?1/Record.into_month/Month() main/load/?1/Record.into_month
-known #131 home Month@main/load/?1/Record.into_month main/load
+home Month@main/load/?1/Record.into_month main/load
 known #101 home _·series@main/load/?1 main/load
 home Month·series@main/load main
 home _·months@main/smooth/get main/smooth
@@ -144,11 +144,6 @@ side File(figures/sunspots.png) right
 
 # a record the csv crate makes inside `load` is drawn from beyond, at the route's frame
 
-# the Month one arm makes takes the choice as its moment, though the other arm makes none
-known #131 extra line main/load/?1/Record.into_month > Month@main/load/?1 value
-known #131 extra line Month@main/load/?1 > main/load/?1/push value
-known #131 extra line Month@main/load/?1 > main/load value
-known #131 extra home Month@main/load/?1 main/load
 
 # a library call whose result no name holds is drawn as a step, its result named by the call around it
 known #125 extra step main/load/?1/Record.into_month/from_ymd_opt

@@ -51,10 +51,10 @@ line Settings·settings > run/report value                         # its level, 
 # the line that says how it went: a Report for the level marks it in one arm, and the marked string goes into the
 # Message built around it
 line Level·level > run/report/?1/Report() value
-line run/report/?1/Report() > Report@run/report/?1 value
-line Report@run/report/?1 > run/report/?1/Report.line value
-line run/report/?1/Report.line > _@run/report/?1 value
-line _@run/report/?1 > run/report/?1/Message() value
+line run/report/?1/Report() > Report@run/report/?1/Report() value
+line Report@run/report/?1/Report() > run/report/?1/Report.line value
+line run/report/?1/Report.line > _@run/report/?1/Report.line value
+line _@run/report/?1/Report.line > run/report/?1/Message() value
 line run/report/?1/Message() > Message·message@run/report/?1 value
 line run/report/?1/Message()#2 > Message·message@run/report/?1 value
 line Message·message@run/report/?1 > run/report/send value
@@ -71,8 +71,8 @@ home Job@run/source/?1 run/source
 home Job·job@run/source run
 home Runner@run/finished/Runner() run/finished
 home _@run/finished run
-home Report@run/report/?1 run/report/?1
-home _@run/report/?1 run/report/?1
+home Report@run/report/?1/Report() run/report/?1
+home _@run/report/?1/Report.line run/report/?1
 home Message·message@run/report/?1 run/report
 
 side entry left

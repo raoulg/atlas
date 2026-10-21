@@ -110,7 +110,6 @@ known #133 side Disk(Store.path) both   # the doors read it and write it again: 
 
 # What Atlas gets wrong here, each by the issue of its cause:
 # C: the struct literal `Store { path }` in `new` is read as a call of `new` itself
-# E: the own arrow of `put` and `put_all` takes the Reading the method only hands on to `Row()`
 # J: the own arrow of an opened step also takes a value its body only hands into a step inside it (`rows` goes into
 #    `rows.iter()…collect()` and no further)
 # #101: a value made in the body and used by the body's own calls has no taker
@@ -125,11 +124,6 @@ known #126 extra line Row·rows@Store()/Store.put_all/push > Store()/Store.put_a
 
 # C
 known #151 extra step Store()/Store.new/Store() recursive
-
-# E
-known #126 extra line Reading > Store()/Store.put value
-known #126 extra home Reading Store()
-known #126 extra line Reading·reading@Store()/Store.put_all/for reading in readings > Store()/Store.put_all value
 
 # #74
 known #74 extra line Store@Store()/Store.new > Store()/Store.put/Store.rows value

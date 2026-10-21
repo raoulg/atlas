@@ -37,11 +37,11 @@ line Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write > Disk(self.path) own
 
 # the get: the lines read, each a Bron or a Begrip injected into Node, the Nodes in the Graaf given back
 line Disk(self.path) > Kennisbank()/Kennisbank.graaf own
-line Kennisbank()/Kennisbank.graaf/node/?1/Bron() > Bron@Kennisbank()/Kennisbank.graaf/node/?1 value
-line Bron@Kennisbank()/Kennisbank.graaf/node/?1 > Kennisbank()/Kennisbank.graaf/node/?1/Node() value
+line Kennisbank()/Kennisbank.graaf/node/?1/Bron() > Bron@Kennisbank()/Kennisbank.graaf/node/?1/Bron() value
+line Bron@Kennisbank()/Kennisbank.graaf/node/?1/Bron() > Kennisbank()/Kennisbank.graaf/node/?1/Node() value
 line Kennisbank()/Kennisbank.graaf/node/?1/Node() > Node@Kennisbank()/Kennisbank.graaf/node/?1 value
-line Kennisbank()/Kennisbank.graaf/node/?1/Begrip() > Begrip@Kennisbank()/Kennisbank.graaf/node/?1 value
-line Begrip@Kennisbank()/Kennisbank.graaf/node/?1 > Kennisbank()/Kennisbank.graaf/node/?1/Node()#2 value
+line Kennisbank()/Kennisbank.graaf/node/?1/Begrip() > Begrip@Kennisbank()/Kennisbank.graaf/node/?1/Begrip() value
+line Begrip@Kennisbank()/Kennisbank.graaf/node/?1/Begrip() > Kennisbank()/Kennisbank.graaf/node/?1/Node()#2 value
 line Kennisbank()/Kennisbank.graaf/node/?1/Node()#2 > Node@Kennisbank()/Kennisbank.graaf/node/?1 value
 line Node@Kennisbank()/Kennisbank.graaf/node/?1 > Kennisbank()/Kennisbank.graaf/node value
 line Kennisbank()/Kennisbank.graaf/node > Node@Kennisbank()/Kennisbank.graaf/node value
@@ -54,8 +54,8 @@ home Kennisbank@Kennisbank()/Kennisbank.new/Kennisbank() Kennisbank()/Kennisbank
 home Kennisbank@Kennisbank()/Kennisbank.new Kennisbank()
 known #74 home Kennisbank Kennisbank()
 home Bron·bron Kennisbank()
-home Bron@Kennisbank()/Kennisbank.graaf/node/?1 Kennisbank()/Kennisbank.graaf/node/?1
-home Begrip@Kennisbank()/Kennisbank.graaf/node/?1 Kennisbank()/Kennisbank.graaf/node/?1
+home Bron@Kennisbank()/Kennisbank.graaf/node/?1/Bron() Kennisbank()/Kennisbank.graaf/node/?1
+home Begrip@Kennisbank()/Kennisbank.graaf/node/?1/Begrip() Kennisbank()/Kennisbank.graaf/node/?1
 home Node@Kennisbank()/Kennisbank.graaf/node/?1 Kennisbank()/Kennisbank.graaf/node
 home Node@Kennisbank()/Kennisbank.graaf/node Kennisbank()/Kennisbank.graaf
 home Graaf@Kennisbank()/Kennisbank.graaf/Graaf() Kennisbank()/Kennisbank.graaf

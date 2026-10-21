@@ -42,8 +42,9 @@ result changes no line to the place (`design.md`, "An opened route is the fiber 
 
 **Values.** A value is `TYPE·NAME@MOMENT`. The type is the code's name for it (`Table`, `Circle`); a value of no type of
 the code's is `_`. The name is the one that holds it; a value no name holds has none. The moment is the occurrence that
-made it (or the choice, for a value either arm makes: `pick/?1` in a body, `Store()/Store.get/?` for the overrides a
-call into a family may run, below the call); a value no step makes, from beyond, has none. A route's
+made it, or the choice for the value a choice hands on that two of its arms make, or that one arm makes anew of a value
+named before it (`pick/?1` in a body, `Store()/Store.get/?` for the overrides a call into a family may run, below the
+call); what one arm makes and uses itself is its maker's. A value no step makes, from beyond, has no moment. A route's
 parameters are values from its start, by their names: `Circle·c`. In the route of an exported class each public method
 is called by the entry and runs on the caller's instance, one value from beyond (`Store`); what the constructor door
 builds goes back to the caller. What a step reads back inside itself of what its own

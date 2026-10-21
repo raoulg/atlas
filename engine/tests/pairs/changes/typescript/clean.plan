@@ -68,9 +68,9 @@ line Api·api > main/remove value
 # choice); one whose result it names is none (`const out = new Map(m)`)
 known #130 extra choice main/counted/?1
 known #125 extra step main/counted/?1/out.get
-known #125 extra line main/counted/?1/out.get > _@main/counted/?1 value
-known #125 extra line _@main/counted/?1 > main/counted/set value
-known #125 extra home _@main/counted/?1 main/counted
+known #125 extra line main/counted/?1/out.get > _@main/counted/?1/out.get value
+known #125 extra line _@main/counted/?1/out.get > main/counted/set value
+known #125 extra home _@main/counted/?1/out.get main/counted
 known #125 step main/counted/Map()
 known #125 line main/counted/Map() > _·out@main/counted/Map() value
 known #125 line _·out@main/counted/Map() > main/counted/set value
