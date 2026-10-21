@@ -36,7 +36,10 @@ jobs:
       - name: Take its picture
         run: uv run tools/atlas_picture.py site/atlas.html site/atlas.png
       - name: Write the pill
-        run: python3 tools/atlas_badge.py site/badge.svg
+        run: |
+          python3 tools/atlas_badge.py site/badge.svg
+          target/release/atlas check --json > findings.json || true
+          python3 tools/atlas_badge.py site/questions.svg findings.json
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site

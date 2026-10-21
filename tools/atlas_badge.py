@@ -12,7 +12,7 @@ import pathlib
 import sys
 from xml.sax.saxutils import escape
 
-INK, VERMILION, TEAL, AMBER = '#141210', '#C43A14', '#3f7f8f', '#a8761a'
+INK, GREEN, TEAL, AMBER = '#141210', '#2f7d4f', '#3f7f8f', '#a8761a'
 ICON = """<svg x="6" y="3" width="14" height="14" viewBox="0 0 128 128">
     <path d="M25 104 L64 25 L103 104 M40 84 L88 84" stroke="#f4f1ec" stroke-opacity="0.75" stroke-width="7" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
     <g fill="#86b9c9"><rect x="16" y="95" width="18" height="18"/><rect x="55" y="16" width="18" height="18"/><rect x="26" y="75" width="18" height="18"/><rect x="85" y="75" width="18" height="18"/></g>
@@ -53,7 +53,7 @@ def render(segments):
 
 
 def main(out, findings=None):
-    segments = [('atlas', INK), ('drawn on push', VERMILION)]
+    segments = [('atlas', INK), ('drawn on push', GREEN)]
     if findings:
         n = len(json.loads(pathlib.Path(findings).read_text())['findings'])
         segments[1] = (f'{n} question' + ('' if n == 1 else 's'), AMBER if n else TEAL)
