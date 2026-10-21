@@ -61,10 +61,6 @@ figure.output img{width:100%;height:auto;display:block;padding:14px 18px}
 .inside .more{margin:0;padding:4px 18px 16px;font-size:14px;color:var(--ink-2)}
 .inside .more a{color:var(--ink);text-decoration-color:var(--accent);text-underline-offset:3px}
 @media (max-width:760px){.inside dl{grid-template-columns:1fr;gap:2px}.inside dd{margin-bottom:10px}}
-.cmds{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:20px}
-.cmds div{background:var(--panel);border:1px solid var(--line);padding:18px}
-.cmds code{font-family:var(--mono);font-size:14px;display:block;margin-bottom:6px}
-.cmds span{color:var(--ink-2);font-size:15px}
 .os{font-size:14px;color:var(--ink-2);margin:16px 0 6px}
 .os:first-of-type{margin-top:0}
 pre{font-family:var(--mono);font-size:13px;background:var(--panel);border:1px solid var(--line);padding:14px 16px;overflow-x:auto;margin:0}
@@ -77,14 +73,18 @@ footer{border-top:1px solid var(--line);padding-top:20px;color:var(--ink-3);font
 /* the Rule 30 band across the top, after pttrn.io's, with Atlas's logo in it: drawn by the script at the end of the page */
 .band{position:relative;height:130px;overflow:hidden;background:var(--bg)}
 .band-cells{position:absolute;inset:0;width:100%;height:100%}
-.band-cells .cell{fill:#E2DCD3}
+.band-cells .cell{fill:var(--cell)}
 .band-cells .accent{fill:var(--accent)}
 .band-logo{position:absolute;display:block}
 /* the tour */
-:root{--ink-2:#4A443D;--proph:#4B3FA8;--add:#2E8B57;--focus:#1D5A73}
+:root{--ink-2:#4A443D;--proph:#4B3FA8;--add:#2E8B57;--focus:#1D5A73;--on-ink:#FFFFFF;--cell:#E2DCD3;--bubble:#ECE7E0;--code-bg:#F1ECE6;--code-ink:#9A2E10;--link:#1D5A73;--del:#C0361C;--chg:#B8860B;color-scheme:light}
+/* dark: the viewer's dark theme, so the page and its pictures are one */
+:root[data-theme="dark"]{--bg:#141210;--panel:#1B1815;--ink:#F4F1EC;--ink-2:#B8B0A5;--ink-3:#857C71;--line:#2B2621;--accent:#F2643C;--good:#6CC08C;
+  --proph:#A99BF0;--add:#6CC08C;--focus:#86B9C9;--on-ink:#141210;--cell:#2B2621;--bubble:#26211D;--code-bg:#26211D;--code-ink:#F2A07C;--link:#86B9C9;
+  --del:#F2643C;--chg:#E0B24A;color-scheme:dark}
 html{scroll-behavior:smooth;scroll-padding-top:72px}
 @media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
-.skip{position:absolute;left:-999px;top:8px;background:var(--ink);color:#fff;padding:8px 14px;z-index:10}
+.skip{position:absolute;left:-999px;top:8px;background:var(--ink);color:var(--on-ink);padding:8px 14px;z-index:10}
 .skip:focus{left:8px}
 a:focus-visible,button:focus-visible{outline:2px solid var(--focus);outline-offset:3px}
 .top{display:block;margin:0;position:sticky;top:0;z-index:5;background:color-mix(in oklab,var(--bg) 92%,transparent);backdrop-filter:blur(6px);border-bottom:1px solid var(--line)}
@@ -94,7 +94,12 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--focus);outline-offs
 .top nav{display:flex;gap:4px 18px;overflow-x:auto;white-space:nowrap;font-size:15px;flex:1;margin-left:0}
 .top nav a{color:var(--ink-2);text-decoration:none;padding:6px 2px;border-bottom:2px solid transparent}
 .top nav a:hover{color:var(--ink);border-bottom-color:var(--accent)}
-.top .repo{margin-left:auto;display:inline-flex;align-items:center;gap:7px;font-size:15px;font-weight:500;text-decoration:none;color:var(--ink);white-space:nowrap}
+.theme{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;margin-left:auto;border:1px solid var(--line);border-radius:50%;background:transparent;color:var(--ink-2);cursor:pointer;flex:none}
+.theme:hover{color:var(--ink);border-color:var(--ink-3)}
+.theme svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.theme .moon,:root[data-theme="dark"] .theme .sun{display:none}
+:root[data-theme="dark"] .theme .moon{display:block}
+.top .repo{margin-left:14px;display:inline-flex;align-items:center;gap:7px;font-size:15px;font-weight:500;text-decoration:none;color:var(--ink);white-space:nowrap}
 .top .repo svg{width:20px;height:20px;fill:currentColor}
 .top .repo:hover{color:var(--accent)}
 main{padding-top:0}
@@ -112,8 +117,8 @@ main{padding-top:0}
 .hero .lede{font-size:20px;max-width:56ch;margin-bottom:26px}
 .ctas{display:flex;flex-wrap:wrap;gap:12px;margin-bottom:0}
 .btn{display:inline-block;font:500 16px var(--sans);padding:11px 22px;border:1px solid var(--ink);text-decoration:none;color:var(--ink);background:transparent}
-.btn.primary{background:var(--ink);color:#fff}
-.btn:hover{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.primary{background:var(--ink);color:var(--on-ink)}
+.btn:hover{background:var(--accent);border-color:var(--accent);color:var(--on-ink)}
 .chap{margin-bottom:104px}
 .chap h2{max-width:22ch}
 .chap .lede{font-size:18px;margin-bottom:30px}
@@ -167,9 +172,9 @@ main{padding-top:0}
 b.g,b.b,b.p{font-weight:600}
 .key{margin:0;font-size:15px;color:var(--ink-2);display:flex;flex-wrap:wrap;gap:6px 18px;align-items:center}
 .key .sw{display:inline-block;width:22px;height:12px;border:3px solid;margin-right:6px;vertical-align:-1px}
-.key .sw.add{border-color:var(--add);background:color-mix(in oklab,var(--add) 26%,#fff)}
-.key .sw.del{border-color:#C0361C;background:color-mix(in oklab,#C0361C 20%,#fff)}
-.key .sw.chg{border-color:#B8860B;background:color-mix(in oklab,#B8860B 18%,#fff)}
+.key .sw.add{border-color:var(--add);background:color-mix(in oklab,var(--add) 26%,var(--panel))}
+.key .sw.del{border-color:var(--del);background:color-mix(in oklab,var(--del) 20%,var(--panel))}
+.key .sw.chg{border-color:var(--chg);background:color-mix(in oklab,var(--chg) 18%,var(--panel))}
 figure a.still{pointer-events:none}
 figcaption .demo{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;justify-content:flex-end}
 figure a.try,a.try{display:inline;padding:0;font-size:14px;font-weight:500;text-decoration:underline;text-decoration-color:var(--accent);text-underline-offset:3px}
@@ -177,8 +182,22 @@ a.try:hover{color:var(--accent)}
 .step{display:grid;grid-template-columns:minmax(0,920px) minmax(0,1fr);gap:22px;align-items:start;width:100%}
 .step figure{min-width:0}
 @media (max-width:1100px){.step{grid-template-columns:minmax(0,1fr)}}
+/* a chat, typeset: the person's question on the right, the agent's answer below it */
+.chatlog{padding:16px 20px 18px;font-size:14.5px;line-height:1.55;color:var(--ink)}
+.chatlog p,.chatlog ul,.chatlog table,.chatlog pre{margin:0 0 10px}
+.chatlog .you{margin:0 0 14px auto;width:fit-content;max-width:82%;background:var(--bubble);border-radius:14px;padding:8px 14px}
+.chatlog .ran{color:var(--ink-3);font-size:13.5px;margin-bottom:10px}
+.chatlog ul{padding-left:20px}
+.chatlog li{margin-bottom:4px}
+.chatlog code{font:12.5px var(--mono);background:var(--code-bg);color:var(--code-ink);border-radius:4px;padding:1px 5px}
+.chatlog pre{font-size:12px;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px 12px;white-space:pre;overflow:hidden}
+.chatlog a{color:var(--link);text-decoration:underline;text-underline-offset:2px}
+.chatlog table{border-collapse:collapse;width:100%;font-size:13.5px}
+.chatlog th,.chatlog td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)}
+.chatlog th{font-weight:500}
+.session figure img{background:var(--bg)}
 /* a step of the session: the chat and the page side by side, at one width; on a phone one after the other, in the order they happened */
-.session{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:22px;align-items:start;width:100%}
+.session{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:22px;align-items:stretch;width:100%}
 .session h3{grid-column:1/-1;font:600 18px var(--sans);margin:14px 0 -8px}
 .session figure img{width:100%;height:auto;display:block;padding:8px}
 .session .aside{margin:0;color:var(--ink-2);font-size:16px;max-width:52ch;align-self:center}
@@ -269,6 +288,10 @@ section{margin-bottom:104px}
 .gh .md a.pic{display:block;border:1px solid var(--g-line);border-radius:6px;overflow:hidden}
 .gh .drawn{margin:8px 0 0!important;font-size:12px;color:var(--g-mute)}
 .gh .drawn code{font-size:12px}
+:root[data-theme="dark"] .gh{--g-fg:#F0F6FC;--g-mute:#9198A1;--g-line:#3D444D;--g-soft:#151B23;--g-link:#4493F8;--g-ok:#3FB950;background:#0D1117}
+:root[data-theme="dark"] .gh .acts i,:root[data-theme="dark"] .gh .tabsg i{background:#2F3742}
+:root[data-theme="dark"] .gh .md code{background:#262C36}
+:root[data-theme="dark"] .gh .topics span{background:#121D2F}
 /* the one part of the page Atlas writes */
 .gh .atlas{position:relative;margin:30px -14px 8px;padding:2px 14px 14px;outline:2px solid var(--accent);outline-offset:0;border-radius:6px}
 .gh .atlas>.mark{position:absolute;top:-13px;right:14px;background:var(--accent);color:#fff;font:500 12px/1 var(--mono);padding:6px 10px;border-radius:3px;white-space:nowrap}
@@ -301,7 +324,11 @@ section{margin-bottom:104px}
 }
 @media (max-width:760px){.top nav{display:none}.hero{padding-top:36px}.chap{margin-bottom:72px}}
 </style>
-<script>document.documentElement.classList.add('js')</script>
+<script>
+document.documentElement.classList.add('js');
+(() => { let chosen = null; try { chosen = localStorage.getItem('atlas.tour.theme'); } catch {}
+  document.documentElement.dataset.theme = chosen || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); })();
+</script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to the content</a>
@@ -318,6 +345,7 @@ section{margin-bottom:104px}
       <a href="#readme">Your README</a>
       <a href="#install">Try it</a>
     </nav>
+    <button class="theme" type="button" aria-label="Dark mode" aria-pressed="false" title="Light or dark"><svg class="sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.3M12 19.2v2.3M4.6 4.6l1.6 1.6M17.8 17.8l1.6 1.6M2.5 12h2.3M19.2 12h2.3M4.6 19.4l1.6-1.6M17.8 6.2l1.6-1.6"/></svg><svg class="moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 14.2A8.5 8.5 0 1 1 9.8 3.5a6.8 6.8 0 0 0 10.7 10.7Z"/></svg></button>
     <a class="repo" href="https://github.com/raoulg/atlas"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>GitHub</a>
   </div>
 </header>
@@ -344,11 +372,11 @@ section{margin-bottom:104px}
   <div class="wide both">
     <figure class="sloppy">
       <figcaption><b>A sloppy script</b><span class="tag">sloppy</span></figcaption>
-      <a class="still"><img src="img/showcase/python-sloppy.png" style="--w:1321" alt="Atlas's picture of the sloppy script: every step reads and changes one global, Global(sunspots.df), and two of them pick their own files"></a>
+      <a class="still"><img src="img/showcase/python-sloppy.png" style="--w:1321" data-dark="img/showcase/python-sloppy-dark.png" alt="Atlas's picture of the sloppy script: every step reads and changes one global, Global(sunspots.df), and two of them pick their own files"></a>
     </figure>
     <figure class="elegant">
       <figcaption><b>Typed and elegant</b><span class="demo"><a class="try" href="showcase/python-clean.html">Open the live picture and click around &rarr;</a><span class="tag">elegant</span></span></figcaption>
-      <a href="showcase/python-clean.html"><img src="img/showcase/python-clean.png" style="--w:1834" alt="Atlas's picture of the typed pipeline: download runs only when no raw CSV is kept, the CSV stands between download and load, a DataFrame passes from load to smooth to Trend.save, and the command names every file"></a>
+      <a href="showcase/python-clean.html"><img src="img/showcase/python-clean.png" style="--w:1927" data-dark="img/showcase/python-clean-dark.png" alt="Atlas's picture of the typed pipeline: download runs only when no raw CSV is kept, the CSV stands between download and load, a DataFrame passes from load to smooth to Trend.save, and the command names every file"></a>
     </figure>
   </div>
   <p class="explain">Atlas shows you. Both reach the same places: the web, the raw CSV, the figure. Inside they part. In the sloppy script every step reads and changes one global, <code>Global(sunspots.df)</code>, and nothing is handed from step to step. In the typed one the CSV stands between <code>download</code> and <code>load</code>, a <code>DataFrame</code> goes from step to step, and the command names every file. <span class="dot"></span>A red dot is a question Atlas asks the author. Open the typed one in Atlas and click around: it is a live picture.</p>
@@ -364,15 +392,15 @@ section{margin-bottom:104px}
       <button role="tab" aria-selected="false" aria-controls="lang-ts" id="tab-ts">TypeScript</button>
     </div>
     <div class="stage" role="tabpanel" id="lang-py" aria-labelledby="tab-py">
-      <a href="showcase/python-clean-save.html"><img class="close" src="img/showcase/python-smooth.png" style="--w:723" alt="The typed Python pipeline close up: load gives a DataFrame, smooth takes it and gives a DataFrame, and Trend.save is handed that frame"></a>
+      <a href="showcase/python-clean-save.html"><img class="close" src="img/showcase/python-smooth.png" style="--w:816" data-dark="img/showcase/python-smooth-dark.png" alt="The typed Python pipeline close up: load gives a DataFrame, smooth takes it and gives a DataFrame, and Trend.save is handed that frame"></a>
       <p class="cap"><b>Python, typed.</b> <code>load</code> gives a pandas <code>DataFrame</code>; <code>smooth</code> takes it and gives it back with a smoothed column, and <code>Trend.save</code> draws that one frame with matplotlib. <a class="try" href="showcase/python-clean-save.html">Open the whole live picture and click around &rarr;</a></p>
     </div>
     <div class="stage" role="tabpanel" id="lang-rs" aria-labelledby="tab-rs">
-      <a href="showcase/rust-clean.html"><img class="close" src="img/showcase/rust-smooth.png" style="--w:782" alt="The Rust port close up: load gives Month records, smooth takes them and gives Smoothed means, and Trend.save is handed both"></a>
+      <a href="showcase/rust-clean.html"><img class="close" src="img/showcase/rust-smooth.png" style="--w:714" data-dark="img/showcase/rust-smooth-dark.png" alt="The Rust port close up: load gives Month records, smooth takes them and gives Smoothed means, and Trend.save is handed both"></a>
       <p class="cap"><b>Rust, ported.</b> The same step: <code>smooth</code> between <code>load</code> and <code>Trend.save</code>. What it is handed differs with the libraries: Rust has no <code>DataFrame</code>, so <code>load</code> gives a list of <code>Month</code> records, <code>smooth</code> gives <code>Smoothed</code> means beside them, and <code>Trend.save</code> is handed both. <a class="try" href="showcase/rust-clean.html">Open the whole live picture and click around &rarr;</a></p>
     </div>
     <div class="stage" role="tabpanel" id="lang-ts" aria-labelledby="tab-ts">
-      <a href="showcase/typescript-clean.html"><img class="close" src="img/showcase/typescript-smooth.png" style="--w:708" alt="The TypeScript port close up: load gives Month records, smooth takes them and gives Smoothed means, and trend is handed both"></a>
+      <a href="showcase/typescript-clean.html"><img class="close" src="img/showcase/typescript-smooth.png" style="--w:870" data-dark="img/showcase/typescript-smooth-dark.png" alt="The TypeScript port close up: load gives Month records, smooth takes them and gives Smoothed means, and trend is handed both"></a>
       <p class="cap"><b>TypeScript, ported.</b> The same shape as Rust: <code>Month</code> records from <code>load</code>, <code>Smoothed</code> means from <code>smooth</code>, both handed to <code>trend</code>, which draws an SVG. <a class="try" href="showcase/typescript-clean.html">Open the whole live picture and click around &rarr;</a></p>
     </div>
   </div>
@@ -387,23 +415,24 @@ section{margin-bottom:104px}
       <p class="os">Claude Code</p>
       <pre>claude mcp add --scope user atlas -- atlas mcp</pre>
       <p class="os">Codex</p>
-      <pre>codex mcp add atlas -- atlas mcp</pre>
-      <p>Then run <code>atlas serve</code> in a repository and open the page it prints. What follows is one real session with Claude Code on the sunspots program: what was said in the chat, and what the page showed.</p>
+      <pre>codex mcp add atlas -- &quot;$(command -v atlas)&quot; mcp</pre>
+      <p>Then run <code>atlas serve</code> in a repository and open the page it prints. What follows is a session with Claude Code on the sunspots program: what was said in the chat, and what the page showed.</p>
     </div>
     <div class="session">
       <h3>1 &middot; You ask where something happens; the agent points at it</h3>
-      <figure class="chat"><figcaption>In the chat</figcaption><img src="img/session/ask.png" style="--w:821" alt="The chat: you ask where the smoothing happens; the agent answers that it is the step smooth, that it took the page to the route run and pointed at smooth, and that it sits between load and Trend.save"></figure>
-      <figure><figcaption>On the page <span class="tag">look</span></figcaption><img src="img/session/look.webp" style="--w:760" alt="The route of the sunspots program around smooth, close up; the step smooth is outlined and pulses with a blue glow: the agent points at it"></figure>
+      <figure class="chat fill"><figcaption>In the chat</figcaption><div class="clip"><div class="chatlog"><p class="you">Where does the smoothing happen?</p><p class="ran">Ran a command, used 2 tools &rsaquo;</p><div class="said"><p>The smoothing happens in the <code>smooth</code> step, and that step now lights up on your page. I switched the page from the package overview to the <code>run</code> route and pointed at <code>smooth</code>.</p><p>In the picture you can see it sits between <code>load</code> and <code>Trend.save</code>:</p><ul><li><b>What goes in:</b> the <code>DataFrame</code> that <code>load</code> makes from the raw CSV, plus <code>months</code> from <code>Settings</code> (13 unless you pass <code>--months</code>).</li><li><b>What comes out:</b> the same <code>DataFrame</code> with an extra <code>smoothed</code> column, which <code>Trend.save</code> draws.</li></ul><p>In the code it's one line, in <a>src/sunspots/series.py</a>:</p><pre>def smooth(frame: pd.DataFrame, months: int) -&gt; pd.DataFrame:
+    return frame.assign(smoothed=frame["mean"].rolling(months, center=True).mean())</pre><p>That's a rolling mean over 13 months, centred on each month.</p></div></div></div></figure>
+      <figure><figcaption>On the page <span class="tag">look</span></figcaption><img src="img/session/look-light.webp" data-dark="img/session/look-dark.webp" width="760" height="190" style="--w:760" alt="The route of the sunspots program around smooth, close up; the step smooth is outlined and pulses with a blue glow: the agent points at it"></figure>
     </div>
     <div class="session">
       <h3>2 &middot; You write a note on a box</h3>
       <p class="aside">Alt-click a box, type, press enter. The note stays on the box, with the view and the commit it was written at. One more note went on <code>load</code>: what happens if the data on the web changes?</p>
-      <figure><figcaption>On the page <span class="tag">alt-click</span></figcaption><img src="img/session/note.png" style="--w:742" alt="A note field open on the step smooth, with the question why smooth uses center typed in"></figure>
+      <figure><figcaption>On the page <span class="tag">alt-click</span></figcaption><img src="img/session/note-light.png" data-dark="img/session/note-dark.png" width="760" height="260" style="--w:760" alt="A note field open on the step smooth, with the question why smooth uses center typed in"></figure>
     </div>
     <div class="session">
       <h3>3 &middot; The agent reads your notes and answers on the box</h3>
-      <figure class="chat"><figcaption>In the chat</figcaption><img src="img/session/read.png" style="--w:808" alt="The chat: you ask whether the agent can read your notes; it found two, answered each on its box and resolved both, and repeats the answers about center and about the data on the web"></figure>
-      <figure><figcaption>On the page <span class="tag">&#10003; &#10022;</span></figcaption><img src="img/session/answer.png" style="--w:702" alt="The step smooth with a check mark (the note is resolved) and a star; the agent's answer about center is open beside the star"></figure>
+      <figure class="chat fill"><figcaption>In the chat</figcaption><div class="clip"><div class="chatlog"><p class="you">can you read my notes?</p><p class="ran">Used 5 tools &rsaquo;</p><div class="said"><p>Yes, I found two notes. I answered each one on its box (it shows as a mark with my answer when you hover) and marked both resolved.</p><p><b>Note 1, on <code>smooth</code>: &ldquo;why does smooth use center?&rdquo;</b><br><code>center=True</code> labels each 13-month mean with the month in the middle of those 13 months. That way the smoothed line doesn't lag: a peak in the blue curve falls in the same month as the real peak. Without it, pandas labels each mean with the last month of the 13, and the curve trails the data by six months. This 13-month centred mean is the standard smoothed sunspot number. The cost is that the first and last six months don't have 13 months around them, so they get no smoothed value.</p><p><b>Note 2, on <code>load</code>: &ldquo;what happens if the data on the web changes?&rdquo;</b><br>Nothing, as long as the CSV is still on disk. <code>load</code> reads <a>data/raw/sunspots.csv</a>, and <code>download</code> only runs when that file is missing. You can see that in the dashed frame &ldquo;only when not raw.exists()&rdquo;. If SILSO adds a month or revises an old one, the figure only picks it up after you delete the file or point <code>--raw</code> at a new path.</p></div></div></div></figure>
+      <figure><figcaption>On the page <span class="tag">&#10003; &#10022;</span></figcaption><img src="img/session/answer-light.png" data-dark="img/session/answer-dark.png" width="760" height="260" style="--w:760" alt="The step smooth with a check mark (the note is resolved) and a star; the agent's answer about center is open beside the star"></figure>
     </div>
   </div>
 </section>
@@ -420,21 +449,21 @@ section{margin-bottom:104px}
     </div>
     <div class="stage" role="tabpanel" id="st-vision" aria-labelledby="tb-vision">
       <div class="session">
-        <figure class="chat fill"><figcaption>In the chat</figcaption><div class="clip"><img src="img/session/ask-change.png" style="--w:602" alt="The chat: you ask for a function that tracks and marks the maxima of the solar cycles; the agent answers that its proposal is drawn on your page as a vision, and begins a long explanation"></div></figure>
-        <figure><figcaption>On the page <span class="tag">vision</span></figcaption><img src="img/session/vision.png" style="--w:677" alt="The route run_cycles beside the code as it is: the new steps Cycles() and peaks and the new type Cycles are filled green, with a plus; smooth, the DataFrames and Trend are as they were"></figure>
+        <figure class="chat fill"><figcaption>In the chat</figcaption><div class="clip"><div class="chatlog"><p class="you">I want to add a function that tracks and marks the maxima of the cycles, do you have a proposal for how to build that?</p><p class="ran">Ran 2 commands, used 4 tools &rsaquo;</p><div class="said"><p>Yes. My proposal is now drawn on your page as a vision, beside the code as it is, and I've pointed at the new <code>peaks</code> step. Your files are unchanged so far.</p><p><b>The proposal: the maxima travel along in the <code>DataFrame</code> you already have, the same way the smoothing does.</b></p><ul><li><b><code>peaks(frame, years)</code></b> goes in <code>series.py</code>, next to <code>smooth</code>. It returns the same <code>DataFrame</code> with an extra <code>peak</code> column. <code>peak</code> is true where the smoothed mean is the highest within <code>years</code> years around that month, which is the maximum of a solar cycle. By default <code>years</code> is 11, the length of a cycle.</li><li><b><code>Cycles(Trend)</code></b> goes in <code>plot.py</code>. It draws the same figure as <code>Trend</code> and marks the rows where <code>peak</code> is true.</li><li><b><code>run_cycles</code></b> goes in <code>cli.py</code>: <code>load → smooth → peaks → Cycles.save</code>, with a <code>--years</code> option. It's a new command next to <code>run</code>, not a change to <code>run</code>, so the picture shows exactly what gets added.</li></ul><p>On the page, the new route draws in green: the same web, the same CSV and the same figure, with one more step between <code>smooth</code> and saving.</p></div></div></div></figure>
+        <figure><figcaption>On the page <span class="tag">vision</span></figcaption><img src="img/session/vision-light.png" data-dark="img/session/vision-dark.png" width="760" height="270" style="--w:760" alt="The route run_cycles beside the code as it is: the new steps Cycles() and peaks and the new type Cycles are filled green, with a plus; smooth, the DataFrames and Trend are as they were"></figure>
       </div>
       <p class="cap"><b>You ask for a change; the agent shows it.</b> A sketch drawn beside the code as it is, with what it adds in green. Nothing is written in your files: the chat can say a lot, the picture shows it at a glance.</p>
     </div>
     <div class="stage" role="tabpanel" id="st-prophecy" aria-labelledby="tb-prophecy">
       <div class="session">
-        <figure class="chat fill"><figcaption>In the chat</figcaption><div class="clip"><img src="img/session/prophetize.png" style="--w:637" alt="The chat: you say yes and ask to set up a prophecy in the code; the agent says the design is now in your code as a prophecy, drawn dotted purple, and begins to list the files"></div></figure>
-        <figure><figcaption>On the page <span class="tag">prophecy</span></figcaption><img src="img/session/prophecy.png" style="--w:595" alt="The same route with the design written into the code: Cycles(), Cycles and peaks have a dotted purple outline, not built yet; the shape is the vision's, from smooth through peaks to Cycles.save"></figure>
+        <figure class="chat fill"><figcaption>In the chat</figcaption><div class="clip"><div class="chatlog"><p class="you">yes, looks great. Set up a prophecy in the code</p><p class="ran">Ran 2 commands, used 3 tools &rsaquo;</p><div class="said"><p>The design is now in your code as a prophecy, and I've pointed your page at the new route. The three new parts draw dotted purple there: written, but not built yet.</p><p><b>What's in your files now</b> (not committed; that's up to you):</p><ul><li><code>series.py</code>: <code>peaks</code> with its signature and docstring, marked <code>@prophecy()</code>. Its body is <code>raise NotImplementedError</code> for now.</li><li><code>plot.py</code>: <code>Cycles(Trend)</code>, marked <code>@prophecy()</code>. Its <code>draw</code> calls <code>Trend.draw</code> first; the marking itself is still to be written.</li><li><code>cli.py</code>: <code>run_cycles</code>, marked <code>@prophecy(supersedes="sunspots.cli.run")</code>. That means it is meant to replace <code>run</code>.</li></ul></div></div></div></figure>
+        <figure><figcaption>On the page <span class="tag">prophecy</span></figcaption><img src="img/session/prophecy-light.png" data-dark="img/session/prophecy-dark.png" width="760" height="270" style="--w:760" alt="The same route with the design written into the code: Cycles(), Cycles and peaks have a dotted purple outline, not built yet; the shape is the vision's, from smooth through peaks to Cycles.save"></figure>
       </div>
       <p class="cap"><b>You say yes; it goes into your code.</b> The same sketch, now real code that Atlas reads with real types, marked as not built yet and drawn <span class="p">dotted purple</span>: the shape of the vision, kept in your files until it is built.</p>
     </div>
     <div class="stage" role="tabpanel" id="st-left" aria-labelledby="tb-left">
       <div class="session">
-        <figure class="chat"><figcaption>In the chat</figcaption><img src="img/session/revelation.png" style="--w:618" alt="The chat: you ask how far along the implementation is; the agent uses atlas revelation and lists three prophecies, run_cycles, Cycles and peaks, each with one body to write"></figure>
+        <figure class="chat"><figcaption>In the chat</figcaption><div class="chatlog"><p class="you">How far along is the implementation?</p><p class="ran">Used atlas: revelation &rsaquo;</p><div class="said"><p>Let me use <code>atlas revelation</code> to check.</p><p>The design is in place, but none of it is built yet. Atlas lists three prophecies, each with one body still to write:</p><table><tr><th>Where</th><th>What</th><th>Still to do</th></tr><tr><td><code>cli.py:32</code></td><td><code>run_cycles</code>, which will replace <code>run</code></td><td>1 body</td></tr><tr><td><code>plot.py:44</code></td><td><code>Cycles</code>, the figure with the maxima marked</td><td>1 body</td></tr><tr><td><code>series.py:29</code></td><td><code>peaks</code>, which finds the maximum of each cycle</td><td>1 body</td></tr></table><p>Nothing built leans on them yet, so <code>run</code> and <code>Trend</code> keep working as they do now.</p><p>The real work is in <code>peaks</code>, finding the maxima, and in <code>Cycles.draw</code>, marking them on the figure. <code>run_cycles</code> already calls everything in the right order; all it needs is to lose its marker. Shall I build it?</p></div></div></figure>
         <figure class="code fill"><figcaption>In your files: the design, with its markers in purple</figcaption><div class="clip"><pre># series.py
 <span class="m">@prophecy()</span>
 def peaks(frame: pd.DataFrame, years: int) -&gt; pd.DataFrame:
@@ -467,7 +496,7 @@ def run_cycles(raw: Path = RAW, figure: Path = FIGURE, months: int = 13, years: 
     </div>
     <div class="stage" role="tabpanel" id="st-built" aria-labelledby="tb-built">
       <div class="session">
-        <figure><figcaption>On the page <span class="tag">built</span></figcaption><img src="img/session/built.png" style="--w:886" alt="The route run_cycles built: Cycles(), Cycles and peaks are solid boxes, between smooth and saving"></figure>
+        <figure><figcaption>On the page <span class="tag">built</span></figcaption><img src="img/session/built-light.png" data-dark="img/session/built-dark.png" width="760" height="270" style="--w:760" alt="The route run_cycles built: Cycles(), Cycles and peaks are solid boxes, between smooth and saving"></figure>
         <figure class="code fill"><figcaption>In your files: built, the markers gone</figcaption><div class="clip"><pre># series.py
 def peaks(frame: pd.DataFrame, years: int) -&gt; pd.DataFrame:
     """`frame` with a `peak` column: true where the smoothed mean is the highest
@@ -508,7 +537,7 @@ def run_cycles(raw: Path = RAW, figure: Path = FIGURE, months: int = 13, years: 
   <div class="wide">
     <figure>
       <figcaption><b>The history: pick two commits, and Atlas draws them as one picture</b><span class="tag">A &cup; B</span></figcaption>
-      <img src="img/interaction/history.png" style="--w:1874" alt="Atlas's history page: on the left the six commits of the sunspots repository, the fifth marked A and the sixth B; on the right the two drawn as one picture, close up. The new steps Cycles(), peaks and Cycles.save, the types Cycles and DataFrame and the new file figures/cycles.png are filled green; everything else is plain.">
+      <img src="img/interaction/history.png" style="--w:1874" data-dark="img/interaction/history-dark.png" alt="Atlas's history page: on the left the six commits of the sunspots repository, the fifth marked A and the sixth B; on the right the two drawn as one picture, close up. The new steps Cycles(), peaks and Cycles.save, the types Cycles and DataFrame and the new file figures/cycles.png are filled green; everything else is plain.">
     </figure>
     <p class="key"><span class="sw add"></span>added <span class="sw del"></span>removed <span class="sw chg"></span>changed: its own arrows differ</p>
   </div>
@@ -553,7 +582,7 @@ def run_cycles(raw: Path = RAW, figure: Path = FIGURE, months: int = 13, years: 
               <span class="mark">drawn by Atlas on every push</span>
               <h4>How the code works</h4>
               <p>Click to explore.</p>
-              <a class="pic" href="showcase/python-clean.html"><img src="img/showcase/python-clean.png" alt="Atlas's picture of sunspots: from the web to the raw CSV, a DataFrame from load to smooth to Trend.save, and the figure"></a>
+              <a class="pic" href="showcase/python-clean.html"><img src="img/showcase/python-clean.png" data-dark="img/showcase/python-clean-dark.png" alt="Atlas's picture of sunspots: from the web to the raw CSV, a DataFrame from load to smooth to Trend.save, and the figure"></a>
               <p class="drawn">Drawn from <code>3f9c2e1</code>, the last push to <code>main</code>.</p>
             </div>
             <div class="cut" aria-hidden="true">
@@ -623,19 +652,12 @@ def run_cycles(raw: Path = RAW, figure: Path = FIGURE, months: int = 13, years: 
   <pre>irm https://raw.githubusercontent.com/raoulg/atlas/main/install.ps1 | iex</pre>
   <p class="os">From source, with a <a href="https://rustup.rs">Rust toolchain</a></p>
   <pre>cargo install --locked --git https://github.com/raoulg/atlas atlas</pre>
-  <div class="cmds" style="margin-top:20px">
-    <div><code>atlas serve</code><span>the picture of the repository you are in, to work in with your agent</span></div>
-    <div><code>atlas view</code><span>the same picture as one HTML file, to keep or send</span></div>
-    <div><code>atlas check</code><span>where the code and eleven design principles disagree</span></div>
-    <div><code>atlas changes</code><span>what your edit did to the routes</span></div>
-    <div><code>atlas mcp</code><span>the picture for your coding agent</span></div>
-  </div>
-  <p class="os">The nightly build, from <code>next</code></p>
-  <pre>ATLAS_CHANNEL=nightly sh -c "$(curl -fsSL https://raw.githubusercontent.com/raoulg/atlas/next/install.sh)"</pre>
+  <p class="explain" style="margin-top:20px">And then <code>atlas serve</code>.</p>
   <p class="os" style="margin-top:20px">Your coding agent, once for every project</p>
   <pre>claude mcp add --scope user atlas -- atlas mcp
 codex mcp add atlas -- &quot;$(command -v atlas)&quot; mcp</pre>
   <p class="explain">Claude Code's <code>--scope user</code> makes Atlas available in every project. Codex keeps its servers in one configuration for all projects and starts them without your shell's <code>PATH</code>, so it is given the binary's full path, which <code>command -v atlas</code> prints. Then <code>atlas serve</code> in any repository is all it takes: the agent's <code>atlas mcp</code> works on the repository the agent runs in, and shares the page with you.</p>
+  <p class="explain">Homebrew, the nightly build and how Atlas tells you about updates: <a href="reference/install.md">install</a>.</p>
 </section>
 
 <footer>
@@ -714,6 +736,30 @@ document.querySelectorAll('[data-tabs]').forEach(tabs);
   };
   let drawn = 0;
   new ResizeObserver(() => { if (band.clientWidth !== drawn) { drawn = band.clientWidth; draw(); } }).observe(band);
+})();
+
+// light or dark: the toggle, and every picture drawn in both themes shows the one of the page
+(() => {
+  const root = document.documentElement, button = document.querySelector('.theme');
+  const show = () => {
+    const dark = root.dataset.theme === 'dark';
+    button.setAttribute('aria-pressed', dark);
+    document.querySelectorAll('img[data-dark]').forEach(img => {
+      if (!img.dataset.light) img.dataset.light = img.getAttribute('src');
+      const src = dark ? img.dataset.dark : img.dataset.light;
+      if (img.getAttribute('src') !== src) img.setAttribute('src', src);
+    });
+  };
+  button.onclick = () => {
+    root.dataset.theme = root.dataset.theme === 'dark' ? 'light' : 'dark';
+    try { localStorage.setItem('atlas.tour.theme', root.dataset.theme); } catch {}
+    show();
+  };
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', e => {
+    let chosen = null; try { chosen = localStorage.getItem('atlas.tour.theme'); } catch {}
+    if (!chosen) { root.dataset.theme = e.matches ? 'dark' : 'light'; show(); }
+  });
+  show();
 })();
 
 // the height of the page's bar, under which a sticky bar of tabs stays
