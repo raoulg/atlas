@@ -7,7 +7,8 @@ use indexmap::IndexMap;
 use tree_sitter::Node as TsNode;
 
 use super::module::{
-    bound_in, changes_inside, def_node, expand, path_parts, resolve, resolve_value, shadowed, type_names, Module, OR_ELSE, WRAPPERS,
+    bound_in, changes_inside, def_node, expand, path_parts, qualified, resolve, resolve_value, shadowed, type_names, Module, OR_ELSE,
+    WRAPPERS,
 };
 use super::paths::{self, Arg, At, Eval};
 use crate::body::{Crosses, Step, Steps, UseSyntax};
@@ -924,7 +925,8 @@ impl<'a, 't> Body<'a, 't> {
         if f.kind() == "field_expression" {
             self.method_call(steps, c, f);
         } else {
-            self.path_call(steps, c, path_parts(Some(f), self.src));
+            let parts = qualified(f, self.src).map_or_else(|| path_parts(Some(f), self.src), |(_, through)| through);
+            self.path_call(steps, c, parts);
         }
     }
 
@@ -1083,7 +1085,12 @@ impl<'a, 't> Body<'a, 't> {
             ..Default::default()
         };
         steps.call(c, t, kind, via.filter(|_| kind == EdgeKind::Instantiates), step);
-        if let Some(arg) = self.argument(c, t, recv.is_some()) {
+        // a method called by its path is handed the value it runs on first
+        let by_path = match c.kind() {
+            "token_tree" => matches!(token_callee(c, self.src), Some(Called::Path(_))),
+            _ => c.child_by_field_name("function").map_or(false, |f| f.kind() != "field_expression"),
+        };
+        if let Some(arg) = self.argument(c, t, recv.is_some() && !by_path) {
             self.read.args.push(arg);
         }
     }
@@ -1342,6 +1349,24 @@ impl<'a, 't> Body<'a, 't> {
         arg.map(|a| self.eval.of(self.at(), a, 0)).filter(|b| crate::paths::is_statement(db, b))
     }
 
+    /// A method called by its path runs on the value it is handed first, as the same call in method
+    /// syntax does (`Source::read(p)` as `p.read()`): the method of that name the value's class runs,
+    /// that class being the one the path is qualified by (`<Plain as Source>::read(p)`) or else the
+    /// one the body knows the value to be of. Gives the method, the value and its class; none for a
+    /// function that takes no `self`.
+    fn on_first(&self, c: TsNode<'t>, t: &str) -> Option<(String, TsNode<'t>, Option<String>)> {
+        let n = self.store.nodes.get(t).filter(|n| n.kind == NodeKind::Method && n.params.first().map_or(false, |p| p.receiver))?;
+        let first = positional(c).into_iter().next().flatten()?;
+        let named = c
+            .child_by_field_name("function")
+            .and_then(|f| qualified(f, self.src))
+            .and_then(|(ty, _)| self.resolve(&ty))
+            .and_then(|r| self.class_of(&r));
+        let class = named.or_else(|| self.value_class(first));
+        let ran = class.as_deref().and_then(|k| self.store.method_of(k, &n.name)).filter(|m| !m.starts_with("ext:"));
+        Some((ran.unwrap_or_else(|| t.to_string()), first, class))
+    }
+
     /// `path::to::f(..)`, `Self::f(..)`, `Type::new(..)`: the program's function or type, or a
     /// library's, which may cross into the world.
     fn path_call(&mut self, steps: &mut Steps, c: TsNode<'t>, mut parts: Vec<String>) {
@@ -1372,7 +1397,10 @@ impl<'a, 't> Body<'a, 't> {
             // `Type::method(..)` with no such method known: keep the name, it is what was called
             Some(t) if !t.starts_with("ext:") => {
                 let via = (parts.len() > 1 && parts[0] != "Self").then(|| parts.last().cloned()).flatten();
-                self.own_step(steps, c, &t, None, None, via);
+                match self.on_first(c, &t) {
+                    Some((ran, first, class)) => self.own_step(steps, c, &ran, Some(first), class.as_deref(), via),
+                    None => self.own_step(steps, c, &t, None, None, via),
+                }
             }
             _ => {
                 let op = parts.last().cloned().unwrap_or_default();

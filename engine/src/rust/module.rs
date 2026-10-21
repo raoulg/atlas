@@ -78,6 +78,16 @@ pub(super) fn path_parts(n: Option<TsNode>, src: &[u8]) -> Vec<String> {
     }
 }
 
+/// A qualified path, `<Plain as Source>::read`: the type it is qualified by (`Plain`), and the
+/// path of the item through the trait (`Source::read`).
+pub(super) fn qualified(f: TsNode, src: &[u8]) -> Option<(Vec<String>, Vec<String>)> {
+    let q = f.child_by_field_name("path").filter(|p| p.kind() == "bracketed_type").and_then(|b| named_children(b).into_iter().next())?;
+    let q = Some(q).filter(|q| q.kind() == "qualified_type")?;
+    let mut through = path_parts(q.child_by_field_name("alias"), src);
+    through.push(text(f.child_by_field_name("name")?, src).to_string());
+    Some((path_parts(q.child_by_field_name("type"), src), through))
+}
+
 /// The type names a type mentions as values, as written: each generic's own name, and its
 /// arguments only where it holds or stands for them (`Option<Vec<Node>>` -> `[[Option], [Vec],
 /// [Node]]`, `impl Iterator<Item = Node>` -> `[[Iterator], [Node]]`), never a generic class's
