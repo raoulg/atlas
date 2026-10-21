@@ -3,7 +3,7 @@
 
 route kennis.Kennisbank
 step Kennisbank()/Kennisbank.new
-known #135 step Kennisbank()/Kennisbank.new/Kennisbank()            # the struct expression `new` builds the store by
+known #151 step Kennisbank()/Kennisbank.new/Kennisbank()            # the struct expression `new` builds the store by
 step Kennisbank()/Kennisbank.voeg_toe
 step Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write
 step Kennisbank()/Kennisbank.graaf
@@ -62,7 +62,7 @@ side entry left
 known #133 side Disk(self.path) both          # voeg_toe reads what the file held and changes it: Atlas says right
 
 # building the struct the route is about is read as a call of the route inside itself
-known #135 extra step Kennisbank()/Kennisbank.new/Kennisbank() recursive
+known #151 extra step Kennisbank()/Kennisbank.new/Kennisbank() recursive
 
 # the door's own arrow takes, as a nameless value from beyond, the Bron its call is handed, though only `write`
 # inside takes it

@@ -492,9 +492,11 @@ parameters is one type, whatever its parameters.
 **In Atlas.** A generic's arguments are values only where the generic holds or stands for them
 (`Vec<Month>`, `Option<T>`, `Promise<Regel[]>`). `DrawingArea<DB, Shift>` and `ndarray[..]` are
 each one type, in every language. A type a trait leaves to its implementations (`Self::Item`) is the one each
-implementation fixes (`type Item = Book`): in the implementation that type, in the trait any of them.
+implementation fixes (`type Item = Book`): in the implementation that type, in the trait any of them. A tuple is the
+values it pairs where it stands for one value (`-> (Config, Store)`); a collection of them holds pairs, of a type the
+code does not name (`Vec<(NaiveDate, f64)>` holds no `NaiveDate`).
 **Where.** `knowledge.rs`: `python_container`, `TYPESCRIPT_CONTAINERS`, `RUST_CONTAINERS`; the Rust reader's
-signatures (`rust/passes.rs`, `fixed_by_implementations`).
+signatures (`rust/passes.rs`, `fixed_by_implementations`; `rust/module.rs`, `type_names`, with `RUST_COLLECTIONS`).
 
 ### Narrowing
 **What.** A test of a value's type refines its type in the code that runs only where the test

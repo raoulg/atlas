@@ -50,7 +50,7 @@ step main/?1/run/?2/Store.rows/unwrap
 
 # ---------- the command line ----------
 line entry > main call
-known #135 line entry > main/collect call                              # the arguments the human typed
+line entry > main/collect call                                      # the arguments the human typed
 line main/collect > _·args@main/collect value
 line _·args@main/collect > main/?1/run value                          # run is handed &args[1..] and looks for --open
 known #125 line _·args@main/collect > main/first value
