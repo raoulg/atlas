@@ -61,7 +61,6 @@ known #129 line Ledger·this@main/Ledger.takeVictim/this.rows.push > main/Ledger
 known #129 home Ledger·this@main/Ledger.takeFrom/this.rows.push main/Ledger.takeFrom
 known #129 home Ledger·this@main/Ledger.takeVictim/this.rows.push main/Ledger.takeVictim
 known #129 extra line Ledger·ledger@main/Ledger() > main/Ledger.takeFrom value
-known #129 extra line Ledger·ledger@main/Ledger.takeFrom > main/Ledger.takeVictim value
 
 # The own arrow drops a value its own body reads when a step inside takes it too: `takeFrom` empties `other.rows` itself
 known #126 line Ledger·other@main/Ledger()#2 > main/Ledger.takeFrom value

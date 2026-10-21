@@ -969,14 +969,19 @@ for (const P of pills.values()) {
 // to be handed into another step (`Row(Reading(line))`) is that step's. One handed into a library's operation goes on in
 // what the operation gives, and stays inside where that does (`query_map(.., |row| Ok(Expense { .. }))` gives the rows
 // the body returns). Decided on the values at their moments, so a value made anew (`rates.insert(..)`) is not the one
-// it was made from
+// it was made from. A value from beyond the step that a step inside takes crosses the frame to that step, also where the
+// signature takes it by no name (`report(job: Job, ..)` hands `job` on to `Message(..)`)
 if (fine) {
   const isOp = Q => stepOf(Q.steps[0]).startsWith("op:");
-  for (const P of pills.values()) if (P.own && P.border && P.kept?.size) {
+  for (const P of pills.values()) if (P.own && P.border && !frames.get(P.parent)?.choice) {
     const fid = P.parent, within = [...pills.values()].filter(Q => Q !== P && planChain(Q.parent).includes(fid));
     const stays = (v, seen = new Set()) => !seen.has(v) && (seen.add(v), within.some(Q => Q.D.has(v) && (!isOp(Q) || (Q.C.size > 0 && [...Q.C.keys()].every(c => stays(c, seen))))));
     const madeHere = v => { const at = places.get(v)?.at; return !!at && (at.startsWith(fid + "/") || at.startsWith(fid + "|") || at.startsWith(fid + "~c")); };
-    for (const v of P.kept) if (madeHere(v) && stays(v)) P.D.delete(v);
+    for (const v of P.kept || []) if (madeHere(v) && stays(v)) P.D.delete(v);
+    // what the signature takes by no name from beyond is the parameter a step inside takes by its name
+    const beyond = v => !places.get(v)?.at && !places.get(v)?.name && v.startsWith("t:");
+    const crosses = v => within.some(Q => Q.D.has(v) || (beyond(v) && [...Q.D.keys()].some(w => !places.get(w)?.at && places.get(w)?.type === places.get(v).type)));
+    for (const v of [...P.D.keys()]) if (isMem(v) && !madeHere(v) && crosses(v)) P.D.delete(v);
   }
 }
 // zoom does not touch the moments: they are counted on the values themselves, and then a value

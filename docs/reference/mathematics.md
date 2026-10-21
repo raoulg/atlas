@@ -374,7 +374,8 @@ open:
   back of what it wrote there is a value at a moment inside the step (rule 4);
 - a step's own arrow is its witness at its border: its signature and its own touches, the lines that
   cross its frame. An opened step draws it as a point on the frame's right edge, not as a step beside
-  its steps: a value its call is handed crosses the frame to the step inside that takes it, and the
+  its steps: a value its call is handed crosses the frame to the step inside that takes it (the value
+  its signature takes by no name is the parameter a step inside takes by its name), and the
   point keeps what the body itself takes and what it gives back, at the step's moment. Of what the
   body's steps make, what it gives back is what no step of the code among them takes: a value built
   only to be handed into another step (`Row(Reading(line))`) is that step's. A value handed into a
