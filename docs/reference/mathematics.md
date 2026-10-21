@@ -371,7 +371,12 @@ open:
 - a step's own arrow is its witness at its border: its signature and its own touches, the lines that
   cross its frame. An opened step draws it as a point on the frame's right edge, not as a step beside
   its steps: a value its call is handed crosses the frame to the step inside that takes it, and the
-  point keeps what the body itself takes and what it gives back, at the step's moment. A call is
+  point keeps what the body itself takes and what it gives back, at the step's moment. Of what the
+  body's steps make, what it gives back is what no step of the code among them takes: a value built
+  only to be handed into another step (`Row(Reading(line))`) is that step's. A value handed into a
+  library's operation goes on in what the operation gives, and is the operation's only where that
+  is. A result of no type of the code's goes back to the step that called it unless another step of
+  the caller takes it, which it then reaches as a value. A call is
   handed the values the names in its arguments hold: `f(x.name)` is handed `x`, since the projection
   `.name` is no occurrence but glued into the call, whose arrow is `f ∘ π_name` with domain `X`; a
   nested call that is a step of its own takes its names itself. A library's operation that is a step

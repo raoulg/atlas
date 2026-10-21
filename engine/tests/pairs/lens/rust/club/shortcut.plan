@@ -58,7 +58,6 @@ known #127 extra home Connection Register()
 # the recursive literal is cut, so new's connection ends at new's border
 known #74 extra line Connection > Register()/Register.new value
 # #126: an opened step's own arrow takes every class its steps build: latest gives back the Report, not its author
-known #126 extra line Member@Register()/Register.latest/Member() > Register()/Register.latest value
 # what names the statement and the rows it gives back are steps of their own (a library's operation whose result the
 # body names); `rows` goes on to `collect`, an unnamed call, and back to the caller
 step Register()/Register.names/prepare

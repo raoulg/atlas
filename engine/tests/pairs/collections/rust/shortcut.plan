@@ -97,7 +97,7 @@ known #137 side Disk(Store.path) both  # D
 # C: the struct literal `Store { path }` in `new` is read as a call of `new` itself
 # D: the store's path is two places, `Disk(self.path)` where it is read and `Disk(write_rows.path)` where the helper
 #    writes what the method hands it, not one `Disk(Store.path)` read and written
-# E: a Reading built inside the step for the Row it returns is drawn as handed back at the step's own arrow too
+# E: the own arrow of `put` and `put_all` takes the Reading the method only hands on to `Row()`
 # J: the own arrow of an opened step also takes a value its body only hands into a step inside it (`rows` goes into
 #    `rows.iter()…collect()` and no further)
 # #101: a value made in the body and used by the body's own calls has no taker
@@ -123,8 +123,9 @@ known #137 extra side Disk(write_rows.path) right
 known #137 extra side Disk(self.path) left
 
 # E
-known #134 extra line Reading@Store()/Store.put/Store.rows/Reading() > Store()/Store.put/Store.rows value
-known #134 extra line Reading@Store()/Store.put_all/Store.rows/Reading() > Store()/Store.put_all/Store.rows value
+known #126 extra line Reading > Store()/Store.put value
+known #126 extra home Reading Store()
+known #126 extra line Reading·reading@Store()/Store.put_all/for reading in readings > Store()/Store.put_all value
 
 # #74
 known #74 extra line Store@Store()/Store.new > Store()/Store.put/Store.rows value

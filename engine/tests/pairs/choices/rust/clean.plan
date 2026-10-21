@@ -131,11 +131,5 @@ known #128 extra line Level·level > run/report/?1/Message()#2 value
 # an opened step's own arrow takes what its steps make, or what its call is handed, though only a step inside takes it
 known #126 extra line Job·job@run/source > run/report value
 known #126 extra line Job·job@run/source > run value
-known #126 extra line Plan@run/finished/Runner.new/Mode.plan > run/finished/Runner.new value
-known #126 extra line Runner@run/finished/Runner.new > run/finished value
-known #126 extra line Message·message@run/report/?1 > run/report value
 
 # a result of no type of the code's handed straight to another step goes back to the caller as well
-known #134 extra line run/finished > run back
-known #134 extra line run/report/?1/Level.prefix > run/report back
-known #134 extra line run/report/?1/Level.suffix > run/report back
