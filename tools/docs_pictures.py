@@ -13,7 +13,8 @@ The pictures are views of two subjects, drawn in the installed Chrome:
   `docs/showcase`);
 - Atlas itself, its `analyze` route, in the light and the dark theme (the guide's flowchart).
 
-Every page and picture is written into `docs/`, and the widths the Pages give the pictures follow
+Every page and picture is written into `docs/`; the pictures the tour shows are drawn in the light
+and the dark theme (`<name>-dark.png`). The widths the Pages give the pictures follow
 them. What each picture draws, its boxes with their words and its lines, is kept in
 `docs/img/drawn.json`. A picture that draws otherwise than `drawn.json` says may no longer match
 the text beside it: the tool names it with the files that show it, and exits with 1. The pipeline
@@ -108,7 +109,7 @@ def draw(atlas, subject, view, html):
                    check=True, capture_output=True)
 
 
-def pipeline(ctx, atlas, out, drawn):
+def pipeline(ctx, dark, atlas, out, drawn):
     """The sunspots pipeline in each language: its pages and pictures, checked."""
     # the live pages with Trend.save open are linked, not shown: their pictures are not kept
     cases = [
@@ -168,11 +169,18 @@ def pipeline(ctx, atlas, out, drawn):
         files = {out / (name + '.html'): DOCS / 'showcase' / (name + '.html')}
         if still:
             files[out / (name + '.png')] = DOCS / 'img/showcase' / (name + '.png')
+            # the same picture in the dark theme, for the tour's dark mode
+            page = dark.new_page()
+            page.goto(html.as_uri(), wait_until='networkidle')
+            settled(page)
+            shoot(page, out / (name + '-dark.png'))
+            page.close()
+            files[out / (name + '-dark.png')] = DOCS / 'img/showcase' / (name + '-dark.png')
         drawn[name] = (canonical(s), files)
     assert world(results['python-clean']) == world(results['python-clean-save'])
 
 
-def smoothing(ctx, atlas, out, drawn):
+def smoothing(ctx, dark, atlas, out, drawn):
     """Each language's route close up, from `load` to the step that draws: what `smooth` is handed
     and what it gives, at a size that reads."""
     cases = [
@@ -183,12 +191,24 @@ def smoothing(ctx, atlas, out, drawn):
     for name, subject, route, last in cases:
         html = out / (name + '.html')
         draw(atlas, ROOT / 'engine/tests/pairs/pipeline' / subject, {'route': route}, html)
-        page = ctx.new_page()
-        page.goto(html.as_uri(), wait_until='networkidle')
-        settled(page)
-        s = snapshot(page)
-        shoot(page, out / (name + '-whole.png'))
-        clip = page.evaluate(r"""(last) => {
+        files = {}
+        for theme, context in [('', ctx), ('-dark', dark)]:
+            page = context.new_page()
+            page.goto(html.as_uri(), wait_until='networkidle')
+            settled(page)
+            s = snapshot(page)
+            shoot(page, out / (name + theme + '-whole.png'))
+            clip = close_up(page, last)
+            page.screenshot(path=str(out / (name + theme + '.png')), clip=clip)
+            page.close()
+            files[out / (name + theme + '.png')] = DOCS / 'img/showcase' / (name + theme + '.png')
+        print(name, ':', round(clip['width']), 'x', round(clip['height']), 'from', len(s['nodes']), 'drawn nodes')
+        drawn[name] = (canonical(s), files)
+
+
+def close_up(page, last):
+    """The part of the page from `load` to the step `last`, with the boxes between them."""
+    return page.evaluate(r"""(last) => {
           const label = g => g.textContent.replace(/^[\u25b8\u25be]\s*/, '').trim();
           const steps = [...document.querySelectorAll('#scene g.tstep')];
           const box = n => n.querySelector('rect.bg').getBoundingClientRect();
@@ -199,10 +219,6 @@ def smoothing(ctx, atlas, out, drawn):
           const top = Math.min(...inside.map(b => b.top)), bottom = Math.max(...inside.map(b => b.bottom));
           return {x: left - 28, y: top - 28, width: right - left + 56, height: bottom - top + 56};
         }""", last)
-        page.screenshot(path=str(out / (name + '.png')), clip=clip)
-        print(name, ':', round(clip['width']), 'x', round(clip['height']), 'from', len(s['nodes']), 'drawn nodes')
-        page.close()
-        drawn[name] = (canonical(s), {out / (name + '.png'): DOCS / 'img/showcase' / (name + '.png')})
 
 
 def flowchart(browser, atlas, out, drawn):
@@ -235,8 +251,11 @@ def main(atlas):
         ctx = browser.new_context(viewport={'width': 1600, 'height': 1000}, device_scale_factor=2,
                                   color_scheme='light', reduced_motion='reduce')
         ctx.add_init_script('(' + CAPTURE + ')()')
-        pipeline(ctx, atlas, out, drawn)
-        smoothing(ctx, atlas, out, drawn)
+        dark = browser.new_context(viewport={'width': 1600, 'height': 1000}, device_scale_factor=2,
+                                   color_scheme='dark', reduced_motion='reduce')
+        dark.add_init_script('(' + CAPTURE + ')()')
+        pipeline(ctx, dark, atlas, out, drawn)
+        smoothing(ctx, dark, atlas, out, drawn)
         flowchart(browser, atlas, out, drawn)
         browser.close()
         for _, files in drawn.values():

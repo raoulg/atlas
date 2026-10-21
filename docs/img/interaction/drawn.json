@@ -7,7 +7,7 @@
    ],
    [
     "n:sunspots.cli.run",
-    "\u25be CLI run~changed \u00b7 was run(raw: Path, figure: Path, months: int, minimum: int) \u2192 None \u00b7 checks File(data/raw/sunspots.csv) \u00b7 $ run --raw --figure --months --minimum"
+    "\u25be CLI run~changed \u00b7 was run(raw: Path, figure: Path, months: int, minimum: int) \u2192 None \u00b7 GETs Web(www.sidc.be) \u00b7 checks File(data/raw/sunspots.csv) \u00b7 reads File(data/raw/sunspots.csv) \u00b7 writes File(data/raw/sunspots.csv) \u00b7 writes File(figures/sunspots.png) \u00b7 $ run --raw --figure --months --minimum"
    ],
    [
     "n:sunspots.cli.run~c0",
@@ -15,7 +15,7 @@
    ],
    [
     "sunspots.cli.run",
-    "run~changed \u00b7 was run(raw: Path, figure: Path, months: int, minimum: int) \u2192 None \u00b7 checks File(data/raw/sunspots.csv) \u00b7 $ run --raw --figure --months --minimum"
+    "run~changed \u00b7 was run(raw: Path, figure: Path, months: int, minimum: int) \u2192 None \u00b7 GETs Web(www.sidc.be) \u00b7 checks File(data/raw/sunspots.csv) \u00b7 reads File(data/raw/sunspots.csv) \u00b7 writes File(data/raw/sunspots.csv) \u00b7 writes File(figures/sunspots.png) \u00b7 $ run --raw --figure --months --minimum"
    ],
    [
     "sunspots.download.download",
