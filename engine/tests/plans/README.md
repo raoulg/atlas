@@ -34,8 +34,10 @@ a method `Class.method`, an override in a call into a family `Circle.draw` below
 order in its body, and its arms stand below it (`pick/?1/load_csv`). A second call of one name in one body is
 `write_to#2`. In `F` every occurrence with calls is open. As the end of a line it is its own arrow, a point on its
 border that keeps what the body itself takes and what it gives back, at the step's moment. A value the step's call is
-handed crosses the frame to the step inside that takes it. A call into a library the program does not read is no
-occurrence: what it touches is its caller's touch.
+handed crosses the frame to the step inside that takes it. A call into a library the program does not read is an
+occurrence where the body names what it gives (`con = duckdb.connect(path)`) or where it changes the value it runs on
+(`rows.append(row)`), labelled by the operation (`connect`, `append`); otherwise what it gives goes into the call around
+it, and what it touches at a place is its caller's touch (`design.md`, "An opened route is the fiber of its calls").
 
 **Values.** A value is `TYPE·NAME@MOMENT`. The type is the code's name for it (`Table`, `Circle`); a value of no type of
 the code's is `_`. The name is the one that holds it; a value no name holds has none. The moment is the occurrence that
