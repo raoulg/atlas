@@ -10,7 +10,7 @@ repository as `atlas serve` lists them, with two of them drawn as one picture be
 One subject, the sunspots pipeline of `engine/tests/pairs/pipeline/python-clean`, is grown in a
 scratch repository as six commits that each add a step. `atlas serve` serves it, and its history page
 is driven in the installed Chrome as a person drives it: the fifth commit and the sixth picked, the
-route `run` chosen. Nothing is drawn by hand: each picture is a screenshot of the page.
+route `run` chosen, once in the light theme and once in the dark. Nothing is drawn by hand: each picture is a screenshot of the page.
 """
 
 import json
@@ -348,48 +348,51 @@ def main(atlas, out=None):
         repo, _ = scratch(tmp)
         server = Served(atlas, repo)
         browser = p.chromium.launch(channel='chrome')
-        ctx = browser.new_context(viewport={'width': 2000, 'height': 520}, device_scale_factor=2, color_scheme='light',
-                                  reduced_motion='reduce')
-        ctx.add_init_script('(' + CAPTURE + ')()')
-        page = ctx.new_page()
-        page.set_default_timeout(15000)
         errors = []
-        page.on('pageerror', lambda e: errors.append(str(e)))
+        # the same page in the light and the dark theme, for the tour's dark mode
+        for theme, suffix in [('light', ''), ('dark', '-dark')]:
+            ctx = browser.new_context(viewport={'width': 2000, 'height': 520}, device_scale_factor=2, color_scheme=theme,
+                                      reduced_motion='reduce')
+            ctx.add_init_script('(' + CAPTURE + ')()')
+            page = ctx.new_page()
+            page.set_default_timeout(15000)
+            page.on('pageerror', lambda e: errors.append(str(e)))
 
-        # the fifth commit against the sixth, as one picture
-        page.goto(server.url('/history'), wait_until='networkidle')
-        settle(page, 2000)
-        page.get_by_text('Leave out the months with too few').first.click()
-        page.get_by_text('Mark the maxima of the cycles').first.click(modifiers=['Shift'])
-        settle(page, 4000)
-        view = page.frame_locator('iframe')
-        routes = view.locator('#entry').evaluate("s => [...s.options].map(o => [o.value, o.textContent])")
-        pick = next((v for v, label in routes if re.search(r'\brun\b', label) and not v.startswith(('kind:', 'part:'))), None)
-        assert pick, routes
-        view.locator('#entry').select_option(pick)
-        page.wait_for_timeout(2500)
-        shown['history'] = canonical(snapshot(next(f for f in page.frames if f != page.main_frame)))
-        view.get_by_role('button', name='fit', exact=True).click()
-        page.wait_for_timeout(900)
-        # in on what the sixth commit adds: from Settings to the figures, just under the bar with A ∪ B
-        for _ in range(ZOOM):
-            view.get_by_role('button', name='+', exact=True).click()
-            page.wait_for_timeout(400)
-        boxes = view.locator('#scene g.tstep, #scene g.tnode, #scene g.wnode')
-        settings = view.locator('#scene g.tnode', has_text='Settings · settings').first.bounding_box()
-        top = min(b['y'] for b in boxes.evaluate_all('gs => gs.map(g => { const r = g.getBoundingClientRect(); return {y: r.y}; })'))
-        page.mouse.move(1200, 300)
-        page.mouse.down()
-        page.mouse.move(1200 - (settings['x'] - LEFT), 300 - (top - TOP), steps=12)
-        page.mouse.up()
-        page.wait_for_timeout(900)
-        frame = next(f for f in page.frames if f != page.main_frame)
-        drawn = frame.evaluate("""() => [...document.querySelectorAll('#scene g.tstep, #scene g.tnode, #scene g.wnode')]
-          .map(g => { const r = g.getBoundingClientRect(); return {right: r.right, bottom: r.bottom}; })""")
-        origin = page.locator('iframe').bounding_box()
-        right, bottom = origin['x'] + max(r['right'] for r in drawn), origin['y'] + max(r['bottom'] for r in drawn)
-        # the page as it is: the commits on the left, the two drawn as one on the right, up to the figures
-        page.screenshot(path=str(out / 'history.png'), clip={'x': 0, 'y': 0, 'width': right + 30, 'height': bottom + 36})
+            # the fifth commit against the sixth, as one picture
+            page.goto(server.url('/history'), wait_until='networkidle')
+            settle(page, 2000)
+            page.get_by_text('Leave out the months with too few').first.click()
+            page.get_by_text('Mark the maxima of the cycles').first.click(modifiers=['Shift'])
+            settle(page, 4000)
+            view = page.frame_locator('iframe')
+            routes = view.locator('#entry').evaluate("s => [...s.options].map(o => [o.value, o.textContent])")
+            pick = next((v for v, label in routes if re.search(r'\brun\b', label) and not v.startswith(('kind:', 'part:'))), None)
+            assert pick, routes
+            view.locator('#entry').select_option(pick)
+            page.wait_for_timeout(2500)
+            if theme == 'light':
+                shown['history'] = canonical(snapshot(next(f for f in page.frames if f != page.main_frame)))
+            view.get_by_role('button', name='fit', exact=True).click()
+            page.wait_for_timeout(900)
+            # in on what the sixth commit adds: from Settings to the figures, just under the bar with A ∪ B
+            for _ in range(ZOOM):
+                view.get_by_role('button', name='+', exact=True).click()
+                page.wait_for_timeout(400)
+            boxes = view.locator('#scene g.tstep, #scene g.tnode, #scene g.wnode')
+            settings = view.locator('#scene g.tnode', has_text='Settings · settings').first.bounding_box()
+            top = min(b['y'] for b in boxes.evaluate_all('gs => gs.map(g => { const r = g.getBoundingClientRect(); return {y: r.y}; })'))
+            page.mouse.move(1200, 300)
+            page.mouse.down()
+            page.mouse.move(1200 - (settings['x'] - LEFT), 300 - (top - TOP), steps=12)
+            page.mouse.up()
+            page.wait_for_timeout(900)
+            frame = next(f for f in page.frames if f != page.main_frame)
+            drawn = frame.evaluate("""() => [...document.querySelectorAll('#scene g.tstep, #scene g.tnode, #scene g.wnode')]
+              .map(g => { const r = g.getBoundingClientRect(); return {right: r.right, bottom: r.bottom}; })""")
+            origin = page.locator('iframe').bounding_box()
+            right, bottom = origin['x'] + max(r['right'] for r in drawn), origin['y'] + max(r['bottom'] for r in drawn)
+            # the page as it is: the commits on the left, the two drawn as one on the right, up to the figures
+            page.screenshot(path=str(out / f'history{suffix}.png'), clip={'x': 0, 'y': 0, 'width': right + 30, 'height': bottom + 36})
         assert not errors, errors
         server.stop()
         browser.close()

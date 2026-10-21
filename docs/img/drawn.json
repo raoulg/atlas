@@ -161,7 +161,7 @@
    ],
    [
     "sunspots.plot.Plot.save",
-    "Trend.save"
+    "Trend.save: what the step gives back, at its border"
    ],
    [
     "sunspots.plot.Trend",
@@ -262,10 +262,6 @@
     "n:sunspots.cli.run/5/0"
    ],
    [
-    "t:ext:pandas.DataFrame~frame@n:sunspots.cli.run/3",
-    "o:sunspots.cli.run/5"
-   ],
-   [
     "t:sunspots.plot.Trend@n:sunspots.cli.run/4",
     "n:sunspots.cli.run/5/0"
    ],
@@ -307,7 +303,7 @@
    ],
    [
     "sunspots.clean",
-    "\u25b8 clean, smooth"
+    "\u25b8 clean"
    ],
    [
     "sunspots.get_data",
@@ -316,6 +312,10 @@
    [
     "sunspots.plot",
     "plot"
+   ],
+   [
+    "sunspots.smooth",
+    "\u25b8 smooth"
    ],
    [
     "t:ext:pandas.DataFrame",
@@ -352,7 +352,11 @@
     "w:Global:sunspots.df"
    ],
    [
-    "n:sunspots/1+sunspots/2",
+    "n:sunspots/1",
+    "w:Global:sunspots.df"
+   ],
+   [
+    "n:sunspots/2",
     "w:Global:sunspots.df"
    ],
    [
@@ -361,11 +365,19 @@
    ],
    [
     "t:ext:pandas.DataFrame",
-    "n:sunspots/1+sunspots/2"
+    "n:sunspots/1"
+   ],
+   [
+    "t:ext:pandas.DataFrame",
+    "n:sunspots/2"
    ],
    [
     "w:Global:sunspots.df",
-    "n:sunspots/1+sunspots/2"
+    "n:sunspots/1"
+   ],
+   [
+    "w:Global:sunspots.df",
+    "n:sunspots/2"
    ],
    [
     "w:Global:sunspots.df",
@@ -409,7 +421,7 @@
    ],
    [
     "sunspots.plot.Plot.save",
-    "Trend.save"
+    "Trend.save: what the step gives back, at its border"
    ],
    [
     "sunspots.plot.Trend.draw",
@@ -450,10 +462,6 @@
    [
     "t:sunspots.series.Month~series@n:sunspots.main.main/4",
     "Month \u00b7 series"
-   ],
-   [
-    "t:sunspots.series.Record",
-    "Record"
    ],
    [
     "t:sunspots.series.Smoothed~smoothed@n:sunspots.main.main/5",
@@ -570,20 +578,8 @@
     "n:sunspots.main.main/7/2"
    ],
    [
-    "t:sunspots.series.Month~series@n:sunspots.main.main/4",
-    "o:sunspots.main.main/7"
-   ],
-   [
-    "t:sunspots.series.Record",
-    "n:sunspots.main.main/4"
-   ],
-   [
     "t:sunspots.series.Smoothed~smoothed@n:sunspots.main.main/5",
     "n:sunspots.main.main/7/2"
-   ],
-   [
-    "t:sunspots.series.Smoothed~smoothed@n:sunspots.main.main/5",
-    "o:sunspots.main.main/7"
    ],
    [
     "t:sunspots.settings.Settings@n:sunspots.main.main/1",
@@ -614,11 +610,11 @@
  "typescript-clean": {
   "nodes": [
    [
-    "n:typescript.cli.main",
+    "n:sunspots.cli.main",
     "\u25be cli.main"
    ],
    [
-    "n:typescript.cli.main~c0",
+    "n:sunspots.cli.main~c0",
     "only when !existsSync(values.raw)"
    ],
    [
@@ -626,55 +622,55 @@
     "parseArgs"
    ],
    [
-    "t:typescript.series.Month~series@n:typescript.cli.main/4",
-    "Month \u00b7 series"
-   ],
-   [
-    "t:typescript.series.Smoothed~smoothed@n:typescript.cli.main/5",
-    "Smoothed \u00b7 smoothed"
-   ],
-   [
-    "t:typescript.settings.Settings",
-    "Settings"
-   ],
-   [
-    "t:typescript.settings.Settings~settings@n:typescript.cli.main/2",
-    "Settings \u00b7 settings"
-   ],
-   [
-    "typescript.cli.main",
+    "sunspots.cli.main",
     "main"
    ],
    [
-    "typescript.cli.monthsOf",
+    "sunspots.cli.monthsOf",
     "\u25b8 monthsOf"
    ],
    [
-    "typescript.download.download",
+    "sunspots.download.download",
     "\u25b8 download"
    ],
    [
-    "typescript.plot.saveSvg",
+    "sunspots.plot.saveSvg",
     "saveSvg"
    ],
    [
-    "typescript.plot.trend",
+    "sunspots.plot.trend",
     "\u25b8 trend"
    ],
    [
-    "typescript.series.load",
+    "sunspots.series.load",
     "\u25b8 load"
    ],
    [
-    "typescript.series.smooth",
+    "sunspots.series.smooth",
     "\u25b8 smooth"
    ],
    [
-    "typescript.settings.Settings",
+    "sunspots.settings.Settings",
     "Settings()"
    ],
    [
-    "v:values@n:typescript.cli.main/0",
+    "t:sunspots.series.Month~series@n:sunspots.cli.main/4",
+    "Month \u00b7 series"
+   ],
+   [
+    "t:sunspots.series.Smoothed~smoothed@n:sunspots.cli.main/5",
+    "Smoothed \u00b7 smoothed"
+   ],
+   [
+    "t:sunspots.settings.Settings",
+    "Settings"
+   ],
+   [
+    "t:sunspots.settings.Settings~settings@n:sunspots.cli.main/2",
+    "Settings \u00b7 settings"
+   ],
+   [
+    "v:values@n:sunspots.cli.main/0",
     "values"
    ],
    [
@@ -692,96 +688,96 @@
   ],
   "edges": [
    [
-    "n:typescript.cli.main/0",
-    "v:values@n:typescript.cli.main/0"
+    "n:sunspots.cli.main/0",
+    "v:values@n:sunspots.cli.main/0"
    ],
    [
-    "n:typescript.cli.main/1",
-    "n:typescript.cli.main/2"
+    "n:sunspots.cli.main/1",
+    "n:sunspots.cli.main/2"
    ],
    [
-    "n:typescript.cli.main/1",
-    "o:typescript.cli.main"
+    "n:sunspots.cli.main/1",
+    "o:sunspots.cli.main"
    ],
    [
-    "n:typescript.cli.main/2",
-    "t:typescript.settings.Settings~settings@n:typescript.cli.main/2"
+    "n:sunspots.cli.main/2",
+    "t:sunspots.settings.Settings~settings@n:sunspots.cli.main/2"
    ],
    [
-    "n:typescript.cli.main/3",
-    "o:typescript.cli.main"
+    "n:sunspots.cli.main/3",
+    "o:sunspots.cli.main"
    ],
    [
-    "n:typescript.cli.main/3",
+    "n:sunspots.cli.main/3",
     "w:File:data/raw/sunspots.csv"
    ],
    [
-    "n:typescript.cli.main/4",
-    "t:typescript.series.Month~series@n:typescript.cli.main/4"
+    "n:sunspots.cli.main/4",
+    "t:sunspots.series.Month~series@n:sunspots.cli.main/4"
    ],
    [
-    "n:typescript.cli.main/5",
-    "t:typescript.series.Smoothed~smoothed@n:typescript.cli.main/5"
+    "n:sunspots.cli.main/5",
+    "t:sunspots.series.Smoothed~smoothed@n:sunspots.cli.main/5"
    ],
    [
-    "n:typescript.cli.main/6",
-    "n:typescript.cli.main/7"
+    "n:sunspots.cli.main/6",
+    "n:sunspots.cli.main/7"
    ],
    [
-    "n:typescript.cli.main/6",
-    "o:typescript.cli.main"
+    "n:sunspots.cli.main/6",
+    "o:sunspots.cli.main"
    ],
    [
-    "n:typescript.cli.main/7",
+    "n:sunspots.cli.main/7",
     "w:File:figures/sunspots.svg"
    ],
    [
-    "t:typescript.series.Month~series@n:typescript.cli.main/4",
-    "n:typescript.cli.main/5"
+    "t:sunspots.series.Month~series@n:sunspots.cli.main/4",
+    "n:sunspots.cli.main/5"
    ],
    [
-    "t:typescript.series.Month~series@n:typescript.cli.main/4",
-    "n:typescript.cli.main/6"
+    "t:sunspots.series.Month~series@n:sunspots.cli.main/4",
+    "n:sunspots.cli.main/6"
    ],
    [
-    "t:typescript.series.Smoothed~smoothed@n:typescript.cli.main/5",
-    "n:typescript.cli.main/6"
+    "t:sunspots.series.Smoothed~smoothed@n:sunspots.cli.main/5",
+    "n:sunspots.cli.main/6"
    ],
    [
-    "t:typescript.settings.Settings",
-    "n:typescript.cli.main/2"
+    "t:sunspots.settings.Settings",
+    "n:sunspots.cli.main/2"
    ],
    [
-    "t:typescript.settings.Settings~settings@n:typescript.cli.main/2",
-    "n:typescript.cli.main/5"
+    "t:sunspots.settings.Settings~settings@n:sunspots.cli.main/2",
+    "n:sunspots.cli.main/5"
    ],
    [
-    "t:typescript.settings.Settings~settings@n:typescript.cli.main/2",
-    "n:typescript.cli.main/6"
+    "t:sunspots.settings.Settings~settings@n:sunspots.cli.main/2",
+    "n:sunspots.cli.main/6"
    ],
    [
-    "v:values@n:typescript.cli.main/0",
-    "n:typescript.cli.main/1"
+    "v:values@n:sunspots.cli.main/0",
+    "n:sunspots.cli.main/1"
    ],
    [
-    "v:values@n:typescript.cli.main/0",
-    "n:typescript.cli.main/3"
+    "v:values@n:sunspots.cli.main/0",
+    "n:sunspots.cli.main/3"
    ],
    [
-    "v:values@n:typescript.cli.main/0",
-    "n:typescript.cli.main/4"
+    "v:values@n:sunspots.cli.main/0",
+    "n:sunspots.cli.main/4"
    ],
    [
-    "v:values@n:typescript.cli.main/0",
-    "n:typescript.cli.main/7"
+    "v:values@n:sunspots.cli.main/0",
+    "n:sunspots.cli.main/7"
    ],
    [
     "w:File:data/raw/sunspots.csv",
-    "n:typescript.cli.main/4"
+    "n:sunspots.cli.main/4"
    ],
    [
     "w:Web:www.sidc.be",
-    "n:typescript.cli.main/3"
+    "n:sunspots.cli.main/3"
    ]
   ]
  },
@@ -974,10 +970,6 @@
     "Month \u00b7 series"
    ],
    [
-    "t:sunspots.series.Record",
-    "Record"
-   ],
-   [
     "t:sunspots.series.Smoothed~smoothed@n:sunspots.main.main/5",
     "Smoothed \u00b7 smoothed"
    ],
@@ -1068,10 +1060,6 @@
     "n:sunspots.main.main/7"
    ],
    [
-    "t:sunspots.series.Record",
-    "n:sunspots.main.main/4"
-   ],
-   [
     "t:sunspots.series.Smoothed~smoothed@n:sunspots.main.main/5",
     "n:sunspots.main.main/7"
    ],
@@ -1100,11 +1088,11 @@
  "typescript-smooth": {
   "nodes": [
    [
-    "n:typescript.cli.main",
+    "n:sunspots.cli.main",
     "\u25be cli.main"
    ],
    [
-    "n:typescript.cli.main~c0",
+    "n:sunspots.cli.main~c0",
     "only when !existsSync(values.raw)"
    ],
    [
@@ -1112,55 +1100,55 @@
     "parseArgs"
    ],
    [
-    "t:typescript.series.Month~series@n:typescript.cli.main/4",
-    "Month \u00b7 series"
-   ],
-   [
-    "t:typescript.series.Smoothed~smoothed@n:typescript.cli.main/5",
-    "Smoothed \u00b7 smoothed"
-   ],
-   [
-    "t:typescript.settings.Settings",
-    "Settings"
-   ],
-   [
-    "t:typescript.settings.Settings~settings@n:typescript.cli.main/2",
-    "Settings \u00b7 settings"
-   ],
-   [
-    "typescript.cli.main",
+    "sunspots.cli.main",
     "main"
    ],
    [
-    "typescript.cli.monthsOf",
+    "sunspots.cli.monthsOf",
     "\u25b8 monthsOf"
    ],
    [
-    "typescript.download.download",
+    "sunspots.download.download",
     "\u25b8 download"
    ],
    [
-    "typescript.plot.saveSvg",
+    "sunspots.plot.saveSvg",
     "saveSvg"
    ],
    [
-    "typescript.plot.trend",
+    "sunspots.plot.trend",
     "\u25b8 trend"
    ],
    [
-    "typescript.series.load",
+    "sunspots.series.load",
     "\u25b8 load"
    ],
    [
-    "typescript.series.smooth",
+    "sunspots.series.smooth",
     "\u25b8 smooth"
    ],
    [
-    "typescript.settings.Settings",
+    "sunspots.settings.Settings",
     "Settings()"
    ],
    [
-    "v:values@n:typescript.cli.main/0",
+    "t:sunspots.series.Month~series@n:sunspots.cli.main/4",
+    "Month \u00b7 series"
+   ],
+   [
+    "t:sunspots.series.Smoothed~smoothed@n:sunspots.cli.main/5",
+    "Smoothed \u00b7 smoothed"
+   ],
+   [
+    "t:sunspots.settings.Settings",
+    "Settings"
+   ],
+   [
+    "t:sunspots.settings.Settings~settings@n:sunspots.cli.main/2",
+    "Settings \u00b7 settings"
+   ],
+   [
+    "v:values@n:sunspots.cli.main/0",
     "values"
    ],
    [
@@ -1178,96 +1166,96 @@
   ],
   "edges": [
    [
-    "n:typescript.cli.main/0",
-    "v:values@n:typescript.cli.main/0"
+    "n:sunspots.cli.main/0",
+    "v:values@n:sunspots.cli.main/0"
    ],
    [
-    "n:typescript.cli.main/1",
-    "n:typescript.cli.main/2"
+    "n:sunspots.cli.main/1",
+    "n:sunspots.cli.main/2"
    ],
    [
-    "n:typescript.cli.main/1",
-    "o:typescript.cli.main"
+    "n:sunspots.cli.main/1",
+    "o:sunspots.cli.main"
    ],
    [
-    "n:typescript.cli.main/2",
-    "t:typescript.settings.Settings~settings@n:typescript.cli.main/2"
+    "n:sunspots.cli.main/2",
+    "t:sunspots.settings.Settings~settings@n:sunspots.cli.main/2"
    ],
    [
-    "n:typescript.cli.main/3",
-    "o:typescript.cli.main"
+    "n:sunspots.cli.main/3",
+    "o:sunspots.cli.main"
    ],
    [
-    "n:typescript.cli.main/3",
+    "n:sunspots.cli.main/3",
     "w:File:data/raw/sunspots.csv"
    ],
    [
-    "n:typescript.cli.main/4",
-    "t:typescript.series.Month~series@n:typescript.cli.main/4"
+    "n:sunspots.cli.main/4",
+    "t:sunspots.series.Month~series@n:sunspots.cli.main/4"
    ],
    [
-    "n:typescript.cli.main/5",
-    "t:typescript.series.Smoothed~smoothed@n:typescript.cli.main/5"
+    "n:sunspots.cli.main/5",
+    "t:sunspots.series.Smoothed~smoothed@n:sunspots.cli.main/5"
    ],
    [
-    "n:typescript.cli.main/6",
-    "n:typescript.cli.main/7"
+    "n:sunspots.cli.main/6",
+    "n:sunspots.cli.main/7"
    ],
    [
-    "n:typescript.cli.main/6",
-    "o:typescript.cli.main"
+    "n:sunspots.cli.main/6",
+    "o:sunspots.cli.main"
    ],
    [
-    "n:typescript.cli.main/7",
+    "n:sunspots.cli.main/7",
     "w:File:figures/sunspots.svg"
    ],
    [
-    "t:typescript.series.Month~series@n:typescript.cli.main/4",
-    "n:typescript.cli.main/5"
+    "t:sunspots.series.Month~series@n:sunspots.cli.main/4",
+    "n:sunspots.cli.main/5"
    ],
    [
-    "t:typescript.series.Month~series@n:typescript.cli.main/4",
-    "n:typescript.cli.main/6"
+    "t:sunspots.series.Month~series@n:sunspots.cli.main/4",
+    "n:sunspots.cli.main/6"
    ],
    [
-    "t:typescript.series.Smoothed~smoothed@n:typescript.cli.main/5",
-    "n:typescript.cli.main/6"
+    "t:sunspots.series.Smoothed~smoothed@n:sunspots.cli.main/5",
+    "n:sunspots.cli.main/6"
    ],
    [
-    "t:typescript.settings.Settings",
-    "n:typescript.cli.main/2"
+    "t:sunspots.settings.Settings",
+    "n:sunspots.cli.main/2"
    ],
    [
-    "t:typescript.settings.Settings~settings@n:typescript.cli.main/2",
-    "n:typescript.cli.main/5"
+    "t:sunspots.settings.Settings~settings@n:sunspots.cli.main/2",
+    "n:sunspots.cli.main/5"
    ],
    [
-    "t:typescript.settings.Settings~settings@n:typescript.cli.main/2",
-    "n:typescript.cli.main/6"
+    "t:sunspots.settings.Settings~settings@n:sunspots.cli.main/2",
+    "n:sunspots.cli.main/6"
    ],
    [
-    "v:values@n:typescript.cli.main/0",
-    "n:typescript.cli.main/1"
+    "v:values@n:sunspots.cli.main/0",
+    "n:sunspots.cli.main/1"
    ],
    [
-    "v:values@n:typescript.cli.main/0",
-    "n:typescript.cli.main/3"
+    "v:values@n:sunspots.cli.main/0",
+    "n:sunspots.cli.main/3"
    ],
    [
-    "v:values@n:typescript.cli.main/0",
-    "n:typescript.cli.main/4"
+    "v:values@n:sunspots.cli.main/0",
+    "n:sunspots.cli.main/4"
    ],
    [
-    "v:values@n:typescript.cli.main/0",
-    "n:typescript.cli.main/7"
+    "v:values@n:sunspots.cli.main/0",
+    "n:sunspots.cli.main/7"
    ],
    [
     "w:File:data/raw/sunspots.csv",
-    "n:typescript.cli.main/4"
+    "n:sunspots.cli.main/4"
    ],
    [
     "w:Web:www.sidc.be",
-    "n:typescript.cli.main/3"
+    "n:sunspots.cli.main/3"
    ]
   ]
  },
@@ -1278,12 +1266,12 @@
     "analyze"
    ],
    [
-    "atlas-engine.graph_of",
-    "\u25b8 graph_of \u00b7 +25 types"
-   ],
-   [
     "atlas-engine.language.read",
     "\u25b8 read"
+   ],
+   [
+    "atlas-engine.parts.graph_of",
+    "\u25b8 graph_of \u00b7 +38 types9"
    ],
    [
     "e:atlas-engine.analyze",
@@ -1294,8 +1282,12 @@
     "\u25be Library analyze"
    ],
    [
-    "t:atlas-engine.Options",
-    "Options (2)"
+    "t:atlas-engine.effects.Facts",
+    "effects.Facts (3)"
+   ],
+   [
+    "t:atlas-engine.model.Edge",
+    "Edge (2)"
    ],
    [
     "t:atlas-engine.model.Graph@n:atlas-engine.analyze",
@@ -1306,16 +1298,24 @@
     "Graph (7)"
    ],
    [
+    "t:atlas-engine.model.Node",
+    "model.Node (11)"
+   ],
+   [
     "t:atlas-engine.model.Touch",
     "Touch (3)"
    ],
    [
-    "t:atlas-engine.repo.Repo~repo@n:atlas-engine.analyze/0",
-    "Repo (2) \u00b7 repo"
+    "t:atlas-engine.options.Options",
+    "Options (2)"
    ],
    [
-    "t:atlas-engine.typescript.Body",
-    "typescript.Body (5)"
+    "t:atlas-engine.pytypes.Param",
+    "pytypes.Param (2)"
+   ],
+   [
+    "t:atlas-engine.repo.Repo~repo@n:atlas-engine.analyze/0",
+    "Repo (2) \u00b7 repo"
    ],
    [
     "w:Disk:in",
@@ -1352,23 +1352,43 @@
     "t:atlas-engine.model.Graph@n:atlas-engine.analyze"
    ],
    [
-    "t:atlas-engine.Options",
-    "n:atlas-engine.analyze/0"
-   ],
-   [
-    "t:atlas-engine.Options",
+    "t:atlas-engine.effects.Facts",
     "n:atlas-engine.analyze/1"
    ],
    [
-    "t:atlas-engine.Options",
-    "o:atlas-engine.analyze"
+    "t:atlas-engine.model.Edge",
+    "n:atlas-engine.analyze/1"
    ],
    [
     "t:atlas-engine.model.Graph@n:atlas-engine.analyze/1",
     "o:atlas-engine.analyze"
    ],
    [
+    "t:atlas-engine.model.Node",
+    "n:atlas-engine.analyze/1"
+   ],
+   [
     "t:atlas-engine.model.Touch",
+    "n:atlas-engine.analyze/1"
+   ],
+   [
+    "t:atlas-engine.options.Options",
+    "n:atlas-engine.analyze/0"
+   ],
+   [
+    "t:atlas-engine.options.Options",
+    "n:atlas-engine.analyze/1"
+   ],
+   [
+    "t:atlas-engine.options.Options",
+    "n:atlas-engine.analyze/1"
+   ],
+   [
+    "t:atlas-engine.options.Options",
+    "o:atlas-engine.analyze"
+   ],
+   [
+    "t:atlas-engine.pytypes.Param",
     "n:atlas-engine.analyze/1"
    ],
    [
@@ -1378,10 +1398,6 @@
    [
     "t:atlas-engine.repo.Repo~repo@n:atlas-engine.analyze/0",
     "o:atlas-engine.analyze"
-   ],
-   [
-    "t:atlas-engine.typescript.Body",
-    "n:atlas-engine.analyze/1"
    ],
    [
     "w:Disk:in",

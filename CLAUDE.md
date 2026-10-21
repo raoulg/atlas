@@ -177,13 +177,14 @@ Two long-lived branches, one release train. Everything else is a short-lived top
   (lefthook `pre-commit`, `tools/docs-pictures.sh`) and stages the pictures. When one draws
   otherwise, the commit stops and names it with the text that shows it: reread that text, change
   what no longer holds, and commit again.
-- The tour's history (`docs/img/interaction/history.png`) is drawn by
+- The tour's history (`docs/img/interaction/history.png` and `history-dark.png`) is drawn by
   `tools/interaction_pictures.py` from a real run of `atlas serve` on six commits of the sunspots pipeline: `uv run
-  tools/interaction_pictures.py target/release/atlas`. No hook runs it; run it with a version raise that changes what the
-  history page draws, and reread the text beside the picture it names. `docs/img/interaction/drawn.json` keeps what it
-  draws. The tour's chapters on pointing and designing ahead are screenshots of real sessions (`docs/img/session`), but
-  for the moment an agent points, which `tools/session_look.py` draws as an animation (`uv run tools/session_look.py
-  target/release/atlas`).
+  tools/interaction_pictures.py target/release/atlas`. The pages of the tour's two sessions (pointing, designing ahead) are
+  drawn by `tools/session_pictures.py`, which plays each session again with `atlas serve` and `atlas mcp`: `uv run
+  tools/session_pictures.py target/release/atlas`; their chats are text in the page. Both draw every picture in the light
+  and the dark theme, as `docs_pictures.py` does, and the tour shows the one of its theme. No hook runs them; run them
+  with a version raise that changes what those pages draw, and reread the text beside a picture they name.
+  `docs/img/interaction/drawn.json` keeps what the history draws.
 - A viewer change is walked on the subjects before it is committed: `uv run tools/pictures.py
   walk <atlas> <repo> <dir>` opens every package, every route and every family in a route, and
   must report no view that throws, draws nothing, or opens a family into other moments.
