@@ -1,8 +1,10 @@
 //! What a change does to the picture: the routes it adds and removes, the steps and places
-//! each route gains and loses, and the findings it raises and resolves. Two revisions are
-//! compared, or one with the working tree; a revision is read from git itself into a directory
-//! of its own, so neither the working tree nor the index is touched. The history the revisions
-//! come from is read from git as well: its commits in topological order, with their refs.
+//! each route gains, loses and keeps changed, what changes on no route, and the findings it
+//! raises and resolves, all read from the union of the two readings the page draws. Two
+//! revisions are compared, or one with the working tree; a revision is read from git itself into
+//! a directory of its own, so neither the working tree nor the index is touched. The history the
+//! revisions come from is read from git as well: its commits in topological order, with their
+//! refs.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::io::{BufRead, BufReader, Read, Write};
@@ -12,6 +14,7 @@ use std::process::{Command, Stdio};
 use anyhow::{bail, Context, Result};
 
 use crate::cache::{Cache, Check};
+use crate::diff::{self, Reading, Status};
 use crate::flow::Drawn;
 use crate::model::{EdgeKind, Graph, NodeKind, Touch, World};
 use crate::principles::{self, Finding};
@@ -27,9 +30,11 @@ pub struct RouteChange {
     pub root: String,
     /// `added`, `removed` or `changed`.
     pub status: &'static str,
-    /// Steps by node id.
+    /// Steps by node id: those the route reaches in one reading only, and those it reaches whose
+    /// own arrow differs.
     pub steps_added: Vec<String>,
     pub steps_removed: Vec<String>,
+    pub steps_changed: Vec<StepChange>,
     /// Ordered bodies that differ, independently of the set of functions a route reaches.
     pub compositions_changed: Vec<CompositionChange>,
     /// Places in words (`writes logs/run.log`), and the touches that reach them.
@@ -37,6 +42,53 @@ pub struct RouteChange {
     pub places_removed: Vec<String>,
     pub touches_added: Vec<Drawn>,
     pub touches_removed: Vec<Drawn>,
+    /// Places the route touches in both readings whose arrows differ: other functions touch
+    /// them, or touch them otherwise.
+    pub places_changed: Vec<PlaceChange>,
+}
+
+/// A node both readings hold whose own arrow differs, as the page marks it.
+#[derive(Debug, serde::Serialize)]
+pub struct StepChange {
+    pub id: String,
+    /// Its id in A, when B renamed it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub renamed_from: Option<String>,
+    /// What it was in A, in words.
+    pub was: String,
+}
+
+/// A place, by its id and the name the picture gives it, with the arrows it had in A when they
+/// differ.
+#[derive(Debug, serde::Serialize)]
+pub struct PlaceChange {
+    pub id: String,
+    pub place: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub was: String,
+}
+
+/// What the union of the two readings marks that no route reaches: nodes added, removed and
+/// changed, and places, as the page marks them.
+#[derive(Debug, Default, serde::Serialize)]
+pub struct Elsewhere {
+    pub added: Vec<String>,
+    pub removed: Vec<String>,
+    pub changed: Vec<StepChange>,
+    pub places_added: Vec<PlaceChange>,
+    pub places_removed: Vec<PlaceChange>,
+    pub places_changed: Vec<PlaceChange>,
+}
+
+impl Elsewhere {
+    fn is_empty(&self) -> bool {
+        self.added.is_empty()
+            && self.removed.is_empty()
+            && self.changed.is_empty()
+            && self.places_added.is_empty()
+            && self.places_removed.is_empty()
+            && self.places_changed.is_empty()
+    }
 }
 
 /// The execution structure of one reachable function in two readings.
@@ -53,7 +105,11 @@ pub struct Changes {
     pub a: String,
     /// The revision compared to; none for the working tree.
     pub b: Option<String>,
+    /// The roots of the parts compared.
+    pub roots: Vec<String>,
     pub routes: Vec<RouteChange>,
+    /// What changed that no route reaches.
+    pub elsewhere: Elsewhere,
     pub findings_added: Vec<Finding>,
     pub findings_resolved: Vec<Finding>,
 }
@@ -262,17 +318,48 @@ pub fn raised(before: &[Finding], after: &[Finding]) -> (Vec<Finding>, Vec<Findi
 }
 
 /// What changed from the parts `before`, read at revision `a`, to the parts `after`, read at
-/// revision `b` or in the working tree.
+/// revision `b` or in the working tree: the union of the two readings, as the page draws it, read
+/// along each route, and what it marks that no route reaches.
 pub fn between(a: &str, b: Option<&str>, before: &[Graph], after: &[Graph]) -> Changes {
     let several = before.len().max(after.len()) > 1;
-    let (old, new) = (routes(before, several), routes(after, several));
-    let mut out = Changes { a: a.to_string(), b: b.map(str::to_string), ..Default::default() };
+    // the part each node is read in
+    let mut roots: HashMap<&str, &str> = HashMap::new();
+    for g in after.iter().chain(before) {
+        for n in &g.nodes {
+            roots.entry(n.id.as_str()).or_insert(g.root.as_str());
+        }
+    }
+    let name = after.first().or(before.first()).map_or_else(String::new, |g| g.root.clone());
+    let (union, d) = diff::union(&name, before.to_vec(), after.to_vec());
+    let root = |id: &str| {
+        let found = roots.get(id).or_else(|| d.renamed.get(id).and_then(|old| roots.get(old.as_str())));
+        found.map_or_else(|| name.clone(), |r| r.to_string())
+    };
+    let (old, new) =
+        (routes(&diff::reading(&union, &d, Reading::A), &root, several), routes(&diff::reading(&union, &d, Reading::B), &root, several));
+    let changed = |id: &String| StepChange {
+        id: id.clone(),
+        renamed_from: d.renamed.get(id).cloned(),
+        was: d.was.get(id).cloned().unwrap_or_default(),
+    };
+    let labels = place_labels(&union);
+    let place_changed = |id: &String| PlaceChange {
+        id: id.clone(),
+        place: labels.get(id).cloned().unwrap_or_else(|| id.clone()),
+        was: d.was.get(id).cloned().unwrap_or_default(),
+    };
+    let parts: BTreeSet<String> = after.iter().chain(before).map(|g| g.root.clone()).collect();
+    let mut out = Changes { a: a.to_string(), b: b.map(str::to_string), roots: parts.into_iter().collect(), ..Default::default() };
     let keys: BTreeSet<&String> = old.keys().chain(new.keys()).collect();
     for k in keys {
         let (a, b) = (old.get(k), new.get(k));
         let empty = Route::default();
         let (a2, b2) = (a.unwrap_or(&empty), b.unwrap_or(&empty));
         let diff = |x: &BTreeSet<String>, y: &BTreeSet<String>| x.difference(y).cloned().collect::<Vec<_>>();
+        // a step or place the route has in one reading only is added or removed: changed is what it
+        // has in both
+        let reached: BTreeSet<&String> = a2.reached.intersection(&b2.reached).collect();
+        let at: BTreeSet<&String> = a2.at.intersection(&b2.at).collect();
         let gone = |x: &BTreeMap<String, Touch>, y: &BTreeMap<String, Touch>| {
             x.iter()
                 .filter(|(p, _)| !y.contains_key(*p))
@@ -293,6 +380,7 @@ pub fn between(a: &str, b: Option<&str>, before: &[Graph], after: &[Graph]) -> C
             },
             steps_added: diff(&b2.steps, &a2.steps),
             steps_removed: diff(&a2.steps, &b2.steps),
+            steps_changed: reached.iter().filter(|id| d.nodes.get(id.as_str()) == Some(&Status::Changed)).map(|id| changed(id)).collect(),
             compositions_changed: b2
                 .bodies
                 .iter()
@@ -305,21 +393,55 @@ pub fn between(a: &str, b: Option<&str>, before: &[Graph], after: &[Graph]) -> C
             places_removed,
             touches_added,
             touches_removed,
+            places_changed: at
+                .iter()
+                .filter(|id| d.places.get(id.as_str()) == Some(&Status::Changed))
+                .map(|id| place_changed(id))
+                .collect(),
         };
         if c.status != "changed"
             || !(c.steps_added.is_empty()
                 && c.steps_removed.is_empty()
+                && c.steps_changed.is_empty()
                 && c.compositions_changed.is_empty()
                 && c.places_added.is_empty()
-                && c.places_removed.is_empty())
+                && c.places_removed.is_empty()
+                && c.places_changed.is_empty())
         {
             out.routes.push(c);
+        }
+    }
+    // what the union marks that no route reaches: a node of the program's own, and a place drawn by
+    // itself (a coarser place stands for those its routes split)
+    let reached: HashSet<&String> = old.values().chain(new.values()).flat_map(|r| &r.reached).collect();
+    let at: HashSet<&String> = old.values().chain(new.values()).flat_map(|r| &r.at).collect();
+    let own: HashSet<&str> = union.nodes.iter().filter(|n| n.kind != NodeKind::External && !n.library).map(|n| n.id.as_str()).collect();
+    let e = &mut out.elsewhere;
+    for (id, s) in d.nodes.iter().filter(|(id, _)| own.contains(id.as_str()) && !reached.contains(id)) {
+        match s {
+            Status::Added => e.added.push(id.clone()),
+            Status::Removed => e.removed.push(id.clone()),
+            Status::Changed => e.changed.push(changed(id)),
+        }
+    }
+    for (id, s) in d.places.iter().filter(|(id, _)| labels.contains_key(*id) && !at.contains(id)) {
+        let place = PlaceChange { id: id.clone(), place: labels[id].clone(), was: String::new() };
+        match s {
+            Status::Added => e.places_added.push(place),
+            Status::Removed => e.places_removed.push(place),
+            Status::Changed => e.places_changed.push(place_changed(id)),
         }
     }
     let (fa, fb): (Vec<Finding>, Vec<Finding>) =
         (before.iter().flat_map(principles::check).collect(), after.iter().flat_map(principles::check).collect());
     (out.findings_added, out.findings_resolved) = raised(&fa, &fb);
     out
+}
+
+/// The places a graph's touches rest at, by id, with the names the picture gives them; a coarser
+/// place one stands in until it is split is not among them.
+fn place_labels(g: &Graph) -> BTreeMap<String, String> {
+    g.nodes.iter().flat_map(|n| n.touches.iter().chain(&n.instead)).map(|t| t.drawn().place).map(|p| (p.id, p.label)).collect()
 }
 
 /// The changes as text: each route that changed with its steps and places, then the findings.
@@ -329,10 +451,15 @@ pub fn report(c: &Changes) -> String {
         Some(b) => format!("{}..{b}", c.a),
         None => format!("since {}", c.a),
     };
-    if c.routes.is_empty() && c.findings_added.is_empty() && c.findings_resolved.is_empty() {
+    if c.routes.is_empty() && c.elsewhere.is_empty() && c.findings_added.is_empty() && c.findings_resolved.is_empty() {
         return format!("nothing changed in the routes, their places or the findings, {span}\n");
     }
     out.push_str(&format!("{span}\n"));
+    // a node changed, by its id from its part's root, renamed or not, and what it was
+    let step = |short: &dyn Fn(&str) -> String, s: &StepChange| {
+        let renamed = s.renamed_from.as_deref().map(|old| format!("renamed from {} · ", short(old))).unwrap_or_default();
+        format!("{}: {renamed}was {}", short(&s.id), s.was)
+    };
     for r in &c.routes {
         let mark = match r.status {
             "added" => "+",
@@ -341,17 +468,20 @@ pub fn report(c: &Changes) -> String {
         };
         out.push_str(&format!("\n{mark} {}\n", r.route));
         let short = |id: &str| id.strip_prefix(&format!("{}.", r.root)).unwrap_or(id).to_string();
+        let changed: Vec<String> = r.steps_changed.iter().map(|s| step(&short, s)).collect();
+        let places: Vec<String> = r.places_changed.iter().map(|p| format!("{}: was {}", p.place, p.was)).collect();
         for (sign, what, xs) in [
-            ("+", "step", &r.steps_added),
-            ("-", "step", &r.steps_removed),
-            ("+", "place", &r.places_added),
-            ("-", "place", &r.places_removed),
+            ("+", "step", r.steps_added.iter().map(|x| short(x)).collect::<Vec<_>>()),
+            ("-", "step", r.steps_removed.iter().map(|x| short(x)).collect()),
+            ("~", "step", changed),
+            ("+", "place", r.places_added.clone()),
+            ("-", "place", r.places_removed.clone()),
+            ("~", "place", places),
         ] {
             if r.status != "changed" && what == "step" {
                 continue;
             }
             for x in xs {
-                let x = if what == "step" { short(x) } else { x.clone() };
                 out.push_str(&format!("    {sign} {what} {x}\n"));
             }
         }
@@ -363,6 +493,29 @@ pub fn report(c: &Changes) -> String {
                 sequence(&composition.before),
                 sequence(&composition.after)
             ));
+        }
+    }
+    let e = &c.elsewhere;
+    if !e.is_empty() {
+        out.push_str("\n~ on no route\n");
+        let short = |id: &str| c.roots.iter().find_map(|r| id.strip_prefix(&format!("{r}."))).unwrap_or(id).to_string();
+        let changed: Vec<String> = e.changed.iter().map(|s| step(&short, s)).collect();
+        let places: Vec<String> = e.places_changed.iter().map(|p| format!("{}: was {}", p.place, p.was)).collect();
+        let (places_added, places_removed): (Vec<String>, Vec<String>) =
+            (e.places_added.iter().map(|p| p.place.clone()).collect(), e.places_removed.iter().map(|p| p.place.clone()).collect());
+        let (added, removed): (Vec<String>, Vec<String>) =
+            (e.added.iter().map(|x| short(x)).collect(), e.removed.iter().map(|x| short(x)).collect());
+        for (sign, what, xs) in [
+            ("+", "", &added),
+            ("-", "", &removed),
+            ("~", "", &changed),
+            ("+", "place ", &places_added),
+            ("-", "place ", &places_removed),
+            ("~", "place ", &places),
+        ] {
+            for x in xs {
+                out.push_str(&format!("    {sign} {what}{x}\n"));
+            }
         }
     }
     for (title, fs) in [("findings raised", &c.findings_added), ("findings resolved", &c.findings_resolved)] {
@@ -383,54 +536,58 @@ struct Route {
     id: String,
     root: String,
     steps: BTreeSet<String>,
+    /// Every node it reaches, its start among them.
+    reached: BTreeSet<String>,
     bodies: BTreeMap<String, crate::flow::Body>,
     places: BTreeMap<String, Touch>,
+    /// The places it touches, by id.
+    at: BTreeSet<String>,
 }
 
-/// Every route of the parts, by its kind and label.
-fn routes(parts: &[Graph], several: bool) -> HashMap<String, Route> {
+/// Every route of one reading, by its kind and label (after the part it starts in, `root`, when
+/// there are `several`).
+fn routes(g: &Graph, root: &dyn Fn(&str) -> String, several: bool) -> HashMap<String, Route> {
     let mut out = HashMap::new();
-    for g in parts {
-        let bodies = crate::flow::bodies(g);
-        let by_id: HashMap<&str, &crate::model::Node> = g.nodes.iter().map(|n| (n.id.as_str(), n)).collect();
-        let mut next: HashMap<&str, Vec<&str>> = HashMap::new();
-        for e in g.edges.iter().filter(|e| matches!(e.kind, EdgeKind::Calls | EdgeKind::Instantiates | EdgeKind::Requests)) {
-            next.entry(e.src.as_str()).or_default().push(e.dst.as_str());
-        }
-        // an exported class's route is its methods
-        for e in g
-            .edges
-            .iter()
-            .filter(|e| e.kind == EdgeKind::Contains && by_id.get(e.src.as_str()).map_or(false, |n| n.kind == NodeKind::Class))
-        {
-            next.entry(e.src.as_str()).or_default().push(e.dst.as_str());
-        }
-        for (kind, label, start) in story::entries(g) {
-            let name = format!("{}{} · {label}", if several { format!("{} · ", g.root) } else { String::new() }, story::kind_label(kind));
-            let mut r = Route { id: start.to_string(), root: g.root.clone(), ..Default::default() };
-            let mut seen = HashSet::from([start]);
-            let (mut stack, mut order) = (vec![start], vec![]);
-            while let Some(id) = stack.pop() {
-                order.push(id);
-                for d in next.get(id).into_iter().flatten() {
-                    if seen.insert(d) {
-                        stack.push(d);
-                    }
+    let bodies = crate::flow::bodies(g);
+    let by_id: HashMap<&str, &crate::model::Node> = g.nodes.iter().map(|n| (n.id.as_str(), n)).collect();
+    let mut next: HashMap<&str, Vec<&str>> = HashMap::new();
+    for e in g.edges.iter().filter(|e| matches!(e.kind, EdgeKind::Calls | EdgeKind::Instantiates | EdgeKind::Requests)) {
+        next.entry(e.src.as_str()).or_default().push(e.dst.as_str());
+    }
+    // an exported class's route is its methods
+    for e in
+        g.edges.iter().filter(|e| e.kind == EdgeKind::Contains && by_id.get(e.src.as_str()).map_or(false, |n| n.kind == NodeKind::Class))
+    {
+        next.entry(e.src.as_str()).or_default().push(e.dst.as_str());
+    }
+    for (kind, label, start) in story::entries(g) {
+        let part = root(start);
+        let name = format!("{}{} · {label}", if several { format!("{part} · ") } else { String::new() }, story::kind_label(kind));
+        let mut r = Route { id: start.to_string(), root: part, ..Default::default() };
+        let mut seen = HashSet::from([start]);
+        let (mut stack, mut order) = (vec![start], vec![]);
+        while let Some(id) = stack.pop() {
+            order.push(id);
+            for d in next.get(id).into_iter().flatten() {
+                if seen.insert(d) {
+                    stack.push(d);
                 }
             }
-            // the places its own calls hand
-            for id in &order {
-                let Some(n) = by_id.get(id) else { continue };
-                r.bodies.insert(id.to_string(), bodies.get(*id).cloned().unwrap_or_default());
-                if *id != start && n.kind != NodeKind::External {
-                    r.steps.insert(id.to_string());
-                }
-                for t in n.touches_in(start, &|f| seen.contains(f)).into_iter().filter(|t| t.kind != World::Screen || *id == start) {
-                    r.places.entry(place(t)).or_insert_with(|| t.clone());
-                }
-            }
-            out.insert(name, r);
         }
+        // the places its own calls hand
+        for id in &order {
+            let Some(n) = by_id.get(id) else { continue };
+            r.reached.insert(id.to_string());
+            r.bodies.insert(id.to_string(), bodies.get(*id).cloned().unwrap_or_default());
+            if *id != start && n.kind != NodeKind::External {
+                r.steps.insert(id.to_string());
+            }
+            for t in n.touches_in(start, &|f| seen.contains(f)).into_iter().filter(|t| t.kind != World::Screen || *id == start) {
+                r.at.insert(t.drawn().place.id);
+                r.places.entry(place(t)).or_insert_with(|| t.clone());
+            }
+        }
+        out.insert(name, r);
     }
     out
 }

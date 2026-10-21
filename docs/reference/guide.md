@@ -255,7 +255,9 @@ with a sketch: the new item takes a new name and supersedes the old one.
 
 `atlas changes [<rev>]` reads the working tree against a git revision (`HEAD` by default)
 and lists what the edit did: the routes added and removed, the steps and places each route
-gains and loses, the ordered compositions that differ, and the findings it raises and resolves.
+gains and loses, those it keeps whose own arrows differ (`~`, with what they were), the ordered
+compositions that differ, what changed on no route, and the findings it raises and resolves. It
+is read from the union `atlas view --since` draws, so the list holds what the picture marks.
 Changing call order or repeating a call changes a composition even when the route reaches the
 same functions. JSON records each such function with its `before` and `after` bodies under
 `compositions_changed`; each body retains its choices and dispatch. `atlas changes A..B` compares two
@@ -271,6 +273,9 @@ since HEAD
     - step server.regels.vat
     - place asks an LLM create
 ```
+
+A function renamed with the same typed arrows is one step, changed: `~ step cli.draw: renamed from
+cli.plot · was plot(frame: Frame, out: Path) → None`.
 
 `atlas view --since <rev>` draws the revision and the working tree as one picture
 (`--until <rev>` draws two revisions): what both hold, drawn once, with what changed marked as a

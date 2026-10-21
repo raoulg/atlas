@@ -145,10 +145,16 @@ those that cross its border. It is changed when they differ; what changes inside
 reaching the border is counted beside it, not marked on it. A bundle is one line with its count
 (rule 3), so a line both readings draw is changed when its count differs (`×2 → ×3`), and so are
 the boxes at its ends.
-A step of a body is the same in both when it makes the same call on what the same calls gave
-it; a change before it leaves it the same step.
+A step of a body is the same in both when it makes the same call on values of the same types,
+in the same order. Which step made a value is the arrow of that step, not of the one it goes to,
+so a change before a step leaves it the same step: `raw = load(p)` becoming `raw = fetch(p)`
+marks that step, never `smooth(raw)` after it. A place a caller makes whole is the caller's
+arrow; a file named by a function's own parameter (`load.path`) is named so whoever calls the
+function. A rename is an isomorphism of the typed arrows in and out: `list[float] → float` is
+no `str → str`. `atlas changes` reads the same union along each route, so the picture and the
+list hold the same marks.
 **Where.** `atlas history`, `atlas changes A..B`, a vision beside the working tree (`atlas
-mcp`'s `vision`); the diff; `design.md` §4, L5.
+mcp`'s `vision`); `diff::union`, `diff::reading`, `changes::between`; `design.md` §4, L5.
 
 ### Partial morphisms: a prophecy
 **What.** A partial map is defined on part of its domain; a graph with some objects and arrows

@@ -530,11 +530,13 @@ added (green, `+`), what B no longer has is removed (red, dashed and struck thro
 both hold is changed (amber, `~`) when its own arrows differ. The layout is the union's, so a
 switch between A, A ∪ B and B hides boxes and never moves one.
 
-A shared call occurrence has the same target, receiver, inputs and output bindings. An input
-made by another call is shared only when its producer is shared too. Anonymous output names
-belong to their reading; a shared producer aliases its outputs across the two readings, so
-each side retains its own value chain. Calls to one function with different inputs remain
-distinct occurrences without changing the function's own arrow.
+A shared call occurrence has the same target, receiver, typed inputs and output bindings, in
+call order. Which call made an input is no part of it: that is the arrow of the call that made
+it, so `raw = load(p)` becoming `raw = fetch(p)` marks that occurrence, and `smooth(raw)` after
+it stays the same. Anonymous output names belong to their reading; a shared occurrence aliases
+A's anonymous values, those it is handed and those it gives, to B's names, so each side retains
+its own value chain. Calls to one function with different inputs remain distinct occurrences
+without changing the function's own arrow.
 
 *Decision (PTT-509): changed is Yoneda, applied to the generators.* An object is determined up to
 isomorphism by the arrows into and out of it. A place or a type is changed when the arrows directly
@@ -543,18 +545,26 @@ changed, and keeps its name. A function is an arrow, so its identity is its own 
 takes and gives, what its own calls read and write, and for an entry its usage line. A step its body
 gains or loses is marked itself, as added or removed. Only direct arrows count (sentence 6): a
 change upstream marks the step that changed, never what runs before or after it, and a place a
-caller makes whole is the caller's arrow.
+caller makes whole is the caller's arrow. A file named by a function's own parameter (`load.path`,
+`Store.path` for what a constructor takes) waits for what the function is handed: it is named so
+whoever calls the function, and is no arrow of the function that hands the parameter on.
 
 *Renames.* A node B no longer has and a node B adds whose direct relations are isomorphic (the same
 typed arrows in and out, the node itself and what is named under it counting as the same) are one
-node, renamed: it is changed, and reads `old → new`. Only a match that is the only one either way
-counts; two that could match either way are removed and added, since Atlas never guesses.
+node, renamed: it is changed, and reads `old → new`. A function's typed arrow is among its
+relations (`list[float] → float` is no `str → str`, and a parameter more is another arrow), and a
+place named by its value (`plot.out`) is named under it. A node named under a renamed one (a method
+of a renamed class) keeps its own name, and is changed only when its own arrow is. Only a match that
+is the only one either way counts; two that could match either way are removed and added, since
+Atlas never guesses.
 
 The engine marks the nodes, the edges, the steps and touches of a node both readings hold (by
 index), and the places, by the calls that touch them. In a picture a value stands at its moments,
 so a box of a value is changed when a line drawn into or out of it is in one reading only: the page
 draws each reading by itself and marks what their union holds once. The page shows no list of
-changes; `atlas changes A..B` and the MCP tool `changes` give the agent the list. `atlas history`
+changes; `atlas changes A..B` and the MCP tool `changes` give the agent the list, read from the
+same union: each route in A and in B, the steps and places it gains and loses, those it has in both
+that the union marks changed, and apart what the union marks that no route reaches. `atlas history`
 serves the commits and these pictures on this machine.
 
 *Decision (PTT-495): a closed box is a point of a quotient.* Its own arrows are the lines that cross
