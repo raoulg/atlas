@@ -1,0 +1,14 @@
+# The sketch kept apart: `run_stored` is a prophecy that supersedes `run`; it makes the prophetized `Store` and writes
+# the report to it. Both are `todo!()`: no effect yet.
+
+route archive.run_stored
+step run_stored/Store.new
+step run_stored/Store.write
+
+line entry > run_stored call
+line run_stored/Store.new > Store@run_stored/Store.new value
+line Store@run_stored/Store.new > run_stored/Store.write value
+
+home Store@run_stored/Store.new run_stored
+
+side entry left

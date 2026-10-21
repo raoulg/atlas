@@ -1,0 +1,16 @@
+# One helper, two callers, two files: what a step reaches is the closure of its calls in the graph of occurrences, so
+# `write_to` under `alpha` writes alpha's file and under `beta` beta's (rule 5).
+
+route twocallers.run
+step run/alpha
+step run/alpha/write_to
+step run/beta
+step run/beta/write_to
+
+line entry > run call
+line run/alpha/write_to > File(data/alpha.txt) own
+line run/beta/write_to > File(data/beta.txt) own
+
+side entry left
+side File(data/alpha.txt) right
+side File(data/beta.txt) right

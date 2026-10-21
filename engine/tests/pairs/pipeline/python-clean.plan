@@ -1,0 +1,3 @@
+# the override's result has the dispatch's own moment: closed, its line into the dispatch is dropped, open it is drawn
+known #102 fault more t:ext:matplotlib.figure.Figure@n:sunspots.plot.Plot/sunspots.plot.Plot.save/0>n:sunspots.plot.Plot/sunspots.plot.Plot.save/0
+known #102 fault no line Figure@Plot()/Plot.save/Plot.draw > Plot()/Plot.save/Plot.draw

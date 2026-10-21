@@ -1,0 +1,30 @@
+# Two parameters of one family are two values: `report(c: Circle, q: Square)` takes a Circle and a Square, each by the
+# name that holds it, also once their family closes them into one box. A route's parameters are values with their
+# names at the route's start: its own arrow takes them, and a step handed one by its name takes the same value.
+
+route shapes.report
+step report/show_circle
+step report/show_square
+
+line entry > report call
+line Circle·c > report value
+line Square·q > report value
+line Circle·c > report/show_circle value
+line Square·q > report/show_square value
+line report/show_circle > Screen own
+line report/show_square > Screen own
+
+home Circle·c report
+home Square·q report
+
+side entry left
+side Screen right
+
+# A list of a type holds values of it: `total(shapes: list[Shape])` takes Shapes.
+route shapes.total
+line entry > total call
+line Shape·shapes > total value
+
+home Shape·shapes total
+
+side entry left

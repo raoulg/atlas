@@ -1,0 +1,30 @@
+# A value an override in a dispatch builds moves into the dispatch's frame when it opens
+known #102 fault Page@Doc()/Doc() stands in
+known #102 fault Page@Doc()/Doc.parse stands in
+known #102 fault Page@Page()/Page()/Doc() stands in
+
+# The same family as on the clean side: `Source.read` runs one of the overrides of `Feed` and `Tape`, on the Source the
+# caller calls it on. That `Feed.read` follows `Archive.read` and gives a str where `Source.read` promises bytes is
+# `check`'s to ask; neither is a type of the code's, so the picture is the clean side's: what an override gives goes
+# back to the dispatch that ran it.
+route reading.feeds.Source
+step Source()/Source.read
+step Source()/Source.read/Feed.read
+step Source()/Source.read/Tape.read
+
+line entry > Source()/Source.read call
+known #100 line Source > Source()/Source.read/Feed.read value
+known #100 line Source > Source()/Source.read/Tape.read value
+line Source()/Source.read/Feed.read > Source()/Source.read back
+line Source()/Source.read/Tape.read > Source()/Source.read back
+
+home Source Source()
+
+side entry left
+
+# each override takes a value of its own class from beyond, and the Source ends at the border of the dispatch
+known #100 extra line Source > Source()/Source.read value
+known #100 extra line Feed > Source()/Source.read/Feed.read value
+known #100 extra line Tape > Source()/Source.read/Tape.read value
+known #100 extra home Feed Source()
+known #100 extra home Tape Source()

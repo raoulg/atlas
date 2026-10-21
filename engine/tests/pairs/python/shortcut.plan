@@ -1,0 +1,22 @@
+# A function whose value is used says what it gives back (principle `gives`): the shortcut's `get_store()` says
+# nothing, so what it gives is a value of no type and the `history` the route calls on it is a call no one can follow.
+# The route builds a store from what the environment holds and reaches no table: the gap is the finding.
+
+route harvest.api.readings
+step readings/get_store
+step readings/get_store/ReadingStore()
+step readings/get_store().history                             # the call on what get_store gave, not followed
+
+line entry > readings call
+line Global(os.environ) > readings/get_store own              # os.environ.get(..), its result handed straight to ReadingStore()
+line readings/get_store/ReadingStore() > ReadingStore@readings/get_store/ReadingStore() value
+known #101 line ReadingStore@readings/get_store/ReadingStore() > readings/get_store value   # get_store hands back what it built
+line readings/get_store > _@readings/get_store value          # what get_store gives has no type
+line _@readings/get_store > readings/get_store().history value
+known #101 line readings/get_store().history > readings back  # and what is asked of it goes back to the route, which returns it
+
+home ReadingStore@readings/get_store/ReadingStore() readings/get_store
+home _@readings/get_store readings
+
+side entry left
+side Global(os.environ) left

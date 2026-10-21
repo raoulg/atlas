@@ -271,7 +271,7 @@ line or a box that appears or disappears means:
    counted, and opening the step splits the block into the values, each with its line. A value that
    another step takes or makes, a family that can be opened and the route's own values are not of the block.
 
-**Where.** `homeOf`, `madeAt` and `addEdge` in `viewer/index.html`; `tools/pictures.py topology`
+**Where.** `homeOf` and `madeAt` in `viewer/plan.js`, `addEdge` in `viewer/index.html`; `tools/pictures.py topology`
 holds the open picture to the closed one.
 
 ### Refinement keeps what it does not refine
@@ -343,8 +343,8 @@ family's frame. A route's parameters are such values, there at the route's start
 takes them by their names, and a step handed one by its name takes the same value. A closed family holds its kinds (a subclass stands in its base
 until the family is opened); a part of a type is structure of its owner, a box of its own in the
 owner's frame, and the values of the part's type stand on their own (#39).
-**Where.** `plan`, `imageOf`, `refines` and the camera in `viewer/index.html`;
-`tools/pictures.py topology`.
+**Where.** `plan`, `imageOf` and `refines` in `viewer/plan.js`, the camera in `viewer/index.html`;
+`tools/pictures.py topology`; `engine/tests/plans.rs`.
 
 ### One fine plan, every picture its image
 **What.** A quotient is not computed from what is drawn of it. A map `q: G → G/π` is defined on the
@@ -425,8 +425,8 @@ Each law is then a theorem of the construction, or it is not yet, and says which
 
 | Law | Why it holds | What checks it |
 | --- | --- | --- |
-| Incidence | `F/q′` maps onto `F/q` along the blocks | the oracle (`checkOpenings`), `pictures.py topology` |
-| Containment, Moment | functions of `F` | the oracle, `topology` |
+| Incidence | `F/q′` maps onto `F/q` along the blocks | the oracle (`checkOpenings`), `pictures.py topology`; `engine/tests/plans.rs`, for every set of open steps: each line counts the fine lines that cross a block's border, by channel |
+| Containment, Moment | functions of `F` | the oracle, `topology`; `plans.rs`: each box stands where it stands with every step open |
 | Side | decided on `F/q₀` and carried by `q` | `topology` (a place that changes side) |
 | Closing | `q` is a function of the set of open boxes | `topology` (closing draws the picture it was) |
 | Reading | the own arrow of an opened step is its border | `topology` |
@@ -434,10 +434,15 @@ Each law is then a theorem of the construction, or it is not yet, and says which
 | Across the cut | a cut step's arrow is the image of its body, made by the same construction (`cutArrow`) | `topology` with a small budget (`ATLAS_FINE_BUDGET=1`, `=3`), which cuts the small programs as a large one is cut |
 | The overview | not built on a finest plan: the packages' pictures are drawn by their own construction, one box per type (#69) | `walk` only |
 
-What none of these checks is whether `F` says what the code does: the oracle holds the pictures to
-one another, not to the program. That is a test of its own, a program with the plan its code
-implies, compared with the plan Atlas builds (#52).
-**Where.** `plan`, `coarsen`, `cutArrow` and `checkOpenings` in `viewer/index.html`; `tools/pictures.py`.
+The oracle holds the pictures to one another, not to the program. Whether `F` says what the code
+does is a test of its own, `engine/tests/plans.rs`: beside a small program a `.plan` file writes down
+the plan its code implies, derived from the code and this page, never from what Atlas draws, and every
+fact of it must hold of the plan Atlas builds, and no other. What Atlas gets wrong today is marked
+with the issue that tracks it, and the mark goes with the fix (`engine/tests/plans/README.md`). The
+test runs the viewer's own model in node, the function every picture is drawn from, on every route of
+the pairs and of its programs.
+**Where.** `plan`, `coarsen`, `cutArrow` and `checkOpenings` in `viewer/plan.js`; `tools/pictures.py`;
+`engine/tests/plans.rs`.
 
 ### Saturation: when the order of a view does not matter
 **What.** A set is saturated by an equivalence when it never cuts a class in two.
@@ -473,6 +478,17 @@ it in: `Boekwinkel(Winkel[Boek])` keeps the promise of `Winkel[Boek]`, the base'
 `Boek` wherever the promise names it. Where a language types structurally (TypeScript), a type
 stands where another does when it has every member the other declares.
 **Where.** Principle `overrides`; `model::linearization`; for Python ty decides it (`pytypes.rs`).
+
+### Method resolution order
+**What.** A linear extension of the order of inheritance: one sequence of a class and its
+ancestors in which every class comes before its bases and each class's bases keep the order it
+declares them in (the C3 linearization).
+**In Atlas.** The method a value of a class runs for a name is the first definition along its
+class's order, and what building it takes is the first constructor along it. The picture's step
+and the rules' comparison read the same order: in a diamond `D(B, C)` over `A`, a `D` runs the `f`
+of `C` before the `f` of `A` that `B` inherits.
+**Where.** `model::linearization`; `principles.rs` (`Index::mro`), `builder.rs` (`family`,
+`method_of`), `flow.rs` (`method_on`, `built_from`).
 
 ### Signatures say the arrow
 **What.** A function's type is its domain and its codomain.
