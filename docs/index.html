@@ -61,6 +61,10 @@ figure.output img{width:100%;height:auto;display:block;padding:14px 18px}
 .inside .more{margin:0;padding:4px 18px 16px;font-size:14px;color:var(--ink-2)}
 .inside .more a{color:var(--ink);text-decoration-color:var(--accent);text-underline-offset:3px}
 @media (max-width:760px){.inside dl{grid-template-columns:1fr;gap:2px}.inside dd{margin-bottom:10px}}
+.cmds{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:20px}
+.cmds div{background:var(--panel);border:1px solid var(--line);padding:18px}
+.cmds code{font-family:var(--mono);font-size:14px;display:block;margin-bottom:6px}
+.cmds span{color:var(--ink-2);font-size:15px}
 .os{font-size:14px;color:var(--ink-2);margin:16px 0 6px}
 .os:first-of-type{margin-top:0}
 pre{font-family:var(--mono);font-size:13px;background:var(--panel);border:1px solid var(--line);padding:14px 16px;overflow-x:auto;margin:0}
@@ -70,6 +74,12 @@ footer{border-top:1px solid var(--line);padding-top:20px;color:var(--ink-3);font
   header nav{margin-left:0;width:100%}
   h2{font-size:27px}
 }
+/* the Rule 30 band across the top, after pttrn.io: drawn by the script at the end of the page */
+.band{position:relative;height:130px;overflow:hidden;background:var(--bg)}
+.band-cells{position:absolute;inset:0;width:100%;height:100%}
+.band-cells .cell{fill:#E2DCD3}
+.band-cells .accent{fill:var(--accent)}
+.band-logo{position:absolute;display:block}
 /* the tour */
 :root{--ink-2:#4A443D;--proph:#4B3FA8;--add:#2E8B57;--focus:#1D5A73}
 html{scroll-behavior:smooth;scroll-padding-top:72px}
@@ -295,6 +305,7 @@ section{margin-bottom:104px}
 </head>
 <body>
 <a class="skip" href="#main">Skip to the content</a>
+<div class="band" aria-hidden="true"><svg class="band-cells"></svg><img class="band-logo" src="logo.svg" alt=""></div>
 <header class="top">
   <div class="bar">
     <a class="brand" href="#top"><img src="logo.svg" alt="">Atlas</a>
@@ -612,7 +623,13 @@ def run_cycles(raw: Path = RAW, figure: Path = FIGURE, months: int = 13, years: 
   <pre>irm https://raw.githubusercontent.com/raoulg/atlas/main/install.ps1 | iex</pre>
   <p class="os">From source, with a <a href="https://rustup.rs">Rust toolchain</a></p>
   <pre>cargo install --locked --git https://github.com/raoulg/atlas atlas</pre>
-  <p class="explain" style="margin-top:20px">And then <code>atlas serve</code>.</p>
+  <div class="cmds" style="margin-top:20px">
+    <div><code>atlas serve</code><span>the picture of the repository you are in, to work in with your agent</span></div>
+    <div><code>atlas view</code><span>the same picture as one HTML file, to keep or send</span></div>
+    <div><code>atlas check</code><span>where the code and eleven design principles disagree</span></div>
+    <div><code>atlas changes</code><span>what your edit did to the routes</span></div>
+    <div><code>atlas mcp</code><span>the picture for your coding agent</span></div>
+  </div>
   <p class="os">The nightly build, from <code>next</code></p>
   <pre>ATLAS_CHANNEL=nightly sh -c "$(curl -fsSL https://raw.githubusercontent.com/raoulg/atlas/next/install.sh)"</pre>
   <p class="os" style="margin-top:20px">Your coding agent, once for every project</p>
@@ -655,6 +672,50 @@ function tabs(root) {
   pick(0);
 }
 document.querySelectorAll('[data-tabs]').forEach(tabs);
+// The Rule 30 band, as pttrn.io draws it (pttrn-huisstijl, DocumentHeader): a single seed,
+// generations 62-74 over columns -62..61, generation 68 in accent, the pitch the width / 124 and at
+// least 8px. Atlas's logo is itself a window of 13 by 13 cells onto Rule 30, so it is taken up in
+// the band on the band's own grid, at the left edge of the text, with one empty column either side.
+(() => {
+  const SKIP = 62, ROWS = 13, COL_MIN = -62, COL_MAX = 61, ACCENT_ROW = 6, MIN_PITCH = 8, SQUARE = 0.78125;
+  const width = COL_MAX - COL_MIN + 1, reach = SKIP + ROWS;
+  let row = new Uint8Array(width + 2 * reach);
+  row[-COL_MIN + reach] = 1;
+  const grid = [];
+  for (let g = 0; g < SKIP + ROWS; g++) {
+    if (g >= SKIP) grid.push(row.slice(reach, reach + width));
+    const next = new Uint8Array(row.length);
+    for (let i = 1; i < row.length - 1; i++) next[i] = row[i - 1] ^ (row[i] | row[i + 1]);
+    row = next;
+  }
+  const band = document.querySelector('.band');
+  const cells = band.querySelector('.band-cells');
+  const logo = band.querySelector('.band-logo');
+  // the left edge of the text: main is 1240px wide at most, with a gutter of 16px
+  const textEdge = w => Math.max(0, (w - 1240) / 2) + 16;
+  const draw = () => {
+    const w = band.clientWidth;
+    const pitch = Math.max(MIN_PITCH, w / width);
+    band.style.height = `${ROWS * pitch}px`;
+    // the logo's left edge on a column of the band, at or after the text's edge
+    const left = w / 2 + Math.ceil((textEdge(w) - w / 2) / pitch) * pitch;
+    Object.assign(logo.style, {left: `${left}px`, top: '0px', width: `${ROWS * pitch}px`, height: `${ROWS * pitch}px`});
+    const clear = {x0: left - pitch, x1: left + (ROWS + 1) * pitch};
+    const inset = (1 - SQUARE) / 2 * pitch, size = SQUARE * pitch;
+    let plain = '', accent = '';
+    grid.forEach((cols, r) => cols.forEach((alive, i) => {
+      const x = w / 2 + (COL_MIN + i) * pitch;
+      if (!alive || x + pitch < 0 || x > w || (x + pitch > clear.x0 + 0.5 && x < clear.x1 - 0.5)) return;
+      const d = `M${(x + inset).toFixed(2)} ${(r * pitch + inset).toFixed(2)}h${size.toFixed(2)}v${size.toFixed(2)}h-${size.toFixed(2)}z`;
+      if (r === ACCENT_ROW) accent += d; else plain += d;
+    }));
+    cells.setAttribute('viewBox', `0 0 ${w} ${ROWS * pitch}`);
+    cells.innerHTML = `<path class="cell" d="${plain}"/><path class="accent" d="${accent}"/>`;
+  };
+  let drawn = 0;
+  new ResizeObserver(() => { if (band.clientWidth !== drawn) { drawn = band.clientWidth; draw(); } }).observe(band);
+})();
+
 // the height of the page's bar, under which a sticky bar of tabs stays
 const below = () => document.documentElement.style.setProperty('--below-top', document.querySelector('.top').offsetHeight + 'px');
 below();
