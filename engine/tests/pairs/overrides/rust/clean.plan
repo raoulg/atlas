@@ -2,11 +2,6 @@
 # `Store`, a choice between them, here `Shelf.get` alone, on the Store the caller calls it on (a value from beyond; the
 # trait's declaration has no body to read it). `Shelf.get` builds a `Book` (a unit struct named as a value is a value of
 # it) and hands it back at its own moment; the dispatch hands on what its override gave, at its own (law 4, Moment).
-# the override's result has the dispatch's own moment: closed, its line into the dispatch is dropped, open it is drawn
-known #102 fault more t:books.Book@n:books.Store/books.Store.get>n:books.Store/books.Store.get
-known #102 fault more t:books.Name@n:books.Keyed/books.Keyed.id>n:books.Keyed/books.Keyed.id
-known #102 fault no line Book@Store()/Store.get > Store()/Store.get
-known #102 fault no line Name@Keyed()/Keyed.id > Keyed()/Keyed.id
 
 route books.Store
 step Store()/Store.get
@@ -17,14 +12,14 @@ line entry > Store()/Store.get call
 known #100 line Store > Store()/Store.get/Shelf.get value
 line Store()/Store.get/Shelf.get/Book() > Book@Store()/Store.get/Shelf.get/Book() value
 line Book@Store()/Store.get/Shelf.get/Book() > Store()/Store.get/Shelf.get value
-known #102 line Store()/Store.get/Shelf.get > Book@Store()/Store.get/Shelf.get value
-known #102 line Book@Store()/Store.get/Shelf.get > Store()/Store.get value
-known #102 line Store()/Store.get > Book@Store()/Store.get value
+line Store()/Store.get/Shelf.get > Book@Store()/Store.get/? value              # the override makes it at the dispatch's choice
+line Book@Store()/Store.get/? > Store()/Store.get value
+known #124 line Store()/Store.get > Book@Store()/Store.get value
 
 home Store Store()
 home Book@Store()/Store.get/Shelf.get/Book() Store()/Store.get/Shelf.get
-known #102 home Book@Store()/Store.get/Shelf.get Store()/Store.get
-home Book@Store()/Store.get Store()
+home Book@Store()/Store.get/? Store()/Store.get
+known #124 home Book@Store()/Store.get Store()                    # the dispatch hands on no Book: its signature names Self::Item
 
 side entry left
 
@@ -32,6 +27,3 @@ side entry left
 known #100 extra line Store > Store()/Store.get value
 known #100 extra line Shelf > Store()/Store.get/Shelf.get value
 known #100 extra home Shelf Store()
-# the override makes its Book at the dispatch's moment, and the dispatch's own arrow takes it back
-known #102 extra line Store()/Store.get/Shelf.get > Book@Store()/Store.get value
-known #102 extra line Book@Store()/Store.get > Store()/Store.get value
