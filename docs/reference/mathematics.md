@@ -276,7 +276,7 @@ screen, at the zoom the reader chose.
 
 | Law | What it asks of the viewer | Where |
 | --- | --- | --- |
-| Incidence | a closed step is the block of the occurrences below it: its lines are the images of the fine lines that cross its border; the frame of an opened step has the id of the block, its own pill (`o:`) is the step's own arrow | `imageOf` |
+| Incidence | a closed step is the block of the occurrences below it: its lines are the images of the fine lines that cross its border; the frame of an opened step has the id of the block, its own arrow (`o:`) is a point on the frame's border | `imageOf` |
 | Containment | a box stands where the finest plan puts it: a value in the smallest frame that holds its users and its maker, a place of the world outside every step | `imageOf` (`homeOf`) |
 | Side | the roles of a place are counted on the coarsest picture, where only the route is open | `coarsen` |
 | Moment | a value has the moment of the occurrence that made it; a closed block hands on at its own | `madeAt`, `imageOf` |
@@ -328,7 +328,9 @@ open:
 - every place of the world is at its concrete place (a path, a table, a command); what a step reads
   back of what it wrote there is a value at a moment inside the step (rule 4);
 - a step's own arrow is its witness at its border: its signature and its own touches, the lines that
-  cross its frame.
+  cross its frame. An opened step draws it as a point on the frame's right edge, not as a step beside
+  its steps: a value its call is handed crosses the frame to the step inside that takes it, and the
+  point keeps what the body itself takes and what it gives back, at the step's moment.
 
 What the reader has open is the map `q`, nothing else: an occurrence goes to its outermost closed
 ancestor (or to itself), a type to the box its family stands in (`placeOfType`), a world place to its

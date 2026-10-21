@@ -235,6 +235,7 @@ svg.glyph{vertical-align:-2px}
 .scene.focus .tstep:not(.on),.scene.focus .tnode:not(.on){opacity:.28}
 .sedge.on{opacity:1;stroke-width:2.2}
 .tstep rect.bg{fill:var(--panel-2);stroke:var(--ink-3)}
+.tstep circle.border-point{fill:var(--ink-3);stroke:var(--panel);stroke-width:2}
 .tstep .title{font-family:var(--mono);font-size:11px;font-weight:500;fill:var(--ink)}
 .tstep:hover rect.bg,.tstep.selected rect.bg{stroke:var(--focus);stroke-width:1.6}
 .tnode.entry .title{font-family:var(--mono);font-weight:500}
@@ -1319,13 +1320,13 @@ async function renderPlaat(mine) {
     if (!info) return morphism(key, own, isAnchor);
     const {step, on, site, fed} = info, dn = new Map(), cn = new Map(), beyond = new Set(), keep = new Set();
     const m = step.startsWith("op:") ? {dom: new Map(), cod: new Map(), goes: new Map()} : morphism(step, own, isAnchor, false, {on, figure: key, label: stepLabel(key), leaf});
+    // what an opened body gives back, made from what its steps make, is a value of its own, never one of its inputs
+    const made = new Set(own && !leaf && !step.startsWith("op:") && arrowOf(step)?.gives_back ? bodyOf(step, on).made_from || [] : []);
+    for (const x of made) keep.add(addPlace(typePlace(x)));
     if (!site && own && key === V.route) {
       // a route's parameters are values with their names, there from its start: `report(c: Circle, q: Square)`
-      // takes `Circle · c` and `Square · q`, two values, whatever family they stand in. What its body gives
-      // back (made from what its steps make) is a value of its own, not one of them
+      // takes `Circle · c` and `Square · q`, two values, whatever family they stand in
       const f = byId.get(step), a = arrowOf(step) || {};
-      const made = new Set(own && a.gives_back ? bodyOf(step, on).made_from || [] : []);
-      for (const x of made) keep.add(addPlace(typePlace(x)));
       const words = p => new Set((p.type || "").split(/[^A-Za-z0-9_]+/));
       for (const p of (f?.params || []).filter(p => !p.receiver)) {
         for (const x of (a.takes || []).filter(x => words(p).has(bare(x)))) {
@@ -1380,6 +1381,13 @@ async function renderPlaat(mine) {
       // the lines that crossed the box cross the frame; a value it hands on is at the moment the closed box had it, and a result
       // with no place of its own goes on to the step that called it from there
       if (caller) own.dom.set(addPlace(entryPlace(caller)), false);
+      // in the finest plan the own arrow of an opened step is its border, not a step beside its steps: a value its
+      // steps take from outside crosses the frame to them, and the own arrow keeps what its own body takes and what
+      // the body gives back, handed on at the step's moment
+      if (fine && node.id !== V.route && !lib) {
+        const inD = new Set([...pills.values()].slice(before).flatMap(P => [...P.D.keys()]));
+        for (const k of [...own.dom.keys()]) if (/^[tv]:/.test(k) && inD.has(k) && !own.keep?.has(k)) own.dom.delete(k);
+      }
       if (shut) {
         const inside = [...pills.values()].slice(before), inD = new Set(inside.flatMap(P => [...P.D.keys()])), inC = new Set(inside.flatMap(P => [...P.C.keys()]));
         for (const k of shut.dom.keys()) if (!own.dom.has(k) && !inC.has(k) && (/^[tv]:/.test(k) || !inD.has(k))) own.dom.set(k, true);
@@ -1387,7 +1395,7 @@ async function renderPlaat(mine) {
       }
       const hb = fine ? !!parent && !caller && node.id !== V.route && !lib && !/^(part|unit|op):/.test(node.id) && handsBack(stepOf(node.id), own.cod) : !!frames.get(fid).closed?.hb;
       if (own.dom.size || own.cod.size || hb || (back.length && !lib && !node.id.startsWith("unit:"))) {
-        const oid = "o:" + node.id, own_ = {id: oid, steps: [node.id], D: own.dom, C: own.cod, dn: own.dn, cn: own.cn, goes: own.goes, parent: fid, hue: node.hue, own: true, beyond: own.beyond, keep: own.keep};
+        const oid = "o:" + node.id, own_ = {id: oid, steps: [node.id], D: own.dom, C: own.cod, dn: own.dn, cn: own.cn, goes: own.goes, parent: fid, hue: node.hue, own: true, beyond: own.beyond, keep: own.keep, ...(fine && node.id !== V.route && !lib ? {border: true} : {})};
         pills.set(oid, own_);
         for (const b of back) b.backTo = oid;
         if (hb) return [own_];
@@ -1592,9 +1600,16 @@ async function renderPlaat(mine) {
       } else places.set(id, fp.get(k));
       return id;
     };
-    const userFrame = P => { const F0 = fFrames.get(P.parent); return P.own && !F0?.anchor ? F0?.parent : P.parent; };
+    // the own arrow of an opened step uses a value where the value was made: inside the step what its steps made there,
+    // outside it what it hands on at the step's moment or takes from beyond
+    const userFrame = (P, k) => {
+      const F0 = fFrames.get(P.parent);
+      if (!P.own || F0?.anchor) return P.parent;
+      const at = fp.get(k)?.at;
+      return P.border && at && (at.startsWith(P.parent + "/") || at.startsWith(P.parent + "|") || at.startsWith(P.parent + "~c")) ? P.parent : F0?.parent;
+    };
     const users = new Map(), makers = new Map();
-    const note = (id, P, maker) => { const m = maker ? makers : users; if (!m.has(id)) m.set(id, []); m.get(id).push(userFrame(P)); if (maker) note(id, P, false); };
+    const note = (id, P, maker, k) => { const m = maker ? makers : users; if (!m.has(id)) m.set(id, []); m.get(id).push(userFrame(P, k)); if (maker) note(id, P, false, k); };
     const famId = pl => { const f = pl?.type && frameOf(pl.type); return f ? "t:" + f + nameOf_(pl) + (pl.at ? "@" + pl.at : "") : null; };
     const within = (at, S) => !!at && (at.startsWith(S + "/") || at.startsWith(S + "|") || at.startsWith(S + "~c"));
     const pills = new Map(), frames = new Map();
@@ -1611,6 +1626,8 @@ async function renderPlaat(mine) {
     for (const B of blocks.values()) {
       const D = new Map(), C = new Map(), Dn = new Map(), Cn = new Map(), goes = new Map(), S = B.frame, back = S ? new Set(arrowOf(stepOf(S.step))?.reads_back || []) : null;
       const incidence = [];
+      const hands = S ? treeInfo.get(S.step)?.site?.hands || [] : [];
+      const handed = pl => !!pl && hands.some(h => (h.name && !h.name.startsWith("#") ? h.name === pl.name : !!h.type && h.type === pl.type));
       for (const P of B.members) {
         const mine = !S || P.id === "o:" + S.step;
         for (const [way, m] of [["D", P.D], ["C", P.C]]) for (const [k, r] of m) {
@@ -1618,7 +1635,8 @@ async function renderPlaat(mine) {
           // a value made and taken inside the block is the block's own; a place it wrote and reads back is no input of it
           if (S && isValue && within(pl?.at, S.id) && !hidden.has(pl.at)) { drop.set(`${P.id}|${way}|${k}`, "internal"); continue; }
           if (S && way === "D" && !isValue && back.has(k)) { drop.set(`${P.id}|${way}|${k}`, "back"); continue; }
-          incidence.push([way, P, k, mine ? r : true]);
+          // a value the step's own call is handed is its own arrow's input, whichever of its steps takes it inside
+          incidence.push([way, P, k, mine ? r : !(way === "D" && isValue && handed(pl))]);
         }
         // what the block reads back of what it wrote is no read of the place: the place stays in the block's codomain
         if (back) P.goes?.forEach((s, k) => { if (!goes.has(k)) goes.set(k, new Set()); for (const x of s) if (!back.has(k) || (x !== "read" && x !== "use")) goes.get(k).add(x); });
@@ -1630,9 +1648,9 @@ async function renderPlaat(mine) {
         const n = way === "D" ? Dn : Cn;
         n.set(id, (n.get(id) || 0) + 1);
         inc.set(`${P.id}|${way}|${k}`, {way, P: P.id, k, p: B.id, c: id});
-        note(id, P, way === "C");
+        note(id, P, way === "C", k);
         const f = famId(fp.get(k));
-        if (f) note(f, P, way === "C");
+        if (f) note(f, P, way === "C", k);
       }
       const out = B.members.find(P => P.backTo && !B.members.some(Q => Q.id === P.backTo));
       const back_ = out?.backTo;
@@ -1689,7 +1707,7 @@ async function renderPlaat(mine) {
   // Opening one more box must refine the picture and nothing else. For each box that can be opened (a closed step, a closed
   // family), the picture with that box open is taken from the same finest plan and held to the one that is drawn: each of its
   // boxes lies in one box of the drawn one, every line of the drawn one is the image of a line of the open one, and no line of
-  // the open one that crosses a block's border is missing from the drawn one (but the reading back of what a step wrote)
+  // the open one that crosses a block's border is missing from the drawn one
   const refines = (A, B) => {
     const out = [], phi = [new Map(), new Map()];
     const lines = M => new Set([...M.inc.values()].filter(i => !M.folded.has(i.c)).map(i => (i.way === "D" ? `${i.c}>${i.p}` : `${i.p}>${i.c}`)));
@@ -1700,7 +1718,7 @@ async function renderPlaat(mine) {
     }
     const la = lines(A), img = new Set();
     for (const [key, i] of B.inc) {
-      // what a block made and takes inside is no line of its border; nor is the reading back of what a step wrote
+      // what a block made and takes inside is no line of its border
       const gone = A.drop.get(key);
       if (gone === "internal" && !A.places.has(A.q(i.k))) continue;
       const l = mapTo(i, i.way === "D" ? "D" : "C");
@@ -2094,6 +2112,8 @@ async function renderPlaat(mine) {
       Object.assign(P, {labels: {a: la, b: lb}, label: (/^[▸↻] /.test(P.label) ? P.label.slice(0, 2) : "") + u.label});
     }
     P.interior = !P.own && ([...P.D.values(), ...P.C.values()].some(Boolean));
+    // the own arrow of an opened step is its border: a point on the frame's right edge, where what the body gives back leaves it
+    if (P.border) { holder(P.parent).children.push(leaf(P.id, 12, 12, {"elk.layered.layering.layerConstraint": "LAST"})); continue; }
     holder(P.parent).children.push(leaf(P.id, Math.max((P.interior ? 48 : 24) + textW(P.label, 6.9), tagsWidth(P.inside) + 2 * 13), P.interior ? 34 : 26));
   }
   // memory lives in the smallest open step that holds every step using it
@@ -2306,7 +2326,7 @@ async function renderPlaat(mine) {
       marked(grp, st, P.w + 3, wasOf(st, id, F.step && DIFF.was[stepOf(F.step)]));
       sided(title, F.labels && {a: "▾ " + F.labels.a, b: "▾ " + F.labels.b});
     }
-    const asked = isFam ? F.fam : F.step && (F.step.startsWith("part:") || !pos.has("o:" + F.step)) ? askedOf(F.step) : null;
+    const asked = isFam ? F.fam : F.step && (F.step.startsWith("part:") || !pos.has("o:" + F.step) || pills.get("o:" + F.step)?.border) ? askedOf(F.step) : null;
     if (asked) markAsks(grp, [asked], P.w - 8, 8);
     title.addEventListener("click", ev => {
       ev.stopPropagation(); if (F.synthetic) return; plaatAnchor = id;
@@ -2374,6 +2394,12 @@ async function renderPlaat(mine) {
     };
     grp.addEventListener("mouseenter", () => { hoverTarget = shows; });
     grp.addEventListener("mouseleave", () => { hoverTarget = null; });
+    if (P.border) {
+      el("circle", {class: "bg border-point", cx: Q.w / 2, cy: Q.h / 2, r: Q.w / 2}, grp);
+      el("title", {}, grp).textContent = `${P.label}: what the step gives back, at its border`;
+      place(grp, P.id);
+      continue;
+    }
     const r = el("rect", {class: "bg", width: Q.w, height: Q.h, rx: Q.h / 2}, grp);
     if (P.hue) r.setAttribute("style", `stroke:${hueVar(P.hue)};stroke-width:1.6`);
     const label = el("text", {class: "title", x: P.interior ? 24 : 11, y: Q.h / 2 + 4}, grp);
