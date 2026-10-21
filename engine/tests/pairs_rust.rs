@@ -87,14 +87,16 @@ fn every_principle_holds_on_the_clean_side() {
 fn choices_a_command_is_chosen_once() {
     let c = clean();
     assert_eq!(found(c, "choices"), Vec::<String>::new());
-    // one choice in `main`, one arm per command, and no name tested against a string
+    // one choice in `main`, one arm per command, and no name tested against a string: the one
+    // `match` names each variant once (`Command::Rates`, the variant without fields, as a case)
     let arms: Vec<(u32, u32)> = ["spend.expense.read_csv", "spend.rates.RatesClient.latest", "spend.report.write"]
         .iter()
         .map(|t| step(c, "spend.main", t).arms[0])
         .collect();
     assert!(arms.iter().all(|a| a.0 == arms[0].0), "{arms:?}");
     assert_eq!(arms.iter().map(|a| a.1).collect::<Vec<_>>(), [0, 1, 2]);
-    assert!(node(c, "spend.main").compares.is_empty(), "{:?}", node(c, "spend.main").compares);
+    let compares = &node(c, "spend.main").compares;
+    assert!(compares.len() == 1 && compares[0].cases.is_empty() && compares[0].members == ["Command::Rates"], "{compares:?}");
 
     let s = shortcut();
     let asked: Vec<_> = check(s).into_iter().filter(|f| f.principle == "choices" && f.node == "spend.run").collect();
@@ -599,4 +601,51 @@ fn prophecy_a_seal_is_listed_and_broken_when_its_issue_is_closed() {
         "a prophecy that is not sealed has no seal to break"
     );
     let _ = std::fs::remove_dir_all(copy.parent().expect("has a parent"));
+}
+
+/// One side of the choices pair (`tests/pairs/choices/rust`): a job run in one of two modes, and a
+/// line that says how it went.
+fn choices_side(side: &str) -> Graph {
+    analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/choices/rust").join(side), &Options::default()).expect("reads")
+}
+
+/// A choice is made once, in a place with a name, and Fowler's repeated switch is between
+/// functions as well as inside one. Rust's clean form is an `enum` with methods that each `match`
+/// the value they run on once (`Mode::plan`, `Level::prefix`, `Level::suffix`), and a function
+/// whose body is where the job comes from (`source`); `report` builds its Message by one struct
+/// expression in either arm, one step with a choice of what it is handed, and nothing is asked.
+/// The shortcut tests `self.mode` in two methods of `Runner`, `mode` in two functions,
+/// `settings.mode` twice through `let m = &settings.mode`, `level` against the variant
+/// `Level::Loud` in two functions (`==` and `match`), and picks where its Job comes from (`load |
+/// infer`) between the steps of `run`: each is asked once, where the value is defined.
+#[test]
+fn choices_a_choice_is_made_once_across_bodies() {
+    let (c, s) = (choices_side("clean"), choices_side("shortcut"));
+    assert_eq!(found(&c, "choices"), Vec::<String>::new());
+    let message: Vec<&[(u32, u32)]> =
+        node(&c, "runs.report").sites.iter().filter(|s| s.to == "runs.Message").map(|s| s.arms.as_slice()).collect();
+    assert_eq!(message, [&[(0, 0)][..], &[(0, 1)][..]], "one struct expression in each arm of one choice");
+    let level = &node(&c, "runs.Level.prefix").compares;
+    assert!(level.len() == 1 && level[0].receiver && level[0].members == ["Level::Quiet", "Level::Loud"], "{level:?}");
+
+    let asked: Vec<_> = check(&s).into_iter().filter(|f| f.principle == "choices").collect();
+    let at = |id: &str| asked.iter().find(|f| f.node == id).unwrap_or_else(|| panic!("{id} is asked: {asked:#?}"));
+    assert_eq!(
+        asked.iter().map(|f| f.node.as_str()).collect::<Vec<_>>(),
+        ["runs.Runner", "runs.retries", "runs.verbosity", "runs.prefix", "runs.run"]
+    );
+    assert_eq!(at("runs.Runner").what, "Runner.batch and Runner.workers test `self.mode` in 2 places; \"parallel\" (2×) come back");
+    assert_eq!(at("runs.retries").what, "retries and timeout test `mode` in 2 places; \"parallel\" (2×) come back");
+    assert_eq!(
+        at("runs.verbosity").evidence,
+        ["line 67: m (settings.mode) against \"parallel\"", "line 68: m (settings.mode) against \"parallel\""],
+        "the local `m` is the value it is bound to"
+    );
+    assert_eq!(
+        at("runs.prefix").evidence,
+        ["line 72 in prefix: level against Level::Loud", "line 80 in suffix: level against Level::Loud, Level::Quiet"]
+    );
+    assert!(at("runs.run").what.contains("(load | infer)"), "{}", at("runs.run").what);
+    // the shortcut still runs the job and sends its line
+    assert!(edge(&s, EdgeKind::Calls, "runs.run", "runs.send") && edge(&s, EdgeKind::Calls, "runs.run", "runs.load"));
 }

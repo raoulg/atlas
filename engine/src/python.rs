@@ -2470,7 +2470,18 @@ fn link_calls<'t>(
         b.ends();
         b.read
     };
-    let compares = (!in_module).then(|| crate::tree::compares(body, &m.src, steps.choices(), &COMPARES, &CHOICES));
+    let compares = (!in_module).then(|| {
+        // a qualifier is a type when ty says it is a class, or when it names a class of the program
+        let facts = types.of(&crate::tree::path_str(&m.path));
+        let is_type = |(a, b): (usize, usize)| {
+            facts.and_then(|f| f.value((a, b))).is_some_and(|v| v.is_class) || {
+                let parts: Vec<String> = String::from_utf8_lossy(&m.src[a..b]).split('.').map(str::to_string).collect();
+                resolve(m, &parts, modules, &store.nodes, own).and_then(|t| store.nodes.get(&t)).is_some_and(|t| t.kind == NodeKind::Class)
+            }
+        };
+        let receiver = n.params.iter().find(|p| p.receiver && !n.on_class).map(|p| p.name.as_str());
+        crate::tree::compares(body, &m.src, steps.choices(), &COMPARES, &CHOICES, &crate::tree::Scope { receiver, is_type: &is_type })
+    });
     steps.finish(store, id);
     if let Some(node) = store.nodes.get_mut(id) {
         node.calls_handed = read.unresolved.iter().any(|(u, _)| n.params.iter().any(|p| &p.name == u));
@@ -3229,43 +3240,65 @@ const USES: UseSyntax = UseSyntax {
     keeps: &["attribute", "subscript"],
 };
 
-/// The string literals an operand names: `"a"`, or every element of `{"a", "b"}`.
-fn string_cases(n: TsNode, src: &[u8]) -> Option<Vec<String>> {
-    match n.kind() {
-        "string" if n.child_by_field_name("interpolation").is_none() && !named_children(n).iter().any(|c| c.kind() == "interpolation") => {
-            Some(vec![unquote(text(n, src))])
-        }
-        "set" | "list" | "tuple" => {
-            let items = named_children(n);
-            (!items.is_empty() && items.iter().all(|i| i.kind() == "string"))
-                .then(|| items.iter().map(|i| unquote(text(*i, src))).collect())
-        }
-        _ => None,
-    }
-}
-
-/// Python's comparisons: `==`, `!=`, `in` and `not in` against strings, and a `match` over them.
+/// Python's comparisons: `==`, `!=`, `is`, `is not`, `in` and `not in` against strings or the
+/// members of a class (`Mode.FAST`), and a `match` over them.
 const COMPARES: CompareSyntax = CompareSyntax {
     kinds: &["comparison_operator", "match_statement"],
     operands: tested,
-    cases: string_cases,
+    each: |n| match n.kind() {
+        "set" | "list" | "tuple" => named_children(n).into_iter().filter(|i| i.kind() != "comment").collect(),
+        _ => vec![n],
+    },
+    literal: |n, src| {
+        (n.kind() == "string" && !named_children(n).iter().any(|c| c.kind() == "interpolation")).then(|| unquote(text(n, src)))
+    },
+    member: |n| match n.kind() {
+        "attribute" => n
+            .child_by_field_name("object")
+            .filter(|o| matches!(o.kind(), "identifier" | "attribute"))
+            .map(|o| (o.start_byte(), o.end_byte())),
+        // a value pattern: `case Mode.FAST:`
+        "dotted_name" => {
+            let parts = named_children(n);
+            (parts.len() > 1).then(|| (parts[0].start_byte(), parts[parts.len() - 2].end_byte()))
+        }
+        _ => None,
+    },
     subject: |n| matches!(n.kind(), "identifier" | "attribute" | "subscript"),
     over: matched,
+    copies: |n| match n.kind() {
+        "assignment" => n.child_by_field_name("left").zip(n.child_by_field_name("right")),
+        "named_expression" => n.child_by_field_name("name").zip(n.child_by_field_name("value")),
+        _ => None,
+    },
+    place: |n| matches!(n.kind(), "identifier" | "attribute" | "subscript").then_some(n),
+    binds: USES.binds,
 };
 
-/// The two operands of a test of equality or membership.
+/// The two operands of a test of equality, identity or membership.
 fn tested<'t>(n: TsNode<'t>, src: &[u8]) -> Option<(TsNode<'t>, TsNode<'t>)> {
     let op = field_children(n, "operators").iter().map(|o| text(*o, src)).collect::<Vec<_>>().join(" ");
     match (op.as_str(), named_children(n).as_slice()) {
-        ("==" | "!=" | "in" | "not in", [l, r]) => Some((*l, *r)),
+        ("==" | "!=" | "is" | "is not" | "in" | "not in", [l, r]) => Some((*l, *r)),
         _ => None,
     }
 }
 
-/// A `match`: its subject, the strings of its case patterns, and the block that holds the cases.
-fn matched<'t>(n: TsNode<'t>, src: &[u8]) -> Option<(String, Vec<String>, Option<TsNode<'t>>)> {
+/// A `match`: its subject, the cases of its patterns (each string, and each value pattern alone
+/// or among alternatives: `case Mode.FAST | Mode.SLOW:`), and the block that holds the cases.
+fn matched<'t>(n: TsNode<'t>, src: &[u8]) -> Option<(String, Vec<TsNode<'t>>, Option<TsNode<'t>>)> {
+    fn values(p: TsNode) -> Vec<TsNode> {
+        named_children(p)
+            .into_iter()
+            .flat_map(|c| match c.kind() {
+                "dotted_name" => vec![c],
+                "union_pattern" => values(c),
+                _ => vec![],
+            })
+            .collect()
+    }
     let (Some(subject), Some(block)) = (n.child_by_field_name("subject"), n.child_by_field_name("body")) else { return None };
-    let cases = walk(block, &["case_pattern"]).into_iter().flat_map(|p| walk(p, &["string"])).map(|s| unquote(text(s, src))).collect();
+    let cases = walk(block, &["case_pattern"]).into_iter().flat_map(|p| walk(p, &["string"]).into_iter().chain(values(p))).collect();
     Some((text(subject, src).to_string(), cases, Some(block)))
 }
 

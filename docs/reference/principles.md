@@ -58,7 +58,7 @@ lets it be traced and Atlas does not yet; each gap is an ignored test in `pairs_
 | places | finding; where the path is made whole | finding; where the path is made whole | finding; where the path is made whole |
 | changes | mutates edge; finding | mutates edge; finding | forbidden: a change is `&mut` in the signature |
 | gives | finding; the call not followed | no returns edge; `uses` on the call | returns edge; `Result<T, E>` gives `T` |
-| choices | finding | finding | finding |
+| choices | finding; a field read through `self` in a class's methods, a parameter by name and type in a module's functions, an `Enum` member | finding; `this` is the value a method runs on, an `enum` member | finding; a field read through `self` in an `impl`'s methods, a variant without fields |
 | nothing | finding | finding | finding |
 | layers | finding | finding | finding; a call among a macro's tokens is a step |
 | lens | finding; takes, returns and has; the steps a value is handed to, a container's `append` among them | finding; takes and returns; the tables a store's client runs statements on; a `push` onto an array the body declares | finding; takes and returns; the tables a store's connection runs statements on; a `push` onto a `Vec` |
@@ -298,14 +298,17 @@ Id: `choices`.
 
 Code chooses: which experiment, which criterion, where a value comes from. A choice that
 is made in one place, under a name, is one thing to read and one thing to change. A
-choice spread over a body is neither.
+choice spread over a body, or over the functions of a module, is neither.
 
 Two shapes of the same problem:
 
 - **A value handed in is tested in several places.** `mode == "parallel"` here,
-  `mode in {"weighted", "parallel"}` there: what `"parallel"` means is spelled out again
-  in each place, and a new mode is a change in all of them (Fowler's *repeated switches*).
-  Made once, the choice becomes a table or a type that says what each case stands for.
+  `mode in {"weighted", "parallel"}` there, in one body or in two functions: what
+  `"parallel"` means is spelled out again in each place, and a new mode is a change in all
+  of them (Fowler's *repeated switches*). Made once, the choice becomes a table or a type
+  that says what each case stands for. A test of an enumeration's member
+  (`mode is Mode.FAST`) is the same test as one of a string: the type names the cases, and
+  the choice is still spelled out in each place.
 - **Alternatives sit between other steps.** `load(p)` or `find(g)` or `infer(g)`: three
   ways to get one value, in the middle of a body that also does other things. Where the
   value comes from is a step of its own; given a name, the body reads as its steps
@@ -314,22 +317,76 @@ Two shapes of the same problem:
 - **Python.** A `Literal["a", "b"]` or an `Enum` for the cases, and one dict from case
   to what it means: `EXPERIMENTS: dict[str, Experiment]`, with `Experiment` a dataclass
   ([PEP 557](https://peps.python.org/pep-0557/)) holding the facts each `if` asked
-  about. A choice between steps becomes a function whose body is that choice, written
-  with `match` ([PEP 634](https://peps.python.org/pep-0634/)) or `if`/`elif`.
+  about, or methods on the `Enum` that each `match` the value they run on once. A choice
+  between steps becomes a function whose body is that choice, written with `match`
+  ([PEP 634](https://peps.python.org/pep-0634/)) or `if`/`elif`.
+- **TypeScript.** An `enum` (or a union of string literals) for the cases, and one
+  `Record<Mode, Plan>` from case to what it means. A choice between steps becomes a function
+  whose body is that choice.
 - **Rust.** An `enum` for the cases with one `match`, and methods on the enum for what
   each case means. A choice between steps becomes a function whose body is the `match`
   (or the `unwrap_or_else` chain).
 
 Atlas records, for every call, the arms of the choices it sits in (`if`/`elif`/`else`,
-`match`, `try`/`except`, `a if c else b`, `x or y`; Rust's `if`, `match` and
+`match`, `try`/`except`, `a if c else b`, `x or y`; TypeScript's `if`, `switch`,
+`try`/`catch`, `c ? a : b`, `x || y`, `x ?? y`; Rust's `if`, `match` and
 `unwrap_or_else`/`or_else`), the name the body keeps its value by, through the arms of a
-choice (`g = a() if c else b()`), and for every comparison of a value with string literals,
-the choice it decides. It checks: a parameter (or `self`) tested against the same literal
-in two or more places, and alternatives in two or more arms that each make a value of one
-type for one later step of the body, by the name it is kept by or handed straight on. It
-reads every call as its own step, so the same constructor in two arms is two alternatives.
-A choice whose value the body returns, or whose arms each finish their own case, is the
-body's name, not a step without one.
+choice (`g = a() if c else b()`), and for every comparison of a value with its cases, the
+choice it decides.
+
+A case is a string literal or a member of a type: `Mode.FAST`, `Mode.Fast`, `Mode::Fast`.
+Python reads a member where ty says its qualifier is a class, or where the qualifier names one
+of the program's classes; TypeScript where the qualifier names one of the program's enums or
+classes; Rust where the qualifier is written as a type's name, in upper camel case, which the
+compiler's naming lints hold every type to. In a `match` or a `switch`, a member is a case on
+its own or among alternatives (`Mode::Fast | Mode::Slow`); a variant taken apart
+(`Shape::Circle(r)`, `case Point(x=0)`) is a sum unwrapped, which `sums` reads, and no case.
+The value tested is the value as the body was handed it: a name the body binds once to a value
+it reads in place (`m = args.mode`, `const l = this.level`, `let m = &self.mode`) is that
+value, so `m == "fast"` tests `args.mode`.
+
+It checks two things.
+
+- **One value tested against the same case in two or more places.** A value is the same
+  across bodies where the graph says so. A field of a class read through the value its
+  methods run on (`self.mode` in Python and Rust, `this.mode` in TypeScript) is one value in
+  every method of that class. A parameter of one name and written type (`mode: str`), and
+  what is read through its fields, its items at a literal and, in Rust, its calls that are
+  handed nothing (`args.mode`, `parts[0]`, `n.kind()`), is one value in every function of
+  its module, methods among them. Any other value a body is handed, the value a method runs
+  on itself among them (`match self` in an enum's own methods), is one value in that body.
+  A place is a choice, or a comparison that decides none on its own line, in one body. The
+  finding stands where the value is defined: at the class, or at the first function that
+  tests it. It names every function that tests the value and the cases that come back, and
+  its evidence lists each test with its line.
+- **Alternatives that get one value by different steps, between other steps.** Two or more
+  arms that each make a value of one type for one later step of the body, by the name it is
+  kept by or handed straight on, each by a step of its own (`load(p) if c else infer(p)`).
+  Arms that each make the value by the same step (`Message("on") if c else Message("off")`)
+  are that one step with a choice of what it is handed, the same arrow as
+  `Message("on" if c else "off")`: by the law of the coproduct, `h ∘ [f, g] = [h ∘ f, h ∘ g]`.
+  They choose an argument, not where the value comes from, and are not asked. A choice whose
+  value the body returns, or whose arms each finish their own case, is the body's name, not
+  a step without one.
+
+What the rule cannot see:
+
+- **Sameness beyond the class and the module.** A field read through another value of the
+  class (`other.mode`), the methods of a subclass or a mixin, a parameter of the same name in
+  another module, and a value handed on to another function under a new name are each a
+  value of their own. A value read through a call that is handed something, or through
+  another name (`self.nodes[t].kind`), is its body's own.
+- **A parameter's name and written type are all it knows of sameness across functions.** Two
+  functions whose `n: Node` are different nodes test one value to the rule; two that write
+  one type differently (`TsNode` and `TsNode<'t>`) test two.
+- **A value made from the one handed in.** `mode.lower() == "fast"` in Python and TypeScript
+  is no comparison of `mode`; Rust reads a call on a handed value as a value of its own, so
+  `self.mode.as_str()` and `self.mode` are two. A local bound twice, or bound to what a call
+  or an operator gives (`m = args.mode or "fast"`), stands for no handed value.
+- **Cases it does not read.** A number compared (`level == 2`) is no case: a number is rarely
+  a type code, and a test of a threshold or a count is written the same way. A member of a
+  library's enumeration is no case in TypeScript, nor in Python where ty does not know the
+  library. Rust's `matches!` is read for its strings, not its members.
 
 A student's exam project: `run_standard_experiment(args)` tests `args.experiment` in four
 places, and `"parallel"` comes back three times. One `Experiment` per name, holding
