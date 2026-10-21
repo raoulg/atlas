@@ -19,6 +19,17 @@ fn copy_tree(from: &Path, to: &Path) {
     }
 }
 
+/// The `clean` side of a prophecy pair, copied to a directory of its own named after `name`, that
+/// the caller removes with its parent.
+#[allow(dead_code)]
+pub fn clean_copy(language: &str, name: &str) -> PathBuf {
+    let pair = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/prophecy").join(language).join("clean");
+    let copy = std::env::temp_dir().join(format!("atlas-{name}-{language}-{}", std::process::id())).join("clean");
+    let _ = std::fs::remove_dir_all(copy.parent().expect("has a parent"));
+    copy_tree(&pair, &copy);
+    copy
+}
+
 /// The `clean` side of a prophecy pair with `addition` appended to its file `file`, as a vision
 /// that is decided: what `prophetize` writes, and the revelation of the tree it is written into.
 /// The pair itself stays as it is; the tree is a copy.
