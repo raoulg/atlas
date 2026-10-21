@@ -61,10 +61,6 @@ figure.output img{width:100%;height:auto;display:block;padding:14px 18px}
 .inside .more{margin:0;padding:4px 18px 16px;font-size:14px;color:var(--ink-2)}
 .inside .more a{color:var(--ink);text-decoration-color:var(--accent);text-underline-offset:3px}
 @media (max-width:760px){.inside dl{grid-template-columns:1fr;gap:2px}.inside dd{margin-bottom:10px}}
-.cmds{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:20px}
-.cmds div{background:var(--panel);border:1px solid var(--line);padding:18px}
-.cmds code{font-family:var(--mono);font-size:14px;display:block;margin-bottom:6px}
-.cmds span{color:var(--ink-2);font-size:15px}
 .os{font-size:14px;color:var(--ink-2);margin:16px 0 6px}
 .os:first-of-type{margin-top:0}
 pre{font-family:var(--mono);font-size:13px;background:var(--panel);border:1px solid var(--line);padding:14px 16px;overflow-x:auto;margin:0}
@@ -387,7 +383,7 @@ section{margin-bottom:104px}
       <p class="os">Claude Code</p>
       <pre>claude mcp add --scope user atlas -- atlas mcp</pre>
       <p class="os">Codex</p>
-      <pre>codex mcp add atlas -- atlas mcp</pre>
+      <pre>codex mcp add atlas -- &quot;$(command -v atlas)&quot; mcp</pre>
       <p>Then run <code>atlas serve</code> in a repository and open the page it prints. What follows is one real session with Claude Code on the sunspots program: what was said in the chat, and what the page showed.</p>
     </div>
     <div class="session">
@@ -623,19 +619,12 @@ def run_cycles(raw: Path = RAW, figure: Path = FIGURE, months: int = 13, years: 
   <pre>irm https://raw.githubusercontent.com/raoulg/atlas/main/install.ps1 | iex</pre>
   <p class="os">From source, with a <a href="https://rustup.rs">Rust toolchain</a></p>
   <pre>cargo install --locked --git https://github.com/raoulg/atlas atlas</pre>
-  <div class="cmds" style="margin-top:20px">
-    <div><code>atlas serve</code><span>the picture of the repository you are in, to work in with your agent</span></div>
-    <div><code>atlas view</code><span>the same picture as one HTML file, to keep or send</span></div>
-    <div><code>atlas check</code><span>where the code and eleven design principles disagree</span></div>
-    <div><code>atlas changes</code><span>what your edit did to the routes</span></div>
-    <div><code>atlas mcp</code><span>the picture for your coding agent</span></div>
-  </div>
-  <p class="os">The nightly build, from <code>next</code></p>
-  <pre>ATLAS_CHANNEL=nightly sh -c "$(curl -fsSL https://raw.githubusercontent.com/raoulg/atlas/next/install.sh)"</pre>
+  <p class="explain" style="margin-top:20px">And then <code>atlas serve</code>.</p>
   <p class="os" style="margin-top:20px">Your coding agent, once for every project</p>
   <pre>claude mcp add --scope user atlas -- atlas mcp
 codex mcp add atlas -- &quot;$(command -v atlas)&quot; mcp</pre>
   <p class="explain">Claude Code's <code>--scope user</code> makes Atlas available in every project. Codex keeps its servers in one configuration for all projects and starts them without your shell's <code>PATH</code>, so it is given the binary's full path, which <code>command -v atlas</code> prints. Then <code>atlas serve</code> in any repository is all it takes: the agent's <code>atlas mcp</code> works on the repository the agent runs in, and shares the page with you.</p>
+  <p class="explain">Homebrew, the nightly build and how Atlas tells you about updates: <a href="reference/install.md">install</a>.</p>
 </section>
 
 <footer>
