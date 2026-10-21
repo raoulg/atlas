@@ -1,3 +1,40 @@
+# A call into a family runs one of its overrides: `Handler.handle` and `Handler.log` each run their own body or
+# `ClickHandler`'s, on the Handler the caller calls them on. What the caller hands the base's method is what the override
+# is handed: `handle` an Event, `log` a Click, each a value from beyond. The base's own body (the dispatch's own arrow)
+# reads the value it is handed, not the Handler. Each result, a string, goes back to the dispatch that ran it.
 # the override's result has the dispatch's own moment: closed, its line into the dispatch is dropped, open it is drawn
 known #102 fault more t:clean.shapes.Circle@n:clean.shapes.Factory/clean.shapes.Factory.make>n:clean.shapes.Factory/clean.shapes.Factory.make
 known #102 fault no line Circle@Factory()/Factory.make > Factory()/Factory.make
+
+route clean.handlers.Handler
+step Handler()/Handler.handle
+step Handler()/Handler.handle/ClickHandler.handle
+step Handler()/Handler.log
+step Handler()/Handler.log/ClickHandler.log
+
+line entry > Handler()/Handler.handle call
+line entry > Handler()/Handler.log call
+known #100 line Handler > Handler()/Handler.handle/ClickHandler.handle value
+known #100 line Handler > Handler()/Handler.log/ClickHandler.log value
+known #new line Event > Handler()/Handler.handle value                  # handle's own body reads e.name
+line Event > Handler()/Handler.handle/ClickHandler.handle value
+line Click > Handler()/Handler.log value
+known #100 line Click > Handler()/Handler.log/ClickHandler.log value
+line Handler()/Handler.handle/ClickHandler.handle > Handler()/Handler.handle back
+line Handler()/Handler.log/ClickHandler.log > Handler()/Handler.log back
+
+home Handler Handler()
+home Event Handler()
+home Click Handler()
+
+side entry left
+
+# each override takes a value of its own class, and of the type its own signature names, from beyond; the Handler ends
+# at the border of the dispatch
+known #100 extra line Handler > Handler()/Handler.handle value
+known #100 extra line Handler > Handler()/Handler.log value
+known #100 extra line ClickHandler > Handler()/Handler.handle/ClickHandler.handle value
+known #100 extra line ClickHandler > Handler()/Handler.log/ClickHandler.log value
+known #100 extra line Named > Handler()/Handler.log/ClickHandler.log value
+known #100 extra home ClickHandler Handler()
+known #100 extra home Named Handler()

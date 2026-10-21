@@ -1,0 +1,35 @@
+# A lens on the board's file: `pin` puts a Notice into the file and `posts` gets it back as the Posts the file holds, a
+# Notice being a Post. The route of an exported class is its constructor and its public methods, in the order the class
+# lists them, each called by the class's caller and run on the Board the constructor built; so the file stands between
+# the put and the get. What a method gives goes back to that caller, beyond the plan.
+
+route club.files.Board
+step Board()/Board()
+step Board()/Board.pin
+step Board()/Board.posts
+step Board()/Board.posts/Notice()
+
+line entry > Board()/Board() call
+line entry > Board()/Board.pin call
+line entry > Board()/Board.posts call
+line Board()/Board() > Board@Board()/Board() value
+line Board@Board()/Board() > Board()/Board.pin value             # the Board each method runs on
+line Board@Board()/Board() > Board()/Board.posts value
+known #new line Notice·notice > Board()/Board.pin value          # new-A: pin's parameter, by the name that holds it
+line Board()/Board.pin > Disk(self.path) own
+line Disk(self.path) > Board()/Board.posts own
+line Board()/Board.posts/Notice() > Notice@Board()/Board.posts/Notice() value
+line Notice@Board()/Board.posts/Notice() > Board()/Board.posts value   # posts hands back the Notice it built
+line Board()/Board.posts > Post@Board()/Board.posts value        # as the Posts its signature gives
+
+home Board@Board()/Board() Board()
+known #new home Notice·notice Board()
+home Notice@Board()/Board.posts/Notice() Board()/Board.posts
+home Post@Board()/Board.posts Board()
+
+side entry left
+side Disk(self.path) between
+
+# new-A: the parameter of a method the entry calls has lost its name
+known #new extra line Notice > Board()/Board.pin value
+known #new extra home Notice Board()

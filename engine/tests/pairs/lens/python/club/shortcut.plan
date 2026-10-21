@@ -1,0 +1,28 @@
+# The shortcut's board: `pin` puts a Notice into the file, and `posts` gives back what the file holds as dicts, of no
+# type of the code's: the Notice goes in and no type comes out. `posts` returns what it read, so it uses it, and the
+# file stands between the put and the get as on the clean side.
+
+route club.files.Board
+step Board()/Board()
+step Board()/Board.pin
+step Board()/Board.posts
+
+line entry > Board()/Board() call
+line entry > Board()/Board.pin call
+line entry > Board()/Board.posts call
+line Board()/Board() > Board@Board()/Board() value
+line Board@Board()/Board() > Board()/Board.pin value
+line Board@Board()/Board() > Board()/Board.posts value
+known #new line Notice·notice > Board()/Board.pin value          # new-A
+line Board()/Board.pin > Disk(self.path) own
+line Disk(self.path) > Board()/Board.posts own
+
+home Board@Board()/Board() Board()
+known #new home Notice·notice Board()
+
+side entry left
+known #76 side Disk(self.path) between                         # Atlas: right, as if what posts returns were unused
+
+# new-A: the parameter of a method the entry calls has lost its name
+known #new extra line Notice > Board()/Board.pin value
+known #new extra home Notice Board()

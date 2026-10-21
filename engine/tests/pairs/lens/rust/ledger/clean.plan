@@ -1,0 +1,58 @@
+# A lens whose focus is a library's type: `put` writes a Decimal into the file and `get` gives it back inside an Entry.
+# The route of the exported struct is its public functions, each called by its caller, run on the Ledger `new` built.
+# What `get` reads and parses are steps of their own, a library's operations whose results the body names; the amount
+# is of no type the code writes, so it is `_`.
+
+route books.Ledger
+step Ledger()/Ledger.new
+known #74 step Ledger()/Ledger.new/Ledger()                      # the struct built by its literal
+step Ledger()/Ledger.put
+step Ledger()/Ledger.get
+step Ledger()/Ledger.get/read_to_string
+step Ledger()/Ledger.get/map_err                                 # `Decimal::from_str(text.trim()).map_err(..)`, named `amount`
+step Ledger()/Ledger.get/Entry()
+
+line entry > Ledger()/Ledger.new call
+line entry > Ledger()/Ledger.put call
+line entry > Ledger()/Ledger.get call
+
+line Ledger()/Ledger.new/Ledger() > Ledger@Ledger()/Ledger.new/Ledger() value
+line Ledger@Ledger()/Ledger.new/Ledger() > Ledger()/Ledger.new value
+line Ledger()/Ledger.new > Ledger@Ledger()/Ledger.new value
+line Ledger@Ledger()/Ledger.new > Ledger()/Ledger.put value
+line Ledger@Ledger()/Ledger.new > Ledger()/Ledger.get value
+
+known #new line Decimal·amount > Ledger()/Ledger.put value       # new-A: put's parameter, a library's type
+line Ledger()/Ledger.put > Disk(self.path) own
+
+line Disk(self.path) > Ledger()/Ledger.get own
+line Ledger()/Ledger.get/read_to_string > _·text@Ledger()/Ledger.get/read_to_string value
+known #new line _·text@Ledger()/Ledger.get/read_to_string > Ledger()/Ledger.get/map_err value   # new-C: from_str's result goes into map_err
+line Ledger()/Ledger.get/map_err > _·amount@Ledger()/Ledger.get/map_err value
+line _·amount@Ledger()/Ledger.get/map_err > Ledger()/Ledger.get/Entry() value
+line Ledger()/Ledger.get/Entry() > Entry@Ledger()/Ledger.get/Entry() value
+line Entry@Ledger()/Ledger.get/Entry() > Ledger()/Ledger.get value
+line Ledger()/Ledger.get > Entry@Ledger()/Ledger.get value
+
+home Ledger@Ledger()/Ledger.new/Ledger() Ledger()/Ledger.new
+home Ledger@Ledger()/Ledger.new Ledger()
+known #new home Decimal·amount Ledger()
+home _·text@Ledger()/Ledger.get/read_to_string Ledger()/Ledger.get
+home _·amount@Ledger()/Ledger.get/map_err Ledger()/Ledger.get
+home Entry@Ledger()/Ledger.get/Entry() Ledger()/Ledger.get
+home Entry@Ledger()/Ledger.get Ledger()
+
+side entry left
+side Disk(self.path) between
+
+# building the exported struct runs its public functions, `new` among them, so the literal is read as recursive
+known #74 extra step Ledger()/Ledger.new/Ledger() recursive
+# new-A: the parameter of a function the entry calls has lost its name
+known #new extra line Decimal > Ledger()/Ledger.put value
+known #new extra home Decimal Ledger()
+# new-C: a call whose result goes into the named call around it is a step of its own
+known #new extra step Ledger()/Ledger.get/from_str
+known #new extra line _·text@Ledger()/Ledger.get/read_to_string > Ledger()/Ledger.get/from_str value
+known #new extra line Ledger()/Ledger.get/from_str > _·amount@Ledger()/Ledger.get/from_str value
+known #new extra line _·amount@Ledger()/Ledger.get/from_str > Ledger()/Ledger.get/map_err value
+known #new extra home _·amount@Ledger()/Ledger.get/from_str Ledger()/Ledger.get

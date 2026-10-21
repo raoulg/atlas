@@ -1,0 +1,78 @@
+# A job run in one of two modes, with the shortcut: where the job comes from is a choice between `load` and `infer`
+# in the middle of `run`, between its other steps; the mode is a str, handed to each function that tests it again.
+
+route runs.core.run
+choice run/?1
+step run/?1/load
+step run/?1/load/Job()
+step run/?1/infer
+step run/?1/infer/Job()
+step run/finished
+step run/finished/Runner()
+step run/finished/Runner.batch
+step run/finished/timeout
+step run/prefix
+step run/suffix
+step run/Message()
+step run/send
+step run/retries
+step run/verbosity
+
+line entry > run call
+line Settings·settings > run value
+line Settings·settings > run/verbosity value
+
+# where the job comes from, between the other steps
+line run/?1/load/Job() > Job@run/?1/load/Job() value
+line Job@run/?1/load/Job() > run/?1/load value
+line run/?1/load > Job·job@run/?1 value
+line run/?1/infer/Job() > Job@run/?1/infer/Job() value
+line Job@run/?1/infer/Job() > run/?1/infer value
+line run/?1/infer > Job·job@run/?1 value
+line Job·job@run/?1 > run/finished value                          # finished counts its steps
+line Job·job@run/?1 > run value                                   # run writes its name into the text
+
+# whether it finished
+line run/finished/Runner() > Runner@run/finished/Runner() value
+line Runner@run/finished/Runner() > run/finished/Runner.batch value
+line run/finished/Runner.batch > run/finished back
+line run/finished/timeout > run/finished back
+known #101 line run/finished > _·done@run/finished value
+known #101 line _·done@run/finished > run value                   # run chooses " done" or " failed" by it
+
+# the line that says how it went: the level, read from the settings, held by no name
+line Level > run/prefix value
+line Level > run/suffix value
+line run/prefix > run back
+line run/suffix > run back
+line run/Message() > Message@run/Message() value
+line Message@run/Message() > run/send value
+line run/send > Screen own
+line run/send > run back
+line run/retries > run back
+line run/verbosity > run back
+
+home Settings·settings run
+home Level run
+home Job@run/?1/load/Job() run/?1/load
+home Job@run/?1/infer/Job() run/?1/infer
+home Job·job@run/?1 run
+home Runner@run/finished/Runner() run/finished
+known #101 home _·done@run/finished run
+home Message@run/Message() run
+
+side entry left
+side Screen right
+
+# the named bool goes back to run instead of being a value
+known #101 extra line run/finished > run back
+
+# a value whose field is read into a call's argument counts as handed to that call
+known #new extra line Settings·settings > run/finished value
+known #new extra line Settings·settings > run/prefix value
+known #new extra line Settings·settings > run/suffix value
+known #new extra line Settings·settings > run/retries value
+
+# an opened step's own arrow takes what its steps make, though only a step inside takes it
+known #new extra line Runner@run/finished/Runner() > run/finished value
+known #new extra line Message@run/Message() > run value

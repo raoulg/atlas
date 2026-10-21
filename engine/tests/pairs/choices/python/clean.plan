@@ -1,0 +1,92 @@
+# A job run in one of two modes. Each choice is made once, in a place with a name: where the job comes from is the
+# body of `source`, a choice between `load` and `infer` whose Job either arm makes; `report` builds its Message by one
+# constructor in either arm, the level's own method marking it. The settings are the route's own value; the mode and
+# the level `run` reads from them, each held by its field, are the values it hands its steps.
+
+route runs.core.run
+step run/source
+choice run/source/?1
+step run/source/?1/load
+step run/source/?1/load/Job()
+step run/source/?1/infer
+step run/source/?1/infer/Job()
+step run/finished
+step run/finished/Runner()
+step run/finished/Runner.batch
+step run/report
+choice run/report/?1
+step run/report/?1/Level.prefix
+step run/report/?1/Message()
+step run/report/?1/Level.suffix
+step run/report/?1/Message()#2
+step run/report/send
+
+line entry > run call
+line Settings·settings > run value                                 # run reads the mode and the level from it
+
+# where the job comes from
+line run/source/?1/load/Job() > Job@run/source/?1/load/Job() value
+line Job@run/source/?1/load/Job() > run/source/?1/load value
+line run/source/?1/load > Job@run/source/?1 value
+line run/source/?1/infer/Job() > Job@run/source/?1/infer/Job() value
+line Job@run/source/?1/infer/Job() > run/source/?1/infer value
+line run/source/?1/infer > Job@run/source/?1 value
+line Job@run/source/?1 > run/source value                          # source hands back the Job either arm made
+line run/source > Job·job@run/source value
+line Job·job@run/source > run/finished value                       # finished counts its steps
+line Job·job@run/source > run/report value                         # report writes its name
+
+# whether it finished: a Runner for the mode, and the mode's timeout
+known #new line Mode·mode > run/finished value                     # finished looks up the mode's plan itself
+line Mode·mode > run/finished/Runner() value
+line run/finished/Runner() > Runner@run/finished/Runner() value
+line Runner@run/finished/Runner() > run/finished/Runner.batch value
+line run/finished/Runner.batch > run/finished back
+line run/finished > _@run/finished value                           # the bool, handed straight to report
+line _@run/finished > run/report value
+
+# the line that says how it went: what the level's method gives goes into the Message built around it
+line Level·level > run/report/?1/Level.prefix value
+line Level·level > run/report/?1/Level.suffix value
+line run/report/?1/Level.prefix > _@run/report/?1 value
+line _@run/report/?1 > run/report/?1/Message() value
+line run/report/?1/Level.suffix > _@run/report/?1#2 value
+line _@run/report/?1#2 > run/report/?1/Message()#2 value
+line run/report/?1/Message() > Message·message@run/report/?1 value
+line run/report/?1/Message()#2 > Message·message@run/report/?1 value
+line Message·message@run/report/?1 > run/report/send value
+line run/report/send > Screen own
+line run/report/send > run/report back
+line run/report > run back
+
+home Settings·settings run
+home Mode·mode run
+home Level·level run
+home Job@run/source/?1/load/Job() run/source/?1/load
+home Job@run/source/?1/infer/Job() run/source/?1/infer
+home Job@run/source/?1 run/source
+home Job·job@run/source run
+home Runner@run/finished/Runner() run/finished
+home _@run/finished run
+home _@run/report/?1 run/report/?1
+home _@run/report/?1#2 run/report/?1
+home Message·message@run/report/?1 run/report
+
+side entry left
+side Screen right
+
+# a value whose field is read into a call's argument counts as handed to that call
+known #new extra line Settings·settings > run/finished value
+known #new extra line Settings·settings > run/report value
+known #new extra line Job·job@run/source > run/report/?1/Message() value
+known #new extra line Job·job@run/source > run/report/?1/Message()#2 value
+
+# an opened step's own arrow takes what its steps make, though only a step inside takes it
+known #new extra line Job·job@run/source > run value
+known #new extra line Runner@run/finished/Runner() > run/finished value
+known #new extra line Message·message@run/report/?1 > run/report value
+
+# a result of no type of the code's handed straight to another step goes back to the caller as well
+known #new extra line run/finished > run back
+known #new extra line run/report/?1/Level.prefix > run/report back
+known #new extra line run/report/?1/Level.suffix > run/report back

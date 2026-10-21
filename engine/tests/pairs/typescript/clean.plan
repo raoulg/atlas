@@ -1,3 +1,5 @@
+# Morphisms are functions: what a value is, is what the arrow that makes it gives. The file's JSON comes in as the
+# world has it, and `parseConfig(raw: unknown): Config` turns it into the program's own type, once.
 # the override's result has the dispatch's own moment: closed, its line into the dispatch is dropped, open it is drawn
 known #102 fault more t:clean.model.RateTable@n:clean.cli/0/9/0>n:clean.cli/0/9/0
 known #102 fault more t:clean.model.RateTable@n:clean.ledger.Ledger/clean.ledger.Ledger.exportReport/0/0>n:clean.ledger.Ledger/clean.ledger.Ledger.exportReport/0/0
@@ -7,3 +9,44 @@ known #102 fault no line RateTable@GET /api/report/Ledger.report/RateSource.late
 known #102 fault no line RateTable@Ledger()/Ledger.exportReport/Ledger.report/RateSource.latest > Ledger()/Ledger.exportReport/Ledger.report/RateSource.latest
 known #102 fault no line RateTable@Ledger()/Ledger.report/RateSource.latest > Ledger()/Ledger.report/RateSource.latest
 known #102 fault no line RateTable@cli.ts/main/?2/Ledger.report/RateSource.latest > cli.ts/main/?2/Ledger.report/RateSource.latest
+
+
+route clean.config.loadConfig
+step loadConfig/parseConfig
+step loadConfig/parseConfig/fieldsOf
+step loadConfig/parseConfig/fields.get                                    # const currency = fields.get("currency")
+step loadConfig/parseConfig/fields.get#2                                  # const categories = fields.get("categories")
+step loadConfig/parseConfig/isCurrency
+
+line entry > loadConfig call
+line Disk(loadConfig.file) > loadConfig own                              # the file the route is handed, read and parsed
+line loadConfig/parseConfig/fieldsOf > _·fields@loadConfig/parseConfig/fieldsOf value   # a map of what is still to be checked
+line _·fields@loadConfig/parseConfig/fieldsOf > loadConfig/parseConfig/fields.get value
+line _·fields@loadConfig/parseConfig/fieldsOf > loadConfig/parseConfig/fields.get#2 value
+line loadConfig/parseConfig/fields.get > _·currency@loadConfig/parseConfig/fields.get value
+line loadConfig/parseConfig/fields.get#2 > _·categories@loadConfig/parseConfig/fields.get#2 value
+line _·currency@loadConfig/parseConfig/fields.get > loadConfig/parseConfig/isCurrency value
+line loadConfig/parseConfig/isCurrency > loadConfig/parseConfig back     # whether the currency is one decides the throw
+# parseConfig builds the Config of what it checked, and checks the categories itself (`Array.isArray`, `every`)
+known #101 line _·currency@loadConfig/parseConfig/fields.get > loadConfig/parseConfig value
+known #101 line _·categories@loadConfig/parseConfig/fields.get#2 > loadConfig/parseConfig value
+line loadConfig/parseConfig > Config@loadConfig/parseConfig value
+line Config@loadConfig/parseConfig > loadConfig value                    # loadConfig hands back what parseConfig made
+line loadConfig > Config@loadConfig value                                # and gives it, at its moment
+
+home _·fields@loadConfig/parseConfig/fieldsOf loadConfig/parseConfig
+home _·currency@loadConfig/parseConfig/fields.get loadConfig/parseConfig
+home _·categories@loadConfig/parseConfig/fields.get#2 loadConfig/parseConfig
+home Config@loadConfig/parseConfig loadConfig
+home Config@loadConfig loadConfig
+
+side entry left
+side Disk(loadConfig.file) left
+
+# the map fieldsOf gives is a value the two lookups take, not a result handed back to parseConfig
+known #101 extra line loadConfig/parseConfig/fieldsOf > loadConfig/parseConfig back
+# `categories.every(..)` runs on what `Array.isArray` narrowed to an array: a library operation whose result is named
+# by nothing and that changes nothing, so no occurrence, and the `||` around it no frame
+known #new extra choice loadConfig/parseConfig/?1
+known #new extra step loadConfig/parseConfig/?1/categories.every
+known #new extra line _·categories@loadConfig/parseConfig/fields.get#2 > loadConfig/parseConfig/?1/categories.every value

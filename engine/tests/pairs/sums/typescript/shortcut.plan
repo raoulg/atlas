@@ -1,0 +1,47 @@
+# The knowledge base with the shortcut: `graaf` gives the lines back as records of no type of the code's, so the Bron
+# put by `voegToe` never comes back as a Node: no value of the code's leaves the get.
+
+route shortcut.bank.Kennisbank
+step Kennisbank()/Kennisbank()
+step Kennisbank()/Kennisbank.voegToe
+step Kennisbank()/Kennisbank.voegToe/Kennisbank.write
+step Kennisbank()/Kennisbank.graaf
+
+line entry > Kennisbank()/Kennisbank() call
+line entry > Kennisbank()/Kennisbank.voegToe call
+line entry > Kennisbank()/Kennisbank.graaf call
+
+# the store the constructor builds, which the doors run on
+line Kennisbank()/Kennisbank() > Kennisbank@Kennisbank()/Kennisbank() value
+line Kennisbank@Kennisbank()/Kennisbank() > Kennisbank()/Kennisbank.voegToe/Kennisbank.write value
+line Kennisbank@Kennisbank()/Kennisbank() > Kennisbank()/Kennisbank.graaf value              # graaf reads this.path
+
+known #new line Bron·bron > Kennisbank()/Kennisbank.voegToe value
+line Disk(this.path) > Kennisbank()/Kennisbank.voegToe/Kennisbank.write own
+line Kennisbank()/Kennisbank.voegToe/Kennisbank.write > Disk(this.path) own
+
+line Disk(this.path) > Kennisbank()/Kennisbank.graaf own
+
+home Kennisbank@Kennisbank()/Kennisbank() Kennisbank()
+home Bron·bron Kennisbank()
+
+# the line split in three parts, each held by its name, which the arrow function `graaf` maps the lines by puts into a row
+known #new step Kennisbank()/Kennisbank.graaf/split
+known #new line Kennisbank()/Kennisbank.graaf/split > _·uuid@Kennisbank()/Kennisbank.graaf/split value
+known #new line Kennisbank()/Kennisbank.graaf/split > _·soort@Kennisbank()/Kennisbank.graaf/split value
+known #new line Kennisbank()/Kennisbank.graaf/split > _·tekst@Kennisbank()/Kennisbank.graaf/split value
+known #new line _·uuid@Kennisbank()/Kennisbank.graaf/split > Kennisbank()/Kennisbank.graaf value
+known #new line _·soort@Kennisbank()/Kennisbank.graaf/split > Kennisbank()/Kennisbank.graaf value
+known #new line _·tekst@Kennisbank()/Kennisbank.graaf/split > Kennisbank()/Kennisbank.graaf value
+known #new home _·uuid@Kennisbank()/Kennisbank.graaf/split Kennisbank()/Kennisbank.graaf
+known #new home _·soort@Kennisbank()/Kennisbank.graaf/split Kennisbank()/Kennisbank.graaf
+known #new home _·tekst@Kennisbank()/Kennisbank.graaf/split Kennisbank()/Kennisbank.graaf
+
+side entry left
+known #new side Disk(this.path) both          # voegToe reads what the file held and changes it: Atlas says right
+
+# a door's parameter is a value from beyond without its name; the Bron's fields, written into the string `write` is
+# handed, count as the Bron handed to it
+known #new extra line Bron > Kennisbank()/Kennisbank.voegToe value
+known #new extra home Bron Kennisbank()
+known #new extra line Bron·bron > Kennisbank()/Kennisbank.voegToe/Kennisbank.write value

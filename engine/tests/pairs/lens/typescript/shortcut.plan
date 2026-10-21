@@ -1,0 +1,121 @@
+# The shortcut's store: readings come back as Readings, but outages come back as the lines they are kept as, and a
+# summary is kept and given back as a line; the Outage that `saveOutage` puts no get gives back, and no Summary type
+# exists. `summary` returns the kept line when there is one (`if (kept) return kept`), else reads the day's readings and
+# writes the new line: the code after the early return is the other arm of that choice. A library's operation whose
+# result the body names (`readFileSync`, `find`, `map`) is a step; what it touches stays its caller's. Each file is
+# read, used and written by the route: it stands on both sides.
+#
+# #new: new-A a parameter at the own arrow by its type, new-B an own arrow taking every class its steps build, new-C an
+# unnamed call in a chain a step, new-F a class's read-and-written place between, new-G an own arrow dropping a value
+# it uses and hands on, new-L the code after an early return no arm.
+
+route shortcut.store.ReadingStore
+step ReadingStore()/ReadingStore()
+step ReadingStore()/ReadingStore.save
+step ReadingStore()/ReadingStore.history
+step ReadingStore()/ReadingStore.history/Reading()
+step ReadingStore()/ReadingStore.saveOutage
+step ReadingStore()/ReadingStore.outages
+step ReadingStore()/ReadingStore.summary
+step ReadingStore()/ReadingStore.summary/readFileSync
+step ReadingStore()/ReadingStore.summary/find
+known #new choice ReadingStore()/ReadingStore.summary/?1   # new-L: the code after `return` is the other arm
+known #new step ReadingStore()/ReadingStore.summary/?1/ReadingStore.history   # new-L: the code after `return` is the other arm
+known #new step ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/Reading()   # new-L: the code after `return` is the other arm
+known #new step ReadingStore()/ReadingStore.summary/?1/map   # new-L: the code after `return` is the other arm
+
+line entry > ReadingStore()/ReadingStore() call
+line entry > ReadingStore()/ReadingStore.save call
+line entry > ReadingStore()/ReadingStore.history call
+line entry > ReadingStore()/ReadingStore.saveOutage call
+line entry > ReadingStore()/ReadingStore.outages call
+line entry > ReadingStore()/ReadingStore.summary call
+
+line ReadingStore()/ReadingStore() > ReadingStore@ReadingStore()/ReadingStore() value
+line ReadingStore@ReadingStore()/ReadingStore() > ReadingStore()/ReadingStore.save value
+known #new line Reading·reading > ReadingStore()/ReadingStore.save value   # new-A
+line Disk(this.readings) > ReadingStore()/ReadingStore.save own
+line ReadingStore()/ReadingStore.save > Disk(this.readings) own
+line ReadingStore@ReadingStore()/ReadingStore() > ReadingStore()/ReadingStore.history value
+line Disk(this.readings) > ReadingStore()/ReadingStore.history own
+line ReadingStore()/ReadingStore.history/Reading() > Reading@ReadingStore()/ReadingStore.history/Reading() value
+line Reading@ReadingStore()/ReadingStore.history/Reading() > ReadingStore()/ReadingStore.history value
+line ReadingStore()/ReadingStore.history > Reading@ReadingStore()/ReadingStore.history value
+line ReadingStore@ReadingStore()/ReadingStore() > ReadingStore()/ReadingStore.saveOutage value
+known #new line Outage·outage > ReadingStore()/ReadingStore.saveOutage value   # new-A
+line Disk(this.outages) > ReadingStore()/ReadingStore.saveOutage own
+line ReadingStore()/ReadingStore.saveOutage > Disk(this.outages) own
+line ReadingStore@ReadingStore()/ReadingStore() > ReadingStore()/ReadingStore.outages value
+line Disk(this.outages) > ReadingStore()/ReadingStore.outages own
+known #new line ReadingStore@ReadingStore()/ReadingStore() > ReadingStore()/ReadingStore.summary value   # new-G: summary reads and writes `this.summaries` itself
+known #new line Day·day > ReadingStore()/ReadingStore.summary value   # new-A: the key it looks for is made of the day
+line Disk(this.summaries) > ReadingStore()/ReadingStore.summary own
+line ReadingStore()/ReadingStore.summary > Disk(this.summaries) own
+line ReadingStore()/ReadingStore.summary/readFileSync > _·text@ReadingStore()/ReadingStore.summary/readFileSync value
+known #new line _·text@ReadingStore()/ReadingStore.summary/readFileSync > ReadingStore()/ReadingStore.summary/find value   # new-C: its lines go into find
+known #101 line _·text@ReadingStore()/ReadingStore.summary/readFileSync > ReadingStore()/ReadingStore.summary value   # written back with the new line
+line ReadingStore()/ReadingStore.summary/find > _·kept@ReadingStore()/ReadingStore.summary/find value
+known #101 line _·kept@ReadingStore()/ReadingStore.summary/find > ReadingStore()/ReadingStore.summary value   # it decides the choice and is returned
+known #new line ReadingStore@ReadingStore()/ReadingStore() > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history value   # new-L: the code after `return` is the other arm
+known #new line Day·day > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history value   # new-L: the code after `return` is the other arm
+known #new line Disk(this.readings) > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history own   # new-L: the code after `return` is the other arm
+known #new line ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/Reading() > Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/Reading() value   # new-L: the code after `return` is the other arm
+known #new line Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/Reading() > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history value   # new-L: the code after `return` is the other arm
+known #new line ReadingStore()/ReadingStore.summary/?1/ReadingStore.history > Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history value   # new-L: the code after `return` is the other arm
+known #new line Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history > ReadingStore()/ReadingStore.summary/?1/map value   # new-L: the code after `return` is the other arm
+known #new line Day·day > ReadingStore()/ReadingStore.summary/?1/map value   # new-L: the code after `return` is the other arm
+known #new line ReadingStore()/ReadingStore.summary/?1/map > _·temperatures@ReadingStore()/ReadingStore.summary/?1/map value   # new-L: the code after `return` is the other arm
+known #new line _·temperatures@ReadingStore()/ReadingStore.summary/?1/map > ReadingStore()/ReadingStore.summary value   # new-L: the code after `return` is the other arm
+
+home ReadingStore@ReadingStore()/ReadingStore() ReadingStore()
+known #new home Reading·reading ReadingStore()
+home Reading@ReadingStore()/ReadingStore.history/Reading() ReadingStore()/ReadingStore.history
+home Reading@ReadingStore()/ReadingStore.history ReadingStore()
+known #new home Outage·outage ReadingStore()
+home _·text@ReadingStore()/ReadingStore.summary/readFileSync ReadingStore()/ReadingStore.summary
+home _·kept@ReadingStore()/ReadingStore.summary/find ReadingStore()/ReadingStore.summary
+known #new home Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/Reading() ReadingStore()/ReadingStore.summary/?1/ReadingStore.history
+known #new home Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history ReadingStore()/ReadingStore.summary/?1
+known #new home _·temperatures@ReadingStore()/ReadingStore.summary/?1/map ReadingStore()/ReadingStore.summary
+home Day·day ReadingStore()
+
+side entry left
+known #new side Disk(this.readings) both   # new-F: Atlas draws it between
+known #76 side Disk(this.outages) both   # Atlas: right, as if what `outages` returns were unused
+known #76 side Disk(this.summaries) both   # Atlas: right, as if what summary reads were unused
+
+# what Atlas has and the code does not say
+known #new extra home Day ReadingStore()   # new-A: a parameter by its type, not as the value handed
+known #new extra home Outage ReadingStore()   # new-A: a parameter by its type, not as the value handed
+known #new extra home Reading ReadingStore()   # new-A: a parameter by its type, not as the value handed
+known #new extra home Reading@ReadingStore()/ReadingStore.summary/ReadingStore.history ReadingStore()/ReadingStore.summary   # new-L: drawn outside the arm the early return makes
+known #new extra home Reading@ReadingStore()/ReadingStore.summary/ReadingStore.history/Reading() ReadingStore()/ReadingStore.summary/ReadingStore.history   # new-L: drawn outside the arm the early return makes
+known #new extra home _@ReadingStore()/ReadingStore.summary/filter ReadingStore()/ReadingStore.summary   # new-C: an unnamed call in a chain is a step
+known #new extra home _@ReadingStore()/ReadingStore.summary/line.startsWith ReadingStore()/ReadingStore.summary   # new-C: an unnamed call in a chain is a step
+known #new extra home _@ReadingStore()/ReadingStore.summary/text.split ReadingStore()/ReadingStore.summary   # new-C: an unnamed call in a chain is a step
+known #new extra home _·temperatures@ReadingStore()/ReadingStore.summary/map ReadingStore()/ReadingStore.summary   # new-L: drawn outside the arm the early return makes
+known #new extra line Day > ReadingStore()/ReadingStore.summary value   # new-A: a parameter by its type, not as the value handed
+known #new extra line Day·day > ReadingStore()/ReadingStore.summary/ReadingStore.history value   # new-L: drawn outside the arm the early return makes
+known #new extra line Disk(this.readings) > ReadingStore()/ReadingStore.summary/ReadingStore.history own   # new-L: drawn outside the arm the early return makes
+known #new extra line Outage > ReadingStore()/ReadingStore.saveOutage value   # new-A: a parameter by its type, not as the value handed
+known #new extra line Reading > ReadingStore()/ReadingStore.save value   # new-A: a parameter by its type, not as the value handed
+known #new extra line Reading@ReadingStore()/ReadingStore.summary/ReadingStore.history > ReadingStore()/ReadingStore.summary value   # new-B: summary gives back a line, not the Readings
+known #new extra line Reading@ReadingStore()/ReadingStore.summary/ReadingStore.history > ReadingStore()/ReadingStore.summary/filter value   # new-C: an unnamed call in a chain is a step
+known #new extra line Reading@ReadingStore()/ReadingStore.summary/ReadingStore.history/Reading() > ReadingStore()/ReadingStore.summary/ReadingStore.history value   # new-L: drawn outside the arm the early return makes
+known #new extra line ReadingStore()/ReadingStore.summary/ReadingStore.history > Reading@ReadingStore()/ReadingStore.summary/ReadingStore.history value   # new-L: drawn outside the arm the early return makes
+known #new extra line ReadingStore()/ReadingStore.summary/ReadingStore.history/Reading() > Reading@ReadingStore()/ReadingStore.summary/ReadingStore.history/Reading() value   # new-L: drawn outside the arm the early return makes
+known #new extra line ReadingStore()/ReadingStore.summary/filter > _@ReadingStore()/ReadingStore.summary/filter value   # new-C: an unnamed call in a chain is a step
+known #new extra line ReadingStore()/ReadingStore.summary/line.startsWith > _@ReadingStore()/ReadingStore.summary/line.startsWith value   # new-C: an unnamed call in a chain is a step
+known #new extra line ReadingStore()/ReadingStore.summary/map > _·temperatures@ReadingStore()/ReadingStore.summary/map value   # new-L: drawn outside the arm the early return makes
+known #new extra line ReadingStore()/ReadingStore.summary/text.split > _@ReadingStore()/ReadingStore.summary/text.split value   # new-C: an unnamed call in a chain is a step
+known #new extra line ReadingStore@ReadingStore()/ReadingStore() > ReadingStore()/ReadingStore.summary/ReadingStore.history value   # new-L: drawn outside the arm the early return makes
+known #new extra line _@ReadingStore()/ReadingStore.summary/filter > ReadingStore()/ReadingStore.summary/map value   # new-C: an unnamed call in a chain is a step
+known #new extra line _@ReadingStore()/ReadingStore.summary/line.startsWith > ReadingStore()/ReadingStore.summary/find value   # new-C: an unnamed call in a chain is a step
+known #new extra line _@ReadingStore()/ReadingStore.summary/text.split > ReadingStore()/ReadingStore.summary/find value   # new-C: an unnamed call in a chain is a step
+known #new extra line _·text@ReadingStore()/ReadingStore.summary/readFileSync > ReadingStore()/ReadingStore.summary/text.split value   # new-C: an unnamed call in a chain is a step
+known #new extra step ReadingStore()/ReadingStore.summary/ReadingStore.history   # new-L: drawn outside the arm the early return makes
+known #new extra step ReadingStore()/ReadingStore.summary/ReadingStore.history/Reading()   # new-L: drawn outside the arm the early return makes
+known #new extra step ReadingStore()/ReadingStore.summary/filter   # new-C: an unnamed call in a chain is a step
+known #new extra step ReadingStore()/ReadingStore.summary/line.startsWith   # new-C: an unnamed call in a chain is a step
+known #new extra step ReadingStore()/ReadingStore.summary/map   # new-L: drawn outside the arm the early return makes
+known #new extra step ReadingStore()/ReadingStore.summary/text.split   # new-C: an unnamed call in a chain is a step

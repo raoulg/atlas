@@ -1,0 +1,56 @@
+# The knowledge base with the shortcut: `graaf` gives the lines back as Strings, of no type of the code's, so the Bron
+# put by `voeg_toe` never comes back as a Node: no value of the code's leaves the get.
+
+route kennis.Kennisbank
+step Kennisbank()/Kennisbank.new
+known #new step Kennisbank()/Kennisbank.new/Kennisbank()            # the struct expression `new` builds the store by
+step Kennisbank()/Kennisbank.voeg_toe
+step Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write
+step Kennisbank()/Kennisbank.graaf
+
+line entry > Kennisbank()/Kennisbank.new call
+line entry > Kennisbank()/Kennisbank.voeg_toe call
+line entry > Kennisbank()/Kennisbank.graaf call
+
+# the store `new` builds, which the doors run on
+line Kennisbank()/Kennisbank.new/Kennisbank() > Kennisbank@Kennisbank()/Kennisbank.new/Kennisbank() value
+line Kennisbank@Kennisbank()/Kennisbank.new/Kennisbank() > Kennisbank()/Kennisbank.new value     # new hands back what it built
+line Kennisbank()/Kennisbank.new > Kennisbank@Kennisbank()/Kennisbank.new value
+line Kennisbank@Kennisbank()/Kennisbank.new > Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write value
+line Kennisbank@Kennisbank()/Kennisbank.new > Kennisbank()/Kennisbank.graaf value
+
+known #new line Bron·bron > Kennisbank()/Kennisbank.voeg_toe value
+line Disk(self.path) > Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write own
+line Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write > Disk(self.path) own
+
+line Disk(self.path) > Kennisbank()/Kennisbank.graaf own
+
+home Kennisbank@Kennisbank()/Kennisbank.new/Kennisbank() Kennisbank()/Kennisbank.new
+home Kennisbank@Kennisbank()/Kennisbank.new Kennisbank()
+home Bron·bron Kennisbank()
+
+# write reads the file into `text`, appends the line and a newline to it, and writes it back
+step Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/read_to_string
+known #new step Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push_str
+known #new step Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push
+line Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/read_to_string > _·text@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/read_to_string value
+known #new line _·text@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/read_to_string > Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push_str value
+known #new line Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push_str > _·text@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push_str value
+known #new line _·text@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push_str > Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push value
+known #new line Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push > _·text@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push value
+known #new line _·text@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push > Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write value                    # fs::write in write's own body writes it
+home _·text@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/read_to_string Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write
+known #new home _·text@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push_str Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write
+known #new home _·text@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write
+
+side entry left
+known #new side Disk(self.path) both          # voeg_toe reads what the file held and changes it: Atlas says right
+
+# building the struct the route is about is read as a call of the route inside itself
+known #new extra step Kennisbank()/Kennisbank.new/Kennisbank() recursive
+
+# a door's parameter is a value from beyond without its name; the Bron's fields, formatted into the str `write` is
+# handed, count as the Bron handed to it
+known #new extra line Bron > Kennisbank()/Kennisbank.voeg_toe value
+known #new extra home Bron Kennisbank()
+known #new extra line Bron·bron > Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write value

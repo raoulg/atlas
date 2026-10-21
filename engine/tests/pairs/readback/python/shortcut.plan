@@ -1,0 +1,32 @@
+# A step that writes a table and reads it back, and hands on what it read: the read is of the table as `keep` left it,
+# inside the step, so the table keeps what `keep` leaves there, in the codomain (rule 4, as `readback-one-body`);
+# what was read goes back to `run`, which prints it.
+
+route ledger.run
+step run/Ledger()
+step run/Ledger.keep
+step run/Ledger.keep/connect                                # `con = duckdb.connect(..)` names what it gives
+
+line entry > run call
+line run/Ledger() > Ledger@run/Ledger() value
+line Ledger@run/Ledger() > run/Ledger.keep value
+line run/Ledger.keep > Ledger@run/Ledger.keep value         # keep changes the ledger it runs on (`self.kept +=`)
+line run/Ledger.keep/connect > DuckDBPyConnection·con@run/Ledger.keep/connect value
+known #101 line DuckDBPyConnection·con@run/Ledger.keep/connect > run/Ledger.keep value   # keep's own calls use con
+line run/Ledger.keep > DuckDB(notes) own
+known #new line run/Ledger.keep > run back                  # the notes read back, a list of str, go back to run (A)
+line run > Screen own
+
+home Ledger@run/Ledger() run
+home Ledger@run/Ledger.keep run
+home DuckDBPyConnection·con@run/Ledger.keep/connect run/Ledger.keep
+
+side entry left
+known #74 side DuckDB(notes) right                          # Atlas: between, through the reach below
+side Screen right
+
+# A: a step that also changes what it runs on hands its result of no type of the code's back to nothing.
+
+# building the ledger runs its public methods, which touch the table: two steps at it, so it stands between them
+known #74 extra line DuckDB(notes) > run/Ledger() reached
+known #74 extra line run/Ledger() > DuckDB(notes) reached

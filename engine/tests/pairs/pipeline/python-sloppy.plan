@@ -1,0 +1,61 @@
+# The student's main block calls four functions in a row that take and give nothing: the frame travels beside the
+# route, through the module's `df`, a place the steps write and read. `get_data` downloads on every run and reads the
+# raw file back itself, so the file is what it leaves behind, in the codomain; `plot` draws on pyplot's own figure.
+
+route sunspots
+step sunspots/get_data
+step sunspots/get_data/get                                        # `r = requests.get(url)`
+step sunspots/get_data/read_csv                                   # `df = pd.read_csv(..)`
+step sunspots/clean
+step sunspots/clean/drop                                          # `df.drop(.., inplace=True)` changes the frame
+step sunspots/clean/reset_index                                   # `df.reset_index(drop=True, inplace=True)`
+step sunspots/smooth
+step sunspots/plot
+
+line entry > sunspots call
+line Web(www.sidc.be) > sunspots/get_data own
+line sunspots/get_data/get > Response·r@sunspots/get_data/get value
+known #101 line Response·r@sunspots/get_data/get > sunspots/get_data value          # `f.write(r.text)`
+line sunspots/get_data > File(data/raw/sunspots.csv) own          # and reads it back in its own body
+line sunspots/get_data/read_csv > DataFrame·df@sunspots/get_data/read_csv value
+known #101 line DataFrame·df@sunspots/get_data/read_csv > sunspots/get_data value   # kept in the module's `df`
+line sunspots/get_data > Global(sunspots.df) own
+line Global(sunspots.df) > sunspots/clean own                     # what `drop` runs on is the module's `df`
+line sunspots/clean/drop > DataFrame·df@sunspots/clean/drop value
+line DataFrame·df@sunspots/clean/drop > sunspots/clean/reset_index value
+line sunspots/clean/reset_index > DataFrame·df@sunspots/clean/reset_index value
+known #101 line DataFrame·df@sunspots/clean/reset_index > sunspots/clean value       # it stays in the module's `df`
+line sunspots/clean > Global(sunspots.df) own
+line Global(sunspots.df) > sunspots/smooth own
+line sunspots/smooth > Global(sunspots.df) own
+line Global(sunspots.df) > sunspots/plot own
+known #new line sunspots/plot > Figure own                        # pyplot's current figure, `plt.figure(..)`
+line sunspots/plot > File(figures/sunspots.png) own
+
+home Response·r@sunspots/get_data/get sunspots/get_data
+home DataFrame·df@sunspots/get_data/read_csv sunspots/get_data
+home DataFrame·df@sunspots/clean/drop sunspots/clean
+home DataFrame·df@sunspots/clean/reset_index sunspots/clean
+
+side entry left
+side Web(www.sidc.be) left
+side File(data/raw/sunspots.csv) right
+side Global(sunspots.df) between
+known #new side Figure right
+side File(figures/sunspots.png) right
+
+# the module's `df`, which `get_data` makes in this route and keeps in a place, is drawn again as a value from beyond
+known #new extra home DataFrame·df sunspots
+known #new extra line DataFrame·df > sunspots/clean/drop value
+known #new extra line DataFrame·df > sunspots/clean/df["year"].astype value
+known #new extra line DataFrame·df > sunspots/clean/df["month"].astype value
+known #new extra line DataFrame·df > sunspots/smooth/df["mean"].rolling value
+
+# a library call whose result no name holds is drawn as a step: what it gives should go into the call around it
+known #new extra step sunspots/clean/df["year"].astype
+known #new extra step sunspots/clean/df["month"].astype
+known #new extra step sunspots/smooth/df["mean"].rolling
+known #new extra step sunspots/smooth/df["mean"].rolling(13, center=True).mean
+known #new extra line sunspots/smooth/df["mean"].rolling > _@sunspots/smooth/df["mean"].rolling value
+known #new extra line _@sunspots/smooth/df["mean"].rolling > sunspots/smooth/df["mean"].rolling(13, center=True).mean value
+known #new extra home _@sunspots/smooth/df["mean"].rolling sunspots/smooth

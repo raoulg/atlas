@@ -1,3 +1,86 @@
+# The clean command hands the frame from step to step: what `load` gives `smooth` takes, what `smooth` gives the plot
+# draws, and the figure `draw` makes stays inside `save`, which writes it. The places are made whole at the command: the
+# raw file is filled only where it is missing, in an arm, so it stands between the download and the reading.
 # the override's result has the dispatch's own moment: closed, its line into the dispatch is dropped, open it is drawn
 known #102 fault more t:ext:matplotlib.figure.Figure@n:sunspots.plot.Plot/sunspots.plot.Plot.save/0>n:sunspots.plot.Plot/sunspots.plot.Plot.save/0
 known #102 fault no line Figure@Plot()/Plot.save/Plot.draw > Plot()/Plot.save/Plot.draw
+
+
+route sunspots.cli.run
+step run/Settings()
+choice run/?1
+step run/?1/download
+step run/?1/download/get                                          # `response = requests.get(..)`
+step run/load
+step run/load/read_csv                                            # `table = pd.read_csv(..)`
+step run/load/to_datetime                                         # `first_days = pd.to_datetime(..)`
+step run/smooth
+step run/Trend()
+step run/Trend.save
+step run/Trend.save/Trend.draw
+step run/Trend.save/Trend.draw/Figure                             # `figure = Figure(..)`
+step run/Trend.save/Trend.draw/add_subplot                        # `ax = figure.add_subplot()`
+
+line entry > run call
+line run/Settings() > Settings·settings@run/Settings() value
+line Web(www.sidc.be) > run/?1/download own                       # the response is written to the file
+line run/?1/download/get > Response·response@run/?1/download/get value
+known #101 line Response·response@run/?1/download/get > run/?1/download value   # `raise_for_status()`, `.content`
+line run/?1/download > File(data/raw/sunspots.csv) own
+line run/?1/download > run back                                   # `return to`: the result goes on to its caller
+line File(data/raw/sunspots.csv) > run/load own
+line run/load/read_csv > DataFrame·table@run/load/read_csv value
+known #new line DataFrame·table@run/load/read_csv > run/load/to_datetime value  # `table[..].assign(day=1)` goes into it
+line run/load/to_datetime > Series·first_days@run/load/to_datetime value
+known #101 line DataFrame·table@run/load/read_csv > run/load value              # `table.set_index(first_days)..` is returned
+known #101 line Series·first_days@run/load/to_datetime > run/load value
+line run/load > DataFrame@run/load value                          # `smooth(load(raw), ..)`: no name holds it
+line DataFrame@run/load > run/smooth value
+line Settings·settings@run/Settings() > run/smooth value          # `settings.months`
+line run/smooth > DataFrame·frame@run/smooth value
+line Settings·settings@run/Settings() > run/Trend() value
+line run/Trend() > Trend@run/Trend() value                        # `Trend(settings).save(..)`: no name holds it
+line Trend@run/Trend() > run/Trend.save value                     # save's own body reads `self.settings.dpi`
+line Trend@run/Trend() > run/Trend.save/Trend.draw value          # draw reads `self.settings`
+known #new line Trend@run/Trend() > run/Trend.save/Trend.draw/Figure value   # `Figure(figsize=self.settings.size, ..)`
+line DataFrame·frame@run/smooth > run/Trend.save/Trend.draw value
+line run/Trend.save/Trend.draw/Figure > Figure·figure@run/Trend.save/Trend.draw/Figure value
+line Figure·figure@run/Trend.save/Trend.draw/Figure > run/Trend.save/Trend.draw/add_subplot value
+line run/Trend.save/Trend.draw/add_subplot > Axes·ax@run/Trend.save/Trend.draw/add_subplot value
+known #101 line Axes·ax@run/Trend.save/Trend.draw/add_subplot > run/Trend.save/Trend.draw value  # `ax.plot(..)`, ..
+known #101 line Figure·figure@run/Trend.save/Trend.draw/Figure > run/Trend.save/Trend.draw value  # `return figure`
+line run/Trend.save/Trend.draw > Figure·figure@run/Trend.save/Trend.draw value
+known #101 line Figure·figure@run/Trend.save/Trend.draw > run/Trend.save value   # `figure.savefig(..)`
+line run/Trend.save > File(figures/sunspots.png) own
+
+home Settings·settings@run/Settings() run
+home Response·response@run/?1/download/get run/?1/download
+home DataFrame·table@run/load/read_csv run/load
+home Series·first_days@run/load/to_datetime run/load
+home DataFrame@run/load run
+home DataFrame·frame@run/smooth run
+home Trend@run/Trend() run
+home Figure·figure@run/Trend.save/Trend.draw/Figure run/Trend.save/Trend.draw
+home Axes·ax@run/Trend.save/Trend.draw/add_subplot run/Trend.save/Trend.draw
+home Figure·figure@run/Trend.save/Trend.draw run/Trend.save
+
+side entry left
+side Web(www.sidc.be) left
+side File(data/raw/sunspots.csv) between
+side File(figures/sunspots.png) right
+
+# a library call whose result no name holds is drawn as a step: what it gives should go into the call around it
+known #new extra step run/load/table[["year", "month"]].assign
+known #new extra line DataFrame·table@run/load/read_csv > run/load/table[["year", "month"]].assign value
+known #new extra line run/load/table[["year", "month"]].assign > _@run/load/table[["year", "month"]].assign value
+known #new extra line _@run/load/table[["year", "month"]].assign > run/load/to_datetime value
+known #new extra home _@run/load/table[["year", "month"]].assign run/load
+known #new extra step run/load/table.set_index(first_days)[["mean", "std", "observations"]].dropna
+known #new extra line DataFrame·table@run/load/read_csv > run/load/table.set_index(first_days)[["mean", "std", "observations"]].dropna value
+known #new extra line Series·first_days@run/load/to_datetime > run/load/table.set_index(first_days)[["mean", "std", "observations"]].dropna value
+known #new extra step run/smooth/frame["mean"].rolling
+known #new extra step run/smooth/frame["mean"].rolling(months, center=True).mean
+known #new extra line DataFrame@run/load > run/smooth/frame["mean"].rolling value
+known #new extra line run/smooth/frame["mean"].rolling > _@run/smooth/frame["mean"].rolling value
+known #new extra line _@run/smooth/frame["mean"].rolling > run/smooth/frame["mean"].rolling(months, center=True).mean value
+known #new extra home _@run/smooth/frame["mean"].rolling run/smooth
