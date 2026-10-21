@@ -3,7 +3,7 @@
 # its route starts at each public method a caller can call, its constructor among them. The methods run on the
 # caller's instance, one value from beyond; what the constructor builds goes back to the caller.
 
-route clean.bank.Kennisbank
+route kennis.bank.Kennisbank
 step Kennisbank()/Kennisbank()
 step Kennisbank()/Kennisbank.voegToe
 step Kennisbank()/Kennisbank.voegToe/Kennisbank.write

@@ -11,7 +11,7 @@
 # operations are steps; #126 what the own arrow keeps; #127 a parameter bound by kind, not to what is handed; #130
 # which forms are choices; #131 a value of one arm at the choice's moment; #133 read and written: between, not both.
 
-route clean.store.ReadingStore
+route harvest.store.ReadingStore
 step ReadingStore()/ReadingStore()
 step ReadingStore()/ReadingStore.save
 step ReadingStore()/ReadingStore.history

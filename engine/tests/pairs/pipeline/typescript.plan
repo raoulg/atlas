@@ -3,7 +3,7 @@
 # code runs `main`, which parses its command line into `values`, whose fields name the places; the raw file is filled
 # only where it is missing, so it stands between the download and the reading.
 
-route typescript.cli
+route sunspots.cli
 step cli.ts/main
 step cli.ts/main/parseArgs                                        # `const { values } = parseArgs(..)`, taken to the entry
 step cli.ts/main/monthsOf

@@ -661,3 +661,26 @@ extra();
         (vec!["--dry-run".to_string(), "--level".to_string()], vec!["parsed".to_string()])
     );
 }
+
+/// Isomorphic is the same: a value read through a wrapper (parentheses, `!`, `as`, `satisfies`,
+/// `await`) is the value inside it. Each of `Store`'s methods changes the rows it holds, however the
+/// field is written, and a cast names the class a method runs on.
+#[test]
+fn a_value_through_its_wrappers_is_the_value_inside() {
+    let g = written(
+        "wrappers",
+        &[
+            ("package.json", "{\"name\": \"wrappers\", \"version\": \"0.0.0\", \"type\": \"module\"}\n"),
+            (
+                "src/store.ts",
+                "export class Store {\n  rows: string[] = [];\n  plain(r: string): void {\n    this.rows.push(r);\n  }\n  bang(r: string): void {\n    (this.rows!).push(r);\n  }\n  cast(r: string): void {\n    (this.rows as string[]).push(r);\n  }\n  meets(r: string): void {\n    (this.rows satisfies string[]).push(r);\n  }\n}\n\nexport function fill(x: unknown): void {\n  (x as Store).plain(\"a\");\n}\n",
+            ),
+        ],
+    );
+    let r = &g.root;
+    let mutates = edges(&g, EdgeKind::Mutates);
+    for m in ["plain", "bang", "cast", "meets"] {
+        assert!(has(&mutates, &format!("{r}.store.Store.{m}"), &format!("{r}.store.Store")), "{m} changes the Store: {mutates:?}");
+    }
+    assert!(has(&edges(&g, EdgeKind::Calls), &format!("{r}.store.fill"), &format!("{r}.store.Store.plain")), "a cast names the class");
+}

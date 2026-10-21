@@ -10,6 +10,7 @@ route board.core.main
 step main/Cell()
 step main/Board()
 step main/mark_all
+step main/mark_all/for cell in board.cells
 step main/reset
 step main/reset/clear
 step main/reset/clear#2
@@ -31,7 +32,8 @@ line entry > main call
 line main/Cell() > Cell@main/Cell() value
 line Cell@main/Cell() > main/Board() value
 line main/Board() > Board·board@main/Board() value
-line Board·board@main/Board() > main/mark_all value
+line Board·board@main/Board() > main/mark_all/for cell in board.cells value
+line main/mark_all/for cell in board.cells > Cell·cell@main/mark_all/for cell in board.cells value
 line main/mark_all > Board·board@main/mark_all value
 line Board·board@main/mark_all > main/reset/clear value
 line main/reset/clear > Board·board@main/reset/clear value
@@ -53,6 +55,7 @@ line main/rename > Board·other@main/rename value
 home Cell@main/Cell() main
 home Board·board@main/Board() main
 home Board·board@main/mark_all main
+home Cell·cell@main/mark_all/for cell in board.cells main/mark_all
 home Board·board@main/reset/clear main/reset
 home Board·board@main/reset/clear#2 main/reset
 home Board·board@main/reset main
@@ -154,3 +157,8 @@ known #126 extra line Cell@main/Cell() > main value
 known #101 line list·tags@main/add_tag > main value
 known #101 line dict·counts@main/count > main value
 known #101 line list·jobs@main/queue > main value
+
+# `cell.marked = True` is the body's own use of each cell the loop gives; the own arrow takes the board the loop goes
+# over instead
+known #101 line Cell·cell@main/mark_all/for cell in board.cells > main/mark_all value
+known #126 extra line Board·board@main/Board() > main/mark_all value

@@ -4,7 +4,7 @@
 # call handed `settings.mode` or `settings.level` is handed the settings, the projection glued into the call; inside,
 # the parameter that holds the field is the value its steps take.
 
-route clean.runs.run
+route runs.runs.run
 step run/source
 choice run/source/?1
 step run/source/?1/load

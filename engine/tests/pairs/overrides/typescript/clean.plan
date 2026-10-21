@@ -6,7 +6,7 @@
 known #102 fault more t:events.shapes.Circle@n:events.shapes.Factory/events.shapes.Factory.make>n:events.shapes.Factory/events.shapes.Factory.make
 known #102 fault no line Circle@Factory()/Factory.make > Factory()/Factory.make
 
-route clean.handlers.Handler
+route events.handlers.Handler
 step Handler()/Handler.handle
 step Handler()/Handler.handle/ClickHandler.handle
 step Handler()/Handler.log

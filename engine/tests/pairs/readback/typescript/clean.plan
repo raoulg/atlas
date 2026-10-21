@@ -4,7 +4,7 @@
 # The library's operations whose result the body names are steps: `const db = new Database(..)`, and
 # `const stored = db.prepare(..).get()`, which `db` goes into through the call it runs on.
 
-route clean.cli
+route ledger.cli
 step cli.ts/Ledger()
 step cli.ts/Ledger.keep
 known #125 step cli.ts/Ledger.keep/Database()                   # I

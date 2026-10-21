@@ -4,7 +4,7 @@
 # body names are steps: `const db = new Database(..)`, and `const stored = db.prepare(..).all()`, which `db` goes into
 # through the call it runs on; `stored.map(..)`, returned unnamed, is keep's own.
 
-route shortcut.cli
+route ledger.cli
 step cli.ts/Ledger()
 step cli.ts/Ledger.keep
 known #125 step cli.ts/Ledger.keep/Database()                   # I

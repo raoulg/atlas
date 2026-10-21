@@ -5,7 +5,7 @@ known #102 fault Notice@Post()/Post() stands in
 # type of the code's: the Notice goes in and no type comes out. `posts` returns what it read, so it uses it, and the
 # file stands between the put and the get as on the clean side.
 
-route shortcut.files.Board
+route club.files.Board
 step Board()/Board()
 step Board()/Board.pin
 step Board()/Board.posts

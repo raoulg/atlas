@@ -4,7 +4,7 @@
 # public methods, each called by its caller and run on the caller's Board; what the constructor builds goes back to
 # that caller.
 
-route clean.files.Board
+route club.files.Board
 step Board()/Board()
 step Board()/Board.pin
 step Board()/Board.posts

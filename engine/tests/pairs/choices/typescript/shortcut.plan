@@ -1,7 +1,7 @@
 # A job run in one of two modes, with the shortcut: where the job comes from is a choice between `load` and `infer`
 # in the middle of `run`, between its other steps; the mode is a string, handed to each function that tests it again.
 
-route shortcut.runs.run
+route runs.runs.run
 choice run/?1
 step run/?1/load
 step run/?1/load/Job()

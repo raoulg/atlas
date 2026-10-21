@@ -1,7 +1,7 @@
 # The knowledge base with the shortcut: `graaf` gives the lines back as records of no type of the code's, so the Bron
 # put by `voegToe` never comes back as a Node: no value of the code's leaves the get.
 
-route shortcut.bank.Kennisbank
+route kennis.bank.Kennisbank
 step Kennisbank()/Kennisbank()
 step Kennisbank()/Kennisbank.voegToe
 step Kennisbank()/Kennisbank.voegToe/Kennisbank.write

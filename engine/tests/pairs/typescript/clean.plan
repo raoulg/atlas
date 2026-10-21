@@ -11,7 +11,7 @@ known #102 fault no line RateTable@Ledger()/Ledger.report/RateSource.latest > Le
 known #102 fault no line RateTable@cli.ts/main/?2/Ledger.report/RateSource.latest > cli.ts/main/?2/Ledger.report/RateSource.latest
 
 
-route clean.config.loadConfig
+route expenses.config.loadConfig
 step loadConfig/parseConfig
 step loadConfig/parseConfig/fieldsOf
 step loadConfig/parseConfig/fields.get                                    # const currency = fields.get("currency")

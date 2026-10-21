@@ -5,7 +5,7 @@
 # handed (`other.rows.length = 0`, in their own body): two values each. `fileAll(ledger.rows)` is handed the ledger (a
 # projection is glued into the call around it) and files the expenses in its rows, so the ledger changes. `rename` is
 # handed an object literal. What `rename` gives goes back to `main`, what `takeFrom` and `takeVictim` give is dropped.
-route shortcut.ledger.main
+route ledger.ledger.main
 step main/Ledger()
 step main/Ledger()#2
 step main/Ledger.takeFrom
@@ -17,6 +17,7 @@ step main/addLine/push
 step main/count
 step main/count/set
 step main/fileAll
+step main/fileAll/for e of expenses
 step main/rename
 
 line entry > main call
@@ -28,7 +29,8 @@ line Ledger·ledger@main/Ledger.takeFrom > main/Ledger.takeVictim/this.rows.push
 line main/Ledger.takeVictim > Ledger·ledger@main/Ledger.takeVictim value
 line main/addLine/push > _·lines@main/addLine/push value
 line main/count/set > _·m@main/count/set value
-line Ledger·ledger@main/Ledger.takeVictim > main/fileAll value             # handed the ledger, through its rows
+line main/fileAll/for e of expenses > Expense·e@main/fileAll/for e of expenses value
+line Expense·e@main/fileAll/for e of expenses > main/fileAll value       # `e.category = ..` in the body
 line main/rename > Expense@main/rename value
 
 home Ledger·ledger@main/Ledger() main
@@ -37,7 +39,7 @@ home Ledger·ledger@main/Ledger.takeFrom main
 home Ledger·ledger@main/Ledger.takeVictim main
 home _·lines@main/addLine/push main/addLine
 home _·m@main/count/set main/count
-home Expense main
+home Expense·e@main/fileAll/for e of expenses main/fileAll
 home Expense@main/rename main
 
 side entry left
@@ -46,7 +48,6 @@ side entry left
 # that type at its moment, not the value it was handed: `fileAll(ledger.rows)` changes the ledger
 known #129 line main/fileAll > Ledger·ledger@main/fileAll value
 known #129 home Ledger·ledger@main/fileAll main
-known #127 extra line Expense > main/fileAll value
 known #129 extra line main/fileAll > Expense@main/fileAll value
 known #129 extra home Expense@main/fileAll main
 
@@ -107,3 +108,12 @@ known #126 extra line Ledger·ledger@main/Ledger.takeVictim > main value
 # `main` reads the length of the array and the size of the Map its steps changed
 known #101 line Array·lines@main/addLine > main value
 known #101 line Map·m@main/count > main value
+
+# The loop goes over the ledger `fileAll` is handed through its rows; it takes the parameter `expenses` from beyond
+# instead (#127), and the own arrow takes the ledger, which only the loop goes over (#126). With the literal `rename`
+# is handed bound away, no Expense from beyond is left
+known #127 line Ledger·ledger@main/Ledger.takeVictim > main/fileAll/for e of expenses value
+known #127 home Expense main
+known #127 extra line Expense·expenses > main/fileAll/for e of expenses value
+known #127 extra home Expense·expenses main
+known #126 extra line Ledger·ledger@main/Ledger.takeVictim > main/fileAll value

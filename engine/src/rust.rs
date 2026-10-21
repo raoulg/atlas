@@ -19,7 +19,13 @@ use crate::knowledge;
 use crate::knowledge::OwnTypes;
 use crate::model::{Bucket, EdgeKind, Entry, EntryKind, Held, Node, NodeKind, Param, Returns, Touch, World};
 use crate::repo::Repo;
-use crate::tree::{evaluation_order, literals, named_children, nth_of_kind, span, text, unquote, walk, ChoiceSyntax, CompareSyntax, Part};
+use crate::tree::{
+    beneath, evaluation_order, literals, named_children, nth_of_kind, span, text, unquote, walk, wrapped, ChoiceSyntax, CompareSyntax,
+    Part, Wrappers,
+};
+
+/// What hands on the value inside it: parentheses, a reference `&x`, `x?` and `x.await`.
+const WRAPPERS: Wrappers = &["parenthesized_expression", "reference_expression", "try_expression", "await_expression"];
 
 mod globals;
 mod libraries;
@@ -1373,7 +1379,7 @@ fn kept_as(c: TsNode, src: &[u8]) -> Option<String> {
     loop {
         let p = n.parent()?;
         match p.kind() {
-            "try_expression" | "await_expression" | "reference_expression" | "parenthesized_expression" | "else_clause" => n = p,
+            k if WRAPPERS.contains(&k) || k == "else_clause" => n = p,
             "match_expression" if p.child_by_field_name("body").map(|b| b.id()) == Some(n.id()) => n = p,
             "block"
                 if p.named_child(p.named_child_count().saturating_sub(1)).map(|x| x.id()) == Some(n.id())
@@ -1425,9 +1431,7 @@ fn library_chain<'t>(
     let mut locals = 0;
     loop {
         match v.kind() {
-            "try_expression" | "await_expression" | "reference_expression" | "parenthesized_expression" => {
-                v = named_children(v).into_iter().next()?
-            }
+            k if WRAPPERS.contains(&k) => v = wrapped(v)?,
             "identifier" | "field_expression" if !made_by.contains_key(text(v, src)) => {
                 let ty = declared(v)?;
                 before.reverse();
@@ -2000,9 +2004,8 @@ impl<'a, 't> Body<'a, 't> {
             let mut value = l.child_by_field_name("value");
             while let Some(v) = value {
                 value = match v.kind() {
-                    "try_expression" | "await_expression" | "unary_expression" | "reference_expression" | "parenthesized_expression" => {
-                        named_children(v).into_iter().next()
-                    }
+                    k if WRAPPERS.contains(&k) => wrapped(v),
+                    "unary_expression" => named_children(v).into_iter().next(),
                     "call_expression" => match v.child_by_field_name("function") {
                         Some(f)
                             if f.kind() == "field_expression"
@@ -2094,7 +2097,7 @@ impl<'a, 't> Body<'a, 't> {
         let mut over = Some(value);
         while let Some(v) = over {
             over = match v.kind() {
-                "reference_expression" | "parenthesized_expression" => named_children(v).into_iter().last(),
+                k if WRAPPERS.contains(&k) => wrapped(v),
                 "call_expression" => v.child_by_field_name("function").filter(|f| {
                     f.kind() == "field_expression"
                         && f.child_by_field_name("field").map_or(false, |x| {
@@ -2133,10 +2136,7 @@ impl<'a, 't> Body<'a, 't> {
                 .collect();
             let skip = usize::from(!on_value && paths::takes_self(def));
             for (p, a) in declared.into_iter().zip(positional(c).into_iter().skip(skip)) {
-                let mut a = a;
-                while let Some(x) = a.filter(|x| matches!(x.kind(), "reference_expression" | "parenthesized_expression")) {
-                    a = x.child_by_field_name("value").or_else(|| named_children(x).into_iter().next());
-                }
+                let a = a.map(|a| beneath(a, WRAPPERS));
                 let Some(name) = a.filter(|x| x.kind() == "identifier").map(|x| text(x, src).to_string()).filter(|x| open.contains(x))
                 else {
                     continue;
@@ -2190,9 +2190,7 @@ impl<'a, 't> Body<'a, 't> {
     fn value_class(&self, v: TsNode) -> Option<String> {
         let src = self.src;
         match v.kind() {
-            "try_expression" | "await_expression" | "reference_expression" | "parenthesized_expression" => {
-                self.value_class(named_children(v).into_iter().next()?)
-            }
+            k if WRAPPERS.contains(&k) => self.value_class(wrapped(v)?),
             "self" => self.cls.clone(),
             "identifier" => self.locals.get(text(v, src)).cloned(),
             "struct_expression" => self.resolve(&path_parts(v.child_by_field_name("name"), src)).and_then(|r| self.class_of(&r)),

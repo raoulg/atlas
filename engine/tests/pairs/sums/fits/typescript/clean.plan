@@ -2,7 +2,7 @@
 # interface Report and calls only the library, so the choice holds no occurrence and the route is its own arrow,
 # taking the sum and giving the Report.
 
-route clean.report.describe
+route fits.report.describe
 line entry > describe call
 known #127 line Fit | Failed·r > describe value                    # the route's parameter, by its name
 line describe > Report@describe value                             # the result goes on to the caller

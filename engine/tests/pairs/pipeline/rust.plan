@@ -8,7 +8,7 @@ step main/download/text                                           # `let body = 
 step main/load
 step main/load/from_path                                          # `let mut reader = ..from_path(..)?`
 step main/load/new                                                # `let mut rows = Vec::new()`
-known #125 step main/load/deserialize                             # `for result in reader.deserialize()`
+step main/load/for result in reader.deserialize()                             # `for result in reader.deserialize()`
 step main/load/ok_or                                              # `let date = NaiveDate::from_ymd_opt(..).ok_or(..)?`
 step main/load/push                                               # `rows.push(..)` changes `rows`
 step main/smooth
@@ -24,12 +24,11 @@ known #101 line _·body@main/download/text > main/download value                
 line main/download > File(data/raw/sunspots.csv) own
 line File(data/raw/sunspots.csv) > main/load own
 line main/load/from_path > _·reader@main/load/from_path value
-known #101 line _·reader@main/load/from_path > main/load value                    # `reader.deserialize()`
 line main/load/new > _·rows@main/load/new value
-known #125 line _·reader@main/load/from_path > main/load/deserialize value
-known #125 line main/load/deserialize > Record·record@main/load/deserialize value
-known #125 line Record·record@main/load/deserialize > main/load/ok_or value         # `record.year`, `record.month`
-known #125 line Record·record@main/load/deserialize > main/load/push value          # `record.mean`
+line _·reader@main/load/from_path > main/load/for result in reader.deserialize() value
+line main/load/for result in reader.deserialize() > _·result@main/load/for result in reader.deserialize() value
+known #128 line _·result@main/load/for result in reader.deserialize() > main/load/ok_or value         # `record.year`, `record.month`
+known #128 line _·result@main/load/for result in reader.deserialize() > main/load/push value          # `record.mean`
 line main/load/ok_or > _·date@main/load/ok_or value
 line _·date@main/load/ok_or > main/load/push value
 line _·rows@main/load/new > main/load/push value
@@ -54,7 +53,7 @@ line main/plot > File(figures/sunspots.png) own
 home _·body@main/download/text main/download
 home _·reader@main/load/from_path main/load
 home _·rows@main/load/new main/load
-known #125 home Record·record@main/load/deserialize main/load
+home _·result@main/load/for result in reader.deserialize() main/load
 home _·date@main/load/ok_or main/load
 home _·rows@main/load/push main/load
 home _·rows@main/load main
@@ -69,9 +68,9 @@ side File(data/raw/sunspots.csv) between
 side File(figures/sunspots.png) right
 
 # a record the csv crate makes inside `load` is drawn from beyond, at the route's frame
-known #125 extra home Record·record main
-known #125 extra line Record·record > main/load/from_ymd_opt value
-known #125 extra line Record·record > main/load/push value
+known #128 extra home Record·record main
+known #128 extra line Record·record > main/load/from_ymd_opt value
+known #128 extra line Record·record > main/load/push value
 
 # a library call whose result no name holds is drawn as a step, its result named by the call around it
 known #125 extra step main/load/from_ymd_opt

@@ -18,7 +18,7 @@ step main/?1/download/bytes                                       # `let body = 
 step main/load
 step main/load/from_path                                          # `let mut reader = ReaderBuilder::new()..from_path(path)?`
 step main/load/new                                                # `let mut series = Vec::new()`
-known #125 step main/load/deserialize                             # `for record in reader.deserialize()`
+step main/load/for record in reader.deserialize()                             # `for record in reader.deserialize()`
 choice main/load/?1
 step main/load/?1/Record.into_month
 step main/load/?1/Record.into_month/ok_or                         # `let date = NaiveDate::from_ymd_opt(..).ok_or(..)?`
@@ -58,13 +58,13 @@ line main/?1/download > main back                                       # `Ok(to
 line Cli·cli@main/Cli() > main/load value                               # `&cli.raw`
 line File(data/raw/sunspots.csv) > main/load own
 line main/load/from_path > _·reader@main/load/from_path value
-known #125 line _·reader@main/load/from_path > main/load/deserialize value
-known #125 line main/load/deserialize > Record·record@main/load/deserialize value
+line _·reader@main/load/from_path > main/load/for record in reader.deserialize() value
+line main/load/for record in reader.deserialize() > Record·record@main/load/for record in reader.deserialize() value
 line main/load/new > _·series@main/load/new value
-known #125 line Record·record@main/load/deserialize > main/load/?1/Record.into_month/ok_or value   # `self.year`, `self.month`
+known #128 line Record·record@main/load/for record in reader.deserialize() > main/load/?1/Record.into_month/ok_or value   # `self.year`, `self.month`
 line main/load/?1/Record.into_month/ok_or > _·date@main/load/?1/Record.into_month/ok_or value
 line _·date@main/load/?1/Record.into_month/ok_or > main/load/?1/Record.into_month/Month() value
-known #125 line Record·record@main/load/deserialize > main/load/?1/Record.into_month/Month() value # `self.mean`, ..
+known #128 line Record·record@main/load/for record in reader.deserialize() > main/load/?1/Record.into_month/Month() value # `self.mean`, ..
 line main/load/?1/Record.into_month/Month() > Month@main/load/?1/Record.into_month/Month() value
 line Month@main/load/?1/Record.into_month/Month() > main/load/?1/Record.into_month value
 known #131 line main/load/?1/Record.into_month > Month@main/load/?1/Record.into_month value
@@ -122,7 +122,7 @@ home Settings·settings@main/Settings() main
 home _·body@main/?1/download/bytes main/?1/download
 home _·reader@main/load/from_path main/load
 home _·series@main/load/new main/load
-known #125 home Record·record@main/load/deserialize main/load
+home Record·record@main/load/for record in reader.deserialize() main/load
 home _·date@main/load/?1/Record.into_month/ok_or main/load/?1/Record.into_month
 home Month@main/load/?1/Record.into_month/Month() main/load/?1/Record.into_month
 known #131 home Month@main/load/?1/Record.into_month main/load
@@ -146,8 +146,6 @@ side File(data/raw/sunspots.csv) between
 side File(figures/sunspots.png) right
 
 # a record the csv crate makes inside `load` is drawn from beyond, at the route's frame
-known #125 extra home Record·record main
-known #125 extra line Record·record > main/load/?1/Record.into_month value
 
 # the Month one arm makes takes the choice as its moment, though the other arm makes none
 known #131 extra line main/load/?1/Record.into_month > Month@main/load/?1 value
@@ -175,3 +173,6 @@ known #138 line main/Trend.save/Trend.draw > Error@main/Trend.save/Trend.draw va
 known #138 line Error@main/Trend.save/Trend.draw > main/Trend.save value
 known #138 line main/Trend.save > Error@main/Trend.save value
 known #138 line Error@main/Trend.save > main value
+
+# the loop hands the record to `into_month`'s own arrow, though only `ok_or` and `Month()` inside take it
+known #126 extra line Record·record@main/load/for record in reader.deserialize() > main/load/?1/Record.into_month value

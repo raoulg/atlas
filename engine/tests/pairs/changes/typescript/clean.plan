@@ -4,7 +4,7 @@
 # delete through the client the route is handed, and `main` drops what it gives. `counted` copies the Map (a library
 # operation whose result it names) and sets a key of the copy. The route's parameter `api` is a value from its start;
 # an object literal no step makes is a value from beyond.
-route clean.ledger.main
+route ledger.ledger.main
 step main/Ledger()
 step main/refiled
 step main/Ledger.add

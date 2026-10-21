@@ -1,7 +1,7 @@
 # One of the two takers of the unopened sum: `line` takes `Fit | Failed` and chooses again which variant it holds;
 # its arms call only the library, so the choice holds no occurrence and the route is its own arrow.
 
-route shortcut.report.line
+route fits.report.line
 line entry > line call
 known #127 line Fit | Failed·r > line value                        # the route's parameter, by its name
 

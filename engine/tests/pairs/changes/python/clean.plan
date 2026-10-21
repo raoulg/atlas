@@ -9,6 +9,7 @@ route board.core.main
 step main/Cell()
 step main/Board()
 step main/Board.mark_all
+step main/Board.mark_all/for cell in self.cells
 step main/Board.reset
 step main/renamed
 step main/Board.merged
@@ -23,7 +24,7 @@ line entry > main call
 line main/Cell() > Cell@main/Cell() value
 line Cell@main/Cell() > main/Board() value
 line main/Board() > Board·board@main/Board() value
-line Board·board@main/Board() > main/Board.mark_all value
+line main/Board.mark_all/for cell in self.cells > Cell·cell@main/Board.mark_all/for cell in self.cells value
 line main/Board.mark_all > Board·board@main/Board.mark_all value
 line main/Board.reset > Board·board@main/Board.reset value
 line main/renamed > Board@main/renamed value
@@ -43,6 +44,7 @@ line main/queued > main back
 home Cell@main/Cell() main
 home Board·board@main/Board() main
 home Board·board@main/Board.mark_all main
+home Cell·cell@main/Board.mark_all/for cell in self.cells main/Board.mark_all
 home Board·board@main/Board.reset main
 home Board@main/renamed main
 home Board@main/Board.merged/Board() main/Board.merged
@@ -99,3 +101,9 @@ known #126 extra line Board@main/renamed > main/Board.merged value
 # A result of no type of the code's that goes into the call around it also goes back to the step that called it
 known #134 extra line main/with_tag > main back
 known #134 extra line main/tally > main back
+
+# The loop over `self.cells` goes over the board the method runs on, and `cell.marked = True` is the body's own use of
+# each cell: the board reaches the loop through `self` (#128); the own arrow takes it instead (#126)
+known #128 line Board·board@main/Board() > main/Board.mark_all/for cell in self.cells value
+known #101 line Cell·cell@main/Board.mark_all/for cell in self.cells > main/Board.mark_all value
+known #126 extra line Board·board@main/Board() > main/Board.mark_all value
