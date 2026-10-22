@@ -65,7 +65,7 @@ known #125 line _·text@ReadingStore()/ReadingStore.save/push_str > ReadingStore
 known #74 line ReadingStore > ReadingStore()/ReadingStore.history/read_to_string value   # the caller's instance: read_to_string is handed `self.readings`
 line Disk(ReadingStore.readings) > ReadingStore()/ReadingStore.history own
 line ReadingStore()/ReadingStore.history/read_to_string > _·text@ReadingStore()/ReadingStore.history/read_to_string value
-known #103 line _·text@ReadingStore()/ReadingStore.history/read_to_string > ReadingStore()/ReadingStore.history/split value   # split runs on a line of the text
+line _·text@ReadingStore()/ReadingStore.history/read_to_string > ReadingStore()/ReadingStore.history/split value   # split runs on a line of the text
 known #101 line _·text@ReadingStore()/ReadingStore.history/read_to_string > ReadingStore()/ReadingStore.history value   # its lines go on through unnamed calls to what history returns
 line ReadingStore()/ReadingStore.history/split > _·parts@ReadingStore()/ReadingStore.history/split value
 line _·parts@ReadingStore()/ReadingStore.history/split > ReadingStore()/ReadingStore.history/next value
@@ -108,7 +108,7 @@ known #126 extra line Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStor
 line Day·day > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history value
 line Disk(ReadingStore.readings) > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history own
 line ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/read_to_string > _·text@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/read_to_string value
-known #130 line _·text@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/read_to_string > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/split value   # #130
+line _·text@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/read_to_string > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/split value
 known #130 line _·text@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/read_to_string > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history value   # #130
 line ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/split > _·parts@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/split value
 line _·parts@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/split > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/next value   # drawn in the arm the early return makes
