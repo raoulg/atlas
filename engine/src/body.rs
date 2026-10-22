@@ -519,6 +519,11 @@ impl<T> Bindings<T> {
             .max_by_key(|&i| (self.all[i].1, i))
     }
 
+    /// Where the binding of `name` visible at `at` is visible from: which binding it is.
+    pub fn which(&self, name: &str, at: usize) -> Option<usize> {
+        self.at(name, at).map(|i| self.all[i].1)
+    }
+
     /// What the binding of `name` visible at `at` holds.
     pub fn get(&self, name: &str, at: usize) -> Option<&T> {
         self.at(name, at).map(|i| &self.all[i].3)

@@ -49,6 +49,8 @@ known #74 line ReadingStore > ReadingStore()/ReadingStore.outages value   # the 
 line Disk(ReadingStore.outages) > ReadingStore()/ReadingStore.outages own
 known #74 line ReadingStore > ReadingStore()/ReadingStore.summary value   # the caller's instance, for the write it makes itself (#126 too: Atlas hands it to history only)
 known #74 line ReadingStore > ReadingStore()/ReadingStore.summary/readFileSync value   # the caller's instance: readFileSync is handed `this.summaries`
+known #74 extra line ReadingStore@ReadingStore()/ReadingStore() > ReadingStore()/ReadingStore.summary/readFileSync value   # Atlas runs it on what the constructor built
+line Day·day > ReadingStore()/ReadingStore.summary/find value   # `key`, built from `day.station` and `day.date`
 known #127 line Day·day > ReadingStore()/ReadingStore.summary value   # #127: the key it looks for is made of the day
 line Disk(ReadingStore.summaries) > ReadingStore()/ReadingStore.summary own
 line ReadingStore()/ReadingStore.summary > Disk(ReadingStore.summaries) own
@@ -64,7 +66,7 @@ line ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/Reading() > Rea
 line Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/Reading() > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history value   # #130: the code after `return` is the other arm
 line ReadingStore()/ReadingStore.summary/?1/ReadingStore.history > Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history value   # #130: the code after `return` is the other arm
 line Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history > ReadingStore()/ReadingStore.summary/?1/map value   # #130: the code after `return` is the other arm
-known #130 line Day·day > ReadingStore()/ReadingStore.summary/?1/map value   # #130: the code after `return` is the other arm
+line Day·day > ReadingStore()/ReadingStore.summary/?1/map value   # #130: the code after `return` is the other arm
 line ReadingStore()/ReadingStore.summary/?1/map > _·temperatures@ReadingStore()/ReadingStore.summary/?1/map value   # #130: the code after `return` is the other arm
 known #101 line _·temperatures@ReadingStore()/ReadingStore.summary/?1/map > ReadingStore()/ReadingStore.summary value   # `Math.min(...temperatures)`, the body's own use
 

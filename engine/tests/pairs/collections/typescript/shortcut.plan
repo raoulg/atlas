@@ -29,7 +29,8 @@ line Row·rows@Store()/Store.put/Store.rows > Store()/Store.put/push value
 line Row@Store()/Store.put/Row() > Store()/Store.put/push value
 line Store()/Store.put/push > Row·rows@Store()/Store.put/push value
 line Row·rows@Store()/Store.put/push > Store()/Store.put/writeRows value  # `rows.map(..)`, no step, is the body's own use
-known #128 line Store > Store()/Store.put/writeRows value  # K: `writeRows(this.path, rows)` hands `this`
+known #74 line Store > Store()/Store.put/writeRows value  # `writeRows(this.path, rows)` hands the caller's instance
+known #74 extra line Store@Store()/Store() > Store()/Store.put/writeRows value   # Atlas runs it on what the constructor built
 line Store()/Store.put/writeRows > Disk(Store.path) own
 step Store()/Store.putAll
 line entry > Store()/Store.putAll call
@@ -51,7 +52,8 @@ line Row·rows@Store()/Store.putAll/Store.rows > Store()/Store.putAll/push value
 line Row@Store()/Store.putAll/Row() > Store()/Store.putAll/push value
 line Store()/Store.putAll/push > Row·rows@Store()/Store.putAll/push value
 line Row·rows@Store()/Store.putAll/push > Store()/Store.putAll/writeRows value  # `rows.map(..)`, no step, is the body's own use
-known #128 line Store > Store()/Store.putAll/writeRows value  # K: `writeRows(this.path, rows)` hands `this`
+known #74 line Store > Store()/Store.putAll/writeRows value  # `writeRows(this.path, rows)` hands the caller's instance
+known #74 extra line Store@Store()/Store() > Store()/Store.putAll/writeRows value   # Atlas runs it on what the constructor built
 line Store()/Store.putAll/writeRows > Disk(Store.path) own
 step Store()/Store.get
 line entry > Store()/Store.get call
@@ -82,8 +84,6 @@ side entry left
 side Disk(Store.path) both
 
 # What Atlas gets wrong here, each by the issue of its cause:
-# K: a value handed through a field reaches no step inside: `writeRows(this.path, rows)` hands `this` (#121, decision
-#    1), and the helper takes no Store
 # #74: the doors run on what the constructor door built, not on the caller's instance `Store` from beyond (#121,
 #    decision 2): the constructor's Store goes back to the caller and is joined to no door
 
