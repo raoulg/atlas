@@ -91,6 +91,9 @@ pub struct UseSyntax {
     pub fails: fn(TsNode, &[u8]) -> bool,
     /// Is `child` what the call `node` is handed: its arguments.
     pub hands: fn(TsNode, TsNode) -> bool,
+    /// The names a call `node` changes among what it is handed, where the language writes it
+    /// (Rust's `&mut s`): the call makes them anew from what it runs on.
+    pub changes: fn(TsNode) -> Vec<TsNode>,
     /// Is `child` what `node` takes apart into the names its arms bind: a `match`'s subject.
     /// Where those names go is not followed, so the value is taken as going on.
     pub splits: fn(TsNode, TsNode) -> bool,
@@ -191,6 +194,19 @@ impl<'t, 's> Steps<'t, 's> {
                 return true;
             }
             handed |= (u.hands)(p, child);
+            // a call that changes a value it is handed (`f.read_to_string(&mut s)`) makes it anew from
+            // what it runs on: what the call is made of goes on where that value goes
+            let after = p.end_byte();
+            for changed in (u.changes)(p) {
+                let name = text(changed, self.src).to_string();
+                if !bound.insert(name.clone()) {
+                    continue;
+                }
+                let later = walk(self.body, u.names).into_iter().filter(|n| n.start_byte() >= after && text(*n, self.src) == name);
+                if later.filter(|n| !self.rebinds(*n)).any(|n| self.goes_on(n, bound)) {
+                    return true;
+                }
+            }
             if let Some((targets, value)) = (u.binds)(p).filter(|(_, value)| value.id() == child.id()) {
                 if walk(targets, u.keeps).first().is_some() {
                     return true;

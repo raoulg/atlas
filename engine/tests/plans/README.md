@@ -107,5 +107,6 @@ smallest that showed one law:
 | `readback-one-body`, `two-steps` | a place a step writes and reads back stays in its codomain; one a later step reads is between (R4) |
 | `merged-touch-order` | two equal calls are one touch that runs on the line of each: seeded in an arm, read, written on: both (R4) |
 | `test-only` | a place the route only tests is the choice's condition, no box and no line (R4) |
+| `read-into` | a handle read into a string the step returns is used: `read_to_string(&mut s)` makes `s` from it (R4) |
 | `open-mode-unknown` | a file opened with a mode that is a value goes no way the code says: in neither (R4) |
 | `what-holds` | a place read and changed stands twice, a choice is a coproduct, a call into a family a choice (Z13) |
