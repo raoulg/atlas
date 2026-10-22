@@ -1964,6 +1964,7 @@ const USES: UseSyntax = UseSyntax {
     leaves: |n, _| matches!(n.kind(), "return_statement" | "yield"),
     fails: |n, _| matches!(n.kind(), "raise_statement" | "assert_statement"),
     hands: |n, child| n.kind() == "call" && n.child_by_field_name("arguments").map(|a| a.id()) == Some(child.id()),
+    changes: |_| vec![],
     splits: |n, child| n.kind() == "match_statement" && n.child_by_field_name("subject").map(|v| v.id()) == Some(child.id()),
     names: &["identifier"],
     keeps: &["attribute", "subscript"],

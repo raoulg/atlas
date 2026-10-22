@@ -1,0 +1,23 @@
+# One step writes a log line, a later step opens it and reads it into a string it returns. The handle is used only as
+# what `read_to_string(&mut s)` runs on: the call makes `s` anew from it, and `s` is returned, so what was read goes on
+# and the log stands between the step that writes it and the step that reads it (#76).
+
+route openread.main
+line entry > main call
+step main/save
+step main/load
+step main/load/unwrap                                                # File::open(..).unwrap(), named f
+step main/load/new                                                   # String::new(), named s
+line main/save > File(data/log.txt) own
+line File(data/log.txt) > main/load own
+line main/load/unwrap > _·f@main/load/unwrap value
+line main/load/new > _·s@main/load/new value
+line main/load > main back                                           # the string, which main prints
+line main > Screen own
+
+home _·f@main/load/unwrap main/load
+home _·s@main/load/new main/load
+
+side entry left
+side File(data/log.txt) between
+side Screen right
