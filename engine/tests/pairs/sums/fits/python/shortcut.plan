@@ -5,15 +5,15 @@ route fits.cli.main
 step main/fit
 choice main/fit/?1
 step main/fit/?1/Failed()
-known #130 step main/fit/?1/Fit()                                  # what follows the early return is the other arm
+step main/fit/?1/Fit()                                  # what follows the early return is the other arm
 step main/line
 step main/points
 
 line entry > main call
-known #130 line main/fit/?1/Failed() > Failed@main/fit/?1 value   # with Fit() in the other arm, the sum either arm makes
-known #130 line main/fit/?1/Fit() > Fit@main/fit/?1 value
-known #130 line Failed@main/fit/?1 > main/fit value
-known #130 line Fit@main/fit/?1 > main/fit value
+line main/fit/?1/Failed() > Failed@main/fit/?1 value   # with Fit() in the other arm, the sum either arm makes
+line main/fit/?1/Fit() > Fit@main/fit/?1 value
+line Failed@main/fit/?1 > main/fit value
+line Fit@main/fit/?1 > main/fit value
 line main/fit > Fit | Failed·result@main/fit value        # fit gives one value, the sum, held by `result`
 line Fit | Failed·result@main/fit > main/line value       # the same sum, however `points` spells it
 line Fit | Failed·result@main/fit > main/points value
@@ -21,18 +21,9 @@ line main/line > main back                                        # the line, a 
 line main/points > main back                                      # the points, a list of floats, printed by main
 line main > Screen own
 
-known #130 home Failed@main/fit/?1 main/fit
-known #130 home Fit@main/fit/?1 main/fit
+home Failed@main/fit/?1 main/fit
+home Fit@main/fit/?1 main/fit
 home Fit | Failed·result@main/fit main
 
 side entry left
 side Screen right
-
-# the early return is read as a choice of one arm, and what follows it as a step after the choice
-known #130 extra step main/fit/Fit()
-known #130 extra line main/fit/Fit() > Fit@main/fit/Fit() value
-known #130 extra line Fit@main/fit/Fit() > main/fit value
-known #130 extra home Fit@main/fit/Fit() main/fit
-known #130 extra line main/fit/?1/Failed() > Failed@main/fit/?1/Failed() value
-known #130 extra line Failed@main/fit/?1/Failed() > main/fit value
-known #130 extra home Failed@main/fit/?1/Failed() main/fit

@@ -151,6 +151,58 @@ pub struct ChoiceSyntax {
     pub continues: fn(TsNode) -> Option<TsNode>,
     /// What a direct child is to the choice.
     pub part: fn(TsNode, TsNode, &[u8]) -> Part,
+    /// Is this choice a guard: none of its arms runs on past its end (each ends in a `return`, a `raise`, a `continue`
+    /// or a `break`) and it has no arm for when none is chosen. What follows it in its block runs only when none is,
+    /// so it is the guard's last arm (`if not xs: return Failed(..)` then `return Fit(..)`).
+    pub guards: fn(TsNode, &[u8]) -> bool,
+}
+
+/// The arm that follows a guard in its block: the one after the guard's own arms.
+fn after_guard(g: TsNode, src: &[u8], ids: &std::collections::HashMap<usize, u32>, syn: &ChoiceSyntax) -> u32 {
+    let k = ids.get(&g.id());
+    walk_all(g)
+        .into_iter()
+        .filter(|x| ids.get(&x.id()) == k)
+        .flat_map(|x| {
+            named_children(x).into_iter().filter_map(move |c| match (syn.part)(x, c, src) {
+                Part::Arm(a) => Some(a),
+                _ => None,
+            })
+        })
+        .max()
+        .map_or(0, |a| a + 1)
+}
+
+/// The guards before `n` in its block, the nearest first, each with its choice and the arm `n` is in.
+pub fn guarded_by(n: TsNode, src: &[u8], ids: &std::collections::HashMap<usize, u32>, syn: &ChoiceSyntax) -> Vec<(u32, u32)> {
+    let mut out = vec![];
+    let mut s = n.prev_named_sibling();
+    while let Some(g) = s {
+        if let Some(&c) = ids.get(&g.id()).filter(|_| (syn.guards)(g, src)) {
+            out.push((c, after_guard(g, src, ids, syn)));
+        }
+        s = g.prev_named_sibling();
+    }
+    out
+}
+
+/// The guards of a body, each with its choice, the arm what follows it is in, and the node that arm starts and ends at.
+pub fn guards<'t>(
+    body: TsNode<'t>,
+    src: &[u8],
+    ids: &std::collections::HashMap<usize, u32>,
+    syn: &ChoiceSyntax,
+) -> Vec<(u32, u32, TsNode<'t>, TsNode<'t>)> {
+    let mut out = vec![];
+    for g in walk_all(body).into_iter().filter(|g| ids.contains_key(&g.id()) && (syn.guards)(*g, src)) {
+        let (Some(first), Some(last)) =
+            (g.next_named_sibling(), g.parent().and_then(|p| p.named_child(p.named_child_count().saturating_sub(1))))
+        else {
+            continue;
+        };
+        out.push((ids[&g.id()], after_guard(g, src, ids, syn), first, last));
+    }
+    out
 }
 
 /// The choices of a body, numbered in source order; a continuation shares the number of the
@@ -175,12 +227,14 @@ pub fn number_choices(body: TsNode, src: &[u8], syn: &ChoiceSyntax) -> std::coll
     ids
 }
 
-/// The arms of the choices `n` sits in, from the outermost in.
+/// The arms of the choices `n` sits in, from the outermost in: of each choice that holds it, and of each guard before it
+/// in a block that holds it.
 pub fn arms_of(n: TsNode, body: TsNode, src: &[u8], ids: &std::collections::HashMap<usize, u32>, syn: &ChoiceSyntax) -> Vec<(u32, u32)> {
     let mut out = vec![];
     let mut child = n;
     while child.id() != body.id() {
         let Some(p) = child.parent() else { break };
+        out.extend(guarded_by(child, src, ids, syn));
         if let (Some(&c), Part::Arm(a)) = (ids.get(&p.id()), (syn.part)(p, child, src)) {
             out.push((c, a));
         }
