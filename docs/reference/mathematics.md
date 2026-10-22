@@ -424,7 +424,14 @@ open:
   steps made of it;
 - a step that can fail has the codomain `T + E`: the error is a value its constructor makes in the arm
   that raises it, the step's border hands it on with its result, and a call that does not catch it
-  hands it on to its own caller. Python's propagation and Rust's `?` are one form, no choice.
+  hands it on to its own caller. Python's propagation and Rust's `?` are one form, no choice. An error
+  is a value of the plan where the code says it is one, whatever library its type is of: where the
+  code builds it to raise (`raise RuntimeError(..)`, `throw new Error(..)`, `Err(Error::Empty)`), where
+  a `?` hands on what a call fails with (converted to the function's error type, glued into the step
+  as a projection is), and where a handler takes it. An error a library may raise that the code
+  neither builds, hands on nor catches, the code does not say, and it is no value. The errors the arms
+  of one choice hand on are one value at the choice's moment, and an opened step takes each error its
+  steps hand on that none of them takes.
 
 What the reader has open is the map `q`, nothing else: an occurrence goes to its outermost closed
 ancestor (or to itself), a type to the box its family stands in (`placeOfType`), a world place to its

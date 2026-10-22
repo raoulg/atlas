@@ -738,6 +738,14 @@ const stepMorphism = (key, own, isAnchor, leaf) => {
   // and what it changes of a value it was handed goes out as what its steps made of it (`other.cells.clear()`)
   const made = new Set(own && !leaf && !step.startsWith("op:") ? [...(arrowOf(step)?.gives_back ? bodyOf(step, on).made_from || [] : []), ...(arrowOf(step)?.changes || [])] : []);
   for (const x of made) keep.add(addPlace(typePlace(x)));
+  // an error is a value in the codomain `T + E` (#138): what a site the reader marks `raises` gives leaves the body as an
+  // error, and a site marked `fails` hands on its callee's error of that type ("" for no type of the code's). An opened body
+  // takes the errors its steps hand on and hands each kind on at its own moment, as its call does closed, up to the route
+  const errKey = t => (t ? addPlace(typePlace(t)) : addPlace({id: "v:#error", label: "·", kind: "type", hue: hueOf(null), type: null, name: "#error"}));
+  const body = byId.get(step), inner = new Set(), errs = new Set(), raised = new Set();
+  if (own && !leaf && !step.startsWith("op:")) (body?.sites || []).forEach((_, i) => { const r = siteIn(body, i); if (r?.raises) for (const g of r.gives || []) inner.add(g.type || ""); if (r?.fails != null) inner.add(r.fails); });
+  for (const t of inner) { const k = errKey(t); m.cod.set(k, false); errs.add(k); }
+  if (site?.fails != null) { const k = errKey(site.fails); m.cod.set(k, false); errs.add(k); }
   // the route of an exported class is its doors, each called by the entry: a door runs on the caller's instance, one value
   // of the class from beyond, and takes its parameters as a route does
   const door = isDoorOf(key);
@@ -792,7 +800,9 @@ const stepMorphism = (key, own, isAnchor, leaf) => {
   // reader gives it: taken at the border by the names that hold them, inside the frame
   const uses = own && !leaf && !step.startsWith("op:") ? (byId.get(step)?.uses || []).filter(u => u.name) : [];
   for (const u of uses) if (u.type) addPlace({...typePlace(u.type), id: `t:${u.type}~${u.name}`, name: u.name});
-  return {dom: m.dom, cod: m.cod, dn, cn, goes: m.goes, beyond, keep, kept, uses};
+  // what a site that raises gives is an error, made where the site makes it
+  if (site?.raises) for (const g of site.gives || []) raised.add(addPlace(g.type ? (g.name ? {...typePlace(g.type), id: `t:${g.type}~${g.name}`, name: g.name} : typePlace(g.type)) : {id: "v:" + g.name, label: "·", kind: "type", hue: hueOf(null), type: null, name: g.name}));
+  return {dom: m.dom, cod: m.cod, dn, cn, goes: m.goes, beyond, keep, kept, uses, errs, raised, inner: new Set([...inner].map(errKey))};
 };
 // build the nested picture: frames for open steps, pills for closed ones (siblings with the same places are one pill)
 const pills = new Map(), frames = new Map();  // id -> {...}
@@ -834,7 +844,7 @@ const build = (node, parent, caller) => {
     const hb = fine ? !!parent && !caller && node.id !== V.route && !lib && !/^(part|unit|op):/.test(node.id) && goesBack(node.id, own.cod) : !!frames.get(fid).closed?.hb;
     const said = hb ? backName(node.id, own.cod) : null;
     if (own.dom.size || own.cod.size || hb || (back.length && !lib && !node.id.startsWith("unit:"))) {
-      const oid = "o:" + node.id, own_ = {id: oid, steps: [node.id], D: own.dom, C: own.cod, dn: own.dn, cn: own.cn, goes: own.goes, parent: fid, hue: node.hue, own: true, beyond: own.beyond, keep: own.keep, ...(own.uses?.length ? {uses: own.uses} : {}), ...(said ? {said} : {}), ...(fine && node.id !== V.route && !lib ? {border: true} : {})};
+      const oid = "o:" + node.id, own_ = {id: oid, steps: [node.id], D: own.dom, C: own.cod, dn: own.dn, cn: own.cn, goes: own.goes, parent: fid, hue: node.hue, own: true, beyond: own.beyond, keep: own.keep, ...(own.uses?.length ? {uses: own.uses} : {}), ...(own.errs?.size ? {errs: own.errs, inner: own.inner} : {}), ...(own.raised?.size ? {raised: own.raised} : {}), ...(said ? {said} : {}), ...(fine && node.id !== V.route && !lib ? {border: true} : {})};
       pills.set(oid, own_);
       for (const b of back) b.backTo = oid;
       if (hb) return [own_];
@@ -849,7 +859,7 @@ const build = (node, parent, caller) => {
   if (caller) m.dom.set(addPlace(entryPlace(caller)), false);
   // a unit stands even when nothing crosses its edge, so that it can be opened
   if (!m.dom.size && !m.cod.size && !hb && !node.id.startsWith("unit:")) return [];
-  const pill = {id: "n:" + node.id, steps: [node.id], D: m.dom, C: m.cod, dn: m.dn, cn: m.cn, goes: m.goes || new Map(), parent, hue: node.hue, branch: node.branch, ...(said ? {said} : {}), ...(m.kept?.size ? {kept: m.kept} : {}), ...(node.parse ? {parse: true} : {}), ...(cut ? {cut: true, mult: m.mult, split: m.split} : {})};
+  const pill = {id: "n:" + node.id, steps: [node.id], D: m.dom, C: m.cod, dn: m.dn, cn: m.cn, goes: m.goes || new Map(), parent, hue: node.hue, branch: node.branch, ...(said ? {said} : {}), ...(m.errs?.size ? {errs: m.errs} : {}), ...(m.raised?.size ? {raised: m.raised} : {}), ...(m.kept?.size ? {kept: m.kept} : {}), ...(node.parse ? {parse: true} : {}), ...(cut ? {cut: true, mult: m.mult, split: m.split} : {})};
   pills.set(pill.id, pill);
   return hb ? [pill] : [];
 };
@@ -945,6 +955,8 @@ const madeAt = (P, k, kept) => {
   const a = armOf(P);
   if (!a) return ownMoment(P);
   if (!frames.get(a.choice).synthetic) return choiceMoment(a.choice);
+  // an error an arm hands on goes past the choice, whichever step of the arm fails: the errors of a choice are one value
+  if (P.errs?.has(k)) return choiceMoment(a.choice);
   // of what one arm makes of a value, the last is what it hands on past the choice; what it makes first is made inside it
   const m = armsOf().get(valueOfArm(a.choice, k, P.cn));
   return kept || (m && m.on && m.arms.size > 1 && m.last.get(a.branch) === P) ? choiceMoment(a.choice) : ownMoment(P);
@@ -1100,7 +1112,7 @@ for (const P of pills.values()) {
     if (a) { if (!madeIn.has(a.choice)) madeIn.set(a.choice, new Set()); madeIn.get(a.choice).add(v); }
     if (a && at === choiceMoment(a.choice)) { const ak = valueOfArm(a.choice, k, P.cn); armKey.set(v, ak); if (!armValues.has(ak)) armValues.set(ak, []); if (!armValues.get(ak).includes(v)) armValues.get(ak).push(v); }
     if (mult && P.mult.C.has(k)) mult.C.set(v, P.mult.C.get(k));
-    Object.assign(places.get(v), {at});
+    Object.assign(places.get(v), {at}, P.errs?.has(k) || P.raised?.has(k) ? {err: true} : {});
     if (nm && !nm.startsWith("#") && !k.startsWith("v:")) Object.assign(places.get(v), {label: `${places.get(k).label} · ${nm}`, held: nm});
     latestSet(kindKey(k) + "|" + nm, v, P); latestSet(kindKey(k) + "|", v, P);
     Cv.set(v, r);
@@ -1115,6 +1127,12 @@ for (const P of pills.values()) {
 // it was made from. A value from beyond the step that a step inside takes crosses the frame to that step, also where the
 // signature takes it by no name (`report(job: Job, ..)` hands `job` on to `Message(..)`)
 if (fine) {
+  // an opened body takes every error its steps hand on that no step of it takes, each value by itself, up to the route
+  for (const P of pills.values()) if (P.own && P.inner?.size) {
+    const fid = P.parent, kinds = new Set([...P.inner].map(kindKey)), within = [...pills.values()].filter(Q => Q !== P && planChain(Q.parent).includes(fid));
+    const madeHere = v => { const at = places.get(v)?.at; return !!at && (at.startsWith(fid + "/") || at.startsWith(fid + "|") || at.startsWith(fid + "~c")); };
+    for (const Q of within) for (const v of Q.C.keys()) if (places.get(v)?.err && madeHere(v) && kinds.has(kindKey(v)) && !within.some(R => R.D.has(v))) { P.D.set(v, false); (P.used ||= new Set()).add(v); }
+  }
   const isOp = Q => stepOf(Q.steps[0]).startsWith("op:");
   for (const P of pills.values()) if (P.own && P.border) {
     const fid = P.parent, within = [...pills.values()].filter(Q => Q !== P && planChain(Q.parent).includes(fid));
