@@ -236,8 +236,8 @@ const REVIEWED: &[(&str, &str, &str)] = &[
     ),
     (
         "choices",
-        "atlas-engine.rust.body.Body.value_class",
-        "`value_class` and `declared` read a name two ways, the class of a value and the type a declaration gives it",
+        "atlas-engine.rust.body.root",
+        "`root`, `value_class` and `declared` read a name three ways: the name a value is a part of, the class of a value, the type a declaration gives it",
     ),
     (
         "choices",
