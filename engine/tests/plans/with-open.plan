@@ -3,12 +3,20 @@
 
 route withopen.run
 step run/save
+step run/save/open                                          # `with open(NOTE, "w") as f`, as `f = open(..)`
 step run/load
+step run/load/open
 line entry > run call
 line run/save > File(data/note.txt) own
 line File(data/note.txt) > run/load own
 line run/load > run back                       # the note, a str
 line run > Screen own
+line run/save/open > TextIOWrapper·f@run/save/open value
+line run/load/open > TextIOWrapper·f@run/load/open value
+known #101 line TextIOWrapper·f@run/save/open > run/save value   # `f.write(..)`
+known #101 line TextIOWrapper·f@run/load/open > run/load value   # `f.read()`
+home TextIOWrapper·f@run/save/open run/save
+home TextIOWrapper·f@run/load/open run/load
 
 side entry left
 side File(data/note.txt) between

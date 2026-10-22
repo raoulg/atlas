@@ -546,6 +546,30 @@ fn composition_a_named_result_or_a_change_is_a_library_step() {
     assert!(!keep.iter().any(|(op, _)| op == "prepare" || op == "query_map"), "{keep:?}");
 }
 
+/// A call is handed the values the names in its arguments hold. A name a pattern binds of a part
+/// of another's value is that value (`Command::Report { format, .. }` of `cli.command` hands
+/// `format.renderer()` the `Cli`; `Outcome::Failed { reason }` hands the Report built of it the
+/// `Outcome`), also where a format string writes it (`format!("failed: {reason}")`); a call written
+/// inside the arguments that is a step of its own takes its names itself (`level.prefix()` in the
+/// Message `report` builds).
+#[test]
+fn composition_a_call_is_handed_what_the_names_in_its_arguments_hold() {
+    let hands = |g: &Graph, f: &str, to: &str| -> Vec<String> {
+        node(g, f).sites.iter().filter(|s| s.to == to).flat_map(|s| s.hands.iter().map(|h| format!("{}·{}", h.ty, h.name))).collect()
+    };
+    assert!(hands(clean(), "spend.main", "spend.Format.renderer").contains(&"spend.Cli·cli".to_string()));
+    let f = fits("clean");
+    let report = hands(&f, "fits.report.describe", "fits.report.Report");
+    assert!(report.iter().filter(|x| *x == "fits.model.Outcome·o").count() >= 2, "both arms build of `o`: {report:?}");
+    // what a closure is handed of what an iterator goes over is a part of it: `run` of
+    // `series.windows(months).map(|run| Smoothed { .. })` is a window of the series
+    let smooth = hands(&sunspots("rust-clean"), "sunspots.series.smooth", "sunspots.series.Smoothed");
+    assert!(smooth.contains(&"sunspots.series.Month·series".to_string()), "{smooth:?}");
+    let c = choices_side("clean");
+    let message = hands(&c, "runs.report", "runs.Message");
+    assert!(!message.iter().any(|h| h.starts_with("runs.Level")), "the level goes to `prefix`, not to Message: {message:?}");
+}
+
 /// A `let .. else` is a choice: its `else` runs when the pattern does not match and must leave,
 /// so what follows it runs otherwise. `Expense::parse` builds the line's error in the `else` and
 /// the expense after it: two arms of one choice.

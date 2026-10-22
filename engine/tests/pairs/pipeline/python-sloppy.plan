@@ -5,6 +5,7 @@
 route sunspots
 step sunspots/get_data
 step sunspots/get_data/get                                        # `r = requests.get(url)`
+step sunspots/get_data/open                                       # `with open(..) as f`
 step sunspots/get_data/read_csv                                   # `df = pd.read_csv(..)`
 step sunspots/clean
 step sunspots/clean/drop                                          # `df.drop(.., inplace=True)` changes the frame
@@ -16,6 +17,8 @@ line entry > sunspots call
 line Web(www.sidc.be) > sunspots/get_data own
 line sunspots/get_data/get > Response·r@sunspots/get_data/get value
 known #101 line Response·r@sunspots/get_data/get > sunspots/get_data value          # `f.write(r.text)`
+line sunspots/get_data/open > TextIOWrapper·f@sunspots/get_data/open value
+known #101 line TextIOWrapper·f@sunspots/get_data/open > sunspots/get_data value   # `f.write(r.text)`
 line sunspots/get_data > File(data/raw/sunspots.csv) own          # and reads it back in its own body
 line sunspots/get_data/read_csv > DataFrame·df@sunspots/get_data/read_csv value
 known #101 line DataFrame·df@sunspots/get_data/read_csv > sunspots/get_data value   # kept in the module's `df`
@@ -33,6 +36,7 @@ line sunspots/plot > Figure own                                # pyplot's curren
 line sunspots/plot > File(figures/sunspots.png) own
 
 home Response·r@sunspots/get_data/get sunspots/get_data
+home TextIOWrapper·f@sunspots/get_data/open sunspots/get_data
 home DataFrame·df@sunspots/get_data/read_csv sunspots/get_data
 home DataFrame·df@sunspots/clean/drop sunspots/clean
 home DataFrame·df@sunspots/clean/reset_index sunspots/clean
@@ -45,10 +49,3 @@ side Figure right
 side File(figures/sunspots.png) right
 
 # a library call whose result no name holds is drawn as a step: what it gives should go into the call around it
-known #125 extra step sunspots/clean/df["year"].astype
-known #125 extra step sunspots/clean/df["month"].astype
-known #125 extra step sunspots/smooth/df["mean"].rolling
-known #125 extra step sunspots/smooth/df["mean"].rolling(13, center=True).mean
-known #125 extra line sunspots/smooth/df["mean"].rolling > _@sunspots/smooth/df["mean"].rolling value
-known #125 extra line _@sunspots/smooth/df["mean"].rolling > sunspots/smooth/df["mean"].rolling(13, center=True).mean value
-known #125 extra home _@sunspots/smooth/df["mean"].rolling sunspots/smooth

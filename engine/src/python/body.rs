@@ -300,7 +300,31 @@ impl<'a> Seen<'a> {
         if !reached.is_empty() {
             return None;
         }
-        self.bound(f)
+        self.bound(f).or_else(|| self.on_library_value(f).map(Callee::Lib))
+    }
+
+    /// The library a method is called into where ty does not know the method: the one whose class
+    /// the value the chain starts from is (`table[cols].assign(..)` on a pandas `DataFrame` is
+    /// pandas'), where that value is of a library's class alone.
+    fn on_library_value(&self, f: TsNode) -> Option<String> {
+        let mut root = f.child_by_field_name("object").filter(|_| f.kind() == "attribute")?;
+        while let Some(inner) = match root.kind() {
+            "attribute" => root.child_by_field_name("object"),
+            "subscript" => root.child_by_field_name("value"),
+            "call" => {
+                root.child_by_field_name("function").filter(|g| g.kind() == "attribute").and_then(|g| g.child_by_field_name("object"))
+            }
+            _ => None,
+        } {
+            root = inner;
+        }
+        let v = self.value(root).filter(|v| !v.is_class && !v.is_code)?;
+        let mut packages = v.classes.iter().map(|t| match t {
+            Target::Lib(m) => Some(package_of(m)),
+            Target::Here { .. } => None,
+        });
+        let first = packages.next()??;
+        packages.all(|p| p.as_deref() == Some(first.as_str())).then_some(first)
     }
 
     /// The package a definition is in: a library's, by its module, or one Atlas reads as code, by
@@ -396,9 +420,9 @@ impl<'a> Seen<'a> {
             .into_iter()
             .flat_map(|n| {
                 let named = self.gives(n, text(n, src), &hands, ext);
-                if !named.iter().all(|h| h.ty.is_empty()) || !one {
+                if !named.iter().all(|h| h.ty.is_empty()) {
                     named
-                } else if !element.is_empty() {
+                } else if one && !element.is_empty() {
                     element.iter().map(|t| Held::new(t.clone(), text(n, src))).collect()
                 } else if undrawn {
                     vec![]
@@ -487,18 +511,19 @@ impl<'a> Seen<'a> {
                 continue;
             }
             let tys = v.map(|v| self.drawn(v, ext)).unwrap_or_default();
-            // a name whose type is not known is still a value the body made, when an earlier step made it
-            if tys.is_empty() && made.contains(name) {
+            // a name of no type Atlas draws is still a value where an earlier step made it, and where
+            // the call makes it anew
+            if tys.is_empty() && (made.contains(name) || changed) {
                 add(String::new(), name.to_string(), i.start_byte());
             }
             for ty in tys {
                 add(ty, name.to_string(), i.start_byte());
             }
         }
-        // what a library's call gives from values known by name is not also a nameless one
-        let named: HashSet<String> = out.iter().filter(|h| !h.name.is_empty()).map(|h| h.ty.clone()).collect();
-        for (ty, at) in glued.into_iter().filter(|(ty, _)| !named.contains(ty)) {
-            if !out.iter().any(|h| h.ty == ty && h.name.is_empty()) {
+        // what a library's call gives goes on from the values it is handed; only where it is handed
+        // none is it handed on by its type
+        if out.is_empty() {
+            for (ty, at) in glued {
                 out.push(Held { ty, name: String::new(), at: at as u32 });
             }
         }
@@ -987,7 +1012,12 @@ impl<'a, 't> Body<'a, 't> {
     /// What a call gives back, by the name it is assigned to: the type ty says, or, for a value
     /// whose type ty does not know, the name alone, when the call made it from what it was handed.
     fn gives(&self, c: TsNode, assigned: &str, hands: &[Held]) -> Vec<Held> {
-        self.seen.gives(c, assigned, hands, self.ext)
+        let mut gives = self.seen.gives(c, assigned, hands, self.ext);
+        // a value of no type of the code's is still the value the name holds
+        if gives.is_empty() && !assigned.is_empty() {
+            gives.push(Held::new(String::new(), assigned));
+        }
+        gives
     }
 
     /// The values a class keeps that the body changes by assignment: `Counter.total += 1`,
@@ -1021,7 +1051,14 @@ impl<'a, 't> Body<'a, 't> {
         let receiver = (fnode.kind() == "attribute").then(|| fnode.child_by_field_name("object")).flatten();
         let hands = self.hands(c, receiver, &steps.kept);
         let assigned = kept_as(c, self.src).unwrap_or_default();
-        let gives = self.gives(c, &assigned, &hands);
+        // `a, b = f(..)` names each part of what the call gives
+        let unpacked = unpacked_as(c, self.src);
+        let gives = match unpacked.is_empty() {
+            true => self.gives(c, &assigned, &hands),
+            false => unpacked.iter().flat_map(|n| self.gives(*n, text(*n, self.src), &hands)).collect(),
+        };
+        let assigned =
+            if unpacked.is_empty() { assigned } else { unpacked.iter().map(|n| text(*n, self.src)).collect::<Vec<_>>().join(", ") };
         self.read.new_ext.extend(hands.iter().chain(&gives).map(|h| h.ty.clone()).filter(|t| t.starts_with("ext:")));
         steps.keep(&gives);
         // a function of the package handed on as a value (`executor.submit(self.run, x)`,
@@ -1491,8 +1528,30 @@ fn kept_as(c: TsNode, src: &[u8]) -> Option<String> {
                     .map(|l| text(l, src).to_string())
             }
             "named_expression" if value("value") => return p.child_by_field_name("name").map(|l| text(l, src).to_string()),
+            // `with X as con` names what `X` gives, as `con = X` does
+            "as_pattern" if p.named_child(0).is_some_and(|v| v.id() == n.id()) && p.parent().is_some_and(|w| w.kind() == "with_item") => {
+                let alias = p.child_by_field_name("alias")?;
+                let name = if alias.kind() == "identifier" { alias } else { named_children(alias).into_iter().next()? };
+                return (name.kind() == "identifier" && text(name, src) != "_").then(|| text(name, src).to_string());
+            }
             _ => return None,
         }
+    }
+}
+
+/// The names a statement binds to the parts of what a call gives, where the call is the whole
+/// value of an assignment to a pattern: `uuid, soort, tekst = line.split(" ", 2)`.
+fn unpacked_as<'t>(c: TsNode<'t>, src: &[u8]) -> Vec<TsNode<'t>> {
+    let value = outermost(c, WRAPPERS);
+    let Some(p) = value.parent().filter(|p| p.kind() == "assignment") else { return vec![] };
+    if p.child_by_field_name("right").map(|r| r.id()) != Some(value.id()) {
+        return vec![];
+    }
+    match p.child_by_field_name("left") {
+        Some(l) if matches!(l.kind(), "pattern_list" | "tuple_pattern" | "list_pattern") => {
+            named_children(l).into_iter().filter(|n| n.kind() == "identifier" && text(*n, src) != "_").collect()
+        }
+        _ => vec![],
     }
 }
 

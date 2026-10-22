@@ -102,7 +102,7 @@ known #125 line _·text@ReadingStore()/ReadingStore.save/push_str > ReadingStore
 known #74 line ReadingStore > ReadingStore()/ReadingStore.history/read_to_string value   # the caller's instance: read_to_string is handed `self.readings`
 line Disk(ReadingStore.readings) > ReadingStore()/ReadingStore.history own
 line ReadingStore()/ReadingStore.history/read_to_string > _·text@ReadingStore()/ReadingStore.history/read_to_string value
-known #103 line _·text@ReadingStore()/ReadingStore.history/read_to_string > ReadingStore()/ReadingStore.history/split value   # split runs on a line of the text
+line _·text@ReadingStore()/ReadingStore.history/read_to_string > ReadingStore()/ReadingStore.history/split value   # split runs on a line of the text
 known #101 line _·text@ReadingStore()/ReadingStore.history/read_to_string > ReadingStore()/ReadingStore.history value   # its lines go on through unnamed calls to what history returns
 line ReadingStore()/ReadingStore.history/split > _·parts@ReadingStore()/ReadingStore.history/split value
 line _·parts@ReadingStore()/ReadingStore.history/split > ReadingStore()/ReadingStore.history/next value
@@ -137,7 +137,7 @@ line _·outages@ReadingStore()/ReadingStore.kept/collect > ReadingStore()/Readin
 known #74 line ReadingStore > ReadingStore()/ReadingStore.kept/ReadingStore.history/read_to_string value   # the caller's instance: read_to_string is handed `self.readings`
 line Disk(ReadingStore.readings) > ReadingStore()/ReadingStore.kept/ReadingStore.history own
 line ReadingStore()/ReadingStore.kept/ReadingStore.history/read_to_string > _·text@ReadingStore()/ReadingStore.kept/ReadingStore.history/read_to_string value
-known #103 line _·text@ReadingStore()/ReadingStore.kept/ReadingStore.history/read_to_string > ReadingStore()/ReadingStore.kept/ReadingStore.history/split value   # split runs on a line of the text
+line _·text@ReadingStore()/ReadingStore.kept/ReadingStore.history/read_to_string > ReadingStore()/ReadingStore.kept/ReadingStore.history/split value   # split runs on a line of the text
 known #101 line _·text@ReadingStore()/ReadingStore.kept/ReadingStore.history/read_to_string > ReadingStore()/ReadingStore.kept/ReadingStore.history value   # its lines go on through unnamed calls to what history returns
 line ReadingStore()/ReadingStore.kept/ReadingStore.history/split > _·parts@ReadingStore()/ReadingStore.kept/ReadingStore.history/split value
 line _·parts@ReadingStore()/ReadingStore.kept/ReadingStore.history/split > ReadingStore()/ReadingStore.kept/ReadingStore.history/next value
@@ -160,7 +160,7 @@ known #74 line ReadingStore > ReadingStore()/ReadingStore.summary/ReadingStore.k
 line Day·day > ReadingStore()/ReadingStore.summary/ReadingStore.kept_summary value
 line Disk(ReadingStore.summaries) > ReadingStore()/ReadingStore.summary/ReadingStore.kept_summary own
 line ReadingStore()/ReadingStore.summary/ReadingStore.kept_summary/read_to_string > _·text@ReadingStore()/ReadingStore.summary/ReadingStore.kept_summary/read_to_string value
-known #103 line _·text@ReadingStore()/ReadingStore.summary/ReadingStore.kept_summary/read_to_string > ReadingStore()/ReadingStore.summary/ReadingStore.kept_summary/split value   # split runs on a line of the text
+line _·text@ReadingStore()/ReadingStore.summary/ReadingStore.kept_summary/read_to_string > ReadingStore()/ReadingStore.summary/ReadingStore.kept_summary/split value   # split runs on a line of the text
 known #101 line _·text@ReadingStore()/ReadingStore.summary/ReadingStore.kept_summary/read_to_string > ReadingStore()/ReadingStore.summary/ReadingStore.kept_summary value   # its lines go on through unnamed calls
 line ReadingStore()/ReadingStore.summary/ReadingStore.kept_summary/split > _·parts@ReadingStore()/ReadingStore.summary/ReadingStore.kept_summary/split value
 line _·parts@ReadingStore()/ReadingStore.summary/ReadingStore.kept_summary/split > ReadingStore()/ReadingStore.summary/ReadingStore.kept_summary/next value
@@ -184,7 +184,7 @@ known #103 line Summary·summary@ReadingStore()/ReadingStore.summary/ReadingStor
 known #74 line ReadingStore > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/read_to_string value   # the caller's instance: read_to_string is handed `self.readings`
 line Disk(ReadingStore.readings) > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history own
 line ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/read_to_string > _·text@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/read_to_string value
-known #103 line _·text@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/read_to_string > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/split value   # split runs on a line of the text
+line _·text@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/read_to_string > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/split value   # split runs on a line of the text
 known #101 line _·text@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/read_to_string > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history value   # its lines go on through unnamed calls to what history returns
 line ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/split > _·parts@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/split value
 line _·parts@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/split > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/next value
@@ -230,7 +230,7 @@ known #74 line ReadingStore > ReadingStore()/ReadingStore.kept_summary/read_to_s
 known #127 line Day·day#2 > ReadingStore()/ReadingStore.kept_summary value   # the day decides which line is its summary
 line Disk(ReadingStore.summaries) > ReadingStore()/ReadingStore.kept_summary own
 line ReadingStore()/ReadingStore.kept_summary/read_to_string > _·text@ReadingStore()/ReadingStore.kept_summary/read_to_string value
-known #103 line _·text@ReadingStore()/ReadingStore.kept_summary/read_to_string > ReadingStore()/ReadingStore.kept_summary/split value   # split runs on a line of the text
+line _·text@ReadingStore()/ReadingStore.kept_summary/read_to_string > ReadingStore()/ReadingStore.kept_summary/split value   # split runs on a line of the text
 known #101 line _·text@ReadingStore()/ReadingStore.kept_summary/read_to_string > ReadingStore()/ReadingStore.kept_summary value   # its lines go on through unnamed calls
 line ReadingStore()/ReadingStore.kept_summary/split > _·parts@ReadingStore()/ReadingStore.kept_summary/split value
 line _·parts@ReadingStore()/ReadingStore.kept_summary/split > ReadingStore()/ReadingStore.kept_summary/next value

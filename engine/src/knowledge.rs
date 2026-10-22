@@ -1776,6 +1776,90 @@ pub const RUST_ELEMENTS: &[&str] = &["iter", "iter_mut", "into_iter", "drain"];
 pub const RUST_KEEPS_ELEMENTS: &[&str] =
     &["filter", "skip", "take", "rev", "skip_while", "take_while", "peekable", "inspect", "step_by", "by_ref"];
 
+/// The methods that go over the parts of a value one by one: a string's lines, words and characters,
+/// a slice's windows and chunks, a map's keys and values.
+pub const RUST_PARTS: &[&str] = &[
+    "lines",
+    "split",
+    "splitn",
+    "rsplit",
+    "split_whitespace",
+    "split_terminator",
+    "chars",
+    "bytes",
+    "char_indices",
+    "windows",
+    "chunks",
+    "chunks_exact",
+    "keys",
+    "values",
+    "values_mut",
+    "enumerate",
+    "zip",
+];
+
+/// The methods that hand the closure they are given each element of what they run on, or what an
+/// `Option` or a `Result` holds: `xs.iter().map(|x| ..)` hands it each `x`.
+pub const RUST_EACH: &[&str] = &[
+    "map",
+    "filter",
+    "filter_map",
+    "flat_map",
+    "for_each",
+    "find",
+    "find_map",
+    "any",
+    "all",
+    "position",
+    "fold",
+    "try_fold",
+    "take_while",
+    "skip_while",
+    "map_while",
+    "inspect",
+    "partition",
+    "max_by_key",
+    "min_by_key",
+    "max_by",
+    "min_by",
+    "sort_by_key",
+    "sort_by",
+    "retain",
+    "and_then",
+    "is_some_and",
+    "map_or",
+    "map_or_else",
+];
+
+/// The macros that format their arguments into a string, where a name written in the string
+/// (`format!("{key} {low}")`) is an argument as one written after it is: std's, anyhow's errors,
+/// and the log crate's.
+pub const RUST_FORMAT_MACROS: &[&str] = &[
+    "format",
+    "format_args",
+    "print",
+    "println",
+    "eprint",
+    "eprintln",
+    "write",
+    "writeln",
+    "panic",
+    "assert",
+    "assert_eq",
+    "assert_ne",
+    "unreachable",
+    "todo",
+    "unimplemented",
+    "anyhow",
+    "bail",
+    "ensure",
+    "error",
+    "warn",
+    "info",
+    "debug",
+    "trace",
+];
+
 /// The methods of a sequence or an iterator that give one of its elements, as it is held (in an
 /// `Option`, which is read as what it holds): `series.first()`.
 pub const RUST_ONE_ELEMENT: &[&str] =
