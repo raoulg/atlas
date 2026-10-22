@@ -3,12 +3,8 @@
 
 route fits.report.line
 line entry > line call
-known #127 line Fit | Failed·r > line value                        # the route's parameter, by its name
+line Fit | Failed·r > line value # the route's parameter, by its name
 
-known #127 home Fit | Failed·r line
+home Fit | Failed·r line
 
 side entry left
-
-# a parameter whose type is a sum written in place keeps no name
-known #127 extra line Fit | Failed > line value
-known #127 extra home Fit | Failed line

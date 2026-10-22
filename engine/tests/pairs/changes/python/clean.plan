@@ -66,7 +66,7 @@ line Board·board@main/Board.mark_all > main/Board.reset/clear value
 line main/Board.reset/clear > Board·self@main/Board.reset/clear value
 line Board·self@main/Board.reset/clear > main/Board.reset/clear#2 value
 line main/Board.reset/clear#2 > Board·self@main/Board.reset/clear#2 value
-known #129 line Board·self@main/Board.reset/clear#2 > main/Board.reset value   # the own arrow hands on what the change inside made
+line Board·self@main/Board.reset/clear#2 > main/Board.reset value # the own arrow hands on what the change inside made
 line Board·board@main/Board.reset > main/renamed/copy value
 line main/renamed/copy > Board·board@main/renamed/copy value
 line Board·board@main/renamed/copy > main/renamed value
@@ -84,17 +84,13 @@ home _·xs@main/extended/append main/extended
 home _·jobs@main/queued/list main/queued
 home _·jobs@main/queued/heappush main/queued
 
-# A callee's parameter is bound to the caller's value of that name, not to what the call is handed: `merged`'s `other`
-# (main's board) resolves to main's `other`, the board `merged` itself makes, and the board handed is taken by nothing
-known #127 line Board·board@main/Board.reset > main/Board.merged/Board() value
+# `merged` is handed the board as `other`, which `Board()` in it takes
+line Board·board@main/Board.reset > main/Board.merged/Board() value
 
 # The own arrow takes a value its body only hands to a step inside it: the Cell built into `[Cell()]` for `Board()`, the
 # receiver of `merged` whose fields go into `Board(..)`
-known #126 extra line Cell@main/Cell() > main value
 
 # The loop over `self.cells` goes over the board the method runs on, and `cell.marked = True` is the body's own use of
 # each cell: the board reaches the loop through `self`
 line Board·board@main/Board() > main/Board.mark_all/for cell in self.cells value
 known #101 line Cell·cell@main/Board.mark_all/for cell in self.cells > main/Board.mark_all value
-# `merged` is handed the board as `other`, which `Board()` in it takes by that name from main (#127)
-known #127 extra line Board·board@main/Board.reset > main/Board.merged value

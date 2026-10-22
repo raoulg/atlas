@@ -3,7 +3,7 @@
 
 route kennis.Kennisbank
 step Kennisbank()/Kennisbank.new
-known #151 step Kennisbank()/Kennisbank.new/Kennisbank()            # the struct expression `new` builds the store by
+step Kennisbank()/Kennisbank.new/Kennisbank() # the struct expression `new` builds the store by
 step Kennisbank()/Kennisbank.voeg_toe
 step Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write
 step Kennisbank()/Kennisbank.graaf
@@ -17,8 +17,8 @@ line entry > Kennisbank()/Kennisbank.graaf call
 line Kennisbank()/Kennisbank.new/Kennisbank() > Kennisbank@Kennisbank()/Kennisbank.new/Kennisbank() value
 line Kennisbank@Kennisbank()/Kennisbank.new/Kennisbank() > Kennisbank()/Kennisbank.new value     # new hands back what it built
 line Kennisbank()/Kennisbank.new > Kennisbank@Kennisbank()/Kennisbank.new value
-known #74 line Kennisbank > Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write value
-known #74 line Kennisbank > Kennisbank()/Kennisbank.graaf value
+known #126 line Kennisbank > Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write value   # its own write at self.path; read_to_string inside takes it too
+line Kennisbank > Kennisbank()/Kennisbank.graaf value
 
 line Bron·bron > Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write value                    # what it is handed: `bron.uuid`, `bron.url` glue `bron` in
 line Disk(Kennisbank.path) > Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write own
@@ -28,7 +28,7 @@ line Disk(Kennisbank.path) > Kennisbank()/Kennisbank.graaf own
 
 home Kennisbank@Kennisbank()/Kennisbank.new/Kennisbank() Kennisbank()/Kennisbank.new
 home Kennisbank@Kennisbank()/Kennisbank.new Kennisbank()
-known #74 home Kennisbank Kennisbank()
+home Kennisbank Kennisbank()
 home Bron·bron Kennisbank()
 
 # write reads the file into `text`, appends the line and a newline to it, and writes it back
@@ -60,10 +60,6 @@ known #138 home _@Kennisbank()/Kennisbank.graaf Kennisbank()
 
 side entry left
 side Disk(Kennisbank.path) both
-
 # building the struct the route is about is read as a call of the route inside itself
-known #151 extra step Kennisbank()/Kennisbank.new/Kennisbank() recursive
-
 # the methods run on what the constructor built, not on the caller's instance
-known #74 extra line Kennisbank@Kennisbank()/Kennisbank.new > Kennisbank()/Kennisbank.graaf value
-known #74 extra line Kennisbank@Kennisbank()/Kennisbank.new > Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/read_to_string value   # the caller's instance, not the one new built, is handed through self
+line Kennisbank > Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/read_to_string value   # `fs::read_to_string(&self.path)`

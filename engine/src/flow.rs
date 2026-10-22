@@ -519,6 +519,10 @@ pub struct Arrow {
     /// reads there is its input, made sure of.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub updates: Vec<String>,
+    /// For a class: the initializer building a value of it runs (`model::initializer_along`), its
+    /// own or a base's. A step that builds the class runs that body, and none of its methods.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub runs: String,
 }
 
 /// What a function does at one place, in the order it runs: whether it reads what was there before
@@ -671,22 +675,26 @@ impl<'g> Ix<'g> {
         out
     }
 
-    /// What a call to the class runs: its initializer.
-    fn ctor(&self, class: &str) -> Option<String> {
-        self.nodes.get(class)?.initializer(|id| self.nodes.get(id).copied())
+    /// The initializer building a value of the class runs (`model::initializer_along`): its own or,
+    /// when it has none, a base's.
+    fn runs(&self, class: &str) -> Option<String> {
+        crate::model::initializer_along(&self.mro(class), |id| self.nodes.get(id).copied())
     }
 
-    /// What building a class takes: the parameters of the initializer it runs
-    /// (`model::initializer_along`), its own or, when it has none, a base's.
+    /// What building a class takes: the parameters of the initializer it runs.
     fn built_from(&self, class: &str) -> Vec<String> {
-        crate::model::initializer_along(&self.mro(class), |id| self.nodes.get(id).copied())
-            .map_or(vec![], |c| self.targets(&c, EdgeKind::Takes))
+        self.runs(class).map_or(vec![], |c| self.targets(&c, EdgeKind::Takes))
     }
 }
 
 fn arrow_of(ix: &Ix, n: &Node, done: &mut Memo) -> Arrow {
     if n.kind == NodeKind::Class {
-        return Arrow { takes: ix.built_from(&n.id), gives: vec![n.id.clone()], ..Default::default() };
+        return Arrow {
+            takes: ix.built_from(&n.id),
+            gives: vec![n.id.clone()],
+            runs: ix.runs(&n.id).unwrap_or_default(),
+            ..Default::default()
+        };
     }
     // a module's own code runs where it is a program (`if __name__ == "__main__":`): what it
     // reads back of what it wrote
@@ -712,6 +720,7 @@ fn arrow_of(ix: &Ix, n: &Node, done: &mut Memo) -> Arrow {
         reads_back: reads_back(orders(ix, &n.id, Some(done))),
         own_reads_back: reads_back(orders(ix, &n.id, None)),
         updates: updates(orders(ix, &n.id, Some(done))),
+        runs: String::new(),
     }
 }
 
@@ -1026,9 +1035,9 @@ fn body_of(ix: &Ix, n: &Node, on: &str) -> Body {
         return Body { alts, items: grouped(steps, &n.whens), made_from: vec![] };
     }
     let callees: Vec<String> = if n.kind == NodeKind::Class && n.entry.is_some() {
-        let ctor = ix.ctor(&n.id);
+        let ctor = ix.runs(&n.id);
         let mut out: Vec<String> = ctor.iter().cloned().collect();
-        // its public methods, the initializer once
+        // the initializer building it runs, its own or a base's, and its public methods, the initializer once
         out.extend(
             ix.out(&n.id, EdgeKind::Contains)
                 .map(|e| e.dst.clone())

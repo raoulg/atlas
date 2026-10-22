@@ -7,7 +7,7 @@
 
 route gathering.Store
 step Store()/Store.new
-known #151 step Store()/Store.new/Store()  # C
+step Store()/Store.new/Store() # C
 line entry > Store()/Store.new call
 line Store()/Store.new/Store() > Store@Store()/Store.new/Store() value
 line Store@Store()/Store.new/Store() > Store()/Store.new value
@@ -17,7 +17,7 @@ line entry > Store()/Store.put call
 step Store()/Store.put/Store.rows
 step Store()/Store.put/Store.rows/Reading()
 step Store()/Store.put/Store.rows/Row()
-known #74 line Store > Store()/Store.put/Store.rows value
+line Store > Store()/Store.put/Store.rows value
 line Disk(Store.path) > Store()/Store.put/Store.rows own
 line Store()/Store.put/Store.rows/Reading() > Reading@Store()/Store.put/Store.rows/Reading() value
 line Reading@Store()/Store.put/Store.rows/Reading() > Store()/Store.put/Store.rows/Row() value
@@ -36,14 +36,14 @@ line Store()/Store.put/push > Row·rows@Store()/Store.put/push value  # the rows
 line Row·rows@Store()/Store.put/push > Store()/Store.put/write_rows/collect value
 line Store()/Store.put/write_rows/collect > _·lines@Store()/Store.put/write_rows/collect value
 known #101 line _·lines@Store()/Store.put/write_rows/collect > Store()/Store.put/write_rows value  # fs::write takes the lines joined
-known #128 line Store > Store()/Store.put/write_rows value  # K: `write_rows(self.path, rows)` hands `self`
+line Store > Store()/Store.put/write_rows value # K: `write_rows(self.path, rows)` hands `self`
 line Store()/Store.put/write_rows > Disk(Store.path) own
 step Store()/Store.put_all
 line entry > Store()/Store.put_all call
 step Store()/Store.put_all/Store.rows
 step Store()/Store.put_all/Store.rows/Reading()
 step Store()/Store.put_all/Store.rows/Row()
-known #74 line Store > Store()/Store.put_all/Store.rows value
+line Store > Store()/Store.put_all/Store.rows value
 line Disk(Store.path) > Store()/Store.put_all/Store.rows own
 line Store()/Store.put_all/Store.rows/Reading() > Reading@Store()/Store.put_all/Store.rows/Reading() value
 line Reading@Store()/Store.put_all/Store.rows/Reading() > Store()/Store.put_all/Store.rows/Row() value
@@ -61,14 +61,14 @@ line Store()/Store.put_all/push > Row·rows@Store()/Store.put_all/push value  # 
 line Row·rows@Store()/Store.put_all/push > Store()/Store.put_all/write_rows/collect value
 line Store()/Store.put_all/write_rows/collect > _·lines@Store()/Store.put_all/write_rows/collect value
 known #101 line _·lines@Store()/Store.put_all/write_rows/collect > Store()/Store.put_all/write_rows value  # fs::write takes the lines joined
-known #128 line Store > Store()/Store.put_all/write_rows value  # K: `write_rows(self.path, rows)` hands `self`
+line Store > Store()/Store.put_all/write_rows value # K: `write_rows(self.path, rows)` hands `self`
 line Store()/Store.put_all/write_rows > Disk(Store.path) own
 step Store()/Store.get
 line entry > Store()/Store.get call
 step Store()/Store.get/Store.rows
 step Store()/Store.get/Store.rows/Reading()
 step Store()/Store.get/Store.rows/Row()
-known #74 line Store > Store()/Store.get/Store.rows value
+line Store > Store()/Store.get/Store.rows value
 line Disk(Store.path) > Store()/Store.get/Store.rows own
 line Store()/Store.get/Store.rows/Reading() > Reading@Store()/Store.get/Store.rows/Reading() value
 line Reading@Store()/Store.get/Store.rows/Reading() > Store()/Store.get/Store.rows/Row() value
@@ -97,7 +97,7 @@ home Row@Store()/Store.get/Store.rows/Row() Store()/Store.get/Store.rows
 home Row@Store()/Store.get/Store.rows Store()/Store.get
 home Reading@Store()/Store.get Store()
 home Reading·reading Store()
-known #74 home Store Store()
+home Store Store()
 home Reading·readings Store()
 
 home Reading·reading@Store()/Store.put_all/for reading in readings Store()/Store.put_all
@@ -109,19 +109,6 @@ side entry left
 side Disk(Store.path) both
 
 # What Atlas gets wrong here, each by the issue of its cause:
-# C: the struct literal `Store { path }` in `new` is read as a call of `new` itself
 # #101: a value made in the body and used by the body's own calls has no taker
 # K: a value handed through a field reaches no step inside: `write_rows(self.path, rows)` hands `self` (#121, decision
 #    1), and the helper takes no Store
-# #74: the doors run on what the constructor door built, not on the caller's instance `Store` from beyond (#121,
-#    decision 2): the constructor's Store goes back to the caller and is joined to no door
-
-# C
-known #151 extra step Store()/Store.new/Store() recursive
-
-# #74
-known #74 extra line Store@Store()/Store.new > Store()/Store.put/Store.rows value
-known #74 extra line Store@Store()/Store.new > Store()/Store.put_all/Store.rows value
-known #74 extra line Store@Store()/Store.new > Store()/Store.get/Store.rows value
-known #74 extra line Store@Store()/Store.new > Store()/Store.put/write_rows value   # the caller's instance, not the one new built, is handed through self
-known #74 extra line Store@Store()/Store.new > Store()/Store.put_all/write_rows value   # the caller's instance, not the one new built, is handed through self

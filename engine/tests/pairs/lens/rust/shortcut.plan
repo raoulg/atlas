@@ -6,13 +6,13 @@
 # changes the String it runs on (`push_str`), is a step; what it touches stays its caller's. Each file is read, used and
 # written by the route: it stands on both sides.
 #
-# Issues marked: #74 an exported class's construction; #101 a body's own use of a
-# value it made; #103 an element of what a body iterates; #125 which library operations are steps; #126 what the own
-# arrow keeps; #127 a parameter bound by kind, not to what is handed; #130 which forms are choices.
+# Issues marked: #101 a body's own use of a value it made; #103 an element of what a body iterates; #125 which library
+# operations are steps; #126 what the own arrow keeps; #128 a call handed nothing through self, a closure, an index or
+# a chain; #130 which forms are choices.
 
 route harvest.ReadingStore
 step ReadingStore()/ReadingStore.new
-known #74 step ReadingStore()/ReadingStore.new/ReadingStore()   # the struct built by its literal
+step ReadingStore()/ReadingStore.new/ReadingStore() # the struct built by its literal
 step ReadingStore()/ReadingStore.save
 step ReadingStore()/ReadingStore.save/read_to_string
 step ReadingStore()/ReadingStore.save/push_str   # push_str changes the String
@@ -53,8 +53,8 @@ line entry > ReadingStore()/ReadingStore.summary call
 line ReadingStore()/ReadingStore.new/ReadingStore() > ReadingStore@ReadingStore()/ReadingStore.new/ReadingStore() value
 line ReadingStore@ReadingStore()/ReadingStore.new/ReadingStore() > ReadingStore()/ReadingStore.new value
 line ReadingStore()/ReadingStore.new > ReadingStore@ReadingStore()/ReadingStore.new value
-known #74 line ReadingStore > ReadingStore()/ReadingStore.save/read_to_string value   # the caller's instance: read_to_string is handed the path
-known #74 line ReadingStore > ReadingStore()/ReadingStore.save value   # and the write it makes itself
+line ReadingStore > ReadingStore()/ReadingStore.save/read_to_string value # the caller's instance: read_to_string is handed the path
+known #126 line ReadingStore > ReadingStore()/ReadingStore.save value   # the body uses it itself (its own write, what it returns), and a step inside takes it too
 line Disk(ReadingStore.readings) > ReadingStore()/ReadingStore.save own
 line ReadingStore()/ReadingStore.save > Disk(ReadingStore.readings) own
 line ReadingStore()/ReadingStore.save/read_to_string > _·text@ReadingStore()/ReadingStore.save/read_to_string value
@@ -62,7 +62,7 @@ line _·text@ReadingStore()/ReadingStore.save/read_to_string > ReadingStore()/Re
 line Reading·reading > ReadingStore()/ReadingStore.save/push_str value
 line ReadingStore()/ReadingStore.save/push_str > _·text@ReadingStore()/ReadingStore.save/push_str value
 known #125 line _·text@ReadingStore()/ReadingStore.save/push_str > ReadingStore()/ReadingStore.save value   # #125: what it writes
-known #74 line ReadingStore > ReadingStore()/ReadingStore.history/read_to_string value   # the caller's instance: read_to_string is handed `self.readings`
+line ReadingStore > ReadingStore()/ReadingStore.history/read_to_string value # the caller's instance: read_to_string is handed `self.readings`
 line Disk(ReadingStore.readings) > ReadingStore()/ReadingStore.history own
 line ReadingStore()/ReadingStore.history/read_to_string > _·text@ReadingStore()/ReadingStore.history/read_to_string value
 line _·text@ReadingStore()/ReadingStore.history/read_to_string > ReadingStore()/ReadingStore.history/split value   # split runs on a line of the text
@@ -80,8 +80,8 @@ line _·t@ReadingStore()/ReadingStore.history/next#3 > ReadingStore()/ReadingSto
 line ReadingStore()/ReadingStore.history/Reading() > Reading@ReadingStore()/ReadingStore.history/Reading() value
 line Reading@ReadingStore()/ReadingStore.history/Reading() > ReadingStore()/ReadingStore.history value
 line ReadingStore()/ReadingStore.history > Reading@ReadingStore()/ReadingStore.history value
-known #74 line ReadingStore > ReadingStore()/ReadingStore.save_outage/read_to_string value   # the caller's instance: read_to_string is handed the path
-known #74 line ReadingStore > ReadingStore()/ReadingStore.save_outage value   # and the write it makes itself
+line ReadingStore > ReadingStore()/ReadingStore.save_outage/read_to_string value # the caller's instance: read_to_string is handed the path
+known #126 line ReadingStore > ReadingStore()/ReadingStore.save_outage value   # the body uses it itself (its own write, what it returns), and a step inside takes it too
 line Disk(ReadingStore.outages) > ReadingStore()/ReadingStore.save_outage own
 line ReadingStore()/ReadingStore.save_outage > Disk(ReadingStore.outages) own
 line ReadingStore()/ReadingStore.save_outage/read_to_string > _·text@ReadingStore()/ReadingStore.save_outage/read_to_string value
@@ -89,13 +89,13 @@ line _·text@ReadingStore()/ReadingStore.save_outage/read_to_string > ReadingSto
 line Outage·outage > ReadingStore()/ReadingStore.save_outage/push_str value
 line ReadingStore()/ReadingStore.save_outage/push_str > _·text@ReadingStore()/ReadingStore.save_outage/push_str value
 known #125 line _·text@ReadingStore()/ReadingStore.save_outage/push_str > ReadingStore()/ReadingStore.save_outage value   # #125: what it writes
-known #74 line ReadingStore > ReadingStore()/ReadingStore.outages/read_to_string value   # the caller's instance: read_to_string is handed `self.outages`
+line ReadingStore > ReadingStore()/ReadingStore.outages/read_to_string value # the caller's instance: read_to_string is handed `self.outages`
 line Disk(ReadingStore.outages) > ReadingStore()/ReadingStore.outages own
 line ReadingStore()/ReadingStore.outages/read_to_string > _·text@ReadingStore()/ReadingStore.outages/read_to_string value
 known #101 line _·text@ReadingStore()/ReadingStore.outages/read_to_string > ReadingStore()/ReadingStore.outages value   # its lines go on through unnamed calls to what outages returns
-known #74 line ReadingStore > ReadingStore()/ReadingStore.summary/read_to_string value   # the caller's instance: read_to_string is handed `self.summaries`
-known #74 line ReadingStore > ReadingStore()/ReadingStore.summary value   # and the write it makes itself (#126 too: Atlas drops it here, not in history)
-known #127 line Day·day > ReadingStore()/ReadingStore.summary value   # #127: the key it looks for is made of the day
+line ReadingStore > ReadingStore()/ReadingStore.summary/read_to_string value # the caller's instance: read_to_string is handed `self.summaries`
+known #126 line ReadingStore > ReadingStore()/ReadingStore.summary value   # and the write it makes itself (#126 too: Atlas drops it here, not in history)
+known #126 line Day·day > ReadingStore()/ReadingStore.summary value # the key it looks for is made of the day
 line Disk(ReadingStore.summaries) > ReadingStore()/ReadingStore.summary own
 line ReadingStore()/ReadingStore.summary > Disk(ReadingStore.summaries) own
 line ReadingStore()/ReadingStore.summary/read_to_string > _·text@ReadingStore()/ReadingStore.summary/read_to_string value
@@ -103,39 +103,39 @@ line _·text@ReadingStore()/ReadingStore.summary/read_to_string > ReadingStore()
 known #101 line _·text@ReadingStore()/ReadingStore.summary/read_to_string > ReadingStore()/ReadingStore.summary value   # written back with the new line
 line ReadingStore()/ReadingStore.summary/find > _·line@ReadingStore()/ReadingStore.summary/find value
 known #125 line _·line@ReadingStore()/ReadingStore.summary/find > ReadingStore()/ReadingStore.summary value   # #125: the kept line is returned
-known #74 line ReadingStore > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/read_to_string value   # the caller's instance (and #130)
-known #126 extra line Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history > ReadingStore()/ReadingStore.summary value   # only `collect` takes them
-line Day·day > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history value
-line Disk(ReadingStore.readings) > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history own
-line ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/read_to_string > _·text@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/read_to_string value
-line _·text@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/read_to_string > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/split value
+line ReadingStore > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/read_to_string value # the caller's instance (and #130)
+line Day·day > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history value # #130
+line Disk(ReadingStore.readings) > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history own # #130
+line ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/read_to_string > _·text@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/read_to_string value # #130
+line _·text@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/read_to_string > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/split value # #130
 known #130 line _·text@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/read_to_string > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history value   # #130
-line ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/split > _·parts@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/split value
-line _·parts@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/split > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/next value   # drawn in the arm the early return makes
-line ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/next > _·s@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/next value   # drawn in the arm the early return makes
-line _·s@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/next > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/Reading() value   # drawn in the arm the early return makes
-line _·parts@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/split > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/next#2 value   # drawn in the arm the early return makes
-line ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/next#2 > _·date@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/next#2 value   # drawn in the arm the early return makes
-line _·date@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/next#2 > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/Reading() value   # drawn in the arm the early return makes
-line _·parts@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/split > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/next#3 value   # drawn in the arm the early return makes
-line ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/next#3 > _·t@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/next#3 value   # drawn in the arm the early return makes
-line _·t@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/next#3 > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/Reading() value   # drawn in the arm the early return makes
-line ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/Reading() > Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/Reading() value
-line Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/Reading() > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history value
-line ReadingStore()/ReadingStore.summary/?1/ReadingStore.history > Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history value
-line Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history > ReadingStore()/ReadingStore.summary/?1/collect value
-known #127 line Day·day > ReadingStore()/ReadingStore.summary/?1/collect value   # #127: the filter by `day.date` goes into collect
-line ReadingStore()/ReadingStore.summary/?1/collect > _·temperatures@ReadingStore()/ReadingStore.summary/?1/collect value
-line _·temperatures@ReadingStore()/ReadingStore.summary/?1/collect > ReadingStore()/ReadingStore.summary/?1/fold value
-line _·temperatures@ReadingStore()/ReadingStore.summary/?1/collect > ReadingStore()/ReadingStore.summary/?1/fold#2 value
-line ReadingStore()/ReadingStore.summary/?1/fold > _·low@ReadingStore()/ReadingStore.summary/?1/fold value
-line ReadingStore()/ReadingStore.summary/?1/fold#2 > _·high@ReadingStore()/ReadingStore.summary/?1/fold#2 value
+line ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/split > _·parts@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/split value # #130
+line _·parts@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/split > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/next value # #125
+line ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/next > _·s@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/next value # #125
+line _·s@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/next > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/Reading() value # #125
+line _·parts@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/split > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/next#2 value # #125
+line ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/next#2 > _·date@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/next#2 value # #125
+line _·date@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/next#2 > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/Reading() value # #125
+line _·parts@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/split > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/next#3 value # #125
+line ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/next#3 > _·t@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/next#3 value # #125
+line _·t@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/next#3 > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/Reading() value # #125
+line ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/Reading() > Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/Reading() value # #130
+line Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/Reading() > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history value # #130
+line ReadingStore()/ReadingStore.summary/?1/ReadingStore.history > Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history value # #130
+line Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history > ReadingStore()/ReadingStore.summary/?1/collect value # #130
+known #128 line Day·day > ReadingStore()/ReadingStore.summary/?1/collect value # a closure: the filter by `day.date` goes into collect
+line ReadingStore()/ReadingStore.summary/?1/collect > _·temperatures@ReadingStore()/ReadingStore.summary/?1/collect value # #130
+line _·temperatures@ReadingStore()/ReadingStore.summary/?1/collect > ReadingStore()/ReadingStore.summary/?1/fold value # #130
+line _·temperatures@ReadingStore()/ReadingStore.summary/?1/collect > ReadingStore()/ReadingStore.summary/?1/fold#2 value # #130
+line ReadingStore()/ReadingStore.summary/?1/fold > _·low@ReadingStore()/ReadingStore.summary/?1/fold value # #130
+line ReadingStore()/ReadingStore.summary/?1/fold#2 > _·high@ReadingStore()/ReadingStore.summary/?1/fold#2 value # #130
+known #126 extra line Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history > ReadingStore()/ReadingStore.summary value   # only `collect` takes them
 known #130 line _·low@ReadingStore()/ReadingStore.summary/?1/fold > ReadingStore()/ReadingStore.summary value   # #130
 known #130 line _·high@ReadingStore()/ReadingStore.summary/?1/fold#2 > ReadingStore()/ReadingStore.summary value   # #130
 
 home ReadingStore@ReadingStore()/ReadingStore.new/ReadingStore() ReadingStore()/ReadingStore.new
 home ReadingStore@ReadingStore()/ReadingStore.new ReadingStore()
-known #74 home ReadingStore ReadingStore()
+home ReadingStore ReadingStore()
 home _·text@ReadingStore()/ReadingStore.save/read_to_string ReadingStore()/ReadingStore.save
 home _·text@ReadingStore()/ReadingStore.save/push_str ReadingStore()/ReadingStore.save
 home Reading·reading ReadingStore()
@@ -168,12 +168,3 @@ side entry left
 side Disk(ReadingStore.readings) both
 side Disk(ReadingStore.outages) both
 side Disk(ReadingStore.summaries) both
-
-# what Atlas has and the code does not say
-known #74 extra step ReadingStore()/ReadingStore.new/ReadingStore() recursive   # building the exported struct runs its public functions, `new` among them
-known #74 extra line ReadingStore@ReadingStore()/ReadingStore.new > ReadingStore()/ReadingStore.history/read_to_string value   # the caller's instance, not the one new built, is handed through self
-known #74 extra line ReadingStore@ReadingStore()/ReadingStore.new > ReadingStore()/ReadingStore.outages/read_to_string value   # the caller's instance, not the one new built, is handed through self
-known #74 extra line ReadingStore@ReadingStore()/ReadingStore.new > ReadingStore()/ReadingStore.save/read_to_string value   # the caller's instance, not the one new built, is handed through self
-known #74 extra line ReadingStore@ReadingStore()/ReadingStore.new > ReadingStore()/ReadingStore.save_outage/read_to_string value   # the caller's instance, not the one new built, is handed through self
-known #74 extra line ReadingStore@ReadingStore()/ReadingStore.new > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/read_to_string value   # the caller's instance, not the one new built, is handed through self
-known #74 extra line ReadingStore@ReadingStore()/ReadingStore.new > ReadingStore()/ReadingStore.summary/read_to_string value   # the caller's instance, not the one new built, is handed through self

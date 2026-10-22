@@ -14,8 +14,8 @@ line entry > Kennisbank()/Kennisbank.graaf call
 # what the constructor builds goes back to the caller; the doors run on the caller's instance, one value from
 # beyond, taken where a body reads its fields or calls on it
 line Kennisbank()/Kennisbank() > Kennisbank@Kennisbank()/Kennisbank() value
-known #74 line Kennisbank > Kennisbank()/Kennisbank.voegToe/Kennisbank.write value
-known #74 line Kennisbank > Kennisbank()/Kennisbank.graaf value
+line Kennisbank > Kennisbank()/Kennisbank.voegToe/Kennisbank.write value
+line Kennisbank > Kennisbank()/Kennisbank.graaf value
 
 line Bron·bron > Kennisbank()/Kennisbank.voegToe/Kennisbank.write value                    # what it is handed: `bron.uuid`, `bron.url` glue `bron` in
 line Disk(Kennisbank.path) > Kennisbank()/Kennisbank.voegToe/Kennisbank.write own
@@ -24,7 +24,7 @@ line Kennisbank()/Kennisbank.voegToe/Kennisbank.write > Disk(Kennisbank.path) ow
 line Disk(Kennisbank.path) > Kennisbank()/Kennisbank.graaf own
 
 home Kennisbank@Kennisbank()/Kennisbank() Kennisbank()
-known #74 home Kennisbank Kennisbank()
+home Kennisbank Kennisbank()
 home Bron·bron Kennisbank()
 
 # the line split in three parts, each held by its name, which the arrow function `graaf` maps the lines by puts into a row
@@ -41,7 +41,3 @@ home _·tekst@Kennisbank()/Kennisbank.graaf/split Kennisbank()/Kennisbank.graaf
 
 side entry left
 side Disk(Kennisbank.path) both
-
-# the methods run on what the constructor built, not on the caller's instance
-known #74 extra line Kennisbank@Kennisbank()/Kennisbank() > Kennisbank()/Kennisbank.voegToe/Kennisbank.write value
-known #74 extra line Kennisbank@Kennisbank()/Kennisbank() > Kennisbank()/Kennisbank.graaf value

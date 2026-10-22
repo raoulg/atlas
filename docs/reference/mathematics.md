@@ -368,7 +368,8 @@ family's frame. A route's parameters are such values, there at the route's start
 takes them by their names, and a step handed one by its name takes the same value. The route of an
 exported class is its doors, its public methods, with no order between them: each runs on the
 caller's instance, one value of the class from beyond (no name, no moment), and what the constructor
-door builds goes back to the caller. A closed family holds its kinds (a subclass stands in its base
+door builds goes back to the caller. A door takes its parameters as a route takes its own, by their names, and the
+parameters of two doors are two values: each door is called by itself. A closed family holds its kinds (a subclass stands in its base
 until the family is opened); a part of a type is structure of its owner, a box of its own in the
 owner's frame, and the values of the part's type stand on their own (#39).
 **Where.** `plan`, `imageOf` and `refines` in `viewer/plan.js`, the camera in `viewer/index.html`;
@@ -384,7 +385,13 @@ graph needs (where an object stands, which side it is on, when it was made) is a
 open:
 
 - every call of the route is an *occurrence* (a step key, its path through the route), opened to
-  all its calls; an occurrence with calls has a frame and its own arrow, one without is a pill;
+  all its calls; an occurrence with calls has a frame and its own arrow, one without is a pill. Building
+  a class runs the initializer along its order (Method resolution order), so the step that builds it
+  opens into that body and never into the class's methods, and building the class is no call of it,
+  also inside the route of that class. An initializer another one calls (`super(text)`) builds nothing:
+  it fills in the value its caller builds. An override in a dispatch runs on the value its call runs on
+  and takes what the call hands it, at the place its own signature has it: what the dispatch takes
+  crosses its frame to the override, as to any step inside;
 - every value is an identity `(type, name, moment)`: the type it has, the name that holds it, and
   the occurrence (or choice) that made it; two values of one type at one moment are two; a route's
   parameters are values with their names at the route's start. A name holds one value: one that
@@ -404,7 +411,12 @@ open:
   cross its frame. An opened step draws it as a point on the frame's right edge, not as a step beside
   its steps: a value its call is handed crosses the frame to the step inside that takes it (the value
   its signature takes by no name is the parameter a step inside takes by its name), and the
-  point keeps what the body itself takes and what it gives back, at the step's moment. Of what the
+  point keeps what the body itself takes and what it gives back, at the step's moment. What the body's
+  own code uses outside its steps (a print, a condition, a format, what it returns), of a value a step
+  inside made or one it is handed, is a line from that value to the point, also where a step inside
+  takes the value too: the line lies inside the frame, so it is internal to the closed step (rule 2)
+  and the value stands in the step's frame. A value no line takes says that the body drops it; the
+  map draws fewer facts by zoom, never by leaving one out. Of what the
   body's steps make, what it gives back is what no step of the code among them takes: a value built
   only to be handed into another step (`Row(Reading(line))`) is that step's. A value handed into a
   library's operation goes on in what the operation gives, and is the operation's only where that
@@ -415,20 +427,35 @@ open:
   handed the values the names in its arguments hold: `f(x.name)` is handed `x`, since the projection
   `.name` is no occurrence but glued into the call, whose arrow is `f ∘ π_name` with domain `X`, and
   `f(self.path)` is handed the instance the method runs on; a nested call that is a step of its own
-  takes its names itself, and the call around it is handed what it gives. A library's operation that is a step
-  carries the value it gives, by the name or the names the body binds it to (`with X as con` as `con = X`,
-  `a, b = f(..)` each part), of whatever type; what it touches at a place stays its caller's own touch, so
-  naming its result changes no line to the place. A copy makes its value anew (`board = copy.copy(board)`),
-  and a method called on a library's value is that library's operation also where its types do not list it. A projection bound to a name first is still the projection
+  takes its names itself, and the call around it is handed what it gives. A library's operation that
+  is a step carries the value it gives, by the name or the names the body binds it to (`with X as con`
+  as `con = X`, `a, b = f(..)` each part), of whatever type; what it touches at a place stays its
+  caller's own touch, so naming its result changes no line to the place. A copy makes its value anew
+  (`board = copy.copy(board)`), and a method called on a library's value is that library's operation
+  also where its types do not list it. A projection bound to a name first is still the projection
   (`width = settings.width; f(width)` hands `settings`), a lookup by a key among them (`row = table[k]`
-  hands `table`, the lens the key chooses), and so is any value a body binds without a step: a pattern that takes a
-  value apart (`const [year, month] = fields` hands `fields`), a name a `case` pattern binds (a part of what the
-  `match` takes apart, through the variant the case matches, a prism), an element of a loop that is no step (`for s, t
-  in rows`), what operators compute of names (`bottom = height - margin`), what each arm of a choice sets a name to
-  (`let unit; if (..) unit = KELVIN; else unit = CELSIUS`). A change made through one changes its owner, a lens's put;
+  hands `table`, the lens the key chooses), and so is any value a body binds without a step: a
+  pattern that takes a value apart (`const [year, month] = fields` hands `fields`), a name a
+  `case` pattern binds (a part of what the `match` takes apart, through the variant the case matches, a
+  prism), an element of a loop that is no step (`for s, t in rows`), what operators compute of names
+  (`bottom = height - margin`), what each arm of a choice sets a name to (`let unit;
+  if (..) unit = KELVIN; else unit = CELSIUS`). A change made through one changes its owner, a lens's
+  put. A parameter is such a name: inside an opened step it holds the value its call hands it, not a
+  caller's value of its name or the latest of its type. The call hands its values in order, the value
+  it runs on first, each to the next parameter of its type; a parameter the call fills through a
+  projection (`finished(job, settings.mode)`) is still the projection, so the steps inside are handed
+  `settings`, and a signature's type is a value of its own only where the call hands nothing. What an
+  opened step changes of a value it was handed goes out at its border as what its steps made of it;
 - a step that can fail has the codomain `T + E`: the error is a value its constructor makes in the arm
   that raises it, the step's border hands it on with its result, and a call that does not catch it
-  hands it on to its own caller. Python's propagation and Rust's `?` are one form, no choice.
+  hands it on to its own caller. Python's propagation and Rust's `?` are one form, no choice. An error
+  is a value of the plan where the code says it is one, whatever library its type is of: where the
+  code builds it to raise (`raise RuntimeError(..)`, `throw new Error(..)`, `Err(Error::Empty)`), where
+  a `?` hands on what a call fails with (converted to the function's error type, glued into the step
+  as a projection is), and where a handler takes it. An error a library may raise that the code
+  neither builds, hands on nor catches, the code does not say, and it is no value. The errors the arms
+  of one choice hand on are one value at the choice's moment, and an opened step takes each error its
+  steps hand on that none of them takes.
 
 What the reader has open is the map `q`, nothing else: an occurrence goes to its outermost closed
 ancestor (or to itself), a type to the box its family stands in (`placeOfType`), a world place to its

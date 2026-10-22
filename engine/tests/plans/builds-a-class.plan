@@ -13,8 +13,3 @@ home Store·store@run/Store() run
 
 side entry left
 side Screen right
-
-# building the store runs its public methods, which touch its file
-known #74 extra line File(data/store.txt) > run/Store() reached
-known #74 extra line run/Store() > File(data/store.txt) reached
-known #74 extra side File(data/store.txt) between

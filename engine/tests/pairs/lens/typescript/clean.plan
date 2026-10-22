@@ -7,9 +7,8 @@
 # ReadingStore; what the constructor builds goes back to that caller. A library's operation whose result the body names (`find`, `map`) is a step; what it touches stays
 # its caller's. Each file is read, used and written by the route: it stands on both sides.
 #
-# Issues marked: #74 an exported class's construction; #101 a body's own use of a value it made; #125 which library
-# operations are steps; #126 what the own arrow keeps; #127 a parameter bound by kind, not to what is handed; #130
-# which forms are choices.
+# Issues marked: #101 a body's own use of a value it made; #125 which library operations are steps; #126 what the own
+# arrow keeps; #130 which forms are choices.
 
 route harvest.store.ReadingStore
 step ReadingStore()/ReadingStore()
@@ -51,26 +50,26 @@ line entry > ReadingStore()/ReadingStore.keptSummary call
 line entry > ReadingStore()/ReadingStore.keepSummary call
 
 line ReadingStore()/ReadingStore() > ReadingStore@ReadingStore()/ReadingStore() value
-known #74 line ReadingStore > ReadingStore()/ReadingStore.save value   # the caller's instance
-known #127 line Reading·reading > ReadingStore()/ReadingStore.save value   # #127
+line ReadingStore > ReadingStore()/ReadingStore.save value # the caller's instance
+line Reading·reading > ReadingStore()/ReadingStore.save value
 line Disk(ReadingStore.readings) > ReadingStore()/ReadingStore.save own
 line ReadingStore()/ReadingStore.save > Disk(ReadingStore.readings) own
-known #74 line ReadingStore > ReadingStore()/ReadingStore.history value   # the caller's instance
+line ReadingStore > ReadingStore()/ReadingStore.history value # the caller's instance
 line Disk(ReadingStore.readings) > ReadingStore()/ReadingStore.history own
 line ReadingStore()/ReadingStore.history/Reading() > Reading@ReadingStore()/ReadingStore.history/Reading() value
 line Reading@ReadingStore()/ReadingStore.history/Reading() > ReadingStore()/ReadingStore.history value
 line ReadingStore()/ReadingStore.history > Reading@ReadingStore()/ReadingStore.history value
-known #74 line ReadingStore > ReadingStore()/ReadingStore.saveOutage value   # the caller's instance
-known #127 line Outage·outage > ReadingStore()/ReadingStore.saveOutage value   # #127
+line ReadingStore > ReadingStore()/ReadingStore.saveOutage value # the caller's instance
+line Outage·outage > ReadingStore()/ReadingStore.saveOutage value
 line Disk(ReadingStore.outages) > ReadingStore()/ReadingStore.saveOutage own
 line ReadingStore()/ReadingStore.saveOutage > Disk(ReadingStore.outages) own
-known #74 line ReadingStore > ReadingStore()/ReadingStore.kept value   # the caller's instance (#126 too: Atlas hands it to history, not to kept itself)
+known #126 line ReadingStore > ReadingStore()/ReadingStore.kept value   # the caller's instance (#126 too: Atlas hands it to history, not to kept itself)
 line Disk(ReadingStore.outages) > ReadingStore()/ReadingStore.kept own
 line ReadingStore()/ReadingStore.kept/Outage() > Outage@ReadingStore()/ReadingStore.kept/Outage() value
 line Outage@ReadingStore()/ReadingStore.kept/Outage() > ReadingStore()/ReadingStore.kept/map value
 line ReadingStore()/ReadingStore.kept/map > _·outages@ReadingStore()/ReadingStore.kept/map value
 line _·outages@ReadingStore()/ReadingStore.kept/map > ReadingStore()/ReadingStore.kept/Harvest() value
-known #74 line ReadingStore > ReadingStore()/ReadingStore.kept/ReadingStore.history value   # the caller's instance
+line ReadingStore > ReadingStore()/ReadingStore.kept/ReadingStore.history value # the caller's instance
 line Disk(ReadingStore.readings) > ReadingStore()/ReadingStore.kept/ReadingStore.history own
 line ReadingStore()/ReadingStore.kept/ReadingStore.history/Reading() > Reading@ReadingStore()/ReadingStore.kept/ReadingStore.history/Reading() value
 line Reading@ReadingStore()/ReadingStore.kept/ReadingStore.history/Reading() > ReadingStore()/ReadingStore.kept/ReadingStore.history value
@@ -79,18 +78,18 @@ line Reading@ReadingStore()/ReadingStore.kept/ReadingStore.history > ReadingStor
 line ReadingStore()/ReadingStore.kept/Harvest() > Harvest@ReadingStore()/ReadingStore.kept/Harvest() value
 line Harvest@ReadingStore()/ReadingStore.kept/Harvest() > ReadingStore()/ReadingStore.kept value
 line ReadingStore()/ReadingStore.kept > Harvest@ReadingStore()/ReadingStore.kept value
-known #74 line ReadingStore > ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary value   # the caller's instance (and #130)
-line Disk(ReadingStore.summaries) > ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary own   # #130: `??`'s left side runs whenever summary does
-line Day·day > ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/find value   # #130: `??`'s left side runs whenever summary does
-line ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/find > _·line@ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/find value   # #130: `??`'s left side runs whenever summary does
+line ReadingStore > ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary value # the caller's instance (and #130)
+line Disk(ReadingStore.summaries) > ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary own # #130: `??`'s left side runs whenever summary does
+line Day·day > ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/find value # #130: `??`'s left side runs whenever summary does
+line ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/find > _·line@ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/find value # #130: `??`'s left side runs whenever summary does
 known #101 line _·line@ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/find > ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary value   # it decides the choice and is returned when there is none
-line Day·day > ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/?1/Summary() value   # #130
-line _·line@ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/find > ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/?1/Summary() value   # #130
-line ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/?1/Summary() > Summary@ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/?1/Summary() value   # #130
-line Summary@ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/?1/Summary() > ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary value   # #130
-line ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary > Summary@ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary value   # #130
-known #130 line Summary@ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary > ReadingStore()/ReadingStore.summary value   # #130: what `??` hands on is its left's value, kept by the arm that does not run; the plan joins it only by a name
-known #74 line ReadingStore > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history value   # the caller's instance
+line Day·day > ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/?1/Summary() value # #130
+line _·line@ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/find > ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/?1/Summary() value # #130
+line ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/?1/Summary() > Summary@ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/?1/Summary() value # #130
+line Summary@ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/?1/Summary() > ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary value # #130
+line ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary > Summary@ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary value # #130
+known #130 line Summary@ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary > ReadingStore()/ReadingStore.summary value   # #130
+line ReadingStore > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history value # the caller's instance
 line Disk(ReadingStore.readings) > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history own
 line ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/Reading() > Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/Reading() value
 line Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/Reading() > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history value
@@ -105,34 +104,34 @@ line ReadingStore()/ReadingStore.summary/?1/daySummary/Summary() > Summary@Readi
 line Summary@ReadingStore()/ReadingStore.summary/?1/daySummary/Summary() > ReadingStore()/ReadingStore.summary/?1/daySummary value
 line ReadingStore()/ReadingStore.summary/?1/daySummary > Summary@ReadingStore()/ReadingStore.summary/?1/daySummary value
 line Summary@ReadingStore()/ReadingStore.summary/?1/daySummary > ReadingStore()/ReadingStore.summary/?1/ReadingStore.keepSummary value
-known #74 line ReadingStore > ReadingStore()/ReadingStore.summary/?1/ReadingStore.keepSummary value   # the caller's instance
+line ReadingStore > ReadingStore()/ReadingStore.summary/?1/ReadingStore.keepSummary value # the caller's instance
 line Disk(ReadingStore.summaries) > ReadingStore()/ReadingStore.summary/?1/ReadingStore.keepSummary own
 line ReadingStore()/ReadingStore.summary/?1/ReadingStore.keepSummary > Disk(ReadingStore.summaries) own
 line ReadingStore()/ReadingStore.summary/?1/ReadingStore.keepSummary > Summary@ReadingStore()/ReadingStore.summary/?1/ReadingStore.keepSummary value   # #130: with `??` drawn as a choice, its two sides make one Summary
 line Summary@ReadingStore()/ReadingStore.summary/?1/ReadingStore.keepSummary > ReadingStore()/ReadingStore.summary value   # with `??` drawn as a choice, its two sides make one Summary
 line ReadingStore()/ReadingStore.summary > Summary@ReadingStore()/ReadingStore.summary value
-known #74 line ReadingStore > ReadingStore()/ReadingStore.keptSummary value   # the caller's instance
+line ReadingStore > ReadingStore()/ReadingStore.keptSummary value # the caller's instance
 line Disk(ReadingStore.summaries) > ReadingStore()/ReadingStore.keptSummary own
-known #127 line Day·day#2 > ReadingStore()/ReadingStore.keptSummary/find value   # #127
+line Day·day#2 > ReadingStore()/ReadingStore.keptSummary/find value
 line ReadingStore()/ReadingStore.keptSummary/find > _·line@ReadingStore()/ReadingStore.keptSummary/find value
 known #101 line _·line@ReadingStore()/ReadingStore.keptSummary/find > ReadingStore()/ReadingStore.keptSummary value   # it decides the choice and is returned when there is none
-known #127 line Day·day#2 > ReadingStore()/ReadingStore.keptSummary/?1/Summary() value   # #127
+line Day·day#2 > ReadingStore()/ReadingStore.keptSummary/?1/Summary() value # #127
 line _·line@ReadingStore()/ReadingStore.keptSummary/find > ReadingStore()/ReadingStore.keptSummary/?1/Summary() value   # #130
 line ReadingStore()/ReadingStore.keptSummary/?1/Summary() > Summary@ReadingStore()/ReadingStore.keptSummary/?1/Summary() value   # #130
 line Summary@ReadingStore()/ReadingStore.keptSummary/?1/Summary() > ReadingStore()/ReadingStore.keptSummary value   # #130
 line ReadingStore()/ReadingStore.keptSummary > Summary@ReadingStore()/ReadingStore.keptSummary value
-known #74 line ReadingStore > ReadingStore()/ReadingStore.keepSummary value   # the caller's instance
-known #127 line Summary·summary > ReadingStore()/ReadingStore.keepSummary value   # #127: it writes and gives back the Summary it is handed
+line ReadingStore > ReadingStore()/ReadingStore.keepSummary value # the caller's instance
+line Summary·summary > ReadingStore()/ReadingStore.keepSummary value # it writes and gives back the Summary it is handed
 line Disk(ReadingStore.summaries) > ReadingStore()/ReadingStore.keepSummary own
 line ReadingStore()/ReadingStore.keepSummary > Disk(ReadingStore.summaries) own
 line ReadingStore()/ReadingStore.keepSummary > Summary@ReadingStore()/ReadingStore.keepSummary value
 
 home ReadingStore@ReadingStore()/ReadingStore() ReadingStore()
-known #74 home ReadingStore ReadingStore()
-known #127 home Reading·reading ReadingStore()
+home ReadingStore ReadingStore()
+home Reading·reading ReadingStore()
 home Reading@ReadingStore()/ReadingStore.history/Reading() ReadingStore()/ReadingStore.history
 home Reading@ReadingStore()/ReadingStore.history ReadingStore()
-known #127 home Outage·outage ReadingStore()
+home Outage·outage ReadingStore()
 home Outage@ReadingStore()/ReadingStore.kept/Outage() ReadingStore()/ReadingStore.kept
 home _·outages@ReadingStore()/ReadingStore.kept/map ReadingStore()/ReadingStore.kept
 home Reading@ReadingStore()/ReadingStore.kept/ReadingStore.history/Reading() ReadingStore()/ReadingStore.kept/ReadingStore.history
@@ -153,30 +152,11 @@ home Day·day ReadingStore()
 home _·line@ReadingStore()/ReadingStore.keptSummary/find ReadingStore()/ReadingStore.keptSummary
 home Summary@ReadingStore()/ReadingStore.keptSummary/?1/Summary() ReadingStore()/ReadingStore.keptSummary
 home Summary@ReadingStore()/ReadingStore.keptSummary ReadingStore()
-known #127 home Day·day#2 ReadingStore()
+home Day·day#2 ReadingStore()
 home Summary@ReadingStore()/ReadingStore.keepSummary ReadingStore()
-known #127 home Summary·summary ReadingStore()
+home Summary·summary ReadingStore()
 
 side entry left
 side Disk(ReadingStore.readings) both
 side Disk(ReadingStore.outages) both
 side Disk(ReadingStore.summaries) both
-
-# what Atlas has and the code does not say
-known #74 extra line ReadingStore@ReadingStore()/ReadingStore() > ReadingStore()/ReadingStore.save value   # Atlas runs it on what the constructor built
-known #74 extra line ReadingStore@ReadingStore()/ReadingStore() > ReadingStore()/ReadingStore.history value   # Atlas runs it on what the constructor built
-known #74 extra line ReadingStore@ReadingStore()/ReadingStore() > ReadingStore()/ReadingStore.saveOutage value   # Atlas runs it on what the constructor built
-known #74 extra line ReadingStore@ReadingStore()/ReadingStore() > ReadingStore()/ReadingStore.kept/ReadingStore.history value   # Atlas runs it on what the constructor built
-known #74 extra line ReadingStore@ReadingStore()/ReadingStore() > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history value   # Atlas runs it on what the constructor built
-known #74 extra line ReadingStore@ReadingStore()/ReadingStore() > ReadingStore()/ReadingStore.summary/?1/ReadingStore.keepSummary value   # Atlas runs it on what the constructor built
-known #74 extra line ReadingStore@ReadingStore()/ReadingStore() > ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary value   # Atlas runs it on what the constructor built
-known #74 extra line ReadingStore@ReadingStore()/ReadingStore() > ReadingStore()/ReadingStore.keptSummary value   # Atlas runs it on what the constructor built
-known #74 extra line ReadingStore@ReadingStore()/ReadingStore() > ReadingStore()/ReadingStore.keepSummary value   # Atlas runs it on what the constructor built
-known #127 extra home Outage ReadingStore()   # #127: a parameter by its type, not as the value handed
-known #127 extra home Reading ReadingStore()   # #127: a parameter by its type, not as the value handed
-known #127 extra line Day·day > ReadingStore()/ReadingStore.keptSummary/find value   # #127: a parameter by its type, not as the value handed
-known #127 extra line Day·day > ReadingStore()/ReadingStore.keptSummary/?1/Summary() value   # #127: a parameter by its type, not as the value handed
-known #127 extra line Outage > ReadingStore()/ReadingStore.saveOutage value   # #127: a parameter by its type, not as the value handed
-known #127 extra line Outage@ReadingStore()/ReadingStore.kept/Outage() > ReadingStore()/ReadingStore.kept/Harvest() value   # #127: a parameter by its type, not as the value handed
-known #127 extra line Reading > ReadingStore()/ReadingStore.save value   # #127: a parameter by its type, not as the value handed
-known #127 extra line Summary@ReadingStore()/ReadingStore.keptSummary > ReadingStore()/ReadingStore.keepSummary value   # #127: a parameter by its type, not as the value handed

@@ -17,6 +17,3 @@ home Sink@run/Sink.new run
 
 side entry left
 side Screen right
-
-# building the exported Sink runs its public methods, so the literal reaches what write prints
-known #74 extra line run/Sink.new/Sink() > Screen reached

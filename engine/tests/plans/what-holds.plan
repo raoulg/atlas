@@ -59,7 +59,6 @@ line entry > draw_all call
 line Shape·shapes > draw_all value
 line Shape·shapes > draw_all/for s in shapes value
 line draw_all/for s in shapes > Shape·s@draw_all/for s in shapes value
-line Shape·s@draw_all/for s in shapes > draw_all/Shape.draw value
 line Shape·s@draw_all/for s in shapes > draw_all/Shape.draw/Circle.draw value
 line Shape·s@draw_all/for s in shapes > draw_all/Shape.draw/Square.draw value
 line draw_all/Shape.draw/Circle.draw > draw_all/Shape.draw back

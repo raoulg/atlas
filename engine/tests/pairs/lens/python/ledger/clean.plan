@@ -1,6 +1,6 @@
 # A lens whose focus is a library's type: `put` writes a Fraction into the file and `get` gives it back inside an
-# Entry. Building the Fraction in `get` is a call into the library, no occurrence: the Fraction it gives is a library's
-# value, from beyond, and no name holds it. `put`'s Fraction is its parameter `amount`, another value.
+# Entry. Building the Fraction in `get` is a call into the library, no occurrence: it is glued into `Entry(..)`, which
+# is handed the ledger whose path it reads. `put`'s Fraction is its parameter `amount`, a value from beyond.
 
 route books.ledger.Ledger
 step Ledger()/Ledger()
@@ -12,10 +12,10 @@ line entry > Ledger()/Ledger() call
 line entry > Ledger()/Ledger.put call
 line entry > Ledger()/Ledger.get call
 line Ledger()/Ledger() > Ledger@Ledger()/Ledger() value
-known #74 line Ledger > Ledger()/Ledger.put value   # the caller's instance: every method runs on it
-known #74 line Ledger > Ledger()/Ledger.get value
-known #74 line Ledger > Ledger()/Ledger.get/Entry() value   # `Entry(Fraction(self.path.read_text()))` hands the ledger
-known #127 line Fraction·amount > Ledger()/Ledger.put value      # #127
+line Ledger > Ledger()/Ledger.put value # the caller's instance: every method runs on it
+known #126 line Ledger > Ledger()/Ledger.get value   # the body reads self.path itself, and hands self to Entry()
+line Fraction·amount > Ledger()/Ledger.put value
+line Ledger > Ledger()/Ledger.get/Entry() value # `Entry(Fraction(self.path.read_text()))` hands the ledger
 line Ledger()/Ledger.put > Disk(Ledger.path) own
 line Disk(Ledger.path) > Ledger()/Ledger.get own
 line Ledger()/Ledger.get/Entry() > Entry@Ledger()/Ledger.get/Entry() value
@@ -23,18 +23,11 @@ line Entry@Ledger()/Ledger.get/Entry() > Ledger()/Ledger.get value
 line Ledger()/Ledger.get > Entry@Ledger()/Ledger.get value
 
 home Ledger@Ledger()/Ledger() Ledger()
-known #74 home Ledger Ledger()
-known #127 home Fraction·amount Ledger()
-home Fraction Ledger()
+home Ledger Ledger()
+home Fraction·amount Ledger()
 home Entry@Ledger()/Ledger.get/Entry() Ledger()/Ledger.get
 home Entry@Ledger()/Ledger.get Ledger()
 
 side entry left
 side Disk(Ledger.path) between
-
-# #127: put's parameter loses its name and becomes the Fraction get builds, one value taken by both
-known #127 extra line Fraction > Ledger()/Ledger.put value
-
 # what the constructor builds goes back to its caller: Atlas runs the methods on it instead of the caller's instance
-known #74 extra line Ledger@Ledger()/Ledger() > Ledger()/Ledger.put value
-known #74 extra line Ledger@Ledger()/Ledger() > Ledger()/Ledger.get/Entry() value
