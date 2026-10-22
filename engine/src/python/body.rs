@@ -794,6 +794,10 @@ pub(super) fn link_calls<'t>(
                     b.each(&mut steps, l);
                     continue;
                 }
+                Ran::Words(w) => {
+                    b.words(&mut steps, w);
+                    continue;
+                }
                 Ran::Call(c) => c,
             };
             let (t, w) = (b.read.touches.len(), b.read.waiting.len());
@@ -873,6 +877,9 @@ struct Read<'t> {
 enum Ran<'t> {
     Call(TsNode<'t>),
     Loop(TsNode<'t>),
+    /// The command line the program is run with, read word by word and kept under a name
+    /// (`args = sys.argv[1:]`): the end of what reads it.
+    Words(TsNode<'t>),
 }
 
 struct Body<'a, 't> {
@@ -976,18 +983,83 @@ impl<'a, 't> Body<'a, 't> {
             }
             out.push((key, Ran::Call(c)));
         }
+        // the command line kept under a name; one a loop goes over is that loop's
+        for w in self.words_read() {
+            let looped = w.parent().is_some_and(|l| matches!(l.kind(), "for_statement" | "for_in_clause"));
+            if !looped && (kept_as(w, self.src).is_some() || !unpacked_as(w, self.src).is_empty()) {
+                out.push(((w.end_byte(), 0, 0), Ran::Words(w)));
+            }
+        }
         out.sort_by_key(|(k, _)| *k);
         out.into_iter().map(|(_, r)| r).collect()
+    }
+
+    /// Where the body reads the command line the program is run with (`knowledge::PYTHON_COMMAND_LINE`,
+    /// `sys.argv`): the end of each chain that starts at it, through the items and the methods taken
+    /// of it (`sys.argv[1:]`).
+    fn words_read(&self) -> Vec<TsNode<'t>> {
+        let src = self.src;
+        let reads = |n: &TsNode| {
+            let parts = dotted(Some(*n), src);
+            let Some((head, rest)) = parts.split_first() else { return false };
+            let Some(bound) = self.m.bindings.get(head) else { return false };
+            let full: Vec<&str> = bound.trim_start_matches("ext:").split('.').chain(rest.iter().map(String::as_str)).collect();
+            knowledge::PYTHON_COMMAND_LINE.contains(&full.as_slice())
+        };
+        let mut out = vec![];
+        for n in walk(self.body, &["attribute", "identifier"]).into_iter().filter(|n| self.holds(*n) && reads(n)) {
+            // `sys.argv` itself, not the `sys` in it
+            if n.parent().is_some_and(|p| p.kind() == "attribute" && p.child_by_field_name("object").is_some_and(|o| o.id() == n.id())) {
+                continue;
+            }
+            let mut end = n;
+            loop {
+                let value = outermost(end, WRAPPERS);
+                let Some(p) = value.parent() else { break };
+                let on = |f: &str| p.child_by_field_name(f).is_some_and(|x| x.id() == value.id());
+                end = match p.kind() {
+                    "subscript" if on("value") => p,
+                    "attribute" if on("object") => match p.parent().filter(|c| c.kind() == "call") {
+                        Some(call) => call,
+                        None => break,
+                    },
+                    _ => break,
+                };
+            }
+            out.push(outermost(end, WRAPPERS));
+        }
+        out
+    }
+
+    /// The command line kept under a name: a step that parses it with no options, since the code
+    /// names none, giving the words under the names it keeps them by.
+    fn words(&mut self, steps: &mut Steps, w: TsNode<'t>) {
+        let unpacked = unpacked_as(w, self.src);
+        let names: Vec<String> = match kept_as(w, self.src) {
+            Some(n) => vec![n],
+            None => unpacked.iter().map(|n| text(*n, self.src).to_string()).collect(),
+        };
+        let gives = names.into_iter().map(|n| Held::new(String::new(), n)).collect();
+        steps.parses(w, "argv", vec![], gives, vec![]);
     }
 
     /// A loop as the step it is: it takes what it goes over, and gives each element under the
     /// name it binds (`for n in g.nodes` takes `g` and gives `n`).
     fn each(&mut self, steps: &mut Steps, l: TsNode<'t>) {
         let (Some(left), Some(right)) = (l.child_by_field_name("left"), l.child_by_field_name("right")) else { return };
-        let (hands, gives) = self.seen.each(l, self.ext, &steps.kept);
+        let (hands, mut gives) = self.seen.each(l, self.ext, &steps.kept);
         self.read.new_ext.extend(hands.iter().chain(&gives).map(|h| h.ty.clone()).filter(|t| t.starts_with("ext:")));
         // the step stands where what it goes over is written: a call there hands it what it gives, the loop's body does not
-        steps.op(right, &format!("for {} in {}", text(left, self.src), text(right, self.src)), hands, gives);
+        let label = format!("for {} in {}", text(left, self.src), text(right, self.src));
+        // a loop over the command line keeps each word under the name it binds: it parses the command line
+        if self.words_read().iter().any(|w| w.id() == right.id()) {
+            let names = if left.kind() == "identifier" { vec![left] } else { walk(left, &["identifier"]) };
+            if gives.is_empty() {
+                gives = names.into_iter().map(|n| Held::new(String::new(), text(n, self.src))).collect();
+            }
+            return steps.parses(right, &label, hands, gives, vec![]);
+        }
+        steps.op(right, &label, hands, gives);
     }
 
     /// What a call is handed: the value it is called on, and its arguments. A method called on
