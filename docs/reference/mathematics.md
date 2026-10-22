@@ -139,8 +139,11 @@ composition) into one box.
 **In Atlas.** Forms that say the same thing are one construct, in every language: typer's
 parameter default, clap's `default_value` and parseArgs' `default:` are each an option the
 caller can override. The pushout is drawn, as the entry's usage line; the language's form lies
-beneath it.
-**Where.** `CLAUDE.md`, "Isomorphic is the same"; `Entry::options`.
+beneath it. An environment variable with a fallback (`os.environ.get("X", "d")`,
+`process.env.X ?? "d"`, `env::var("X").unwrap_or("d")`) is that construct too, and so is any value
+nothing in the program hands, with a fallback: one input, one place, drawn as its default and
+decided by no code, since a run reads or writes one file whatever the input says.
+**Where.** `CLAUDE.md`, "Isomorphic is the same"; `Entry::options`; `paths::or_else`.
 
 ### Paths as terms, directories as fibers
 **What.** A path is a term in a small algebra over a root: a root (a literal, a parameter, an

@@ -475,53 +475,71 @@ pub fn changed_through<'a>(body: TsNode, src: &'a [u8], syn: &BindSyntax, name: 
     }
 }
 
-/// What the names of a body hold, binding by binding. Each binding is visible over a stretch of
-/// the source, as the language scopes it (a `let` to the end of its block, a parameter over the
-/// function, a loop's pattern over its body), and a use of a name takes the innermost binding
-/// visible where it stands: of those that hold it, the one that starts last. A name bound twice
-/// (shadowing, a block, an arm) holds two values, as two names would.
-#[derive(Clone, Debug)]
+/// What the names of a body hold, binding by binding: each binding is visible over a stretch of the
+/// source, and a use takes the innermost binding visible where it stands. A name bound twice (a
+/// loop's `b`, then `let b = Body::new()`) is two values, as two names would be. Where a binding is
+/// visible is the language's to say.
 pub struct Bindings<T> {
-    by_name: HashMap<String, Vec<(usize, usize, T)>>,
+    all: Vec<(String, usize, usize, T)>,
 }
 
 impl<T> Default for Bindings<T> {
     fn default() -> Self {
-        Bindings { by_name: HashMap::new() }
+        Bindings { all: vec![] }
     }
 }
 
 impl<T> Bindings<T> {
-    /// `name` holds `value` over the bytes `from..to`; a binding over the same stretch replaces it.
+    /// A binding of `name` to `value`, visible over the bytes `from..to`.
     pub fn bind(&mut self, name: &str, from: usize, to: usize, value: T) {
-        let all = self.by_name.entry(name.to_string()).or_default();
-        match all.iter_mut().find(|(f, t, _)| *f == from && *t == to) {
-            Some(b) => b.2 = value,
-            None => all.push((from, to, value)),
-        }
+        self.all.push((name.to_string(), from, to, value));
     }
 
-    /// What `name` holds at byte `at`.
+    /// The index of the binding of `name` visible at `at`: of those that hold it, the one visible
+    /// from the latest byte, which is the innermost.
+    fn at(&self, name: &str, at: usize) -> Option<usize> {
+        (0..self.all.len())
+            .filter(|&i| self.all[i].0 == name && self.all[i].1 <= at && at < self.all[i].2)
+            .max_by_key(|&i| (self.all[i].1, i))
+    }
+
+    /// What the binding of `name` visible at `at` holds.
     pub fn get(&self, name: &str, at: usize) -> Option<&T> {
-        self.binding(name, at).map(|(_, v)| v)
+        self.at(name, at).map(|i| &self.all[i].3)
     }
 
-    /// The binding of `name` visible at byte `at`, by where it starts, and what it holds.
+    /// The binding of `name` visible at `at`: the byte it is visible from, and what it holds.
     pub fn binding(&self, name: &str, at: usize) -> Option<(usize, &T)> {
-        self.by_name.get(name)?.iter().filter(|(f, t, _)| *f <= at && at < *t).max_by_key(|(f, ..)| *f).map(|(f, _, v)| (*f, v))
+        self.at(name, at).map(|i| (self.all[i].1, &self.all[i].3))
     }
 
-    /// Whether `name` holds a value at byte `at`.
+    /// Whether `name` holds a value at `at`.
     pub fn holds(&self, name: &str, at: usize) -> bool {
-        self.binding(name, at).is_some()
+        self.at(name, at).is_some()
     }
 
-    /// Every name visible at byte `at`, with what it holds there.
+    /// What the binding of `name` visible at `at` holds, to change it.
+    pub fn get_mut(&mut self, name: &str, at: usize) -> Option<&mut T> {
+        self.at(name, at).map(|i| &mut self.all[i].3)
+    }
+
+    /// Every binding, by its name.
+    pub fn iter(&self) -> impl Iterator<Item = (&str, &T)> {
+        self.all.iter().map(|(n, _, _, v)| (n.as_str(), v))
+    }
+
+    /// Every name visible at `at`, with what it holds there.
     pub fn visible(&self, at: usize) -> HashMap<String, T>
     where
         T: Clone,
     {
-        self.by_name.keys().filter_map(|n| Some((n.clone(), self.get(n, at)?.clone()))).collect()
+        let mut out = HashMap::new();
+        for (name, ..) in &self.all {
+            if let Some(v) = self.get(name, at) {
+                out.entry(name.clone()).or_insert_with(|| v.clone());
+            }
+        }
+        out
     }
 }
 
@@ -579,21 +597,20 @@ mod tests {
         assert_eq!(sides("write_text", 2), None);
     }
 
-    /// `for b in bases { resolve(b) }` then `let b = Body::new()`: the loop's `b` is the element
-    /// inside the loop, the `let`'s `b` the body after it; a block's binding ends with the block.
+    /// `for b in bases { resolve(b) }` then `let b = Body::new()`: the use in the loop takes the
+    /// loop's `b`, a use after it the later binding, and a use before both neither.
     #[test]
-    fn a_name_holds_the_binding_visible_where_it_is_used() {
-        let mut b: Bindings<&str> = Bindings::default();
-        b.bind("b", 0, 100, "Param");
-        b.bind("b", 20, 40, "Base");
-        b.bind("b", 60, 100, "Body");
-        assert_eq!(b.get("b", 10), Some(&"Param"));
-        assert_eq!(b.get("b", 30), Some(&"Base"));
-        assert_eq!(b.get("b", 50), Some(&"Param"), "the loop's binding ends with the loop");
-        assert_eq!(b.get("b", 70), Some(&"Body"));
-        assert_eq!(b.get("b", 100), None);
-        b.bind("b", 60, 100, "Other");
-        assert_eq!(b.get("b", 70), Some(&"Other"), "a binding over the same stretch is replaced");
-        assert_eq!(b.visible(30).get("b"), Some(&"Base"));
+    fn a_use_takes_the_innermost_binding_visible_where_it_stands() {
+        let mut b = Bindings::default();
+        b.bind("b", 10, 40, "String");
+        b.bind("b", 50, 100, "Body");
+        b.bind("b", 60, 70, "Leaf");
+        assert_eq!(b.get("b", 5), None);
+        assert_eq!(b.get("b", 20), Some(&"String"));
+        assert_eq!(b.get("b", 45), None);
+        assert_eq!(b.get("b", 55), Some(&"Body"));
+        assert_eq!(b.get("b", 65), Some(&"Leaf"));
+        assert_eq!(b.get("b", 80), Some(&"Body"));
+        assert_eq!(b.visible(65).get("b"), Some(&"Leaf"));
     }
 }

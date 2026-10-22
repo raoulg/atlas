@@ -250,8 +250,8 @@ fn places_where_data_lives_is_decided_where_the_program_starts() {
 
 /// Library code does not decide where data lives. A library function that falls back to a path of
 /// its own when an environment variable is not set leaves the place to whoever starts the program:
-/// the variable is a place the code does not name, and the default an option, as a parameter's
-/// default is. `places` does not ask; the shortcut shows in where the place is whole: in the
+/// the variable with its default is one input, an option, as a parameter's default is, and one
+/// place, drawn as its default. `places` does not ask; the shortcut shows in where the place is whole: in the
 /// library itself, while the clean side's is whole in `main`.
 #[test]
 fn places_an_environment_variable_with_a_default_is_an_option() {
@@ -264,7 +264,8 @@ fn places_an_environment_variable_with_a_default_is_an_option() {
         assert!(!asked.contains(&f.to_string()), "{f} takes what the environment says: {asked:?}");
         let ts = touches(s, f, kind);
         assert!(ts.iter().any(|t| t.artifact == default && !t.fixed && t.fixed_by.is_empty()), "{f}: {ts:#?}");
-        assert!(ts.iter().any(|t| t.artifact.is_empty() && t.what.starts_with(variable)), "{f} shows the variable: {ts:#?}");
+        let defaults = ts.iter().all(|t| t.artifact.starts_with(default.trim_end_matches('/')) && !t.fixed);
+        assert!(defaults, "{f} draws its default, {variable} its input, and no place beside it: {ts:#?}");
     }
 }
 
