@@ -72,12 +72,13 @@ home Board·other@main/rename main
 side entry left
 
 # A library operation that changes the value it runs on is a step: on a part of `self` it changes the instance the
-# method runs on (`self.cells.extend(..)`); in Python it is none on a parameter itself (`tags.append(tag)`). Inside the
+# method runs on (`self.cells.extend(..)`), on a parameter itself (`tags.append(tag)`) the list, of no type of the
+# code's (`_`), and so is a function that changes the list it is handed (`heapq.heappush`). Inside the
 # step `self` is bound by its kind, not to the board the call runs on (#127), and the own arrow does not hand on what
 # the change made (#129)
 step main/Board.take_from/extend
 step main/Board.take_victim/extend
-known #125 step main/add_tag/append
+step main/add_tag/append
 line Board·other@main/Board()#2 > main/Board.take_from/extend value
 known #127 line Board·board@main/reset > main/Board.take_from/extend value
 line main/Board.take_from/extend > Board·self@main/Board.take_from/extend value
@@ -86,11 +87,14 @@ line Board·other@main/Board.take_from > main/Board.take_victim/extend value
 known #127 line Board·board@main/Board.take_from > main/Board.take_victim/extend value
 line main/Board.take_victim/extend > Board·self@main/Board.take_victim/extend value
 known #129 line Board·self@main/Board.take_victim/extend > main/Board.take_victim value
-known #125 line main/add_tag/append > list·tags@main/add_tag/append value
-known #125 line list·tags@main/add_tag/append > main/add_tag value
+line main/add_tag/append > _·tags@main/add_tag/append value
+known #129 line _·tags@main/add_tag/append > main/add_tag value   # the own arrow hands on what the change made
 home Board·self@main/Board.take_from/extend main/Board.take_from
 home Board·self@main/Board.take_victim/extend main/Board.take_victim
-known #125 home list·tags@main/add_tag/append main/add_tag
+home _·tags@main/add_tag/append main/add_tag
+step main/queue/heappush                                    # `heapq.heappush(jobs, job)` changes the list it is handed
+line main/queue/heappush > _·jobs@main/queue/heappush value
+home _·jobs@main/queue/heappush main/queue
 
 # A callee's parameter is bound to the caller's value of that name, or to the latest of its type, not to what the call
 # is handed: `take_from`'s `other` (main's board) to main's `other`, `take_victim`'s `victim` to main's other,

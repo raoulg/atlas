@@ -404,8 +404,10 @@ open:
   `.name` is no occurrence but glued into the call, whose arrow is `f ∘ π_name` with domain `X`, and
   `f(self.path)` is handed the instance the method runs on; a nested call that is a step of its own
   takes its names itself, and the call around it is handed what it gives. A library's operation that is a step
-  carries the value it gives; what it touches at a place stays its caller's own touch, so naming its
-  result changes no line to the place. A projection bound to a name first is still the projection
+  carries the value it gives, by the name or the names the body binds it to (`with X as con` as `con = X`,
+  `a, b = f(..)` each part), of whatever type; what it touches at a place stays its caller's own touch, so
+  naming its result changes no line to the place. A copy makes its value anew (`board = copy.copy(board)`),
+  and a method called on a library's value is that library's operation also where its types do not list it. A projection bound to a name first is still the projection
   (`width = settings.width; f(width)` hands `settings`), a lookup by a key among them (`row = table[k]`
   hands `table`, the lens the key chooses), and a change made through one changes its owner, a lens's put;
 - a step that can fail has the codomain `T + E`: the error is a value its constructor makes in the arm

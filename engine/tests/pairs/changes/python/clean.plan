@@ -55,38 +55,38 @@ home _@main/tally main
 side entry left
 
 # A library operation that changes the value it runs on, or whose result the body names, is a step: on a part of
-# `self` it changes the instance the method runs on (`self.cells.clear()`); in Python it is none on a local list itself
-# or where the result is named
+# `self` it changes the instance the method runs on (`self.cells.clear()`), and a function that changes the list it is
+# handed (`heapq.heappush`) is one too. A list is of no type of the code's: its values are `_`
 step main/Board.reset/clear
 step main/Board.reset/clear#2
-known #125 step main/renamed/copy
-known #125 step main/extended/append
-known #125 step main/queued/list
+step main/renamed/copy
+step main/extended/append
+step main/queued/list
 line Board·board@main/Board.mark_all > main/Board.reset/clear value
 line main/Board.reset/clear > Board·self@main/Board.reset/clear value
 line Board·self@main/Board.reset/clear > main/Board.reset/clear#2 value
 line main/Board.reset/clear#2 > Board·self@main/Board.reset/clear#2 value
 known #129 line Board·self@main/Board.reset/clear#2 > main/Board.reset value   # the own arrow hands on what the change inside made
-known #125 line Board·board@main/Board.reset > main/renamed/copy value
-known #125 line main/renamed/copy > Board·board@main/renamed/copy value
-known #125 line Board·board@main/renamed/copy > main/renamed value
-known #125 line main/extended/append > list·xs@main/extended/append value
-known #125 line list·xs@main/extended/append > main/extended value
-known #125 line main/queued/list > list·jobs@main/queued/list value
-known #125 line list·jobs@main/queued/list > main/queued value
+line Board·board@main/Board.reset > main/renamed/copy value
+line main/renamed/copy > Board·board@main/renamed/copy value
+line Board·board@main/renamed/copy > main/renamed value
+line main/extended/append > _·xs@main/extended/append value
+known #129 line _·xs@main/extended/append > main/extended value   # the own arrow hands back what the change made
+line main/queued/list > _·jobs@main/queued/list value
+step main/queued/heappush                                   # `heapq.heappush(jobs, job)` changes the list it is handed
+line _·jobs@main/queued/list > main/queued/heappush value
+line main/queued/heappush > _·jobs@main/queued/heappush value
+known #129 line _·jobs@main/queued/heappush > main/queued value   # the own arrow hands back what the change made
 home Board·self@main/Board.reset/clear main/Board.reset
 home Board·self@main/Board.reset/clear#2 main/Board.reset
-known #125 home Board·board@main/renamed/copy main/renamed
-known #125 home list·xs@main/extended/append main/extended
-known #125 home list·jobs@main/queued/list main/queued
+home Board·board@main/renamed/copy main/renamed
+home _·xs@main/extended/append main/extended
+home _·jobs@main/queued/list main/queued
+home _·jobs@main/queued/heappush main/queued
 
 # A callee's parameter is bound to the caller's value of that name, not to what the call is handed: `merged`'s `other`
 # (main's board) resolves to main's `other`, the board `merged` itself makes, and the board handed is taken by nothing
 known #127 line Board·board@main/Board.reset > main/Board.merged/Board() value
-
-# A method that changes its receiver hands it on twice: unnamed from its arrow's change, and named; the next step takes
-# the second
-known #125 extra line Board·board@main/Board.reset > main/renamed value   # `copy.copy(board)` inside takes it
 
 # The own arrow takes a value its body only hands to a step inside it: the Cell built into `[Cell()]` for `Board()`, the
 # receiver of `merged` whose fields go into `Board(..)`
