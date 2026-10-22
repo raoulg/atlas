@@ -613,6 +613,14 @@ pub type Waiting = (String, crate::model::Touch, Vec<Built>);
 /// with where it is whole and the function whose own code decides it, if one does.
 pub type Completed = (String, crate::model::Touch, Vec<Built>, Vec<(Whole, Built, Option<String>)>);
 
+/// The way a request goes by the method it is built with (`knowledge::REQUEST_WAYS`), where every
+/// alternative says the same; none where one does not say its method.
+fn way_of_request<'b>(mut built: impl Iterator<Item = &'b Built>) -> Option<crate::model::Dir> {
+    let way = |b: &Built| crate::knowledge::request_way(method_and_path(&render(b)).0);
+    let first = way(built.next()?)?;
+    built.all(|b| way(b) == Some(first)).then_some(first)
+}
+
 /// Whether the code decides where a call goes, once its path or URL is whole: it starts at
 /// something the code holds, a literal or a constant, not at what a caller hands, an input with a
 /// default, or what the environment says (a value, the user's home `~`, the system's `$TMPDIR`).
@@ -701,7 +709,8 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
         // a file named by the value its function holds as it is where nothing calls the function
         if wholes.iter().any(|w| **w != Whole::In(f.clone())) {
             let what = if t.kind == World::Disk { by_value(store, &f, built.iter()) } else { None };
-            store.instead(&f, Touch { what: what.unwrap_or_else(|| t.what.clone()), ..t.clone() });
+            let dir = if t.kind == World::Net { way_of_request(built.iter()).or(t.dir) } else { t.dir };
+            store.instead(&f, Touch { what: what.unwrap_or_else(|| t.what.clone()), dir, ..t.clone() });
         }
         for whole in wholes {
             let (by, users_of) = match whole {
@@ -712,6 +721,9 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
             let holder = match whole {
                 Whole::In(h) | Whole::Users(h) => h,
             };
+            // the way a request goes, where the method its alternatives say gives one
+            let alternatives = found.iter().filter(|(w, _, _)| w == whole).map(|(_, b, _)| b);
+            let way = if t.kind == World::Net { way_of_request(alternatives).or(t.dir) } else { t.dir };
             // each place with the functions whose own code decides it
             let mut placed: Vec<(String, Option<crate::model::Dir>, Vec<String>)> = vec![];
             let (mut requested, mut decides) = (false, vec![]);
@@ -746,7 +758,7 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
                         .map(|(a, _)| a)
                         .filter(|a| !a.is_empty())
                     {
-                        placed.push((host, t.dir, fixed));
+                        placed.push((host, way, fixed));
                     }
                     requested |= served;
                     if !served && placed.len() == before {
@@ -819,7 +831,7 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
                 if !requested {
                     // a URL without a host is the page's own origin, decided by whoever serves it
                     let fixed = if t.kind != World::Net || !t.artifact.is_empty() { decides } else { vec![] };
-                    let touch = at(t.artifact.clone(), t.dir, fixed);
+                    let touch = at(t.artifact.clone(), way, fixed);
                     store.touch(&f, Touch { what: value.unwrap_or_else(|| touch.what.clone()), file: opened, ..touch });
                 }
                 continue;
@@ -831,7 +843,7 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
             // an alternative that names no place stays one the code does not name, by what names
             // it: what a caller hands that no code says
             if !unnamed.is_empty() {
-                let touch = at(String::new(), t.dir, vec![]);
+                let touch = at(String::new(), way, vec![]);
                 store.touch(&f, Touch { what: unnamed_value.unwrap_or_else(|| touch.what.clone()), ..touch });
             }
         }

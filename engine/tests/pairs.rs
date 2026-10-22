@@ -67,3 +67,24 @@ fn a_request_meets_the_route_it_names() {
         }
     }
 }
+
+/// A request's method says which way it goes, as a statement's verb does: a GET takes what the
+/// place holds, a POST leaves something there. The clean clients say the method of each request
+/// (`requests.post`, `fetch(url, { method: "POST" })`, `client.post(..)`); the shortcut looks the
+/// method of `order` up by a key at run time (`requests.request(METHODS["order"], ..)`,
+/// `{ method: method("order") }`, `client.request(method("order"), ..)`), so the code does not say
+/// which way it goes and the place is in neither domain nor codomain. Its `item` still says GET.
+#[test]
+fn a_request_goes_the_way_its_method_says() {
+    use atlas_engine::flow::Side;
+    let g = pair("requests");
+    let side =
+        |f: &str| -> Vec<Side> { g.node(f).unwrap().touches.iter().filter(|t| t.kind == World::Net).map(|t| t.side()).collect::<Vec<_>>() };
+    for (clean, shortcut) in [("clean", "shortcut"), ("pyclean", "pyshortcut"), ("rsclean", "rsshortcut")] {
+        let at = |side: &str, f: &str| if side.starts_with("rs") { format!("{side}.{f}") } else { format!("{side}.client.{f}") };
+        assert_eq!(side(&at(clean, "item")), [Side::In], "{clean}: a GET reads");
+        assert_eq!(side(&at(clean, "order")), [Side::Out], "{clean}: a POST writes");
+        assert_eq!(side(&at(shortcut, "item")), [Side::In], "{shortcut}: a GET reads");
+        assert_eq!(side(&at(shortcut, "order")), [Side::Open], "{shortcut}: a method looked up at run time says no way");
+    }
+}
