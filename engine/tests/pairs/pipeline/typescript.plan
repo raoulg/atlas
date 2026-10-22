@@ -57,7 +57,7 @@ line cli.ts/main/?1/download > cli.ts/main back                          # `retu
 line _·values@cli.ts/main/parseArgs > cli.ts/main/load value             # `values.raw`
 line File(data/raw/sunspots.csv) > cli.ts/main/load own
 line cli.ts/main/load/parse/parseLine/map > _·fields@cli.ts/main/load/parse/parseLine/map value
-known #128 line _·fields@cli.ts/main/load/parse/parseLine/map > cli.ts/main/load/parse/parseLine/?1/Month() value   # `const [year, ..] = fields`
+line _·fields@cli.ts/main/load/parse/parseLine/map > cli.ts/main/load/parse/parseLine/?1/Month() value   # `const [year, ..] = fields`
 line cli.ts/main/load/parse/parseLine/?1/Month() > Month@cli.ts/main/load/parse/parseLine/?1/Month() value
 line Month@cli.ts/main/load/parse/parseLine/?1/Month() > cli.ts/main/load/parse/parseLine value
 line cli.ts/main/load/parse/parseLine > Month@cli.ts/main/load/parse/parseLine value
@@ -93,21 +93,21 @@ known #125 line _·y@cli.ts/main/trend/range#2 > cli.ts/main/trend/map#2 value  
 known #101 line _·counts@cli.ts/main/trend/map#2 > cli.ts/main/trend value
 line Settings·settings@cli.ts/main/Settings() > cli.ts/main/trend/?1/escape value   # `escape(settings.title)`
 line cli.ts/main/trend/?1/escape > cli.ts/main/trend back
-known #127 line Month·series@cli.ts/main/load > cli.ts/main/trend/at value
+line Month·series@cli.ts/main/load > cli.ts/main/trend/at value
 line cli.ts/main/trend/at > _·last@cli.ts/main/trend/at value
-known #128 line Month·series@cli.ts/main/load > cli.ts/main/trend/?1/range value      # `series[0].date`
+line Month·series@cli.ts/main/load > cli.ts/main/trend/?1/range value      # `series[0].date`
 line _·last@cli.ts/main/trend/at > cli.ts/main/trend/?1/range value
-known #128 line Settings·settings@cli.ts/main/Settings() > cli.ts/main/trend/?1/range value   # `width`
+line Settings·settings@cli.ts/main/Settings() > cli.ts/main/trend/?1/range value   # `width`
 line cli.ts/main/trend/?1/range > _·x@cli.ts/main/trend/?1/range value
 line Month·series@cli.ts/main/load > cli.ts/main/trend/?1/range#2 value    # `series.map(..)` in its domain
-known #128 line Settings·settings@cli.ts/main/Settings() > cli.ts/main/trend/?1/range#2 value # `bottom`
+line Settings·settings@cli.ts/main/Settings() > cli.ts/main/trend/?1/range#2 value # `bottom`
 line cli.ts/main/trend/?1/range#2 > _·y@cli.ts/main/trend/?1/range#2 value
 line _·x@cli.ts/main/trend/?1/range > cli.ts/main/trend/?1/line value         # `(month) => x(month.date)`
 line _·y@cli.ts/main/trend/?1/range#2 > cli.ts/main/trend/?1/line value
 line cli.ts/main/trend/?1/line > _·path@cli.ts/main/trend/?1/line value
 known #101 line _·path@cli.ts/main/trend/?1/line > cli.ts/main/trend value           # `path(series)`, `path(smoothed)`
 line _·x@cli.ts/main/trend/?1/range > cli.ts/main/trend/?1/map value          # `x.ticks(10)`, `x(t)`
-known #128 line Settings·settings@cli.ts/main/Settings() > cli.ts/main/trend/?1/map value     # `bottom + 18`
+line Settings·settings@cli.ts/main/Settings() > cli.ts/main/trend/?1/map value     # `bottom + 18`
 line cli.ts/main/trend/?1/map > _·years@cli.ts/main/trend/?1/map value
 known #101 line _·years@cli.ts/main/trend/?1/map > cli.ts/main/trend value
 line _·y@cli.ts/main/trend/?1/range#2 > cli.ts/main/trend/?1/map#2 value      # `y.ticks(5)`, `y(n)`

@@ -16,8 +16,9 @@ line entry > Board()/Board.pin call
 line entry > Board()/Board.posts call
 line Board()/Board() > Board@Board()/Board() value
 line Board > Board()/Board.pin value # the caller's instance: every method runs on it
-line Board > Board()/Board.posts value
+known #126 line Board > Board()/Board.posts value   # the body reads this.path itself, and hands this to Notice()
 line Notice·notice > Board()/Board.pin value
+line Board > Board()/Board.posts/parse value # `readFileSync(this.path, ..)` in what `parse` is handed
 line Board()/Board.pin > Disk(Board.path) own
 line Disk(Board.path) > Board()/Board.posts own
 line Board()/Board.posts/Notice() > Notice@Board()/Board.posts/Notice() value
@@ -39,3 +40,4 @@ step Board()/Board.posts/parse
 line Board()/Board.posts/parse > _·kept@Board()/Board.posts/parse value
 line _·kept@Board()/Board.posts/parse > Board()/Board.posts/Notice() value
 home _·kept@Board()/Board.posts/parse Board()/Board.posts
+# what the constructor builds goes back to its caller: Atlas runs the methods on it instead of the caller's instance
