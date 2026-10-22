@@ -421,10 +421,11 @@ open:
   naming its result changes no line to the place. A copy makes its value anew (`board = copy.copy(board)`),
   and a method called on a library's value is that library's operation also where its types do not list it. A projection bound to a name first is still the projection
   (`width = settings.width; f(width)` hands `settings`), a lookup by a key among them (`row = table[k]`
-  hands `table`, the lens the key chooses), a name a `case` pattern binds (a part of what the `match` takes
-  apart, through the variant the case matches, a prism) and an element of a loop that is no step (`for s, t in
-  rows`), and a change made through one changes its owner, a lens's put. A name bound in the arms of a choice
-  holds what each arm binds it to: a value the body binds without a call is made in the body, never from beyond;
+  hands `table`, the lens the key chooses), and so is any value a body binds without a step: a pattern that takes a
+  value apart (`const [year, month] = fields` hands `fields`), a name a `case` pattern binds (a part of what the
+  `match` takes apart, through the variant the case matches, a prism), an element of a loop that is no step (`for s, t
+  in rows`), what operators compute of names (`bottom = height - margin`), what each arm of a choice sets a name to
+  (`let unit; if (..) unit = KELVIN; else unit = CELSIUS`). A change made through one changes its owner, a lens's put;
 - a step that can fail has the codomain `T + E`: the error is a value its constructor makes in the arm
   that raises it, the step's border hands it on with its result, and a call that does not catch it
   hands it on to its own caller. Python's propagation and Rust's `?` are one form, no choice.
