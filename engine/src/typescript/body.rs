@@ -1825,6 +1825,7 @@ const USES: UseSyntax = UseSyntax {
     hands: |n, child| {
         matches!(n.kind(), "call_expression" | "new_expression") && n.child_by_field_name("arguments").map(|a| a.id()) == Some(child.id())
     },
+    changes: |_| vec![],
     splits: |n, child| n.kind() == "switch_statement" && n.child_by_field_name("value").map(|v| v.id()) == Some(child.id()),
     names: &["identifier", "shorthand_property_identifier"],
     keeps: &["member_expression", "subscript_expression"],

@@ -34,7 +34,8 @@ left, in the domain, when the route uses what was there for what it makes. It st
 codomain, when the route leaves something in it. What the route reads back of what it wrote, or
 reads only to check or count, it does not use: that place stays in the codomain. Whether a read is
 used is a fact of the step's body: what the call gives reaches the step's codomain (it is returned,
-handed to a call, kept in a field) through the names it is bound to, or it only decides a choice,
+handed to a call, kept in a field) through the names it is bound to and the values a call on it
+changes (`f.read_to_string(&mut s)` makes `s` from `f`), or it only decides a choice,
 goes to an error or is dropped, and is a check. A place one step
 writes and a later step reads and uses is the object between them, and stands between them. A
 place the route reads and then writes on is in both: two projections of one place, `from X` on
