@@ -266,13 +266,15 @@ fn composition_a_call_not_followed_shows() {
 
 /// A guard of the language's narrows what it tests where it holds: after `!Array.isArray(categories)
 /// ||`, `categories` is an array, and `categories.every(..)` is the language's own operation, which
-/// Atlas reads, not a call it cannot follow. The lookup that gives `categories` (`fields.get(..)`, on
-/// a value of no type the program names) is one it cannot follow.
+/// Atlas reads, not a call it cannot follow. So is the lookup that gives `categories`: `fields` is
+/// what `fieldsOf` gives, a `ReadonlyMap` as its signature writes it, and `fields.get(..)` is the
+/// Map's operation, a step where the body names what it gives.
 #[test]
 fn composition_a_method_on_what_a_guard_narrowed_is_the_language_s() {
     let parse = node(clean(), "config.parseConfig");
-    let not_followed: Vec<&str> = parse.sites.iter().filter(|s| s.not_followed).map(|s| s.op.as_str()).collect();
-    assert_eq!(not_followed, ["fields.get", "fields.get"], "{:#?}", parse.sites);
+    assert!(parse.sites.iter().all(|s| !s.not_followed), "{:#?}", parse.sites);
+    let gets: Vec<&str> = parse.sites.iter().filter(|s| s.op == "get").flat_map(|s| s.gives.iter().map(|h| h.name.as_str())).collect();
+    assert_eq!(gets, ["currency", "categories"], "{:#?}", parse.sites);
 }
 
 // ---------- places ----------
@@ -1298,6 +1300,47 @@ fn a_place_carries_a_what_and_a_collection_of_pairs_names_none() {
     for g in [&p.clean, &p.shortcut] {
         assert_eq!(returns(g, "first"), ["Station", "Store"], "a tuple that stands for one value is the values it pairs");
     }
+}
+
+/// Which forms are choices (#130). What follows an early return is the other arm of the `if` that
+/// returns, as an `else` would write it: the clean `describe` builds its Report in one arm and the
+/// other of one choice. In `x ?? y` the left always runs and is no arm; the right is the one arm:
+/// the clean `summary` runs `keptSummary` whenever it runs, and `keepSummary` only sometimes.
+#[test]
+fn choices_an_early_return_and_the_left_of_a_logical_operator() {
+    let describe = node(&fits("clean"), "report.describe").sites.clone();
+    let reports: Vec<&[(u32, u32)]> = describe.iter().filter(|s| s.to.ends_with(".Report")).map(|s| s.arms.as_slice()).collect();
+    assert_eq!(reports.len(), 2, "{describe:#?}");
+    assert!(reports[0].len() == 1 && reports[1].len() == 1, "{reports:?}");
+    assert_eq!(reports[0][0].0, reports[1][0].0, "one choice: {reports:?}");
+    assert_ne!(reports[0][0].1, reports[1][0].1, "two arms: {reports:?}");
+    let g = harvest("clean");
+    let arms = |to: &str| -> Vec<Vec<(u32, u32)>> {
+        node(&g, "store.ReadingStore.summary").sites.iter().filter(|s| s.to.ends_with(to)).map(|s| s.arms.clone()).collect()
+    };
+    assert_eq!(arms(".keptSummary"), [vec![]], "the left of `??` always runs");
+    assert!(arms(".keepSummary").iter().all(|a| a.len() == 1), "the right is the arm: {:?}", arms(".keepSummary"));
+}
+
+/// Which operations of the language's and a library's are steps (#125): one whose result the body
+/// names, by a name or the names a pattern takes out of it, or that changes the value it runs on.
+/// What one gives without a name goes into the call around it. `const db = new Database(this.path)`
+/// is a step that gives `db` (`readback`); `text.split("\n").filter(..).map(parseLine).filter(..)`
+/// in the pipeline's `parse`, returned unnamed, is none, and neither is `x(month.date)`, a call of
+/// the scale d3 gave `trend`.
+#[test]
+fn composition_an_operation_is_a_step_where_its_result_is_named() {
+    let readback = common::pair("readback/typescript");
+    for g in [&readback.clean, &readback.shortcut] {
+        let keep = node(g, "cli.Ledger.keep");
+        let db = keep.sites.iter().find(|s| s.op == "Database()").unwrap_or_else(|| panic!("{:#?}", keep.sites));
+        assert_eq!(db.gives.iter().map(|h| h.name.as_str()).collect::<Vec<_>>(), ["db"]);
+    }
+    let pipeline =
+        analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/pipeline/typescript"), &Options::default()).expect("reads");
+    assert!(node(&pipeline, "series.parse").sites.iter().all(|s| !s.to.is_empty()), "{:#?}", node(&pipeline, "series.parse").sites);
+    let trend: Vec<&str> = node(&pipeline, "plot.trend").sites.iter().filter(|s| s.to.is_empty()).map(|s| s.op.as_str()).collect();
+    assert_eq!(trend, ["at", "range", "range", "line", "map", "map"], "each named, by its operation");
 }
 
 /// A name bound twice holds two values, one for each binding where it is in scope (#148). The

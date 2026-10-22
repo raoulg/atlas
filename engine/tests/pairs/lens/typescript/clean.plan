@@ -23,10 +23,10 @@ step ReadingStore()/ReadingStore.kept/ReadingStore.history
 step ReadingStore()/ReadingStore.kept/ReadingStore.history/Reading()
 step ReadingStore()/ReadingStore.kept/Harvest()
 step ReadingStore()/ReadingStore.summary
-known #130 step ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary   # #130: `??`'s left side runs whenever summary does
-known #130 step ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/find   # #130: `??`'s left side runs whenever summary does
-known #130 choice ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/?1   # #130: `line && ..`
-known #130 step ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/?1/Summary()   # #130
+step ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary   # #130: `??`'s left side runs whenever summary does
+step ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/find   # #130: `??`'s left side runs whenever summary does
+choice ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/?1   # #130: `line && ..`
+step ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/?1/Summary()   # #130
 choice ReadingStore()/ReadingStore.summary/?1
 step ReadingStore()/ReadingStore.summary/?1/ReadingStore.history
 step ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/Reading()
@@ -36,8 +36,8 @@ step ReadingStore()/ReadingStore.summary/?1/daySummary/Summary()
 step ReadingStore()/ReadingStore.summary/?1/ReadingStore.keepSummary
 step ReadingStore()/ReadingStore.keptSummary
 step ReadingStore()/ReadingStore.keptSummary/find
-known #130 choice ReadingStore()/ReadingStore.keptSummary/?1   # #130: `line && ..`
-known #130 step ReadingStore()/ReadingStore.keptSummary/?1/Summary()   # #130
+choice ReadingStore()/ReadingStore.keptSummary/?1   # #130: `line && ..`
+step ReadingStore()/ReadingStore.keptSummary/?1/Summary()   # #130
 step ReadingStore()/ReadingStore.keepSummary
 
 line entry > ReadingStore()/ReadingStore() call
@@ -78,16 +78,16 @@ line Reading@ReadingStore()/ReadingStore.kept/ReadingStore.history > ReadingStor
 line ReadingStore()/ReadingStore.kept/Harvest() > Harvest@ReadingStore()/ReadingStore.kept/Harvest() value
 line Harvest@ReadingStore()/ReadingStore.kept/Harvest() > ReadingStore()/ReadingStore.kept value
 line ReadingStore()/ReadingStore.kept > Harvest@ReadingStore()/ReadingStore.kept value
-known #130 line ReadingStore > ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary value   # the caller's instance (and #130)
-known #130 line Disk(ReadingStore.summaries) > ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary own   # #130: `??`'s left side runs whenever summary does
-known #130 line Day·day > ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/find value   # #130: `??`'s left side runs whenever summary does
-known #130 line ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/find > _·line@ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/find value   # #130: `??`'s left side runs whenever summary does
+line ReadingStore > ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary value # the caller's instance (and #130)
+line Disk(ReadingStore.summaries) > ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary own # #130: `??`'s left side runs whenever summary does
+line Day·day > ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/find value # #130: `??`'s left side runs whenever summary does
+line ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/find > _·line@ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/find value # #130: `??`'s left side runs whenever summary does
 known #101 line _·line@ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/find > ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary value   # it decides the choice and is returned when there is none
-known #130 line Day·day > ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/?1/Summary() value   # #130
-known #130 line _·line@ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/find > ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/?1/Summary() value   # #130
-known #130 line ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/?1/Summary() > Summary@ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/?1/Summary() value   # #130
-known #130 line Summary@ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/?1/Summary() > ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary value   # #130
-known #130 line ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary > Summary@ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary value   # #130
+line Day·day > ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/?1/Summary() value # #130
+line _·line@ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/find > ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/?1/Summary() value # #130
+line ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/?1/Summary() > Summary@ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/?1/Summary() value # #130
+line Summary@ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/?1/Summary() > ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary value # #130
+line ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary > Summary@ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary value # #130
 known #130 line Summary@ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary > ReadingStore()/ReadingStore.summary value   # #130
 line ReadingStore > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history value # the caller's instance
 line Disk(ReadingStore.readings) > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history own
@@ -95,8 +95,8 @@ line ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/Reading() > Rea
 line Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/Reading() > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history value
 line Day·day > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history value   # history is handed `day.station`
 line ReadingStore()/ReadingStore.summary/?1/ReadingStore.history > Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history value
-known #125 line Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history > ReadingStore()/ReadingStore.summary/?1/daySummary/map value   # the readings filtered go into map
-known #125 line Day·day > ReadingStore()/ReadingStore.summary/?1/daySummary/map value   # #125: filtered by `day.date` in the chain map closes
+line Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history > ReadingStore()/ReadingStore.summary/?1/daySummary/map value   # the readings filtered go into map
+line Day·day > ReadingStore()/ReadingStore.summary/?1/daySummary/map value   # #125: filtered by `day.date` in the chain map closes
 line Day·day > ReadingStore()/ReadingStore.summary/?1/daySummary/Summary() value
 line ReadingStore()/ReadingStore.summary/?1/daySummary/map > _·temperatures@ReadingStore()/ReadingStore.summary/?1/daySummary/map value
 line _·temperatures@ReadingStore()/ReadingStore.summary/?1/daySummary/map > ReadingStore()/ReadingStore.summary/?1/daySummary/Summary() value
@@ -107,18 +107,18 @@ line Summary@ReadingStore()/ReadingStore.summary/?1/daySummary > ReadingStore()/
 line ReadingStore > ReadingStore()/ReadingStore.summary/?1/ReadingStore.keepSummary value # the caller's instance
 line Disk(ReadingStore.summaries) > ReadingStore()/ReadingStore.summary/?1/ReadingStore.keepSummary own
 line ReadingStore()/ReadingStore.summary/?1/ReadingStore.keepSummary > Disk(ReadingStore.summaries) own
-known #130 line ReadingStore()/ReadingStore.summary/?1/ReadingStore.keepSummary > Summary@ReadingStore()/ReadingStore.summary/?1/ReadingStore.keepSummary value   # #130: with `??` drawn as a choice, its two sides make one Summary
-known #130 line Summary@ReadingStore()/ReadingStore.summary/?1/ReadingStore.keepSummary > ReadingStore()/ReadingStore.summary value   # with `??` drawn as a choice, its two sides make one Summary
+line ReadingStore()/ReadingStore.summary/?1/ReadingStore.keepSummary > Summary@ReadingStore()/ReadingStore.summary/?1/ReadingStore.keepSummary value   # #130: with `??` drawn as a choice, its two sides make one Summary
+line Summary@ReadingStore()/ReadingStore.summary/?1/ReadingStore.keepSummary > ReadingStore()/ReadingStore.summary value   # with `??` drawn as a choice, its two sides make one Summary
 line ReadingStore()/ReadingStore.summary > Summary@ReadingStore()/ReadingStore.summary value
 line ReadingStore > ReadingStore()/ReadingStore.keptSummary value # the caller's instance
 line Disk(ReadingStore.summaries) > ReadingStore()/ReadingStore.keptSummary own
 line Day·day#2 > ReadingStore()/ReadingStore.keptSummary/find value
 line ReadingStore()/ReadingStore.keptSummary/find > _·line@ReadingStore()/ReadingStore.keptSummary/find value
 known #101 line _·line@ReadingStore()/ReadingStore.keptSummary/find > ReadingStore()/ReadingStore.keptSummary value   # it decides the choice and is returned when there is none
-known #130 line Day·day#2 > ReadingStore()/ReadingStore.keptSummary/?1/Summary() value   # #130
-known #130 line _·line@ReadingStore()/ReadingStore.keptSummary/find > ReadingStore()/ReadingStore.keptSummary/?1/Summary() value   # #130
-known #130 line ReadingStore()/ReadingStore.keptSummary/?1/Summary() > Summary@ReadingStore()/ReadingStore.keptSummary/?1/Summary() value   # #130
-known #130 line Summary@ReadingStore()/ReadingStore.keptSummary/?1/Summary() > ReadingStore()/ReadingStore.keptSummary value   # #130
+line Day·day#2 > ReadingStore()/ReadingStore.keptSummary/?1/Summary() value # #127
+line _·line@ReadingStore()/ReadingStore.keptSummary/find > ReadingStore()/ReadingStore.keptSummary/?1/Summary() value   # #130
+line ReadingStore()/ReadingStore.keptSummary/?1/Summary() > Summary@ReadingStore()/ReadingStore.keptSummary/?1/Summary() value   # #130
+line Summary@ReadingStore()/ReadingStore.keptSummary/?1/Summary() > ReadingStore()/ReadingStore.keptSummary value   # #130
 line ReadingStore()/ReadingStore.keptSummary > Summary@ReadingStore()/ReadingStore.keptSummary value
 line ReadingStore > ReadingStore()/ReadingStore.keepSummary value # the caller's instance
 line Summary·summary > ReadingStore()/ReadingStore.keepSummary value # it writes and gives back the Summary it is handed
@@ -138,19 +138,19 @@ home Reading@ReadingStore()/ReadingStore.kept/ReadingStore.history/Reading() Rea
 home Reading@ReadingStore()/ReadingStore.kept/ReadingStore.history ReadingStore()/ReadingStore.kept
 home Harvest@ReadingStore()/ReadingStore.kept/Harvest() ReadingStore()/ReadingStore.kept
 home Harvest@ReadingStore()/ReadingStore.kept ReadingStore()
-known #130 home _·line@ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/find ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary
-known #130 home Summary@ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/?1/Summary() ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary
-known #130 home Summary@ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary ReadingStore()/ReadingStore.summary
+home _·line@ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/find ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary
+home Summary@ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/?1/Summary() ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary
+home Summary@ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary ReadingStore()/ReadingStore.summary
 home Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/Reading() ReadingStore()/ReadingStore.summary/?1/ReadingStore.history
 home Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history ReadingStore()/ReadingStore.summary/?1
 home _·temperatures@ReadingStore()/ReadingStore.summary/?1/daySummary/map ReadingStore()/ReadingStore.summary/?1/daySummary
 home Summary@ReadingStore()/ReadingStore.summary/?1/daySummary/Summary() ReadingStore()/ReadingStore.summary/?1/daySummary
 home Summary@ReadingStore()/ReadingStore.summary/?1/daySummary ReadingStore()/ReadingStore.summary/?1
-known #130 home Summary@ReadingStore()/ReadingStore.summary/?1/ReadingStore.keepSummary ReadingStore()/ReadingStore.summary
+home Summary@ReadingStore()/ReadingStore.summary/?1/ReadingStore.keepSummary ReadingStore()/ReadingStore.summary
 home Summary@ReadingStore()/ReadingStore.summary ReadingStore()
 home Day·day ReadingStore()
 home _·line@ReadingStore()/ReadingStore.keptSummary/find ReadingStore()/ReadingStore.keptSummary
-known #130 home Summary@ReadingStore()/ReadingStore.keptSummary/?1/Summary() ReadingStore()/ReadingStore.keptSummary
+home Summary@ReadingStore()/ReadingStore.keptSummary/?1/Summary() ReadingStore()/ReadingStore.keptSummary
 home Summary@ReadingStore()/ReadingStore.keptSummary ReadingStore()
 home Day·day#2 ReadingStore()
 home Summary@ReadingStore()/ReadingStore.keepSummary ReadingStore()
@@ -160,48 +160,3 @@ side entry left
 side Disk(ReadingStore.readings) both
 side Disk(ReadingStore.outages) both
 side Disk(ReadingStore.summaries) both
-
-# what Atlas has and the code does not say
-known #130 extra home Summary@ReadingStore()/ReadingStore.keptSummary/Summary() ReadingStore()/ReadingStore.keptSummary   # #130: the Summary is built only when a line is found
-known #130 extra home Summary@ReadingStore()/ReadingStore.summary/?1/ReadingStore.keptSummary/Summary() ReadingStore()/ReadingStore.summary/?1/ReadingStore.keptSummary   # #130: `??`'s left side drawn as an arm
-known #125 extra home _@ReadingStore()/ReadingStore.kept/line.split ReadingStore()/ReadingStore.kept   # #125: an unnamed call in a chain is a step
-known #125 extra home _@ReadingStore()/ReadingStore.keptSummary/l.split ReadingStore()/ReadingStore.keptSummary   # #125: an unnamed call in a chain is a step
-known #130 extra home _@ReadingStore()/ReadingStore.summary/?1/ReadingStore.keptSummary/l.split ReadingStore()/ReadingStore.summary/?1/ReadingStore.keptSummary   # #130: `??`'s left side drawn as an arm
-known #125 extra home _@ReadingStore()/ReadingStore.summary/?1/daySummary/readings.filter ReadingStore()/ReadingStore.summary/?1/daySummary   # #125: an unnamed call in a chain is a step
-known #130 extra home _·line@ReadingStore()/ReadingStore.summary/?1/ReadingStore.keptSummary/find ReadingStore()/ReadingStore.summary/?1/ReadingStore.keptSummary   # #130: `??`'s left side drawn as an arm
-known #130 extra line Day·day > ReadingStore()/ReadingStore.summary/?1/ReadingStore.keptSummary/Summary() value   # #130: `??`'s left side drawn as an arm
-known #130 extra line Day·day > ReadingStore()/ReadingStore.summary/?1/ReadingStore.keptSummary/find value   # #130: `??`'s left side drawn as an arm
-known #125 extra line Day·day > ReadingStore()/ReadingStore.summary/?1/daySummary/readings.filter value   # #125: an unnamed call in a chain is a step
-known #130 extra line Disk(ReadingStore.summaries) > ReadingStore()/ReadingStore.summary/?1/ReadingStore.keptSummary own   # #130: `??`'s left side drawn as an arm
-known #125 extra line Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history > ReadingStore()/ReadingStore.summary/?1/daySummary/readings.filter value # #125: an unnamed call in a chain is a step
-known #125 extra line ReadingStore()/ReadingStore.kept/line.split > _@ReadingStore()/ReadingStore.kept/line.split value   # #125: an unnamed call in a chain is a step
-known #130 extra line ReadingStore()/ReadingStore.keptSummary/Summary() > Summary@ReadingStore()/ReadingStore.keptSummary/Summary() value   # #130: the Summary is built only when a line is found
-known #125 extra line ReadingStore()/ReadingStore.keptSummary/l.split > _@ReadingStore()/ReadingStore.keptSummary/l.split value   # #125: an unnamed call in a chain is a step
-known #130 extra line ReadingStore()/ReadingStore.summary/?1/ReadingStore.keptSummary/Summary() > Summary@ReadingStore()/ReadingStore.summary/?1/ReadingStore.keptSummary/Summary() value   # #130: `??`'s left side drawn as an arm
-known #130 extra line ReadingStore()/ReadingStore.summary/?1/ReadingStore.keptSummary/find > _·line@ReadingStore()/ReadingStore.summary/?1/ReadingStore.keptSummary/find value   # #130: `??`'s left side drawn as an arm
-known #130 extra line ReadingStore()/ReadingStore.summary/?1/ReadingStore.keptSummary/l.split > _@ReadingStore()/ReadingStore.summary/?1/ReadingStore.keptSummary/l.split value   # #130: `??`'s left side drawn as an arm
-known #125 extra line ReadingStore()/ReadingStore.summary/?1/daySummary/readings.filter > _@ReadingStore()/ReadingStore.summary/?1/daySummary/readings.filter value   # #125: an unnamed call in a chain is a step
-known #130 extra line Summary@ReadingStore()/ReadingStore.keptSummary/Summary() > ReadingStore()/ReadingStore.keptSummary value   # #130: the Summary is built only when a line is found
-known #130 extra line Summary@ReadingStore()/ReadingStore.summary/?1/ReadingStore.keptSummary/Summary() > ReadingStore()/ReadingStore.summary/?1/ReadingStore.keptSummary value   # #130: `??`'s left side drawn as an arm
-known #125 extra line _@ReadingStore()/ReadingStore.kept/line.split > ReadingStore()/ReadingStore.kept/map value   # #125: an unnamed call in a chain is a step
-known #125 extra line _@ReadingStore()/ReadingStore.keptSummary/l.split > ReadingStore()/ReadingStore.keptSummary/find value   # #125: an unnamed call in a chain is a step
-known #130 extra line _@ReadingStore()/ReadingStore.summary/?1/ReadingStore.keptSummary/l.split > ReadingStore()/ReadingStore.summary/?1/ReadingStore.keptSummary/find value   # #130: `??`'s left side drawn as an arm
-known #125 extra line _@ReadingStore()/ReadingStore.summary/?1/daySummary/readings.filter > ReadingStore()/ReadingStore.summary/?1/daySummary/map value   # #125: an unnamed call in a chain is a step
-known #130 extra line _·line@ReadingStore()/ReadingStore.keptSummary/find > ReadingStore()/ReadingStore.keptSummary/Summary() value   # #130: the Summary is built only when a line is found
-known #130 extra line _·line@ReadingStore()/ReadingStore.summary/?1/ReadingStore.keptSummary/find > ReadingStore()/ReadingStore.summary/?1/ReadingStore.keptSummary/Summary() value   # #130: `??`'s left side drawn as an arm
-known #125 extra step ReadingStore()/ReadingStore.kept/line.split   # #125: an unnamed call in a chain is a step
-known #130 extra step ReadingStore()/ReadingStore.keptSummary/Summary()   # #130: the Summary is built only when a line is found
-known #125 extra step ReadingStore()/ReadingStore.keptSummary/l.split   # #125: an unnamed call in a chain is a step
-known #130 extra step ReadingStore()/ReadingStore.summary/?1/ReadingStore.keptSummary   # #130: `??`'s left side drawn as an arm
-known #130 extra step ReadingStore()/ReadingStore.summary/?1/ReadingStore.keptSummary/Summary()   # #130: `??`'s left side drawn as an arm
-known #130 extra step ReadingStore()/ReadingStore.summary/?1/ReadingStore.keptSummary/find   # #130: `??`'s left side drawn as an arm
-known #130 extra step ReadingStore()/ReadingStore.summary/?1/ReadingStore.keptSummary/l.split   # #130: `??`'s left side drawn as an arm
-known #125 extra step ReadingStore()/ReadingStore.summary/?1/daySummary/readings.filter   # #125: an unnamed call in a chain is a step
-known #130 extra line ReadingStore()/ReadingStore.summary/?1/ReadingStore.keepSummary > Summary@ReadingStore()/ReadingStore.summary/?1 value   # #130: one value of both sides of `??`
-known #130 extra line ReadingStore()/ReadingStore.summary/?1/ReadingStore.keptSummary > Summary@ReadingStore()/ReadingStore.summary/?1 value   # #130: one value of both sides of `??`
-known #130 extra line Summary@ReadingStore()/ReadingStore.summary/?1 > ReadingStore()/ReadingStore.summary value   # #130: one value of both sides of `??`
-known #130 extra home Summary@ReadingStore()/ReadingStore.summary/?1 ReadingStore()/ReadingStore.summary   # #130: one value of both sides of `??`
-
-# `line && ..` and `??` are no choices yet (#130)
-known #130 extra line Day·day#2 > ReadingStore()/ReadingStore.keptSummary/Summary() value
-known #130 extra line ReadingStore > ReadingStore()/ReadingStore.summary/?1/ReadingStore.keptSummary value

@@ -1,0 +1,9 @@
+# A flag file the route only tests: whether it is there decides the choice and takes no content, so the test is the
+# choice's condition (`FLAG.exists()`), and the file no place and no line of its own (#76).
+
+route existsonly.run
+line entry > run call
+line run > Screen own
+
+side entry left
+side Screen right

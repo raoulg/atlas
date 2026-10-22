@@ -52,18 +52,18 @@ home Graaf@Kennisbank()/Kennisbank.graaf/Graaf() Kennisbank()/Kennisbank.graaf
 home Graaf@Kennisbank()/Kennisbank.graaf Kennisbank()
 
 # the line split in three parts, each held by its name: the kind decides the choice, the uuid and the text build the node
-known #125 step Kennisbank()/Kennisbank.graaf/Kennisbank.node/split
-known #125 line Kennisbank()/Kennisbank.graaf/Kennisbank.node/split > _·uuid@Kennisbank()/Kennisbank.graaf/Kennisbank.node/split value
-known #125 line Kennisbank()/Kennisbank.graaf/Kennisbank.node/split > _·soort@Kennisbank()/Kennisbank.graaf/Kennisbank.node/split value
-known #125 line Kennisbank()/Kennisbank.graaf/Kennisbank.node/split > _·tekst@Kennisbank()/Kennisbank.graaf/Kennisbank.node/split value
-known #125 line _·soort@Kennisbank()/Kennisbank.graaf/Kennisbank.node/split > Kennisbank()/Kennisbank.graaf/Kennisbank.node value
-known #125 line _·uuid@Kennisbank()/Kennisbank.graaf/Kennisbank.node/split > Kennisbank()/Kennisbank.graaf/Kennisbank.node/?1/Bron() value
-known #125 line _·tekst@Kennisbank()/Kennisbank.graaf/Kennisbank.node/split > Kennisbank()/Kennisbank.graaf/Kennisbank.node/?1/Bron() value
-known #125 line _·uuid@Kennisbank()/Kennisbank.graaf/Kennisbank.node/split > Kennisbank()/Kennisbank.graaf/Kennisbank.node/?1/Begrip() value
-known #125 line _·tekst@Kennisbank()/Kennisbank.graaf/Kennisbank.node/split > Kennisbank()/Kennisbank.graaf/Kennisbank.node/?1/Begrip() value
-known #125 home _·uuid@Kennisbank()/Kennisbank.graaf/Kennisbank.node/split Kennisbank()/Kennisbank.graaf/Kennisbank.node
-known #125 home _·soort@Kennisbank()/Kennisbank.graaf/Kennisbank.node/split Kennisbank()/Kennisbank.graaf/Kennisbank.node
-known #125 home _·tekst@Kennisbank()/Kennisbank.graaf/Kennisbank.node/split Kennisbank()/Kennisbank.graaf/Kennisbank.node
+step Kennisbank()/Kennisbank.graaf/Kennisbank.node/split
+line Kennisbank()/Kennisbank.graaf/Kennisbank.node/split > _·uuid@Kennisbank()/Kennisbank.graaf/Kennisbank.node/split value
+line Kennisbank()/Kennisbank.graaf/Kennisbank.node/split > _·soort@Kennisbank()/Kennisbank.graaf/Kennisbank.node/split value
+line Kennisbank()/Kennisbank.graaf/Kennisbank.node/split > _·tekst@Kennisbank()/Kennisbank.graaf/Kennisbank.node/split value
+known #101 line _·soort@Kennisbank()/Kennisbank.graaf/Kennisbank.node/split > Kennisbank()/Kennisbank.graaf/Kennisbank.node value
+line _·uuid@Kennisbank()/Kennisbank.graaf/Kennisbank.node/split > Kennisbank()/Kennisbank.graaf/Kennisbank.node/?1/Bron() value
+line _·tekst@Kennisbank()/Kennisbank.graaf/Kennisbank.node/split > Kennisbank()/Kennisbank.graaf/Kennisbank.node/?1/Bron() value
+line _·uuid@Kennisbank()/Kennisbank.graaf/Kennisbank.node/split > Kennisbank()/Kennisbank.graaf/Kennisbank.node/?1/Begrip() value
+line _·tekst@Kennisbank()/Kennisbank.graaf/Kennisbank.node/split > Kennisbank()/Kennisbank.graaf/Kennisbank.node/?1/Begrip() value
+home _·uuid@Kennisbank()/Kennisbank.graaf/Kennisbank.node/split Kennisbank()/Kennisbank.graaf/Kennisbank.node
+home _·soort@Kennisbank()/Kennisbank.graaf/Kennisbank.node/split Kennisbank()/Kennisbank.graaf/Kennisbank.node
+home _·tekst@Kennisbank()/Kennisbank.graaf/Kennisbank.node/split Kennisbank()/Kennisbank.graaf/Kennisbank.node
 
 side entry left
 side Disk(Kennisbank.path) both

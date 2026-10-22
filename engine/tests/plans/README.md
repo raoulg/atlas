@@ -105,4 +105,7 @@ smallest that showed one law:
 | `callee-reads-back` | a callee that reads back what its caller wrote changes nothing the route found (R5) |
 | `recursion-order-a`, `-b` | a recursive program draws the same whichever function is defined first (R5) |
 | `readback-one-body`, `two-steps` | a place a step writes and reads back stays in its codomain; one a later step reads is between (R4) |
+| `merged-touch-order` | two equal calls are one touch that runs on the line of each: seeded in an arm, read, written on: both (R4) |
+| `test-only` | a place the route only tests is the choice's condition, no box and no line (R4) |
+| `open-mode-unknown` | a file opened with a mode that is a value goes no way the code says: in neither (R4) |
 | `what-holds` | a place read and changed stands twice, a choice is a coproduct, a call into a family a choice (Z13) |

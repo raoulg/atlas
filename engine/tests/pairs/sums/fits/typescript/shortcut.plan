@@ -8,9 +8,3 @@ line Fit | Failed·r > line value # the route's parameter, by its name
 home Fit | Failed·r line
 
 side entry left
-
-# a library operation whose result no name holds and which changes nothing it runs on (`r.score.toFixed(2)`) stands as
-# an occurrence, in a choice frame of its own
-known #125 extra choice line/?1
-known #125 extra step line/?1/r.score.toFixed
-known #125 extra line Fit | Failed·r > line/?1/r.score.toFixed value # toFixed is no step

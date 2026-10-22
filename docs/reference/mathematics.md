@@ -50,12 +50,13 @@ it before the call: the step changes nothing the body found. The
 route of a class is its doors, each called by the entry with no order between them: a place one door
 finds and changes, the route finds and changes. Making a place's shape (a directory, a table's
 schema) or testing it (whether a file is there, whether a value holds a key) puts and takes no
-content. A connection that opens a database on a file names that file, so a directory made for the
+content: a test whose answer only decides a choice is that choice's condition, as any condition is,
+and the place has no box and no line of its own unless the route reads or writes there. A connection that opens a database on a file names that file, so a directory made for the
 file is made for the database. A request goes the way its method says, as a statement goes by its
 verb: a `GET` takes what the place holds, a `POST`, `PUT`, `PATCH` or `DELETE` leaves something
 there, and what such a request answers is what the place gives back of what it left, read back.
-Where the code does not say which way a call goes (a method looked up at run time), the place is in
-neither.
+Where the code does not say which way a call goes (a file's mode or a request's method that is a
+value), the place is in neither.
 **Where.** A function's `reads_back` and `updates` (`flow.rs`); a read's `checks` (`Steps::mark`,
 `body.rs`, with each language's `UseSyntax`); a request's way, `knowledge::REQUEST_WAYS`, and
 `Touch::side` (`flow.rs`); `sideOfRoles` in `viewer/plan.js`.
@@ -99,7 +100,9 @@ are that step with a choice of what it is handed, no choice of where the value c
 coproduct of its arms, each injected by what decides it as the code writes it (`when not
 raw.exists()`, a `match` pattern, `otherwise`). A choice of one arm is a coproduct with the
 identity, `f + 1`: its steps run when the condition holds and nothing runs otherwise, so it is
-drawn as a choice too. A guard, a choice none of whose arms runs on past its end and that has no arm for when none
+drawn as a choice too. In `x ?? y`, `x || y` and `x && y` (Python's `or` and `and`, Rust's
+`x.unwrap_or_else(..)`) the left always runs and its value goes on where it holds, so it is no arm; the right is
+the one arm. A guard, a choice none of whose arms runs on past its end and that has no arm for when none
 is chosen (`if not xs: return Failed(..)`), is that choice with what follows it in its block as its last arm: `return
 Fit(..)` after it runs otherwise, as an `else` would write it. A repository's graph is the coproduct of its parts' graphs, glued only
 along the libraries and places of the world they share (a pushout over those): two parts whose code

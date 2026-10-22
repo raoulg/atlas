@@ -28,16 +28,16 @@ home Kennisbank Kennisbank()
 home Bron·bron Kennisbank()
 
 # the line split in three parts, each held by its name, which the arrow function `graaf` maps the lines by puts into a row
-known #125 step Kennisbank()/Kennisbank.graaf/split
-known #125 line Kennisbank()/Kennisbank.graaf/split > _·uuid@Kennisbank()/Kennisbank.graaf/split value
-known #125 line Kennisbank()/Kennisbank.graaf/split > _·soort@Kennisbank()/Kennisbank.graaf/split value
-known #125 line Kennisbank()/Kennisbank.graaf/split > _·tekst@Kennisbank()/Kennisbank.graaf/split value
-known #125 line _·uuid@Kennisbank()/Kennisbank.graaf/split > Kennisbank()/Kennisbank.graaf value
-known #125 line _·soort@Kennisbank()/Kennisbank.graaf/split > Kennisbank()/Kennisbank.graaf value
-known #125 line _·tekst@Kennisbank()/Kennisbank.graaf/split > Kennisbank()/Kennisbank.graaf value
-known #125 home _·uuid@Kennisbank()/Kennisbank.graaf/split Kennisbank()/Kennisbank.graaf
-known #125 home _·soort@Kennisbank()/Kennisbank.graaf/split Kennisbank()/Kennisbank.graaf
-known #125 home _·tekst@Kennisbank()/Kennisbank.graaf/split Kennisbank()/Kennisbank.graaf
+step Kennisbank()/Kennisbank.graaf/split
+line Kennisbank()/Kennisbank.graaf/split > _·uuid@Kennisbank()/Kennisbank.graaf/split value
+line Kennisbank()/Kennisbank.graaf/split > _·soort@Kennisbank()/Kennisbank.graaf/split value
+line Kennisbank()/Kennisbank.graaf/split > _·tekst@Kennisbank()/Kennisbank.graaf/split value
+known #101 line _·uuid@Kennisbank()/Kennisbank.graaf/split > Kennisbank()/Kennisbank.graaf value
+known #101 line _·soort@Kennisbank()/Kennisbank.graaf/split > Kennisbank()/Kennisbank.graaf value
+known #101 line _·tekst@Kennisbank()/Kennisbank.graaf/split > Kennisbank()/Kennisbank.graaf value
+home _·uuid@Kennisbank()/Kennisbank.graaf/split Kennisbank()/Kennisbank.graaf
+home _·soort@Kennisbank()/Kennisbank.graaf/split Kennisbank()/Kennisbank.graaf
+home _·tekst@Kennisbank()/Kennisbank.graaf/split Kennisbank()/Kennisbank.graaf
 
 side entry left
 side Disk(Kennisbank.path) both

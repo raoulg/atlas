@@ -18,10 +18,10 @@ step ReadingStore()/ReadingStore.outages
 step ReadingStore()/ReadingStore.summary
 step ReadingStore()/ReadingStore.summary/readFileSync
 step ReadingStore()/ReadingStore.summary/find
-known #130 choice ReadingStore()/ReadingStore.summary/?1   # #130: the code after `return` is the other arm
-known #130 step ReadingStore()/ReadingStore.summary/?1/ReadingStore.history   # #130: the code after `return` is the other arm
-known #130 step ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/Reading()   # #130: the code after `return` is the other arm
-known #130 step ReadingStore()/ReadingStore.summary/?1/map   # #130: the code after `return` is the other arm
+choice ReadingStore()/ReadingStore.summary/?1   # #130: the code after `return` is the other arm
+step ReadingStore()/ReadingStore.summary/?1/ReadingStore.history   # #130: the code after `return` is the other arm
+step ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/Reading()   # #130: the code after `return` is the other arm
+step ReadingStore()/ReadingStore.summary/?1/map   # #130: the code after `return` is the other arm
 
 line entry > ReadingStore()/ReadingStore() call
 line entry > ReadingStore()/ReadingStore.save call
@@ -52,20 +52,20 @@ known #126 line Day·day > ReadingStore()/ReadingStore.summary value # the key i
 line Disk(ReadingStore.summaries) > ReadingStore()/ReadingStore.summary own
 line ReadingStore()/ReadingStore.summary > Disk(ReadingStore.summaries) own
 line ReadingStore()/ReadingStore.summary/readFileSync > _·text@ReadingStore()/ReadingStore.summary/readFileSync value
-known #125 line _·text@ReadingStore()/ReadingStore.summary/readFileSync > ReadingStore()/ReadingStore.summary/find value   # #125: its lines go into find
+line _·text@ReadingStore()/ReadingStore.summary/readFileSync > ReadingStore()/ReadingStore.summary/find value   # #125: its lines go into find
 known #101 line _·text@ReadingStore()/ReadingStore.summary/readFileSync > ReadingStore()/ReadingStore.summary value   # written back with the new line
 line ReadingStore()/ReadingStore.summary/find > _·kept@ReadingStore()/ReadingStore.summary/find value
 known #101 line _·kept@ReadingStore()/ReadingStore.summary/find > ReadingStore()/ReadingStore.summary value   # it decides the choice and is returned
-known #130 line ReadingStore > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history value   # the caller's instance (and #130)
-known #130 line Day·day > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history value   # #130: the code after `return` is the other arm
-known #130 line Disk(ReadingStore.readings) > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history own   # #130: the code after `return` is the other arm
-known #130 line ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/Reading() > Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/Reading() value   # #130: the code after `return` is the other arm
-known #130 line Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/Reading() > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history value   # #130: the code after `return` is the other arm
-known #130 line ReadingStore()/ReadingStore.summary/?1/ReadingStore.history > Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history value   # #130: the code after `return` is the other arm
-known #130 line Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history > ReadingStore()/ReadingStore.summary/?1/map value   # #130: the code after `return` is the other arm
+line ReadingStore > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history value # the caller's instance (and #130)
+line Day·day > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history value # #130: the code after `return` is the other arm
+line Disk(ReadingStore.readings) > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history own # #130: the code after `return` is the other arm
+line ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/Reading() > Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/Reading() value # #130: the code after `return` is the other arm
+line Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/Reading() > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history value # #130: the code after `return` is the other arm
+line ReadingStore()/ReadingStore.summary/?1/ReadingStore.history > Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history value # #130: the code after `return` is the other arm
+line Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history > ReadingStore()/ReadingStore.summary/?1/map value # #130: the code after `return` is the other arm
 known #130 line Day·day > ReadingStore()/ReadingStore.summary/?1/map value   # #130: the code after `return` is the other arm
-known #130 line ReadingStore()/ReadingStore.summary/?1/map > _·temperatures@ReadingStore()/ReadingStore.summary/?1/map value   # #130: the code after `return` is the other arm
-known #130 line _·temperatures@ReadingStore()/ReadingStore.summary/?1/map > ReadingStore()/ReadingStore.summary value   # #130: the code after `return` is the other arm
+line ReadingStore()/ReadingStore.summary/?1/map > _·temperatures@ReadingStore()/ReadingStore.summary/?1/map value   # #130: the code after `return` is the other arm
+known #101 line _·temperatures@ReadingStore()/ReadingStore.summary/?1/map > ReadingStore()/ReadingStore.summary value   # `Math.min(...temperatures)`, the body's own use
 
 home ReadingStore@ReadingStore()/ReadingStore() ReadingStore()
 home ReadingStore ReadingStore()
@@ -75,8 +75,9 @@ home Reading@ReadingStore()/ReadingStore.history ReadingStore()
 home Outage·outage ReadingStore()
 home _·text@ReadingStore()/ReadingStore.summary/readFileSync ReadingStore()/ReadingStore.summary
 home _·kept@ReadingStore()/ReadingStore.summary/find ReadingStore()/ReadingStore.summary
-known #130 home Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/Reading() ReadingStore()/ReadingStore.summary/?1/ReadingStore.history
+home Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/Reading() ReadingStore()/ReadingStore.summary/?1/ReadingStore.history
 known #130 home Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history ReadingStore()/ReadingStore.summary/?1
+known #126 extra line Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history > ReadingStore()/ReadingStore.summary value   # #126: summary gives back a line, not the Readings
 known #130 home _·temperatures@ReadingStore()/ReadingStore.summary/?1/map ReadingStore()/ReadingStore.summary
 home Day·day ReadingStore()
 
@@ -84,33 +85,3 @@ side entry left
 side Disk(ReadingStore.readings) both
 side Disk(ReadingStore.outages) both
 side Disk(ReadingStore.summaries) both
-
-# what Atlas has and the code does not say
-known #130 extra home Reading@ReadingStore()/ReadingStore.summary/ReadingStore.history ReadingStore()/ReadingStore.summary   # #130: drawn outside the arm the early return makes
-known #130 extra home Reading@ReadingStore()/ReadingStore.summary/ReadingStore.history/Reading() ReadingStore()/ReadingStore.summary/ReadingStore.history   # #130: drawn outside the arm the early return makes
-known #125 extra home _@ReadingStore()/ReadingStore.summary/filter ReadingStore()/ReadingStore.summary   # #125: an unnamed call in a chain is a step
-known #125 extra home _@ReadingStore()/ReadingStore.summary/line.startsWith ReadingStore()/ReadingStore.summary   # #125: an unnamed call in a chain is a step
-known #125 extra home _@ReadingStore()/ReadingStore.summary/text.split ReadingStore()/ReadingStore.summary   # #125: an unnamed call in a chain is a step
-known #130 extra home _·temperatures@ReadingStore()/ReadingStore.summary/map ReadingStore()/ReadingStore.summary   # #130: drawn outside the arm the early return makes
-known #130 extra line Day·day > ReadingStore()/ReadingStore.summary/ReadingStore.history value   # #130: drawn outside the arm the early return makes
-known #130 extra line Disk(ReadingStore.readings) > ReadingStore()/ReadingStore.summary/ReadingStore.history own   # #130: drawn outside the arm the early return makes
-known #126 extra line Reading@ReadingStore()/ReadingStore.summary/ReadingStore.history > ReadingStore()/ReadingStore.summary value   # #126: summary gives back a line, not the Readings
-known #125 extra line Reading@ReadingStore()/ReadingStore.summary/ReadingStore.history > ReadingStore()/ReadingStore.summary/filter value   # #125: an unnamed call in a chain is a step
-known #130 extra line Reading@ReadingStore()/ReadingStore.summary/ReadingStore.history/Reading() > ReadingStore()/ReadingStore.summary/ReadingStore.history value   # #130: drawn outside the arm the early return makes
-known #130 extra line ReadingStore()/ReadingStore.summary/ReadingStore.history > Reading@ReadingStore()/ReadingStore.summary/ReadingStore.history value   # #130: drawn outside the arm the early return makes
-known #130 extra line ReadingStore()/ReadingStore.summary/ReadingStore.history/Reading() > Reading@ReadingStore()/ReadingStore.summary/ReadingStore.history/Reading() value   # #130: drawn outside the arm the early return makes
-known #125 extra line ReadingStore()/ReadingStore.summary/filter > _@ReadingStore()/ReadingStore.summary/filter value   # #125: an unnamed call in a chain is a step
-known #125 extra line ReadingStore()/ReadingStore.summary/line.startsWith > _@ReadingStore()/ReadingStore.summary/line.startsWith value   # #125: an unnamed call in a chain is a step
-known #130 extra line ReadingStore()/ReadingStore.summary/map > _·temperatures@ReadingStore()/ReadingStore.summary/map value   # #130: drawn outside the arm the early return makes
-known #125 extra line ReadingStore()/ReadingStore.summary/text.split > _@ReadingStore()/ReadingStore.summary/text.split value   # #125: an unnamed call in a chain is a step
-known #125 extra line _@ReadingStore()/ReadingStore.summary/filter > ReadingStore()/ReadingStore.summary/map value   # #125: an unnamed call in a chain is a step
-known #125 extra line _@ReadingStore()/ReadingStore.summary/line.startsWith > ReadingStore()/ReadingStore.summary/find value   # #125: an unnamed call in a chain is a step
-known #125 extra line _@ReadingStore()/ReadingStore.summary/text.split > ReadingStore()/ReadingStore.summary/find value   # #125: an unnamed call in a chain is a step
-known #125 extra line _·text@ReadingStore()/ReadingStore.summary/readFileSync > ReadingStore()/ReadingStore.summary/text.split value   # #125: an unnamed call in a chain is a step
-known #130 extra step ReadingStore()/ReadingStore.summary/ReadingStore.history   # #130: drawn outside the arm the early return makes
-known #130 extra step ReadingStore()/ReadingStore.summary/ReadingStore.history/Reading()   # #130: drawn outside the arm the early return makes
-known #125 extra step ReadingStore()/ReadingStore.summary/filter   # #125: an unnamed call in a chain is a step
-known #125 extra step ReadingStore()/ReadingStore.summary/line.startsWith   # #125: an unnamed call in a chain is a step
-known #130 extra step ReadingStore()/ReadingStore.summary/map   # #130: drawn outside the arm the early return makes
-known #125 extra step ReadingStore()/ReadingStore.summary/text.split   # #125: an unnamed call in a chain is a step
-known #130 extra line ReadingStore > ReadingStore()/ReadingStore.summary/ReadingStore.history value   # `??` is no choice yet
