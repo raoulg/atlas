@@ -26,6 +26,5 @@ side entry left
 side DuckDB(notes) right # Atlas: between, through the reach below
 side Screen right
 
-# building the ledger runs its public methods, which touch the table: two steps at it, so it stands between them
 # K: a value handed through a field reaches no step inside: `duckdb.connect(self.path)` hands `self` (#121, decision 1,
 #    cause 3: the reader's `held_in` skips `self` even inside an argument)

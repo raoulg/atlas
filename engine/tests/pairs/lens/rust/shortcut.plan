@@ -6,9 +6,9 @@
 # changes the String it runs on (`push_str`), is a step; what it touches stays its caller's. Each file is read, used and
 # written by the route: it stands on both sides.
 #
-# Issues marked: #74 an exported class's construction; #101 a body's own use of a
-# value it made; #103 an element of what a body iterates; #125 which library operations are steps; #126 what the own
-# arrow keeps; #127 a parameter bound by kind, not to what is handed; #130 which forms are choices.
+# Issues marked: #101 a body's own use of a value it made; #103 an element of what a body iterates; #125 which library
+# operations are steps; #126 what the own arrow keeps; #128 a call handed nothing through self, a closure, an index or
+# a chain; #130 which forms are choices.
 
 route harvest.ReadingStore
 step ReadingStore()/ReadingStore.new
@@ -95,7 +95,7 @@ line ReadingStore()/ReadingStore.outages/read_to_string > _·text@ReadingStore()
 known #101 line _·text@ReadingStore()/ReadingStore.outages/read_to_string > ReadingStore()/ReadingStore.outages value   # its lines go on through unnamed calls to what outages returns
 known #128 line ReadingStore > ReadingStore()/ReadingStore.summary/read_to_string value   # the caller's instance: read_to_string is handed `self.summaries`
 known #126 line ReadingStore > ReadingStore()/ReadingStore.summary value   # and the write it makes itself (#126 too: Atlas drops it here, not in history)
-known #127 line Day·day > ReadingStore()/ReadingStore.summary value   # #127: the key it looks for is made of the day
+known #126 line Day·day > ReadingStore()/ReadingStore.summary value # the key it looks for is made of the day
 line Disk(ReadingStore.summaries) > ReadingStore()/ReadingStore.summary own
 line ReadingStore()/ReadingStore.summary > Disk(ReadingStore.summaries) own
 line ReadingStore()/ReadingStore.summary/read_to_string > _·text@ReadingStore()/ReadingStore.summary/read_to_string value
@@ -123,7 +123,7 @@ known #130 line ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/Read
 known #130 line Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/Reading() > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history value   # #130
 known #130 line ReadingStore()/ReadingStore.summary/?1/ReadingStore.history > Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history value   # #130
 known #130 line Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history > ReadingStore()/ReadingStore.summary/?1/collect value   # #130
-known #127 line Day·day > ReadingStore()/ReadingStore.summary/?1/collect value   # #127: the filter by `day.date` goes into collect
+known #128 line Day·day > ReadingStore()/ReadingStore.summary/?1/collect value # a closure: the filter by `day.date` goes into collect
 known #130 line ReadingStore()/ReadingStore.summary/?1/collect > _·temperatures@ReadingStore()/ReadingStore.summary/?1/collect value   # #130
 known #130 line _·temperatures@ReadingStore()/ReadingStore.summary/?1/collect > ReadingStore()/ReadingStore.summary/?1/fold value   # #130
 known #130 line _·temperatures@ReadingStore()/ReadingStore.summary/?1/collect > ReadingStore()/ReadingStore.summary/?1/fold#2 value   # #130

@@ -80,9 +80,9 @@ known #125 home Board·board@main/renamed/copy main/renamed
 known #125 home list·xs@main/extended/append main/extended
 known #125 home list·jobs@main/queued/list main/queued
 
-# A callee's parameter is bound to the caller's value of that name, not to what the call is handed: `merged`'s `other`
-# (main's board) resolves to main's `other`, the board `merged` itself makes, and the board handed is taken by nothing
-known #127 line Board·board@main/Board.reset > main/Board.merged/Board() value
+# The call of `merged` on what `renamed` gives is handed nothing of `board` (#128, the inner call of a chain): its
+# `other` holds nothing the call hands
+known #128 line Board·board@main/Board.reset > main/Board.merged/Board() value
 
 # A method that changes its receiver hands it on twice: unnamed from its arrow's change, and named; the next step takes
 # the second

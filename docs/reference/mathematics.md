@@ -410,7 +410,13 @@ open:
   carries the value it gives; what it touches at a place stays its caller's own touch, so naming its
   result changes no line to the place. A projection bound to a name first is still the projection
   (`width = settings.width; f(width)` hands `settings`), and a change made through one changes its
-  owner, a lens's put;
+  owner, a lens's put. A parameter is such a name: inside an opened step it holds the value its call
+  hands it, not a caller's value of its name or the latest of its type. The call hands its values in
+  order, the value it runs on first, each to the next parameter of its type; a parameter the call
+  fills through a projection (`finished(job, settings.mode)`) is still the projection, so the steps
+  inside are handed `settings`, and a signature's type is a value of its own only where the call hands
+  nothing. What an opened step changes of a value it was handed goes out at its border as what its
+  steps made of it;
 - a step that can fail has the codomain `T + E`: the error is a value its constructor makes in the arm
   that raises it, the step's border hands it on with its result, and a call that does not catch it
   hands it on to its own caller. Python's propagation and Rust's `?` are one form, no choice.

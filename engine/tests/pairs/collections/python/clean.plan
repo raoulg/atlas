@@ -111,7 +111,4 @@ side Disk(Store.path) both
 # What Atlas gets wrong here, each by the issue of its cause:
 # K: a value handed through a field reaches no step inside: `write_rows(self.path, rows)` hands `self` (#121, decision
 #    1), and the helper takes no Store
-# #74: the doors run on what the constructor door built, not on the caller's instance `Store` from beyond (#121,
-#    decision 2): the constructor's Store goes back to the caller and is joined to no door
 
-# #74

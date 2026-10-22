@@ -63,12 +63,12 @@ line cli.ts/main/load/parse > Month@cli.ts/main/load/parse value
 line Month@cli.ts/main/load/parse > cli.ts/main/load value
 line cli.ts/main/load > Month·series@cli.ts/main/load value
 
-known #126 line Month·series@cli.ts/main/load > cli.ts/main/smooth value   # `series.slice(..)`; the body uses it itself, and a step inside takes it too
+line Month·series@cli.ts/main/load > cli.ts/main/smooth value # `series.slice(..)`; the body uses it itself, and a step inside takes it too
 line Settings·settings@cli.ts/main/Settings() > cli.ts/main/smooth value  # `settings.months`, handed as `months`
 known #128 line Settings·settings@cli.ts/main/Settings() > cli.ts/main/smooth/floor value
 line cli.ts/main/smooth/floor > _·before@cli.ts/main/smooth/floor value
 known #101 line _·before@cli.ts/main/smooth/floor > cli.ts/main/smooth value    # `series.slice(before, ..)`
-line Month·series@cli.ts/main/load > cli.ts/main/smooth/average value
+known #125 line Month·series@cli.ts/main/load > cli.ts/main/smooth/average value # handed series.slice(..), which is no step
 known #125 line cli.ts/main/smooth/average > cli.ts/main/smooth back   # the mean goes into the Smoothed `smooth` makes; `map`, no step, takes it
 line cli.ts/main/smooth > Smoothed·smoothed@cli.ts/main/smooth value
 
@@ -77,7 +77,7 @@ line Smoothed·smoothed@cli.ts/main/smooth > cli.ts/main/trend value
 known #126 line Settings·settings@cli.ts/main/Settings() > cli.ts/main/trend value   # the body uses it itself, and a step inside takes it too
 line Settings·settings@cli.ts/main/Settings() > cli.ts/main/trend/escape value   # `escape(settings.title)`
 line cli.ts/main/trend/escape > cli.ts/main/trend back
-known #127 line Month·series@cli.ts/main/load > cli.ts/main/trend/series.at value
+known #128 line Month·series@cli.ts/main/load > cli.ts/main/trend/series.at value # the array `at` runs on is not handed
 line cli.ts/main/trend/series.at > _·last@cli.ts/main/trend/series.at value
 known #128 line Month·series@cli.ts/main/load > cli.ts/main/trend/range value      # `series[0].date`
 line _·last@cli.ts/main/trend/series.at > cli.ts/main/trend/range value

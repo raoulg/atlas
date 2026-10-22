@@ -113,9 +113,5 @@ known #138 home _@Kennisbank()/Kennisbank.graaf Kennisbank()
 side entry left
 side Disk(Kennisbank.path) both
 
-# building the struct the route is about is read as a call of the route inside itself
-
-# the methods run on what the constructor built, not on the caller's instance
-
 # graaf's own arrow takes what its steps make, the Nodes too, though only Graaf() takes them and graaf gives back the Graaf
 known #126 extra line Node@Kennisbank()/Kennisbank.graaf/node > Kennisbank()/Kennisbank.graaf value

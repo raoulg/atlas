@@ -25,7 +25,7 @@ line main/Ledger() > Ledger·ledger@main/Ledger() value
 line main/Ledger()#2 > Ledger·other@main/Ledger()#2 value
 line Ledger·other@main/Ledger()#2 > main/Ledger.takeFrom/this.rows.push value
 line main/Ledger.takeFrom > Ledger·ledger@main/Ledger.takeFrom value
-line Ledger·ledger@main/Ledger.takeFrom > main/Ledger.takeVictim/this.rows.push value
+known #128 line Ledger·ledger@main/Ledger.takeFrom > main/Ledger.takeVictim/this.rows.push value # the push runs on this.rows, which the reader does not hand
 line main/Ledger.takeVictim > Ledger·ledger@main/Ledger.takeVictim value
 line main/addLine/push > _·lines@main/addLine/push value
 line main/count/set > _·m@main/count/set value
@@ -79,7 +79,6 @@ known #129 home Ledger·other@main/Ledger.takeFrom main
 known #129 home Ledger·other@main/Ledger.takeVictim main
 known #129 home Array·lines@main/addLine main
 known #129 home Map·m@main/count main
-known #129 extra line Ledger·other@main/Ledger()#2 > main/Ledger.takeVictim value
 known #129 extra line main/addLine > Array@main/addLine value
 known #129 extra line main/count > Map@main/count value
 known #129 extra home Array@main/addLine main
@@ -87,8 +86,8 @@ known #129 extra home Map@main/count main
 
 # A callee's parameter is bound to the latest value of its type, not to what the call is handed: `rename` takes the
 # expenses `fileAll` filed, not the object literal
-known #127 line Expense > main/rename value
-known #127 extra line Expense@main/fileAll > main/rename value
+known #154 line Expense > main/rename value
+known #154 extra line Expense@main/fileAll > main/rename value
 
 # A step that changes an input loses the result of no type it gives back
 line main/rename > main back
@@ -108,15 +107,15 @@ known #126 extra line Ledger·ledger@main/Ledger.takeVictim > main value
 known #101 line Array·lines@main/addLine > main value
 known #101 line Map·m@main/count > main value
 
-# The loop goes over the ledger `fileAll` is handed through its rows; it takes the parameter `expenses` from beyond
-# instead (#127), and the own arrow takes the ledger, which only the loop goes over (#126). With the literal `rename`
-# is handed bound away, no Expense from beyond is left
-known #127 line Ledger·ledger@main/Ledger.takeVictim > main/fileAll/for e of expenses value
-known #127 home Expense main
-known #127 extra line Expense·expenses > main/fileAll/for e of expenses value
-known #127 extra home Expense·expenses main
-known #126 extra line Ledger·ledger@main/Ledger.takeVictim > main/fileAll value
+# The loop goes over the ledger `fileAll` is handed through its rows: its parameter `expenses` holds that projection.
+# `rename` is handed an object literal, which builds no Expense yet (#154)
+line Ledger·ledger@main/Ledger.takeVictim > main/fileAll/for e of expenses value
+known #154 home Expense main
 
 # a result the caller drops goes back to it: the reader does not say the call is a statement of its own
 known #134 extra line main/Ledger.takeFrom > main back
 known #134 extra line main/Ledger.takeVictim > main back
+
+# the push is handed the victim the call hands, stale (#129), and not this (#128): the own arrow takes this itself
+known #129 extra line Ledger·other@main/Ledger()#2 > main/Ledger.takeVictim/this.rows.push value
+known #128 extra line Ledger·ledger@main/Ledger.takeFrom > main/Ledger.takeVictim value

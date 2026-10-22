@@ -13,5 +13,3 @@ home Sink@run/Sink() run
 
 side entry left
 side Screen right
-
-# building the exported Sink runs its public methods, so `new Sink()` reaches what write logs

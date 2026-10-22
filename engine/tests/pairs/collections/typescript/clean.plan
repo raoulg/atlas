@@ -101,8 +101,6 @@ side Disk(Store.path) both
 #    (`rows.map(..).join(..)`, `this.rows().map(..)`): what it gives goes into the call around it
 # K: a value handed through a field reaches no step inside: `writeRows(this.path, rows)` hands `this` (#121, decision
 #    1), and the helper takes no Store
-# #74: the doors run on what the constructor door built, not on the caller's instance `Store` from beyond (#121,
-#    decision 2): the constructor's Store goes back to the caller and is joined to no door
 
 # B
 known #125 extra home _@Store()/Store.put/writeRows/rows.map Store()/Store.put/writeRows
@@ -120,4 +118,3 @@ known #125 extra step Store()/Store.put/writeRows/rows.map
 known #125 extra step Store()/Store.putAll/writeRows/join
 known #125 extra step Store()/Store.putAll/writeRows/rows.map
 
-# #74

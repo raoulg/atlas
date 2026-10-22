@@ -13,5 +13,3 @@ home Store·store@run/Store() run
 
 side entry left
 side Screen right
-
-# building the store runs its public methods, which touch its file

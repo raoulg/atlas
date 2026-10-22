@@ -3,7 +3,6 @@
 # fields name the places, makes its `Settings` from the defaults and `--months`, and fills the raw file only where it
 # is missing, so the file stands between the download and the reading.
 
-
 route sunspots.main.main
 step main/Cli()                                                   # `Cli::parse()`, which q takes to the entry
 step main/Settings.default
@@ -141,9 +140,6 @@ side entry left
 side Web(www.sidc.be) left
 side File(data/raw/sunspots.csv) between
 side File(figures/sunspots.png) right
-
-# a record the csv crate makes inside `load` is drawn from beyond, at the route's frame
-
 
 # a library call whose result no name holds is drawn as a step, its result named by the call around it
 known #125 extra step main/load/?1/Record.into_month/from_ymd_opt

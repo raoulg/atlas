@@ -44,5 +44,3 @@ known #125 home _·tekst@Kennisbank()/Kennisbank.graaf/Kennisbank._row/split Ken
 
 side entry left
 side Disk(Kennisbank.path) both
-
-# the methods run on what the constructor built, not on the caller's instance

@@ -90,19 +90,14 @@ known #125 home Board·self@main/Board.take_from/extend main/Board.take_from
 known #125 home Board·self@main/Board.take_victim/extend main/Board.take_victim
 known #125 home list·tags@main/add_tag/append main/add_tag
 
-# A callee's parameter is bound to the caller's value of that name, or to the latest of its type, not to what the call
-# is handed: `take_from`'s `other` (main's board) to main's `other`, `take_victim`'s `victim` to main's other,
-# `merge_scores`' `board` (main's other) to main's `board`
-known #127 line Board·board@main/reset > main/Board.take_from/clear value
-known #127 line Board·other@main/Board.take_from/clear > main/Board.take_from value
-known #127 line Board·board@main/Board.take_from > main/Board.take_victim/clear value
-known #127 line Board·victim@main/Board.take_victim/clear > main/Board.take_victim value
-known #127 line Board·other@main/Board.take_victim > main/merge_scores/update value
-known #127 line Board·board@main/merge_scores/update > main/merge_scores value
-known #127 extra line Board·other@main/Board()#2 > main/Board.take_from/clear value
-known #127 extra line Board·board@main/reset > main/Board.take_from value
-known #127 extra line Board·other@main/Board.take_from > main/Board.take_victim/clear value
-known #127 extra line Board·board@main/reset > main/merge_scores/update value
+# A callee's parameter holds what its call hands it: `take_from`'s `other` is main's board, `take_victim`'s `victim`
+# main's board as take_from left it, `merge_scores`' `board` main's other; what each changes of it goes out at its border
+line Board·board@main/reset > main/Board.take_from/clear value
+line Board·other@main/Board.take_from/clear > main/Board.take_from value
+known #129 line Board·board@main/Board.take_from > main/Board.take_victim/clear value
+line Board·victim@main/Board.take_victim/clear > main/Board.take_victim value
+line Board·other@main/Board.take_victim > main/merge_scores/update value
+line Board·board@main/merge_scores/update > main/merge_scores value
 
 # A changed argument is not the caller's value at a new moment: it is named by the callee's parameter (`take_from`
 # names main's board `other`), two changes of one type collapse into one value (`swap`), so the next step takes the
@@ -123,7 +118,6 @@ known #129 home list·tags@main/add_tag main
 known #129 home dict·counts@main/count main
 known #129 home list·jobs@main/queue main
 known #129 home list·xs@main/extend main
-known #129 extra line Board·board@main/reset > main/Board.take_victim value
 known #129 extra line Board·board@main/reset > main/swap value
 known #129 extra line Board·other@main/merge_scores > main/rename value
 known #129 extra line main/add_tag > list@main/add_tag value
@@ -134,10 +128,6 @@ known #129 extra home list@main/add_tag main
 known #129 extra home dict@main/count main
 known #129 extra home list@main/queue main
 known #129 extra home list@main/extend main
-
-# A method that changes its receiver hands it on twice: unnamed from its arrow's change, and named; the next step takes
-# the second
-known #129 extra line Board·other@main/Board.take_victim > main/merge_scores value
 
 # A step that changes an input loses the result of no type it gives back: no `back`, and the caller takes the changed
 # input instead
@@ -160,3 +150,7 @@ known #101 line Cell·cell@main/mark_all/for cell in board.cells > main/mark_all
 # a result the caller drops goes back to it: the reader does not say the call is a statement of its own
 known #134 extra line main/Board.take_from > main back
 known #134 extra line main/Board.take_victim > main back
+
+# take_victim's victim is the board the call hands, stale (#129); its own arrow takes the receiver that extend, no step yet, runs on (#125)
+known #129 extra line Board·board@main/reset > main/Board.take_victim/clear value
+known #125 extra line Board·other@main/Board.take_from > main/Board.take_victim value

@@ -1,8 +1,9 @@
 # A job run in one of two modes. Each choice is made once, in a place with a name: what a mode means is `Mode::plan`,
-# one match building a Plan in either arm, called wherever a mode's plan is wanted; where the job comes from is the
-# body of `source`; `report` builds its Message by one struct expression in either arm, the level's own method marking
-# it. The settings are the route's own value: a call handed `settings.mode` or `settings.level` is handed the
-# settings, the projection glued into the call; inside, the parameter that holds the field is the value its steps take.
+# one match building a Plan in either arm, called wherever a mode's plan is wanted; where the job comes from is the body
+# of `source`; `report` builds its Message by one struct expression in either arm, the level's own method marking it.
+# The settings are the route's own value: a call handed `settings.mode` or `settings.level` is handed the settings, the
+# projection glued into the call; inside, the parameter that holds the field is still the projection: its steps are
+# handed the settings.
 
 route runs.run
 step run/source
@@ -48,11 +49,9 @@ line run/source/?1/infer > Job@run/source/?1 value
 line Job@run/source/?1 > run/source value
 line run/source > Job·job@run/source value
 line Job·job@run/source > run/finished value
-line Settings·settings > run/finished value                       # its mode, held by finished's `mode`
-line Settings·settings > run/report value                         # its level, held by report's `level`
 
 # whether it finished: a Runner built on the mode's plan, and the timeout of that plan
-line Mode·mode > run/finished/Runner.new/Mode.plan value            # new hands the mode to Mode::plan
+line Settings·settings > run/finished/Runner.new/Mode.plan value # new hands the mode to Mode::plan
 line run/finished/Runner.new/Mode.plan/?1/Plan() > Plan@run/finished/Runner.new/Mode.plan/?1 value
 line run/finished/Runner.new/Mode.plan/?1/Plan()#2 > Plan@run/finished/Runner.new/Mode.plan/?1 value
 line Plan@run/finished/Runner.new/Mode.plan/?1 > run/finished/Runner.new/Mode.plan value
@@ -63,7 +62,7 @@ line Runner@run/finished/Runner.new/Runner() > run/finished/Runner.new value
 line run/finished/Runner.new > Runner@run/finished/Runner.new value
 line Runner@run/finished/Runner.new > run/finished/Runner.batch value
 line run/finished/Runner.batch > run/finished back
-line Mode·mode > run/finished/Mode.plan value
+line Settings·settings > run/finished/Mode.plan value
 line run/finished/Mode.plan/?1/Plan() > Plan@run/finished/Mode.plan/?1 value
 line run/finished/Mode.plan/?1/Plan()#2 > Plan@run/finished/Mode.plan/?1 value
 line Plan@run/finished/Mode.plan/?1 > run/finished/Mode.plan value
@@ -73,8 +72,8 @@ line run/finished > _@run/finished value                           # the bool, h
 line _@run/finished > run/report value
 
 # the line that says how it went: what the level's method gives goes into the Message built around it
-line Level·level > run/report/?1/Level.prefix value
-line Level·level > run/report/?1/Level.suffix value
+line Settings·settings > run/report/?1/Level.prefix value
+line Settings·settings > run/report/?1/Level.suffix value
 line run/report/?1/Level.prefix > _@run/report/?1/Level.prefix value
 line _@run/report/?1/Level.prefix > run/report/?1/Message() value
 line run/report/?1/Level.suffix > _@run/report/?1/Level.suffix value
@@ -97,8 +96,6 @@ line run/Mode.plan > Plan@run/Mode.plan value
 line Plan@run/Mode.plan > run value                                 # run reads its retries
 
 home Settings·settings run
-home Mode·mode run
-home Level·level run
 home Job@run/source/?1/load/Job() run/source/?1/load
 home Job@run/source/?1/infer/Job() run/source/?1/infer
 home Job@run/source/?1 run/source
@@ -119,14 +116,10 @@ home Plan@run/Mode.plan run
 side entry left
 side Screen right
 
-# the field a call's argument reads is drawn as a nameless value of its own, beside the settings the call is handed
-known #127 extra line Mode > run/Mode.plan value
-known #127 extra home Mode run
-
 # a name handed to a call nested in an argument counts as handed to the call around it too: `level` goes to
 # `level.prefix()`, whose result the Message is built from, not to the Message
-known #128 extra line Level·level > run/report/?1/Message() value
-known #128 extra line Level·level > run/report/?1/Message()#2 value
+known #128 extra line Settings·settings > run/report/?1/Message() value
+known #128 extra line Settings·settings > run/report/?1/Message()#2 value
 
 # an opened step's own arrow takes what its steps make, or what its call is handed, though only a step inside takes it
 known #126 extra line Job·job@run/source > run value

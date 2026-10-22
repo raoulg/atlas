@@ -24,7 +24,7 @@ line Register > Register()/Register.join value # the caller's instance: every me
 known #128 line Register > Register()/Register.names/prepare value   # the method hands `self.conn` to it
 line Register > Register()/Register.latest value
 
-line Member·who > Register()/Register.join value # #127
+line Member·who > Register()/Register.join value
 line Register()/Register.join > SQLite(members) own
 
 line SQLite(members) > Register()/Register.names own
@@ -49,9 +49,6 @@ side entry left
 side SQLite(members) between
 side SQLite(reports) left
 
-# building the exported struct runs its public functions, `new` among them, so the literal is read as recursive
-# #127: the parameters of a function the entry calls have lost their names
-# the recursive literal is cut, so new's connection ends at new's border
 # #126: an opened step's own arrow takes every class its steps build: latest gives back the Report, not its author
 # what names the statement and the rows it gives back are steps of their own (a library's operation whose result the
 # body names); `rows` goes on to `collect`, an unnamed call, and back to the caller
@@ -63,8 +60,6 @@ line Register()/Register.names/query_map > _·rows@Register()/Register.names/que
 known #101 line _·rows@Register()/Register.names/query_map > Register()/Register.names value   # names returns what `collect` makes of them
 home _·select@Register()/Register.names/prepare Register()/Register.names
 home _·rows@Register()/Register.names/query_map Register()/Register.names
-
-# what the constructor builds goes back to its caller: Atlas runs the methods on it instead of the caller's instance
 
 # the struct literal is handed nothing of the fields it is given (#128), so new takes the connection itself
 known #128 extra line Connection·conn > Register()/Register.new value

@@ -14,7 +14,7 @@ line entry > Ledger()/Ledger.get call
 line Ledger()/Ledger() > Ledger@Ledger()/Ledger() value
 line Ledger > Ledger()/Ledger.put value # the caller's instance: every method runs on it
 line Ledger > Ledger()/Ledger.get value
-line Fraction·amount > Ledger()/Ledger.put value # #127
+line Fraction·amount > Ledger()/Ledger.put value
 line Ledger()/Ledger.put > Disk(Ledger.path) own
 line Disk(Ledger.path) > Ledger()/Ledger.get own
 line Fraction > Ledger()/Ledger.get/Entry() value
@@ -31,7 +31,3 @@ home Entry@Ledger()/Ledger.get Ledger()
 
 side entry left
 side Disk(Ledger.path) between
-
-# #127: put's parameter loses its name and becomes the Fraction get builds, one value taken by both
-
-# what the constructor builds goes back to its caller: Atlas runs the methods on it instead of the caller's instance

@@ -22,5 +22,3 @@ home Book@Store()/Store.get/? Store()/Store.get
 home Book@Store()/Store.get Store()
 
 side entry left
-
-# the override takes a value of its own class from beyond, and the Store ends at the border of the dispatch

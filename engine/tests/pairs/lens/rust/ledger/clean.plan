@@ -22,7 +22,7 @@ line Ledger()/Ledger.new > Ledger@Ledger()/Ledger.new value
 line Ledger > Ledger()/Ledger.put value # the caller's instance: every method runs on it
 known #128 line Ledger > Ledger()/Ledger.get/read_to_string value   # the method hands `self.path` to it
 
-line Decimal·amount > Ledger()/Ledger.put value # #127: put's parameter, a library's type
+line Decimal·amount > Ledger()/Ledger.put value # put's parameter, a library's type
 line Ledger()/Ledger.put > Disk(Ledger.path) own
 
 line Disk(Ledger.path) > Ledger()/Ledger.get own
@@ -54,8 +54,6 @@ known #138 home Error@Ledger()/Ledger.get Ledger()
 side entry left
 side Disk(Ledger.path) between
 
-# building the exported struct runs its public functions, `new` among them, so the literal is read as recursive
-# #127: the parameter of a function the entry calls has lost its name
 # #125: a call whose result goes into the named call around it is a step of its own
 known #125 extra step Ledger()/Ledger.get/from_str
 known #125 extra line _·text@Ledger()/Ledger.get/read_to_string > Ledger()/Ledger.get/from_str value

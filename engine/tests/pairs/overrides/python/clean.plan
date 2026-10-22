@@ -18,5 +18,3 @@ line Source()/Source.read/Tape.read > Source()/Source.read back
 home Source Source()
 
 side entry left
-
-# each override takes a value of its own class from beyond, and the Source ends at the border of the dispatch

@@ -5,9 +5,8 @@
 # result the body names (`readFileSync`, `find`, `map`) is a step; what it touches stays its caller's. Each file is
 # read, used and written by the route: it stands on both sides.
 #
-# Issues marked: #74 an exported class's construction; #101 a body's own use of a
-# value it made; #125 which library operations are steps; #126 what the own arrow keeps; #127 a parameter bound by
-# kind, not to what is handed; #130 which forms are choices.
+# Issues marked: #101 a body's own use of a value it made; #125 which library operations are steps; #126 what the own
+# arrow keeps; #128 a call handed nothing through self, a closure, an index or a chain; #130 which forms are choices.
 
 route harvest.store.ReadingStore
 step ReadingStore()/ReadingStore()
@@ -33,7 +32,7 @@ line entry > ReadingStore()/ReadingStore.summary call
 
 line ReadingStore()/ReadingStore() > ReadingStore@ReadingStore()/ReadingStore() value
 line ReadingStore > ReadingStore()/ReadingStore.save value # the caller's instance
-line Reading·reading > ReadingStore()/ReadingStore.save value # #127
+line Reading·reading > ReadingStore()/ReadingStore.save value
 line Disk(ReadingStore.readings) > ReadingStore()/ReadingStore.save own
 line ReadingStore()/ReadingStore.save > Disk(ReadingStore.readings) own
 line ReadingStore > ReadingStore()/ReadingStore.history value # the caller's instance
@@ -42,14 +41,14 @@ line ReadingStore()/ReadingStore.history/Reading() > Reading@ReadingStore()/Read
 line Reading@ReadingStore()/ReadingStore.history/Reading() > ReadingStore()/ReadingStore.history value
 line ReadingStore()/ReadingStore.history > Reading@ReadingStore()/ReadingStore.history value
 line ReadingStore > ReadingStore()/ReadingStore.saveOutage value # the caller's instance
-line Outage·outage > ReadingStore()/ReadingStore.saveOutage value # #127
+line Outage·outage > ReadingStore()/ReadingStore.saveOutage value
 line Disk(ReadingStore.outages) > ReadingStore()/ReadingStore.saveOutage own
 line ReadingStore()/ReadingStore.saveOutage > Disk(ReadingStore.outages) own
 line ReadingStore > ReadingStore()/ReadingStore.outages value # the caller's instance
 line Disk(ReadingStore.outages) > ReadingStore()/ReadingStore.outages own
 known #126 line ReadingStore > ReadingStore()/ReadingStore.summary value   # the caller's instance, for the write it makes itself (#126 too: Atlas hands it to history only)
 known #128 line ReadingStore > ReadingStore()/ReadingStore.summary/readFileSync value   # the caller's instance: readFileSync is handed `this.summaries`
-known #127 line Day·day > ReadingStore()/ReadingStore.summary value   # #127: the key it looks for is made of the day
+known #126 line Day·day > ReadingStore()/ReadingStore.summary value # the key it looks for is made of the day
 line Disk(ReadingStore.summaries) > ReadingStore()/ReadingStore.summary own
 line ReadingStore()/ReadingStore.summary > Disk(ReadingStore.summaries) own
 line ReadingStore()/ReadingStore.summary/readFileSync > _·text@ReadingStore()/ReadingStore.summary/readFileSync value

@@ -24,6 +24,3 @@ home Event·e Handler()
 home Click·e Handler()
 
 side entry left
-
-# each override takes a value of its own class, and of the type its own signature names, from beyond; the Handler ends
-# at the border of the dispatch

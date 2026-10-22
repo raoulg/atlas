@@ -56,7 +56,8 @@ writers wrote is `PLACE in STEP` (`File(cache.json) in main/refresh`), made by t
 Two values the names do not tell apart are told apart by a count, `#2`. A call is handed the values the names in its
 arguments hold: `f(x.name)` is handed `x` (a projection is no occurrence; it is glued into the call). A nested call that
 is a step of its own takes its names itself, and the call around it is handed what that step gives. A projection bound to
-a name first is still the projection (`width = settings.width; f(width)` hands `settings`). An error is a value: its
+a name first is still the projection (`width = settings.width; f(width)` hands `settings`), and so is a parameter its call
+fills through one: inside a step, a parameter holds what its call hands it. An error is a value: its
 constructor makes it in the arm that raises it, and each border it crosses uncaught hands it on, up to the route.
 
 **Places.** A place is drawn as Atlas names it: `File(data/out.csv)`, `Screen`, `Disk(bump.path)`, `entry` (where the

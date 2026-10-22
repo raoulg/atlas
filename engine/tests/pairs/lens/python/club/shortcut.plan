@@ -13,7 +13,7 @@ line entry > Board()/Board.posts call
 line Board()/Board() > Board@Board()/Board() value
 line Board > Board()/Board.pin value # the caller's instance: every method runs on it
 line Board > Board()/Board.posts value
-line Notice·notice > Board()/Board.pin value # #127
+line Notice·notice > Board()/Board.pin value
 line Board()/Board.pin > Disk(Board.path) own
 line Disk(Board.path) > Board()/Board.posts own
 
@@ -23,7 +23,3 @@ home Notice·notice Board()
 
 side entry left
 side Disk(Board.path) between                                   # posts reads and hands on what pin left
-
-# #127: the parameter of a method the entry calls has lost its name
-
-# what the constructor builds goes back to its caller: Atlas runs the methods on it instead of the caller's instance

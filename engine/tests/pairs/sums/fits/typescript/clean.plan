@@ -8,25 +8,19 @@ step describe/?1/Report()                                         # `return { li
 known #130 step describe/?1/Report()#2                            # what follows the early return is the other arm
 
 line entry > describe call
-known #127 line Fit | Failed·r > describe value                    # the route's parameter, by its name
-known #127 line Fit | Failed·r > describe/?1/Report() value        # `r.score`
-known #127 line Fit | Failed·r > describe/?1/Report()#2 value      # `r.reason`
+line Fit | Failed·r > describe value # the route's parameter, by its name
+known #130 line Fit | Failed·r > describe/?1/Report() value # `r.score`
+known #130 line Fit | Failed·r > describe/?1/Report()#2 value # `r.reason`
 known #130 line describe/?1/Report() > Report@describe/?1 value   # with the other arm's Report, the value either arm makes
 known #130 line describe/?1/Report()#2 > Report@describe/?1 value
 known #130 line Report@describe/?1 > describe value
 line describe > Report@describe value                             # the result goes on to the caller
 
-known #127 home Fit | Failed·r describe
+home Fit | Failed·r describe
 known #130 home Report@describe/?1 describe
 home Report@describe describe
 
 side entry left
-
-# a parameter whose type is a sum written in place keeps no name, and is taken as one of its variants
-known #127 extra line Fit | Failed > describe value
-known #127 extra home Fit | Failed describe
-known #127 extra line Fit·r > describe/Report() value
-known #127 extra home Fit·r describe
 
 # the early return is read as a choice of one arm, and what follows it as a step after the choice
 known #130 extra step describe/Report()
@@ -37,9 +31,10 @@ known #130 extra home Report@describe/Report() describe
 # a library operation whose result no name holds and which changes nothing it runs on (`r.score.toFixed(2)`) stands as
 # an occurrence, and what it gives as a value
 known #125 extra step describe/?1/r.score.toFixed
-known #125 extra line Fit·r > describe/?1/r.score.toFixed value
 known #125 extra line describe/?1/r.score.toFixed > _@describe/?1/r.score.toFixed value
 known #125 extra line _@describe/?1/r.score.toFixed > describe/?1/Report() value
 known #125 extra home _@describe/?1/r.score.toFixed describe/?1
 known #130 extra line describe/?1/Report() > Report@describe/?1/Report() value
 known #130 extra home Report@describe/?1/Report() describe/?1
+known #125 extra line Fit | Failed·r > describe/?1/r.score.toFixed value # toFixed is no step
+known #130 extra line Fit | Failed·r > describe/Report() value # the Report of the other arm of `?:`, which is no choice yet
