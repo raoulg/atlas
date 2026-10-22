@@ -167,14 +167,20 @@ pub fn environment_named(names: &[Built]) -> Option<Built> {
 /// `x ?? "d"`, `env::var("X").unwrap_or(..)`, `opts.config ?? "d"`. Where every value is one the
 /// code does not decide (what a caller hands, an input with a default, what the environment says,
 /// a value the code does not know), it is an input, and what the code takes is its default, which
-/// whoever says the value may override; else the two are alternatives.
+/// whoever says the value may override; else the two are alternatives. An input nothing in the
+/// program hands (what the environment says, a value the code does not know) is that input with
+/// its default and nothing beside it, as an option of the command line is: one place, drawn as
+/// its default, which a run reads or writes whatever the input says. What a caller hands is
+/// followed to the caller, so it stays beside the default.
 pub fn or_else(value: Vec<Built>, fallback: Vec<Built>) -> Vec<Built> {
     let input = |b: &Built| match b.as_slice() {
         [Seg::Param(x) | Seg::Held(_, x) | Seg::Option(x, _) | Seg::Hole(x)] => Some(x.clone()),
         _ => None,
     };
     let named: Option<Vec<String>> = value.iter().map(input).collect();
+    let untraced = value.iter().all(|b| matches!(b.as_slice(), [Seg::Hole(_)]));
     match named.and_then(|n| n.into_iter().next()) {
+        Some(name) if untraced && !fallback.is_empty() => option(&name, fallback),
         Some(name) => union(value, option(&name, fallback)),
         None => union(value, fallback),
     }
@@ -823,7 +829,7 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
                 store.touch(&f, Touch { what, ..at(artifact, dir, fixed) });
             }
             // an alternative that names no place stays one the code does not name, by what names
-            // it: what the environment says beside the default the code holds
+            // it: what a caller hands that no code says
             if !unnamed.is_empty() {
                 let touch = at(String::new(), t.dir, vec![]);
                 store.touch(&f, Touch { what: unnamed_value.unwrap_or_else(|| touch.what.clone()), ..touch });
@@ -912,7 +918,13 @@ mod tests {
     fn a_fallback_of_an_input_is_its_default() {
         use crate::model::{Dir, Touch, World};
         let fallback = or_else(vec![environment("STORE")], vec![lit("out.csv")]);
-        assert_eq!(fallback, [environment("STORE"), vec![Seg::Option("$STORE".into(), lit("out.csv"))]]);
+        assert_eq!(fallback, [vec![Seg::Option("$STORE".into(), lit("out.csv"))]], "what the environment says with a default is one input");
+        let handed = or_else(vec![vec![Seg::Param("path".into())]], vec![lit("out.csv")]);
+        assert_eq!(
+            handed,
+            [vec![Seg::Param("path".into())], vec![Seg::Option("path".into(), lit("out.csv"))]],
+            "what a caller hands is followed"
+        );
         assert_eq!(or_else(vec![lit("a.csv")], vec![lit("b.csv")]), [lit("a.csv"), lit("b.csv")], "two literals are alternatives");
         let (read, write) = (Touch::new(World::Disk, Some(Dir::Read)), Touch::new(World::Disk, Some(Dir::Write)));
         assert!(fallback.iter().all(|b| !decided(b, &write)), "{fallback:?}");
@@ -943,6 +955,6 @@ mod tests {
         assert_eq!(place(&lit("*"), "read_text"), None);
         let unset = or_else(vec![environment("DATA_DIR")], vec![lit("")]);
         let joined: Vec<Option<String>> = cross(&unset, &[lit("sub/report.txt")], "/").iter().map(|b| place(b, "read")).collect();
-        assert_eq!(joined, [Some("*/sub/report.txt".into()), Some("sub/report.txt".into())], "the empty path joins as nothing");
+        assert_eq!(joined, [Some("sub/report.txt".into())], "the empty path joins as nothing, and the variable is its input");
     }
 }
