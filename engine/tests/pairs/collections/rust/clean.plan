@@ -123,3 +123,5 @@ known #151 extra step Store()/Store.new/Store() recursive
 known #74 extra line Store@Store()/Store.new > Store()/Store.put/Store.rows value
 known #74 extra line Store@Store()/Store.new > Store()/Store.put_all/Store.rows value
 known #74 extra line Store@Store()/Store.new > Store()/Store.get/Store.rows value
+known #74 extra line Store@Store()/Store.new > Store()/Store.put/write_rows value   # the caller's instance, not the one new built, is handed through self
+known #74 extra line Store@Store()/Store.new > Store()/Store.put_all/write_rows value   # the caller's instance, not the one new built, is handed through self

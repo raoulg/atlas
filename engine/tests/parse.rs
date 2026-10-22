@@ -457,7 +457,7 @@ fn alternatives_carry_their_arms() {
     let rs = analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixture-rs"), &Options::default()).unwrap();
     let arms = |dst: &str| rs.edges.iter().find(|e| e.src == "handed.choose.resolve" && e.dst == dst).map(|e| e.arms.clone()).unwrap();
     assert_eq!(arms("handed.choose.load"), [(0, 0)], "match arm `Some(p)`");
-    assert_eq!(arms("handed.choose.find"), [(0, 1), (1, 0)], "`None`, then the receiver of `unwrap_or_else`");
+    assert_eq!(arms("handed.choose.find"), [(0, 1)], "`None`; the receiver of `unwrap_or_else` always runs");
     assert_eq!(arms("handed.choose.infer"), [(0, 1), (1, 1)], "`None`, then its argument");
 }
 
@@ -611,13 +611,15 @@ fn rust_workspace_parses() {
     assert!(boundaries(g.node("atlas.view").unwrap()).contains_key("screen"), "eprintln!");
     let m = edges(&g, EdgeKind::Mutates);
     assert!(m.contains(&("atlas-engine.model.Graph.recount".into(), "atlas-engine.model.Graph".into())), "&mut self");
-    // a method runs on the value the call before it gives: `Repo::read(&root, ..)?.asked_for(package)`
+    // a method runs on the value the call before it gives: `Repo::read(&root, ..)?.asked_for(package)`; the
+    // `find_map` whose result the `match` takes apart into `root` and `package` is a step of its own
     let read: Vec<&str> = g.node("atlas-engine.language.read").unwrap().sites.iter().map(|s| s.to.as_str()).collect();
     assert_eq!(
         read,
         [
             "atlas-engine.repo.Repo.read",
             "atlas-engine.language.languages",
+            "",
             "atlas-engine.repo.Repo.read",
             "atlas-engine.repo.Repo.asked_for"
         ]

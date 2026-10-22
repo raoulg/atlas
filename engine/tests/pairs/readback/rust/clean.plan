@@ -11,10 +11,10 @@ step main/Ledger.keep/query_row
 
 line entry > main call
 line main/Ledger() > Ledger·ledger@main/Ledger() value
-line Ledger·ledger@main/Ledger() > main/Ledger.keep value
+known #126 line Ledger·ledger@main/Ledger() > main/Ledger.keep value   # the body uses the instance itself, and a step inside takes it too
 line main/Ledger.keep > Ledger·ledger@main/Ledger.keep value     # `&mut self`: keep changes the ledger
 line main/Ledger.keep/open > _·con@main/Ledger.keep/open value
-known #128 line Ledger·ledger@main/Ledger() > main/Ledger.keep/open value  # K
+line Ledger·ledger@main/Ledger() > main/Ledger.keep/open value   # K
 line _·con@main/Ledger.keep/open > main/Ledger.keep/query_row value
 known #101 line _·con@main/Ledger.keep/open > main/Ledger.keep value  # its own execute
 line main/Ledger.keep/query_row > _·stored@main/Ledger.keep/query_row value
