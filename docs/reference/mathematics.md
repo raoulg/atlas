@@ -552,7 +552,9 @@ nothing.
 the value: parentheses, a cast or an assertion (`as`, `satisfies`, `!`), a reference (`&x`), and an
 unwrapping (`await`, `x?`, `x.await`), since a promise, a coroutine, an `Option` and a `Result` are read as what
 they hold. A value read through any of them is the value inside, so a change, a place or a call
-written through a wrapper is the one written without it. A cast also names a type, and where the
+written through a wrapper is the one written without it. Moving a value into a container that holds
+one and is read as it (`RefCell::new(x)`, `Box::new(x)`, `Rc::new(x)`) hands on that value: no new
+one, as a copy makes (`copy.copy(x)`), so it is no step. A cast also names a type, and where the
 question is the class a method runs on (`(x as Store).f()`), that type answers it.
 **Where.** `tree.rs`: `Wrappers`, `beneath`, `outermost`; each reader's `WRAPPERS`.
 

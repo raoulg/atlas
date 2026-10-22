@@ -1,6 +1,6 @@
 # The signature says the log changes, as `&mut Log` or as `&RefCell<Log>`: each `note` takes the log as it was and
 # makes it at its own moment, and inside it `push` makes the log's lines anew. A struct expression builds its struct,
-# as a constructor does; `RefCell::new` is a library operation whose result `run` names, the cell that holds the Log.
+# as a constructor does; `RefCell::new` moves that Log into a cell, which is read as what it holds.
 # `run` counts the lines of both logs itself.
 route journal.run
 step run/Log()
@@ -25,22 +25,19 @@ home Log·shared@run/note_shared run
 
 side entry left
 
-# A library operation whose result the body names (`let shared = RefCell::new(..)`), or that changes what a call gives
-# (`log.borrow_mut().lines.push(..)`), is no step
-known #125 step run/new
+# `RefCell::new(Log { .. })` is no step: a cell is read as what it holds, as `Option` and `Box` are ("Wrappers are
+# identities"), and moving a value into it makes no new one, as a copy would (`copy.copy`, #125). `let mut log = Log
+# { .. }` and `let shared = RefCell::new(Log { .. })` say one thing: the Log the struct expression builds, named.
+line run/Log()#2 > Log·shared@run/Log()#2 value
+home Log·shared@run/Log()#2 run
+
+# A library operation that changes what a call gives (`log.borrow_mut().lines.push(..)`) is a step
 known #125 step run/note_shared/push
-known #125 line run/Log()#2 > Log@run/Log()#2 value
-known #125 line Log@run/Log()#2 > run/new value
-known #125 line run/new > Log·shared@run/new value
-known #125 line Log·shared@run/new > run/note_shared/push value
+known #125 line Log·shared@run/Log()#2 > run/note_shared/push value
 known #125 line run/note_shared/push > Log·log@run/note_shared/push value
 known #125 line Log·log@run/note_shared/push > run/note_shared value
-known #125 home Log@run/Log()#2 run
-known #125 home Log·shared@run/new run
 known #125 home Log·log@run/note_shared/push run/note_shared
-known #125 extra line run/Log()#2 > Log·shared@run/Log()#2 value
 known #125 extra line Log·shared@run/Log()#2 > run/note_shared value
-known #125 extra home Log·shared@run/Log()#2 run
 
 # `run` reads the lines of the log `note` changed
 known #101 line Log·log@run/note > run value
