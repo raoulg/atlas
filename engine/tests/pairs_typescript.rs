@@ -1253,6 +1253,53 @@ fn cooperative_super_and_a_call_through_a_prototype_run_one_method() {
     }
 }
 
+/// An entry run from the command line is handed the words the human types (#152). Node holds them
+/// raw in `process.argv`, as Rust's `env::args()` gives them: the shortcut keeps them under names,
+/// `const [kind = "", ...flags] = process.argv.slice(2)`, a step that takes the entry's words under
+/// `kind` and `flags` and declares no option, since the code names none. The clean side hands the
+/// words on to `main` without a name; they go into the call around them, and no step of the
+/// module's own code parses them.
+#[test]
+fn places_the_command_line_is_the_entrys() {
+    let parses = |g: &Graph| -> Vec<(String, String, Vec<String>, Vec<String>)> {
+        node(g, "cli")
+            .sites
+            .iter()
+            .filter_map(|s| Some((s.to.clone(), s.op.clone(), s.command_line.clone()?, s.gives.iter().map(|h| h.name.clone()).collect())))
+            .collect()
+    };
+    assert_eq!(parses(clean()), []);
+    let words = vec!["kind".to_string(), "flags".to_string()];
+    assert_eq!(parses(shortcut()), [(String::new(), "slice".to_string(), vec![], words)]);
+}
+
+/// A tuple is the values it pairs where it stands for one value, and a collection of tuples holds
+/// pairs, of a type the code does not name (#152), as Rust's `Vec<(NaiveDate, f64)>` holds no
+/// `NaiveDate`. The tuples pair (`tests/pairs/tuples/typescript`) gives each station's mean: the clean
+/// side as a `Mean[]`, a record with a name, the shortcut as `[Station, number][]`, which gives no
+/// Station. Both give `[Station, Store] | undefined` from `first`: a pair or nothing, one value of
+/// each where there is one, and no union of a Station and a Store.
+#[test]
+fn a_place_carries_a_what_and_a_collection_of_pairs_names_none() {
+    let p = common::pair("tuples/typescript");
+    let returns = |g: &Graph, f: &str| -> Vec<String> {
+        let id = format!("{}.{f}", g.root);
+        let mut out: Vec<String> = g
+            .edges
+            .iter()
+            .filter(|e| e.kind == EdgeKind::Returns && e.src == id)
+            .map(|e| e.dst.rsplit('.').next().unwrap_or("").to_string())
+            .collect();
+        out.sort();
+        out
+    };
+    assert_eq!(returns(&p.clean, "means"), ["Mean"]);
+    assert_eq!(returns(&p.shortcut, "means"), Vec::<String>::new(), "a pair of a Station and a number is no Station");
+    for g in [&p.clean, &p.shortcut] {
+        assert_eq!(returns(g, "first"), ["Station", "Store"], "a tuple that stands for one value is the values it pairs");
+    }
+}
+
 /// A name bound twice holds two values, one for each binding where it is in scope (#148). The
 /// rebinds pair (`tests/pairs/rebinds/typescript`) resolves each base of a module in a loop, then
 /// builds its `Body`: the clean side names the loop's value `base` and the body `body`, the shortcut

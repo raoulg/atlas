@@ -512,6 +512,23 @@ pub const TYPESCRIPT_CONTAINERS: &[&str] = &[
     "AsyncGenerator",
 ];
 
+/// The TypeScript containers among `TYPESCRIPT_CONTAINERS` that hold many values, not one: the
+/// collections, and what an iterator gives. A pair one holds is an element of a type the code does
+/// not name (`Array<[Date, number]>`), as Rust's `RUST_COLLECTIONS` read it.
+pub const TYPESCRIPT_COLLECTIONS: &[&str] = &[
+    "Array",
+    "ReadonlyArray",
+    "Set",
+    "ReadonlySet",
+    "Map",
+    "ReadonlyMap",
+    "Record",
+    "Iterable",
+    "AsyncIterable",
+    "Generator",
+    "AsyncGenerator",
+];
+
 /// Rust's generic types whose arguments are the values they hold or stand for, by the name Rust
 /// code writes them with: std's collections, pointers, cells and locks with their guards, an
 /// `Option`; what an iterator, a future or a stream gives (`impl Iterator<Item = Month>` gives
@@ -1607,6 +1624,11 @@ pub struct DerivedParser {
 /// The functions that give the command line the program is run with, word by word, unparsed: what
 /// they give is the entry's, whatever the program makes of it.
 pub const RUST_COMMAND_LINE: &[&[&str]] = &[&["std", "env", "args"], &["std", "env", "args_os"]];
+
+/// The values of a JavaScript runtime that hold the command line the program is run with, word by
+/// word, unparsed, as `RUST_COMMAND_LINE` gives it: Node's (and Bun's) `process.argv`, Deno's
+/// `Deno.args`.
+pub const TYPESCRIPT_COMMAND_LINE: &[&[&str]] = &[&["process", "argv"], &["Deno", "args"]];
 
 /// clap's derive: `#[derive(Parser)] struct Cli { #[arg(long, default_value = RAW)] raw: PathBuf }`,
 /// with the options a struct of `Args` or a variant of `Subcommand` adds to it.
