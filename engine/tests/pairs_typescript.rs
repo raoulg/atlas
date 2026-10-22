@@ -1250,3 +1250,28 @@ fn cooperative_super_and_a_call_through_a_prototype_run_one_method() {
         assert_eq!(r.contains("Store.get(key)"), side == "clean", "{side}: {r}");
     }
 }
+
+/// A name bound twice holds two values, one for each binding where it is in scope (#148). The
+/// rebinds pair (`tests/pairs/rebinds/typescript`) resolves each base of a module in a loop, then
+/// builds its `Body`: the clean side names the loop's value `base` and the body `body`, the shortcut
+/// names both `b`. A use takes the binding in scope where it stands, so `resolve(b)` in the loop is
+/// handed the loop's base, a string, never the `Body` the later `const b` holds; and the shortcut
+/// reads as the clean side does.
+#[test]
+fn composition_a_name_bound_twice_is_two_values() {
+    let p = common::pair("rebinds/typescript");
+    let link =
+        |g: &Graph| -> Node { g.nodes.iter().find(|n| n.name == "link").cloned().unwrap_or_else(|| panic!("link is in {}", g.root)) };
+    let hands = |g: &Graph| -> Vec<Vec<String>> {
+        link(g).sites.iter().filter(|s| s.to.ends_with(".resolve")).map(|s| s.hands.iter().map(|h| h.ty.clone()).collect()).collect()
+    };
+    let (clean, shortcut) = (hands(&p.clean), hands(&p.shortcut));
+    assert_eq!(clean.len(), 1, "link resolves each base: {clean:?}");
+    assert!(shortcut.iter().flatten().all(|t| !t.ends_with(".Body")), "the loop's `b` is no Body: {shortcut:?}");
+    assert_eq!(clean, shortcut, "the shortcut reads as the clean side");
+    let body = |g: &Graph| -> Vec<String> {
+        link(g).sites.iter().flat_map(|s| s.gives.clone()).filter(|h| h.ty.ends_with(".Body")).map(|h| h.name).collect()
+    };
+    assert_eq!(body(&p.clean), ["body"]);
+    assert_eq!(body(&p.shortcut), ["b"], "the later `b` holds the Body its constructor builds");
+}
