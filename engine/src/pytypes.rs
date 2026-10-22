@@ -117,8 +117,13 @@ pub struct Value {
 
 /// The classes a type is, as written: through the containers that hold values (`tuple`,
 /// `list`, `dict`, a union) to each value's own class, but not into a class's own parameters
-/// (`ndarray[tuple[int], dtype[float64]]` is an `ndarray`).
+/// (`ndarray[tuple[int], dtype[float64]]` is an `ndarray`), nor into a pair a collection holds,
+/// which is of a type the code does not name (`list[tuple[date, float]]` holds no `date`).
 pub fn outer_classes(label: &str) -> Vec<String> {
+    classes_within(label, false)
+}
+
+fn classes_within(label: &str, in_collection: bool) -> Vec<String> {
     // split at depth 0 on `,` and `|`
     fn parts(s: &str) -> Vec<&str> {
         let (mut out, mut depth, mut start) = (vec![], 0, 0);
@@ -142,11 +147,14 @@ pub fn outer_classes(label: &str) -> Vec<String> {
             Some(i) if p.ends_with(']') => (&p[..i], Some(&p[i + 1..p.len() - 1])),
             _ => (p, None),
         };
+        let pair = crate::knowledge::PYTHON_TUPLES.contains(&head) && inner.is_some_and(|i| !i.trim_end().ends_with("..."));
         match inner {
-            Some(inner) if crate::knowledge::PYTHON_HOLDERS.contains(&head) || crate::knowledge::PYTHON_ALTERNATIVES.contains(&head) => {
-                out.extend(outer_classes(inner))
+            Some(_) if pair && in_collection => {}
+            Some(inner) if crate::knowledge::PYTHON_ALTERNATIVES.contains(&head) => out.extend(classes_within(inner, in_collection)),
+            Some(inner) if crate::knowledge::PYTHON_HOLDERS.contains(&head) => {
+                out.extend(classes_within(inner, crate::knowledge::python_collection(head) || (in_collection && !pair)))
             }
-            _ if !head.is_empty() => out.push(head.to_string()),
+            _ if !head.is_empty() && head != "..." => out.push(head.to_string()),
             _ => {}
         }
     }
@@ -1471,6 +1479,9 @@ mod tests {
     fn a_type_is_the_classes_of_the_values_it_holds() {
         assert_eq!(outer_classes("ndarray[tuple[int], dtype[float64]]"), ["ndarray"]);
         assert_eq!(outer_classes("tuple[Figure, Axes]"), ["Figure", "Axes"]);
+        assert_eq!(outer_classes("list[tuple[Station, float]]"), Vec::<String>::new());
+        assert_eq!(outer_classes("tuple[Station, Store] | None"), ["Station", "Store", "None"]);
+        assert_eq!(outer_classes("list[tuple[Station, ...]]"), ["Station"]);
         assert_eq!(outer_classes("list[Node] | None"), ["Node", "None"]);
         assert_eq!(outer_classes("dict[str, Series[Any]]"), ["str", "Series"]);
     }
