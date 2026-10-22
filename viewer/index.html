@@ -1253,7 +1253,9 @@ async function renderPlaat(mine) {
   // a bundle says how many lines it stands for, and in a union what it was; the layout keeps room for the words
   const bundleOf = info => (recounted(info) ? `×${info.was} → ×${info.n ?? 1}` : info.n > 1 ? "×" + info.n : null);
   for (const e of root.edges) { const t = bundleOf(edgeInfo.get(e.id)); if (t) (e.labels ||= []).push({text: t, width: textW(t, 6.2), height: 12}); }
-  const layout = await new ELK().layout(Object.assign(root, {layoutOptions: {"elk.algorithm": "layered", "elk.direction": "RIGHT", "elk.hierarchyHandling": "INCLUDE_CHILDREN", "elk.edgeRouting": "ORTHOGONAL", "elk.layered.spacing.nodeNodeBetweenLayers": "56", "elk.spacing.nodeNode": "16", "elk.layered.nodePlacement.strategy": "NETWORK_SIMPLEX", "elk.spacing.edgeNode": "14", "elk.layered.spacing.edgeNodeBetweenLayers": "16", "elk.layered.considerModelOrder.strategy": "NODES_AND_EDGES"}}));
+  // boxes are placed by Brandes–Köpf, which grows about linearly with the lines, so a picture of a few
+  // hundred lines opens at once; network simplex straightens long lines a little at ten times the cost
+  const layout = await new ELK().layout(Object.assign(root, {layoutOptions: {"elk.algorithm": "layered", "elk.direction": "RIGHT", "elk.hierarchyHandling": "INCLUDE_CHILDREN", "elk.edgeRouting": "ORTHOGONAL", "elk.layered.spacing.nodeNodeBetweenLayers": "56", "elk.spacing.nodeNode": "16", "elk.layered.nodePlacement.strategy": "BRANDES_KOEPF", "elk.spacing.edgeNode": "14", "elk.layered.spacing.edgeNodeBetweenLayers": "16", "elk.layered.considerModelOrder.strategy": "NODES_AND_EDGES"}}));
   if (mine !== undefined && mine !== renderSeq) return;
   g.innerHTML = ""; g.classList.remove("focus", "busy");
   PICTURE = {boxes: new Map(), lines: []};
