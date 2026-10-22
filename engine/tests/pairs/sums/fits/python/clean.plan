@@ -22,7 +22,9 @@ line main/fit/?1/Fit() > Fit@main/fit/?1 value
 line Failed@main/fit/?1 > main/fit value                           # fit hands back what either arm made
 line Fit@main/fit/?1 > main/fit value
 line main/fit > Fit | Failed@main/fit value                        # fit gives one value, the sum
-line Fit | Failed@main/fit > main/describe value                   # the match in describe's own body opens it
+known #126 line Fit | Failed@main/fit > main/describe value        # the match in describe's own body opens it
+line Fit | Failed@main/fit > main/describe/?1/Report() value         # `case Fit(score=s)`: `s` is a part of the sum
+line Fit | Failed@main/fit > main/describe/?1/Report()#2 value       # `case Failed(reason=why)`
 line main/describe/?1/Report() > Report@main/describe/?1 value
 line main/describe/?1/Report()#2 > Report@main/describe/?1 value
 line Report@main/describe/?1 > main/describe value
