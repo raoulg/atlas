@@ -528,6 +528,11 @@ impl<T> Bindings<T> {
         self.all.iter().map(|(n, _, _, v)| (n.as_str(), v))
     }
 
+    /// Every binding, by its name and the byte it is visible from.
+    pub fn all(&self) -> impl Iterator<Item = (&str, usize, &T)> {
+        self.all.iter().map(|(n, from, _, v)| (n.as_str(), *from, v))
+    }
+
     /// Every name visible at `at`, with what it holds there.
     pub fn visible(&self, at: usize) -> HashMap<String, T>
     where

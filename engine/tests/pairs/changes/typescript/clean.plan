@@ -62,17 +62,12 @@ line main/remove > Web own
 side Web right
 line Api·api > main/remove value
 
-# A library operation whose result the body does not name is a step (`out.get(k)` in `?? 0`, which then stands as a
-# choice); one whose result it names is none (`const out = new Map(m)`)
-known #130 extra choice main/counted/?1
-known #125 extra step main/counted/?1/out.get
-known #125 extra line main/counted/?1/out.get > _@main/counted/?1/out.get value
-known #125 extra line _@main/counted/?1/out.get > main/counted/set value
-known #125 extra home _@main/counted/?1/out.get main/counted
-known #125 step main/counted/Map()
-known #125 line main/counted/Map() > _·out@main/counted/Map() value
-known #125 line _·out@main/counted/Map() > main/counted/set value
-known #125 home _·out@main/counted/Map() main/counted
+# A library operation whose result the body names is a step (`const out = new Map(m)`); one whose result it does not
+# name is none, and what it gives goes into the call around it (`out.get(k) ?? 0`, whose left always runs: no choice)
+step main/counted/Map()
+line main/counted/Map() > _·out@main/counted/Map() value
+line _·out@main/counted/Map() > main/counted/set value
+home _·out@main/counted/Map() main/counted
 
 # A result the caller drops (`void remove(..)`) goes back to it
 known #134 extra line main/remove > main back

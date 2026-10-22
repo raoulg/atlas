@@ -100,7 +100,9 @@ are that step with a choice of what it is handed, no choice of where the value c
 coproduct of its arms, each injected by what decides it as the code writes it (`when not
 raw.exists()`, a `match` pattern, `otherwise`). A choice of one arm is a coproduct with the
 identity, `f + 1`: its steps run when the condition holds and nothing runs otherwise, so it is
-drawn as a choice too. A guard, a choice none of whose arms runs on past its end and that has no arm for when none
+drawn as a choice too. In `x ?? y`, `x || y` and `x && y` (Python's `or` and `and`, Rust's
+`x.unwrap_or_else(..)`) the left always runs and its value goes on where it holds, so it is no arm; the right is
+the one arm. A guard, a choice none of whose arms runs on past its end and that has no arm for when none
 is chosen (`if not xs: return Failed(..)`), is that choice with what follows it in its block as its last arm: `return
 Fit(..)` after it runs otherwise, as an `else` would write it. A repository's graph is the coproduct of its parts' graphs, glued only
 along the libraries and places of the world they share (a pushout over those): two parts whose code
