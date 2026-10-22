@@ -66,18 +66,31 @@ line cli.ts/main/load/parse > Month@cli.ts/main/load/parse value
 line Month@cli.ts/main/load/parse > cli.ts/main/load value
 line cli.ts/main/load > Month·series@cli.ts/main/load value
 
-known #126 line Month·series@cli.ts/main/load > cli.ts/main/smooth value   # `series.slice(..)`; the body uses it itself, and a step inside takes it too
+known #126 line Month·series@cli.ts/main/load > cli.ts/main/smooth value # `series.slice(..)`; the body uses it itself, and a step inside takes it too
 line Settings·settings@cli.ts/main/Settings() > cli.ts/main/smooth value  # `settings.months`, handed as `months`
 known #128 line Settings·settings@cli.ts/main/Settings() > cli.ts/main/smooth/floor value
 line cli.ts/main/smooth/floor > _·before@cli.ts/main/smooth/floor value
 known #101 line _·before@cli.ts/main/smooth/floor > cli.ts/main/smooth value    # `series.slice(before, ..)`
-line Month·series@cli.ts/main/load > cli.ts/main/smooth/average value
-line cli.ts/main/smooth/average > cli.ts/main/smooth back   # the mean goes into the Smoothed `smooth` makes; `map`, no step, takes it
+line Month·series@cli.ts/main/load > cli.ts/main/smooth/average value # handed series.slice(..), which is no step
+line cli.ts/main/smooth/average > cli.ts/main/smooth back # the mean goes into the Smoothed `smooth` makes; `map`, no step, takes it
 line cli.ts/main/smooth > Smoothed·smoothed@cli.ts/main/smooth value
 
 known #126 line Month·series@cli.ts/main/load > cli.ts/main/trend value   # `series[0]`, `path(series)`; the body uses it itself, and a step inside takes it too
 line Smoothed·smoothed@cli.ts/main/smooth > cli.ts/main/trend value
 known #126 line Settings·settings@cli.ts/main/Settings() > cli.ts/main/trend value   # the body uses it itself, and a step inside takes it too
+known #128 line Month·series@cli.ts/main/load > cli.ts/main/trend/series.at value # the array `at` runs on is not handed
+known #128 line Month·series@cli.ts/main/load > cli.ts/main/trend/range value      # `series[0].date`
+known #128 line Settings·settings@cli.ts/main/Settings() > cli.ts/main/trend/range value   # `width`
+known #125 line Month·series@cli.ts/main/load > cli.ts/main/trend/range#2 value    # `series.map(..)` in its domain
+known #128 line Settings·settings@cli.ts/main/Settings() > cli.ts/main/trend/range#2 value # `bottom`
+known #125 line _·x@cli.ts/main/trend/range > cli.ts/main/trend/line value         # `(month) => x(month.date)`
+known #125 line _·y@cli.ts/main/trend/range#2 > cli.ts/main/trend/line value
+known #101 line _·path@cli.ts/main/trend/line > cli.ts/main/trend value           # `path(series)`, `path(smoothed)`
+known #125 line _·x@cli.ts/main/trend/range > cli.ts/main/trend/map value          # `x.ticks(10)`, `x(t)`
+known #128 line Settings·settings@cli.ts/main/Settings() > cli.ts/main/trend/map value     # `bottom + 18`
+known #101 line _·years@cli.ts/main/trend/map > cli.ts/main/trend value
+known #125 line _·y@cli.ts/main/trend/range#2 > cli.ts/main/trend/map#2 value      # `y.ticks(5)`, `y(n)`
+known #101 line _·counts@cli.ts/main/trend/map#2 > cli.ts/main/trend value
 line Settings·settings@cli.ts/main/Settings() > cli.ts/main/trend/?1/escape value   # `escape(settings.title)`
 line cli.ts/main/trend/?1/escape > cli.ts/main/trend back
 line Month·series@cli.ts/main/load > cli.ts/main/trend/at value

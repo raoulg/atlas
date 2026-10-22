@@ -32,8 +32,12 @@ One fact per line; `#` starts a comment, at the start of a line or after a space
 **Occurrences.** A path is the route's name and the step labels below it: `run/tidy/strip`. A constructor is `Table()`,
 a method `Class.method`, an override in a call into a family `Circle.draw` below the call. A choice is `?1`, `?2` in
 order in its body, and its arms stand below it (`pick/?1/load_csv`). A second call of one name in one body is
-`write_to#2`. In `F` every occurrence with calls is open. As the end of a line it is its own arrow, a point on its
-border that keeps what the body itself takes and what it gives back, at the step's moment. A value the step's call is
+`write_to#2`. Building a class runs the initializer along its order, and the step that builds it opens into that body
+(`run/Audit()/stamp`), never into the class's methods; an initializer another calls (`super(text)`) builds nothing. An
+override in a call into a family takes what the call is handed and runs on what the call runs on. In `F` every
+occurrence with calls is open. As the end of a line it is its own arrow, a point on its border that keeps what the body
+itself takes and what it gives back, at the step's moment: what the body's own code uses outside its steps
+(`print(store.path)`, `if done:`), of a value made inside or handed in, is a line to it. A value the step's call is
 handed crosses the frame to the step inside that takes it. A call into a library the program does not read is an
 occurrence where the body names what it gives (`con = duckdb.connect(path)`) or where it changes the value it runs on
 (`rows.append(row)`), labelled by the operation (`connect`, `append`); otherwise what it gives goes into the call around
@@ -47,12 +51,14 @@ named before it (`pick/?1` in a body, `Store()/Store.get/?` for the overrides a 
 call); what one arm makes and uses itself is its maker's. A value no step makes, from beyond, has no moment. A route's
 parameters are values from its start, by their names: `Circle·c`. In the route of an exported class each public method
 is called by the entry and runs on the caller's instance, one value from beyond (`Store`); what the constructor door
-builds goes back to the caller. What a step reads back inside itself of what its own
+builds goes back to the caller. A door takes its parameters by their names, as a route does; two doors' parameters are
+two values (`Day·day`, `Day·day#2`). What a step reads back inside itself of what its own
 writers wrote is `PLACE in STEP` (`File(cache.json) in main/refresh`), made by the writers and taken by the reader.
 Two values the names do not tell apart are told apart by a count, `#2`. A call is handed the values the names in its
 arguments hold: `f(x.name)` is handed `x` (a projection is no occurrence; it is glued into the call). A nested call that
 is a step of its own takes its names itself, and the call around it is handed what that step gives. A projection bound to
-a name first is still the projection (`width = settings.width; f(width)` hands `settings`). An error is a value: its
+a name first is still the projection (`width = settings.width; f(width)` hands `settings`), and so is a parameter its call
+fills through one: inside a step, a parameter holds what its call hands it. An error is a value: its
 constructor makes it in the arm that raises it, and each border it crosses uncaught hands it on, up to the route.
 
 **Places.** A place is drawn as Atlas names it: `File(data/out.csv)`, `Screen`, `Disk(bump.path)`, `entry` (where the
@@ -90,6 +96,7 @@ smallest that showed one law:
 | `two-of-one-type` | the route's own parameters are values from its start (Z7) |
 | `two-callers` | what a step reaches is the closure of its calls in the occurrences, not the functions (R1) |
 | `builds-a-class` | building an object runs its constructor, not its methods (R2) |
+| `builds-a-subclass` | building a subclass without an initializer of its own runs its base's, and opens into it |
 | `path-hole` | a directory no code decides is a hole in the path (R3) |
 | `path-pattern` | a pattern below a directory is one place, for the listing and for what is read of what it yields (R3) |
 | `check-after-fill` | a place read only to check it stays in the codomain, also where an arm filled it first (R4) |

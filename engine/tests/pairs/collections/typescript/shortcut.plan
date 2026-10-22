@@ -13,7 +13,7 @@ line entry > Store()/Store.put call
 step Store()/Store.put/Store.rows
 step Store()/Store.put/Store.rows/Reading()
 step Store()/Store.put/Store.rows/Row()
-known #74 line Store > Store()/Store.put/Store.rows value
+line Store > Store()/Store.put/Store.rows value
 line Disk(Store.path) > Store()/Store.put/Store.rows own
 line Store()/Store.put/Store.rows/Reading() > Reading@Store()/Store.put/Store.rows/Reading() value
 line Reading@Store()/Store.put/Store.rows/Reading() > Store()/Store.put/Store.rows/Row() value
@@ -29,15 +29,14 @@ line Row·rows@Store()/Store.put/Store.rows > Store()/Store.put/push value
 line Row@Store()/Store.put/Row() > Store()/Store.put/push value
 line Store()/Store.put/push > Row·rows@Store()/Store.put/push value
 line Row·rows@Store()/Store.put/push > Store()/Store.put/writeRows value  # `rows.map(..)`, no step, is the body's own use
-known #74 line Store > Store()/Store.put/writeRows value  # `writeRows(this.path, rows)` hands the caller's instance
-known #74 extra line Store@Store()/Store() > Store()/Store.put/writeRows value   # Atlas runs it on what the constructor built
+line Store > Store()/Store.put/writeRows value # `writeRows(this.path, rows)` hands the caller's instance
 line Store()/Store.put/writeRows > Disk(Store.path) own
 step Store()/Store.putAll
 line entry > Store()/Store.putAll call
 step Store()/Store.putAll/Store.rows
 step Store()/Store.putAll/Store.rows/Reading()
 step Store()/Store.putAll/Store.rows/Row()
-known #74 line Store > Store()/Store.putAll/Store.rows value
+line Store > Store()/Store.putAll/Store.rows value
 line Disk(Store.path) > Store()/Store.putAll/Store.rows own
 line Store()/Store.putAll/Store.rows/Reading() > Reading@Store()/Store.putAll/Store.rows/Reading() value
 line Reading@Store()/Store.putAll/Store.rows/Reading() > Store()/Store.putAll/Store.rows/Row() value
@@ -52,12 +51,11 @@ line Row·rows@Store()/Store.putAll/Store.rows > Store()/Store.putAll/push value
 line Row@Store()/Store.putAll/Row() > Store()/Store.putAll/push value
 line Store()/Store.putAll/push > Row·rows@Store()/Store.putAll/push value
 line Row·rows@Store()/Store.putAll/push > Store()/Store.putAll/writeRows value  # `rows.map(..)`, no step, is the body's own use
-known #74 line Store > Store()/Store.putAll/writeRows value  # `writeRows(this.path, rows)` hands the caller's instance
-known #74 extra line Store@Store()/Store() > Store()/Store.putAll/writeRows value   # Atlas runs it on what the constructor built
+line Store > Store()/Store.putAll/writeRows value # `writeRows(this.path, rows)` hands the caller's instance
 line Store()/Store.putAll/writeRows > Disk(Store.path) own
 step Store()/Store.get
 line entry > Store()/Store.get call
-known #74 line Store > Store()/Store.get value  # get reads the store's path itself
+line Store > Store()/Store.get value # get reads the store's path itself
 line Disk(Store.path) > Store()/Store.get own
 
 home Store@Store()/Store() Store()
@@ -72,7 +70,7 @@ home Row·rows@Store()/Store.putAll/Store.rows Store()/Store.putAll
 home Row@Store()/Store.putAll/Row() Store()/Store.putAll
 home Row·rows@Store()/Store.putAll/push Store()/Store.putAll
 home Reading·reading Store()
-known #74 home Store Store()
+home Store Store()
 home Reading·readings Store()
 
 home Reading·reading@Store()/Store.putAll/for reading of readings Store()/Store.putAll
@@ -84,10 +82,8 @@ side entry left
 side Disk(Store.path) both
 
 # What Atlas gets wrong here, each by the issue of its cause:
+# K: a value handed through a field reaches no step inside: `writeRows(this.path, rows)` hands `this` (#121, decision
+#    1), and the helper takes no Store
 # #74: the doors run on what the constructor door built, not on the caller's instance `Store` from beyond (#121,
 #    decision 2): the constructor's Store goes back to the caller and is joined to no door
-
 # #74
-known #74 extra line Store@Store()/Store() > Store()/Store.put/Store.rows value
-known #74 extra line Store@Store()/Store() > Store()/Store.putAll/Store.rows value
-known #74 extra line Store@Store()/Store() > Store()/Store.get value

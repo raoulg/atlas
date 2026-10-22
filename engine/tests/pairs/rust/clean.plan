@@ -284,8 +284,6 @@ side Screen right
 # ---- what Atlas has and should not ----
 # a value one arm of the choice makes, and only that arm takes, has the choice's moment; two (`Rates·rates`) become one
 # a value handed to a call into a family ends at the dispatch's border
-known #100 extra line Render@main/?1/Format.renderer > main/?1/write/Render.extension value
-known #100 extra line Render@main/?1/Format.renderer > main/?1/write/Render.render value
 # the format the arm's pattern binds out of `cli` comes from beyond
 # an own arrow takes what only a step inside it takes, and a value is not followed into the operation a body hands it to
 known #126 extra line Config·config@main/Config.load > main/?1/RatesClient.latest value
@@ -310,7 +308,6 @@ known #138 home Error@main/?1/read_csv/Expense.parse/?1/Money.parse main/?1/read
 known #138 home Error@main/?1/read_csv/Expense.parse main/?1/read_csv
 known #138 home Error@main/?1 main
 known #138 home Error@main main
-
 
 # ---- each loop is a step: it takes what it runs over and makes the element (#103) ----
 step main/?1/Store.save/for e in expenses
@@ -348,6 +345,4 @@ line Expense@main/?1/Store.expenses > main/?1/lines/for e in expenses value
 line Rates·rates@main/?1/RatesClient.latest > main/?1/Store.save_rates/for (currency, rate) in &rates.rates value
 line Line·lines@main/?1/lines > main/?1/write/Render.render/Csv.render/for l in lines value
 line Line·lines@main/?1/lines > main/?1/write/Render.render/Markdown.render/for l in lines value
-known #127 extra home Format main/?1   # the parameter takes what the call is handed by its kind, not the projection it is handed
-known #127 extra line Cli·cli@main/Cli() > main/?1/read_csv value   # the parameter takes what the call is handed by its kind, not the projection it is handed
-known #127 extra line Format > main/?1/Format.renderer value   # the parameter takes what the call is handed by its kind, not the projection it is handed
+known #128 extra line Cli·cli@main/Cli() > main/?1/read_csv value   # `fs::read_to_string(path)` is handed nothing of `path`, the projection of cli

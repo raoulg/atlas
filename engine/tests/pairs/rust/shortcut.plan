@@ -204,12 +204,9 @@ side Screen right
 # ---- what Atlas has and should not ----
 # a value one arm of the choice makes, and only that arm takes, has the choice's moment
 # the parameter of a sum type is not the value its call is handed: it comes from beyond
-known #127 extra line Result<Value, reqwest::Error> > main/?1/run/?1/Store.save_rates value
-known #127 extra home Result<Value, reqwest::Error> main/?1
 # the name a chain's last operation gives is given to every call in the chain
 # an environment variable with a fallback puts the read of the variable in a choice, though it always runs
 # an own arrow takes what only a step inside it takes; a result that only a step takes is no result handed back
-
 
 # ---- each loop is a step: it takes what it runs over and makes the element (#103) ----
 step main/?1/run/?1/Store.save/for e in expenses

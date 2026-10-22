@@ -10,18 +10,11 @@ step Source()/Source.read/Feed.read
 step Source()/Source.read/Tape.read
 
 line entry > Source()/Source.read call
-known #100 line Source > Source()/Source.read/Feed.read value
-known #100 line Source > Source()/Source.read/Tape.read value
+line Source > Source()/Source.read/Feed.read value
+line Source > Source()/Source.read/Tape.read value
 line Source()/Source.read/Feed.read > Source()/Source.read back
 line Source()/Source.read/Tape.read > Source()/Source.read back
 
 home Source Source()
 
 side entry left
-
-# each override takes a value of its own class from beyond, and the Source ends at the border of the dispatch
-known #100 extra line Source > Source()/Source.read value
-known #100 extra line Feed > Source()/Source.read/Feed.read value
-known #100 extra line Tape > Source()/Source.read/Tape.read value
-known #100 extra home Feed Source()
-known #100 extra home Tape Source()

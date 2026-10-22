@@ -74,17 +74,16 @@ side entry left
 # A library operation that changes the value it runs on is a step: on a part of `self` it changes the instance the
 # method runs on (`self.cells.extend(..)`), on a parameter itself (`tags.append(tag)`) the list, of no type of the
 # code's (`_`), and so is a function that changes the list it is handed (`heapq.heappush`). Inside the
-# step `self` is bound by its kind, not to the board the call runs on (#127), and the own arrow does not hand on what
-# the change made (#129)
+# step `self` is the board the call runs on; the own arrow does not hand on what the change made (#129)
 step main/Board.take_from/extend
 step main/Board.take_victim/extend
 step main/add_tag/append
 line Board·other@main/Board()#2 > main/Board.take_from/extend value
-known #127 line Board·board@main/reset > main/Board.take_from/extend value
+line Board·board@main/reset > main/Board.take_from/extend value
 line main/Board.take_from/extend > Board·self@main/Board.take_from/extend value
 known #129 line Board·self@main/Board.take_from/extend > main/Board.take_from value
 line Board·other@main/Board.take_from > main/Board.take_victim/extend value
-known #127 line Board·board@main/Board.take_from > main/Board.take_victim/extend value
+known #129 line Board·board@main/Board.take_from > main/Board.take_victim/extend value
 line main/Board.take_victim/extend > Board·self@main/Board.take_victim/extend value
 known #129 line Board·self@main/Board.take_victim/extend > main/Board.take_victim value
 line main/add_tag/append > _·tags@main/add_tag/append value
@@ -96,18 +95,17 @@ step main/queue/heappush                                    # `heapq.heappush(jo
 line main/queue/heappush > _·jobs@main/queue/heappush value
 home _·jobs@main/queue/heappush main/queue
 
+# A callee's parameter holds what its call hands it: `take_from`'s `other` is main's board, `take_victim`'s `victim`
+# main's board as take_from left it, `merge_scores`' `board` main's other; what each changes of it goes out at its border
+line Board·board@main/reset > main/Board.take_from/clear value
+line Board·other@main/Board.take_from/clear > main/Board.take_from value
+known #129 line Board·board@main/Board.take_from > main/Board.take_victim/clear value
+line Board·victim@main/Board.take_victim/clear > main/Board.take_victim value
+line Board·other@main/Board.take_victim > main/merge_scores/update value
+line Board·board@main/merge_scores/update > main/merge_scores value
 # A callee's parameter is bound to the caller's value of that name, or to the latest of its type, not to what the call
 # is handed: `take_from`'s `other` (main's board) to main's `other`, `take_victim`'s `victim` to main's other,
 # `merge_scores`' `board` (main's other) to main's `board`
-known #127 line Board·board@main/reset > main/Board.take_from/clear value
-known #127 line Board·other@main/Board.take_from/clear > main/Board.take_from value
-known #127 line Board·board@main/Board.take_from > main/Board.take_victim/clear value
-known #127 line Board·victim@main/Board.take_victim/clear > main/Board.take_victim value
-known #127 line Board·other@main/Board.take_victim > main/merge_scores/update value
-known #127 line Board·board@main/merge_scores/update > main/merge_scores value
-known #127 extra line Board·other@main/Board()#2 > main/Board.take_from/clear value
-known #127 extra line Board·board@main/reset > main/Board.take_from value
-known #127 extra line Board·board@main/reset > main/merge_scores/update value
 
 # A changed argument is not the caller's value at a new moment: it is named by the callee's parameter (`take_from`
 # names main's board `other`), two changes of one type collapse into one value (`swap`), so the next step takes the
@@ -128,7 +126,6 @@ known #129 home list·tags@main/add_tag main
 known #129 home dict·counts@main/count main
 known #129 home list·jobs@main/queue main
 known #129 home list·xs@main/extend main
-known #129 extra line Board·board@main/reset > main/Board.take_victim value
 known #129 extra line Board·board@main/reset > main/swap value
 known #129 extra line Board·other@main/merge_scores > main/rename value
 known #129 extra line main/add_tag > list@main/add_tag value
@@ -140,18 +137,11 @@ known #129 extra home dict@main/count main
 known #129 extra home list@main/queue main
 known #129 extra home list@main/extend main
 
-# A method that changes its receiver hands it on twice: unnamed from its arrow's change, and named; the next step takes
-# the second
-known #129 extra line Board·other@main/Board.take_victim > main/merge_scores value
-
 # A step that changes an input loses the result of no type it gives back: no `back`, and the caller takes the changed
 # input instead
 line main/rename > main back
 line main/extend > main back
 known #129 extra line Board·other@main/rename > main value
-
-# The own arrow takes a value its body only hands to a step inside it: the Cell built into `[Cell()]` for `Board()`
-known #126 extra line Cell@main/Cell() > main value
 
 # `main` reads the lengths of the list and dicts its steps changed
 known #101 line list·tags@main/add_tag > main value
@@ -165,4 +155,7 @@ known #101 line Cell·cell@main/mark_all/for cell in board.cells > main/mark_all
 # a result the caller drops goes back to it: the reader does not say the call is a statement of its own
 known #134 extra line main/Board.take_from > main back
 known #134 extra line main/Board.take_victim > main back
-known #127 extra line Board·self@main/Board.take_victim/extend > main/Board.take_victim/clear value
+
+# take_victim's victim is the board the call hands, stale (#129); its own arrow takes the receiver that extend, no step yet, runs on (#125)
+known #129 extra line Board·board@main/reset > main/Board.take_victim/clear value
+known #129 extra line Board·board@main/reset > main/Board.take_victim/extend value

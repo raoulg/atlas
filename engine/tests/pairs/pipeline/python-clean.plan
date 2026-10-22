@@ -2,7 +2,6 @@
 # draws, and the figure `draw` makes stays inside `save`, which writes it. The places are made whole at the command: the
 # raw file is filled only where it is missing, in an arm, so it stands between the download and the reading.
 
-
 route sunspots.cli.run
 step run/Settings()
 choice run/?1

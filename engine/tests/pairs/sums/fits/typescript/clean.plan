@@ -8,25 +8,16 @@ step describe/?1/Report()                                         # `return { li
 step describe/?1/Report()#2                            # what follows the early return is the other arm
 
 line entry > describe call
-known #127 line Fit | Failed·r > describe value                    # the route's parameter, by its name
-known #127 line Fit | Failed·r > describe/?1/Report() value        # `r.score`
-known #127 line Fit | Failed·r > describe/?1/Report()#2 value      # `r.reason`
-line describe/?1/Report() > Report@describe/?1 value   # with the other arm's Report, the value either arm makes
+line Fit | Failed·r > describe value # the route's parameter, by its name
+line Fit | Failed·r > describe/?1/Report() value # `r.score`
+line Fit | Failed·r > describe/?1/Report()#2 value # `r.reason`
+line describe/?1/Report() > Report@describe/?1 value # with the other arm's Report, the value either arm makes
 line describe/?1/Report()#2 > Report@describe/?1 value
 line Report@describe/?1 > describe value
 line describe > Report@describe value                             # the result goes on to the caller
 
-known #127 home Fit | Failed·r describe
+home Fit | Failed·r describe
 home Report@describe/?1 describe
 home Report@describe describe
 
 side entry left
-
-# a parameter whose type is a sum written in place keeps no name, and is taken as one of its variants
-known #127 extra line Fit | Failed > describe value
-known #127 extra home Fit | Failed describe
-
-# the route's parameter is taken as the variant its type names first, by its name
-known #127 extra line Fit·r > describe/?1/Report() value
-known #127 extra line Fit·r > describe/?1/Report()#2 value
-known #127 extra home Fit·r describe/?1

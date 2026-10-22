@@ -1,8 +1,8 @@
 # A job run in one of two modes. Each choice is made once, in a place with a name: what a mode means is one table
 # (`PLANS`), how a level marks a line another (`MARKS`, read by `Report.line`); where the job comes from is the body of
-# `source`; `report` builds its Message by one constructor in either arm. The settings are the route's own value: a
-# call handed `settings.mode` or `settings.level` is handed the settings, the projection glued into the call; inside,
-# the parameter that holds the field is the value its steps take.
+# `source`; `report` builds its Message by one constructor in either arm. The settings are the route's own value: a call
+# handed `settings.mode` or `settings.level` is handed the settings, the projection glued into the call; inside, the
+# parameter that holds the field is still the projection: its steps are handed the settings.
 
 route runs.runs.run
 step run/source
@@ -39,18 +39,17 @@ line Job·job@run/source > run/report/?1/Report.line value           # its name,
 line Job·job@run/source > run/report/?1/Message()#2 value           # its name, unmarked
 
 # whether it finished: a Runner for the mode, and the mode's timeout
-line Settings·settings > run/finished value                       # finished looks up the mode's plan itself
-line Mode·mode > run/finished/Runner() value
+known #126 line Settings·settings > run/finished value # finished looks up the mode's plan itself
+line Settings·settings > run/finished/Runner() value
 line run/finished/Runner() > Runner@run/finished/Runner() value
 line Runner@run/finished/Runner() > run/finished/Runner.batch value
 line run/finished/Runner.batch > run/finished back
 line run/finished > _@run/finished value                           # the boolean, handed straight to report
 line _@run/finished > run/report value
-line Settings·settings > run/report value                         # its level, held by report's `level`
 
 # the line that says how it went: a Report for the level marks it in one arm, and the marked string goes into the
 # Message built around it
-line Level·level > run/report/?1/Report() value
+line Settings·settings > run/report/?1/Report() value
 line run/report/?1/Report() > Report@run/report/?1/Report() value
 line Report@run/report/?1/Report() > run/report/?1/Report.line value
 line run/report/?1/Report.line > _@run/report/?1/Report.line value
@@ -63,8 +62,6 @@ line run/report/send > run/report back
 line run/report > run back
 
 home Settings·settings run
-home Mode·mode run
-home Level·level run
 home Job@run/source/?1/load/Job() run/source/?1/load
 home Job@run/source/?1/infer/Job() run/source/?1/infer
 home Job@run/source/?1 run/source
@@ -79,4 +76,3 @@ side entry left
 side Screen right
 
 # an opened step's own arrow takes what its steps make, or what its call is handed, though only a step inside takes it
-known #126 extra line Job·job@run/source > run value
