@@ -63,4 +63,4 @@ known #127 extra home Decimal Ledger()
 
 # what the constructor builds goes back to its caller: Atlas runs the methods on it instead of the caller's instance
 known #74 extra line Ledger@Ledger()/Ledger.new > Ledger()/Ledger.put value
-known #74 extra line Ledger@Ledger()/Ledger.new > Ledger()/Ledger.get value
+known #74 extra line Ledger@Ledger()/Ledger.new > Ledger()/Ledger.get/read_to_string value   # the caller's instance, not the one new built, is handed through self

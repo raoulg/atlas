@@ -69,6 +69,16 @@ fn place_literals(n: TsNode, src: &[u8]) -> Vec<String> {
     }
 }
 
+/// What a call calls: its function, and through a turbofish the method it names (`collect` of
+/// `rows.collect::<Vec<_>>()`), as the call without it writes it.
+fn function(c: TsNode) -> Option<TsNode> {
+    let f = c.child_by_field_name("function")?;
+    match f.child_by_field_name("function").filter(|m| f.kind() == "generic_function" && m.kind() == "field_expression") {
+        Some(method) => Some(method),
+        None => Some(f),
+    }
+}
+
 /// The kinds of node a pattern is built of, between a name it binds and what binds it.
 const PATTERNS: &[&str] = &[
     "identifier",
@@ -145,9 +155,7 @@ fn kept_as(c: TsNode, src: &[u8]) -> Vec<(String, usize)> {
             }
             "arguments"
                 if p.named_child_count() == 1
-                    && p.parent()
-                        .and_then(|c| c.child_by_field_name("function"))
-                        .map_or(false, |f| matches!(text(f, src), "Some" | "Ok" | "Err")) =>
+                    && p.parent().and_then(|c| function(c)).map_or(false, |f| matches!(text(f, src), "Some" | "Ok" | "Err")) =>
             {
                 match p.parent() {
                     Some(call) => n = call,
@@ -242,7 +250,7 @@ fn library_chain<'t>(
                 locals += 1;
             }
             "call_expression" => {
-                let f = v.child_by_field_name("function")?;
+                let f = function(v)?;
                 if f.kind() == "field_expression" {
                     let call = (text(f.child_by_field_name("field")?, src).to_string(), v);
                     if locals == 0 {
@@ -540,6 +548,8 @@ pub(super) struct Body<'a, 't> {
     locals: Bindings<String>,
     /// The locals a call made, by the call: `let c = reqwest::Client::new()`.
     made_by: Bindings<TsNode<'t>>,
+    /// The names bound `mut`: what a method changes in place.
+    mutable: Bindings<()>,
     /// The locals bound to the value another name holds, through what hands it on unchanged (`let
     /// record: Record = result?`): that name, where it is used.
     aliases: Bindings<(String, usize)>,
@@ -593,6 +603,7 @@ impl<'a, 't> Body<'a, 't> {
             cls,
             locals: Bindings::default(),
             made_by: Bindings::default(),
+            mutable: Bindings::default(),
             aliases: Bindings::default(),
             attr_types,
             foreign: Bindings::default(),
@@ -804,6 +815,9 @@ impl<'a, 't> Body<'a, 't> {
             let Some(pat) = l.child_by_field_name("pattern").filter(|p| matches!(p.kind(), "identifier" | "mut_pattern")) else { continue };
             let name = text(pat, src).trim_start_matches("mut ").to_string();
             let Some((from, to)) = scope(pat) else { continue };
+            if pat.kind() == "mut_pattern" || named_children(l).iter().any(|x| x.kind() == "mutable_specifier") {
+                self.mutable.bind(&name, from, to, ());
+            }
             let declared = type_names(l.child_by_field_name("type"), src);
             if let Some(t) = declared.iter().find_map(|t| self.resolve(t).filter(|r| r.starts_with("ext:"))) {
                 self.foreign.bind(&name, from, to, t);
@@ -814,7 +828,7 @@ impl<'a, 't> Body<'a, 't> {
                 value = match v.kind() {
                     k if WRAPPERS.contains(&k) => wrapped(v),
                     "unary_expression" => named_children(v).into_iter().next(),
-                    "call_expression" => match v.child_by_field_name("function") {
+                    "call_expression" => match function(v) {
                         Some(f)
                             if f.kind() == "field_expression"
                                 && f.child_by_field_name("field").map_or(false, |x| knowledge::hands_on(text(x, src))) =>
@@ -833,7 +847,7 @@ impl<'a, 't> Body<'a, 't> {
                 while let Some(owner) = (held.kind() == "field_expression").then(|| held.child_by_field_name("value")).flatten() {
                     held = beneath(owner, WRAPPERS);
                 }
-                if held.kind() == "identifier" {
+                if matches!(held.kind(), "identifier" | "self") {
                     self.aliases.bind(&name, from, to, (text(held, src).to_string(), held.start_byte()));
                 }
             }
@@ -914,7 +928,7 @@ impl<'a, 't> Body<'a, 't> {
         while let Some(v) = over {
             over = match v.kind() {
                 k if WRAPPERS.contains(&k) => wrapped(v),
-                "call_expression" => v.child_by_field_name("function").filter(|f| {
+                "call_expression" => function(v).filter(|f| {
                     f.kind() == "field_expression"
                         && f.child_by_field_name("field").map_or(false, |x| {
                             knowledge::RUST_ELEMENTS.contains(&text(x, src)) || knowledge::RUST_KEEPS_ELEMENTS.contains(&text(x, src))
@@ -1017,7 +1031,7 @@ impl<'a, 't> Body<'a, 't> {
     /// the class its receiver holds, or one its path names.
     fn callee(&self, c: TsNode) -> Option<(String, bool)> {
         let src = self.src;
-        let f = c.child_by_field_name("function")?;
+        let f = function(c)?;
         let own = |t: String| self.store.nodes.get(&t).filter(|n| matches!(n.kind, NodeKind::Function | NodeKind::Method)).map(|_| t);
         if f.kind() == "field_expression" {
             let class = self.value_class(f.child_by_field_name("value")?)?;
@@ -1041,8 +1055,8 @@ impl<'a, 't> Body<'a, 't> {
             "self" => self.cls.clone(),
             "identifier" => self.locals.get(text(v, src), v.start_byte()).cloned(),
             "struct_expression" => self.resolve(&path_parts(v.child_by_field_name("name"), src)).and_then(|r| self.class_of(&r)),
-            "call_expression" if v.child_by_field_name("function").map_or(false, |f| f.kind() == "field_expression") => {
-                let f = v.child_by_field_name("function")?;
+            "call_expression" if function(v).map_or(false, |f| f.kind() == "field_expression") => {
+                let f = function(v)?;
                 let on = self.value_class(f.child_by_field_name("value")?)?;
                 let name = f.child_by_field_name("field").map(|x| text(x, src)).unwrap_or("");
                 match self.store.method_of(&on, name) {
@@ -1053,7 +1067,7 @@ impl<'a, 't> Body<'a, 't> {
                 }
             }
             "call_expression" => {
-                let parts = path_parts(v.child_by_field_name("function"), src);
+                let parts = path_parts(function(v), src);
                 if parts.is_empty() {
                     return None;
                 }
@@ -1086,16 +1100,36 @@ impl<'a, 't> Body<'a, 't> {
     }
 
     /// What a call is handed: the value it is called on, its arguments, a literal's fields.
+    /// The instance the body runs on is handed where an argument names it or a part of it
+    /// (`fs::read_to_string(&self.path)`, `let conn = &self.conn; conn.prepare(..)`), as a value of
+    /// its class no name of the body holds; a call made on `self` itself runs on it instead.
     fn hands(&self, parts: &[Option<TsNode>], kept: &HashSet<String>) -> Vec<Held> {
         let ty_of = |n: TsNode| {
             let (name, at) = self.holder(text(n, self.src), n.start_byte());
-            let ty = self.held_type(&name, at);
-            (name, ty)
+            match name.as_str() {
+                "self" => (String::new(), self.cls.clone()),
+                _ => {
+                    let ty = self.held_type(&name, at);
+                    (name, ty)
+                }
+            }
         };
         let mut out: Vec<Held> = vec![];
+        // the receiver a method called by its path runs on is its first argument (`Self::raw(self)`)
+        let runs_on: Vec<usize> =
+            parts.iter().flatten().map(|p| beneath(*p, WRAPPERS)).filter(|p| p.kind() == "self").map(|p| p.id()).collect();
         for p in parts.iter().flatten() {
-            for h in crate::tree::held_at(*p, self.src, &["self"], &ty_of, kept) {
-                if !out.contains(&h) {
+            let mut held = crate::tree::held_at(*p, self.src, &["self"], &ty_of, kept);
+            if beneath(*p, WRAPPERS).kind() != "self" {
+                held.extend(
+                    walk(*p, &["self"])
+                        .into_iter()
+                        .filter(|s| !runs_on.contains(&s.id()))
+                        .filter_map(|s| Some(Held { ty: self.cls.clone()?, name: String::new(), at: s.start_byte() as u32 })),
+                );
+            }
+            for h in held {
+                if !out.iter().any(|o| o.ty == h.ty && o.name == h.name && (o.at == h.at || h.name.is_empty())) {
                     out.push(h);
                 }
             }
@@ -1151,7 +1185,7 @@ impl<'a, 't> Body<'a, 't> {
         if c.kind() == "token_tree" {
             return self.token_call(steps, c);
         }
-        let Some(f) = c.child_by_field_name("function") else { return };
+        let Some(f) = function(c) else { return };
         self.handed_on(steps, c);
         if f.kind() == "field_expression" {
             self.method_call(steps, c, f);
@@ -1255,7 +1289,7 @@ impl<'a, 't> Body<'a, 't> {
     /// a function or a type's by its path (`serde_json.from_str`, `regex.Regex.new`), or a method
     /// of the library type of the value it is called on (`regex.Regex.is_match`).
     pub(super) fn library_target(&self, c: TsNode<'t>) -> Option<Vec<String>> {
-        let f = c.child_by_field_name("function")?;
+        let f = function(c)?;
         if f.kind() == "field_expression" {
             if self.callee(c).is_some() {
                 return None;
@@ -1342,7 +1376,7 @@ impl<'a, 't> Body<'a, 't> {
         // a method called by its path is handed the value it runs on first
         let by_path = match c.kind() {
             "token_tree" => matches!(token_callee(c, self.src), Some(Called::Path(_))),
-            _ => c.child_by_field_name("function").map_or(false, |f| f.kind() != "field_expression"),
+            _ => function(c).map_or(false, |f| f.kind() != "field_expression"),
         };
         if let Some(arg) = self.argument(c, t, recv.is_some() && !by_path) {
             self.read.args.push(arg);
@@ -1416,7 +1450,17 @@ impl<'a, 't> Body<'a, 't> {
         let own = receiver.as_deref().and_then(|r| self.store.method_of(r, &method)).filter(|t| !t.starts_with("ext:"));
         if own.is_none() && self.changes_library_value(value, &method) {
             let hands = self.call_hands(c, Some(value), &steps.kept);
-            let changed = self.hands(&[Some(value)], &steps.kept);
+            let mut changed = self.hands(&[Some(value)], &steps.kept);
+            // a name no step made, a collection a macro built (`vec![]`), holds what is put into it
+            if changed.is_empty() && value.kind() == "identifier" {
+                let put = c
+                    .child_by_field_name("arguments")
+                    .map(named_children)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .find_map(|a| self.value_class(a));
+                changed.push(Held::new(put.unwrap_or_default(), text(value, src)));
+            }
             steps.changes(c, &method, hands, self.gives(c, None), changed);
             return;
         }
@@ -1450,7 +1494,7 @@ impl<'a, 't> Body<'a, 't> {
             Some(ty) => ty,
             None => match library_chain(value, self.m, self.src, &self.made_by, &|v| self.declared(v)) {
                 Some(made) => made.ty,
-                None => return false,
+                None => return self.changed_in_place(value, method),
             },
         };
         let Some(t) = self.resolve(&ty) else { return false };
@@ -1461,6 +1505,16 @@ impl<'a, 't> Body<'a, 't> {
             None => return false,
         };
         knowledge::mutates(knowledge::Registry::Crates, krate, method)
+    }
+
+    /// Whether `method` changes a name bound `mut` it is called on, whose type the body does not
+    /// write (`text.push_str(..)` on `let mut text = fs::read_to_string(p)?`, `out.push(..)` on `let
+    /// mut out = vec![]`): Rust lets a method change only a value its name is bound `mut` to, and
+    /// a method of the prelude's collections of the name that changes what it runs on is that one.
+    fn changed_in_place(&self, value: TsNode<'t>, method: &str) -> bool {
+        value.kind() == "identifier"
+            && self.mutable.holds(text(value, self.src), value.start_byte())
+            && knowledge::mutates(knowledge::Registry::Crates, knowledge::RUST_PRELUDE_CRATE, method)
     }
 
     /// The library type a value is declared to be: a parameter's (`conn: &Connection`), or a
@@ -1629,7 +1683,7 @@ impl<'a, 't> Body<'a, 't> {
     fn path_call(&mut self, steps: &mut Steps, c: TsNode<'t>, mut parts: Vec<String>) {
         if parts.is_empty() {
             // a call through a value no path names (`(self.on_done)()`) is one Atlas cannot follow
-            if let Some(f) = c.child_by_field_name("function").filter(|_| c.kind() == "call_expression") {
+            if let Some(f) = function(c).filter(|_| c.kind() == "call_expression") {
                 self.dropped(steps, c, text(f, self.src));
             }
             return;
@@ -1776,17 +1830,35 @@ fn else_if_depth(n: TsNode) -> u32 {
 
 /// The method of a call that chooses (`x.unwrap_or_else(..)`, `ok.then(..)`), if it is one.
 fn chooser<'s>(n: TsNode, src: &'s [u8]) -> Option<&'s str> {
-    let m = n.child_by_field_name("function").filter(|f| f.kind() == "field_expression")?.child_by_field_name("field")?;
+    let m = function(n).filter(|f| f.kind() == "field_expression")?.child_by_field_name("field")?;
     Some(text(m, src)).filter(|m| OR_ELSE.contains(m) || THEN.contains(m))
 }
 
-/// Rust's choices: `if`/`else if`/`else` (with `if let`), `match`, the `Option`/`Result` methods
-/// that run their argument only when the receiver has nothing, and `bool::then`, which runs its
-/// argument only when the receiver holds. What the call is made on always runs: it flows through
-/// an or-else into what the call gives, and decides a `then`.
+/// The macros that end a body without giving a value: it panics.
+const DIVERGES: &[&str] = &["panic", "unreachable", "todo", "unimplemented"];
+
+/// Whether a block never runs on past its end: its last statement returns, breaks, continues or
+/// panics.
+fn leaves(block: Option<TsNode>, src: &[u8]) -> bool {
+    let Some(last) = block.and_then(|b| named_children(b).into_iter().filter(|s| !s.kind().ends_with("comment")).last()) else {
+        return false;
+    };
+    let e = if last.kind() == "expression_statement" { last.named_child(0).unwrap_or(last) } else { last };
+    match e.kind() {
+        "return_expression" | "break_expression" | "continue_expression" => true,
+        "macro_invocation" => e.child_by_field_name("macro").map_or(false, |m| DIVERGES.contains(&text(m, src))),
+        _ => false,
+    }
+}
+
+/// Rust's choices: `if`/`else if`/`else` (with `if let`), `match`, `let .. else`, the
+/// `Option`/`Result` methods that run their argument only when the receiver has nothing, and
+/// `bool::then`, which runs its argument only when the receiver holds. What the call is made on
+/// always runs: it flows through an or-else into what the call gives, and decides a `then`.
 const CHOICES: ChoiceSyntax = ChoiceSyntax {
     chooses: |n, src| match n.kind() {
         "if_expression" | "match_block" | "match_arm" => true,
+        "let_declaration" => n.child_by_field_name("alternative").is_some(),
         "call_expression" => chooser(n, src).is_some(),
         _ => false,
     },
@@ -1815,10 +1887,30 @@ const CHOICES: ChoiceSyntax = ChoiceSyntax {
             "call_expression" if is("function") && chooser(c, src).map_or(false, |m| THEN.contains(&m)) => Part::Decides,
             "call_expression" if is("function") => Part::Through,
             "call_expression" if is("arguments") => Part::Arm(1),
+            // the `else` of a `let .. else` runs when the pattern does not match
+            "let_declaration" if is("alternative") => Part::Arm(0),
             _ => Part::Through,
         }
     },
-    guards: |_, _| false,
+    // a `let .. else`, whose `else` must leave, and an `if` without an `else` whose block and each
+    // `else if`'s leaves: what follows runs otherwise
+    guards: |n, src| match n.kind() {
+        "let_declaration" => n.child_by_field_name("alternative").is_some(),
+        "if_expression" => {
+            let mut at = n;
+            loop {
+                if !leaves(at.child_by_field_name("consequence"), src) {
+                    return false;
+                }
+                match at.child_by_field_name("alternative").and_then(|e| named_children(e).into_iter().next()) {
+                    None => return true,
+                    Some(next) if next.kind() == "if_expression" => at = next,
+                    Some(_) => return false,
+                }
+            }
+        }
+        _ => false,
+    },
 };
 
 /// Where Rust's values go: `let x = v`, `if let x = v`, `x = v`, `x += v`, `for x in v`; `return` and the last

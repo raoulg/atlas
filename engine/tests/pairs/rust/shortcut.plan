@@ -119,7 +119,7 @@ line main/?1/run/?1/Store.save_rates > SQLite(rates) own
 line main/?1/run/?1/Store.save_rates > Screen own                      # the error, when the request failed
 
 # ---------- report ----------
-known #128 line Store·store@main/?1/run/Store.open > main/?1/run/?1/Store.rates/unwrap value   # self.conn.prepare(..).unwrap()
+line Store·store@main/?1/run/Store.open > main/?1/run/?1/Store.rates/unwrap value   # self.conn.prepare(..).unwrap()
 line main/?1/run/?1/Store.rates/unwrap > _·select@main/?1/run/?1/Store.rates/unwrap value
 known #101 line _·select@main/?1/run/?1/Store.rates/unwrap > main/?1/run/?1/Store.rates value
 line SQLite(rates) > main/?1/run/?1/Store.rates own
@@ -134,8 +134,7 @@ known #128 line _·format@main/?1/run/?1/unwrap_or > main/?1/run/?1/write/join v
 
 known #125 line main/?1/run/?1/write/?1/from > _·out@main/?1/run/?1/write/?1 value   # the other arm makes it by `format!`, no step: the value either arm makes
 known #101 line _·out@main/?1/run/?1/write/?1 > main/?1/run/?1/write value              # out += .., fs::write(&path, out)
-known #126 extra line Store·store@main/?1/run/Store.open > main/?1/run/?1/write/Store.rows value
-known #128 line Store·store@main/?1/run/Store.open > main/?1/run/?1/write/Store.rows/unwrap value
+line Store·store@main/?1/run/Store.open > main/?1/run/?1/write/Store.rows/unwrap value
 line main/?1/run/?1/write/Store.rows/unwrap > _·select@main/?1/run/?1/write/Store.rows/unwrap value
 known #101 line _·select@main/?1/run/?1/write/Store.rows/unwrap > main/?1/run/?1/write/Store.rows value
 line SQLite(expenses) > main/?1/run/?1/write/Store.rows own
@@ -156,8 +155,7 @@ line main/?1/run/?1/write > File(reports/report.md) own
 line main/?1/run/?1/write > main/?1/run back                             # the path, which run prints and opens
 
 # ---------- what every command but the report counts after ----------
-known #126 extra line Store·store@main/?1/run/Store.open > main/?1/run/?2/Store.rows value
-known #128 line Store·store@main/?1/run/Store.open > main/?1/run/?2/Store.rows/unwrap value
+line Store·store@main/?1/run/Store.open > main/?1/run/?2/Store.rows/unwrap value
 line main/?1/run/?2/Store.rows/unwrap > _·select@main/?1/run/?2/Store.rows/unwrap value
 known #101 line _·select@main/?1/run/?2/Store.rows/unwrap > main/?1/run/?2/Store.rows value
 line SQLite(expenses) > main/?1/run/?2/Store.rows own
@@ -221,7 +219,6 @@ known #127 extra home Result<Value, reqwest::Error> main/?1
 # the name a chain's last operation gives is given to every call in the chain
 # an environment variable with a fallback puts the read of the variable in a choice, though it always runs
 # an own arrow takes what only a step inside it takes; a result that only a step takes is no result handed back
-known #126 extra line Store·store@main/?1/run/Store.open > main/?1/run/?1/Store.rates value
 
 
 # ---- each loop is a step: it takes what it runs over and makes the element (#103) ----

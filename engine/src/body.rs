@@ -342,9 +342,10 @@ impl<'t, 's> Steps<'t, 's> {
     /// What decides each arm of the body's choices, as the code writes it: `(choice, arm, when)`.
     /// An arm that decides itself (a `case`, a `match` arm) runs when its pattern matches; the
     /// first arm of a choice decided in one place (an `if`, an `elif`, a conditional expression)
-    /// when that holds, and a later one otherwise. Of two arms nothing decides (an or-else, a
-    /// `try` and its handler) the first is tried and the second runs otherwise; the first, and
-    /// the arms of a longer choice nothing decides, have no words.
+    /// when that holds, and a later one otherwise. Of two arms nothing decides (a `try` and its
+    /// handler) the first is tried and the second runs otherwise, and the one arm of a choice
+    /// nothing decides (what an or-else falls back on) runs otherwise; the first, and the arms of a
+    /// longer choice nothing decides, have no words.
     fn whens(&self) -> Vec<(u32, u32, String)> {
         let decided = |n: TsNode| -> String {
             let parts: Vec<&str> = named_children(n)
@@ -371,7 +372,8 @@ impl<'t, 's> Steps<'t, 's> {
                 let itself = if self.choices.contains_key(&c.id()) { decided(c) } else { String::new() };
                 let when = match () {
                     _ if !itself.is_empty() => itself,
-                    _ if Some(a) == first => own.clone(),
+                    _ if Some(a) == first && !(own.is_empty() && n_arms == 1) => own.clone(),
+                    _ if n_arms == 1 => "otherwise".to_string(),
                     _ if !own.is_empty() || n_arms == 2 => "otherwise".to_string(),
                     _ => String::new(),
                 };

@@ -377,7 +377,10 @@ open:
   the occurrence (or choice) that made it; two values of one type at one moment are two; a route's
   parameters are values with their names at the route's start. A name holds one value: one that
   holds a sum holds the sum, whichever variants the reader lists of it (Coproducts), one a
-  constructor fills holds what it builds, and a name handed on holds what the body last gave it;
+  constructor fills holds what it builds, and a name handed on holds what the body last gave it. A
+  name is read by the binding visible where it is used: a name bound again (shadowed, in a block,
+  in an arm) holds another value, as a second name would, and a name bound to another through what
+  hands a value on unchanged (`let record: Record = result?`) holds that one's value;
 - every place of the world is at its concrete place (a path, a table, a command); what a step reads
   back of what it wrote there is a value at a moment inside the step (rule 4). A place named by a
   value an object holds is one place wherever it is reached: a method runs on an instance its class's
