@@ -855,6 +855,58 @@ fn sums_a_union_written_in_place_is_a_sum() {
     assert_eq!(asked.what, "Fit | Failed is handed on unopened: points and line take it");
 }
 
+/// An entry run from the command line is handed the words the human types. `sys.argv` holds them
+/// word by word, as Rust's `env::args()` gives them: the step that keeps them under a name parses
+/// the command line, with no options since the code names none. In the fits pair that is the loop
+/// of `[float(x) for x in sys.argv[1:]]`, which keeps each word as `x`, handed on to `fit`.
+#[test]
+fn places_the_command_line_is_the_entrys() {
+    for side in ["clean", "shortcut"] {
+        let g = fits(side);
+        let main = g.node("fits.cli.main").unwrap();
+        let parses: Vec<(String, Vec<String>, Vec<String>)> = main
+            .sites
+            .iter()
+            .filter_map(|s| Some((s.op.clone(), s.command_line.clone()?, s.gives.iter().map(|h| h.name.clone()).collect())))
+            .collect();
+        assert_eq!(parses, [("for x in sys.argv[1:]".to_string(), vec![], vec!["x".to_string()])], "{side}");
+        let fit = main.sites.iter().find(|s| s.to == "fits.fitter.fit").unwrap();
+        assert!(fit.hands.iter().any(|h| h.name == "x"), "{side}: {:?}", fit.hands);
+    }
+}
+
+/// A tuple is the values it pairs where it stands for one value, and a collection of tuples holds
+/// pairs, of a type the code does not name, as Rust's `Vec<(NaiveDate, f64)>` holds no
+/// `NaiveDate`. The tuples pair (`tests/pairs/tuples/python`) gives each station's mean: the clean
+/// side as a `list[Mean]`, a record with a name, the shortcut as `list[tuple[Station, float]]`,
+/// which gives no Station. Both give `tuple[Station, Store] | None` from `first`: a pair or nothing,
+/// one value of each where there is one. A tuple of any length (`tuple[Station, ...]`) holds
+/// Stations.
+#[test]
+fn a_place_carries_a_what_and_a_collection_of_pairs_names_none() {
+    let p = common::pair("tuples/python");
+    let edges = |g: &Graph, kind: EdgeKind, src: &str| -> Vec<String> {
+        let mut out: Vec<String> =
+            g.edges.iter().filter(|e| e.kind == kind && e.src == src).map(|e| e.dst.rsplit('.').next().unwrap_or("").to_string()).collect();
+        out.sort();
+        out
+    };
+    assert_eq!(edges(&p.clean, EdgeKind::Returns, "stations.means"), ["Mean"]);
+    assert_eq!(
+        edges(&p.shortcut, EdgeKind::Returns, "stations.means"),
+        Vec::<String>::new(),
+        "a pair of a Station and a number is no Station"
+    );
+    for g in [&p.clean, &p.shortcut] {
+        assert_eq!(
+            edges(g, EdgeKind::Returns, "stations.first"),
+            ["Station", "Store"],
+            "a tuple that stands for one value is the values it pairs"
+        );
+        assert_eq!(edges(g, EdgeKind::Has, "stations.Store"), ["Station"], "a tuple of any length holds its elements");
+    }
+}
+
 /// What follows an early return runs only where the guard's arm does not: `fit`'s `if not xs:
 /// return Failed(..)` and the `return Fit(..)` after it are the two arms of one choice, as an `if ..
 /// else` writes them (isomorphic is the same), the second running otherwise. Each arm makes its

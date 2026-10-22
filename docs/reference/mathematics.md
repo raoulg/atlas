@@ -553,9 +553,10 @@ parameters is one type, whatever its parameters.
 each one type, in every language. A type a trait leaves to its implementations (`Self::Item`) is the one each
 implementation fixes (`type Item = Book`): in the implementation that type, in the trait any of them. A tuple is the
 values it pairs where it stands for one value (`-> (Config, Store)`); a collection of them holds pairs, of a type the
-code does not name (`Vec<(NaiveDate, f64)>` holds no `NaiveDate`).
+code does not name (`Vec<(NaiveDate, f64)>` holds no `NaiveDate`). A tuple of any length (`tuple[Station, ...]`) is a
+collection itself.
 **Where.** `knowledge.rs`: `python_container`, `TYPESCRIPT_CONTAINERS`, `RUST_CONTAINERS`; the Rust reader's
-signatures (`rust/passes.rs`, `fixed_by_implementations`; `rust/module.rs`, `type_names`, with `RUST_COLLECTIONS`); `typescript/module.rs`, `type_names`, with `TYPESCRIPT_COLLECTIONS`.
+signatures (`rust/passes.rs`, `fixed_by_implementations`; `rust/module.rs`, `type_names`, with `RUST_COLLECTIONS`); `typescript/module.rs`, `type_names`, with `TYPESCRIPT_COLLECTIONS`; `python/module.rs`, `type_names`, and `pytypes::outer_classes`, with `python_collection`.
 
 ### Narrowing
 **What.** A test of a value's type refines its type in the code that runs only where the test
