@@ -82,21 +82,10 @@ const BINDS: BindSyntax = BindSyntax {
 };
 
 /// The names whose value a Python value may be or be a part of: `graph`, `self.items[0]`, either
-/// side of `a or b` and of `a if c else b`. A call and a slice (`xs[:]`) make a value anew.
+/// side of `a or b` and of `a if c else b` (`projections`). A call and a slice (`xs[:]`) make a
+/// value anew.
 fn held_by<'a>(v: TsNode, src: &'a [u8]) -> Vec<&'a str> {
-    let v = beneath(v, WRAPPERS);
-    match v.kind() {
-        "boolean_operator" => {
-            [v.child_by_field_name("left"), v.child_by_field_name("right")].into_iter().flatten().flat_map(|x| held_by(x, src)).collect()
-        }
-        // `a if c else b`: the first part and the last
-        "conditional_expression" => {
-            let parts = named_children(v);
-            [parts.first(), parts.get(2)].into_iter().flatten().flat_map(|x| held_by(*x, src)).collect()
-        }
-        "subscript" if field_children(v, "subscript").iter().any(|s| s.kind() == "slice") => vec![],
-        _ => root_name(v, src).into_iter().collect(),
-    }
+    projections(v).into_iter().flatten().map(|n| text(n, src)).collect()
 }
 
 /// Whether the name `i` is one a `lambda` between it and `e` binds: a parameter of the function
@@ -114,6 +103,136 @@ fn lambda_binds(i: TsNode, e: TsNode, src: &[u8]) -> bool {
         x = p;
     }
     false
+}
+
+/// The bindings of `name` that reach `at`: the latest assignment to it before `at` in the function,
+/// and where that one stands in an arm of a choice `at` is not in, the latest in each of its other
+/// arms (`if c: x = a.b` / `else: x = d.e`).
+fn reaching<'t>(at: TsNode<'t>, name: &str, src: &[u8]) -> Vec<TsNode<'t>> {
+    let mut scope = at;
+    while let Some(p) = scope.parent() {
+        scope = p;
+        if matches!(p.kind(), "function_definition" | "lambda") {
+            break;
+        }
+    }
+    let binds = |a: &TsNode| {
+        a.child_by_field_name("left").is_some_and(|l| match l.kind() {
+            "identifier" => text(l, src) == name,
+            "pattern_list" | "tuple_pattern" => named_children(l).iter().any(|n| n.kind() == "identifier" && text(*n, src) == name),
+            _ => false,
+        })
+    };
+    let before: Vec<TsNode> = walk(scope, &["assignment"]).into_iter().filter(|a| a.end_byte() <= at.start_byte() && binds(a)).collect();
+    let Some(last) = before.last().copied() else { return vec![] };
+    let within = |n: TsNode, outer: TsNode| outer.start_byte() <= n.start_byte() && n.end_byte() <= outer.end_byte();
+    // the arms of the choice the latest binding stands in, where `at` stands outside that choice
+    let mut arm = last;
+    while let Some(p) = arm.parent().filter(|p| p.id() != scope.id()) {
+        if matches!((CHOICES.part)(p, arm, src), Part::Arm(_)) && (CHOICES.chooses)(p, src) && !within(at, p) {
+            let mut choice = p;
+            while let Some(up) = (CHOICES.continues)(choice) {
+                choice = up;
+            }
+            // the choice and what continues it (an `elif`), each with its arms
+            let parts = std::iter::once(choice).chain(named_children(choice).into_iter().filter(|c| (CHOICES.continues)(*c).is_some()));
+            let arms: Vec<TsNode> = parts
+                .flat_map(|q| named_children(q).into_iter().filter(move |c| matches!((CHOICES.part)(q, *c, src), Part::Arm(_))))
+                .collect();
+            let mut out: Vec<TsNode> = arms.iter().filter_map(|b| before.iter().filter(|a| within(**a, *b)).last().copied()).collect();
+            out.dedup_by_key(|a| a.id());
+            return out;
+        }
+        arm = p;
+    }
+    vec![last]
+}
+
+/// The names a value is a projection of, by their roots: `a.x[k]` of `a`, `y` of itself, either part
+/// of `a.x if c else b.y` and of `a or b`. `None` for a part that is no projection (a call, a slice).
+fn projections(v: TsNode) -> Vec<Option<TsNode>> {
+    let v = beneath(v, WRAPPERS);
+    match v.kind() {
+        "conditional_expression" => {
+            let parts = named_children(v);
+            [parts.first(), parts.get(2)].into_iter().flatten().flat_map(|p| projections(*p)).collect()
+        }
+        "boolean_operator" => {
+            [v.child_by_field_name("left"), v.child_by_field_name("right")].into_iter().flatten().flat_map(projections).collect()
+        }
+        "subscript" if field_children(v, "subscript").iter().any(|s| s.kind() == "slice") => vec![None],
+        "attribute" | "subscript" | "identifier" => {
+            let mut root = v;
+            while let Some(inner) = match root.kind() {
+                "attribute" => root.child_by_field_name("object"),
+                "subscript" => root.child_by_field_name("value"),
+                _ => None,
+            } {
+                root = inner;
+            }
+            vec![(root.kind() == "identifier").then_some(root)]
+        }
+        _ => vec![None],
+    }
+}
+
+/// What the loop around `at` that binds `name` goes over (`for s, t in rows`): its element is a part of
+/// it. A loop that is a step of its own has made the name, which then holds what the loop gave.
+fn looped_by<'t>(at: TsNode<'t>, name: &str, src: &[u8]) -> Option<TsNode<'t>> {
+    let names = |l: Option<TsNode>| l.is_some_and(|l| walk(l, &["identifier"]).iter().any(|n| text(*n, src) == name));
+    let mut x = at;
+    while let Some(p) = x.parent() {
+        match p.kind() {
+            "function_definition" | "lambda" => return None,
+            "for_statement" if p.child_by_field_name("body").is_some_and(|b| b.id() == x.id()) && names(p.child_by_field_name("left")) => {
+                return p.child_by_field_name("right");
+            }
+            // a comprehension's element and its later clauses stand in its loops
+            "list_comprehension" | "set_comprehension" | "dictionary_comprehension" | "generator_expression" => {
+                let clause = named_children(p)
+                    .into_iter()
+                    .find(|c| c.kind() == "for_in_clause" && c.id() != x.id() && names(c.child_by_field_name("left")));
+                if let Some(c) = clause {
+                    return c.child_by_field_name("right");
+                }
+            }
+            _ => {}
+        }
+        x = p;
+    }
+    None
+}
+
+/// The subject of the `match` whose `case` around `at` binds `name` in its pattern: a capture, a
+/// keyword's value or an `as` name, not a class or a keyword the pattern names.
+fn matched_by<'t>(at: TsNode<'t>, name: &str, src: &[u8]) -> Option<TsNode<'t>> {
+    let mut x = at;
+    while let Some(p) = x.parent() {
+        if p.kind() == "case_clause" {
+            let binds = named_children(p).into_iter().filter(|c| c.kind() == "case_pattern").any(|pat| {
+                walk(pat, &["identifier"]).into_iter().any(|i| {
+                    let first = |q: TsNode, c: TsNode| named_children(q).first().is_some_and(|f| f.id() == c.id());
+                    // a keyword, a class the pattern matches, or a value written by its dotted name
+                    let label = i.parent().is_some_and(|q| match q.kind() {
+                        "keyword_pattern" => first(q, i),
+                        "dotted_name" => {
+                            named_children(q).len() > 1 || q.parent().is_some_and(|c| c.kind() == "class_pattern" && first(c, q))
+                        }
+                        _ => false,
+                    });
+                    !label && text(i, src) == name
+                })
+            });
+            if binds {
+                return p.parent().and_then(|b| b.parent()).filter(|m| m.kind() == "match_statement")?.child_by_field_name("subject");
+            }
+        }
+        if matches!(p.kind(), "function_definition" | "lambda") {
+            return None;
+        }
+        x = p;
+    }
+    None
 }
 
 /// The name a chain like `self.items[0].x` starts from.
@@ -488,7 +607,7 @@ impl<'a> Seen<'a> {
                 (p.kind() == "attribute" && field("attribute")) || (p.kind() == "keyword_argument" && field("name"))
             });
             if x.kind() == "identifier" && !label && !lambda_binds(x, e, src) {
-                names.push(self.projected(x, made));
+                names.extend(self.projected(x, made));
             }
             stack.extend(named_children(x).into_iter().rev());
         }
@@ -530,53 +649,33 @@ impl<'a> Seen<'a> {
         out
     }
 
-    /// The name a projection bound to `i`'s name starts from, where the latest binding of that name
-    /// before `i` binds it to one: `width = settings.width` makes `width` in `f(width)` the
-    /// projection `settings.width`, which hands `settings`, and so does `width, height =
-    /// settings.size` and a lookup `row = rows[k]`. A name a step made holds what the step gave.
-    fn projected<'t>(&self, i: TsNode<'t>, made: &HashSet<String>) -> TsNode<'t> {
+    /// The names a projection bound to `i`'s name starts from, where the bindings of that name that
+    /// reach `i` bind it to one: `width = settings.width` makes `width` in `f(width)` the projection
+    /// `settings.width`, which hands `settings`, and so do `width, height = settings.size`, a lookup
+    /// `row = rows[k]`, a name a `case` pattern binds (a part of what the `match` takes apart, through
+    /// the variant the case matches), and either part of `a.x if c else b.y`. A name bound in the arms
+    /// of a choice before `i` holds what each arm binds. A name a step made holds what the step gave.
+    fn projected<'t>(&self, i: TsNode<'t>, made: &HashSet<String>) -> Vec<TsNode<'t>> {
         let src = &self.m.src;
-        let mut at = i;
-        for _ in 0..8 {
+        let (mut out, mut todo, mut seen) = (vec![], vec![(i, 0)], HashSet::new());
+        while let Some((at, depth)) = todo.pop() {
             let name = text(at, src);
-            if made.contains(name) || name == "self" {
-                break;
+            if !seen.insert(at.id()) || depth > 8 || made.contains(name) || name == "self" {
+                out.push(at);
+                continue;
             }
-            let mut scope = at;
-            while let Some(p) = scope.parent() {
-                scope = p;
-                if matches!(p.kind(), "function_definition" | "lambda") {
-                    break;
-                }
-            }
-            let binds = |a: &TsNode| {
-                a.child_by_field_name("left").is_some_and(|l| match l.kind() {
-                    "identifier" => text(l, src) == name,
-                    "pattern_list" | "tuple_pattern" => named_children(l).iter().any(|n| n.kind() == "identifier" && text(*n, src) == name),
-                    _ => false,
-                })
+            let rights: Vec<TsNode> = match reaching(at, name, src) {
+                bound if !bound.is_empty() => bound.into_iter().filter_map(|b| b.child_by_field_name("right")).collect(),
+                _ => matched_by(at, name, src).or_else(|| looped_by(at, name, src)).into_iter().collect(),
             };
-            let Some(bound) = walk(scope, &["assignment"]).into_iter().filter(|a| a.end_byte() <= at.start_byte() && binds(a)).last()
-            else {
-                break;
-            };
-            let Some(right) = bound.child_by_field_name("right").map(|r| beneath(r, WRAPPERS)) else { break };
-            let projection = matches!(right.kind(), "attribute" | "subscript")
-                && !(right.kind() == "subscript" && field_children(right, "subscript").iter().any(|s| s.kind() == "slice"));
-            let mut root = right;
-            while let Some(inner) = match root.kind() {
-                "attribute" => root.child_by_field_name("object"),
-                "subscript" => root.child_by_field_name("value"),
-                _ => None,
-            } {
-                root = inner;
+            let roots: Vec<Option<TsNode>> = rights.into_iter().flat_map(projections).collect();
+            if roots.is_empty() || roots.iter().any(|r| r.is_none_or(|r| r.id() == at.id())) {
+                out.push(at);
+                continue;
             }
-            if !projection || root.kind() != "identifier" || root.id() == at.id() {
-                break;
-            }
-            at = root;
+            todo.extend(roots.into_iter().flatten().map(|r| (r, depth + 1)));
         }
-        at
+        out
     }
 
     /// Whether class `c` is `b` or descends from it.

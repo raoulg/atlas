@@ -435,8 +435,10 @@ open:
   also where its types do not list it. A projection bound to a name first is still the projection
   (`width = settings.width; f(width)` hands `settings`), a lookup by a key among them (`row = table[k]`
   hands `table`, the lens the key chooses), and so is any value a body binds without a step: a
-  pattern that takes a value apart (`const [year, month] = fields` hands `fields`), what operators
-  compute of names (`bottom = height - margin`), what each arm of a choice sets a name to (`let unit;
+  pattern that takes a value apart (`const [year, month] = fields` hands `fields`), a name a
+  `case` pattern binds (a part of what the `match` takes apart, through the variant the case matches, a
+  prism), an element of a loop that is no step (`for s, t in rows`), what operators compute of names
+  (`bottom = height - margin`), what each arm of a choice sets a name to (`let unit;
   if (..) unit = KELVIN; else unit = CELSIUS`). A change made through one changes its owner, a lens's
   put. A parameter is such a name: inside an opened step it holds the value its call hands it, not a
   caller's value of its name or the latest of its type. The call hands its values in order, the value
