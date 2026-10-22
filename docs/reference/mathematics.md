@@ -51,9 +51,14 @@ route of a class is its doors, each called by the entry with no order between th
 finds and changes, the route finds and changes. Making a place's shape (a directory, a table's
 schema) or testing it (whether a file is there, whether a value holds a key) puts and takes no
 content. A connection that opens a database on a file names that file, so a directory made for the
-file is made for the database. Where the code does not say which way a call goes, the place is in neither.
+file is made for the database. A request goes the way its method says, as a statement goes by its
+verb: a `GET` takes what the place holds, a `POST`, `PUT`, `PATCH` or `DELETE` leaves something
+there, and what such a request answers is what the place gives back of what it left, read back.
+Where the code does not say which way a call goes (a method looked up at run time), the place is in
+neither.
 **Where.** A function's `reads_back` and `updates` (`flow.rs`); a read's `checks` (`Steps::mark`,
-`body.rs`, with each language's `UseSyntax`); `sideOfRoles` in `viewer/plan.js`.
+`body.rs`, with each language's `UseSyntax`); a request's way, `knowledge::REQUEST_WAYS`, and
+`Touch::side` (`flow.rs`); `sideOfRoles` in `viewer/plan.js`.
 
 ### The effect functor
 **What.** A functor maps objects to objects and arrows to arrows, keeping composition.
