@@ -283,6 +283,12 @@ impl GraphBuilder {
         {
             Some(x) => {
                 x.n += 1;
+                // the touch runs on the line of every call it stands for
+                for l in std::iter::once(t.line).chain(t.also_at.iter().copied()) {
+                    if l != x.line && !x.also_at.contains(&l) {
+                        x.also_at.push(l);
+                    }
+                }
                 // one call that uses what it reads makes the touch a use
                 x.checks &= t.checks;
                 // whole in its own function is whole in every route; else in the routes of each
