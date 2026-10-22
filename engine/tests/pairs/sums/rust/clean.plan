@@ -77,25 +77,25 @@ known #125 home _·text@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push K
 
 # node splits the line, and takes its three parts by name, each a part or the empty string
 step Kennisbank()/Kennisbank.graaf/node/splitn
-known #125 step Kennisbank()/Kennisbank.graaf/node/unwrap_or
-known #125 step Kennisbank()/Kennisbank.graaf/node/unwrap_or#2
-known #125 step Kennisbank()/Kennisbank.graaf/node/unwrap_or#3
+step Kennisbank()/Kennisbank.graaf/node/unwrap_or
+step Kennisbank()/Kennisbank.graaf/node/unwrap_or#2
+step Kennisbank()/Kennisbank.graaf/node/unwrap_or#3
 line Kennisbank()/Kennisbank.graaf/node/splitn > _·parts@Kennisbank()/Kennisbank.graaf/node/splitn value
-known #125 line _·parts@Kennisbank()/Kennisbank.graaf/node/splitn > Kennisbank()/Kennisbank.graaf/node/unwrap_or value        # what `parts.next()` gives goes into it
-known #125 line _·parts@Kennisbank()/Kennisbank.graaf/node/splitn > Kennisbank()/Kennisbank.graaf/node/unwrap_or#2 value
-known #125 line _·parts@Kennisbank()/Kennisbank.graaf/node/splitn > Kennisbank()/Kennisbank.graaf/node/unwrap_or#3 value
-known #125 line Kennisbank()/Kennisbank.graaf/node/unwrap_or > _·uuid@Kennisbank()/Kennisbank.graaf/node/unwrap_or value
-known #125 line Kennisbank()/Kennisbank.graaf/node/unwrap_or#2 > _·soort@Kennisbank()/Kennisbank.graaf/node/unwrap_or#2 value
-known #125 line Kennisbank()/Kennisbank.graaf/node/unwrap_or#3 > _·tekst@Kennisbank()/Kennisbank.graaf/node/unwrap_or#3 value
+line _·parts@Kennisbank()/Kennisbank.graaf/node/splitn > Kennisbank()/Kennisbank.graaf/node/unwrap_or value   # what `parts.next()` gives goes into it
+line _·parts@Kennisbank()/Kennisbank.graaf/node/splitn > Kennisbank()/Kennisbank.graaf/node/unwrap_or#2 value
+line _·parts@Kennisbank()/Kennisbank.graaf/node/splitn > Kennisbank()/Kennisbank.graaf/node/unwrap_or#3 value
+line Kennisbank()/Kennisbank.graaf/node/unwrap_or > _·uuid@Kennisbank()/Kennisbank.graaf/node/unwrap_or value
+line Kennisbank()/Kennisbank.graaf/node/unwrap_or#2 > _·soort@Kennisbank()/Kennisbank.graaf/node/unwrap_or#2 value
+line Kennisbank()/Kennisbank.graaf/node/unwrap_or#3 > _·tekst@Kennisbank()/Kennisbank.graaf/node/unwrap_or#3 value
 known #125 line _·soort@Kennisbank()/Kennisbank.graaf/node/unwrap_or#2 > Kennisbank()/Kennisbank.graaf/node value                # it decides the choice
-known #125 line _·uuid@Kennisbank()/Kennisbank.graaf/node/unwrap_or > Kennisbank()/Kennisbank.graaf/node/?1/Bron() value
-known #125 line _·tekst@Kennisbank()/Kennisbank.graaf/node/unwrap_or#3 > Kennisbank()/Kennisbank.graaf/node/?1/Bron() value
-known #125 line _·uuid@Kennisbank()/Kennisbank.graaf/node/unwrap_or > Kennisbank()/Kennisbank.graaf/node/?1/Begrip() value
-known #125 line _·tekst@Kennisbank()/Kennisbank.graaf/node/unwrap_or#3 > Kennisbank()/Kennisbank.graaf/node/?1/Begrip() value
+line _·uuid@Kennisbank()/Kennisbank.graaf/node/unwrap_or > Kennisbank()/Kennisbank.graaf/node/?1/Bron() value
+line _·tekst@Kennisbank()/Kennisbank.graaf/node/unwrap_or#3 > Kennisbank()/Kennisbank.graaf/node/?1/Bron() value
+line _·uuid@Kennisbank()/Kennisbank.graaf/node/unwrap_or > Kennisbank()/Kennisbank.graaf/node/?1/Begrip() value
+line _·tekst@Kennisbank()/Kennisbank.graaf/node/unwrap_or#3 > Kennisbank()/Kennisbank.graaf/node/?1/Begrip() value
 home _·parts@Kennisbank()/Kennisbank.graaf/node/splitn Kennisbank()/Kennisbank.graaf/node
-known #125 home _·uuid@Kennisbank()/Kennisbank.graaf/node/unwrap_or Kennisbank()/Kennisbank.graaf/node
-known #125 home _·soort@Kennisbank()/Kennisbank.graaf/node/unwrap_or#2 Kennisbank()/Kennisbank.graaf/node
-known #125 home _·tekst@Kennisbank()/Kennisbank.graaf/node/unwrap_or#3 Kennisbank()/Kennisbank.graaf/node
+home _·uuid@Kennisbank()/Kennisbank.graaf/node/unwrap_or Kennisbank()/Kennisbank.graaf/node
+home _·soort@Kennisbank()/Kennisbank.graaf/node/unwrap_or#2 Kennisbank()/Kennisbank.graaf/node
+home _·tekst@Kennisbank()/Kennisbank.graaf/node/unwrap_or#3 Kennisbank()/Kennisbank.graaf/node
 
 # the io::Error, a value of no type of the code's: `read_to_string` makes it in write, and fs::write in write's own body;
 # `?` is no choice, and each border it crosses uncaught hands it on, up to the caller of the door

@@ -27,7 +27,7 @@ line Ledger()/Ledger.put > Disk(Ledger.path) own
 
 line Disk(Ledger.path) > Ledger()/Ledger.get own
 line Ledger()/Ledger.get/read_to_string > _·text@Ledger()/Ledger.get/read_to_string value
-known #125 line _·text@Ledger()/Ledger.get/read_to_string > Ledger()/Ledger.get/map_err value   # #125: from_str's result goes into map_err
+line _·text@Ledger()/Ledger.get/read_to_string > Ledger()/Ledger.get/map_err value   # from_str's result goes into map_err
 line Ledger()/Ledger.get/map_err > _·amount@Ledger()/Ledger.get/map_err value
 line _·amount@Ledger()/Ledger.get/map_err > Ledger()/Ledger.get/Entry() value
 line Ledger()/Ledger.get/Entry() > Entry@Ledger()/Ledger.get/Entry() value
@@ -60,11 +60,6 @@ known #74 extra step Ledger()/Ledger.new/Ledger() recursive
 known #127 extra line Decimal > Ledger()/Ledger.put value
 known #127 extra home Decimal Ledger()
 # #125: a call whose result goes into the named call around it is a step of its own
-known #125 extra step Ledger()/Ledger.get/from_str
-known #125 extra line _·text@Ledger()/Ledger.get/read_to_string > Ledger()/Ledger.get/from_str value
-known #125 extra line Ledger()/Ledger.get/from_str > _·amount@Ledger()/Ledger.get/from_str value
-known #125 extra line _·amount@Ledger()/Ledger.get/from_str > Ledger()/Ledger.get/map_err value
-known #125 extra home _·amount@Ledger()/Ledger.get/from_str Ledger()/Ledger.get
 
 # what the constructor builds goes back to its caller: Atlas runs the methods on it instead of the caller's instance
 known #74 extra line Ledger@Ledger()/Ledger.new > Ledger()/Ledger.put value

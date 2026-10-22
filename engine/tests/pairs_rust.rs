@@ -1099,3 +1099,25 @@ fn places_the_command_line_is_the_entrys() {
     let args = node(shortcut(), "spend.main").sites.iter().find(|s| s.command_line.is_some()).map(|s| s.gives.clone());
     assert!(args.is_some_and(|g| g.iter().any(|h| h.name == "args")));
 }
+
+/// One side of the rebinds pair (`tests/pairs/rebinds/rust`): a module linked, its bases resolved
+/// in a loop and its body read after it, each value named apart on the clean side and both named
+/// `b` on the shortcut.
+fn linker(side: &str) -> Graph {
+    analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/rebinds/rust").join(side), &Options::default()).expect("reads")
+}
+
+/// A name holds the value of the binding visible where it is used: inside the loop `b` is the
+/// base, after the `let` it is the body. Shadowing is ordinary code and reads as the code with
+/// names of their own: `resolve` is handed a `Base` and `check` a `Body` on both sides, and no
+/// step is handed a value of the other type.
+#[test]
+fn composition_a_name_bound_twice_holds_each_binding_where_it_is_visible() {
+    for side in ["clean", "shortcut"] {
+        let g = linker(side);
+        let hands = |to: &str| step(&g, "linker.link", to).hands.iter().map(|h| h.ty.clone()).collect::<Vec<_>>();
+        assert_eq!(hands("linker.resolve"), ["linker.Base"], "{side}");
+        assert_eq!(hands("linker.check"), ["linker.Body"], "{side}");
+        assert_eq!(gives(step(&g, "linker.link", "linker.read")), ["linker.Body"], "{side}");
+    }
+}

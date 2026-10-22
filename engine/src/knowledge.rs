@@ -1724,6 +1724,11 @@ pub const RUST_ELEMENTS: &[&str] = &["iter", "iter_mut", "into_iter", "drain"];
 pub const RUST_KEEPS_ELEMENTS: &[&str] =
     &["filter", "skip", "take", "rev", "skip_while", "take_while", "peekable", "inspect", "step_by", "by_ref"];
 
+/// The methods of a sequence or an iterator that give one of its elements, as it is held (in an
+/// `Option`, which is read as what it holds): `series.first()`.
+pub const RUST_ONE_ELEMENT: &[&str] =
+    &["first", "last", "get", "get_mut", "first_mut", "last_mut", "pop", "next", "next_back", "nth", "find"];
+
 /// The crate the prelude's types are of: `Vec` and `String` are `std`'s.
 pub const RUST_PRELUDE_CRATE: &str = "std";
 

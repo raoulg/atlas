@@ -26,9 +26,9 @@ line File(data/raw/sunspots.csv) > main/load own
 line main/load/from_path > _·reader@main/load/from_path value
 line main/load/new > _·rows@main/load/new value
 line _·reader@main/load/from_path > main/load/for result in reader.deserialize() value
-line main/load/for result in reader.deserialize() > _·result@main/load/for result in reader.deserialize() value
-known #128 line _·result@main/load/for result in reader.deserialize() > main/load/ok_or value         # `record.year`, `record.month`
-known #128 line _·result@main/load/for result in reader.deserialize() > main/load/push value          # `record.mean`
+line main/load/for result in reader.deserialize() > Record·result@main/load/for result in reader.deserialize() value
+line Record·result@main/load/for result in reader.deserialize() > main/load/ok_or value   # `record.year`, `record.month`: `record` holds what `result` holds
+line Record·result@main/load/for result in reader.deserialize() > main/load/push value    # `record.mean`
 line main/load/ok_or > _·date@main/load/ok_or value
 line _·date@main/load/ok_or > main/load/push value
 line _·rows@main/load/new > main/load/push value
@@ -53,7 +53,7 @@ line main/plot > File(figures/sunspots.png) own
 home _·body@main/download/text main/download
 home _·reader@main/load/from_path main/load
 home _·rows@main/load/new main/load
-home _·result@main/load/for result in reader.deserialize() main/load
+home Record·result@main/load/for result in reader.deserialize() main/load
 home _·date@main/load/ok_or main/load
 home _·rows@main/load/push main/load
 home _·rows@main/load main
@@ -67,13 +67,5 @@ side Web(www.sidc.be) left
 side File(data/raw/sunspots.csv) between
 side File(figures/sunspots.png) right
 
-# a record the csv crate makes inside `load` is drawn from beyond, at the route's frame
-known #128 extra home Record·record main
-known #128 extra line Record·record > main/load/from_ymd_opt value
-known #128 extra line Record·record > main/load/push value
 
 # a library call whose result no name holds is drawn as a step, its result named by the call around it
-known #125 extra step main/load/from_ymd_opt
-known #125 extra line main/load/from_ymd_opt > _·date@main/load/from_ymd_opt value
-known #125 extra line _·date@main/load/from_ymd_opt > main/load/ok_or value
-known #125 extra home _·date@main/load/from_ymd_opt main/load

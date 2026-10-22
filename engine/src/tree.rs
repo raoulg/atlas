@@ -73,15 +73,29 @@ pub fn held_names(
     ty: &dyn Fn(&str) -> Option<String>,
     made: &std::collections::HashSet<String>,
 ) -> Vec<crate::model::Held> {
+    held_at(e, src, skip, &|i| (text(i, src).to_string(), ty(text(i, src))), made)
+}
+
+/// What an expression hands a call, as `held_names` reads it, each name read where it stands:
+/// `holder` is handed the name's node and gives the name that holds its value there and that
+/// value's type, so that a name bound twice is typed by the binding it uses, and a name bound to
+/// another (`let record: Record = result?`) hands the value that one holds.
+pub fn held_at(
+    e: TsNode,
+    src: &[u8],
+    skip: &[&str],
+    holder: &dyn Fn(TsNode) -> (String, Option<String>),
+    made: &std::collections::HashSet<String>,
+) -> Vec<crate::model::Held> {
     let mut out: Vec<crate::model::Held> = vec![];
     for i in walk(e, &["identifier", "shorthand_property_identifier"]) {
-        let name = text(i, src);
-        if skip.contains(&name) {
+        if skip.contains(&text(i, src)) {
             continue;
         }
-        let held = match ty(name) {
-            Some(t) => crate::model::Held { ty: t, name: name.to_string(), at: i.start_byte() as u32 },
-            None if made.contains(name) => crate::model::Held { ty: String::new(), name: name.to_string(), at: i.start_byte() as u32 },
+        let (name, ty) = holder(i);
+        let held = match ty {
+            Some(t) => crate::model::Held { ty: t, name, at: i.start_byte() as u32 },
+            None if made.contains(&name) => crate::model::Held { ty: String::new(), name, at: i.start_byte() as u32 },
             None => continue,
         };
         if !out.contains(&held) {

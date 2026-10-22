@@ -85,9 +85,10 @@ fn a_client_initializes_lists_and_calls() {
     );
     // a package named on its own is read as the project it is in, asked for that package:
     // `Repo::read(&root, ..)?.asked_for(package)`, a method on what the call before it gives, run
-    // only when a package is named
+    // only when a package is named; the `find_map` the arms' patterns take apart is a step
+    assert!(text(&replies[4]).contains("\n  1.3  find_map(repo, opts, ·) → root, package\n"), "{}", text(&replies[4]));
     assert!(
-        text(&replies[4]).contains("\n  1.3a  Repo.asked_for(asked) → Repo   ·   when Some((root, package))\n"),
+        text(&replies[4]).contains("\n  1.4a  Repo.asked_for(asked) → Repo   ·   when Some((root, package))\n"),
         "{}",
         text(&replies[4])
     );
