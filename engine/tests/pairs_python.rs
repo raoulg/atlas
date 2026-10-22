@@ -552,7 +552,8 @@ fn a_call_is_handed_the_values_the_names_in_its_arguments_hold() {
 
 /// A value a body binds without a call is made in the body from what it holds, never a value from
 /// beyond: a name bound in the arms of an `if` holds what each arm binds it to, a conditional
-/// expression either of its parts, and a name a `case` pattern binds is a part of what the `match`
+/// expression either of its parts, an operator what it computes the value from (`a.width -
+/// b.width`, as TypeScript's `height - margin`), and a name a `case` pattern binds is a part of what the `match`
 /// takes apart, through the variant the case matches. A call handed such a name is handed what it
 /// is a projection of: `describe`'s `Report(.., [s])` in `case Fit(score=s)` is handed the sum `r`.
 #[test]
@@ -563,9 +564,10 @@ fn composition_a_name_bound_without_a_call_holds_what_it_is_bound_to() {
          def draw(w: int) -> Shape:\n    return Shape(w)\n\n\n\
          def pick(a: Settings, b: Settings, wide: bool) -> Shape:\n    if wide:\n        w = a.width\n    else:\n        w = b.width\n    \
          return draw(w)\n\n\n\
-         def either(a: Settings, b: Settings, wide: bool) -> Shape:\n    w = a.width if wide else b.width\n    return draw(w)\n",
+         def either(a: Settings, b: Settings, wide: bool) -> Shape:\n    w = a.width if wide else b.width\n    return draw(w)\n\n\n\
+         def less(a: Settings, b: Settings) -> Shape:\n    w = a.width - b.width\n    return draw(w)\n",
     );
-    for f in ["pick", "either"] {
+    for f in ["pick", "either", "less"] {
         let node = g.node(&format!("demo.core.{f}")).unwrap();
         let draw = node.sites.iter().find(|s| s.to == "demo.core.draw").unwrap();
         let mut names: Vec<&str> = draw.hands.iter().map(|h| h.name.as_str()).collect();
