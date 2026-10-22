@@ -11,8 +11,14 @@
 // still be opened refines the picture) and the quotient's (each line of the picture is the image of the fine lines
 // that cross a block's border, by channel and count).
 import fs from "node:fs";
+import path from "node:path";
 
 const [planJs, dataJson, ...routes] = process.argv.slice(2);
+// the page inlines the model into its own script, so a name both declare is an error before the page draws anything:
+// parse the page's script with the model in it, as the browser would
+const page = fs.readFileSync(path.join(path.dirname(planJs), "index.html"), "utf8");
+const script = page.split("<script>").find(s => s.includes("/*__PLAN__*/")).split("</script>")[0];
+new Function(script.replace("/*__PLAN__*/", () => fs.readFileSync(planJs, "utf8")));
 const D = JSON.parse(fs.readFileSync(dataJson, "utf8"));
 const window = {};
 const M = new Function("D", "window", fs.readFileSync(planJs, "utf8") + `

@@ -39,7 +39,7 @@ const SUM_OF = new Map(), VARIANTS = new Map();
 for (const e of D.edges) if (e.kind === "variant") { SUM_OF.set(e.dst, SUM_OF.has(e.dst) && SUM_OF.get(e.dst) !== e.src ? null : e.src); if (!VARIANTS.has(e.src)) VARIANTS.set(e.src, []); VARIANTS.get(e.src).push(e.dst); }
 // whether a parameter's written type names a type: by its name, or a sum written in place by the names of its variants
 // (`r: Fit | Failed`)
-const names = (p, x) => { const w = new Set((p.type || "").split(/[^A-Za-z0-9_]+/)), b = id => id.replace(/^ext:/, "").split(".").pop(); return w.has(b(x)) || (VARIANTS.has(x) && VARIANTS.get(x).every(v => w.has(b(v)))); };
+const writesType = (p, x) => { const w = new Set((p.type || "").split(/[^A-Za-z0-9_]+/)), b = id => id.replace(/^ext:/, "").split(".").pop(); return w.has(b(x)) || (VARIANTS.has(x) && VARIANTS.get(x).every(v => w.has(b(v)))); };
 // the values a call is handed and gives, one value per name: the variants of a sum a name holds are the sum, a value
 // of no type a constructor gives is of the class it builds, one a change gives is the value it was handed, and one
 // handed by a name of no type is the value
@@ -755,7 +755,7 @@ const stepMorphism = (key, own, isAnchor, leaf) => {
     // takes `Circle · c` and `Square · q`, two values, whatever family they stand in
     const f = byId.get(step), a = arrowOf(step) || {};
     for (const p of (f?.params || []).filter(p => !p.receiver)) {
-      for (const x of (a.takes || []).filter(x => names(p, x))) {
+      for (const x of (a.takes || []).filter(x => writesType(p, x))) {
         // the parameters of two doors are two values, each door called by itself: `door` tells them apart
         const k = addPlace({...typePlace(x), id: `t:${x}~${p.name}` + (door ? "^" + key : ""), name: p.name, ...(door ? {door: key} : {})});
         if (!made.has(x)) m.dom.delete("t:" + x);
@@ -1034,7 +1034,7 @@ const viaDispatch = (P, k) => {
   const takes = [...Own.D.keys()].filter(isMem).map(x => bound(Own, x) || x).filter(Boolean);
   const t = places.get(k).type, mine = byId.get(stepOf(key)), theirs = byId.get(stepOf(d));
   const args = n => (n?.params || []).filter(p => !p.receiver);
-  const i = t === arrowOf(stepOf(key))?.receiver ? -1 : args(mine).findIndex(p => names(p, t));
+  const i = t === arrowOf(stepOf(key))?.receiver ? -1 : args(mine).findIndex(p => writesType(p, t));
   const by = i >= 0 && args(theirs)[i]?.name, named = by && takes.find(v => places.get(v)?.name === by);
   const recv = i < 0 && (treeInfo.get(d)?.on || arrowOf(stepOf(d))?.receiver), on = recv && takes.find(v => places.get(v)?.type === recv);
   return named || on || takes.find(v => kindKey(v) === kindKey(k)) || null;
@@ -1051,8 +1051,8 @@ const enter = fid => {
   const fn = byId.get(stepOf(f.step)), recv = arrowOf(stepOf(f.step))?.receiver;
   const formals = [...(recv && !info.site.on_receiver && !info.built ? [{receiver: recv}] : []), ...(fn?.params || []).filter(p => !p.receiver)];
   // a value of a type no reader knows fills a parameter of no type of the code's
-  const ours = p => !!p.receiver || (arrowOf(stepOf(f.step))?.takes || []).some(t => names(p, t));
-  const fits = (p, h) => (!h.type ? !ours(p) : p.receiver ? p.receiver === h.type || kindOf(p.receiver) === kindOf(h.type) : names(p, h.type) || (SUM_OF.get(h.type) && names(p, SUM_OF.get(h.type))));
+  const ours = p => !!p.receiver || (arrowOf(stepOf(f.step))?.takes || []).some(t => writesType(p, t));
+  const fits = (p, h) => (!h.type ? !ours(p) : p.receiver ? p.receiver === h.type || kindOf(p.receiver) === kindOf(h.type) : writesType(p, h.type) || (SUM_OF.get(h.type) && writesType(p, SUM_OF.get(h.type))));
   let at = 0;
   const pairs = [], left = [];
   for (const h of info.site.hands || []) {
@@ -1070,7 +1070,7 @@ const enter = fid => {
     if (!places.has(k)) continue;
     const v = bound(Own, k) || k;
     // a parameter is looked for by its own type and name: what fills it through a projection is of another type
-    const x = !p.receiver && (arrowOf(stepOf(f.step))?.takes || []).find(t => names(p, t));
+    const x = !p.receiver && (arrowOf(stepOf(f.step))?.takes || []).find(t => writesType(p, t));
     if (p.receiver) latestSet(kindKey(v) + "|", v, Own, fid, true);
     else if (p.name) latestSet((x ? "t:" + (x === V.route ? V.route : kindOf(x)) : v.startsWith("v:") ? "v:" + p.name : kindKey(v)) + "|" + p.name, v, Own, fid, true);
   }
