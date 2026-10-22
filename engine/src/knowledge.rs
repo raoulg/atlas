@@ -448,6 +448,17 @@ pub const PYTHON_HOLDERS: &[&str] = &[
     "Reversible",
 ];
 
+/// The tuples among `PYTHON_HOLDERS`: a tuple of fixed length stands for one value, the values it
+/// pairs; one of any length (`tuple[Station, ...]`) holds many.
+pub const PYTHON_TUPLES: &[&str] = &["tuple", "Tuple"];
+
+/// Whether a Python generic type holds many values: a holder that is no tuple. A pair one holds is
+/// an element of a type the code does not name (`list[tuple[date, float]]`), as Rust's
+/// `RUST_COLLECTIONS` read it.
+pub fn python_collection(name: &str) -> bool {
+    PYTHON_HOLDERS.contains(&name) && !PYTHON_TUPLES.contains(&name)
+}
+
 /// The keywords a Python call is handed a function by whose value the call uses: the key it
 /// orders, picks or groups by (`sorted(xs, key=score)`, `max(xs, key=..)`, `list.sort(key=..)`,
 /// `itertools.groupby(xs, key=..)`).
@@ -1629,6 +1640,10 @@ pub const RUST_COMMAND_LINE: &[&[&str]] = &[&["std", "env", "args"], &["std", "e
 /// word, unparsed, as `RUST_COMMAND_LINE` gives it: Node's (and Bun's) `process.argv`, Deno's
 /// `Deno.args`.
 pub const TYPESCRIPT_COMMAND_LINE: &[&[&str]] = &[&["process", "argv"], &["Deno", "args"]];
+
+/// The value of Python's standard library that holds the command line the program is run with,
+/// word by word, unparsed, as `RUST_COMMAND_LINE` gives it: `sys.argv`.
+pub const PYTHON_COMMAND_LINE: &[&[&str]] = &[&["sys", "argv"]];
 
 /// clap's derive: `#[derive(Parser)] struct Cli { #[arg(long, default_value = RAW)] raw: PathBuf }`,
 /// with the options a struct of `Args` or a variant of `Subcommand` adds to it.

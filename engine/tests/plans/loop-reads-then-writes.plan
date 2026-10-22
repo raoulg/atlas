@@ -2,7 +2,12 @@
 # later round writes on it, though the write stands above the read in the loop. Read, then written: both.
 
 route loopnote.run
+step run/for word in sys.argv[1:]                           # the words the human typed, each kept as `word`
 line entry > run call
+line entry > run/for word in sys.argv[1:] call             # the command line is the entry's
+line run/for word in sys.argv[1:] > _·word@run/for word in sys.argv[1:] value
+known #101 line _·word@run/for word in sys.argv[1:] > run value   # `word.startswith(..)`, `NOTE.write_text(word)`
+home _·word@run/for word in sys.argv[1:] run
 line File(data/note.txt) > run own
 line run > File(data/note.txt) own
 line run > Screen own

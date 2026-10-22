@@ -202,6 +202,23 @@ fn type_names_outside(t: Option<TsNode>, src: &[u8], skip: &[TsNode]) -> Vec<Vec
             params.extend(args);
         }
     }
+    // a pair a collection holds is of a type the code does not name: `list[tuple[date, float]]`
+    let head_of = |g: TsNode| match g.kind() {
+        "subscript" => dotted(g.child_by_field_name("value"), src),
+        _ => dotted(named_children(g).first().copied(), src),
+    };
+    let generic = |g: &TsNode| matches!(g.kind(), "subscript" | "generic_type");
+    for g in walk(t, &["subscript", "generic_type"]) {
+        let pair = head_of(g).last().is_some_and(|h| knowledge::PYTHON_TUPLES.contains(&h.as_str()))
+            && !text(g, src).trim_end_matches(']').trim_end().ends_with("...");
+        let mut up = g.parent();
+        while let Some(p) = up.filter(|p| !generic(p)) {
+            up = p.parent();
+        }
+        if pair && up.is_some_and(|p| head_of(p).last().is_some_and(|h| knowledge::python_collection(h))) {
+            params.push(g);
+        }
+    }
     let within = |n: TsNode, outer: &TsNode| outer.start_byte() <= n.start_byte() && n.end_byte() <= outer.end_byte();
     let inside = |n: TsNode| arrays.iter().chain(params.iter()).chain(skip.iter()).any(|a| within(n, a));
     for a in arrays.iter().filter(|a| !arrays.iter().any(|b| b.id() != a.id() && within(**a, b)) && !skip.iter().any(|s| within(**a, s))) {
