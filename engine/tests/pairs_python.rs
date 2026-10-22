@@ -550,6 +550,36 @@ fn a_call_is_handed_the_values_the_names_in_its_arguments_hold() {
     assert_eq!(hands, [vec!["Settings·settings"], vec!["Settings·table"], vec!["Shape·a", "Shape·b"]]);
 }
 
+/// A value a body binds without a call is made in the body from what it holds, never a value from
+/// beyond: a name bound in the arms of an `if` holds what each arm binds it to, a conditional
+/// expression either of its parts, an operator what it computes the value from (`a.width -
+/// b.width`, as TypeScript's `height - margin`), and a name a `case` pattern binds is a part of what the `match`
+/// takes apart, through the variant the case matches. A call handed such a name is handed what it
+/// is a projection of: `describe`'s `Report(.., [s])` in `case Fit(score=s)` is handed the sum `r`.
+#[test]
+fn composition_a_name_bound_without_a_call_holds_what_it_is_bound_to() {
+    let g = program(
+        "bound",
+        "from dataclasses import dataclass\n\n\n@dataclass\nclass Settings:\n    width: int\n\n\n@dataclass\nclass Shape:\n    w: int\n\n\n\
+         def draw(w: int) -> Shape:\n    return Shape(w)\n\n\n\
+         def pick(a: Settings, b: Settings, wide: bool) -> Shape:\n    if wide:\n        w = a.width\n    else:\n        w = b.width\n    \
+         return draw(w)\n\n\n\
+         def either(a: Settings, b: Settings, wide: bool) -> Shape:\n    w = a.width if wide else b.width\n    return draw(w)\n\n\n\
+         def less(a: Settings, b: Settings) -> Shape:\n    w = a.width - b.width\n    return draw(w)\n",
+    );
+    for f in ["pick", "either", "less"] {
+        let node = g.node(&format!("demo.core.{f}")).unwrap();
+        let draw = node.sites.iter().find(|s| s.to == "demo.core.draw").unwrap();
+        let mut names: Vec<&str> = draw.hands.iter().map(|h| h.name.as_str()).collect();
+        names.sort();
+        assert_eq!(names, ["a", "b"], "{f}: {:?}", draw.hands);
+    }
+    let describe = fits("clean").node("fits.report.describe").unwrap().clone();
+    for report in describe.sites.iter().filter(|s| s.to == "fits.report.Report") {
+        assert!(report.hands.iter().all(|h| h.name == "r") && !report.hands.is_empty(), "{:?}", report.hands);
+    }
+}
+
 /// A program of one module, `demo/core.py` holding `code`, read as a repository of its own.
 fn program(name: &str, code: &str) -> Graph {
     let root = std::env::temp_dir().join(format!("atlas-python-{name}-{}", std::process::id()));
