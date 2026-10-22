@@ -42,9 +42,10 @@ The rigorous half and the visual half are the same structure. Read `docs/referen
   mind, the code is what changes. If a view only works because of a special case, it is
   wrong.
 - **Atlas is its own first subject.** `atlas view .` must read as the algebra:
-  `Disk(repo) → Repo.read → Repo → Language.parse → Graph → Flow → View → File(html) → open`. When the
-  self-picture shows a box the algebra does not have, the code changes, not the
-  picture. `cargo test` pins the self-picture.
+  `Disk(repo) → Repo.read → Repo → Language.parse → Graph → (Flow, Findings) → Html → File(html) → open`:
+  the graph goes to two arrows, `flow::of` and the principles' check, and the page is drawn from the
+  pair; the view it opens in is the command line's. When the self-picture shows a box the algebra
+  does not have, the code changes, not the picture. `cargo test` pins the self-picture.
 - **If the code is good, the picture is good, automatically.** Views are computed
   from types and effects, never from file layout. Hierarchies in the code
   (base classes, composition) are the zoom levels; there is no other source of
