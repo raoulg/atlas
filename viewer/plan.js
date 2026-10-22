@@ -578,9 +578,11 @@ if (!routeContent.has(seen)) {
 }
 const {found, updated, content} = routeContent.get(seen);
 // a place's shape (a directory made, a table created) and a connection opened without a way serve
-// the data the route reads or writes there: of a file, in a directory; of a database, any table
+// the data the route reads or writes there: of a file, in a directory; of a database, any table. A
+// test whose answer only decides a choice is that choice's condition: its place is drawn by what the
+// route reads or writes there, if anything
 const inDir = dir => [...content.files].some(f => f.startsWith(dir));
-const served = t => (t.shape || isOpen(t)) && (t.kind.startsWith("db_") ? content.dbs.has(t.kind) : !!t.place.file && (content.places.has(t.place.id) || (t.place.file.endsWith("/") && inDir(t.place.file))));
+const served = t => t.test || (t.shape || isOpen(t)) && (t.kind.startsWith("db_") ? content.dbs.has(t.kind) : !!t.place.file && (content.places.has(t.place.id) || (t.place.file.endsWith("/") && inDir(t.place.file))));
 // a type is a place of its own while its moments are counted; then a closed one stands in its kind.
 // The kind is the type's (its base class), not the view's: the route's subject is its own
 const kindKey = k => k.startsWith("t:") && places.get(k)?.type ? "t:" + (places.get(k).type === V.route ? V.route : kindOf(places.get(k).type)) : k;

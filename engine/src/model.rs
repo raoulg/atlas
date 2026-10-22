@@ -656,6 +656,9 @@ pub struct Touch {
     pub fixed_by: Vec<String>,
     /// The line of the first such call, 1-based.
     pub line: u32,
+    /// The lines of the other calls it stands for, each once: two `write_text` calls of one file,
+    /// one in an arm and one after a read, are one touch that runs on both lines.
+    pub also_at: Vec<u32>,
     /// The functions whose calls hand what makes its path or statement whole, where that is not
     /// its own function: a route shows it when it reaches one of them (`a&b`: both).
     pub by: Vec<String>,
@@ -681,6 +684,7 @@ impl Touch {
             fixed: false,
             fixed_by: vec![],
             line: 0,
+            also_at: vec![],
             by: vec![],
             users_of: vec![],
             checks: false,
@@ -734,6 +738,8 @@ pub struct TouchJson {
     #[serde(default, skip_serializing_if = "is_zero")]
     pub line: u32,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub also_at: Vec<u32>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub by: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub users_of: Vec<String>,
@@ -756,6 +762,7 @@ impl From<Touch> for TouchJson {
             fixed: t.fixed,
             fixed_by: t.fixed_by,
             line: t.line,
+            also_at: t.also_at,
             by: t.by,
             users_of: t.users_of,
             checks: t.checks,
@@ -779,6 +786,7 @@ impl TryFrom<TouchJson> for Touch {
             fixed: j.fixed,
             fixed_by: j.fixed_by,
             line: j.line,
+            also_at: j.also_at,
             by: j.by,
             users_of: j.users_of,
             checks: j.checks,
