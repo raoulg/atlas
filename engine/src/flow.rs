@@ -266,6 +266,10 @@ pub struct Where {
     /// It makes or checks the place's shape, not its content.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub shape: bool,
+    /// It only tests the place, and what the test says only decides a choice (`if path.exists()`):
+    /// the test is the choice's condition, and the place no box and no line of its own.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub test: bool,
 }
 
 /// A touch and where it is drawn, for whoever reads it apart from its graph.
@@ -347,7 +351,7 @@ pub fn shown(text: &str) -> String {
 impl Touch {
     /// Where the picture draws it.
     pub fn drawn(&self) -> Where {
-        Where { place: self.place(), side: self.side(), verb: self.verb(), shape: self.shape() }
+        Where { place: self.place(), side: self.side(), verb: self.verb(), shape: self.shape(), test: self.shape() && self.checks }
     }
 
     /// Whether it makes or checks its place's shape rather than its content: a directory made, a
@@ -364,14 +368,14 @@ impl Touch {
 
     /// Which side of its step the touch stands on: what the call says (a file's mode, a
     /// statement's verb, a request's method, a download), else what its kind of place does by
-    /// default. A file whose way is not said is read, as opening one is; a request or a database
-    /// whose way is not said is open, in neither domain nor codomain; everything else is written to.
+    /// default. A file, a request or a database whose way the code does not say (a mode or a
+    /// method that is a value) is open, in neither domain nor codomain; everything else is written
+    /// to. A file opened with no mode is read: the language says so.
     pub fn side(&self) -> Side {
         match (self.dir, self.kind) {
             (Some(Dir::Read), _) => Side::In,
             (Some(Dir::Write), _) => Side::Out,
-            (None, World::Disk) => Side::In,
-            (None, World::Net | World::Db(_)) => Side::Open,
+            (None, World::Disk | World::Net | World::Db(_)) => Side::Open,
             (None, _) => Side::Out,
         }
     }
@@ -571,8 +575,13 @@ fn orders(ix: &Ix, id: &str, mut done: Option<&mut Memo>) -> BTreeMap<String, Or
         Call(&'n str, bool),
     }
     // a place's shape is no content: what is read after it was made is what was there
-    let mut events: Vec<(u32, Event)> =
-        n.touches.iter().filter(|t| t.dir.is_some() && !t.shape()).map(|t| (t.line, Event::Touch(t))).collect();
+    // a touch that stands for several calls runs on the line of each
+    let mut events: Vec<(u32, Event)> = n
+        .touches
+        .iter()
+        .filter(|t| t.dir.is_some() && !t.shape())
+        .flat_map(|t| std::iter::once(t.line).chain(t.also_at.iter().copied()).map(move |l| (l, Event::Touch(t))))
+        .collect();
     if done.is_some() {
         events.extend(n.sites.iter().filter(|s| !s.to.is_empty()).map(|s| (s.line, Event::Call(s.to.as_str(), !s.arms.is_empty()))));
     }
@@ -1213,6 +1222,30 @@ mod tests {
         let (a, b) = (arrow(vec![save(), show(), run()], "run"), arrow(vec![show(), save(), run()], "run"));
         assert_eq!(a, b, "the order of definitions");
         assert_eq!(a.1, log(), "show reads the log as it was, then save writes on it");
+    }
+
+    /// Two equal calls are one touch that runs on the line of each: a file seeded in an arm, read, and then
+    /// always written on is found and changed, though the first write stands in the arm.
+    #[test]
+    fn a_touch_runs_on_the_line_of_every_call_it_stands_for() {
+        let touch =
+            |dir, op: &str, line| Touch { artifact: "data/note.txt".into(), op: op.into(), line, ..Touch::new(World::Disk, Some(dir)) };
+        let mut b = crate::builder::GraphBuilder::default();
+        b.add_node(crate::model::Node {
+            id: "run".into(),
+            kind: NodeKind::Function,
+            arm_lines: vec![(3, 3)],
+            arm_choices: vec![1],
+            ..Default::default()
+        });
+        for t in [touch(Dir::Write, "write_text", 3), touch(Dir::Read, "read_text", 4), touch(Dir::Write, "write_text", 5)] {
+            b.touch("run", t);
+        }
+        let n = b.nodes["run"].clone();
+        assert_eq!(n.touches.len(), 2, "the two writes are one touch");
+        assert_eq!(n.touches[0].also_at, [5]);
+        let g = Graph { nodes: vec![n], ..Default::default() };
+        assert_eq!(arrows(&g)["run"].updates, ["w:File:data/note.txt"], "written on after it was read");
     }
 
     /// `lang = detect(opts).unwrap()` read by a language that names the unwrapped value already:
