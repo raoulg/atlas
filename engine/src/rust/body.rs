@@ -1583,6 +1583,7 @@ const CHOICES: ChoiceSyntax = ChoiceSyntax {
             _ => Part::Through,
         }
     },
+    guards: |_, _| false,
 };
 
 /// Where Rust's values go: `let x = v`, `if let x = v`, `x = v`, `x += v`, `for x in v`; `return` and the last
