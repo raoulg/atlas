@@ -866,11 +866,19 @@ impl<'g> Ix<'g> {
         self.out.get(id).into_iter().flatten().copied().filter(move |e| e.kind == kind)
     }
 
-    /// The overrides a call to a method may run: the methods of that name of every class below
-    /// the method's own.
+    /// What a call to a method by name may run in its place, on a value whose class is not known:
+    /// for each class the value may be, the method's own or one below it, the method that class
+    /// runs for the name along its order (`method_on`), each once. In a diamond `D(B, C)` over `A`
+    /// a call of `C.f` may run `B.f` on a `D`, though `B` is not below `C`.
     fn overrides(&self, n: &Node) -> Vec<String> {
         let Some(cls) = n.cls.as_deref() else { return vec![] };
-        self.below(cls).into_iter().map(|c| format!("{c}.{}", n.name)).filter(|m| self.nodes.contains_key(m.as_str())).collect()
+        let mut out: Vec<String> = vec![];
+        for c in self.below(cls) {
+            if let Some(m) = self.method_on(&c, &n.name).filter(|m| *m != n.id && !out.contains(m)) {
+                out.push(m);
+            }
+        }
+        out
     }
 
     /// The classes below `cls`, each once, nearest first along each line of descent.

@@ -575,11 +575,14 @@ through a class (`C.f(x)`, `C.prototype.f.call(x)`) runs the `f` along `C`'s ord
 is handed first, and no override of it. A `super()` call written in `K` runs the next `f` after `K`
 along the order of the value's class, not of `K`: in `D(B, C)`, a `super().f()` in `B` runs `C.f` on
 a `D`. Where the value's class is not known, it may be `K` or any class below, and the call runs
-the next `f` after `K` along each of their orders: one of them. A call by name may run any override
-below the method it reaches; these two run the one their call names.
+the next `f` after `K` along each of their orders: one of them. A call by name on a value whose class
+is not known may run, for each class the value may be (the class of the method it reaches or one below
+it), the `f` that class runs along its order: in `D(B, C)`, a call of `C.f` may run `B.f` on a `D`,
+though `B` is not below `C`. A call through a class, and a `super()` call on a value whose class is
+known, run the one their call names.
 **Where.** `model::linearization`, `model::initializer_along`; `principles.rs` (`Index::mro`),
 `builder.rs` (`family`, `method_of`, `initializer_of`), `flow.rs` (`method_on`, `method_after`,
-`built_from`, `Step::named`).
+`built_from`, `Step::named`, `Ix::overrides`).
 
 ### Signatures say the arrow
 **What.** A function's type is its domain and its codomain.
