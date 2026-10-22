@@ -1592,7 +1592,7 @@ fn kept_as(c: TsNode, src: &[u8]) -> Option<String> {
         let value = |field: &str| p.child_by_field_name(field).map(|v| v.id()) == Some(n.id());
         match p.kind() {
             k if WRAPPERS.contains(&k) => n = p,
-            _ if (CHOICES.chooses)(p, src) && matches!((CHOICES.part)(p, n, src), Part::Arm(_)) => n = p,
+            _ if (CHOICES.chooses)(p, src) && !matches!((CHOICES.part)(p, n, src), Part::Decides) => n = p,
             "assignment" if value("right") => {
                 return p
                     .child_by_field_name("left")
@@ -1786,19 +1786,22 @@ pub(super) fn keyword(call: TsNode, src: &[u8], names: &[&str]) -> Option<String
     Some(text(k.child_by_field_name("value")?, src).to_string())
 }
 
-/// Python's choices: `if`/`elif`/`else`, `match`, `try`/`except`, `a if c else b`, `x or y`.
+/// Python's choices: `if`/`elif`/`else`, `match`, `try`/`except`, `a if c else b`, and the right of
+/// `x or y` and `x and y`, which runs only where the left is false or true: the left always runs, and
+/// what `or` is handed on flows through it, as an or-else's receiver does.
 const CHOICES: ChoiceSyntax = ChoiceSyntax {
     chooses: |n, src| match n.kind() {
         "if_statement" => !is_main_guard(n, src),
         "elif_clause" | "conditional_expression" | "try_statement" | "case_clause" => true,
-        "boolean_operator" => n.child_by_field_name("operator").map(|o| text(o, src)) == Some("or"),
+        "boolean_operator" => matches!(n.child_by_field_name("operator").map(|o| text(o, src)), Some("or" | "and")),
         // the cases of a `match` sit in its body block
         "block" => n.parent().map_or(false, |p| p.kind() == "match_statement"),
         _ => false,
     },
     continues: |n| if matches!(n.kind(), "elif_clause" | "case_clause") { n.parent() } else { None },
-    part: |c, child, _| {
+    part: |c, child, src| {
         let is = |f: &str| c.child_by_field_name(f).map(|x| x.id()) == Some(child.id());
+        let and = || c.child_by_field_name("operator").map(|o| text(o, src)) == Some("and");
         match c.kind() {
             "if_statement" if is("condition") => Part::Decides,
             "if_statement" if is("consequence") => Part::Arm(0),
@@ -1813,7 +1816,8 @@ const CHOICES: ChoiceSyntax = ChoiceSyntax {
                 Some(2) => Part::Arm(1),
                 _ => Part::Through,
             },
-            "boolean_operator" if is("left") => Part::Arm(0),
+            "boolean_operator" if is("left") && and() => Part::Decides,
+            "boolean_operator" if is("left") => Part::Through,
             "boolean_operator" if is("right") => Part::Arm(1),
             "block" if child.kind() == "case_clause" => Part::Arm(nth_of_kind(c, child)),
             // a pattern and its guard decide which case runs

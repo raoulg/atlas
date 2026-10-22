@@ -855,6 +855,21 @@ fn sums_a_union_written_in_place_is_a_sum() {
     assert_eq!(asked.what, "Fit | Failed is handed on unopened: points and line take it");
 }
 
+/// The left of `x or y` always runs and what it gives flows on through it; the right runs only
+/// where the left gives nothing: a choice of one arm, `f + 1`, as Rust's `unwrap_or_else` and
+/// TypeScript's `??` are. The store's `summary` returns the summary kept, else keeps one made from
+/// the day's readings: `kept_summary` is in no arm, `history`, `day_summary` and `keep_summary` in
+/// the one that runs otherwise.
+#[test]
+fn choices_the_left_of_an_or_always_runs() {
+    let summary = clean().node("harvest.store.ReadingStore.summary").unwrap();
+    let arms = |to: &str| summary.sites.iter().find(|s| s.to == format!("harvest.{to}")).map(|s| s.arms.clone()).unwrap();
+    assert_eq!(arms("store.ReadingStore.kept_summary"), []);
+    for to in ["store.ReadingStore.history", "model.day_summary", "store.ReadingStore.keep_summary"] {
+        assert_eq!(arms(to), [(0, 1)], "{to}");
+    }
+}
+
 /// An entry run from the command line is handed the words the human types. `sys.argv` holds them
 /// word by word, as Rust's `env::args()` gives them: the step that keeps them under a name parses
 /// the command line, with no options since the code names none. In the fits pair that is the loop
