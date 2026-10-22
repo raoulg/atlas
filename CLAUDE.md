@@ -92,8 +92,10 @@ The rigorous half and the visual half are the same structure. Read `docs/referen
   issue on GitHub: label it `in progress` and comment a *Coordination* note that names the active
   owner, the branch, the worktree, the base commit and the files in scope. Work in your own
   worktree and branch; never edit another agent's worktree, branch or files in scope. Claude's
-  checkout is `/Users/rgrouls/code/packages/atlas` on `atlas-obeys-its-algebra`, its subagents'
-  are `.claude/worktrees/agent-*`; Codex's are under `~/.codex/worktrees/`. Branches, versions and
+  checkout is `/Users/rgrouls/code/packages/atlas`, kept on `next`; its subagents'
+  are `.claude/worktrees/agent-*`; Codex's are under `~/.codex/worktrees/`. Since `next` is checked
+  out there, a worktree lands its branch from a detached head:
+  `git checkout --detach origin/next && git merge --no-ff <branch> && git push origin HEAD:next`. Branches, versions and
   releases follow the next section. When work lands, the issue is closed with a comment saying where:
   the commit and the version it is released as (on `next`, the nightly that has it). A commit names
   the issue it serves (`#19`).
