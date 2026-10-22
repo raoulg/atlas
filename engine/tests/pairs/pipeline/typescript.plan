@@ -78,7 +78,6 @@ line cli.ts/main/smooth > Smoothed·smoothed@cli.ts/main/smooth value
 known #126 line Month·series@cli.ts/main/load > cli.ts/main/trend value   # `series[0]`, `path(series)`; the body uses it itself, and a step inside takes it too
 line Smoothed·smoothed@cli.ts/main/smooth > cli.ts/main/trend value
 known #126 line Settings·settings@cli.ts/main/Settings() > cli.ts/main/trend value   # the body uses it itself, and a step inside takes it too
-known #128 line Month·series@cli.ts/main/load > cli.ts/main/trend/series.at value # the array `at` runs on is not handed
 known #128 line Month·series@cli.ts/main/load > cli.ts/main/trend/range value      # `series[0].date`
 known #128 line Settings·settings@cli.ts/main/Settings() > cli.ts/main/trend/range value   # `width`
 known #125 line Month·series@cli.ts/main/load > cli.ts/main/trend/range#2 value    # `series.map(..)` in its domain

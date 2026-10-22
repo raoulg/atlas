@@ -74,8 +74,8 @@ the name that holds it, and no value `_·name` beside it).
 A fact Atlas gets wrong is written down as it should be and marked with the issue that tracks it:
 
 ```
-known #100 line Store > Store()/Store.get/Shelf.get value          # a fact that does not hold
-known #74 extra line run/Store() > File(data/store.txt) reached    # a fact Atlas has and should not
+known #101 line Store·store@run/Store() > run value                # a fact that does not hold
+known #134 extra line main/remove > main back                     # a fact Atlas has and should not
 known #N fault Page@Doc()/Doc() stands in                           # a fault of the pictures, matched as part of its text
 ```
 
