@@ -60,7 +60,8 @@ route starts).
 
 **Channels.** `value` (a value made or taken), `own` (a step's own effect at a place), `reached` (an effect through a
 step below, only where the plan is cut), `call` (the entry calls the route), `back` (a result of no type of the code's
-goes on to the step that called it, where no other step of the caller takes it).
+goes on to the step that called it, where no other step of the caller takes it: one line, labelled in the picture by
+the name that holds it, and no value `_·name` beside it).
 
 ## What Atlas gets wrong today
 

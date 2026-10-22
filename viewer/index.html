@@ -1170,7 +1170,7 @@ async function renderPlaat(mine) {
       const gs = finesOf(k).map(f => P.goes?.get(f)).filter(Boolean), open = gs.some(g => g.has("open")) && !gs.some(g => g.has("read") || g.has("write"));
       for (const [reach, n, sides, was] of channels(P, "C", r, k)) addEdge(P.id, twinOf.get(k) || k, {reach, hue: P.hue, sides, n, was, ...(open ? {label: "?", title: "the code does not say which way the data goes"} : {})});
     });
-    if (P.backTo) addEdge(P.id, P.backTo, {back: true, hue: P.hue, sides: P.sides});
+    if (P.backTo) addEdge(P.id, P.backTo, {back: true, hue: P.hue, sides: P.sides, ...(P.said ? {label: P.said} : {})});
   }
   // a focus and the rest of the code: one arrow each way per unit, counting the types that cross
   for (const [rest, at, r, ts, sides] of restArrows) {

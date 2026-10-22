@@ -139,9 +139,7 @@ line SQLite(expenses) > main/?1/run/?1/write/Store.rows own
 known #128 extra line main/?1/run/?1/write/Store.rows > main/?1/run/?1/write back   # the loop takes the rows, not the store
 line main/?1/run/?1/write/to_base > _@main/?1/run/?1/write/to_base value
 line _@main/?1/run/?1/write/to_base > main/?1/run/?1/write/round2 value
-line main/?1/run/?1/write/round2 > _·base@main/?1/run/?1/write/round2 value
 line main/?1/run/?1/write/round2 > main/?1/run/?1/write back
-known #101 line _·base@main/?1/run/?1/write/round2 > main/?1/run/?1/write value
 line main/?1/run/?1/write/from > _·dir@main/?1/run/?1/write/from value
 line _·dir@main/?1/run/?1/write/from > main/?1/run/?1/write/join value
 known #101 line _·dir@main/?1/run/?1/write/from > main/?1/run/?1/write value        # fs::create_dir_all(&dir)
@@ -153,8 +151,6 @@ line main/?1/run/?1/write > File(*/report.md) own                       # report
 line main/?1/run/?1/write > File(reports/) own
 line main/?1/run/?1/write > File(reports/report.md) own
 line main/?1/run/?1/write > main/?1/run back                             # the path, which run prints and opens
-line main/?1/run/?1/write > _·path@main/?1/run/?1/write value
-known #101 line _·path@main/?1/run/?1/write > main/?1/run value
 
 # ---------- what every command but the report counts after ----------
 known #126 extra line Store·store@main/?1/run/Store.open > main/?1/run/?2/Store.rows value
@@ -192,10 +188,8 @@ home _·format@main/?1/run/?1/unwrap_or main/?1/run/?1
 known #101 home _·out@main/?1/run/?1/write/?1 main/?1/run/?1/write
 home _·select@main/?1/run/?1/write/Store.rows/unwrap main/?1/run/?1/write/Store.rows
 home _@main/?1/run/?1/write/to_base main/?1/run/?1/write
-home _·base@main/?1/run/?1/write/round2 main/?1/run/?1/write
 home _·dir@main/?1/run/?1/write/from main/?1/run/?1/write
 home _·path@main/?1/run/?1/write/join main/?1/run/?1/write
-known #101 home _·path@main/?1/run/?1/write main/?1/run
 home _·select@main/?1/run/?2/Store.rows/unwrap main/?1/run/?2/Store.rows
 
 side entry left

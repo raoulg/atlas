@@ -392,7 +392,9 @@ open:
   only to be handed into another step (`Row(Reading(line))`) is that step's. A value handed into a
   library's operation goes on in what the operation gives, and is the operation's only where that
   is. A result of no type of the code's goes back to the step that called it unless another step of
-  the caller takes it, which it then reaches as a value. A call is
+  the caller takes it, which it then reaches as a value. Going back, it is one line labelled by the
+  name that holds it, and no value beside it: the caller's own arrow is a point on its border, no
+  step, and `done = finished(..); if done:` is `if finished(..):` with a name. A call is
   handed the values the names in its arguments hold: `f(x.name)` is handed `x`, since the projection
   `.name` is no occurrence but glued into the call, whose arrow is `f ∘ π_name` with domain `X`; a
   nested call that is a step of its own takes its names itself. A library's operation that is a step
