@@ -638,3 +638,6 @@ pub(super) const HOLDING: &[&str] = &["Some", "Ok"];
 
 /// `Option` and `Result` methods whose argument is the other arm: `find(g).unwrap_or_else(|| infer(g))`.
 pub(super) const OR_ELSE: &[&str] = &["unwrap_or_else", "unwrap_or", "or_else", "or", "map_or_else", "map_or"];
+
+/// `bool::then`: its argument runs only when what it is called on holds.
+pub(super) const THEN: &[&str] = &["then"];

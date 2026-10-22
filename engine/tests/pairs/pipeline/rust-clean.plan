@@ -11,6 +11,7 @@ step main/Settings.default/Settings()
 step main/Settings()
 choice main/?1
 step main/?1/download
+step main/?1/download/parent                                      # `if let Some(dir) = to.parent()`
 step main/?1/download/bytes                                       # `let body = reqwest::blocking::get(url)?..bytes()?`
 step main/load
 step main/load/from_path                                          # `let mut reader = ReaderBuilder::new()..from_path(path)?`
@@ -28,12 +29,14 @@ step main/Trend.new
 step main/Trend.new/Trend()
 step main/Trend.save
 step main/Trend.save/Trend.settings
+step main/Trend.save/parent                                       # `if let Some(dir) = to.parent()`
 step main/Trend.save/into_drawing_area                            # `let area = BitMapBackend::new(..).into_drawing_area()`
 step main/Trend.save/Trend.draw
-known #125 step main/Trend.save/Trend.draw/first                  # `let (Some(first), Some(last)) = (series.first(), ..)`
-known #125 step main/Trend.save/Trend.draw/last
-step main/Trend.save/Trend.draw/fold                              # `let top = series.iter()..fold(..)`
-step main/Trend.save/Trend.draw/build_cartesian_2d                # `let mut chart = ChartBuilder::on(area)..`
+step main/Trend.save/Trend.draw/first   # `let (Some(first), Some(last)) = (series.first(), ..)`
+step main/Trend.save/Trend.draw/last
+choice main/Trend.save/Trend.draw/?1                              # `let (Some(first), Some(last)) = .. else { return Err(Error::Empty) }`: the rest runs otherwise
+step main/Trend.save/Trend.draw/?1/fold                              # `let top = series.iter()..fold(..)`
+step main/Trend.save/Trend.draw/?1/build_cartesian_2d                # `let mut chart = ChartBuilder::on(area)..`
 
 line entry > main call
 line entry > main/Cli() call                                      # the command line is what the parse reads
@@ -47,6 +50,8 @@ line main/Settings() > Settings·settings@main/Settings() value
 
 line Cli·cli@main/Cli() > main/?1/download value                        # `&cli.raw`
 line Web(www.sidc.be) > main/?1/download own
+line main/?1/download/parent > _·dir@main/?1/download/parent value
+home _·dir@main/?1/download/parent main/?1/download
 line main/?1/download/bytes > _·body@main/?1/download/bytes value
 known #101 line _·body@main/?1/download/bytes > main/?1/download value         # `fs::write(to, body)`
 line main/?1/download > File(data/raw/sunspots.csv) own
@@ -58,10 +63,10 @@ line main/load/from_path > _·reader@main/load/from_path value
 line _·reader@main/load/from_path > main/load/for record in reader.deserialize() value
 line main/load/for record in reader.deserialize() > Record·record@main/load/for record in reader.deserialize() value
 line main/load/new > _·series@main/load/new value
-known #128 line Record·record@main/load/for record in reader.deserialize() > main/load/?1/Record.into_month/ok_or value   # `self.year`, `self.month`
+line Record·record@main/load/for record in reader.deserialize() > main/load/?1/Record.into_month/ok_or value   # `self.year`, `self.month`
 line main/load/?1/Record.into_month/ok_or > _·date@main/load/?1/Record.into_month/ok_or value
 line _·date@main/load/?1/Record.into_month/ok_or > main/load/?1/Record.into_month/Month() value
-known #128 line Record·record@main/load/for record in reader.deserialize() > main/load/?1/Record.into_month/Month() value # `self.mean`, ..
+line Record·record@main/load/for record in reader.deserialize() > main/load/?1/Record.into_month/Month() value   # `self.mean`, ..
 line main/load/?1/Record.into_month/Month() > Month@main/load/?1/Record.into_month/Month() value
 line Month@main/load/?1/Record.into_month/Month() > main/load/?1/Record.into_month value
 line main/load/?1/Record.into_month > Month@main/load/?1/Record.into_month value
@@ -88,27 +93,30 @@ line Trend@main/Trend.new/Trend() > main/Trend.new value
 line main/Trend.new > Trend@main/Trend.new value
 
 line Cli·cli@main/Cli() > main/Trend.save value                         # `&cli.figure`
+line main/Trend.save/parent > _·dir@main/Trend.save/parent value
+home _·dir@main/Trend.save/parent main/Trend.save
 line Trend@main/Trend.new > main/Trend.save/Trend.settings value
 line main/Trend.save/Trend.settings > Settings@main/Trend.save/Trend.settings value
 line Settings@main/Trend.save/Trend.settings > main/Trend.save/into_drawing_area value   # `self.settings().size`
 line main/Trend.save/into_drawing_area > DrawingArea·area@main/Trend.save/into_drawing_area value
 known #101 line DrawingArea·area@main/Trend.save/into_drawing_area > main/Trend.save value   # `area.present()`
 line DrawingArea·area@main/Trend.save/into_drawing_area > main/Trend.save/Trend.draw value  # `area.fill(&WHITE)`
-known #128 line DrawingArea·area@main/Trend.save/into_drawing_area > main/Trend.save/Trend.draw/build_cartesian_2d value
-line Trend@main/Trend.new > main/Trend.save/Trend.draw value            # `self.settings.months`
-known #128 line Trend@main/Trend.new > main/Trend.save/Trend.draw/build_cartesian_2d value   # `self.settings.title`
+known #128 line DrawingArea·area@main/Trend.save/into_drawing_area > main/Trend.save/Trend.draw/?1/build_cartesian_2d value
+known #126 line Trend@main/Trend.new > main/Trend.save/Trend.draw value   # the body uses the instance itself, and a step inside takes it too
+line Trend@main/Trend.new > main/Trend.save/Trend.draw/?1/build_cartesian_2d value   # `self.settings.title`
 known #126 line Month·series@main/load > main/Trend.save/Trend.draw value   # `draw_series(..)`; the body uses it itself, and a step inside takes it too
-known #125 line Month·series@main/load > main/Trend.save/Trend.draw/first value
-known #125 line Month·series@main/load > main/Trend.save/Trend.draw/last value
-known #125 line main/Trend.save/Trend.draw/first > Month·first@main/Trend.save/Trend.draw/first value
-known #125 line main/Trend.save/Trend.draw/last > Month·last@main/Trend.save/Trend.draw/last value
-known #125 line Month·first@main/Trend.save/Trend.draw/first > main/Trend.save/Trend.draw/build_cartesian_2d value
-known #125 line Month·last@main/Trend.save/Trend.draw/last > main/Trend.save/Trend.draw/build_cartesian_2d value
-line Month·series@main/load > main/Trend.save/Trend.draw/fold value
-line main/Trend.save/Trend.draw/fold > _·top@main/Trend.save/Trend.draw/fold value
-line _·top@main/Trend.save/Trend.draw/fold > main/Trend.save/Trend.draw/build_cartesian_2d value
-line main/Trend.save/Trend.draw/build_cartesian_2d > _·chart@main/Trend.save/Trend.draw/build_cartesian_2d value
-known #101 line _·chart@main/Trend.save/Trend.draw/build_cartesian_2d > main/Trend.save/Trend.draw value   # `chart.draw_series(..)`
+known #126 extra line Month·last@main/Trend.save/Trend.draw/last > main/Trend.save/Trend.draw value   # the own arrow takes the latest Month in place of `series`
+line Month·series@main/load > main/Trend.save/Trend.draw/first value
+line Month·series@main/load > main/Trend.save/Trend.draw/last value
+line main/Trend.save/Trend.draw/first > Month·first@main/Trend.save/Trend.draw/first value
+line main/Trend.save/Trend.draw/last > Month·last@main/Trend.save/Trend.draw/last value
+line Month·first@main/Trend.save/Trend.draw/first > main/Trend.save/Trend.draw/?1/build_cartesian_2d value
+line Month·last@main/Trend.save/Trend.draw/last > main/Trend.save/Trend.draw/?1/build_cartesian_2d value
+line Month·series@main/load > main/Trend.save/Trend.draw/?1/fold value
+line main/Trend.save/Trend.draw/?1/fold > _·top@main/Trend.save/Trend.draw/?1/fold value
+line _·top@main/Trend.save/Trend.draw/?1/fold > main/Trend.save/Trend.draw/?1/build_cartesian_2d value
+line main/Trend.save/Trend.draw/?1/build_cartesian_2d > _·chart@main/Trend.save/Trend.draw/?1/build_cartesian_2d value
+known #101 line _·chart@main/Trend.save/Trend.draw/?1/build_cartesian_2d > main/Trend.save/Trend.draw value   # `chart.draw_series(..)`
 line Smoothed·smoothed@main/smooth > main/Trend.save/Trend.draw value
 line main/Trend.save > File(figures/sunspots.png) own
 
@@ -132,10 +140,10 @@ home Trend@main/Trend.new/Trend() main/Trend.new
 home Trend@main/Trend.new main
 home Settings@main/Trend.save/Trend.settings main/Trend.save
 home DrawingArea·area@main/Trend.save/into_drawing_area main/Trend.save
-known #125 home Month·first@main/Trend.save/Trend.draw/first main/Trend.save/Trend.draw
-known #125 home Month·last@main/Trend.save/Trend.draw/last main/Trend.save/Trend.draw
-home _·top@main/Trend.save/Trend.draw/fold main/Trend.save/Trend.draw
-home _·chart@main/Trend.save/Trend.draw/build_cartesian_2d main/Trend.save/Trend.draw
+home Month·first@main/Trend.save/Trend.draw/first main/Trend.save/Trend.draw
+home Month·last@main/Trend.save/Trend.draw/last main/Trend.save/Trend.draw
+home _·top@main/Trend.save/Trend.draw/?1/fold main/Trend.save/Trend.draw/?1
+home _·chart@main/Trend.save/Trend.draw/?1/build_cartesian_2d main/Trend.save/Trend.draw/?1
 
 side entry left
 side Web(www.sidc.be) left
@@ -146,10 +154,6 @@ side File(figures/sunspots.png) right
 
 
 # a library call whose result no name holds is drawn as a step, its result named by the call around it
-known #125 extra step main/load/?1/Record.into_month/from_ymd_opt
-known #125 extra line main/load/?1/Record.into_month/from_ymd_opt > _·date@main/load/?1/Record.into_month/from_ymd_opt value
-known #125 extra line _·date@main/load/?1/Record.into_month/from_ymd_opt > main/load/?1/Record.into_month/ok_or value
-known #125 extra home _·date@main/load/?1/Record.into_month/from_ymd_opt main/load/?1/Record.into_month
 
 # a value handed to a step also goes to its own arrow, though only a step inside it takes it
 known #126 extra line Settings·settings@main/Settings() > main/smooth value
@@ -165,4 +169,3 @@ known #138 line main/Trend.save > Error@main/Trend.save value
 known #138 line Error@main/Trend.save > main value
 
 # the loop hands the record to `into_month`'s own arrow, though only `ok_or` and `Month()` inside take it
-known #126 extra line Record·record@main/load/for record in reader.deserialize() > main/load/?1/Record.into_month value
