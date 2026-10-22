@@ -10,7 +10,7 @@ use crate::builder::GraphBuilder;
 use crate::effects::{self, Facts};
 use crate::model::{Crossing, Dir, EdgeKind, Held, Site, Touch, World};
 use crate::tree::{
-    arms_of, named_children, number_choices, payload_of, starts_at_literal, text, walk, walk_all, what_of, ChoiceSyntax, Part,
+    arms_of, guards, named_children, number_choices, payload_of, starts_at_literal, text, walk, walk_all, what_of, ChoiceSyntax, Part,
 };
 
 /// A call that crosses into the world, as the code writes it.
@@ -380,6 +380,10 @@ impl<'t, 's> Steps<'t, 's> {
                 }
             }
         }
+        // what follows a guard runs when none of its arms does
+        for (k, a, _, _) in guards(self.body, self.src, &self.choices, self.syntax) {
+            out.push((k, a, "otherwise".to_string()));
+        }
         out
     }
 
@@ -402,6 +406,9 @@ impl<'t, 's> Steps<'t, 's> {
                     out.push(((line(c), c.end_position().row as u32 + 1), self.choices[&p.id()]));
                 }
             }
+        }
+        for (k, _, first, last) in guards(self.body, self.src, &self.choices, self.syntax) {
+            out.push(((line(first), last.end_position().row as u32 + 1), k));
         }
         out
     }

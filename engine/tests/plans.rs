@@ -99,6 +99,10 @@ fn built(program: &Path) -> BTreeMap<String, (BTreeSet<String>, Vec<String>)> {
     let name = program.to_string_lossy().replace(['/', '\\', ':'], "_");
     let file = std::env::temp_dir().join(format!("atlas-plans-{}-{name}.json", std::process::id()));
     std::fs::write(&file, data.to_string()).expect("writes the data");
+    // `ATLAS_PLANS_DATA=dir` keeps each program's data there, for `node plans.mjs ../viewer/plan.js DATA ROUTE` by hand
+    if let Ok(keep) = std::env::var("ATLAS_PLANS_DATA") {
+        std::fs::write(Path::new(&keep).join(format!("{name}.json")), data.to_string()).expect("keeps the data");
+    }
     let here = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let out = Command::new("node")
         .arg(here.join("tests/plans.mjs"))

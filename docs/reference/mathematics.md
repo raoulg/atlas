@@ -94,10 +94,12 @@ are that step with a choice of what it is handed, no choice of where the value c
 coproduct of its arms, each injected by what decides it as the code writes it (`when not
 raw.exists()`, a `match` pattern, `otherwise`). A choice of one arm is a coproduct with the
 identity, `f + 1`: its steps run when the condition holds and nothing runs otherwise, so it is
-drawn as a choice too. A repository's graph is the coproduct of its parts' graphs, glued only
+drawn as a choice too. A guard, a choice none of whose arms runs on past its end and that has no arm for when none
+is chosen (`if not xs: return Failed(..)`), is that choice with what follows it in its block as its last arm: `return
+Fit(..)` after it runs otherwise, as an `else` would write it. A repository's graph is the coproduct of its parts' graphs, glued only
 along the libraries and places of the world they share (a pushout over those): two parts whose code
 holds one name stay two, each name injected under where its part lies (`orders/app`, `billing/app`).
-**Where.** Principles `sums` and `choices`; `Node::whens` (`body.rs`), `Item::Choice` (`flow.rs`),
+**Where.** Principles `sums` and `choices`; `Node::whens` (`body.rs`), `arms_of` and `guarded_by` (`tree.rs`), `Item::Choice` (`flow.rs`),
 the MCP tool `choices`; `parts::apart`, `Graph::rename`.
 
 ### Lenses
@@ -392,7 +394,9 @@ open:
   only to be handed into another step (`Row(Reading(line))`) is that step's. A value handed into a
   library's operation goes on in what the operation gives, and is the operation's only where that
   is. A result of no type of the code's goes back to the step that called it unless another step of
-  the caller takes it, which it then reaches as a value. A call is
+  the caller takes it, which it then reaches as a value. Going back, it is one line labelled by the
+  name that holds it, and no value beside it: the caller's own arrow is a point on its border, no
+  step, and `done = finished(..); if done:` is `if finished(..):` with a name. A call is
   handed the values the names in its arguments hold: `f(x.name)` is handed `x`, since the projection
   `.name` is no occurrence but glued into the call, whose arrow is `f ∘ π_name` with domain `X`; a
   nested call that is a step of its own takes its names itself. A library's operation that is a step

@@ -216,9 +216,7 @@ line main/?1/write/Render.render/Markdown.render > main/?1/write/Render.render b
 line main/?1/write/Render.render/Csv.render > main/?1/write/Render.render back
 line main/?1/write/Render.render > main/?1/write back                            # into fs::write
 line main/?1/write > File(reports/) own
-line main/?1/write > main back                                                  # the path, which main prints and opens
-line main/?1/write > _·path@main/?1/write value
-known #101 line _·path@main/?1/write > main value
+line main/?1/write > main back                                                  # the path, which main prints and opens: one line, labelled `path`
 
 line main > Screen own
 line main > open own                                                            # the viewer, when asked to open
@@ -272,7 +270,6 @@ home Render@main/?1/Format.renderer main/?1
 home _@main/?1/write/Render.extension main/?1/write
 home _·path@main/?1/write/join main/?1/write
 home _·out@main/?1/write/Render.render/Csv.render/from main/?1/write/Render.render/Csv.render
-known #101 home _·path@main/?1/write main
 
 side entry left
 side File(spend.toml) left

@@ -800,6 +800,22 @@ fn sums_a_union_written_in_place_is_a_sum() {
     assert_eq!(asked.what, "Fit | Failed is handed on unopened: points and line take it");
 }
 
+/// What follows an early return runs only where the guard's arm does not: `fit`'s `if not xs:
+/// return Failed(..)` and the `return Fit(..)` after it are the two arms of one choice, as an `if ..
+/// else` writes them (isomorphic is the same), the second running otherwise. Each arm makes its
+/// variant of the sum `fit` gives.
+#[test]
+fn choices_what_follows_an_early_return_is_the_other_arm() {
+    for side in ["clean", "shortcut"] {
+        let g = fits(side);
+        let fit = g.node("fits.fitter.fit").unwrap();
+        let arms = |to: &str| fit.sites.iter().find(|s| s.to == to).map(|s| s.arms.clone());
+        assert_eq!(arms("fits.model.Failed"), Some(vec![(0, 0)]), "{side}");
+        assert_eq!(arms("fits.model.Fit"), Some(vec![(0, 1)]), "{side}: what follows the guard is its other arm");
+        assert!(fit.whens.contains(&(0, 1, "otherwise".to_string())), "{side}: {:?}", fit.whens);
+    }
+}
+
 /// One side of the choices pair (`tests/pairs/choices/python`): a job run in one of two modes, and
 /// a line that says how it went.
 fn choices_side(side: &str) -> Graph {

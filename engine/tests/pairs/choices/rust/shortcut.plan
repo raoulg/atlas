@@ -41,8 +41,6 @@ line run/finished/Runner.new > Runner@run/finished/Runner.new value
 line Runner@run/finished/Runner.new > run/finished/Runner.batch value
 line run/finished/Runner.batch > run/finished back
 line run/finished/timeout > run/finished back
-line run/finished > _·done@run/finished value
-known #101 line _·done@run/finished > run value                   # run chooses " done" or " failed" by it
 
 # the line that says how it went: prefix and suffix are handed the settings, `.level` glued into each call
 line Settings·settings > run/prefix value
@@ -63,14 +61,13 @@ home Job@run/?1/infer/Job() run/?1/infer
 home Job·job@run/?1 run
 home Runner@run/finished/Runner.new/Runner() run/finished/Runner.new
 home Runner@run/finished/Runner.new run/finished
-home _·done@run/finished run
 home Message@run/Message() run
 
 side entry left
 side Screen right
 
-# the named bool goes back to run as well as being a value no step takes
-known #134 extra line run/finished > run back
+# a result of no type that no other step of run takes goes back to it, once: the name labels the line
+line run/finished > run back   # `done`, which run decides on
 
 # the field a call's argument reads is drawn as a nameless value of its own, beside the settings the call is handed
 known #127 extra line Level > run/prefix value
