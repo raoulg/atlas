@@ -148,6 +148,34 @@ fn reaching<'t>(at: TsNode<'t>, name: &str, src: &[u8]) -> Vec<TsNode<'t>> {
     vec![last]
 }
 
+/// The names a value is made of without a step: what it is a projection of (`projections`), and the
+/// names an operator, a literal of several values or an f-string computes it from (`bottom = height -
+/// margin`, `pair = (a, b)`). A literal of its own is made of none; `None` for a part a call makes.
+fn sources(v: TsNode) -> Vec<Option<TsNode>> {
+    let v = beneath(v, WRAPPERS);
+    match v.kind() {
+        "integer" | "float" | "true" | "false" | "none" | "ellipsis" => vec![],
+        "binary_operator"
+        | "unary_operator"
+        | "not_operator"
+        | "comparison_operator"
+        | "tuple"
+        | "list"
+        | "set"
+        | "expression_list"
+        | "string"
+        | "concatenated_string"
+        | "interpolation" => named_children(v)
+            .into_iter()
+            .filter(|c| {
+                !matches!(c.kind(), "comment" | "string_start" | "string_content" | "string_end" | "escape_sequence" | "format_specifier")
+            })
+            .flat_map(sources)
+            .collect(),
+        _ => projections(v),
+    }
+}
+
 /// The names a value is a projection of, by their roots: `a.x[k]` of `a`, `y` of itself, either part
 /// of `a.x if c else b.y` and of `a or b`. `None` for a part that is no projection (a call, a slice).
 fn projections(v: TsNode) -> Vec<Option<TsNode>> {
@@ -607,7 +635,7 @@ impl<'a> Seen<'a> {
                 (p.kind() == "attribute" && field("attribute")) || (p.kind() == "keyword_argument" && field("name"))
             });
             if x.kind() == "identifier" && !label && !lambda_binds(x, e, src) {
-                names.extend(self.projected(x, made));
+                names.extend(self.projected(x, made, !changed));
             }
             stack.extend(named_children(x).into_iter().rev());
         }
@@ -655,7 +683,9 @@ impl<'a> Seen<'a> {
     /// `row = rows[k]`, a name a `case` pattern binds (a part of what the `match` takes apart, through
     /// the variant the case matches), and either part of `a.x if c else b.y`. A name bound in the arms
     /// of a choice before `i` holds what each arm binds. A name a step made holds what the step gave.
-    fn projected<'t>(&self, i: TsNode<'t>, made: &HashSet<String>) -> Vec<TsNode<'t>> {
+    /// Where `computed`, a name holds what an operator computes it from as well (`sources`); a change
+    /// made through a name changes only what the name is or is a part of.
+    fn projected<'t>(&self, i: TsNode<'t>, made: &HashSet<String>, computed: bool) -> Vec<TsNode<'t>> {
         let src = &self.m.src;
         let (mut out, mut todo, mut seen) = (vec![], vec![(i, 0)], HashSet::new());
         while let Some((at, depth)) = todo.pop() {
@@ -668,7 +698,7 @@ impl<'a> Seen<'a> {
                 bound if !bound.is_empty() => bound.into_iter().filter_map(|b| b.child_by_field_name("right")).collect(),
                 _ => matched_by(at, name, src).or_else(|| looped_by(at, name, src)).into_iter().collect(),
             };
-            let roots: Vec<Option<TsNode>> = rights.into_iter().flat_map(projections).collect();
+            let roots: Vec<Option<TsNode>> = rights.into_iter().flat_map(if computed { sources } else { projections }).collect();
             if roots.is_empty() || roots.iter().any(|r| r.is_none_or(|r| r.id() == at.id())) {
                 out.push(at);
                 continue;
