@@ -77,8 +77,8 @@ line main/load/?1/push > _·series@main/load/?1 value                    # pushe
 known #101 line _·series@main/load/?1 > main/load value                        # `Ok(series)`
 line main/load > Month·series@main/load value
 
-line Month·series@main/load > main/smooth value                         # `series.windows(..)`
-known #128 line Month·series@main/load > main/smooth/Smoothed() value         # `run[months / 2].date`
+known #126 line Month·series@main/load > main/smooth value   # the body uses it itself (`series.windows(..)`), and a step inside takes it too
+line Month·series@main/load > main/smooth/Smoothed() value   # `run[months / 2].date`
 known #128 line Settings·settings@main/Settings() > main/smooth/get value     # `settings.months`, handed as `months`
 line main/smooth/get > _·months@main/smooth/get value
 known #101 line _·months@main/smooth/get > main/smooth value                   # `series.windows(months)`
@@ -100,8 +100,8 @@ line main/Trend.save/Trend.settings > Settings@main/Trend.save/Trend.settings va
 line Settings@main/Trend.save/Trend.settings > main/Trend.save/into_drawing_area value   # `self.settings().size`
 line main/Trend.save/into_drawing_area > DrawingArea·area@main/Trend.save/into_drawing_area value
 known #101 line DrawingArea·area@main/Trend.save/into_drawing_area > main/Trend.save value   # `area.present()`
-line DrawingArea·area@main/Trend.save/into_drawing_area > main/Trend.save/Trend.draw value  # `area.fill(&WHITE)`
-known #128 line DrawingArea·area@main/Trend.save/into_drawing_area > main/Trend.save/Trend.draw/?1/build_cartesian_2d value
+known #126 line DrawingArea·area@main/Trend.save/into_drawing_area > main/Trend.save/Trend.draw value   # the body uses it itself (`area.fill(..)`), and a step inside takes it too
+line DrawingArea·area@main/Trend.save/into_drawing_area > main/Trend.save/Trend.draw/?1/build_cartesian_2d value
 known #126 line Trend@main/Trend.new > main/Trend.save/Trend.draw value   # the body uses the instance itself, and a step inside takes it too
 line Trend@main/Trend.new > main/Trend.save/Trend.draw/?1/build_cartesian_2d value   # `self.settings.title`
 known #126 line Month·series@main/load > main/Trend.save/Trend.draw value   # `draw_series(..)`; the body uses it itself, and a step inside takes it too
