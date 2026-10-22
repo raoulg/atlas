@@ -1094,6 +1094,50 @@ fn overrides_a_type_ignore_with_codes_is_the_code_saying_it_knows() {
     assert_eq!(c.node("reading.counts.Kennel.count").unwrap().returns.as_ref().map(|r| r.written.as_str()), Some("str"));
 }
 
+/// A library's operation is a step where the body names what it gives or where it changes the
+/// value it runs on; what it gives without a name goes into the call around it. On the clean
+/// board `renamed` names the copy it makes (`board = copy.copy(board)`, a value made anew, no
+/// identity), `queued` the list it makes and the one `heapq.heappush` changes, `extended` the list
+/// `append` changes, and `Board.reset` the board `self.cells.clear()` changes; a list is of no type
+/// of the code's, a value all the same. `with self.connect() as con` names the connection as `con
+/// = ..` does, `rows = con.execute(..).fetchall()` names what `fetchall` gives with `execute`
+/// glued into it, and `uuid, soort, tekst = line.split(" ", 2)` names its three parts. A method
+/// of pandas ty does not know (`frame["mean"].rolling(..).mean()`) is still pandas', called on a
+/// DataFrame, so unnamed it is no step.
+#[test]
+fn a_library_operation_is_a_step_where_its_result_is_named_or_it_changes_a_value() {
+    let ops = |g: &Graph, id: &str| -> Vec<(String, Vec<String>)> {
+        g.node(id)
+            .unwrap_or_else(|| panic!("{id}"))
+            .sites
+            .iter()
+            .filter(|s| s.to.is_empty())
+            .map(|s| (s.op.clone(), s.gives.iter().map(|h| h.name.clone()).collect()))
+            .collect()
+    };
+    let named = |op: &str, names: &[&str]| (op.to_string(), names.iter().map(|n| n.to_string()).collect::<Vec<_>>());
+    let c = board("clean");
+    assert_eq!(ops(&c, "board.core.renamed"), [named("copy", &["board"])]);
+    assert_eq!(ops(&c, "board.core.queued"), [named("list", &["jobs"]), named("heappush", &["jobs"])]);
+    assert_eq!(ops(&c, "board.core.extended"), [named("append", &["xs"])]);
+    assert_eq!(ops(&c, "board.core.Board.reset"), [named("clear", &["self"]), named("clear", &["self"])]);
+    let s = board("shortcut");
+    assert_eq!(ops(&s, "board.core.add_tag"), [named("append", &["tags"])]);
+
+    let history = clean().node("harvest.store.ReadingStore.history").unwrap();
+    let connect = history.sites.iter().find(|x| x.to == "harvest.store.ReadingStore.connect").unwrap();
+    assert!(connect.gives.iter().any(|h| h.name == "con"), "{:?}", connect.gives);
+    assert!(ops(clean(), "harvest.store.ReadingStore.history").contains(&named("fetchall", &["rows"])));
+    assert!(ops(clean(), "harvest.store.ReadingStore.history").iter().all(|(op, _)| op != "execute"));
+
+    let k = kennis("clean");
+    assert_eq!(ops(&k, "kennis.bank.Kennisbank._node"), [named("split", &["uuid", "soort", "tekst"])]);
+
+    let pipeline =
+        analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/pipeline/python-clean"), &Options::default()).unwrap();
+    assert!(ops(&pipeline, "sunspots.series.smooth").is_empty(), "{:?}", pipeline.node("sunspots.series.smooth").unwrap().sites);
+}
+
 /// One side of the change pair (`tests/pairs/changes`): a scoreboard of cells and scores, whose
 /// functions change what they are handed, in Python, Rust and TypeScript alike.
 fn board(side: &str) -> Graph {
