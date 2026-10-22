@@ -31,16 +31,16 @@ known #74 home Kennisbank Kennisbank()
 home Bron·bron Kennisbank()
 
 # the line split in three parts, each held by its name, which `_row` puts into a row
-known #125 step Kennisbank()/Kennisbank.graaf/Kennisbank._row/split
-known #125 line Kennisbank()/Kennisbank.graaf/Kennisbank._row/split > _·uuid@Kennisbank()/Kennisbank.graaf/Kennisbank._row/split value
-known #125 line Kennisbank()/Kennisbank.graaf/Kennisbank._row/split > _·soort@Kennisbank()/Kennisbank.graaf/Kennisbank._row/split value
-known #125 line Kennisbank()/Kennisbank.graaf/Kennisbank._row/split > _·tekst@Kennisbank()/Kennisbank.graaf/Kennisbank._row/split value
-known #125 line _·uuid@Kennisbank()/Kennisbank.graaf/Kennisbank._row/split > Kennisbank()/Kennisbank.graaf/Kennisbank._row value
-known #125 line _·soort@Kennisbank()/Kennisbank.graaf/Kennisbank._row/split > Kennisbank()/Kennisbank.graaf/Kennisbank._row value
-known #125 line _·tekst@Kennisbank()/Kennisbank.graaf/Kennisbank._row/split > Kennisbank()/Kennisbank.graaf/Kennisbank._row value
-known #125 home _·uuid@Kennisbank()/Kennisbank.graaf/Kennisbank._row/split Kennisbank()/Kennisbank.graaf/Kennisbank._row
-known #125 home _·soort@Kennisbank()/Kennisbank.graaf/Kennisbank._row/split Kennisbank()/Kennisbank.graaf/Kennisbank._row
-known #125 home _·tekst@Kennisbank()/Kennisbank.graaf/Kennisbank._row/split Kennisbank()/Kennisbank.graaf/Kennisbank._row
+step Kennisbank()/Kennisbank.graaf/Kennisbank._row/split
+line Kennisbank()/Kennisbank.graaf/Kennisbank._row/split > _·uuid@Kennisbank()/Kennisbank.graaf/Kennisbank._row/split value
+line Kennisbank()/Kennisbank.graaf/Kennisbank._row/split > _·soort@Kennisbank()/Kennisbank.graaf/Kennisbank._row/split value
+line Kennisbank()/Kennisbank.graaf/Kennisbank._row/split > _·tekst@Kennisbank()/Kennisbank.graaf/Kennisbank._row/split value
+known #101 line _·uuid@Kennisbank()/Kennisbank.graaf/Kennisbank._row/split > Kennisbank()/Kennisbank.graaf/Kennisbank._row value   # the row literal `_row` gives back
+known #101 line _·soort@Kennisbank()/Kennisbank.graaf/Kennisbank._row/split > Kennisbank()/Kennisbank.graaf/Kennisbank._row value
+known #101 line _·tekst@Kennisbank()/Kennisbank.graaf/Kennisbank._row/split > Kennisbank()/Kennisbank.graaf/Kennisbank._row value
+home _·uuid@Kennisbank()/Kennisbank.graaf/Kennisbank._row/split Kennisbank()/Kennisbank.graaf/Kennisbank._row
+home _·soort@Kennisbank()/Kennisbank.graaf/Kennisbank._row/split Kennisbank()/Kennisbank.graaf/Kennisbank._row
+home _·tekst@Kennisbank()/Kennisbank.graaf/Kennisbank._row/split Kennisbank()/Kennisbank.graaf/Kennisbank._row
 
 side entry left
 side Disk(Kennisbank.path) both

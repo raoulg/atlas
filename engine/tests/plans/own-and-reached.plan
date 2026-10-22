@@ -4,10 +4,14 @@
 route exporter.main
 step main/export
 step main/export/write_header
+step main/export/open                                       # `with path.open("a") as f`
 
 line entry > main call
 line main/export/write_header > File(out.csv) own
 line main/export > File(out.csv) own                     # export appends to the file itself
+line main/export/open > TextIOWrapper·f@main/export/open value
+known #101 line TextIOWrapper·f@main/export/open > main/export value   # `f.write(..)`
+home TextIOWrapper·f@main/export/open main/export
 
 side entry left
 side File(out.csv) right

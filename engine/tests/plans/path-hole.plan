@@ -2,9 +2,13 @@
 # What the environment holds stands in the term as its hole; it is no place of its own.
 
 route holeenv.run
+step run/Path                                               # `root = Path(os.environ["DATA_DIR"])`
 line entry > run call
 line File(*/report.txt) > run own
 line run > Screen own
+line run/Path > _·root@run/Path value
+known #101 line _·root@run/Path > run value                 # `(root / "report.txt").read_text()`
+home _·root@run/Path run
 
 side entry left
 side File(*/report.txt) left
