@@ -7,7 +7,7 @@ step readings/get_store/ReadingStore()
 step readings/ReadingStore.history
 step readings/ReadingStore.history/ReadingStore.connect
 step readings/ReadingStore.history/ReadingStore.connect/connect          # con = sqlite3.connect(self.path)
-known #125 step readings/ReadingStore.history/fetchall                   # rows = con.execute(..).fetchall()
+step readings/ReadingStore.history/fetchall                   # rows = con.execute(..).fetchall()
 step readings/ReadingStore.history/Unit()
 step readings/ReadingStore.history/Reading()
 
@@ -16,15 +16,15 @@ line readings/get_store/ReadingStore() > ReadingStore@readings/get_store/Reading
 line ReadingStore@readings/get_store/ReadingStore() > readings/get_store value         # get_store hands back what it built
 line readings/get_store > ReadingStore@readings/get_store value
 # history is called on the store and hands it to connect, whose body hands its path to sqlite3.connect
-known #128 line ReadingStore@readings/get_store > readings/ReadingStore.history/ReadingStore.connect/connect value
+line ReadingStore@readings/get_store > readings/ReadingStore.history/ReadingStore.connect/connect value
 line readings/ReadingStore.history/ReadingStore.connect/connect > Connection·con@readings/ReadingStore.history/ReadingStore.connect/connect value
 known #101 line Connection·con@readings/ReadingStore.history/ReadingStore.connect/connect > readings/ReadingStore.history/ReadingStore.connect value
 # `with self.connect() as con`: the name holds the connection connect gives
-known #125 line readings/ReadingStore.history/ReadingStore.connect > Connection·con@readings/ReadingStore.history/ReadingStore.connect value
-known #125 line Connection·con@readings/ReadingStore.history/ReadingStore.connect > readings/ReadingStore.history value   # the `with` enters and closes it
-known #125 line Connection·con@readings/ReadingStore.history/ReadingStore.connect > readings/ReadingStore.history/fetchall value   # con.execute(..) is glued into fetchall()
+line readings/ReadingStore.history/ReadingStore.connect > Connection·con@readings/ReadingStore.history/ReadingStore.connect value
+line Connection·con@readings/ReadingStore.history/ReadingStore.connect > readings/ReadingStore.history value   # the `with` enters and closes it
+line Connection·con@readings/ReadingStore.history/ReadingStore.connect > readings/ReadingStore.history/fetchall value   # con.execute(..) is glued into fetchall()
 line SQLite(readings) > readings/ReadingStore.history own                              # the SELECT, its touch history's own
-known #125 line readings/ReadingStore.history/fetchall > _·rows@readings/ReadingStore.history/fetchall value
+line readings/ReadingStore.history/fetchall > _·rows@readings/ReadingStore.history/fetchall value
 known #103 line _·rows@readings/ReadingStore.history/fetchall > readings/ReadingStore.history/Unit() value
 known #103 line _·rows@readings/ReadingStore.history/fetchall > readings/ReadingStore.history/Reading() value
 line readings/ReadingStore.history/Unit() > Unit@readings/ReadingStore.history/Unit() value
@@ -38,8 +38,8 @@ line readings > Reading@readings value                                          
 home ReadingStore@readings/get_store/ReadingStore() readings/get_store
 home ReadingStore@readings/get_store readings
 home Connection·con@readings/ReadingStore.history/ReadingStore.connect/connect readings/ReadingStore.history/ReadingStore.connect
-known #125 home Connection·con@readings/ReadingStore.history/ReadingStore.connect readings/ReadingStore.history
-known #125 home _·rows@readings/ReadingStore.history/fetchall readings/ReadingStore.history
+home Connection·con@readings/ReadingStore.history/ReadingStore.connect readings/ReadingStore.history
+home _·rows@readings/ReadingStore.history/fetchall readings/ReadingStore.history
 home Unit@readings/ReadingStore.history/Unit() readings/ReadingStore.history
 home Reading@readings/ReadingStore.history/Reading() readings/ReadingStore.history
 home Reading@readings/ReadingStore.history readings
@@ -48,10 +48,6 @@ home Reading@readings readings
 side entry left
 side SQLite(readings) left # read and handed back; making its shape on connecting puts nothing
 
-# the connection the `with` names has no name
-known #125 extra line readings/ReadingStore.history/ReadingStore.connect > Connection@readings/ReadingStore.history/ReadingStore.connect value
-known #125 extra line Connection@readings/ReadingStore.history/ReadingStore.connect > readings/ReadingStore.history value
-known #125 extra home Connection@readings/ReadingStore.history/ReadingStore.connect readings/ReadingStore.history
 # an own arrow takes what only a step inside it takes: the store (to connect), the Unit (to Reading())
-known #126 extra line ReadingStore@readings/get_store > readings/ReadingStore.history/ReadingStore.connect value
+known #126 extra line ReadingStore@readings/get_store > readings value
 # building the store runs its public methods, which touch its tables

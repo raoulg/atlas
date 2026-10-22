@@ -73,15 +73,29 @@ pub fn held_names(
     ty: &dyn Fn(&str) -> Option<String>,
     made: &std::collections::HashSet<String>,
 ) -> Vec<crate::model::Held> {
+    held_at(e, src, skip, &|i| (text(i, src).to_string(), ty(text(i, src))), made)
+}
+
+/// What an expression hands a call, as `held_names` reads it, each name read where it stands:
+/// `holder` is handed the name's node and gives the name that holds its value there and that
+/// value's type, so that a name bound twice is typed by the binding it uses, and a name bound to
+/// another (`let record: Record = result?`) hands the value that one holds.
+pub fn held_at(
+    e: TsNode,
+    src: &[u8],
+    skip: &[&str],
+    holder: &dyn Fn(TsNode) -> (String, Option<String>),
+    made: &std::collections::HashSet<String>,
+) -> Vec<crate::model::Held> {
     let mut out: Vec<crate::model::Held> = vec![];
     for i in walk(e, &["identifier", "shorthand_property_identifier"]) {
-        let name = text(i, src);
-        if skip.contains(&name) {
+        if skip.contains(&text(i, src)) {
             continue;
         }
-        let held = match ty(name) {
-            Some(t) => crate::model::Held { ty: t, name: name.to_string(), at: i.start_byte() as u32 },
-            None if made.contains(name) => crate::model::Held { ty: String::new(), name: name.to_string(), at: i.start_byte() as u32 },
+        let (name, ty) = holder(i);
+        let held = match ty {
+            Some(t) => crate::model::Held { ty: t, name, at: i.start_byte() as u32 },
+            None if made.contains(&name) => crate::model::Held { ty: String::new(), name, at: i.start_byte() as u32 },
             None => continue,
         };
         if !out.contains(&held) {
@@ -173,15 +187,33 @@ fn after_guard(g: TsNode, src: &[u8], ids: &std::collections::HashMap<usize, u32
         .map_or(0, |a| a + 1)
 }
 
+/// The choice a statement of a block is: the statement itself, or the one choice it is made of (an
+/// expression written as a statement, `if .. { .. }` in a block).
+fn choice_of<'t>(s: TsNode<'t>, ids: &std::collections::HashMap<usize, u32>) -> Option<TsNode<'t>> {
+    if ids.contains_key(&s.id()) {
+        return Some(s);
+    }
+    let c = s.named_child(0).filter(|c| s.named_child_count() == 1 && c.start_byte() == s.start_byte())?;
+    ids.contains_key(&c.id()).then_some(c)
+}
+
+/// The statement of its block a choice stands as: itself, or the statement made of it alone.
+fn statement_of(g: TsNode) -> TsNode {
+    match g.parent() {
+        Some(p) if p.named_child_count() == 1 && p.start_byte() == g.start_byte() => p,
+        _ => g,
+    }
+}
+
 /// The guards before `n` in its block, the nearest first, each with its choice and the arm `n` is in.
 pub fn guarded_by(n: TsNode, src: &[u8], ids: &std::collections::HashMap<usize, u32>, syn: &ChoiceSyntax) -> Vec<(u32, u32)> {
     let mut out = vec![];
     let mut s = n.prev_named_sibling();
-    while let Some(g) = s {
-        if let Some(&c) = ids.get(&g.id()).filter(|_| (syn.guards)(g, src)) {
-            out.push((c, after_guard(g, src, ids, syn)));
+    while let Some(st) = s {
+        if let Some(g) = choice_of(st, ids).filter(|g| (syn.guards)(*g, src)) {
+            out.push((ids[&g.id()], after_guard(g, src, ids, syn)));
         }
-        s = g.prev_named_sibling();
+        s = st.prev_named_sibling();
     }
     out
 }
@@ -195,8 +227,9 @@ pub fn guards<'t>(
 ) -> Vec<(u32, u32, TsNode<'t>, TsNode<'t>)> {
     let mut out = vec![];
     for g in walk_all(body).into_iter().filter(|g| ids.contains_key(&g.id()) && (syn.guards)(*g, src)) {
+        let s = statement_of(g);
         let (Some(first), Some(last)) =
-            (g.next_named_sibling(), g.parent().and_then(|p| p.named_child(p.named_child_count().saturating_sub(1))))
+            (s.next_named_sibling(), s.parent().and_then(|p| p.named_child(p.named_child_count().saturating_sub(1))))
         else {
             continue;
         };

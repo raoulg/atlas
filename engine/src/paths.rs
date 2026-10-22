@@ -167,14 +167,20 @@ pub fn environment_named(names: &[Built]) -> Option<Built> {
 /// `x ?? "d"`, `env::var("X").unwrap_or(..)`, `opts.config ?? "d"`. Where every value is one the
 /// code does not decide (what a caller hands, an input with a default, what the environment says,
 /// a value the code does not know), it is an input, and what the code takes is its default, which
-/// whoever says the value may override; else the two are alternatives.
+/// whoever says the value may override; else the two are alternatives. An input nothing in the
+/// program hands (what the environment says, a value the code does not know) is that input with
+/// its default and nothing beside it, as an option of the command line is: one place, drawn as
+/// its default, which a run reads or writes whatever the input says. What a caller hands is
+/// followed to the caller, so it stays beside the default.
 pub fn or_else(value: Vec<Built>, fallback: Vec<Built>) -> Vec<Built> {
     let input = |b: &Built| match b.as_slice() {
         [Seg::Param(x) | Seg::Held(_, x) | Seg::Option(x, _) | Seg::Hole(x)] => Some(x.clone()),
         _ => None,
     };
     let named: Option<Vec<String>> = value.iter().map(input).collect();
+    let untraced = value.iter().all(|b| matches!(b.as_slice(), [Seg::Hole(_)]));
     match named.and_then(|n| n.into_iter().next()) {
+        Some(name) if untraced && !fallback.is_empty() => option(&name, fallback),
         Some(name) => union(value, option(&name, fallback)),
         None => union(value, fallback),
     }
@@ -607,6 +613,14 @@ pub type Waiting = (String, crate::model::Touch, Vec<Built>);
 /// with where it is whole and the function whose own code decides it, if one does.
 pub type Completed = (String, crate::model::Touch, Vec<Built>, Vec<(Whole, Built, Option<String>)>);
 
+/// The way a request goes by the method it is built with (`knowledge::REQUEST_WAYS`), where every
+/// alternative says the same; none where one does not say its method.
+fn way_of_request<'b>(mut built: impl Iterator<Item = &'b Built>) -> Option<crate::model::Dir> {
+    let way = |b: &Built| crate::knowledge::request_way(method_and_path(&render(b)).0);
+    let first = way(built.next()?)?;
+    built.all(|b| way(b) == Some(first)).then_some(first)
+}
+
 /// Whether the code decides where a call goes, once its path or URL is whole: it starts at
 /// something the code holds, a literal or a constant, not at what a caller hands, an input with a
 /// default, or what the environment says (a value, the user's home `~`, the system's `$TMPDIR`).
@@ -695,7 +709,8 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
         // a file named by the value its function holds as it is where nothing calls the function
         if wholes.iter().any(|w| **w != Whole::In(f.clone())) {
             let what = if t.kind == World::Disk { by_value(store, &f, built.iter()) } else { None };
-            store.instead(&f, Touch { what: what.unwrap_or_else(|| t.what.clone()), ..t.clone() });
+            let dir = if t.kind == World::Net { way_of_request(built.iter()).or(t.dir) } else { t.dir };
+            store.instead(&f, Touch { what: what.unwrap_or_else(|| t.what.clone()), dir, ..t.clone() });
         }
         for whole in wholes {
             let (by, users_of) = match whole {
@@ -706,6 +721,9 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
             let holder = match whole {
                 Whole::In(h) | Whole::Users(h) => h,
             };
+            // the way a request goes, where the method its alternatives say gives one
+            let alternatives = found.iter().filter(|(w, _, _)| w == whole).map(|(_, b, _)| b);
+            let way = if t.kind == World::Net { way_of_request(alternatives).or(t.dir) } else { t.dir };
             // each place with the functions whose own code decides it
             let mut placed: Vec<(String, Option<crate::model::Dir>, Vec<String>)> = vec![];
             let (mut requested, mut decides) = (false, vec![]);
@@ -740,7 +758,7 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
                         .map(|(a, _)| a)
                         .filter(|a| !a.is_empty())
                     {
-                        placed.push((host, t.dir, fixed));
+                        placed.push((host, way, fixed));
                     }
                     requested |= served;
                     if !served && placed.len() == before {
@@ -813,7 +831,7 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
                 if !requested {
                     // a URL without a host is the page's own origin, decided by whoever serves it
                     let fixed = if t.kind != World::Net || !t.artifact.is_empty() { decides } else { vec![] };
-                    let touch = at(t.artifact.clone(), t.dir, fixed);
+                    let touch = at(t.artifact.clone(), way, fixed);
                     store.touch(&f, Touch { what: value.unwrap_or_else(|| touch.what.clone()), file: opened, ..touch });
                 }
                 continue;
@@ -823,9 +841,9 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
                 store.touch(&f, Touch { what, ..at(artifact, dir, fixed) });
             }
             // an alternative that names no place stays one the code does not name, by what names
-            // it: what the environment says beside the default the code holds
+            // it: what a caller hands that no code says
             if !unnamed.is_empty() {
-                let touch = at(String::new(), t.dir, vec![]);
+                let touch = at(String::new(), way, vec![]);
                 store.touch(&f, Touch { what: unnamed_value.unwrap_or_else(|| touch.what.clone()), ..touch });
             }
         }
@@ -912,7 +930,13 @@ mod tests {
     fn a_fallback_of_an_input_is_its_default() {
         use crate::model::{Dir, Touch, World};
         let fallback = or_else(vec![environment("STORE")], vec![lit("out.csv")]);
-        assert_eq!(fallback, [environment("STORE"), vec![Seg::Option("$STORE".into(), lit("out.csv"))]]);
+        assert_eq!(fallback, [vec![Seg::Option("$STORE".into(), lit("out.csv"))]], "what the environment says with a default is one input");
+        let handed = or_else(vec![vec![Seg::Param("path".into())]], vec![lit("out.csv")]);
+        assert_eq!(
+            handed,
+            [vec![Seg::Param("path".into())], vec![Seg::Option("path".into(), lit("out.csv"))]],
+            "what a caller hands is followed"
+        );
         assert_eq!(or_else(vec![lit("a.csv")], vec![lit("b.csv")]), [lit("a.csv"), lit("b.csv")], "two literals are alternatives");
         let (read, write) = (Touch::new(World::Disk, Some(Dir::Read)), Touch::new(World::Disk, Some(Dir::Write)));
         assert!(fallback.iter().all(|b| !decided(b, &write)), "{fallback:?}");
@@ -943,6 +967,6 @@ mod tests {
         assert_eq!(place(&lit("*"), "read_text"), None);
         let unset = or_else(vec![environment("DATA_DIR")], vec![lit("")]);
         let joined: Vec<Option<String>> = cross(&unset, &[lit("sub/report.txt")], "/").iter().map(|b| place(b, "read")).collect();
-        assert_eq!(joined, [Some("*/sub/report.txt".into()), Some("sub/report.txt".into())], "the empty path joins as nothing");
+        assert_eq!(joined, [Some("sub/report.txt".into())], "the empty path joins as nothing, and the variable is its input");
     }
 }

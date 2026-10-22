@@ -9,10 +9,13 @@ step bump/write_count
 
 line entry > bump call
 line Disk(bump.path) > bump/read_count own
-line bump/read_count > bump back                         # the count, of no type of the code's, goes on to bump (#101)
+line bump/read_count > _·n@bump/read_count value          # the count, of no type of the code's, under its name
+line _·n@bump/read_count > bump/write_count value         # `write_count(path, n + 1)`
 line bump/write_count > Disk(bump.path) own
 
 side entry left
+home _·n@bump/read_count bump
+
 side Disk(bump.path) both
 
 # `pick` makes its Table in one of two arms: the value is made by the choice, and `show` takes it after.

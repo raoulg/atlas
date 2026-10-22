@@ -20,14 +20,14 @@ line Ledger()/Ledger.new/Ledger() > Ledger@Ledger()/Ledger.new/Ledger() value
 line Ledger@Ledger()/Ledger.new/Ledger() > Ledger()/Ledger.new value
 line Ledger()/Ledger.new > Ledger@Ledger()/Ledger.new value
 line Ledger > Ledger()/Ledger.put value # the caller's instance: every method runs on it
-known #128 line Ledger > Ledger()/Ledger.get/read_to_string value   # the method hands `self.path` to it
+line Ledger > Ledger()/Ledger.get/read_to_string value # the method hands `self.path` to it
 
 line Decimal·amount > Ledger()/Ledger.put value # put's parameter, a library's type
 line Ledger()/Ledger.put > Disk(Ledger.path) own
 
 line Disk(Ledger.path) > Ledger()/Ledger.get own
 line Ledger()/Ledger.get/read_to_string > _·text@Ledger()/Ledger.get/read_to_string value
-known #125 line _·text@Ledger()/Ledger.get/read_to_string > Ledger()/Ledger.get/map_err value   # #125: from_str's result goes into map_err
+line _·text@Ledger()/Ledger.get/read_to_string > Ledger()/Ledger.get/map_err value   # from_str's result goes into map_err
 line Ledger()/Ledger.get/map_err > _·amount@Ledger()/Ledger.get/map_err value
 line _·amount@Ledger()/Ledger.get/map_err > Ledger()/Ledger.get/Entry() value
 line Ledger()/Ledger.get/Entry() > Entry@Ledger()/Ledger.get/Entry() value
@@ -55,11 +55,3 @@ side entry left
 side Disk(Ledger.path) between
 
 # #125: a call whose result goes into the named call around it is a step of its own
-known #125 extra step Ledger()/Ledger.get/from_str
-known #125 extra line _·text@Ledger()/Ledger.get/read_to_string > Ledger()/Ledger.get/from_str value
-known #125 extra line Ledger()/Ledger.get/from_str > _·amount@Ledger()/Ledger.get/from_str value
-known #125 extra line _·amount@Ledger()/Ledger.get/from_str > Ledger()/Ledger.get/map_err value
-known #125 extra home _·amount@Ledger()/Ledger.get/from_str Ledger()/Ledger.get
-
-# what the constructor builds goes back to its caller: Atlas runs the methods on it instead of the caller's instance
-known #128 extra line Ledger > Ledger()/Ledger.get value   # read_to_string is handed nothing through self.path

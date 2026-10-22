@@ -177,10 +177,10 @@ fn steps_come_and_go_and_a_place_changes_its_writer() {
 }
 
 /// A step whose input comes from a call that changed is still the same step: in B the raw file is
-/// fetched only when it is missing, and `load` is handed the path rather than what `fetch` gives
-/// back: a value a step made in A, a path no step makes in B, so `load` is removed and added;
-/// `smooth` takes what `load` gives in both readings, and so does what follows it. A vision that
-/// adds a condition marks the calls it changes, not the whole route.
+/// fetched only when it is missing, and `load` is handed the path `raw = Path(..)` names rather than
+/// what `fetch` gives back. Which step made the value is that step's arrow, so `Path` is added and
+/// `load` stays the same step, and so do `smooth` and what follows it. A vision that adds a condition
+/// marks the calls it changes, not the whole route.
 #[test]
 fn a_step_after_a_changed_call_stays_the_same() {
     let fetch = "\n\ndef fetch(path: Path) -> Path:\n    path.write_text(\"1 2 3\")\n    return path\n";
@@ -196,8 +196,8 @@ fn a_step_after_a_changed_call_stays_the_same() {
     let (g, d, _) = both(&repo);
     let main = steps(&g, &d, "spots.cli.main");
     let same = |to: &str| main.iter().any(|(t, s)| t == to && s.is_none());
-    assert!(main.iter().any(|(t, s)| t == "spots.cli.load" && *s == Some(Status::Added)), "{main:?}");
-    assert!(same("spots.cli.smooth") && same("spots.cli.plot"), "{main:?}");
+    assert!(main.iter().any(|(t, s)| t == "op:Path" && *s == Some(Status::Added)), "{main:?}");
+    assert!(same("spots.cli.load") && same("spots.cli.smooth") && same("spots.cli.plot"), "{main:?}");
     done(&repo);
 }
 

@@ -773,9 +773,11 @@ const stepMorphism = (key, own, isAnchor, leaf) => {
     const body = info.from && treeInfo.get(info.from)?.step;
     const globals = new Set((byId.get(body)?.touches || []).filter(t => t.kind === "global").map(t => t.what));
     for (const h of site.hands || []) {
+      // a value the call hands by no name (the value a method runs on, `self.cells.extend(..)`) is a value all the same, not
+      // the signature's type that one of a name stands for
       // what the command line gives comes from the entry, in place of the value it is parsed into
       if (fed?.has(h.name)) { if (h.type) m.dom.delete("t:" + h.type); m.dom.set(addPlace(entryPlace(V.route)), false); continue; }
-      const k = held(h); if (!m.dom.has(k)) m.dom.set(k, false); if (h.name) dn.set(k, h.name);
+      const k = held(h); if (!m.dom.has(k)) m.dom.set(k, false); if (h.name) dn.set(k, h.name); else keep.add(k);
       if (h.name && globals.has(h.name)) kept.add(k);
     }
     // the parse of the command line, shown where the entry is opened, reads what the human typed
@@ -859,7 +861,7 @@ const build = (node, parent, caller) => {
   if (caller) m.dom.set(addPlace(entryPlace(caller)), false);
   // a unit stands even when nothing crosses its edge, so that it can be opened
   if (!m.dom.size && !m.cod.size && !hb && !node.id.startsWith("unit:")) return [];
-  const pill = {id: "n:" + node.id, steps: [node.id], D: m.dom, C: m.cod, dn: m.dn, cn: m.cn, goes: m.goes || new Map(), parent, hue: node.hue, branch: node.branch, ...(said ? {said} : {}), ...(m.errs?.size ? {errs: m.errs} : {}), ...(m.raised?.size ? {raised: m.raised} : {}), ...(m.kept?.size ? {kept: m.kept} : {}), ...(node.parse ? {parse: true} : {}), ...(cut ? {cut: true, mult: m.mult, split: m.split} : {})};
+  const pill = {id: "n:" + node.id, steps: [node.id], D: m.dom, C: m.cod, dn: m.dn, cn: m.cn, goes: m.goes || new Map(), parent, hue: node.hue, branch: node.branch, ...(said ? {said} : {}), ...(m.keep?.size ? {keep: m.keep} : {}), ...(m.errs?.size ? {errs: m.errs} : {}), ...(m.raised?.size ? {raised: m.raised} : {}), ...(m.kept?.size ? {kept: m.kept} : {}), ...(node.parse ? {parse: true} : {}), ...(cut ? {cut: true, mult: m.mult, split: m.split} : {})};
   pills.set(pill.id, pill);
   return hb ? [pill] : [];
 };
@@ -1072,7 +1074,11 @@ const enter = fid => {
     // a parameter is looked for by its own type and name: what fills it through a projection is of another type
     const x = !p.receiver && (arrowOf(stepOf(f.step))?.takes || []).find(t => writesType(p, t));
     if (p.receiver) latestSet(kindKey(v) + "|", v, Own, fid, true);
-    else if (p.name) latestSet((x ? "t:" + (x === V.route ? V.route : kindOf(x)) : v.startsWith("v:") ? "v:" + p.name : kindKey(v)) + "|" + p.name, v, Own, fid, true);
+    else if (p.name) {
+      latestSet((x ? "t:" + (x === V.route ? V.route : kindOf(x)) : v.startsWith("v:") ? "v:" + p.name : kindKey(v)) + "|" + p.name, v, Own, fid, true);
+      // a parameter of no type of the code's is looked for as a value of no type, whatever it holds
+      if (!x && !v.startsWith("v:")) latestSet("v:" + p.name + "|" + p.name, v, Own, fid, true);
+    }
   }
 };
 for (const P of pills.values()) {

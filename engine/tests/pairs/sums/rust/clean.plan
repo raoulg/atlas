@@ -27,8 +27,8 @@ line entry > Kennisbank()/Kennisbank.graaf call
 line Kennisbank()/Kennisbank.new/Kennisbank() > Kennisbank@Kennisbank()/Kennisbank.new/Kennisbank() value
 line Kennisbank@Kennisbank()/Kennisbank.new/Kennisbank() > Kennisbank()/Kennisbank.new value     # new hands back what it built
 line Kennisbank()/Kennisbank.new > Kennisbank@Kennisbank()/Kennisbank.new value
-line Kennisbank > Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write value
-line Kennisbank > Kennisbank()/Kennisbank.graaf value
+known #126 line Kennisbank > Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write value   # its own write at self.path; read_to_string inside takes it too
+known #126 line Kennisbank > Kennisbank()/Kennisbank.graaf value   # its own read at self.path, glued into the literal Graaf() is handed
 
 # the put: the Bron a caller hands is written into the line `write` appends to what the file held
 line Bron·bron > Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write value                    # what it is handed: `bron.uuid`, `bron.url` glue `bron` in
@@ -63,39 +63,39 @@ home Graaf@Kennisbank()/Kennisbank.graaf Kennisbank()
 
 # write reads the file into `text`, appends the line and a newline to it, and writes it back
 step Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/read_to_string
-known #125 step Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push_str
-known #125 step Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push
+step Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push_str
+step Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push
 line Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/read_to_string > _·text@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/read_to_string value
-known #125 line _·text@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/read_to_string > Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push_str value
-known #125 line Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push_str > _·text@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push_str value
-known #125 line _·text@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push_str > Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push value
-known #125 line Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push > _·text@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push value
+line _·text@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/read_to_string > Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push_str value
+line Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push_str > _·text@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push_str value
+line _·text@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push_str > Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push value
+line Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push > _·text@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push value
 known #125 line _·text@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push > Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write value                    # fs::write in write's own body writes it
 home _·text@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/read_to_string Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write
-known #125 home _·text@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push_str Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write
-known #125 home _·text@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write
+home _·text@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push_str Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write
+home _·text@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write
 
 # node splits the line, and takes its three parts by name, each a part or the empty string
 step Kennisbank()/Kennisbank.graaf/node/splitn
-known #125 step Kennisbank()/Kennisbank.graaf/node/unwrap_or
-known #125 step Kennisbank()/Kennisbank.graaf/node/unwrap_or#2
-known #125 step Kennisbank()/Kennisbank.graaf/node/unwrap_or#3
+step Kennisbank()/Kennisbank.graaf/node/unwrap_or
+step Kennisbank()/Kennisbank.graaf/node/unwrap_or#2
+step Kennisbank()/Kennisbank.graaf/node/unwrap_or#3
 line Kennisbank()/Kennisbank.graaf/node/splitn > _·parts@Kennisbank()/Kennisbank.graaf/node/splitn value
-known #125 line _·parts@Kennisbank()/Kennisbank.graaf/node/splitn > Kennisbank()/Kennisbank.graaf/node/unwrap_or value        # what `parts.next()` gives goes into it
-known #125 line _·parts@Kennisbank()/Kennisbank.graaf/node/splitn > Kennisbank()/Kennisbank.graaf/node/unwrap_or#2 value
-known #125 line _·parts@Kennisbank()/Kennisbank.graaf/node/splitn > Kennisbank()/Kennisbank.graaf/node/unwrap_or#3 value
-known #125 line Kennisbank()/Kennisbank.graaf/node/unwrap_or > _·uuid@Kennisbank()/Kennisbank.graaf/node/unwrap_or value
-known #125 line Kennisbank()/Kennisbank.graaf/node/unwrap_or#2 > _·soort@Kennisbank()/Kennisbank.graaf/node/unwrap_or#2 value
-known #125 line Kennisbank()/Kennisbank.graaf/node/unwrap_or#3 > _·tekst@Kennisbank()/Kennisbank.graaf/node/unwrap_or#3 value
+line _·parts@Kennisbank()/Kennisbank.graaf/node/splitn > Kennisbank()/Kennisbank.graaf/node/unwrap_or value   # what `parts.next()` gives goes into it
+line _·parts@Kennisbank()/Kennisbank.graaf/node/splitn > Kennisbank()/Kennisbank.graaf/node/unwrap_or#2 value
+line _·parts@Kennisbank()/Kennisbank.graaf/node/splitn > Kennisbank()/Kennisbank.graaf/node/unwrap_or#3 value
+line Kennisbank()/Kennisbank.graaf/node/unwrap_or > _·uuid@Kennisbank()/Kennisbank.graaf/node/unwrap_or value
+line Kennisbank()/Kennisbank.graaf/node/unwrap_or#2 > _·soort@Kennisbank()/Kennisbank.graaf/node/unwrap_or#2 value
+line Kennisbank()/Kennisbank.graaf/node/unwrap_or#3 > _·tekst@Kennisbank()/Kennisbank.graaf/node/unwrap_or#3 value
 known #125 line _·soort@Kennisbank()/Kennisbank.graaf/node/unwrap_or#2 > Kennisbank()/Kennisbank.graaf/node value                # it decides the choice
-known #125 line _·uuid@Kennisbank()/Kennisbank.graaf/node/unwrap_or > Kennisbank()/Kennisbank.graaf/node/?1/Bron() value
-known #125 line _·tekst@Kennisbank()/Kennisbank.graaf/node/unwrap_or#3 > Kennisbank()/Kennisbank.graaf/node/?1/Bron() value
-known #125 line _·uuid@Kennisbank()/Kennisbank.graaf/node/unwrap_or > Kennisbank()/Kennisbank.graaf/node/?1/Begrip() value
-known #125 line _·tekst@Kennisbank()/Kennisbank.graaf/node/unwrap_or#3 > Kennisbank()/Kennisbank.graaf/node/?1/Begrip() value
+line _·uuid@Kennisbank()/Kennisbank.graaf/node/unwrap_or > Kennisbank()/Kennisbank.graaf/node/?1/Bron() value
+line _·tekst@Kennisbank()/Kennisbank.graaf/node/unwrap_or#3 > Kennisbank()/Kennisbank.graaf/node/?1/Bron() value
+line _·uuid@Kennisbank()/Kennisbank.graaf/node/unwrap_or > Kennisbank()/Kennisbank.graaf/node/?1/Begrip() value
+line _·tekst@Kennisbank()/Kennisbank.graaf/node/unwrap_or#3 > Kennisbank()/Kennisbank.graaf/node/?1/Begrip() value
 home _·parts@Kennisbank()/Kennisbank.graaf/node/splitn Kennisbank()/Kennisbank.graaf/node
-known #125 home _·uuid@Kennisbank()/Kennisbank.graaf/node/unwrap_or Kennisbank()/Kennisbank.graaf/node
-known #125 home _·soort@Kennisbank()/Kennisbank.graaf/node/unwrap_or#2 Kennisbank()/Kennisbank.graaf/node
-known #125 home _·tekst@Kennisbank()/Kennisbank.graaf/node/unwrap_or#3 Kennisbank()/Kennisbank.graaf/node
+home _·uuid@Kennisbank()/Kennisbank.graaf/node/unwrap_or Kennisbank()/Kennisbank.graaf/node
+home _·soort@Kennisbank()/Kennisbank.graaf/node/unwrap_or#2 Kennisbank()/Kennisbank.graaf/node
+home _·tekst@Kennisbank()/Kennisbank.graaf/node/unwrap_or#3 Kennisbank()/Kennisbank.graaf/node
 
 # the io::Error, a value of no type of the code's: `read_to_string` makes it in write, and fs::write in write's own body;
 # `?` is no choice, and each border it crosses uncaught hands it on, up to the caller of the door
@@ -113,5 +113,9 @@ known #138 home _@Kennisbank()/Kennisbank.graaf Kennisbank()
 side entry left
 side Disk(Kennisbank.path) both
 
+# building the struct the route is about is read as a call of the route inside itself
+# the methods run on what the constructor built, not on the caller's instance
 # graaf's own arrow takes what its steps make, the Nodes too, though only Graaf() takes them and graaf gives back the Graaf
 known #126 extra line Node@Kennisbank()/Kennisbank.graaf/node > Kennisbank()/Kennisbank.graaf value
+line Kennisbank > Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/read_to_string value   # `fs::read_to_string(&self.path)`
+line Kennisbank > Kennisbank()/Kennisbank.graaf/Graaf() value   # the read glued into the literal reads `self.path`

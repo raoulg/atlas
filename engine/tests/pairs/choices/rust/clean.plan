@@ -115,10 +115,3 @@ home Plan@run/Mode.plan run
 
 side entry left
 side Screen right
-
-# a name handed to a call nested in an argument counts as handed to the call around it too: `level` goes to
-# `level.prefix()`, whose result the Message is built from, not to the Message
-known #128 extra line Settings·settings > run/report/?1/Message() value
-known #128 extra line Settings·settings > run/report/?1/Message()#2 value
-
-# an opened step's own arrow takes what its steps make, or what its call is handed, though only a step inside takes it

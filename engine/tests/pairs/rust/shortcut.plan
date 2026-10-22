@@ -1,14 +1,14 @@
 # `spend`, as it is written under time pressure: the command line is strings and `run(kind, args)` tests `kind` again
 # after its `match`; the settings and the rates are maps of no type of the program's, the rates of a report go
 # through a global, and the report reads the store itself. The places are decided in the library, each an
-# environment variable with a fallback: the set of terms it can be.
+# environment variable with a fallback: one input, drawn as its default, which whoever starts the program may set.
 #
 # Touches stay with the function whose body makes them. Of a chain of library operations the last, whose result the
 # body names, is the step; what the others give goes into it.
 
 route spend.main
 step main/collect                                                      # env::args().skip(1).collect()
-known #125 step main/first                                             # match args.first() { Some(kind) => .. }
+step main/first   # match args.first() { Some(kind) => .. }
 choice main/?1
 step main/?1/run
 step main/?1/run/load
@@ -24,6 +24,7 @@ step main/?1/run/?1/read_csv/unwrap
 step main/?1/run/?1/read_csv/Expense.parse
 step main/?1/run/?1/read_csv/Expense.parse/collect
 step main/?1/run/?1/read_csv/Expense.parse/split_amount
+step main/?1/run/?1/read_csv/Expense.parse/split_amount/unwrap_or      # `let (amount, currency) = ..split_once(' ').unwrap_or((text, "EUR"))`
 step main/?1/run/?1/read_csv/Expense.parse/Expense()
 step main/?1/run/?1/Store.save
 step main/?1/run/?1/Store.save/round2
@@ -53,18 +54,17 @@ line entry > main call
 line entry > main/collect call                                      # the arguments the human typed
 line main/collect > _·args@main/collect value
 line _·args@main/collect > main/?1/run value                          # run is handed &args[1..] and looks for --open
-known #125 line _·args@main/collect > main/first value
-known #125 line main/first > _·kind@main/first value
-known #125 line _·kind@main/first > main/?1/run value
+line _·args@main/collect > main/first value
+line main/first > _·kind@main/first value
+line _·kind@main/first > main/?1/run value
 known #103 line _·args@main/collect > main/?1/run/?1/read_csv/unwrap value   # &args[0]
 known #128 line _·args@main/collect > main/?1/run/?1/unwrap_or value
 line main > Screen own                                                 # the usage, when no command is given
 
 # ---------- the settings and the ledger ----------
 line File(spend.toml) > main/?1/run/load own
-line Disk({$SPEND_CONFIG}) > main/?1/run/load own
 line main/?1/run/load/unwrap_or_else > _·path@main/?1/run/load/unwrap_or_else value
-known #128 line _·path@main/?1/run/load/unwrap_or_else > main/?1/run/load/expect value
+line _·path@main/?1/run/load/unwrap_or_else > main/?1/run/load/expect value
 line main/?1/run/load/expect > _·text@main/?1/run/load/expect value
 known #101 line _·text@main/?1/run/load/expect > main/?1/run/load value     # toml::from_str(&text)
 line main/?1/run/load > _·config@main/?1/run/load value
@@ -74,7 +74,7 @@ line _·config@main/?1/run/load > main/?1/run/?1/Store.rates value
 line _·config@main/?1/run/load > main/?1/run/?1/write value
 
 line main/?1/run/Store.open/unwrap_or_else > _·path@main/?1/run/Store.open/unwrap_or_else value
-known #128 line _·path@main/?1/run/Store.open/unwrap_or_else > main/?1/run/Store.open/unwrap value
+line _·path@main/?1/run/Store.open/unwrap_or_else > main/?1/run/Store.open/unwrap value
 line main/?1/run/Store.open/unwrap > _·conn@main/?1/run/Store.open/unwrap value
 line _·conn@main/?1/run/Store.open/unwrap > main/?1/run/Store.open/Store() value
 known #101 line _·conn@main/?1/run/Store.open/unwrap > main/?1/run/Store.open value   # conn.execute_batch(..)
@@ -89,10 +89,12 @@ known #103 line _·text@main/?1/run/?1/read_csv/unwrap > main/?1/run/?1/read_csv
 line main/?1/run/?1/read_csv/Expense.parse/collect > _·fields@main/?1/run/?1/read_csv/Expense.parse/collect value
 line _·fields@main/?1/run/?1/read_csv/Expense.parse/collect > main/?1/run/?1/read_csv/Expense.parse/split_amount value
 line _·fields@main/?1/run/?1/read_csv/Expense.parse/collect > main/?1/run/?1/read_csv/Expense.parse/Expense() value
-known #125 line main/?1/run/?1/read_csv/Expense.parse/split_amount > _·amount@main/?1/run/?1/read_csv/Expense.parse/split_amount value
-known #125 line main/?1/run/?1/read_csv/Expense.parse/split_amount > _·currency@main/?1/run/?1/read_csv/Expense.parse/split_amount value
-known #125 line _·amount@main/?1/run/?1/read_csv/Expense.parse/split_amount > main/?1/run/?1/read_csv/Expense.parse/Expense() value
-known #125 line _·currency@main/?1/run/?1/read_csv/Expense.parse/split_amount > main/?1/run/?1/read_csv/Expense.parse/Expense() value
+line main/?1/run/?1/read_csv/Expense.parse/split_amount > _·amount@main/?1/run/?1/read_csv/Expense.parse/split_amount value
+line main/?1/run/?1/read_csv/Expense.parse/split_amount > _·currency@main/?1/run/?1/read_csv/Expense.parse/split_amount value
+line main/?1/run/?1/read_csv/Expense.parse/split_amount/unwrap_or > _·amount@main/?1/run/?1/read_csv/Expense.parse/split_amount/unwrap_or value
+line main/?1/run/?1/read_csv/Expense.parse/split_amount/unwrap_or > _·currency@main/?1/run/?1/read_csv/Expense.parse/split_amount/unwrap_or value
+line _·amount@main/?1/run/?1/read_csv/Expense.parse/split_amount > main/?1/run/?1/read_csv/Expense.parse/Expense() value
+line _·currency@main/?1/run/?1/read_csv/Expense.parse/split_amount > main/?1/run/?1/read_csv/Expense.parse/Expense() value
 line main/?1/run/?1/read_csv/Expense.parse/Expense() > Expense@main/?1/run/?1/read_csv/Expense.parse/Expense() value
 line Expense@main/?1/run/?1/read_csv/Expense.parse/Expense() > main/?1/run/?1/read_csv/Expense.parse value
 line main/?1/run/?1/read_csv/Expense.parse > Expense@main/?1/run/?1/read_csv/Expense.parse value
@@ -109,14 +111,14 @@ line main/?1/run/?1/fetch > Value@main/?1/run/?1/fetch value
 line Value@main/?1/run/?1/fetch > main/?1/run/?1/Store.save_rates value  # the body of a Result, matched
 known #103 line Value@main/?1/run/?1/fetch > main/?1/run/?1/Store.save_rates/?1/unwrap_or_default value   # Ok(body) => body["date"]..
 line Store·store@main/?1/run/Store.open > main/?1/run/?1/Store.save_rates value
-known #103 line _·config@main/?1/run/load > main/?1/run/?1/Store.save_rates value   # base = &config["base"], into params![base, ..]
+line _·config@main/?1/run/load > main/?1/run/?1/Store.save_rates value   # base = &config["base"], into params![base, ..]
 line main/?1/run/?1/Store.save_rates/?1/unwrap_or_default > _·date@main/?1/run/?1/Store.save_rates/?1/unwrap_or_default value
 known #101 line _·date@main/?1/run/?1/Store.save_rates/?1/unwrap_or_default > main/?1/run/?1/Store.save_rates value
 line main/?1/run/?1/Store.save_rates > SQLite(rates) own
 line main/?1/run/?1/Store.save_rates > Screen own                      # the error, when the request failed
 
 # ---------- report ----------
-known #128 line Store·store@main/?1/run/Store.open > main/?1/run/?1/Store.rates/unwrap value   # self.conn.prepare(..).unwrap()
+line Store·store@main/?1/run/Store.open > main/?1/run/?1/Store.rates/unwrap value   # self.conn.prepare(..).unwrap()
 line main/?1/run/?1/Store.rates/unwrap > _·select@main/?1/run/?1/Store.rates/unwrap value
 known #101 line _·select@main/?1/run/?1/Store.rates/unwrap > main/?1/run/?1/Store.rates value
 line SQLite(rates) > main/?1/run/?1/Store.rates own
@@ -131,8 +133,7 @@ known #128 line _·format@main/?1/run/?1/unwrap_or > main/?1/run/?1/write/join v
 
 known #125 line main/?1/run/?1/write/?1/from > _·out@main/?1/run/?1/write/?1 value   # the other arm makes it by `format!`, no step: the value either arm makes
 known #101 line _·out@main/?1/run/?1/write/?1 > main/?1/run/?1/write value              # out += .., fs::write(&path, out)
-known #126 extra line Store·store@main/?1/run/Store.open > main/?1/run/?1/write/Store.rows value
-known #128 line Store·store@main/?1/run/Store.open > main/?1/run/?1/write/Store.rows/unwrap value
+line Store·store@main/?1/run/Store.open > main/?1/run/?1/write/Store.rows/unwrap value
 line main/?1/run/?1/write/Store.rows/unwrap > _·select@main/?1/run/?1/write/Store.rows/unwrap value
 known #101 line _·select@main/?1/run/?1/write/Store.rows/unwrap > main/?1/run/?1/write/Store.rows value
 line SQLite(expenses) > main/?1/run/?1/write/Store.rows own
@@ -145,16 +146,11 @@ line _·dir@main/?1/run/?1/write/from > main/?1/run/?1/write/join value
 known #101 line _·dir@main/?1/run/?1/write/from > main/?1/run/?1/write value        # fs::create_dir_all(&dir)
 line main/?1/run/?1/write/join > _·path@main/?1/run/?1/write/join value
 known #101 line _·path@main/?1/run/?1/write/join > main/?1/run/?1/write value       # fs::write(&path, out), path
-line main/?1/run/?1/write > Disk({$SPEND_REPORTS}) own
-line main/?1/run/?1/write > Disk({$SPEND_REPORTS}/report.{map}) own
-line main/?1/run/?1/write > File(*/report.md) own                       # report.md under wherever SPEND_REPORTS says
-line main/?1/run/?1/write > File(reports/) own
-line main/?1/run/?1/write > File(reports/report.md) own
+line main/?1/run/?1/write > File(reports/report.md) own              # the format an input with its default, md; reports/ made for it
 line main/?1/run/?1/write > main/?1/run back                             # the path, which run prints and opens
 
 # ---------- what every command but the report counts after ----------
-known #126 extra line Store·store@main/?1/run/Store.open > main/?1/run/?2/Store.rows value
-known #128 line Store·store@main/?1/run/Store.open > main/?1/run/?2/Store.rows/unwrap value
+line Store·store@main/?1/run/Store.open > main/?1/run/?2/Store.rows/unwrap value
 line main/?1/run/?2/Store.rows/unwrap > _·select@main/?1/run/?2/Store.rows/unwrap value
 known #101 line _·select@main/?1/run/?2/Store.rows/unwrap > main/?1/run/?2/Store.rows value
 line SQLite(expenses) > main/?1/run/?2/Store.rows own
@@ -164,7 +160,7 @@ line main/?1/run > Screen own
 line main/?1/run > open own
 
 home _·args@main/collect main
-known #125 home _·kind@main/first main
+home _·kind@main/first main
 home _·path@main/?1/run/load/unwrap_or_else main/?1/run/load
 home _·text@main/?1/run/load/expect main/?1/run/load
 home _·config@main/?1/run/load main/?1/run
@@ -174,8 +170,10 @@ home Store@main/?1/run/Store.open/Store() main/?1/run/Store.open
 home Store·store@main/?1/run/Store.open main/?1/run
 home _·text@main/?1/run/?1/read_csv/unwrap main/?1/run/?1/read_csv
 home _·fields@main/?1/run/?1/read_csv/Expense.parse/collect main/?1/run/?1/read_csv/Expense.parse
-known #125 home _·amount@main/?1/run/?1/read_csv/Expense.parse/split_amount main/?1/run/?1/read_csv/Expense.parse
-known #125 home _·currency@main/?1/run/?1/read_csv/Expense.parse/split_amount main/?1/run/?1/read_csv/Expense.parse
+home _·amount@main/?1/run/?1/read_csv/Expense.parse/split_amount/unwrap_or main/?1/run/?1/read_csv/Expense.parse/split_amount
+home _·currency@main/?1/run/?1/read_csv/Expense.parse/split_amount/unwrap_or main/?1/run/?1/read_csv/Expense.parse/split_amount
+home _·amount@main/?1/run/?1/read_csv/Expense.parse/split_amount main/?1/run/?1/read_csv/Expense.parse
+home _·currency@main/?1/run/?1/read_csv/Expense.parse/split_amount main/?1/run/?1/read_csv/Expense.parse
 home Expense@main/?1/run/?1/read_csv/Expense.parse/Expense() main/?1/run/?1/read_csv/Expense.parse
 home Expense@main/?1/run/?1/read_csv/Expense.parse main/?1/run/?1/read_csv
 known #101 home Expense·expenses@main/?1/run/?1/read_csv main/?1/run
@@ -194,73 +192,21 @@ home _·select@main/?1/run/?2/Store.rows/unwrap main/?1/run/?2/Store.rows
 
 side entry left
 side File(spend.toml) left
-side Disk({$SPEND_CONFIG}) left
 side Disk(path) left
 side Web left
 side SQLite(expenses) both        # import writes it, report reads and uses it: arms of one choice; the count after is no use
 side SQLite(rates) both           # rates writes it, report reads and uses it
 side Global(spend.rates.LATEST) right          # run reads back what it left there: closed, the place keeps what run leaves
-side Disk({$SPEND_REPORTS}) right
-side Disk({$SPEND_REPORTS}/report.{map}) right
-side File(*/report.md) right
-side File(reports/) right
 side File(reports/report.md) right
 side open right
 side Screen right
 
 # ---- what Atlas has and should not ----
 # a value one arm of the choice makes, and only that arm takes, has the choice's moment
-known #125 extra home _·format@main/?1/run/?1/first main/?1/run/?1
-known #125 extra home _·format@main/?1/run/?1/map main/?1/run/?1
-known #125 extra home _·date@main/?1/run/?1/Store.save_rates/?1/as_str main/?1/run/?1/Store.save_rates/?1
 # the parameter of a sum type is not the value its call is handed: it comes from beyond
 # the name a chain's last operation gives is given to every call in the chain
-known #125 extra step main/?1/run/load/read_to_string
-known #125 extra line main/?1/run/load/read_to_string > _·text@main/?1/run/load/read_to_string value
-known #125 extra line _·text@main/?1/run/load/read_to_string > main/?1/run/load/expect value
-known #125 extra line _·path@main/?1/run/load/unwrap_or_else > main/?1/run/load/read_to_string value
-known #125 extra home _·text@main/?1/run/load/read_to_string main/?1/run/load
-known #125 extra step main/?1/run/Store.open/open
-known #125 extra line main/?1/run/Store.open/open > _·conn@main/?1/run/Store.open/open value
-known #125 extra line _·conn@main/?1/run/Store.open/open > main/?1/run/Store.open/unwrap value
-known #125 extra line _·path@main/?1/run/Store.open/unwrap_or_else > main/?1/run/Store.open/open value
-known #125 extra home _·conn@main/?1/run/Store.open/open main/?1/run/Store.open
-known #125 extra step main/?1/run/?1/read_csv/read_to_string
-known #125 extra line main/?1/run/?1/read_csv/read_to_string > _·text@main/?1/run/?1/read_csv/read_to_string value
-known #125 extra line _·text@main/?1/run/?1/read_csv/read_to_string > main/?1/run/?1/read_csv/unwrap value
-known #125 extra home _·text@main/?1/run/?1/read_csv/read_to_string main/?1/run/?1/read_csv
-known #125 extra step main/?1/run/?1/Store.rates/prepare
-known #125 extra line main/?1/run/?1/Store.rates/prepare > _·select@main/?1/run/?1/Store.rates/prepare value
-known #125 extra line _·select@main/?1/run/?1/Store.rates/prepare > main/?1/run/?1/Store.rates/unwrap value
-known #125 extra home _·select@main/?1/run/?1/Store.rates/prepare main/?1/run/?1/Store.rates
-known #125 extra step main/?1/run/?1/write/Store.rows/prepare
-known #125 extra line main/?1/run/?1/write/Store.rows/prepare > _·select@main/?1/run/?1/write/Store.rows/prepare value
-known #125 extra line _·select@main/?1/run/?1/write/Store.rows/prepare > main/?1/run/?1/write/Store.rows/unwrap value
-known #125 extra home _·select@main/?1/run/?1/write/Store.rows/prepare main/?1/run/?1/write/Store.rows
-known #125 extra step main/?1/run/?2/Store.rows/prepare
-known #125 extra line main/?1/run/?2/Store.rows/prepare > _·select@main/?1/run/?2/Store.rows/prepare value
-known #125 extra line _·select@main/?1/run/?2/Store.rows/prepare > main/?1/run/?2/Store.rows/unwrap value
-known #125 extra home _·select@main/?1/run/?2/Store.rows/prepare main/?1/run/?2/Store.rows
-known #125 extra step main/?1/run/?1/first
-known #125 extra step main/?1/run/?1/map
-known #125 extra line main/?1/run/?1/first > _·format@main/?1/run/?1/first value
-known #125 extra line main/?1/run/?1/map > _·format@main/?1/run/?1/map value
-known #125 extra step main/?1/run/?1/Store.save_rates/?1/as_str
-known #125 extra line main/?1/run/?1/Store.save_rates/?1/as_str > _·date@main/?1/run/?1/Store.save_rates/?1/as_str value
 # an environment variable with a fallback puts the read of the variable in a choice, though it always runs
-known #130 extra choice main/?1/run/load/?1
-known #130 extra step main/?1/run/load/?1/var
-known #130 extra line main/?1/run/load/?1/var > _·path@main/?1/run/load/?1/var value
-known #130 extra line _·path@main/?1/run/load/?1/var > main/?1/run/load/unwrap_or_else value
-known #130 extra home _·path@main/?1/run/load/?1/var main/?1/run/load
-known #130 extra choice main/?1/run/Store.open/?1
-known #130 extra step main/?1/run/Store.open/?1/var
-known #130 extra line main/?1/run/Store.open/?1/var > _·path@main/?1/run/Store.open/?1/var value
-known #130 extra line _·path@main/?1/run/Store.open/?1/var > main/?1/run/Store.open/unwrap_or_else value
-known #130 extra home _·path@main/?1/run/Store.open/?1/var main/?1/run/Store.open
 # an own arrow takes what only a step inside it takes; a result that only a step takes is no result handed back
-known #126 extra line Store·store@main/?1/run/Store.open > main/?1/run/?1/Store.rates value
-known #125 extra line main/?1/run/?1/read_csv/Expense.parse/split_amount > main/?1/run/?1/read_csv/Expense.parse back   # the tuple it gives goes to `amount` and `currency`
 
 # ---- each loop is a step: it takes what it runs over and makes the element (#103) ----
 step main/?1/run/?1/Store.save/for e in expenses
@@ -281,14 +227,10 @@ line _·amount@main/?1/run/?1/write/for (date, description, amount, currency) in
 line _·currency@main/?1/run/?1/write/for (date, description, amount, currency) in store.rows() > main/?1/run/?1/write/to_base value
 line Expense·expenses@main/?1/run/?1/read_csv > main/?1/run/?1/Store.save/for e in expenses value
 # the loop runs over what Store.rows gives, a step of its own, not over the store (convention 1)
-known #128 extra line Store·store@main/?1/run/Store.open > main/?1/run/?1/write/for (date, description, amount, currency) in store.rows() value
 known #128 line main/?1/run/?1/write/Store.rows > _@main/?1/run/?1/write/Store.rows value   # the rows go to the loop
 known #128 line _@main/?1/run/?1/write/Store.rows > main/?1/run/?1/write/for (date, description, amount, currency) in store.rows() value
 known #128 home _@main/?1/run/?1/write/Store.rows main/?1/run/?1/write
 
 # a value read through its wrappers is handed into the chain's calls, which are no steps (#125)
-known #125 extra line _·date@main/?1/run/?1/Store.save_rates/?1/as_str > main/?1/run/?1/Store.save_rates/?1/unwrap_or_default value
-known #125 extra line _·format@main/?1/run/?1/first > main/?1/run/?1/map value
-known #125 extra line _·format@main/?1/run/?1/map > main/?1/run/?1/unwrap_or value
 known #125 extra line main/?1/run/?1/write/?1/from > _·out@main/?1/run/?1/write/?1/from value
 known #125 extra home _·out@main/?1/run/?1/write/?1/from main/?1/run/?1/write/?1

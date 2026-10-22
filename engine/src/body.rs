@@ -342,9 +342,10 @@ impl<'t, 's> Steps<'t, 's> {
     /// What decides each arm of the body's choices, as the code writes it: `(choice, arm, when)`.
     /// An arm that decides itself (a `case`, a `match` arm) runs when its pattern matches; the
     /// first arm of a choice decided in one place (an `if`, an `elif`, a conditional expression)
-    /// when that holds, and a later one otherwise. Of two arms nothing decides (an or-else, a
-    /// `try` and its handler) the first is tried and the second runs otherwise; the first, and
-    /// the arms of a longer choice nothing decides, have no words.
+    /// when that holds, and a later one otherwise. Of two arms nothing decides (a `try` and its
+    /// handler) the first is tried and the second runs otherwise, and the one arm of a choice
+    /// nothing decides (what an or-else falls back on) runs otherwise; the first, and the arms of a
+    /// longer choice nothing decides, have no words.
     fn whens(&self) -> Vec<(u32, u32, String)> {
         let decided = |n: TsNode| -> String {
             let parts: Vec<&str> = named_children(n)
@@ -371,7 +372,8 @@ impl<'t, 's> Steps<'t, 's> {
                 let itself = if self.choices.contains_key(&c.id()) { decided(c) } else { String::new() };
                 let when = match () {
                     _ if !itself.is_empty() => itself,
-                    _ if Some(a) == first => own.clone(),
+                    _ if Some(a) == first && !(own.is_empty() && n_arms == 1) => own.clone(),
+                    _ if n_arms == 1 => "otherwise".to_string(),
                     _ if !own.is_empty() || n_arms == 2 => "otherwise".to_string(),
                     _ => String::new(),
                 };
@@ -473,6 +475,74 @@ pub fn changed_through<'a>(body: TsNode, src: &'a [u8], syn: &BindSyntax, name: 
     }
 }
 
+/// What the names of a body hold, binding by binding: each binding is visible over a stretch of the
+/// source, and a use takes the innermost binding visible where it stands. A name bound twice (a
+/// loop's `b`, then `let b = Body::new()`) is two values, as two names would be. Where a binding is
+/// visible is the language's to say.
+pub struct Bindings<T> {
+    all: Vec<(String, usize, usize, T)>,
+}
+
+impl<T> Default for Bindings<T> {
+    fn default() -> Self {
+        Bindings { all: vec![] }
+    }
+}
+
+impl<T> Bindings<T> {
+    /// A binding of `name` to `value`, visible over the bytes `from..to`.
+    pub fn bind(&mut self, name: &str, from: usize, to: usize, value: T) {
+        self.all.push((name.to_string(), from, to, value));
+    }
+
+    /// The index of the binding of `name` visible at `at`: of those that hold it, the one visible
+    /// from the latest byte, which is the innermost.
+    fn at(&self, name: &str, at: usize) -> Option<usize> {
+        (0..self.all.len())
+            .filter(|&i| self.all[i].0 == name && self.all[i].1 <= at && at < self.all[i].2)
+            .max_by_key(|&i| (self.all[i].1, i))
+    }
+
+    /// What the binding of `name` visible at `at` holds.
+    pub fn get(&self, name: &str, at: usize) -> Option<&T> {
+        self.at(name, at).map(|i| &self.all[i].3)
+    }
+
+    /// The binding of `name` visible at `at`: the byte it is visible from, and what it holds.
+    pub fn binding(&self, name: &str, at: usize) -> Option<(usize, &T)> {
+        self.at(name, at).map(|i| (self.all[i].1, &self.all[i].3))
+    }
+
+    /// Whether `name` holds a value at `at`.
+    pub fn holds(&self, name: &str, at: usize) -> bool {
+        self.at(name, at).is_some()
+    }
+
+    /// What the binding of `name` visible at `at` holds, to change it.
+    pub fn get_mut(&mut self, name: &str, at: usize) -> Option<&mut T> {
+        self.at(name, at).map(|i| &mut self.all[i].3)
+    }
+
+    /// Every binding, by its name.
+    pub fn iter(&self) -> impl Iterator<Item = (&str, &T)> {
+        self.all.iter().map(|(n, _, _, v)| (n.as_str(), v))
+    }
+
+    /// Every name visible at `at`, with what it holds there.
+    pub fn visible(&self, at: usize) -> HashMap<String, T>
+    where
+        T: Clone,
+    {
+        let mut out = HashMap::new();
+        for (name, ..) in &self.all {
+            if let Some(v) = self.get(name, at) {
+                out.entry(name.clone()).or_insert_with(|| v.clone());
+            }
+        }
+        out
+    }
+}
+
 fn line(c: TsNode) -> u32 {
     c.start_position().row as u32 + 1
 }
@@ -525,5 +595,22 @@ mod tests {
         }
         assert_eq!(sides("copy", 1), None, "one path is the operation's own way");
         assert_eq!(sides("write_text", 2), None);
+    }
+
+    /// `for b in bases { resolve(b) }` then `let b = Body::new()`: the use in the loop takes the
+    /// loop's `b`, a use after it the later binding, and a use before both neither.
+    #[test]
+    fn a_use_takes_the_innermost_binding_visible_where_it_stands() {
+        let mut b = Bindings::default();
+        b.bind("b", 10, 40, "String");
+        b.bind("b", 50, 100, "Body");
+        b.bind("b", 60, 70, "Leaf");
+        assert_eq!(b.get("b", 5), None);
+        assert_eq!(b.get("b", 20), Some(&"String"));
+        assert_eq!(b.get("b", 45), None);
+        assert_eq!(b.get("b", 55), Some(&"Body"));
+        assert_eq!(b.get("b", 65), Some(&"Leaf"));
+        assert_eq!(b.get("b", 80), Some(&"Body"));
+        assert_eq!(b.visible(65).get("b"), Some(&"Leaf"));
     }
 }

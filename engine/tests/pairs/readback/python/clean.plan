@@ -9,10 +9,10 @@ step run/Ledger.keep/connect                                # `con = duckdb.conn
 
 line entry > run call
 line run/Ledger() > Ledger@run/Ledger() value
-line Ledger@run/Ledger() > run/Ledger.keep value
+known #126 line Ledger@run/Ledger() > run/Ledger.keep value   # its own body changes it (`self.kept +=`) besides handing it to connect
 line run/Ledger.keep > Ledger@run/Ledger.keep value         # keep changes the ledger it runs on (`self.kept +=`)
 line run/Ledger.keep/connect > DuckDBPyConnection·con@run/Ledger.keep/connect value
-known #128 line Ledger@run/Ledger() > run/Ledger.keep/connect value  # K
+line Ledger@run/Ledger() > run/Ledger.keep/connect value   # `duckdb.connect(self.path)` hands the ledger
 known #101 line DuckDBPyConnection·con@run/Ledger.keep/connect > run/Ledger.keep value   # keep's own calls use con
 line run/Ledger.keep > DuckDB(notes) own                    # it inserts the notes; reading them back is no read
 
@@ -36,3 +36,4 @@ side DuckDB(notes) right
 
 # K: a value handed through a field reaches no step inside: `duckdb.connect(self.path)` hands `self` (#121, decision 1,
 #    cause 3: the reader's `held_in` skips `self` even inside an argument)
+# building the ledger runs its public methods, which touch the table

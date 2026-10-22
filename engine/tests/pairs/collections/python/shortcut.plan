@@ -28,7 +28,7 @@ line Store()/Store.put/Row() > Row@Store()/Store.put/Row() value
 line Row·rows@Store()/Store.put/Store._rows > Store()/Store.put/append value
 line Row@Store()/Store.put/Row() > Store()/Store.put/append value
 line Store()/Store.put/append > Row·rows@Store()/Store.put/append value  # the rows made anew
-known #128 line Store > Store()/Store.put/write_rows value  # K: `write_rows(self.path, rows)` hands `self`
+line Store > Store()/Store.put/write_rows value # `write_rows(self.path, rows)` hands the store it runs on
 line Store()/Store.put/write_rows > Disk(Store.path) own
 step Store()/Store.put_all
 line entry > Store()/Store.put_all call
@@ -49,7 +49,7 @@ line Store()/Store.put_all/Row() > Row@Store()/Store.put_all/Row() value
 line Row·rows@Store()/Store.put_all/Store._rows > Store()/Store.put_all/append value
 line Row@Store()/Store.put_all/Row() > Store()/Store.put_all/append value
 line Store()/Store.put_all/append > Row·rows@Store()/Store.put_all/append value  # the rows made anew
-known #128 line Store > Store()/Store.put_all/write_rows value  # K: `write_rows(self.path, rows)` hands `self`
+line Store > Store()/Store.put_all/write_rows value # `write_rows(self.path, rows)` hands the store it runs on
 line Store()/Store.put_all/write_rows > Disk(Store.path) own
 step Store()/Store.get
 line entry > Store()/Store.get call
@@ -92,4 +92,3 @@ side Disk(Store.path) both
 # What Atlas gets wrong here, each by the issue of its cause:
 # K: a value handed through a field reaches no step inside: `write_rows(self.path, rows)` hands `self` (#121, decision
 #    1), and the helper takes no Store
-

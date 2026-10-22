@@ -344,7 +344,8 @@ pub fn facts(kind: Crossing, pkg: Option<&str>, op: &str, literals: &[String]) -
                 return Facts::of(DISK_READ, local.clone());
             }
         }
-        // a web place is named by its host; the Hub's operations say which way the files go
+        // a web place is named by its host; the Hub's operations say which way the files go, and a
+        // request named for its method goes that method's way
         let hub = k::HUB_READ.contains(&op) || k::HUB_WRITE.contains(&op) || k::HUB_MODELS.contains(&op);
         let artifact = if hub { k::HUB_HOST.to_string() } else { literals.iter().find_map(|l| host(l)).unwrap_or_default() };
         let dir = if k::HUB_WRITE.contains(&op) {
@@ -352,7 +353,7 @@ pub fn facts(kind: Crossing, pkg: Option<&str>, op: &str, literals: &[String]) -
         } else if hub {
             Some(Dir::Read)
         } else {
-            None
+            k::request_way(op)
         };
         return Facts::of(Crossing { world: World::Net, dir }, artifact);
     }

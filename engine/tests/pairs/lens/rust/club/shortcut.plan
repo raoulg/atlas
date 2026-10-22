@@ -16,12 +16,12 @@ line entry > Register()/Register.join call
 line entry > Register()/Register.names call
 line entry > Register()/Register.latest call
 
-known #128 line Connection·conn > Register()/Register.new/Register() value   # the literal is handed new's connection
+line Connection·conn > Register()/Register.new/Register() value # the literal is handed new's connection
 line Register()/Register.new/Register() > Register@Register()/Register.new/Register() value
 line Register@Register()/Register.new/Register() > Register()/Register.new value
 line Register()/Register.new > Register@Register()/Register.new value
 line Register > Register()/Register.join value # the caller's instance: every method runs on it
-known #128 line Register > Register()/Register.names/prepare value   # the method hands `self.conn` to it
+line Register > Register()/Register.names/prepare value # the method hands `self.conn` to it
 line Register > Register()/Register.latest value
 
 line Member·who > Register()/Register.join value
@@ -60,7 +60,3 @@ line Register()/Register.names/query_map > _·rows@Register()/Register.names/que
 known #101 line _·rows@Register()/Register.names/query_map > Register()/Register.names value   # names returns what `collect` makes of them
 home _·select@Register()/Register.names/prepare Register()/Register.names
 home _·rows@Register()/Register.names/query_map Register()/Register.names
-
-# the struct literal is handed nothing of the fields it is given (#128), so new takes the connection itself
-known #128 extra line Connection·conn > Register()/Register.new value
-known #128 extra line Register > Register()/Register.names value   # prepare is handed nothing through self.conn

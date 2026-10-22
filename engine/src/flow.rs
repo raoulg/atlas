@@ -99,20 +99,23 @@ fn nest(sites: &mut [Site], gives_class: &HashMap<String, String>, next: &mut us
     }
 }
 
-/// A library's operation handed one value and giving a value of the same type, either the result of
-/// the step before it or the value it is named for, is an identity (`option.ok_or_else(..)`,
-/// `x = x.copy()`): the arrow is not drawn, and the step before it gives what it names. A call that
-/// changes what it is called on is none, even where the graph follows nothing else it is handed.
+/// A library's operation handed one value and giving a value of the same type, the result of the
+/// step it is written on (`option.ok_or_else(..)`, `lang = detect(opts).unwrap()`), is an identity: the
+/// arrow is not drawn, and the step before it gives what it names. One handed a value the body named
+/// before it makes that value anew (`board = copy.copy(board)`), and a call that changes what it is
+/// called on is none, even where the graph follows nothing else it is handed.
 fn drop_identities(sites: &mut Vec<Site>) {
     let mut gone = vec![];
     for b in 0..sites.len() {
         let s = &sites[b];
         let ([h], [g]) = (s.hands.as_slice(), s.gives.as_slice()) else { continue };
-        if !s.to.is_empty() || s.changes || g.ty.is_empty() || g.ty != h.ty || !(h.name.starts_with('#') || h.name == g.name) {
+        let maker = sites.iter().position(|x| x.gives.contains(h));
+        let chained = h.name.starts_with('#') || (h.name == g.name && maker.is_some_and(|m| m != b && inside(sites[m].span, s.span)));
+        if !s.to.is_empty() || s.changes || g.ty.is_empty() || g.ty != h.ty || !chained {
             continue;
         }
         let (h, g) = (h.clone(), g.clone());
-        if let Some(maker) = sites.iter().position(|x| x.gives.contains(&h)) {
+        if let Some(maker) = maker {
             for x in sites[maker].gives.iter_mut().filter(|x| **x == h) {
                 *x = g.clone();
             }
@@ -360,15 +363,15 @@ impl Touch {
     }
 
     /// Which side of its step the touch stands on: what the call says (a file's mode, a
-    /// statement's verb, a download), else what its kind of place does by default. The web and a
-    /// file whose way is not said are read; a database whose way is not said is open; everything
-    /// else is written to.
+    /// statement's verb, a request's method, a download), else what its kind of place does by
+    /// default. A file whose way is not said is read, as opening one is; a request or a database
+    /// whose way is not said is open, in neither domain nor codomain; everything else is written to.
     pub fn side(&self) -> Side {
         match (self.dir, self.kind) {
             (Some(Dir::Read), _) => Side::In,
             (Some(Dir::Write), _) => Side::Out,
-            (None, World::Net | World::Disk) => Side::In,
-            (None, World::Db(_)) => Side::Open,
+            (None, World::Disk) => Side::In,
+            (None, World::Net | World::Db(_)) => Side::Open,
             (None, _) => Side::Out,
         }
     }
@@ -875,11 +878,19 @@ impl<'g> Ix<'g> {
         self.out.get(id).into_iter().flatten().copied().filter(move |e| e.kind == kind)
     }
 
-    /// The overrides a call to a method may run: the methods of that name of every class below
-    /// the method's own.
+    /// What a call to a method by name may run in its place, on a value whose class is not known:
+    /// for each class the value may be, the method's own or one below it, the method that class
+    /// runs for the name along its order (`method_on`), each once. In a diamond `D(B, C)` over `A`
+    /// a call of `C.f` may run `B.f` on a `D`, though `B` is not below `C`.
     fn overrides(&self, n: &Node) -> Vec<String> {
         let Some(cls) = n.cls.as_deref() else { return vec![] };
-        self.below(cls).into_iter().map(|c| format!("{c}.{}", n.name)).filter(|m| self.nodes.contains_key(m.as_str())).collect()
+        let mut out: Vec<String> = vec![];
+        for c in self.below(cls) {
+            if let Some(m) = self.method_on(&c, &n.name).filter(|m| *m != n.id && !out.contains(m)) {
+                out.push(m);
+            }
+        }
+        out
     }
 
     /// The classes below `cls`, each once, nearest first along each line of descent.
@@ -1224,5 +1235,17 @@ mod tests {
         nest(&mut sites, &HashMap::new(), &mut 0);
         drop_identities(&mut sites);
         assert_eq!(sites.iter().map(|s| s.to.as_str()).collect::<Vec<_>>(), ["detect"]);
+    }
+
+    /// `board = copy.copy(board)` makes the board it is handed anew: a step, no identity.
+    #[test]
+    fn a_copy_of_a_named_value_is_a_step() {
+        let mut sites = vec![
+            site("make", "", (10, 22), vec![], vec![Held::new("Board", "board")]),
+            site("", "copy", (40, 56), vec![at("Board", "board", 50)], vec![Held::new("Board", "board")]),
+        ];
+        nest(&mut sites, &HashMap::new(), &mut 0);
+        drop_identities(&mut sites);
+        assert_eq!(sites.iter().map(|s| s.op.as_str()).collect::<Vec<_>>(), ["", "copy"]);
     }
 }

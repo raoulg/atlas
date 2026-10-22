@@ -99,6 +99,23 @@ fn held_by<'a>(v: TsNode, src: &'a [u8]) -> Vec<&'a str> {
     }
 }
 
+/// Whether the name `i` is one a `lambda` between it and `e` binds: a parameter of the function
+/// the lambda is, no value of the body around it.
+fn lambda_binds(i: TsNode, e: TsNode, src: &[u8]) -> bool {
+    let name = text(i, src);
+    let mut x = i;
+    while x.id() != e.id() {
+        let Some(p) = x.parent() else { return false };
+        if p.kind() == "lambda"
+            && p.child_by_field_name("parameters").is_some_and(|ps| walk(ps, &["identifier"]).iter().any(|n| text(*n, src) == name))
+        {
+            return true;
+        }
+        x = p;
+    }
+    false
+}
+
 /// The name a chain like `self.items[0].x` starts from.
 fn root_name<'a>(n: TsNode, src: &'a [u8]) -> Option<&'a str> {
     match n.kind() {
@@ -212,6 +229,8 @@ pub(super) struct Seen<'a> {
     pub(super) modules: &'a IndexMap<String, Module>,
     pub(super) store: &'a GraphBuilder,
     pub(super) own: &'a Own,
+    /// The class whose instance `self` holds, in a method that runs on one.
+    pub(super) receiver: Option<String>,
 }
 
 impl<'a> Seen<'a> {
@@ -223,7 +242,7 @@ impl<'a> Seen<'a> {
         store: &'a GraphBuilder,
         own: &'a Own,
     ) -> Self {
-        Seen { m, facts: types.of(&crate::tree::path_str(&m.path)), sites, modules, store, own }
+        Seen { m, facts: types.of(&crate::tree::path_str(&m.path)), sites, modules, store, own, receiver: None }
     }
 
     fn range(n: TsNode) -> (usize, usize) {
@@ -281,7 +300,31 @@ impl<'a> Seen<'a> {
         if !reached.is_empty() {
             return None;
         }
-        self.bound(f)
+        self.bound(f).or_else(|| self.on_library_value(f).map(Callee::Lib))
+    }
+
+    /// The library a method is called into where ty does not know the method: the one whose class
+    /// the value the chain starts from is (`table[cols].assign(..)` on a pandas `DataFrame` is
+    /// pandas'), where that value is of a library's class alone.
+    fn on_library_value(&self, f: TsNode) -> Option<String> {
+        let mut root = f.child_by_field_name("object").filter(|_| f.kind() == "attribute")?;
+        while let Some(inner) = match root.kind() {
+            "attribute" => root.child_by_field_name("object"),
+            "subscript" => root.child_by_field_name("value"),
+            "call" => {
+                root.child_by_field_name("function").filter(|g| g.kind() == "attribute").and_then(|g| g.child_by_field_name("object"))
+            }
+            _ => None,
+        } {
+            root = inner;
+        }
+        let v = self.value(root).filter(|v| !v.is_class && !v.is_code)?;
+        let mut packages = v.classes.iter().map(|t| match t {
+            Target::Lib(m) => Some(package_of(m)),
+            Target::Here { .. } => None,
+        });
+        let first = packages.next()??;
+        packages.all(|p| p.as_deref() == Some(first.as_str())).then_some(first)
     }
 
     /// The package a definition is in: a library's, by its module, or one Atlas reads as code, by
@@ -347,10 +390,72 @@ impl<'a> Seen<'a> {
         out
     }
 
-    /// What an expression hands a call: the value a call in it gives, and the names in it with
-    /// the values they hold (`data[before]` hands `data`). A class or a function named is no
-    /// value, and `self` is the call's receiver, not something handed.
+    /// What a call gives back, by the name it is assigned to: the type ty says, or, for a value
+    /// whose type ty does not know, the name alone, when the call made it from what it was handed.
+    fn gives(&self, c: TsNode, assigned: &str, hands: &[Held], ext: &HashMap<(String, String), String>) -> Vec<Held> {
+        let known = self.value(c).filter(|v| !v.is_class && !v.is_code);
+        let mut gives: Vec<Held> =
+            known.map(|v| self.drawn(v, ext)).unwrap_or_default().into_iter().map(|ty| Held::new(ty, assigned)).collect();
+        if gives.is_empty() && known.map_or(true, |v| v.shown == "Unknown") && !assigned.is_empty() && !hands.is_empty() {
+            gives.push(Held::new(String::new(), assigned));
+        }
+        gives
+    }
+
+    /// A loop as the step it is: what it takes (what it goes over), and what it gives, each
+    /// element under the name it binds (`for n in g.nodes` takes `g` and gives `n`). It gives
+    /// nothing where its elements are no values Atlas draws.
+    fn each(&self, l: TsNode, ext: &HashMap<(String, String), String>, made: &HashSet<String>) -> (Vec<Held>, Vec<Held>) {
+        let (Some(left), Some(right)) = (l.child_by_field_name("left"), l.child_by_field_name("right")) else { return (vec![], vec![]) };
+        let src = &self.m.src;
+        let names: Vec<TsNode> = if left.kind() == "identifier" { vec![left] } else { walk(left, &["identifier"]) };
+        let hands = self.held_in(right, ext, made);
+        // one name holds an element of what the loop goes over: of a `list[Node]` a `Node`, where ty does not say it of the name
+        let over = self.value(right).filter(|v| !v.is_class && !v.is_code);
+        let element: Vec<String> = over.map(|v| self.drawn(v, ext)).unwrap_or_default();
+        // what it goes over is of a known type that holds none Atlas draws (a `list[str]`): its elements are no values it draws
+        let undrawn = element.is_empty() && over.is_some_and(|v| v.shown != "Unknown");
+        let one = names.len() == 1;
+        let gives: Vec<Held> = names
+            .into_iter()
+            .flat_map(|n| {
+                let named = self.gives(n, text(n, src), &hands, ext);
+                if !named.iter().all(|h| h.ty.is_empty()) {
+                    named
+                } else if one && !element.is_empty() {
+                    element.iter().map(|t| Held::new(t.clone(), text(n, src))).collect()
+                } else if undrawn {
+                    vec![]
+                } else {
+                    named
+                }
+            })
+            .collect();
+        (hands, gives)
+    }
+
+    /// Whether a call is a step of its own: a call of the program's code, or one Atlas cannot
+    /// follow. A library's call is glued into the call around it.
+    fn steps_itself(&self, c: TsNode) -> bool {
+        c.child_by_field_name("function").is_some_and(|f| !matches!(self.callee(f), Some(Callee::Lib(_))))
+    }
+
+    /// What an expression hands a call: the value it gives where it is a call, and the names in
+    /// it with the values they hold (`data[before]` hands `data`, `self.path` the instance the
+    /// method runs on). A call in it that is a step of its own takes its names itself and hands
+    /// what it gives (`Message(level.prefix())` is handed what `prefix` gives, not `level`). A
+    /// class or a function named is no value, and neither is a name a `lambda` in it binds.
     fn held_in(&self, e: TsNode, ext: &HashMap<(String, String), String>, made: &HashSet<String>) -> Vec<Held> {
+        self.held(e, ext, made, false)
+    }
+
+    /// What a call changes in `e`, the value it is called on: as `held_in`, with the instance the
+    /// method runs on by its name, `self`, the value the change makes anew.
+    fn changed_in(&self, e: TsNode, ext: &HashMap<(String, String), String>, made: &HashSet<String>) -> Vec<Held> {
+        self.held(e, ext, made, true)
+    }
+
+    fn held(&self, e: TsNode, ext: &HashMap<(String, String), String>, made: &HashSet<String>, changed: bool) -> Vec<Held> {
         let mut out: Vec<Held> = vec![];
         let mut add = |ty: String, name: String, at: usize| {
             if !out.iter().any(|h| h.ty == ty && h.name == name) {
@@ -358,14 +463,47 @@ impl<'a> Seen<'a> {
             }
         };
         let data = |v: &&Value| !v.is_class && !v.is_code;
-        if e.kind() == "call" {
-            for ty in self.value(e).filter(data).map(|v| self.drawn(v, ext)).unwrap_or_default() {
-                add(ty, String::new(), e.start_byte());
+        let src = &self.m.src;
+        let mut names = vec![];
+        // what a library's call `e` gives, glued into the call it is handed to
+        let mut glued = vec![];
+        let mut stack = vec![e];
+        while let Some(x) = stack.pop() {
+            let nested = x.kind() == "call" && self.steps_itself(x);
+            if x.kind() == "call" && (nested || x.id() == e.id()) {
+                for ty in self.value(x).filter(data).map(|v| self.drawn(v, ext)).unwrap_or_default() {
+                    match nested {
+                        true => add(ty, String::new(), x.start_byte()),
+                        false => glued.push((ty, x.start_byte())),
+                    }
+                }
             }
+            // a loop in it that is a step takes what it goes over itself
+            if nested || (x.kind() == "for_in_clause" && !self.each(x, ext, made).1.is_empty()) {
+                continue;
+            }
+            // a name, not the attribute a projection reads (`.width`) or the keyword an argument is handed by
+            let label = x.parent().is_some_and(|p| {
+                let field = |f: &str| p.child_by_field_name(f).is_some_and(|n| n.id() == x.id());
+                (p.kind() == "attribute" && field("attribute")) || (p.kind() == "keyword_argument" && field("name"))
+            });
+            if x.kind() == "identifier" && !label && !lambda_binds(x, e, src) {
+                names.push(self.projected(x, made));
+            }
+            stack.extend(named_children(x).into_iter().rev());
         }
-        for i in walk(e, &["identifier"]) {
-            let name = text(i, &self.m.src);
-            if matches!(name, "self" | "cls") {
+        for i in names {
+            let name = text(i, src);
+            if name == "cls" {
+                continue;
+            }
+            // `self` holds the instance the method runs on, from beyond the body until a step makes
+            // it anew
+            if name == "self" {
+                let named = if changed || made.contains(name) { name } else { "" };
+                if let Some(cls) = &self.receiver {
+                    add(cls.clone(), named.to_string(), i.start_byte());
+                }
                 continue;
             }
             let v = self.value(i);
@@ -373,18 +511,72 @@ impl<'a> Seen<'a> {
                 continue;
             }
             let tys = v.map(|v| self.drawn(v, ext)).unwrap_or_default();
-            // a name whose type is not known is still a value the body made, when an earlier step made it
-            if tys.is_empty() && made.contains(name) {
+            // a name of no type Atlas draws is still a value where an earlier step made it, and where
+            // the call makes it anew
+            if tys.is_empty() && (made.contains(name) || changed) {
                 add(String::new(), name.to_string(), i.start_byte());
             }
             for ty in tys {
                 add(ty, name.to_string(), i.start_byte());
             }
         }
-        // a value known by name is not also a nameless one
-        let named: HashSet<String> = out.iter().filter(|h| !h.name.is_empty()).map(|h| h.ty.clone()).collect();
-        out.retain(|h| !h.name.is_empty() || !named.contains(&h.ty));
+        // what a library's call gives goes on from the values it is handed; only where it is handed
+        // none is it handed on by its type
+        if out.is_empty() {
+            for (ty, at) in glued {
+                out.push(Held { ty, name: String::new(), at: at as u32 });
+            }
+        }
         out
+    }
+
+    /// The name a projection bound to `i`'s name starts from, where the latest binding of that name
+    /// before `i` binds it to one: `width = settings.width` makes `width` in `f(width)` the
+    /// projection `settings.width`, which hands `settings`, and so does `width, height =
+    /// settings.size` and a lookup `row = rows[k]`. A name a step made holds what the step gave.
+    fn projected<'t>(&self, i: TsNode<'t>, made: &HashSet<String>) -> TsNode<'t> {
+        let src = &self.m.src;
+        let mut at = i;
+        for _ in 0..8 {
+            let name = text(at, src);
+            if made.contains(name) || name == "self" {
+                break;
+            }
+            let mut scope = at;
+            while let Some(p) = scope.parent() {
+                scope = p;
+                if matches!(p.kind(), "function_definition" | "lambda") {
+                    break;
+                }
+            }
+            let binds = |a: &TsNode| {
+                a.child_by_field_name("left").is_some_and(|l| match l.kind() {
+                    "identifier" => text(l, src) == name,
+                    "pattern_list" | "tuple_pattern" => named_children(l).iter().any(|n| n.kind() == "identifier" && text(*n, src) == name),
+                    _ => false,
+                })
+            };
+            let Some(bound) = walk(scope, &["assignment"]).into_iter().filter(|a| a.end_byte() <= at.start_byte() && binds(a)).last()
+            else {
+                break;
+            };
+            let Some(right) = bound.child_by_field_name("right").map(|r| beneath(r, WRAPPERS)) else { break };
+            let projection = matches!(right.kind(), "attribute" | "subscript")
+                && !(right.kind() == "subscript" && field_children(right, "subscript").iter().any(|s| s.kind() == "slice"));
+            let mut root = right;
+            while let Some(inner) = match root.kind() {
+                "attribute" => root.child_by_field_name("object"),
+                "subscript" => root.child_by_field_name("value"),
+                _ => None,
+            } {
+                root = inner;
+            }
+            if !projection || root.kind() != "identifier" || root.id() == at.id() {
+                break;
+            }
+            at = root;
+        }
+        at
     }
 
     /// Whether class `c` is `b` or descends from it.
@@ -593,7 +785,9 @@ pub(super) fn link_calls<'t>(
     let Some(body) = (if in_module { Some(d) } else { d.child_by_field_name("body") }) else { return Linked::default() };
     let mut steps = Steps::new(body, &m.src, &CHOICES, &USES);
     let read = {
-        let mut b = Body::new(Seen::new(m, types, sites, modules, store, own), modules, ext, eval, &n, d, body);
+        let mut seen = Seen::new(m, types, sites, modules, store, own);
+        seen.receiver = n.cls.clone().filter(|_| n.kind == NodeKind::Method && !n.on_class && n.params.iter().any(|p| p.receiver));
+        let mut b = Body::new(seen, modules, ext, eval, &n, d, body);
         for r in b.steps() {
             let c = match r {
                 Ran::Loop(l) => {
@@ -790,36 +984,17 @@ impl<'a, 't> Body<'a, 't> {
     /// name it binds (`for n in g.nodes` takes `g` and gives `n`).
     fn each(&mut self, steps: &mut Steps, l: TsNode<'t>) {
         let (Some(left), Some(right)) = (l.child_by_field_name("left"), l.child_by_field_name("right")) else { return };
-        let names: Vec<TsNode> = if left.kind() == "identifier" { vec![left] } else { walk(left, &["identifier"]) };
-        let hands = self.seen.held_in(right, self.ext, &steps.kept);
-        // one name holds an element of what the loop goes over: of a `list[Node]` a `Node`, where ty does not say it of the name
-        let over = self.seen.value(right).filter(|v| !v.is_class && !v.is_code);
-        let element: Vec<String> = over.map(|v| self.seen.drawn(v, self.ext)).unwrap_or_default();
-        // what it goes over is of a known type that holds none Atlas draws (a `list[str]`): its elements are no values it draws
-        let undrawn = element.is_empty() && over.is_some_and(|v| v.shown != "Unknown");
-        let one = names.len() == 1;
-        let gives: Vec<Held> = names
-            .into_iter()
-            .flat_map(|n| {
-                let named = self.gives(n, text(n, self.src), &hands);
-                if !named.iter().all(|h| h.ty.is_empty()) || !one {
-                    named
-                } else if !element.is_empty() {
-                    element.iter().map(|t| Held::new(t.clone(), text(n, self.src))).collect()
-                } else if undrawn {
-                    vec![]
-                } else {
-                    named
-                }
-            })
-            .collect();
+        let (hands, gives) = self.seen.each(l, self.ext, &steps.kept);
         self.read.new_ext.extend(hands.iter().chain(&gives).map(|h| h.ty.clone()).filter(|t| t.starts_with("ext:")));
         // the step stands where what it goes over is written: a call there hands it what it gives, the loop's body does not
         steps.op(right, &format!("for {} in {}", text(left, self.src), text(right, self.src)), hands, gives);
     }
 
-    /// What a call is handed: the value it is called on, and its arguments.
+    /// What a call is handed: the value it is called on, and its arguments. A method called on
+    /// `self` itself runs on the instance the body runs on, which its step says (`on_receiver`);
+    /// `self` inside an argument or a part of it (`self.path`, `self.cells.clear()`) is handed.
     fn hands(&self, c: TsNode, receiver: Option<TsNode>, kept: &HashSet<String>) -> Vec<Held> {
+        let receiver = receiver.filter(|r| !(r.kind() == "identifier" && text(*r, self.src) == "self"));
         let args = c.child_by_field_name("arguments").map(named_children).unwrap_or_default();
         let values = args.into_iter().filter(|x| x.kind() != "comment").map(|x| {
             if x.kind() == "keyword_argument" {
@@ -837,10 +1012,9 @@ impl<'a, 't> Body<'a, 't> {
     /// What a call gives back, by the name it is assigned to: the type ty says, or, for a value
     /// whose type ty does not know, the name alone, when the call made it from what it was handed.
     fn gives(&self, c: TsNode, assigned: &str, hands: &[Held]) -> Vec<Held> {
-        let known = self.seen.value(c).filter(|v| !v.is_class && !v.is_code);
-        let mut gives: Vec<Held> =
-            known.map(|v| self.seen.drawn(v, self.ext)).unwrap_or_default().into_iter().map(|ty| Held::new(ty, assigned)).collect();
-        if gives.is_empty() && known.map_or(true, |v| v.shown == "Unknown") && !assigned.is_empty() && !hands.is_empty() {
+        let mut gives = self.seen.gives(c, assigned, hands, self.ext);
+        // a value of no type of the code's is still the value the name holds
+        if gives.is_empty() && !assigned.is_empty() {
             gives.push(Held::new(String::new(), assigned));
         }
         gives
@@ -877,7 +1051,14 @@ impl<'a, 't> Body<'a, 't> {
         let receiver = (fnode.kind() == "attribute").then(|| fnode.child_by_field_name("object")).flatten();
         let hands = self.hands(c, receiver, &steps.kept);
         let assigned = kept_as(c, self.src).unwrap_or_default();
-        let gives = self.gives(c, &assigned, &hands);
+        // `a, b = f(..)` names each part of what the call gives
+        let unpacked = unpacked_as(c, self.src);
+        let gives = match unpacked.is_empty() {
+            true => self.gives(c, &assigned, &hands),
+            false => unpacked.iter().flat_map(|n| self.gives(*n, text(*n, self.src), &hands)).collect(),
+        };
+        let assigned =
+            if unpacked.is_empty() { assigned } else { unpacked.iter().map(|n| text(*n, self.src)).collect::<Vec<_>>().join(", ") };
         self.read.new_ext.extend(hands.iter().chain(&gives).map(|h| h.ty.clone()).filter(|t| t.starts_with("ext:")));
         steps.keep(&gives);
         // a function of the package handed on as a value (`executor.submit(self.run, x)`,
@@ -907,7 +1088,7 @@ impl<'a, 't> Body<'a, 't> {
                     steps.parses(c, &op, hands, gives, options);
                     true
                 } else if let Some(changed) = library_change(self.seen.facts, c, self.src) {
-                    let changed = self.seen.held_in(changed, self.ext, &steps.kept);
+                    let changed = self.seen.changed_in(changed, self.ext, &steps.kept);
                     let op = text(fnode, self.src).rsplit('.').next().unwrap_or("");
                     steps.changes(c, op, hands, gives, changed);
                     true
@@ -984,7 +1165,8 @@ impl<'a, 't> Body<'a, 't> {
         // a method of the program's own that changes its receiver gives it, beside what it returns
         let mut gives = gives;
         if seen.store.mutating.contains(t) {
-            for r in value.map(|r| seen.held_in(r, self.ext, &steps.kept)).unwrap_or_default().into_iter().filter(|h| !h.name.is_empty()) {
+            for r in value.map(|r| seen.changed_in(r, self.ext, &steps.kept)).unwrap_or_default().into_iter().filter(|h| !h.name.is_empty())
+            {
                 if !gives.contains(&r) {
                     gives.push(r);
                 }
@@ -1346,8 +1528,30 @@ fn kept_as(c: TsNode, src: &[u8]) -> Option<String> {
                     .map(|l| text(l, src).to_string())
             }
             "named_expression" if value("value") => return p.child_by_field_name("name").map(|l| text(l, src).to_string()),
+            // `with X as con` names what `X` gives, as `con = X` does
+            "as_pattern" if p.named_child(0).is_some_and(|v| v.id() == n.id()) && p.parent().is_some_and(|w| w.kind() == "with_item") => {
+                let alias = p.child_by_field_name("alias")?;
+                let name = if alias.kind() == "identifier" { alias } else { named_children(alias).into_iter().next()? };
+                return (name.kind() == "identifier" && text(name, src) != "_").then(|| text(name, src).to_string());
+            }
             _ => return None,
         }
+    }
+}
+
+/// The names a statement binds to the parts of what a call gives, where the call is the whole
+/// value of an assignment to a pattern: `uuid, soort, tekst = line.split(" ", 2)`.
+fn unpacked_as<'t>(c: TsNode<'t>, src: &[u8]) -> Vec<TsNode<'t>> {
+    let value = outermost(c, WRAPPERS);
+    let Some(p) = value.parent().filter(|p| p.kind() == "assignment") else { return vec![] };
+    if p.child_by_field_name("right").map(|r| r.id()) != Some(value.id()) {
+        return vec![];
+    }
+    match p.child_by_field_name("left") {
+        Some(l) if matches!(l.kind(), "pattern_list" | "tuple_pattern" | "list_pattern") => {
+            named_children(l).into_iter().filter(|n| n.kind() == "identifier" && text(*n, src) != "_").collect()
+        }
+        _ => vec![],
     }
 }
 

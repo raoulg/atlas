@@ -51,9 +51,14 @@ route of a class is its doors, each called by the entry with no order between th
 finds and changes, the route finds and changes. Making a place's shape (a directory, a table's
 schema) or testing it (whether a file is there, whether a value holds a key) puts and takes no
 content. A connection that opens a database on a file names that file, so a directory made for the
-file is made for the database. Where the code does not say which way a call goes, the place is in neither.
+file is made for the database. A request goes the way its method says, as a statement goes by its
+verb: a `GET` takes what the place holds, a `POST`, `PUT`, `PATCH` or `DELETE` leaves something
+there, and what such a request answers is what the place gives back of what it left, read back.
+Where the code does not say which way a call goes (a method looked up at run time), the place is in
+neither.
 **Where.** A function's `reads_back` and `updates` (`flow.rs`); a read's `checks` (`Steps::mark`,
-`body.rs`, with each language's `UseSyntax`); `sideOfRoles` in `viewer/plan.js`.
+`body.rs`, with each language's `UseSyntax`); a request's way, `knowledge::REQUEST_WAYS`, and
+`Touch::side` (`flow.rs`); `sideOfRoles` in `viewer/plan.js`.
 
 ### The effect functor
 **What.** A functor maps objects to objects and arrows to arrows, keeping composition.
@@ -139,8 +144,11 @@ composition) into one box.
 **In Atlas.** Forms that say the same thing are one construct, in every language: typer's
 parameter default, clap's `default_value` and parseArgs' `default:` are each an option the
 caller can override. The pushout is drawn, as the entry's usage line; the language's form lies
-beneath it.
-**Where.** `CLAUDE.md`, "Isomorphic is the same"; `Entry::options`.
+beneath it. An environment variable with a fallback (`os.environ.get("X", "d")`,
+`process.env.X ?? "d"`, `env::var("X").unwrap_or("d")`) is that construct too, and so is any value
+nothing in the program hands, with a fallback: one input, one place, drawn as its default and
+decided by no code, since a run reads or writes one file whatever the input says.
+**Where.** `CLAUDE.md`, "Isomorphic is the same"; `Entry::options`; `paths::or_else`.
 
 ### Paths as terms, directories as fibers
 **What.** A path is a term in a small algebra over a root: a root (a literal, a parameter, an
@@ -384,7 +392,10 @@ open:
   the occurrence (or choice) that made it; two values of one type at one moment are two; a route's
   parameters are values with their names at the route's start. A name holds one value: one that
   holds a sum holds the sum, whichever variants the reader lists of it (Coproducts), one a
-  constructor fills holds what it builds, and a name handed on holds what the body last gave it;
+  constructor fills holds what it builds, and a name handed on holds what the body last gave it. A
+  name is read by the binding visible where it is used: a name bound again (shadowed, in a block,
+  in an arm) holds another value, as a second name would, and a name bound to another through what
+  hands a value on unchanged (`let record: Record = result?`) holds that one's value;
 - every place of the world is at its concrete place (a path, a table, a command); what a step reads
   back of what it wrote there is a value at a moment inside the step (rule 4). A place named by a
   value an object holds is one place wherever it is reached: a method runs on an instance its class's
@@ -410,18 +421,22 @@ open:
   name that holds it, and no value beside it: the caller's own arrow is a point on its border, no
   step, and `done = finished(..); if done:` is `if finished(..):` with a name. A call is
   handed the values the names in its arguments hold: `f(x.name)` is handed `x`, since the projection
-  `.name` is no occurrence but glued into the call, whose arrow is `f ∘ π_name` with domain `X`; a
-  nested call that is a step of its own takes its names itself. A library's operation that is a step
-  carries the value it gives; what it touches at a place stays its caller's own touch, so naming its
-  result changes no line to the place. A projection bound to a name first is still the projection
-  (`width = settings.width; f(width)` hands `settings`), and a change made through one changes its
-  owner, a lens's put. A parameter is such a name: inside an opened step it holds the value its call
-  hands it, not a caller's value of its name or the latest of its type. The call hands its values in
-  order, the value it runs on first, each to the next parameter of its type; a parameter the call
-  fills through a projection (`finished(job, settings.mode)`) is still the projection, so the steps
-  inside are handed `settings`, and a signature's type is a value of its own only where the call hands
-  nothing. What an opened step changes of a value it was handed goes out at its border as what its
-  steps made of it;
+  `.name` is no occurrence but glued into the call, whose arrow is `f ∘ π_name` with domain `X`, and
+  `f(self.path)` is handed the instance the method runs on; a nested call that is a step of its own
+  takes its names itself, and the call around it is handed what it gives. A library's operation that
+  is a step carries the value it gives, by the name or the names the body binds it to (`with X as con`
+  as `con = X`, `a, b = f(..)` each part), of whatever type; what it touches at a place stays its
+  caller's own touch, so naming its result changes no line to the place. A copy makes its value anew
+  (`board = copy.copy(board)`), and a method called on a library's value is that library's operation
+  also where its types do not list it. A projection bound to a name first is still the projection
+  (`width = settings.width; f(width)` hands `settings`), a lookup by a key among them (`row = table[k]`
+  hands `table`, the lens the key chooses), and a change made through one changes its owner, a lens's
+  put. A parameter is such a name: inside an opened step it holds the value its call hands it, not a
+  caller's value of its name or the latest of its type. The call hands its values in order, the value
+  it runs on first, each to the next parameter of its type; a parameter the call fills through a
+  projection (`finished(job, settings.mode)`) is still the projection, so the steps inside are handed
+  `settings`, and a signature's type is a value of its own only where the call hands nothing. What an
+  opened step changes of a value it was handed goes out at its border as what its steps made of it;
 - a step that can fail has the codomain `T + E`: the error is a value its constructor makes in the arm
   that raises it, the step's border hands it on with its result, and a call that does not catch it
   hands it on to its own caller. Python's propagation and Rust's `?` are one form, no choice. An error
@@ -540,7 +555,7 @@ implementation fixes (`type Item = Book`): in the implementation that type, in t
 values it pairs where it stands for one value (`-> (Config, Store)`); a collection of them holds pairs, of a type the
 code does not name (`Vec<(NaiveDate, f64)>` holds no `NaiveDate`).
 **Where.** `knowledge.rs`: `python_container`, `TYPESCRIPT_CONTAINERS`, `RUST_CONTAINERS`; the Rust reader's
-signatures (`rust/passes.rs`, `fixed_by_implementations`; `rust/module.rs`, `type_names`, with `RUST_COLLECTIONS`).
+signatures (`rust/passes.rs`, `fixed_by_implementations`; `rust/module.rs`, `type_names`, with `RUST_COLLECTIONS`); `typescript/module.rs`, `type_names`, with `TYPESCRIPT_COLLECTIONS`.
 
 ### Narrowing
 **What.** A test of a value's type refines its type in the code that runs only where the test
@@ -588,11 +603,14 @@ through a class (`C.f(x)`, `C.prototype.f.call(x)`) runs the `f` along `C`'s ord
 is handed first, and no override of it. A `super()` call written in `K` runs the next `f` after `K`
 along the order of the value's class, not of `K`: in `D(B, C)`, a `super().f()` in `B` runs `C.f` on
 a `D`. Where the value's class is not known, it may be `K` or any class below, and the call runs
-the next `f` after `K` along each of their orders: one of them. A call by name may run any override
-below the method it reaches; these two run the one their call names.
+the next `f` after `K` along each of their orders: one of them. A call by name on a value whose class
+is not known may run, for each class the value may be (the class of the method it reaches or one below
+it), the `f` that class runs along its order: in `D(B, C)`, a call of `C.f` may run `B.f` on a `D`,
+though `B` is not below `C`. A call through a class, and a `super()` call on a value whose class is
+known, run the one their call names.
 **Where.** `model::linearization`, `model::initializer_along`; `principles.rs` (`Index::mro`),
 `builder.rs` (`family`, `method_of`, `initializer_of`), `flow.rs` (`method_on`, `method_after`,
-`built_from`, `Step::named`).
+`built_from`, `Step::named`, `Ix::overrides`).
 
 ### Signatures say the arrow
 **What.** A function's type is its domain and its codomain.

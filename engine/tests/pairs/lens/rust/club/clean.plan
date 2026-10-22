@@ -18,7 +18,7 @@ line entry > Register()/Register.join call
 line entry > Register()/Register.member call
 line entry > Register()/Register.latest call
 
-known #128 line Connection·conn > Register()/Register.new/Register() value   # the literal is handed new's connection
+line Connection·conn > Register()/Register.new/Register() value # the literal is handed new's connection
 line Register()/Register.new/Register() > Register@Register()/Register.new/Register() value
 line Register@Register()/Register.new/Register() > Register()/Register.new value
 line Register()/Register.new > Register@Register()/Register.new value
@@ -55,6 +55,3 @@ home Report@Register()/Register.latest Register()
 side entry left
 side SQLite(members) between
 side SQLite(reports) left
-
-# the struct literal is handed nothing of the fields it is given (#128), so new takes the connection itself
-known #128 extra line Connection·conn > Register()/Register.new value

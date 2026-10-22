@@ -36,7 +36,7 @@ line Store()/Store.put/push > Row·rows@Store()/Store.put/push value  # the rows
 line Row·rows@Store()/Store.put/push > Store()/Store.put/write_rows/collect value
 line Store()/Store.put/write_rows/collect > _·lines@Store()/Store.put/write_rows/collect value
 known #101 line _·lines@Store()/Store.put/write_rows/collect > Store()/Store.put/write_rows value  # fs::write takes the lines joined
-known #128 line Store > Store()/Store.put/write_rows value  # K: `write_rows(self.path, rows)` hands `self`
+line Store > Store()/Store.put/write_rows value # K: `write_rows(self.path, rows)` hands `self`
 line Store()/Store.put/write_rows > Disk(Store.path) own
 step Store()/Store.put_all
 line entry > Store()/Store.put_all call
@@ -61,7 +61,7 @@ line Store()/Store.put_all/push > Row·rows@Store()/Store.put_all/push value  # 
 line Row·rows@Store()/Store.put_all/push > Store()/Store.put_all/write_rows/collect value
 line Store()/Store.put_all/write_rows/collect > _·lines@Store()/Store.put_all/write_rows/collect value
 known #101 line _·lines@Store()/Store.put_all/write_rows/collect > Store()/Store.put_all/write_rows value  # fs::write takes the lines joined
-known #128 line Store > Store()/Store.put_all/write_rows value  # K: `write_rows(self.path, rows)` hands `self`
+line Store > Store()/Store.put_all/write_rows value # K: `write_rows(self.path, rows)` hands `self`
 line Store()/Store.put_all/write_rows > Disk(Store.path) own
 step Store()/Store.get
 line entry > Store()/Store.get call
@@ -112,4 +112,3 @@ side Disk(Store.path) both
 # #101: a value made in the body and used by the body's own calls has no taker
 # K: a value handed through a field reaches no step inside: `write_rows(self.path, rows)` hands `self` (#121, decision
 #    1), and the helper takes no Store
-

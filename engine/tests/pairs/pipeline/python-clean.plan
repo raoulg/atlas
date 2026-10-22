@@ -26,19 +26,19 @@ line run/?1/download > File(data/raw/sunspots.csv) own
 line run/?1/download > run back                                   # `return to`: the result goes on to its caller
 line File(data/raw/sunspots.csv) > run/load own
 line run/load/read_csv > DataFrame·table@run/load/read_csv value
-known #125 line DataFrame·table@run/load/read_csv > run/load/to_datetime value  # `table[..].assign(day=1)` goes into it
+line DataFrame·table@run/load/read_csv > run/load/to_datetime value  # `table[..].assign(day=1)` goes into it
 line run/load/to_datetime > Series·first_days@run/load/to_datetime value
 known #101 line DataFrame·table@run/load/read_csv > run/load value              # `table.set_index(first_days)..` is returned
 known #101 line Series·first_days@run/load/to_datetime > run/load value
 line run/load > DataFrame@run/load value                          # `smooth(load(raw), ..)`: no name holds it
-known #125 line DataFrame@run/load > run/smooth value   # `rolling`, no step, is the body's own use
+line DataFrame@run/load > run/smooth value   # `rolling`, no step, is the body's own use
 line Settings·settings@run/Settings() > run/smooth value          # `settings.months`
 line run/smooth > DataFrame·frame@run/smooth value
 line Settings·settings@run/Settings() > run/Trend() value
 line run/Trend() > Trend@run/Trend() value                        # `Trend(settings).save(..)`: no name holds it
 known #126 line Trend@run/Trend() > run/Trend.save value   # save's own body reads `self.settings.dpi`; the body uses it itself, and a step inside takes it too
-line Trend@run/Trend() > run/Trend.save/Trend.draw value          # draw reads `self.settings`
-known #128 line Trend@run/Trend() > run/Trend.save/Trend.draw/Figure value   # `Figure(figsize=self.settings.size, ..)`
+known #126 line Trend@run/Trend() > run/Trend.save/Trend.draw value   # draw's own calls read `self.settings`
+line Trend@run/Trend() > run/Trend.save/Trend.draw/Figure value   # `Figure(figsize=self.settings.size, ..)`
 line DataFrame·frame@run/smooth > run/Trend.save/Trend.draw value
 line run/Trend.save/Trend.draw/Figure > Figure·figure@run/Trend.save/Trend.draw/Figure value
 line Figure·figure@run/Trend.save/Trend.draw/Figure > run/Trend.save/Trend.draw/add_subplot value
@@ -66,17 +66,3 @@ side File(data/raw/sunspots.csv) between
 side File(figures/sunspots.png) right
 
 # a library call whose result no name holds is drawn as a step: what it gives should go into the call around it
-known #125 extra step run/load/table[["year", "month"]].assign
-known #125 extra line DataFrame·table@run/load/read_csv > run/load/table[["year", "month"]].assign value
-known #125 extra line run/load/table[["year", "month"]].assign > _@run/load/table[["year", "month"]].assign value
-known #125 extra line _@run/load/table[["year", "month"]].assign > run/load/to_datetime value
-known #125 extra home _@run/load/table[["year", "month"]].assign run/load
-known #125 extra step run/load/table.set_index(first_days)[["mean", "std", "observations"]].dropna
-known #125 extra line DataFrame·table@run/load/read_csv > run/load/table.set_index(first_days)[["mean", "std", "observations"]].dropna value
-known #125 extra line Series·first_days@run/load/to_datetime > run/load/table.set_index(first_days)[["mean", "std", "observations"]].dropna value
-known #125 extra step run/smooth/frame["mean"].rolling
-known #125 extra step run/smooth/frame["mean"].rolling(months, center=True).mean
-known #125 extra line DataFrame@run/load > run/smooth/frame["mean"].rolling value
-known #125 extra line run/smooth/frame["mean"].rolling > _@run/smooth/frame["mean"].rolling value
-known #125 extra line _@run/smooth/frame["mean"].rolling > run/smooth/frame["mean"].rolling(months, center=True).mean value
-known #125 extra home _@run/smooth/frame["mean"].rolling run/smooth

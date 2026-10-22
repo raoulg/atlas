@@ -333,16 +333,16 @@ fn lens_what_a_lens_puts_is_what_reaches_the_place() {
 /// Every place carries a what: a request names the service it goes to. In Python the clean
 /// client takes `base_url` and the entry hands it `API_URL`; the shortcut's client module reads
 /// `os.environ.get("WEATHER_API_URL", ...)` at import, so where it asks is said at run time, in
-/// library code: what the environment says, a place the code does not name, or the default the
-/// library holds. Whoever starts the program may set the variable, so the default is an option,
-/// as a parameter's default is, and `places` does not ask; the shortcut shows in where the address
-/// is whole: in the library, not where the program starts.
+/// library code: what the environment says, or the default the library holds, one input drawn as
+/// its default. Whoever starts the program may set the variable, so the default is an option, as a
+/// parameter's default is, and `places` does not ask; the shortcut shows in where the address is
+/// whole: in the library, not where the program starts.
 #[test]
 fn a_place_carries_a_what_the_service_url() {
     let s = shortcut();
     let net = touches(s, "harvest.client.WeatherClient.latest", "net");
     assert!(!net.is_empty(), "the request is in the graph");
-    assert!(net.iter().any(|t| t.artifact.is_empty() && !t.fixed), "what the environment says is no address the code says: {net:?}");
+    assert!(net.iter().all(|t| t.artifact == "api.weather.example"), "one place, the variable its input: {net:?}");
     assert!(
         net.iter().any(|t| t.artifact == "api.weather.example" && !t.fixed && t.fixed_by.is_empty() && t.by.is_empty()),
         "the default, whole in the library: {net:?}"
@@ -505,6 +505,61 @@ fn lens_what_is_appended_to_what_is_put_is_put() {
     }
     let observe = s.node("gathering.store.observe").unwrap();
     assert!(observe.sites.iter().flat_map(|x| &x.gives).all(|g| g.name != "frozen" && g.name != "path"), "{:?}", observe.sites);
+}
+
+/// A call is handed the values the names in its arguments hold, `self` among them: `write_rows(self.path,
+/// rows)` in `Store.put` is handed the store the method runs on with the rows, the projection `.path`
+/// glued into the call. A method called on `self` itself runs on that store, which its step says, and is
+/// handed nothing for it. A call in an argument that is a step of its own takes its names itself:
+/// `Message(level.prefix() + job.name)` is handed what `prefix` gives and `job`, not `level`.
+#[test]
+fn a_call_is_handed_the_values_the_names_in_its_arguments_hold() {
+    for side in ["clean", "shortcut"] {
+        let g = gathering(side);
+        let put = g.node("gathering.store.Store.put").unwrap();
+        let hands = |to: &str| put.sites.iter().find(|x| x.to == to).map(|x| x.hands.clone()).unwrap_or_default();
+        let store = "gathering.store.Store";
+        assert!(hands("gathering.store.write_rows").iter().any(|h| h.ty == store), "{side}: {:?}", put.sites);
+        assert!(hands("gathering.store.write_rows").iter().any(|h| h.name == "rows"), "{side}: {:?}", put.sites);
+        let own = put.sites.iter().find(|x| x.to == "gathering.store.Store._rows").unwrap();
+        assert!(own.on_receiver && own.hands.iter().all(|h| h.ty != store), "{side}: {:?}", own);
+    }
+    let c = choices_side("clean");
+    let report = c.node("runs.core.report").unwrap();
+    for message in report.sites.iter().filter(|x| x.to == "runs.core.Message") {
+        assert!(message.hands.iter().all(|h| h.name != "level"), "{:?}", message.hands);
+        assert!(message.hands.iter().any(|h| h.name == "job"), "{:?}", message.hands);
+    }
+    assert!(report.sites.iter().any(|x| x.to == "runs.core.Level.prefix" && x.hands.iter().any(|h| h.name == "level")));
+
+    // a projection bound to a name first is still the projection, a lookup among them; a name a
+    // `lambda` binds is no value of the body
+    let g = program(
+        "projection",
+        "from dataclasses import dataclass\n\n\n@dataclass\nclass Settings:\n    width: int\n\n\n@dataclass\nclass Shape:\n    w: int\n\n\n\
+         def draw(w: int) -> Shape:\n    return Shape(w)\n\n\n\
+         def run(settings: Settings, table: dict[str, Settings]) -> list[Shape]:\n    width = settings.width\n    a = draw(width)\n    \
+         row = table[\"x\"]\n    b = draw(row.width)\n    c = sorted([a, b], key=lambda s: s.w)\n    return c\n",
+    );
+    let run = g.node("demo.core.run").unwrap();
+    let hands: Vec<Vec<String>> = run
+        .sites
+        .iter()
+        .map(|x| x.hands.iter().map(|h| format!("{}·{}", h.ty.rsplit('.').next().unwrap_or(""), h.name)).collect())
+        .collect();
+    assert_eq!(hands, [vec!["Settings·settings"], vec!["Settings·table"], vec!["Shape·a", "Shape·b"]]);
+}
+
+/// A program of one module, `demo/core.py` holding `code`, read as a repository of its own.
+fn program(name: &str, code: &str) -> Graph {
+    let root = std::env::temp_dir().join(format!("atlas-python-{name}-{}", std::process::id()));
+    std::fs::create_dir_all(root.join("src/demo")).expect("makes the package");
+    std::fs::write(root.join("pyproject.toml"), "[project]\nname = \"demo\"\nversion = \"0\"\n").expect("writes the manifest");
+    std::fs::write(root.join("src/demo/__init__.py"), "").expect("writes the package");
+    std::fs::write(root.join("src/demo/core.py"), code).expect("writes the module");
+    let g = analyze(&root, &Options::default()).expect("reads");
+    let _ = std::fs::remove_dir_all(&root);
+    g
 }
 
 /// One side of the sum pair (`tests/pairs/sums`): a knowledge base that adds a source and gives
@@ -1039,6 +1094,50 @@ fn overrides_a_type_ignore_with_codes_is_the_code_saying_it_knows() {
     assert_eq!(c.node("reading.counts.Kennel.count").unwrap().returns.as_ref().map(|r| r.written.as_str()), Some("str"));
 }
 
+/// A library's operation is a step where the body names what it gives or where it changes the
+/// value it runs on; what it gives without a name goes into the call around it. On the clean
+/// board `renamed` names the copy it makes (`board = copy.copy(board)`, a value made anew, no
+/// identity), `queued` the list it makes and the one `heapq.heappush` changes, `extended` the list
+/// `append` changes, and `Board.reset` the board `self.cells.clear()` changes; a list is of no type
+/// of the code's, a value all the same. `with self.connect() as con` names the connection as `con
+/// = ..` does, `rows = con.execute(..).fetchall()` names what `fetchall` gives with `execute`
+/// glued into it, and `uuid, soort, tekst = line.split(" ", 2)` names its three parts. A method
+/// of pandas ty does not know (`frame["mean"].rolling(..).mean()`) is still pandas', called on a
+/// DataFrame, so unnamed it is no step.
+#[test]
+fn a_library_operation_is_a_step_where_its_result_is_named_or_it_changes_a_value() {
+    let ops = |g: &Graph, id: &str| -> Vec<(String, Vec<String>)> {
+        g.node(id)
+            .unwrap_or_else(|| panic!("{id}"))
+            .sites
+            .iter()
+            .filter(|s| s.to.is_empty())
+            .map(|s| (s.op.clone(), s.gives.iter().map(|h| h.name.clone()).collect()))
+            .collect()
+    };
+    let named = |op: &str, names: &[&str]| (op.to_string(), names.iter().map(|n| n.to_string()).collect::<Vec<_>>());
+    let c = board("clean");
+    assert_eq!(ops(&c, "board.core.renamed"), [named("copy", &["board"])]);
+    assert_eq!(ops(&c, "board.core.queued"), [named("list", &["jobs"]), named("heappush", &["jobs"])]);
+    assert_eq!(ops(&c, "board.core.extended"), [named("append", &["xs"])]);
+    assert_eq!(ops(&c, "board.core.Board.reset"), [named("clear", &["self"]), named("clear", &["self"])]);
+    let s = board("shortcut");
+    assert_eq!(ops(&s, "board.core.add_tag"), [named("append", &["tags"])]);
+
+    let history = clean().node("harvest.store.ReadingStore.history").unwrap();
+    let connect = history.sites.iter().find(|x| x.to == "harvest.store.ReadingStore.connect").unwrap();
+    assert!(connect.gives.iter().any(|h| h.name == "con"), "{:?}", connect.gives);
+    assert!(ops(clean(), "harvest.store.ReadingStore.history").contains(&named("fetchall", &["rows"])));
+    assert!(ops(clean(), "harvest.store.ReadingStore.history").iter().all(|(op, _)| op != "execute"));
+
+    let k = kennis("clean");
+    assert_eq!(ops(&k, "kennis.bank.Kennisbank._node"), [named("split", &["uuid", "soort", "tekst"])]);
+
+    let pipeline =
+        analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/pipeline/python-clean"), &Options::default()).unwrap();
+    assert!(ops(&pipeline, "sunspots.series.smooth").is_empty(), "{:?}", pipeline.node("sunspots.series.smooth").unwrap().sites);
+}
+
 /// One side of the change pair (`tests/pairs/changes`): a scoreboard of cells and scores, whose
 /// functions change what they are handed, in Python, Rust and TypeScript alike.
 fn board(side: &str) -> Graph {
@@ -1395,9 +1494,9 @@ fn places_the_function_that_writes_the_path_decides_it() {
 /// A default whoever calls the function or starts the program can override is an option, not a
 /// decision: a parameter's (`path: Path = Path("out/rows.csv")`, `path or Path("out/rows.csv")`)
 /// and an environment variable's (`os.environ.get("STOCK_PATH", "out/rows.csv")`,
-/// `os.getenv("STOCK_PATH") or "out/rows.csv"`). The forms say the same thing and draw alike: the
-/// file the code takes where nobody says otherwise, and the variable, a place the code does not
-/// name. `places` asks none of them.
+/// `os.getenv("STOCK_PATH") or "out/rows.csv"`). The forms say the same thing and draw alike: one
+/// place, the file the code takes where nobody says otherwise, the caller's to choose, as an option
+/// of the command line is. `places` asks none of them.
 #[test]
 fn places_a_default_the_caller_can_override_is_an_option() {
     let c = stock("clean");
@@ -1411,7 +1510,7 @@ fn places_a_default_the_caller_can_override_is_an_option() {
     assert_eq!(drawn("stock.rows.save_where_told"), drawn("stock.rows.save_or_default"));
     let told = drawn("stock.rows.save_where_told");
     assert!(told.iter().any(|(file, _, decided)| file == "out/rows.csv" && !decided), "{told:?}");
-    assert!(told.iter().any(|(file, what, _)| file.is_empty() && what == "{$STOCK_PATH}"), "{told:?}");
+    assert!(told.iter().all(|(file, _, _)| file == "out/rows.csv"), "one place, the variable its input: {told:?}");
     for f in ["stock.rows.save", "stock.rows.save_or_given"] {
         assert!(drawn(f).iter().any(|(file, _, decided)| file == "out/rows.csv" && !decided), "{f}: {:?}", drawn(f));
     }
@@ -1528,6 +1627,32 @@ fn cooperative_super_runs_the_next_method_along_the_value_s_order() {
     assert!(r.contains("Source.read() → bytes   ·   calls self.url   ·   one of 1") && r.contains("1.1a  Cached.read()"), "{r}");
     let r = route(&cooperative().shortcut, "news.read.lines");
     assert!(!r.contains("one of") && !r.contains("Cached.read"), "{r}");
+}
+
+/// A call by name on a value whose class is not known may run, for each class the value may be,
+/// the method that class runs for the name along its order (#140). In `cached_lines(source:
+/// Cached)` a cached source may be a feed, `Feed(Trimmed, Cached)`, which runs `Trimmed.read`
+/// first, though `Trimmed` is no class below `Cached`: the call is `Cached.read` or `Trimmed.read`,
+/// on either side. What the pair lays bare is what the sibling does then: the clean `Trimmed.read`
+/// hands on with `super().read()`, which on a feed runs `Cached.read`, so a cached source still
+/// reads its store; the shortcut's `Source.read(self)` asks the network, and a cached source that
+/// is a feed never reads its cache.
+#[test]
+fn cooperative_a_call_by_name_may_run_a_sibling_s_method() {
+    for (side, g) in [("clean", &cooperative().clean), ("shortcut", &cooperative().shortcut)] {
+        let bodies = atlas_engine::flow::bodies(g);
+        let lines = &bodies["news.read.cached_lines"].steps()[0];
+        assert_eq!(lines.to, "news.sources.Cached.read", "{side}");
+        assert_eq!(lines.alts(&bodies), ["news.sources.Trimmed.read".to_string()], "{side}");
+        let r = route(g, "news.read.cached_lines");
+        assert!(r.contains("one of 1") && r.contains("Trimmed.read()"), "{side}: {r}");
+    }
+    let trimmed = |g: &Graph| -> Vec<String> {
+        let bodies = atlas_engine::flow::bodies(g);
+        bodies[&atlas_engine::flow::key("news.sources.Trimmed.read", "news.sources.Feed")].steps().iter().map(|s| s.to.clone()).collect()
+    };
+    assert_eq!(trimmed(&cooperative().clean), ["news.sources.Cached.read"]);
+    assert_eq!(trimmed(&cooperative().shortcut), ["news.sources.Source.read"]);
 }
 
 /// The file a feed reads is named in the terms of the route that builds it, on either side: the

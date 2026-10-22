@@ -4,12 +4,24 @@
 
 route storage.run
 step run/join
+step run/join/Path                                          # `first = Path(os.environ["FIRST"])`
+step run/join/Path#2
+step run/join/Path#3
 step run/join/read_pair
 
 line entry > run call
 line Disk({$FIRST}) > run/join/read_pair own
 line Disk({$SECOND}) > run/join/read_pair own
 line run/join/read_pair > run/join back
+line run/join/Path > _·first@run/join/Path value
+line run/join/Path#2 > _·second@run/join/Path#2 value
+line run/join/Path#3 > _·destination@run/join/Path#3 value
+line _·first@run/join/Path > run/join/read_pair value
+line _·second@run/join/Path#2 > run/join/read_pair value
+known #101 line _·destination@run/join/Path#3 > run/join value   # `destination.write_text(..)`
+home _·first@run/join/Path run/join
+home _·second@run/join/Path#2 run/join
+home _·destination@run/join/Path#3 run/join
 line run/join > Disk({$DESTINATION}) own
 
 side entry left
