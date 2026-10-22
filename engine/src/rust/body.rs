@@ -2105,6 +2105,19 @@ const USES: UseSyntax = UseSyntax {
         "macro_invocation" => child.kind() == "token_tree",
         _ => false,
     },
+    // `&mut s` handed to a call: the call writes into `s`
+    changes: |n| {
+        let mut out = vec![];
+        let Some(args) = n.child_by_field_name("arguments").filter(|_| n.kind() == "call_expression") else { return out };
+        for i in 0..args.named_child_count() {
+            let Some(a) = args.named_child(i).filter(|a| a.kind() == "reference_expression") else { continue };
+            let mutable = (0..a.child_count()).any(|j| a.child(j).is_some_and(|c| c.kind() == "mutable_specifier"));
+            if let Some(v) = a.child_by_field_name("value").filter(|v| mutable && v.kind() == "identifier") {
+                out.push(v);
+            }
+        }
+        out
+    },
     splits: |n, child| n.kind() == "match_expression" && n.child_by_field_name("value").map(|v| v.id()) == Some(child.id()),
     names: &["identifier"],
     keeps: &["field_expression", "index_expression"],
