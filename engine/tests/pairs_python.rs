@@ -1585,6 +1585,32 @@ fn cooperative_super_runs_the_next_method_along_the_value_s_order() {
     assert!(!r.contains("one of") && !r.contains("Cached.read"), "{r}");
 }
 
+/// A call by name on a value whose class is not known may run, for each class the value may be,
+/// the method that class runs for the name along its order (#140). In `cached_lines(source:
+/// Cached)` a cached source may be a feed, `Feed(Trimmed, Cached)`, which runs `Trimmed.read`
+/// first, though `Trimmed` is no class below `Cached`: the call is `Cached.read` or `Trimmed.read`,
+/// on either side. What the pair lays bare is what the sibling does then: the clean `Trimmed.read`
+/// hands on with `super().read()`, which on a feed runs `Cached.read`, so a cached source still
+/// reads its store; the shortcut's `Source.read(self)` asks the network, and a cached source that
+/// is a feed never reads its cache.
+#[test]
+fn cooperative_a_call_by_name_may_run_a_sibling_s_method() {
+    for (side, g) in [("clean", &cooperative().clean), ("shortcut", &cooperative().shortcut)] {
+        let bodies = atlas_engine::flow::bodies(g);
+        let lines = &bodies["news.read.cached_lines"].steps()[0];
+        assert_eq!(lines.to, "news.sources.Cached.read", "{side}");
+        assert_eq!(lines.alts(&bodies), ["news.sources.Trimmed.read".to_string()], "{side}");
+        let r = route(g, "news.read.cached_lines");
+        assert!(r.contains("one of 1") && r.contains("Trimmed.read()"), "{side}: {r}");
+    }
+    let trimmed = |g: &Graph| -> Vec<String> {
+        let bodies = atlas_engine::flow::bodies(g);
+        bodies[&atlas_engine::flow::key("news.sources.Trimmed.read", "news.sources.Feed")].steps().iter().map(|s| s.to.clone()).collect()
+    };
+    assert_eq!(trimmed(&cooperative().clean), ["news.sources.Cached.read"]);
+    assert_eq!(trimmed(&cooperative().shortcut), ["news.sources.Source.read"]);
+}
+
 /// The file a feed reads is named in the terms of the route that builds it, on either side: the
 /// cache directory `headlines` is handed, then the name of the feed in it. A class's call hands its
 /// arguments to the initializer it runs, its own or the first along its bases: the shortcut's
