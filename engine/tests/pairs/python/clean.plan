@@ -16,7 +16,7 @@ line readings/get_store/ReadingStore() > ReadingStore@readings/get_store/Reading
 line ReadingStore@readings/get_store/ReadingStore() > readings/get_store value         # get_store hands back what it built
 line readings/get_store > ReadingStore@readings/get_store value
 # history is called on the store and hands it to connect, whose body hands its path to sqlite3.connect
-known #128 line ReadingStore@readings/get_store > readings/ReadingStore.history/ReadingStore.connect/connect value
+line ReadingStore@readings/get_store > readings/ReadingStore.history/ReadingStore.connect/connect value
 line readings/ReadingStore.history/ReadingStore.connect/connect > Connection·con@readings/ReadingStore.history/ReadingStore.connect/connect value
 known #101 line Connection·con@readings/ReadingStore.history/ReadingStore.connect/connect > readings/ReadingStore.history/ReadingStore.connect value
 # `with self.connect() as con`: the name holds the connection connect gives
@@ -54,7 +54,6 @@ known #125 extra line Connection@readings/ReadingStore.history/ReadingStore.conn
 known #125 extra home Connection@readings/ReadingStore.history/ReadingStore.connect readings/ReadingStore.history
 # an own arrow takes what only a step inside it takes: the store (to connect), the Unit (to Reading())
 known #126 extra line ReadingStore@readings/get_store > readings value
-known #126 extra line ReadingStore@readings/get_store > readings/ReadingStore.history/ReadingStore.connect value
 # building the store runs its public methods, which touch its tables
 known #74 extra line SQLite(outages) > readings/get_store/ReadingStore() reached
 known #74 extra line SQLite(readings) > readings/get_store/ReadingStore() reached

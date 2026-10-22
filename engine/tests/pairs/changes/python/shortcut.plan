@@ -71,23 +71,25 @@ home Board·other@main/rename main
 
 side entry left
 
-# A library operation that changes the value it runs on is a step; in Python it is none on a part of `self`
-# (`self.cells.extend(..)`) or on a parameter itself (`tags.append(tag)`)
-known #129 step main/Board.take_from/extend
-known #129 step main/Board.take_victim/extend
+# A library operation that changes the value it runs on is a step: on a part of `self` it changes the instance the
+# method runs on (`self.cells.extend(..)`); in Python it is none on a parameter itself (`tags.append(tag)`). Inside the
+# step `self` is bound by its kind, not to the board the call runs on (#127), and the own arrow does not hand on what
+# the change made (#129)
+step main/Board.take_from/extend
+step main/Board.take_victim/extend
 known #125 step main/add_tag/append
-known #125 line Board·other@main/Board()#2 > main/Board.take_from/extend value
-known #125 line Board·board@main/reset > main/Board.take_from/extend value
-known #125 line main/Board.take_from/extend > Board·self@main/Board.take_from/extend value
-known #125 line Board·self@main/Board.take_from/extend > main/Board.take_from value
-known #125 line Board·other@main/Board.take_from > main/Board.take_victim/extend value
-known #125 line Board·board@main/Board.take_from > main/Board.take_victim/extend value
-known #125 line main/Board.take_victim/extend > Board·self@main/Board.take_victim/extend value
-known #125 line Board·self@main/Board.take_victim/extend > main/Board.take_victim value
+line Board·other@main/Board()#2 > main/Board.take_from/extend value
+known #127 line Board·board@main/reset > main/Board.take_from/extend value
+line main/Board.take_from/extend > Board·self@main/Board.take_from/extend value
+known #129 line Board·self@main/Board.take_from/extend > main/Board.take_from value
+line Board·other@main/Board.take_from > main/Board.take_victim/extend value
+known #127 line Board·board@main/Board.take_from > main/Board.take_victim/extend value
+line main/Board.take_victim/extend > Board·self@main/Board.take_victim/extend value
+known #129 line Board·self@main/Board.take_victim/extend > main/Board.take_victim value
 known #125 line main/add_tag/append > list·tags@main/add_tag/append value
 known #125 line list·tags@main/add_tag/append > main/add_tag value
-known #125 home Board·self@main/Board.take_from/extend main/Board.take_from
-known #125 home Board·self@main/Board.take_victim/extend main/Board.take_victim
+home Board·self@main/Board.take_from/extend main/Board.take_from
+home Board·self@main/Board.take_victim/extend main/Board.take_victim
 known #125 home list·tags@main/add_tag/append main/add_tag
 
 # A callee's parameter is bound to the caller's value of that name, or to the latest of its type, not to what the call
@@ -101,7 +103,6 @@ known #127 line Board·other@main/Board.take_victim > main/merge_scores/update v
 known #127 line Board·board@main/merge_scores/update > main/merge_scores value
 known #127 extra line Board·other@main/Board()#2 > main/Board.take_from/clear value
 known #127 extra line Board·board@main/reset > main/Board.take_from value
-known #127 extra line Board·other@main/Board.take_from > main/Board.take_victim/clear value
 known #127 extra line Board·board@main/reset > main/merge_scores/update value
 
 # A changed argument is not the caller's value at a new moment: it is named by the callee's parameter (`take_from`
@@ -160,3 +161,4 @@ known #101 line Cell·cell@main/mark_all/for cell in board.cells > main/mark_all
 # a result the caller drops goes back to it: the reader does not say the call is a statement of its own
 known #134 extra line main/Board.take_from > main back
 known #134 extra line main/Board.take_victim > main back
+known #127 extra line Board·self@main/Board.take_victim/extend > main/Board.take_victim/clear value
