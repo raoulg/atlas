@@ -74,7 +74,7 @@ line entry > main/Cli() call
 line main/Cli() > Cli·cli@main/Cli() value
 known #101 line Cli·cli@main/Cli() > main value                                # the match decides on cli.command, the if on `open`
 known #103 line Cli·cli@main/Cli() > main/?1/read_csv/read_to_string value     # `file`, bound by the arm's pattern
-known #103 line Cli·cli@main/Cli() > main/?1/Format.renderer value             # `format`, bound by the arm's pattern
+line Cli·cli@main/Cli() > main/?1/Format.renderer value   # `format`, bound by the arm's pattern
 
 line File(spend.toml) > main/Config.load own
 line main/Config.load/read_to_string > _·text@main/Config.load/read_to_string value
@@ -283,13 +283,10 @@ side Screen right
 
 # ---- what Atlas has and should not ----
 # a value one arm of the choice makes, and only that arm takes, has the choice's moment; two (`Rates·rates`) become one
-known #128 extra line Render@main/?1/Format.renderer > main/?1/write/join value   # `render.extension()` is a step that takes the render itself
 # a value handed to a call into a family ends at the dispatch's border
 known #100 extra line Render@main/?1/Format.renderer > main/?1/write/Render.extension value
 known #100 extra line Render@main/?1/Format.renderer > main/?1/write/Render.render value
 # the format the arm's pattern binds out of `cli` comes from beyond
-known #103 extra line Format·format > main/?1/Format.renderer value
-known #103 extra home Format·format main/?1
 # an own arrow takes what only a step inside it takes, and a value is not followed into the operation a body hands it to
 known #126 extra line Config·config@main/Config.load > main/?1/RatesClient.latest value
 known #126 extra line Config·config@main/Config.load > main/?1/Store.rates value
@@ -338,7 +335,7 @@ home _·rate@main/?1/Store.save_rates/for (currency, rate) in &rates.rates main/
 line _·rows@main/?1/Store.rates/query_map > main/?1/Store.rates/for row in rows value
 line main/?1/Store.rates/for row in rows > _·row@main/?1/Store.rates/for row in rows value
 home _·row@main/?1/Store.rates/for row in rows main/?1/Store.rates
-known #103 line _·row@main/?1/Store.rates/for row in rows > main/?1/Store.rates/insert value   # let (date, currency, rate) = row?
+line _·row@main/?1/Store.rates/for row in rows > main/?1/Store.rates/insert value   # let (date, currency, rate) = row?
 line main/?1/write/Render.render/Csv.render/for l in lines > Line·l@main/?1/write/Render.render/Csv.render/for l in lines value
 line Line·l@main/?1/write/Render.render/Csv.render/for l in lines > main/?1/write/Render.render/Csv.render value
 home Line·l@main/?1/write/Render.render/Csv.render/for l in lines main/?1/write/Render.render/Csv.render
@@ -351,3 +348,6 @@ line Expense@main/?1/Store.expenses > main/?1/lines/for e in expenses value
 line Rates·rates@main/?1/RatesClient.latest > main/?1/Store.save_rates/for (currency, rate) in &rates.rates value
 line Line·lines@main/?1/lines > main/?1/write/Render.render/Csv.render/for l in lines value
 line Line·lines@main/?1/lines > main/?1/write/Render.render/Markdown.render/for l in lines value
+known #127 extra home Format main/?1   # the parameter takes what the call is handed by its kind, not the projection it is handed
+known #127 extra line Cli·cli@main/Cli() > main/?1/read_csv value   # the parameter takes what the call is handed by its kind, not the projection it is handed
+known #127 extra line Format > main/?1/Format.renderer value   # the parameter takes what the call is handed by its kind, not the projection it is handed

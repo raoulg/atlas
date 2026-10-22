@@ -79,6 +79,45 @@ fn function(c: TsNode) -> Option<TsNode> {
     }
 }
 
+/// Whether a string literal is the format string of a macro that formats: a token of its own
+/// among the macro's tokens (`format!("{key}")`, also inside another macro's tokens).
+fn formats(lit: TsNode, src: &[u8]) -> bool {
+    let Some(t) = lit.parent().filter(|t| t.kind() == "token_tree") else { return false };
+    let name = match t.parent() {
+        Some(m) if m.kind() == "macro_invocation" => m.child_by_field_name("macro").and_then(|x| path_parts(Some(x), src).pop()),
+        _ => t.prev_sibling().filter(|b| b.kind() == "!").and_then(|b| b.prev_sibling()).map(|x| text(x, src).to_string()),
+    };
+    name.map_or(false, |n| knowledge::RUST_FORMAT_MACROS.contains(&n.as_str()))
+}
+
+/// The names a format string writes in its braces, each with its byte offset in the literal:
+/// `key` and `low` of `"{key} {low:.1}"`; `{{` is a brace, `{}` and `{0}` name nothing.
+fn inline_names(s: &str) -> Vec<(&str, usize)> {
+    let b = s.as_bytes();
+    let (mut out, mut i) = (vec![], 0);
+    while i < b.len() {
+        if b[i] == b'{' && b.get(i + 1) == Some(&b'{') {
+            i += 2;
+            continue;
+        }
+        if b[i] == b'{' {
+            let start = i + 1;
+            let mut j = start;
+            while j < b.len() && (b[j].is_ascii_alphanumeric() || b[j] == b'_') {
+                j += 1;
+            }
+            let ident = j > start && !b[start].is_ascii_digit();
+            if ident && matches!(b.get(j), Some(b'}' | b':')) {
+                out.push((&s[start..j], start));
+            }
+            i = j.max(i + 1);
+            continue;
+        }
+        i += 1;
+    }
+    out
+}
+
 /// The kinds of node a pattern is built of, between a name it binds and what binds it.
 const PATTERNS: &[&str] = &[
     "identifier",
@@ -206,6 +245,11 @@ fn kept_as(c: TsNode, src: &[u8]) -> Vec<(String, usize)> {
 /// pattern names (`Some`, `Mode::Fast`, `None`: a name Rust writes as a type's), and not what a
 /// guard tests.
 fn binds(pat: TsNode, src: &[u8]) -> Vec<(String, usize)> {
+    bound_names(pat, src).into_iter().filter_map(|i| Some((text(i, src).to_string(), scope(i)?.0))).collect()
+}
+
+/// The names a pattern binds, as nodes: not the variant a pattern names, not what a guard tests.
+fn bound_names<'t>(pat: TsNode<'t>, src: &[u8]) -> Vec<TsNode<'t>> {
     let guard = pat.child_by_field_name("condition").map(|g| g.byte_range());
     let variant = |i: TsNode| {
         i.parent().map_or(false, |p| {
@@ -218,8 +262,22 @@ fn binds(pat: TsNode, src: &[u8]) -> Vec<(String, usize)> {
         .into_iter()
         .filter(|i| guard.as_ref().map_or(true, |g| !g.contains(&i.start_byte())))
         .filter(|i| !variant(*i) && !names_type(text(*i, src)))
-        .filter_map(|i| Some((text(i, src).to_string(), scope(i)?.0)))
         .collect()
+}
+
+/// The name a value is a part of, where the code writes it so: through what hands a value on
+/// unchanged, a field and an index (`settings.months`, `&config["base"]`, `row?`), the name or the
+/// `self` it starts at; none for a value a call or a literal makes.
+fn root(v: TsNode) -> Option<TsNode> {
+    let mut v = beneath(v, WRAPPERS);
+    loop {
+        v = match v.kind() {
+            "identifier" | "self" => return Some(v),
+            "field_expression" => beneath(v.child_by_field_name("value")?, WRAPPERS),
+            "index_expression" => beneath(v.named_child(0)?, WRAPPERS),
+            _ => return None,
+        };
+    }
 }
 
 /// The library value a chain of method calls starts from: a call of a function on a library's
@@ -627,6 +685,7 @@ impl<'a, 't> Body<'a, 't> {
         );
         b.patterns(body);
         b.held(body);
+        b.projections(body);
         b.handed_to(body, untyped);
         // a macro that prints shows the human something
         for mac in walk(body, &["macro_invocation"]) {
@@ -770,6 +829,33 @@ impl<'a, 't> Body<'a, 't> {
         }
     }
 
+    /// A name a binding gives a part of another name's value holds that value (a projection bound
+    /// to a name is still the projection): `let months = settings.months`, `let base =
+    /// &config["base"]`, `let record: Record = result?`, `let (date, rate) = row?`, the fields a
+    /// `match` on `cli.command` takes apart (`Command::Import { file }`), `Ok(body)` of a `match
+    /// fetched`. A value a call makes is the call's, and is not followed.
+    fn projections(&mut self, body: TsNode<'t>) {
+        let src = self.src;
+        for n in walk(body, &["let_declaration", "let_condition", "match_expression"]) {
+            let Some(held) = n.child_by_field_name("value").and_then(root) else { continue };
+            let patterns: Vec<TsNode> = match n.kind() {
+                "match_expression" => n
+                    .child_by_field_name("body")
+                    .map(named_children)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter_map(|arm| arm.child_by_field_name("pattern"))
+                    .collect(),
+                _ => n.child_by_field_name("pattern").into_iter().collect(),
+            };
+            for name in patterns.into_iter().flat_map(|p| bound_names(p, src)) {
+                if let Some((from, to)) = scope(name) {
+                    self.aliases.bind(text(name, src), from, to, (text(held, src).to_string(), held.start_byte()));
+                }
+            }
+        }
+    }
+
     /// The program's classes a struct pattern's fields hold, by field: a struct's, or an enum
     /// variant's (`Command::Report`), read where the enum declares it.
     fn declared_fields(&self, parts: &[String]) -> Option<Vec<(String, String)>> {
@@ -842,14 +928,6 @@ impl<'a, 't> Body<'a, 't> {
             }
             if let Some(made) = l.child_by_field_name("value") {
                 self.made_by.bind(&name, from, to, made);
-                // a projection bound to a name is still the projection: `let months = settings.months` holds `settings`
-                let mut held = beneath(made, WRAPPERS);
-                while let Some(owner) = (held.kind() == "field_expression").then(|| held.child_by_field_name("value")).flatten() {
-                    held = beneath(owner, WRAPPERS);
-                }
-                if matches!(held.kind(), "identifier" | "self") {
-                    self.aliases.bind(&name, from, to, (text(held, src).to_string(), held.start_byte()));
-                }
             }
             match annotated.or_else(|| value.and_then(|v| self.value_class(v))) {
                 Some(t) => self.locals.bind(&name, from, to, t),
@@ -1128,10 +1206,72 @@ impl<'a, 't> Body<'a, 't> {
                         .filter_map(|s| Some(Held { ty: self.cls.clone()?, name: String::new(), at: s.start_byte() as u32 })),
                 );
             }
-            for h in held {
+            // a name a format string writes (`format!("{key} {low}")`) is an argument as one after it is
+            for lit in walk(*p, &["string_literal", "raw_string_literal"]).into_iter().filter(|l| formats(*l, self.src)) {
+                for (name, off) in inline_names(text(lit, self.src)) {
+                    let at = lit.start_byte() + off;
+                    let (name, from) = self.holder(name, at);
+                    let ty = if name == "self" { self.cls.clone() } else { self.held_type(&name, from) };
+                    let name = if name == "self" { String::new() } else { name };
+                    if ty.is_some() || kept.contains(&name) {
+                        held.push(Held { ty: ty.unwrap_or_default(), name, at: at as u32 });
+                    }
+                }
+            }
+            // a call inside that is a step of its own takes its names itself; this call is handed what it gives
+            let steps = self.steps_within(*p);
+            for h in held.into_iter().filter(|h| !steps.iter().any(|r| r.contains(&(h.at as usize)))) {
                 if !out.iter().any(|o| o.ty == h.ty && o.name == h.name && (o.at == h.at || h.name.is_empty())) {
                     out.push(h);
                 }
+            }
+        }
+        out
+    }
+
+    /// The stretches of `p` that a call of the program's own code covers, `p` itself among them: a
+    /// function or method the body calls (`level.prefix()`, also among a macro's tokens), a type it
+    /// builds by its literal. Each is a step of its own, and takes the names in it itself.
+    fn steps_within(&self, p: TsNode) -> Vec<std::ops::Range<usize>> {
+        let src = self.src;
+        let own = |t: &str| self.store.nodes.get(t).map_or(false, |n| matches!(n.kind, NodeKind::Function | NodeKind::Method));
+        let mut out = vec![];
+        for n in walk(p, &["call_expression", "struct_expression", "token_tree"]) {
+            match n.kind() {
+                "call_expression" if self.callee(n).is_some() => out.push(n.byte_range()),
+                "struct_expression"
+                    if self
+                        .resolve(&path_parts(n.child_by_field_name("name"), src))
+                        .filter(|r| !r.starts_with("ext:"))
+                        .and_then(|r| self.class_of(&r))
+                        .is_some() =>
+                {
+                    out.push(n.byte_range())
+                }
+                "token_tree" => match token_callee(n, src) {
+                    Some(Called::Path(parts)) if self.resolve_value(n, &parts).map_or(false, |t| own(&t)) => out.push(n.byte_range()),
+                    Some(Called::Method(recv, method)) => {
+                        let owner = |t: TsNode| {
+                            if t.kind() == "self" {
+                                self.cls.clone()
+                            } else {
+                                self.locals.get(text(t, src), t.start_byte()).cloned()
+                            }
+                        };
+                        let class = match recv.as_slice() {
+                            [r] => owner(*r),
+                            [o, f] => {
+                                owner(*o).and_then(|c| self.store.classes.get(&c)).and_then(|k| k.attr_types.get(text(*f, src)).cloned())
+                            }
+                            _ => None,
+                        };
+                        if class.and_then(|k| self.store.method_of(&k, &method)).map_or(false, |t| !t.starts_with("ext:")) {
+                            out.push(recv.first().map_or(n.start_byte(), |r| r.start_byte())..n.end_byte());
+                        }
+                    }
+                    _ => {}
+                },
+                _ => {}
             }
         }
         out
@@ -1143,11 +1283,13 @@ impl<'a, 't> Body<'a, 't> {
         let names: Vec<String> = walk(pat, &["identifier"]).into_iter().map(|i| text(i, self.src).to_string()).collect();
         let hands = self.hands(&[Some(value)], &steps.kept);
         let inside = scope(pat).map_or(pat.end_byte(), |(from, _)| from);
+        // it goes over what it is handed, or over what a step of the program gives it (`store.rows()`)
+        let over = !hands.is_empty() || !self.steps_within(value).is_empty();
         let gives: Vec<Held> = names
             .iter()
             .filter_map(|n| match self.held_type(n, inside) {
                 Some(t) => Some(Held::new(t, n.clone())),
-                None => (!hands.is_empty()).then(|| Held::new(String::new(), n.clone())),
+                None => over.then(|| Held::new(String::new(), n.clone())),
             })
             .collect();
         // the step stands where what it goes over is written: a call there hands it what it gives, the loop's body does not

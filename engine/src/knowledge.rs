@@ -1724,6 +1724,35 @@ pub const RUST_ELEMENTS: &[&str] = &["iter", "iter_mut", "into_iter", "drain"];
 pub const RUST_KEEPS_ELEMENTS: &[&str] =
     &["filter", "skip", "take", "rev", "skip_while", "take_while", "peekable", "inspect", "step_by", "by_ref"];
 
+/// The macros that format their arguments into a string, where a name written in the string
+/// (`format!("{key} {low}")`) is an argument as one written after it is: std's, anyhow's errors,
+/// and the log crate's.
+pub const RUST_FORMAT_MACROS: &[&str] = &[
+    "format",
+    "format_args",
+    "print",
+    "println",
+    "eprint",
+    "eprintln",
+    "write",
+    "writeln",
+    "panic",
+    "assert",
+    "assert_eq",
+    "assert_ne",
+    "unreachable",
+    "todo",
+    "unimplemented",
+    "anyhow",
+    "bail",
+    "ensure",
+    "error",
+    "warn",
+    "info",
+    "debug",
+    "trace",
+];
+
 /// The methods of a sequence or an iterator that give one of its elements, as it is held (in an
 /// `Option`, which is read as what it holds): `series.first()`.
 pub const RUST_ONE_ELEMENT: &[&str] =
