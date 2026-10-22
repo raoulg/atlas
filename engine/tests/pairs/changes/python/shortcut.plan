@@ -136,7 +136,6 @@ line main/extend > main back
 known #129 extra line Board·other@main/rename > main value
 
 # The own arrow takes a value its body only hands to a step inside it: the Cell built into `[Cell()]` for `Board()`
-known #126 extra line Cell@main/Cell() > main value
 
 # `main` reads the lengths of the list and dicts its steps changed
 known #101 line list·tags@main/add_tag > main value

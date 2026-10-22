@@ -101,7 +101,6 @@ known #125 extra line _@main/count/?1/m.get > main/count/set value
 known #125 extra home _@main/count/?1/m.get main/count
 
 # The own arrow takes a value its body only hands to a step inside it: the ledger whose rows go to `fileAll`
-known #126 extra line Ledger·ledger@main/Ledger.takeVictim > main value
 
 # `main` reads the length of the array and the size of the Map its steps changed
 known #101 line Array·lines@main/addLine > main value

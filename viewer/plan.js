@@ -1134,7 +1134,8 @@ if (fine) {
     for (const Q of within) for (const v of Q.C.keys()) if (places.get(v)?.err && madeHere(v) && kinds.has(kindKey(v)) && !within.some(R => R.D.has(v))) { P.D.set(v, false); (P.used ||= new Set()).add(v); }
   }
   const isOp = Q => stepOf(Q.steps[0]).startsWith("op:");
-  for (const P of pills.values()) if (P.own && P.border) {
+  // the route's own arrow is a point on its border too: what it gives back is what no step inside takes
+  for (const P of pills.values()) if (P.own && (P.border || frames.get(P.parent)?.anchor)) {
     const fid = P.parent, within = [...pills.values()].filter(Q => Q !== P && planChain(Q.parent).includes(fid));
     const stays = (v, seen = new Set()) => !seen.has(v) && (seen.add(v), within.some(Q => Q.D.has(v) && (!isOp(Q) || (Q.C.size > 0 && [...Q.C.keys()].every(c => stays(c, seen))))));
     const madeHere = v => { const at = places.get(v)?.at; return !!at && (at.startsWith(fid + "/") || at.startsWith(fid + "|") || at.startsWith(fid + "~c")); };
@@ -1142,7 +1143,7 @@ if (fine) {
     // what the signature takes by no name from beyond is the parameter a step inside takes by its name
     const beyond = v => !places.get(v)?.at && !places.get(v)?.name && v.startsWith("t:");
     const crosses = v => within.some(Q => Q.D.has(v) || (beyond(v) && [...Q.D.keys()].some(w => !places.get(w)?.at && places.get(w)?.type === places.get(v).type)));
-    for (const v of [...P.D.keys()]) if (isMem(v) && !madeHere(v) && crosses(v) && !P.used?.has(v)) P.D.delete(v);
+    if (P.border) for (const v of [...P.D.keys()]) if (isMem(v) && !madeHere(v) && crosses(v) && !P.used?.has(v)) P.D.delete(v);
   }
 }
 // zoom does not touch the moments: they are counted on the values themselves, and then a value
