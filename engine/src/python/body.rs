@@ -1547,6 +1547,19 @@ const CHOICES: ChoiceSyntax = ChoiceSyntax {
             _ => Part::Through,
         }
     },
+    // an `if` without an `else` whose every arm returns, raises, continues or breaks
+    guards: |n, src| {
+        let exits = |b: Option<TsNode>| {
+            b.and_then(|b| named_children(b).into_iter().filter(|s| s.kind() != "comment").last())
+                .is_some_and(|s| matches!(s.kind(), "return_statement" | "raise_statement" | "continue_statement" | "break_statement"))
+        };
+        let parts = named_children(n);
+        n.kind() == "if_statement"
+            && !is_main_guard(n, src)
+            && !parts.iter().any(|p| p.kind() == "else_clause")
+            && exits(n.child_by_field_name("consequence"))
+            && parts.iter().filter(|p| p.kind() == "elif_clause").all(|e| exits(e.child_by_field_name("consequence")))
+    },
 };
 
 /// Where Python's values go: `x = v`, `x += v`, `for x in v`, `(x := v)`; `return` and `yield`

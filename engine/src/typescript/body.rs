@@ -1652,6 +1652,7 @@ const CHOICES: ChoiceSyntax = ChoiceSyntax {
             _ => Part::Through,
         }
     },
+    guards: |_, _| false,
 };
 
 /// TypeScript's comparisons: `===`, `==`, `!==` and `!=` against a string or a member of an
