@@ -139,8 +139,11 @@ composition) into one box.
 **In Atlas.** Forms that say the same thing are one construct, in every language: typer's
 parameter default, clap's `default_value` and parseArgs' `default:` are each an option the
 caller can override. The pushout is drawn, as the entry's usage line; the language's form lies
-beneath it.
-**Where.** `CLAUDE.md`, "Isomorphic is the same"; `Entry::options`.
+beneath it. An environment variable with a fallback (`os.environ.get("X", "d")`,
+`process.env.X ?? "d"`, `env::var("X").unwrap_or("d")`) is that construct too, and so is any value
+nothing in the program hands, with a fallback: one input, one place, drawn as its default and
+decided by no code, since a run reads or writes one file whatever the input says.
+**Where.** `CLAUDE.md`, "Isomorphic is the same"; `Entry::options`; `paths::or_else`.
 
 ### Paths as terms, directories as fibers
 **What.** A path is a term in a small algebra over a root: a root (a literal, a parameter, an
@@ -394,7 +397,9 @@ open:
   only to be handed into another step (`Row(Reading(line))`) is that step's. A value handed into a
   library's operation goes on in what the operation gives, and is the operation's only where that
   is. A result of no type of the code's goes back to the step that called it unless another step of
-  the caller takes it, which it then reaches as a value. A call is
+  the caller takes it, which it then reaches as a value. Going back, it is one line labelled by the
+  name that holds it, and no value beside it: the caller's own arrow is a point on its border, no
+  step, and `done = finished(..); if done:` is `if finished(..):` with a name. A call is
   handed the values the names in its arguments hold: `f(x.name)` is handed `x`, since the projection
   `.name` is no occurrence but glued into the call, whose arrow is `f ∘ π_name` with domain `X`, and
   `f(self.path)` is handed the instance the method runs on; a nested call that is a step of its own

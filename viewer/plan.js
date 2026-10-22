@@ -696,6 +696,12 @@ const takenBeside = key => {
   return names.size > 0 && (n.sites || []).some((_, j) => j !== i.siteNo && (siteIn(n, j)?.hands || []).some(h => !h.type && names.has(h.name)));
 };
 const goesBack = (key, cod) => handsBack(stepOf(key), cod) && !takenBeside(key);
+// a result of no type of the code's that goes back is that one line, labelled by the name that holds it: no value beside it
+const backName = (key, cod) => {
+  const ns = (treeInfo.get(key)?.site?.gives || []).filter(g => g.name && !g.type).map(g => g.name);
+  for (const nm of ns) cod.delete("v:" + nm);
+  return ns.find(nm => !nm.startsWith("#")) || null;
+};
 
 // a figure a call makes, numbered in the order the route makes them
 const figureNo = new Map();
@@ -792,8 +798,9 @@ const build = (node, parent, caller) => {
       for (const k of shut.cod.keys()) if (!own.cod.has(k) && !inC.has(k)) own.cod.set(k, true);
     }
     const hb = fine ? !!parent && !caller && node.id !== V.route && !lib && !/^(part|unit|op):/.test(node.id) && goesBack(node.id, own.cod) : !!frames.get(fid).closed?.hb;
+    const said = hb ? backName(node.id, own.cod) : null;
     if (own.dom.size || own.cod.size || hb || (back.length && !lib && !node.id.startsWith("unit:"))) {
-      const oid = "o:" + node.id, own_ = {id: oid, steps: [node.id], D: own.dom, C: own.cod, dn: own.dn, cn: own.cn, goes: own.goes, parent: fid, hue: node.hue, own: true, beyond: own.beyond, keep: own.keep, ...(fine && node.id !== V.route && !lib ? {border: true} : {})};
+      const oid = "o:" + node.id, own_ = {id: oid, steps: [node.id], D: own.dom, C: own.cod, dn: own.dn, cn: own.cn, goes: own.goes, parent: fid, hue: node.hue, own: true, beyond: own.beyond, keep: own.keep, ...(said ? {said} : {}), ...(fine && node.id !== V.route && !lib ? {border: true} : {})};
       pills.set(oid, own_);
       for (const b of back) b.backTo = oid;
       if (hb) return [own_];
@@ -804,10 +811,11 @@ const build = (node, parent, caller) => {
   const cut = fine && node.cut && byId.get(stepOf(node.id))?.kind !== "class";
   const m = cut ? cutArrow(node.id) : stepMorphism(node.id, fine && !node.cut, false, fine && !node.cut), hb = parent && !caller && goesBack(node.id, m.cod);
   if (cut) for (const pl of m.places.values()) addPlace(pl);
+  const said = hb ? backName(node.id, m.cod) : null;
   if (caller) m.dom.set(addPlace(entryPlace(caller)), false);
   // a unit stands even when nothing crosses its edge, so that it can be opened
   if (!m.dom.size && !m.cod.size && !hb && !node.id.startsWith("unit:")) return [];
-  const pill = {id: "n:" + node.id, steps: [node.id], D: m.dom, C: m.cod, dn: m.dn, cn: m.cn, goes: m.goes || new Map(), parent, hue: node.hue, branch: node.branch, ...(m.kept?.size ? {kept: m.kept} : {}), ...(node.parse ? {parse: true} : {}), ...(cut ? {cut: true, mult: m.mult, split: m.split} : {})};
+  const pill = {id: "n:" + node.id, steps: [node.id], D: m.dom, C: m.cod, dn: m.dn, cn: m.cn, goes: m.goes || new Map(), parent, hue: node.hue, branch: node.branch, ...(said ? {said} : {}), ...(m.kept?.size ? {kept: m.kept} : {}), ...(node.parse ? {parse: true} : {}), ...(cut ? {cut: true, mult: m.mult, split: m.split} : {})};
   pills.set(pill.id, pill);
   return hb ? [pill] : [];
 };
@@ -1171,11 +1179,11 @@ const imageOf = (F, opened, folded, {fineKeys = false} = {}) => {
     if (!S) {
       const P = B.members[0];
       if (!D.size && !C.size && !back_ && !P.own) continue;
-      pills.set(P.id, {...P, D, C, Dn, Cn, Dr, Cr, fine: fineOf(incidence), goes, ...(back_ ? {backTo: back_, backFrom: out.id} : {backTo: undefined})});
+      pills.set(P.id, {...P, D, C, Dn, Cn, Dr, Cr, fine: fineOf(incidence), goes, ...(back_ ? {backTo: back_, backFrom: out.id, said: out.said} : {backTo: undefined})});
       continue;
     }
     if (!D.size && !C.size && !back_) continue;
-    pills.set(S.id, {id: S.id, steps: [S.step], D, C, Dn, Cn, Dr, Cr, fine: fineOf(incidence), dn: new Map(), cn: new Map(), goes, parent: S.parent, hue: S.hue, ...(back_ ? {backTo: back_, backFrom: out.id} : {})});
+    pills.set(S.id, {id: S.id, steps: [S.step], D, C, Dn, Cn, Dr, Cr, fine: fineOf(incidence), dn: new Map(), cn: new Map(), goes, parent: S.parent, hue: S.hue, ...(back_ ? {backTo: back_, backFrom: out.id, said: out.said} : {})});
   }
   for (const P of [...pills.values()]) if (P.backTo && !pills.has(P.backTo)) delete P.backTo;
   for (const P of pills.values()) if (P.backTo) inc.set(`${P.backFrom}|back`, {way: "B", P: P.backFrom, k: P.backTo, p: P.id, c: P.backTo});

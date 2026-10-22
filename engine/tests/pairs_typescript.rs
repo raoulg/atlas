@@ -304,18 +304,20 @@ fn places_are_decided_where_the_program_starts() {
 }
 
 /// Library code does not decide where data lives. A path the library takes from the environment
-/// shows as what it is: a place the code does not name, or a file under a directory it does not
-/// name (`*/report.csv`), beside the default the library takes where nobody sets the variable.
-/// Whoever starts the program may set it, so the default is an option, as a parameter's default
-/// is, and `places` does not ask.
+/// with a default (`process.env.RATES_FILE ?? "data/rates.json"`) is one input, an option whoever
+/// starts the program may set, as a parameter's default is: one place, drawn as its default and
+/// decided by no code, and `places` does not ask.
 #[test]
 fn places_decided_in_library_code_show() {
     let s = shortcut();
-    for (f, kind) in
-        [("rates.file.FileRates.latest", "disk_read"), ("exporters.csv.writeCsv", "disk_write"), ("exporters.json.writeJson", "disk_write")]
-    {
-        let unnamed = touches(s, f, kind).iter().any(|t| (t.artifact.is_empty() || t.artifact.starts_with("*/")) && !t.fixed);
-        assert!(unnamed && !asked(s, "places", f), "{f}: {:?}", places(s, f, kind));
+    for (f, kind, default) in [
+        ("rates.file.FileRates.latest", "disk_read", "data/rates.json"),
+        ("exporters.csv.writeCsv", "disk_write", "out/report.csv"),
+        ("exporters.json.writeJson", "disk_write", "out/report.json"),
+    ] {
+        let ts = touches(s, f, kind);
+        let one = !ts.is_empty() && ts.iter().all(|t| t.artifact == default && !t.fixed && t.fixed_by.is_empty());
+        assert!(one && !asked(s, "places", f), "{f}: {:?}", places(s, f, kind));
     }
 }
 
@@ -1143,15 +1145,15 @@ fn places_the_function_that_writes_the_path_decides_it() {
 
 /// A default whoever calls the function or starts the program can override is an option, not a
 /// decision: a parameter's (`path: string = "out/rows.csv"`) and an environment variable's
-/// (`process.env.STOCK_PATH ?? "out/rows.csv"`). The variable draws as a place the code does not
-/// name, beside the file the code takes where nobody sets it; `places` asks neither form.
+/// (`process.env.STOCK_PATH ?? "out/rows.csv"`). The two forms say the same thing and draw alike:
+/// one place, the file the code takes where nobody says otherwise; `places` asks neither form.
 #[test]
 fn places_a_default_the_caller_can_override_is_an_option() {
     let c = stock("clean");
     assert!(!asked(&c, "places", "rows.save") && !asked(&c, "places", "rows.saveWhereTold"), "{:?}", asked_anywhere(&c, "places"));
     let told = touches(&c, "rows.saveWhereTold", "disk_write");
     assert!(told.iter().any(|t| t.artifact == "out/rows.csv" && !t.fixed && t.fixed_by.is_empty()), "{told:?}");
-    assert!(told.iter().any(|t| t.artifact.is_empty() && t.what == "{$STOCK_PATH}"), "{told:?}");
+    assert!(told.iter().all(|t| t.artifact == "out/rows.csv"), "one place, the variable its input: {told:?}");
 }
 
 /// A file that ships with the package, found from where its code lies
@@ -1249,4 +1251,29 @@ fn cooperative_super_and_a_call_through_a_prototype_run_one_method() {
         assert!(!r.contains("one of") && !r.contains("prototype"), "{side}: {r}");
         assert_eq!(r.contains("Store.get(key)"), side == "clean", "{side}: {r}");
     }
+}
+
+/// A name bound twice holds two values, one for each binding where it is in scope (#148). The
+/// rebinds pair (`tests/pairs/rebinds/typescript`) resolves each base of a module in a loop, then
+/// builds its `Body`: the clean side names the loop's value `base` and the body `body`, the shortcut
+/// names both `b`. A use takes the binding in scope where it stands, so `resolve(b)` in the loop is
+/// handed the loop's base, a string, never the `Body` the later `const b` holds; and the shortcut
+/// reads as the clean side does.
+#[test]
+fn composition_a_name_bound_twice_is_two_values() {
+    let p = common::pair("rebinds/typescript");
+    let link =
+        |g: &Graph| -> Node { g.nodes.iter().find(|n| n.name == "link").cloned().unwrap_or_else(|| panic!("link is in {}", g.root)) };
+    let hands = |g: &Graph| -> Vec<Vec<String>> {
+        link(g).sites.iter().filter(|s| s.to.ends_with(".resolve")).map(|s| s.hands.iter().map(|h| h.ty.clone()).collect()).collect()
+    };
+    let (clean, shortcut) = (hands(&p.clean), hands(&p.shortcut));
+    assert_eq!(clean.len(), 1, "link resolves each base: {clean:?}");
+    assert!(shortcut.iter().flatten().all(|t| !t.ends_with(".Body")), "the loop's `b` is no Body: {shortcut:?}");
+    assert_eq!(clean, shortcut, "the shortcut reads as the clean side");
+    let body = |g: &Graph| -> Vec<String> {
+        link(g).sites.iter().flat_map(|s| s.gives.clone()).filter(|h| h.ty.ends_with(".Body")).map(|h| h.name).collect()
+    };
+    assert_eq!(body(&p.clean), ["body"]);
+    assert_eq!(body(&p.shortcut), ["b"], "the later `b` holds the Body its constructor builds");
 }
