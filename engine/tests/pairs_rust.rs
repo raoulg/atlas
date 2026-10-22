@@ -561,6 +561,10 @@ fn composition_a_call_is_handed_what_the_names_in_its_arguments_hold() {
     let f = fits("clean");
     let report = hands(&f, "fits.report.describe", "fits.report.Report");
     assert!(report.iter().filter(|x| *x == "fits.model.Outcome·o").count() >= 2, "both arms build of `o`: {report:?}");
+    // what a closure is handed of what an iterator goes over is a part of it: `run` of
+    // `series.windows(months).map(|run| Smoothed { .. })` is a window of the series
+    let smooth = hands(&sunspots("rust-clean"), "sunspots.series.smooth", "sunspots.series.Smoothed");
+    assert!(smooth.contains(&"sunspots.series.Month·series".to_string()), "{smooth:?}");
     let c = choices_side("clean");
     let message = hands(&c, "runs.report", "runs.Message");
     assert!(!message.iter().any(|h| h.starts_with("runs.Level")), "the level goes to `prefix`, not to Message: {message:?}");

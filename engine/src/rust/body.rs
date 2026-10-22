@@ -854,6 +854,33 @@ impl<'a, 't> Body<'a, 't> {
                 }
             }
         }
+        // what a method hands the closure it is given, each element or what an `Option` holds, is a
+        // part of the value it runs on, through the methods that go over its parts: `run` of
+        // `series.windows(m).map(|run| ..)` is a window of `series`, `line` of `text.lines().filter_map(|line| ..)`
+        // a line of `text`
+        let method = |call: TsNode<'t>| {
+            function(call)
+                .filter(|f| f.kind() == "field_expression")
+                .and_then(|f| Some((text(f.child_by_field_name("field")?, src), f.child_by_field_name("value")?)))
+        };
+        for c in walk(body, &["closure_expression"]) {
+            let Some(call) = c.parent().filter(|a| a.kind() == "arguments").and_then(|a| a.parent()) else { continue };
+            let Some(mut on) = method(call).filter(|(m, _)| knowledge::RUST_EACH.contains(m)).map(|(_, v)| v) else { continue };
+            while let Some((_, v)) = method(beneath(on, WRAPPERS)).filter(|(m, _)| {
+                knowledge::RUST_PARTS.contains(m)
+                    || knowledge::RUST_ELEMENTS.contains(m)
+                    || knowledge::RUST_KEEPS_ELEMENTS.contains(m)
+                    || knowledge::hands_on(m)
+            }) {
+                on = v;
+            }
+            let (Some(held), Some(params)) = (root(on), c.child_by_field_name("parameters")) else { continue };
+            for name in bound_names(params, src) {
+                if let Some((from, to)) = scope(name) {
+                    self.aliases.bind(text(name, src), from, to, (text(held, src).to_string(), held.start_byte()));
+                }
+            }
+        }
     }
 
     /// The program's classes a struct pattern's fields hold, by field: a struct's, or an enum
@@ -1159,9 +1186,11 @@ impl<'a, 't> Body<'a, 't> {
     }
 
     /// The type a name of the body holds at byte `at`: a class of the program's, else the library's
-    /// type a `let` takes from the parameter it is handed to.
+    /// type a `let` takes from the parameter it is handed to, else a library's type it is declared
+    /// with (`area: &DrawingArea<DB, Shift>`), not one of Rust's own (`Vec<f64>`, `PathBuf`).
     fn held_type(&self, name: &str, at: usize) -> Option<String> {
-        self.locals.get(name, at).or_else(|| self.taken.get(name, at)).cloned()
+        let library = || self.foreign.get(name, at).filter(|t| foreign_type(t, &OWN));
+        self.locals.get(name, at).or_else(|| self.taken.get(name, at)).or_else(library).cloned()
     }
 
     /// The name whose value `name` holds at byte `at`, and where: the name itself, or the one a
