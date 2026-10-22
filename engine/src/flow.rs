@@ -368,14 +368,14 @@ impl Touch {
 
     /// Which side of its step the touch stands on: what the call says (a file's mode, a
     /// statement's verb, a request's method, a download), else what its kind of place does by
-    /// default. A file whose way is not said is read, as opening one is; a request or a database
-    /// whose way is not said is open, in neither domain nor codomain; everything else is written to.
+    /// default. A file, a request or a database whose way the code does not say (a mode or a
+    /// method that is a value) is open, in neither domain nor codomain; everything else is written
+    /// to. A file opened with no mode is read: the language says so.
     pub fn side(&self) -> Side {
         match (self.dir, self.kind) {
             (Some(Dir::Read), _) => Side::In,
             (Some(Dir::Write), _) => Side::Out,
-            (None, World::Disk) => Side::In,
-            (None, World::Net | World::Db(_)) => Side::Open,
+            (None, World::Disk | World::Net | World::Db(_)) => Side::Open,
             (None, _) => Side::Out,
         }
     }

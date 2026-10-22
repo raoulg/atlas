@@ -1466,7 +1466,19 @@ fn file_calls<'t>(
     };
     let sig = seen.facts.and_then(|x| x.signature(Seen::range(fnode)));
     let typed = sig.map(|s| paths::file_args(s, c, src)).unwrap_or_default();
-    let mode = typed.iter().find(|(p, _)| p.name == "mode").map(|(_, a)| unquote(text(*a, src)));
+    // the mode the call is handed, where the code writes it out; a mode that is a value says no way
+    let handed = typed.iter().find(|(p, _)| p.name == "mode").map(|(_, a)| *a);
+    let mode = handed.and_then(|a| match a.kind() {
+        "string" => Some(unquote(text(a, src))),
+        _ => match eval.of(at, a, 0).as_slice() {
+            [b] if crate::paths::known(b) => Some(crate::paths::render(b)),
+            _ => None,
+        },
+    });
+    let said = |f: effects::Facts| match handed.is_some() && mode.is_none() {
+        true => effects::Facts { dir: None, ..f },
+        false => f,
+    };
     let files: Vec<(Option<FileArg>, &str, TsNode)> =
         match (fnode.kind() == "attribute" && lib.map_or(false, |l| knowledge::PATH_LIBRARIES.contains(&l)), sig) {
             (true, _) => fnode.child_by_field_name("object").map(|o| vec![(Some(FileArg::Path), "self", o)]).unwrap_or_default(),
@@ -1476,7 +1488,7 @@ fn file_calls<'t>(
     let paths = files.iter().filter(|(k, _, _)| *k == Some(FileArg::Path)).count();
     let sides = crate::body::sides(op, paths);
     if files.is_empty() {
-        let f = effects::facts(tag, lib, op, &mode.into_iter().collect::<Vec<_>>());
+        let f = said(effects::facts(tag, lib, op, &mode.iter().cloned().collect::<Vec<_>>()));
         let what = what_of(c, src, &["string"], "arguments");
         return f
             .places()
@@ -1496,7 +1508,7 @@ fn file_calls<'t>(
                 lits.extend(c.child_by_field_name("arguments").map(|x| literals(x, src, &["string"])).unwrap_or_default());
             }
             lits.extend(mode.clone());
-            let f = effects::facts(tag, lib, op, &lits);
+            let f = said(effects::facts(tag, lib, op, &lits));
             let kind = file_direction(file, nth, sides, &f);
             let artifact = f.places().into_iter().next().map(|(a, _)| a).unwrap_or_default();
             let what = match literals(a, src, &["string"]).into_iter().next() {

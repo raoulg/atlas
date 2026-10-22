@@ -4,6 +4,9 @@
 
 route mergedorder.run
 line entry > run call
+step run/read_text                                                   # text = NOTE.read_text(): its result is named
+line run/read_text > _·text@run/read_text value
+home _·text@run/read_text run
 line File(data/note.txt) > run own
 line run > File(data/note.txt) own
 
