@@ -14,7 +14,7 @@ line entry > Store()/Store.put call
 step Store()/Store.put/Store.rows
 step Store()/Store.put/Store.rows/Reading()
 step Store()/Store.put/Store.rows/Row()
-known #74 line Store > Store()/Store.put/Store.rows value
+line Store > Store()/Store.put/Store.rows value
 line Disk(Store.path) > Store()/Store.put/Store.rows own
 line Store()/Store.put/Store.rows/Reading() > Reading@Store()/Store.put/Store.rows/Reading() value
 line Reading@Store()/Store.put/Store.rows/Reading() > Store()/Store.put/Store.rows/Row() value
@@ -37,7 +37,7 @@ line entry > Store()/Store.putAll call
 step Store()/Store.putAll/Store.rows
 step Store()/Store.putAll/Store.rows/Reading()
 step Store()/Store.putAll/Store.rows/Row()
-known #74 line Store > Store()/Store.putAll/Store.rows value
+line Store > Store()/Store.putAll/Store.rows value
 line Disk(Store.path) > Store()/Store.putAll/Store.rows own
 line Store()/Store.putAll/Store.rows/Reading() > Reading@Store()/Store.putAll/Store.rows/Reading() value
 line Reading@Store()/Store.putAll/Store.rows/Reading() > Store()/Store.putAll/Store.rows/Row() value
@@ -59,7 +59,7 @@ line entry > Store()/Store.get call
 step Store()/Store.get/Store.rows
 step Store()/Store.get/Store.rows/Reading()
 step Store()/Store.get/Store.rows/Row()
-known #74 line Store > Store()/Store.get/Store.rows value
+line Store > Store()/Store.get/Store.rows value
 line Disk(Store.path) > Store()/Store.get/Store.rows own
 line Store()/Store.get/Store.rows/Reading() > Reading@Store()/Store.get/Store.rows/Reading() value
 line Reading@Store()/Store.get/Store.rows/Reading() > Store()/Store.get/Store.rows/Row() value
@@ -85,7 +85,7 @@ home Row@Store()/Store.get/Store.rows/Row() Store()/Store.get/Store.rows
 home Row@Store()/Store.get/Store.rows Store()/Store.get
 home Reading@Store()/Store.get Store()
 home Reading·reading Store()
-known #74 home Store Store()
+home Store Store()
 home Reading·readings Store()
 
 home Reading·reading@Store()/Store.putAll/for reading of readings Store()/Store.putAll
@@ -121,6 +121,3 @@ known #125 extra step Store()/Store.putAll/writeRows/join
 known #125 extra step Store()/Store.putAll/writeRows/rows.map
 
 # #74
-known #74 extra line Store@Store()/Store() > Store()/Store.put/Store.rows value
-known #74 extra line Store@Store()/Store() > Store()/Store.putAll/Store.rows value
-known #74 extra line Store@Store()/Store() > Store()/Store.get/Store.rows value

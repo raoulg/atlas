@@ -9,15 +9,15 @@ step Board()/Board()
 step Board()/Board.pin
 step Board()/Board.posts
 step Board()/Board.posts/Notice()
-known #146 step Board()/Board.posts/Notice()/Post()           # super(text) runs Post's constructor
+known #128 step Board()/Board.posts/Notice()/Post() # super(text) runs Post's constructor; it is handed nothing (#128), so it draws no line
 
 line entry > Board()/Board() call
 line entry > Board()/Board.pin call
 line entry > Board()/Board.posts call
 line Board()/Board() > Board@Board()/Board() value
-known #74 line Board > Board()/Board.pin value   # the caller's instance: every method runs on it
-known #74 line Board > Board()/Board.posts value
-known #127 line Notice·notice > Board()/Board.pin value          # #127
+line Board > Board()/Board.pin value # the caller's instance: every method runs on it
+line Board > Board()/Board.posts value
+line Notice·notice > Board()/Board.pin value # #127
 line Board()/Board.pin > Disk(Board.path) own
 line Disk(Board.path) > Board()/Board.posts own
 line Board()/Board.posts/Notice() > Notice@Board()/Board.posts/Notice() value
@@ -25,8 +25,8 @@ line Notice@Board()/Board.posts/Notice() > Board()/Board.posts value
 line Board()/Board.posts > Post@Board()/Board.posts value
 
 home Board@Board()/Board() Board()
-known #74 home Board Board()
-known #127 home Notice·notice Board()
+home Board Board()
+home Notice·notice Board()
 home Notice@Board()/Board.posts/Notice() Board()/Board.posts
 home Post@Board()/Board.posts Board()
 
@@ -34,8 +34,6 @@ side entry left
 side Disk(Board.path) between
 
 # #127: the parameter of a method the entry calls has lost its name
-known #127 extra line Notice > Board()/Board.pin value
-known #127 extra home Notice Board()
 # the record `posts` parses is a step of its own (a library's operation whose result the body names), and the Notice is
 # built from its fields
 step Board()/Board.posts/parse
@@ -44,5 +42,3 @@ line _·kept@Board()/Board.posts/parse > Board()/Board.posts/Notice() value
 home _·kept@Board()/Board.posts/parse Board()/Board.posts
 
 # what the constructor builds goes back to its caller: Atlas runs the methods on it instead of the caller's instance
-known #74 extra line Board@Board()/Board() > Board()/Board.pin value
-known #74 extra line Board@Board()/Board() > Board()/Board.posts value

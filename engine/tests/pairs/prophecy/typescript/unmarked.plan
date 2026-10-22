@@ -15,4 +15,3 @@ side entry left
 side Screen right
 
 # building the exported Sink runs its public methods, so `new Sink()` reaches what write logs
-known #74 extra line run/Sink() > Screen reached

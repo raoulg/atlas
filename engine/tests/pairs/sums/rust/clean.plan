@@ -6,7 +6,7 @@
 
 route kennis.Kennisbank
 step Kennisbank()/Kennisbank.new
-known #151 step Kennisbank()/Kennisbank.new/Kennisbank()            # the struct expression `new` builds the store by
+step Kennisbank()/Kennisbank.new/Kennisbank() # the struct expression `new` builds the store by
 step Kennisbank()/Kennisbank.voeg_toe
 step Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write
 step Kennisbank()/Kennisbank.graaf
@@ -27,8 +27,8 @@ line entry > Kennisbank()/Kennisbank.graaf call
 line Kennisbank()/Kennisbank.new/Kennisbank() > Kennisbank@Kennisbank()/Kennisbank.new/Kennisbank() value
 line Kennisbank@Kennisbank()/Kennisbank.new/Kennisbank() > Kennisbank()/Kennisbank.new value     # new hands back what it built
 line Kennisbank()/Kennisbank.new > Kennisbank@Kennisbank()/Kennisbank.new value
-known #74 line Kennisbank > Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write value
-known #74 line Kennisbank > Kennisbank()/Kennisbank.graaf value
+line Kennisbank > Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write value
+line Kennisbank > Kennisbank()/Kennisbank.graaf value
 
 # the put: the Bron a caller hands is written into the line `write` appends to what the file held
 line Bron·bron > Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write value                    # what it is handed: `bron.uuid`, `bron.url` glue `bron` in
@@ -52,7 +52,7 @@ line Kennisbank()/Kennisbank.graaf > Graaf@Kennisbank()/Kennisbank.graaf value
 
 home Kennisbank@Kennisbank()/Kennisbank.new/Kennisbank() Kennisbank()/Kennisbank.new
 home Kennisbank@Kennisbank()/Kennisbank.new Kennisbank()
-known #74 home Kennisbank Kennisbank()
+home Kennisbank Kennisbank()
 home Bron·bron Kennisbank()
 home Bron@Kennisbank()/Kennisbank.graaf/node/?1/Bron() Kennisbank()/Kennisbank.graaf/node/?1
 home Begrip@Kennisbank()/Kennisbank.graaf/node/?1/Begrip() Kennisbank()/Kennisbank.graaf/node/?1
@@ -114,11 +114,8 @@ side entry left
 side Disk(Kennisbank.path) both
 
 # building the struct the route is about is read as a call of the route inside itself
-known #151 extra step Kennisbank()/Kennisbank.new/Kennisbank() recursive
 
 # the methods run on what the constructor built, not on the caller's instance
-known #74 extra line Kennisbank@Kennisbank()/Kennisbank.new > Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write value
-known #74 extra line Kennisbank@Kennisbank()/Kennisbank.new > Kennisbank()/Kennisbank.graaf value
 
 # graaf's own arrow takes what its steps make, the Nodes too, though only Graaf() takes them and graaf gives back the Graaf
 known #126 extra line Node@Kennisbank()/Kennisbank.graaf/node > Kennisbank()/Kennisbank.graaf value

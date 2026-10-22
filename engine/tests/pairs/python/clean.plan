@@ -46,7 +46,7 @@ home Reading@readings/ReadingStore.history readings
 home Reading@readings readings
 
 side entry left
-known #74 side SQLite(readings) left                    # read and handed back; making its shape on connecting puts nothing
+side SQLite(readings) left # read and handed back; making its shape on connecting puts nothing
 
 # the connection the `with` names has no name
 known #125 extra line readings/ReadingStore.history/ReadingStore.connect > Connection@readings/ReadingStore.history/ReadingStore.connect value
@@ -56,11 +56,3 @@ known #125 extra home Connection@readings/ReadingStore.history/ReadingStore.conn
 known #126 extra line ReadingStore@readings/get_store > readings value
 known #126 extra line ReadingStore@readings/get_store > readings/ReadingStore.history/ReadingStore.connect value
 # building the store runs its public methods, which touch its tables
-known #74 extra line SQLite(outages) > readings/get_store/ReadingStore() reached
-known #74 extra line SQLite(readings) > readings/get_store/ReadingStore() reached
-known #74 extra line SQLite(summaries) > readings/get_store/ReadingStore() reached
-known #74 extra line readings/get_store/ReadingStore() > SQLite(outages) reached
-known #74 extra line readings/get_store/ReadingStore() > SQLite(readings) reached
-known #74 extra line readings/get_store/ReadingStore() > SQLite(summaries) reached
-known #74 extra side SQLite(outages) between
-known #74 extra side SQLite(summaries) between

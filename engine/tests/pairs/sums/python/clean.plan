@@ -21,9 +21,9 @@ line entry > Kennisbank()/Kennisbank.graaf call
 # what the constructor builds goes back to the caller; the doors run on the caller's instance, one value from
 # beyond, taken where a body reads its fields or calls on it
 line Kennisbank()/Kennisbank() > Kennisbank@Kennisbank()/Kennisbank() value
-known #74 line Kennisbank > Kennisbank()/Kennisbank.voeg_toe/Kennisbank._write value
-known #74 line Kennisbank > Kennisbank()/Kennisbank.graaf value
-known #74 line Kennisbank > Kennisbank()/Kennisbank.graaf/Kennisbank._node value
+line Kennisbank > Kennisbank()/Kennisbank.voeg_toe/Kennisbank._write value
+known #126 line Kennisbank > Kennisbank()/Kennisbank.graaf value   # graaf reads self.path itself, and hands self to _node
+line Kennisbank > Kennisbank()/Kennisbank.graaf/Kennisbank._node value
 
 # the put: the Bron a caller hands is written into the line `_write` appends to what the file held
 line Bron·bron > Kennisbank()/Kennisbank.voeg_toe/Kennisbank._write value                    # what it is handed: `bron.uuid`, `bron.url` glue `bron` in
@@ -43,7 +43,7 @@ line Graaf@Kennisbank()/Kennisbank.graaf/Graaf() > Kennisbank()/Kennisbank.graaf
 line Kennisbank()/Kennisbank.graaf > Graaf@Kennisbank()/Kennisbank.graaf value
 
 home Kennisbank@Kennisbank()/Kennisbank() Kennisbank()
-known #74 home Kennisbank Kennisbank()
+home Kennisbank Kennisbank()
 home Bron·bron Kennisbank()
 home Bron@Kennisbank()/Kennisbank.graaf/Kennisbank._node/?1 Kennisbank()/Kennisbank.graaf/Kennisbank._node
 home Begrip@Kennisbank()/Kennisbank.graaf/Kennisbank._node/?1 Kennisbank()/Kennisbank.graaf/Kennisbank._node
@@ -69,5 +69,3 @@ side entry left
 side Disk(Kennisbank.path) both
 
 # the methods run on what the constructor built, not on the caller's instance
-known #74 extra line Kennisbank@Kennisbank()/Kennisbank() > Kennisbank()/Kennisbank.voeg_toe/Kennisbank._write value
-known #74 extra line Kennisbank@Kennisbank()/Kennisbank() > Kennisbank()/Kennisbank.graaf/Kennisbank._node value

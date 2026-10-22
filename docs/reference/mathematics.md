@@ -356,7 +356,8 @@ family's frame. A route's parameters are such values, there at the route's start
 takes them by their names, and a step handed one by its name takes the same value. The route of an
 exported class is its doors, its public methods, with no order between them: each runs on the
 caller's instance, one value of the class from beyond (no name, no moment), and what the constructor
-door builds goes back to the caller. A closed family holds its kinds (a subclass stands in its base
+door builds goes back to the caller. A door takes its parameters as a route takes its own, by their names, and the
+parameters of two doors are two values: each door is called by itself. A closed family holds its kinds (a subclass stands in its base
 until the family is opened); a part of a type is structure of its owner, a box of its own in the
 owner's frame, and the values of the part's type stand on their own (#39).
 **Where.** `plan`, `imageOf` and `refines` in `viewer/plan.js`, the camera in `viewer/index.html`;
@@ -372,7 +373,13 @@ graph needs (where an object stands, which side it is on, when it was made) is a
 open:
 
 - every call of the route is an *occurrence* (a step key, its path through the route), opened to
-  all its calls; an occurrence with calls has a frame and its own arrow, one without is a pill;
+  all its calls; an occurrence with calls has a frame and its own arrow, one without is a pill. Building
+  a class runs the initializer along its order (Method resolution order), so the step that builds it
+  opens into that body and never into the class's methods, and building the class is no call of it,
+  also inside the route of that class. An initializer another one calls (`super(text)`) builds nothing:
+  it fills in the value its caller builds. An override in a dispatch runs on the value its call runs on
+  and takes what the call hands it, at the place its own signature has it: what the dispatch takes
+  crosses its frame to the override, as to any step inside;
 - every value is an identity `(type, name, moment)`: the type it has, the name that holds it, and
   the occurrence (or choice) that made it; two values of one type at one moment are two; a route's
   parameters are values with their names at the route's start. A name holds one value: one that

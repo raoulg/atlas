@@ -10,28 +10,20 @@ step Handler()/Handler.log/ClickHandler.log
 
 line entry > Handler()/Handler.handle call
 line entry > Handler()/Handler.log call
-known #100 line Handler > Handler()/Handler.handle/ClickHandler.handle value
-known #100 line Handler > Handler()/Handler.log/ClickHandler.log value
-line Event > Handler()/Handler.handle value                            # handle's own body reads e.name
-known #100 line Event > Handler()/Handler.handle/ClickHandler.handle value
-line Click > Handler()/Handler.log value
-known #100 line Click > Handler()/Handler.log/ClickHandler.log value
+line Handler > Handler()/Handler.handle/ClickHandler.handle value
+line Handler > Handler()/Handler.log/ClickHandler.log value
+known #126 line Event·e > Handler()/Handler.handle value                            # handle's own body reads e.name
+line Event·e > Handler()/Handler.handle/ClickHandler.handle value
+known #126 line Click·e > Handler()/Handler.log value
+line Click·e > Handler()/Handler.log/ClickHandler.log value
 line Handler()/Handler.handle/ClickHandler.handle > Handler()/Handler.handle back
 line Handler()/Handler.log/ClickHandler.log > Handler()/Handler.log back
 
 home Handler Handler()
-home Event Handler()
-home Click Handler()
+home Event·e Handler()
+home Click·e Handler()
 
 side entry left
 
 # each override takes a value of its own class, and of the type its own signature names, from beyond; the Handler ends
 # at the border of the dispatch
-known #100 extra line Handler > Handler()/Handler.handle value
-known #100 extra line Handler > Handler()/Handler.log value
-known #100 extra line ClickHandler > Handler()/Handler.handle/ClickHandler.handle value
-known #100 extra line ClickHandler > Handler()/Handler.log/ClickHandler.log value
-known #100 extra line Click > Handler()/Handler.handle/ClickHandler.handle value
-known #100 extra line Named > Handler()/Handler.log/ClickHandler.log value
-known #100 extra home ClickHandler Handler()
-known #100 extra home Named Handler()

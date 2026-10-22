@@ -9,7 +9,7 @@ step Store()/Store.get/Shelf.get
 step Store()/Store.get/Shelf.get/Book()
 
 line entry > Store()/Store.get call
-known #100 line Store > Store()/Store.get/Shelf.get value
+line Store > Store()/Store.get/Shelf.get value
 line Store()/Store.get/Shelf.get/Book() > Book@Store()/Store.get/Shelf.get/Book() value
 line Book@Store()/Store.get/Shelf.get/Book() > Store()/Store.get/Shelf.get value
 line Store()/Store.get/Shelf.get > Book@Store()/Store.get/? value              # the override makes it at the dispatch's choice
@@ -24,6 +24,3 @@ home Book@Store()/Store.get Store()
 side entry left
 
 # the override takes a value of its own class from beyond, and the Store ends at the border of the dispatch
-known #100 extra line Store > Store()/Store.get value
-known #100 extra line Shelf > Store()/Store.get/Shelf.get value
-known #100 extra home Shelf Store()

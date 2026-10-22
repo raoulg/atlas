@@ -23,11 +23,9 @@ home Ledger@run/Ledger.keep run
 home DuckDBPyConnection·con@run/Ledger.keep/connect run/Ledger.keep
 
 side entry left
-known #74 side DuckDB(notes) right                          # Atlas: between, through the reach below
+side DuckDB(notes) right # Atlas: between, through the reach below
 side Screen right
 
 # building the ledger runs its public methods, which touch the table: two steps at it, so it stands between them
-known #74 extra line DuckDB(notes) > run/Ledger() reached
-known #74 extra line run/Ledger() > DuckDB(notes) reached
 # K: a value handed through a field reaches no step inside: `duckdb.connect(self.path)` hands `self` (#121, decision 1,
 #    cause 3: the reader's `held_in` skips `self` even inside an argument)

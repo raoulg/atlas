@@ -4,7 +4,7 @@
 
 route club.desk.Register
 step Register()/Register.new
-known #74 step Register()/Register.new/Register()
+step Register()/Register.new/Register()
 step Register()/Register.join
 step Register()/Register.names
 step Register()/Register.latest
@@ -16,15 +16,15 @@ line entry > Register()/Register.join call
 line entry > Register()/Register.names call
 line entry > Register()/Register.latest call
 
-known #74 line Connection·conn > Register()/Register.new/Register() value   # the literal is handed new's connection
+known #128 line Connection·conn > Register()/Register.new/Register() value   # the literal is handed new's connection
 line Register()/Register.new/Register() > Register@Register()/Register.new/Register() value
 line Register@Register()/Register.new/Register() > Register()/Register.new value
 line Register()/Register.new > Register@Register()/Register.new value
-known #74 line Register > Register()/Register.join value   # the caller's instance: every method runs on it
-known #74 line Register > Register()/Register.names/prepare value   # the method hands `self.conn` to it
-known #74 line Register > Register()/Register.latest value
+line Register > Register()/Register.join value # the caller's instance: every method runs on it
+known #128 line Register > Register()/Register.names/prepare value   # the method hands `self.conn` to it
+line Register > Register()/Register.latest value
 
-known #127 line Member·who > Register()/Register.join value     # #127
+line Member·who > Register()/Register.join value # #127
 line Register()/Register.join > SQLite(members) own
 
 line SQLite(members) > Register()/Register.names own
@@ -36,11 +36,11 @@ line Register()/Register.latest/Report() > Report@Register()/Register.latest/Rep
 line Report@Register()/Register.latest/Report() > Register()/Register.latest value
 line Register()/Register.latest > Report@Register()/Register.latest value
 
-known #127 home Connection·conn Register()
+home Connection·conn Register()
 home Register@Register()/Register.new/Register() Register()/Register.new
 home Register@Register()/Register.new Register()
-known #74 home Register Register()
-known #127 home Member·who Register()
+home Register Register()
+home Member·who Register()
 home Member@Register()/Register.latest/Member() Register()/Register.latest
 home Report@Register()/Register.latest/Report() Register()/Register.latest
 home Report@Register()/Register.latest Register()
@@ -50,13 +50,8 @@ side SQLite(members) between
 side SQLite(reports) left
 
 # building the exported struct runs its public functions, `new` among them, so the literal is read as recursive
-known #74 extra step Register()/Register.new/Register() recursive
 # #127: the parameters of a function the entry calls have lost their names
-known #127 extra line Member > Register()/Register.join value
-known #127 extra home Member Register()
-known #127 extra home Connection Register()
 # the recursive literal is cut, so new's connection ends at new's border
-known #74 extra line Connection > Register()/Register.new value
 # #126: an opened step's own arrow takes every class its steps build: latest gives back the Report, not its author
 # what names the statement and the rows it gives back are steps of their own (a library's operation whose result the
 # body names); `rows` goes on to `collect`, an unnamed call, and back to the caller
@@ -70,6 +65,7 @@ home _·select@Register()/Register.names/prepare Register()/Register.names
 home _·rows@Register()/Register.names/query_map Register()/Register.names
 
 # what the constructor builds goes back to its caller: Atlas runs the methods on it instead of the caller's instance
-known #74 extra line Register@Register()/Register.new > Register()/Register.join value
-known #74 extra line Register@Register()/Register.new > Register()/Register.names value
-known #74 extra line Register@Register()/Register.new > Register()/Register.latest value
+
+# the struct literal is handed nothing of the fields it is given (#128), so new takes the connection itself
+known #128 extra line Connection·conn > Register()/Register.new value
+known #128 extra line Register > Register()/Register.names value   # prepare is handed nothing through self.conn

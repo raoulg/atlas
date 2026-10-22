@@ -285,8 +285,6 @@ side Screen right
 # a value one arm of the choice makes, and only that arm takes, has the choice's moment; two (`Rates·rates`) become one
 known #128 extra line Render@main/?1/Format.renderer > main/?1/write/join value   # `render.extension()` is a step that takes the render itself
 # a value handed to a call into a family ends at the dispatch's border
-known #100 extra line Render@main/?1/Format.renderer > main/?1/write/Render.extension value
-known #100 extra line Render@main/?1/Format.renderer > main/?1/write/Render.render value
 # the format the arm's pattern binds out of `cli` comes from beyond
 known #103 extra line Format·format > main/?1/Format.renderer value
 known #103 extra home Format·format main/?1

@@ -1,0 +1,19 @@
+# Building an object runs the initializer along its class's order: `Audit` has none of its own, so `Audit(path)` runs
+# `Log.__init__`, which stamps the file it is handed. It runs none of the methods, `add` and `last` among them. The value
+# it builds is an Audit, and the route prints the path the audit holds.
+
+route auditlog.run
+step run/Audit()
+step run/Audit()/stamp
+
+line entry > run call
+line run/Audit()/stamp > Disk(run.path) own
+line run/Audit() > Audit·audit@run/Audit() value
+known #101 line Audit·audit@run/Audit() > run value       # run prints a field of the audit it built
+line run > Screen own
+
+home Audit·audit@run/Audit() run
+
+side entry left
+side Disk(run.path) right
+side Screen right

@@ -13,7 +13,7 @@ line entry > Store()/Store.put call
 step Store()/Store.put/Store._rows
 step Store()/Store.put/Store._rows/Reading()
 step Store()/Store.put/Store._rows/Row()
-known #74 line Store > Store()/Store.put/Store._rows value
+line Store > Store()/Store.put/Store._rows value
 line Disk(Store.path) > Store()/Store.put/Store._rows own
 line Store()/Store.put/Store._rows/Reading() > Reading@Store()/Store.put/Store._rows/Reading() value
 line Reading@Store()/Store.put/Store._rows/Reading() > Store()/Store.put/Store._rows/Row() value
@@ -35,7 +35,7 @@ line entry > Store()/Store.put_all call
 step Store()/Store.put_all/Store._rows
 step Store()/Store.put_all/Store._rows/Reading()
 step Store()/Store.put_all/Store._rows/Row()
-known #74 line Store > Store()/Store.put_all/Store._rows value
+line Store > Store()/Store.put_all/Store._rows value
 line Disk(Store.path) > Store()/Store.put_all/Store._rows own
 line Store()/Store.put_all/Store._rows/Reading() > Reading@Store()/Store.put_all/Store._rows/Reading() value
 line Reading@Store()/Store.put_all/Store._rows/Reading() > Store()/Store.put_all/Store._rows/Row() value
@@ -53,7 +53,7 @@ known #128 line Store > Store()/Store.put_all/write_rows value  # K: `write_rows
 line Store()/Store.put_all/write_rows > Disk(Store.path) own
 step Store()/Store.get
 line entry > Store()/Store.get call
-known #74 line Store > Store()/Store.get value  # get reads the store's path itself
+line Store > Store()/Store.get value # get reads the store's path itself
 line Disk(Store.path) > Store()/Store.get own
 
 home Store@Store()/Store() Store()
@@ -68,7 +68,7 @@ home Row·rows@Store()/Store.put_all/Store._rows Store()/Store.put_all
 home Row@Store()/Store.put_all/Row() Store()/Store.put_all
 home Row·rows@Store()/Store.put_all/append Store()/Store.put_all
 home Reading·reading Store()
-known #74 home Store Store()
+home Store Store()
 home Reading·readings Store()
 
 home Reading·reading@Store()/Store.put_all/for reading in readings Store()/Store.put_all
@@ -96,6 +96,3 @@ side Disk(Store.path) both
 #    decision 2): the constructor's Store goes back to the caller and is joined to no door
 
 # #74
-known #74 extra line Store@Store()/Store() > Store()/Store.put/Store._rows value
-known #74 extra line Store@Store()/Store() > Store()/Store.put_all/Store._rows value
-known #74 extra line Store@Store()/Store() > Store()/Store.get value
