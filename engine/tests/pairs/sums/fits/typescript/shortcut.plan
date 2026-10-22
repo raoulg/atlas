@@ -12,10 +12,3 @@ side entry left
 # a parameter whose type is a sum written in place keeps no name
 known #127 extra line Fit | Failed > line value
 known #127 extra home Fit | Failed line
-
-# a library operation whose result no name holds and which changes nothing it runs on (`r.score.toFixed(2)`) stands as
-# an occurrence, in a choice frame of its own
-known #125 extra choice line/?1
-known #125 extra step line/?1/r.score.toFixed
-known #125 extra line Fit·r > line/?1/r.score.toFixed value
-known #125 extra home Fit·r line/?1

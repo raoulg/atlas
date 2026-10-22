@@ -14,6 +14,7 @@ step main/Ledger.takeVictim
 step main/Ledger.takeVictim/this.rows.push
 step main/addLine
 step main/addLine/push
+step main/Map()                                                          # `const m = new Map<string, number>()`
 step main/count
 step main/count/set
 step main/fileAll
@@ -28,6 +29,8 @@ line main/Ledger.takeFrom > Ledger·ledger@main/Ledger.takeFrom value
 line Ledger·ledger@main/Ledger.takeFrom > main/Ledger.takeVictim/this.rows.push value
 line main/Ledger.takeVictim > Ledger·ledger@main/Ledger.takeVictim value
 line main/addLine/push > _·lines@main/addLine/push value
+line main/Map() > _·m@main/Map() value
+known #129 line _·m@main/Map() > main/count/set value                    # the Map `count` is handed, which its `set` changes
 line main/count/set > _·m@main/count/set value
 line main/fileAll/for e of expenses > Expense·e@main/fileAll/for e of expenses value
 line Expense·e@main/fileAll/for e of expenses > main/fileAll value       # `e.category = ..` in the body
@@ -38,6 +41,7 @@ home Ledger·other@main/Ledger()#2 main
 home Ledger·ledger@main/Ledger.takeFrom main
 home Ledger·ledger@main/Ledger.takeVictim main
 home _·lines@main/addLine/push main/addLine
+home _·m@main/Map() main
 home _·m@main/count/set main/count
 home Expense·e@main/fileAll/for e of expenses main/fileAll
 home Expense@main/rename main
@@ -73,7 +77,7 @@ known #129 line Ledger·other@main/Ledger.takeFrom > main/Ledger.takeVictim valu
 known #129 line main/Ledger.takeVictim > Ledger·other@main/Ledger.takeVictim value
 known #129 line _·lines@main/addLine/push > main/addLine value
 known #129 line main/addLine > Array·lines@main/addLine value
-known #129 line _·m@main/count/set > main/count value
+line _·m@main/count/set > main/count value
 known #129 line main/count > Map·m@main/count value
 known #129 home Ledger·other@main/Ledger.takeFrom main
 known #129 home Ledger·other@main/Ledger.takeVictim main
@@ -92,14 +96,6 @@ known #127 extra line Expense@main/fileAll > main/rename value
 
 # A step that changes an input loses the result of no type it gives back
 line main/rename > main back
-
-# A library operation whose result the body does not name is a step (`m.get(k)` in `?? 0`, which then stands as a
-# choice)
-known #130 extra choice main/count/?1
-known #125 extra step main/count/?1/m.get
-known #125 extra line main/count/?1/m.get > _@main/count/?1/m.get value
-known #125 extra line _@main/count/?1/m.get > main/count/set value
-known #125 extra home _@main/count/?1/m.get main/count
 
 # The own arrow takes a value its body only hands to a step inside it: the ledger whose rows go to `fileAll`
 known #126 extra line Ledger·ledger@main/Ledger.takeVictim > main value
