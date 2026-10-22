@@ -189,33 +189,57 @@ pub(super) fn prophecy_of(n: TsNode, src: &[u8]) -> Option<crate::model::Prophec
 }
 
 /// The type names an annotation mentions as values: `Promise<Regel[]>` -> Regel,
-/// `Treffer | Mis` -> both, `Laag<Bron>` -> Laag (a generic class's arguments are types).
+/// `Treffer | Mis` -> both, `Laag<Bron>` -> Laag (a generic class's arguments are types). A tuple is
+/// the values it pairs where it stands for one value (`Promise<[Config, Store]>`); a collection of
+/// them holds pairs, of a type the code does not name (`[Date, number][]` holds no `Date`).
 pub(super) fn type_names(t: Option<TsNode>, src: &[u8]) -> Vec<Vec<String>> {
     let Some(t) = t else { return vec![] };
     let mut out = vec![];
-    collect_types(t, src, &[], &mut out);
+    collect_types(t, src, &[], false, &mut out);
     out
 }
 
 /// An annotation's names apart from the unions it writes in place, and those unions, outermost
-/// first: `(r: Fit | Failed)` takes one union, which may be a sum, not a `Fit` and a `Failed`.
+/// first: `(r: Fit | Failed)` takes one union, which may be a sum, not a `Fit` and a `Failed`. A
+/// tuple among the alternatives is one alternative, a pair of a type the code does not name:
+/// `[Station, Store] | undefined` is a pair or nothing, no union of a Station and a Store, and it
+/// names the values it pairs as a tuple that stands for one value does.
 fn split_unions(t: Option<TsNode>, src: &[u8]) -> (Vec<Vec<String>>, Vec<crate::builder::Union>) {
     let Some(t) = t else { return (vec![], vec![]) };
-    let all = walk(t, &["union_type"]);
+    fn alternatives<'t>(u: TsNode<'t>, out: &mut Vec<TsNode<'t>>) {
+        for c in named_children(u) {
+            match c.kind() {
+                "union_type" => alternatives(c, out),
+                "parenthesized_type" if named_children(c).first().is_some_and(|x| x.kind() == "union_type") => {
+                    alternatives(named_children(c)[0], out)
+                }
+                _ => out.push(c),
+            }
+        }
+    }
+    let named = |u: TsNode| {
+        let mut alts = vec![];
+        alternatives(u, &mut alts);
+        alts.into_iter().filter(|a| a.kind() != "tuple_type" && !type_names(Some(*a), src).is_empty()).count()
+    };
+    // a union as written is the whole of `A | B | C`, which the grammar nests
+    let all: Vec<TsNode> =
+        walk(t, &["union_type"]).into_iter().filter(|u| u.parent().map_or(true, |p| p.kind() != "union_type") && named(*u) > 1).collect();
     let written: Vec<TsNode> = all
         .iter()
         .copied()
         .filter(|u| !all.iter().any(|o| o.id() != u.id() && o.start_byte() <= u.start_byte() && u.end_byte() <= o.end_byte()))
         .collect();
     let mut names = vec![];
-    collect_types(t, src, &written, &mut names);
+    collect_types(t, src, &written, false, &mut names);
     let unions =
         written.iter().map(|u| crate::builder::Union { names: type_names(Some(*u), src), written: text(*u, src).to_string() }).collect();
     (names, unions)
 }
 
-/// The type names below `n`, apart from those inside the nodes `skip`.
-fn collect_types(n: TsNode, src: &[u8], skip: &[TsNode], out: &mut Vec<Vec<String>>) {
+/// The type names below `n`, apart from those inside the nodes `skip`, `many` where a collection
+/// around it holds many of it.
+fn collect_types(n: TsNode, src: &[u8], skip: &[TsNode], many: bool, out: &mut Vec<Vec<String>>) {
     if skip.iter().any(|s| s.id() == n.id()) {
         return;
     }
@@ -225,19 +249,28 @@ fn collect_types(n: TsNode, src: &[u8], skip: &[TsNode], out: &mut Vec<Vec<Strin
         "generic_type" => {
             let Some(name) = n.child_by_field_name("name") else { return };
             let parts: Vec<String> = text(name, src).split('.').map(str::to_string).collect();
-            if knowledge::TYPESCRIPT_CONTAINERS.contains(&parts.last().map(String::as_str).unwrap_or("")) {
+            let last = parts.last().map(String::as_str).unwrap_or("");
+            if knowledge::TYPESCRIPT_CONTAINERS.contains(&last) {
                 if let Some(args) = n.child_by_field_name("type_arguments") {
-                    collect_types(args, src, skip, out);
+                    collect_types(args, src, skip, many || knowledge::TYPESCRIPT_COLLECTIONS.contains(&last), out);
                 }
             } else {
                 out.push(parts);
             }
         }
+        // an array holds many of what it holds
+        "array_type" => {
+            for c in named_children(n) {
+                collect_types(c, src, skip, true, out);
+            }
+        }
+        // a pair a collection holds is an element of a type the code does not name
+        "tuple_type" if many => {}
         // a function type is a callback, an object type an anonymous shape: neither names a place
         "function_type" | "object_type" | "predefined_type" | "literal_type" | "template_literal_type" | "type_query" => {}
         _ => {
             for c in named_children(n) {
-                collect_types(c, src, skip, out);
+                collect_types(c, src, skip, many, out);
             }
         }
     }

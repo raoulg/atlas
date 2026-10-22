@@ -518,7 +518,7 @@ implementation fixes (`type Item = Book`): in the implementation that type, in t
 values it pairs where it stands for one value (`-> (Config, Store)`); a collection of them holds pairs, of a type the
 code does not name (`Vec<(NaiveDate, f64)>` holds no `NaiveDate`).
 **Where.** `knowledge.rs`: `python_container`, `TYPESCRIPT_CONTAINERS`, `RUST_CONTAINERS`; the Rust reader's
-signatures (`rust/passes.rs`, `fixed_by_implementations`; `rust/module.rs`, `type_names`, with `RUST_COLLECTIONS`).
+signatures (`rust/passes.rs`, `fixed_by_implementations`; `rust/module.rs`, `type_names`, with `RUST_COLLECTIONS`); `typescript/module.rs`, `type_names`, with `TYPESCRIPT_COLLECTIONS`.
 
 ### Narrowing
 **What.** A test of a value's type refines its type in the code that runs only where the test
