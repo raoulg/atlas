@@ -396,12 +396,13 @@ open:
   is. A result of no type of the code's goes back to the step that called it unless another step of
   the caller takes it, which it then reaches as a value. A call is
   handed the values the names in its arguments hold: `f(x.name)` is handed `x`, since the projection
-  `.name` is no occurrence but glued into the call, whose arrow is `f ∘ π_name` with domain `X`; a
-  nested call that is a step of its own takes its names itself. A library's operation that is a step
+  `.name` is no occurrence but glued into the call, whose arrow is `f ∘ π_name` with domain `X`, and
+  `f(self.path)` is handed the instance the method runs on; a nested call that is a step of its own
+  takes its names itself, and the call around it is handed what it gives. A library's operation that is a step
   carries the value it gives; what it touches at a place stays its caller's own touch, so naming its
   result changes no line to the place. A projection bound to a name first is still the projection
-  (`width = settings.width; f(width)` hands `settings`), and a change made through one changes its
-  owner, a lens's put;
+  (`width = settings.width; f(width)` hands `settings`), a lookup by a key among them (`row = table[k]`
+  hands `table`, the lens the key chooses), and a change made through one changes its owner, a lens's put;
 - a step that can fail has the codomain `T + E`: the error is a value its constructor makes in the arm
   that raises it, the step's border hands it on with its result, and a call that does not catch it
   hands it on to its own caller. Python's propagation and Rust's `?` are one form, no choice.
