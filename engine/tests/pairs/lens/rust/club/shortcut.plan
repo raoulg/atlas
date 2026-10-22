@@ -71,5 +71,5 @@ home _·rows@Register()/Register.names/query_map Register()/Register.names
 
 # what the constructor builds goes back to its caller: Atlas runs the methods on it instead of the caller's instance
 known #74 extra line Register@Register()/Register.new > Register()/Register.join value
-known #74 extra line Register@Register()/Register.new > Register()/Register.names value
 known #74 extra line Register@Register()/Register.new > Register()/Register.latest value
+known #74 extra line Register@Register()/Register.new > Register()/Register.names/prepare value   # the caller's instance, not the one new built, is handed through self

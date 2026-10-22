@@ -13,3 +13,18 @@ home blocking.Client·client item
 
 side entry left
 side Web(localhost:8000) left
+
+# A request's method says which way it goes, as a statement's verb does: the clean `order` sends `POST /api/orders`,
+# which leaves something at the place, and drops what it answers (`send()?;`), so the place stands in the codomain.
+# (The shortcut's `order` looks its method up by a key at run time, `client.request(method("order"), ..)`: the code
+# does not say which way it goes, and the place is in neither.)
+
+route rsclean.order
+line entry > order call
+line blocking.Client·client > order value                         # `client.post(..).body(..).send()?`
+line order > Web(localhost:8000) own
+
+home blocking.Client·client order
+
+side entry left
+side Web(localhost:8000) right

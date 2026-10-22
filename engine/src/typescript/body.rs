@@ -133,6 +133,16 @@ fn kept_as(c: TsNode, src: &[u8]) -> Option<String> {
     }
 }
 
+/// The pattern a call's value is taken apart by: `const { values } = parseArgs(..)`, `const [a, b] =
+/// f(..)`.
+fn pattern_of(c: TsNode) -> Option<TsNode> {
+    let v = outermost(c, WRAPPERS);
+    v.parent()
+        .filter(|d| d.kind() == "variable_declarator" && d.child_by_field_name("value").map(|x| x.id()) == Some(v.id()))
+        .and_then(|d| d.child_by_field_name("name"))
+        .filter(|p| matches!(p.kind(), "object_pattern" | "array_pattern"))
+}
+
 fn value_type(m: &Module, name: &str, modules: &IndexMap<String, Module>, nodes: &IndexMap<String, Node>) -> Option<String> {
     let (home, local) = match m.values.contains_key(name) {
         true => (m, name.to_string()),
@@ -409,6 +419,8 @@ pub(super) struct Body<'a, 't> {
     pub(super) made: HashMap<String, String>,
     /// The calls, constructors, elements and names of the body, in the order they run.
     pub(super) sites: Vec<TsNode<'t>>,
+    /// The calls that keep the command line the program is run with under a name (`command_line`).
+    pub(super) keeps_command_line: HashSet<usize>,
     pub(super) read: Read<'t>,
 }
 
@@ -448,10 +460,12 @@ impl<'a, 't> Body<'a, 't> {
             inputs: HashMap::new(),
             made: HashMap::new(),
             sites: vec![],
+            keeps_command_line: HashSet::new(),
             read: Read::default(),
         };
         b.typed(n);
         b.made();
+        b.keeps_command_line = b.command_line();
         b.sites = evaluation_order(walk(
             body,
             &["call_expression", "new_expression", "object", "jsx_opening_element", "jsx_self_closing_element", "identifier"],
@@ -471,6 +485,40 @@ impl<'a, 't> Body<'a, 't> {
         (self.is_module || !self.locals.bound(n, self.src))
             .then(|| value_type(self.m, text(n, self.src), self.modules, &self.store.nodes))
             .flatten()
+    }
+
+    /// Where the body keeps the command line the program is run with (`process.argv`,
+    /// `knowledge::TYPESCRIPT_COMMAND_LINE`): the end of the chain of methods called on it, where a
+    /// name or a pattern keeps what that gives (`const [kind = "", ...flags] = process.argv.slice(2)`).
+    /// The step there takes the entry's words and declares no options: the code names none. Words
+    /// handed on without a name (`main(process.argv.slice(2))`) go into the call around them, which
+    /// parses them where it parses them.
+    fn command_line(&self) -> HashSet<usize> {
+        let src = self.src;
+        let mut out = HashSet::new();
+        for m in walk(self.body, &["member_expression"]).into_iter().filter(|m| self.mine(*m)) {
+            let parts = member_parts(m, src);
+            if !knowledge::TYPESCRIPT_COMMAND_LINE.contains(&parts.iter().map(String::as_str).collect::<Vec<_>>().as_slice())
+                || self.m.bindings.contains_key(&parts[0])
+                || self.m.symbols.contains_key(&parts[0])
+                || self.locals.bound(m, src)
+            {
+                continue;
+            }
+            let (mut value, mut end) = (outermost(m, WRAPPERS), None);
+            while let Some(call) = value
+                .parent()
+                .filter(|f| f.kind() == "member_expression" && f.child_by_field_name("object").map(|o| o.id()) == Some(value.id()))
+                .and_then(|f| f.parent().filter(|c| c.kind() == "call_expression" && function_of(*c).map(|x| x.id()) == Some(f.id())))
+            {
+                end = Some(call);
+                value = outermost(call, WRAPPERS);
+            }
+            if let Some(end) = end.filter(|e| kept_as(*e, src).is_some() || pattern_of(*e).is_some()) {
+                out.insert(end.id());
+            }
+        }
+        out
     }
 
     /// Whether a node is the body's own: inside a module's own code, not in a function it defines.
@@ -828,24 +876,16 @@ impl<'a, 't> Body<'a, 't> {
         kept_as(c, self.src).map(|name| Held::new(ty(&name), name)).into_iter().collect()
     }
 
-    /// The values the body keeps of what a parse of the command line gives: the name it is kept
-    /// by, or the names a pattern takes out of it (`const { values } = parseArgs(..)`).
+    /// The values the body keeps of what a call Atlas does not follow gives: the name it is kept
+    /// by, or the names a pattern takes out of it (`const { values } = parseArgs(..)`, `const [kind
+    /// = "", ...flags] = process.argv.slice(2)`).
     fn parsed_into(&self, c: TsNode) -> Vec<Held> {
-        let v = outermost(c, WRAPPERS);
-        let pattern = v
-            .parent()
-            .filter(|d| d.kind() == "variable_declarator" && d.child_by_field_name("value").map(|x| x.id()) == Some(v.id()))
-            .and_then(|d| d.child_by_field_name("name"));
-        match pattern.filter(|p| p.kind() == "object_pattern") {
-            Some(p) => named_children(p)
-                .into_iter()
-                .filter_map(|x| match x.kind() {
-                    "shorthand_property_identifier_pattern" => Some(x),
-                    "pair_pattern" => x.child_by_field_name("value").filter(|v| v.kind() == "identifier"),
-                    _ => None,
-                })
-                .map(|x| Held::new("", text(x, self.src)))
-                .collect(),
+        match pattern_of(c) {
+            Some(p) => {
+                let mut names = vec![];
+                pattern_names(p, &mut names);
+                names.into_iter().map(|x| Held::new("", text(x, self.src))).collect()
+            }
             None => self.gives(c, None),
         }
     }
@@ -1023,6 +1063,11 @@ impl<'a, 't> Body<'a, 't> {
         let class = object.and_then(|o| self.receiver(o));
         let target = self.callee(c);
         let hands = self.hands(&[object, c.child_by_field_name("arguments")], &steps.kept);
+        // the words of the command line, kept under a name: a step that parses them with no options
+        if self.keeps_command_line.contains(&c.id()) {
+            steps.parses(c, &written_callee(f, src), hands, self.parsed_into(c), vec![]);
+            return;
+        }
         match target {
             Some(t) if self.own(&t) => {
                 // `super.f()` runs on the body's own receiver the next `f` after the class it is

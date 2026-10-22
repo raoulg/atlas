@@ -7,11 +7,11 @@ use indexmap::IndexMap;
 use tree_sitter::Node as TsNode;
 
 use super::module::{
-    bound_in, changes_inside, def_node, expand, path_parts, qualified, resolve, resolve_value, shadowed, type_names, Module, OR_ELSE,
+    bound_in, changes_inside, def_node, expand, path_parts, qualified, resolve, resolve_value, shadowed, type_names, Module, OR_ELSE, THEN,
     WRAPPERS,
 };
 use super::paths::{self, Arg, At, Eval};
-use crate::body::{Crosses, Step, Steps, UseSyntax};
+use crate::body::{Bindings, Crosses, Step, Steps, UseSyntax};
 use crate::builder::{foreign_type, GraphBuilder};
 use crate::effects::{self, Crossing};
 use crate::knowledge::{self, OwnTypes};
@@ -69,16 +69,84 @@ fn place_literals(n: TsNode, src: &[u8]) -> Vec<String> {
     }
 }
 
-/// The name a call's value is kept by: `let x = f(..)?`, `let x = f(..).unwrap()`, `x = f(..)`,
-/// through what an arm of a choice gives (`let x = if c { Some(f(..)) } else { None }`): the last
-/// expression of a block, a `match` arm, `Some`, `Ok` and `Err`.
-fn kept_as(c: TsNode, src: &[u8]) -> Option<String> {
-    let mut n = c;
+/// What a call calls: its function, and through a turbofish the method it names (`collect` of
+/// `rows.collect::<Vec<_>>()`), as the call without it writes it.
+fn function(c: TsNode) -> Option<TsNode> {
+    let f = c.child_by_field_name("function")?;
+    match f.child_by_field_name("function").filter(|m| f.kind() == "generic_function" && m.kind() == "field_expression") {
+        Some(method) => Some(method),
+        None => Some(f),
+    }
+}
+
+/// The kinds of node a pattern is built of, between a name it binds and what binds it.
+const PATTERNS: &[&str] = &[
+    "identifier",
+    "shorthand_field_identifier",
+    "mut_pattern",
+    "ref_pattern",
+    "reference_pattern",
+    "captured_pattern",
+    "or_pattern",
+    "tuple_pattern",
+    "tuple_struct_pattern",
+    "struct_pattern",
+    "field_pattern",
+    "slice_pattern",
+    "match_pattern",
+    "parameter",
+];
+
+/// Where a name a pattern binds is visible, as Rust scopes it: a `let`'s from its end to the end of
+/// its block, a parameter's over its function, a closure's over its body, a loop's over its body, an
+/// arm's over its guard and its value, an `if let`'s or a `while let`'s over the block it opens.
+fn scope(pat: TsNode) -> Option<(usize, usize)> {
+    let mut n = pat;
     loop {
         let p = n.parent()?;
         match p.kind() {
+            "let_declaration" => return Some((p.end_byte(), p.parent()?.end_byte())),
+            "parameters" => return Some((p.parent()?.start_byte(), p.parent()?.end_byte())),
+            "closure_parameters" => return Some((p.end_byte(), p.parent()?.end_byte())),
+            "for_expression" => {
+                let body = p.child_by_field_name("body")?;
+                return Some((body.start_byte(), body.end_byte()));
+            }
+            "match_arm" => return Some((n.end_byte(), p.end_byte())),
+            "let_condition" => {
+                let mut c = p.parent()?;
+                while c.kind() == "let_chain" {
+                    c = c.parent()?;
+                }
+                let block = c.child_by_field_name(if c.kind() == "while_expression" { "body" } else { "consequence" })?;
+                return Some((p.end_byte(), block.end_byte()));
+            }
+            k if PATTERNS.contains(&k) => n = p,
+            _ => return None,
+        }
+    }
+}
+
+/// A name a pattern binds, as written: `x` of `mut x`, `&x` or `ref x`.
+fn bound_name<'s>(pat: TsNode, src: &'s [u8]) -> &'s str {
+    text(pat, src).trim_start_matches('&').trim_start_matches("ref ").trim_start_matches("mut ").trim()
+}
+
+/// The names a call's value is kept by, each with the byte where it holds the value. A name a
+/// binding gives it (`let x = f(..)?`, `x = f(..)`, a pattern: `let (a, b) = g(..)`, `if let
+/// Some(line) = f(..)`, the patterns of a `match` on it), through what an arm of a choice gives
+/// (`let x = if c { Some(f(..)) } else { None }`: the last expression of a block, a `match` arm,
+/// `Some`, `Ok` and `Err`), and element by element from a tuple bound to a tuple pattern (`let
+/// (a, b) = (f(), g())`). Of a chain of calls only the last keeps what it gives under the name: what
+/// a call gives that another is made on goes into that call (`read_to_string(p).expect(..)`).
+fn kept_as(c: TsNode, src: &[u8]) -> Vec<(String, usize)> {
+    let mut n = c;
+    loop {
+        let Some(p) = n.parent() else { return vec![] };
+        let is = |field: &str| p.child_by_field_name(field).map(|x| x.id()) == Some(n.id());
+        match p.kind() {
             k if WRAPPERS.contains(&k) || k == "else_clause" => n = p,
-            "match_expression" if p.child_by_field_name("body").map(|b| b.id()) == Some(n.id()) => n = p,
+            "match_expression" if is("body") => n = p,
             "block"
                 if p.named_child(p.named_child_count().saturating_sub(1)).map(|x| x.id()) == Some(n.id())
                     && n.kind() != "expression_statement" =>
@@ -87,31 +155,71 @@ fn kept_as(c: TsNode, src: &[u8]) -> Option<String> {
             }
             "arguments"
                 if p.named_child_count() == 1
-                    && p.parent()
-                        .and_then(|c| c.child_by_field_name("function"))
-                        .map_or(false, |f| matches!(text(f, src), "Some" | "Ok" | "Err")) =>
+                    && p.parent().and_then(|c| function(c)).map_or(false, |f| matches!(text(f, src), "Some" | "Ok" | "Err")) =>
             {
-                n = p.parent()?
+                match p.parent() {
+                    Some(call) => n = call,
+                    None => return vec![],
+                }
             }
             _ if (CHOICES.chooses)(p, src) && !matches!((CHOICES.part)(p, n, src), Part::Decides) => n = p,
-            // `.unwrap()` and its kind hand on the value they are called on
-            "field_expression" => {
-                let call = p.parent().filter(|x| x.kind() == "call_expression")?;
-                if !p.child_by_field_name("field").map_or(false, |f| knowledge::hands_on(text(f, src))) {
-                    return None;
-                }
-                n = call;
+            "let_declaration" | "let_condition" if is("value") => {
+                return p.child_by_field_name("pattern").map_or(vec![], |x| binds(x, src))
             }
-            "let_declaration" => {
-                let pat = p.child_by_field_name("pattern").filter(|x| matches!(x.kind(), "identifier" | "mut_pattern"))?;
-                return Some(text(pat, src).trim_start_matches("mut ").to_string());
+            // what a `match` takes apart is kept by the names its arms' patterns bind
+            "match_expression" if is("value") => {
+                return p
+                    .child_by_field_name("body")
+                    .map(named_children)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter_map(|arm| arm.child_by_field_name("pattern"))
+                    .flat_map(|x| binds(x, src))
+                    .collect()
             }
-            "assignment_expression" if p.child_by_field_name("right").map(|r| r.id()) == Some(n.id()) => {
-                return p.child_by_field_name("left").filter(|l| l.kind() == "identifier").map(|l| text(l, src).to_string());
+            "tuple_expression" => {
+                let at = named_children(p).iter().position(|x| x.id() == n.id());
+                let Some(b) = p.parent().filter(|b| matches!(b.kind(), "let_declaration" | "let_condition")) else { return vec![] };
+                let Some(pat) = b.child_by_field_name("pattern").filter(|x| x.kind() == "tuple_pattern") else { return vec![] };
+                let parts = named_children(pat);
+                return match at {
+                    Some(i) if parts.len() == named_children(p).len() && b.child_by_field_name("value").map(|v| v.id()) == Some(p.id()) => {
+                        binds(parts[i], src)
+                    }
+                    _ => vec![],
+                };
             }
-            _ => return None,
+            "assignment_expression" if is("right") => {
+                return p
+                    .child_by_field_name("left")
+                    .filter(|l| l.kind() == "identifier")
+                    .map(|l| (text(l, src).to_string(), p.start_byte()))
+                    .into_iter()
+                    .collect();
+            }
+            _ => return vec![],
         }
     }
+}
+
+/// The names a pattern binds, each with the byte from which it is visible: not the variant a
+/// pattern names (`Some`, `Mode::Fast`, `None`: a name Rust writes as a type's), and not what a
+/// guard tests.
+fn binds(pat: TsNode, src: &[u8]) -> Vec<(String, usize)> {
+    let guard = pat.child_by_field_name("condition").map(|g| g.byte_range());
+    let variant = |i: TsNode| {
+        i.parent().map_or(false, |p| {
+            matches!(p.kind(), "scoped_identifier" | "scoped_type_identifier")
+                || (matches!(p.kind(), "tuple_struct_pattern" | "struct_pattern")
+                    && p.child_by_field_name("type").map(|t| t.id()) == Some(i.id()))
+        })
+    };
+    walk(pat, &["identifier", "shorthand_field_identifier"])
+        .into_iter()
+        .filter(|i| guard.as_ref().map_or(true, |g| !g.contains(&i.start_byte())))
+        .filter(|i| !variant(*i) && !names_type(text(*i, src)))
+        .filter_map(|i| Some((text(i, src).to_string(), scope(i)?.0)))
+        .collect()
 }
 
 /// The library value a chain of method calls starts from: a call of a function on a library's
@@ -122,7 +230,7 @@ fn library_chain<'t>(
     mut v: TsNode<'t>,
     m: &Module,
     src: &[u8],
-    made_by: &HashMap<String, TsNode<'t>>,
+    made_by: &Bindings<TsNode<'t>>,
     declared: &dyn Fn(TsNode<'t>) -> Option<Vec<String>>,
 ) -> Option<Made<'t>> {
     let (mut before, mut here, mut origin) = (vec![], vec![], None);
@@ -130,19 +238,19 @@ fn library_chain<'t>(
     loop {
         match v.kind() {
             k if WRAPPERS.contains(&k) => v = wrapped(v)?,
-            "identifier" | "field_expression" if !made_by.contains_key(text(v, src)) => {
+            "identifier" | "field_expression" if !made_by.holds(text(v, src), v.start_byte()) => {
                 let ty = declared(v)?;
                 before.reverse();
                 here.reverse();
                 return Some(Made { ty, ctor: vec![], before, here, origin });
             }
             "identifier" if locals < 8 => {
-                v = *made_by.get(text(v, src))?;
+                v = *made_by.get(text(v, src), v.start_byte())?;
                 origin.get_or_insert(v);
                 locals += 1;
             }
             "call_expression" => {
-                let f = v.child_by_field_name("function")?;
+                let f = function(v)?;
                 if f.kind() == "field_expression" {
                     let call = (text(f.child_by_field_name("field")?, src).to_string(), v);
                     if locals == 0 {
@@ -434,19 +542,24 @@ pub(super) struct Body<'a, 't> {
     def: TsNode<'t>,
     params: Vec<String>,
     cls: Option<String>,
-    /// The classes the body's names hold: its typed parameters, and locals assigned from a
-    /// constructor, a struct literal or a function with a typed return, or handed to a parameter
-    /// that takes one.
-    locals: HashMap<String, String>,
+    /// The classes the body's names hold, binding by binding: its typed parameters, and locals
+    /// assigned from a constructor, a struct literal or a function with a typed return, or handed
+    /// to a parameter that takes one.
+    locals: Bindings<String>,
     /// The locals a call made, by the call: `let c = reqwest::Client::new()`.
-    made_by: HashMap<String, TsNode<'t>>,
+    made_by: Bindings<TsNode<'t>>,
+    /// The names bound `mut`: what a method changes in place.
+    mutable: Bindings<()>,
+    /// The locals bound to the value another name holds, through what hands it on unchanged (`let
+    /// record: Record = result?`): that name, where it is used.
+    aliases: Bindings<(String, usize)>,
     /// The classes the fields of the body's own class hold.
     attr_types: std::collections::BTreeMap<String, String>,
     /// The library types its parameters are declared with: `conn` is `ext:rusqlite.Connection`.
-    foreign: HashMap<String, String>,
+    foreign: Bindings<String>,
     /// The library types its `let`s hold by the parameter they are handed to: `area` is a
     /// `DrawingArea` where `draw(&area, ..)` takes one.
-    taken: HashMap<String, String>,
+    taken: Bindings<String>,
     /// The class each function gives back, by its signature.
     returned: &'a HashMap<String, String>,
     /// The names the function binds, found when a call not followed first asks.
@@ -488,11 +601,13 @@ impl<'a, 't> Body<'a, 't> {
             def: d,
             params,
             cls,
-            locals: HashMap::new(),
-            made_by: HashMap::new(),
+            locals: Bindings::default(),
+            made_by: Bindings::default(),
+            mutable: Bindings::default(),
+            aliases: Bindings::default(),
             attr_types,
-            foreign: HashMap::new(),
-            taken: HashMap::new(),
+            foreign: Bindings::default(),
+            taken: Bindings::default(),
             returned,
             bound: Default::default(),
             keeps_command_line: HashSet::new(),
@@ -508,9 +623,10 @@ impl<'a, 't> Body<'a, 't> {
                 .into_iter()
                 .map(|(p, _)| p)
                 .filter(|p| matches!(p.kind(), "identifier" | "mut_pattern" | "reference_pattern"))
-                .map(|p| text(p, b.src).trim_start_matches('&').trim_start_matches("mut ").trim().to_string()),
+                .filter_map(|p| Some((bound_name(p, b.src).to_string(), scope(p)?))),
         );
         b.patterns(body);
+        b.held(body);
         b.handed_to(body, untyped);
         // a macro that prints shows the human something
         for mac in walk(body, &["macro_invocation"]) {
@@ -564,17 +680,18 @@ impl<'a, 't> Body<'a, 't> {
             }
             let Some(pat) = p.child_by_field_name("pattern") else { continue };
             let pname = text(pat, src).trim_start_matches("mut ").to_string();
+            let (from, to) = (d.start_byte(), d.end_byte());
             let by_mut_ref = p.child_by_field_name("type").map_or(false, |t| text(t, src).starts_with("&mut") || changes_inside(t, src));
             let types = type_names(p.child_by_field_name("type"), src);
             if let Some(lib) = types.iter().find_map(|t| self.resolve(t).filter(|r| r.starts_with("ext:"))) {
-                self.foreign.insert(pname.clone(), lib);
+                self.foreign.bind(&pname, from, to, lib);
             }
             let class = types.iter().find_map(|t| self.resolve(t).filter(|r| !r.starts_with("ext:")).and_then(|r| self.class_of(&r)));
             if let Some(r) = class {
                 if by_mut_ref {
                     self.read.mutates.push((r.clone(), pname.clone()));
                 }
-                self.locals.insert(pname, r);
+                self.locals.bind(&pname, from, to, r);
             }
         }
     }
@@ -588,14 +705,67 @@ impl<'a, 't> Body<'a, 't> {
             for f in named_children(p).into_iter().filter(|f| f.kind() == "field_pattern") {
                 // `format` binds the field, `format: f` binds `f`
                 let Some(field) = f.child_by_field_name("name").map(|x| text(x, src)) else { continue };
-                let bound = match f.child_by_field_name("pattern") {
-                    Some(x) if x.kind() == "identifier" => text(x, src),
+                let (bound, at) = match f.child_by_field_name("pattern") {
+                    Some(x) if x.kind() == "identifier" => (text(x, src), x),
                     Some(_) => continue,
-                    None => field,
+                    None => (field, f),
                 };
+                let Some((from, to)) = scope(at) else { continue };
                 if let Some((_, class)) = fields.iter().find(|(n, _)| n == field) {
-                    self.locals.insert(bound.to_string(), class.clone());
+                    self.locals.bind(bound, from, to, class.clone());
                 }
+            }
+        }
+    }
+
+    /// The name a pattern binds to the value `Some` or `Ok` holds holds the class of what the
+    /// pattern takes apart: `if let Some(line) = find(..)`, `Some(summary) => ..` of `match
+    /// self.kept_summary(day)?`, as `let summary = .. .unwrap()` would.
+    fn held(&mut self, body: TsNode<'t>) {
+        let src = self.src;
+        for n in walk(body, &["let_declaration", "let_condition", "match_expression"]) {
+            let Some(value) = n.child_by_field_name("value") else { continue };
+            let mut pairs: Vec<(TsNode, TsNode)> = match n.kind() {
+                "match_expression" => n
+                    .child_by_field_name("body")
+                    .map(named_children)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter_map(|arm| arm.child_by_field_name("pattern"))
+                    .filter_map(|p| named_children(p).into_iter().next())
+                    .map(|p| (p, value))
+                    .collect(),
+                _ => n.child_by_field_name("pattern").into_iter().map(|p| (p, value)).collect(),
+            };
+            // a tuple bound to a tuple pattern, element by element: `let (Some(first), Some(last)) = (xs.first(), xs.last())`
+            if let [(p, v)] = pairs.as_slice() {
+                let (p, v) = (*p, beneath(*v, WRAPPERS));
+                if p.kind() == "tuple_pattern" && v.kind() == "tuple_expression" && named_children(p).len() == named_children(v).len() {
+                    pairs = named_children(p).into_iter().zip(named_children(v)).collect();
+                }
+            }
+            for (p, value) in pairs {
+                let one = match p.kind() {
+                    "tuple_struct_pattern" => {
+                        let ty = p.child_by_field_name("type").map(|t| text(t, src)).unwrap_or("");
+                        let inner: Vec<TsNode> = named_children(p)
+                            .into_iter()
+                            .filter(|x| Some(x.id()) != p.child_by_field_name("type").map(|t| t.id()))
+                            .collect();
+                        match inner.as_slice() {
+                            [one] if super::module::HOLDING.contains(&ty) => *one,
+                            _ => continue,
+                        }
+                    }
+                    // a name of a tuple's element; a whole `let` is typed where its `let` is read
+                    _ if n.kind() == "let_declaration" && n.child_by_field_name("pattern").map(|x| x.id()) == Some(p.id()) => continue,
+                    _ => p,
+                };
+                if !matches!(one.kind(), "identifier" | "mut_pattern" | "ref_pattern") {
+                    continue;
+                }
+                let (Some((from, to)), Some(class)) = (scope(one), self.value_class(value)) else { continue };
+                self.locals.bind(bound_name(one, src), from, to, class);
             }
         }
     }
@@ -636,16 +806,21 @@ impl<'a, 't> Body<'a, 't> {
 
     /// Locals assigned from a constructor, a struct literal, or a function with a typed return;
     /// `.unwrap()`, `.expect(..)`, `.context(..)` hand on the type of the value they are called on.
-    /// Gives the `let`s that write no type and whose value is of none the body knows.
-    fn lets(&mut self, body: TsNode<'t>) -> Vec<String> {
+    /// Gives the `let`s that write no type and whose value is of none the body knows, each with
+    /// where it is visible.
+    fn lets(&mut self, body: TsNode<'t>) -> Vec<(String, (usize, usize))> {
         let src = self.src;
         let mut untyped = vec![];
         for l in walk(body, &["let_declaration"]) {
             let Some(pat) = l.child_by_field_name("pattern").filter(|p| matches!(p.kind(), "identifier" | "mut_pattern")) else { continue };
             let name = text(pat, src).trim_start_matches("mut ").to_string();
+            let Some((from, to)) = scope(pat) else { continue };
+            if pat.kind() == "mut_pattern" || named_children(l).iter().any(|x| x.kind() == "mutable_specifier") {
+                self.mutable.bind(&name, from, to, ());
+            }
             let declared = type_names(l.child_by_field_name("type"), src);
             if let Some(t) = declared.iter().find_map(|t| self.resolve(t).filter(|r| r.starts_with("ext:"))) {
-                self.foreign.insert(name.clone(), t);
+                self.foreign.bind(&name, from, to, t);
             }
             let annotated = declared.iter().find_map(|t| self.resolve(t).and_then(|t| self.class_of(&t)));
             let mut value = l.child_by_field_name("value");
@@ -653,7 +828,7 @@ impl<'a, 't> Body<'a, 't> {
                 value = match v.kind() {
                     k if WRAPPERS.contains(&k) => wrapped(v),
                     "unary_expression" => named_children(v).into_iter().next(),
-                    "call_expression" => match v.child_by_field_name("function") {
+                    "call_expression" => match function(v) {
                         Some(f)
                             if f.kind() == "field_expression"
                                 && f.child_by_field_name("field").map_or(false, |x| knowledge::hands_on(text(x, src))) =>
@@ -666,13 +841,19 @@ impl<'a, 't> Body<'a, 't> {
                 };
             }
             if let Some(made) = l.child_by_field_name("value") {
-                self.made_by.insert(name.clone(), made);
+                self.made_by.bind(&name, from, to, made);
+                // a projection bound to a name is still the projection: `let months = settings.months` holds `settings`
+                let mut held = beneath(made, WRAPPERS);
+                while let Some(owner) = (held.kind() == "field_expression").then(|| held.child_by_field_name("value")).flatten() {
+                    held = beneath(owner, WRAPPERS);
+                }
+                if matches!(held.kind(), "identifier" | "self") {
+                    self.aliases.bind(&name, from, to, (text(held, src).to_string(), held.start_byte()));
+                }
             }
             match annotated.or_else(|| value.and_then(|v| self.value_class(v))) {
-                Some(t) => {
-                    self.locals.insert(name, t);
-                }
-                None if l.child_by_field_name("type").is_none() => untyped.push(name),
+                Some(t) => self.locals.bind(&name, from, to, t),
+                None if l.child_by_field_name("type").is_none() => untyped.push((name, (from, to))),
                 None => {}
             }
         }
@@ -684,16 +865,16 @@ impl<'a, 't> Body<'a, 't> {
     /// (`readings: &[Reading]`, `let rows: Vec<Row>`).
     fn loops(&mut self, d: TsNode<'t>, body: TsNode<'t>) {
         let src = self.src;
-        let typed = |n: TsNode<'t>, name: &str| n.child_by_field_name("type").map(|t| (name.to_string(), text(t, src).to_string()));
-        let mut written: HashMap<String, String> = HashMap::new();
+        let mut written: Bindings<String> = Bindings::default();
         for p in d.child_by_field_name("parameters").map(named_children).unwrap_or_default() {
-            if let Some(pat) = p.child_by_field_name("pattern") {
-                written.extend(typed(p, text(pat, src).trim_start_matches("mut ")));
+            if let (Some(pat), Some(t)) = (p.child_by_field_name("pattern"), p.child_by_field_name("type")) {
+                written.bind(text(pat, src).trim_start_matches("mut "), d.start_byte(), d.end_byte(), text(t, src).to_string());
             }
         }
         for l in walk(body, &["let_declaration"]) {
-            if let Some(pat) = l.child_by_field_name("pattern").filter(|p| matches!(p.kind(), "identifier" | "mut_pattern")) {
-                written.extend(typed(l, text(pat, src).trim_start_matches("mut ")));
+            let Some(pat) = l.child_by_field_name("pattern").filter(|p| matches!(p.kind(), "identifier" | "mut_pattern")) else { continue };
+            if let (Some((from, to)), Some(t)) = (scope(pat), l.child_by_field_name("type")) {
+                written.bind(text(pat, src).trim_start_matches("mut "), from, to, text(t, src).to_string());
             }
         }
         let sequence = |t: &str| {
@@ -705,15 +886,17 @@ impl<'a, 't> Body<'a, 't> {
             if !matches!(pat.kind(), "identifier" | "mut_pattern" | "reference_pattern") {
                 continue;
             }
-            let name = text(pat, src).trim_start_matches('&').trim_start_matches("mut ").trim().to_string();
+            let name = bound_name(pat, src).to_string();
+            let Some((from, to)) = scope(pat) else { continue };
             let element = match self.sequence(value) {
                 // a sequence the body names, as its type is written (`readings: &[Reading]`)
                 Some(s) if s.kind() == "identifier" => {
-                    written.get(text(s, src)).filter(|t| sequence(t)).and_then(|_| self.locals.get(text(s, src)).cloned())
+                    let (name, at) = (text(s, src), s.start_byte());
+                    written.get(name, at).filter(|t| sequence(t)).and_then(|_| self.locals.get(name, at).cloned())
                 }
                 // a field of a value of the program's struct (`g.nodes`): the class its type names
                 Some(s) if s.kind() == "field_expression" => {
-                    let owner = s.child_by_field_name("value").and_then(|o| self.locals.get(text(o, src)).cloned());
+                    let owner = s.child_by_field_name("value").and_then(|o| self.locals.get(text(o, src), o.start_byte()).cloned());
                     let field = s.child_by_field_name("field").map(|f| text(f, src)).unwrap_or("");
                     let named = owner
                         .and_then(|c| self.store.classes.get(&c))
@@ -724,7 +907,7 @@ impl<'a, 't> Body<'a, 't> {
                 _ => None,
             };
             if let Some(class) = element {
-                self.locals.insert(name, class);
+                self.locals.bind(&name, from, to, class);
             }
         }
     }
@@ -745,7 +928,7 @@ impl<'a, 't> Body<'a, 't> {
         while let Some(v) = over {
             over = match v.kind() {
                 k if WRAPPERS.contains(&k) => wrapped(v),
-                "call_expression" => v.child_by_field_name("function").filter(|f| {
+                "call_expression" => function(v).filter(|f| {
                     f.kind() == "field_expression"
                         && f.child_by_field_name("field").map_or(false, |x| {
                             knowledge::RUST_ELEMENTS.contains(&text(x, src)) || knowledge::RUST_KEEPS_ELEMENTS.contains(&text(x, src))
@@ -763,9 +946,29 @@ impl<'a, 't> Body<'a, 't> {
     /// functions (`draw(&area, ..)`), holds that parameter's type, read in the module that
     /// declares it: a class of the program's, or a library's (`area: &DrawingArea<DB, Shift>`
     /// through `use plotters::prelude::*`).
-    fn handed_to(&mut self, body: TsNode<'t>, untyped: Vec<String>) {
+    fn handed_to(&mut self, body: TsNode<'t>, untyped: Vec<(String, (usize, usize))>) {
         let src = self.src;
-        let mut open: HashSet<String> = untyped.into_iter().filter(|n| !self.locals.contains_key(n)).collect();
+        let mut open: Vec<(String, (usize, usize))> =
+            untyped.into_iter().filter(|(n, (from, _))| self.locals.binding(n, *from).map_or(true, |(f, _)| f != *from)).collect();
+        // bound whole to a `let` that writes its type: `result` of `let record: Record = result?`
+        for l in walk(body, &["let_declaration"]) {
+            let (Some(pat), Some(value)) = (l.child_by_field_name("pattern"), l.child_by_field_name("value")) else { continue };
+            let held = beneath(value, WRAPPERS);
+            if l.child_by_field_name("type").is_none() || held.kind() != "identifier" {
+                continue;
+            }
+            let Some((_, class)) = scope(pat).and_then(|(from, _)| self.locals.binding(bound_name(pat, src), from)) else { continue };
+            let class = class.clone();
+            let (name, at) = (text(held, src), held.start_byte());
+            let inner =
+                open.iter().enumerate().filter(|(_, (n, (f, t)))| n == name && *f <= at && at < *t).max_by_key(|(_, (_, (f, _)))| *f);
+            if let Some((i, (_, (from, to)))) = inner.map(|(i, b)| (i, b.clone())) {
+                if self.locals.binding(name, at).map_or(true, |(f, _)| f < from) {
+                    self.locals.bind(name, from, to, class);
+                    open.remove(i);
+                }
+            }
+        }
         for c in walk(body, &["call_expression"]) {
             if open.is_empty() {
                 return;
@@ -783,11 +986,22 @@ impl<'a, 't> Body<'a, 't> {
                 .collect();
             let skip = usize::from(!on_value && paths::takes_self(def));
             for (p, a) in declared.into_iter().zip(positional(c).into_iter().skip(skip)) {
-                let a = a.map(|a| beneath(a, WRAPPERS));
-                let Some(name) = a.filter(|x| x.kind() == "identifier").map(|x| text(x, src).to_string()).filter(|x| open.contains(x))
+                let Some(a) = a.map(|a| beneath(a, WRAPPERS)).filter(|x| x.kind() == "identifier") else { continue };
+                let (name, at) = (text(a, src).to_string(), a.start_byte());
+                // the binding the argument uses: the innermost open one, unless a typed one inside it shadows it
+                let Some(i) = open
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, (n, (from, to)))| *n == name && *from <= at && at < *to)
+                    .max_by_key(|(_, (_, (from, _)))| *from)
+                    .map(|(i, _)| i)
                 else {
                     continue;
                 };
+                let (from, to) = open[i].1;
+                if self.locals.binding(&name, at).map_or(false, |(f, _)| f > from) {
+                    continue;
+                }
                 let ty = p.child_by_field_name("type");
                 let named = |parts: &Vec<String>| match parts.as_slice() {
                     [s] if s == "Self" => n.cls.clone(),
@@ -804,11 +1018,11 @@ impl<'a, 't> Body<'a, 't> {
                     .and_then(named)
                     .filter(|r| foreign_type(r, &OWN));
                 match (class, lib) {
-                    (Some(class), _) => self.locals.insert(name.clone(), class),
-                    (None, Some(lib)) => self.taken.insert(name.clone(), lib),
+                    (Some(class), _) => self.locals.bind(&name, from, to, class),
+                    (None, Some(lib)) => self.taken.bind(&name, from, to, lib),
                     (None, None) => continue,
                 };
-                open.remove(&name);
+                open.remove(i);
             }
         }
     }
@@ -817,7 +1031,7 @@ impl<'a, 't> Body<'a, 't> {
     /// the class its receiver holds, or one its path names.
     fn callee(&self, c: TsNode) -> Option<(String, bool)> {
         let src = self.src;
-        let f = c.child_by_field_name("function")?;
+        let f = function(c)?;
         let own = |t: String| self.store.nodes.get(&t).filter(|n| matches!(n.kind, NodeKind::Function | NodeKind::Method)).map(|_| t);
         if f.kind() == "field_expression" {
             let class = self.value_class(f.child_by_field_name("value")?)?;
@@ -839,16 +1053,21 @@ impl<'a, 't> Body<'a, 't> {
         match v.kind() {
             k if WRAPPERS.contains(&k) => self.value_class(wrapped(v)?),
             "self" => self.cls.clone(),
-            "identifier" => self.locals.get(text(v, src)).cloned(),
+            "identifier" => self.locals.get(text(v, src), v.start_byte()).cloned(),
             "struct_expression" => self.resolve(&path_parts(v.child_by_field_name("name"), src)).and_then(|r| self.class_of(&r)),
-            "call_expression" if v.child_by_field_name("function").map_or(false, |f| f.kind() == "field_expression") => {
-                let f = v.child_by_field_name("function")?;
-                let on = self.value_class(f.child_by_field_name("value")?);
+            "call_expression" if function(v).map_or(false, |f| f.kind() == "field_expression") => {
+                let f = function(v)?;
+                let on = self.value_class(f.child_by_field_name("value")?)?;
                 let name = f.child_by_field_name("field").map(|x| text(x, src)).unwrap_or("");
-                on.and_then(|t| self.store.method_of(&t, name)).and_then(|t| self.returned_class(&t))
+                match self.store.method_of(&on, name) {
+                    Some(t) => self.returned_class(&t),
+                    // one of the records a sequence of them holds: `series.first()`
+                    None if knowledge::RUST_ONE_ELEMENT.contains(&name) => Some(on),
+                    None => None,
+                }
             }
             "call_expression" => {
-                let parts = path_parts(v.child_by_field_name("function"), src);
+                let parts = path_parts(function(v), src);
                 if parts.is_empty() {
                     return None;
                 }
@@ -861,19 +1080,56 @@ impl<'a, 't> Body<'a, 't> {
         }
     }
 
-    /// The type a name of the body holds: a class of the program's, else the library's type a
-    /// `let` takes from the parameter it is handed to.
-    fn held_type(&self, name: &str) -> Option<String> {
-        self.locals.get(name).or_else(|| self.taken.get(name)).cloned()
+    /// The type a name of the body holds at byte `at`: a class of the program's, else the library's
+    /// type a `let` takes from the parameter it is handed to.
+    fn held_type(&self, name: &str, at: usize) -> Option<String> {
+        self.locals.get(name, at).or_else(|| self.taken.get(name, at)).cloned()
+    }
+
+    /// The name whose value `name` holds at byte `at`, and where: the name itself, or the one a
+    /// `let` bound it to (`record` of `let record: Record = result?` holds what `result` holds).
+    fn holder(&self, name: &str, at: usize) -> (String, usize) {
+        let (mut name, mut at) = (name.to_string(), at);
+        for _ in 0..8 {
+            match self.aliases.get(&name, at) {
+                Some((n, a)) => (name, at) = (n.clone(), *a),
+                None => break,
+            }
+        }
+        (name, at)
     }
 
     /// What a call is handed: the value it is called on, its arguments, a literal's fields.
+    /// The instance the body runs on is handed where an argument names it or a part of it
+    /// (`fs::read_to_string(&self.path)`, `let conn = &self.conn; conn.prepare(..)`), as a value of
+    /// its class no name of the body holds; a call made on `self` itself runs on it instead.
     fn hands(&self, parts: &[Option<TsNode>], kept: &HashSet<String>) -> Vec<Held> {
-        let ty_of = |name: &str| self.held_type(name);
+        let ty_of = |n: TsNode| {
+            let (name, at) = self.holder(text(n, self.src), n.start_byte());
+            match name.as_str() {
+                "self" => (String::new(), self.cls.clone()),
+                _ => {
+                    let ty = self.held_type(&name, at);
+                    (name, ty)
+                }
+            }
+        };
         let mut out: Vec<Held> = vec![];
+        // the receiver a method called by its path runs on is its first argument (`Self::raw(self)`)
+        let runs_on: Vec<usize> =
+            parts.iter().flatten().map(|p| beneath(*p, WRAPPERS)).filter(|p| p.kind() == "self").map(|p| p.id()).collect();
         for p in parts.iter().flatten() {
-            for h in crate::tree::held_names(*p, self.src, &["self"], &ty_of, kept) {
-                if !out.contains(&h) {
+            let mut held = crate::tree::held_at(*p, self.src, &["self"], &ty_of, kept);
+            if beneath(*p, WRAPPERS).kind() != "self" {
+                held.extend(
+                    walk(*p, &["self"])
+                        .into_iter()
+                        .filter(|s| !runs_on.contains(&s.id()))
+                        .filter_map(|s| Some(Held { ty: self.cls.clone()?, name: String::new(), at: s.start_byte() as u32 })),
+                );
+            }
+            for h in held {
+                if !out.iter().any(|o| o.ty == h.ty && o.name == h.name && (o.at == h.at || h.name.is_empty())) {
                     out.push(h);
                 }
             }
@@ -886,9 +1142,10 @@ impl<'a, 't> Body<'a, 't> {
     fn each(&mut self, steps: &mut Steps, pat: TsNode<'t>, value: TsNode<'t>) {
         let names: Vec<String> = walk(pat, &["identifier"]).into_iter().map(|i| text(i, self.src).to_string()).collect();
         let hands = self.hands(&[Some(value)], &steps.kept);
+        let inside = scope(pat).map_or(pat.end_byte(), |(from, _)| from);
         let gives: Vec<Held> = names
             .iter()
-            .filter_map(|n| match self.held_type(n) {
+            .filter_map(|n| match self.held_type(n, inside) {
                 Some(t) => Some(Held::new(t, n.clone())),
                 None => (!hands.is_empty()).then(|| Held::new(String::new(), n.clone())),
             })
@@ -901,15 +1158,19 @@ impl<'a, 't> Body<'a, 't> {
     /// with, else the class the call builds or returns.
     fn gives(&self, c: TsNode, to: Option<&str>) -> Vec<Held> {
         let made = |t: &str| self.class_of(t).or_else(|| self.returned_class(t));
-        kept_as(c, self.src)
-            .map(|name| Held::new(self.held_type(&name).or_else(|| to.and_then(made)).unwrap_or_default(), name))
-            .into_iter()
+        let kept = kept_as(c, self.src);
+        // the class the call builds or returns is the value of a name that keeps it whole
+        let whole = kept.len() == 1;
+        kept.into_iter()
+            .map(|(name, at)| {
+                Held::new(self.held_type(&name, at).or_else(|| to.filter(|_| whole).and_then(made)).unwrap_or_default(), name)
+            })
             .collect()
     }
 
     /// A boundary call's touches, refined by the literals that name its place.
     fn touch(&self, c: TsNode, kind: Crossing, op: &str, lits: &[String]) -> Vec<Touch> {
-        Crosses::read(c, self.src, kind, None, op, lits, STRINGS, &self.locals).touches(None)
+        Crosses::read(c, self.src, kind, None, op, lits, STRINGS, &self.locals.visible(c.start_byte())).touches(None)
     }
 
     /// One call of the body, as the step it is: a struct literal, a method on a value, or a path,
@@ -924,7 +1185,7 @@ impl<'a, 't> Body<'a, 't> {
         if c.kind() == "token_tree" {
             return self.token_call(steps, c);
         }
-        let Some(f) = c.child_by_field_name("function") else { return };
+        let Some(f) = function(c) else { return };
         self.handed_on(steps, c);
         if f.kind() == "field_expression" {
             self.method_call(steps, c, f);
@@ -946,7 +1207,7 @@ impl<'a, 't> Body<'a, 't> {
             Called::Path(parts) => return self.path_call(steps, c, parts),
             Called::Method(recv, method) => (recv, method),
         };
-        let owner = |t: TsNode| if t.kind() == "self" { self.cls.clone() } else { self.locals.get(text(t, src)).cloned() };
+        let owner = |t: TsNode| if t.kind() == "self" { self.cls.clone() } else { self.locals.get(text(t, src), t.start_byte()).cloned() };
         let class = match recv.as_slice() {
             [r] => owner(*r),
             [o, f] => owner(*o).and_then(|c| self.store.classes.get(&c)).and_then(|k| k.attr_types.get(text(*f, src)).cloned()),
@@ -1028,7 +1289,7 @@ impl<'a, 't> Body<'a, 't> {
     /// a function or a type's by its path (`serde_json.from_str`, `regex.Regex.new`), or a method
     /// of the library type of the value it is called on (`regex.Regex.is_match`).
     pub(super) fn library_target(&self, c: TsNode<'t>) -> Option<Vec<String>> {
-        let f = c.child_by_field_name("function")?;
+        let f = function(c)?;
         if f.kind() == "field_expression" {
             if self.callee(c).is_some() {
                 return None;
@@ -1080,7 +1341,7 @@ impl<'a, 't> Body<'a, 't> {
                 None => break,
             }
         }
-        let at = if kept_as(end, self.src).is_some() { end } else { c };
+        let at = if kept_as(end, self.src).is_empty() { c } else { end };
         self.keeps_command_line.insert(at.id());
     }
 
@@ -1115,7 +1376,7 @@ impl<'a, 't> Body<'a, 't> {
         // a method called by its path is handed the value it runs on first
         let by_path = match c.kind() {
             "token_tree" => matches!(token_callee(c, self.src), Some(Called::Path(_))),
-            _ => c.child_by_field_name("function").map_or(false, |f| f.kind() != "field_expression"),
+            _ => function(c).map_or(false, |f| f.kind() != "field_expression"),
         };
         if let Some(arg) = self.argument(c, t, recv.is_some() && !by_path) {
             self.read.args.push(arg);
@@ -1169,14 +1430,14 @@ impl<'a, 't> Body<'a, 't> {
         let method = text(field, src).to_string();
         let receiver = match value.kind() {
             "self" => self.cls.clone(),
-            "identifier" => self.locals.get(text(value, src)).cloned(),
+            "identifier" => self.locals.get(text(value, src), value.start_byte()).cloned(),
             "field_expression" => {
                 let v = value.child_by_field_name("value");
                 let fld = value.child_by_field_name("field").map(|x| text(x, src)).unwrap_or("");
                 match v.map(|v| v.kind()) {
                     Some("self") => self.attr_types.get(fld).cloned(),
                     Some("identifier") => v
-                        .and_then(|v| self.locals.get(text(v, src)))
+                        .and_then(|v| self.locals.get(text(v, src), v.start_byte()))
                         .and_then(|t| self.store.classes.get(t))
                         .and_then(|c| c.attr_types.get(fld).cloned()),
                     _ => None,
@@ -1189,15 +1450,27 @@ impl<'a, 't> Body<'a, 't> {
         let own = receiver.as_deref().and_then(|r| self.store.method_of(r, &method)).filter(|t| !t.starts_with("ext:"));
         if own.is_none() && self.changes_library_value(value, &method) {
             let hands = self.call_hands(c, Some(value), &steps.kept);
-            let changed = self.hands(&[Some(value)], &steps.kept);
+            let mut changed = self.hands(&[Some(value)], &steps.kept);
+            // a name no step made, a collection a macro built (`vec![]`), holds what is put into it
+            if changed.is_empty() && value.kind() == "identifier" {
+                let put = c
+                    .child_by_field_name("arguments")
+                    .map(named_children)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .find_map(|a| self.value_class(a));
+                changed.push(Held::new(put.unwrap_or_default(), text(value, src)));
+            }
             steps.changes(c, &method, hands, self.gives(c, None), changed);
             return;
         }
         match (own, receiver) {
             (Some(t), r) => self.own_step(steps, c, &t, Some(value), r.as_deref(), None),
-            // a method not found on a name's type (`to_string`, `clone`) is not known; it builds
-            // nothing, and what it does where its value goes nowhere Atlas does not see
+            // a method not found on a name's type (`to_string`, `clone`, `first` of the records a
+            // slice holds) is the language's: a step where the body names what it gives, and what
+            // it does where its value goes nowhere Atlas does not see
             (None, Some(_)) if matches!(value.kind(), "self" | "identifier" | "field_expression") => {
+                self.library_step(steps, c, &method, Some(value));
                 self.dropped(steps, c, &format!("{}.{method}", text(value, src)));
             }
             // a library's operation; on what a call gives, also one its class does not have, which
@@ -1221,7 +1494,7 @@ impl<'a, 't> Body<'a, 't> {
             Some(ty) => ty,
             None => match library_chain(value, self.m, self.src, &self.made_by, &|v| self.declared(v)) {
                 Some(made) => made.ty,
-                None => return false,
+                None => return self.changed_in_place(value, method),
             },
         };
         let Some(t) = self.resolve(&ty) else { return false };
@@ -1234,18 +1507,28 @@ impl<'a, 't> Body<'a, 't> {
         knowledge::mutates(knowledge::Registry::Crates, krate, method)
     }
 
+    /// Whether `method` changes a name bound `mut` it is called on, whose type the body does not
+    /// write (`text.push_str(..)` on `let mut text = fs::read_to_string(p)?`, `out.push(..)` on `let
+    /// mut out = vec![]`): Rust lets a method change only a value its name is bound `mut` to, and
+    /// a method of the prelude's collections of the name that changes what it runs on is that one.
+    fn changed_in_place(&self, value: TsNode<'t>, method: &str) -> bool {
+        value.kind() == "identifier"
+            && self.mutable.holds(text(value, self.src), value.start_byte())
+            && knowledge::mutates(knowledge::Registry::Crates, knowledge::RUST_PRELUDE_CRATE, method)
+    }
+
     /// The library type a value is declared to be: a parameter's (`conn: &Connection`), or a
     /// field's of the body's own class or of a local's class (`self.conn`, `store.conn`).
     fn declared(&self, v: TsNode) -> Option<Vec<String>> {
         let src = self.src;
         let ext = match v.kind() {
-            "identifier" => self.foreign.get(text(v, src)).cloned(),
+            "identifier" => self.foreign.get(text(v, src), v.start_byte()).cloned(),
             "field_expression" => {
                 let field = text(v.child_by_field_name("field")?, src);
                 let owner = v.child_by_field_name("value")?;
                 let cls = match owner.kind() {
                     "self" => self.cls.clone(),
-                    "identifier" => self.locals.get(text(owner, src)).cloned(),
+                    "identifier" => self.locals.get(text(owner, src), owner.start_byte()).cloned(),
                     _ => None,
                 }?;
                 self.store.classes.get(&cls)?.foreign.get(field).cloned()
@@ -1363,7 +1646,8 @@ impl<'a, 't> Body<'a, 't> {
         }
         let mut out = vec![];
         for v in values {
-            let mut cr = Crosses::read(c, self.src, tag, None, op, &[vec![v.clone()], lits.clone()].concat(), STRINGS, &self.locals);
+            let held = self.locals.visible(c.start_byte());
+            let mut cr = Crosses::read(c, self.src, tag, None, op, &[vec![v.clone()], lits.clone()].concat(), STRINGS, &held);
             cr.what = v;
             out.extend(cr.touches(None));
         }
@@ -1399,7 +1683,7 @@ impl<'a, 't> Body<'a, 't> {
     fn path_call(&mut self, steps: &mut Steps, c: TsNode<'t>, mut parts: Vec<String>) {
         if parts.is_empty() {
             // a call through a value no path names (`(self.on_done)()`) is one Atlas cannot follow
-            if let Some(f) = c.child_by_field_name("function").filter(|_| c.kind() == "call_expression") {
+            if let Some(f) = function(c).filter(|_| c.kind() == "call_expression") {
                 self.dropped(steps, c, text(f, self.src));
             }
             return;
@@ -1516,7 +1800,7 @@ impl<'a, 't> Body<'a, 't> {
         let (mut out, two) = (vec![], files.len() > 1);
         for (kind, a) in files {
             let lits = literals(a, self.src, STRINGS);
-            let mut cr = Crosses::read(c, self.src, kind, None, op, &lits, STRINGS, &self.locals);
+            let mut cr = Crosses::read(c, self.src, kind, None, op, &lits, STRINGS, &self.locals.visible(c.start_byte()));
             // a file is named by the argument that is its path, not by what is written into it; a
             // call handed two paths names each by its own
             cr.what = if two {
@@ -1544,16 +1828,38 @@ fn else_if_depth(n: TsNode) -> u32 {
     d
 }
 
-/// Rust's choices: `if`/`else if`/`else` (with `if let`), `match`, and the `Option`/`Result`
-/// methods that run their argument only when the receiver has nothing.
+/// The method of a call that chooses (`x.unwrap_or_else(..)`, `ok.then(..)`), if it is one.
+fn chooser<'s>(n: TsNode, src: &'s [u8]) -> Option<&'s str> {
+    let m = function(n).filter(|f| f.kind() == "field_expression")?.child_by_field_name("field")?;
+    Some(text(m, src)).filter(|m| OR_ELSE.contains(m) || THEN.contains(m))
+}
+
+/// The macros that end a body without giving a value: it panics.
+const DIVERGES: &[&str] = &["panic", "unreachable", "todo", "unimplemented"];
+
+/// Whether a block never runs on past its end: its last statement returns, breaks, continues or
+/// panics.
+fn leaves(block: Option<TsNode>, src: &[u8]) -> bool {
+    let Some(last) = block.and_then(|b| named_children(b).into_iter().filter(|s| !s.kind().ends_with("comment")).last()) else {
+        return false;
+    };
+    let e = if last.kind() == "expression_statement" { last.named_child(0).unwrap_or(last) } else { last };
+    match e.kind() {
+        "return_expression" | "break_expression" | "continue_expression" => true,
+        "macro_invocation" => e.child_by_field_name("macro").map_or(false, |m| DIVERGES.contains(&text(m, src))),
+        _ => false,
+    }
+}
+
+/// Rust's choices: `if`/`else if`/`else` (with `if let`), `match`, `let .. else`, the
+/// `Option`/`Result` methods that run their argument only when the receiver has nothing, and
+/// `bool::then`, which runs its argument only when the receiver holds. What the call is made on
+/// always runs: it flows through an or-else into what the call gives, and decides a `then`.
 const CHOICES: ChoiceSyntax = ChoiceSyntax {
     chooses: |n, src| match n.kind() {
         "if_expression" | "match_block" | "match_arm" => true,
-        "call_expression" => n
-            .child_by_field_name("function")
-            .filter(|f| f.kind() == "field_expression")
-            .and_then(|f| f.child_by_field_name("field"))
-            .map_or(false, |m| OR_ELSE.contains(&text(m, src))),
+        "let_declaration" => n.child_by_field_name("alternative").is_some(),
+        "call_expression" => chooser(n, src).is_some(),
         _ => false,
     },
     continues: |n| {
@@ -1563,7 +1869,7 @@ const CHOICES: ChoiceSyntax = ChoiceSyntax {
         let up = n.parent().filter(|p| p.kind() == "else_clause")?.parent()?;
         (n.kind() == "if_expression" && up.kind() == "if_expression").then_some(up)
     },
-    part: |c, child, _| {
+    part: |c, child, src| {
         let is = |f: &str| c.child_by_field_name(f).map(|x| x.id()) == Some(child.id());
         match c.kind() {
             "if_expression" if is("condition") => Part::Decides,
@@ -1578,12 +1884,33 @@ const CHOICES: ChoiceSyntax = ChoiceSyntax {
             "match_block" if child.kind() == "match_arm" => Part::Arm(nth_of_kind(c, child)),
             // a pattern and its guard decide which arm runs
             "match_arm" if is("pattern") => Part::Decides,
-            "call_expression" if is("function") => Part::Arm(0),
+            "call_expression" if is("function") && chooser(c, src).map_or(false, |m| THEN.contains(&m)) => Part::Decides,
+            "call_expression" if is("function") => Part::Through,
             "call_expression" if is("arguments") => Part::Arm(1),
+            // the `else` of a `let .. else` runs when the pattern does not match
+            "let_declaration" if is("alternative") => Part::Arm(0),
             _ => Part::Through,
         }
     },
-    guards: |_, _| false,
+    // a `let .. else`, whose `else` must leave, and an `if` without an `else` whose block and each
+    // `else if`'s leaves: what follows runs otherwise
+    guards: |n, src| match n.kind() {
+        "let_declaration" => n.child_by_field_name("alternative").is_some(),
+        "if_expression" => {
+            let mut at = n;
+            loop {
+                if !leaves(at.child_by_field_name("consequence"), src) {
+                    return false;
+                }
+                match at.child_by_field_name("alternative").and_then(|e| named_children(e).into_iter().next()) {
+                    None => return true,
+                    Some(next) if next.kind() == "if_expression" => at = next,
+                    Some(_) => return false,
+                }
+            }
+        }
+        _ => false,
+    },
 };
 
 /// Where Rust's values go: `let x = v`, `if let x = v`, `x = v`, `x += v`, `for x in v`; `return` and the last

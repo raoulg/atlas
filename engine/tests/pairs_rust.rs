@@ -505,6 +505,59 @@ fn lens_what_is_put_comes_back_inside_and_a_key_is_no_put() {
     assert!(lens[0].contains("Outage") && lens[0].contains("Day") && !lens[0].contains("Reading "), "{}", lens[0]);
 }
 
+/// What follows an early return runs only where the guard's arm does not. The clean `summary`
+/// writes its choice as a `match` whose `None` arm reads the history; the shortcut returns the
+/// kept line from an `if let` and reads the history after it. Isomorphic is the same: on both
+/// sides the history is read in the second arm of the one choice `summary` makes, and the
+/// shortcut's says it runs otherwise.
+#[test]
+fn choices_what_follows_an_early_return_is_the_other_arm() {
+    for side in ["clean", "shortcut"] {
+        let g = harvest(side);
+        let summary = node(&g, "harvest.ReadingStore.summary");
+        assert_eq!(step(&g, "harvest.ReadingStore.summary", "harvest.ReadingStore.history").arms, [(0, 1)], "{side}");
+        if side == "shortcut" {
+            assert!(summary.whens.contains(&(0, 1, "otherwise".to_string())), "{:?}", summary.whens);
+        }
+    }
+}
+
+/// A library's operation is a step where the body names what it gives or changes the value it runs
+/// on, and of a chain only the last: `fs::read_to_string(p)?` names its text, `text.push_str(..)`
+/// changes the String a `let mut` holds, and `con.prepare(..)?.query_map(..)?.collect::<..>()?`
+/// is one step, `collect`, whatever its turbofish says. The calls before it in the chain are no
+/// steps: what they give goes into it, and the instance the body runs on (`&self.path`) is handed
+/// to the step that takes it.
+#[test]
+fn composition_a_named_result_or_a_change_is_a_library_step() {
+    let s = harvest("shortcut");
+    let ops = |f: &str| node(&s, f).sites.iter().filter(|x| !x.op.is_empty()).map(|x| (x.op.clone(), x.changes)).collect::<Vec<_>>();
+    assert_eq!(ops("harvest.ReadingStore.save"), [("read_to_string".to_string(), false), ("push_str".to_string(), true)]);
+    let read = node(&s, "harvest.ReadingStore.save").sites.iter().find(|x| x.op == "read_to_string").unwrap();
+    assert!(read.hands.iter().any(|h| h.ty == "harvest.ReadingStore" && h.name.is_empty()), "{:?}", read.hands);
+    let g = analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/readback/rust/shortcut"), &Options::default()).unwrap();
+    let keep: Vec<(String, Vec<String>)> = node(&g, "ledger.Ledger.keep")
+        .sites
+        .iter()
+        .filter(|x| !x.op.is_empty())
+        .map(|x| (x.op.clone(), x.gives.iter().map(|h| h.name.clone()).collect()))
+        .collect();
+    assert!(keep.contains(&("collect".to_string(), vec!["stored".to_string()])), "{keep:?}");
+    assert!(!keep.iter().any(|(op, _)| op == "prepare" || op == "query_map"), "{keep:?}");
+}
+
+/// A `let .. else` is a choice: its `else` runs when the pattern does not match and must leave,
+/// so what follows it runs otherwise. `Expense::parse` builds the line's error in the `else` and
+/// the expense after it: two arms of one choice.
+#[test]
+fn choices_a_let_else_is_a_guard() {
+    let parse = "spend.expense.Expense.parse";
+    let arms = |to: &str| step(clean(), parse, to).arms.clone();
+    assert_eq!(arms("spend.expense.Money.parse"), [(0, 1)]);
+    assert_eq!(arms("spend.expense.Expense"), [(0, 1)]);
+    assert!(node(clean(), parse).sites.iter().any(|s| s.arms == [(0, 0)] && s.to.ends_with("Error")), "{:?}", node(clean(), parse).sites);
+}
+
 // ---------- prophecy ----------
 
 /// One side of the prophecy pair (`tests/pairs/prophecy`): a report `Sink` that only writes, and
@@ -1099,4 +1152,26 @@ fn places_the_command_line_is_the_entrys() {
     assert_eq!(parses(shortcut()), [(String::new(), "collect".to_string(), vec![])]);
     let args = node(shortcut(), "spend.main").sites.iter().find(|s| s.command_line.is_some()).map(|s| s.gives.clone());
     assert!(args.is_some_and(|g| g.iter().any(|h| h.name == "args")));
+}
+
+/// One side of the rebinds pair (`tests/pairs/rebinds/rust`): a module linked, its bases resolved
+/// in a loop and its body read after it, each value named apart on the clean side and both named
+/// `b` on the shortcut.
+fn linker(side: &str) -> Graph {
+    analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/rebinds/rust").join(side), &Options::default()).expect("reads")
+}
+
+/// A name holds the value of the binding visible where it is used: inside the loop `b` is the
+/// base, after the `let` it is the body. Shadowing is ordinary code and reads as the code with
+/// names of their own: `resolve` is handed a `Base` and `check` a `Body` on both sides, and no
+/// step is handed a value of the other type.
+#[test]
+fn composition_a_name_bound_twice_holds_each_binding_where_it_is_visible() {
+    for side in ["clean", "shortcut"] {
+        let g = linker(side);
+        let hands = |to: &str| step(&g, "linker.link", to).hands.iter().map(|h| h.ty.clone()).collect::<Vec<_>>();
+        assert_eq!(hands("linker.resolve"), ["linker.Base"], "{side}");
+        assert_eq!(hands("linker.check"), ["linker.Body"], "{side}");
+        assert_eq!(gives(step(&g, "linker.link", "linker.read")), ["linker.Body"], "{side}");
+    }
 }

@@ -58,10 +58,8 @@ known #129 extra line Ledger·ledger@main/Ledger() > main/Ledger.add value
 # A call on a field of a network client's type (`api.http.delete(..)`, `http: AxiosInstance`) is a request through
 # the client the route is handed; the code names no host, so its place is `Web`. A DELETE leaves something there, and
 # main drops what it answers
-known #147 line main/remove > Web own
-known #147 side Web right
-known #147 extra line Web > main/remove own
-known #147 extra side Web left
+line main/remove > Web own
+side Web right
 line Api·api > main/remove value
 
 # A library operation whose result the body does not name is a step (`out.get(k)` in `?? 0`, which then stands as a

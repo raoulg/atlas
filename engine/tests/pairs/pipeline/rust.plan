@@ -9,8 +9,9 @@ step main/load
 step main/load/from_path                                          # `let mut reader = ..from_path(..)?`
 step main/load/new                                                # `let mut rows = Vec::new()`
 step main/load/for result in reader.deserialize()                             # `for result in reader.deserialize()`
-step main/load/ok_or                                              # `let date = NaiveDate::from_ymd_opt(..).ok_or(..)?`
-step main/load/push                                               # `rows.push(..)` changes `rows`
+choice main/load/?1                                               # `if record.mean == -1.0 { continue; }`: the rest of the loop runs otherwise
+step main/load/?1/ok_or                                           # `let date = NaiveDate::from_ymd_opt(..).ok_or(..)?`
+step main/load/?1/push                                            # `rows.push(..)` changes `rows`
 step main/smooth
 step main/plot
 step main/plot/into_drawing_area                                  # `let root = BitMapBackend::new(..).into_drawing_area()`
@@ -26,14 +27,14 @@ line File(data/raw/sunspots.csv) > main/load own
 line main/load/from_path > _·reader@main/load/from_path value
 line main/load/new > _·rows@main/load/new value
 line _·reader@main/load/from_path > main/load/for result in reader.deserialize() value
-line main/load/for result in reader.deserialize() > _·result@main/load/for result in reader.deserialize() value
-known #128 line _·result@main/load/for result in reader.deserialize() > main/load/ok_or value         # `record.year`, `record.month`
-known #128 line _·result@main/load/for result in reader.deserialize() > main/load/push value          # `record.mean`
-line main/load/ok_or > _·date@main/load/ok_or value
-line _·date@main/load/ok_or > main/load/push value
-line _·rows@main/load/new > main/load/push value
-line main/load/push > _·rows@main/load/push value
-known #101 line _·rows@main/load/push > main/load value                            # `Ok(rows)`
+line main/load/for result in reader.deserialize() > Record·result@main/load/for result in reader.deserialize() value
+line Record·result@main/load/for result in reader.deserialize() > main/load/?1/ok_or value   # `record.year`, `record.month`: `record` holds what `result` holds
+line Record·result@main/load/for result in reader.deserialize() > main/load/?1/push value    # `record.mean`
+line main/load/?1/ok_or > _·date@main/load/?1/ok_or value
+line _·date@main/load/?1/ok_or > main/load/?1/push value
+line _·rows@main/load/new > main/load/?1/push value
+line main/load/?1/push > _·rows@main/load/?1 value                  # one arm makes anew what was named before the choice
+known #101 line _·rows@main/load/?1 > main/load value                           # `Ok(rows)`
 line main/load > _·rows@main/load value                           # a named value of no type of the program's
 line _·rows@main/load > main/smooth value
 line _·rows@main/load > main/plot value                           # `draw_series(LineSeries::new(rows..))`
@@ -53,9 +54,9 @@ line main/plot > File(figures/sunspots.png) own
 home _·body@main/download/text main/download
 home _·reader@main/load/from_path main/load
 home _·rows@main/load/new main/load
-home _·result@main/load/for result in reader.deserialize() main/load
-home _·date@main/load/ok_or main/load
-home _·rows@main/load/push main/load
+home Record·result@main/load/for result in reader.deserialize() main/load
+home _·date@main/load/?1/ok_or main/load/?1
+home _·rows@main/load/?1 main/load/?1
 home _·rows@main/load main
 home _·smoothed@main/smooth main
 home _·root@main/plot/into_drawing_area main/plot
@@ -67,13 +68,5 @@ side Web(www.sidc.be) left
 side File(data/raw/sunspots.csv) between
 side File(figures/sunspots.png) right
 
-# a record the csv crate makes inside `load` is drawn from beyond, at the route's frame
-known #128 extra home Record·record main
-known #128 extra line Record·record > main/load/from_ymd_opt value
-known #128 extra line Record·record > main/load/push value
 
 # a library call whose result no name holds is drawn as a step, its result named by the call around it
-known #125 extra step main/load/from_ymd_opt
-known #125 extra line main/load/from_ymd_opt > _·date@main/load/from_ymd_opt value
-known #125 extra line _·date@main/load/from_ymd_opt > main/load/ok_or value
-known #125 extra home _·date@main/load/from_ymd_opt main/load
