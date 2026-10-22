@@ -333,16 +333,16 @@ fn lens_what_a_lens_puts_is_what_reaches_the_place() {
 /// Every place carries a what: a request names the service it goes to. In Python the clean
 /// client takes `base_url` and the entry hands it `API_URL`; the shortcut's client module reads
 /// `os.environ.get("WEATHER_API_URL", ...)` at import, so where it asks is said at run time, in
-/// library code: what the environment says, a place the code does not name, or the default the
-/// library holds. Whoever starts the program may set the variable, so the default is an option,
-/// as a parameter's default is, and `places` does not ask; the shortcut shows in where the address
-/// is whole: in the library, not where the program starts.
+/// library code: what the environment says, or the default the library holds, one input drawn as
+/// its default. Whoever starts the program may set the variable, so the default is an option, as a
+/// parameter's default is, and `places` does not ask; the shortcut shows in where the address is
+/// whole: in the library, not where the program starts.
 #[test]
 fn a_place_carries_a_what_the_service_url() {
     let s = shortcut();
     let net = touches(s, "harvest.client.WeatherClient.latest", "net");
     assert!(!net.is_empty(), "the request is in the graph");
-    assert!(net.iter().any(|t| t.artifact.is_empty() && !t.fixed), "what the environment says is no address the code says: {net:?}");
+    assert!(net.iter().all(|t| t.artifact == "api.weather.example"), "one place, the variable its input: {net:?}");
     assert!(
         net.iter().any(|t| t.artifact == "api.weather.example" && !t.fixed && t.fixed_by.is_empty() && t.by.is_empty()),
         "the default, whole in the library: {net:?}"
@@ -1379,9 +1379,9 @@ fn places_the_function_that_writes_the_path_decides_it() {
 /// A default whoever calls the function or starts the program can override is an option, not a
 /// decision: a parameter's (`path: Path = Path("out/rows.csv")`, `path or Path("out/rows.csv")`)
 /// and an environment variable's (`os.environ.get("STOCK_PATH", "out/rows.csv")`,
-/// `os.getenv("STOCK_PATH") or "out/rows.csv"`). The forms say the same thing and draw alike: the
-/// file the code takes where nobody says otherwise, and the variable, a place the code does not
-/// name. `places` asks none of them.
+/// `os.getenv("STOCK_PATH") or "out/rows.csv"`). The forms say the same thing and draw alike: one
+/// place, the file the code takes where nobody says otherwise, the caller's to choose, as an option
+/// of the command line is. `places` asks none of them.
 #[test]
 fn places_a_default_the_caller_can_override_is_an_option() {
     let c = stock("clean");
@@ -1395,7 +1395,7 @@ fn places_a_default_the_caller_can_override_is_an_option() {
     assert_eq!(drawn("stock.rows.save_where_told"), drawn("stock.rows.save_or_default"));
     let told = drawn("stock.rows.save_where_told");
     assert!(told.iter().any(|(file, _, decided)| file == "out/rows.csv" && !decided), "{told:?}");
-    assert!(told.iter().any(|(file, what, _)| file.is_empty() && what == "{$STOCK_PATH}"), "{told:?}");
+    assert!(told.iter().all(|(file, _, _)| file == "out/rows.csv"), "one place, the variable its input: {told:?}");
     for f in ["stock.rows.save", "stock.rows.save_or_given"] {
         assert!(drawn(f).iter().any(|(file, _, decided)| file == "out/rows.csv" && !decided), "{f}: {:?}", drawn(f));
     }

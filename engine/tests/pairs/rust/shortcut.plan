@@ -1,7 +1,7 @@
 # `spend`, as it is written under time pressure: the command line is strings and `run(kind, args)` tests `kind` again
 # after its `match`; the settings and the rates are maps of no type of the program's, the rates of a report go
 # through a global, and the report reads the store itself. The places are decided in the library, each an
-# environment variable with a fallback: the set of terms it can be.
+# environment variable with a fallback: one input, drawn as its default, which whoever starts the program may set.
 #
 # Touches stay with the function whose body makes them. Of a chain of library operations the last, whose result the
 # body names, is the step; what the others give goes into it.
@@ -62,7 +62,6 @@ line main > Screen own                                                 # the usa
 
 # ---------- the settings and the ledger ----------
 line File(spend.toml) > main/?1/run/load own
-line Disk({$SPEND_CONFIG}) > main/?1/run/load own
 line main/?1/run/load/unwrap_or_else > _·path@main/?1/run/load/unwrap_or_else value
 known #128 line _·path@main/?1/run/load/unwrap_or_else > main/?1/run/load/expect value
 line main/?1/run/load/expect > _·text@main/?1/run/load/expect value
@@ -147,11 +146,7 @@ line _·dir@main/?1/run/?1/write/from > main/?1/run/?1/write/join value
 known #101 line _·dir@main/?1/run/?1/write/from > main/?1/run/?1/write value        # fs::create_dir_all(&dir)
 line main/?1/run/?1/write/join > _·path@main/?1/run/?1/write/join value
 known #101 line _·path@main/?1/run/?1/write/join > main/?1/run/?1/write value       # fs::write(&path, out), path
-line main/?1/run/?1/write > Disk({$SPEND_REPORTS}) own
-line main/?1/run/?1/write > Disk({$SPEND_REPORTS}/report.{map}) own
-line main/?1/run/?1/write > File(*/report.md) own                       # report.md under wherever SPEND_REPORTS says
-line main/?1/run/?1/write > File(reports/) own
-line main/?1/run/?1/write > File(reports/report.md) own
+line main/?1/run/?1/write > File(reports/report.md) own              # the format an input with its default, md; reports/ made for it
 line main/?1/run/?1/write > main/?1/run back                             # the path, which run prints and opens
 line main/?1/run/?1/write > _·path@main/?1/run/?1/write value
 known #101 line _·path@main/?1/run/?1/write > main/?1/run value
@@ -200,16 +195,11 @@ home _·select@main/?1/run/?2/Store.rows/unwrap main/?1/run/?2/Store.rows
 
 side entry left
 side File(spend.toml) left
-side Disk({$SPEND_CONFIG}) left
 side Disk(path) left
 side Web left
 side SQLite(expenses) both        # import writes it, report reads and uses it: arms of one choice; the count after is no use
 side SQLite(rates) both           # rates writes it, report reads and uses it
 side Global(spend.rates.LATEST) right          # run reads back what it left there: closed, the place keeps what run leaves
-side Disk({$SPEND_REPORTS}) right
-side Disk({$SPEND_REPORTS}/report.{map}) right
-side File(*/report.md) right
-side File(reports/) right
 side File(reports/report.md) right
 side open right
 side Screen right
