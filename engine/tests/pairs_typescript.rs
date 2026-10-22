@@ -1343,6 +1343,51 @@ fn composition_an_operation_is_a_step_where_its_result_is_named() {
     assert_eq!(trend, ["at", "range", "range", "line", "map", "map"], "each named, by its operation");
 }
 
+/// A call is handed the values the names in its arguments hold (#128), also through a name the body
+/// binds to a value without a step (#103): a projection or an element bound first, a pattern that
+/// takes a value apart, a value computed by operators, `this` in an argument. In the pipeline's
+/// `trend`, the scale `range` gives `x` is handed the months (`first = series[0]`) and the settings
+/// (`const { width, height } = settings`); `parseLine` builds its Month of what `const [year, ..] =
+/// fields` took apart; `new Database(this.path)` is handed the ledger it runs on (`readback`).
+#[test]
+fn composition_a_call_is_handed_what_its_names_hold() {
+    let pipeline =
+        analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/pipeline/typescript"), &Options::default()).expect("reads");
+    let handed = |id: &str, op: &str| -> Vec<String> {
+        let sites = &node(&pipeline, id).sites;
+        let site = sites.iter().find(|s| s.op == op || s.to.ends_with(op)).unwrap_or_else(|| panic!("{id} {op}: {sites:#?}"));
+        let mut names: Vec<String> = site.hands.iter().map(|h| h.name.clone()).collect();
+        names.sort();
+        names
+    };
+    assert_eq!(handed("plot.trend", "range"), ["last", "series", "settings"], "`first.date`, `width - MARGIN.right` and what `at` gave");
+    assert_eq!(handed("series.parseLine", ".Month"), ["fields"]);
+    let readback = common::pair("readback/typescript");
+    let keep = node(&readback.clean, "cli.Ledger.keep");
+    let db = keep.sites.iter().find(|s| s.op == "Database()").expect("a step");
+    assert_eq!(db.hands.iter().map(|h| (h.ty.as_str(), h.name.as_str())).collect::<Vec<_>>(), [("ledger.cli.Ledger", "")]);
+}
+
+/// A value a body binds without a call comes from the values it is made of, not from beyond (#103).
+/// The bound pair (`tests/pairs/bound/typescript`) shows a reading in its unit: the clean side
+/// chooses the unit in a function of its own, `const unit = unitOf(kind)`; the shortcut declares
+/// `let unit` and sets it in each arm of an `if`. The Reading is built of a Unit on both sides: the
+/// one `unitOf` gives, or the module's `KELVIN` or `CELSIUS` the arms set.
+#[test]
+fn composition_a_value_bound_without_a_call_is_made_of_its_values() {
+    let p = common::pair("bound/typescript");
+    let built = |g: &Graph| -> Vec<(String, String)> {
+        let show = node(g, "show");
+        let reading = show.sites.iter().find(|s| s.to.ends_with(".Reading")).unwrap_or_else(|| panic!("{:#?}", show.sites));
+        let mut held: Vec<(String, String)> =
+            reading.hands.iter().map(|h| (h.ty.rsplit('.').next().unwrap_or("").to_string(), h.name.clone())).collect();
+        held.sort();
+        held
+    };
+    assert_eq!(built(&p.clean), [("Unit".to_string(), "unit".to_string())], "what `unitOf` gave, by its name");
+    assert_eq!(built(&p.shortcut), [("Unit".to_string(), "CELSIUS".to_string()), ("Unit".to_string(), "KELVIN".to_string())]);
+}
+
 /// A name bound twice holds two values, one for each binding where it is in scope (#148). The
 /// rebinds pair (`tests/pairs/rebinds/typescript`) resolves each base of a module in a loop, then
 /// builds its `Body`: the clean side names the loop's value `base` and the body `body`, the shortcut

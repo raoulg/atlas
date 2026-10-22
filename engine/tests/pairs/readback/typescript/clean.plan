@@ -12,10 +12,10 @@ step cli.ts/Ledger.keep/get
 
 line entry > cli.ts call
 line cli.ts/Ledger() > Ledger@cli.ts/Ledger() value
-line Ledger@cli.ts/Ledger() > cli.ts/Ledger.keep value
+known #126 line Ledger@cli.ts/Ledger() > cli.ts/Ledger.keep value   # keep changes it itself (`this.kept +=`), and `Database()` takes it too
 line cli.ts/Ledger.keep > Ledger@cli.ts/Ledger.keep value       # keep changes the ledger it runs on (`this.kept +=`)
 line cli.ts/Ledger.keep/Database() > _·db@cli.ts/Ledger.keep/Database() value
-known #128 line Ledger@cli.ts/Ledger() > cli.ts/Ledger.keep/Database() value  # K
+line Ledger@cli.ts/Ledger() > cli.ts/Ledger.keep/Database() value
 line _·db@cli.ts/Ledger.keep/Database() > cli.ts/Ledger.keep/get value
 known #101 line _·db@cli.ts/Ledger.keep/Database() > cli.ts/Ledger.keep value                 # keep uses it itself (`db.exec`, `db.close`)
 line cli.ts/Ledger.keep/get > _·stored@cli.ts/Ledger.keep/get value
@@ -41,5 +41,3 @@ known #138 home Error@cli.ts/Ledger.keep cli.ts
 side entry left
 side SQLite(notes) right
 # #101: a value made in the body and used by the body's own calls has no taker
-# K: a value handed through a field reaches no step inside: `new Database(this.path)` hands `this` (#121, decision 1,
-#    cause 3: the reader's `held_in` skips `this` even inside an argument)

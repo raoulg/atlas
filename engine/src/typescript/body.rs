@@ -240,6 +240,11 @@ impl<'t> Locals<'t> {
         self.0.get(text(n, src), n.start_byte()).is_some_and(|b| b.container)
     }
 
+    /// Which binding of the name `n` is visible where it stands: where it is visible from.
+    pub(super) fn which(&self, n: TsNode, src: &[u8]) -> Option<usize> {
+        self.0.which(text(n, src), n.start_byte())
+    }
+
     /// Whether `n` is a name the body binds where it stands.
     pub(super) fn bound(&self, n: TsNode, src: &[u8]) -> bool {
         self.0.get(text(n, src), n.start_byte()).is_some()
@@ -716,7 +721,7 @@ impl<'a, 't> Body<'a, 't> {
             if container_type(&p.ty, self.m) {
                 self.locals.container_at(name, src);
             }
-            let ty = p.ty.split(['<', '[', ' ', '|']).next().unwrap_or("").to_string();
+            let ty = p.ty.trim_start_matches("readonly ").split(['<', '[', ' ', '|']).next().unwrap_or("").to_string();
             if let Some(r) = self.class(self.resolve(&[ty])) {
                 self.locals.type_at(name, src, r);
             }
@@ -912,25 +917,83 @@ impl<'a, 't> Body<'a, 't> {
         steps.op(right, &format!("for {} of {}", text(left, self.src), text(right, self.src)), hands, gives);
     }
 
-    /// What a call is handed: the value it is called on, its arguments, an element's attributes.
-    /// Each name is the value its binding holds where the name stands, with the class the body knows
-    /// for it, or by its name alone where an earlier step of the body made it.
+    /// What a call is handed: the value it is called on, its arguments, an element's attributes. A
+    /// call is handed the values the names in them hold (`mathematics.md`, "One fine plan"): each name
+    /// is the value its binding holds where the name stands, with the class the body knows for it, or
+    /// by its name alone where an earlier step of the body made it; a name the body binds to a value
+    /// without a step (`const first = series[0]`, `const { width } = settings`, `const bottom = height -
+    /// MARGIN.bottom`) stands for the values the names in that value hold. `this` in an argument is the
+    /// instance the body runs on (`new Database(this.path)`); the receiver a method runs on is no
+    /// argument. Of a name written twice, the occurrence outside a call written inside counts, since a
+    /// call that is a step of its own takes its names itself.
     fn hands(&self, parts: &[Option<TsNode>], kept: &HashSet<String>) -> Vec<Held> {
-        let mut out: Vec<Held> = vec![];
-        for p in parts.iter().flatten() {
-            for i in walk(*p, &["identifier", "shorthand_property_identifier"]) {
-                let name = text(i, self.src);
-                let held = match self.type_of(i) {
-                    Some(ty) => Held { ty, name: name.to_string(), at: i.start_byte() as u32 },
-                    None if kept.contains(name) => Held { ty: String::new(), name: name.to_string(), at: i.start_byte() as u32 },
-                    None => continue,
-                };
-                if !out.contains(&held) {
-                    out.push(held);
+        self.hands_on(None, parts, kept)
+    }
+
+    /// What a method call is handed: the value it is called `on`, and its arguments (`hands`).
+    fn hands_on(&self, on: Option<TsNode>, parts: &[Option<TsNode>], kept: &HashSet<String>) -> Vec<Held> {
+        let mut out: Vec<(Held, bool)> = vec![];
+        for (p, receiver) in on.map(|o| (o, true)).into_iter().chain(parts.iter().flatten().map(|p| (*p, false))) {
+            for i in names_in(p) {
+                if i.kind() == "this" && (receiver || self.cls.is_none()) {
+                    continue;
+                }
+                let inner = std::iter::successors(i.parent(), |x| x.parent())
+                    .take_while(|x| x.id() != p.id())
+                    .any(|x| matches!(x.kind(), "call_expression" | "new_expression"));
+                let mut held = vec![];
+                self.held(i, kept, 0, &mut held);
+                for mut h in held {
+                    h.at = i.start_byte() as u32;
+                    match out.iter_mut().find(|(o, _)| *o == h) {
+                        Some((o, nested)) if *nested && !inner => (*o, *nested) = (h, false),
+                        Some(_) => {}
+                        None => out.push((h, inner)),
+                    }
                 }
             }
         }
-        out
+        out.into_iter().map(|(h, _)| h).collect()
+    }
+
+    /// The values the name `i` holds where it stands (`hands`).
+    fn held(&self, i: TsNode, kept: &HashSet<String>, depth: u32, out: &mut Vec<Held>) {
+        let name = text(i, self.src);
+        if i.kind() == "this" {
+            out.extend(self.cls.clone().map(|k| Held::new(k, "")));
+            return;
+        }
+        if let Some(ty) = self.type_of(i) {
+            return out.push(Held::new(ty, name));
+        }
+        if kept.contains(name) {
+            return out.push(Held::new("", name));
+        }
+        // a name bound to values without a step stands for what they are made of: what it is declared
+        // with, and what each assignment to it sets (`let unit; if (..) unit = CELSIUS; else unit = KELVIN`)
+        if depth > 8 {
+            return;
+        }
+        let declared = match self.locals.from(i, self.src) {
+            Some((v, BoundFrom::Whole | BoundFrom::Part)) => Some(v),
+            Some((_, BoundFrom::Element)) => return,
+            None => None,
+        };
+        let binding = self.locals.which(i, self.src);
+        let assigned = walk(self.body, &["assignment_expression"]).into_iter().filter_map(|a| {
+            let l = a.child_by_field_name("left").filter(|l| l.kind() == "identifier" && text(*l, self.src) == name)?;
+            (binding.is_some() && self.locals.which(l, self.src) == binding).then(|| a.child_by_field_name("right")).flatten()
+        });
+        let values: Vec<TsNode> = declared.into_iter().chain(assigned).collect();
+        let stepless = |v: &TsNode| {
+            walk(*v, &["call_expression", "new_expression", "arrow_function", "function_expression", "await_expression"]).is_empty()
+        };
+        if values.is_empty() || !values.iter().all(stepless) {
+            return;
+        }
+        for n in values.iter().flat_map(|v| names_in(*v)) {
+            self.held(n, kept, depth + 1, out);
+        }
     }
 
     /// What a call gives back, by the name the body keeps it by. Its type is one a step gives: what
@@ -1134,7 +1197,7 @@ impl<'a, 't> Body<'a, 't> {
         let object = (f.kind() == "member_expression").then(|| f.child_by_field_name("object")).flatten();
         let class = object.and_then(|o| self.receiver(o));
         let target = self.callee(c);
-        let hands = self.hands(&[object, c.child_by_field_name("arguments")], &steps.kept);
+        let hands = self.hands_on(object, &[c.child_by_field_name("arguments")], &steps.kept);
         // the words of the command line, kept under a name: a step that parses them with no options
         if self.keeps_command_line.contains(&c.id()) {
             steps.parses(c, &written_callee(f, src), hands, self.parsed_into(c), vec![]);
@@ -1631,6 +1694,20 @@ impl<'a, 't> Body<'a, 't> {
             }
         }
     }
+}
+
+/// The names in an expression that stand for values, and `this`: not the key of a lookup, which
+/// chooses among the values of what it looks in (`table[k]` stands for `table`).
+fn names_in(e: TsNode) -> Vec<TsNode> {
+    walk(e, &["identifier", "shorthand_property_identifier", "this"])
+        .into_iter()
+        .filter(|i| {
+            !std::iter::successors(Some(*i), |x| x.parent()).take_while(|x| x.id() != e.id()).any(|x| {
+                x.parent()
+                    .is_some_and(|p| p.kind() == "subscript_expression" && p.child_by_field_name("index").is_some_and(|k| k.id() == x.id()))
+            })
+        })
+        .collect()
 }
 
 /// Whether a callee is read where it stands rather than called: a function written where it is
