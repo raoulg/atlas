@@ -1788,7 +1788,7 @@ pub(super) fn keyword(call: TsNode, src: &[u8], names: &[&str]) -> Option<String
 
 /// Python's choices: `if`/`elif`/`else`, `match`, `try`/`except`, `a if c else b`, and the right of
 /// `x or y` and `x and y`, which runs only where the left is false or true: the left always runs, and
-/// what `or` is handed on flows through it, as an or-else's receiver does.
+/// its value goes on where it holds, so it is no arm.
 const CHOICES: ChoiceSyntax = ChoiceSyntax {
     chooses: |n, src| match n.kind() {
         "if_statement" => !is_main_guard(n, src),
@@ -1799,9 +1799,8 @@ const CHOICES: ChoiceSyntax = ChoiceSyntax {
         _ => false,
     },
     continues: |n| if matches!(n.kind(), "elif_clause" | "case_clause") { n.parent() } else { None },
-    part: |c, child, src| {
+    part: |c, child, _| {
         let is = |f: &str| c.child_by_field_name(f).map(|x| x.id()) == Some(child.id());
-        let and = || c.child_by_field_name("operator").map(|o| text(o, src)) == Some("and");
         match c.kind() {
             "if_statement" if is("condition") => Part::Decides,
             "if_statement" if is("consequence") => Part::Arm(0),
@@ -1816,7 +1815,6 @@ const CHOICES: ChoiceSyntax = ChoiceSyntax {
                 Some(2) => Part::Arm(1),
                 _ => Part::Through,
             },
-            "boolean_operator" if is("left") && and() => Part::Decides,
             "boolean_operator" if is("left") => Part::Through,
             "boolean_operator" if is("right") => Part::Arm(1),
             "block" if child.kind() == "case_clause" => Part::Arm(nth_of_kind(c, child)),

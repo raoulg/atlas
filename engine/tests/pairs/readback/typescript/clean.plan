@@ -7,24 +7,24 @@
 route ledger.cli
 step cli.ts/Ledger()
 step cli.ts/Ledger.keep
-known #125 step cli.ts/Ledger.keep/Database()                   # I
+step cli.ts/Ledger.keep/Database()
 step cli.ts/Ledger.keep/get
 
 line entry > cli.ts call
 line cli.ts/Ledger() > Ledger@cli.ts/Ledger() value
 line Ledger@cli.ts/Ledger() > cli.ts/Ledger.keep value
 line cli.ts/Ledger.keep > Ledger@cli.ts/Ledger.keep value       # keep changes the ledger it runs on (`this.kept +=`)
-known #125 line cli.ts/Ledger.keep/Database() > _·db@cli.ts/Ledger.keep/Database() value      # I
-known #125 line Ledger@cli.ts/Ledger() > cli.ts/Ledger.keep/Database() value  # I, K
-known #125 line _·db@cli.ts/Ledger.keep/Database() > cli.ts/Ledger.keep/get value              # I
-known #125 line _·db@cli.ts/Ledger.keep/Database() > cli.ts/Ledger.keep value                 # I, then #101
+line cli.ts/Ledger.keep/Database() > _·db@cli.ts/Ledger.keep/Database() value
+known #128 line Ledger@cli.ts/Ledger() > cli.ts/Ledger.keep/Database() value  # K
+line _·db@cli.ts/Ledger.keep/Database() > cli.ts/Ledger.keep/get value
+known #101 line _·db@cli.ts/Ledger.keep/Database() > cli.ts/Ledger.keep value                 # keep uses it itself (`db.exec`, `db.close`)
 line cli.ts/Ledger.keep/get > _·stored@cli.ts/Ledger.keep/get value
 known #101 line _·stored@cli.ts/Ledger.keep/get > cli.ts/Ledger.keep value     # keep checks the count itself
 line cli.ts/Ledger.keep > SQLite(notes) own
 
 home Ledger@cli.ts/Ledger() cli.ts
 home Ledger@cli.ts/Ledger.keep cli.ts
-known #125 home _·db@cli.ts/Ledger.keep/Database() cli.ts/Ledger.keep                          # I
+home _·db@cli.ts/Ledger.keep/Database() cli.ts/Ledger.keep
 home _·stored@cli.ts/Ledger.keep/get cli.ts/Ledger.keep
 
 # An error is a value (#121, decision 4): `Error(..)` makes it in the arm that raises it, and each border it crosses
@@ -40,8 +40,6 @@ known #138 home Error@cli.ts/Ledger.keep cli.ts
 
 side entry left
 side SQLite(notes) right
-# I: a library's constructor whose result the body names (`const db = new Database(..)`) is no step, so `db` is no
-#    value; `duckdb.connect(..)` and `Connection::open(..)`, which say the same, are steps.
 # #101: a value made in the body and used by the body's own calls has no taker
 # K: a value handed through a field reaches no step inside: `new Database(this.path)` hands `this` (#121, decision 1,
 #    cause 3: the reader's `held_in` skips `this` even inside an argument)
