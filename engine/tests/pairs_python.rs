@@ -507,6 +507,61 @@ fn lens_what_is_appended_to_what_is_put_is_put() {
     assert!(observe.sites.iter().flat_map(|x| &x.gives).all(|g| g.name != "frozen" && g.name != "path"), "{:?}", observe.sites);
 }
 
+/// A call is handed the values the names in its arguments hold, `self` among them: `write_rows(self.path,
+/// rows)` in `Store.put` is handed the store the method runs on with the rows, the projection `.path`
+/// glued into the call. A method called on `self` itself runs on that store, which its step says, and is
+/// handed nothing for it. A call in an argument that is a step of its own takes its names itself:
+/// `Message(level.prefix() + job.name)` is handed what `prefix` gives and `job`, not `level`.
+#[test]
+fn a_call_is_handed_the_values_the_names_in_its_arguments_hold() {
+    for side in ["clean", "shortcut"] {
+        let g = gathering(side);
+        let put = g.node("gathering.store.Store.put").unwrap();
+        let hands = |to: &str| put.sites.iter().find(|x| x.to == to).map(|x| x.hands.clone()).unwrap_or_default();
+        let store = "gathering.store.Store";
+        assert!(hands("gathering.store.write_rows").iter().any(|h| h.ty == store), "{side}: {:?}", put.sites);
+        assert!(hands("gathering.store.write_rows").iter().any(|h| h.name == "rows"), "{side}: {:?}", put.sites);
+        let own = put.sites.iter().find(|x| x.to == "gathering.store.Store._rows").unwrap();
+        assert!(own.on_receiver && own.hands.iter().all(|h| h.ty != store), "{side}: {:?}", own);
+    }
+    let c = choices_side("clean");
+    let report = c.node("runs.core.report").unwrap();
+    for message in report.sites.iter().filter(|x| x.to == "runs.core.Message") {
+        assert!(message.hands.iter().all(|h| h.name != "level"), "{:?}", message.hands);
+        assert!(message.hands.iter().any(|h| h.name == "job"), "{:?}", message.hands);
+    }
+    assert!(report.sites.iter().any(|x| x.to == "runs.core.Level.prefix" && x.hands.iter().any(|h| h.name == "level")));
+
+    // a projection bound to a name first is still the projection, a lookup among them; a name a
+    // `lambda` binds is no value of the body
+    let g = program(
+        "projection",
+        "from dataclasses import dataclass\n\n\n@dataclass\nclass Settings:\n    width: int\n\n\n@dataclass\nclass Shape:\n    w: int\n\n\n\
+         def draw(w: int) -> Shape:\n    return Shape(w)\n\n\n\
+         def run(settings: Settings, table: dict[str, Settings]) -> list[Shape]:\n    width = settings.width\n    a = draw(width)\n    \
+         row = table[\"x\"]\n    b = draw(row.width)\n    c = sorted([a, b], key=lambda s: s.w)\n    return c\n",
+    );
+    let run = g.node("demo.core.run").unwrap();
+    let hands: Vec<Vec<String>> = run
+        .sites
+        .iter()
+        .map(|x| x.hands.iter().map(|h| format!("{}·{}", h.ty.rsplit('.').next().unwrap_or(""), h.name)).collect())
+        .collect();
+    assert_eq!(hands, [vec!["Settings·settings"], vec!["Settings·table"], vec!["Shape·a", "Shape·b"]]);
+}
+
+/// A program of one module, `demo/core.py` holding `code`, read as a repository of its own.
+fn program(name: &str, code: &str) -> Graph {
+    let root = std::env::temp_dir().join(format!("atlas-python-{name}-{}", std::process::id()));
+    std::fs::create_dir_all(root.join("src/demo")).expect("makes the package");
+    std::fs::write(root.join("pyproject.toml"), "[project]\nname = \"demo\"\nversion = \"0\"\n").expect("writes the manifest");
+    std::fs::write(root.join("src/demo/__init__.py"), "").expect("writes the package");
+    std::fs::write(root.join("src/demo/core.py"), code).expect("writes the module");
+    let g = analyze(&root, &Options::default()).expect("reads");
+    let _ = std::fs::remove_dir_all(&root);
+    g
+}
+
 /// One side of the sum pair (`tests/pairs/sums`): a knowledge base that adds a source and gives
 /// back the graph of its nodes, in Python, Rust and TypeScript alike.
 fn kennis(side: &str) -> Graph {

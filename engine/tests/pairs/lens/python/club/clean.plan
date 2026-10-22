@@ -15,6 +15,7 @@ line entry > Board()/Board.posts call
 line Board()/Board() > Board@Board()/Board() value
 known #74 line Board > Board()/Board.pin value   # the caller's instance: every method runs on it
 known #74 line Board > Board()/Board.posts value
+known #74 line Board > Board()/Board.posts/Notice() value   # `Notice(**json.loads(self.path.read_text()))` hands the board
 known #127 line Notice·notice > Board()/Board.pin value          # #127: pin's parameter, by the name that holds it
 line Board()/Board.pin > Disk(Board.path) own
 line Disk(Board.path) > Board()/Board.posts own
@@ -37,4 +38,4 @@ known #127 extra home Notice Board()
 
 # what the constructor builds goes back to its caller: Atlas runs the methods on it instead of the caller's instance
 known #74 extra line Board@Board()/Board() > Board()/Board.pin value
-known #74 extra line Board@Board()/Board() > Board()/Board.posts value
+known #74 extra line Board@Board()/Board() > Board()/Board.posts/Notice() value

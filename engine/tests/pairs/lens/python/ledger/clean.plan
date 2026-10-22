@@ -14,6 +14,7 @@ line entry > Ledger()/Ledger.get call
 line Ledger()/Ledger() > Ledger@Ledger()/Ledger() value
 known #74 line Ledger > Ledger()/Ledger.put value   # the caller's instance: every method runs on it
 known #74 line Ledger > Ledger()/Ledger.get value
+known #74 line Ledger > Ledger()/Ledger.get/Entry() value   # `Entry(Fraction(self.path.read_text()))` hands the ledger
 known #127 line Fraction·amount > Ledger()/Ledger.put value      # #127
 line Ledger()/Ledger.put > Disk(Ledger.path) own
 line Disk(Ledger.path) > Ledger()/Ledger.get own
@@ -37,4 +38,4 @@ known #127 extra line Fraction > Ledger()/Ledger.put value
 
 # what the constructor builds goes back to its caller: Atlas runs the methods on it instead of the caller's instance
 known #74 extra line Ledger@Ledger()/Ledger() > Ledger()/Ledger.put value
-known #74 extra line Ledger@Ledger()/Ledger() > Ledger()/Ledger.get value
+known #74 extra line Ledger@Ledger()/Ledger() > Ledger()/Ledger.get/Entry() value
