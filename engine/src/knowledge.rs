@@ -4,8 +4,38 @@
 
 // ---------- the web ----------
 
-/// The methods a request goes by.
-pub const HTTP_METHODS: &[&str] = &["get", "post", "put", "patch", "delete", "head", "options"];
+/// The way a request goes by its method, as a statement goes by its verb (`effects::sql`): a
+/// `GET` takes what the place holds, and `HEAD` and `OPTIONS` what it says of it; a `POST`, `PUT`,
+/// `PATCH` or `DELETE` leaves something there. What a request that leaves something answers is
+/// what the place gives back of what it left, read back, no use of what was there. One table for
+/// every language: each reader writes the method into the request it builds (`paths::request_of`,
+/// `fetch`'s `init.method`), whatever library sends it.
+pub const REQUEST_WAYS: &[(&str, Dir)] = &[
+    ("get", Dir::Read),
+    ("head", Dir::Read),
+    ("options", Dir::Read),
+    ("post", Dir::Write),
+    ("put", Dir::Write),
+    ("patch", Dir::Write),
+    ("delete", Dir::Write),
+];
+
+/// The methods a request goes by: those of `REQUEST_WAYS`.
+pub const HTTP_METHODS: &[&str] = &{
+    let mut out = [""; REQUEST_WAYS.len()];
+    let mut i = 0;
+    while i < out.len() {
+        out[i] = REQUEST_WAYS[i].0;
+        i += 1;
+    }
+    out
+};
+
+/// The way a request goes by its method, in any case (`delete`, `DELETE`); none where the code
+/// does not say the method.
+pub fn request_way(method: &str) -> Option<Dir> {
+    REQUEST_WAYS.iter().find(|(m, _)| m.eq_ignore_ascii_case(method)).map(|(_, d)| *d)
+}
 
 /// The hosts that are the machine a program runs on, where the other parts of a repository may
 /// serve their routes.
@@ -476,6 +506,23 @@ pub const TYPESCRIPT_CONTAINERS: &[&str] = &[
     "Omit",
     "NonNullable",
     "Awaited",
+    "Iterable",
+    "AsyncIterable",
+    "Generator",
+    "AsyncGenerator",
+];
+
+/// The TypeScript containers among `TYPESCRIPT_CONTAINERS` that hold many values, not one: the
+/// collections, and what an iterator gives. A pair one holds is an element of a type the code does
+/// not name (`Array<[Date, number]>`), as Rust's `RUST_COLLECTIONS` read it.
+pub const TYPESCRIPT_COLLECTIONS: &[&str] = &[
+    "Array",
+    "ReadonlyArray",
+    "Set",
+    "ReadonlySet",
+    "Map",
+    "ReadonlyMap",
+    "Record",
     "Iterable",
     "AsyncIterable",
     "Generator",
@@ -1577,6 +1624,11 @@ pub struct DerivedParser {
 /// The functions that give the command line the program is run with, word by word, unparsed: what
 /// they give is the entry's, whatever the program makes of it.
 pub const RUST_COMMAND_LINE: &[&[&str]] = &[&["std", "env", "args"], &["std", "env", "args_os"]];
+
+/// The values of a JavaScript runtime that hold the command line the program is run with, word by
+/// word, unparsed, as `RUST_COMMAND_LINE` gives it: Node's (and Bun's) `process.argv`, Deno's
+/// `Deno.args`.
+pub const TYPESCRIPT_COMMAND_LINE: &[&[&str]] = &[&["process", "argv"], &["Deno", "args"]];
 
 /// clap's derive: `#[derive(Parser)] struct Cli { #[arg(long, default_value = RAW)] raw: PathBuf }`,
 /// with the options a struct of `Args` or a variant of `Subcommand` adds to it.
