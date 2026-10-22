@@ -70,6 +70,15 @@ The rigorous half and the visual half are the same structure. Read `docs/referen
 - **The mathematics has one home.** Every notion Atlas uses (a functor, a fiber, Yoneda, a
   quotient) has an entry in `docs/reference/mathematics.md`: what it is, what it is in Atlas, where
   it lives. A notion Atlas starts to use is written there first.
+- **A design question gets a derivation, not a vote.** What Atlas draws is settled in this order:
+  first the six sentences and `docs/reference/mathematics.md`, as consistently as they allow (forms
+  that are isomorphic are the same; a form is never made special when a general rule already covers
+  it); where they leave room, UI/UX and good coding practice; only what is left after both is
+  Raoul's preference. Write the derivation on the issue (label `decision`) and act on it; a
+  principle it adds goes into `mathematics.md`. The map is not the territory: how fine a picture is
+  drawn is answered by zoom and filters (quotients and fibers), never by dropping a fact from the
+  graph. What does go to Raoul is put visually: what the question means for the picture, the
+  pictures it chooses between side by side, with the derivation that narrowed it to them.
 - **Keep it simple.** The basic elements first, rigorous and consistent across all
   future codebases, before any richness. One question per feedback round.
 - **Plan in GitHub issues first**, in `raoulg/atlas`: Atlas is developed in the open. Record
