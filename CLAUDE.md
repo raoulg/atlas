@@ -171,10 +171,13 @@ Two long-lived branches, one release train. Everything else is a short-lived top
   beside a program writes down the plan its code implies (`engine/tests/plans/README.md`). A plan is written from the
   code and `docs/reference/mathematics.md`, never from what Atlas draws; a change to what the plan says lands with the
   plans it moves, and a defect a plan shows is marked `known #N` with its issue, the mark going with the fix.
-- Disk: cargo names Atlas's builds by its version, so every raise leaves a full set of test
-  binaries behind (they reached 260 GB). A commit that raises the version removes them, in the
-  worktree it is made in: `lefthook.yml` runs `tools/clean-old-builds.sh` after each commit (`lefthook
-  install` once per clone; worktrees share it). Dependencies stay, so the next build stays quick.
+- Disk: cargo names Atlas's builds by its version and by the hash of its dependencies and toolchain,
+  so every raise, dependency update or new Rust leaves a full set of builds behind (they reached
+  260 GB). `lefthook.yml` runs `tools/clean-old-builds.sh` after each commit and merge, in the
+  worktree it is made in (`lefthook install` once per clone; worktrees share it): a commit that raises
+  the version removes Atlas's builds of the old one, and `cargo sweep` (from the Brewfile) keeps
+  `target` below 15 GB by removing the least recently used builds. Dependencies stay, so the next
+  build stays quick.
   When `df -h ~` still runs low, `cargo clean -p atlas -p atlas-engine` (and with `--release`) in
   your own worktree; never another session's target. The larger cost is the number of worktrees,
   each with its own `target` of 3 to 18 GB: remove a worktree when its branch is merged (see
