@@ -788,7 +788,11 @@ const stepMorphism = (key, own, isAnchor, leaf) => {
       for (const k of m.cod.keys()) if (held && kindKey(k) === kind && !cn.has(k)) cn.set(k, dn.get(held));
     }
   }
-  return {dom: m.dom, cod: m.cod, dn, cn, goes: m.goes, beyond, keep, kept};
+  // what the body's own code uses outside the calls that are its steps (`print(store.path)`, `if done:`, `Ok(path)`), as the
+  // reader gives it: taken at the border by the names that hold them, inside the frame
+  const uses = own && !leaf && !step.startsWith("op:") ? (byId.get(step)?.uses || []).filter(u => u.name) : [];
+  for (const u of uses) if (u.type) addPlace({...typePlace(u.type), id: `t:${u.type}~${u.name}`, name: u.name});
+  return {dom: m.dom, cod: m.cod, dn, cn, goes: m.goes, beyond, keep, kept, uses};
 };
 // build the nested picture: frames for open steps, pills for closed ones (siblings with the same places are one pill)
 const pills = new Map(), frames = new Map();  // id -> {...}
@@ -830,7 +834,7 @@ const build = (node, parent, caller) => {
     const hb = fine ? !!parent && !caller && node.id !== V.route && !lib && !/^(part|unit|op):/.test(node.id) && goesBack(node.id, own.cod) : !!frames.get(fid).closed?.hb;
     const said = hb ? backName(node.id, own.cod) : null;
     if (own.dom.size || own.cod.size || hb || (back.length && !lib && !node.id.startsWith("unit:"))) {
-      const oid = "o:" + node.id, own_ = {id: oid, steps: [node.id], D: own.dom, C: own.cod, dn: own.dn, cn: own.cn, goes: own.goes, parent: fid, hue: node.hue, own: true, beyond: own.beyond, keep: own.keep, ...(said ? {said} : {}), ...(fine && node.id !== V.route && !lib ? {border: true} : {})};
+      const oid = "o:" + node.id, own_ = {id: oid, steps: [node.id], D: own.dom, C: own.cod, dn: own.dn, cn: own.cn, goes: own.goes, parent: fid, hue: node.hue, own: true, beyond: own.beyond, keep: own.keep, ...(own.uses?.length ? {uses: own.uses} : {}), ...(said ? {said} : {}), ...(fine && node.id !== V.route && !lib ? {border: true} : {})};
       pills.set(oid, own_);
       for (const b of back) b.backTo = oid;
       if (hb) return [own_];
@@ -962,12 +966,12 @@ const scopeOf = P => {
 // the arms of the choices in a body a step stands in: what one arm makes, no step of another arm of that choice takes
 const armsAbove = P => { const out = new Map(); for (let F = P.own ? frames.get(P.parent) : P; F; F = frames.get(F.parent)) if (frames.get(F.parent)?.synthetic) out.set(F.parent, F.branch); return out; };
 const latestSet = (key, v, P, scope = scopeOf(P), param = false) => { if (!latest.has(key)) latest.set(key, []); latest.get(key).push({v, scope, arms: armsAbove(P), param}); };
-const latestGet = (key, P) => {
+const latestGet = (key, P, inner = false, arms = null) => {
   const es = latest.get(key); if (!es) return null;
-  const here = new Set(planChain(P.parent)), mine = armsAbove(P);
+  const here = new Set(planChain(P.parent)), mine = arms || armsAbove(P);
   const apart = e => [...e.arms].some(([c, b]) => mine.has(c) && mine.get(c) !== b);
   // a parameter holds its value for the steps inside the body, not for the call that hands it, at the frame's own arrow
-  const outside = e => e.param && P.own && P.parent === e.scope;
+  const outside = e => !inner && e.param && P.own && P.parent === e.scope;
   for (let i = es.length - 1; i >= 0; i--) if ((!es[i].scope || here.has(es[i].scope)) && !apart(es[i]) && !outside(es[i])) return es[i].v;
   return null;
 };
@@ -1075,6 +1079,17 @@ for (const P of pills.values()) {
     if (armKey.has(v) && !armsAbove(P).has(places.get(v).at)) for (const w of armValues.get(armKey.get(v))) if (w !== v) Dv.set(w, r);
     if (v && P.keep?.has(k)) (P.kept ||= new Set()).add(v);
   });
+  // a value the body uses itself is the one its name holds there, made inside or handed in; a name that holds none (a
+  // result that went back, a literal) adds nothing
+  // a use in an arm of a choice finds what that arm holds (`arms`, numbered as a site's)
+  for (const u of P.uses || []) {
+    const base = u.type ? `t:${u.type}~${u.name}` : "v:" + u.name, sum = u.type && SUM_OF.get(u.type);
+    const arms = new Map([...armsAbove(P), ...(u.arms || []).map(([c, b]) => [`n:${frames.get(P.parent).step}~c${c}`, b])]);
+    const v = latestGet(kindKey(base) + "|" + u.name, P, true, arms) || (sum && latestGet("t:" + kindOf(sum) + "|" + u.name, P, true, arms));
+    if (!v) continue;
+    if (!Dv.has(v)) Dv.set(v, false);
+    (P.used ||= new Set()).add(v);
+  }
   P.C.forEach((r, k) => {
     if (!isMem(k) || inside(k) || !V.route) { Cv.set(k, r); if (mult && P.mult.C.has(k)) mult.C.set(k, P.mult.C.get(k)); return; }
     const nm = name(P.cn, k), a = armOf(P);
@@ -1105,11 +1120,11 @@ if (fine) {
     const fid = P.parent, within = [...pills.values()].filter(Q => Q !== P && planChain(Q.parent).includes(fid));
     const stays = (v, seen = new Set()) => !seen.has(v) && (seen.add(v), within.some(Q => Q.D.has(v) && (!isOp(Q) || (Q.C.size > 0 && [...Q.C.keys()].every(c => stays(c, seen))))));
     const madeHere = v => { const at = places.get(v)?.at; return !!at && (at.startsWith(fid + "/") || at.startsWith(fid + "|") || at.startsWith(fid + "~c")); };
-    for (const v of P.kept || []) if (madeHere(v) && stays(v)) P.D.delete(v);
+    for (const v of P.kept || []) if (madeHere(v) && stays(v) && !P.used?.has(v)) P.D.delete(v);
     // what the signature takes by no name from beyond is the parameter a step inside takes by its name
     const beyond = v => !places.get(v)?.at && !places.get(v)?.name && v.startsWith("t:");
     const crosses = v => within.some(Q => Q.D.has(v) || (beyond(v) && [...Q.D.keys()].some(w => !places.get(w)?.at && places.get(w)?.type === places.get(v).type)));
-    for (const v of [...P.D.keys()]) if (isMem(v) && !madeHere(v) && crosses(v)) P.D.delete(v);
+    for (const v of [...P.D.keys()]) if (isMem(v) && !madeHere(v) && crosses(v) && !P.used?.has(v)) P.D.delete(v);
   }
 }
 // zoom does not touch the moments: they are counted on the values themselves, and then a value

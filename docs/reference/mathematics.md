@@ -396,7 +396,12 @@ open:
   cross its frame. An opened step draws it as a point on the frame's right edge, not as a step beside
   its steps: a value its call is handed crosses the frame to the step inside that takes it (the value
   its signature takes by no name is the parameter a step inside takes by its name), and the
-  point keeps what the body itself takes and what it gives back, at the step's moment. Of what the
+  point keeps what the body itself takes and what it gives back, at the step's moment. What the body's
+  own code uses outside its steps (a print, a condition, a format, what it returns), of a value a step
+  inside made or one it is handed, is a line from that value to the point, also where a step inside
+  takes the value too: the line lies inside the frame, so it is internal to the closed step (rule 2)
+  and the value stands in the step's frame. A value no line takes says that the body drops it; the
+  map draws fewer facts by zoom, never by leaving one out. Of what the
   body's steps make, what it gives back is what no step of the code among them takes: a value built
   only to be handed into another step (`Row(Reading(line))`) is that step's. A value handed into a
   library's operation goes on in what the operation gives, and is the operation's only where that

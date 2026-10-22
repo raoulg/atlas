@@ -35,8 +35,9 @@ order in its body, and its arms stand below it (`pick/?1/load_csv`). A second ca
 `write_to#2`. Building a class runs the initializer along its order, and the step that builds it opens into that body
 (`run/Audit()/stamp`), never into the class's methods; an initializer another calls (`super(text)`) builds nothing. An
 override in a call into a family takes what the call is handed and runs on what the call runs on. In `F` every
-occurrence with calls is open. As the end of a line it is its own arrow, a point on its
-border that keeps what the body itself takes and what it gives back, at the step's moment. A value the step's call is
+occurrence with calls is open. As the end of a line it is its own arrow, a point on its border that keeps what the body
+itself takes and what it gives back, at the step's moment: what the body's own code uses outside its steps
+(`print(store.path)`, `if done:`), of a value made inside or handed in, is a line to it. A value the step's call is
 handed crosses the frame to the step inside that takes it. A call into a library the program does not read is an
 occurrence where the body names what it gives (`con = duckdb.connect(path)`) or where it changes the value it runs on
 (`rows.append(row)`), labelled by the operation (`connect`, `append`); otherwise what it gives goes into the call around
