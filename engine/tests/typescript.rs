@@ -684,3 +684,162 @@ fn a_value_through_its_wrappers_is_the_value_inside() {
     }
     assert!(has(&edges(&g, EdgeKind::Calls), &format!("{r}.store.fill"), &format!("{r}.store.Store.plain")), "a cast names the class");
 }
+
+/// An object literal the compiler checks against a type of the program's builds a value of it, as
+/// `new` does, a struct expression in Rust and a call of the class in Python (#154): handed to a
+/// parameter its function writes with the type, also of a method or a constructor and of a function
+/// another module declares, written `satisfies` or `as` the type. The call it is handed to is handed
+/// what it builds. A literal written for a type that is no plain name of the program's
+/// (`Partial<Box>`) builds nothing, and neither does one handed to a rest parameter.
+#[test]
+fn an_object_literal_of_a_type_of_the_programs_builds_it() {
+    let g = written(
+        "literals",
+        &[
+            ("package.json", r#"{ "name": "literals" }"#),
+            ("tsconfig.json", "{}"),
+            (
+                "src/model.ts",
+                r#"export interface Box {
+  size: number;
+}
+
+export function weigh(b: Box, scale: number): number {
+  return b.size * scale;
+}
+"#,
+            ),
+            (
+                "src/main.ts",
+                r#"import { weigh } from "./model.js";
+import type { Box } from "./model.js";
+
+class Shelf {
+  constructor(readonly first: Box) {}
+
+  put(b: Box): number {
+    return b.size;
+  }
+}
+
+function part(b: Partial<Box>): number {
+  return b.size ?? 0;
+}
+
+function all(...bs: Box[]): number {
+  return bs.length;
+}
+
+export function main(n: number): number {
+  const shelf = new Shelf({ size: n });
+  const kept = { size: 2 } satisfies Box;
+  const cast = { size: 3 } as Box;
+  return weigh({ size: 1 }, 2) + shelf.put({ size: n }) + part({ size: 4 }) + all({ size: 5 }) + kept.size + cast.size;
+}
+"#,
+            ),
+        ],
+    );
+    let main = g.node(&format!("{}.main.main", g.root)).expect("main");
+    let bx = format!("{}.model.Box", g.root);
+    let built: Vec<u32> = main.sites.iter().filter(|s| s.to == bx).map(|s| s.line).collect();
+    assert_eq!(
+        built,
+        [21, 22, 23, 24, 24],
+        "`new Shelf({{..}})`, `satisfies`, `as`, `weigh({{..}})`, `shelf.put({{..}})`: {:#?}",
+        main.sites
+    );
+    let kept: Vec<&str> = main
+        .sites
+        .iter()
+        .filter(|s| s.to == bx)
+        .flat_map(|s| s.gives.iter().map(|h| h.name.as_str()))
+        .filter(|n| !n.starts_with('#'))
+        .collect();
+    assert_eq!(kept, ["kept", "cast"], "a literal kept by a name gives it");
+    let weigh = main.sites.iter().find(|s| s.to.ends_with(".weigh")).expect("weigh");
+    assert!(weigh.hands.iter().any(|h| h.ty == bx && h.name.starts_with('#')), "weigh is handed the Box the literal builds: {weigh:#?}");
+    let part = main.sites.iter().find(|s| s.to.ends_with(".part")).expect("part");
+    assert!(part.hands.is_empty(), "`Partial<Box>` is no Box: {part:#?}");
+}
+
+/// A call gives anew each value it changes among what it is handed, under the name it was handed
+/// (#129): the value it is called on where the method changes `this`, and each argument whose
+/// parameter the function changes, also through a call of another that changes it (`refill` hands
+/// its `xs` to `addAll`). A change through a projection changes its owner (`fill(box.items)` gives
+/// `box`), a name of no type of the program's is of the type the change is drawn as (an Array), and
+/// what the call makes anew (a spread) changes nothing of the body's. `this.items.push(..)` is the
+/// language's `push` on a part of the value the method runs on: it is handed `this` and gives it
+/// anew.
+#[test]
+fn a_call_gives_anew_what_it_changes_of_what_it_is_handed() {
+    let g = written(
+        "changed",
+        &[
+            ("package.json", r#"{ "name": "changed" }"#),
+            ("tsconfig.json", "{}"),
+            (
+                "src/main.ts",
+                r#"export class Box {
+  items: string[] = [];
+
+  add(x: string): void {
+    this.items.push(x);
+  }
+}
+
+function addAll(xs: string[], more: string[]): void {
+  xs.push(...more);
+}
+
+function refill(xs: string[]): void {
+  addAll(xs, ["a"]);
+}
+
+function fill(items: string[]): void {
+  items.push("b");
+}
+
+export function main(): number {
+  const box = new Box();
+  const other = new Box();
+  box.add("a");
+  const lines: string[] = [];
+  refill(lines);
+  fill(box.items);
+  fill([...other.items]);
+  return lines.length + box.items.length;
+}
+"#,
+            ),
+        ],
+    );
+    let r = &g.root;
+    let mut via: Vec<(String, String)> = g
+        .edges
+        .iter()
+        .filter(|e| e.kind == EdgeKind::Mutates && e.src == format!("{r}.main.refill"))
+        .map(|e| (e.dst.clone(), e.via.clone().unwrap_or_default()))
+        .collect();
+    via.sort();
+    assert_eq!(via, [("ext:javascript.Array".to_string(), "xs".to_string())], "refill changes what it hands addAll");
+    let main = g.node(&format!("{r}.main.main")).expect("main");
+    let gives = |to: &str| -> Vec<Vec<(String, String)>> {
+        main.sites
+            .iter()
+            .filter(|s| s.to.ends_with(to))
+            .map(|s| s.gives.iter().map(|h| (h.ty.rsplit('.').next().unwrap_or("").to_string(), h.name.clone())).collect())
+            .collect()
+    };
+    let bx = ("Box".to_string(), "box".to_string());
+    assert_eq!(gives(".Box.add"), [vec![bx.clone()]], "`box.add(..)` changes the box");
+    assert_eq!(gives(".refill"), [vec![("Array".to_string(), "lines".to_string())]], "through `addAll`");
+    assert_eq!(gives(".fill"), [vec![bx], vec![]], "`fill(box.items)` changes the box; a spread is a new array");
+    let add = g.node(&format!("{r}.main.Box.add")).expect("add");
+    let push = add.sites.iter().find(|s| s.op == "push").unwrap_or_else(|| panic!("{:#?}", add.sites));
+    let held = |hs: &[atlas_engine::Held]| -> Vec<(String, String)> { hs.iter().map(|h| (h.ty.clone(), h.name.clone())).collect() };
+    let this = format!("{r}.main.Box");
+    assert!(push.changes && !push.not_followed, "{push:#?}");
+    assert!(held(&push.hands).contains(&(this.clone(), String::new())), "handed the box it runs on: {push:#?}");
+    assert_eq!(held(&push.gives), [(this, "this".to_string())], "and gives it anew");
+}
