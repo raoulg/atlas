@@ -6,9 +6,7 @@
 # changes the String it runs on (`push_str`), is a step; what it touches stays its caller's. Each file is read, used and
 # written by the route: it stands on both sides.
 #
-# Issues marked: #103 an element of what a body iterates; #125 which library operations are steps; #126 what the own
-# arrow keeps; #128 a call handed nothing through self, a closure, an index or a chain; #130 which forms are choices;
-# #138 an error a step hands on.
+# Issues marked: #126 what the own arrow keeps; #138 an error a step hands on.
 
 route harvest.ReadingStore
 step ReadingStore()/ReadingStore.new
@@ -123,7 +121,7 @@ line ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/Reading() > Rea
 line Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/Reading() > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history value # #130
 line ReadingStore()/ReadingStore.summary/?1/ReadingStore.history > Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history value # #130
 line Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history > ReadingStore()/ReadingStore.summary/?1/collect value # #130
-known #128 line Day·day > ReadingStore()/ReadingStore.summary/?1/collect value # a closure: the filter by `day.date` goes into collect
+line Day·day > ReadingStore()/ReadingStore.summary/?1/collect value # a closure: the filter by `day.date` goes into collect
 line ReadingStore()/ReadingStore.summary/?1/collect > _·temperatures@ReadingStore()/ReadingStore.summary/?1/collect value # #130
 line _·temperatures@ReadingStore()/ReadingStore.summary/?1/collect > ReadingStore()/ReadingStore.summary/?1/fold value # #130
 line _·temperatures@ReadingStore()/ReadingStore.summary/?1/collect > ReadingStore()/ReadingStore.summary/?1/fold#2 value # #130
@@ -158,7 +156,7 @@ home _·t@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/next#3 Rea
 home _·text@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/read_to_string ReadingStore()/ReadingStore.summary/?1/ReadingStore.history
 home _·parts@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/split ReadingStore()/ReadingStore.summary/?1/ReadingStore.history
 home Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/Reading() ReadingStore()/ReadingStore.summary/?1/ReadingStore.history
-known #130 home Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history ReadingStore()/ReadingStore.summary/?1
+known #126 home Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history ReadingStore()/ReadingStore.summary/?1   # only `collect` takes them
 home _·temperatures@ReadingStore()/ReadingStore.summary/?1/collect ReadingStore()/ReadingStore.summary/?1
 home _·low@ReadingStore()/ReadingStore.summary/?1/fold ReadingStore()/ReadingStore.summary
 home _·high@ReadingStore()/ReadingStore.summary/?1/fold#2 ReadingStore()/ReadingStore.summary

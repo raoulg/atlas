@@ -4,14 +4,15 @@
 # `lines.push(s)`, `m.set(..)`). `takeFrom` and `takeVictim` change the ledger they are called on and the one they are
 # handed (`other.rows.length = 0`, in their own body): two values each. `fileAll(ledger.rows)` is handed the ledger (a
 # projection is glued into the call around it) and files the expenses in its rows, so the ledger changes. `rename` is
-# handed an object literal. What `rename` gives goes back to `main`, what `takeFrom` and `takeVictim` give is dropped.
+# handed the Expense the object literal written for its parameter builds (#154). What `rename` gives goes back to `main`,
+# what `takeFrom` and `takeVictim` give is dropped.
 route ledger.ledger.main
 step main/Ledger()
 step main/Ledger()#2
 step main/Ledger.takeFrom
-step main/Ledger.takeFrom/this.rows.push
+step main/Ledger.takeFrom/push                                           # `this.rows.push(...other.rows)`
 step main/Ledger.takeVictim
-step main/Ledger.takeVictim/this.rows.push
+step main/Ledger.takeVictim/push
 step main/addLine
 step main/addLine/push
 step main/Map()                                                          # `const m = new Map<string, number>()`
@@ -19,18 +20,19 @@ step main/count
 step main/count/set
 step main/fileAll
 step main/fileAll/for e of expenses
+step main/Expense()                                                      # `rename({ category: "a" }, ..)`
 step main/rename
 
 line entry > main call
 line main/Ledger() > Ledger·ledger@main/Ledger() value
 line main/Ledger()#2 > Ledger·other@main/Ledger()#2 value
-line Ledger·other@main/Ledger()#2 > main/Ledger.takeFrom/this.rows.push value
+line Ledger·other@main/Ledger()#2 > main/Ledger.takeFrom/push value
 line main/Ledger.takeFrom > Ledger·ledger@main/Ledger.takeFrom value
-known #128 line Ledger·ledger@main/Ledger.takeFrom > main/Ledger.takeVictim/this.rows.push value # the push runs on this.rows, which the reader does not hand
+line Ledger·ledger@main/Ledger.takeFrom > main/Ledger.takeVictim/push value  # the push runs on this.rows, a part of the ledger
 line main/Ledger.takeVictim > Ledger·ledger@main/Ledger.takeVictim value
 line main/addLine/push > _·lines@main/addLine/push value
 line main/Map() > _·m@main/Map() value
-known #129 line _·m@main/Map() > main/count/set value                    # the Map `count` is handed, which its `set` changes
+known #128 line _·m@main/Map() > main/count/set value                    # the Map `count` is handed, which its `set` changes: `m` is a parameter of no type of the code's
 line main/count/set > _·m@main/count/set value
 line main/fileAll/for e of expenses > Expense·e@main/fileAll/for e of expenses value
 line Expense·e@main/fileAll/for e of expenses > main/fileAll value       # `e.category = ..` in the body
@@ -48,50 +50,47 @@ home Expense@main/rename main
 
 side entry left
 
-# A step handed a value through a projection takes, beside it, its parameter's type from beyond, and what it changes is
-# that type at its moment, not the value it was handed: `fileAll(ledger.rows)` changes the ledger
-known #129 line main/fileAll > Ledger·ledger@main/fileAll value
-known #129 home Ledger·ledger@main/fileAll main
+# A step handed a value through a projection changes its owner: `fileAll(ledger.rows)` changes the ledger, and the
+# parameter's type its arrow changes is no value of its own beside it
+line main/fileAll > Ledger·ledger@main/fileAll value
+home Ledger·ledger@main/fileAll main
 known #129 extra line main/fileAll > Expense@main/fileAll value
 known #129 extra home Expense@main/fileAll main
 
-# An operation that changes a part of the receiver (`this.rows.push(..)`) neither runs on nor makes anew the receiver,
-# which ends at the method's own arrow
-known #129 line Ledger·ledger@main/Ledger() > main/Ledger.takeFrom/this.rows.push value
-known #129 line main/Ledger.takeFrom/this.rows.push > Ledger·this@main/Ledger.takeFrom/this.rows.push value
-known #129 line Ledger·this@main/Ledger.takeFrom/this.rows.push > main/Ledger.takeFrom value
-known #129 line main/Ledger.takeVictim/this.rows.push > Ledger·this@main/Ledger.takeVictim/this.rows.push value
-known #129 line Ledger·this@main/Ledger.takeVictim/this.rows.push > main/Ledger.takeVictim value
-known #129 home Ledger·this@main/Ledger.takeFrom/this.rows.push main/Ledger.takeFrom
-known #129 home Ledger·this@main/Ledger.takeVictim/this.rows.push main/Ledger.takeVictim
-known #129 extra line Ledger·ledger@main/Ledger() > main/Ledger.takeFrom value
+# An operation that changes a part of the receiver (`this.rows.push(..)`) runs on the ledger the method runs on and
+# makes it anew: what the method's own arrow hands on
+line Ledger·ledger@main/Ledger() > main/Ledger.takeFrom/push value
+line main/Ledger.takeFrom/push > Ledger·this@main/Ledger.takeFrom/push value
+line Ledger·this@main/Ledger.takeFrom/push > main/Ledger.takeFrom value
+line main/Ledger.takeVictim/push > Ledger·this@main/Ledger.takeVictim/push value
+line Ledger·this@main/Ledger.takeVictim/push > main/Ledger.takeVictim value
+home Ledger·this@main/Ledger.takeFrom/push main/Ledger.takeFrom
+home Ledger·this@main/Ledger.takeVictim/push main/Ledger.takeVictim
 
 # The own arrow drops a value its own body reads when a step inside takes it too: `takeFrom` empties `other.rows` itself
 line Ledger·other@main/Ledger()#2 > main/Ledger.takeFrom value
+# itself, `takeVictim` `victim.rows`
+line Ledger·other@main/Ledger.takeFrom > main/Ledger.takeVictim value
 
-# A changed argument is not the caller's value at a new moment: the ledger handed to `takeFrom` is changed in no value,
-# so `takeVictim` takes it stale; a changed array or Map has no name, and is not what the inner change made
-known #129 line main/Ledger.takeFrom > Ledger·other@main/Ledger.takeFrom value
-known #129 line Ledger·other@main/Ledger.takeFrom > main/Ledger.takeVictim/this.rows.push value
-known #129 line Ledger·other@main/Ledger.takeFrom > main/Ledger.takeVictim value
-known #129 line main/Ledger.takeVictim > Ledger·other@main/Ledger.takeVictim value
-known #129 line _·lines@main/addLine/push > main/addLine value
-known #129 line main/addLine > Array·lines@main/addLine value
+# A changed argument is the caller's value at a new moment, under the name it was handed: the ledger handed to
+# `takeFrom` is changed, and `takeVictim` takes it as `takeFrom` left it; the array and the Map are made anew by the
+# step that changes them
+line main/Ledger.takeFrom > Ledger·other@main/Ledger.takeFrom value
+line Ledger·other@main/Ledger.takeFrom > main/Ledger.takeVictim/push value
+line main/Ledger.takeVictim > Ledger·other@main/Ledger.takeVictim value
+line main/addLine > Array·lines@main/addLine value
 line _·m@main/count/set > main/count value
-known #129 line main/count > Map·m@main/count value
-known #129 home Ledger·other@main/Ledger.takeFrom main
-known #129 home Ledger·other@main/Ledger.takeVictim main
-known #129 home Array·lines@main/addLine main
-known #129 home Map·m@main/count main
-known #129 extra line main/addLine > Array@main/addLine value
-known #129 extra line main/count > Map@main/count value
-known #129 extra home Array@main/addLine main
-known #129 extra home Map@main/count main
+line main/count > Map·m@main/count value
+home Ledger·other@main/Ledger.takeFrom main
+home Ledger·other@main/Ledger.takeVictim main
+home Array·lines@main/addLine main
+home Map·m@main/count main
+# the own arrow hands on what the change inside made of a value of no type of the code's
+known #129 line _·lines@main/addLine/push > main/addLine value
 
-# A callee's parameter is bound to the latest value of its type, not to what the call is handed: `rename` takes the
-# expenses `fileAll` filed, not the object literal
-known #154 line Expense > main/rename value
-known #154 extra line Expense@main/fileAll > main/rename value
+# `rename` is handed the Expense the object literal builds, as its parameter is written
+line main/Expense() > Expense@main/Expense() value
+line Expense@main/Expense() > main/rename value
 
 # A step that changes an input loses the result of no type it gives back
 line main/rename > main back
@@ -99,18 +98,17 @@ line main/rename > main back
 # The own arrow takes a value its body only hands to a step inside it: the ledger whose rows go to `fileAll`
 
 # `main` reads the length of the array and the size of the Map its steps changed
-known #129 line Array·lines@main/addLine > main value   # the reader gives the use (#101); the value it uses waits on #129
-known #129 line Map·m@main/count > main value
+line Array·lines@main/addLine > main value   # the reader gives the use (#101); the value it uses waits on #129
+line Map·m@main/count > main value
 
 # The loop goes over the ledger `fileAll` is handed through its rows: its parameter `expenses` holds that projection.
-# `rename` is handed an object literal, which builds no Expense yet (#154)
+# The object literal handed to `rename` builds an Expense in `main`
 line Ledger·ledger@main/Ledger.takeVictim > main/fileAll/for e of expenses value
-known #154 home Expense main
+home Expense@main/Expense() main
 
 # a result the caller drops goes back to it: the reader does not say the call is a statement of its own
 
 # the push is handed the victim the call hands, stale (#129), and not this (#128): the own arrow takes this itself
-known #129 extra line Ledger·other@main/Ledger()#2 > main/Ledger.takeVictim/this.rows.push value
-known #129 extra line Ledger·other@main/Ledger()#2 > main/Ledger.takeVictim value   # takeVictim empties `victim.rows` itself, the stale ledger
-known #129 extra line _·m@main/Map() > main value                     # `m.size` reads the Map before `count`, as the change made no value
-known #128 extra line Ledger·ledger@main/Ledger.takeFrom > main/Ledger.takeVictim value
+# the own arrow takes the last value of every class its steps build (`made_from`), though `main` gives back a number
+known #126 extra line Ledger·ledger@main/fileAll > main value
+known #126 extra line Expense@main/rename > main value

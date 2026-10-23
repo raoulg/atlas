@@ -212,6 +212,12 @@ impl CliFramework {
 
 // ---------- a Python project's manifest ----------
 
+/// The files the Python tools read from a project's root to install or build it, each of which says
+/// that the directory holds a Python project: the standard's `pyproject.toml`, setuptools'
+/// `setup.py` and `setup.cfg`, pip's `requirements.txt` and pipenv's `Pipfile`. A lock is made from
+/// one of them, and conda's `environment.yml` holds any language's packages.
+pub const PYTHON_PROJECT_FILES: &[&str] = &["pyproject.toml", "setup.py", "setup.cfg", "requirements.txt", "Pipfile"];
+
 /// What a table of entry points declares: programs, run by their names, or plugins, each loaded
 /// by the host that names its group.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

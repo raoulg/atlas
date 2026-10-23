@@ -20,7 +20,7 @@ line Kennisbank()/Kennisbank.new > Kennisbank@Kennisbank()/Kennisbank.new value
 known #126 line Kennisbank > Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write value   # its own write at self.path; read_to_string inside takes it too
 line Kennisbank > Kennisbank()/Kennisbank.graaf value
 
-line Bron·bron > Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write value                    # what it is handed: `bron.uuid`, `bron.url` glue `bron` in
+line Bron·bron > Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push_str value           # what it is handed: `bron.uuid`, `bron.url` glue `bron` in, held by `line`
 line Disk(Kennisbank.path) > Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write own
 line Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write > Disk(Kennisbank.path) own
 

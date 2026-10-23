@@ -30,7 +30,8 @@ line run/?1/load > Job·job@run/?1 value
 line run/?1/infer/Job() > Job@run/?1/infer/Job() value
 line Job@run/?1/infer/Job() > run/?1/infer value
 line run/?1/infer > Job·job@run/?1 value
-line Settings·settings > run/finished value                       # its mode, a String, held by finished's `mode`
+line Settings·settings > run/finished/Runner.new/Runner() value   # its mode, a String, held by finished's `mode` and new's
+line Settings·settings > run/finished/timeout value               # and handed to timeout, which tests it again
 line Job·job@run/?1 > run/finished value                          # finished counts its steps
 line Job·job@run/?1 > run value   # run writes its name into the text
 

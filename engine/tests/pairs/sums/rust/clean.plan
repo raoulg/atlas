@@ -31,7 +31,7 @@ known #126 line Kennisbank > Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write v
 known #126 line Kennisbank > Kennisbank()/Kennisbank.graaf value   # its own read at self.path, glued into the literal Graaf() is handed
 
 # the put: the Bron a caller hands is written into the line `write` appends to what the file held
-line Bron·bron > Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write value                    # what it is handed: `bron.uuid`, `bron.url` glue `bron` in
+line Bron·bron > Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push_str value           # what it is handed: `bron.uuid`, `bron.url` glue `bron` in, held by `line`
 line Disk(Kennisbank.path) > Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write own
 line Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write > Disk(Kennisbank.path) own
 
@@ -45,7 +45,7 @@ line Begrip@Kennisbank()/Kennisbank.graaf/node/?1/Begrip() > Kennisbank()/Kennis
 line Kennisbank()/Kennisbank.graaf/node/?1/Node()#2 > Node@Kennisbank()/Kennisbank.graaf/node/?1 value
 line Node@Kennisbank()/Kennisbank.graaf/node/?1 > Kennisbank()/Kennisbank.graaf/node value
 line Kennisbank()/Kennisbank.graaf/node > Node@Kennisbank()/Kennisbank.graaf/node value
-known #135 line Node@Kennisbank()/Kennisbank.graaf/node > Kennisbank()/Kennisbank.graaf/Graaf() value   # what `map(node)` gives, collected into its nodes: the reader hands `Graaf { nodes }` nothing
+line Node@Kennisbank()/Kennisbank.graaf/node > Kennisbank()/Kennisbank.graaf/Graaf() value   # what `map(node)` gives, collected into its nodes
 line Kennisbank()/Kennisbank.graaf/Graaf() > Graaf@Kennisbank()/Kennisbank.graaf/Graaf() value
 line Graaf@Kennisbank()/Kennisbank.graaf/Graaf() > Kennisbank()/Kennisbank.graaf value
 line Kennisbank()/Kennisbank.graaf > Graaf@Kennisbank()/Kennisbank.graaf value
@@ -115,7 +115,5 @@ side Disk(Kennisbank.path) both
 
 # building the struct the route is about is read as a call of the route inside itself
 # the methods run on what the constructor built, not on the caller's instance
-# graaf's own arrow takes what its steps make, the Nodes too, though only Graaf() takes them and graaf gives back the Graaf
-known #126 extra line Node@Kennisbank()/Kennisbank.graaf/node > Kennisbank()/Kennisbank.graaf value
 line Kennisbank > Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/read_to_string value   # `fs::read_to_string(&self.path)`
 line Kennisbank > Kennisbank()/Kennisbank.graaf/Graaf() value   # the read glued into the literal reads `self.path`

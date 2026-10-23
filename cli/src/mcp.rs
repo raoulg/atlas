@@ -8,7 +8,9 @@ use std::io::{BufRead, Write};
 use std::path::PathBuf;
 
 use anyhow::Result;
+use atlas_engine::sight::Sight;
 use atlas_engine::{principles, remote, story, Graph, Options};
+use serde::Deserialize;
 use serde_json::{json, Value};
 
 /// Protocol versions this server speaks; a client asking for one gets it, else the newest.
@@ -368,37 +370,17 @@ fn call(name: &str, args: &Value, opts: &Options) -> Option<Result<String, Strin
                 .map(|c| atlas_engine::changes::report(&c))
                 .map_err(|e| format!("Could not compare {} with {rev}: {e}", repo.display()))
         }
-        "view" => {
-            let (repo, clone) = match located(text("path")) {
-                Ok(r) => r,
-                Err(e) => return Some(Err(e)),
-            };
-            let shown = args.get("view").cloned().filter(Value::is_object);
-            crate::page::page(&[repo.clone()], opts, None, None, shown).map_err(|e| format!("Could not read {}: {e}", repo.display())).and_then(
-                |(name, html, _)| {
-                    let home = clone.is_none().then_some(repo.as_path());
-                    let out = text("out").map(PathBuf::from).unwrap_or_else(|| crate::home::made(home, &format!("{name}.view.html")));
-                    if let Some(dir) = out.parent() {
-                        std::fs::create_dir_all(dir).map_err(|e| format!("Could not make {}: {e}", dir.display()))?;
-                    }
-                    std::fs::write(&out, html).map_err(|e| format!("Could not write {}: {e}", out.display()))?;
-                    Ok(format!(
-                        "Wrote {}. Open it in a browser, or hand the file to the person you work with; once open, its address holds the view, to share as a link.",
-                        out.display()
-                    ))
-                },
-            )
-        }
+        "view" => sight(args).and_then(|sight| view(text("path"), sight, text("out"), opts)),
         "shown" => Ok(shown(&here(text("path")))),
-        "look" => {
-            let (view, at) = (args.get("view").filter(|v| v.is_object()), text("at").filter(|a| !a.is_empty()));
+        "look" => sight(args).and_then(|view| {
+            let at = text("at").filter(|a| !a.is_empty()).map(str::to_string);
             if view.is_none() && at.is_none() {
-                return Some(Err("`look` takes a `view` (`{\"route\": …, \"open\": {…}}`), a box or line to point `at`, or both.".into()));
+                return Err("`look` takes a `view` (`{\"route\": …, \"open\": {…}}`), a box or line to point `at`, or both.".into());
             }
-            crate::shared::look(&here(text("path")), &json!({ "view": view, "at": at }))
+            crate::shared::look(&here(text("path")), &crate::shared::Look { view, at })
                 .map(|_| "The page of `atlas serve` goes there when it next asks, within a second while it is open.".to_string())
                 .map_err(|e| format!("Could not keep where to look: {e}"))
-        }
+        }),
         "vision" => {
             let repo = here(text("path"));
             if args.get("retract").and_then(Value::as_bool) == Some(true) {
@@ -501,6 +483,35 @@ fn call(name: &str, args: &Value, opts: &Options) -> Option<Result<String, Strin
         }),
         _ => return None,
     })
+}
+
+/// The sight a tool is handed as its `view`, if any.
+fn sight(args: &Value) -> Result<Option<Sight>, String> {
+    args.get("view")
+        .filter(|v| !v.is_null())
+        .map(Sight::deserialize)
+        .transpose()
+        .map_err(|e| format!("`view` is not a view the page knows ({e}): it holds `route`, `kind`, `part`, `focus` and `open`."))
+}
+
+/// The page of the repository at `path` in `sight`, written to `out`, else to `.atlas/<project>.view.html`
+/// at the top of the git repository it is in.
+fn view(path: Option<&str>, sight: Option<Sight>, out: Option<&str>, opts: &Options) -> Result<String, String> {
+    let (repo, clone) = located(path)?;
+    let read = crate::page::reading(&[repo.clone()], opts, None, None).map_err(|e| format!("Could not read {}: {e}", repo.display()))?;
+    let findings = read.findings();
+    let (graph, compared) = read.drawn();
+    let flow = atlas_engine::flow::of(&graph);
+    let opens = crate::page::Opens { route: None, sight, served: None };
+    let html =
+        crate::page::Html::of(&graph, &flow, &findings, compared.as_ref(), &opens).map_err(|e| format!("Could not draw the page: {e}"))?;
+    let home = clone.is_none().then_some(repo.as_path());
+    let out = out.map(PathBuf::from).unwrap_or_else(|| crate::home::made(home, &format!("{}.view.html", graph.root)));
+    html.write(&out).map_err(|e| format!("Could not write the page: {e:#}"))?;
+    Ok(format!(
+        "Wrote {}. Open it in a browser, or hand the file to the person you work with; once open, its address holds the view, to share as a link.",
+        out.display()
+    ))
 }
 
 /// The repository `atlas serve` serves, as a tool names it: a directory, else where the server runs.

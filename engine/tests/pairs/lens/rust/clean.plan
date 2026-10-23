@@ -7,9 +7,7 @@
 # it touches stays its caller's. `kept_summary` builds its Summary only where the line is the day's (`.then(|| ..)`, a
 # choice as `unwrap_or_else` is). Each file is read, used and written by the route: it stands on both sides.
 #
-# Issues marked: #103 an element of what a body iterates; #125 which library operations are steps; #126 what the own
-# arrow keeps; #128 a call handed nothing through self, a closure, an index or a chain; #130 which forms are choices;
-# #138 an error a step hands on.
+# Issues marked: #126 what the own arrow keeps; #138 an error a step hands on.
 
 route harvest.ReadingStore
 step ReadingStore()/ReadingStore.new

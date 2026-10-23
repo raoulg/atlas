@@ -84,3 +84,7 @@ def main() -> int:
     jobs: list[int] = []
     queue(jobs, 1)
     return rename(other, "d") + extend(xs, [2]) + len(tags) + len(counts) + len(jobs)
+
+
+def wipe(board: Board) -> None:
+    reset(board)

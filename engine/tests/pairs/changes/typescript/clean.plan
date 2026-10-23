@@ -3,12 +3,13 @@
 # expense it is handed and hands back the copy; `merged` builds a new Ledger from the rows of both; `remove` sends a
 # delete through the client the route is handed, and `main` drops what it gives. `counted` copies the Map (a library
 # operation whose result it names) and sets a key of the copy. The route's parameter `api` is a value from its start;
-# an object literal no step makes is a value from beyond.
+# the object literal handed to `refiled` is written for its parameter's Expense, and builds one (#154).
 route ledger.ledger.main
 step main/Ledger()
+step main/Expense()                                                       # `refiled({ category: "a" })`
 step main/refiled
 step main/Ledger.add
-step main/Ledger.add/this.rows.push
+step main/Ledger.add/push                                                 # `this.rows.push(e)`
 step main/remove
 step main/Ledger()#2
 step main/Ledger.merged
@@ -20,9 +21,10 @@ step main/counted/set
 line entry > main call
 line Api·api > main value
 line main/Ledger() > Ledger·ledger@main/Ledger() value
-line Expense > main/refiled value
+line main/Expense() > Expense@main/Expense() value
+line Expense@main/Expense() > main/refiled value
 line main/refiled > Expense@main/refiled value
-line Expense@main/refiled > main/Ledger.add/this.rows.push value
+line Expense@main/refiled > main/Ledger.add/push value
 line main/Ledger.add > Ledger·ledger@main/Ledger.add value
 line main/Ledger()#2 > Ledger@main/Ledger()#2 value
 line Ledger·ledger@main/Ledger.add > main/Ledger.merged value              # merged reads this.rows itself
@@ -37,7 +39,7 @@ line main/counted > main back
 
 home Api·api main
 home Ledger·ledger@main/Ledger() main
-home Expense main
+home Expense@main/Expense() main
 home Expense@main/refiled main
 home Ledger·ledger@main/Ledger.add main
 home Ledger@main/Ledger()#2 main
@@ -47,13 +49,12 @@ home _·out@main/counted/set main/counted
 
 side entry left
 
-# An operation that changes a part of the receiver (`this.rows.push(e)`) takes what it is handed but neither runs on
-# nor makes anew the receiver, which ends at the method's own arrow
-known #129 line Ledger·ledger@main/Ledger() > main/Ledger.add/this.rows.push value
-known #129 line main/Ledger.add/this.rows.push > Ledger·this@main/Ledger.add/this.rows.push value
-known #129 line Ledger·this@main/Ledger.add/this.rows.push > main/Ledger.add value
-known #129 home Ledger·this@main/Ledger.add/this.rows.push main/Ledger.add
-known #129 extra line Ledger·ledger@main/Ledger() > main/Ledger.add value
+# An operation that changes a part of the receiver (`this.rows.push(e)`) runs on the ledger the method runs on and makes
+# it anew: what the method's own arrow hands on
+line Ledger·ledger@main/Ledger() > main/Ledger.add/push value
+line main/Ledger.add/push > Ledger·this@main/Ledger.add/push value
+line Ledger·this@main/Ledger.add/push > main/Ledger.add value
+home Ledger·this@main/Ledger.add/push main/Ledger.add
 
 # A call on a field of a network client's type (`api.http.delete(..)`, `http: AxiosInstance`) is a request through
 # the client the route is handed; the code names no host, so its place is `Web`. A DELETE leaves something there, and
@@ -70,9 +71,6 @@ line _·out@main/counted/Map() > main/counted/set value
 home _·out@main/counted/Map() main/counted
 
 # A result the caller drops (`void remove(..)`) goes back to it
-
-# The own arrow takes a value its body only hands to a step inside it: the expense `refiled` gives, handed to `add`
-known #126 extra line Expense@main/refiled > main value
 
 # `counted` hands back the Map its `set` made anew
 line _·out@main/counted/set > main/counted value

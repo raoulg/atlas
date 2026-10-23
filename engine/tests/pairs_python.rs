@@ -1245,14 +1245,15 @@ fn board(side: &str) -> Graph {
 /// a value through a method of its own (`Board.reset` clears its cells, `Board.mark_all` marks each
 /// cell it holds) or hands back a new one: `with_tag` and `counted` build it, `renamed` rebinds
 /// `board` to a copy before it sets the name, `extended` and `queued` rebind their list to a new
-/// one before they change it. Nothing is asked. The shortcut changes what it is handed and says
-/// nothing: a `list[str]` it appends to, a `dict` it sets an item of, a list it extends with `+=`,
-/// a heap `heapq` keeps in a list, the cells `clear` empties and the scores `update` fills (methods
-/// ty finds on typing's `MutableSequence` and `MutableMapping`), each cell through the loop
-/// variable that goes over the board's cells, the board through a second name for it, and both
-/// boards a tuple assignment swaps. `Board.take_from` and `Board.take_victim` have one body: each
-/// empties the board it is handed as well as its own, two changes, whatever the parameter is
-/// called. Each is asked, and none of them is a call that leaves nothing behind.
+/// one before they change it, and `emptied` resets a copy of the board. Nothing is asked. The
+/// shortcut changes what it is handed and says nothing: a `list[str]` it appends to, a `dict` it
+/// sets an item of, a list it extends with `+=`, a heap `heapq` keeps in a list, the cells `clear`
+/// empties and the scores `update` fills (methods ty finds on typing's `MutableSequence` and
+/// `MutableMapping`), each cell through the loop variable that goes over the board's cells, the
+/// board through a second name for it, both boards a tuple assignment swaps, and the board `wipe`
+/// hands to `reset`, a function that changes it. `Board.take_from` and `Board.take_victim` have one
+/// body: each empties the board it is handed as well as its own, two changes, whatever the
+/// parameter is called. Each is asked, and none of them is a call that leaves nothing behind.
 #[test]
 fn changes_a_change_to_an_input_of_any_type_shows_in_the_signature() {
     let (c, s) = (board("clean"), board("shortcut"));
@@ -1274,6 +1275,7 @@ fn changes_a_change_to_an_input_of_any_type_shows_in_the_signature() {
         "reset",
         "swap",
         "swap",
+        "wipe",
     ];
     assert_eq!(asked, want.map(|f| format!("board.core.{f}")));
     assert!(found(&s, "nothing").is_empty(), "{:?}", found(&s, "nothing"));
@@ -1288,6 +1290,43 @@ fn changes_a_change_to_an_input_of_any_type_shows_in_the_signature() {
     assert!(edge(&s, "board.core.add_tag", "ext:builtins.list", EdgeKind::Mutates), "a list is what changes");
     let add_tag = check(&s).into_iter().find(|f| f.node == "board.core.add_tag").expect("asked");
     assert!(add_tag.what.contains("the list[str] it is handed as `tags`"), "{}", add_tag.what);
+    assert_eq!(inputs("board.core.wipe"), ["board"], "what it hands a function that changes it, it changes");
+}
+
+/// A call that changes what it is handed makes each such value anew, under the name the caller
+/// handed it by and of its type (`T × A → T`): the shortcut's `other.take_from(board)` and
+/// `other.take_victim(board)` give main's other and main's board, `swap(board, other)` both boards,
+/// and `add_tag(tags, ..)`, `count(counts, ..)`, `queue(jobs, ..)` and `extend(xs, ..)` the list or
+/// dict they change, of the type the change is to (the literal the name holds is no value of the
+/// plan, so it is not handed). On the clean board only a method that changes its receiver gives it
+/// (`board.mark_all()`, `board.reset()`); `renamed(board, ..)` and `extended([1], ..)` change
+/// nothing they are handed and give none of it.
+#[test]
+fn changes_a_call_gives_what_it_changes_under_the_name_it_was_handed() {
+    let (c, s) = (board("clean"), board("shortcut"));
+    let gives = |g: &Graph, to: &str| -> Vec<(String, String)> {
+        let main = g.node("board.core.main").expect("main");
+        let site = main.sites.iter().find(|x| x.to == to).unwrap_or_else(|| panic!("main calls {to}"));
+        site.gives.iter().map(|h| (h.ty.clone(), h.name.clone())).collect()
+    };
+    let held = |vs: &[(&str, &str)]| vs.iter().map(|(t, n)| (t.to_string(), n.to_string())).collect::<Vec<_>>();
+    let board_ = "board.core.Board";
+    assert_eq!(gives(&s, "board.core.Board.take_from"), held(&[(board_, "other"), (board_, "board")]));
+    assert_eq!(gives(&s, "board.core.Board.take_victim"), held(&[(board_, "other"), (board_, "board")]));
+    assert_eq!(gives(&s, "board.core.swap"), held(&[(board_, "board"), (board_, "other")]));
+    assert_eq!(gives(&s, "board.core.reset"), held(&[(board_, "board")]));
+    assert_eq!(gives(&s, "board.core.add_tag"), held(&[("ext:builtins.list", "tags")]));
+    assert_eq!(gives(&s, "board.core.count"), held(&[("ext:builtins.dict", "counts")]));
+    assert_eq!(gives(&s, "board.core.queue"), held(&[("ext:builtins.list", "jobs")]));
+    assert_eq!(gives(&s, "board.core.extend"), held(&[("ext:builtins.list", "xs")]));
+    let main = s.node("board.core.main").unwrap();
+    let add_tag = main.sites.iter().find(|x| x.to == "board.core.add_tag").unwrap();
+    assert!(add_tag.hands.is_empty(), "a literal under a name is no value handed: {:?}", add_tag.hands);
+
+    assert_eq!(gives(&c, "board.core.Board.mark_all"), held(&[(board_, "board")]));
+    assert_eq!(gives(&c, "board.core.Board.reset"), held(&[(board_, "board")]));
+    assert!(gives(&c, "board.core.renamed").iter().all(|(_, n)| n != "board"), "{:?}", gives(&c, "board.core.renamed"));
+    assert!(gives(&c, "board.core.extended").is_empty(), "{:?}", gives(&c, "board.core.extended"));
 }
 
 // ---------- layers: the package quotient the picture draws ----------

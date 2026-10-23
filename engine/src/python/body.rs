@@ -265,10 +265,17 @@ fn matched_by<'t>(at: TsNode<'t>, name: &str, src: &[u8]) -> Option<TsNode<'t>> 
 
 /// The name a chain like `self.items[0].x` starts from.
 fn root_name<'a>(n: TsNode, src: &'a [u8]) -> Option<&'a str> {
+    root_of(n).map(|r| text(r, src))
+}
+
+/// The name a chain like `self.items[i].x` starts from, where it is written: what a change to the
+/// chain changes, never the key it is looked up by; a wrapper is the value inside (`(board).cells`).
+fn root_of(n: TsNode) -> Option<TsNode> {
+    let n = beneath(n, WRAPPERS);
     match n.kind() {
-        "identifier" => Some(text(n, src)),
-        "attribute" => root_name(n.child_by_field_name("object")?, src),
-        "subscript" => root_name(n.child_by_field_name("value")?, src),
+        "identifier" => Some(n),
+        "attribute" => root_of(n.child_by_field_name("object")?),
+        "subscript" => root_of(n.child_by_field_name("value")?),
         _ => None,
     }
 }
@@ -278,15 +285,80 @@ fn root_name<'a>(n: TsNode, src: &'a [u8]) -> Option<&'a str> {
 pub(super) fn changed_roots<'a, 't>(
     body: TsNode<'t>,
     src: &'a [u8],
-    changes: &dyn Fn(TsNode<'t>) -> Option<TsNode<'t>>,
+    changes: &dyn Fn(TsNode<'t>) -> Vec<TsNode<'t>>,
 ) -> std::collections::BTreeSet<&'a str> {
     changed(body, changes).into_iter().filter_map(|x| changed_through(body, src, &BINDS, root_name(x, src)?, x.start_byte())).collect()
 }
 
+/// The parameters each function and method of the package changes in place, by name, each with
+/// the type a change to it changes where its annotation names one (`changed_types`), else `""`:
+/// what its body changes itself and what it hands a call that changes it. The value a method runs
+/// on is `GraphBuilder::mutating`'s.
+pub(super) type Changing = HashMap<String, Vec<(String, String)>>;
+
+/// The parameters a function's body changes in place (`changing`): the roots of what it changes,
+/// and a parameter that holds one of the language's own containers it changes with `xs += ys`.
+pub(super) fn changed_params<'t>(
+    seen: &Seen,
+    changing: &Changing,
+    d: TsNode<'t>,
+    body: TsNode<'t>,
+    method: bool,
+    cls: Option<&str>,
+) -> (bool, Vec<(String, String)>) {
+    let src = &seen.m.src;
+    let (types, changeable) = changed_types(seen.m, d, seen.modules, &seen.store.nodes, seen.own, seen.facts);
+    let mut roots = changed_roots(body, src, &|c| changed_by(seen, changing, c, cls));
+    for a in walk(body, &["augmented_assignment"]) {
+        let Some(l) = a.child_by_field_name("left").filter(|l| l.kind() == "identifier") else { continue };
+        if changeable.contains(text(l, src)) {
+            roots.extend(changed_through(body, src, &BINDS, text(l, src), a.start_byte()));
+        }
+    }
+    let params = paths::parameters(d, src, method).into_iter().map(|(p, _)| p).filter(|p| roots.contains(p.as_str()));
+    let params = params.map(|p| {
+        let t = types.get(&p).cloned().unwrap_or_default();
+        (p, t)
+    });
+    (roots.contains("self"), params.collect())
+}
+
+/// What a call changes in place: the value a method of the package that changes its receiver runs
+/// on (`board.reset()`, `Board.reset(board)`, `self.reset()` in a method of `cls`), what it hands
+/// the parameters a function or method of the package changes (`swap(a, b)`, `changing`), or what
+/// a library's call changes (`library_change`).
+pub(super) fn changed_by<'t>(seen: &Seen, changing: &Changing, c: TsNode<'t>, cls: Option<&str>) -> Vec<TsNode<'t>> {
+    let src = &seen.m.src;
+    let Some(f) = c.child_by_field_name("function") else { return vec![] };
+    let obj = f.child_by_field_name("object").filter(|_| f.kind() == "attribute");
+    let name = f.child_by_field_name("attribute").filter(|_| f.kind() == "attribute").map_or("", |a| text(a, src));
+    let on_self = cls.filter(|_| obj.map(|o| text(o, src)) == Some("self")).and_then(|k| seen.store.method_of(k, name));
+    let callee = match seen.callee(f) {
+        Some(Callee::Def(t)) => Some(t),
+        _ => None,
+    };
+    let mut out = vec![];
+    for t in on_self.iter().chain(callee.iter()) {
+        // a method called through its class runs on the value it is handed first
+        let named = obj.and_then(|o| seen.value(o)).map_or(false, |v| v.is_class);
+        let first = named && seen.store.nodes.get(t).map_or(false, |n| n.kind == NodeKind::Method && !n.on_class);
+        if seen.store.mutating.contains(t) {
+            out.extend(if first { first_argument(c) } else { obj });
+        }
+        if let Some((to, passed)) = passed(seen.modules, seen.store, t, c, first, src) {
+            let ps = changing.get(&to).map_or(&[][..], Vec::as_slice);
+            out.extend(passed.into_iter().filter(|(p, _)| ps.iter().any(|(q, _)| q == p)).map(|(_, a)| a));
+        }
+        if !out.is_empty() {
+            return out;
+        }
+    }
+    library_change(seen.facts, c, src).into_iter().collect()
+}
+
 /// What a body changes in place: every attribute or item it assigns (`self.x = ..`,
-/// `p.items[k] = ..`, each of `a.x, b.y = ..`) or deletes, and what a call to a mutator
-/// (`self.nodes.append(..)`) or to a method known to change its receiver changes.
-pub(super) fn changed<'t>(body: TsNode<'t>, changes: &dyn Fn(TsNode<'t>) -> Option<TsNode<'t>>) -> Vec<TsNode<'t>> {
+/// `p.items[k] = ..`, each of `a.x, b.y = ..`) or deletes, and what a call changes (`changed_by`).
+pub(super) fn changed<'t>(body: TsNode<'t>, changes: &dyn Fn(TsNode<'t>) -> Vec<TsNode<'t>>) -> Vec<TsNode<'t>> {
     let mut out = vec![];
     for a in walk(body, &["assignment", "augmented_assignment"]) {
         let Some(l) = a.child_by_field_name("left") else { continue };
@@ -301,7 +373,7 @@ pub(super) fn changed<'t>(body: TsNode<'t>, changes: &dyn Fn(TsNode<'t>) -> Opti
                 .filter(|t| t.parent().map_or(false, |p| p.kind() == "delete_statement" || p.kind() == "expression_list")),
         );
     }
-    out.extend(walk(body, &["call"]).into_iter().filter_map(changes));
+    out.extend(walk(body, &["call"]).into_iter().flat_map(changes));
     out
 }
 
@@ -905,6 +977,7 @@ pub(super) fn link_calls<'t>(
     ext: &HashMap<(String, String), String>,
     eval: &Eval,
     own: &Own,
+    changing: &Changing,
     id: &str,
 ) -> Linked<'t> {
     let n = store.nodes[id].clone();
@@ -916,7 +989,7 @@ pub(super) fn link_calls<'t>(
     let read = {
         let mut seen = Seen::new(m, types, sites, modules, store, own);
         seen.receiver = n.cls.clone().filter(|_| n.kind == NodeKind::Method && !n.on_class && n.params.iter().any(|p| p.receiver));
-        let mut b = Body::new(seen, modules, ext, eval, &n, d, body);
+        let mut b = Body::new(seen, modules, ext, eval, changing, &n, d, body);
         for r in b.steps() {
             let c = match r {
                 Ran::Loop(l) => {
@@ -1033,6 +1106,7 @@ struct Body<'a, 't> {
     params: HashMap<String, String>,
     changeable: HashSet<String>,
     own: &'a Own,
+    changing: &'a Changing,
     read: Read<'t>,
 }
 
@@ -1043,6 +1117,7 @@ impl<'a, 't> Body<'a, 't> {
         modules: &'t IndexMap<String, Module>,
         ext: &'a HashMap<(String, String), String>,
         eval: &'a Eval<'a>,
+        changing: &'a Changing,
         n: &Node,
         d: TsNode<'t>,
         body: TsNode<'t>,
@@ -1070,6 +1145,7 @@ impl<'a, 't> Body<'a, 't> {
             params,
             changeable,
             own,
+            changing,
             read: Read::default(),
         }
     }
@@ -1384,12 +1460,33 @@ impl<'a, 't> Body<'a, 't> {
         };
         // a method of the program's own that changes its receiver gives it, beside what it returns
         let mut gives = gives;
+        let mut changed: Vec<Held> = vec![];
         if seen.store.mutating.contains(t) {
-            for r in value.map(|r| seen.changed_in(r, self.ext, &steps.kept)).unwrap_or_default().into_iter().filter(|h| !h.name.is_empty())
-            {
-                if !gives.contains(&r) {
-                    gives.push(r);
+            changed.extend(value.and_then(root_of).map(|r| seen.changed_in(r, self.ext, &steps.kept)).unwrap_or_default());
+        }
+        // and each value it hands a parameter the callee changes, under the name it was handed by (`swap(board, other)`
+        // gives both), of the type the change is to where the caller's value is of none Atlas draws (`add_tag(tags, ..)`
+        // gives the list `tags`); a part of a value handed changes its owner (`clear(board.cells)` gives `board`), and a
+        // value a call or an operator computes is no value of the caller's
+        let args = arguments(self.modules, seen.store, &self.id, t, c, named && instance, self.at());
+        if let Some(arg) = &args {
+            let ps = self.changing.get(&arg.callee).map_or(&[][..], Vec::as_slice);
+            for (p, a) in &arg.passed {
+                let Some((_, ty)) = ps.iter().find(|(q, _)| q == p) else { continue };
+                for mut h in root_of(*a).map(|r| seen.changed_in(r, self.ext, &steps.kept)).unwrap_or_default() {
+                    if h.ty.is_empty() {
+                        h.ty = ty.clone();
+                    }
+                    changed.push(h);
                 }
+            }
+        }
+        for r in changed.into_iter().filter(|h| !h.name.is_empty()) {
+            if r.ty.starts_with("ext:") {
+                self.read.new_ext.push(r.ty.clone());
+            }
+            if !gives.contains(&r) {
+                gives.push(r);
             }
         }
         let after_class = after.map(|(k, _)| k).unwrap_or_default();
@@ -1403,7 +1500,6 @@ impl<'a, 't> Body<'a, 't> {
         if kind == EdgeKind::Calls && value_used(c) {
             self.read.used.push(t.to_string());
         }
-        let args = arguments(self.modules, seen.store, &self.id, t, c, named && instance, self.at());
         self.read.args.extend(args);
     }
 
@@ -1534,18 +1630,9 @@ impl<'a, 't> Body<'a, 't> {
         if self.in_module {
             return;
         }
-        let seen = &self.seen;
-        // a method of the package that changes its receiver, or a library call that changes a value
-        let changes = |c: TsNode<'t>| {
-            let own = c.child_by_field_name("function").filter(|f| f.kind() == "attribute");
-            match own {
-                Some(f) if matches!(seen.callee(f), Some(Callee::Def(t)) if seen.store.mutating.contains(&t)) => {
-                    f.child_by_field_name("object")
-                }
-                _ => library_change(seen.facts, c, self.src),
-            }
-        };
-        let mut roots = changed_roots(self.body, self.src, &changes);
+        let (seen, changing, cls) = (&self.seen, self.changing, self.cls.as_deref());
+        // a call of the package's that changes what it runs on or is handed, or a library call that changes a value
+        let mut roots = changed_roots(self.body, self.src, &|c| changed_by(seen, changing, c, cls));
         // `xs += ys` on a parameter that holds a list, a dict or a set changes it in place
         for a in walk(self.body, &["augmented_assignment"]) {
             let Some(l) = a.child_by_field_name("left").filter(|l| l.kind() == "identifier") else { continue };
@@ -1812,6 +1899,20 @@ pub(super) fn arguments<'t>(
     receiver_first: bool,
     at: At<'_, 't>,
 ) -> Option<Arg<'t>> {
+    let (callee, passed) = passed(modules, store, target, c, receiver_first, &at.m.src)?;
+    Some(Arg { caller: caller.to_string(), callee, module: at.m.id.clone(), scope: at.scope, params: at.params.to_vec(), passed })
+}
+
+/// What a call of the package's `target` hands each parameter, by name, with the function that
+/// takes them (`arguments`); `src` is the caller's.
+pub(super) fn passed<'t>(
+    modules: &IndexMap<String, Module>,
+    store: &GraphBuilder,
+    target: &str,
+    c: TsNode<'t>,
+    receiver_first: bool,
+    src: &[u8],
+) -> Option<(String, Vec<(String, TsNode<'t>)>)> {
     let callee = match store.nodes.get(target)?.kind {
         NodeKind::Class => {
             let own = format!("{target}.__init__");
@@ -1825,13 +1926,13 @@ pub(super) fn arguments<'t>(
         _ => target.to_string(),
     };
     // a class without an `__init__` of its own is built from the fields it declares, in order
-    let params: Vec<(String, Option<TsNode>)> = match store.nodes.get(&callee) {
+    let params: Vec<String> = match store.nodes.get(&callee) {
         Some(cn) => {
             let cm = modules.get(&cn.module)?;
             let def = def_node(cm, cn)?;
-            paths::parameters(def, &cm.src, cn.kind == NodeKind::Method)
+            paths::parameters(def, &cm.src, cn.kind == NodeKind::Method).into_iter().map(|(p, _)| p).collect()
         }
-        None => store.classes.get(target)?.fields.iter().map(|(f, _)| (f.clone(), None)).collect(),
+        None => store.classes.get(target)?.fields.iter().map(|(f, _)| f.clone()).collect(),
     };
     let mut passed = vec![];
     let mut i = 0;
@@ -1840,20 +1941,20 @@ pub(super) fn arguments<'t>(
         match a.kind() {
             "keyword_argument" => {
                 if let (Some(k), Some(v)) = (a.child_by_field_name("name"), a.child_by_field_name("value")) {
-                    passed.push((text(k, &at.m.src).to_string(), v));
+                    passed.push((text(k, src).to_string(), v));
                 }
             }
             "list_splat" | "dictionary_splat" => break,
             _ if receiver => receiver = false,
             _ => {
-                if let Some((p, _)) = params.get(i) {
+                if let Some(p) = params.get(i) {
                     passed.push((p.clone(), a));
                 }
                 i += 1;
             }
         }
     }
-    Some(Arg { caller: caller.to_string(), callee, module: at.m.id.clone(), scope: at.scope, params: at.params.to_vec(), passed })
+    Some((callee, passed))
 }
 
 /// For a class built from its fields (no `__init__` of its own, `f` is `Class.__init__`): the

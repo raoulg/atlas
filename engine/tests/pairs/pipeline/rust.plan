@@ -37,9 +37,9 @@ line main/load/?1/push > _·rows@main/load/?1 value                  # one arm m
 line _·rows@main/load/?1 > main/load value   # `Ok(rows)`
 line main/load > _·rows@main/load value                           # a named value of no type of the program's
 line _·rows@main/load > main/smooth value
-line _·rows@main/load > main/plot value                           # `draw_series(LineSeries::new(rows..))`
-known #128 line _·rows@main/load > main/plot/fold value
-known #128 line _·rows@main/load > main/plot/build_cartesian_2d value                # `rows[0].0..rows[rows.len() - 1].0`
+line _·rows@main/load > main/plot value   # `draw_series(LineSeries::new(rows..))`, the body's own call
+line _·rows@main/load > main/plot/fold value
+line _·rows@main/load > main/plot/build_cartesian_2d value                # `rows[0].0..rows[rows.len() - 1].0`
 line main/smooth > _·smoothed@main/smooth value
 line _·smoothed@main/smooth > main/plot value
 line main/plot/into_drawing_area > _·root@main/plot/into_drawing_area value

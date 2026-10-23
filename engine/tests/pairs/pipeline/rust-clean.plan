@@ -53,7 +53,8 @@ line Settings@main/Settings.default > main/Settings() value             # `..Set
 line Cli·cli@main/Cli() > main/Settings() value                         # `cli.months`
 line main/Settings() > Settings·settings@main/Settings() value
 
-line Cli·cli@main/Cli() > main/?1/download value                        # `&cli.raw`
+line Cli·cli@main/Cli() > main/?1/download value                        # `&cli.raw`: `fs::write(to, body)`, `Ok(to.to_path_buf())`
+known #157 line Cli·cli@main/Cli() > main/?1/download/parent value      # `to.parent()`; the call hands no value for `url`
 line Web(www.sidc.be) > main/?1/download own
 line main/?1/download/parent > _·dir@main/?1/download/parent value
 home _·dir@main/?1/download/parent main/?1/download
@@ -62,7 +63,7 @@ line _·body@main/?1/download/bytes > main/?1/download value   # `fs::write(to, 
 line main/?1/download > File(data/raw/sunspots.csv) own
 # `download(SILSO, &cli.raw)?;` is a statement: main throws away the path download gives back (#134)
 
-line Cli·cli@main/Cli() > main/load value                               # `&cli.raw`
+line Cli·cli@main/Cli() > main/load/from_path value                     # `&cli.raw`, held by `path`
 line File(data/raw/sunspots.csv) > main/load own
 line main/load/from_path > _·reader@main/load/from_path value
 line _·reader@main/load/from_path > main/load/for record in reader.deserialize() value
@@ -84,7 +85,7 @@ line main/load > Month·series@main/load value
 
 line Month·series@main/load > main/smooth value   # the body uses it itself (`series.windows(..)`), and a step inside takes it too
 line Month·series@main/load > main/smooth/Smoothed() value   # `run[months / 2].date`
-known #128 line Settings·settings@main/Settings() > main/smooth/get value     # `settings.months`, handed as `months`
+line Settings·settings@main/Settings() > main/smooth/get value     # `settings.months`, handed as `months`
 line main/smooth/get > _·months@main/smooth/get value
 line _·months@main/smooth/get > main/smooth value   # `series.windows(months)`
 line _·months@main/smooth/get > main/smooth/Smoothed() value
@@ -97,7 +98,9 @@ line main/Trend.new/Trend() > Trend@main/Trend.new/Trend() value
 line Trend@main/Trend.new/Trend() > main/Trend.new value
 line main/Trend.new > Trend@main/Trend.new value
 
-line Cli·cli@main/Cli() > main/Trend.save value                         # `&cli.figure`
+known #157 line Cli·cli@main/Cli() > main/Trend.save/parent value       # `&cli.figure`, held by `to`; the receiver comes from a nested step
+known #157 line Cli·cli@main/Cli() > main/Trend.save/into_drawing_area value   # `BitMapBackend::new(to, ..)`
+known #157 extra line Cli·cli@main/Cli() > main/Trend.save value
 line main/Trend.save/parent > _·dir@main/Trend.save/parent value
 home _·dir@main/Trend.save/parent main/Trend.save
 line Trend@main/Trend.new > main/Trend.save/Trend.settings value
@@ -164,7 +167,6 @@ side File(figures/sunspots.png) right
 # a library call whose result no name holds is drawn as a step, its result named by the call around it
 
 # a value handed to a step also goes to its own arrow, though only a step inside it takes it
-known #126 extra line Settings·settings@main/Settings() > main/smooth value
 
 # an error is a value of the codomain: made where it is raised, handed on across each border up to the route
 line main/load/?1/Record.into_month > Error@main/load/?1 value   # what an arm hands on is the choice's error
@@ -198,3 +200,10 @@ line main > Error@main value
 home Error@main main
 
 # the loop hands the record to `into_month`'s own arrow, though only `ok_or` and `Month()` inside take it
+
+# the plan pairs the values a call hands with its parameters by type and count, not by place (#157): `download` is
+# handed nothing for `url`, `save` its receiver last, so `to` holds nothing and comes from beyond
+known #157 extra line _·to > main/?1/download/parent value
+known #157 extra line _·to > main/Trend.save/parent value
+known #157 extra line _·to > main/Trend.save/into_drawing_area value
+known #157 extra home _·to main
