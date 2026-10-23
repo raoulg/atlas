@@ -51,7 +51,7 @@ line Cli·cli@main/Cli() > main/Settings() value                         # `cli.
 line main/Settings() > Settings·settings@main/Settings() value
 
 line Cli·cli@main/Cli() > main/?1/download value                        # `&cli.raw`: `fs::write(to, body)`, `Ok(to.to_path_buf())`
-known #157 line Cli·cli@main/Cli() > main/?1/download/parent value      # `to.parent()`; the call hands no value for `url`
+line Cli·cli@main/Cli() > main/?1/download/parent value      # `to.parent()`, `to` filled by `&cli.raw`; the call hands no value for `url`
 line Web(www.sidc.be) > main/?1/download own
 line main/?1/download/parent > _·dir@main/?1/download/parent value
 home _·dir@main/?1/download/parent main/?1/download
@@ -195,8 +195,3 @@ line main > Error@main value
 home Error@main main
 
 # the loop hands the record to `into_month`'s own arrow, though only `ok_or` and `Month()` inside take it
-
-# the plan pairs the values a call hands with its parameters by type and count, not by place (#157): `download` is
-# handed nothing for `url`, `save` its receiver last, so `to` holds nothing and comes from beyond
-known #157 extra line _·to@main/?1/download/~to > main/?1/download/parent value   # the parameter, bound by no value the call hands
-known #157 extra home _·to@main/?1/download/~to main/?1/download

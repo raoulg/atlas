@@ -1029,17 +1029,24 @@ const scopeOf = P => {
 };
 // the arms of the choices in a body a step stands in: what one arm makes, no step of another arm of that choice takes
 const armsAbove = P => { const out = new Map(); for (let F = P.own ? frames.get(P.parent) : P; F; F = frames.get(F.parent)) if (frames.get(F.parent)?.synthetic) out.set(F.parent, F.branch); return out; };
-const latestSet = (key, v, P, scope = scopeOf(P), param = false) => { if (!latest.has(key)) latest.set(key, []); latest.get(key).push({v, scope, arms: armsAbove(P), param}); };
-const latestGet = (key, P, inner = false, arms = null) => {
+// a name holds `NONE` where its call fills its parameter with no value of the plan, and a parameter more than one value fills
+// holds the others beside the first (`also`)
+const NONE = "∅";
+const latestSet = (key, v, P, scope = scopeOf(P), param = false, also = []) => { if (!latest.has(key)) latest.set(key, []); latest.get(key).push({v, scope, arms: armsAbove(P), param, also}); };
+const latestEntry = (key, P, inner = false, arms = null) => {
   const es = latest.get(key); if (!es) return null;
   const here = new Set(planChain(P.parent)), mine = arms || armsAbove(P);
   const apart = e => [...e.arms].some(([c, b]) => mine.has(c) && mine.get(c) !== b);
   // what the call hands an opened step crosses its frame from outside: at the frame's own arrow, neither a parameter nor a
   // value the body makes is what its call hands it, but for what the body gives back (`inner`)
   const outside = e => !inner && P.own && P.parent === e.scope;
-  for (let i = es.length - 1; i >= 0; i--) if ((!es[i].scope || here.has(es[i].scope)) && !apart(es[i]) && !outside(es[i])) return es[i].v;
+  for (let i = es.length - 1; i >= 0; i--) if ((!es[i].scope || here.has(es[i].scope)) && !apart(es[i]) && !outside(es[i])) return es[i];
   return null;
 };
+const latestGet = (key, P, inner = false, arms = null) => { const e = latestEntry(key, P, inner, arms); return e && e.v !== NONE ? e.v : null; };
+// whether the name a step takes `k` by holds no value here, and the other values that name holds beside `v`
+const holdsNone = (P, k, nm = (P.dn && P.dn.get(k)) || "", within = false) => !!nm && latestEntry(kindKey(k) + "|" + nm, P, within)?.v === NONE;
+const alsoOf = (P, k, nm, within, v) => { const e = nm && v ? latestEntry(kindKey(k) + "|" + nm, P, within) : null; return e && e.v === v ? e.also : []; };
 // what the call hands a step and what the function says it takes are one value when they are of one
 // kind and at most one of them has a name: the value by the name and the type the call gives it.
 // Two values of a kind with names of their own are two values
@@ -1076,6 +1083,8 @@ const bound = (P, k, nm = (P.dn && P.dn.get(k)) || "", within = false) => {
   // what a cut step takes by a name its body did not make: the value of that name here, else one the body made, inside it
   if (pl?.cond) { const v = latestGet(kindKey(k) + "|" + pl.name, P, within); return v || (alone ? null : false); }
   if (!isMem(k) || P.beyond?.has(k) || inside(k)) return null;
+  // a parameter its call fills with no value holds none (#157)
+  if (holdsNone(P, k, nm, within)) return false;
   // a name that holds a sum holds the sum, whichever variant the reader narrows it to
   const sum = nm && pl?.type && SUM_OF.get(pl.type), v = latestGet(kindKey(k) + "|" + nm, P, within) || (sum && latestGet("t:" + kindOf(sum) + "|" + nm, P, within));
   if (!v && P.kept?.has(k)) return false;
@@ -1118,9 +1127,9 @@ const viaDispatch = (P, k) => {
   const recv = i < 0 && (treeInfo.get(d)?.on || arrowOf(stepOf(d))?.receiver), on = recv && takes.find(v => places.get(v)?.type === recv);
   return named || on || takes.find(v => kindKey(v) === kindKey(k)) || null;
 };
-// Inside an opened step a parameter holds the value its call hands it (#127): the call hands its values in order, the
-// receiver first where the call names one, and each goes to the next parameter of its type; a value of a type no reader
-// knows to the next parameter. Inside a method, its receiver is the latest of its kind until the body makes another
+// Inside an opened step a parameter holds the value its call hands it (#127): each value goes to the parameters its
+// argument fills, as the call writes it (`fills`, #157), whatever its type. Inside a method, its receiver is the latest of
+// its kind until the body makes another
 const entered = new Set(), receiverAt = new Map();
 const enter = fid => {
   if (!fid || entered.has(fid)) return;
@@ -1142,41 +1151,39 @@ const enter = fid => {
   const rv = receiverAt.get(fid), self = (fn?.params || []).find(p => p.receiver)?.name;
   if (rv) { const k = "t:" + kindOf(recv); latestSet(k + "|", rv, Own, fid, true); if (self) latestSet(k + "|" + self, rv, Own, fid, true); }
 };
-// what a call hands a step's parameters, each the value its call hands it there
+// what a call hands a step's parameters: each value fills the parameters its argument is written for (`Site::args`,
+// `Held::fills`): the value the call runs on (`receiver`), the parameter at a place after it (`{at: n}`), the parameter of a
+// name (`{name: k}`); a spread fills each parameter from its place on, a spread of names each one the call writes no
+// argument for. A parameter holds every value that fills it (`f(a.x + b.y)`), and none where the call writes an argument
+// for it that hands no value (a literal, a constant) or writes none (it holds its default)
 const handTo = (fid, f, info, Own, fn, recv) => {
+  const site = info.site, params = fn?.params || [], args = params.filter(p => !p.receiver);
   // the receiver is of the class the call says it runs on, a subclass of the method's own where it says so
-  const formals = [...(recv && !info.site.on_receiver && !info.built ? [{receiver: info.on || recv, name: (fn?.params || []).find(p => p.receiver)?.name}] : []), ...(fn?.params || []).filter(p => !p.receiver)];
-  // a value of a type no reader knows fills a parameter of no type of the code's
-  const ours = p => !!p.receiver || (arrowOf(stepOf(f.step))?.takes || []).some(t => writesType(p, t));
-  const fits = (p, h) => (!h.type ? !ours(p) : p.receiver ? p.receiver === h.type || kindOf(p.receiver) === kindOf(h.type) : writesType(p, h.type) || (SUM_OF.get(h.type) && writesType(p, SUM_OF.get(h.type))));
-  // the value the call runs on fills the receiver wherever the reader lists it (a call's result it runs on comes last:
-  // `Trend(settings).save(frame, to)`), the others each the next parameter of its type
-  const hands = info.site.hands || [], r = formals[0]?.receiver ? hands.findIndex(h => fits(formals[0], h)) : -1;
-  let at = r >= 0 ? 1 : 0;
-  const pairs = r >= 0 ? [[hands[r], formals[0]]] : [], left = [];
-  for (const h of hands.filter((_, i) => i !== r)) {
-    const j = formals.findIndex((p, i) => i >= at && fits(p, h));
-    if (j < 0) { left.push(h); continue; }
-    at = j + 1;
-    pairs.push([h, formals[j]]);
-  }
-  // what fits no parameter by its type fills one through a projection (`fileAll(ledger.rows)`): where as many are left
-  // of each, they pair in order
-  const open = formals.filter(p => !p.receiver && !pairs.some(([, q]) => q === p));
-  if (left.length && left.length === open.length) left.forEach((h, i) => pairs.push([h, open[i]]));
-  for (const [h, p] of pairs) {
+  const self = recv && !site.on_receiver && !info.built ? {receiver: info.on || recv, name: params.find(p => p.receiver)?.name} : null;
+  // the parameter at a place: one that takes whatever is left (`*args`, `...xs`) takes every place from its own on
+  const atPlace = n => { for (let i = 0; i < args.length; i++) if (args[i].rest || i === n) return [args[i]]; return []; };
+  const byName = k => { const p = args.find(q => q.name === k && !q.rest) || args.filter(q => q.rest).pop(); return p ? [p] : []; };
+  const written = new Set((site.args || []).flatMap(s => (s?.at != null ? atPlace(s.at) : s?.name != null ? byName(s.name) : [])));
+  const slotted = s => s === "receiver" ? (self ? [self] : []) : s === "keywords" ? args.filter(p => !written.has(p)) : s?.at != null ? atPlace(s.at) : s?.name != null ? byName(s.name) : s?.spread != null ? args.slice(s.spread).filter(p => !written.has(p) || p.rest) : [];
+  const holds = new Map([...(self ? [self] : []), ...args].map(p => [p, []]));
+  for (const h of site.hands || []) {
     const k = h.type ? (h.name ? `t:${h.type}~${h.name}` : "t:" + h.type) : "v:" + h.name;
     if (!places.has(k)) continue;
-    const v = bound(Own, k) || k;
-    // a parameter is looked for by its own type and name: what fills it through a projection is of another type
-    const x = !p.receiver && (arrowOf(stepOf(f.step))?.takes || []).find(t => writesType(p, t));
+    // what the caller's name holds there: a parameter of its own may hold none, or more than one value
+    const v = bound(Own, k);
+    if (v === false && holdsNone(Own, k)) continue;
+    const vs = [v || k, ...alsoOf(Own, k, h.name || "", false, v)];
+    for (const s of h.fills || []) for (const p of slotted(s)) for (const w of vs) if (!holds.get(p).includes(w)) holds.get(p).push(w);
+  }
+  for (const [p, vs] of holds) {
     // the receiver is the latest of its kind inside the body, and the value its name holds (`self`)
-    if (p.receiver) { receiverAt.set(fid, v); latestSet(kindKey(v) + "|", v, Own, fid, true); if (p.name) latestSet(kindKey(v) + "|" + p.name, v, Own, fid, true); }
-    else if (p.name) {
-      latestSet((x ? "t:" + (x === V.route ? V.route : kindOf(x)) : v.startsWith("v:") ? "v:" + p.name : kindKey(v)) + "|" + p.name, v, Own, fid, true);
-      // a parameter of no type of the code's is looked for as a value of no type, whatever it holds
-      if (!x && !v.startsWith("v:")) latestSet("v:" + p.name + "|" + p.name, v, Own, fid, true);
-    }
+    if (p.receiver) { if (!vs.length) continue; const v = vs[0]; receiverAt.set(fid, v); latestSet(kindKey(v) + "|", v, Own, fid, true); if (p.name) latestSet(kindKey(v) + "|" + p.name, v, Own, fid, true); continue; }
+    if (!p.name) continue;
+    // a parameter is looked for by its own type and name: what fills it through a projection is of another type; one of
+    // no type of the code's as a value of no type, whatever it holds
+    const x = (arrowOf(stepOf(f.step))?.takes || []).find(t => writesType(p, t)), typed = x && "t:" + (x === V.route ? V.route : kindOf(x));
+    const keys = typed ? [typed] : ["v:" + p.name, ...new Set(vs.filter(v => !v.startsWith("v:")).map(kindKey))];
+    for (const key of keys) latestSet(key + "|" + p.name, vs.length ? vs[0] : NONE, Own, fid, true, vs.slice(1));
   }
 };
 // a value a step changes is the value it was handed, at a new moment: what each moment of it was made from
@@ -1224,6 +1231,8 @@ for (const P of pills.values()) {
     const v = viaDispatch(P, k) || bound(P, k, name(P.dn, k), !!P.made?.has(k));
     if (v === false) return;
     Dv.set(v || k, r);
+    // a parameter more than one value fills hands them all
+    for (const w of alsoOf(P, k, name(P.dn, k), !!P.made?.has(k), v)) Dv.set(w, r);
     // what each value a step beyond the cut takes is bound to here: a figure its image keeps in one is that value's
     if (P.cut) (P.boundOf ||= new Map()).set(k, v || k);
     if (mult && P.mult.D.has(k)) mult.D.set(v || k, P.mult.D.get(k));
@@ -1251,8 +1260,7 @@ for (const P of pills.values()) {
     if (!v) continue;
     // a name the step changes is taken where a step inside made it anew; the value its call handed it crosses the frame
     if (u.changed) { const at = places.get(v)?.at, f = P.parent; if (!at || !(at.startsWith(f + "/") || at.startsWith(f + "|") || at.startsWith(f + "~c"))) continue; }
-    if (!Dv.has(v)) Dv.set(v, false);
-    (P.used ||= new Set()).add(v);
+    for (const w of [v, ...(u.name ? alsoOf(P, base, u.name, true, v) : [])]) { if (!Dv.has(w)) Dv.set(w, false); (P.used ||= new Set()).add(w); }
   }
   const figs = [];
   P.C.forEach((r, k) => {

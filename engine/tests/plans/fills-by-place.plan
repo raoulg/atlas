@@ -1,0 +1,22 @@
+# `transfer(target=checking, source=savings, note="weekly")` writes its arguments by name, in another order than the
+# signature has them: `target` holds the checking account and `source` the savings, though both are Accounts and the
+# checking account is written first (#157). `log(target)` is handed the checking account. `note` is filled by a literal
+# and holds no value.
+
+route accounts.run
+step run/transfer
+step run/transfer/log
+
+line entry > run call
+line Account·savings > run value
+line Account·checking > run value
+line Account·savings > run/transfer value                  # `print(source.name, ..)`
+line Account·checking > run/transfer/log value             # `log(target)`
+line run/transfer > Screen own
+line run/transfer/log > Screen own
+
+home Account·savings run
+home Account·checking run
+
+side entry left
+side Screen right

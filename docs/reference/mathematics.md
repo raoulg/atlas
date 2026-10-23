@@ -453,11 +453,16 @@ open:
   put. A parameter is such a name: inside an opened step it holds the value its call hands it, not a
   caller's value of its name or the latest of its type, and where the plan cannot say which, it is still
   a value of that body, in its frame, never one from beyond the route: what comes from beyond the route
-  is what its caller holds, its parameters and the instance of a class route. The call hands its
-  values in order, the value it runs on first, each to the next parameter of its type; a parameter the
-  call fills through a projection (`finished(job, settings.mode)`) is still the projection, so the
-  steps inside are handed
-  `settings`, and a signature's type is a value of its own only where the call hands nothing. A value
+  is what its caller holds, its parameters and the instance of a class route. The call hands each
+  value to the parameter its argument fills, as the call writes it, whatever its type: the value it runs
+  on to the receiver (also the first argument of a method called through its class or path), an
+  argument by its place to the parameter at that place after the receiver, one by its name to the
+  parameter of that name; a spread to each parameter from its place on, a spread of names to each one
+  the call writes no argument for. A parameter holds every value its argument hands (`f(a.x + b.y)`),
+  and none where its argument hands no value (a literal, a constant) or the call writes none for it,
+  where it holds its default. A parameter the call fills through a projection (`finished(job,
+  settings.mode)`) is still the projection, so the steps inside are handed `settings`, and a
+  signature's type is a value of its own only where the call hands nothing. A value
   of no type of the code's is one where a step makes it, so a parameter of no type of the code's
   (`path: &Path`) holds one only where its call fills it with one, a value a step made or a projection
   of one: a literal fills it with none, and the route's own, which no code of the program fills, hold
