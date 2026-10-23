@@ -111,3 +111,4 @@ smallest that showed one law:
 | `open-mode-unknown` | a file opened with a mode that is a value goes no way the code says: in neither (R4) |
 | `what-holds` | a place read and changed stands twice, a choice is a coproduct, a call into a family a choice (Z13) |
 | `unbound-parameter` | a parameter the plan cannot pair with what its call hands is a value of its body, never one from beyond the route (#159) |
+| `next-method-on-a-class` | a body run on a known class does at a place what that class runs: a `super()` call runs one method there (R5) |

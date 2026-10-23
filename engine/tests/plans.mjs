@@ -22,7 +22,7 @@ new Function(script.replace("/*__PLAN__*/", () => fs.readFileSync(planJs, "utf8"
 const D = JSON.parse(fs.readFileSync(dataJson, "utf8"));
 const window = {};
 const M = new Function("D", "window", fs.readFileSync(planJs, "utf8") + `
-return {V, plan, imageOf, checkOpenings, treeInfo, stepLabel, typeLabel, sideOfRoles, familyOf, kindOf, byId, arrowOf, stepOf};`)(D, window);
+return {V, plan, imageOf, checkOpenings, treeInfo, stepLabel, typeLabel, sideOfRoles, familyOf, kindOf, byId, ordersOn, stepOf};`)(D, window);
 const {V} = M;
 
 const SIDES = {in: "left", out: "right", mid: "between", both: "both"};
@@ -160,7 +160,7 @@ function quotient(F, view, set, homes, occ, valueName) {
     const S = closedTop(P.id), b = S || P.id;
     if (view.pillBlock.get(P.id) !== b) out.push(`${occ(P.id)} lies in ${occ(view.pillBlock.get(P.id) || "")}, the quotient puts it in ${occ(b)}`);
     const step = S && F.frames.get(S).step, mine = !S || P.id === "o:" + step;
-    const back = new Set(S ? M.arrowOf(M.stepOf(step))?.reads_back || [] : []);
+    const back = new Set(S ? M.ordersOn(M.stepOf(step), M.treeInfo.get(step)?.on).reads_back || [] : []);
     const hands = S ? M.treeInfo.get(step)?.site?.hands || [] : [];
     const handed = pl => !!pl && hands.some(h => (h.name && !h.name.startsWith("#") ? h.name === pl.name : !!h.type && h.type === pl.type));
     for (const [way, m] of [["D", P.D], ["C", P.C]]) for (const [k, r] of m) {

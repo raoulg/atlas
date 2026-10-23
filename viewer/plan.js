@@ -191,6 +191,8 @@ const arrowOf = id => {
   return arrowCache.get(ck);
 };
 const stepsIn = b => b.items.flatMap(it => it.members ? it.members : [it]);
+// what a function does at places where it runs on a value of a known class (`on`), else on a value of any class it may be
+const ordersOn = (id, on) => (on && arrowOf(id)?.on?.[on]) || arrowOf(id) || {};
 // what a call may run in place of the function it reaches, each a body by its key: a method called by name on a value
 // whose class is not known, any override its body lists, on the classes that run it; one whose call names the method
 // (`Cached.read(self)`, `super().read()`), what its call says
@@ -657,7 +659,7 @@ const morphism = (id, own, isAnchor, noReceiver, opts = {}) => {
   const root = V.route || (f.entry ? f.id : null), at = opts.at && treeInfo.get(opts.at), chain = V.route && at?.path ? new Set([...at.path, f.id]) : null;
   const ownKeys = new Set(touchesIn(f, root, chain).map(touchKey));
   // what the step reads back of what it wrote is no input: the place is in its codomain only
-  const back = new Set((own ? arrowOf(f.id)?.own_reads_back : arrowOf(f.id)?.reads_back) || []);
+  const back = new Set((own ? arrowOf(f.id)?.own_reads_back : ordersOn(f.id, opts.on).reads_back) || []);
   for (const raw of (own ? touchesIn(f, root, chain) : reach(f.id, opts.on, root, chain, opts.alts).touches)) {
     const tc = shownAs(raw);
     if (served(raw) || (isIn(raw) && !raw.shape && back.has(raw.place.id))) continue;
@@ -914,7 +916,7 @@ for (const t of tree || routeTree()) build(t, null);
 // what the step leaves there, in the codomain; closed, the value is internal to the step and draws no line
 if (fine) {
   const backOf = new Map();
-  for (const [fid, f] of frames) if (f.step && !f.synthetic && !f.anchor) { const rb = arrowOf(stepOf(f.step))?.reads_back; if (rb?.length) backOf.set(fid, new Set(rb)); }
+  for (const [fid, f] of frames) if (f.step && !f.synthetic && !f.anchor) { const rb = ordersOn(stepOf(f.step), treeInfo.get(f.step)?.on).reads_back; if (rb?.length) backOf.set(fid, new Set(rb)); }
   if (backOf.size) {
     const chainUp = fid => { const c = []; for (let f = fid; f; f = frames.get(f)?.parent) c.push(f); return c; };
     const writers = new Map();
@@ -1431,7 +1433,7 @@ const imageOf = (F, opened, folded, {fineKeys = false} = {}) => {
     pillBlock.set(P.id, id);
   }
   for (const B of blocks.values()) {
-    const D = new Map(), C = new Map(), Dn = new Map(), Cn = new Map(), Dr = new Map(), Cr = new Map(), goes = new Map(), S = B.frame, back = S ? new Set(arrowOf(stepOf(S.step))?.reads_back || []) : null;
+    const D = new Map(), C = new Map(), Dn = new Map(), Cn = new Map(), Dr = new Map(), Cr = new Map(), goes = new Map(), S = B.frame, back = S ? new Set(ordersOn(stepOf(S.step), treeInfo.get(S.step)?.on).reads_back || []) : null;
     const incidence = [];
     const hands = S ? treeInfo.get(S.step)?.site?.hands || [] : [];
     const handed = pl => !!pl && hands.some(h => (h.name && !h.name.startsWith("#") ? h.name === pl.name : !!h.type && h.type === pl.type));
