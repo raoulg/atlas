@@ -412,13 +412,15 @@ open:
   hands it to takes it there, no value from beyond, until a step of the body makes it anew. A figure a
   library draws on rests in that figure (`Figure`) until something saves or shows it, and a notebook shows
   each figure its cells make on the screen (`Figure 1`). A figure rests in what holds it, as a place named
-  by a value does: one a method keeps in the value it runs on (a method that changes that value,
-  `self.fig, self.ax = plt.subplots()`) is that value's, so every step that runs on the value draws on the
-  one figure it holds, whichever of them makes it (`create_figure` only where `self.fig is None`); one a
-  call makes and no value beyond it holds is that call's own, and two calls make two. A value a body sets
-  a part of to what another value holds (`other.fig = self.fig`, or `self.fig = fig` in a method its
-  call hands the other's figure to) is that one's put, a lens's: from then on it holds the figure the
-  other holds, and so does every value made anew of it;
+  by a value does, through the fields that hold it: one a method keeps in a field of the value it runs on
+  (the fields the binding that makes it sets, `self.fig, self.ax = plt.subplots()`) is that value's, so
+  every step that runs on the value draws on the one figure it holds, whichever of them makes it
+  (`create_figure` only where `self.fig is None`); one a call makes and no value beyond it holds is that
+  call's own, and two calls make two. A value a body sets such a field of to what another value holds
+  there (`other.fig = self.fig`, or `self.fig = fig` in a method its call hands the other's figure to) is
+  that one's put, a lens's: from then on it holds the figure the other holds, and so does every value made
+  anew of it. The code names the field it sets (`Node::sets`), so a field that holds no figure lends none
+  (`other.title = self.title`);
 - a step's own arrow is its witness at its border: its signature and its own touches, the lines that
   cross its frame. An opened step draws it as a point on the frame's right edge, not as a step beside
   its steps: a value its call is handed crosses the frame to the step inside that takes it (the value
@@ -569,7 +571,7 @@ fact of it must hold of the plan Atlas builds, and no other. What Atlas gets wro
 with the issue that tracks it, and the mark goes with the fix (`engine/tests/plans/README.md`). The
 test runs the viewer's own model in node, the function every picture is drawn from, on every route of
 the pairs and of its programs.
-**Where.** `plan`, `sitesOf`, `figureOf`, `coarsen`, `cutArrow`, `handTo` and `checkOpenings` in `viewer/plan.js`;
+**Where.** `plan`, `sitesOf`, `figureOf` and `FIGURE_FIELDS`, `coarsen`, `cutArrow`, `handTo` and `checkOpenings` in `viewer/plan.js`;
 which parameters of no type of the code's hold a value, `builder::settle_parameters`; `tools/pictures.py`;
 `engine/tests/plans.rs`.
 

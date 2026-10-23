@@ -1,0 +1,56 @@
+# Two charts, the second titled after the first. The first chart makes its figure when its first line is drawn and hands
+# its title to the second's `retitle`, which sets the second's `title` to it. A figure rests in the fields that hold it
+# (#168): a chart keeps its figure in `fig` and `ax`, which `create_figure` sets to what `plt.subplots()` makes, and
+# `title` is none of them. So the second chart holds no figure of the first's, and its line makes one of its own: the
+# notebook's screen shows two figures, each named by the chart that holds it.
+
+route notebooks.side_by_side
+step side_by_side/side_by_side
+step side_by_side/side_by_side/Chart()
+step side_by_side/side_by_side/Chart()#2
+step side_by_side/side_by_side/Chart.line
+choice side_by_side/side_by_side/Chart.line/?1
+step side_by_side/side_by_side/Chart.line/?1/Chart.create_figure
+step side_by_side/side_by_side/Chart.lend_title
+step side_by_side/side_by_side/Chart.lend_title/Chart.retitle
+step side_by_side/side_by_side/Chart.line#2
+choice side_by_side/side_by_side/Chart.line#2/?1
+step side_by_side/side_by_side/Chart.line#2/?1/Chart.create_figure
+
+line entry > side_by_side call
+line side_by_side/side_by_side/Chart() > Chart·first@side_by_side/side_by_side/Chart() value
+line side_by_side/side_by_side/Chart()#2 > Chart·second@side_by_side/side_by_side/Chart()#2 value
+
+line Chart·first@side_by_side/side_by_side/Chart() > side_by_side/side_by_side/Chart.line/?1/Chart.create_figure value
+line side_by_side/side_by_side/Chart.line/?1/Chart.create_figure > Chart·self@side_by_side/side_by_side/Chart.line/?1 value
+line side_by_side/side_by_side/Chart.line/?1/Chart.create_figure > Figure 1 · Chart · first own    # `plt.subplots()`
+line Chart·self@side_by_side/side_by_side/Chart.line/?1 > side_by_side/side_by_side/Chart.line value   # `self.ax.plot(..)`
+line side_by_side/side_by_side/Chart.line > Chart·first@side_by_side/side_by_side/Chart.line value
+
+line Chart·first@side_by_side/side_by_side/Chart.line > side_by_side/side_by_side/Chart.lend_title/Chart.retitle value   # `self.title`
+line Chart·second@side_by_side/side_by_side/Chart()#2 > side_by_side/side_by_side/Chart.lend_title/Chart.retitle value  # `other.retitle(..)` runs on it
+line side_by_side/side_by_side/Chart.lend_title/Chart.retitle > Chart·other@side_by_side/side_by_side/Chart.lend_title/Chart.retitle value   # `self.title = title`
+line Chart·other@side_by_side/side_by_side/Chart.lend_title/Chart.retitle > side_by_side/side_by_side/Chart.lend_title value
+line side_by_side/side_by_side/Chart.lend_title > Chart·second@side_by_side/side_by_side/Chart.lend_title value
+
+line Chart·second@side_by_side/side_by_side/Chart.lend_title > side_by_side/side_by_side/Chart.line#2/?1/Chart.create_figure value
+line side_by_side/side_by_side/Chart.line#2/?1/Chart.create_figure > Chart·self@side_by_side/side_by_side/Chart.line#2/?1 value
+line side_by_side/side_by_side/Chart.line#2/?1/Chart.create_figure > Figure 2 · Chart · second own   # a figure of its own
+line Chart·self@side_by_side/side_by_side/Chart.line#2/?1 > side_by_side/side_by_side/Chart.line#2 value
+line side_by_side/side_by_side/Chart.line#2 > Chart·second@side_by_side/side_by_side/Chart.line#2 value
+line Chart·second@side_by_side/side_by_side/Chart.line#2 > side_by_side/side_by_side value              # `return second`
+line side_by_side/side_by_side > Chart·chart@side_by_side/side_by_side value                            # `chart = side_by_side(..)`
+
+home Chart·first@side_by_side/side_by_side/Chart() side_by_side/side_by_side
+home Chart·second@side_by_side/side_by_side/Chart()#2 side_by_side/side_by_side
+home Chart·self@side_by_side/side_by_side/Chart.line/?1 side_by_side/side_by_side/Chart.line
+home Chart·first@side_by_side/side_by_side/Chart.line side_by_side/side_by_side
+home Chart·other@side_by_side/side_by_side/Chart.lend_title/Chart.retitle side_by_side/side_by_side/Chart.lend_title
+home Chart·second@side_by_side/side_by_side/Chart.lend_title side_by_side/side_by_side
+home Chart·self@side_by_side/side_by_side/Chart.line#2/?1 side_by_side/side_by_side/Chart.line#2
+home Chart·second@side_by_side/side_by_side/Chart.line#2 side_by_side/side_by_side
+home Chart·chart@side_by_side/side_by_side side_by_side
+
+side entry left
+side Figure 1 · Chart · first right
+side Figure 2 · Chart · second right

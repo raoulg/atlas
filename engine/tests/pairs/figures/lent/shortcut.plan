@@ -1,7 +1,7 @@
 # The same two charts, where `lend` reaches into the second chart and sets its fields to what the first holds
-# (`other.fig, other.ax = self.fig, self.ax`). The second chart holds the first's figure all the same (#11, `Node::sets`),
-# and the screen shows one figure; what differs is who sets the second chart's fields: the first chart's `lend` itself,
-# no step of the second's.
+# (`other.fig, other.ax = self.fig, self.ax`), each field to the first's of the same name, the fields a chart keeps its
+# figure in (#168). The second chart holds the first's figure all the same (#11, `Node::sets`), and the screen shows one
+# figure; what differs is who sets the second chart's fields: the first chart's `lend` itself, no step of the second's.
 
 route notebooks.overlay
 step overlay/overlay

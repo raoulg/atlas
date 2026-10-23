@@ -1344,3 +1344,13 @@ fn rust_a_call_is_handed_no_name_a_closure_in_it_binds() {
 fn a_table_is_one_value_and_the_lists_it_is_cut_into_two() {
     common::a_table_is_one_value("rust", "tables.timeout");
 }
+
+/// A body's own code that sets a field of a value names the field (#168): the store's `rates` sets the `date` of the Rates
+/// it builds (`rates.date = date`), and no other field of them; what a figure or a lens follows through a field, it follows
+/// through that one.
+#[test]
+fn a_set_names_the_field_it_sets() {
+    let sets = &node(clean(), "spend.store.Store.rates").sets;
+    let named: Vec<(&str, &str)> = sets.iter().map(|s| (s.on.name.as_str(), s.field.as_str())).collect();
+    assert_eq!(named, [("rates", "date")], "{sets:#?}");
+}

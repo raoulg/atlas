@@ -2175,6 +2175,12 @@ const USES: UseSyntax = UseSyntax {
     splits: |n, child| n.kind() == "switch_statement" && n.child_by_field_name("value").map(|v| v.id()) == Some(child.id()),
     names: &["identifier", "shorthand_property_identifier"],
     keeps: &["member_expression", "subscript_expression"],
+    field: |n, src| {
+        (n.kind() == "member_expression")
+            .then(|| Some((n.child_by_field_name("object")?, text(n.child_by_field_name("property")?, src).to_string())))
+            .flatten()
+    },
+    pairs: |targets, value| targets.kind() == "array_pattern" && value.kind() == "array",
     wrappers: WRAPPERS,
     drops: |n, child, src| match n.kind() {
         "expression_statement" => n.named_child(0).map(|c| c.id()) == Some(child.id()),

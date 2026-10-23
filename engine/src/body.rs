@@ -103,6 +103,12 @@ pub struct UseSyntax {
     /// The kinds of target that keep a value beyond a name: a field, an element (`self.n = v`,
     /// `rows[i] = v`).
     pub keeps: &'static [&'static str],
+    /// The value a field of it is read or set through and the field's name, as the code writes it:
+    /// `x` and `f` of `x.f`; none for an element (`rows[i]`).
+    pub field: for<'n> fn(TsNode<'n>, &[u8]) -> Option<(TsNode<'n>, String)>,
+    /// Are a binding's targets and its value written as as many parts each, so that each target is
+    /// bound to the part of the value at its place: `a.x, a.y = b, c`, `(a.x, a.y) = (b, c)`.
+    pub pairs: fn(TsNode, TsNode) -> bool,
     /// What hands on the value inside it (`tree::Wrappers`): a call written in one is that call to
     /// what it stands in (`await f(x)`, `f(x)?`).
     pub wrappers: Wrappers,
@@ -489,9 +495,10 @@ impl<'t, 's> Steps<'t, 's> {
 
     /// What the body's own code sets a part of a value to (`Node::sets`): each binding whose target is a
     /// field or an element of a value a name holds (`other.fig = self.fig`, `rows[i] = row`, `self.n +=
-    /// 1`), the value it changes, as a call is handed it, with the values the assigned expression reads,
-    /// outside the steps written in it, and those steps' results that a name holds. A binding of a name
-    /// is no change of a value (`Node::binds`).
+    /// 1`), once for each part it sets: the value it changes, as a call is handed it, and the field of it
+    /// that is set, with the values the assigned expression reads, outside the steps written in it, and
+    /// those steps' results that a name holds, and the field of a value the expression is. A binding of a
+    /// name is no change of a value (`Node::binds`).
     fn sets(&self, held: &dyn Fn(TsNode<'t>) -> Vec<Held>) -> Vec<Set> {
         let u = self.uses;
         let kinds: Vec<&str> = u.names.iter().chain(u.reads).copied().collect();
@@ -503,29 +510,72 @@ impl<'t, 's> Steps<'t, 's> {
             }
             stack.extend(named_children(b).into_iter().rev());
             let Some((targets, value)) = (u.binds)(b) else { continue };
-            if walk(targets, u.keeps).is_empty() || b.child_by_field_name("body").is_some() || self.in_function(b) {
+            let kept = walk(targets, u.keeps);
+            if kept.is_empty() || b.child_by_field_name("body").is_some() || self.in_function(b) {
                 continue;
             }
+            // each part a binding sets, with the part of the value at its place where both are written as as many parts
+            // (`other.fig, other.ax = self.fig, self.ax`), else with the whole value (`self.fig, self.ax = plt.subplots()`)
+            let each = |n: TsNode<'t>| named_children(n).into_iter().filter(|x| !x.kind().ends_with("comment")).collect::<Vec<_>>();
+            let parts: Vec<(TsNode, TsNode)> = if (u.pairs)(targets, value) && each(targets).len() == each(value).len() {
+                each(targets).into_iter().zip(each(value)).collect()
+            } else {
+                let within = |a: &TsNode, b: &TsNode| a.id() != b.id() && b.start_byte() <= a.start_byte() && a.end_byte() <= b.end_byte();
+                kept.iter().filter(|k| !kept.iter().any(|o| within(k, o))).map(|k| (*k, value)).collect()
+            };
             let read = |n: &TsNode| !(u.label)(*n, self.src);
-            let Some(owner) = walk(targets, &kinds).into_iter().filter(read).min_by_key(|n| n.start_byte()) else { continue };
-            let Some(on) = held(owner).into_iter().next() else { continue };
-            let steps: Vec<&Site> = self
-                .sites
-                .iter()
-                .filter(|s| s.span != (0, 0) && value.start_byte() <= s.span.0 as usize && s.span.1 as usize <= value.end_byte())
-                .collect();
-            let in_step = |n: &TsNode| steps.iter().any(|s| s.span.0 as usize <= n.start_byte() && n.end_byte() <= s.span.1 as usize);
-            let mut from: Vec<Held> = vec![];
-            let names = walk(value, &kinds).into_iter().filter(|n| read(n) && !in_step(n)).flat_map(|n| held(n));
-            let made = steps.iter().flat_map(|s| s.gives.iter().filter(|g| !g.name.is_empty()).cloned());
-            for h in names.chain(made).filter(|h| !h.ty.is_empty() || !h.name.is_empty()) {
-                if !from.contains(&h) {
-                    from.push(Held { at: 0, fills: vec![], ..h });
+            for (target, value) in parts {
+                if walk(target, u.keeps).is_empty() {
+                    continue;
                 }
+                let Some(owner) = walk(target, &kinds).into_iter().filter(read).min_by_key(|n| n.start_byte()) else { continue };
+                let Some(on) = held(owner).into_iter().next() else { continue };
+                let steps: Vec<&Site> = self
+                    .sites
+                    .iter()
+                    .filter(|s| s.span != (0, 0) && value.start_byte() <= s.span.0 as usize && s.span.1 as usize <= value.end_byte())
+                    .collect();
+                let in_step = |n: &TsNode| steps.iter().any(|s| s.span.0 as usize <= n.start_byte() && n.end_byte() <= s.span.1 as usize);
+                let mut from: Vec<Held> = vec![];
+                let names = walk(value, &kinds).into_iter().filter(|n| read(n) && !in_step(n)).flat_map(|n| held(n));
+                let made = steps.iter().flat_map(|s| s.gives.iter().filter(|g| !g.name.is_empty()).cloned());
+                for h in names.chain(made).filter(|h| !h.ty.is_empty() || !h.name.is_empty()) {
+                    if !from.contains(&h) {
+                        from.push(Held { at: 0, fills: vec![], ..h });
+                    }
+                }
+                let of = if from.len() == 1 { self.fields(value).unwrap_or_default() } else { String::new() };
+                out.push(Set {
+                    on: Held { at: 0, fills: vec![], ..on },
+                    field: self.fields(target).unwrap_or_default(),
+                    from,
+                    of,
+                    lines: Some((line(b), b.end_position().row as u32 + 1)),
+                    arms: self.arms(b),
+                });
             }
-            out.push(Set { on: Held { at: 0, fills: vec![], ..on }, from, arms: self.arms(b) });
         }
         out
+    }
+
+    /// The fields an expression reads of the name it starts at, as the code writes them, the elements it
+    /// goes through left out: `fig` of `other.fig`, `fig.title` of `self.fig.title`, `rows` of
+    /// `self.rows[i]`. None where it starts at no name (a call's result) or reads no field.
+    fn fields(&self, n: TsNode) -> Option<String> {
+        let u = self.uses;
+        let (mut k, mut fields) = (beneath(n, u.wrappers), vec![]);
+        loop {
+            if let Some((of, field)) = (u.field)(k, self.src) {
+                fields.push(field);
+                k = beneath(of, u.wrappers);
+            } else if u.keeps.contains(&k.kind()) {
+                k = beneath(k.named_child(0)?, u.wrappers);
+            } else {
+                break;
+            }
+        }
+        fields.reverse();
+        (!fields.is_empty() && (u.names.contains(&k.kind()) || u.reads.contains(&k.kind()))).then(|| fields.join("."))
     }
 
     /// Whether the body's own code reads what step `i` of the program's code gives, by no name: through
@@ -628,17 +678,15 @@ impl<'t, 's> Steps<'t, 's> {
     }
 
     /// What an initializer keeps of its parameters in the value it builds where its signature says so (TypeScript's
-    /// `constructor(readonly until: string)`): the body's own code reads them and sets them into the value `on`, as
-    /// `self.until = until` does. Called after `uses`.
+    /// `constructor(readonly until: string)`): the body's own code reads them and sets each into the field of its name of
+    /// the value `on`, as `self.until = until` does. Called after `uses`.
     pub fn keeps(&mut self, on: Held, values: Vec<Held>) {
-        for h in &values {
+        for h in values {
             let one = Use { name: h.name.clone(), ty: h.ty.clone(), arms: vec![], param: h.param };
             if !self.own.contains(&one) {
                 self.own.push(one);
             }
-        }
-        if !values.is_empty() {
-            self.sets.push(Set { on, from: values, arms: vec![] });
+            self.sets.push(Set { on: on.clone(), field: h.name.clone(), from: vec![h], ..Set::default() });
         }
     }
 

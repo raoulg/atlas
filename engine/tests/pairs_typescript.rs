@@ -1505,3 +1505,16 @@ fn a_parameter_of_no_type_is_handed_by_its_name_where_a_call_fills_it() {
 fn a_table_is_one_value_and_the_lists_it_is_cut_into_two() {
     common::a_table_is_one_value("typescript", "tables.tables.timeout");
 }
+
+/// A body's own code that sets a field of a value names the field (#168): the changes pair's `rename` sets the `category`
+/// of the expense it is handed (`x.category = name`, through the name `x` that holds it), and a parameter the signature
+/// keeps (`constructor(readonly level: Level)`) sets the field of its name of the value the constructor builds.
+#[test]
+fn a_set_names_the_field_it_sets() {
+    let named =
+        |g: &Graph, id: &str| -> Vec<(String, String)> { node(g, id).sets.iter().map(|s| (s.on.name.clone(), s.field.clone())).collect() };
+    let changes = common::pair("changes/typescript");
+    assert_eq!(named(&changes.shortcut, "ledger.rename"), [("e".to_string(), "category".to_string())]);
+    let choices = common::pair("choices/typescript");
+    assert_eq!(named(&choices.clean, "runs.Report.constructor"), [(String::new(), "level".to_string())]);
+}

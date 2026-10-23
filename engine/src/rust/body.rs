@@ -2359,6 +2359,12 @@ const USES: UseSyntax = UseSyntax {
     splits: |n, child| n.kind() == "match_expression" && n.child_by_field_name("value").map(|v| v.id()) == Some(child.id()),
     names: &["identifier"],
     keeps: &["field_expression", "index_expression"],
+    field: |n, src| {
+        (n.kind() == "field_expression")
+            .then(|| Some((n.child_by_field_name("value")?, text(n.child_by_field_name("field")?, src).to_string())))
+            .flatten()
+    },
+    pairs: |targets, value| targets.kind() == "tuple_expression" && value.kind() == "tuple_expression",
     wrappers: WRAPPERS,
     // a statement ends in `;`: a block's last expression without one is the block's value
     drops: |n, child, src| match n.kind() {
