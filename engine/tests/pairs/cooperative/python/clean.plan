@@ -24,7 +24,7 @@ line entry > lines call
 line Trimmed·source > lines value
 known #128 line Trimmed·source > lines/Trimmed.read/Source.read/urlopen value         # `urlopen(self.url)`
 line lines/Trimmed.read/Source.read/urlopen > _·response@lines/Trimmed.read/Source.read/urlopen value
-known #101 line _·response@lines/Trimmed.read/Source.read/urlopen > lines/Trimmed.read/Source.read value   # `response.read()`
+line _·response@lines/Trimmed.read/Source.read/urlopen > lines/Trimmed.read/Source.read value   # `response.read()`
 line lines/Trimmed.read/Source.read > Web own
 line lines/Trimmed.read/Source.read > lines/Trimmed.read back
 line lines/Trimmed.read > lines back
@@ -35,13 +35,13 @@ line Disk(self.root / key) > lines/Trimmed.read/Source.read/Cached.read/?1/Store
 line lines/Trimmed.read/Source.read/Cached.read/?1/Store.get > lines/Trimmed.read/Source.read/Cached.read back
 known #128 line Trimmed·source > lines/Trimmed.read/Source.read/Cached.read/?1/Source.read/urlopen value
 line lines/Trimmed.read/Source.read/Cached.read/?1/Source.read/urlopen > _·response@lines/Trimmed.read/Source.read/Cached.read/?1/Source.read/urlopen value
-known #101 line _·response@lines/Trimmed.read/Source.read/Cached.read/?1/Source.read/urlopen > lines/Trimmed.read/Source.read/Cached.read/?1/Source.read value
+line _·response@lines/Trimmed.read/Source.read/Cached.read/?1/Source.read/urlopen > lines/Trimmed.read/Source.read/Cached.read/?1/Source.read value
 line lines/Trimmed.read/Source.read/Cached.read/?1/Source.read > Web own
 line lines/Trimmed.read/Source.read/Cached.read/?1/Source.read > _·data@lines/Trimmed.read/Source.read/Cached.read/?1/Source.read value
 line _·data@lines/Trimmed.read/Source.read/Cached.read/?1/Source.read > lines/Trimmed.read/Source.read/Cached.read/?1/Store.put value
 known #128 line Trimmed·source > lines/Trimmed.read/Source.read/Cached.read/?1/Store.put value
 line lines/Trimmed.read/Source.read/Cached.read/?1/Store.put > Disk(self.root / key) own
-known #101 line _·data@lines/Trimmed.read/Source.read/Cached.read/?1/Source.read > lines/Trimmed.read/Source.read/Cached.read value   # `return data`
+line _·data@lines/Trimmed.read/Source.read/Cached.read/?1/Source.read > lines/Trimmed.read/Source.read/Cached.read value   # `return data`
 line lines/Trimmed.read/Source.read/Cached.read > lines/Trimmed.read/Source.read back
 
 # the values a call is handed through `self` drawn as types from beyond, and the source at the own arrow
@@ -62,7 +62,7 @@ known #128 extra home Store lines
 home Trimmed·source lines
 home _·response@lines/Trimmed.read/Source.read/urlopen lines/Trimmed.read/Source.read
 home _·response@lines/Trimmed.read/Source.read/Cached.read/?1/Source.read/urlopen lines/Trimmed.read/Source.read/Cached.read/?1/Source.read
-known #101 home _·data@lines/Trimmed.read/Source.read/Cached.read/?1/Source.read lines/Trimmed.read/Source.read/Cached.read   # `return data` uses it too
+home _·data@lines/Trimmed.read/Source.read/Cached.read/?1/Source.read lines/Trimmed.read/Source.read/Cached.read   # `return data` uses it too
 
 side entry left
 known #160 side Web left                                                              # `urlopen(url)` with no data is a GET

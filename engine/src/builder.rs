@@ -5,7 +5,9 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use indexmap::IndexMap;
 
-use crate::model::{Bucket, Dir, Edge, EdgeKind, Entry, EntryKind, Graph, Node, NodeKind, Signature, Stats, Touch, Unresolved, World};
+use crate::model::{
+    Bucket, Dir, Edge, EdgeKind, Entry, EntryKind, Graph, Node, NodeKind, Signature, Site, Stats, Touch, Unresolved, World,
+};
 
 /// Per-class facts that only matter during resolution.
 #[derive(Default, Clone, Debug)]
@@ -328,6 +330,7 @@ impl GraphBuilder {
     /// resolve are counted.
     pub fn finish(self, root: String, project_root: Option<&std::path::Path>, language: &str) -> Graph {
         let mut top: Vec<(String, u32)> = self.unresolved.iter().map(|(k, v)| (k.clone(), *v)).collect();
+        let family = self.family();
         let mut nodes = self.nodes;
         for (id, info) in &self.classes {
             if let Some(n) = nodes.get_mut(id).filter(|n| n.kind == NodeKind::Class) {
@@ -339,6 +342,7 @@ impl GraphBuilder {
             }
         }
         serve_data(&mut nodes);
+        settle_fails(&mut nodes, &self.edges, &family);
         crate::flow::wire(&mut nodes, &self.edges);
         mark_doors(&mut nodes, &self.edges);
         mark_options(&mut nodes);
@@ -521,6 +525,94 @@ fn parsed(nodes: &IndexMap<String, Node>, id: &str, seen: &mut HashSet<String>, 
             }
             None if !s.to.is_empty() => parsed(nodes, &s.to, seen, out),
             None => {}
+        }
+    }
+}
+
+/// The error each call hands on to its body's border where the language hands on every error a call
+/// fails with (`Site::fails`), settled once every body is read, since it needs what the callee's body
+/// does: what the callee's body ends with uncaught, as a `raise` propagates. A body ends with what it
+/// raises, by the class of the error it builds, and with what its calls hand on, each where no handler
+/// around it catches it. A handler catches the classes it names and those below them, and one that
+/// names none catches whatever is raised. A call that `?` hands on fails as its reader said (`Steps`).
+fn settle_fails(nodes: &mut IndexMap<String, Node>, edges: &[Edge], family: &Family) {
+    let bare = |id: &str| id.trim_start_matches("ext:").rsplit(['.', ':']).next().unwrap_or("").to_string();
+    let mut bases: HashMap<&str, Vec<&str>> = HashMap::new();
+    for e in edges.iter().filter(|e| e.kind == EdgeKind::Inherits) {
+        bases.entry(e.src.as_str()).or_default().push(e.dst.as_str());
+    }
+    // the classes an error is of, itself first: what a handler that names one of them catches
+    let kinds = |error: &str| -> Vec<String> {
+        let (mut out, mut todo) = (vec![], vec![error]);
+        while let Some(k) = todo.pop() {
+            if !out.contains(&bare(k)) {
+                out.push(bare(k));
+                todo.extend(bases.get(k).into_iter().flatten());
+            }
+        }
+        out
+    };
+    let caught = |handlers: &[Vec<String>], error: &str| {
+        let of = kinds(error);
+        handlers.iter().any(|h| h.is_empty() || h.iter().any(|n| of.contains(&bare(n))))
+    };
+    // what a call runs: the initializer of a class it builds, a method and each override of it, one
+    // of which a call into the family runs
+    let mut below: HashMap<&str, Vec<&str>> = HashMap::new();
+    for (m, bases) in &family.overrides {
+        for (b, _) in bases {
+            below.entry(b.as_str()).or_default().push(m.as_str());
+        }
+    }
+    let runs = |s: &Site| -> Vec<String> {
+        let Some(n) = nodes.get(&s.to) else { return vec![] };
+        match n.kind {
+            NodeKind::Class => n.initializer(|m| nodes.get(m)).into_iter().collect(),
+            // a call through a class runs the method that class's order finds, and no override of it
+            _ => std::iter::once(n.id.as_str())
+                .chain(below.get(n.id.as_str()).filter(|_| !s.named).into_iter().flatten().copied())
+                .map(str::to_string)
+                .collect(),
+        }
+    };
+    let handed = |s: &Site, ends: &HashMap<String, Vec<String>>| -> Option<String> {
+        if !s.handed_on || s.fails.is_some() {
+            return s.fails.clone();
+        }
+        runs(s).iter().flat_map(|f| ends.get(f).into_iter().flatten()).find(|e| !caught(&s.caught, e)).cloned()
+    };
+    // what each function's body ends with uncaught, grown to the fixpoint: a call that hands on what
+    // its callee ends with makes the caller end with it too
+    let mut ends: HashMap<String, Vec<String>> = HashMap::new();
+    loop {
+        let mut grew = false;
+        for n in nodes.values() {
+            let mut out: Vec<String> = ends.get(&n.id).cloned().unwrap_or_default();
+            let before = out.len();
+            for s in &n.sites {
+                let raised = s.gives.iter().filter(|g| s.raises && !caught(&s.caught, &g.ty)).map(|g| g.ty.clone());
+                for e in raised.chain(handed(s, &ends)) {
+                    if !out.contains(&e) {
+                        out.push(e);
+                    }
+                }
+            }
+            if out.len() > before {
+                ends.insert(n.id.clone(), out);
+                grew = true;
+            }
+        }
+        if !grew {
+            break;
+        }
+    }
+    let fails: Vec<(String, usize, String)> = nodes
+        .values()
+        .flat_map(|n| n.sites.iter().enumerate().filter_map(|(i, s)| handed(s, &ends).map(|e| (n.id.clone(), i, e))).collect::<Vec<_>>())
+        .collect();
+    for (id, i, e) in fails {
+        if let Some(s) = nodes.get_mut(&id).and_then(|n| n.sites.get_mut(i)) {
+            s.fails = Some(e);
         }
     }
 }

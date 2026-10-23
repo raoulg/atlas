@@ -65,10 +65,13 @@ def settled(page):
     assert page.locator('#fault').is_hidden(), page.locator('#fault').inner_text()
 
 
-def shoot(page, destination):
+def shoot(page, destination, widest=None):
+    """The diagram alone, at its own size; with `widest` (CSS pixels) a wider one is scaled down to it."""
     bounds = page.locator('#scene').evaluate("g => {const b=g.getBBox();return {x:b.x,y:b.y,width:b.width,height:b.height}}")
-    page.set_viewport_size({'width': max(1400, int(bounds['width']) + 80), 'height': max(900, int(bounds['height']) + 180)})
-    page.locator('#scene').evaluate("(g,b) => g.setAttribute('transform', `translate(${30-b.x},${70-b.y})`)", bounds)
+    scale = min(1, widest / bounds['width']) if widest and bounds['width'] else 1
+    page.set_viewport_size({'width': max(1400, int(bounds['width'] * scale) + 80), 'height': max(900, int(bounds['height'] * scale) + 180)})
+    page.locator('#scene').evaluate("(g,[b,s]) => g.setAttribute('transform', `translate(30,70) scale(${s}) translate(${-b.x},${-b.y})`)",
+                                    [bounds, scale])
     page.locator('#scene').screenshot(path=str(destination))
 
 

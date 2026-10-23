@@ -13,7 +13,7 @@ line entry > lines call
 line Trimmed·source > lines value
 known #128 line Trimmed·source > lines/Trimmed.read/Source.read/urlopen value         # `urlopen(self.url)`
 line lines/Trimmed.read/Source.read/urlopen > _·response@lines/Trimmed.read/Source.read/urlopen value
-known #101 line _·response@lines/Trimmed.read/Source.read/urlopen > lines/Trimmed.read/Source.read value   # `response.read()`
+line _·response@lines/Trimmed.read/Source.read/urlopen > lines/Trimmed.read/Source.read value   # `response.read()`
 line lines/Trimmed.read/Source.read > Web own
 line lines/Trimmed.read/Source.read > lines/Trimmed.read back
 line lines/Trimmed.read > lines back

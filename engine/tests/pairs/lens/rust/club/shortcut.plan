@@ -45,6 +45,18 @@ home Member@Register()/Register.latest/Member() Register()/Register.latest
 home Report@Register()/Register.latest/Report() Register()/Register.latest
 home Report@Register()/Register.latest Register()
 
+# An error is a value (#138): `?` hands on what a step fails with, converted to the function's error type, here no type
+# of the code's (`io::Error`, `rusqlite::Error`); each border it crosses uncaught hands it on. An opened step takes what
+# its steps hand on, which Atlas does not draw for an error of no type of the code's.
+line Register()/Register.names > _@Register()/Register.names value
+line Register()/Register.names/prepare > _@Register()/Register.names/prepare value
+line Register()/Register.names/query_map > _@Register()/Register.names/query_map value
+known #138 line _@Register()/Register.names/prepare > Register()/Register.names value
+known #138 line _@Register()/Register.names/query_map > Register()/Register.names value
+home _@Register()/Register.names Register()
+home _@Register()/Register.names/prepare Register()/Register.names
+home _@Register()/Register.names/query_map Register()/Register.names
+
 side entry left
 side SQLite(members) between
 side SQLite(reports) left
@@ -57,6 +69,6 @@ step Register()/Register.names/query_map
 line Register()/Register.names/prepare > _·select@Register()/Register.names/prepare value
 line _·select@Register()/Register.names/prepare > Register()/Register.names/query_map value
 line Register()/Register.names/query_map > _·rows@Register()/Register.names/query_map value
-known #101 line _·rows@Register()/Register.names/query_map > Register()/Register.names value   # names returns what `collect` makes of them
+line _·rows@Register()/Register.names/query_map > Register()/Register.names value   # names returns what `collect` makes of them
 home _·select@Register()/Register.names/prepare Register()/Register.names
 home _·rows@Register()/Register.names/query_map Register()/Register.names

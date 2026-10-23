@@ -18,7 +18,7 @@ line run/join/Path#2 > _·second@run/join/Path#2 value
 line run/join/Path#3 > _·destination@run/join/Path#3 value
 line _·first@run/join/Path > run/join/read_pair value
 line _·second@run/join/Path#2 > run/join/read_pair value
-known #101 line _·destination@run/join/Path#3 > run/join value   # `destination.write_text(..)`
+line _·destination@run/join/Path#3 > run/join value   # `destination.write_text(..)`
 home _·first@run/join/Path run/join
 home _·second@run/join/Path#2 run/join
 home _·destination@run/join/Path#3 run/join

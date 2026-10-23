@@ -13,7 +13,7 @@ line Log·log@run/Log() > run/note/clone value
 line run/note/clone > _·lines@run/note/clone value
 line _·lines@run/note/clone > run/note/push value
 line run/note/push > _·lines@run/note/push value
-known #101 line Log·log@run/Log() > run value   # `log.lines.len()`: the body uses it itself
+line Log·log@run/Log() > run value   # `log.lines.len()`: the body uses it itself
 
 home Log·log@run/Log() run
 home _·lines@run/note/clone run/note

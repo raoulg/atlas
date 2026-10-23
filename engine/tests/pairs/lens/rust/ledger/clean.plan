@@ -44,12 +44,17 @@ home Entry@Ledger()/Ledger.get/Entry() Ledger()/Ledger.get
 home Entry@Ledger()/Ledger.get Ledger()
 
 # the error `get` raises when the text is no Decimal: `io::Error::new` is no step, so it goes into map_err, whose border
-# hands it on with its result, and `?` hands it on across get's border to its caller
-known #138 line Ledger()/Ledger.get/map_err > Error@Ledger()/Ledger.get/map_err value
-known #138 line Error@Ledger()/Ledger.get/map_err > Ledger()/Ledger.get value
-known #138 line Ledger()/Ledger.get > Error@Ledger()/Ledger.get value
-known #138 home Error@Ledger()/Ledger.get/map_err Ledger()/Ledger.get
-known #138 home Error@Ledger()/Ledger.get Ledger()
+# hands it on with its result, and `?` hands it on across get's border to its caller, as it does what read_to_string
+# fails with. Both are `io::Error`, the error type of get's signature, no type of the code's (#138); an opened step takes
+# what its steps hand on, which Atlas does not draw for an error of no type of the code's
+line Ledger()/Ledger.get/read_to_string > _@Ledger()/Ledger.get/read_to_string value
+known #138 line _@Ledger()/Ledger.get/read_to_string > Ledger()/Ledger.get value
+home _@Ledger()/Ledger.get/read_to_string Ledger()/Ledger.get
+line Ledger()/Ledger.get/map_err > _@Ledger()/Ledger.get/map_err value
+known #138 line _@Ledger()/Ledger.get/map_err > Ledger()/Ledger.get value
+home _@Ledger()/Ledger.get/map_err Ledger()/Ledger.get
+line Ledger()/Ledger.get > _@Ledger()/Ledger.get value
+home _@Ledger()/Ledger.get Ledger()
 
 side entry left
 side Disk(Ledger.path) between

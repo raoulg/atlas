@@ -65,10 +65,10 @@ line Ledger·this@main/Ledger.takeVictim/push > main/Ledger.takeVictim value
 home Ledger·this@main/Ledger.takeFrom/push main/Ledger.takeFrom
 home Ledger·this@main/Ledger.takeVictim/push main/Ledger.takeVictim
 
-# The own arrow drops a value its own body reads when a step inside takes it too: `takeFrom` empties `other.rows`
+# The own arrow drops a value its own body reads when a step inside takes it too: `takeFrom` empties `other.rows` itself
+line Ledger·other@main/Ledger()#2 > main/Ledger.takeFrom value
 # itself, `takeVictim` `victim.rows`
-known #126 line Ledger·other@main/Ledger()#2 > main/Ledger.takeFrom value
-known #126 line Ledger·other@main/Ledger.takeFrom > main/Ledger.takeVictim value
+line Ledger·other@main/Ledger.takeFrom > main/Ledger.takeVictim value
 
 # A changed argument is the caller's value at a new moment, under the name it was handed: the ledger handed to
 # `takeFrom` is changed, and `takeVictim` takes it as `takeFrom` left it; the array and the Map are made anew by the
@@ -96,8 +96,8 @@ line main/rename > main back
 # The own arrow takes a value its body only hands to a step inside it: the ledger whose rows go to `fileAll`
 
 # `main` reads the length of the array and the size of the Map its steps changed
-known #101 line Array·lines@main/addLine > main value
-known #101 line Map·m@main/count > main value
+line Array·lines@main/addLine > main value   # the reader gives the use (#101); the value it uses waits on #129
+line Map·m@main/count > main value
 
 # The loop goes over the ledger `fileAll` is handed through its rows: its parameter `expenses` holds that projection.
 # The object literal handed to `rename` builds an Expense in `main`
@@ -105,6 +105,5 @@ line Ledger·ledger@main/Ledger.takeVictim > main/fileAll/for e of expenses valu
 home Expense@main/Expense() main
 
 # a result the caller drops goes back to it: the reader does not say the call is a statement of its own
-known #134 extra line main/Ledger.takeFrom > main back
-known #134 extra line main/Ledger.takeVictim > main back
 
+# the push is handed the victim the call hands, stale (#129), and not this (#128): the own arrow takes this itself

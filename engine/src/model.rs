@@ -208,7 +208,10 @@ pub struct Node {
     pub sites: Vec<Site>,
     /// What the body's own code uses outside the calls that are its steps: each name it reads in a
     /// condition, an operator, a format, a return or an argument of a call that is no step
-    /// (`print(store.path)`, `if done:`, `Ok(path)`), once. A projection of a name uses that name.
+    /// (`print(store.path)`, `if done:`, `Ok(path)`), once in each arm it is read in. A projection of a
+    /// name uses that name; a name bound to a part of another (`width = settings.width`) uses it where
+    /// the body reads that name. The instance a method runs on is used by no name, as a call is handed
+    /// it.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub uses: Vec<Use>,
     /// The lines each arm of its body's choices spans, first and last: what is written there runs
@@ -381,6 +384,16 @@ pub struct Site {
     /// `""` where it is no type of the code's.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fails: Option<String>,
+    /// The call hands on what its callee's body raises, as a `raise` propagates in its language: read
+    /// where the call stands, and `fails` is settled from what the callee's body ends with once the
+    /// graph is whole. A call `?` hands on fails as the reader reads it.
+    #[serde(skip)]
+    pub handed_on: bool,
+    /// The handlers that watch the call (the body of a `try` it stands in), innermost first, each by
+    /// the classes it catches as the code names them, none for one that catches whatever is raised.
+    /// `fails` is settled from them once the graph is whole.
+    #[serde(skip)]
+    pub caught: Vec<Vec<String>>,
     /// The class of the value a method is called on, when that is a subclass of the method's own
     /// class (`ComparePlot(..).plot()` reaches `BasePlot.plot` on a `ComparePlot`).
     #[serde(default, skip_serializing_if = "String::is_empty")]
@@ -439,8 +452,9 @@ impl Held {
     }
 }
 
-/// A name a body's own code reads (`Node::uses`), with its type when known and the arms of the
-/// choices the use sits in, numbered as `Site::arms` numbers them.
+/// A value a body's own code reads (`Node::uses`), by the name that holds it (none for the instance
+/// a method runs on), with its type when known and the arms of the choices the use sits in, numbered
+/// as `Site::arms` numbers them.
 #[derive(Serialize, Deserialize, TS, Clone, Debug, Default, PartialEq, Eq)]
 #[ts(export)]
 pub struct Use {
@@ -1113,8 +1127,10 @@ impl Graph {
                 m(&mut s.to);
                 m(&mut s.on);
                 m(&mut s.after);
+                s.fails.iter_mut().for_each(&m);
                 s.hands.iter_mut().chain(s.gives.iter_mut()).for_each(|h| m(&mut h.ty));
             }
+            n.uses.iter_mut().for_each(|u| m(&mut u.ty));
             for t in n.touches.iter_mut().chain(n.instead.iter_mut()) {
                 for f in &mut t.by {
                     *f = f.split('&').map(to).collect::<Vec<_>>().join("&");

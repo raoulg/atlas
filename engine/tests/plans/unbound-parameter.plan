@@ -13,7 +13,7 @@ line Sheet·sheet > run value
 line Sheet·sheet > run/show value                                      # `print(title, ..)`, the title of the sheet
 known #157 line Sheet·sheet > run/show/for row in rows value          # `rows` holds `sheet.rows`
 line run/show/for row in rows > Row·row@run/show/for row in rows value
-known #101 line Row·row@run/show/for row in rows > run/show value     # `row.text`
+line Row·row@run/show/for row in rows > run/show value     # `row.text`
 line run/show > Screen own
 known #157 extra line Row·rows@run/show/~rows > run/show/for row in rows value   # the parameter, bound by no value the call hands
 known #157 extra home Row·rows@run/show/~rows run/show

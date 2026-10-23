@@ -8,6 +8,7 @@ step run/touch/open                                                  # with open
 line run/touch/open > _·f@run/touch/open value
 line run/touch > File(data/notes.txt) own
 line run/touch > Screen own                                          # print(f)
+line _·f@run/touch/open > run/touch value                            # print(f): the body's own use
 
 home _·f@run/touch/open run/touch
 

@@ -1370,8 +1370,8 @@ fn choices_an_early_return_and_the_left_of_a_logical_operator() {
 }
 
 /// Which operations of the language's and a library's are steps (#125): one whose result the body
-/// names, by a name or the names a pattern takes out of it, or that changes the value it runs on.
-/// What one gives without a name goes into the call around it. `const db = new Database(this.path)`
+/// names, by a name or the names a pattern takes out of it, that changes the value it runs on, or
+/// that builds the error it throws (#138). What one gives without a name goes into the call around it. `const db = new Database(this.path)`
 /// is a step that gives `db` (`readback`); `text.split("\n").filter(..).map(parseLine).filter(..)`
 /// in the pipeline's `parse`, returned unnamed, is none, and neither is `x(month.date)`, a call of
 /// the scale d3 gave `trend`.
@@ -1387,7 +1387,7 @@ fn composition_an_operation_is_a_step_where_its_result_is_named() {
         analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/pipeline/typescript"), &Options::default()).expect("reads");
     assert!(node(&pipeline, "series.parse").sites.iter().all(|s| !s.to.is_empty()), "{:#?}", node(&pipeline, "series.parse").sites);
     let trend: Vec<&str> = node(&pipeline, "plot.trend").sites.iter().filter(|s| s.to.is_empty()).map(|s| s.op.as_str()).collect();
-    assert_eq!(trend, ["at", "range", "range", "line", "map", "map"], "each named, by its operation");
+    assert_eq!(trend, ["at", "Error()", "range", "range", "line", "map", "map"], "each named, by its operation");
 }
 
 /// A call is handed the values the names in its arguments hold (#128), also through a name the body

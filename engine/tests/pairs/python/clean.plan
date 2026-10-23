@@ -18,10 +18,10 @@ line readings/get_store > ReadingStore@readings/get_store value
 # history is called on the store and hands it to connect, whose body hands its path to sqlite3.connect
 line ReadingStore@readings/get_store > readings/ReadingStore.history/ReadingStore.connect/connect value
 line readings/ReadingStore.history/ReadingStore.connect/connect > Connection·con@readings/ReadingStore.history/ReadingStore.connect/connect value
-known #101 line Connection·con@readings/ReadingStore.history/ReadingStore.connect/connect > readings/ReadingStore.history/ReadingStore.connect value
+line Connection·con@readings/ReadingStore.history/ReadingStore.connect/connect > readings/ReadingStore.history/ReadingStore.connect value
 # `with self.connect() as con`: the name holds the connection connect gives
 line readings/ReadingStore.history/ReadingStore.connect > Connection·con@readings/ReadingStore.history/ReadingStore.connect value
-known #126 line Connection·con@readings/ReadingStore.history/ReadingStore.connect > readings/ReadingStore.history value   # the `with` enters and closes it
+line Connection·con@readings/ReadingStore.history/ReadingStore.connect > readings/ReadingStore.history value   # the `with` enters and closes it
 line Connection·con@readings/ReadingStore.history/ReadingStore.connect > readings/ReadingStore.history/fetchall value   # con.execute(..) is glued into fetchall()
 line SQLite(readings) > readings/ReadingStore.history own                              # the SELECT, its touch history's own
 line readings/ReadingStore.history/fetchall > _·rows@readings/ReadingStore.history/fetchall value

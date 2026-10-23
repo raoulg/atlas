@@ -24,7 +24,7 @@ line compare/compare/Chart.line#2/subplots > _·fig@compare/compare/Chart.line#2
 line compare/compare/Chart.line#2/subplots > _·ax@compare/compare/Chart.line#2/subplots value
 known #101 line _·ax@compare/compare/Chart.line#2/subplots > compare/compare/Chart.line#2 value
 line compare/compare/Chart.line#2 > Figure 2 · Chart.line own                                       # a second figure
-known #101 line Chart·chart@compare/compare/Chart() > compare/compare value                         # `return chart`
+line Chart·chart@compare/compare/Chart() > compare/compare value                         # `return chart`
 line compare/compare > Chart·chart@compare/compare value
 
 home Chart·chart@compare/compare/Chart() compare/compare
@@ -57,7 +57,7 @@ line compare/Chart.line#2/subplots > _·fig@compare/Chart.line#2/subplots value
 line compare/Chart.line#2/subplots > _·ax@compare/Chart.line#2/subplots value
 known #101 line _·ax@compare/Chart.line#2/subplots > compare/Chart.line#2 value
 line compare/Chart.line#2 > Figure own
-known #101 line Chart·chart@compare/Chart() > compare value
+line Chart·chart@compare/Chart() > compare value
 line compare > Chart@compare value
 
 home Chart·chart@compare/Chart() compare

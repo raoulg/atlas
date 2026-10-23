@@ -57,7 +57,7 @@ step Kennisbank()/Kennisbank.graaf/Kennisbank.node/split
 line Kennisbank()/Kennisbank.graaf/Kennisbank.node/split > _·uuid@Kennisbank()/Kennisbank.graaf/Kennisbank.node/split value
 line Kennisbank()/Kennisbank.graaf/Kennisbank.node/split > _·soort@Kennisbank()/Kennisbank.graaf/Kennisbank.node/split value
 line Kennisbank()/Kennisbank.graaf/Kennisbank.node/split > _·tekst@Kennisbank()/Kennisbank.graaf/Kennisbank.node/split value
-known #101 line _·soort@Kennisbank()/Kennisbank.graaf/Kennisbank.node/split > Kennisbank()/Kennisbank.graaf/Kennisbank.node value
+line _·soort@Kennisbank()/Kennisbank.graaf/Kennisbank.node/split > Kennisbank()/Kennisbank.graaf/Kennisbank.node value
 line _·uuid@Kennisbank()/Kennisbank.graaf/Kennisbank.node/split > Kennisbank()/Kennisbank.graaf/Kennisbank.node/?1/Bron() value
 line _·tekst@Kennisbank()/Kennisbank.graaf/Kennisbank.node/split > Kennisbank()/Kennisbank.graaf/Kennisbank.node/?1/Bron() value
 line _·uuid@Kennisbank()/Kennisbank.graaf/Kennisbank.node/split > Kennisbank()/Kennisbank.graaf/Kennisbank.node/?1/Begrip() value

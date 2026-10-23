@@ -378,6 +378,14 @@ pub(super) fn link_calls<'t>(
             b.call(&mut steps, c);
             steps.mark(c, b.read.touches[t..].iter_mut().chain(b.read.calls[w..].iter_mut().map(|(t, _)| t)));
         }
+        let kept = steps.kept.clone();
+        steps.uses(&|n| {
+            let mut out = vec![];
+            if b.mine(n) {
+                b.held(n, &kept, 0, &mut out);
+            }
+            out
+        });
         b.class_state(&mut steps);
         b.ends();
         b.read
@@ -1060,9 +1068,16 @@ impl<'a, 't> Body<'a, 't> {
                 self.read.args.push(a);
             }
         } else if self.world(c, 0) {
-            // a constructor of the language's or a library's: an operation, a step where the body names what it builds
+            // a constructor of the language's or a library's: an operation, a step where the body names what it builds,
+            // and where it builds the error the body throws, of its class whatever library the class is of
             let hands = self.hands(&[c.child_by_field_name("arguments")], &steps.kept);
-            steps.op(c, &format!("{}()", parts.last().cloned().unwrap_or_default()), hands, self.parsed_into(c));
+            let mut gives = self.parsed_into(c);
+            if gives.is_empty() && steps.raised(c) {
+                let class =
+                    self.resolve(&parts).filter(|r| r.starts_with("ext:")).unwrap_or_else(|| format!("ext:javascript.{}", parts.join(".")));
+                gives.push(Held::new(class, ""));
+            }
+            steps.op(c, &format!("{}()", parts.last().cloned().unwrap_or_default()), hands, gives);
         }
     }
 
@@ -2055,6 +2070,49 @@ const USES: UseSyntax = UseSyntax {
     splits: |n, child| n.kind() == "switch_statement" && n.child_by_field_name("value").map(|v| v.id()) == Some(child.id()),
     names: &["identifier", "shorthand_property_identifier"],
     keeps: &["member_expression", "subscript_expression"],
+    wrappers: WRAPPERS,
+    drops: |n, child, src| match n.kind() {
+        "expression_statement" => n.named_child(0).map(|c| c.id()) == Some(child.id()),
+        "unary_expression" => {
+            n.child_by_field_name("operator").is_some_and(|o| text(o, src) == "void")
+                && n.child_by_field_name("argument").map(|a| a.id()) == Some(child.id())
+        }
+        _ => false,
+    },
+    nested: &[
+        "function_declaration",
+        "generator_function_declaration",
+        "class_declaration",
+        "abstract_class_declaration",
+        "method_definition",
+        "interface_declaration",
+        "type_alias_declaration",
+        "enum_declaration",
+        "import_statement",
+    ],
+    reads: &["this"],
+    label: |_, _| false,
+    binders: |n, child| {
+        let is = |f: &str| n.child_by_field_name(f).is_some_and(|x| x.id() == child.id());
+        match n.kind() {
+            "arrow_function" | "function_expression" | "function" if is("parameters") || is("parameter") => Some(true),
+            "catch_clause" if is("parameter") => Some(false),
+            _ => None,
+        }
+    },
+    updates: &["augmented_assignment_expression"],
+    parts: |_, _| false,
+    raises: |n, child, _| n.kind() == "throw_statement" && n.named_child(0).map(|c| c.id()) == Some(child.id()),
+    errs: |_, _, _| false,
+    tails: &[],
+    propagates: None,
+    // a `catch` catches whatever its `try` throws
+    catches: |n, child, _| {
+        (n.kind() == "try_statement"
+            && n.child_by_field_name("body").map(|b| b.id()) == Some(child.id())
+            && n.child_by_field_name("handler").is_some())
+        .then(Vec::new)
+    },
 };
 
 /// TypeScript's choices: `if`/`else if`/`else`, `a ? b : c`, `switch`, `try`/`catch`, and `x ?? y`, `x || y`
