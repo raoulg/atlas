@@ -67,11 +67,11 @@ pub fn newer(this: &Build, latest: &Latest) -> Option<String> {
 /// The command that upgrades an install, from where the executable lives and what this build is.
 pub fn upgrade(exe: &Path, nightly: bool, windows: bool) -> String {
     let path = exe.to_string_lossy().replace('\\', "/");
-    if path.contains("/Cellar/atlas-code-nightly/") {
-        return "brew upgrade atlas-code-nightly".into();
+    if path.contains("/Cellar/atlas-code/HEAD-") {
+        return "brew upgrade --fetch-HEAD atlas-code".into();
     }
     if path.contains("/Cellar/") || path.contains("/homebrew/") || path.contains("/linuxbrew/") {
-        return if nightly { "brew upgrade --fetch-HEAD atlas-code".into() } else { "brew upgrade atlas-code".into() };
+        return if nightly { "brew upgrade atlas-code-nightly".into() } else { "brew upgrade atlas-code".into() };
     }
     if path.contains("/.cargo/bin/") {
         let branch = if nightly { " --branch next" } else { "" };
@@ -105,8 +105,9 @@ fn read(file: &Path) -> Option<(u64, String, Latest)> {
     Some((v["checked"].as_u64()?, text("for"), Latest { release: text("release"), nightly: text("nightly") }))
 }
 
+/// The build a cached answer was found for: two nightlies share a version, so the commit says which.
 fn key(this: &Build) -> String {
-    format!("{}/{}", this.channel, this.version)
+    format!("{}/{}/{}", this.channel, this.version, this.commit)
 }
 
 /// One GET of the GitHub API, the field `field` of its answer.
@@ -157,7 +158,9 @@ pub fn begin() -> Check {
     let cached = read(&file).filter(|(_, built, _)| *built == key(&this));
     if let Some((_, _, latest)) = &cached {
         if let Some(line) = newer(&this, latest) {
-            let how = upgrade(&std::env::current_exe().unwrap_or_default(), this.nightly(), cfg!(windows));
+            // the executable as installed, not the link on the PATH that points to it (`/opt/homebrew/bin/atlas`)
+            let exe = std::env::current_exe().map(|e| std::fs::canonicalize(&e).unwrap_or(e)).unwrap_or_default();
+            let how = upgrade(&exe, this.nightly(), cfg!(windows));
             eprintln!("{line}. Upgrade with: {how}\n(ATLAS_NO_UPDATE_CHECK=1 silences this)");
         }
     }
@@ -220,10 +223,17 @@ mod tests {
             up("/opt/homebrew/Cellar/atlas-code-nightly/0.66.2-nightly.202610171105/bin/atlas", true, false),
             "brew upgrade atlas-code-nightly"
         );
+        assert_eq!(up("/opt/homebrew/bin/atlas", true, false), "brew upgrade atlas-code-nightly", "a link on the PATH");
+        assert_eq!(up("/opt/homebrew/bin/atlas", false, false), "brew upgrade atlas-code");
         assert!(up("/home/x/.cargo/bin/atlas", true, false).contains("--branch next"));
         assert!(up("/home/x/.local/bin/atlas", false, false).ends_with("install.sh | sh"));
         assert!(up("/home/x/.local/bin/atlas", true, false).contains("| ATLAS_CHANNEL=nightly sh"));
         assert!(up("C:\\Users\\x\\AppData\\Local\\Programs\\atlas\\atlas.exe", false, true).ends_with("install.ps1 | iex"));
         assert!(up("C:\\Users\\x\\AppData\\Local\\Programs\\atlas\\atlas.exe", true, true).starts_with("$env:ATLAS_CHANNEL = 'nightly'; "));
+    }
+
+    #[test]
+    fn a_cached_answer_belongs_to_one_build() {
+        assert_ne!(key(&build("0.68.0", "nightly", "edce364")), key(&build("0.68.0", "nightly", "e3e2584")));
     }
 }
