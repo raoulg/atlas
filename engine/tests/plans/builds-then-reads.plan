@@ -1,0 +1,18 @@
+# Building a class runs its initializer along its order, at the place the call stands in its caller's order (#165):
+# `Log("started")` runs `Log.__init__`, which writes the log whenever it runs, so what the route then reads of the log
+# is what its own step wrote. It reads it back, and the log stands between the step that writes it and the route that
+# reads and uses it, as it does where a method writes it (`next-method-on-a-class`).
+
+route logs.run
+step run/Log()
+
+line entry > run call
+line run/Log() > Log@run/Log() value                                # what it builds, which no line takes: the body drops it
+line run/Log() > File(data/log.txt) own                             # `LOG.write_text(..)` in the initializer
+line File(data/log.txt) > run own                                   # `LOG.read_text()`, what building the log wrote
+line run > File(data/log.txt) own
+
+home Log@run/Log() run
+
+side entry left
+side File(data/log.txt) between

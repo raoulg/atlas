@@ -110,6 +110,7 @@ smallest that showed one law:
 | `read-into` | a handle read into a string the step returns is used: `read_to_string(&mut s)` makes `s` from it (R4) |
 | `open-mode-unknown` | a file opened with a mode that is a value goes no way the code says: in neither (R4) |
 | `what-holds` | a place read and changed stands twice, a choice is a coproduct, a call into a family a choice (Z13) |
+| `builds-then-reads` | building a class runs its initializer at the call's place: what the caller then reads of what it wrote, it reads back (#165) |
 | `fills-by-place` | a call fills each parameter by where it writes the argument, by its name in whatever order, and a literal fills none (#157) |
 | `unbound-parameter` | a call fills each parameter by where it writes the argument, whatever its type: two projections of one value, and both parameters hold it (#157); one the plan cannot pair is a value of its body, never one from beyond the route (#159) |
 | `next-method-on-a-class` | a body run on a known class does at a place what that class runs: a `super()` call runs one method there (R5) |

@@ -47,7 +47,8 @@ not in one branch of a choice the read is outside. Two arms of one choice never 
 other: a place one arm writes and another reads finds what was there and is changed, in both. A
 loop runs its body again: a read in a loop finds what a later round writes over, whichever stands
 first in the loop. A call that may run one of several bodies (the overrides of a call by name, the
-next method of a `super()` call) does at a place what one of them does, as the arms of a choice do.
+next method of a `super()` call) does at a place what one of them does, as the arms of a choice do; a
+call that builds a class does there what the initializer it runs does, at the call's place in the order.
 What a step a body calls finds there is what the body left, where the body wrote it before the call:
 the step changes nothing the body found. The
 route of a class is its doors, each called by the entry with no order between them: a place one door
