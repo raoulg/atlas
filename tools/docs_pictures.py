@@ -42,18 +42,9 @@ TEXTS = ['README.md', 'docs/index.html', 'docs/reference/guide.md']
 
 CAPTURE = """() => {
   localStorage.setItem('atlas.code', '0');
-  let Impl;
-  Object.defineProperty(window, 'ELK', {configurable: true,
-    get() { return Impl; },
-    set(C) { Impl = class extends C {
-      async layout(g, ...args) {
-        window.planned = structuredClone(g);
-        const result = await super.layout(g, ...args);
-        window.layouts = (window.layouts || 0) + 1;
-        return result;
-      }
-    }; }
-  });
+  // what the page drew: how many pictures, and the graph laid out for the last (a layout it kept is not laid out again)
+  Object.defineProperty(window, 'layouts', {configurable: true, get: () => window.atlasPicture?.n || 0});
+  Object.defineProperty(window, 'planned', {configurable: true, get: () => window.atlasPicture?.planned});
 }"""
 
 
