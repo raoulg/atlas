@@ -1867,3 +1867,26 @@ fn sets_a_body_says_what_it_sets_a_part_of_a_value_to() {
     let uses = &p.shortcut.node("boards.Board.lend").unwrap().uses;
     assert!(uses.iter().any(|u| u.name.is_empty() && u.ty == "boards.Board"), "`self.pen` is read: {uses:#?}");
 }
+
+/// A parameter of no type of the code's is a name like any other (#128, #157), in Python as in Rust and TypeScript: inside
+/// its function it holds what its call fills it with, so a step written with it is handed it by its name, and the body's
+/// own code reads it there; where every call fills it with a literal, it holds none (`builder::settle_parameters`). The
+/// choices pair tells the two forms apart: the shortcut's `finished(job, mode: str)` hands the string it is filled with on
+/// to `Runner(mode)` and `timeout(mode)`, the clean's `mode: Mode` is a value of the code's own type.
+#[test]
+fn a_parameter_of_no_type_is_handed_by_its_name_where_a_call_fills_it() {
+    let p = common::pair("choices/python");
+    let hands = |g: &Graph, id: &str, to: &str| -> Vec<(String, String)> {
+        let site = g.node(id).unwrap().sites.iter().find(|s| s.to.ends_with(to)).unwrap_or_else(|| panic!("{id} calls {to}"));
+        site.hands.iter().map(|h| (h.ty.clone(), h.name.clone())).collect()
+    };
+    let mode = vec![(String::new(), "mode".to_string())];
+    assert_eq!(hands(&p.shortcut, "runs.core.finished", ".Runner"), mode);
+    assert_eq!(hands(&p.shortcut, "runs.core.finished", ".timeout"), mode);
+    assert_eq!(hands(&p.clean, "runs.core.finished", ".Runner"), [("runs.core.Mode".to_string(), "mode".to_string())]);
+    // `print(title, ..)` reads the parameter `show(sheet.title, ..)` fills
+    let sheets =
+        analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/plans/unbound-parameter"), &Options::default()).expect("reads");
+    let uses = &sheets.node("sheets.show").unwrap().uses;
+    assert!(uses.iter().any(|u| u.name == "title" && u.ty.is_empty()), "{uses:#?}");
+}

@@ -9,7 +9,7 @@ step Board()/Board()
 step Board()/Board.pin
 step Board()/Board.posts
 step Board()/Board.posts/Notice()
-known #128 step Board()/Board.posts/Notice()/Post() # super(text) runs Post's constructor, handed the `text` its own call fills (`{"at": 0}`)
+step Board()/Board.posts/Notice()/Post() # super(text) runs Post's constructor, handed the `text` its own call fills (`{"at": 0}`)
 
 line entry > Board()/Board() call
 line entry > Board()/Board.pin call
@@ -37,6 +37,7 @@ side Disk(Board.path) between
 # built from its fields
 step Board()/Board.posts/parse
 line Board()/Board.posts/parse > _·kept@Board()/Board.posts/parse value
-line _·kept@Board()/Board.posts/parse > Board()/Board.posts/Notice() value
+line _·kept@Board()/Board.posts/parse > Board()/Board.posts/Notice() value   # `readonly until`: the constructor keeps it in the Notice
+line _·kept@Board()/Board.posts/parse > Board()/Board.posts/Notice()/Post() value   # `super(text)`, `text` filled by `kept.text`
 home _·kept@Board()/Board.posts/parse Board()/Board.posts
 # what the constructor builds goes back to its caller: Atlas runs the methods on it instead of the caller's instance

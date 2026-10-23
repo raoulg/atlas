@@ -105,6 +105,26 @@ fn lambda_binds(i: TsNode, e: TsNode, src: &[u8]) -> bool {
     false
 }
 
+/// Whether the name `at` is one of the parameters of the function it stands in, bound by nothing nearer: no assignment,
+/// loop or `case` pattern of the body binds it before `at`. (`self` and `cls` are the value a method runs on and its
+/// class, read apart.)
+fn own_parameter(at: TsNode, src: &[u8]) -> bool {
+    let name = text(at, src);
+    let mut def = at;
+    while let Some(p) = def.parent() {
+        def = p;
+        if matches!(p.kind(), "function_definition" | "lambda") {
+            break;
+        }
+    }
+    let Some(params) = def.child_by_field_name("parameters").filter(|_| def.kind() == "function_definition") else { return false };
+    let declared = named_children(params).into_iter().any(|p| {
+        let id = if p.kind() == "identifier" { Some(p) } else { p.child_by_field_name("name").or_else(|| p.named_child(0)) };
+        id.is_some_and(|id| id.kind() == "identifier" && text(id, src) == name)
+    });
+    declared && reaching(at, name, src).is_empty() && looped_by(at, name, src).is_none() && matched_by(at, name, src).is_none()
+}
+
 /// The bindings of `name` that reach `at`: the latest assignment to it before `at` in the function,
 /// and where that one stands in an arm of a choice `at` is not in, the latest in each of its other
 /// arms (`if c: x = a.b` / `else: x = d.e`).
@@ -676,9 +696,9 @@ impl<'a> Seen<'a> {
 
     fn held(&self, e: TsNode, ext: &HashMap<(String, String), String>, made: &HashSet<String>, changed: bool) -> Vec<Held> {
         let mut out: Vec<Held> = vec![];
-        let mut add = |ty: String, name: String, at: usize| {
+        let mut add = |ty: String, name: String, at: usize, param: bool| {
             if !out.iter().any(|h| h.ty == ty && h.name == name) {
-                out.push(Held { ty, name, at: at as u32, fills: vec![] });
+                out.push(Held { ty, name, at: at as u32, fills: vec![], param });
             }
         };
         let data = |v: &&Value| !v.is_class && !v.is_code;
@@ -692,7 +712,7 @@ impl<'a> Seen<'a> {
             if x.kind() == "call" && (nested || x.id() == e.id()) {
                 for ty in self.value(x).filter(data).map(|v| self.drawn(v, ext)).unwrap_or_default() {
                     match nested {
-                        true => add(ty, String::new(), x.start_byte()),
+                        true => add(ty, String::new(), x.start_byte(), false),
                         false => glued.push((ty, x.start_byte())),
                     }
                 }
@@ -721,7 +741,7 @@ impl<'a> Seen<'a> {
             if name == "self" {
                 let named = if changed || made.contains(name) { name } else { "" };
                 if let Some(cls) = &self.receiver {
-                    add(cls.clone(), named.to_string(), i.start_byte());
+                    add(cls.clone(), named.to_string(), i.start_byte(), false);
                 }
                 continue;
             }
@@ -731,19 +751,22 @@ impl<'a> Seen<'a> {
             }
             let tys = v.map(|v| self.drawn(v, ext)).unwrap_or_default();
             // a name of no type Atlas draws is still a value where an earlier step made it, and where
-            // the call makes it anew
+            // the call makes it anew; one of the function's own parameters holds what its calls fill it with,
+            // which is known once every body is read (`builder::settle_parameters`)
             if tys.is_empty() && (made.contains(name) || changed) {
-                add(String::new(), name.to_string(), i.start_byte());
+                add(String::new(), name.to_string(), i.start_byte(), false);
+            } else if tys.is_empty() && own_parameter(i, src) {
+                add(String::new(), name.to_string(), i.start_byte(), true);
             }
             for ty in tys {
-                add(ty, name.to_string(), i.start_byte());
+                add(ty, name.to_string(), i.start_byte(), false);
             }
         }
         // what a library's call gives goes on from the values it is handed; only where it is handed
         // none is it handed on by its type
         if out.is_empty() {
             for (ty, at) in glued {
-                out.push(Held { ty, name: String::new(), at: at as u32, fills: vec![] });
+                out.push(Held { ty, name: String::new(), at: at as u32, fills: vec![], param: false });
             }
         }
         out

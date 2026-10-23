@@ -567,8 +567,9 @@ fact of it must hold of the plan Atlas builds, and no other. What Atlas gets wro
 with the issue that tracks it, and the mark goes with the fix (`engine/tests/plans/README.md`). The
 test runs the viewer's own model in node, the function every picture is drawn from, on every route of
 the pairs and of its programs.
-**Where.** `plan`, `sitesOf`, `figureOf`, `coarsen`, `cutArrow` and `checkOpenings` in `viewer/plan.js`;
-`tools/pictures.py`; `engine/tests/plans.rs`.
+**Where.** `plan`, `sitesOf`, `figureOf`, `coarsen`, `cutArrow`, `handTo` and `checkOpenings` in `viewer/plan.js`;
+which parameters of no type of the code's hold a value, `builder::settle_parameters`; `tools/pictures.py`;
+`engine/tests/plans.rs`.
 
 ### Saturation: when the order of a view does not matter
 **What.** A set is saturated by an equivalence when it never cuts a class in two.

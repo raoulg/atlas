@@ -38,8 +38,9 @@ line entry > cli.ts/main/parseArgs call                           # the command 
 line cli.ts/main/parseArgs > _·values@cli.ts/main/parseArgs value
 
 line _·values@cli.ts/main/parseArgs > cli.ts/main/monthsOf value         # `values.months`, checked
-known #128 line _·values@cli.ts/main/parseArgs > cli.ts/main/monthsOf/?1/Number value   # `Number(option)`: `option` holds what fills it, `{"at": 0}`
-known #128 line Settings·DEFAULT_SETTINGS > cli.ts/main/monthsOf value   # `return DEFAULT_SETTINGS.months`: the body's own use of a module's value
+line _·values@cli.ts/main/parseArgs > cli.ts/main/monthsOf/?1/Number value   # `Number(option)`: `option` holds what fills it, `{"at": 0}`
+line _·values@cli.ts/main/parseArgs > cli.ts/main/monthsOf/?1/Error() value   # the error's message names the option, `${option}`
+line Settings·DEFAULT_SETTINGS > cli.ts/main/monthsOf value   # `return DEFAULT_SETTINGS.months`: the body's own use of a module's value
 line cli.ts/main/monthsOf/?1/Number > _·months@cli.ts/main/monthsOf/?1/Number value
 line _·months@cli.ts/main/monthsOf/?1/Number > cli.ts/main/monthsOf value   # `return months`
 line cli.ts/main/monthsOf > _@cli.ts/main/monthsOf value
@@ -54,7 +55,11 @@ line _·response@cli.ts/main/?1/download/fetch > cli.ts/main/?1/download value  
 line cli.ts/main/?1/download > File(data/raw/sunspots.csv) own
 # `await download(..)` is a statement: main throws away the path download gives back, so nothing goes back (#134)
 
-line _·values@cli.ts/main/parseArgs > cli.ts/main/load value             # `values.raw`
+# `load(values.raw)`: `path` holds the values, and `readFile(path, ..)`, no step, is glued into `parse`'s call, which is
+# handed what it is handed; inside `parse`, `text` holds them, and `parseLine` is handed each line, an element of `text`
+line _·values@cli.ts/main/parseArgs > cli.ts/main/load/parse value
+line _·values@cli.ts/main/parseArgs > cli.ts/main/load/parse/parseLine/map value       # `line.split(";").map(Number)`
+line _·values@cli.ts/main/parseArgs > cli.ts/main/load/parse/parseLine/?1/Error() value   # the error's message names the line
 line File(data/raw/sunspots.csv) > cli.ts/main/load own
 line cli.ts/main/load/parse/parseLine/map > _·fields@cli.ts/main/load/parse/parseLine/map value
 line _·fields@cli.ts/main/load/parse/parseLine/map > cli.ts/main/load/parse/parseLine/?1/Month() value   # `const [year, ..] = fields`
@@ -68,7 +73,8 @@ line cli.ts/main/load > Month·series@cli.ts/main/load value
 
 line Month·series@cli.ts/main/load > cli.ts/main/smooth value   # `series.slice(..)`; the body uses it itself, and a step inside takes it too
 line Settings·settings@cli.ts/main/Settings() > cli.ts/main/smooth value  # `settings.months`, handed as `months`
-known #128 line Settings·settings@cli.ts/main/Settings() > cli.ts/main/smooth/floor value   # `Math.floor(months / 2)`: `months` holds what fills it, `{"at": 1}`
+line Settings·settings@cli.ts/main/Settings() > cli.ts/main/smooth/floor value   # `Math.floor(months / 2)`: `months` holds what fills it, `{"at": 1}`
+line Settings·settings@cli.ts/main/Settings() > cli.ts/main/smooth/average value   # `average(series.slice(i, i + months))`
 line cli.ts/main/smooth/floor > _·before@cli.ts/main/smooth/floor value
 line _·before@cli.ts/main/smooth/floor > cli.ts/main/smooth value   # `series.slice(before, ..)`
 line Month·series@cli.ts/main/load > cli.ts/main/smooth/average value # handed series.slice(..), which is no step

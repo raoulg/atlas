@@ -16,6 +16,7 @@ line main/for x in sys.argv[1:] > _·x@main/for x in sys.argv[1:] value
 line _·x@main/for x in sys.argv[1:] > main/fit value               # `fit([float(x) for x in ..])`
 line main/fit/?1/Failed() > Failed@main/fit/?1 value   # with Fit() in the other arm, the sum either arm makes
 line main/fit/?1/Fit() > Fit@main/fit/?1 value
+line _·x@main/for x in sys.argv[1:] > main/fit/?1/Fit() value     # `Fit(sum(xs) / len(xs))`: `xs` holds the words
 line Failed@main/fit/?1 > main/fit value
 line Fit@main/fit/?1 > main/fit value
 line main/fit > Fit | Failed·result@main/fit value        # fit gives one value, the sum, held by `result`

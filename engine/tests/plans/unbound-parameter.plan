@@ -10,7 +10,7 @@ step run/show/for row in rows
 
 line entry > run call
 line Sheet·sheet > run value
-known #128 line Sheet·sheet > run/show value     # `print(title, ..)`, the title of the sheet: the reader gives no use of `title`, of no type of the code's
+line Sheet·sheet > run/show value                                      # `print(title, ..)`, the title of the sheet
 line Sheet·sheet > run/show/for row in rows value          # `rows` holds `sheet.rows`
 line run/show/for row in rows > Row·row@run/show/for row in rows value
 line Row·row@run/show/for row in rows > run/show value     # `row.text`
