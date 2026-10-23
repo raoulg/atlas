@@ -910,7 +910,7 @@ const build = (node, parent, caller) => {
   if (caller) m.dom.set(addPlace(entryPlace(caller)), false);
   // a unit stands even when nothing crosses its edge, so that it can be opened
   if (!m.dom.size && !m.cod.size && !hb && !node.id.startsWith("unit:")) return [];
-  const pill = {id: "n:" + node.id, steps: [node.id], D: m.dom, C: m.cod, dn: m.dn, cn: m.cn, goes: m.goes || new Map(), parent, hue: node.hue, branch: node.branch, ...(said ? {said} : {}), ...(m.keep?.size ? {keep: m.keep} : {}), ...(m.errs?.size ? {errs: m.errs} : {}), ...(m.raised?.size ? {raised: m.raised} : {}), ...(m.kept?.size ? {kept: m.kept} : {}), ...(node.parse ? {parse: true} : {}), ...(cut ? {cut: true, mult: m.mult, split: m.split} : {})};
+  const pill = {id: "n:" + node.id, steps: [node.id], D: m.dom, C: m.cod, dn: m.dn, cn: m.cn, goes: m.goes || new Map(), parent, hue: node.hue, branch: node.branch, ...(said ? {said} : {}), ...(m.keep?.size ? {keep: m.keep} : {}), ...(m.errs?.size ? {errs: m.errs} : {}), ...(m.raised?.size ? {raised: m.raised} : {}), ...(m.kept?.size ? {kept: m.kept} : {}), ...(node.parse ? {parse: true} : {}), ...(cut ? {cut: true, mult: m.mult, split: m.split, holds: m.holds} : {})};
   pills.set(pill.id, pill);
   return hb ? [pill] : [];
 };
@@ -1220,6 +1220,27 @@ const changesKind = (P, k) => (arrowOf(stepAt(P))?.changes || []).some(x => kind
 // of them makes it; any other call that makes a figure makes one of its own. Planned by itself, a step beyond the cut does not
 // know the value its caller hands it: a figure kept in that value (the one it runs on, `^recv`, or one it is handed, by the
 // key its call hands it as) is held by it, and its caller says which value that is
+// A value a body sets a part of to what another value holds (`other.fig = self.fig`, `self.fig = fig`, `Node::sets`) is that
+// one's put: from then on it holds the figure that one holds, and so does every value made anew of it
+const heldBy = new Map();
+const holderOf = v => heldBy.get(v) || originOf.get(v) || v;
+// what the values a step's sets name hold where its call runs: the value it runs on, a parameter by its name
+const setsAt = (P, resolved, Cv) => {
+  const key = P.own ? frames.get(P.parent)?.step : P.steps[0], info = treeInfo.get(key), n = byId.get(stepAt(P));
+  if (!n?.sets?.length || !info?.site || P.cut) return;
+  const params = n.params || [], self = params.find(p => p.receiver)?.name, args = params.filter(p => !p.receiver);
+  let c = P.own ? frames.get(P.parent)?.parent : P.parent;
+  while (c && frames.get(c)?.synthetic) c = frames.get(c).parent;
+  const filling = h => {
+    const recv = !h.name || h.name === self, at = args.findIndex(p => p.name === h.name);
+    const vs = (info.site.hands || []).filter(x => (x.fills || []).some(s => (recv ? s === "receiver" : s?.at === at || s?.name === h.name))).map(x => resolved.get(x.type ? (x.name ? `t:${x.type}~${x.name}` : "t:" + x.type) : "v:" + x.name)).filter(Boolean);
+    return vs.length || !recv || !info.site.on_receiver ? vs : [receiverAt.get(c)].filter(Boolean);
+  };
+  for (const s of n.sets) {
+    const from = (s.from || []).flatMap(filling), on = new Set(filling(s.on).map(w => originOf.get(w) || w));
+    if (from.length) for (const v of Cv.keys()) if (on.has(originOf.get(v) || v)) heldBy.set(v, holderOf(from[0]));
+  }
+};
 const heldFigure = (h, label) => {
   const id = "w:Screen:fig:" + h + "^held";
   if (!places.has(id)) places.set(id, {id, label, short: label, kind: "world", figure: label, holder: h});
@@ -1237,7 +1258,7 @@ const figureOf = (P, k) => {
     v = receiver();
   }
   // the value is held from its first moment: one made before the step planned by itself is its caller's
-  const o = v && (originOf.get(v) || v);
+  const o = v && holderOf(v);
   if (alone && (!o || !places.get(o)?.at)) return heldFigure(o || "^recv", pl?.figure ?? k);
   // a holder the caller does not name leaves the figure the call's own
   if (!o) return P.cut ? addPlace(figurePlace(key, pl.figure)) : k;
@@ -1251,11 +1272,12 @@ for (const P of pills.values()) {
   for (const f of planChain(P.own ? frames.get(P.parent)?.parent : P.parent)) enter(f);
   // a value is taken by the name that holds it, else as the latest of its kind: an override runs on
   // the value its call runs on, and a subclass's value is its base's
-  const Dv = new Map(), Cv = new Map(), name = (m, k) => (m && m.get(k)) || "", mult = P.mult && {D: new Map(), C: new Map()};
+  const Dv = new Map(), Cv = new Map(), name = (m, k) => (m && m.get(k)) || "", mult = P.mult && {D: new Map(), C: new Map()}, resolved = new Map(), madeOfKey = new Map();
   P.D.forEach((r, k) => {
     const v = viaDispatch(P, k) || bound(P, k, name(P.dn, k), !!P.made?.has(k));
     if (v === false) return;
     Dv.set(v || k, r);
+    resolved.set(k, v || k);
     // a parameter more than one value fills hands them all, and a sum of a value and an error both
     for (const w of [...alsoOf(P, k, name(P.dn, k), !!P.made?.has(k), v), ...errorsWith(scopeOf(P), v)]) if (!Dv.has(w)) Dv.set(w, r);
     // what each value a step beyond the cut takes is bound to here: a figure its image keeps in one is that value's
@@ -1306,7 +1328,18 @@ for (const P of pills.values()) {
     // an error leaves by the border it is handed on across: no later step of the body takes it (#138)
     if (!places.get(v).err) { latestSet(kindKey(k) + "|" + nm, v, P); latestSet(kindKey(k) + "|", v, P); }
     Cv.set(v, r);
+    madeOfKey.set(k, v);
   });
+  // a step beyond the cut makes a value it hands on hold what a value it was handed holds: here, which values those are
+  for (const [c, d] of P.holds || []) { const v = madeOfKey.get(c), w = P.boundOf?.get(d); if (v && w) heldBy.set(v, holderOf(w)); }
+  // a value made anew holds the figure the moment it was made of held, and an opened step hands on what its steps made of a
+  // value; what a body sets of it may hand it another's
+  const within = w => P.own && /^(\/|\||~c)/.test((places.get(w)?.at || "").slice(P.parent.length)) && (places.get(w)?.at || "").startsWith(P.parent);
+  for (const v of Cv.keys()) if (isMem(v) && !heldBy.has(v) && changesKind(P, v)) {
+    const ws = [...Dv.keys()].filter(w => heldBy.has(w) && (originOf.has(v) ? (originOf.get(w) || w) === originOf.get(v) : within(w) && kindKey(w) === kindKey(v)));
+    if (ws.length && new Set(ws.map(w => heldBy.get(w))).size === 1) heldBy.set(v, heldBy.get(ws[0]));
+  }
+  setsAt(P, resolved, Cv);
   for (const [k, r] of figs) { const f = figureOf(P, k); Cv.set(f, r); if (mult && P.mult.C.has(k)) mult.C.set(f, P.mult.C.get(k)); }
   // a call whose signature gives its error in the sum it gives (`Result<T, E>`) and which hands no error on gives the sum:
   // what takes its result takes its error with it (`store.save_rates(base, rates::fetch(..))`, #138)
@@ -1385,7 +1418,7 @@ if (fine) {
       pl.label = pl.short = `Figure ${++n} · ${pl.figure}`;
     }
   }
-  return {places, pills, frames, found, updated, split};
+  return {places, pills, frames, found, updated, split, holderOf, originOf};
 }
 // what the steps do at each place of the world: read it, write it, go there without saying which
 // way; whether a route finds what it reads there; whether a step that reads it hands on what it read
@@ -1602,6 +1635,12 @@ const cutArrow = key => {
       r.places.set(s, F.places.get(s) || {...pl, id: s, at: undefined});
       if (nm) names.set(s, nm);
     }
+    // a value it hands on that its body made to hold what a value it was handed holds (`other.take(self.fig, ..)`): the
+    // caller says which values those are
+    r.holds = [...(P?.C?.keys() || [])].flatMap(c => {
+      const h = F.holderOf(c), d = h !== (F.originOf.get(c) || c) && [...(P?.D?.keys() || [])].find(d => (F.originOf.get(d) || d) === h || F.holderOf(d) === h);
+      return d ? [[strip(c), strip(d)]] : [];
+    });
     cutArrows.set(memo, r);
   }
   // planned by itself, a step's figures are its call's: the figures of another call of the step are this call's
@@ -1611,7 +1650,7 @@ const cutArrow = key => {
   const copy = m => new Map([...m].map(([k, v]) => [re(k), v]));
   // what it hands on as an error leaves by its border beside its result (#138)
   const errs = new Set([...r.cod.keys()].filter(k => r.places.get(k)?.err).map(re));
-  return {dom: copy(r.dom), cod: copy(r.cod), dn: copy(r.dn), cn: copy(r.cn), goes: copy(r.goes), mult: {D: copy(r.mult.D), C: copy(r.mult.C)}, places: new Map([...r.places].map(([k, pl]) => [re(k), {...pl, id: re(k)}])), split: r.split, errs};
+  return {dom: copy(r.dom), cod: copy(r.cod), dn: copy(r.dn), cn: copy(r.cn), goes: copy(r.goes), mult: {D: copy(r.mult.D), C: copy(r.mult.C)}, places: new Map([...r.places].map(([k, pl]) => [re(k), {...pl, id: re(k)}])), split: r.split, errs, holds: r.holds};
 };
 // Opening one more box must refine the picture and nothing else. For each box that can be opened (a closed step, a closed
 // family), the picture with that box open is taken from the same finest plan and held to the one that is drawn: each of its

@@ -69,12 +69,18 @@ fn the_route_says_where_each_figure_is_made() {
 /// of the places `Figure n · ..` (`tests/plans.mjs`, run in node as `tests/plans.rs` runs it). With a `budget`, the plan
 /// is cut as a large program's is (`ATLAS_FINE_BUDGET`).
 fn screen(side: &str, budget: Option<usize>) -> BTreeSet<String> {
+    screen_of("figures/python", side, "notebooks.compare", budget)
+}
+
+/// The figures on the screen of a notebook's route of a side of the pair under `tests/pairs/{pair}`.
+fn screen_of(pair: &str, side: &str, route: &str, budget: Option<usize>) -> BTreeSet<String> {
     let here = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let program = here.join("tests/pairs/figures/python").join(side);
+    let program = here.join("tests/pairs").join(pair).join(side);
     let graph = parts::analyze_repo(&[program], &Options::default()).expect("reads the program");
     let mut data = serde_json::to_value(&graph).expect("the graph is data");
     data["flow"] = serde_json::to_value(flow::of(&graph)).expect("the flow is data");
-    let file = std::env::temp_dir().join(format!("atlas-figures-{}-{side}-{budget:?}.json", std::process::id()));
+    let name = pair.replace('/', "-");
+    let file = std::env::temp_dir().join(format!("atlas-figures-{}-{name}-{side}-{budget:?}.json", std::process::id()));
     std::fs::write(&file, data.to_string()).expect("writes the data");
     let mut node = Command::new("node");
     if let Some(b) = budget {
@@ -84,13 +90,13 @@ fn screen(side: &str, budget: Option<usize>) -> BTreeSet<String> {
         .arg(here.join("tests/plans.mjs"))
         .arg(here.join("../viewer/plan.js"))
         .arg(&file)
-        .arg("notebooks.compare")
+        .arg(route)
         .output()
         .expect("node runs the viewer's model: the test needs node on the PATH");
     let _ = std::fs::remove_file(&file);
     assert!(out.status.success(), "the model fails\n{}", String::from_utf8_lossy(&out.stderr));
     let read: serde_json::Value = serde_json::from_slice(&out.stdout).expect("the model prints JSON");
-    read["notebooks.compare"]["facts"]
+    read[route]["facts"]
         .as_array()
         .into_iter()
         .flatten()
@@ -143,4 +149,24 @@ fn building_a_class_opens_into_its_initializer_in_the_route_s_text() {
     );
     let doors = atlas_engine::story::route(&figures().clean, "charts.chart.Chart", 2).expect("Chart is a route");
     assert!(doors.contains("Chart.create_figure()") && doors.contains("Chart.line(xs, ys)"), "the class's own route is its doors\n{doors}");
+}
+
+/// The lent pair (`tests/pairs/figures/lent`): a figure handed between charts through a field (#11). The clean first chart
+/// lends its figure by handing what it holds to the second's `take`, which sets its own fields; the shortcut's `lend`
+/// reaches into the second chart and sets its fields there (`other.fig, other.ax = self.fig, self.ax`). Either way the
+/// second chart holds the first's figure (`Node::sets`, a lens's put), so the notebook's screen shows one figure, also
+/// beyond the cut; what tells them apart is who sets the second chart's fields.
+#[test]
+fn a_figure_lent_through_a_field_is_the_one_figure() {
+    let one = BTreeSet::from(["Figure 1 · Chart · first right".to_string()]);
+    for side in ["clean", "shortcut"] {
+        for budget in [None, Some(1), Some(2), Some(3), Some(5)] {
+            assert_eq!(screen_of("figures/lent", side, "notebooks.overlay", budget), one, "{side}, budget {budget:?}");
+        }
+    }
+    let lent = common::pair("figures/lent");
+    let sets = |g: &Graph, id: &str| -> Vec<String> { g.node(id).unwrap().sets.iter().map(|s| s.on.name.clone()).collect() };
+    assert_eq!(sets(&lent.clean, "charts.chart.Chart.take"), [""], "the second chart sets its own fields");
+    assert!(sets(&lent.clean, "charts.chart.Chart.lend").is_empty(), "the first hands them to it");
+    assert_eq!(sets(&lent.shortcut, "charts.chart.Chart.lend"), ["other"], "the first sets the second's fields itself");
 }

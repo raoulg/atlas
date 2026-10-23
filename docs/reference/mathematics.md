@@ -414,7 +414,10 @@ open:
   by a value does: one a method keeps in the value it runs on (a method that changes that value,
   `self.fig, self.ax = plt.subplots()`) is that value's, so every step that runs on the value draws on the
   one figure it holds, whichever of them makes it (`create_figure` only where `self.fig is None`); one a
-  call makes and no value beyond it holds is that call's own, and two calls make two;
+  call makes and no value beyond it holds is that call's own, and two calls make two. A value a body sets
+  a part of to what another value holds (`other.fig = self.fig`, or `self.fig = fig` in a method its
+  call hands the other's figure to) is that one's put, a lens's: from then on it holds the figure the
+  other holds, and so does every value made anew of it;
 - a step's own arrow is its witness at its border: its signature and its own touches, the lines that
   cross its frame. An opened step draws it as a point on the frame's right edge, not as a step beside
   its steps: a value its call is handed crosses the frame to the step inside that takes it (the value
