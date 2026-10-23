@@ -453,7 +453,10 @@ open:
   hands `table`, the lens the key chooses), and so is any value a body binds without a step: a
   pattern that takes a value apart (`const [year, month] = fields` hands `fields`), a name a
   `case` pattern binds (a part of what the `match` takes apart, through the variant the case matches, a
-  prism), an element of a loop that is no step (`for s, t in rows`), what operators compute of names
+  prism), an element of a loop that is no step (`for s, t in rows`), an element a method hands the
+  closure or the function it is given (`g.nodes.iter().map(|n| ..)` hands `g`, and inside it
+  `n.touches.iter().chain(&n.instead).map(Touch::drawn)` hands `g` as well: what `chain` goes on with
+  is part of what it is handed, an element of either), what operators compute of names
   (`bottom = height - margin`), what each arm of a choice sets a name to (`let unit;
   if (..) unit = KELVIN; else unit = CELSIUS`). A change made through one changes its owner, a lens's
   put. A parameter is such a name: inside an opened step it holds the value its call hands it, not a

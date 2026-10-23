@@ -296,27 +296,49 @@ fn opened<'t>(v: TsNode<'t>, src: &[u8]) -> TsNode<'t> {
     v
 }
 
-/// The name what a method hands the function it is given is a part of, where the method hands it
+/// The names what a method hands the function it is given is a part of, where the method hands it
 /// each element of the value it runs on or what an `Option` holds (`knowledge::RUST_EACH`), through
 /// the methods that go over its parts: `series` of `series.windows(m).map(..)`, whose windows `map`
-/// hands its closure, `text` of `text.lines().filter_map(..)`. None for a method that hands no
-/// element, or a value no name holds.
-fn each_of<'t>(call: TsNode<'t>, src: &[u8]) -> Option<TsNode<'t>> {
-    let method = |call: TsNode<'t>| {
-        function(call)
-            .filter(|f| f.kind() == "field_expression")
-            .and_then(|f| Some((text(f.child_by_field_name("field")?, src), f.child_by_field_name("value")?)))
-    };
-    let mut on = method(call).filter(|(m, _)| knowledge::RUST_EACH.contains(m)).map(|(_, v)| v)?;
-    while let Some((_, v)) = method(beneath(on, WRAPPERS)).filter(|(m, _)| {
-        knowledge::RUST_PARTS.contains(m)
-            || knowledge::RUST_ELEMENTS.contains(m)
-            || knowledge::RUST_KEEPS_ELEMENTS.contains(m)
-            || knowledge::hands_on(m)
-    }) {
+/// hands its closure, `text` of `text.lines().filter_map(..)`. Where an adaptor goes on with the
+/// elements of what it is handed (`a.iter().chain(&b)`), an element is a part of either: `a`, then
+/// `b`. None for a method that hands no element, or a value no name holds.
+fn each_of<'t>(call: TsNode<'t>, src: &[u8]) -> Vec<TsNode<'t>> {
+    let on = method_on(call, src).filter(|(m, _)| knowledge::RUST_EACH.contains(m)).map(|(_, v)| v);
+    on.map_or(vec![], |on| elements_of(on, src))
+}
+
+/// The method a call makes on a value, by its name, and the value: `map` and `xs.iter()` of
+/// `xs.iter().map(..)`.
+fn method_on<'t, 's>(call: TsNode<'t>, src: &'s [u8]) -> Option<(&'s str, TsNode<'t>)> {
+    function(call)
+        .filter(|f| f.kind() == "field_expression")
+        .and_then(|f| Some((text(f.child_by_field_name("field")?, src), f.child_by_field_name("value")?)))
+}
+
+/// The names the elements of `on` are parts of, through the methods that go over its parts and keep
+/// its elements, and through what an adaptor joins after them (`each_of`).
+fn elements_of<'t>(mut on: TsNode<'t>, src: &[u8]) -> Vec<TsNode<'t>> {
+    let mut joined = vec![];
+    while let Some((m, v)) = method_on(beneath(on, WRAPPERS), src) {
+        if knowledge::RUST_JOINS_ELEMENTS.contains(&m) {
+            joined.extend(positional(beneath(on, WRAPPERS)).into_iter().flatten().flat_map(|a| elements_of(a, src)));
+        } else if !(knowledge::RUST_PARTS.contains(&m)
+            || knowledge::RUST_ELEMENTS.contains(&m)
+            || knowledge::RUST_KEEPS_ELEMENTS.contains(&m)
+            || knowledge::hands_on(m))
+        {
+            break;
+        }
         on = v;
     }
-    root(on)
+    // one name written twice is one value: `n` of `n.touches.iter().chain(&n.instead)`
+    let mut out: Vec<TsNode<'t>> = vec![];
+    for r in root(on).into_iter().chain(joined) {
+        if !out.iter().any(|o| text(*o, src) == text(r, src)) {
+            out.push(r);
+        }
+    }
+    out
 }
 
 /// The library value a chain of method calls starts from: a call of a function on a library's
@@ -996,7 +1018,9 @@ impl<'a, 't> Body<'a, 't> {
         }
         for c in walk(body, &["closure_expression"]) {
             let Some(call) = c.parent().filter(|a| a.kind() == "arguments").and_then(|a| a.parent()) else { continue };
-            let (Some(held), Some(params)) = (each_of(call, src), c.child_by_field_name("parameters")) else { continue };
+            // a name holds one value: where the elements are parts of two (`a.iter().chain(&b)`), the closure's names hold
+            // a value the body binds out of sight
+            let (&[held], Some(params)) = (each_of(call, src).as_slice(), c.child_by_field_name("parameters")) else { continue };
             for name in bound_names(params, src) {
                 if let Some((from, to)) = scope(name) {
                     self.aliases.bind(text(name, src), from, to, (text(held, src).to_string(), held.start_byte()));
@@ -1656,8 +1680,8 @@ impl<'a, 't> Body<'a, 't> {
                 steps.handed(c, a, &t, EdgeKind::Calls, None);
                 continue;
             }
-            let element = each_of(c, self.src);
-            let hands = element.map(|e| self.hands(&[Some(e)], &steps.kept)).unwrap_or_default();
+            let elements: Vec<Option<TsNode>> = each_of(c, self.src).into_iter().map(Some).collect();
+            let hands = self.hands(&elements, &steps.kept);
             // the element is the function's first parameter, or the value a method runs on
             let takes_self = self.store.nodes[&t].params.first().map_or(false, |p| p.receiver);
             let slot = if takes_self { Slot::Receiver } else { Slot::At(0) };

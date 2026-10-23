@@ -1354,3 +1354,19 @@ fn a_set_names_the_field_it_sets() {
     let named: Vec<(&str, &str)> = sets.iter().map(|s| (s.on.name.as_str(), s.field.as_str())).collect();
     assert_eq!(named, [("rates", "date")], "{sets:#?}");
 }
+
+/// The each pair (`tests/pairs/each/rust`): what a graph draws, each node's touches and what it does instead. The clean side
+/// hands `Touch::drawn`, by its path, each element of `n.touches.iter().chain(&n.instead)`, inside the closure `map` hands
+/// each node: every element is a part of the graph the function is handed, through what `chain` goes on with, so the step
+/// takes the graph (#166). The shortcut gathers them into a list first (`let all = ..collect()`), a value of its own, and
+/// the step takes that list.
+#[test]
+fn an_element_of_a_closure_s_parameter_is_a_part_of_what_the_function_is_handed() {
+    let each = common::pair("each/rust");
+    let drawn = |g: &Graph| -> Vec<String> {
+        let f = node(g, "drawing.drawn");
+        f.sites.iter().filter(|s| s.to == "drawing.Touch.drawn").flat_map(|s| s.hands.iter().map(|h| h.name.clone())).collect()
+    };
+    assert_eq!(drawn(&each.clean), ["g"], "each touch is a part of the graph the function is handed");
+    assert_eq!(drawn(&each.shortcut), ["all"], "the shortcut draws from the list it gathered");
+}

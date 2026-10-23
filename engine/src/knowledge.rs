@@ -1837,6 +1837,10 @@ pub const RUST_ELEMENTS: &[&str] = &["iter", "iter_mut", "into_iter", "drain"];
 pub const RUST_KEEPS_ELEMENTS: &[&str] =
     &["filter", "skip", "take", "rev", "skip_while", "take_while", "peekable", "inspect", "step_by", "by_ref"];
 
+/// The adaptors of an iterator that go on with the elements of what they are handed after their own:
+/// each element of `a.iter().chain(&b)` is one of `a` or one of `b`.
+pub const RUST_JOINS_ELEMENTS: &[&str] = &["chain"];
+
 /// The methods that go over the parts of a value one by one: a string's lines, words and characters,
 /// a slice's windows and chunks, a map's keys and values.
 pub const RUST_PARTS: &[&str] = &[
