@@ -76,8 +76,7 @@ home Outage·outage ReadingStore()
 home _·text@ReadingStore()/ReadingStore.summary/readFileSync ReadingStore()/ReadingStore.summary
 home _·kept@ReadingStore()/ReadingStore.summary/find ReadingStore()/ReadingStore.summary
 home Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/Reading() ReadingStore()/ReadingStore.summary/?1/ReadingStore.history
-known #126 home Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history ReadingStore()/ReadingStore.summary/?1   # it stands in summary's frame while summary's own arrow takes it (#126 extra below)
-known #126 extra line Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history > ReadingStore()/ReadingStore.summary value   # #126: summary gives back a line, not the Readings
+home Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history ReadingStore()/ReadingStore.summary/?1   # it stands in summary's frame while summary's own arrow takes it (#126 extra below)
 home _·temperatures@ReadingStore()/ReadingStore.summary/?1/map ReadingStore()/ReadingStore.summary
 home Day·day ReadingStore()
 

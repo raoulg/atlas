@@ -87,13 +87,13 @@ line Board·board@main/Board.take_from > main/Board.take_victim/extend value
 line main/Board.take_victim/extend > Board·self@main/Board.take_victim/extend value
 line Board·self@main/Board.take_victim/extend > main/Board.take_victim value
 line main/add_tag/append > _·tags@main/add_tag/append value
-known #129 line _·tags@main/add_tag/append > main/add_tag value   # the own arrow hands on what the change made
+line _·tags@main/add_tag/append > main/add_tag value   # the own arrow hands on what the change made
 home Board·self@main/Board.take_from/extend main/Board.take_from
 home Board·self@main/Board.take_victim/extend main/Board.take_victim
 home _·tags@main/add_tag/append main/add_tag
 step main/queue/heappush                                    # `heapq.heappush(jobs, job)` changes the list it is handed
 line main/queue/heappush > _·jobs@main/queue/heappush value
-known #129 line _·jobs@main/queue/heappush > main/queue value   # the own arrow hands on what the change made
+line _·jobs@main/queue/heappush > main/queue value   # the own arrow hands on what the change made
 home _·jobs@main/queue/heappush main/queue
 
 # A callee's parameter holds what its call hands it: `take_from`'s `other` is main's board, `take_victim`'s `victim`
@@ -132,7 +132,6 @@ home list·xs@main/extend main
 # nowhere: main's code does not use it, but main's own arrow takes it as a value main's result is made from (#129)
 line main/rename > main back
 line main/extend > main back
-known #129 extra line Board·other@main/rename > main value
 
 # `main` reads the lengths of the list and dicts its steps changed: the reader gives the use (#101), the values it uses
 # wait on the changes being values (#129)

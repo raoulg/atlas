@@ -1,0 +1,31 @@
+# `lines(source: Trimmed)`: the shortcut's `Trimmed.read` names the `read` it hands on to, `Source.read(self)`, a
+# call through a class: it runs that method and nothing in its place, on the source it is handed first, so a trimmed
+# source that is a feed never reads its store and the route asks the network alone. What `read` gives is bytes, no
+# type of the code's: it goes back to the call that ran it.
+
+route news.read.lines
+step lines/Trimmed.read
+step lines/Trimmed.read/Source.read                                                    # `Source.read(self)`
+step lines/Trimmed.read/Source.read/urlopen
+known #125 extra step lines/Trimmed.read/Source.read/response.read                     # `return response.read()`
+
+line entry > lines call
+line Trimmed·source > lines value
+known #128 line Trimmed·source > lines/Trimmed.read/Source.read/urlopen value         # `urlopen(self.url)`
+line lines/Trimmed.read/Source.read/urlopen > _·response@lines/Trimmed.read/Source.read/urlopen value
+line _·response@lines/Trimmed.read/Source.read/urlopen > lines/Trimmed.read/Source.read value   # `response.read()`
+line lines/Trimmed.read/Source.read > Web own
+line lines/Trimmed.read/Source.read > lines/Trimmed.read back
+line lines/Trimmed.read > lines back
+
+# the source `Source.read` is handed rests at its own arrow, and `urlopen` takes the signature's type from beyond
+known #128 extra line Trimmed·source > lines/Trimmed.read/Source.read value
+known #128 extra line Source > lines/Trimmed.read/Source.read/urlopen value
+known #125 extra line _·response@lines/Trimmed.read/Source.read/urlopen > lines/Trimmed.read/Source.read/response.read value
+known #128 extra home Source lines
+
+home Trimmed·source lines
+home _·response@lines/Trimmed.read/Source.read/urlopen lines/Trimmed.read/Source.read
+
+side entry left
+known #160 side Web left                                                              # `urlopen(url)` with no data is a GET

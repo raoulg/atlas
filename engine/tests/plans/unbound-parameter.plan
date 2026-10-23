@@ -1,0 +1,25 @@
+# `show(sheet.title, sheet.rows)` is handed the sheet, through two projections: inside `show`, `title` and `rows` hold
+# it, so the loop goes over the sheet, and `print(title, ..)` reads it. Where the plan cannot pair what a call hands with
+# the parameters it fills (#157), a parameter still holds no value from beyond the route: it is a value of the body
+# whose parameter it is, made by no step the plan follows, in that body's frame (#159). Closed, `show` takes no `Row`
+# from beyond.
+
+route sheets.run
+step run/show
+step run/show/for row in rows
+
+line entry > run call
+line Sheet·sheet > run value
+line Sheet·sheet > run/show value                                      # `print(title, ..)`, the title of the sheet
+known #157 line Sheet·sheet > run/show/for row in rows value          # `rows` holds `sheet.rows`
+line run/show/for row in rows > Row·row@run/show/for row in rows value
+line Row·row@run/show/for row in rows > run/show value     # `row.text`
+line run/show > Screen own
+known #157 extra line Row·rows@run/show/~rows > run/show/for row in rows value   # the parameter, bound by no value the call hands
+known #157 extra home Row·rows@run/show/~rows run/show
+
+home Sheet·sheet run
+home Row·row@run/show/for row in rows run/show
+
+side entry left
+side Screen right

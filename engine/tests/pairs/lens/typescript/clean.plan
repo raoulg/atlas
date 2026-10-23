@@ -89,7 +89,7 @@ line _·line@ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/find >
 line ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/?1/Summary() > Summary@ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/?1/Summary() value # #130
 line Summary@ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/?1/Summary() > ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary value # #130
 line ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary > Summary@ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary value # #130
-known #130 line Summary@ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary > ReadingStore()/ReadingStore.summary value   # #130
+line Summary@ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary > ReadingStore()/ReadingStore.summary value   # where the arm does not run, `??` hands on the left
 line ReadingStore > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history value # the caller's instance
 line Disk(ReadingStore.readings) > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history own
 line ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/Reading() > Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/Reading() value

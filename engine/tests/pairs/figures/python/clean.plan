@@ -1,0 +1,74 @@
+# A chart is one figure. `Chart.line` makes it only where the chart holds none (`if self.ax is None`): `create_figure`
+# keeps what `plt.subplots()` makes in the chart it runs on, so both lines draw on the one figure the chart holds. In a
+# notebook a figure is on the screen, numbered in the order the route makes it and named by what holds it; elsewhere it
+# rests in pyplot's figure. `self` is made anew in the arm and kept otherwise: the choice's value, which `self.ax.plot`
+# uses.
+
+route notebooks.compare
+step compare/compare
+step compare/compare/Chart()
+step compare/compare/Chart.line
+choice compare/compare/Chart.line/?1
+step compare/compare/Chart.line/?1/Chart.create_figure
+step compare/compare/Chart.line#2
+choice compare/compare/Chart.line#2/?1
+step compare/compare/Chart.line#2/?1/Chart.create_figure
+
+line entry > compare call
+line compare/compare/Chart() > Chart·chart@compare/compare/Chart() value
+line Chart·chart@compare/compare/Chart() > compare/compare/Chart.line/?1/Chart.create_figure value   # `self.create_figure()`
+line compare/compare/Chart.line/?1/Chart.create_figure > Chart·self@compare/compare/Chart.line/?1 value
+line compare/compare/Chart.line/?1/Chart.create_figure > Figure 1 · Chart · chart own              # `plt.subplots()`
+line Chart·self@compare/compare/Chart.line/?1 > compare/compare/Chart.line value                     # `self.ax.plot(..)`
+line compare/compare/Chart.line > Chart·chart@compare/compare/Chart.line value
+line Chart·chart@compare/compare/Chart.line > compare/compare/Chart.line#2/?1/Chart.create_figure value
+line compare/compare/Chart.line#2/?1/Chart.create_figure > Chart·self@compare/compare/Chart.line#2/?1 value
+line compare/compare/Chart.line#2/?1/Chart.create_figure > Figure 1 · Chart · chart own            # the chart's figure again
+line Chart·self@compare/compare/Chart.line#2/?1 > compare/compare/Chart.line#2 value
+line compare/compare/Chart.line#2 > Chart·chart@compare/compare/Chart.line#2 value
+line Chart·chart@compare/compare/Chart.line#2 > compare/compare value                                # `return chart`
+line compare/compare > Chart·chart@compare/compare value                                             # `chart = compare(..)`
+
+home Chart·chart@compare/compare/Chart() compare/compare
+home Chart·self@compare/compare/Chart.line/?1 compare/compare/Chart.line
+home Chart·chart@compare/compare/Chart.line compare/compare
+home Chart·self@compare/compare/Chart.line#2/?1 compare/compare/Chart.line#2
+home Chart·chart@compare/compare/Chart.line#2 compare/compare
+home Chart·chart@compare/compare compare
+
+side entry left
+side Figure 1 · Chart · chart right
+
+route charts.chart.compare
+step compare/Chart()
+step compare/Chart.line
+choice compare/Chart.line/?1
+step compare/Chart.line/?1/Chart.create_figure
+step compare/Chart.line#2
+choice compare/Chart.line#2/?1
+step compare/Chart.line#2/?1/Chart.create_figure
+
+line entry > compare call
+line compare/Chart() > Chart·chart@compare/Chart() value
+line Chart·chart@compare/Chart() > compare/Chart.line/?1/Chart.create_figure value
+line compare/Chart.line/?1/Chart.create_figure > Chart·self@compare/Chart.line/?1 value
+line compare/Chart.line/?1/Chart.create_figure > Figure own                                          # pyplot's figure
+line Chart·self@compare/Chart.line/?1 > compare/Chart.line value
+line compare/Chart.line > Chart·chart@compare/Chart.line value
+line Chart·chart@compare/Chart.line > compare/Chart.line#2/?1/Chart.create_figure value
+line compare/Chart.line#2/?1/Chart.create_figure > Chart·self@compare/Chart.line#2/?1 value
+line compare/Chart.line#2/?1/Chart.create_figure > Figure own
+line Chart·self@compare/Chart.line#2/?1 > compare/Chart.line#2 value
+line compare/Chart.line#2 > Chart·chart@compare/Chart.line#2 value
+line Chart·chart@compare/Chart.line#2 > compare value
+line compare > Chart@compare value                                                                   # the chart goes to the caller
+
+home Chart·chart@compare/Chart() compare
+home Chart·self@compare/Chart.line/?1 compare/Chart.line
+home Chart·chart@compare/Chart.line compare
+home Chart·self@compare/Chart.line#2/?1 compare/Chart.line#2
+home Chart·chart@compare/Chart.line#2 compare
+home Chart@compare compare
+
+side entry left
+side Figure right

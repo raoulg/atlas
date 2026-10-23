@@ -46,8 +46,10 @@ that reads it. A read is preceded by a write only when the write happens wheneve
 not in one branch of a choice the read is outside. Two arms of one choice never run one after the
 other: a place one arm writes and another reads finds what was there and is changed, in both. A
 loop runs its body again: a read in a loop finds what a later round writes over, whichever stands
-first in the loop. What a step a body calls finds there is what the body left, where the body wrote
-it before the call: the step changes nothing the body found. The
+first in the loop. A call that may run one of several bodies (the overrides of a call by name, the
+next method of a `super()` call) does at a place what one of them does, as the arms of a choice do.
+What a step a body calls finds there is what the body left, where the body wrote it before the call:
+the step changes nothing the body found. The
 route of a class is its doors, each called by the entry with no order between them: a place one door
 finds and changes, the route finds and changes. Making a place's shape (a directory, a table's
 schema) or testing it (whether a file is there, whether a value holds a key) puts and takes no
@@ -103,7 +105,8 @@ raw.exists()`, a `match` pattern, `otherwise`). A choice of one arm is a coprodu
 identity, `f + 1`: its steps run when the condition holds and nothing runs otherwise, so it is
 drawn as a choice too. In `x ?? y`, `x || y` and `x && y` (Python's `or` and `and`, Rust's
 `x.unwrap_or_else(..)`) the left always runs and its value goes on where it holds, so it is no arm; the right is
-the one arm. A guard, a choice none of whose arms runs on past its end and that has no arm for when none
+the one arm. What goes on past them is the left's value where the arm does not run and the arm's where it does, as
+in `match x { Some(v) => v, None => y }`: a body that gives back `x ?? y` gives back both. A guard, a choice none of whose arms runs on past its end and that has no arm for when none
 is chosen (`if not xs: return Failed(..)`), is that choice with what follows it in its block as its last arm: `return
 Fit(..)` after it runs otherwise, as an `else` would write it. A repository's graph is the coproduct of its parts' graphs, glued only
 along the libraries and places of the world they share (a pushout over those): two parts whose code
@@ -406,7 +409,12 @@ open:
   constructor built, so `self.path` in a method and `path` in a helper it hands it to are both
   `Disk(Store.path)`. A module's global holds what rests in its place, `Global(m.df)`; a step its body
   hands it to takes it there, no value from beyond, until a step of the body makes it anew. A figure a
-  library draws on rests in that figure (`Figure`) until something saves or shows it;
+  library draws on rests in that figure (`Figure`) until something saves or shows it, and a notebook shows
+  each figure its cells make on the screen (`Figure 1`). A figure rests in what holds it, as a place named
+  by a value does: one a method keeps in the value it runs on (a method that changes that value,
+  `self.fig, self.ax = plt.subplots()`) is that value's, so every step that runs on the value draws on the
+  one figure it holds, whichever of them makes it (`create_figure` only where `self.fig is None`); one a
+  call makes and no value beyond it holds is that call's own, and two calls make two;
 - a step's own arrow is its witness at its border: its signature and its own touches, the lines that
   cross its frame. An opened step draws it as a point on the frame's right edge, not as a step beside
   its steps: a value its call is handed crosses the frame to the step inside that takes it (the value
@@ -417,8 +425,10 @@ open:
   takes the value too: the line lies inside the frame, so it is internal to the closed step (rule 2)
   and the value stands in the step's frame. A value no line takes says that the body drops it; the
   map draws fewer facts by zoom, never by leaving one out. Of what the
-  body's steps make, what it gives back is what no step of the code among them takes: a value built
-  only to be handed into another step (`Row(Reading(line))`) is that step's. A value handed into a
+  body's steps make, what it gives back is what no step of the code among them takes and is of a type
+  its signature gives (its result, or the error of `T + E`): a value built only to be handed into another
+  step (`Row(Reading(line))`) is that step's, and a body that gives back a number gives back none of the
+  values its steps make, which it uses, if at all, by its own code. A value handed into a
   library's operation goes on in what the operation gives, and is the operation's only where that
   is. A result of no type of the code's goes back to the step that called it unless another step of
   the caller takes it, which it then reaches as a value. Going back, it is one line labelled by the
@@ -441,9 +451,12 @@ open:
   (`bottom = height - margin`), what each arm of a choice sets a name to (`let unit;
   if (..) unit = KELVIN; else unit = CELSIUS`). A change made through one changes its owner, a lens's
   put. A parameter is such a name: inside an opened step it holds the value its call hands it, not a
-  caller's value of its name or the latest of its type. The call hands its values in order, the value
-  it runs on first, each to the next parameter of its type; a parameter the call fills through a
-  projection (`finished(job, settings.mode)`) is still the projection, so the steps inside are handed
+  caller's value of its name or the latest of its type, and where the plan cannot say which, it is still
+  a value of that body, in its frame, never one from beyond the route: what comes from beyond the route
+  is what its caller holds, its parameters and the instance of a class route. The call hands its
+  values in order, the value it runs on first, each to the next parameter of its type; a parameter the
+  call fills through a projection (`finished(job, settings.mode)`) is still the projection, so the
+  steps inside are handed
   `settings`, and a signature's type is a value of its own only where the call hands nothing. A value
   of no type of the code's is one where a step makes it, so a parameter of no type of the code's
   (`path: &Path`) holds one only where its call fills it with one, a value a step made or a projection
@@ -509,7 +522,8 @@ parse the command line to the entry. The closed picture is `F/q`:
   is the image of the body unfolded to its leaves, made without unfolding it, once for each function,
   call and set of callers that make its paths whole. Planned by itself, a body does not know its
   caller's values: a value it takes by a name it did not make is the caller's value of that name where
-  the caller has one, else the latest of its kind the body made. The cut changes how much of `F` is
+  the caller has one, else the latest of its kind the body made, else one its body binds out of the
+  plan's sight, which the caller does not see either. The cut changes how much of `F` is
   held, never its picture, and opening a cut step refines as opening any step does.
 
 On the image the page then does only what is a quotient of `F` or a way of drawing it: the merge of
@@ -539,8 +553,8 @@ fact of it must hold of the plan Atlas builds, and no other. What Atlas gets wro
 with the issue that tracks it, and the mark goes with the fix (`engine/tests/plans/README.md`). The
 test runs the viewer's own model in node, the function every picture is drawn from, on every route of
 the pairs and of its programs.
-**Where.** `plan`, `sitesOf`, `coarsen`, `cutArrow` and `checkOpenings` in `viewer/plan.js`; `tools/pictures.py`;
-`engine/tests/plans.rs`.
+**Where.** `plan`, `sitesOf`, `figureOf`, `coarsen`, `cutArrow` and `checkOpenings` in `viewer/plan.js`;
+`tools/pictures.py`; `engine/tests/plans.rs`.
 
 ### Saturation: when the order of a view does not matter
 **What.** A set is saturated by an equivalence when it never cuts a class in two.
@@ -619,11 +633,14 @@ through a class (`C.f(x)`, `C.prototype.f.call(x)`) runs the `f` along `C`'s ord
 is handed first, and no override of it. A `super()` call written in `K` runs the next `f` after `K`
 along the order of the value's class, not of `K`: in `D(B, C)`, a `super().f()` in `B` runs `C.f` on
 a `D`. Where the value's class is not known, it may be `K` or any class below, and the call runs
-the next `f` after `K` along each of their orders: one of them. A call by name on a value whose class
-is not known may run, for each class the value may be (the class of the method it reaches or one below
-it), the `f` that class runs along its order: in `D(B, C)`, a call of `C.f` may run `B.f` on a `D`,
-though `B` is not below `C`. A call through a class, and a `super()` call on a value whose class is
-known, run the one their call names.
+the next `f` after `K` along each of their orders: one of them, on that class. A call by name on a value
+whose class is not known may run, for each class the value may be (the class of the method it reaches or
+one below it), the `f` that class runs along its order, on the values that run it: in `D(B, C)`, a call
+of `C.f` may run `B.f` on a `D`, though `B` is not below `C`, and there its `super().f()` runs `C.f`. The
+alternative is that method on that class, a body as any step on a known class runs it, named by the
+class it runs on (`D.f`); one of a class below the method's own runs on any value of its class, whose
+class is not known. A call through a class, and a `super()` call on a value whose class is known, run
+the one their call names.
 **Where.** `model::linearization`, `model::initializer_along`; `principles.rs` (`Index::mro`),
 `builder.rs` (`family`, `method_of`, `initializer_of`), `flow.rs` (`method_on`, `method_after`,
 `built_from`, `Step::named`, `Ix::overrides`).

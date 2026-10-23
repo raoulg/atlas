@@ -158,6 +158,9 @@ for (const n of D.nodes) for (const t of [...(n.touches || []), ...(n.instead ||
   if (!COARSE.has(c)) COARSE.set(c, new Map());
   COARSE.get(c).set(t.place.id, t.place);
 }
+// a body by its key: the function, and the class it runs on where that is known (`flow::key`); what a call may run
+// instead is a body
+const keyed = k => { const i = k.indexOf("@"); return i < 0 ? [k, null] : [k.slice(0, i), k.slice(i + 1)]; };
 // in one reading of a union, a body runs the steps that reading has
 const bodyCache = new Map();
 const bodyOf = (id, on) => {
@@ -167,7 +170,7 @@ const bodyOf = (id, on) => {
   if (!bodyCache.has(ck)) {
     const n = byId.get(id), runs = s => has(byId.get(s.to)) && (s.site == null || has(n?.sites?.[s.site]));
     const items = b.items.flatMap(it => { if (!it.members) return runs(it) ? [it] : []; const ms = it.members.filter(runs); return ms.length ? [{...it, members: ms}] : []; });
-    bodyCache.set(ck, {...b, items, alts: (b.alts || []).filter(a => has(byId.get(a)))});
+    bodyCache.set(ck, {...b, items, alts: (b.alts || []).filter(a => has(byId.get(keyed(a)[0])))});
   }
   return bodyCache.get(ck);
 };
@@ -181,11 +184,12 @@ const arrowOf = id => {
   return arrowCache.get(ck);
 };
 const stepsIn = b => b.items.flatMap(it => it.members ? it.members : [it]);
-// what a call may run in place of the function it reaches: a method called by name on a value whose class is not
-// known, any override its body lists; one whose call names the method (`Cached.read(self)`), what its call says
-const insteadOf = s => s.named ? (s.instead || []).filter(a => has(byId.get(a))) : s.on ? [] : bodyOf(s.to, null).alts || [];
+// what a call may run in place of the function it reaches, each a body by its key: a method called by name on a value
+// whose class is not known, any override its body lists, on the classes that run it; one whose call names the method
+// (`Cached.read(self)`, `super().read()`), what its call says
+const insteadOf = s => s.named ? (s.instead || []).filter(a => has(byId.get(keyed(a)[0]))) : s.on ? [] : bodyOf(s.to, null).alts || [];
 // the functions a step runs: its body's steps, and what the call may run instead (`alts`, else the overrides of a call by name)
-const callees = (id, on, alts = null) => { const b = bodyOf(id, on); return [...new Set([...stepsIn(b).map(s => s.to), ...(alts ?? b.alts ?? [])])].filter(t => byId.has(t)); };
+const callees = (id, on, alts = null) => { const b = bodyOf(id, on); return [...new Set([...stepsIn(b).map(s => s.to), ...(alts ?? b.alts ?? []).map(a => keyed(a)[0])])].filter(t => byId.has(t)); };
 // what each step of an opened route stands for: the function it runs (or a library's operation,
 // `op:to_numpy`), the class of the value it runs on, and the call; a step is a call, keyed by its
 // path through the route, so two calls of one function are two steps; `fed` names the values of
@@ -215,7 +219,7 @@ function reach(id, on, root = null, chain = null, alts = null) {
     const [cur, con, calts] = stack.pop(), n = byId.get(cur); if (!n) continue;
     seen.push(n);
     const b = bodyOf(cur, con);
-    for (let [t, o, a] of [...stepsIn(b).map(s => [s.to, s.on || null, s.named ? insteadOf(s) : null]), ...(calts ?? b.alts ?? []).map(x => [x, null, null])]) {
+    for (let [t, o, a] of [...stepsIn(b).map(s => [s.to, s.on || null, s.named ? insteadOf(s) : null]), ...(calts ?? b.alts ?? []).map(x => [...keyed(x), null])]) {
       if (byId.get(t)?.kind === "class") { t = runsOf(t); o = null; a = null; }
       const k = (o ? `${t}@${o}` : t) + (a ? "!" : "");
       if (byId.has(t) && !vis.has(k)) { vis.add(k); stack.push([t, o, a]); }
@@ -486,7 +490,14 @@ function routeTree() {
     const deeper = new Set([...path, step]), body = bodyOf(step, on);
     node.choice = alts.length > 0;
     let b = 0;
-    for (const o of alts) node.kids.push(visit(`${key}|${o}`, o, null, null, (b++ % 8) + 1, deeper, undefined, {dispatch: key}));
+    // what the call may run instead runs on the class of its key; the next method of a call that names its method
+    // (`super().read()`) is named by its own class. It runs in place of the function the call reaches, as the same call:
+    // that function is not on the calls that lead into it, and one the route is already inside stays closed
+    for (const o of alts) {
+      const [to, cls] = keyed(o), ak = `${key}|${o}`, h = (b++ % 8) + 1, info = {dispatch: key, named: !!by.named};
+      if (path.has(to)) { treeInfo.set(ak, {step: to, on: cls, site: null, path, recursive: true, alts: [], ...info}); node.kids.push({id: ak, open: false, kids: [], hue: h, choice: false, recursive: true}); continue; }
+      node.kids.push(visit(ak, to, cls, null, h, path, undefined, info));
+    }
     const parse = commandLine(n);
     if (parse.hidden.size) routeParses = true;
     const entry = folds ? parse : {hidden: new Set(), fed: new Set()};
@@ -593,12 +604,12 @@ if (!routeContent.has(seen)) {
   routeContent.set(seen, {found, updated, content});
 }
 const {found, updated, content} = routeContent.get(seen);
-// a place's shape (a directory made, a table created) and a connection opened without a way serve
-// the data the route reads or writes there: of a file, in a directory; of a database, any table. A
-// test whose answer only decides a choice is that choice's condition: its place is drawn by what the
-// route reads or writes there, if anything
+// a place's shape (a directory made, a table created, a file tested) and a connection opened without a way serve
+// the data the route reads or writes there: at that place, whether a file or a path only a value names; of a file,
+// in a directory; of a database, any table. A test whose answer only decides a choice is that choice's condition:
+// its place is drawn by what the route reads or writes there, if anything
 const inDir = dir => [...content.files].some(f => f.startsWith(dir));
-const served = t => t.test || (t.shape || isOpen(t)) && (t.kind.startsWith("db_") ? content.dbs.has(t.kind) : !!t.place.file && (content.places.has(t.place.id) || (t.place.file.endsWith("/") && inDir(t.place.file))));
+const served = t => t.test || (t.shape || isOpen(t)) && (t.kind.startsWith("db_") ? content.dbs.has(t.kind) : content.places.has(t.place.id) || (!!t.place.file && t.place.file.endsWith("/") && inDir(t.place.file)));
 // a type is a place of its own while its moments are counted; then a closed one stands in its kind.
 // The kind is the type's (its base class), not the view's: the route's subject is its own
 const kindKey = k => k.startsWith("t:") && places.get(k)?.type ? "t:" + (places.get(k).type === V.route ? V.route : kindOf(places.get(k).type)) : k;
@@ -632,7 +643,7 @@ const morphism = (id, own, isAnchor, noReceiver, opts = {}) => {
     if (own && a.gives_back && !opts.leaf) for (const x of bodyOf(f.id, opts.on).made_from || []) dom.push([addPlace(typePlace(x)), false]);
     // a closed call into a family takes and hands on what any of its branches does, unless the call
     // says which class it runs on
-    if (!own) for (const o of opts.alts ?? (opts.on ? [] : bodyOf(f.id, null).alts || [])) merge(morphism(o, false, false, noReceiver, {at: opts.at}));
+    if (!own) for (const o of opts.alts ?? (opts.on ? [] : bodyOf(f.id, null).alts || [])) { const [to, cls] = keyed(o); merge(morphism(to, false, false, noReceiver, {at: opts.at, on: cls})); }
   }
   // a step of a route runs the touches its own calls lead to: the functions on the calls to it, and itself
   const root = V.route || (f.entry ? f.id : null), at = opts.at && treeInfo.get(opts.at), chain = V.route && at?.path ? new Set([...at.path, f.id]) : null;
@@ -643,7 +654,7 @@ const morphism = (id, own, isAnchor, noReceiver, opts = {}) => {
     const tc = shownAs(raw);
     if (served(raw) || (isIn(raw) && !raw.shape && back.has(raw.place.id))) continue;
     go(goes, tc);
-    // each call that makes a figure makes one: a figure of its own on the screen
+    // a figure made is on the screen: the call's that makes it, until the plan knows what holds it (`figureOf`)
     const p = raw.kind === "figure" && tc.kind === "screen" && opts.figure ? figurePlace(opts.figure, opts.label) : worldPlace(tc);
     (isIn(tc) ? dom : cod).push([addPlace(p), !ownKeys.has(touchKey(raw))]);
   }
@@ -722,13 +733,9 @@ const backName = (key, cod) => {
   return ns.find(nm => !nm.startsWith("#")) || null;
 };
 
-// a figure a call makes, numbered in the order the route makes them
-const figureNo = new Map();
-const figurePlace = (key, label) => {
-  if (!figureNo.has(key)) figureNo.set(key, figureNo.size + 1);
-  const name = `Figure ${figureNo.get(key)} · ${label}`;
-  return {id: "w:Screen:fig:" + key, label: name, short: name, kind: "world"};
-};
+// a figure a call makes, until the plan knows what holds it (`figureOf`); the plan numbers its figures in the order the route
+// makes them
+const figurePlace = (key, label) => ({id: "w:Screen:fig:" + key, label, short: label, kind: "world", figure: label});
 // a step of an opened route is a call: what its function takes and gives, with what the call
 // hands it and gets back, each value by the name that holds it; a library's operation has only those
 const stepMorphism = (key, own, isAnchor, leaf) => {
@@ -793,9 +800,14 @@ const stepMorphism = (key, own, isAnchor, leaf) => {
     // the value a method runs on too, where the call names it (`settings.mode.plan()` runs on a projection of `settings`)
     const recv = !site.on_receiver && arrowOf(step)?.receiver ? [on || arrowOf(step).receiver] : [];
     if (hs.length) for (const x of [...(arrowOf(step)?.takes || []), ...recv]) { const k = "t:" + x; if (m.dom.has(k) && !made.has(x) && !handed.has(kindKey(k))) m.dom.delete(k); }
-    // what the step changes is the value it was handed, under the same name: `read_makefile(&mut g)`
-    const changes = arrowOf(step)?.changes || [];
+    // what the step changes is the value it was handed, under the same name: `read_makefile(&mut g)`. A call that gives
+    // anew what it is handed says which values it changes, each under the name it was handed (`fileAll(ledger.rows)` gives
+    // `ledger`): the types its arrow changes are those values, no value of their own beside them. Where the call does not
+    // say, a changed type is the value of its kind the call was handed
+    const changes = arrowOf(step)?.changes || [], gives = new Set(arrowOf(step)?.gives || []);
+    const explicit = (site.gives || []).some(g => g.name && (site.hands || []).some(h => h.name === g.name));
     for (const x of [...changes, ...(on && changes.includes(byId.get(step)?.cls) ? [on] : [])]) {
+      if (explicit) { if (!gives.has(x) && !cn.has("t:" + x)) m.cod.delete("t:" + x); continue; }
       const kind = kindKey(addPlace(typePlace(x))), held = [...dn.keys()].find(d => kindKey(d) === kind);
       for (const k of m.cod.keys()) if (held && kindKey(k) === kind && !cn.has(k)) cn.set(k, dn.get(held));
     }
@@ -803,6 +815,16 @@ const stepMorphism = (key, own, isAnchor, leaf) => {
   // what the body's own code uses outside the calls that are its steps (`print(store.path)`, `if done:`, `Ok(path)`), as the
   // reader gives it: taken at the border by the names that hold them, inside the frame
   const uses = own && !leaf && !step.startsWith("op:") ? (byId.get(step)?.uses || []).filter(u => u.name) : [];
+  // what an opened step changes of a value it was handed goes out at its border as what its steps made of it: its own arrow
+  // takes the value each name it changes holds at its end (`self`, `lines`), of whatever type
+  if (own && !leaf && !step.startsWith("op:")) {
+    const a = arrowOf(step) || {}, fn = byId.get(step), params = fn?.params || [];
+    for (const nm of a.changed || []) {
+      const p = params.find(q => q.name === nm), recv = (p ? p.receiver : ["self", "this"].includes(nm)) && a.receiver ? on || a.receiver : null;
+      const type = recv || (p && (a.takes || []).find(t => writesType(p, t))) || "";
+      if (p || recv) uses.push({name: nm, type, arms: [], changed: true});
+    }
+  }
   for (const u of uses) if (u.type) addPlace({...typePlace(u.type), id: `t:${u.type}~${u.name}`, name: u.name});
   // what a site that raises gives is an error, made where the site makes it
   if (site?.raises) for (const g of site.gives || []) raised.add(addPlace(g.type ? (g.name ? {...typePlace(g.type), id: `t:${g.type}~${g.name}`, name: g.name} : typePlace(g.type)) : {id: "v:" + g.name, label: "·", kind: "type", hue: hueOf(null), type: null, name: g.name}));
@@ -814,7 +836,7 @@ const build = (node, parent, caller) => {
   if (node.synthetic) {
     const fid = "n:" + node.id, one = node.when.length === 1;
     const w = one ? node.when[0][1] : "", title = !one ? "one of" : !w ? "only sometimes" : w === "otherwise" ? "only otherwise" : `only when ${w}`;
-    frames.set(fid, {id: fid, step: null, parent, hue: node.hue, choice: true, synthetic: true, title, whens: one ? [] : node.when.filter(w => w[1])});
+    frames.set(fid, {id: fid, step: null, parent, hue: node.hue, choice: true, synthetic: true, title, whens: one ? [] : node.when.filter(w => w[1]), ...(one ? {one: true} : {})});
     return node.kids.flatMap(k => build(k, fid, caller));
   }
   // in the finest plan a call without calls of its own is a pill; an open step has a frame and its own arrow
@@ -924,8 +946,12 @@ const version = (k, v) => { if (!places.has(v)) places.set(v, {...places.get(k),
 // of its own at the step's moment
 const choiceMoment = fid => (frames.get(fid).synthetic ? fid : fid + "|");
 // the arm of a choice in a body a step stands in, and the step's own moment: an opened step's arrow hands on at the moment
-// the closed step did, so opening it moves no value to another moment
-const armOf = P => { const F = P.own ? frames.get(P.parent) : P, c = frames.get(F?.parent); return c?.choice ? {choice: F.parent, branch: F.branch} : null; };
+// the closed step did, so opening it moves no value to another moment. The arms of a step that is a choice are what its
+// call may run instead; the steps of its own body are in no arm
+const armOf = P => {
+  const F = P.own ? frames.get(P.parent) : P, c = frames.get(F?.parent);
+  return c?.choice && (c.synthetic || treeInfo.get(F.step ?? F.steps?.[0])?.dispatch === c.step) ? {choice: F.parent, branch: F.branch} : null;
+};
 const ownMoment = P => (P.own ? P.parent : P.id);
 // a value of a choice in a body is the choice's where it goes on past the choice and two of its arms make it, or where one
 // arm makes anew a value the body named before, which the other arms keep (`if ..: series.push(..)`); a value one arm makes,
@@ -1030,7 +1056,31 @@ const bound = (P, k, nm = (P.dn && P.dn.get(k)) || "") => {
   const sum = nm && pl?.type && SUM_OF.get(pl.type), v = latestGet(kindKey(k) + "|" + nm, P) || (sum && latestGet("t:" + kindOf(sum) + "|" + nm, P));
   if (!v && P.kept?.has(k)) return false;
   const any = v ? null : latestGet(kindKey(k) + "|", P);
-  return v || (any && alone && nm && !nm.startsWith("#") ? condOf(k, nm) : any);
+  // a step inside a step planned by itself takes by a name no step of its body made and no value of its kind the body
+  // made: what the caller holds by that name, or what the body made of it beyond what the plan follows, a projection; no
+  // value from beyond the route (#159)
+  const inner = alone && P.id !== "n:" + tree[0].id && P.id !== "o:" + tree[0].id;
+  if (v || any || !nm || nm.startsWith("#")) return v || ((any || inner) && alone && nm && !nm.startsWith("#") ? condOf(k, nm) : any);
+  if (alone) return inner ? condOf(k, nm) : null;
+  // a name no step of the route makes and nothing in scope holds is no value from beyond the route: the body that names it
+  // binds it in a way the plan does not follow (a loop's or a closure's name, an arm's binding, a projection a call fills a
+  // parameter with). It is a value of that body, in its frame, made there by no step (#159)
+  // what a call hands is named in the body that makes the call: an opened step's own arrow is handed it by its caller's
+  let f = P.own ? frames.get(P.parent)?.parent : P.parent;
+  while (f && frames.get(f)?.synthetic) f = frames.get(f).parent;
+  // a name the body's own function does not declare (a module's constant) is what the module holds: from beyond, as before
+  if (!f || frames.get(f)?.anchor || !(byId.get(stepOf(frames.get(f).step))?.params || []).some(p => p.name === nm)) return null;
+  const b = version(k, `${k}@${f}/~${nm}`);
+  Object.assign(places.get(b), {at: `${f}/~${nm}`, bound: f});
+  return b;
+};
+// the value of `k`'s kind made before the choice of one arm that made `v` in its arm, inside the frame of the own arrow `P`
+const passedOn = (P, k, v) => {
+  const e = (latest.get(kindKey(k) + "|") || []).find(x => x.v === v), at = places.get(v)?.at;
+  const c = e && [...e.arms.keys()].find(c => frames.get(c)?.one && at !== c && planChain(c).includes(P.parent));
+  if (!c) return null;
+  const w = latestGet(kindKey(k) + "|", P, true, new Map([[c, -1]])), wat = places.get(w)?.at, f = P.parent;
+  return w && w !== v && wat && (wat.startsWith(f + "/") || wat.startsWith(f + "|") || wat.startsWith(f + "~c")) ? w : null;
 };
 const viaDispatch = (P, k) => {
   const key = P.own ? frames.get(P.parent)?.step : P.steps[0], d = key && treeInfo.get(key)?.dispatch, Own = d && pills.get("o:" + d);
@@ -1038,7 +1088,8 @@ const viaDispatch = (P, k) => {
   const takes = [...Own.D.keys()].filter(isMem).map(x => bound(Own, x) || x).filter(Boolean);
   const t = places.get(k).type, mine = byId.get(stepOf(key)), theirs = byId.get(stepOf(d));
   const args = n => (n?.params || []).filter(p => !p.receiver);
-  const i = t === arrowOf(stepOf(key))?.receiver ? -1 : args(mine).findIndex(p => writesType(p, t));
+  // an override runs on the class of its key where that is known
+  const i = t === (treeInfo.get(key)?.on || arrowOf(stepOf(key))?.receiver) ? -1 : args(mine).findIndex(p => writesType(p, t));
   const by = i >= 0 && args(theirs)[i]?.name, named = by && takes.find(v => places.get(v)?.name === by);
   const recv = i < 0 && (treeInfo.get(d)?.on || arrowOf(stepOf(d))?.receiver), on = recv && takes.find(v => places.get(v)?.type === recv);
   return named || on || takes.find(v => kindKey(v) === kindKey(k)) || null;
@@ -1053,7 +1104,7 @@ const enter = fid => {
   const f = frames.get(fid), info = f && !f.synthetic && !f.anchor && f.step && treeInfo.get(f.step), Own = info && pills.get("o:" + f.step);
   if (!info?.site || !Own || stepOf(f.step).startsWith("op:")) return;
   const fn = byId.get(stepOf(f.step)), recv = arrowOf(stepOf(f.step))?.receiver;
-  const formals = [...(recv && !info.site.on_receiver && !info.built ? [{receiver: recv}] : []), ...(fn?.params || []).filter(p => !p.receiver)];
+  const formals = [...(recv && !info.site.on_receiver && !info.built ? [{receiver: recv, name: (fn?.params || []).find(p => p.receiver)?.name}] : []), ...(fn?.params || []).filter(p => !p.receiver)];
   // a value of a type no reader knows fills a parameter of no type of the code's
   const ours = p => !!p.receiver || (arrowOf(stepOf(f.step))?.takes || []).some(t => writesType(p, t));
   const fits = (p, h) => (!h.type ? !ours(p) : p.receiver ? p.receiver === h.type || kindOf(p.receiver) === kindOf(h.type) : writesType(p, h.type) || (SUM_OF.get(h.type) && writesType(p, SUM_OF.get(h.type))));
@@ -1075,13 +1126,32 @@ const enter = fid => {
     const v = bound(Own, k) || k;
     // a parameter is looked for by its own type and name: what fills it through a projection is of another type
     const x = !p.receiver && (arrowOf(stepOf(f.step))?.takes || []).find(t => writesType(p, t));
-    if (p.receiver) latestSet(kindKey(v) + "|", v, Own, fid, true);
+    // the receiver is the latest of its kind inside the body, and the value its name holds (`self`)
+    if (p.receiver) { latestSet(kindKey(v) + "|", v, Own, fid, true); if (p.name) latestSet(kindKey(v) + "|" + p.name, v, Own, fid, true); }
     else if (p.name) {
       latestSet((x ? "t:" + (x === V.route ? V.route : kindOf(x)) : v.startsWith("v:") ? "v:" + p.name : kindKey(v)) + "|" + p.name, v, Own, fid, true);
       // a parameter of no type of the code's is looked for as a value of no type, whatever it holds
       if (!x && !v.startsWith("v:")) latestSet("v:" + p.name + "|" + p.name, v, Own, fid, true);
     }
   }
+};
+// a value a step changes is the value it was handed, at a new moment: what each moment of it was made from
+const originOf = new Map();
+const stepAt = P => stepOf(P.own ? frames.get(P.parent)?.step : P.steps[0]);
+const changesKind = (P, k) => (arrowOf(stepAt(P))?.changes || []).some(x => kindKey(addPlace(typePlace(x))) === kindKey(k));
+// A figure rests in what holds it (#11): a method that changes the value it runs on keeps the figure it makes in that value
+// (`self.fig, self.ax = plt.subplots()`), so every step that runs on the value draws on the one figure it holds, whichever
+// of them makes it; any other call that makes a figure makes one of its own. Planned by itself, a step beyond the cut does not
+// know the value its callers hand it, and its figure is its call's
+const figureOf = (P, k) => {
+  if (P.cut || alone) return k;
+  const key = P.own ? frames.get(P.parent)?.step : P.steps[0], n = byId.get(stepAt(P)), a = arrowOf(stepAt(P));
+  if (!n?.cls || !(a?.changes || []).includes(n.cls)) return k;
+  const v = latestGet(kindKey(addPlace(typePlace(treeInfo.get(key)?.on || a.receiver || n.cls))) + "|", P, true);
+  if (!v) return k;
+  const o = originOf.get(v) || v, id = "w:Screen:fig:" + o, label = places.get(o)?.label || o;
+  if (!places.has(id)) places.set(id, {id, label, short: label, kind: "world", figure: label});
+  return id;
 };
 for (const P of pills.values()) {
   // between units a type is the joint itself: one unit makes it, the next takes it
@@ -1098,6 +1168,10 @@ for (const P of pills.values()) {
     // a value of a choice is what each arm made of it: a step after the choice takes them all
     if (armKey.has(v) && !armsAbove(P).has(places.get(v).at)) for (const w of armValues.get(armKey.get(v))) if (w !== v) Dv.set(w, r);
     if (v && P.keep?.has(k)) (P.kept ||= new Set()).add(v);
+    // what an opened step gives back past a choice of one arm, where the arm does not run, is what was there before it:
+    // `x ?? y` hands on the left's value, whose name, if it has one, the choice's value holds already
+    const left = v && P.own && P.keep?.has(k) && passedOn(P, k, v);
+    if (left && !Dv.has(left)) { Dv.set(left, r); P.kept.add(left); }
   });
   // a value the body uses itself is the one its name holds there, made inside or handed in; a name that holds none (a
   // result that went back, a literal) adds nothing
@@ -1107,10 +1181,14 @@ for (const P of pills.values()) {
     const arms = new Map([...armsAbove(P), ...(u.arms || []).map(([c, b]) => [`n:${frames.get(P.parent).step}~c${c}`, b])]);
     const v = latestGet(kindKey(base) + "|" + u.name, P, true, arms) || (sum && latestGet("t:" + kindOf(sum) + "|" + u.name, P, true, arms));
     if (!v) continue;
+    // a name the step changes is taken where a step inside made it anew; the value its call handed it crosses the frame
+    if (u.changed) { const at = places.get(v)?.at, f = P.parent; if (!at || !(at.startsWith(f + "/") || at.startsWith(f + "|") || at.startsWith(f + "~c"))) continue; }
     if (!Dv.has(v)) Dv.set(v, false);
     (P.used ||= new Set()).add(v);
   }
+  const figs = [];
   P.C.forEach((r, k) => {
+    if (places.get(k)?.figure != null) { figs.push([k, r]); return; }
     if (!isMem(k) || inside(k) || !V.route) { Cv.set(k, r); if (mult && P.mult.C.has(k)) mult.C.set(k, P.mult.C.get(k)); return; }
     const nm = name(P.cn, k), a = armOf(P);
     // a value of that name from before the choice, kept by the arms that do not make it anew; an opened step's arrow hands
@@ -1122,9 +1200,12 @@ for (const P of pills.values()) {
     if (mult && P.mult.C.has(k)) mult.C.set(v, P.mult.C.get(k));
     Object.assign(places.get(v), {at}, P.errs?.has(k) || P.raised?.has(k) ? {err: true} : {});
     if (nm && !nm.startsWith("#") && !k.startsWith("v:")) Object.assign(places.get(v), {label: `${places.get(k).label} · ${nm}`, held: nm});
+    // a step that changes a value makes the value it was handed anew: the same value, at a new moment
+    if (changesKind(P, k)) { const ctx = P.own ? frames.get(P.parent) : P, was = latestGet(kindKey(k) + "|" + nm, ctx) || latestGet(kindKey(k) + "|", ctx); if (was && was !== v) originOf.set(v, originOf.get(was) || was); }
     latestSet(kindKey(k) + "|" + nm, v, P); latestSet(kindKey(k) + "|", v, P);
     Cv.set(v, r);
   });
+  for (const [k, r] of figs) { const f = figureOf(P, k); Cv.set(f, r); if (mult && P.mult.C.has(k)) mult.C.set(f, P.mult.C.get(k)); }
   P.D = Dv; P.C = Cv;
   if (mult) P.mult = mult;
 }
@@ -1178,6 +1259,17 @@ if (fine) {
     const seen = new Map();
     for (const k of m.keys()) if (unmade(k)) { const t = kindOf(places.get(k).type); if (!seen.has(t)) seen.set(t, new Set()); seen.get(t).add(places.get(k).name); }
     for (const [t, ns] of seen) if (ns.size > 1) split.add(t);
+  }
+  // the figures of the route, numbered in the order its steps make them
+  if (!alone) {
+    let n = 0;
+    const no = new Set();
+    for (const P of pills.values()) for (const k of P.C.keys()) {
+      const pl = places.get(k);
+      if (pl?.figure == null || no.has(k)) continue;
+      no.add(k);
+      pl.label = pl.short = `Figure ${++n} · ${pl.figure}`;
+    }
   }
   return {places, pills, frames, found, updated, split};
 }
@@ -1261,7 +1353,14 @@ const imageOf = (F, opened, folded, {fineKeys = false} = {}) => {
     return P.border && at && (at.startsWith(P.parent + "/") || at.startsWith(P.parent + "|") || at.startsWith(P.parent + "~c")) ? P.parent : F0?.parent;
   };
   const users = new Map(), makers = new Map();
-  const note = (id, P, maker, k) => { const m = maker ? makers : users; if (!m.has(id)) m.set(id, []); m.get(id).push(userFrame(P, k)); if (maker) note(id, P, false, k); };
+  // a value its body binds in a way the plan does not follow is made in that body's frame
+  const note = (id, P, maker, k) => {
+    const m = maker ? makers : users, b = fp.get(k)?.bound;
+    if (!m.has(id)) m.set(id, []);
+    m.get(id).push(userFrame(P, k));
+    if (b && !maker) { if (!makers.has(id)) makers.set(id, []); if (!makers.get(id).includes(b)) makers.get(id).push(b); }
+    if (maker) note(id, P, false, k);
+  };
   const famId = pl => { const f = pl?.type && frameOf(pl.type); return f ? "t:" + f + nameOf_(pl) + (pl.door ? "^" + pl.door : "") + (pl.at ? "@" + pl.at : "") : null; };
   const within = (at, S) => !!at && (at.startsWith(S + "/") || at.startsWith(S + "|") || at.startsWith(S + "~c"));
   const pills = new Map(), frames = new Map();
@@ -1391,7 +1490,7 @@ const cutArrow = key => {
     }
     cutArrows.set(memo, r);
   }
-  // each call that makes a figure makes one of its own: the figures of another call of the step are this call's
+  // planned by itself, a step's figures are its call's: the figures of another call of the step are this call's
   const r = cutArrows.get(memo), fig = "w:Screen:fig:", re = k => (r.key === key ? k : k.replace(fig + r.key, fig + key));
   const copy = m => new Map([...m].map(([k, v]) => [re(k), v]));
   return {dom: copy(r.dom), cod: copy(r.cod), dn: copy(r.dn), cn: copy(r.cn), goes: copy(r.goes), mult: {D: copy(r.mult.D), C: copy(r.mult.C)}, places: new Map([...r.places].map(([k, pl]) => [re(k), {...pl, id: re(k)}])), split: r.split};

@@ -1339,8 +1339,9 @@ async function renderPlaat(mine) {
   if (!pos.size) el("text", {class: "route-sub", x: 20, y: 70}, g).textContent = "No step on this route takes or hands on a place: it calls nothing that does. Pick another route.";
   const fg = el("g", {}, g), eg = el("g", {}, g), ng = el("g", {}, g), ig = el("g", {class: "interior-ports"}, g);
   // pointing at a box or a pill lights up its lines and what is at their other ends; the versions of
-  // one type light up together, so a type can be followed through the route
-  const nodeEls = new Map(), edgeEls = [], base = id => id.split("@")[0].replace(/ ⇄$/, "");
+  // one type light up together, so a type can be followed through the route; a step is one box, whatever class the
+  // body it runs is on (`Trimmed.read@Feed`)
+  const nodeEls = new Map(), edgeEls = [], base = id => (/^[no]:/.test(id) ? id : id.split("@")[0]).replace(/ ⇄$/, "");
   const goTo = id => {
     const q = pos.get(id); if (!q) return;
     const t0 = d3.zoomTransform(svg.node()), t1 = d3.zoomIdentity.translate(svg.node().clientWidth / 2 - t0.k * (q.x + q.w / 2), svg.node().clientHeight / 2 - t0.k * (q.y + q.h / 2)).scale(t0.k);

@@ -1,0 +1,71 @@
+# Each line makes a figure of its own: `Chart.line` calls `plt.subplots()` itself, whatever the chart holds, so two
+# lines meant for one chart are two figures. In a notebook each is on the screen, named by the call that made it, since
+# nothing beyond the call holds it; elsewhere both rest in pyplot's figure. `fig` is dropped; `ax` is drawn on by the
+# body itself (`ax.plot(..)`), and the chart is only read (`self.title`), so the chart the route returns is the one it
+# built.
+
+route notebooks.compare
+step compare/compare
+step compare/compare/Chart()
+step compare/compare/Chart.line
+step compare/compare/Chart.line/subplots                                                            # `fig, ax = plt.subplots()`
+step compare/compare/Chart.line#2
+step compare/compare/Chart.line#2/subplots
+
+line entry > compare call
+line compare/compare/Chart() > Chart·chart@compare/compare/Chart() value
+line Chart·chart@compare/compare/Chart() > compare/compare/Chart.line value                         # `self.title`
+line compare/compare/Chart.line/subplots > _·fig@compare/compare/Chart.line/subplots value
+line compare/compare/Chart.line/subplots > _·ax@compare/compare/Chart.line/subplots value
+known #101 line _·ax@compare/compare/Chart.line/subplots > compare/compare/Chart.line value          # `ax.plot(..)`
+line compare/compare/Chart.line > Figure 1 · Chart.line own
+line Chart·chart@compare/compare/Chart() > compare/compare/Chart.line#2 value
+line compare/compare/Chart.line#2/subplots > _·fig@compare/compare/Chart.line#2/subplots value
+line compare/compare/Chart.line#2/subplots > _·ax@compare/compare/Chart.line#2/subplots value
+known #101 line _·ax@compare/compare/Chart.line#2/subplots > compare/compare/Chart.line#2 value
+line compare/compare/Chart.line#2 > Figure 2 · Chart.line own                                       # a second figure
+line Chart·chart@compare/compare/Chart() > compare/compare value                         # `return chart`
+line compare/compare > Chart·chart@compare/compare value
+
+home Chart·chart@compare/compare/Chart() compare/compare
+home _·fig@compare/compare/Chart.line/subplots compare/compare/Chart.line
+home _·ax@compare/compare/Chart.line/subplots compare/compare/Chart.line
+home _·fig@compare/compare/Chart.line#2/subplots compare/compare/Chart.line#2
+home _·ax@compare/compare/Chart.line#2/subplots compare/compare/Chart.line#2
+home Chart·chart@compare/compare compare
+
+side entry left
+side Figure 1 · Chart.line right
+side Figure 2 · Chart.line right
+
+route charts.chart.compare
+step compare/Chart()
+step compare/Chart.line
+step compare/Chart.line/subplots
+step compare/Chart.line#2
+step compare/Chart.line#2/subplots
+
+line entry > compare call
+line compare/Chart() > Chart·chart@compare/Chart() value
+line Chart·chart@compare/Chart() > compare/Chart.line value
+line compare/Chart.line/subplots > _·fig@compare/Chart.line/subplots value
+line compare/Chart.line/subplots > _·ax@compare/Chart.line/subplots value
+known #101 line _·ax@compare/Chart.line/subplots > compare/Chart.line value
+line compare/Chart.line > Figure own
+line Chart·chart@compare/Chart() > compare/Chart.line#2 value
+line compare/Chart.line#2/subplots > _·fig@compare/Chart.line#2/subplots value
+line compare/Chart.line#2/subplots > _·ax@compare/Chart.line#2/subplots value
+known #101 line _·ax@compare/Chart.line#2/subplots > compare/Chart.line#2 value
+line compare/Chart.line#2 > Figure own
+line Chart·chart@compare/Chart() > compare value
+line compare > Chart@compare value
+
+home Chart·chart@compare/Chart() compare
+home _·fig@compare/Chart.line/subplots compare/Chart.line
+home _·ax@compare/Chart.line/subplots compare/Chart.line
+home _·fig@compare/Chart.line#2/subplots compare/Chart.line#2
+home _·ax@compare/Chart.line#2/subplots compare/Chart.line#2
+home Chart@compare compare
+
+side entry left
+side Figure right

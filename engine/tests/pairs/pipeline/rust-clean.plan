@@ -203,7 +203,8 @@ home Error@main main
 
 # the plan pairs the values a call hands with its parameters by type and count, not by place (#157): `download` is
 # handed nothing for `url`, `save` its receiver last, so `to` holds nothing and comes from beyond
-known #157 extra line _·to > main/?1/download/parent value
-known #157 extra line _·to > main/Trend.save/parent value
-known #157 extra line _·to > main/Trend.save/into_drawing_area value
-known #157 extra home _·to main
+known #157 extra line _·to@main/?1/download/~to > main/?1/download/parent value   # the parameter, bound by no value the call hands
+known #157 extra line _·to@main/Trend.save/~to > main/Trend.save/parent value
+known #157 extra line _·to@main/Trend.save/~to > main/Trend.save/into_drawing_area value
+known #157 extra home _·to@main/?1/download/~to main/?1/download
+known #157 extra home _·to@main/Trend.save/~to main/Trend.save

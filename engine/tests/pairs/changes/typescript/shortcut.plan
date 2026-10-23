@@ -54,8 +54,6 @@ side entry left
 # parameter's type its arrow changes is no value of its own beside it
 line main/fileAll > Ledger·ledger@main/fileAll value
 home Ledger·ledger@main/fileAll main
-known #129 extra line main/fileAll > Expense@main/fileAll value
-known #129 extra home Expense@main/fileAll main
 
 # An operation that changes a part of the receiver (`this.rows.push(..)`) runs on the ledger the method runs on and
 # makes it anew: what the method's own arrow hands on
@@ -86,7 +84,7 @@ home Ledger·other@main/Ledger.takeVictim main
 home Array·lines@main/addLine main
 home Map·m@main/count main
 # the own arrow hands on what the change inside made of a value of no type of the code's
-known #129 line _·lines@main/addLine/push > main/addLine value
+line _·lines@main/addLine/push > main/addLine value
 
 # `rename` is handed the Expense the object literal builds, as its parameter is written
 line main/Expense() > Expense@main/Expense() value
@@ -109,6 +107,3 @@ home Expense@main/Expense() main
 # a result the caller drops goes back to it: the reader does not say the call is a statement of its own
 
 # the push is handed the victim the call hands, stale (#129), and not this (#128): the own arrow takes this itself
-# the own arrow takes the last value of every class its steps build (`made_from`), though `main` gives back a number
-known #126 extra line Ledger·ledger@main/fileAll > main value
-known #126 extra line Expense@main/rename > main value

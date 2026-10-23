@@ -32,7 +32,7 @@ line Ledger@main/Ledger()#2 > main/Ledger.merged value                     # and
 line main/Ledger.merged/Ledger() > Ledger·out@main/Ledger.merged/Ledger() value
 line Ledger·out@main/Ledger.merged/Ledger() > main/Ledger.merged value
 line main/Ledger.merged > Ledger@main/Ledger.merged value
-line Ledger@main/Ledger.merged > main value                                # main counts its rows
+known #101 line Ledger@main/Ledger.merged > main value                                # main counts its rows
 line main/withLine > main back
 line main/counted/set > _·out@main/counted/set value
 line main/counted > main back
