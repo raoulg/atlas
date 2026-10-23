@@ -826,6 +826,14 @@ const stepMorphism = (key, own, isAnchor, leaf) => {
     // the value a method runs on too, where the call names it (`settings.mode.plan()` runs on a projection of `settings`)
     const recv = !site.on_receiver && arrowOf(step)?.receiver ? [on || arrowOf(step).receiver] : [];
     if (hs.length) for (const x of [...(arrowOf(step)?.takes || []), ...recv]) { const k = "t:" + x; if (m.dom.has(k) && !made.has(x) && !handed.has(kindKey(k))) m.dom.delete(k); }
+    // a parameter the call writes an argument for holds what that argument hands, or none: its signature's type stands for
+    // it no more (#157)
+    const formal = (byId.get(step)?.params || []).filter(p => !p.receiver);
+    const written = new Set((site.args || []).flatMap(s => (s?.at != null ? [formal[s.at]?.name] : s?.name != null ? [s.name] : [])).filter(Boolean));
+    for (const x of arrowOf(step)?.takes || []) {
+      const ps = formal.filter(p => writesType(p, x)), k = "t:" + x;
+      if (ps.length && ps.every(p => written.has(p.name)) && m.dom.has(k) && !made.has(x)) m.dom.delete(k);
+    }
     // what the step changes is the value it was handed, under the same name: `read_makefile(&mut g)`. A call that gives
     // anew what it is handed says which values it changes, each under the name it was handed (`fileAll(ledger.rows)` gives
     // `ledger`): the types its arrow changes are those values, no value of their own beside them. Where the call does not
@@ -845,7 +853,7 @@ const stepMorphism = (key, own, isAnchor, leaf) => {
   // global or name as its class; a body with no steps reads it by its own code too
   const fnode = byId.get(step), declared = new Set((fnode?.params || []).map(p => p.name));
   const kept_ = new Set((fnode?.touches || []).filter(t => t.kind === "global").map(t => t.what));
-  const modular = u => !!u.name && !!u.type && !declared.has(u.name) && !kept_.has(u.name) && u.name !== u.type.replace(/^ext:/, "").split(".").pop();
+  const modular = u => !!u.name && !u.name.startsWith("#") && !!u.type && !declared.has(u.name) && !kept_.has(u.name) && u.name !== u.type.replace(/^ext:/, "").split(".").pop();
   const uses = (!own || step.startsWith("op:") ? [] : !leaf ? (fnode?.uses || []).filter(u => u.name || u.type) : (fnode?.uses || []).filter(modular).map(u => ({...u, arms: []}))).map(u => (modular(u) ? {...u, extern: true} : u));
   // what an opened step changes of a value it was handed goes out at its border as what its steps made of it: its own arrow
   // takes the value each name it changes holds at its end (`self`, `lines`), of whatever type

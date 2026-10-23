@@ -529,3 +529,24 @@ fn a_value_through_its_wrappers_is_the_value_inside() {
     let areas = both.iter().filter(|s| s.to == "wrappers.Square.area").count();
     assert_eq!(areas, 3, "{both:#?}");
 }
+
+/// What a call gives is kept by the name a `let .. else` binds of it (`let Some(n) = self.node(id) else { .. }`), as an
+/// `if let` keeps it; and a method called on a part of `self` among a macro's tokens (`format!(.., self.kind.name())`)
+/// runs on a projection of the instance, as written outside a macro, so it is handed the instance (#159).
+#[test]
+fn a_let_else_keeps_what_it_binds_and_a_macro_s_method_on_self_is_handed_the_instance() {
+    let g = written(
+        "kept",
+        &[(
+            "src/lib.rs",
+            "pub enum Kind { A, B }\n\nimpl Kind {\n    pub fn name(&self) -> &str {\n        match self { Kind::A => \"a\", Kind::B => \"b\" }\n    }\n}\n\npub struct Touch { pub kind: Kind, pub what: String }\n\nimpl Touch {\n    pub fn verb(&self) -> String {\n        format!(\"queries {}\", self.kind.name())\n    }\n}\n\npub struct Index { pub touches: Vec<Touch> }\n\nimpl Index {\n    fn node(&self, at: usize) -> Option<&Touch> {\n        self.touches.get(at)\n    }\n\n    pub fn label(&self, at: usize) -> String {\n        let Some(n) = self.node(at) else { return String::new() };\n        n.verb()\n    }\n}\n",
+        )],
+    );
+    let label = g.node("kept.Index.label").expect("label is read");
+    let node = label.sites.iter().find(|s| s.to == "kept.Index.node").expect("label calls node");
+    assert_eq!(node.gives.iter().map(|h| (h.ty.as_str(), h.name.as_str())).collect::<Vec<_>>(), [("kept.Touch", "n")]);
+    let verb = g.node("kept.Touch.verb").expect("verb is read");
+    let name = verb.sites.iter().find(|s| s.to == "kept.Kind.name").expect("verb calls name");
+    assert_eq!(name.hands.iter().map(|h| (h.ty.as_str(), h.name.as_str())).collect::<Vec<_>>(), [("kept.Touch", "")]);
+    assert_eq!(name.hands[0].fills, [atlas_engine::Slot::Receiver]);
+}

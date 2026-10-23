@@ -201,10 +201,11 @@ fn kept_as(c: TsNode, src: &[u8]) -> Vec<(String, usize)> {
                     None => return vec![],
                 }
             }
-            _ if (CHOICES.chooses)(p, src) && !matches!((CHOICES.part)(p, n, src), Part::Decides) => n = p,
+            // a `let .. else` decides by what it binds, and keeps what it binds (`let Some(n) = f(..) else { .. }`)
             "let_declaration" | "let_condition" if is("value") => {
                 return p.child_by_field_name("pattern").map_or(vec![], |x| binds(x, src))
             }
+            _ if (CHOICES.chooses)(p, src) && !matches!((CHOICES.part)(p, n, src), Part::Decides) => n = p,
             // what a `match` takes apart is kept by the names its arms' patterns bind
             "match_expression" if is("value") => {
                 return p
@@ -1731,7 +1732,19 @@ impl<'a, 't> Body<'a, 't> {
             "token_tree" => std::iter::once(recv).chain(token_values(c).into_iter().map(Some)).collect(),
             _ => vec![recv, c.child_by_field_name("arguments")],
         };
-        self.hands(&parts, kept)
+        let mut hands = self.hands(&parts, kept);
+        // among a macro's tokens, a method called on a part of `self` (`format!(.., self.kind.name())`) runs on a projection
+        // of the instance, as written outside a macro: it is handed the instance
+        let instance =
+            std::iter::successors(recv.filter(|_| c.kind() == "token_tree").and_then(|r| r.prev_sibling()), |t| t.prev_sibling())
+                .take_while(|t| matches!(t.kind(), "." | "identifier" | "self"))
+                .find(|t| t.kind() == "self");
+        if let (Some(s), Some(ty)) = (instance, self.cls.clone()) {
+            if !hands.iter().any(|h| h.ty == ty && h.name.is_empty()) {
+                hands.push(Held { ty, name: String::new(), at: s.start_byte() as u32, fills: vec![], param: false });
+            }
+        }
+        hands
     }
 
     /// A step to one of the program's own functions or types; a method called on a value of a

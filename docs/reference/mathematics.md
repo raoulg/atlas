@@ -465,7 +465,8 @@ open:
   and none where its argument hands no value (a literal, a constant) or the call writes none for it,
   where it holds its default. A parameter the call fills through a projection (`finished(job,
   settings.mode)`) is still the projection, so the steps inside are handed `settings`, and a
-  signature's type is a value of its own only where the call hands nothing. A value
+  signature's type stands for what a parameter holds only where the call does not say what fills it:
+  never for one it writes an argument for. A value
   of no type of the code's is one where a step makes it, so a parameter of no type of the code's
   (`path: &Path`) holds one only where its call fills it with one, a value a step made or a projection
   of one: a literal fills it with none, and the route's own, which no code of the program fills, hold
