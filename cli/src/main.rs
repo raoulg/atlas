@@ -102,6 +102,13 @@ fn banner() -> String {
     lines.join("\n")
 }
 
+/// The help's layout, clap's own with the banner on top. The banner is written into the template,
+/// not handed over as text before the help: the help is wrapped to the terminal, and the banner is a
+/// picture whose lines must stay whole.
+fn help_template() -> String {
+    format!("{}\n\n{{about-with-newline}}\n{{usage-heading}} {{usage}}\n\n{{all-args}}{{after-help}}", banner())
+}
+
 fn examples() -> String {
     let (head, cmd, dim) = (STYLES.get_header(), STYLES.get_literal(), Style::new().effects(Effects::DIMMED));
     let rows = [
@@ -133,7 +140,7 @@ fn examples() -> String {
     name = "atlas",
     version = version::VERSION.as_str(),
     about = "A mathematical panorama of your software code.",
-    before_help = banner(),
+    help_template = help_template(),
     after_help = examples(),
     styles = STYLES
 )]
