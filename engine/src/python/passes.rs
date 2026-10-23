@@ -9,7 +9,7 @@ use indexmap::IndexMap;
 use tree_sitter::Node as TsNode;
 
 use super::body::{
-    by_name, changed, changed_roots, field_default, handed, library_change, link_calls, positional, sites, Arg, Callee, Evaluated, Seen,
+    by_name, changed, changed_params, field_default, handed, library_change, link_calls, positional, sites, Arg, Changing, Evaluated, Seen,
     OWN,
 };
 use super::module::{
@@ -502,37 +502,36 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
     // what a framework registers, and what the attributes hold, as ty types them
     mark_registered(modules, store, types, &sites, own);
     attributes(modules, store, types, &sites, own);
-    // methods that change their receiver, directly or through another such method on self: until
-    // nothing changes, which ends, as the set only grows and the methods are finite
+    // the methods that change their receiver and the parameters each function changes, directly or
+    // through a call of the package's that changes what it runs on or is handed (`self.add(..)`,
+    // `reset(board)`): until nothing changes, which ends, as the sets only grow and are finite
+    let mut changing = Changing::new();
     loop {
-        let before = store.mutating.len();
+        let before = (store.mutating.len(), changing.values().map(Vec::len).sum::<usize>());
+        let mut found = vec![];
         for id in &ids {
             let n = &store.nodes[id];
-            let (Some(cls), true) = (n.cls.clone(), n.kind == NodeKind::Method && n.name != "__init__") else { continue };
+            let method = n.kind == NodeKind::Method;
+            if !method && n.kind != NodeKind::Function {
+                continue;
+            }
             let m = &modules[&n.module];
-            let Some(body) = def_node(m, n).and_then(|d| d.child_by_field_name("body")) else { continue };
+            let Some(d) = def_node(m, n) else { continue };
+            let Some(body) = d.child_by_field_name("body") else { continue };
             let seen = Seen::new(m, types, &sites, modules, store, own);
-            // a method of the package that changes what it is called on (`self.add(..)`,
-            // `self.pipeline.add(..)`), or a library call that changes a value
-            let changed = changed_roots(body, &m.src, &|c| {
-                let f = c.child_by_field_name("function").filter(|f| f.kind() == "attribute")?;
-                let obj = f.child_by_field_name("object");
-                let name = f.child_by_field_name("attribute").map(|a| text(a, &m.src)).unwrap_or("");
-                let on_self = obj.map(|o| text(o, &m.src)) == Some("self")
-                    && store.method_of(&cls, name).map_or(false, |t| store.mutating.contains(&t));
-                let own = on_self || matches!(seen.callee(f), Some(Callee::Def(t)) if store.mutating.contains(&t));
-                if own {
-                    obj
-                } else {
-                    library_change(seen.facts, c, &m.src)
-                }
-            });
-            if changed.contains("self") {
-                let id = id.clone();
-                store.mutating.insert(id);
+            let cls = n.cls.as_deref().filter(|_| method);
+            let (receiver, params) = changed_params(&seen, &changing, d, body, method, cls);
+            found.push((id.clone(), receiver && method && n.name != "__init__" && cls.is_some(), params));
+        }
+        for (id, receiver, params) in found {
+            if receiver {
+                store.mutating.insert(id.clone());
+            }
+            if !params.is_empty() {
+                changing.insert(id, params);
             }
         }
-        if store.mutating.len() == before {
+        if (store.mutating.len(), changing.values().map(Vec::len).sum::<usize>()) == before {
             break;
         }
     }
@@ -550,7 +549,7 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
     let mut args: Vec<Arg> = vec![];
     for id in &ids {
         if matches!(store.nodes[id].kind, NodeKind::Function | NodeKind::Method | NodeKind::Module) {
-            let linked = link_calls(modules, store, types, &sites, &ext, &eval, own, id);
+            let linked = link_calls(modules, store, types, &sites, &ext, &eval, own, &changing, id);
             handed.extend(linked.handed);
             waiting.extend(linked.waiting.into_iter().map(|(t, b)| (id.clone(), t, b)));
             args.extend(linked.args);
@@ -684,7 +683,7 @@ fn globals(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, types: 
                     writes.extend(kept(text(l, src)).map(|k| (k, text(l, src).to_string(), line(a))));
                 }
             }
-            for x in changed(body, &|c| library_change(facts, c, src)) {
+            for x in changed(body, &|c| library_change(facts, c, src).into_iter().collect()) {
                 if let Some((k, n)) = held(x).filter(|(k, _)| !writes.iter().any(|(w, _, _)| w == k)) {
                     writes.push((k, n, line(x)));
                 }
