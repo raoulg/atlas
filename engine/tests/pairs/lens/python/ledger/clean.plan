@@ -13,7 +13,6 @@ line entry > Ledger()/Ledger.put call
 line entry > Ledger()/Ledger.get call
 line Ledger()/Ledger() > Ledger@Ledger()/Ledger() value
 line Ledger > Ledger()/Ledger.put value # the caller's instance: every method runs on it
-known #126 line Ledger > Ledger()/Ledger.get value   # the body reads self.path itself, and hands self to Entry()
 line Fraction·amount > Ledger()/Ledger.put value
 line Ledger > Ledger()/Ledger.get/Entry() value # `Entry(Fraction(self.path.read_text()))` hands the ledger
 line Ledger()/Ledger.put > Disk(Ledger.path) own

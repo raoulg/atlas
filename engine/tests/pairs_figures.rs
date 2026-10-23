@@ -66,16 +66,21 @@ fn the_route_says_where_each_figure_is_made() {
 }
 
 /// The figures on the screen of the notebook that draws the chart, as the viewer's model plans its route: `side` facts
-/// of the places `Figure n · ..` (`tests/plans.mjs`, run in node as `tests/plans.rs` runs it).
-fn screen(side: &str) -> BTreeSet<String> {
+/// of the places `Figure n · ..` (`tests/plans.mjs`, run in node as `tests/plans.rs` runs it). With a `budget`, the plan
+/// is cut as a large program's is (`ATLAS_FINE_BUDGET`).
+fn screen(side: &str, budget: Option<usize>) -> BTreeSet<String> {
     let here = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let program = here.join("tests/pairs/figures/python").join(side);
     let graph = parts::analyze_repo(&[program], &Options::default()).expect("reads the program");
     let mut data = serde_json::to_value(&graph).expect("the graph is data");
     data["flow"] = serde_json::to_value(flow::of(&graph)).expect("the flow is data");
-    let file = std::env::temp_dir().join(format!("atlas-figures-{}-{side}.json", std::process::id()));
+    let file = std::env::temp_dir().join(format!("atlas-figures-{}-{side}-{budget:?}.json", std::process::id()));
     std::fs::write(&file, data.to_string()).expect("writes the data");
-    let out = Command::new("node")
+    let mut node = Command::new("node");
+    if let Some(b) = budget {
+        node.env("ATLAS_FINE_BUDGET", b.to_string());
+    }
+    let out = node
         .arg(here.join("tests/plans.mjs"))
         .arg(here.join("../viewer/plan.js"))
         .arg(&file)
@@ -97,6 +102,45 @@ fn screen(side: &str) -> BTreeSet<String> {
 /// the chart holds, named by the chart, and the shortcut's a figure for each line, named by the call that made it.
 #[test]
 fn a_notebook_shows_a_figure_for_each_thing_that_holds_one() {
-    assert_eq!(screen("clean"), BTreeSet::from(["Figure 1 · Chart · chart right".to_string()]));
-    assert_eq!(screen("shortcut"), BTreeSet::from(["Figure 1 · Chart.line right".to_string(), "Figure 2 · Chart.line right".to_string()]));
+    assert_eq!(screen("clean", None), BTreeSet::from(["Figure 1 · Chart · chart right".to_string()]));
+    assert_eq!(
+        screen("shortcut", None),
+        BTreeSet::from(["Figure 1 · Chart.line right".to_string(), "Figure 2 · Chart.line right".to_string()])
+    );
+}
+
+/// Across the cut the figures are the same (#11): a step planned by itself does not know the value its caller hands it,
+/// so a figure it keeps in that value is held by it, and the caller says which value that is. Cut at every depth, the
+/// clean notebook still shows the chart's one figure and the shortcut a figure for each line.
+#[test]
+fn a_figure_is_held_by_the_same_value_beyond_the_cut() {
+    for budget in [1, 2, 3, 5] {
+        assert_eq!(screen("clean", Some(budget)), BTreeSet::from(["Figure 1 · Chart · chart right".to_string()]), "budget {budget}");
+        assert_eq!(
+            screen("shortcut", Some(budget)),
+            BTreeSet::from(["Figure 1 · Chart.line right".to_string(), "Figure 2 · Chart.line right".to_string()]),
+            "budget {budget}"
+        );
+    }
+}
+
+/// Building a class runs its initializer along its order, in the route's text as on the page: `Chart("compare")` opens
+/// into `Chart.__init__`, which calls nothing, and never into the methods of the class, though `Chart` is a route of its
+/// own (its doors). The first `line` is then the one that shows what it runs.
+#[test]
+fn building_a_class_opens_into_its_initializer_in_the_route_s_text() {
+    let r = atlas_engine::story::route(&figures().clean, "charts.chart.compare", 4).expect("compare is a route");
+    let lines: Vec<&str> = r.lines().collect();
+    assert_eq!(
+        lines[2..],
+        [
+            "1  Chart()",
+            "2  Chart.line(xs, ys)  ↻ Chart",
+            "  2.1a  Chart.create_figure()  ↻ Chart   ·   draws   ·   when self.ax is None",
+            "3  Chart.line  → see 2"
+        ],
+        "{r}"
+    );
+    let doors = atlas_engine::story::route(&figures().clean, "charts.chart.Chart", 2).expect("Chart is a route");
+    assert!(doors.contains("Chart.create_figure()") && doors.contains("Chart.line(xs, ys)"), "the class's own route is its doors\n{doors}");
 }

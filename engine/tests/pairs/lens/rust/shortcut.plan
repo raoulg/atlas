@@ -5,8 +5,6 @@
 # result the body names (`read_to_string`, `split`, `find`, `collect`, `fold`, the `next()`s a tuple binds), or that
 # changes the String it runs on (`push_str`), is a step; what it touches stays its caller's. Each file is read, used and
 # written by the route: it stands on both sides.
-#
-# Issues marked: #126 what the own arrow keeps; #138 an error a step hands on.
 
 route harvest.ReadingStore
 step ReadingStore()/ReadingStore.new
@@ -52,7 +50,7 @@ line ReadingStore()/ReadingStore.new/ReadingStore() > ReadingStore@ReadingStore(
 line ReadingStore@ReadingStore()/ReadingStore.new/ReadingStore() > ReadingStore()/ReadingStore.new value
 line ReadingStore()/ReadingStore.new > ReadingStore@ReadingStore()/ReadingStore.new value
 line ReadingStore > ReadingStore()/ReadingStore.save/read_to_string value # the caller's instance: read_to_string is handed the path
-known #126 line ReadingStore > ReadingStore()/ReadingStore.save value   # the body uses it itself (its own write, what it returns), and a step inside takes it too
+line ReadingStore > ReadingStore()/ReadingStore.save value   # the body uses it itself (its own write, what it returns), and a step inside takes it too
 line Disk(ReadingStore.readings) > ReadingStore()/ReadingStore.save own
 line ReadingStore()/ReadingStore.save > Disk(ReadingStore.readings) own
 line ReadingStore()/ReadingStore.save/read_to_string > _·text@ReadingStore()/ReadingStore.save/read_to_string value
@@ -79,7 +77,7 @@ line ReadingStore()/ReadingStore.history/Reading() > Reading@ReadingStore()/Read
 line Reading@ReadingStore()/ReadingStore.history/Reading() > ReadingStore()/ReadingStore.history value
 line ReadingStore()/ReadingStore.history > Reading@ReadingStore()/ReadingStore.history value
 line ReadingStore > ReadingStore()/ReadingStore.save_outage/read_to_string value # the caller's instance: read_to_string is handed the path
-known #126 line ReadingStore > ReadingStore()/ReadingStore.save_outage value   # the body uses it itself (its own write, what it returns), and a step inside takes it too
+line ReadingStore > ReadingStore()/ReadingStore.save_outage value   # the body uses it itself (its own write, what it returns), and a step inside takes it too
 line Disk(ReadingStore.outages) > ReadingStore()/ReadingStore.save_outage own
 line ReadingStore()/ReadingStore.save_outage > Disk(ReadingStore.outages) own
 line ReadingStore()/ReadingStore.save_outage/read_to_string > _·text@ReadingStore()/ReadingStore.save_outage/read_to_string value
@@ -92,7 +90,7 @@ line Disk(ReadingStore.outages) > ReadingStore()/ReadingStore.outages own
 line ReadingStore()/ReadingStore.outages/read_to_string > _·text@ReadingStore()/ReadingStore.outages/read_to_string value
 line _·text@ReadingStore()/ReadingStore.outages/read_to_string > ReadingStore()/ReadingStore.outages value   # its lines go on through unnamed calls to what outages returns
 line ReadingStore > ReadingStore()/ReadingStore.summary/read_to_string value # the caller's instance: read_to_string is handed `self.summaries`
-known #126 line ReadingStore > ReadingStore()/ReadingStore.summary value   # and the write it makes itself (#126 too: Atlas drops it here, not in history)
+line ReadingStore > ReadingStore()/ReadingStore.summary value   # and the write it makes itself
 line Day·day > ReadingStore()/ReadingStore.summary value   # the key it looks for is made of the day
 line Disk(ReadingStore.summaries) > ReadingStore()/ReadingStore.summary own
 line ReadingStore()/ReadingStore.summary > Disk(ReadingStore.summaries) own
@@ -176,13 +174,13 @@ line ReadingStore()/ReadingStore.summary > _@ReadingStore()/ReadingStore.summary
 line ReadingStore()/ReadingStore.summary/?1/ReadingStore.history > _@ReadingStore()/ReadingStore.summary/?1 value
 line ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/read_to_string > _@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/read_to_string value
 line ReadingStore()/ReadingStore.summary/read_to_string > _@ReadingStore()/ReadingStore.summary/read_to_string value
-known #138 line _@ReadingStore()/ReadingStore.history/read_to_string > ReadingStore()/ReadingStore.history value
-known #138 line _@ReadingStore()/ReadingStore.outages/read_to_string > ReadingStore()/ReadingStore.outages value
-known #138 line _@ReadingStore()/ReadingStore.save/read_to_string > ReadingStore()/ReadingStore.save value
-known #138 line _@ReadingStore()/ReadingStore.save_outage/read_to_string > ReadingStore()/ReadingStore.save_outage value
-known #138 line _@ReadingStore()/ReadingStore.summary/?1 > ReadingStore()/ReadingStore.summary value
-known #138 line _@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/read_to_string > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history value
-known #138 line _@ReadingStore()/ReadingStore.summary/read_to_string > ReadingStore()/ReadingStore.summary value
+line _@ReadingStore()/ReadingStore.history/read_to_string > ReadingStore()/ReadingStore.history value
+line _@ReadingStore()/ReadingStore.outages/read_to_string > ReadingStore()/ReadingStore.outages value
+line _@ReadingStore()/ReadingStore.save/read_to_string > ReadingStore()/ReadingStore.save value
+line _@ReadingStore()/ReadingStore.save_outage/read_to_string > ReadingStore()/ReadingStore.save_outage value
+line _@ReadingStore()/ReadingStore.summary/?1 > ReadingStore()/ReadingStore.summary value
+line _@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/read_to_string > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history value
+line _@ReadingStore()/ReadingStore.summary/read_to_string > ReadingStore()/ReadingStore.summary value
 home _@ReadingStore()/ReadingStore.history ReadingStore()
 home _@ReadingStore()/ReadingStore.history/read_to_string ReadingStore()/ReadingStore.history
 home _@ReadingStore()/ReadingStore.outages ReadingStore()
@@ -192,7 +190,7 @@ home _@ReadingStore()/ReadingStore.save/read_to_string ReadingStore()/ReadingSto
 home _@ReadingStore()/ReadingStore.save_outage ReadingStore()
 home _@ReadingStore()/ReadingStore.save_outage/read_to_string ReadingStore()/ReadingStore.save_outage
 home _@ReadingStore()/ReadingStore.summary ReadingStore()
-known #138 home _@ReadingStore()/ReadingStore.summary/?1 ReadingStore()/ReadingStore.summary
+home _@ReadingStore()/ReadingStore.summary/?1 ReadingStore()/ReadingStore.summary
 home _@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/read_to_string ReadingStore()/ReadingStore.summary/?1/ReadingStore.history
 home _@ReadingStore()/ReadingStore.summary/read_to_string ReadingStore()/ReadingStore.summary
 

@@ -98,8 +98,8 @@ line Store()/Store.put > _@Store()/Store.put value
 line Store()/Store.put/Store.rows > _@Store()/Store.put/Store.rows value
 line Store()/Store.put_all > _@Store()/Store.put_all value
 line Store()/Store.put_all/Store.rows > _@Store()/Store.put_all/Store.rows value
-known #138 line _@Store()/Store.put/Store.rows > Store()/Store.put value
-known #138 line _@Store()/Store.put_all/Store.rows > Store()/Store.put_all value
+line _@Store()/Store.put/Store.rows > Store()/Store.put value
+line _@Store()/Store.put_all/Store.rows > Store()/Store.put_all value
 home _@Store()/Store.put Store()
 home _@Store()/Store.put/Store.rows Store()/Store.put
 home _@Store()/Store.put_all Store()

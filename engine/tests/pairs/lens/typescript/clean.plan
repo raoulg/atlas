@@ -6,8 +6,6 @@
 # exported class is its constructor and its public methods, each called by its caller and run on the caller's
 # ReadingStore; what the constructor builds goes back to that caller. A library's operation whose result the body names (`find`, `map`) is a step; what it touches stays
 # its caller's. Each file is read, used and written by the route: it stands on both sides.
-#
-# Issues marked: #126 what the own arrow keeps; #130 which forms are choices.
 
 route harvest.store.ReadingStore
 step ReadingStore()/ReadingStore()
@@ -62,7 +60,6 @@ line ReadingStore > ReadingStore()/ReadingStore.saveOutage value # the caller's 
 line Outage·outage > ReadingStore()/ReadingStore.saveOutage value
 line Disk(ReadingStore.outages) > ReadingStore()/ReadingStore.saveOutage own
 line ReadingStore()/ReadingStore.saveOutage > Disk(ReadingStore.outages) own
-known #126 line ReadingStore > ReadingStore()/ReadingStore.kept value   # the caller's instance (#126 too: Atlas hands it to history, not to kept itself)
 line Disk(ReadingStore.outages) > ReadingStore()/ReadingStore.kept own
 line ReadingStore()/ReadingStore.kept/Outage() > Outage@ReadingStore()/ReadingStore.kept/Outage() value
 line Outage@ReadingStore()/ReadingStore.kept/Outage() > ReadingStore()/ReadingStore.kept/map value
@@ -78,7 +75,6 @@ line Reading@ReadingStore()/ReadingStore.kept/ReadingStore.history > ReadingStor
 line ReadingStore()/ReadingStore.kept/Harvest() > Harvest@ReadingStore()/ReadingStore.kept/Harvest() value
 line Harvest@ReadingStore()/ReadingStore.kept/Harvest() > ReadingStore()/ReadingStore.kept value
 line ReadingStore()/ReadingStore.kept > Harvest@ReadingStore()/ReadingStore.kept value
-known #126 line ReadingStore > ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary value # the caller's instance: the body reads this.summaries itself, and hands this to find
 line ReadingStore > ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/find value # `readFileSync(this.summaries, ..)` is glued into the chain `find` ends
 line Disk(ReadingStore.summaries) > ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary own # #130: `??`'s left side runs whenever summary does
 line Day·day > ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/find value # #130: `??`'s left side runs whenever summary does
@@ -111,7 +107,6 @@ line ReadingStore()/ReadingStore.summary/?1/ReadingStore.keepSummary > Disk(Read
 line ReadingStore()/ReadingStore.summary/?1/ReadingStore.keepSummary > Summary@ReadingStore()/ReadingStore.summary/?1/ReadingStore.keepSummary value   # #130: with `??` drawn as a choice, its two sides make one Summary
 line Summary@ReadingStore()/ReadingStore.summary/?1/ReadingStore.keepSummary > ReadingStore()/ReadingStore.summary value   # with `??` drawn as a choice, its two sides make one Summary
 line ReadingStore()/ReadingStore.summary > Summary@ReadingStore()/ReadingStore.summary value
-known #126 line ReadingStore > ReadingStore()/ReadingStore.keptSummary value # the caller's instance: the body reads this.summaries itself, and hands this to find
 line ReadingStore > ReadingStore()/ReadingStore.keptSummary/find value
 line Disk(ReadingStore.summaries) > ReadingStore()/ReadingStore.keptSummary own
 line Day·day#2 > ReadingStore()/ReadingStore.keptSummary/find value

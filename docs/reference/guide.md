@@ -56,8 +56,10 @@ Read it from left to right:
   names the code holds them by (`Graph · g`, `DataFrame · data`), and a step that changes a
   value hands it on under the same name. A library operation Atlas does not read is a step in
   italics where the code names its result (`to_numpy`), or where it changes the container it is
-  called on (`rows.append(row)` hands on `rows`). In a notebook, each call that makes
-  a figure makes its own (`Figure 3 · ResidualPlot.plot`).
+  called on (`rows.append(row)` hands on `rows`). In a notebook, a figure is drawn on
+  the screen and named by what holds it: a method that keeps its figure in the value it runs
+  on draws, with every other step on that value, on the value's one figure (`Figure 1 · Chart ·
+  chart`); any other call that makes a figure makes its own (`Figure 2 · Chart.line`).
 - **Files fold into their folders** once a picture holds more than a column's worth:
   `File(artefacts/) · 8` opens into what is in it with a click.
 - **Shift-click a package** in the overview to focus on it: the picture keeps the packages

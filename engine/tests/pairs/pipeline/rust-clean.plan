@@ -4,10 +4,7 @@
 # is missing, so the file stands between the download and the reading.
 
 # An error a call into a family hands on (`self.draw(..)?` in `Plot::save`) is made inside the step, at the moment of the
-# choice it is, and its border hands on a value of its own (#138): the pictures put the inner one in the frame around
-# the step, and opening the step draws a line the closed one did not
-known #138 fault /Plot.draw/? stands in
-known #138 fault >t:sunspots.error.Error@n:sunspots.plot.Plot/
+# choice it is, and its border hands on a value of its own (#138).
 
 route sunspots.main.main
 step main/Cli()                                                   # `Cli::parse()`, which q takes to the entry
@@ -98,9 +95,8 @@ line main/Trend.new/Trend() > Trend@main/Trend.new/Trend() value
 line Trend@main/Trend.new/Trend() > main/Trend.new value
 line main/Trend.new > Trend@main/Trend.new value
 
-known #157 line Cli·cli@main/Cli() > main/Trend.save/parent value       # `&cli.figure`, held by `to`; the receiver comes from a nested step
-known #157 line Cli·cli@main/Cli() > main/Trend.save/into_drawing_area value   # `BitMapBackend::new(to, ..)`
-known #157 extra line Cli·cli@main/Cli() > main/Trend.save value
+line Cli·cli@main/Cli() > main/Trend.save/parent value       # `&cli.figure`, held by `to`; the receiver comes from a nested step
+line Cli·cli@main/Cli() > main/Trend.save/into_drawing_area value   # `BitMapBackend::new(to, ..)`
 line main/Trend.save/parent > _·dir@main/Trend.save/parent value
 home _·dir@main/Trend.save/parent main/Trend.save
 line Trend@main/Trend.new > main/Trend.save/Trend.settings value
@@ -110,10 +106,9 @@ line main/Trend.save/into_drawing_area > DrawingArea·area@main/Trend.save/into_
 line DrawingArea·area@main/Trend.save/into_drawing_area > main/Trend.save value   # `area.present()`
 line DrawingArea·area@main/Trend.save/into_drawing_area > main/Trend.save/Trend.draw value   # the body uses it itself (`area.fill(..)`), and a step inside takes it too
 line DrawingArea·area@main/Trend.save/into_drawing_area > main/Trend.save/Trend.draw/?1/build_cartesian_2d value
-known #126 line Trend@main/Trend.new > main/Trend.save/Trend.draw value   # the body uses the instance itself, and a step inside takes it too
+line Trend@main/Trend.new > main/Trend.save/Trend.draw value   # the body uses the instance itself, and a step inside takes it too
 line Trend@main/Trend.new > main/Trend.save/Trend.draw/?1/build_cartesian_2d value   # `self.settings.title`
 line Month·series@main/load > main/Trend.save/Trend.draw value   # `draw_series(..)`; the body uses it itself, and a step inside takes it too
-known #126 extra line Month·last@main/Trend.save/Trend.draw/last > main/Trend.save/Trend.draw value   # the own arrow takes the latest Month in place of `series`
 line Month·series@main/load > main/Trend.save/Trend.draw/first value
 line Month·series@main/load > main/Trend.save/Trend.draw/last value
 line main/Trend.save/Trend.draw/first > Month·first@main/Trend.save/Trend.draw/first value
@@ -204,7 +199,4 @@ home Error@main main
 # the plan pairs the values a call hands with its parameters by type and count, not by place (#157): `download` is
 # handed nothing for `url`, `save` its receiver last, so `to` holds nothing and comes from beyond
 known #157 extra line _·to@main/?1/download/~to > main/?1/download/parent value   # the parameter, bound by no value the call hands
-known #157 extra line _·to@main/Trend.save/~to > main/Trend.save/parent value
-known #157 extra line _·to@main/Trend.save/~to > main/Trend.save/into_drawing_area value
 known #157 extra home _·to@main/?1/download/~to main/?1/download
-known #157 extra home _·to@main/Trend.save/~to main/Trend.save

@@ -14,7 +14,6 @@ line entry > Board()/Board.pin call
 line entry > Board()/Board.posts call
 line Board()/Board() > Board@Board()/Board() value
 line Board > Board()/Board.pin value # the caller's instance: every method runs on it
-known #126 line Board > Board()/Board.posts value   # the body reads self.path itself, and hands self to Notice()
 line Notice·notice > Board()/Board.pin value # pin's parameter, by the name that holds it
 line Board > Board()/Board.posts/Notice() value # `Notice(**json.loads(self.path.read_text()))` hands the board
 line Board()/Board.pin > Disk(Board.path) own

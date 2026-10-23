@@ -10,10 +10,10 @@ step readings/get_store().history                             # the call on what
 line entry > readings call
 line Global(os.environ) > readings/get_store own              # os.environ.get(..), its result handed straight to ReadingStore()
 line readings/get_store/ReadingStore() > ReadingStore@readings/get_store/ReadingStore() value
-known #101 line ReadingStore@readings/get_store/ReadingStore() > readings/get_store value   # get_store hands back what it built
+line ReadingStore@readings/get_store/ReadingStore() > readings/get_store value   # get_store hands back what it built
 line readings/get_store > _@readings/get_store value          # what get_store gives has no type
 line _@readings/get_store > readings/get_store().history value
-known #101 line readings/get_store().history > readings back  # and what is asked of it goes back to the route, which returns it
+line readings/get_store().history > readings back  # and what is asked of it goes back to the route, which returns it
 
 home ReadingStore@readings/get_store/ReadingStore() readings/get_store
 home _@readings/get_store readings

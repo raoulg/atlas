@@ -22,47 +22,112 @@ known #125 extra step lines/Trimmed.read/Source.read/Cached.read/?1/Source.read/
 
 line entry > lines call
 line Trimmed·source > lines value
-known #128 line Trimmed·source > lines/Trimmed.read/Source.read/urlopen value         # `urlopen(self.url)`
+line Trimmed·source > lines/Trimmed.read/Source.read/urlopen value         # `urlopen(self.url)`
 line lines/Trimmed.read/Source.read/urlopen > _·response@lines/Trimmed.read/Source.read/urlopen value
 line _·response@lines/Trimmed.read/Source.read/urlopen > lines/Trimmed.read/Source.read value   # `response.read()`
 line Web > lines/Trimmed.read/Source.read own                                         # `urlopen(self.url)` with no data is a GET
 line lines/Trimmed.read/Source.read > lines/Trimmed.read back
 line lines/Trimmed.read > lines back
-known #128 line Trimmed·source > lines/Trimmed.read/Source.read/Cached.read/Store.has value   # `self.store.has(self.url)`
+line Trimmed·source > lines/Trimmed.read/Source.read/Cached.read/Store.has value   # `self.store.has(self.url)`
 line lines/Trimmed.read/Source.read/Cached.read/Store.has > lines/Trimmed.read/Source.read/Cached.read back
-known #128 line Trimmed·source > lines/Trimmed.read/Source.read/Cached.read/?1/Store.get value
+line Trimmed·source > lines/Trimmed.read/Source.read/Cached.read/?1/Store.get value
 line Disk(self.root / key) > lines/Trimmed.read/Source.read/Cached.read/?1/Store.get own
 line lines/Trimmed.read/Source.read/Cached.read/?1/Store.get > lines/Trimmed.read/Source.read/Cached.read back
-known #128 line Trimmed·source > lines/Trimmed.read/Source.read/Cached.read/?1/Source.read/urlopen value
+line Trimmed·source > lines/Trimmed.read/Source.read/Cached.read/?1/Source.read/urlopen value
 line lines/Trimmed.read/Source.read/Cached.read/?1/Source.read/urlopen > _·response@lines/Trimmed.read/Source.read/Cached.read/?1/Source.read/urlopen value
 line _·response@lines/Trimmed.read/Source.read/Cached.read/?1/Source.read/urlopen > lines/Trimmed.read/Source.read/Cached.read/?1/Source.read value
 line Web > lines/Trimmed.read/Source.read/Cached.read/?1/Source.read own
 line lines/Trimmed.read/Source.read/Cached.read/?1/Source.read > _·data@lines/Trimmed.read/Source.read/Cached.read/?1/Source.read value
 line _·data@lines/Trimmed.read/Source.read/Cached.read/?1/Source.read > lines/Trimmed.read/Source.read/Cached.read/?1/Store.put value
-known #128 line Trimmed·source > lines/Trimmed.read/Source.read/Cached.read/?1/Store.put value
+line Trimmed·source > lines/Trimmed.read/Source.read/Cached.read/?1/Store.put value
 line lines/Trimmed.read/Source.read/Cached.read/?1/Store.put > Disk(self.root / key) own
 line _·data@lines/Trimmed.read/Source.read/Cached.read/?1/Source.read > lines/Trimmed.read/Source.read/Cached.read value   # `return data`
 line lines/Trimmed.read/Source.read/Cached.read > lines/Trimmed.read/Source.read back
 
 # the values a call is handed through `self` drawn as types from beyond, and the source at the own arrow
-known #128 extra line Source > lines/Trimmed.read/Source.read/urlopen value
-known #128 extra line Source > lines/Trimmed.read/Source.read/Cached.read/?1/Source.read/urlopen value
-known #128 extra line Cached > lines/Trimmed.read/Source.read/Cached.read/Store.has value
-known #128 extra line Cached > lines/Trimmed.read/Source.read/Cached.read/?1/Store.get value
-known #128 extra line Cached > lines/Trimmed.read/Source.read/Cached.read/?1/Store.put value
-known #128 extra line Store > lines/Trimmed.read/Source.read/Cached.read/Store.has value
-known #128 extra line Store > lines/Trimmed.read/Source.read/Cached.read/?1/Store.get value
-known #128 extra line Trimmed·source > lines/Trimmed.read/Source.read/Cached.read/?1/Source.read value
 known #125 extra line _·response@lines/Trimmed.read/Source.read/urlopen > lines/Trimmed.read/Source.read/response.read value
 known #125 extra line _·response@lines/Trimmed.read/Source.read/Cached.read/?1/Source.read/urlopen > lines/Trimmed.read/Source.read/Cached.read/?1/Source.read/response.read value
-known #128 extra home Source lines
-known #128 extra home Cached lines
-known #128 extra home Store lines
 
 home Trimmed·source lines
 home _·response@lines/Trimmed.read/Source.read/urlopen lines/Trimmed.read/Source.read
 home _·response@lines/Trimmed.read/Source.read/Cached.read/?1/Source.read/urlopen lines/Trimmed.read/Source.read/Cached.read/?1/Source.read
 home _·data@lines/Trimmed.read/Source.read/Cached.read/?1/Source.read lines/Trimmed.read/Source.read/Cached.read   # `return data` uses it too
+
+side entry left
+side Web left                                                                         # `urlopen(url)` with no data is a GET
+side Disk(self.root / key) both
+
+# `cached_lines(source: Cached)`: a cached source may be a feed, `Feed(Trimmed, Cached)`, which runs `Trimmed.read` for
+# `read`, so the call is `Cached.read` or, on a feed, `Trimmed.read` on the feed (#155), drawn as the feed's method,
+# `Feed.read`. Its `super().read()` runs the next `read` after `Trimmed` along the feed's order: `Cached.read` on the
+# feed, which reads the store before it asks the network. Either way the source is read through its store: what
+# `cached_lines` runs on a feed does what it does on any cached source, as a cache that is also trimmed should.
+
+route news.read.cached_lines
+step cached_lines/Cached.read                                                     # `source.read()`, one of two
+step cached_lines/Cached.read/Store.has
+choice cached_lines/Cached.read/?1
+step cached_lines/Cached.read/?1/Store.get
+step cached_lines/Cached.read/?1/Source.read                                      # `super().read()`
+step cached_lines/Cached.read/?1/Source.read/urlopen
+step cached_lines/Cached.read/?1/Store.put
+step cached_lines/Cached.read/Feed.read                                           # what it runs on a feed
+step cached_lines/Cached.read/Feed.read/Cached.read                               # `super().read()` on the feed
+step cached_lines/Cached.read/Feed.read/Cached.read/Store.has
+choice cached_lines/Cached.read/Feed.read/Cached.read/?1
+step cached_lines/Cached.read/Feed.read/Cached.read/?1/Store.get
+step cached_lines/Cached.read/Feed.read/Cached.read/?1/Source.read                # Cached's `super().read()` on the feed
+step cached_lines/Cached.read/Feed.read/Cached.read/?1/Source.read/urlopen
+step cached_lines/Cached.read/Feed.read/Cached.read/?1/Store.put
+known #125 extra step cached_lines/Cached.read/?1/Source.read/response.read     # `return response.read()`
+known #125 extra step cached_lines/Cached.read/Feed.read/Cached.read/?1/Source.read/response.read
+
+line entry > cached_lines call
+line Cached·source > cached_lines value
+line cached_lines/Cached.read > cached_lines back
+
+# on any cached source: the store, else the network and then the store
+line Cached·source > cached_lines/Cached.read/Store.has value                    # `self.store.has(self.url)`
+line cached_lines/Cached.read/Store.has > cached_lines/Cached.read back
+line Cached·source > cached_lines/Cached.read/?1/Store.get value
+line Disk(self.root / key) > cached_lines/Cached.read/?1/Store.get own
+line cached_lines/Cached.read/?1/Store.get > cached_lines/Cached.read back
+line Cached·source > cached_lines/Cached.read/?1/Source.read/urlopen value       # `urlopen(self.url)`
+line cached_lines/Cached.read/?1/Source.read/urlopen > _·response@cached_lines/Cached.read/?1/Source.read/urlopen value
+line _·response@cached_lines/Cached.read/?1/Source.read/urlopen > cached_lines/Cached.read/?1/Source.read value   # `response.read()`
+line Web > cached_lines/Cached.read/?1/Source.read own
+line cached_lines/Cached.read/?1/Source.read > _·data@cached_lines/Cached.read/?1/Source.read value
+line _·data@cached_lines/Cached.read/?1/Source.read > cached_lines/Cached.read/?1/Store.put value
+line Cached·source > cached_lines/Cached.read/?1/Store.put value
+line cached_lines/Cached.read/?1/Store.put > Disk(self.root / key) own
+line _·data@cached_lines/Cached.read/?1/Source.read > cached_lines/Cached.read value   # `return data`
+
+# on a feed: the same through `Trimmed.read`, whose `super().read()` is the feed's `Cached.read`
+line cached_lines/Cached.read/Feed.read > cached_lines/Cached.read back
+line cached_lines/Cached.read/Feed.read/Cached.read > cached_lines/Cached.read/Feed.read back
+line Cached·source > cached_lines/Cached.read/Feed.read/Cached.read/Store.has value
+line cached_lines/Cached.read/Feed.read/Cached.read/Store.has > cached_lines/Cached.read/Feed.read/Cached.read back
+line Cached·source > cached_lines/Cached.read/Feed.read/Cached.read/?1/Store.get value
+line Disk(self.root / key) > cached_lines/Cached.read/Feed.read/Cached.read/?1/Store.get own
+line cached_lines/Cached.read/Feed.read/Cached.read/?1/Store.get > cached_lines/Cached.read/Feed.read/Cached.read back
+line Cached·source > cached_lines/Cached.read/Feed.read/Cached.read/?1/Source.read/urlopen value
+line cached_lines/Cached.read/Feed.read/Cached.read/?1/Source.read/urlopen > _·response@cached_lines/Cached.read/Feed.read/Cached.read/?1/Source.read/urlopen value
+line _·response@cached_lines/Cached.read/Feed.read/Cached.read/?1/Source.read/urlopen > cached_lines/Cached.read/Feed.read/Cached.read/?1/Source.read value
+line Web > cached_lines/Cached.read/Feed.read/Cached.read/?1/Source.read own
+line cached_lines/Cached.read/Feed.read/Cached.read/?1/Source.read > _·data@cached_lines/Cached.read/Feed.read/Cached.read/?1/Source.read value
+line _·data@cached_lines/Cached.read/Feed.read/Cached.read/?1/Source.read > cached_lines/Cached.read/Feed.read/Cached.read/?1/Store.put value
+line Cached·source > cached_lines/Cached.read/Feed.read/Cached.read/?1/Store.put value
+line cached_lines/Cached.read/Feed.read/Cached.read/?1/Store.put > Disk(self.root / key) own
+line _·data@cached_lines/Cached.read/Feed.read/Cached.read/?1/Source.read > cached_lines/Cached.read/Feed.read/Cached.read value
+
+known #125 extra line _·response@cached_lines/Cached.read/?1/Source.read/urlopen > cached_lines/Cached.read/?1/Source.read/response.read value
+known #125 extra line _·response@cached_lines/Cached.read/Feed.read/Cached.read/?1/Source.read/urlopen > cached_lines/Cached.read/Feed.read/Cached.read/?1/Source.read/response.read value
+
+home Cached·source cached_lines
+home _·response@cached_lines/Cached.read/?1/Source.read/urlopen cached_lines/Cached.read/?1/Source.read
+home _·data@cached_lines/Cached.read/?1/Source.read cached_lines/Cached.read
+home _·response@cached_lines/Cached.read/Feed.read/Cached.read/?1/Source.read/urlopen cached_lines/Cached.read/Feed.read/Cached.read/?1/Source.read
+home _·data@cached_lines/Cached.read/Feed.read/Cached.read/?1/Source.read cached_lines/Cached.read/Feed.read/Cached.read
 
 side entry left
 side Web left                                                                         # `urlopen(url)` with no data is a GET
