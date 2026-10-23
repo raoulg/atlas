@@ -35,7 +35,7 @@ pub fn route(g: &Graph, entry: &str, depth: usize) -> Option<String> {
     }
     out.push('\n');
     let mut shown: HashMap<String, String> = HashMap::from([(s.seen(start, start, &path), "the entry".to_string())]);
-    let alts = s.bodies.get(start).map(|b| b.alts.clone()).unwrap_or_default();
+    let alts = Step::of(start).runs_instead(&s.bodies);
     s.walk(start, "", depth.max(1), &mut shown, &mut out, &path, &alts);
     Some(out)
 }
@@ -101,7 +101,7 @@ pub fn choices(g: &Graph, entry: &str) -> Option<String> {
             };
             queue.extend(steps.into_iter().filter(|st| s.nodes.contains_key(st.to.as_str())).cloned());
         }
-        queue.extend(call.alts(&s.bodies).iter().map(|o| Step::of(o)));
+        queue.extend(call.runs_instead(&s.bodies));
     }
     if found == 0 {
         out.push_str("\nNo choice on this route: every step runs whenever the route does.\n");
@@ -218,7 +218,7 @@ impl<'g> Story<'g> {
         shown: &mut HashMap<String, String>,
         out: &mut String,
         path: &[String],
-        alts: &[String],
+        alts: &[Step],
     ) {
         let Some(b) = self.bodies.get(body) else { return };
         let holder = body.split('@').next().unwrap_or(body);
@@ -263,7 +263,7 @@ impl<'g> Story<'g> {
             }
         }
         for (i, o) in alts.iter().enumerate() {
-            self.step(&Step::of(o), None, &format!("{prefix}{}", letter(i)), "", level, depth, shown, out, path);
+            self.step(o, None, &format!("{prefix}{}", letter(i)), "", level, depth, shown, out, path);
         }
     }
 
@@ -325,7 +325,7 @@ impl<'g> Story<'g> {
         out.push_str(&line);
         out.push('\n');
         if level + 1 < depth {
-            self.walk(&k, num, depth, shown, out, &inner, alts);
+            self.walk(&k, num, depth, shown, out, &inner, &st.runs_instead(&self.bodies));
         }
     }
 

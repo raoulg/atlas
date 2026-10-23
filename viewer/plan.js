@@ -158,6 +158,9 @@ for (const n of D.nodes) for (const t of [...(n.touches || []), ...(n.instead ||
   if (!COARSE.has(c)) COARSE.set(c, new Map());
   COARSE.get(c).set(t.place.id, t.place);
 }
+// a body by its key: the function, and the class it runs on where that is known (`flow::key`); what a call may run
+// instead is a body
+const keyed = k => { const i = k.indexOf("@"); return i < 0 ? [k, null] : [k.slice(0, i), k.slice(i + 1)]; };
 // in one reading of a union, a body runs the steps that reading has
 const bodyCache = new Map();
 const bodyOf = (id, on) => {
@@ -167,7 +170,7 @@ const bodyOf = (id, on) => {
   if (!bodyCache.has(ck)) {
     const n = byId.get(id), runs = s => has(byId.get(s.to)) && (s.site == null || has(n?.sites?.[s.site]));
     const items = b.items.flatMap(it => { if (!it.members) return runs(it) ? [it] : []; const ms = it.members.filter(runs); return ms.length ? [{...it, members: ms}] : []; });
-    bodyCache.set(ck, {...b, items, alts: (b.alts || []).filter(a => has(byId.get(a)))});
+    bodyCache.set(ck, {...b, items, alts: (b.alts || []).filter(a => has(byId.get(keyed(a)[0])))});
   }
   return bodyCache.get(ck);
 };
@@ -181,11 +184,12 @@ const arrowOf = id => {
   return arrowCache.get(ck);
 };
 const stepsIn = b => b.items.flatMap(it => it.members ? it.members : [it]);
-// what a call may run in place of the function it reaches: a method called by name on a value whose class is not
-// known, any override its body lists; one whose call names the method (`Cached.read(self)`), what its call says
-const insteadOf = s => s.named ? (s.instead || []).filter(a => has(byId.get(a))) : s.on ? [] : bodyOf(s.to, null).alts || [];
+// what a call may run in place of the function it reaches, each a body by its key: a method called by name on a value
+// whose class is not known, any override its body lists, on the classes that run it; one whose call names the method
+// (`Cached.read(self)`, `super().read()`), what its call says
+const insteadOf = s => s.named ? (s.instead || []).filter(a => has(byId.get(keyed(a)[0]))) : s.on ? [] : bodyOf(s.to, null).alts || [];
 // the functions a step runs: its body's steps, and what the call may run instead (`alts`, else the overrides of a call by name)
-const callees = (id, on, alts = null) => { const b = bodyOf(id, on); return [...new Set([...stepsIn(b).map(s => s.to), ...(alts ?? b.alts ?? [])])].filter(t => byId.has(t)); };
+const callees = (id, on, alts = null) => { const b = bodyOf(id, on); return [...new Set([...stepsIn(b).map(s => s.to), ...(alts ?? b.alts ?? []).map(a => keyed(a)[0])])].filter(t => byId.has(t)); };
 // what each step of an opened route stands for: the function it runs (or a library's operation,
 // `op:to_numpy`), the class of the value it runs on, and the call; a step is a call, keyed by its
 // path through the route, so two calls of one function are two steps; `fed` names the values of
@@ -215,7 +219,7 @@ function reach(id, on, root = null, chain = null, alts = null) {
     const [cur, con, calts] = stack.pop(), n = byId.get(cur); if (!n) continue;
     seen.push(n);
     const b = bodyOf(cur, con);
-    for (let [t, o, a] of [...stepsIn(b).map(s => [s.to, s.on || null, s.named ? insteadOf(s) : null]), ...(calts ?? b.alts ?? []).map(x => [x, null, null])]) {
+    for (let [t, o, a] of [...stepsIn(b).map(s => [s.to, s.on || null, s.named ? insteadOf(s) : null]), ...(calts ?? b.alts ?? []).map(x => [...keyed(x), null])]) {
       if (byId.get(t)?.kind === "class") { t = runsOf(t); o = null; a = null; }
       const k = (o ? `${t}@${o}` : t) + (a ? "!" : "");
       if (byId.has(t) && !vis.has(k)) { vis.add(k); stack.push([t, o, a]); }
@@ -486,7 +490,14 @@ function routeTree() {
     const deeper = new Set([...path, step]), body = bodyOf(step, on);
     node.choice = alts.length > 0;
     let b = 0;
-    for (const o of alts) node.kids.push(visit(`${key}|${o}`, o, null, null, (b++ % 8) + 1, deeper, undefined, {dispatch: key}));
+    // what the call may run instead runs on the class of its key; the next method of a call that names its method
+    // (`super().read()`) is named by its own class. It runs in place of the function the call reaches, as the same call:
+    // that function is not on the calls that lead into it, and one the route is already inside stays closed
+    for (const o of alts) {
+      const [to, cls] = keyed(o), ak = `${key}|${o}`, h = (b++ % 8) + 1, info = {dispatch: key, named: !!by.named};
+      if (path.has(to)) { treeInfo.set(ak, {step: to, on: cls, site: null, path, recursive: true, alts: [], ...info}); node.kids.push({id: ak, open: false, kids: [], hue: h, choice: false, recursive: true}); continue; }
+      node.kids.push(visit(ak, to, cls, null, h, path, undefined, info));
+    }
     const parse = commandLine(n);
     if (parse.hidden.size) routeParses = true;
     const entry = folds ? parse : {hidden: new Set(), fed: new Set()};
@@ -593,12 +604,12 @@ if (!routeContent.has(seen)) {
   routeContent.set(seen, {found, updated, content});
 }
 const {found, updated, content} = routeContent.get(seen);
-// a place's shape (a directory made, a table created) and a connection opened without a way serve
-// the data the route reads or writes there: of a file, in a directory; of a database, any table. A
-// test whose answer only decides a choice is that choice's condition: its place is drawn by what the
-// route reads or writes there, if anything
+// a place's shape (a directory made, a table created, a file tested) and a connection opened without a way serve
+// the data the route reads or writes there: at that place, whether a file or a path only a value names; of a file,
+// in a directory; of a database, any table. A test whose answer only decides a choice is that choice's condition:
+// its place is drawn by what the route reads or writes there, if anything
 const inDir = dir => [...content.files].some(f => f.startsWith(dir));
-const served = t => t.test || (t.shape || isOpen(t)) && (t.kind.startsWith("db_") ? content.dbs.has(t.kind) : !!t.place.file && (content.places.has(t.place.id) || (t.place.file.endsWith("/") && inDir(t.place.file))));
+const served = t => t.test || (t.shape || isOpen(t)) && (t.kind.startsWith("db_") ? content.dbs.has(t.kind) : content.places.has(t.place.id) || (!!t.place.file && t.place.file.endsWith("/") && inDir(t.place.file)));
 // a type is a place of its own while its moments are counted; then a closed one stands in its kind.
 // The kind is the type's (its base class), not the view's: the route's subject is its own
 const kindKey = k => k.startsWith("t:") && places.get(k)?.type ? "t:" + (places.get(k).type === V.route ? V.route : kindOf(places.get(k).type)) : k;
@@ -632,7 +643,7 @@ const morphism = (id, own, isAnchor, noReceiver, opts = {}) => {
     if (own && a.gives_back && !opts.leaf) for (const x of bodyOf(f.id, opts.on).made_from || []) dom.push([addPlace(typePlace(x)), false]);
     // a closed call into a family takes and hands on what any of its branches does, unless the call
     // says which class it runs on
-    if (!own) for (const o of opts.alts ?? (opts.on ? [] : bodyOf(f.id, null).alts || [])) merge(morphism(o, false, false, noReceiver, {at: opts.at}));
+    if (!own) for (const o of opts.alts ?? (opts.on ? [] : bodyOf(f.id, null).alts || [])) { const [to, cls] = keyed(o); merge(morphism(to, false, false, noReceiver, {at: opts.at, on: cls})); }
   }
   // a step of a route runs the touches its own calls lead to: the functions on the calls to it, and itself
   const root = V.route || (f.entry ? f.id : null), at = opts.at && treeInfo.get(opts.at), chain = V.route && at?.path ? new Set([...at.path, f.id]) : null;
@@ -924,8 +935,12 @@ const version = (k, v) => { if (!places.has(v)) places.set(v, {...places.get(k),
 // of its own at the step's moment
 const choiceMoment = fid => (frames.get(fid).synthetic ? fid : fid + "|");
 // the arm of a choice in a body a step stands in, and the step's own moment: an opened step's arrow hands on at the moment
-// the closed step did, so opening it moves no value to another moment
-const armOf = P => { const F = P.own ? frames.get(P.parent) : P, c = frames.get(F?.parent); return c?.choice ? {choice: F.parent, branch: F.branch} : null; };
+// the closed step did, so opening it moves no value to another moment. The arms of a step that is a choice are what its
+// call may run instead; the steps of its own body are in no arm
+const armOf = P => {
+  const F = P.own ? frames.get(P.parent) : P, c = frames.get(F?.parent);
+  return c?.choice && (c.synthetic || treeInfo.get(F.step ?? F.steps?.[0])?.dispatch === c.step) ? {choice: F.parent, branch: F.branch} : null;
+};
 const ownMoment = P => (P.own ? P.parent : P.id);
 // a value of a choice in a body is the choice's where it goes on past the choice and two of its arms make it, or where one
 // arm makes anew a value the body named before, which the other arms keep (`if ..: series.push(..)`); a value one arm makes,
@@ -1038,7 +1053,8 @@ const viaDispatch = (P, k) => {
   const takes = [...Own.D.keys()].filter(isMem).map(x => bound(Own, x) || x).filter(Boolean);
   const t = places.get(k).type, mine = byId.get(stepOf(key)), theirs = byId.get(stepOf(d));
   const args = n => (n?.params || []).filter(p => !p.receiver);
-  const i = t === arrowOf(stepOf(key))?.receiver ? -1 : args(mine).findIndex(p => writesType(p, t));
+  // an override runs on the class of its key where that is known
+  const i = t === (treeInfo.get(key)?.on || arrowOf(stepOf(key))?.receiver) ? -1 : args(mine).findIndex(p => writesType(p, t));
   const by = i >= 0 && args(theirs)[i]?.name, named = by && takes.find(v => places.get(v)?.name === by);
   const recv = i < 0 && (treeInfo.get(d)?.on || arrowOf(stepOf(d))?.receiver), on = recv && takes.find(v => places.get(v)?.type === recv);
   return named || on || takes.find(v => kindKey(v) === kindKey(k)) || null;

@@ -576,18 +576,21 @@ fn orders(ix: &Ix, id: &str, mut done: Option<&mut Memo>) -> BTreeMap<String, Or
     let looped = |x: u32, y: u32| n.loop_lines.iter().any(|&(a, b)| a <= x.min(y) && x.max(y) <= b);
     enum Event<'n> {
         Touch(&'n Touch),
-        Call(&'n str, bool),
+        /// A call: what it may run, one of them, and whether it stands in an arm.
+        Call(Vec<String>, bool),
     }
     // a place's shape is no content: what is read after it was made is what was there
     // a touch that stands for several calls runs on the line of each
+    // a call whose place a caller makes whole is read as written where no such caller runs (`instead`): at each place
     let mut events: Vec<(u32, Event)> = n
         .touches
         .iter()
+        .chain(&n.instead)
         .filter(|t| t.dir.is_some() && !t.shape())
         .flat_map(|t| std::iter::once(t.line).chain(t.also_at.iter().copied()).map(move |l| (l, Event::Touch(t))))
         .collect();
     if done.is_some() {
-        events.extend(n.sites.iter().filter(|s| !s.to.is_empty()).map(|s| (s.line, Event::Call(s.to.as_str(), !s.arms.is_empty()))));
+        events.extend(n.sites.iter().filter(|s| !s.to.is_empty()).map(|s| (s.line, Event::Call(ix.may_run(s), !s.arms.is_empty()))));
     }
     // on one line what is read comes first, then the calls, then what is written: `x ??= v` reads
     // `x` before it may write it, `y = f(x)` calls `f` before `y` is written
@@ -604,12 +607,12 @@ fn orders(ix: &Ix, id: &str, mut done: Option<&mut Memo>) -> BTreeMap<String, Or
     let mut written_at: HashMap<String, Vec<u32>> = HashMap::new();
     for (line, e) in events {
         let at = arm(line);
-        let happened: Vec<(String, Order)> = match e {
+        let happened: Vec<(String, Order)> = match &e {
             Event::Touch(t) => {
                 let writes = t.dir == Some(Dir::Write);
                 vec![(t.place().id, Order { finds: !writes, writes, always_writes: writes, ..Order::default() })]
             }
-            Event::Call(to, _) => orders(ix, to, done.as_deref_mut()).into_iter().collect(),
+            Event::Call(to, _) => one_of(to.iter().map(|t| orders(ix, t, done.as_deref_mut())).collect()).into_iter().collect(),
         };
         let conditional = match e {
             Event::Touch(_) => at.is_some(),
@@ -654,6 +657,24 @@ fn orders(ix: &Ix, id: &str, mut done: Option<&mut Memo>) -> BTreeMap<String, Or
     out
 }
 
+/// What one of several functions does at each place, where a call runs one of them, as the arms of a choice: what any
+/// of them finds, reads back, writes or changes there, written whenever the call runs only where all of them write it.
+fn one_of(runs: Vec<BTreeMap<String, Order>>) -> BTreeMap<String, Order> {
+    let all = runs.len();
+    let mut out: BTreeMap<String, (Order, usize)> = BTreeMap::new();
+    for run in runs {
+        for (place, b) in run {
+            let (o, always) = out.entry(place).or_default();
+            o.finds |= b.finds;
+            o.reads_back |= b.reads_back;
+            o.writes |= b.writes;
+            o.updates |= b.updates;
+            *always += usize::from(b.always_writes);
+        }
+    }
+    out.into_iter().map(|(p, (o, always))| (p, Order { always_writes: always == all, ..o })).collect()
+}
+
 /// The places where what is read is only what was written.
 fn reads_back(orders: BTreeMap<String, Order>) -> Vec<String> {
     orders.into_iter().filter(|(_, o)| o.reads_back && !o.finds).map(|(p, _)| p).collect()
@@ -684,6 +705,26 @@ impl<'g> Ix<'g> {
     /// What building a class takes: the parameters of the initializer it runs.
     fn built_from(&self, class: &str) -> Vec<String> {
         self.runs(class).map_or(vec![], |c| self.targets(&c, EdgeKind::Takes))
+    }
+
+    /// The functions a call may run, one of them, where the class of the value its body runs on is not known
+    /// (`body_of`, read without the classes): the method a known class runs for it, the next method of a `super()` call
+    /// along each class it may be, or the method a call by name reaches and its overrides.
+    fn may_run(&self, s: &Site) -> Vec<String> {
+        let Some(m) = self.nodes.get(s.to.as_str()).filter(|m| m.cls.is_some()) else { return vec![s.to.clone()] };
+        let mut out: Vec<String> = if !s.after.is_empty() {
+            let first = self.method_after(&s.after, &s.after, &m.name).unwrap_or_else(|| s.to.clone());
+            std::iter::once(first).chain(self.below(&s.after).iter().filter_map(|d| self.method_after(d, &s.after, &m.name))).collect()
+        } else if s.named {
+            vec![s.to.clone()]
+        } else if !s.on.is_empty() {
+            vec![self.method_on(&s.on, &m.name).unwrap_or_else(|| s.to.clone())]
+        } else {
+            std::iter::once(s.to.clone()).chain(self.overrides(m).iter().map(|k| split(k).0.to_string())).collect()
+        };
+        let mut seen = HashSet::new();
+        out.retain(|f| seen.insert(f.clone()));
+        out
     }
 }
 
@@ -744,7 +785,7 @@ pub fn arrows(g: &Graph) -> BTreeMap<String, Arrow> {
 /// What a body's steps make: the class a step builds, else what the function it runs gives back.
 fn made_from(ix: &Ix, body: &Body) -> Vec<String> {
     let mut callees: Vec<&str> = vec![];
-    for t in body.steps().into_iter().map(|s| s.to.as_str()).chain(body.alts.iter().map(String::as_str)) {
+    for t in body.steps().into_iter().map(|s| s.to.as_str()).chain(body.alts.iter().map(|k| split(k).0)) {
         if ix.nodes.contains_key(t) && !callees.contains(&t) {
             callees.push(t);
         }
@@ -774,9 +815,9 @@ pub struct Step {
     /// named by its own class, not by the class of the value.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub named: bool,
-    /// What a `super()` call may run in place of `to` where the class of the value is not known:
-    /// the next method after the class it is written in, along the order of each class the value
-    /// may be.
+    /// What a `super()` call may run in place of `to` where the class of the value is not known,
+    /// by the key of each body: the next method after the class it is written in, along the order
+    /// of each class the value may be, on that class.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub instead: Vec<String>,
 }
@@ -787,14 +828,28 @@ impl Step {
         Step { to: to.to_string(), ..Default::default() }
     }
 
-    /// What the call may run in place of `to`: what its call says, or, for a method called by
-    /// name on a value whose class is not known, the overrides `bodies` gives its body.
+    /// What the call may run in place of `to`, by the key of each body: what its call says, or,
+    /// for a method called by name on a value whose class is not known, the overrides `bodies`
+    /// gives its body.
     pub fn alts<'b>(&'b self, bodies: &'b BTreeMap<String, Body>) -> &'b [String] {
         match bodies.get(&self.to) {
             _ if self.named => &self.instead,
             Some(b) if self.on.is_empty() => &b.alts,
             _ => &[],
         }
+    }
+
+    /// What the call may run in place of `to`, each as a step: the function of each body on the
+    /// class of its key. Where the call names its method, each is named too: the next method of a
+    /// `super()` call is named by its own class.
+    pub fn runs_instead(&self, bodies: &BTreeMap<String, Body>) -> Vec<Step> {
+        self.alts(bodies)
+            .iter()
+            .map(|k| {
+                let (to, on) = split(k);
+                Step { to: to.to_string(), on: on.to_string(), named: self.named, ..Default::default() }
+            })
+            .collect()
     }
 }
 
@@ -828,6 +883,7 @@ pub enum Item {
 /// the class is known; `Step::alts`), and its own steps.
 #[derive(Serialize, Clone, Debug, Default, PartialEq)]
 pub struct Body {
+    /// The overrides, by the key of the body each runs (`Ix::overrides`).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub alts: Vec<String>,
     pub items: Vec<Item>,
@@ -863,6 +919,11 @@ pub fn key(to: &str, on: &str) -> String {
     }
 }
 
+/// The function of a body's key and the class it runs on, none where that is not known.
+pub fn split(key: &str) -> (&str, &str) {
+    key.split_once('@').unwrap_or((key, ""))
+}
+
 /// The edges of a graph by their ends, in the order the graph holds them.
 struct Ix<'g> {
     nodes: HashMap<&'g str, &'g Node>,
@@ -887,16 +948,24 @@ impl<'g> Ix<'g> {
         self.out.get(id).into_iter().flatten().copied().filter(move |e| e.kind == kind)
     }
 
-    /// What a call to a method by name may run in its place, on a value whose class is not known:
-    /// for each class the value may be, the method's own or one below it, the method that class
-    /// runs for the name along its order (`method_on`), each once. In a diamond `D(B, C)` over `A`
-    /// a call of `C.f` may run `B.f` on a `D`, though `B` is not below `C`.
+    /// What a call to a method by name may run in its place, on a value whose class is not known,
+    /// by the key of the body each runs: for each class the value may be, the method's own or one
+    /// below it, the method that class runs for the name along its order (`method_on`), each once,
+    /// on the values that run it. A method of a class below the method's own runs on any value of
+    /// its class, all of which the call may be handed: its body is read where the class is not
+    /// known. One of a class beside it runs on the classes below both, the class that runs it: in a
+    /// diamond `D(B, C)` over `A` a call of `C.f` may run `B.f` on a `D`, though `B` is not below
+    /// `C`, and there its `super().f()` runs `C.f`.
     fn overrides(&self, n: &Node) -> Vec<String> {
         let Some(cls) = n.cls.as_deref() else { return vec![] };
+        let below = self.below(cls);
         let mut out: Vec<String> = vec![];
-        for c in self.below(cls) {
-            if let Some(m) = self.method_on(&c, &n.name).filter(|m| *m != n.id && !out.contains(m)) {
-                out.push(m);
+        for c in &below {
+            let Some(m) = self.method_on(c, &n.name).filter(|m| *m != n.id) else { continue };
+            let of = self.nodes.get(m.as_str()).and_then(|m| m.cls.as_deref()).unwrap_or_default();
+            let k = if of == cls || below.iter().any(|b| b == of) { m } else { key(&m, c) };
+            if !out.contains(&k) {
+                out.push(k);
             }
         }
         out
@@ -1015,13 +1084,15 @@ fn body_of(ix: &Ix, n: &Node, on: &str) -> Body {
                 match method {
                     // a `super()` call runs the next method after its class along the order of
                     // the value's; where that class is not known, along the order of each class it
-                    // may be, the class the call is written in or one below it
+                    // may be, the class the call is written in or one below it, on that class
                     Some(m) if !s.after.is_empty() && !runs_on.is_empty() => to = ix.method_after(runs_on, &s.after, &m.name).unwrap_or(to),
                     Some(m) if !s.after.is_empty() => {
                         to = ix.method_after(&s.after, &s.after, &m.name).unwrap_or(to);
                         for d in ix.below(&s.after) {
-                            if let Some(r) = ix.method_after(&d, &s.after, &m.name).filter(|r| *r != to && !instead.contains(r)) {
-                                instead.push(r);
+                            if let Some(r) = ix.method_after(&d, &s.after, &m.name).filter(|r| *r != to).map(|r| key(&r, &d)) {
+                                if !instead.contains(&r) {
+                                    instead.push(r);
+                                }
                             }
                         }
                     }
@@ -1070,9 +1141,9 @@ fn body_of(ix: &Ix, n: &Node, on: &str) -> Body {
     Body { alts, items: grouped(steps, &n.whens), made_from: vec![] }
 }
 
-/// The body of every function, and of every function on each class a step runs it on, by `key`:
-/// what a route through it runs, for whoever reads the route. A Makefile target runs the targets
-/// and commands its recipe names.
+/// The body of every function, and of every function on each class a step or what it may run
+/// instead runs it on, by `key`: what a route through it runs, for whoever reads the route. A
+/// Makefile target runs the targets and commands its recipe names.
 pub fn bodies(g: &Graph) -> BTreeMap<String, Body> {
     let ix = Ix::new(g);
     let mut out = BTreeMap::new();
@@ -1098,6 +1169,12 @@ pub fn bodies(g: &Graph) -> BTreeMap<String, Body> {
         let mut body = body_of(&ix, n, &on);
         for s in body.steps().into_iter().filter(|s| !s.on.is_empty()) {
             todo.push((s.to.clone(), s.on.clone()));
+        }
+        for k in body.alts.iter().chain(body.steps().into_iter().flat_map(|s| s.instead.iter())) {
+            let (to, on) = split(k);
+            if !on.is_empty() {
+                todo.push((to.to_string(), on.to_string()));
+            }
         }
         body.made_from = made_from(&ix, &body);
         if !body.is_empty() {
@@ -1268,6 +1345,39 @@ mod tests {
         nest(&mut sites, &HashMap::new(), &mut 0);
         drop_identities(&mut sites);
         assert_eq!(sites.iter().map(|s| s.to.as_str()).collect::<Vec<_>>(), ["detect"]);
+    }
+
+    /// An alternative is the method on the class that runs it (#155): in `cached_lines(source: Cached)` of the
+    /// cooperative pair a cached source may be a `Feed(Trimmed, Cached)`, which runs `Trimmed.read`, so the call may run
+    /// `Trimmed.read` on a feed, whose `super().read()` runs the next `read` along the feed's order: the clean side's
+    /// `Cached.read`, which reads the store; the shortcut's `Source.read(self)` names `Source.read`. A `super()` call on a
+    /// value whose class is not known may run the next method on each class the value may be: `Trimmed.read`'s
+    /// `super().read()` runs `Cached.read` on a feed.
+    #[test]
+    fn an_alternative_is_the_method_on_the_class_that_runs_it() {
+        let at = |side: &str| std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/cooperative/python").join(side);
+        let (trimmed, cached, source, feed) =
+            ("news.sources.Trimmed.read", "news.sources.Cached.read", "news.sources.Source.read", "news.sources.Feed");
+        for (side, next) in [("clean", cached), ("shortcut", source)] {
+            let g = crate::analyze(&at(side), &crate::Options::default()).expect("reads the pair");
+            let b = bodies(&g);
+            let call = &b["news.read.cached_lines"].steps()[0];
+            assert_eq!((call.to.as_str(), call.alts(&b)), (cached, [key(trimmed, feed)].as_slice()), "{side}");
+            let runs = call.runs_instead(&b);
+            assert_eq!((runs[0].to.as_str(), runs[0].on.as_str(), runs[0].named), (trimmed, feed, false), "{side}");
+            let on_feed: Vec<(&str, &str)> = b[&key(trimmed, feed)].steps().iter().map(|s| (s.to.as_str(), s.on.as_str())).collect();
+            assert_eq!(on_feed, [(next, feed)], "{side}");
+        }
+        let g = crate::analyze(&at("clean"), &crate::Options::default()).expect("reads the pair");
+        let b = bodies(&g);
+        let up = &b[trimmed].steps()[0];
+        assert_eq!((up.to.as_str(), up.instead.as_slice()), (source, [key(cached, feed)].as_slice()));
+        assert!(b.contains_key(&key(cached, feed)) && b[&key(cached, feed)].alts.is_empty(), "on a feed, nothing runs in its place");
+        // what a route does at a place is what its calls may run there: on a feed, `lines` reads the store in one arm
+        // and writes it in the other, the place as `lines` names it (the store from beyond, `self.root / key`)
+        assert_eq!(arrows(&g)["news.read.lines"].updates, ["w:Disk:self.root / key", "w:Disk:{cache}/{url}"]);
+        let g = crate::analyze(&at("shortcut"), &crate::Options::default()).expect("reads the pair");
+        assert!(arrows(&g)["news.read.lines"].updates.is_empty(), "the shortcut's lines never reads the store");
     }
 
     /// `board = copy.copy(board)` makes the board it is handed anew: a step, no identity.

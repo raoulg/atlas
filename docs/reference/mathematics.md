@@ -46,8 +46,10 @@ that reads it. A read is preceded by a write only when the write happens wheneve
 not in one branch of a choice the read is outside. Two arms of one choice never run one after the
 other: a place one arm writes and another reads finds what was there and is changed, in both. A
 loop runs its body again: a read in a loop finds what a later round writes over, whichever stands
-first in the loop. What a step a body calls finds there is what the body left, where the body wrote
-it before the call: the step changes nothing the body found. The
+first in the loop. A call that may run one of several bodies (the overrides of a call by name, the
+next method of a `super()` call) does at a place what one of them does, as the arms of a choice do.
+What a step a body calls finds there is what the body left, where the body wrote it before the call:
+the step changes nothing the body found. The
 route of a class is its doors, each called by the entry with no order between them: a place one door
 finds and changes, the route finds and changes. Making a place's shape (a directory, a table's
 schema) or testing it (whether a file is there, whether a value holds a key) puts and takes no
@@ -615,11 +617,14 @@ through a class (`C.f(x)`, `C.prototype.f.call(x)`) runs the `f` along `C`'s ord
 is handed first, and no override of it. A `super()` call written in `K` runs the next `f` after `K`
 along the order of the value's class, not of `K`: in `D(B, C)`, a `super().f()` in `B` runs `C.f` on
 a `D`. Where the value's class is not known, it may be `K` or any class below, and the call runs
-the next `f` after `K` along each of their orders: one of them. A call by name on a value whose class
-is not known may run, for each class the value may be (the class of the method it reaches or one below
-it), the `f` that class runs along its order: in `D(B, C)`, a call of `C.f` may run `B.f` on a `D`,
-though `B` is not below `C`. A call through a class, and a `super()` call on a value whose class is
-known, run the one their call names.
+the next `f` after `K` along each of their orders: one of them, on that class. A call by name on a value
+whose class is not known may run, for each class the value may be (the class of the method it reaches or
+one below it), the `f` that class runs along its order, on the values that run it: in `D(B, C)`, a call
+of `C.f` may run `B.f` on a `D`, though `B` is not below `C`, and there its `super().f()` runs `C.f`. The
+alternative is that method on that class, a body as any step on a known class runs it, named by the
+class it runs on (`D.f`); one of a class below the method's own runs on any value of its class, whose
+class is not known. A call through a class, and a `super()` call on a value whose class is known, run
+the one their call names.
 **Where.** `model::linearization`, `model::initializer_along`; `principles.rs` (`Index::mro`),
 `builder.rs` (`family`, `method_of`, `initializer_of`), `flow.rs` (`method_on`, `method_after`,
 `built_from`, `Step::named`, `Ix::overrides`).
