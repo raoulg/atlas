@@ -1507,7 +1507,11 @@ mod tests {
         let at = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/plans/next-method-on-a-class");
         let g = crate::analyze(&at, &crate::Options::default()).expect("reads the program");
         let run = &arrows(&g)["feeds.run"];
-        assert_eq!((run.reads_back.as_slice(), run.updates.as_slice()), (["w:File:data/log.txt".to_string()].as_slice(), [].as_slice()), "{run:?}");
+        assert_eq!(
+            (run.reads_back.as_slice(), run.updates.as_slice()),
+            (["w:File:data/log.txt".to_string()].as_slice(), [].as_slice()),
+            "{run:?}"
+        );
     }
 
     /// `board = copy.copy(board)` makes the board it is handed anew: a step, no identity.
