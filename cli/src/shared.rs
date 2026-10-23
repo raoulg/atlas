@@ -21,6 +21,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
+use atlas_engine::sight::Sight;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -88,17 +89,25 @@ pub fn set_shown(repo: &Path, shown: &Value) -> Result<()> {
     write(&file(repo, "shown.json"), shown)
 }
 
-/// Ask the page to go to `view`.
-pub fn look(repo: &Path, view: &Value) -> Result<()> {
-    write(&file(repo, "look.json"), view)
+/// Where an agent asks the page to look: a sight to go to, a box or a line to point at there (by its
+/// id, a line as `from>to`), or both.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct Look {
+    pub view: Option<Sight>,
+    pub at: Option<String>,
 }
 
-/// The view an agent asked for, taken once.
-pub fn take_look(repo: &Path) -> Option<Value> {
+/// Ask the page to look where `look` says.
+pub fn look(repo: &Path, look: &Look) -> Result<()> {
+    write(&file(repo, "look.json"), look)
+}
+
+/// Where an agent asked the page to look, taken once.
+pub fn take_look(repo: &Path) -> Option<Look> {
     let path = file(repo, "look.json");
-    let view = read(&path)?;
+    let look = read(&path).and_then(|v| serde_json::from_value(v).ok());
     std::fs::remove_file(&path).ok()?;
-    Some(view)
+    look
 }
 
 pub fn notes(repo: &Path) -> Vec<Note> {

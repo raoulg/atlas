@@ -556,22 +556,23 @@ fn rust_workspace_parses() {
     assert!(inh.contains(&("atlas-engine.view.Fiber".into(), "atlas-engine.view.View".into())), "impl View for Fiber");
     let calls = edges(&g, EdgeKind::Calls);
     assert!(calls.contains(&("atlas.main".into(), "atlas.view".into())));
-    assert!(calls.contains(&("atlas.view".into(), "atlas.page.page".into())), "the command writes the page");
-    // the page reads the repository (one reading, or two as one) and draws what it read
-    assert!(
-        calls.contains(&("atlas.page.page".into(), "atlas.page.reading".into()))
-            && calls.contains(&("atlas.page.page".into(), "atlas.page.viewer".into())),
-        "the command reads, then draws"
-    );
+    // the command reads the repository (one reading, or two as one), asks the principles of what it
+    // read, draws it as one graph, takes its flow, and makes the page of those and writes it
+    for step in
+        ["atlas.page.reading", "atlas.page.Reading.findings", "atlas.page.Reading.drawn", "atlas-engine.flow.of", "atlas.page.Html.of"]
+    {
+        assert!(calls.contains(&("atlas.view".into(), step.into())), "the command runs {step}: Graph -> (Flow, Findings) -> Html");
+    }
+    assert!(calls.contains(&("atlas.view".into(), "atlas.page.Html.write".into())), "the command writes the page");
     assert!(
         calls.contains(&("atlas.page.reading".into(), "atlas-engine.parts.analyze_parts".into()))
-            && calls.contains(&("atlas.page.single".into(), "atlas-engine.parts.merged".into())),
+            && calls.contains(&("atlas.page.Reading.drawn".into(), "atlas-engine.parts.merged".into())),
         "cli calls into the engine"
     );
-    assert!(calls.contains(&("atlas.page.union".into(), "atlas-engine.diff.union".into())), "two readings are one graph, their union");
+    assert!(calls.contains(&("atlas.page.Reading.findings".into(), "atlas-engine.principles.check".into())), "each part is checked");
     assert!(
-        calls.contains(&("atlas.page.viewer".into(), "atlas-engine.flow.of".into())),
-        "the page is drawn from the Flow: Graph -> Flow -> File(html)"
+        calls.contains(&("atlas.page.Reading.drawn".into(), "atlas-engine.diff.union".into())),
+        "two readings are one graph, their union"
     );
     assert!(
         calls.contains(&("atlas-engine.parts.analyze_parts".into(), "atlas-engine.parts.graph_of".into())),
