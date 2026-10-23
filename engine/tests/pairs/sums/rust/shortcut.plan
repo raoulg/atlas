@@ -40,21 +40,21 @@ line _·text@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/read_to_string > 
 line Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push_str > _·text@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push_str value
 line _·text@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push_str > Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push value
 line Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push > _·text@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push value
-known #125 line _·text@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push > Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write value                    # fs::write in write's own body writes it
+line _·text@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push > Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write value   # fs::write in write's own body writes it
 home _·text@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/read_to_string Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write
 home _·text@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push_str Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write
 home _·text@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write
 
 # the io::Error, a value of no type of the code's: `read_to_string` makes it in write, and fs::write in write's own body;
 # `?` is no choice, and each border it crosses uncaught hands it on, up to the caller of the door
-known #138 line Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/read_to_string > _@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/read_to_string value
+line Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/read_to_string > _@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/read_to_string value
 known #138 line _@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/read_to_string > Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write value
-known #138 line Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write > _@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write value
+line Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write > _@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write value
 known #138 line _@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write > Kennisbank()/Kennisbank.voeg_toe value
 known #138 line Kennisbank()/Kennisbank.voeg_toe > _@Kennisbank()/Kennisbank.voeg_toe value
 known #138 line Kennisbank()/Kennisbank.graaf > _@Kennisbank()/Kennisbank.graaf value                                  # its read, `?`-propagated
-known #138 home _@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/read_to_string Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write
-known #138 home _@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write Kennisbank()/Kennisbank.voeg_toe
+home _@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/read_to_string Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write
+home _@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write Kennisbank()/Kennisbank.voeg_toe
 known #138 home _@Kennisbank()/Kennisbank.voeg_toe Kennisbank()
 known #138 home _@Kennisbank()/Kennisbank.graaf Kennisbank()
 

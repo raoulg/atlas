@@ -40,4 +40,4 @@ known #125 home Log·log@run/note_shared/push run/note_shared
 known #125 extra line Log·shared@run/Log()#2 > run/note_shared value
 
 # `run` reads the lines of the log `note` changed
-known #101 line Log·log@run/note > run value
+line Log·log@run/note > run value

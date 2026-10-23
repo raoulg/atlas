@@ -13,8 +13,8 @@ line run/load > run back                       # the note, a str
 line run > Screen own
 line run/save/open > TextIOWrapper·f@run/save/open value
 line run/load/open > TextIOWrapper·f@run/load/open value
-known #101 line TextIOWrapper·f@run/save/open > run/save value   # `f.write(..)`
-known #101 line TextIOWrapper·f@run/load/open > run/load value   # `f.read()`
+line TextIOWrapper·f@run/save/open > run/save value   # `f.write(..)`
+line TextIOWrapper·f@run/load/open > run/load value   # `f.read()`
 home TextIOWrapper·f@run/save/open run/save
 home TextIOWrapper·f@run/load/open run/load
 

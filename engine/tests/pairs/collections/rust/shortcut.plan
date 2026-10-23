@@ -34,7 +34,7 @@ line Row@Store()/Store.put/Row() > Store()/Store.put/push value
 line Store()/Store.put/push > Row·rows@Store()/Store.put/push value  # the rows made anew
 line Row·rows@Store()/Store.put/push > Store()/Store.put/write_rows/collect value
 line Store()/Store.put/write_rows/collect > _·lines@Store()/Store.put/write_rows/collect value
-known #101 line _·lines@Store()/Store.put/write_rows/collect > Store()/Store.put/write_rows value  # fs::write takes the lines joined
+line _·lines@Store()/Store.put/write_rows/collect > Store()/Store.put/write_rows value   # fs::write takes the lines joined
 line Store > Store()/Store.put/write_rows value # K: `write_rows(self.path, rows)` hands `self`
 line Store()/Store.put/write_rows > Disk(Store.path) own
 step Store()/Store.put_all
@@ -59,7 +59,7 @@ line Row@Store()/Store.put_all/Row() > Store()/Store.put_all/push value
 line Store()/Store.put_all/push > Row·rows@Store()/Store.put_all/push value  # the rows made anew
 line Row·rows@Store()/Store.put_all/push > Store()/Store.put_all/write_rows/collect value
 line Store()/Store.put_all/write_rows/collect > _·lines@Store()/Store.put_all/write_rows/collect value
-known #101 line _·lines@Store()/Store.put_all/write_rows/collect > Store()/Store.put_all/write_rows value  # fs::write takes the lines joined
+line _·lines@Store()/Store.put_all/write_rows/collect > Store()/Store.put_all/write_rows value   # fs::write takes the lines joined
 line Store > Store()/Store.put_all/write_rows value # K: `write_rows(self.path, rows)` hands `self`
 line Store()/Store.put_all/write_rows > Disk(Store.path) own
 step Store()/Store.get
@@ -90,10 +90,24 @@ line Reading·reading@Store()/Store.put_all/for reading in readings > Store()/St
 line Reading·readings > Store()/Store.put_all/for reading in readings value
 line Store()/Store.put_all/for reading in readings > Reading·reading@Store()/Store.put_all/for reading in readings value
 step Store()/Store.put_all/for reading in readings
+
+# An error is a value (#138): `?` hands on what a step fails with, converted to the function's error type, here no type
+# of the code's (`io::Error`, `rusqlite::Error`); each border it crosses uncaught hands it on. An opened step takes what
+# its steps hand on, which Atlas does not draw for an error of no type of the code's.
+line Store()/Store.put > _@Store()/Store.put value
+line Store()/Store.put/Store.rows > _@Store()/Store.put/Store.rows value
+line Store()/Store.put_all > _@Store()/Store.put_all value
+line Store()/Store.put_all/Store.rows > _@Store()/Store.put_all/Store.rows value
+known #138 line _@Store()/Store.put/Store.rows > Store()/Store.put value
+known #138 line _@Store()/Store.put_all/Store.rows > Store()/Store.put_all value
+home _@Store()/Store.put Store()
+home _@Store()/Store.put/Store.rows Store()/Store.put
+home _@Store()/Store.put_all Store()
+home _@Store()/Store.put_all/Store.rows Store()/Store.put_all
+
 side entry left
 side Disk(Store.path) both
 
 # What Atlas gets wrong here, each by the issue of its cause:
-# #101: a value made in the body and used by the body's own calls has no taker
 # K: a value handed through a field reaches no step inside: `write_rows(self.path, rows)` hands `self` (#121, decision
 #    1), and the helper takes no Store

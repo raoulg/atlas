@@ -71,12 +71,12 @@ line Board·board@main/Board.reset > main/renamed/copy value
 line main/renamed/copy > Board·board@main/renamed/copy value
 line Board·board@main/renamed/copy > main/renamed value
 line main/extended/append > _·xs@main/extended/append value
-known #129 line _·xs@main/extended/append > main/extended value   # the own arrow hands back what the change made
+line _·xs@main/extended/append > main/extended value   # the own arrow hands back what the change made
 line main/queued/list > _·jobs@main/queued/list value
 step main/queued/heappush                                   # `heapq.heappush(jobs, job)` changes the list it is handed
 line _·jobs@main/queued/list > main/queued/heappush value
 line main/queued/heappush > _·jobs@main/queued/heappush value
-known #129 line _·jobs@main/queued/heappush > main/queued value   # the own arrow hands back what the change made
+line _·jobs@main/queued/heappush > main/queued value   # the own arrow hands back what the change made
 home Board·self@main/Board.reset/clear main/Board.reset
 home Board·self@main/Board.reset/clear#2 main/Board.reset
 home Board·board@main/renamed/copy main/renamed
@@ -93,4 +93,4 @@ line Board·board@main/Board.reset > main/Board.merged/Board() value
 # The loop over `self.cells` goes over the board the method runs on, and `cell.marked = True` is the body's own use of
 # each cell: the board reaches the loop through `self`
 line Board·board@main/Board() > main/Board.mark_all/for cell in self.cells value
-known #101 line Cell·cell@main/Board.mark_all/for cell in self.cells > main/Board.mark_all value
+line Cell·cell@main/Board.mark_all/for cell in self.cells > main/Board.mark_all value

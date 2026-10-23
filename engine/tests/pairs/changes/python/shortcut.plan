@@ -81,11 +81,11 @@ step main/add_tag/append
 line Board·other@main/Board()#2 > main/Board.take_from/extend value
 line Board·board@main/reset > main/Board.take_from/extend value
 line main/Board.take_from/extend > Board·self@main/Board.take_from/extend value
-known #129 line Board·self@main/Board.take_from/extend > main/Board.take_from value
+line Board·self@main/Board.take_from/extend > main/Board.take_from value
 line Board·other@main/Board.take_from > main/Board.take_victim/extend value
 known #129 line Board·board@main/Board.take_from > main/Board.take_victim/extend value
 line main/Board.take_victim/extend > Board·self@main/Board.take_victim/extend value
-known #129 line Board·self@main/Board.take_victim/extend > main/Board.take_victim value
+line Board·self@main/Board.take_victim/extend > main/Board.take_victim value
 line main/add_tag/append > _·tags@main/add_tag/append value
 known #129 line _·tags@main/add_tag/append > main/add_tag value   # the own arrow hands on what the change made
 home Board·self@main/Board.take_from/extend main/Board.take_from
@@ -143,18 +143,17 @@ line main/rename > main back
 line main/extend > main back
 known #129 extra line Board·other@main/rename > main value
 
-# `main` reads the lengths of the list and dicts its steps changed
-known #101 line list·tags@main/add_tag > main value
-known #101 line dict·counts@main/count > main value
-known #101 line list·jobs@main/queue > main value
+# `main` reads the lengths of the list and dicts its steps changed: the reader gives the use (#101), the values it uses
+# wait on the changes being values (#129)
+known #129 line list·tags@main/add_tag > main value
+known #129 line dict·counts@main/count > main value
+known #129 line list·jobs@main/queue > main value
 
 # `cell.marked = True` is the body's own use of each cell the loop gives; the own arrow takes the board the loop goes
 # over instead
-known #101 line Cell·cell@main/mark_all/for cell in board.cells > main/mark_all value
+line Cell·cell@main/mark_all/for cell in board.cells > main/mark_all value
 
 # a result the caller drops goes back to it: the reader does not say the call is a statement of its own
-known #134 extra line main/Board.take_from > main back
-known #134 extra line main/Board.take_victim > main back
 
 # take_victim's victim is the board the call hands, stale (#129); its own arrow takes the receiver that extend, no step yet, runs on (#125)
 known #129 extra line Board·board@main/reset > main/Board.take_victim/clear value

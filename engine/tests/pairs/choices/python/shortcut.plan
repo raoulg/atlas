@@ -31,7 +31,7 @@ line Job@run/?1/infer/Job() > run/?1/infer value
 line run/?1/infer > Job·job@run/?1 value
 line Settings·settings > run/finished value                       # its mode, a str, held by finished's `mode`
 line Job·job@run/?1 > run/finished value                          # finished counts its steps
-known #101 line Job·job@run/?1 > run value                        # run writes its name into the text
+line Job·job@run/?1 > run value   # run writes its name into the text
 
 # whether it finished
 line run/finished/Runner() > Runner@run/finished/Runner() value

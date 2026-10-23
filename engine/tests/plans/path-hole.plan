@@ -7,7 +7,7 @@ line entry > run call
 line File(*/report.txt) > run own
 line run > Screen own
 line run/Path > _·root@run/Path value
-known #101 line _·root@run/Path > run value                 # `(root / "report.txt").read_text()`
+line _·root@run/Path > run value   # `(root / "report.txt").read_text()`
 home _·root@run/Path run
 
 side entry left

@@ -1,17 +1,35 @@
 # Morphisms are functions: a type no arrow gives is no type of the route. The shortcut asserts the type
 # (`JSON.parse(..) as Config`): no step makes a Config, and the route reads its file and hands on what it parsed.
 
+# An error a call into a family hands on is made inside the step, at the moment of the choice it is, and its border hands
+# on a value of its own (#138): the pictures put the inner one in the frame around the step, and opening the step draws
+# a line the closed one did not
+known #138 fault /RateSource.latest/? stands in
+known #138 fault >t:ext:javascript.Error@n:
+
 route expenses.config.loadConfig
 step loadConfig/parse                                                    # const config = JSON.parse(..) as Config
 
 line entry > loadConfig call
 line Disk(loadConfig.file) > loadConfig own
 line loadConfig/parse > _·config@loadConfig/parse value                  # what JSON.parse gives has no type
-known #101 line _·config@loadConfig/parse > loadConfig value             # loadConfig checks config.currency and returns it
+line _·config@loadConfig/parse > loadConfig value   # loadConfig checks config.currency and returns it
 line loadConfig > Config@loadConfig value                                # the Config the signature promises, made by no step
 
 home _·config@loadConfig/parse loadConfig
 home Config@loadConfig loadConfig
+
+# An error is a value (#138): the check `throw`s one in its arm, and the route's border hands it on
+choice loadConfig/?1                                                     # if (!config.currency) throw ..
+step loadConfig/?1/Error()
+known #138 line loadConfig/?1/Error() > Error@loadConfig/?1 value
+known #138 line Error@loadConfig/?1 > loadConfig value
+known #138 home Error@loadConfig/?1 loadConfig
+line loadConfig > Error@loadConfig value
+home Error@loadConfig loadConfig
+known #138 extra line loadConfig/?1/Error() > Error@loadConfig/?1/Error() value   # the constructor's moment, not the choice's
+known #138 extra line Error@loadConfig/?1/Error() > loadConfig value
+known #138 extra home Error@loadConfig/?1/Error() loadConfig
 
 side entry left
 side Disk(loadConfig.file) left

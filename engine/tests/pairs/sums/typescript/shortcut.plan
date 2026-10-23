@@ -32,9 +32,9 @@ step Kennisbank()/Kennisbank.graaf/split
 line Kennisbank()/Kennisbank.graaf/split > _·uuid@Kennisbank()/Kennisbank.graaf/split value
 line Kennisbank()/Kennisbank.graaf/split > _·soort@Kennisbank()/Kennisbank.graaf/split value
 line Kennisbank()/Kennisbank.graaf/split > _·tekst@Kennisbank()/Kennisbank.graaf/split value
-known #101 line _·uuid@Kennisbank()/Kennisbank.graaf/split > Kennisbank()/Kennisbank.graaf value
-known #101 line _·soort@Kennisbank()/Kennisbank.graaf/split > Kennisbank()/Kennisbank.graaf value
-known #101 line _·tekst@Kennisbank()/Kennisbank.graaf/split > Kennisbank()/Kennisbank.graaf value
+line _·uuid@Kennisbank()/Kennisbank.graaf/split > Kennisbank()/Kennisbank.graaf value
+line _·soort@Kennisbank()/Kennisbank.graaf/split > Kennisbank()/Kennisbank.graaf value
+line _·tekst@Kennisbank()/Kennisbank.graaf/split > Kennisbank()/Kennisbank.graaf value
 home _·uuid@Kennisbank()/Kennisbank.graaf/split Kennisbank()/Kennisbank.graaf
 home _·soort@Kennisbank()/Kennisbank.graaf/split Kennisbank()/Kennisbank.graaf
 home _·tekst@Kennisbank()/Kennisbank.graaf/split Kennisbank()/Kennisbank.graaf

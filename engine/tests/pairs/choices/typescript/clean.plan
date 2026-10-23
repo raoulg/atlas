@@ -39,7 +39,7 @@ line Job·job@run/source > run/report/?1/Report.line value           # its name,
 line Job·job@run/source > run/report/?1/Message()#2 value           # its name, unmarked
 
 # whether it finished: a Runner for the mode, and the mode's timeout
-known #126 line Settings·settings > run/finished value # finished looks up the mode's plan itself
+line Settings·settings > run/finished value   # finished looks up the mode's plan itself
 line Settings·settings > run/finished/Runner() value
 line run/finished/Runner() > Runner@run/finished/Runner() value
 line Runner@run/finished/Runner() > run/finished/Runner.batch value

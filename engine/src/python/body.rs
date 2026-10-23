@@ -933,6 +933,8 @@ pub(super) fn link_calls<'t>(
             b.call(&mut steps, c);
             steps.mark(c, b.read.touches[t..].iter_mut().chain(b.read.waiting[w..].iter_mut().map(|(t, _)| t)));
         }
+        let kept = steps.kept.clone();
+        steps.uses(&|n| if b.holds(n) { b.seen.held_in(n, b.ext, &kept) } else { vec![] });
         b.class_state(&mut steps);
         b.ends();
         b.read
@@ -1221,6 +1223,18 @@ impl<'a, 't> Body<'a, 't> {
         gives
     }
 
+    /// The library's class of the error a call builds, as ty says it: `ext:builtins.RuntimeError`.
+    fn raised_class(&self, c: TsNode) -> Option<String> {
+        let v = self.seen.value(c)?;
+        v.classes.iter().zip(&v.names).find_map(|(t, name)| match t {
+            Target::Lib(module) => {
+                let pkg = package_of(module);
+                Some(self.ext.get(&(pkg.clone(), name.clone())).cloned().unwrap_or_else(|| format!("ext:{pkg}.{name}")))
+            }
+            Target::Here { .. } => None,
+        })
+    }
+
     /// The values a class keeps that the body changes by assignment: `Counter.total += 1`,
     /// `cls.handlers[name] = fn`. An attribute of a class is no place Atlas draws, so what the
     /// change leaves behind it does not see.
@@ -1300,6 +1314,11 @@ impl<'a, 't> Body<'a, 't> {
                             _ => Some(text(fnode, self.src).rsplit('.').next().unwrap_or("").to_string()),
                         };
                         steps.op(c, &op.unwrap_or_default(), hands, gives);
+                    } else if let Some(class) = steps.raised(c).then(|| self.raised_class(c)).flatten() {
+                        // the error the body raises is a step of its class, whatever library the class is of
+                        self.read.new_ext.push(class.clone());
+                        let op = format!("{}()", class.rsplit('.').next().unwrap_or(""));
+                        steps.op(c, &op, hands, vec![Held::new(class, "")]);
                     }
                     knowledge::PYTHON_OWN.contains(&lib.as_str())
                 };
@@ -1998,7 +2017,70 @@ const USES: UseSyntax = UseSyntax {
     splits: |n, child| n.kind() == "match_statement" && n.child_by_field_name("subject").map(|v| v.id()) == Some(child.id()),
     names: &["identifier"],
     keeps: &["attribute", "subscript"],
+    wrappers: WRAPPERS,
+    drops: |n, child, _| {
+        n.kind() == "expression_statement" && n.named_child_count() == 1 && n.named_child(0).map(|c| c.id()) == Some(child.id())
+    },
+    nested: &["function_definition", "class_definition", "decorated_definition"],
+    reads: &[],
+    label: |n, _| {
+        n.parent().is_some_and(|p| {
+            let is = |f: &str| p.child_by_field_name(f).is_some_and(|x| x.id() == n.id());
+            (p.kind() == "attribute" && is("attribute")) || (p.kind() == "keyword_argument" && is("name"))
+        })
+    },
+    binders: |n, child| {
+        let is = |f: &str| n.child_by_field_name(f).is_some_and(|x| x.id() == child.id());
+        match n.kind() {
+            "lambda" | "lambda_within_for_in_clause" if is("parameters") => Some(true),
+            "case_clause" if child.kind() == "case_pattern" => Some(false),
+            "for_in_clause" if is("left") => Some(false),
+            "except_clause" if is("alias") => Some(false),
+            "global_statement" | "nonlocal_statement" | "import_statement" | "import_from_statement" => Some(false),
+            _ => None,
+        }
+    },
+    // `x += v` reads `x`; `with X as x:` enters and leaves what it binds
+    updates: &["augmented_assignment", "as_pattern"],
+    parts: |n, child| n.kind() == "for_in_clause" && field_children(n, "right").iter().any(|r| r.id() == child.id()),
+    raises: |n, child, _| n.kind() == "raise_statement" && n.named_child(0).map(|c| c.id()) == Some(child.id()),
+    errs: |_, _, _| false,
+    tails: &[],
+    propagates: None,
+    catches: handlers,
 };
+
+/// What the handlers of a `try` catch, where `child` is its body: the classes each `except` names
+/// (`except (A, B)`), none where one catches whatever is raised: a bare `except:`, and one that names
+/// a class every error is of (`Exception`, `BaseException`).
+fn handlers(n: TsNode, child: TsNode, src: &[u8]) -> Option<Vec<String>> {
+    if n.kind() != "try_statement" || n.child_by_field_name("body").map(|b| b.id()) != Some(child.id()) {
+        return None;
+    }
+    let clauses: Vec<TsNode> = named_children(n).into_iter().filter(|c| c.kind() == "except_clause").collect();
+    if clauses.is_empty() {
+        return None;
+    }
+    let mut names = vec![];
+    for c in clauses {
+        let values = field_children(c, "value");
+        if values.is_empty() {
+            return Some(vec![]);
+        }
+        for v in
+            values
+                .into_iter()
+                .flat_map(|v| if matches!(v.kind(), "tuple" | "parenthesized_expression") { named_children(v) } else { vec![v] })
+        {
+            let name = text(v, src);
+            if matches!(name.rsplit('.').next(), Some("Exception" | "BaseException")) {
+                return Some(vec![]);
+            }
+            names.push(name.to_string());
+        }
+    }
+    Some(names)
+}
 
 /// Python's comparisons: `==`, `!=`, `is`, `is not`, `in` and `not in` against strings or the
 /// members of a class (`Mode.FAST`), and a `match` over them.

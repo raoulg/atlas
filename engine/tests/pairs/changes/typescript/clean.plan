@@ -70,13 +70,11 @@ line _·out@main/counted/Map() > main/counted/set value
 home _·out@main/counted/Map() main/counted
 
 # A result the caller drops (`void remove(..)`) goes back to it
-known #134 extra line main/remove > main back
 
 # The own arrow takes a value its body only hands to a step inside it: the expense `refiled` gives, handed to `add`
 known #126 extra line Expense@main/refiled > main value
 
 # `counted` hands back the Map its `set` made anew
-known #101 line _·out@main/counted/set > main/counted value
+line _·out@main/counted/set > main/counted value
 
 # a result the caller drops goes back to it: the reader does not say the call is a statement of its own
-known #134 extra line main/Ledger.add > main back

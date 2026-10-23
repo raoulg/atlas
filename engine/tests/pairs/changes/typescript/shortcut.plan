@@ -67,7 +67,7 @@ known #129 home Ledger·this@main/Ledger.takeVictim/this.rows.push main/Ledger.t
 known #129 extra line Ledger·ledger@main/Ledger() > main/Ledger.takeFrom value
 
 # The own arrow drops a value its own body reads when a step inside takes it too: `takeFrom` empties `other.rows` itself
-known #126 line Ledger·other@main/Ledger()#2 > main/Ledger.takeFrom value
+line Ledger·other@main/Ledger()#2 > main/Ledger.takeFrom value
 
 # A changed argument is not the caller's value at a new moment: the ledger handed to `takeFrom` is changed in no value,
 # so `takeVictim` takes it stale; a changed array or Map has no name, and is not what the inner change made
@@ -99,8 +99,8 @@ line main/rename > main back
 # The own arrow takes a value its body only hands to a step inside it: the ledger whose rows go to `fileAll`
 
 # `main` reads the length of the array and the size of the Map its steps changed
-known #101 line Array·lines@main/addLine > main value
-known #101 line Map·m@main/count > main value
+known #129 line Array·lines@main/addLine > main value   # the reader gives the use (#101); the value it uses waits on #129
+known #129 line Map·m@main/count > main value
 
 # The loop goes over the ledger `fileAll` is handed through its rows: its parameter `expenses` holds that projection.
 # `rename` is handed an object literal, which builds no Expense yet (#154)
@@ -108,9 +108,9 @@ line Ledger·ledger@main/Ledger.takeVictim > main/fileAll/for e of expenses valu
 known #154 home Expense main
 
 # a result the caller drops goes back to it: the reader does not say the call is a statement of its own
-known #134 extra line main/Ledger.takeFrom > main back
-known #134 extra line main/Ledger.takeVictim > main back
 
 # the push is handed the victim the call hands, stale (#129), and not this (#128): the own arrow takes this itself
 known #129 extra line Ledger·other@main/Ledger()#2 > main/Ledger.takeVictim/this.rows.push value
+known #129 extra line Ledger·other@main/Ledger()#2 > main/Ledger.takeVictim value   # takeVictim empties `victim.rows` itself, the stale ledger
+known #129 extra line _·m@main/Map() > main value                     # `m.size` reads the Map before `count`, as the change made no value
 known #128 extra line Ledger·ledger@main/Ledger.takeFrom > main/Ledger.takeVictim value
