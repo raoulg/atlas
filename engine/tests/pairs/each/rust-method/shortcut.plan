@@ -1,0 +1,37 @@
+# The same drawing, where each place is pushed onto a list the body changes. A loop is a step: it takes what it goes
+# over and gives each element under the name it binds, so the node and the touch are values the body makes, `Node·n`
+# from the graph and `Touch·t` from the node, and `t.drawn()` on the loop's `t` is `Touch::drawn`, as on the closure's
+# (#170). `out.push(..)` makes the list anew from the Where it is handed; the list starts as `vec![]`, which no step
+# makes, so the push takes no list, and the body gives back what the push made.
+
+route drawing.drawn
+step drawn/for n in &g.nodes
+step drawn/for t in n.touches.iter().chain(&n.instead)
+step drawn/Touch.drawn
+step drawn/Touch.drawn/Where()
+step drawn/push                                                # `out.push(t.drawn())`
+
+line entry > drawn call
+line Graph·g > drawn value                                    # the route's own parameter, from its start
+line Graph·g > drawn/for n in &g.nodes value
+line drawn/for n in &g.nodes > Node·n@drawn/for n in &g.nodes value
+line Node·n@drawn/for n in &g.nodes > drawn/for t in n.touches.iter().chain(&n.instead) value
+line drawn/for t in n.touches.iter().chain(&n.instead) > Touch·t@drawn/for t in n.touches.iter().chain(&n.instead) value
+line Touch·t@drawn/for t in n.touches.iter().chain(&n.instead) > drawn/Touch.drawn/Where() value   # `self.op`
+line drawn/Touch.drawn/Where() > Where@drawn/Touch.drawn/Where() value
+line Where@drawn/Touch.drawn/Where() > drawn/Touch.drawn value
+line drawn/Touch.drawn > Where@drawn/Touch.drawn value
+line Where@drawn/Touch.drawn > drawn/push value
+line drawn/push > Where·out@drawn/push value
+line Where·out@drawn/push > drawn value                       # given back
+line drawn > Where@drawn value                                # and given, at the route's moment
+
+home Graph·g drawn
+home Where@drawn drawn
+home Node·n@drawn/for n in &g.nodes drawn
+home Touch·t@drawn/for t in n.touches.iter().chain(&n.instead) drawn
+home Where@drawn/Touch.drawn/Where() drawn/Touch.drawn
+home Where@drawn/Touch.drawn drawn
+home Where·out@drawn/push drawn
+
+side entry left

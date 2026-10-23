@@ -303,8 +303,19 @@ fn opened<'t>(v: TsNode<'t>, src: &[u8]) -> TsNode<'t> {
 /// elements of what it is handed (`a.iter().chain(&b)`), an element is a part of either: `a`, then
 /// `b`. None for a method that hands no element, or a value no name holds.
 fn each_of<'t>(call: TsNode<'t>, src: &[u8]) -> Vec<TsNode<'t>> {
-    let on = method_on(call, src).filter(|(m, _)| knowledge::RUST_EACH.contains(m)).map(|(_, v)| v);
+    let on = method_on(call, src).filter(|(m, _)| knowledge::rust_element(m).is_some()).map(|(_, v)| v);
     on.map_or(vec![], |on| elements_of(on, src))
+}
+
+/// The parameters of a closure that a method hands each element of what it runs on (`knowledge::RUST_EACH`), each
+/// with the value the method runs on: `t` and `n.touches.iter()` of `n.touches.iter().map(|t| t.drawn())`, `x` and
+/// not `n` of `xs.iter().fold(0, |n, x| ..)`, whose first is what it gathers. A parameter that writes its type
+/// (`|t: &Touch|`) is given as the `parameter` it is.
+fn element_parameters<'t>(closure: TsNode<'t>, src: &[u8]) -> Vec<(TsNode<'t>, TsNode<'t>)> {
+    let Some(call) = closure.parent().filter(|a| a.kind() == "arguments").and_then(|a| a.parent()) else { return vec![] };
+    let Some((at, on)) = method_on(call, src).and_then(|(m, v)| Some((knowledge::rust_element(m)?, v))) else { return vec![] };
+    let params = closure.child_by_field_name("parameters").map(named_children).unwrap_or_default();
+    params.into_iter().filter(|p| !p.kind().ends_with("comment")).skip(at as usize).map(|p| (p, on)).collect()
 }
 
 /// The method a call makes on a value, by its name, and the value: `map` and `xs.iter()` of
@@ -1020,8 +1031,9 @@ impl<'a, 't> Body<'a, 't> {
             let Some(call) = c.parent().filter(|a| a.kind() == "arguments").and_then(|a| a.parent()) else { continue };
             // a name holds one value: where the elements are parts of two (`a.iter().chain(&b)`), the closure's names hold
             // a value the body binds out of sight
-            let (&[held], Some(params)) = (each_of(call, src).as_slice(), c.child_by_field_name("parameters")) else { continue };
-            for name in bound_names(params, src) {
+            let &[held] = each_of(call, src).as_slice() else { continue };
+            // the parameters the elements fill: not what a `fold` gathers
+            for name in element_parameters(c, src).into_iter().flat_map(|(p, _)| bound_names(p, src)) {
                 if let Some((from, to)) = scope(name) {
                     self.aliases.bind(text(name, src), from, to, (text(held, src).to_string(), held.start_byte()));
                 }
@@ -1113,7 +1125,11 @@ impl<'a, 't> Body<'a, 't> {
 
     /// A loop variable over a sequence the body names (`for r in readings`, `&readings`,
     /// `readings.iter()`) is an element of it, of the class the sequence's written type holds
-    /// (`readings: &[Reading]`, `let rows: Vec<Row>`).
+    /// (`readings: &[Reading]`, `let rows: Vec<Row>`, a field `g.nodes`, `self.rows`). So is a
+    /// parameter of a closure a method hands each element of what it runs on, as a loop binds it
+    /// (`n.touches.iter().map(|t| t.drawn())` as `for t in &n.touches`), or what an `Option` holds
+    /// (`self.cache.map(|c| ..)`); one that writes its type is of that type (`|t: &Touch|`). They are
+    /// read outer before inner, so that a closure inside another knows what the outer one is handed.
     fn loops(&mut self, d: TsNode<'t>, body: TsNode<'t>) {
         let src = self.src;
         let mut written: Bindings<String> = Bindings::default();
@@ -1128,26 +1144,43 @@ impl<'a, 't> Body<'a, 't> {
                 written.bind(text(pat, src).trim_start_matches("mut "), from, to, text(t, src).to_string());
             }
         }
-        let sequence = |t: &str| {
+        // a sequence's type, or for a closure an `Option`'s, which hands it what it holds
+        let holds = |t: &str, closure: bool| {
             let head = t.trim_start_matches('&').trim_start_matches("mut ").trim();
-            head.starts_with('[')
-                || knowledge::RUST_SEQUENCES.contains(&head.split('<').next().unwrap_or("").rsplit("::").next().unwrap_or(""))
+            let name = head.split('<').next().unwrap_or("").rsplit("::").next().unwrap_or("");
+            head.starts_with('[') || knowledge::RUST_SEQUENCES.contains(&name) || (closure && name == "Option")
         };
-        for (pat, value) in self.iterations(body) {
+        let closures =
+            walk(body, &["closure_expression"]).into_iter().flat_map(|c| element_parameters(c, src)).map(|(p, on)| (p, on, true));
+        let mut binders: Vec<(TsNode, TsNode, bool)> =
+            self.iterations(body).into_iter().map(|(p, v)| (p, v, false)).chain(closures).collect();
+        binders.sort_by_key(|(p, _, _)| p.start_byte());
+        for (pat, value, closure) in binders {
+            let (pat, declared) = match pat.kind() {
+                "parameter" => match pat.child_by_field_name("pattern") {
+                    Some(p) => (p, pat.child_by_field_name("type")),
+                    None => continue,
+                },
+                _ => (pat, None),
+            };
             if !matches!(pat.kind(), "identifier" | "mut_pattern" | "reference_pattern") {
                 continue;
             }
             let name = bound_name(pat, src).to_string();
             let Some((from, to)) = scope(pat) else { continue };
             let element = match self.sequence(value) {
+                _ if declared.is_some() => type_names(declared, src).iter().find_map(|t| self.resolve(t).and_then(|r| self.class_of(&r))),
                 // a sequence the body names, as its type is written (`readings: &[Reading]`)
                 Some(s) if s.kind() == "identifier" => {
                     let (name, at) = (text(s, src), s.start_byte());
-                    written.get(name, at).filter(|t| sequence(t)).and_then(|_| self.locals.get(name, at).cloned())
+                    written.get(name, at).filter(|t| holds(t, closure)).and_then(|_| self.locals.get(name, at).cloned())
                 }
-                // a field of a value of the program's struct (`g.nodes`): the class its type names
+                // a field of a value of the program's struct (`g.nodes`, `self.rows`): the class its type names
                 Some(s) if s.kind() == "field_expression" => {
-                    let owner = s.child_by_field_name("value").and_then(|o| self.locals.get(text(o, src), o.start_byte()).cloned());
+                    let owner = s.child_by_field_name("value").and_then(|o| match o.kind() {
+                        "self" => self.cls.clone(),
+                        _ => self.locals.get(text(o, src), o.start_byte()).cloned(),
+                    });
                     let field = s.child_by_field_name("field").map(|f| text(f, src)).unwrap_or("");
                     let named = owner
                         .and_then(|c| self.store.classes.get(&c))
@@ -1172,7 +1205,9 @@ impl<'a, 't> Body<'a, 't> {
     }
 
     /// What a loop goes over, through `&xs`, `(xs)`, the methods that go over a sequence's
-    /// elements and the adaptors that keep them (`xs.iter().filter(..)`): the sequence itself.
+    /// elements and the adaptors that keep them (`xs.iter().filter(..)`): the sequence itself. Of
+    /// what joins elements after its own (`xs.iter().chain(&ys)`), whose elements are all of one
+    /// type, it is the first.
     fn sequence(&self, value: TsNode<'t>) -> Option<TsNode<'t>> {
         let src = self.src;
         let mut over = Some(value);
@@ -1182,7 +1217,10 @@ impl<'a, 't> Body<'a, 't> {
                 "call_expression" => function(v).filter(|f| {
                     f.kind() == "field_expression"
                         && f.child_by_field_name("field").map_or(false, |x| {
-                            knowledge::RUST_ELEMENTS.contains(&text(x, src)) || knowledge::RUST_KEEPS_ELEMENTS.contains(&text(x, src))
+                            let m = text(x, src);
+                            knowledge::RUST_ELEMENTS.contains(&m)
+                                || knowledge::RUST_KEEPS_ELEMENTS.contains(&m)
+                                || knowledge::RUST_JOINS_ELEMENTS.contains(&m)
                         })
                 }),
                 "field_expression" if v.parent().map_or(false, |p| p.kind() == "call_expression") => v.child_by_field_name("value"),
@@ -1658,10 +1696,10 @@ impl<'a, 't> Body<'a, 't> {
     /// Expense::parse(line)` would: a step written where the function is named, handed the element,
     /// a part of what the method runs on, and what it gives goes into the step around it.
     fn handed_on(&mut self, steps: &mut Steps, c: TsNode<'t>) {
-        let each = function(c)
+        let element = function(c)
             .filter(|f| f.kind() == "field_expression")
             .and_then(|f| f.child_by_field_name("field"))
-            .map_or(false, |m| knowledge::RUST_EACH.contains(&text(m, self.src)));
+            .and_then(|m| knowledge::rust_element(text(m, self.src)));
         for a in positional(c).into_iter().flatten() {
             if !matches!(a.kind(), "identifier" | "scoped_identifier") {
                 continue;
@@ -1676,15 +1714,19 @@ impl<'a, 't> Body<'a, 't> {
             else {
                 continue;
             };
-            if !each {
+            let Some(element) = element else {
                 steps.handed(c, a, &t, EdgeKind::Calls, None);
                 continue;
-            }
+            };
             let elements: Vec<Option<TsNode>> = each_of(c, self.src).into_iter().map(Some).collect();
             let hands = self.hands(&elements, &steps.kept);
-            // the element is the function's first parameter, or the value a method runs on
+            // the element fills the function's parameter at its place, the first of a method being the value it runs on
             let takes_self = self.store.nodes[&t].params.first().map_or(false, |p| p.receiver);
-            let slot = if takes_self { Slot::Receiver } else { Slot::At(0) };
+            let slot = match (takes_self, element) {
+                (true, 0) => Slot::Receiver,
+                (true, at) => Slot::At(at - 1),
+                (false, at) => Slot::At(at),
+            };
             steps.handed(c, a, &t, EdgeKind::Calls, Some((hands, slot)));
         }
     }

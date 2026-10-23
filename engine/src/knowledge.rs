@@ -1914,37 +1914,44 @@ pub const TYPESCRIPT_EACH: &[(&str, u32)] = &[
 pub const PYTHON_CATCH_ALL: &[&str] = &["Exception", "BaseException"];
 
 /// The methods that hand the closure they are given each element of what they run on, or what an
-/// `Option` or a `Result` holds: `xs.iter().map(|x| ..)` hands it each `x`.
-pub const RUST_EACH: &[&str] = &[
-    "map",
-    "filter",
-    "filter_map",
-    "flat_map",
-    "for_each",
-    "find",
-    "find_map",
-    "any",
-    "all",
-    "position",
-    "fold",
-    "try_fold",
-    "take_while",
-    "skip_while",
-    "map_while",
-    "inspect",
-    "partition",
-    "max_by_key",
-    "min_by_key",
-    "max_by",
-    "min_by",
-    "sort_by_key",
-    "sort_by",
-    "retain",
-    "and_then",
-    "is_some_and",
-    "map_or",
-    "map_or_else",
+/// `Option` or a `Result` holds, with the place of the closure's parameter the element fills first:
+/// `xs.iter().map(|x| ..)` hands it each `x`, `xs.iter().fold(0, |n, x| ..)` its second, after what it
+/// gathers. Each parameter from that place on is an element (`xs.sort_by(|a, b| ..)`).
+pub const RUST_EACH: &[(&str, u32)] = &[
+    ("map", 0),
+    ("filter", 0),
+    ("filter_map", 0),
+    ("flat_map", 0),
+    ("for_each", 0),
+    ("find", 0),
+    ("find_map", 0),
+    ("any", 0),
+    ("all", 0),
+    ("position", 0),
+    ("fold", 1),
+    ("try_fold", 1),
+    ("take_while", 0),
+    ("skip_while", 0),
+    ("map_while", 0),
+    ("inspect", 0),
+    ("partition", 0),
+    ("max_by_key", 0),
+    ("min_by_key", 0),
+    ("max_by", 0),
+    ("min_by", 0),
+    ("sort_by_key", 0),
+    ("sort_by", 0),
+    ("retain", 0),
+    ("and_then", 0),
+    ("is_some_and", 0),
+    ("map_or", 0),
+    ("map_or_else", 0),
 ];
+
+/// The place of the parameter a method of `RUST_EACH` hands its closure each element in first.
+pub fn rust_element(method: &str) -> Option<u32> {
+    RUST_EACH.iter().find(|(m, _)| *m == method).map(|(_, at)| *at)
+}
 
 /// The macros that format their arguments into a string, where a name written in the string
 /// (`format!("{key} {low}")`) is an argument as one written after it is: std's, anyhow's errors,

@@ -456,7 +456,9 @@ open:
   prism), an element of a loop that is no step (`for s, t in rows`), an element a method hands the
   closure or the function it is given (`g.nodes.iter().map(|n| ..)` hands `g`, and inside it
   `n.touches.iter().chain(&n.instead).map(Touch::drawn)` hands `g` as well: what `chain` goes on with
-  is part of what it is handed, an element of either), what operators compute of names
+  is part of what it is handed, an element of either; the closure's name is that element, of the class
+  a loop's name over the same value is, so `.map(|t| t.drawn())` is `Touch::drawn` as `for t in ..`
+  makes it), what operators compute of names
   (`bottom = height - margin`), what each arm of a choice sets a name to (`let unit;
   if (..) unit = KELVIN; else unit = CELSIUS`). A change made through one changes its owner, a lens's
   put. A parameter is such a name: inside an opened step it holds the value its call hands it, not a

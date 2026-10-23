@@ -1,0 +1,26 @@
+# What a graph draws: every node's touches and what it does instead, each drawn by its own method where it is.
+# `flat_map` hands its closure each node of the graph, and the closure calls `drawn` on each touch of the node and each
+# of what it does instead (`chain` goes on with the elements it is handed). The closure's `t` is an element of the node,
+# as `for t in ..` binds it, so `t.drawn()` is `Touch::drawn`, as `.map(Touch::drawn)` and `.map(|t| Touch::drawn(t))`
+# are (#170). Every element is a part of the graph the route is handed, glued into the step as a projection is, so the
+# step takes the graph and no Touch comes from beyond: the plan is the each pair's (`../rust/clean.plan`).
+
+route drawing.drawn
+step drawn/Touch.drawn
+step drawn/Touch.drawn/Where()
+
+line entry > drawn call
+line Graph·g > drawn value                                    # `g.nodes.iter()`: no step
+line Graph·g > drawn/Touch.drawn/Where() value               # `self.op` of each touch, a part of the graph
+line drawn/Touch.drawn/Where() > Where@drawn/Touch.drawn/Where() value
+line Where@drawn/Touch.drawn/Where() > drawn/Touch.drawn value
+line drawn/Touch.drawn > Where@drawn/Touch.drawn value
+line Where@drawn/Touch.drawn > drawn value                    # collected and given back
+line drawn > Where@drawn value                                # and given, at the route's moment
+
+home Graph·g drawn
+home Where@drawn/Touch.drawn/Where() drawn/Touch.drawn
+home Where@drawn/Touch.drawn drawn
+home Where@drawn drawn
+
+side entry left

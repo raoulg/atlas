@@ -1370,3 +1370,23 @@ fn an_element_of_a_closure_s_parameter_is_a_part_of_what_the_function_is_handed(
     assert_eq!(drawn(&each.clean), ["g"], "each touch is a part of the graph the function is handed");
     assert_eq!(drawn(&each.shortcut), ["all"], "the shortcut draws from the list it gathered");
 }
+
+/// The method pair (`tests/pairs/each/rust-method`): what a graph draws, every node's touches and what it does instead. The
+/// clean side calls `drawn` on each element a closure is handed, `n.touches.iter().chain(&n.instead).map(|t| t.drawn())`,
+/// inside the closure `flat_map` hands each node: the closure's `t` is an element of the node, as a loop binds it, so the
+/// call is a step to `Touch::drawn`, handed the graph each element is a part of, as `.map(Touch::drawn)` is in the each pair
+/// (#170). The shortcut pushes each place onto a list in two loops: the step is handed the loop's `t`, and the push changes
+/// the list.
+#[test]
+fn a_method_called_on_a_closure_s_parameter_is_a_step_on_its_element() {
+    let method = common::pair("each/rust-method");
+    let drawn = |g: &Graph| -> Vec<String> {
+        let f = node(g, "drawing.drawn");
+        f.sites.iter().filter(|s| s.to == "drawing.Touch.drawn").flat_map(|s| s.hands.iter().map(|h| h.name.clone())).collect()
+    };
+    let pushes = |g: &Graph| node(g, "drawing.drawn").sites.iter().filter(|s| s.op == "push" && s.changes).count();
+    assert_eq!(drawn(&method.clean), ["g"], "each touch is a part of the graph the function is handed");
+    assert_eq!(pushes(&method.clean), 0, "the clean side changes no list");
+    assert_eq!(drawn(&method.shortcut), ["t"], "the loop's touch, a value the body makes");
+    assert_eq!(pushes(&method.shortcut), 1, "the shortcut changes a list");
+}
