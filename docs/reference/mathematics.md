@@ -424,8 +424,10 @@ open:
   takes the value too: the line lies inside the frame, so it is internal to the closed step (rule 2)
   and the value stands in the step's frame. A value no line takes says that the body drops it; the
   map draws fewer facts by zoom, never by leaving one out. Of what the
-  body's steps make, what it gives back is what no step of the code among them takes: a value built
-  only to be handed into another step (`Row(Reading(line))`) is that step's. A value handed into a
+  body's steps make, what it gives back is what no step of the code among them takes and is of a type
+  its signature gives (its result, or the error of `T + E`): a value built only to be handed into another
+  step (`Row(Reading(line))`) is that step's, and a body that gives back a number gives back none of the
+  values its steps make, which it uses, if at all, by its own code. A value handed into a
   library's operation goes on in what the operation gives, and is the operation's only where that
   is. A result of no type of the code's goes back to the step that called it unless another step of
   the caller takes it, which it then reaches as a value. Going back, it is one line labelled by the

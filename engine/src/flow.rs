@@ -782,8 +782,26 @@ pub fn arrows(g: &Graph) -> BTreeMap<String, Arrow> {
     g.nodes.iter().filter(kinds).map(|n| (n.id.clone(), arrow_of(&ix, n, &mut done))).filter(|(_, a)| *a != Arrow::default()).collect()
 }
 
-/// What a body's steps make: the class a step builds, else what the function it runs gives back.
-fn made_from(ix: &Ix, body: &Body) -> Vec<String> {
+/// What a body's steps make that it may give back: the class a step builds, else what the function it runs gives back,
+/// where that is of a type the function itself gives (`n`'s `returns`, a kind or a variant of one, or a type its written
+/// return names: the error of a `Result<T, E>`, `T + E`), or an error its own calls raise or hand on. A value of another
+/// type its steps make is no part of what it gives back: a function that gives back a number is made of none of them.
+fn made_from(ix: &Ix, n: &Node, body: &Body) -> Vec<String> {
+    let mut gives = ix.targets(&n.id, EdgeKind::Returns);
+    for s in &n.sites {
+        let errors = s.gives.iter().filter(|_| s.raises).map(|g| g.ty.clone()).chain(s.fails.clone());
+        for e in errors.filter(|e| !e.is_empty()) {
+            if !gives.contains(&e) {
+                gives.push(e);
+            }
+        }
+    }
+    let written: HashSet<&str> =
+        n.returns.as_ref().map_or("", |r| r.written.as_str()).split(|c: char| !(c.is_alphanumeric() || c == '_')).collect();
+    let names = |t: &str| ix.nodes.get(t).map_or(false, |c| written.contains(c.name.as_str()));
+    let of = |t: &str| {
+        names(t) || gives.iter().any(|g| t == g || ix.mro(t).contains(&g.as_str()) || ix.out(g, EdgeKind::Variant).any(|e| e.dst == t))
+    };
     let mut callees: Vec<&str> = vec![];
     for t in body.steps().into_iter().map(|s| s.to.as_str()).chain(body.alts.iter().map(|k| split(k).0)) {
         if ix.nodes.contains_key(t) && !callees.contains(&t) {
@@ -793,7 +811,7 @@ fn made_from(ix: &Ix, body: &Body) -> Vec<String> {
     let mut out = vec![];
     for c in callees {
         let made = if ix.nodes[c].kind == NodeKind::Class { vec![c.to_string()] } else { ix.targets(c, EdgeKind::Returns) };
-        out.extend(made);
+        out.extend(made.into_iter().filter(|t| of(t)));
     }
     out
 }
@@ -1176,7 +1194,7 @@ pub fn bodies(g: &Graph) -> BTreeMap<String, Body> {
                 todo.push((to.to_string(), on.to_string()));
             }
         }
-        body.made_from = made_from(&ix, &body);
+        body.made_from = made_from(&ix, n, &body);
         if !body.is_empty() {
             out.insert(k, body);
         }

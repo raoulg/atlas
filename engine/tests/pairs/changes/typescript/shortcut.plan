@@ -110,6 +110,3 @@ home Expense@main/Expense() main
 known #134 extra line main/Ledger.takeFrom > main back
 known #134 extra line main/Ledger.takeVictim > main back
 
-# the own arrow takes the last value of every class its steps build (`made_from`), though `main` gives back a number
-known #126 extra line Ledger·ledger@main/fileAll > main value
-known #126 extra line Expense@main/rename > main value

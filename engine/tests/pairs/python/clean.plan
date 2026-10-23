@@ -49,5 +49,4 @@ side entry left
 side SQLite(readings) left # read and handed back; making its shape on connecting puts nothing
 
 # an own arrow takes what only a step inside it takes: the store (to connect), the Unit (to Reading())
-known #126 extra line ReadingStore@readings/get_store > readings value
 # building the store runs its public methods, which touch its tables

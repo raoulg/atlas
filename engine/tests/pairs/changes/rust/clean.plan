@@ -16,7 +16,7 @@ line run/note/push > Log·log@run/note/push value
 line Log·log@run/note/push > run/note value
 line run/note > Log·log@run/note value
 line run/note_shared > Log·shared@run/note_shared value
-line Log·shared@run/note_shared > run value
+known #101 line Log·shared@run/note_shared > run value   # `shared.borrow().lines.len()`: the body uses it itself
 
 home Log·log@run/Log() run
 home Log·log@run/note/push run/note

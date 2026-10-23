@@ -92,7 +92,7 @@ home Row·row@Store()/Store.put_all/write_rows/for row in rows Store()/Store.put
 line Reading·reading@Store()/Store.put_all/for reading in readings > Store()/Store.put_all/Row() value
 line Reading·readings > Store()/Store.put_all/for reading in readings value
 line Row@Store()/Store.get/Store._rows > Store()/Store.get/for row in self._rows() value
-line Row·row@Store()/Store.get/for row in self._rows() > Store()/Store.get value
+known #101 line Row·row@Store()/Store.get/for row in self._rows() > Store()/Store.get value   # `row.reading`: the body uses the row itself
 line Row·row@Store()/Store.put/write_rows/for row in rows > Store()/Store.put/write_rows value
 line Row·row@Store()/Store.put_all/write_rows/for row in rows > Store()/Store.put_all/write_rows value
 line Row·rows@Store()/Store.put/append > Store()/Store.put/write_rows/for row in rows value

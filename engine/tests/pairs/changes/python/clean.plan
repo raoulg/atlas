@@ -32,7 +32,7 @@ line Board@main/renamed > main/Board.merged/Board() value                  # sel
 line main/Board.merged/Board() > Board@main/Board.merged/Board() value
 line Board@main/Board.merged/Board() > main/Board.merged value             # merged hands back what its body made
 line main/Board.merged > Board·other@main/Board.merged value
-line Board·other@main/Board.merged > main value                            # main counts the cells of other
+known #101 line Board·other@main/Board.merged > main value                            # main counts the cells of other
 line main/with_tag > _@main/with_tag value
 line _@main/with_tag > main/tally value
 line main/tally > _@main/tally value

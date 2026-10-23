@@ -132,7 +132,6 @@ home list·xs@main/extend main
 # nowhere: main's code does not use it, but main's own arrow takes it as a value main's result is made from (#129)
 line main/rename > main back
 line main/extend > main back
-known #129 extra line Board·other@main/rename > main value
 
 # `main` reads the lengths of the list and dicts its steps changed
 known #101 line list·tags@main/add_tag > main value

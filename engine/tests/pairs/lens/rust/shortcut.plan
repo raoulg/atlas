@@ -127,7 +127,6 @@ line _·temperatures@ReadingStore()/ReadingStore.summary/?1/collect > ReadingSto
 line _·temperatures@ReadingStore()/ReadingStore.summary/?1/collect > ReadingStore()/ReadingStore.summary/?1/fold#2 value # #130
 line ReadingStore()/ReadingStore.summary/?1/fold > _·low@ReadingStore()/ReadingStore.summary/?1/fold value # #130
 line ReadingStore()/ReadingStore.summary/?1/fold#2 > _·high@ReadingStore()/ReadingStore.summary/?1/fold#2 value # #130
-known #126 extra line Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history > ReadingStore()/ReadingStore.summary value   # only `collect` takes them
 known #101 line _·low@ReadingStore()/ReadingStore.summary/?1/fold > ReadingStore()/ReadingStore.summary value   # `format!("{key} {low} {high}")`, the body's own
 known #101 line _·high@ReadingStore()/ReadingStore.summary/?1/fold#2 > ReadingStore()/ReadingStore.summary value
 
@@ -156,7 +155,7 @@ home _·t@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/next#3 Rea
 home _·text@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/read_to_string ReadingStore()/ReadingStore.summary/?1/ReadingStore.history
 home _·parts@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/split ReadingStore()/ReadingStore.summary/?1/ReadingStore.history
 home Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/Reading() ReadingStore()/ReadingStore.summary/?1/ReadingStore.history
-known #126 home Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history ReadingStore()/ReadingStore.summary/?1   # only `collect` takes them
+home Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history ReadingStore()/ReadingStore.summary/?1   # only `collect` takes them
 home _·temperatures@ReadingStore()/ReadingStore.summary/?1/collect ReadingStore()/ReadingStore.summary/?1
 known #101 home _·low@ReadingStore()/ReadingStore.summary/?1/fold ReadingStore()/ReadingStore.summary
 known #101 home _·high@ReadingStore()/ReadingStore.summary/?1/fold#2 ReadingStore()/ReadingStore.summary
