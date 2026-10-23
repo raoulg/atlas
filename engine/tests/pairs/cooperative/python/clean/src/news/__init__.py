@@ -1,3 +1,3 @@
-from news.read import headlines, lines
+from news.read import cached_lines, headlines, lines
 
-__all__ = ["headlines", "lines"]
+__all__ = ["cached_lines", "headlines", "lines"]
