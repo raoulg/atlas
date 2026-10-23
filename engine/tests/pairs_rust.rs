@@ -1336,3 +1336,11 @@ fn rust_a_call_is_handed_no_name_a_closure_in_it_binds() {
     assert!(!names.contains(&"amount"), "{names:?}");
     assert!(query.hands.iter().any(|h| h.ty == "spend.expense.Expense"), "what the closure gives back: {:#?}", query.hands);
 }
+
+/// The tables pair (`tests/pairs/tables/rust`): what a mode means, looked up in one table, `plans: &HashMap<Mode, Plan>`, against
+/// two lists at the same places, `modes: &[Mode]` and `plans: &[Plan]`. A map holds its values by its keys (#167): the clean table is one
+/// value, of Plans, which the body's own lookup reads as one; the shortcut takes the modes as a value of their own.
+#[test]
+fn a_table_is_one_value_and_the_lists_it_is_cut_into_two() {
+    common::a_table_is_one_value("rust", "tables.timeout");
+}

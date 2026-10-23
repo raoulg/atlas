@@ -37,9 +37,9 @@ const SUMS = new Map();
 // the sum a variant is injected into, where it is the variant of one
 const SUM_OF = new Map(), VARIANTS = new Map();
 for (const e of D.edges) if (e.kind === "variant") { SUM_OF.set(e.dst, SUM_OF.has(e.dst) && SUM_OF.get(e.dst) !== e.src ? null : e.src); if (!VARIANTS.has(e.src)) VARIANTS.set(e.src, []); VARIANTS.get(e.src).push(e.dst); }
-// whether a parameter's written type names a type: by its name, or a sum written in place by the names of its variants
-// (`r: Fit | Failed`)
-const writesType = (p, x) => { const w = new Set((p.type || "").split(/[^A-Za-z0-9_]+/)), b = id => id.replace(/^ext:/, "").split(".").pop(); return w.has(b(x)) || (VARIANTS.has(x) && VARIANTS.get(x).every(v => w.has(b(v)))); };
+// whether a parameter holds a value of a type: one its type holds as its language reads it (`Param::holds`, by name: a map
+// holds its values by its keys), or a sum written in place, by the names of its variants (`r: Fit | Failed`)
+const writesType = (p, x) => { const w = new Set(p.holds || []), b = id => id.replace(/^ext:/, "").split(".").pop(); return w.has(b(x)) || (VARIANTS.has(x) && VARIANTS.get(x).every(v => w.has(b(v)))); };
 // the values a call is handed and gives, one value per name: the variants of a sum a name holds are the sum, a value
 // of no type a constructor gives is of the class it builds, one a change gives is the value it was handed, and one
 // handed by a name of no type is the value

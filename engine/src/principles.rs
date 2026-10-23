@@ -705,7 +705,7 @@ fn signature_keeps(ix: &Index, base: &Node, m: &Node, structural: bool, assumed:
     };
     let inputs = |f: &Node| f.params.iter().filter(|p| !p.receiver && !p.rest).cloned().collect::<Vec<_>>();
     let takes = |f: &Node, p: &Param| -> Vec<&str> {
-        ix.targets(&f.id, EdgeKind::Takes).into_iter().filter(|t| ix.node(t).is_some_and(|n| names(&p.ty, &n.name))).collect()
+        ix.targets(&f.id, EdgeKind::Takes).into_iter().filter(|t| ix.node(t).is_some_and(|n| p.holds_type(&n.name))).collect()
     };
     gives
         && inputs(base).iter().zip(&inputs(m)).all(|(theirs, own)| {
@@ -1689,12 +1689,6 @@ fn lens<'g>(ix: &Index<'g>) -> Vec<Finding> {
     out
 }
 
-/// Whether a type as written names `name`: `list[Reading]`, `&[Reading]` and `Reading[]` name
-/// `Reading`.
-fn names(written: &str, name: &str) -> bool {
-    written.split(|c: char| !(c.is_alphanumeric() || c == '_')).any(|w| w == name)
-}
-
 /// What a value of type `t` holds, `t` among it: its fields and theirs in turn, the elements of
 /// its lists, the variants of its sums, and its subclasses, the variants of a sum left open. A get
 /// that gives `t` gives back each of these: a lens composed with the projection to a part of what
@@ -1829,7 +1823,7 @@ impl<'g> Places<'_, 'g> {
             .iter()
             .filter(|p| !p.receiver)
             .map(|p| {
-                let declared = takes.iter().copied().filter(|t| ix.node(t).map_or(false, |n| names(&p.ty, &n.name)));
+                let declared = takes.iter().copied().filter(|t| ix.node(t).is_some_and(|n| p.holds_type(&n.name)));
                 let handed = hands().filter(|h| h.name == p.name && !h.ty.is_empty()).map(|h| h.ty.as_str());
                 (p.name.as_str(), declared.chain(handed).flat_map(|t| holds(ix, t)).collect())
             })

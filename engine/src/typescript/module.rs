@@ -251,8 +251,10 @@ fn collect_types(n: TsNode, src: &[u8], skip: &[TsNode], many: bool, out: &mut V
             let parts: Vec<String> = text(name, src).split('.').map(str::to_string).collect();
             let last = parts.last().map(String::as_str).unwrap_or("");
             if knowledge::TYPESCRIPT_CONTAINERS.contains(&last) {
-                if let Some(args) = n.child_by_field_name("type_arguments") {
-                    collect_types(args, src, skip, many || knowledge::TYPESCRIPT_COLLECTIONS.contains(&last), out);
+                // a map holds its values by its keys, its first argument: a key is no value it holds
+                let keys = usize::from(knowledge::TYPESCRIPT_MAPS.contains(&last));
+                for a in n.child_by_field_name("type_arguments").map(named_children).unwrap_or_default().into_iter().skip(keys) {
+                    collect_types(a, src, skip, many || knowledge::TYPESCRIPT_COLLECTIONS.contains(&last), out);
                 }
             } else {
                 out.push(parts);
@@ -306,6 +308,7 @@ pub(super) fn signature(params: Option<TsNode>, ret: Option<TsNode>, src: &[u8])
                     rest: pattern.map_or(false, |x| x.kind() == "rest_pattern"),
                     changes: false,
                     unchecked: written.map_or(false, |t| unchecked(t, src)),
+                    holds: Param::held(type_names(ty, src)),
                 });
                 let (names, unions) = split_unions(ty, src);
                 info.ptypes.extend(names);

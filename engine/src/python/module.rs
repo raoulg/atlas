@@ -200,6 +200,10 @@ fn type_names_outside(t: Option<TsNode>, src: &[u8], skip: &[TsNode]) -> Vec<Vec
         };
         if head.last().map_or(false, |h| !knowledge::python_container(h)) {
             params.extend(args);
+        } else if head.last().is_some_and(|h| knowledge::PYTHON_MAPS.contains(&h.as_str())) {
+            // a map holds its values by its keys, its first parameter: a key is no value it holds
+            let keys = if g.kind() == "subscript" { args } else { args.into_iter().flat_map(named_children).collect() };
+            params.extend(keys.into_iter().take(1));
         }
     }
     // a pair a collection holds is of a type the code does not name: `list[tuple[date, float]]`
@@ -248,11 +252,13 @@ fn type_names_outside(t: Option<TsNode>, src: &[u8], skip: &[TsNode]) -> Vec<Vec
 }
 
 /// The names in a quoted annotation that stand for values: `"List[Node]"` -> Node,
-/// `"VectorCache[TVectorizer]"` -> VectorCache, its parameter being a type.
+/// `"VectorCache[TVectorizer]"` -> VectorCache, its parameter being a type, `"dict[Mode, Plan]"`
+/// -> Plan, its first parameter being a key.
 fn quoted_values(lit: &str) -> Vec<&str> {
     let mut out = vec![];
-    // per open bracket: whether what it holds are parameters of a generic class
-    let mut opaque: Vec<bool> = vec![];
+    // per open bracket: whether what it holds are parameters of a generic class, and whether what
+    // stands there now is the key of a map
+    let mut opaque: Vec<(bool, bool)> = vec![];
     let mut last = "";
     let mut start = None;
     let is_name = |c: char| c.is_alphanumeric() || c == '_' || c == '.';
@@ -263,15 +269,23 @@ fn quoted_values(lit: &str) -> Vec<&str> {
         }
         if let Some(s) = start.take() {
             let w = &lit[s..i];
-            if w.chars().next().map_or(false, |c| c.is_alphabetic() || c == '_') && !opaque.iter().any(|o| *o) {
+            if w.chars().next().map_or(false, |c| c.is_alphabetic() || c == '_') && !opaque.iter().any(|(o, key)| *o || *key) {
                 out.push(w);
             }
             last = w;
         }
         match c {
-            '[' => opaque.push(!knowledge::python_container(last.rsplit('.').next().unwrap_or(last))),
+            '[' => {
+                let head = last.rsplit('.').next().unwrap_or(last);
+                opaque.push((!knowledge::python_container(head), knowledge::PYTHON_MAPS.contains(&head)));
+            }
             ']' => {
                 opaque.pop();
+            }
+            ',' => {
+                if let Some((_, key)) = opaque.last_mut() {
+                    *key = false;
+                }
             }
             _ => {}
         }
@@ -371,6 +385,7 @@ pub(super) fn signature(f: TsNode, src: &[u8], receiver: bool) -> (Vec<Param>, O
                 rest: pname.starts_with('*'),
                 changes: false,
                 unchecked: t.map_or(false, |t| unchecked(t, src)),
+                holds: Param::held(type_names(t, src)),
             });
             let (names, unions) = split_unions(t, src);
             info.ptypes.extend(names);

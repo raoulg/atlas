@@ -41,16 +41,12 @@ line Job·job@run/source > run/report/?1/Message()#2 value
 # whether it finished: a Runner for the mode, and the mode's timeout
 line Settings·settings > run/finished value   # finished looks up the mode's plan itself
 line Settings·settings > run/finished/Runner() value
-# `PLANS`, the module's table of plans by mode, is a value the module holds, from beyond: a `dict[Mode, Plan]` holds its
-# Modes and its Plans; `run` (`PLANS[settings.mode]`), `finished` (`PLANS[mode].timeout`) and the Runner's initializer
-# (`self.plan = PLANS[mode]`) read it in their own code
-line Mode·PLANS > run value
+# `PLANS`, the module's table of plans by mode, is one value the module holds, from beyond: a `dict[Mode, Plan]` holds
+# Plans by their Mode, a key choosing the Plan a lookup gives (#167); `run` (`PLANS[settings.mode]`), `finished`
+# (`PLANS[mode].timeout`) and the Runner's initializer (`self.plan = PLANS[mode]`) read it in their own code
 line Plan·PLANS > run value
-line Mode·PLANS > run/finished value
 line Plan·PLANS > run/finished value
-line Mode·PLANS > run/finished/Runner() value
 line Plan·PLANS > run/finished/Runner() value
-home Mode·PLANS run
 home Plan·PLANS run
 line run/finished/Runner() > Runner@run/finished/Runner() value
 line Runner@run/finished/Runner() > run/finished/Runner.batch value

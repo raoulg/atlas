@@ -1497,3 +1497,11 @@ fn a_parameter_of_no_type_is_handed_by_its_name_where_a_call_fills_it() {
     let keep = node(&readback.clean, "cli.Ledger.keep");
     assert!(keep.sites.iter().all(|s| !s.op.starts_with("for note")), "a loop over the literal notes makes no value: {:#?}", keep.sites);
 }
+
+/// The tables pair (`tests/pairs/tables/typescript`): what a mode means, looked up in one table, `plans: Record<Mode, Plan>`, against
+/// two lists at the same places, `modes: Mode[]` and `plans: Plan[]`. A map holds its values by its keys (#167): the clean table is one
+/// value, of Plans, which the body's own lookup reads as one; the shortcut takes the modes as a value of their own.
+#[test]
+fn a_table_is_one_value_and_the_lists_it_is_cut_into_two() {
+    common::a_table_is_one_value("typescript", "tables.tables.timeout");
+}

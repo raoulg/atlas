@@ -118,9 +118,24 @@ pub struct Value {
 /// The classes a type is, as written: through the containers that hold values (`tuple`,
 /// `list`, `dict`, a union) to each value's own class, but not into a class's own parameters
 /// (`ndarray[tuple[int], dtype[float64]]` is an `ndarray`), nor into a pair a collection holds,
-/// which is of a type the code does not name (`list[tuple[date, float]]` holds no `date`).
+/// which is of a type the code does not name (`list[tuple[date, float]]` holds no `date`), nor into
+/// a map's keys (`dict[Mode, Plan]` holds Plans by their Mode).
 pub fn outer_classes(label: &str) -> Vec<String> {
     classes_within(label, false)
+}
+
+/// What follows the first parameter of a generic's parameters: `Plan` of `Mode, Plan`.
+fn past_first(params: &str) -> &str {
+    let mut depth = 0;
+    for (i, c) in params.char_indices() {
+        match c {
+            '[' => depth += 1,
+            ']' => depth -= 1,
+            ',' if depth == 0 => return &params[i + 1..],
+            _ => {}
+        }
+    }
+    ""
 }
 
 fn classes_within(label: &str, in_collection: bool) -> Vec<String> {
@@ -152,6 +167,8 @@ fn classes_within(label: &str, in_collection: bool) -> Vec<String> {
             Some(_) if pair && in_collection => {}
             Some(inner) if crate::knowledge::PYTHON_ALTERNATIVES.contains(&head) => out.extend(classes_within(inner, in_collection)),
             Some(inner) if crate::knowledge::PYTHON_HOLDERS.contains(&head) => {
+                // a map holds its values by its keys, its first parameter: a key is no value it holds
+                let inner = if crate::knowledge::PYTHON_MAPS.contains(&head) { past_first(inner) } else { inner };
                 out.extend(classes_within(inner, crate::knowledge::python_collection(head) || (in_collection && !pair)))
             }
             _ if !head.is_empty() && head != "..." => out.push(head.to_string()),
@@ -1483,7 +1500,10 @@ mod tests {
         assert_eq!(outer_classes("tuple[Station, Store] | None"), ["Station", "Store", "None"]);
         assert_eq!(outer_classes("list[tuple[Station, ...]]"), ["Station"]);
         assert_eq!(outer_classes("list[Node] | None"), ["Node", "None"]);
-        assert_eq!(outer_classes("dict[str, Series[Any]]"), ["str", "Series"]);
+        assert_eq!(outer_classes("dict[str, Series[Any]]"), ["Series"]);
+        assert_eq!(outer_classes("dict[Mode, Plan]"), ["Plan"]);
+        assert_eq!(outer_classes("dict[tuple[Mode, Level], list[Plan]] | None"), ["Plan", "None"]);
+        assert_eq!(outer_classes("Counter[Mode]"), Vec::<String>::new());
     }
 
     /// A `type: ignore` with codes says the code knows, whatever the codes and wherever it stands

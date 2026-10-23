@@ -305,12 +305,33 @@ pub struct Param {
     /// written out, it says no more than a parameter without a type.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub unchecked: bool,
+    /// The types its type holds as values, as its language reads the type, each by the last part of
+    /// its name as written: `dict[Mode, Plan]` holds a `Plan` by its `Mode`, `Option<Vec<Node>>` a
+    /// `Node`, `VectorCache[TVectorizer]` a `VectorCache`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub holds: Vec<String>,
 }
 
 impl Param {
     /// Whether the signature says what it is: a type is written, and it is not the unchecked one.
     pub fn says(&self) -> bool {
         !self.ty.is_empty() && !self.unchecked
+    }
+
+    /// Whether its type holds a value of the type named `name` (the last part of its name).
+    pub fn holds_type(&self, name: &str) -> bool {
+        self.holds.iter().any(|h| h == name)
+    }
+
+    /// What a type holds as values, as `type_names` reads it, by the last part of each name.
+    pub fn held(names: Vec<Vec<String>>) -> Vec<String> {
+        let mut out: Vec<String> = vec![];
+        for n in names.into_iter().filter_map(|n| n.last().cloned()) {
+            if !out.contains(&n) {
+                out.push(n);
+            }
+        }
+        out
     }
 }
 
