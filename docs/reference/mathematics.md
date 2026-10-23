@@ -451,9 +451,12 @@ open:
   (`bottom = height - margin`), what each arm of a choice sets a name to (`let unit;
   if (..) unit = KELVIN; else unit = CELSIUS`). A change made through one changes its owner, a lens's
   put. A parameter is such a name: inside an opened step it holds the value its call hands it, not a
-  caller's value of its name or the latest of its type. The call hands its values in order, the value
-  it runs on first, each to the next parameter of its type; a parameter the call fills through a
-  projection (`finished(job, settings.mode)`) is still the projection, so the steps inside are handed
+  caller's value of its name or the latest of its type, and where the plan cannot say which, it is still
+  a value of that body, in its frame, never one from beyond the route: what comes from beyond the route
+  is what its caller holds, its parameters and the instance of a class route. The call hands its
+  values in order, the value it runs on first, each to the next parameter of its type; a parameter the
+  call fills through a projection (`finished(job, settings.mode)`) is still the projection, so the
+  steps inside are handed
   `settings`, and a signature's type is a value of its own only where the call hands nothing. A value
   of no type of the code's is one where a step makes it, so a parameter of no type of the code's
   (`path: &Path`) holds one only where its call fills it with one, a value a step made or a projection
@@ -519,7 +522,8 @@ parse the command line to the entry. The closed picture is `F/q`:
   is the image of the body unfolded to its leaves, made without unfolding it, once for each function,
   call and set of callers that make its paths whole. Planned by itself, a body does not know its
   caller's values: a value it takes by a name it did not make is the caller's value of that name where
-  the caller has one, else the latest of its kind the body made. The cut changes how much of `F` is
+  the caller has one, else the latest of its kind the body made, else one its body binds out of the
+  plan's sight, which the caller does not see either. The cut changes how much of `F` is
   held, never its picture, and opening a cut step refines as opening any step does.
 
 On the image the page then does only what is a quotient of `F` or a way of drawing it: the merge of

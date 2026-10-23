@@ -345,5 +345,5 @@ line Line·lines@main/?1/lines > main/?1/write/Render.render/Csv.render/for l in
 line Line·lines@main/?1/lines > main/?1/write/Render.render/Markdown.render/for l in lines value
 # `write` is called with a literal for `dir`: the plan pairs `config`, which fills `title`, with no parameter, and `title`
 # holds nothing
-known #157 extra line _·title > main/?1/write/Render.render value
-known #157 extra home _·title main/?1
+known #157 extra line _·title@main/?1/write/~title > main/?1/write/Render.render value   # the parameter, bound by no value the call hands
+known #157 extra home _·title@main/?1/write/~title main/?1/write

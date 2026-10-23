@@ -1056,7 +1056,23 @@ const bound = (P, k, nm = (P.dn && P.dn.get(k)) || "") => {
   const sum = nm && pl?.type && SUM_OF.get(pl.type), v = latestGet(kindKey(k) + "|" + nm, P) || (sum && latestGet("t:" + kindOf(sum) + "|" + nm, P));
   if (!v && P.kept?.has(k)) return false;
   const any = v ? null : latestGet(kindKey(k) + "|", P);
-  return v || (any && alone && nm && !nm.startsWith("#") ? condOf(k, nm) : any);
+  // a step inside a step planned by itself takes by a name no step of its body made and no value of its kind the body
+  // made: what the caller holds by that name, or what the body made of it beyond what the plan follows, a projection; no
+  // value from beyond the route (#159)
+  const inner = alone && P.id !== "n:" + tree[0].id && P.id !== "o:" + tree[0].id;
+  if (v || any || !nm || nm.startsWith("#")) return v || ((any || inner) && alone && nm && !nm.startsWith("#") ? condOf(k, nm) : any);
+  if (alone) return inner ? condOf(k, nm) : null;
+  // a name no step of the route makes and nothing in scope holds is no value from beyond the route: the body that names it
+  // binds it in a way the plan does not follow (a loop's or a closure's name, an arm's binding, a projection a call fills a
+  // parameter with). It is a value of that body, in its frame, made there by no step (#159)
+  // what a call hands is named in the body that makes the call: an opened step's own arrow is handed it by its caller's
+  let f = P.own ? frames.get(P.parent)?.parent : P.parent;
+  while (f && frames.get(f)?.synthetic) f = frames.get(f).parent;
+  // a name the body's own function does not declare (a module's constant) is what the module holds: from beyond, as before
+  if (!f || frames.get(f)?.anchor || !(byId.get(stepOf(frames.get(f).step))?.params || []).some(p => p.name === nm)) return null;
+  const b = version(k, `${k}@${f}/~${nm}`);
+  Object.assign(places.get(b), {at: `${f}/~${nm}`, bound: f});
+  return b;
 };
 // the value of `k`'s kind made before the choice of one arm that made `v` in its arm, inside the frame of the own arrow `P`
 const passedOn = (P, k, v) => {
@@ -1337,7 +1353,14 @@ const imageOf = (F, opened, folded, {fineKeys = false} = {}) => {
     return P.border && at && (at.startsWith(P.parent + "/") || at.startsWith(P.parent + "|") || at.startsWith(P.parent + "~c")) ? P.parent : F0?.parent;
   };
   const users = new Map(), makers = new Map();
-  const note = (id, P, maker, k) => { const m = maker ? makers : users; if (!m.has(id)) m.set(id, []); m.get(id).push(userFrame(P, k)); if (maker) note(id, P, false, k); };
+  // a value its body binds in a way the plan does not follow is made in that body's frame
+  const note = (id, P, maker, k) => {
+    const m = maker ? makers : users, b = fp.get(k)?.bound;
+    if (!m.has(id)) m.set(id, []);
+    m.get(id).push(userFrame(P, k));
+    if (b && !maker) { if (!makers.has(id)) makers.set(id, []); if (!makers.get(id).includes(b)) makers.get(id).push(b); }
+    if (maker) note(id, P, false, k);
+  };
   const famId = pl => { const f = pl?.type && frameOf(pl.type); return f ? "t:" + f + nameOf_(pl) + (pl.door ? "^" + pl.door : "") + (pl.at ? "@" + pl.at : "") : null; };
   const within = (at, S) => !!at && (at.startsWith(S + "/") || at.startsWith(S + "|") || at.startsWith(S + "~c"));
   const pills = new Map(), frames = new Map();

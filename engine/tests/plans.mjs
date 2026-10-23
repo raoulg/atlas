@@ -57,7 +57,13 @@ function read(route) {
   };
   visit(null, null);
   // the choice of a step that is itself a choice (a call into a family) is below it: `Store()/Store.get/?`
-  const occ = id => (id.endsWith("|") ? occ(id.slice(0, -1)) + "/?" : name.get(id.startsWith("o:") ? "n:" + id.slice(2) : id) ?? id);
+  // a value its body binds in a way the plan does not follow is of that body: `main/download/~to`
+  const occ = id => {
+    if (id.endsWith("|")) return occ(id.slice(0, -1)) + "/?";
+    const bound = id.match(/^(n:.*)\/~([^/]+)$/);
+    if (bound && !name.has(id)) return `${occ(bound[1])}/~${bound[2]}`;
+    return name.get(id.startsWith("o:") ? "n:" + id.slice(2) : id) ?? id;
+  };
   const placeName = k => (F.places.get(k)?.label ?? k.replace(/^w:/, "")).replace(/\s+/g, " ");
   const values = new Map(), taken = new Map();
   const valueName = k => {
