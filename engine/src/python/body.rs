@@ -12,11 +12,11 @@ use super::module::{
     written, Module, Own, WRAPPERS,
 };
 use super::paths::{self, At, Built, Eval};
-use crate::body::{changed_through, BindSyntax, Crosses, Step, Steps, UseSyntax};
+use crate::body::{changed_through, BindSyntax, Crosses, Range, Step, Steps, UseSyntax};
 use crate::builder::{foreign_type, GraphBuilder};
 use crate::effects::{self, Crossing};
 use crate::knowledge::{self, OwnTypes};
-use crate::model::{Bucket, Dir, EdgeKind, Held, Node, NodeKind, Touch, World};
+use crate::model::{Bucket, Dir, EdgeKind, Held, Node, NodeKind, Slot, Touch, World};
 use crate::pytypes::{By, Facts, FileArg, Target, Types, Value};
 use crate::tree::{
     beneath, evaluation_order, field_children, literals, named_children, nth_of_kind, outermost, payload_of, text, unquote, walk, what_of,
@@ -678,7 +678,7 @@ impl<'a> Seen<'a> {
         let mut out: Vec<Held> = vec![];
         let mut add = |ty: String, name: String, at: usize| {
             if !out.iter().any(|h| h.ty == ty && h.name == name) {
-                out.push(Held { ty, name, at: at as u32 });
+                out.push(Held { ty, name, at: at as u32, fills: vec![] });
             }
         };
         let data = |v: &&Value| !v.is_class && !v.is_code;
@@ -743,7 +743,7 @@ impl<'a> Seen<'a> {
         // none is it handed on by its type
         if out.is_empty() {
             for (ty, at) in glued {
-                out.push(Held { ty, name: String::new(), at: at as u32 });
+                out.push(Held { ty, name: String::new(), at: at as u32, fills: vec![] });
             }
         }
         out
@@ -1007,7 +1007,9 @@ pub(super) fn link_calls<'t>(
             steps.mark(c, b.read.touches[t..].iter_mut().chain(b.read.waiting[w..].iter_mut().map(|(t, _)| t)));
         }
         let kept = steps.kept.clone();
-        steps.uses(&|n| if b.holds(n) { b.seen.held_in(n, b.ext, &kept) } else { vec![] });
+        let held = |n| if b.holds(n) { b.seen.held_in(n, b.ext, &kept) } else { vec![] };
+        steps.uses(&held);
+        steps.fills(&held);
         b.class_state(&mut steps);
         b.ends();
         b.read
@@ -1108,6 +1110,9 @@ struct Body<'a, 't> {
     own: &'a Own,
     changing: &'a Changing,
     read: Read<'t>,
+    /// The names that hold what a library's call gave: a method called on one is that library's
+    /// operation, also where its types do not list it (`response.read()` of `urlopen(..) as response`).
+    library_values: HashSet<String>,
 }
 
 impl<'a, 't> Body<'a, 't> {
@@ -1147,6 +1152,7 @@ impl<'a, 't> Body<'a, 't> {
             own,
             changing,
             read: Read::default(),
+            library_values: HashSet::new(),
         }
     }
 
@@ -1266,7 +1272,27 @@ impl<'a, 't> Body<'a, 't> {
             }
             return steps.parses(right, &label, hands, gives, vec![]);
         }
-        steps.op(right, &label, hands, gives);
+        steps.each(right, &label, hands, gives);
+    }
+
+    /// What a call of the language's own that runs the function `a` it is handed on each element of
+    /// what it goes over hands that function (`knowledge::PYTHON_EACH`): the values the element is a
+    /// part of, and the parameter it fills (`map(f, rows)`, `sorted(rows, key=f)`, `rows.sort(key=f)`).
+    fn per_element(&self, c: TsNode<'t>, a: TsNode<'t>, receiver: Option<TsNode<'t>>, kept: &HashSet<String>) -> Option<(Vec<Held>, Slot)> {
+        let name = dotted(c.child_by_field_name("function"), self.src).last().cloned()?;
+        let e = knowledge::PYTHON_EACH.iter().find(|e| e.name == name && (e.over.is_some() || receiver.is_some()))?;
+        let function = match e.function {
+            knowledge::Handed::At(i) => positional_at(c, i),
+            knowledge::Handed::Key(k) => keyword_node(c, self.src, k),
+        };
+        if function.map(|f| f.id()) != Some(a.id()) {
+            return None;
+        }
+        let over = match e.over {
+            Some(i) => positional_at(c, i),
+            None => receiver,
+        }?;
+        Some((self.seen.held_in(over, self.ext, kept), Slot::At(e.element)))
     }
 
     /// What a call is handed: the value it is called on, and its arguments. A method called on
@@ -1361,13 +1387,33 @@ impl<'a, 't> Body<'a, 't> {
                 if handed_for_its_value(a, self.src) {
                     self.read.used.push(t.clone());
                 }
-                steps.handed(c, a, &t, EdgeKind::Calls);
+                let each = matches!(callee, Some(Callee::Lib(_))).then(|| self.per_element(c, a, receiver, &steps.kept)).flatten();
+                steps.handed(c, a, &t, EdgeKind::Calls, each);
             } else if let (Some(Callee::Def(_)), Some(t)) = (&callee, self.seen.handed_class(a)) {
-                steps.handed(c, a, &t, EdgeKind::Instantiates);
+                steps.handed(c, a, &t, EdgeKind::Instantiates, None);
             }
+        }
+        // a method on what a library's call gave is that library's, also where ty does not list it
+        let on_library = receiver
+            .map(|r| beneath(r, WRAPPERS))
+            .filter(|r| r.kind() == "identifier")
+            .is_some_and(|r| self.library_values.contains(text(r, self.src)));
+        if matches!(callee, Some(Callee::Lib(_))) {
+            self.library_values.extend(gives.iter().map(|g| g.name.clone()).filter(|n| !n.is_empty()));
         }
         match callee {
             Some(Callee::Def(t)) => self.own(steps, c, &t, receiver, hands, gives),
+            None if on_library => {
+                // a step where the body names what it gives; else what it gives goes into the code around it
+                if !assigned.is_empty() {
+                    let op = fnode.child_by_field_name("attribute").map(|a| text(a, self.src).to_string()).unwrap_or_default();
+                    self.library_values.extend(gives.iter().map(|g| g.name.clone()).filter(|n| !n.is_empty()));
+                    steps.op(c, &op, hands, gives);
+                }
+                steps.dropped(c, &written(fnode, self.src));
+                self.read.unresolved.push((named_path(fnode, self.src).into_iter().take(2).collect::<Vec<_>>().join("."), Bucket::Library));
+                self.library(steps, c, fnode, None);
+            }
             Some(Callee::Lib(lib)) => {
                 // a library's call not read that makes a value the body keeps under a name, from
                 // values it was handed, is a step of its own; what a call gives without a name
@@ -1495,7 +1541,16 @@ impl<'a, 't> Body<'a, 't> {
             t,
             kind,
             None,
-            Step { on: on.unwrap_or_default(), on_receiver, named, after: after_class, hands, gives, ..Default::default() },
+            Step {
+                on: on.unwrap_or_default(),
+                on_receiver,
+                named,
+                receiver_first: named && instance,
+                after: after_class,
+                hands,
+                gives,
+                ..Default::default()
+            },
         );
         if kind == EdgeKind::Calls && value_used(c) {
             self.read.used.push(t.to_string());
@@ -1731,13 +1786,51 @@ fn crossed<'t>(
                 return Crossed { waiting: vec![(t, built)], said: said.map(|d| (cr.facts.kind, d)), handed, ..Default::default() };
             }
             // a request is its method and its URL, whole where the callers make it, as a path is
-            let request = url.filter(|_| lib.map_or(false, effects::network)).map(|a| crate::paths::request_of(op, eval.of(at, a, 0)));
+            let request = url.filter(|_| lib.map_or(false, effects::network)).map(|a| {
+                let (way, a) = sent(seen, c, a, op);
+                crate::paths::request_of(&way, eval.of(at, a, 0))
+            });
             if let (Some(built), Some(t)) = (request, cr.touches(said).into_iter().next()) {
                 return Crossed { waiting: vec![(t, built)], said: said.map(|d| (cr.facts.kind, d)), handed, ..Default::default() };
             }
             Crossed { touches: cr.touches(said), said: said.map(|d| (cr.facts.kind, d)), handed, ..Default::default() }
         }
     }
+}
+
+/// The method a request `op` goes by, with the URL it asks for, where its library says the method by
+/// what the call is handed (`knowledge::REQUESTS_BY_DATA`): a `Request(..)` built in place where the
+/// call opens one, by that one's `method` or data and with its URL; else the call's own name.
+fn sent<'t>(seen: &Seen, c: TsNode<'t>, url: TsNode<'t>, op: &str) -> (String, TsNode<'t>) {
+    let src = &seen.m.src;
+    let Some(by) = knowledge::request_by_data(op) else { return (op.to_string(), url) };
+    let built = (url.kind() == "call").then(|| dotted(url.child_by_field_name("function"), src).last().cloned()).flatten();
+    if let Some(inner) = built.as_deref().and_then(knowledge::request_by_data).filter(|r| r.method.is_some()) {
+        if let Some(u) = keyword_node(url, src, knowledge::ASKED_BY[0]).or_else(|| positional_at(url, 0)) {
+            return (way_by_data(seen, url, inner).unwrap_or_else(|| op.to_string()), u);
+        }
+    }
+    (way_by_data(seen, c, by).unwrap_or_else(|| op.to_string()), url)
+}
+
+/// The method a call of `by` says by what it is handed: the method it is handed as a literal, else a
+/// `GET` where it is handed no data (none, or `None` written), a `POST` where what it is handed is
+/// never `None` (a literal, or a value of a type without `None` as ty says), and none where it may
+/// be or the method is a value: the code does not say which way the request goes.
+fn way_by_data(seen: &Seen, c: TsNode, by: &knowledge::RequestByData) -> Option<String> {
+    let src = &seen.m.src;
+    if let Some(m) = by.method.and_then(|k| keyword_node(c, src, k)) {
+        return (m.kind() == "string").then(|| unquote(text(m, src)).to_lowercase());
+    }
+    let Some(data) = keyword_node(c, src, by.data.1).or_else(|| positional_at(c, by.data.0)) else {
+        return Some(knowledge::REQUEST_WITHOUT_DATA.to_string());
+    };
+    if data.kind() == "none" {
+        return Some(knowledge::REQUEST_WITHOUT_DATA.to_string());
+    }
+    let literal = matches!(data.kind(), "string" | "concatenated_string" | "integer" | "float" | "list" | "dictionary" | "tuple");
+    let typed = seen.facts.and_then(|f| f.value(Seen::range(data))).map(|v| v.shown.split('|').all(|p| p.trim() != "None"));
+    (literal || typed == Some(true)).then(|| knowledge::REQUEST_WITH_DATA.to_string())
 }
 
 /// The files a file call touches, each a touch with its direction, what the code calls it (the
@@ -2149,11 +2242,49 @@ const USES: UseSyntax = UseSyntax {
     tails: &[],
     propagates: None,
     catches: handlers,
+    args,
 };
+
+/// The arguments a Python call writes, each with the parameter it fills (`body::placed`): the object a
+/// method is called on (`x` of `x.f(..)`), each argument by its place up to a `*xs`, each `k=v` by its
+/// name, and what a `**kw` spreads; a generator written as the one argument fills the first place.
+fn args(n: TsNode, src: &[u8]) -> Vec<(Range, Slot)> {
+    if n.kind() != "call" {
+        return vec![];
+    }
+    let range = |n: TsNode| (n.start_byte(), n.end_byte());
+    let f = n.child_by_field_name("function");
+    let mut out: Vec<(Range, Slot)> = f
+        .filter(|f| f.kind() == "attribute")
+        .and_then(|f| f.child_by_field_name("object"))
+        .map(|o| (range(o), Slot::Receiver))
+        .into_iter()
+        .collect();
+    let Some(a) = n.child_by_field_name("arguments") else { return out };
+    if a.kind() == "generator_expression" {
+        out.push((range(a), Slot::At(0)));
+        return out;
+    }
+    let written = named_children(a).into_iter().filter(|x| x.kind() != "comment");
+    out.extend(crate::body::placed(
+        written,
+        |x| match x.kind() {
+            "list_splat" => Some(Slot::Spread(0)),
+            "dictionary_splat" => Some(Slot::Keywords),
+            _ => None,
+        },
+        |x| {
+            (x.kind() == "keyword_argument")
+                .then(|| Some((text(x.child_by_field_name("name")?, src).to_string(), x.child_by_field_name("value")?)))
+                .flatten()
+        },
+    ));
+    out
+}
 
 /// What the handlers of a `try` catch, where `child` is its body: the classes each `except` names
 /// (`except (A, B)`), none where one catches whatever is raised: a bare `except:`, and one that names
-/// a class every error is of (`Exception`, `BaseException`).
+/// a class every error is of (`knowledge::PYTHON_CATCH_ALL`).
 fn handlers(n: TsNode, child: TsNode, src: &[u8]) -> Option<Vec<String>> {
     if n.kind() != "try_statement" || n.child_by_field_name("body").map(|b| b.id()) != Some(child.id()) {
         return None;
@@ -2174,7 +2305,7 @@ fn handlers(n: TsNode, child: TsNode, src: &[u8]) -> Option<Vec<String>> {
                 .flat_map(|v| if matches!(v.kind(), "tuple" | "parenthesized_expression") { named_children(v) } else { vec![v] })
         {
             let name = text(v, src);
-            if matches!(name.rsplit('.').next(), Some("Exception" | "BaseException")) {
+            if name.rsplit('.').next().is_some_and(|n| knowledge::PYTHON_CATCH_ALL.contains(&n)) {
                 return Some(vec![]);
             }
             names.push(name.to_string());

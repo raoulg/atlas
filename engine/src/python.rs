@@ -42,8 +42,8 @@ fn runs_as_main(root: TsNode, src: &[u8]) -> bool {
 /// The scripts and notebooks of a project: every `.py` and `.ipynb` outside its packages, at any
 /// depth, and the files named on the command line, even where git ignores them. Not its tests,
 /// what git ignores, hidden directories or environments, a project's own file (`setup.py`, which
-/// setuptools runs to build it), and not another project inside it (a directory with a
-/// `pyproject.toml`: a part of its own).
+/// setuptools runs to build it), and not another project inside it (a directory that holds one,
+/// `is_project`: a part of its own).
 fn scripts(repo: &Repo, root_dir: &Path, packages: &[PathBuf]) -> Vec<PathBuf> {
     let named: Vec<PathBuf> = repo.named().into_iter().filter(|p| p.starts_with(root_dir)).collect();
     // without a package or a project's file, the project is the files named
@@ -53,7 +53,7 @@ fn scripts(repo: &Repo, root_dir: &Path, packages: &[PathBuf]) -> Vec<PathBuf> {
     // what a tool made, tests, and another project inside the project
     let elsewhere = |d: &Path| {
         let name = d.file_name().and_then(|n| n.to_str()).unwrap_or("");
-        knowledge::made_dir(name) || knowledge::TEST_DIRS.contains(&name) || repo.is_file(d.join("pyproject.toml"))
+        knowledge::made_dir(name) || knowledge::TEST_DIRS.contains(&name) || is_project(repo, d)
     };
     let packaged: HashSet<PathBuf> = packages.iter().flat_map(|d| repo.files_under(d)).collect();
     let mut out: Vec<PathBuf> = repo
@@ -82,7 +82,12 @@ pub const PROJECT_ABOVE: usize = 4;
 /// a project from (knowledge::PYTHON_PROJECT_FILES), a `pyproject.toml` or a `requirements.txt`
 /// alike.
 pub fn is_project(repo: &Repo, dir: &Path) -> bool {
-    knowledge::PYTHON_PROJECT_FILES.iter().any(|f| repo.is_file(dir.join(f)))
+    project_files(dir).any(|f| repo.is_file(f))
+}
+
+/// Where the files that say a directory holds a Python project would lie in `dir`.
+pub fn project_files(dir: &Path) -> impl Iterator<Item = PathBuf> + '_ {
+    knowledge::PYTHON_PROJECT_FILES.iter().map(move |f| dir.join(f))
 }
 
 /// The nearest ancestor of the package that holds a Python project (`is_project`).
@@ -112,7 +117,7 @@ pub fn packages(repo: &Repo) -> Vec<PathBuf> {
     for base in package_bases(&manifest) {
         for d in repo.dirs_in(&base) {
             let name = d.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            let elsewhere = knowledge::made_dir(name) || knowledge::TEST_DIRS.contains(&name) || repo.is_file(d.join("pyproject.toml"));
+            let elsewhere = knowledge::made_dir(name) || knowledge::TEST_DIRS.contains(&name) || is_project(repo, &d);
             // a package inside another is read with it
             if !elsewhere && repo.is_file(d.join("__init__.py")) && !out.iter().any(|p| d.starts_with(p) || p.starts_with(&d)) {
                 out.push(d);

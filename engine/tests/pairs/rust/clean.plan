@@ -294,7 +294,6 @@ side Screen right
 # the format the arm's pattern binds out of `cli` comes from beyond
 # an own arrow takes what only a step inside it takes, and a value is not followed into the operation a body hands it to
 known #157 extra line Config·config@main/Config.load > main/?1/write value   # what render.render is not bound to rests at write's own arrow
-known #128 extra line Money·amount@main/?1/Store.expenses/Money() > main/?1/Store.expenses/query_map value   # a name the closure binds is handed to the call it is written in
 # a result that only a step takes is no result handed back
 # the name a chain's last operation gives is given to every call in the chain
 # the else of a `let .. else` is no choice
@@ -376,6 +375,7 @@ line _·rows@main/?1/Store.rates/query_map > main/?1/Store.rates/for row in rows
 line main/?1/Store.rates/for row in rows > _·row@main/?1/Store.rates/for row in rows value
 home _·row@main/?1/Store.rates/for row in rows main/?1/Store.rates
 line _·row@main/?1/Store.rates/for row in rows > main/?1/Store.rates/insert value   # let (date, currency, rate) = row?
+line _·row@main/?1/Store.rates/for row in rows > main/?1/Store.rates value          # `rates.date = date`: the body's own code sets a part of `rates` to it
 line main/?1/write/Render.render/Csv.render/for l in lines > Line·l@main/?1/write/Render.render/Csv.render/for l in lines value
 line Line·l@main/?1/write/Render.render/Csv.render/for l in lines > main/?1/write/Render.render/Csv.render value
 home Line·l@main/?1/write/Render.render/Csv.render/for l in lines main/?1/write/Render.render/Csv.render

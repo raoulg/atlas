@@ -75,7 +75,7 @@ line Reading@Store()/Store.get/Store.rows/Reading() > Store()/Store.get/Store.ro
 line Store()/Store.get/Store.rows/Row() > Row@Store()/Store.get/Store.rows/Row() value
 line Row@Store()/Store.get/Store.rows/Row() > Store()/Store.get/Store.rows value  # the rows built go back
 line Store()/Store.get/Store.rows > Row@Store()/Store.get/Store.rows value  # no name holds them
-known #101 line Row@Store()/Store.get/Store.rows > Store()/Store.get value   # the body uses the rows itself
+line Row@Store()/Store.get/Store.rows > Store()/Store.get value   # the body uses the rows itself
 line Store()/Store.get > Reading@Store()/Store.get value  # the Readings back
 
 home Store@Store()/Store.new/Store() Store()/Store.new
@@ -118,6 +118,12 @@ line Store()/Store.put_all/Store.rows > _@Store()/Store.put_all/Store.rows value
 line _@Store()/Store.get/Store.rows > Store()/Store.get value
 line _@Store()/Store.put/Store.rows > Store()/Store.put value
 line _@Store()/Store.put_all/Store.rows > Store()/Store.put_all value
+line Store()/Store.put/write_rows > _@Store()/Store.put/write_rows value   # `write_rows(..)` last: put gives back what it gives, its error with it
+line _@Store()/Store.put/write_rows > Store()/Store.put value
+line Store()/Store.put_all/write_rows > _@Store()/Store.put_all/write_rows value
+line _@Store()/Store.put_all/write_rows > Store()/Store.put_all value
+home _@Store()/Store.put/write_rows Store()/Store.put
+home _@Store()/Store.put_all/write_rows Store()/Store.put_all
 home _@Store()/Store.get Store()
 home _@Store()/Store.get/Store.rows Store()/Store.get
 home _@Store()/Store.put Store()

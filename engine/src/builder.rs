@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use indexmap::IndexMap;
 
 use crate::model::{
-    Bucket, Dir, Edge, EdgeKind, Entry, EntryKind, Graph, Node, NodeKind, Signature, Site, Stats, Touch, Unresolved, World,
+    Bucket, Dir, Edge, EdgeKind, Entry, EntryKind, Graph, Held, Node, NodeKind, Signature, Site, Slot, Stats, Touch, Unresolved, World,
 };
 
 /// Per-class facts that only matter during resolution.
@@ -344,6 +344,7 @@ impl GraphBuilder {
         serve_data(&mut nodes);
         settle_fails(&mut nodes, &self.edges, &family);
         crate::flow::wire(&mut nodes, &self.edges);
+        fill_nested(&mut nodes);
         mark_doors(&mut nodes, &self.edges);
         mark_options(&mut nodes);
         crate::prophecy::settle(&mut nodes, &self.edges);
@@ -429,6 +430,48 @@ impl GraphBuilder {
             door: crate::effects::library_place(package),
             ..Default::default()
         });
+    }
+}
+
+/// What a step written inside a call's argument gives fills that argument's parameter (`Held::fills`),
+/// once the steps are wired and the call is handed what the step gives: `Trend::new(s).save(..)` hands
+/// what `Trend.new` gives for the value `save` runs on, `f(g(y))` what `g` gives for `f`'s first. A
+/// call that is no method of the program's runs on no value it is not handed: what is written before
+/// the name of a function or a class is where it lies (`models.Store(..)`, `pd.read_csv(..)`).
+fn fill_nested(nodes: &mut IndexMap<String, Node>) {
+    let inside = |inner: (u32, u32), outer: (u32, u32)| inner != outer && inner != (0, 0) && outer.0 <= inner.0 && inner.1 <= outer.1;
+    let methods: HashSet<String> = nodes.values().filter(|n| n.kind == NodeKind::Method).map(|n| n.id.clone()).collect();
+    for n in nodes.values_mut() {
+        let sites = &mut n.sites;
+        // what a step in a function written in a call's arguments gives under a name the function binds is the function's:
+        // the call is handed what the function gives back (`query_map(.., |row| { let amount = Money { .. }; Ok(..) })`)
+        for o in 0..sites.len() {
+            let span = sites[o].span;
+            let theirs: Vec<Held> = sites
+                .iter()
+                .filter(|s| s.in_function && inside(s.span, span))
+                .flat_map(|s| s.gives.iter().filter(|g| !g.name.is_empty() && !g.name.starts_with('#')).cloned())
+                .collect();
+            sites[o].hands.retain(|h| !theirs.contains(h));
+        }
+        for o in 0..sites.len() {
+            for k in 0..sites[o].hands.len() {
+                if !sites[o].hands[k].fills.is_empty() {
+                    continue;
+                }
+                let (span, h) = (sites[o].span, &sites[o].hands[k]);
+                let Some(at) = sites.iter().find(|s| inside(s.span, span) && s.gives.contains(h)).map(|s| s.span.0) else { continue };
+                let slots: Vec<Slot> =
+                    sites[o].written.iter().zip(&sites[o].args).filter(|((a, b), _)| *a <= at && at < *b).map(|(_, s)| s.clone()).collect();
+                sites[o].hands[k].fills = slots;
+            }
+        }
+        for s in sites.iter_mut().filter(|s| !methods.contains(&s.to) && !s.hands.iter().any(|h| h.fills.contains(&Slot::Receiver))) {
+            if let Some(j) = s.args.iter().position(|a| *a == Slot::Receiver) {
+                s.args.remove(j);
+                s.written.remove(j);
+            }
+        }
     }
 }
 

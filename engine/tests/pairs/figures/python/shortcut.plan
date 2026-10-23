@@ -17,12 +17,12 @@ line compare/compare/Chart() > Chart·chart@compare/compare/Chart() value
 line Chart·chart@compare/compare/Chart() > compare/compare/Chart.line value                         # `self.title`
 line compare/compare/Chart.line/subplots > _·fig@compare/compare/Chart.line/subplots value
 line compare/compare/Chart.line/subplots > _·ax@compare/compare/Chart.line/subplots value
-known #101 line _·ax@compare/compare/Chart.line/subplots > compare/compare/Chart.line value          # `ax.plot(..)`
+line _·ax@compare/compare/Chart.line/subplots > compare/compare/Chart.line value          # `ax.plot(..)`
 line compare/compare/Chart.line > Figure 1 · Chart.line own
 line Chart·chart@compare/compare/Chart() > compare/compare/Chart.line#2 value
 line compare/compare/Chart.line#2/subplots > _·fig@compare/compare/Chart.line#2/subplots value
 line compare/compare/Chart.line#2/subplots > _·ax@compare/compare/Chart.line#2/subplots value
-known #101 line _·ax@compare/compare/Chart.line#2/subplots > compare/compare/Chart.line#2 value
+line _·ax@compare/compare/Chart.line#2/subplots > compare/compare/Chart.line#2 value
 line compare/compare/Chart.line#2 > Figure 2 · Chart.line own                                       # a second figure
 line Chart·chart@compare/compare/Chart() > compare/compare value                         # `return chart`
 line compare/compare > Chart·chart@compare/compare value
@@ -50,12 +50,12 @@ line compare/Chart() > Chart·chart@compare/Chart() value
 line Chart·chart@compare/Chart() > compare/Chart.line value
 line compare/Chart.line/subplots > _·fig@compare/Chart.line/subplots value
 line compare/Chart.line/subplots > _·ax@compare/Chart.line/subplots value
-known #101 line _·ax@compare/Chart.line/subplots > compare/Chart.line value
+line _·ax@compare/Chart.line/subplots > compare/Chart.line value
 line compare/Chart.line > Figure own
 line Chart·chart@compare/Chart() > compare/Chart.line#2 value
 line compare/Chart.line#2/subplots > _·fig@compare/Chart.line#2/subplots value
 line compare/Chart.line#2/subplots > _·ax@compare/Chart.line#2/subplots value
-known #101 line _·ax@compare/Chart.line#2/subplots > compare/Chart.line#2 value
+line _·ax@compare/Chart.line#2/subplots > compare/Chart.line#2 value
 line compare/Chart.line#2 > Figure own
 line Chart·chart@compare/Chart() > compare value
 line compare > Chart@compare value

@@ -197,6 +197,46 @@ fn every_project_file_makes_the_scripts_beside_the_packages_entries() {
     }
 }
 
+/// A language names every file that roots a part in it (issue #161): a repository of scripts with no
+/// package, beside a `requirements.txt` and nothing else, is a Python project, one part, and its scripts
+/// are its entries; one below it beside a project file of its own is a part of its own.
+#[test]
+fn a_repository_of_scripts_beside_a_requirements_file_is_a_part() {
+    let dir = std::env::temp_dir().join(format!("atlas-parts-requirements-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let written = [
+        ("requirements.txt", "requests==2.32.3\n"),
+        ("fetch.py", "import sys\n\n\ndef fetch(url: str) -> str:\n    return url\n\n\nif __name__ == \"__main__\":\n    print(fetch(sys.argv[1]))\n"),
+        ("tidy.py", "def tidy(text: str) -> str:\n    return text.strip()\n\n\nif __name__ == \"__main__\":\n    print(tidy(\" x \"))\n"),
+        ("tools/setup.cfg", "[metadata]\nname = tools\n"),
+        ("tools/lint.py", "if __name__ == \"__main__\":\n    print(\"lint\")\n"),
+    ];
+    for (path, body) in written {
+        let file = dir.join(path);
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        std::fs::write(file, body).unwrap();
+    }
+    let found: Vec<(String, &str)> = roots(&Repo::read(&dir, &[]).unwrap(), &Options::default())
+        .into_iter()
+        .map(|(d, l)| (d.strip_prefix(&dir).unwrap().to_string_lossy().replace('\\', "/"), l))
+        .collect();
+    let g = analyze_repo(&[dir.clone()], &Options::default());
+    let _ = std::fs::remove_dir_all(&dir);
+    assert_eq!(found, [(String::new(), "python"), ("tools".to_string(), "python")], "each project file roots a part");
+    let g = g.expect("a repository of scripts beside a requirements.txt is read");
+    let mut scripts: Vec<(String, String)> = g
+        .nodes
+        .iter()
+        .filter(|n| n.entry.as_ref().is_some_and(|e| e.kind == EntryKind::Script))
+        .map(|n| (n.part.clone(), n.entry.as_ref().unwrap().label.clone()))
+        .collect();
+    scripts.sort();
+    let part = |label: &str| scripts.iter().find(|(_, l)| l.ends_with(label)).map(|(p, _)| p.clone());
+    assert_eq!(scripts.len(), 3, "every script is an entry: {scripts:?}");
+    assert!(part("fetch.py").is_some() && part("fetch.py") == part("tidy.py"), "the scripts at the root are one part's: {scripts:?}");
+    assert_ne!(part("lint.py"), part("fetch.py"), "the scripts below a project file of their own are another part's: {scripts:?}");
+}
+
 /// The parts side by side in one graph, every node in its part; checked part by part.
 #[test]
 fn the_parts_are_one_graph() {

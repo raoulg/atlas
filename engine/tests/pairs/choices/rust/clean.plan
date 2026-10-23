@@ -67,7 +67,7 @@ line run/finished/Mode.plan/?1/Plan() > Plan@run/finished/Mode.plan/?1 value
 line run/finished/Mode.plan/?1/Plan()#2 > Plan@run/finished/Mode.plan/?1 value
 line Plan@run/finished/Mode.plan/?1 > run/finished/Mode.plan value
 line run/finished/Mode.plan > Plan@run/finished/Mode.plan value
-known #101 line Plan@run/finished/Mode.plan > run/finished value               # finished reads its timeout
+line Plan@run/finished/Mode.plan > run/finished value               # finished reads its timeout
 line run/finished > _@run/finished value                           # the bool, handed straight to report
 line _@run/finished > run/report value
 
@@ -93,7 +93,7 @@ line run/Mode.plan/?1/Plan() > Plan@run/Mode.plan/?1 value
 line run/Mode.plan/?1/Plan()#2 > Plan@run/Mode.plan/?1 value
 line Plan@run/Mode.plan/?1 > run/Mode.plan value
 line run/Mode.plan > Plan@run/Mode.plan value
-known #101 line Plan@run/Mode.plan > run value                                 # run reads its retries
+line Plan@run/Mode.plan > run value                                 # run reads its retries
 
 home Settings·settings run
 home Job@run/source/?1/load/Job() run/source/?1/load

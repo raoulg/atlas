@@ -17,15 +17,13 @@ step lines/Trimmed.read/Source.read/Cached.read/?1/Store.get
 step lines/Trimmed.read/Source.read/Cached.read/?1/Source.read                         # `super().read()` on the feed
 step lines/Trimmed.read/Source.read/Cached.read/?1/Source.read/urlopen
 step lines/Trimmed.read/Source.read/Cached.read/?1/Store.put
-known #125 extra step lines/Trimmed.read/Source.read/response.read                     # `return response.read()`
-known #125 extra step lines/Trimmed.read/Source.read/Cached.read/?1/Source.read/response.read
 
 line entry > lines call
 line Trimmed·source > lines value
 line Trimmed·source > lines/Trimmed.read/Source.read/urlopen value         # `urlopen(self.url)`
 line lines/Trimmed.read/Source.read/urlopen > _·response@lines/Trimmed.read/Source.read/urlopen value
 line _·response@lines/Trimmed.read/Source.read/urlopen > lines/Trimmed.read/Source.read value   # `response.read()`
-line lines/Trimmed.read/Source.read > Web own
+line Web > lines/Trimmed.read/Source.read own                                         # `urlopen(self.url)` with no data is a GET
 line lines/Trimmed.read/Source.read > lines/Trimmed.read back
 line lines/Trimmed.read > lines back
 line Trimmed·source > lines/Trimmed.read/Source.read/Cached.read/Store.has value   # `self.store.has(self.url)`
@@ -36,7 +34,7 @@ line lines/Trimmed.read/Source.read/Cached.read/?1/Store.get > lines/Trimmed.rea
 line Trimmed·source > lines/Trimmed.read/Source.read/Cached.read/?1/Source.read/urlopen value
 line lines/Trimmed.read/Source.read/Cached.read/?1/Source.read/urlopen > _·response@lines/Trimmed.read/Source.read/Cached.read/?1/Source.read/urlopen value
 line _·response@lines/Trimmed.read/Source.read/Cached.read/?1/Source.read/urlopen > lines/Trimmed.read/Source.read/Cached.read/?1/Source.read value
-line lines/Trimmed.read/Source.read/Cached.read/?1/Source.read > Web own
+line Web > lines/Trimmed.read/Source.read/Cached.read/?1/Source.read own
 line lines/Trimmed.read/Source.read/Cached.read/?1/Source.read > _·data@lines/Trimmed.read/Source.read/Cached.read/?1/Source.read value
 line _·data@lines/Trimmed.read/Source.read/Cached.read/?1/Source.read > lines/Trimmed.read/Source.read/Cached.read/?1/Store.put value
 line Trimmed·source > lines/Trimmed.read/Source.read/Cached.read/?1/Store.put value
@@ -45,8 +43,6 @@ line _·data@lines/Trimmed.read/Source.read/Cached.read/?1/Source.read > lines/T
 line lines/Trimmed.read/Source.read/Cached.read > lines/Trimmed.read/Source.read back
 
 # the values a call is handed through `self` drawn as types from beyond, and the source at the own arrow
-known #125 extra line _·response@lines/Trimmed.read/Source.read/urlopen > lines/Trimmed.read/Source.read/response.read value
-known #125 extra line _·response@lines/Trimmed.read/Source.read/Cached.read/?1/Source.read/urlopen > lines/Trimmed.read/Source.read/Cached.read/?1/Source.read/response.read value
 
 home Trimmed·source lines
 home _·response@lines/Trimmed.read/Source.read/urlopen lines/Trimmed.read/Source.read
@@ -54,7 +50,7 @@ home _·response@lines/Trimmed.read/Source.read/Cached.read/?1/Source.read/urlop
 home _·data@lines/Trimmed.read/Source.read/Cached.read/?1/Source.read lines/Trimmed.read/Source.read/Cached.read   # `return data` uses it too
 
 side entry left
-known #160 side Web left                                                              # `urlopen(url)` with no data is a GET
+side Web left                                                                         # `urlopen(url)` with no data is a GET
 side Disk(self.root / key) both
 
 # `cached_lines(source: Cached)`: a cached source may be a feed, `Feed(Trimmed, Cached)`, which runs `Trimmed.read` for
@@ -79,8 +75,6 @@ step cached_lines/Cached.read/Feed.read/Cached.read/?1/Store.get
 step cached_lines/Cached.read/Feed.read/Cached.read/?1/Source.read                # Cached's `super().read()` on the feed
 step cached_lines/Cached.read/Feed.read/Cached.read/?1/Source.read/urlopen
 step cached_lines/Cached.read/Feed.read/Cached.read/?1/Store.put
-known #125 extra step cached_lines/Cached.read/?1/Source.read/response.read     # `return response.read()`
-known #125 extra step cached_lines/Cached.read/Feed.read/Cached.read/?1/Source.read/response.read
 
 line entry > cached_lines call
 line Cached·source > cached_lines value
@@ -95,7 +89,7 @@ line cached_lines/Cached.read/?1/Store.get > cached_lines/Cached.read back
 line Cached·source > cached_lines/Cached.read/?1/Source.read/urlopen value       # `urlopen(self.url)`
 line cached_lines/Cached.read/?1/Source.read/urlopen > _·response@cached_lines/Cached.read/?1/Source.read/urlopen value
 line _·response@cached_lines/Cached.read/?1/Source.read/urlopen > cached_lines/Cached.read/?1/Source.read value   # `response.read()`
-line cached_lines/Cached.read/?1/Source.read > Web own
+line Web > cached_lines/Cached.read/?1/Source.read own
 line cached_lines/Cached.read/?1/Source.read > _·data@cached_lines/Cached.read/?1/Source.read value
 line _·data@cached_lines/Cached.read/?1/Source.read > cached_lines/Cached.read/?1/Store.put value
 line Cached·source > cached_lines/Cached.read/?1/Store.put value
@@ -113,15 +107,13 @@ line cached_lines/Cached.read/Feed.read/Cached.read/?1/Store.get > cached_lines/
 line Cached·source > cached_lines/Cached.read/Feed.read/Cached.read/?1/Source.read/urlopen value
 line cached_lines/Cached.read/Feed.read/Cached.read/?1/Source.read/urlopen > _·response@cached_lines/Cached.read/Feed.read/Cached.read/?1/Source.read/urlopen value
 line _·response@cached_lines/Cached.read/Feed.read/Cached.read/?1/Source.read/urlopen > cached_lines/Cached.read/Feed.read/Cached.read/?1/Source.read value
-line cached_lines/Cached.read/Feed.read/Cached.read/?1/Source.read > Web own
+line Web > cached_lines/Cached.read/Feed.read/Cached.read/?1/Source.read own
 line cached_lines/Cached.read/Feed.read/Cached.read/?1/Source.read > _·data@cached_lines/Cached.read/Feed.read/Cached.read/?1/Source.read value
 line _·data@cached_lines/Cached.read/Feed.read/Cached.read/?1/Source.read > cached_lines/Cached.read/Feed.read/Cached.read/?1/Store.put value
 line Cached·source > cached_lines/Cached.read/Feed.read/Cached.read/?1/Store.put value
 line cached_lines/Cached.read/Feed.read/Cached.read/?1/Store.put > Disk(self.root / key) own
 line _·data@cached_lines/Cached.read/Feed.read/Cached.read/?1/Source.read > cached_lines/Cached.read/Feed.read/Cached.read value
 
-known #125 extra line _·response@cached_lines/Cached.read/?1/Source.read/urlopen > cached_lines/Cached.read/?1/Source.read/response.read value
-known #125 extra line _·response@cached_lines/Cached.read/Feed.read/Cached.read/?1/Source.read/urlopen > cached_lines/Cached.read/Feed.read/Cached.read/?1/Source.read/response.read value
 
 home Cached·source cached_lines
 home _·response@cached_lines/Cached.read/?1/Source.read/urlopen cached_lines/Cached.read/?1/Source.read
@@ -130,5 +122,5 @@ home _·response@cached_lines/Cached.read/Feed.read/Cached.read/?1/Source.read/u
 home _·data@cached_lines/Cached.read/Feed.read/Cached.read/?1/Source.read cached_lines/Cached.read/Feed.read/Cached.read
 
 side entry left
-known #160 side Web left                                                              # `urlopen(url)` with no data is a GET
+side Web left                                                                         # `urlopen(url)` with no data is a GET
 side Disk(self.root / key) both

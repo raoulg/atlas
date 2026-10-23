@@ -1,0 +1,25 @@
+# The same client with one function for every request (#160). `latest` still asks without data: a `GET`, left. `call`
+# is handed data that may be `None`, so whether it asks or sends is decided at run time, and the `Request` that
+# `remove` opens is built with a method that is a value: the code does not say which way either goes, and the feed is
+# in neither domain nor codomain.
+
+route feeds.latest
+line entry > latest call
+line Web(feeds.example.org) > latest own        # return urlopen(FEED).read()
+
+side entry left
+side Web(feeds.example.org) left
+
+route feeds.call
+line entry > call call
+line call > Web(feeds.example.org) own          # urlopen(FEED, data), `data: bytes | None`
+
+side entry left
+side Web(feeds.example.org) between
+
+route feeds.remove
+line entry > remove call
+line remove > Web(feeds.example.org) own        # urlopen(Request(.., method=method))
+
+side entry left
+side Web(feeds.example.org) between

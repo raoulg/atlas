@@ -162,6 +162,11 @@ pub struct Node {
     /// functions it defines, or it calls what ends the program (`sys.exit`, `process.exit`).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub raises: bool,
+    /// The error its body's own code hands on outside its steps, as its signature converts it, `""`
+    /// for one of no type of the code's: a `?` written in no step (`Ok(fs::read_to_string(p)?.lines()..)`).
+    /// What a step hands on, the step's site says (`Site::fails`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fails: Option<String>,
     /// It calls a function it is handed: what that function does is its caller's to say.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub calls_handed: bool,
@@ -214,6 +219,19 @@ pub struct Node {
     /// it.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub uses: Vec<Use>,
+    /// The names the arms of its body's choices bind by the body's own code, no step of it: what an
+    /// arm sets a name to (`let unit; if .. { unit = KELVIN }`), and what an arm of a choice a name is
+    /// bound to gives where no step makes it (`let out = match f { "csv" => String::from(..), _ =>
+    /// format!(..) }`, `x = a if c else b`). Each name once in each arm, with its type when known and
+    /// the arms the value is made in. Such an arm makes the name's value as an arm whose step gives it
+    /// does.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub binds: Vec<Use>,
+    /// What its body's own code sets a part of a value to, by assignment through the name that holds
+    /// the value (`other.fig = self.fig`, `rows[i] = row`): the value changed and what the assigned
+    /// expression reads, a lens's put made in place.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sets: Vec<Set>,
     /// The lines each arm of its body's choices spans, first and last: what is written there runs
     /// only in that arm.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -410,9 +428,19 @@ pub struct Site {
     /// the next method after it along the order of the value's class.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub after: String,
-    /// The values the call is handed: its arguments and the value it is called on.
+    /// The values the call is handed: its arguments and the value it is called on, each with the
+    /// parameters it fills (`Held::fills`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub hands: Vec<Held>,
+    /// The parameters the call writes an argument for, as the call writes them, in the order written:
+    /// the value it runs on, each argument by its place and by its name. A parameter none of them
+    /// fills holds its default; one an argument fills that hands no value holds what no step makes
+    /// (a literal, a constant).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub args: Vec<Slot>,
+    /// Where each of `args` is written, as a byte range of its file.
+    #[serde(skip)]
+    pub written: Vec<(u32, u32)>,
     /// What it gives back.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub gives: Vec<Held>,
@@ -430,6 +458,10 @@ pub struct Site {
     /// of the body is (a function handed on, called by whoever receives it).
     #[serde(skip)]
     pub span: (u32, u32),
+    /// The call stands in a function written in place in the body (`|row| ..`, `lambda r: ..`,
+    /// `(r) => ..`): what it gives under a name that function binds is the function's own.
+    #[serde(skip)]
+    pub in_function: bool,
 }
 
 /// A value by its type, and the name the code holds it by when it has one. A value no name holds
@@ -444,23 +476,68 @@ pub struct Held {
     /// Where the code writes it, as a byte offset of its file: where it comes from, not what it is.
     #[serde(skip)]
     pub at: u32,
+    /// For a value a call is handed: the parameters it fills, each argument of the call it is written
+    /// in (`Site::args`). `f(x.title, x.lines)` hands `x` for the first two; `f(g(y))` hands what the
+    /// step `g` gives for the first, and `y` to `g`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub fills: Vec<Slot>,
 }
 
 impl Held {
     pub fn new(ty: impl Into<String>, name: impl Into<String>) -> Held {
-        Held { ty: ty.into(), name: name.into(), at: 0 }
+        Held { ty: ty.into(), name: name.into(), at: 0, fills: vec![] }
     }
 }
 
-/// A value a body's own code reads (`Node::uses`), by the name that holds it (none for the instance
-/// a method runs on), with its type when known and the arms of the choices the use sits in, numbered
-/// as `Site::arms` numbers them.
+/// Which parameter of the function a call reaches an argument fills, as the call writes it. Inside the
+/// callee the parameter holds what the argument hands (`mathematics.md`, "One fine plan"): a call
+/// pairs its values with the parameters by where it writes them, not by their types.
+#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum Slot {
+    /// The value the call runs on: `x` of `x.f(..)`, `Trend::new(..)` of `Trend::new(..).save(..)`, and
+    /// the first argument of a method called through its class or path (`Cached.read(self)`,
+    /// `Trend::save(&t, ..)`, `Source.prototype.read.call(v)`).
+    Receiver,
+    /// The parameter after the receiver at this place, the first being 0: the argument written there
+    /// by place.
+    At(u32),
+    /// The parameter of this name: a keyword argument (`f(title=t)`), a field a literal of a struct or
+    /// an element writes (`Trend { settings }`, `<Chart rows={rows} />`).
+    Name(String),
+    /// What a spread hands (`f(*xs)`, `f(...xs)`) and what any argument by place after it hands: the
+    /// parameters from this place on, of which the call does not say which.
+    Spread(u32),
+    /// What a spread of names hands (`f(**options)`, `Settings { ..base }`): the parameters the call
+    /// writes no argument for by name.
+    Keywords,
+}
+
+/// A value a body's own code reads (`Node::uses`) or an arm binds (`Node::binds`), by the name that
+/// holds it (none for the instance a method runs on), with its type when known and the arms of the
+/// choices the use or the binding sits in, numbered as `Site::arms` numbers them.
 #[derive(Serialize, Deserialize, TS, Clone, Debug, Default, PartialEq, Eq)]
 #[ts(export)]
 pub struct Use {
     pub name: String,
     #[serde(rename = "type", default, skip_serializing_if = "String::is_empty")]
     pub ty: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(type = "Array<[number, number]>")]
+    pub arms: Vec<(u32, u32)>,
+}
+
+/// A part of a value the body's own code sets (`Node::sets`): the value, as a call is handed it (`other`
+/// of `other.fig = self.fig`, the instance a method runs on by no name for `self.n = ..`), what the
+/// assigned expression reads (the instance of `self.fig`), and the arms of the choices the setting sits
+/// in, numbered as `Site::arms` numbers them.
+#[derive(Serialize, Deserialize, TS, Clone, Debug, Default, PartialEq)]
+#[ts(export)]
+pub struct Set {
+    pub on: Held,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub from: Vec<Held>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[ts(type = "Array<[number, number]>")]
     pub arms: Vec<(u32, u32)>,
@@ -1104,7 +1181,8 @@ impl Graph {
 
     /// Every id the graph holds, mapped by `to`: each node's own, and each that names a node (its
     /// module, class and part, the method whose promise it breaks, what its prophecy replaces or may
-    /// replace, what its calls reach and the types they hand and give, whose calls make its touches
+    /// replace, what its calls reach and the types they hand and give, the values its own code uses,
+    /// binds and sets and the error it hands on, a value named by its step, whose calls make its touches
     /// whole and whose code decides where they go), an edge's ends, a make target's own with its
     /// Makefile, its part and what it runs, the parts and the root.
     pub fn rename(&mut self, to: &dyn Fn(&str) -> String) {
@@ -1112,6 +1190,16 @@ impl Graph {
             if !s.is_empty() {
                 *s = to(s)
             }
+        };
+        // a value no name holds is named by the step that makes it, in the function it is made in: `#<function>@<where>`
+        let named = |s: &mut String| {
+            if let Some((f, at)) = s.strip_prefix('#').and_then(|r| r.rsplit_once('@')) {
+                *s = format!("#{}@{at}", to(f));
+            }
+        };
+        let held = |h: &mut Held| {
+            m(&mut h.ty);
+            named(&mut h.name);
         };
         m(&mut self.root);
         self.parts.iter_mut().for_each(|p| m(&mut p.id));
@@ -1128,9 +1216,17 @@ impl Graph {
                 m(&mut s.on);
                 m(&mut s.after);
                 s.fails.iter_mut().for_each(&m);
-                s.hands.iter_mut().chain(s.gives.iter_mut()).for_each(|h| m(&mut h.ty));
+                s.hands.iter_mut().chain(s.gives.iter_mut()).for_each(held);
             }
-            n.uses.iter_mut().for_each(|u| m(&mut u.ty));
+            for u in n.uses.iter_mut().chain(n.binds.iter_mut()) {
+                m(&mut u.ty);
+                named(&mut u.name);
+            }
+            n.fails.iter_mut().for_each(&m);
+            for s in &mut n.sets {
+                held(&mut s.on);
+                s.from.iter_mut().for_each(held);
+            }
             for t in n.touches.iter_mut().chain(n.instead.iter_mut()) {
                 for f in &mut t.by {
                     *f = f.split('&').map(to).collect::<Vec<_>>().join("&");

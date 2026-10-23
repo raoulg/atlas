@@ -9,11 +9,33 @@
 //!   holds no count, and each border hands it on up to the route; `shortcut` raises the language's catch-all error and
 //!   swallows it (Python, TypeScript), or boxes it into one of no type of the program's (Rust).
 
+//!
+//! Beside them, what a call says of each value it hands, the parameter it fills (`Held::fills`, `Site::args`, #157),
+//! what an arm binds by the body's own code (`Node::binds`, #158), and a function a call runs on each element
+//! (`Steps::handed`), read on the programs of the other pairs where the code writes them.
+
 // the helpers the prophecy pairs use stand beside the one this file does
 #[allow(dead_code)]
 mod common;
 
-use atlas_engine::{Graph, Node, Site};
+use std::path::PathBuf;
+
+use atlas_engine::{analyze, Graph, Node, Options, Site, Slot};
+
+/// The program at `dir` below `engine/tests/pairs`.
+fn program(dir: &str) -> Graph {
+    analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs").join(dir), &Options::default()).unwrap()
+}
+
+/// What a site hands, by the name that holds each value (its type where no name holds it), with the parameters it fills.
+fn fills(s: &Site) -> Vec<(String, Vec<Slot>)> {
+    let named = |h: &atlas_engine::Held| if h.name.is_empty() || h.name.starts_with('#') { h.ty.clone() } else { h.name.clone() };
+    s.hands.iter().map(|h| (named(h), h.fills.clone())).collect()
+}
+
+fn at(n: u32) -> Slot {
+    Slot::At(n)
+}
 
 fn node<'g>(g: &'g Graph, id: &str) -> &'g Node {
     g.node(id).unwrap_or_else(|| panic!("no node {id}"))
@@ -97,4 +119,119 @@ fn errors_a_raise_is_a_step_and_each_call_hands_it_on() {
     assert_eq!(site(&p.clean, "counts.main", "counts.total").fails.as_deref(), Some("counts.Error"));
     assert_eq!(site(&p.shortcut, "counts.total", "counts.parse").fails.as_deref(), Some(""), "a `Box<dyn Error>` is no type of the code's");
     assert_eq!(site(&p.shortcut, "counts.main", "counts.total").fails.as_deref(), Some(""));
+}
+
+/// A call hands each value to the parameter its argument fills (#157), by where the call writes it, never by its type:
+/// the value it runs on, a place after it, a name, a spread whose parameters the call does not say. A value written in
+/// an argument fills that argument's parameter, also through a projection, and what a step written inside gives fills
+/// the place the step stands in. The parameters the call writes an argument for are `args`: one with no value handed
+/// (a literal) holds none, one not written holds its default.
+#[test]
+fn a_call_hands_each_value_to_the_parameter_its_argument_fills() {
+    // Rust: `report::write(Path::new(REPORTS), format.renderer().as_ref(), &config.title, &lines)`
+    let g = program("rust/clean");
+    let write = site(&g, "spend.main", "spend.report.write");
+    assert_eq!(write.args, [at(0), at(1), at(2), at(3)], "the directory is written, by a literal");
+    let want = [("config", vec![at(2)]), ("lines", vec![at(3)]), ("spend.report.Render", vec![at(1)])];
+    assert_eq!(fills(write), want.map(|(n, s)| (n.to_string(), s)), "the renderer a nested step gives, in its own place");
+    // `Trend::new(settings).save(&series, &smoothed, &cli.figure)` and `download(SILSO, &cli.raw)`
+    let g = program("pipeline/rust-clean");
+    let save = site(&g, "sunspots.main.main", "sunspots.plot.Plot.save");
+    assert_eq!(save.args, [Slot::Receiver, at(0), at(1), at(2)]);
+    assert!(
+        fills(save).contains(&("sunspots.plot.Trend".to_string(), vec![Slot::Receiver])),
+        "the nested step's result runs it: {save:#?}"
+    );
+    assert!(fills(save).contains(&("cli".to_string(), vec![at(2)])), "`&cli.figure` is the third: {save:#?}");
+    let download = site(&g, "sunspots.main.main", "sunspots.download.download");
+    assert_eq!((download.args.clone(), fills(download)), (vec![at(0), at(1)], vec![("cli".to_string(), vec![at(1)])]));
+    // TypeScript: `download(SILSO, values.raw)`, `{ ...DEFAULT_SETTINGS, months: monthsOf(values.months) }`
+    let g = program("pipeline/typescript");
+    let download = site(&g, "sunspots.cli.main", "sunspots.download.download");
+    assert_eq!((download.args.clone(), fills(download)), (vec![at(0), at(1)], vec![("values".to_string(), vec![at(1)])]));
+    let settings = site(&g, "sunspots.cli.main", "sunspots.settings.Settings");
+    assert_eq!(settings.args, [Slot::Keywords, Slot::Name("months".into())], "an object literal writes by name");
+    assert_eq!(
+        fills(settings),
+        [("DEFAULT_SETTINGS".to_string(), vec![Slot::Keywords]), (String::new(), vec![Slot::Name("months".into())])],
+        "what the spread hands fills the names the literal does not write"
+    );
+    // Python: `Harvester(client=.., store=.., exporter=.., unit=settings.unit)`, `Summary(day.station, day.date, *row)`
+    let g = program("python/clean");
+    let built = site(&g, "harvest.harvester.build_harvester", "harvest.harvester.Harvester");
+    assert!(fills(built).contains(&("settings".to_string(), vec![Slot::Name("unit".into())])), "{built:#?}");
+    let summary = site(&g, "harvest.store.ReadingStore.kept_summary", "harvest.model.Summary");
+    assert_eq!(summary.args, [at(0), at(1), Slot::Spread(2)]);
+    assert_eq!(fills(summary), [("day".to_string(), vec![at(0), at(1)]), ("row".to_string(), vec![Slot::Spread(2)])]);
+    let g = program("pipeline/python-clean");
+    let save = site(&g, "sunspots.cli.run", "sunspots.plot.Plot.save");
+    assert!(fills(save).contains(&("sunspots.plot.Trend".to_string(), vec![Slot::Receiver])), "{save:#?}");
+    // a function or a library's call runs on no value it is not handed: `pd.read_csv(..)` is written in its module
+    let read = site(&g, "sunspots.series.load", "read_csv");
+    assert!(!read.args.contains(&Slot::Receiver), "{read:#?}");
+}
+
+/// A name an arm of a choice binds by the body's own code is made by that arm (#158), as one a step in the arm gives:
+/// `let mut out = match format { "csv" => String::from(..), _ => format!(..) }` makes `out` in both arms, the first by
+/// its step (`Site::gives`) and the second by `format!`, no step (`Node::binds`). The clean report renders through a
+/// trait whose method makes its line with `format!` outside any choice, so it binds nothing in an arm.
+#[test]
+fn an_arm_that_binds_a_name_by_its_own_code_makes_it() {
+    let p = common::pair("rust");
+    let write = node(&p.shortcut, "spend.report.write");
+    let from = write.sites.iter().find(|s| s.op == "from" && s.gives.iter().any(|g| g.name == "out")).expect("`String::from` gives out");
+    assert_eq!(from.arms, [(0, 0)]);
+    let out: Vec<&Vec<(u32, u32)>> = write.binds.iter().filter(|b| b.name == "out").map(|b| &b.arms).collect();
+    assert!(out.contains(&&vec![(0, 1)]), "the `_` arm binds out by `format!`: {:#?}", write.binds);
+    assert!(!out.contains(&&vec![(0, 0)]), "the csv arm's step gives it");
+    assert!(node(&p.clean, "spend.report.Markdown.render").binds.iter().all(|b| b.name != "out"), "bound outside every choice");
+    // the same in Python and TypeScript: what follows a guard is its last arm
+    let g = program("python/shortcut");
+    let names: Vec<&str> = node(&g, "harvest.store.ReadingStore.summary").binds.iter().map(|b| b.name.as_str()).collect();
+    assert_eq!(names, ["temperatures", "low", "high", "mean"], "`if row is None:` binds them by its own code");
+    let g = program("pipeline/typescript");
+    let trend = node(&g, "sunspots.plot.trend");
+    assert!(trend.binds.iter().any(|b| b.name == "bottom" && b.arms == [(0, 1)]), "{:#?}", trend.binds);
+}
+
+/// What a step gives that the body's own code reads by no name is a use (#101), named by the step that makes it:
+/// `mode.plan().timeout <= ..`, `ledger.merged(other).rows.length`, `this.rows().map((row) => row.reading)`. A result a
+/// step around it is handed, bound to a name, or given back as it is, is none.
+#[test]
+fn what_a_step_gives_and_the_body_reads_itself_is_a_use() {
+    for (dir, body, to, ty) in [
+        ("choices/rust/clean", "runs.finished", "runs.Mode.plan", "runs.Plan"),
+        ("changes/typescript/clean", "ledger.ledger.main", "ledger.ledger.Ledger.merged", "ledger.ledger.Ledger"),
+        ("collections/typescript/clean", "gathering.gathering.Store.get", "gathering.gathering.Store.rows", "gathering.gathering.Row"),
+        ("collections/rust/clean", "gathering.Store.get", "gathering.Store.rows", "gathering.Row"),
+        ("python/clean", "harvest.store.ReadingStore.history", "harvest.model.Reading", "harvest.model.Reading"),
+    ] {
+        let g = program(dir);
+        let s = site(&g, body, to);
+        let given = s.gives.iter().find(|h| h.ty == ty).unwrap_or_else(|| panic!("{dir}: {to} gives a {ty}: {s:#?}"));
+        assert!(given.name.starts_with(&format!("#{body}@")), "{dir}: named by its step: {given:?}");
+        assert!(
+            node(&g, body).uses.iter().any(|u| u.name == given.name && u.ty == ty),
+            "{dir}: the body reads it: {:#?}",
+            node(&g, body).uses
+        );
+    }
+    // handed to the step around it, it is that step's
+    let g = program("choices/rust/clean");
+    let batch = node(&g, "runs.finished").sites.iter().find(|s| s.to == "runs.Runner.new").unwrap();
+    assert!(batch.gives.iter().all(|h| !h.name.starts_with("#runs.finished@")), "{batch:#?}");
+}
+
+/// A function a call runs on each element of what it goes over is one form in every language (`Steps::handed`): a step
+/// where it is named, handed what the element is a part of, which fills its first parameter. Rust's
+/// `piles.iter().map(size)`, Python's `sorted(readings, key=score)`, TypeScript's `.map(parseLine)`.
+#[test]
+fn a_function_run_on_each_element_is_handed_the_element() {
+    let g = program("shadows/rust/shortcut");
+    let size = node(&g, "inbox.total").sites.iter().find(|s| s.to == "inbox.size").expect("`map(size)` runs size");
+    assert_eq!((size.args.clone(), fills(size)), (vec![at(0)], vec![("piles".to_string(), vec![at(0)])]));
+    let g = program("gives/python/clean");
+    assert_eq!(site(&g, "readings.store.ranked", "readings.store.score").args, [at(0)], "`key=score` is handed each reading");
+    let g = program("pipeline/typescript");
+    assert_eq!(site(&g, "sunspots.series.parse", "sunspots.series.parseLine").args, [at(0)], "`.map(parseLine)` hands it each line");
 }

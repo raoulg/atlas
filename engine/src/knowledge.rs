@@ -930,6 +930,32 @@ pub fn reaches(pkg: &str, from: Option<Registry>) -> Option<World> {
 /// What a request does that moves data, beside its HTTP method: send one, stream one, open a URL.
 pub const REQUESTS: &[&str] = &["request", "send", "stream", "urlopen", "urlretrieve"];
 
+/// A request whose method is what the call is handed, as its library says, not its name: urllib's
+/// `urlopen(url, data=None)` and `urlretrieve(url, filename, reporthook, data)` send a `GET`, and a
+/// `POST` where they are handed data to send; a `Request(url, data, .., method=None)` opened by
+/// `urlopen` goes as its own `method` says, else by its data alike. The operation, the place and
+/// keyword of its data, and the keyword of its method where it has one.
+pub struct RequestByData {
+    pub op: &'static str,
+    pub data: (usize, &'static str),
+    pub method: Option<&'static str>,
+}
+
+pub const REQUESTS_BY_DATA: &[RequestByData] = &[
+    RequestByData { op: "urlopen", data: (1, "data"), method: None },
+    RequestByData { op: "urlretrieve", data: (3, "data"), method: None },
+    RequestByData { op: "Request", data: (1, "data"), method: Some("method") },
+];
+
+/// The method a request goes by that sends no data, and the one that sends it (`REQUESTS_BY_DATA`).
+pub const REQUEST_WITHOUT_DATA: &str = "get";
+pub const REQUEST_WITH_DATA: &str = "post";
+
+/// The request an operation of `REQUESTS_BY_DATA` sends, by its name as the code writes it.
+pub fn request_by_data(op: &str) -> Option<&'static RequestByData> {
+    REQUESTS_BY_DATA.iter().find(|r| r.op == op)
+}
+
 /// A socket's connecting, sending and receiving: the network calls that are handed no URL.
 pub const SOCKET_OPS: &[&str] = &["connect", "send", "sendall", "sendto", "recv", "recvfrom", "recv_into"];
 
@@ -1818,6 +1844,56 @@ pub const RUST_PARTS: &[&str] = &[
     "enumerate",
     "zip",
 ];
+
+/// A call of the language's own that runs a function it is handed on each element of what it goes
+/// over: its name, where it is handed the function (by place or by keyword), where what it goes over
+/// is (by place; none for the value a method is called on), and the parameter of the function the
+/// element fills. Python's `map(f, xs)`, `sorted(xs, key=f)`, `xs.sort(key=f)`, `reduce(f, xs)`.
+pub struct EachCall {
+    pub name: &'static str,
+    pub function: Handed,
+    pub over: Option<usize>,
+    pub element: u32,
+}
+
+/// Where a call is handed a value: at a place among its arguments, or by a keyword.
+#[derive(Clone, Copy)]
+pub enum Handed {
+    At(usize),
+    Key(&'static str),
+}
+
+pub const PYTHON_EACH: &[EachCall] = &[
+    EachCall { name: "map", function: Handed::At(0), over: Some(1), element: 0 },
+    EachCall { name: "filter", function: Handed::At(0), over: Some(1), element: 0 },
+    EachCall { name: "sorted", function: Handed::Key("key"), over: Some(0), element: 0 },
+    EachCall { name: "min", function: Handed::Key("key"), over: Some(0), element: 0 },
+    EachCall { name: "max", function: Handed::Key("key"), over: Some(0), element: 0 },
+    EachCall { name: "sort", function: Handed::Key("key"), over: None, element: 0 },
+    EachCall { name: "reduce", function: Handed::At(0), over: Some(1), element: 1 },
+];
+
+/// The methods of an array that run the function they are handed first on each element of the array,
+/// with the parameter the element fills: the first, the second of a `reduce`, whose first is what it
+/// gathers.
+pub const TYPESCRIPT_EACH: &[(&str, u32)] = &[
+    ("map", 0),
+    ("flatMap", 0),
+    ("filter", 0),
+    ("forEach", 0),
+    ("find", 0),
+    ("findIndex", 0),
+    ("findLast", 0),
+    ("findLastIndex", 0),
+    ("some", 0),
+    ("every", 0),
+    ("reduce", 1),
+    ("reduceRight", 1),
+];
+
+/// The classes of error a Python handler that names one catches whatever is raised by: every error is
+/// of them (`except Exception:`).
+pub const PYTHON_CATCH_ALL: &[&str] = &["Exception", "BaseException"];
 
 /// The methods that hand the closure they are given each element of what they run on, or what an
 /// `Option` or a `Result` holds: `xs.iter().map(|x| ..)` hands it each `x`.
