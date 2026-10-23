@@ -1186,14 +1186,30 @@ const changesKind = (P, k) => (arrowOf(stepAt(P))?.changes || []).some(x => kind
 // A figure rests in what holds it (#11): a method that changes the value it runs on keeps the figure it makes in that value
 // (`self.fig, self.ax = plt.subplots()`), so every step that runs on the value draws on the one figure it holds, whichever
 // of them makes it; any other call that makes a figure makes one of its own. Planned by itself, a step beyond the cut does not
-// know the value its callers hand it, and its figure is its call's
+// know the value its caller hands it: a figure kept in that value (the one it runs on, `^recv`, or one it is handed, by the
+// key its call hands it as) is held by it, and its caller says which value that is
+const heldFigure = (h, label) => {
+  const id = "w:Screen:fig:" + h + "^held";
+  if (!places.has(id)) places.set(id, {id, label, short: label, kind: "world", figure: label, holder: h});
+  return id;
+};
 const figureOf = (P, k) => {
-  if (P.cut || alone) return k;
-  const key = P.own ? frames.get(P.parent)?.step : P.steps[0], n = byId.get(stepAt(P)), a = arrowOf(stepAt(P));
-  if (!n?.cls || !(a?.changes || []).includes(n.cls)) return k;
-  const v = latestGet(kindKey(addPlace(typePlace(treeInfo.get(key)?.on || a.receiver || n.cls))) + "|", P, true);
-  if (!v) return k;
-  const o = originOf.get(v) || v, id = "w:Screen:fig:" + o, label = places.get(o)?.label || o;
+  const key = P.own ? frames.get(P.parent)?.step : P.steps[0], n = byId.get(stepAt(P)), a = arrowOf(stepAt(P)), pl = places.get(k);
+  const receiver = () => latestGet(kindKey(addPlace(typePlace(treeInfo.get(key)?.on || a?.receiver || n?.cls))) + "|", P, true);
+  let v;
+  if (P.cut) {
+    if (!pl?.holder) return k;
+    v = pl.holder === "^recv" ? receiver() : P.boundOf?.get(pl.holder);
+  } else {
+    if (!n?.cls || !(a?.changes || []).includes(n.cls)) return k;
+    v = receiver();
+  }
+  // the value is held from its first moment: one made before the step planned by itself is its caller's
+  const o = v && (originOf.get(v) || v);
+  if (alone && (!o || !places.get(o)?.at)) return heldFigure(o || "^recv", pl?.figure ?? k);
+  // a holder the caller does not name leaves the figure the call's own
+  if (!o) return P.cut ? addPlace(figurePlace(key, pl.figure)) : k;
+  const id = "w:Screen:fig:" + o, label = places.get(o)?.label || o;
   if (!places.has(id)) places.set(id, {id, label, short: label, kind: "world", figure: label});
   return id;
 };
@@ -1208,6 +1224,8 @@ for (const P of pills.values()) {
     const v = viaDispatch(P, k) || bound(P, k, name(P.dn, k), !!P.made?.has(k));
     if (v === false) return;
     Dv.set(v || k, r);
+    // what each value a step beyond the cut takes is bound to here: a figure its image keeps in one is that value's
+    if (P.cut) (P.boundOf ||= new Map()).set(k, v || k);
     if (mult && P.mult.D.has(k)) mult.D.set(v || k, P.mult.D.get(k));
     // a value of a choice is what each arm made of it: a step after the choice takes them all
     if (armKey.has(v) && !armsAbove(P).has(places.get(v).at)) for (const w of armValues.get(armKey.get(v))) if (w !== v) Dv.set(w, r);
@@ -1547,7 +1565,9 @@ const cutArrow = key => {
     cutArrows.set(memo, r);
   }
   // planned by itself, a step's figures are its call's: the figures of another call of the step are this call's
-  const r = cutArrows.get(memo), fig = "w:Screen:fig:", re = k => (r.key === key ? k : k.replace(fig + r.key, fig + key));
+  // its figures are named by the occurrence that makes them or the value that holds them: another call's are this call's
+  const r = cutArrows.get(memo), fig = "w:Screen:fig:", esc = r.key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const re = k => (r.key === key || !k.startsWith(fig) ? k : k.replace(new RegExp(esc + "(?=[/|~@^]|$)", "g"), key));
   const copy = m => new Map([...m].map(([k, v]) => [re(k), v]));
   // what it hands on as an error leaves by its border beside its result (#138)
   const errs = new Set([...r.cod.keys()].filter(k => r.places.get(k)?.err).map(re));

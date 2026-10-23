@@ -20,7 +20,8 @@ const page = fs.readFileSync(path.join(path.dirname(planJs), "index.html"), "utf
 const script = page.split("<script>").find(s => s.includes("/*__PLAN__*/")).split("</script>")[0];
 new Function(script.replace("/*__PLAN__*/", () => fs.readFileSync(planJs, "utf8")));
 const D = JSON.parse(fs.readFileSync(dataJson, "utf8"));
-const window = {};
+// `ATLAS_FINE_BUDGET=n` cuts the plan as a large program's is cut (`plan.js`, `FINE_BUDGET`)
+const window = process.env.ATLAS_FINE_BUDGET ? {ATLAS_FINE_BUDGET: Number(process.env.ATLAS_FINE_BUDGET)} : {};
 const M = new Function("D", "window", fs.readFileSync(planJs, "utf8") + `
 return {V, plan, imageOf, checkOpenings, treeInfo, stepLabel, typeLabel, sideOfRoles, familyOf, kindOf, byId, ordersOn, stepOf};`)(D, window);
 const {V} = M;
