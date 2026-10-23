@@ -100,3 +100,15 @@ fn a_notebook_shows_a_figure_for_each_thing_that_holds_one() {
     assert_eq!(screen("clean"), BTreeSet::from(["Figure 1 · Chart · chart right".to_string()]));
     assert_eq!(screen("shortcut"), BTreeSet::from(["Figure 1 · Chart.line right".to_string(), "Figure 2 · Chart.line right".to_string()]));
 }
+
+/// Building a class runs its initializer along its order, in the route's text as on the page: `Chart("compare")` opens
+/// into `Chart.__init__`, which calls nothing, and never into the methods of the class, though `Chart` is a route of its
+/// own (its doors). The first `line` is then the one that shows what it runs.
+#[test]
+fn building_a_class_opens_into_its_initializer_in_the_route_s_text() {
+    let r = atlas_engine::story::route(&figures().clean, "charts.chart.compare", 4).expect("compare is a route");
+    let lines: Vec<&str> = r.lines().collect();
+    assert_eq!(lines[2..], ["1  Chart()", "2  Chart.line(xs, ys)  ↻ Chart", "  2.1a  Chart.create_figure()  ↻ Chart   ·   draws   ·   when self.ax is None", "3  Chart.line  → see 2"], "{r}");
+    let doors = atlas_engine::story::route(&figures().clean, "charts.chart.Chart", 2).expect("Chart is a route");
+    assert!(doors.contains("Chart.create_figure()") && doors.contains("Chart.line(xs, ys)"), "the class's own route is its doors\n{doors}");
+}

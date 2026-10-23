@@ -852,6 +852,12 @@ pub fn arrows(g: &Graph) -> BTreeMap<String, Arrow> {
     out
 }
 
+/// For each class, the initializer building a value of it runs (`Arrow::runs`), its own or a base's.
+pub fn initializers(g: &Graph) -> HashMap<String, String> {
+    let ix = Ix::new(g);
+    g.nodes.iter().filter(|n| n.kind == NodeKind::Class).filter_map(|n| ix.runs(&n.id).map(|i| (n.id.clone(), i))).collect()
+}
+
 /// What a body's steps make that it may give back: the class a step builds, else what the function it runs gives back,
 /// where that is of a type the function itself gives (`n`'s `returns`, a kind or a variant of one, or a type its written
 /// return names: the error of a `Result<T, E>`, `T + E`), or an error its own calls raise or hand on. A value of another
