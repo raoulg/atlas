@@ -654,7 +654,7 @@ const morphism = (id, own, isAnchor, noReceiver, opts = {}) => {
     const tc = shownAs(raw);
     if (served(raw) || (isIn(raw) && !raw.shape && back.has(raw.place.id))) continue;
     go(goes, tc);
-    // each call that makes a figure makes one: a figure of its own on the screen
+    // a figure made is on the screen: the call's that makes it, until the plan knows what holds it (`figureOf`)
     const p = raw.kind === "figure" && tc.kind === "screen" && opts.figure ? figurePlace(opts.figure, opts.label) : worldPlace(tc);
     (isIn(tc) ? dom : cod).push([addPlace(p), !ownKeys.has(touchKey(raw))]);
   }
@@ -733,13 +733,9 @@ const backName = (key, cod) => {
   return ns.find(nm => !nm.startsWith("#")) || null;
 };
 
-// a figure a call makes, numbered in the order the route makes them
-const figureNo = new Map();
-const figurePlace = (key, label) => {
-  if (!figureNo.has(key)) figureNo.set(key, figureNo.size + 1);
-  const name = `Figure ${figureNo.get(key)} · ${label}`;
-  return {id: "w:Screen:fig:" + key, label: name, short: name, kind: "world"};
-};
+// a figure a call makes, until the plan knows what holds it (`figureOf`); the plan numbers its figures in the order the route
+// makes them
+const figurePlace = (key, label) => ({id: "w:Screen:fig:" + key, label, short: label, kind: "world", figure: label});
 // a step of an opened route is a call: what its function takes and gives, with what the call
 // hands it and gets back, each value by the name that holds it; a library's operation has only those
 const stepMorphism = (key, own, isAnchor, leaf) => {
@@ -1069,7 +1065,7 @@ const enter = fid => {
   const f = frames.get(fid), info = f && !f.synthetic && !f.anchor && f.step && treeInfo.get(f.step), Own = info && pills.get("o:" + f.step);
   if (!info?.site || !Own || stepOf(f.step).startsWith("op:")) return;
   const fn = byId.get(stepOf(f.step)), recv = arrowOf(stepOf(f.step))?.receiver;
-  const formals = [...(recv && !info.site.on_receiver && !info.built ? [{receiver: recv}] : []), ...(fn?.params || []).filter(p => !p.receiver)];
+  const formals = [...(recv && !info.site.on_receiver && !info.built ? [{receiver: recv, name: (fn?.params || []).find(p => p.receiver)?.name}] : []), ...(fn?.params || []).filter(p => !p.receiver)];
   // a value of a type no reader knows fills a parameter of no type of the code's
   const ours = p => !!p.receiver || (arrowOf(stepOf(f.step))?.takes || []).some(t => writesType(p, t));
   const fits = (p, h) => (!h.type ? !ours(p) : p.receiver ? p.receiver === h.type || kindOf(p.receiver) === kindOf(h.type) : writesType(p, h.type) || (SUM_OF.get(h.type) && writesType(p, SUM_OF.get(h.type))));
@@ -1091,13 +1087,32 @@ const enter = fid => {
     const v = bound(Own, k) || k;
     // a parameter is looked for by its own type and name: what fills it through a projection is of another type
     const x = !p.receiver && (arrowOf(stepOf(f.step))?.takes || []).find(t => writesType(p, t));
-    if (p.receiver) latestSet(kindKey(v) + "|", v, Own, fid, true);
+    // the receiver is the latest of its kind inside the body, and the value its name holds (`self`)
+    if (p.receiver) { latestSet(kindKey(v) + "|", v, Own, fid, true); if (p.name) latestSet(kindKey(v) + "|" + p.name, v, Own, fid, true); }
     else if (p.name) {
       latestSet((x ? "t:" + (x === V.route ? V.route : kindOf(x)) : v.startsWith("v:") ? "v:" + p.name : kindKey(v)) + "|" + p.name, v, Own, fid, true);
       // a parameter of no type of the code's is looked for as a value of no type, whatever it holds
       if (!x && !v.startsWith("v:")) latestSet("v:" + p.name + "|" + p.name, v, Own, fid, true);
     }
   }
+};
+// a value a step changes is the value it was handed, at a new moment: what each moment of it was made from
+const originOf = new Map();
+const stepAt = P => stepOf(P.own ? frames.get(P.parent)?.step : P.steps[0]);
+const changesKind = (P, k) => (arrowOf(stepAt(P))?.changes || []).some(x => kindKey(addPlace(typePlace(x))) === kindKey(k));
+// A figure rests in what holds it (#11): a method that changes the value it runs on keeps the figure it makes in that value
+// (`self.fig, self.ax = plt.subplots()`), so every step that runs on the value draws on the one figure it holds, whichever
+// of them makes it; any other call that makes a figure makes one of its own. Planned by itself, a step beyond the cut does not
+// know the value its callers hand it, and its figure is its call's
+const figureOf = (P, k) => {
+  if (P.cut || alone) return k;
+  const key = P.own ? frames.get(P.parent)?.step : P.steps[0], n = byId.get(stepAt(P)), a = arrowOf(stepAt(P));
+  if (!n?.cls || !(a?.changes || []).includes(n.cls)) return k;
+  const v = latestGet(kindKey(addPlace(typePlace(treeInfo.get(key)?.on || a.receiver || n.cls))) + "|", P, true);
+  if (!v) return k;
+  const o = originOf.get(v) || v, id = "w:Screen:fig:" + o, label = places.get(o)?.label || o;
+  if (!places.has(id)) places.set(id, {id, label, short: label, kind: "world", figure: label});
+  return id;
 };
 for (const P of pills.values()) {
   // between units a type is the joint itself: one unit makes it, the next takes it
@@ -1126,7 +1141,9 @@ for (const P of pills.values()) {
     if (!Dv.has(v)) Dv.set(v, false);
     (P.used ||= new Set()).add(v);
   }
+  const figs = [];
   P.C.forEach((r, k) => {
+    if (places.get(k)?.figure != null) { figs.push([k, r]); return; }
     if (!isMem(k) || inside(k) || !V.route) { Cv.set(k, r); if (mult && P.mult.C.has(k)) mult.C.set(k, P.mult.C.get(k)); return; }
     const nm = name(P.cn, k), a = armOf(P);
     // a value of that name from before the choice, kept by the arms that do not make it anew; an opened step's arrow hands
@@ -1138,9 +1155,12 @@ for (const P of pills.values()) {
     if (mult && P.mult.C.has(k)) mult.C.set(v, P.mult.C.get(k));
     Object.assign(places.get(v), {at}, P.errs?.has(k) || P.raised?.has(k) ? {err: true} : {});
     if (nm && !nm.startsWith("#") && !k.startsWith("v:")) Object.assign(places.get(v), {label: `${places.get(k).label} · ${nm}`, held: nm});
+    // a step that changes a value makes the value it was handed anew: the same value, at a new moment
+    if (changesKind(P, k)) { const ctx = P.own ? frames.get(P.parent) : P, was = latestGet(kindKey(k) + "|" + nm, ctx) || latestGet(kindKey(k) + "|", ctx); if (was && was !== v) originOf.set(v, originOf.get(was) || was); }
     latestSet(kindKey(k) + "|" + nm, v, P); latestSet(kindKey(k) + "|", v, P);
     Cv.set(v, r);
   });
+  for (const [k, r] of figs) { const f = figureOf(P, k); Cv.set(f, r); if (mult && P.mult.C.has(k)) mult.C.set(f, P.mult.C.get(k)); }
   P.D = Dv; P.C = Cv;
   if (mult) P.mult = mult;
 }
@@ -1194,6 +1214,17 @@ if (fine) {
     const seen = new Map();
     for (const k of m.keys()) if (unmade(k)) { const t = kindOf(places.get(k).type); if (!seen.has(t)) seen.set(t, new Set()); seen.get(t).add(places.get(k).name); }
     for (const [t, ns] of seen) if (ns.size > 1) split.add(t);
+  }
+  // the figures of the route, numbered in the order its steps make them
+  if (!alone) {
+    let n = 0;
+    const no = new Set();
+    for (const P of pills.values()) for (const k of P.C.keys()) {
+      const pl = places.get(k);
+      if (pl?.figure == null || no.has(k)) continue;
+      no.add(k);
+      pl.label = pl.short = `Figure ${++n} · ${pl.figure}`;
+    }
   }
   return {places, pills, frames, found, updated, split};
 }
@@ -1407,7 +1438,7 @@ const cutArrow = key => {
     }
     cutArrows.set(memo, r);
   }
-  // each call that makes a figure makes one of its own: the figures of another call of the step are this call's
+  // planned by itself, a step's figures are its call's: the figures of another call of the step are this call's
   const r = cutArrows.get(memo), fig = "w:Screen:fig:", re = k => (r.key === key ? k : k.replace(fig + r.key, fig + key));
   const copy = m => new Map([...m].map(([k, v]) => [re(k), v]));
   return {dom: copy(r.dom), cod: copy(r.cod), dn: copy(r.dn), cn: copy(r.cn), goes: copy(r.goes), mult: {D: copy(r.mult.D), C: copy(r.mult.C)}, places: new Map([...r.places].map(([k, pl]) => [re(k), {...pl, id: re(k)}])), split: r.split};

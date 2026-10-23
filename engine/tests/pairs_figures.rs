@@ -1,0 +1,102 @@
+//! The figures pair (`tests/pairs/figures/python`): two series meant for one chart, drawn by a notebook. The clean
+//! `Chart` is one figure: `create_figure` keeps what `plt.subplots()` makes in the chart it runs on, and `line` runs it
+//! only where the chart holds none (`if self.ax is None`), so every line draws on the figure the chart holds. The
+//! shortcut's `line` calls `plt.subplots()` itself, so every line makes a figure of its own. A figure rests in what holds
+//! it (`docs/reference/mathematics.md`, "One fine plan, every picture its image"): the plans beside the programs write
+//! down the notebook's route; these tests read what the plan is drawn from, and the figures the notebook's screen shows.
+
+// the helpers the other pairs use for prophecies are none of these tests'
+#[allow(dead_code)]
+mod common;
+
+use common::Pair;
+
+use std::collections::BTreeSet;
+use std::path::PathBuf;
+use std::process::Command;
+use std::sync::OnceLock;
+
+use atlas_engine::{flow, parts, Graph, Options};
+
+fn figures() -> &'static Pair {
+    static PAIR: OnceLock<Pair> = OnceLock::new();
+    PAIR.get_or_init(|| common::pair("figures/python"))
+}
+
+/// The operations of `id`'s figures, by the kind of place each touches.
+fn figure_touches(g: &Graph, id: &str) -> Vec<String> {
+    g.node(id)
+        .unwrap_or_else(|| panic!("{id} is in the graph"))
+        .touches
+        .iter()
+        .filter(|t| t.kind_name() == "figure")
+        .map(|t| t.op.clone())
+        .collect()
+}
+
+/// The clean chart keeps its figure in itself: `create_figure` makes it and changes the chart it runs on, and `line`
+/// calls it only in the arm where the chart holds no axes. The shortcut's `line` makes a figure each time it runs and
+/// changes nothing of the chart, which holds no figure.
+#[test]
+fn the_clean_chart_keeps_its_figure_and_the_shortcut_makes_one_per_line() {
+    let (clean, shortcut) = (&figures().clean, &figures().shortcut);
+    let arrows = flow::arrows(clean);
+    assert_eq!(figure_touches(clean, "charts.chart.Chart.create_figure"), ["subplots"]);
+    assert_eq!(arrows["charts.chart.Chart.create_figure"].changes, ["charts.chart.Chart"], "it keeps the figure in the chart");
+    assert!(figure_touches(clean, "charts.chart.Chart.line").is_empty());
+    let line = clean.node("charts.chart.Chart.line").expect("line is in the graph");
+    let call = line.sites.iter().find(|s| s.to == "charts.chart.Chart.create_figure").expect("line calls create_figure");
+    let when: Vec<&str> =
+        call.arms.iter().filter_map(|(c, a)| line.whens.iter().find(|w| w.0 == *c && w.1 == *a)).map(|w| w.2.as_str()).collect();
+    assert_eq!(when, ["self.ax is None"], "made only where the chart holds none");
+
+    let arrows = flow::arrows(shortcut);
+    assert_eq!(figure_touches(shortcut, "charts.chart.Chart.line"), ["subplots"]);
+    assert!(arrows.get("charts.chart.Chart.line").map_or(true, |a| a.changes.is_empty()), "the shortcut's line keeps nothing");
+}
+
+/// The route says where the figure is made: in the clean chart, in an arm of `line`, only where the chart holds no
+/// axes; in the shortcut, by `line` on every call.
+#[test]
+fn the_route_says_where_each_figure_is_made() {
+    let clean = atlas_engine::story::route(&figures().clean, "charts.chart.compare", 4).expect("compare is a route");
+    assert!(clean.contains("Chart.create_figure()  ↻ Chart   ·   draws   ·   when self.ax is None"), "{clean}");
+    let shortcut = atlas_engine::story::route(&figures().shortcut, "charts.chart.compare", 4).expect("compare is a route");
+    assert!(shortcut.contains("Chart.line(xs, ys)   ·   draws") && !shortcut.contains("create_figure"), "{shortcut}");
+}
+
+/// The figures on the screen of the notebook that draws the chart, as the viewer's model plans its route: `side` facts
+/// of the places `Figure n · ..` (`tests/plans.mjs`, run in node as `tests/plans.rs` runs it).
+fn screen(side: &str) -> BTreeSet<String> {
+    let here = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let program = here.join("tests/pairs/figures/python").join(side);
+    let graph = parts::analyze_repo(&[program], &Options::default()).expect("reads the program");
+    let mut data = serde_json::to_value(&graph).expect("the graph is data");
+    data["flow"] = serde_json::to_value(flow::of(&graph)).expect("the flow is data");
+    let file = std::env::temp_dir().join(format!("atlas-figures-{}-{side}.json", std::process::id()));
+    std::fs::write(&file, data.to_string()).expect("writes the data");
+    let out = Command::new("node")
+        .arg(here.join("tests/plans.mjs"))
+        .arg(here.join("../viewer/plan.js"))
+        .arg(&file)
+        .arg("notebooks.compare")
+        .output()
+        .expect("node runs the viewer's model: the test needs node on the PATH");
+    let _ = std::fs::remove_file(&file);
+    assert!(out.status.success(), "the model fails\n{}", String::from_utf8_lossy(&out.stderr));
+    let read: serde_json::Value = serde_json::from_slice(&out.stdout).expect("the model prints JSON");
+    read["notebooks.compare"]["facts"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|f| f.as_str()?.strip_prefix("side Figure ").map(|s| format!("Figure {s}")))
+        .collect()
+}
+
+/// Five functions on one figure are one figure, five plots five (#11): the clean notebook's screen shows the one figure
+/// the chart holds, named by the chart, and the shortcut's a figure for each line, named by the call that made it.
+#[test]
+fn a_notebook_shows_a_figure_for_each_thing_that_holds_one() {
+    assert_eq!(screen("clean"), BTreeSet::from(["Figure 1 · Chart · chart right".to_string()]));
+    assert_eq!(screen("shortcut"), BTreeSet::from(["Figure 1 · Chart.line right".to_string(), "Figure 2 · Chart.line right".to_string()]));
+}

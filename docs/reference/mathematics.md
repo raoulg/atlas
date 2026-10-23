@@ -408,7 +408,12 @@ open:
   constructor built, so `self.path` in a method and `path` in a helper it hands it to are both
   `Disk(Store.path)`. A module's global holds what rests in its place, `Global(m.df)`; a step its body
   hands it to takes it there, no value from beyond, until a step of the body makes it anew. A figure a
-  library draws on rests in that figure (`Figure`) until something saves or shows it;
+  library draws on rests in that figure (`Figure`) until something saves or shows it, and a notebook shows
+  each figure its cells make on the screen (`Figure 1`). A figure rests in what holds it, as a place named
+  by a value does: one a method keeps in the value it runs on (a method that changes that value,
+  `self.fig, self.ax = plt.subplots()`) is that value's, so every step that runs on the value draws on the
+  one figure it holds, whichever of them makes it (`create_figure` only where `self.fig is None`); one a
+  call makes and no value beyond it holds is that call's own, and two calls make two;
 - a step's own arrow is its witness at its border: its signature and its own touches, the lines that
   cross its frame. An opened step draws it as a point on the frame's right edge, not as a step beside
   its steps: a value its call is handed crosses the frame to the step inside that takes it (the value
@@ -537,8 +542,8 @@ fact of it must hold of the plan Atlas builds, and no other. What Atlas gets wro
 with the issue that tracks it, and the mark goes with the fix (`engine/tests/plans/README.md`). The
 test runs the viewer's own model in node, the function every picture is drawn from, on every route of
 the pairs and of its programs.
-**Where.** `plan`, `sitesOf`, `coarsen`, `cutArrow` and `checkOpenings` in `viewer/plan.js`; `tools/pictures.py`;
-`engine/tests/plans.rs`.
+**Where.** `plan`, `sitesOf`, `figureOf`, `coarsen`, `cutArrow` and `checkOpenings` in `viewer/plan.js`;
+`tools/pictures.py`; `engine/tests/plans.rs`.
 
 ### Saturation: when the order of a view does not matter
 **What.** A set is saturated by an equivalence when it never cuts a class in two.
