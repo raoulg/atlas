@@ -490,8 +490,9 @@ parse the command line to the entry. The closed picture is `F/q`:
   not the signature alone. A line comes from the step itself when its own arrow supplies it and
   reaches through it otherwise (the sixth sentence);
 - a place made and taken inside one block is internal to it and is not drawn. The arms of a choice make
-  one value at the choice's moment, the value it hands on past it: what two of its arms make (the
-  variants of a sum are one value of it), or what one arm makes anew of a value named before the
+  one value at the choice's moment, the value it hands on past it: what two of its arms make, by a
+  step or by the body's own code (`let out = match f { "csv" => String::from(..), _ => format!(..) }`;
+  the variants of a sum are one value of it), or what one arm makes anew of a value named before the
   choice, which the other arms keep. What one arm makes and uses itself is its maker's, and no step of
   another arm takes it: a run goes through one arm. A step that is itself a choice (a call into a family, which runs
   one of the overrides) makes it at a moment inside the step, and hands on a value of its own at its

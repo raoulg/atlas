@@ -986,20 +986,35 @@ const armsOf = () => {
   armsMaking = new Map();
   const order = [...pills.values()], last = new Map();
   order.forEach((Q, i) => { const b = armOf(Q); if (b && frames.get(b.choice).synthetic) last.set(b.choice, i); });
+  const making = v => { if (!armsMaking.has(v)) armsMaking.set(v, {arms: new Set(), on: false, last: new Map()}); return armsMaking.get(v); };
   order.forEach(Q => {
     const b = armOf(Q);
     if (b && frames.get(b.choice).synthetic) for (const x of Q.C.keys()) if (isMem(x)) {
-      const v = valueOfArm(b.choice, x, Q.cn);
-      if (!armsMaking.has(v)) armsMaking.set(v, {arms: new Set(), on: false, last: new Map()});
-      armsMaking.get(v).arms.add(b.branch);
-      armsMaking.get(v).last.set(b.branch, Q);
+      const m = making(valueOfArm(b.choice, x, Q.cn));
+      m.arms.add(b.branch);
+      m.last.set(b.branch, Q);
     }
   });
+  // an arm that binds a name by the body's own code makes its value as an arm whose step gives it does (`Node::binds`, #158):
+  // `let out = match f { "csv" => String::from(..), _ => format!(..) }`. A choice whose arms run no step has no frame: what
+  // they bind is the body's own
+  const named = (t, nm) => (t ? addPlace({...typePlace(t), id: `t:${t}~${nm}`, name: nm}) : "v:" + nm);
+  for (const [fid, F] of frames) if (F.step && !F.synthetic) for (const b of byId.get(stepOf(F.step))?.binds || []) for (const [c, a] of b.arms || []) {
+    const cid = `${fid}~c${c}`, k = named(b.type, b.name);
+    if (frames.get(cid)?.synthetic) making(valueOfArm(cid, k, new Map([[k, b.name]]))).arms.add(a);
+  }
   // what a step after the choice, in the body that holds it, takes of it
   order.forEach((Q, i) => {
     const ch = chainOf(Q);
     for (const [c, j] of last) if (i > j && !ch.includes(c) && ch.includes(frames.get(c).parent)) for (const x of Q.D.keys()) armsMaking.get(valueOfArm(c, x, Q.dn)) && (armsMaking.get(valueOfArm(c, x, Q.dn)).on = true);
   });
+  // and what the body's own code uses of it outside the choice (`fs::write(&path, out)` after the `match`)
+  for (const Q of order) if (Q.own) for (const u of Q.uses || []) if (u.name) for (const c of last.keys()) {
+    let h = frames.get(c).parent; while (h && frames.get(h)?.synthetic) h = frames.get(h).parent;
+    if (h !== Q.parent || (u.arms || []).some(([x]) => `${h}~c${x}` === c)) continue;
+    const k = named(u.type, u.name), m = armsMaking.get(valueOfArm(c, k, new Map([[k, u.name]])));
+    if (m) m.on = true;
+  }
   return armsMaking;
 };
 const madeAt = (P, k, kept) => {
