@@ -1757,7 +1757,7 @@ fn cooperative_super_runs_the_next_method_along_the_value_s_order() {
     let unknown = &bodies["news.sources.Trimmed.read"].steps()[0];
     assert_eq!(
         (unknown.to.as_str(), unknown.instead.as_slice()),
-        ("news.sources.Source.read", ["news.sources.Cached.read".to_string()].as_slice())
+        ("news.sources.Source.read", [atlas_engine::flow::key("news.sources.Cached.read", "news.sources.Feed")].as_slice())
     );
     let r = route(&cooperative().clean, "news.read.lines");
     assert!(r.contains("Source.read() → bytes   ·   calls self.url   ·   one of 1") && r.contains("1.1a  Cached.read()"), "{r}");
@@ -1768,20 +1768,22 @@ fn cooperative_super_runs_the_next_method_along_the_value_s_order() {
 /// A call by name on a value whose class is not known may run, for each class the value may be,
 /// the method that class runs for the name along its order (#140). In `cached_lines(source:
 /// Cached)` a cached source may be a feed, `Feed(Trimmed, Cached)`, which runs `Trimmed.read`
-/// first, though `Trimmed` is no class below `Cached`: the call is `Cached.read` or `Trimmed.read`,
-/// on either side. What the pair lays bare is what the sibling does then: the clean `Trimmed.read`
+/// first, though `Trimmed` is no class below `Cached`: the call is `Cached.read` or, on a feed,
+/// `Trimmed.read`, drawn as the method of the class that runs it (`Feed.read`, #155), on either
+/// side. What the pair lays bare is what the sibling does then: the clean `Trimmed.read`
 /// hands on with `super().read()`, which on a feed runs `Cached.read`, so a cached source still
 /// reads its store; the shortcut's `Source.read(self)` asks the network, and a cached source that
 /// is a feed never reads its cache.
 #[test]
 fn cooperative_a_call_by_name_may_run_a_sibling_s_method() {
-    for (side, g) in [("clean", &cooperative().clean), ("shortcut", &cooperative().shortcut)] {
+    for (side, g, next) in [("clean", &cooperative().clean, "Cached"), ("shortcut", &cooperative().shortcut, "Source")] {
         let bodies = atlas_engine::flow::bodies(g);
         let lines = &bodies["news.read.cached_lines"].steps()[0];
         assert_eq!(lines.to, "news.sources.Cached.read", "{side}");
-        assert_eq!(lines.alts(&bodies), ["news.sources.Trimmed.read".to_string()], "{side}");
+        assert_eq!(lines.alts(&bodies), [atlas_engine::flow::key("news.sources.Trimmed.read", "news.sources.Feed")], "{side}");
         let r = route(g, "news.read.cached_lines");
-        assert!(r.contains("one of 1") && r.contains("Trimmed.read()"), "{side}: {r}");
+        assert!(r.contains("one of 1") && r.contains("1a  Feed.read()"), "{side}: {r}");
+        assert!(r.contains(&format!("1a.1  {next}.read()")), "{side}: {r}");
     }
     let trimmed = |g: &Graph| -> Vec<String> {
         let bodies = atlas_engine::flow::bodies(g);
