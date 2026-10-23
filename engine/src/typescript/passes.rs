@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use indexmap::IndexMap;
 use tree_sitter::Node as TsNode;
 
-use super::body::{builds_container, chain_root, changes_in, container_type, link_calls, typed_package, Body, Linked, OWN};
+use super::body::{builds_container, chain_root, changes_in, container_type, link_calls, typed_package, Body, Changing, Linked, OWN};
 use super::module::{
     declarations, defined, doc_of, function_in, function_of, is_property, member_parts, package_from_ext, package_of, prophecy_of, resolve,
     signature, top_variables, type_head, type_names, Bound, Imported, Module, EXTENSIONS, WRAPPERS,
@@ -978,8 +978,11 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
     let eval = Eval::new(modules, repo, bases);
     // of a library's code, the methods of the classes the program names, and of their bases
     let named = named_classes(modules, store);
-    // methods that change their receiver, directly or through another such method of the
-    // program's: until nothing changes, which ends, as the set only grows and the methods are finite
+    // what each function changes among what it is handed (the value a method runs on, its
+    // parameters), directly or through a call of the program's that changes what it is handed: until
+    // nothing changes, which ends, as the sets only grow and the functions are finite. A method that
+    // changes its receiver is one that changes the value it is called on.
+    let mut changing = Changing::new();
     loop {
         let mut found = vec![];
         for id in &ids {
@@ -987,17 +990,22 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
             if n.library && !n.cls.as_ref().map_or(false, |c| named.contains(c)) {
                 continue;
             }
-            let Some(m) = modules.get(&n.module).filter(|_| n.kind == NodeKind::Method && !store.mutating.contains(id)) else { continue };
+            let Some(m) = modules.get(&n.module).filter(|_| matches!(n.kind, NodeKind::Function | NodeKind::Method)) else { continue };
             let Some(body) = m.bodies.get(id).and_then(|(s, e)| m.tree.root_node().descendant_for_byte_range(*s, *e)) else { continue };
-            let b = Body::new(m, modules, store, n, body, &returned, &eval);
-            if !b.initializer && b.changed().contains("this") {
-                found.push(id.clone());
+            let now = Body::new(m, modules, store, n, body, &returned, &eval, &changing).changes_handed();
+            if now.len() > changing.get(id).map_or(0, Vec::len) {
+                found.push((id.clone(), now));
             }
         }
         if found.is_empty() {
             break;
         }
-        store.mutating.extend(found);
+        for (id, now) in found {
+            if now.iter().any(|(r, _)| r == "this") {
+                store.mutating.insert(id.clone());
+            }
+            changing.insert(id, now);
+        }
     }
     // bodies -> calls / instantiates / boundaries: the program's, then the functions of the
     // library's code read; a library's module runs its own code on import, by no call of the
@@ -1013,7 +1021,7 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
         .partition(|id| !store.nodes[*id].library);
     for id in own.into_iter().chain(library) {
         let Some(m) = store.nodes.get(id).and_then(|n| modules.get(&n.module)) else { continue };
-        link_calls(m, modules, store, id, &returned, &eval, &mut linked);
+        link_calls(m, modules, store, id, &returned, &eval, &changing, &mut linked);
     }
     let handing: Vec<paths::Evaluated> = linked.args.iter().map(|arg| paths::Evaluated { arg, eval: &eval }).collect();
     let entry = |f: &str| store.nodes.get(f).map_or(false, |n| n.entry.is_some());
@@ -1021,7 +1029,7 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
     let completed = crate::paths::complete(linked.calls, &handing, &family, &|_, _| vec![], &entry);
     // a page's request without a host goes to the page's own origin
     crate::paths::place_calls(store, completed, true);
-    globals(modules, store, &returned, &eval);
+    globals(modules, store, &returned, &eval, &changing);
 }
 
 /// The library's classes the program names (imports, builds or calls a method of), with the
@@ -1064,7 +1072,13 @@ type Use = (String, String, u32);
 /// Every function that changes one writes it and every one that uses it reads it: a place,
 /// `Global(module.name)`. A name no function changes is a constant of the code, and no place; the
 /// methods of a value a package made are the package's, and change no value of the language.
-fn globals(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, returned: &HashMap<String, String>, eval: &Eval) {
+fn globals(
+    modules: &IndexMap<String, Module>,
+    store: &mut GraphBuilder,
+    returned: &HashMap<String, String>,
+    eval: &Eval,
+    changing: &Changing,
+) {
     let tops: HashMap<&str, HashSet<String>> = modules.values().map(|m| (m.id.as_str(), top_names(m))).collect();
     let mutators = knowledge::mutators(knowledge::Registry::Npm);
     let mut uses: Vec<(String, Vec<Use>, Vec<Use>)> = vec![];
@@ -1083,7 +1097,7 @@ fn globals(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, returne
             // a function defined in this one is a function of its own
             let inner: Vec<(usize, usize)> = m.bodies.values().copied().filter(|&(a, b)| s <= a && b <= e && (a, b) != (s, e)).collect();
             let mine = |x: &TsNode| !inner.iter().any(|&(a, b)| a <= x.start_byte() && x.end_byte() <= b);
-            let b = Body::new(m, modules, store, n, body, returned, eval);
+            let b = Body::new(m, modules, store, n, body, returned, eval, changing);
             let bound = b.bound_in();
             let module_value = |x: &str| if bound.contains(x) { None } else { kept(x) };
             let line = |x: TsNode| x.start_position().row as u32 + 1;
@@ -1097,15 +1111,19 @@ fn globals(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, returne
                 }
             }
             // a method of the language's own that changes its receiver, on a value no package made
-            let language: &dyn Fn(TsNode) -> Option<TsNode> = &|c| {
-                let f = function_of(c).filter(|f| f.kind() == "member_expression")?;
+            let language: &dyn Fn(TsNode) -> Vec<TsNode> = &|c| {
+                let Some(f) = function_of(c).filter(|f| f.kind() == "member_expression") else { return vec![] };
                 let changing = f.child_by_field_name("property").map_or(false, |p| mutators.contains(&text(p, src)));
                 if !changing || b.callee(c).map_or(false, |t| b.own(&t)) {
-                    return None;
+                    return vec![];
                 }
-                let o = f.child_by_field_name("object")?;
+                let Some(o) = f.child_by_field_name("object") else { return vec![] };
                 let made = chain_root(o, src).and_then(module_value).map_or(false, |k| package_value(modules, &k));
-                (!made).then_some(o)
+                if made {
+                    vec![]
+                } else {
+                    vec![o]
+                }
             };
             for (at, name) in changes_in(body, src, language).into_iter().filter(|(x, _)| mine(x)) {
                 note(&mut writes, module_value(name), name, line(at));

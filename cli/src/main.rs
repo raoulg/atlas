@@ -13,7 +13,8 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 use atlas_engine::changes;
-use atlas_engine::{parts, principles, remote, Options};
+use atlas_engine::sight::Sight;
+use atlas_engine::{parts, principles, remote, Graph, Options};
 use clap::builder::styling::{AnsiColor, Effects, Style, Styles};
 use clap::{Parser, Subcommand};
 
@@ -199,7 +200,7 @@ enum Cmd {
         /// Also `"open": {"functions": [<id>, ..]}`, and `kind`, `part`, `focus`, and the opened
         /// `parts`, `units`, `steps`, `families`, `places`, `dirs`, as the page's address writes them.
         #[arg(long, value_name = "JSON")]
-        view: Option<String>,
+        view: Option<Sight>,
     },
     /// Where the code and the design principles disagree, each with a question
     Check {
@@ -271,27 +272,36 @@ enum Cmd {
     },
 }
 
-/// The page of `repos`, written to `out`, else beside `home`, the folder of the first of them
-/// when it is not a clone.
+/// The page of `repos`, or of one of them `since` a revision (`until` another), written to `out`,
+/// else beside `home`, the folder of the first of them when it is not a clone. It opens in `sight`,
+/// and on the route of a file named on the command line.
 fn view(
     repos: &[PathBuf],
     opts: &Options,
     (out, home): (Option<PathBuf>, Option<&Path>),
     shown_in_browser: bool,
-    range: (Option<&str>, Option<&str>),
-    shown: Option<serde_json::Value>,
+    (since, until): (Option<&str>, Option<&str>),
+    sight: Option<Sight>,
 ) -> Result<()> {
-    let (name, html, summary) = page::page(repos, opts, range.0, range.1, shown)?;
-    let out = out.unwrap_or_else(|| home::made(home, &format!("{name}.html")));
-    if let Some(dir) = out.parent() {
-        std::fs::create_dir_all(dir)?;
-    }
-    std::fs::write(&out, html)?;
-    eprintln!("{summary} · wrote {}", out.display());
+    let read = page::reading(repos, opts, since, until)?;
+    let findings = read.findings();
+    let (graph, compared) = read.drawn();
+    let flow = atlas_engine::flow::of(&graph);
+    let opens = page::Opens { route: named_route(&graph, &opts.named), sight, served: None };
+    let html = page::Html::of(&graph, &flow, &findings, compared.as_ref(), &opens)?;
+    let out = out.unwrap_or_else(|| home::made(home, &format!("{}.html", graph.root)));
+    html.write(&out)?;
+    eprintln!("{} · wrote {}", page::summary(&graph), out.display());
     if shown_in_browser {
         page::open(out.as_os_str());
     }
     Ok(())
+}
+
+/// The route of a file named on the command line: the entry that lies in one of the `named`, by its id.
+fn named_route(graph: &Graph, named: &[PathBuf]) -> Option<String> {
+    let lies_in = |file: &str| std::fs::canonicalize(file).is_ok_and(|f| named.contains(&f));
+    graph.nodes.iter().find(|n| n.entry.is_some() && lies_in(&n.file)).map(|n| n.id.clone())
 }
 
 /// A repository argument as a folder on disk: a path as it is, a URL cloned for as long as the
@@ -401,16 +411,12 @@ fn main() -> Result<()> {
     let cache = if cli.no_cache { None } else { atlas_engine::cache::Cache::new(version::VERSION.as_str()) };
     let mut opts = Options { libraries: cli.libraries, cache, ..Options::default() };
     match cli.cmd {
-        Cmd::View { repos, out, no_open, since, until, view: shown } => {
+        Cmd::View { repos, out, no_open, since, until, view: sight } => {
             let repos = if repos.is_empty() { vec![std::env::current_dir()?] } else { repos };
-            let shown = shown
-                .map(|v| serde_json::from_str::<serde_json::Value>(&v))
-                .transpose()
-                .map_err(|e| anyhow::anyhow!("--view is not JSON: {e}"))?;
             let (repos, clones): (Vec<PathBuf>, Vec<Option<remote::Clone>>) =
                 repos.into_iter().map(|r| local(r, &mut opts)).collect::<Result<Vec<_>>>()?.into_iter().unzip();
             let home = clones[0].is_none().then(|| repos[0].as_path());
-            view(&repos, &opts, (out, home), !no_open, (since.as_deref(), until.as_deref()), shown)?
+            view(&repos, &opts, (out, home), !no_open, (since.as_deref(), until.as_deref()), sight)?
         }
         Cmd::Mcp => mcp::serve(&opts)?,
         Cmd::History { repo, port, no_open } => {

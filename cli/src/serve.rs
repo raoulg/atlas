@@ -14,12 +14,15 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use anyhow::{Context, Result};
+use atlas_engine::changes::{self, Named};
 use atlas_engine::repo::Stamp;
-use atlas_engine::{changes, Options};
+use atlas_engine::sight::Sight;
+use atlas_engine::Options;
 use serde_json::{json, Value};
 
 use crate::http::{reply, request, Answer, Request};
 use crate::log::{Log, Who};
+use crate::page::{self, Html, Opens, Reading};
 use crate::shared::{self, Note, State};
 
 /// The working tree as far as Atlas reads it: each file by its size and the time it was written.
@@ -72,7 +75,7 @@ pub fn serve(repo: &Path, port: Option<u16>, opts: &Options, shown: bool) -> Res
     let code = Arc::clone(&server);
     std::thread::spawn(move || code.watch());
     if shown {
-        crate::page::open(url.as_ref());
+        page::open(url.as_ref());
     }
     for conn in listener.incoming().flatten() {
         let server = Arc::clone(&server);
@@ -107,9 +110,10 @@ impl Server {
                 self.export(req).map_or_else(Answer::failed, |(name, html)| Answer::download(format!("{name}.html"), html))
             }
             ("POST", "/api/shown") => json(self.body(req).and_then(|v| shared::set_shown(&self.repo, &v).map(|_| Value::Null))),
-            ("GET", "/api/look") => shared::take_look(&self.repo).map_or_else(Answer::none, |v| {
-                self.log.say(Who::Agent, &format!("look here: {v}"));
-                Answer::json(v.to_string())
+            ("GET", "/api/look") => shared::take_look(&self.repo).map_or_else(Answer::none, |look| {
+                let said = serde_json::to_string(&look).unwrap_or_default();
+                self.log.say(Who::Agent, &format!("look here: {said}"));
+                Answer::json(said)
             }),
             ("GET", "/api/notes") => json(Ok(serde_json::to_value(shared::notes(&self.repo)).unwrap_or_default())),
             ("GET", "/api/annotations") => json(Ok(serde_json::to_value(shared::annotations(&self.repo)).unwrap_or_default())),
@@ -119,13 +123,18 @@ impl Server {
         }
     }
 
-    /// The page as `atlas view` writes it, opened in the view the reader has (`v`): a file to keep
+    /// The page as `atlas view` writes it, opened in the sight the reader has (`v`): a file to keep
     /// or send, that needs no server.
     fn export(&self, req: &Request) -> Result<(String, String)> {
-        let view = req.query.get("v").map(|v| serde_json::from_str::<Value>(v)).transpose().context("the view is not JSON")?;
-        let (name, html, _) = crate::page::page(&[self.repo.clone()], &self.opts, None, None, view.clone())?;
-        self.log.say(Who::You, &format!("exported {name}.html, in the view {}", view.unwrap_or_default()));
-        Ok((name, html))
+        let sight = req.query.get("v").map(|v| v.parse::<Sight>()).transpose().context("the view is not one the page writes")?;
+        let said = serde_json::to_string(sight.as_ref().unwrap_or(&Sight::default()))?;
+        let read = page::reading(&[self.repo.clone()], &self.opts, None, None)?;
+        let findings = read.findings();
+        let (graph, compared) = read.drawn();
+        let flow = atlas_engine::flow::of(&graph);
+        let html = Html::of(&graph, &flow, &findings, compared.as_ref(), &Opens { route: None, sight, served: None })?;
+        self.log.say(Who::You, &format!("exported {}.html, in the view {said}", graph.root));
+        Ok((graph.root, html.into()))
     }
 
     /// The page of the working tree as its files are now: the one kept while none has changed, so
@@ -140,9 +149,13 @@ impl Server {
             None => {}
         }
         let id = name(&now);
-        let (html, summary) = crate::page::served_page(&self.repo, &self.opts, &id)?;
-        self.log.say(Who::Atlas, &format!("drew {summary}"));
-        let drawn = Arc::new(Drawn { stamps: now, id, html });
+        let read = reading(&self.repo, &self.opts)?;
+        let findings = read.findings();
+        let (graph, compared) = read.drawn();
+        let flow = atlas_engine::flow::of(&graph);
+        let html = Html::of(&graph, &flow, &findings, compared.as_ref(), &Opens { route: None, sight: None, served: Some(id.clone()) })?;
+        self.log.say(Who::Atlas, &format!("drew {}", page::summary(&graph)));
+        let drawn = Arc::new(Drawn { stamps: now, id, html: html.into() });
         *self.kept.lock().unwrap_or_else(|e| e.into_inner()) = Some(Arc::clone(&drawn));
         Ok(drawn)
     }
@@ -234,6 +247,15 @@ fn own_port(repo: &Path) -> u16 {
     let path = std::fs::canonicalize(repo).unwrap_or_else(|_| repo.to_path_buf());
     let hash = path.to_string_lossy().bytes().fold(0xcbf29ce484222325u64, |h, b| (h ^ b as u64).wrapping_mul(0x100000001b3));
     8700 + (hash % 200) as u16
+}
+
+/// The working tree as the page draws it: beside what an agent has in view, as two readings are
+/// drawn (A the working tree, B the vision), and alone when no vision is kept.
+fn reading(repo: &Path, opts: &Options) -> Result<Reading> {
+    let Some(p) = shared::vision(repo) else { return page::reading(&[repo.to_path_buf()], opts, None, None) };
+    let envisioned = Named { rev: "vision".into(), short: "vision".into(), subject: p.title.clone() };
+    let now = atlas_engine::parts::analyze_parts(&[repo.to_path_buf()], opts)?;
+    Ok(Reading::compared(repo, (changes::worktree(), now), (envisioned, changes::envisioned(repo, &p.files, opts)?)))
 }
 
 /// The working tree as far as Atlas reads it, and what an agent has in view beside it: equal stamps

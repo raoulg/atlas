@@ -929,6 +929,53 @@ fn changes_a_change_to_an_input_of_any_type_shows_in_the_signature() {
     );
 }
 
+/// A change to a value is the caller's value at a new moment (#129): a call gives anew each value
+/// it changes among what it is handed, under the name it was handed. The clean `main` hands values
+/// on and gets new ones back; only `ledger.add(..)` changes what it runs on, and gives the ledger.
+/// The shortcut's calls change what they are handed: `ledger.takeFrom(other)` both ledgers, the
+/// Array `lines` and the Map `m` that `addLine` and `count` are handed, and the ledger whose rows
+/// `fileAll` files (a change through a projection changes its owner). Inside `Ledger.add`,
+/// `this.rows.push(e)` is the language's `push` on a part of the ledger: handed the ledger (#128),
+/// it gives it anew. The object literal each side hands to a parameter written as an Expense is a
+/// step that builds one, which the call is handed (#154).
+#[test]
+fn changes_a_call_gives_anew_what_it_changes_of_what_it_is_handed() {
+    let (c, s) = (ledger("clean"), ledger("shortcut"));
+    let changed = |g: &Graph| -> Vec<(String, Vec<String>)> {
+        let mut out: Vec<(String, Vec<String>)> = node(g, "ledger.main")
+            .sites
+            .iter()
+            .filter(|x| !x.to.is_empty() && x.hands.iter().any(|h| x.gives.iter().any(|v| v.name == h.name && !h.name.is_empty())))
+            .map(|x| (x.to.rsplit('.').next().unwrap_or("").to_string(), x.gives.iter().map(|h| h.name.clone()).collect()))
+            .collect();
+        out.sort();
+        out
+    };
+    let names = |xs: &[&str]| xs.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+    assert_eq!(changed(&c), [("add".to_string(), names(&["ledger"]))], "only the ledger's own method changes it");
+    assert_eq!(
+        changed(&s),
+        [
+            ("count".to_string(), names(&["m"])),
+            ("fileAll".to_string(), names(&["ledger"])),
+            ("takeFrom".to_string(), names(&["ledger", "other"])),
+            ("takeVictim".to_string(), names(&["ledger", "other"])),
+        ]
+    );
+    let lines = node(&s, "ledger.main").sites.iter().find(|x| x.to.ends_with(".addLine")).expect("addLine");
+    assert_eq!(lines.gives.iter().map(|h| (h.ty.as_str(), h.name.as_str())).collect::<Vec<_>>(), [("ext:javascript.Array", "lines")]);
+    let push = node(&c, "ledger.Ledger.add").sites.iter().find(|x| x.op == "push").expect("push is a step");
+    let held = |hs: &[atlas_engine::Held]| hs.iter().map(|h| (h.ty.clone(), h.name.clone())).collect::<Vec<_>>();
+    assert!(push.changes && held(&push.hands).contains(&("ledger.ledger.Ledger".to_string(), String::new())), "{push:#?}");
+    assert_eq!(held(&push.gives), [("ledger.ledger.Ledger".to_string(), "this".to_string())]);
+    for (g, to) in [(&c, ".refiled"), (&s, ".rename")] {
+        let main = &node(g, "ledger.main").sites;
+        assert!(main.iter().any(|x| x.to == "ledger.ledger.Expense"), "the literal builds an Expense: {main:#?}");
+        let call = main.iter().find(|x| x.to.ends_with(to)).expect("the call");
+        assert!(call.hands.iter().any(|h| h.ty == "ledger.ledger.Expense"), "{to} is handed what it builds: {call:#?}");
+    }
+}
+
 /// A field that holds what a package made is that package's, on any value of the class that
 /// declares it, as on the body's own receiver: `api.http.delete(..)`, with `http: AxiosInstance` a
 /// field of `Api`, is a request through axios, as `this.http.delete(..)` in `Api` would be. Its
@@ -1348,7 +1395,10 @@ fn composition_an_operation_is_a_step_where_its_result_is_named() {
 /// takes a value apart, a value computed by operators, `this` in an argument. In the pipeline's
 /// `trend`, the scale `range` gives `x` is handed the months (`first = series[0]`) and the settings
 /// (`const { width, height } = settings`); `parseLine` builds its Month of what `const [year, ..] =
-/// fields` took apart; `new Database(this.path)` is handed the ledger it runs on (`readback`).
+/// fields` took apart; `new Database(this.path)` is handed the ledger it runs on (`readback`), and so
+/// is the step a chain on `readFileSync(this.outages, ..)` ends in, since a library's call that is no
+/// step is glued into the step around it (`kept` in `lens`). A method called on `this` itself runs
+/// on it and is handed nothing more.
 #[test]
 fn composition_a_call_is_handed_what_its_names_hold() {
     let pipeline =
@@ -1366,6 +1416,12 @@ fn composition_a_call_is_handed_what_its_names_hold() {
     let keep = node(&readback.clean, "cli.Ledger.keep");
     let db = keep.sites.iter().find(|s| s.op == "Database()").expect("a step");
     assert_eq!(db.hands.iter().map(|h| (h.ty.as_str(), h.name.as_str())).collect::<Vec<_>>(), [("ledger.cli.Ledger", "")]);
+    let g = harvest("clean");
+    let kept = &node(&g, "store.ReadingStore.kept").sites;
+    let map = kept.iter().find(|s| s.op == "map").unwrap_or_else(|| panic!("{kept:#?}"));
+    assert!(map.hands.iter().any(|h| h.ty == "harvest.store.ReadingStore" && h.name.is_empty()), "{map:#?}");
+    let history = kept.iter().find(|s| s.to.ends_with(".history")).expect("history");
+    assert!(history.on_receiver && history.hands.iter().all(|h| h.ty != "harvest.store.ReadingStore"), "{history:#?}");
 }
 
 /// A value a body binds without a call comes from the values it is made of, not from beyond (#103).

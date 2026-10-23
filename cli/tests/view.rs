@@ -96,6 +96,28 @@ fn what_atlas_makes_goes_to_atlas_at_the_top_of_the_repository() {
     assert!(ignore.lines().any(|l| l == "*"), "the folder ignores itself: {ignore:?}");
 }
 
+/// `--view` is the page's view: the page opens in it as given, and a member the page does not know
+/// is refused before anything is read.
+#[test]
+fn view_opens_the_page_in_the_view_it_names() {
+    let out = scratch("in-view.html");
+    let view = r#"{"route":"fixture.cli.build","open":{"steps":["fixture.cli.build/2"]}}"#;
+    atlas(&["view", "engine/tests/fixture", "--no-open", "--out", out.to_str().unwrap(), "--view", view]);
+    let html = std::fs::read_to_string(&out).unwrap();
+    let _ = std::fs::remove_file(&out);
+    let data = &html[html.find("window.DATA = ").expect("the page holds its data") + "window.DATA = ".len()..];
+    let data: Value = serde_json::Deserializer::from_str(data).into_iter().next().unwrap().unwrap();
+    assert_eq!(data["projects"]["fixture"]["view"], serde_json::from_str::<Value>(view).unwrap());
+    let refused = Command::new(env!("CARGO_BIN_EXE_atlas"))
+        .args(["view", "engine/tests/fixture", "--no-open", "--view", r#"{"route":"fixture.cli.build","opne":{}}"#])
+        .current_dir(root())
+        .output()
+        .unwrap();
+    assert!(!refused.status.success());
+    let said = String::from_utf8_lossy(&refused.stderr);
+    assert!(said.contains("--view") && said.contains("unknown field `opne`"), "{said}");
+}
+
 /// An `--out` in a folder that does not exist yet makes that folder, for the page and the graph.
 #[test]
 fn out_makes_the_folders_it_names() {
