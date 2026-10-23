@@ -1598,9 +1598,10 @@ async function renderPlaat(mine) {
   if (t1) { if (plaatFit || !DUR) svg.call(zoom.transform, t1); else svg.transition().duration(DUR).call(zoom.transform, t1); }
   prevPos = pos; prevParent = parentOf; plaatAnchor = null; plaatFit = false;
   PICTURE = {boxes: nodeEls, lines: edgeEls};
-  // the picture as data, for the checks that walk it (tools/pictures.py): each box with the box that holds it, each line by its ends
+  // the picture as data, for the checks that walk it (tools/pictures.py, tools/docs_pictures.py): the graph laid out, each box
+  // with the box that holds it, each line by its ends
   window.atlasBoxes = nodeEls;
-  window.atlasPicture = {n: (window.atlasPicture?.n || 0) + 1, dropped, oracle: oracle || [], sides: [...roleAt], boxes: [...nodeEls.keys()].map(id => [id, parentOf.get(id) || "root"]), lines: edgeEls.map(e => [e.a, e.b])};
+  window.atlasPicture = {n: (window.atlasPicture?.n || 0) + 1, planned: root, dropped, oracle: oracle || [], sides: [...roleAt], boxes: [...nodeEls.keys()].map(id => [id, parentOf.get(id) || "root"]), lines: edgeEls.map(e => [e.a, e.b])};
 }
 // what the picture is a function of, each part undoable: the route, the opened steps, the open families, the split world boxes
 function crumbs() {
