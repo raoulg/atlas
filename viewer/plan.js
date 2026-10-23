@@ -1195,7 +1195,7 @@ const heldFigure = (h, label) => {
 };
 const figureOf = (P, k) => {
   const key = P.own ? frames.get(P.parent)?.step : P.steps[0], n = byId.get(stepAt(P)), a = arrowOf(stepAt(P)), pl = places.get(k);
-  const receiver = () => latestGet(kindKey(addPlace(typePlace(treeInfo.get(key)?.on || a?.receiver || n?.cls))) + "|", P, true);
+  const cls = treeInfo.get(key)?.on || a?.receiver || n?.cls, receiver = () => cls && latestGet(kindKey(addPlace(typePlace(cls))) + "|", P, true);
   let v;
   if (P.cut) {
     if (!pl?.holder) return k;
