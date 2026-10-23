@@ -800,9 +800,14 @@ const stepMorphism = (key, own, isAnchor, leaf) => {
     // the value a method runs on too, where the call names it (`settings.mode.plan()` runs on a projection of `settings`)
     const recv = !site.on_receiver && arrowOf(step)?.receiver ? [on || arrowOf(step).receiver] : [];
     if (hs.length) for (const x of [...(arrowOf(step)?.takes || []), ...recv]) { const k = "t:" + x; if (m.dom.has(k) && !made.has(x) && !handed.has(kindKey(k))) m.dom.delete(k); }
-    // what the step changes is the value it was handed, under the same name: `read_makefile(&mut g)`
-    const changes = arrowOf(step)?.changes || [];
+    // what the step changes is the value it was handed, under the same name: `read_makefile(&mut g)`. A call that gives
+    // anew what it is handed says which values it changes, each under the name it was handed (`fileAll(ledger.rows)` gives
+    // `ledger`): the types its arrow changes are those values, no value of their own beside them. Where the call does not
+    // say, a changed type is the value of its kind the call was handed
+    const changes = arrowOf(step)?.changes || [], gives = new Set(arrowOf(step)?.gives || []);
+    const explicit = (site.gives || []).some(g => g.name && (site.hands || []).some(h => h.name === g.name));
     for (const x of [...changes, ...(on && changes.includes(byId.get(step)?.cls) ? [on] : [])]) {
+      if (explicit) { if (!gives.has(x) && !cn.has("t:" + x)) m.cod.delete("t:" + x); continue; }
       const kind = kindKey(addPlace(typePlace(x))), held = [...dn.keys()].find(d => kindKey(d) === kind);
       for (const k of m.cod.keys()) if (held && kindKey(k) === kind && !cn.has(k)) cn.set(k, dn.get(held));
     }
@@ -810,6 +815,16 @@ const stepMorphism = (key, own, isAnchor, leaf) => {
   // what the body's own code uses outside the calls that are its steps (`print(store.path)`, `if done:`, `Ok(path)`), as the
   // reader gives it: taken at the border by the names that hold them, inside the frame
   const uses = own && !leaf && !step.startsWith("op:") ? (byId.get(step)?.uses || []).filter(u => u.name) : [];
+  // what an opened step changes of a value it was handed goes out at its border as what its steps made of it: its own arrow
+  // takes the value each name it changes holds at its end (`self`, `lines`), of whatever type
+  if (own && !leaf && !step.startsWith("op:")) {
+    const a = arrowOf(step) || {}, fn = byId.get(step), params = fn?.params || [];
+    for (const nm of a.changed || []) {
+      const p = params.find(q => q.name === nm), recv = (p ? p.receiver : ["self", "this"].includes(nm)) && a.receiver ? on || a.receiver : null;
+      const type = recv || (p && (a.takes || []).find(t => writesType(p, t))) || "";
+      if (p || recv) uses.push({name: nm, type, arms: [], changed: true});
+    }
+  }
   for (const u of uses) if (u.type) addPlace({...typePlace(u.type), id: `t:${u.type}~${u.name}`, name: u.name});
   // what a site that raises gives is an error, made where the site makes it
   if (site?.raises) for (const g of site.gives || []) raised.add(addPlace(g.type ? (g.name ? {...typePlace(g.type), id: `t:${g.type}~${g.name}`, name: g.name} : typePlace(g.type)) : {id: "v:" + g.name, label: "·", kind: "type", hue: hueOf(null), type: null, name: g.name}));
@@ -1138,6 +1153,8 @@ for (const P of pills.values()) {
     const arms = new Map([...armsAbove(P), ...(u.arms || []).map(([c, b]) => [`n:${frames.get(P.parent).step}~c${c}`, b])]);
     const v = latestGet(kindKey(base) + "|" + u.name, P, true, arms) || (sum && latestGet("t:" + kindOf(sum) + "|" + u.name, P, true, arms));
     if (!v) continue;
+    // a name the step changes is taken where a step inside made it anew; the value its call handed it crosses the frame
+    if (u.changed) { const at = places.get(v)?.at, f = P.parent; if (!at || !(at.startsWith(f + "/") || at.startsWith(f + "|") || at.startsWith(f + "~c"))) continue; }
     if (!Dv.has(v)) Dv.set(v, false);
     (P.used ||= new Set()).add(v);
   }

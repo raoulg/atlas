@@ -81,19 +81,19 @@ step main/add_tag/append
 line Board·other@main/Board()#2 > main/Board.take_from/extend value
 line Board·board@main/reset > main/Board.take_from/extend value
 line main/Board.take_from/extend > Board·self@main/Board.take_from/extend value
-known #129 line Board·self@main/Board.take_from/extend > main/Board.take_from value
+line Board·self@main/Board.take_from/extend > main/Board.take_from value
 line Board·other@main/Board.take_from > main/Board.take_victim/extend value
 line Board·board@main/Board.take_from > main/Board.take_victim/extend value
 line main/Board.take_victim/extend > Board·self@main/Board.take_victim/extend value
-known #129 line Board·self@main/Board.take_victim/extend > main/Board.take_victim value
+line Board·self@main/Board.take_victim/extend > main/Board.take_victim value
 line main/add_tag/append > _·tags@main/add_tag/append value
-known #129 line _·tags@main/add_tag/append > main/add_tag value   # the own arrow hands on what the change made
+line _·tags@main/add_tag/append > main/add_tag value   # the own arrow hands on what the change made
 home Board·self@main/Board.take_from/extend main/Board.take_from
 home Board·self@main/Board.take_victim/extend main/Board.take_victim
 home _·tags@main/add_tag/append main/add_tag
 step main/queue/heappush                                    # `heapq.heappush(jobs, job)` changes the list it is handed
 line main/queue/heappush > _·jobs@main/queue/heappush value
-known #129 line _·jobs@main/queue/heappush > main/queue value   # the own arrow hands on what the change made
+line _·jobs@main/queue/heappush > main/queue value   # the own arrow hands on what the change made
 home _·jobs@main/queue/heappush main/queue
 
 # A callee's parameter holds what its call hands it: `take_from`'s `other` is main's board, `take_victim`'s `victim`

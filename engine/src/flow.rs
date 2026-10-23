@@ -496,6 +496,9 @@ pub struct Arrow {
     /// What the body changes in place: `T -> T`.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub changes: Vec<String>,
+    /// The names of what it changes in place: each parameter (or `self`, `this`) a change is of, of whatever type.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub changed: Vec<String>,
     /// The signature gives a value back: a type of the code's, or what it gives on success
     /// (unwrapped from a `Result` or a `Promise`) is no unit. An opened body makes it from what
     /// its steps give.
@@ -757,6 +760,15 @@ fn arrow_of(ix: &Ix, n: &Node, done: &mut Memo) -> Arrow {
         gives,
         builds: if ctor { n.cls.clone().unwrap_or_default() } else { String::new() },
         changes: ix.targets(&n.id, EdgeKind::Mutates),
+        changed: {
+            let mut names: Vec<String> = vec![];
+            for v in ix.out(&n.id, EdgeKind::Mutates).filter_map(|e| e.via.clone()) {
+                if !names.contains(&v) {
+                    names.push(v);
+                }
+            }
+            names
+        },
         returns_value,
         reads_back: reads_back(orders(ix, &n.id, Some(done))),
         own_reads_back: reads_back(orders(ix, &n.id, None)),
