@@ -6,9 +6,7 @@
 # changes the String it runs on (`push_str`), is a step; what it touches stays its caller's. Each file is read, used and
 # written by the route: it stands on both sides.
 #
-# Issues marked: #101 a body's own use of a value it made; #103 an element of what a body iterates; #125 which library
-# operations are steps; #126 what the own arrow keeps; #128 a call handed nothing through self, a closure, an index or
-# a chain; #130 which forms are choices.
+# Issues marked: #101 a body's own use of a value it made; #126 what the own arrow keeps.
 
 route harvest.ReadingStore
 step ReadingStore()/ReadingStore.new
@@ -61,7 +59,7 @@ line ReadingStore()/ReadingStore.save/read_to_string > _·text@ReadingStore()/Re
 line _·text@ReadingStore()/ReadingStore.save/read_to_string > ReadingStore()/ReadingStore.save/push_str value
 line Reading·reading > ReadingStore()/ReadingStore.save/push_str value
 line ReadingStore()/ReadingStore.save/push_str > _·text@ReadingStore()/ReadingStore.save/push_str value
-known #125 line _·text@ReadingStore()/ReadingStore.save/push_str > ReadingStore()/ReadingStore.save value   # #125: what it writes
+known #101 line _·text@ReadingStore()/ReadingStore.save/push_str > ReadingStore()/ReadingStore.save value   # what it writes, the body's own `fs::write`
 line ReadingStore > ReadingStore()/ReadingStore.history/read_to_string value # the caller's instance: read_to_string is handed `self.readings`
 line Disk(ReadingStore.readings) > ReadingStore()/ReadingStore.history own
 line ReadingStore()/ReadingStore.history/read_to_string > _·text@ReadingStore()/ReadingStore.history/read_to_string value
@@ -88,7 +86,7 @@ line ReadingStore()/ReadingStore.save_outage/read_to_string > _·text@ReadingSto
 line _·text@ReadingStore()/ReadingStore.save_outage/read_to_string > ReadingStore()/ReadingStore.save_outage/push_str value
 line Outage·outage > ReadingStore()/ReadingStore.save_outage/push_str value
 line ReadingStore()/ReadingStore.save_outage/push_str > _·text@ReadingStore()/ReadingStore.save_outage/push_str value
-known #125 line _·text@ReadingStore()/ReadingStore.save_outage/push_str > ReadingStore()/ReadingStore.save_outage value   # #125: what it writes
+known #101 line _·text@ReadingStore()/ReadingStore.save_outage/push_str > ReadingStore()/ReadingStore.save_outage value   # what it writes, the body's own `fs::write`
 line ReadingStore > ReadingStore()/ReadingStore.outages/read_to_string value # the caller's instance: read_to_string is handed `self.outages`
 line Disk(ReadingStore.outages) > ReadingStore()/ReadingStore.outages own
 line ReadingStore()/ReadingStore.outages/read_to_string > _·text@ReadingStore()/ReadingStore.outages/read_to_string value
@@ -102,13 +100,13 @@ line ReadingStore()/ReadingStore.summary/read_to_string > _·text@ReadingStore()
 line _·text@ReadingStore()/ReadingStore.summary/read_to_string > ReadingStore()/ReadingStore.summary/find value
 known #101 line _·text@ReadingStore()/ReadingStore.summary/read_to_string > ReadingStore()/ReadingStore.summary value   # written back with the new line
 line ReadingStore()/ReadingStore.summary/find > _·line@ReadingStore()/ReadingStore.summary/find value
-known #125 line _·line@ReadingStore()/ReadingStore.summary/find > ReadingStore()/ReadingStore.summary value   # #125: the kept line is returned
+known #101 line _·line@ReadingStore()/ReadingStore.summary/find > ReadingStore()/ReadingStore.summary value   # the kept line is returned
 line ReadingStore > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/read_to_string value # the caller's instance (and #130)
 line Day·day > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history value # #130
 line Disk(ReadingStore.readings) > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history own # #130
 line ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/read_to_string > _·text@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/read_to_string value # #130
 line _·text@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/read_to_string > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/split value # #130
-known #130 line _·text@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/read_to_string > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history value   # #130
+known #101 line _·text@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/read_to_string > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history value   # its lines go on through unnamed calls to what history returns, as at the door
 line ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/split > _·parts@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/split value # #130
 line _·parts@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/split > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/next value # #125
 line ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/next > _·s@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/next value # #125
@@ -123,15 +121,15 @@ line ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/Reading() > Rea
 line Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/Reading() > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history value # #130
 line ReadingStore()/ReadingStore.summary/?1/ReadingStore.history > Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history value # #130
 line Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history > ReadingStore()/ReadingStore.summary/?1/collect value # #130
-known #128 line Day·day > ReadingStore()/ReadingStore.summary/?1/collect value # a closure: the filter by `day.date` goes into collect
+line Day·day > ReadingStore()/ReadingStore.summary/?1/collect value # a closure: the filter by `day.date` goes into collect
 line ReadingStore()/ReadingStore.summary/?1/collect > _·temperatures@ReadingStore()/ReadingStore.summary/?1/collect value # #130
 line _·temperatures@ReadingStore()/ReadingStore.summary/?1/collect > ReadingStore()/ReadingStore.summary/?1/fold value # #130
 line _·temperatures@ReadingStore()/ReadingStore.summary/?1/collect > ReadingStore()/ReadingStore.summary/?1/fold#2 value # #130
 line ReadingStore()/ReadingStore.summary/?1/fold > _·low@ReadingStore()/ReadingStore.summary/?1/fold value # #130
 line ReadingStore()/ReadingStore.summary/?1/fold#2 > _·high@ReadingStore()/ReadingStore.summary/?1/fold#2 value # #130
 known #126 extra line Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history > ReadingStore()/ReadingStore.summary value   # only `collect` takes them
-known #130 line _·low@ReadingStore()/ReadingStore.summary/?1/fold > ReadingStore()/ReadingStore.summary value   # #130
-known #130 line _·high@ReadingStore()/ReadingStore.summary/?1/fold#2 > ReadingStore()/ReadingStore.summary value   # #130
+known #101 line _·low@ReadingStore()/ReadingStore.summary/?1/fold > ReadingStore()/ReadingStore.summary value   # `format!("{key} {low} {high}")`, the body's own
+known #101 line _·high@ReadingStore()/ReadingStore.summary/?1/fold#2 > ReadingStore()/ReadingStore.summary value
 
 home ReadingStore@ReadingStore()/ReadingStore.new/ReadingStore() ReadingStore()/ReadingStore.new
 home ReadingStore@ReadingStore()/ReadingStore.new ReadingStore()
@@ -158,10 +156,10 @@ home _·t@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/next#3 Rea
 home _·text@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/read_to_string ReadingStore()/ReadingStore.summary/?1/ReadingStore.history
 home _·parts@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/split ReadingStore()/ReadingStore.summary/?1/ReadingStore.history
 home Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/Reading() ReadingStore()/ReadingStore.summary/?1/ReadingStore.history
-known #130 home Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history ReadingStore()/ReadingStore.summary/?1
+known #126 home Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history ReadingStore()/ReadingStore.summary/?1   # only `collect` takes them
 home _·temperatures@ReadingStore()/ReadingStore.summary/?1/collect ReadingStore()/ReadingStore.summary/?1
-known #130 home _·low@ReadingStore()/ReadingStore.summary/?1/fold ReadingStore()/ReadingStore.summary
-known #130 home _·high@ReadingStore()/ReadingStore.summary/?1/fold#2 ReadingStore()/ReadingStore.summary
+known #101 home _·low@ReadingStore()/ReadingStore.summary/?1/fold ReadingStore()/ReadingStore.summary
+known #101 home _·high@ReadingStore()/ReadingStore.summary/?1/fold#2 ReadingStore()/ReadingStore.summary
 home Day·day ReadingStore()
 
 side entry left

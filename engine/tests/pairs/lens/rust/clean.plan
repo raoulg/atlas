@@ -7,9 +7,7 @@
 # it touches stays its caller's. `kept_summary` builds its Summary only where the line is the day's (`.then(|| ..)`, a
 # choice as `unwrap_or_else` is). Each file is read, used and written by the route: it stands on both sides.
 #
-# Issues marked: #101 a body's own use of a value it made; #103 an element of what a body iterates; #125 which library
-# operations are steps; #128 a call handed nothing through self, a closure, an index or a chain; #130 which forms are
-# choices.
+# Issues marked: #101 a body's own use of a value it made; #126 what the own arrow keeps.
 
 route harvest.ReadingStore
 step ReadingStore()/ReadingStore.new
@@ -98,7 +96,7 @@ line ReadingStore()/ReadingStore.save/read_to_string > _·text@ReadingStore()/Re
 line _·text@ReadingStore()/ReadingStore.save/read_to_string > ReadingStore()/ReadingStore.save/push_str value
 line Reading·reading > ReadingStore()/ReadingStore.save/push_str value
 line ReadingStore()/ReadingStore.save/push_str > _·text@ReadingStore()/ReadingStore.save/push_str value
-known #125 line _·text@ReadingStore()/ReadingStore.save/push_str > ReadingStore()/ReadingStore.save value   # #125: what it writes
+known #101 line _·text@ReadingStore()/ReadingStore.save/push_str > ReadingStore()/ReadingStore.save value   # what it writes, the body's own `fs::write`
 line ReadingStore > ReadingStore()/ReadingStore.history/read_to_string value # the caller's instance: read_to_string is handed `self.readings`
 line Disk(ReadingStore.readings) > ReadingStore()/ReadingStore.history own
 line ReadingStore()/ReadingStore.history/read_to_string > _·text@ReadingStore()/ReadingStore.history/read_to_string value
@@ -125,7 +123,7 @@ line ReadingStore()/ReadingStore.save_outage/read_to_string > _·text@ReadingSto
 line _·text@ReadingStore()/ReadingStore.save_outage/read_to_string > ReadingStore()/ReadingStore.save_outage/push_str value
 line Outage·outage > ReadingStore()/ReadingStore.save_outage/push_str value
 line ReadingStore()/ReadingStore.save_outage/push_str > _·text@ReadingStore()/ReadingStore.save_outage/push_str value
-known #125 line _·text@ReadingStore()/ReadingStore.save_outage/push_str > ReadingStore()/ReadingStore.save_outage value   # #125: what it writes
+known #101 line _·text@ReadingStore()/ReadingStore.save_outage/push_str > ReadingStore()/ReadingStore.save_outage value   # what it writes, the body's own `fs::write`
 line ReadingStore > ReadingStore()/ReadingStore.kept/read_to_string value # the caller's instance: read_to_string is handed `self.outages`
 line Disk(ReadingStore.outages) > ReadingStore()/ReadingStore.kept own
 line ReadingStore()/ReadingStore.kept/read_to_string > _·text@ReadingStore()/ReadingStore.kept/read_to_string value
@@ -175,12 +173,12 @@ line _·low@ReadingStore()/ReadingStore.summary/ReadingStore.kept_summary/next#3
 line _·parts@ReadingStore()/ReadingStore.summary/ReadingStore.kept_summary/split > ReadingStore()/ReadingStore.summary/ReadingStore.kept_summary/next#4 value
 line ReadingStore()/ReadingStore.summary/ReadingStore.kept_summary/next#4 > _·high@ReadingStore()/ReadingStore.summary/ReadingStore.kept_summary/next#4 value
 line _·high@ReadingStore()/ReadingStore.summary/ReadingStore.kept_summary/next#4 > ReadingStore()/ReadingStore.summary/ReadingStore.kept_summary/?1/Summary() value
-known #125 line _·s@ReadingStore()/ReadingStore.summary/ReadingStore.kept_summary/next > ReadingStore()/ReadingStore.summary/ReadingStore.kept_summary value   # #125: compared with the day
-known #125 line _·date@ReadingStore()/ReadingStore.summary/ReadingStore.kept_summary/next#2 > ReadingStore()/ReadingStore.summary/ReadingStore.kept_summary value   # #125: compared with the day
+known #101 line _·s@ReadingStore()/ReadingStore.summary/ReadingStore.kept_summary/next > ReadingStore()/ReadingStore.summary/ReadingStore.kept_summary value   # compared with the day: it decides the `then`
+known #101 line _·date@ReadingStore()/ReadingStore.summary/ReadingStore.kept_summary/next#2 > ReadingStore()/ReadingStore.summary/ReadingStore.kept_summary value   # compared with the day: it decides the `then`
 line ReadingStore()/ReadingStore.summary/ReadingStore.kept_summary/?1/Summary() > Summary@ReadingStore()/ReadingStore.summary/ReadingStore.kept_summary/?1/Summary() value
 line Summary@ReadingStore()/ReadingStore.summary/ReadingStore.kept_summary/?1/Summary() > ReadingStore()/ReadingStore.summary/ReadingStore.kept_summary value
 line ReadingStore()/ReadingStore.summary/ReadingStore.kept_summary > Summary·summary@ReadingStore()/ReadingStore.summary/ReadingStore.kept_summary value   # `Some(summary)` names it
-known #103 line Summary·summary@ReadingStore()/ReadingStore.summary/ReadingStore.kept_summary > ReadingStore()/ReadingStore.summary value   # the arm returns it
+known #101 line Summary·summary@ReadingStore()/ReadingStore.summary/ReadingStore.kept_summary > ReadingStore()/ReadingStore.summary value   # the arm returns it: the pattern names it (#103), the body's own `Ok(summary)` uses it
 line ReadingStore > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/read_to_string value # the caller's instance: read_to_string is handed `self.readings`
 line Disk(ReadingStore.readings) > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history own
 line ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/read_to_string > _·text@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/read_to_string value
@@ -221,7 +219,7 @@ line ReadingStore()/ReadingStore.summary/?1/ReadingStore.keep_summary/read_to_st
 line _·text@ReadingStore()/ReadingStore.summary/?1/ReadingStore.keep_summary/read_to_string > ReadingStore()/ReadingStore.summary/?1/ReadingStore.keep_summary/push_str value
 line Summary@ReadingStore()/ReadingStore.summary/?1/day_summary > ReadingStore()/ReadingStore.summary/?1/ReadingStore.keep_summary/push_str value # #125
 line ReadingStore()/ReadingStore.summary/?1/ReadingStore.keep_summary/push_str > _·text@ReadingStore()/ReadingStore.summary/?1/ReadingStore.keep_summary/push_str value
-known #125 line _·text@ReadingStore()/ReadingStore.summary/?1/ReadingStore.keep_summary/push_str > ReadingStore()/ReadingStore.summary/?1/ReadingStore.keep_summary value   # #125: what it writes
+known #101 line _·text@ReadingStore()/ReadingStore.summary/?1/ReadingStore.keep_summary/push_str > ReadingStore()/ReadingStore.summary/?1/ReadingStore.keep_summary value   # what it writes, the body's own `fs::write`
 known #126 line Summary@ReadingStore()/ReadingStore.summary/?1/day_summary > ReadingStore()/ReadingStore.summary/?1/ReadingStore.keep_summary value   # the body uses it itself (its own write, what it returns), and a step inside takes it too
 line ReadingStore()/ReadingStore.summary/?1/ReadingStore.keep_summary > Summary@ReadingStore()/ReadingStore.summary/?1/ReadingStore.keep_summary value
 line Summary@ReadingStore()/ReadingStore.summary/?1/ReadingStore.keep_summary > ReadingStore()/ReadingStore.summary value
@@ -245,8 +243,8 @@ line _·low@ReadingStore()/ReadingStore.kept_summary/next#3 > ReadingStore()/Rea
 line _·parts@ReadingStore()/ReadingStore.kept_summary/split > ReadingStore()/ReadingStore.kept_summary/next#4 value
 line ReadingStore()/ReadingStore.kept_summary/next#4 > _·high@ReadingStore()/ReadingStore.kept_summary/next#4 value
 line _·high@ReadingStore()/ReadingStore.kept_summary/next#4 > ReadingStore()/ReadingStore.kept_summary/?1/Summary() value
-known #125 line _·s@ReadingStore()/ReadingStore.kept_summary/next > ReadingStore()/ReadingStore.kept_summary value   # #125: compared with the day
-known #125 line _·date@ReadingStore()/ReadingStore.kept_summary/next#2 > ReadingStore()/ReadingStore.kept_summary value   # #125: compared with the day
+known #101 line _·s@ReadingStore()/ReadingStore.kept_summary/next > ReadingStore()/ReadingStore.kept_summary value   # compared with the day: it decides the `then`
+known #101 line _·date@ReadingStore()/ReadingStore.kept_summary/next#2 > ReadingStore()/ReadingStore.kept_summary value   # compared with the day: it decides the `then`
 line ReadingStore()/ReadingStore.kept_summary/?1/Summary() > Summary@ReadingStore()/ReadingStore.kept_summary/?1/Summary() value
 line Summary@ReadingStore()/ReadingStore.kept_summary/?1/Summary() > ReadingStore()/ReadingStore.kept_summary value
 line ReadingStore()/ReadingStore.kept_summary > Summary@ReadingStore()/ReadingStore.kept_summary value
@@ -258,7 +256,7 @@ line ReadingStore()/ReadingStore.keep_summary/read_to_string > _·text@ReadingSt
 line _·text@ReadingStore()/ReadingStore.keep_summary/read_to_string > ReadingStore()/ReadingStore.keep_summary/push_str value
 line Summary·summary > ReadingStore()/ReadingStore.keep_summary/push_str value # #125
 line ReadingStore()/ReadingStore.keep_summary/push_str > _·text@ReadingStore()/ReadingStore.keep_summary/push_str value
-known #125 line _·text@ReadingStore()/ReadingStore.keep_summary/push_str > ReadingStore()/ReadingStore.keep_summary value   # #125: what it writes
+known #101 line _·text@ReadingStore()/ReadingStore.keep_summary/push_str > ReadingStore()/ReadingStore.keep_summary value   # what it writes, the body's own `fs::write`
 known #126 line Summary·summary > ReadingStore()/ReadingStore.keep_summary value   # the body uses it itself (its own write, what it returns), and a step inside takes it too
 line ReadingStore()/ReadingStore.keep_summary > Summary@ReadingStore()/ReadingStore.keep_summary value
 
