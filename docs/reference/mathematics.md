@@ -47,7 +47,8 @@ not in one branch of a choice the read is outside. Two arms of one choice never 
 other: a place one arm writes and another reads finds what was there and is changed, in both. A
 loop runs its body again: a read in a loop finds what a later round writes over, whichever stands
 first in the loop. A call that may run one of several bodies (the overrides of a call by name, the
-next method of a `super()` call) does at a place what one of them does, as the arms of a choice do.
+next method of a `super()` call) does at a place what one of them does, as the arms of a choice do; a
+call that builds a class does there what the initializer it runs does, at the call's place in the order.
 What a step a body calls finds there is what the body left, where the body wrote it before the call:
 the step changes nothing the body found. The
 route of a class is its doors, each called by the entry with no order between them: a place one door
@@ -414,7 +415,10 @@ open:
   by a value does: one a method keeps in the value it runs on (a method that changes that value,
   `self.fig, self.ax = plt.subplots()`) is that value's, so every step that runs on the value draws on the
   one figure it holds, whichever of them makes it (`create_figure` only where `self.fig is None`); one a
-  call makes and no value beyond it holds is that call's own, and two calls make two;
+  call makes and no value beyond it holds is that call's own, and two calls make two. A value a body sets
+  a part of to what another value holds (`other.fig = self.fig`, or `self.fig = fig` in a method its
+  call hands the other's figure to) is that one's put, a lens's: from then on it holds the figure the
+  other holds, and so does every value made anew of it;
 - a step's own arrow is its witness at its border: its signature and its own touches, the lines that
   cross its frame. An opened step draws it as a point on the frame's right edge, not as a step beside
   its steps: a value its call is handed crosses the frame to the step inside that takes it (the value
@@ -453,11 +457,17 @@ open:
   put. A parameter is such a name: inside an opened step it holds the value its call hands it, not a
   caller's value of its name or the latest of its type, and where the plan cannot say which, it is still
   a value of that body, in its frame, never one from beyond the route: what comes from beyond the route
-  is what its caller holds, its parameters and the instance of a class route. The call hands its
-  values in order, the value it runs on first, each to the next parameter of its type; a parameter the
-  call fills through a projection (`finished(job, settings.mode)`) is still the projection, so the
-  steps inside are handed
-  `settings`, and a signature's type is a value of its own only where the call hands nothing. A value
+  is what its caller holds, its parameters and the instance of a class route. The call hands each
+  value to the parameter its argument fills, as the call writes it, whatever its type: the value it runs
+  on to the receiver (also the first argument of a method called through its class or path), an
+  argument by its place to the parameter at that place after the receiver, one by its name to the
+  parameter of that name; a spread to each parameter from its place on, a spread of names to each one
+  the call writes no argument for. A parameter holds every value its argument hands (`f(a.x + b.y)`),
+  and none where its argument hands no value (a literal, a constant) or the call writes none for it,
+  where it holds its default. A parameter the call fills through a projection (`finished(job,
+  settings.mode)`) is still the projection, so the steps inside are handed `settings`, and a
+  signature's type stands for what a parameter holds only where the call does not say what fills it:
+  never for one it writes an argument for. A value
   of no type of the code's is one where a step makes it, so a parameter of no type of the code's
   (`path: &Path`) holds one only where its call fills it with one, a value a step made or a projection
   of one: a literal fills it with none, and the route's own, which no code of the program fills, hold
@@ -469,10 +479,15 @@ open:
   is a value of the plan where the code says it is one, whatever library its type is of: where the
   code builds it to raise (`raise RuntimeError(..)`, `throw new Error(..)`, `Err(Error::Empty)`), where
   a `?` hands on what a call fails with (converted to the function's error type, glued into the step
-  as a projection is), and where a handler takes it. An error a library may raise that the code
-  neither builds, hands on nor catches, the code does not say, and it is no value. The errors the arms
-  of one choice hand on are one value at the choice's moment, and an opened step takes each error its
-  steps hand on that none of them takes.
+  as a projection is), and where a handler takes it. A `?` written in the body's own code, in no step
+  (`Ok(fs::read_to_string(p)?.lines()..)`), is handed on by the body's own arrow, at the step's moment.
+  An error a library may raise that the code neither builds, hands on nor catches, the code does not
+  say, and it is no value. The errors the arms of one choice hand on are one value at the choice's
+  moment, and an opened step takes each error its steps hand on that none of them takes. A call whose
+  signature gives its error in the sum it gives (`Result<T, E>`) and that hands no error on gives the
+  sum, at the step's moment, also in an arm: what takes its result takes its error with it
+  (`store.save_rates(base, rates::fetch(..))`), and a body it is handed to takes the sum apart, its
+  steps a variant (`Ok(body) =>`), its own code the error (`Err(e) =>`).
 
 What the reader has open is the map `q`, nothing else: an occurrence goes to its outermost closed
 ancestor (or to itself), a type to the box its family stands in (`placeOfType`), a world place to its
@@ -485,8 +500,9 @@ parse the command line to the entry. The closed picture is `F/q`:
   not the signature alone. A line comes from the step itself when its own arrow supplies it and
   reaches through it otherwise (the sixth sentence);
 - a place made and taken inside one block is internal to it and is not drawn. The arms of a choice make
-  one value at the choice's moment, the value it hands on past it: what two of its arms make (the
-  variants of a sum are one value of it), or what one arm makes anew of a value named before the
+  one value at the choice's moment, the value it hands on past it: what two of its arms make, by a
+  step or by the body's own code (`let out = match f { "csv" => String::from(..), _ => format!(..) }`;
+  the variants of a sum are one value of it), or what one arm makes anew of a value named before the
   choice, which the other arms keep. What one arm makes and uses itself is its maker's, and no step of
   another arm takes it: a run goes through one arm. A step that is itself a choice (a call into a family, which runs
   one of the overrides) makes it at a moment inside the step, and hands on a value of its own at its
@@ -553,8 +569,9 @@ fact of it must hold of the plan Atlas builds, and no other. What Atlas gets wro
 with the issue that tracks it, and the mark goes with the fix (`engine/tests/plans/README.md`). The
 test runs the viewer's own model in node, the function every picture is drawn from, on every route of
 the pairs and of its programs.
-**Where.** `plan`, `sitesOf`, `figureOf`, `coarsen`, `cutArrow` and `checkOpenings` in `viewer/plan.js`;
-`tools/pictures.py`; `engine/tests/plans.rs`.
+**Where.** `plan`, `sitesOf`, `figureOf`, `coarsen`, `cutArrow`, `handTo` and `checkOpenings` in `viewer/plan.js`;
+which parameters of no type of the code's hold a value, `builder::settle_parameters`; `tools/pictures.py`;
+`engine/tests/plans.rs`.
 
 ### Saturation: when the order of a view does not matter
 **What.** A set is saturated by an equivalence when it never cuts a class in two.

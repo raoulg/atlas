@@ -59,7 +59,8 @@ Read it from left to right:
   called on (`rows.append(row)` hands on `rows`). In a notebook, a figure is drawn on
   the screen and named by what holds it: a method that keeps its figure in the value it runs
   on draws, with every other step on that value, on the value's one figure (`Figure 1 · Chart ·
-  chart`); any other call that makes a figure makes its own (`Figure 2 · Chart.line`).
+  chart`); any other call that makes a figure makes its own (`Figure 2 · Chart.line`). A value
+  that is set to hold what another holds (`other.fig = self.fig`) draws on the other's figure.
 - **Files fold into their folders** once a picture holds more than a column's worth:
   `File(artefacts/) · 8` opens into what is in it with a click.
 - **Shift-click a package** in the overview to focus on it: the picture keeps the packages

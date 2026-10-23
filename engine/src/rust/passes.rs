@@ -544,26 +544,12 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
         .iter()
         .filter(|id| matches!(store.nodes[*id].kind, NodeKind::Function | NodeKind::Method))
         .partition(|id| !store.nodes[*id].library);
-    let (mut fills, mut handed) = (vec![], vec![]);
     for id in own.into_iter().chain(library) {
         let l = link_calls(modules, store, crate_ids, &eval, &returned, id);
         waiting.extend(l.waiting.into_iter().map(|(t, b)| (id.clone(), t, b)));
         args.extend(l.args);
-        fills.extend(l.fills);
-        if !l.handed.is_empty() {
-            handed.push((id.clone(), l.handed));
-        }
     }
     let family = store.family();
-    // a parameter of no type of the code's that no call fills with a value of the plan hands none
-    let filled = super::body::filled(&fills, &family.overrides);
-    for (id, params) in handed {
-        let empty: Vec<&super::body::Parameter> = params.iter().filter(|p| !filled.contains(&(id.clone(), p.at))).collect();
-        let Some(n) = store.nodes.get_mut(&id).filter(|_| !empty.is_empty()) else { continue };
-        for s in n.sites.iter_mut() {
-            s.hands.retain(|h| !(h.ty.is_empty() && empty.iter().any(|p| p.name == h.name && p.written == h.at)));
-        }
-    }
     // a path or a statement built from a function's parameters is whole where its callers hand them
     let handing: Vec<Evaluated> = args.iter().map(|arg| Evaluated { arg, eval: &eval }).collect();
     let entry = |f: &str| store.nodes.get(f).map_or(false, |n| n.entry.is_some());

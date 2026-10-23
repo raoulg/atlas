@@ -345,6 +345,7 @@ impl GraphBuilder {
         settle_fails(&mut nodes, &self.edges, &family);
         crate::flow::wire(&mut nodes, &self.edges);
         fill_nested(&mut nodes);
+        settle_parameters(&mut nodes, &family);
         mark_doors(&mut nodes, &self.edges);
         mark_options(&mut nodes);
         crate::prophecy::settle(&mut nodes, &self.edges);
@@ -430,6 +431,109 @@ impl GraphBuilder {
             door: crate::effects::library_place(package),
             ..Default::default()
         });
+    }
+}
+
+/// The parameters of no type of the code's that hold a value of the plan (`mathematics.md`, "One fine plan"): those a call
+/// fills with a value, a step's result, a projection of one or a parameter of its caller's that holds one, and those of an
+/// override where the method it overrides is so filled (a call into a family runs one of them). A literal fills a
+/// parameter with none, and a function no call of the program fills (an entry, a door) is handed none by what calls it
+/// from outside. A value a body hands or reads by such a parameter's name (`Held::param`, `Use::param`) is the parameter:
+/// where it holds none, the body is handed and reads nothing of it.
+fn settle_parameters(nodes: &mut IndexMap<String, Node>, family: &Family) {
+    let args = |n: &Node| -> Vec<String> { n.params.iter().filter(|p| !p.receiver).map(|p| p.name.clone()).collect() };
+    // what a call runs: the initializer of a class it builds, a method and each override of it
+    let mut below: HashMap<&str, Vec<&str>> = HashMap::new();
+    for (m, bases) in &family.overrides {
+        for (b, _) in bases {
+            below.entry(b.as_str()).or_default().push(m.as_str());
+        }
+    }
+    let runs = |s: &Site| -> Vec<String> {
+        let Some(n) = nodes.get(&s.to) else { return vec![] };
+        match n.kind {
+            NodeKind::Class => n.initializer(|m| nodes.get(m)).into_iter().collect(),
+            NodeKind::Function | NodeKind::Method => {
+                std::iter::once(n.id.as_str()).chain(below.get(n.id.as_str()).into_iter().flatten().copied()).map(str::to_string).collect()
+            }
+            _ => vec![],
+        }
+    };
+    // the places a slot of a call fills among the callee's parameters after its receiver
+    let places = |callee: &Node, slot: &Slot, written: &[Slot]| -> Vec<usize> {
+        let ps: Vec<&crate::model::Param> = callee.params.iter().filter(|p| !p.receiver).collect();
+        let at = |n: usize| ps.iter().position(|p| p.rest).filter(|r| *r <= n).or((n < ps.len()).then_some(n));
+        let named = |k: &str| ps.iter().position(|p| p.name == k && !p.rest).or_else(|| ps.iter().rposition(|p| p.rest));
+        let by: Vec<usize> = written
+            .iter()
+            .filter_map(|w| match w {
+                Slot::At(n) => at(*n as usize),
+                Slot::Name(k) => named(k),
+                _ => None,
+            })
+            .collect();
+        match slot {
+            Slot::At(n) => at(*n as usize).into_iter().collect(),
+            Slot::Name(k) => named(k).into_iter().collect(),
+            Slot::Spread(n) => (*n as usize..ps.len()).filter(|i| !by.contains(i) || ps[*i].rest).collect(),
+            Slot::Keywords => (0..ps.len()).filter(|i| !by.contains(i)).collect(),
+            Slot::Receiver => vec![],
+        }
+    };
+    // each call fills a parameter with a value, or with one of its caller's own parameters, which holds one where a call of
+    // the caller fills it so: to the fixpoint
+    let mut filled: HashSet<(String, usize)> = HashSet::new();
+    loop {
+        let before = filled.len();
+        for n in nodes.values() {
+            let mine = args(n);
+            for s in &n.sites {
+                for callee in runs(s).iter().filter_map(|c| nodes.get(c)) {
+                    for h in &s.hands {
+                        let theirs = h.param.then(|| mine.iter().position(|p| *p == h.name)).flatten();
+                        if theirs.is_some_and(|i| !filled.contains(&(n.id.clone(), i))) {
+                            continue;
+                        }
+                        for p in h.fills.iter().flat_map(|slot| places(callee, slot, &s.args)) {
+                            filled.insert((callee.id.clone(), p));
+                        }
+                    }
+                }
+            }
+        }
+        if filled.len() == before {
+            break;
+        }
+    }
+    let holds = |id: &str, name: &str| -> bool {
+        let Some(i) = nodes.get(id).map(&args).and_then(|ps| ps.iter().position(|p| p == name)) else { return true };
+        filled.contains(&(id.to_string(), i))
+    };
+    let empty: HashMap<String, HashSet<String>> = nodes
+        .values()
+        .map(|n| {
+            let names = n.sites.iter().flat_map(|s| &s.hands).filter(|h| h.param).map(|h| h.name.clone());
+            let used = n.uses.iter().filter(|u| u.param).map(|u| u.name.clone());
+            (n.id.clone(), names.chain(used).filter(|nm| !holds(&n.id, nm)).collect::<HashSet<String>>())
+        })
+        .filter(|(_, e)| !e.is_empty())
+        .collect();
+    for (id, names) in empty {
+        let Some(n) = nodes.get_mut(&id) else { continue };
+        // what a step makes of those parameters alone (a loop's element) holds no value either, and a library's operation
+        // that makes nothing of nothing is no step
+        n.sites.retain_mut(|s| {
+            s.hands.retain(|h| !(h.param && names.contains(&h.name)));
+            let made = s.gives.iter().any(|g| g.param);
+            if s.hands.is_empty() {
+                s.gives.retain(|g| !g.param);
+            }
+            !(made && s.gives.is_empty() && s.hands.is_empty() && s.to.is_empty())
+        });
+        n.uses.retain(|u| !(u.param && names.contains(&u.name)));
+        for s in n.sets.iter_mut() {
+            s.from.retain(|h| !(h.param && names.contains(&h.name)));
+        }
     }
 }
 

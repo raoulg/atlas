@@ -28,6 +28,8 @@ line Register > Register()/Register.latest value
 
 line Member·who > Register()/Register.join value
 line Register()/Register.join > SQLite(members) own
+line Register()/Register.join > _@Register()/Register.join value   # `self.conn.execute(..)?`, in its own code: a rusqlite error
+home _@Register()/Register.join Register()
 
 line SQLite(members) > Register()/Register.member own
 line Register()/Register.member/Member() > Member@Register()/Register.member/Member() value

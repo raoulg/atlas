@@ -201,10 +201,11 @@ fn kept_as(c: TsNode, src: &[u8]) -> Vec<(String, usize)> {
                     None => return vec![],
                 }
             }
-            _ if (CHOICES.chooses)(p, src) && !matches!((CHOICES.part)(p, n, src), Part::Decides) => n = p,
+            // a `let .. else` decides by what it binds, and keeps what it binds (`let Some(n) = f(..) else { .. }`)
             "let_declaration" | "let_condition" if is("value") => {
                 return p.child_by_field_name("pattern").map_or(vec![], |x| binds(x, src))
             }
+            _ if (CHOICES.chooses)(p, src) && !matches!((CHOICES.part)(p, n, src), Part::Decides) => n = p,
             // what a `match` takes apart is kept by the names its arms' patterns bind
             "match_expression" if is("value") => {
                 return p
@@ -560,73 +561,12 @@ fn positional(c: TsNode) -> Vec<Option<TsNode>> {
 }
 
 /// What reading a body gives besides its edges and touches: its file and database calls with
-/// their paths and statements as built (placed once the parameters' values are known), the
-/// arguments of its calls of the program's functions, what those calls fill each parameter with,
-/// and where its steps are handed one of its own parameters of no type of the code's.
+/// their paths and statements as built (placed once the parameters' values are known), and the
+/// arguments of its calls of the program's functions.
 #[derive(Default)]
 pub(super) struct Linked<'t> {
     pub(super) waiting: Vec<(Touch, Vec<crate::paths::Built>)>,
     pub(super) args: Vec<Arg<'t>>,
-    pub(super) fills: Vec<Filled>,
-    pub(super) handed: Vec<Parameter>,
-}
-
-/// What a call of the program's function `callee` fills its parameter `at` (counted without the
-/// receiver) with: a value the plan draws, or what parameters of the caller's own hold.
-pub(super) struct Filled {
-    pub(super) caller: String,
-    pub(super) callee: String,
-    pub(super) at: usize,
-    pub(super) fill: Fill,
-}
-
-pub(super) enum Fill {
-    /// A value a step made or a value of a type of the code's or a library's.
-    Value,
-    /// What the caller's own parameters of no type of the code's hold, by their place.
-    Parameters(Vec<usize>),
-}
-
-/// A step handed one of the body's own parameters of no type of the code's (`fs::read_to_string(path)`
-/// with `path: &Path`): the parameter by its place and name, and where the name is written.
-pub(super) struct Parameter {
-    pub(super) at: usize,
-    pub(super) name: String,
-    pub(super) written: u32,
-}
-
-/// The parameters of no type of the code's that hold a value of the plan: those a call fills with
-/// one, or with a parameter of its caller's that holds one, and those of an override where the
-/// method it overrides is so filled (a call through a trait reaches its implementations). A
-/// function no call of the program fills, an entry or a door, is handed none by what calls it from
-/// outside the program, and a literal fills a parameter with no value: a step handed such a
-/// parameter is handed nothing of it.
-pub(super) fn filled(fills: &[Filled], overrides: &HashMap<String, Vec<(String, Vec<(String, String)>)>>) -> HashSet<(String, usize)> {
-    let mut out: HashSet<(String, usize)> =
-        fills.iter().filter(|f| matches!(f.fill, Fill::Value)).map(|f| (f.callee.clone(), f.at)).collect();
-    let holds = |out: &HashSet<(String, usize)>, id: &str, at: usize| {
-        out.contains(&(id.to_string(), at)) || overrides.get(id).into_iter().flatten().any(|(base, _)| out.contains(&(base.clone(), at)))
-    };
-    loop {
-        let before = out.len();
-        for f in fills {
-            if let Fill::Parameters(ps) = &f.fill {
-                if ps.iter().any(|p| holds(&out, &f.caller, *p)) {
-                    out.insert((f.callee.clone(), f.at));
-                }
-            }
-        }
-        if out.len() == before {
-            break;
-        }
-    }
-    let overridden: Vec<(String, usize)> = overrides
-        .iter()
-        .flat_map(|(m, bases)| bases.iter().map(move |(b, _)| (m, b)))
-        .flat_map(|(m, b)| out.iter().filter(move |(id, _)| id == b).map(move |(_, at)| (m.clone(), *at)))
-        .collect();
-    out.extend(overridden);
-    out
 }
 
 pub(super) fn link_calls<'t>(
@@ -681,7 +621,6 @@ pub(super) fn link_calls<'t>(
         };
         steps.uses(&held);
         steps.fills(&held);
-        b.read.handed = b.handed_params.take();
         b.read
     };
     let receiver = n.params.iter().find(|p| p.receiver).map(|p| p.name.as_str());
@@ -705,7 +644,7 @@ pub(super) fn link_calls<'t>(
     for t in read.touches {
         store.touch(id, t);
     }
-    Linked { waiting: read.waiting, args: read.args, fills: read.fills, handed: read.handed }
+    Linked { waiting: read.waiting, args: read.args }
 }
 
 /// What reading a body finds besides its steps: what it touches, the file and database calls
@@ -720,8 +659,6 @@ struct Read<'t> {
     unresolved: Vec<(String, Bucket)>,
     mutates: Vec<(String, String)>,
     exits: bool,
-    fills: Vec<Filled>,
-    handed: Vec<Parameter>,
 }
 
 /// A function's body as Rust reads it: the program around it, and the classes its names hold.
@@ -770,8 +707,6 @@ pub(super) struct Body<'a, 't> {
     keeps_command_line: HashSet<usize>,
     /// It gives no value: what the last expression of its block gives goes nowhere.
     unit: bool,
-    /// Where its steps are handed one of its parameters of no type of the code's.
-    handed_params: std::cell::RefCell<Vec<Parameter>>,
     /// What its loops go over, as written: each `for` loop's value.
     loop_values: HashSet<usize>,
     read: Read<'t>,
@@ -819,7 +754,6 @@ impl<'a, 't> Body<'a, 't> {
             bound: Default::default(),
             keeps_command_line: HashSet::new(),
             unit: n.returns.as_ref().map_or(true, |r| r.value.is_empty() && !r.own),
-            handed_params: Default::default(),
             loop_values: HashSet::new(),
             read: Read::default(),
         };
@@ -1403,18 +1337,10 @@ impl<'a, 't> Body<'a, 't> {
     }
 
     /// The values a call is handed, each of the body's own parameters of no type of the code's among
-    /// them kept aside with where it is written: it holds a value only where the function's calls
-    /// fill it with one, which is known once every body is read.
+    /// them marked (`Held::param`): it holds a value only where the function's calls fill it with one,
+    /// which is known once every body is read (`builder::settle_parameters`).
     fn handed(&self, held: Vec<(Held, Option<usize>)>) -> Vec<Held> {
-        let mut handed = self.handed_params.borrow_mut();
-        held.into_iter()
-            .map(|(h, param)| {
-                if let Some(at) = param {
-                    handed.push(Parameter { at, name: h.name.clone(), written: h.at });
-                }
-                h
-            })
-            .collect()
+        held.into_iter().map(|(h, param)| Held { param: param.is_some(), ..h }).collect()
     }
 
     /// What `hands` gives, each value with the place of the body's own parameter of no type of the
@@ -1455,7 +1381,7 @@ impl<'a, 't> Body<'a, 't> {
             if beneath(*p, WRAPPERS).kind() != "self" {
                 for s in walk(*p, &["self"]).into_iter().filter(|s| !runs_on.contains(&s.id())) {
                     if let Some(ty) = self.cls.clone() {
-                        add((Held { ty, name: String::new(), at: s.start_byte() as u32, fills: vec![] }, None));
+                        add((Held { ty, name: String::new(), at: s.start_byte() as u32, fills: vec![], param: false }, None));
                     }
                 }
             }
@@ -1484,19 +1410,19 @@ impl<'a, 't> Body<'a, 't> {
     fn held_by(&self, name: &str, at: usize, kept: &HashSet<String>) -> Option<(Held, Option<usize>)> {
         let (name, from) = self.holder(name, at);
         if name == "self" {
-            return Some((Held { ty: self.cls.clone()?, name: String::new(), at: at as u32, fills: vec![] }, None));
+            return Some((Held { ty: self.cls.clone()?, name: String::new(), at: at as u32, fills: vec![], param: false }, None));
         }
         // a closure is no value; what it makes is, and no name holds that
         if let Some(made) = self.closures.get(&name, from) {
-            return Some((Held { ty: made.clone(), name: String::new(), at: at as u32, fills: vec![] }, None));
+            return Some((Held { ty: made.clone(), name: String::new(), at: at as u32, fills: vec![], param: false }, None));
         }
         let param = || self.params.iter().position(|p| *p == name).filter(|_| self.parameter.get(&name, from) == Some(&true));
         match self.held_type(&name, from) {
-            Some(ty) => Some((Held { ty, name, at: at as u32, fills: vec![] }, None)),
-            None if kept.contains(&name) => Some((Held { ty: String::new(), name, at: at as u32, fills: vec![] }, None)),
+            Some(ty) => Some((Held { ty, name, at: at as u32, fills: vec![], param: false }, None)),
+            None if kept.contains(&name) => Some((Held { ty: String::new(), name, at: at as u32, fills: vec![], param: false }, None)),
             None => {
                 let at_param = param()?;
-                Some((Held { ty: String::new(), name, at: at as u32, fills: vec![] }, Some(at_param)))
+                Some((Held { ty: String::new(), name, at: at as u32, fills: vec![], param: false }, Some(at_param)))
             }
         }
     }
@@ -1734,9 +1660,6 @@ impl<'a, 't> Body<'a, 't> {
             let hands = element.map(|e| self.hands(&[Some(e)], &steps.kept)).unwrap_or_default();
             // the element is the function's first parameter, or the value a method runs on
             let takes_self = self.store.nodes[&t].params.first().map_or(false, |p| p.receiver);
-            if let (Some(e), false) = (element, takes_self) {
-                self.fills(&t, 0, e, &steps.kept);
-            }
             let slot = if takes_self { Slot::Receiver } else { Slot::At(0) };
             steps.handed(c, a, &t, EdgeKind::Calls, Some((hands, slot)));
         }
@@ -1809,7 +1732,19 @@ impl<'a, 't> Body<'a, 't> {
             "token_tree" => std::iter::once(recv).chain(token_values(c).into_iter().map(Some)).collect(),
             _ => vec![recv, c.child_by_field_name("arguments")],
         };
-        self.hands(&parts, kept)
+        let mut hands = self.hands(&parts, kept);
+        // among a macro's tokens, a method called on a part of `self` (`format!(.., self.kind.name())`) runs on a projection
+        // of the instance, as written outside a macro: it is handed the instance
+        let instance =
+            std::iter::successors(recv.filter(|_| c.kind() == "token_tree").and_then(|r| r.prev_sibling()), |t| t.prev_sibling())
+                .take_while(|t| matches!(t.kind(), "." | "identifier" | "self"))
+                .find(|t| t.kind() == "self");
+        if let (Some(s), Some(ty)) = (instance, self.cls.clone()) {
+            if !hands.iter().any(|h| h.ty == ty && h.name.is_empty()) {
+                hands.push(Held { ty, name: String::new(), at: s.start_byte() as u32, fills: vec![], param: false });
+            }
+        }
+        hands
     }
 
     /// A step to one of the program's own functions or types; a method called on a value of a
@@ -1836,9 +1771,6 @@ impl<'a, 't> Body<'a, 't> {
         };
         let on_value = recv.is_some() && !by_path;
         let passed = self.passed(c, t, on_value);
-        for (_, at, a) in &passed {
-            self.fills(t, *at, *a, &steps.kept);
-        }
         let receiver_first = !on_value && self.takes_self(t);
         steps.call(c, t, kind, via.filter(|_| kind == EdgeKind::Instantiates), Step { receiver_first, ..step });
         if let Some(arg) = self.argument(t, passed) {
@@ -1866,17 +1798,6 @@ impl<'a, 't> Body<'a, 't> {
             .enumerate()
             .filter_map(|(at, (p, a))| Some((p, at, a?)))
             .collect()
-    }
-
-    /// What the argument `a` fills the parameter `at` of the program's function `callee` with.
-    fn fills(&mut self, callee: &str, at: usize, a: TsNode<'t>, kept: &HashSet<String>) {
-        let held = self.hands_of(&[Some(a)], kept);
-        let fill = match held.iter().any(|(_, p)| p.is_none()) {
-            true => Fill::Value,
-            false if held.is_empty() => return,
-            false => Fill::Parameters(held.iter().filter_map(|(_, p)| *p).collect()),
-        };
-        self.read.fills.push(Filled { caller: self.id.clone(), callee: callee.to_string(), at, fill });
     }
 
     /// The call of the program's function `t` with what it hands each of its parameters, by name.

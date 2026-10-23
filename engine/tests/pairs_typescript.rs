@@ -1468,3 +1468,32 @@ fn composition_a_name_bound_twice_is_two_values() {
     assert_eq!(body(&p.clean), ["body"]);
     assert_eq!(body(&p.shortcut), ["b"], "the later `b` holds the Body its constructor builds");
 }
+
+/// A parameter of no type of the code's is a name like any other (#128, #157): inside its function it holds what its call
+/// fills it with, so a step written with it is handed it by its name, and where every call fills it with a literal, or none
+/// of the program's calls it, it holds none and the step is handed nothing of it (`builder::settle_parameters`). The
+/// choices pair tells the two forms apart: the shortcut's `finished(job, mode: string)` hands the string it is filled with
+/// on to `new Runner(mode)` and `timeout(mode)`, the clean's `mode: Mode` is a value of the code's own type.
+#[test]
+fn a_parameter_of_no_type_is_handed_by_its_name_where_a_call_fills_it() {
+    let pipeline =
+        analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/pipeline/typescript"), &Options::default()).expect("reads");
+    let hands = |g: &Graph, id: &str, op: &str| -> Vec<(String, String)> {
+        let sites = &node(g, id).sites;
+        let site = sites.iter().find(|s| s.op == op || s.to.ends_with(op)).unwrap_or_else(|| panic!("{id} {op}: {sites:#?}"));
+        site.hands.iter().map(|h| (h.ty.clone(), h.name.clone())).collect()
+    };
+    let bare = |n: &str| vec![(String::new(), n.to_string())];
+    assert_eq!(hands(&pipeline, "cli.monthsOf", "Number"), bare("option"), "`Number(option)`, filled by `values.months`");
+    assert_eq!(hands(&pipeline, "series.smooth", "floor"), bare("months"), "`Math.floor(months / 2)`, filled by `settings.months`");
+    let choices = common::pair("choices/typescript");
+    assert_eq!(hands(&choices.shortcut, "runs.finished", ".Runner"), bare("mode"));
+    assert_eq!(hands(&choices.shortcut, "runs.finished", ".timeout"), bare("mode"));
+    assert_eq!(hands(&choices.clean, "runs.finished", ".Runner"), [("runs.runs.Mode".to_string(), "mode".to_string())]);
+    // a literal fills a parameter with no value: `count(m, "a")`'s `k`, and the notes a ledger keeps
+    let changes = common::pair("changes/typescript");
+    assert_eq!(hands(&changes.shortcut, "ledger.count", "set"), bare("m"), "the Map `count` is handed, not the literal `k`");
+    let readback = common::pair("readback/typescript");
+    let keep = node(&readback.clean, "cli.Ledger.keep");
+    assert!(keep.sites.iter().all(|s| !s.op.starts_with("for note")), "a loop over the literal notes makes no value: {:#?}", keep.sites);
+}

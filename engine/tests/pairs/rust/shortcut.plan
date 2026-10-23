@@ -109,6 +109,11 @@ line main/?1/run/?1/Store.save > SQLite(expenses) own
 line Web > main/?1/run/?1/fetch own                                    # a URL the settings hold, which the code does not say
 line main/?1/run/?1/fetch > Value@main/?1/run/?1/fetch value
 line Value@main/?1/run/?1/fetch > main/?1/run/?1/Store.save_rates value   # the body of a Result, matched: the match decides on it
+# fetch's own `reqwest::blocking::get(url)?` hands its error on at its border; `run` hands it on by no `?`, but in the
+# `Result` it hands `save_rates`, whose `Err(e)` arm prints it: the error stays in the arm, at fetch's moment
+line main/?1/run/?1/fetch > _@main/?1/run/?1/fetch value
+line _@main/?1/run/?1/fetch > main/?1/run/?1/Store.save_rates value   # a `Result` handed on whole hands its error with it
+home _@main/?1/run/?1/fetch main/?1/run/?1
 line Value@main/?1/run/?1/fetch > main/?1/run/?1/Store.save_rates/?1/unwrap_or_default value   # Ok(body) => body["date"]..
 line Store·store@main/?1/run/Store.open > main/?1/run/?1/Store.save_rates value
 line _·config@main/?1/run/load > main/?1/run/?1/Store.save_rates value   # base = &config["base"], into params![base, ..]
@@ -131,8 +136,8 @@ line main/?1/run/?1/unwrap_or > _·format@main/?1/run/?1/unwrap_or value
 line _·format@main/?1/run/?1/unwrap_or > main/?1/run/?1/write value   # `match format`, `if format == "csv"` decide on it
 line _·format@main/?1/run/?1/unwrap_or > main/?1/run/?1/write/join value   # format!("report.{format}")
 
-known #158 line main/?1/run/?1/write/?1/from > _·out@main/?1/run/?1/write/?1 value   # the other arm makes it by `format!`, no step: the value either arm makes
-known #158 line _·out@main/?1/run/?1/write/?1 > main/?1/run/?1/write value              # out += .., fs::write(&path, out): the reader gives the use (#101), the value either arm makes waits on #158
+line main/?1/run/?1/write/?1/from > _·out@main/?1/run/?1/write/?1 value   # the other arm makes it by `format!`, no step: the value either arm makes
+line _·out@main/?1/run/?1/write/?1 > main/?1/run/?1/write value              # out += .., fs::write(&path, out)
 line Store·store@main/?1/run/Store.open > main/?1/run/?1/write/Store.rows/unwrap value
 line main/?1/run/?1/write/Store.rows/unwrap > _·select@main/?1/run/?1/write/Store.rows/unwrap value
 line _·select@main/?1/run/?1/write/Store.rows/unwrap > main/?1/run/?1/write/Store.rows value
@@ -182,7 +187,7 @@ home _·select@main/?1/run/?1/Store.rates/unwrap main/?1/run/?1/Store.rates
 home _@main/?1/run/?1/Store.rates main/?1/run/?1
 home Global(spend.rates.LATEST) in main/?1/run main/?1/run/?1
 home _·format@main/?1/run/?1/unwrap_or main/?1/run/?1
-known #158 home _·out@main/?1/run/?1/write/?1 main/?1/run/?1/write
+home _·out@main/?1/run/?1/write/?1 main/?1/run/?1/write
 home _·select@main/?1/run/?1/write/Store.rows/unwrap main/?1/run/?1/write/Store.rows
 home _@main/?1/run/?1/write/to_base main/?1/run/?1/write
 home _·dir@main/?1/run/?1/write/from main/?1/run/?1/write
@@ -229,11 +234,6 @@ line Expense·expenses@main/?1/run/?1/read_csv > main/?1/run/?1/Store.save/for e
 line main/?1/run/?1/write/Store.rows > _@main/?1/run/?1/write/Store.rows value   # the rows go to the loop
 line _@main/?1/run/?1/write/Store.rows > main/?1/run/?1/write/for (date, description, amount, currency) in store.rows() value
 home _@main/?1/run/?1/write/Store.rows main/?1/run/?1/write
-
-# `format!` is no step but a literal of the names it writes, as an f-string is: the arm makes `out` without one (#158)
-known #158 extra line main/?1/run/?1/write/?1/from > _·out@main/?1/run/?1/write/?1/from value
-known #158 extra line _·out@main/?1/run/?1/write/?1/from > main/?1/run/?1/write value   # the use finds what one arm made
-known #158 extra home _·out@main/?1/run/?1/write/?1/from main/?1/run/?1/write
 
 # ---- what a body's own code uses outside its steps (#101) ----
 line _·text@main/?1/run/?1/read_csv/unwrap > main/?1/run/?1/read_csv value   # text.lines()..collect(), no step

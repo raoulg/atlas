@@ -733,6 +733,11 @@ impl<'g> Ix<'g> {
     /// known, the next method of a `super()` call along each class it may be, or the method a call by name reaches and
     /// its overrides.
     fn may_run(&self, s: &Site, on: &str) -> Vec<(String, String)> {
+        // building a class runs its initializer along its order, on the class it builds; a class built from its fields
+        // runs nothing
+        if self.nodes.get(s.to.as_str()).is_some_and(|c| c.kind == NodeKind::Class) {
+            return self.runs(&s.to).map(|i| vec![(i, s.to.clone())]).unwrap_or_default();
+        }
         let Some(m) = self.nodes.get(s.to.as_str()).filter(|m| m.cls.is_some()) else { return vec![(s.to.clone(), String::new())] };
         let runs_on = if !s.on.is_empty() {
             s.on.as_str()
@@ -1507,6 +1512,21 @@ mod tests {
         let at = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/plans/next-method-on-a-class");
         let g = crate::analyze(&at, &crate::Options::default()).expect("reads the program");
         let run = &arrows(&g)["feeds.run"];
+        assert_eq!(
+            (run.reads_back.as_slice(), run.updates.as_slice()),
+            (["w:File:data/log.txt".to_string()].as_slice(), [].as_slice()),
+            "{run:?}"
+        );
+    }
+
+    /// Building a class runs its initializer at the place the call stands in its caller's order (#165): `Log("started")`
+    /// runs `Log.__init__`, which writes the log, so the route reads back what its step wrote and changes nothing it
+    /// found.
+    #[test]
+    fn building_a_class_runs_its_initializer_in_its_caller_s_order() {
+        let at = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/plans/builds-then-reads");
+        let g = crate::analyze(&at, &crate::Options::default()).expect("reads the program");
+        let run = &arrows(&g)["logs.run"];
         assert_eq!(
             (run.reads_back.as_slice(), run.updates.as_slice()),
             (["w:File:data/log.txt".to_string()].as_slice(), [].as_slice()),

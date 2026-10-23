@@ -206,8 +206,8 @@ line Render@main/?1/Format.renderer > main/?1/write/Render.extension/Markdown.ex
 line Render@main/?1/Format.renderer > main/?1/write/Render.extension/Csv.extension value
 line Render@main/?1/Format.renderer > main/?1/write/Render.render/Markdown.render value
 line Render@main/?1/Format.renderer > main/?1/write/Render.render/Csv.render value
-known #157 line Config·config@main/Config.load > main/?1/write/Render.render/Markdown.render value   # the title, which `title` holds
-known #157 line Config·config@main/Config.load > main/?1/write/Render.render/Csv.render value
+line Config·config@main/Config.load > main/?1/write/Render.render/Markdown.render value   # the title, which `title` holds
+# `Csv.render` drops what `_title` holds: no line
 line main/?1/write/Render.extension/Markdown.extension > main/?1/write/Render.extension back
 line main/?1/write/Render.extension/Csv.extension > main/?1/write/Render.extension back
 line main/?1/write/Render.extension > _@main/?1/write/Render.extension value
@@ -293,7 +293,6 @@ side Screen right
 # a value handed to a call into a family ends at the dispatch's border
 # the format the arm's pattern binds out of `cli` comes from beyond
 # an own arrow takes what only a step inside it takes, and a value is not followed into the operation a body hands it to
-known #157 extra line Config·config@main/Config.load > main/?1/write value   # what render.render is not bound to rests at write's own arrow
 # a result that only a step takes is no result handed back
 # the name a chain's last operation gives is given to every call in the chain
 # the else of a `let .. else` is no choice
@@ -388,7 +387,3 @@ line Expense@main/?1/Store.expenses > main/?1/lines/for e in expenses value
 line Rates·rates@main/?1/RatesClient.latest > main/?1/Store.save_rates/for (currency, rate) in &rates.rates value
 line Line·lines@main/?1/lines > main/?1/write/Render.render/Csv.render/for l in lines value
 line Line·lines@main/?1/lines > main/?1/write/Render.render/Markdown.render/for l in lines value
-# `write` is called with a literal for `dir`: the plan pairs `config`, which fills `title`, with no parameter, and `title`
-# holds nothing
-known #157 extra line _·title@main/?1/write/~title > main/?1/write/Render.render/Markdown.render value   # its own `format!("# {title}")` reads the title it is handed
-known #157 extra home _·title@main/?1/write/~title main/?1/write

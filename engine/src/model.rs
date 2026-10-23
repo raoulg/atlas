@@ -481,11 +481,16 @@ pub struct Held {
     /// step `g` gives for the first, and `y` to `g`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub fills: Vec<Slot>,
+    /// The value is one of the body's own parameters of no type of the code's, handed or read by its name, or what a step
+    /// gives of such parameters alone (a loop's element): it holds a value only where the function's calls fill them with
+    /// one, settled once every body is read (`builder::settle_parameters`).
+    #[serde(skip)]
+    pub param: bool,
 }
 
 impl Held {
     pub fn new(ty: impl Into<String>, name: impl Into<String>) -> Held {
-        Held { ty: ty.into(), name: name.into(), at: 0, fills: vec![] }
+        Held { ty: ty.into(), name: name.into(), at: 0, fills: vec![], param: false }
     }
 }
 
@@ -526,6 +531,9 @@ pub struct Use {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[ts(type = "Array<[number, number]>")]
     pub arms: Vec<(u32, u32)>,
+    /// The name is one of the body's own parameters of no type of the code's (`Held::param`).
+    #[serde(skip)]
+    pub param: bool,
 }
 
 /// A part of a value the body's own code sets (`Node::sets`): the value, as a call is handed it (`other`

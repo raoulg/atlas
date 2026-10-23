@@ -336,7 +336,8 @@ impl<'t, 's> Steps<'t, 's> {
         }
         let mut at = c;
         loop {
-            if (u.leaves)(at, self.body) {
+            // what the body's block ends with is what the function gives (`match v { .. }` last, without `;`)
+            if (u.leaves)(at, self.body) || at.id() == self.body.id() {
                 return true;
             }
             let Some(up) = at.parent().filter(|_| at.id() != self.body.id()) else { return false };
@@ -451,7 +452,7 @@ impl<'t, 's> Steps<'t, 's> {
             if (u.names.contains(&n.kind()) || u.reads.contains(&n.kind())) && self.read_here(n) {
                 let arms = self.arms(n);
                 for h in held(n).into_iter().filter(|h| !h.ty.is_empty() || !h.name.is_empty()) {
-                    let one = Use { name: h.name, ty: h.ty, arms: arms.clone() };
+                    let one = Use { name: h.name, ty: h.ty, arms: arms.clone(), param: h.param };
                     if !out.contains(&one) {
                         out.push(one);
                     }
@@ -623,6 +624,21 @@ impl<'t, 's> Steps<'t, 's> {
     pub fn dropped(&mut self, c: TsNode, name: &str) {
         if !self.goes_on(c, &mut HashSet::new()) {
             self.unseen(c, &format!("{name}(..)"));
+        }
+    }
+
+    /// What an initializer keeps of its parameters in the value it builds where its signature says so (TypeScript's
+    /// `constructor(readonly until: string)`): the body's own code reads them and sets them into the value `on`, as
+    /// `self.until = until` does. Called after `uses`.
+    pub fn keeps(&mut self, on: Held, values: Vec<Held>) {
+        for h in &values {
+            let one = Use { name: h.name.clone(), ty: h.ty.clone(), arms: vec![], param: h.param };
+            if !self.own.contains(&one) {
+                self.own.push(one);
+            }
+        }
+        if !values.is_empty() {
+            self.sets.push(Set { on, from: values, arms: vec![] });
         }
     }
 
@@ -939,7 +955,7 @@ impl<'t, 's> Steps<'t, 's> {
                 Some(g) => g.name = name.clone(),
                 None => s.gives.push(Held::new(given.clone(), name.clone())),
             }
-            own.push(Use { name, ty: given, arms: s.arms.clone() });
+            own.push(Use { name, ty: given, arms: s.arms.clone(), param: false });
         }
         if let Some(n) = store.nodes.get_mut(id) {
             n.sites = sites;
@@ -982,7 +998,7 @@ impl<'t, 's> Steps<'t, 's> {
                 }
                 let arms = self.arms(leaf);
                 for name in names.iter().filter(|_| !arms.is_empty()) {
-                    let one = Use { name: name.clone(), ty: String::new(), arms: arms.clone() };
+                    let one = Use { name: name.clone(), ty: String::new(), arms: arms.clone(), param: false };
                     if !out.contains(&one) {
                         out.push(one);
                     }

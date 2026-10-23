@@ -387,6 +387,9 @@ pub(super) fn link_calls<'t>(
             out
         };
         steps.uses(&held);
+        if let Some(cls) = b.cls.clone().filter(|_| b.initializer) {
+            steps.keeps(Held::new(cls, ""), b.properties());
+        }
         steps.fills(&held);
         b.class_state(&mut steps);
         b.ends();
@@ -928,11 +931,13 @@ impl<'a, 't> Body<'a, 't> {
     fn each(&mut self, steps: &mut Steps, l: TsNode<'t>) {
         let (Some(left), Some(right)) = (l.child_by_field_name("left"), l.child_by_field_name("right")) else { return };
         let hands = self.hands(&[Some(right)], &steps.kept);
+        // an element of what holds a value of the plan is one; of the body's own parameters alone, where they hold one
+        let params = hands.iter().all(|h| h.param);
         let gives: Vec<Held> = walk(left, &["identifier"])
             .into_iter()
             .filter_map(|n| match self.locals.of(n, self.src) {
                 Some(t) => Some(Held::new(t.clone(), text(n, self.src))),
-                None => (!hands.is_empty()).then(|| Held::new(String::new(), text(n, self.src))),
+                None => (!hands.is_empty()).then(|| Held { param: params, ..Held::new(String::new(), text(n, self.src)) }),
             })
             .collect();
         // the step stands where what it goes over is written: a call there hands it what it gives, the loop's body does not
@@ -979,6 +984,36 @@ impl<'a, 't> Body<'a, 't> {
         out.into_iter().map(|(h, _)| h).collect()
     }
 
+    /// The constructor's parameters that declare a field of its class as well (`constructor(readonly until: string)`), as
+    /// the values they hold: what the constructor keeps in the value it builds.
+    fn properties(&self) -> Vec<Held> {
+        let params = self.scope.and_then(|f| f.child_by_field_name("parameters")).map(named_children).unwrap_or_default();
+        params
+            .into_iter()
+            .filter(|p| super::module::is_property(*p))
+            .filter_map(|p| p.child_by_field_name("pattern").filter(|x| x.kind() == "identifier"))
+            .map(|x| match self.type_of(x) {
+                Some(ty) => Held::new(ty, text(x, self.src)),
+                None => Held { param: true, ..Held::new("", text(x, self.src)) },
+            })
+            .collect()
+    }
+
+    /// Whether the name `i` is one of the function's own parameters where it stands: declared as one, and bound by
+    /// nothing nearer.
+    fn own_parameter(&self, i: TsNode) -> bool {
+        let name = text(i, self.src);
+        let declared = self
+            .scope
+            .and_then(|f| f.child_by_field_name("parameters"))
+            .map(named_children)
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|p| p.child_by_field_name("pattern").filter(|x| x.kind() == "identifier"))
+            .find(|x| text(*x, self.src) == name);
+        declared.is_some_and(|d| d.id() != i.id() && self.locals.which(d, self.src) == self.locals.which(i, self.src))
+    }
+
     /// The values the name `i` holds where it stands (`hands`).
     fn held(&self, i: TsNode, kept: &HashSet<String>, depth: u32, out: &mut Vec<Held>) {
         let name = text(i, self.src);
@@ -1011,6 +1046,11 @@ impl<'a, 't> Body<'a, 't> {
         let stepless = |v: &TsNode| {
             walk(*v, &["call_expression", "new_expression", "arrow_function", "function_expression", "await_expression"]).is_empty()
         };
+        // one of the function's own parameters of no type of the code's holds what its calls fill it with, which is known
+        // once every body is read (`builder::settle_parameters`)
+        if values.is_empty() && self.own_parameter(i) {
+            return out.push(Held { param: true, ..Held::new("", name) });
+        }
         if values.is_empty() || !values.iter().all(stepless) {
             return;
         }
@@ -1442,7 +1482,7 @@ impl<'a, 't> Body<'a, 't> {
             "this" => (self.cls.clone().unwrap_or_default(), "this"),
             _ => (self.type_of(owner).unwrap_or_default(), text(owner, src)),
         };
-        vec![Held { ty, name: name.to_string(), at: owner.start_byte() as u32, fills: vec![] }]
+        vec![Held { ty, name: name.to_string(), at: owner.start_byte() as u32, fills: vec![], param: false }]
     }
 
     /// Whether the name `o` is narrowed where it stands to one of the language's own containers
@@ -1649,8 +1689,33 @@ impl<'a, 't> Body<'a, 't> {
             Some(Bound::Own(_)) => Bucket::Unknown,
             None if made => Bucket::Library,
             None if !self.m.symbols.contains_key(head) && knowledge::TYPESCRIPT_GLOBALS.contains(&head) => Bucket::Builtin,
+            None if self.languages(head) => Bucket::Builtin,
             None => Bucket::Unknown,
         }
+    }
+
+    /// Whether the module's own constant `name` holds one of the language's own values: built as a literal of one (`[..]`,
+    /// `new Map()`) or written as its container (`const CURRENCIES: readonly Currency[] = ..`). A method on it is the
+    /// language's operation.
+    fn languages(&self, name: &str) -> bool {
+        let src = self.src;
+        let top = named_children(self.root).into_iter().flat_map(|s| match s.kind() {
+            "export_statement" => s.child_by_field_name("declaration").into_iter().collect::<Vec<_>>(),
+            _ => vec![s],
+        });
+        let declared = top
+            .filter(|s| matches!(s.kind(), "lexical_declaration" | "variable_declaration"))
+            .flat_map(named_children)
+            .filter(|v| v.kind() == "variable_declarator")
+            .find(|v| v.child_by_field_name("name").is_some_and(|n| text(n, src) == name));
+        let Some(v) = declared else { return false };
+        let written =
+            v.child_by_field_name("type").map(|t| text(t, src).trim_start_matches(':').trim().trim_start_matches("readonly ").to_string());
+        let container = |t: &str| {
+            t.ends_with("[]")
+                || ["Array<", "ReadonlyArray<", "Map<", "ReadonlyMap<", "Set<", "ReadonlySet<"].iter().any(|p| t.starts_with(p))
+        };
+        written.as_deref().map_or_else(|| v.child_by_field_name("value").is_some_and(|x| builds_container(x, self.m, src)), container)
     }
 
     /// The names the body binds: its parameters, each variable it declares, the parameters of
