@@ -11,12 +11,12 @@ use super::module::{
     WRAPPERS,
 };
 use super::paths::{self, Arg, At, Eval};
-use crate::body::{changed_through, BindSyntax, Bindings, Crosses, Step, Steps, UseSyntax};
+use crate::body::{changed_through, BindSyntax, Bindings, Crosses, Range, Step, Steps, UseSyntax};
 use crate::builder::{foreign_type, GraphBuilder};
 use crate::effects::{self, Crossing};
 use crate::knowledge;
 use crate::knowledge::OwnTypes;
-use crate::model::{Bucket, EdgeKind, Held, Node, NodeKind, Touch, World};
+use crate::model::{Bucket, EdgeKind, Held, Node, NodeKind, Slot, Touch, World};
 use crate::tree::{
     beneath, evaluation_order, literals, named_children, nth_of_kind, outermost, text, unquote, walk, what_of, wrapped, ChoiceSyntax,
     CompareSyntax, Part,
@@ -379,13 +379,15 @@ pub(super) fn link_calls<'t>(
             steps.mark(c, b.read.touches[t..].iter_mut().chain(b.read.calls[w..].iter_mut().map(|(t, _)| t)));
         }
         let kept = steps.kept.clone();
-        steps.uses(&|n| {
+        let held = |n| {
             let mut out = vec![];
             if b.mine(n) {
                 b.held(n, &kept, 0, &mut out);
             }
             out
-        });
+        };
+        steps.uses(&held);
+        steps.fills(&held);
         b.class_state(&mut steps);
         b.ends();
         b.read
@@ -934,7 +936,7 @@ impl<'a, 't> Body<'a, 't> {
             })
             .collect();
         // the step stands where what it goes over is written: a call there hands it what it gives, the loop's body does not
-        steps.op(right, &format!("for {} of {}", text(left, self.src), text(right, self.src)), hands, gives);
+        steps.each(right, &format!("for {} of {}", text(left, self.src), text(right, self.src)), hands, gives);
     }
 
     /// What a call is handed: the value it is called on, its arguments, an element's attributes. A
@@ -1176,8 +1178,23 @@ impl<'a, 't> Body<'a, 't> {
         });
         let fun = |r: &String| matches!(self.store.nodes[r].kind, NodeKind::Function | NodeKind::Method);
         if let Some(r) = self.resolve(&[text(c, self.src).to_string()]).filter(|r| handed && self.own(r) && fun(r)) {
-            steps.handed(c, c, &r, EdgeKind::Calls);
+            let each = self.per_element(c, &steps.kept);
+            steps.handed(c, c, &r, EdgeKind::Calls, each);
         }
+    }
+
+    /// What a method of an array that runs the function `f` it is handed first on each element of the
+    /// array hands that function (`knowledge::TYPESCRIPT_EACH`): the values the array is a part of, and
+    /// the parameter the element fills (`lines.map(parseLine)`).
+    fn per_element(&self, f: TsNode<'t>, kept: &HashSet<String>) -> Option<(Vec<Held>, Slot)> {
+        let args = f.parent().filter(|p| p.kind() == "arguments")?;
+        if named_children(args).into_iter().find(|x| x.kind() != "comment").map(|x| x.id()) != Some(f.id()) {
+            return None;
+        }
+        let method = function_of(args.parent().filter(|c| c.kind() == "call_expression")?).filter(|m| m.kind() == "member_expression")?;
+        let name = text(method.child_by_field_name("property")?, self.src);
+        let (_, element) = knowledge::TYPESCRIPT_EACH.iter().find(|(m, _)| *m == name)?;
+        Some((self.hands(&[method.child_by_field_name("object")], kept), Slot::At(*element)))
     }
 
     /// The class of the value a method is called on, typed however the body knows it: built with
@@ -1251,7 +1268,7 @@ impl<'a, 't> Body<'a, 't> {
             self.read.used.push(t.clone());
         }
         let hands = self.hands(&[c.child_by_field_name("arguments")], &steps.kept);
-        let step = Step { on, on_receiver, named: true, hands, gives: self.gives(c, Some(&t)), ..Default::default() };
+        let step = Step { on, on_receiver, named: true, receiver_first: true, hands, gives: self.gives(c, Some(&t)), ..Default::default() };
         steps.call(c, &t, EdgeKind::Calls, None, step);
         true
     }
@@ -1425,7 +1442,7 @@ impl<'a, 't> Body<'a, 't> {
             "this" => (self.cls.clone().unwrap_or_default(), "this"),
             _ => (self.type_of(owner).unwrap_or_default(), text(owner, src)),
         };
-        vec![Held { ty, name: name.to_string(), at: owner.start_byte() as u32 }]
+        vec![Held { ty, name: name.to_string(), at: owner.start_byte() as u32, fills: vec![] }]
     }
 
     /// Whether the name `o` is narrowed where it stands to one of the language's own containers
@@ -2113,7 +2130,64 @@ const USES: UseSyntax = UseSyntax {
             && n.child_by_field_name("handler").is_some())
         .then(Vec::new)
     },
+    args,
 };
+
+/// The arguments a TypeScript call writes, each with the parameter it fills (`body::placed`): the value
+/// a method is called on (`x` of `x.f(..)`), each argument of a call or a `new` by its place up to a
+/// `...xs`, and the array `C.prototype.f.apply(v, xs)` spreads; the properties an object literal of a
+/// type of the program's writes by their names, and what its `...base` spreads. A component an element
+/// renders is handed its attributes as the one value it takes, its props.
+fn args(n: TsNode, src: &[u8]) -> Vec<(Range, Slot)> {
+    let range = |n: TsNode| (n.start_byte(), n.end_byte());
+    match n.kind() {
+        "call_expression" | "new_expression" => {
+            let f = n.child_by_field_name(if n.kind() == "new_expression" { "constructor" } else { "function" });
+            let method = f.filter(|f| f.kind() == "member_expression" && n.kind() == "call_expression");
+            let mut out: Vec<(Range, Slot)> =
+                method.and_then(|f| f.child_by_field_name("object")).map(|o| (range(o), Slot::Receiver)).into_iter().collect();
+            let Some(a) = n.child_by_field_name("arguments") else { return out };
+            // a tagged template is the one argument of its tag
+            if a.kind() != "arguments" {
+                out.push((range(a), Slot::At(0)));
+                return out;
+            }
+            let applied = method.is_some_and(|f| {
+                f.child_by_field_name("property").is_some_and(|p| text(p, src) == "apply")
+                    && f.child_by_field_name("object").is_some_and(|o| text(o, src).contains(".prototype."))
+            });
+            let mut placed = crate::body::placed(
+                named_children(a).into_iter().filter(|x| x.kind() != "comment"),
+                |x| (x.kind() == "spread_element").then_some(Slot::Spread(0)),
+                |_| None,
+            );
+            for (_, s) in placed.iter_mut().filter(|(_, s)| applied && *s == Slot::At(1)) {
+                *s = Slot::Spread(1);
+            }
+            out.extend(placed);
+            out
+        }
+        "object" => named_children(n)
+            .into_iter()
+            .filter_map(|p| match p.kind() {
+                "pair" => {
+                    let key = p.child_by_field_name("key")?;
+                    let name = if key.kind() == "string" { unquote(text(key, src)) } else { text(key, src).to_string() };
+                    Some((range(p.child_by_field_name("value")?), Slot::Name(name)))
+                }
+                "shorthand_property_identifier" => Some((range(p), Slot::Name(text(p, src).to_string()))),
+                "spread_element" => Some((range(p), Slot::Keywords)),
+                _ => None,
+            })
+            .collect(),
+        "jsx_opening_element" | "jsx_self_closing_element" => named_children(n)
+            .into_iter()
+            .filter(|a| matches!(a.kind(), "jsx_attribute" | "jsx_expression"))
+            .map(|a| (range(a), Slot::At(0)))
+            .collect(),
+        _ => vec![],
+    }
+}
 
 /// TypeScript's choices: `if`/`else if`/`else`, `a ? b : c`, `switch`, `try`/`catch`, and `x ?? y`, `x || y`
 /// and `x && y`, a choice of one arm.

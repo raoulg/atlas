@@ -11,11 +11,11 @@ use super::module::{
     WRAPPERS,
 };
 use super::paths::{self, Arg, At, Eval};
-use crate::body::{Bindings, Crosses, Step, Steps, UseSyntax};
+use crate::body::{Bindings, Crosses, Range, Step, Steps, UseSyntax};
 use crate::builder::{foreign_type, GraphBuilder};
 use crate::effects::{self, Crossing};
 use crate::knowledge::{self, OwnTypes};
-use crate::model::{Bucket, EdgeKind, Held, Node, NodeKind, Touch, World};
+use crate::model::{Bucket, EdgeKind, Held, Node, NodeKind, Slot, Touch, World};
 use crate::tree::{
     beneath, evaluation_order, literals, named_children, nth_of_kind, text, unquote, walk, wrapped, ChoiceSyntax, CompareSyntax, Part,
 };
@@ -674,11 +674,13 @@ pub(super) fn link_calls<'t>(
         let stepped = |n: TsNode| {
             n.parent().filter(|p| p.kind() == "token_tree").is_some_and(|p| b.steps_within(p).iter().any(|r| r.contains(&n.start_byte())))
         };
-        steps.uses(&|n| match n.kind() {
+        let held = |n: TsNode<'t>| match n.kind() {
             _ if stepped(n) => vec![],
             "self" => b.cls.iter().map(|k| Held::new(k.clone(), "")).collect(),
             _ => b.hands(&[Some(n)], &kept),
-        });
+        };
+        steps.uses(&held);
+        steps.fills(&held);
         b.read.handed = b.handed_params.take();
         b.read
     };
@@ -1440,7 +1442,7 @@ impl<'a, 't> Body<'a, 't> {
             if beneath(*p, WRAPPERS).kind() != "self" {
                 for s in walk(*p, &["self"]).into_iter().filter(|s| !runs_on.contains(&s.id())) {
                     if let Some(ty) = self.cls.clone() {
-                        add((Held { ty, name: String::new(), at: s.start_byte() as u32 }, None));
+                        add((Held { ty, name: String::new(), at: s.start_byte() as u32, fills: vec![] }, None));
                     }
                 }
             }
@@ -1469,19 +1471,19 @@ impl<'a, 't> Body<'a, 't> {
     fn held_by(&self, name: &str, at: usize, kept: &HashSet<String>) -> Option<(Held, Option<usize>)> {
         let (name, from) = self.holder(name, at);
         if name == "self" {
-            return Some((Held { ty: self.cls.clone()?, name: String::new(), at: at as u32 }, None));
+            return Some((Held { ty: self.cls.clone()?, name: String::new(), at: at as u32, fills: vec![] }, None));
         }
         // a closure is no value; what it makes is, and no name holds that
         if let Some(made) = self.closures.get(&name, from) {
-            return Some((Held { ty: made.clone(), name: String::new(), at: at as u32 }, None));
+            return Some((Held { ty: made.clone(), name: String::new(), at: at as u32, fills: vec![] }, None));
         }
         let param = || self.params.iter().position(|p| *p == name).filter(|_| self.parameter.get(&name, from) == Some(&true));
         match self.held_type(&name, from) {
-            Some(ty) => Some((Held { ty, name, at: at as u32 }, None)),
-            None if kept.contains(&name) => Some((Held { ty: String::new(), name, at: at as u32 }, None)),
+            Some(ty) => Some((Held { ty, name, at: at as u32, fills: vec![] }, None)),
+            None if kept.contains(&name) => Some((Held { ty: String::new(), name, at: at as u32, fills: vec![] }, None)),
             None => {
                 let at_param = param()?;
-                Some((Held { ty: String::new(), name, at: at as u32 }, Some(at_param)))
+                Some((Held { ty: String::new(), name, at: at as u32, fills: vec![] }, Some(at_param)))
             }
         }
     }
@@ -1555,7 +1557,7 @@ impl<'a, 't> Body<'a, 't> {
             })
             .collect();
         // the step stands where what it goes over is written: a call there hands it what it gives, the loop's body does not
-        steps.op(value, &format!("for {} in {}", text(pat, self.src), text(value, self.src)), hands, gives);
+        steps.each(value, &format!("for {} in {}", text(pat, self.src), text(value, self.src)), hands, gives);
     }
 
     /// What a call gives back, by the name the body keeps it by: the type the local is declared
@@ -1712,7 +1714,7 @@ impl<'a, 't> Body<'a, 't> {
                 continue;
             };
             if !each {
-                steps.handed(c, a, &t, EdgeKind::Calls);
+                steps.handed(c, a, &t, EdgeKind::Calls, None);
                 continue;
             }
             let element = each_of(c, self.src);
@@ -1722,7 +1724,8 @@ impl<'a, 't> Body<'a, 't> {
             if let (Some(e), false) = (element, takes_self) {
                 self.fills(&t, 0, e, &steps.kept);
             }
-            steps.call(a, &t, EdgeKind::Calls, None, Step { hands, ..Default::default() });
+            let slot = if takes_self { Slot::Receiver } else { Slot::At(0) };
+            steps.handed(c, a, &t, EdgeKind::Calls, Some((hands, slot)));
         }
     }
 
@@ -1818,14 +1821,23 @@ impl<'a, 't> Body<'a, 't> {
             "token_tree" => matches!(token_callee(c, self.src), Some(Called::Path(_))),
             _ => function(c).map_or(false, |f| f.kind() != "field_expression"),
         };
-        let passed = self.passed(c, t, recv.is_some() && !by_path);
+        let on_value = recv.is_some() && !by_path;
+        let passed = self.passed(c, t, on_value);
         for (_, at, a) in &passed {
             self.fills(t, *at, *a, &steps.kept);
         }
-        steps.call(c, t, kind, via.filter(|_| kind == EdgeKind::Instantiates), step);
+        let receiver_first = !on_value && self.takes_self(t);
+        steps.call(c, t, kind, via.filter(|_| kind == EdgeKind::Instantiates), Step { receiver_first, ..step });
         if let Some(arg) = self.argument(t, passed) {
             self.read.args.push(arg);
         }
+    }
+
+    /// Whether the program's function `t` takes the value it runs on, `self`: a method called by its
+    /// path is handed it first.
+    fn takes_self(&self, t: &str) -> bool {
+        let n = self.store.nodes.get(t).filter(|n| matches!(n.kind, NodeKind::Function | NodeKind::Method));
+        n.and_then(|n| def_node(self.modules.get(&n.module)?, n)).is_some_and(paths::takes_self)
     }
 
     /// What a call of the program's function `t` hands each of its parameters, by the parameter's
@@ -2474,7 +2486,50 @@ const USES: UseSyntax = UseSyntax {
     tails: &["block", "else_clause", "match_arm", "match_expression", "expression_statement"],
     propagates: Some(&["try_expression"]),
     catches: |_, _, _| None,
+    args,
 };
+
+/// The arguments a Rust call writes, each with the parameter it fills (`body::placed`): the value a
+/// method is called on (`x` of `x.f(..)`, also a step's result, `Trend::new(..)` of
+/// `Trend::new(..).save(..)`), each argument by its place, a struct literal's fields by their names and
+/// what its `..base` spreads; among a macro's tokens, each group by its place and the names a method
+/// written there is called on.
+fn args(n: TsNode, src: &[u8]) -> Vec<(Range, Slot)> {
+    let range = |n: TsNode| (n.start_byte(), n.end_byte());
+    let between = |g: &[TsNode]| Some((g.first()?.start_byte(), g.last()?.end_byte()));
+    match n.kind() {
+        "call_expression" => {
+            let recv = function(n).filter(|f| f.kind() == "field_expression").and_then(|f| f.child_by_field_name("value"));
+            let mut out: Vec<(Range, Slot)> = recv.map(|r| (range(r), Slot::Receiver)).into_iter().collect();
+            let written = n.child_by_field_name("arguments").map(named_children).unwrap_or_default();
+            out.extend(crate::body::placed(written.into_iter().filter(|a| !a.kind().ends_with("comment")), |_| None, |_| None));
+            out
+        }
+        "struct_expression" => {
+            let fields = n.child_by_field_name("body").map(named_children).unwrap_or_default();
+            let named = |f: TsNode| -> Option<(Range, Slot)> {
+                match f.kind() {
+                    "field_initializer" => {
+                        Some((range(f.child_by_field_name("value")?), Slot::Name(text(f.child_by_field_name("field")?, src).to_string())))
+                    }
+                    "shorthand_field_initializer" => Some((range(f), Slot::Name(text(f, src).to_string()))),
+                    "base_field_initializer" => Some((range(f), Slot::Keywords)),
+                    _ => None,
+                }
+            };
+            fields.into_iter().filter_map(named).collect()
+        }
+        "token_tree" => {
+            let recv = match token_callee(n, src) {
+                Some(Called::Method(names, _)) => between(&names).map(|r| (r, Slot::Receiver)),
+                _ => None,
+            };
+            let groups = paths::token_groups(n).into_iter().enumerate().filter_map(|(i, g)| Some((between(&g)?, Slot::At(i as u32))));
+            recv.into_iter().chain(groups).collect()
+        }
+        _ => vec![],
+    }
+}
 
 /// Rust's comparisons: `==` and `!=` against a string or a member of a type (`Mode::Fast`), a
 /// `match` on either, and `matches!` on strings.

@@ -214,6 +214,14 @@ pub struct Node {
     /// it.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub uses: Vec<Use>,
+    /// The names the arms of its body's choices bind by the body's own code, no step of it: what an
+    /// arm sets a name to (`let unit; if .. { unit = KELVIN }`), and what an arm of a choice a name is
+    /// bound to gives where no step makes it (`let out = match f { "csv" => String::from(..), _ =>
+    /// format!(..) }`, `x = a if c else b`). Each name once in each arm, with its type when known and
+    /// the arms the value is made in. Such an arm makes the name's value as an arm whose step gives it
+    /// does.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub binds: Vec<Use>,
     /// The lines each arm of its body's choices spans, first and last: what is written there runs
     /// only in that arm.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -410,9 +418,19 @@ pub struct Site {
     /// the next method after it along the order of the value's class.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub after: String,
-    /// The values the call is handed: its arguments and the value it is called on.
+    /// The values the call is handed: its arguments and the value it is called on, each with the
+    /// parameters it fills (`Held::fills`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub hands: Vec<Held>,
+    /// The parameters the call writes an argument for, as the call writes them, in the order written:
+    /// the value it runs on, each argument by its place and by its name. A parameter none of them
+    /// fills holds its default; one an argument fills that hands no value holds what no step makes
+    /// (a literal, a constant).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub args: Vec<Slot>,
+    /// Where each of `args` is written, as a byte range of its file.
+    #[serde(skip)]
+    pub written: Vec<(u32, u32)>,
     /// What it gives back.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub gives: Vec<Held>,
@@ -444,17 +462,47 @@ pub struct Held {
     /// Where the code writes it, as a byte offset of its file: where it comes from, not what it is.
     #[serde(skip)]
     pub at: u32,
+    /// For a value a call is handed: the parameters it fills, each argument of the call it is written
+    /// in (`Site::args`). `f(x.title, x.lines)` hands `x` for the first two; `f(g(y))` hands what the
+    /// step `g` gives for the first, and `y` to `g`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub fills: Vec<Slot>,
 }
 
 impl Held {
     pub fn new(ty: impl Into<String>, name: impl Into<String>) -> Held {
-        Held { ty: ty.into(), name: name.into(), at: 0 }
+        Held { ty: ty.into(), name: name.into(), at: 0, fills: vec![] }
     }
 }
 
-/// A value a body's own code reads (`Node::uses`), by the name that holds it (none for the instance
-/// a method runs on), with its type when known and the arms of the choices the use sits in, numbered
-/// as `Site::arms` numbers them.
+/// Which parameter of the function a call reaches an argument fills, as the call writes it. Inside the
+/// callee the parameter holds what the argument hands (`mathematics.md`, "One fine plan"): a call
+/// pairs its values with the parameters by where it writes them, not by their types.
+#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum Slot {
+    /// The value the call runs on: `x` of `x.f(..)`, `Trend::new(..)` of `Trend::new(..).save(..)`, and
+    /// the first argument of a method called through its class or path (`Cached.read(self)`,
+    /// `Trend::save(&t, ..)`, `Source.prototype.read.call(v)`).
+    Receiver,
+    /// The parameter after the receiver at this place, the first being 0: the argument written there
+    /// by place.
+    At(u32),
+    /// The parameter of this name: a keyword argument (`f(title=t)`), a field a literal of a struct or
+    /// an element writes (`Trend { settings }`, `<Chart rows={rows} />`).
+    Name(String),
+    /// What a spread hands (`f(*xs)`, `f(...xs)`) and what any argument by place after it hands: the
+    /// parameters from this place on, of which the call does not say which.
+    Spread(u32),
+    /// What a spread of names hands (`f(**options)`, `Settings { ..base }`): the parameters the call
+    /// writes no argument for by name.
+    Keywords,
+}
+
+/// A value a body's own code reads (`Node::uses`) or an arm binds (`Node::binds`), by the name that
+/// holds it (none for the instance a method runs on), with its type when known and the arms of the
+/// choices the use or the binding sits in, numbered as `Site::arms` numbers them.
 #[derive(Serialize, Deserialize, TS, Clone, Debug, Default, PartialEq, Eq)]
 #[ts(export)]
 pub struct Use {

@@ -1845,6 +1845,56 @@ pub const RUST_PARTS: &[&str] = &[
     "zip",
 ];
 
+/// A call of the language's own that runs a function it is handed on each element of what it goes
+/// over: its name, where it is handed the function (by place or by keyword), where what it goes over
+/// is (by place; none for the value a method is called on), and the parameter of the function the
+/// element fills. Python's `map(f, xs)`, `sorted(xs, key=f)`, `xs.sort(key=f)`, `reduce(f, xs)`.
+pub struct EachCall {
+    pub name: &'static str,
+    pub function: Handed,
+    pub over: Option<usize>,
+    pub element: u32,
+}
+
+/// Where a call is handed a value: at a place among its arguments, or by a keyword.
+#[derive(Clone, Copy)]
+pub enum Handed {
+    At(usize),
+    Key(&'static str),
+}
+
+pub const PYTHON_EACH: &[EachCall] = &[
+    EachCall { name: "map", function: Handed::At(0), over: Some(1), element: 0 },
+    EachCall { name: "filter", function: Handed::At(0), over: Some(1), element: 0 },
+    EachCall { name: "sorted", function: Handed::Key("key"), over: Some(0), element: 0 },
+    EachCall { name: "min", function: Handed::Key("key"), over: Some(0), element: 0 },
+    EachCall { name: "max", function: Handed::Key("key"), over: Some(0), element: 0 },
+    EachCall { name: "sort", function: Handed::Key("key"), over: None, element: 0 },
+    EachCall { name: "reduce", function: Handed::At(0), over: Some(1), element: 1 },
+];
+
+/// The methods of an array that run the function they are handed first on each element of the array,
+/// with the parameter the element fills: the first, the second of a `reduce`, whose first is what it
+/// gathers.
+pub const TYPESCRIPT_EACH: &[(&str, u32)] = &[
+    ("map", 0),
+    ("flatMap", 0),
+    ("filter", 0),
+    ("forEach", 0),
+    ("find", 0),
+    ("findIndex", 0),
+    ("findLast", 0),
+    ("findLastIndex", 0),
+    ("some", 0),
+    ("every", 0),
+    ("reduce", 1),
+    ("reduceRight", 1),
+];
+
+/// The classes of error a Python handler that names one catches whatever is raised by: every error is
+/// of them (`except Exception:`).
+pub const PYTHON_CATCH_ALL: &[&str] = &["Exception", "BaseException"];
+
 /// The methods that hand the closure they are given each element of what they run on, or what an
 /// `Option` or a `Result` holds: `xs.iter().map(|x| ..)` hands it each `x`.
 pub const RUST_EACH: &[&str] = &[

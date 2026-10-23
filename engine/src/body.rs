@@ -8,10 +8,10 @@ use tree_sitter::Node as TsNode;
 
 use crate::builder::GraphBuilder;
 use crate::effects::{self, Facts};
-use crate::model::{Crossing, Dir, EdgeKind, Held, Site, Touch, Use, World};
+use crate::model::{Crossing, Dir, EdgeKind, Held, NodeKind, Site, Slot, Touch, Use, World};
 use crate::tree::{
-    arms_of, guards, named_children, number_choices, outermost, payload_of, starts_at_literal, text, walk, walk_all, what_of, wrapped,
-    ChoiceSyntax, Part, Wrappers,
+    arms_of, beneath, guards, named_children, number_choices, outermost, payload_of, starts_at_literal, text, walk, walk_all, what_of,
+    wrapped, ChoiceSyntax, Part, Wrappers,
 };
 
 /// A call that crosses into the world, as the code writes it.
@@ -143,6 +143,40 @@ pub struct UseSyntax {
     /// Where `child` is the part of `node` its handlers watch (the body of a `try`): the classes they
     /// catch as the code names them, none where one catches whatever is raised.
     pub catches: fn(TsNode, TsNode, &[u8]) -> Option<Vec<String>>,
+    /// The arguments call `node` writes, each with the parameter it fills as the call writes it
+    /// (`Slot`): the value it is called on, each argument by its place up to a spread, each by its name.
+    pub args: fn(TsNode, &[u8]) -> Vec<(Range, Slot)>,
+}
+
+/// Where code is written, as a byte range of its file.
+pub type Range = (usize, usize);
+
+/// The arguments a list of them writes by place and by name: each by its place until a spread (`*xs`,
+/// `...xs`), which hands the places from its own on, as does every argument by place after it.
+/// `spread` and `named` say which an argument is: a spread of places (`Slot::Spread`) or of names
+/// (`Slot::Keywords`), and the name a keyword argument writes with the value it hands.
+pub fn placed<'t>(
+    args: impl IntoIterator<Item = TsNode<'t>>,
+    spread: impl Fn(TsNode<'t>) -> Option<Slot>,
+    named: impl Fn(TsNode<'t>) -> Option<(String, TsNode<'t>)>,
+) -> Vec<(Range, Slot)> {
+    let range = |n: TsNode| (n.start_byte(), n.end_byte());
+    let (mut out, mut at, mut from) = (vec![], 0u32, None);
+    for a in args {
+        if let Some((name, value)) = named(a) {
+            out.push((range(value), Slot::Name(name)));
+            continue;
+        }
+        match spread(a) {
+            Some(Slot::Keywords) => out.push((range(a), Slot::Keywords)),
+            Some(_) => out.push((range(a), Slot::Spread(*from.get_or_insert(at)))),
+            None => {
+                out.push((range(a), from.map_or(Slot::At(at), Slot::Spread)));
+                at += 1;
+            }
+        }
+    }
+    out
 }
 
 /// One call as a step of the route through its body: what it runs, on which class and how the
@@ -153,6 +187,9 @@ pub struct Step {
     pub on: String,
     pub on_receiver: bool,
     pub named: bool,
+    /// The call is made through its method's class or path, and the first argument by place is the
+    /// value the method runs on (`Cached.read(self)`, `Trend::save(&t, ..)`, `C.prototype.f.call(v)`).
+    pub receiver_first: bool,
     pub after: String,
     pub hands: Vec<Held>,
     pub gives: Vec<Held>,
@@ -183,6 +220,8 @@ pub struct Steps<'t, 's> {
     edges: Vec<(String, EdgeKind, Option<String>, Vec<(u32, u32)>)>,
     unseen: Vec<(u32, String)>,
     own: Vec<Use>,
+    /// The steps whose result the body's own code reads, by no name (`Steps::read`).
+    read: Vec<usize>,
     /// The error type what hands on an error converts it to (`?`), where the function the body is of
     /// says it fails.
     converts: Option<String>,
@@ -203,6 +242,7 @@ impl<'t, 's> Steps<'t, 's> {
             edges: vec![],
             unseen: vec![],
             own: vec![],
+            read: vec![],
             converts: None,
             kept: HashSet::new(),
         }
@@ -353,14 +393,23 @@ impl<'t, 's> Steps<'t, 's> {
             }
             stack.extend(named_children(n).into_iter().rev());
         }
-        // a name a step gave holds what the step gave, where the reader knows no type for it where it is read
-        for u in out.iter_mut().filter(|u| u.ty.is_empty() && !u.name.is_empty()) {
-            let types: HashSet<&String> =
-                self.sites.iter().flat_map(|s| &s.gives).filter(|g| g.name == u.name && !g.ty.is_empty()).map(|g| &g.ty).collect();
-            if let [t] = types.into_iter().collect::<Vec<_>>()[..] {
-                u.ty = t.clone();
+        // a name a step gave holds what the step gave, where the reader knows no type for it where it is read, or one of a
+        // library's: the value is the step's, of no type of the code's where the step gives none (`fig, ax = plt.subplots()`)
+        for u in out.iter_mut().filter(|u| (u.ty.is_empty() || u.ty.starts_with("ext:")) && !u.name.is_empty()) {
+            let types: HashSet<&String> = self.sites.iter().flat_map(|s| &s.gives).filter(|g| g.name == u.name).map(|g| &g.ty).collect();
+            let types: Vec<&String> = types.into_iter().collect();
+            match types[..] {
+                [t] if !t.is_empty() || u.ty.starts_with("ext:") => u.ty = t.clone(),
+                _ => {
+                    if let [t] = types.iter().filter(|t| !t.is_empty()).collect::<Vec<_>>()[..] {
+                        if u.ty.is_empty() {
+                            u.ty = (*t).clone();
+                        }
+                    }
+                }
             }
         }
+        self.read = (0..self.sites.len()).filter(|&i| self.read_by_own_code(i)).collect();
         let mut once: Vec<Use> = vec![];
         for u in out {
             if !once.contains(&u) {
@@ -368,6 +417,52 @@ impl<'t, 's> Steps<'t, 's> {
             }
         }
         self.own = once;
+    }
+
+    /// Whether the body's own code reads what step `i` of the program's code gives, by no name: through
+    /// what hands it on unchanged and the parts of it it takes, what it is in is no step, no binding, no
+    /// statement of its own and not what leaves the body as it is (`mode.plan().timeout <= ..`,
+    /// `ledger.merged(other).rows.length + ..`, `this.rows().map((row) => row.reading)`). A step written
+    /// around it is handed it.
+    fn read_by_own_code(&self, i: usize) -> bool {
+        let (u, s) = (self.uses, &self.sites[i]);
+        if s.to.is_empty() || s.span == (0, 0) || s.raises || s.gives.iter().any(|g| !g.name.is_empty()) {
+            return false;
+        }
+        let Some(c) = self.body.descendant_for_byte_range(s.span.0 as usize, s.span.1 as usize) else { return false };
+        // what a function written in place gives is that function's (`let wrong = || Error::Amount(..)`), and what a
+        // function handed on by its name gives, the call's it is handed to (`lines.map(parse_line)`)
+        if self.in_function(c) || u.names.contains(&c.kind()) {
+            return false;
+        }
+        let (mut child, mut part) = (c, false);
+        while let Some(p) = child.parent().filter(|_| child.id() != self.body.id()) {
+            let last =
+                named_children(p).into_iter().filter(|x| !x.kind().ends_with("comment")).last().is_some_and(|l| l.id() == child.id());
+            if u.wrappers.contains(&p.kind()) && wrapped(p).is_some_and(|w| w.id() == child.id()) {
+                child = p;
+            } else if u.keeps.contains(&p.kind()) {
+                (child, part) = (p, true);
+            } else if (u.tails.contains(&p.kind()) && last && !(u.drops)(p, child, self.src))
+                || matches!((self.syntax.part)(p, child, self.src), Part::Arm(_))
+            {
+                // the value of an arm, or of a block it ends, is the value of the choice or the block
+                child = p;
+            } else {
+                // a step that stands where it is written (a loop over it) or around it is handed it
+                let around = |(j, x): (usize, &Site)| {
+                    j != i && x.span != (0, 0) && x.span.0 as usize <= child.start_byte() && child.end_byte() <= x.span.1 as usize
+                };
+                let bound = (u.binds)(p).is_some_and(|(_, value)| value.id() == child.id());
+                let leaves = !part && ((u.leaves)(child, self.body) || (u.leaves)(p, self.body));
+                return !self.sites.iter().enumerate().any(around)
+                    && !bound
+                    && !leaves
+                    && !(u.drops)(p, child, self.src)
+                    && !(u.fails)(p, self.src);
+            }
+        }
+        false
     }
 
     /// Whether the name `n` is read where it stands: no label (the `f` of `x.f`), not what a binding
@@ -522,6 +617,7 @@ impl<'t, 's> Steps<'t, 's> {
     pub fn call(&mut self, c: TsNode, to: &str, kind: EdgeKind, via: Option<String>, step: Step) {
         let arms = self.arms(c);
         self.keep(&step.gives);
+        let (args, written) = self.written(c, step.receiver_first);
         let site = Site {
             line: line(c),
             to: to.to_string(),
@@ -531,6 +627,8 @@ impl<'t, 's> Steps<'t, 's> {
             after: step.after,
             hands: step.hands,
             gives: step.gives,
+            args,
+            written,
             arms: arms.clone(),
             span: span(c),
             command_line: step.command_line,
@@ -542,8 +640,20 @@ impl<'t, 's> Steps<'t, 's> {
     }
 
     /// A function or class `to`, handed on as a value at `a` inside call `c`: run by whoever
-    /// receives it.
-    pub fn handed(&mut self, c: TsNode, a: TsNode, to: &str, kind: EdgeKind) {
+    /// receives it. Where the call runs it on each element of what it goes over (`xs.map(f)`,
+    /// `map(f, xs)`, `sorted(xs, key=f)`: `knowledge::RUST_EACH`, `PYTHON_EACH`, `TYPESCRIPT_EACH`),
+    /// `each` says what the call hands it: the values the element is a part of, and the parameter the
+    /// element fills. It is then a step where it is named, handed the element.
+    pub fn handed(&mut self, c: TsNode, a: TsNode, to: &str, kind: EdgeKind, each: Option<(Vec<Held>, Slot)>) {
+        if let Some((hands, slot)) = each {
+            let hands = hands.into_iter().map(|h| Held { fills: vec![slot.clone()], ..h }).collect();
+            self.call(a, to, kind, None, Step { hands, ..Default::default() });
+            // the call hands it the element, which the body writes nowhere
+            if let Some(s) = self.sites.last_mut() {
+                (s.args, s.written) = (vec![slot], vec![(0, 0)]);
+            }
+            return;
+        }
         let arms = self.arms(a);
         // what it raises, the call it is handed to hands on, as that call stands
         let site = self.site(c, Site { line: line(c), to: to.to_string(), arms: arms.clone(), ..Default::default() });
@@ -597,9 +707,90 @@ impl<'t, 's> Steps<'t, 's> {
     fn unread(&mut self, c: TsNode, name: &str, hands: Vec<Held>, gives: Vec<Held>, not_followed: bool) {
         self.keep(&gives);
         let op = name.lines().map(str::trim).collect::<String>();
-        let site = Site { line: line(c), op, not_followed, hands, gives, arms: self.arms(c), span: span(c), ..Default::default() };
+        let (args, written) = self.written(c, false);
+        let site =
+            Site { line: line(c), op, not_followed, hands, gives, args, written, arms: self.arms(c), span: span(c), ..Default::default() };
         let site = self.site(c, site);
         self.sites.push(site);
+    }
+
+    /// A loop as the step it is, where what it goes `over` is written: it takes what it goes over and
+    /// gives each element under the names it binds (`for n in g.nodes`), `label`led as the code writes
+    /// it. A call written there is a step of its own, which hands the loop what it gives.
+    pub fn each(&mut self, over: TsNode, label: &str, hands: Vec<Held>, gives: Vec<Held>) {
+        if gives.is_empty() {
+            return;
+        }
+        self.unread(over, label, hands, gives, false);
+        // what a loop goes over is no argument of a call written there
+        if let Some(s) = self.sites.last_mut() {
+            (s.args, s.written) = (vec![], vec![]);
+        }
+    }
+
+    /// The arguments call `c` writes (`Site::args`), with where each is written. A method called
+    /// through its class or its path runs on the first argument it is handed by place.
+    fn written(&self, c: TsNode, receiver_first: bool) -> (Vec<Slot>, Vec<(u32, u32)>) {
+        let mut args = (self.uses.args)(c, self.src);
+        if receiver_first {
+            args.retain(|(_, s)| *s != Slot::Receiver);
+            for (_, s) in args.iter_mut() {
+                let shifted = match &*s {
+                    Slot::At(0) => Slot::Receiver,
+                    Slot::At(n) => Slot::At(n - 1),
+                    Slot::Spread(n) => Slot::Spread(n.saturating_sub(1)),
+                    other => other.clone(),
+                };
+                *s = shifted;
+            }
+        }
+        args.into_iter().map(|((a, b), s)| (s, (a as u32, b as u32))).unzip()
+    }
+
+    /// Which parameters each value a step is handed fills (`Held::fills`): the arguments of the call
+    /// (`Site::args`) a name that holds it is written in, outside the steps written inside the call,
+    /// whose names are theirs, and the one the reader found it in. What a step written inside gives
+    /// fills the argument it stands in once the graph wires the steps (`builder::fill_nested`). `held`
+    /// is the reader's, as for `uses`: the values a name holds where it stands.
+    pub fn fills(&mut self, held: &dyn Fn(TsNode<'t>) -> Vec<Held>) {
+        let u = self.uses;
+        let kinds: Vec<&str> = u.names.iter().chain(u.reads).copied().collect();
+        let spans: Vec<(u32, u32)> = self.sites.iter().map(|s| s.span).filter(|s| *s != (0, 0)).collect();
+        for i in 0..self.sites.len() {
+            let (call, written) = (self.sites[i].span, self.sites[i].written.clone());
+            if written.is_empty() || self.sites[i].hands.is_empty() {
+                continue;
+            }
+            let inner: Vec<(u32, u32)> = spans.iter().copied().filter(|s| *s != call && call.0 <= s.0 && s.1 <= call.1).collect();
+            let within = |at: u32| inner.iter().any(|(a, b)| *a <= at && at < *b);
+            let mut fills: Vec<Vec<Slot>> = self.sites[i].hands.iter().map(|h| h.fills.clone()).collect();
+            for (j, (a, b)) in written.iter().enumerate() {
+                let slot = &self.sites[i].args[j];
+                let Some(arg) = self.body.descendant_for_byte_range(*a as usize, *b as usize) else { continue };
+                let written_here = |n: &TsNode| *a as usize <= n.start_byte() && n.end_byte() <= *b as usize;
+                for n in walk(arg, &kinds).into_iter().filter(written_here) {
+                    if within(n.start_byte() as u32) || !self.read_here(n) {
+                        continue;
+                    }
+                    for h in held(n) {
+                        if let Some(k) = self.sites[i].hands.iter().position(|x| *x == h) {
+                            if !fills[k].contains(slot) {
+                                fills[k].push(slot.clone());
+                            }
+                        }
+                    }
+                }
+            }
+            for (k, h) in self.sites[i].hands.iter().enumerate() {
+                let found = written.iter().position(|(a, b)| h.at != 0 && *a <= h.at && h.at < *b).map(|j| &self.sites[i].args[j]);
+                if let Some(slot) = found.filter(|s| !fills[k].contains(s)) {
+                    fills[k].push(slot.clone());
+                }
+            }
+            for (h, f) in self.sites[i].hands.iter_mut().zip(fills) {
+                h.fills = f;
+            }
+        }
     }
 
     /// An edge of `kind` to `to` at call `c`, with no step of its own.
@@ -609,18 +800,113 @@ impl<'t, 's> Steps<'t, 's> {
 
     /// Write the body's edges and its steps to the graph.
     pub fn finish(self, store: &mut GraphBuilder, id: &str) {
-        let (arm_lines, loop_lines, whens) = (self.arm_lines(), self.loop_lines(), self.whens());
+        let (arm_lines, loop_lines, whens, binds) = (self.arm_lines(), self.loop_lines(), self.whens(), self.binds());
         for (t, kind, via, arms) in self.edges {
             store.add_call(id, &t, kind, via, arms);
         }
+        let mut sites = self.sites;
+        let mut own = self.own;
+        // what a step gives that the body's own code reads by no name is named by its step, as one handed to a step written
+        // around it is, and is of the class the step builds or its function gives
+        for &i in &self.read {
+            let s = &mut sites[i];
+            let given = match store.nodes.get(&s.to) {
+                Some(n) if n.kind == NodeKind::Class => s.to.clone(),
+                _ => store
+                    .edges
+                    .iter()
+                    .find(|e| {
+                        e.kind == EdgeKind::Returns && e.src == s.to && store.nodes.get(&e.dst).is_some_and(|d| d.kind == NodeKind::Class)
+                    })
+                    .map(|e| e.dst.clone())
+                    .unwrap_or_default(),
+            };
+            if given.is_empty() {
+                continue;
+            }
+            let name = format!("#{id}@{}", s.span.0);
+            match s.gives.iter_mut().find(|g| g.ty == given) {
+                Some(g) => g.name = name.clone(),
+                None => s.gives.push(Held::new(given.clone(), name.clone())),
+            }
+            own.push(Use { name, ty: given, arms: s.arms.clone() });
+        }
         if let Some(n) = store.nodes.get_mut(id) {
-            n.sites = self.sites;
+            n.sites = sites;
             (n.arm_lines, n.arm_choices) = arm_lines.into_iter().unzip();
             n.loop_lines = loop_lines;
             n.whens = whens;
             n.unseen = self.unseen;
-            n.uses = self.own;
+            n.uses = own;
+            n.binds = binds;
         }
+    }
+
+    /// What the arms of the body's choices bind a name to by the body's own code (`Node::binds`): of
+    /// each binding of the body, what it binds that no step makes, where that is made in an arm, either
+    /// the binding standing in the arm (`unit = KELVIN`) or the value it binds being a choice whose arm
+    /// gives it (`let out = match f { .. }`, `x = a if c else b`). What a loop binds, its step gives;
+    /// a field or an element is kept beyond a name.
+    fn binds(&self) -> Vec<Use> {
+        let u = self.uses;
+        let steps: HashSet<(u32, u32)> = self.sites.iter().map(|s| s.span).filter(|s| *s != (0, 0)).collect();
+        let mut out: Vec<Use> = vec![];
+        let mut stack = vec![self.body];
+        while let Some(b) = stack.pop() {
+            if b.id() != self.body.id() && u.nested.contains(&b.kind()) {
+                continue;
+            }
+            stack.extend(named_children(b).into_iter().rev());
+            let Some((targets, value)) = (u.binds)(b) else { continue };
+            if b.child_by_field_name("body").is_some() || !walk(targets, u.keeps).is_empty() || self.in_function(b) {
+                continue;
+            }
+            let names: Vec<String> =
+                walk(targets, u.names).into_iter().filter(|n| !(u.label)(*n, self.src)).map(|n| text(n, self.src).to_string()).collect();
+            for leaf in self.values_of(value, None) {
+                let made = steps.contains(&span(leaf));
+                if made || (u.leaves)(leaf, self.body) || (u.fails)(leaf, self.src) {
+                    continue;
+                }
+                let arms = self.arms(leaf);
+                for name in names.iter().filter(|_| !arms.is_empty()) {
+                    let one = Use { name: name.clone(), ty: String::new(), arms: arms.clone() };
+                    if !out.contains(&one) {
+                        out.push(one);
+                    }
+                }
+            }
+        }
+        // a name a step gives elsewhere holds what the step gives
+        for b in out.iter_mut() {
+            let types: HashSet<&String> =
+                self.sites.iter().flat_map(|s| &s.gives).filter(|g| g.name == b.name && !g.ty.is_empty()).map(|g| &g.ty).collect();
+            if let [t] = types.into_iter().collect::<Vec<_>>()[..] {
+                b.ty = t.clone();
+            }
+        }
+        out
+    }
+
+    /// The expressions whose value `v` gives: itself, or where it is a choice, those of each of its
+    /// arms, through what hands on the value inside it and the blocks and arms whose value is their
+    /// last part. `within` is the choice an arm is of: a part of it that continues it is no choice of
+    /// its own (a `match` arm).
+    fn values_of(&self, v: TsNode<'t>, within: Option<u32>) -> Vec<TsNode<'t>> {
+        let u = self.uses;
+        let v = beneath(v, u.wrappers);
+        if let Some(&k) = self.choices.get(&v.id()).filter(|k| Some(**k) != within) {
+            let arms = walk_all(v)
+                .into_iter()
+                .filter(|x| self.choices.get(&x.id()) == Some(&k))
+                .flat_map(|x| named_children(x).into_iter().filter(move |c| matches!((self.syntax.part)(x, *c, self.src), Part::Arm(_))));
+            return arms.collect::<Vec<_>>().into_iter().flat_map(|a| self.values_of(a, Some(k))).collect();
+        }
+        if u.tails.contains(&v.kind()) {
+            let last = named_children(v).into_iter().filter(|c| !c.kind().ends_with("comment")).last();
+            return last.filter(|l| !(u.drops)(v, *l, self.src)).map(|l| self.values_of(l, within)).unwrap_or_default();
+        }
+        vec![v]
     }
 
     /// What decides each arm of the body's choices, as the code writes it: `(choice, arm, when)`.

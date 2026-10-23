@@ -75,7 +75,7 @@ line Reading@Store()/Store.get/Store.rows/Reading() > Store()/Store.get/Store.ro
 line Store()/Store.get/Store.rows/Row() > Row@Store()/Store.get/Store.rows/Row() value
 line Row@Store()/Store.get/Store.rows/Row() > Store()/Store.get/Store.rows value  # the rows built go back
 line Store()/Store.get/Store.rows > Row@Store()/Store.get/Store.rows value  # no name holds them
-known #101 line Row@Store()/Store.get/Store.rows > Store()/Store.get value   # the body uses the rows itself
+line Row@Store()/Store.get/Store.rows > Store()/Store.get value   # the body uses the rows itself
 line Store()/Store.get > Reading@Store()/Store.get value  # the Readings back
 
 home Store@Store()/Store.new/Store() Store()/Store.new

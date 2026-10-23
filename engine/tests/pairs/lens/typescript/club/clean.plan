@@ -9,7 +9,7 @@ step Board()/Board()
 step Board()/Board.pin
 step Board()/Board.posts
 step Board()/Board.posts/Notice()
-known #128 step Board()/Board.posts/Notice()/Post() # super(text) runs Post's constructor; it is handed nothing (#128), so it draws no line
+known #128 step Board()/Board.posts/Notice()/Post() # super(text) runs Post's constructor, handed the `text` its own call fills (`{"at": 0}`)
 
 line entry > Board()/Board() call
 line entry > Board()/Board.pin call

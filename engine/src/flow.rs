@@ -1223,7 +1223,7 @@ mod tests {
     }
 
     fn at(ty: &str, name: &str, at: u32) -> Held {
-        Held { ty: ty.into(), name: name.into(), at }
+        Held { at, ..Held::new(ty, name) }
     }
 
     /// `lang = detect(opts).ok_or_else(..)`: `detect` is handed `opts` and gives `lang`; the
