@@ -1110,6 +1110,9 @@ struct Body<'a, 't> {
     own: &'a Own,
     changing: &'a Changing,
     read: Read<'t>,
+    /// The names that hold what a library's call gave: a method called on one is that library's
+    /// operation, also where its types do not list it (`response.read()` of `urlopen(..) as response`).
+    library_values: HashSet<String>,
 }
 
 impl<'a, 't> Body<'a, 't> {
@@ -1149,6 +1152,7 @@ impl<'a, 't> Body<'a, 't> {
             own,
             changing,
             read: Read::default(),
+            library_values: HashSet::new(),
         }
     }
 
@@ -1389,8 +1393,27 @@ impl<'a, 't> Body<'a, 't> {
                 steps.handed(c, a, &t, EdgeKind::Instantiates, None);
             }
         }
+        // a method on what a library's call gave is that library's, also where ty does not list it
+        let on_library = receiver
+            .map(|r| beneath(r, WRAPPERS))
+            .filter(|r| r.kind() == "identifier")
+            .is_some_and(|r| self.library_values.contains(text(r, self.src)));
+        if matches!(callee, Some(Callee::Lib(_))) {
+            self.library_values.extend(gives.iter().map(|g| g.name.clone()).filter(|n| !n.is_empty()));
+        }
         match callee {
             Some(Callee::Def(t)) => self.own(steps, c, &t, receiver, hands, gives),
+            None if on_library => {
+                // a step where the body names what it gives; else what it gives goes into the code around it
+                if !assigned.is_empty() {
+                    let op = fnode.child_by_field_name("attribute").map(|a| text(a, self.src).to_string()).unwrap_or_default();
+                    self.library_values.extend(gives.iter().map(|g| g.name.clone()).filter(|n| !n.is_empty()));
+                    steps.op(c, &op, hands, gives);
+                }
+                steps.dropped(c, &written(fnode, self.src));
+                self.read.unresolved.push((named_path(fnode, self.src).into_iter().take(2).collect::<Vec<_>>().join("."), Bucket::Library));
+                self.library(steps, c, fnode, None);
+            }
             Some(Callee::Lib(lib)) => {
                 // a library's call not read that makes a value the body keeps under a name, from
                 // values it was handed, is a step of its own; what a call gives without a name

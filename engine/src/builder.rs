@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use indexmap::IndexMap;
 
 use crate::model::{
-    Bucket, Dir, Edge, EdgeKind, Entry, EntryKind, Graph, Node, NodeKind, Signature, Site, Slot, Stats, Touch, Unresolved, World,
+    Bucket, Dir, Edge, EdgeKind, Entry, EntryKind, Graph, Held, Node, NodeKind, Signature, Site, Slot, Stats, Touch, Unresolved, World,
 };
 
 /// Per-class facts that only matter during resolution.
@@ -443,6 +443,17 @@ fn fill_nested(nodes: &mut IndexMap<String, Node>) {
     let methods: HashSet<String> = nodes.values().filter(|n| n.kind == NodeKind::Method).map(|n| n.id.clone()).collect();
     for n in nodes.values_mut() {
         let sites = &mut n.sites;
+        // what a step in a function written in a call's arguments gives under a name the function binds is the function's:
+        // the call is handed what the function gives back (`query_map(.., |row| { let amount = Money { .. }; Ok(..) })`)
+        for o in 0..sites.len() {
+            let span = sites[o].span;
+            let theirs: Vec<Held> = sites
+                .iter()
+                .filter(|s| s.in_function && inside(s.span, span))
+                .flat_map(|s| s.gives.iter().filter(|g| !g.name.is_empty() && !g.name.starts_with('#')).cloned())
+                .collect();
+            sites[o].hands.retain(|h| !theirs.contains(h));
+        }
         for o in 0..sites.len() {
             for k in 0..sites[o].hands.len() {
                 if !sites[o].hands[k].fills.is_empty() {

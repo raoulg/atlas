@@ -101,13 +101,16 @@ home _·tekst@Kennisbank()/Kennisbank.graaf/node/unwrap_or#3 Kennisbank()/Kennis
 line Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/read_to_string > _@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/read_to_string value
 line _@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/read_to_string > Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write value
 line Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write > _@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write value
-known #138 line _@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write > Kennisbank()/Kennisbank.voeg_toe value
-known #138 line Kennisbank()/Kennisbank.voeg_toe > _@Kennisbank()/Kennisbank.voeg_toe value
-known #138 line Kennisbank()/Kennisbank.graaf > _@Kennisbank()/Kennisbank.graaf value                                  # its read, `?`-propagated
+line _@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write > Kennisbank()/Kennisbank.voeg_toe value          # `self.write(..)` last: voeg_toe gives back what it gives
+line Kennisbank()/Kennisbank.voeg_toe > _@Kennisbank()/Kennisbank.voeg_toe value
+line Kennisbank()/Kennisbank.graaf/Graaf() > _@Kennisbank()/Kennisbank.graaf/Graaf() value                        # the read glued into the step, `?`-propagated
+line _@Kennisbank()/Kennisbank.graaf/Graaf() > Kennisbank()/Kennisbank.graaf value
+line Kennisbank()/Kennisbank.graaf > _@Kennisbank()/Kennisbank.graaf value
 home _@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/read_to_string Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write
 home _@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write Kennisbank()/Kennisbank.voeg_toe
-known #138 home _@Kennisbank()/Kennisbank.voeg_toe Kennisbank()
-known #138 home _@Kennisbank()/Kennisbank.graaf Kennisbank()
+home _@Kennisbank()/Kennisbank.voeg_toe Kennisbank()
+home _@Kennisbank()/Kennisbank.graaf/Graaf() Kennisbank()/Kennisbank.graaf
+home _@Kennisbank()/Kennisbank.graaf Kennisbank()
 
 side entry left
 side Disk(Kennisbank.path) both

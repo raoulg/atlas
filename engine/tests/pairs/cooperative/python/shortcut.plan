@@ -7,7 +7,6 @@ route news.read.lines
 step lines/Trimmed.read
 step lines/Trimmed.read/Source.read                                                    # `Source.read(self)`
 step lines/Trimmed.read/Source.read/urlopen
-known #125 extra step lines/Trimmed.read/Source.read/response.read                     # `return response.read()`
 
 line entry > lines call
 line Trimmed·source > lines value
@@ -19,7 +18,6 @@ line lines/Trimmed.read/Source.read > lines/Trimmed.read back
 line lines/Trimmed.read > lines back
 
 # the source `Source.read` is handed rests at its own arrow, and `urlopen` takes the signature's type from beyond
-known #125 extra line _·response@lines/Trimmed.read/Source.read/urlopen > lines/Trimmed.read/Source.read/response.read value
 
 home Trimmed·source lines
 home _·response@lines/Trimmed.read/Source.read/urlopen lines/Trimmed.read/Source.read
@@ -43,8 +41,6 @@ step cached_lines/Cached.read/?1/Store.put
 step cached_lines/Cached.read/Feed.read                                           # what it runs on a feed
 step cached_lines/Cached.read/Feed.read/Source.read                               # `Source.read(self)`
 step cached_lines/Cached.read/Feed.read/Source.read/urlopen
-known #125 extra step cached_lines/Cached.read/?1/Source.read/response.read     # `return response.read()`
-known #125 extra step cached_lines/Cached.read/Feed.read/Source.read/response.read
 
 line entry > cached_lines call
 line Cached·source > cached_lines value
@@ -74,8 +70,6 @@ line cached_lines/Cached.read/Feed.read/Source.read/urlopen > _·response@cached
 line _·response@cached_lines/Cached.read/Feed.read/Source.read/urlopen > cached_lines/Cached.read/Feed.read/Source.read value
 line Web > cached_lines/Cached.read/Feed.read/Source.read own
 
-known #125 extra line _·response@cached_lines/Cached.read/?1/Source.read/urlopen > cached_lines/Cached.read/?1/Source.read/response.read value
-known #125 extra line _·response@cached_lines/Cached.read/Feed.read/Source.read/urlopen > cached_lines/Cached.read/Feed.read/Source.read/response.read value
 
 home Cached·source cached_lines
 home _·response@cached_lines/Cached.read/?1/Source.read/urlopen cached_lines/Cached.read/?1/Source.read

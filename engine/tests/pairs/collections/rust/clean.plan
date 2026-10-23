@@ -118,6 +118,12 @@ line Store()/Store.put_all/Store.rows > _@Store()/Store.put_all/Store.rows value
 line _@Store()/Store.get/Store.rows > Store()/Store.get value
 line _@Store()/Store.put/Store.rows > Store()/Store.put value
 line _@Store()/Store.put_all/Store.rows > Store()/Store.put_all value
+line Store()/Store.put/write_rows > _@Store()/Store.put/write_rows value   # `write_rows(..)` last: put gives back what it gives, its error with it
+line _@Store()/Store.put/write_rows > Store()/Store.put value
+line Store()/Store.put_all/write_rows > _@Store()/Store.put_all/write_rows value
+line _@Store()/Store.put_all/write_rows > Store()/Store.put_all value
+home _@Store()/Store.put/write_rows Store()/Store.put
+home _@Store()/Store.put_all/write_rows Store()/Store.put_all
 home _@Store()/Store.get Store()
 home _@Store()/Store.get/Store.rows Store()/Store.get
 home _@Store()/Store.put Store()

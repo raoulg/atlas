@@ -162,6 +162,11 @@ pub struct Node {
     /// functions it defines, or it calls what ends the program (`sys.exit`, `process.exit`).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub raises: bool,
+    /// The error its body's own code hands on outside its steps, as its signature converts it, `""`
+    /// for one of no type of the code's: a `?` written in no step (`Ok(fs::read_to_string(p)?.lines()..)`).
+    /// What a step hands on, the step's site says (`Site::fails`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fails: Option<String>,
     /// It calls a function it is handed: what that function does is its caller's to say.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub calls_handed: bool,
@@ -222,6 +227,11 @@ pub struct Node {
     /// does.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub binds: Vec<Use>,
+    /// What its body's own code sets a part of a value to, by assignment through the name that holds
+    /// the value (`other.fig = self.fig`, `rows[i] = row`): the value changed and what the assigned
+    /// expression reads, a lens's put made in place.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sets: Vec<Set>,
     /// The lines each arm of its body's choices spans, first and last: what is written there runs
     /// only in that arm.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -448,6 +458,10 @@ pub struct Site {
     /// of the body is (a function handed on, called by whoever receives it).
     #[serde(skip)]
     pub span: (u32, u32),
+    /// The call stands in a function written in place in the body (`|row| ..`, `lambda r: ..`,
+    /// `(r) => ..`): what it gives under a name that function binds is the function's own.
+    #[serde(skip)]
+    pub in_function: bool,
 }
 
 /// A value by its type, and the name the code holds it by when it has one. A value no name holds
@@ -509,6 +523,21 @@ pub struct Use {
     pub name: String,
     #[serde(rename = "type", default, skip_serializing_if = "String::is_empty")]
     pub ty: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(type = "Array<[number, number]>")]
+    pub arms: Vec<(u32, u32)>,
+}
+
+/// A part of a value the body's own code sets (`Node::sets`): the value, as a call is handed it (`other`
+/// of `other.fig = self.fig`, the instance a method runs on by no name for `self.n = ..`), what the
+/// assigned expression reads (the instance of `self.fig`), and the arms of the choices the setting sits
+/// in, numbered as `Site::arms` numbers them.
+#[derive(Serialize, Deserialize, TS, Clone, Debug, Default, PartialEq)]
+#[ts(export)]
+pub struct Set {
+    pub on: Held,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub from: Vec<Held>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[ts(type = "Array<[number, number]>")]
     pub arms: Vec<(u32, u32)>,

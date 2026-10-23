@@ -1295,3 +1295,34 @@ fn composition_a_name_bound_twice_holds_each_binding_where_it_is_visible() {
         assert_eq!(gives(step(&g, "linker.link", "linker.read")), ["linker.Body"], "{side}");
     }
 }
+
+/// An error leaves a body the ways `?` hands it on and as what the body gives back (#138): a call whose `Result` the
+/// body gives back as it is (`self.write(..)` last in `voeg_toe`) fails with what the signature names, `io::Error`, no
+/// type of the code's; a `?` written in a call that is no step is handed on by the step it is glued into (the clean
+/// `Graaf { nodes: fs::read_to_string(&self.path)?.lines().. }`), or, written in no step, by the body's own code (the
+/// shortcut's `graaf`, which builds no type of its own).
+#[test]
+fn sums_an_error_leaves_by_what_the_body_gives_back_and_by_a_glued_question_mark() {
+    let p = common::pair("sums/rust");
+    for (side, g) in [("clean", &p.clean), ("shortcut", &p.shortcut)] {
+        let write = g.node("kennis.Kennisbank.voeg_toe").unwrap().sites.iter().find(|s| s.to == "kennis.Kennisbank.write").unwrap();
+        assert_eq!(write.fails.as_deref(), Some(""), "{side}: what voeg_toe gives back");
+    }
+    let graaf = p.clean.node("kennis.Kennisbank.graaf").unwrap();
+    let built = graaf.sites.iter().find(|s| s.to == "kennis.Graaf").expect("the clean graaf builds a Graaf");
+    assert_eq!((built.fails.as_deref(), graaf.fails.as_deref()), (Some(""), None), "the read's `?` is the step's");
+    let graaf = p.shortcut.node("kennis.Kennisbank.graaf").unwrap();
+    assert_eq!((graaf.sites.len(), graaf.fails.as_deref()), (0, Some("")), "the shortcut's `?` is its own code's");
+}
+
+/// What a closure written in a call's arguments binds in its own body is the closure's (#128): `query_map([], |row| {
+/// let amount = Money { .. }; Ok(Expense { .., amount }) })` is handed what the closure gives back, not the `amount` it
+/// binds.
+#[test]
+fn rust_a_call_is_handed_no_name_a_closure_in_it_binds() {
+    let g = analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/rust/clean"), &Options::default()).unwrap();
+    let query = g.node("spend.store.Store.expenses").unwrap().sites.iter().find(|s| s.op == "query_map").unwrap();
+    let names: Vec<&str> = query.hands.iter().map(|h| h.name.as_str()).collect();
+    assert!(!names.contains(&"amount"), "{names:?}");
+    assert!(query.hands.iter().any(|h| h.ty == "spend.expense.Expense"), "what the closure gives back: {:#?}", query.hands);
+}

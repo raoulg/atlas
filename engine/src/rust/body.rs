@@ -1434,7 +1434,20 @@ impl<'a, 't> Body<'a, 't> {
                     held.push(h);
                 }
             };
-            for i in walk(*p, &["identifier"]).into_iter().filter(|i| names_value(*i, self.src)) {
+            // what a closure written in the call binds in its own body is that closure's (`|row| { let amount = ..; .. }`)
+            let closures: Vec<TsNode> =
+                walk(*p, &["closure_expression"]).into_iter().filter_map(|c| c.child_by_field_name("body")).collect();
+            let bound_inside = |i: TsNode| {
+                let (name, at) = (text(i, self.src), i.start_byte());
+                closures.iter().filter(|b| b.start_byte() <= at && at < b.end_byte()).any(|b| {
+                    walk(*b, &["let_declaration", "let_condition", "match_arm"])
+                        .into_iter()
+                        .filter(|l| l.start_byte() < at)
+                        .filter_map(|l| l.child_by_field_name("pattern"))
+                        .any(|pat| walk(pat, &["identifier"]).into_iter().any(|x| text(x, self.src) == name))
+                })
+            };
+            for i in walk(*p, &["identifier"]).into_iter().filter(|i| names_value(*i, self.src) && !bound_inside(*i)) {
                 if let Some(h) = self.held_by(text(i, self.src), i.start_byte(), kept) {
                     add(h);
                 }

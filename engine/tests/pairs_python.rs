@@ -1824,3 +1824,46 @@ fn ways_a_request_goes_the_way_its_data_says() {
     assert_eq!(side(&ways.shortcut, "feeds.call"), [Side::Open], "data that may be None says no way");
     assert_eq!(side(&ways.shortcut, "feeds.remove"), [Side::Open], "a method that is a value says no way");
 }
+
+/// A method called on what a library's call gave is that library's operation, also where its types do not list it
+/// (#125): `with urlopen(self.url) as response: return response.read()` names what `read` gives nowhere and changes
+/// nothing it runs on, so it is no step; `urlopen`, whose value the body keeps, is.
+#[test]
+fn cooperative_a_method_on_a_library_s_value_is_the_library_s() {
+    for (side, g) in [("clean", &cooperative().clean), ("shortcut", &cooperative().shortcut)] {
+        let read = g.node("news.sources.Source.read").unwrap();
+        let ops: Vec<&str> = read.sites.iter().map(|s| s.op.as_str()).collect();
+        assert_eq!(ops, ["urlopen"], "{side}: {:#?}", read.sites);
+        assert!(read.uses.iter().any(|u| u.name == "response"), "{side}: the body reads what urlopen gave");
+    }
+}
+
+/// A body that sets a part of a value through the name that holds it says what it sets it to (#11, `Node::sets`):
+/// the value it changes, and what the assigned expression reads, a lens's put made in place. The clean board sets
+/// only its own pen, to the pen it is handed (`take`), and lends by handing its pen to the other's `take`; the
+/// shortcut's `lend` reaches into the other board and sets its pen there to what the board it runs on holds
+/// (`other.pen = self.pen`). What the right side reads is a use of the body's own code.
+#[test]
+fn sets_a_body_says_what_it_sets_a_part_of_a_value_to() {
+    let p = common::pair("sets/python");
+    let sets = |g: &Graph, id: &str| -> Vec<(String, String, Vec<(String, String)>)> {
+        let held = |h: &atlas_engine::Held| (h.ty.clone(), h.name.clone());
+        g.node(id).unwrap().sets.iter().map(|s| (s.on.ty.clone(), s.on.name.clone(), s.from.iter().map(held).collect())).collect()
+    };
+    let board = || "boards.Board".to_string();
+    let pen = vec![("boards.Pen".to_string(), "pen".to_string())];
+    assert_eq!(sets(&p.clean, "boards.Board.take"), [(board(), String::new(), pen.clone())], "its own pen, to the pen it is handed");
+    assert!(sets(&p.clean, "boards.Board.lend").is_empty(), "the other board takes it itself");
+    let take = p.clean.node("boards.Board.lend").unwrap().sites.iter().find(|s| s.to == "boards.Board.take").expect("lend hands it on");
+    assert_eq!(
+        take.hands.iter().map(|h| (h.name.as_str(), h.fills.clone())).collect::<Vec<_>>(),
+        [("other", vec![atlas_engine::Slot::Receiver]), ("", vec![atlas_engine::Slot::At(0)])]
+    );
+    assert_eq!(
+        sets(&p.shortcut, "boards.Board.lend"),
+        [(board(), "other".to_string(), vec![(board(), String::new())])],
+        "the other's pen, to its own"
+    );
+    let uses = &p.shortcut.node("boards.Board.lend").unwrap().uses;
+    assert!(uses.iter().any(|u| u.name.is_empty() && u.ty == "boards.Board"), "`self.pen` is read: {uses:#?}");
+}
