@@ -1315,6 +1315,16 @@ fn sums_an_error_leaves_by_what_the_body_gives_back_and_by_a_glued_question_mark
     assert_eq!((graaf.sites.len(), graaf.fails.as_deref()), (0, Some("")), "the shortcut's `?` is its own code's");
 }
 
+/// A `match` that ends a body without a `;` is what the body gives back (#138): `summary`'s `match self.kept_summary(day)?
+/// { Some(summary) => Ok(summary), None => self.keep_summary(..) }` gives back what `keep_summary` gives, its error among it,
+/// so that call fails with the signature's `io::Error`, no type of the code's.
+#[test]
+fn an_arm_of_a_match_that_ends_the_body_gives_back_its_call_s_error() {
+    let g = analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/lens/rust/clean"), &Options::default()).unwrap();
+    let keep = g.node("harvest.ReadingStore.summary").unwrap().sites.iter().find(|s| s.to == "harvest.ReadingStore.keep_summary").unwrap();
+    assert_eq!(keep.fails.as_deref(), Some(""), "what the match's arm gives back");
+}
+
 /// What a closure written in a call's arguments binds in its own body is the closure's (#128): `query_map([], |row| {
 /// let amount = Money { .. }; Ok(Expense { .., amount }) })` is handed what the closure gives back, not the `amount` it
 /// binds.

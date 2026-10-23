@@ -66,6 +66,8 @@ step Store()/Store.get
 line entry > Store()/Store.get call
 line Store > Store()/Store.get value # get reads the store's path itself
 line Disk(Store.path) > Store()/Store.get own
+line Store()/Store.get > _@Store()/Store.get value   # `Ok(fs::read_to_string(&self.path)?..)`: `?` in its own code
+home _@Store()/Store.get Store()
 
 home Store@Store()/Store.new/Store() Store()/Store.new
 home Store@Store()/Store.new Store()

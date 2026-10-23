@@ -474,10 +474,15 @@ open:
   is a value of the plan where the code says it is one, whatever library its type is of: where the
   code builds it to raise (`raise RuntimeError(..)`, `throw new Error(..)`, `Err(Error::Empty)`), where
   a `?` hands on what a call fails with (converted to the function's error type, glued into the step
-  as a projection is), and where a handler takes it. An error a library may raise that the code
-  neither builds, hands on nor catches, the code does not say, and it is no value. The errors the arms
-  of one choice hand on are one value at the choice's moment, and an opened step takes each error its
-  steps hand on that none of them takes.
+  as a projection is), and where a handler takes it. A `?` written in the body's own code, in no step
+  (`Ok(fs::read_to_string(p)?.lines()..)`), is handed on by the body's own arrow, at the step's moment.
+  An error a library may raise that the code neither builds, hands on nor catches, the code does not
+  say, and it is no value. The errors the arms of one choice hand on are one value at the choice's
+  moment, and an opened step takes each error its steps hand on that none of them takes. A call whose
+  signature gives its error in the sum it gives (`Result<T, E>`) and that hands no error on gives the
+  sum, at the step's moment, also in an arm: what takes its result takes its error with it
+  (`store.save_rates(base, rates::fetch(..))`), and a body it is handed to takes the sum apart, its
+  steps a variant (`Ok(body) =>`), its own code the error (`Err(e) =>`).
 
 What the reader has open is the map `q`, nothing else: an occurrence goes to its outermost closed
 ancestor (or to itself), a type to the box its family stands in (`placeOfType`), a world place to its

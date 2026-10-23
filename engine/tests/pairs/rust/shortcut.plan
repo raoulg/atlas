@@ -109,6 +109,11 @@ line main/?1/run/?1/Store.save > SQLite(expenses) own
 line Web > main/?1/run/?1/fetch own                                    # a URL the settings hold, which the code does not say
 line main/?1/run/?1/fetch > Value@main/?1/run/?1/fetch value
 line Value@main/?1/run/?1/fetch > main/?1/run/?1/Store.save_rates value   # the body of a Result, matched: the match decides on it
+# fetch's own `reqwest::blocking::get(url)?` hands its error on at its border; `run` hands it on by no `?`, but in the
+# `Result` it hands `save_rates`, whose `Err(e)` arm prints it: the error stays in the arm, at fetch's moment
+line main/?1/run/?1/fetch > _@main/?1/run/?1/fetch value
+line _@main/?1/run/?1/fetch > main/?1/run/?1/Store.save_rates value   # a `Result` handed on whole hands its error with it
+home _@main/?1/run/?1/fetch main/?1/run/?1
 line Value@main/?1/run/?1/fetch > main/?1/run/?1/Store.save_rates/?1/unwrap_or_default value   # Ok(body) => body["date"]..
 line Store·store@main/?1/run/Store.open > main/?1/run/?1/Store.save_rates value
 line _·config@main/?1/run/load > main/?1/run/?1/Store.save_rates value   # base = &config["base"], into params![base, ..]

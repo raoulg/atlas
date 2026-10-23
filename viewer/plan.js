@@ -75,11 +75,12 @@ const sitesOf = n => {
   return sites;
 };
 const siteIn = (n, i) => (n?.sites?.[i] ? sitesOf(n)[i] : undefined);
-// the errors a body hands on (#138): what its sites raise, and the error each of its calls fails with, "" for one of no type
-// of the code's
+// the errors a body hands on (#138): what its sites raise, the error each of its calls fails with, and the one its own code
+// hands on outside its steps (`Node::fails`, `Ok(fs::read_to_string(p)?.lines()..)`), "" for one of no type of the code's
 const errorsOf = id => {
   const n = byId.get(id), out = new Set();
   (n?.sites || []).forEach((_, i) => { const r = siteIn(n, i); if (r?.raises) for (const g of r.gives || []) out.add(g.type || ""); if (r?.fails != null) out.add(r.fails); });
+  if (n?.fails != null) out.add(n.fails);
   return out;
 };
 
@@ -773,6 +774,9 @@ const stepMorphism = (key, own, isAnchor, leaf) => {
   for (const x of made) keep.add(addPlace(typePlace(x)));
   for (const t of inner) { const k = errKey(t); m.cod.set(k, false); errs.add(k); }
   if (site?.fails != null) { const k = errKey(site.fails); m.cod.set(k, false); errs.add(k); }
+  // a body with no steps hands on what its own code fails with, at its own moment
+  const own_fails = own && leaf && !step.startsWith("op:") ? byId.get(step)?.fails : null;
+  if (own_fails != null) { const k = errKey(own_fails); m.cod.set(k, false); errs.add(k); }
   // the route of an exported class is its doors, each called by the entry: a door runs on the caller's instance, one value
   // of the class from beyond, and takes its parameters as a route does
   const door = isDoorOf(key);
@@ -1022,8 +1026,10 @@ const madeAt = (P, k, kept) => {
   if (!a) return ownMoment(P);
   if (!frames.get(a.choice).synthetic) return choiceMoment(a.choice);
   // an error an arm hands on or raises goes past the choice, whichever step of the arm fails or builds it: the errors of a
-  // choice are one value
-  if (P.errs?.has(k) || P.raised?.has(k)) return choiceMoment(a.choice);
+  // choice are one value. One a step's border hands on that its call does not (`rates::fetch(..)` handed, as the `Result` it
+  // gives, to a step of the arm) stays the step's
+  const key = P.own ? frames.get(P.parent)?.step : P.steps[0];
+  if ((P.errs?.has(k) && treeInfo.get(key)?.site?.fails != null) || P.raised?.has(k)) return choiceMoment(a.choice);
   // of what one arm makes of a value, the last is what it hands on past the choice; what it makes first is made inside it
   const m = armsOf().get(valueOfArm(a.choice, k, P.cn));
   return kept || (m && m.on && m.arms.size > 1 && m.last.get(a.branch) === P) ? choiceMoment(a.choice) : ownMoment(P);
@@ -1203,6 +1209,10 @@ const handTo = (fid, f, info, Own, fn, recv) => {
 };
 // a value a step changes is the value it was handed, at a new moment: what each moment of it was made from
 const originOf = new Map();
+// the errors that go with a value, where the step that gives it gives them in one sum: a step of the body that made the call
+// takes them with it; a body it is handed to takes the sum apart (`Ok(body) =>`, `Err(e) =>`), and its steps take a variant
+const withErrors = new Map();
+const errorsWith = (scope, v) => { const w = withErrors.get(v); return w && w.scope === scope ? w.errs : []; };
 const stepAt = P => stepOf(P.own ? frames.get(P.parent)?.step : P.steps[0]);
 const changesKind = (P, k) => (arrowOf(stepAt(P))?.changes || []).some(x => kindKey(addPlace(typePlace(x))) === kindKey(k));
 // A figure rests in what holds it (#11): a method that changes the value it runs on keeps the figure it makes in that value
@@ -1246,8 +1256,8 @@ for (const P of pills.values()) {
     const v = viaDispatch(P, k) || bound(P, k, name(P.dn, k), !!P.made?.has(k));
     if (v === false) return;
     Dv.set(v || k, r);
-    // a parameter more than one value fills hands them all
-    for (const w of alsoOf(P, k, name(P.dn, k), !!P.made?.has(k), v)) Dv.set(w, r);
+    // a parameter more than one value fills hands them all, and a sum of a value and an error both
+    for (const w of [...alsoOf(P, k, name(P.dn, k), !!P.made?.has(k), v), ...errorsWith(scopeOf(P), v)]) if (!Dv.has(w)) Dv.set(w, r);
     // what each value a step beyond the cut takes is bound to here: a figure its image keeps in one is that value's
     if (P.cut) (P.boundOf ||= new Map()).set(k, v || k);
     if (mult && P.mult.D.has(k)) mult.D.set(v || k, P.mult.D.get(k));
@@ -1275,7 +1285,7 @@ for (const P of pills.values()) {
     if (!v) continue;
     // a name the step changes is taken where a step inside made it anew; the value its call handed it crosses the frame
     if (u.changed) { const at = places.get(v)?.at, f = P.parent; if (!at || !(at.startsWith(f + "/") || at.startsWith(f + "|") || at.startsWith(f + "~c"))) continue; }
-    for (const w of [v, ...(u.name ? alsoOf(P, base, u.name, true, v) : [])]) { if (!Dv.has(w)) Dv.set(w, false); (P.used ||= new Set()).add(w); }
+    for (const w of [v, ...(u.name ? alsoOf(P, base, u.name, true, v) : []), ...errorsWith(P.parent, v)]) { if (!Dv.has(w)) Dv.set(w, false); (P.used ||= new Set()).add(w); }
   }
   const figs = [];
   P.C.forEach((r, k) => {
@@ -1298,6 +1308,13 @@ for (const P of pills.values()) {
     Cv.set(v, r);
   });
   for (const [k, r] of figs) { const f = figureOf(P, k); Cv.set(f, r); if (mult && P.mult.C.has(k)) mult.C.set(f, P.mult.C.get(k)); }
+  // a call whose signature gives its error in the sum it gives (`Result<T, E>`) and which hands no error on gives the sum:
+  // what takes its result takes its error with it (`store.save_rates(base, rates::fetch(..))`, #138)
+  const info = treeInfo.get(P.own ? frames.get(P.parent)?.step : P.steps[0]);
+  if (info?.site && info.site.fails == null && !info.site.raises && byId.get(stepOf(info.step ?? ""))?.returns?.fails) {
+    const errs = [...Cv.keys()].filter(v => places.get(v)?.err);
+    if (errs.length) for (const v of Cv.keys()) if (isMem(v) && !places.get(v)?.err) withErrors.set(v, {errs, scope: scopeOf(P)});
+  }
   P.D = Dv; P.C = Cv;
   if (mult) P.mult = mult;
 }

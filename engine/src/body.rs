@@ -336,7 +336,8 @@ impl<'t, 's> Steps<'t, 's> {
         }
         let mut at = c;
         loop {
-            if (u.leaves)(at, self.body) {
+            // what the body's block ends with is what the function gives (`match v { .. }` last, without `;`)
+            if (u.leaves)(at, self.body) || at.id() == self.body.id() {
                 return true;
             }
             let Some(up) = at.parent().filter(|_| at.id() != self.body.id()) else { return false };

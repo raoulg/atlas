@@ -8,8 +8,10 @@ route rsclean.item
 line entry > item call
 line blocking.Client·client > item value                          # `client.get(..).send()?.text()`
 line Web(localhost:8000) > item own
+line item > _@item value                                         # `send()?`, in its own code: what `?` hands on, a reqwest error
 
 home blocking.Client·client item
+home _@item item
 
 side entry left
 side Web(localhost:8000) left
@@ -23,8 +25,10 @@ route rsclean.order
 line entry > order call
 line blocking.Client·client > order value                         # `client.post(..).body(..).send()?`
 line order > Web(localhost:8000) own
+line order > _@order value                                       # `send()?;`, in its own code
 
 home blocking.Client·client order
+home _@order order
 
 side entry left
 side Web(localhost:8000) right
