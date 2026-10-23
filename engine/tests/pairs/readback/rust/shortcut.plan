@@ -19,7 +19,7 @@ line Ledger·ledger@main/Ledger() > main/Ledger.keep/open value   # K
 line _·con@main/Ledger.keep/open > main/Ledger.keep/collect value   # H
 known #101 line _·con@main/Ledger.keep/open > main/Ledger.keep value                  # keep's own `con.execute`
 line main/Ledger.keep/collect > _·stored@main/Ledger.keep/collect value   # H
-known #125 line _·stored@main/Ledger.keep/collect > main/Ledger.keep value            # H: keep hands it back
+known #101 line _·stored@main/Ledger.keep/collect > main/Ledger.keep value            # H: keep hands it back
 line main/Ledger.keep > SQLite(notes) own
 line main/Ledger.keep > main back  # the notes read back, a Vec<String>
 line main > Screen own
