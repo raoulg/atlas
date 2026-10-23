@@ -2163,7 +2163,9 @@ async function renderPlaat(mine) {
   };
   // a label a union reads otherwise in A and in B: the switch shows the one of the reading shown
   const sided = (text, labels) => { if (labels) { text.dataset.a = labels.a; text.dataset.b = labels.b; text.dataset.u = text.textContent; } };
-  const layout = await new ELK().layout(Object.assign(root, {layoutOptions: {"elk.algorithm": "layered", "elk.direction": "RIGHT", "elk.hierarchyHandling": "INCLUDE_CHILDREN", "elk.edgeRouting": "ORTHOGONAL", "elk.layered.spacing.nodeNodeBetweenLayers": "56", "elk.spacing.nodeNode": "16", "elk.layered.nodePlacement.strategy": "NETWORK_SIMPLEX", "elk.spacing.edgeNode": "14", "elk.layered.spacing.edgeNodeBetweenLayers": "16", "elk.layered.considerModelOrder.strategy": "NODES_AND_EDGES"}}));
+  // boxes are placed by Brandes–Köpf, which grows about linearly with the lines, so a picture of a few
+  // hundred lines opens at once; network simplex straightens long lines a little at ten times the cost
+  const layout = await new ELK().layout(Object.assign(root, {layoutOptions: {"elk.algorithm": "layered", "elk.direction": "RIGHT", "elk.hierarchyHandling": "INCLUDE_CHILDREN", "elk.edgeRouting": "ORTHOGONAL", "elk.layered.spacing.nodeNodeBetweenLayers": "56", "elk.spacing.nodeNode": "16", "elk.layered.nodePlacement.strategy": "BRANDES_KOEPF", "elk.spacing.edgeNode": "14", "elk.layered.spacing.edgeNodeBetweenLayers": "16", "elk.layered.considerModelOrder.strategy": "NODES_AND_EDGES"}}));
   if (mine !== undefined && mine !== renderSeq) return;
   g.innerHTML = ""; g.classList.remove("focus", "busy");
   PICTURE = {boxes: new Map(), lines: []};
