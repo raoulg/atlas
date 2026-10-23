@@ -22,42 +22,31 @@ known #125 extra step lines/Trimmed.read/Source.read/Cached.read/?1/Source.read/
 
 line entry > lines call
 line Trimmed·source > lines value
-known #128 line Trimmed·source > lines/Trimmed.read/Source.read/urlopen value         # `urlopen(self.url)`
+line Trimmed·source > lines/Trimmed.read/Source.read/urlopen value         # `urlopen(self.url)`
 line lines/Trimmed.read/Source.read/urlopen > _·response@lines/Trimmed.read/Source.read/urlopen value
 line _·response@lines/Trimmed.read/Source.read/urlopen > lines/Trimmed.read/Source.read value   # `response.read()`
 line lines/Trimmed.read/Source.read > Web own
 line lines/Trimmed.read/Source.read > lines/Trimmed.read back
 line lines/Trimmed.read > lines back
-known #128 line Trimmed·source > lines/Trimmed.read/Source.read/Cached.read/Store.has value   # `self.store.has(self.url)`
+line Trimmed·source > lines/Trimmed.read/Source.read/Cached.read/Store.has value   # `self.store.has(self.url)`
 line lines/Trimmed.read/Source.read/Cached.read/Store.has > lines/Trimmed.read/Source.read/Cached.read back
-known #128 line Trimmed·source > lines/Trimmed.read/Source.read/Cached.read/?1/Store.get value
+line Trimmed·source > lines/Trimmed.read/Source.read/Cached.read/?1/Store.get value
 line Disk(self.root / key) > lines/Trimmed.read/Source.read/Cached.read/?1/Store.get own
 line lines/Trimmed.read/Source.read/Cached.read/?1/Store.get > lines/Trimmed.read/Source.read/Cached.read back
-known #128 line Trimmed·source > lines/Trimmed.read/Source.read/Cached.read/?1/Source.read/urlopen value
+line Trimmed·source > lines/Trimmed.read/Source.read/Cached.read/?1/Source.read/urlopen value
 line lines/Trimmed.read/Source.read/Cached.read/?1/Source.read/urlopen > _·response@lines/Trimmed.read/Source.read/Cached.read/?1/Source.read/urlopen value
 line _·response@lines/Trimmed.read/Source.read/Cached.read/?1/Source.read/urlopen > lines/Trimmed.read/Source.read/Cached.read/?1/Source.read value
 line lines/Trimmed.read/Source.read/Cached.read/?1/Source.read > Web own
 line lines/Trimmed.read/Source.read/Cached.read/?1/Source.read > _·data@lines/Trimmed.read/Source.read/Cached.read/?1/Source.read value
 line _·data@lines/Trimmed.read/Source.read/Cached.read/?1/Source.read > lines/Trimmed.read/Source.read/Cached.read/?1/Store.put value
-known #128 line Trimmed·source > lines/Trimmed.read/Source.read/Cached.read/?1/Store.put value
+line Trimmed·source > lines/Trimmed.read/Source.read/Cached.read/?1/Store.put value
 line lines/Trimmed.read/Source.read/Cached.read/?1/Store.put > Disk(self.root / key) own
 line _·data@lines/Trimmed.read/Source.read/Cached.read/?1/Source.read > lines/Trimmed.read/Source.read/Cached.read value   # `return data`
 line lines/Trimmed.read/Source.read/Cached.read > lines/Trimmed.read/Source.read back
 
 # the values a call is handed through `self` drawn as types from beyond, and the source at the own arrow
-known #128 extra line Source > lines/Trimmed.read/Source.read/urlopen value
-known #128 extra line Source > lines/Trimmed.read/Source.read/Cached.read/?1/Source.read/urlopen value
-known #128 extra line Cached > lines/Trimmed.read/Source.read/Cached.read/Store.has value
-known #128 extra line Cached > lines/Trimmed.read/Source.read/Cached.read/?1/Store.get value
-known #128 extra line Cached > lines/Trimmed.read/Source.read/Cached.read/?1/Store.put value
-known #128 extra line Store > lines/Trimmed.read/Source.read/Cached.read/Store.has value
-known #128 extra line Store > lines/Trimmed.read/Source.read/Cached.read/?1/Store.get value
-known #128 extra line Trimmed·source > lines/Trimmed.read/Source.read/Cached.read/?1/Source.read value
 known #125 extra line _·response@lines/Trimmed.read/Source.read/urlopen > lines/Trimmed.read/Source.read/response.read value
 known #125 extra line _·response@lines/Trimmed.read/Source.read/Cached.read/?1/Source.read/urlopen > lines/Trimmed.read/Source.read/Cached.read/?1/Source.read/response.read value
-known #128 extra home Source lines
-known #128 extra home Cached lines
-known #128 extra home Store lines
 
 home Trimmed·source lines
 home _·response@lines/Trimmed.read/Source.read/urlopen lines/Trimmed.read/Source.read

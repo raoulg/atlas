@@ -16,7 +16,7 @@ line entry > Kennisbank()/Kennisbank.graaf call
 # beyond, taken where a body reads its fields or calls on it
 line Kennisbank()/Kennisbank() > Kennisbank@Kennisbank()/Kennisbank() value
 line Kennisbank > Kennisbank()/Kennisbank.voeg_toe/Kennisbank._write value
-known #126 line Kennisbank > Kennisbank()/Kennisbank.graaf value   # graaf reads self.path itself, and hands self to _node
+line Kennisbank > Kennisbank()/Kennisbank.graaf value   # graaf reads self.path itself, and hands self to _node
 line Kennisbank > Kennisbank()/Kennisbank.graaf/Kennisbank._row value
 
 line Bron·bron > Kennisbank()/Kennisbank.voeg_toe/Kennisbank._write value                    # what it is handed: `bron.uuid`, `bron.url` glue `bron` in

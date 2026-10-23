@@ -22,7 +22,6 @@ line entry > Kennisbank()/Kennisbank.graaf call
 # beyond, taken where a body reads its fields or calls on it
 line Kennisbank()/Kennisbank() > Kennisbank@Kennisbank()/Kennisbank() value
 line Kennisbank > Kennisbank()/Kennisbank.voegToe/Kennisbank.write value
-known #126 line Kennisbank > Kennisbank()/Kennisbank.graaf value   # graaf reads self.path itself, and hands self to _node
 line Kennisbank > Kennisbank()/Kennisbank.graaf/Kennisbank.node value
 line Kennisbank > Kennisbank()/Kennisbank.graaf/Graaf() value # `readFileSync(this.path, ..)` in what it is handed
 

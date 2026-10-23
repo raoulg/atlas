@@ -33,6 +33,7 @@ line main/Ledger.takeVictim > Ledger·ledger@main/Ledger.takeVictim value
 line main/addLine/push > _·lines@main/addLine/push value
 line main/Map() > _·m@main/Map() value
 known #128 line _·m@main/Map() > main/count/set value                    # the Map `count` is handed, which its `set` changes: `m` is a parameter of no type of the code's
+known #128 extra line _·m@main/Map() > main/count value                     # so what count is handed rests at its own arrow
 line main/count/set > _·m@main/count/set value
 line main/fileAll/for e of expenses > Expense·e@main/fileAll/for e of expenses value
 line Expense·e@main/fileAll/for e of expenses > main/fileAll value       # `e.category = ..` in the body

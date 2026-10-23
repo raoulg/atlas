@@ -11,7 +11,7 @@ known #125 extra step lines/Trimmed.read/Source.read/response.read              
 
 line entry > lines call
 line Trimmed·source > lines value
-known #128 line Trimmed·source > lines/Trimmed.read/Source.read/urlopen value         # `urlopen(self.url)`
+line Trimmed·source > lines/Trimmed.read/Source.read/urlopen value         # `urlopen(self.url)`
 line lines/Trimmed.read/Source.read/urlopen > _·response@lines/Trimmed.read/Source.read/urlopen value
 line _·response@lines/Trimmed.read/Source.read/urlopen > lines/Trimmed.read/Source.read value   # `response.read()`
 line lines/Trimmed.read/Source.read > Web own
@@ -19,10 +19,7 @@ line lines/Trimmed.read/Source.read > lines/Trimmed.read back
 line lines/Trimmed.read > lines back
 
 # the source `Source.read` is handed rests at its own arrow, and `urlopen` takes the signature's type from beyond
-known #128 extra line Trimmed·source > lines/Trimmed.read/Source.read value
-known #128 extra line Source > lines/Trimmed.read/Source.read/urlopen value
 known #125 extra line _·response@lines/Trimmed.read/Source.read/urlopen > lines/Trimmed.read/Source.read/response.read value
-known #128 extra home Source lines
 
 home Trimmed·source lines
 home _·response@lines/Trimmed.read/Source.read/urlopen lines/Trimmed.read/Source.read

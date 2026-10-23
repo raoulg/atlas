@@ -36,8 +36,8 @@ line Settings·settings@run/Settings() > run/smooth value          # `settings.m
 line run/smooth > DataFrame·frame@run/smooth value
 line Settings·settings@run/Settings() > run/Trend() value
 line run/Trend() > Trend@run/Trend() value                        # `Trend(settings).save(..)`: no name holds it
-known #126 line Trend@run/Trend() > run/Trend.save value   # save's own body reads `self.settings.dpi`; the body uses it itself, and a step inside takes it too
-known #126 line Trend@run/Trend() > run/Trend.save/Trend.draw value   # draw's own calls read `self.settings`
+line Trend@run/Trend() > run/Trend.save value   # save's own body reads `self.settings.dpi`; the body uses it itself, and a step inside takes it too
+line Trend@run/Trend() > run/Trend.save/Trend.draw value   # draw's own calls read `self.settings`
 line Trend@run/Trend() > run/Trend.save/Trend.draw/Figure value   # `Figure(figsize=self.settings.size, ..)`
 line DataFrame·frame@run/smooth > run/Trend.save/Trend.draw value
 line run/Trend.save/Trend.draw/Figure > Figure·figure@run/Trend.save/Trend.draw/Figure value

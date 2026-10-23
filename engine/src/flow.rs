@@ -12,7 +12,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use indexmap::IndexMap;
 use serde::Serialize;
 
-use crate::model::{Db, Dir, Edge, EdgeKind, Graph, Held, Node, NodeKind, Site, Touch, World};
+use crate::model::{Db, Dir, Edge, EdgeKind, Graph, Held, Leaves, Node, NodeKind, Site, Touch, World};
 
 /// Wire the steps of every body: a call written inside another call hands it its result, under
 /// the name the body gives it or, without one, under the step's own (`#n`, unique in the graph);
@@ -505,7 +505,8 @@ pub struct Arrow {
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub gives_back: bool,
     /// What it gives back on success is a value, not a unit: a value with no place of its own (a
-    /// `str`) goes back to the step that called it.
+    /// `str`) goes back to the step that called it. A signature that says nothing of it, where its
+    /// language leaves that to the author, gives back a value where a caller uses what it gives.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub returns_value: bool,
     /// The places where it reads only what it wrote, its body and what it calls in the order they
@@ -752,7 +753,8 @@ fn arrow_of(ix: &Ix, n: &Node, done: &mut Memo) -> Arrow {
     }
     let ctor = n.ctor;
     let gives = ix.targets(&n.id, EdgeKind::Returns);
-    let returns_value = n.returns.as_ref().map_or(false, |r| !r.value.is_empty());
+    // a function whose signature does not say what it gives back gives back a value where its callers use one
+    let returns_value = n.returns.as_ref().map_or(false, |r| !r.value.is_empty()) || (ix.unsaid(n) && ix.used(&n.id));
     Arrow {
         receiver: n.cls.clone().filter(|_| !ctor && !n.on_class).unwrap_or_default(),
         takes: ix.targets(&n.id, EdgeKind::Takes),
@@ -797,7 +799,9 @@ pub fn arrows(g: &Graph) -> BTreeMap<String, Arrow> {
 /// What a body's steps make that it may give back: the class a step builds, else what the function it runs gives back,
 /// where that is of a type the function itself gives (`n`'s `returns`, a kind or a variant of one, or a type its written
 /// return names: the error of a `Result<T, E>`, `T + E`), or an error its own calls raise or hand on. A value of another
-/// type its steps make is no part of what it gives back: a function that gives back a number is made of none of them.
+/// type its steps make is no part of what it gives back: a function that gives back a number is made of none of them. A
+/// signature that says nothing of what it gives back, whose callers use what it gives (`Arrow::returns_value`), rules out
+/// no type.
 fn made_from(ix: &Ix, n: &Node, body: &Body) -> Vec<String> {
     let mut gives = ix.targets(&n.id, EdgeKind::Returns);
     for s in &n.sites {
@@ -811,8 +815,12 @@ fn made_from(ix: &Ix, n: &Node, body: &Body) -> Vec<String> {
     let written: HashSet<&str> =
         n.returns.as_ref().map_or("", |r| r.written.as_str()).split(|c: char| !(c.is_alphanumeric() || c == '_')).collect();
     let names = |t: &str| ix.nodes.get(t).map_or(false, |c| written.contains(c.name.as_str()));
+    // a signature that says nothing of what it gives back rules out no type: every type is one of the unchecked one's
+    let unsaid = ix.unsaid(n) && ix.used(&n.id);
     let of = |t: &str| {
-        names(t) || gives.iter().any(|g| t == g || ix.mro(t).contains(&g.as_str()) || ix.out(g, EdgeKind::Variant).any(|e| e.dst == t))
+        unsaid
+            || names(t)
+            || gives.iter().any(|g| t == g || ix.mro(t).contains(&g.as_str()) || ix.out(g, EdgeKind::Variant).any(|e| e.dst == t))
     };
     let mut callees: Vec<&str> = vec![];
     for t in body.steps().into_iter().map(|s| s.to.as_str()).chain(body.alts.iter().map(|k| split(k).0)) {
@@ -961,6 +969,8 @@ struct Ix<'g> {
     into: HashMap<&'g str, Vec<&'g Edge>>,
     /// Each class's method resolution order, worked out once.
     mro: RefCell<HashMap<&'g str, Vec<&'g str>>>,
+    /// What each part's language leaves its author to write, by the part's id, the first part's for a node of none.
+    leaves: Vec<(&'g str, Leaves)>,
 }
 
 impl<'g> Ix<'g> {
@@ -971,7 +981,23 @@ impl<'g> Ix<'g> {
             out.entry(e.src.as_str()).or_default().push(e);
             into.entry(e.dst.as_str()).or_default().push(e);
         }
-        Ix { nodes: g.nodes.iter().map(|n| (n.id.as_str(), n)).collect(), out, into, mro: RefCell::default() }
+        let leaves = g.parts.iter().map(|p| (p.id.as_str(), p.leaves)).collect();
+        Ix { nodes: g.nodes.iter().map(|n| (n.id.as_str(), n)).collect(), out, into, mro: RefCell::default(), leaves }
+    }
+
+    /// Whether `n`'s signature does not say what it gives back: its language leaves that to the author, and the author
+    /// left it out or wrote the unchecked type. A constructor gives its class.
+    fn unsaid(&self, n: &Node) -> bool {
+        let leaves = self.leaves.iter().find(|(p, _)| *p == n.part).or(self.leaves.first()).map_or(Leaves::default(), |(_, l)| *l);
+        matches!(n.kind, NodeKind::Function | NodeKind::Method)
+            && leaves.returns
+            && !n.ctor
+            && !n.returns.as_ref().map_or(false, crate::model::Returns::says)
+    }
+
+    /// Whether a caller uses what a call of `id` gives back.
+    fn used(&self, id: &str) -> bool {
+        self.into.get(id).into_iter().flatten().any(|e| e.kind == EdgeKind::Calls && e.uses)
     }
 
     fn out(&self, id: &str, kind: EdgeKind) -> impl Iterator<Item = &'g Edge> + '_ {
