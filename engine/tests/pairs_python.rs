@@ -1760,7 +1760,7 @@ fn cooperative_super_runs_the_next_method_along_the_value_s_order() {
         ("news.sources.Source.read", [atlas_engine::flow::key("news.sources.Cached.read", "news.sources.Feed")].as_slice())
     );
     let r = route(&cooperative().clean, "news.read.lines");
-    assert!(r.contains("Source.read() → bytes   ·   calls self.url   ·   one of 1") && r.contains("1.1a  Cached.read()"), "{r}");
+    assert!(r.contains("Source.read() → bytes   ·   downloads self.url   ·   one of 1") && r.contains("1.1a  Cached.read()"), "{r}");
     let r = route(&cooperative().shortcut, "news.read.lines");
     assert!(!r.contains("one of") && !r.contains("Cached.read"), "{r}");
 }
@@ -1804,4 +1804,23 @@ fn diamond_the_file_a_feed_reads_is_named_where_it_is_built() {
         let r = route(g, "news.read.headlines");
         assert!(r.contains("reads {cache}/"), "{side}: {r}");
     }
+}
+
+/// A request goes the way its method says, and urllib says the method by what a request is handed
+/// (#160): `urlopen(url)` without data is a `GET`, which takes what the feed holds; handed data it is
+/// a `POST`, which leaves something there; a `Request(..)` it opens goes by the `method` it is built
+/// with. The clean client says the way of each request. The shortcut's `call` is handed data that may
+/// be `None` and its `remove` builds its request with a method that is a value: the code does not say
+/// which way either goes, so the feed is in neither domain nor codomain. Its `latest` still asks.
+#[test]
+fn ways_a_request_goes_the_way_its_data_says() {
+    use atlas_engine::flow::Side;
+    let ways = common::pair("ways/python");
+    let side = |g: &Graph, f: &str| -> Vec<Side> { touches(g, f, "net").into_iter().map(|t| t.side()).collect() };
+    assert_eq!(side(&ways.clean, "feeds.latest"), [Side::In], "a GET reads");
+    assert_eq!(side(&ways.clean, "feeds.post"), [Side::Out], "a request handed data writes");
+    assert_eq!(side(&ways.clean, "feeds.remove"), [Side::Out], "a Request built with DELETE writes");
+    assert_eq!(side(&ways.shortcut, "feeds.latest"), [Side::In], "a GET reads");
+    assert_eq!(side(&ways.shortcut, "feeds.call"), [Side::Open], "data that may be None says no way");
+    assert_eq!(side(&ways.shortcut, "feeds.remove"), [Side::Open], "a method that is a value says no way");
 }

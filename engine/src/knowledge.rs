@@ -930,6 +930,32 @@ pub fn reaches(pkg: &str, from: Option<Registry>) -> Option<World> {
 /// What a request does that moves data, beside its HTTP method: send one, stream one, open a URL.
 pub const REQUESTS: &[&str] = &["request", "send", "stream", "urlopen", "urlretrieve"];
 
+/// A request whose method is what the call is handed, as its library says, not its name: urllib's
+/// `urlopen(url, data=None)` and `urlretrieve(url, filename, reporthook, data)` send a `GET`, and a
+/// `POST` where they are handed data to send; a `Request(url, data, .., method=None)` opened by
+/// `urlopen` goes as its own `method` says, else by its data alike. The operation, the place and
+/// keyword of its data, and the keyword of its method where it has one.
+pub struct RequestByData {
+    pub op: &'static str,
+    pub data: (usize, &'static str),
+    pub method: Option<&'static str>,
+}
+
+pub const REQUESTS_BY_DATA: &[RequestByData] = &[
+    RequestByData { op: "urlopen", data: (1, "data"), method: None },
+    RequestByData { op: "urlretrieve", data: (3, "data"), method: None },
+    RequestByData { op: "Request", data: (1, "data"), method: Some("method") },
+];
+
+/// The method a request goes by that sends no data, and the one that sends it (`REQUESTS_BY_DATA`).
+pub const REQUEST_WITHOUT_DATA: &str = "get";
+pub const REQUEST_WITH_DATA: &str = "post";
+
+/// The request an operation of `REQUESTS_BY_DATA` sends, by its name as the code writes it.
+pub fn request_by_data(op: &str) -> Option<&'static RequestByData> {
+    REQUESTS_BY_DATA.iter().find(|r| r.op == op)
+}
+
 /// A socket's connecting, sending and receiving: the network calls that are handed no URL.
 pub const SOCKET_OPS: &[&str] = &["connect", "send", "sendall", "sendto", "recv", "recvfrom", "recv_into"];
 

@@ -1,0 +1,25 @@
+# A request goes the way its method says (#160). urllib says the method by what a request is handed: `urlopen(url)`
+# without data is a `GET`, which takes what the feed holds; handed data it is a `POST`, which leaves the data there; a
+# `Request(..)` it opens goes by the `method` it is built with. What `urlopen` gives is used in the body's own code
+# (`.read()`, returned), so `latest` takes from the feed. No call of these bodies is a step: none names what it gives.
+
+route feeds.latest
+line entry > latest call
+line Web(feeds.example.org) > latest own        # return urlopen(FEED).read()
+
+side entry left
+side Web(feeds.example.org) left
+
+route feeds.post
+line entry > post call
+line post > Web(feeds.example.org) own          # urlopen(FEED, data=item.encode())
+
+side entry left
+side Web(feeds.example.org) right
+
+route feeds.remove
+line entry > remove call
+line remove > Web(feeds.example.org) own        # urlopen(Request(.., method="DELETE"))
+
+side entry left
+side Web(feeds.example.org) right

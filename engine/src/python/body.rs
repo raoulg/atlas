@@ -1731,13 +1731,51 @@ fn crossed<'t>(
                 return Crossed { waiting: vec![(t, built)], said: said.map(|d| (cr.facts.kind, d)), handed, ..Default::default() };
             }
             // a request is its method and its URL, whole where the callers make it, as a path is
-            let request = url.filter(|_| lib.map_or(false, effects::network)).map(|a| crate::paths::request_of(op, eval.of(at, a, 0)));
+            let request = url.filter(|_| lib.map_or(false, effects::network)).map(|a| {
+                let (way, a) = sent(seen, c, a, op);
+                crate::paths::request_of(&way, eval.of(at, a, 0))
+            });
             if let (Some(built), Some(t)) = (request, cr.touches(said).into_iter().next()) {
                 return Crossed { waiting: vec![(t, built)], said: said.map(|d| (cr.facts.kind, d)), handed, ..Default::default() };
             }
             Crossed { touches: cr.touches(said), said: said.map(|d| (cr.facts.kind, d)), handed, ..Default::default() }
         }
     }
+}
+
+/// The method a request `op` goes by, with the URL it asks for, where its library says the method by
+/// what the call is handed (`knowledge::REQUESTS_BY_DATA`): a `Request(..)` built in place where the
+/// call opens one, by that one's `method` or data and with its URL; else the call's own name.
+fn sent<'t>(seen: &Seen, c: TsNode<'t>, url: TsNode<'t>, op: &str) -> (String, TsNode<'t>) {
+    let src = &seen.m.src;
+    let Some(by) = knowledge::request_by_data(op) else { return (op.to_string(), url) };
+    let built = (url.kind() == "call").then(|| dotted(url.child_by_field_name("function"), src).last().cloned()).flatten();
+    if let Some(inner) = built.as_deref().and_then(knowledge::request_by_data).filter(|r| r.method.is_some()) {
+        if let Some(u) = keyword_node(url, src, knowledge::ASKED_BY[0]).or_else(|| positional_at(url, 0)) {
+            return (way_by_data(seen, url, inner).unwrap_or_else(|| op.to_string()), u);
+        }
+    }
+    (way_by_data(seen, c, by).unwrap_or_else(|| op.to_string()), url)
+}
+
+/// The method a call of `by` says by what it is handed: the method it is handed as a literal, else a
+/// `GET` where it is handed no data (none, or `None` written), a `POST` where what it is handed is
+/// never `None` (a literal, or a value of a type without `None` as ty says), and none where it may
+/// be or the method is a value: the code does not say which way the request goes.
+fn way_by_data(seen: &Seen, c: TsNode, by: &knowledge::RequestByData) -> Option<String> {
+    let src = &seen.m.src;
+    if let Some(m) = by.method.and_then(|k| keyword_node(c, src, k)) {
+        return (m.kind() == "string").then(|| unquote(text(m, src)).to_lowercase());
+    }
+    let Some(data) = keyword_node(c, src, by.data.1).or_else(|| positional_at(c, by.data.0)) else {
+        return Some(knowledge::REQUEST_WITHOUT_DATA.to_string());
+    };
+    if data.kind() == "none" {
+        return Some(knowledge::REQUEST_WITHOUT_DATA.to_string());
+    }
+    let literal = matches!(data.kind(), "string" | "concatenated_string" | "integer" | "float" | "list" | "dictionary" | "tuple");
+    let typed = seen.facts.and_then(|f| f.value(Seen::range(data))).map(|v| v.shown.split('|').all(|p| p.trim() != "None"));
+    (literal || typed == Some(true)).then(|| knowledge::REQUEST_WITH_DATA.to_string())
 }
 
 /// The files a file call touches, each a touch with its direction, what the code calls it (the
