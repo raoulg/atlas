@@ -1181,7 +1181,8 @@ impl Graph {
 
     /// Every id the graph holds, mapped by `to`: each node's own, and each that names a node (its
     /// module, class and part, the method whose promise it breaks, what its prophecy replaces or may
-    /// replace, what its calls reach and the types they hand and give, whose calls make its touches
+    /// replace, what its calls reach and the types they hand and give, the values its own code uses,
+    /// binds and sets and the error it hands on, a value named by its step, whose calls make its touches
     /// whole and whose code decides where they go), an edge's ends, a make target's own with its
     /// Makefile, its part and what it runs, the parts and the root.
     pub fn rename(&mut self, to: &dyn Fn(&str) -> String) {
@@ -1189,6 +1190,16 @@ impl Graph {
             if !s.is_empty() {
                 *s = to(s)
             }
+        };
+        // a value no name holds is named by the step that makes it, in the function it is made in: `#<function>@<where>`
+        let named = |s: &mut String| {
+            if let Some((f, at)) = s.strip_prefix('#').and_then(|r| r.rsplit_once('@')) {
+                *s = format!("#{}@{at}", to(f));
+            }
+        };
+        let held = |h: &mut Held| {
+            m(&mut h.ty);
+            named(&mut h.name);
         };
         m(&mut self.root);
         self.parts.iter_mut().for_each(|p| m(&mut p.id));
@@ -1205,9 +1216,17 @@ impl Graph {
                 m(&mut s.on);
                 m(&mut s.after);
                 s.fails.iter_mut().for_each(&m);
-                s.hands.iter_mut().chain(s.gives.iter_mut()).for_each(|h| m(&mut h.ty));
+                s.hands.iter_mut().chain(s.gives.iter_mut()).for_each(held);
             }
-            n.uses.iter_mut().for_each(|u| m(&mut u.ty));
+            for u in n.uses.iter_mut().chain(n.binds.iter_mut()) {
+                m(&mut u.ty);
+                named(&mut u.name);
+            }
+            n.fails.iter_mut().for_each(&m);
+            for s in &mut n.sets {
+                held(&mut s.on);
+                s.from.iter_mut().for_each(held);
+            }
             for t in n.touches.iter_mut().chain(n.instead.iter_mut()) {
                 for f in &mut t.by {
                     *f = f.split('&').map(to).collect::<Vec<_>>().join("&");
