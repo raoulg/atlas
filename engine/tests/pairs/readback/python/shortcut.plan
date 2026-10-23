@@ -9,7 +9,7 @@ step run/Ledger.keep/connect                                # `con = duckdb.conn
 
 line entry > run call
 line run/Ledger() > Ledger@run/Ledger() value
-known #126 line Ledger@run/Ledger() > run/Ledger.keep value   # its own body changes it (`self.kept +=`) besides handing it to connect
+line Ledger@run/Ledger() > run/Ledger.keep value   # its own body changes it (`self.kept +=`) besides handing it to connect
 line run/Ledger.keep > Ledger@run/Ledger.keep value         # keep changes the ledger it runs on (`self.kept +=`)
 line run/Ledger.keep/connect > DuckDBPyConnection·con@run/Ledger.keep/connect value
 line Ledger@run/Ledger() > run/Ledger.keep/connect value   # `duckdb.connect(self.path)` hands the ledger

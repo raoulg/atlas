@@ -12,7 +12,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use indexmap::IndexMap;
 use serde::Serialize;
 
-use crate::model::{Db, Dir, Edge, EdgeKind, Graph, Held, Node, NodeKind, Site, Touch, World};
+use crate::model::{Db, Dir, Edge, EdgeKind, Graph, Held, Leaves, Node, NodeKind, Site, Touch, World};
 
 /// Wire the steps of every body: a call written inside another call hands it its result, under
 /// the name the body gives it or, without one, under the step's own (`#n`, unique in the graph);
@@ -505,7 +505,8 @@ pub struct Arrow {
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub gives_back: bool,
     /// What it gives back on success is a value, not a unit: a value with no place of its own (a
-    /// `str`) goes back to the step that called it.
+    /// `str`) goes back to the step that called it. A signature that says nothing of it, where its
+    /// language leaves that to the author, gives back a value where a caller uses what it gives.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub returns_value: bool,
     /// The places where it reads only what it wrote, its body and what it calls in the order they
@@ -526,6 +527,20 @@ pub struct Arrow {
     /// own or a base's. A step that builds the class runs that body, and none of its methods.
     #[serde(skip_serializing_if = "String::is_empty")]
     pub runs: String,
+    /// What it does at places where it runs on a value of a known class, by the class, where that differs from what it
+    /// does on a value of any class it may be: there a `super()` call, or a call on its receiver, runs one method.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub on: BTreeMap<String, Orders>,
+}
+
+/// What a body does at places as a route reads it: where it reads only what it wrote, and where it writes on what it found
+/// (`Arrow::reads_back`, `Arrow::updates`).
+#[derive(Serialize, Clone, Debug, Default, PartialEq)]
+pub struct Orders {
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub reads_back: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub updates: Vec<String>,
 }
 
 /// What a function does at one place, in the order it runs: whether it reads what was there before
@@ -554,18 +569,20 @@ struct Memo {
 /// The most rounds a recursive cycle is worked out in.
 const ROUNDS: usize = 8;
 
-/// What `id` does at each place, its own touches and its calls in line order (`Memo`). Its
-/// calls in a loop run again after what follows them there. A read reads back
+/// What `id` does at each place, run on a value of class `on` (none where that is not known), its own touches and its
+/// calls in line order (`Memo`, by the body's `key`): on a known class a call on the body's receiver or a `super()` call
+/// runs the one method that class runs. Its calls in a loop run again after what follows them there. A read reads back
 /// what was written when the write ran whenever it did: unconditionally, or in an arm of a choice
 /// the read is in too; a write in one arm says nothing of a read outside it. Without `done`, its
 /// own body alone, its calls left out.
-fn orders(ix: &Ix, id: &str, mut done: Option<&mut Memo>) -> BTreeMap<String, Order> {
+fn orders(ix: &Ix, id: &str, on: &str, mut done: Option<&mut Memo>) -> BTreeMap<String, Order> {
+    let k = key(id, on);
     if let Some(m) = done.as_deref_mut() {
-        if let Some(o) = m.done.get(id) {
+        if let Some(o) = m.done.get(&k) {
             return o.clone();
         }
-        if !m.open.insert(id.to_string()) {
-            return m.before.get(id).cloned().unwrap_or_default();
+        if !m.open.insert(k.clone()) {
+            return m.before.get(&k).cloned().unwrap_or_default();
         }
     }
     let Some(&n) = ix.nodes.get(id) else { return BTreeMap::new() };
@@ -579,8 +596,8 @@ fn orders(ix: &Ix, id: &str, mut done: Option<&mut Memo>) -> BTreeMap<String, Or
     let looped = |x: u32, y: u32| n.loop_lines.iter().any(|&(a, b)| a <= x.min(y) && x.max(y) <= b);
     enum Event<'n> {
         Touch(&'n Touch),
-        /// A call: what it may run, one of them, and whether it stands in an arm.
-        Call(Vec<String>, bool),
+        /// A call: what it may run, one of them, each on the class it runs on, and whether it stands in an arm.
+        Call(Vec<(String, String)>, bool),
     }
     // a place's shape is no content: what is read after it was made is what was there
     // a touch that stands for several calls runs on the line of each
@@ -593,7 +610,7 @@ fn orders(ix: &Ix, id: &str, mut done: Option<&mut Memo>) -> BTreeMap<String, Or
         .flat_map(|t| std::iter::once(t.line).chain(t.also_at.iter().copied()).map(move |l| (l, Event::Touch(t))))
         .collect();
     if done.is_some() {
-        events.extend(n.sites.iter().filter(|s| !s.to.is_empty()).map(|s| (s.line, Event::Call(ix.may_run(s), !s.arms.is_empty()))));
+        events.extend(n.sites.iter().filter(|s| !s.to.is_empty()).map(|s| (s.line, Event::Call(ix.may_run(s, on), !s.arms.is_empty()))));
     }
     // on one line what is read comes first, then the calls, then what is written: `x ??= v` reads
     // `x` before it may write it, `y = f(x)` calls `f` before `y` is written
@@ -615,7 +632,7 @@ fn orders(ix: &Ix, id: &str, mut done: Option<&mut Memo>) -> BTreeMap<String, Or
                 let writes = t.dir == Some(Dir::Write);
                 vec![(t.place().id, Order { finds: !writes, writes, always_writes: writes, ..Order::default() })]
             }
-            Event::Call(to, _) => one_of(to.iter().map(|t| orders(ix, t, done.as_deref_mut())).collect()).into_iter().collect(),
+            Event::Call(to, _) => one_of(to.iter().map(|(t, c)| orders(ix, t, c, done.as_deref_mut())).collect()).into_iter().collect(),
         };
         let conditional = match e {
             Event::Touch(_) => at.is_some(),
@@ -654,8 +671,8 @@ fn orders(ix: &Ix, id: &str, mut done: Option<&mut Memo>) -> BTreeMap<String, Or
         }
     }
     if let Some(m) = done {
-        m.open.remove(id);
-        m.done.insert(id.to_string(), out.clone());
+        m.open.remove(&k);
+        m.done.insert(k, out.clone());
     }
     out
 }
@@ -710,20 +727,38 @@ impl<'g> Ix<'g> {
         self.runs(class).map_or(vec![], |c| self.targets(&c, EdgeKind::Takes))
     }
 
-    /// The functions a call may run, one of them, where the class of the value its body runs on is not known
-    /// (`body_of`, read without the classes): the method a known class runs for it, the next method of a `super()` call
-    /// along each class it may be, or the method a call by name reaches and its overrides.
-    fn may_run(&self, s: &Site) -> Vec<String> {
-        let Some(m) = self.nodes.get(s.to.as_str()).filter(|m| m.cls.is_some()) else { return vec![s.to.clone()] };
-        let mut out: Vec<String> = if !s.after.is_empty() {
-            let first = self.method_after(&s.after, &s.after, &m.name).unwrap_or_else(|| s.to.clone());
-            std::iter::once(first).chain(self.below(&s.after).iter().filter_map(|d| self.method_after(d, &s.after, &m.name))).collect()
-        } else if s.named {
-            vec![s.to.clone()]
-        } else if !s.on.is_empty() {
-            vec![self.method_on(&s.on, &m.name).unwrap_or_else(|| s.to.clone())]
+    /// The functions a call in a body run on class `on` may run, one of them, each with the class it runs on, as
+    /// `body_of` reads it: on a known class (the one the call names, or the body's own for a call on its receiver) the
+    /// method that class runs for it, or the next method of a `super()` call along its order; where the class is not
+    /// known, the next method of a `super()` call along each class it may be, or the method a call by name reaches and
+    /// its overrides.
+    fn may_run(&self, s: &Site, on: &str) -> Vec<(String, String)> {
+        let Some(m) = self.nodes.get(s.to.as_str()).filter(|m| m.cls.is_some()) else { return vec![(s.to.clone(), String::new())] };
+        let runs_on = if !s.on.is_empty() {
+            s.on.as_str()
+        } else if s.on_receiver {
+            on
         } else {
-            std::iter::once(s.to.clone()).chain(self.overrides(m).iter().map(|k| split(k).0.to_string())).collect()
+            ""
+        };
+        let at = |f: Option<String>, c: &str| (f.unwrap_or_else(|| s.to.clone()), c.to_string());
+        let mut out: Vec<(String, String)> = if !s.after.is_empty() && !runs_on.is_empty() {
+            vec![at(self.method_after(runs_on, &s.after, &m.name), runs_on)]
+        } else if !s.after.is_empty() {
+            std::iter::once(at(self.method_after(&s.after, &s.after, &m.name), ""))
+                .chain(self.below(&s.after).iter().filter_map(|d| self.method_after(d, &s.after, &m.name).map(|r| (r, d.clone()))))
+                .collect()
+        } else if s.named {
+            vec![(s.to.clone(), runs_on.to_string())]
+        } else if !runs_on.is_empty() {
+            vec![at(self.method_on(runs_on, &m.name), runs_on)]
+        } else {
+            std::iter::once((s.to.clone(), String::new()))
+                .chain(self.overrides(m).iter().map(|k| {
+                    let (f, c) = split(k);
+                    (f.to_string(), c.to_string())
+                }))
+                .collect()
         };
         let mut seen = HashSet::new();
         out.retain(|f| seen.insert(f.clone()));
@@ -744,15 +779,16 @@ fn arrow_of(ix: &Ix, n: &Node, done: &mut Memo) -> Arrow {
     // reads back of what it wrote
     if n.kind == NodeKind::Module {
         return Arrow {
-            reads_back: reads_back(orders(ix, &n.id, Some(done))),
-            own_reads_back: reads_back(orders(ix, &n.id, None)),
-            updates: updates(orders(ix, &n.id, Some(done))),
+            reads_back: reads_back(orders(ix, &n.id, "", Some(done))),
+            own_reads_back: reads_back(orders(ix, &n.id, "", None)),
+            updates: updates(orders(ix, &n.id, "", Some(done))),
             ..Default::default()
         };
     }
     let ctor = n.ctor;
     let gives = ix.targets(&n.id, EdgeKind::Returns);
-    let returns_value = n.returns.as_ref().map_or(false, |r| !r.value.is_empty());
+    // a function whose signature does not say what it gives back gives back a value where its callers use one
+    let returns_value = n.returns.as_ref().map_or(false, |r| !r.value.is_empty()) || (ix.unsaid(n) && ix.used(&n.id));
     Arrow {
         receiver: n.cls.clone().filter(|_| !ctor && !n.on_class).unwrap_or_default(),
         takes: ix.targets(&n.id, EdgeKind::Takes),
@@ -770,34 +806,64 @@ fn arrow_of(ix: &Ix, n: &Node, done: &mut Memo) -> Arrow {
             names
         },
         returns_value,
-        reads_back: reads_back(orders(ix, &n.id, Some(done))),
-        own_reads_back: reads_back(orders(ix, &n.id, None)),
-        updates: updates(orders(ix, &n.id, Some(done))),
+        reads_back: reads_back(orders(ix, &n.id, "", Some(done))),
+        own_reads_back: reads_back(orders(ix, &n.id, "", None)),
+        updates: updates(orders(ix, &n.id, "", Some(done))),
         runs: String::new(),
+        on: BTreeMap::new(),
     }
 }
 
-/// The arrow of every function, method and class, and of a module, where its own code runs.
+/// The arrow of every function, method and class, and of a module, where its own code runs; of a method, also what it
+/// does at places on each class a route runs it on (`Arrow::on`).
 pub fn arrows(g: &Graph) -> BTreeMap<String, Arrow> {
     let ix = Ix::new(g);
     let kinds = |n: &&Node| matches!(n.kind, NodeKind::Module | NodeKind::Class | NodeKind::Function | NodeKind::Method);
+    // the bodies a route runs on a known class
+    let on: Vec<(String, String)> = bodies(g)
+        .into_keys()
+        .filter_map(|k| {
+            let (f, c) = split(&k);
+            (!c.is_empty()).then(|| (f.to_string(), c.to_string()))
+        })
+        .collect();
     let mut done = Memo::default();
     for round in 1..=ROUNDS {
         for n in g.nodes.iter().filter(kinds) {
-            orders(&ix, &n.id, Some(&mut done));
+            orders(&ix, &n.id, "", Some(&mut done));
+        }
+        for (f, c) in &on {
+            orders(&ix, f, c, Some(&mut done));
         }
         if done.done == done.before || round == ROUNDS {
             break;
         }
         done.before = std::mem::take(&mut done.done);
     }
-    g.nodes.iter().filter(kinds).map(|n| (n.id.clone(), arrow_of(&ix, n, &mut done))).filter(|(_, a)| *a != Arrow::default()).collect()
+    let mut out: BTreeMap<String, Arrow> = g.nodes.iter().filter(kinds).map(|n| (n.id.clone(), arrow_of(&ix, n, &mut done))).collect();
+    for (f, c) in &on {
+        let o = orders(&ix, f, c, Some(&mut done));
+        let at = Orders { reads_back: reads_back(o.clone()), updates: updates(o) };
+        if let Some(a) = out.get_mut(f).filter(|a| a.reads_back != at.reads_back || a.updates != at.updates) {
+            a.on.insert(c.clone(), at);
+        }
+    }
+    out.retain(|_, a| *a != Arrow::default());
+    out
+}
+
+/// For each class, the initializer building a value of it runs (`Arrow::runs`), its own or a base's.
+pub fn initializers(g: &Graph) -> HashMap<String, String> {
+    let ix = Ix::new(g);
+    g.nodes.iter().filter(|n| n.kind == NodeKind::Class).filter_map(|n| ix.runs(&n.id).map(|i| (n.id.clone(), i))).collect()
 }
 
 /// What a body's steps make that it may give back: the class a step builds, else what the function it runs gives back,
 /// where that is of a type the function itself gives (`n`'s `returns`, a kind or a variant of one, or a type its written
 /// return names: the error of a `Result<T, E>`, `T + E`), or an error its own calls raise or hand on. A value of another
-/// type its steps make is no part of what it gives back: a function that gives back a number is made of none of them.
+/// type its steps make is no part of what it gives back: a function that gives back a number is made of none of them. A
+/// signature that says nothing of what it gives back, whose callers use what it gives (`Arrow::returns_value`), rules out
+/// no type.
 fn made_from(ix: &Ix, n: &Node, body: &Body) -> Vec<String> {
     let mut gives = ix.targets(&n.id, EdgeKind::Returns);
     for s in &n.sites {
@@ -811,8 +877,12 @@ fn made_from(ix: &Ix, n: &Node, body: &Body) -> Vec<String> {
     let written: HashSet<&str> =
         n.returns.as_ref().map_or("", |r| r.written.as_str()).split(|c: char| !(c.is_alphanumeric() || c == '_')).collect();
     let names = |t: &str| ix.nodes.get(t).map_or(false, |c| written.contains(c.name.as_str()));
+    // a signature that says nothing of what it gives back rules out no type: every type is one of the unchecked one's
+    let unsaid = ix.unsaid(n) && ix.used(&n.id);
     let of = |t: &str| {
-        names(t) || gives.iter().any(|g| t == g || ix.mro(t).contains(&g.as_str()) || ix.out(g, EdgeKind::Variant).any(|e| e.dst == t))
+        unsaid
+            || names(t)
+            || gives.iter().any(|g| t == g || ix.mro(t).contains(&g.as_str()) || ix.out(g, EdgeKind::Variant).any(|e| e.dst == t))
     };
     let mut callees: Vec<&str> = vec![];
     for t in body.steps().into_iter().map(|s| s.to.as_str()).chain(body.alts.iter().map(|k| split(k).0)) {
@@ -961,6 +1031,8 @@ struct Ix<'g> {
     into: HashMap<&'g str, Vec<&'g Edge>>,
     /// Each class's method resolution order, worked out once.
     mro: RefCell<HashMap<&'g str, Vec<&'g str>>>,
+    /// What each part's language leaves its author to write, by the part's id, the first part's for a node of none.
+    leaves: Vec<(&'g str, Leaves)>,
 }
 
 impl<'g> Ix<'g> {
@@ -971,7 +1043,23 @@ impl<'g> Ix<'g> {
             out.entry(e.src.as_str()).or_default().push(e);
             into.entry(e.dst.as_str()).or_default().push(e);
         }
-        Ix { nodes: g.nodes.iter().map(|n| (n.id.as_str(), n)).collect(), out, into, mro: RefCell::default() }
+        let leaves = g.parts.iter().map(|p| (p.id.as_str(), p.leaves)).collect();
+        Ix { nodes: g.nodes.iter().map(|n| (n.id.as_str(), n)).collect(), out, into, mro: RefCell::default(), leaves }
+    }
+
+    /// Whether `n`'s signature does not say what it gives back: its language leaves that to the author, and the author
+    /// left it out or wrote the unchecked type. A constructor gives its class.
+    fn unsaid(&self, n: &Node) -> bool {
+        let leaves = self.leaves.iter().find(|(p, _)| *p == n.part).or(self.leaves.first()).map_or(Leaves::default(), |(_, l)| *l);
+        matches!(n.kind, NodeKind::Function | NodeKind::Method)
+            && leaves.returns
+            && !n.ctor
+            && !n.returns.as_ref().map_or(false, crate::model::Returns::says)
+    }
+
+    /// Whether a caller uses what a call of `id` gives back.
+    fn used(&self, id: &str) -> bool {
+        self.into.get(id).into_iter().flatten().any(|e| e.kind == EdgeKind::Calls && e.uses)
     }
 
     fn out(&self, id: &str, kind: EdgeKind) -> impl Iterator<Item = &'g Edge> + '_ {
@@ -1408,6 +1496,22 @@ mod tests {
         assert_eq!(arrows(&g)["news.read.lines"].updates, ["w:Disk:self.root / key", "w:Disk:{cache}/{url}"]);
         let g = crate::analyze(&at("shortcut"), &crate::Options::default()).expect("reads the pair");
         assert!(arrows(&g)["news.read.lines"].updates.is_empty(), "the shortcut's lines never reads the store");
+    }
+
+    /// A body run on a known class runs what that class runs (`tests/plans/next-method-on-a-class`): on a
+    /// `Feed(Trimmed, Logged)`, `Trimmed.read`'s `super().read()` runs `Logged.read`, which writes the log whenever it
+    /// runs, so the route reads back what its step wrote and changes nothing it found. On a value of any class a trimmed
+    /// source may be, the call may run `Source.read` instead, which writes no log.
+    #[test]
+    fn a_body_on_a_known_class_does_what_that_class_runs() {
+        let at = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/plans/next-method-on-a-class");
+        let g = crate::analyze(&at, &crate::Options::default()).expect("reads the program");
+        let run = &arrows(&g)["feeds.run"];
+        assert_eq!(
+            (run.reads_back.as_slice(), run.updates.as_slice()),
+            (["w:File:data/log.txt".to_string()].as_slice(), [].as_slice()),
+            "{run:?}"
+        );
     }
 
     /// `board = copy.copy(board)` makes the board it is handed anew: a step, no identity.

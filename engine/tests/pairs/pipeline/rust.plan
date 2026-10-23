@@ -70,25 +70,25 @@ line Record·result@main/load/for result in reader.deserialize() > main/load val
 # `Box<dyn Error>`, no type of the code's; each border it crosses uncaught hands it on, up to the route. An opened step
 # takes what its steps hand on, which Atlas does not draw for an error of no type of the code's.
 line main/download/text > _@main/download/text value
-known #138 line _@main/download/text > main/download value
+line _@main/download/text > main/download value
 home _@main/download/text main/download
 line main/download > _@main/download value
-known #138 line _@main/download > main value
+line _@main/download > main value
 home _@main/download main
 line main/load/from_path > _@main/load/from_path value
-known #138 line _@main/load/from_path > main/load value
+line _@main/load/from_path > main/load value
 home _@main/load/from_path main/load
 line main/load/?1/ok_or > _@main/load/?1 value                         # ok_or("bad date")?, in the arm after the guard
-known #138 line _@main/load/?1 > main/load value
-known #138 home _@main/load/?1 main/load
+line _@main/load/?1 > main/load value
+home _@main/load/?1 main/load
 line main/load > _@main/load value
-known #138 line _@main/load > main value
+line _@main/load > main value
 home _@main/load main
 line main/plot/build_cartesian_2d > _@main/plot/build_cartesian_2d value
-known #138 line _@main/plot/build_cartesian_2d > main/plot value
+line _@main/plot/build_cartesian_2d > main/plot value
 home _@main/plot/build_cartesian_2d main/plot
 line main/plot > _@main/plot value
-known #138 line _@main/plot > main value
+line _@main/plot > main value
 home _@main/plot main
 line main > _@main value
 home _@main main

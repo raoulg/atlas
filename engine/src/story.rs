@@ -165,6 +165,8 @@ struct Story<'g> {
     nodes: HashMap<&'g str, &'g Node>,
     out: HashMap<&'g str, Vec<&'g Edge>>,
     bodies: BTreeMap<String, Body>,
+    /// The initializer building each class runs (`flow::initializers`).
+    inits: HashMap<String, String>,
     /// The route's entry, and what it can run.
     entry: String,
     reached: HashSet<String>,
@@ -185,6 +187,7 @@ impl<'g> Story<'g> {
             nodes: g.nodes.iter().map(|n| (n.id.as_str(), n)).collect(),
             out,
             bodies: flow::bodies(g),
+            inits: flow::initializers(g),
             entry: String::new(),
             reached: Default::default(),
             parses: false,
@@ -298,34 +301,39 @@ impl<'g> Story<'g> {
             ));
             return;
         };
-        let k = flow::key(&st.to, &st.on);
-        let body = self.bodies.get(&k);
+        // building a class runs its initializer along its order and none of the class's methods, whether or not the class
+        // is a route of its own; a class built from its fields runs nothing
+        let built = n.kind == NodeKind::Class;
+        let runs = if built { self.inits.get(st.to.as_str()).map(String::as_str) } else { Some(st.to.as_str()) };
+        let runner = runs.and_then(|r| self.nodes.get(r).copied()).unwrap_or(n);
+        let k = flow::key(runs.unwrap_or(&st.to), &st.on);
+        let body = runs.and_then(|_| self.bodies.get(&k));
         let when = match when {
             "" => String::new(),
             "otherwise" => "   ·   otherwise".to_string(),
             w => format!("   ·   when {w}"),
         };
-        let inner: Vec<String> = path.iter().cloned().chain([st.to.clone()]).collect();
-        let seen = self.seen(&k, &st.to, &inner);
+        let inner: Vec<String> = path.iter().cloned().chain([runner.id.clone()]).collect();
+        let seen = self.seen(&k, &runner.id, &inner);
         if let Some(at) = shown.get(&seen).filter(|_| body.is_some()) {
             out.push_str(&format!("{indent}{num}  {}  → see {at}{when}\n", self.step_name(st)));
             return;
         }
         shown.insert(seen, num.to_string());
         let mut line = format!("{indent}{num}  {}{}", self.step_name(st), self.signature(n));
-        let effects = self.effects(n, Some(&inner));
+        let effects = self.effects(runner, Some(&inner));
         if !effects.is_empty() {
             line.push_str(&format!("   ·   {effects}"));
         }
-        let alts = st.alts(&self.bodies);
+        let alts = if built { &[][..] } else { st.alts(&self.bodies) };
         if !alts.is_empty() {
             line.push_str(&format!("   ·   one of {}", alts.len()));
         }
         line.push_str(&when);
         out.push_str(&line);
         out.push('\n');
-        if level + 1 < depth {
-            self.walk(&k, num, depth, shown, out, &inner, &st.runs_instead(&self.bodies));
+        if level + 1 < depth && body.is_some() {
+            self.walk(&k, num, depth, shown, out, &inner, &if built { vec![] } else { st.runs_instead(&self.bodies) });
         }
     }
 

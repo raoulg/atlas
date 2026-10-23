@@ -10,14 +10,11 @@ line File(cache/data.txt) > run own
 # one value at the choice's moment, and the route's border hands it on.
 choice run/?1                                                        # if CACHE.read_text() == ""
 step run/?1/RuntimeError()
-known #138 line run/?1/RuntimeError() > RuntimeError@run/?1 value
-known #138 line RuntimeError@run/?1 > run value
+line run/?1/RuntimeError() > RuntimeError@run/?1 value
+line RuntimeError@run/?1 > run value
 line run > RuntimeError@run value
-known #138 home RuntimeError@run/?1 run
+home RuntimeError@run/?1 run
 home RuntimeError@run run
-known #138 extra line run/?1/RuntimeError() > RuntimeError@run/?1/RuntimeError() value   # the constructor's moment, not the choice's
-known #138 extra line RuntimeError@run/?1/RuntimeError() > run value
-known #138 extra home RuntimeError@run/?1/RuntimeError() run
 
 side entry left
 side File(cache/data.txt) right

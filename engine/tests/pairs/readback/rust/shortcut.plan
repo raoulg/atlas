@@ -12,7 +12,7 @@ step main/Ledger.keep/collect   # H
 
 line entry > main call
 line main/Ledger() > Ledger·ledger@main/Ledger() value
-known #126 line Ledger·ledger@main/Ledger() > main/Ledger.keep value   # the body uses the instance itself, and a step inside takes it too
+line Ledger·ledger@main/Ledger() > main/Ledger.keep value   # the body uses the instance itself, and a step inside takes it too
 line main/Ledger.keep > Ledger·ledger@main/Ledger.keep value     # `&mut self`: keep changes the ledger
 line main/Ledger.keep/open > _·con@main/Ledger.keep/open value
 line Ledger·ledger@main/Ledger() > main/Ledger.keep/open value   # K
@@ -35,8 +35,8 @@ home _·stored@main/Ledger.keep/collect main/Ledger.keep   # H
 line main/Ledger.keep > _@main/Ledger.keep value
 line main/Ledger.keep/collect > _@main/Ledger.keep/collect value
 line main/Ledger.keep/open > _@main/Ledger.keep/open value
-known #138 line _@main/Ledger.keep/collect > main/Ledger.keep value
-known #138 line _@main/Ledger.keep/open > main/Ledger.keep value
+line _@main/Ledger.keep/collect > main/Ledger.keep value
+line _@main/Ledger.keep/open > main/Ledger.keep value
 home _@main/Ledger.keep main
 home _@main/Ledger.keep/collect main/Ledger.keep
 home _@main/Ledger.keep/open main/Ledger.keep

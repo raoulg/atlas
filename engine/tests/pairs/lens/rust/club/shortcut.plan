@@ -51,8 +51,8 @@ home Report@Register()/Register.latest Register()
 line Register()/Register.names > _@Register()/Register.names value
 line Register()/Register.names/prepare > _@Register()/Register.names/prepare value
 line Register()/Register.names/query_map > _@Register()/Register.names/query_map value
-known #138 line _@Register()/Register.names/prepare > Register()/Register.names value
-known #138 line _@Register()/Register.names/query_map > Register()/Register.names value
+line _@Register()/Register.names/prepare > Register()/Register.names value
+line _@Register()/Register.names/query_map > Register()/Register.names value
 home _@Register()/Register.names Register()
 home _@Register()/Register.names/prepare Register()/Register.names
 home _@Register()/Register.names/query_map Register()/Register.names
@@ -61,7 +61,8 @@ side entry left
 side SQLite(members) between
 side SQLite(reports) left
 
-# #126: an opened step's own arrow takes every class its steps build: latest gives back the Report, not its author
+# an opened step's own arrow gives back what its steps make of the type it gives: latest gives back the Report, not its
+# author
 # what names the statement and the rows it gives back are steps of their own (a library's operation whose result the
 # body names); `rows` goes on to `collect`, an unnamed call, and back to the caller
 step Register()/Register.names/prepare

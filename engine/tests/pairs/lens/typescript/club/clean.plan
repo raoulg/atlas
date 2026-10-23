@@ -16,7 +16,6 @@ line entry > Board()/Board.pin call
 line entry > Board()/Board.posts call
 line Board()/Board() > Board@Board()/Board() value
 line Board > Board()/Board.pin value # the caller's instance: every method runs on it
-known #126 line Board > Board()/Board.posts value   # the body reads this.path itself, and hands this to Notice()
 line Notice·notice > Board()/Board.pin value
 line Board > Board()/Board.posts/parse value # `readFileSync(this.path, ..)` in what `parse` is handed
 line Board()/Board.pin > Disk(Board.path) own
