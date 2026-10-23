@@ -41,6 +41,14 @@ line Job·job@run/source > run/report/?1/Message()#2 value           # its name,
 # whether it finished: a Runner for the mode, and the mode's timeout
 line Settings·settings > run/finished value   # finished looks up the mode's plan itself
 line Settings·settings > run/finished/Runner() value
+# `PLANS`, the module's table of plans by mode, is one value the module holds, from beyond (#171), as the Python pair's:
+# a `Record<Mode, Plan>` holds Plans by their Mode, a key choosing the Plan a lookup gives (#167); `run`
+# (`PLANS[settings.mode]`), `finished` (`PLANS[mode].timeout`) and the Runner's initializer (`this.plan = PLANS[mode]`)
+# read it in their own code
+line Plan·PLANS > run value
+line Plan·PLANS > run/finished value
+line Plan·PLANS > run/finished/Runner() value
+home Plan·PLANS run
 line run/finished/Runner() > Runner@run/finished/Runner() value
 line Runner@run/finished/Runner() > run/finished/Runner.batch value
 line run/finished/Runner.batch > run/finished back
@@ -50,6 +58,9 @@ line _@run/finished > run/report value
 # the line that says how it went: a Report for the level marks it in one arm, and the marked string goes into the
 # Message built around it
 line Settings·settings > run/report/?1/Report() value
+# `MARKS`, the module's table of marks by level, is from beyond too: `Report.line` reads it (`MARKS[this.level]`)
+line Marks·MARKS > run/report/?1/Report.line value
+home Marks·MARKS run
 line run/report/?1/Report() > Report@run/report/?1/Report() value
 line Report@run/report/?1/Report() > run/report/?1/Report.line value
 line run/report/?1/Report.line > _@run/report/?1/Report.line value

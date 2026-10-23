@@ -121,3 +121,24 @@ pub fn a_table_is_one_value(language: &str, id: &str) {
         "the modes and the plans are two values"
     );
 }
+
+/// The choices pair of `language`: what a mode means is one table the module keeps (`PLANS`), which the route's own code looks
+/// its mode up in, a value from beyond of the Plans the table holds by their Mode; the shortcut keeps no table and tests the
+/// mode in each function that needs it. A body's own code reads the module's table alike in every language (#171): each name
+/// the route `id` reads that is none of its parameters, by the type it holds.
+#[allow(dead_code)]
+pub fn a_module_s_table_is_a_value_the_body_reads(language: &str, id: &str) {
+    let choices = pair(&format!("choices/{language}"));
+    let modular = |g: &Graph| -> Vec<(String, String)> {
+        let f = g.node(id).unwrap_or_else(|| panic!("no node {id}"));
+        let declared = |name: &str| f.params.iter().any(|p| p.name == name);
+        let short = |t: &str| t.rsplit('.').next().unwrap_or(t).to_string();
+        f.uses
+            .iter()
+            .filter(|u| !u.ty.is_empty() && !u.name.is_empty() && !declared(&u.name))
+            .map(|u| (u.name.clone(), short(&u.ty)))
+            .collect()
+    };
+    assert_eq!(modular(&choices.clean), [("PLANS".to_string(), "Plan".to_string())], "the route looks its mode up in the module's table");
+    assert!(modular(&choices.shortcut).iter().all(|(n, _)| n != "PLANS"), "the shortcut keeps no table");
+}

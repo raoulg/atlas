@@ -607,8 +607,9 @@ values it pairs where it stands for one value (`-> (Config, Store)`); a collecti
 code does not name (`Vec<(NaiveDate, f64)>` holds no `NaiveDate`). A tuple of any length (`tuple[Station, ...]`) is a
 collection itself. A map holds its values by its keys, a family of lenses indexed by the key (Lenses): `dict[Mode, Plan]`,
 `HashMap<Mode, Plan>` and `Record<Mode, Plan>` are one value that holds Plans, the key choosing the Plan a lookup gives
-as an index chooses an element of a list, no value the map holds. What a parameter holds is what its type holds as its
-language reads it, never a name its type merely writes.
+as an index chooses an element of a list, no value the map holds. What a parameter or a value its module keeps holds is
+what its type holds as its language reads it, never a name its type merely writes: the module's `PLANS: Record<Mode,
+Plan>` is a value of Plans from beyond, as `PLANS: dict[Mode, Plan]` is.
 **Where.** `knowledge.rs`: `python_container`, `TYPESCRIPT_CONTAINERS`, `RUST_CONTAINERS`, the maps `PYTHON_MAPS`,
 `TYPESCRIPT_MAPS`, `RUST_MAPS`; `Param::holds`, read by `writesType` in `viewer/plan.js` and by the principles; the Rust reader's
 signatures (`rust/passes.rs`, `fixed_by_implementations`; `rust/module.rs`, `type_names`, with `RUST_COLLECTIONS`); `typescript/module.rs`, `type_names`, with `TYPESCRIPT_COLLECTIONS`; `python/module.rs`, `type_names`, and `pytypes::outer_classes`, with `python_collection`.
