@@ -57,7 +57,7 @@ step Kennisbank()/Kennisbank.graaf/Kennisbank._node/split
 line Kennisbank()/Kennisbank.graaf/Kennisbank._node/split > _·uuid@Kennisbank()/Kennisbank.graaf/Kennisbank._node/split value
 line Kennisbank()/Kennisbank.graaf/Kennisbank._node/split > _·soort@Kennisbank()/Kennisbank.graaf/Kennisbank._node/split value
 line Kennisbank()/Kennisbank.graaf/Kennisbank._node/split > _·tekst@Kennisbank()/Kennisbank.graaf/Kennisbank._node/split value
-known #101 line _·soort@Kennisbank()/Kennisbank.graaf/Kennisbank._node/split > Kennisbank()/Kennisbank.graaf/Kennisbank._node value   # `soort == "bron"` decides the choice
+line _·soort@Kennisbank()/Kennisbank.graaf/Kennisbank._node/split > Kennisbank()/Kennisbank.graaf/Kennisbank._node value   # `soort == "bron"` decides the choice
 line _·uuid@Kennisbank()/Kennisbank.graaf/Kennisbank._node/split > Kennisbank()/Kennisbank.graaf/Kennisbank._node/?1/Bron() value
 line _·tekst@Kennisbank()/Kennisbank.graaf/Kennisbank._node/split > Kennisbank()/Kennisbank.graaf/Kennisbank._node/?1/Bron() value
 line _·uuid@Kennisbank()/Kennisbank.graaf/Kennisbank._node/split > Kennisbank()/Kennisbank.graaf/Kennisbank._node/?1/Begrip() value

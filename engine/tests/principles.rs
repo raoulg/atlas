@@ -246,6 +246,11 @@ const REVIEWED: &[(&str, &str, &str)] = &[
     ),
     (
         "choices",
+        "atlas-engine.rust.body.link_calls",
+        "what the body's own code reads (`Steps::uses`): Rust writes the receiver as the keyword `self`, no name, and `hands` reads a bare `self` as the value a call by path runs on, so the receiver a use reads is the body's class; any other name is what `hands` says it holds",
+    ),
+    (
+        "choices",
         "atlas-engine.rust.paths.Eval.of",
         "`of` and `parsed` are two evaluations over different domains (the values an expression can have, the type a command line is parsed into) on the same kinds of expression",
     ),

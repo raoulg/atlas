@@ -9,7 +9,7 @@ step run/Audit()/stamp
 line entry > run call
 line run/Audit()/stamp > Disk(run.path) own
 line run/Audit() > Audit·audit@run/Audit() value
-known #101 line Audit·audit@run/Audit() > run value       # run prints a field of the audit it built
+line Audit·audit@run/Audit() > run value   # run prints a field of the audit it built
 line run > Screen own
 
 home Audit·audit@run/Audit() run

@@ -21,15 +21,15 @@ line entry > run call
 line run/Settings() > Settings·settings@run/Settings() value
 line Web(www.sidc.be) > run/?1/download own                       # the response is written to the file
 line run/?1/download/get > Response·response@run/?1/download/get value
-known #101 line Response·response@run/?1/download/get > run/?1/download value   # `raise_for_status()`, `.content`
+line Response·response@run/?1/download/get > run/?1/download value   # `raise_for_status()`, `.content`
 line run/?1/download > File(data/raw/sunspots.csv) own
-line run/?1/download > run back                                   # `return to`: the result goes on to its caller
+# `download(SILSO, raw)` is a statement: run throws away the path download gives back, so nothing goes back (#134)
 line File(data/raw/sunspots.csv) > run/load own
 line run/load/read_csv > DataFrame·table@run/load/read_csv value
 line DataFrame·table@run/load/read_csv > run/load/to_datetime value  # `table[..].assign(day=1)` goes into it
 line run/load/to_datetime > Series·first_days@run/load/to_datetime value
-known #101 line DataFrame·table@run/load/read_csv > run/load value              # `table.set_index(first_days)..` is returned
-known #101 line Series·first_days@run/load/to_datetime > run/load value
+line DataFrame·table@run/load/read_csv > run/load value   # `table.set_index(first_days)..` is returned
+line Series·first_days@run/load/to_datetime > run/load value
 line run/load > DataFrame@run/load value                          # `smooth(load(raw), ..)`: no name holds it
 line DataFrame@run/load > run/smooth value   # `rolling`, no step, is the body's own use
 line Settings·settings@run/Settings() > run/smooth value          # `settings.months`
@@ -43,10 +43,10 @@ line DataFrame·frame@run/smooth > run/Trend.save/Trend.draw value
 line run/Trend.save/Trend.draw/Figure > Figure·figure@run/Trend.save/Trend.draw/Figure value
 line Figure·figure@run/Trend.save/Trend.draw/Figure > run/Trend.save/Trend.draw/add_subplot value
 line run/Trend.save/Trend.draw/add_subplot > Axes·ax@run/Trend.save/Trend.draw/add_subplot value
-known #101 line Axes·ax@run/Trend.save/Trend.draw/add_subplot > run/Trend.save/Trend.draw value  # `ax.plot(..)`, ..
-known #101 line Figure·figure@run/Trend.save/Trend.draw/Figure > run/Trend.save/Trend.draw value  # `return figure`
+line Axes·ax@run/Trend.save/Trend.draw/add_subplot > run/Trend.save/Trend.draw value   # `ax.plot(..)`, ..
+line Figure·figure@run/Trend.save/Trend.draw/Figure > run/Trend.save/Trend.draw value   # `return figure`
 line run/Trend.save/Trend.draw > Figure·figure@run/Trend.save/Trend.draw value
-known #101 line Figure·figure@run/Trend.save/Trend.draw > run/Trend.save value   # `figure.savefig(..)`
+line Figure·figure@run/Trend.save/Trend.draw > run/Trend.save value   # `figure.savefig(..)`
 line run/Trend.save > File(figures/sunspots.png) own
 
 home Settings·settings@run/Settings() run

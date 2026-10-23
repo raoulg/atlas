@@ -17,9 +17,9 @@ line main/Ledger.keep > Ledger·ledger@main/Ledger.keep value     # `&mut self`:
 line main/Ledger.keep/open > _·con@main/Ledger.keep/open value
 line Ledger·ledger@main/Ledger() > main/Ledger.keep/open value   # K
 line _·con@main/Ledger.keep/open > main/Ledger.keep/collect value   # H
-known #101 line _·con@main/Ledger.keep/open > main/Ledger.keep value                  # keep's own `con.execute`
+line _·con@main/Ledger.keep/open > main/Ledger.keep value   # keep's own `con.execute`
 line main/Ledger.keep/collect > _·stored@main/Ledger.keep/collect value   # H
-known #101 line _·stored@main/Ledger.keep/collect > main/Ledger.keep value            # H: keep hands it back
+line _·stored@main/Ledger.keep/collect > main/Ledger.keep value   # H: keep hands it back
 line main/Ledger.keep > SQLite(notes) own
 line main/Ledger.keep > main back  # the notes read back, a Vec<String>
 line main > Screen own
@@ -29,12 +29,23 @@ home Ledger·ledger@main/Ledger.keep main
 home _·con@main/Ledger.keep/open main/Ledger.keep
 home _·stored@main/Ledger.keep/collect main/Ledger.keep   # H
 
+# An error is a value (#138): `?` hands on what a step fails with, converted to the function's error type, here no type
+# of the code's (`io::Error`, `rusqlite::Error`); each border it crosses uncaught hands it on. An opened step takes what
+# its steps hand on, which Atlas does not draw for an error of no type of the code's.
+line main/Ledger.keep > _@main/Ledger.keep value
+line main/Ledger.keep/collect > _@main/Ledger.keep/collect value
+line main/Ledger.keep/open > _@main/Ledger.keep/open value
+known #138 line _@main/Ledger.keep/collect > main/Ledger.keep value
+known #138 line _@main/Ledger.keep/open > main/Ledger.keep value
+home _@main/Ledger.keep main
+home _@main/Ledger.keep/collect main/Ledger.keep
+home _@main/Ledger.keep/open main/Ledger.keep
+
 side entry left
 side SQLite(notes) right
 side Screen right
 
 # H: a method call with a turbofish (`.collect::<T>()`) whose result the body names is no step (without the turbofish
 #    it is one, handed `con`).
-# #101: a value made in the body and used by the body's own calls has no taker
 # K: a value handed through a field reaches no step inside: `Connection::open(&self.path)` hands `self` (#121,
 #    decision 1, cause 3: the reader's `held_in` skips `self` even inside an argument)

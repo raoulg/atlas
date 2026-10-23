@@ -17,9 +17,9 @@ line cli.ts/Ledger.keep > Ledger@cli.ts/Ledger.keep value       # keep changes t
 line cli.ts/Ledger.keep/Database() > _·db@cli.ts/Ledger.keep/Database() value
 line Ledger@cli.ts/Ledger() > cli.ts/Ledger.keep/Database() value
 line _·db@cli.ts/Ledger.keep/Database() > cli.ts/Ledger.keep/all value
-known #101 line _·db@cli.ts/Ledger.keep/Database() > cli.ts/Ledger.keep value                 # keep uses it itself (`db.exec`, `db.close`)
+line _·db@cli.ts/Ledger.keep/Database() > cli.ts/Ledger.keep value   # keep uses it itself (`db.exec`, `db.close`)
 line cli.ts/Ledger.keep/all > _·stored@cli.ts/Ledger.keep/all value
-known #101 line _·stored@cli.ts/Ledger.keep/all > cli.ts/Ledger.keep value     # keep maps it and hands it back
+line _·stored@cli.ts/Ledger.keep/all > cli.ts/Ledger.keep value   # keep maps it and hands it back
 line cli.ts/Ledger.keep > SQLite(notes) own
 line cli.ts/Ledger.keep > cli.ts back  # the notes read back, a string[], go back
 line cli.ts > Screen own
@@ -33,4 +33,3 @@ side entry left
 side SQLite(notes) right
 side Screen right
 
-# #101: a value made in the body and used by the body's own calls has no taker

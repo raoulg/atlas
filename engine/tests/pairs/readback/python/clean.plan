@@ -13,7 +13,7 @@ known #126 line Ledger@run/Ledger() > run/Ledger.keep value   # its own body cha
 line run/Ledger.keep > Ledger@run/Ledger.keep value         # keep changes the ledger it runs on (`self.kept +=`)
 line run/Ledger.keep/connect > DuckDBPyConnection·con@run/Ledger.keep/connect value
 line Ledger@run/Ledger() > run/Ledger.keep/connect value   # `duckdb.connect(self.path)` hands the ledger
-known #101 line DuckDBPyConnection·con@run/Ledger.keep/connect > run/Ledger.keep value   # keep's own calls use con
+line DuckDBPyConnection·con@run/Ledger.keep/connect > run/Ledger.keep value   # keep's own calls use con
 line run/Ledger.keep > DuckDB(notes) own                    # it inserts the notes; reading them back is no read
 
 home Ledger@run/Ledger() run
@@ -22,14 +22,19 @@ home DuckDBPyConnection·con@run/Ledger.keep/connect run/Ledger.keep
 
 # An error is a value (#121, decision 4): `RuntimeError(..)` makes it in the arm that raises it, and each border it crosses
 # uncaught hands it on, up to the route.
-known #138 choice run/Ledger.keep/?1
-known #138 step run/Ledger.keep/?1/RuntimeError()
+choice run/Ledger.keep/?1
+step run/Ledger.keep/?1/RuntimeError()
 known #138 line run/Ledger.keep/?1/RuntimeError() > RuntimeError@run/Ledger.keep/?1 value
 known #138 line RuntimeError@run/Ledger.keep/?1 > run/Ledger.keep value
-known #138 line run/Ledger.keep > RuntimeError@run/Ledger.keep value
-known #138 line RuntimeError@run/Ledger.keep > run value
+line run/Ledger.keep > RuntimeError@run/Ledger.keep value
+line RuntimeError@run/Ledger.keep > run value
 known #138 home RuntimeError@run/Ledger.keep/?1 run/Ledger.keep
-known #138 home RuntimeError@run/Ledger.keep run
+home RuntimeError@run/Ledger.keep run
+line run > RuntimeError@run value                           # and the route's border hands it on, as `main`'s does in Rust
+home RuntimeError@run run
+known #138 extra line run/Ledger.keep/?1/RuntimeError() > RuntimeError@run/Ledger.keep/?1/RuntimeError() value   # the constructor's moment, not the choice's
+known #138 extra line RuntimeError@run/Ledger.keep/?1/RuntimeError() > run/Ledger.keep value
+known #138 extra home RuntimeError@run/Ledger.keep/?1/RuntimeError() run/Ledger.keep
 
 side entry left
 side DuckDB(notes) right

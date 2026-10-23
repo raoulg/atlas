@@ -6,7 +6,7 @@ step run/Store()
 
 line entry > run call
 line run/Store() > Store·store@run/Store() value
-known #101 line Store·store@run/Store() > run value       # run prints a field of the store it built
+line Store·store@run/Store() > run value   # run prints a field of the store it built
 line run > Screen own
 
 home Store·store@run/Store() run

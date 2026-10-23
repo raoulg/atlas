@@ -1,6 +1,12 @@
 # Morphisms are functions: what a value is, is what the arrow that makes it gives. The file's JSON comes in as the
 # world has it, and `parseConfig(raw: unknown): Config` turns it into the program's own type, once.
 
+# An error a call into a family hands on (`this.rates.latest(..)`, which runs `HttpRates.latest` or `FileRates.latest`) is
+# made inside the step, at the moment of the choice it is, and its border hands on a value of its own (#138): the
+# pictures put the inner one in the frame around the step, and opening the step draws a line the closed one did not
+known #138 fault /RateSource.latest/? stands in
+known #138 fault >t:ext:javascript.Error@n:
+
 route expenses.config.loadConfig
 step loadConfig/parseConfig
 step loadConfig/parseConfig/fieldsOf
@@ -36,6 +42,42 @@ home _·categories@loadConfig/parseConfig/get#2 loadConfig/parseConfig
 home Config@loadConfig/parseConfig/?1/Config() loadConfig/parseConfig
 home Config@loadConfig/parseConfig loadConfig
 home Config@loadConfig loadConfig
+
+# The body's own test of the categories (`Array.isArray(categories)`, `categories.every(..)`, #101)
+line _·categories@loadConfig/parseConfig/get#2 > loadConfig/parseConfig value
+
+# An error is a value (#138): `throw new Error(..)` builds one in the arm that throws it, the errors the arms of one choice
+# hand on are one value at the choice's moment, and each border it crosses uncaught hands it on, up to the route
+choice loadConfig/parseConfig/fieldsOf/?1                                  # what is no object is an error
+step loadConfig/parseConfig/fieldsOf/?1/Error()
+step loadConfig/parseConfig/?1/Error()                                     # config: unknown currency
+step loadConfig/parseConfig/?1/Error()#2                                   # config: categories must be a list of names
+line _·currency@loadConfig/parseConfig/get > loadConfig/parseConfig/?1/Error() value   # `${String(currency)}`
+known #138 line loadConfig/parseConfig/fieldsOf/?1/Error() > Error@loadConfig/parseConfig/fieldsOf/?1 value
+known #138 line Error@loadConfig/parseConfig/fieldsOf/?1 > loadConfig/parseConfig/fieldsOf value
+known #138 home Error@loadConfig/parseConfig/fieldsOf/?1 loadConfig/parseConfig/fieldsOf
+line loadConfig/parseConfig/fieldsOf > Error@loadConfig/parseConfig/fieldsOf value
+line Error@loadConfig/parseConfig/fieldsOf > loadConfig/parseConfig value
+home Error@loadConfig/parseConfig/fieldsOf loadConfig/parseConfig
+known #138 line loadConfig/parseConfig/?1/Error() > Error@loadConfig/parseConfig/?1 value
+known #138 line loadConfig/parseConfig/?1/Error()#2 > Error@loadConfig/parseConfig/?1 value   # the other arm's, the same value
+known #138 line Error@loadConfig/parseConfig/?1 > loadConfig/parseConfig value
+known #138 home Error@loadConfig/parseConfig/?1 loadConfig/parseConfig
+line loadConfig/parseConfig > Error@loadConfig/parseConfig value
+line Error@loadConfig/parseConfig > loadConfig value
+home Error@loadConfig/parseConfig loadConfig
+line loadConfig > Error@loadConfig value
+home Error@loadConfig loadConfig
+# the error an arm throws stands at the constructor's moment, not the choice's
+known #138 extra line loadConfig/parseConfig/fieldsOf/?1/Error() > Error@loadConfig/parseConfig/fieldsOf/?1/Error() value
+known #138 extra line Error@loadConfig/parseConfig/fieldsOf/?1/Error() > loadConfig/parseConfig/fieldsOf value
+known #138 extra home Error@loadConfig/parseConfig/fieldsOf/?1/Error() loadConfig/parseConfig/fieldsOf
+known #138 extra line loadConfig/parseConfig/?1/Error() > Error@loadConfig/parseConfig/?1/Error() value
+known #138 extra line loadConfig/parseConfig/?1/Error()#2 > Error@loadConfig/parseConfig/?1/Error()#2 value
+known #138 extra line Error@loadConfig/parseConfig/?1/Error() > loadConfig/parseConfig value
+known #138 extra line Error@loadConfig/parseConfig/?1/Error()#2 > loadConfig/parseConfig value
+known #138 extra home Error@loadConfig/parseConfig/?1/Error() loadConfig/parseConfig
+known #138 extra home Error@loadConfig/parseConfig/?1/Error()#2 loadConfig/parseConfig
 
 side entry left
 side Disk(loadConfig.file) left

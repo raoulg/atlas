@@ -8,9 +8,10 @@ use tree_sitter::Node as TsNode;
 
 use crate::builder::GraphBuilder;
 use crate::effects::{self, Facts};
-use crate::model::{Crossing, Dir, EdgeKind, Held, Site, Touch, World};
+use crate::model::{Crossing, Dir, EdgeKind, Held, Site, Touch, Use, World};
 use crate::tree::{
-    arms_of, guards, named_children, number_choices, payload_of, starts_at_literal, text, walk, walk_all, what_of, ChoiceSyntax, Part,
+    arms_of, guards, named_children, number_choices, outermost, payload_of, starts_at_literal, text, walk, walk_all, what_of, wrapped,
+    ChoiceSyntax, Part, Wrappers,
 };
 
 /// A call that crosses into the world, as the code writes it.
@@ -102,6 +103,46 @@ pub struct UseSyntax {
     /// The kinds of target that keep a value beyond a name: a field, an element (`self.n = v`,
     /// `rows[i] = v`).
     pub keeps: &'static [&'static str],
+    /// What hands on the value inside it (`tree::Wrappers`): a call written in one is that call to
+    /// what it stands in (`await f(x)`, `f(x)?`).
+    pub wrappers: Wrappers,
+    /// Does `node` throw away what `child` gives, `child` being all it is made of: a statement that is
+    /// one expression (`f(x)`, `f(x);`), `void f(x)`, `let _ = f(x)`.
+    pub drops: fn(TsNode, TsNode, &[u8]) -> bool,
+    /// The kinds of node a body defines that are bodies of their own (a function, a class): what is
+    /// written there is theirs.
+    pub nested: &'static [&'static str],
+    /// The kinds of node besides a name that read a value: the receiver a method runs on, where the
+    /// language writes it as no name (`self`, `this`), and a string that writes names into its text
+    /// (`"{total}"`).
+    pub reads: &'static [&'static str],
+    /// Is the name `n` a label where it stands, no value read: the attribute of `x.f`, the keyword of
+    /// `f(k=v)`, a part of a path (`Error::Empty`).
+    pub label: fn(TsNode, &[u8]) -> bool,
+    /// Whether `child` is the part of `node` that binds names, and whether those are its own: a
+    /// function written in place binds its parameters (`lambda x: ..`, `|x| ..`, `x => ..`), which hold
+    /// no value of the body around it; a pattern binds the parts of a value the body takes apart (a
+    /// `case`, a `match` arm, a `catch`), which are the body's.
+    pub binders: fn(TsNode, TsNode) -> Option<bool>,
+    /// The kinds of binding that read what they bind as well: `x += v`.
+    pub updates: &'static [&'static str],
+    /// Is `child` what the names `node` binds are parts of, beyond what `binds` binds: what a
+    /// comprehension's `for` goes over.
+    pub parts: fn(TsNode, TsNode) -> bool,
+    /// Does `node` end the body with what `child` gives as an error: a `raise`, a `throw`.
+    pub raises: fn(TsNode, TsNode, &[u8]) -> bool,
+    /// Does `node` hold what `child` gives as an error, which ends the body where `node` leaves it or is
+    /// handed on (`Err(child)`)?
+    pub errs: fn(TsNode, TsNode, &[u8]) -> bool,
+    /// The kinds of node whose value is that of their last part, as far as an error held in it leaves
+    /// the body with it: a block, an `else`, a `match` arm.
+    pub tails: &'static [&'static str],
+    /// The kinds of node that hand on the error what they hold fails with (`x?`); none where every
+    /// call hands on what its callee raises, as a `raise` propagates.
+    pub propagates: Option<&'static [&'static str]>,
+    /// Where `child` is the part of `node` its handlers watch (the body of a `try`): the classes they
+    /// catch as the code names them, none where one catches whatever is raised.
+    pub catches: fn(TsNode, TsNode, &[u8]) -> Option<Vec<String>>,
 }
 
 /// One call as a step of the route through its body: what it runs, on which class and how the
@@ -141,6 +182,10 @@ pub struct Steps<'t, 's> {
     sites: Vec<Site>,
     edges: Vec<(String, EdgeKind, Option<String>, Vec<(u32, u32)>)>,
     unseen: Vec<(u32, String)>,
+    own: Vec<Use>,
+    /// The error type what hands on an error converts it to (`?`), where the function the body is of
+    /// says it fails.
+    converts: Option<String>,
     /// The names the steps so far have kept.
     pub kept: HashSet<String>,
 }
@@ -148,7 +193,223 @@ pub struct Steps<'t, 's> {
 impl<'t, 's> Steps<'t, 's> {
     pub fn new(body: TsNode<'t>, src: &'s [u8], syntax: &'s ChoiceSyntax, uses: &'s UseSyntax) -> Self {
         let choices = number_choices(body, src, syntax);
-        Steps { body, src, syntax, uses, choices, sites: vec![], edges: vec![], unseen: vec![], kept: HashSet::new() }
+        Steps {
+            body,
+            src,
+            syntax,
+            uses,
+            choices,
+            sites: vec![],
+            edges: vec![],
+            unseen: vec![],
+            own: vec![],
+            converts: None,
+            kept: HashSet::new(),
+        }
+    }
+
+    /// The error type what hands on an error converts it to (`?` by `From`), where the signature of the
+    /// function the body is of says it fails: the program's type it names, `""` for one that is no type
+    /// of the code's (`io::Error`, `anyhow::Error`). A call it is wrapped around fails with that type.
+    pub fn converts(&mut self, error: Option<String>) {
+        self.converts = error;
+    }
+
+    /// A site of call `c`, as the body's statements stand to it: whether the body throws away what
+    /// it gives, whether that is the error the body ends with, and what hands on or catches the error
+    /// it fails with.
+    fn site(&self, c: TsNode, site: Site) -> Site {
+        let (handed_on, explicit, raises) = (self.handed_on(c), self.uses.propagates.is_some(), self.raised(c));
+        let fails = self.converts.clone().filter(|_| handed_on && explicit);
+        // the error a constructor builds to raise is a value of its class, whether or not a name holds it
+        let mut gives = site.gives;
+        if raises && gives.is_empty() && !site.to.is_empty() {
+            gives.push(Held::new(site.to.clone(), ""));
+        }
+        Site { dropped: self.drops(c), raises, handed_on: handed_on && !explicit, fails, caught: self.caught(c), gives, ..site }
+    }
+
+    /// Whether the body throws away what call `c` gives: through what hands its value on unchanged,
+    /// the call is all a statement is made of (`other.take_from(board)`, `store.add(x)?;`), or what
+    /// discards a value is handed it (`void remove(..)`, `let _ = f(x)`).
+    fn drops(&self, c: TsNode) -> bool {
+        let v = outermost(c, self.uses.wrappers);
+        v.parent().is_some_and(|p| (self.uses.drops)(p, v, self.src))
+    }
+
+    /// Whether what call `c` gives ends the body as an error: a `raise` or a `throw` raises it, or what
+    /// holds it as an error (`Err(c)`) leaves the body, as what it returns or its last value, or is
+    /// handed on by `?`.
+    pub fn raised(&self, c: TsNode) -> bool {
+        let u = self.uses;
+        let v = outermost(c, u.wrappers);
+        let Some(p) = v.parent() else { return false };
+        if (u.raises)(p, v, self.src) {
+            return true;
+        }
+        let Some(holder) = p.parent().filter(|_| (u.errs)(p, v, self.src) && !self.in_function(p)) else { return false };
+        let mut at = holder;
+        loop {
+            // what the body's block ends with is what the function gives
+            if (u.leaves)(at, self.body) || at.id() == self.body.id() {
+                return true;
+            }
+            let Some(up) = at.parent() else { return false };
+            if u.propagates.is_some_and(|p| p.contains(&up.kind())) || (u.leaves)(up, self.body) {
+                return true;
+            }
+            let last = up.named_child(up.named_child_count().saturating_sub(1)).map(|l| l.id()) == Some(at.id());
+            let through = (u.wrappers.contains(&up.kind()) && wrapped(up).map(|w| w.id()) == Some(at.id()))
+                || (u.tails.contains(&up.kind()) && last && !(u.drops)(up, at, self.src))
+                || matches!((self.syntax.part)(up, at, self.src), Part::Arm(_));
+            if !through {
+                return false;
+            }
+            at = up;
+        }
+    }
+
+    /// Whether call `c` hands on the error it fails with: what hands it on is wrapped around the call
+    /// (`f(x)?`), or the language hands on every error a call fails with.
+    fn handed_on(&self, c: TsNode) -> bool {
+        let u = self.uses;
+        let Some(propagates) = u.propagates else { return true };
+        let mut at = c;
+        while let Some(p) = at.parent().filter(|p| u.wrappers.contains(&p.kind()) && wrapped(*p).map(|w| w.id()) == Some(at.id())) {
+            if propagates.contains(&p.kind()) {
+                return !self.in_function(p);
+            }
+            at = p;
+        }
+        false
+    }
+
+    /// Whether a binding decides a choice by what it binds: `if let Some(x) = v`, `let Some(x) = v
+    /// else { .. }`. What it takes apart is read there, as a `match` reads its subject.
+    fn decides(&self, binding: TsNode) -> bool {
+        if (self.syntax.chooses)(binding, self.src) {
+            return true;
+        }
+        let mut at = binding;
+        for _ in 0..2 {
+            let Some(p) = at.parent() else { return false };
+            if (self.syntax.part)(p, at, self.src) == Part::Decides {
+                return true;
+            }
+            at = p;
+        }
+        false
+    }
+
+    /// Whether `n` stands in a function written in place in the body (`|x| ..`, `x => ..`): what
+    /// it returns or hands on by `?` leaves that function, not the body.
+    fn in_function(&self, n: TsNode) -> bool {
+        let mut child = n;
+        while let Some(p) = child.parent().filter(|_| child.id() != self.body.id()) {
+            if named_children(p).into_iter().any(|c| c.id() != child.id() && (self.uses.binders)(p, c) == Some(true)) {
+                return true;
+            }
+            child = p;
+        }
+        false
+    }
+
+    /// The handlers that watch call `c`, innermost first, each by the classes it catches.
+    fn caught(&self, c: TsNode) -> Vec<Vec<String>> {
+        let mut out = vec![];
+        let mut child = c;
+        while let Some(p) = child.parent().filter(|_| child.id() != self.body.id()) {
+            out.extend((self.uses.catches)(p, child, self.src));
+            child = p;
+        }
+        out
+    }
+
+    /// What the body's own code uses outside its steps (`Node::uses`): each value a name holds where
+    /// the body reads it itself, in a condition, an operator, a format, what it returns or what it hands
+    /// a call that is no step (`print(store.path)`, `if done:`, `Ok(path)`, `f.write(..)`). What a step
+    /// is handed is the step's. `held` is the reader's: the values a name, or a string that writes
+    /// names, holds where it stands, as a call written there would be handed them; none for one that
+    /// holds no value (a function, a module, a class). Each value once in each arm it is used in.
+    pub fn uses(&mut self, held: &dyn Fn(TsNode<'t>) -> Vec<Held>) {
+        let u = self.uses;
+        let steps: Vec<(usize, usize)> =
+            self.sites.iter().filter(|s| s.span != (0, 0)).map(|s| (s.span.0 as usize, s.span.1 as usize)).collect();
+        let in_step = |n: TsNode| steps.iter().any(|(a, b)| *a <= n.start_byte() && n.end_byte() <= *b);
+        let mut out: Vec<Use> = vec![];
+        let mut stack = vec![self.body];
+        while let Some(n) = stack.pop() {
+            if (n.id() != self.body.id() && u.nested.contains(&n.kind())) || in_step(n) {
+                continue;
+            }
+            if (u.names.contains(&n.kind()) || u.reads.contains(&n.kind())) && self.read_here(n) {
+                let arms = self.arms(n);
+                for h in held(n).into_iter().filter(|h| !h.ty.is_empty() || !h.name.is_empty()) {
+                    let one = Use { name: h.name, ty: h.ty, arms: arms.clone() };
+                    if !out.contains(&one) {
+                        out.push(one);
+                    }
+                }
+            }
+            stack.extend(named_children(n).into_iter().rev());
+        }
+        // a name a step gave holds what the step gave, where the reader knows no type for it where it is read
+        for u in out.iter_mut().filter(|u| u.ty.is_empty() && !u.name.is_empty()) {
+            let types: HashSet<&String> =
+                self.sites.iter().flat_map(|s| &s.gives).filter(|g| g.name == u.name && !g.ty.is_empty()).map(|g| &g.ty).collect();
+            if let [t] = types.into_iter().collect::<Vec<_>>()[..] {
+                u.ty = t.clone();
+            }
+        }
+        let mut once: Vec<Use> = vec![];
+        for u in out {
+            if !once.contains(&u) {
+                once.push(u);
+            }
+        }
+        self.own = once;
+    }
+
+    /// Whether the name `n` is read where it stands: no label (the `f` of `x.f`), not what a binding
+    /// or a pattern binds (`x` of `x = v`, the names of `Some(x) =>`), and not a name a function written
+    /// in place binds for itself. A binding that reads what it binds reads it (`x += v`), and a change
+    /// made through a name reads the name (`x.f = v`, `rows[i] = v`). A name a binding binds to a part
+    /// of what it holds (`width = settings.width`, `row = rows[k]`, `for r in rows`) is read where the
+    /// bound name is: that name stands for the part, and a step it is handed takes it, the projection
+    /// glued into the step (`mathematics.md`, "One fine plan"). An operator, a format or a call the
+    /// body computes a value with reads what it is computed from.
+    fn read_here(&self, n: TsNode) -> bool {
+        let u = self.uses;
+        if (u.label)(n, self.src) {
+            return false;
+        }
+        let name = text(n, self.src);
+        // `chain`: what lies between `n` and `child` takes a part of what `n` holds, or hands it on
+        let (mut child, mut through, mut chain) = (n, false, true);
+        while let Some(p) = child.parent().filter(|_| child.id() != self.body.id()) {
+            if (u.binders)(p, child).is_some() {
+                return false;
+            }
+            let own = |c: &TsNode| c.id() != child.id() && (u.binders)(p, *c) == Some(true);
+            if named_children(p).into_iter().filter(own).any(|c| walk(c, u.names).iter().any(|x| text(*x, self.src) == name)) {
+                return false;
+            }
+            if let Some((targets, value)) = (u.binds)(p) {
+                if targets.id() == child.id() {
+                    return through || u.updates.contains(&p.kind());
+                }
+                if value.id() == child.id() && chain && !u.updates.contains(&p.kind()) && !self.decides(p) {
+                    return false;
+                }
+            }
+            if (u.parts)(p, child) && chain {
+                return false;
+            }
+            through |= u.keeps.contains(&p.kind());
+            chain &= u.keeps.contains(&p.kind()) || u.wrappers.contains(&p.kind());
+            child = p;
+        }
+        true
     }
 
     /// A call `c`, `name`d as the code writes it, of which the graph holds no more than what it
@@ -275,6 +536,7 @@ impl<'t, 's> Steps<'t, 's> {
             command_line: step.command_line,
             ..Default::default()
         };
+        let site = self.site(c, site);
         self.sites.push(site);
         self.edges.push((to.to_string(), kind, via, arms));
     }
@@ -283,12 +545,15 @@ impl<'t, 's> Steps<'t, 's> {
     /// receives it.
     pub fn handed(&mut self, c: TsNode, a: TsNode, to: &str, kind: EdgeKind) {
         let arms = self.arms(a);
-        self.sites.push(Site { line: line(c), to: to.to_string(), arms: arms.clone(), ..Default::default() });
+        // what it raises, the call it is handed to hands on, as that call stands
+        let site = self.site(c, Site { line: line(c), to: to.to_string(), arms: arms.clone(), ..Default::default() });
+        self.sites.push(Site { dropped: false, raises: false, ..site });
         self.edges.push((to.to_string(), kind, None, arms));
     }
 
     /// A library's operation `op` that the body reads no further: a step when it makes a value the
-    /// body keeps, whatever it is handed.
+    /// body keeps, whatever it is handed, or the error it raises (`raise RuntimeError(..)`, `throw new
+    /// Error(..)`), of the class the reader gives.
     pub fn op(&mut self, c: TsNode, op: &str, hands: Vec<Held>, gives: Vec<Held>) {
         if gives.is_empty() {
             return;
@@ -332,7 +597,9 @@ impl<'t, 's> Steps<'t, 's> {
     fn unread(&mut self, c: TsNode, name: &str, hands: Vec<Held>, gives: Vec<Held>, not_followed: bool) {
         self.keep(&gives);
         let op = name.lines().map(str::trim).collect::<String>();
-        self.sites.push(Site { line: line(c), op, not_followed, hands, gives, arms: self.arms(c), span: span(c), ..Default::default() });
+        let site = Site { line: line(c), op, not_followed, hands, gives, arms: self.arms(c), span: span(c), ..Default::default() };
+        let site = self.site(c, site);
+        self.sites.push(site);
     }
 
     /// An edge of `kind` to `to` at call `c`, with no step of its own.
@@ -352,6 +619,7 @@ impl<'t, 's> Steps<'t, 's> {
             n.loop_lines = loop_lines;
             n.whens = whens;
             n.unseen = self.unseen;
+            n.uses = self.own;
         }
     }
 
@@ -430,6 +698,23 @@ impl<'t, 's> Steps<'t, 's> {
         }
         out
     }
+}
+
+/// The error type a written result names apart from its value, where it names one: the second
+/// argument of `Result<T, E>`, as written.
+pub fn error_written(written: &str) -> Option<&str> {
+    let open = written.find('<')?;
+    let inner = written[open + 1..].trim_end().strip_suffix('>')?;
+    let (mut depth, mut at) = (0, None);
+    for (i, c) in inner.char_indices() {
+        match c {
+            '<' | '(' | '[' => depth += 1,
+            '>' | ')' | ']' => depth -= 1,
+            ',' if depth == 0 => at = Some(i),
+            _ => {}
+        }
+    }
+    at.map(|i| inner[i + 1..].trim())
 }
 
 /// How a language binds names in a body, as far as a change made through a name is followed to
@@ -621,6 +906,17 @@ mod tests {
         }
         assert_eq!(sides("copy", 1), None, "one path is the operation's own way");
         assert_eq!(sides("write_text", 2), None);
+    }
+
+    /// The error a `Result` names is its second argument, at the top level of the brackets; a result
+    /// that names none apart from its value (`io::Result<T>`) names none.
+    #[test]
+    fn the_error_a_result_names_is_its_second_argument() {
+        assert_eq!(error_written("Result<Vec<Expense>, Error>"), Some("Error"));
+        assert_eq!(error_written("Result<HashMap<String, f64>, crate::Error>"), Some("crate::Error"));
+        assert_eq!(error_written("Result<(), Box<dyn Error>>"), Some("Box<dyn Error>"));
+        assert_eq!(error_written("io::Result<()>"), None);
+        assert_eq!(error_written("Option<u32>"), None);
     }
 
     /// `for b in bases { resolve(b) }` then `let b = Body::new()`: the use in the loop takes the

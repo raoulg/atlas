@@ -21,7 +21,7 @@ step main/plot/build_cartesian_2d                                 # `let mut cha
 line entry > main call
 line Web(www.sidc.be) > main/download own
 line main/download/text > _·body@main/download/text value
-known #101 line _·body@main/download/text > main/download value                  # `fs::write(.., body)`
+line _·body@main/download/text > main/download value   # `fs::write(.., body)`
 line main/download > File(data/raw/sunspots.csv) own
 line File(data/raw/sunspots.csv) > main/load own
 line main/load/from_path > _·reader@main/load/from_path value
@@ -34,21 +34,21 @@ line main/load/?1/ok_or > _·date@main/load/?1/ok_or value
 line _·date@main/load/?1/ok_or > main/load/?1/push value
 line _·rows@main/load/new > main/load/?1/push value
 line main/load/?1/push > _·rows@main/load/?1 value                  # one arm makes anew what was named before the choice
-known #101 line _·rows@main/load/?1 > main/load value                           # `Ok(rows)`
+line _·rows@main/load/?1 > main/load value   # `Ok(rows)`
 line main/load > _·rows@main/load value                           # a named value of no type of the program's
 line _·rows@main/load > main/smooth value
-known #101 line _·rows@main/load > main/plot value                # `draw_series(LineSeries::new(rows..))`, the body's own call
+line _·rows@main/load > main/plot value   # `draw_series(LineSeries::new(rows..))`, the body's own call
 line _·rows@main/load > main/plot/fold value
 line _·rows@main/load > main/plot/build_cartesian_2d value                # `rows[0].0..rows[rows.len() - 1].0`
 line main/smooth > _·smoothed@main/smooth value
 line _·smoothed@main/smooth > main/plot value
 line main/plot/into_drawing_area > _·root@main/plot/into_drawing_area value
-known #101 line _·root@main/plot/into_drawing_area > main/plot value             # `root.fill(..)`, `root.present()`
+line _·root@main/plot/into_drawing_area > main/plot value   # `root.fill(..)`, `root.present()`
 line main/plot/fold > _·top@main/plot/fold value
 line _·root@main/plot/into_drawing_area > main/plot/build_cartesian_2d value
 line _·top@main/plot/fold > main/plot/build_cartesian_2d value
 line main/plot/build_cartesian_2d > _·chart@main/plot/build_cartesian_2d value
-known #101 line _·chart@main/plot/build_cartesian_2d > main/plot value           # `chart.draw_series(..)`
+line _·chart@main/plot/build_cartesian_2d > main/plot value   # `chart.draw_series(..)`
 line main/plot > File(figures/sunspots.png) own
 
 home _·body@main/download/text main/download
@@ -56,12 +56,42 @@ home _·reader@main/load/from_path main/load
 home _·rows@main/load/new main/load
 home Record·result@main/load/for result in reader.deserialize() main/load
 home _·date@main/load/?1/ok_or main/load/?1
-home _·rows@main/load/?1 main/load/?1
+home _·rows@main/load/?1 main/load   # load's own arrow uses it (`Ok(rows)`), at its border
 home _·rows@main/load main
 home _·smoothed@main/smooth main
 home _·root@main/plot/into_drawing_area main/plot
 home _·top@main/plot/fold main/plot
 home _·chart@main/plot/build_cartesian_2d main/plot
+
+# what a body's own code uses outside its steps (#101)
+line Record·result@main/load/for result in reader.deserialize() > main/load value   # `record.mean == -1.0`, through `let record: Record = result?`
+
+# An error is a value (#138): `?` hands on what a step fails with, converted to the function's error type, here a
+# `Box<dyn Error>`, no type of the code's; each border it crosses uncaught hands it on, up to the route. An opened step
+# takes what its steps hand on, which Atlas does not draw for an error of no type of the code's.
+line main/download/text > _@main/download/text value
+known #138 line _@main/download/text > main/download value
+home _@main/download/text main/download
+line main/download > _@main/download value
+known #138 line _@main/download > main value
+home _@main/download main
+line main/load/from_path > _@main/load/from_path value
+known #138 line _@main/load/from_path > main/load value
+home _@main/load/from_path main/load
+line main/load/?1/ok_or > _@main/load/?1 value                         # ok_or("bad date")?, in the arm after the guard
+known #138 line _@main/load/?1 > main/load value
+known #138 home _@main/load/?1 main/load
+line main/load > _@main/load value
+known #138 line _@main/load > main value
+home _@main/load main
+line main/plot/build_cartesian_2d > _@main/plot/build_cartesian_2d value
+known #138 line _@main/plot/build_cartesian_2d > main/plot value
+home _@main/plot/build_cartesian_2d main/plot
+line main/plot > _@main/plot value
+known #138 line _@main/plot > main value
+home _@main/plot main
+line main > _@main value
+home _@main main
 
 side entry left
 side Web(www.sidc.be) left

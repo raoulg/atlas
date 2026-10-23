@@ -7,8 +7,7 @@
 # ReadingStore; what the constructor builds goes back to that caller. A library's operation whose result the body names (`find`, `map`) is a step; what it touches stays
 # its caller's. Each file is read, used and written by the route: it stands on both sides.
 #
-# Issues marked: #101 a body's own use of a value it made; #125 which library operations are steps; #126 what the own
-# arrow keeps; #130 which forms are choices.
+# Issues marked: #126 what the own arrow keeps; #130 which forms are choices.
 
 route harvest.store.ReadingStore
 step ReadingStore()/ReadingStore()
@@ -84,7 +83,7 @@ line ReadingStore > ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary
 line Disk(ReadingStore.summaries) > ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary own # #130: `??`'s left side runs whenever summary does
 line Day·day > ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/find value # #130: `??`'s left side runs whenever summary does
 line ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/find > _·line@ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/find value # #130: `??`'s left side runs whenever summary does
-known #101 line _·line@ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/find > ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary value   # it decides the choice and is returned when there is none
+line _·line@ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/find > ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary value   # it decides the choice and is returned when there is none
 line Day·day > ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/?1/Summary() value # #130
 line _·line@ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/find > ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/?1/Summary() value # #130
 line ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/?1/Summary() > Summary@ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/?1/Summary() value # #130
@@ -117,7 +116,7 @@ line ReadingStore > ReadingStore()/ReadingStore.keptSummary/find value
 line Disk(ReadingStore.summaries) > ReadingStore()/ReadingStore.keptSummary own
 line Day·day#2 > ReadingStore()/ReadingStore.keptSummary/find value
 line ReadingStore()/ReadingStore.keptSummary/find > _·line@ReadingStore()/ReadingStore.keptSummary/find value
-known #101 line _·line@ReadingStore()/ReadingStore.keptSummary/find > ReadingStore()/ReadingStore.keptSummary value   # it decides the choice and is returned when there is none
+line _·line@ReadingStore()/ReadingStore.keptSummary/find > ReadingStore()/ReadingStore.keptSummary value   # it decides the choice and is returned when there is none
 line Day·day#2 > ReadingStore()/ReadingStore.keptSummary/?1/Summary() value # #127
 line _·line@ReadingStore()/ReadingStore.keptSummary/find > ReadingStore()/ReadingStore.keptSummary/?1/Summary() value   # #130
 line ReadingStore()/ReadingStore.keptSummary/?1/Summary() > Summary@ReadingStore()/ReadingStore.keptSummary/?1/Summary() value   # #130

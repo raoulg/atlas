@@ -644,6 +644,13 @@ pub(super) fn link_calls<'t>(
     let mut steps = Steps::new(body, &m.src, &CHOICES, &USES);
     let read = {
         let mut b = Body::new(modules, store, crate_ids, eval, returned, m, &n, d, body);
+        // the error type `?` converts to: the program's type the signature's `Result` names, else none of the code's
+        let error = n.returns.as_ref().filter(|r| r.fails).map(|r| {
+            let named = crate::body::error_written(&r.written).map(|e| e.split('<').next().unwrap_or(e).trim_start_matches(['&', ' ']));
+            let parts = named.map(|e| e.trim_start_matches("dyn ").split("::").map(str::to_string).collect::<Vec<_>>());
+            parts.and_then(|p| b.resolve(&p)).and_then(|t| b.class_of(&t)).unwrap_or_default()
+        });
+        steps.converts(error);
         // a loop binds its element once what it goes over is made, and before its body runs
         let calls =
             evaluation_order(walk(body, &["call_expression", "struct_expression", "identifier", "scoped_identifier", "token_tree"]));
@@ -662,6 +669,16 @@ pub(super) fn link_calls<'t>(
             b.call(&mut steps, c);
             steps.mark(c, b.read.touches[t..].iter_mut().chain(b.read.waiting[w..].iter_mut().map(|(t, _)| t)));
         }
+        let kept = steps.kept.clone();
+        // among a macro's tokens, the value a call that is a step is made on is that step's
+        let stepped = |n: TsNode| {
+            n.parent().filter(|p| p.kind() == "token_tree").is_some_and(|p| b.steps_within(p).iter().any(|r| r.contains(&n.start_byte())))
+        };
+        steps.uses(&|n| match n.kind() {
+            _ if stepped(n) => vec![],
+            "self" => b.cls.iter().map(|k| Held::new(k.clone(), "")).collect(),
+            _ => b.hands(&[Some(n)], &kept),
+        });
         b.read.handed = b.handed_params.take();
         b.read
     };
@@ -2396,6 +2413,67 @@ const USES: UseSyntax = UseSyntax {
     splits: |n, child| n.kind() == "match_expression" && n.child_by_field_name("value").map(|v| v.id()) == Some(child.id()),
     names: &["identifier"],
     keeps: &["field_expression", "index_expression"],
+    wrappers: WRAPPERS,
+    // a statement ends in `;`: a block's last expression without one is the block's value
+    drops: |n, child, src| match n.kind() {
+        "expression_statement" => n.named_child(0).map(|c| c.id()) == Some(child.id()) && text(n, src).trim_end().ends_with(';'),
+        "let_declaration" => {
+            n.child_by_field_name("value").map(|v| v.id()) == Some(child.id())
+                && n.child_by_field_name("pattern").is_some_and(|p| text(p, src) == "_")
+        }
+        _ => false,
+    },
+    nested: &[
+        "function_item",
+        "impl_item",
+        "trait_item",
+        "mod_item",
+        "struct_item",
+        "enum_item",
+        "use_declaration",
+        "attribute_item",
+        "macro_definition",
+        "const_item",
+        "static_item",
+    ],
+    reads: &["self", "string_literal", "raw_string_literal"],
+    // a part of a path (`Error::Empty`), a macro's name, and among a macro's tokens a field after a `.`
+    label: |n, _| {
+        let Some(p) = n.parent() else { return false };
+        match p.kind() {
+            "scoped_identifier" | "scoped_type_identifier" => true,
+            "macro_invocation" => p.child_by_field_name("macro").is_some_and(|m| m.id() == n.id()),
+            "token_tree" => {
+                matches!(n.prev_sibling().map(|s| s.kind()), Some("." | "::"))
+                    || matches!(n.next_sibling().map(|s| s.kind()), Some("::" | "!"))
+            }
+            _ => false,
+        }
+    },
+    binders: |n, child| {
+        let is = |f: &str| n.child_by_field_name(f).is_some_and(|x| x.id() == child.id());
+        match n.kind() {
+            "closure_expression" if is("parameters") => Some(true),
+            "match_pattern" if !is("condition") => Some(false),
+            _ => None,
+        }
+    },
+    updates: &["compound_assignment_expr"],
+    parts: |_, _| false,
+    raises: |_, _, _| false,
+    // `Err(e)`, `Result::Err(e)`
+    errs: |n, child, src| {
+        n.kind() == "arguments"
+            && n.named_child_count() == 1
+            && n.named_child(0).map(|c| c.id()) == Some(child.id())
+            && n.parent()
+                .and_then(|c| c.child_by_field_name("function"))
+                .is_some_and(|f| matches!(text(f, src).rsplit("::").next(), Some("Err")))
+    },
+    // a statement without `;` is the value of the block it ends (`match v { .. }` last in a function)
+    tails: &["block", "else_clause", "match_arm", "match_expression", "expression_statement"],
+    propagates: Some(&["try_expression"]),
+    catches: |_, _, _| None,
 };
 
 /// Rust's comparisons: `==` and `!=` against a string or a member of a type (`Mode::Fast`), a
