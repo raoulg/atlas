@@ -305,12 +305,33 @@ pub struct Param {
     /// written out, it says no more than a parameter without a type.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub unchecked: bool,
+    /// The types its type holds as values, as its language reads the type, each by the last part of
+    /// its name as written: `dict[Mode, Plan]` holds a `Plan` by its `Mode`, `Option<Vec<Node>>` a
+    /// `Node`, `VectorCache[TVectorizer]` a `VectorCache`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub holds: Vec<String>,
 }
 
 impl Param {
     /// Whether the signature says what it is: a type is written, and it is not the unchecked one.
     pub fn says(&self) -> bool {
         !self.ty.is_empty() && !self.unchecked
+    }
+
+    /// Whether its type holds a value of the type named `name` (the last part of its name).
+    pub fn holds_type(&self, name: &str) -> bool {
+        self.holds.iter().any(|h| h == name)
+    }
+
+    /// What a type holds as values, as `type_names` reads it, by the last part of each name.
+    pub fn held(names: Vec<Vec<String>>) -> Vec<String> {
+        let mut out: Vec<String> = vec![];
+        for n in names.into_iter().filter_map(|n| n.last().cloned()) {
+            if !out.contains(&n) {
+                out.push(n);
+            }
+        }
+        out
     }
 }
 
@@ -536,16 +557,35 @@ pub struct Use {
     pub param: bool,
 }
 
-/// A part of a value the body's own code sets (`Node::sets`): the value, as a call is handed it (`other`
-/// of `other.fig = self.fig`, the instance a method runs on by no name for `self.n = ..`), what the
-/// assigned expression reads (the instance of `self.fig`), and the arms of the choices the setting sits
-/// in, numbered as `Site::arms` numbers them.
+/// A part of a value the body's own code sets (`Node::sets`), one for each part a binding sets: the value,
+/// as a call is handed it (`other` of `other.fig = self.fig`, the instance a method runs on by no name for
+/// `self.n = ..`), the field of it that is set, what the assigned expression reads (the instance of
+/// `self.fig`) and the field of it that the expression is, the lines the binding spans, and the arms of
+/// the choices the setting sits in, numbered as `Site::arms` numbers them. A binding that sets two parts
+/// at once sets each to the part of the value at its place where the value is written as as many parts
+/// (`other.fig, other.ax = self.fig, self.ax`), else each to the whole value (`self.fig, self.ax =
+/// plt.subplots()`).
 #[derive(Serialize, Deserialize, TS, Clone, Debug, Default, PartialEq)]
 #[ts(export)]
 pub struct Set {
     pub on: Held,
+    /// The field of the value that is set, as the code names it, through the fields it is reached by:
+    /// `fig` of `other.fig = ..`, `fig.title` of `self.fig.title = ..`; none for an element of the
+    /// value itself (`rows[i] = row`).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub field: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub from: Vec<Held>,
+    /// Where the assigned expression is a field of a value, as the code names it (`fig` of `other.fig =
+    /// self.fig`): that field of the one value of `from`. None where it is a whole value (`self.fig =
+    /// fig`) or what the body computes (`self.title = title + "!"`).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub of: String,
+    /// The lines the binding spans, first and last; none for one the signature writes
+    /// (`constructor(readonly until: string)`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(type = "[number, number] | null")]
+    pub lines: Option<(u32, u32)>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[ts(type = "Array<[number, number]>")]
     pub arms: Vec<(u32, u32)>,

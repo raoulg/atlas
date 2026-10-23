@@ -1,0 +1,20 @@
+# The same lookup through two lists at the same places: the modes and their plans are two values, which only the places
+# they share tie together, and `index` finds where the mode stands among the modes. What the table says in one value,
+# the shortcut says in two.
+
+route tables.plans.timeout
+step timeout/index
+
+line entry > timeout call
+line Mode·modes > timeout value
+line Plan·plans > timeout value              # `plans[..].timeout`
+line Mode·mode > timeout value
+line Mode·modes > timeout/index value        # `index(modes, mode)`
+line Mode·mode > timeout/index value
+line timeout/index > timeout back            # the place, a number, goes to the lookup
+
+home Mode·modes timeout
+home Plan·plans timeout
+home Mode·mode timeout
+
+side entry left

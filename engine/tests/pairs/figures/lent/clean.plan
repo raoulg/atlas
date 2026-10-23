@@ -1,7 +1,8 @@
 # Two charts on one figure. The first chart makes its figure when its first line is drawn, and lends it: `lend` hands what
-# the first chart holds (`self.fig`, `self.ax`) to the second's `take`, which sets its own fields to them. From then on the
-# second chart holds the first's figure (#11, `Node::sets`), so its line, which makes a figure only where the chart holds
-# none, draws on that one: the notebook's screen shows one figure, named by the chart that made it.
+# the first chart holds (`self.fig`, `self.ax`) to the second's `take`, which sets its own fields to them. Those are the
+# fields a chart keeps its figure in (#168), so from then on the second chart holds the first's figure (#11, `Node::sets`),
+# and its line, which makes a figure only where the chart holds none, draws on that one: the notebook's screen shows one
+# figure, named by the chart that made it.
 
 route notebooks.overlay
 step overlay/overlay

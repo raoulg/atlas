@@ -412,13 +412,15 @@ open:
   hands it to takes it there, no value from beyond, until a step of the body makes it anew. A figure a
   library draws on rests in that figure (`Figure`) until something saves or shows it, and a notebook shows
   each figure its cells make on the screen (`Figure 1`). A figure rests in what holds it, as a place named
-  by a value does: one a method keeps in the value it runs on (a method that changes that value,
-  `self.fig, self.ax = plt.subplots()`) is that value's, so every step that runs on the value draws on the
-  one figure it holds, whichever of them makes it (`create_figure` only where `self.fig is None`); one a
-  call makes and no value beyond it holds is that call's own, and two calls make two. A value a body sets
-  a part of to what another value holds (`other.fig = self.fig`, or `self.fig = fig` in a method its
-  call hands the other's figure to) is that one's put, a lens's: from then on it holds the figure the
-  other holds, and so does every value made anew of it;
+  by a value does, through the fields that hold it: one a method keeps in a field of the value it runs on
+  (the fields the binding that makes it sets, `self.fig, self.ax = plt.subplots()`) is that value's, so
+  every step that runs on the value draws on the one figure it holds, whichever of them makes it
+  (`create_figure` only where `self.fig is None`); one a call makes and no value beyond it holds is that
+  call's own, and two calls make two. A value a body sets such a field of to what another value holds
+  there (`other.fig = self.fig`, or `self.fig = fig` in a method its call hands the other's figure to) is
+  that one's put, a lens's: from then on it holds the figure the other holds, and so does every value made
+  anew of it. The code names the field it sets (`Node::sets`), so a field that holds no figure lends none
+  (`other.title = self.title`);
 - a step's own arrow is its witness at its border: its signature and its own touches, the lines that
   cross its frame. An opened step draws it as a point on the frame's right edge, not as a step beside
   its steps: a value its call is handed crosses the frame to the step inside that takes it (the value
@@ -451,7 +453,10 @@ open:
   hands `table`, the lens the key chooses), and so is any value a body binds without a step: a
   pattern that takes a value apart (`const [year, month] = fields` hands `fields`), a name a
   `case` pattern binds (a part of what the `match` takes apart, through the variant the case matches, a
-  prism), an element of a loop that is no step (`for s, t in rows`), what operators compute of names
+  prism), an element of a loop that is no step (`for s, t in rows`), an element a method hands the
+  closure or the function it is given (`g.nodes.iter().map(|n| ..)` hands `g`, and inside it
+  `n.touches.iter().chain(&n.instead).map(Touch::drawn)` hands `g` as well: what `chain` goes on with
+  is part of what it is handed, an element of either), what operators compute of names
   (`bottom = height - margin`), what each arm of a choice sets a name to (`let unit;
   if (..) unit = KELVIN; else unit = CELSIUS`). A change made through one changes its owner, a lens's
   put. A parameter is such a name: inside an opened step it holds the value its call hands it, not a
@@ -559,7 +564,7 @@ Each law is then a theorem of the construction, or it is not yet, and says which
 | Closing | `q` is a function of the set of open boxes | `topology` (closing draws the picture it was) |
 | Reading | the own arrow of an opened step is its border | `topology` |
 | Endpoints | every image of a place or an occurrence is a box | `pictures.py walk` |
-| Across the cut | a cut step's arrow is the image of its body, made by the same construction (`cutArrow`) | `topology` with a small budget (`ATLAS_FINE_BUDGET=1`, `=3`), which cuts the small programs as a large one is cut |
+| Across the cut | a cut step's arrow is the image of its body, made by the same construction (`cutArrow`) | `plans.rs` at the budgets 1, 2 and 3 (`ATLAS_FINE_BUDGET`), which cut the small programs as a large one is cut: each line of a cut step counts the fine lines its body draws there; `topology` with a small budget |
 | The overview | not built on a finest plan: the packages' pictures are drawn by their own construction, one box per type (#69) | `walk` only |
 
 The oracle holds the pictures to one another, not to the program. Whether `F` says what the code
@@ -569,7 +574,7 @@ fact of it must hold of the plan Atlas builds, and no other. What Atlas gets wro
 with the issue that tracks it, and the mark goes with the fix (`engine/tests/plans/README.md`). The
 test runs the viewer's own model in node, the function every picture is drawn from, on every route of
 the pairs and of its programs.
-**Where.** `plan`, `sitesOf`, `figureOf`, `coarsen`, `cutArrow`, `handTo` and `checkOpenings` in `viewer/plan.js`;
+**Where.** `plan`, `sitesOf`, `figureOf` and `FIGURE_FIELDS`, `coarsen`, `cutArrow`, `handTo` and `checkOpenings` in `viewer/plan.js`;
 which parameters of no type of the code's hold a value, `builder::settle_parameters`; `tools/pictures.py`;
 `engine/tests/plans.rs`.
 
@@ -598,8 +603,12 @@ each one type, in every language. A type a trait leaves to its implementations (
 implementation fixes (`type Item = Book`): in the implementation that type, in the trait any of them. A tuple is the
 values it pairs where it stands for one value (`-> (Config, Store)`); a collection of them holds pairs, of a type the
 code does not name (`Vec<(NaiveDate, f64)>` holds no `NaiveDate`). A tuple of any length (`tuple[Station, ...]`) is a
-collection itself.
-**Where.** `knowledge.rs`: `python_container`, `TYPESCRIPT_CONTAINERS`, `RUST_CONTAINERS`; the Rust reader's
+collection itself. A map holds its values by its keys, a family of lenses indexed by the key (Lenses): `dict[Mode, Plan]`,
+`HashMap<Mode, Plan>` and `Record<Mode, Plan>` are one value that holds Plans, the key choosing the Plan a lookup gives
+as an index chooses an element of a list, no value the map holds. What a parameter holds is what its type holds as its
+language reads it, never a name its type merely writes.
+**Where.** `knowledge.rs`: `python_container`, `TYPESCRIPT_CONTAINERS`, `RUST_CONTAINERS`, the maps `PYTHON_MAPS`,
+`TYPESCRIPT_MAPS`, `RUST_MAPS`; `Param::holds`, read by `writesType` in `viewer/plan.js` and by the principles; the Rust reader's
 signatures (`rust/passes.rs`, `fixed_by_implementations`; `rust/module.rs`, `type_names`, with `RUST_COLLECTIONS`); `typescript/module.rs`, `type_names`, with `TYPESCRIPT_COLLECTIONS`; `python/module.rs`, `type_names`, and `pytypes::outer_classes`, with `python_collection`.
 
 ### Narrowing

@@ -2234,6 +2234,15 @@ const USES: UseSyntax = UseSyntax {
     splits: |n, child| n.kind() == "match_statement" && n.child_by_field_name("subject").map(|v| v.id()) == Some(child.id()),
     names: &["identifier"],
     keeps: &["attribute", "subscript"],
+    field: |n, src| {
+        (n.kind() == "attribute")
+            .then(|| Some((n.child_by_field_name("object")?, text(n.child_by_field_name("attribute")?, src).to_string())))
+            .flatten()
+    },
+    pairs: |targets, value| {
+        matches!(targets.kind(), "pattern_list" | "tuple_pattern" | "list_pattern")
+            && matches!(value.kind(), "expression_list" | "tuple" | "list")
+    },
     wrappers: WRAPPERS,
     drops: |n, child, _| {
         n.kind() == "expression_statement" && n.named_child_count() == 1 && n.named_child(0).map(|c| c.id()) == Some(child.id())

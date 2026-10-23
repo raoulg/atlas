@@ -747,7 +747,13 @@ impl<'a, 't> Body<'a, 't> {
                 self.locals.container_at(name, src);
             }
             let ty = p.ty.trim_start_matches("readonly ").split(['<', '[', ' ', '|']).next().unwrap_or("").to_string();
-            if let Some(r) = self.class(self.resolve(&[ty])) {
+            // a container holds what its type holds: `Array<Plan>` and `Record<Mode, Plan>` hold Plans, as `Plan[]` does
+            let held = || {
+                let t = name.parent()?.child_by_field_name("type")?;
+                type_names(Some(t), src).into_iter().find_map(|t| self.class(self.resolve(&t)))
+            };
+            let class = if knowledge::TYPESCRIPT_CONTAINERS.contains(&ty.as_str()) { held() } else { self.class(self.resolve(&[ty])) };
+            if let Some(r) = class {
                 self.locals.type_at(name, src, r);
             }
         }
@@ -841,6 +847,23 @@ impl<'a, 't> Body<'a, 't> {
         if !(ty.ends_with("[]") || knowledge::TYPESCRIPT_COLLECTIONS.contains(&head)) {
             return None;
         }
+        // each element of a map is one of its values: its key, the first argument, chooses it
+        let ty = match ty.find('<').filter(|_| knowledge::TYPESCRIPT_MAPS.contains(&head)) {
+            Some(open) => {
+                let mut depth = 0;
+                let key = ty[open..].char_indices().find_map(|(i, c)| {
+                    match c {
+                        '<' | '[' | '(' | '{' => depth += 1,
+                        '>' | ']' | ')' | '}' => depth -= 1,
+                        ',' if depth == 1 => return Some(open + i + 1),
+                        _ => {}
+                    }
+                    None
+                });
+                key.map_or("", |at| &ty[at..])
+            }
+            None => ty,
+        };
         ty.split(|c: char| !(c.is_alphanumeric() || c == '_' || c == '$'))
             .filter(|w| !w.is_empty() && !knowledge::TYPESCRIPT_CONTAINERS.contains(w))
             .find_map(|w| self.class(self.resolve(&[w.to_string()])))
@@ -2152,6 +2175,12 @@ const USES: UseSyntax = UseSyntax {
     splits: |n, child| n.kind() == "switch_statement" && n.child_by_field_name("value").map(|v| v.id()) == Some(child.id()),
     names: &["identifier", "shorthand_property_identifier"],
     keeps: &["member_expression", "subscript_expression"],
+    field: |n, src| {
+        (n.kind() == "member_expression")
+            .then(|| Some((n.child_by_field_name("object")?, text(n.child_by_field_name("property")?, src).to_string())))
+            .flatten()
+    },
+    pairs: |targets, value| targets.kind() == "array_pattern" && value.kind() == "array",
     wrappers: WRAPPERS,
     drops: |n, child, src| match n.kind() {
         "expression_statement" => n.named_child(0).map(|c| c.id()) == Some(child.id()),

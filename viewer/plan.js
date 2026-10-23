@@ -37,9 +37,27 @@ const SUMS = new Map();
 // the sum a variant is injected into, where it is the variant of one
 const SUM_OF = new Map(), VARIANTS = new Map();
 for (const e of D.edges) if (e.kind === "variant") { SUM_OF.set(e.dst, SUM_OF.has(e.dst) && SUM_OF.get(e.dst) !== e.src ? null : e.src); if (!VARIANTS.has(e.src)) VARIANTS.set(e.src, []); VARIANTS.get(e.src).push(e.dst); }
-// whether a parameter's written type names a type: by its name, or a sum written in place by the names of its variants
-// (`r: Fit | Failed`)
-const writesType = (p, x) => { const w = new Set((p.type || "").split(/[^A-Za-z0-9_]+/)), b = id => id.replace(/^ext:/, "").split(".").pop(); return w.has(b(x)) || (VARIANTS.has(x) && VARIANTS.get(x).every(v => w.has(b(v)))); };
+// A figure rests in the fields that hold it (#168): a method keeps the figure it makes in the fields of the value it runs on
+// that the binding which makes the figure sets (`self.fig, self.ax = plt.subplots()`), by the class the method is written in
+const FIGURE_FIELDS = new Map(), KEEPS_FIGURE = new Set(), BASES = new Map();
+for (const e of D.edges) if (e.kind === "inherits") { if (!BASES.has(e.src)) BASES.set(e.src, []); BASES.get(e.src).push(e.dst); }
+for (const n of D.nodes) {
+  const lines = (n.touches || []).filter(t => t.kind === "figure").map(t => t.line), self = (n.params || []).find(p => p.receiver)?.name;
+  for (const s of n.sets || []) if (n.cls && s.field && s.lines && (!s.on.name || s.on.name === self) && lines.some(l => s.lines[0] <= l && l <= s.lines[1])) {
+    if (!FIGURE_FIELDS.has(n.cls)) FIGURE_FIELDS.set(n.cls, new Set());
+    FIGURE_FIELDS.get(n.cls).add(s.field);
+    KEEPS_FIGURE.add(n.id);
+  }
+}
+// whether a value of a class keeps its figure in a field: one its class or a base of it keeps the figure in
+const keepsFigure = (cls, field) => {
+  const seen = new Set(), todo = [cls];
+  while (todo.length) { const c = todo.pop(); if (!c || seen.has(c)) continue; seen.add(c); if (FIGURE_FIELDS.get(c)?.has(field)) return true; todo.push(...(BASES.get(c) || [])); }
+  return false;
+};
+// whether a parameter holds a value of a type: one its type holds as its language reads it (`Param::holds`, by name: a map
+// holds its values by its keys), or a sum written in place, by the names of its variants (`r: Fit | Failed`)
+const writesType = (p, x) => { const w = new Set(p.holds || []), b = id => id.replace(/^ext:/, "").split(".").pop(); return w.has(b(x)) || (VARIANTS.has(x) && VARIANTS.get(x).every(v => w.has(b(v)))); };
 // the values a call is handed and gives, one value per name: the variants of a sum a name holds are the sum, a value
 // of no type a constructor gives is of the class it builds, one a change gives is the value it was handed, and one
 // handed by a name of no type is the value
@@ -1232,13 +1250,14 @@ const withErrors = new Map();
 const errorsWith = (scope, v) => { const w = withErrors.get(v); return w && w.scope === scope ? w.errs : []; };
 const stepAt = P => stepOf(P.own ? frames.get(P.parent)?.step : P.steps[0]);
 const changesKind = (P, k) => (arrowOf(stepAt(P))?.changes || []).some(x => kindKey(addPlace(typePlace(x))) === kindKey(k));
-// A figure rests in what holds it (#11): a method that changes the value it runs on keeps the figure it makes in that value
-// (`self.fig, self.ax = plt.subplots()`), so every step that runs on the value draws on the one figure it holds, whichever
-// of them makes it; any other call that makes a figure makes one of its own. Planned by itself, a step beyond the cut does not
-// know the value its caller hands it: a figure kept in that value (the one it runs on, `^recv`, or one it is handed, by the
-// key its call hands it as) is held by it, and its caller says which value that is
-// A value a body sets a part of to what another value holds (`other.fig = self.fig`, `self.fig = fig`, `Node::sets`) is that
-// one's put: from then on it holds the figure that one holds, and so does every value made anew of it
+// A figure rests in what holds it (#11): a method that keeps the figure it makes in a field of the value it runs on
+// (`self.fig, self.ax = plt.subplots()`, `FIGURE_FIELDS`) keeps it in that value, so every step that runs on the value draws
+// on the one figure it holds, whichever of them makes it; any other call that makes a figure makes one of its own. Planned by
+// itself, a step beyond the cut does not know the value its caller hands it: a figure kept in that value (the one it runs on,
+// `^recv`, or one it is handed, by the key its call hands it as) is held by it, and its caller says which value that is
+// A value a body sets a field of to what another value holds (`other.fig = self.fig`, `self.fig = fig`, `Node::sets`) is that
+// one's put: where the field is one it keeps its figure in, from then on it holds the figure that one holds, and so does
+// every value made anew of it (#168)
 const heldBy = new Map();
 const holderOf = v => heldBy.get(v) || originOf.get(v) || v;
 // what the values a step's sets name hold where its call runs: the value it runs on, a parameter by its name
@@ -1254,6 +1273,9 @@ const setsAt = (P, resolved, Cv) => {
     return vs.length || !recv || !info.site.on_receiver ? vs : [receiverAt.get(c)].filter(Boolean);
   };
   for (const s of n.sets) {
+    // a figure follows only through the field it rests in: the field set is one the value keeps its figure in, and what it is
+    // set to is a field another value keeps its figure in (`other.fig = self.fig`) or a whole value (`self.fig = fig`)
+    if (!keepsFigure(s.on.type, s.field) || (s.of && !keepsFigure(s.from?.[0]?.type, s.of))) continue;
     const from = (s.from || []).flatMap(filling), on = new Set(filling(s.on).map(w => originOf.get(w) || w));
     if (from.length) for (const v of Cv.keys()) if (on.has(originOf.get(v) || v)) heldBy.set(v, holderOf(from[0]));
   }
@@ -1271,7 +1293,7 @@ const figureOf = (P, k) => {
     if (!pl?.holder) return k;
     v = pl.holder === "^recv" ? receiver() : P.boundOf?.get(pl.holder);
   } else {
-    if (!n?.cls || !(a?.changes || []).includes(n.cls)) return k;
+    if (!n?.cls || !(a?.changes || []).includes(n.cls) || !KEEPS_FIGURE.has(n.id)) return k;
     v = receiver();
   }
   // the value is held from its first moment: one made before the step planned by itself is its caller's

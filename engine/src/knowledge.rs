@@ -458,6 +458,12 @@ pub const PYTHON_HOLDERS: &[&str] = &[
 /// pairs; one of any length (`tuple[Station, ...]`) holds many.
 pub const PYTHON_TUPLES: &[&str] = &["tuple", "Tuple"];
 
+/// The maps among `PYTHON_HOLDERS`: a map holds its values by its keys, its first parameter (`dict[Mode, Plan]` holds
+/// Plans by their Mode, a `Counter[str]` counts by strings). A key chooses the value a lookup gives, as an index chooses
+/// an element of a list, and is no value the map holds; iterating it is a step whose element is its own value.
+pub const PYTHON_MAPS: &[&str] =
+    &["dict", "Dict", "Mapping", "MutableMapping", "defaultdict", "DefaultDict", "OrderedDict", "Counter", "ChainMap"];
+
 /// Whether a Python generic type holds many values: a holder that is no tuple. A pair one holds is
 /// an element of a type the code does not name (`list[tuple[date, float]]`), as Rust's
 /// `RUST_COLLECTIONS` read it.
@@ -546,6 +552,10 @@ pub const TYPESCRIPT_COLLECTIONS: &[&str] = &[
     "AsyncGenerator",
 ];
 
+/// The maps among `TYPESCRIPT_CONTAINERS`: each holds its values by its keys, its first argument (`Record<Mode, Plan>`
+/// holds Plans by their Mode), as Python's `PYTHON_MAPS` do.
+pub const TYPESCRIPT_MAPS: &[&str] = &["Map", "ReadonlyMap", "Record"];
+
 /// Rust's generic types whose arguments are the values they hold or stand for, by the name Rust
 /// code writes them with: std's collections, pointers, cells and locks with their guards, an
 /// `Option`; what an iterator, a future or a stream gives (`impl Iterator<Item = Month>` gives
@@ -627,6 +637,10 @@ pub const RUST_COLLECTIONS: &[&str] = &[
     "DashMap",
     "DashSet",
 ];
+
+/// The maps among `RUST_CONTAINERS`: each holds its values by its keys, its first argument (`HashMap<Mode, Plan>` holds
+/// Plans by their Mode), as Python's `PYTHON_MAPS` do.
+pub const RUST_MAPS: &[&str] = &["HashMap", "BTreeMap", "IndexMap", "DashMap"];
 
 /// Whether a Rust generic type's arguments are the values it holds or stands for.
 pub fn rust_container(name: &str) -> bool {
@@ -1822,6 +1836,10 @@ pub const RUST_ELEMENTS: &[&str] = &["iter", "iter_mut", "into_iter", "drain"];
 /// The adaptors of an iterator that keep its elements as they are, fewer or in another order.
 pub const RUST_KEEPS_ELEMENTS: &[&str] =
     &["filter", "skip", "take", "rev", "skip_while", "take_while", "peekable", "inspect", "step_by", "by_ref"];
+
+/// The adaptors of an iterator that go on with the elements of what they are handed after their own:
+/// each element of `a.iter().chain(&b)` is one of `a` or one of `b`.
+pub const RUST_JOINS_ELEMENTS: &[&str] = &["chain"];
 
 /// The methods that go over the parts of a value one by one: a string's lines, words and characters,
 /// a slice's windows and chunks, a map's keys and values.

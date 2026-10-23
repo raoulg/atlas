@@ -165,8 +165,37 @@ fn a_figure_lent_through_a_field_is_the_one_figure() {
         }
     }
     let lent = common::pair("figures/lent");
-    let sets = |g: &Graph, id: &str| -> Vec<String> { g.node(id).unwrap().sets.iter().map(|s| s.on.name.clone()).collect() };
-    assert_eq!(sets(&lent.clean, "charts.chart.Chart.take"), [""], "the second chart sets its own fields");
+    assert_eq!(sets(&lent.clean, "charts.chart.Chart.take"), [("", "fig", ""), ("", "ax", "")], "the second chart sets its own fields");
     assert!(sets(&lent.clean, "charts.chart.Chart.lend").is_empty(), "the first hands them to it");
-    assert_eq!(sets(&lent.shortcut, "charts.chart.Chart.lend"), ["other"], "the first sets the second's fields itself");
+    assert_eq!(
+        sets(&lent.shortcut, "charts.chart.Chart.lend"),
+        [("other", "fig", "fig"), ("other", "ax", "ax")],
+        "the first sets the second's fields itself, each to its own field of the same name"
+    );
+}
+
+/// What a body sets of `id`'s values, as `Node::sets` names it: the name that holds the value, the field set and the field
+/// of a value it is set to.
+fn sets<'g>(g: &'g Graph, id: &str) -> Vec<(&'g str, &'g str, &'g str)> {
+    g.node(id).unwrap().sets.iter().map(|s| (s.on.name.as_str(), s.field.as_str(), s.of.as_str())).collect()
+}
+
+/// The titled pair (`tests/pairs/figures/titled`): two charts, the second titled after the first (#168). The clean first
+/// chart hands its title to the second's `retitle`, which sets its own `title`; the shortcut's `lend_title` reaches into
+/// the second chart and sets its title there (`other.title = self.title`). A figure rests in the fields that hold it: a
+/// chart keeps its figure in `fig` and `ax`, which `create_figure` sets to what `plt.subplots()` makes, and the title is
+/// none of them, so the second chart holds no figure of the first's and the screen shows two, also beyond the cut. A field
+/// set is named, so a figure follows only the fields that hold it.
+#[test]
+fn a_field_that_holds_no_figure_lends_none() {
+    let two = BTreeSet::from(["Figure 1 · Chart · first right".to_string(), "Figure 2 · Chart · second right".to_string()]);
+    for side in ["clean", "shortcut"] {
+        for budget in [None, Some(1), Some(2), Some(3), Some(5)] {
+            assert_eq!(screen_of("figures/titled", side, "notebooks.side_by_side", budget), two, "{side}, budget {budget:?}");
+        }
+    }
+    let titled = common::pair("figures/titled");
+    assert_eq!(sets(&titled.clean, "charts.chart.Chart.create_figure"), [("", "fig", ""), ("", "ax", "")], "where the figure rests");
+    assert_eq!(sets(&titled.clean, "charts.chart.Chart.retitle"), [("", "title", "")], "the second chart sets its own title");
+    assert_eq!(sets(&titled.shortcut, "charts.chart.Chart.lend_title"), [("other", "title", "title")], "the first sets the second's");
 }

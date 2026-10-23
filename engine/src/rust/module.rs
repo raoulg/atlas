@@ -91,7 +91,8 @@ pub(super) fn qualified(f: TsNode, src: &[u8]) -> Option<(Vec<String>, Vec<Strin
 /// The type names a type mentions as values, as written: each generic's own name, and its
 /// arguments only where it holds or stands for them (`Option<Vec<Node>>` -> `[[Option], [Vec],
 /// [Node]]`, `impl Iterator<Item = Node>` -> `[[Iterator], [Node]]`), never a generic class's
-/// own parameters (`DrawingArea<DB, Shift>` -> `[[DrawingArea]]`). References, slices, arrays,
+/// own parameters (`DrawingArea<DB, Shift>` -> `[[DrawingArea]]`), nor a map's keys (`HashMap<Mode,
+/// Plan>` -> `[[HashMap], [Plan]]`). References, slices, arrays,
 /// tuples, `impl` and `dyn` go through to what they hold; a `fn(..)` or `Fn(..)` type is a
 /// callback and names none. A tuple is the values it pairs where it stands for one value
 /// (`-> (Config, Store)`, `Option<(Config, Store)>`); held by a collection (`Vec<(NaiveDate,
@@ -135,11 +136,15 @@ fn collect_types(n: TsNode, src: &[u8], many: bool, out: &mut Vec<Vec<String>>) 
             let parts = path_parts(n.child_by_field_name("type"), src);
             let holds = parts.last().map_or(false, |g| knowledge::rust_container(g));
             let collects = parts.last().map_or(false, |g| knowledge::RUST_COLLECTIONS.contains(&g.as_str()));
+            // a map holds its values by its keys, its first argument: a key is no value it holds
+            let keys = usize::from(parts.last().is_some_and(|g| knowledge::RUST_MAPS.contains(&g.as_str())));
             if !parts.is_empty() {
                 out.push(parts);
             }
             if let Some(args) = n.child_by_field_name("type_arguments").filter(|_| holds) {
-                collect_types(args, src, many || collects, out);
+                for a in named_children(args).into_iter().filter(|a| a.kind() != "lifetime").skip(keys) {
+                    collect_types(a, src, many || collects, out);
+                }
             }
         }
         // `Item = Node` names the value an iterator gives, not a type called `Item`
@@ -257,6 +262,7 @@ pub(super) fn signature(f: TsNode, src: &[u8]) -> (Vec<Param>, Option<Returns>, 
                         ty: ty.map(|t| text(t, src).to_string()).unwrap_or_default(),
                         receiver: pattern.map_or(false, |x| x.kind() == "self"),
                         changes: ty.map_or(false, |t| mutable(t) || changes_inside(t, src)),
+                        holds: Param::held(type_names(ty, src)),
                         ..Default::default()
                     });
                     info.ptypes.extend(type_names(ty, src));

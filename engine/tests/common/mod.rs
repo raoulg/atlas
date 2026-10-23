@@ -80,3 +80,44 @@ pub fn written(language: &str, file: &str, addition: &str) -> (PathBuf, atlas_en
     let g = analyze(&copy, &Options::default()).expect("reads");
     (copy, g)
 }
+
+/// Of the function `id`, each parameter by its name, with the types among `types` its reader reads its type as holding
+/// and the types the body's own code reads it as: how the tables pair (`tests/pairs/tables`) tells a table from the
+/// lists it is cut into.
+#[allow(dead_code)]
+pub fn held_by_parameters(g: &Graph, id: &str, types: &[&str]) -> Vec<(String, Vec<String>, Vec<String>)> {
+    let f = g.node(id).unwrap_or_else(|| panic!("no node {id}"));
+    let short = |t: &str| t.rsplit('.').next().unwrap_or(t).to_string();
+    f.params
+        .iter()
+        .filter(|p| !p.receiver)
+        .map(|p| {
+            let holds = types.iter().filter(|t| p.holds_type(t)).map(|t| t.to_string()).collect();
+            let read = f.uses.iter().filter(|u| u.name == p.name && !u.ty.is_empty()).map(|u| short(&u.ty)).collect();
+            (p.name.clone(), holds, read)
+        })
+        .collect()
+}
+
+/// The tables pair of `language`: the clean side looks a Plan up in one table by its Mode, which holds Plans; the
+/// shortcut cuts the table into a list of modes and a list of plans, two values (#167).
+#[allow(dead_code)]
+pub fn a_table_is_one_value(language: &str, id: &str) {
+    let tables = pair(&format!("tables/{language}"));
+    let held = |g: &Graph| -> Vec<(String, Vec<String>, Vec<String>)> { held_by_parameters(g, id, &["Mode", "Plan"]) };
+    let s = |xs: &[&str]| xs.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+    assert_eq!(
+        held(&tables.clean),
+        [("plans".to_string(), s(&["Plan"]), s(&["Plan"])), ("mode".to_string(), s(&["Mode"]), s(&["Mode"]))],
+        "the table holds Plans by their Mode: one value"
+    );
+    assert_eq!(
+        held(&tables.shortcut),
+        [
+            ("modes".to_string(), s(&["Mode"]), s(&[])),
+            ("plans".to_string(), s(&["Plan"]), s(&["Plan"])),
+            ("mode".to_string(), s(&["Mode"]), s(&[]))
+        ],
+        "the modes and the plans are two values"
+    );
+}

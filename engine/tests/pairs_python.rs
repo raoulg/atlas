@@ -1890,3 +1890,11 @@ fn a_parameter_of_no_type_is_handed_by_its_name_where_a_call_fills_it() {
     let uses = &sheets.node("sheets.show").unwrap().uses;
     assert!(uses.iter().any(|u| u.name == "title" && u.ty.is_empty()), "{uses:#?}");
 }
+
+/// The tables pair (`tests/pairs/tables/python`): what a mode means, looked up in one table, `plans: dict[Mode, Plan]`, against
+/// two lists at the same places, `modes: list[Mode]` and `plans: list[Plan]`. A map holds its values by its keys (#167): the clean table is one
+/// value, of Plans, which the body's own lookup reads as one; the shortcut takes the modes as a value of their own.
+#[test]
+fn a_table_is_one_value_and_the_lists_it_is_cut_into_two() {
+    common::a_table_is_one_value("python", "tables.plans.timeout");
+}

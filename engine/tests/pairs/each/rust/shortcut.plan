@@ -1,0 +1,27 @@
+# The same drawing, where each node's touches and what it does instead are gathered into a list first (`let all = ..
+# .collect()`). The list is a value of the body's own, made by the step that names it from the node, a part of the graph;
+# `Touch::drawn` takes each element of the list, so what the clean side draws from the graph, the shortcut draws from a
+# copy it made.
+
+route drawing.drawn
+step drawn/collect
+step drawn/Touch.drawn
+step drawn/Touch.drawn/Where()
+
+line entry > drawn call
+line Graph·g > drawn value
+line Graph·g > drawn/collect value                            # `n.touches.iter().chain(&n.instead).collect()`
+line drawn/collect > Touch·all@drawn/collect value            # `let all = ..`
+line Touch·all@drawn/collect > drawn value                    # `all.into_iter()`, a call that is no step
+line Touch·all@drawn/collect > drawn/Touch.drawn/Where() value
+line drawn/Touch.drawn/Where() > Where@drawn/Touch.drawn/Where() value
+line Where@drawn/Touch.drawn/Where() > drawn/Touch.drawn value
+line drawn/Touch.drawn > Where@drawn/Touch.drawn value
+line Where@drawn/Touch.drawn > drawn value                    # collected and given back
+
+home Graph·g drawn
+home Touch·all@drawn/collect drawn
+home Where@drawn/Touch.drawn/Where() drawn/Touch.drawn
+home Where@drawn/Touch.drawn drawn
+
+side entry left
