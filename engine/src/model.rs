@@ -206,6 +206,11 @@ pub struct Node {
     /// The calls of its body, in the order they run: the steps of a route through it.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sites: Vec<Site>,
+    /// What the body's own code uses outside the calls that are its steps: each name it reads in a
+    /// condition, an operator, a format, a return or an argument of a call that is no step
+    /// (`print(store.path)`, `if done:`, `Ok(path)`), once. A projection of a name uses that name.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub uses: Vec<Use>,
     /// The lines each arm of its body's choices spans, first and last: what is written there runs
     /// only in that arm.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -364,6 +369,18 @@ pub struct Site {
     /// `T × A → T`, never an identity, however much of `A` the graph follows.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub changes: bool,
+    /// The body throws away what the call gives back: the call is the whole of a statement
+    /// (`other.take_from(board)`, `void remove(..)`, `store.add(x);`).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub dropped: bool,
+    /// What the call gives leaves the body as an error: it builds the error a `raise`, a `throw`
+    /// or a `return Err(..)` ends the body with.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub raises: bool,
+    /// The call hands on its callee's error, outside a handler that catches it: the error's type,
+    /// `""` where it is no type of the code's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fails: Option<String>,
     /// The class of the value a method is called on, when that is a subclass of the method's own
     /// class (`ComparePlot(..).plot()` reaches `BasePlot.plot` on a `ComparePlot`).
     #[serde(default, skip_serializing_if = "String::is_empty")]
@@ -420,6 +437,19 @@ impl Held {
     pub fn new(ty: impl Into<String>, name: impl Into<String>) -> Held {
         Held { ty: ty.into(), name: name.into(), at: 0 }
     }
+}
+
+/// A name a body's own code reads (`Node::uses`), with its type when known and the arms of the
+/// choices the use sits in, numbered as `Site::arms` numbers them.
+#[derive(Serialize, Deserialize, TS, Clone, Debug, Default, PartialEq, Eq)]
+#[ts(export)]
+pub struct Use {
+    pub name: String,
+    #[serde(rename = "type", default, skip_serializing_if = "String::is_empty")]
+    pub ty: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(type = "Array<[number, number]>")]
+    pub arms: Vec<(u32, u32)>,
 }
 
 /// A value is its type and its name; where it is written does not make it another.
