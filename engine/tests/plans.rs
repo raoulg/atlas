@@ -10,7 +10,9 @@
 //! Every route of every program under `pairs` and `plans` is also asked for its pictures, for every set of open steps
 //! (each subset while there are few, else each step and each pair): the oracle (opening one more box refines the
 //! picture) and the quotient (each line of the picture counts the fine lines that cross a block's border, by channel,
-//! and each box stands where it stands with every step open).
+//! and each box stands where it stands with every step open). The pictures are asked again of the plan cut as a large
+//! program's is cut, at a few small budgets (`ATLAS_FINE_BUDGET`): a step beyond the cut is the image of its body, and
+//! each of its lines counts the fine lines its body draws there.
 //!
 //! What Atlas gets wrong today is marked in the file with the issue that tracks it: `known #N FACT` for a fact that does
 //! not hold, `known #N extra FACT` for one Atlas has and should not, `known #N fault TEXT` for a fault of the pictures
@@ -21,6 +23,8 @@ use atlas_engine::{flow, parts, Options};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Mutex;
 
 /// A fact Atlas gets wrong today, and the issue that tracks it.
 struct Known {
@@ -90,22 +94,39 @@ fn subject(fact: &str) -> Option<String> {
     (matches!(w[0], "home" | "side") && w.len() > 2).then(|| w[..w.len() - 1].join(" "))
 }
 
-/// What the viewer's model builds of a program: for each route but its tests, the facts of its finest plan and the faults
-/// of its pictures.
-fn built(program: &Path) -> BTreeMap<String, (BTreeSet<String>, Vec<String>)> {
+/// The page's data of a program: its graph and its flow.
+fn data(program: &Path) -> String {
     let graph = parts::analyze_repo(&[program.to_path_buf()], &Options::default()).expect("reads the program");
     let mut data = serde_json::to_value(&graph).expect("the graph is data");
     data["flow"] = serde_json::to_value(flow::of(&graph)).expect("the flow is data");
-    let name = program.to_string_lossy().replace(['/', '\\', ':'], "_");
-    let file = std::env::temp_dir().join(format!("atlas-plans-{}-{name}.json", std::process::id()));
-    std::fs::write(&file, data.to_string()).expect("writes the data");
+    let data = data.to_string();
     // `ATLAS_PLANS_DATA=dir` keeps each program's data there, for `node plans.mjs ../viewer/plan.js DATA ROUTE` by hand
     if let Ok(keep) = std::env::var("ATLAS_PLANS_DATA") {
+        let name = program.to_string_lossy().replace(['/', '\\', ':'], "_");
         let short = name.rsplit_once("tests_").map_or(name.as_str(), |(_, s)| s);
-        std::fs::write(Path::new(&keep).join(format!("{short}.json")), data.to_string()).expect("keeps the data");
+        std::fs::write(Path::new(&keep).join(format!("{short}.json")), &data).expect("keeps the data");
     }
+    data
+}
+
+/// What the viewer's model builds of a program: for each route but its tests, the facts of its finest plan and the faults
+/// of its pictures.
+fn built(program: &Path) -> BTreeMap<String, (BTreeSet<String>, Vec<String>)> {
+    modelled(program, &data(program), None)
+}
+
+/// What the viewer's model builds of a program's data, its plan cut at about `budget` steps as a large program's is cut
+/// (`ATLAS_FINE_BUDGET`), or at its own budget.
+fn modelled(program: &Path, data: &str, budget: Option<usize>) -> BTreeMap<String, (BTreeSet<String>, Vec<String>)> {
+    let name = program.to_string_lossy().replace(['/', '\\', ':'], "_");
+    let file = std::env::temp_dir().join(format!("atlas-plans-{}-{name}-{budget:?}.json", std::process::id()));
+    std::fs::write(&file, data).expect("writes the data");
     let here = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let out = Command::new("node")
+    let mut node = Command::new("node");
+    if let Some(b) = budget {
+        node.env("ATLAS_FINE_BUDGET", b.to_string());
+    }
+    let out = node
         .arg(here.join("tests/plans.mjs"))
         .arg(here.join("../viewer/plan.js"))
         .arg(&file)
@@ -178,19 +199,24 @@ fn faults_of(marks: &[&Known], faults: &[String], fails: &mut Vec<String>, known
     }
 }
 
-/// Every plan written down holds of the plan the viewer builds, and every picture of every route is the image of its
-/// plan, but what is marked as known, each with its issue.
-#[test]
-fn the_finest_plan_says_what_the_code_does() {
+/// The programs under `pairs` and `plans`; `ATLAS_PLANS=pairs/pipeline` keeps only those under that path.
+fn all_programs() -> (PathBuf, Vec<PathBuf>) {
     let tests = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests");
     let mut all = vec![];
     for dir in ["pairs", "plans"] {
         programs(&tests.join(dir), &mut all);
     }
-    // `ATLAS_PLANS=pairs/pipeline` holds only the programs under that path
     if let Ok(only) = std::env::var("ATLAS_PLANS") {
         all.retain(|p| p.strip_prefix(&tests).is_ok_and(|r| r.starts_with(&only)));
     }
+    (tests, all)
+}
+
+/// Every plan written down holds of the plan the viewer builds, and every picture of every route is the image of its
+/// plan, but what is marked as known, each with its issue.
+#[test]
+fn the_finest_plan_says_what_the_code_does() {
+    let (tests, all) = all_programs();
     let (mut report, mut failed, mut written) = (vec![], 0, 0);
     for program in &all {
         let name = program.strip_prefix(&tests).unwrap().display().to_string();
@@ -238,4 +264,42 @@ fn the_finest_plan_says_what_the_code_does() {
     println!("{}", report.join("\n"));
     assert!(written > 0 || std::env::var("ATLAS_PLANS").is_ok(), "there are plans to hold");
     assert!(failed == 0, "{failed} facts of the plans do not hold:\n{}", report.join("\n"));
+}
+
+/// The budgets the plans are cut at as a large program's plan is cut, each small enough to cut the small programs here.
+const BUDGETS: [usize; 3] = [1, 2, 3];
+
+/// Cut as a large program's plan is cut (`ATLAS_FINE_BUDGET`), every picture of every route is still the image of its
+/// plan: a step beyond the cut is the image of its body (`cutArrow`), each of its lines counting the fine lines its body
+/// draws there (#169). The facts are not asked of a cut plan, which holds less of `F` than the finest one does; the faults
+/// known of a program are known here too. The programs are read and modelled side by side, each at every budget.
+#[test]
+fn every_picture_of_a_cut_plan_is_its_image() {
+    let (tests, all) = all_programs();
+    let (next, fails) = (AtomicUsize::new(0), Mutex::new(vec![]));
+    let workers = std::thread::available_parallelism().map_or(4, |n| n.get());
+    std::thread::scope(|s| {
+        for _ in 0..workers {
+            s.spawn(|| {
+                while let Some(program) = all.get(next.fetch_add(1, Ordering::Relaxed)) {
+                    let name = program.strip_prefix(&tests).unwrap().display().to_string();
+                    let file = program.with_extension("plan");
+                    let plan = if file.is_file() { read_plan(&file) } else { Plan::default() };
+                    let data = data(program);
+                    for budget in BUDGETS {
+                        for (route, (_, faults)) in modelled(program, &data, Some(budget)) {
+                            let expected = plan.routes.iter().find(|(r, _)| *r == route).map(|(_, e)| e);
+                            let marks: Vec<&Known> =
+                                plan.faults.iter().chain(expected.into_iter().flat_map(|e| e.known.iter())).filter(|k| k.fault).collect();
+                            let (mut f, mut known) = (vec![], vec![]);
+                            faults_of(&marks, &faults, &mut f, &mut known);
+                            fails.lock().unwrap().extend(f.into_iter().map(|x| format!("{name}, budget {budget}, {route}: {x}")));
+                        }
+                    }
+                }
+            });
+        }
+    });
+    let fails = fails.into_inner().unwrap();
+    assert!(fails.is_empty(), "{} faults of the cut plans:\n{}", fails.len(), fails.join("\n"));
 }

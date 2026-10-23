@@ -559,7 +559,7 @@ Each law is then a theorem of the construction, or it is not yet, and says which
 | Closing | `q` is a function of the set of open boxes | `topology` (closing draws the picture it was) |
 | Reading | the own arrow of an opened step is its border | `topology` |
 | Endpoints | every image of a place or an occurrence is a box | `pictures.py walk` |
-| Across the cut | a cut step's arrow is the image of its body, made by the same construction (`cutArrow`) | `topology` with a small budget (`ATLAS_FINE_BUDGET=1`, `=3`), which cuts the small programs as a large one is cut |
+| Across the cut | a cut step's arrow is the image of its body, made by the same construction (`cutArrow`) | `plans.rs` at the budgets 1, 2 and 3 (`ATLAS_FINE_BUDGET`), which cut the small programs as a large one is cut: each line of a cut step counts the fine lines its body draws there; `topology` with a small budget |
 | The overview | not built on a finest plan: the packages' pictures are drawn by their own construction, one box per type (#69) | `walk` only |
 
 The oracle holds the pictures to one another, not to the program. Whether `F` says what the code

@@ -133,8 +133,9 @@ function pictures(F, openable, occ, homes, valueName) {
 // closed step (or stays itself); a value made below a closed step and taken in it is internal to it, and so is a read of
 // a place the step wrote itself; the other lines between two blocks are one line per channel that counts them. A line
 // comes from the block itself when its own arrow supplies it (what the step's call is handed, what its own arrow takes
-// and gives) and reaches through it otherwise. The picture must draw exactly these counts, and a value it draws stands
-// where it stands with every step open.
+// and gives) and reaches through it otherwise. A step beyond the cut is the image of its body: each of its lines stands
+// for the fine lines its body draws there (`mult`), of which some it reaches. The picture must draw exactly these counts,
+// and a value it draws stands where it stands with every step open.
 function quotient(F, view, set, homes, occ, valueName) {
   const out = [], route = V.route, open = new Set([route, ...set]);
   // a box of the picture by the name of what it stands for in the plan
@@ -151,9 +152,9 @@ function quotient(F, view, set, homes, occ, valueName) {
   };
   const below = (at, S) => !!at && (at.startsWith(S + "/") || at.startsWith(S + "|") || at.startsWith(S + "~c"));
   // a line by its block, its way and what it crosses to; a block's name may hold `|` (a dispatch's alternative)
-  const want = new Map(), add = (b, way, c, r) => {
+  const want = new Map(), add = (b, way, c, n, r) => {
     const k = JSON.stringify([b, way, c]), e = want.get(k) || {n: 0, r: 0};
-    e.n++; if (r) e.r++;
+    e.n += n; e.r += r;
     want.set(k, e);
   };
   for (const P of F.pills.values()) {
@@ -168,7 +169,10 @@ function quotient(F, view, set, homes, occ, valueName) {
       const pl = F.places.get(k), value = /^[tv]:/.test(k);
       if (S && value && below(pl?.at, S) && !view.hidden.has(pl.at)) continue;
       if (S && way === "D" && !value && back.has(k)) continue;
-      add(b, way, view.q(k), mine ? r : !(way === "D" && value && handed(pl)));
+      // a line of a step beyond the cut counts the fine lines its body draws there, and of them the ones it reaches; the
+      // block reaches all of them where it reaches through the step, and the ones the step reaches where it is the step
+      const far = mine ? r : !(way === "D" && value && handed(pl)), [n, nr] = P.mult?.[way]?.get(k) || [1, r ? 1 : 0];
+      add(b, way, view.q(k), n, mine ? nr : far ? n : 0);
     }
   }
   const drawn = new Map();
