@@ -32,12 +32,11 @@ line run/Log()#2 > Log·shared@run/Log()#2 value
 home Log·shared@run/Log()#2 run
 
 # A library operation that changes what a call gives (`log.borrow_mut().lines.push(..)`) is a step
-known #125 step run/note_shared/push
-known #125 line Log·shared@run/Log()#2 > run/note_shared/push value
-known #125 line run/note_shared/push > Log·log@run/note_shared/push value
-known #125 line Log·log@run/note_shared/push > run/note_shared value
-known #125 home Log·log@run/note_shared/push run/note_shared
-known #125 extra line Log·shared@run/Log()#2 > run/note_shared value
+step run/note_shared/push
+line Log·shared@run/Log()#2 > run/note_shared/push value
+line run/note_shared/push > Log·log@run/note_shared/push value
+line Log·log@run/note_shared/push > run/note_shared value
+home Log·log@run/note_shared/push run/note_shared
 
 # `run` reads the lines of the log `note` changed
 known #101 line Log·log@run/note > run value

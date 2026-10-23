@@ -41,12 +41,13 @@ fn runs_as_main(root: TsNode, src: &[u8]) -> bool {
 
 /// The scripts and notebooks of a project: every `.py` and `.ipynb` outside its packages, at any
 /// depth, and the files named on the command line, even where git ignores them. Not its tests,
-/// what git ignores, hidden directories or environments, and not another project inside it (a
-/// directory with a `pyproject.toml`: a part of its own).
+/// what git ignores, hidden directories or environments, a project's own file (`setup.py`, which
+/// setuptools runs to build it), and not another project inside it (a directory with a
+/// `pyproject.toml`: a part of its own).
 fn scripts(repo: &Repo, root_dir: &Path, packages: &[PathBuf]) -> Vec<PathBuf> {
     let named: Vec<PathBuf> = repo.named().into_iter().filter(|p| p.starts_with(root_dir)).collect();
-    // without a package or a project file, the project is the files named
-    if packages.is_empty() && !repo.is_file(root_dir.join("pyproject.toml")) {
+    // without a package or a project's file, the project is the files named
+    if packages.is_empty() && !is_project(repo, root_dir) {
         return named;
     }
     // what a tool made, tests, and another project inside the project
@@ -62,6 +63,7 @@ fn scripts(repo: &Repo, root_dir: &Path, packages: &[PathBuf]) -> Vec<PathBuf> {
         .filter(|p| !packaged.contains(p))
         .filter(|p| !p.ancestors().skip(1).take_while(|a| *a != root_dir).any(elsewhere))
         .filter(|p| !knowledge::python_test_file(p.file_name().and_then(|n| n.to_str()).unwrap_or("")))
+        .filter(|p| !knowledge::PYTHON_PROJECT_FILES.iter().any(|f| p.file_name().is_some_and(|n| n == *f)))
         .collect();
     for f in named {
         if !out.contains(&f) {
@@ -72,16 +74,23 @@ fn scripts(repo: &Repo, root_dir: &Path, packages: &[PathBuf]) -> Vec<PathBuf> {
     out
 }
 
-/// How many directories, from a package up, are looked through for its `pyproject.toml`: the
-/// package, `src`, the project, and one more for a nested layout.
+/// How many directories, from a package up, are looked through for its project: the package,
+/// `src`, the project, and one more for a nested layout.
 pub const PROJECT_ABOVE: usize = 4;
 
-/// The nearest ancestor of the package that holds a `pyproject.toml`.
+/// Whether a directory holds a Python project: one of the files the Python tools install or build
+/// a project from (knowledge::PYTHON_PROJECT_FILES), a `pyproject.toml` or a `requirements.txt`
+/// alike.
+pub fn is_project(repo: &Repo, dir: &Path) -> bool {
+    knowledge::PYTHON_PROJECT_FILES.iter().any(|f| repo.is_file(dir.join(f)))
+}
+
+/// The nearest ancestor of the package that holds a Python project (`is_project`).
 pub fn project_root(repo: &Repo, pkg_dir: &Path) -> Option<PathBuf> {
     let mut cur = Some(pkg_dir);
     for _ in 0..PROJECT_ABOVE {
         let p = cur?;
-        if repo.is_file(p.join("pyproject.toml")) {
+        if is_project(repo, p) {
             return Some(p.to_path_buf());
         }
         cur = p.parent();

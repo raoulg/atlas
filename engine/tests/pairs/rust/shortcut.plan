@@ -53,12 +53,12 @@ step main/?1/run/?2/Store.rows/unwrap
 line entry > main call
 line entry > main/collect call                                      # the arguments the human typed
 line main/collect > _·args@main/collect value
-line _·args@main/collect > main/?1/run value                          # run is handed &args[1..] and looks for --open
+known #101 line _·args@main/collect > main/?1/run value               # run is handed &args[1..] and looks for --open: `args.iter().any(..)` decides
 line _·args@main/collect > main/first value
 line main/first > _·kind@main/first value
 line _·kind@main/first > main/?1/run value
-known #103 line _·args@main/collect > main/?1/run/?1/read_csv/unwrap value   # &args[0]
-known #128 line _·args@main/collect > main/?1/run/?1/unwrap_or value
+line _·args@main/collect > main/?1/run/?1/read_csv/unwrap value   # &args[0]
+line _·args@main/collect > main/?1/run/?1/unwrap_or value
 line main > Screen own                                                 # the usage, when no command is given
 
 # ---------- the settings and the ledger ----------
@@ -85,9 +85,9 @@ line main/?1/run/Store.open > Store·store@main/?1/run/Store.open value
 # ---------- import ----------
 line Disk(path) > main/?1/run/?1/read_csv own
 line main/?1/run/?1/read_csv/unwrap > _·text@main/?1/run/?1/read_csv/unwrap value
-known #103 line _·text@main/?1/run/?1/read_csv/unwrap > main/?1/run/?1/read_csv/Expense.parse/collect value   # each line, through map
+line _·text@main/?1/run/?1/read_csv/unwrap > main/?1/run/?1/read_csv/Expense.parse/collect value   # each line, through map
 line main/?1/run/?1/read_csv/Expense.parse/collect > _·fields@main/?1/run/?1/read_csv/Expense.parse/collect value
-line _·fields@main/?1/run/?1/read_csv/Expense.parse/collect > main/?1/run/?1/read_csv/Expense.parse/split_amount value
+line _·fields@main/?1/run/?1/read_csv/Expense.parse/collect > main/?1/run/?1/read_csv/Expense.parse/split_amount/unwrap_or value   # `text`, filled by `fields[2]`
 line _·fields@main/?1/run/?1/read_csv/Expense.parse/collect > main/?1/run/?1/read_csv/Expense.parse/Expense() value
 line main/?1/run/?1/read_csv/Expense.parse/split_amount > _·amount@main/?1/run/?1/read_csv/Expense.parse/split_amount value
 line main/?1/run/?1/read_csv/Expense.parse/split_amount > _·currency@main/?1/run/?1/read_csv/Expense.parse/split_amount value
@@ -108,8 +108,8 @@ line main/?1/run/?1/Store.save > SQLite(expenses) own
 # ---------- rates ----------
 line Web > main/?1/run/?1/fetch own                                    # a URL the settings hold, which the code does not say
 line main/?1/run/?1/fetch > Value@main/?1/run/?1/fetch value
-line Value@main/?1/run/?1/fetch > main/?1/run/?1/Store.save_rates value  # the body of a Result, matched
-known #103 line Value@main/?1/run/?1/fetch > main/?1/run/?1/Store.save_rates/?1/unwrap_or_default value   # Ok(body) => body["date"]..
+known #101 line Value@main/?1/run/?1/fetch > main/?1/run/?1/Store.save_rates value  # the body of a Result, matched: the match decides on it
+line Value@main/?1/run/?1/fetch > main/?1/run/?1/Store.save_rates/?1/unwrap_or_default value   # Ok(body) => body["date"]..
 line Store·store@main/?1/run/Store.open > main/?1/run/?1/Store.save_rates value
 line _·config@main/?1/run/load > main/?1/run/?1/Store.save_rates value   # base = &config["base"], into params![base, ..]
 line main/?1/run/?1/Store.save_rates/?1/unwrap_or_default > _·date@main/?1/run/?1/Store.save_rates/?1/unwrap_or_default value
@@ -128,16 +128,15 @@ line main/?1/run/?1/remember > Global(spend.rates.LATEST) own
 line main/?1/run/?1/remember > Global(spend.rates.LATEST) in main/?1/run value     # read back inside run, by to_base
 line Global(spend.rates.LATEST) in main/?1/run > main/?1/run/?1/write/to_base value
 line main/?1/run/?1/unwrap_or > _·format@main/?1/run/?1/unwrap_or value
-line _·format@main/?1/run/?1/unwrap_or > main/?1/run/?1/write value
-known #128 line _·format@main/?1/run/?1/unwrap_or > main/?1/run/?1/write/join value   # format!("report.{format}")
+known #101 line _·format@main/?1/run/?1/unwrap_or > main/?1/run/?1/write value   # `match format`, `if format == "csv"` decide on it
+line _·format@main/?1/run/?1/unwrap_or > main/?1/run/?1/write/join value   # format!("report.{format}")
 
-known #125 line main/?1/run/?1/write/?1/from > _·out@main/?1/run/?1/write/?1 value   # the other arm makes it by `format!`, no step: the value either arm makes
+known #158 line main/?1/run/?1/write/?1/from > _·out@main/?1/run/?1/write/?1 value   # the other arm makes it by `format!`, no step: the value either arm makes
 known #101 line _·out@main/?1/run/?1/write/?1 > main/?1/run/?1/write value              # out += .., fs::write(&path, out)
 line Store·store@main/?1/run/Store.open > main/?1/run/?1/write/Store.rows/unwrap value
 line main/?1/run/?1/write/Store.rows/unwrap > _·select@main/?1/run/?1/write/Store.rows/unwrap value
 known #101 line _·select@main/?1/run/?1/write/Store.rows/unwrap > main/?1/run/?1/write/Store.rows value
 line SQLite(expenses) > main/?1/run/?1/write/Store.rows own
-known #128 extra line main/?1/run/?1/write/Store.rows > main/?1/run/?1/write back   # the loop takes the rows, not the store
 line main/?1/run/?1/write/to_base > _@main/?1/run/?1/write/to_base value
 line _@main/?1/run/?1/write/to_base > main/?1/run/?1/write/round2 value
 line main/?1/run/?1/write/round2 > main/?1/run/?1/write back
@@ -227,10 +226,22 @@ line _·amount@main/?1/run/?1/write/for (date, description, amount, currency) in
 line _·currency@main/?1/run/?1/write/for (date, description, amount, currency) in store.rows() > main/?1/run/?1/write/to_base value
 line Expense·expenses@main/?1/run/?1/read_csv > main/?1/run/?1/Store.save/for e in expenses value
 # the loop runs over what Store.rows gives, a step of its own, not over the store (convention 1)
-known #128 line main/?1/run/?1/write/Store.rows > _@main/?1/run/?1/write/Store.rows value   # the rows go to the loop
-known #128 line _@main/?1/run/?1/write/Store.rows > main/?1/run/?1/write/for (date, description, amount, currency) in store.rows() value
-known #128 home _@main/?1/run/?1/write/Store.rows main/?1/run/?1/write
+line main/?1/run/?1/write/Store.rows > _@main/?1/run/?1/write/Store.rows value   # the rows go to the loop
+line _@main/?1/run/?1/write/Store.rows > main/?1/run/?1/write/for (date, description, amount, currency) in store.rows() value
+home _@main/?1/run/?1/write/Store.rows main/?1/run/?1/write
 
-# a value read through its wrappers is handed into the chain's calls, which are no steps (#125)
-known #125 extra line main/?1/run/?1/write/?1/from > _·out@main/?1/run/?1/write/?1/from value
-known #125 extra home _·out@main/?1/run/?1/write/?1/from main/?1/run/?1/write/?1
+# `format!` is no step but a literal of the names it writes, as an f-string is: the arm makes `out` without one (#158)
+known #158 extra line main/?1/run/?1/write/?1/from > _·out@main/?1/run/?1/write/?1/from value
+known #158 extra home _·out@main/?1/run/?1/write/?1/from main/?1/run/?1/write/?1
+
+# the rates the body of the Result holds are gone over in the arm that has one: a loop over a value of a library's type
+# is a step, as `for e in expenses` is; what it makes goes into `params![base, date, currency, rate.as_f64()]`, the
+# body's own call
+step main/?1/run/?1/Store.save_rates/?1/for (currency, rate) in body["rates"].as_object().into_iter().flatten()
+line Value@main/?1/run/?1/fetch > main/?1/run/?1/Store.save_rates/?1/for (currency, rate) in body["rates"].as_object().into_iter().flatten() value
+line main/?1/run/?1/Store.save_rates/?1/for (currency, rate) in body["rates"].as_object().into_iter().flatten() > _·currency@main/?1/run/?1/Store.save_rates/?1/for (currency, rate) in body["rates"].as_object().into_iter().flatten() value
+line main/?1/run/?1/Store.save_rates/?1/for (currency, rate) in body["rates"].as_object().into_iter().flatten() > _·rate@main/?1/run/?1/Store.save_rates/?1/for (currency, rate) in body["rates"].as_object().into_iter().flatten() value
+known #101 line _·currency@main/?1/run/?1/Store.save_rates/?1/for (currency, rate) in body["rates"].as_object().into_iter().flatten() > main/?1/run/?1/Store.save_rates value
+known #101 line _·rate@main/?1/run/?1/Store.save_rates/?1/for (currency, rate) in body["rates"].as_object().into_iter().flatten() > main/?1/run/?1/Store.save_rates value
+known #101 home _·currency@main/?1/run/?1/Store.save_rates/?1/for (currency, rate) in body["rates"].as_object().into_iter().flatten() main/?1/run/?1/Store.save_rates
+known #101 home _·rate@main/?1/run/?1/Store.save_rates/?1/for (currency, rate) in body["rates"].as_object().into_iter().flatten() main/?1/run/?1/Store.save_rates

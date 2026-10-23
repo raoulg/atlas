@@ -69,3 +69,9 @@ def main() -> int:
     other = renamed(board, "c").merged(board)
     counts = counted(tally(with_tag([], "x")), "y")
     return len(other.cells) + len(counts) + len(extended([1], [2])) + len(queued([], 1))
+
+
+def emptied(board: Board) -> Board:
+    board = copy.copy(board)
+    board.reset()
+    return board

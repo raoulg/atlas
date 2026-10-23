@@ -73,7 +73,7 @@ line entry > main call
 line entry > main/Cli() call
 line main/Cli() > Cli·cli@main/Cli() value
 known #101 line Cli·cli@main/Cli() > main value                                # the match decides on cli.command, the if on `open`
-known #103 line Cli·cli@main/Cli() > main/?1/read_csv/read_to_string value     # `file`, bound by the arm's pattern
+line Cli·cli@main/Cli() > main/?1/read_csv/read_to_string value     # `file`, bound by the arm's pattern
 line Cli·cli@main/Cli() > main/?1/Format.renderer value   # `format`, bound by the arm's pattern
 
 line File(spend.toml) > main/Config.load own
@@ -91,8 +91,8 @@ line main/Store.open > Store·store@main/Store.open value
 # ---------- import ----------
 line Disk(path) > main/?1/read_csv own
 line main/?1/read_csv/read_to_string > _·text@main/?1/read_csv/read_to_string value
-known #103 line _·text@main/?1/read_csv/read_to_string > main/?1/read_csv/Expense.parse/splitn value    # each line, through map
-known #103 line _·text@main/?1/read_csv/read_to_string > main/?1/read_csv/Expense.parse/?1/Error() value
+line _·text@main/?1/read_csv/read_to_string > main/?1/read_csv/Expense.parse/splitn value    # each line, through map
+line _·text@main/?1/read_csv/read_to_string > main/?1/read_csv/Expense.parse/?1/Error() value
 line main/?1/read_csv/Expense.parse/splitn > _·fields@main/?1/read_csv/Expense.parse/splitn value
 line _·fields@main/?1/read_csv/Expense.parse/splitn > main/?1/read_csv/Expense.parse/next value
 line _·fields@main/?1/read_csv/Expense.parse/splitn > main/?1/read_csv/Expense.parse/next#2 value
@@ -102,8 +102,8 @@ line main/?1/read_csv/Expense.parse/next#2 > _·description@main/?1/read_csv/Exp
 line main/?1/read_csv/Expense.parse/next#3 > _·amount@main/?1/read_csv/Expense.parse/next#3 value
 line _·date@main/?1/read_csv/Expense.parse/next > main/?1/read_csv/Expense.parse/?1/Expense() value
 line _·description@main/?1/read_csv/Expense.parse/next#2 > main/?1/read_csv/Expense.parse/?1/Expense() value
-known #125 line _·amount@main/?1/read_csv/Expense.parse/next#3 > main/?1/read_csv/Expense.parse/?1/Money.parse/ok_or_else value
-known #125 line _·amount@main/?1/read_csv/Expense.parse/next#3 > main/?1/read_csv/Expense.parse/?1/Money.parse/Error() value
+line _·amount@main/?1/read_csv/Expense.parse/next#3 > main/?1/read_csv/Expense.parse/?1/Money.parse/ok_or_else value
+line _·amount@main/?1/read_csv/Expense.parse/next#3 > main/?1/read_csv/Expense.parse/?1/Money.parse/Error() value
 line main/?1/read_csv/Expense.parse/?1/Error() > Error@main/?1/read_csv/Expense.parse/?1/Error() value
 line Error@main/?1/read_csv/Expense.parse/?1/Error() > main/?1/read_csv/Expense.parse value
 line main/?1/read_csv/Expense.parse/?1/Money.parse/ok_or_else > _·amount@main/?1/read_csv/Expense.parse/?1/Money.parse/ok_or_else value
@@ -113,9 +113,9 @@ line _·currency@main/?1/read_csv/Expense.parse/?1/Money.parse/ok_or_else > main
 line main/?1/read_csv/Expense.parse/?1/Money.parse/map_err > _·value@main/?1/read_csv/Expense.parse/?1/Money.parse/map_err value
 line _·value@main/?1/read_csv/Expense.parse/?1/Money.parse/map_err > main/?1/read_csv/Expense.parse/?1/Money.parse/Money() value
 line main/?1/read_csv/Expense.parse/?1/Money.parse/Error() > Error@main/?1/read_csv/Expense.parse/?1/Money.parse/Error() value
-known #125 line Error@main/?1/read_csv/Expense.parse/?1/Money.parse/Error() > main/?1/read_csv/Expense.parse/?1/Money.parse/ok_or_else value
-known #128 line Error@main/?1/read_csv/Expense.parse/?1/Money.parse/Error() > main/?1/read_csv/Expense.parse/?1/Money.parse/map_err value
-line Error@main/?1/read_csv/Expense.parse/?1/Money.parse/Error() > main/?1/read_csv/Expense.parse/?1/Money.parse value   # and `?` hands it back
+line Error@main/?1/read_csv/Expense.parse/?1/Money.parse/Error() > main/?1/read_csv/Expense.parse/?1/Money.parse/ok_or_else value
+line Error@main/?1/read_csv/Expense.parse/?1/Money.parse/Error() > main/?1/read_csv/Expense.parse/?1/Money.parse/map_err value
+known #138 line Error@main/?1/read_csv/Expense.parse/?1/Money.parse/Error() > main/?1/read_csv/Expense.parse/?1/Money.parse value   # and `?` hands it back
 line main/?1/read_csv/Expense.parse/?1/Money.parse/Money() > Money@main/?1/read_csv/Expense.parse/?1/Money.parse/Money() value
 line Money@main/?1/read_csv/Expense.parse/?1/Money.parse/Money() > main/?1/read_csv/Expense.parse/?1/Money.parse value
 line main/?1/read_csv/Expense.parse/?1/Money.parse > Money·amount@main/?1/read_csv/Expense.parse/?1/Money.parse value
@@ -135,7 +135,7 @@ line RatesClient@main/?1/RatesClient.new/RatesClient() > main/?1/RatesClient.new
 line main/?1/RatesClient.new > RatesClient·client@main/?1/RatesClient.new value
 known #126 line RatesClient·client@main/?1/RatesClient.new > main/?1/RatesClient.latest value   # the body uses the instance itself, and a step inside takes it too
 line RatesClient·client@main/?1/RatesClient.new > main/?1/RatesClient.latest/error_for_status value   # self.http.get(url)..
-known #128 line Config·config@main/Config.load > main/?1/RatesClient.latest/error_for_status value             # ..query(&[("base", base)])
+line Config·config@main/Config.load > main/?1/RatesClient.latest/error_for_status value             # ..query(&[("base", base)])
 line Web(api.frankfurter.app) > main/?1/RatesClient.latest own
 line main/?1/RatesClient.latest/error_for_status > _·response@main/?1/RatesClient.latest/error_for_status value
 known #101 line _·response@main/?1/RatesClient.latest/error_for_status > main/?1/RatesClient.latest value      # response.json()
@@ -149,9 +149,9 @@ line main/?1/Store.save_rates > SQLite(rates) own
 line Store·store@main/Store.open > main/?1/Store.rates/prepare value   # self.conn.prepare(..)
 line main/?1/Store.rates/prepare > _·select@main/?1/Store.rates/prepare value
 line _·select@main/?1/Store.rates/prepare > main/?1/Store.rates/query_map value
-known #128 line Config·config@main/Config.load > main/?1/Store.rates/query_map value   # query_map([base], ..)
-known #128 line Config·config@main/Config.load > main/?1/Store.rates/Rates() value     # Rates { base: base.to_string(), .. }
-known #128 line Config·config@main/Config.load > main/?1/Store.rates/?1/Error() value  # Error::NoRates(base.to_string())
+line Config·config@main/Config.load > main/?1/Store.rates/query_map value   # query_map([base], ..)
+line Config·config@main/Config.load > main/?1/Store.rates/Rates() value     # Rates { base: base.to_string(), .. }
+line Config·config@main/Config.load > main/?1/Store.rates/?1/Error() value  # Error::NoRates(base.to_string())
 line SQLite(rates) > main/?1/Store.rates own
 line main/?1/Store.rates/query_map > _·rows@main/?1/Store.rates/query_map value
 line main/?1/Store.rates/Rates() > Rates·rates@main/?1/Store.rates/Rates() value
@@ -202,8 +202,8 @@ line Render@main/?1/Format.renderer > main/?1/write/Render.extension/Markdown.ex
 line Render@main/?1/Format.renderer > main/?1/write/Render.extension/Csv.extension value
 line Render@main/?1/Format.renderer > main/?1/write/Render.render/Markdown.render value
 line Render@main/?1/Format.renderer > main/?1/write/Render.render/Csv.render value
-known #128 line Config·config@main/Config.load > main/?1/write/Render.render/Markdown.render value   # the title
-known #128 line Config·config@main/Config.load > main/?1/write/Render.render/Csv.render value
+known #157 line Config·config@main/Config.load > main/?1/write/Render.render/Markdown.render value   # the title, which `title` holds
+known #157 line Config·config@main/Config.load > main/?1/write/Render.render/Csv.render value
 line main/?1/write/Render.extension/Markdown.extension > main/?1/write/Render.extension back
 line main/?1/write/Render.extension/Csv.extension > main/?1/write/Render.extension back
 line main/?1/write/Render.extension > _@main/?1/write/Render.extension value
@@ -286,8 +286,6 @@ side Screen right
 # a value handed to a call into a family ends at the dispatch's border
 # the format the arm's pattern binds out of `cli` comes from beyond
 # an own arrow takes what only a step inside it takes, and a value is not followed into the operation a body hands it to
-known #126 extra line Config·config@main/Config.load > main/?1/RatesClient.latest value
-known #126 extra line Config·config@main/Config.load > main/?1/Store.rates value
 known #126 extra line Config·config@main/Config.load > main/?1/write value
 known #126 extra line Money·amount@main/?1/Store.expenses/Money() > main/?1/Store.expenses/query_map value
 # a result that only a step takes is no result handed back
@@ -345,4 +343,7 @@ line Expense@main/?1/Store.expenses > main/?1/lines/for e in expenses value
 line Rates·rates@main/?1/RatesClient.latest > main/?1/Store.save_rates/for (currency, rate) in &rates.rates value
 line Line·lines@main/?1/lines > main/?1/write/Render.render/Csv.render/for l in lines value
 line Line·lines@main/?1/lines > main/?1/write/Render.render/Markdown.render/for l in lines value
-known #128 extra line Cli·cli@main/Cli() > main/?1/read_csv value   # `fs::read_to_string(path)` is handed nothing of `path`, the projection of cli
+# `write` is called with a literal for `dir`: the plan pairs `config`, which fills `title`, with no parameter, and `title`
+# holds nothing
+known #157 extra line _·title > main/?1/write/Render.render value
+known #157 extra home _·title main/?1

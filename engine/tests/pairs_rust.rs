@@ -568,6 +568,95 @@ fn composition_a_call_is_handed_what_the_names_in_its_arguments_hold() {
     let c = choices_side("clean");
     let message = hands(&c, "runs.report", "runs.Message");
     assert!(!message.iter().any(|h| h.starts_with("runs.Level")), "the level goes to `prefix`, not to Message: {message:?}");
+    // a name written twice, once in a step written inside and once outside it, is handed by the one
+    // outside: `self.history(&day.station)?.iter().filter(|r| r.date == day.date)..collect()`
+    let summary = node(&harvest("shortcut"), "harvest.ReadingStore.summary").sites.iter().find(|s| s.op == "collect").unwrap().clone();
+    assert!(handed(&summary).contains(&"harvest.Day·day".to_string()), "{:?}", summary.hands);
+    // a parameter typed as the value a library's sum holds is that value: `fetched: Result<Value, reqwest::Error>`
+    let rates = node(shortcut(), "spend.store.Store.save_rates").sites.iter().find(|s| s.op == "unwrap_or_default").unwrap();
+    assert_eq!(handed(rates), ["ext:serde_json.Value·fetched"], "`body` of `Ok(body)` is a part of `fetched`");
+}
+
+/// What a step is handed, each value as `type·name`.
+fn handed(s: &Site) -> Vec<String> {
+    s.hands.iter().map(|h| format!("{}·{}", h.ty, h.name)).collect()
+}
+
+/// A parameter is a name, and holds what its call fills it with, of whatever type: a step handed
+/// it is handed that. Where no call fills it with a value of the plan (a literal, or a function
+/// no code of the program calls) it holds none. Both sides import the file the command line
+/// names: `read_csv(&file)` and `read_csv(&args[0])` fill `path`, so the read inside is handed it.
+/// The clean side names its settings' file once in `main`, `Config::load(Path::new(CONFIG))`: the
+/// read of `path` there is handed nothing. The choices pair tells the same of a mode: the clean
+/// `finished(&job, settings.mode)` hands `Mode::plan` a `Mode`, the shortcut's
+/// `finished(&job, &settings.mode)` hands `Runner::new` and `timeout` the String `mode` holds,
+/// and the route's own `name: &str`, which nothing in the program fills, is handed to no step.
+#[test]
+fn composition_a_parameter_holds_what_its_call_fills_it_with() {
+    for g in [clean(), shortcut()] {
+        let read = node(g, "spend.expense.read_csv").sites.iter().find(|s| !s.op.is_empty()).unwrap();
+        assert!(handed(read).contains(&"·path".to_string()), "{:?}", read.hands);
+    }
+    let load = node(clean(), "spend.config.Config.load").sites.iter().find(|s| s.op == "read_to_string").unwrap();
+    assert!(load.hands.is_empty(), "a literal fills `path`: {:?}", load.hands);
+    let (c, s) = (choices_side("clean"), choices_side("shortcut"));
+    assert!(node(&c, "runs.finished").sites.iter().any(|x| x.to == "runs.Mode.plan" && handed(x).contains(&"runs.Mode·mode".to_string())));
+    for to in ["runs.Runner.new", "runs.timeout"] {
+        assert_eq!(handed(step(&s, "runs.finished", to)), ["·mode"], "{to}");
+    }
+    for to in ["runs.load", "runs.infer"] {
+        assert!(step(&s, "runs.run", to).hands.is_empty(), "the route's own `name` holds no value of the plan: {to}");
+    }
+}
+
+/// A function a method hands each element of what it runs on is called there, as the closure
+/// `|line| Expense::parse(line)` would call it: a step written where the function is named,
+/// handed the element, a part of what the method runs on (`text` of `text.lines()..map(Expense::parse)`),
+/// and what it gives goes into the step around it (isomorphic is the same). The clean knowledge
+/// base builds its Graaf of the Nodes `map(node)` gives; the shortcut maps the library's
+/// `str::to_string`, no step, and builds no Node.
+#[test]
+fn composition_a_function_handed_each_element_is_a_step_where_it_is_named() {
+    for g in [clean(), shortcut()] {
+        assert_eq!(handed(step(g, "spend.expense.read_csv", "spend.expense.Expense.parse")), ["·text"]);
+    }
+    let (c, s) = (kennis("clean"), kennis("shortcut"));
+    let made = gives(step(&c, "kennis.Kennisbank.graaf", "kennis.node"));
+    assert_eq!(made, ["kennis.Node"]);
+    let graaf = step(&c, "kennis.Kennisbank.graaf", "kennis.Graaf");
+    assert!(graaf.hands.iter().any(|h| h.ty == "kennis.Node"), "the Nodes go into `Graaf {{ nodes }}`: {:?}", graaf.hands);
+    assert!(node(&s, "kennis.Kennisbank.graaf").sites.iter().all(|x| x.to.is_empty()), "{:?}", node(&s, "kennis.Kennisbank.graaf").sites);
+}
+
+/// A closure bound to a name makes its value wherever it is called or handed to a call that calls
+/// it: `let wrong = || Error::Amount(..)` in the clean `Money::parse` hands the Error it builds to
+/// `ok_or_else(wrong)` and to `map_err(|_| wrong())`. The shortcut's `split_amount` falls back on a
+/// pair, `unwrap_or((text, "EUR"))`, and builds no error.
+#[test]
+fn composition_a_closure_bound_to_a_name_makes_its_value_where_it_is_handed() {
+    let parse = node(clean(), "spend.expense.Money.parse");
+    for op in ["ok_or_else", "map_err"] {
+        let s = parse.sites.iter().find(|s| s.op == op).unwrap_or_else(|| panic!("no step {op}"));
+        assert!(handed(s).contains(&"spend.error.Error·".to_string()), "{op}: {:?}", s.hands);
+    }
+    let split = node(shortcut(), "spend.expense.split_amount");
+    assert!(split.sites.iter().all(|s| s.hands.iter().all(|h| !h.ty.ends_with("Error"))), "{:?}", split.sites);
+}
+
+/// A loop is a step that takes what it goes over: written over a step of the program's own
+/// (`for (date, ..) in store.rows()` in the shortcut's `report::write`), it takes what that step
+/// gives, the rows, not the store the step runs on. The clean report is handed its lines and goes
+/// over them (`for l in lines`).
+#[test]
+fn composition_a_loop_over_a_step_takes_what_the_step_gives() {
+    let write = node(shortcut(), "spend.report.write");
+    let rows = step(shortcut(), "spend.report.write", "spend.store.Store.rows");
+    let each = write.sites.iter().find(|s| s.op.starts_with("for ")).unwrap();
+    assert_eq!(rows.gives.len(), 1, "{:?}", rows.gives);
+    assert_eq!(each.hands, rows.gives, "the loop takes the rows `Store.rows` gives");
+    assert!(each.hands.iter().all(|h| h.ty != "spend.store.Store"));
+    let render = node(clean(), "spend.report.Csv.render").sites.iter().find(|s| s.op.starts_with("for ")).unwrap();
+    assert_eq!(handed(render), ["spend.report.Line·lines"]);
 }
 
 /// A `let .. else` is a choice: its `else` runs when the pattern does not match and must leave,
@@ -882,8 +971,11 @@ fn journal(side: &str) -> Graph {
 /// A change to an input shows in the signature. Rust says it with `&mut Log`, and with a type that
 /// changes through a shared reference, `&RefCell<Log>`: on the clean side both put the Log in the
 /// function's codomain, `changes` has nothing to ask, and neither is a call that leaves nothing
-/// behind. The shortcut borrows the log to read and pushes the line onto a copy of its lines: the
-/// line is lost, the signature says the log stays as it was, and `nothing` asks.
+/// behind. The step that makes the change makes the Log anew, also through the guard the cell
+/// gives on what it holds (`log.borrow_mut().lines.push(..)`), as `log.lines.push(..)` does. The
+/// shortcut borrows the log to read and pushes the line onto a copy of its lines: the line is
+/// lost, the signature says the log stays as it was, the push makes the copy anew, and `nothing`
+/// asks.
 #[test]
 fn changes_a_cell_in_the_signature_says_the_value_changes() {
     let (c, s) = (journal("clean"), journal("shortcut"));
@@ -892,10 +984,14 @@ fn changes_a_cell_in_the_signature_says_the_value_changes() {
     for f in ["journal.note", "journal.note_shared"] {
         assert!(node(&c, f).params.iter().any(|p| p.name == "log" && p.changes), "{f}: {:?}", node(&c, f).params);
         assert_eq!(targets(&c, EdgeKind::Mutates, f), ["journal.Log"], "{f}");
+        let push = node(&c, f).sites.iter().find(|x| x.op == "push").unwrap_or_else(|| panic!("{f}: no push"));
+        assert!(push.changes && gives(push) == ["journal.Log"], "{f}: {:?}", push.gives);
     }
     assert_eq!(found(&s, "nothing"), ["journal.note"]);
     assert!(node(&s, "journal.note").params.iter().all(|p| !p.changes));
     assert!(targets(&s, EdgeKind::Mutates, "journal.note").is_empty());
+    let push = node(&s, "journal.note").sites.iter().find(|x| x.op == "push").unwrap();
+    assert_eq!(handed(push), ["·lines"], "the copy, not the log");
 }
 
 // ---------- layers: the package quotient the picture draws ----------

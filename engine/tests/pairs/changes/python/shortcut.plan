@@ -83,7 +83,7 @@ line Board·board@main/reset > main/Board.take_from/extend value
 line main/Board.take_from/extend > Board·self@main/Board.take_from/extend value
 known #129 line Board·self@main/Board.take_from/extend > main/Board.take_from value
 line Board·other@main/Board.take_from > main/Board.take_victim/extend value
-known #129 line Board·board@main/Board.take_from > main/Board.take_victim/extend value
+line Board·board@main/Board.take_from > main/Board.take_victim/extend value
 line main/Board.take_victim/extend > Board·self@main/Board.take_victim/extend value
 known #129 line Board·self@main/Board.take_victim/extend > main/Board.take_victim value
 line main/add_tag/append > _·tags@main/add_tag/append value
@@ -93,13 +93,14 @@ home Board·self@main/Board.take_victim/extend main/Board.take_victim
 home _·tags@main/add_tag/append main/add_tag
 step main/queue/heappush                                    # `heapq.heappush(jobs, job)` changes the list it is handed
 line main/queue/heappush > _·jobs@main/queue/heappush value
+known #129 line _·jobs@main/queue/heappush > main/queue value   # the own arrow hands on what the change made
 home _·jobs@main/queue/heappush main/queue
 
 # A callee's parameter holds what its call hands it: `take_from`'s `other` is main's board, `take_victim`'s `victim`
 # main's board as take_from left it, `merge_scores`' `board` main's other; what each changes of it goes out at its border
 line Board·board@main/reset > main/Board.take_from/clear value
 line Board·other@main/Board.take_from/clear > main/Board.take_from value
-known #129 line Board·board@main/Board.take_from > main/Board.take_victim/clear value
+line Board·board@main/Board.take_from > main/Board.take_victim/clear value
 line Board·victim@main/Board.take_victim/clear > main/Board.take_victim value
 line Board·other@main/Board.take_victim > main/merge_scores/update value
 line Board·board@main/merge_scores/update > main/merge_scores value
@@ -107,38 +108,28 @@ line Board·board@main/merge_scores/update > main/merge_scores value
 # is handed: `take_from`'s `other` (main's board) to main's `other`, `take_victim`'s `victim` to main's other,
 # `merge_scores`' `board` (main's other) to main's `board`
 
-# A changed argument is not the caller's value at a new moment: it is named by the callee's parameter (`take_from`
-# names main's board `other`), two changes of one type collapse into one value (`swap`), so the next step takes the
-# stale board; a changed list or dict has no name
-known #129 line main/Board.take_from > Board·board@main/Board.take_from value
-known #129 line main/Board.take_victim > Board·board@main/Board.take_victim value
-known #129 line Board·board@main/Board.take_victim > main/swap value
-known #129 line main/swap > Board·other@main/swap value
-known #129 line Board·other@main/swap > main/rename value
-known #129 line main/add_tag > list·tags@main/add_tag value
-known #129 line main/count > dict·counts@main/count value
-known #129 line main/queue > list·jobs@main/queue value
-known #129 line main/extend > list·xs@main/extend value
-known #129 home Board·board@main/Board.take_from main
-known #129 home Board·board@main/Board.take_victim main
-known #129 home Board·other@main/swap main
-known #129 home list·tags@main/add_tag main
-known #129 home dict·counts@main/count main
-known #129 home list·jobs@main/queue main
-known #129 home list·xs@main/extend main
-known #129 extra line Board·board@main/reset > main/swap value
-known #129 extra line Board·other@main/merge_scores > main/rename value
-known #129 extra line main/add_tag > list@main/add_tag value
-known #129 extra line main/count > dict@main/count value
-known #129 extra line main/queue > list@main/queue value
-known #129 extra line main/extend > list@main/extend value
-known #129 extra home list@main/add_tag main
-known #129 extra home dict@main/count main
-known #129 extra home list@main/queue main
-known #129 extra home list@main/extend main
+# A changed argument is the caller's value at a new moment, under the name the caller handed it by: `take_from` and
+# `take_victim` make main's other and main's board anew, `swap` both boards, and `add_tag`, `count`, `queue` and
+# `extend` the list or dict they are handed, of the type the change is to, so the next step takes what the change made
+line main/Board.take_from > Board·board@main/Board.take_from value
+line main/Board.take_victim > Board·board@main/Board.take_victim value
+line Board·board@main/Board.take_victim > main/swap value
+line main/swap > Board·other@main/swap value
+line Board·other@main/swap > main/rename value
+line main/add_tag > list·tags@main/add_tag value
+line main/count > dict·counts@main/count value
+line main/queue > list·jobs@main/queue value
+line main/extend > list·xs@main/extend value
+home Board·board@main/Board.take_from main
+home Board·board@main/Board.take_victim main
+home Board·other@main/swap main
+home list·tags@main/add_tag main
+home dict·counts@main/count main
+home list·jobs@main/queue main
+home list·xs@main/extend main
 
-# A step that changes an input loses the result of no type it gives back: no `back`, and the caller takes the changed
-# input instead
+# A step that changes an input gives back its result of no type beside what it changes. The changed `other` goes
+# nowhere: main's code does not use it, but main's own arrow takes it as a value main's result is made from (#129)
 line main/rename > main back
 line main/extend > main back
 known #129 extra line Board·other@main/rename > main value
@@ -155,7 +146,3 @@ known #101 line Cell·cell@main/mark_all/for cell in board.cells > main/mark_all
 # a result the caller drops goes back to it: the reader does not say the call is a statement of its own
 known #134 extra line main/Board.take_from > main back
 known #134 extra line main/Board.take_victim > main back
-
-# take_victim's victim is the board the call hands, stale (#129); its own arrow takes the receiver that extend, no step yet, runs on (#125)
-known #129 extra line Board·board@main/reset > main/Board.take_victim/clear value
-known #129 extra line Board·board@main/reset > main/Board.take_victim/extend value

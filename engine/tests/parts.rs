@@ -146,6 +146,57 @@ fn a_single_module_is_a_package() {
     assert!(g.node("_root.solo").is_none(), "the module is not read as a script as well");
 }
 
+/// Every file the Python tools install or build a project from says as much as a `pyproject.toml`
+/// does that its directory holds a Python project (issue #1): a repository of two packages under
+/// `src` without an `__init__.py` of its own and a script under `scripts`, run as `python
+/// scripts/main.py`, has that script as its entry, the same whichever of `pyproject.toml`,
+/// `requirements.txt`, `setup.py`, `setup.cfg` and `Pipfile` it keeps at its root.
+#[test]
+fn every_project_file_makes_the_scripts_beside_the_packages_entries() {
+    let files: [(&str, &str); 5] = [
+        ("pyproject.toml", "[project]\nname = \"news\"\nversion = \"0.1.0\"\n"),
+        ("requirements.txt", "requests==2.32.3\n"),
+        ("setup.py", "from setuptools import setup\n\nsetup(name=\"news\")\n"),
+        ("setup.cfg", "[metadata]\nname = news\n"),
+        ("Pipfile", "[packages]\nrequests = \"*\"\n"),
+    ];
+    let entries = |manifest: &str, text: &str| -> Vec<(EntryKind, String)> {
+        let dir = std::env::temp_dir().join(format!("atlas-parts-project-{}-{}", manifest.replace('.', "-"), std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let written = [
+            (manifest, text),
+            ("src/archiving/__init__.py", ""),
+            ("src/archiving/store.py", "def archive(text: str) -> str:\n    return text\n"),
+            ("src/enrichment/__init__.py", ""),
+            ("src/enrichment/tag.py", "def tag(text: str) -> str:\n    return text.upper()\n"),
+            (
+                "scripts/main.py",
+                "from archiving.store import archive\nfrom enrichment.tag import tag\n\nif __name__ == \"__main__\":\n    print(archive(tag(\"x\")))\n",
+            ),
+        ];
+        for (path, body) in written {
+            let file = dir.join(path);
+            std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+            std::fs::write(file, body).unwrap();
+        }
+        let g = analyze_repo(&[dir.clone()], &Options::default());
+        let _ = std::fs::remove_dir_all(&dir);
+        let g = g.unwrap_or_else(|e| panic!("{manifest}: {e}"));
+        let mut out: Vec<(EntryKind, String)> = g
+            .nodes
+            .iter()
+            .filter_map(|n| n.entry.as_ref())
+            .filter(|e| e.kind == EntryKind::Script)
+            .map(|e| (e.kind, e.label.clone()))
+            .collect();
+        out.sort_by(|a, b| a.1.cmp(&b.1));
+        out
+    };
+    for (manifest, text) in files {
+        assert_eq!(entries(manifest, text), [(EntryKind::Script, "scripts/main.py".to_string())], "beside a {manifest}");
+    }
+}
+
 /// The parts side by side in one graph, every node in its part; checked part by part.
 #[test]
 fn the_parts_are_one_graph() {
