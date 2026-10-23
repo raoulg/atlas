@@ -836,7 +836,7 @@ const build = (node, parent, caller) => {
   if (node.synthetic) {
     const fid = "n:" + node.id, one = node.when.length === 1;
     const w = one ? node.when[0][1] : "", title = !one ? "one of" : !w ? "only sometimes" : w === "otherwise" ? "only otherwise" : `only when ${w}`;
-    frames.set(fid, {id: fid, step: null, parent, hue: node.hue, choice: true, synthetic: true, title, whens: one ? [] : node.when.filter(w => w[1])});
+    frames.set(fid, {id: fid, step: null, parent, hue: node.hue, choice: true, synthetic: true, title, whens: one ? [] : node.when.filter(w => w[1]), ...(one ? {one: true} : {})});
     return node.kids.flatMap(k => build(k, fid, caller));
   }
   // in the finest plan a call without calls of its own is a pill; an open step has a frame and its own arrow
@@ -1058,6 +1058,14 @@ const bound = (P, k, nm = (P.dn && P.dn.get(k)) || "") => {
   const any = v ? null : latestGet(kindKey(k) + "|", P);
   return v || (any && alone && nm && !nm.startsWith("#") ? condOf(k, nm) : any);
 };
+// the value of `k`'s kind made before the choice of one arm that made `v` in its arm, inside the frame of the own arrow `P`
+const passedOn = (P, k, v) => {
+  const e = (latest.get(kindKey(k) + "|") || []).find(x => x.v === v), at = places.get(v)?.at;
+  const c = e && [...e.arms.keys()].find(c => frames.get(c)?.one && at !== c && planChain(c).includes(P.parent));
+  if (!c) return null;
+  const w = latestGet(kindKey(k) + "|", P, true, new Map([[c, -1]])), wat = places.get(w)?.at, f = P.parent;
+  return w && w !== v && wat && (wat.startsWith(f + "/") || wat.startsWith(f + "|") || wat.startsWith(f + "~c")) ? w : null;
+};
 const viaDispatch = (P, k) => {
   const key = P.own ? frames.get(P.parent)?.step : P.steps[0], d = key && treeInfo.get(key)?.dispatch, Own = d && pills.get("o:" + d);
   if (!Own || !isMem(k) || P.dn?.get(k) || P.keep?.has(k) || !places.get(k)?.type) return null;
@@ -1144,6 +1152,10 @@ for (const P of pills.values()) {
     // a value of a choice is what each arm made of it: a step after the choice takes them all
     if (armKey.has(v) && !armsAbove(P).has(places.get(v).at)) for (const w of armValues.get(armKey.get(v))) if (w !== v) Dv.set(w, r);
     if (v && P.keep?.has(k)) (P.kept ||= new Set()).add(v);
+    // what an opened step gives back past a choice of one arm, where the arm does not run, is what was there before it:
+    // `x ?? y` hands on the left's value, whose name, if it has one, the choice's value holds already
+    const left = v && P.own && P.keep?.has(k) && passedOn(P, k, v);
+    if (left && !Dv.has(left)) { Dv.set(left, r); P.kept.add(left); }
   });
   // a value the body uses itself is the one its name holds there, made inside or handed in; a name that holds none (a
   // result that went back, a literal) adds nothing

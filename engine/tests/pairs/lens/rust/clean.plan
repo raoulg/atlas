@@ -178,7 +178,7 @@ known #101 line _·date@ReadingStore()/ReadingStore.summary/ReadingStore.kept_su
 line ReadingStore()/ReadingStore.summary/ReadingStore.kept_summary/?1/Summary() > Summary@ReadingStore()/ReadingStore.summary/ReadingStore.kept_summary/?1/Summary() value
 line Summary@ReadingStore()/ReadingStore.summary/ReadingStore.kept_summary/?1/Summary() > ReadingStore()/ReadingStore.summary/ReadingStore.kept_summary value
 line ReadingStore()/ReadingStore.summary/ReadingStore.kept_summary > Summary·summary@ReadingStore()/ReadingStore.summary/ReadingStore.kept_summary value   # `Some(summary)` names it
-known #101 line Summary·summary@ReadingStore()/ReadingStore.summary/ReadingStore.kept_summary > ReadingStore()/ReadingStore.summary value   # the arm returns it: the pattern names it (#103), the body's own `Ok(summary)` uses it
+line Summary·summary@ReadingStore()/ReadingStore.summary/ReadingStore.kept_summary > ReadingStore()/ReadingStore.summary value   # where the `None` arm does not run, `Some(summary) => Ok(summary)` hands on the left
 line ReadingStore > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/read_to_string value # the caller's instance: read_to_string is handed `self.readings`
 line Disk(ReadingStore.readings) > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history own
 line ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/read_to_string > _·text@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/read_to_string value
