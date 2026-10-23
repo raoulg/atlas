@@ -13,12 +13,12 @@ use crate::model::{Graph, Leaves};
 use crate::options::Options;
 use crate::prophecy::Form;
 use crate::repo::Repo;
-use crate::{entries, python, pytypes, rust, typescript};
+use crate::{entries, knowledge, python, pytypes, rust, typescript};
 
 pub trait Language {
     fn name(&self) -> &'static str;
-    /// The file that roots a part in the language.
-    fn manifest(&self) -> &'static str;
+    /// The files that root a part in the language: each says that its directory holds a project.
+    fn manifests(&self) -> &'static [&'static str];
     /// The extensions of the files that hold its code as text.
     fn sources(&self) -> &'static [&'static str];
     /// The form it marks a prophecy in.
@@ -67,8 +67,8 @@ impl Language for Python {
     fn name(&self) -> &'static str {
         "python"
     }
-    fn manifest(&self) -> &'static str {
-        "pyproject.toml"
+    fn manifests(&self) -> &'static [&'static str] {
+        knowledge::PYTHON_PROJECT_FILES
     }
     /// A notebook holds its code in the cells of a JSON document.
     fn sources(&self) -> &'static [&'static str] {
@@ -78,16 +78,17 @@ impl Language for Python {
         Form::Decorator
     }
     fn detect(&self, repo: &Repo, _opts: &Options) -> bool {
-        repo.is_file("pyproject.toml") || !python::packages(repo).is_empty() || !repo.named().is_empty()
+        python::is_project(repo, repo.root()) || !python::packages(repo).is_empty() || !repo.named().is_empty()
     }
     fn parse(&self, repo: &Repo, opts: &Options) -> Result<Graph> {
         let (packages, project_root) = Python::reading(repo, opts);
         // a project of scripts and notebooks has no package: a file named on the command line
         // in a folder without one, or a project file with none beside it
-        if packages.is_empty() && !repo.is_file("pyproject.toml") && repo.named().is_empty() {
+        if packages.is_empty() && !python::is_project(repo, repo.root()) && repo.named().is_empty() {
             anyhow::bail!(
-                "no Python package found under {} (looked for a pyproject.toml, src/<pkg>/__init__.py and <pkg>/__init__.py)",
-                repo.root().display()
+                "no Python package found under {} (looked for {}, src/<pkg>/__init__.py and <pkg>/__init__.py)",
+                repo.root().display(),
+                knowledge::PYTHON_PROJECT_FILES.join(", ")
             );
         }
         let (mut b, root) = python::parse(repo, &packages, project_root.as_deref(), opts)?;
@@ -104,16 +105,16 @@ impl Language for Python {
     fn leaves(&self) -> Leaves {
         Leaves { exports: true, types: true, returns: true, overrides: true }
     }
-    /// A package without a `pyproject.toml` of its own is in the nearest of the three directories
-    /// above it that has one.
+    /// A package that holds no project of its own (`python::is_project`) is in the nearest of the
+    /// three directories above it that holds one.
     fn project_above(&self, repo: &Repo, opts: &Options) -> Option<(PathBuf, PathBuf)> {
-        if repo.is_file("pyproject.toml") {
+        if python::is_project(repo, repo.root()) {
             return None;
         }
         let package = opts.package.clone().or_else(|| python::packages(repo).into_iter().next())?;
         let root = package.ancestors().take(python::PROJECT_ABOVE).find(|p| match p.starts_with(repo.root()) {
-            true => repo.is_file(p.join("pyproject.toml")),
-            false => p.join("pyproject.toml").is_file(),
+            true => python::is_project(repo, p),
+            false => python::project_files(p).any(|f| f.is_file()),
         })?;
         (!root.starts_with(repo.root())).then(|| (root.to_path_buf(), package.clone()))
     }
@@ -134,7 +135,7 @@ impl Python {
         let first = packages.first().map(PathBuf::as_path);
         let project_root = first
             .and_then(|p| python::project_root(repo, p))
-            .or_else(|| (repo.is_file("pyproject.toml") || first.is_none()).then(|| repo.root().to_path_buf()));
+            .or_else(|| (python::is_project(repo, repo.root()) || first.is_none()).then(|| repo.root().to_path_buf()));
         (packages, project_root)
     }
 }
@@ -145,8 +146,8 @@ impl Language for Rust {
     fn name(&self) -> &'static str {
         "rust"
     }
-    fn manifest(&self) -> &'static str {
-        "Cargo.toml"
+    fn manifests(&self) -> &'static [&'static str] {
+        &["Cargo.toml"]
     }
     fn sources(&self) -> &'static [&'static str] {
         &["rs"]
@@ -185,8 +186,8 @@ impl Language for TypeScript {
     fn name(&self) -> &'static str {
         "typescript"
     }
-    fn manifest(&self) -> &'static str {
-        "package.json"
+    fn manifests(&self) -> &'static [&'static str] {
+        &["package.json"]
     }
     fn sources(&self) -> &'static [&'static str] {
         typescript::EXTENSIONS
@@ -224,10 +225,14 @@ impl Language for TypeScript {
     }
 }
 
+/// The manifests that root a part, in every language.
+pub fn manifests() -> Vec<&'static str> {
+    languages().iter().flat_map(|l| l.manifests().iter().copied()).collect()
+}
+
 /// What the languages look for: the manifests that root a part, and a package directory.
 pub fn looked_for() -> String {
-    let manifests: Vec<&str> = languages().iter().map(|l| l.manifest()).collect();
-    format!("looked for {}, or a package directory", manifests.join(", "))
+    format!("looked for {}, or a package directory", manifests().join(", "))
 }
 
 /// What the language of that name leaves its author to write.

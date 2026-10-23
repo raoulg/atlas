@@ -319,7 +319,8 @@ fn named_route(graph: &Graph, named: &[PathBuf]) -> Option<String> {
 fn project_of(file: &std::path::Path) -> PathBuf {
     let file = std::fs::canonicalize(file).unwrap_or_else(|_| file.to_path_buf());
     let dir = file.parent().unwrap_or(&file);
-    let root = dir.ancestors().find(|d| ["pyproject.toml", "Cargo.toml", "package.json"].iter().any(|m| d.join(m).exists())).unwrap_or(dir);
+    let manifests = atlas_engine::language::manifests();
+    let root = dir.ancestors().find(|d| manifests.iter().any(|m| d.join(m).exists())).unwrap_or(dir);
     // the project is written from where atlas runs, as a folder named on the command line is
     let here = std::env::current_dir().ok().and_then(|c| std::fs::canonicalize(c).ok());
     match here.as_deref().and_then(|h| root.strip_prefix(h).ok()) {

@@ -30,7 +30,7 @@ pub fn roots(repo: &Repo, opts: &Options) -> Vec<(PathBuf, &'static str)> {
     // a directory comes after the directories around it
     for d in repo.dirs_under("").into_iter().filter(|d| !skipped(d)) {
         for l in crate::language::languages() {
-            if !repo.is_file(d.join(l.manifest())) {
+            if !l.manifests().iter().any(|m| repo.is_file(d.join(m))) {
                 continue;
             }
             let read = out.iter().any(|(o, name)| *name == l.name() && d.starts_with(o) && l.reads(&repo.under(&rel(o)), &d));
