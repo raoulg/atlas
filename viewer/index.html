@@ -101,6 +101,7 @@ svg#canvas:active{cursor:grabbing}
 #keys kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--line);border-bottom-width:2px;padding:0 5px;background:var(--panel-2)}
 #zoomctl{position:absolute;right:14px;top:14px;display:flex;gap:4px}
 #fault{position:absolute;left:14px;top:52px;max-width:min(720px,calc(100% - 28px));background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--alert);border-radius:4px;padding:12px 14px;font-size:12px;line-height:1.5;color:var(--ink-2);z-index:5}
+#laying{position:absolute;left:50%;top:52px;transform:translateX(-50%);background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:5px 12px;font-size:12px;color:var(--ink-2);z-index:5;pointer-events:none;font-variant-numeric:tabular-nums}
 #fault b{display:block;color:var(--ink);font-weight:600;margin-bottom:2px}
 #fault pre{font-family:var(--mono);font-size:11px;color:var(--ink);white-space:pre-wrap;word-break:break-word;margin:8px 0;max-height:180px;overflow:auto}
 #fault button{font:inherit;font-size:11px;color:var(--ink-2);background:var(--panel-2);border:1px solid var(--line);border-radius:3px;padding:2px 8px;cursor:pointer}
@@ -309,6 +310,7 @@ pre.code .l::before{counter-increment:ln;content:counter(ln);display:inline-bloc
     <svg id="canvas"><g id="scene" class="scene"></g></svg>
     <div id="crumbs" aria-label="what this picture shows"></div>
     <div id="fault" role="alert" hidden></div>
+    <div id="laying" role="status" hidden></div>
     <div id="zoomctl"><button id="zout" type="button" title="zoom out">−</button><button id="fit" type="button">fit</button><button id="zone" type="button" title="actual size">1:1</button><button id="zin" type="button" title="zoom in">+</button><button id="codetoggle" type="button" title="show or hide the code panel">hide code</button></div>
     <div id="resizer" title="drag to resize the inspector"></div>
     <div id="legend"></div>
@@ -1145,6 +1147,65 @@ function insideTags(grp, w, h, I, pad) {
 let prevPos = new Map(), plaatAnchor = null, plaatFit = true;
 // what the last render drew: each box by its id in the layout, and each line by its two ends
 let PICTURE = {boxes: new Map(), lines: []};
+// ---------- the layout: ELK in a worker, each layout kept under its input ----------
+// ELK works in a worker of its own, so the page stays usable and says what is coming while it works; a
+// worker that cannot start (its script out of reach) leaves the layout to the page's own ELK. The same
+// input gives the same layout, so a picture seen before is drawn from what was kept.
+const ELK_SCRIPT = "https://cdn.jsdelivr.net/npm/elkjs@0.9.3/lib/elk-worker.min.js", KEPT = 48;
+const SUPERSEDED = new Error("laid out for a picture no longer asked for");
+const LAYOUTS = new Map();      // input → the promise of its layout, the least recently used first
+const rate = {ms: 0, size: 0};  // how long this page's layouts took, by their boxes and lines
+let elkUrl = null, layWorker = null;
+const sizeOf = n => 1 + (n.edges || []).length + (n.children || []).reduce((s, c) => s + sizeOf(c), 0);
+const startWorker = () => {
+  let fail;
+  const broken = new Promise((_, no) => { fail = no; });
+  broken.catch(() => {});
+  let elk = null;
+  try {
+    elkUrl ||= URL.createObjectURL(new Blob([`importScripts(${JSON.stringify(ELK_SCRIPT)})`], {type: "text/javascript"}));
+    elk = new ELK({workerFactory: () => { const w = new Worker(elkUrl); w.addEventListener("error", e => { e.preventDefault(); fail(e); }); return w; }});
+  } catch (e) { fail(e); }
+  return {elk, broken, job: null};
+};
+function laidOut(graph) {
+  const key = JSON.stringify(graph), hit = LAYOUTS.get(key);
+  if (hit) { LAYOUTS.delete(key); LAYOUTS.set(key, hit); return hit; }
+  // a worker does one layout at a time, and stopping it is the only way to stop what it does: a picture
+  // asked for replaces the one asked for before it
+  if (layWorker?.job) { try { layWorker.elk?.terminateWorker(); } catch {} layWorker.job.stop(); layWorker = null; }
+  const W = (layWorker ||= startWorker()), size = sizeOf(graph), t0 = performance.now();
+  let stop;
+  const stopped = new Promise((_, no) => { stop = () => no(SUPERSEDED); });
+  const here = () => new ELK().layout(JSON.parse(key));
+  const run = W.elk ? Promise.race([W.elk.layout(graph), W.broken]).catch(() => { if (layWorker === W) layWorker = null; return here(); }) : here();
+  const job = {stop: () => stop()};
+  const done = Promise.race([run, stopped]).then(r => {
+    rate.ms += performance.now() - t0; rate.size += size;
+    if (W.job === job) W.job = null;
+    return r;
+  }, err => { LAYOUTS.delete(key); if (W.job === job) W.job = null; throw err; });
+  done.catch(() => {});
+  W.job = job;
+  LAYOUTS.set(key, done);
+  for (const k of LAYOUTS.keys()) { if (LAYOUTS.size <= KEPT) break; LAYOUTS.delete(k); }
+  return done;
+}
+// while a picture is laid out: what is coming, and from this page's rate how long it should take
+const layingEl = document.getElementById("laying");
+let layingTimer = null;
+function laying(root, shown) {
+  clearTimeout(layingTimer); clearInterval(layingTimer);
+  layingEl.hidden = true;
+  if (!root) return;
+  const boxes = (function n(x) { return (x.children || []).reduce((s, c) => s + 1 + n(c), 0); })(root), lines = sizeOf(root) - boxes - 1;
+  const about = rate.size ? rate.ms / rate.size * sizeOf(root) / 1000 : null, t0 = performance.now();
+  const say = () => {
+    const s = (performance.now() - t0) / 1000;
+    layingEl.textContent = `laying out ${boxes} boxes and ${lines} lines · ${s.toFixed(0)} s` + (about != null && about > s ? ` of about ${Math.max(1, Math.round(about))} s` : "");
+  };
+  layingTimer = setTimeout(() => { if (!shown()) return; say(); layingEl.hidden = false; layingTimer = setInterval(say, 500); }, 300);
+}
 async function renderPlaat(mine) {
   const g = scene.node(), DUR = matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 380;
   dirFold = {to: new Map(), n: new Map()};
@@ -2165,8 +2226,12 @@ async function renderPlaat(mine) {
   const sided = (text, labels) => { if (labels) { text.dataset.a = labels.a; text.dataset.b = labels.b; text.dataset.u = text.textContent; } };
   // boxes are placed by Brandes–Köpf, which grows about linearly with the lines, so a picture of a few
   // hundred lines opens at once; network simplex straightens long lines a little at ten times the cost
-  const layout = await new ELK().layout(Object.assign(root, {layoutOptions: {"elk.algorithm": "layered", "elk.direction": "RIGHT", "elk.hierarchyHandling": "INCLUDE_CHILDREN", "elk.edgeRouting": "ORTHOGONAL", "elk.layered.spacing.nodeNodeBetweenLayers": "56", "elk.spacing.nodeNode": "16", "elk.layered.nodePlacement.strategy": "BRANDES_KOEPF", "elk.spacing.edgeNode": "14", "elk.layered.spacing.edgeNodeBetweenLayers": "16", "elk.layered.considerModelOrder.strategy": "NODES_AND_EDGES"}}));
+  Object.assign(root, {layoutOptions: {"elk.algorithm": "layered", "elk.direction": "RIGHT", "elk.hierarchyHandling": "INCLUDE_CHILDREN", "elk.edgeRouting": "ORTHOGONAL", "elk.layered.spacing.nodeNodeBetweenLayers": "56", "elk.spacing.nodeNode": "16", "elk.layered.nodePlacement.strategy": "BRANDES_KOEPF", "elk.spacing.edgeNode": "14", "elk.layered.spacing.edgeNodeBetweenLayers": "16", "elk.layered.considerModelOrder.strategy": "NODES_AND_EDGES"}});
+  let layout;
+  laying(root, () => mine === undefined || mine === renderSeq);
+  try { layout = await laidOut(root); } catch (err) { if (err === SUPERSEDED) return; throw err; }
   if (mine !== undefined && mine !== renderSeq) return;
+  laying(null);
   g.innerHTML = ""; g.classList.remove("focus", "busy");
   PICTURE = {boxes: new Map(), lines: []};
   // absolute positions; edge points are relative to the edge's container
