@@ -107,7 +107,7 @@ fn a_client_initializes_lists_and_calls() {
 fn atlas_view_reads_as_its_algebra() {
     let replies = session(&[
         call(1, "route", json!({ "entry": "atlas.view", "depth": 1 })),
-        call(2, "route", json!({ "entry": "atlas.view", "depth": 4 })),
+        call(2, "route", json!({ "entry": "atlas.view", "depth": 5 })),
     ]);
     let route = text(&replies[0]);
     // the steps at depth 1, without their numbers

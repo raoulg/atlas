@@ -13,11 +13,5 @@ pub(crate) fn made(dir: Option<&Path>, file: &str) -> PathBuf {
         let _ = std::fs::create_dir_all(&tmp);
         return tmp.join(file);
     };
-    let dir = atlas_engine::repo::normal(&std::path::absolute(dir).unwrap_or_else(|_| dir.to_path_buf()));
-    let top = dir.ancestors().find(|a| a.join(".git").exists()).unwrap_or(&dir);
-    let home = top.join(".atlas");
-    if std::fs::create_dir_all(&home).is_ok() && !home.join(".gitignore").exists() {
-        let _ = std::fs::write(home.join(".gitignore"), "# What atlas makes: pages and graphs, never committed.\n*\n");
-    }
-    home.join(file)
+    atlas_engine::cache::home(dir).join(file)
 }

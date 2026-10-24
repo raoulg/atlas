@@ -2,10 +2,9 @@
 //! from the cache and draws the same graph, and a library whose code changes without a new version
 //! is read anew.
 //!
-//! Kept: what ty says of an installed Python library's file, by its bytes and the environment, and
-//! a revision's parts, by its commit, while what the reading took from outside the commit stands as
-//! it did. Not kept: the reading of a crate or a package in the working tree, which links its code
-//! together with the program's.
+//! The cache keeps a working-tree part while its sources and environment stand as they did, what ty
+//! says of an installed Python library's file by its bytes and environment, and a revision's parts
+//! by its commit and external inputs.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -156,18 +155,18 @@ fn a_revision_is_read_once_and_anew_when_its_libraries_change() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// A crate and a package in the working tree are linked together with the program, so what is read
-/// of them depends on the program: they are read anew each time, and a change to their code without
-/// a new version is seen at once.
+/// A crate and a package in the working tree are kept with their source and library inputs. A
+/// change to either library's code without a new version is seen on the next reading.
 #[test]
-fn the_working_tree_is_read_anew() {
+fn the_working_tree_reuses_current_parts_and_refreshes_changed_libraries() {
     let dir = scratch("worktree");
     let repo = project(&dir);
     let opts = cached(&dir.join("cache"));
     let read = || parts::analyze_parts(&[repo.clone()], &opts).unwrap();
     let (first, second) = (read(), read());
     assert_eq!(shown(&first), shown(&second));
-    assert_eq!(opts.cache.as_ref().unwrap().hits(), 0, "nothing of a crate or a package is kept");
+    assert!(opts.cache.as_ref().unwrap().hits() >= 2, "both parts are found in the index");
+    assert_eq!(opts.cache.as_ref().unwrap().writes(), 2, "the warm reading writes no part");
     filekit(&dir.join("filekit"), "    std::fs::write(path, \"\").unwrap();\n    String::new()");
     textkit(&repo, "  return readFileSync(path, \"latin1\").trim();");
     let third = read();
