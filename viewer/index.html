@@ -102,6 +102,13 @@ svg#canvas:active{cursor:grabbing}
 #zoomctl{position:absolute;right:14px;top:14px;display:flex;gap:4px}
 #fault{position:absolute;left:14px;top:52px;max-width:min(720px,calc(100% - 28px));background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--alert);border-radius:4px;padding:12px 14px;font-size:12px;line-height:1.5;color:var(--ink-2);z-index:5}
 #laying{position:absolute;left:50%;top:52px;transform:translateX(-50%);background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:5px 12px;font-size:12px;color:var(--ink-2);z-index:5;pointer-events:none;font-variant-numeric:tabular-nums}
+#readstate{position:absolute;left:50%;top:52px;transform:translateX(-50%);max-width:min(660px,calc(100% - 28px));background:var(--panel);border:1px solid var(--focus);border-radius:4px;padding:6px 12px;font-size:12px;color:var(--ink);z-index:6;text-align:center}
+#readstate:not([hidden]) ~ #laying{top:100px}
+#readstate.error{border-color:var(--alert);color:var(--alert)}
+#readstate.working{padding-bottom:12px}
+#readstate.working::after{content:"";position:absolute;left:0;right:0;bottom:0;height:3px;background:linear-gradient(90deg,transparent 0%,var(--focus) 45%,transparent 90%);background-size:40% 100%;background-repeat:no-repeat;animation:reading-progress 1.6s ease-in-out infinite alternate}
+@keyframes reading-progress{from{background-position:0 0}to{background-position:100% 0}}
+@media (prefers-reduced-motion:reduce){#readstate.working::after{animation:none;background:var(--focus)}}
 #fault b{display:block;color:var(--ink);font-weight:600;margin-bottom:2px}
 #fault pre{font-family:var(--mono);font-size:11px;color:var(--ink);white-space:pre-wrap;word-break:break-word;margin:8px 0;max-height:180px;overflow:auto}
 #fault button{font:inherit;font-size:11px;color:var(--ink-2);background:var(--panel-2);border:1px solid var(--line);border-radius:3px;padding:2px 8px;cursor:pointer}
@@ -311,6 +318,7 @@ pre.code .l::before{counter-increment:ln;content:counter(ln);display:inline-bloc
     <svg id="canvas"><g id="scene" class="scene"></g></svg>
     <div id="crumbs" aria-label="what this picture shows"></div>
     <div id="fault" role="alert" hidden></div>
+    <div id="readstate" role="status" hidden></div>
     <div id="laying" role="status" hidden></div>
     <div id="zoomctl"><button id="zout" type="button" title="zoom out">−</button><button id="fit" type="button">fit</button><button id="zone" type="button" title="actual size">1:1</button><button id="zin" type="button" title="zoom in">+</button><button id="codetoggle" type="button" title="show or hide the code panel">hide code</button></div>
     <div id="resizer" title="drag to resize the inspector"></div>
@@ -779,20 +787,19 @@ function laidOut(graph) {
   for (const k of LAYOUTS.keys()) { if (LAYOUTS.size <= KEPT) break; LAYOUTS.delete(k); }
   return done;
 }
-// while a picture is laid out: what is coming, and from this page's rate how long it should take
+// while a picture is laid out: what is coming
 const layingEl = document.getElementById("laying");
 let layingTimer = null;
 function laying(root, shown) {
-  clearTimeout(layingTimer); clearInterval(layingTimer);
+  clearTimeout(layingTimer);
   layingEl.hidden = true;
   if (!root) return;
   const boxes = (function n(x) { return (x.children || []).reduce((s, c) => s + 1 + n(c), 0); })(root), lines = sizeOf(root) - boxes - 1;
-  const about = rate.size ? rate.ms / rate.size * sizeOf(root) / 1000 : null, t0 = performance.now();
-  const say = () => {
-    const s = (performance.now() - t0) / 1000;
-    layingEl.textContent = `laying out ${boxes} boxes and ${lines} lines · ${s.toFixed(0)} s` + (about != null && about > s ? ` of about ${Math.max(1, Math.round(about))} s` : "");
-  };
-  layingTimer = setTimeout(() => { if (!shown()) return; say(); layingEl.hidden = false; layingTimer = setInterval(say, 500); }, 300);
+  layingTimer = setTimeout(() => {
+    if (!shown()) return;
+    layingEl.textContent = `Laying out ${boxes} boxes and ${lines} lines…`;
+    layingEl.hidden = false;
+  }, 900);
 }
 async function renderPlaat(mine) {
   const g = scene.node(), DUR = matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 380;
@@ -2224,16 +2231,26 @@ if (D.served) {
   if (back) { view = back.view; document.querySelectorAll(".tabs button").forEach(x => x.setAttribute("aria-selected", x.dataset.view === view)); }
   // the page follows the code, a moment after the server has drawn it; not while the reader writes a
   // note or a symbol to jump to, when the header says that the code changed instead
-  const fresh = html("a", "histlink"); fresh.id = "fresh"; fresh.hidden = true;
+  const fresh = html("a", "histlink"), readState = document.getElementById("readstate"); fresh.id = "fresh"; fresh.hidden = true;
   fresh.onclick = redraw;
+  if (D.preliminary) {
+    readState.hidden = false;
+    readState.classList.add("working");
+    readState.textContent = "Step 2 of 3 · Showing project code · Following library calls…";
+  }
   setInterval(async () => {
     try {
       const s = await (await fetch("/api/drawn")).json();
       const ready = s.drawn && s.drawn !== D.drawn, busy = !noteEl.hidden || document.activeElement?.id === "search";
       if (ready && !busy) return redraw();
-      fresh.hidden = !ready && !s.drawing;
-      fresh.textContent = ready ? "the code changed ↻" : "the code changed · drawing…";
-      fresh.title = ready ? "draw the page as the code is now, in this view" : "atlas serve is drawing the changed code; the page follows when it is done";
+      readState.hidden = !D.preliminary && !s.error;
+      readState.classList.toggle("error", !!s.error);
+      readState.classList.toggle("working", !!D.preliminary && !ready && !s.error && s.drawing);
+      if (s.error) readState.textContent = `Atlas could not complete the picture: ${s.error}`;
+      else if (D.preliminary) readState.textContent = ready ? "Step 3 of 3 · The complete picture is ready · Open it when you finish here." : "Step 2 of 3 · Showing project code · Following library calls…";
+      fresh.hidden = !ready && (!s.drawing || D.preliminary);
+      fresh.textContent = ready ? (D.preliminary ? "complete picture ↻" : "the code changed ↻") : "the code changed · drawing…";
+      fresh.title = ready ? "open the latest picture in this view" : "atlas serve is drawing the changed code; the page follows when it is done";
     } catch {}
   }, 1000);
   // the history beside the page, from the same server

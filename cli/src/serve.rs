@@ -25,6 +25,8 @@ use crate::log::{Log, Who};
 use crate::page::{self, Html, Opens, Reading};
 use crate::shared::{self, Note, State};
 
+const LOADING: &str = include_str!("../../viewer/loading.html");
+
 /// The working tree as far as Atlas reads it: each file by its size and the time it was written.
 type Stamps = BTreeMap<PathBuf, Stamp>;
 
@@ -33,6 +35,12 @@ struct Drawn {
     stamps: Stamps,
     id: String,
     html: String,
+    complete: bool,
+}
+
+struct Progress {
+    phase: &'static str,
+    error: Option<String>,
 }
 
 struct Server {
@@ -42,6 +50,7 @@ struct Server {
     log: Arc<Log>,
     /// The page of the working tree last drawn.
     kept: Mutex<Option<Arc<Drawn>>>,
+    progress: Mutex<Progress>,
     /// Held while the page is drawn: it is drawn once, however many ask for it at a time.
     drawing: Mutex<()>,
 }
@@ -63,6 +72,7 @@ pub fn serve(repo: &Path, port: Option<u16>, opts: &Options, shown: bool) -> Res
         hosts: vec![at.to_string(), format!("localhost:{}", at.port())],
         log: Arc::clone(&log),
         kept: Mutex::new(None),
+        progress: Mutex::new(Progress { phase: "code", error: None }),
         drawing: Mutex::new(()),
     });
     let url = format!("http://{at}/");
@@ -104,7 +114,7 @@ impl Server {
         }
         let json = |v: Result<Value>| v.map_or_else(Answer::failed, |v| Answer::json(v.to_string()));
         match (req.method.as_str(), req.path.as_str()) {
-            ("GET", "/") => self.page().map_or_else(Answer::failed, |d| Answer::page(d.html.clone())),
+            ("GET", "/") => Answer::page(self.kept().map_or_else(|| LOADING.to_string(), |d| d.html.clone())),
             ("GET", "/api/drawn") => Answer::json(self.drawn().to_string()),
             ("GET", "/export") => {
                 self.export(req).map_or_else(Answer::failed, |(name, html)| Answer::download(format!("{name}.html"), html))
@@ -132,42 +142,70 @@ impl Server {
         let findings = read.findings();
         let (graph, compared) = read.drawn();
         let flow = atlas_engine::flow::of(&graph);
-        let html = Html::of(&graph, &flow, &findings, compared.as_ref(), &Opens { route: None, sight, served: None })?;
+        let html = Html::of(&graph, &flow, &findings, compared.as_ref(), &Opens { route: None, sight, served: None, preliminary: false })?;
         self.log.say(Who::You, &format!("exported {}.html, in the view {said}", graph.root));
         Ok((graph.root, html.into()))
     }
 
-    /// The page of the working tree as its files are now: the one kept while none has changed, so
-    /// that a reload, or a return from the history, is at once; else drawn anew.
-    fn page(&self) -> Result<Arc<Drawn>> {
-        let now = stamps(&self.repo, &self.opts)?;
+    /// Draw the repository's own code first, then the complete reading. Each page is available as
+    /// soon as it is drawn; the open browser follows the next one by its drawing id.
+    fn page(&self, now: Stamps) -> Result<()> {
         let _drawing = self.drawing.lock().unwrap_or_else(|e| e.into_inner());
         let kept = self.kept();
         match &kept {
-            Some(d) if d.stamps == now => return Ok(Arc::clone(d)),
+            Some(d) if d.stamps == now && d.complete => return Ok(()),
             Some(d) => self.log.say(Who::Atlas, &format!("changed {}", changed(&d.stamps, &now))),
             None => {}
         }
         let id = name(&now);
-        let read = reading(&self.repo, &self.opts)?;
+        self.progress("code", None);
+        if self.opts.libraries > 0 {
+            let mut local = self.opts.clone();
+            local.libraries = 0;
+            match self.draw(&now, &format!("{id}-local"), &local, true) {
+                Ok(d) => *self.kept.lock().unwrap_or_else(|e| e.into_inner()) = Some(Arc::new(d)),
+                Err(e) => self.log.say(Who::Atlas, &format!("could not draw local code: {e:#}")),
+            }
+        }
+        if self.opts.libraries > 0 {
+            self.progress("libraries", None);
+        }
+        let drawn = self.draw(&now, &id, &self.opts, false)?;
+        *self.kept.lock().unwrap_or_else(|e| e.into_inner()) = Some(Arc::new(drawn));
+        self.progress("ready", None);
+        Ok(())
+    }
+
+    fn draw(&self, stamps: &Stamps, id: &str, opts: &Options, preliminary: bool) -> Result<Drawn> {
+        let read = reading(&self.repo, opts)?;
         let findings = read.findings();
         let (graph, compared) = read.drawn();
         let flow = atlas_engine::flow::of(&graph);
-        let html = Html::of(&graph, &flow, &findings, compared.as_ref(), &Opens { route: None, sight: None, served: Some(id.clone()) })?;
-        self.log.say(Who::Atlas, &format!("drew {}", page::summary(&graph)));
-        let drawn = Arc::new(Drawn { stamps: now, id, html: html.into() });
-        *self.kept.lock().unwrap_or_else(|e| e.into_inner()) = Some(Arc::clone(&drawn));
-        Ok(drawn)
+        let html = Html::of(
+            &graph,
+            &flow,
+            &findings,
+            compared.as_ref(),
+            &Opens { route: None, sight: None, served: Some(id.to_string()), preliminary },
+        )?;
+        self.log.say(Who::Atlas, &format!("drew {}{}", if preliminary { "local code · " } else { "" }, page::summary(&graph)));
+        Ok(Drawn { stamps: stamps.clone(), id: id.to_string(), html: html.into(), complete: !preliminary })
     }
 
     fn kept(&self) -> Option<Arc<Drawn>> {
         self.kept.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
+    fn progress(&self, phase: &'static str, error: Option<String>) {
+        *self.progress.lock().unwrap_or_else(|e| e.into_inner()) = Progress { phase, error };
+    }
+
     /// Which page the server has drawn, and whether it is drawing one: the open page compares the
     /// first with its own, and follows.
     fn drawn(&self) -> Value {
-        json!({"drawn": self.kept().map(|d| d.id.clone()), "drawing": self.drawing.try_lock().is_err()})
+        let progress = self.progress.lock().unwrap_or_else(|e| e.into_inner());
+        json!({"drawn": self.kept().map(|d| d.id.clone()), "drawing": self.drawing.try_lock().is_err(),
+            "phase": progress.phase, "error": progress.error})
     }
 
     /// The working tree, looked at every second: when a file Atlas reads has changed and has stayed
@@ -177,10 +215,11 @@ impl Server {
         let (mut last, mut failed): (Option<Stamps>, Option<Stamps>) = (None, None);
         loop {
             if let Ok(now) = stamps(&self.repo, &self.opts) {
-                let kept = self.kept().map(|d| d.stamps == now);
+                let kept = self.kept().map(|d| d.stamps == now && d.complete);
                 if kept != Some(true) && (kept.is_none() || last.as_ref() == Some(&now)) && failed.as_ref() != Some(&now) {
-                    if let Err(e) = self.page() {
+                    if let Err(e) = self.page(now.clone()) {
                         self.log.say(Who::Atlas, &format!("could not draw: {e:#}"));
+                        self.progress("failed", Some(format!("{e:#}")));
                         failed = Some(now.clone());
                     }
                 }
@@ -283,5 +322,36 @@ fn changed(before: &Stamps, now: &Stamps) -> String {
     match files.len() {
         0..=3 => names.join(", "),
         n => format!("{}, and {} more", names.join(", "), n - 3),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn root_answers_with_progress_before_any_picture_exists() {
+        let server = Server {
+            repo: PathBuf::new(),
+            opts: Options::default(),
+            hosts: vec!["localhost:8797".into()],
+            log: Arc::new(Log::new()),
+            kept: Mutex::new(None),
+            progress: Mutex::new(Progress { phase: "code", error: None }),
+            drawing: Mutex::new(()),
+        };
+        let request = Request {
+            method: "GET".into(),
+            path: "/".into(),
+            query: HashMap::new(),
+            host: "localhost:8797".into(),
+            own: false,
+            body: vec![],
+        };
+        let answer = server.respond(&request);
+        let page = String::from_utf8(answer.body).unwrap();
+        assert_eq!(answer.status, "200 OK");
+        assert!(page.contains("The first picture is taking shape") && page.contains("Step 1 of 3"));
+        assert!(!page.contains("http-equiv=\"refresh\""));
     }
 }

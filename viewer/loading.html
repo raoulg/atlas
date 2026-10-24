@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Atlas · reading code</title>
+<style>
+  :root{font-family:system-ui,-apple-system,sans-serif;color:#111;background:#f4f1ec}
+  @media(prefers-color-scheme:dark){:root{color:#f4f1ec;background:#141210}}
+  body{margin:0;min-height:100vh;display:grid;grid-template-rows:46px 1fr}
+  header{display:flex;align-items:center;padding:0 16px;background:#fff;border-bottom:1px solid #e2dcd3;font-weight:600}
+  @media(prefers-color-scheme:dark){header{background:#1b1815;border-color:#2b2621}}
+  main{display:grid;place-content:center;padding:24px}
+  .card{width:min(540px,calc(100vw - 48px))}
+  .eyebrow{font:11px ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.08em;text-transform:uppercase;color:#857d73}
+  h1{font-size:24px;font-weight:550;line-height:1.2;margin:14px 0 10px}
+  p{line-height:1.55;color:#5a544d;max-width:48ch}
+  @media(prefers-color-scheme:dark){p{color:#b8b0a5}}
+  .track{height:3px;background:#e2dcd3;overflow:hidden;margin:26px 0 8px}
+  .track::before{content:"";display:block;width:var(--done,33.333%);height:100%;background:#c43a14;transition:width .3s}
+  .track.working::after{content:"";display:block;width:18%;height:100%;margin-top:-3px;background:#f59a7e;animation:reading 1.5s ease-in-out infinite alternate}
+  @keyframes reading{from{transform:translateX(0)}to{transform:translateX(450%)}}
+  @media(prefers-reduced-motion:reduce){.track.working::after{animation:none}}
+  .step{font:11px ui-monospace,SFMono-Regular,Menlo,monospace;color:#857d73;text-align:right;margin:0 0 22px}
+  ol{list-style:none;margin:0;padding:0;display:grid;gap:10px;font:12px ui-monospace,SFMono-Regular,Menlo,monospace;color:#857d73}
+  li::before{content:"○";display:inline-block;width:24px}
+  li.active{color:#c43a14}li.active::before{content:"◉"}
+  #error{white-space:pre-wrap;color:#c43a14}
+</style>
+<header>atlas</header>
+<main><div class="card">
+  <div class="eyebrow">Your repository</div>
+  <h1>The first picture is taking shape</h1>
+  <p id="status" role="status">Reading the repository's own code. The page opens as soon as that picture is ready.</p>
+  <div class="track working" aria-hidden="true"></div><div class="step" id="step">Step 1 of 3</div>
+  <ol><li id="code" class="active">Read project code</li><li id="libraries">Follow library calls</li><li id="ready">Show the complete picture</li></ol>
+  <p id="error" role="alert" hidden></p>
+</div></main>
+<script>
+  const status = document.getElementById("status"), error = document.getElementById("error"), track = document.querySelector(".track"), step = document.getElementById("step");
+  async function check() {
+    try {
+      const response = await fetch("/api/drawn", {cache: "no-store"});
+      if (!response.ok) throw new Error("The server did not answer.");
+      const state = await response.json();
+      if (state.drawn) { location.reload(); return; }
+      const number = state.phase === "libraries" ? 2 : state.phase === "ready" ? 3 : 1;
+      step.textContent = `Step ${number} of 3`;
+      track.style.setProperty("--done", `${number * 100 / 3}%`);
+      for (const id of ["code", "libraries", "ready"]) document.getElementById(id).classList.toggle("active", id === state.phase);
+      if (state.error) {
+        status.textContent = "Atlas could not draw this repository.";
+        track.classList.remove("working");
+        error.textContent = state.error; error.hidden = false;
+      } else {
+        status.textContent = state.phase === "libraries" ? "Following library calls for the complete picture." : "Reading the repository's own code. The page opens as soon as that picture is ready.";
+        track.classList.add("working");
+        error.hidden = true;
+      }
+    } catch { status.textContent = "Waiting for the Atlas server…"; }
+    setTimeout(check, 500);
+  }
+  check();
+</script>
+</html>
