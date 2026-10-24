@@ -1769,7 +1769,9 @@ const cutArrow = key => {
     const at = "@n:" + key, strip = k => (k.endsWith(at) ? k.slice(0, -at.length) : k);
     const r = {key, dom: new Map(), cod: new Map(), dn: new Map(), cn: new Map(), goes: P?.goes || new Map(), mult: {D: new Map(), C: new Map()}, places: new Map(), split: F.split};
     for (const [way, m, n, far, names, into] of [["D", P?.D, P?.Dn, P?.Dr, r.dn, r.dom], ["C", P?.C, P?.Cn, P?.Cr, r.cn, r.cod]]) for (const [k, flag] of m || []) {
-      const s = strip(k), pl = F.places.get(k), nm = way === "D" ? pl?.name : pl?.held;
+      // what it hands on keeps the name that holds it, also one its call gives by no name, which the caller's own code reads
+      // (`#..`, `Node::uses`)
+      const s = strip(k), pl = F.places.get(k), nm = way === "D" ? pl?.name : pl?.held || (pl?.name?.startsWith("#") ? pl.name : undefined);
       into.set(s, flag);
       r.mult[way].set(s, [n?.get(k) || 1, far?.get(k) || 0]);
       r.places.set(s, F.places.get(s) || {...pl, id: s, at: undefined});
