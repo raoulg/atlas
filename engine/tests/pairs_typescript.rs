@@ -1550,3 +1550,10 @@ fn a_set_names_the_field_it_sets() {
     let choices = common::pair("choices/typescript");
     assert_eq!(named(&choices.clean, "runs.Report.constructor"), [(String::new(), "level".to_string())]);
 }
+
+/// The projections pair: a projection bound to a name first is still the projection (#174), as the Python and Rust readers
+/// read it.
+#[test]
+fn a_projection_bound_to_a_name_is_still_the_projection() {
+    common::a_projection_bound_to_a_name_is_still_the_projection("typescript", "charts");
+}

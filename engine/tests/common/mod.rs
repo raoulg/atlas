@@ -160,3 +160,21 @@ pub fn a_call_names_the_field_a_projection_reads(language: &str, module: &str) {
     assert_eq!(through("report"), at(1, "level"), "report's level is the settings' level");
     assert_eq!(through("finished"), at(1, "mode"), "finished's mode is the settings' mode");
 }
+
+/// The projections pair of `language` (`tests/pairs/projections`), its classes in the module `module`: a chart lends another
+/// its title and its width, handing each as a field of its own (`other.take(self.title, self.size.width)`), or binding them to
+/// names first (`t = self.title; s = self.size; other.take(t, s.width)`). A projection bound to a name first is still the
+/// projection (#121, #174): both forms fill `take`'s parameters through the same fields, the name's own after those it is
+/// bound to, in every language.
+#[allow(dead_code)]
+pub fn a_projection_bound_to_a_name_is_still_the_projection(language: &str, module: &str) {
+    let projections = pair(&format!("projections/{language}"));
+    let through = |g: &Graph| -> Vec<(atlas_engine::Slot, String)> {
+        let lend = g.node(&format!("{module}.Chart.lend")).unwrap_or_else(|| panic!("no node {module}.Chart.lend"));
+        let take = format!("{module}.Chart.take");
+        lend.sites.iter().filter(|s| s.to == take).flat_map(|s| &s.hands).flat_map(|h| h.through.clone()).collect()
+    };
+    let fields = vec![(atlas_engine::Slot::At(0), "title".to_string()), (atlas_engine::Slot::At(1), "size.width".to_string())];
+    assert_eq!(through(&projections.clean), fields, "handed as fields of its own");
+    assert_eq!(through(&projections.shortcut), fields, "bound to names first");
+}

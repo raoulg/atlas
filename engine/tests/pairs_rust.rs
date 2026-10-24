@@ -1413,3 +1413,10 @@ fn a_collection_of_pairs_gives_back_none_of_what_they_pair() {
 fn a_call_names_the_field_a_projection_reads() {
     common::a_call_names_the_field_a_projection_reads("rust", "runs");
 }
+
+/// The projections pair: a projection bound to a name first is still the projection (#174), as the Python and TypeScript
+/// readers read it.
+#[test]
+fn a_projection_bound_to_a_name_is_still_the_projection() {
+    common::a_projection_bound_to_a_name_is_still_the_projection("rust", "charts");
+}

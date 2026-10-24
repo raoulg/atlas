@@ -458,7 +458,10 @@ open:
   caller's own touch, so naming its result changes no line to the place. A copy makes its value anew
   (`board = copy.copy(board)`), and a method called on a library's value is that library's operation
   also where its types do not list it. A projection bound to a name first is still the projection
-  (`width = settings.width; f(width)` hands `settings`), a lookup by a key among them (`row = table[k]`
+  (`width = settings.width; f(width)` hands `settings` through its field `width`, as `f(settings.width)` does, and
+  `f = self.fig; other.fig = f` sets the field to `fig` of the instance; names bound in turn compose, `a = self.size; w =
+  a.width` is `size.width`, and a binding written as as many parts as its value binds each name to its part, `fig, ax =
+  self.fig, self.ax`), a lookup by a key among them (`row = table[k]`
   hands `table`, the lens the key chooses), and so is any value a body binds without a step: a
   pattern that takes a value apart (`const [year, month] = fields` hands `fields`), a name a
   `case` pattern binds (a part of what the `match` takes apart, through the variant the case matches, a

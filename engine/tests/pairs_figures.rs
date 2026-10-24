@@ -308,3 +308,35 @@ fn a_value_an_initializer_keeps_in_a_field_is_taken() {
     let used: Vec<&str> = built.shortcut.node(init).unwrap().uses.iter().map(|u| u.name.as_str()).collect();
     assert!(made.iter().all(|m| used.contains(&m.as_str())), "its own code reads each chart it keeps: {used:?}");
 }
+
+/// The bound pair (`tests/pairs/figures/bound`) is the lent pair, where `lend` names what the first chart holds before it
+/// lends it (`fig, ax = self.fig, self.ax`); `tests/plans/takes-a-bound-title` is `takes-a-title`, where it binds the title
+/// first (`t = self.title; other.take(t, None)`). A projection bound to a name first is still the projection (#121, #174):
+/// a call fills each parameter through the field the name is bound to, and a field set from the name is set from that field
+/// (`Set::of`). So each form reads as the one without the name: one figure where the fields that hold it are lent, two
+/// where the title is lent in their place, at every budget.
+#[test]
+fn a_projection_bound_to_a_name_is_still_the_projection() {
+    let (lent, bound) = (common::pair("figures/lent"), common::pair("figures/bound"));
+    let (lend, take) = ("charts.chart.Chart.lend", "charts.chart.Chart.take");
+    assert_eq!(
+        handed_through(&bound.clean, lend, take),
+        handed_through(&lent.clean, lend, take),
+        "`take(fig, ax)` is `take(self.fig, self.ax)`"
+    );
+    assert_eq!(sets(&bound.shortcut, lend), sets(&lent.shortcut, lend), "`other.fig = fig` is `other.fig = self.fig`");
+    let one = BTreeSet::from(["Figure 1 · Chart · first right".to_string()]);
+    let two = BTreeSet::from(["Figure 1 · Chart · first right".to_string(), "Figure 2 · Chart · second right".to_string()]);
+    let program = |name: &str| {
+        let at = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/plans").join(name);
+        atlas_engine::analyze(&at, &Options::default()).expect("reads the program")
+    };
+    let (direct, named) = (program("takes-a-title"), program("takes-a-bound-title"));
+    assert_eq!(handed_through(&named, lend, take), handed_through(&direct, lend, take), "`take(t, None)` is `take(self.title, None)`");
+    for budget in [None, Some(1), Some(2), Some(3), Some(5)] {
+        for side in ["clean", "shortcut"] {
+            assert_eq!(screen_of("figures/bound", side, "notebooks.overlay", budget), one, "{side}, budget {budget:?}");
+        }
+        assert_eq!(screen_at("plans/takes-a-bound-title", "notebooks.overlay", budget), two, "budget {budget:?}");
+    }
+}

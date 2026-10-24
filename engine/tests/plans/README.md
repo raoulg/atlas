@@ -117,3 +117,4 @@ smallest that showed one law:
 | `unbound-parameter` | a call fills each parameter by where it writes the argument, whatever its type: two projections of one value, and both parameters hold it (#157); one the plan cannot pair is a value of its body, never one from beyond the route (#159) |
 | `next-method-on-a-class` | a body run on a known class does at a place what that class runs: a `super()` call runs one method there (R5) |
 | `takes-a-title` | a parameter filled through a projection is that projection: handed a title where `take` keeps its figure, the second chart holds no figure of the first's (#172) |
+| `takes-a-bound-title` | a projection bound to a name first is still the projection: `t = self.title; other.take(t, None)` reads as `takes-a-title` (#174) |

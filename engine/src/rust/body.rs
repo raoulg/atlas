@@ -1471,8 +1471,10 @@ impl<'a, 't> Body<'a, 't> {
     /// a name that holds no value Atlas draws (a local the body bound to a literal).
     fn held_by(&self, name: &str, at: usize, kept: &HashSet<String>) -> Option<(Held, Option<usize>)> {
         let (name, from) = self.holder(name, at);
+        // a name a `let` bound to a projection holds what the projection starts from, there (`let t = &self.title`)
+        let bound = |h: Held| Held { bound: if from != at { from as u32 } else { 0 }, ..h };
         if name == "self" {
-            return Some((Held::at(self.cls.clone()?, String::new(), at, false), None));
+            return Some((bound(Held::at(self.cls.clone()?, String::new(), at, false)), None));
         }
         // a closure is no value; what it makes is, and no name holds that
         if let Some(made) = self.closures.get(&name, from) {
@@ -1480,11 +1482,11 @@ impl<'a, 't> Body<'a, 't> {
         }
         let param = || self.params.iter().position(|p| *p == name).filter(|_| self.parameter.get(&name, from) == Some(&true));
         match self.held_type(&name, from) {
-            Some(ty) => Some((Held::at(ty, name, at, false), None)),
-            None if kept.contains(&name) => Some((Held::at(String::new(), name, at, false), None)),
+            Some(ty) => Some((bound(Held::at(ty, name, at, false)), None)),
+            None if kept.contains(&name) => Some((bound(Held::at(String::new(), name, at, false)), None)),
             None => {
                 let at_param = param()?;
-                Some((Held::at(String::new(), name, at, false), Some(at_param)))
+                Some((bound(Held::at(String::new(), name, at, false)), Some(at_param)))
             }
         }
     }

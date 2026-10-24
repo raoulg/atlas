@@ -502,6 +502,11 @@ pub struct Held {
     /// Where the code writes it, as a byte offset of its file: where it comes from, not what it is.
     #[serde(skip)]
     pub at: u32,
+    /// Where the value comes from when the name written at `at` holds it through a binding of a projection of it that the
+    /// reader follows (`let t = &self.title`): the byte offset of the name that projection starts from (`self`), so that the
+    /// fields the name is bound to can be read where it is used (`Steps::fills`, `Set::of`). None (0) where `at` says it.
+    #[serde(skip)]
+    pub bound: u32,
     /// For a value a call is handed: the parameters it fills, each argument of the call it is written
     /// in (`Site::args`). `f(x.title, x.lines)` hands `x` for the first two; `f(g(y))` hands what the
     /// step `g` gives for the first, and `y` to `g`.

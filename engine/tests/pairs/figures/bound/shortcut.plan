@@ -1,0 +1,51 @@
+# The lent pair's shortcut, where `lend` names what the first chart holds before it sets the second's fields: `fig, ax =
+# self.fig, self.ax`, then `other.fig, other.ax = fig, ax`. A projection bound to a name first is still the projection
+# (#121, #174): each field of the second is set to the first's field of the same name (`Set::of`), as `other.fig, other.ax
+# = self.fig, self.ax` sets it. The plan is the lent pair's: the second chart holds the first's figure, and the screen
+# shows one; what differs is who sets the second chart's fields.
+
+route notebooks.overlay
+step overlay/overlay
+step overlay/overlay/Chart()
+step overlay/overlay/Chart()#2
+step overlay/overlay/Chart.line
+choice overlay/overlay/Chart.line/?1
+step overlay/overlay/Chart.line/?1/Chart.create_figure
+step overlay/overlay/Chart.lend
+step overlay/overlay/Chart.line#2
+choice overlay/overlay/Chart.line#2/?1
+step overlay/overlay/Chart.line#2/?1/Chart.create_figure
+
+line entry > overlay call
+line overlay/overlay/Chart() > Chart·first@overlay/overlay/Chart() value
+line overlay/overlay/Chart()#2 > Chart·second@overlay/overlay/Chart()#2 value
+
+line Chart·first@overlay/overlay/Chart() > overlay/overlay/Chart.line/?1/Chart.create_figure value   # `self.create_figure()`
+line overlay/overlay/Chart.line/?1/Chart.create_figure > Chart·self@overlay/overlay/Chart.line/?1 value
+line overlay/overlay/Chart.line/?1/Chart.create_figure > Figure 1 · Chart · first own              # `plt.subplots()`
+line Chart·self@overlay/overlay/Chart.line/?1 > overlay/overlay/Chart.line value                     # `self.ax.plot(..)`
+line overlay/overlay/Chart.line > Chart·first@overlay/overlay/Chart.line value
+
+line Chart·first@overlay/overlay/Chart.line > overlay/overlay/Chart.lend value                      # `fig, ax = self.fig, self.ax`
+line Chart·second@overlay/overlay/Chart()#2 > overlay/overlay/Chart.lend value                      # `other.fig, other.ax = fig, ax`
+line overlay/overlay/Chart.lend > Chart·second@overlay/overlay/Chart.lend value
+
+line Chart·second@overlay/overlay/Chart.lend > overlay/overlay/Chart.line#2/?1/Chart.create_figure value
+line overlay/overlay/Chart.line#2/?1/Chart.create_figure > Chart·self@overlay/overlay/Chart.line#2/?1 value
+line overlay/overlay/Chart.line#2/?1/Chart.create_figure > Figure 1 · Chart · first own            # the figure lend set it to
+line Chart·self@overlay/overlay/Chart.line#2/?1 > overlay/overlay/Chart.line#2 value
+line overlay/overlay/Chart.line#2 > Chart·second@overlay/overlay/Chart.line#2 value
+line Chart·second@overlay/overlay/Chart.line#2 > overlay/overlay value                               # `return second`
+line overlay/overlay > Chart·chart@overlay/overlay value                                             # `chart = overlay(..)`
+
+home Chart·first@overlay/overlay/Chart() overlay/overlay
+home Chart·second@overlay/overlay/Chart()#2 overlay/overlay
+home Chart·self@overlay/overlay/Chart.line/?1 overlay/overlay/Chart.line
+home Chart·first@overlay/overlay/Chart.line overlay/overlay
+home Chart·second@overlay/overlay/Chart.lend overlay/overlay
+home Chart·self@overlay/overlay/Chart.line#2/?1 overlay/overlay/Chart.line#2
+home Chart·second@overlay/overlay/Chart.line#2 overlay/overlay
+home Chart·chart@overlay/overlay overlay
+
+side entry left
+side Figure 1 · Chart · first right

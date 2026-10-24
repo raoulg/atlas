@@ -157,6 +157,16 @@ pub struct UseSyntax {
 /// Where code is written, as a byte range of its file.
 pub type Range = (usize, usize);
 
+/// Where the value `h` comes from: the name a binding's projection of it starts from, where the reader followed one
+/// (`Held::bound`), else where the code writes it.
+fn origin(h: &Held) -> u32 {
+    if h.bound != 0 {
+        h.bound
+    } else {
+        h.at
+    }
+}
+
 /// The arguments a list of them writes by place and by name: each by its place until a spread (`*xs`,
 /// `...xs`), which hands the places from its own on, as does every argument by place after it.
 /// `spread` and `named` say which an argument is: a spread of places (`Slot::Spread`) or of names
@@ -537,17 +547,27 @@ impl<'t, 's> Steps<'t, 's> {
                     .collect();
                 let in_step = |n: &TsNode| steps.iter().any(|s| s.span.0 as usize <= n.start_byte() && n.end_byte() <= s.span.1 as usize);
                 let mut from: Vec<Held> = vec![];
-                let names = walk(value, &kinds).into_iter().filter(|n| read(n) && !in_step(n)).flat_map(|n| held(n));
+                let named: Vec<(TsNode, Held)> = walk(value, &kinds)
+                    .into_iter()
+                    .filter(|n| read(n) && !in_step(n))
+                    .flat_map(|n| held(n).into_iter().map(move |h| (n, h)))
+                    .collect();
                 let made = steps.iter().flat_map(|s| s.gives.iter().filter(|g| !g.name.is_empty()).cloned());
-                for h in names.chain(made).filter(|h| !h.ty.is_empty() || !h.name.is_empty()) {
+                for h in named.iter().map(|(_, h)| h.clone()).chain(made).filter(|h| !h.ty.is_empty() || !h.name.is_empty()) {
                     if !from.contains(&h) {
                         from.push(Held { at: 0, fills: vec![], through: vec![], ..h });
                     }
                 }
-                let of = if from.len() == 1 { self.fields(value).unwrap_or_default() } else { String::new() };
+                // a projection bound to a name first is still the projection (#121): `f = self.fig; other.fig = f` sets the
+                // field to `fig` of the instance, and `c = self.left; c.fig = ..` sets `left.fig` of it
+                let of = match from.as_slice() {
+                    [one] => named.iter().filter(|(_, h)| h == one).find_map(|(n, h)| self.read_of(value, *n, h, held)).unwrap_or_default(),
+                    _ => String::new(),
+                };
+                let field = self.read_of(target, owner, &on, held).or_else(|| self.fields(target)).unwrap_or_default();
                 out.push(Set {
                     on: Held { at: 0, fills: vec![], through: vec![], ..on },
-                    field: self.fields(target).unwrap_or_default(),
+                    field,
                     from,
                     of,
                     lines: Some((line(b), b.end_position().row as u32 + 1)),
@@ -583,6 +603,100 @@ impl<'t, 's> Steps<'t, 's> {
         }
         fields.reverse();
         (!fields.is_empty() && (u.names.contains(&k.kind()) || u.reads.contains(&k.kind()))).then(|| (k, fields.join(".")))
+    }
+
+    /// The fields `e` reads of the value `h` the name `n` holds, where `e` is `n` or a projection of it: those it reads of
+    /// `n` (`fields`) after the projection `n` is bound to first, where the reader finds the value at the name of a
+    /// binding that reaches `n` (`mathematics.md`, "One fine plan": a projection bound to a name is still the projection).
+    /// `t = self.title` makes `t`, and `t.x`, the projections `title` and `title.x` of the instance, and so through the
+    /// names bound between (`a = self.chart; t = a.title` makes `t` `chart.title`). None where `e` is no projection of `n`,
+    /// or where no binding of a projection makes `n` hold `h` (a loop's element, a `case` pattern): it holds the value
+    /// whole, as far as the code says.
+    fn read_of(&self, e: TsNode<'t>, n: TsNode<'t>, h: &Held, held: &dyn Fn(TsNode<'t>) -> Vec<Held>) -> Option<String> {
+        let u = self.uses;
+        let e = beneath(e, u.wrappers);
+        let own = match self.projection(e) {
+            Some((root, fields)) if root.id() == n.id() => fields,
+            None if e.id() == n.id() => String::new(),
+            _ => return None,
+        };
+        // a value the reader finds at the name itself, or at no place it says (the instance a method runs on), the name holds
+        // as written
+        let origin = origin(h) as usize;
+        if origin == 0 || origin == n.start_byte() {
+            return Some(own);
+        }
+        let first = self.body.named_descendant_for_byte_range(origin, origin + 1)?;
+        let bound = self.bound_from(first, n, h, held, 0)?;
+        Some([bound, own].into_iter().filter(|f| !f.is_empty()).collect::<Vec<_>>().join("."))
+    }
+
+    /// The fields of the value `h` a binding binds a name to, from `at`, where the reader finds the value: the binding
+    /// whose value reads it, up through the fields and the elements it reads, and the fields of it it binds each name to
+    /// (`bound_by`); on through the bindings of a projection of one of those names that holds the same value, up to the
+    /// name `n` (`read_of`).
+    fn bound_from(&self, at: TsNode<'t>, n: TsNode<'t>, h: &Held, held: &dyn Fn(TsNode<'t>) -> Vec<Held>, depth: usize) -> Option<String> {
+        let u = self.uses;
+        if depth > 8 {
+            return None;
+        }
+        let mut k = at;
+        while let Some(p) = k.parent() {
+            let of = |x: TsNode| beneath(x, u.wrappers).id() == beneath(k, u.wrappers).id();
+            if (u.wrappers.contains(&p.kind()) && wrapped(p).is_some_and(|w| w.id() == k.id()))
+                || (u.field)(p, self.src).is_some_and(|(o, _)| of(o))
+                || (u.keeps.contains(&p.kind()) && p.named_child(0).is_some_and(of))
+            {
+                k = p;
+            } else {
+                break;
+            }
+        }
+        // the binding of the value, or of the part of it at its place where the binding and its value are written as as
+        // many parts (`fig, ax = self.fig, self.ax`)
+        let at_value = |b: TsNode<'t>, v: TsNode<'t>| (u.binds)(b).filter(move |(_, value)| value.id() == v.id());
+        let binding = k.parent().filter(|b| at_value(*b, k).is_some()).or_else(|| {
+            let list = k.parent()?;
+            list.parent().filter(|b| at_value(*b, list).is_some_and(|(targets, value)| (u.pairs)(targets, value)))
+        })?;
+        let (targets, _) = (u.binds)(binding)?;
+        let names: Vec<&str> = walk(targets, u.names).into_iter().filter(|x| !(u.label)(*x, self.src)).map(|x| text(x, self.src)).collect();
+        if names.contains(&text(n, self.src)) {
+            return self.bound_by(binding, text(n, self.src));
+        }
+        let later = |r: &TsNode| binding.end_byte() <= r.start_byte() && r.end_byte() <= n.start_byte();
+        for r in walk(self.body, u.names).into_iter().filter(|r| later(r) && names.contains(&text(*r, self.src))) {
+            if !held(r).iter().any(|x| x == h && origin(x) == origin(h)) {
+                continue;
+            }
+            let (Some(here), Some(rest)) = (self.bound_by(binding, text(r, self.src)), self.bound_from(r, n, h, held, depth + 1)) else {
+                continue;
+            };
+            return Some([here, rest].into_iter().filter(|f| !f.is_empty()).collect::<Vec<_>>().join("."));
+        }
+        None
+    }
+
+    /// The fields of the value it reads that `binding` binds `name` to: those its value reads of the name it is a
+    /// projection of, or, where the binding and its value are written as as many parts, those the part at the name's place
+    /// reads (`fig, ax = self.fig, self.ax` binds `ax` to `ax`). An element is left out (`row = self.rows[k]` is `rows`).
+    fn bound_by(&self, binding: TsNode<'t>, name: &str) -> Option<String> {
+        let u = self.uses;
+        let (targets, value) = (u.binds)(binding)?;
+        let each = |x: TsNode<'t>| named_children(x).into_iter().filter(|c| !c.kind().ends_with("comment")).collect::<Vec<_>>();
+        let part = match ((u.pairs)(targets, value), each(targets), each(value)) {
+            (true, ts, vs) if ts.len() == vs.len() => {
+                let i = ts.iter().position(|t| walk(*t, u.names).iter().any(|x| text(*x, self.src) == name))?;
+                vs[i]
+            }
+            _ => value,
+        };
+        let part = beneath(part, u.wrappers);
+        match self.projection(part) {
+            Some((_, fields)) => Some(fields),
+            None if u.names.contains(&part.kind()) || u.reads.contains(&part.kind()) => Some(String::new()),
+            None => None,
+        }
     }
 
     /// Whether the body's own code reads what step `i` of the program's code gives, by no name: through
@@ -693,8 +807,11 @@ impl<'t, 's> Steps<'t, 's> {
             if (u.parts)(p, child) && chain {
                 return false;
             }
+            // a binding written as as many parts as its value binds each name to the part at its place, two bindings
+            // (`fig, ax = self.fig, self.ax`)
+            let paired = p.parent().and_then(|b| (u.binds)(b)).is_some_and(|(t, v)| v.id() == p.id() && (u.pairs)(t, v));
             through |= u.keeps.contains(&p.kind());
-            chain &= u.keeps.contains(&p.kind()) || u.wrappers.contains(&p.kind());
+            chain &= u.keeps.contains(&p.kind()) || u.wrappers.contains(&p.kind()) || paired;
             child = p;
         }
         true
@@ -986,13 +1103,15 @@ impl<'t, 's> Steps<'t, 's> {
                     if within(n.start_byte() as u32) || !self.read_here(n) {
                         continue;
                     }
-                    let field = projected[j].as_ref().filter(|(root, _)| *root == n.start_byte() as u32).map(|(_, f)| f.clone());
                     for h in held(n) {
                         if let Some(k) = self.sites[i].hands.iter().position(|x| *x == h) {
                             if !fills[k].contains(slot) {
                                 fills[k].push(slot.clone());
                             }
-                            if let Some(f) = field.clone().filter(|_| !through[k].iter().any(|(s, _)| s == slot)) {
+                            // the argument as a whole is the name or a projection of it, through the projection the name is
+                            // bound to first (`t = self.title; other.take(t, ..)` fills through `title`)
+                            let field = whole.and_then(|x| self.read_of(x, n, &h, held)).filter(|f| !f.is_empty());
+                            if let Some(f) = field.filter(|_| !through[k].iter().any(|(s, _)| s == slot)) {
                                 through[k].push((slot.clone(), f));
                             }
                         }
