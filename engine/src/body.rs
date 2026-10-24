@@ -8,7 +8,7 @@ use tree_sitter::Node as TsNode;
 
 use crate::builder::GraphBuilder;
 use crate::effects::{self, Facts};
-use crate::model::{Crossing, Dir, EdgeKind, Held, NodeKind, Set, Site, Slot, Touch, Use, World};
+use crate::model::{Crossing, Dir, EdgeKind, Held, NodeKind, Set, Site, Slot, Test, Touch, Use, World};
 use crate::tree::{
     arms_of, beneath, guards, named_children, number_choices, outermost, payload_of, starts_at_literal, text, walk, walk_all, what_of,
     wrapped, ChoiceSyntax, Part, Wrappers,
@@ -242,6 +242,8 @@ pub struct Steps<'t, 's> {
     fails: Option<String>,
     /// What the body's own code sets a part of a value to (`Node::sets`).
     sets: Vec<Set>,
+    /// The fields the conditions of the body's choices read (`Node::tests`).
+    tests: Vec<Test>,
     /// The error type what hands on an error converts it to (`?`), where the function the body is of
     /// says it fails.
     converts: Option<String>,
@@ -265,6 +267,7 @@ impl<'t, 's> Steps<'t, 's> {
             read: vec![],
             fails: None,
             sets: vec![],
+            tests: vec![],
             converts: None,
             kept: HashSet::new(),
         }
@@ -487,6 +490,7 @@ impl<'t, 's> Steps<'t, 's> {
         }
         self.read = (0..self.sites.len()).filter(|&i| self.read_by_own_code(i)).collect();
         self.sets = self.sets(held);
+        self.tests = self.tests(held);
         let mut once: Vec<Use> = vec![];
         for u in out {
             if !once.contains(&u) {
@@ -567,6 +571,45 @@ impl<'t, 's> Steps<'t, 's> {
                     arms: self.arms(b),
                     value: (value.start_byte() as u32, value.end_byte() as u32),
                 });
+            }
+        }
+        out
+    }
+
+    /// What the conditions that decide the body's choices read of the values names hold (`Node::tests`): for each
+    /// choice, each value a name in a condition holds and the field the condition reads of it, through the fields it is
+    /// reached by and the projection the name is bound to first (`read_of`): `ax` of `self.ax is None`, `left.ax` of
+    /// `self.left.ax is None`. What a method is called on is read up to the method (`self.ax.is_none()` reads `ax`); a
+    /// value read whole reads no field.
+    fn tests(&self, held: &dyn Fn(TsNode<'t>) -> Vec<Held>) -> Vec<Test> {
+        let u = self.uses;
+        let kinds: Vec<&str> = u.names.iter().chain(u.reads).copied().collect();
+        let callee = |q: TsNode| q.parent().and_then(|c| c.child_by_field_name("function")).is_some_and(|f| f.id() == q.id());
+        let mut out: Vec<Test> = vec![];
+        for p in walk_all(self.body).into_iter().filter(|p| self.choices.contains_key(&p.id())) {
+            let choice = self.choices[&p.id()];
+            for c in named_children(p).into_iter().filter(|c| (self.syntax.part)(p, *c, self.src) == Part::Decides) {
+                for n in walk(c, &kinds).into_iter().filter(|n| !(u.label)(*n, self.src)) {
+                    // the projection the name is read through: the fields read of it, and what hands on the value inside it
+                    let mut e = n;
+                    while let Some(q) = e.parent().filter(|_| e.id() != c.id()) {
+                        let of = |x: TsNode| beneath(x, u.wrappers).id() == beneath(e, u.wrappers).id();
+                        let wraps = u.wrappers.contains(&q.kind()) && wrapped(q).is_some_and(|w| w.id() == e.id());
+                        let reads = (u.field)(q, self.src).is_some_and(|(o, _)| of(o))
+                            || (u.keeps.contains(&q.kind()) && q.named_child(0).is_some_and(of));
+                        if !(wraps || reads) || callee(q) {
+                            break;
+                        }
+                        e = q;
+                    }
+                    for h in held(n) {
+                        let Some(field) = self.read_of(e, n, &h, held).filter(|f| !f.is_empty()) else { continue };
+                        let test = Test { choice, on: Held { at: 0, fills: vec![], through: vec![], ..h }, field };
+                        if !out.contains(&test) {
+                            out.push(test);
+                        }
+                    }
+                }
             }
         }
         out
@@ -1207,6 +1250,7 @@ impl<'t, 's> Steps<'t, 's> {
             n.binds = binds;
             n.fails = self.fails;
             n.sets = self.sets;
+            n.tests = self.tests;
         }
     }
 

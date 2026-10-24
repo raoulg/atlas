@@ -10,9 +10,12 @@
 //! Every route of every program under `pairs` and `plans` is also asked for its pictures, for every set of open steps
 //! (each subset while there are few, else each step and each pair): the oracle (opening one more box refines the
 //! picture) and the quotient (each line of the picture counts the fine lines that cross a block's border, by channel,
-//! and each box stands where it stands with every step open). The pictures are asked again of the plan cut as a large
-//! program's is cut, at a few small budgets (`ATLAS_FINE_BUDGET`): a step beyond the cut is the image of its body, and
-//! each of its lines counts the fine lines its body draws there.
+//! and each box stands where it stands with every step open); and each closed family opens into a frame with the id of
+//! its box for each value it stands for, as the page draws the frame (the walk's rule). The pictures are asked again of
+//! the plan cut as a large program's is cut, at a few small budgets (`ATLAS_FINE_BUDGET`): a step beyond the cut is the
+//! image of its body, and each of its lines counts the fine lines its body draws there. Opening a step beyond the cut plans
+//! it anew, so the oracle, which opens a box of one plan, does not hold it: each such step of the closed picture is opened
+//! as the page opens it, and the picture it opens to must refine the one it was cut in.
 //!
 //! What Atlas gets wrong today is marked in the file with the issue that tracks it: `known #N FACT` for a fact that does
 //! not hold, `known #N extra FACT` for one Atlas has and should not, `known #N fault TEXT` for a fault of the pictures

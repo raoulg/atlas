@@ -428,10 +428,18 @@ open:
   does, by the class its owner's field holds (`Node::holds`: a board's `right` holds a Chart, which keeps its figure in `fig`
   and `ax`): `self.right.take(self.left.fig, self.left.ax)` sets the right part's fields to the left part's, so from then on
   the right part holds the figure the left one holds, and so does a parameter filled through a part (`other` of
-  `self.left.lend(self.right)` is the board's `right`, and `other.take(self.fig, self.ax)` lends the same). Each binding that
+  `self.left.lend(self.right)` is the board's `right`, and `other.take(self.fig, self.ax)` lends the same). A step that changes
+  such a parameter changes the part's owner, which its call gives anew, and no value of the parameter's type of its own:
+  `lender.lend(self.left)` makes the board anew, its left part holding the lender's figure, also beyond the cut. Each binding that
   makes a figure is a figure the value holds: a class whose methods keep figures under two bindings (`self.fig, self.ax =
   plt.subplots()` and `self.res_fig, self.res_ax = plt.subplots()`) holds two, each named by the first field its binding sets
-  (`fit.fig`, `fit.res_fig`), and a class that keeps one names none. A part set to a whole value (`self.left = left`) is that
+  (`fit.fig`, `fit.res_fig`), and a class that keeps one names none. A figure made in an arm that a condition decides by a
+  field of the slot it is made in is that slot's figure made sure of: the slot keeps what it holds, its own or one lent to it
+  (`if self.ax is None: self.create_figure()`, the condition in the step's body or in a body that calls it on the same
+  value). One made otherwise is made anew, the slot's own, which the slot holds from then on, put over one lent to it: under
+  `if self.ax is None`, `self.res_fig, self.res_ax = plt.subplots()` makes the residuals' figure whatever `res_ax` holds. The
+  condition names the field it tests (`Node::tests`); without a lend the two readings name the one figure the slot holds.
+  A part set to a whole value (`self.left = left`) is that
   value, a lens's put (`get_left(put_left(c, b)) = c`): what the value holds the part holds, and a figure lent to either is
   lent to both, so a chart that holds a figure, set into a board's part, draws there on the figure it made. A figure is one
   figure wherever what holds it is reached, and is named where it is made, by the value that holds it there and the part
@@ -570,8 +578,12 @@ parse the command line to the entry. The closed picture is `F/q`:
   call and set of callers that make its paths whole. Planned by itself, a body does not know its
   caller's values: a value it takes by a name it did not make is the caller's value of that name where
   the caller has one, else the latest of its kind the body made, else one its body binds out of the
-  plan's sight, which the caller does not see either. The cut changes how much of `F` is
-  held, never its picture, and opening a cut step refines as opening any step does.
+  plan's sight, which the caller does not see either; a name its function does not declare (a module's
+  constant) is what the module holds, from beyond, as it is with the step open. What its border hands
+  on is what it hands on open: an error as an error, a result of no type back to its caller, a value
+  of no type by its name; and the types its body holds are the route's fiber, as they are open. The cut
+  changes how much of `F` is held, never its picture, and opening a cut step refines as opening any step
+  does: the picture it opens to, planned anew, maps onto the one it was cut in.
 
 On the image the page then does only what is a quotient of `F` or a way of drawing it: the merge of
 siblings, the storage quotient and the fold (above); a value with no name and no type of the code's
@@ -585,12 +597,12 @@ Each law is then a theorem of the construction, or it is not yet, and says which
 | Law | Why it holds | What checks it |
 | --- | --- | --- |
 | Incidence | `F/q′` maps onto `F/q` along the blocks | the oracle (`checkOpenings`), `pictures.py topology`; `engine/tests/plans.rs`, for every set of open steps: each line counts the fine lines that cross a block's border, by channel |
-| Containment, Moment | functions of `F` | the oracle, `topology`; `plans.rs`: each box stands where it stands with every step open |
+| Containment, Moment | functions of `F` | the oracle, `topology`; `plans.rs`: each box stands where it stands with every step open, and a closed family opens into a frame with the id of its box for each value it stands for (`valueBox`, the walk's rule) |
 | Side | decided on `F/q₀` and carried by `q` | `topology` (a place that changes side) |
 | Closing | `q` is a function of the set of open boxes | `topology` (closing draws the picture it was) |
 | Reading | the own arrow of an opened step is its border | `topology` |
 | Endpoints | every image of a place or an occurrence is a box | `pictures.py walk` |
-| Across the cut | a cut step's arrow is the image of its body, made by the same construction (`cutArrow`) | `plans.rs` at the budgets 1, 2 and 3 (`ATLAS_FINE_BUDGET`), which cut the small programs as a large one is cut: each line of a cut step counts the fine lines its body draws there; `topology` with a small budget |
+| Across the cut | a cut step's arrow is the image of its body, made by the same construction (`cutArrow`) | `plans.rs` at the budgets 1, 2 and 3 (`ATLAS_FINE_BUDGET`), which cut the small programs as a large one is cut: each line of a cut step counts the fine lines its body draws there, and each cut step of the closed picture, opened and planned anew, refines the picture it was cut in (`cutOpenings` in `plans.mjs`); `topology` with a small budget |
 | The overview | not built on a finest plan: the packages' pictures are drawn by their own construction, one box per type (#69) | `walk` only |
 
 The oracle holds the pictures to one another, not to the program. Whether `F` says what the code
@@ -601,9 +613,11 @@ with the issue that tracks it, and the mark goes with the fix (`engine/tests/pla
 test runs the viewer's own model in node, the function every picture is drawn from, on every route of
 the pairs and of its programs.
 **Where.** `plan`, `sitesOf`, `figureOf`, `FIGURE_FIELDS`, `FIGURE_SLOTS` and `figurePart`, `setsAt` and `resolveWhole`, `throughOf` and `partIn`,
-`coarsen`, `cutArrow`, `handTo` and `checkOpenings` in `viewer/plan.js`;
+`changedThrough` and `changesOwner`,
+`coarsen`, `cutArrow` and `typesOf`, `handTo` and `checkOpenings` in `viewer/plan.js`, `cutOpenings` in `engine/tests/plans.mjs`;
 the field an argument reads, `Steps::fills` and `Steps::read_of` (`body.rs`); the class each field of a class holds, `Node::holds`;
-which parameters of no type of the code's hold a value, `builder::settle_parameters`; `tools/pictures.py`;
+which parameters of no type of the code's hold a value, `builder::settle_parameters`; the fields a condition tests,
+`Steps::tests` (`body.rs`), and whether a figure is made sure of, `guarded` in `viewer/plan.js`; `tools/pictures.py`;
 `engine/tests/plans.rs`.
 
 ### Saturation: when the order of a view does not matter

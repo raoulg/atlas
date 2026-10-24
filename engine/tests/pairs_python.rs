@@ -1914,6 +1914,12 @@ fn a_call_names_the_field_a_projection_reads() {
     common::a_call_names_the_field_a_projection_reads("python", "runs.core");
 }
 
+/// The choices pair: a condition names the field it tests (#184), as the Rust and TypeScript readers read it.
+#[test]
+fn a_condition_names_the_field_it_tests() {
+    common::a_condition_names_the_field_it_tests("python", "runs.core");
+}
+
 /// The projections pair: a projection bound to a name first is still the projection (#174), as the Rust and TypeScript
 /// readers read it.
 #[test]

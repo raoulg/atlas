@@ -60,7 +60,9 @@ Read it from left to right:
   the screen and named by what holds it: a method that keeps its figure in the value it runs
   on draws, with every other step on that value, on the value's one figure (`Figure 1 · Chart ·
   chart`); any other call that makes a figure makes its own (`Figure 2 · Chart.line`). A value
-  that is set to hold what another holds (`other.fig = self.fig`) draws on the other's figure. A
+  that is set to hold what another holds (`other.fig = self.fig`) draws on the other's figure,
+  where the figure it would make is made only when the field that keeps it holds none
+  (`if self.ax is None:`); one made under a test of another field is a figure of its own. A
   value whose class keeps two figures in fields of its own holds two, each named by the first
   field that keeps it (`Fit · fit.res_fig`). A chart set into a board's part (`self.left = left`)
   is that chart there: the board draws on the figure the chart holds, named where it was made.

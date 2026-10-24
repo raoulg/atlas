@@ -161,6 +161,21 @@ pub fn a_call_names_the_field_a_projection_reads(language: &str, module: &str) {
     assert_eq!(through("finished"), at(1, "mode"), "finished's mode is the settings' mode");
 }
 
+/// The choices pair of `language`, its functions in the module `module`: the shortcut's `Runner.batch` chooses by a field of the
+/// instance it runs on (`self.mode == "parallel"`), `retries` by the parameter it is handed whole (`mode == "parallel"`). A
+/// condition names the field it tests (`Node::tests`, #184), the same in every language: `mode` of the instance for `batch`,
+/// no field for `retries`.
+#[allow(dead_code)]
+pub fn a_condition_names_the_field_it_tests(language: &str, module: &str) {
+    let choices = pair(&format!("choices/{language}"));
+    let tests = |id: &str| -> Vec<(String, String)> {
+        let n = choices.shortcut.node(&format!("{module}.{id}")).unwrap_or_else(|| panic!("no node {module}.{id}"));
+        n.tests.iter().map(|t| (t.on.ty.clone(), t.field.clone())).collect()
+    };
+    assert_eq!(tests("Runner.batch"), [(format!("{module}.Runner"), "mode".to_string())], "a field of the instance");
+    assert_eq!(tests("retries"), [], "a value read whole names no field");
+}
+
 /// The projections pair of `language` (`tests/pairs/projections`), its classes in the module `module`: a chart lends another
 /// its title and its width, handing each as a field of its own (`other.take(self.title, self.size.width)`), or binding them to
 /// names first (`t = self.title; s = self.size; other.take(t, s.width)`). A projection bound to a name first is still the

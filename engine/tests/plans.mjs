@@ -23,7 +23,7 @@ const D = JSON.parse(fs.readFileSync(dataJson, "utf8"));
 // `ATLAS_FINE_BUDGET=n` cuts the plan as a large program's is cut (`plan.js`, `FINE_BUDGET`)
 const window = process.env.ATLAS_FINE_BUDGET ? {ATLAS_FINE_BUDGET: Number(process.env.ATLAS_FINE_BUDGET)} : {};
 const M = new Function("D", "window", fs.readFileSync(planJs, "utf8") + `
-return {V, plan, imageOf, checkOpenings, treeInfo, stepLabel, typeLabel, sideOfRoles, familyOf, kindOf, byId, ordersOn, stepOf};`)(D, window);
+return {V, plan, imageOf, checkOpenings, treeInfo, stepLabel, typeLabel, sideOfRoles, familyOf, kindOf, byId, ordersOn, stepOf, opens, frameOf, valueBox};`)(D, window);
 const {V} = M;
 
 const SIDES = {in: "left", out: "right", mid: "between", both: "both"};
@@ -107,7 +107,65 @@ function read(route) {
     const w = C.fine.ways.get(k), s = M.sideOfRoles([C.roles.get(k)].filter(Boolean), () => (w?.size === 1 ? [...w][0] : "mid"));
     facts.push(`side ${placeName(k)} ${SIDES[s]}`);
   }
-  return {facts: [...new Set(facts)].sort(), faults: pictures(F, open, occ, homes, valueName)};
+  const faults = [...pictures(F, open, occ, homes, valueName), ...familyOpenings()];
+  if (window.ATLAS_FINE_BUDGET) faults.push(...cutOpenings(F, occ));
+  return {facts: [...new Set(facts)].sort(), faults};
+}
+
+// The walk's rule, held where the picture is drawn from: a closed family opens, for each value it stood for, into a frame with
+// the id its closed box had, as the page draws the frame of an open family (`valueBox`, #182)
+function familyOpenings() {
+  const out = [];
+  V.open.steps = new Set();
+  V.open.families = new Set();
+  const closed = new Map();
+  for (const p of M.plan().places.values()) if (p.type && p.type !== V.route && /^t:/.test(p.id) && M.opens(p.type)) {
+    if (!closed.has(p.type)) closed.set(p.type, []);
+    closed.get(p.type).push(p.id);
+  }
+  for (const [t, boxes] of closed) {
+    V.open.families = new Set([t]);
+    const frames = new Set([...M.plan().places.values()].filter(p => p.type && M.frameOf(p.type)).map(p => M.valueBox(M.frameOf(p.type), p)));
+    for (const b of boxes) if (!frames.has(b)) out.push(`the family ${M.typeLabel(t)}: its box ${b} opens into no frame`);
+  }
+  V.open.families = new Set();
+  M.plan();
+  return out;
+}
+
+// Opening a step beyond the cut plans it anew, unfolded one level more: the picture with it open is drawn from another plan
+// than the one it was cut in, so the oracle, which opens a box of one plan, does not hold it. Here each step of the closed
+// picture that stands beyond the cut is opened as the page opens it, and the picture it opens to must refine the one it was
+// cut in (mathematics.md, "Refinement keeps what it does not refine"): seen through the quotient map, which sends what lies
+// inside the opened step and the values made at moments inside it to the step's box, it takes no line away and draws no line
+// the cut step did not (#183)
+function cutOpenings(Fc, occ) {
+  const route = V.route, foldable = ["cli", "script"].includes(M.byId.get(route)?.entry?.kind), out = [];
+  const lines = view => new Set([...view.inc.values()].filter(i => !view.folded.has(i.c)).map(i => (i.way === "D" ? [i.c, i.p] : [i.p, i.c])));
+  V.open.steps = new Set();
+  const A = M.imageOf(Fc, k => k === route, foldable), was = new Set([...lines(A)].map(([a, b]) => `${a}>${b}`));
+  const cut = [...Fc.pills.values()].filter(P => P.cut && A.pillBlock.get(P.id) === P.id).map(P => P.steps[0]);
+  for (const key of cut) {
+    V.open.steps = new Set([key]);
+    M.plan();
+    const Fo = window.atlasPlan.fine, B = M.imageOf(Fo, k => k === route || k === key, foldable), box = "n:" + key;
+    const below = id => [key + "/", key + "|", key + "~c"].some(p => id.startsWith("n:" + p) || id.startsWith("o:" + p));
+    const phi = id => {
+      if ([box, "o:" + key].includes(id) || below(id)) return box;
+      // a value made at a moment inside the step, or read back inside it, is the step's own
+      const at = /^[tv]:/.test(id) && B.places.get(id)?.at;
+      if (at && below(at)) return box;
+      return A.folded.get(id) || id;
+    };
+    const now = new Set();
+    for (const [a, b] of lines(B)) { const x = phi(a), y = phi(b); if (x !== y) now.add(`${x}>${y}`); }
+    const at = `opening cut step ${occ(box)}`;
+    for (const l of was) if (!now.has(l)) out.push(`${at}: lost ${l}`);
+    for (const l of now) if (!was.has(l)) out.push(`${at}: more ${l}`);
+  }
+  V.open.steps = new Set();
+  M.plan();
+  return out;
 }
 
 // the faults of the pictures of one plan, for every set of open steps
