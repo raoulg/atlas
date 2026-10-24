@@ -1018,13 +1018,15 @@ const build = (node, parent, caller) => {
   }
   // a step beyond the cut stands for the image of its whole body, made as a closed step's is (`cutArrow`)
   const cut = fine && node.cut;
-  const m = cut ? cutArrow(node.id) : stepMorphism(node.id, fine && !node.cut, false, fine && !node.cut), hb = parent && !caller && goesBack(node.id, m.cod, m.errs);
+  const m = cut ? cutArrow(node.id) : stepMorphism(node.id, fine && !node.cut, false, fine && !node.cut);
+  // the places of a cut step's image are known before what it hands on is read: a result of no type goes back (#183)
   if (cut) for (const pl of m.places.values()) addPlace(pl);
+  const hb = parent && !caller && goesBack(node.id, m.cod, m.errs);
   const said = hb ? backName(node.id, m.cod) : null;
   if (caller) m.dom.set(addPlace(entryPlace(caller)), false);
   // a unit stands even when nothing crosses its edge, so that it can be opened
   if (!m.dom.size && !m.cod.size && !hb && !node.id.startsWith("unit:")) return [];
-  const pill = {id: "n:" + node.id, steps: [node.id], D: m.dom, C: m.cod, dn: m.dn, cn: m.cn, goes: m.goes || new Map(), parent, hue: node.hue, branch: node.branch, ...(said ? {said} : {}), ...(m.keep?.size ? {keep: m.keep} : {}), ...(m.errs?.size ? {errs: m.errs} : {}), ...(m.raised?.size ? {raised: m.raised} : {}), ...(m.kept?.size ? {kept: m.kept} : {}), ...(m.uses?.length ? {uses: m.uses} : {}), ...(node.parse ? {parse: true} : {}), ...(cut ? {cut: true, mult: m.mult, split: m.split, holds: m.holds} : {})};
+  const pill = {id: "n:" + node.id, steps: [node.id], D: m.dom, C: m.cod, dn: m.dn, cn: m.cn, goes: m.goes || new Map(), parent, hue: node.hue, branch: node.branch, ...(said ? {said} : {}), ...(m.keep?.size ? {keep: m.keep} : {}), ...(m.errs?.size ? {errs: m.errs} : {}), ...(m.raised?.size ? {raised: m.raised} : {}), ...(m.kept?.size ? {kept: m.kept} : {}), ...(m.uses?.length ? {uses: m.uses} : {}), ...(node.parse ? {parse: true} : {}), ...(cut ? {cut: true, mult: m.mult, split: m.split, holds: m.holds, types: m.types} : {})};
   pills.set(pill.id, pill);
   return hb ? [pill] : [];
 };
@@ -1231,15 +1233,17 @@ const bound = (P, k, nm = (P.dn && P.dn.get(k)) || "", within = false) => {
   // value from beyond the route (#159)
   const inner = alone && P.id !== "n:" + tree[0].id && P.id !== "o:" + tree[0].id;
   if (v || any || !nm || nm.startsWith("#")) return v || ((any || inner) && alone && nm && !nm.startsWith("#") ? condOf(k, nm) : any);
-  if (alone) return inner ? condOf(k, nm) : null;
   // a name no step of the route makes and nothing in scope holds is no value from beyond the route: the body that names it
   // binds it in a way the plan does not follow (a loop's or a closure's name, an arm's binding, a projection a call fills a
   // parameter with). It is a value of that body, in its frame, made there by no step (#159)
   // what a call hands is named in the body that makes the call: an opened step's own arrow is handed it by its caller's
   let f = P.own ? frames.get(P.parent)?.parent : P.parent;
   while (f && frames.get(f)?.synthetic) f = frames.get(f).parent;
-  // a name the body's own function does not declare (a module's constant) is what the module holds: from beyond, as before
-  if (!f || frames.get(f)?.anchor || !(byId.get(stepOf(frames.get(f).step))?.params || []).some(p => p.name === nm)) return null;
+  // a name the body's own function does not declare (a module's constant) is what the module holds: from beyond, as before,
+  // also in a step planned by itself, whose caller does not hold it either (#183)
+  const declared = !!f && !frames.get(f)?.anchor && (byId.get(stepOf(frames.get(f).step))?.params || []).some(p => p.name === nm);
+  if (alone) return inner && declared ? condOf(k, nm) : null;
+  if (!declared) return null;
   const b = version(k, `${k}@${f}/~${nm}`);
   Object.assign(places.get(b), {at: `${f}/~${nm}`, bound: f});
   return b;
@@ -1866,12 +1870,16 @@ const cutArrow = key => {
     const F = planBase(true, [unfoldStep(key)]), P = imageOf(F, () => false, false, {fineKeys: true}).pills.get("n:" + key);
     // what the step hands on is at its own moment; the moment it has is its caller's to give
     const at = "@n:" + key, strip = k => (k.endsWith(at) ? k.slice(0, -at.length) : k);
-    const r = {key, dom: new Map(), cod: new Map(), dn: new Map(), cn: new Map(), goes: P?.goes || new Map(), mult: {D: new Map(), C: new Map()}, places: new Map(), split: F.split};
+    // the types its body holds, inside it as well as at its border: the route's fiber, on which its families are taken, is
+    // the same whether the step is cut or open (#183)
+    const r = {key, dom: new Map(), cod: new Map(), dn: new Map(), cn: new Map(), goes: P?.goes || new Map(), mult: {D: new Map(), C: new Map()}, places: new Map(), split: F.split, errs: new Set(), types: typesOf(F)};
     for (const [way, m, n, far, names, into] of [["D", P?.D, P?.Dn, P?.Dr, r.dn, r.dom], ["C", P?.C, P?.Cn, P?.Cr, r.cn, r.cod]]) for (const [k, flag] of m || []) {
       // what it hands on keeps the name that holds it, also one its call gives by no name, which the caller's own code reads
-      // (`#..`, `Node::uses`)
-      const s = strip(k), pl = F.places.get(k), nm = way === "D" ? pl?.name : pl?.held || (pl?.name?.startsWith("#") ? pl.name : undefined);
+      // (`#..`, `Node::uses`), and a value of no type of the code's, which is its name (#183)
+      const s = strip(k), pl = F.places.get(k), nm = way === "D" ? pl?.name : pl?.held || (pl?.name?.startsWith("#") || k.startsWith("v:") ? pl?.name : undefined);
       into.set(s, flag);
+      // an error it hands on is one by the value at its moment, whatever the place of its type says (#183)
+      if (way === "C" && pl?.err) r.errs.add(s);
       r.mult[way].set(s, [n?.get(k) || 1, far?.get(k) || 0]);
       r.places.set(s, F.places.get(s) || {...pl, id: s, at: undefined});
       if (nm) names.set(s, nm);
@@ -1894,9 +1902,11 @@ const cutArrow = key => {
   const re = k => (r.key === key || !k.startsWith(fig) ? k : k.replace(new RegExp(esc + "(?=[/|~@^]|$)", "g"), key));
   const copy = m => new Map([...m].map(([k, v]) => [re(k), v]));
   // what it hands on as an error leaves by its border beside its result (#138)
-  const errs = new Set([...r.cod.keys()].filter(k => r.places.get(k)?.err).map(re));
-  return {dom: copy(r.dom), cod: copy(r.cod), dn: copy(r.dn), cn: copy(r.cn), goes: copy(r.goes), mult: {D: copy(r.mult.D), C: copy(r.mult.C)}, places: new Map([...r.places].map(([k, pl]) => [re(k), {...pl, id: re(k)}])), split: r.split, errs, holds: r.holds};
+  const errs = new Set([...r.errs].map(re));
+  return {dom: copy(r.dom), cod: copy(r.cod), dn: copy(r.dn), cn: copy(r.cn), goes: copy(r.goes), mult: {D: copy(r.mult.D), C: copy(r.mult.C)}, places: new Map([...r.places].map(([k, pl]) => [re(k), {...pl, id: re(k)}])), split: r.split, errs, holds: r.holds, types: r.types};
 };
+// the types a plan holds: those of its places, and those the bodies of its steps beyond the cut hold
+const typesOf = F => new Set([...[...F.places.values()].map(p => p.type).filter(Boolean), ...[...F.pills.values()].flatMap(P => [...(P.types || [])])]);
 // Opening one more box must refine the picture and nothing else. For each box that can be opened (a closed step, a closed
 // family), the picture with that box open is taken from the same finest plan and held to the one that is drawn: each of its
 // boxes lies in one box of the drawn one, every line of the drawn one is the image of a line of the open one, and no line of
@@ -1957,7 +1967,7 @@ const plan = () => {
   cutArrows.clear();
   try {
     const F = planBase(true);
-    FIBER = new Set([...F.places.values()].map(p => p.type).filter(Boolean));
+    FIBER = typesOf(F);
     const C = coarsen(F);
     window.atlasPlan = {fine: F, coarse: C};
     return {...C, fiber: FIBER};

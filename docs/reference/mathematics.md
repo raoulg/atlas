@@ -572,8 +572,12 @@ parse the command line to the entry. The closed picture is `F/q`:
   call and set of callers that make its paths whole. Planned by itself, a body does not know its
   caller's values: a value it takes by a name it did not make is the caller's value of that name where
   the caller has one, else the latest of its kind the body made, else one its body binds out of the
-  plan's sight, which the caller does not see either. The cut changes how much of `F` is
-  held, never its picture, and opening a cut step refines as opening any step does.
+  plan's sight, which the caller does not see either; a name its function does not declare (a module's
+  constant) is what the module holds, from beyond, as it is with the step open. What its border hands
+  on is what it hands on open: an error as an error, a result of no type back to its caller, a value
+  of no type by its name; and the types its body holds are the route's fiber, as they are open. The cut
+  changes how much of `F` is held, never its picture, and opening a cut step refines as opening any step
+  does: the picture it opens to, planned anew, maps onto the one it was cut in.
 
 On the image the page then does only what is a quotient of `F` or a way of drawing it: the merge of
 siblings, the storage quotient and the fold (above); a value with no name and no type of the code's
@@ -592,7 +596,7 @@ Each law is then a theorem of the construction, or it is not yet, and says which
 | Closing | `q` is a function of the set of open boxes | `topology` (closing draws the picture it was) |
 | Reading | the own arrow of an opened step is its border | `topology` |
 | Endpoints | every image of a place or an occurrence is a box | `pictures.py walk` |
-| Across the cut | a cut step's arrow is the image of its body, made by the same construction (`cutArrow`) | `plans.rs` at the budgets 1, 2 and 3 (`ATLAS_FINE_BUDGET`), which cut the small programs as a large one is cut: each line of a cut step counts the fine lines its body draws there; `topology` with a small budget |
+| Across the cut | a cut step's arrow is the image of its body, made by the same construction (`cutArrow`) | `plans.rs` at the budgets 1, 2 and 3 (`ATLAS_FINE_BUDGET`), which cut the small programs as a large one is cut: each line of a cut step counts the fine lines its body draws there, and each cut step of the closed picture, opened and planned anew, refines the picture it was cut in (`cutOpenings` in `plans.mjs`); `topology` with a small budget |
 | The overview | not built on a finest plan: the packages' pictures are drawn by their own construction, one box per type (#69) | `walk` only |
 
 The oracle holds the pictures to one another, not to the program. Whether `F` says what the code
@@ -604,7 +608,7 @@ test runs the viewer's own model in node, the function every picture is drawn fr
 the pairs and of its programs.
 **Where.** `plan`, `sitesOf`, `figureOf`, `FIGURE_FIELDS`, `FIGURE_SLOTS` and `figurePart`, `setsAt` and `resolveWhole`, `throughOf` and `partIn`,
 `changedThrough` and `changesOwner`,
-`coarsen`, `cutArrow`, `handTo` and `checkOpenings` in `viewer/plan.js`;
+`coarsen`, `cutArrow` and `typesOf`, `handTo` and `checkOpenings` in `viewer/plan.js`, `cutOpenings` in `engine/tests/plans.mjs`;
 the field an argument reads, `Steps::fills` and `Steps::read_of` (`body.rs`); the class each field of a class holds, `Node::holds`;
 which parameters of no type of the code's hold a value, `builder::settle_parameters`; `tools/pictures.py`;
 `engine/tests/plans.rs`.

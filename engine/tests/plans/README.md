@@ -12,7 +12,8 @@ under `pairs` and `plans`, with or without a file, is also asked for its picture
 oracle and the quotient must find nothing, and every closed family must open into a frame with the id of its box for
 each value it stands for, as the page draws it (the walk's rule). They are asked again with the plan cut as a large
 program's is cut, at the budgets 1, 2 and 3 (`ATLAS_FINE_BUDGET`), where a step beyond the cut is the image of its body
-and each of its lines counts the fine lines its body draws there; the facts are asked of the finest plan only.
+and each of its lines counts the fine lines its body draws there, and where each step beyond the cut, opened as the page
+opens it and planned anew, must refine the picture it was cut in; the facts are asked of the finest plan only.
 
 ```bash
 cargo test -p atlas-engine --test plans -- --nocapture                              # every program
