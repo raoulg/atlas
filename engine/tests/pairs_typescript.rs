@@ -1514,6 +1514,13 @@ fn a_module_s_table_is_a_value_the_body_reads() {
     common::a_module_s_table_is_a_value_the_body_reads("typescript", "runs.runs.run");
 }
 
+/// The choices pair: `report(job, settings.level, ..)` is handed the settings through their `level`, and the graph says
+/// so beside the value it is handed (#172), as the Python and Rust readers do.
+#[test]
+fn a_call_names_the_field_a_projection_reads() {
+    common::a_call_names_the_field_a_projection_reads("typescript", "runs.runs");
+}
+
 /// A body's own code that sets a field of a value names the field (#168): the changes pair's `rename` sets the `category`
 /// of the expense it is handed (`x.category = name`, through the name `x` that holds it), and a parameter the signature
 /// keeps (`constructor(readonly level: Level)`) sets the field of its name of the value the constructor builds.

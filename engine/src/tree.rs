@@ -94,10 +94,8 @@ pub fn held_at(
         }
         let (name, ty) = holder(i);
         let held = match ty {
-            Some(t) => crate::model::Held { ty: t, name, at: i.start_byte() as u32, fills: vec![], param: false },
-            None if made.contains(&name) => {
-                crate::model::Held { ty: String::new(), name, at: i.start_byte() as u32, fills: vec![], param: false }
-            }
+            Some(t) => crate::model::Held::at(t, name, i.start_byte(), false),
+            None if made.contains(&name) => crate::model::Held::at(String::new(), name, i.start_byte(), false),
             None => continue,
         };
         if !out.contains(&held) {

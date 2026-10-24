@@ -1906,3 +1906,10 @@ fn a_table_is_one_value_and_the_lists_it_is_cut_into_two() {
 fn a_module_s_table_is_a_value_the_body_reads() {
     common::a_module_s_table_is_a_value_the_body_reads("python", "runs.core.run");
 }
+
+/// The choices pair: `report(job, settings.level, ..)` is handed the settings through their `level`, and the graph says
+/// so beside the value it is handed (#172), as the Rust and TypeScript readers do.
+#[test]
+fn a_call_names_the_field_a_projection_reads() {
+    common::a_call_names_the_field_a_projection_reads("python", "runs.core");
+}

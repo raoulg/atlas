@@ -1390,3 +1390,10 @@ fn a_method_called_on_a_closure_s_parameter_is_a_step_on_its_element() {
     assert_eq!(drawn(&method.shortcut), ["t"], "the loop's touch, a value the body makes");
     assert_eq!(pushes(&method.shortcut), 1, "the shortcut changes a list");
 }
+
+/// The choices pair: `report(&job, settings.level, ..)` is handed the settings through their `level`, and the graph says
+/// so beside the value it is handed (#172), as the Python and TypeScript readers do.
+#[test]
+fn a_call_names_the_field_a_projection_reads() {
+    common::a_call_names_the_field_a_projection_reads("rust", "runs");
+}

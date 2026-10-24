@@ -420,7 +420,11 @@ open:
   there (`other.fig = self.fig`, or `self.fig = fig` in a method its call hands the other's figure to) is
   that one's put, a lens's: from then on it holds the figure the other holds, and so does every value made
   anew of it. The code names the field it sets (`Node::sets`), so a field that holds no figure lends none
-  (`other.title = self.title`);
+  (`other.title = self.title`), and the field each argument of a call reads of the value it hands (`Held::through`), so a
+  parameter filled through one is that projection: `self.fig = fig` in a `take` its call hands `self.title` sets the field
+  to the title, and lends none. A method called on a part of a value (`self.left.line(..)`) runs on the value through the
+  field it reads: a figure it keeps in the value it runs on rests in that part, so two parts hold two figures
+  (`board.left`, `board.right`), and a change made through the part makes the value anew;
 - a step's own arrow is its witness at its border: its signature and its own touches, the lines that
   cross its frame. An opened step draws it as a point on the frame's right edge, not as a step beside
   its steps: a value its call is handed crosses the frame to the step inside that takes it (the value
@@ -441,7 +445,9 @@ open:
   name that holds it, and no value beside it: the caller's own arrow is a point on its border, no
   step, and `done = finished(..); if done:` is `if finished(..):` with a name. A call is
   handed the values the names in its arguments hold: `f(x.name)` is handed `x`, since the projection
-  `.name` is no occurrence but glued into the call, whose arrow is `f ∘ π_name` with domain `X`, and
+  `.name` is no occurrence but glued into the call, whose arrow is `f ∘ π_name` with domain `X`; beside
+  `x` the call keeps `π_name`, the field the argument reads, since `f ∘ π_name` and `f ∘ π_fig` are two
+  arrows (`Held::through`, through the fields it is reached by, as `Set::of` names one), and
   `f(self.path)` is handed the instance the method runs on; a nested call that is a step of its own
   takes its names itself, and the call around it is handed what it gives. A library's operation that
   is a step carries the value it gives, by the name or the names the body binds it to (`with X as con`
@@ -576,7 +582,8 @@ fact of it must hold of the plan Atlas builds, and no other. What Atlas gets wro
 with the issue that tracks it, and the mark goes with the fix (`engine/tests/plans/README.md`). The
 test runs the viewer's own model in node, the function every picture is drawn from, on every route of
 the pairs and of its programs.
-**Where.** `plan`, `sitesOf`, `figureOf` and `FIGURE_FIELDS`, `coarsen`, `cutArrow`, `handTo` and `checkOpenings` in `viewer/plan.js`;
+**Where.** `plan`, `sitesOf`, `figureOf` and `FIGURE_FIELDS`, `setsAt` and `throughOf`, `coarsen`, `cutArrow`, `handTo` and `checkOpenings` in `viewer/plan.js`;
+the field an argument reads, `Steps::fills` (`body.rs`);
 which parameters of no type of the code's hold a value, `builder::settle_parameters`; `tools/pictures.py`;
 `engine/tests/plans.rs`.
 

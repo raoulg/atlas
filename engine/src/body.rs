@@ -541,12 +541,12 @@ impl<'t, 's> Steps<'t, 's> {
                 let made = steps.iter().flat_map(|s| s.gives.iter().filter(|g| !g.name.is_empty()).cloned());
                 for h in names.chain(made).filter(|h| !h.ty.is_empty() || !h.name.is_empty()) {
                     if !from.contains(&h) {
-                        from.push(Held { at: 0, fills: vec![], ..h });
+                        from.push(Held { at: 0, fills: vec![], through: vec![], ..h });
                     }
                 }
                 let of = if from.len() == 1 { self.fields(value).unwrap_or_default() } else { String::new() };
                 out.push(Set {
-                    on: Held { at: 0, fills: vec![], ..on },
+                    on: Held { at: 0, fills: vec![], through: vec![], ..on },
                     field: self.fields(target).unwrap_or_default(),
                     from,
                     of,
@@ -562,6 +562,12 @@ impl<'t, 's> Steps<'t, 's> {
     /// goes through left out: `fig` of `other.fig`, `fig.title` of `self.fig.title`, `rows` of
     /// `self.rows[i]`. None where it starts at no name (a call's result) or reads no field.
     fn fields(&self, n: TsNode) -> Option<String> {
+        self.projection(n).map(|(_, fields)| fields)
+    }
+
+    /// The name an expression is a projection of and the fields it reads of it (`fields`): `self` and `title` of
+    /// `self.title`.
+    fn projection<'n>(&self, n: TsNode<'n>) -> Option<(TsNode<'n>, String)> {
         let u = self.uses;
         let (mut k, mut fields) = (beneath(n, u.wrappers), vec![]);
         loop {
@@ -575,7 +581,7 @@ impl<'t, 's> Steps<'t, 's> {
             }
         }
         fields.reverse();
-        (!fields.is_empty() && (u.names.contains(&k.kind()) || u.reads.contains(&k.kind()))).then(|| fields.join("."))
+        (!fields.is_empty() && (u.names.contains(&k.kind()) || u.reads.contains(&k.kind()))).then(|| (k, fields.join(".")))
     }
 
     /// Whether the body's own code reads what step `i` of the program's code gives, by no name: through
@@ -924,7 +930,9 @@ impl<'t, 's> Steps<'t, 's> {
     /// (`Site::args`) a name that holds it is written in, outside the steps written inside the call,
     /// whose names are theirs, and the one the reader found it in. What a step written inside gives
     /// fills the argument it stands in once the graph wires the steps (`builder::fill_nested`). `held`
-    /// is the reader's, as for `uses`: the values a name holds where it stands.
+    /// is the reader's, as for `uses`: the values a name holds where it stands. An argument that is a
+    /// projection of the value a name holds (`self.title`, `self.fig.ax`) fills its parameter through
+    /// the fields it reads (`Held::through`), the value it reads them of being what the call is handed.
     pub fn fills(&mut self, held: &dyn Fn(TsNode<'t>) -> Vec<Held>) {
         let u = self.uses;
         let kinds: Vec<&str> = u.names.iter().chain(u.reads).copied().collect();
@@ -937,31 +945,47 @@ impl<'t, 's> Steps<'t, 's> {
             let inner: Vec<(u32, u32)> = spans.iter().copied().filter(|s| *s != call && call.0 <= s.0 && s.1 <= call.1).collect();
             let within = |at: u32| inner.iter().any(|(a, b)| *a <= at && at < *b);
             let mut fills: Vec<Vec<Slot>> = self.sites[i].hands.iter().map(|h| h.fills.clone()).collect();
+            let mut through: Vec<Vec<(Slot, String)>> = self.sites[i].hands.iter().map(|h| h.through.clone()).collect();
+            // where an argument as a whole is a projection of one name, where that name is written and the fields it reads
+            let mut projected: Vec<Option<(u32, String)>> = vec![];
             for (j, (a, b)) in written.iter().enumerate() {
                 let slot = &self.sites[i].args[j];
-                let Some(arg) = self.body.descendant_for_byte_range(*a as usize, *b as usize) else { continue };
+                let arg = self.body.descendant_for_byte_range(*a as usize, *b as usize);
+                let whole = arg.filter(|x| x.start_byte() == *a as usize && x.end_byte() == *b as usize);
+                projected.push(whole.and_then(|x| self.projection(x)).map(|(root, f)| (root.start_byte() as u32, f)));
+                let Some(arg) = arg else { continue };
                 let written_here = |n: &TsNode| *a as usize <= n.start_byte() && n.end_byte() <= *b as usize;
                 for n in walk(arg, &kinds).into_iter().filter(written_here) {
                     if within(n.start_byte() as u32) || !self.read_here(n) {
                         continue;
                     }
+                    let field = projected[j].as_ref().filter(|(root, _)| *root == n.start_byte() as u32).map(|(_, f)| f.clone());
                     for h in held(n) {
                         if let Some(k) = self.sites[i].hands.iter().position(|x| *x == h) {
                             if !fills[k].contains(slot) {
                                 fills[k].push(slot.clone());
+                            }
+                            if let Some(f) = field.clone().filter(|_| !through[k].iter().any(|(s, _)| s == slot)) {
+                                through[k].push((slot.clone(), f));
                             }
                         }
                     }
                 }
             }
             for (k, h) in self.sites[i].hands.iter().enumerate() {
-                let found = written.iter().position(|(a, b)| h.at != 0 && *a <= h.at && h.at < *b).map(|j| &self.sites[i].args[j]);
-                if let Some(slot) = found.filter(|s| !fills[k].contains(s)) {
+                let Some(j) = written.iter().position(|(a, b)| h.at != 0 && *a <= h.at && h.at < *b) else { continue };
+                let slot = &self.sites[i].args[j];
+                if !fills[k].contains(slot) {
                     fills[k].push(slot.clone());
                 }
+                // the value the reader found where the projection's name is written fills the parameter through its fields
+                if let Some((_, f)) = projected[j].as_ref().filter(|(root, _)| *root == h.at && !through[k].iter().any(|(s, _)| s == slot))
+                {
+                    through[k].push((slot.clone(), f.clone()));
+                }
             }
-            for (h, f) in self.sites[i].hands.iter_mut().zip(fills) {
-                h.fills = f;
+            for ((h, f), t) in self.sites[i].hands.iter_mut().zip(fills).zip(through) {
+                (h.fills, h.through) = (f, t);
             }
         }
     }

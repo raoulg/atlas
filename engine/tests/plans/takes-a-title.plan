@@ -1,0 +1,57 @@
+# Two charts, where the first lends the second its title in the place of its figure: `lend` calls `other.take(self.title,
+# None)`, and `take` sets the second chart's `fig` and `ax` to what it is handed. The call is handed the first chart, the
+# projection `.title` glued into it (#121), and fills `fig` through the field `title` (#172): a parameter filled through a
+# projection is that projection, so `self.fig = fig` sets the second chart's `fig` to the first's title, a field that holds
+# no figure (#168), and `ax` to nothing. The second chart holds none of the first's figure, and its line makes one of its
+# own: the screen shows two, as the code says, whatever its author meant.
+
+route notebooks.overlay
+step overlay/overlay
+step overlay/overlay/Chart()
+step overlay/overlay/Chart()#2
+step overlay/overlay/Chart.line
+choice overlay/overlay/Chart.line/?1
+step overlay/overlay/Chart.line/?1/Chart.create_figure
+step overlay/overlay/Chart.lend
+step overlay/overlay/Chart.lend/Chart.take
+step overlay/overlay/Chart.line#2
+choice overlay/overlay/Chart.line#2/?1
+step overlay/overlay/Chart.line#2/?1/Chart.create_figure
+
+line entry > overlay call
+line overlay/overlay/Chart() > Chart·first@overlay/overlay/Chart() value
+line overlay/overlay/Chart()#2 > Chart·second@overlay/overlay/Chart()#2 value
+
+line Chart·first@overlay/overlay/Chart() > overlay/overlay/Chart.line/?1/Chart.create_figure value   # `self.create_figure()`
+line overlay/overlay/Chart.line/?1/Chart.create_figure > Chart·self@overlay/overlay/Chart.line/?1 value
+line overlay/overlay/Chart.line/?1/Chart.create_figure > Figure 1 · Chart · first own              # `plt.subplots()`
+line Chart·self@overlay/overlay/Chart.line/?1 > overlay/overlay/Chart.line value                     # `self.ax.plot(..)`
+line overlay/overlay/Chart.line > Chart·first@overlay/overlay/Chart.line value
+
+line Chart·first@overlay/overlay/Chart.line > overlay/overlay/Chart.lend/Chart.take value          # `self.title`
+line Chart·second@overlay/overlay/Chart()#2 > overlay/overlay/Chart.lend/Chart.take value          # `other.take(..)` runs on it
+line overlay/overlay/Chart.lend/Chart.take > Chart·other@overlay/overlay/Chart.lend/Chart.take value   # `self.fig, self.ax = fig, ax`
+line Chart·other@overlay/overlay/Chart.lend/Chart.take > overlay/overlay/Chart.lend value
+line overlay/overlay/Chart.lend > Chart·second@overlay/overlay/Chart.lend value
+
+line Chart·second@overlay/overlay/Chart.lend > overlay/overlay/Chart.line#2/?1/Chart.create_figure value
+line overlay/overlay/Chart.line#2/?1/Chart.create_figure > Chart·self@overlay/overlay/Chart.line#2/?1 value
+line overlay/overlay/Chart.line#2/?1/Chart.create_figure > Figure 2 · Chart · second own           # a figure of its own
+line Chart·self@overlay/overlay/Chart.line#2/?1 > overlay/overlay/Chart.line#2 value
+line overlay/overlay/Chart.line#2 > Chart·second@overlay/overlay/Chart.line#2 value
+line Chart·second@overlay/overlay/Chart.line#2 > overlay/overlay value                               # `return second`
+line overlay/overlay > Chart·chart@overlay/overlay value                                             # `chart = overlay(..)`
+
+home Chart·first@overlay/overlay/Chart() overlay/overlay
+home Chart·second@overlay/overlay/Chart()#2 overlay/overlay
+home Chart·self@overlay/overlay/Chart.line/?1 overlay/overlay/Chart.line
+home Chart·first@overlay/overlay/Chart.line overlay/overlay
+home Chart·other@overlay/overlay/Chart.lend/Chart.take overlay/overlay/Chart.lend
+home Chart·second@overlay/overlay/Chart.lend overlay/overlay
+home Chart·self@overlay/overlay/Chart.line#2/?1 overlay/overlay/Chart.line#2
+home Chart·second@overlay/overlay/Chart.line#2 overlay/overlay
+home Chart·chart@overlay/overlay overlay
+
+side entry left
+side Figure 1 · Chart · first right
+side Figure 2 · Chart · second right

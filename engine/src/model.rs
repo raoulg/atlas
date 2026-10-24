@@ -502,6 +502,15 @@ pub struct Held {
     /// step `g` gives for the first, and `y` to `g`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub fills: Vec<Slot>,
+    /// Of the parameters it fills, those it fills through a field of it, each with that field as the code names it,
+    /// through the fields it is reached by, as `Set::of` names one: `title` for the first parameter of
+    /// `other.take(self.title, self.ax)` and `ax` for the second, `left` for the value `self.left.line(..)` runs on. The
+    /// call is handed the value, the projection glued into it (`take ∘ π_title`, whose domain is the value's type); the
+    /// field says which part of it fills the parameter. A parameter it fills whole, or through what the call computes of
+    /// it (`f(x.n + 1)`), is none of them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(type = "Array<[Slot, string]>")]
+    pub through: Vec<(Slot, String)>,
     /// The value is one of the body's own parameters of no type of the code's, handed or read by its name, or what a step
     /// gives of such parameters alone (a loop's element): it holds a value only where the function's calls fill them with
     /// one, settled once every body is read (`builder::settle_parameters`).
@@ -511,7 +520,12 @@ pub struct Held {
 
 impl Held {
     pub fn new(ty: impl Into<String>, name: impl Into<String>) -> Held {
-        Held { ty: ty.into(), name: name.into(), at: 0, fills: vec![], param: false }
+        Held { ty: ty.into(), name: name.into(), ..Held::default() }
+    }
+
+    /// The value as one of the body's code holds it, written at byte `at`: no parameter of a call filled yet.
+    pub fn at(ty: impl Into<String>, name: impl Into<String>, at: usize, param: bool) -> Held {
+        Held { at: at as u32, param, ..Held::new(ty, name) }
     }
 }
 

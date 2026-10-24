@@ -1443,7 +1443,7 @@ impl<'a, 't> Body<'a, 't> {
             if beneath(*p, WRAPPERS).kind() != "self" {
                 for s in walk(*p, &["self"]).into_iter().filter(|s| !runs_on.contains(&s.id())) {
                     if let Some(ty) = self.cls.clone() {
-                        add((Held { ty, name: String::new(), at: s.start_byte() as u32, fills: vec![], param: false }, None));
+                        add((Held::at(ty, String::new(), s.start_byte(), false), None));
                     }
                 }
             }
@@ -1472,19 +1472,19 @@ impl<'a, 't> Body<'a, 't> {
     fn held_by(&self, name: &str, at: usize, kept: &HashSet<String>) -> Option<(Held, Option<usize>)> {
         let (name, from) = self.holder(name, at);
         if name == "self" {
-            return Some((Held { ty: self.cls.clone()?, name: String::new(), at: at as u32, fills: vec![], param: false }, None));
+            return Some((Held::at(self.cls.clone()?, String::new(), at, false), None));
         }
         // a closure is no value; what it makes is, and no name holds that
         if let Some(made) = self.closures.get(&name, from) {
-            return Some((Held { ty: made.clone(), name: String::new(), at: at as u32, fills: vec![], param: false }, None));
+            return Some((Held::at(made.clone(), String::new(), at, false), None));
         }
         let param = || self.params.iter().position(|p| *p == name).filter(|_| self.parameter.get(&name, from) == Some(&true));
         match self.held_type(&name, from) {
-            Some(ty) => Some((Held { ty, name, at: at as u32, fills: vec![], param: false }, None)),
-            None if kept.contains(&name) => Some((Held { ty: String::new(), name, at: at as u32, fills: vec![], param: false }, None)),
+            Some(ty) => Some((Held::at(ty, name, at, false), None)),
+            None if kept.contains(&name) => Some((Held::at(String::new(), name, at, false), None)),
             None => {
                 let at_param = param()?;
-                Some((Held { ty: String::new(), name, at: at as u32, fills: vec![], param: false }, Some(at_param)))
+                Some((Held::at(String::new(), name, at, false), Some(at_param)))
             }
         }
     }
@@ -1807,7 +1807,7 @@ impl<'a, 't> Body<'a, 't> {
                 .find(|t| t.kind() == "self");
         if let (Some(s), Some(ty)) = (instance, self.cls.clone()) {
             if !hands.iter().any(|h| h.ty == ty && h.name.is_empty()) {
-                hands.push(Held { ty, name: String::new(), at: s.start_byte() as u32, fills: vec![], param: false });
+                hands.push(Held::at(ty, String::new(), s.start_byte(), false));
             }
         }
         hands

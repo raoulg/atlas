@@ -1505,7 +1505,7 @@ impl<'a, 't> Body<'a, 't> {
             "this" => (self.cls.clone().unwrap_or_default(), "this"),
             _ => (self.type_of(owner).unwrap_or_default(), text(owner, src)),
         };
-        vec![Held { ty, name: name.to_string(), at: owner.start_byte() as u32, fills: vec![], param: false }]
+        vec![Held::at(ty, name.to_string(), owner.start_byte(), false)]
     }
 
     /// Whether the name `o` is narrowed where it stands to one of the language's own containers
