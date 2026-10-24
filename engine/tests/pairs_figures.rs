@@ -340,3 +340,37 @@ fn a_projection_bound_to_a_name_is_still_the_projection() {
         assert_eq!(screen_at("plans/takes-a-bound-title", "notebooks.overlay", budget), two, "budget {budget:?}");
     }
 }
+
+/// The shared pair (`tests/pairs/figures/shared`): two charts of a board on one figure (#173). The clean left chart lends its
+/// figure to the right one by its own `lend` (`self.left.lend(self.right)`, which fills `other` with the board through
+/// `right`); the shortcut's board hands its left chart's fields to the right one's `take` itself (`self.right.take(self.left
+/// .fig, self.left.ax)`). Either way `take` sets the fields of the board's right part to those of its left part, and the class
+/// of each part keeps its figure there (`Node::holds`: a board's `left` and `right` hold Charts), so the right part holds the
+/// left part's figure: one figure, also beyond the cut. What tells the sides apart is who reads the left chart's fields: its
+/// own `lend`, or the board's call.
+#[test]
+fn a_figure_lent_between_two_parts_of_one_value_is_the_one_figure() {
+    let one = BTreeSet::from(["Figure 1 · Board · board.left right".to_string()]);
+    for side in ["clean", "shortcut"] {
+        for budget in [None, Some(1), Some(2), Some(3), Some(5)] {
+            assert_eq!(screen_of("figures/shared", side, "notebooks.overlay", budget), one, "{side}, budget {budget:?}");
+        }
+    }
+    let shared = common::pair("figures/shared");
+    let chart = "charts.chart.Chart".to_string();
+    let holds = &shared.clean.node("charts.chart.Board").expect("the board is in the graph").holds;
+    assert_eq!(holds.iter().collect::<Vec<_>>(), [(&"left".to_string(), &chart), (&"right".to_string(), &chart)], "the class of each part");
+    let through = |fields: &[(&str, &str)]| -> Vec<(String, Vec<(String, String)>)> {
+        vec![("self".to_string(), fields.iter().map(|(s, f)| (s.to_string(), f.to_string())).collect())]
+    };
+    assert_eq!(
+        handed_through(&shared.clean, "charts.chart.Board.overlay", "charts.chart.Chart.lend"),
+        through(&[("receiver", "left"), ("{at:0}", "right")]),
+        "the left chart lends, handed the right one"
+    );
+    assert_eq!(
+        handed_through(&shared.shortcut, "charts.chart.Board.overlay", "charts.chart.Chart.take"),
+        through(&[("receiver", "right"), ("{at:0}", "left.fig"), ("{at:1}", "left.ax")]),
+        "the board reads the left chart's fields itself"
+    );
+}

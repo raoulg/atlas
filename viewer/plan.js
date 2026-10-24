@@ -60,6 +60,19 @@ const keepsFigure = (cls, field) => {
   while (todo.length) { const c = todo.pop(); if (!c || seen.has(c)) continue; seen.add(c); if (FIGURE_FIELDS.get(c)?.has(field)) return true; todo.push(...(BASES.get(c) || [])); }
   return false;
 };
+// the class a field of a value of a class holds, its own or a base's (`Node::holds`): a Board's `left` holds a Chart
+const heldIn = (cls, field) => {
+  const seen = new Set(), todo = [cls];
+  while (todo.length) { const c = todo.pop(); if (!c || seen.has(c)) continue; seen.add(c); const t = byId.get(c)?.holds?.[field]; if (t) return t; todo.push(...(BASES.get(c) || [])); }
+  return null;
+};
+// the part of a value of a class that keeps its figure in the field a path names, through the classes its fields hold (#173):
+// "" for `fig` of a Chart, `left` for `left.fig` of a Board whose `left` holds a Chart; null where no part keeps a figure there
+const figurePart = (cls, path) => {
+  const fs = path ? path.split(".") : [];
+  for (let i = 0, c = cls; i < fs.length && c; c = heldIn(c, fs[i]), i++) if (keepsFigure(c, fs.slice(i).join("."))) return fs.slice(0, i).join(".");
+  return null;
+};
 // whether a parameter holds a value of a type: one its type holds as its language reads it (`Param::holds`, by name: a map
 // holds its values by its keys), or a sum written in place, by the names of its variants (`r: Fit | Failed`)
 const writesType = (p, x) => { const w = new Set(p.holds || []), b = id => id.replace(/^ext:/, "").split(".").pop(); return w.has(b(x)) || (VARIANTS.has(x) && VARIANTS.get(x).every(v => w.has(b(v)))); };
@@ -1195,8 +1208,19 @@ const viaDispatch = (P, k) => {
 // Inside an opened step a parameter holds the value its call hands it (#127): each value goes to the parameters its
 // argument fills, as the call writes it (`fills`, #157), whatever its type. Inside a method, its receiver is the latest of
 // its kind until the body makes another. A method called on a part of a value (`self.left.line(..)`) runs on that value, the
-// projection glued into the call (#121); `receiverPart` keeps the fields of it the call reads (`left`, #172)
-const entered = new Set(), receiverAt = new Map(), receiverPart = new Map();
+// projection glued into the call (#121); `receiverPart` keeps the fields of it the call reads (`left`, #172). A parameter
+// filled through a projection is that projection: `paramPart` keeps, by the frame and the parameter's name, the value it holds
+// and the fields of it the call reads (`other` of `self.left.lend(self.right)` is the board through `right`, #173)
+const entered = new Set(), receiverAt = new Map(), receiverPart = new Map(), paramPart = new Map();
+const sameValue = (a, b) => !!a && !!b && (originOf.get(a) || a) === (originOf.get(b) || b);
+// the part of the value `v` that what the body of frame `c` hands by `h` is: the part the instance it runs on is, where `h`
+// is that instance, or the part a parameter of it holds, where `h` is that parameter and still holds the value
+const partIn = (c, h, v) => {
+  const f = frames.get(c), self = f?.step && (byId.get(stepOf(f.step))?.params || []).find(p => p.receiver)?.name;
+  if ((!h.name || h.name === self) && sameValue(receiverAt.get(c), v)) return receiverPart.get(c) || "";
+  const p = h.name && paramPart.get(c)?.get(h.name);
+  return p && sameValue(p.v, v) ? p.part : "";
+};
 const enter = fid => {
   if (!fid || entered.has(fid)) return;
   entered.add(fid);
@@ -1237,6 +1261,7 @@ const handTo = (fid, f, info, Own, fn, recv) => {
   const slotted = s => s === "receiver" ? (self ? [self] : []) : s === "keywords" ? args.filter(p => !written.has(p)) : s?.at != null ? atPlace(s.at) : s?.name != null ? byName(s.name) : s?.spread != null ? args.slice(s.spread).filter(p => !written.has(p) || p.rest) : [];
   const holds = new Map([...(self ? [self] : []), ...args].map(p => [p, []]));
   let part = "";
+  const parts = new Map();
   for (const h of site.hands || []) {
     const k = h.type ? (h.name ? `t:${h.type}~${h.name}` : "t:" + h.type) : "v:" + h.name;
     if (!places.has(k)) continue;
@@ -1245,9 +1270,13 @@ const handTo = (fid, f, info, Own, fn, recv) => {
     if (v === false && holdsNone(Own, k)) continue;
     const vs = [v || k, ...alsoOf(Own, k, h.name || "", false, v)];
     for (const s of h.fills || []) for (const p of slotted(s)) for (const w of vs) if (!holds.get(p).includes(w)) holds.get(p).push(w);
-    // the part of the value the call runs on: the fields it reads, after those of the part its caller runs on
-    if ((h.fills || []).includes("receiver") && self && !part) part = fieldPath(receiverAt.get(callerOf(fid)) === (v || k) ? receiverPart.get(callerOf(fid)) : "", throughOf(h, "receiver"));
+    // the part of the value each parameter holds: the fields the call reads of it, after those of the part the caller's name
+    // holds (the part its caller runs on, or one a parameter of its caller holds)
+    const was = partIn(callerOf(fid), h, v || k);
+    if ((h.fills || []).includes("receiver") && self && !part) part = fieldPath(was, throughOf(h, "receiver"));
+    for (const s of (h.fills || []).filter(s => s !== "receiver")) for (const p of slotted(s)) if (p.name && fieldPath(was, throughOf(h, s))) parts.set(p.name, {v: v || k, part: fieldPath(was, throughOf(h, s))});
   }
+  if (parts.size) paramPart.set(fid, parts);
   for (const [p, vs] of holds) {
     // the receiver is the latest of its kind inside the body, and the value its name holds (`self`)
     if (p.receiver) { if (!vs.length) continue; const v = vs[0]; receiverAt.set(fid, v); if (part) receiverPart.set(fid, part); latestSet(kindKey(v) + "|", v, Own, fid, true); if (p.name) latestSet(kindKey(v) + "|" + p.name, v, Own, fid, true); continue; }
@@ -1281,11 +1310,17 @@ const changesOwner = (P, k) => {
 // `^recv`, or one it is handed, by the key its call hands it as) is held by it, and its caller says which value that is
 // A value a body sets a field of to what another value holds (`other.fig = self.fig`, `self.fig = fig`, `Node::sets`) is that
 // one's put: where the field is one it keeps its figure in, from then on it holds the figure that one holds, and so does
-// every value made anew of it (#168)
+// every value made anew of it (#168). A part of a value holds a figure as a value does (#173): `self.right.take(self.left.fig,
+// ..)` makes the board's `right` hold the figure its `left` holds. `heldBy` keeps, by the value and the part, the value and
+// the part that hold the figure there
 const heldBy = new Map();
-const holderOf = v => heldBy.get(v) || originOf.get(v) || v;
+const holderOf = (v, part = "") => heldBy.get(v)?.get(part) || [originOf.get(v) || v, part];
+const setHeld = (v, part, h) => { if (!heldBy.has(v)) heldBy.set(v, new Map()); heldBy.get(v).set(part, h); };
+const heldOf = v => [...(heldBy.get(v) || [])];
+const heldKey = x => (x.type ? (x.name ? `t:${x.type}~${x.name}` : "t:" + x.type) : "v:" + x.name);
 // what the values a step's sets name hold where its call runs: the value it runs on, a parameter by its name, each with the
-// field of it the call fills that with
+// field of it the call fills that with, after the part of it the caller's name holds; a value handed as a part of another is
+// of that other's class
 const setsAt = (P, resolved, Cv) => {
   const key = P.own ? frames.get(P.parent)?.step : P.steps[0], info = treeInfo.get(key), n = byId.get(stepAt(P));
   if (!n?.sets?.length || !info?.site || P.cut) return;
@@ -1295,18 +1330,27 @@ const setsAt = (P, resolved, Cv) => {
   const filling = h => {
     const recv = !h.name || h.name === self, at = args.findIndex(p => p.name === h.name);
     const fills = s => (recv ? s === "receiver" : s?.at === at || s?.name === h.name);
-    const vs = (info.site.hands || []).flatMap(x => (x.fills || []).filter(fills).map(s => ({v: resolved.get(x.type ? (x.name ? `t:${x.type}~${x.name}` : "t:" + x.type) : "v:" + x.name), field: throughOf(x, s), type: x.type || h.type}))).filter(o => o.v);
-    return vs.length || !recv || !info.site.on_receiver ? vs : [receiverAt.get(c)].filter(Boolean).map(v => ({v, field: "", type: places.get(v)?.type || h.type}));
+    const of = (x, s) => {
+      const v = resolved.get(heldKey(x)), was = v ? partIn(c, x, v) : "";
+      return {v, field: fieldPath(was, throughOf(x, s)), type: (was && places.get(v)?.type) || x.type || h.type};
+    };
+    const vs = (info.site.hands || []).flatMap(x => (x.fills || []).filter(fills).map(s => of(x, s))).filter(o => o.v);
+    return vs.length || !recv || !info.site.on_receiver ? vs : [receiverAt.get(c)].filter(Boolean).map(v => ({v, field: receiverPart.get(c) || "", type: places.get(v)?.type || h.type}));
   };
   for (const s of n.sets) {
     // a figure follows only through the field it rests in: the field set is one the value keeps its figure in, and what it is
     // set to is a field another value keeps its figure in (`other.fig = self.fig`) or a whole value (`self.fig = fig`). A
     // parameter filled through a projection is that projection: `self.fig = fig` with `fig` filled by `first.title` sets the
-    // field to `first.title`, which holds no figure, and a set on a value `self.left.take(..)` runs on sets a field of its
-    // part `left`, none it keeps its figure in itself
-    const on = new Set(filling(s.on).filter(o => keepsFigure(o.type, fieldPath(o.field, s.field))).map(o => originOf.get(o.v) || o.v));
-    const from = (s.from || []).flatMap(filling).filter(o => !fieldPath(o.field, s.of) || keepsFigure(o.type, fieldPath(o.field, s.of))).map(o => o.v);
-    if (from.length) for (const v of Cv.keys()) if (on.has(originOf.get(v) || v)) heldBy.set(v, holderOf(from[0]));
+    // field to `first.title`, which holds no figure. Through a part, the class of the part says (`figurePart`): a set on a
+    // value `self.right.take(..)` runs on sets the fields of its part `right`, which keeps its figure there, to those of the
+    // part `left` the call is handed
+    const on = new Map();
+    for (const o of filling(s.on)) {
+      const part = figurePart(o.type, fieldPath(o.field, s.field)), k = originOf.get(o.v) || o.v;
+      if (part != null) { if (!on.has(k)) on.set(k, new Set()); on.get(k).add(part); }
+    }
+    const from = (s.from || []).flatMap(filling).map(o => { const path = fieldPath(o.field, s.of); return {v: o.v, part: path ? figurePart(o.type, path) : ""}; }).filter(o => o.part != null);
+    if (from.length) for (const v of Cv.keys()) for (const part of on.get(originOf.get(v) || v) || []) setHeld(v, part, holderOf(from[0].v, from[0].part));
   }
 };
 const heldFigure = (h, label, part = "") => {
@@ -1329,7 +1373,7 @@ const partRunOn = (P, resolved) => {
   const h = (site?.hands || []).find(x => (x.fills || []).includes("receiver"));
   if (!h) return "";
   const v = handedReceiver(P, resolved);
-  return fieldPath(v && receiverAt.get(c) === v ? receiverPart.get(c) : "", throughOf(h, "receiver"));
+  return fieldPath(v ? partIn(c, h, v) : "", throughOf(h, "receiver"));
 };
 const figureOf = (P, k, resolved) => {
   const key = P.own ? frames.get(P.parent)?.step : P.steps[0], n = byId.get(stepAt(P)), a = arrowOf(stepAt(P)), pl = places.get(k);
@@ -1344,15 +1388,16 @@ const figureOf = (P, k, resolved) => {
     if (!n?.cls || !(a?.changes || []).includes(n.cls) || !KEEPS_FIGURE.has(n.id)) return k;
     v = receiver();
   }
-  // the value is held from its first moment: one made before the step planned by itself is its caller's
-  const o = v && holderOf(v);
-  if (alone && (!o || !places.get(o)?.at)) return heldFigure(o || "^recv", pl?.figure ?? k, part);
+  // the value is held from its first moment: one made before the step planned by itself is its caller's. A part that holds
+  // the figure another part holds draws on that one's (#173)
+  const [o, held] = v ? holderOf(v, part) : [null, part];
+  if (alone && (!o || !places.get(o)?.at)) return heldFigure(o || "^recv", pl?.figure ?? k, held);
   // a holder the caller does not name leaves the figure the call's own
   if (!o) return P.cut ? addPlace(figurePlace(key, pl.figure)) : k;
   // a figure kept in a part of the value rests in that part: two parts hold two figures. It is named by the value that holds
   // it, its type and its name, whatever family the view closes the type into
   const h = places.get(o), named = h?.type ? typeLabel(h.type) + (h.held ? ` · ${h.held}` : "") : h?.label || o;
-  const id = "w:Screen:fig:" + o + (part ? "." + part : ""), label = named + (part ? "." + part : "");
+  const id = "w:Screen:fig:" + o + (held ? "." + held : ""), label = named + (held ? "." + held : "");
   if (!places.has(id)) places.set(id, {id, label, short: label, kind: "world", figure: label});
   return id;
 };
@@ -1424,13 +1469,15 @@ for (const P of pills.values()) {
     madeOfKey.set(k, v);
   });
   // a step beyond the cut makes a value it hands on hold what a value it was handed holds: here, which values those are
-  for (const [c, d] of P.holds || []) { const v = madeOfKey.get(c), w = P.boundOf?.get(d); if (v && w) heldBy.set(v, holderOf(w)); }
-  // a value made anew holds the figure the moment it was made of held, and an opened step hands on what its steps made of a
-  // value; what a body sets of it may hand it another's
+  for (const [c, cp, d, dp] of P.holds || []) { const v = madeOfKey.get(c), w = P.boundOf?.get(d); if (v && w) setHeld(v, cp, holderOf(w, dp)); }
+  // a value made anew holds the figure the moment it was made of held, in each part, and an opened step hands on what its
+  // steps made of a value, also of one it runs on a part of; what a body sets of it may hand it another's
   const within = w => P.own && /^(\/|\||~c)/.test((places.get(w)?.at || "").slice(P.parent.length)) && (places.get(w)?.at || "").startsWith(P.parent);
-  for (const v of Cv.keys()) if (isMem(v) && !heldBy.has(v) && changesKind(P, v)) {
-    const ws = [...Dv.keys()].filter(w => heldBy.has(w) && (originOf.has(v) ? (originOf.get(w) || w) === originOf.get(v) : within(w) && kindKey(w) === kindKey(v)));
-    if (ws.length && new Set(ws.map(w => heldBy.get(w))).size === 1) heldBy.set(v, heldBy.get(ws[0]));
+  for (const v of Cv.keys()) if (isMem(v) && !heldBy.has(v) && (changesKind(P, v) || changesOwner(P, v))) {
+    // of a value the step was handed from beyond (planned by itself), what its steps made of that value
+    const of = w => (originOf.has(v) ? (originOf.get(w) || w) === originOf.get(v) : (within(w) && kindKey(w) === kindKey(v)) || (Dv.has(originOf.get(w)) && kindKey(originOf.get(w)) === kindKey(v)));
+    const ws = [...Dv.keys()].filter(w => heldBy.has(w) && of(w));
+    if (ws.length && new Set(ws.map(w => JSON.stringify(heldOf(w)))).size === 1) heldBy.set(v, new Map(heldBy.get(ws[0])));
   }
   setsAt(P, resolved, Cv);
   for (const [k, r] of figs) { const f = figureOf(P, k, resolved); Cv.set(f, r); if (mult && P.mult.C.has(k)) mult.C.set(f, P.mult.C.get(k)); }
@@ -1511,7 +1558,7 @@ if (fine) {
       pl.label = pl.short = `Figure ${++n} · ${pl.figure}`;
     }
   }
-  return {places, pills, frames, found, updated, split, holderOf, originOf};
+  return {places, pills, frames, found, updated, split, heldOf, originOf};
 }
 // what the steps do at each place of the world: read it, write it, go there without saying which
 // way; whether a route finds what it reads there; whether a step that reads it hands on what it read
@@ -1728,12 +1775,16 @@ const cutArrow = key => {
       r.places.set(s, F.places.get(s) || {...pl, id: s, at: undefined});
       if (nm) names.set(s, nm);
     }
-    // a value it hands on that its body made to hold what a value it was handed holds (`other.take(self.fig, ..)`): the
-    // caller says which values those are
-    r.holds = [...(P?.C?.keys() || [])].flatMap(c => {
-      const h = F.holderOf(c), d = h !== (F.originOf.get(c) || c) && [...(P?.D?.keys() || [])].find(d => (F.originOf.get(d) || d) === h || F.holderOf(d) === h);
-      return d ? [[strip(c), strip(d)]] : [];
-    });
+    // a value it hands on that its body made to hold, in a part, what a value it was handed holds in a part (`other.take(self
+    // .fig, ..)`, `self.right.take(self.left.fig, ..)`): the caller says which values those are
+    const handed = [...(P?.D?.keys() || [])];
+    r.holds = [...(P?.C?.keys() || [])].flatMap(c => F.heldOf(c).flatMap(([cp, [h, hp]]) => {
+      if (h === (F.originOf.get(c) || c) && hp === cp) return [];
+      const d = handed.find(d => (F.originOf.get(d) || d) === h);
+      if (d) return [[strip(c), cp, strip(d), hp]];
+      const [e, ep] = handed.flatMap(d => F.heldOf(d).filter(([, [h2, hp2]]) => h2 === h && hp2 === hp).map(([dp]) => [d, dp]))[0] || [];
+      return e ? [[strip(c), cp, strip(e), ep]] : [];
+    }));
     cutArrows.set(memo, r);
   }
   // planned by itself, a step's figures are its call's: the figures of another call of the step are this call's

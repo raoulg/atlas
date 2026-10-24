@@ -102,6 +102,12 @@ pub struct Node {
     /// For a class: the fields it declares, by name, beside its methods.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub fields: Vec<String>,
+    /// For a class: the class of the program each of its fields holds, by the field's name, as its declarations and its
+    /// methods' assignments say (`self.left = left` with `left: Chart`): what a value of it is reached through, field by
+    /// field (`board.left` is a `Chart`). The `has` edges say which classes it holds; this says through which field.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[ts(type = "Record<string, string>")]
+    pub holds: BTreeMap<String, String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub decorators: Vec<String>,
     /// Sketch code kept in the tree, not built yet: what its marker says. Read by the language's reader.
@@ -1283,7 +1289,7 @@ impl Graph {
             m(&mut n.id);
             m(&mut n.module);
             m(&mut n.part);
-            n.cls.iter_mut().chain(n.breaks.iter_mut()).for_each(&m);
+            n.cls.iter_mut().chain(n.breaks.iter_mut()).chain(n.holds.values_mut()).for_each(&m);
             if let Some(p) = n.prophecy.as_mut() {
                 p.supersedes.iter_mut().chain(p.replaces.iter_mut()).chain(p.candidates.iter_mut()).for_each(&m);
             }

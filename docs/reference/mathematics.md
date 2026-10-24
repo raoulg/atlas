@@ -424,7 +424,11 @@ open:
   parameter filled through one is that projection: `self.fig = fig` in a `take` its call hands `self.title` sets the field
   to the title, and lends none. A method called on a part of a value (`self.left.line(..)`) runs on the value through the
   field it reads: a figure it keeps in the value it runs on rests in that part, so two parts hold two figures
-  (`board.left`, `board.right`), and a change made through the part makes the value anew;
+  (`board.left`, `board.right`), and a change made through the part makes the value anew. A part holds a figure as a value
+  does, by the class its owner's field holds (`Node::holds`: a board's `right` holds a Chart, which keeps its figure in `fig`
+  and `ax`): `self.right.take(self.left.fig, self.left.ax)` sets the right part's fields to the left part's, so from then on
+  the right part holds the figure the left one holds, and so does a parameter filled through a part (`other` of
+  `self.left.lend(self.right)` is the board's `right`, and `other.take(self.fig, self.ax)` lends the same);
 - a step's own arrow is its witness at its border: its signature and its own touches, the lines that
   cross its frame. An opened step draws it as a point on the frame's right edge, not as a step beside
   its steps: a value its call is handed crosses the frame to the step inside that takes it (the value
@@ -588,8 +592,8 @@ fact of it must hold of the plan Atlas builds, and no other. What Atlas gets wro
 with the issue that tracks it, and the mark goes with the fix (`engine/tests/plans/README.md`). The
 test runs the viewer's own model in node, the function every picture is drawn from, on every route of
 the pairs and of its programs.
-**Where.** `plan`, `sitesOf`, `figureOf` and `FIGURE_FIELDS`, `setsAt` and `throughOf`, `coarsen`, `cutArrow`, `handTo` and `checkOpenings` in `viewer/plan.js`;
-the field an argument reads, `Steps::fills` (`body.rs`);
+**Where.** `plan`, `sitesOf`, `figureOf`, `FIGURE_FIELDS` and `figurePart`, `setsAt`, `throughOf` and `partIn`, `coarsen`, `cutArrow`, `handTo` and `checkOpenings` in `viewer/plan.js`;
+the field an argument reads, `Steps::fills` and `Steps::read_of` (`body.rs`); the class each field of a class holds, `Node::holds`;
 which parameters of no type of the code's hold a value, `builder::settle_parameters`; `tools/pictures.py`;
 `engine/tests/plans.rs`.
 

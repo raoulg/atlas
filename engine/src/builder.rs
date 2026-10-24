@@ -339,6 +339,7 @@ impl GraphBuilder {
                         n.fields.push(f.clone());
                     }
                 }
+                n.holds = info.attr_types.clone();
             }
         }
         serve_data(&mut nodes);
