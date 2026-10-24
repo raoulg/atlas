@@ -430,7 +430,8 @@ open:
   its steps: a value its call is handed crosses the frame to the step inside that takes it (the value
   its signature takes by no name is the parameter a step inside takes by its name), and the
   point keeps what the body itself takes and what it gives back, at the step's moment. What the body's
-  own code uses outside its steps (a print, a condition, a format, what it returns), of a value a step
+  own code uses outside its steps (a print, a condition, a format, what it returns, what it keeps in a
+  field of a value, a lens's put: `self.left = Chart("left")` in an initializer), of a value a step
   inside made or one it is handed, is a line from that value to the point, also where a step inside
   takes the value too: the line lies inside the frame, so it is internal to the closed step (rule 2)
   and the value stands in the step's frame. A value no line takes says that the body drops it; the

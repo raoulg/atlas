@@ -603,6 +603,10 @@ pub struct Set {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[ts(type = "Array<[number, number]>")]
     pub arms: Vec<(u32, u32)>,
+    /// Where the assigned expression is written, as a byte range of its file: a step written there that the
+    /// set keeps (`self.left = Chart("left")`) is among what it reads once its result is named.
+    #[serde(skip)]
+    pub value: (u32, u32),
 }
 
 /// A value is its type and its name; where it is written does not make it another.

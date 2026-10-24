@@ -1275,6 +1275,23 @@ fn diamond_the_name_of_a_feed_s_file_is_its_url() {
     }
 }
 
+/// A constructor that keeps what it builds in a field puts it there by its own code, a lens's put (#176), as Python's
+/// initializer does in `tests/pairs/figures/built`: `this.store = new Store(cache)` in `Cached`'s constructor is set from the
+/// store its step builds, and its own code reads that store, on either side.
+#[test]
+fn diamond_a_constructor_reads_the_store_it_keeps_in_a_field() {
+    for side in ["clean", "shortcut"] {
+        let g = news(side);
+        let ctor = node(&g, "sources.Cached.constructor");
+        let made: Vec<&str> =
+            ctor.sites.iter().flat_map(|s| &s.gives).filter(|h| h.ty.ends_with(".store.Store")).map(|h| h.name.as_str()).collect();
+        assert_eq!(made.len(), 1, "{side}: the store it builds is named by its step");
+        let set = ctor.sets.iter().find(|s| s.field == "store").expect("it sets its field `store`");
+        assert_eq!(set.from.iter().map(|h| h.name.as_str()).collect::<Vec<_>>(), made, "{side}: set from the store it builds");
+        assert!(ctor.uses.iter().any(|u| u.name == made[0]), "{side}: its own code reads the store it keeps");
+    }
+}
+
 /// One side of the cooperative pair (`tests/pairs/cooperative/typescript`): a feed that extends a
 /// cached source, whose every `read` hands on to the one above it with `super.read()`; the
 /// shortcut's feed hands on with `Source.prototype.read.call(this)`.

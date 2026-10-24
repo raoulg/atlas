@@ -280,3 +280,31 @@ fn two_calls_that_make_a_figure_make_two() {
     assert!(figure_calls(&apart.clean, "charts.chart.compare").is_empty());
     assert_eq!(figure_calls(&apart.shortcut, "charts.chart.compare"), [7, 10], "two calls in one body");
 }
+
+/// The built pair (`tests/pairs/figures/built`): a board of two charts (#176). The clean board is handed its charts; the
+/// shortcut builds them in its initializer and keeps each in a field (`self.left = Chart("left")`). A value kept in a field is
+/// the body's own code putting it there, a lens's put: the initializer reads what each `Chart(..)` gives, so its own arrow
+/// takes the chart (the `.plan` files), as building the clean board takes the charts it is handed, and the field is set from
+/// it. Either way each figure rests in the part of the board that holds it. What tells the sides apart is where the charts
+/// are made, and what the initializer sets its fields from: its parameters, or the results of its own steps.
+#[test]
+fn a_value_an_initializer_keeps_in_a_field_is_taken() {
+    let two = BTreeSet::from(["Figure 1 · Board · board.left right".to_string(), "Figure 2 · Board · board.right right".to_string()]);
+    for side in ["clean", "shortcut"] {
+        for budget in [None, Some(1), Some(2), Some(3), Some(5)] {
+            assert_eq!(screen_of("figures/built", side, "notebooks.side_by_side", budget), two, "{side}, budget {budget:?}");
+        }
+    }
+    let built = common::pair("figures/built");
+    let init = "charts.chart.Board.__init__";
+    let from = |g: &Graph| -> Vec<(String, String)> {
+        g.node(init).unwrap().sets.iter().flat_map(|s| s.from.iter().map(|h| (s.field.clone(), h.name.clone()))).collect()
+    };
+    let field = |f: &str, by: &str| (f.to_string(), by.to_string());
+    assert_eq!(from(&built.clean), [field("left", "left"), field("right", "right")], "set from the charts it is handed");
+    let made: Vec<String> = built.shortcut.node(init).unwrap().sites.iter().flat_map(|s| s.gives.iter().map(|g| g.name.clone())).collect();
+    assert_eq!(made.len(), 2, "each chart it builds is named by its step: {made:?}");
+    assert_eq!(from(&built.shortcut), [field("left", &made[0]), field("right", &made[1])], "set from the charts it builds");
+    let used: Vec<&str> = built.shortcut.node(init).unwrap().uses.iter().map(|u| u.name.as_str()).collect();
+    assert!(made.iter().all(|m| used.contains(&m.as_str())), "its own code reads each chart it keeps: {used:?}");
+}

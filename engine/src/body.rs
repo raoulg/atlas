@@ -552,6 +552,7 @@ impl<'t, 's> Steps<'t, 's> {
                     of,
                     lines: Some((line(b), b.end_position().row as u32 + 1)),
                     arms: self.arms(b),
+                    value: (value.start_byte() as u32, value.end_byte() as u32),
                 });
             }
         }
@@ -585,9 +586,10 @@ impl<'t, 's> Steps<'t, 's> {
     }
 
     /// Whether the body's own code reads what step `i` of the program's code gives, by no name: through
-    /// what hands it on unchanged and the parts of it it takes, what it is in is no step, no binding, no
-    /// statement of its own and not what leaves the body as it is (`mode.plan().timeout <= ..`,
-    /// `ledger.merged(other).rows.length + ..`, `this.rows().map((row) => row.reading)`). A step written
+    /// what hands it on unchanged and the parts of it it takes, what it is in is no step, no binding of a
+    /// name, no statement of its own and not what leaves the body as it is (`mode.plan().timeout <= ..`,
+    /// `ledger.merged(other).rows.length + ..`, `this.rows().map((row) => row.reading)`). A binding that
+    /// keeps it in a field or an element of a value reads it (`self.left = Chart("left")`). A step written
     /// around it is handed it.
     fn read_by_own_code(&self, i: usize) -> bool {
         let (u, s) = (self.uses, &self.sites[i]);
@@ -618,7 +620,9 @@ impl<'t, 's> Steps<'t, 's> {
                 let around = |(j, x): (usize, &Site)| {
                     j != i && x.span != (0, 0) && x.span.0 as usize <= child.start_byte() && child.end_byte() <= x.span.1 as usize
                 };
-                let bound = (u.binds)(p).is_some_and(|(_, value)| value.id() == child.id());
+                // a binding of a name hands the value to the name; one that keeps it in a field or an element of a value
+                // (`self.left = Chart(..)`) is the body's own code putting it there, a lens's put
+                let bound = (u.binds)(p).is_some_and(|(targets, value)| value.id() == child.id() && walk(targets, u.keeps).is_empty());
                 let leaves = !part && ((u.leaves)(child, self.body) || (u.leaves)(p, self.body));
                 return !self.sites.iter().enumerate().any(around)
                     && !bound
@@ -1026,6 +1030,11 @@ impl<'t, 's> Steps<'t, 's> {
             match s.gives.iter_mut().find(|g| g.ty == given) {
                 Some(g) => g.name = name.clone(),
                 None => s.gives.push(Held::new(given.clone(), name.clone())),
+            }
+            // a set that keeps what the step gives in a field reads it (`self.left = Chart("left")`)
+            let one = Held::new(given.clone(), name.clone());
+            for set in self.sets.iter_mut().filter(|t| t.value.0 <= s.span.0 && s.span.1 <= t.value.1 && !t.from.contains(&one)) {
+                set.from.push(one.clone());
             }
             own.push(Use { name, ty: given, arms: s.arms.clone(), param: false });
         }
