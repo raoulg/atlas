@@ -1557,3 +1557,24 @@ fn a_set_names_the_field_it_sets() {
 fn a_projection_bound_to_a_name_is_still_the_projection() {
     common::a_projection_bound_to_a_name_is_still_the_projection("typescript", "charts");
 }
+
+/// The each pair (`tests/pairs/each/typescript`): a node's places, its touches drawn by a function written in place handed
+/// to `map`, which gives back what `Touch.drawn` makes as an expression (`(t) => t.drawn()`) or returns it from a block
+/// (`(t) => { return t.drawn(); }`). What a function written in place gives back goes where its result goes (#177): into
+/// what `map` gives, which the body's own code puts in the pairs it returns. The two forms say the same thing, and read alike:
+/// the body's own code reads the Where `drawn` gives, by the name its step gives it.
+#[test]
+fn what_a_function_written_in_place_returns_it_gives_back() {
+    let each = common::pair("each/typescript");
+    for (side, g) in [("clean", &each.clean), ("shortcut", &each.shortcut)] {
+        let f = node(g, "drawn");
+        let given: Vec<&str> =
+            f.sites.iter().filter(|s| s.to.ends_with("Touch.drawn")).flat_map(|s| &s.gives).map(|h| h.name.as_str()).collect();
+        assert_eq!(given.len(), 1, "{side}: the Where is named by its step: {given:?}");
+        assert!(
+            f.uses.iter().any(|u| u.name == given[0] && u.ty.ends_with(".Where")),
+            "{side}: its own code reads the Where: {:?}",
+            f.uses
+        );
+    }
+}

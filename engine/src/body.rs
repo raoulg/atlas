@@ -427,14 +427,7 @@ impl<'t, 's> Steps<'t, 's> {
     /// Whether `n` stands in a function written in place in the body (`|x| ..`, `x => ..`): what
     /// it returns or hands on by `?` leaves that function, not the body.
     fn in_function(&self, n: TsNode) -> bool {
-        let mut child = n;
-        while let Some(p) = child.parent().filter(|_| child.id() != self.body.id()) {
-            if named_children(p).into_iter().any(|c| c.id() != child.id() && (self.uses.binders)(p, c) == Some(true)) {
-                return true;
-            }
-            child = p;
-        }
-        false
+        self.function_around(n).is_some()
     }
 
     /// The handlers that watch call `c`, innermost first, each by the classes it catches.
@@ -738,6 +731,18 @@ impl<'t, 's> Steps<'t, 's> {
                     None => return false,
                 }
             } else {
+                let leaves = !part && ((u.leaves)(child, self.body) || (u.leaves)(p, self.body));
+                // what a function written in place returns is what it gives back (`(t) => { return t.drawn(); }` is
+                // `(t) => t.drawn()`)
+                if let Some(f) = leaves.then(|| self.function_around(p)).flatten() {
+                    match self.glued_call(f) {
+                        Some(call) => {
+                            (child, part) = (call, false);
+                            continue;
+                        }
+                        None => return false,
+                    }
+                }
                 // a step that stands where it is written (a loop over it) or around it is handed it
                 let around = |(j, x): (usize, &Site)| {
                     j != i && x.span != (0, 0) && x.span.0 as usize <= child.start_byte() && child.end_byte() <= x.span.1 as usize
@@ -745,7 +750,6 @@ impl<'t, 's> Steps<'t, 's> {
                 // a binding of a name hands the value to the name; one that keeps it in a field or an element of a value
                 // (`self.left = Chart(..)`) is the body's own code putting it there, a lens's put
                 let bound = (u.binds)(p).is_some_and(|(targets, value)| value.id() == child.id() && walk(targets, u.keeps).is_empty());
-                let leaves = !part && ((u.leaves)(child, self.body) || (u.leaves)(p, self.body));
                 return !self.sites.iter().enumerate().any(around)
                     && !bound
                     && !leaves
@@ -754,6 +758,19 @@ impl<'t, 's> Steps<'t, 's> {
             }
         }
         false
+    }
+
+    /// The innermost function written in place that `n` stands in, within the body: the node that binds its own names
+    /// beside the part `n` is in (`|x| ..`, `(x) => { .. }`).
+    fn function_around<'n>(&self, n: TsNode<'n>) -> Option<TsNode<'n>> {
+        let mut child = n;
+        while let Some(p) = child.parent().filter(|_| child.id() != self.body.id()) {
+            if named_children(p).into_iter().any(|x| x.id() != child.id() && (self.uses.binders)(p, x) == Some(true)) {
+                return Some(p);
+            }
+            child = p;
+        }
+        None
     }
 
     /// The call a function written in place at `f` is handed to as an argument (also by a name, `key=lambda r: ..`),

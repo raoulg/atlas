@@ -446,7 +446,8 @@ open:
   values its steps make, which it uses, if at all, by its own code, nor does one that gives back a collection of pairs
   (`Vec<(String, Vec<Where>)>` gives back pairs, no `Where`). A value handed into a
   library's operation goes on in what the operation gives, and is the operation's only where that
-  is; what a function written in place gives back goes where its result goes, so handed to such an operation it goes on in
+  is; what a function written in place gives back, as its expression or by a `return` of its own (`(t) => { return
+  t.drawn(); }` is `(t) => t.drawn()`), goes where its result goes, so handed to such an operation it goes on in
   what the operation gives (`.map(|t| t.drawn()).collect()`). A result of no type of the code's goes back to the step that called it unless another step of
   the caller takes it, which it then reaches as a value. Going back, it is one line labelled by the
   name that holds it, and no value beside it: the caller's own arrow is a point on its border, no
