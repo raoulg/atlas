@@ -1,0 +1,26 @@
+# What a graph draws: every node's touches, each drawn by its own method where it is. `flatMap` hands its function each
+# node of the graph, and that function hands `map`'s each touch of the node; each function's parameter is that element,
+# a part of the graph the route is handed, glued into the step as a projection is (#180), so `t.drawn()` is `Touch.drawn`
+# on the graph and no Node or Touch comes from beyond. A field declared as an array is an array, so `n.touches.map(..)`
+# and `g.nodes.flatMap(..)` are the language's own operations, no steps. The plan is the Rust method pair's
+# (`../rust-method/clean.plan`).
+
+route drawing.drawn
+step drawn/Touch.drawn
+step drawn/Touch.drawn/Where()
+
+line entry > drawn call
+line Graph·g > drawn value                                    # `g.nodes.flatMap(..)`: no step
+line Graph·g > drawn/Touch.drawn/Where() value               # `this.op` of each touch, a part of the graph
+line drawn/Touch.drawn/Where() > Where@drawn/Touch.drawn/Where() value
+line Where@drawn/Touch.drawn/Where() > drawn/Touch.drawn value
+line drawn/Touch.drawn > Where@drawn/Touch.drawn value
+line Where@drawn/Touch.drawn > drawn value                    # gathered by `map` and `flatMap` and given back
+line drawn > Where@drawn value                                # and given, at the route's moment
+
+home Graph·g drawn
+home Where@drawn/Touch.drawn/Where() drawn/Touch.drawn
+home Where@drawn/Touch.drawn drawn
+home Where@drawn drawn
+
+side entry left

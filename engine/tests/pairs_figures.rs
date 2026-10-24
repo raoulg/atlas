@@ -374,3 +374,78 @@ fn a_figure_lent_between_two_parts_of_one_value_is_the_one_figure() {
         "the board reads the left chart's fields itself"
     );
 }
+
+/// The bindings of `id`'s body that set fields of the value it runs on, each as the fields it sets.
+fn bindings(g: &Graph, id: &str) -> Vec<Vec<String>> {
+    let mut out: Vec<(Option<(u32, u32)>, Vec<String>)> = vec![];
+    for s in &g.node(id).unwrap_or_else(|| panic!("{id} is in the graph")).sets {
+        match out.iter_mut().find(|(l, _)| *l == s.lines) {
+            Some((_, fs)) => fs.push(s.field.clone()),
+            None => out.push((s.lines, vec![s.field.clone()])),
+        }
+    }
+    out.into_iter().map(|(_, fs)| fs).collect()
+}
+
+/// The two pair (`tests/pairs/figures/two`): a fit and its residuals, each on a figure of its own (#178). The clean fit holds
+/// two charts, each of which keeps one figure; the shortcut's fit keeps both itself, one method making each in fields of its
+/// own (`self.fig, self.ax = plt.subplots()`, `self.res_fig, self.res_ax = plt.subplots()`). A figure rests in the fields the
+/// binding that makes it sets, so each binding is a figure the value holds: two either way, also beyond the cut, the
+/// shortcut's named by the first field each binding sets. What tells the sides apart is what holds the figures: two parts
+/// of the fit, or two slots of one value.
+#[test]
+fn two_figures_one_value_keeps_in_different_fields_are_two() {
+    let fit = |a: &str, b: &str| BTreeSet::from([format!("Figure 1 · Fit · fit.{a} right"), format!("Figure 2 · Fit · fit.{b} right")]);
+    for budget in [None, Some(1), Some(2), Some(3), Some(5)] {
+        assert_eq!(screen_of("figures/two", "clean", "notebooks.residuals", budget), fit("data", "residuals"), "budget {budget:?}");
+        assert_eq!(screen_of("figures/two", "shortcut", "notebooks.residuals", budget), fit("fig", "res_fig"), "budget {budget:?}");
+    }
+    let two = common::pair("figures/two");
+    assert_eq!(bindings(&two.clean, "charts.chart.Chart.create_figure"), [["fig", "ax"]], "a chart keeps one figure");
+    let holds = &two.clean.node("charts.chart.Fit").expect("the fit is in the graph").holds;
+    assert_eq!(holds.values().collect::<Vec<_>>(), ["charts.chart.Chart", "charts.chart.Chart"], "the clean fit holds two charts");
+    assert_eq!(bindings(&two.shortcut, "charts.chart.Fit.create_figures"), [["fig", "ax"], ["res_fig", "res_ax"]], "one value, two");
+}
+
+/// The handed pair (`tests/pairs/figures/handed`): two charts on a board (#179). The clean board is handed charts that hold no
+/// figure yet and draws every line on them; the shortcut's caller draws on the left chart first and then hands it to the
+/// board, which draws on it again. A part set whole to a value (`self.left = left`) is that value, a lens's put, so the
+/// board's left part holds the figure the chart holds: two figures either way, also beyond the cut, each named where it is
+/// made. What tells the sides apart is who draws on the left chart first, and so what the figure is named by: the board's
+/// part, or the caller's chart.
+#[test]
+fn a_chart_set_whole_into_a_part_draws_there_on_the_figure_it_holds() {
+    let two = |left: &str| BTreeSet::from([format!("Figure 1 · {left} right"), "Figure 2 · Board · board.right right".to_string()]);
+    for budget in [None, Some(1), Some(2), Some(3), Some(5)] {
+        assert_eq!(screen_of("figures/handed", "clean", "notebooks.side_by_side", budget), two("Board · board.left"), "budget {budget:?}");
+        assert_eq!(screen_of("figures/handed", "shortcut", "notebooks.side_by_side", budget), two("Chart · left"), "budget {budget:?}");
+    }
+    let handed = common::pair("figures/handed");
+    let init = "charts.chart.Board.__init__";
+    for (side, g) in [("clean", &handed.clean), ("shortcut", &handed.shortcut)] {
+        let whole: Vec<(&str, &str)> = g
+            .node(init)
+            .unwrap()
+            .sets
+            .iter()
+            .filter(|s| s.of.is_empty())
+            .flat_map(|s| s.from.iter().map(|h| (s.field.as_str(), h.name.as_str())))
+            .collect();
+        assert_eq!(whole, [("left", "left"), ("right", "right")], "{side}: each part is set to the whole chart it is handed");
+    }
+    let lines = |g: &Graph| g.node("charts.chart.side_by_side").unwrap().sites.iter().filter(|s| s.to == "charts.chart.Chart.line").count();
+    assert_eq!(lines(&handed.clean), 0, "the board draws every line");
+    assert_eq!(lines(&handed.shortcut), 1, "the caller draws on the left chart before it hands it over");
+    // the part is the chart either way round: a figure lent to the chart after the put is the part's (`tests/plans/
+    // lent-after-the-put`), and one the board makes through the part is the chart's, which its own name draws on again
+    // (`tests/plans/drawn-after-the-put`)
+    for budget in [None, Some(1), Some(2), Some(3), Some(5)] {
+        let lent = BTreeSet::from(["Figure 1 · Chart · first right".to_string(), "Figure 2 · Board · board.right right".to_string()]);
+        assert_eq!(screen_at("plans/lent-after-the-put", "notebooks.side_by_side", budget), lent, "budget {budget:?}");
+        assert_eq!(
+            screen_at("plans/drawn-after-the-put", "notebooks.side_by_side", budget),
+            two("Board · board.left"),
+            "budget {budget:?}"
+        );
+    }
+}

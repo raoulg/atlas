@@ -428,7 +428,14 @@ open:
   does, by the class its owner's field holds (`Node::holds`: a board's `right` holds a Chart, which keeps its figure in `fig`
   and `ax`): `self.right.take(self.left.fig, self.left.ax)` sets the right part's fields to the left part's, so from then on
   the right part holds the figure the left one holds, and so does a parameter filled through a part (`other` of
-  `self.left.lend(self.right)` is the board's `right`, and `other.take(self.fig, self.ax)` lends the same);
+  `self.left.lend(self.right)` is the board's `right`, and `other.take(self.fig, self.ax)` lends the same). Each binding that
+  makes a figure is a figure the value holds: a class whose methods keep figures under two bindings (`self.fig, self.ax =
+  plt.subplots()` and `self.res_fig, self.res_ax = plt.subplots()`) holds two, each named by the first field its binding sets
+  (`fit.fig`, `fit.res_fig`), and a class that keeps one names none. A part set to a whole value (`self.left = left`) is that
+  value, a lens's put (`get_left(put_left(c, b)) = c`): what the value holds the part holds, and a figure lent to either is
+  lent to both, so a chart that holds a figure, set into a board's part, draws there on the figure it made. A figure is one
+  figure wherever what holds it is reached, and is named where it is made, by the value that holds it there and the part
+  (`Chart · left` made by `left.line(..)`, `Board · board.left` made by the board's `self.left.line(..)`);
 - a step's own arrow is its witness at its border: its signature and its own touches, the lines that
   cross its frame. An opened step draws it as a point on the frame's right edge, not as a step beside
   its steps: a value its call is handed crosses the frame to the step inside that takes it (the value
@@ -475,7 +482,7 @@ open:
   `n.touches.iter().chain(&n.instead).map(Touch::drawn)` hands `g` as well: what `chain` goes on with
   is part of what it is handed, an element of either; the closure's name is that element, of the class
   a loop's name over the same value is, so `.map(|t| t.drawn())` is `Touch::drawn` as `for t in ..`
-  makes it), what operators compute of names
+  makes it, and `touches.map((t) => t.drawn())` hands `touches`), what operators compute of names
   (`bottom = height - margin`), what each arm of a choice sets a name to (`let unit;
   if (..) unit = KELVIN; else unit = CELSIUS`). A change made through one changes its owner, a lens's
   put. A parameter is such a name: inside an opened step it holds the value its call hands it, not a
@@ -593,7 +600,8 @@ fact of it must hold of the plan Atlas builds, and no other. What Atlas gets wro
 with the issue that tracks it, and the mark goes with the fix (`engine/tests/plans/README.md`). The
 test runs the viewer's own model in node, the function every picture is drawn from, on every route of
 the pairs and of its programs.
-**Where.** `plan`, `sitesOf`, `figureOf`, `FIGURE_FIELDS` and `figurePart`, `setsAt`, `throughOf` and `partIn`, `coarsen`, `cutArrow`, `handTo` and `checkOpenings` in `viewer/plan.js`;
+**Where.** `plan`, `sitesOf`, `figureOf`, `FIGURE_FIELDS`, `FIGURE_SLOTS` and `figurePart`, `setsAt` and `resolveWhole`, `throughOf` and `partIn`,
+`coarsen`, `cutArrow`, `handTo` and `checkOpenings` in `viewer/plan.js`;
 the field an argument reads, `Steps::fills` and `Steps::read_of` (`body.rs`); the class each field of a class holds, `Node::holds`;
 which parameters of no type of the code's hold a value, `builder::settle_parameters`; `tools/pictures.py`;
 `engine/tests/plans.rs`.
@@ -625,14 +633,16 @@ values it pairs where it stands for one value (`-> (Config, Store)`); a collecti
 code does not name (`Vec<(NaiveDate, f64)>` holds no `NaiveDate`). A tuple of any length (`tuple[Station, ...]`) is a
 collection itself. A map holds its values by its keys, a family of lenses indexed by the key (Lenses): `dict[Mode, Plan]`,
 `HashMap<Mode, Plan>` and `Record<Mode, Plan>` are one value that holds Plans, the key choosing the Plan a lookup gives
-as an index chooses an element of a list, no value the map holds. What a parameter or a value its module keeps holds is
-what its type holds as its language reads it, never a name its type merely writes: the module's `PLANS: Record<Mode,
-Plan>` is a value of Plans from beyond, as `PLANS: dict[Mode, Plan]` is. So is what a function gives back: one that
-returns `Vec<(String, Vec<Where>)>` gives back pairs, and none of the Wheres its steps make.
+as an index chooses an element of a list, no value the map holds. What a parameter, a local or a value its module keeps
+holds is what its type holds as its language reads it, never a name its type merely writes: the module's `PLANS: Record<Mode,
+Plan>` is a value of Plans from beyond, as `PLANS: dict[Mode, Plan]` is, and `const out: Where[] = []` holds Wheres. So is
+what a function gives back: one that returns `Vec<(String, Vec<Where>)>` gives back pairs, and none of the Wheres its steps
+make. A value declared as the language's container is one, a field as a name (`n.touches: Touch[]` is an array), so a method
+called on it is the language's operation.
 **Where.** `knowledge.rs`: `python_container`, `TYPESCRIPT_CONTAINERS`, `RUST_CONTAINERS`, the maps `PYTHON_MAPS`,
 `TYPESCRIPT_MAPS`, `RUST_MAPS`; `Param::holds`, read by `writesType` in `viewer/plan.js` and by the principles, and
 `Returns::holds`, read by `flow::made_from`; the Rust reader's
-signatures (`rust/passes.rs`, `fixed_by_implementations`; `rust/module.rs`, `type_names`, with `RUST_COLLECTIONS`); `typescript/module.rs`, `type_names`, with `TYPESCRIPT_COLLECTIONS`; `python/module.rs`, `type_names`, and `pytypes::outer_classes`, with `python_collection`.
+signatures (`rust/passes.rs`, `fixed_by_implementations`; `rust/module.rs`, `type_names`, with `RUST_COLLECTIONS`); `typescript/module.rs`, `type_names`, with `TYPESCRIPT_COLLECTIONS`, and `typescript/body.rs`, `typed` and `world`; `python/module.rs`, `type_names`, and `pytypes::outer_classes`, with `python_collection`.
 
 ### Narrowing
 **What.** A test of a value's type refines its type in the code that runs only where the test
