@@ -49,6 +49,11 @@ for (const n of D.nodes) {
     KEEPS_FIGURE.add(n.id);
   }
 }
+// the field a value a call hands fills one of its parameters through, where the call writes the argument as a projection of
+// it (`Held::through`, #172): `title` for the `fig` of `other.take(self.title, ..)`, `left` for the value `self.left.line(..)`
+// runs on; none where it fills the parameter whole
+const throughOf = (h, slot) => (h.through || []).find(([s]) => JSON.stringify(s) === JSON.stringify(slot))?.[1] || "";
+const fieldPath = (...fs) => fs.filter(Boolean).join(".");
 // whether a value of a class keeps its figure in a field: one its class or a base of it keeps the figure in
 const keepsFigure = (cls, field) => {
   const seen = new Set(), todo = [cls];
@@ -858,8 +863,11 @@ const stepMorphism = (key, own, isAnchor, leaf) => {
     // say, a changed type is the value of its kind the call was handed
     const changes = arrowOf(step)?.changes || [], gives = new Set(arrowOf(step)?.gives || []);
     const explicit = (site.gives || []).some(g => g.name && (site.hands || []).some(h => h.name === g.name));
+    // a change of the value the call runs on, where that is a part of another (`self.left.line(..)`), is a change of that
+    // other, which the call gives anew: a lens's put (#172), no value of the part's type of its own
+    const part = (site.hands || []).some(h => h.type && throughOf(h, "receiver"));
     for (const x of [...changes, ...(on && changes.includes(byId.get(step)?.cls) ? [on] : [])]) {
-      if (explicit) { if (!gives.has(x) && !cn.has("t:" + x)) m.cod.delete("t:" + x); continue; }
+      if (explicit || (part && x === byId.get(step)?.cls)) { if (!gives.has(x) && !cn.has("t:" + x)) m.cod.delete("t:" + x); continue; }
       const kind = kindKey(addPlace(typePlace(x))), held = [...dn.keys()].find(d => kindKey(d) === kind);
       for (const k of m.cod.keys()) if (held && kindKey(k) === kind && !cn.has(k)) cn.set(k, dn.get(held));
     }
@@ -1185,8 +1193,9 @@ const viaDispatch = (P, k) => {
 };
 // Inside an opened step a parameter holds the value its call hands it (#127): each value goes to the parameters its
 // argument fills, as the call writes it (`fills`, #157), whatever its type. Inside a method, its receiver is the latest of
-// its kind until the body makes another
-const entered = new Set(), receiverAt = new Map();
+// its kind until the body makes another. A method called on a part of a value (`self.left.line(..)`) runs on that value, the
+// projection glued into the call (#121); `receiverPart` keeps the fields of it the call reads (`left`, #172)
+const entered = new Set(), receiverAt = new Map(), receiverPart = new Map();
 const enter = fid => {
   if (!fid || entered.has(fid)) return;
   entered.add(fid);
@@ -1200,13 +1209,17 @@ const enter = fid => {
     let c = f.parent;
     while (c && frames.get(c)?.synthetic) c = frames.get(c).parent;
     const rv = info.dispatch ? receiverAt.get("n:" + info.dispatch) : info.site?.on_receiver ? receiverAt.get(c) : isDoorOf(f.step) && places.has("t:" + (info.on || recv)) ? "t:" + (info.on || recv) : null;
-    if (rv) receiverAt.set(fid, rv);
+    const part = info.dispatch ? receiverPart.get("n:" + info.dispatch) : info.site?.on_receiver ? receiverPart.get(c) : "";
+    if (rv) { receiverAt.set(fid, rv); if (part) receiverPart.set(fid, part); }
   }
   // it is a value of the class the method is written in too: inside the body the latest of that kind, and the value its name
   // holds (`self`), whichever subclass it is (`Source.read` run on a `Trimmed` by `super().read()`)
   const rv = receiverAt.get(fid), self = (fn?.params || []).find(p => p.receiver)?.name;
   if (rv) { const k = "t:" + kindOf(recv); latestSet(k + "|", rv, Own, fid, true); if (self) latestSet(k + "|" + self, rv, Own, fid, true); }
 };
+// the frame of the body a frame's call is made in, through the choices between them
+const bodyFrame = fid => { let c = fid; while (c && frames.get(c)?.synthetic) c = frames.get(c).parent; return c; };
+const callerOf = fid => bodyFrame(frames.get(fid)?.parent);
 // what a call hands a step's parameters: each value fills the parameters its argument is written for (`Site::args`,
 // `Held::fills`): the value the call runs on (`receiver`), the parameter at a place after it (`{at: n}`), the parameter of a
 // name (`{name: k}`); a spread fills each parameter from its place on, a spread of names each one the call writes no
@@ -1222,6 +1235,7 @@ const handTo = (fid, f, info, Own, fn, recv) => {
   const written = new Set((site.args || []).flatMap(s => (s?.at != null ? atPlace(s.at) : s?.name != null ? byName(s.name) : [])));
   const slotted = s => s === "receiver" ? (self ? [self] : []) : s === "keywords" ? args.filter(p => !written.has(p)) : s?.at != null ? atPlace(s.at) : s?.name != null ? byName(s.name) : s?.spread != null ? args.slice(s.spread).filter(p => !written.has(p) || p.rest) : [];
   const holds = new Map([...(self ? [self] : []), ...args].map(p => [p, []]));
+  let part = "";
   for (const h of site.hands || []) {
     const k = h.type ? (h.name ? `t:${h.type}~${h.name}` : "t:" + h.type) : "v:" + h.name;
     if (!places.has(k)) continue;
@@ -1230,10 +1244,12 @@ const handTo = (fid, f, info, Own, fn, recv) => {
     if (v === false && holdsNone(Own, k)) continue;
     const vs = [v || k, ...alsoOf(Own, k, h.name || "", false, v)];
     for (const s of h.fills || []) for (const p of slotted(s)) for (const w of vs) if (!holds.get(p).includes(w)) holds.get(p).push(w);
+    // the part of the value the call runs on: the fields it reads, after those of the part its caller runs on
+    if ((h.fills || []).includes("receiver") && self && !part) part = fieldPath(receiverAt.get(callerOf(fid)) === (v || k) ? receiverPart.get(callerOf(fid)) : "", throughOf(h, "receiver"));
   }
   for (const [p, vs] of holds) {
     // the receiver is the latest of its kind inside the body, and the value its name holds (`self`)
-    if (p.receiver) { if (!vs.length) continue; const v = vs[0]; receiverAt.set(fid, v); latestSet(kindKey(v) + "|", v, Own, fid, true); if (p.name) latestSet(kindKey(v) + "|" + p.name, v, Own, fid, true); continue; }
+    if (p.receiver) { if (!vs.length) continue; const v = vs[0]; receiverAt.set(fid, v); if (part) receiverPart.set(fid, part); latestSet(kindKey(v) + "|", v, Own, fid, true); if (p.name) latestSet(kindKey(v) + "|" + p.name, v, Own, fid, true); continue; }
     if (!p.name) continue;
     // a parameter is looked for by its own type and name: what fills it through a projection is of another type; one of
     // no type of the code's as a value of no type, whatever it holds
@@ -1250,6 +1266,13 @@ const withErrors = new Map();
 const errorsWith = (scope, v) => { const w = withErrors.get(v); return w && w.scope === scope ? w.errs : []; };
 const stepAt = P => stepOf(P.own ? frames.get(P.parent)?.step : P.steps[0]);
 const changesKind = (P, k) => (arrowOf(stepAt(P))?.changes || []).some(x => kindKey(addPlace(typePlace(x))) === kindKey(k));
+// a step that changes the value it runs on, called on a part of another (`self.left.line(..)`), makes that other anew: a change
+// made through a projection changes its owner, a lens's put (#172)
+const changesOwner = (P, k) => {
+  const site = treeInfo.get(P.own ? frames.get(P.parent)?.step : P.steps[0])?.site, n = byId.get(stepAt(P));
+  if (!site || !n?.cls || !(arrowOf(n.id)?.changes || []).includes(n.cls)) return false;
+  return (site.hands || []).some(h => h.type && throughOf(h, "receiver") && kindKey(addPlace(typePlace(h.type))) === kindKey(k));
+};
 // A figure rests in what holds it (#11): a method that keeps the figure it makes in a field of the value it runs on
 // (`self.fig, self.ax = plt.subplots()`, `FIGURE_FIELDS`) keeps it in that value, so every step that runs on the value draws
 // on the one figure it holds, whichever of them makes it; any other call that makes a figure makes one of its own. Planned by
@@ -1260,7 +1283,8 @@ const changesKind = (P, k) => (arrowOf(stepAt(P))?.changes || []).some(x => kind
 // every value made anew of it (#168)
 const heldBy = new Map();
 const holderOf = v => heldBy.get(v) || originOf.get(v) || v;
-// what the values a step's sets name hold where its call runs: the value it runs on, a parameter by its name
+// what the values a step's sets name hold where its call runs: the value it runs on, a parameter by its name, each with the
+// field of it the call fills that with
 const setsAt = (P, resolved, Cv) => {
   const key = P.own ? frames.get(P.parent)?.step : P.steps[0], info = treeInfo.get(key), n = byId.get(stepAt(P));
   if (!n?.sets?.length || !info?.site || P.cut) return;
@@ -1269,39 +1293,65 @@ const setsAt = (P, resolved, Cv) => {
   while (c && frames.get(c)?.synthetic) c = frames.get(c).parent;
   const filling = h => {
     const recv = !h.name || h.name === self, at = args.findIndex(p => p.name === h.name);
-    const vs = (info.site.hands || []).filter(x => (x.fills || []).some(s => (recv ? s === "receiver" : s?.at === at || s?.name === h.name))).map(x => resolved.get(x.type ? (x.name ? `t:${x.type}~${x.name}` : "t:" + x.type) : "v:" + x.name)).filter(Boolean);
-    return vs.length || !recv || !info.site.on_receiver ? vs : [receiverAt.get(c)].filter(Boolean);
+    const fills = s => (recv ? s === "receiver" : s?.at === at || s?.name === h.name);
+    const vs = (info.site.hands || []).flatMap(x => (x.fills || []).filter(fills).map(s => ({v: resolved.get(x.type ? (x.name ? `t:${x.type}~${x.name}` : "t:" + x.type) : "v:" + x.name), field: throughOf(x, s), type: x.type || h.type}))).filter(o => o.v);
+    return vs.length || !recv || !info.site.on_receiver ? vs : [receiverAt.get(c)].filter(Boolean).map(v => ({v, field: "", type: places.get(v)?.type || h.type}));
   };
   for (const s of n.sets) {
     // a figure follows only through the field it rests in: the field set is one the value keeps its figure in, and what it is
-    // set to is a field another value keeps its figure in (`other.fig = self.fig`) or a whole value (`self.fig = fig`)
-    if (!keepsFigure(s.on.type, s.field) || (s.of && !keepsFigure(s.from?.[0]?.type, s.of))) continue;
-    const from = (s.from || []).flatMap(filling), on = new Set(filling(s.on).map(w => originOf.get(w) || w));
+    // set to is a field another value keeps its figure in (`other.fig = self.fig`) or a whole value (`self.fig = fig`). A
+    // parameter filled through a projection is that projection: `self.fig = fig` with `fig` filled by `first.title` sets the
+    // field to `first.title`, which holds no figure, and a set on a value `self.left.take(..)` runs on sets a field of its
+    // part `left`, none it keeps its figure in itself
+    const on = new Set(filling(s.on).filter(o => keepsFigure(o.type, fieldPath(o.field, s.field))).map(o => originOf.get(o.v) || o.v));
+    const from = (s.from || []).flatMap(filling).filter(o => !fieldPath(o.field, s.of) || keepsFigure(o.type, fieldPath(o.field, s.of))).map(o => o.v);
     if (from.length) for (const v of Cv.keys()) if (on.has(originOf.get(v) || v)) heldBy.set(v, holderOf(from[0]));
   }
 };
-const heldFigure = (h, label) => {
-  const id = "w:Screen:fig:" + h + "^held";
-  if (!places.has(id)) places.set(id, {id, label, short: label, kind: "world", figure: label, holder: h});
+const heldFigure = (h, label, part = "") => {
+  const id = "w:Screen:fig:" + h + (part ? "." + part : "") + "^held";
+  if (!places.has(id)) places.set(id, {id, label, short: label, kind: "world", figure: label, holder: h, ...(part ? {part} : {})});
   return id;
 };
-const figureOf = (P, k) => {
+// the value a closed step's call hands it to run on, where the call writes one (`other.f()`, `self.left.f()`), as the step
+// takes it: what its kind's latest is in the body otherwise
+const handedReceiver = (P, resolved) => {
+  const site = !P.own && treeInfo.get(P.steps[0])?.site, h = site && !site.on_receiver && (site.hands || []).find(x => (x.fills || []).includes("receiver"));
+  return h ? resolved.get(h.type ? (h.name ? `t:${h.type}~${h.name}` : "t:" + h.type) : "v:" + h.name) || null : null;
+};
+// the part of the value a step runs on that its call reads (#172): a method called on `self.left` runs on the value `self`
+// holds, through its field `left`, after the part the body it is called in runs on
+const partRunOn = (P, resolved) => {
+  if (P.own) return receiverPart.get(P.parent) || "";
+  const site = treeInfo.get(P.steps[0])?.site, c = bodyFrame(P.parent);
+  if (site?.on_receiver) return receiverPart.get(c) || "";
+  const h = (site?.hands || []).find(x => (x.fills || []).includes("receiver"));
+  if (!h) return "";
+  const v = handedReceiver(P, resolved);
+  return fieldPath(v && receiverAt.get(c) === v ? receiverPart.get(c) : "", throughOf(h, "receiver"));
+};
+const figureOf = (P, k, resolved) => {
   const key = P.own ? frames.get(P.parent)?.step : P.steps[0], n = byId.get(stepAt(P)), a = arrowOf(stepAt(P)), pl = places.get(k);
-  const cls = treeInfo.get(key)?.on || a?.receiver || n?.cls, receiver = () => cls && latestGet(kindKey(addPlace(typePlace(cls))) + "|", P, true);
-  let v;
+  const cls = treeInfo.get(key)?.on || a?.receiver || n?.cls;
+  const receiver = () => handedReceiver(P, resolved) || (cls && latestGet(kindKey(addPlace(typePlace(cls))) + "|", P, true));
+  let v, part = partRunOn(P, resolved);
   if (P.cut) {
     if (!pl?.holder) return k;
     v = pl.holder === "^recv" ? receiver() : P.boundOf?.get(pl.holder);
+    part = pl.holder === "^recv" ? fieldPath(part, pl.part) : pl.part || "";
   } else {
     if (!n?.cls || !(a?.changes || []).includes(n.cls) || !KEEPS_FIGURE.has(n.id)) return k;
     v = receiver();
   }
   // the value is held from its first moment: one made before the step planned by itself is its caller's
   const o = v && holderOf(v);
-  if (alone && (!o || !places.get(o)?.at)) return heldFigure(o || "^recv", pl?.figure ?? k);
+  if (alone && (!o || !places.get(o)?.at)) return heldFigure(o || "^recv", pl?.figure ?? k, part);
   // a holder the caller does not name leaves the figure the call's own
   if (!o) return P.cut ? addPlace(figurePlace(key, pl.figure)) : k;
-  const id = "w:Screen:fig:" + o, label = places.get(o)?.label || o;
+  // a figure kept in a part of the value rests in that part: two parts hold two figures. It is named by the value that holds
+  // it, its type and its name, whatever family the view closes the type into
+  const h = places.get(o), named = h?.type ? typeLabel(h.type) + (h.held ? ` · ${h.held}` : "") : h?.label || o;
+  const id = "w:Screen:fig:" + o + (part ? "." + part : ""), label = named + (part ? "." + part : "");
   if (!places.has(id)) places.set(id, {id, label, short: label, kind: "world", figure: label});
   return id;
 };
@@ -1366,7 +1416,7 @@ for (const P of pills.values()) {
     Object.assign(places.get(v), {at}, P.errs?.has(k) || P.raised?.has(k) ? {err: true} : {});
     if (nm && !nm.startsWith("#") && !k.startsWith("v:")) Object.assign(places.get(v), {label: `${places.get(k).label} · ${nm}`, held: nm});
     // a step that changes a value makes the value it was handed anew: the same value, at a new moment
-    if (changesKind(P, k)) { const ctx = P.own ? frames.get(P.parent) : P, was = latestGet(kindKey(k) + "|" + nm, ctx) || latestGet(kindKey(k) + "|", ctx); if (was && was !== v) originOf.set(v, originOf.get(was) || was); }
+    if (changesKind(P, k) || changesOwner(P, k)) { const ctx = P.own ? frames.get(P.parent) : P, was = latestGet(kindKey(k) + "|" + nm, ctx) || latestGet(kindKey(k) + "|", ctx); if (was && was !== v) originOf.set(v, originOf.get(was) || was); }
     // an error leaves by the border it is handed on across: no later step of the body takes it (#138)
     if (!places.get(v).err) { latestSet(kindKey(k) + "|" + nm, v, P); latestSet(kindKey(k) + "|", v, P); }
     Cv.set(v, r);
@@ -1382,7 +1432,7 @@ for (const P of pills.values()) {
     if (ws.length && new Set(ws.map(w => heldBy.get(w))).size === 1) heldBy.set(v, heldBy.get(ws[0]));
   }
   setsAt(P, resolved, Cv);
-  for (const [k, r] of figs) { const f = figureOf(P, k); Cv.set(f, r); if (mult && P.mult.C.has(k)) mult.C.set(f, P.mult.C.get(k)); }
+  for (const [k, r] of figs) { const f = figureOf(P, k, resolved); Cv.set(f, r); if (mult && P.mult.C.has(k)) mult.C.set(f, P.mult.C.get(k)); }
   // a call whose signature gives its error in the sum it gives (`Result<T, E>`) and which hands no error on gives the sum:
   // what takes its result takes its error with it (`store.save_rates(base, rates::fetch(..))`, #138)
   const info = treeInfo.get(P.own ? frames.get(P.parent)?.step : P.steps[0]);

@@ -1898,3 +1898,18 @@ fn a_parameter_of_no_type_is_handed_by_its_name_where_a_call_fills_it() {
 fn a_table_is_one_value_and_the_lists_it_is_cut_into_two() {
     common::a_table_is_one_value("python", "tables.plans.timeout");
 }
+
+/// The choices pair (`tests/pairs/choices/python`): `run` looks its mode up in the module's `PLANS: dict[Mode, Plan]`, a value
+/// from beyond of the Plans it holds, as the TypeScript pair's `run` reads its `Record<Mode, Plan>` (#171); the shortcut tests
+/// a string in each function and keeps no table.
+#[test]
+fn a_module_s_table_is_a_value_the_body_reads() {
+    common::a_module_s_table_is_a_value_the_body_reads("python", "runs.core.run");
+}
+
+/// The choices pair: `report(job, settings.level, ..)` is handed the settings through their `level`, and the graph says
+/// so beside the value it is handed (#172), as the Rust and TypeScript readers do.
+#[test]
+fn a_call_names_the_field_a_projection_reads() {
+    common::a_call_names_the_field_a_projection_reads("python", "runs.core");
+}

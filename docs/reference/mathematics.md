@@ -420,7 +420,11 @@ open:
   there (`other.fig = self.fig`, or `self.fig = fig` in a method its call hands the other's figure to) is
   that one's put, a lens's: from then on it holds the figure the other holds, and so does every value made
   anew of it. The code names the field it sets (`Node::sets`), so a field that holds no figure lends none
-  (`other.title = self.title`);
+  (`other.title = self.title`), and the field each argument of a call reads of the value it hands (`Held::through`), so a
+  parameter filled through one is that projection: `self.fig = fig` in a `take` its call hands `self.title` sets the field
+  to the title, and lends none. A method called on a part of a value (`self.left.line(..)`) runs on the value through the
+  field it reads: a figure it keeps in the value it runs on rests in that part, so two parts hold two figures
+  (`board.left`, `board.right`), and a change made through the part makes the value anew;
 - a step's own arrow is its witness at its border: its signature and its own touches, the lines that
   cross its frame. An opened step draws it as a point on the frame's right edge, not as a step beside
   its steps: a value its call is handed crosses the frame to the step inside that takes it (the value
@@ -441,7 +445,9 @@ open:
   name that holds it, and no value beside it: the caller's own arrow is a point on its border, no
   step, and `done = finished(..); if done:` is `if finished(..):` with a name. A call is
   handed the values the names in its arguments hold: `f(x.name)` is handed `x`, since the projection
-  `.name` is no occurrence but glued into the call, whose arrow is `f ∘ π_name` with domain `X`, and
+  `.name` is no occurrence but glued into the call, whose arrow is `f ∘ π_name` with domain `X`; beside
+  `x` the call keeps `π_name`, the field the argument reads, since `f ∘ π_name` and `f ∘ π_fig` are two
+  arrows (`Held::through`, through the fields it is reached by, as `Set::of` names one), and
   `f(self.path)` is handed the instance the method runs on; a nested call that is a step of its own
   takes its names itself, and the call around it is handed what it gives. A library's operation that
   is a step carries the value it gives, by the name or the names the body binds it to (`with X as con`
@@ -456,7 +462,9 @@ open:
   prism), an element of a loop that is no step (`for s, t in rows`), an element a method hands the
   closure or the function it is given (`g.nodes.iter().map(|n| ..)` hands `g`, and inside it
   `n.touches.iter().chain(&n.instead).map(Touch::drawn)` hands `g` as well: what `chain` goes on with
-  is part of what it is handed, an element of either), what operators compute of names
+  is part of what it is handed, an element of either; the closure's name is that element, of the class
+  a loop's name over the same value is, so `.map(|t| t.drawn())` is `Touch::drawn` as `for t in ..`
+  makes it), what operators compute of names
   (`bottom = height - margin`), what each arm of a choice sets a name to (`let unit;
   if (..) unit = KELVIN; else unit = CELSIUS`). A change made through one changes its owner, a lens's
   put. A parameter is such a name: inside an opened step it holds the value its call hands it, not a
@@ -574,7 +582,8 @@ fact of it must hold of the plan Atlas builds, and no other. What Atlas gets wro
 with the issue that tracks it, and the mark goes with the fix (`engine/tests/plans/README.md`). The
 test runs the viewer's own model in node, the function every picture is drawn from, on every route of
 the pairs and of its programs.
-**Where.** `plan`, `sitesOf`, `figureOf` and `FIGURE_FIELDS`, `coarsen`, `cutArrow`, `handTo` and `checkOpenings` in `viewer/plan.js`;
+**Where.** `plan`, `sitesOf`, `figureOf` and `FIGURE_FIELDS`, `setsAt` and `throughOf`, `coarsen`, `cutArrow`, `handTo` and `checkOpenings` in `viewer/plan.js`;
+the field an argument reads, `Steps::fills` (`body.rs`);
 which parameters of no type of the code's hold a value, `builder::settle_parameters`; `tools/pictures.py`;
 `engine/tests/plans.rs`.
 
@@ -605,8 +614,9 @@ values it pairs where it stands for one value (`-> (Config, Store)`); a collecti
 code does not name (`Vec<(NaiveDate, f64)>` holds no `NaiveDate`). A tuple of any length (`tuple[Station, ...]`) is a
 collection itself. A map holds its values by its keys, a family of lenses indexed by the key (Lenses): `dict[Mode, Plan]`,
 `HashMap<Mode, Plan>` and `Record<Mode, Plan>` are one value that holds Plans, the key choosing the Plan a lookup gives
-as an index chooses an element of a list, no value the map holds. What a parameter holds is what its type holds as its
-language reads it, never a name its type merely writes.
+as an index chooses an element of a list, no value the map holds. What a parameter or a value its module keeps holds is
+what its type holds as its language reads it, never a name its type merely writes: the module's `PLANS: Record<Mode,
+Plan>` is a value of Plans from beyond, as `PLANS: dict[Mode, Plan]` is.
 **Where.** `knowledge.rs`: `python_container`, `TYPESCRIPT_CONTAINERS`, `RUST_CONTAINERS`, the maps `PYTHON_MAPS`,
 `TYPESCRIPT_MAPS`, `RUST_MAPS`; `Param::holds`, read by `writesType` in `viewer/plan.js` and by the principles; the Rust reader's
 signatures (`rust/passes.rs`, `fixed_by_implementations`; `rust/module.rs`, `type_names`, with `RUST_COLLECTIONS`); `typescript/module.rs`, `type_names`, with `TYPESCRIPT_COLLECTIONS`; `python/module.rs`, `type_names`, and `pytypes::outer_classes`, with `python_collection`.

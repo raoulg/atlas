@@ -1,0 +1,58 @@
+# Two charts side by side on a board, each on a figure of its own. The board is handed its two charts and draws each by
+# the chart's own `line`, which makes the chart's figure where it holds none. `self.left.line(..)` runs on the board, the
+# projection glued into the call (#121), through its field `left` (#172): the figure `line` keeps in the value it runs on
+# rests in that part of the board, so the left and the right chart hold a figure each, and the notebook's screen shows
+# two, named by the part that holds each. A change made through a projection changes its owner, a lens's put: each `line`
+# makes the board anew, and no Chart of its own.
+
+route notebooks.side_by_side
+step side_by_side/side_by_side
+step side_by_side/side_by_side/Chart()
+step side_by_side/side_by_side/Chart()#2
+step side_by_side/side_by_side/Board()
+step side_by_side/side_by_side/Board.draw
+step side_by_side/side_by_side/Board.draw/Chart.line
+choice side_by_side/side_by_side/Board.draw/Chart.line/?1
+step side_by_side/side_by_side/Board.draw/Chart.line/?1/Chart.create_figure
+step side_by_side/side_by_side/Board.draw/Chart.line#2
+choice side_by_side/side_by_side/Board.draw/Chart.line#2/?1
+step side_by_side/side_by_side/Board.draw/Chart.line#2/?1/Chart.create_figure
+
+line entry > side_by_side call
+line side_by_side/side_by_side/Chart() > Chart@side_by_side/side_by_side/Chart() value
+line side_by_side/side_by_side/Chart()#2 > Chart@side_by_side/side_by_side/Chart()#2 value
+line Chart@side_by_side/side_by_side/Chart() > side_by_side/side_by_side/Board() value        # `self.left = left`
+line Chart@side_by_side/side_by_side/Chart()#2 > side_by_side/side_by_side/Board() value      # `self.right = right`
+line side_by_side/side_by_side/Board() > Board·board@side_by_side/side_by_side/Board() value
+
+# the left chart's line, run on the board through `left`
+line Board·board@side_by_side/side_by_side/Board() > side_by_side/side_by_side/Board.draw/Chart.line/?1/Chart.create_figure value
+line side_by_side/side_by_side/Board.draw/Chart.line/?1/Chart.create_figure > Chart·self@side_by_side/side_by_side/Board.draw/Chart.line/?1 value
+line side_by_side/side_by_side/Board.draw/Chart.line/?1/Chart.create_figure > Figure 1 · Board · board.left own   # `plt.subplots()`
+line Chart·self@side_by_side/side_by_side/Board.draw/Chart.line/?1 > side_by_side/side_by_side/Board.draw/Chart.line value   # `self.ax.plot(..)`
+line side_by_side/side_by_side/Board.draw/Chart.line > Board·self@side_by_side/side_by_side/Board.draw/Chart.line value
+
+# the right chart's, run on the board the first made anew, through `right`
+line Board·self@side_by_side/side_by_side/Board.draw/Chart.line > side_by_side/side_by_side/Board.draw/Chart.line#2/?1/Chart.create_figure value
+line side_by_side/side_by_side/Board.draw/Chart.line#2/?1/Chart.create_figure > Chart·self@side_by_side/side_by_side/Board.draw/Chart.line#2/?1 value
+line side_by_side/side_by_side/Board.draw/Chart.line#2/?1/Chart.create_figure > Figure 2 · Board · board.right own
+line Chart·self@side_by_side/side_by_side/Board.draw/Chart.line#2/?1 > side_by_side/side_by_side/Board.draw/Chart.line#2 value
+line side_by_side/side_by_side/Board.draw/Chart.line#2 > Board·self@side_by_side/side_by_side/Board.draw/Chart.line#2 value
+line Board·self@side_by_side/side_by_side/Board.draw/Chart.line#2 > side_by_side/side_by_side/Board.draw value   # what its steps made of the board
+line side_by_side/side_by_side/Board.draw > Board·board@side_by_side/side_by_side/Board.draw value
+line Board·board@side_by_side/side_by_side/Board.draw > side_by_side/side_by_side value     # `return board`
+line side_by_side/side_by_side > Board·board@side_by_side/side_by_side value                 # `board = side_by_side(..)`
+
+home Chart@side_by_side/side_by_side/Chart() side_by_side/side_by_side
+home Chart@side_by_side/side_by_side/Chart()#2 side_by_side/side_by_side
+home Board·board@side_by_side/side_by_side/Board() side_by_side/side_by_side
+home Chart·self@side_by_side/side_by_side/Board.draw/Chart.line/?1 side_by_side/side_by_side/Board.draw/Chart.line
+home Board·self@side_by_side/side_by_side/Board.draw/Chart.line side_by_side/side_by_side/Board.draw
+home Chart·self@side_by_side/side_by_side/Board.draw/Chart.line#2/?1 side_by_side/side_by_side/Board.draw/Chart.line#2
+home Board·self@side_by_side/side_by_side/Board.draw/Chart.line#2 side_by_side/side_by_side/Board.draw
+home Board·board@side_by_side/side_by_side/Board.draw side_by_side/side_by_side
+home Board·board@side_by_side/side_by_side side_by_side
+
+side entry left
+side Figure 1 · Board · board.left right
+side Figure 2 · Board · board.right right

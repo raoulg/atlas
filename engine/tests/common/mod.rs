@@ -121,3 +121,42 @@ pub fn a_table_is_one_value(language: &str, id: &str) {
         "the modes and the plans are two values"
     );
 }
+
+/// The choices pair of `language`: what a mode means is one table the module keeps (`PLANS`), which the route's own code looks
+/// its mode up in, a value from beyond of the Plans the table holds by their Mode; the shortcut keeps no table and tests the
+/// mode in each function that needs it. A body's own code reads the module's table alike in every language (#171): each name
+/// the route `id` reads that is none of its parameters, by the type it holds.
+#[allow(dead_code)]
+pub fn a_module_s_table_is_a_value_the_body_reads(language: &str, id: &str) {
+    let choices = pair(&format!("choices/{language}"));
+    let modular = |g: &Graph| -> Vec<(String, String)> {
+        let f = g.node(id).unwrap_or_else(|| panic!("no node {id}"));
+        let declared = |name: &str| f.params.iter().any(|p| p.name == name);
+        let short = |t: &str| t.rsplit('.').next().unwrap_or(t).to_string();
+        f.uses
+            .iter()
+            .filter(|u| !u.ty.is_empty() && !u.name.is_empty() && !declared(&u.name))
+            .map(|u| (u.name.clone(), short(&u.ty)))
+            .collect()
+    };
+    assert_eq!(modular(&choices.clean), [("PLANS".to_string(), "Plan".to_string())], "the route looks its mode up in the module's table");
+    assert!(modular(&choices.shortcut).iter().all(|(n, _)| n != "PLANS"), "the shortcut keeps no table");
+}
+
+/// The choices pair of `language`, its functions in the module `module`: `run` hands `report` the settings it is handed
+/// through their field `level` and `finished` through `mode` (`report(job, settings.level, finished(job, settings.mode))`).
+/// A call is handed the value a projection is of (#121), and the graph keeps the field it reads beside it, the same in every
+/// language (#172): which parameter of `report` and `finished` the settings fill, and through which field.
+#[allow(dead_code)]
+pub fn a_call_names_the_field_a_projection_reads(language: &str, module: &str) {
+    let choices = pair(&format!("choices/{language}"));
+    let run = choices.clean.node(&format!("{module}.run")).unwrap_or_else(|| panic!("no node {module}.run"));
+    let through = |to: &str| -> Vec<(atlas_engine::Slot, String)> {
+        let to = format!("{module}.{to}");
+        let settings = run.sites.iter().filter(|s| s.to == to).flat_map(|s| &s.hands).filter(|h| h.name == "settings");
+        settings.flat_map(|h| h.through.clone()).collect()
+    };
+    let at = |n: u32, field: &str| vec![(atlas_engine::Slot::At(n), field.to_string())];
+    assert_eq!(through("report"), at(1, "level"), "report's level is the settings' level");
+    assert_eq!(through("finished"), at(1, "mode"), "finished's mode is the settings' mode");
+}

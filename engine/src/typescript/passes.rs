@@ -286,8 +286,17 @@ pub(super) fn collect_symbols(m: &mut Module, store: &mut GraphBuilder) {
                         continue;
                     }
                     let Some(f) = function_in(value) else {
-                        let declared =
-                            v.child_by_field_name("type").and_then(|t| named_children(t).into_iter().next()).map(|t| type_head(t, &src));
+                        // a container holds what its type holds, as a parameter's does: `Record<Mode, Plan>`, `readonly Plan[]`
+                        // and `Map<string, Plan>` hold Plans, the key no value of them
+                        let held = |t: TsNode| {
+                            let written = text(t, &src).trim_start_matches("readonly ").trim();
+                            let head = written.split(['<', '[', ' ', '|']).next().unwrap_or("");
+                            match knowledge::TYPESCRIPT_CONTAINERS.contains(&head) || written.ends_with("[]") {
+                                true => type_names(Some(t), &src).into_iter().next().unwrap_or_default(),
+                                false => type_head(t, &src),
+                            }
+                        };
+                        let declared = v.child_by_field_name("type").and_then(|t| named_children(t).into_iter().next()).map(held);
                         let built = (value.kind() == "new_expression")
                             .then(|| value.child_by_field_name("constructor").map(|c| member_parts(c, &src)))
                             .flatten();

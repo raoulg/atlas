@@ -698,7 +698,7 @@ impl<'a> Seen<'a> {
         let mut out: Vec<Held> = vec![];
         let mut add = |ty: String, name: String, at: usize, param: bool| {
             if !out.iter().any(|h| h.ty == ty && h.name == name) {
-                out.push(Held { ty, name, at: at as u32, fills: vec![], param });
+                out.push(Held::at(ty, name, at, param));
             }
         };
         let data = |v: &&Value| !v.is_class && !v.is_code;
@@ -766,7 +766,7 @@ impl<'a> Seen<'a> {
         // none is it handed on by its type
         if out.is_empty() {
             for (ty, at) in glued {
-                out.push(Held { ty, name: String::new(), at: at as u32, fills: vec![], param: false });
+                out.push(Held::at(ty, String::new(), at, false));
             }
         }
         out

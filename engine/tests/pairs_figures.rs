@@ -74,13 +74,17 @@ fn screen(side: &str, budget: Option<usize>) -> BTreeSet<String> {
 
 /// The figures on the screen of a notebook's route of a side of the pair under `tests/pairs/{pair}`.
 fn screen_of(pair: &str, side: &str, route: &str, budget: Option<usize>) -> BTreeSet<String> {
+    screen_at(&format!("pairs/{pair}/{side}"), route, budget)
+}
+
+/// The figures on the screen of a notebook's route of the program at `tests/{program}`.
+fn screen_at(program: &str, route: &str, budget: Option<usize>) -> BTreeSet<String> {
     let here = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let program = here.join("tests/pairs").join(pair).join(side);
-    let graph = parts::analyze_repo(&[program], &Options::default()).expect("reads the program");
+    let graph = parts::analyze_repo(&[here.join("tests").join(program)], &Options::default()).expect("reads the program");
     let mut data = serde_json::to_value(&graph).expect("the graph is data");
     data["flow"] = serde_json::to_value(flow::of(&graph)).expect("the flow is data");
-    let name = pair.replace('/', "-");
-    let file = std::env::temp_dir().join(format!("atlas-figures-{}-{name}-{side}-{budget:?}.json", std::process::id()));
+    let name = program.replace('/', "-");
+    let file = std::env::temp_dir().join(format!("atlas-figures-{}-{name}-{budget:?}.json", std::process::id()));
     std::fs::write(&file, data.to_string()).expect("writes the data");
     let mut node = Command::new("node");
     if let Some(b) = budget {
@@ -198,4 +202,57 @@ fn a_field_that_holds_no_figure_lends_none() {
     assert_eq!(sets(&titled.clean, "charts.chart.Chart.create_figure"), [("", "fig", ""), ("", "ax", "")], "where the figure rests");
     assert_eq!(sets(&titled.clean, "charts.chart.Chart.retitle"), [("", "title", "")], "the second chart sets its own title");
     assert_eq!(sets(&titled.shortcut, "charts.chart.Chart.lend_title"), [("other", "title", "title")], "the first sets the second's");
+}
+
+/// What `id`'s calls of `to` are handed, each value by its name with the fields of it each parameter is filled through
+/// (`Held::through`, #172).
+fn handed_through(g: &Graph, id: &str, to: &str) -> Vec<(String, Vec<(String, String)>)> {
+    let slot = |s: &atlas_engine::Slot| serde_json::to_value(s).expect("a slot is data").to_string().replace('"', "");
+    let sites = g.node(id).unwrap_or_else(|| panic!("{id} is in the graph")).sites.iter().filter(|s| s.to == to);
+    sites.flat_map(|s| &s.hands).map(|h| (h.name.clone(), h.through.iter().map(|(s, f)| (slot(s), f.clone())).collect())).collect()
+}
+
+/// A call hands the value a projection is of, and the field it reads of it (#172): `lend` hands the first chart to the
+/// second's `take` through the fields that hold its figure (`other.take(self.fig, self.ax)`), so the second holds the first's
+/// figure; in `tests/plans/takes-a-title` it hands the first's title in the place of the figure (`other.take(self.title,
+/// None)`), a field that holds none, so the second chart makes a figure of its own and the screen shows two, at every budget.
+#[test]
+fn a_parameter_filled_through_a_field_that_holds_no_figure_lends_none() {
+    let lent = common::pair("figures/lent");
+    let through =
+        |fields: &[(&str, &str)]| -> Vec<(String, String)> { fields.iter().map(|(s, f)| (s.to_string(), f.to_string())).collect() };
+    let first = |fields: &[(&str, &str)]| vec![("other".to_string(), vec![]), (String::new(), through(fields))];
+    assert_eq!(
+        handed_through(&lent.clean, "charts.chart.Chart.lend", "charts.chart.Chart.take"),
+        first(&[("{at:0}", "fig"), ("{at:1}", "ax")])
+    );
+    let program = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/plans/takes-a-title");
+    let titled = atlas_engine::analyze(&program, &Options::default()).expect("reads the program");
+    assert_eq!(handed_through(&titled, "charts.chart.Chart.lend", "charts.chart.Chart.take"), first(&[("{at:0}", "title")]));
+    let two = BTreeSet::from(["Figure 1 · Chart · first right".to_string(), "Figure 2 · Chart · second right".to_string()]);
+    for budget in [None, Some(1), Some(2), Some(3), Some(5)] {
+        assert_eq!(screen_at("plans/takes-a-title", "notebooks.overlay", budget), two, "budget {budget:?}");
+    }
+}
+
+/// The panels pair (`tests/pairs/figures/panels`): two charts side by side on a board, each on a figure of its own. The
+/// clean board draws each chart by the chart's own `line`; the shortcut reaches into its charts, making each one's figure
+/// and plotting on its axes itself. Either way a call on `self.left` runs on the board through its field `left` (#172), and
+/// the figure the call keeps in the value it runs on rests in that part: two parts, two figures, also beyond the cut. What
+/// tells the sides apart is what the board calls on each part.
+#[test]
+fn a_figure_kept_in_a_part_rests_in_that_part() {
+    let two = BTreeSet::from(["Figure 1 · Board · board.left right".to_string(), "Figure 2 · Board · board.right right".to_string()]);
+    for side in ["clean", "shortcut"] {
+        for budget in [None, Some(1), Some(2), Some(3), Some(5)] {
+            assert_eq!(screen_of("figures/panels", side, "notebooks.side_by_side", budget), two, "{side}, budget {budget:?}");
+        }
+    }
+    let panels = common::pair("figures/panels");
+    let parts = |g: &Graph, to: &str| -> Vec<String> {
+        handed_through(g, "charts.chart.Board.draw", to).into_iter().flat_map(|(_, t)| t.into_iter().map(|(_, f)| f)).collect()
+    };
+    assert_eq!(parts(&panels.clean, "charts.chart.Chart.line"), ["left", "right"], "each chart draws its own line");
+    assert_eq!(parts(&panels.shortcut, "charts.chart.Chart.create_figure"), ["left", "right"], "the board makes each chart's figure");
+    assert!(parts(&panels.shortcut, "charts.chart.Chart.line").is_empty());
 }
