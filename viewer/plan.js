@@ -648,6 +648,10 @@ function routeTree() {
 const placeOfType = t => t === V.route || V.open.families.has(familyOf(t)) || V.open.families.has(kindOf(t)) || !folds(kindOf(t)) ? t : kindOf(t);
 // the route's subject stands as itself, in no family
 const frameOf = t => t === V.route ? undefined : [kindOf(t), t].find(f => V.open.families.has(f) && opens(f) && (f === t || folds(f)));
+// the box a value stands in, by the type or family it stands in: the name that holds it where the picture tells two apart by
+// it, the door whose parameter it is (the parameters of two doors are two values), the moment its maker made it. A family
+// opened is a frame with the id its closed box had, for each value it stood for (#182)
+const valueBox = (t, {name, door, at} = {}) => "t:" + t + (name ? "~" + name : "") + (door ? "^" + door : "") + (at ? "@" + at : "");
 const typePlace = t => {
   const n = byId.get(t), closedFam = t !== V.route && opens(t) && !V.open.families.has(t);
   return {id: "t:" + t, label: typeLabel(t) + (closedFam ? ` (${opensInto(t)})` : ""), kind: n && n.kind === "external" ? "ext" : "type", hue: hueOf(n), type: t};
@@ -1703,13 +1707,14 @@ const imageOf = (F, opened, folded, {fineKeys = false} = {}) => {
   }
   const qId = new Map();
   // a value keeps its name where a step made it, and where two of its type are taken at once
-  const named = pl => !!pl.name && !pl.name.startsWith("#") && (!!pl.at || F.split.has(kindOf(pl.type))), nameOf_ = pl => named(pl) ? "~" + pl.name : "";
+  const named = pl => !!pl.name && !pl.name.startsWith("#") && (!!pl.at || F.split.has(kindOf(pl.type)));
+  const boxIn = (t, pl) => valueBox(t, {name: named(pl) ? pl.name : "", door: pl.door, at: pl.at});
   const q = k => {
     if (fineKeys) return k;
     if (qId.has(k)) return qId.get(k);
     const pl = fp.get(k);
     let id = k;
-    if (pl && /^[tv]:/.test(k)) id = pl.at && hidden.has(pl.at) ? entryId : pl.type && k.startsWith("t:") ? "t:" + placeOfType(pl.type) + nameOf_(pl) + (pl.door ? "^" + pl.door : "") + (pl.at ? "@" + pl.at : "") : k;
+    if (pl && /^[tv]:/.test(k)) id = pl.at && hidden.has(pl.at) ? entryId : pl.type && k.startsWith("t:") ? boxIn(placeOfType(pl.type), pl) : k;
     qId.set(k, id);
     return id;
   };
@@ -1721,7 +1726,7 @@ const imageOf = (F, opened, folded, {fineKeys = false} = {}) => {
     if (id === entryId) places.set(id, entryPlace(V.route));
     else if (pl?.type && k.startsWith("t:")) {
       const pid = placeOfType(pl.type), b = typePlace(pid);
-      places.set(id, {...b, id, label: b.label + (pl.held ? ` · ${pl.held}` : named(pl) ? ` · ${pl.name}` : ""), at: pl.at, name: named(pl) ? pl.name : undefined, held: pl.held});
+      places.set(id, {...b, id, label: b.label + (pl.held ? ` · ${pl.held}` : named(pl) ? ` · ${pl.name}` : ""), at: pl.at, name: named(pl) ? pl.name : undefined, held: pl.held, ...(pl.door ? {door: pl.door} : {})});
     } else places.set(id, fp.get(k));
     return id;
   };
@@ -1742,7 +1747,7 @@ const imageOf = (F, opened, folded, {fineKeys = false} = {}) => {
     if (b && !maker) { if (!makers.has(id)) makers.set(id, []); if (!makers.get(id).includes(b)) makers.get(id).push(b); }
     if (maker) note(id, P, false, k);
   };
-  const famId = pl => { const f = pl?.type && frameOf(pl.type); return f ? "t:" + f + nameOf_(pl) + (pl.door ? "^" + pl.door : "") + (pl.at ? "@" + pl.at : "") : null; };
+  const famId = pl => { const f = pl?.type && frameOf(pl.type); return f ? boxIn(f, pl) : null; };
   const within = (at, S) => !!at && (at.startsWith(S + "/") || at.startsWith(S + "|") || at.startsWith(S + "~c"));
   const pills = new Map(), frames = new Map();
   for (const [fid, f] of fFrames) if (!closedOf(fid) && !hidden.has(fid)) frames.set(fid, {...f, closed: undefined});

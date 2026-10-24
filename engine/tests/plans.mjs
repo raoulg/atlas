@@ -23,7 +23,7 @@ const D = JSON.parse(fs.readFileSync(dataJson, "utf8"));
 // `ATLAS_FINE_BUDGET=n` cuts the plan as a large program's is cut (`plan.js`, `FINE_BUDGET`)
 const window = process.env.ATLAS_FINE_BUDGET ? {ATLAS_FINE_BUDGET: Number(process.env.ATLAS_FINE_BUDGET)} : {};
 const M = new Function("D", "window", fs.readFileSync(planJs, "utf8") + `
-return {V, plan, imageOf, checkOpenings, treeInfo, stepLabel, typeLabel, sideOfRoles, familyOf, kindOf, byId, ordersOn, stepOf};`)(D, window);
+return {V, plan, imageOf, checkOpenings, treeInfo, stepLabel, typeLabel, sideOfRoles, familyOf, kindOf, byId, ordersOn, stepOf, opens, frameOf, valueBox};`)(D, window);
 const {V} = M;
 
 const SIDES = {in: "left", out: "right", mid: "between", both: "both"};
@@ -107,7 +107,29 @@ function read(route) {
     const w = C.fine.ways.get(k), s = M.sideOfRoles([C.roles.get(k)].filter(Boolean), () => (w?.size === 1 ? [...w][0] : "mid"));
     facts.push(`side ${placeName(k)} ${SIDES[s]}`);
   }
-  return {facts: [...new Set(facts)].sort(), faults: pictures(F, open, occ, homes, valueName)};
+  const faults = [...pictures(F, open, occ, homes, valueName), ...familyOpenings()];
+  return {facts: [...new Set(facts)].sort(), faults};
+}
+
+// The walk's rule, held where the picture is drawn from: a closed family opens, for each value it stood for, into a frame with
+// the id its closed box had, as the page draws the frame of an open family (`valueBox`, #182)
+function familyOpenings() {
+  const out = [];
+  V.open.steps = new Set();
+  V.open.families = new Set();
+  const closed = new Map();
+  for (const p of M.plan().places.values()) if (p.type && p.type !== V.route && /^t:/.test(p.id) && M.opens(p.type)) {
+    if (!closed.has(p.type)) closed.set(p.type, []);
+    closed.get(p.type).push(p.id);
+  }
+  for (const [t, boxes] of closed) {
+    V.open.families = new Set([t]);
+    const frames = new Set([...M.plan().places.values()].filter(p => p.type && M.frameOf(p.type)).map(p => M.valueBox(M.frameOf(p.type), p)));
+    for (const b of boxes) if (!frames.has(b)) out.push(`the family ${M.typeLabel(t)}: its box ${b} opens into no frame`);
+  }
+  V.open.families = new Set();
+  M.plan();
+  return out;
 }
 
 // the faults of the pictures of one plan, for every set of open steps

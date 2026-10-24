@@ -587,7 +587,7 @@ Each law is then a theorem of the construction, or it is not yet, and says which
 | Law | Why it holds | What checks it |
 | --- | --- | --- |
 | Incidence | `F/q′` maps onto `F/q` along the blocks | the oracle (`checkOpenings`), `pictures.py topology`; `engine/tests/plans.rs`, for every set of open steps: each line counts the fine lines that cross a block's border, by channel |
-| Containment, Moment | functions of `F` | the oracle, `topology`; `plans.rs`: each box stands where it stands with every step open |
+| Containment, Moment | functions of `F` | the oracle, `topology`; `plans.rs`: each box stands where it stands with every step open, and a closed family opens into a frame with the id of its box for each value it stands for (`valueBox`, the walk's rule) |
 | Side | decided on `F/q₀` and carried by `q` | `topology` (a place that changes side) |
 | Closing | `q` is a function of the set of open boxes | `topology` (closing draws the picture it was) |
 | Reading | the own arrow of an opened step is its border | `topology` |

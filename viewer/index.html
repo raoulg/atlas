@@ -976,11 +976,12 @@ async function renderPlaat(mine) {
   // inside the frame of its moment, the family itself is the frame. A type opens where it stood closed:
   // in the kind it is a kind of, or as itself; a part stands on its own, as it did closed
   const famFrames = new Map();
-  // a value keeps its name in its box and its frame: two values of one family at one moment are two frames
-  const nameAt = p => (p.name ? "~" + p.name : "") + (p.at ? "@" + p.at : "");
+  // a value keeps its name in its box and its frame: two values of one family at one moment are two frames, and so are the
+  // parameters of two doors, each door called by itself. The frame has the id its closed box had (`valueBox`)
+  const nameAt = p => valueBox("", p).slice(2);
   for (const p of places.values()) {
     if (!p.type) continue;
-    const f = frameOf(p.type), at = nameAt(p), id = "t:" + f + at;
+    const f = frameOf(p.type), at = nameAt(p), id = valueBox(f, p);
     if (!f) continue;
     if (!famFrames.has(id)) famFrames.set(id, {id, fam: f, at, name: p.name, when: p.at, label: places.get(id)?.label, types: new Set()});
     famFrames.get(id).types.add(p.type);

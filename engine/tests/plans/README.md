@@ -9,9 +9,10 @@ A `.plan` file lies beside the program it describes: `inside-a-step.plan` beside
 what Atlas draws. `plans.rs` builds the plans in node with the viewer's own model (`viewer/plan.js`, through
 `../plans.mjs`). Every fact the file writes down for a route must hold, and no other. Every route of every program
 under `pairs` and `plans`, with or without a file, is also asked for its pictures: for every set of open steps, the
-oracle and the quotient must find nothing. They are asked again with the plan cut as a large program's is cut, at the
-budgets 1, 2 and 3 (`ATLAS_FINE_BUDGET`), where a step beyond the cut is the image of its body and each of its lines
-counts the fine lines its body draws there; the facts are asked of the finest plan only.
+oracle and the quotient must find nothing, and every closed family must open into a frame with the id of its box for
+each value it stands for, as the page draws it (the walk's rule). They are asked again with the plan cut as a large
+program's is cut, at the budgets 1, 2 and 3 (`ATLAS_FINE_BUDGET`), where a step beyond the cut is the image of its body
+and each of its lines counts the fine lines its body draws there; the facts are asked of the finest plan only.
 
 ```bash
 cargo test -p atlas-engine --test plans -- --nocapture                              # every program
