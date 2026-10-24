@@ -1,0 +1,29 @@
+# Two series, each on a figure of its own. `compare` calls `plot` once for each series, and each `plot` makes its figure
+# with one `plt.subplots()`. No value beyond the call holds it (`fig` is dropped, `ax` is drawn on by the body itself), so
+# each figure is the call's own: two calls, two figures, named by the step that makes each.
+
+route notebooks.compare
+step compare/compare
+step compare/compare/plot
+step compare/compare/plot/subplots                                  # `fig, ax = plt.subplots()`
+step compare/compare/plot#2
+step compare/compare/plot#2/subplots
+
+line entry > compare call
+line compare/compare/plot/subplots > _·fig@compare/compare/plot/subplots value
+line compare/compare/plot/subplots > _·ax@compare/compare/plot/subplots value
+line _·ax@compare/compare/plot/subplots > compare/compare/plot value                  # `ax.set_title(..)`, `ax.plot(..)`
+line compare/compare/plot > Figure 1 · plot own
+line compare/compare/plot#2/subplots > _·fig@compare/compare/plot#2/subplots value
+line compare/compare/plot#2/subplots > _·ax@compare/compare/plot#2/subplots value
+line _·ax@compare/compare/plot#2/subplots > compare/compare/plot#2 value
+line compare/compare/plot#2 > Figure 2 · plot own
+
+home _·fig@compare/compare/plot/subplots compare/compare/plot
+home _·ax@compare/compare/plot/subplots compare/compare/plot
+home _·fig@compare/compare/plot#2/subplots compare/compare/plot#2
+home _·ax@compare/compare/plot#2/subplots compare/compare/plot#2
+
+side entry left
+side Figure 1 · plot right
+side Figure 2 · plot right

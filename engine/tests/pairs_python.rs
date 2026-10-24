@@ -1913,3 +1913,10 @@ fn a_module_s_table_is_a_value_the_body_reads() {
 fn a_call_names_the_field_a_projection_reads() {
     common::a_call_names_the_field_a_projection_reads("python", "runs.core");
 }
+
+/// The projections pair: a projection bound to a name first is still the projection (#174), as the Rust and TypeScript
+/// readers read it.
+#[test]
+fn a_projection_bound_to_a_name_is_still_the_projection() {
+    common::a_projection_bound_to_a_name_is_still_the_projection("python", "charts.chart");
+}

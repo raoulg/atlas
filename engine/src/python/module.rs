@@ -407,7 +407,7 @@ pub(super) fn returns(rt: TsNode, src: &[u8]) -> Returns {
         _ if written.rsplit('.').next() == Some("Self") => (String::new(), true),
         _ => (written.clone(), false),
     };
-    Returns { written, value, own, fails: false, unchecked: unchecked(rt, src) }
+    Returns { written, value, own, fails: false, unchecked: unchecked(rt, src), holds: Param::held(type_names(Some(rt), src)) }
 }
 
 pub(super) fn new_parser() -> Result<Parser> {

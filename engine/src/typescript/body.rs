@@ -1078,7 +1078,12 @@ impl<'a, 't> Body<'a, 't> {
             return;
         }
         for n in values.iter().flat_map(|v| names_in(*v)) {
+            let before = out.len();
             self.held(n, kept, depth + 1, out);
+            // what a name bound to a projection holds comes from the name the projection starts from (`const t = this.title`)
+            for h in out[before..].iter_mut().filter(|h| h.bound == 0) {
+                h.bound = n.start_byte() as u32;
+            }
         }
     }
 

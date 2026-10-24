@@ -1,0 +1,9 @@
+[project]
+name = "charts"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = ["matplotlib>=3.9"]
+
+# The libraries the program imports, as their stubs: in place of an installed environment.
+[tool.ty.environment]
+extra-paths = ["../../pairs/figures/lent/typings"]

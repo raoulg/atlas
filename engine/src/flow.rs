@@ -865,10 +865,11 @@ pub fn initializers(g: &Graph) -> HashMap<String, String> {
 
 /// What a body's steps make that it may give back: the class a step builds, else what the function it runs gives back,
 /// where that is of a type the function itself gives (`n`'s `returns`, a kind or a variant of one, or a type its written
-/// return names: the error of a `Result<T, E>`, `T + E`), or an error its own calls raise or hand on. A value of another
-/// type its steps make is no part of what it gives back: a function that gives back a number is made of none of them. A
-/// signature that says nothing of what it gives back, whose callers use what it gives (`Arrow::returns_value`), rules out
-/// no type.
+/// return holds as a value as its language reads it: the error of a `Result<T, E>`, `T + E`), or an error its own calls
+/// raise or hand on. A value of another type its steps make is no part of what it gives back: a function that gives back a
+/// number is made of none of them, and one that gives back a collection of pairs (`Vec<(String, Vec<Where>)>`) gives back
+/// pairs of a type the code does not name, none of what they pair. A signature that says nothing of what it gives back,
+/// whose callers use what it gives (`Arrow::returns_value`), rules out no type.
 fn made_from(ix: &Ix, n: &Node, body: &Body) -> Vec<String> {
     let mut gives = ix.targets(&n.id, EdgeKind::Returns);
     for s in &n.sites {
@@ -879,9 +880,8 @@ fn made_from(ix: &Ix, n: &Node, body: &Body) -> Vec<String> {
             }
         }
     }
-    let written: HashSet<&str> =
-        n.returns.as_ref().map_or("", |r| r.written.as_str()).split(|c: char| !(c.is_alphanumeric() || c == '_')).collect();
-    let names = |t: &str| ix.nodes.get(t).map_or(false, |c| written.contains(c.name.as_str()));
+    let holds: HashSet<&str> = n.returns.iter().flat_map(|r| &r.holds).map(String::as_str).collect();
+    let names = |t: &str| ix.nodes.get(t).map_or(false, |c| holds.contains(c.name.as_str()));
     // a signature that says nothing of what it gives back rules out no type: every type is one of the unchecked one's
     let unsaid = ix.unsaid(n) && ix.used(&n.id);
     let of = |t: &str| {

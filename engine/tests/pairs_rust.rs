@@ -1391,9 +1391,32 @@ fn a_method_called_on_a_closure_s_parameter_is_a_step_on_its_element() {
     assert_eq!(pushes(&method.shortcut), 1, "the shortcut changes a list");
 }
 
+/// The pairs pair (`tests/pairs/each/rust-pairs`): each node's places, gathered node by node with `out.push(..)`. The clean
+/// side names what it gathers, `Vec<Drawn>`; the shortcut gathers pairs, `Vec<(String, Vec<Where>)>`, a type the code does
+/// not name. A collection of pairs holds pairs and none of what they pair (#177): the shortcut's return holds no Where, so
+/// what its body gives back is made of no Where its steps make, and the route gives back the list alone (the `.plan`
+/// files). The clean route gives back the Drawns its push gathered, made of the Drawn its step builds.
+#[test]
+fn a_collection_of_pairs_gives_back_none_of_what_they_pair() {
+    let pairs = common::pair("each/rust-pairs");
+    let holds = |g: &Graph| node(g, "drawing.drawn").returns.as_ref().map(|r| r.holds.clone()).unwrap_or_default();
+    let made = |g: &Graph| atlas_engine::flow::of(g).bodies["drawing.drawn"].made_from.clone();
+    assert_eq!(holds(&pairs.clean), ["Vec", "Drawn"]);
+    assert_eq!(made(&pairs.clean), ["drawing.Drawn"], "made of the Drawn its step builds");
+    assert_eq!(holds(&pairs.shortcut), ["Vec"], "a collection of pairs, of a type the code does not name");
+    assert!(made(&pairs.shortcut).is_empty(), "made of no Where: {:?}", made(&pairs.shortcut));
+}
+
 /// The choices pair: `report(&job, settings.level, ..)` is handed the settings through their `level`, and the graph says
 /// so beside the value it is handed (#172), as the Python and TypeScript readers do.
 #[test]
 fn a_call_names_the_field_a_projection_reads() {
     common::a_call_names_the_field_a_projection_reads("rust", "runs");
+}
+
+/// The projections pair: a projection bound to a name first is still the projection (#174), as the Python and TypeScript
+/// readers read it.
+#[test]
+fn a_projection_bound_to_a_name_is_still_the_projection() {
+    common::a_projection_bound_to_a_name_is_still_the_projection("rust", "charts");
 }

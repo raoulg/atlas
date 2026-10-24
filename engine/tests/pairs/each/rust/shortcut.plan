@@ -17,7 +17,7 @@ line Touch·all@drawn/collect > drawn/Touch.drawn/Where() value
 line drawn/Touch.drawn/Where() > Where@drawn/Touch.drawn/Where() value
 line Where@drawn/Touch.drawn/Where() > drawn/Touch.drawn value
 line drawn/Touch.drawn > Where@drawn/Touch.drawn value
-line Where@drawn/Touch.drawn > drawn value                    # collected and given back
+line Where@drawn/Touch.drawn > drawn value                    # collected into the pairs the body gives back, by its own code
 
 home Graph·g drawn
 home Touch·all@drawn/collect drawn

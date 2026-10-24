@@ -256,3 +256,121 @@ fn a_figure_kept_in_a_part_rests_in_that_part() {
     assert_eq!(parts(&panels.shortcut, "charts.chart.Chart.create_figure"), ["left", "right"], "the board makes each chart's figure");
     assert!(parts(&panels.shortcut, "charts.chart.Chart.line").is_empty());
 }
+
+/// The lines of `id`'s body that make a figure: each call of `plt.subplots()`, also where one touch stands for two.
+fn figure_calls(g: &Graph, id: &str) -> Vec<u32> {
+    let n = g.node(id).unwrap_or_else(|| panic!("{id} is in the graph"));
+    n.touches.iter().filter(|t| t.kind_name() == "figure").flat_map(|t| std::iter::once(t.line).chain(t.also_at.iter().copied())).collect()
+}
+
+/// The apart pair (`tests/pairs/figures/apart`): two series, each on a figure of its own (#175). The clean `compare` calls
+/// `plot` for each series, and each `plot` makes one figure; the shortcut makes both in its own body, two `plt.subplots()`
+/// calls, which the graph keeps as one touch on two lines. No value beyond a call holds what it makes, so each figure is its
+/// call's: the screen shows two either way, also beyond the cut. What tells the sides apart is which step makes each: two
+/// steps of one figure, or one step of two.
+#[test]
+fn two_calls_that_make_a_figure_make_two() {
+    let two = |by: &str| BTreeSet::from([format!("Figure 1 · {by} right"), format!("Figure 2 · {by} right")]);
+    for budget in [None, Some(1), Some(2), Some(3), Some(5)] {
+        assert_eq!(screen_of("figures/apart", "clean", "notebooks.compare", budget), two("plot"), "budget {budget:?}");
+        assert_eq!(screen_of("figures/apart", "shortcut", "notebooks.compare", budget), two("compare"), "budget {budget:?}");
+    }
+    let apart = common::pair("figures/apart");
+    assert_eq!(figure_calls(&apart.clean, "charts.chart.plot"), [7], "one call, run once for each series");
+    assert!(figure_calls(&apart.clean, "charts.chart.compare").is_empty());
+    assert_eq!(figure_calls(&apart.shortcut, "charts.chart.compare"), [7, 10], "two calls in one body");
+}
+
+/// The built pair (`tests/pairs/figures/built`): a board of two charts (#176). The clean board is handed its charts; the
+/// shortcut builds them in its initializer and keeps each in a field (`self.left = Chart("left")`). A value kept in a field is
+/// the body's own code putting it there, a lens's put: the initializer reads what each `Chart(..)` gives, so its own arrow
+/// takes the chart (the `.plan` files), as building the clean board takes the charts it is handed, and the field is set from
+/// it. Either way each figure rests in the part of the board that holds it. What tells the sides apart is where the charts
+/// are made, and what the initializer sets its fields from: its parameters, or the results of its own steps.
+#[test]
+fn a_value_an_initializer_keeps_in_a_field_is_taken() {
+    let two = BTreeSet::from(["Figure 1 · Board · board.left right".to_string(), "Figure 2 · Board · board.right right".to_string()]);
+    for side in ["clean", "shortcut"] {
+        for budget in [None, Some(1), Some(2), Some(3), Some(5)] {
+            assert_eq!(screen_of("figures/built", side, "notebooks.side_by_side", budget), two, "{side}, budget {budget:?}");
+        }
+    }
+    let built = common::pair("figures/built");
+    let init = "charts.chart.Board.__init__";
+    let from = |g: &Graph| -> Vec<(String, String)> {
+        g.node(init).unwrap().sets.iter().flat_map(|s| s.from.iter().map(|h| (s.field.clone(), h.name.clone()))).collect()
+    };
+    let field = |f: &str, by: &str| (f.to_string(), by.to_string());
+    assert_eq!(from(&built.clean), [field("left", "left"), field("right", "right")], "set from the charts it is handed");
+    let made: Vec<String> = built.shortcut.node(init).unwrap().sites.iter().flat_map(|s| s.gives.iter().map(|g| g.name.clone())).collect();
+    assert_eq!(made.len(), 2, "each chart it builds is named by its step: {made:?}");
+    assert_eq!(from(&built.shortcut), [field("left", &made[0]), field("right", &made[1])], "set from the charts it builds");
+    let used: Vec<&str> = built.shortcut.node(init).unwrap().uses.iter().map(|u| u.name.as_str()).collect();
+    assert!(made.iter().all(|m| used.contains(&m.as_str())), "its own code reads each chart it keeps: {used:?}");
+}
+
+/// The bound pair (`tests/pairs/figures/bound`) is the lent pair, where `lend` names what the first chart holds before it
+/// lends it (`fig, ax = self.fig, self.ax`); `tests/plans/takes-a-bound-title` is `takes-a-title`, where it binds the title
+/// first (`t = self.title; other.take(t, None)`). A projection bound to a name first is still the projection (#121, #174):
+/// a call fills each parameter through the field the name is bound to, and a field set from the name is set from that field
+/// (`Set::of`). So each form reads as the one without the name: one figure where the fields that hold it are lent, two
+/// where the title is lent in their place, at every budget.
+#[test]
+fn a_projection_bound_to_a_name_is_still_the_projection() {
+    let (lent, bound) = (common::pair("figures/lent"), common::pair("figures/bound"));
+    let (lend, take) = ("charts.chart.Chart.lend", "charts.chart.Chart.take");
+    assert_eq!(
+        handed_through(&bound.clean, lend, take),
+        handed_through(&lent.clean, lend, take),
+        "`take(fig, ax)` is `take(self.fig, self.ax)`"
+    );
+    assert_eq!(sets(&bound.shortcut, lend), sets(&lent.shortcut, lend), "`other.fig = fig` is `other.fig = self.fig`");
+    let one = BTreeSet::from(["Figure 1 · Chart · first right".to_string()]);
+    let two = BTreeSet::from(["Figure 1 · Chart · first right".to_string(), "Figure 2 · Chart · second right".to_string()]);
+    let program = |name: &str| {
+        let at = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/plans").join(name);
+        atlas_engine::analyze(&at, &Options::default()).expect("reads the program")
+    };
+    let (direct, named) = (program("takes-a-title"), program("takes-a-bound-title"));
+    assert_eq!(handed_through(&named, lend, take), handed_through(&direct, lend, take), "`take(t, None)` is `take(self.title, None)`");
+    for budget in [None, Some(1), Some(2), Some(3), Some(5)] {
+        for side in ["clean", "shortcut"] {
+            assert_eq!(screen_of("figures/bound", side, "notebooks.overlay", budget), one, "{side}, budget {budget:?}");
+        }
+        assert_eq!(screen_at("plans/takes-a-bound-title", "notebooks.overlay", budget), two, "budget {budget:?}");
+    }
+}
+
+/// The shared pair (`tests/pairs/figures/shared`): two charts of a board on one figure (#173). The clean left chart lends its
+/// figure to the right one by its own `lend` (`self.left.lend(self.right)`, which fills `other` with the board through
+/// `right`); the shortcut's board hands its left chart's fields to the right one's `take` itself (`self.right.take(self.left
+/// .fig, self.left.ax)`). Either way `take` sets the fields of the board's right part to those of its left part, and the class
+/// of each part keeps its figure there (`Node::holds`: a board's `left` and `right` hold Charts), so the right part holds the
+/// left part's figure: one figure, also beyond the cut. What tells the sides apart is who reads the left chart's fields: its
+/// own `lend`, or the board's call.
+#[test]
+fn a_figure_lent_between_two_parts_of_one_value_is_the_one_figure() {
+    let one = BTreeSet::from(["Figure 1 · Board · board.left right".to_string()]);
+    for side in ["clean", "shortcut"] {
+        for budget in [None, Some(1), Some(2), Some(3), Some(5)] {
+            assert_eq!(screen_of("figures/shared", side, "notebooks.overlay", budget), one, "{side}, budget {budget:?}");
+        }
+    }
+    let shared = common::pair("figures/shared");
+    let chart = "charts.chart.Chart".to_string();
+    let holds = &shared.clean.node("charts.chart.Board").expect("the board is in the graph").holds;
+    assert_eq!(holds.iter().collect::<Vec<_>>(), [(&"left".to_string(), &chart), (&"right".to_string(), &chart)], "the class of each part");
+    let through = |fields: &[(&str, &str)]| -> Vec<(String, Vec<(String, String)>)> {
+        vec![("self".to_string(), fields.iter().map(|(s, f)| (s.to_string(), f.to_string())).collect())]
+    };
+    assert_eq!(
+        handed_through(&shared.clean, "charts.chart.Board.overlay", "charts.chart.Chart.lend"),
+        through(&[("receiver", "left"), ("{at:0}", "right")]),
+        "the left chart lends, handed the right one"
+    );
+    assert_eq!(
+        handed_through(&shared.shortcut, "charts.chart.Board.overlay", "charts.chart.Chart.take"),
+        through(&[("receiver", "right"), ("{at:0}", "left.fig"), ("{at:1}", "left.ax")]),
+        "the board reads the left chart's fields itself"
+    );
+}

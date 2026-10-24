@@ -1275,6 +1275,23 @@ fn diamond_the_name_of_a_feed_s_file_is_its_url() {
     }
 }
 
+/// A constructor that keeps what it builds in a field puts it there by its own code, a lens's put (#176), as Python's
+/// initializer does in `tests/pairs/figures/built`: `this.store = new Store(cache)` in `Cached`'s constructor is set from the
+/// store its step builds, and its own code reads that store, on either side.
+#[test]
+fn diamond_a_constructor_reads_the_store_it_keeps_in_a_field() {
+    for side in ["clean", "shortcut"] {
+        let g = news(side);
+        let ctor = node(&g, "sources.Cached.constructor");
+        let made: Vec<&str> =
+            ctor.sites.iter().flat_map(|s| &s.gives).filter(|h| h.ty.ends_with(".store.Store")).map(|h| h.name.as_str()).collect();
+        assert_eq!(made.len(), 1, "{side}: the store it builds is named by its step");
+        let set = ctor.sets.iter().find(|s| s.field == "store").expect("it sets its field `store`");
+        assert_eq!(set.from.iter().map(|h| h.name.as_str()).collect::<Vec<_>>(), made, "{side}: set from the store it builds");
+        assert!(ctor.uses.iter().any(|u| u.name == made[0]), "{side}: its own code reads the store it keeps");
+    }
+}
+
 /// One side of the cooperative pair (`tests/pairs/cooperative/typescript`): a feed that extends a
 /// cached source, whose every `read` hands on to the one above it with `super.read()`; the
 /// shortcut's feed hands on with `Source.prototype.read.call(this)`.
@@ -1532,4 +1549,32 @@ fn a_set_names_the_field_it_sets() {
     assert_eq!(named(&changes.shortcut, "ledger.rename"), [("e".to_string(), "category".to_string())]);
     let choices = common::pair("choices/typescript");
     assert_eq!(named(&choices.clean, "runs.Report.constructor"), [(String::new(), "level".to_string())]);
+}
+
+/// The projections pair: a projection bound to a name first is still the projection (#174), as the Python and Rust readers
+/// read it.
+#[test]
+fn a_projection_bound_to_a_name_is_still_the_projection() {
+    common::a_projection_bound_to_a_name_is_still_the_projection("typescript", "charts");
+}
+
+/// The each pair (`tests/pairs/each/typescript`): a node's places, its touches drawn by a function written in place handed
+/// to `map`, which gives back what `Touch.drawn` makes as an expression (`(t) => t.drawn()`) or returns it from a block
+/// (`(t) => { return t.drawn(); }`). What a function written in place gives back goes where its result goes (#177): into
+/// what `map` gives, which the body's own code puts in the pairs it returns. The two forms say the same thing, and read alike:
+/// the body's own code reads the Where `drawn` gives, by the name its step gives it.
+#[test]
+fn what_a_function_written_in_place_returns_it_gives_back() {
+    let each = common::pair("each/typescript");
+    for (side, g) in [("clean", &each.clean), ("shortcut", &each.shortcut)] {
+        let f = node(g, "drawn");
+        let given: Vec<&str> =
+            f.sites.iter().filter(|s| s.to.ends_with("Touch.drawn")).flat_map(|s| &s.gives).map(|h| h.name.as_str()).collect();
+        assert_eq!(given.len(), 1, "{side}: the Where is named by its step: {given:?}");
+        assert!(
+            f.uses.iter().any(|u| u.name == given[0] && u.ty.ends_with(".Where")),
+            "{side}: its own code reads the Where: {:?}",
+            f.uses
+        );
+    }
 }

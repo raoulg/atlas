@@ -306,7 +306,7 @@ pub(super) fn returns(rt: TsNode, src: &[u8]) -> Returns {
         (_, "Self") => (String::new(), true),
         (_, v) => (v.to_string(), false),
     };
-    Returns { written: text(rt, src).to_string(), value, own, fails, ..Default::default() }
+    Returns { written: text(rt, src).to_string(), value, own, fails, holds: Param::held(type_names(Some(rt), src)), ..Default::default() }
 }
 
 /// A method whose first parameter is the value it is called on.

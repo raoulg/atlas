@@ -332,7 +332,14 @@ pub(super) fn returns(rt: TsNode, src: &[u8]) -> Returns {
         ("this_type", _) => (String::new(), true),
         (_, v) => (v.to_string(), false),
     };
-    Returns { written: text(rt, src).to_string(), value, own, fails: false, unchecked: unchecked(t, src) }
+    Returns {
+        written: text(rt, src).to_string(),
+        value,
+        own,
+        fails: false,
+        unchecked: unchecked(t, src),
+        holds: Param::held(type_names(Some(rt), src)),
+    }
 }
 
 /// The type a return type gives once it arrives: `T` of `Promise<T>`.

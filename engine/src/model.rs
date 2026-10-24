@@ -102,6 +102,12 @@ pub struct Node {
     /// For a class: the fields it declares, by name, beside its methods.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub fields: Vec<String>,
+    /// For a class: the class of the program each of its fields holds, by the field's name, as its declarations and its
+    /// methods' assignments say (`self.left = left` with `left: Chart`): what a value of it is reached through, field by
+    /// field (`board.left` is a `Chart`). The `has` edges say which classes it holds; this says through which field.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[ts(type = "Record<string, string>")]
+    pub holds: BTreeMap<String, String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub decorators: Vec<String>,
     /// Sketch code kept in the tree, not built yet: what its marker says. Read by the language's reader.
@@ -368,6 +374,11 @@ pub struct Returns {
     /// than leaving the type out.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub unchecked: bool,
+    /// The types the written type holds as values, as its language reads the type (`Param::holds`), each by the last part
+    /// of its name: `Result<Vec<Node>, Error>` holds a `Node` and an `Error`; `Vec<(String, Vec<Where>)>` holds pairs, of
+    /// a type the code does not name, and no `Where`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub holds: Vec<String>,
 }
 
 impl Returns {
@@ -497,6 +508,11 @@ pub struct Held {
     /// Where the code writes it, as a byte offset of its file: where it comes from, not what it is.
     #[serde(skip)]
     pub at: u32,
+    /// Where the value comes from when the name written at `at` holds it through a binding of a projection of it that the
+    /// reader follows (`let t = &self.title`): the byte offset of the name that projection starts from (`self`), so that the
+    /// fields the name is bound to can be read where it is used (`Steps::fills`, `Set::of`). None (0) where `at` says it.
+    #[serde(skip)]
+    pub bound: u32,
     /// For a value a call is handed: the parameters it fills, each argument of the call it is written
     /// in (`Site::args`). `f(x.title, x.lines)` hands `x` for the first two; `f(g(y))` hands what the
     /// step `g` gives for the first, and `y` to `g`.
@@ -603,6 +619,10 @@ pub struct Set {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[ts(type = "Array<[number, number]>")]
     pub arms: Vec<(u32, u32)>,
+    /// Where the assigned expression is written, as a byte range of its file: a step written there that the
+    /// set keeps (`self.left = Chart("left")`) is among what it reads once its result is named.
+    #[serde(skip)]
+    pub value: (u32, u32),
 }
 
 /// A value is its type and its name; where it is written does not make it another.
@@ -1269,7 +1289,7 @@ impl Graph {
             m(&mut n.id);
             m(&mut n.module);
             m(&mut n.part);
-            n.cls.iter_mut().chain(n.breaks.iter_mut()).for_each(&m);
+            n.cls.iter_mut().chain(n.breaks.iter_mut()).chain(n.holds.values_mut()).for_each(&m);
             if let Some(p) = n.prophecy.as_mut() {
                 p.supersedes.iter_mut().chain(p.replaces.iter_mut()).chain(p.candidates.iter_mut()).for_each(&m);
             }

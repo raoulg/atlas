@@ -416,7 +416,7 @@ open:
   (the fields the binding that makes it sets, `self.fig, self.ax = plt.subplots()`) is that value's, so
   every step that runs on the value draws on the one figure it holds, whichever of them makes it
   (`create_figure` only where `self.fig is None`); one a call makes and no value beyond it holds is that
-  call's own, and two calls make two. A value a body sets such a field of to what another value holds
+  call's own, and two calls make two, also two in one body (`fig, ax = plt.subplots(); other, bx = plt.subplots()`). A value a body sets such a field of to what another value holds
   there (`other.fig = self.fig`, or `self.fig = fig` in a method its call hands the other's figure to) is
   that one's put, a lens's: from then on it holds the figure the other holds, and so does every value made
   anew of it. The code names the field it sets (`Node::sets`), so a field that holds no figure lends none
@@ -424,23 +424,31 @@ open:
   parameter filled through one is that projection: `self.fig = fig` in a `take` its call hands `self.title` sets the field
   to the title, and lends none. A method called on a part of a value (`self.left.line(..)`) runs on the value through the
   field it reads: a figure it keeps in the value it runs on rests in that part, so two parts hold two figures
-  (`board.left`, `board.right`), and a change made through the part makes the value anew;
+  (`board.left`, `board.right`), and a change made through the part makes the value anew. A part holds a figure as a value
+  does, by the class its owner's field holds (`Node::holds`: a board's `right` holds a Chart, which keeps its figure in `fig`
+  and `ax`): `self.right.take(self.left.fig, self.left.ax)` sets the right part's fields to the left part's, so from then on
+  the right part holds the figure the left one holds, and so does a parameter filled through a part (`other` of
+  `self.left.lend(self.right)` is the board's `right`, and `other.take(self.fig, self.ax)` lends the same);
 - a step's own arrow is its witness at its border: its signature and its own touches, the lines that
   cross its frame. An opened step draws it as a point on the frame's right edge, not as a step beside
   its steps: a value its call is handed crosses the frame to the step inside that takes it (the value
   its signature takes by no name is the parameter a step inside takes by its name), and the
   point keeps what the body itself takes and what it gives back, at the step's moment. What the body's
-  own code uses outside its steps (a print, a condition, a format, what it returns), of a value a step
+  own code uses outside its steps (a print, a condition, a format, what it returns, what it keeps in a
+  field of a value, a lens's put: `self.left = Chart("left")` in an initializer), of a value a step
   inside made or one it is handed, is a line from that value to the point, also where a step inside
   takes the value too: the line lies inside the frame, so it is internal to the closed step (rule 2)
   and the value stands in the step's frame. A value no line takes says that the body drops it; the
   map draws fewer facts by zoom, never by leaving one out. Of what the
   body's steps make, what it gives back is what no step of the code among them takes and is of a type
-  its signature gives (its result, or the error of `T + E`): a value built only to be handed into another
+  its signature gives as its language reads the type (its result, or the error of `T + E`): a value built only to be handed into another
   step (`Row(Reading(line))`) is that step's, and a body that gives back a number gives back none of the
-  values its steps make, which it uses, if at all, by its own code. A value handed into a
+  values its steps make, which it uses, if at all, by its own code, nor does one that gives back a collection of pairs
+  (`Vec<(String, Vec<Where>)>` gives back pairs, no `Where`). A value handed into a
   library's operation goes on in what the operation gives, and is the operation's only where that
-  is. A result of no type of the code's goes back to the step that called it unless another step of
+  is; what a function written in place gives back, as its expression or by a `return` of its own (`(t) => { return
+  t.drawn(); }` is `(t) => t.drawn()`), goes where its result goes, so handed to such an operation it goes on in
+  what the operation gives (`.map(|t| t.drawn()).collect()`). A result of no type of the code's goes back to the step that called it unless another step of
   the caller takes it, which it then reaches as a value. Going back, it is one line labelled by the
   name that holds it, and no value beside it: the caller's own arrow is a point on its border, no
   step, and `done = finished(..); if done:` is `if finished(..):` with a name. A call is
@@ -455,7 +463,10 @@ open:
   caller's own touch, so naming its result changes no line to the place. A copy makes its value anew
   (`board = copy.copy(board)`), and a method called on a library's value is that library's operation
   also where its types do not list it. A projection bound to a name first is still the projection
-  (`width = settings.width; f(width)` hands `settings`), a lookup by a key among them (`row = table[k]`
+  (`width = settings.width; f(width)` hands `settings` through its field `width`, as `f(settings.width)` does, and
+  `f = self.fig; other.fig = f` sets the field to `fig` of the instance; names bound in turn compose, `a = self.size; w =
+  a.width` is `size.width`, and a binding written as as many parts as its value binds each name to its part, `fig, ax =
+  self.fig, self.ax`), a lookup by a key among them (`row = table[k]`
   hands `table`, the lens the key chooses), and so is any value a body binds without a step: a
   pattern that takes a value apart (`const [year, month] = fields` hands `fields`), a name a
   `case` pattern binds (a part of what the `match` takes apart, through the variant the case matches, a
@@ -582,8 +593,8 @@ fact of it must hold of the plan Atlas builds, and no other. What Atlas gets wro
 with the issue that tracks it, and the mark goes with the fix (`engine/tests/plans/README.md`). The
 test runs the viewer's own model in node, the function every picture is drawn from, on every route of
 the pairs and of its programs.
-**Where.** `plan`, `sitesOf`, `figureOf` and `FIGURE_FIELDS`, `setsAt` and `throughOf`, `coarsen`, `cutArrow`, `handTo` and `checkOpenings` in `viewer/plan.js`;
-the field an argument reads, `Steps::fills` (`body.rs`);
+**Where.** `plan`, `sitesOf`, `figureOf`, `FIGURE_FIELDS` and `figurePart`, `setsAt`, `throughOf` and `partIn`, `coarsen`, `cutArrow`, `handTo` and `checkOpenings` in `viewer/plan.js`;
+the field an argument reads, `Steps::fills` and `Steps::read_of` (`body.rs`); the class each field of a class holds, `Node::holds`;
 which parameters of no type of the code's hold a value, `builder::settle_parameters`; `tools/pictures.py`;
 `engine/tests/plans.rs`.
 
@@ -616,9 +627,11 @@ collection itself. A map holds its values by its keys, a family of lenses indexe
 `HashMap<Mode, Plan>` and `Record<Mode, Plan>` are one value that holds Plans, the key choosing the Plan a lookup gives
 as an index chooses an element of a list, no value the map holds. What a parameter or a value its module keeps holds is
 what its type holds as its language reads it, never a name its type merely writes: the module's `PLANS: Record<Mode,
-Plan>` is a value of Plans from beyond, as `PLANS: dict[Mode, Plan]` is.
+Plan>` is a value of Plans from beyond, as `PLANS: dict[Mode, Plan]` is. So is what a function gives back: one that
+returns `Vec<(String, Vec<Where>)>` gives back pairs, and none of the Wheres its steps make.
 **Where.** `knowledge.rs`: `python_container`, `TYPESCRIPT_CONTAINERS`, `RUST_CONTAINERS`, the maps `PYTHON_MAPS`,
-`TYPESCRIPT_MAPS`, `RUST_MAPS`; `Param::holds`, read by `writesType` in `viewer/plan.js` and by the principles; the Rust reader's
+`TYPESCRIPT_MAPS`, `RUST_MAPS`; `Param::holds`, read by `writesType` in `viewer/plan.js` and by the principles, and
+`Returns::holds`, read by `flow::made_from`; the Rust reader's
 signatures (`rust/passes.rs`, `fixed_by_implementations`; `rust/module.rs`, `type_names`, with `RUST_COLLECTIONS`); `typescript/module.rs`, `type_names`, with `TYPESCRIPT_COLLECTIONS`; `python/module.rs`, `type_names`, and `pytypes::outer_classes`, with `python_collection`.
 
 ### Narrowing
