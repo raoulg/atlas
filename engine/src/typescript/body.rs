@@ -775,7 +775,12 @@ impl<'a, 't> Body<'a, 't> {
             let built = (value.kind() == "new_expression")
                 .then(|| value.child_by_field_name("constructor").map(|c| member_parts(c, src)))
                 .flatten();
-            let typed = self.class(declared.or(built).and_then(|t| self.resolve(&t)));
+            // a container holds what its type holds, as a parameter's does: `const out: Where[] = []` holds Wheres
+            let holds = || {
+                let t = v.child_by_field_name("type").filter(|_| ty.is_some_and(|t| container_type(t, self.m)))?;
+                type_names(Some(t), src).into_iter().find_map(|t| self.class(self.resolve(&t)))
+            };
+            let typed = self.class(declared.or(built).and_then(|t| self.resolve(&t))).or_else(holds);
             // `const p = await getProvider()`: what the function hands on
             let handed = || {
                 let call = walk(value, &["call_expression"]).into_iter().next()?;
@@ -1042,6 +1047,26 @@ impl<'a, 't> Body<'a, 't> {
         let name = text(i, self.src);
         if i.kind() == "this" {
             out.extend(self.cls.clone().map(|k| Held::new(k, "")));
+            return;
+        }
+        // the parameter of a function an array's method hands each element (`touches.map((t) => t.drawn())`) is that
+        // element, a part of the array glued into the call as a projection is: it stands for what the array's names hold,
+        // as `.map(|t| ..)` does in Rust. A loop's variable is the element its step gives
+        if let Some((v, BoundFrom::Element)) =
+            self.locals.from(i, self.src).filter(|(v, _)| v.parent().is_some_and(|p| p.kind() != "for_in_statement"))
+        {
+            if depth > 8
+                || !walk(v, &["call_expression", "new_expression", "arrow_function", "function_expression", "await_expression"]).is_empty()
+            {
+                return;
+            }
+            for n in names_in(v) {
+                let before = out.len();
+                self.held(n, kept, depth + 1, out);
+                for h in out[before..].iter_mut().filter(|h| h.bound == 0) {
+                    h.bound = n.start_byte() as u32;
+                }
+            }
             return;
         }
         if let Some(ty) = self.type_of(i) {
@@ -1620,6 +1645,11 @@ impl<'a, 't> Body<'a, 't> {
             }
             "member_expression" => {
                 let Some(o) = e.child_by_field_name("object") else { return false };
+                // a field declared as one of the language's own containers is one, as a name written so is (`touches:
+                // Touch[]`, of the node `n.touches` is read of)
+                if self.holds_container(e) {
+                    return true;
+                }
                 let parts = member_parts(e, src);
                 if parts.len() == 2 && parts[0] == "this" {
                     return self.made.contains_key(&format!("this.{}", parts[1]))

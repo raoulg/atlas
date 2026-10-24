@@ -475,7 +475,7 @@ open:
   `n.touches.iter().chain(&n.instead).map(Touch::drawn)` hands `g` as well: what `chain` goes on with
   is part of what it is handed, an element of either; the closure's name is that element, of the class
   a loop's name over the same value is, so `.map(|t| t.drawn())` is `Touch::drawn` as `for t in ..`
-  makes it), what operators compute of names
+  makes it, and `touches.map((t) => t.drawn())` hands `touches`), what operators compute of names
   (`bottom = height - margin`), what each arm of a choice sets a name to (`let unit;
   if (..) unit = KELVIN; else unit = CELSIUS`). A change made through one changes its owner, a lens's
   put. A parameter is such a name: inside an opened step it holds the value its call hands it, not a
@@ -625,14 +625,16 @@ values it pairs where it stands for one value (`-> (Config, Store)`); a collecti
 code does not name (`Vec<(NaiveDate, f64)>` holds no `NaiveDate`). A tuple of any length (`tuple[Station, ...]`) is a
 collection itself. A map holds its values by its keys, a family of lenses indexed by the key (Lenses): `dict[Mode, Plan]`,
 `HashMap<Mode, Plan>` and `Record<Mode, Plan>` are one value that holds Plans, the key choosing the Plan a lookup gives
-as an index chooses an element of a list, no value the map holds. What a parameter or a value its module keeps holds is
-what its type holds as its language reads it, never a name its type merely writes: the module's `PLANS: Record<Mode,
-Plan>` is a value of Plans from beyond, as `PLANS: dict[Mode, Plan]` is. So is what a function gives back: one that
-returns `Vec<(String, Vec<Where>)>` gives back pairs, and none of the Wheres its steps make.
+as an index chooses an element of a list, no value the map holds. What a parameter, a local or a value its module keeps
+holds is what its type holds as its language reads it, never a name its type merely writes: the module's `PLANS: Record<Mode,
+Plan>` is a value of Plans from beyond, as `PLANS: dict[Mode, Plan]` is, and `const out: Where[] = []` holds Wheres. So is
+what a function gives back: one that returns `Vec<(String, Vec<Where>)>` gives back pairs, and none of the Wheres its steps
+make. A value declared as the language's container is one, a field as a name (`n.touches: Touch[]` is an array), so a method
+called on it is the language's operation.
 **Where.** `knowledge.rs`: `python_container`, `TYPESCRIPT_CONTAINERS`, `RUST_CONTAINERS`, the maps `PYTHON_MAPS`,
 `TYPESCRIPT_MAPS`, `RUST_MAPS`; `Param::holds`, read by `writesType` in `viewer/plan.js` and by the principles, and
 `Returns::holds`, read by `flow::made_from`; the Rust reader's
-signatures (`rust/passes.rs`, `fixed_by_implementations`; `rust/module.rs`, `type_names`, with `RUST_COLLECTIONS`); `typescript/module.rs`, `type_names`, with `TYPESCRIPT_COLLECTIONS`; `python/module.rs`, `type_names`, and `pytypes::outer_classes`, with `python_collection`.
+signatures (`rust/passes.rs`, `fixed_by_implementations`; `rust/module.rs`, `type_names`, with `RUST_COLLECTIONS`); `typescript/module.rs`, `type_names`, with `TYPESCRIPT_COLLECTIONS`, and `typescript/body.rs`, `typed` and `world`; `python/module.rs`, `type_names`, and `pytypes::outer_classes`, with `python_collection`.
 
 ### Narrowing
 **What.** A test of a value's type refines its type in the code that runs only where the test

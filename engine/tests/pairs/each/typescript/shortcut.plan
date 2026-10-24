@@ -1,0 +1,21 @@
+# The same drawing, where the function written in place returns what it gives back from a block. A `return` leaves that
+# function, not the body around it, so `(t) => { return t.drawn(); }` says what `(t) => t.drawn()` says (#177), and its
+# `t` is each element of `touches` as on the clean side (#180): the plan is the clean side's.
+
+route drawing.drawn
+step drawn/Touch.drawn
+step drawn/Touch.drawn/Where()
+
+line entry > drawn call
+line Touch·touches > drawn value                              # `touches.map(..)`: no step
+line Touch·touches > drawn/Touch.drawn/Where() value         # `this.op` of each touch, an element of `touches`
+line drawn/Touch.drawn/Where() > Where@drawn/Touch.drawn/Where() value
+line Where@drawn/Touch.drawn/Where() > drawn/Touch.drawn value
+line drawn/Touch.drawn > Where@drawn/Touch.drawn value
+line Where@drawn/Touch.drawn > drawn value                    # put into the pairs the body gives back, by its own code
+
+home Touch·touches drawn
+home Where@drawn/Touch.drawn/Where() drawn/Touch.drawn
+home Where@drawn/Touch.drawn drawn
+
+side entry left

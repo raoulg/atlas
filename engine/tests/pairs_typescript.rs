@@ -1578,3 +1578,34 @@ fn what_a_function_written_in_place_returns_it_gives_back() {
         );
     }
 }
+
+/// The value each call of `Touch.drawn` in `drawing.drawn` is handed, by its name.
+fn drawn_on(g: &Graph) -> Vec<String> {
+    let f = node(g, "drawn");
+    f.sites.iter().filter(|s| s.to.ends_with("Touch.drawn")).flat_map(|s| s.hands.iter().map(|h| h.name.clone())).collect()
+}
+
+/// The parameter of a function written in place that an array's method hands each element is that element (#180), as
+/// Rust's `.map(|t| t.drawn())` is (#170): in the each pair (`tests/pairs/each/typescript`), `t` of `touches.map((t) =>
+/// t.drawn())` is a part of the `touches` the route is handed, so `Touch.drawn` is handed `touches`, on both sides. The
+/// method pair (`tests/pairs/each/typescript-method`) is Rust's: the clean side maps each node's touches inside the function
+/// `flatMap` hands each node, so every element is a part of the graph and the step is handed `g`, and a field declared as
+/// an array is one, so neither `map` nor `flatMap` is a step; the shortcut pushes each place onto a list in two loops, a step
+/// each, whose `t` the step is handed, and the push changes the list (`out: Where[]` holds Wheres).
+#[test]
+fn a_function_s_parameter_is_each_element_of_the_array_it_maps() {
+    let each = common::pair("each/typescript");
+    assert_eq!(drawn_on(&each.clean), ["touches"], "each touch is an element of the array the route is handed");
+    assert_eq!(drawn_on(&each.shortcut), ["touches"], "as from a block");
+    let method = common::pair("each/typescript-method");
+    let ops = |g: &Graph| -> Vec<String> { node(g, "drawn").sites.iter().filter(|s| !s.op.is_empty()).map(|s| s.op.clone()).collect() };
+    assert_eq!(drawn_on(&method.clean), ["g"], "each touch is a part of the graph the function is handed");
+    assert!(ops(&method.clean).is_empty(), "`flatMap` and `map` on arrays are no steps: {:?}", ops(&method.clean));
+    assert_eq!(drawn_on(&method.shortcut), ["t"], "the loop's touch, a value the body makes");
+    assert_eq!(ops(&method.shortcut), ["for n of g.nodes", "for t of n.touches", "push"]);
+    let push = node(&method.shortcut, "drawn").sites.iter().find(|s| s.op == "push").expect("the shortcut pushes");
+    assert!(
+        push.changes && push.gives.iter().any(|g| g.name == "out" && g.ty.ends_with(".Where")),
+        "the push makes the list of Wheres anew"
+    );
+}
