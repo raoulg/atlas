@@ -38,15 +38,23 @@ const SUMS = new Map();
 const SUM_OF = new Map(), VARIANTS = new Map();
 for (const e of D.edges) if (e.kind === "variant") { SUM_OF.set(e.dst, SUM_OF.has(e.dst) && SUM_OF.get(e.dst) !== e.src ? null : e.src); if (!VARIANTS.has(e.src)) VARIANTS.set(e.src, []); VARIANTS.get(e.src).push(e.dst); }
 // A figure rests in the fields that hold it (#168): a method keeps the figure it makes in the fields of the value it runs on
-// that the binding which makes the figure sets (`self.fig, self.ax = plt.subplots()`), by the class the method is written in
-const FIGURE_FIELDS = new Map(), KEEPS_FIGURE = new Set(), BASES = new Map();
+// that the binding which makes the figure sets (`self.fig, self.ax = plt.subplots()`), by the class the method is written in.
+// Each such binding is a slot of the class, one figure a value of it holds (#178): `self.res_fig, self.res_ax = plt.subplots()`
+// beside it is a second, named by the first field it sets
+const FIGURE_FIELDS = new Map(), KEEPS_FIGURE = new Set(), BASES = new Map(), FIGURE_SLOTS = new Map(), SLOTS_AT = new Map();
 for (const e of D.edges) if (e.kind === "inherits") { if (!BASES.has(e.src)) BASES.set(e.src, []); BASES.get(e.src).push(e.dst); }
 for (const n of D.nodes) {
-  const lines = (n.touches || []).filter(t => t.kind === "figure").map(t => t.line), self = (n.params || []).find(p => p.receiver)?.name;
+  const touches = (n.touches || []).filter(t => t.kind === "figure"), lines = touches.flatMap(t => [t.line, ...(t.also_at || [])]), self = (n.params || []).find(p => p.receiver)?.name;
   for (const s of n.sets || []) if (n.cls && s.field && s.lines && (!s.on.name || s.on.name === self) && lines.some(l => s.lines[0] <= l && l <= s.lines[1])) {
     if (!FIGURE_FIELDS.has(n.cls)) FIGURE_FIELDS.set(n.cls, new Set());
     FIGURE_FIELDS.get(n.cls).add(s.field);
     KEEPS_FIGURE.add(n.id);
+    if (!FIGURE_SLOTS.has(n.cls)) FIGURE_SLOTS.set(n.cls, []);
+    const slots = FIGURE_SLOTS.get(n.cls), at = slots.find(x => x.node === n.id && x.lines[0] === s.lines[0] && x.lines[1] === s.lines[1]);
+    if (at) at.fields.push(s.field);
+    else if (!slots.some(x => x.fields.includes(s.field))) slots.push({node: n.id, lines: s.lines, fields: [s.field]});
+    if (!SLOTS_AT.has(n.id)) SLOTS_AT.set(n.id, []);
+    if (!SLOTS_AT.get(n.id).some(x => x.lines[0] === s.lines[0] && x.lines[1] === s.lines[1])) SLOTS_AT.get(n.id).push({lines: s.lines, field: s.field});
   }
 }
 // the field a value a call hands fills one of its parameters through, where the call writes the argument as a projection of
@@ -66,11 +74,24 @@ const heldIn = (cls, field) => {
   while (todo.length) { const c = todo.pop(); if (!c || seen.has(c)) continue; seen.add(c); const t = byId.get(c)?.holds?.[field]; if (t) return t; todo.push(...(BASES.get(c) || [])); }
   return null;
 };
+// the slots of a class, its own and its bases': each a figure a value of it holds, in the fields one binding sets
+const slotsOf = cls => {
+  const seen = new Set(), todo = [cls], out = [];
+  while (todo.length) { const c = todo.pop(); if (!c || seen.has(c)) continue; seen.add(c); out.push(...(FIGURE_SLOTS.get(c) || [])); todo.push(...(BASES.get(c) || [])); }
+  return out;
+};
+// the name of the slot of a class a field holds a figure in: none where the class keeps one figure, which is the value's, else
+// the first field its binding sets (`res_fig` for `res_ax`)
+const slotName = (cls, field) => { const ss = slotsOf(cls); return ss.length > 1 ? ss.find(s => s.fields.includes(field))?.fields[0] || "" : ""; };
+// the slot the figure a step makes on a line rests in: the binding of the step's body that spans the line; null where none
+// does, and the figure is the call's own
+const slotAtLine = (n, line) => { const s = (SLOTS_AT.get(n?.id) || []).find(x => x.lines[0] <= line && line <= x.lines[1]); return s && n.cls ? slotName(n.cls, s.field) : null; };
 // the part of a value of a class that keeps its figure in the field a path names, through the classes its fields hold (#173):
-// "" for `fig` of a Chart, `left` for `left.fig` of a Board whose `left` holds a Chart; null where no part keeps a figure there
+// "" for `fig` of a Chart, `left` for `left.fig` of a Board whose `left` holds a Chart, and below it the slot where the class
+// keeps more than one figure (`res_fig` for `res_ax` of a Fit, #178); null where no part keeps a figure there
 const figurePart = (cls, path) => {
   const fs = path ? path.split(".") : [];
-  for (let i = 0, c = cls; i < fs.length && c; c = heldIn(c, fs[i]), i++) if (keepsFigure(c, fs.slice(i).join("."))) return fs.slice(0, i).join(".");
+  for (let i = 0, c = cls; i < fs.length && c; c = heldIn(c, fs[i]), i++) if (keepsFigure(c, fs.slice(i).join("."))) return fieldPath(fs.slice(0, i).join("."), slotName(c, fs.slice(i).join(".")));
   return null;
 };
 // whether a parameter holds a value of a type: one its type holds as its language reads it (`Param::holds`, by name: a map
@@ -703,7 +724,7 @@ const morphism = (id, own, isAnchor, noReceiver, opts = {}) => {
     go(goes, tc);
     // a figure made is on the screen: the call's that makes it, until the plan knows what holds it (`figureOf`). Each call
     // makes one, so a touch that stands for two calls in one body (`also_at`) makes two figures (#175)
-    const ps = raw.kind === "figure" && tc.kind === "screen" && opts.figure ? [raw.line, ...(raw.also_at || [])].map(l => figurePlace(`${opts.figure}~${l}`, opts.label)) : [worldPlace(tc)];
+    const ps = raw.kind === "figure" && tc.kind === "screen" && opts.figure ? [raw.line, ...(raw.also_at || [])].map(l => figurePlace(`${opts.figure}~${l}`, opts.label, l)) : [worldPlace(tc)];
     for (const p of ps) (isIn(tc) ? dom : cod).push([addPlace(p), !ownKeys.has(touchKey(raw))]);
   }
   const sig = arr => { const m = new Map(); for (const [p, r] of arr) m.set(p, (m.has(p) ? m.get(p) : true) && r); return m; };
@@ -792,7 +813,7 @@ const backName = (key, cod) => {
 
 // a figure a call makes, until the plan knows what holds it (`figureOf`); the plan numbers its figures in the order the route
 // makes them
-const figurePlace = (key, label) => ({id: "w:Screen:fig:" + key, label, short: label, kind: "world", figure: label});
+const figurePlace = (key, label, line) => ({id: "w:Screen:fig:" + key, label, short: label, kind: "world", figure: label, ...(line ? {line} : {})});
 // a step of an opened route is a call: what its function takes and gives, with what the call
 // hands it and gets back, each value by the name that holds it; a library's operation has only those
 const stepMorphism = (key, own, isAnchor, leaf) => {
@@ -1386,7 +1407,11 @@ const figureOf = (P, k, resolved) => {
     part = pl.holder === "^recv" ? fieldPath(part, pl.part) : pl.part || "";
   } else {
     if (!n?.cls || !(a?.changes || []).includes(n.cls) || !KEEPS_FIGURE.has(n.id)) return k;
+    // the slot the binding that makes it keeps it in: one a value of a class with two holds apart from the other (#178)
+    const slot = slotAtLine(n, pl?.line);
+    if (slot == null) return k;
     v = receiver();
+    part = fieldPath(part, slot);
   }
   // the value is held from its first moment: one made before the step planned by itself is its caller's. A part that holds
   // the figure another part holds draws on that one's (#173)

@@ -428,7 +428,10 @@ open:
   does, by the class its owner's field holds (`Node::holds`: a board's `right` holds a Chart, which keeps its figure in `fig`
   and `ax`): `self.right.take(self.left.fig, self.left.ax)` sets the right part's fields to the left part's, so from then on
   the right part holds the figure the left one holds, and so does a parameter filled through a part (`other` of
-  `self.left.lend(self.right)` is the board's `right`, and `other.take(self.fig, self.ax)` lends the same);
+  `self.left.lend(self.right)` is the board's `right`, and `other.take(self.fig, self.ax)` lends the same). Each binding that
+  makes a figure is a figure the value holds: a class whose methods keep figures under two bindings (`self.fig, self.ax =
+  plt.subplots()` and `self.res_fig, self.res_ax = plt.subplots()`) holds two, each named by the first field its binding sets
+  (`fit.fig`, `fit.res_fig`), and a class that keeps one names none;
 - a step's own arrow is its witness at its border: its signature and its own touches, the lines that
   cross its frame. An opened step draws it as a point on the frame's right edge, not as a step beside
   its steps: a value its call is handed crosses the frame to the step inside that takes it (the value

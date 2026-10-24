@@ -1,0 +1,68 @@
+# A fit and its residuals, each on a chart of its own. The fit holds two charts and draws each by the chart's own `line`,
+# which makes the chart's one figure where it holds none. Each call on a part runs on the fit through the field it reads
+# (#172), so the data chart's two lines draw on the one figure its part holds and the residuals' line on another: two
+# figures, each named where it is made, by the fit and the part that holds it.
+
+route notebooks.residuals
+step residuals/draw_fit
+step residuals/draw_fit/Chart()
+step residuals/draw_fit/Chart()#2
+step residuals/draw_fit/Fit()
+step residuals/draw_fit/Fit.draw
+step residuals/draw_fit/Fit.draw/Chart.line
+choice residuals/draw_fit/Fit.draw/Chart.line/?1
+step residuals/draw_fit/Fit.draw/Chart.line/?1/Chart.create_figure
+step residuals/draw_fit/Fit.draw/Chart.line#2
+choice residuals/draw_fit/Fit.draw/Chart.line#2/?1
+step residuals/draw_fit/Fit.draw/Chart.line#2/?1/Chart.create_figure
+step residuals/draw_fit/Fit.draw/Chart.line#3
+choice residuals/draw_fit/Fit.draw/Chart.line#3/?1
+step residuals/draw_fit/Fit.draw/Chart.line#3/?1/Chart.create_figure
+
+line entry > residuals call
+line residuals/draw_fit/Chart() > Chart@residuals/draw_fit/Chart() value
+line residuals/draw_fit/Chart()#2 > Chart@residuals/draw_fit/Chart()#2 value
+line Chart@residuals/draw_fit/Chart() > residuals/draw_fit/Fit() value          # `self.data = data`
+line Chart@residuals/draw_fit/Chart()#2 > residuals/draw_fit/Fit() value        # `self.residuals = residuals`
+line residuals/draw_fit/Fit() > Fit·fit@residuals/draw_fit/Fit() value
+
+# the data chart's first line, run on the fit through `data`, makes the data part's figure
+line Fit·fit@residuals/draw_fit/Fit() > residuals/draw_fit/Fit.draw/Chart.line/?1/Chart.create_figure value
+line residuals/draw_fit/Fit.draw/Chart.line/?1/Chart.create_figure > Chart·self@residuals/draw_fit/Fit.draw/Chart.line/?1 value
+line residuals/draw_fit/Fit.draw/Chart.line/?1/Chart.create_figure > Figure 1 · Fit · fit.data own   # `plt.subplots()`
+line Chart·self@residuals/draw_fit/Fit.draw/Chart.line/?1 > residuals/draw_fit/Fit.draw/Chart.line value   # `self.ax.plot(..)`
+line residuals/draw_fit/Fit.draw/Chart.line > Fit·self@residuals/draw_fit/Fit.draw/Chart.line value
+
+# its second draws on the figure the data part holds
+line Fit·self@residuals/draw_fit/Fit.draw/Chart.line > residuals/draw_fit/Fit.draw/Chart.line#2/?1/Chart.create_figure value
+line residuals/draw_fit/Fit.draw/Chart.line#2/?1/Chart.create_figure > Chart·self@residuals/draw_fit/Fit.draw/Chart.line#2/?1 value
+line residuals/draw_fit/Fit.draw/Chart.line#2/?1/Chart.create_figure > Figure 1 · Fit · fit.data own
+line Chart·self@residuals/draw_fit/Fit.draw/Chart.line#2/?1 > residuals/draw_fit/Fit.draw/Chart.line#2 value
+line residuals/draw_fit/Fit.draw/Chart.line#2 > Fit·self@residuals/draw_fit/Fit.draw/Chart.line#2 value
+
+# the residuals' line, through `residuals`, makes that part's
+line Fit·self@residuals/draw_fit/Fit.draw/Chart.line#2 > residuals/draw_fit/Fit.draw/Chart.line#3/?1/Chart.create_figure value
+line residuals/draw_fit/Fit.draw/Chart.line#3/?1/Chart.create_figure > Chart·self@residuals/draw_fit/Fit.draw/Chart.line#3/?1 value
+line residuals/draw_fit/Fit.draw/Chart.line#3/?1/Chart.create_figure > Figure 2 · Fit · fit.residuals own
+line Chart·self@residuals/draw_fit/Fit.draw/Chart.line#3/?1 > residuals/draw_fit/Fit.draw/Chart.line#3 value
+line residuals/draw_fit/Fit.draw/Chart.line#3 > Fit·self@residuals/draw_fit/Fit.draw/Chart.line#3 value
+line Fit·self@residuals/draw_fit/Fit.draw/Chart.line#3 > residuals/draw_fit/Fit.draw value   # what its steps made of the fit
+line residuals/draw_fit/Fit.draw > Fit·fit@residuals/draw_fit/Fit.draw value
+line Fit·fit@residuals/draw_fit/Fit.draw > residuals/draw_fit value           # `return fit`
+line residuals/draw_fit > Fit·fit@residuals/draw_fit value                     # `fit = draw_fit(..)`
+
+home Chart@residuals/draw_fit/Chart() residuals/draw_fit
+home Chart@residuals/draw_fit/Chart()#2 residuals/draw_fit
+home Fit·fit@residuals/draw_fit/Fit() residuals/draw_fit
+home Chart·self@residuals/draw_fit/Fit.draw/Chart.line/?1 residuals/draw_fit/Fit.draw/Chart.line
+home Fit·self@residuals/draw_fit/Fit.draw/Chart.line residuals/draw_fit/Fit.draw
+home Chart·self@residuals/draw_fit/Fit.draw/Chart.line#2/?1 residuals/draw_fit/Fit.draw/Chart.line#2
+home Fit·self@residuals/draw_fit/Fit.draw/Chart.line#2 residuals/draw_fit/Fit.draw
+home Chart·self@residuals/draw_fit/Fit.draw/Chart.line#3/?1 residuals/draw_fit/Fit.draw/Chart.line#3
+home Fit·self@residuals/draw_fit/Fit.draw/Chart.line#3 residuals/draw_fit/Fit.draw
+home Fit·fit@residuals/draw_fit/Fit.draw residuals/draw_fit
+home Fit·fit@residuals/draw_fit residuals
+
+side entry left
+side Figure 1 · Fit · fit.data right
+side Figure 2 · Fit · fit.residuals right
