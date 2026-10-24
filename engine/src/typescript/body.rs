@@ -480,6 +480,8 @@ pub(super) struct Body<'a, 't> {
     /// The classes the body's names hold: its typed parameters, and locals declared with a type,
     /// built with `new`, or handed on by a function.
     pub(super) locals: Locals<'t>,
+    /// Assignments to each name in this body, in source order.
+    assigned: HashMap<String, Vec<(TsNode<'t>, TsNode<'t>)>>,
     /// What a change to each typed parameter changes (`inputs_of`).
     pub(super) inputs: HashMap<String, String>,
     /// The values a package made, by the package: a call on one is the package's.
@@ -527,6 +529,7 @@ impl<'a, 't> Body<'a, 't> {
             eval,
             changing,
             locals: Locals::default(),
+            assigned: HashMap::new(),
             inputs: HashMap::new(),
             made: HashMap::new(),
             sites: vec![],
@@ -534,6 +537,12 @@ impl<'a, 't> Body<'a, 't> {
             read: Read::default(),
         };
         b.typed(n);
+        for a in walk(body, &["assignment_expression"]) {
+            let (Some(left), Some(right)) = (a.child_by_field_name("left"), a.child_by_field_name("right")) else { continue };
+            if left.kind() == "identifier" {
+                b.assigned.entry(text(left, b.src).to_string()).or_default().push((left, right));
+            }
+        }
         b.made();
         b.keeps_command_line = b.command_line();
         b.sites = evaluation_order(walk(
@@ -1086,10 +1095,13 @@ impl<'a, 't> Body<'a, 't> {
             None => None,
         };
         let binding = self.locals.which(i, self.src);
-        let assigned = walk(self.body, &["assignment_expression"]).into_iter().filter_map(|a| {
-            let l = a.child_by_field_name("left").filter(|l| l.kind() == "identifier" && text(*l, self.src) == name)?;
-            (binding.is_some() && self.locals.which(l, self.src) == binding).then(|| a.child_by_field_name("right")).flatten()
-        });
+        let assigned = self
+            .assigned
+            .get(name)
+            .into_iter()
+            .flatten()
+            .filter(|(left, _)| binding.is_some() && self.locals.which(*left, self.src) == binding)
+            .map(|(_, right)| *right);
         let values: Vec<TsNode> = declared.into_iter().chain(assigned).collect();
         let stepless = |v: &TsNode| {
             walk(*v, &["call_expression", "new_expression", "arrow_function", "function_expression", "await_expression"]).is_empty()
