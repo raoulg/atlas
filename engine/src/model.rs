@@ -368,6 +368,11 @@ pub struct Returns {
     /// than leaving the type out.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub unchecked: bool,
+    /// The types the written type holds as values, as its language reads the type (`Param::holds`), each by the last part
+    /// of its name: `Result<Vec<Node>, Error>` holds a `Node` and an `Error`; `Vec<(String, Vec<Where>)>` holds pairs, of
+    /// a type the code does not name, and no `Where`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub holds: Vec<String>,
 }
 
 impl Returns {

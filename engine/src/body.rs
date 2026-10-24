@@ -589,17 +589,18 @@ impl<'t, 's> Steps<'t, 's> {
     /// what hands it on unchanged and the parts of it it takes, what it is in is no step, no binding of a
     /// name, no statement of its own and not what leaves the body as it is (`mode.plan().timeout <= ..`,
     /// `ledger.merged(other).rows.length + ..`, `this.rows().map((row) => row.reading)`). A binding that
-    /// keeps it in a field or an element of a value reads it (`self.left = Chart("left")`). A step written
-    /// around it is handed it.
+    /// keeps it in a field or an element of a value reads it (`self.left = Chart("left")`). What a function
+    /// written in place gives back goes where the function's result goes: handed to a library's call that is
+    /// no step, on in what that call gives (`.map(|t| t.drawn()).collect()`). A step written around it is
+    /// handed it.
     fn read_by_own_code(&self, i: usize) -> bool {
         let (u, s) = (self.uses, &self.sites[i]);
         if s.to.is_empty() || s.span == (0, 0) || s.raises || s.gives.iter().any(|g| !g.name.is_empty()) {
             return false;
         }
         let Some(c) = self.body.descendant_for_byte_range(s.span.0 as usize, s.span.1 as usize) else { return false };
-        // what a function written in place gives is that function's (`let wrong = || Error::Amount(..)`), and what a
-        // function handed on by its name gives, the call's it is handed to (`lines.map(parse_line)`)
-        if self.in_function(c) || u.names.contains(&c.kind()) {
+        // what a function handed on by its name gives, the call's it is handed to (`lines.map(parse_line)`)
+        if u.names.contains(&c.kind()) {
             return false;
         }
         let (mut child, mut part) = (c, false);
@@ -615,6 +616,13 @@ impl<'t, 's> Steps<'t, 's> {
             {
                 // the value of an arm, or of a block it ends, is the value of the choice or the block
                 child = p;
+            } else if named_children(p).into_iter().any(|x| x.id() != child.id() && (u.binders)(p, x) == Some(true)) {
+                // what a function written in place gives is that function's (`let wrong = || Error::Amount(..)`); handed to
+                // a library's call that is no step, it goes on in what that call gives, as a value handed to one does
+                match self.glued_call(p) {
+                    Some(call) => (child, part) = (call, false),
+                    None => return false,
+                }
             } else {
                 // a step that stands where it is written (a loop over it) or around it is handed it
                 let around = |(j, x): (usize, &Site)| {
@@ -632,6 +640,21 @@ impl<'t, 's> Steps<'t, 's> {
             }
         }
         false
+    }
+
+    /// The call a function written in place at `f` is handed to as an argument (also by a name, `key=lambda r: ..`),
+    /// where that call is no step of the body: a library's call, glued into the body's own code.
+    fn glued_call(&self, f: TsNode<'t>) -> Option<TsNode<'t>> {
+        let mut a = f;
+        for _ in 0..3 {
+            let p = a.parent()?;
+            if let Some(call) = p.parent().filter(|c| (self.uses.hands)(*c, p)) {
+                let at = (call.start_byte() as u32, call.end_byte() as u32);
+                return (!self.sites.iter().any(|s| s.span == at)).then_some(call);
+            }
+            a = p;
+        }
+        None
     }
 
     /// Whether the name `n` is read where it stands: no label (the `f` of `x.f`), not what a binding

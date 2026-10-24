@@ -437,11 +437,13 @@ open:
   and the value stands in the step's frame. A value no line takes says that the body drops it; the
   map draws fewer facts by zoom, never by leaving one out. Of what the
   body's steps make, what it gives back is what no step of the code among them takes and is of a type
-  its signature gives (its result, or the error of `T + E`): a value built only to be handed into another
+  its signature gives as its language reads the type (its result, or the error of `T + E`): a value built only to be handed into another
   step (`Row(Reading(line))`) is that step's, and a body that gives back a number gives back none of the
-  values its steps make, which it uses, if at all, by its own code. A value handed into a
+  values its steps make, which it uses, if at all, by its own code, nor does one that gives back a collection of pairs
+  (`Vec<(String, Vec<Where>)>` gives back pairs, no `Where`). A value handed into a
   library's operation goes on in what the operation gives, and is the operation's only where that
-  is. A result of no type of the code's goes back to the step that called it unless another step of
+  is; what a function written in place gives back goes where its result goes, so handed to such an operation it goes on in
+  what the operation gives (`.map(|t| t.drawn()).collect()`). A result of no type of the code's goes back to the step that called it unless another step of
   the caller takes it, which it then reaches as a value. Going back, it is one line labelled by the
   name that holds it, and no value beside it: the caller's own arrow is a point on its border, no
   step, and `done = finished(..); if done:` is `if finished(..):` with a name. A call is
@@ -617,9 +619,11 @@ collection itself. A map holds its values by its keys, a family of lenses indexe
 `HashMap<Mode, Plan>` and `Record<Mode, Plan>` are one value that holds Plans, the key choosing the Plan a lookup gives
 as an index chooses an element of a list, no value the map holds. What a parameter or a value its module keeps holds is
 what its type holds as its language reads it, never a name its type merely writes: the module's `PLANS: Record<Mode,
-Plan>` is a value of Plans from beyond, as `PLANS: dict[Mode, Plan]` is.
+Plan>` is a value of Plans from beyond, as `PLANS: dict[Mode, Plan]` is. So is what a function gives back: one that
+returns `Vec<(String, Vec<Where>)>` gives back pairs, and none of the Wheres its steps make.
 **Where.** `knowledge.rs`: `python_container`, `TYPESCRIPT_CONTAINERS`, `RUST_CONTAINERS`, the maps `PYTHON_MAPS`,
-`TYPESCRIPT_MAPS`, `RUST_MAPS`; `Param::holds`, read by `writesType` in `viewer/plan.js` and by the principles; the Rust reader's
+`TYPESCRIPT_MAPS`, `RUST_MAPS`; `Param::holds`, read by `writesType` in `viewer/plan.js` and by the principles, and
+`Returns::holds`, read by `flow::made_from`; the Rust reader's
 signatures (`rust/passes.rs`, `fixed_by_implementations`; `rust/module.rs`, `type_names`, with `RUST_COLLECTIONS`); `typescript/module.rs`, `type_names`, with `TYPESCRIPT_COLLECTIONS`; `python/module.rs`, `type_names`, and `pytypes::outer_classes`, with `python_collection`.
 
 ### Narrowing
