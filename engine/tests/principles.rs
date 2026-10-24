@@ -220,6 +220,11 @@ fn a_package_called_src_is_asked_its_name() {
 /// why it stands (a fault of Atlas's code, tracked in an issue, or a fault of the rule).
 const REVIEWED: &[(&str, &str, &str)] = &[
     (
+        "nothing",
+        "atlas.serve.Server.progress",
+        "`progress` writes the server's shared Progress value through a Mutex; Atlas does not trace the lock's interior mutation",
+    ),
+    (
         "choices",
         "atlas-engine.builder.GraphBuilder.declare",
         "`Declared` is a type already: the first test asks whether a name's first declaration, which has no node yet, starts its overloads, the `match` what a later one does, in one function",

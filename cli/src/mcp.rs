@@ -502,7 +502,7 @@ fn view(path: Option<&str>, sight: Option<Sight>, out: Option<&str>, opts: &Opti
     let findings = read.findings();
     let (graph, compared) = read.drawn();
     let flow = atlas_engine::flow::of(&graph);
-    let opens = crate::page::Opens { route: None, sight, served: None };
+    let opens = crate::page::Opens { route: None, sight, served: None, preliminary: false };
     let html =
         crate::page::Html::of(&graph, &flow, &findings, compared.as_ref(), &opens).map_err(|e| format!("Could not draw the page: {e}"))?;
     let home = clone.is_none().then_some(repo.as_path());

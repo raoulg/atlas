@@ -294,7 +294,7 @@ fn view(
     let findings = read.findings();
     let (graph, compared) = read.drawn();
     let flow = atlas_engine::flow::of(&graph);
-    let opens = page::Opens { route: named_route(&graph, &opts.named), sight, served: None };
+    let opens = page::Opens { route: named_route(&graph, &opts.named), sight, served: None, preliminary: false };
     let html = page::Html::of(&graph, &flow, &findings, compared.as_ref(), &opens)?;
     let out = out.unwrap_or_else(|| home::made(home, &format!("{}.html", graph.root)));
     html.write(&out)?;

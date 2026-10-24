@@ -66,13 +66,27 @@ fn tool(repo: &Path, name: &str, mut args: Value) -> String {
     reply["result"]["content"][0]["text"].as_str().unwrap_or_else(|| panic!("{reply}")).to_string()
 }
 
+fn complete(at: &str) -> (String, String) {
+    for _ in 0..300 {
+        let (_, body) = send(at, "GET", "/api/drawn", None, false);
+        let state: Value = serde_json::from_str(&body).unwrap();
+        if state["phase"] == "ready" {
+            let (_, page) = send(at, "GET", "/", None, false);
+            return (state["drawn"].as_str().unwrap().to_string(), page);
+        }
+        assert_ne!(state["phase"], "failed", "{state}");
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    panic!("the complete page was not served");
+}
+
 #[test]
 fn the_page_and_the_agent_share_one_view() {
     let repo = repository("shared");
     let (mut server, at) = serve(&repo);
 
-    let (status, page) = send(&at, "GET", "/", None, false);
-    assert!(status.contains("200") && page.contains("\"served\":true"), "the page knows it is served: {status}");
+    let (_, page) = complete(&at);
+    assert!(page.contains("\"served\":true"), "the page knows it is served");
     let (history, page) = send(&at, "GET", "/history", None, false);
     assert!(history.contains("200") && page.contains("Atlas history"), "the history beside the page: {history}");
     let mut conn = TcpStream::connect(&at).unwrap();
@@ -131,7 +145,8 @@ fn the_page_and_the_agent_share_one_view() {
 /// What the server has drawn: the name of the drawing a page shows.
 fn drawn(at: &str) -> Option<String> {
     let (_, body) = send(at, "GET", "/api/drawn", None, false);
-    serde_json::from_str::<Value>(&body).ok()?["drawn"].as_str().map(String::from)
+    let state = serde_json::from_str::<Value>(&body).ok()?;
+    (state["phase"] == "ready").then(|| state["drawn"].as_str().map(String::from)).flatten()
 }
 
 #[test]
@@ -139,8 +154,7 @@ fn the_page_follows_the_code() {
     let repo = repository("follows");
     let (mut server, at) = serve(&repo);
 
-    let (_, page) = send(&at, "GET", "/", None, false);
-    let first = drawn(&at).expect("a drawing, once the page is asked for");
+    let (first, page) = complete(&at);
     assert!(page.contains(&format!("\"drawn\":\"{first}\"")), "the page knows which drawing it is");
 
     std::fs::write(
@@ -168,8 +182,7 @@ fn the_page_follows_the_code() {
 fn a_vision_is_drawn_beside_the_working_tree() {
     let repo = repository("vision");
     let (mut server, at) = serve(&repo);
-    let _ = send(&at, "GET", "/", None, false);
-    let first = drawn(&at).expect("a drawing, once the page is asked for");
+    let (first, _) = complete(&at);
 
     let sketch = "def count(n: int) -> int:\n    return n + 1\n\n\ndef twice(n: int) -> int:\n    return count(count(n))\n";
     let told = tool(&repo, "vision", json!({"title": "count twice", "files": {"src/spots/__init__.py": sketch}}));
