@@ -13,7 +13,7 @@ use std::process::{Command, Stdio};
 
 use anyhow::{bail, Context, Result};
 
-use crate::cache::{Cache, Check};
+use crate::cache::{Cache, Check, Written};
 use crate::diff::{self, Reading, Status};
 use crate::flow::Drawn;
 use crate::model::{EdgeKind, Graph, NodeKind, Touch, World};
@@ -273,39 +273,6 @@ fn replaced(v: &mut serde_json::Value, pairs: &[(&str, &str)]) {
             }
         }
         _ => {}
-    }
-}
-
-/// Where each step and each value a step hands or gives is written in its file: what a reading
-/// knows and the graph's JSON leaves out, kept beside it.
-#[derive(Default, serde::Serialize, serde::Deserialize)]
-struct Written {
-    steps: Vec<(u32, u32)>,
-    values: Vec<u32>,
-}
-
-impl Written {
-    fn of(parts: &[Graph]) -> Written {
-        let mut w = Written::default();
-        for s in parts.iter().flat_map(|g| &g.nodes).flat_map(|n| &n.sites) {
-            w.steps.push(s.span);
-            w.values.extend(s.hands.iter().chain(&s.gives).map(|h| h.at));
-        }
-        w
-    }
-
-    /// Write it back into the parts, in the same order; whether it fits them.
-    fn apply(&self, parts: &mut [Graph]) -> bool {
-        let (mut steps, mut values) = (self.steps.iter(), self.values.iter());
-        for s in parts.iter_mut().flat_map(|g| g.nodes.iter_mut()).flat_map(|n| n.sites.iter_mut()) {
-            let Some(span) = steps.next() else { return false };
-            s.span = *span;
-            for h in s.hands.iter_mut().chain(s.gives.iter_mut()) {
-                let Some(at) = values.next() else { return false };
-                h.at = *at;
-            }
-        }
-        steps.next().is_none() && values.next().is_none()
     }
 }
 

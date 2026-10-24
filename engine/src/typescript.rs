@@ -118,11 +118,11 @@ fn jsonc(text: &str) -> String {
     regex::Regex::new(r",(\s*[}\]])").unwrap().replace_all(&out, "$1").to_string()
 }
 
-/// What a reading of the package at `repo` takes from outside it: the packages installed in a
-/// `node_modules` above it, which Node finds from its files as well.
+/// What a reading of the package at `repo` takes from its dependency directories: its own
+/// `node_modules` and those above it, which Node finds from its files as well.
 pub fn environment(repo: &Repo) -> Vec<crate::cache::Check> {
     let root = std::fs::canonicalize(repo.root()).unwrap_or_else(|_| repo.root().to_path_buf());
-    root.ancestors().skip(1).map(|a| crate::cache::Check::Tree(a.join(knowledge::NODE_PACKAGES))).collect()
+    root.ancestors().map(|a| crate::cache::Check::Tree(a.join(knowledge::NODE_PACKAGES))).collect()
 }
 
 pub fn parse(repo: &Repo, opts: &crate::Options) -> Result<(GraphBuilder, String)> {

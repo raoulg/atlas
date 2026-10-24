@@ -15,6 +15,7 @@ use anyhow::Result;
 /// Directories no author writes in, never walked: dependencies and a build's output.
 
 struct Listing {
+    base: PathBuf,
     files: BTreeSet<PathBuf>,
     dirs: BTreeSet<PathBuf>,
     /// The files named on the command line.
@@ -37,6 +38,8 @@ pub struct Repo {
     asked: Option<PathBuf>,
     /// The language a part is read in, when its manifest names it.
     language: Option<&'static str>,
+    /// Files whose contents this reading consumed, relative to the listing root.
+    read_files: Arc<Mutex<BTreeSet<PathBuf>>>,
 }
 
 impl Repo {
@@ -73,9 +76,9 @@ impl Repo {
             }
         }
         dirs.insert(PathBuf::new());
-        let listing = Listing { files, dirs, named: listed, texts: Mutex::new(HashMap::new()) };
         let root = normal(&std::path::absolute(dir)?);
-        Ok(Repo { root, at: PathBuf::new(), listing: Arc::new(listing), asked: None, language: None })
+        let listing = Listing { base: root.clone(), files, dirs, named: listed, texts: Mutex::new(HashMap::new()) };
+        Ok(Repo { root, at: PathBuf::new(), listing: Arc::new(listing), asked: None, language: None, read_files: Arc::default() })
     }
 
     /// The project read for a directory inside it, `asked`.
@@ -120,7 +123,14 @@ impl Repo {
         if rel.as_os_str().is_empty() {
             return self.clone();
         }
-        Repo { root: self.root.join(rel), at: self.at.join(rel), listing: self.listing.clone(), asked: None, language: None }
+        Repo {
+            root: self.root.join(rel),
+            at: self.at.join(rel),
+            listing: self.listing.clone(),
+            asked: None,
+            language: None,
+            read_files: Arc::default(),
+        }
     }
 
     /// Where a path the caller writes from the root stands in the listing: `root/x` and `x` alike.
@@ -149,12 +159,30 @@ impl Repo {
         self.listing.files.iter().map(|f| (f.clone(), stamp(f).map(|m| (m.len(), m.modified().ok())))).collect()
     }
 
+    /// Bytes of files this part has consumed, from the listing root.
+    pub fn read_contents(&self) -> BTreeMap<PathBuf, Arc<Vec<u8>>> {
+        let Ok(paths) = self.read_files.lock() else { return BTreeMap::new() };
+        let Ok(texts) = self.listing.texts.lock() else { return BTreeMap::new() };
+        paths.iter().filter_map(|path| texts.get(path).map(|bytes| (path.clone(), bytes.clone()))).collect()
+    }
+
+    /// A listed path's bytes as they stand on disk, from the listing root.
+    pub fn listed_bytes(&self, path: &Path) -> Option<Arc<Vec<u8>>> {
+        self.listing.files.contains(path).then(|| std::fs::read(self.listing.base.join(path)).ok()).flatten().map(Arc::new)
+    }
+
+    /// Listed files below this part, from the listing root.
+    pub fn listed_files(&self) -> BTreeSet<PathBuf> {
+        self.listing.files.iter().filter(|f| f.starts_with(&self.at)).cloned().collect()
+    }
+
     /// A file's bytes, read once.
     pub fn bytes(&self, p: impl AsRef<Path>) -> Option<Arc<Vec<u8>>> {
         let key = self.key(p.as_ref());
         if !self.listing.files.contains(&key) {
             return None;
         }
+        self.read_files.lock().ok()?.insert(key.clone());
         let mut texts = self.listing.texts.lock().ok()?;
         if let Some(t) = texts.get(&key) {
             return Some(t.clone());

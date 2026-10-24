@@ -92,7 +92,7 @@ fn what_atlas_makes_goes_to_atlas_at_the_top_of_the_repository() {
     names.sort();
     let ignore = std::fs::read_to_string(made.join(".gitignore")).unwrap_or_default();
     let _ = std::fs::remove_dir_all(&repo);
-    assert_eq!(names, [".gitignore", "graph.json", "made.html"]);
+    assert_eq!(names, [".gitignore", "graph.json", "index", "made.html"]);
     assert!(ignore.lines().any(|l| l == "*"), "the folder ignores itself: {ignore:?}");
 }
 

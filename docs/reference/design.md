@@ -79,7 +79,10 @@ ignores, no dependency or build directory) and the files named on the command li
 → Repo** is the one place the engine touches a repository: the listing is read once, a file's
 text once, when a reader first asks, and a part of the repository is a view of the same reading.
 A package named on its own (`atlas view src/pkg`) is read as the project it is in, asked for that
-package: finding the project is part of reading, and nothing after it looks at the disk.
+package: finding the project is part of reading, and nothing after it looks at the disk. A
+worktree's `.atlas/index/` keeps each part's graph between readings, with the listed files, the
+contents the part read and its language environment as the conditions for reuse. CLI, serve and
+MCP read through the same index; `--no-cache` reads anew.
 What a library's code and types are is the environment's, not the repository's: read by ty, from `node_modules`, from where Cargo keeps a crate. **Graph** is the one central type: typed nodes
 (modules, classes, functions) and typed edges, and on each function the places in the
 world its calls touch. Everything between parsing and drawing is `Graph → Graph`.
@@ -648,4 +651,3 @@ than two clicks from the code.
 3. Editing: probably never. "Open in editor" as a deep link should be enough.
 4. The browser as a resting place: a click in a frontend is an arrow into an API route,
    where the request names the path it asks for.
-5. Analysis cache across runs: a `.atlas/` directory next to `.git`.
