@@ -256,3 +256,27 @@ fn a_figure_kept_in_a_part_rests_in_that_part() {
     assert_eq!(parts(&panels.shortcut, "charts.chart.Chart.create_figure"), ["left", "right"], "the board makes each chart's figure");
     assert!(parts(&panels.shortcut, "charts.chart.Chart.line").is_empty());
 }
+
+/// The lines of `id`'s body that make a figure: each call of `plt.subplots()`, also where one touch stands for two.
+fn figure_calls(g: &Graph, id: &str) -> Vec<u32> {
+    let n = g.node(id).unwrap_or_else(|| panic!("{id} is in the graph"));
+    n.touches.iter().filter(|t| t.kind_name() == "figure").flat_map(|t| std::iter::once(t.line).chain(t.also_at.iter().copied())).collect()
+}
+
+/// The apart pair (`tests/pairs/figures/apart`): two series, each on a figure of its own (#175). The clean `compare` calls
+/// `plot` for each series, and each `plot` makes one figure; the shortcut makes both in its own body, two `plt.subplots()`
+/// calls, which the graph keeps as one touch on two lines. No value beyond a call holds what it makes, so each figure is its
+/// call's: the screen shows two either way, also beyond the cut. What tells the sides apart is which step makes each: two
+/// steps of one figure, or one step of two.
+#[test]
+fn two_calls_that_make_a_figure_make_two() {
+    let two = |by: &str| BTreeSet::from([format!("Figure 1 · {by} right"), format!("Figure 2 · {by} right")]);
+    for budget in [None, Some(1), Some(2), Some(3), Some(5)] {
+        assert_eq!(screen_of("figures/apart", "clean", "notebooks.compare", budget), two("plot"), "budget {budget:?}");
+        assert_eq!(screen_of("figures/apart", "shortcut", "notebooks.compare", budget), two("compare"), "budget {budget:?}");
+    }
+    let apart = common::pair("figures/apart");
+    assert_eq!(figure_calls(&apart.clean, "charts.chart.plot"), [7], "one call, run once for each series");
+    assert!(figure_calls(&apart.clean, "charts.chart.compare").is_empty());
+    assert_eq!(figure_calls(&apart.shortcut, "charts.chart.compare"), [7, 10], "two calls in one body");
+}

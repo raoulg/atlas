@@ -688,9 +688,10 @@ const morphism = (id, own, isAnchor, noReceiver, opts = {}) => {
     const tc = shownAs(raw);
     if (served(raw) || (isIn(raw) && !raw.shape && back.has(raw.place.id))) continue;
     go(goes, tc);
-    // a figure made is on the screen: the call's that makes it, until the plan knows what holds it (`figureOf`)
-    const p = raw.kind === "figure" && tc.kind === "screen" && opts.figure ? figurePlace(opts.figure, opts.label) : worldPlace(tc);
-    (isIn(tc) ? dom : cod).push([addPlace(p), !ownKeys.has(touchKey(raw))]);
+    // a figure made is on the screen: the call's that makes it, until the plan knows what holds it (`figureOf`). Each call
+    // makes one, so a touch that stands for two calls in one body (`also_at`) makes two figures (#175)
+    const ps = raw.kind === "figure" && tc.kind === "screen" && opts.figure ? [raw.line, ...(raw.also_at || [])].map(l => figurePlace(`${opts.figure}~${l}`, opts.label)) : [worldPlace(tc)];
+    for (const p of ps) (isIn(tc) ? dom : cod).push([addPlace(p), !ownKeys.has(touchKey(raw))]);
   }
   const sig = arr => { const m = new Map(); for (const [p, r] of arr) m.set(p, (m.has(p) ? m.get(p) : true) && r); return m; };
   return {dom: sig(dom), cod: sig(cod), goes};

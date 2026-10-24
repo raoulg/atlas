@@ -416,7 +416,7 @@ open:
   (the fields the binding that makes it sets, `self.fig, self.ax = plt.subplots()`) is that value's, so
   every step that runs on the value draws on the one figure it holds, whichever of them makes it
   (`create_figure` only where `self.fig is None`); one a call makes and no value beyond it holds is that
-  call's own, and two calls make two. A value a body sets such a field of to what another value holds
+  call's own, and two calls make two, also two in one body (`fig, ax = plt.subplots(); other, bx = plt.subplots()`). A value a body sets such a field of to what another value holds
   there (`other.fig = self.fig`, or `self.fig = fig` in a method its call hands the other's figure to) is
   that one's put, a lens's: from then on it holds the figure the other holds, and so does every value made
   anew of it. The code names the field it sets (`Node::sets`), so a field that holds no figure lends none
