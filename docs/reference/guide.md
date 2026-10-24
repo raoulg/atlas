@@ -62,7 +62,8 @@ Read it from left to right:
   chart`); any other call that makes a figure makes its own (`Figure 2 · Chart.line`). A value
   that is set to hold what another holds (`other.fig = self.fig`) draws on the other's figure. A
   value whose class keeps two figures in fields of its own holds two, each named by the first
-  field that keeps it (`Fit · fit.res_fig`).
+  field that keeps it (`Fit · fit.res_fig`). A chart set into a board's part (`self.left = left`)
+  is that chart there: the board draws on the figure the chart holds, named where it was made.
 - **Files fold into their folders** once a picture holds more than a column's worth:
   `File(artefacts/) · 8` opens into what is in it with a click.
 - **Shift-click a package** in the overview to focus on it: the picture keeps the packages

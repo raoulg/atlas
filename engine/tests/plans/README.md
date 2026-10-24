@@ -118,3 +118,5 @@ smallest that showed one law:
 | `next-method-on-a-class` | a body run on a known class does at a place what that class runs: a `super()` call runs one method there (R5) |
 | `takes-a-title` | a parameter filled through a projection is that projection: handed a title where `take` keeps its figure, the second chart holds no figure of the first's (#172) |
 | `takes-a-bound-title` | a projection bound to a name first is still the projection: `t = self.title; other.take(t, None)` reads as `takes-a-title` (#174) |
+| `lent-after-the-put` | a part set whole to a chart is that chart: a figure lent to the chart after the put is the one the board's part draws on (#179) |
+| `drawn-after-the-put` | the same, the other way round: the figure the board makes through its part is the chart's, and the chart's own name draws on it again (#179) |
