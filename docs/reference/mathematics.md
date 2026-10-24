@@ -428,7 +428,9 @@ open:
   does, by the class its owner's field holds (`Node::holds`: a board's `right` holds a Chart, which keeps its figure in `fig`
   and `ax`): `self.right.take(self.left.fig, self.left.ax)` sets the right part's fields to the left part's, so from then on
   the right part holds the figure the left one holds, and so does a parameter filled through a part (`other` of
-  `self.left.lend(self.right)` is the board's `right`, and `other.take(self.fig, self.ax)` lends the same). Each binding that
+  `self.left.lend(self.right)` is the board's `right`, and `other.take(self.fig, self.ax)` lends the same). A step that changes
+  such a parameter changes the part's owner, which its call gives anew, and no value of the parameter's type of its own:
+  `lender.lend(self.left)` makes the board anew, its left part holding the lender's figure, also beyond the cut. Each binding that
   makes a figure is a figure the value holds: a class whose methods keep figures under two bindings (`self.fig, self.ax =
   plt.subplots()` and `self.res_fig, self.res_ax = plt.subplots()`) holds two, each named by the first field its binding sets
   (`fit.fig`, `fit.res_fig`), and a class that keeps one names none. A part set to a whole value (`self.left = left`) is that
@@ -601,6 +603,7 @@ with the issue that tracks it, and the mark goes with the fix (`engine/tests/pla
 test runs the viewer's own model in node, the function every picture is drawn from, on every route of
 the pairs and of its programs.
 **Where.** `plan`, `sitesOf`, `figureOf`, `FIGURE_FIELDS`, `FIGURE_SLOTS` and `figurePart`, `setsAt` and `resolveWhole`, `throughOf` and `partIn`,
+`changedThrough` and `changesOwner`,
 `coarsen`, `cutArrow`, `handTo` and `checkOpenings` in `viewer/plan.js`;
 the field an argument reads, `Steps::fills` and `Steps::read_of` (`body.rs`); the class each field of a class holds, `Node::holds`;
 which parameters of no type of the code's hold a value, `builder::settle_parameters`; `tools/pictures.py`;

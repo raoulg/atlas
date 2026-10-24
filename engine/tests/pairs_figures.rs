@@ -449,3 +449,39 @@ fn a_chart_set_whole_into_a_part_draws_there_on_the_figure_it_holds() {
         );
     }
 }
+
+/// The borrowed pair (`tests/pairs/figures/borrowed`): a board borrows another chart's figure for its left part (#181). The
+/// clean lender lends it by its own `lend`, handed the board's part (`lender.lend(self.left)` fills `other` with the board
+/// through `left`); the shortcut's board reads the lender's fields and hands them to its part's `take` itself
+/// (`self.left.take(lender.fig, lender.ax)`). A change made through a part changes its owner, a lens's put: either way the
+/// call gives the board anew, its left part holding the lender's figure, and no chart of its own, also where `lend` is beyond
+/// the cut and planned by itself. Two figures at every budget. What tells the sides apart is who reads the lender's fields:
+/// its own `lend`, or the board's call.
+#[test]
+fn a_figure_lent_through_a_parameter_filled_with_a_part_is_the_lender_s() {
+    let two = BTreeSet::from(["Figure 1 · Chart · first right".to_string(), "Figure 2 · Board · board.right right".to_string()]);
+    for side in ["clean", "shortcut"] {
+        for budget in [None, Some(1), Some(2), Some(3), Some(5)] {
+            assert_eq!(screen_of("figures/borrowed", side, "notebooks.side_by_side", budget), two, "{side}, budget {budget:?}");
+        }
+    }
+    let borrowed = common::pair("figures/borrowed");
+    let through =
+        |fields: &[(&str, &str)]| -> Vec<(String, String)> { fields.iter().map(|(s, f)| (s.to_string(), f.to_string())).collect() };
+    assert_eq!(
+        handed_through(&borrowed.clean, "charts.chart.Board.borrow", "charts.chart.Chart.lend"),
+        [("lender".to_string(), vec![]), (String::new(), through(&[("{at:0}", "left")]))],
+        "the lender lends, handed the board's left part"
+    );
+    assert_eq!(
+        handed_through(&borrowed.shortcut, "charts.chart.Board.borrow", "charts.chart.Chart.take"),
+        [(String::new(), through(&[("receiver", "left")])), ("lender".to_string(), through(&[("{at:0}", "fig"), ("{at:1}", "ax")]))],
+        "the board reads the lender's fields itself"
+    );
+    let gives = |g: &Graph, to: &str| -> Vec<String> {
+        let borrow = g.node("charts.chart.Board.borrow").expect("borrow is in the graph");
+        borrow.sites.iter().filter(|s| s.to == to).flat_map(|s| s.gives.iter().map(|h| h.name.clone())).collect()
+    };
+    assert_eq!(gives(&borrowed.clean, "charts.chart.Chart.lend"), ["self"], "a change made through the part gives the board anew");
+    assert_eq!(gives(&borrowed.shortcut, "charts.chart.Chart.take"), ["self"], "a change made through the part gives the board anew");
+}

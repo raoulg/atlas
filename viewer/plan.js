@@ -62,6 +62,28 @@ for (const n of D.nodes) {
 // runs on; none where it fills the parameter whole
 const throughOf = (h, slot) => (h.through || []).find(([s]) => JSON.stringify(s) === JSON.stringify(slot))?.[1] || "";
 const fieldPath = (...fs) => fs.filter(Boolean).join(".");
+// the parameters a step changes (`changed`) that its call fills through a field of a value it hands, each with that hand and
+// the types the change makes anew: `lender.lend(self.left)` fills `other`, which `lend` changes, with the board through
+// `left`. A change made through a projection changes its owner, a lens's put (#172, #181), and the call gives the owner anew
+const changedThrough = (step, site) => {
+  const a = arrowOf(step) || {}, formal = (byId.get(step)?.params || []).filter(p => !p.receiver), changed = new Set(a.changed || []);
+  const param = s => { if (s?.name != null) return formal.find(p => p.name === s.name && !p.rest); if (s?.at != null) for (let i = 0; i < formal.length; i++) if (formal[i].rest || i === s.at) return formal[i]; return null; };
+  const out = [];
+  for (const h of site?.hands || []) if (h.type) for (const [s, f] of h.through || []) {
+    const p = f && s !== "receiver" && param(s);
+    if (p && changed.has(p.name)) out.push({h, name: p.name, types: (a.changes || []).filter(x => writesType(p, x))});
+  }
+  return out;
+};
+// the types a step changes only through parts of the values its call hands: every parameter of the type it changes is filled
+// through a field, and the value it runs on, which it does not change, is none of them. They are no values of their own
+const changedOnlyThrough = (step, site) => {
+  const a = arrowOf(step) || {}, params = byId.get(step)?.params || [], cls = byId.get(step)?.cls, through = changedThrough(step, site);
+  const changesRecv = (a.changed || []).some(nm => { const p = params.find(q => q.name === nm); return p ? p.receiver : ["self", "this"].includes(nm); });
+  const names = new Set(through.map(c => c.name));
+  const whole = x => (changesRecv && x === cls) || params.some(p => !p.receiver && (a.changed || []).includes(p.name) && !names.has(p.name) && writesType(p, x));
+  return new Set(through.flatMap(c => c.types).filter(x => !whole(x)));
+};
 // whether a value of a class keeps its figure in a field: one its class or a base of it keeps the figure in
 const keepsFigure = (cls, field) => {
   const seen = new Set(), todo = [cls];
@@ -911,9 +933,10 @@ const stepMorphism = (key, own, isAnchor, leaf) => {
     const explicit = (site.gives || []).some(g => g.name && (site.hands || []).some(h => h.name === g.name));
     // a change of the value the call runs on, where that is a part of another (`self.left.line(..)`), is a change of that
     // other, which the call gives anew: a lens's put (#172), no value of the part's type of its own
-    const part = (site.hands || []).some(h => h.type && throughOf(h, "receiver"));
+    // and so is a change of a parameter the call fills through a part of a value it hands (`lender.lend(self.left)`, #181)
+    const part = (site.hands || []).some(h => h.type && throughOf(h, "receiver")), owned = changedOnlyThrough(step, site);
     for (const x of [...changes, ...(on && changes.includes(byId.get(step)?.cls) ? [on] : [])]) {
-      if (explicit || (part && x === byId.get(step)?.cls)) { if (!gives.has(x) && !cn.has("t:" + x)) m.cod.delete("t:" + x); continue; }
+      if (explicit || (part && x === byId.get(step)?.cls) || owned.has(x)) { if (!gives.has(x) && !cn.has("t:" + x)) m.cod.delete("t:" + x); continue; }
       const kind = kindKey(addPlace(typePlace(x))), held = [...dn.keys()].find(d => kindKey(d) === kind);
       for (const k of m.cod.keys()) if (held && kindKey(k) === kind && !cn.has(k)) cn.set(k, dn.get(held));
     }
@@ -1329,11 +1352,15 @@ const errorsWith = (scope, v) => { const w = withErrors.get(v); return w && w.sc
 const stepAt = P => stepOf(P.own ? frames.get(P.parent)?.step : P.steps[0]);
 const changesKind = (P, k) => (arrowOf(stepAt(P))?.changes || []).some(x => kindKey(addPlace(typePlace(x))) === kindKey(k));
 // a step that changes the value it runs on, called on a part of another (`self.left.line(..)`), makes that other anew: a change
-// made through a projection changes its owner, a lens's put (#172)
+// made through a projection changes its owner, a lens's put (#172); so does one that changes a parameter its call fills through
+// a part of another (`lender.lend(self.left)` makes the board anew, #181)
 const changesOwner = (P, k) => {
   const site = treeInfo.get(P.own ? frames.get(P.parent)?.step : P.steps[0])?.site, n = byId.get(stepAt(P));
-  if (!site || !n?.cls || !(arrowOf(n.id)?.changes || []).includes(n.cls)) return false;
-  return (site.hands || []).some(h => h.type && throughOf(h, "receiver") && kindKey(addPlace(typePlace(h.type))) === kindKey(k));
+  if (!site || !n) return false;
+  const of = h => h.type && kindKey(addPlace(typePlace(h.type))) === kindKey(k);
+  if (changedThrough(n.id, site).some(c => of(c.h))) return true;
+  if (!n.cls || !(arrowOf(n.id)?.changes || []).includes(n.cls)) return false;
+  return (site.hands || []).some(h => throughOf(h, "receiver") && of(h));
 };
 // A figure rests in what holds it (#11): a method that keeps the figure it makes in a field of the value it runs on
 // (`self.fig, self.ax = plt.subplots()`, `FIGURE_FIELDS`) keeps it in that value, so every step that runs on the value draws
