@@ -433,7 +433,13 @@ open:
   `lender.lend(self.left)` makes the board anew, its left part holding the lender's figure, also beyond the cut. Each binding that
   makes a figure is a figure the value holds: a class whose methods keep figures under two bindings (`self.fig, self.ax =
   plt.subplots()` and `self.res_fig, self.res_ax = plt.subplots()`) holds two, each named by the first field its binding sets
-  (`fit.fig`, `fit.res_fig`), and a class that keeps one names none. A part set to a whole value (`self.left = left`) is that
+  (`fit.fig`, `fit.res_fig`), and a class that keeps one names none. A figure made in an arm that a condition decides by a
+  field of the slot it is made in is that slot's figure made sure of: the slot keeps what it holds, its own or one lent to it
+  (`if self.ax is None: self.create_figure()`, the condition in the step's body or in a body that calls it on the same
+  value). One made otherwise is made anew, the slot's own, which the slot holds from then on, put over one lent to it: under
+  `if self.ax is None`, `self.res_fig, self.res_ax = plt.subplots()` makes the residuals' figure whatever `res_ax` holds. The
+  condition names the field it tests (`Node::tests`); without a lend the two readings name the one figure the slot holds.
+  A part set to a whole value (`self.left = left`) is that
   value, a lens's put (`get_left(put_left(c, b)) = c`): what the value holds the part holds, and a figure lent to either is
   lent to both, so a chart that holds a figure, set into a board's part, draws there on the figure it made. A figure is one
   figure wherever what holds it is reached, and is named where it is made, by the value that holds it there and the part
@@ -610,7 +616,8 @@ the pairs and of its programs.
 `changedThrough` and `changesOwner`,
 `coarsen`, `cutArrow` and `typesOf`, `handTo` and `checkOpenings` in `viewer/plan.js`, `cutOpenings` in `engine/tests/plans.mjs`;
 the field an argument reads, `Steps::fills` and `Steps::read_of` (`body.rs`); the class each field of a class holds, `Node::holds`;
-which parameters of no type of the code's hold a value, `builder::settle_parameters`; `tools/pictures.py`;
+which parameters of no type of the code's hold a value, `builder::settle_parameters`; the fields a condition tests,
+`Steps::tests` (`body.rs`), and whether a figure is made sure of, `guarded` in `viewer/plan.js`; `tools/pictures.py`;
 `engine/tests/plans.rs`.
 
 ### Saturation: when the order of a view does not matter

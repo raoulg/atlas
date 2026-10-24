@@ -257,6 +257,22 @@ pub struct Node {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[ts(type = "Array<[number, number, string]>")]
     pub whens: Vec<(u32, u32, String)>,
+    /// The fields the conditions that decide its body's choices read of the values they read, as the code
+    /// names them: `ax` of the instance for `if self.ax is None:` (#184).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tests: Vec<Test>,
+}
+
+/// A field a condition reads (`Node::tests`): the choice it decides, numbered as `Site::arms` numbers them,
+/// the value it reads the field of, as a call is handed it (the instance a method runs on by no name), and the
+/// field, through the fields it is reached by (`left.ax` of `self.left.ax is None`), an element left out. A
+/// condition that reads a value whole, or calls a method on it, reads no field of it.
+#[derive(Serialize, Deserialize, TS, Clone, Debug, Default, PartialEq)]
+#[ts(export)]
+pub struct Test {
+    pub choice: u32,
+    pub on: Held,
+    pub field: String,
 }
 
 impl Node {
@@ -1308,6 +1324,9 @@ impl Graph {
             for s in &mut n.sets {
                 held(&mut s.on);
                 s.from.iter_mut().for_each(held);
+            }
+            for t in &mut n.tests {
+                held(&mut t.on);
             }
             for t in n.touches.iter_mut().chain(n.instead.iter_mut()) {
                 for f in &mut t.by {

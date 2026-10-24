@@ -450,6 +450,33 @@ fn a_chart_set_whole_into_a_part_draws_there_on_the_figure_it_holds() {
     }
 }
 
+/// The guarded pair (`tests/pairs/figures/guarded`): two fits, each keeping a figure for itself and one for its residuals; the
+/// first lends its residuals' figure to the second, which draws (#184). The clean fit makes each figure only where its own
+/// field holds none (`if self.ax is None:` around `create_figure`, `if self.res_ax is None:` around `create_residuals`); the
+/// shortcut makes both under the one condition `self.ax is None`. A condition that reads a field of the slot a figure is made
+/// in makes that slot's figure sure of, and one that reads another field makes it anew: the clean second fit draws its
+/// residuals on the figure lent (three figures), the shortcut's puts a figure of its own over it (four), at every budget.
+/// What tells the sides apart is which field each condition tests (`Node::tests`).
+#[test]
+fn a_condition_makes_sure_only_of_the_figure_whose_field_it_tests() {
+    let fit = |names: &[&str]| -> BTreeSet<String> {
+        names.iter().enumerate().map(|(i, n)| format!("Figure {} · Fit · {n} right", i + 1)).collect()
+    };
+    for budget in [None, Some(1), Some(2), Some(3), Some(5)] {
+        let clean = fit(&["fit.fig", "fit.res_fig", "other.fig"]);
+        let shortcut = fit(&["fit.fig", "fit.res_fig", "other.fig", "other.res_fig"]);
+        assert_eq!(screen_of("figures/guarded", "clean", "notebooks.residuals", budget), clean, "budget {budget:?}");
+        assert_eq!(screen_of("figures/guarded", "shortcut", "notebooks.residuals", budget), shortcut, "budget {budget:?}");
+    }
+    let guarded = common::pair("figures/guarded");
+    let tests = |g: &Graph| -> Vec<(u32, String)> {
+        g.node("charts.chart.Fit.draw").expect("draw is in the graph").tests.iter().map(|t| (t.choice, t.field.clone())).collect()
+    };
+    assert_eq!(tests(&guarded.clean), [(0, "ax".to_string()), (1, "res_ax".to_string())], "a condition for each figure");
+    assert_eq!(tests(&guarded.shortcut), [(0, "ax".to_string())], "one condition, on the fit's own figure");
+    assert_eq!(bindings(&guarded.shortcut, "charts.chart.Fit.create_figures"), [["fig", "ax"], ["res_fig", "res_ax"]], "two under it");
+}
+
 /// The borrowed pair (`tests/pairs/figures/borrowed`): a board borrows another chart's figure for its left part (#181). The
 /// clean lender lends it by its own `lend`, handed the board's part (`lender.lend(self.left)` fills `other` with the board
 /// through `left`); the shortcut's board reads the lender's fields and hands them to its part's `take` itself

@@ -1,0 +1,61 @@
+# Two fits, each keeping a figure for itself and one for its residuals (#178). The first draws both; it then lends its
+# residuals' figure to the second (`other.res_fig, other.res_ax = self.res_fig, self.res_ax`), which draws. One method
+# makes both figures, under the one condition `self.ax is None`: it reads the field of the fit's own figure, not of its
+# residuals'. So the condition makes the fit's own figure sure of, and nothing of the residuals' (#184): where the second
+# fit holds no figure of its own it makes both anew, and its residuals' figure is put over the one lent. Four figures,
+# each named where it is made, as the code makes them: what the first fit lent is lost, and the shortcut shows as a
+# figure more.
+
+route notebooks.residuals
+step residuals/draw_both
+step residuals/draw_both/Fit()
+step residuals/draw_both/Fit.draw
+choice residuals/draw_both/Fit.draw/?1
+step residuals/draw_both/Fit.draw/?1/Fit.create_figures
+step residuals/draw_both/Fit()#2
+step residuals/draw_both/Fit.lend
+step residuals/draw_both/Fit.draw#2
+choice residuals/draw_both/Fit.draw#2/?1
+step residuals/draw_both/Fit.draw#2/?1/Fit.create_figures
+
+line entry > residuals call
+
+# the first fit makes both its figures where it holds none of its own
+line residuals/draw_both/Fit() > Fit·fit@residuals/draw_both/Fit() value
+line Fit·fit@residuals/draw_both/Fit() > residuals/draw_both/Fit.draw/?1/Fit.create_figures value
+line residuals/draw_both/Fit.draw/?1/Fit.create_figures > Figure 1 · Fit · fit.fig own       # `self.fig, self.ax = plt.subplots()`
+line residuals/draw_both/Fit.draw/?1/Fit.create_figures > Figure 2 · Fit · fit.res_fig own   # `self.res_fig, self.res_ax = plt.subplots()`
+line residuals/draw_both/Fit.draw/?1/Fit.create_figures > Fit·self@residuals/draw_both/Fit.draw/?1 value
+line Fit·self@residuals/draw_both/Fit.draw/?1 > residuals/draw_both/Fit.draw value   # `self.ax.plot(..)`, `self.res_ax.plot(..)`
+line residuals/draw_both/Fit.draw > Fit·fit@residuals/draw_both/Fit.draw value
+
+# it lends its residuals' figure to the second
+line residuals/draw_both/Fit()#2 > Fit·other@residuals/draw_both/Fit()#2 value
+line Fit·other@residuals/draw_both/Fit()#2 > residuals/draw_both/Fit.lend value
+line Fit·fit@residuals/draw_both/Fit.draw > residuals/draw_both/Fit.lend value   # `self.res_fig, self.res_ax`
+line residuals/draw_both/Fit.lend > Fit·other@residuals/draw_both/Fit.lend value
+
+# the second holds no figure of its own, so it makes both, the residuals' over the one lent
+line Fit·other@residuals/draw_both/Fit.lend > residuals/draw_both/Fit.draw#2/?1/Fit.create_figures value
+line residuals/draw_both/Fit.draw#2/?1/Fit.create_figures > Figure 3 · Fit · other.fig own
+line residuals/draw_both/Fit.draw#2/?1/Fit.create_figures > Figure 4 · Fit · other.res_fig own
+line residuals/draw_both/Fit.draw#2/?1/Fit.create_figures > Fit·self@residuals/draw_both/Fit.draw#2/?1 value
+line Fit·self@residuals/draw_both/Fit.draw#2/?1 > residuals/draw_both/Fit.draw#2 value
+line residuals/draw_both/Fit.draw#2 > Fit·other@residuals/draw_both/Fit.draw#2 value
+line Fit·other@residuals/draw_both/Fit.draw#2 > residuals/draw_both value   # `return other`
+line residuals/draw_both > Fit·fit@residuals/draw_both value                 # `fit = draw_both(..)`
+
+home Fit·fit@residuals/draw_both/Fit() residuals/draw_both
+home Fit·self@residuals/draw_both/Fit.draw/?1 residuals/draw_both/Fit.draw
+home Fit·fit@residuals/draw_both/Fit.draw residuals/draw_both
+home Fit·other@residuals/draw_both/Fit()#2 residuals/draw_both
+home Fit·other@residuals/draw_both/Fit.lend residuals/draw_both
+home Fit·self@residuals/draw_both/Fit.draw#2/?1 residuals/draw_both/Fit.draw#2
+home Fit·other@residuals/draw_both/Fit.draw#2 residuals/draw_both
+home Fit·fit@residuals/draw_both residuals
+
+side entry left
+side Figure 1 · Fit · fit.fig right
+side Figure 2 · Fit · fit.res_fig right
+side Figure 3 · Fit · other.fig right
+side Figure 4 · Fit · other.res_fig right

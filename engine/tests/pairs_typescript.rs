@@ -1538,6 +1538,12 @@ fn a_call_names_the_field_a_projection_reads() {
     common::a_call_names_the_field_a_projection_reads("typescript", "runs.runs");
 }
 
+/// The choices pair: a condition names the field it tests (#184), as the Python and Rust readers read it.
+#[test]
+fn a_condition_names_the_field_it_tests() {
+    common::a_condition_names_the_field_it_tests("typescript", "runs.runs");
+}
+
 /// A body's own code that sets a field of a value names the field (#168): the changes pair's `rename` sets the `category`
 /// of the expense it is handed (`x.category = name`, through the name `x` that holds it), and a parameter the signature
 /// keeps (`constructor(readonly level: Level)`) sets the field of its name of the value the constructor builds.

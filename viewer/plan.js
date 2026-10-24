@@ -1445,9 +1445,11 @@ const setsAt = (P, resolved, Cv) => {
     if (put.length) for (const v of Cv.keys()) for (const part of whole.get(originOf.get(v) || v) || []) setHeld(v, part, [originOf.get(put[0].v) || put[0].v, put[0].path, true]);
   }
 };
-const heldFigure = (h, label, part = "") => {
-  const id = "w:Screen:fig:" + h + (part ? "." + part : "") + "^held";
-  if (!places.has(id)) places.set(id, {id, label, short: label, kind: "world", figure: label, holder: h, ...(part ? {part} : {})});
+// a figure a step planned by itself draws on in a value its caller holds: the caller says which value, and, where the step
+// does not make sure of the part, whether it does (#184)
+const heldFigure = (h, label, part = "", sure = true) => {
+  const id = "w:Screen:fig:" + h + (part ? "." + part : "") + (sure ? "^held" : "^made");
+  if (!places.has(id)) places.set(id, {id, label, short: label, kind: "world", figure: label, holder: h, ...(part ? {part} : {}), ...(sure ? {sure} : {})});
   return id;
 };
 // the value a closed step's call hands it to run on, where the call writes one (`other.f()`, `self.left.f()`), as the step
@@ -1467,11 +1469,42 @@ const partRunOn = (P, resolved) => {
   const v = handedReceiver(P, resolved);
   return fieldPath(v ? partIn(c, h, v) : "", throughOf(h, "receiver"));
 };
-const figureOf = (P, k, resolved) => {
+// what a condition in the body of frame `b` reads by `h` (`Node::tests`): the instance the body runs on, with the part of it
+// the body's call runs on, or the value a parameter of it holds, with the part the call fills it through
+const readIn = (b, h) => {
+  const f = frames.get(b), self = f?.step && (byId.get(stepOf(f.step))?.params || []).find(p => p.receiver)?.name;
+  if (!h.name || h.name === self) return receiverAt.has(b) ? [receiverAt.get(b), receiverPart.get(b) || ""] : null;
+  const p = paramPart.get(b)?.get(h.name), Own = pills.get("o:" + f?.step);
+  if (p) return [p.v, p.part];
+  const w = Own && h.type && latestGet(kindKey(addPlace(typePlace(h.type))) + "|" + h.name, Own, true);
+  return w ? [w, ""] : null;
+};
+// Whether the figure a step makes in the part `part` of the value `v` is made sure of (#11): a condition that decides a choice
+// the making stands in reads a field of that part of that value (`if self.ax is None:` for the slot `fig, ax`), in the body of
+// the step itself (the arm that holds the line it is made on) or in a body that calls it. A condition that tests another field
+// (`self.ax` for the slot `res_fig, res_ax`) makes nothing sure of the part, which the step then makes anew (#184)
+const guarded = (P, v, part, line, at) => {
+  const cls = places.get(originOf.get(v) || v)?.type, slotOf = (base, t) => figurePart(cls, fieldPath(base, t.field)) === part;
+  const n = byId.get(stepAt(P)), self = (n?.params || []).find(p => p.receiver)?.name;
+  const arms = (n?.arm_lines || []).flatMap(([a, b], i) => (line != null && a <= line && line <= b ? [n.arm_choices?.[i]] : []));
+  if ((n?.tests || []).some(t => arms.includes(t.choice) && (!t.on.name || t.on.name === self) && slotOf(at, t))) return true;
+  for (let f = P.own ? frames.get(P.parent)?.parent : P.parent; f; f = frames.get(f)?.parent) {
+    const C = frames.get(f), choice = C?.synthetic && f.match(/~c(\d+)$/);
+    if (!choice) continue;
+    const b = bodyFrame(C.parent), m = byId.get(stepOf(frames.get(b)?.step || ""));
+    for (const t of (m?.tests || []).filter(t => t.choice === Number(choice[1]))) {
+      const [w, base] = readIn(b, t.on) || [];
+      if (w && sameValue(w, v) && slotOf(base, t)) return true;
+    }
+  }
+  return false;
+};
+const figureOf = (P, k, resolved, Cv) => {
   const key = P.own ? frames.get(P.parent)?.step : P.steps[0], n = byId.get(stepAt(P)), a = arrowOf(stepAt(P)), pl = places.get(k);
   const cls = treeInfo.get(key)?.on || a?.receiver || n?.cls;
   const receiver = () => handedReceiver(P, resolved) || (cls && latestGet(kindKey(addPlace(typePlace(cls))) + "|", P, true));
   let v, part = partRunOn(P, resolved);
+  const at = part;
   if (P.cut) {
     if (!pl?.holder) return k;
     v = pl.holder === "^recv" ? receiver() : P.boundOf?.get(pl.holder);
@@ -1486,8 +1519,16 @@ const figureOf = (P, k, resolved) => {
   }
   // the value is held from its first moment: one made before the step planned by itself is its caller's. A part that holds
   // the figure another part holds draws on that one's (#173)
-  const [o, held] = v ? holderOf(v, part) : [null, part];
-  if (alone && (!o || !places.get(o)?.at)) return heldFigure(o || "^recv", pl?.figure ?? k, held);
+  let [o, held] = v ? holderOf(v, part) : [null, part];
+  // made where a condition makes sure of the part, the figure is what the part holds, its own or one lent to it; made
+  // otherwise it is the part's own, made anew, and the part holds it from then on: what was lent to it is put over (#184)
+  const sure = !!pl?.sure || (!!v && guarded(P, v, part, P.cut ? null : pl?.line, at));
+  if (v && !sure) {
+    const [w, p] = resolveWhole(v, part);
+    [o, held] = [originOf.get(w) || w, p];
+    for (const x of Cv.keys()) if (isMem(x) && (originOf.get(x) || x) === (originOf.get(v) || v)) lendTo(x, part, [o, held]);
+  }
+  if (alone && (!o || !places.get(o)?.at)) return heldFigure(o || "^recv", pl?.figure ?? k, held, sure);
   // a holder the caller does not name leaves the figure the call's own
   if (!o) return P.cut ? addPlace(figurePlace(key, pl.figure)) : k;
   // a figure kept in a part of the value rests in that part: two parts hold two figures. It is one figure wherever what holds
@@ -1582,7 +1623,7 @@ for (const P of pills.values()) {
   // here, which values those are
   for (const [c, cp, d, dp, whole] of P.holds || []) { const v = madeOfKey.get(c), w = P.boundOf?.get(d); if (v && w) { if (whole) setHeld(v, cp, [originOf.get(w) || w, dp, true]); else lendTo(v, cp, holderOf(w, dp)); } }
   setsAt(P, resolved, Cv);
-  for (const [k, r] of figs) { const f = figureOf(P, k, resolved); Cv.set(f, r); if (mult && P.mult.C.has(k)) mult.C.set(f, P.mult.C.get(k)); }
+  for (const [k, r] of figs) { const f = figureOf(P, k, resolved, Cv); Cv.set(f, r); if (mult && P.mult.C.has(k)) mult.C.set(f, P.mult.C.get(k)); }
   // a call whose signature gives its error in the sum it gives (`Result<T, E>`) and which hands no error on gives the sum:
   // what takes its result takes its error with it (`store.save_rates(base, rates::fetch(..))`, #138)
   const info = treeInfo.get(P.own ? frames.get(P.parent)?.step : P.steps[0]);
