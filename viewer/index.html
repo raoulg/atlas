@@ -350,6 +350,13 @@ window.DATA = /*__DATA__*/null;
 </script>
 <script>
 (function(){
+const template = document.getElementById("app").cloneNode(true);
+let dispose = () => {};
+function mount(data, resume = null) {
+window.DATA = data;
+const controller = new AbortController(), intervals = [];
+const listen = (target, event, handler, capture = false) => target.addEventListener(event, handler, {capture, signal: controller.signal});
+const every = (handler, delay) => intervals.push(setInterval(handler, delay));
 document.querySelector("header .brand img").src = document.querySelector("link[rel=icon]").href;
 document.getElementById("version").textContent = window.DATA.atlas || "";
 const ALL = window.DATA.projects, names = Object.keys(ALL);
@@ -420,7 +427,7 @@ function clicks(node, once, twice) {
     if (t) { clearTimeout(t); t = null; twice(ev); } else t = setTimeout(() => { t = null; once(ev); }, 230);
   });
 }
-document.addEventListener("keydown", ev => { if (ev.key === "Escape" && pinned.size) { pinned.clear(); repaintPins(); crumbs(); } });
+listen(document, "keydown", ev => { if (ev.key === "Escape" && pinned.size) { pinned.clear(); repaintPins(); crumbs(); } });
 svg.call(zoom).on("dblclick.zoom", null);
 // a double click on empty space lets the pinned boxes go
 svg.on("dblclick.pins", ev => { if (pinned.size && !ev.target.closest("g.tstep, g.tnode")) { pinned.clear(); repaintPins(); crumbs(); } });
@@ -442,11 +449,11 @@ document.getElementById("zout").onclick = () => svg.transition().duration(150).c
 document.getElementById("zone").onclick = () => { const t = d3.zoomTransform(svg.node()); svg.transition().duration(200).call(zoom.transform, d3.zoomIdentity.translate(t.x, t.y).scale(1)); };
 let userZoomed = false;
 zoom.on("zoom.user", ev => { if (ev.sourceEvent) userZoomed = true; });
-window.addEventListener("resize", () => { if (!userZoomed) fit(); });
+listen(window, "resize", () => { if (!userZoomed) fit(); });
 { const rz = document.getElementById("resizer"); let drag = false;
   rz.addEventListener("mousedown", e => { drag = true; e.preventDefault(); document.body.style.cursor = "col-resize"; });
-  window.addEventListener("mousemove", e => { if (!drag) return; const w = Math.max(360, Math.min(window.innerWidth - 420, window.innerWidth - e.clientX)); document.documentElement.style.setProperty("--aside-w", w + "px"); });
-  window.addEventListener("mouseup", () => { if (drag) { drag = false; document.body.style.cursor = ""; if (!userZoomed) fit(); } }); }
+  listen(window, "mousemove", e => { if (!drag) return; const w = Math.max(360, Math.min(window.innerWidth - 420, window.innerWidth - e.clientX)); document.documentElement.style.setProperty("--aside-w", w + "px"); });
+  listen(window, "mouseup", () => { if (drag) { drag = false; document.body.style.cursor = ""; if (!userZoomed) fit(); } }); }
 let defs = el("defs", {}, svg.node());
 // the code panel opens on demand (space shows the code over the picture); opened, the canvas gives it
 // room, and the choice is remembered in this browser
@@ -460,7 +467,7 @@ let defs = el("defs", {}, svg.node());
 { const keys = document.getElementById("keys"), show = open => { keys.hidden = !open; };
   document.getElementById("keyshelp").onclick = () => show(true);
   keys.addEventListener("click", ev => { if (ev.target === keys) show(false); });
-  document.addEventListener("keydown", ev => {
+  listen(document, "keydown", ev => {
     if (ev.target.closest && ev.target.closest("input, select, textarea")) return;
     if (ev.key === "?") { ev.preventDefault(); show(keys.hidden); }
     else if (ev.key === "Escape" && !keys.hidden) { show(false); ev.stopImmediatePropagation(); }
@@ -470,7 +477,7 @@ let defs = el("defs", {}, svg.node());
 let hoverTarget = null;  // shows what is under the pointer in the inspector
 { const app = document.getElementById("app");
   const peek = open => app.classList.toggle("peek", open);
-  document.addEventListener("keydown", ev => {
+  listen(document, "keydown", ev => {
     if (ev.target.closest && ev.target.closest("input, select, textarea")) return;
     const peeking = app.classList.contains("peek");
     if (ev.key === " " && app.classList.contains("noaside")) {
@@ -669,6 +676,7 @@ function setView(o) {
   const linked = (location.hash.match(/[#&]v=([^&]*)/) || [])[1];
   try { if (linked) setView(JSON.parse(decodeURIComponent(linked))); else if (D.view) setView(D.view); } catch {}
 }
+if (resume?.state) setView(resume.state);
 // the reading a union's picture shows: A, B, or both ("u"); written to the address beside the view
 let SHOWN = DIFF ? (location.hash.match(/[#&]d=([ab])/) || [])[1] || "u" : "u";
 const writeView = () => { const o = viewData(); try { history.replaceState(null, "", `#p=${current}` + (Object.keys(o).length ? `&v=${encodeURIComponent(JSON.stringify(o))}` : "") + (SHOWN !== "u" ? `&d=${SHOWN}` : "")); } catch {} };
@@ -1970,8 +1978,8 @@ function fault(err) {
   faultEl.appendChild(copy);
   faultEl.hidden = false;
 }
-window.addEventListener("error", e => fault(e.error || e.message));
-window.addEventListener("unhandledrejection", e => fault(e.reason));
+listen(window, "error", e => fault(e.error || e.message));
+listen(window, "unhandledrejection", e => fault(e.reason));
 // the render in progress: a picture laid out after a newer render began is dropped
 let renderSeq = 0;
 async function render() {
@@ -2154,14 +2162,27 @@ async function point(at) {
   setTimeout(() => target.classList.remove("pointed"), 2400);
   if (!a) setTimeout(() => centre(at), SETTLED);
 }
-// the code changed: the server has drawn the page anew, and the page reloads to it, in the view it
-// was in. The route and what is opened are in the address; the tab, the selected box, the pinned
-// ones and where the picture stands are kept for the reload here
+// A served reading installs its own model and event handlers; the view survives a new reading.
 let back = null;
-function redraw() {
-  const t = d3.zoomTransform(svg.node());
-  try { sessionStorage.setItem("atlas.redraw", JSON.stringify({view, selected, pinned: [...pinned], t: [t.x, t.y, t.k]})); } catch {}
-  location.reload();
+let updating = false;
+async function redraw() {
+  if (updating) return;
+  updating = true;
+  try {
+    const response = await fetch("/api/snapshot");
+    if (!response.ok) return;
+    const data = await response.json();
+    if (Object.values(data.projects)[0]?.drawn === D.drawn) return;
+    const t = d3.zoomTransform(svg.node());
+    const resume = {view, selected, pinned: [...pinned], t: [t.x, t.y, t.k], state: viewData()};
+    dispose();
+    document.getElementById("app").replaceWith(template.cloneNode(true));
+    mount(data, resume);
+  } catch (err) {
+    const fault = document.getElementById("fault");
+    fault.textContent = String(err);
+    fault.hidden = false;
+  } finally { updating = false; }
 }
 function comeBack() {
   if (!back) return;
@@ -2174,8 +2195,8 @@ function comeBack() {
 const noteEl = html("div"); noteEl.id = "notefield"; noteEl.hidden = true; document.body.appendChild(noteEl);
 // the field goes with Esc, wherever the focus is, with its ✕, and with a click beside it
 const dropNote = () => { noteEl.hidden = true; };
-document.addEventListener("keydown", ev => { if (ev.key === "Escape" && !noteEl.hidden) { dropNote(); ev.stopImmediatePropagation(); } }, true);
-document.addEventListener("mousedown", ev => { if (!noteEl.hidden && !noteEl.contains(ev.target)) dropNote(); }, true);
+listen(document, "keydown", ev => { if (ev.key === "Escape" && !noteEl.hidden) { dropNote(); ev.stopImmediatePropagation(); } }, true);
+listen(document, "mousedown", ev => { if (!noteEl.hidden && !noteEl.contains(ev.target)) dropNote(); }, true);
 // on a box or line with a resolved note, it opens that note again, with a new line
 function noteField(x, y, on, label) {
   const again = NOTES.filter(n => n.on === on && n.state === "resolved").at(-1)?.id;
@@ -2210,7 +2231,7 @@ if (D.served) {
     }
   }, true);
   // an agent's "look here": the view it asks for and what it points at there, taken once
-  setInterval(async () => {
+  every(async () => {
     try {
       const r = await fetch("/api/look");
       if (r.status !== 200) return;
@@ -2225,9 +2246,9 @@ if (D.served) {
       if (at) point(at);
     } catch {}
   }, 1000);
-  setInterval(loadNotes, 3000);
+  every(loadNotes, 3000);
   loadNotes();
-  try { back = JSON.parse(sessionStorage.getItem("atlas.redraw")); sessionStorage.removeItem("atlas.redraw"); } catch {}
+  if (resume) back = resume;
   if (back) { view = back.view; document.querySelectorAll(".tabs button").forEach(x => x.setAttribute("aria-selected", x.dataset.view === view)); }
   // the page follows the code, a moment after the server has drawn it; not while the reader writes a
   // note or a symbol to jump to, when the header says that the code changed instead
@@ -2238,7 +2259,7 @@ if (D.served) {
     readState.classList.add("working");
     readState.textContent = "Step 2 of 3 · Showing project code · Following library calls…";
   }
-  setInterval(async () => {
+  every(async () => {
     try {
       const s = await (await fetch("/api/drawn")).json();
       const ready = s.drawn && s.drawn !== D.drawn, busy = !noteEl.hidden || document.activeElement?.id === "search";
@@ -2268,5 +2289,16 @@ if (D.served) {
 // a link to a place (`#v=…&at=…`, the place of a note) points at it once the picture is drawn
 const linkedAt = (location.hash.match(/[#&]at=([^&]*)/) || [])[1];
 render().then(comeBack).then(() => { if (linkedAt) point(decodeURIComponent(linkedAt)); });
+dispose = () => { controller.abort(); intervals.forEach(clearInterval); noteEl.remove(); renderSeq++; };
+}
+if (window.DATA) mount(window.DATA);
+else fetch("/api/snapshot").then(response => {
+  if (!response.ok) throw new Error("Atlas has no complete snapshot to show");
+  return response.json();
+}).then(data => mount(data)).catch(error => {
+  const fault = document.getElementById("fault");
+  fault.textContent = String(error);
+  fault.hidden = false;
+});
 })();
 </script>

@@ -82,7 +82,11 @@ A package named on its own (`atlas view src/pkg`) is read as the project it is i
 package: finding the project is part of reading, and nothing after it looks at the disk. A
 worktree's `.atlas/index/` keeps each part's graph between readings, with the listed files, the
 contents the part read and its language environment as the conditions for reuse. CLI, serve and
-MCP read through the same index; `--no-cache` reads anew.
+MCP read through the same index; `--no-cache` reads anew. A reading checks its complete input
+witness before it is published, including the repository listing and external environment.
+`atlas serve` keeps the last complete reading available while the next is drawn. Its viewer loads
+one HTML shell and receives each complete graph, flow and set of findings at `/api/snapshot`;
+the selected route, filters and opened boxes belong to the view across those readings.
 What a library's code and types are is the environment's, not the repository's: read by ty, from `node_modules`, from where Cargo keeps a crate. **Graph** is the one central type: typed nodes
 (modules, classes, functions) and typed edges, and on each function the places in the
 world its calls touch. Everything between parsing and drawing is `Graph → Graph`.

@@ -107,7 +107,7 @@ fn a_client_initializes_lists_and_calls() {
 fn atlas_view_reads_as_its_algebra() {
     let replies = session(&[
         call(1, "route", json!({ "entry": "atlas.view", "depth": 1 })),
-        call(2, "route", json!({ "entry": "atlas.view", "depth": 5 })),
+        call(2, "route", json!({ "entry": "atlas.view", "depth": 6 })),
     ]);
     let route = text(&replies[0]);
     // the steps at depth 1, without their numbers
@@ -131,7 +131,8 @@ fn atlas_view_reads_as_its_algebra() {
     assert!(step("open(target)").ends_with("when shown_in_browser"), "{route}");
     // the flow and the findings are steps of their own, handed to the step that makes the page
     assert!(!steps.iter().any(|s| s.contains("check(") || s.contains("viewer(")), "{route}");
-    // the reading is the line's start: the repository read into a `Repo`, each part parsed into a `Graph`
+    // the reading contains the repository read before each part's parse; intervening functions
+    // have their own arrows and their number is not part of the algebra
     let deep = text(&replies[1]);
     let reading = &deep[..deep.find("\n2  ").unwrap_or(deep.len())];
     let at = |step: &str| reading.find(step).unwrap_or_else(|| panic!("`{step}` in the reading:\n{deep}"));

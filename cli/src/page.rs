@@ -173,20 +173,18 @@ impl Html {
     /// The viewer holding one graph, its flow and its findings, and, where the graph is the union
     /// of two readings, how it stands to them; opened where `opens` says.
     pub(crate) fn of(graph: &Graph, flow: &Flow, findings: &Findings, compared: Option<&Compared>, opens: &Opens) -> Result<Html> {
-        let project = Project {
-            graph,
-            flow,
-            findings: &findings.found,
-            diff: compared.zip(findings.changed).map(|(compared, findings)| Marked { compared, findings }),
-            open: opens.route.as_deref(),
-            view: opens.sight.as_ref(),
-            served: opens.served.is_some(),
-            drawn: opens.served.as_deref(),
-            preliminary: opens.preliminary,
-        };
-        let payload = Payload { projects: BTreeMap::from([(graph.root.as_str(), project)]), atlas: crate::version::VERSION.as_str() };
-        let payload = serde_json::to_string(&payload)?.replace("</", "<\\/");
+        let payload = payload(graph, flow, findings, compared, opens)?.replace("</", "<\\/");
         Ok(Html(VIEWER.replacen("/*__PLAN__*/", PLAN, 1).replacen("/*__FONTS__*/", FONTS, 1).replacen("/*__DATA__*/null", &payload, 1)))
+    }
+
+    /// The served viewer, which asks the server for the current complete snapshot.
+    pub(crate) fn shell() -> Html {
+        Html(VIEWER.replacen("/*__PLAN__*/", PLAN, 1).replacen("/*__FONTS__*/", FONTS, 1))
+    }
+
+    /// The viewer's complete model, for a served page to receive without loading HTML again.
+    pub(crate) fn payload(graph: &Graph, flow: &Flow, findings: &Findings, compared: Option<&Compared>, opens: &Opens) -> Result<String> {
+        payload(graph, flow, findings, compared, opens)
     }
 
     /// The page as a file at `out`, in a folder made for it where there is none.
@@ -196,6 +194,22 @@ impl Html {
         }
         std::fs::write(out, &self.0).with_context(|| format!("writing {}", out.display()))
     }
+}
+
+fn payload(graph: &Graph, flow: &Flow, findings: &Findings, compared: Option<&Compared>, opens: &Opens) -> Result<String> {
+    let project = Project {
+        graph,
+        flow,
+        findings: &findings.found,
+        diff: compared.zip(findings.changed).map(|(compared, findings)| Marked { compared, findings }),
+        open: opens.route.as_deref(),
+        view: opens.sight.as_ref(),
+        served: opens.served.is_some(),
+        drawn: opens.served.as_deref(),
+        preliminary: opens.preliminary,
+    };
+    let payload = Payload { projects: BTreeMap::from([(graph.root.as_str(), project)]), atlas: crate::version::VERSION.as_str() };
+    Ok(serde_json::to_string(&payload)?)
 }
 
 impl From<Html> for String {

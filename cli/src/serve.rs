@@ -2,8 +2,8 @@
 //! says what it shows, goes where an agent points it, and keeps the notes its reader writes on boxes
 //! and lines; all three are files of `.atlas/` (`shared`), which `atlas mcp` reads and writes too.
 //!
-//! The page is the working tree's, and follows it: when a file Atlas reads changes, the server draws
-//! the page anew and the open page reloads in the view it was in. Beside it, at `/history`, the
+//! The page is the working tree's, and follows it: when a file Atlas reads changes, the server publishes
+//! a complete snapshot and the open page draws it in the view it was in. Beside it, at `/history`, the
 //! history of `atlas history`, so that two commits are a click away.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -34,7 +34,7 @@ type Stamps = BTreeMap<PathBuf, Stamp>;
 struct Drawn {
     stamps: Stamps,
     id: String,
-    html: String,
+    data: String,
     complete: bool,
 }
 
@@ -114,8 +114,9 @@ impl Server {
         }
         let json = |v: Result<Value>| v.map_or_else(Answer::failed, |v| Answer::json(v.to_string()));
         match (req.method.as_str(), req.path.as_str()) {
-            ("GET", "/") => Answer::page(self.kept().map_or_else(|| LOADING.to_string(), |d| d.html.clone())),
+            ("GET", "/") => Answer::page(self.kept().map_or_else(|| LOADING.to_string(), |_| Html::shell().into())),
             ("GET", "/api/drawn") => Answer::json(self.drawn().to_string()),
+            ("GET", "/api/snapshot") => self.kept().map_or_else(Answer::none, |d| Answer::json(d.data.clone())),
             ("GET", "/export") => {
                 self.export(req).map_or_else(Answer::failed, |(name, html)| Answer::download(format!("{name}.html"), html))
             }
@@ -181,15 +182,10 @@ impl Server {
         let findings = read.findings();
         let (graph, compared) = read.drawn();
         let flow = atlas_engine::flow::of(&graph);
-        let html = Html::of(
-            &graph,
-            &flow,
-            &findings,
-            compared.as_ref(),
-            &Opens { route: None, sight: None, served: Some(id.to_string()), preliminary },
-        )?;
+        let opens = Opens { route: None, sight: None, served: Some(id.to_string()), preliminary };
+        let data = Html::payload(&graph, &flow, &findings, compared.as_ref(), &opens)?;
         self.log.say(Who::Atlas, &format!("drew {}{}", if preliminary { "local code · " } else { "" }, page::summary(&graph)));
-        Ok(Drawn { stamps: stamps.clone(), id: id.to_string(), html: html.into(), complete: !preliminary })
+        Ok(Drawn { stamps: stamps.clone(), id: id.to_string(), data, complete: !preliminary })
     }
 
     fn kept(&self) -> Option<Arc<Drawn>> {
