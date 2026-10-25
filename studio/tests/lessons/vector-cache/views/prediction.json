@@ -1,0 +1,6 @@
+{
+  "route": "_root.demo",
+  "open": {
+    "functions": ["_root.demo.nearest"]
+  }
+}

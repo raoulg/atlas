@@ -5,6 +5,10 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Atlas Studio</title>
   <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="lesson.css">
+  <script defer src="lesson.js"></script>
+  <script defer src="lesson.html.js"></script>
+  <script defer src="lesson.mount.js"></script>
   <script defer src="studio.js"></script>
 </head>
 <body>
@@ -12,6 +16,7 @@
     <header class="topbar">
       <div class="brand"><span class="mark">A</span> Atlas <span class="brand-light">/ studio</span></div>
       <div class="project"><span id="project-name">No workspace</span><span id="project-path"></span></div>
+      <button id="insert-atlas-view" class="open-button" type="button" hidden>Insert view in lesson</button>
       <button id="open-workspace" class="open-button" type="button">Open workspace</button>
     </header>
     <div class="workbench">
@@ -19,6 +24,8 @@
         <div class="side-label">WORKSPACE</div>
         <button class="side-tab active" type="button" data-view="atlas" aria-current="page"><span>◇</span> Atlas view</button>
         <button class="side-tab" type="button" data-view="history"><span>◷</span> History</button>
+        <div class="side-label lessons-label">LESSONS</div>
+        <div id="lesson-list" class="lesson-list"></div>
         <div class="side-spacer"></div>
         <div class="side-path" id="side-path">Open a repository to begin.</div>
       </nav>
@@ -35,6 +42,7 @@
         <section id="views" class="views" aria-label="Atlas workspace" hidden>
           <iframe id="atlas-frame" title="Atlas view" referrerpolicy="no-referrer"></iframe>
           <iframe id="history-frame" title="Atlas history" referrerpolicy="no-referrer" hidden></iframe>
+          <section id="lesson-panel" aria-label="Lesson" hidden></section>
         </section>
       </main>
     </div>

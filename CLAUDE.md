@@ -254,6 +254,7 @@ Two long-lived branches, one release train. Everything else is a short-lived top
   project and re-locks `uv.lock`, and ty then reads that `.venv` as the project's environment.
   Pass the project's path as an argument instead.
 - The shell is zsh: a loop over subjects must not name its variable `path` (`while read name path`),
-  since zsh ties `path` to `$PATH` and every command in the body is then "not found". `atlas analyze`
+  since zsh ties `path` to `$PATH` and every command in the body is then "not found". `status` is
+  read-only in zsh; store a command's exit code in a task-specific variable. `atlas analyze`
   and `atlas view` write into `.atlas/` at the top of the subject's git repository unless given
   `-o`/`--out`; give the scratchpad when the subject is not ours.
