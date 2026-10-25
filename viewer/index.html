@@ -342,9 +342,9 @@ pre.code .l::before{counter-increment:ln;content:counter(ln);display:inline-bloc
   <div id="ask" role="tooltip" hidden></div>
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/elkjs@0.9.3/lib/elk.bundled.js"></script>
+<script>/*__D3__*/</script>
+<script>/*__HIGHLIGHT__*/</script>
+<script>/*__ELK__*/</script>
 <script>
 window.DATA = /*__DATA__*/null;
 </script>
@@ -755,7 +755,7 @@ let PICTURE = {boxes: new Map(), lines: []};
 // ELK works in a worker of its own, so the page stays usable and says what is coming while it works; a
 // worker that cannot start (its script out of reach) leaves the layout to the page's own ELK. The same
 // input gives the same layout, so a picture seen before is drawn from what was kept.
-const ELK_SCRIPT = "https://cdn.jsdelivr.net/npm/elkjs@0.9.3/lib/elk-worker.min.js", KEPT = 48;
+const ELK_WORKER = /*__ELK_WORKER__*/null, KEPT = 48;
 const SUPERSEDED = new Error("laid out for a picture no longer asked for");
 const LAYOUTS = new Map();      // input → the promise of its layout, the least recently used first
 const rate = {ms: 0, size: 0};  // how long this page's layouts took, by their boxes and lines
@@ -767,7 +767,7 @@ const startWorker = () => {
   broken.catch(() => {});
   let elk = null;
   try {
-    elkUrl ||= URL.createObjectURL(new Blob([`importScripts(${JSON.stringify(ELK_SCRIPT)})`], {type: "text/javascript"}));
+    elkUrl ||= URL.createObjectURL(new Blob([ELK_WORKER], {type: "text/javascript"}));
     elk = new ELK({workerFactory: () => { const w = new Worker(elkUrl); w.addEventListener("error", e => { e.preventDefault(); fail(e); }); return w; }});
   } catch (e) { fail(e); }
   return {elk, broken, job: null};

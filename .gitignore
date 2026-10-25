@@ -9,3 +9,7 @@ engine/bindings/
 # stray analyze output
 graph.json
 *.graph.json
+
+studio/src-tauri/binaries/
+studio/src-tauri/target/
+studio/src-tauri/gen/schemas/

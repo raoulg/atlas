@@ -1,5 +1,6 @@
 [workspace]
 members = ["engine", "cli"]
+exclude = ["studio/src-tauri"]
 resolver = "2"
 
 [workspace.package]

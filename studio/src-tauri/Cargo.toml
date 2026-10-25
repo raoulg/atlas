@@ -1,0 +1,22 @@
+[package]
+name = "atlas-studio"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.90"
+license = "CC-BY-NC-SA-4.0"
+repository = "https://github.com/raoulg/atlas"
+build = "build.rs"
+
+[[bin]]
+name = "atlas-studio"
+path = "src/main.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+tauri = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-shell = "2"
+tokio = { version = "1", features = ["sync", "time"] }
+
+[build-dependencies]
+tauri-build = "2"

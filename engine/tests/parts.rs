@@ -21,8 +21,8 @@ fn label(g: &Graph, id: &str) -> String {
     g.node(id).and_then(|n| n.entry.as_ref()).map(|e| e.label.clone()).unwrap_or_default()
 }
 
-/// A manifest roots a part in its language; tests' fixtures and a workspace's member crates
-/// are not parts of their own.
+/// A manifest roots a part in its language; a Cargo workspace and a separate app crate
+/// have distinct roots.
 #[test]
 fn every_manifest_roots_a_part() {
     let found: Vec<(String, &str)> = roots(&Repo::read(&fixture(), &[]).unwrap(), &Options::default())
@@ -30,11 +30,10 @@ fn every_manifest_roots_a_part() {
         .map(|(d, l)| (d.file_name().unwrap().to_string_lossy().to_string(), l))
         .collect();
     assert_eq!(found, [("fixture-parts".to_string(), "python"), ("web".to_string(), "typescript")]);
-    let atlas = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
+    let atlas = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").canonicalize().unwrap();
     assert_eq!(
-        roots(&Repo::read(&atlas, &[]).unwrap(), &Options::default()).len(),
-        1,
-        "the workspace is one root; engine/tests holds data"
+        roots(&Repo::read(&atlas, &[]).unwrap(), &Options::default()),
+        [(atlas.clone(), "rust"), (atlas.join("studio/src-tauri"), "rust")],
     );
 }
 

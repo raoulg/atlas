@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Atlas Studio</title>
+  <link rel="stylesheet" href="style.css">
+  <script defer src="studio.js"></script>
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand"><span class="mark">A</span> Atlas <span class="brand-light">/ studio</span></div>
+      <div class="project"><span id="project-name">No workspace</span><span id="project-path"></span></div>
+      <button id="open-workspace" class="open-button" type="button">Open workspace</button>
+    </header>
+    <div class="workbench">
+      <nav class="sidebar" aria-label="Workspace sections">
+        <div class="side-label">WORKSPACE</div>
+        <button class="side-tab active" type="button" data-view="atlas" aria-current="page"><span>◇</span> Atlas view</button>
+        <button class="side-tab" type="button" data-view="history"><span>◷</span> History</button>
+        <div class="side-spacer"></div>
+        <div class="side-path" id="side-path">Open a repository to begin.</div>
+      </nav>
+      <main class="content">
+        <div id="welcome" class="welcome">
+          <div class="welcome-mark">◇</div>
+          <p class="eyebrow">ATLAS STUDIO</p>
+          <h1>A place to read software together.</h1>
+          <p>Choose a repository to open its live Atlas view and history.</p>
+          <button id="welcome-open" class="primary-button" type="button">Open workspace <span>↗</span></button>
+        </div>
+        <div id="loading" class="message" hidden>Opening workspace…</div>
+        <div id="error" class="message error" role="alert" hidden></div>
+        <section id="views" class="views" aria-label="Atlas workspace" hidden>
+          <iframe id="atlas-frame" title="Atlas view" referrerpolicy="no-referrer"></iframe>
+          <iframe id="history-frame" title="Atlas history" referrerpolicy="no-referrer" hidden></iframe>
+        </section>
+      </main>
+    </div>
+    <footer class="statusbar"><span class="status-dot"></span><span id="status-text">Ready</span><span class="status-right">Atlas Studio</span></footer>
+  </div>
+</body>
+</html>

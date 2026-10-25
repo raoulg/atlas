@@ -18,6 +18,10 @@ use serde::Serialize;
 /// The viewer, baked into the binary, with its model and its fonts: the layout of the graph it is handed.
 const VIEWER: &str = include_str!("../../viewer/index.html");
 const PLAN: &str = include_str!("../../viewer/plan.js");
+const D3: &str = include_str!("../../viewer/vendor/d3.min.js");
+const HIGHLIGHT: &str = include_str!("../../viewer/vendor/highlight.min.js");
+const ELK: &str = include_str!("../../viewer/vendor/elk.bundled.js");
+const ELK_WORKER: &str = include_str!("../../viewer/vendor/elk-worker.min.js");
 pub(crate) const FONTS: &str = include_str!("../../viewer/fonts.css");
 
 /// What a page draws, as read: the parts of the repositories, each read in its own language, and,
@@ -174,12 +178,23 @@ impl Html {
     /// of two readings, how it stands to them; opened where `opens` says.
     pub(crate) fn of(graph: &Graph, flow: &Flow, findings: &Findings, compared: Option<&Compared>, opens: &Opens) -> Result<Html> {
         let payload = payload(graph, flow, findings, compared, opens)?.replace("</", "<\\/");
-        Ok(Html(VIEWER.replacen("/*__PLAN__*/", PLAN, 1).replacen("/*__FONTS__*/", FONTS, 1).replacen("/*__DATA__*/null", &payload, 1)))
+        Ok(Html(Self::template().replacen("/*__DATA__*/null", &payload, 1)))
     }
 
     /// The served viewer, which asks the server for the current complete snapshot.
     pub(crate) fn shell() -> Html {
-        Html(VIEWER.replacen("/*__PLAN__*/", PLAN, 1).replacen("/*__FONTS__*/", FONTS, 1))
+        Html(Self::template())
+    }
+
+    fn template() -> String {
+        let worker = serde_json::to_string(ELK_WORKER).expect("worker source is serializable").replace("</", "<\\/");
+        VIEWER
+            .replacen("/*__PLAN__*/", PLAN, 1)
+            .replacen("/*__FONTS__*/", FONTS, 1)
+            .replacen("/*__D3__*/", D3, 1)
+            .replacen("/*__HIGHLIGHT__*/", HIGHLIGHT, 1)
+            .replacen("/*__ELK__*/", ELK, 1)
+            .replacen("/*__ELK_WORKER__*/null", &worker, 1)
     }
 
     /// The viewer's complete model, for a served page to receive without loading HTML again.
@@ -235,5 +250,23 @@ pub(crate) fn open(target: &std::ffi::OsStr) {
     let status = std::process::Command::new("cmd").args(["/C", "start", ""]).arg(target).status();
     if let Err(e) = status {
         eprintln!("could not open a browser ({e}); open {} yourself", target.to_string_lossy());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Html;
+
+    #[test]
+    fn viewer_carries_its_scripts_for_offline_opening() {
+        let page: String = Html::shell().into();
+        for marker in ["/*__D3__*/", "/*__HIGHLIGHT__*/", "/*__ELK__*/", "/*__ELK_WORKER__*/null"] {
+            assert!(!page.contains(marker), "missing embedded asset: {marker}");
+        }
+        assert!(page.contains("https://d3js.org v7.9.0"));
+        assert!(page.contains("highlightAuto"));
+        assert!(page.contains("ELK_WORKER = \""));
+        assert!(!page.contains("<script src=\"https://"));
+        assert!(!page.contains("importScripts(\"https://"));
     }
 }

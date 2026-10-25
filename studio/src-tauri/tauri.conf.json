@@ -1,0 +1,35 @@
+{
+  "productName": "Atlas Studio",
+  "version": "0.1.0",
+  "identifier": "io.github.raoulg.atlas-studio",
+  "build": {
+    "frontendDist": "../ui"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "security": {
+      "csp": null
+    },
+    "windows": [
+      {
+        "label": "main",
+        "title": "Atlas Studio",
+        "width": 1320,
+        "height": 820,
+        "minWidth": 850,
+        "minHeight": 560
+      }
+    ]
+  },
+  "bundle": {
+    "active": true,
+    "externalBin": [
+      "binaries/atlas"
+    ],
+    "icon": [
+      "icons/icon.png",
+      "icons/icon.ico",
+      "icons/icon.icns"
+    ]
+  }
+}
