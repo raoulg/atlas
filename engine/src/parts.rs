@@ -60,6 +60,16 @@ pub fn graph_of(repo: &Repo, opts: &Options) -> Result<Graph> {
 /// Each part's own graph, read in its language: what `atlas check` asks, part by part. Each
 /// repository is read once; a part is a view of its reading.
 pub fn analyze_parts(repos: &[PathBuf], opts: &Options) -> Result<Vec<Graph>> {
+    for _ in 0..3 {
+        if let Some(graphs) = read_current_parts(repos, opts)? {
+            return Ok(graphs);
+        }
+    }
+    anyhow::bail!("repository changed while Atlas was reading it")
+}
+
+/// A complete reading of the listed repository and the source files its parts consume.
+fn read_current_parts(repos: &[PathBuf], opts: &Options) -> Result<Option<Vec<Graph>>> {
     let read: Vec<Repo> = repos.iter().map(|r| crate::language::read(r, opts)).collect::<Result<_>>()?;
     // each part with where it lies: its directory in its repository, behind the repository's name
     // when several are read
@@ -82,11 +92,18 @@ pub fn analyze_parts(repos: &[PathBuf], opts: &Options) -> Result<Vec<Graph>> {
     }
     let opts = Options { package: None, ..opts.clone() };
     let mut graphs = vec![];
+    let mut witnesses = vec![];
     for (part, at) in &found {
         match indexed_graph(part, &opts) {
             // a manifest without code of its own (tooling, a docs site, a workspace's root) is not a part
-            Ok(g) if g.nodes.is_empty() && found.len() > 1 => eprintln!("skipped {}: no code of its own", part.root().display()),
-            Ok(g) => graphs.push((g, at.clone())),
+            Ok((g, witness)) if g.nodes.is_empty() && found.len() > 1 => {
+                witnesses.push((part, witness));
+                eprintln!("skipped {}: no code of its own", part.root().display());
+            }
+            Ok((g, witness)) => {
+                witnesses.push((part, witness));
+                graphs.push((g, at.clone()));
+            }
             Err(e) if found.len() > 1 => eprintln!("skipped {}: {e}", part.root().display()),
             Err(e) => return Err(e),
         }
@@ -94,7 +111,11 @@ pub fn analyze_parts(repos: &[PathBuf], opts: &Options) -> Result<Vec<Graph>> {
     if graphs.is_empty() {
         anyhow::bail!("no code found in {}", repos.iter().map(|r| r.display().to_string()).collect::<Vec<_>>().join(", "));
     }
-    Ok(apart(graphs))
+    let current: Vec<Repo> = repos.iter().map(|r| crate::language::read(r, &opts)).collect::<Result<_>>()?;
+    let stable =
+        read.iter().zip(&current).all(|(before, after)| before.listed_files() == after.listed_files() && before.stamps() == after.stamps())
+            && witnesses.iter().all(|(part, witness)| witness.current(part));
+    Ok(stable.then(|| apart(graphs)))
 }
 
 /// One part's complete analysis and the inputs that make it current.
@@ -107,11 +128,25 @@ struct Snapshot {
     graph: Graph,
 }
 
+struct Witness {
+    read: BTreeMap<PathBuf, String>,
+    environment: Vec<(Check, String)>,
+}
+
+impl Witness {
+    fn current(&self, part: &Repo) -> bool {
+        self.read.iter().all(|(path, was)| part.listed_bytes(path).is_some_and(|bytes| crate::cache::digest(&bytes) == *was))
+            && crate::cache::holds(&self.environment)
+    }
+}
+
 impl Snapshot {
     fn current(&self, part: &Repo) -> bool {
-        self.listed == part.listed_files()
-            && self.read.iter().all(|(path, was)| part.listed_bytes(path).is_some_and(|bytes| crate::cache::digest(&bytes) == *was))
-            && crate::cache::holds(&self.environment)
+        self.listed == part.listed_files() && self.witness().current(part)
+    }
+
+    fn witness(&self) -> Witness {
+        Witness { read: self.read.clone(), environment: self.environment.clone() }
     }
 
     fn graph(mut self) -> Option<Graph> {
@@ -121,8 +156,14 @@ impl Snapshot {
 
 /// A part from the worktree index where its listed files, read contents and language environment
 /// stand as they did; otherwise a fresh reading kept as a complete entry.
-fn indexed_graph(part: &Repo, opts: &Options) -> Result<Graph> {
-    let Some(cache) = opts.cache.as_ref().and_then(|cache| cache.workspace(part.root())) else { return graph_of(part, opts) };
+fn indexed_graph(part: &Repo, opts: &Options) -> Result<(Graph, Witness)> {
+    let Some(cache) = opts.cache.as_ref().and_then(|cache| cache.workspace(part.root())) else {
+        let language = crate::language::of(part, opts)?;
+        let environment = crate::cache::witness(language.environment(part, opts));
+        let graph = graph_of(part, opts)?;
+        let read = part.read_contents().into_iter().map(|(path, bytes)| (path, crate::cache::digest(&bytes))).collect();
+        return Ok((graph, Witness { read, environment }));
+    };
     let key = format!(
         "{}\n{}\n{}\n{}\n{:?}\n{:?}",
         std::fs::canonicalize(part.root()).unwrap_or_else(|_| part.root().to_path_buf()).display(),
@@ -132,12 +173,15 @@ fn indexed_graph(part: &Repo, opts: &Options) -> Result<Graph> {
         opts.named,
         opts.package
     );
-    if let Some(graph) = cache
-        .get("part", &key)
-        .and_then(|bytes| serde_json::from_slice::<Snapshot>(&bytes).ok())
-        .and_then(|snapshot| snapshot.current(part).then(|| snapshot.graph()).flatten())
+    if let Some((graph, environment)) =
+        cache.get("part", &key).and_then(|bytes| serde_json::from_slice::<Snapshot>(&bytes).ok()).and_then(|snapshot| {
+            snapshot.current(part).then(|| {
+                let witness = snapshot.witness();
+                snapshot.graph().map(|graph| (graph, witness))
+            })?
+        })
     {
-        return Ok(graph);
+        return Ok((graph, environment));
     }
     let language = crate::language::of(part, opts)?;
     let environment = crate::cache::witness(language.environment(part, opts));
@@ -145,14 +189,15 @@ fn indexed_graph(part: &Repo, opts: &Options) -> Result<Graph> {
     let snapshot = Snapshot {
         listed: part.listed_files(),
         read: part.read_contents().into_iter().map(|(path, bytes)| (path, crate::cache::digest(&bytes))).collect(),
-        environment,
+        environment: environment.clone(),
         written: Written::of(std::slice::from_ref(&graph)),
         graph: graph.clone(),
     };
     if let Ok(bytes) = serde_json::to_vec(&snapshot) {
         cache.put("part", &key, &bytes);
     }
-    Ok(graph)
+    let witness = snapshot.witness();
+    Ok((graph, witness))
 }
 
 /// The parts of the repository as read: each root's, read in the language of its manifest, and for

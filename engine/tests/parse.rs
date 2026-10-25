@@ -575,9 +575,10 @@ fn rust_workspace_parses() {
         "two readings are one graph, their union"
     );
     assert!(
-        calls.contains(&("atlas-engine.parts.analyze_parts".into(), "atlas-engine.parts.indexed_graph".into()))
+        calls.contains(&("atlas-engine.parts.analyze_parts".into(), "atlas-engine.parts.read_current_parts".into()))
+            && calls.contains(&("atlas-engine.parts.read_current_parts".into(), "atlas-engine.parts.indexed_graph".into()))
             && calls.contains(&("atlas-engine.parts.indexed_graph".into(), "atlas-engine.parts.graph_of".into())),
-        "each part is found in the index or analyzed in its language"
+        "each complete reading finds its parts in the index or analyzes them in their language"
     );
     assert!(calls.contains(&("atlas-engine.language.Rust.parse".into(), "atlas-engine.rust.parse".into())), "trait impl calls the module");
     let returns = edges(&g, EdgeKind::Returns);

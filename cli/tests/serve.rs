@@ -80,13 +80,18 @@ fn complete(at: &str) -> (String, String) {
     panic!("the complete page was not served");
 }
 
+fn snapshot(at: &str) -> Value {
+    serde_json::from_str(&send(at, "GET", "/api/snapshot", None, false).1).unwrap()
+}
+
 #[test]
 fn the_page_and_the_agent_share_one_view() {
     let repo = repository("shared");
     let (mut server, at) = serve(&repo);
 
     let (_, page) = complete(&at);
-    assert!(page.contains("\"served\":true"), "the page knows it is served");
+    assert!(page.contains("/api/snapshot"), "the viewer requests its current reading");
+    assert_eq!(snapshot(&at)["projects"]["spots"]["served"], true);
     let (history, page) = send(&at, "GET", "/history", None, false);
     assert!(history.contains("200") && page.contains("Atlas history"), "the history beside the page: {history}");
     let mut conn = TcpStream::connect(&at).unwrap();
@@ -155,7 +160,8 @@ fn the_page_follows_the_code() {
     let (mut server, at) = serve(&repo);
 
     let (first, page) = complete(&at);
-    assert!(page.contains(&format!("\"drawn\":\"{first}\"")), "the page knows which drawing it is");
+    assert!(page.contains("/api/snapshot"), "the served viewer requests complete readings");
+    assert_eq!(snapshot(&at)["projects"]["spots"]["drawn"], first);
 
     std::fs::write(
         repo.join("src/spots/__init__.py"),
@@ -168,8 +174,9 @@ fn the_page_follows_the_code() {
             drawn(&at).filter(|d| *d != first)
         })
         .expect("the server draws the changed code by itself");
-    let (_, page) = send(&at, "GET", "/", None, false);
-    assert!(page.contains(&format!("\"drawn\":\"{next}\"")) && page.contains("spots.twice"), "the page asked for next is the new drawing");
+    let updated = snapshot(&at);
+    assert_eq!(updated["projects"]["spots"]["drawn"], next);
+    assert!(updated["projects"]["spots"]["nodes"].to_string().contains("spots.twice"), "the snapshot holds the changed code");
 
     server.kill().ok();
     let _ = std::fs::remove_dir_all(repo.parent().unwrap());
@@ -196,8 +203,8 @@ fn a_vision_is_drawn_beside_the_working_tree() {
             drawn(&at).filter(|d| *d != first)
         })
         .expect("the server draws the vision by itself");
-    let (_, page) = send(&at, "GET", "/", None, false);
-    assert!(page.contains(&format!("\"drawn\":\"{next}\"")), "the page asked for next is the vision");
+    let page = snapshot(&at).to_string();
+    assert!(page.contains(&format!("\"drawn\":\"{next}\"")), "the snapshot is the vision");
     assert!(
         page.contains("\"diff\":") && page.contains("\"subject\":\"count twice\"") && page.contains("spots.twice"),
         "A and B as one picture"
@@ -210,7 +217,7 @@ fn a_vision_is_drawn_beside_the_working_tree() {
             drawn(&at).filter(|d| *d != next)
         })
         .expect("the server draws the working tree again");
-    let (_, page) = send(&at, "GET", "/", None, false);
+    let page = snapshot(&at).to_string();
     assert!(page.contains(&format!("\"drawn\":\"{alone}\"")) && !page.contains("\"diff\":"), "the working tree alone");
 
     server.kill().ok();

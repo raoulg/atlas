@@ -1,4 +1,5 @@
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use atlas_engine::cache::Cache;
@@ -43,6 +44,11 @@ fn copy_tree(from: &Path, to: &Path) {
 
 fn read(root: &Path, opts: &Options) -> Vec<Graph> {
     parts::analyze_parts(&[root.to_path_buf()], opts).unwrap()
+}
+
+fn git(root: &Path, args: &[&str]) {
+    let output = Command::new("git").arg("-C").arg(root).args(args).output().unwrap();
+    assert!(output.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&output.stderr));
 }
 
 fn same_reading(a: &[Graph], b: &[Graph]) {
@@ -125,5 +131,99 @@ fn a_python_pair_has_the_same_flow_and_findings_when_warm() {
     same_reading(&read(&root, &indexed), &read(&root, &cold));
     same_reading(&read(&root, &indexed), &read(&root, &cold));
 
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn renamed_sources_and_changed_manifests_match_a_cold_reading() {
+    let root = two_parts();
+    let cold = Options { libraries: 0, ..Options::default() };
+    let indexed = Options { cache: Some(Cache::at(&root.join("global"), "index-test")), ..cold.clone() };
+    let cache = indexed.cache.as_ref().unwrap();
+    read(&root, &indexed);
+    assert_eq!(cache.writes(), 2);
+
+    std::fs::rename(root.join("one/src/index.ts"), root.join("one/src/renamed.ts")).unwrap();
+    same_reading(&read(&root, &indexed), &read(&root, &cold));
+    assert_eq!(cache.writes(), 3);
+
+    std::fs::write(root.join("two/package.json"), "{\"name\":\"second\",\"version\":\"1.0.0\"}").unwrap();
+    same_reading(&read(&root, &indexed), &read(&root, &cold));
+    assert_eq!(cache.writes(), 4);
+
+    std::fs::remove_file(root.join("one/package.json")).unwrap();
+    same_reading(&read(&root, &indexed), &read(&root, &cold));
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn each_worktree_keeps_its_own_snapshot() {
+    let first = workspace();
+    git(&first, &["init", "--initial-branch=main"]);
+    git(&first, &["add", "Cargo.toml", "src/main.rs"]);
+    git(&first, &["-c", "user.name=Atlas", "-c", "user.email=atlas@example.invalid", "commit", "-m", "initial"]);
+    let second =
+        std::env::temp_dir().join(format!("atlas-workspace-index-other-{}-{}", std::process::id(), NEXT.fetch_add(1, Ordering::Relaxed)));
+    git(&first, &["worktree", "add", "-b", "other", second.to_str().unwrap()]);
+    let cache = Cache::at(&first.join("global"), "index-test");
+    let cold = Options { libraries: 0, ..Options::default() };
+    let indexed = Options { cache: Some(cache.clone()), ..cold.clone() };
+
+    std::fs::write(second.join("src/main.rs"), "fn main() { println!(\"other branch\"); }\n").unwrap();
+    same_reading(&read(&first, &indexed), &read(&first, &cold));
+    same_reading(&read(&second, &indexed), &read(&second, &cold));
+    assert_eq!(cache.writes(), 2);
+    same_reading(&read(&first, &indexed), &read(&first, &cold));
+    same_reading(&read(&second, &indexed), &read(&second, &cold));
+    assert_eq!(cache.writes(), 2);
+
+    git(&first, &["switch", "-c", "changed"]);
+    std::fs::write(first.join("src/main.rs"), "fn main() { println!(\"switched branch\"); }\n").unwrap();
+    git(&first, &["add", "src/main.rs"]);
+    git(&first, &["-c", "user.name=Atlas", "-c", "user.email=atlas@example.invalid", "commit", "-m", "changed"]);
+    same_reading(&read(&first, &indexed), &read(&first, &cold));
+    assert_eq!(cache.writes(), 3);
+    git(&first, &["switch", "main"]);
+    same_reading(&read(&first, &indexed), &read(&first, &cold));
+    assert_eq!(cache.writes(), 4);
+    assert!(cache.hits() >= 2);
+    git(&first, &["worktree", "remove", "--force", second.to_str().unwrap()]);
+    let _ = std::fs::remove_dir_all(first);
+}
+
+#[test]
+fn changed_options_select_an_independent_reading() {
+    let root = workspace();
+    let cache = Cache::at(&root.join("global"), "index-test");
+    let cold = Options { libraries: 0, ..Options::default() };
+    let indexed = Options { cache: Some(cache.clone()), ..cold.clone() };
+    read(&root, &indexed);
+    let named = Options { named: vec![root.join("src/main.rs")], ..indexed.clone() };
+    same_reading(&read(&root, &named), &read(&root, &Options { cache: None, ..named.clone() }));
+    assert_eq!(cache.writes(), 2);
+    same_reading(&read(&root, &indexed), &read(&root, &cold));
+    assert_eq!(cache.writes(), 2);
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn a_shared_library_environment_refreshes_dependent_parts() {
+    let root = two_parts();
+    let cold = Options { libraries: 1, ..Options::default() };
+    let indexed = Options { cache: Some(Cache::at(&root.join("global"), "index-test")), ..cold.clone() };
+    let cache = indexed.cache.as_ref().unwrap();
+    read(&root, &indexed);
+    assert_eq!(cache.writes(), 2);
+
+    let library = root.join("node_modules/shared");
+    std::fs::create_dir_all(&library).unwrap();
+    std::fs::write(library.join("package.json"), "{\"name\":\"shared\",\"types\":\"index.d.ts\"}").unwrap();
+    std::fs::write(library.join("index.d.ts"), "export declare function value(): number;\n").unwrap();
+    same_reading(&read(&root, &indexed), &read(&root, &cold));
+    assert_eq!(cache.writes(), 4);
+
+    std::fs::write(library.join("index.d.ts"), "export declare function value(): string;\n").unwrap();
+    same_reading(&read(&root, &indexed), &read(&root, &cold));
+    assert_eq!(cache.writes(), 6);
     let _ = std::fs::remove_dir_all(root);
 }
