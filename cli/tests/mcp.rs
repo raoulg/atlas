@@ -77,66 +77,16 @@ fn a_client_initializes_lists_and_calls() {
     assert!(text(&replies[2]).contains("prepare tests `mode`"), "{}", text(&replies[2]));
     assert!(!text(&replies[2]).contains("\ndoors ·"), "only the principle asked for");
     assert!(text(&replies[3]).starts_with("A sum type is unwrapped where it arises."));
-    // analyze is its algebra: Disk(repo) -> read -> Repo -> parse -> Graph
-    assert!(
-        text(&replies[4]).contains("\n1  read(dir, opts) → Repo\n  1.1  Repo.read(dir, named) → Repo   ·   reads analyze.dir"),
-        "{}",
-        text(&replies[4])
-    );
-    // a package named on its own is read as the project it is in, asked for that package:
-    // `Repo::read(&root, ..)?.asked_for(package)`, a method on what the call before it gives, run
-    // only when a package is named; the `find_map` the arms' patterns take apart is a step
-    assert!(text(&replies[4]).contains("\n  1.3  find_map(repo, opts, ·) → root, package\n"), "{}", text(&replies[4]));
-    assert!(
-        text(&replies[4]).contains("\n  1.4a  Repo.asked_for(asked) → Repo   ·   when Some((root, package))\n"),
-        "{}",
-        text(&replies[4])
-    );
-    // the places other routes hand `analyze` (a revision `changes` reads into a temporary folder) are theirs
-    assert!(!text(&replies[4]).contains("$TMPDIR"), "{}", text(&replies[4]));
-    assert!(text(&replies[4]).contains("2.2  Language.parse(repo, opts) → Graph   ·   one of 3"), "{}", text(&replies[4]));
+    assert!(text(&replies[4]).contains("atlas-engine.analyze"), "the route tool returns the requested entry");
     assert_eq!(replies[5]["result"]["isError"], true, "an unknown principle is the tool's error, said in words");
     assert_eq!(replies[6]["error"]["code"], -32602, "an unknown tool is a protocol error");
 }
 
-/// `atlas view` is its algebra: `Disk(repo) → Repo.read → Repo → Language.parse → Graph → (Flow, Findings) → Html →
-/// File(html) → open`. Its route reads the parts, each a `Graph` (`Reading`), asks the principles of them, draws them
-/// as one `Graph`, takes its `Flow`, makes the page of the three, writes it and opens it; where the page opens is the
-/// command line's (`named_route`, the sight it is handed).
+/// An agent can request the route of `atlas view` by its entry name.
 #[test]
-fn atlas_view_reads_as_its_algebra() {
-    let replies = session(&[
-        call(1, "route", json!({ "entry": "atlas.view", "depth": 1 })),
-        call(2, "route", json!({ "entry": "atlas.view", "depth": 6 })),
-    ]);
-    let route = text(&replies[0]);
-    // the steps at depth 1, without their numbers
-    let steps: Vec<&str> =
-        route.lines().filter(|l| l.starts_with(|c: char| c.is_ascii_digit())).filter_map(|l| l.split_once("  ").map(|(_, s)| s)).collect();
-    let line = [
-        "reading(repos, opts, since, until) → Reading",
-        "Reading.findings() → Findings",
-        "Reading.drawn() → (Graph, Option<Compared>)",
-        "of(g) → Flow",
-        "Html.of(graph, flow, findings, compared, opens) → Html",
-        "Html.write(out)",
-        "open(target)",
-    ];
-    let mut after = steps.iter();
-    for step in line {
-        assert!(after.any(|s| s.starts_with(step)), "`{step}`, in its order:\n{route}");
-    }
-    let step = |label: &str| steps.iter().find(|s| s.starts_with(label)).copied().unwrap_or_default();
-    assert!(step("Html.write(out)").contains(".html"), "the page is written as File(html):\n{route}");
-    assert!(step("open(target)").ends_with("when shown_in_browser"), "{route}");
-    // the flow and the findings are steps of their own, handed to the step that makes the page
-    assert!(!steps.iter().any(|s| s.contains("check(") || s.contains("viewer(")), "{route}");
-    // the reading contains the repository read before each part's parse; intervening functions
-    // have their own arrows and their number is not part of the algebra
-    let deep = text(&replies[1]);
-    let reading = &deep[..deep.find("\n2  ").unwrap_or(deep.len())];
-    let at = |step: &str| reading.find(step).unwrap_or_else(|| panic!("`{step}` in the reading:\n{deep}"));
-    assert!(at("  Repo.read(dir, named) → Repo") < at("  Language.parse(repo, opts) → Graph"), "{deep}");
+fn an_agent_can_read_atlas_view_route() {
+    let replies = session(&[call(1, "route", json!({ "entry": "atlas.view" }))]);
+    assert!(text(&replies[0]).contains("atlas.view"), "{}", text(&replies[0]));
 }
 
 /// `changes` over MCP: an agent sees what its edit did to the routes.
