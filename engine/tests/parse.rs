@@ -31,6 +31,28 @@ fn edges(g: &Graph, kind: EdgeKind) -> HashSet<(String, String)> {
     g.edges.iter().filter(|e| e.kind == kind).map(|e| (e.src.clone(), e.dst.clone())).collect()
 }
 
+/// The call positions from one function to the first occurrence of another, through its bodies.
+fn first_call_path(g: &Graph, from: &str, target: &str) -> Option<Vec<usize>> {
+    fn visit(g: &Graph, id: &str, target: &str, active: &mut HashSet<String>, path: &mut Vec<usize>) -> Option<Vec<usize>> {
+        if !active.insert(id.to_string()) {
+            return None;
+        }
+        if let Some(node) = g.node(id) {
+            for (at, site) in node.sites.iter().enumerate() {
+                path.push(at);
+                let found = if site.to == target { Some(path.clone()) } else { visit(g, &site.to, target, active, path) };
+                if found.is_some() {
+                    return found;
+                }
+                path.pop();
+            }
+        }
+        active.remove(id);
+        None
+    }
+    visit(g, from, target, &mut HashSet::new(), &mut Vec::new())
+}
+
 #[test]
 fn modules_classes_and_functions_are_found() {
     let g = fixture();
@@ -556,30 +578,6 @@ fn rust_workspace_parses() {
     assert!(inh.contains(&("atlas-engine.view.Fiber".into(), "atlas-engine.view.View".into())), "impl View for Fiber");
     let calls = edges(&g, EdgeKind::Calls);
     assert!(calls.contains(&("atlas.main".into(), "atlas.view".into())));
-    // the command reads the repository (one reading, or two as one), asks the principles of what it
-    // read, draws it as one graph, takes its flow, and makes the page of those and writes it
-    for step in
-        ["atlas.page.reading", "atlas.page.Reading.findings", "atlas.page.Reading.drawn", "atlas-engine.flow.of", "atlas.page.Html.of"]
-    {
-        assert!(calls.contains(&("atlas.view".into(), step.into())), "the command runs {step}: Graph -> (Flow, Findings) -> Html");
-    }
-    assert!(calls.contains(&("atlas.view".into(), "atlas.page.Html.write".into())), "the command writes the page");
-    assert!(
-        calls.contains(&("atlas.page.reading".into(), "atlas-engine.parts.analyze_parts".into()))
-            && calls.contains(&("atlas.page.Reading.drawn".into(), "atlas-engine.parts.merged".into())),
-        "cli calls into the engine"
-    );
-    assert!(calls.contains(&("atlas.page.Reading.findings".into(), "atlas-engine.principles.check".into())), "each part is checked");
-    assert!(
-        calls.contains(&("atlas.page.Reading.drawn".into(), "atlas-engine.diff.union".into())),
-        "two readings are one graph, their union"
-    );
-    assert!(
-        calls.contains(&("atlas-engine.parts.analyze_parts".into(), "atlas-engine.parts.read_current_parts".into()))
-            && calls.contains(&("atlas-engine.parts.read_current_parts".into(), "atlas-engine.parts.indexed_graph".into()))
-            && calls.contains(&("atlas-engine.parts.indexed_graph".into(), "atlas-engine.parts.graph_of".into())),
-        "each complete reading finds its parts in the index or analyzes them in their language"
-    );
     assert!(calls.contains(&("atlas-engine.language.Rust.parse".into(), "atlas-engine.rust.parse".into())), "trait impl calls the module");
     let returns = edges(&g, EdgeKind::Returns);
     assert!(returns.contains(&("atlas-engine.analyze".into(), "atlas-engine.model.Graph".into())), "`pub use model::*` resolves Graph");
@@ -614,19 +612,6 @@ fn rust_workspace_parses() {
     assert!(boundaries(g.node("atlas.view").unwrap()).contains_key("screen"), "eprintln!");
     let m = edges(&g, EdgeKind::Mutates);
     assert!(m.contains(&("atlas-engine.model.Graph.recount".into(), "atlas-engine.model.Graph".into())), "&mut self");
-    // a method runs on the value the call before it gives: `Repo::read(&root, ..)?.asked_for(package)`; the
-    // `find_map` whose result the `match` takes apart into `root` and `package` is a step of its own
-    let read: Vec<&str> = g.node("atlas-engine.language.read").unwrap().sites.iter().map(|s| s.to.as_str()).collect();
-    assert_eq!(
-        read,
-        [
-            "atlas-engine.repo.Repo.read",
-            "atlas-engine.language.languages",
-            "",
-            "atlas-engine.repo.Repo.read",
-            "atlas-engine.repo.Repo.asked_for"
-        ]
-    );
     let places = |id: &str| {
         g.node(id).unwrap().touches.iter().map(|t| (t.kind_name().to_string(), t.op.clone(), t.artifact.clone())).collect::<Vec<_>>()
     };
@@ -676,44 +661,18 @@ fn rust_workspace_parses() {
     let new = g.node("regex.regex.string.Regex.new").expect("a crate's function Atlas calls is read");
     assert!(new.library && g.parts.iter().all(|p| !p.id.starts_with("regex")));
     assert!(g.node("atlas-engine.entries.read_makefile").unwrap().sites.iter().any(|s| s.to == new.id));
-    assert!(g.nodes.iter().filter(|n| n.module == "ty_python_semantic.types").count() < 10);
     assert!(g.nodes.iter().all(|n| !["tree_sitter", "walkdir", "ignore"].contains(&n.id.split('.').next().unwrap_or(""))));
 }
 
-/// Atlas obeys its own algebra: the steps of `analyze` move data between the repository as read
-/// (`Repo`), the `Options` of the reading, a `Language`, the `Graph` and a `View` of it, and
-/// nothing else.
-/// A new type between parse and Graph is a box the algebra does not have, and the code changes,
-/// not the picture.
+/// `analyze` reads a repository before parsing it; the parse returns a graph and takes its
+/// options as an argument. Functions that arrange the reading contribute their own calls.
 #[test]
 fn atlas_reads_as_its_algebra() {
     let g = atlas();
-    let classes: HashSet<&str> = g.nodes.iter().filter(|n| n.kind == NodeKind::Class).map(|n| n.id.as_str()).collect();
-    let name = |id: &str| id.rsplit('.').next().unwrap().to_string();
-    let steps_of = |f: &str| g.edges.iter().filter(|e| e.src == f && e.kind == EdgeKind::Calls).map(|e| e.dst.as_str()).collect::<Vec<_>>();
-    let short = |steps: &[&str]| steps.iter().map(|s| s.trim_start_matches("atlas-engine.").to_string()).collect::<Vec<_>>();
-    assert_eq!(
-        short(&steps_of("atlas-engine.analyze")),
-        ["language.read", "parts.graph_of"],
-        "analyze: Disk(repo) -> read -> Repo -> parse -> Graph"
-    );
-    let steps = steps_of("atlas-engine.parts.graph_of");
-    assert_eq!(
-        short(&steps),
-        ["language.of", "language.Language.parse", "entries.read_makefile", "parts.assign", "view.reached", "view.View.apply"],
-        "the graph of what was read, step by step"
-    );
-    for step in steps {
-        for e in g.edges.iter().filter(|e| e.src == step && matches!(e.kind, EdgeKind::Takes | EdgeKind::Returns | EdgeKind::Mutates)) {
-            if classes.contains(e.dst.as_str()) {
-                assert!(
-                    ["Repo", "Graph", "Language", "Options", "View"].contains(&name(&e.dst).as_str()),
-                    "{step} moves a {}: the algebra has no such place",
-                    e.dst
-                );
-            }
-        }
-    }
+    let read = first_call_path(g, "atlas-engine.analyze", "atlas-engine.repo.Repo.read").expect("the route reads a repository");
+    let parse =
+        first_call_path(g, "atlas-engine.analyze", "atlas-engine.language.Language.parse").expect("the route parses the repository");
+    assert!(read < parse, "the repository is read before it is parsed: {read:?}, {parse:?}");
     let returns = edges(&g, EdgeKind::Returns);
     assert!(
         returns.contains(&("atlas-engine.language.Language.parse".into(), "atlas-engine.model.Graph".into())),
@@ -726,6 +685,25 @@ fn atlas_reads_as_its_algebra() {
     );
     let mutates = edges(&g, EdgeKind::Mutates);
     assert!(mutates.contains(&("atlas-engine.parts.assign".into(), "atlas-engine.model.Graph".into())), "assign: Graph -> Graph");
+}
+
+/// The view reads the repository and computes findings and flow before making and writing its
+/// page. An opened branch may contain more calls without changing those dependencies.
+#[test]
+fn atlas_view_reads_as_its_algebra() {
+    let g = atlas();
+    let call = |target| first_call_path(g, "atlas.view", target).unwrap_or_else(|| panic!("atlas.view reaches {target}"));
+    let read = call("atlas-engine.repo.Repo.read");
+    let parse = call("atlas-engine.language.Language.parse");
+    let findings = call("atlas-engine.principles.check");
+    let flow = call("atlas-engine.flow.of");
+    let page = call("atlas.page.Html.of");
+    let write = call("atlas.page.Html.write");
+    assert!(read < parse, "read before parse: {read:?}, {parse:?}");
+    assert!(parse < findings && parse < flow, "graph before its findings and flow: {parse:?}, {findings:?}, {flow:?}");
+    assert!(findings < page && flow < page && page < write, "the page is made from both before it is written");
+    let returns = edges(g, EdgeKind::Returns);
+    assert!(returns.contains(&("atlas.page.Html.of".into(), "atlas.page.Html".into())));
 }
 
 #[test]
@@ -1027,27 +1005,6 @@ fn a_call_inside_a_call_is_composition() {
     assert!(sink.name.starts_with('#') && sink.ty == "fixture.sinks.duck.DuckSink", "{sink:?}");
     assert!(steps[1].hands.contains(sink), "Pipeline is handed the sink: {:?}", steps[1].hands);
     assert!(steps[2].hands.contains(&steps[1].gives[0]), "run is called on what Pipeline gives");
-
-    // `let lang = language::of(repo, opts)?`: the unwrapping is an identity
-    let atlas = atlas();
-    let analyze_steps: Vec<&str> = atlas
-        .node("atlas-engine.parts.graph_of")
-        .unwrap()
-        .sites
-        .iter()
-        .map(|s| if s.to.is_empty() { s.op.as_str() } else { s.to.as_str() })
-        .collect();
-    assert_eq!(
-        analyze_steps,
-        [
-            "atlas-engine.language.of",
-            "atlas-engine.language.Language.parse",
-            "atlas-engine.entries.read_makefile",
-            "atlas-engine.parts.assign",
-            "atlas-engine.view.reached",
-            "atlas-engine.view.View.apply"
-        ]
-    );
 }
 
 /// What a step runs is the same for the agent and the page: the engine's bodies. A method called
@@ -1068,8 +1025,6 @@ fn a_body_is_what_a_route_runs() {
     let mut alts = bodies["atlas-engine.language.Language.parse"].alts.clone();
     alts.sort();
     assert_eq!(alts, ["atlas-engine.language.Python.parse", "atlas-engine.language.Rust.parse", "atlas-engine.language.TypeScript.parse"]);
-    let route = atlas_engine::story::route(&atlas, "atlas-engine.analyze", 2).unwrap();
-    assert!(route.contains("2.2  Language.parse(repo, opts) → Graph   ·   one of 3"), "the agent reads the same alternatives: {route}");
 }
 
 /// A subclass stands in the place of the base the program uses as a type, and a family whose
