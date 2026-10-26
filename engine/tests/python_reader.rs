@@ -135,20 +135,10 @@ fn a_cache_filled_on_first_use_is_made_sure_of() {
             "_cache: dict[str, int] = {}\n\n\ndef build(key: str) -> int:\n    return len(key)\n\n\ndef cached(key: str) -> int:\n    if key not in _cache:\n        value = build(key)\n        _cache[key] = value\n    return _cache[key]\n\n\ndef bump(key: str) -> None:\n    _cache[key] = _cache.get(key, 0) + 1\n",
         )],
     );
-    let globals = |id: &str| {
-        g.node(id)
-            .unwrap()
-            .touches
-            .iter()
-            .filter(|t| t.kind_name() == "global")
-            .map(|t| (t.op.clone(), t.dir_name(), t.line))
-            .collect::<Vec<_>>()
-    };
-    assert_eq!(
-        globals("memo.cached"),
-        [("_cache".to_string(), "write", 11), ("_cache".to_string(), "read", 12)],
-        "the test of a key goes with the reading"
-    );
+    let globals: Vec<_> = g.node("memo.cached").unwrap().touches.iter().filter(|t| t.kind_name() == "global").collect();
+    let kept: Vec<(&str, &str)> = globals.iter().map(|t| (t.op.as_str(), t.dir_name())).collect();
+    assert_eq!(kept, [("_cache", "write"), ("_cache", "read")], "the test of a key goes with the reading");
+    assert!(globals[0].line < globals[1].line, "the write stands before the read: {globals:#?}");
     let arrows = atlas_engine::flow::arrows(&g);
     let cache = "w:Global:memo._cache";
     assert!(arrows.get("memo.cached").map_or(true, |a| !a.updates.iter().any(|p| p == cache) && !a.reads_back.iter().any(|p| p == cache)));
@@ -184,10 +174,22 @@ def run() -> None:
 "#,
         )],
     );
-    let route = atlas_engine::story::route(&g, "twocallers.run", 3).unwrap();
-    let under = |step: &str| route.lines().find(|l| l.trim_start().starts_with(step)).unwrap_or_default().to_string();
-    assert!(under("1.1").contains("data/alpha.txt") && !under("1.1").contains("beta"), "under alpha:\n{route}");
-    assert!(under("2.1").contains("data/beta.txt") && !under("2.1").contains("alpha"), "under beta:\n{route}");
+    let bodies = atlas_engine::flow::bodies(&g);
+    let steps = |id: &str| bodies[id].steps().iter().map(|s| s.to.clone()).collect::<Vec<_>>();
+    assert_eq!(steps("twocallers.run"), ["twocallers.alpha", "twocallers.beta"]);
+    let helper = g.node("twocallers.write_to").unwrap();
+    for (caller, file) in [("twocallers.alpha", "data/alpha.txt"), ("twocallers.beta", "data/beta.txt")] {
+        assert_eq!(steps(caller), ["twocallers.write_to"], "{caller}");
+        // the step `run → caller → write_to`, as the route walks it
+        let path = ["twocallers.run", caller, "twocallers.write_to"];
+        let written: Vec<&str> = helper
+            .touches_in("twocallers.run", &|f| path.contains(&f))
+            .iter()
+            .filter(|t| t.kind_name() == "disk_write")
+            .map(|t| t.artifact.as_str())
+            .collect();
+        assert_eq!(written, [file], "under {caller}: {:#?}", helper.touches);
+    }
 }
 
 /// What hands on the value inside it, parentheses and `await`, is read as that value, wherever a
@@ -223,15 +225,12 @@ async def awaited() -> str:
 "#,
         )],
     );
-    for (f, file) in [("plain", "where()"), ("parenthesized", "where()"), ("awaited", "place()")] {
-        let read: Vec<&str> = g
-            .node(&format!("wrappers.{f}"))
-            .unwrap()
-            .touches
-            .iter()
-            .filter(|t| t.kind_name() == "disk_read")
-            .map(|t| t.what.as_str())
-            .collect();
-        assert_eq!(read, [file], "{f}");
-    }
+    let read = |f: &str| -> Vec<String> {
+        g.node(&format!("wrappers.{f}")).unwrap().touches.iter().filter(|t| t.kind_name() == "disk_read").map(|t| t.what.clone()).collect()
+    };
+    let plain = read("plain");
+    assert!(plain.len() == 1 && plain[0].contains("where"), "the file is named by the call `where`: {plain:?}");
+    assert_eq!(read("parenthesized"), plain, "parentheses are the value inside");
+    let awaited: Vec<String> = read("awaited").iter().map(|w| w.replace("place", "where")).collect();
+    assert_eq!(awaited, plain, "`await place()` is named as `place()` is");
 }

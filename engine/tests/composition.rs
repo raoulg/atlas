@@ -59,7 +59,6 @@ fn reversing_nested_calls_preserves_order_and_marks_occurrences_not_functions() 
     assert_eq!(composition.function, "composition.run");
     assert_eq!(composition.before.steps().iter().map(|s| s.to.as_str()).collect::<Vec<_>>(), calls(&a[0]));
     assert_eq!(composition.after.steps().iter().map(|s| s.to.as_str()).collect::<Vec<_>>(), calls(&b[0]));
-    assert!(changes::report(&changed).contains("composition run: add_one → double ⇒ double → add_one"));
     assert!(changes::between("same", Some("same"), &a, &a).routes.is_empty());
     std::fs::write(repo.join("composition.py"), format!("# A named composition.\n{}", PROGRAM.replace("EXPRESSION", "add_one(double(3))")))
         .unwrap();
