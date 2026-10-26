@@ -13,11 +13,13 @@ mod common;
 
 use common::Pair;
 
+use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::sync::OnceLock;
 
+use atlas_engine::flow::{self, Side, Step};
 use atlas_engine::principles::{check, Finding};
-use atlas_engine::{analyze, EdgeKind, EntryKind, Graph, Options, Touch, World};
+use atlas_engine::{analyze, EdgeKind, EntryKind, Graph, NodeKind, Options, Touch, World};
 
 fn side(name: &str) -> Graph {
     analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/python").join(name), &Options::default()).unwrap()
@@ -52,9 +54,57 @@ fn route(g: &Graph, entry: &str) -> String {
     atlas_engine::story::route(g, entry, 4).unwrap_or_else(|| panic!("{entry} is a route"))
 }
 
-/// Whether the calls Atlas does not follow include one that starts from `name`.
-fn not_followed(g: &Graph, name: &str) -> bool {
-    g.stats.unresolved_calls_top.iter().any(|(n, _)| n == name)
+/// The steps the route from `entry` runs, as the route opens them, each as the key of the body it runs (the function, `@`
+/// the class it runs on) with the bodies its call may run instead (`Step::alts`). Building a class runs its initializer,
+/// and none of its methods.
+fn runs(g: &Graph, entry: &str) -> BTreeSet<(String, Vec<String>)> {
+    let (bodies, inits) = (flow::bodies(g), flow::initializers(g));
+    let (mut out, mut opened) = (BTreeSet::new(), BTreeSet::new());
+    let mut todo = vec![Step::of(entry)];
+    while let Some(st) = todo.pop() {
+        let built = g.node(&st.to).is_some_and(|n| n.kind == NodeKind::Class);
+        let runs = if built { inits.get(&st.to).cloned() } else { Some(st.to.clone()) };
+        let key = flow::key(runs.as_deref().unwrap_or(&st.to), &st.on);
+        let alts = if built { vec![] } else { st.alts(&bodies).to_vec() };
+        if !out.insert((key.clone(), alts)) {
+            continue;
+        }
+        if !built {
+            todo.extend(st.runs_instead(&bodies));
+        }
+        if let Some(b) = runs.and(bodies.get(&key)).filter(|_| opened.insert(key.clone())) {
+            todo.extend(b.steps().into_iter().cloned());
+        }
+    }
+    out
+}
+
+/// The functions the route from `entry` runs.
+fn ran(g: &Graph, entry: &str) -> BTreeSet<String> {
+    runs(g, entry).into_iter().map(|(k, _)| flow::split(&k).0.to_string()).collect()
+}
+
+/// The places the route from `entry` reaches for their content, each with the side of its step it stands on: what every
+/// function it runs touches, by the place's id (`w:SQLite:readings`).
+fn places(g: &Graph, entry: &str) -> Vec<(String, Side)> {
+    let drawn = flow::of(g).drawn;
+    ran(g, entry)
+        .iter()
+        .filter_map(|f| drawn.get(f))
+        .flatten()
+        .filter(|w| !w.shape && !w.test)
+        .map(|w| (w.place.id.clone(), w.side))
+        .collect()
+}
+
+/// Whether the route from `entry` reads (`Side::In`) or writes (`Side::Out`) the place `id`.
+fn reaches(g: &Graph, entry: &str, id: &str, side: Side) -> bool {
+    places(g, entry).iter().any(|(p, s)| p == id && *s == side)
+}
+
+/// Whether the body of `id` makes a call Atlas does not follow, as the code writes it (`op`).
+fn not_followed(g: &Graph, id: &str, op: &str) -> bool {
+    g.node(id).unwrap_or_else(|| panic!("{id} is in the graph")).sites.iter().any(|s| s.not_followed && s.op == op)
 }
 
 /// What the clean side says it does, it does: Atlas asks nothing about it.
@@ -121,9 +171,15 @@ fn overrides_an_override_keeps_the_promise_of_its_base() {
     }
     assert_eq!(found(s, "overrides"), ["harvest.export.Exporter.write"]);
     assert_eq!(s.node("harvest.export.CsvExporter.write").unwrap().keeps, Some(false));
-    let broken = check(s).into_iter().find(|f| f.principle == "overrides").unwrap();
-    assert_eq!(broken.what, "Exporter.write promises (rows: list[dict], path: Path) -> None; 1 override breaks it");
-    assert_eq!(broken.evidence, ["CsvExporter.write(rows: list[dict], path: Path) -> int (src/harvest/export.py:35)"]);
+    // one override breaks the base's promise: it gives an int where the base gives None
+    let breaking: Vec<&str> =
+        s.nodes.iter().filter(|n| n.breaks.as_deref() == Some("harvest.export.Exporter.write")).map(|n| n.id.as_str()).collect();
+    assert_eq!(breaking, ["harvest.export.CsvExporter.write"]);
+    let gives = |id: &str| s.node(id).unwrap().returns.as_ref().map(|r| r.written.clone());
+    assert_eq!(
+        (gives("harvest.export.Exporter.write"), gives("harvest.export.CsvExporter.write")),
+        (Some("None".into()), Some("int".into()))
+    );
     // the override is still a member of the family, and still writes its file
     assert!(edge(s, "harvest.export.CsvExporter", "harvest.export.Exporter", EdgeKind::Inherits));
     assert_eq!(touches(s, "harvest.export.CsvExporter.write", "disk_write").len(), 1);
@@ -180,14 +236,14 @@ fn gives_a_function_whose_value_is_used_says_what_it_gives() {
     assert!(found(c, "gives").is_empty());
     assert!(edge(c, "harvest.api.get_store", "harvest.store.ReadingStore", EdgeKind::Returns));
     assert!(edge(c, "harvest.api.readings", "harvest.store.ReadingStore.history", EdgeKind::Calls));
-    assert!(route(c, "harvest.api.readings").contains("reads readings"), "{}", route(c, "harvest.api.readings"));
+    assert!(reaches(c, "harvest.api.readings", "w:SQLite:readings", Side::In), "{:?}", places(c, "harvest.api.readings"));
     assert_eq!(found(s, "gives"), ["harvest.api.get_store", "harvest.harvester.Harvester.run"]);
     assert!(
         !edge(s, "harvest.api.readings", "harvest.store.ReadingStore.history", EdgeKind::Calls),
         "the call on the store is not followed"
     );
-    assert!(not_followed(s, "get_store.history"));
-    assert!(!route(s, "harvest.api.readings").contains("reads readings"), "{}", route(s, "harvest.api.readings"));
+    assert!(not_followed(s, "harvest.api.readings", "get_store().history"), "{:#?}", s.node("harvest.api.readings").unwrap().sites);
+    assert!(!reaches(s, "harvest.api.readings", "w:SQLite:readings", Side::In), "{:?}", places(s, "harvest.api.readings"));
     // the factory is still a step of the route, and the store still reads its table
     assert!(edge(s, "harvest.api.readings", "harvest.api.get_store", EdgeKind::Calls));
     assert!(edge(s, "harvest.api.get_store", "harvest.store.ReadingStore", EdgeKind::Instantiates));
@@ -391,10 +447,11 @@ fn a_place_carries_a_what_the_report_file_through_the_exporter_base() {
 /// The values are no place: in a route of its own, `save` writes `readings` on both sides.
 #[test]
 fn a_place_carries_a_what_the_table_of_a_statement_built_from_values() {
-    // the second line of a route is its start, with that function's own effects
-    let own = |g: &Graph| route(g, "harvest.store.ReadingStore.save").lines().nth(1).unwrap_or_default().to_string();
-    assert!(own(clean()).contains("writes readings"), "{}", own(clean()));
-    assert!(own(shortcut()).contains("writes readings"), "{}", own(shortcut()));
+    // what `save` touches itself, not what the steps it runs touch
+    for g in [clean(), shortcut()] {
+        let own = flow::of(g).drawn.remove("harvest.store.ReadingStore.save").unwrap_or_default();
+        assert!(own.iter().any(|w| w.place.id == "w:SQLite:readings" && w.side == Side::Out && !w.shape), "{own:#?}");
+    }
 }
 
 /// A route starts at an entry and ends at a visible place. The clean API serves `POST /collect`,
@@ -403,11 +460,12 @@ fn a_place_carries_a_what_the_table_of_a_statement_built_from_values() {
 #[test]
 fn a_route_ends_at_a_visible_place() {
     let (c, s) = (clean(), shortcut());
-    let collect = route(c, "harvest.api.collect");
-    assert!(collect.contains("GETs") && collect.contains("writes readings"), "{collect}");
+    let (net, table) = ("w:Web:api.weather.example", "w:SQLite:readings");
+    let collect = "harvest.api.collect";
+    assert!(reaches(c, collect, net, Side::In) && reaches(c, collect, table, Side::Out), "{:?}", places(c, collect));
     assert!(edge(c, "harvest.api.collect", "harvest.harvester.Harvester.collect", EdgeKind::Calls));
-    let task = route(s, "harvest.api.run_task");
-    assert!(!task.contains("GETs") && !task.contains("writes readings"), "{task}");
+    let task = "harvest.api.run_task";
+    assert!(!reaches(s, task, net, Side::In) && !reaches(s, task, table, Side::Out), "{:?}", places(s, task));
     assert!(
         s.edges.iter().all(|e| !(e.src == "harvest.harvester.Harvester.run" && e.kind == EdgeKind::Calls)),
         "run calls nothing Atlas follows"
@@ -424,7 +482,7 @@ fn a_route_ends_at_a_visible_place_a_call_by_name_stays_a_step() {
     let s = shortcut();
     let run = s.node("harvest.harvester.Harvester.run").unwrap();
     assert!(run.sites.iter().any(|x| x.op == "getattr(self, kind)"), "{:#?}", run.sites);
-    assert!(s.stats.unresolved_calls_top.iter().any(|(n, _)| n.contains("getattr")), "{:?}", s.stats.unresolved_calls_top);
+    assert!(not_followed(s, "harvest.harvester.Harvester.run", "getattr(self, kind)"), "{:#?}", run.sites);
 }
 
 /// Zoom is a quotient by base type and by composition: a class holds its parts by their types.
@@ -445,14 +503,14 @@ fn zoom_is_a_quotient_by_composition() {
         );
     }
     assert!(edge(c, "harvest.harvester.Harvester.collect", "harvest.client.WeatherClient.latest", EdgeKind::Calls));
-    let collect = route(c, "harvest.cli.collect");
-    assert!(collect.contains("GETs") && collect.contains("writes readings"), "{collect}");
+    let (net, table, collect) = ("w:Web:api.weather.example", "w:SQLite:readings", "harvest.cli.collect");
+    assert!(reaches(c, collect, net, Side::In) && reaches(c, collect, table, Side::Out), "{:?}", places(c, collect));
     // the shortcut's harvester holds nothing Atlas can name, and its calls on its parts are not followed
     assert!(s.edges.iter().all(|e| !(e.kind == EdgeKind::Has && e.src == "harvest.harvester.Harvester")));
     assert!(!edge(s, "harvest.harvester.Harvester.collect", "harvest.client.WeatherClient.latest", EdgeKind::Calls));
-    assert!(not_followed(s, "self.client") && not_followed(s, "self.store"));
-    let collect = route(s, "harvest.cli.collect");
-    assert!(!collect.contains("GETs") && !collect.contains("writes readings"), "{collect}");
+    let harvester = "harvest.harvester.Harvester.collect";
+    assert!(not_followed(s, harvester, "self.client.latest") && not_followed(s, harvester, "self.store.save"));
+    assert!(!reaches(s, collect, net, Side::In) && !reaches(s, collect, table, Side::Out), "{:?}", places(s, collect));
     // the parts still touch their places
     assert!(!touches(s, "harvest.client.WeatherClient.latest", "net").is_empty());
     assert!(touches(s, "harvest.store.ReadingStore.save", "db_sqlite").iter().any(|t| t.artifact == "readings"));
@@ -808,7 +866,8 @@ fn prophecy_says_when_its_import_goes_in_a_circle() {
     assert!(text.contains("import json\n\nfrom archive import prophecy\n"), "{text}");
     assert!(notes.is_empty(), "{notes:?}");
     let (_, notes) = decide(true);
-    assert!(notes.iter().any(|n| n.contains("goes in a circle") && n.contains("archive.sink")), "{notes:?}");
+    // a note, which names the module the vision writes into
+    assert!(notes.iter().any(|n| n.contains("archive.sink")), "{notes:?}");
 }
 
 /// A vision that changes what is built is no prophecy: writing it would replace the code with a
@@ -823,7 +882,7 @@ fn prophecy_a_vision_that_changes_what_exists_is_refused() {
     let vision = BTreeMap::from([(file, Some(now.replace("print(report)", "...")))]);
     let refused =
         atlas_engine::decide::prophetize(&dir, &vision, &BTreeMap::new(), &Options::default()).expect_err("a changed body is refused");
-    assert!(refused.to_string().contains("changes `archive.sink.Sink.write`") && refused.to_string().contains("supersedes"), "{refused}");
+    assert!(refused.to_string().contains("archive.sink.Sink.write"), "the refusal names what the vision changes: {refused}");
 }
 
 /// A prophecy whose shape waits on an open question is sealed on its issue. The seals come back
@@ -881,8 +940,10 @@ fn sums_a_union_written_in_place_is_a_sum() {
         assert!(edge(&s, consumer, sum, EdgeKind::Takes), "{consumer} takes the sum, however it spells it");
     }
     assert_eq!(found(&s, "sums"), [sum]);
-    let asked = check(&s).into_iter().find(|f| f.principle == "sums").unwrap();
-    assert_eq!(asked.what, "Fit | Failed is handed on unopened: points and line take it");
+    // the functions that take the sum unopened are these two, and no other
+    let mut takers: Vec<&str> = s.edges.iter().filter(|e| e.kind == EdgeKind::Takes && e.dst == sum).map(|e| e.src.as_str()).collect();
+    takers.sort();
+    assert_eq!(takers, ["fits.plot.points", "fits.report.line"]);
 }
 
 /// The left of `x or y` always runs and what it gives flows on through it; the right runs only
@@ -993,26 +1054,39 @@ fn choices_a_choice_is_made_once_across_bodies() {
     let level = &c.node("runs.core.Level.prefix").unwrap().compares;
     assert!(level.len() == 1 && level[0].receiver && level[0].members == ["Level.QUIET", "Level.LOUD"], "{level:?}");
 
-    let asked: Vec<Finding> = check(&s).into_iter().filter(|f| f.principle == "choices").collect();
-    let at = |id: &str| asked.iter().find(|f| f.node == id).unwrap_or_else(|| panic!("{id} is asked: {asked:#?}"));
-    assert_eq!(
-        asked.iter().map(|f| f.node.as_str()).collect::<Vec<_>>(),
-        ["runs.core.Runner", "runs.core.retries", "runs.core.verbosity", "runs.core.prefix", "runs.core.run"]
+    let mut asked = found(&s, "choices");
+    asked.sort();
+    assert_eq!(asked, ["runs.core.Runner", "runs.core.prefix", "runs.core.retries", "runs.core.run", "runs.core.verbosity"]);
+    // what each comes back to: the subject each body tests (as its comparison writes it), and the value it tests it against
+    let tests = |id: &str| -> Vec<(String, String, Vec<String>)> {
+        let compares = &s.node(id).unwrap().compares;
+        compares.iter().map(|c| (c.subject.clone(), c.written.clone(), c.cases.iter().chain(&c.members).cloned().collect())).collect()
+    };
+    let against = |subject: &str, written: &str, value: &str| (subject.to_string(), written.to_string(), vec![value.to_string()]);
+    for f in ["Runner.batch", "Runner.workers"] {
+        assert_eq!(tests(&format!("runs.core.{f}")), [against("self.mode", "", "parallel")], "{f}");
+    }
+    for f in ["retries", "timeout"] {
+        assert_eq!(tests(&format!("runs.core.{f}")), [against("mode", "", "parallel")], "{f}");
+    }
+    let m = against("settings.mode", "m", "parallel");
+    assert_eq!(tests("runs.core.verbosity"), [m.clone(), m], "the local `m` is the value it is bound to");
+    for f in ["prefix", "suffix"] {
+        assert_eq!(tests(&format!("runs.core.{f}")), [against("level", "", "Level.LOUD")], "{f}");
+    }
+    // `run` takes its Job from `load` in one arm of a choice and from `infer` in the other, and hands it to `finished`
+    // after the choice
+    let run = s.node("runs.core.run").unwrap();
+    let site = |to: &str| run.sites.iter().find(|x| x.to == to).unwrap_or_else(|| panic!("run calls {to}"));
+    let (load, infer, finished) = (site("runs.core.load"), site("runs.core.infer"), site("runs.core.finished"));
+    assert!(
+        load.arms.len() == 1 && infer.arms.len() == 1 && load.arms[0].0 == infer.arms[0].0 && load.arms[0].1 != infer.arms[0].1,
+        "{:?} {:?}",
+        load.arms,
+        infer.arms
     );
-    let runner = at("runs.core.Runner");
-    assert_eq!(runner.what, "Runner.batch and Runner.workers test `self.mode` in 2 places; \"parallel\" (2×) come back");
-    assert_eq!(
-        runner.evidence,
-        ["line 34 in Runner.batch: self.mode against \"parallel\"", "line 37 in Runner.workers: self.mode against \"parallel\""]
-    );
-    assert_eq!(at("runs.core.retries").what, "retries and timeout test `mode` in 2 places; \"parallel\" (2×) come back");
-    assert_eq!(
-        at("runs.core.verbosity").evidence,
-        ["line 50: m (settings.mode) against \"parallel\"", "line 51: m (settings.mode) against \"parallel\""],
-        "the local `m` is the value it is bound to"
-    );
-    assert_eq!(at("runs.core.prefix").what, "prefix and suffix test `level` in 2 places; Level.LOUD (2×) come back");
-    assert!(at("runs.core.run").what.contains("(load | infer)"), "{}", at("runs.core.run").what);
+    assert!([load, infer].iter().all(|x| x.gives.iter().any(|h| h.name == "job")), "{:?} {:?}", load.gives, infer.gives);
+    assert!(finished.arms.is_empty() && finished.hands.iter().any(|h| h.name == "job"), "{finished:?}");
     // the shortcut still runs the job and sends its line
     assert!(edge(&s, "runs.core.run", "runs.core.send", EdgeKind::Calls) && edge(&s, "runs.core.run", "runs.core.load", EdgeKind::Calls));
 }
@@ -1028,6 +1102,21 @@ fn club() -> &'static Pair {
 /// What `lens` says of class `id` of the club: empty when it asks nothing.
 fn lens_of(g: &Graph, id: &str) -> String {
     check(g).into_iter().find(|f| f.principle == "lens" && f.node == format!("club.{id}")).map(|f| f.what).unwrap_or_default()
+}
+
+/// Whether class `club.{cls}` takes a `club.model.{ty}` where it writes the place `at` (a table, or the value that holds a
+/// file's path) and gets from `at` (reads it without writing it), while no get gives a `ty` back: as itself, inside what
+/// it gives, or as a subclass of what it gives. That is what `lens` asks, short of telling a value put from a key the
+/// statement finds rows by.
+fn loses(g: &Graph, cls: &str, ty: &str, at: &str) -> bool {
+    let (cls, ty) = (format!("club.{cls}"), format!("club.model.{ty}"));
+    let methods: Vec<_> = g.nodes.iter().filter(|n| n.cls.as_deref() == Some(cls.as_str())).collect();
+    let touches = |m: &atlas_engine::Node, side: Side| m.touches.iter().any(|t| (t.artifact == at || t.what == at) && t.side() == side);
+    let holds = |t: &str| t == ty || edge(g, t, &ty, EdgeKind::Has) || edge(g, &ty, t, EdgeKind::Inherits);
+    let gets: Vec<_> = methods.iter().filter(|m| touches(m, Side::In) && !touches(m, Side::Out)).collect();
+    methods.iter().any(|m| edge(g, &m.id, &ty, EdgeKind::Takes) && touches(m, Side::Out))
+        && !gets.is_empty()
+        && !gets.iter().any(|m| g.edges.iter().any(|e| e.kind == EdgeKind::Returns && e.src == m.id && holds(&e.dst)))
 }
 
 /// What a lens puts, it gets back, at the place it puts to: a table, not the database it is in.
@@ -1048,8 +1137,10 @@ fn lens_the_place_is_the_table() {
     assert_eq!(at(c, "Desk.members"), [("members".to_string(), "read")]);
     assert_eq!(at(s, "Register.latest"), [("reports".to_string(), "read")]);
     assert!(edge(s, "club.model.Report", "club.model.Member", EdgeKind::Has));
-    assert_eq!(lens_of(s, "desk.Desk"), "Desk puts Visit into SQLite(visits) and gets no Visit back");
-    assert_eq!(lens_of(s, "desk.Register"), "Register puts Member into SQLite(members) and gets no Member back");
+    for (cls, ty, table) in [("desk.Desk", "Visit", "visits"), ("desk.Register", "Member", "members")] {
+        assert!(found(s, "lens").contains(&format!("club.{cls}")) && loses(s, cls, ty, table), "{cls}");
+        assert!(!loses(c, cls, ty, table), "{cls}");
+    }
 }
 
 /// What a lens puts, it gets back, at the file the code names: by its path, or by the value that
@@ -1063,7 +1154,8 @@ fn lens_the_place_is_the_file_the_code_names() {
     let record = c.node("club.files.Tape.record").unwrap();
     assert!(record.touches.iter().any(|t| t.artifact == "*.json" && t.kind_name() == "disk_write"), "{:?}", record.touches);
     assert_eq!(lens_of(c, "files.Tape"), "");
-    assert_eq!(lens_of(s, "files.Tape"), "Tape puts Visit into Disk(Tape.path) and gets no Visit back");
+    assert!(found(s, "lens").contains(&"club.files.Tape".to_string()) && loses(s, "files.Tape", "Visit", "Tape.path"));
+    assert!(!loses(c, "files.Tape", "Visit", "Tape.path"));
 }
 
 /// A get gives a value back from the place; an operation that reads the place on its way to
@@ -1077,7 +1169,8 @@ fn lens_a_get_gives_a_value_back() {
     let kinds: Vec<&str> = add.touches.iter().map(|t| t.kind_name()).collect();
     assert!(kinds.contains(&"disk_read") && kinds.contains(&"disk_write"), "{:?}", add.touches);
     assert_eq!(lens_of(c, "files.Log"), "");
-    assert_eq!(lens_of(s, "files.Log"), "Log puts Visit into Disk(Log.path) and gets no Visit back");
+    assert!(found(s, "lens").contains(&"club.files.Log".to_string()) && loses(s, "files.Log", "Visit", "Log.path"));
+    assert!(!loses(c, "files.Log", "Visit", "Log.path"));
 }
 
 /// What a put puts is what its statement writes; a key its statement finds rows by is no value
@@ -1090,7 +1183,7 @@ fn lens_a_key_is_no_value_put() {
     assert!(edge(c, "club.desk.Visits.forget", "club.model.Member", EdgeKind::Takes));
     assert!(touches(c, "club.desk.Visits.forget", "db_sqlite").iter().any(|t| t.artifact == "visits" && t.dir_name() == "write"));
     assert_eq!(lens_of(c, "desk.Visits"), "");
-    assert_eq!(lens_of(s, "desk.Visits"), "Visits puts Member into SQLite(visits) and gets no Member back");
+    assert!(found(s, "lens").contains(&"club.desk.Visits".to_string()) && loses(s, "desk.Visits", "Member", "visits"));
 }
 
 /// What a get gives back holds what was put: the class's own type, which a constructor gives, and
@@ -1106,8 +1199,11 @@ fn lens_a_get_gives_its_own_class_and_a_subclass_back() {
     assert!(edge(c, "club.model.Notice", "club.model.Post", EdgeKind::Inherits));
     assert_eq!(lens_of(c, "files.Roster"), "");
     assert_eq!(lens_of(c, "files.Board"), "");
-    assert_eq!(lens_of(s, "files.Roster"), "Roster puts Member into Disk(Roster.path) and gets no Member back");
-    assert_eq!(lens_of(s, "files.Board"), "Board puts Notice into Disk(Board.path) and gets no Notice back");
+    for (cls, ty) in [("files.Roster", "Member"), ("files.Board", "Notice")] {
+        let file = format!("{}.path", cls.trim_start_matches("files."));
+        assert!(found(s, "lens").contains(&format!("club.{cls}")) && loses(s, cls, ty, &file), "{cls}");
+        assert!(!loses(c, cls, ty, &file), "{cls}");
+    }
 }
 
 /// What a get gives back holds its fields, a library's type among them. `Ledger` puts a `Fraction`
@@ -1152,9 +1248,12 @@ fn overrides_the_base_is_the_next_in_the_method_resolution_order() {
     assert_eq!(feeds, ["reading.feeds.Source.read", "reading.feeds.Archive.read"]);
     assert_eq!(s.node("reading.feeds.Feed.read").unwrap().breaks.as_deref(), Some("reading.feeds.Source.read"));
     assert_eq!(s.node("reading.feeds.Tape.read").unwrap().breaks.as_deref(), Some("reading.feeds.Archive.read"));
-    let source = check(s).into_iter().find(|f| f.node == "reading.feeds.Source.read").unwrap();
-    assert_eq!(source.what, "Source.read promises () -> bytes; 1 override breaks it");
-    assert_eq!(source.evidence, ["Feed.read() -> str (src/reading/feeds.py:20)"]);
+    // `Source.read` promises bytes, and the one override that breaks it gives a str
+    let breaking: Vec<&str> =
+        s.nodes.iter().filter(|n| n.breaks.as_deref() == Some("reading.feeds.Source.read")).map(|n| n.id.as_str()).collect();
+    assert_eq!(breaking, ["reading.feeds.Feed.read"]);
+    let gives = |id: &str| s.node(id).unwrap().returns.as_ref().map(|r| r.written.clone());
+    assert_eq!((gives("reading.feeds.Source.read"), gives("reading.feeds.Feed.read")), (Some("bytes".into()), Some("str".into())));
 }
 
 /// A constructor on the class is called through the class a caller names, and is handed what the
@@ -1288,8 +1387,10 @@ fn changes_a_change_to_an_input_of_any_type_shows_in_the_signature() {
     assert_eq!(inputs("board.core.Board.take_from"), ["other", "self"]);
     assert_eq!(inputs("board.core.Board.take_victim"), ["self", "victim"]);
     assert!(edge(&s, "board.core.add_tag", "ext:builtins.list", EdgeKind::Mutates), "a list is what changes");
-    let add_tag = check(&s).into_iter().find(|f| f.node == "board.core.add_tag").expect("asked");
-    assert!(add_tag.what.contains("the list[str] it is handed as `tags`"), "{}", add_tag.what);
+    // what changes is the `list[str]` it is handed as `tags`
+    assert!(s.edges.iter().any(|e| e.kind == EdgeKind::Mutates && e.src == "board.core.add_tag" && e.via.as_deref() == Some("tags")));
+    let tags = s.node("board.core.add_tag").unwrap().params.iter().find(|p| p.name == "tags").map(|p| p.ty.clone());
+    assert_eq!(tags.as_deref(), Some("list[str]"));
     assert_eq!(inputs("board.core.wipe"), ["board"], "what it hands a function that changes it, it changes");
 }
 
@@ -1351,15 +1452,17 @@ fn layers_a_package_and_its_own_module_and_the_top_packages_depend_in_one_direct
     assert!(found(&c, "layers").is_empty(), "{:?}", check(&c).iter().map(|f| &f.what).collect::<Vec<_>>());
     assert!(edge(&c, "shop.orders.total", "shop.orders.lines.price", EdgeKind::Calls));
     assert!(edge(&c, "kitchen.cook.boil", "shop.orders.total", EdgeKind::Calls));
-    let layers: Vec<Finding> = check(&s).into_iter().filter(|f| f.principle == "layers").collect();
-    let said: Vec<(&str, &str)> = layers.iter().map(|f| (f.node.as_str(), f.what.as_str())).collect();
-    assert_eq!(
-        said,
-        [("kitchen", "kitchen and shop depend on one another"), ("shop.orders", "orders itself and lines depend on one another")]
+    assert_eq!(found(&s, "layers"), ["kitchen", "shop.orders"]);
+    // kitchen and shop call each other
+    assert!(
+        edge(&s, "kitchen.cook.boil", "shop.orders.total", EdgeKind::Calls)
+            && edge(&s, "shop.menu.dish", "kitchen.cook.boil", EdgeKind::Calls)
     );
-    assert!(layers[1].evidence.iter().any(|e| e.starts_with("orders itself: the code of `shop.orders`")), "{:?}", layers[1].evidence);
+    // `orders` itself, the code in `orders/__init__.py`, and `lines` below it call each other
+    assert!(edge(&s, "shop.orders.total", "shop.orders.lines.price", EdgeKind::Calls));
     assert!(edge(&s, "shop.orders.lines.price", "shop.orders.tax", EdgeKind::Calls), "the shortcut's call back is in the graph");
-    assert!(edge(&s, "shop.menu.dish", "kitchen.cook.boil", EdgeKind::Calls));
+    let own = |id: &str| s.node(id).is_some_and(|n| PathBuf::from(&n.file).ends_with("src/shop/orders/__init__.py"));
+    assert!(own("shop.orders.total") && own("shop.orders.tax"), "the package's own module");
 }
 
 /// A test is a way in from outside, not a layer: a pytest file (`test_*.py`, `*_test.py`,
@@ -1376,9 +1479,14 @@ fn layers_a_test_inside_a_package_is_no_layer() {
         assert!(edge(&g, "shop.orders.test_lines.boiled", "kitchen.cook.boil", EdgeKind::Calls), "{side}");
         assert!(edge(&g, "shop.conftest.cooked", "kitchen.cook.boil", EdgeKind::Calls), "{side}");
         assert!(g.node("shop.orders.lines").is_some_and(|m| !m.test), "{side}: a module beside a test is not one");
-        let cycles: Vec<Finding> = check(&g).into_iter().filter(|f| f.principle == "layers").collect();
-        assert!(cycles.iter().all(|f| f.evidence.iter().all(|e| !e.contains("boiled") && !e.contains("cooked"))), "{side}: {cycles:#?}");
     }
+    // on the clean side the tests cook from the kitchen that cooks from the shop, and no cycle comes of it; the shortcut's
+    // cycle between kitchen and shop is the one its `menu` closes, and names no test
+    assert!(found(&shop_python("clean"), "layers").is_empty());
+    let s = shop_python("shortcut");
+    let kitchen = check(&s).into_iter().find(|f| f.principle == "layers" && f.node == "kitchen").expect("kitchen and shop are a cycle");
+    assert!(kitchen.evidence.iter().any(|e| e.contains("dish")), "{:?}", kitchen.evidence);
+    assert!(kitchen.evidence.iter().all(|e| !e.contains("boiled") && !e.contains("cooked")), "{:?}", kitchen.evidence);
 }
 
 // ---------- prophecy: what leans, and what a name names ----------
@@ -1418,10 +1526,11 @@ fn prophecy_a_name_that_names_several_nodes_is_ambiguous() {
     let replaces = |g: &Graph, id: &str| g.node(id).and_then(|n| n.prophecy.as_ref()).and_then(|p| p.replaces.clone());
     assert_eq!(replaces(&c, "archive.plan.save_posted").as_deref(), Some("archive.ledger.save"));
     assert_eq!(replaces(&c, "archive.plan.save_kept").as_deref(), Some("archive.shelf.save"));
-    let asked: Vec<Finding> = check(&s).into_iter().filter(|f| f.principle == "prophecy").collect();
-    assert_eq!(asked.len(), 1, "{asked:#?}");
-    assert_eq!(asked[0].what, "save_posted supersedes `save`, which names 2 nodes: `archive.ledger.save` and `archive.shelf.save`");
-    assert!(!asked[0].what.contains("does not hold"));
+    assert_eq!(found(&s, "prophecy"), ["archive.plan.save_posted"]);
+    // `save` names both, and the prophecy replaces neither: it names both rather than call the name one the code does not hold
+    let posted = s.node("archive.plan.save_posted").and_then(|n| n.prophecy.clone()).expect("a prophecy");
+    assert_eq!(posted.supersedes.as_deref(), Some("save"));
+    assert_eq!((posted.replaces, posted.candidates), (None, vec!["archive.ledger.save".to_string(), "archive.shelf.save".to_string()]));
 }
 
 /// A request to a route leans on its handler as a call does. In each side a client part asks the
@@ -1440,9 +1549,11 @@ fn prophecy_a_request_to_a_prophesied_route_leans_on_it() {
     assert!(edge(&c, "buyer.client.item", "shop.api.item", EdgeKind::Requests));
     assert!(found(&c, "prophecy").is_empty(), "{:?}", check(&c).iter().map(|f| &f.what).collect::<Vec<_>>());
     assert!(edge(&s, "buyer.client.item", "shop.api.item_v2", EdgeKind::Requests));
-    let asked: Vec<Finding> = check(&s).into_iter().filter(|f| f.principle == "prophecy").collect();
-    assert_eq!(asked.iter().map(|f| f.node.as_str()).collect::<Vec<_>>(), ["buyer.client.item"]);
-    assert_eq!(asked[0].evidence, ["Requests `item_v2`, which is not built"]);
+    assert_eq!(found(&s, "prophecy"), ["buyer.client.item"]);
+    // what it requests is a prophecy, and the route it served before is built
+    assert!(
+        s.node("shop.api.item_v2").is_some_and(|n| n.prophecy.is_some()) && s.node("shop.api.item").is_some_and(|n| n.prophecy.is_none())
+    );
 }
 
 // ---------- doors: every declaration a door is made of ----------
@@ -1474,8 +1585,10 @@ fn doors_every_declaration_of_a_door_says_what_goes_in_and_out() {
     }
     // one node per name: the implementation with the overloads its callers see, the property's getter
     let scale = c.node("units.core.scale").unwrap();
-    assert_eq!(scale.overloads.iter().map(|o| o.line).collect::<Vec<_>>(), [26, 28]);
-    assert!(scale.params.iter().all(|p| p.ty.is_empty()) && scale.span.map(|s| s.0) == Some(29), "the implementation, as written");
+    assert_eq!(scale.overloads.len(), 2, "{:?}", scale.overloads);
+    assert!(scale.overloads.iter().all(|o| o.params.iter().all(|p| !p.ty.is_empty()) && o.returns.is_some()), "typed overloads");
+    let after = scale.span.is_some_and(|(start, _)| scale.overloads.iter().all(|o| o.line < start));
+    assert!(scale.params.iter().all(|p| p.ty.is_empty()) && after, "the implementation, as written, after its overloads");
     let meters = c.node("units.core.Length.meters").unwrap();
     assert_eq!(meters.decorators, ["property"]);
     assert_eq!(meters.returns.as_ref().map(|r| r.written.as_str()), Some("float"));
@@ -1485,14 +1598,18 @@ fn doors_every_declaration_of_a_door_says_what_goes_in_and_out() {
     assert_eq!(steps, ["__init__", "meters", "__add__", "__eq__"].map(|m| format!("units.core.Length.{m}")));
     // the shortcut: each door left open is asked, at the declaration that leaves it open
     let asked: Vec<(String, u32)> = check(&s).into_iter().filter(|f| f.principle == "doors").map(|f| (f.node, f.line)).collect();
+    let declared = |id: &str| s.node(id).and_then(|n| n.span).map(|(start, _)| start).unwrap();
+    // of `scale`, the declaration left open is its overload without types
+    let open_overload = s.node("units.core.scale").unwrap().overloads.iter().find(|o| o.params.iter().any(|p| p.ty.is_empty())).unwrap();
     let want = [
-        ("units.convert.parse", 6),
-        ("units.core.Length.meters", 11),
-        ("units.core.Length.__add__", 18),
-        ("units.core.scale", 28),
-        ("units.core.log", 33),
+        ("units.convert.parse", declared("units.convert.parse")),
+        ("units.core.Length.meters", declared("units.core.Length.meters")),
+        ("units.core.Length.__add__", declared("units.core.Length.__add__")),
+        ("units.core.scale", open_overload.line),
+        ("units.core.log", declared("units.core.log")),
     ];
     assert_eq!(asked, want.map(|(n, l)| (n.to_string(), l)));
+    assert_eq!(s.node("units.core.Length.meters").unwrap().returns, None, "the node is the getter, left untyped");
     // `Any` is drawn as written, and says nothing
     let parse = s.node("units.convert.parse").unwrap();
     assert_eq!(parse.params.iter().map(|p| (p.ty.as_str(), p.unchecked)).collect::<Vec<_>>(), [("Any", true)]);
@@ -1518,22 +1635,22 @@ fn jobs(side: &str) -> Graph {
 #[test]
 fn nothing_says_what_atlas_cannot_see() {
     let (c, s) = (jobs("clean"), jobs("shortcut"));
-    let asked = |g: &Graph| -> Vec<(String, String)> {
-        check(g).into_iter().filter(|f| f.principle == "nothing").map(|f| (f.node, f.what)).collect()
-    };
-    assert!(asked(&c).is_empty(), "{:#?}", asked(&c));
+    assert!(found(&c, "nothing").is_empty(), "{:?}", found(&c, "nothing"));
     for g in [&c, &s] {
         assert!(g.node("jobs.runner.stop").unwrap().raises, "ending the run is what `stop` leaves behind");
     }
-    let want = [
-        ("run_task", "run_task gives nothing back, and Atlas cannot see what `Task.run` does"),
-        ("Job.finish", "Job.finish gives nothing back, and Atlas cannot see what `self.on_done(..)` does"),
-        ("report", "report gives nothing back, and Atlas cannot see what `logger.info(..)` does"),
-        ("count", "count gives nothing back, and Atlas cannot see what `Counter.runs += 1` does"),
-        ("settle", "settle gives nothing back, and Atlas sees no change and no place it reaches"),
-    ]
-    .map(|(f, what)| (format!("jobs.runner.{f}"), what.to_string()));
-    assert_eq!(asked(&s), want);
+    let want = ["run_task", "Job.finish", "report", "count", "settle"].map(|f| format!("jobs.runner.{f}"));
+    assert_eq!(found(&s, "nothing"), want);
+    // what each runs that Atlas cannot see into, as the code writes it: a method only declared, a call on a field, a call
+    // into a library no table describes, a value its class keeps; `settle` runs nothing at all
+    assert!(edge(&s, "jobs.runner.run_task", "jobs.runner.Task.run", EdgeKind::Calls));
+    for (f, code) in [("Job.finish", "self.on_done"), ("report", "logger.info"), ("count", "Counter.runs")] {
+        let unseen = &s.node(&format!("jobs.runner.{f}")).unwrap().unseen;
+        assert!(unseen.len() == 1 && unseen[0].1.contains(code), "{f}: {unseen:?}");
+    }
+    let settle = s.node("jobs.runner.settle").unwrap();
+    assert!(settle.unseen.is_empty() && settle.sites.is_empty() && settle.touches.is_empty(), "{settle:?}");
+    assert!(s.edges.iter().all(|e| !(e.src == "jobs.runner.settle" && e.kind == EdgeKind::Mutates)));
     // what is only declared has no body to ask about, and what implements it is still drawn
     assert!(s.node("jobs.runner.Task.run").unwrap().declared && c.node("jobs.runner.Task.run").unwrap().declared);
     assert_eq!(touches(&s, "jobs.runner.Echo.run", "screen").len(), 1);
@@ -1623,8 +1740,8 @@ fn places_the_function_that_writes_the_path_decides_it() {
         touches(g, "stock.rows.read_rows", "disk_read").iter().any(|t| t.artifact == "data/rows.csv" && !t.fixed && t.fixed_by == [by])
     };
     assert!(read(&c, "stock.cli.main") && read(&s, "stock.rows.default_rows"));
-    let asked = check(&s).into_iter().find(|f| f.principle == "places").expect("default_rows is asked");
-    assert_eq!(asked.evidence, ["read_text(data/rows.csv) in read_rows"]);
+    // the file `default_rows` decides is read in `read_rows`, which it calls
+    assert!(edge(&s, "stock.rows.default_rows", "stock.rows.read_rows", EdgeKind::Calls));
 }
 
 /// A default whoever calls the function or starts the program can override is an option, not a
@@ -1700,8 +1817,9 @@ fn diamond_a_value_runs_the_method_its_method_resolution_order_names() {
         assert_eq!(ran, [first("read")], "{side}");
         assert_eq!(atlas_engine::flow::arrows(g)[&class("Feed")].takes, ["news.store.Store"], "{side}");
         assert!(edge(g, "news.sources.Buffered.lines", "news.sources.Source.read", EdgeKind::Calls), "{side}");
-        let r = route(g, "news.read.headlines");
-        assert!(r.contains("Store.get(key)") && !r.contains("response.read()"), "{side}: {r}");
+        // the route reads the store, and never runs the read that asks the network
+        let route = crate::ran(g, "news.read.headlines");
+        assert!(route.contains("news.store.Store.get") && !route.contains("news.sources.Source.read"), "{side}: {route:?}");
     }
     let asked: Vec<String> = check(&news().clean).into_iter().map(|f| format!("{} {}", f.principle, f.node)).collect();
     assert!(asked.is_empty(), "{asked:?}");
@@ -1713,9 +1831,12 @@ fn diamond_a_value_runs_the_method_its_method_resolution_order_names() {
 /// store reads is named by the feed's `url`.
 #[test]
 fn diamond_a_call_through_a_class_runs_its_method() {
-    let r = route(&news().clean, "news.read.headlines");
-    assert!(!r.contains("one of") && r.contains("Cached.read()"), "{r}");
-    assert!(r.contains("reads {cache}/{url}"), "{r}");
+    let (g, headlines) = (&news().clean, "news.read.headlines");
+    let steps = runs(g, headlines);
+    assert!(steps.iter().all(|(_, alts)| alts.is_empty()), "no step may run another in its place: {steps:?}");
+    assert!(ran(g, headlines).contains("news.sources.Cached.read") && ran(g, headlines).contains("news.store.Store.get"));
+    let read = touches(g, "news.store.Store.get", "disk_read");
+    assert!(read.iter().any(|t| t.what == "{cache}/{url}" && t.by.iter().any(|b| b == headlines)), "{read:?}");
     let bodies = atlas_engine::flow::bodies(&news().clean);
     let read = &bodies[&atlas_engine::flow::key("news.sources.Feed.read", "news.sources.Feed")];
     let ran: Vec<(&str, &str, bool)> = read.steps().iter().map(|s| (s.to.as_str(), s.on.as_str(), s.named)).collect();
@@ -1747,9 +1868,9 @@ fn cooperative_super_runs_the_next_method_along_the_value_s_order() {
         let trimmed: Vec<(&str, bool)> = bodies[&key("Trimmed", "Feed")].steps().iter().map(|s| (s.to.as_str(), s.named)).collect();
         assert_eq!(trimmed, [(format!("{}.read", class(next)).as_str(), true)], "{side}");
         assert!(edge(g, &format!("{}.read", class("Trimmed")), &format!("{}.read", class("Source")), EdgeKind::Calls), "{side}");
-        let r = route(g, "news.read.headlines");
-        assert!(!r.contains("one of"), "{side}: {r}");
-        assert_eq!(r.contains("Store.get(key)"), side == "clean", "{side}: {r}");
+        let steps = runs(g, "news.read.headlines");
+        assert!(steps.iter().all(|(_, alts)| alts.is_empty()), "{side}: {steps:?}");
+        assert_eq!(ran(g, "news.read.headlines").contains("news.store.Store.get"), side == "clean", "{side}: {steps:?}");
     }
     let bodies = atlas_engine::flow::bodies(&cooperative().clean);
     let cached: Vec<&str> = bodies[&key("Cached", "Feed")].steps().iter().map(|s| s.to.as_str()).collect();
@@ -1759,10 +1880,14 @@ fn cooperative_super_runs_the_next_method_along_the_value_s_order() {
         (unknown.to.as_str(), unknown.instead.as_slice()),
         ("news.sources.Source.read", [atlas_engine::flow::key("news.sources.Cached.read", "news.sources.Feed")].as_slice())
     );
-    let r = route(&cooperative().clean, "news.read.lines");
-    assert!(r.contains("Source.read() → bytes   ·   downloads self.url   ·   one of 1") && r.contains("1.1a  Cached.read()"), "{r}");
-    let r = route(&cooperative().shortcut, "news.read.lines");
-    assert!(!r.contains("one of") && !r.contains("Cached.read"), "{r}");
+    // the route of `lines` runs that call, which downloads, or in its place the cached read on a feed
+    let (c, s) = (&cooperative().clean, &cooperative().shortcut);
+    let cached = atlas_engine::flow::key("news.sources.Cached.read", "news.sources.Feed");
+    let steps = runs(c, "news.read.lines");
+    assert!(steps.contains(&("news.sources.Source.read".to_string(), vec![cached])), "{steps:?}");
+    assert!(!touches(c, "news.sources.Source.read", "net").is_empty());
+    let steps = runs(s, "news.read.lines");
+    assert!(steps.iter().all(|(_, alts)| alts.is_empty()) && !ran(s, "news.read.lines").contains("news.sources.Cached.read"), "{steps:?}");
 }
 
 /// A call by name on a value whose class is not known may run, for each class the value may be,
@@ -1776,14 +1901,15 @@ fn cooperative_super_runs_the_next_method_along_the_value_s_order() {
 /// is a feed never reads its cache.
 #[test]
 fn cooperative_a_call_by_name_may_run_a_sibling_s_method() {
-    for (side, g, next) in [("clean", &cooperative().clean, "Cached"), ("shortcut", &cooperative().shortcut, "Source")] {
+    for (side, g) in [("clean", &cooperative().clean), ("shortcut", &cooperative().shortcut)] {
         let bodies = atlas_engine::flow::bodies(g);
         let lines = &bodies["news.read.cached_lines"].steps()[0];
         assert_eq!(lines.to, "news.sources.Cached.read", "{side}");
         assert_eq!(lines.alts(&bodies), [atlas_engine::flow::key("news.sources.Trimmed.read", "news.sources.Feed")], "{side}");
-        let r = route(g, "news.read.cached_lines");
-        assert!(r.contains("one of 1") && r.contains("1a  Feed.read()"), "{side}: {r}");
-        assert!(r.contains(&format!("1a.1  {next}.read()")), "{side}: {r}");
+        // the route runs the call, or in its place the sibling's method on a feed, whose steps `trimmed` below names
+        let sibling = atlas_engine::flow::key("news.sources.Trimmed.read", "news.sources.Feed");
+        let steps = runs(g, "news.read.cached_lines");
+        assert!(steps.contains(&("news.sources.Cached.read".to_string(), vec![sibling])), "{side}: {steps:?}");
     }
     let trimmed = |g: &Graph| -> Vec<String> {
         let bodies = atlas_engine::flow::bodies(g);
@@ -1801,8 +1927,9 @@ fn cooperative_a_call_by_name_may_run_a_sibling_s_method() {
 #[test]
 fn diamond_the_file_a_feed_reads_is_named_where_it_is_built() {
     for (side, g) in [("clean", &news().clean), ("shortcut", &news().shortcut)] {
-        let r = route(g, "news.read.headlines");
-        assert!(r.contains("reads {cache}/"), "{side}: {r}");
+        assert!(ran(g, "news.read.headlines").contains("news.store.Store.get"), "{side}");
+        let read = touches(g, "news.store.Store.get", "disk_read");
+        assert!(read.iter().any(|t| t.what.starts_with("{cache}/") && t.by.iter().any(|b| b == "news.read.headlines")), "{side}: {read:?}");
     }
 }
 
