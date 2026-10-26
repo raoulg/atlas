@@ -11,7 +11,9 @@ cargo install tauri-cli --version "^2" --locked
 ./studio/build-app.sh
 ```
 
-Run it again after pulling to install the new build. The app is signed ad hoc on the machine that builds it; packages for other machines, signed and notarized, are #201.
+Run it again after pulling to install the new build. Studio's version is Atlas's own, from the root `Cargo.toml`.
+
+Released and nightly builds need no checkout: `install-studio.sh` installs the disk image of the latest release (or with `ATLAS_CHANNEL=nightly` the nightly) into `~/Applications`; see `docs/reference/install.md`. `.github/workflows/studio.yml` makes those images, for Apple silicon and Intel, and `release.yml` and `nightly.yml` publish them; run by hand, it keeps them as the run's artifacts. The app is signed ad hoc, not with an Apple Developer ID: a disk image downloaded in a browser opens through System Settings › Privacy & Security › Open Anyway.
 
 Studio opens the workspace it had open last. A folder named on its command line opens instead: `open -a "Atlas Studio" --args ~/code/project`. An app started from the Finder or the Dock takes the `PATH` of the user's login shell, so the sidecar, the lessons' Python and the terminal find what the shell profile adds.
 

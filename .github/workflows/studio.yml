@@ -1,0 +1,66 @@
+name: studio
+
+# Atlas Studio for macOS, as a disk image per architecture (`atlas-studio-<target>.dmg`), with the
+# atlas CLI of the same commit inside. The version is Atlas's own, from the root Cargo.toml. The app
+# is signed ad hoc, not with an Apple Developer ID, so a disk image downloaded in a browser opens
+# through System Settings › Privacy & Security › Open Anyway; `install-studio.sh` downloads it
+# without that step. `release.yml` and `nightly.yml` call this workflow and publish what it makes;
+# run by hand, it only keeps the images as the run's artifacts.
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: "The commit to build"
+        type: string
+        required: true
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "The commit or branch to build"
+        type: string
+        default: next
+
+permissions:
+  contents: read
+
+jobs:
+  dmg:
+    strategy:
+      matrix:
+        target: [aarch64-apple-darwin, x86_64-apple-darwin]
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: the atlas CLI, as Studio's sidecar
+        run: |
+          cargo build --release --locked --target ${{ matrix.target }} -p atlas
+          mkdir -p studio/src-tauri/binaries
+          cp target/${{ matrix.target }}/release/atlas studio/src-tauri/binaries/atlas-${{ matrix.target }}
+      - name: the disk image
+        working-directory: studio
+        run: |
+          version=$(grep -m1 '^version' ../Cargo.toml | cut -d'"' -f2)
+          npx --yes @tauri-apps/cli@2.12.2 build --ci --target ${{ matrix.target }} --bundles dmg \
+            --config "{\"version\":\"$version\"}"
+          cp src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg "$GITHUB_WORKSPACE/atlas-studio-${{ matrix.target }}.dmg"
+      - name: the app in the image is signed whole and carries its atlas
+        run: |
+          mount=$(hdiutil attach -nobrowse -readonly "atlas-studio-${{ matrix.target }}.dmg" | awk -F'\t' '/\/Volumes\//{print $NF}')
+          app="$mount/Atlas Studio.app"
+          codesign --verify --deep --strict "$app"
+          plutil -p "$app/Contents/Info.plist" | grep CFBundleShortVersionString
+          if [ "${{ matrix.target }}" = aarch64-apple-darwin ]; then "$app/Contents/MacOS/atlas" --version; fi
+          hdiutil detach "$mount"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: atlas-studio-${{ matrix.target }}
+          path: atlas-studio-${{ matrix.target }}.dmg

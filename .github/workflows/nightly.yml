@@ -1,6 +1,7 @@
 name: nightly
 
-# The nightly build of `next`, made when `next` has moved and `ci` is green for its commit. Every
+# The nightly build of `next`, made when `next` has moved and `ci` is green for its commit: the CLI
+# for five platforms and Atlas Studio for macOS (`studio.yml`). Every
 # build is its own immutable pre-release, `nightly-<yyyymmddHHMM>`, which the tap's formula names
 # with its checksums; the newest seven are kept. The pre-release `nightly` is the moving pointer
 # `install.sh` reads: its assets are replaced in place and its tag moved to the build. A
@@ -90,8 +91,17 @@ jobs:
           name: atlas-${{ matrix.target }}
           path: atlas-${{ matrix.target }}.*
 
+  # Atlas Studio for macOS of the same commit: its disk images go into the nightly with the CLI's
+  # archives, so the release's Studio build runs every night before a tag needs it.
+  studio:
+    needs: decide
+    if: needs.decide.outputs.build == 'true'
+    uses: ./.github/workflows/studio.yml
+    with:
+      ref: ${{ needs.decide.outputs.sha }}
+
   publish:
-    needs: [decide, build]
+    needs: [decide, build, studio]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v8

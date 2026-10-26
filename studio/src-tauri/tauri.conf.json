@@ -1,6 +1,5 @@
 {
   "productName": "Atlas Studio",
-  "version": "0.1.0",
   "identifier": "io.github.raoulg.atlas-studio",
   "build": {
     "frontendDist": "../ui"
@@ -23,6 +22,9 @@
   },
   "bundle": {
     "active": true,
+    "macOS": {
+      "signingIdentity": "-"
+    },
     "externalBin": [
       "binaries/atlas"
     ],
