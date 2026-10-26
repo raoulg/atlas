@@ -103,6 +103,7 @@ smallest that showed one law:
 | `builds-a-subclass` | building a subclass without an initializer of its own runs its base's, and opens into it |
 | `path-hole` | a directory no code decides is a hole in the path (R3) |
 | `path-pattern` | a pattern below a directory is one place, for the listing and for what is read of what it yields (R3) |
+| `path-listing` | a listing of all a directory holds lists the directory, each element below it; a sort key takes the paths it orders; a key no code decides is one of a table's values (#225) |
 | `check-after-fill` | a place read only to check it stays in the codomain, also where an arm filled it first (R4) |
 | `read-logged`, `with-open` | a read handed to a call, or through `with .. as`, is used: the place stands between (R4) |
 | `loop-reads-then-writes` | a read in a loop finds what a later round writes over: both (R4) |

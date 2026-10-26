@@ -715,6 +715,68 @@ fn a_place_carries_a_what_a_pattern_below_a_directory_the_entry_hands_down() {
     assert!(shortcut.iter().all(|t| t.what == "{d}/*/station-*"), "{shortcut:?}");
 }
 
+/// The places `demo.core.run` of a one-module program touches, each with its kind, the program its
+/// imports, the constants `DATA` and `KINDS`, and `run`'s body.
+fn run_places(name: &str, body: &str) -> BTreeSet<(String, String)> {
+    let code = format!(
+        "import os\nfrom pathlib import Path\n\nDATA = Path(\"data\")\nKINDS = {{\"a\": \"regelingen\", \"b\": \"ontwerp\"}}\n\n\ndef run(kind: str) -> None:\n{body}\n"
+    );
+    let g = program(name, &code);
+    let run = g.node("demo.core.run").unwrap_or_else(|| panic!("{name}: run is in the graph"));
+    run.touches.iter().filter(|t| t.kind_name() != "screen").map(|t| (t.kind_name().to_string(), t.artifact.clone())).collect()
+}
+
+/// Each element of a listing of a directory is the pattern `*` below it (`docs/reference/mathematics.md`,
+/// "Paths as terms"): `iterdir()` yields what `glob("*")` yields, and so do `os.listdir`, whose names
+/// the code joins back below the directory, and `os.scandir`, whose entries are at their `path`. A
+/// term built the four ways is one place: the directory listed, and the file read in each folder.
+#[test]
+fn a_place_carries_a_what_a_listing_is_a_pattern_below_its_directory() {
+    let glob = run_places("listing-glob", "    for p in DATA.glob(\"*\"):\n        print((p / \"x.txt\").read_text())");
+    assert!(glob.contains(&("disk_read".into(), "data/*/x.txt".into())), "{glob:?}");
+    for (name, body) in [
+        ("listing-iterdir", "    for p in DATA.iterdir():\n        print((p / \"x.txt\").read_text())"),
+        ("listing-listdir", "    for n in os.listdir(DATA):\n        print(open(os.path.join(DATA, n, \"x.txt\")).read())"),
+        ("listing-scandir", "    for e in os.scandir(DATA):\n        print(open(os.path.join(e.path, \"x.txt\")).read())"),
+    ] {
+        assert_eq!(run_places(name, body), glob, "{name}");
+    }
+}
+
+/// A function a call runs on each element of a collection is handed the elements: the parameter of
+/// a sort key (`sorted`, `max`, `list.sort`) and of `map` is one of the paths the collection holds,
+/// as the name a loop over it binds is, and what `max`, `next` or `sorted(..)[-1]` picks of it is one
+/// of them too. Each form reads at the place the loop reads.
+#[test]
+fn a_place_carries_a_what_a_sort_keys_parameter_is_an_element_of_what_it_orders() {
+    let each = run_places("each-loop", "    for p in DATA.glob(\"*.csv\"):\n        print(p.stat().st_size, p.read_text())");
+    assert_eq!(each, BTreeSet::from([("disk_read".to_string(), "data/*.csv".to_string())]));
+    for (name, body) in [
+        ("each-sorted", "    print(sorted(DATA.glob(\"*.csv\"), key=lambda p: p.stat().st_size)[-1].read_text())"),
+        ("each-max", "    print(max(DATA.glob(\"*.csv\"), key=lambda p: p.stat().st_size).read_text())"),
+        (
+            "each-sort",
+            "    found = list(DATA.glob(\"*.csv\"))\n    found.sort(key=lambda q: q.stat().st_size)\n    print(found[0].read_text())",
+        ),
+        ("each-map", "    print(list(map(lambda p: p.stat().st_size, DATA.glob(\"*.csv\"))), next(DATA.glob(\"*.csv\")).read_text())"),
+    ] {
+        assert_eq!(run_places(name, body), each, "{name}");
+    }
+}
+
+/// `d[k]`, `d` a mapping the code writes out, is one of the values `d` holds where no code decides
+/// `k`, as `d[k]` for each `k` of `d` is; a key the code writes picks its own value, the path written
+/// with that value.
+#[test]
+fn a_place_carries_a_what_a_key_no_code_decides_is_one_of_a_mappings_values() {
+    let every = run_places("mapping-every", "    for k in KINDS:\n        print((DATA / KINDS[k]).read_text())");
+    assert_eq!(every.len(), 2, "{every:?}");
+    assert_eq!(run_places("mapping-handed", "    print((DATA / KINDS[kind]).read_text())"), every);
+    let written = run_places("mapping-written", "    print((DATA / \"regelingen\").read_text())");
+    assert_eq!(run_places("mapping-known", "    print((DATA / KINDS[\"a\"]).read_text())"), written);
+    assert!(written.is_subset(&every), "{written:?} in {every:?}");
+}
+
 // ---------- prophecy ----------
 
 /// One side of the prophecy pair (`tests/pairs/prophecy`): a report `Sink` that only writes, and
