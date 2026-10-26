@@ -9,6 +9,8 @@ once the build's disk images are published and push the result to the tap, besid
 `<dist-dir>` holds the `atlas-studio-<target>.dmg` files that were uploaded. A release's cask names the
 tag `v<version>`; a nightly's names the immutable pre-release `nightly-<yyyymmddHHMM>`, and its version
 is the base version and the minute of the build, so that every nightly is newer than the one before it.
+The two install side by side: a release is `Atlas Studio.app`, a nightly `Atlas Studio Nightly.app`, each
+with an identifier and data of its own (`studio.yml`).
 
 Studio is signed ad hoc. Homebrew quarantines what a cask downloads, so macOS blocks the first start
 until the user allows it; the caveats say where. Studio installs its own updates (`install-studio.sh`,
@@ -24,7 +26,10 @@ from pathlib import Path
 ARCHES = {"arm": "aarch64", "intel": "x86_64"}
 RELEASES = "https://github.com/raoulg/atlas/releases/download"
 DMG = "atlas-studio-{arch}-apple-darwin.dmg"
-IDENTIFIER = "io.github.raoulg.atlas-studio"
+APPS = {
+    "release": ("Atlas Studio", "io.github.raoulg.atlas-studio"),
+    "nightly": ("Atlas Studio Nightly", "io.github.raoulg.atlas-studio-nightly"),
+}
 
 CASK = """cask "{token}" do
   arch arm: "{arm}", intel: "{intel}"
@@ -34,15 +39,14 @@ CASK = """cask "{token}" do
          intel: "{sha_intel}"
 
   url "{url}"
-  name "Atlas Studio"
+  name "{app}"
   desc "{desc}"
   homepage "https://raoulg.github.io/atlas/"
 {livecheck}
   auto_updates true
-  conflicts_with cask: "{other}"
   depends_on :macos
 
-  app "Atlas Studio.app"
+  app "{app}.app"
 
   zap trash: [
     "~/Library/Application Support/{identifier}",
@@ -54,13 +58,13 @@ CASK = """cask "{token}" do
   ]
 
   caveats <<~EOS
-    Atlas Studio is signed ad hoc, not with an Apple Developer ID, so macOS blocks
-    its first start. Open it once, then allow it in
+    {app} is signed ad hoc, not with an Apple Developer ID,
+    so macOS blocks its first start. Open it once, then allow it in
       System Settings > Privacy & Security > Open Anyway
 
-    Studio installs its own updates (Atlas Studio > Check for Updates...), which
-    open without asking again. `brew upgrade --greedy` installs a new copy that
-    macOS asks about once more.
+    It installs its own updates ({app} > Check for Updates...),
+    which open without asking again. `brew upgrade --greedy` installs
+    a new copy that macOS asks about once more.
   EOS
 end
 """
@@ -82,15 +86,15 @@ def cask(dist: Path, version: str, stamp: str | None = None) -> str:
     shas = {cpu: sha256(dist / DMG.format(arch=arch)) for cpu, arch in ARCHES.items()}
     dmg = DMG.format(arch="#{arch}")
     if stamp is None:
-        token, other, tag = "atlas-studio", "atlas-studio-nightly", "v#{version}"
+        token, tag, (app, identifier) = "atlas-studio", "v#{version}", APPS["release"]
         desc, livecheck = "Draws what a program is, beneath the language it is written in", LIVECHECK
     else:
-        token, other, tag = "atlas-studio-nightly", "atlas-studio", 'nightly-#{version.split(".").last}'
+        token, tag, (app, identifier) = "atlas-studio-nightly", 'nightly-#{version.split(".").last}', APPS["nightly"]
         version = f"{version}-nightly.{stamp}"
         desc, livecheck = "Draws what a program is, beneath its language: the nightly build", ""
     return CASK.format(
         token=token,
-        other=other,
+        app=app,
         arm=ARCHES["arm"],
         intel=ARCHES["intel"],
         version=version,
@@ -99,7 +103,7 @@ def cask(dist: Path, version: str, stamp: str | None = None) -> str:
         url=f"{RELEASES}/{tag}/{dmg}",
         desc=desc,
         livecheck=livecheck,
-        identifier=IDENTIFIER,
+        identifier=identifier,
     )
 
 

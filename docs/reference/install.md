@@ -47,8 +47,11 @@ Homebrew puts the app in `/Applications`:
 brew install --cask raoulg/tap/atlas-studio
 ```
 
-`raoulg/tap/atlas-studio-nightly` is the nightly; the two replace each other. In a `Brewfile` it is
-`cask "raoulg/tap/atlas-studio"`. Studio is signed ad hoc, not with an Apple Developer ID. Homebrew
+`raoulg/tap/atlas-studio-nightly` is the nightly: an app of its own, Atlas Studio Nightly, with its own
+settings and list of workspaces, so the release and the nightly install side by side and the release
+is at hand when a nightly breaks. Open a repository in one of them at a time: both would run
+`atlas serve` on what it keeps in `.atlas/`. In a `Brewfile` it is `cask "raoulg/tap/atlas-studio"`
+(or `-nightly`, or both). Studio is signed ad hoc, not with an Apple Developer ID. Homebrew
 marks what it downloads as from the internet, as a browser does, so that macOS checks the app, and
 macOS blocks its first start: open Studio once, then allow it in System Settings › Privacy & Security
 › Open Anyway. Studio installs its own updates (Atlas Studio › Check for Updates…), which open without
@@ -61,8 +64,8 @@ The script puts the app in `~/Applications` instead:
 sh -c "$(curl -fsSL https://raw.githubusercontent.com/raoulg/atlas/main/install-studio.sh)"
 ```
 
-`ATLAS_CHANNEL=nightly` installs the nightly, `ATLAS_STUDIO_DIR` another folder. Run it again to
-update. The script downloads with `curl`, which leaves no mark of the internet on the app, so it opens
+`ATLAS_CHANNEL=nightly` installs the nightly, as `Atlas Studio Nightly.app` beside the release, and
+`ATLAS_STUDIO_DIR` another folder. Run it again to update. The script downloads with `curl`, which leaves no mark of the internet on the app, so it opens
 as it is. A disk image downloaded in a browser does carry that mark: drag the app to Applications,
 open it once, and then allow it in System Settings › Privacy & Security › Open Anyway.
 
@@ -73,7 +76,8 @@ On Windows the script installs Studio for you alone, without administrator right
 irm https://raw.githubusercontent.com/raoulg/atlas/main/install-studio.ps1 | iex
 ```
 
-`$env:ATLAS_CHANNEL = 'nightly'` installs the nightly; run it again to update. The setup program is
+`$env:ATLAS_CHANNEL = 'nightly'` installs the nightly, as Atlas Studio Nightly in
+`%LOCALAPPDATA%\Atlas Studio Nightly` beside the release; run it again to update. The setup program is
 not signed with a paid identity either. Downloaded by the script it carries no mark of the internet
 and runs as it is; downloaded in a browser, SmartScreen asks first: choose More info, then Run anyway.
 Windows › Settings › Apps removes Studio again.
