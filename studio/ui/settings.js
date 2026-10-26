@@ -27,7 +27,7 @@
     card.append(title, appearance, agents, version, close);
     host.append(card);
 
-    // the mode, and the theme Studio shows in light and in dark, each with a strip of its colours
+    // the mode, and the theme Studio shows in light and in dark, each theme a button that looks like it
     function drawAppearance(chosen) {
       appearance.replaceChildren(node('h2', '', 'Appearance'));
       const choose = async (next) => { await bridge.setAppearance(next); drawAppearance(next); };
@@ -41,26 +41,38 @@
       }
       appearance.append(choices);
       for (const [scheme, label] of [['light', 'Light theme'], ['dark', 'Dark theme']]) {
-        const row = node('label', 'settings-theme');
-        const select = node('select', '');
+        const row = node('div', 'settings-themes');
+        row.setAttribute('role', 'radiogroup');
+        row.setAttribute('aria-label', label);
         for (const theme of bridge.themes.filter((t) => t.scheme === scheme)) {
-          const option = node('option', '', theme.name);
-          option.value = theme.id;
-          option.selected = theme.id === chosen[scheme];
-          select.append(option);
+          const choice = button('settings-theme', '', () => choose({...chosen, [scheme]: theme.id}));
+          choice.setAttribute('role', 'radio');
+          choice.setAttribute('aria-checked', String(theme.id === chosen[scheme]));
+          choice.setAttribute('aria-label', theme.name);
+          choice.append(look(theme), node('span', 'settings-theme-name', theme.name));
+          row.append(choice);
         }
-        select.addEventListener('change', () => choose({...chosen, [scheme]: select.value}));
-        row.append(node('span', '', label), select, strip(bridge.themes.find((t) => t.id === select.value)));
-        appearance.append(row);
+        appearance.append(node('h3', 'settings-subhead', label), row);
       }
       appearance.append(node('p', 'settings-note', 'The Atlas view and the terminal follow it. ⇧⌘L, or ◐ in the status bar, switches between the two.'));
     }
 
-    // a theme's colours in a row
-    function strip(theme) {
-      const row = node('span', 'settings-strip');
-      for (const colour of theme ? bridge.swatchOf(theme) : []) { const dot = node('i', ''); dot.style.background = colour; row.append(dot); }
-      return row;
+    // a theme in small: its background, a sheet of its panel with text in its ink, a line in its focus,
+    // and the colours it gives the kinds of place
+    function look(theme) {
+      const [background, panel, ink, focus, ...hues] = bridge.swatchOf(theme);
+      const frame = node('span', 'settings-theme-look');
+      frame.style.background = background;
+      const sheet = node('span', 'settings-theme-sheet');
+      sheet.style.background = panel;
+      sheet.style.color = ink;
+      const line = node('i', 'settings-theme-line');
+      line.style.background = focus;
+      const dots = node('span', 'settings-theme-dots');
+      for (const colour of hues) { const dot = node('i', ''); dot.style.background = colour; dots.append(dot); }
+      sheet.append(node('b', '', 'Aa'), line, dots);
+      frame.append(sheet);
+      return frame;
     }
 
     function drawAgents(list) {
