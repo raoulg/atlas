@@ -137,8 +137,8 @@ The README itself never changes: the pictures it names are drawn anew on every p
 images in a README through its own image cache, which may show the earlier picture for a while
 after a push.
 
-`ATLAS_CHANNEL=nightly` before `sh` installs the nightly build instead of the latest release. The
-runner reads the update check as CI and stays silent.
+`ATLAS_CHANNEL=nightly` before `sh` installs the nightly build instead of the latest release, as the
+command `atlas-nightly`. The runner reads the update check as CI and stays silent.
 
 ### The pill
 
