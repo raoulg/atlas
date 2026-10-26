@@ -86,7 +86,7 @@
 .status-button:disabled{color:var(--s20);cursor:default}
 .status-button.on{background:var(--s24)}
 .status-button+.status-right{margin-left:12px}
-.status-button.scheme{margin-left:4px;font-size:12px;line-height:1}
+.status-button.scheme{margin-left:4px}
 body.dragging iframe{pointer-events:none}
 body.dragging{cursor:row-resize;user-select:none}
 @media(max-width:720px){.workbench{grid-template-columns:50px minmax(0,1fr)}.files-label,.file-tree-host{display:none}.preview{position:absolute;inset:0;width:auto;z-index:3}.stage{position:relative}}

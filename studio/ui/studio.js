@@ -28,7 +28,8 @@ function showAppearance(next) {
     }
   }
   const other = shownTheme.scheme === 'dark' ? 'light' : 'dark';
-  byId('scheme-toggle').title = `${shownTheme.name}: switch to ${Themes.byId(appearance[other], other).name} (⇧⌘L)`;
+  byId('scheme-toggle').textContent = `◐ ${shownTheme.name}`;
+  byId('scheme-toggle').title = `Switch to ${Themes.byId(appearance[other], other).name} (⇧⌘L)`;
 }
 async function setAppearance(next) {
   showAppearance(next);
