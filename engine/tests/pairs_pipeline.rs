@@ -869,7 +869,7 @@ fn the_python_pair_exposes_how_the_frame_travels() {
     for f in ["sunspots.get_data", "sunspots.clean", "sunspots.smooth", "sunspots.plot"] {
         assert!(step(s, STUDENT, f).gives.is_empty(), "{f}: the frame is held globally");
         assert!(
-            node(s, f).touches.iter().zip(&flow.drawn[f]).any(|(t, d)| t.kind == World::Global && d.place.label.contains("sunspots.df")),
+            node(s, f).touches.iter().zip(&flow.drawn[f]).any(|(t, d)| t.kind == World::Global && d.place.id == "w:Global:sunspots.df"),
             "{f}: the shared frame has a visible place"
         );
     }
@@ -936,20 +936,33 @@ fn the_port_fetches_the_raw_file_only_where_it_is_missing() {
     const RAW: &str = "w:File:data/raw/sunspots.csv";
     for p in ports() {
         let bodies = atlas_engine::flow::bodies(p.g);
+        // one branch, which holds the download alone: nothing runs otherwise
         let guarded = bodies[p.run].items.iter().any(|it| {
             matches!(it, atlas_engine::flow::Item::Choice { members, when, .. }
-                if members.iter().all(|m| m.step.to == p.download) && when.len() == 1 && when[0].contains("exists"))
+                if members.iter().all(|m| m.step.to == p.download && m.branch == members[0].branch)
+                    && when.len() == 1 && when[0].contains("exists"))
         });
         assert!(guarded, "{}: {:?}", p.language, bodies[p.run].items);
-        let choices = atlas_engine::story::choices(p.g, p.run).unwrap();
-        assert!(choices.contains("exists") && choices.contains("otherwise: nothing"), "{}: {choices}", p.language);
+        assert!(route_choices(p.g, p.run) > 0, "{}", p.language);
         // what is filled before it is read is no update: the run makes sure of its input
         let arrows = atlas_engine::flow::arrows(p.g);
         let names = |l: Option<&Vec<String>>| l.map_or(false, |l| l.iter().any(|x| x == RAW));
         assert!(!names(arrows.get(p.run).map(|a| &a.reads_back)) && !names(arrows.get(p.run).map(|a| &a.updates)), "{}", p.language);
     }
     assert!(atlas_engine::flow::arrows(sloppy())["sunspots.get_data"].own_reads_back.iter().any(|x| x == RAW));
-    assert!(atlas_engine::story::choices(sloppy(), STUDENT).unwrap().contains("No choice on this route"));
+    assert!(sloppy().reach(STUDENT).contains("sunspots.get_data"));
+    assert_eq!(route_choices(sloppy(), STUDENT), 0, "every step of the student's route runs whenever the route does");
+}
+
+/// The choices the route from `start` makes: those in the bodies of the functions it runs.
+fn route_choices(g: &Graph, start: &str) -> usize {
+    let reached = g.reach(start);
+    atlas_engine::flow::bodies(g)
+        .iter()
+        .filter(|(key, _)| reached.contains(key.split('@').next().unwrap_or(key)))
+        .flat_map(|(_, b)| &b.items)
+        .filter(|it| matches!(it, atlas_engine::flow::Item::Choice { .. }))
+        .count()
 }
 
 /// The raw file and the figure are options of the run, each with its default: typer's
@@ -989,21 +1002,18 @@ fn the_port_reaches_the_raw_file_and_the_figure_through_its_options() {
 /// for its function, `run`, where the TypeScript `bin` and the Rust binary are `sunspots`.
 #[test]
 fn the_port_entry_reads_as_its_usage_line() {
-    let usage = |g: &Graph| node(g, program(g)).entry.as_ref().map(atlas_engine::story::usage).unwrap();
+    let entry = |g: &Graph| node(g, program(g)).entry.clone().unwrap();
     for p in ports() {
-        assert_eq!(node(p.g, program(p.g)).entry.as_ref().unwrap().options, ["--raw", "--figure", "--months"], "{}", p.language);
+        assert_eq!(entry(p.g).options, ["--raw", "--figure", "--months"], "{}", p.language);
     }
-    assert_eq!(
-        [usage(clean()), usage(typescript()), usage(rust_clean())],
-        ["run --raw --figure --months", "sunspots --raw --figure --months", "sunspots --raw --figure --months"]
-    );
+    assert_eq!([entry(clean()).label, entry(typescript()).label, entry(rust_clean()).label], ["run", "sunspots", "sunspots"]);
 }
 
 /// The step that turns the command line into values belongs to the entry, not to the route: clap's
 /// `Cli::parse()` and parseArgs' call read the command line, with the options they declare, and
 /// what they give (`cli`, `values`) is handed to the steps that use an option, as typer hands
 /// `raw` to `download`. typer parses before the command runs, so the Python command has no such
-/// step. The route as text starts at the usage line and leaves the parse out, as the page does.
+/// step. A route run from the command line starts at its entry, whose step the parse is.
 #[test]
 fn the_port_parses_its_command_line_in_the_entry() {
     let options = ["--raw", "--figure", "--months"].map(String::from).to_vec();
@@ -1015,10 +1025,15 @@ fn the_port_parses_its_command_line_in_the_entry() {
     assert_eq!((parse.command_line.as_ref(), names(&parse.gives)), (Some(&options), vec!["values"]));
     assert_eq!(names(&step(typescript(), "sunspots.cli.main", "sunspots.download.download").hands), ["values"]);
     assert!(node(clean(), "sunspots.cli.run").sites.iter().all(|s| s.command_line.is_none()));
-    let rs = atlas_engine::story::route(rust_clean(), "sunspots.main.main", 1).unwrap();
-    assert!(rs.starts_with("CLI · sunspots --raw --figure --months\n") && !rs.contains("Cli()"), "{rs}");
-    let ts = atlas_engine::story::route(typescript(), "sunspots.cli", 2).unwrap();
-    assert!(ts.starts_with("CLI · sunspots --raw --figure --months\n") && ts.contains("download") && !ts.contains("parseArgs"), "{ts}");
+    // the route starts at the entry run from the command line, whose steps are the parse and not
+    // the download
+    for (g, body, parse) in [(rust_clean(), "sunspots.main.main", "sunspots.main.Cli"), (typescript(), "sunspots.cli.main", "parseArgs")] {
+        assert_eq!(node(g, program(g)).entry.as_ref().map(|e| e.kind), Some(EntryKind::Cli), "{body}");
+        let sites = &node(g, body).sites;
+        let at = |to: &str| sites.iter().position(|s| s.to == to || s.op == to).unwrap_or_else(|| panic!("{body} has no step {to}"));
+        let entry = atlas_engine::story::entry_steps(sites);
+        assert!(entry.contains(&at(parse)) && !entry.contains(&at("sunspots.download.download")), "{body}: {entry:?}");
+    }
 }
 
 /// Where the three differ, each the language's doing:
