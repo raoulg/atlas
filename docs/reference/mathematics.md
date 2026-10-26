@@ -418,7 +418,11 @@ graph needs (where an object stands, which side it is on, when it was made) is a
 open:
 
 - every call of the route is an *occurrence* (a step key, its path through the route), opened to
-  all its calls; an occurrence with calls has a frame and its own arrow, one without is a pill. Building
+  all its calls; an occurrence with calls has a frame and its own arrow, one without is a pill. A call into a
+  function the route is already inside stays closed, since the frame it would open is the one it stands in: it is a
+  closed step, no pill without calls, so it takes what its call hands it and gives what its call gives, its own touches
+  solid and what its function reaches beyond them dashed, and none of the values its body makes, which are drawn in the
+  frame it stands in. Building
   a class runs the initializer along its order (Method resolution order), so the step that builds it
   opens into that body and never into the class's methods, and building the class is no call of it,
   also inside the route of that class. An initializer another one calls (`super(text)`) builds nothing:
@@ -539,7 +543,9 @@ open:
   of no type of the code's is one where a step makes it, so a parameter of no type of the code's
   (`path: &Path`) holds one only where its call fills it with one, a value a step made or a projection
   of one: a literal fills it with none, and the route's own, which no code of the program fills, hold
-  none. What an opened step changes of a value it was handed goes out at its border as what its steps
+  none. A name a body binds by a literal of a type of the code's (`let mut held = vec![]`, `items: list[Item] = []`)
+  holds a value the body makes itself, in its frame, as the call handed nothing it is isomorphic to makes it
+  (`Vec::new()`, `list()`); the graph says which names a body binds so (`Node::binds`). What an opened step changes of a value it was handed goes out at its border as what its steps
   made of it;
 - a step that can fail has the codomain `T + E`: the error is a value its constructor makes in the arm
   that raises it, the step's border hands it on with its result, and a call that does not catch it
@@ -608,7 +614,9 @@ parse the command line to the entry. The closed picture is `F/q`:
   caller's values: a value it takes by a name it did not make is the caller's value of that name where
   the caller has one, else the latest of its kind the body made, else one its body binds out of the
   plan's sight, which the caller does not see either; a name its function does not declare (a module's
-  constant) is what the module holds, from beyond, as it is with the step open. What its border hands
+  constant) is what the module holds, from beyond, as it is with the step open. A function declares its parameters and
+  the names its body binds, by a step or by its own code (a literal), none of them from beyond. The image depends on the
+  callers that make its paths whole and on which of the functions its body calls are on the path, which stay closed. What its border hands
   on is what it hands on open: an error as an error, a result of no type back to its caller, a value
   of no type by its name; and the types its body holds are the route's fiber, as they are open. The cut
   changes how much of `F` is held, never its picture, and opening a cut step refines as opening any step
@@ -646,8 +654,10 @@ the pairs and of its programs.
 `coarsen`, `cutArrow` and `typesOf`, `handTo` and `checkOpenings` in `viewer/plan.js`, `cutOpenings` in `engine/tests/plans.mjs`;
 the field an argument reads, `Steps::fills` and `Steps::read_of` (`body.rs`); the class each field of a class holds, `Node::holds`;
 which parameters of no type of the code's hold a value, `builder::settle_parameters`; the fields a condition tests,
-`Steps::tests` (`body.rs`), and whether a figure is made sure of, `guarded` in `viewer/plan.js`; `tools/pictures.py`;
-`engine/tests/plans.rs`.
+`Steps::tests` (`body.rs`), and whether a figure is made sure of, `guarded` in `viewer/plan.js`; the names a body binds
+by a literal, `Steps::literals` (`body.rs`), and those a function declares, `declaredIn` and `bodyMade` in
+`viewer/plan.js`; `tools/pictures.py`; `engine/tests/plans.rs`; the recursion and literals pairs
+(`common::a_recursive_call_takes_what_its_call_hands_it`, `common::a_list_made_by_a_literal_is_made_by_the_body`).
 
 ### Saturation: when the order of a view does not matter
 **What.** A set is saturated by an equivalence when it never cuts a class in two.

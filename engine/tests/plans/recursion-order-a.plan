@@ -1,6 +1,7 @@
 # `show` reads the log as it was and calls `save`, which writes on it and, while there is more to show, calls `show`
 # again: read, then written, both. `save` is defined before `show` here and after it in `recursion-order-b`; the plan
-# is the same. What the inner `show` reads is what `save` left, a value inside `save` (rule 4).
+# is the same. What the inner `show` reads is what `save` left, a value inside `save` (rule 4). The inner `show` is a
+# closed step, its body drawn in the frame it stands in: it writes the log through the `save` it calls, reached.
 
 route recura.run
 step run/show
@@ -14,6 +15,7 @@ line run/show/save > File(data/log.txt) own
 line run/show/save > File(data/log.txt) in run/show/save value
 line File(data/log.txt) in run/show/save > run/show/save/?1/show value
 line run/show/save/?1/show > Screen own
+line run/show/save/?1/show > File(data/log.txt) reached
 home File(data/log.txt) in run/show/save run/show/save
 
 side entry left

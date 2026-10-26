@@ -1767,3 +1767,17 @@ fn a_function_s_parameter_is_each_element_of_the_array_it_maps() {
         "the push makes the list of Wheres anew"
     );
 }
+
+/// The recursion pair: a call into a function the route is already inside takes what its call hands it, and no value a body
+/// makes comes from beyond the route (#237); the shortcut's `const FLOOR` alone does, as in Python and Rust.
+#[test]
+fn a_recursive_call_takes_what_its_call_hands_it() {
+    common::a_recursive_call_takes_what_its_call_hands_it("typescript");
+}
+
+/// The literals pair: `[]` and `new Array<Item>()` make the same list, the body's (#237), as `vec![]` and `Vec::new()` do in
+/// Rust.
+#[test]
+fn a_list_made_by_a_literal_is_made_by_the_body() {
+    common::a_list_made_by_a_literal_is_made_by_the_body("typescript", "byLiteral", "byCall", "byConstant");
+}

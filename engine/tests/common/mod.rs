@@ -1,11 +1,12 @@
 //! What the pair tests share.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use atlas_engine::decide::{prophetize, Prophetized};
 use atlas_engine::revelation::{revelation, Stand};
-use atlas_engine::{analyze, Graph, Options};
+use atlas_engine::{analyze, flow, Graph, Options};
 
 /// A pair below `engine/tests/pairs`: the same program once as good practice writes it and once
 /// with the usual shortcut.
@@ -192,4 +193,178 @@ pub fn a_projection_bound_to_a_name_is_still_the_projection(language: &str, modu
     let fields = vec![(atlas_engine::Slot::At(0), "title".to_string()), (atlas_engine::Slot::At(1), "size.width".to_string())];
     assert_eq!(through(&projections.clean), fields, "handed as fields of its own");
     assert_eq!(through(&projections.shortcut), fields, "bound to names first");
+}
+
+/// The facts of the finest plan the viewer's model builds of every route of `g`, as `tests/plans.rs` writes them
+/// (`tests/plans.mjs`, run in node): with a `budget`, of the plan cut as a large program's is (`ATLAS_FINE_BUDGET`).
+#[allow(dead_code)]
+pub fn planned(g: &Graph, name: &str, budget: Option<usize>) -> BTreeMap<String, BTreeSet<String>> {
+    let mut data = serde_json::to_value(g).expect("the graph is data");
+    data["flow"] = serde_json::to_value(flow::of(g)).expect("the flow is data");
+    let file = std::env::temp_dir().join(format!("atlas-planned-{}-{name}-{budget:?}.json", std::process::id()));
+    std::fs::write(&file, data.to_string()).expect("writes the data");
+    let here = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let mut node = Command::new("node");
+    if let Some(b) = budget {
+        node.env("ATLAS_FINE_BUDGET", b.to_string());
+    }
+    let out = node
+        .arg(here.join("tests/plans.mjs"))
+        .arg(here.join("../viewer/plan.js"))
+        .arg(&file)
+        .output()
+        .expect("node runs the viewer's model: the test needs node on the PATH");
+    let _ = std::fs::remove_file(&file);
+    assert!(out.status.success(), "{name}: the model fails\n{}", String::from_utf8_lossy(&out.stderr));
+    let read: BTreeMap<String, serde_json::Value> = serde_json::from_slice(&out.stdout).expect("the model prints JSON");
+    read.into_iter()
+        .map(|(r, v)| (r, v["facts"].as_array().into_iter().flatten().filter_map(|x| x.as_str().map(String::from)).collect()))
+        .collect()
+}
+
+/// The budgets a route is planned at: uncut, and cut as a large program's plan is cut.
+#[allow(dead_code)]
+pub const BUDGETS: [Option<usize>; 4] = [None, Some(1), Some(2), Some(3)];
+
+/// What the plan of a route takes from beyond it that is none of the route's own parameters (`params`), by type and name:
+/// each value a line takes that no occurrence made, so that it has no moment (`docs/reference/mathematics.md`, "One fine
+/// plan, every picture its image": a name its function does not declare, a module's constant, is what the module holds).
+#[allow(dead_code)]
+pub fn from_beyond(facts: &BTreeSet<String>, params: &[String]) -> BTreeSet<String> {
+    facts
+        .iter()
+        .filter_map(|f| f.strip_prefix("line ")?.split(" > ").next())
+        .filter(|v| !v.contains('@') && !v.contains(' '))
+        .filter(|v| v.split_once('·').is_some_and(|(_, name)| !params.iter().any(|p| p == name.split('#').next().unwrap_or(name))))
+        .map(String::from)
+        .collect()
+}
+
+/// The parameters of the function `id`, by name.
+#[allow(dead_code)]
+pub fn parameters(g: &Graph, id: &str) -> Vec<String> {
+    g.node(id).unwrap_or_else(|| panic!("no node {id}")).params.iter().filter(|p| !p.receiver).map(|p| p.name.clone()).collect()
+}
+
+/// What each step of a route's closed picture takes from beyond the route, by the value and the step: the values a line
+/// takes that no occurrence made, but the route's own parameters (`from_beyond`), each with the step of the route the line
+/// ends in or below (`docs/reference/mathematics.md`, "The closed picture is the pushforward of the fine one").
+#[allow(dead_code)]
+pub fn taken_from_beyond(facts: &BTreeSet<String>, params: &[String]) -> BTreeSet<(String, String)> {
+    let beyond = from_beyond(facts, params);
+    facts
+        .iter()
+        .filter_map(|f| f.strip_prefix("line ")?.split_once(" > "))
+        .filter(|(v, _)| beyond.contains(*v))
+        .map(|(v, to)| {
+            let at = [" reached", " value"].iter().fold(to, |at, channel| at.strip_suffix(channel).unwrap_or(at));
+            (v.to_string(), at.split('/').take(2).collect::<Vec<_>>().join("/"))
+        })
+        .collect()
+}
+
+/// The recursion pair of `language` (`tests/pairs/recursion`): `split` takes a node's own items from `items_of` and the rest
+/// from `below`, which splits each child in turn, so that `below` calls `split` again, a call into a function the route is
+/// already inside; `climb` enters a recursion of three (`deeper`, `rest`, `kids`) at two of its functions. Every value is
+/// made by the body that names it: a recursive occurrence stays closed, a step whose body is drawn in the frame it stands in,
+/// so it takes only what its call hands it (the child, the floor) and none of the values the body that holds it made by other
+/// names (no line from the outer call's `mine` into the inner call), and no value the bodies make comes from beyond the route
+/// (#237). The shortcut reads the module's floor (`FLOOR`), which alone comes from beyond. So uncut and at every budget the
+/// plan is cut at, in every language; and the cut changes how much of the plan is held, never its picture: each step of the
+/// closed route takes from beyond what it takes uncut, also where the function a step beyond the cut calls is on the path of
+/// one occurrence of it and not of another (`climb`).
+#[allow(dead_code)]
+pub fn a_recursive_call_takes_what_its_call_hands_it(language: &str) {
+    let p = pair(&format!("recursion/{language}"));
+    for (side, g, beyond) in [("clean", &p.clean, vec![]), ("shortcut", &p.shortcut, vec!["Floor·FLOOR".to_string()])] {
+        let want: BTreeSet<String> = beyond.into_iter().collect();
+        let mut uncut = BTreeMap::new();
+        for budget in BUDGETS {
+            let at = format!("{language}, budget {budget:?}, {side}");
+            let plans = planned(g, &format!("recursion-{language}-{side}"), budget);
+            for route in ["tree.split", "tree.climb"] {
+                let (facts, params) = (&plans[route], parameters(g, route));
+                assert_eq!(from_beyond(facts, &params), want, "{at}: what comes from beyond {route}");
+                let taken = taken_from_beyond(facts, &params);
+                match budget {
+                    None => drop(uncut.insert(route, taken)),
+                    Some(_) => assert_eq!(taken, uncut[route], "{at}: what each step of {route} takes from beyond, cut and uncut"),
+                }
+                for r in facts.iter().filter_map(|f| f.strip_prefix("step ")?.strip_suffix(" recursive")) {
+                    // what the call into the function the route is inside hands it, by name: the call in the body of the
+                    // step around it, through the choices between them
+                    let segs: Vec<&str> = r.split('/').collect();
+                    let (callee, caller) = (segs[segs.len() - 1], segs[..segs.len() - 1].iter().rev().find(|s| !s.starts_with('?')));
+                    let caller = g.node(&format!("tree.{}", caller.expect("a caller"))).unwrap_or_else(|| panic!("{at}: no caller of {r}"));
+                    let handed: BTreeSet<&str> = caller
+                        .sites
+                        .iter()
+                        .filter(|s| s.to == format!("tree.{callee}"))
+                        .flat_map(|s| &s.hands)
+                        .map(|h| h.name.as_str())
+                        .collect();
+                    let taken: BTreeSet<&str> = facts
+                        .iter()
+                        .filter_map(|f| f.strip_prefix("line ")?.strip_suffix(&format!(" > {r} value")))
+                        .map(|v| v.split_once('·').map_or(v, |(_, n)| n).split(['@', '#']).next().unwrap_or(v))
+                        .collect();
+                    assert!(!taken.is_empty() && taken.is_subset(&handed), "{at}: {r} takes {taken:?}, its call hands it {handed:?}");
+                }
+            }
+        }
+    }
+}
+
+/// The literals pair of `language` (`tests/pairs/literals`): a list gathered by a function the body hands it to (`collect_into`),
+/// made empty by a literal in `literal` (`vec![]`, `[]`) and by a call handed nothing in `call` (`Vec::new()`, `list()`, `new
+/// Array<Item>()`). The two forms say the same thing, and Atlas draws them alike (CLAUDE.md, "Isomorphic is the same"): the graph
+/// says that the body binds the name by a literal (`Node::binds`), the plan holds the value the body made in the route's
+/// frame, and the plan of one is the plan of the other once the call that takes nothing and makes the list is contracted into
+/// the list it makes (a homotopy, `mathematics.md`, rule 6). Nothing comes from beyond either route. The shortcut seeds the
+/// list from the module's (`SEED`), which alone comes from beyond (#237). So in every language, and what comes from beyond
+/// also at every budget the plan is cut at.
+#[allow(dead_code)]
+pub fn a_list_made_by_a_literal_is_made_by_the_body(language: &str, literal: &str, call: &str, constant: &str) {
+    let p = pair(&format!("literals/{language}"));
+    let binds = |g: &Graph, f: &str| -> Vec<(String, usize)> {
+        g.node(&format!("gather.{f}"))
+            .unwrap_or_else(|| panic!("no node gather.{f}"))
+            .binds
+            .iter()
+            .map(|b| (b.name.clone(), b.arms.len()))
+            .collect()
+    };
+    assert_eq!(binds(&p.clean, literal), [("items".to_string(), 0)], "{language}: the body binds the list by a literal");
+    assert_eq!(binds(&p.clean, call), [], "{language}: a step makes the list");
+    assert_eq!(binds(&p.shortcut, constant), [], "{language}: the list is the module's");
+    for budget in BUDGETS {
+        let at = format!("{language}, budget {budget:?}");
+        let clean = planned(&p.clean, &format!("literals-{language}-clean"), budget);
+        let (by_literal, by_call) = (&clean[&format!("gather.{literal}")], &clean[&format!("gather.{call}")]);
+        assert_eq!(from_beyond(by_literal, &parameters(&p.clean, &format!("gather.{literal}"))), BTreeSet::new(), "{at}: {literal}");
+        assert_eq!(from_beyond(by_call, &parameters(&p.clean, &format!("gather.{call}"))), BTreeSet::new(), "{at}: {call}");
+        let shortcut = &planned(&p.shortcut, &format!("literals-{language}-shortcut"), budget)[&format!("gather.{constant}")];
+        let want: BTreeSet<String> = ["Item·SEED".to_string()].into_iter().collect();
+        assert_eq!(from_beyond(shortcut, &parameters(&p.shortcut, &format!("gather.{constant}"))), want, "{at}: {constant}");
+        // the call that takes nothing and makes the list, contracted into the list it makes; a cut depends on how many occurrences
+        // a plan holds, which the call adds, so the two plans are held to each other uncut
+        if budget.is_some() {
+            continue;
+        }
+        let lines_into = |s: &str| by_call.iter().any(|f| f.starts_with("line ") && f.ends_with(&format!(" > {s} value")));
+        let makers: Vec<&str> = by_call
+            .iter()
+            .filter_map(|f| f.strip_prefix("step "))
+            .filter(|s| {
+                !lines_into(s) && by_call.iter().any(|f| f.starts_with(&format!("line {s} > ")) && f.contains(&format!("·items@{s} ")))
+            })
+            .collect();
+        let [maker] = makers[..] else { panic!("{at}: one call makes the list in {call}: {makers:?}") };
+        let contracted: BTreeSet<String> = by_call
+            .iter()
+            .filter(|f| *f != &format!("step {maker}") && !f.starts_with(&format!("line {maker} > ")))
+            .map(|f| f.replace(&format!("@{maker} "), &format!("@{call}/~items ")).replace(call, literal))
+            .collect();
+        assert_eq!(by_literal, &contracted, "{at}: {literal} draws as {call} does");
+    }
 }

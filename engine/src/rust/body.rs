@@ -742,6 +742,10 @@ pub(super) struct Body<'a, 't> {
     unit: bool,
     /// What its loops go over, as written: each `for` loop's value.
     loop_values: HashSet<usize>,
+    /// The constants its module declares, by name, each with the class of the program its declared type holds: a `const`,
+    /// or a `static` that nothing changes (`const FLOOR: Floor = ..`). A name of one holds what the module holds, a value the
+    /// body did not make.
+    constants: HashMap<String, String>,
     read: Read<'t>,
 }
 
@@ -788,8 +792,10 @@ impl<'a, 't> Body<'a, 't> {
             keeps_command_line: HashSet::new(),
             unit: n.returns.as_ref().map_or(true, |r| r.value.is_empty() && !r.own),
             loop_values: HashSet::new(),
+            constants: HashMap::new(),
             read: Read::default(),
         };
+        b.constants = b.constants();
         b.parameters(d);
         b.binders(d, body);
         b.loop_values = b.iterations(body).into_iter().map(|(_, v)| v.id()).collect();
@@ -1371,10 +1377,30 @@ impl<'a, 't> Body<'a, 't> {
 
     /// The type a name of the body holds at byte `at`: a class of the program's, else the library's
     /// type a `let` takes from the parameter it is handed to, else a library's type it is declared
-    /// with (`area: &DrawingArea<DB, Shift>`), not one of Rust's own (`Vec<f64>`, `PathBuf`).
+    /// with (`area: &DrawingArea<DB, Shift>`), not one of Rust's own (`Vec<f64>`, `PathBuf`); a name
+    /// the body binds nowhere, of a constant its module declares, the class that constant holds.
     fn held_type(&self, name: &str, at: usize) -> Option<String> {
         let library = || self.foreign.get(name, at).filter(|t| foreign_type(t, &OWN));
-        self.locals.get(name, at).or_else(|| self.taken.get(name, at)).or_else(library).cloned()
+        let constant = || self.constants.get(name).filter(|_| self.parameter.get(name, at).is_none());
+        self.locals.get(name, at).or_else(|| self.taken.get(name, at)).or_else(library).or_else(constant).cloned()
+    }
+
+    /// The constants the body's module declares at its top, each with the class of the program its declared type holds
+    /// (`Body::constants`): a `static` that is `mut` or changes in place is a place, `Global(..)`, no constant.
+    fn constants(&self) -> HashMap<String, String> {
+        let src = self.src;
+        let mut out = HashMap::new();
+        for item in named_children(self.m.tree.root_node()).into_iter().filter(|i| matches!(i.kind(), "const_item" | "static_item")) {
+            let types = type_names(item.child_by_field_name("type"), src);
+            let changes = named_children(item).iter().any(|c| c.kind() == "mutable_specifier")
+                || types.iter().any(|t| t.last().is_some_and(|l| knowledge::rust_interior(l)));
+            let Some(name) = item.child_by_field_name("name").filter(|_| !changes) else { continue };
+            let class = types.iter().find_map(|t| self.resolve(t).filter(|r| !r.starts_with("ext:")).and_then(|r| self.class_of(&r)));
+            if let Some(c) = class {
+                out.insert(text(name, src).to_string(), c);
+            }
+        }
+        out
     }
 
     /// The name whose value `name` holds at byte `at`, and where: the name itself, or the one a
