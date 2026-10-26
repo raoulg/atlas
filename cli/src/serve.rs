@@ -389,25 +389,19 @@ fn slashed(p: &Path) -> String {
 }
 
 /// How many starts the expected time of a phase is taken from.
-const STARTS: usize = 5;
+const STARTS: usize = 3;
 
-/// What each phase of a start is expected to take: the middle of what it took at starts of the same kind,
-/// with the index of their build of Atlas (`warm`) or without it.
+/// What each phase of a start is expected to take: the longest it took at the last starts of the same
+/// kind, with the index of their build of Atlas (`warm`) or without it.
 fn expected(timings: &shared::Timings, warm: bool) -> BTreeMap<String, f64> {
-    timings.of(warm).iter().filter_map(|(phase, times)| Some((phase.clone(), median(times)?))).collect()
+    timings.of(warm).iter().filter_map(|(phase, times)| Some((phase.clone(), slowest(times)?))).collect()
 }
 
-/// The middle of `times`: what a phase is expected to take, which one start that was quick (all of it
-/// in the cache) or slow (the machine busy) does not move far.
-fn median(times: &[f64]) -> Option<f64> {
-    let mut sorted = times.to_vec();
-    sorted.sort_by(f64::total_cmp);
-    let n = sorted.len();
-    match n {
-        0 => None,
-        _ if n % 2 == 1 => Some(sorted[n / 2]),
-        _ => Some((sorted[n / 2 - 1] + sorted[n / 2]) / 2.0),
-    }
+/// The longest of the last `STARTS` of `times`. A bar that expects too little waits before its end and
+/// looks stuck; one that expects too much is done early, which looks like what it is. So a phase is
+/// expected to take as long as the slowest recent start, recent enough to follow a project that grows.
+fn slowest(times: &[f64]) -> Option<f64> {
+    times[times.len().saturating_sub(STARTS)..].iter().copied().reduce(f64::max)
 }
 
 /// The name a page knows its drawing by: the stamps it was drawn from, hashed.
@@ -431,11 +425,13 @@ fn changed(before: &Stamps, now: &Stamps) -> String {
 mod tests {
     use super::*;
 
+    /// A start is never expected to be quicker than the slowest of the last three of its kind, and a slow
+    /// start further back no longer counts.
     #[test]
-    fn one_quick_or_slow_start_moves_the_expected_time_little() {
-        assert_eq!(median(&[]), None);
-        assert_eq!(median(&[20.0, 0.3, 21.0]), Some(20.0));
-        assert_eq!(median(&[20.0, 22.0, 90.0, 21.0]), Some(21.5));
+    fn a_start_is_expected_to_take_the_longest_of_the_last_few() {
+        assert_eq!(slowest(&[]), None);
+        assert_eq!(slowest(&[20.0, 0.3, 21.0]), Some(21.0));
+        assert_eq!(slowest(&[90.0, 20.0, 22.0, 21.0]), Some(22.0));
     }
 
     /// A start is expected to take what starts of its kind took: one that reads everything is not hurried
@@ -447,7 +443,7 @@ mod tests {
             cold: BTreeMap::from([("code".to_string(), vec![79.0, 81.0, 80.0])]),
             warm: BTreeMap::from([("code".to_string(), vec![0.04, 0.003, 0.006, 0.004])]),
         };
-        assert_eq!(expected(&timings, false)["code"], 80.0);
+        assert_eq!(expected(&timings, false)["code"], 81.0);
         assert!(expected(&timings, true)["code"] < 0.01);
         let older: shared::Timings = serde_json::from_str(r#"{"code": [79.4, 0.04, 0.003]}"#).unwrap();
         assert_eq!(older, shared::Timings::default());
