@@ -606,6 +606,7 @@ fn the_newest_work_stands_at_the_top() {
     let repo = repository("dates", &format!("{FRAME}{PLOT}"));
     let at = |when: &str, args: &[&str]| {
         let done = Command::new("git")
+            .args(["-c", "user.name=atlas", "-c", "user.email=atlas@example.org", "-c", "commit.gpgsign=false"])
             .args(args)
             .current_dir(&repo)
             .env("GIT_AUTHOR_DATE", when)
