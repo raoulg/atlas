@@ -10,7 +10,8 @@ what Atlas draws. `plans.rs` builds the plans in node with the viewer's own mode
 `../plans.mjs`). Every fact the file writes down for a route must hold, and no other. Every route of every program
 under `pairs` and `plans`, with or without a file, is also asked for its pictures: for every set of open steps, the
 oracle and the quotient must find nothing, and every closed family must open into a frame with the id of its box for
-each value it stands for, as the page draws it (the walk's rule). They are asked again with the plan cut as a large
+each value it stands for, as the page draws it (the walk's rule), and every box of files folded into a directory must
+open, in one step, to the files it held or to directories below it, leaving every other file where it stood. They are asked again with the plan cut as a large
 program's is cut, at the budgets 1, 2 and 3 (`ATLAS_FINE_BUDGET`), where a step beyond the cut is the image of its body
 and each of its lines counts the fine lines its body draws there, and where each step beyond the cut, opened as the page
 opens it and planned anew, must refine the picture it was cut in; the facts are asked of the finest plan only.
@@ -122,3 +123,4 @@ smallest that showed one law:
 | `takes-a-bound-title` | a projection bound to a name first is still the projection: `t = self.title; other.take(t, None)` reads as `takes-a-title` (#174) |
 | `lent-after-the-put` | a part set whole to a chart is that chart: a figure lent to the chart after the put is the one the board's part draws on (#179) |
 | `drawn-after-the-put` | the same, the other way round: the figure the board makes through its part is the chart's, and the chart's own name draws on it again (#179) |
+| `folds-two-levels` | files folded into directories nested in one another that hold the same files (`data/`, `data/*/`) are one box: opening it shows the files in one step (#227) |

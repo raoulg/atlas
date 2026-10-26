@@ -23,7 +23,7 @@ const D = JSON.parse(fs.readFileSync(dataJson, "utf8"));
 // `ATLAS_FINE_BUDGET=n` cuts the plan as a large program's is cut (`plan.js`, `FINE_BUDGET`)
 const window = process.env.ATLAS_FINE_BUDGET ? {ATLAS_FINE_BUDGET: Number(process.env.ATLAS_FINE_BUDGET)} : {};
 const M = new Function("D", "window", fs.readFileSync(planJs, "utf8") + `
-return {V, plan, imageOf, checkOpenings, treeInfo, stepLabel, typeLabel, sideOfRoles, familyOf, kindOf, byId, ordersOn, stepOf, opens, frameOf, valueBox};`)(D, window);
+return {V, plan, imageOf, checkOpenings, treeInfo, stepLabel, typeLabel, sideOfRoles, familyOf, kindOf, byId, ordersOn, stepOf, opens, frameOf, valueBox, foldDirs, filePath};`)(D, window);
 const {V} = M;
 
 const SIDES = {in: "left", out: "right", mid: "between", both: "both"};
@@ -125,7 +125,7 @@ function read(route) {
     const w = C.fine.ways.get(k), s = M.sideOfRoles([C.roles.get(k)].filter(Boolean), () => (w?.size === 1 ? [...w][0] : "mid"));
     facts.push(`side ${placeName(k)} ${SIDES[s]}`);
   }
-  const faults = [...pictures(F, open, occ, homes, valueName), ...familyOpenings()];
+  const faults = [...pictures(F, open, occ, homes, valueName), ...familyOpenings(), ...folderOpenings([...C.fine.ways.keys()].map(M.filePath).filter(Boolean))];
   if (window.ATLAS_FINE_BUDGET) faults.push(...cutOpenings(F, occ));
   return {facts: [...new Set(facts)].sort(), faults};
 }
@@ -148,6 +148,34 @@ function familyOpenings() {
   }
   V.open.families = new Set();
   M.plan();
+  return out;
+}
+
+// The disk is a tree, and the fold of a picture's files into their directories is a quotient of it (mathematics.md,
+// "Refinement keeps what it does not refine"): opening a folded directory as the page opens it (a click adds the box's
+// directory to the open ones) refines the fold in one step, so that each file the box held stands as itself or in a
+// directory below the box, and every other file stands where it stood. Asked of every fold reached by opening one box
+// after another (#227), or where a large program's pictures are sampled, of each box of the closed fold; that closing
+// it draws the box again is asked of the page, which closes it (`pictures.py topology`)
+function folderOpenings(paths) {
+  const out = [], seen = new Set();
+  const fold = open => { V.open.dirs = new Set(open); return M.foldDirs(paths).to; };
+  const walk = open => {
+    const key = [...open].sort().join(" ");
+    if (seen.has(key) || seen.size > 256) return;
+    seen.add(key);
+    const A = fold(open);
+    for (const d of new Set(A.values())) {
+      const B = fold([...open, d]), at = `opening the folder ${d}${open.length ? ` with ${open.join(", ")} open` : ""}`;
+      for (const p of paths) {
+        const a = A.get(p) || p, b = B.get(p) || p;
+        if (a === d ? !(b === p || (b.startsWith(d) && b !== d)) : b !== a) out.push(`${at}: ${p} stands in ${b}, closed in ${a}`);
+      }
+      if (!SAMPLED) walk([...open, d]);
+    }
+  };
+  walk([]);
+  V.open.dirs = new Set();
   return out;
 }
 

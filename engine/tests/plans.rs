@@ -11,7 +11,8 @@
 //! (each subset while there are few, else each step and each pair): the oracle (opening one more box refines the
 //! picture) and the quotient (each line of the picture counts the fine lines that cross a block's border, by channel,
 //! and each box stands where it stands with every step open); and each closed family opens into a frame with the id of
-//! its box for each value it stands for, as the page draws the frame (the walk's rule). The pictures are asked again of
+//! its box for each value it stands for, as the page draws the frame (the walk's rule); and each box of files folded into a
+//! directory opens in one step to what lies below it, every other file standing where it stood. The pictures are asked again of
 //! the plan cut as a large program's is cut, at a few small budgets (`ATLAS_FINE_BUDGET`): a step beyond the cut is the
 //! image of its body, and each of its lines counts the fine lines its body draws there. Opening a step beyond the cut plans
 //! it anew, so the oracle, which opens a box of one plan, does not hold it: each such step of the closed picture is opened
