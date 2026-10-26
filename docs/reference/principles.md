@@ -11,6 +11,12 @@ atlas check ../goad    # another one
 atlas check --json     # for an agent or a script
 ```
 
+A finding says in a sentence what the graph shows, and holds the same as data in `--json`:
+`about` lists what it is about by the part each plays, each an id the graph holds (a node, a
+type, a place) or a name the code writes (a parameter, what a choice tests). A lens's finding is
+about the type it `lost`, the `place`, and the methods that `put` and `get` there; an override's
+about the overrides that `breaks` its base. The MCP tool `check` gives the same with `json: true`.
+
 A coding agent asks the same through MCP. `atlas mcp` serves seven tools over stdio:
 `principles`, `check`, `explain` (a principle's section of this page), `routes`, `route`
 (what one entry point does, step by step), `view` (the picture opened where the agent points,
