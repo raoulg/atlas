@@ -218,9 +218,15 @@ enum Cmd {
     Check {
         /// Repository root or git URL; default: the current directory.
         repo: Option<PathBuf>,
-        /// Print the findings as JSON.
+        /// Print the findings as JSON, those set aside among them.
         #[arg(long)]
         json: bool,
+        /// List the findings set aside too, each with the decision that answers it
+        ///
+        /// A decision is a comment in the code (`# atlas: ignore[changes] in place for the frame
+        /// rate`) or an entry of `.atlasignore`; the summary counts what they set aside.
+        #[arg(long)]
+        all: bool,
     },
     /// The sketch code kept in the tree, and what is left to build
     ///
@@ -350,31 +356,35 @@ fn local(arg: PathBuf, opts: &mut Options) -> Result<(PathBuf, Option<remote::Cl
     Ok((c.dir.clone(), Some(c)))
 }
 
-/// The findings, grouped by principle, each ending in its question, and below them how many
-/// each part has; as JSON, one document that holds every part (`{"parts": [{"root", "findings"}]}`).
+/// The open findings, grouped by principle, each ending in its question, and below them how many
+/// each part has and how many the author has set aside, with `all` each of those too; then the
+/// decisions that set nothing aside. As JSON, one document that holds every part and those decisions
+/// (`{"parts": [{"root", "findings"}], "stale": [..]}`), a finding set aside with its `aside`.
 /// Exit status 1 when there is anything to ask.
-fn check(repo: &std::path::Path, opts: &Options, json: bool) -> Result<bool> {
+fn check(repo: &std::path::Path, opts: &Options, json: bool, all: bool) -> Result<bool> {
     // each part in its own language: what a Python package declares, a crate's compiler checks
-    let parts: Vec<(String, Vec<principles::Finding>)> = parts::analyze_parts(&[repo.to_path_buf()], opts)?
-        .into_iter()
-        .map(|g| {
-            let f = principles::check(&g);
-            (g.root, f)
-        })
-        .collect();
+    let graphs = parts::analyze_parts(&[repo.to_path_buf()], opts)?;
+    let parts: Vec<(&str, Vec<principles::Finding>)> = graphs.iter().map(|g| (g.root.as_str(), atlas_engine::aside::check(g))).collect();
+    let stale = atlas_engine::aside::stale(&graphs.iter().zip(&parts).map(|(g, (_, f))| (g, f.as_slice())).collect::<Vec<_>>());
     if json {
         let reports: Vec<serde_json::Value> =
             parts.iter().map(|(root, findings)| serde_json::json!({ "root": root, "findings": findings })).collect();
-        println!("{}", serde_json::to_string_pretty(&serde_json::json!({ "parts": reports }))?);
+        println!("{}", serde_json::to_string_pretty(&serde_json::json!({ "parts": reports, "stale": stale }))?);
     } else {
         let look = look();
         for (i, (root, findings)) in parts.iter().enumerate() {
             print!("{}{}", if i > 0 { "\n" } else { "" }, principles::report(root, findings, &look));
         }
-        let counted: Vec<(&str, &[principles::Finding])> = parts.iter().map(|(r, f)| (r.as_str(), f.as_slice())).collect();
+        if all {
+            for (root, findings) in &parts {
+                print!("{}", principles::set_aside(root, findings, &look));
+            }
+        }
+        let counted: Vec<(&str, &[principles::Finding])> = parts.iter().map(|(r, f)| (*r, f.as_slice())).collect();
         print!("{}", principles::summary(&counted, &principles::PRINCIPLES.iter().collect::<Vec<_>>(), &look));
+        print!("{}", atlas_engine::aside::report(&stale, &look));
     }
-    Ok(parts.iter().all(|(_, f)| f.is_empty()))
+    Ok(stale.is_empty() && parts.iter().all(|(_, f)| f.iter().all(|f| f.aside.is_some())))
 }
 
 /// How a report looks here: in a terminal, the logo's colours (principles in petrol, a question's
@@ -497,7 +507,7 @@ fn main() -> Result<()> {
                 }
             }
         }
-        Cmd::Check { repo, json } => {
+        Cmd::Check { repo, json, all } => {
             let (repo, _clone) = local(
                 match repo {
                     Some(r) => r,
@@ -505,7 +515,7 @@ fn main() -> Result<()> {
                 },
                 &mut opts,
             )?;
-            if !check(&repo, &opts, json)? {
+            if !check(&repo, &opts, json, all)? {
                 std::process::exit(1);
             }
         }

@@ -23,6 +23,8 @@ pub trait Language {
     fn sources(&self) -> &'static [&'static str];
     /// The form it marks a prophecy in.
     fn marks(&self) -> Form;
+    /// What opens a comment that runs to the end of its line.
+    fn comment(&self) -> &'static str;
     /// Does this repo look like one of mine?
     fn detect(&self, repo: &Repo, opts: &Options) -> bool;
     /// `Disk(repo) -> Graph`: every file, its symbols, the calls and types between them, the
@@ -76,6 +78,9 @@ impl Language for Python {
     }
     fn marks(&self) -> Form {
         Form::Decorator
+    }
+    fn comment(&self) -> &'static str {
+        "#"
     }
     fn detect(&self, repo: &Repo, _opts: &Options) -> bool {
         python::is_project(repo, repo.root()) || !python::packages(repo).is_empty() || !repo.named().is_empty()
@@ -155,6 +160,9 @@ impl Language for Rust {
     fn marks(&self) -> Form {
         Form::Attribute
     }
+    fn comment(&self) -> &'static str {
+        "//"
+    }
     fn detect(&self, repo: &Repo, _opts: &Options) -> bool {
         repo.is_file("Cargo.toml")
     }
@@ -195,6 +203,9 @@ impl Language for TypeScript {
     fn marks(&self) -> Form {
         Form::JsDoc
     }
+    fn comment(&self) -> &'static str {
+        "//"
+    }
     fn detect(&self, repo: &Repo, _opts: &Options) -> bool {
         typescript::detect(repo)
     }
@@ -233,6 +244,12 @@ pub fn manifests() -> Vec<&'static str> {
 /// What the languages look for: the manifests that root a part, and a package directory.
 pub fn looked_for() -> String {
     format!("looked for {}, or a package directory", manifests().join(", "))
+}
+
+/// What opens a line's comment in the language of the file at `path`, by its extension.
+pub fn comment_of(path: &str) -> Option<&'static str> {
+    let ext = Path::new(path).extension()?.to_str()?;
+    languages().into_iter().find(|l| l.sources().contains(&ext)).map(|l| l.comment())
 }
 
 /// What the language of that name leaves its author to write.

@@ -32,6 +32,36 @@ Each finding names the principle, the place in the code, the evidence the graph 
 and ends in a question. Atlas coaches; it does not fix. The author decides what the
 answer is, changes the code, and the picture follows.
 
+Sometimes the answer is that the code stays as it is: a particle system that updates its pool in
+place for the frame rate, a ported module that waits for its rewrite. The author writes that
+decision down, with its reason, beside the code it answers, after the language's line comment:
+
+```python
+def step(pool: Pool) -> None:  # atlas: ignore[changes] in place for the frame rate, see docs/perf.md
+```
+
+```rust
+// atlas: ignore[nothing] the log is the point of the call
+fn record(event: &Event) {
+```
+
+A decision at the end of a line answers that line; one alone on its line answers the first line
+below that is not only a comment. For whole paths, a `.atlasignore` at the top of the repository
+holds one decision a line: a pattern as `.gitignore` writes one, the principles it answers, and
+the reason after `#`.
+
+```gitignore
+src/sim/particles.py  changes   # in place for the frame rate, see docs/perf.md
+src/legacy/**                   # ported pipeline, rewrite planned
+```
+
+A decision that names no principle answers all of them. A finding a decision answers is still
+found: it is set aside, counted beside the open questions (`9 questions, 6 set aside`), kept in
+`--json` with the decision that answers it as `aside`, and listed with `--all`. A decision that
+sets nothing aside, gives no reason or names a principle that is none is asked about below the
+summary, so the file does not outlive the code it speaks of. What `atlas view` and `changes` ask is
+what is open: a finding set aside between two readings is neither raised nor resolved.
+
 `atlas view` and `atlas check` read the same graph. The view is the map: your eye finds
 the box that should not be there. Check is the list of places on that map that deserve
 a second look, found by the engine, which sees every type, call and effect at once.

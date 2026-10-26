@@ -55,6 +55,18 @@ pub struct Finding {
     /// `evidence` say the same in a sentence; whoever asks what a finding is about reads it here.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub about: Vec<About>,
+    /// The decision that answers it, when the author has written one: it is still found, and set
+    /// aside (`crate::aside`). `check` leaves it empty.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub aside: Option<Aside>,
+}
+
+/// The decision that sets a finding aside: where it is written and why.
+#[derive(Serialize, Clone, Debug, PartialEq)]
+pub struct Aside {
+    /// `file:line`, the file from the project root.
+    pub by: String,
+    pub reason: String,
 }
 
 /// One thing a finding is about: its part in the finding (`breaks`, `variant`, `put`, `lost`) and the id or name.
@@ -131,13 +143,13 @@ impl Look {
         Look { ink: |ink, s| if ink == Ink::Bar { String::new() } else { s.to_string() }, width: None }
     }
 
-    fn paint(&self, ink: Ink, s: &str) -> String {
+    pub(crate) fn paint(&self, ink: Ink, s: &str) -> String {
         (self.ink)(ink, s)
     }
 
     /// `text` in `ink`, starting at column `start` and wrapped onto lines that start at column
     /// `indent`.
-    fn wrapped(&self, ink: Ink, text: &str, start: usize, indent: usize) -> String {
+    pub(crate) fn wrapped(&self, ink: Ink, text: &str, start: usize, indent: usize) -> String {
         let mut lines = vec![];
         let mut line = String::new();
         let mut col = start;
@@ -189,12 +201,13 @@ fn shared_lead(qs: &[Vec<&str>]) -> usize {
     (0..most).take_while(|&i| qs.iter().all(|q| q[i] == qs[0][i])).count()
 }
 
-/// The findings of one part as text: by principle, what it asks and the reason its questions
+/// The open findings of one part as text: by principle, what it asks and the reason its questions
 /// share, then each finding with its evidence and what is left of its question.
 pub fn report(root: &str, findings: &[Finding], look: &Look) -> String {
-    let mut out = format!("{} · {}\n", look.paint(Ink::Part, root), look.paint(Ink::Count, &questions(findings.len())));
+    let open: Vec<&Finding> = findings.iter().filter(|f| f.aside.is_none()).collect();
+    let mut out = format!("{} · {}\n", look.paint(Ink::Part, root), look.paint(Ink::Count, &questions(open.len())));
     for p in PRINCIPLES {
-        let mine: Vec<&Finding> = findings.iter().filter(|f| f.principle == p.id).collect();
+        let mine: Vec<&Finding> = open.iter().copied().filter(|f| f.principle == p.id).collect();
         if mine.is_empty() {
             continue;
         }
@@ -218,12 +231,36 @@ pub fn report(root: &str, findings: &[Finding], look: &Look) -> String {
     out
 }
 
-/// Every part's questions counted by principle, to read after the reports: a row for each
+/// The findings of one part that the author has set aside, each with where it stands, what it
+/// says and the decision that answers it.
+pub fn set_aside(root: &str, findings: &[Finding], look: &Look) -> String {
+    let aside: Vec<(&Finding, &Aside)> = findings.iter().filter_map(|f| Some((f, f.aside.as_ref()?))).collect();
+    if aside.is_empty() {
+        return String::new();
+    }
+    let mut out = format!("\n{} · {} set aside\n", look.paint(Ink::Part, root), look.paint(Ink::Count, &aside.len().to_string()));
+    for (f, a) in aside {
+        let at = if f.file.is_empty() { String::new() } else { format!("{}:{}  ", f.file, f.line) };
+        let head = format!("{} · ", f.principle);
+        out += &format!(
+            "\n  {}{}{}\n",
+            look.paint(Ink::Principle, &head),
+            look.paint(Ink::At, &at),
+            look.wrapped(Ink::Quiet, &f.what, 2 + head.len() + at.len(), 4)
+        );
+        out += &format!("    {}\n", look.wrapped(Ink::Why, &format!("{}: {}", a.by, a.reason), 4, 6));
+    }
+    out
+}
+
+/// Every part's open questions counted by principle, to read after the reports: a row for each
 /// principle with something to ask, a column for each part, and on one line the principles in
-/// `asked` with nothing to ask.
+/// `asked` with nothing to ask; how many the author has set aside, beside the count.
 pub fn summary(parts: &[(&str, &[Finding])], asked: &[&Principle], look: &Look) -> String {
-    let count = |part: &[Finding], p: &Principle| part.iter().filter(|f| f.principle == p.id).count();
-    let total: usize = parts.iter().map(|(_, fs)| fs.iter().filter(|f| asked.iter().any(|p| p.id == f.principle)).count()).sum();
+    let count = |part: &[Finding], p: &Principle| part.iter().filter(|f| f.principle == p.id && f.aside.is_none()).count();
+    let asks = |f: &&Finding| asked.iter().any(|p| p.id == f.principle);
+    let total: usize = parts.iter().map(|(_, fs)| fs.iter().filter(asks).filter(|f| f.aside.is_none()).count()).sum();
+    let aside: usize = parts.iter().map(|(_, fs)| fs.iter().filter(asks).filter(|f| f.aside.is_some()).count()).sum();
     let rows: Vec<(&Principle, Vec<usize>)> = asked
         .iter()
         .map(|p| (*p, parts.iter().map(|(_, fs)| count(fs, p)).collect::<Vec<_>>()))
@@ -235,6 +272,9 @@ pub fn summary(parts: &[(&str, &[Finding])], asked: &[&Principle], look: &Look) 
     out += &look.paint(Ink::Count, &questions(total));
     if parts.len() > 1 {
         out += &format!(" in {} parts", parts.len());
+    }
+    if aside > 0 {
+        out += &format!(", {} set aside", look.paint(Ink::Count, &aside.to_string()));
     }
     out += "\n";
     if !rows.is_empty() {
@@ -373,6 +413,7 @@ impl<'g> Index<'g> {
             evidence,
             question,
             about: vec![],
+            aside: None,
         }
     }
 

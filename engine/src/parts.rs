@@ -115,7 +115,22 @@ fn read_current_parts(repos: &[PathBuf], opts: &Options) -> Result<Option<Vec<Gr
     let stable =
         read.iter().zip(&current).all(|(before, after)| before.listed_files() == after.listed_files() && before.stamps() == after.stamps())
             && witnesses.iter().all(|(part, witness)| witness.current(part));
-    Ok(stable.then(|| apart(graphs)))
+    Ok(stable.then(|| {
+        let mut graphs = apart(graphs);
+        decided(&read, &mut graphs);
+        graphs
+    }))
+}
+
+/// The `.atlasignore` at the top of each repository read, among the files of every part: the
+/// decisions it holds are the author's, whichever part the code they answer lies in.
+fn decided(read: &[Repo], graphs: &mut [Graph]) {
+    for r in read {
+        let Some((file, text)) = r.hidden(crate::aside::FILE) else { continue };
+        for g in graphs.iter_mut() {
+            g.files.insert(crate::tree::path_str(&file), text.clone());
+        }
+    }
 }
 
 /// One part's complete analysis and the inputs that make it current.

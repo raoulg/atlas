@@ -17,7 +17,7 @@ use crate::cache::{Cache, Check, Written};
 use crate::diff::{self, Reading, Status};
 use crate::flow::Drawn;
 use crate::model::{EdgeKind, Graph, NodeKind, Touch, World};
-use crate::principles::{self, Finding};
+use crate::principles::Finding;
 use crate::story;
 
 /// How one route differs between two revisions.
@@ -112,6 +112,9 @@ pub struct Changes {
     pub elsewhere: Elsewhere,
     pub findings_added: Vec<Finding>,
     pub findings_resolved: Vec<Finding>,
+    /// The findings asked before that are still found, and the author has since set aside.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub findings_set_aside: Vec<Finding>,
 }
 
 /// The revisions a range names, as git reads one: `A..B` is A against B, a side left out is
@@ -276,12 +279,19 @@ fn replaced(v: &mut serde_json::Value, pairs: &[(&str, &str)]) {
     }
 }
 
-/// The findings of `after` that `before` does not have (raised), and those of `before` that
-/// `after` no longer has (resolved).
-pub fn raised(before: &[Finding], after: &[Finding]) -> (Vec<Finding>, Vec<Finding>) {
+/// How the questions `after` asks stand to those `before` asks, a question being a finding not set
+/// aside: those `before` does not ask (raised), those `after` no longer finds (resolved), and those
+/// `after` still finds and has set aside.
+pub fn raised(before: &[Finding], after: &[Finding]) -> (Vec<Finding>, Vec<Finding>, Vec<Finding>) {
     let key = |f: &Finding| (f.principle, f.node.clone(), f.what.clone());
-    let (ka, kb): (HashSet<_>, HashSet<_>) = (before.iter().map(key).collect(), after.iter().map(key).collect());
-    (after.iter().filter(|f| !ka.contains(&key(f))).cloned().collect(), before.iter().filter(|f| !kb.contains(&key(f))).cloned().collect())
+    let asked = |fs: &[Finding], aside: bool| -> HashSet<_> { fs.iter().filter(|f| f.aside.is_some() == aside).map(key).collect() };
+    let (ka, kb, kept) = (asked(before, false), asked(after, false), asked(after, true));
+    let gone = || before.iter().filter(|f| f.aside.is_none() && !kb.contains(&key(f)));
+    (
+        after.iter().filter(|f| f.aside.is_none() && !ka.contains(&key(f))).cloned().collect(),
+        gone().filter(|f| !kept.contains(&key(f))).cloned().collect(),
+        gone().filter(|f| kept.contains(&key(f))).cloned().collect(),
+    )
 }
 
 /// What changed from the parts `before`, read at revision `a`, to the parts `after`, read at
@@ -400,8 +410,8 @@ pub fn between(a: &str, b: Option<&str>, before: &[Graph], after: &[Graph]) -> C
         }
     }
     let (fa, fb): (Vec<Finding>, Vec<Finding>) =
-        (before.iter().flat_map(principles::check).collect(), after.iter().flat_map(principles::check).collect());
-    (out.findings_added, out.findings_resolved) = raised(&fa, &fb);
+        (before.iter().flat_map(crate::aside::check).collect(), after.iter().flat_map(crate::aside::check).collect());
+    (out.findings_added, out.findings_resolved, out.findings_set_aside) = raised(&fa, &fb);
     out
 }
 
@@ -418,7 +428,12 @@ pub fn report(c: &Changes) -> String {
         Some(b) => format!("{}..{b}", c.a),
         None => format!("since {}", c.a),
     };
-    if c.routes.is_empty() && c.elsewhere.is_empty() && c.findings_added.is_empty() && c.findings_resolved.is_empty() {
+    if c.routes.is_empty()
+        && c.elsewhere.is_empty()
+        && c.findings_added.is_empty()
+        && c.findings_resolved.is_empty()
+        && c.findings_set_aside.is_empty()
+    {
         return format!("nothing changed in the routes, their places or the findings, {span}\n");
     }
     out.push_str(&format!("{span}\n"));
@@ -485,7 +500,9 @@ pub fn report(c: &Changes) -> String {
             }
         }
     }
-    for (title, fs) in [("findings raised", &c.findings_added), ("findings resolved", &c.findings_resolved)] {
+    for (title, fs) in
+        [("findings raised", &c.findings_added), ("findings resolved", &c.findings_resolved), ("findings set aside", &c.findings_set_aside)]
+    {
         if fs.is_empty() {
             continue;
         }
