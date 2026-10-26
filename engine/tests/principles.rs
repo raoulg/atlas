@@ -86,7 +86,7 @@ fn an_override_of_a_generic_base_keeps_what_its_subclass_fills_in() {
     assert_eq!(returns("fixture.generic.Ledger.from_row").as_deref(), Some("Version[R]"));
     assert_eq!(returns("fixture.generic.CountLedger.from_row").as_deref(), Some("Version[int]"));
     let ledger = fs.iter().find(|f| f.node == "fixture.generic.Ledger.from_row").expect("Ledger.from_row is asked about");
-    assert!(matches!(ledger.evidence.as_slice(), [e] if names(e).contains(&"CountLedger.from_row")), "{:?}", ledger.evidence);
+    assert_eq!(ledger.about("breaks"), ["fixture.generic.CountLedger.from_row"], "{:?}", ledger.about);
 }
 
 /// What a lens puts, it gets back, also inside what a get gives: a lens composed with the
@@ -123,9 +123,15 @@ fn a_lens_puts_what_reaches_the_place_not_the_key_it_looks_up_by() {
     assert!(lens.iter().all(|f| f.node != "fixture.tiles.Tiles"), "{:#?}", lens);
     let notes = lens.iter().find(|f| f.node == "fixture.notes.Notes").expect("Notes is asked");
     // its put is `Notes.put`, putting the Note into the file at `Notes.path`, and its get `Notes.get`, getting a dict from it
-    let shown = |held: &[&str]| notes.evidence.iter().any(|e| held.iter().all(|n| names(e).contains(n)));
-    assert_eq!(notes.evidence.len(), 2, "{:?}", notes.evidence);
-    assert!(shown(&["Notes.put", "Note", "Notes.path"]) && shown(&["Notes.get", "dict", "Notes.path"]), "{:?}", notes.evidence);
+    let about = |role: &str| notes.about(role);
+    assert_eq!(
+        (about("lost"), about("place"), about("put"), about("get")),
+        (vec!["fixture.notes.Note"], vec!["w:Disk:Notes.path"], vec!["fixture.notes.Notes.put"], vec!["fixture.notes.Notes.get"]),
+        "{:?}",
+        notes.about
+    );
+    // what a get gives back is no part of what the finding is about; only its sentence says it
+    assert!(notes.evidence.iter().any(|e| names(e).contains(&"Notes.get") && names(e).contains(&"dict")), "{:?}", notes.evidence);
 }
 
 /// The principles read Rust by what its types and entries mean: a trait's implementation has the
@@ -167,7 +173,7 @@ fn a_command_its_package_exports_is_a_door() {
     };
     let doors = |g: &Graph| check(g).into_iter().filter(|f| f.principle == "doors").collect::<Vec<_>>();
     let asked = doors(&graph(true));
-    assert!(matches!(asked.as_slice(), [f] if f.node == "tool.main" && names(&f.what).contains(&"n")), "{asked:?}");
+    assert!(matches!(asked.as_slice(), [f] if f.node == "tool.main" && f.about("takes") == ["n"]), "{asked:?}");
     assert!(doors(&graph(false)).is_empty());
 }
 
@@ -176,9 +182,9 @@ fn a_command_its_package_exports_is_a_door() {
 fn a_package_called_src_is_asked_its_name() {
     let fs = findings("tests/srclayout");
     assert_eq!(by_principle(&fs)["doors"], ["src"]);
-    // only the sentence tells the name asked apart from the root that exports nothing
+    // the name it is asked about tells it apart from the root that exports nothing
     let asked = fs.iter().find(|f| f.principle == "doors").unwrap();
-    assert!(asked.what.contains("called src"), "{}", asked.what);
+    assert_eq!(asked.about("named"), ["src"], "{asked:?}");
 }
 
 /// The docs explain every principle the engine checks.
