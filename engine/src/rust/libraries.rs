@@ -43,10 +43,10 @@ fn sources(asked: &mut Vec<Check>) -> Vec<PathBuf> {
     let Some(home) = home else { return vec![] };
     let dir = knowledge::CARGO_SOURCES.iter().fold(home, |d, p| d.join(p));
     asked.push(Check::Names(dir.clone()));
-    let mut out: Vec<PathBuf> =
+    let mut registries: Vec<PathBuf> =
         std::fs::read_dir(dir).map(|r| r.flatten().map(|e| e.path()).filter(|p| p.is_dir()).collect()).unwrap_or_default();
-    out.sort();
-    out
+    registries.sort();
+    registries
 }
 
 /// A manifest's tables of the crates its code may call: its dependencies, those of its tests,
@@ -124,9 +124,11 @@ fn dependencies(repo: &Repo, crates: &[Crate]) -> (HashMap<String, PathBuf>, Vec
                     None => {
                         let Some(v) = version(locked, &packages, package) else { continue };
                         let fetched: Vec<PathBuf> = sources.iter().map(|s| s.join(format!("{package}-{v}"))).collect();
-                        asked.extend(fetched.iter().map(|d| Check::File(d.join("Cargo.toml"))));
-                        let Some(d) = fetched.into_iter().find(|d| d.join("Cargo.toml").is_file()) else { continue };
-                        d
+                        asked.extend(fetched.iter().map(|package_dir| Check::File(package_dir.join("Cargo.toml"))));
+                        let Some(package_dir) = fetched.into_iter().find(|package_dir| package_dir.join("Cargo.toml").is_file()) else {
+                            continue;
+                        };
+                        package_dir
                     }
                 };
                 out.insert(ident, dir);
@@ -165,18 +167,18 @@ impl Libraries {
         if let Some(r) = self.roots.get(ident) {
             return r.clone();
         }
-        let r = self.deps.get(ident).filter(|_| !effects::described(ident, Registry::Crates)).and_then(|dir| {
-            let manifest: toml::Table = std::fs::read_to_string(dir.join("Cargo.toml")).ok()?.parse().ok()?;
+        let r = self.deps.get(ident).filter(|_| !effects::described(ident, Registry::Crates)).and_then(|package_dir| {
+            let manifest: toml::Table = std::fs::read_to_string(package_dir.join("Cargo.toml")).ok()?.parse().ok()?;
             if manifest.get("package").and_then(|p| p.get("links")).is_some() {
                 return None;
             }
             let compiled = knowledge::compiled(Registry::Crates);
-            let holds = WalkDir::new(dir)
+            let holds = WalkDir::new(package_dir)
                 .into_iter()
                 .flatten()
                 .any(|e| e.path().extension().and_then(|x| x.to_str()).map_or(false, |x| compiled.contains(&x)));
             let lib = manifest.get("lib").and_then(|l| l.get("path")).and_then(|p| p.as_str()).unwrap_or("src/lib.rs");
-            let file = normal(&dir.join(lib));
+            let file = normal(&package_dir.join(lib));
             (!holds && file.is_file()).then_some(file)
         });
         self.roots.insert(ident.to_string(), r.clone());
@@ -198,7 +200,11 @@ impl Libraries {
         Some(Module {
             id: id.to_string(),
             krate,
-            manifest_dir: file.ancestors().find(|a| a.join("Cargo.toml").is_file()).map(crate::tree::path_str).unwrap_or_default(),
+            manifest_dir: file
+                .ancestors()
+                .find(|package_dir| package_dir.join("Cargo.toml").is_file())
+                .map(crate::tree::path_str)
+                .unwrap_or_default(),
             parent,
             path: file.to_path_buf(),
             src,
