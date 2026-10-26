@@ -174,10 +174,10 @@
       if (focused) list.querySelector(`[data-path="${CSS.escape(focused)}"]`)?.focus();
     }
 
-    // where a traced file's reading starts: the route of a module that is an entry point (a notebook,
-    // a script), as a file named to `atlas view` opens; else its module's box, else the first thing
-    // defined in it
-    const reading = (facts) => facts.find((fact) => fact.kind === 'module') || facts[0];
+    // where a traced file's reading starts: the route of the entry point it defines (a notebook or a
+    // script is one itself, a command line is a function in it), as a file named to `atlas view` opens;
+    // else its module's box, else the first thing defined in it
+    const reading = (facts) => facts.find((fact) => fact.entry) || facts.find((fact) => fact.kind === 'module') || facts[0];
 
     function choose(row, preview = false) {
       if (row.dir) {
@@ -191,7 +191,7 @@
       selected = row.path;
       draw();
       const start = reading(facts);
-      if (start.kind === 'module' && start.entry) bridge.openFullView({route: start.id});
+      if (start.entry) bridge.openFullView({route: start.id});
       else bridge.pointAt(start.id);
     }
 

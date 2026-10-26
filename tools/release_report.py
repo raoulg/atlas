@@ -405,7 +405,9 @@ class Browser:
     def open(self, html, view=None):
         """A page Atlas wrote, with the report's probe, in `view` if given (as its address would)."""
         text = html.read_text()
-        i = text.rindex('})();')
+        # the model lives in `mount` where the page has one (a served page mounts each new reading), else in the
+        # function around the whole script
+        i = text.rindex('dispose = () =>') if 'function mount(' in text else text.rindex('})();')
         self.n += 1
         probe = self.tmp / f'{self.n:03d}-{html.stem}.html'
         probe.write_text(text[:i] + EXPOSE + text[i:])

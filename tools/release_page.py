@@ -9,10 +9,19 @@ page that lists them.
 
 A release's notes are `docs/releases/<version>.md`: a head (`version`, `date`, empty until the tag),
 a paragraph that says what the release is, and its main points, each a `## ` heading with a few
-paragraphs, an `Issues:` line and a `Pictures:` line of files under `docs/` (the notes each issue
-leaves in `docs/changes/`, and what `tools/release_report.py` draws). A `Draw:` line says which
-picture is still to be drawn for a point; the page leaves it out and this tool names it, so that the
-release is not tagged with a point that shows nothing. The page is
+paragraphs (code in fences), an `Issues:` line, and the point's pictures:
+
+- `Atlas: #147, #175`: the issue's cards of `tools/release_report.py`, its program drawn by the release
+  before and by this one (what only one of them draws outlined in its colour), and Atlas's own code
+  where the change is. `--take <report dir> <version>` copies what the notes name of a report into
+  `docs/releases/<version>/report/`.
+- `Diagram: releases/<version>/x.svg`: a drawing of the point's structure, inline, so that it takes the
+  page's colours in the light and the dark.
+- `Bars: label = 18.9 s; label = 0.14 s | caption`: a bar chart of measured numbers.
+- `Pictures: changes/x.jpg`: screenshots, from the notes each issue leaves in `docs/changes/`.
+
+A `Draw:` line says which picture is still to be made for a point; the page leaves it out and this
+tool names it, so that the release is not tagged with a point that shows nothing. The page is
 `docs/releases/<version>/index.html`, in the site's own style; `docs/releases/index.html` lists the
 releases, newest first. Pages publishes `docs/` from `main`, so a page goes live with the promotion
 that carries it, at `https://raoulg.github.io/atlas/releases/<version>/`.
@@ -59,6 +68,58 @@ code{font-family:var(--mono);font-size:.86em;background:var(--panel);border:1px 
 .list .v{font-family:var(--mono);font-size:15px;min-width:90px}
 .list .t{color:var(--ink-2)}
 footer{margin-top:64px;font-family:var(--mono);font-size:12px;color:var(--ink-3)}
+:root{--add:#2E8B57;--del:#C0361C;--edit:#B26A00;--key:#1D5A73}
+@media(prefers-color-scheme:dark){:root{--add:#6CC08C;--del:#F2643C;--edit:#E0A24A;--key:#86B9C9}}
+.legend{display:flex;flex-wrap:wrap;gap:8px 18px;font-size:14px;color:var(--ink-2);margin:-30px 0 48px}
+.legend span{display:inline-flex;align-items:center;gap:7px}
+.swatch{width:18px;height:12px;border:3px solid;border-radius:2px}
+.card{background:var(--panel);border:1px solid var(--line);padding:16px 18px;margin:20px 0}
+.card h3{font-size:16px;font-weight:500;margin:0 0 12px}
+.card h3 a{text-decoration:none;color:var(--ink-3);font-family:var(--mono);font-size:13px;margin-right:6px}
+.pair{display:grid;gap:12px}
+.pair figure{margin:0}
+.pair .shot{overflow-x:auto;border:1px solid var(--line);background:var(--bg);padding:6px}
+.pair .shot pre{border:0;background:none;margin:0;padding:4px;font-size:12px;max-width:none;max-height:340px}
+@media(min-width:900px){.pair:has(pre){grid-template-columns:1fr 1fr}}
+.pair img{display:block;max-width:100%;height:auto}
+figcaption{font-size:13.5px;color:var(--ink-2);margin-top:6px}
+.tag{font-family:var(--mono);font-size:11.5px;padding:1px 6px;border:1.5px solid;margin-right:6px}
+.tag.before{color:var(--del)}.tag.after{color:var(--add)}
+.where{font-family:var(--mono);font-size:12px;color:var(--ink-3);margin:0 0 8px}
+details{margin-top:12px}
+summary{cursor:pointer;font-size:13.5px;color:var(--ink-2)}
+pre{font-family:var(--mono);font-size:13px;background:var(--panel);border:1px solid var(--line);padding:12px 14px;overflow:auto;max-width:70ch}
+pre code{background:none;border:0;padding:0}
+.hero{margin:6px 0 24px;border:1px solid var(--line);background:var(--panel);padding:8px}
+.hero img{display:block;width:100%;height:auto}
+.example{margin:18px 0 6px}
+.example pre{margin:0 0 14px}
+@media(min-width:900px){.pair{grid-template-columns:1fr 1fr;align-items:start}}
+section ul{padding-left:20px;margin:0 0 16px}
+section li{margin:4px 0}
+.diagram{margin:22px 0;background:var(--panel);border:1px solid var(--line);padding:14px}
+.diagram svg{display:block;width:100%;height:auto;max-height:340px}
+.d-frame{fill:none;stroke:var(--ink-3);stroke-width:1.5}
+.d-box{fill:var(--bg);stroke:var(--line);stroke-width:1.5}
+.d-key{stroke:var(--key);stroke-width:2}
+.d-engine{fill:var(--panel);stroke:var(--ink-3)}
+.d-ground{fill:var(--line);stroke:none}
+.d-title{font:600 15px var(--sans);fill:var(--ink)}
+.d-name{font:500 14px var(--mono);fill:var(--ink)}
+.d-note{font:13px var(--sans);fill:var(--ink-2)}
+.d-label{font:13px var(--sans);fill:var(--ink-2)}
+.d-arrow{fill:none;stroke:var(--ink-3);stroke-width:1.6;marker-end:url(#d-head)}
+.d-before{stroke:var(--del)}.d-after{stroke:var(--add)}
+.d-law{font:28px var(--sans);fill:var(--key)}
+.d-broken{fill:var(--del)}
+.d-axis{stroke:var(--ink-3);stroke-width:1.4;fill:none}.d-grid{stroke:var(--line);stroke-dasharray:4 4}
+.d-curve{fill:none;stroke:var(--key);stroke-width:3}.d-dot{fill:var(--key)}
+.bars{margin:22px 0;background:var(--panel);border:1px solid var(--line);padding:16px 18px;max-width:760px}
+.bar{display:grid;grid-template-columns:minmax(120px,30%) 1fr;gap:12px;align-items:center;margin:8px 0}
+.bar .l{font-size:14px;color:var(--ink-2)}
+.bar .v{height:22px;background:var(--key);min-width:2px;position:relative}
+.bar .v span{position:absolute;left:calc(100% + 8px);top:1px;font-family:var(--mono);font-size:13px;color:var(--ink);white-space:nowrap}
+.bars .cap{font-size:13.5px;color:var(--ink-2);margin-top:10px}
 """
 
 
@@ -82,6 +143,18 @@ def inline(text: str) -> str:
 
 
 def blocks(text: str) -> list[str]:
+    """Paragraphs, lists and fenced code of `text`, as HTML."""
+    out = []
+    parts = re.split(r"(?ms)^```[^\n]*\n(.*?)^```\s*$", text.strip())
+    for n, part in enumerate(parts):
+        if n % 2:
+            out.append(f"<pre><code>{html.escape(part.rstrip())}</code></pre>")
+        else:
+            out += prose(part)
+    return out
+
+
+def prose(text: str) -> list[str]:
     """Paragraphs and lists of `text`, as HTML."""
     out = []
     for chunk in re.split(r"\n\s*\n", text.strip()):
@@ -117,9 +190,17 @@ def read(path: pathlib.Path) -> dict:
             fields[m.group(1).lower()] = " ".join(m.group(2).split())
             return ""
 
-        rest = re.sub(r"(?ms)^(Issues|Pictures|Draw): (.*?)(?=\n\s*\n|\n(?:Issues|Pictures|Draw): |\Z)", field, rest)
+        keys = "Issues|Pictures|Draw|Atlas|Diagram|Bars|Hero|Example|Compare"
+        rest = re.sub(rf"(?ms)^({keys}): (.*?)(?=\n\s*\n|\n(?:{keys}): |\Z)", field, rest)
         points.append({"title": re.sub(r"^\d+\.\s*", "", title.strip()), "text": rest, **fields})
-    return {"version": head.get("version", path.stem), "date": head.get("date", ""), "lede": parts[0].strip(), "points": points}
+    release = {"version": head.get("version", path.stem), "date": head.get("date", ""), "lede": parts[0].strip(), "points": points}
+    report = RELEASES / release["version"] / "report" / "report.json"
+    if report.is_file():
+        import json
+
+        release["builds"] = json.loads(report.read_text()).get("builds", {})
+    release.setdefault("builds", {"before": f"atlas {head.get('before', 'before')}", "after": f"atlas {release['version']}"})
+    return release
 
 
 def page(release: dict) -> str:
@@ -128,6 +209,18 @@ def page(release: dict) -> str:
     sections = []
     for point in release["points"]:
         body = blocks(point["text"])
+        if point.get("hero"):
+            body.insert(0, f'<figure class="hero"><img src="../../{html.escape(point["hero"])}" alt=""></figure>')
+        if point.get("example"):
+            body.append(example(release, point["example"]))
+        if point.get("compare"):
+            body.append(compare(point["compare"]))
+        for diagram in [d.strip() for d in point.get("diagram", "").split(",") if d.strip()]:
+            body.append(f'<figure class="diagram">{svg(DOCS / diagram)}</figure>')
+        if point.get("bars"):
+            body.append(bars(point["bars"]))
+        for n in re.findall(r"#(\d+)", point.get("atlas", "")):
+            body.append(card(release, int(n)))
         pictures = [p.strip() for p in point.get("pictures", "").split(",") if p.strip()]
         if pictures:
             body.append(
@@ -158,12 +251,161 @@ def page(release: dict) -> str:
 <p class="eyebrow">Release {v}{when}</p>
 <h1>What changed in Atlas {v}</h1>
 <div class="lede">{"".join(blocks(release["lede"]))}</div>
+<div class="legend"><span><i class="swatch" style="border-color:var(--del)"></i>only in the release before</span><span><i class="swatch" style="border-color:var(--add)"></i>only in {v}</span><span><i class="swatch" style="border-color:var(--edit)"></i>its text changed, its arrow not</span></div>
 {"".join(sections)}
 <footer>Made by tools/release_page.py from docs/releases/{v}.md and the notes in docs/changes.</footer>
 </main>
 </body>
 </html>
 """
+
+
+def example(release: dict, name: str) -> str:
+    """A small program of `fixtures/<name>` (fixtures: Atlas reads no part there, so the program stays out
+    of Atlas's own picture) and the picture of it by the release before and by this one
+    (`tools/release_example.py` draws them into `img/<name>-before.png` and `-after.png`)."""
+    folder = RELEASES / release["version"] / "fixtures" / name
+    source = next((p for p in sorted(folder.rglob("*.py")) if "typings" not in p.parts), None)
+    code = source.read_text().split("\n\n\ndef main(")[0].strip() if source else ""
+    builds = {side: html.escape(v.split()[1]) if len(v.split()) > 1 else side for side, v in release.get("builds", {}).items()}
+    labels = {"before": builds.get("before", "before"), "after": builds.get("after", release["version"])}
+    figures = "".join(
+        f'<figure><div class="shot"><img src="img/{html.escape(name)}-{side}.png" alt="" loading="lazy"></div>'
+        f'<figcaption><span class="tag {side}">{labels[side]}</span></figcaption></figure>'
+        for side in ("before", "after")
+    )
+    return f'<div class="example"><pre><code>{html.escape(code)}</code></pre><div class="pair">{figures}</div></div>'
+
+
+def compare(spec: str) -> str:
+    """`img = label; img = label`: pictures side by side, each with its label."""
+    figures = []
+    for item in [i for i in spec.split(";") if "=" in i]:
+        path, label = (x.strip() for x in item.split("=", 1))
+        figures.append(
+            f'<figure><div class="shot"><img src="../../{html.escape(path)}" alt="" loading="lazy"></div>'
+            f'<figcaption><span class="tag after">{inline(label)}</span></figcaption></figure>'
+        )
+    return f'<div class="pair">{"".join(figures)}</div>'
+
+
+def svg(path: pathlib.Path) -> str:
+    """A drawing of the notes, inline, with the arrowhead its arrows use."""
+    head = ('<defs><marker id="d-head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">'
+            '<path d="M0 0 L10 5 L0 10 z" style="fill:var(--ink-3)"/></marker></defs>')
+    text = path.read_text()
+    return re.sub(r"(<svg[^>]*>)", lambda m: m.group(1) + head, text, count=1)
+
+
+def bars(spec: str) -> str:
+    """`label = 18.9 s; label = 0.14 s | caption` as bars of one scale."""
+    data, _, caption = spec.partition("|")
+    rows = []
+    for item in [i for i in data.split(";") if "=" in i]:
+        label, value = (x.strip() for x in item.split("=", 1))
+        number = float(re.match(r"[\d.]+", value).group(0))
+        rows.append((label, value, number))
+    top = max(n for _, _, n in rows) or 1
+    out = "".join(
+        f'<div class="bar"><span class="l">{inline(label)}</span><div class="v" style="width:{max(0.4, 82 * n / top):.2f}%"><span>{html.escape(value)}</span></div></div>'
+        for label, value, n in rows
+    )
+    return f'<div class="bars">{out}' + (f'<p class="cap">{inline(caption.strip())}</p>' if caption.strip() else "") + "</div>"
+
+
+def report_of(release: dict) -> dict:
+    """The report this release's cards are drawn from, by issue."""
+    path = RELEASES / release["version"] / "report" / "report.json"
+    if not path.is_file():
+        return {}
+    import json
+
+    return {i["issue"]: i for i in json.loads(path.read_text())["issues"]}
+
+
+def card(release: dict, n: int) -> str:
+    """An issue as Atlas draws it: its program before and after, and where Atlas's own code changed."""
+    issue = report_of(release).get(n)
+    if not issue:
+        return f'<div class="card"><h3><a href="{ISSUES}{n}">#{n}</a>no picture in the report</h3></div>'
+    base = f"../../releases/{release['version']}/report/{n}/"
+    builds = {side: html.escape(v.split()[1]) if len(v.split()) > 1 else side for side, v in release.get("builds", {}).items()}
+    parts = [f'<div class="card"><h3><a href="{ISSUES}{n}">#{n}</a>{inline(issue.get("title", ""))}</h3>']
+    shown = False
+    for c in issue["cards"]:
+        if c["kind"] == "A" and c.get("pictures") and not shown:
+            shown = True
+            route = c.get("view", {}).get("after", {}).get("route", c.get("route", ""))
+            parts.append(f'<p class="where">{html.escape(c["subject"].removeprefix("engine/tests/"))} · route {html.escape(route)}</p>')
+            if c.get("says"):
+                parts.append(f"<p>{inline(c['says'])}</p>")
+            figures = []
+            for side in ("before", "after"):
+                if side in c["pictures"]:
+                    figures.append(
+                        f'<figure><div class="shot"><img src="{base}{c["pictures"][side]}" alt="" loading="lazy"></div>'
+                        f'<figcaption><span class="tag {side}">{builds.get(side, side)}</span></figcaption></figure>'
+                    )
+            parts.append(f'<div class="pair">{"".join(figures)}</div>')
+    for c in issue["cards"]:
+        if c["kind"] == "C" and c.get("what") == "check" and not shown:
+            shown = True
+            for pair in c.get("pairs", [])[:2]:
+                count = {side: pair[side].get("questions") or 0 for side in ("before", "after")}
+                texts = "".join(
+                    f'<figure><div class="shot"><pre>{html.escape((RELEASES / release["version"] / "report" / str(n) / pair[side]["text"]).read_text().strip())}</pre></div>'
+                    f'<figcaption><span class="tag {side}">{builds.get(side, side)}</span>{count[side]} question{"" if count[side] == 1 else "s"}</figcaption></figure>'
+                    for side in ("before", "after")
+                    if (RELEASES / release["version"] / "report" / str(n) / pair[side]["text"]).is_file()
+                )
+                parts.append(f'<p class="where">atlas check {html.escape(pair["program"].removeprefix("engine/tests/"))} · {count["before"]} → {count["after"]} questions</p><div class="pair">{texts}</div>')
+    for c in issue["cards"]:
+        if c["kind"] == "B":
+            routes = [r for r in c.get("routes", []) if r.get("picture")]
+            if routes:
+                marks = ", ".join(f"<code>{html.escape(f.split('.')[-1])}</code> {m}" for f, m in list(c.get("marked", {}).items())[:6])
+                parts.append(
+                    f'<details><summary>In Atlas\'s own code · {html.escape(routes[0]["route"])}</summary>'
+                    f'<div class="pair"><figure><div class="shot"><img src="{base}{routes[0]["picture"]}" alt="" loading="lazy"></div>'
+                    f"<figcaption>{marks}</figcaption></figure></div></details>"
+                )
+    parts.append("</div>")
+    return "".join(parts)
+
+
+def take(report: pathlib.Path, version: str) -> None:
+    """Copy what the notes of `version` name of a report of `tools/release_report.py` into the docs."""
+    import json
+    import shutil
+
+    release = read(RELEASES / f"{version}.md")
+    wanted = {int(n) for p in release["points"] for n in re.findall(r"#(\d+)", p.get("atlas", ""))}
+    data = json.loads((report / "report.json").read_text())
+    into = RELEASES / version / "report"
+    shutil.rmtree(into, ignore_errors=True)
+    kept = []
+    for issue in data["issues"]:
+        if issue.get("issue") not in wanted or "cards" not in issue:
+            continue
+        names = set()
+        for c in issue["cards"]:
+            if c["kind"] == "A" and c.get("pictures"):
+                names |= set(c["pictures"].values())
+                break
+        for c in issue["cards"]:
+            if c["kind"] == "B":
+                names |= {r["picture"] for r in c.get("routes", [])[:1] if r.get("picture")}
+        if not any(c["kind"] == "A" and c.get("pictures") for c in issue["cards"]):
+            for c in issue["cards"]:
+                if c["kind"] == "C" and c.get("what") == "check":
+                    names |= {pair[side]["text"] for pair in c.get("pairs", [])[:2] for side in ("before", "after")}
+        (into / str(issue["issue"])).mkdir(parents=True, exist_ok=True)
+        for name in names:
+            shutil.copy(report / str(issue["issue"]) / name, into / str(issue["issue"]) / name)
+        kept.append({k: issue[k] for k in ("issue", "title", "cards") if k in issue})
+    (into / "report.json").write_text(json.dumps({"builds": data.get("builds", {}), "base": data["base"], "head": data["head"], "issues": kept}, indent=1, ensure_ascii=False) + "\n")
+    missing = wanted - {i["issue"] for i in kept}
+    print(f"took {len(kept)} issues into {into.relative_to(DOCS.parent)}" + (f"; not in the report: {sorted(missing)}" if missing else ""))
 
 
 def index(releases: list[dict]) -> str:
@@ -204,6 +446,9 @@ def version_key(v: str):
 
 
 def main(args: list[str]) -> int:
+    if args[:1] == ["--take"]:
+        take(pathlib.Path(args[1]), args[2])
+        args = args[2:]
     sources = sorted(RELEASES.glob("*.md"), key=lambda p: version_key(p.stem), reverse=True)
     if not sources:
         print("no release notes in docs/releases")
