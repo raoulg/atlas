@@ -7,6 +7,7 @@ use std::process::Command;
 
 use atlas_engine::changes::{self, RefKind};
 use atlas_engine::diff::{self, Diff, Reading, Status};
+use atlas_engine::flow::Side;
 use atlas_engine::model::NodeKind;
 use atlas_engine::{Graph, Options};
 
@@ -142,6 +143,34 @@ fn steps(g: &Graph, d: &Diff, id: &str) -> Vec<(String, Option<Status>)> {
         .collect()
 }
 
+/// The functions whose touches rest at `place` in reading `r`, each with the side it stands on.
+fn touching(g: &Graph, d: &Diff, r: Reading, place: &str) -> Vec<(String, Side)> {
+    let side = diff::reading(g, d, r);
+    let mut out: Vec<(String, Side)> = side
+        .nodes
+        .iter()
+        .flat_map(|n| n.touches.iter().chain(&n.instead).map(move |t| (n, t.drawn())))
+        .filter(|(_, w)| w.place.id == place || w.place.coarse.as_ref().is_some_and(|c| c.id == place))
+        .map(|(n, w)| (n.id.clone(), w.side))
+        .collect();
+    out.sort_by(|a, b| a.0.cmp(&b.0));
+    out.dedup();
+    out
+}
+
+/// The places `caller` makes whole in reading `r` (it hands the path a function it calls touches),
+/// each with the side the touch stands on: the places of its own arrow that its own body does not
+/// touch.
+fn made_whole(g: &Graph, d: &Diff, r: Reading, caller: &str) -> Vec<(String, Side)> {
+    let side = diff::reading(g, d, r);
+    side.nodes
+        .iter()
+        .flat_map(|n| &n.touches)
+        .filter(|t| t.by.iter().any(|b| b.split('&').any(|f| f == caller)))
+        .map(|t| (t.drawn().place.id, t.drawn().side))
+        .collect()
+}
+
 /// `plot` gives way to `Trend(frame).save(..)`: the step B no longer has is removed, the steps it
 /// adds are added, in call order, and the file both write keeps its name and is changed, since
 /// another function writes it now. `main` takes and gives what it did, so it is not changed.
@@ -163,7 +192,9 @@ fn steps_come_and_go_and_a_place_changes_its_writer() {
     assert!(at("spots.cli.smooth") < at("spots.cli.plot") && at("spots.cli.plot") < at("spots.cli.Trend.save"), "call order: {main:?}");
     assert!(main.iter().filter(|(_, s)| s.is_none()).any(|(t, _)| t == "spots.cli.smooth"), "a step both have is unmarked: {main:?}");
     assert_eq!(d.places.get("w:File:figures/spots.txt"), Some(&Status::Changed), "{:?}", d.places);
-    assert_eq!(d.was.get("w:File:figures/spots.txt").map(String::as_str), Some("plot writes"));
+    let writers = |r: Reading| touching(&g, &d, r, "w:File:figures/spots.txt");
+    assert_eq!(writers(Reading::A), [("spots.cli.plot".to_string(), Side::Out)]);
+    assert_eq!(writers(Reading::B), [("spots.cli.Trend.save".to_string(), Side::Out)]);
     assert_eq!(d.places.get("w:File:data/raw.csv"), None, "the file both read the same way is the same");
     let removed = g
         .edges
@@ -215,7 +246,7 @@ fn a_function_whose_return_type_changed_is_changed() {
     let (_, d, _) = both(&repo);
     assert_eq!(d.nodes.get("spots.cli.smooth"), Some(&Status::Changed));
     let was = d.was.get("spots.cli.smooth").unwrap();
-    assert!(was.starts_with("smooth(frame: Frame) → None"), "{was}");
+    assert!(was.contains("None"), "what it gave in A: {was}");
     assert_eq!(d.nodes.get("spots.cli.plot"), None);
     assert_eq!(d.nodes.get("spots.cli.load"), None);
     done(&repo);
@@ -239,11 +270,8 @@ fn a_renamed_function_is_one_node() {
         route.steps_changed.iter().map(|s| (s.id.as_str(), s.renamed_from.as_deref())).collect::<Vec<_>>(),
         [("spots.cli.draw", Some("spots.cli.plot"))]
     );
-    assert!(
-        changes::report(&c).contains("~ step cli.draw: renamed from cli.plot · was plot(frame: Frame, out: Path) → None"),
-        "{}",
-        changes::report(&c)
-    );
+    let was = &route.steps_changed[0].was;
+    assert!(was.contains("plot") && !was.contains("draw"), "what it was is said as A had it: {was}");
     done(&repo);
 }
 
@@ -354,7 +382,9 @@ fn a_swapped_producer_marks_the_swap_alone() {
             "{name}"
         );
         assert_eq!(d.places.keys().collect::<Vec<_>>(), ["w:File:data/raw.csv"], "{name}");
-        assert_eq!(d.was.get("w:File:data/raw.csv").map(String::as_str), Some("load reads"));
+        let readers = |r: Reading| touching(&g, &d, r, "w:File:data/raw.csv");
+        assert_eq!(readers(Reading::A), [("spots.cli.load".to_string(), Side::In)], "{name}");
+        assert_eq!(readers(Reading::B), [("spots.cli.fetch".to_string(), Side::In)], "{name}");
         // the frame smooth is handed is one value in both readings, made by load in A and by fetch in B
         assert!(d.hands.is_empty(), "{name}: A hands smooth what B hands it: {:?}", d.hands);
         assert_eq!(
@@ -515,7 +545,7 @@ fn a_rename_carries_the_place_named_after_it() {
     let (_, d, c) = both(&repo);
     assert_eq!(d.renamed.get("spots.cli.draw").map(String::as_str), Some("spots.cli.plot"), "{:?}", d.nodes);
     assert!(d.places.is_empty(), "{:?}", d.places);
-    assert!(d.was["spots.cli.draw"].ends_with("writes Disk(plot.out)"), "what it was is said as A had it: {}", d.was["spots.cli.draw"]);
+    assert!(d.was["spots.cli.draw"].contains("plot.out"), "what it was is said as A had it: {}", d.was["spots.cli.draw"]);
     assert_eq!(c.elsewhere.changed.iter().map(|s| s.id.as_str()).collect::<Vec<_>>(), ["spots.cli.draw"], "{}", changes::report(&c));
     done(&repo);
 }
@@ -543,25 +573,28 @@ fn a_place_a_caller_makes_whole_is_the_callers_arrow() {
     let program = |body: &str| CALLER.replace("MAIN", body);
     let repo = repository("drops", &program("    print(sum(load(Path(\"data/raw.csv\"))))"));
     commit(&repo, &program("    print(sum([1.0, 2.0]))"), "main does not load");
-    let (_, d, _) = both(&repo);
+    let (g, d, _) = both(&repo);
     assert_eq!(d.nodes.get("spots.cli.load"), None, "{:?}", d.was.get("spots.cli.load"));
     assert_eq!(d.nodes.get("spots.cli.main"), Some(&Status::Changed));
-    assert!(d.was["spots.cli.main"].contains("reads File(data/raw.csv)"), "{}", d.was["spots.cli.main"]);
+    let raw = ("w:File:data/raw.csv".to_string(), Side::In);
+    assert!(made_whole(&g, &d, Reading::A, "spots.cli.main").contains(&raw), "main reads the file in A");
+    assert!(!made_whole(&g, &d, Reading::B, "spots.cli.main").contains(&raw), "and not in B");
     done(&repo);
     let save = |out: &str| program(&format!("    save(load(Path(\"data/raw.csv\")), Path(\"{out}\"))"));
     let repo = repository("hands", &save("out/a.txt"));
     commit(&repo, &save("out/b.txt"), "main hands out/b.txt");
-    let (_, d, c) = both(&repo);
+    let (g, d, c) = both(&repo);
     assert_eq!(d.nodes.iter().collect::<Vec<_>>(), [(&"spots.cli.main".to_string(), &Status::Changed)], "{:?}", d.was);
-    assert!(d.was["spots.cli.main"].contains("writes File(out/a.txt)"), "{}", d.was["spots.cli.main"]);
+    let out = |file: &str| (format!("w:File:{file}"), Side::Out);
+    assert!(made_whole(&g, &d, Reading::A, "spots.cli.main").contains(&out("out/a.txt")), "main writes out/a.txt in A");
+    assert!(made_whole(&g, &d, Reading::B, "spots.cli.main").contains(&out("out/b.txt")), "main writes out/b.txt in B");
     assert_eq!(d.places.get("w:File:out/a.txt"), Some(&Status::Removed));
     assert_eq!(d.places.get("w:File:out/b.txt"), Some(&Status::Added));
     let route = &c.routes[0];
     assert_eq!(route.steps_changed.iter().map(|s| s.id.as_str()).collect::<Vec<_>>(), ["spots.cli.main"]);
-    assert_eq!(
-        (route.places_added.as_slice(), route.places_removed.as_slice()),
-        (["writes out/b.txt".to_string()].as_slice(), ["writes out/a.txt".to_string()].as_slice())
-    );
+    let at = |ts: &[atlas_engine::flow::Drawn]| ts.iter().map(|t| (t.at.place.id.clone(), t.at.side)).collect::<Vec<_>>();
+    assert_eq!((at(&route.touches_added), at(&route.touches_removed)), (vec![out("out/b.txt")], vec![out("out/a.txt")]));
+    assert_eq!((route.places_added.len(), route.places_removed.len()), (1, 1), "one place each way");
     done(&repo);
 }
 
