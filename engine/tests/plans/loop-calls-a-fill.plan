@@ -1,0 +1,20 @@
+# `loop-reads-then-writes` with its body in a step of its own: `show` may write the note, then reads it, and the loop runs
+# `show` again. What a route does at a place composes from what its steps do there (the effect functor), so the route is
+# the one body written out: the first round reads the note as it was and a later round writes over it. Read, then
+# written: both.
+
+route loopfill.run
+step run/for word in sys.argv[1:]                           # the words the human typed, each kept as `word`
+step run/show
+line entry > run call
+line entry > run/for word in sys.argv[1:] call             # the command line is the entry's
+line run/for word in sys.argv[1:] > _·word@run/for word in sys.argv[1:] value
+line _·word@run/for word in sys.argv[1:] > run/show value   # `show(word)`
+home _·word@run/for word in sys.argv[1:] run
+line File(data/note.txt) > run/show own
+line run/show > File(data/note.txt) own
+line run/show > Screen own
+
+side entry left
+side File(data/note.txt) both
+side Screen right

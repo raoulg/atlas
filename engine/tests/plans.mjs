@@ -204,8 +204,49 @@ function pictures(F, openable, occ, homes, valueName) {
     for (const f of M.checkOpenings(F, view, foldable)) faults.push(`${at}: ${f}`);
     for (const f of quotient(F, view, set, homes, occ, valueName)) faults.push(`${at}: ${f}`);
   }
+  // sampled, a large program's route is asked of the sets drawn for it; in full, of none, each step alone and all
+  faults.push(...closing(SAMPLED ? sets : [[], ...steps.map(s => [s]), ...(steps.length > 1 ? [steps] : [])], occ));
   V.open.steps = new Set();
   return faults;
+}
+
+// A picture as what it draws: its boxes, the frames they stand in, the lines of each step with their counts, and the side
+// of each place of the world
+function drawn(C) {
+  const sorted = m => [...m].map(([k, v]) => [k, v]).sort();
+  const pills = [...C.pills.values()].map(P => [P.id, sorted(P.Dn || []), sorted(P.Cn || []), P.folded || 0, P.backTo || ""]).sort();
+  const frames = [...C.frames].map(([id, f]) => [id, f.parent || ""]).sort();
+  return JSON.stringify({places: [...C.places.keys()].sort(), pills, frames, sides: sides(C)});
+}
+
+// where each place of the world stands, decided on the coarsest picture (`coarsen`)
+function sides(C) {
+  return [...C.roles.keys()].sort().map(k => {
+    const w = C.fine.ways.get(k);
+    return [k, M.sideOfRoles([C.roles.get(k)], () => (w?.size === 1 ? [...w][0] : "mid"))];
+  });
+}
+
+// Closing (mathematics.md, "Refinement keeps what it does not refine"): the picture is a function of the set of open steps,
+// not of the order they were opened in. Each set (none, each step alone, all of them; sampled, the sets drawn) is drawn as
+// the page draws it (`plan`), once in order and once more after every other set was drawn, in the reverse order: both draw
+// the same picture, so closing a step draws the picture it was. Side: a place stands where the coarsest picture puts it,
+// so it stands there whatever is open.
+function closing(sets, occ) {
+  const out = [], first = new Map(), name = set => (set.length ? `with ${set.map(s => occ("n:" + s)).join(", ")} open` : "closed");
+  for (const set of sets) {
+    V.open.steps = new Set(set);
+    first.set(set, drawn(M.plan()));
+  }
+  const closed = JSON.stringify(JSON.parse(first.get(sets[0])).sides);
+  for (const set of [...sets].reverse()) {
+    V.open.steps = new Set(set);
+    const again = drawn(M.plan()), was = first.get(set);
+    if (again !== was) out.push(`${name(set)}: drawn again after the other sets, the picture differs`);
+    const s = JSON.stringify(JSON.parse(was).sides);
+    if (set.length && s !== closed) out.push(`${name(set)}: a place stands on another side than with every step closed: ${s} against ${closed}`);
+  }
+  return out;
 }
 
 // The image of the fine lines under the quotient, as `mathematics.md` defines it: a fine occurrence goes to its outermost

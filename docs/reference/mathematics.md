@@ -23,7 +23,8 @@ is a composite from an entry point to the places it reaches.
 **In Atlas.** A function's domain is its parameters plus what its body consumes; its codomain is
 what it returns plus what it writes, sends or runs. A file written is as much a part of the
 arrow as a value returned.
-**Where.** `design.md` §0; `effects.rs`, a node's touches.
+**Where.** `design.md` §0; `effects.rs`, a node's touches. Held by `engine/tests/arrows.rs`: a touch changed marks its
+function as a type it gives does.
 
 ### A route's domain and codomain
 **What.** An arrow `f: A → B` has a domain and a codomain; in a composite `g ∘ f: A → C` the
@@ -70,7 +71,8 @@ value), the place is in neither.
 **In Atlas.** `F: Graph → W` sends each function to the arrow from what it takes in to what it
 hands on, in the small category W of resting places. The overview of a codebase is the image of
 F; refining W refines the picture.
-**Where.** `design.md` §1, "The plaat is a functor image"; `flow.rs`.
+**Where.** `design.md` §1, "The plaat is a functor image"; `flow.rs`. Held by `engine/tests/arrows.rs`: what a function
+does at places, composed from its calls (`flow::arrows`), is what the body with every call written out in its place does.
 
 ### Generators and composites
 **What.** A graph of arrows (a quiver) generates a free category, whose arrows are its paths.
@@ -215,7 +217,8 @@ named so whoever calls the function. A rename is an isomorphism of the typed arr
 `list[float] → float` is no `str → str`. `atlas changes` reads the same union along each route,
 so the picture and the list hold the same marks.
 **Where.** `atlas history`, `atlas changes A..B`, a vision beside the working tree (`atlas
-mcp`'s `vision`); `diff::union`, `diff::reading`, `changes::between`; `design.md` §4, L5.
+mcp`'s `vision`); `diff::union`, `diff::reading`, `changes::between`; `design.md` §4, L5. Held by `engine/tests/arrows.rs`:
+on two readings of the same nodes, the marks are those of the direct arrows, and a node renamed is one node.
 
 ### Partial morphisms: a prophecy
 **What.** A partial map is defined on part of its domain; a graph with some objects and arrows
@@ -236,7 +239,8 @@ collapsing a part R of G onto a point b is the pushout of `G ← R → {b}`.
 **In Atlas.** Zooming out glues each family of types into one point, one box. Of a library, what
 lies beyond the fiber the project reaches is glued into the function at the fiber's border: that
 function is one arrow, whose effects are all its code reaches inside the library.
-**Where.** `design.md` §0, "Zoom is a quotient on types"; `view::reached`.
+**Where.** `design.md` §0, "Zoom is a quotient on types"; `view::reached`. Held by `engine/tests/arrows.rs`: what the
+program reaches at places is the same at every depth the library is read to.
 
 ### Fibers: one route
 **What.** The fiber of a map over a point is everything that lies above that point.
@@ -356,9 +360,9 @@ image.
 | --- | --- | --- |
 | Incidence | a closed step is the block of the occurrences below it: its lines are the images of the fine lines that cross its border; the frame of an opened step has the id of the block, its own arrow (`o:`) is a point on the frame's border | `imageOf` |
 | Containment | a box stands where the finest plan puts it: a value in the smallest frame that holds its users and its maker, a place of the world outside every step | `imageOf` (`homeOf`) |
-| Side | the roles of a place are counted on the coarsest picture, where only the route is open | `coarsen` |
+| Side | the roles of a place are counted on the coarsest picture, where only the route is open | `coarsen`; `closing` in `engine/tests/plans.mjs` |
 | Moment | a value has the moment of the occurrence that made it; a closed block hands on at its own | `madeAt`, `imageOf` |
-| Closing | the picture is the image of the finest plan under the map the sets in `V.open` define, and nothing else | `plan`, `coarsen` |
+| Closing | the picture is the image of the finest plan under the map the sets in `V.open` define, and nothing else | `plan`, `coarsen`; `closing` in `engine/tests/plans.mjs` |
 | Reading | a call's hands and gives are applied to the step's own arrow as to its closed box | `stepMorphism` |
 | Endpoints | `addEdge` records each line it cannot end (`atlasPicture.dropped`); the walk reports it | `addEdge`, `pictures.py walk` |
 | Refinement | for every box that can be opened, the picture with it open is held to the one drawn (`atlasPicture.oracle`) | `refines`, `checkOpenings` |
@@ -757,7 +761,8 @@ calls that change their receiver in `knowledge::MUTATORS`; a loop's step in each
 **What.** The transitive closure of a relation: everything a path leads to.
 **In Atlas.** What a step reaches is the closure of its calls; it is drawn apart from the step's
 own arrow.
-**Where.** `flow.rs`; sentence 6.
+**Where.** `flow.rs`; sentence 6; `Graph::reach`, `view::reach_from`, held to a closure computed apart in
+`engine/tests/arrows.rs`.
 
 ### One direction
 **What.** A directed graph without cycles.
