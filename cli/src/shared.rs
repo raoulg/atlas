@@ -65,6 +65,16 @@ pub struct Note {
 }
 
 /// A file of `.atlas/` at the top of the repository `repo` is in.
+/// How long each phase of drawing the page took the last few times `atlas serve` started, in
+/// seconds, the latest last: what the progress bars expect of the next start.
+pub fn timings(repo: &Path) -> BTreeMap<String, Vec<f64>> {
+    read(&file(repo, "timings.json")).and_then(|v| serde_json::from_value(v).ok()).unwrap_or_default()
+}
+
+pub fn set_timings(repo: &Path, timings: &BTreeMap<String, Vec<f64>>) -> Result<()> {
+    write(&file(repo, "timings.json"), timings)
+}
+
 fn file(repo: &Path, name: &str) -> PathBuf {
     crate::home::made(Some(repo), name)
 }

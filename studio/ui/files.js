@@ -2,8 +2,10 @@
   'use strict';
 
   // The workspace's files as Atlas reads them, a tree beside the picture: a file the graph defines
-  // something in is traced (a filled dot), any other file is only physical (an open dot). Selecting
-  // a file previews it; a fact in the preview points the Atlas view at its box.
+  // something in is traced (a filled dot), any other file is only physical (an open dot). A traced
+  // file opens where the picture has it, its module's box; the picture is that file's reading. Any
+  // other file opens in the preview, as a traced one does on request (alt-click, shift-Enter, or its
+  // row's preview button).
 
   const node = (tag, className, label) => {
     const element = document.createElement(tag);
@@ -21,6 +23,34 @@
   const extension = (path) => (path.match(/\.([^./]+)$/)?.[1] || '').toLowerCase();
   const IMAGES = {png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml'};
   const KIND = {module: 'module', class: 'class', function: 'function', method: 'method'};
+  // the language highlight.js reads a file in, by its extension or its name
+  const LANGUAGES = {
+    rs: 'rust', py: 'python', pyi: 'python', ts: 'typescript', tsx: 'typescript', mts: 'typescript', js: 'javascript', mjs: 'javascript',
+    cjs: 'javascript', jsx: 'javascript', json: 'json', toml: 'ini', ini: 'ini', cfg: 'ini', yml: 'yaml', yaml: 'yaml', sh: 'bash',
+    bash: 'bash', zsh: 'bash', md: 'markdown', html: 'xml', htm: 'xml', svg: 'xml', xml: 'xml', css: 'css', scss: 'scss', sql: 'sql',
+    go: 'go', java: 'java', kt: 'kotlin', c: 'c', h: 'c', cpp: 'cpp', hpp: 'cpp', cc: 'cpp', rb: 'ruby', lua: 'lua', r: 'r',
+    diff: 'diff', patch: 'diff', makefile: 'makefile', mk: 'makefile', swift: 'swift', cs: 'csharp', php: 'php',
+  };
+  const language = (path) => LANGUAGES[extension(path)] || LANGUAGES[path.split('/').at(-1).toLowerCase()] || '';
+
+  // `text` highlighted as `language`, one piece of HTML per line, each with the spans it is inside
+  // closed at its end and opened again on the next; nothing when highlight.js does not read it.
+  // highlight.js writes the text escaped, and only `<span class>` around it.
+  function highlightedLines(text, language, hljs = root.hljs) {
+    if (!hljs || !language || !hljs.getLanguage(language) || text.length > 500000) return null;
+    const html = hljs.highlight(text, {language, ignoreIllegals: true}).value;
+    const lines = [];
+    const open = [];
+    let line = '';
+    for (const part of html.split(/(<span class="[^"]*">|<\/span>|\n)/)) {
+      if (part === '\n') { lines.push(line + '</span>'.repeat(open.length)); line = open.join(''); }
+      else if (part.startsWith('<span')) { open.push(part); line += part; }
+      else if (part === '</span>') { open.pop(); line += part; }
+      else line += part;
+    }
+    lines.push(line + '</span>'.repeat(open.length));
+    return lines;
+  }
 
   // the directories and files of a listing, as nested folders
   function tree(files) {
@@ -41,6 +71,11 @@
   // a box id of the page, as the id of the fact it shows: a type box (`t:…`) and a step of a route
   // (`n:…/0`) name the fact they come from before any `~`, `@` or `/`
   const factOf = (box) => box.replace(/^[tn]:/, '').split(/[~@/]/)[0];
+
+  // where an HTML file of the workspace is previewed, its folders kept, so that what it refers to by a
+  // relative path loads from beside it
+  const previewUrl = (path, base = root.__TAURI__?.core.convertFileSrc('', 'preview') || 'preview://localhost/') =>
+    base.replace(/\/?$/, '/') + path.split('/').map(encodeURIComponent).join('/');
 
   // a path relative to the file `from`, from the workspace's root
   function relative(from, target) {
@@ -117,28 +152,47 @@
           here.title = 'Selected in the Atlas view';
           item.append(here);
         }
+        if (!row.dir && row.facts.length) {
+          const peek = node('button', 'peek', '⧉');
+          peek.type = 'button';
+          peek.tabIndex = -1;
+          peek.title = 'Preview the file (alt-click)';
+          peek.addEventListener('click', (event) => { event.stopPropagation(); openFile(row.path); });
+          item.append(peek);
+        }
         if (!row.dir) {
           const traced = row.facts.length > 0;
           const dot = node('span', 'dot' + (traced ? ' traced' : ''), traced ? '●' : '○');
-          dot.title = traced ? `${row.facts.length} in the graph` : 'No graph fact: a physical file only';
+          dot.title = traced ? `${row.facts.length} in the graph: opens in the Atlas view` : 'No graph fact: a physical file only';
           item.append(dot);
         }
         item.title = row.path;
-        item.addEventListener('click', () => choose(row));
+        item.addEventListener('click', (event) => choose(row, event.altKey));
         list.append(item);
       }
       empty.hidden = shown.length > 0;
       if (focused) list.querySelector(`[data-path="${CSS.escape(focused)}"]`)?.focus();
     }
 
-    function choose(row) {
+    // where a traced file's reading starts: the route of a module that is an entry point (a notebook,
+    // a script), as a file named to `atlas view` opens; else its module's box, else the first thing
+    // defined in it
+    const reading = (facts) => facts.find((fact) => fact.kind === 'module') || facts[0];
+
+    function choose(row, preview = false) {
       if (row.dir) {
         if (open.has(row.path)) open.delete(row.path); else open.add(row.path);
         draw();
         list.querySelector(`[data-path="${CSS.escape(row.path)}"]`)?.focus();
         return;
       }
-      openFile(row.path);
+      const facts = byPath.get(row.path)?.facts || [];
+      if (preview || !facts.length) { openFile(row.path); return; }
+      selected = row.path;
+      draw();
+      const start = reading(facts);
+      if (start.kind === 'module' && start.entry) bridge.openFullView({route: start.id});
+      else bridge.pointAt(start.id);
     }
 
     // arrows move through the tree, right and left open and close a folder, Enter opens
@@ -164,7 +218,7 @@
         const parent = row.path.split('/').slice(0, -1).join('/');
         const index = items.findIndex((each) => each.dataset.path === parent);
         if (index >= 0) go(index);
-      } else if (event.key === 'Enter' || event.key === ' ') choose(row);
+      } else if (event.key === 'Enter' || event.key === ' ') choose(row, event.shiftKey);
       else return;
       event.preventDefault();
     });
@@ -257,15 +311,55 @@
       }
     }
 
+    // a PDF drawn by pdf.js, the same on every platform: a page is drawn once it comes into sight,
+    // as wide as the preview; `wanted` says whether the preview still shows it
+    async function pdfView(bytes, wanted) {
+      const pdfjs = await import('./vendor/pdf.min.mjs');
+      pdfjs.GlobalWorkerOptions.workerSrc = new URL('vendor/pdf.worker.min.mjs', location.href).href;
+      const pdf = await pdfjs.getDocument({data: bytes, isEvalSupported: false}).promise;
+      const pages = node('div', 'pdf-pages');
+      const count = node('div', 'pdf-count', `${pdf.numPages} page${pdf.numPages === 1 ? '' : 's'}`);
+      pages.append(count);
+      const width = Math.max(200, body.clientWidth - 34);
+      const draw = async (holder, number) => {
+        if (!wanted()) return;
+        const page = await pdf.getPage(number);
+        const plain = page.getViewport({scale: 1});
+        const viewport = page.getViewport({scale: width / plain.width});
+        const ratio = root.devicePixelRatio || 1;
+        const canvas = node('canvas');
+        canvas.width = Math.floor(viewport.width * ratio);
+        canvas.height = Math.floor(viewport.height * ratio);
+        canvas.style.width = `${Math.floor(viewport.width)}px`;
+        await page.render({canvasContext: canvas.getContext('2d'), viewport, transform: ratio === 1 ? null : [ratio, 0, 0, ratio, 0, 0]}).promise;
+        holder.replaceChildren(canvas);
+      };
+      const sight = new IntersectionObserver((seen) => {
+        for (const entry of seen) if (entry.isIntersecting) { sight.unobserve(entry.target); draw(entry.target, Number(entry.target.dataset.page)); }
+      }, {root: body, rootMargin: '400px'});
+      const first = await pdf.getPage(1);
+      const shape = first.getViewport({scale: 1});
+      for (let number = 1; number <= pdf.numPages; number++) {
+        const holder = node('div', 'pdf-page');
+        holder.dataset.page = number;
+        holder.style.width = `${width}px`;
+        holder.style.aspectRatio = `${shape.width} / ${shape.height}`;
+        pages.append(holder);
+        sight.observe(holder);
+      }
+      return pages;
+    }
+
     function blobUrl(bytes, type) {
       const url = URL.createObjectURL(new Blob([bytes], {type}));
       urls.push(url);
       return url;
     }
 
-    function sourceView(text, facts) {
+    function sourceView(text, facts, path) {
       const lines = text.replaceAll('\r\n', '\n').split('\n');
       if (lines.at(-1) === '') lines.pop();
+      const lit = highlightedLines(lines.join('\n'), language(path));
       const starts = new Map();
       for (const fact of facts) if (fact.line && fact.kind !== 'module') starts.set(fact.line, fact);
       const pre = node('pre', 'source');
@@ -278,7 +372,10 @@
           number.title = `${fact.name}: show in the Atlas view`;
           number.addEventListener('click', () => bridge.pointAt(fact.id));
         }
-        row.append(number, node('span', 'code', line || ' '));
+        const code = node('span', 'code hljs-line');
+        if (lit) code.innerHTML = lit[index] || ' ';
+        else code.textContent = line || ' ';
+        row.append(number, code);
         pre.append(row);
       });
       return pre;
@@ -320,10 +417,8 @@
         return;
       }
       if (kind === 'pdf') {
-        const frame = node('iframe', 'preview-frame');
-        frame.title = path;
-        frame.src = blobUrl(bytes, 'application/pdf');
-        body.replaceChildren(frame);
+        try { body.replaceChildren(await pdfView(bytes, () => active === path)); }
+        catch (error) { if (active === path) body.replaceChildren(node('p', 'preview-error', `This PDF cannot be shown: ${error}`)); }
         return;
       }
       let text;
@@ -332,8 +427,10 @@
       if (kind === 'md' || kind === 'markdown') {
         const render = async (mode) => {
           modeButtons(mode, render);
-          if (mode === 'Source') { body.replaceChildren(sourceView(text, facts)); return; }
-          const article = await root.AtlasLesson.render(root.AtlasLesson.parse(text), {
+          if (mode === 'Source') { body.replaceChildren(sourceView(text, facts, path)); return; }
+          // a lesson's head (`---` … `---`) says which script it runs; the preview shows the text
+          const markdown = text.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, '');
+          const article = await root.AtlasLesson.renderHtml(root.marked.parse(markdown, {gfm: true}), {
             workspaceUrl: bridge.workspaceUrl(),
             openLink: (target) => {
               if (/^[a-z]+:/i.test(target)) return;
@@ -347,6 +444,10 @@
             readView: async (reference) => JSON.parse(new TextDecoder().decode(await bridge.readFile(relative(path, reference)))),
             openFullView: bridge.openFullView,
           });
+          for (const code of article.querySelectorAll('pre > code[class*="language-"]')) {
+            const lit = highlightedLines(code.textContent.replace(/\n$/, ''), LANGUAGES[code.className.match(/language-([\w+-]+)/)[1]] || code.className.match(/language-([\w+-]+)/)[1]);
+            if (lit) code.innerHTML = lit.join('\n');
+          }
           if (active === path) body.replaceChildren(article);
         };
         render('Preview');
@@ -355,24 +456,26 @@
       if (kind === 'html' || kind === 'htm') {
         const render = (mode) => {
           modeButtons(mode, render);
-          if (mode === 'Source') { body.replaceChildren(sourceView(text, facts)); return; }
-          // the page alone: no script runs and it reaches neither Studio nor the files
+          if (mode === 'Source') { body.replaceChildren(sourceView(text, facts, path)); return; }
+          // the page with what it refers to in the workspace, and nothing else: the sandbox runs no
+          // script, and `preview:` answers only with the workspace's files and forbids the rest
           const frame = node('iframe', 'preview-frame');
           frame.title = path;
           frame.setAttribute('sandbox', '');
-          frame.srcdoc = text;
+          frame.referrerPolicy = 'no-referrer';
+          frame.src = previewUrl(path);
           body.replaceChildren(frame);
         };
         render('Preview');
         return;
       }
-      body.replaceChildren(sourceView(text, facts));
+      body.replaceChildren(sourceView(text, facts, path));
     }
 
     draw();
     return {load, clear, shown, openFile, factFile: (id) => factFile.get(id) || factFile.get(factOf(id))};
   }
 
-  root.AtlasFiles = {mount, tree, factOf, relative};
+  root.AtlasFiles = {mount, tree, factOf, relative, highlightedLines, previewUrl, language};
   if (typeof module !== 'undefined' && module.exports) module.exports = root.AtlasFiles;
 })(typeof window !== 'undefined' ? window : globalThis);

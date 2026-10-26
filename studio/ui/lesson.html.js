@@ -2,7 +2,9 @@
   'use strict';
 
   const lesson = root.AtlasLesson;
-  const allowed = new Set(['H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'P', 'DIV', 'SECTION', 'ARTICLE', 'UL', 'OL', 'LI', 'STRONG', 'EM', 'CODE', 'PRE', 'BLOCKQUOTE', 'FIGURE', 'FIGCAPTION', 'SPAN', 'HR']);
+  const allowed = new Set(['H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'P', 'DIV', 'SECTION', 'ARTICLE', 'UL', 'OL', 'LI', 'STRONG', 'EM', 'B', 'I', 'DEL', 'S', 'SUP', 'SUB', 'KBD', 'MARK', 'BR', 'CODE', 'PRE', 'BLOCKQUOTE', 'FIGURE', 'FIGCAPTION', 'SPAN', 'HR', 'TABLE', 'THEAD', 'TBODY', 'TR', 'TH', 'TD', 'DL', 'DT', 'DD', 'DETAILS', 'SUMMARY']);
+  // of the attributes only the classes that name a code block's language survive, for highlighting
+  const kept = (className) => String(className).split(/\s+/).filter((name) => /^language-[\w+-]+$/.test(name)).join(' ');
   const skipped = new Set(['SCRIPT', 'STYLE', 'IFRAME', 'OBJECT', 'EMBED', 'FORM', 'INPUT', 'BUTTON', 'LINK']);
 
   async function renderHtml(source, context) {
@@ -37,6 +39,7 @@
         return link;
       }
       const output = document.createElement(allowed.has(original.tagName) ? original.tagName.toLowerCase() : 'span');
+      if (original.className && kept(original.className)) output.className = kept(original.className);
       for (const child of original.childNodes) {
         const made = await copy(child);
         if (made) output.append(made);
