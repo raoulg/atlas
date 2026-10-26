@@ -1660,9 +1660,9 @@ async function renderPlaat(mine) {
   prevPos = pos; prevParent = parentOf; plaatAnchor = null; plaatFit = false;
   PICTURE = {boxes: nodeEls, lines: edgeEls};
   // the picture as data, for the checks that walk it (tools/pictures.py, tools/docs_pictures.py): the graph laid out, each box
-  // with the box that holds it, each line by its ends
+  // with the box that holds it, each line by its ends, each box of folded files by the directory it opens
   window.atlasBoxes = nodeEls;
-  window.atlasPicture = {n: (window.atlasPicture?.n || 0) + 1, planned: root, dropped, oracle: oracle || [], sides: [...roleAt], boxes: [...nodeEls.keys()].map(id => [id, parentOf.get(id) || "root"]), lines: edgeEls.map(e => [e.a, e.b])};
+  window.atlasPicture = {n: (window.atlasPicture?.n || 0) + 1, planned: root, dropped, oracle: oracle || [], sides: [...roleAt], boxes: [...nodeEls.keys()].map(id => [id, parentOf.get(id) || "root"]), lines: edgeEls.map(e => [e.a, e.b]), folders: [...places.values()].filter(p => p.folded && nodeEls.has(p.id)).map(p => [p.id, p.folded])};
 }
 // what the picture is a function of, each part undoable: the route, the opened steps, the open families, the split world boxes
 function crumbs() {

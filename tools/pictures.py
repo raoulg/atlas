@@ -22,11 +22,12 @@ closed; it fails when there is one.
 out (`window.ATLAS_ORACLE`, `atlasPicture.oracle`): for each box that can be opened, the picture with that box open is
 taken from the route's finest plan and compared with the one drawn, and every difference is reported.
 It opens one box at a time in each route (up to ROUTES routes, default all; up to OPENS boxes in each,
-default 8: its steps, then its closed families) and holds the picture that opens to the one it was: opening a
-box refines the quotient, so it takes no line away (every line of the closed picture is a line of the open one,
-seen through the quotient map), draws no line the closed picture did not (a line the open box draws across its
-frame is one the closed box should have drawn: rule 1), moves no box from outside a frame into it, and closing the
-box draws the closed picture again. It fails when a box does otherwise.
+default 8: its folded folders, its steps, then its closed families) and holds the picture that opens to the one it
+was: opening a box refines the quotient, so it takes no line away (every line of the closed picture is a line of the
+open one, seen through the quotient map, which sends a file to the folded folder that holds it), draws no line the
+closed picture did not (a line the open box draws across its frame is one the closed box should have drawn: rule 1),
+moves no box from outside a frame into it, and closing the box (by its frame, a folder by its chip) draws the closed
+picture again. It fails when a box does otherwise.
 
 With `ATLAS_FINE_BUDGET=n` in the environment the page cuts each route's finest plan at about n steps instead of its own
 budget, so that a small program is cut as a large one is: a step beyond the cut stands for its arrow, and opening it
@@ -101,18 +102,27 @@ FAMILIES = """async (done) => {
 TOPOLOGY = """async (spec) => {
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const settle = async n0 => { for (let i = 0; i < 100 && window.atlasPicture.n === n0; i++) await sleep(50); await sleep(30); };
-  const snap = () => { const P = window.atlasPicture; return {n: P.n, folded: new Map(window.atlasPlan?.coarse?.folded || []), boxes: new Map(P.boxes), sides: new Map(P.sides || []), lines: P.lines.map(([a, b]) => a + ">" + b)}; };
+  const snap = () => { const P = window.atlasPicture; return {n: P.n, folded: new Map(window.atlasPlan?.coarse?.folded || []), boxes: new Map(P.boxes), sides: new Map(P.sides || []), lines: P.lines.map(([a, b]) => a + ">" + b), dirs: new Map(P.folders || [])}; };
   const keyOf = id => id.replace(/^[no]:/, "");
   const closedFamily = g => g.matches('g.tnode[data-id^="t:"]') && /\\(\\d+\\)/.test(g.querySelector(".title")?.textContent || "");
-  const targets = () => [...window.atlasBoxes].flatMap(([id, g]) => g.classList.contains("tstep") && /^▸/.test(g.querySelector(".title")?.textContent || "") ? [{id, kind: "step"}] : closedFamily(g) ? [{id, kind: "family"}] : []);
+  // a box of files folded into a directory opens that directory
+  const targets = () => [...window.atlasBoxes].flatMap(([id, g]) => (window.atlasPicture.folders || []).some(([b]) => b === id) ? [{id, kind: "folder"}] : g.classList.contains("tstep") && /^▸/.test(g.querySelector(".title")?.textContent || "") ? [{id, kind: "step"}] : closedFamily(g) ? [{id, kind: "family"}] : []).sort((a, b) => (b.kind === "folder") - (a.kind === "folder"));
   if (spec === null) return targets();
   const phiFor = (coarse, fine) => {
     const keys = new Map();
     for (const id of coarse.boxes.keys()) if (/^n:/.test(id)) for (const k of keyOf(id).split("+")) keys.set(k, id);
     const under = k => { let best = null; for (const [kc, id] of keys) if ((k === kc || k.startsWith(kc + "/") || k.startsWith(kc + "~") || k.startsWith(kc + "|")) && (!best || kc.length > best[0].length)) best = [kc, id]; return best && best[1]; };
+    // a file, or a directory below one, lies in the folded box of the directory that holds it, on its side where it splits
+    const folders = [...coarse.boxes.keys()].filter(b => coarse.dirs.has(b));
+    const inFolder = id => {
+      const path = id.slice(7).replace(/~[a-z]+$/, ""), side = id.match(/~([a-z]+)$/)?.[1] || fine.sides.get(id);
+      const at = folders.filter(b => { const d = coarse.dirs.get(b); return path.startsWith(d) && path !== d; });
+      return at.find(b => b.endsWith("~" + side)) || at[0];
+    };
     return id => {
       if (coarse.boxes.has(id)) return id;
       if (coarse.folded.has(id)) return coarse.folded.get(id);
+      if (/^w:File:/.test(id) && inFolder(id)) return inFolder(id);
       for (let p = fine.boxes.get(id); p && p !== "root"; p = fine.boxes.get(p)) if (coarse.boxes.has(p)) return p;
       const m = id.match(/^(.*?)@(.*)$/);
       if (m) {
@@ -140,18 +150,20 @@ TOPOLOGY = """async (spec) => {
   const moved = [...fine.boxes].filter(([b, par]) => coarse.boxes.has(b) && coarse.boxes.get(b) !== par).map(([b, par]) => `${b}: ${coarse.boxes.get(b)} -> ${par}`);
   // a place of the world stands on the side it stood: opening a box does not make what it does there another's
   const resided = [...fine.sides].filter(([id, side]) => coarse.sides.has(id) && coarse.sides.get(id) !== side).map(([id, side]) => `${id}: ${coarse.sides.get(id)} -> ${side}`);
-  // close it again by its frame
+  // close it again by its frame, or a folder by its chip
   const frame = [...fine.boxes].find(([b, par]) => !coarse.boxes.has(b) && coarse.boxes.has(par) && /^(n|t):/.test(par))?.[1];
   let back = null;
   const fr = frame && [...document.querySelectorAll("#scene g.frame[data-id]")].find(x => x.dataset.id === frame);
-  if (fr) {
+  const closer = spec.kind === "folder" ? [...document.querySelectorAll("button")].find(b => b.textContent === coarse.dirs.get(spec.id) + " ✕") : fr?.querySelector(".ftitle");
+  if (closer) {
     n0 = window.atlasPicture.n;
-    fr.querySelector(".ftitle")?.dispatchEvent(new MouseEvent("click", {bubbles: true}));
+    closer.dispatchEvent(new MouseEvent("click", {bubbles: true}));
     await settle(n0);
     const again = snap(), same = (a, b) => a.length === b.length && a.every(x => b.includes(x));
     back = same([...again.boxes.keys()], [...coarse.boxes.keys()]) && same(again.lines, coarse.lines);
   }
-  return {opened: spec.id, lost, gained, moved, resided, reversible: back};
+  // an opened folder that names no chip to close it by cannot be closed
+  return {opened: spec.id, lost, gained, moved, resided, reversible: spec.kind === "folder" && !closer ? false : back};
 }"""
 
 # Opens the boxes named, one after the other, and gives the picture: its boxes with the box that holds each, and its lines.

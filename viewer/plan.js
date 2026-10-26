@@ -496,8 +496,10 @@ const filePath = id => id.startsWith("w:File:") ? id.slice(7) : null;
 // the directories a path is in, from the top: `a/b/c.csv` -> `a/`, `a/b/`
 const dirsOf = p => { const segs = p.replace(/\/$/, "").split("/"), out = []; for (let i = 1; i < segs.length; i++) out.push(segs.slice(0, i).join("/") + "/"); return out.filter(d => d !== "/"); };
 // a picture with more files than a column holds folds them: each file stands in the highest
-// directory that holds more than one of them and is not opened, taken as deep as it holds the
-// same files (`artefacts/*/` when everything in `artefacts/` is under `*`)
+// directory that holds more than one of them and is not opened. Directories nested in one another
+// that hold the same files are one class, drawn as the deepest (`artefacts/*/` when everything in
+// `artefacts/` is under `*`): the class is open when any of its directories is, so opening its box
+// shows what lies below it in one step, and closing it draws the box again
 function foldDirs(paths) {
   const to = new Map(), n = new Map();
   if (paths.length <= 6) return {to, n};
@@ -505,12 +507,12 @@ function foldDirs(paths) {
   for (const p of paths) {
     const ds = dirsOf(p);
     let at = p;
-    for (let i = 0; i < ds.length; i++) {
-      if (V.open.dirs.has(ds[i])) continue;
+    for (let i = 0; i < ds.length;) {
       const k = holds(ds[i]);
-      if (k < 2) break;
-      let j = i; while (j + 1 < ds.length && !V.open.dirs.has(ds[j + 1]) && holds(ds[j + 1]) === k) j++;
-      at = ds[j]; break;
+      let j = i; while (j + 1 < ds.length && holds(ds[j + 1]) === k) j++;
+      if (ds.slice(i, j + 1).some(d => V.open.dirs.has(d))) { i = j + 1; continue; }
+      if (k > 1) at = ds[j];
+      break;
     }
     if (at !== p) { to.set(p, at); n.set(at, holds(at)); }
   }
