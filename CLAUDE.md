@@ -170,6 +170,13 @@ Two long-lived branches, one release train. Everything else is a short-lived top
   function that all views use) and test that function, on small graphs, before the plan is laid out;
   keep the sweep for a gate before a promotion, and then agree on it. Show Raoul the result before
   verifying it further.
+- The laws on real programs: `engine/tests/sample.rs` asks the laws of views and of a route's pictures
+  at sites drawn from a seed, within a budget, of the programs it is pointed at (ignored by `cargo test`):
+  `ATLAS_SAMPLE_REPOS=a:b ATLAS_SAMPLE_SECONDS=120 cargo test -p atlas-engine --test sample -- --ignored --nocapture`.
+  It prints the seed and writes a report (the build, each program's revision, every site); a site that
+  breaks is asked again with the seed and `ATLAS_SAMPLE_N` it names. A short budget is ordinary
+  development; a long one, agreed on, is a gate before a promotion. A broken site is a question, about
+  the law, the code or the sampler, and gets an issue before anything is changed.
 - Tests: `cargo test`. The Rust workspace itself is a test subject. CI runs them on Linux, macOS
   and Windows: a test that writes files builds them as the platform lays them out (a virtual
   environment keeps its packages in `Lib\site-packages` on Windows) and compares paths as `Path`s,

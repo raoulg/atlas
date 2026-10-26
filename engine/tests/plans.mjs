@@ -29,6 +29,23 @@ const {V} = M;
 const SIDES = {in: "left", out: "right", mid: "between", both: "both"};
 // every subset of the steps that open, up to this many steps; beyond it, each step alone and each pair
 const ALL_SUBSETS = 6;
+// `ATLAS_SAMPLE_OPENINGS=k` (with `ATLAS_SAMPLE_SEED`) asks k sets of open steps of each route, drawn from the seed and the
+// route, instead of the sets above: `engine/tests/sample.rs` samples a large program's pictures this way, and
+// `ATLAS_SAMPLE_DEADLINE` (milliseconds since the epoch) stops before a route that would start after it
+const SAMPLED = Number(process.env.ATLAS_SAMPLE_OPENINGS || 0);
+const SEED = Number(process.env.ATLAS_SAMPLE_SEED || 0) >>> 0;
+const DEADLINE = Number(process.env.ATLAS_SAMPLE_DEADLINE || Infinity);
+// mulberry32: a small generator whose stream a seed decides
+function random(seed) {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+const hash = text => [...text].reduce((h, c) => Math.imul(h ^ c.charCodeAt(0), 16777619) >>> 0, 2166136261);
 
 function read(route) {
   V.route = route;
@@ -172,7 +189,10 @@ function cutOpenings(Fc, occ) {
 function pictures(F, openable, occ, homes, valueName) {
   const route = V.route, steps = [...openable].filter(s => s !== route);
   const foldable = ["cli", "script"].includes(M.byId.get(route)?.entry?.kind);
-  const sets = steps.length <= ALL_SUBSETS
+  const draw = random(SEED ^ hash(route));
+  const sets = SAMPLED
+    ? [[], ...[...Array(SAMPLED).keys()].map(() => { const p = draw(); return steps.filter(() => draw() < p); })]
+    : steps.length <= ALL_SUBSETS
     ? [...Array(1 << steps.length).keys()].map(m => steps.filter((_, i) => m & (1 << i)))
     : [[], ...steps.map(s => [s]), ...steps.flatMap((a, i) => steps.slice(i + 1).map(b => [a, b]))];
   const faults = [];
@@ -256,5 +276,8 @@ function quotient(F, view, set, homes, occ, valueName) {
 // with no route named, every route of the program but its tests
 const named = routes.length ? routes : [...M.byId.values()].filter(n => n.entry && n.entry.kind !== "test").map(n => n.id);
 const result = {};
-for (const r of named) result[r] = read(r);
+for (const r of named) {
+  if (Date.now() > DEADLINE) break;
+  result[r] = read(r);
+}
 process.stdout.write(JSON.stringify(result));
