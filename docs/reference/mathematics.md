@@ -158,8 +158,10 @@ caller can override. The pushout is drawn, as the entry's usage line; the langua
 beneath it. An environment variable with a fallback (`os.environ.get("X", "d")`,
 `process.env.X ?? "d"`, `env::var("X").unwrap_or("d")`) is that construct too, and so is any value
 nothing in the program hands, with a fallback: one input, one place, drawn as its default and
-decided by no code, since a run reads or writes one file whatever the input says.
-**Where.** `CLAUDE.md`, "Isomorphic is the same"; `Entry::options`; `paths::or_else`.
+decided by no code, since a run reads or writes one file whatever the input says. A type written
+through an alias (`Order as Parcel`, `use tree_sitter::Node as TsNode`) is the type it stands for: a
+parameter holds it by that type's name, as the type it takes is named (#216).
+**Where.** `CLAUDE.md`, "Isomorphic is the same"; `Entry::options`; `paths::or_else`; `model::resolve_held`.
 
 ### Paths as terms, directories as fibers
 **What.** A path is a term in a small algebra over a root: a root (a literal, a parameter, an

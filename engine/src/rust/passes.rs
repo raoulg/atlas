@@ -533,6 +533,9 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
             }
         }
         take_sums(modules, store, crate_ids, id);
+        // a type written through an alias is held by the name of the type it stands for
+        let held = crate::model::holds_resolved(&store.nodes[id], |h| resolve(m, &[h.to_string()], modules, &store.nodes, crate_ids));
+        crate::model::set_holds(store.nodes.get_mut(id).expect("a node of the graph"), held);
     }
     // every signature before any body: a body's locals take their types from what the functions
     // it calls give back, wherever those are defined
