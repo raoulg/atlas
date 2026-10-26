@@ -39,8 +39,13 @@ permissions:
 
 # The channel a build is of, which its atlas names (`0.68.0-nightly (sha)`) and by which Studio looks
 # for its updates: a release's, or the nightly's, which a build of `next` pushed or run by hand is too.
+# Each channel is an app of its own, so that the two install side by side: a release is Atlas Studio
+# (`io.github.raoulg.atlas-studio`), a nightly Atlas Studio Nightly, with its own identifier and so
+# its own settings and data.
 env:
   ATLAS_CHANNEL: ${{ inputs.channel != 'release' && 'nightly' || '' }}
+  STUDIO_APP: ${{ inputs.channel != 'release' && 'Atlas Studio Nightly' || 'Atlas Studio' }}
+  STUDIO_ID: ${{ inputs.channel != 'release' && 'io.github.raoulg.atlas-studio-nightly' || 'io.github.raoulg.atlas-studio' }}
 
 jobs:
   dmg:
@@ -68,14 +73,15 @@ jobs:
         run: |
           version=$(grep -m1 '^version' ../Cargo.toml | cut -d'"' -f2)
           npx --yes @tauri-apps/cli@2.12.2 build --ci --target ${{ matrix.target }} --bundles dmg \
-            --config "{\"version\":\"$version\"}"
+            --config "{\"version\":\"$version\",\"productName\":\"$STUDIO_APP\",\"identifier\":\"$STUDIO_ID\"}"
           cp src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg "$GITHUB_WORKSPACE/atlas-studio-${{ matrix.target }}.dmg"
       - name: the app in the image is signed whole and carries its atlas
         run: |
           mount=$(hdiutil attach -nobrowse -readonly "atlas-studio-${{ matrix.target }}.dmg" | awk -F'\t' '/\/Volumes\//{print $NF}')
-          app="$mount/Atlas Studio.app"
+          app="$mount/$STUDIO_APP.app"
           codesign --verify --deep --strict "$app"
           plutil -p "$app/Contents/Info.plist" | grep CFBundleShortVersionString
+          test "$(plutil -extract CFBundleIdentifier raw "$app/Contents/Info.plist")" = "$STUDIO_ID"
           if [ "${{ matrix.target }}" = aarch64-apple-darwin ]; then "$app/Contents/MacOS/atlas" --version; fi
           hdiutil detach "$mount"
       - uses: actions/upload-artifact@v7
@@ -106,13 +112,14 @@ jobs:
         working-directory: studio
         run: |
           version=$(grep -m1 '^version' ../Cargo.toml | cut -d'"' -f2)
-          npx --yes @tauri-apps/cli@2.12.2 build --ci --target $TARGET --bundles nsis --config "{\"version\":\"$version\"}"
+          npx --yes @tauri-apps/cli@2.12.2 build --ci --target $TARGET --bundles nsis \
+            --config "{\"version\":\"$version\",\"productName\":\"$STUDIO_APP\",\"identifier\":\"$STUDIO_ID\"}"
           cp src-tauri/target/$TARGET/release/bundle/nsis/*-setup.exe "$GITHUB_WORKSPACE/atlas-studio-$TARGET-setup.exe"
       - name: the setup program installs Studio and its atlas, for the user alone
         shell: pwsh
         run: |
           Start-Process -Wait -FilePath ".\atlas-studio-$env:TARGET-setup.exe" -ArgumentList '/S'
-          $dir = Join-Path $env:LOCALAPPDATA 'Atlas Studio'
+          $dir = Join-Path $env:LOCALAPPDATA $env:STUDIO_APP
           Get-ChildItem $dir | Select-Object Name, Length | Format-Table | Out-String | Write-Host
           & (Join-Path $dir 'atlas.exe') --version
           if ($LASTEXITCODE -ne 0) { exit 1 }

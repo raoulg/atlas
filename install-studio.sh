@@ -1,6 +1,7 @@
 #!/bin/sh
 # Install the latest Atlas Studio for this Mac into $ATLAS_STUDIO_DIR (default ~/Applications).
-# ATLAS_CHANNEL=nightly installs the nightly build of `next` instead of the latest release.
+# ATLAS_CHANNEL=nightly installs the nightly build of `next` instead of the latest release: an app of
+# its own, Atlas Studio Nightly, beside the release.
 #
 # Studio is signed ad hoc, not with an Apple Developer ID. A disk image a browser downloads is marked
 # as from the internet, and macOS then opens the app only through System Settings › Privacy &
@@ -16,13 +17,17 @@ case "$(uname -s)-$(uname -m)" in
 esac
 
 dir="${ATLAS_STUDIO_DIR:-$HOME/Applications}"
-if [ "${ATLAS_CHANNEL:-}" = nightly ]; then from=download/nightly; else from=latest/download; fi
+if [ "${ATLAS_CHANNEL:-}" = nightly ]; then
+  from=download/nightly app="Atlas Studio Nightly.app"
+else
+  from=latest/download app="Atlas Studio.app"
+fi
 work=$(mktemp -d)
 trap 'hdiutil detach -quiet "$work/mount" 2>/dev/null || true; rm -rf "$work"' EXIT
 curl -fsSL -o "$work/studio.dmg" "https://github.com/raoulg/atlas/releases/$from/atlas-studio-$target.dmg"
 hdiutil attach -quiet -nobrowse -readonly -mountpoint "$work/mount" "$work/studio.dmg"
 mkdir -p "$dir"
 # a running Studio keeps its files; it runs the new build when it starts again
-rm -rf "$dir/Atlas Studio.app"
-cp -R "$work/mount/Atlas Studio.app" "$dir/"
-echo "Atlas Studio installed in $dir/Atlas Studio.app"
+rm -rf "${dir:?}/$app"
+cp -R "$work/mount/$app" "$dir/"
+echo "Atlas Studio installed in $dir/$app"

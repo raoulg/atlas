@@ -3,8 +3,8 @@
 
 For a release and for a nightly: on every macOS and architecture Homebrew knows, the cask resolves to
 a disk image of that build's release (the tag `v<version>`, or the pre-release `nightly-<stamp>`), for
-that architecture, with that file's checksum; and Homebrew's own `brew style` and `brew audit` accept
-the cask. Homebrew reads a cask only from a tap, so the test makes one and removes it again. It needs
+that architecture, with that file's checksum; Homebrew's own `brew style` and `brew audit` accept the
+cask; and the release and the nightly install side by side, each its own app with its own data. Homebrew reads a cask only from a tap, so the test makes one and removes it again. It needs
 `brew`, and skips without it (CI runs it on macOS).
 
     python3 tools/test_tap_cask.py
@@ -89,13 +89,22 @@ class CaskNamesItsBuild(unittest.TestCase):
         self.resolves_to(read, "nightly-202610261819")
         self.accepted("atlas-studio-nightly")
 
-    def test_the_two_channels_exclude_each_other(self):
-        # both install `Atlas Studio.app`
+    def test_the_two_channels_install_side_by_side(self):
         release = self.read("atlas-studio", cask(self.dist, "1.2.3"))
         nightly = self.read("atlas-studio-nightly", cask(self.dist, "1.3.0", "202610261819"))
-        self.assertIn("atlas-studio-nightly", release["conflicts_with"]["cask"])
-        self.assertIn("atlas-studio", nightly["conflicts_with"]["cask"])
+        self.assertNotIn("atlas-studio-nightly", (release["conflicts_with"] or {}).get("cask", []))
+        self.assertNotIn("atlas-studio", (nightly["conflicts_with"] or {}).get("cask", []))
 
+        def apps(read):
+            return {app for artifact in read["artifacts"] for app in artifact.get("app", [])}
+
+        def data(read):
+            return {path for artifact in read["artifacts"] for zap in artifact.get("zap", []) for path in zap["trash"]}
+
+        self.assertTrue(apps(release) and apps(nightly))
+        self.assertFalse(apps(release) & apps(nightly), "both install one app")
+        self.assertTrue(data(release) and data(nightly))
+        self.assertFalse(data(release) & data(nightly), "zapping one removes the other's data")
 
 if __name__ == "__main__":
     unittest.main()

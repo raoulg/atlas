@@ -129,7 +129,7 @@ async fn open_workspace(
         let _ = previous.child.kill();
     }
     if let Some(window) = app.get_webview_window(label) {
-        let _ = window.set_title(&format!("{} — Atlas Studio", workspace.name));
+        let _ = window.set_title(&format!("{} — {}", workspace.name, app.package_info().name));
     }
     let _ = workspaces::remember(app, &path);
     Ok(Some(workspace))
@@ -464,7 +464,7 @@ fn new_window(app: &tauri::AppHandle) -> tauri::Result<()> {
     static NEXT: AtomicU32 = AtomicU32::new(1);
     let label = format!("workspace-{}", NEXT.fetch_add(1, Ordering::Relaxed));
     let builder = tauri::WebviewWindowBuilder::new(app, label, tauri::WebviewUrl::App("index.html".into()))
-        .title("Atlas Studio")
+        .title(&app.package_info().name)
         .inner_size(1320.0, 820.0)
         .min_inner_size(850.0, 560.0);
     #[cfg(target_os = "macos")]
