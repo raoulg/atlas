@@ -34,6 +34,12 @@ fn storage_places_keep_the_evidence_for_their_quotient() {
     }
 }
 
+/// `overwrite(path)` reads the file its caller names and writes it back: one place, read and
+/// written. A vertex of the finest picture is a place at a moment, the place as the step finds it
+/// and as it leaves it, so the read and the write are two vertices of one place. The fold of the
+/// disk is its quotient by directory met with the side ("files fold into the directories that hold
+/// them, one box per side their files stand on", mathematics.md): a path no directory names folds
+/// into the disk itself, once on each side.
 #[test]
 fn reading_and_writing_a_symbolic_path_touch_the_same_place() {
     for side in ["clean", "shortcut"] {
@@ -45,8 +51,10 @@ fn reading_and_writing_a_symbolic_path_touch_the_same_place() {
         let writes: Vec<_> = places.iter().filter(|p| p.side == flow::Side::Out).collect();
         assert_eq!(reads.len(), 1);
         assert_eq!(writes.len(), 1);
-        assert_eq!(reads[0].place.id, writes[0].place.id);
-        assert_ne!(reads[0].place.coarse.as_ref().unwrap().id, writes[0].place.coarse.as_ref().unwrap().id);
+        assert_eq!(reads[0].place.id, writes[0].place.id, "one place");
+        for drawn in [reads[0], writes[0]] {
+            assert_eq!(drawn.place.coarse.as_ref().unwrap().id, drawn.side.disk().id, "the fold of the disk met with the side");
+        }
     }
 }
 
