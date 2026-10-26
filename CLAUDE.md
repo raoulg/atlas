@@ -131,6 +131,13 @@ Two long-lived branches, one release train. Everything else is a short-lived top
    the issue's note, `docs/changes/<issue>.md`, with its picture (`docs/changes/README.md`): what a
    user sees differently, drawn with Atlas where Atlas draws it. A release report is put together
    from these notes, never written afresh.
+   **The whole suite runs once per landing, never once per branch.** While a topic is built, its
+   owner runs only the tests of what it changes. Work done in parallel lands through one queue: each
+   topic branch is pushed, not merged, and the integrating agent merges the finished branches into
+   one branch from `origin/next`, runs `cargo fmt --check`, `cargo test` (and for a viewer change
+   `walk` and `topology`) once on the whole, and lands that. A failure there is found by testing the
+   branches in it, not by running the suite again for each. When `next` moves before the push, merge
+   it again and run again only the suites its new commits touch: documentation and CI touch none.
 3. **Promote**: when Raoul says so, `next` is merged into `main` (a merge commit), `main` is tagged
    `vX.Y.0` and pushed; the tag builds the stable release and, with the secret `TAP_TOKEN`, updates
    the tap. `main` then holds nothing `next` lacks. An agent prepares the promotion (conflicts
@@ -196,6 +203,8 @@ Two long-lived branches, one release train. Everything else is a short-lived top
   beside a program writes down the plan its code implies (`engine/tests/plans/README.md`). A plan is written from the
   code and `docs/reference/mathematics.md`, never from what Atlas draws; a change to what the plan says lands with the
   plans it moves, and a defect a plan shows is marked `known #N` with its issue, the mark going with the fix.
+- Builds share one compile cache: `sccache` (from the Brewfile) with `RUSTC_WRAPPER=sccache` in the
+  environment, so a new worktree does not compile the dependencies again.
 - Disk: cargo names Atlas's builds by its version and by the hash of its dependencies and toolchain,
   so every raise, dependency update or new Rust leaves a full set of builds behind (they reached
   260 GB). `lefthook.yml` runs `tools/clean-old-builds.sh` after each commit and merge, in the
