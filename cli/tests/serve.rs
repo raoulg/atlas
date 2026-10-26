@@ -24,11 +24,18 @@ fn repository(test: &str) -> PathBuf {
 
 /// The server, and the address it serves at, read from what it says when it starts.
 fn serve(repo: &Path) -> (Child, String) {
+    serve_with(repo, &[])
+}
+
+/// The server, started with `more` arguments; its standard input is a pipe the test holds.
+fn serve_with(repo: &Path, more: &[&str]) -> (Child, String) {
     let cache = std::env::temp_dir().join(format!("atlas-serve-cache-{}", std::process::id()));
     let mut child = Command::new(env!("CARGO_BIN_EXE_atlas"))
         .args(["serve", "--no-open", "--port", "0"])
+        .args(more)
         .arg(repo)
         .env("XDG_CACHE_HOME", cache)
+        .stdin(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
         .expect("atlas serve starts");
@@ -148,6 +155,32 @@ fn the_page_and_the_agent_share_one_view() {
 }
 
 /// What the server has drawn: the name of the drawing a page shows.
+/// Whether `child` has ended within `seconds`.
+fn ends_within(child: &mut Child, seconds: u64) -> bool {
+    let until = std::time::Instant::now() + std::time::Duration::from_secs(seconds);
+    while std::time::Instant::now() < until {
+        if child.try_wait().unwrap().is_some() {
+            return true;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    false
+}
+
+#[test]
+fn a_server_started_by_a_program_ends_with_it() {
+    let repo = repository("tethered");
+    let (mut tethered, _) = serve_with(&repo, &["--exit-on-stdin-close"]);
+    let (mut free, _) = serve(&repo);
+    // the system closes a program's end of the pipe when the program ends, however it ends
+    drop(tethered.stdin.take());
+    drop(free.stdin.take());
+    assert!(ends_within(&mut tethered, 10), "the server ends once its standard input closes");
+    assert!(tethered.wait().unwrap().success());
+    assert!(!ends_within(&mut free, 1), "a server started without the flag serves on, as from a terminal");
+    free.kill().ok();
+}
+
 fn drawn(at: &str) -> Option<String> {
     let (_, body) = send(at, "GET", "/api/drawn", None, false);
     let state = serde_json::from_str::<Value>(&body).ok()?;

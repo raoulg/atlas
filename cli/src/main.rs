@@ -177,6 +177,11 @@ enum Cmd {
         /// Serve without opening a browser.
         #[arg(long)]
         no_open: bool,
+        /// Stop when standard input closes
+        ///
+        /// For a program that starts the server: the server ends with it, however it ends.
+        #[arg(long)]
+        exit_on_stdin_close: bool,
     },
     /// The same picture as one HTML file, to keep or send
     ///
@@ -412,6 +417,15 @@ fn columns() -> Option<usize> {
     None
 }
 
+/// End the process once its standard input reaches its end. The program that started it holds the
+/// other end of the pipe, which the system closes when that program ends, by Quit or by a signal.
+fn exit_when_stdin_closes() {
+    std::thread::spawn(|| {
+        let _ = std::io::copy(&mut std::io::stdin(), &mut std::io::sink());
+        std::process::exit(0);
+    });
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
     // a person's commands say when a newer build is out; the agent's and the graph's do not
@@ -435,11 +449,14 @@ fn main() -> Result<()> {
             // this machine only: the page shows the repository's code
             history::serve(&repo, std::net::SocketAddr::from(([127, 0, 0, 1], port)), &opts, !no_open)?
         }
-        Cmd::Serve { repo, port, no_open } => {
+        Cmd::Serve { repo, port, no_open, exit_on_stdin_close } => {
             let repo = match repo {
                 Some(r) => r,
                 None => std::env::current_dir()?,
             };
+            if exit_on_stdin_close {
+                exit_when_stdin_closes();
+            }
             serve::serve(&repo, port, &opts, !no_open)?
         }
         Cmd::Changes { rev, repo, json } => {
