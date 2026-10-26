@@ -111,11 +111,12 @@ fn tools() -> Value {
         },
         {
             "name": "check",
-            "description": "Check a repository against Atlas's principles. Each finding gives the file and line, what the graph shows, the evidence, and a question for the author.",
+            "description": "Check a repository against Atlas's principles. Each finding gives the file and line, what the graph shows, the evidence, and a question for the author. A finding the author has answered with a decision (`# atlas: ignore[changes] reason` in the code, or an entry of `.atlasignore`) is set aside and counted; a decision that sets nothing aside is listed as a question of its own.",
             "inputSchema": { "type": "object", "properties": {
                 "path": path,
                 "principle": { "type": "string", "description": "Only this principle's findings: an id from `principles`." },
-                "json": { "type": "boolean", "description": "The findings as data, as `atlas check --json` prints them: each with `about`, the ids it is about by the part each plays (`breaks`, `variant`, `put`, `lost`), to read without the sentences." },
+                "json": { "type": "boolean", "description": "The findings as data, as `atlas check --json` prints them: each with `about`, the ids it is about by the part each plays (`breaks`, `variant`, `put`, `lost`), to read without the sentences, and one set aside with its `aside`, the decision that answers it." },
+                "all": { "type": "boolean", "description": "List the findings set aside too, each with the decision that answers it." },
             } },
             "annotations": read_only,
         },
@@ -279,18 +280,25 @@ fn call(name: &str, args: &Value, opts: &Options) -> Option<Result<String, Strin
             }
             let asked: Vec<&principles::Principle> =
                 principles::PRINCIPLES.iter().filter(|p| text("principle").map_or(true, |id| p.id == id)).collect();
+            let found: Vec<Vec<principles::Finding>> = gs.iter().map(atlas_engine::aside::check).collect();
+            // whether a decision sets anything aside is asked of every finding, whichever are shown
+            let stale = atlas_engine::aside::stale(&gs.iter().zip(&found).map(|(g, f)| (g, f.as_slice())).collect::<Vec<_>>());
             let parts: Vec<(String, Vec<principles::Finding>)> = gs
                 .iter()
-                .map(|g| (g.root.clone(), principles::check(g).into_iter().filter(|f| asked.iter().any(|p| p.id == f.principle)).collect()))
+                .zip(found)
+                .map(|(g, f)| (g.root.clone(), f.into_iter().filter(|f| asked.iter().any(|p| p.id == f.principle)).collect()))
                 .collect();
             if args.get("json").and_then(Value::as_bool) == Some(true) {
                 let reports: Vec<Value> = parts.iter().map(|(root, findings)| json!({ "root": root, "findings": findings })).collect();
-                return Ok(serde_json::to_string_pretty(&json!({ "parts": reports })).unwrap_or_default());
+                return Ok(serde_json::to_string_pretty(&json!({ "parts": reports, "stale": stale })).unwrap_or_default());
             }
             let look = principles::Look::plain();
-            let reports: Vec<String> = parts.iter().map(|(root, findings)| principles::report(root, findings, &look)).collect();
+            let mut reports: Vec<String> = parts.iter().map(|(root, findings)| principles::report(root, findings, &look)).collect();
+            if args.get("all").and_then(Value::as_bool) == Some(true) {
+                reports.extend(parts.iter().map(|(root, findings)| principles::set_aside(root, findings, &look)).filter(|r| !r.is_empty()));
+            }
             let counted: Vec<(&str, &[principles::Finding])> = parts.iter().map(|(r, f)| (r.as_str(), f.as_slice())).collect();
-            Ok(reports.join("\n") + &principles::summary(&counted, &asked, &look))
+            Ok(reports.join("\n") + &principles::summary(&counted, &asked, &look) + &atlas_engine::aside::report(&stale, &look))
         }),
         "revelation" => parts_of(text("path"), opts).map(|gs| {
             let repo = here(text("path"));

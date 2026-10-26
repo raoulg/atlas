@@ -2,6 +2,7 @@
 //!
 //! The engine knows languages and libraries, never a project.
 
+pub mod aside;
 pub mod body;
 pub mod builder;
 pub mod cache;

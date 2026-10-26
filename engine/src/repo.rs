@@ -197,6 +197,13 @@ impl Repo {
         self.bytes(p).map(|b| String::from_utf8_lossy(&b).into_owned())
     }
 
+    /// A hidden file at the top of the repository, which the listing leaves out (`.atlasignore`):
+    /// its path from the root of the file system, and its text as it is now.
+    pub fn hidden(&self, name: &str) -> Option<(PathBuf, String)> {
+        let path = self.listing.base.join(name);
+        std::fs::read_to_string(&path).ok().map(|text| (path, text))
+    }
+
     /// Every file under `dir` (a path from the root), at any depth, as the root's path joined
     /// with it, in order.
     pub fn files_under(&self, dir: impl AsRef<Path>) -> Vec<PathBuf> {

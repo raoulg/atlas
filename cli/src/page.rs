@@ -10,7 +10,7 @@ use anyhow::{Context, Result};
 use atlas_engine::changes::{self, Named};
 use atlas_engine::diff::Diff;
 use atlas_engine::flow::Flow;
-use atlas_engine::principles::{self, Finding};
+use atlas_engine::principles::Finding;
 use atlas_engine::sight::Sight;
 use atlas_engine::{parts, Graph, Options};
 use serde::Serialize;
@@ -78,16 +78,17 @@ impl Reading {
         Reading { repos: vec![repo.to_path_buf()], parts: b.1, since: Some(Since { a: a.0, parts: a.1, b: b.0 }) }
     }
 
-    /// What the principles ask of the parts drawn, each part checked in its own language, and,
+    /// What the principles still ask of the parts drawn, each part checked in its own language, and,
     /// where two readings are drawn as one, how many findings the later raises and resolves.
     pub(crate) fn findings(&self) -> Findings {
-        let found: Vec<Finding> = self.parts.iter().flat_map(principles::check).collect();
+        let found: Vec<Finding> = self.parts.iter().flat_map(atlas_engine::aside::check).collect();
         let changed = self.since.as_ref().map(|s| {
-            let before: Vec<Finding> = s.parts.iter().flat_map(principles::check).collect();
-            let (raised, resolved) = changes::raised(&before, &found);
+            let before: Vec<Finding> = s.parts.iter().flat_map(atlas_engine::aside::check).collect();
+            let (raised, resolved, _) = changes::raised(&before, &found);
             Changed { raised: raised.len(), resolved: resolved.len() }
         });
-        Findings { found, changed }
+        // the page asks what is open; what the author has answered stays with `atlas check --all`
+        Findings { found: found.into_iter().filter(|f| f.aside.is_none()).collect(), changed }
     }
 
     /// The parts as one graph, joined where one requests another's routes; where two readings are
