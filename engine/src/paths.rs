@@ -302,25 +302,72 @@ pub fn parent(b: &Built) -> Built {
             return out;
         }
     }
-    match b.as_slice() {
-        [Seg::Lit(_)] => lit("."),
+    // text after the last part that is no literal is more of that part's name (`{to}.json`)
+    let name = b.iter().rposition(|s| !matches!(s, Seg::Lit(_))).map_or(b.len(), |k| k + 1);
+    match (b.as_slice(), &b[..name]) {
+        ([Seg::Lit(_)], _) => lit("."),
         // a module at the top of the repository is in its root
-        [Seg::Package(_)] => vec![Seg::Package(".".into())],
+        ([Seg::Package(_)], _) => vec![Seg::Package(".".into())],
         // a path a caller hands or an option names: its directory, once the path is said (`{to}/..`)
-        [.., Seg::Param(_) | Seg::Held(..) | Seg::Option(..)] => [b.clone(), lit("/..")].concat(),
+        (_, [.., Seg::Param(_) | Seg::Held(..) | Seg::Option(..)]) => [b[..name].to_vec(), lit("/..")].concat(),
         _ => hole("parent"),
     }
 }
 
+/// Marks, in a path's text, that the suffix of the name before it is taken away: what
+/// `with_suffix` does to a name not said where it is written (a path a caller hands), done once
+/// the name is said, as `/..` is for `parent`.
+const UNSUFFIXED: char = '\u{1}';
+
+/// A path with another suffix, written with its dot (`.html`, `.{}.part`), or with none (the
+/// empty suffix takes it away): `page.json` is `page.html`. A name the path does not say yet (a
+/// path a caller hands) gets its suffix once the caller says it: `{path}` with `.part`, handed
+/// `look.json`, is `look.part`.
+pub fn with_suffix(b: &Built, suffix: &Built) -> Built {
+    let mut out = b.clone();
+    let whole = b.len() == 1;
+    match last_lit(&mut out) {
+        Some(s) if !s.ends_with('/') && s.contains('/') || (whole && !s.is_empty()) => {
+            let name_at = s.rfind('/').map_or(0, |i| i + 1);
+            if let Some(dot) = s[name_at..].rfind('.').filter(|d| *d > 0) {
+                s.truncate(name_at + dot);
+            }
+        }
+        _ => out = join(&out, &lit(&UNSUFFIXED.to_string()), ""),
+    }
+    join(&out, suffix, "")
+}
+
+/// A path's text with each suffix `with_suffix` takes away from a name said later taken away.
+fn unsuffixed(p: String) -> String {
+    if !p.contains(UNSUFFIXED) {
+        return p;
+    }
+    let mut out = String::new();
+    for c in p.chars() {
+        if c != UNSUFFIXED {
+            out.push(c);
+            continue;
+        }
+        let name_at = out.rfind('/').map_or(0, |i| i + 1);
+        if let Some(dot) = out[name_at..].rfind('.').filter(|d| *d > 0) {
+            out.truncate(name_at + dot);
+        }
+    }
+    out
+}
+
 /// A path with its unknown parts written as `{name}`, and an option as its default.
 pub fn render(b: &Built) -> String {
-    b.iter()
-        .map(|s| match s {
-            Seg::Lit(x) | Seg::Package(x) => x.clone(),
-            Seg::Param(x) | Seg::Held(_, x) | Seg::Hole(x) => format!("{{{x}}}"),
-            Seg::Option(_, d) => render(d),
-        })
-        .collect()
+    unsuffixed(
+        b.iter()
+            .map(|s| match s {
+                Seg::Lit(x) | Seg::Package(x) => x.clone(),
+                Seg::Param(x) | Seg::Held(_, x) | Seg::Hole(x) => format!("{{{x}}}"),
+                Seg::Option(_, d) => render(d),
+            })
+            .collect(),
+    )
 }
 
 /// A path with what is given to the function written as `{name}`: what a caller hands, what the
@@ -350,17 +397,41 @@ pub fn is_statement(db: crate::model::Db, built: &[Built]) -> bool {
 }
 
 /// The names Atlas gives a hole where the code gives it none: an expression it does not follow
-/// (`value`, `call`, `format`, `method`, `parent`) or one beyond its depth (`…`).
+/// (`value`, `call`, `format`, `method`, `parent`) or one beyond its depth (`…`). A call Atlas
+/// does not follow is `call` in every language, never the name of what it calls: the callee names
+/// an operation, not the value it gives back.
 const ANONYMOUS: &[&str] = &["value", "call", "format", "method", "parent", "…"];
+
+/// Whether a hole, by its name or as a place writes it (`call`, `{call}`), is one the code gives
+/// no name.
+fn anonymous(hole: &str) -> bool {
+    let name = hole.trim_start_matches('$').trim_start_matches('{').trim_end_matches('}');
+    ANONYMOUS.contains(&name.trim_start_matches('$'))
+}
 
 /// A hole as a place writes it: `{name}` where the code names it, `{}` where it does not.
 fn named_hole(hole: &str) -> String {
-    let name = hole.trim_start_matches('$').trim_start_matches('{').trim_end_matches('}');
-    if ANONYMOUS.contains(&name.trim_start_matches('$')) {
+    if anonymous(hole) {
         "{}".into()
     } else {
         hole.trim_start_matches('$').to_string()
     }
+}
+
+/// What a name the code binds holds, as the code names it. A value that no code Atlas follows
+/// decides and that the code gives no name (what a library call gives back:
+/// `let home = dirs::home_dir()`) is named by the binding, the first name the code gives it,
+/// which every later name of it hands on; so one value is one hole however many names it passes
+/// through. A path built around such a value keeps its hole unnamed: the binding names the
+/// whole, not the part.
+pub fn bound(name: &str, values: Vec<Built>) -> Vec<Built> {
+    values
+        .into_iter()
+        .map(|b| match b.as_slice() {
+            [Seg::Hole(h)] if anonymous(h) => hole(name),
+            _ => b,
+        })
+        .collect()
 }
 
 /// The place a path names: the file, or for an operation on a directory that directory. A file
@@ -1031,6 +1102,39 @@ mod tests {
     fn a_place_with_places_below_is_a_folder() {
         let places = ["D/*/IO-*", "D/*/IO-*/Metadata.xml", "D/x.csv", "D/*/IO-*/"];
         assert_eq!(folders(places.into_iter()), HashSet::from(["D/*/IO-*".to_string()]));
+    }
+
+    /// A hole keeps the name the code gives the value: a value the code binds and no code Atlas
+    /// follows decides is named by the binding, and a later name of it hands that name on, so one
+    /// value is one hole; a path built around such a value is no name of it, and a hole the code
+    /// names keeps its name.
+    #[test]
+    fn a_binding_names_the_value_it_holds() {
+        let given = vec![hole("call")];
+        assert_eq!(bound("folder", given.clone()), [hole("folder")]);
+        assert_eq!(bound("path", bound("folder", given.clone())), bound("folder", given), "a later name hands the first on");
+        let built = vec![[hole("call"), lit("/note.json")].concat()];
+        assert_eq!(bound("path", built.clone()), built, "the binding names the whole, not the part");
+        assert_eq!(bound("x", vec![environment("HOME")]), [environment("HOME")]);
+        assert_eq!(bound("x", vec![lit("data")]), [lit("data")]);
+    }
+
+    /// A suffix given to a path a caller hands is the suffix given to what the caller hands:
+    /// `path.with_extension("part")` with `path = a/look.json` is `a/look.part`, the same as written
+    /// out, and so with a suffix the code builds (`format!("{}.part", id)`). A name the path says
+    /// gets its suffix where it is written.
+    #[test]
+    fn a_suffix_of_a_handed_path_is_the_suffix_of_what_is_handed() {
+        let path = vec![Seg::Param("path".into())];
+        for suffix in [lit(".part"), [lit("."), hole("value"), lit(".part")].concat(), lit("")] {
+            let handed = substitute(&with_suffix(&path, &suffix), |_| vec![lit("a/look.json")]);
+            let written = with_suffix(&lit("a/look.json"), &suffix);
+            assert_eq!(handed.iter().map(render).collect::<Vec<_>>(), [render(&written)], "{suffix:?}");
+        }
+        assert_eq!(render(&with_suffix(&lit("a/look.json"), &lit(".part"))), "a/look.part");
+        assert_eq!(render(&with_suffix(&lit("a/.env"), &lit(".bak"))), "a/.env.bak", "a dot file has no suffix");
+        let up = parent(&with_suffix(&path, &lit(".part")));
+        assert_eq!(place(&substitute(&up, |_| vec![lit("a/look.json")])[0], "read").as_deref(), Some("a"));
     }
 
     /// Going up twice from a path a caller hands is going up twice from what the caller hands:

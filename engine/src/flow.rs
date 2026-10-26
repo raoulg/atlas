@@ -380,13 +380,14 @@ impl Touch {
         }
     }
 
-    /// Where the touch rests. A file the code names is that file, and so is a test whether it is
-    /// there or the making of it, which serve its data; an operation on the shape of the file
-    /// system around it (what a directory lists, a file moved or removed) is the disk, except on a
-    /// directory, a place of its own (`assets/regelingen/`). A file only a variable names is the
-    /// disk read or written, split
-    /// by that name. A database is one place, split by its tables; a host on the web and a
-    /// model's checkpoint are named where the code names them; a program by its command.
+    /// Where the touch rests. A file the code names is that file, whatever operation touches it:
+    /// its data read or written, a test whether it is there, the making of it, a copy or a move
+    /// into it or out of it, its removal; one file is one place. What a directory lists is that
+    /// directory, a place of its own (`assets/regelingen/`), and so is a pattern below it; a listing
+    /// the code names no directory or pattern for is the disk. A file only a variable names is the
+    /// disk read or written, split by that name. A database is one place, split by its tables; a
+    /// host on the web and a model's checkpoint are named where the code names them; a program by
+    /// its command.
     pub fn place(&self) -> Place {
         let (w, name) = (self.kind, self.kind.name());
         let base = format!("w:{name}");
@@ -397,10 +398,8 @@ impl Touch {
                 place(format!("w:open:{what}"), shown(what), shown(what), "proc")
             }
             World::Disk => {
-                let shape = crate::effects::fs_op(&self.op) != crate::effects::FsOp::Data;
-                // a pattern below a directory lists a part of it, a place of its own
-                let listed = crate::effects::fs_op(&self.op) == crate::effects::FsOp::Lists && self.artifact.contains('*');
-                if !self.artifact.is_empty() && (!shape || self.shape() || self.artifact.ends_with('/') || listed) {
+                let lists = crate::effects::fs_op(&self.op) == crate::effects::FsOp::Lists;
+                if !self.artifact.is_empty() && (!lists || self.artifact.ends_with('/') || self.artifact.contains('*')) {
                     let a = &self.artifact;
                     return Place { file: a.clone(), ..place(format!("w:File:{a}"), format!("File({a})"), a.clone(), "file") };
                 }

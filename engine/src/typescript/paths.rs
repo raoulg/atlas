@@ -12,7 +12,7 @@ use super::module::{
     class_named, declarations, function_in, is_property, member_parts, package_from_ext, top_variables, Bound, Module, WRAPPERS,
 };
 use crate::knowledge::{self, PathFn};
-use crate::paths::{cross, environment, environment_named, hole, lit, or_else, parent, substitute, union, Built, Seg};
+use crate::paths::{bound as named_by, cross, environment, environment_named, hole, lit, or_else, parent, substitute, union, Built, Seg};
 use crate::tree::{beneath, named_children, path_str, text, unquote, walk};
 
 const DEPTH: u32 = 12;
@@ -176,7 +176,7 @@ impl<'a> Eval<'a> {
             if let Some(Bound::Own(target)) = at.m.bindings.get(head) {
                 if let Some(home) = self.modules.get(target) {
                     if let Some(v) = top_value(home, name) {
-                        return self.of(At { m: home, scope: None, params: &[] }, v, depth + 1);
+                        return named_by(name, self.of(At { m: home, scope: None, params: &[] }, v, depth + 1));
                     }
                 }
             }
@@ -373,14 +373,14 @@ impl<'a> Eval<'a> {
                 .into_iter()
                 .find(|v| v.child_by_field_name("name").map(|n| text(n, src)) == Some(name.as_str()) && v.start_byte() < e.start_byte());
             if let Some(v) = local.and_then(|v| v.child_by_field_name("value")) {
-                return self.of(at, v, depth + 1);
+                return named_by(&name, self.of(at, v, depth + 1));
             }
             if at.params.contains(&name) {
                 return vec![vec![Seg::Param(name)]];
             }
         }
         if let Some(v) = top_value(at.m, &name) {
-            return self.of(At { m: at.m, scope: None, params: &[] }, v, depth + 1);
+            return named_by(&name, self.of(At { m: at.m, scope: None, params: &[] }, v, depth + 1));
         }
         // a constant another module of the package exports
         let mut bound = at.m.bindings.get(&name).cloned();
@@ -389,7 +389,7 @@ impl<'a> Eval<'a> {
             let Some((mid, n)) = target.rsplit_once('.') else { break };
             let Some(home) = self.modules.get(mid) else { break };
             if let Some(v) = top_value(home, n) {
-                return self.of(At { m: home, scope: None, params: &[] }, v, depth + 1);
+                return named_by(n, self.of(At { m: home, scope: None, params: &[] }, v, depth + 1));
             }
             bound = home.bindings.get(n).cloned();
         }
@@ -420,13 +420,13 @@ impl<'a> Eval<'a> {
             Some(PathFn::Home) => vec![lit("~")],
             Some(PathFn::Here) => vec![lit(".")],
             Some(PathFn::Temp) => vec![lit(knowledge::TEMP_DIR)],
-            Some(PathFn::Environment) => vec![environment_named(&arg(0)).unwrap_or_else(|| hole(last))],
+            Some(PathFn::Environment) => vec![environment_named(&arg(0)).unwrap_or_else(|| hole("call"))],
             // the language's own conversions to a string
             None if parts.as_slice() == ["String"] => arg(0),
             None if last == "toString" => {
                 f.child_by_field_name("object").map(|o| self.of(at, o, depth + 1)).unwrap_or_else(|| vec![hole("value")])
             }
-            None => self.given(at, &parts, &args, depth).unwrap_or_else(|| vec![hole(last)]),
+            None => self.given(at, &parts, &args, depth).unwrap_or_else(|| vec![hole("call")]),
         }
     }
 
