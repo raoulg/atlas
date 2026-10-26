@@ -127,7 +127,10 @@ Two long-lived branches, one release train. Everything else is a short-lived top
    `git rev-list --count origin/next..HEAD` is 0. The agent that merges does this in the same turn.
 2. **Land on `next`** when `cargo fmt` and `cargo test` pass: merge the topic branch
    (a merge commit, no squash), push, close the issue. New work, documentation, the release
-   workflows and the tap all go to `next`, also while it is only documentation.
+   workflows and the tap all go to `next`, also while it is only documentation. The landing carries
+   the issue's note, `docs/changes/<issue>.md`, with its picture (`docs/changes/README.md`): what a
+   user sees differently, drawn with Atlas where Atlas draws it. A release report is put together
+   from these notes, never written afresh.
 3. **Promote**: when Raoul says so, `next` is merged into `main` (a merge commit), `main` is tagged
    `vX.Y.0` and pushed; the tag builds the stable release and, with the secret `TAP_TOKEN`, updates
    the tap. `main` then holds nothing `next` lacks. An agent prepares the promotion (conflicts
