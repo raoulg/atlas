@@ -165,11 +165,11 @@ const sitesOf = n => {
   return sites;
 };
 const siteIn = (n, i) => (n?.sites?.[i] ? sitesOf(n)[i] : undefined);
-// the errors a body hands on (#138): what its sites raise, the error each of its calls fails with, and the one its own code
+// the errors a body hands on (#138): what its sites raise, the errors each of its calls fails with, and the one its own code
 // hands on outside its steps (`Node::fails`, `Ok(fs::read_to_string(p)?.lines()..)`), "" for one of no type of the code's
 const errorsOf = id => {
   const n = byId.get(id), out = new Set();
-  (n?.sites || []).forEach((_, i) => { const r = siteIn(n, i); if (r?.raises) for (const g of r.gives || []) out.add(g.type || ""); if (r?.fails != null) out.add(r.fails); });
+  (n?.sites || []).forEach((_, i) => { const r = siteIn(n, i); if (r?.raises) for (const g of r.gives || []) out.add(g.type || ""); for (const e of r?.fails || []) out.add(e); });
   if (n?.fails != null) out.add(n.fails);
   return out;
 };
@@ -861,14 +861,14 @@ const stepMorphism = (key, own, isAnchor, leaf) => {
   // what an opened body gives back, made from what its steps make, is a value of its own, never one of its inputs
   // and what it changes of a value it was handed goes out as what its steps made of it (`other.cells.clear()`)
   // an error is a value in the codomain `T + E` (#138): what a site the reader marks `raises` gives leaves the body as an
-  // error, and a site marked `fails` hands on its callee's error of that type ("" for no type of the code's). An opened body
+  // error, and a site marked `fails` hands on each of its callee's errors it names ("" for no type of the code's). An opened body
   // takes the errors its steps hand on and hands each kind on at its own moment, as its call does closed, up to the route
   const errKey = t => (t ? addPlace(typePlace(t)) : addPlace({id: "v:#error", label: "·", kind: "type", hue: hueOf(null), type: null, name: "#error"}));
   const inner = own && !leaf && !step.startsWith("op:") ? errorsOf(step) : new Set(), errs = new Set(), raised = new Set();
   const made = new Set(own && !leaf && !step.startsWith("op:") ? [...(arrowOf(step)?.gives_back ? (bodyOf(step, on).made_from || []).filter(x => !inner.has(x)) : []), ...(arrowOf(step)?.changes || [])] : []);
   for (const x of made) keep.add(addPlace(typePlace(x)));
   for (const t of inner) { const k = errKey(t); m.cod.set(k, false); errs.add(k); }
-  if (site?.fails != null) { const k = errKey(site.fails); m.cod.set(k, false); errs.add(k); }
+  for (const e of site?.fails || []) { const k = errKey(e); m.cod.set(k, false); errs.add(k); }
   // a body with no steps hands on what its own code fails with, at its own moment
   const own_fails = own && leaf && !step.startsWith("op:") ? byId.get(step)?.fails : null;
   if (own_fails != null) { const k = errKey(own_fails); m.cod.set(k, false); errs.add(k); }
@@ -1145,7 +1145,7 @@ const madeAt = (P, k, kept) => {
   // choice are one value. One a step's border hands on that its call does not (`rates::fetch(..)` handed, as the `Result` it
   // gives, to a step of the arm) stays the step's
   const key = P.own ? frames.get(P.parent)?.step : P.steps[0];
-  if ((P.errs?.has(k) && treeInfo.get(key)?.site?.fails != null) || P.raised?.has(k)) return choiceMoment(a.choice);
+  if ((P.errs?.has(k) && treeInfo.get(key)?.site?.fails?.length) || P.raised?.has(k)) return choiceMoment(a.choice);
   // of what one arm makes of a value, the last is what it hands on past the choice; what it makes first is made inside it
   const m = armsOf().get(valueOfArm(a.choice, k, P.cn));
   return kept || (m && m.on && m.arms.size > 1 && m.last.get(a.branch) === P) ? choiceMoment(a.choice) : ownMoment(P);
@@ -1627,7 +1627,7 @@ for (const P of pills.values()) {
   // a call whose signature gives its error in the sum it gives (`Result<T, E>`) and which hands no error on gives the sum:
   // what takes its result takes its error with it (`store.save_rates(base, rates::fetch(..))`, #138)
   const info = treeInfo.get(P.own ? frames.get(P.parent)?.step : P.steps[0]);
-  if (info?.site && info.site.fails == null && !info.site.raises && byId.get(stepOf(info.step ?? ""))?.returns?.fails) {
+  if (info?.site && !info.site.fails?.length && !info.site.raises && byId.get(stepOf(info.step ?? ""))?.returns?.fails) {
     const errs = [...Cv.keys()].filter(v => places.get(v)?.err);
     if (errs.length) for (const v of Cv.keys()) if (isMem(v) && !places.get(v)?.err) withErrors.set(v, {errs, scope: scopeOf(P)});
   }

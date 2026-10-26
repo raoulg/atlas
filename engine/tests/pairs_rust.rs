@@ -1359,11 +1359,12 @@ fn sums_an_error_leaves_by_what_the_body_gives_back_and_by_a_glued_question_mark
     let p = common::pair("sums/rust");
     for (side, g) in [("clean", &p.clean), ("shortcut", &p.shortcut)] {
         let write = g.node("kennis.Kennisbank.voeg_toe").unwrap().sites.iter().find(|s| s.to == "kennis.Kennisbank.write").unwrap();
-        assert_eq!(write.fails.as_deref(), Some(""), "{side}: what voeg_toe gives back");
+        assert_eq!(write.fails, [""], "{side}: what voeg_toe gives back");
     }
     let graaf = p.clean.node("kennis.Kennisbank.graaf").unwrap();
     let built = graaf.sites.iter().find(|s| s.to == "kennis.Graaf").expect("the clean graaf builds a Graaf");
-    assert_eq!((built.fails.as_deref(), graaf.fails.as_deref()), (Some(""), None), "the read's `?` is the step's");
+    assert_eq!(built.fails, [""], "the read's `?` is the step's");
+    assert_eq!(graaf.fails, None, "and not the body's own code's");
     let graaf = p.shortcut.node("kennis.Kennisbank.graaf").unwrap();
     assert_eq!((graaf.sites.len(), graaf.fails.as_deref()), (0, Some("")), "the shortcut's `?` is its own code's");
 }
@@ -1375,7 +1376,7 @@ fn sums_an_error_leaves_by_what_the_body_gives_back_and_by_a_glued_question_mark
 fn an_arm_of_a_match_that_ends_the_body_gives_back_its_call_s_error() {
     let g = analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/lens/rust/clean"), &Options::default()).unwrap();
     let keep = g.node("harvest.ReadingStore.summary").unwrap().sites.iter().find(|s| s.to == "harvest.ReadingStore.keep_summary").unwrap();
-    assert_eq!(keep.fails.as_deref(), Some(""), "what the match's arm gives back");
+    assert_eq!(keep.fails, [""], "what the match's arm gives back");
 }
 
 /// What a closure written in a call's arguments binds in its own body is the closure's (#128): `query_map([], |row| {
