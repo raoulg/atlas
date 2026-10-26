@@ -99,6 +99,9 @@ body.dragging{cursor:row-resize;user-select:none}
 .atlas-bar{flex:1;min-width:0;align-self:stretch;display:flex;align-items:center;gap:12px;border-left:1px solid #ddd7ce;padding:0 4px 0 14px}
 #insert-atlas-view{margin-left:auto}
 .atlas-bar+#insert-atlas-view{margin-left:12px}
+#open-workspace{margin-left:12px;flex:none}
+#insert-atlas-view[hidden]+#open-workspace{margin-left:auto}
+.atlas-bar:not([hidden])~#open-workspace{margin-left:12px}
 .bar-select{font:11.5px ui-monospace,"SF Mono",Menlo,monospace;padding:4px 7px;border:1px solid #ddd7ce;border-radius:0;background:#faf8f5;color:#211e1b;max-width:200px;min-width:0}
 .bar-tabs{display:flex;align-self:stretch;flex:none}
 .bar-tab{border:0;border-bottom:2px solid transparent;background:transparent;padding:0 10px;font-size:12px;color:#6d675f;white-space:nowrap}

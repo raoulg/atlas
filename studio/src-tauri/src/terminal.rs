@@ -22,6 +22,8 @@ pub enum Event {
 }
 
 struct Terminal {
+    /// The window the terminal is in.
+    owner: String,
     master: Box<dyn MasterPty + Send>,
     writer: Box<dyn Write + Send>,
     killer: Box<dyn ChildKiller + Send + Sync>,
@@ -39,10 +41,11 @@ fn size(cols: u16, rows: u16) -> PtySize {
 }
 
 impl Terminals {
-    /// Start the user's shell in `workspace`, `cols` by `rows`; what it writes goes to `send`, which
-    /// says whether the window still listens.
+    /// Start the user's shell in `workspace`, `cols` by `rows`, in the window `owner`; what it writes
+    /// goes to `send`, which says whether the window still listens.
     pub fn open(
         &self,
+        owner: &str,
         workspace: &Path,
         cols: u16,
         rows: u16,
@@ -61,7 +64,10 @@ impl Terminals {
         let writer = pair.master.take_writer().map_err(|error| error.to_string())?;
         let id = self.next.fetch_add(1, Ordering::Relaxed) + 1;
         let killer = child.clone_killer();
-        self.open.lock().map_err(|error| error.to_string())?.insert(id, Terminal { master: pair.master, writer, killer });
+        self.open
+            .lock()
+            .map_err(|error| error.to_string())?
+            .insert(id, Terminal { owner: owner.to_string(), master: pair.master, writer, killer });
         let send = Arc::new(send);
         let data = Arc::clone(&send);
         let reading = std::thread::spawn(move || {
@@ -114,10 +120,10 @@ impl Terminals {
         Ok(())
     }
 
-    /// End every shell, as the app closes.
-    pub fn close_all(&self) {
+    /// End every shell of the window `owner`, as it closes, or of every window (`None`), as the app does.
+    pub fn close_all(&self, owner: Option<&str>) {
         if let Ok(mut open) = self.open.lock() {
-            for terminal in open.values_mut() {
+            for terminal in open.values_mut().filter(|terminal| owner.is_none_or(|owner| terminal.owner == owner)) {
                 let _ = terminal.killer.kill();
             }
         }
@@ -165,7 +171,7 @@ mod tests {
 
     fn terminal(terminals: &Terminals) -> (u32, std::sync::mpsc::Receiver<Event>) {
         let (sender, events) = std::sync::mpsc::channel();
-        let id = terminals.open(&std::env::temp_dir(), 80, 24, move |event| sender.send(event).is_ok()).unwrap();
+        let id = terminals.open("main", &std::env::temp_dir(), 80, 24, move |event| sender.send(event).is_ok()).unwrap();
         (id, events)
     }
 

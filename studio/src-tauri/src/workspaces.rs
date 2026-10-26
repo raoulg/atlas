@@ -91,6 +91,8 @@ pub fn menu<R: Runtime>(app: &AppHandle<R>, recent: &[Recent]) -> tauri::Result<
     }
     let clear = MenuItemBuilder::with_id("workspace.clear", "Clear Recent").enabled(!recent.is_empty()).build(app)?;
     let file = SubmenuBuilder::new(app, "File")
+        .item(&MenuItemBuilder::with_id("window.new", "New Window").accelerator("CmdOrCtrl+N").build(app)?)
+        .separator()
         .item(&MenuItemBuilder::with_id("workspace.page", "Open Workspace…").accelerator("CmdOrCtrl+O").build(app)?)
         .item(&MenuItemBuilder::with_id("workspace.folder", "Open Folder…").accelerator("CmdOrCtrl+Shift+O").build(app)?)
         .item(&opened.item(&clear).build()?)

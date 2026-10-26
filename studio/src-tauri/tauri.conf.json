@@ -16,7 +16,8 @@
         "width": 1320,
         "height": 820,
         "minWidth": 850,
-        "minHeight": 560
+        "minHeight": 560,
+        "tabbingIdentifier": "atlas-studio"
       }
     ]
   },

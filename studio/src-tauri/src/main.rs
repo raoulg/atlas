@@ -4,7 +4,15 @@ mod terminal;
 mod update;
 mod workspaces;
 
-use std::{path::PathBuf, sync::Mutex, time::Duration};
+use std::{
+    collections::HashMap,
+    path::PathBuf,
+    sync::{
+        atomic::{AtomicU32, Ordering},
+        Mutex,
+    },
+    time::Duration,
+};
 use tauri::{ipc::Channel, Emitter, Manager};
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_shell::{
@@ -25,11 +33,17 @@ struct Session {
     child: CommandChild,
 }
 
+/// The workspace open in each window, by the window's label: every window is one workspace, with its
+/// own `atlas serve`.
 #[derive(Default)]
-struct StudioState(Mutex<Option<Session>>);
+struct StudioState(Mutex<HashMap<String, Session>>);
 
 #[tauri::command]
-async fn choose_workspace(app: tauri::AppHandle, state: tauri::State<'_, StudioState>) -> Result<Option<Workspace>, String> {
+async fn choose_workspace(
+    window: tauri::Window,
+    app: tauri::AppHandle,
+    state: tauri::State<'_, StudioState>,
+) -> Result<Option<Workspace>, String> {
     let (sender, receiver) = tokio::sync::oneshot::channel();
     app.dialog().file().pick_folder(move |folder| {
         let _ = sender.send(folder);
@@ -37,22 +51,30 @@ async fn choose_workspace(app: tauri::AppHandle, state: tauri::State<'_, StudioS
     let Some(folder) = receiver.await.map_err(|e| e.to_string())? else {
         return Ok(None);
     };
-    open_workspace(&app, &state, folder.into_path().map_err(|e| e.to_string())?).await.map(Some)
+    open_workspace(&app, &state, window.label(), folder.into_path().map_err(|e| e.to_string())?).await
 }
 
-/// The workspace Studio opens as it starts: the folder named on its command line
-/// (`open -a "Atlas Studio" --args ~/code/x`), else the one opened last.
+/// The workspace a window opens on: the one it has; for the window Studio starts with, the folder named
+/// on its command line (`open -a "Atlas Studio" --args ~/code/x`), else the one opened last; a new
+/// window starts on the page of workspaces.
 #[tauri::command]
-async fn first_workspace(app: tauri::AppHandle, state: tauri::State<'_, StudioState>) -> Result<Option<Workspace>, String> {
-    if let Some(current) = state.0.lock().map_err(|e| e.to_string())?.as_ref() {
+async fn first_workspace(
+    window: tauri::Window,
+    app: tauri::AppHandle,
+    state: tauri::State<'_, StudioState>,
+) -> Result<Option<Workspace>, String> {
+    if let Some(current) = state.0.lock().map_err(|e| e.to_string())?.get(window.label()) {
         return Ok(Some(current.workspace.clone()));
+    }
+    if window.label() != "main" {
+        return Ok(None);
     }
     let named = std::env::args_os().skip(1).map(PathBuf::from).find(|path| path.is_dir());
     let last = workspaces::recent(&app).into_iter().map(|recent| PathBuf::from(recent.path)).find(|path| path.is_dir());
     let Some(path) = named.or(last) else {
         return Ok(None);
     };
-    open_workspace(&app, &state, path).await.map(Some)
+    open_workspace(&app, &state, window.label(), path).await
 }
 
 #[tauri::command]
@@ -61,8 +83,20 @@ fn recent_workspaces(app: tauri::AppHandle) -> Vec<workspaces::Recent> {
 }
 
 #[tauri::command]
-async fn open_workspace_at(app: tauri::AppHandle, state: tauri::State<'_, StudioState>, path: String) -> Result<Workspace, String> {
-    open_workspace(&app, &state, PathBuf::from(path)).await
+async fn open_workspace_at(
+    window: tauri::Window,
+    app: tauri::AppHandle,
+    state: tauri::State<'_, StudioState>,
+    path: String,
+) -> Result<Option<Workspace>, String> {
+    open_workspace(&app, &state, window.label(), PathBuf::from(path)).await
+}
+
+/// The workspaces open in the other windows, by their paths.
+#[tauri::command]
+fn open_elsewhere(window: tauri::Window, state: tauri::State<'_, StudioState>) -> Result<Vec<String>, String> {
+    let sessions = state.0.lock().map_err(|e| e.to_string())?;
+    Ok(sessions.iter().filter(|(label, _)| *label != window.label()).map(|(_, session)| session.workspace.path.clone()).collect())
 }
 
 #[tauri::command]
@@ -70,20 +104,39 @@ fn forget_workspace(app: tauri::AppHandle, path: String) -> Result<(), String> {
     workspaces::forget(&app, &path)
 }
 
-async fn open_workspace(app: &tauri::AppHandle, state: &tauri::State<'_, StudioState>, path: PathBuf) -> Result<Workspace, String> {
+/// Open `path` in the window `label`, in place of what it had open. A workspace open in another window
+/// is that window's: it comes to the front, and nothing is opened here (two servers on one repository
+/// would share what it keeps in `.atlas/`).
+async fn open_workspace(
+    app: &tauri::AppHandle,
+    state: &tauri::State<'_, StudioState>,
+    label: &str,
+    path: PathBuf,
+) -> Result<Option<Workspace>, String> {
     let path = path.canonicalize().map_err(|e| e.to_string())?;
-    let started = start_workspace(app, &path).await?;
+    let shown = path.display().to_string();
+    let elsewhere =
+        state.0.lock().map_err(|e| e.to_string())?.iter().find(|(l, s)| *l != label && s.workspace.path == shown).map(|(l, _)| l.clone());
+    if let Some(window) = elsewhere.and_then(|other| app.get_webview_window(&other)) {
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+        return Ok(None);
+    }
+    let started = start_workspace(app, &path, label).await?;
     let workspace = started.workspace.clone();
-    if let Some(previous) = state.0.lock().map_err(|e| e.to_string())?.replace(started) {
+    if let Some(previous) = state.0.lock().map_err(|e| e.to_string())?.insert(label.to_string(), started) {
         let _ = previous.child.kill();
     }
+    if let Some(window) = app.get_webview_window(label) {
+        let _ = window.set_title(&format!("{} — Atlas Studio", workspace.name));
+    }
     let _ = workspaces::remember(app, &path);
-    Ok(workspace)
+    Ok(Some(workspace))
 }
 
 /// Start `atlas serve` on the workspace. Its standard input is a pipe Studio holds and never writes:
 /// the system closes it when Studio ends, by Quit or by a signal, and the server ends with it.
-async fn start_workspace(app: &tauri::AppHandle, path: &PathBuf) -> Result<Session, String> {
+async fn start_workspace(app: &tauri::AppHandle, path: &PathBuf, label: &str) -> Result<Session, String> {
     let command = app
         .shell()
         .sidecar("atlas")
@@ -133,13 +186,14 @@ async fn start_workspace(app: &tauri::AppHandle, path: &PathBuf) -> Result<Sessi
     let workspace = Workspace { path: path.display().to_string(), name, url };
     let monitor = app.clone();
     let monitor_url = workspace.url.clone();
+    let monitor_label = label.to_string();
     tauri::async_runtime::spawn(async move {
         while let Some(event) = events.recv().await {
             if let CommandEvent::Terminated(status) = event {
                 let current = monitor.try_state::<StudioState>().is_some_and(|state| {
-                    state.0.lock().is_ok_and(|mut session| {
-                        if session.as_ref().is_some_and(|session| session.workspace.url == monitor_url) {
-                            session.take();
+                    state.0.lock().is_ok_and(|mut sessions| {
+                        if sessions.get(&monitor_label).is_some_and(|session| session.workspace.url == monitor_url) {
+                            sessions.remove(&monitor_label);
                             true
                         } else {
                             false
@@ -147,7 +201,7 @@ async fn start_workspace(app: &tauri::AppHandle, path: &PathBuf) -> Result<Sessi
                     })
                 });
                 if current {
-                    let _ = monitor.emit("studio-backend-stopped", status.code);
+                    let _ = monitor.emit_to(monitor_label.as_str(), "studio-backend-stopped", status.code);
                 }
                 break;
             }
@@ -156,10 +210,17 @@ async fn start_workspace(app: &tauri::AppHandle, path: &PathBuf) -> Result<Sessi
     Ok(Session { workspace, child: child.expect("the sidecar is available after startup") })
 }
 
-fn workspace_path(state: &tauri::State<'_, StudioState>) -> Result<PathBuf, String> {
+/// The workspace open in the window `label`.
+fn workspace_path(state: &tauri::State<'_, StudioState>, label: &str) -> Result<PathBuf, String> {
     let state = state.0.lock().map_err(|error| error.to_string())?;
-    let session = state.as_ref().ok_or("Open a workspace first")?;
+    let session = state.get(label).ok_or("Open a workspace first")?;
     Ok(PathBuf::from(&session.workspace.path))
+}
+
+/// Where the window `label`'s `atlas serve` answers.
+fn workspace_url(state: &tauri::State<'_, StudioState>, label: &str) -> Result<String, String> {
+    let state = state.0.lock().map_err(|error| error.to_string())?;
+    Ok(state.get(label).ok_or("Open a workspace first")?.workspace.url.clone())
 }
 
 #[derive(serde::Serialize)]
@@ -177,45 +238,62 @@ struct LessonRun {
 }
 
 #[tauri::command]
-fn list_lessons(state: tauri::State<'_, StudioState>) -> Result<Vec<String>, String> {
-    lesson::list(&workspace_path(&state)?).map(|lessons| lessons.into_iter().map(|path| path.display().to_string()).collect())
+fn list_lessons(window: tauri::Window, state: tauri::State<'_, StudioState>) -> Result<Vec<String>, String> {
+    lesson::list(&workspace_path(&state, window.label())?)
+        .map(|lessons| lessons.into_iter().map(|path| path.display().to_string()).collect())
 }
 
 #[tauri::command]
-fn open_lesson(state: tauri::State<'_, StudioState>, path: String) -> Result<LessonData, String> {
-    let found = lesson::open(&workspace_path(&state)?, PathBuf::from(path).as_path())?;
+fn open_lesson(window: tauri::Window, state: tauri::State<'_, StudioState>, path: String) -> Result<LessonData, String> {
+    let found = lesson::open(&workspace_path(&state, window.label())?, PathBuf::from(path).as_path())?;
     let script = found.script.strip_prefix(found.path.parent().ok_or("Lesson has no folder")?).map_err(|error| error.to_string())?;
     Ok(LessonData { text: found.text, script: script.display().to_string() })
 }
 
 #[tauri::command]
-fn read_lesson_reference(state: tauri::State<'_, StudioState>, path: String, reference: String) -> Result<String, String> {
-    lesson::read_reference(&workspace_path(&state)?, PathBuf::from(path).as_path(), &reference)
+fn read_lesson_reference(
+    window: tauri::Window,
+    state: tauri::State<'_, StudioState>,
+    path: String,
+    reference: String,
+) -> Result<String, String> {
+    lesson::read_reference(&workspace_path(&state, window.label())?, PathBuf::from(path).as_path(), &reference)
 }
 
 #[tauri::command]
-fn read_lesson_asset(state: tauri::State<'_, StudioState>, path: String, reference: String) -> Result<Vec<u8>, String> {
-    lesson::read_asset(&workspace_path(&state)?, PathBuf::from(path).as_path(), PathBuf::from(reference).as_path())
+fn read_lesson_asset(
+    window: tauri::Window,
+    state: tauri::State<'_, StudioState>,
+    path: String,
+    reference: String,
+) -> Result<Vec<u8>, String> {
+    lesson::read_asset(&workspace_path(&state, window.label())?, PathBuf::from(path).as_path(), PathBuf::from(reference).as_path())
 }
 
 #[tauri::command]
-fn save_lesson(state: tauri::State<'_, StudioState>, path: String, text: String) -> Result<(), String> {
-    lesson::save_document(&workspace_path(&state)?, PathBuf::from(path).as_path(), &text)
+fn save_lesson(window: tauri::Window, state: tauri::State<'_, StudioState>, path: String, text: String) -> Result<(), String> {
+    lesson::save_document(&workspace_path(&state, window.label())?, PathBuf::from(path).as_path(), &text)
 }
 
 #[tauri::command]
-fn current_atlas_view(state: tauri::State<'_, StudioState>) -> Result<String, String> {
-    lesson::current_view(&workspace_path(&state)?)
+fn current_atlas_view(window: tauri::Window, state: tauri::State<'_, StudioState>) -> Result<String, String> {
+    lesson::current_view(&workspace_path(&state, window.label())?)
 }
 
 #[tauri::command]
-fn save_lesson_view(state: tauri::State<'_, StudioState>, path: String, name: String, view: String) -> Result<String, String> {
-    lesson::save_view(&workspace_path(&state)?, PathBuf::from(path).as_path(), &name, &view)
+fn save_lesson_view(
+    window: tauri::Window,
+    state: tauri::State<'_, StudioState>,
+    path: String,
+    name: String,
+    view: String,
+) -> Result<String, String> {
+    lesson::save_view(&workspace_path(&state, window.label())?, PathBuf::from(path).as_path(), &name, &view)
 }
 
 #[tauri::command]
-async fn run_lesson(state: tauri::State<'_, StudioState>, path: String) -> Result<LessonRun, String> {
-    let workspace = workspace_path(&state)?;
+async fn run_lesson(window: tauri::Window, state: tauri::State<'_, StudioState>, path: String) -> Result<LessonRun, String> {
+    let workspace = workspace_path(&state, window.label())?;
     let result = tauri::async_runtime::spawn_blocking(move || lesson::run_python(&workspace, PathBuf::from(path).as_path()))
         .await
         .map_err(|error| error.to_string())??;
@@ -228,18 +306,21 @@ async fn run_lesson(state: tauri::State<'_, StudioState>, path: String) -> Resul
 }
 
 #[tauri::command]
-async fn workspace_files(state: tauri::State<'_, StudioState>) -> Result<String, String> {
-    let url =
-        state.0.lock().map_err(|e| e.to_string())?.as_ref().map(|session| session.workspace.url.clone()).ok_or("Open a workspace first")?;
+async fn workspace_files(window: tauri::Window, state: tauri::State<'_, StudioState>) -> Result<String, String> {
+    let url = workspace_url(&state, window.label())?;
     tauri::async_runtime::spawn_blocking(move || files::listing(&url)).await.map_err(|error| error.to_string())?
 }
 
 /// The Atlas view as one HTML file, opened in `view`, saved where the user chooses; the name it was
 /// saved as, or nothing when the user cancelled.
 #[tauri::command]
-async fn export_view(app: tauri::AppHandle, state: tauri::State<'_, StudioState>, view: String) -> Result<Option<String>, String> {
-    let url =
-        state.0.lock().map_err(|e| e.to_string())?.as_ref().map(|session| session.workspace.url.clone()).ok_or("Open a workspace first")?;
+async fn export_view(
+    window: tauri::Window,
+    app: tauri::AppHandle,
+    state: tauri::State<'_, StudioState>,
+    view: String,
+) -> Result<Option<String>, String> {
+    let url = workspace_url(&state, window.label())?;
     let path = format!("/export?v={}", files::query(&view));
     let (html, name) = tauri::async_runtime::spawn_blocking(move || files::get(&url, &path)).await.map_err(|error| error.to_string())??;
     let (sender, receiver) = tokio::sync::oneshot::channel();
@@ -255,19 +336,20 @@ async fn export_view(app: tauri::AppHandle, state: tauri::State<'_, StudioState>
 }
 
 #[tauri::command]
-fn read_workspace_file(state: tauri::State<'_, StudioState>, path: String) -> Result<tauri::ipc::Response, String> {
-    files::read(&workspace_path(&state)?, &path).map(tauri::ipc::Response::new)
+fn read_workspace_file(window: tauri::Window, state: tauri::State<'_, StudioState>, path: String) -> Result<tauri::ipc::Response, String> {
+    files::read(&workspace_path(&state, window.label())?, &path).map(tauri::ipc::Response::new)
 }
 
 #[tauri::command]
 fn terminal_open(
+    window: tauri::Window,
     state: tauri::State<'_, StudioState>,
     terminals: tauri::State<'_, Terminals>,
     cols: u16,
     rows: u16,
     on_event: Channel<terminal::Event>,
 ) -> Result<u32, String> {
-    terminals.open(&workspace_path(&state)?, cols, rows, move |event| on_event.send(event).is_ok())
+    terminals.open(window.label(), &workspace_path(&state, window.label())?, cols, rows, move |event| on_event.send(event).is_ok())
 }
 
 #[tauri::command]
@@ -311,6 +393,12 @@ async fn newer_build(app: &tauri::AppHandle, now: bool) -> Result<Option<update:
     tauri::async_runtime::spawn_blocking(move || newer.map(update::shown)).await.map_err(|e| e.to_string())
 }
 
+/// Which build Studio is, for the status bar.
+#[tauri::command]
+async fn studio_build(app: tauri::AppHandle) -> Result<update::Build, String> {
+    this_build(&app).await
+}
+
 #[tauri::command]
 async fn check_update(app: tauri::AppHandle, now: bool) -> Result<Option<update::Newer>, String> {
     newer_build(&app, now).await
@@ -344,6 +432,41 @@ fn watch_updates(app: tauri::AppHandle) {
             tokio::time::sleep(Duration::from_secs(60 * 60)).await;
         }
     });
+}
+
+/// A new window, for a workspace of its own; on macOS in the same group of tabs as the others.
+fn new_window(app: &tauri::AppHandle) -> tauri::Result<()> {
+    static NEXT: AtomicU32 = AtomicU32::new(1);
+    let label = format!("workspace-{}", NEXT.fetch_add(1, Ordering::Relaxed));
+    let builder = tauri::WebviewWindowBuilder::new(app, label, tauri::WebviewUrl::App("index.html".into()))
+        .title("Atlas Studio")
+        .inner_size(1320.0, 820.0)
+        .min_inner_size(850.0, 560.0);
+    #[cfg(target_os = "macos")]
+    let builder = builder.tabbing_identifier("atlas-studio");
+    builder.build().map(|_| ())
+}
+
+/// The window the user works in, for a menu item to act on.
+fn focused(app: &tauri::AppHandle) -> Option<String> {
+    let windows = app.webview_windows();
+    windows
+        .iter()
+        .find(|(_, window)| window.is_focused().unwrap_or(false))
+        .or_else(|| windows.iter().next())
+        .map(|(label, _)| label.clone())
+}
+
+/// End what the window `label` had open: its server and its shells.
+fn close_window(app: &tauri::AppHandle, label: &str) {
+    if let Some(terminals) = app.try_state::<Terminals>() {
+        terminals.close_all(Some(label));
+    }
+    if let Some(state) = app.try_state::<StudioState>() {
+        if let Some(session) = state.0.lock().ok().and_then(|mut sessions| sessions.remove(label)) {
+            let _ = session.child.kill();
+        }
+    }
 }
 
 /// An app started from the Finder or the Dock gets the system's bare `PATH`, without what the
@@ -388,8 +511,13 @@ fn main() {
         .manage(StudioState::default())
         .manage(Terminals::default())
         .register_uri_scheme_protocol("preview", |context, request| {
+            // the files of the workspace of the window that asks
             let state = context.app_handle().state::<StudioState>();
-            let workspace = state.0.lock().ok().and_then(|session| session.as_ref().map(|session| PathBuf::from(&session.workspace.path)));
+            let workspace = state
+                .0
+                .lock()
+                .ok()
+                .and_then(|sessions| sessions.get(context.webview_label()).map(|session| PathBuf::from(&session.workspace.path)));
             files::preview(workspace.as_deref(), request.uri().path())
         })
         .menu(|app| workspaces::menu(app, &workspaces::recent(app)))
@@ -398,17 +526,26 @@ fn main() {
             Ok(())
         })
         .on_menu_event(|app, event| {
-            // what the window does for a menu item, said to it by name; Clear Recent is the app's
+            // what a window does for a menu item, said to the window in front by name; Clear Recent
+            // and New Window are the app's
             let id = event.id().as_ref();
+            let to = focused(app).unwrap_or_else(|| "main".into());
             if id == "workspace.clear" {
                 let _ = workspaces::clear(app);
                 let _ = app.emit("studio-menu", serde_json::json!({"action": "recents"}));
+            } else if id == "window.new" {
+                let _ = new_window(app);
             } else if let Some(index) = id.strip_prefix(workspaces::RECENT).and_then(|index| index.parse::<usize>().ok()) {
                 if let Some(recent) = workspaces::recent(app).get(index) {
-                    let _ = app.emit("studio-menu", serde_json::json!({"action": "open", "path": recent.path}));
+                    let _ = app.emit_to(to.as_str(), "studio-menu", serde_json::json!({"action": "open", "path": recent.path}));
                 }
             } else {
-                let _ = app.emit("studio-menu", serde_json::json!({"action": id}));
+                let _ = app.emit_to(to.as_str(), "studio-menu", serde_json::json!({"action": id}));
+            }
+        })
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::Destroyed = event {
+                close_window(window.app_handle(), window.label());
             }
         })
         .invoke_handler(tauri::generate_handler![
@@ -417,6 +554,7 @@ fn main() {
             recent_workspaces,
             open_workspace_at,
             forget_workspace,
+            open_elsewhere,
             list_lessons,
             open_lesson,
             read_lesson_reference,
@@ -428,6 +566,7 @@ fn main() {
             workspace_files,
             export_view,
             check_update,
+            studio_build,
             install_update,
             read_workspace_file,
             terminal_open,
@@ -440,11 +579,11 @@ fn main() {
         .run(|app, event| {
             if let tauri::RunEvent::Exit = event {
                 if let Some(terminals) = app.try_state::<Terminals>() {
-                    terminals.close_all();
+                    terminals.close_all(None);
                 }
                 if let Some(state) = app.try_state::<StudioState>() {
-                    if let Ok(mut session) = state.0.lock() {
-                        if let Some(session) = session.take() {
+                    if let Ok(mut sessions) = state.0.lock() {
+                        for (_, session) in sessions.drain() {
                             let _ = session.child.kill();
                         }
                     }
