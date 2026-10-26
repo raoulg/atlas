@@ -126,7 +126,7 @@ fn a_lens_puts_what_reaches_the_place_not_the_key_it_looks_up_by() {
         notes.about
     );
     // what a get gives back is no part of what the finding is about; only its sentence says it
-    assert_eq!(notes.about("got"), ["dict"], "{:?}", notes.about);
+    assert_eq!(notes.about("back"), ["dict"], "{:?}", notes.about);
 }
 
 /// The principles read Rust by what its types and entries mean: a trait's implementation has the

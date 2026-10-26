@@ -1770,7 +1770,7 @@ fn lens<'g>(ix: &Index<'g>) -> Vec<Finding> {
             about.push(("place", place.clone()));
             about.extend(putters.into_iter().map(|m| ("put", m)));
             about.extend(getters.into_iter().map(|m| ("get", m)));
-            about.extend(gave.into_iter().map(|t| ("got", t)));
+            about.extend(gave.into_iter().map(|t| ("back", t)));
             evidence.extend(put.values().flatten().map(|p| format!("put {p}")));
             evidence.extend(got.iter().map(|g| format!("get {g}")));
             for t in lost.iter().filter(|_| named(place)) {
