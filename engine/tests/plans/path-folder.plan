@@ -1,0 +1,13 @@
+# A place the program names a place below is a directory: what `glob("*/IO-*")` lists and the file read in each folder
+# it yields stand in one folder, `assets/regelingen/*/IO-*/`, the listing as that folder.
+
+route foldered.run
+line entry > run call
+line File(assets/regelingen/*/IO-*/) > run own                  # ASSETS.glob(..) lists the folders
+line File(assets/regelingen/*/IO-*/Metadata.xml) > run own      # (io_dir / "Metadata.xml").read_text() reads in each
+line run > Screen own
+
+side entry left
+side File(assets/regelingen/*/IO-*/) left
+side File(assets/regelingen/*/IO-*/Metadata.xml) left
+side Screen right

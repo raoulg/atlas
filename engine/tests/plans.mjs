@@ -82,7 +82,8 @@ function read(route) {
     if (bound && !name.has(id)) return `${occ(bound[1])}/~${bound[2]}`;
     return name.get(id.startsWith("o:") ? "n:" + id.slice(2) : id) ?? id;
   };
-  const placeName = k => (F.places.get(k)?.label ?? k.replace(/^w:/, "")).replace(/\s+/g, " ");
+  // a file by its term, the place's identity; the page's label says the term's patterns in words
+  const placeName = k => (k.startsWith("w:File:") ? `File(${k.slice(7).replace(/~[a-z]+$/, "")})` : F.places.get(k)?.label ?? k.replace(/^w:/, "")).replace(/\s+/g, " ");
   const values = new Map(), taken = new Map();
   const valueName = k => {
     if (values.has(k)) return values.get(k);

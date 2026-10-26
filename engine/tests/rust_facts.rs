@@ -117,7 +117,7 @@ fn global_options_are_the_entrys_options() {
 }
 
 /// A file is written where the command line says, else where the code puts it: in `.made/` at the
-/// top of the git repository, a folder found on disk that the code cannot name, or for a clone in
+/// top of the git repository, a folder found on disk that the code knows only as the value it calls `dir`, or for a clone in
 /// the system's temporary folder. Each is a place `main` writes; neither starts at a literal in
 /// `main`'s code (`out` is a value it computes), and no caller hands it.
 #[test]
@@ -126,8 +126,8 @@ fn a_path_the_code_computes_is_each_place_it_can_be() {
     let written = places(&g, "keeper.main");
     assert!(written.contains(&place("disk_write", "write", "$TMPDIR/made/graph.json")), "{written:?}");
     assert!(
-        written.contains(&place("disk_write", "write", "*/.made/graph.json")),
-        "the folder found on disk has no name, the file below it has: {written:?}"
+        written.contains(&place("disk_write", "write", "{dir}/.made/graph.json")),
+        "the folder found on disk is the value `dir`, the file below it is named: {written:?}"
     );
     let tmp = g.node("keeper.main").unwrap().touches.iter().find(|t| t.artifact == "$TMPDIR/made/graph.json").unwrap();
     assert!(!tmp.fixed && tmp.by.is_empty(), "{tmp:?}");

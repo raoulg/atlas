@@ -994,7 +994,7 @@ async function renderPlaat(mine) {
     // a directory that stands for files is that directory, whatever it is itself folded into: the lines planned to it end at it
     for (const [d, cs] of classes) for (const [s, ps] of cs) {
       const id = cs.size > 1 ? `w:File:${d}~${s}` : "w:File:" + d, k = cs.size > 1 ? ps.length : dirFold.n.get(d);
-      if (standing.has(id) || [...pills.values()].some(P => P.D.has(id) || P.C.has(id))) places.set(id, {id, label: `File(${d}) · ${k}`, short: `${d} · ${k}`, kind: "world", folded: d, ...(cs.size > 1 ? {members: ps.map(p => "w:File:" + p), ...(WAY[s] ? {way: WAY[s]} : {})} : {}), ...(DIFF ? {sides: folded.get(id)} : {})});
+      if (standing.has(id) || [...pills.values()].some(P => P.D.has(id) || P.C.has(id))) places.set(id, {id, label: `File(${pathWords(d)}) · ${k}`, short: `${pathWords(d)} · ${k}`, kind: "world", folded: d, ...(cs.size > 1 ? {members: ps.map(p => "w:File:" + p), ...(WAY[s] ? {way: WAY[s]} : {})} : {}), ...(DIFF ? {sides: folded.get(id)} : {})});
     }
   }
   // siblings that draw the same lines on the finest plan (the same places, versions and channels) are one pill: a
@@ -1120,7 +1120,7 @@ async function renderPlaat(mine) {
     for (const m of (members.get(t) || []).filter(m => !alone.has(m))) { markNode(I, m); if (!dotted.has(m)) I.asks.push(...(ASKS.get(m) || [])); }
     return I;
   };
-  const standsFor = p => p.members ? p.members.filter(id => id !== p.id).map(id => ({id, label: COARSE.get(p.id)?.get(id)?.label || id})) : p.folded ? [...dirFold.to].filter(([, d]) => d === p.folded).map(([f]) => ({id: "w:File:" + f, label: `File(${f})`}))
+  const standsFor = p => p.members ? p.members.filter(id => id !== p.id).map(id => ({id, label: COARSE.get(p.id)?.get(id)?.label || id})) : p.folded ? [...dirFold.to].filter(([, d]) => d === p.folded).map(([f]) => ({id: "w:File:" + f, label: `File(${pathWords(f)})`}))
     : [];
   const insidePlace = p => {
     const I = marks();
@@ -1590,6 +1590,9 @@ async function renderPlaat(mine) {
     else if (p.kind !== "ref") el("rect", {x: 0, y: 0, width: 5, height: Q.h, fill: p.hue || hueOf(null)}, grp);
     const label = el("text", {class: "title", x: kind ? 32 : 15, y: Q.h / 2 + 4}, grp);
     label.textContent = sideLabel(p);
+    // a file's label says its pattern in words; the path as the code writes it is under the pointer
+    const term = p.id.startsWith("w:File:") ? p.id.slice(7).replace(/~[a-z]+$/, "") : null;
+    if (term && pathWords(term) !== term) el("title", {}, label).textContent = term;
     if (p.twin) twinLink(label, p.twin);
     if (DIFF) {
       const st = placeStanding(p), entry = p.id.startsWith("e:") && byId.get(p.id.slice(2));

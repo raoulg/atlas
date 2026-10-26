@@ -516,9 +516,37 @@ function foldDirs(paths) {
   }
   return {to, n};
 }
+// a path with a pattern in it said in words, from the file up: `{root}/*/*/OW-bestanden/*.xml` is "every *.xml in
+// OW-bestanden/ in each folder two levels into {root}/". A wildcard the code writes is "each" or "every", a hole the
+// code gives no name (`{}`) "an unnamed folder"; a path without either, or a bare pattern (a file known by its
+// format only, `*.json`), is itself
+const DEEP = ["", "", "two", "three", "four"];
+function pathWords(path) {
+  const dir = path.endsWith("/"), segs = path.replace(/\/$/, "").split("/");
+  const wild = s => /[*?[]/.test(s), open = s => wild(s) || s === "{}";
+  if (!segs.some(open) || segs.length === 1) return path;
+  const chunks = [];
+  for (let i = segs.length - 1; i >= 0;) {
+    const s = segs[i], last = i === segs.length - 1;
+    if (s === "*" || s === "{}") {
+      let j = i; while (j > 0 && segs[j - 1] === s) j--;
+      const k = i - j + 1, what = s === "{}" ? "an unnamed folder" : "each folder";
+      chunks.push(k === 1 ? {words: what, into: false} : {words: `${what} ${DEEP[k] || k} levels into`, into: true});
+      i = j - 1;
+    } else if (s === "**") { chunks.push({words: "any folder at any depth", into: false}); i--; }
+    else if (wild(s)) { chunks.push({words: last && !dir ? `every ${s}` : `each ${s}/`, into: false}); i--; }
+    else {
+      let j = i; while (j > 0 && !open(segs[j - 1])) j--;
+      chunks.push({words: segs.slice(j, i + 1).join("/") + (last && !dir ? "" : "/"), into: false}); i = j - 1;
+    }
+  }
+  const top = chunks[chunks.length - 1];
+  if (top.into) top.words = top.words.replace(/ into$/, " down");
+  return chunks.reduce((out, c, n) => n === 0 ? c.words : out + (chunks[n - 1].into ? " " : " in ") + c.words, "");
+}
 const filePlace = path => {
   const d = dirFold.to.get(path) || path, k = dirFold.n.get(d);
-  return k ? {id: "w:File:" + d, label: `File(${d}) · ${k}`, short: `${d} · ${k}`, kind: "world", folded: d} : {id: "w:File:" + path, label: `File(${path})`, short: path, kind: "world"};
+  return k ? {id: "w:File:" + d, label: `File(${pathWords(d)}) · ${k}`, short: `${pathWords(d)} · ${k}`, kind: "world", folded: d} : {id: "w:File:" + path, label: `File(${pathWords(path)})`, short: pathWords(path), kind: "world"};
 };
 // a figure made is seen where a notebook runs the cell that made it: on a notebook's route it is
 // on the screen; elsewhere it rests in the figure the library holds, which only `show` puts there

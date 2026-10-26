@@ -588,16 +588,17 @@ fn a_client_is_a_door() {
 /// from the code: a constant (`DATA / "raw"`), what a parameter is handed (`unpack(.., out)`),
 /// an entry's declared default (`--out`). An unknown part of a path is a directory: what is
 /// made in `data/raw/{kind}/{archive}` and what lists `data/raw` meet at `data/raw/`; a file
-/// named under an unknown directory is that name under any (`data/*/report.json`).
+/// named under an unknown directory is that name under that directory, by the name the code gives it
+/// (`data/{kind}/report.json`).
 #[test]
 fn routes_meet_on_the_disk() {
     let g = fixture();
     let places = |id: &str| g.node(id).unwrap().touches.iter().map(|t| (t.kind_name(), t.artifact.as_str())).collect::<HashSet<_>>();
     assert!(places("fixture.files.unpack").contains(&("disk_write", "data/raw/")), "{:?}", places("fixture.files.unpack"));
     assert!(places("fixture.files.kinds").contains(&("disk_read", "data/raw/")), "{:?}", places("fixture.files.kinds"));
-    assert!(places("fixture.files.report").contains(&("disk_write", "data/*/report.json")), "{:?}", places("fixture.files.report"));
+    assert!(places("fixture.files.report").contains(&("disk_write", "data/{kind}/report.json")), "{:?}", places("fixture.files.report"));
     assert!(
-        places("fixture.files.read_report").contains(&("disk_read", "data/*/report.json")),
+        places("fixture.files.read_report").contains(&("disk_read", "data/{kind}/report.json")),
         "{:?}",
         places("fixture.files.read_report")
     );
@@ -689,11 +690,11 @@ fn rust_reads_paths_as_built() {
     let here = |kind: &str, artifact: &str| (kind.to_string(), artifact.to_string(), vec![], vec![]);
     let by = |kind: &str, artifact: &str, f: &str| (kind.to_string(), artifact.to_string(), vec![format!("handed.world.{f}")], vec![]);
     let users = |kind: &str, f: &str| (kind.to_string(), String::new(), vec![], vec![format!("handed.world.{f}")]);
-    // a file whose name is known under a directory its users hand is that name under any directory
-    let under = |kind: &str, file: &str, f: &str| (kind.to_string(), format!("*/{file}"), vec![], vec![format!("handed.world.{f}")]);
+    // a file whose name is known under a directory its users hand is that name under that directory, by its name
+    let under = |kind: &str, file: &str, f: &str| (kind.to_string(), format!("{{dir}}/{file}"), vec![], vec![format!("handed.world.{f}")]);
     assert_eq!(
         t("report"),
-        [under("disk_write", "report.html", "report"), by("disk_write", "site/report.html", "publish")],
+        [by("disk_write", "site/report.html", "publish"), under("disk_write", "report.html", "report")],
         "`dir.join(REPORT)`: `publish` hands `Path::new(\"site\")`, and `report` is exported"
     );
     assert_eq!(t("stamp"), [here("disk_write", "out/")], "`format!(\"out/{{name}}.txt\")`: the directory before what is not known");
@@ -706,7 +707,7 @@ fn rust_reads_paths_as_built() {
     assert_eq!(t("run"), [users("db_sqlite", "run"), by("db_sqlite", "seen", "forget")], "`run(path, \"DELETE FROM seen\")`");
     // a route shows what its own calls hand
     assert_eq!(in_route(&g, "handed.world.publish", "handed.world.report"), [("disk_write", "site/report.html")]);
-    assert_eq!(in_route(&g, "handed.world.report", "handed.world.report"), [("disk_write", "*/report.html")]);
+    assert_eq!(in_route(&g, "handed.world.report", "handed.world.report"), [("disk_write", "{dir}/report.html")]);
 }
 
 /// `atlas check .` inside a crate reads the crate: the walk's root is read whatever it is called,

@@ -703,15 +703,15 @@ fn a_table_made_on_connecting_holds_what_was_there() {
 /// A place is the path it was built from. The clean archive reader is handed `data/archive` by
 /// the entry and lists `*/station-*` below it: the place is that pattern below that directory.
 /// The shortcut's directories come out of a config dict: the pattern is still written out, and
-/// the root stays a hole in the term (`{d}`, any directory: `*/*/station-*`), not a guess; no
-/// directory decides the place.
+/// the root stays a hole in the term by the name the code gives it (`{d}/*/station-*`), not a
+/// guess and not a wildcard; no directory decides the place.
 #[test]
 fn a_place_carries_a_what_a_pattern_below_a_directory_the_entry_hands_down() {
     let clean = touches(clean(), "harvest.stations.archived_stations", "disk_read");
     assert!(clean.iter().any(|t| t.artifact == "data/archive/*/station-*"), "{clean:?}");
     let shortcut = touches(shortcut(), "harvest.stations.archived_stations", "disk_read");
     assert!(!shortcut.is_empty(), "the listing is in the graph");
-    assert!(shortcut.iter().all(|t| t.artifact == "*/*/station-*" && !t.fixed), "{shortcut:?}");
+    assert!(shortcut.iter().all(|t| t.artifact == "{d}/*/station-*" && !t.fixed), "{shortcut:?}");
     assert!(shortcut.iter().all(|t| t.what == "{d}/*/station-*"), "{shortcut:?}");
 }
 
@@ -2009,8 +2009,8 @@ fn places_a_module_s_constant_decides_where_data_lives() {
     // each still reaches its file, in the direction its call goes
     for (f, kind, file) in [
         ("kinds", "disk_read", "data/raw/"),
-        ("report", "disk_write", "data/*/report.json"),
-        ("read_report", "disk_read", "data/*/report.json"),
+        ("report", "disk_write", "data/{kind}/report.json"),
+        ("read_report", "disk_read", "data/{kind}/report.json"),
         ("install", "disk_write", "data/config.toml"),
         ("export", "disk_write", "data/frame.csv"),
         ("Sink.write", "disk_write", "out.json"),
