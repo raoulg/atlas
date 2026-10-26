@@ -99,10 +99,14 @@ impl Terminals {
         terminal.master.resize(size(cols, rows)).map_err(|error| error.to_string())
     }
 
-    /// End the terminal's shell; the terminal then says it has ended.
+    /// End the terminal's shell, and take its pseudo-terminal away, which ends the shell where the
+    /// kill does not (a Windows console ends the programs attached to it when it closes, a Unix shell
+    /// hangs up); the terminal then says it has ended. A shell that ended by itself meanwhile cannot
+    /// be killed, and is ended all the same.
     pub fn close(&self, id: u32) -> Result<(), String> {
-        if let Some(terminal) = self.open.lock().map_err(|error| error.to_string())?.get_mut(&id) {
-            terminal.killer.kill().map_err(|error| error.to_string())?;
+        let closed = self.open.lock().map_err(|error| error.to_string())?.remove(&id);
+        if let Some(mut terminal) = closed {
+            let _ = terminal.killer.kill();
         }
         Ok(())
     }
