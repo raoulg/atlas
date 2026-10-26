@@ -1538,3 +1538,16 @@ fn a_condition_names_the_field_it_tests() {
 fn a_projection_bound_to_a_name_is_still_the_projection() {
     common::a_projection_bound_to_a_name_is_still_the_projection("rust", "charts");
 }
+
+/// The recursion pair: a call into a function the route is already inside takes what its call hands it, and no value a body
+/// makes comes from beyond the route (#237); the shortcut's `const FLOOR` alone does, as in Python and TypeScript.
+#[test]
+fn a_recursive_call_takes_what_its_call_hands_it() {
+    common::a_recursive_call_takes_what_its_call_hands_it("rust");
+}
+
+/// The literals pair: `vec![]` and `Vec::new()` make the same list, the body's (#237), as `[]` and `list()` do in Python.
+#[test]
+fn a_list_made_by_a_literal_is_made_by_the_body() {
+    common::a_list_made_by_a_literal_is_made_by_the_body("rust", "by_literal", "by_call", "by_constant");
+}

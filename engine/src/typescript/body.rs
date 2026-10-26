@@ -1179,6 +1179,14 @@ impl<'a, 't> Body<'a, 't> {
             // and where it builds the error the body throws, of its class whatever library the class is of
             let hands = self.hands(&[c.child_by_field_name("arguments")], &steps.kept);
             let mut gives = self.parsed_into(c);
+            // what it builds holds the program's type its type arguments name, the last of them (`new Array<Item>()`, the
+            // values of `new Map<string, Row>()`), as `[]` written for an `Item[]` does: a type the call gives, not asserts
+            let holds = c.child_by_field_name("type_arguments").and_then(|t| {
+                walk(t, &["type_identifier"]).into_iter().filter_map(|x| self.class(self.resolve(&[text(x, self.src).to_string()]))).last()
+            });
+            for g in gives.iter_mut().filter(|g| g.ty.is_empty() && !g.name.is_empty()) {
+                g.ty = holds.clone().unwrap_or_default();
+            }
             if gives.is_empty() && steps.raised(c) {
                 let class =
                     self.resolve(&parts).filter(|r| r.starts_with("ext:")).unwrap_or_else(|| format!("ext:javascript.{}", parts.join(".")));

@@ -47,17 +47,19 @@ struct Package {
 }
 
 impl Package {
-    /// The package at `dir`, unless Atlas does not read it: one the tables describe, or one
+    /// The package at `package_dir`, unless Atlas does not read it: one the tables describe, or one
     /// with compiled code.
-    fn read(dir: &Path) -> Option<Package> {
-        let manifest: Value = serde_json::from_str(&std::fs::read_to_string(dir.join("package.json")).ok()?).ok()?;
+    fn read(package_dir: &Path) -> Option<Package> {
+        let manifest: Value = serde_json::from_str(&std::fs::read_to_string(package_dir.join("package.json")).ok()?).ok()?;
         let name = manifest["name"].as_str()?.to_string();
         if effects::described(&name, Registry::Npm) {
             return None;
         }
         let compiled = knowledge::compiled(Registry::Npm);
         let mut paths = vec![];
-        for e in WalkDir::new(dir).into_iter().filter_entry(|e| e.depth() == 0 || e.file_name() != knowledge::NODE_PACKAGES).flatten() {
+        for e in
+            WalkDir::new(package_dir).into_iter().filter_entry(|e| e.depth() == 0 || e.file_name() != knowledge::NODE_PACKAGES).flatten()
+        {
             let ext = e.path().extension().and_then(|x| x.to_str()).unwrap_or("");
             if compiled.contains(&ext) {
                 return None;
@@ -71,14 +73,14 @@ impl Package {
         let (mut files, mut by_id) = (HashMap::new(), HashMap::new());
         for p in paths {
             // two builds of one module (`index.js`, `index.mjs`) are two modules
-            let mut id = module_id(&root, dir, &p);
+            let mut id = module_id(&root, package_dir, &p);
             if by_id.contains_key(&id) {
                 id = format!("{id}_{}", p.extension().and_then(|x| x.to_str()).unwrap_or(""));
             }
             by_id.insert(id.clone(), p.clone());
             files.insert(p, id);
         }
-        Some(Package { name, dir: dir.to_path_buf(), manifest, files, by_id })
+        Some(Package { name, dir: package_dir.to_path_buf(), manifest, files, by_id })
     }
 
     /// The file a specifier's path below the package names (`""` for the package itself): what
@@ -192,7 +194,10 @@ impl Libraries {
         if let Some(f) = self.found.get(&key) {
             return f.clone();
         }
-        let found = dir.ancestors().map(|a| a.join(knowledge::NODE_PACKAGES).join(name)).find(|d| d.join("package.json").is_file());
+        let found = dir
+            .ancestors()
+            .map(|a| a.join(knowledge::NODE_PACKAGES).join(name))
+            .find(|package_dir| package_dir.join("package.json").is_file());
         // a package of the repository's own, linked into `node_modules` (a workspace's member), is
         // read as its own part
         let own = |d: &PathBuf| {
@@ -205,15 +210,15 @@ impl Libraries {
         found
     }
 
-    fn package(&mut self, dir: &Path) -> Option<&Package> {
-        if !self.packages.contains_key(dir) {
-            let p = Package::read(dir);
+    fn package(&mut self, package_dir: &Path) -> Option<&Package> {
+        if !self.packages.contains_key(package_dir) {
+            let p = Package::read(package_dir);
             for f in p.iter().flat_map(|p| p.files.keys()) {
-                self.owner.insert(f.clone(), dir.to_path_buf());
+                self.owner.insert(f.clone(), package_dir.to_path_buf());
             }
-            self.packages.insert(dir.to_path_buf(), p);
+            self.packages.insert(package_dir.to_path_buf(), p);
         }
-        self.packages.get(dir)?.as_ref()
+        self.packages.get(package_dir)?.as_ref()
     }
 
     /// The package a code file is in.
@@ -232,8 +237,8 @@ impl Libraries {
             return None;
         }
         let sub = spec[name.len()..].trim_start_matches('/').to_string();
-        let dir = self.locate(from, &name)?;
-        self.package(&dir)?.entry(&sub)
+        let package_dir = self.locate(from, &name)?;
+        self.package(&package_dir)?.entry(&sub)
     }
 
     /// A file of a package, parsed: its module with what it imports, binds and defines.

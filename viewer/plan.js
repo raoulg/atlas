@@ -282,6 +282,16 @@ const arrowOf = id => {
   return arrowCache.get(ck);
 };
 const stepsIn = b => b.items.flatMap(it => it.members ? it.members : [it]);
+// the names a function's body binds by its own code, no step of it (`Node::binds`): a value the body makes itself, by a
+// literal or in an arm, which no caller holds and no module keeps
+const ownBound = id => new Set((byId.get(id)?.binds || []).map(b => b.name));
+// the names a function declares: its parameters, and what its body binds, by a step (`Site::gives`, not a value the step is
+// handed and gives anew) or by its own code. A name it uses that it does not declare is its module's (a constant,
+// `DEFAULT_SETTINGS`)
+const declaredIn = id => {
+  const n = byId.get(id), given = s => (s.gives || []).filter(g => g.name && !(s.hands || []).some(h => h.name === g.name)).map(g => g.name);
+  return new Set([...(n?.params || []).map(p => p.name), ...ownBound(id), ...(n?.sites || []).flatMap(given)]);
+};
 // what a function does at places where it runs on a value of a known class (`on`), else on a value of any class it may be
 const ordersOn = (id, on) => (on && arrowOf(id)?.on?.[on]) || arrowOf(id) || {};
 // what a call may run in place of the function it reaches, each a body by its key: a method called by name on a value
@@ -979,8 +989,9 @@ const stepMorphism = (key, own, isAnchor, leaf) => {
   // reader gives it: taken at the border by the names that hold them, inside the frame
   // the instance a method runs on is a use by no name and of its class (#126)
   // what a module holds (`PLANS[mode]`, `DEFAULT_SETTINGS.months`): a name of a type the function does not declare, keep as a
-  // global or name as its class; a body with no steps reads it by its own code too
-  const fnode = byId.get(step), declared = new Set((fnode?.params || []).map(p => p.name));
+  // global or name as its class; a body with no steps reads it by its own code too. The function declares its parameters and
+  // the names its body binds, by a step or by its own code (`Node::binds`, a literal among them)
+  const fnode = byId.get(step), declared = declaredIn(step);
   const kept_ = new Set((fnode?.touches || []).filter(t => t.kind === "global").map(t => t.what));
   const modular = u => !!u.name && !u.name.startsWith("#") && !!u.type && !declared.has(u.name) && !kept_.has(u.name) && u.name !== u.type.replace(/^ext:/, "").split(".").pop();
   const uses = (!own || step.startsWith("op:") ? [] : !leaf ? (fnode?.uses || []).filter(u => u.name || u.type) : (fnode?.uses || []).filter(modular).map(u => ({...u, arms: []}))).map(u => (modular(u) ? {...u, extern: true} : u));
@@ -1046,9 +1057,11 @@ const build = (node, parent, caller) => {
     }
     return [];
   }
-  // a step beyond the cut stands for the image of its whole body, made as a closed step's is (`cutArrow`)
-  const cut = fine && node.cut;
-  const m = cut ? cutArrow(node.id) : stepMorphism(node.id, fine && !node.cut, false, fine && !node.cut);
+  // a step beyond the cut stands for the image of its whole body, made as a closed step's is (`cutArrow`). A call into a
+  // function the route is already inside stays closed, a step with a body that is no leaf: its morphism is a closed step's,
+  // what its call hands it and gives and what its function reaches, its body drawn in the frame it stands in
+  const cut = fine && node.cut, own = fine && !node.cut && !node.recursive;
+  const m = cut ? cutArrow(node.id) : stepMorphism(node.id, own, false, own);
   // the places of a cut step's image are known before what it hands on is read: a result of no type goes back (#183)
   if (cut) for (const pl of m.places.values()) addPlace(pl);
   const hb = parent && !caller && goesBack(node.id, m.cod, m.errs);
@@ -1270,11 +1283,18 @@ const bound = (P, k, nm = (P.dn && P.dn.get(k)) || "", within = false) => {
   // what a call hands is named in the body that makes the call: an opened step's own arrow is handed it by its caller's
   let f = P.own ? frames.get(P.parent)?.parent : P.parent;
   while (f && frames.get(f)?.synthetic) f = frames.get(f).parent;
+  // a name the body binds by its own code, no step of it (a literal, `items = []`), holds the value the body made there, in
+  // its frame, also the route's and also in a step planned by itself (#237); a literal of no type of the code's is no value
+  if (f && ownBound(stepOf(frames.get(f).step)).has(nm)) return k.startsWith("t:") ? bodyMade(k, f, nm) : false;
   // a name the body's own function does not declare (a module's constant) is what the module holds: from beyond, as before,
   // also in a step planned by itself, whose caller does not hold it either (#183)
   const declared = !!f && !frames.get(f)?.anchor && (byId.get(stepOf(frames.get(f).step))?.params || []).some(p => p.name === nm);
   if (alone) return inner && declared ? condOf(k, nm) : null;
   if (!declared) return null;
+  return bodyMade(k, f, nm);
+};
+// the value of `k`'s kind the body of frame `f` holds by the name `nm`, made there by no step
+const bodyMade = (k, f, nm) => {
   const b = version(k, `${k}@${f}/~${nm}`);
   Object.assign(places.get(b), {at: `${f}/~${nm}`, bound: f});
   return b;
@@ -1616,6 +1636,8 @@ for (const P of pills.values()) {
       const self = (byId.get(stepAt(P))?.params || []).find(p => p.receiver)?.name, b = self && latestGet(kindKey(base) + "|" + self, P, true, arms);
       v = b && v && v !== b && (originOf.get(v) || v) === (originOf.get(b) || b) ? v : b || v;
     }
+    // a name the body binds by its own code that no step made anew holds what the body made, in its frame (#237)
+    if (!v && u.type && P.own && !latestEntry(kindKey(base) + "|" + u.name, P, true, arms) && ownBound(stepAt(P)).has(u.name)) v = bodyMade(base, P.parent, u.name);
     // a name of a type the body's function does not declare and no step makes (a module's constant, `DEFAULT_SETTINGS`) is
     // what the module holds, from beyond, as a call is handed it
     if (!v && u.extern && !latestEntry(kindKey(base) + "|" + u.name, P, true, arms)) v = base;
@@ -1942,7 +1964,10 @@ let sites = 0;
 const siteId = site => { if (!site) return "-"; if (!siteIds.has(site)) siteIds.set(site, ++sites); return siteIds.get(site); };
 const cutArrow = key => {
   const i = treeInfo.get(key), made = pathMakers(i.step, i.on, callAlts(key));
-  const memo = [SIDE, i.step, i.on || "", siteId(i.site), [...(i.fed || [])].sort(), [...i.path, i.step].filter(f => made.has(f)).sort()].join("|");
+  // unfolded, a call into a function already on the path stays closed (`routeTree`): the image depends on which of the
+  // functions its body calls are on the path, as well as on the callers that make its paths whole (#237)
+  const direct = new Set(callees(i.step, i.on, callAlts(key)).map(t => (byId.get(t)?.kind === "class" ? runsOf(t) || t : t)));
+  const memo = [SIDE, i.step, i.on || "", siteId(i.site), [...(i.fed || [])].sort(), [...i.path, i.step].filter(f => made.has(f) || direct.has(f)).sort()].join("|");
   if (!cutArrows.has(memo)) {
     const F = planBase(true, [unfoldStep(key)]), P = imageOf(F, () => false, false, {fineKeys: true}).pills.get("n:" + key);
     // what the step hands on is at its own moment; the moment it has is its caller's to give
