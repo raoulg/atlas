@@ -5,6 +5,12 @@ on:
     branches: [main, next]
   pull_request:
 
+# a push stops the runs of the commits before it on the same branch: only the newest commit's run
+# says whether the branch is green, which is what the nightly asks
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     strategy:
