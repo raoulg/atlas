@@ -106,7 +106,9 @@ pub fn menu<R: Runtime>(app: &AppHandle<R>, recent: &[Recent]) -> tauri::Result<
         .item(&MenuItemBuilder::with_id("view.atlas", "Atlas View").accelerator("CmdOrCtrl+1").build(app)?)
         .item(&MenuItemBuilder::with_id("view.history", "History").accelerator("CmdOrCtrl+2").build(app)?)
         .separator()
-        .item(&MenuItemBuilder::with_id("view.terminal", "Terminal").accelerator("Ctrl+`").build(app)?);
+        .item(&MenuItemBuilder::with_id("view.terminal", "Terminal").accelerator("Ctrl+`").build(app)?)
+        .separator()
+        .item(&MenuItemBuilder::with_id("view.scheme", "Light or Dark").accelerator("CmdOrCtrl+Shift+L").build(app)?);
     #[cfg(target_os = "macos")]
     let view = view.separator().fullscreen();
     let window = SubmenuBuilder::new(app, "Window").minimize().maximize().separator().close_window().build()?;

@@ -27,20 +27,40 @@
     card.append(title, appearance, agents, version, close);
     host.append(card);
 
-    function drawAppearance(theme) {
+    // the mode, and the theme Studio shows in light and in dark, each with a strip of its colours
+    function drawAppearance(chosen) {
       appearance.replaceChildren(node('h2', '', 'Appearance'));
+      const choose = async (next) => { await bridge.setAppearance(next); drawAppearance(next); };
       const choices = node('div', 'settings-segments');
       choices.setAttribute('role', 'radiogroup');
       for (const [value, label] of [['system', 'System'], ['light', 'Light'], ['dark', 'Dark']]) {
-        const choice = button('settings-segment', label, async () => {
-          try { await bridge.setTheme(value); drawAppearance(value); }
-          catch (error) { bridge.say(String(error)); }
-        });
+        const choice = button('settings-segment', label, () => choose({...chosen, theme: value}));
         choice.setAttribute('role', 'radio');
-        choice.setAttribute('aria-checked', String(value === theme));
+        choice.setAttribute('aria-checked', String(value === chosen.theme));
         choices.append(choice);
       }
-      appearance.append(choices, node('p', 'settings-note', 'The Atlas view follows it.'));
+      appearance.append(choices);
+      for (const [scheme, label] of [['light', 'Light theme'], ['dark', 'Dark theme']]) {
+        const row = node('label', 'settings-theme');
+        const select = node('select', '');
+        for (const theme of bridge.themes.filter((t) => t.scheme === scheme)) {
+          const option = node('option', '', theme.name);
+          option.value = theme.id;
+          option.selected = theme.id === chosen[scheme];
+          select.append(option);
+        }
+        select.addEventListener('change', () => choose({...chosen, [scheme]: select.value}));
+        row.append(node('span', '', label), select, strip(bridge.themes.find((t) => t.id === select.value)));
+        appearance.append(row);
+      }
+      appearance.append(node('p', 'settings-note', 'The Atlas view and the terminal follow it. ⇧⌘L, or ◐ in the status bar, switches between the two.'));
+    }
+
+    // a theme's colours in a row
+    function strip(theme) {
+      const row = node('span', 'settings-strip');
+      for (const colour of theme ? bridge.swatchOf(theme) : []) { const dot = node('i', ''); dot.style.background = colour; row.append(dot); }
+      return row;
     }
 
     function drawAgents(list) {
@@ -84,7 +104,7 @@
 
     async function refresh() {
       const settings = await bridge.get();
-      drawAppearance(settings.theme);
+      drawAppearance(settings.appearance);
       drawAgents(settings.agents);
       drawVersion(bridge.build());
     }
