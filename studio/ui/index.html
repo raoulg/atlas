@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Atlas Studio</title>
+  <link rel="stylesheet" href="theme.css">
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="lesson.css">
   <link rel="stylesheet" href="workbench.css">
@@ -20,6 +21,7 @@
   <script defer src="workspaces.js"></script>
   <script defer src="bar.js"></script>
   <script defer src="updates.js"></script>
+  <script defer src="settings.js"></script>
   <script defer src="studio.js"></script>
 </head>
 <body>
@@ -47,6 +49,7 @@
           <div class="center">
             <section id="workspaces" class="workspaces" aria-label="Workspaces" hidden></section>
             <section id="updates" class="updates" aria-label="Update" hidden></section>
+            <section id="settings" class="workspaces settings" aria-label="Settings" hidden></section>
             <div id="loading" class="message" hidden>Opening workspace…</div>
             <div id="error" class="message error" role="alert" hidden></div>
             <section id="views" class="views" aria-label="Atlas workspace" hidden>

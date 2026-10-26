@@ -40,6 +40,18 @@ Once a day Studio asks GitHub whether a newer build of its channel is out, as th
 
 Studio keeps the last twenty workspaces it opened. ⌘O (File › Open Workspace…) shows them, most recent first: type to filter, arrows and Enter to open one, × to take one off the list. **Open folder…** (⇧⌘O) opens a new one through the system's dialog. File › Open Recent lists the same workspaces, with Clear Recent. With no workspace open, the same page is where Studio starts. The list lives in Studio's configuration folder (`~/Library/Application Support/io.github.raoulg.atlas-studio/workspaces.json` on macOS).
 
+## Windows
+
+Every window is one workspace, with its own `atlas serve` and its own terminals. File › New Window (⌘N) opens one on the page of workspaces; **Open workspace** in the top bar and ⌘O open that page in the window you are in. A workspace already open in another window brings that window to the front, since two servers on one repository would share what it keeps in `.atlas/`. On macOS the windows share a tab group: Window › Merge All Windows makes them tabs. Closing a window ends its server and its shells. The window's title names its workspace, and the status bar names Studio's build.
+
+## Settings
+
+Atlas Studio › Settings… (⌘,; File › Settings… on Windows and Linux):
+
+- **Appearance**: System, Light or Dark, for every window and the Atlas view in it.
+- **Coding agents**: whether Claude Code and Codex have Atlas's MCP server, registered once for every project as `docs/reference/install.md` says. **Add Atlas** runs that command, with the `atlas` on the `PATH`, else Studio's own; the agent connects to it in a new session (or `/mcp` in Claude Code).
+- **Version**, and a check for updates.
+
 ## The top bar
 
 In Studio the Atlas view draws no header of its own: its controls (the project, Flowchart / Type lattice / Signature flow, the entry point, what it counts, export, jump to a symbol) stand in Studio's top bar beside the workspace's name. The page opens with `?host=` and Studio's origin; it describes its controls to Studio and does what Studio's bar asks, as messages addressed to that origin only. In a browser the page keeps its header and its link to the history; in Studio the history is in the sidebar (⌘2, with ⌘1 for the Atlas view). **export** saves the page through the system's save dialog.

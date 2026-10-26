@@ -1,5 +1,6 @@
 mod files;
 mod lesson;
+mod settings;
 mod terminal;
 mod update;
 mod workspaces;
@@ -393,6 +394,23 @@ async fn newer_build(app: &tauri::AppHandle, now: bool) -> Result<Option<update:
     tauri::async_runtime::spawn_blocking(move || newer.map(update::shown)).await.map_err(|e| e.to_string())
 }
 
+/// Studio's settings, for the window that asks: its theme, and the coding agents with Atlas or without.
+#[tauri::command]
+fn get_settings(window: tauri::Window, app: tauri::AppHandle, state: tauri::State<'_, StudioState>) -> serde_json::Value {
+    let workspace = workspace_path(&state, window.label()).ok();
+    serde_json::json!({"theme": settings::theme(&app), "agents": settings::agents(workspace.as_deref())})
+}
+
+#[tauri::command]
+fn set_theme(app: tauri::AppHandle, theme: String) -> Result<(), String> {
+    settings::set_theme(&app, &theme)
+}
+
+#[tauri::command]
+async fn register_agent(id: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || settings::register(&id)).await.map_err(|e| e.to_string())?
+}
+
 /// Which build Studio is, for the status bar.
 #[tauri::command]
 async fn studio_build(app: tauri::AppHandle) -> Result<update::Build, String> {
@@ -522,6 +540,7 @@ fn main() {
         })
         .menu(|app| workspaces::menu(app, &workspaces::recent(app)))
         .setup(|app| {
+            settings::apply(app.handle(), &settings::theme(app.handle()));
             watch_updates(app.handle().clone());
             Ok(())
         })
@@ -567,6 +586,9 @@ fn main() {
             export_view,
             check_update,
             studio_build,
+            get_settings,
+            set_theme,
+            register_agent,
             install_update,
             read_workspace_file,
             terminal_open,

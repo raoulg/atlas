@@ -151,7 +151,7 @@ function showState(name, error = '') {
 function selectView(view) {
   activeView = view;
   // going to a view leaves the workspaces page and the update's
-  if (workspace) { byId('workspaces').hidden = true; byId('updates').hidden = true; }
+  if (workspace) { byId('workspaces').hidden = true; byId('updates').hidden = true; byId('settings').hidden = true; }
   for (const tab of document.querySelectorAll('.side-tab')) {
     const selected = tab.dataset.view === view;
     tab.classList.toggle('active', selected);
@@ -251,7 +251,9 @@ byId('workspace-button').addEventListener('click', showWorkspaces);
 byId('terminal-toggle').addEventListener('click', () => showTerminal());
 for (const tab of document.querySelectorAll('.side-tab')) tab.addEventListener('click', () => selectView(tab.dataset.view));
 // which build this is, at the right of the status bar: its version, and for a nightly its commit
+let buildSaid = 'Atlas Studio';
 invoke('studio_build').then((build) => {
+  buildSaid = `Atlas Studio ${build.version}` + (build.nightly ? ` · nightly ${build.commit}` : '');
   byId('studio-version').textContent = `Atlas Studio ${build.version}` + (build.nightly ? ` · nightly ${build.commit}` : '');
   byId('studio-version').title = `atlas ${build.version}${build.nightly ? '-nightly' : ''}${build.commit ? ` (${build.commit})` : ''}`;
 }).catch(() => {});
@@ -273,6 +275,17 @@ async function checkNow() {
   } catch (error) { byId('status-text').textContent = String(error); }
 }
 
+// Studio's settings (⌘,): the theme, the coding agents with Atlas, the version
+const settingsPage = window.AtlasSettings.mount(byId('settings'), {
+  get: () => invoke('get_settings'),
+  setTheme: (theme) => invoke('set_theme', {theme}),
+  register: (id) => invoke('register_agent', {id}),
+  build: () => buildSaid,
+  checkUpdates: () => checkNow(),
+  say: (text) => { byId('status-text').textContent = text; },
+  closed: () => { if (workspace) selectView(activeView); else showState('welcome'); },
+});
+
 // the menu bar's items, said by name
 listen('studio-menu', ({payload}) => {
   const action = payload?.action;
@@ -284,6 +297,7 @@ listen('studio-menu', ({payload}) => {
   else if (action === 'view.history' && workspace) selectView('history');
   else if (action === 'view.terminal') showTerminal();
   else if (action === 'update.check') checkNow();
+  else if (action === 'settings') { byId('atlas-bar').hidden = true; settingsPage.show(); }
 });
 listen('studio-backend-stopped', () => { displayWorkspace(null); showState('error', 'Atlas stopped. Open the workspace again to restart it.'); });
 showState('loading');
