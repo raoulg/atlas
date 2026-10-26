@@ -24,13 +24,16 @@
     const documentPane = node('div', 'lesson-document');
     const terminal = node('pre', 'lesson-terminal');
     const source = node('aside', 'lesson-source');
-    const sourceHeader = node('header', '', 'Source');
+    const sourceHeader = node('header');
+    const sourceLabel = node('span', '', 'Source');
+    const closeSource = control('Close', () => shell.classList.remove('source-open'));
+    sourceHeader.append(sourceLabel, closeSource);
     const sourceBody = node('pre', '', 'Select a source file.');
     const sourceFooter = node('footer', '', 'Space in the Atlas view opens a function.');
     const editor = node('textarea', 'lesson-editor');
     editor.spellcheck = false;
     editor.hidden = true;
-    source.append(sourceHeader, sourceBody, editor, sourceFooter);
+    source.append(sourceHeader, sourceBody, sourceFooter);
     let currentPath = null;
     let current = null;
     let mode = 'normal';
@@ -45,7 +48,7 @@
         await bridge.saveLesson(currentPath, editor.value);
         current = await bridge.openLesson(currentPath);
         await showDocument();
-        await showSource(current.script);
+        await showSource(current.script, false);
         switchMode('normal');
       } catch (error) { terminal.textContent += `\nSave failed: ${error}`; }
     });
@@ -67,7 +70,7 @@
       finally { run.disabled = false; }
     });
     toolbar.append(title, space, normal, insert, save, capture, run);
-    main.append(toolbar, documentPane, terminal);
+    main.append(toolbar, documentPane, editor, terminal);
     shell.append(main, source);
     host.replaceChildren(shell);
 
@@ -77,7 +80,7 @@
       insert.classList.toggle('active', next === 'insert');
       documentPane.hidden = next !== 'normal';
       editor.hidden = next !== 'insert';
-      sourceBody.hidden = next === 'insert';
+      capture.hidden = next !== 'insert';
       save.hidden = next !== 'insert';
       if (next === 'insert') {
         editor.value = current?.text || '';
@@ -85,11 +88,12 @@
       }
     }
 
-    async function showSource(path) {
+    async function showSource(path, reveal = true) {
       if (!currentPath || !path) return;
       try {
         sourceBody.textContent = await bridge.readReference(currentPath, path);
-        sourceHeader.textContent = path;
+        sourceLabel.textContent = path;
+        if (reveal) shell.classList.add('source-open');
       } catch (error) { sourceBody.textContent = `Cannot open source: ${error}`; }
     }
 
@@ -140,7 +144,8 @@
       title.textContent = path;
       terminal.textContent = `Script: ${current.script}\n`;
       await showDocument();
-      await showSource(current.script);
+      await showSource(current.script, false);
+      shell.classList.remove('source-open');
       switchMode(mode);
     }
 
