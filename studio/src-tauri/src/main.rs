@@ -1,12 +1,15 @@
+mod files;
 mod lesson;
+mod terminal;
 
 use std::{path::PathBuf, sync::Mutex, time::Duration};
-use tauri::{Emitter, Manager};
+use tauri::{ipc::Channel, Emitter, Manager};
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_shell::{
     process::{CommandChild, CommandEvent},
     ShellExt,
 };
+use terminal::Terminals;
 
 #[derive(Clone, serde::Serialize)]
 struct Workspace {
@@ -24,11 +27,6 @@ struct Session {
 struct StudioState(Mutex<Option<Session>>);
 
 #[tauri::command]
-fn current_workspace(state: tauri::State<'_, StudioState>) -> Result<Option<Workspace>, String> {
-    Ok(state.0.lock().map_err(|e| e.to_string())?.as_ref().map(|session| session.workspace.clone()))
-}
-
-#[tauri::command]
 async fn choose_workspace(app: tauri::AppHandle, state: tauri::State<'_, StudioState>) -> Result<Option<Workspace>, String> {
     let (sender, receiver) = tokio::sync::oneshot::channel();
     app.dialog().file().pick_folder(move |folder| {
@@ -37,14 +35,44 @@ async fn choose_workspace(app: tauri::AppHandle, state: tauri::State<'_, StudioS
     let Some(folder) = receiver.await.map_err(|e| e.to_string())? else {
         return Ok(None);
     };
-    let path = folder.into_path().map_err(|e| e.to_string())?.canonicalize().map_err(|e| e.to_string())?;
-    let workspace = start_workspace(&app, &path).await?;
-    let mut session = state.0.lock().map_err(|e| e.to_string())?;
-    if let Some(previous) = session.take() {
+    open_workspace(&app, &state, folder.into_path().map_err(|e| e.to_string())?).await.map(Some)
+}
+
+/// The workspace Studio opens as it starts: the folder named on its command line
+/// (`open -a "Atlas Studio" --args ~/code/x`), else the one open when it last closed.
+#[tauri::command]
+async fn first_workspace(app: tauri::AppHandle, state: tauri::State<'_, StudioState>) -> Result<Option<Workspace>, String> {
+    if let Some(current) = state.0.lock().map_err(|e| e.to_string())?.as_ref() {
+        return Ok(Some(current.workspace.clone()));
+    }
+    let named = std::env::args_os().skip(1).map(PathBuf::from).find(|path| path.is_dir());
+    let Some(path) = named.or_else(|| last_workspace(&app).filter(|path| path.is_dir())) else {
+        return Ok(None);
+    };
+    open_workspace(&app, &state, path).await.map(Some)
+}
+
+/// The file that keeps the workspace open last, in the app's own configuration folder.
+fn last_workspace_file(app: &tauri::AppHandle) -> Option<PathBuf> {
+    app.path().app_config_dir().ok().map(|dir| dir.join("last-workspace"))
+}
+
+fn last_workspace(app: &tauri::AppHandle) -> Option<PathBuf> {
+    std::fs::read_to_string(last_workspace_file(app)?).ok().map(|path| PathBuf::from(path.trim()))
+}
+
+async fn open_workspace(app: &tauri::AppHandle, state: &tauri::State<'_, StudioState>, path: PathBuf) -> Result<Workspace, String> {
+    let path = path.canonicalize().map_err(|e| e.to_string())?;
+    let started = start_workspace(app, &path).await?;
+    let workspace = started.workspace.clone();
+    if let Some(previous) = state.0.lock().map_err(|e| e.to_string())?.replace(started) {
         let _ = previous.child.kill();
     }
-    *session = Some(workspace);
-    Ok(session.as_ref().map(|session| session.workspace.clone()))
+    if let Some(file) = last_workspace_file(app) {
+        let _ = file.parent().map(std::fs::create_dir_all);
+        let _ = std::fs::write(file, path.to_string_lossy().as_bytes());
+    }
+    Ok(workspace)
 }
 
 async fn start_workspace(app: &tauri::AppHandle, path: &PathBuf) -> Result<Session, String> {
@@ -191,14 +219,87 @@ async fn run_lesson(state: tauri::State<'_, StudioState>, path: String) -> Resul
     })
 }
 
+#[tauri::command]
+async fn workspace_files(state: tauri::State<'_, StudioState>) -> Result<String, String> {
+    let url =
+        state.0.lock().map_err(|e| e.to_string())?.as_ref().map(|session| session.workspace.url.clone()).ok_or("Open a workspace first")?;
+    tauri::async_runtime::spawn_blocking(move || files::listing(&url)).await.map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+fn read_workspace_file(state: tauri::State<'_, StudioState>, path: String) -> Result<tauri::ipc::Response, String> {
+    files::read(&workspace_path(&state)?, &path).map(tauri::ipc::Response::new)
+}
+
+#[tauri::command]
+fn terminal_open(
+    state: tauri::State<'_, StudioState>,
+    terminals: tauri::State<'_, Terminals>,
+    cols: u16,
+    rows: u16,
+    on_event: Channel<terminal::Event>,
+) -> Result<u32, String> {
+    terminals.open(&workspace_path(&state)?, cols, rows, move |event| on_event.send(event).is_ok())
+}
+
+#[tauri::command]
+fn terminal_write(terminals: tauri::State<'_, Terminals>, id: u32, data: String) -> Result<(), String> {
+    terminals.write(id, &data)
+}
+
+#[tauri::command]
+fn terminal_resize(terminals: tauri::State<'_, Terminals>, id: u32, cols: u16, rows: u16) -> Result<(), String> {
+    terminals.resize(id, cols, rows)
+}
+
+#[tauri::command]
+fn terminal_close(terminals: tauri::State<'_, Terminals>, id: u32) -> Result<(), String> {
+    terminals.close(id)
+}
+
+/// An app started from the Finder or the Dock gets the system's bare `PATH`, without what the
+/// user's shell profile adds (Homebrew, `uv`, `cargo`). The sidecar, the lessons' Python and the
+/// terminals take the `PATH` the user's login shell has, as a terminal application does.
+#[cfg(unix)]
+fn take_login_path() {
+    use std::process::{Command, Stdio};
+    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
+    let mark = "__ATLAS_STUDIO_PATH__";
+    let Ok(child) = Command::new(&shell)
+        .args(["-ilc", &format!("printf '{mark}%s{mark}' \"$PATH\"")])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+    else {
+        return;
+    };
+    let id = child.id();
+    let (sender, receiver) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = sender.send(child.wait_with_output());
+    });
+    let Ok(Ok(output)) = receiver.recv_timeout(Duration::from_secs(5)) else {
+        let _ = Command::new("kill").arg(id.to_string()).status();
+        return;
+    };
+    let text = String::from_utf8_lossy(&output.stdout);
+    if let Some(path) = text.split(mark).nth(1).filter(|path| !path.is_empty()) {
+        std::env::set_var("PATH", path);
+    }
+}
+
 fn main() {
+    #[cfg(unix)]
+    take_login_path();
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .manage(StudioState::default())
+        .manage(Terminals::default())
         .invoke_handler(tauri::generate_handler![
-            current_workspace,
             choose_workspace,
+            first_workspace,
             list_lessons,
             open_lesson,
             read_lesson_reference,
@@ -206,12 +307,21 @@ fn main() {
             save_lesson,
             current_atlas_view,
             save_lesson_view,
-            run_lesson
+            run_lesson,
+            workspace_files,
+            read_workspace_file,
+            terminal_open,
+            terminal_write,
+            terminal_resize,
+            terminal_close
         ])
         .build(tauri::generate_context!())
         .expect("Atlas Studio could not start")
         .run(|app, event| {
             if let tauri::RunEvent::Exit = event {
+                if let Some(terminals) = app.try_state::<Terminals>() {
+                    terminals.close_all();
+                }
                 if let Some(state) = app.try_state::<StudioState>() {
                     if let Ok(mut session) = state.0.lock() {
                         if let Some(session) = session.take() {

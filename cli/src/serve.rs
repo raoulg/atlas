@@ -4,7 +4,8 @@
 //!
 //! The page is the working tree's, and follows it: when a file Atlas reads changes, the server publishes
 //! a complete snapshot and the open page draws it in the view it was in. Beside it, at `/history`, the
-//! history of `atlas history`, so that two commits are a click away.
+//! history of `atlas history`, so that two commits are a click away. At `/api/files`, the files Atlas
+//! reads, each with what the graph defines in it: the tree a file browser shows beside the page.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::hash::{Hash, Hasher};
@@ -30,13 +31,19 @@ const LOADING: &str = include_str!("../../viewer/loading.html");
 /// The working tree as far as Atlas reads it: each file by its size and the time it was written.
 type Stamps = BTreeMap<PathBuf, Stamp>;
 
-/// A page of the working tree, with the files it was drawn from and the name the page knows it by.
+/// A page of the working tree, with the files it was drawn from, the name the page knows it by, and
+/// what its graph defines in each file.
 struct Drawn {
     stamps: Stamps,
     id: String,
     data: String,
     complete: bool,
+    facts: Facts,
 }
+
+/// What a graph defines in each file of the repository, by the file's path from the root: its
+/// modules, classes and functions, each with its id and the line it starts at.
+type Facts = BTreeMap<String, Vec<Value>>;
 
 struct Progress {
     phase: &'static str,
@@ -117,6 +124,7 @@ impl Server {
             ("GET", "/") => Answer::page(self.kept().map_or_else(|| LOADING.to_string(), |_| Html::shell().into())),
             ("GET", "/api/drawn") => Answer::json(self.drawn().to_string()),
             ("GET", "/api/snapshot") => self.kept().map_or_else(Answer::none, |d| Answer::json(d.data.clone())),
+            ("GET", "/api/files") => json(self.files()),
             ("GET", "/export") => {
                 self.export(req).map_or_else(Answer::failed, |(name, html)| Answer::download(format!("{name}.html"), html))
             }
@@ -185,7 +193,26 @@ impl Server {
         let opens = Opens { route: None, sight: None, served: Some(id.to_string()), preliminary };
         let data = Html::payload(&graph, &flow, &findings, compared.as_ref(), &opens)?;
         self.log.say(Who::Atlas, &format!("drew {}{}", if preliminary { "local code · " } else { "" }, page::summary(&graph)));
-        Ok(Drawn { stamps: stamps.clone(), id: id.to_string(), data, complete: !preliminary })
+        let facts = facts(&atlas_engine::language::read(&self.repo, opts)?, &graph);
+        Ok(Drawn { stamps: stamps.clone(), id: id.to_string(), data, complete: !preliminary, facts })
+    }
+
+    /// The files of the working tree as Atlas reads them, now, each with what the last page drawn
+    /// defines in it; a file the graph defines nothing in has no facts. The paths go from the
+    /// listing's root, with `/` between their parts on every platform.
+    fn files(&self) -> Result<Value> {
+        let read = atlas_engine::language::read(&self.repo, &self.opts)?;
+        let kept = self.kept();
+        let files: Vec<Value> = read
+            .listed_files()
+            .iter()
+            .map(|f| {
+                let path = slashed(f);
+                let facts = kept.as_ref().and_then(|d| d.facts.get(&path)).cloned().unwrap_or_default();
+                json!({"path": path, "facts": facts})
+            })
+            .collect();
+        Ok(json!({"root": read.root(), "drawn": kept.map(|d| d.id.clone()), "files": files}))
     }
 
     fn kept(&self) -> Option<Arc<Drawn>> {
@@ -302,6 +329,23 @@ fn stamps(repo: &Path, opts: &Options) -> Result<Stamps> {
         now.insert(vision, Some((m.len(), m.modified().ok())));
     }
     Ok(now)
+}
+
+/// What `graph` defines in the files of `read`, by their paths from its root: a library's code is
+/// not the repository's, and has no file in it.
+fn facts(read: &atlas_engine::repo::Repo, graph: &atlas_engine::model::Graph) -> Facts {
+    let mut facts = Facts::new();
+    for n in graph.nodes.iter().filter(|n| n.kind != atlas_engine::model::NodeKind::External) {
+        let Ok(rel) = Path::new(&n.file).strip_prefix(read.root()) else { continue };
+        let fact = json!({"id": n.id, "name": n.name, "kind": n.kind, "line": n.span.map(|s| s.0)});
+        facts.entry(slashed(rel)).or_default().push(fact);
+    }
+    facts
+}
+
+/// A path from a root, with `/` between its parts.
+fn slashed(p: &Path) -> String {
+    p.components().map(|c| c.as_os_str().to_string_lossy()).collect::<Vec<_>>().join("/")
 }
 
 /// The name a page knows its drawing by: the stamps it was drawn from, hashed.

@@ -7,16 +7,20 @@ license = "CC-BY-NC-SA-4.0"
 repository = "https://github.com/raoulg/atlas"
 build = "build.rs"
 
+# a crate of its own, outside the Atlas workspace, wherever it is checked out
+[workspace]
+
 [[bin]]
 name = "atlas-studio"
 path = "src/main.rs"
 
 [dependencies]
+portable-pty = "0.9"
 serde = { version = "1", features = ["derive"] }
-tauri = "2"
+tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
 tauri-plugin-shell = "2"
 tokio = { version = "1", features = ["sync", "time"] }
 
 [build-dependencies]
-tauri-build = "2"
+tauri-build = { version = "2", features = [] }

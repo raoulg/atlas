@@ -43,6 +43,12 @@
         blocks.push({ kind: 'code', language: fence[1], text: code.join('\n') });
         continue;
       }
+      if (/^<[a-z!]/i.test(line.trim())) {
+        const html = [];
+        while (at < lines.length && lines[at].trim()) html.push(lines[at++]);
+        blocks.push({ kind: 'html', text: html.join('\n') });
+        continue;
+      }
       const heading = line.match(/^(#{1,6})\s+(.+)$/);
       if (heading) { blocks.push({ kind: 'heading', level: heading[1].length, text: heading[2] }); at++; continue; }
       const image = line.trim().match(/^!\[([^\]]*)\]\(([^)]+)\)$/);
@@ -60,7 +66,7 @@
         continue;
       }
       const paragraph = [];
-      while (at < lines.length && lines[at].trim() && !/^(#{1,6} |```|[-*] |>|<atlas-view\b|!\[)/.test(lines[at])) paragraph.push(lines[at++]);
+      while (at < lines.length && lines[at].trim() && !/^(#{1,6} |```|[-*] |>|<[a-z!]|!\[)/i.test(lines[at])) paragraph.push(lines[at++]);
       if (paragraph.length) blocks.push({ kind: 'paragraph', text: paragraph.join(' ') });
       else { blocks.push({ kind: 'paragraph', text: line }); at++; }
     }
@@ -145,6 +151,7 @@
         case 'code': element = document.createElement('pre'); { const code = document.createElement('code'); code.textContent = block.text; element.append(code); } break;
         case 'image': element = document.createElement('figure'); { const image = document.createElement('img'); image.alt = block.alt; try { image.src = await context.readArtifact(block.path); } catch (error) { element.append(message('Image unavailable: ' + error)); } element.append(image); } break;
         case 'view': element = await viewBlock(block, context); break;
+        case 'html': if (!root.AtlasLesson.renderHtml) continue; element = document.createElement('div'); element.append(...(await root.AtlasLesson.renderHtml(block.text, context)).childNodes); break;
         default: continue;
       }
       article.append(element);
